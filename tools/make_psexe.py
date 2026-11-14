@@ -2,6 +2,7 @@
 Build a PS-X EXE from the linked ELF and its raw .main binary.
 
 Usage: python3 make_psexe.py <elf> <raw_binary> <output_exe> [--entry SYMBOL]
+                                                             [--zeroed-from SYMBOL]
 
 The 0x800-byte header template is the ELF's .header section (asm/header.s:
 magic, stack, region string). The fields that depend on the link are computed:
@@ -11,6 +12,15 @@ magic, stack, region string). The fields that depend on the link are computed:
                to that size; the loader reads whole sectors)
 For the matching link these equal the retail header, so the EXE is unchanged;
 a build that moves code or data gets a header that describes it.
+
+--zeroed-from names the symbol the start-up code clears memory from (the
+game's is main_SBSS_START: its small zeroed variables are the end of .main).
+The file then ends at the first sector boundary at or after that address
+and not at the end of .main: what is left out is zero in the file and is
+cleared before main in any case. The matching build does not ask for it;
+the ReBushido build does, because one sector fewer is what lets its
+program stay where the retail one is on the disc (docs/REBUSHIDO.md,
+"Playing").
 """
 
 import argparse
@@ -31,6 +41,7 @@ def main():
     ap.add_argument("binary")
     ap.add_argument("output")
     ap.add_argument("--entry", default="__SN_ENTRY_POINT")
+    ap.add_argument("--zeroed-from", metavar="SYMBOL")
     args = ap.parse_args()
 
     elf = Elf(args.elf)
@@ -49,6 +60,17 @@ def main():
         binary = f.read()
     size = (len(binary) + SECTOR - 1) // SECTOR * SECTOR
     binary += b"\0" * (size - len(binary))
+    if args.zeroed_from:
+        zeroed = elf.symbol(args.zeroed_from)
+        if zeroed is None:
+            sys.exit("make_psexe: %s has no symbol %s" % (args.elf, args.zeroed_from))
+        keep = (zeroed - main_sec["addr"] + SECTOR - 1) // SECTOR * SECTOR
+        if not 0 < keep <= size:
+            sys.exit("make_psexe: %s (0x%08X) is not in .main" % (args.zeroed_from, zeroed))
+        if any(binary[keep:]):
+            sys.exit("make_psexe: .main is not zero from 0x%08X on, after %s"
+                     % (main_sec["addr"] + keep, args.zeroed_from))
+        binary, size = binary[:keep], keep
 
     struct.pack_into("<I", header, 0x10, entry)
     struct.pack_into("<I", header, 0x18, main_sec["addr"])

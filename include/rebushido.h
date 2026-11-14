@@ -11,8 +11,16 @@
 #define REBUSHIDO 0
 #endif
 
-/* ReBushido's version. The build adds the commit (src/rebushido/version.c). */
-#define RB_VERSION "0.1-dev"
+/* ReBushido's version: the number here is the one place it is written.
+ * The build adds the commit (src/rebushido/version.c). Every build has
+ * -dev after the number but a release's, which `make rebushido-patch
+ * RB_RELEASE=1` builds by giving RB_VERSION_SUFFIX as nothing
+ * (docs/REBUSHIDO.md, "Making a release"). */
+#define RB_VERSION_NUMBER "0.1"
+#ifndef RB_VERSION_SUFFIX
+#define RB_VERSION_SUFFIX "-dev"
+#endif
+#define RB_VERSION RB_VERSION_NUMBER RB_VERSION_SUFFIX
 
 /* ---- the changes ---- */
 

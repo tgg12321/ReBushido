@@ -132,7 +132,7 @@ ALL_O_FILES  := $(S_O_FILES) $(C_O_FILES) $(ASM_FUNC_O_FILES)
 
 # -- Top-level targets --
 .PHONY: all clean check clean-check shift movovl modern test checks \
-	rebushido rebushido-disc rebushido-test rebushido-modern rb-build \
+	rebushido rebushido-disc rebushido-patch rebushido-test rebushido-modern rb-build \
 	quickboot quickboot-compile quickboot-disc playtest playtest-discs
 
 ifeq ($(REBUSHIDO),1)
@@ -175,6 +175,23 @@ rebushido-disc: rebushido
 	python3 tools/build_disc.py --image "$(RETAIL_IMAGE)" --out $(PLAY_DIR)/ReBushido.bin --exe build/rebushido/rebushido.exe
 	python3 tools/playtest.py --symbols build/rebushido/rebushido.elf $(PLAY_DIR)/ReBushido.sym
 	@echo "OK: $(PLAY_DIR)/ReBushido.cue"
+
+# What a release is made of (docs/REBUSHIDO.md, "Making a release"): the
+# matching build, which must match, the ReBushido disc, and from the two
+# images a patch with a README for players in build/release/
+# (tools/rebushido_release.py), tried on the retail image before it is
+# kept. RB_RELEASE=1 builds the version without -dev and refuses a tree
+# with anything uncommitted; without it the patch is a trial. It needs the
+# retail image, so it is no check: where there is none it says so.
+rebushido-patch:
+	@if [ ! -f "$(RETAIL_IMAGE)" ]; then \
+		echo "rebushido-patch: skipped: no retail image \"$(RETAIL_IMAGE)\" here (your own copy of the disc; RETAIL_IMAGE=... names another)"; \
+	elif [ "$(RB_RELEASE)" = 1 ] && [ -n "$$(git status --porcelain)" ]; then \
+		echo "rebushido-patch: no release from a tree with changes or files that are not committed"; exit 1; \
+	else \
+		$(MAKE) check && $(MAKE) rebushido-disc && \
+		python3 tools/rebushido_release.py --retail "$(RETAIL_IMAGE)" $(if $(filter 1,$(RB_RELEASE)),--release); \
+	fi
 
 # The quick-boot build: the ReBushido build with RB_QUICK_BOOT on and the
 # fight of the QB_ variables, into build/quickboot/. A developer's tool.
@@ -298,8 +315,10 @@ $(BIN): $(ELF)
 
 # Construct PS-X EXE: the linked .header (asm/header.s) with pc0 / t_addr / t_size
 # computed from the ELF (tools/make_psexe.py), then the binary
+# The ReBushido build's file ends where the start-up code begins to clear
+# memory, on a sector: its last zeroes are not in it (tools/make_psexe.py).
 $(EXE): $(BIN) $(ELF) tools/make_psexe.py tools/elf32.py
-	python3 tools/make_psexe.py $(ELF) $< $@
+	python3 tools/make_psexe.py $(ELF) $< $@ $(if $(filter 1,$(REBUSHIDO)),--zeroed-from main_SBSS_START)
 
 # -- The small-data threshold --
 # Every file of the game is compiled -G8: the whole game builds to the original's
@@ -373,10 +392,13 @@ PIPELINE_DEPS := Makefile \
 # not otherwise.
 ifeq ($(REBUSHIDO),1)
 RB_GIT_HASH  := $(shell h=$$(git rev-parse --short HEAD 2>/dev/null) && { git diff --quiet HEAD 2>/dev/null || h=$$h-dirty; }; echo $${h:-unknown})
+# A release's version has no -dev after its number: RB_RELEASE=1, which
+# `make rebushido-patch RB_RELEASE=1` is given (include/rebushido.h).
+RB_VERSION_AS := $(RB_GIT_HASH)$(if $(filter 1,$(RB_RELEASE)), release)
 RB_HASH_FILE := $(BUILD_DIR)/git_hash.txt
-$(shell mkdir -p $(BUILD_DIR); [ "$$(cat $(RB_HASH_FILE) 2>/dev/null)" = "$(RB_GIT_HASH)" ] || echo "$(RB_GIT_HASH)" > $(RB_HASH_FILE))
+$(shell mkdir -p $(BUILD_DIR); [ "$$(cat $(RB_HASH_FILE) 2>/dev/null)" = "$(RB_VERSION_AS)" ] || echo "$(RB_VERSION_AS)" > $(RB_HASH_FILE))
 $(BUILD_DIR)/$(RB_SRC_DIR)/version.o: $(RB_HASH_FILE)
-$(BUILD_DIR)/$(RB_SRC_DIR)/version.o: CPP_DEFS += -DRB_GIT_HASH='"$(RB_GIT_HASH)"'
+$(BUILD_DIR)/$(RB_SRC_DIR)/version.o: CPP_DEFS += -DRB_GIT_HASH='"$(RB_GIT_HASH)"' $(if $(filter 1,$(RB_RELEASE)),-DRB_VERSION_SUFFIX='""')
 endif
 
 # -- Quick boot's fight --
@@ -404,8 +426,9 @@ $(BUILD_DIR)/$(ASM_DIR)/%.o: $(ASM_DIR)/%.s $(shell find $(INCLUDE_DIR) -type f)
 
 # -- Clean --
 # build/play/ is kept: it holds a disc image built for a play test
-# (tools/build_disc.py), which takes minutes to make again. The ReBushido
+# (tools/build_disc.py), which takes minutes to make again. So is
+# build/release/, the patch of `make rebushido-patch`. The ReBushido
 # build (build/rebushido/), the quick-boot build (build/quickboot/) and the
 # play tests' pictures (build/playtest/) go with the rest.
 clean:
-	[ ! -d build ] || find build -mindepth 1 -maxdepth 1 ! -name play -exec rm -rf {} +
+	[ ! -d build ] || find build -mindepth 1 -maxdepth 1 ! -name play ! -name release -exec rm -rf {} +

@@ -16,7 +16,8 @@ still builds the original byte for byte, and the checks hold it to that.
 change; [`docs/ROADMAP.md`](docs/ROADMAP.md) says what is planned.
 
 No game files are in this repository. To play anything built from it you need
-your own copy of the North American disc.
+your own copy of the North American disc. A release is a patch for your image
+of it: see [Releases](../../releases) and [`docs/REBUSHIDO.md`](docs/REBUSHIDO.md), "Applying the patch".
 
 ## Status
 

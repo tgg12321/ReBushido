@@ -84,7 +84,9 @@ the archive's `Snn`); their names are in [STAGE_BIN.md](STAGE_BIN.md).
 
 `tools/build_disc.py` builds a modded image from the retail one. Replaced
 files may change size: one that still fits its sectors is written in place,
-a bigger one moves to the end of the files (before the 150 empty sectors).
+a bigger one takes the empty sectors after the file where the disc has
+some (three after `SLUS_006.63`), or else moves to the end of the files
+(before the 150 empty sectors).
 For each file that moves or changes size it rewrites the ISO directory
 record and the file's table entry in the EXE that goes on the disc (found
 by its old 8 bytes, so a rebuilt or shifted EXE works as long as its

@@ -27,8 +27,11 @@ No dates.
    or what everybody has seen and heard (the same section, "Left as the
    original has it"); one of those that is fixed gets a setting of its
    own if it changes how the game plays by much.
-5. **Release tooling.** A patch file against the retail disc, and the tool
-   that makes it and applies it; then a first release.
+5. **Release tooling.** Done but for the release itself: a patch file
+   against the retail disc, and the tool that makes it and applies it
+   (`make rebushido-patch`; [`REBUSHIDO.md`](REBUSHIDO.md), "Making a
+   release" and "Applying the patch"). The first release, 0.1, is still
+   to be made.
 6. **The native port.** A build of the same source for a PC, beside the
    PlayStation one. First a C equivalent beside each piece of assembly
    (the GTE operations, the BIOS calls, the functions the authors wrote

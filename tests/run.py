@@ -21,6 +21,10 @@ arguments and reads what it printed. The program is built as tools/modern/
 check.py builds the game for its warnings (32-bit, the same shim and
 rewritten GTE headers), linked with tests/runtime/runtime.c and nothing
 else, into build/tests/.
+
+A test of one of ReBushido's tools, which are Python, is Python alone:
+tests/rebushido/NAME.py with no NAME.c beside it and a function
+`run(checks)`.
 """
 import importlib.util
 import os
@@ -86,13 +90,21 @@ def include_flags():
 def test_names(rebushido=False):
     names = sorted(f[:-2] for f in os.listdir('tests') if f.endswith('.c'))
     if rebushido:
-        names += sorted('%s/%s' % (REBUSHIDO_TESTS, f[:-2])
-                        for f in os.listdir('tests/' + REBUSHIDO_TESTS) if f.endswith('.c'))
+        own = os.listdir('tests/' + REBUSHIDO_TESTS)
+        names += sorted('%s/%s' % (REBUSHIDO_TESTS, os.path.splitext(f)[0]) for f in own
+                        if f.endswith('.c') or (f.endswith('.py') and f[:-3] + '.c' not in own))
     return names
+
+
+def python_alone(name):
+    return not os.path.exists('tests/%s.c' % name)
 
 
 def title(name):
     """What a test says it is: the first line of its file's comment."""
+    if python_alone(name):
+        with open('tests/%s.py' % name, encoding='utf-8') as f:
+            return f.readline().strip().strip('"').strip()
     with open('tests/%s.c' % name, encoding='utf-8') as f:
         line = f.readline().strip()
     return line[2:].strip().rstrip('*/').strip() if line.startswith('/*') else ''
@@ -128,6 +140,18 @@ def run_one(name, verbose, defs):
     """(state, count, lines): state is ok, skip or FAIL; lines say why, or
     for a test that passed what it could not do here."""
     side = python_side(name)
+    if python_alone(name):
+        checks = support.Checks()
+        try:
+            side.run(checks)
+        except support.Skip as skip:
+            return 'skip', 0, [str(skip)]
+        if checks.count == 0 and not checks.failures:
+            checks.failures.append('it checked nothing')
+        if checks.failures:
+            more = len(checks.failures) - 20
+            return 'FAIL', checks.count, checks.failures[:20] + (['... and %d more' % more] if more > 0 else [])
+        return 'ok', checks.count, checks.notes
     args = []
     if side and hasattr(side, 'arguments'):
         try:

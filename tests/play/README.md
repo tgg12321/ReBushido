@@ -84,10 +84,10 @@ A test whose disc is not there is skipped, saying which.
 | `options_no_card` | ReBushido, no card in either slot | The page comes up without waiting and says there is no card; the choice holds; leaving it takes no time and asks nothing; the game reaches its top menu |
 
 What `same_as_original` had to give up when the options page came: the
-ReBushido disc reaches every checkpoint 270 vertical blanks later than the
+ReBushido disc reaches every checkpoint 109 vertical blanks later than the
 retail disc (the page, read from the card and left by a press, is 108 of
-them; the other 162 are the drive, since the larger program is no longer
-where the retail one was on the disc). So the blank a checkpoint is
+them; while the larger program was at the end of the disc the drive
+added 161 more). So the blank a checkpoint is
 reached at is compared as blanks since the checkpoint `movie`
 (`frames_from`), and `movie` itself, the first, by its values and picture
 alone. Everything else is compared as before, the game's own frame count

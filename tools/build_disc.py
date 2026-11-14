@@ -15,9 +15,12 @@ SLUS_006.63. Only plain Form 1 data files can be replaced (not the XA audio or
 STR video streams), and directories stay where they are.
 
 A replacement that still fits the file's sectors is written in place (the
-sectors it no longer needs keep their old bytes); a bigger one moves to the
-end of the files, before the image's 150 trailing empty sectors. For every
-file that moves or changes size the tool rewrites:
+sectors it no longer needs keep their old bytes). So is one that fits with
+the empty sectors that follow the file, where the image has some before
+the next file or directory (the retail image has three after SLUS_006.63).
+A bigger one moves to the end of the files, before the image's 150
+trailing empty sectors. For every file that moves or changes size the tool
+rewrites:
 
 * its ISO 9660 directory record (extent and size, both byte orders), and
   the volume space size when the image grows;
@@ -140,14 +143,21 @@ class Image:
         return b"".join(self.raw(lba + i)[24:24 + DATA] for i in range(n))
 
 
-def walk(img):
-    """Returns (pvd, files): files = {path: dict(lba, size, rec=(sector, off))}."""
+def walk(img, others=None):
+    """Returns (pvd, files): files = {path: dict(lba, size, rec=(sector, off))}.
+    `others`, a list, is given the first sector of everything else the
+    volume keeps: its directories and its path tables."""
     pvd = img.data(16)
     if pvd[:6] != b"\x01CD001":
         raise ValueError("no ISO 9660 primary volume descriptor at sector 16")
     files = {}
+    if others is not None:
+        others += [lba for lba in struct.unpack_from("<II", pvd, 140)
+                   + struct.unpack_from(">II", pvd, 148) if lba]
 
     def rec_dir(extent, size, prefix):
+        if others is not None:
+            others.append(extent)
         n = (size + DATA - 1) // DATA
         d = img.data(extent, n)
         off = 0
@@ -186,7 +196,20 @@ def both32(v):
 # ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
-def plan(img, files, repl):
+def empty_after(img, files, others, path):
+    """How many sectors after the file are in nothing's extent and hold
+    nothing: the mastering left a few between some files."""
+    e = files[path]
+    last = e["lba"] + nsectors(e["size"])
+    starts = [f["lba"] for f in files.values()] + list(others)
+    limit = min([lba for lba in starts if lba >= last], default=last)
+    count = 0
+    while last + count < limit and not any(img.raw(last + count)[0x18:0x92C]):
+        count += 1
+    return count
+
+
+def plan(img, files, repl, others=()):
     """Returns {path: (new_lba, new_size)} for the replaced files and the
     first free sector after all files."""
     end = max(e["lba"] + nsectors(e["size"]) for e in files.values())
@@ -199,7 +222,10 @@ def plan(img, files, repl):
         if img.raw(e["lba"])[0x12] not in (0x08, 0x89):
             raise ValueError(f"{path}: not a plain data file (XA / STR "
                              "stream sectors), not replaceable")
-        if nsectors(new) <= nsectors(e["size"]):
+        room = nsectors(e["size"])
+        if nsectors(new) > room:
+            room += empty_after(img, files, others, path)
+        if nsectors(new) <= room:
             layout[path] = (e["lba"], new)
         else:
             layout[path] = (end, new)
@@ -240,7 +266,8 @@ def patch_exe(exe, disc_exe, files, layout):
 
 def build(image, out, repl):
     img = Image(image)
-    pvd, files = walk(img)
+    others = []
+    pvd, files = walk(img, others)
     for path in repl:
         if path not in files:
             raise ValueError(f"{path}: not a file on the disc")
@@ -249,7 +276,7 @@ def build(image, out, repl):
         raise ValueError(f"NDATA.INF is {len(inf)} bytes; the game reads only "
                          f"{INF_MAX}")
     exe_path = "SLUS_006.63"
-    layout, end, tail = plan(img, files, repl)
+    layout, end, tail = plan(img, files, repl, others)
     if end + tail + 150 > 100 * 60 * 75:
         raise ValueError(f"image would be {end + tail} sectors, past the "
                          "99:59:74 that a BCD CdlLOC can address")
@@ -314,6 +341,9 @@ def build(image, out, repl):
     for path, (lba, size) in sorted(layout.items(), key=lambda x: x[1]):
         e = files[path]
         how = "in place" if lba == e["lba"] else f"moved {e['lba']} -> {lba}"
+        grown = nsectors(size) - nsectors(e["size"])
+        if lba == e["lba"] and grown > 0:
+            how += f", with {grown} of the empty sectors after it"
         print(f"{path}: {e['size']} -> {size} bytes, {how}")
     return total
 

@@ -12,7 +12,8 @@ written and how it is tested. What is planned, in order, is in
 options page at boot with the settings' own file on the memory card, the
 tools for trying a change (a build that boots straight into a fight, and
 play tests in an emulator), and fifteen fixes of the original's bugs,
-which the "Bugfixes" setting turns on ("The fixes"). Nothing reads the
+which the "Bugfixes" setting turns on ("The fixes"), and the tool that
+makes a release's patch ("Making a release"). Nothing reads the
 "Graphics" setting yet.
 
 ## The rules
@@ -32,11 +33,14 @@ which the "Bugfixes" setting turns on ("The fixes"). Nothing reads the
    So most changes ask a setting while the game runs, as well as being
    behind their switch. With nothing chosen everything is as the original.
 4. **A release is a patch file** against the player's own retail disc, never
-   a disc image. No game data is ever committed.
+   a disc image ("Making a release", "Applying the patch"). No game data is
+   ever committed.
 5. **The licence** is AGPL-3.0-or-later ([`LICENSE`](../LICENSE),
    [`NOTICE`](../NOTICE)).
 6. **The version is in the build**: the text `ReBushido <version> (<commit>)`
-   is in the executable.
+   is in the executable. The number is written once, `RB_VERSION_NUMBER`
+   in `include/rebushido.h`; every build but a release's has `-dev` after
+   it.
 
 ## Building
 
@@ -49,6 +53,7 @@ bash tools/build.sh rebushido-disc    # and a disc image to play (needs your ret
 bash tools/build.sh checks            # every check; "OK: all 10 checks pass"
 bash tools/build.sh quickboot-disc    # a disc that boots straight into a fight (a developer's tool)
 bash tools/build.sh playtest          # the play tests, in an emulator with no window
+bash tools/build.sh rebushido-patch   # a release's patch, into build/release/ (needs your retail image)
 ```
 
 From a Windows shell put `wsl` in front, as with the other commands.
@@ -57,6 +62,7 @@ From a Windows shell put `wsl` in front, as with the other commands.
 |---|---|
 | `make rebushido` | Compiles the source with the master switch on, and the files of `src/rebushido/`, into `build/rebushido/`; links `build/rebushido/rebushido.exe`; prints its size and the room left, and fails if it does not fit |
 | `make rebushido-disc` | The same, then `build/play/ReBushido.bin` and `.cue`: the retail image with that executable in place of the game's |
+| `make rebushido-patch` | The matching build and the ReBushido disc, then `build/release/`: the patch `ReBushido-<version>.bps`, a `README.txt` for players and a copy of the tool that applies it ("Making a release"). `RB_RELEASE=1` makes it a release's |
 | `make rebushido-test` | The host tests with the master switch on, and ReBushido's own (`tests/rebushido/`) |
 | `make rebushido-modern` | `make modern` with the master switch on, `src/rebushido/` included |
 | `make quickboot` | The ReBushido build with quick boot on, into `build/quickboot/`: a program that starts one fight in place of the opening and the menus (below, "Booting straight into a fight") |
@@ -66,7 +72,7 @@ From a Windows shell put `wsl` in front, as with the other commands.
 The builds share one tree and no object: the matching build is in
 `build/` exactly as on `decomp`, the ReBushido build in `build/rebushido/`,
 the quick-boot build in `build/quickboot/`. `make clean` removes them all
-and leaves `build/play/`.
+and leaves `build/play/` and `build/release/`.
 
 The build ends with a report:
 
@@ -95,16 +101,54 @@ emulator as any disc. It has the retail serial, so an emulator with a card
 per game gives it the retail game's memory card; ReBushido's settings are
 a second file on that card, beside the game's save ("The options page").
 
-The executable is four sectors longer than the retail one and does not
-fit where that was, so the image has it after the last file, and the
-drive seeks there and back as the disc boots. In the emulator the boot
-image comes up about 160 vertical blanks later than on the retail disc,
-the options page not counted.
+The executable is where the retail one is on the disc, and the image is
+the retail image's size. It is three sectors longer than the retail one,
+and three empty sectors are all the disc has after that file, before
+`SYSTEM.CNF`: `tools/build_disc.py` takes them. It fits only because the
+file leaves out its last zeroes: the small zeroed variables are the end
+of what is loaded, the start-up code clears them before `main` in any
+case, and `tools/make_psexe.py` ends the ReBushido build's file on the
+first sector boundary after they begin (`--zeroed-from`). That saves one
+sector, and as it stands `0x120` bytes are left before the file needs it
+back. When the program outgrows the place, `build_disc.py` puts it after
+the last file, as it did until this was found; the disc then boots about
+160 vertical blanks (2.7 seconds) later in the emulator, the drive
+seeking to the end of the disc and back, and nothing else changes. In its
+place it boots when the retail disc does, to the vertical blank, the
+options page not counted.
 
 `build/play/` is not in git and `make clean` leaves it alone. Other images
 there (the shifted disc of the play test, `BB2_shifted.*`) are not touched.
 Beside the image the build writes `ReBushido.sym`, the names of the program
 and their addresses, which the play tests read.
+
+## Applying the patch
+
+For players. A release is three files: `ReBushido-<version>.bps`, the
+patch; `README.txt`, which says all of this; and `rebushido_patch.py`.
+The patch is for one image and no other: *Bushido Blade 2*, the North
+American disc (SLUS-00663), as a single `.bin` of 701,714,496 bytes with
+its `.cue` (the README has its CRC-32 and SHA-1).
+
+- With [Floating IPS](https://github.com/Alcaro/Flips) (Flips), or
+  another patcher that takes BPS files: apply the patch to the `.bin`,
+  save the result as `ReBushido.bin`, copy the `.cue` as `ReBushido.cue`
+  and change the file's name in its first line.
+- Or with Python 3, nothing installed, on Windows, macOS or Linux:
+
+  ```
+  python3 rebushido_patch.py apply --patch ReBushido-0.1.bps --image "Bushido Blade 2 (USA).bin" --out ReBushido.bin
+  ```
+
+  It checks the image first, by its size and CRC-32, and says what is
+  wrong with one the patch is not for (another region's disc, another
+  dump, an `.iso`, an image already patched). Then it writes
+  `ReBushido.bin` and `ReBushido.cue`. The image is only read, and
+  `--out` may not be the image; a file already there is left alone
+  without `--force`.
+
+Load `ReBushido.cue` in an emulator. The saves are the retail game's and
+go both ways ("The options page" has what ReBushido adds to the card).
 
 ## The options page
 
@@ -501,7 +545,7 @@ The last three are ReBushido's:
 | Check | Command | Fails when |
 |---|---|---|
 | The build | `make rebushido` | the ReBushido build does not compile or link, does not fit below the fixed buffers, its small data is out of `gp`'s reach, an object was left out of the link, or its version text is missing; or a file that asks `RB_QUICK_BOOT` does not compile with it on |
-| Tests | `make rebushido-test` | a host test fails with the master switch on. These are the game's tests, linked with the settings at their defaults, so they also show that a change does nothing until its setting is on; and ReBushido's own in `tests/rebushido/`: the settings, the options page's table, the settings' file (its checksum, its header, and every kind of file that must not be read), quick boot, the offsets the play tests read memory at, and five of the fixes with the setting off and on (`fix_*`) |
+| Tests | `make rebushido-test` | a host test fails with the master switch on. These are the game's tests, linked with the settings at their defaults, so they also show that a change does nothing until its setting is on; and ReBushido's own in `tests/rebushido/`: the settings, the options page's table, the settings' file (its checksum, its header, and every kind of file that must not be read), the release's patch tool on made-up bytes (round trips, a damaged patch and a wrong source refused), quick boot, the offsets the play tests read memory at, and five of the fixes with the setting off and on (`fix_*`) |
 | Modern | `make rebushido-modern` | the host's `gcc` finds something serious in the source with the master switch on that `tools/modern/baseline.tsv` does not have |
 
 The counts and the lint understand the switches. `tools/count.py` counts
@@ -544,9 +588,10 @@ and what must hold at each).
 What they do not show: the sound (the emulator runs silent), anything the
 watched values and eleven pictures do not catch, and any mode but the
 versus fight. `same_as_original` cannot compare how long the boot takes:
-the ReBushido disc has the options page, and its program is elsewhere on
-the disc, so each checkpoint is 270 vertical blanks later than on the
-retail disc. What it holds the two to is that the difference is the same
+the ReBushido disc has the options page, so each checkpoint is 109
+vertical blanks later than on the retail disc (it was 270 while the
+program was at the end of the disc). What it holds the two to is that
+the difference is the same
 at every checkpoint (the blanks are counted from the first one, the
 opening's screen), with the game's own count of frames, which starts
 after the page, equal outright. It compares what `tests/play/state.toml`
@@ -559,6 +604,73 @@ show as a difference in a fight's first frames. The test's fight is katana
 against katana and does not go through it, and the two discs agree at
 every checkpoint. ("Bugfixes" takes that read away: "The fixes", the
 first row.)
+
+## Making a release
+
+A release is a patch against the retail image, a README and the tool
+that applies the patch: never an image, never the program. Nothing of it
+is committed (`build/` is not in git).
+
+1. **The version.** `RB_VERSION_NUMBER` in `include/rebushido.h` is the
+   number (`"0.1"`). Commit and push everything; wait for the checks.
+2. **Build the patch**, from a tree with nothing uncommitted:
+
+   ```bash
+   bash tools/build.sh rebushido-patch RB_RELEASE=1
+   ```
+
+   It builds the matching program and stops if that does not match,
+   builds ReBushido with the version `ReBushido 0.1 (<commit>)` (no
+   `-dev`; a tree with changes is refused), makes the disc, and writes
+   into `build/release/`: `ReBushido-0.1.bps`, `README.txt`,
+   `rebushido_patch.py` and `patch-report.txt`. It applies the patch to
+   the retail image and compares the result with the disc by SHA-1
+   before it says OK. Without `RB_RELEASE=1` the same is made as a
+   trial, `ReBushido-0.1-dev.bps`.
+3. **Test that disc**: `bash tools/build.sh playtest RB_RELEASE=1`. The
+   `RB_RELEASE=1` matters: without it the discs are built again with
+   `-dev` in the version, and the tests run another image than the one
+   the patch makes. Afterwards the SHA-1 of `build/play/ReBushido.bin`
+   is still the one `README.txt` gives for the result. Try the patch in
+   Flips as well, once (below).
+4. **Tag and publish**: `git tag v0.1 && git push origin v0.1`, then a
+   GitHub release of that tag with the three files attached
+   (`ReBushido-0.1.bps`, `README.txt`, `rebushido_patch.py`) and the
+   notes. `patch-report.txt` is for you.
+5. **Afterwards** raise `RB_VERSION_NUMBER` for the next one.
+
+**The patch** is a BPS file (`tools/rebushido_patch.py` has the format at
+its top, and writes and applies it with Python's standard library alone;
+`tools/rebushido_release.py` is what the target runs). BPS says where
+each run of the result's bytes comes from: the image at the same place,
+the image somewhere else, the result so far, or the patch itself. Only
+the last kind is carried, and the tool that makes the patch looks for
+every run of ReBushido's program in the retail image's own program
+before it carries a byte, so code that only moved is "this many bytes
+from there". The report counts what is left. For 0.1 as it stands, a
+patch of 176 KB carries 115,587 bytes:
+
+| Bytes | What they are |
+|---|---|
+| 80,316 | The error codes (EDC and ECC) of the 299 sectors of the program and of the directory's. They follow from the sectors' contents, and a patch of the raw image has to carry them |
+| 28,350 | Addresses inside the game's instructions and tables: the program was linked again, most of it is somewhere else, and every call and pointer to what moved has other bytes than the original's |
+| 4,092 | ReBushido's own code and data |
+| 2,588 | The seventeen functions of the game that ReBushido changes, as they compile now. Much of that is the original function's code in another shape |
+| 145 | Bytes of the original program that the tool found no run for: the same as the retail program has at that place of the same function or table |
+| 96 | The rest: the directory's record of the program's size, the program's header, two bytes of sector headers, padding |
+
+So the patch does hold a little of the original as it is (the 145),
+and the changed functions hold more of it recompiled. What would shrink
+all of this is a link that leaves the original where it is, ReBushido's
+additions after the original's sections and a changed function moved out
+whole: then nothing moves, no address changes, and only the sectors
+ReBushido touches differ, with their error codes. That is a redesign of
+`tools/rebushido.py`'s script and has not been done.
+
+Not known: whether Flips takes the patch. The format is written from
+its description, and the tool's own applier and its tests
+(`tests/rebushido/patch.py`) agree with it, but no other patcher has
+been tried, and neither has an image of 700 MB in one.
 
 ## Keeping up with `decomp`
 

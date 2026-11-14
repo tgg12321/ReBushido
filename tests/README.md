@@ -53,6 +53,13 @@ python3 tests/run.py --rebushido -v rebushido/settings # one, showing what it pr
   and its mode started once. `rebushido/play_state` holds the offsets the
   play tests read the fighters at (`tests/play/state.toml`) to the
   structures of `include/`.
+- A test of one of ReBushido's tools is Python alone:
+  `tests/rebushido/NAME.py` with no `NAME.c`, and a function
+  `run(checks)`. `rebushido/patch` is the release's patch tool
+  (`tools/rebushido_patch.py`): the format's numbers, a patch written by
+  hand with every kind of action, round trips of patches it makes, and a
+  damaged patch, a lying one and a wrong source refused. Its bytes are
+  made up in the test; it reads nothing of the game.
 - A test of one of ReBushido's fixes is `tests/rebushido/fix_NAME.c`: it
   includes the game's file that has the fix and runs the function with
   the "Bugfixes" setting off, for what the original does, and on
