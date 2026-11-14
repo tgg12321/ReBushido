@@ -63,8 +63,10 @@ WSL with the virtualenv active you can also call `make` directly:
 | `make modern` | The game's C through the host's modern `gcc` for its warnings and analyser; fails on a serious finding that is new (`tools/modern/check.py`) |
 | `make test` | Host tests of what the game's C computes ([`tests/README.md`](tests/README.md)) |
 | `make checks` | Every check below, in order, with a summary (`tools/checks.sh`) |
-| `make clean` | Delete `build/` (but not `build/play/`, a play test's disc) |
+| `make clean` | Delete `build/` (but not `build/play/`, the disc images) |
 | `make rebushido`, `rebushido-disc`, `rebushido-test`, `rebushido-modern` | The ReBushido build, into `build/rebushido/`, its disc and its checks ([`docs/REBUSHIDO.md`](docs/REBUSHIDO.md)); they leave the matching build alone |
+| `make quickboot`, `quickboot-disc` | A ReBushido build that boots straight into a chosen fight, into `build/quickboot/`, and its disc: a developer's tool ([`docs/REBUSHIDO.md`](docs/REBUSHIDO.md), "Booting straight into a fight") |
+| `make playtest` | The play tests: the game run by script in an emulator with no window ([`tests/play/README.md`](tests/play/README.md)). Not one of the checks: it needs your retail image and PCSX-Redux, and says what it skipped without them |
 
 `tools/build.sh` exits with `make`'s status, so a script can rely on it.
 The overlay builds 43 of Sony's library modules from `src/main/psxsdk/`, so

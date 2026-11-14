@@ -605,7 +605,7 @@ def main():
 
     title('ReBushido (in none of the counts above)')
     print('its own files: %d (%s)' % (len(REBUSHIDO_FILES), ', '.join(REBUSHIDO_FILES)))
-    switches = re.findall(r'^#define (RB_\w+) \(REBUSHIDO && [01]\)', read_raw('include/rebushido.h'), re.M) \
+    switches = re.findall(r'^#define (RB_\w+) \(REBUSHIDO && (?:[01]|RB_\w+_BUILD)\)', read_raw('include/rebushido.h'), re.M) \
         if os.path.exists('include/rebushido.h') else []
     print('switches in include/rebushido.h: %d%s' % (len(switches), ' (%s)' % ', '.join(switches) if switches else ''))
     blocks = [(f, rb_blocks(f)) for a in AREAS for f in AREAS[a]]

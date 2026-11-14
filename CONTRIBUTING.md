@@ -22,6 +22,9 @@ work.
 - `wsl bash tools/build.sh checks` (or `make checks` inside WSL or Linux)
   must print `OK: all 10 checks pass` on this branch (`OK: all 7 checks
   pass` on `decomp`). GitHub Actions runs the same checks.
+- If you have your own retail image and PCSX-Redux, run the play tests
+  as well when the change is to the game: `wsl bash tools/build.sh
+  playtest` (`tests/play/README.md`). They are not run by GitHub Actions.
 - Follow `docs/STYLE.md`; `python tools/format.py <files>` applies the
   layout.
 - One subject per pull request, with a plain description of what changed

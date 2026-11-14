@@ -1,0 +1,35 @@
+about = "A quick-boot disc starts the fight it was built for, with no input."
+discs = ["quickboot-playtest"]
+limit = 2400
+
+# QB_MODE and the rest are what the disc was built with (make quickboot-disc
+# writes them beside it), so this test holds for any quick-boot disc of a
+# versus fight.
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+expect = [
+    "mode == QB_MODE",
+    "stage == QB_STAGE",
+    "loaded_stage == QB_STAGE",
+    "p1_roster == QB_P1",
+    "p2_roster == QB_P2",
+    "p1_weapon == QB_WEAPON1",
+    "p2_weapon == QB_WEAPON2",
+    "p1_cpu == 0",
+    "p2_cpu == QB_CPU2",
+    "winner == FIGHT_NOBODY",
+    # Half a minute of the console's time from power on, nearly all of it
+    # the disc: the BIOS reading the program, then the sound bank, the
+    # models, the stage and the motions. The retail disc is at its top menu
+    # no sooner than blank 2100, with the opening skipped, and in a fight
+    # 2400 blanks after that.
+    "frame < 1800",
+]
+
+# The fight is running: frames are shown (thirty a second) and both
+# fighters stand.
+[[checkpoint]]
+name = "running"
+after = 120
+expect = ["screen == SCREEN_FIGHT_UPDATE", "frames >= 50", "p1_defeated == 0", "p2_defeated == 0"]

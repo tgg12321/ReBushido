@@ -181,7 +181,9 @@ change".
 23. Every change is behind a switch of its own, `RB_NAME`, defined in
     `include/rebushido.h` as `(REBUSHIDO && 1)` with a comment saying what
     the change is; a fix is `RB_FIX_...`. The source asks `#if RB_NAME`,
-    never `#ifdef`, and only switches go in such an `#if`. [rb-flag]
+    never `#ifdef`, and only switches go in such an `#if`. (A developer's
+    build of its own, like quick boot, is `(REBUSHIDO && RB_NAME_BUILD)`:
+    off unless the build gives that name.) [rb-flag]
 24. The original's lines stay as they are, once: not deleted, not copied
     into ReBushido's side, not reworded. What is added goes in an `#if`;
     what is replaced goes in the `#if` and the original in its `#else`;

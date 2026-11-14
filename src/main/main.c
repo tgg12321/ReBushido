@@ -579,11 +579,16 @@ void main(void) {
     sys_Init();
     sys_InitGame();
     SetDispMask(1);
+#if RB_QUICK_BOOT
+    /* no boot image and no movie: the first screen is the fight's */
+    rb_QuickBoot();
+#else
     /* only the first argument is used; the others are whatever was there
      * (the original's behaviour) */
     disp_ShowBootImage((u8 *)SYS_LOAD_ADDR, frame_db, index);
 
     g_sys_screen = SCREEN_MOVIE;
+#endif
     g_sys_skip_frames = 0;
     g_disp_frame_count = 0;
 

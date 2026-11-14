@@ -11,9 +11,10 @@ build.
 | `setup_wsl.sh` | One-time set-up on Ubuntu: packages, the Python virtualenv, the compiler |
 | `build_cc1.sh` | Builds the compiler, GCC 2.7.2's `cc1`, into `gcc-2.7.2/` ([`docs/COMPILER.md`](../docs/COMPILER.md)) |
 | `cc1-reorg-negate-rtx-decl.patch` | The one change made to the compiler's source: a missing declaration that crashes it on a 64-bit host |
-| `build.sh` | `bash tools/build.sh [check\|clean-check\|movovl\|shift\|modern\|rebushido\|rebushido-disc]`: activates the virtualenv and runs `make`, hiding the assembler's noise and exiting with `make`'s status; `bash tools/build.sh test` runs the tests |
+| `build.sh` | `bash tools/build.sh [check\|clean-check\|movovl\|shift\|modern\|rebushido\|rebushido-disc\|quickboot\|quickboot-disc]`: activates the virtualenv and runs `make`, hiding the assembler's noise and exiting with `make`'s status; `bash tools/build.sh test` runs the tests, `bash tools/build.sh playtest [name...]` builds the play tests' discs and runs them |
 | `checks.sh` | `make checks` (`bash tools/build.sh checks`): every check GitHub Actions runs, in its order (the counts, the lint, `modern`, `test`, the game's bytes, the overlay's, `shift`, then ReBushido's build, tests and `modern`), each one's output in `build/checks/<name>.log`, and a summary; exit 1 if any failed. The list is the workflow's: change both together |
 | `rebushido.py` | The ReBushido build's link ([`docs/REBUSHIDO.md`](../docs/REBUSHIDO.md), "How it links"): `ld` writes `build/rebushido/rebushido.ld` from `bb2.ld` and the objects, adding what `bb2.ld` does not place; `fit` reports the program's size and the room left, and fails if it does not fit. `make rebushido` runs both |
+| `quickboot.py` | The fight a quick-boot build starts ([`docs/REBUSHIDO.md`](../docs/REBUSHIDO.md), "Booting straight into a fight"): `--list` prints what each `QB_` variable of the `Makefile` can be, by the game's own names; `check` is what `make quickboot` runs before it compiles, `write` what `make quickboot-disc` leaves beside the disc image |
 | `maspsx/` | The stand-in for Sony's assembler ASPSX 2.34: a modified copy of [mkst/maspsx](https://github.com/mkst/maspsx) |
 | `make_psexe.py`, `elf32.py` | Put the PS-X EXE header in front of the linked image; the small ELF reader it uses |
 | `gcc-2.7.2/` | The compiler's source and binary (not in git; made by `build_cc1.sh`) |
@@ -28,6 +29,18 @@ build.
 | `shift_test.py` | `make shift`: relinks with padding, fails if anything depends on where code or data is, and reports the room left below the fixed buffers |
 | `modern/check.py` | `make modern`: gives the game's C (`src/main/*.c`, `movovl/src/*.c`) to the host's modern `gcc` as 32-bit code, with `-Wall -Wextra`, more warnings and `-fanalyzer`, only for what it says: nothing it makes is used. `modern/shim.h` and the headers it rewrites into `build/modern/include/` stand in for what only the old compiler or the PlayStation has (assembly functions, GTE macros, a cast that is assigned to). Writes `build/modern/report.txt`; `--check` fails on a finding of a serious kind (something read before it is set, an index past an array, a wrong format, a missing return) that `modern/baseline.tsv` does not have, `--update` rewrites that, `--raw <file>` shows the compiler's own text. `modern/verdicts.tsv` holds what was decided about each finding read: the tool is wrong, the original's bug, or how the bytes need it. Needs WSL's `gcc`, no build |
 | `../tests/run.py` | `make test` (`bash tools/build.sh test [-v] [name...]`): builds the game's pure functions for the host, from the game's own `.c` files, and compares what they compute with real maths, hand-made cases and the disc's data; a line a test, exit 1 if one fails. The tests, how to add one and what they stand on: [`tests/README.md`](../tests/README.md). Needs WSL's `gcc` and `python3`, no build; the disc's tests are skipped without the disc |
+
+## Playing the game by script
+
+On the developer's machine only: these need your own retail image and
+PCSX-Redux. How to run them and how a test is written:
+[`tests/play/README.md`](../tests/play/README.md).
+
+| | |
+|---|---|
+| `playtest.py` | `make playtest` (`bash tools/build.sh playtest [name...]`; `python tools/playtest.py [name...]` with the discs already built): runs the tests of `tests/play/` in the emulator with no window, one run at a time, each ended by a time limit; a table of test, result and time, exit 1 if one failed; "skipped", and exit 0, where the emulator or a disc is missing. Pictures and logs go to `build/playtest/`. `--symbols ELF OUT` writes the table of a built disc's names, which the disc targets run |
+| `play/runner.lua` | The emulator's side: the one script it is given. It reads the run's plan (data, not generated Lua), presses the pads, writes down the watched values at each checkpoint, takes the pictures, and ends the run on a crash (an exception, the program counter astray, no frame for too long) |
+| `play/launch.py` | Starts the emulator so that nothing of it is seen or left: on Windows on a desktop of its own, with the system's error boxes off, in a job that is ended as a whole; reports any visible window and any process left |
 
 ## Working on the source
 

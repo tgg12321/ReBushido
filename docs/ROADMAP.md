@@ -10,9 +10,12 @@ No dates.
    player sets "Bugfixes" and the picture, and a file of ReBushido's own on
    the memory card that keeps the choices. The game's save is never
    touched.
-3. **Scripted play tests.** The game run in an emulator with no window, by
-   script, on the developer's machine only; and options to boot straight
-   into a fight, for people and for agents.
+3. **Scripted play tests.** Done, ahead of item 2, so that everything
+   after it can be tried. The game run in an emulator with no window, by
+   script, on the developer's machine only (`make playtest`,
+   [`tests/play/README.md`](../tests/play/README.md)); and a build that
+   boots straight into a chosen fight, for people and for agents
+   (`make quickboot-disc`, [`REBUSHIDO.md`](REBUSHIDO.md)).
 4. **The bug fixes.** The list is in [`STATUS.md`](STATUS.md), "Suspected
    bugs and oddities of the original". Each is behind the "Bugfixes"
    setting; one that changes how the game plays by much gets its own.

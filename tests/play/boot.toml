@@ -1,0 +1,28 @@
+about = "The retail disc boots to the top menu."
+discs = ["retail"]
+limit = 6000
+
+# Start skips the opening movie, cross the title, Start the memory card's
+# message.
+input = [
+    "movie+300 START",
+    "movie+600 CROSS",
+    "movie+900 START",
+]
+
+# The program is up: its first screen is the movie's.
+[[checkpoint]]
+name = "movie"
+when = "screen == SCREEN_MOVIE"
+within = 2000
+shot = false
+
+# The top menu, two seconds after it opened.
+[[checkpoint]]
+name = "menu"
+when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && screen_frames >= 120"
+within = 3000
+expect = [
+    "frame_period == 1",   # the menu runs at 60 frames a second
+    "loaded_stage == -1",  # and no stage is in memory
+]

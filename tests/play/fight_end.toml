@@ -1,0 +1,65 @@
+about = "From a quick boot, a fight to a kill, the menu after the fight, and a rematch."
+discs = ["quickboot-playtest"]
+limit = 9000
+
+# The first fighter walks in and strikes, high and low in turn, six times
+# over, while the CPU plays the second: one of them is cut down. (As the
+# disc is built the CPU wins; the test does not ask who.)
+input = [
+    "fight+100 RIGHT hold 90",
+    "fight+200 CIRCLE", "fight+250 CROSS", "fight+300 CIRCLE", "fight+350 CROSS", "fight+400 CIRCLE", "fight+450 CROSS",
+    "fight+500 RIGHT hold 90",
+    "fight+600 CIRCLE", "fight+650 CROSS", "fight+700 CIRCLE", "fight+750 CROSS", "fight+800 CIRCLE", "fight+850 CROSS",
+    "fight+900 RIGHT hold 90",
+    "fight+1000 CIRCLE", "fight+1050 CROSS", "fight+1100 CIRCLE", "fight+1150 CROSS", "fight+1200 CIRCLE", "fight+1250 CROSS",
+    "fight+1300 RIGHT hold 90",
+    "fight+1400 CIRCLE", "fight+1450 CROSS", "fight+1500 CIRCLE", "fight+1550 CROSS", "fight+1600 CIRCLE", "fight+1650 CROSS",
+    "fight+1700 RIGHT hold 90",
+    "fight+1800 CIRCLE", "fight+1850 CROSS", "fight+1900 CIRCLE", "fight+1950 CROSS", "fight+2000 CIRCLE", "fight+2050 CROSS",
+    "fight+2100 RIGHT hold 90",
+    "fight+2200 CIRCLE", "fight+2250 CROSS", "fight+2300 CIRCLE", "fight+2350 CROSS", "fight+2400 CIRCLE", "fight+2450 CROSS",
+    # on the menu after the fight: the first row, Rematch
+    "after_fight+120 CROSS",
+]
+
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+within = 2400
+expect = ["winner == FIGHT_NOBODY", "p1_defeated == 0", "p2_defeated == 0"]
+
+[[checkpoint]]
+name = "kill"
+when = "winner != FIGHT_NOBODY"
+within = 4200
+expect = [
+    "screen == SCREEN_FIGHT_UPDATE",
+    "winner == 0 || winner == 1",
+    # the fighter left standing is the winner
+    "(winner == 0 && p2_defeated != 0 && p1_defeated == 0) || (winner == 1 && p1_defeated != 0 && p2_defeated == 0)",
+]
+
+# The replay and the camera's swing to the winner come between.
+[[checkpoint]]
+name = "after_fight"
+when = "screen == SCREEN_AFTER_FIGHT_UPDATE"
+within = 3000
+expect = ["wins_p1 + wins_p2 == 1", "mode == QB_MODE", "stage == QB_STAGE"]
+
+# Rematch: the same fight again, from what is loaded.
+[[checkpoint]]
+name = "rematch"
+when = "screen == SCREEN_FIGHT_UPDATE && winner == FIGHT_NOBODY"
+within = 1500
+shot = false
+
+[[checkpoint]]
+name = "rematch_2s"
+after = 120
+expect = [
+    "screen == SCREEN_FIGHT_UPDATE",
+    "p1_defeated == 0",
+    "p2_defeated == 0",
+    "p1_roster == QB_P1",
+    "p2_roster == QB_P2",
+]

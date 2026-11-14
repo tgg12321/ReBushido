@@ -183,7 +183,7 @@ def switches():
     if _SWITCHES is None:
         _SWITCHES = set(['REBUSHIDO'])
         if os.path.exists(SWITCHES_HEADER):
-            _SWITCHES.update(re.findall(r'^#define (RB_\w+) \(REBUSHIDO && [01]\)', C.read_raw(SWITCHES_HEADER), re.M))
+            _SWITCHES.update(re.findall(r'^#define (RB_\w+) \(REBUSHIDO && (?:[01]|RB_\w+_BUILD)\)', C.read_raw(SWITCHES_HEADER), re.M))
     return _SWITCHES
 
 

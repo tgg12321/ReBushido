@@ -21,8 +21,19 @@
  * tools/lint.py takes a name that is not defined here for a mistake. While
  * a change is being worked on its 1 can be made a 0 to build without it.
  *
- * There are none yet: the version text and the settings are in files that
- * only the ReBushido build has (src/rebushido/), which need no switch. */
+ * The version text and the settings are in files that only the ReBushido
+ * build has (src/rebushido/), which need no switch. */
+
+/* Quick boot, a developer's tool and no part of the game: the program
+ * skips the boot image, the opening and the menus and starts one fight,
+ * which the build chose (src/rebushido/quickboot.c). It is off in the
+ * ReBushido build too: only `make quickboot` turns it on, by giving
+ * RB_QUICK_BOOT_BUILD (docs/REBUSHIDO.md, "Booting straight into a
+ * fight"). */
+#ifndef RB_QUICK_BOOT_BUILD
+#define RB_QUICK_BOOT_BUILD 0
+#endif
+#define RB_QUICK_BOOT (REBUSHIDO && RB_QUICK_BOOT_BUILD)
 
 /* ---- what only the ReBushido build has ---- */
 

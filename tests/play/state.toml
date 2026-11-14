@@ -1,0 +1,62 @@
+# The values of the game's memory that every play test can name
+# (tests/play/README.md). Each is `symbol+offset:type`: a name of the source,
+# found in the table of the disc the run is on, so that a build with the
+# program laid out differently is read at the right places; an offset into
+# it if it is a structure; and one of u8 s8 u16 s16 u32 s32.
+#
+# The offsets are those of the structures in include/. tests/play_state.c
+# (make test) fails if one of them moves: change both together.
+
+[state]
+# -- the program (sys.h, menu.h) --
+screen = "g_sys_screen:s16"                # enum Screen
+screen_frames = "g_sys_screen_frames:s32"  # frames the screen has run, where it counts them (the fight does not)
+frames = "g_disp_frame_count:s32"          # frames shown since power on
+frame_period = "g_sys_frame_period:u8"     # vertical blanks a frame
+menu_page = "g_menu_page:u8"               # enum MenuPage
+rng = "g_rng_state:s32"                    # the game's random numbers
+
+# -- the fight (fight.h) --
+mode = "g_fight_mode:s16"                  # enum FightMode
+stage = "g_fight_stage:s16"                # enum StageIndex
+loaded_stage = "g_fight_loaded_stage:s8"   # the stage in memory, or -1
+winner = "g_fight_winner:s8"               # 0, 1 or FIGHT_NOBODY
+defeat_frames = "g_fight_defeat_frames:s16"
+wins_p1 = "g_fight_wins_p1:u8"
+wins_p2 = "g_fight_wins_p2:u8"
+
+# -- what was asked for (FightConfig, fight.h) --
+config_roster_p1 = "g_fight_config+4:s8"   # enum RosterId
+config_roster_p2 = "g_fight_config+5:s8"
+config_weapon_p1 = "g_fight_config+6:s8"   # enum WeaponId
+config_weapon_p2 = "g_fight_config+7:s8"
+config_cpu_p2 = "g_fight_config+9:s8"
+config_stage = "g_fight_config+12:s8"
+config_mode = "g_fight_config+13:s8"
+
+# -- the two fighters (Fighter, fighter.h; the second is 0x44C further) --
+p1_cpu = "g_fighters+0x006:s16"
+p1_character = "g_fighters+0x00A:s16"      # enum CharacterId
+p1_roster = "g_fighters+0x00C:s16"         # enum RosterId
+p1_weapon = "g_fighters+0x00E:s16"         # enum WeaponId
+p1_defeated = "g_fighters+0x096:s16"
+p1_x = "g_fighters+0x0B8:s32"              # foot_pos
+p1_y = "g_fighters+0x0BC:s32"
+p1_z = "g_fighters+0x0C0:s32"
+p1_off_arm_ok = "g_fighters+0x26C:s16"
+p1_leg_wounds = "g_fighters+0x26E:s16"
+p1_arm_wounds = "g_fighters+0x270:s16"
+p1_body_wounds = "g_fighters+0x272:s16"
+
+p2_cpu = "g_fighters+0x44C+0x006:s16"
+p2_character = "g_fighters+0x44C+0x00A:s16"
+p2_roster = "g_fighters+0x44C+0x00C:s16"
+p2_weapon = "g_fighters+0x44C+0x00E:s16"
+p2_defeated = "g_fighters+0x44C+0x096:s16"
+p2_x = "g_fighters+0x44C+0x0B8:s32"
+p2_y = "g_fighters+0x44C+0x0BC:s32"
+p2_z = "g_fighters+0x44C+0x0C0:s32"
+p2_off_arm_ok = "g_fighters+0x44C+0x26C:s16"
+p2_leg_wounds = "g_fighters+0x44C+0x26E:s16"
+p2_arm_wounds = "g_fighters+0x44C+0x270:s16"
+p2_body_wounds = "g_fighters+0x44C+0x272:s16"

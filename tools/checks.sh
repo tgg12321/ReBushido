@@ -44,8 +44,10 @@ check test    make test
 check game    make -j8 check
 check overlay make movovl
 check shift   make shift
-# ReBushido: it compiles, links and fits; then its tests and the modern
-# compiler with the master switch on, which need no build.
+# ReBushido: it compiles, links and fits (and quick boot's files compile
+# with their switch on); then its tests and the modern compiler with the
+# master switch on, which need no build. The play tests (make playtest)
+# are not a check: they need the retail disc and an emulator.
 check rb-build  make -j8 rebushido
 check rb-test   make rebushido-test
 check rb-modern make rebushido-modern

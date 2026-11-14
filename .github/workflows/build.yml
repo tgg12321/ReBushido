@@ -95,6 +95,10 @@ jobs:
       # ReBushido: the same source with the master switch on and the files
       # of src/rebushido/, in build/rebushido/. The build's last lines are
       # the size and the room left; it fails if the program does not fit.
+      # It begins by compiling the files that ask RB_QUICK_BOOT with that
+      # switch on (the developer's build that boots into a fight), so that
+      # they keep compiling. The play tests (make playtest) are not here:
+      # they need the retail disc and an emulator.
 
       - name: ReBushido builds, links and fits (make rebushido)
         if: ${{ !cancelled() }}

@@ -439,6 +439,15 @@ are at the end, and what a modern compiler found is marked "found by `make moder
   decoded two ways, the CD table against the disc's directory, the archive's directory and packs,
   every model's cloth). All pass; two are skipped without the disc.
 
+- **ReBushido's build in the running game** (`make playtest`,
+  [`tests/play/README.md`](../tests/play/README.md); on the `main` branch, on the developer's
+  machine): four scripted runs in an emulator with no window. The retail disc reaches its top menu;
+  the ReBushido disc with nothing turned on is in the same state as the retail disc at eleven
+  checkpoints through boot, the menus and a versus fight to the menu after it (the watched values,
+  the vertical blank of each, the picture to the pixel); a quick-boot disc starts the fight it was
+  built for, and that fight runs to a kill, the menu after and a rematch without a crash. Two
+  versus fights in all, with no sound.
+
 **Not tested, or not read**
 
 - **Modes never run on a moved build by script**: team battle, chanbara, practice, link play, the

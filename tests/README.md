@@ -42,12 +42,24 @@ python3 tests/run.py --rebushido -v rebushido/settings # one, showing what it pr
   named `rebushido/NAME`, made like any other; it includes the file of
   `src/rebushido/` it tests. It runs only with `--rebushido`.
   `rebushido/settings` checks that every setting starts as the original's
-  behaviour and goes back to it.
+  behaviour and goes back to it. `rebushido/quickboot` runs quick boot's
+  one function with the game stood in for: the chosen fight is asked for
+  and its mode started once. `rebushido/play_state` holds the offsets the
+  play tests read the fighters at (`tests/play/state.toml`) to the
+  structures of `include/`.
 - The game's tests are linked with `src/rebushido/settings.c` in this run,
   the settings as they are when the game starts. A file of the game's whose
   change asks a setting therefore still has to compute what the original
   does: the same answers as in the first run.
 - The programs are in `build/rebushido/tests/`.
+
+## Play tests
+
+These tests run the game's functions, never the game. The tests that run
+the game itself, in an emulator with no window, are in
+[`play/`](play/README.md): `make playtest`. They need your own retail
+image and the emulator, so they are run on the developer's machine and
+are not among the checks.
 
 ## The tests
 

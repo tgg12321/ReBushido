@@ -71,6 +71,31 @@ OUT          := rebushido
 CPP_DEFS     += -DREBUSHIDO=1
 endif
 
+# -- Quick boot --
+# A ReBushido build that starts one fight in place of the boot image, the
+# opening and the menus: a developer's tool, for trying a change and for the
+# play tests (docs/REBUSHIDO.md, "Booting straight into a fight"). The fight
+# is chosen here, by the game's own names; `python3 tools/quickboot.py
+# --list` shows what each can be. `make quickboot` runs this Makefile again
+# with REBUSHIDO=1 QUICKBOOT=1, into a build folder of its own.
+QB_MODE      ?= FIGHT_MODE_VS
+QB_P1        ?= ROSTER_KANNUKI
+QB_P2        ?= ROSTER_GENGORO
+QB_WEAPON1   ?= WEAPON_ID_KATANA
+QB_WEAPON2   ?= WEAPON_ID_KATANA
+QB_STAGE     ?= STAGE_BAMBOO_THICKET
+QB_CPU2      ?= 1
+# The disc image `make quickboot-disc` writes: build/play/$(QB_NAME).bin.
+QB_NAME      ?= QuickBoot
+QB_SETTINGS  := QB_MODE=$(QB_MODE) QB_P1=$(QB_P1) QB_P2=$(QB_P2) QB_WEAPON1=$(QB_WEAPON1) \
+                QB_WEAPON2=$(QB_WEAPON2) QB_STAGE=$(QB_STAGE) QB_CPU2=$(QB_CPU2)
+QUICKBOOT    ?= 0
+ifeq ($(REBUSHIDO)$(QUICKBOOT),11)
+BUILD_DIR    := build/quickboot
+OUT          := quickboot
+CPP_DEFS     += -DRB_QUICK_BOOT_BUILD=1
+endif
+
 # -- Output --
 ELF          := $(BUILD_DIR)/$(OUT).elf
 BIN          := $(BUILD_DIR)/$(OUT).bin
@@ -103,7 +128,8 @@ ALL_O_FILES  := $(S_O_FILES) $(C_O_FILES) $(ASM_FUNC_O_FILES)
 
 # -- Top-level targets --
 .PHONY: all clean check clean-check shift movovl modern test checks \
-	rebushido rebushido-disc rebushido-test rebushido-modern rb-build
+	rebushido rebushido-disc rebushido-test rebushido-modern rb-build \
+	quickboot quickboot-compile quickboot-disc playtest playtest-discs
 
 ifeq ($(REBUSHIDO),1)
 all: rb-build
@@ -128,7 +154,10 @@ endif
 # The ReBushido build: compile with the master switch on into
 # build/rebushido/, link, and report the size and the room left; fails if
 # the program does not fit below the fixed buffers (tools/rebushido.py).
+# First the files that ask RB_QUICK_BOOT are compiled with it on, so that
+# the check of this build keeps quick boot compiling too.
 rebushido:
+	$(MAKE) REBUSHIDO=1 QUICKBOOT=1 quickboot-compile
 	$(MAKE) REBUSHIDO=1 rb-build
 
 rb-build: $(EXE)
@@ -140,7 +169,49 @@ RETAIL_IMAGE ?= Bushido Blade 2 (USA).bin
 rebushido-disc: rebushido
 	@[ -f "$(RETAIL_IMAGE)" ] || { echo "rebushido-disc: no retail image \"$(RETAIL_IMAGE)\" here (your own copy of the disc; RETAIL_IMAGE=... names another)"; exit 1; }
 	python3 tools/build_disc.py --image "$(RETAIL_IMAGE)" --out $(PLAY_DIR)/ReBushido.bin --exe build/rebushido/rebushido.exe
+	python3 tools/playtest.py --symbols build/rebushido/rebushido.elf $(PLAY_DIR)/ReBushido.sym
 	@echo "OK: $(PLAY_DIR)/ReBushido.cue"
+
+# The quick-boot build: the ReBushido build with RB_QUICK_BOOT on and the
+# fight of the QB_ variables, into build/quickboot/. A developer's tool.
+quickboot:
+	python3 tools/quickboot.py check $(QB_SETTINGS) QB_NAME=$(QB_NAME)
+	$(MAKE) REBUSHIDO=1 QUICKBOOT=1 rb-build
+
+# The files that ask RB_QUICK_BOOT, compiled as the quick-boot build
+# compiles them and no more: a few seconds, where the whole build is a
+# minute.
+ifeq ($(REBUSHIDO)$(QUICKBOOT),11)
+QB_ASKERS    := $(sort $(shell grep -l -w RB_QUICK_BOOT -r $(SRC_DIR) --include='*.c'))
+quickboot-compile: $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/$(SRC_DIR)/%.o,$(QB_ASKERS))
+	@echo "OK: quick boot compiles ($(QB_ASKERS))"
+endif
+
+# Its disc, beside the ReBushido disc and not in its place, with the table
+# of its names and the fight it starts for tools/playtest.py.
+quickboot-disc: quickboot
+	@[ -f "$(RETAIL_IMAGE)" ] || { echo "quickboot-disc: no retail image \"$(RETAIL_IMAGE)\" here (your own copy of the disc; RETAIL_IMAGE=... names another)"; exit 1; }
+	python3 tools/build_disc.py --image "$(RETAIL_IMAGE)" --out $(PLAY_DIR)/$(QB_NAME).bin --exe build/quickboot/quickboot.exe
+	python3 tools/playtest.py --symbols build/quickboot/quickboot.elf $(PLAY_DIR)/$(QB_NAME).sym
+	python3 tools/quickboot.py write $(PLAY_DIR)/$(QB_NAME).txt $(QB_SETTINGS)
+	@echo "OK: $(PLAY_DIR)/$(QB_NAME).cue"
+
+# The scripted play tests (tests/play/README.md): the game run in an
+# emulator with no window, on the developer's machine only. Builds the two
+# discs the tests want beside the retail one, the ReBushido disc and a
+# quick-boot disc of the tests' own, then runs the tests; where the retail
+# image or the emulator is missing the tests say what they skipped.
+PLAYTEST_QB  := QB_NAME=QuickBoot-playtest QB_MODE=FIGHT_MODE_VS QB_P1=ROSTER_MIKADO QB_P2=ROSTER_UTAMARU \
+                QB_WEAPON1=WEAPON_ID_NAGINATA QB_WEAPON2=WEAPON_ID_KATANA QB_STAGE=STAGE_LIGHTHOUSE QB_CPU2=1
+playtest-discs:
+	@if [ -f "$(RETAIL_IMAGE)" ]; then \
+		$(MAKE) rebushido-disc && $(MAKE) quickboot-disc $(PLAYTEST_QB); \
+	else \
+		echo "playtest: no retail image \"$(RETAIL_IMAGE)\" here: no disc is built"; \
+	fi
+
+playtest: playtest-discs
+	python3 tools/playtest.py $(PLAYTEST)
 
 # The host tests with the master switch on: the game's, and ReBushido's own
 # (tests/rebushido/).
@@ -295,6 +366,17 @@ $(BUILD_DIR)/$(RB_SRC_DIR)/version.o: $(RB_HASH_FILE)
 $(BUILD_DIR)/$(RB_SRC_DIR)/version.o: CPP_DEFS += -DRB_GIT_HASH='"$(RB_GIT_HASH)"'
 endif
 
+# -- Quick boot's fight --
+# src/rebushido/quickboot.c is given the QB_ variables as RB_QB_ names. They
+# are kept in a file that is written again only when one changes, so that
+# quickboot.o is rebuilt then and not otherwise.
+ifeq ($(REBUSHIDO)$(QUICKBOOT),11)
+QB_FILE      := $(BUILD_DIR)/quickboot_settings.txt
+$(shell mkdir -p $(BUILD_DIR); [ "$$(cat $(QB_FILE) 2>/dev/null)" = "$(QB_SETTINGS)" ] || echo "$(QB_SETTINGS)" > $(QB_FILE))
+$(BUILD_DIR)/$(RB_SRC_DIR)/quickboot.o: $(QB_FILE)
+$(BUILD_DIR)/$(RB_SRC_DIR)/quickboot.o: CPP_DEFS += $(patsubst QB_%,-DRB_QB_%,$(QB_SETTINGS))
+endif
+
 # -- Compile C source (decompiled functions) --
 # Pipeline: cpp | cc1 | maspsx | as -> .o, then objcopy (.rodata alignment 4)
 $(BUILD_DIR)/$(SRC_DIR)/%.o: $(SRC_DIR)/%.c $(PIPELINE_DEPS)
@@ -310,6 +392,7 @@ $(BUILD_DIR)/$(ASM_DIR)/%.o: $(ASM_DIR)/%.s $(shell find $(INCLUDE_DIR) -type f)
 # -- Clean --
 # build/play/ is kept: it holds a disc image built for a play test
 # (tools/build_disc.py), which takes minutes to make again. The ReBushido
-# build (build/rebushido/) goes with the rest.
+# build (build/rebushido/), the quick-boot build (build/quickboot/) and the
+# play tests' pictures (build/playtest/) go with the rest.
 clean:
 	[ ! -d build ] || find build -mindepth 1 -maxdepth 1 ! -name play -exec rm -rf {} +
