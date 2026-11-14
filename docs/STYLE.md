@@ -198,6 +198,13 @@ change".
     `include/rb_<file>.h`; names are `rb_VerbNoun`, `g_rb_noun`, `RbType`,
     `RB_CONSTANT`. ReBushido's side has no `FAKE` note, and `bb2.ld` is not
     edited for it.
+28. The native port ([`PORT.md`](PORT.md)) is behind `RB_PORT`. Where a
+    function is assembly, its C goes in the `#if RB_PORT` and the
+    `INCLUDE_ASM` line in the `#else`, with a comment on the C that
+    begins "In C" and says what a reader of the listing would not
+    expect. Code that only the port has is in `src/port/`, its header
+    `include/port_<file>.h`, its names `port_VerbNoun`, `g_port_noun`,
+    `PortType`, `PORT_CONSTANT`: no PlayStation build compiles it.
 
 ## Working method
 

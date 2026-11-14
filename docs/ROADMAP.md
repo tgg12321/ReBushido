@@ -33,12 +33,16 @@ No dates.
    release" and "Applying the patch"). The first release, 0.1, is still
    to be made.
 6. **The native port.** A build of the same source for a PC, beside the
-   PlayStation one. First a C equivalent beside each piece of assembly
-   (the GTE operations, the BIOS calls, the functions the authors wrote
-   in assembly), checked by host tests; the PlayStation build keeps the
-   assembly, and `decomp` is not touched. Then Sony's libraries
-   (graphics, sound, disc, pad, memory card) answered by PC code: the
-   menu in a window, then a fight, then sound. The game's code stays C.
+   PlayStation one ([`PORT.md`](PORT.md) has what stands in the way,
+   counted, and the stages). First a C equivalent beside each piece of
+   assembly, checked by host tests and against the emulator; the
+   PlayStation build keeps the assembly, and `decomp` is not touched.
+   Begun: the GTE is in C, with every instruction of the game's that
+   reaches it, and so are Sony's libgte and the game's maths routines,
+   68 of the 138 functions that are assembly; the renderer's 51 are
+   left. Then Sony's libraries (graphics, sound, disc, pad, memory card)
+   answered by PC code: the menu in a window, then a fight, then sound.
+   The game's code stays C.
 7. **The picture.** A wide picture, high resolution and a high frame rate
    on the port, which is what "Graphics: Remastered" will mean. On the
    PlayStation build only what is cheap: about 17 KB is left there before

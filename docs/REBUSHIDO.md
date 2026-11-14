@@ -63,8 +63,8 @@ From a Windows shell put `wsl` in front, as with the other commands.
 | `make rebushido` | Compiles the source with the master switch on, and the files of `src/rebushido/`, into `build/rebushido/`; links `build/rebushido/rebushido.exe`; prints its size and the room left, and fails if it does not fit |
 | `make rebushido-disc` | The same, then `build/play/ReBushido.bin` and `.cue`: the retail image with that executable in place of the game's |
 | `make rebushido-patch` | The matching build and the ReBushido disc, then `build/release/`: the patch `ReBushido-<version>.bps`, a `README.txt` for players and a copy of the tool that applies it ("Making a release"). `RB_RELEASE=1` makes it a release's |
-| `make rebushido-test` | The host tests with the master switch on, and ReBushido's own (`tests/rebushido/`) |
-| `make rebushido-modern` | `make modern` with the master switch on, `src/rebushido/` included |
+| `make rebushido-test` | The host tests with the master switch on, and ReBushido's own (`tests/rebushido/`); with the native port's switch on as well, and the port's own (`tests/port/`; [`PORT.md`](PORT.md)) |
+| `make rebushido-modern` | `make modern` with the master switch on, `src/rebushido/` included; and the port's switch, with `src/port/` and the C beside the assembly |
 | `make quickboot` | The ReBushido build with quick boot on, into `build/quickboot/`: a program that starts one fight in place of the opening and the menus (below, "Booting straight into a fight") |
 | `make quickboot-disc` | The same, then `build/play/QuickBoot.bin` and `.cue` |
 | `make playtest` | Builds the discs the play tests want and runs them in an emulator with no window ([`tests/play/README.md`](../tests/play/README.md)); on the developer's machine only |
@@ -545,8 +545,8 @@ The last three are ReBushido's:
 | Check | Command | Fails when |
 |---|---|---|
 | The build | `make rebushido` | the ReBushido build does not compile or link, does not fit below the fixed buffers, its small data is out of `gp`'s reach, an object was left out of the link, or its version text is missing; or a file that asks `RB_QUICK_BOOT` does not compile with it on |
-| Tests | `make rebushido-test` | a host test fails with the master switch on. These are the game's tests, linked with the settings at their defaults, so they also show that a change does nothing until its setting is on; and ReBushido's own in `tests/rebushido/`: the settings, the options page's table, the settings' file (its checksum, its header, and every kind of file that must not be read), the release's patch tool on made-up bytes (round trips, a damaged patch and a wrong source refused), quick boot, the offsets the play tests read memory at, and five of the fixes with the setting off and on (`fix_*`) |
-| Modern | `make rebushido-modern` | the host's `gcc` finds something serious in the source with the master switch on that `tools/modern/baseline.tsv` does not have |
+| Tests | `make rebushido-test` | a host test fails with the master switch on, which is also the native port's build for the host ([`PORT.md`](PORT.md): the port's switch is on, and its tests in `tests/port/` run). These are the game's tests, linked with the settings at their defaults, so they also show that a change does nothing until its setting is on; and ReBushido's own in `tests/rebushido/`: the settings, the options page's table, the settings' file (its checksum, its header, and every kind of file that must not be read), the release's patch tool on made-up bytes (round trips, a damaged patch and a wrong source refused), quick boot, the offsets the play tests read memory at, and five of the fixes with the setting off and on (`fix_*`) |
+| Modern | `make rebushido-modern` | the host's `gcc` finds something serious in the source with the master switch on that `tools/modern/baseline.tsv` does not have; the port's switch is on too, so that reads `src/port/` and the C beside the assembly |
 
 The counts and the lint understand the switches. `tools/count.py` counts
 the source as the matching build compiles it, so what
@@ -562,7 +562,7 @@ None of those ten runs the game. The play tests do
 bash tools/build.sh playtest      # from Windows: wsl bash tools/build.sh playtest
 ```
 
-builds the ReBushido disc and three quick-boot discs and runs nine tests in an
+builds the ReBushido disc and three quick-boot discs and runs ten tests in an
 emulator (PCSX-Redux) with no window, pressing the pads by script and
 reading the game's memory by the names of the source:
 
@@ -577,6 +577,7 @@ reading the game's memory by the names of the source:
 | `bugfixes_fight` | With Bugfixes turned on at the options page: the opening, the menus, a versus fight to a kill, the replay and the menu after, with no crash |
 | `first_frame_sweep` | A naginata's first frame sweeps its shaft from a stale place; with Bugfixes on, from where it is |
 | `vanish` | Off the shrine's stage the vanisher, struck, comes back at another stage's place and falls out of the stage; with Bugfixes on it comes back where it started and stands |
+| `gte_model` | The native port's GTE in C, and its C beside the assembly, make of 116,000 made-up cases what the emulator's GTE and the assembly make of them ([`PORT.md`](PORT.md)). It runs a program of the tests' own with no disc |
 
 They are not among the checks and GitHub Actions does not run them: they
 need your own retail image and the emulator, which are never in the

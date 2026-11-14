@@ -94,8 +94,8 @@ bash tools/build.sh checks        # or `make checks`; from Windows, `wsl bash to
 | The overlay | `make movovl` | the movie overlay's SHA1 is not the original's |
 | Shift | `make shift` | something depends on where code or data is |
 | ReBushido, the build | `make rebushido` | the ReBushido build does not compile, link or fit ([`docs/REBUSHIDO.md`](docs/REBUSHIDO.md)) |
-| ReBushido, tests | `make rebushido-test` | a host test fails with ReBushido's master switch on |
-| ReBushido, modern | `make rebushido-modern` | the host's `gcc` finds something serious and new with the master switch on |
+| ReBushido, tests | `make rebushido-test` | a host test fails with ReBushido's master switch on; the native port's C is built and tested in this run ([`docs/PORT.md`](docs/PORT.md)) |
+| ReBushido, modern | `make rebushido-modern` | the host's `gcc` finds something serious and new with the master switch on, the port's C included |
 
 The first four and the last two need no build of the game and nothing but `python3` and the
 host's `gcc`: no virtualenv, no 32-bit packages (`-m32` is used, but nothing

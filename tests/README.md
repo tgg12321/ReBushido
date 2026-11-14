@@ -74,6 +74,32 @@ python3 tests/run.py --rebushido -v rebushido/settings # one, showing what it pr
   does: the same answers as in the first run.
 - The programs are in `build/rebushido/tests/`.
 
+## The native port
+
+The same run, `--rebushido`, has the port's switch on as well (`RB_PORT`,
+[`docs/PORT.md`](../docs/PORT.md)): a function that is assembly on the
+PlayStation is the C the port has beside it, and Sony's GTE macros are C
+on the port's GTE (`src/port/gte.c`), which the game's tests are linked
+with in this run. So `roots`, whose `math_TableSqrt` counts leading
+zeroes on the GTE, runs on the model there and on `stubs/gte.c` in the
+plain run, and has to give the same answers.
+
+The port's own tests are `tests/port/NAME.c`, named `port/NAME`:
+
+| Test | What it runs | Compared with |
+|---|---|---|
+| `port/gte` | every operation of `src/port/gte.c` and its registers | cases worked out by hand: each limit and its bit of FLAG, the queues, the registers that read back otherwise than written; the division against true division, for every divisor of sixteen dividends |
+| `port/asm` | the C beside the assembly: the game's `math_asm.c` and `math_RotMatrixZYX`, Sony's libgte | real square roots; rotations made from real sines, and for Sony's from Sony's table of sines; products and scalings in whole numbers; a blend of two rotations is a rotation; cases by hand |
+| `port/gte_vectors` | the GTE on the probe's 84,000 made-up cases | the numbers written down when the emulator's GTE last made the same of them |
+| `port/asm_vectors` | the C beside the assembly on the probe's 32,000 | the numbers written down when the assembly itself last made the same of them, on the emulator |
+
+The last two are the host's half of the play test `gte_model`
+([`play/README.md`](play/README.md), "The GTE probe"): the emulator is
+not there on every push, so what is held is that the C still gives what
+it gave when the emulator last agreed. A test's Python side may name
+more source files to compile apart and link (`sources()`); those two and
+`port/asm` do, for Sony's modules, each of which is a file of its own.
+
 ## Play tests
 
 These tests run the game's functions, never the game. The tests that run
@@ -202,12 +228,13 @@ MIPS: the SHA1 is the check of that.
 
 ## What is not tested
 
-- Assembly: `math_Sqrt`, `math_Length`, `math_MulMatrix`, `math_Transform`,
-  `math_LerpRotation`, `mem_MoveWords`, the renderer.
+- Assembly: the renderer. (The other routines that are assembly,
+  `math_Sqrt`, `math_MulMatrix`, `mem_MoveWords` and the rest, are run as
+  the C the port has beside them: "The native port".)
 - What works through the GTE: the blade tests of `hit_test.c`,
   `math_MatrixToAngles`, `math_TurnAngles`, `math_ScaleAlong`,
-  `math_TriangleHeading`, the cloth's step. A GTE written out in C would be
-  the thing under test.
+  `math_TriangleHeading`, the cloth's step. With the port's GTE they can
+  be run now; no test of them is written yet.
 - `math_Grayscale3` (in `tex.c`, see above); `math_LobVelocity` (its root is
   Sony's table-driven `SquareRoot0`, which is assembly: the answer would be
   the stand-in's).

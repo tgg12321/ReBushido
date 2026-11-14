@@ -14,7 +14,8 @@ fixes and enhancements, built on a complete decompilation of the game.
 Every ReBushido change is behind a switch. With the switches off this branch
 still builds the original byte for byte, and the checks hold it to that.
 [`docs/REBUSHIDO.md`](docs/REBUSHIDO.md) says how it works and how to write a
-change; [`docs/ROADMAP.md`](docs/ROADMAP.md) says what is planned.
+change; [`docs/ROADMAP.md`](docs/ROADMAP.md) says what is planned;
+[`docs/PORT.md`](docs/PORT.md) is the native PC port, which has begun.
 
 No game files are in this repository. To play anything built from it you need
 your own copy of the North American disc. A release is a patch for your image
