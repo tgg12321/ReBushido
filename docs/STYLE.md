@@ -174,7 +174,7 @@ file's findings; `--check` fails if a count went up.
 
 ## ReBushido
 
-On the `rebushido` branch everything above holds, and these as well. The
+On the `main` branch everything above holds, and these as well. The
 whole of it, with examples, is [`REBUSHIDO.md`](REBUSHIDO.md), "Writing a
 change".
 

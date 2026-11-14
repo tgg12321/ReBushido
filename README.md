@@ -1,25 +1,19 @@
 # ReBushido
 
-A decompilation of *Bushido Blade 2* (PlayStation, 1998, SLUS-00663), and the
-base for ReBushido, a modded version of the game.
+A modded version of *Bushido Blade 2* (PlayStation, 1998, SLUS-00663): bug
+fixes and enhancements, built on a complete decompilation of the game.
 
-- **`main`** is the decompilation. It builds the original executable byte for
-  byte (`SLUS_006.63`, SHA1 `62efab4f73f992798c43e8c730aa43baa10bb4fa`) and
-  nothing on it changes how the game behaves.
-- **`rebushido`** is the mod: bug fixes and enhancements. Early days.
+- **`main`** (this branch) is ReBushido. Early days: so far it is the
+  foundation only, and plays as the original.
+- **[`decomp`](../../tree/decomp)** is the decompilation by itself. It builds
+  the original executable byte for byte (`SLUS_006.63`, SHA1
+  `62efab4f73f992798c43e8c730aa43baa10bb4fa`) and nothing on it changes how
+  the game behaves.
 
-> **This is the `rebushido` branch.** Every change of ReBushido's is behind
-> a switch; with every switch off this branch still builds the original
-> executable byte for byte, and the checks hold it to that. What ReBushido
-> is, how to build and play it and how to write a change:
-> [`docs/REBUSHIDO.md`](docs/REBUSHIDO.md). What is planned:
-> [`docs/ROADMAP.md`](docs/ROADMAP.md). As it stands the branch is the
-> foundation only, and plays as the original.
->
-> ```bash
-> bash tools/build.sh rebushido        # the ReBushido build; "OK: rebushido fits"
-> bash tools/build.sh rebushido-disc   # and a disc image to play, from your retail image
-> ```
+Every ReBushido change is behind a switch. With the switches off this branch
+still builds the original byte for byte, and the checks hold it to that.
+[`docs/REBUSHIDO.md`](docs/REBUSHIDO.md) says how it works and how to write a
+change; [`docs/ROADMAP.md`](docs/ROADMAP.md) says what is planned.
 
 No game files are in this repository. To play anything built from it you need
 your own copy of the North American disc.
@@ -29,7 +23,8 @@ your own copy of the North American disc.
 All 1,484 functions are decompiled and the build matches. The source has been
 reorganised and renamed to be readable, but the names are ours, not the
 original developers', and some are guesses. About seventy probable bugs in the
-original are documented and left as they are on `main`.
+original are documented; they are left as they are on `decomp` and are
+being fixed here.
 
 [`docs/STATUS.md`](docs/STATUS.md) has the details, including what was tested
 and what was not.
@@ -39,9 +34,11 @@ and what was not.
 Linux, or Windows with WSL 2 (Ubuntu 24.04). The build needs no game files.
 
 ```bash
-bash tools/setup_wsl.sh      # once: toolchain and compiler
-bash tools/build.sh check    # ends with "OK: bb2 matches!"
-bash tools/build.sh checks   # everything CI runs
+bash tools/setup_wsl.sh             # once: toolchain and compiler
+bash tools/build.sh check           # the original; ends with "OK: bb2 matches!"
+bash tools/build.sh rebushido       # ReBushido; ends with "OK: rebushido fits"
+bash tools/build.sh rebushido-disc  # a disc image to play, from your retail image
+bash tools/build.sh checks          # everything CI runs
 ```
 
 [`BUILD.md`](BUILD.md) covers the rest.

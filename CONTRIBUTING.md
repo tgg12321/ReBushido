@@ -6,13 +6,13 @@ work.
 
 ## The two lines of work
 
-- **`main` is the decompilation.** It must always build the original
+- **`decomp` is the decompilation.** It must always build the original
   executable byte for byte. A change here is a better name, a clearer
   comment, a truer type, a correction to the documentation, or C that
   matches where a stand-in was. It never changes what the program does:
   the original's bugs stay, marked in comments and listed in
   `docs/STATUS.md`.
-- **`rebushido` is the mod.** Bug fixes, enhancements and new features go
+- **`main` is the mod.** Bug fixes, enhancements and new features go
   there. It does not have to match the original, but every change there is
   behind a switch, and with the switches off the branch still builds the
   original byte for byte: `docs/REBUSHIDO.md`, "Writing a change".
@@ -21,7 +21,7 @@ work.
 
 - `wsl bash tools/build.sh checks` (or `make checks` inside WSL or Linux)
   must print `OK: all 10 checks pass` on this branch (`OK: all 7 checks
-  pass` on `main`). GitHub Actions runs the same checks.
+  pass` on `decomp`). GitHub Actions runs the same checks.
 - Follow `docs/STYLE.md`; `python tools/format.py <files>` applies the
   layout.
 - One subject per pull request, with a plain description of what changed

@@ -30,7 +30,7 @@ not there.
 
 ## ReBushido
 
-On the `rebushido` branch the same tests run a second time with ReBushido's
+On the `main` branch the same tests run a second time with ReBushido's
 master switch on (`include/rebushido.h`), together with ReBushido's own:
 
 ```

@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-Matching decompilation of **Bushido Blade 2** (SLUS-00663). Project facts,
+ReBushido: a modded *Bushido Blade 2* (SLUS-00663) built on its matching
+decompilation. Project facts,
 toolchain, build, gates and conventions are in [AGENTS.md](AGENTS.md):
 
 @AGENTS.md
@@ -17,11 +18,24 @@ matches but is probably not what the authors wrote, detailed in
 "Open questions". How the project got here:
 [docs/HISTORY.md](docs/HISTORY.md).
 
-`main` is the byte-matching decompilation and stays that. The modded line,
-ReBushido, lives on the branch `rebushido`; no bug fix or behaviour change
-goes on `main`.
+Two branches. `decomp` is the byte-matching decompilation and stays that:
+no bug fix or behaviour change goes on it. `main` is ReBushido, where the
+work now happens ([docs/REBUSHIDO.md](docs/REBUSHIDO.md), and what is
+planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
 
-## Working on `main`
+## Working on `main` (ReBushido)
+
+- Every change is behind a switch of `include/rebushido.h`, and the
+  original's lines stay as they are (`docs/STYLE.md`, "ReBushido").
+- With the switches off the build must still match the original:
+  `wsl bash tools/build.sh checks` runs ten checks here (the seven of
+  `decomp`, then the ReBushido build, its tests and its modern-compiler
+  run).
+- `wsl bash tools/build.sh rebushido` builds it into `build/rebushido/`.
+  Never edit `bb2.ld` for ReBushido.
+- Merge `decomp` into `main`, never the reverse.
+
+## Working on `decomp`
 
 - The first gate is the SHA1: `wsl bash tools/build.sh check`, and
   `wsl bash tools/build.sh movovl` as well when `src/main/psxsdk/` or
@@ -33,13 +47,14 @@ goes on `main`.
 - Identifiers are English; proper nouns from the game stay.
 - Work one subsystem at a time; the helpers are in `tools/`
   ([tools/README.md](tools/README.md)).
-- Commit on `main` when the build matches. Plain commit messages; no special
+- Commit on `decomp` when the build matches. Plain commit messages; no special
   conventions.
 
 ## Standing warnings
 
 - `bb2.ld` is hand-maintained and all data is defined in C: nothing
   regenerates the linker script or the listings.
-- Run no emulator unless the owner says so.
+- The emulator runs only for automated tests, with no window, on the
+  owner's machine; it and the disc images are never committed.
 - Build files must be LF (see AGENTS.md).
 - Scratch goes in `tmp/<task>/` and is removed when the task is done.

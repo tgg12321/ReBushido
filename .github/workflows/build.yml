@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [main, rebushido]
+    branches: [main, decomp]
   pull_request:
 
 # Every check the project has, each a step of its own so that a failure names

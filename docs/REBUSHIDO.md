@@ -2,8 +2,8 @@
 
 ReBushido is a modded line of *Bushido Blade 2*: the original's bugs fixed,
 the picture improved as far as a PlayStation can, and new features. It is
-built from the matching decompilation and lives on the branch `rebushido`.
-`main` stays the byte-matching source and never changes what the program
+built from the matching decompilation and lives on the branch `main`.
+`decomp` stays the byte-matching source and never changes what the program
 does.
 
 This page is the branch's rules, how to build and play it, how a change is
@@ -53,7 +53,7 @@ From a Windows shell put `wsl` in front, as with the other commands.
 | `make rebushido-modern` | `make modern` with the master switch on, `src/rebushido/` included |
 
 The two builds share one tree and no object: the matching build is in
-`build/` exactly as on `main`, the ReBushido build in `build/rebushido/`.
+`build/` exactly as on `decomp`, the ReBushido build in `build/rebushido/`.
 `make clean` removes both and leaves `build/play/`.
 
 The build ends with a report:
@@ -167,7 +167,7 @@ asks `#if RB_NAME`, never `#ifdef` (the name is always defined).
 here: misspelt, it would be 0, and the change silently missing.
 
 **2. Leave the original's lines as they are, once.** They are not deleted,
-not copied into ReBushido's side and not reworded: the diff against `main`
+not copied into ReBushido's side and not reworded: the diff against `decomp`
 should show what was added and nothing else. The shapes:
 
 Something added:
@@ -234,9 +234,9 @@ in ReBushido's side is marked `FAKE`: it has no bytes to match.
 ## How it is tested
 
 `bash tools/build.sh checks` runs ten checks and prints a summary; GitHub
-Actions runs the same ten on every push to `rebushido` and on pull requests.
+Actions runs the same ten on every push to `main` and on pull requests.
 
-The first seven are `main`'s, on the source with every switch off: the
+The first seven are `decomp`'s, on the source with every switch off: the
 counts, the lint, `modern`, the tests, the game's SHA1, the overlay's SHA1
 and `shift`. The SHA1 is the one that matters most here: a change that
 reaches the original, through a missing `#if` or a moved original line,
@@ -261,9 +261,9 @@ None of this runs the game. Play tests in an emulator, scripted, are the
 third item of the [roadmap](ROADMAP.md); until then a change is played by
 hand from `make rebushido-disc`.
 
-## Keeping up with `main`
+## Keeping up with `decomp`
 
-`main` goes on being corrected (names, comments, a truer type). Merge it
-into `rebushido` often (`git merge main`), and never the other way. Because
+`decomp` goes on being corrected (names, comments, a truer type). Merge it
+into `main` often (`git merge decomp`), and never the other way. Because
 the original's lines stay as they are on this branch, such merges are
 mostly clean.

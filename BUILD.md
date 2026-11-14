@@ -74,7 +74,7 @@ a change there has to pass both byte checks.
 
 GitHub Actions runs ten checks on every push and pull request
 (`.github/workflows/build.yml`), each a step of its own, and one that fails
-does not stop the rest: `main`'s seven, on the source with every switch of
+does not stop the rest: `decomp`'s seven, on the source with every switch of
 ReBushido off, and three for the ReBushido build. All of them locally, in
 the same order, with a summary at the end (about three minutes):
 

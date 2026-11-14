@@ -11,8 +11,10 @@ decompiled and the build reproduces the original. A single-person project. State
 `docs/STATUS.md`; how it got here: `docs/HISTORY.md`; disc layout, asset formats and inspectors:
 `docs/formats/`.
 
-`main` is the canonical byte-matching source: no bug fix, mod or behaviour change goes here. A
-modded line, ReBushido, lives on the branch `rebushido`.
+Two branches. `decomp` is the canonical byte-matching source: no bug fix, mod or behaviour change
+goes there. `main` (this branch) is ReBushido, the modded line: every change is behind a switch of
+`include/rebushido.h`, the original's lines stay as they are, and with the switches off the build
+is still byte-identical (`docs/REBUSHIDO.md`). Merge `decomp` into `main`, never the reverse.
 
 ## Toolchain (confirmed from binary analysis)
 
@@ -52,9 +54,16 @@ Builds run inside WSL (Ubuntu 24.04); toolchain setup: `bash tools/setup_wsl.sh`
 
 ```bash
 cd /mnt/c/<path to the checkout> && source .venv/bin/activate
-make          # build and verify SHA1
+make          # build and verify SHA1 (every switch off)
 make clean
 ```
+
+ReBushido: `make rebushido` (`wsl bash tools/build.sh rebushido`) builds with the master switch on
+into `build/rebushido/`, including `src/rebushido/`, linked by a script that `tools/rebushido.py`
+writes from `bb2.ld` each time; `make rebushido-disc` makes a disc image in `build/play/` from the
+retail image at the repository root; `make rebushido-test` and `make rebushido-modern` are its
+tests. Never edit `bb2.ld` for ReBushido. `src/rebushido/` holds ReBushido's own files (names
+`rb_*`, `g_rb_*`, `Rb*`; headers `include/rebushido.h` for the switches and `include/rb_*.h`).
 
 - **`bb2.ld` is hand-maintained**, and all data is defined in C. No tool writes the linker script
   or the listings in `asm/funcs/`; do not try to regenerate either with a splitter.

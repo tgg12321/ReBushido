@@ -114,7 +114,7 @@ played by hand. With the two byte checks, the counts, the lint and
 ## The clean-up (November 2026)
 
 With the work done, the repository was made ready for outside readers:
-everything that only served the decompilation was taken out of `main`. That
+everything that only served the decompilation was taken out. That
 was the plan and its notes (`docs/PLAN.md`, about 4,600 lines: what each step
 found), the record of the names checked in the running game
 (`docs/RUNTIME_CHECK.md`) and the page to play from (`docs/PLAYTEST.md`),
@@ -126,7 +126,7 @@ What an outside reader needs from those documents was folded into
 [`STATUS.md`](STATUS.md).
 
 The cleaned tree then became the first commit of this repository.
-`main` stays the byte-matching decompilation. A modded line of the game,
-ReBushido, lives on a branch of its own, `rebushido`.
+`decomp` stays the byte-matching decompilation. A modded line of the game,
+ReBushido, lives on a branch of its own, `main`.
 
 [`STATUS.md`](STATUS.md) says where things stand.
