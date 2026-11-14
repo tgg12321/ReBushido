@@ -169,7 +169,33 @@ file's findings; `--check` fails if a count went up.
     area its function leaves alone. What the compiler would leave empty
     anyway (alignment) is not declared at all. [unk]
 22. A suspected bug of the original is noted where it is with "the
-    original's behaviour"; the code is not changed.
+    original's behaviour"; the code is not changed. (ReBushido fixes it
+    behind a switch, below; the note stays.)
+
+## ReBushido
+
+On the `rebushido` branch everything above holds, and these as well. The
+whole of it, with examples, is [`REBUSHIDO.md`](REBUSHIDO.md), "Writing a
+change".
+
+23. Every change is behind a switch of its own, `RB_NAME`, defined in
+    `include/rebushido.h` as `(REBUSHIDO && 1)` with a comment saying what
+    the change is; a fix is `RB_FIX_...`. The source asks `#if RB_NAME`,
+    never `#ifdef`, and only switches go in such an `#if`. [rb-flag]
+24. The original's lines stay as they are, once: not deleted, not copied
+    into ReBushido's side, not reworded. What is added goes in an `#if`;
+    what is replaced goes in the `#if` and the original in its `#else`;
+    what the player can turn off is
+    `#if RB_NAME` / `if (g_rb_settings...) { ... } else` / `#endif` /
+    `{ the original's lines }`.
+25. Each side of an `#if RB_NAME` block is whole statements or
+    declarations with its braces closed.
+26. What the player can turn off asks `g_rb_settings` (`rb_settings.h`),
+    whose defaults are the original's behaviour.
+27. New code of any size is in `src/rebushido/`, its header
+    `include/rb_<file>.h`; names are `rb_VerbNoun`, `g_rb_noun`, `RbType`,
+    `RB_CONSTANT`. ReBushido's side has no `FAKE` note, and `bb2.ld` is not
+    edited for it.
 
 ## Working method
 

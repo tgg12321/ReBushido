@@ -1,7 +1,12 @@
 #!/bin/bash
 # Every check GitHub Actions runs (.github/workflows/build.yml), in its order,
 # and a summary:  bash tools/checks.sh   (make checks; from Windows,
-# wsl bash tools/build.sh checks). About a minute and a half.
+# wsl bash tools/build.sh checks). About three minutes.
+#
+# The first seven are the matching build's, with every switch of ReBushido
+# off: the SHA1 among them is what shows that no change of ReBushido's
+# reaches the original. The last three are the ReBushido build's
+# (docs/REBUSHIDO.md).
 #
 # A check that fails does not stop the ones after it. What each printed is in
 # build/checks/<name>.log; its last lines are shown when it fails. Exits 1 if
@@ -17,7 +22,7 @@ failed=0
 check() {
     local name=$1 start=$SECONDS result=ok
     shift
-    printf '%-8s %s ... ' "$name" "$*"
+    printf '%-10s %s ... ' "$name" "$*"
     if ! "$@" > "build/checks/$name.log" 2>&1; then
         result=FAILED
         failed=1
@@ -39,10 +44,15 @@ check test    make test
 check game    make -j8 check
 check overlay make movovl
 check shift   make shift
+# ReBushido: it compiles, links and fits; then its tests and the modern
+# compiler with the master switch on, which need no build.
+check rb-build  make -j8 rebushido
+check rb-test   make rebushido-test
+check rb-modern make rebushido-modern
 
 echo
 for i in "${!names[@]}"; do
-    printf '  %-8s %s\n' "${names[$i]}" "${results[$i]}"
+    printf '  %-10s %s\n' "${names[$i]}" "${results[$i]}"
 done
 if [ "$failed" = 1 ]; then
     echo "FAILED: see build/checks/<name>.log"

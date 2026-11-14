@@ -1,5 +1,15 @@
 # Bushido Blade 2 (SLUS-00663): matching decompilation
 
+> **This is the `rebushido` branch: ReBushido, the modded line of the
+> game.** Bug fixes, a better picture and new features, each behind a
+> switch; with every switch off this branch still builds the original
+> executable byte for byte, and the checks hold it to that. What ReBushido
+> is, how to build and play it and how to write a change:
+> [`docs/REBUSHIDO.md`](docs/REBUSHIDO.md). What is planned:
+> [`docs/ROADMAP.md`](docs/ROADMAP.md). As it stands the branch is the
+> foundation only, and plays as the original. The rest of this page is
+> `main`'s and holds here too.
+
 C source for *Bushido Blade 2* (SquareSoft / Lightweight, 1998, PlayStation,
 North American release) that builds the original executable byte for byte:
 `SLUS_006.63`, SHA1 `62efab4f73f992798c43e8c730aa43baa10bb4fa`. The small
@@ -55,7 +65,8 @@ source.
 bash tools/setup_wsl.sh      # once: MIPS binutils, Python venv, the compiler
 bash tools/build.sh check    # build; ends with "OK: bb2 matches!"
 bash tools/build.sh movovl   # the movie overlay; "OK: movovl matches!"
-bash tools/build.sh checks   # everything CI checks; "OK: all 7 checks pass"
+bash tools/build.sh checks   # everything CI checks; "OK: all 10 checks pass"
+bash tools/build.sh rebushido   # the ReBushido build; "OK: rebushido fits"
 ```
 
 From a Windows shell the same commands are `wsl bash tools/build.sh check`.
@@ -65,7 +76,9 @@ counts and the lint of the source (`tools/count.py`, `tools/lint.py`),
 `make shift` (nothing depends on where code or data is), `make modern` (the
 game's C through a modern compiler's warnings and analyser) and `make test`
 (host tests of what the game's C computes, [`tests/README.md`](tests/README.md)).
-`checks` runs the same seven locally. [`BUILD.md`](BUILD.md) has the details,
+On this branch three more follow, for the ReBushido build
+([`docs/REBUSHIDO.md`](docs/REBUSHIDO.md), "How it is tested"). `checks`
+runs all ten locally. [`BUILD.md`](BUILD.md) has the details,
 the disc extraction for the asset tools, and what to do when something fails.
 
 ## The program
@@ -101,6 +114,7 @@ movovl/                 the movie overlay: its own source, Makefile and README
 config/                 what the build is told: the SHA1, the few addresses the linker
                         is given, three lists of functions where the original assembler
                         behaved differently, and the table of every symbol's address
+src/rebushido/          ReBushido's own files, which only the ReBushido build compiles
 tests/                  host tests of the game's pure functions
 tools/                  build scripts, source checks, disc and asset tools (tools/README.md)
 docs/                   documentation (below)
@@ -111,6 +125,7 @@ Makefile, bb2.ld        the build and the linker script (hand-maintained)
 
 | File | What |
 |---|---|
+| [`docs/REBUSHIDO.md`](docs/REBUSHIDO.md), [`docs/ROADMAP.md`](docs/ROADMAP.md) | ReBushido: its rules, building and playing it, writing a change; what is planned |
 | [`BUILD.md`](BUILD.md) | Setting up, building, the build pipeline, the checks, troubleshooting |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How the game works: the main loop, the subsystems, where the data lives, the words the source uses |
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | PlayStation, MIPS and toolchain terms; the Japanese words in the game's files |

@@ -2,13 +2,18 @@ name: build
 
 on:
   push:
-    branches: [main]
+    branches: [main, rebushido]
   pull_request:
 
 # Every check the project has, each a step of its own so that a failure names
 # itself. A check that fails does not stop the ones after it (`!cancelled()`),
 # so one run shows everything that is wrong. `make checks` (tools/checks.sh)
 # runs the same list locally: keep the two the same.
+#
+# The first seven are the matching build's, with every switch of ReBushido
+# off (include/rebushido.h): the SHA1 among them is what shows that no change
+# of ReBushido's reaches the original. The last three are the ReBushido
+# build's (docs/REBUSHIDO.md).
 #
 # Nothing here needs the disc, the virtualenv or a Python package: the tools
 # use the standard library, and the two tests that read the disc say they
@@ -86,3 +91,19 @@ jobs:
       - name: Relink with padding, nothing may depend on an address (make shift)
         if: ${{ !cancelled() && steps.game.outcome == 'success' }}
         run: make shift
+
+      # ReBushido: the same source with the master switch on and the files
+      # of src/rebushido/, in build/rebushido/. The build's last lines are
+      # the size and the room left; it fails if the program does not fit.
+
+      - name: ReBushido builds, links and fits (make rebushido)
+        if: ${{ !cancelled() }}
+        run: make -j4 rebushido
+
+      - name: ReBushido, the host tests with the master switch on (make rebushido-test)
+        if: ${{ !cancelled() }}
+        run: make rebushido-test
+
+      - name: ReBushido through a modern gcc (make rebushido-modern)
+        if: ${{ !cancelled() }}
+        run: make rebushido-modern

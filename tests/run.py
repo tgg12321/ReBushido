@@ -5,8 +5,12 @@
     python3 tests/run.py NAME...       only those
     python3 tests/run.py -v NAME...    and show what each program printed
     python3 tests/run.py --list        the tests' names
+    python3 tests/run.py --rebushido   the same tests with ReBushido's master switch on
+                                       (include/rebushido.h), and ReBushido's own,
+                                       tests/rebushido/NAME.c, named rebushido/NAME
 
-`make test` and `tools/build.sh test` run them all. Run it in WSL or on
+`make test` and `tools/build.sh test` run them all; `make rebushido-test`
+runs them with --rebushido, into build/rebushido/tests/. Run it in WSL or on
 Linux: it needs the host's gcc (for x86, with -m32) and python3, and nothing
 else: no 32-bit C library, no build of the game.
 
@@ -31,6 +35,16 @@ import check as modern  # noqa: E402  (tools/modern/check.py)
 import support  # noqa: E402
 
 OUT_DIR = 'build/tests'
+# With --rebushido: where the programs go, where ReBushido's own tests are,
+# and what switches the source over.
+REBUSHIDO_OUT_DIR = 'build/rebushido/tests'
+REBUSHIDO_TESTS = 'rebushido'
+REBUSHIDO_DEFS = ['-DREBUSHIDO=1']
+# With --rebushido a test of the game's is linked with the settings too, as
+# they are when the game starts: a file of the game's may ask them, and with
+# every one at its default it has to do what the original does. ReBushido's
+# own tests include what they test.
+REBUSHIDO_SOURCES = ['src/rebushido/settings.c']
 
 # As tools/modern/check.py compiles the game, and then: -fwrapv, since the
 # game's arithmetic wraps as the PlayStation's does; each function in a
@@ -39,9 +53,7 @@ OUT_DIR = 'build/tests'
 COMPILE_FLAGS = ['-m32', '-std=gnu89', '-ffreestanding', '-fno-builtin', '-funsigned-char',
                  '-fno-strict-aliasing', '-fwrapv', '-nostdinc', '-O1', '-w',
                  '-fno-pic', '-fno-stack-protector', '-fno-asynchronous-unwind-tables',
-                 '-ffunction-sections', '-fdata-sections',
-                 '-include', modern.SHIM, '-I' + OUT_DIR + '/include',
-                 '-I' + modern.OUT_DIR + '/include', '-Iinclude', '-Itests', '-I.']
+                 '-ffunction-sections', '-fdata-sections', '-include', modern.SHIM]
 LINK_FLAGS = ['-nostdlib', '-static', '-no-pie', '-Wl,--gc-sections', '-Wl,--build-id=none']
 RUNTIME = 'tests/runtime/runtime.c'
 
@@ -67,8 +79,16 @@ def write_headers():
         f.write(text.replace(POLLHOST_OLD, POLLHOST_NEW))
 
 
-def test_names():
-    return sorted(f[:-2] for f in os.listdir('tests') if f.endswith('.c'))
+def include_flags():
+    return ['-I' + OUT_DIR + '/include', '-I' + modern.OUT_DIR + '/include', '-Iinclude', '-Itests', '-I.']
+
+
+def test_names(rebushido=False):
+    names = sorted(f[:-2] for f in os.listdir('tests') if f.endswith('.c'))
+    if rebushido:
+        names += sorted('%s/%s' % (REBUSHIDO_TESTS, f[:-2])
+                        for f in os.listdir('tests/' + REBUSHIDO_TESTS) if f.endswith('.c'))
+    return names
 
 
 def title(name):
@@ -88,12 +108,13 @@ def python_side(name):
     return module
 
 
-def build(name):
+def build(name, defs, sources):
     """Compile and link one test. Returns the program's path, or the
     compiler's complaint."""
     program = '%s/%s' % (OUT_DIR, name)
-    cmd = (['gcc'] + COMPILE_FLAGS + modern.DEFS + LINK_FLAGS
-           + ['tests/%s.c' % name, RUNTIME, '-o', program])
+    os.makedirs(os.path.dirname(program), exist_ok=True)
+    cmd = (['gcc'] + COMPILE_FLAGS + include_flags() + modern.DEFS + defs + LINK_FLAGS
+           + ['tests/%s.c' % name] + sources + [RUNTIME, '-o', program])
     # the compiler's temporary files beside the program: /tmp is emptied
     # under a WSL that has just started
     env = dict(os.environ, TMPDIR=os.path.abspath(OUT_DIR), LC_ALL='C')
@@ -103,7 +124,7 @@ def build(name):
     return program, []
 
 
-def run_one(name, verbose):
+def run_one(name, verbose, defs):
     """(state, count, lines): state is ok, skip or FAIL; lines say why, or
     for a test that passed what it could not do here."""
     side = python_side(name)
@@ -113,7 +134,8 @@ def run_one(name, verbose):
             args = [str(a) for a in side.arguments()]
         except support.Skip as skip:
             return 'skip', 0, [str(skip)]
-    program, errors = build(name)
+    own = name.startswith(REBUSHIDO_TESTS + '/')
+    program, errors = build(name, defs, REBUSHIDO_SOURCES if defs and not own else [])
     if not program:
         return 'FAIL', 0, ['it does not build:'] + errors[:30]
     try:
@@ -159,23 +181,30 @@ def run_one(name, verbose):
 
 
 def main():
+    global OUT_DIR
     os.chdir(ROOT)
     args = sys.argv[1:]
     verbose = '-v' in args
+    rebushido = '--rebushido' in args
+    defs = []
+    if rebushido:
+        OUT_DIR = REBUSHIDO_OUT_DIR
+        defs = REBUSHIDO_DEFS
     names = [a for a in args if not a.startswith('-')]
-    known = test_names()
+    known = test_names(rebushido)
     if '--list' in args:
         print('\n'.join(known))
         return 0
     for name in names:
         if name not in known:
-            sys.exit('run.py: no test tests/%s.c' % name)
+            sys.exit('run.py: no test tests/%s.c%s' % (
+                name, '' if rebushido else " (ReBushido's own run with --rebushido)"))
     os.makedirs(OUT_DIR, exist_ok=True)
     write_headers()
 
     tally = {'ok': 0, 'skip': 0, 'FAIL': 0}
     for name in names or known:
-        state, count, lines = run_one(name, verbose)
+        state, count, lines = run_one(name, verbose, defs)
         tally[state] += 1
         if state == 'ok':
             print('ok    %-16s %7d checks  %s' % (name, count, title(name)))
@@ -191,7 +220,7 @@ def main():
     if tally['FAIL']:
         print('FAILED: ' + summary)
         return 1
-    print('OK: tests: ' + summary)
+    print('OK: tests%s: %s' % (' (rebushido)' if rebushido else '', summary))
     return 0
 
 

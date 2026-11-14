@@ -9,7 +9,15 @@
     python tools/lint.py --update           write the baseline from the tree as it is
 
 It reads the game's own files: src/main/*.c, include/*.h, movovl/src/*.c and
-movovl/include/*.h. Sony's library code is not looked at. It needs no build.
+movovl/include/*.h, and ReBushido's, src/rebushido/*.c. Sony's library code
+is not looked at. It needs no build.
+
+A file is read with both sides of every `#if RB_NAME` block in it (the
+switches of include/rebushido.h): the lines that ask the switch are taken
+out and what is between them stays, so ReBushido's code is held to the
+checklist like the rest, and a block's `#else` is not taken for the body of
+the `if` above it. That works as long as each side of a block is whole
+statements or declarations, which docs/STYLE.md asks.
 
 The baseline is tools/lint_baseline.tsv (file, check, count; zeroes
 left out). `--check` fails if a file has more of something than the baseline
@@ -68,6 +76,12 @@ The checks (the rule each counts against is in docs/STYLE.md, "Checklist"):
   cxx-comment   a `//` comment.
   address       a RAM address (0x80xxxxxx) in a comment.
   todo          TODO, FIXME, XXX, HACK or ??? in a comment.
+  rb-flag       an `#if` or `#elif` that asks an RB_ name include/rebushido.h
+                does not define as a switch (a misspelt one is 0, and the
+                change silently left out of every build), or that mixes a
+                switch with anything but other switches, `!`, `&&` and `||`;
+                and an `#ifdef` or `#ifndef` of a switch, which is defined
+                whether it is on or off.
 """
 import collections
 import os
@@ -85,7 +99,7 @@ FUNC_LINES = 12
 
 CHECKS = ['names', 'hex', 'dec', 'lower-hex', 'extern-c', 'proto-c', 'proto-plain', 'empty-params',
           'unnamed-param', 'unused-param', 'no-return', 'wrong-header', 'old-style', 'unk', 'c-types', 'no-braces', 'top-comment', 'func-comment',
-          'guard', 'includes', 'spelling', 'cxx-comment', 'address', 'todo']
+          'guard', 'includes', 'spelling', 'cxx-comment', 'address', 'todo', 'rb-flag']
 
 KEYWORDS = {'if', 'while', 'for', 'switch', 'return', 'sizeof', 'else', 'do', 'goto', 'case', 'break',
             'continue', 'default', 'typedef', 'extern', 'static', 'const', 'volatile', 'register',
@@ -150,7 +164,49 @@ BII = set(['bb2.h'])
 
 
 def game_files():
-    return C.files('src/main/*.c', 'include/*.h', 'movovl/src/*.c', 'movovl/include/*.h')
+    return C.files('src/main/*.c', 'src/rebushido/*.c', 'include/*.h', 'movovl/src/*.c', 'movovl/include/*.h')
+
+
+def read(f):
+    """A file with the lines that ask ReBushido's switches taken out and both
+    sides of each such block kept."""
+    return C.rb_blank(C.read_raw(f), ('directive',))
+
+
+SWITCHES_HEADER = 'include/rebushido.h'
+_SWITCHES = None
+
+
+def switches():
+    """The names include/rebushido.h defines as switches, and the master one."""
+    global _SWITCHES
+    if _SWITCHES is None:
+        _SWITCHES = set(['REBUSHIDO'])
+        if os.path.exists(SWITCHES_HEADER):
+            _SWITCHES.update(re.findall(r'^#define (RB_\w+) \(REBUSHIDO && [01]\)', C.read_raw(SWITCHES_HEADER), re.M))
+    return _SWITCHES
+
+
+def switch_findings(f):
+    """[(line, text)] the lines of a file that ask a switch wrongly."""
+    out = []
+    for number, line in enumerate(C.strip(C.read_raw(f)).split('\n'), 1):
+        m = C.DIRECTIVE.match(line)
+        if not m or m.group(1) in ('else', 'endif'):
+            continue
+        word, rest = m.group(1), m.group(2)
+        names = re.findall(C.RB_NAME, rest)
+        if word in ('ifdef', 'ifndef'):
+            # the master switch's own default is the one place a switch is asked this way
+            if any(n in switches() for n in names) and f != SWITCHES_HEADER:
+                out.append((number, '#%s of a switch: %s' % (word, line.strip())))
+            continue
+        unknown = [n for n in names if n not in switches()]
+        if unknown:
+            out.append((number, '%s is not a switch of %s' % (', '.join(unknown), SWITCHES_HEADER)))
+        elif names and C.rb_value(rest) is None:
+            out.append((number, 'a switch mixed with something else: %s' % line.strip()))
+    return out
 
 
 def line_of(s, pos):
@@ -261,7 +317,7 @@ def explained_lines(src, s, first, last):
 
 def lint(f):
     """{check: [(line, text)]} for one file."""
-    src = C.read(f)
+    src = read(f)
     s = C.strip(src)
     is_c = f.endswith('.c')
     name = os.path.basename(f)
@@ -480,13 +536,14 @@ def lint(f):
         a = re.search(r'\b(?:TODO|FIXME|XXX|HACK)\b|\?\?\?', t)
         if a:
             found['todo'].append((line_of(src, m.start() + a.start()), a.group(0)))
+    found['rb-flag'] = switch_findings(f)
     return found
 
 
 # What bb2.h includes already; a .c file names only what it does not.
 def bb2_includes():
     out = set()
-    for inc in re.findall(r'^#include\s+(\S+)', C.read('include/bb2.h'), re.M):
+    for inc in re.findall(r'^#include\s+(\S+)', read('include/bb2.h'), re.M):
         out.add(inc)
     return out
 

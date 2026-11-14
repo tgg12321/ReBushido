@@ -5,6 +5,9 @@
  * and each subsystem's header. Nothing is declared here. */
 
 #include "common.h"
+/* ReBushido's switches, all 0 in the matching build: ahead of every header,
+ * so that any of them can ask. */
+#include "rebushido.h"
 #include <psxsdk/kernel.h>
 #include <psxsdk/libapi.h>
 #include <psxsdk/libc.h>
@@ -63,5 +66,10 @@
 #include "fight.h"
 #include "story.h"
 #include "replay.h"
+
+/* What only the ReBushido build has (src/rebushido/). */
+#if REBUSHIDO
+#include "rb_settings.h"
+#endif
 
 #endif /* BB2_H */

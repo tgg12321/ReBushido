@@ -13,12 +13,15 @@ work.
   the original's bugs stay, marked in comments and listed in
   `docs/STATUS.md`.
 - **`rebushido` is the mod.** Bug fixes, enhancements and new features go
-  there. It does not have to match the original.
+  there. It does not have to match the original, but every change there is
+  behind a switch, and with the switches off the branch still builds the
+  original byte for byte: `docs/REBUSHIDO.md`, "Writing a change".
 
 ## Before you open a pull request
 
 - `wsl bash tools/build.sh checks` (or `make checks` inside WSL or Linux)
-  must print `OK: all 7 checks pass`. GitHub Actions runs the same checks.
+  must print `OK: all 10 checks pass` on this branch (`OK: all 7 checks
+  pass` on `main`). GitHub Actions runs the same checks.
 - Follow `docs/STYLE.md`; `python tools/format.py <files>` applies the
   layout.
 - One subject per pull request, with a plain description of what changed

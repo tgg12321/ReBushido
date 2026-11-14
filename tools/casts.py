@@ -20,7 +20,9 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
 
-GAME = sorted(glob.glob('src/main/*.c')) + sorted(f for f in glob.glob('include/*.h'))
+import count  # noqa: E402  (its read: C as the matching build compiles it, ReBushido's `#if` blocks out)
+
+GAME = sorted(glob.glob('src/main/*.c')) + count.GAME_HEADERS
 OVL = sorted(glob.glob('movovl/src/*.c')) + sorted(glob.glob('movovl/include/*.h'))
 
 SCALARS = {'s8', 'u8', 's16', 'u16', 's32', 'u32', 's64', 'u64', 'int', 'char', 'short', 'long', 'unsigned',
@@ -41,7 +43,7 @@ def typedefs():
     names = set()
     for f in glob.glob('include/**/*.h', recursive=True) + glob.glob('src/main/**/*.c', recursive=True) + \
             glob.glob('movovl/**/*.[ch]', recursive=True):
-        s = strip(open(f, encoding='utf-8', errors='replace').read())
+        s = strip(count.read(f))
         for m in re.finditer(r'\}\s*(\w+)\s*;', s):
             names.add(m.group(1))
         for m in re.finditer(r'typedef\s+[^;{}]*?\b(\w+)\s*(?:\[[^\]]*\])?;', s):
@@ -99,7 +101,7 @@ def classify(s, m):
 def scan(files):
     out = []
     for f in files:
-        s = strip(open(f, encoding='utf-8', errors='replace').read())
+        s = strip(count.read(f))
         for m in CAST.finditer(s):
             k = classify(s, m)
             if k:
@@ -140,7 +142,7 @@ def main():
     print('%-12s %7d %8d' % ('total', len(res['game']), len(res['overlay'])))
     # the other things section 35 counts
     for who, files in (('game', GAME), ('overlay', OVL)):
-        txt = '\n'.join(strip(open(f, encoding='utf-8', errors='replace').read()) for f in files)
+        txt = '\n'.join(strip(count.read(f)) for f in files)
         print(who, 'unions:', len(re.findall(r'\bunion\b', txt)),
               ' unkNN uses:', len(re.findall(r'(?:->|\.)\s*unk[0-9A-Fa-f]+\b', txt)),
               ' unkNN members declared:', len(re.findall(r'\bunk[0-9A-Fa-f]+\b(?:\[[^\]]*\])*\s*;', txt)),

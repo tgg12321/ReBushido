@@ -64,6 +64,7 @@ WSL with the virtualenv active you can also call `make` directly:
 | `make test` | Host tests of what the game's C computes ([`tests/README.md`](tests/README.md)) |
 | `make checks` | Every check below, in order, with a summary (`tools/checks.sh`) |
 | `make clean` | Delete `build/` (but not `build/play/`, a play test's disc) |
+| `make rebushido`, `rebushido-disc`, `rebushido-test`, `rebushido-modern` | The ReBushido build, into `build/rebushido/`, its disc and its checks ([`docs/REBUSHIDO.md`](docs/REBUSHIDO.md)); they leave the matching build alone |
 
 `tools/build.sh` exits with `make`'s status, so a script can rely on it.
 The overlay builds 43 of Sony's library modules from `src/main/psxsdk/`, so
@@ -71,10 +72,11 @@ a change there has to pass both byte checks.
 
 ## What is checked
 
-GitHub Actions runs seven checks on every push and pull request
+GitHub Actions runs ten checks on every push and pull request
 (`.github/workflows/build.yml`), each a step of its own, and one that fails
-does not stop the rest. All of them locally, in the same order, with a
-summary at the end (about a minute and a half):
+does not stop the rest: `main`'s seven, on the source with every switch of
+ReBushido off, and three for the ReBushido build. All of them locally, in
+the same order, with a summary at the end (about three minutes):
 
 ```bash
 bash tools/build.sh checks        # or `make checks`; from Windows, `wsl bash tools/build.sh checks`
@@ -89,8 +91,11 @@ bash tools/build.sh checks        # or `make checks`; from Windows, `wsl bash to
 | The game | `make check` | the executable's SHA1 is not the original's |
 | The overlay | `make movovl` | the movie overlay's SHA1 is not the original's |
 | Shift | `make shift` | something depends on where code or data is |
+| ReBushido, the build | `make rebushido` | the ReBushido build does not compile, link or fit ([`docs/REBUSHIDO.md`](docs/REBUSHIDO.md)) |
+| ReBushido, tests | `make rebushido-test` | a host test fails with ReBushido's master switch on |
+| ReBushido, modern | `make rebushido-modern` | the host's `gcc` finds something serious and new with the master switch on |
 
-The first four need no build of the game and nothing but `python3` and the
+The first four and the last two need no build of the game and nothing but `python3` and the
 host's `gcc`: no virtualenv, no 32-bit packages (`-m32` is used, but nothing
 is linked against a library). CI has no disc, so there two of the thirteen
 tests are skipped, saying so, and two more do the part that needs none; with
@@ -142,6 +147,9 @@ The objects are linked with `mipsel-linux-gnu-ld -T bb2.ld -T config/named_syms.
 `bb2.ld` lists every object once per section, in the original's order, and is
 maintained by hand: adding, renaming or splitting a source file means editing
 it; no tool writes it, and nothing regenerates the listings in `asm/funcs/`.
+(The ReBushido build links by a script written from `bb2.ld`, and a file of
+`src/rebushido/` needs no line in either: [`docs/REBUSHIDO.md`](docs/REBUSHIDO.md),
+"How it links".)
 `objcopy` takes the image out of the ELF and `tools/make_psexe.py` puts the
 0x800-byte PS-X EXE header in front of it.
 

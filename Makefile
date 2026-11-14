@@ -53,11 +53,28 @@ ASM_DIR      := asm
 SRC_DIR      := src
 BUILD_DIR    := build
 INCLUDE_DIR  := include
+# The play tests' disc images; `clean` leaves it alone.
+PLAY_DIR     := build/play
+
+# -- ReBushido --
+# The modded build (docs/REBUSHIDO.md): the same source with the master
+# switch of include/rebushido.h on, and the files of src/rebushido/, into a
+# build folder of its own, so that it shares no object with the matching
+# build. `make rebushido` and the targets beside it run this Makefile again
+# with REBUSHIDO=1; without it nothing here is any different from before.
+REBUSHIDO    ?= 0
+RB_SRC_DIR   := $(SRC_DIR)/rebushido
+OUT          := $(TARGET)
+ifeq ($(REBUSHIDO),1)
+BUILD_DIR    := build/rebushido
+OUT          := rebushido
+CPP_DEFS     += -DREBUSHIDO=1
+endif
 
 # -- Output --
-ELF          := $(BUILD_DIR)/$(TARGET).elf
-BIN          := $(BUILD_DIR)/$(TARGET).bin
-EXE          := $(BUILD_DIR)/$(TARGET).exe
+ELF          := $(BUILD_DIR)/$(OUT).elf
+BIN          := $(BUILD_DIR)/$(OUT).bin
+EXE          := $(BUILD_DIR)/$(OUT).exe
 
 # -- Collect source files --
 # Top-level assembly: header.s (the PS-X EXE header, linked as .data)
@@ -67,7 +84,8 @@ S_O_FILES    := $(patsubst $(ASM_DIR)/%.s,$(BUILD_DIR)/$(ASM_DIR)/%.o,$(S_FILES)
 # C source files (decompiled functions), found recursively. A TU id is the path
 # under src/ without .c (`main/tex`, `main/psxsdk/libcomb/comb`); its object is
 # build/src/<id>.o, the path bb2.ld links.
-C_FILES      := $(sort $(shell find $(SRC_DIR) -name '*.c'))
+# src/rebushido/ is the ReBushido build's alone.
+C_FILES      := $(sort $(shell find $(SRC_DIR) -name '*.c' $(if $(filter 1,$(REBUSHIDO)),,-not -path '$(RB_SRC_DIR)/*')))
 C_IDS        := $(patsubst $(SRC_DIR)/%.c,%,$(C_FILES))
 C_O_FILES    := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/$(SRC_DIR)/%.o,$(C_FILES))
 
@@ -84,8 +102,16 @@ ASM_FUNC_O_FILES := $(patsubst %,$(BUILD_DIR)/$(ASM_DIR)/funcs/%.o,$(LINKED_ASM_
 ALL_O_FILES  := $(S_O_FILES) $(C_O_FILES) $(ASM_FUNC_O_FILES)
 
 # -- Top-level targets --
-.PHONY: all clean check clean-check shift movovl modern test checks
+.PHONY: all clean check clean-check shift movovl modern test checks \
+	rebushido rebushido-disc rebushido-test rebushido-modern rb-build
 
+ifeq ($(REBUSHIDO),1)
+all: rb-build
+
+# The byte check and the relink are the matching build's.
+check clean-check shift:
+	@echo "make $@ is the matching build's: run it without REBUSHIDO=1"; exit 1
+else
 all: check
 
 # Build and verify match
@@ -97,6 +123,33 @@ check: $(EXE) $(CONFIG_DIR)/$(TARGET).sha1
 clean-check:
 	$(MAKE) clean
 	$(MAKE) check
+endif
+
+# The ReBushido build: compile with the master switch on into
+# build/rebushido/, link, and report the size and the room left; fails if
+# the program does not fit below the fixed buffers (tools/rebushido.py).
+rebushido:
+	$(MAKE) REBUSHIDO=1 rb-build
+
+rb-build: $(EXE)
+	python3 tools/rebushido.py fit $(ELF) $(EXE)
+
+# A disc to play: the retail image, which is only read, with the ReBushido
+# executable in place of the game's (tools/build_disc.py).
+RETAIL_IMAGE ?= Bushido Blade 2 (USA).bin
+rebushido-disc: rebushido
+	@[ -f "$(RETAIL_IMAGE)" ] || { echo "rebushido-disc: no retail image \"$(RETAIL_IMAGE)\" here (your own copy of the disc; RETAIL_IMAGE=... names another)"; exit 1; }
+	python3 tools/build_disc.py --image "$(RETAIL_IMAGE)" --out $(PLAY_DIR)/ReBushido.bin --exe build/rebushido/rebushido.exe
+	@echo "OK: $(PLAY_DIR)/ReBushido.cue"
+
+# The host tests with the master switch on: the game's, and ReBushido's own
+# (tests/rebushido/).
+rebushido-test:
+	python3 tests/run.py --rebushido
+
+# `modern` with the master switch on, src/rebushido/ included.
+rebushido-modern:
+	python3 tools/modern/check.py --check --rebushido
 
 # The movie overlay (disc/STR/MOVOVL.EXE) is a separate program with its own
 # Makefile and SHA1. Not part of `check`.
@@ -106,8 +159,10 @@ movovl:
 
 # Shift test (non-matching): relink the objects with padding into build/shift/
 # and report address assumptions (tools/shift_test.py). Never writes the EXE.
+ifneq ($(REBUSHIDO),1)
 shift: $(ELF)
 	python3 tools/shift_test.py
+endif
 
 # The game's C through the host's modern gcc, for its warnings and its
 # analyser (tools/modern/check.py). Fails on a serious finding that
@@ -124,7 +179,7 @@ test:
 
 # Every check GitHub Actions runs, in its order, with a summary
 # (tools/checks.sh): the counts, the lint, modern, test, the game's bytes,
-# the overlay's, shift.
+# the overlay's, shift; then ReBushido's build, tests and modern.
 checks:
 	bash tools/checks.sh
 
@@ -133,8 +188,24 @@ $(CONFIG_DIR)/$(TARGET).sha1:
 	@echo "62efab4f73f992798c43e8c730aa43baa10bb4fa  $(EXE)" > $@
 
 # -- Link --
-$(ELF): $(ALL_O_FILES) $(TARGET).ld $(CONFIG_DIR)/named_syms.txt
-	$(LD) $(LD_FLAGS) -Map $(BUILD_DIR)/$(TARGET).map -T $(TARGET).ld \
+# The matching build links by bb2.ld. The ReBushido build links by a script
+# tools/rebushido.py writes from bb2.ld and the objects: the same order, and
+# what the objects hold that bb2.ld does not place added at the end of its
+# kind. bb2.ld itself is never changed for ReBushido.
+ifeq ($(REBUSHIDO),1)
+LD_SCRIPT    := $(BUILD_DIR)/$(OUT).ld
+# The list of the objects, written again only when it changes: taking a
+# file out of src/rebushido/ has to make the script, and so the link, again.
+RB_OBJECTS   := $(BUILD_DIR)/objects.txt
+$(shell mkdir -p $(BUILD_DIR); echo "$(ALL_O_FILES)" | cmp -s - $(RB_OBJECTS) || echo "$(ALL_O_FILES)" > $(RB_OBJECTS))
+$(LD_SCRIPT): $(ALL_O_FILES) $(RB_OBJECTS) $(TARGET).ld tools/rebushido.py tools/elf32.py
+	@python3 tools/rebushido.py ld --out $@ $(ALL_O_FILES)
+else
+LD_SCRIPT    := $(TARGET).ld
+endif
+
+$(ELF): $(ALL_O_FILES) $(LD_SCRIPT) $(CONFIG_DIR)/named_syms.txt
+	$(LD) $(LD_FLAGS) -Map $(BUILD_DIR)/$(OUT).map -T $(LD_SCRIPT) \
 		-T $(CONFIG_DIR)/named_syms.txt -o $@
 
 # Extract raw binary from ELF
@@ -194,7 +265,9 @@ NOWARN_FILES := main/psxsdk/libspu/spu
 # Every per-file list names TU ids. An id that is not a TU stops the build: a
 # moved or renamed file must take its flags along, never silently lose them.
 FLAG_LISTS := ASM_FILES PSYQ_LIBRARY_FILES DATA_ONLY_NO_SDATA_FILES EXPAND_LH_FILES NO_SR_FILES NOWARN_FILES
-$(foreach l,$(FLAG_LISTS),$(foreach f,$($(l)),$(if $(filter $(f),$(C_IDS)),,$(error $(l) names '$(f)', which is not a TU (no $(SRC_DIR)/$(f).c)))))
+# (A file of src/rebushido/ is a TU of the ReBushido build only, so the test
+# is that the file is there.)
+$(foreach l,$(FLAG_LISTS),$(foreach f,$($(l)),$(if $(wildcard $(SRC_DIR)/$(f).c),,$(error $(l) names '$(f)', which is not a TU (no $(SRC_DIR)/$(f).c)))))
 
 # Helper: resolve CC/MASPSX flags based on whether file needs GP-relative
 cc_flags_for = $(if $(filter $1,$(PSYQ_LIBRARY_FILES) $(DATA_ONLY_NO_SDATA_FILES) $(ASM_FILES)),$(CC_FLAGS),$(CC_FLAGS_GP))$(if $(filter $1,$(NO_SR_FILES)), -fno-strength-reduce)$(if $(filter $1,$(NOWARN_FILES)), -w, $(WARN_FLAGS))
@@ -208,6 +281,19 @@ PIPELINE_DEPS := Makefile \
 	$(CONFIG_DIR)/expand_lb_funcs.txt $(CONFIG_DIR)/expand_dest_funcs.txt $(CONFIG_DIR)/maspsx_prefill_label_funcs.txt \
 	$(wildcard tools/maspsx/*.py tools/maspsx/maspsx/*.py) \
 	$(shell find $(INCLUDE_DIR) -type f) $(wildcard asm/funcs/*.s) $(shell find $(SRC_DIR) -name '*.h')
+
+# -- ReBushido's version text --
+# src/rebushido/version.c is given the commit it is built from, with -dirty
+# when the tree has changes not committed. The commit is kept in a file that
+# is written again only when it changes, so version.o is rebuilt then and
+# not otherwise.
+ifeq ($(REBUSHIDO),1)
+RB_GIT_HASH  := $(shell h=$$(git rev-parse --short HEAD 2>/dev/null) && { git diff --quiet HEAD 2>/dev/null || h=$$h-dirty; }; echo $${h:-unknown})
+RB_HASH_FILE := $(BUILD_DIR)/git_hash.txt
+$(shell mkdir -p $(BUILD_DIR); [ "$$(cat $(RB_HASH_FILE) 2>/dev/null)" = "$(RB_GIT_HASH)" ] || echo "$(RB_GIT_HASH)" > $(RB_HASH_FILE))
+$(BUILD_DIR)/$(RB_SRC_DIR)/version.o: $(RB_HASH_FILE)
+$(BUILD_DIR)/$(RB_SRC_DIR)/version.o: CPP_DEFS += -DRB_GIT_HASH='"$(RB_GIT_HASH)"'
+endif
 
 # -- Compile C source (decompiled functions) --
 # Pipeline: cpp | cc1 | maspsx | as -> .o, then objcopy (.rodata alignment 4)
@@ -223,6 +309,7 @@ $(BUILD_DIR)/$(ASM_DIR)/%.o: $(ASM_DIR)/%.s $(shell find $(INCLUDE_DIR) -type f)
 
 # -- Clean --
 # build/play/ is kept: it holds a disc image built for a play test
-# (tools/build_disc.py), which takes minutes to make again.
+# (tools/build_disc.py), which takes minutes to make again. The ReBushido
+# build (build/rebushido/) goes with the rest.
 clean:
-	[ ! -d $(BUILD_DIR) ] || find $(BUILD_DIR) -mindepth 1 -maxdepth 1 ! -name play -exec rm -rf {} +
+	[ ! -d build ] || find build -mindepth 1 -maxdepth 1 ! -name play -exec rm -rf {} +

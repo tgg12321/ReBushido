@@ -9,8 +9,14 @@
     python3 tools/modern/check.py --raw FILE   print the compiler's own output for one file, with the
                                                analyser's paths, and write nothing
     --no-analyzer                              leave -fanalyzer out
+    --rebushido                                with ReBushido's master switch on (include/rebushido.h)
+                                               and src/rebushido/*.c as well; the report is
+                                               build/rebushido/modern/report.txt. The baseline is
+                                               the same one, the matching source's: ReBushido's
+                                               code gets no rows in it, so --update is refused
 
-`make modern` and `tools/build.sh modern` run `--check`. Run it in WSL: it
+`make modern` and `tools/build.sh modern` run `--check`; `make
+rebushido-modern` runs `--check --rebushido`. Run it in WSL: it
 needs the host's gcc and nothing else (no 32-bit libc: nothing is linked and
 no host header is read).
 
@@ -65,6 +71,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT_DIR = 'build/modern'
 REPORT = OUT_DIR + '/report.txt'
+REBUSHIDO_REPORT = 'build/rebushido/modern/report.txt'
+REBUSHIDO_DEFS = ['-DREBUSHIDO=1']
 BASELINE = 'tools/modern/baseline.tsv'
 VERDICTS = 'tools/modern/verdicts.tsv'
 SHIM = 'tools/modern/shim.h'
@@ -102,9 +110,12 @@ STYLE_KINDS = {
 }
 
 
-def sources():
+def sources(rebushido=False):
     files = sorted(f for f in os.listdir('src/main') if f.endswith('.c'))
     out = [('src/main/' + f, ['-Iinclude']) for f in files]
+    if rebushido:
+        files = sorted(f for f in os.listdir('src/rebushido') if f.endswith('.c'))
+        out += [('src/rebushido/' + f, ['-Iinclude']) for f in files]
     files = sorted(f for f in os.listdir('movovl/src') if f.endswith('.c'))
     out += [('movovl/src/' + f, ['-Imovovl/include', '-Iinclude']) for f in files]
     return out
@@ -172,7 +183,7 @@ def modern_source(path):
     return '# 1 "%s"\n%s' % (path, text)
 
 
-def compile_one(path, includes, analyzer, plain=True):
+def compile_one(path, includes, analyzer, plain=True, defs=()):
     """The compiler's messages for one file. Two runs: optimised, for the
     warnings that need the optimiser (-Wmaybe-uninitialized, -Warray-bounds)
     and the analyser on what the optimiser left; and, for the analyser
@@ -185,7 +196,7 @@ def compile_one(path, includes, analyzer, plain=True):
     out = ''
     for flags in runs:
         cmd = ['gcc'] + BASE_FLAGS + flags
-        cmd += ['-I' + OUT_DIR + '/include'] + includes + DEFS + ['-']
+        cmd += ['-I' + OUT_DIR + '/include'] + includes + DEFS + list(defs) + ['-']
         if not plain:
             cmd.remove('-fdiagnostics-plain-output')
         env = dict(os.environ, LC_ALL='C')
@@ -286,19 +297,24 @@ def main():
     os.chdir(ROOT)
     args = sys.argv[1:]
     analyzer = '--no-analyzer' not in args
+    rebushido = '--rebushido' in args
+    defs = REBUSHIDO_DEFS if rebushido else []
+    report = REBUSHIDO_REPORT if rebushido else REPORT
+    if rebushido and '--update' in args:
+        sys.exit('check.py: the baseline is the matching source\'s: --update without --rebushido')
     write_headers()
-    srcs = sources()
+    srcs = sources(rebushido)
 
     if '--raw' in args:
         want = args[args.index('--raw') + 1].replace('\\', '/')
         for path, includes in srcs:
             if path == want or os.path.basename(path) == want:
-                sys.stdout.write(compile_one(path, includes, analyzer, plain=False))
+                sys.stdout.write(compile_one(path, includes, analyzer, plain=False, defs=defs))
                 return 0
         sys.exit('check.py: no such file among the game\'s: ' + want)
 
     with concurrent.futures.ThreadPoolExecutor(os.cpu_count() or 4) as pool:
-        outputs = list(pool.map(lambda s: compile_one(s[0], s[1], analyzer), srcs))
+        outputs = list(pool.map(lambda s: compile_one(s[0], s[1], analyzer, defs=defs), srcs))
 
     seen, findings, errors = set(), [], []
     for (path, _), stderr in zip(srcs, outputs):
@@ -352,7 +368,8 @@ def main():
     gone = sorted(key for key, n in baseline.items() if counts.get(key, 0) < n)
 
     version = subprocess.run(['gcc', '--version'], capture_output=True, text=True).stdout.split('\n')[0]
-    lines = ['The game\'s C through a modern compiler (tools/modern/check.py).',
+    lines = ['The game\'s C through a modern compiler (tools/modern/check.py)%s.'
+             % (', with ReBushido\'s master switch on' if rebushido else ''),
              version + (', with -fanalyzer' if analyzer else ', without -fanalyzer'),
              '%d files. %d findings: %d serious, %d style; %d set aside as the tool being wrong.' % (
                  len(srcs), len(findings), sum(1 for f in findings if is_serious(f[3])),
@@ -375,8 +392,8 @@ def main():
         for finding in sorted(set_aside, key=lambda f: (f[3], f[0], f[1])):
             lines.append('%s:%d: %s: [%s] %s   {%s}' % (finding[0], finding[1], finding[2], finding[3],
                                                       finding[4], verdict_of(finding)[1]))
-    os.makedirs(OUT_DIR, exist_ok=True)
-    with open(REPORT, 'w', encoding='utf-8', newline='\n') as f:
+    os.makedirs(os.path.dirname(report), exist_ok=True)
+    with open(report, 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(lines) + '\n')
 
     if '--list' in args:
@@ -400,7 +417,7 @@ def main():
             print('  serious %5d  %s' % (by_kind[kind], kind))
     style = sorted((k for k in by_kind if not is_serious(k)), key=lambda k: (-by_kind[k], k))
     print('  style: ' + ', '.join('%s %d' % (k, by_kind[k]) for k in style))
-    print('Every finding: ' + REPORT)
+    print('Every finding: ' + report)
     for key in sorted(verdicts):
         for text, _, _ in verdicts[key]:
             if key + (text,) not in used:

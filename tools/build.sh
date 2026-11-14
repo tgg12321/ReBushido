@@ -4,6 +4,9 @@
 #   with their own output and exit code
 #   wsl bash tools/build.sh checks                every check CI runs, and a
 #   summary (tools/checks.sh)
+#   wsl bash tools/build.sh rebushido             the ReBushido build, into
+#   build/rebushido/ (docs/REBUSHIDO.md); rebushido-disc, rebushido-test and
+#   rebushido-modern are make's targets too
 # Exits with make's status: a build that fails is not hidden by the filter.
 cd "$(dirname "$0")/.." || exit 1
 if [ "$1" = test ]; then

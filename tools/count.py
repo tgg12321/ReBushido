@@ -11,6 +11,13 @@ checkout's tools/ to count that one). It needs no build. How each thing is count
   areas     game:    src/main/*.c and include/*.h
             SDK:     src/main/psxsdk/ and include/psxsdk/
             overlay: movovl/src, movovl/include, movovl/sdk
+  ReBushido Everything above is counted as the matching build compiles it:
+            what is inside `#if RB_NAME` (or `#if REBUSHIDO`) is left out,
+            and its `#else` kept, as with every switch of
+            include/rebushido.h off. ReBushido's own files
+            (src/rebushido/*.c, include/rebushido.h, include/rb_*.h) are in
+            no area; they and the `#if` blocks are counted apart, at the
+            end.
   FAKE      every `FAKE:` in a comment. Its kind is the row of docs/FAKES.md
             that names it ("Kind A, left", "Kind B, left", "Kind C, left",
             "Kept, ours" for the ones on a goto, "A listing"): the file and
@@ -52,8 +59,12 @@ def files(*patterns):
     return sorted(f.replace('\\', '/') for f in out if '/build/' not in f.replace('\\', '/'))
 
 
+# ReBushido's own files: in no area, counted apart.
+REBUSHIDO_FILES = files('src/rebushido/*.c', 'include/rebushido.h', 'include/rb_*.h')
+GAME_HEADERS = [f for f in files('include/*.h') if f not in REBUSHIDO_FILES]
+
 AREAS = collections.OrderedDict([
-    ('game', files('src/main/*.c', 'include/*.h')),
+    ('game', files('src/main/*.c') + GAME_HEADERS),
     ('SDK', files('src/main/psxsdk/**/*.c', 'src/main/psxsdk/**/*.h', 'include/psxsdk/**/*.h')),
     ('overlay', files('movovl/src/*.c', 'movovl/include/*.h', 'movovl/sdk/**/*.c', 'movovl/sdk/**/*.h')),
 ])
@@ -61,8 +72,82 @@ AREAS = collections.OrderedDict([
 OVERLAY_OWN = files('movovl/src/*.c', 'movovl/include/*.h')
 
 
-def read(f):
+def read_raw(f):
     return open(f, encoding='utf-8', errors='replace').read()
+
+
+def read(f):
+    """A file's text; C as the matching build compiles it (rb_matching)."""
+    src = read_raw(f)
+    return rb_matching(src) if f.endswith(('.c', '.h')) else src
+
+
+# ------------------------------------------------- ReBushido's `#if` blocks
+
+RB_NAME = r'\b(?:REBUSHIDO|RB_[A-Z0-9_]+)\b'
+RB_EXPRESSION = re.compile(r'(?:\s|!|&&|\|\||\(|\)|\b[01]\b|%s)+$' % RB_NAME)
+DIRECTIVE = re.compile(r'[ \t]*#[ \t]*(if|ifdef|ifndef|elif|else|endif)\b(.*)')
+
+
+def rb_value(expression):
+    """What an `#if` of ReBushido's switches comes to with every switch off:
+    True or False; None if it is not made of those switches alone."""
+    expression = re.sub(r'/\*.*?\*/|//.*', '', expression).strip()
+    if not re.search(RB_NAME, expression) or not RB_EXPRESSION.match(expression):
+        return None
+    python = re.sub(RB_NAME, '0', expression).replace('&&', ' and ').replace('||', ' or ').replace('!', ' not ')
+    try:
+        return bool(eval(python, {}))
+    except SyntaxError:
+        return None
+
+
+def rb_lines(src):
+    """For each line of a C file: 'directive' if it is the #if, #elif, #else
+    or #endif of a block that asks ReBushido's switches, 'off' if the
+    matching build does not compile it, else 'on'."""
+    out = []
+    stack = []  # [is ReBushido's, this branch compiled, a branch was compiled]
+    for line in src.split('\n'):
+        m = DIRECTIVE.match(line)
+        kind = 'on' if all(live for rb, live, _ in stack if rb) else 'off'
+        if m:
+            word, rest = m.group(1), m.group(2)
+            if word in ('if', 'ifdef', 'ifndef'):
+                value = rb_value(rest) if word == 'if' else None
+                stack.append([value is not None, bool(value), bool(value)])
+                if value is not None:
+                    kind = 'directive'
+            elif stack and stack[-1][0]:
+                kind = 'directive'
+                if word == 'endif':
+                    stack.pop()
+                else:
+                    top = stack[-1]
+                    top[1] = not top[2] and (word == 'else' or bool(rb_value(rest)))
+                    top[2] = top[2] or top[1]
+            elif stack and word == 'endif':
+                stack.pop()
+        out.append(kind)
+    return out
+
+
+def rb_blank(src, kinds):
+    """The text with the lines of those kinds made empty, the others kept."""
+    return '\n'.join('' if kind in kinds else line
+                     for line, kind in zip(src.split('\n'), rb_lines(src)))
+
+
+def rb_matching(src):
+    """A C file as the matching build compiles it."""
+    return rb_blank(src, ('directive', 'off'))
+
+
+def rb_blocks(f):
+    """How many blocks of a file ask ReBushido's switches."""
+    src = read_raw(f)
+    return sum(1 for line, kind in zip(src.split('\n'), rb_lines(src))
+               if kind == 'directive' and re.match(r'[ \t]*#[ \t]*if\b', line))
 
 
 def strip(src):
@@ -464,7 +549,7 @@ def main():
     print('src/main/*.c: %d (code %d, assembly %d, data %d)' % (
         sum(len(v) for v in gf.values()), len(gf['code']), len(gf['assembly']), len(gf['data'])))
     print('  data: ' + ', '.join(os.path.basename(f) for f in gf['data']))
-    print('include/*.h: %d' % len(files('include/*.h')))
+    print('include/*.h: %d' % len(GAME_HEADERS))
     sdk = files('src/main/psxsdk/*/*.c')
     lib = collections.Counter(f.split('/')[3] for f in sdk)
     print('src/main/psxsdk: %d modules in %d libraries (%s)' % (
@@ -477,7 +562,7 @@ def main():
 
     title('Functions defined in C (found by a pattern; the totals above are by the symbol table)')
     ref = in_table - on_disk
-    for area, fs in (('game', files('src/main/*.c', 'include/*.h')), ('SDK', files('src/main/psxsdk/*/*.c'))):
+    for area, fs in (('game', files('src/main/*.c') + GAME_HEADERS), ('SDK', files('src/main/psxsdk/*/*.c'))):
         defs = [(f, d) for f in fs for d in functions_defined(f)]
         listed = [d for _, d in defs if d[0] in ref]
         print('%-5s %4d in the symbol table (%d `static`, %d defined in the old style, `f(a) int a; {`); '
@@ -517,6 +602,17 @@ def main():
         count_re(AREAS['game'], r'\bvolatile\b'), count_re(sc, r'\bvolatile\b'),
         count_re(AREAS['overlay'], r'\bvolatile\b')))
     print('unions: game %d' % count_re(AREAS['game'], r'\bunion\b'))
+
+    title('ReBushido (in none of the counts above)')
+    print('its own files: %d (%s)' % (len(REBUSHIDO_FILES), ', '.join(REBUSHIDO_FILES)))
+    switches = re.findall(r'^#define (RB_\w+) \(REBUSHIDO && [01]\)', read_raw('include/rebushido.h'), re.M) \
+        if os.path.exists('include/rebushido.h') else []
+    print('switches in include/rebushido.h: %d%s' % (len(switches), ' (%s)' % ', '.join(switches) if switches else ''))
+    blocks = [(f, rb_blocks(f)) for a in AREAS for f in AREAS[a]]
+    blocks = [(f, n) for f, n in blocks if n]
+    print('`#if` blocks that ask a switch: %d in %d files%s' % (
+        sum(n for _, n in blocks), len(blocks),
+        ' (%s)' % ', '.join('%s %d' % (base(f), n) for f, n in blocks) if blocks else ''))
 
     if problems:
         title('The source and the documents disagree')

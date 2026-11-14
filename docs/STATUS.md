@@ -19,7 +19,8 @@
 - **After the passes** the documents and tools that only served the work (the plan with each step's notes,
   the listings of the functions that are C, the emulator scripts) were taken out. They are
   kept in a private archive ([`HISTORY.md`](HISTORY.md)).
-- **Checks:** seven, run by GitHub Actions on every push and by `wsl bash tools/build.sh checks`
+- **Checks:** seven, and on the `rebushido` branch three more for the ReBushido build
+  ([`REBUSHIDO.md`](REBUSHIDO.md)), run by GitHub Actions on every push and by `wsl bash tools/build.sh checks`
   locally ([`BUILD.md`](../BUILD.md), "What is checked"). What they show and what they do not is
   under ["What was tested and what was not"](#what-was-tested-and-what-was-not).
 - **Names:** every name of the game's is ours; none of the original's was recovered. Many are a

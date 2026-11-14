@@ -28,6 +28,27 @@ seconds, and nothing else: no build of the game, no 32-bit C library, no
 emulator. The tests that read the disc are skipped, saying so, where it is
 not there.
 
+## ReBushido
+
+On the `rebushido` branch the same tests run a second time with ReBushido's
+master switch on (`include/rebushido.h`), together with ReBushido's own:
+
+```
+make rebushido-test                                    # in WSL or on Linux
+python3 tests/run.py --rebushido -v rebushido/settings # one, showing what it printed
+```
+
+- A test of ReBushido's own is `tests/rebushido/NAME.c` (and `NAME.py`),
+  named `rebushido/NAME`, made like any other; it includes the file of
+  `src/rebushido/` it tests. It runs only with `--rebushido`.
+  `rebushido/settings` checks that every setting starts as the original's
+  behaviour and goes back to it.
+- The game's tests are linked with `src/rebushido/settings.c` in this run,
+  the settings as they are when the game starts. A file of the game's whose
+  change asks a setting therefore still has to compute what the original
+  does: the same answers as in the first run.
+- The programs are in `build/rebushido/tests/`.
+
 ## The tests
 
 | Test | What it runs | Compared with |
