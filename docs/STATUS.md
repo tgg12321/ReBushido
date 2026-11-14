@@ -1,6 +1,6 @@
 # Project status
 
-- **Build:** `main` reproduces the original executable (SHA1
+- **Build:** `decomp` reproduces the original executable (SHA1
   `62efab4f73f992798c43e8c730aa43baa10bb4fa`): `wsl bash tools/build.sh check`.
   The movie overlay, a separate program, is rebuilt too (`disc/STR/MOVOVL.EXE`, SHA1
   `a1307dbebefca0b057e02509207d00f6225e13e4`): `wsl bash tools/build.sh movovl`.

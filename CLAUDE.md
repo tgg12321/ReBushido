@@ -17,11 +17,11 @@ matches but is probably not what the authors wrote, detailed in
 "Open questions". How the project got here:
 [docs/HISTORY.md](docs/HISTORY.md).
 
-`main` is the byte-matching decompilation and stays that. The modded line,
-ReBushido, lives on the branch `rebushido`; no bug fix or behaviour change
-goes on `main`.
+`decomp` is the byte-matching decompilation and stays that. The modded line,
+ReBushido, lives on the branch `main`; no bug fix or behaviour change
+goes on `decomp`.
 
-## Working on `main`
+## Working on `decomp`
 
 - The first gate is the SHA1: `wsl bash tools/build.sh check`, and
   `wsl bash tools/build.sh movovl` as well when `src/main/psxsdk/` or
@@ -33,7 +33,7 @@ goes on `main`.
 - Identifiers are English; proper nouns from the game stay.
 - Work one subsystem at a time; the helpers are in `tools/`
   ([tools/README.md](tools/README.md)).
-- Commit on `main` when the build matches. Plain commit messages; no special
+- Commit on `decomp` when the build matches. Plain commit messages; no special
   conventions.
 
 ## Standing warnings

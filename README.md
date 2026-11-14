@@ -1,12 +1,14 @@
-# ReBushido
+# Bushido Blade 2: the decompilation
 
 A decompilation of *Bushido Blade 2* (PlayStation, 1998, SLUS-00663), and the
 base for ReBushido, a modded version of the game.
 
-- **`main`** is the decompilation. It builds the original executable byte for
-  byte (`SLUS_006.63`, SHA1 `62efab4f73f992798c43e8c730aa43baa10bb4fa`) and
-  nothing on it changes how the game behaves.
-- **`rebushido`** is the mod: bug fixes and enhancements. Early days.
+- **`decomp`** (this branch) is the decompilation. It builds the original
+  executable byte for byte (`SLUS_006.63`, SHA1
+  `62efab4f73f992798c43e8c730aa43baa10bb4fa`) and nothing on it changes how
+  the game behaves.
+- **[`main`](../../tree/main)** is ReBushido, the mod: bug fixes and
+  enhancements. Early days.
 
 No game files are in this repository. To play anything built from it you need
 your own copy of the North American disc.
@@ -16,7 +18,7 @@ your own copy of the North American disc.
 All 1,484 functions are decompiled and the build matches. The source has been
 reorganised and renamed to be readable, but the names are ours, not the
 original developers', and some are guesses. About seventy probable bugs in the
-original are documented and left as they are on `main`.
+original are documented and left as they are on `decomp`.
 
 [`docs/STATUS.md`](docs/STATUS.md) has the details, including what was tested
 and what was not.

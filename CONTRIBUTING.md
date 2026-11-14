@@ -6,13 +6,13 @@ work.
 
 ## The two lines of work
 
-- **`main` is the decompilation.** It must always build the original
+- **`decomp` is the decompilation.** It must always build the original
   executable byte for byte. A change here is a better name, a clearer
   comment, a truer type, a correction to the documentation, or C that
   matches where a stand-in was. It never changes what the program does:
   the original's bugs stay, marked in comments and listed in
   `docs/STATUS.md`.
-- **`rebushido` is the mod.** Bug fixes, enhancements and new features go
+- **`main` is the mod.** Bug fixes, enhancements and new features go
   there. It does not have to match the original.
 
 ## Before you open a pull request

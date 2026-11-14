@@ -11,8 +11,8 @@ decompiled and the build reproduces the original. A single-person project. State
 `docs/STATUS.md`; how it got here: `docs/HISTORY.md`; disc layout, asset formats and inspectors:
 `docs/formats/`.
 
-`main` is the canonical byte-matching source: no bug fix, mod or behaviour change goes here. A
-modded line, ReBushido, lives on the branch `rebushido`.
+`decomp` is the canonical byte-matching source: no bug fix, mod or behaviour change goes here. A
+modded line, ReBushido, lives on the branch `main`, the repository's default.
 
 ## Toolchain (confirmed from binary analysis)
 
