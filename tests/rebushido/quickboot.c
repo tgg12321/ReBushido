@@ -1,4 +1,5 @@
-/* Quick boot (quickboot.c): asks for the fight the build chose and starts its mode. */
+/* Quick boot (quickboot.c): asks for the fight the build chose and starts its
+ * mode. */
 /* What `make quickboot` gives the file, here with a fight of the test's. */
 #define RB_QUICK_BOOT_BUILD 1
 #define RB_QB_MODE FIGHT_MODE_VSCPU

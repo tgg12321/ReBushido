@@ -1,4 +1,5 @@
-/* Where the play tests read the fighters and the fight's settings (tests/play/state.toml). */
+/* Where the play tests read the fighters and the fight's settings
+ * (tests/play/state.toml). */
 #include "common.h"
 #include "bb2.h"
 #include "runtime/runtime.h"

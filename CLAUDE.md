@@ -33,6 +33,11 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   run).
 - `wsl bash tools/build.sh rebushido` builds it into `build/rebushido/`.
   Never edit `bb2.ld` for ReBushido.
+- `wsl bash tools/build.sh playtest` runs the play tests in an emulator
+  with no window (`tests/play/README.md`); run it before pushing a change
+  to the game. It is not one of the ten checks.
+- To try a change quickly: `wsl bash tools/build.sh quickboot-disc QB_...`
+  (`docs/REBUSHIDO.md`, "Booting straight into a fight").
 - Merge `decomp` into `main`, never the reverse.
 
 ## Working on `decomp`
@@ -54,7 +59,8 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 - `bb2.ld` is hand-maintained and all data is defined in C: nothing
   regenerates the linker script or the listings.
-- The emulator runs only for automated tests, with no window, on the
-  owner's machine; it and the disc images are never committed.
+- The emulator runs only through `tools/playtest.py`, which runs it with
+  no window, one at a time, with a time limit, on the owner's machine; it
+  and the disc images are never committed.
 - Build files must be LF (see AGENTS.md).
 - Scratch goes in `tmp/<task>/` and is removed when the task is done.

@@ -62,7 +62,11 @@ ReBushido: `make rebushido` (`wsl bash tools/build.sh rebushido`) builds with th
 into `build/rebushido/`, including `src/rebushido/`, linked by a script that `tools/rebushido.py`
 writes from `bb2.ld` each time; `make rebushido-disc` makes a disc image in `build/play/` from the
 retail image at the repository root; `make rebushido-test` and `make rebushido-modern` are its
-tests. Never edit `bb2.ld` for ReBushido. `src/rebushido/` holds ReBushido's own files (names
+tests. `make quickboot` / `quickboot-disc` build a developer's ReBushido that boots into a chosen
+fight (`build/quickboot/`); `make playtest` runs the scripted play tests locally (it needs the
+retail image and PCSX-Redux: `REBUSHIDO_EMULATOR`, `REBUSHIDO_RETAIL`). A new ReBushido variable
+of eight bytes or fewer is small data; the generated link script keeps each kind's end on a word.
+Never edit `bb2.ld` for ReBushido. `src/rebushido/` holds ReBushido's own files (names
 `rb_*`, `g_rb_*`, `Rb*`; headers `include/rebushido.h` for the switches and `include/rb_*.h`).
 
 - **`bb2.ld` is hand-maintained**, and all data is defined in C. No tool writes the linker script
