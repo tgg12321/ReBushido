@@ -17,11 +17,14 @@ input = [
 # ---- the first boot, with a new card ----
 
 # The page is up, with the original's settings and a card it can save to.
+# (The picture on show at this blank is still the one drawn while the card
+# was read; the next checkpoint has the page as the player gets it.)
 [[checkpoint]]
 name = "page"
 runs = [1]
 when = "rb_page == RB_PAGE_UP"
 within = 2000
+shot = false
 expect = [
     "rb_bugfixes == 0",
     "rb_graphics == RB_GRAPHICS_ORIGINAL",
@@ -31,9 +34,14 @@ expect = [
 ]
 
 [[checkpoint]]
+name = "page_shown"
+runs = [1]
+after = 10
+
+[[checkpoint]]
 name = "bugfixes_on"
 runs = [1]
-after = 45
+after = 35
 expect = ["rb_bugfixes == 1", "rb_graphics == RB_GRAPHICS_ORIGINAL"]
 
 [[checkpoint]]
@@ -63,12 +71,18 @@ name = "page_again"
 runs = [2]
 when = "rb_page == RB_PAGE_UP"
 within = 2000
+shot = false
 expect = [
     "rb_save == RB_SAVE_LOADED",
     "rb_bugfixes == 0",
     "rb_graphics == RB_GRAPHICS_ENHANCED",
     "rb_card == RB_CARD_READY",
 ]
+
+[[checkpoint]]
+name = "page_again_shown"
+runs = [2]
+after = 10
 
 # Nothing was changed, so nothing is written.
 [[checkpoint]]

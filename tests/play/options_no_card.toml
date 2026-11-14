@@ -15,6 +15,7 @@ input = [
 name = "page"
 when = "rb_page == RB_PAGE_UP"
 within = 2000
+shot = false
 expect = ["rb_card == RB_CARD_NONE", "rb_save == RB_SAVE_NOTHING", "rb_bugfixes == 0"]
 
 # A second later it still says there is no card.
