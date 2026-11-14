@@ -1,0 +1,32 @@
+glabel __main
+    /* 73F94 80083794 0A80083C */  lui        $t0, %hi(__initialised)
+    /* 73F98 80083798 6826088D */  lw         $t0, %lo(__initialised)($t0)
+    /* 73F9C 8008379C F0FFBD27 */  addiu      $sp, $sp, -0x10
+    /* 73FA0 800837A0 0400B0AF */  sw         $s0, 0x4($sp)
+    /* 73FA4 800837A4 0800B1AF */  sw         $s1, 0x8($sp)
+    /* 73FA8 800837A8 0C00BFAF */  sw         $ra, 0xC($sp)
+    /* 73FAC 800837AC 0F000015 */  bnez       $t0, .L800837EC
+    /* 73FB0 800837B0 01000834 */   ori       $t0, $zero, 0x1
+    /* 73FB4 800837B4 0A80013C */  lui        $at, %hi(__initialised)
+    /* 73FB8 800837B8 682628AC */  sw         $t0, %lo(__initialised)($at)
+    /* 73FBC 800837BC 0980103C */  lui        $s0, %hi(g_sys_data_start)
+    /* 73FC0 800837C0 70D01026 */  addiu      $s0, $s0, %lo(g_sys_data_start)
+    /* 73FC4 800837C4 0000113C */  lui        $s1, (0x0 >> 16)
+    /* 73FC8 800837C8 00003126 */  addiu      $s1, $s1, 0x0
+    /* 73FCC 800837CC 07002012 */  beqz       $s1, .L800837EC
+    /* 73FD0 800837D0 00000000 */   nop
+  .L800837D4:
+    /* 73FD4 800837D4 0000088E */  lw         $t0, 0x0($s0)
+    /* 73FD8 800837D8 04001026 */  addiu      $s0, $s0, 0x4
+    /* 73FDC 800837DC 09F80001 */  jalr       $t0
+    /* 73FE0 800837E0 FFFF3126 */   addiu     $s1, $s1, -0x1
+    /* 73FE4 800837E4 FBFF2016 */  bnez       $s1, .L800837D4
+    /* 73FE8 800837E8 00000000 */   nop
+  .L800837EC:
+    /* 73FEC 800837EC 0C00BF8F */  lw         $ra, 0xC($sp)
+    /* 73FF0 800837F0 0800B18F */  lw         $s1, 0x8($sp)
+    /* 73FF4 800837F4 0400B08F */  lw         $s0, 0x4($sp)
+    /* 73FF8 800837F8 1000BD27 */  addiu      $sp, $sp, 0x10
+    /* 73FFC 800837FC 0800E003 */  jr         $ra
+    /* 74000 80083800 00000000 */   nop
+endlabel __main

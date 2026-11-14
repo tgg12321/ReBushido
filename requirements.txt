@@ -1,0 +1,9 @@
+# Python packages for the tools. The build itself needs none: maspsx
+# (tools/maspsx/) and tools/make_psexe.py use only the standard library.
+
+# tools/format.py. Pinned: another version formats differently, and format.py
+# refuses a mismatch.
+clang-format==18.1.8
+
+# tools/repack_tim.py and tools/inspect_tim.py --png.
+Pillow

@@ -1,0 +1,51 @@
+# What was decided about a finding of tools/modern/check.py that was read.
+# kind, file, function, a piece of the message (* for any), verdict, reason; tabs between.
+# tool: the compiler is wrong (set aside, not counted). original: the original's bug or
+# oddity, kept (docs/STATUS.md lists it). ours: how the source has to be for the bytes.
+excess-elements	src/main/hud.c	-	*	tool	GCC 2.7.2 lays out the cells given to a sheet's `cells[0]` after it; a modern gcc drops them
+maybe-uninitialized	src/main/cpu.c	cpu_BuildPad	opponent_hit_	tool	set and read under the same test of CPU_UNDER_ATTACK, which nothing changes between
+maybe-uninitialized	src/main/fighter.c	fight_FindNearestStartPair	best	tool	the first pair is always nearer than the 0x7FFFFFFF it starts from
+analyzer-use-of-uninitialized-value	src/main/fighter.c	fight_FindNearestStartPair	best	tool	the first pair is always nearer than the 0x7FFFFFFF it starts from
+maybe-uninitialized	src/main/fighter.c	fighter_Update	buttons	tool	the switch's four cases are the four values of MOVE_COMMAND_WORD
+analyzer-use-of-uninitialized-value	src/main/fighter.c	fighter_Update	buttons	tool	the switch's four cases are the four values of MOVE_COMMAND_WORD
+maybe-uninitialized	src/main/fighter.c	fight_UpdateLock	flash	tool	its one caller calls it only when the first fighter's move is one of the seven kinds of the switch (MOVE_IS_LOCK)
+analyzer-use-of-uninitialized-value	src/main/fighter.c	fight_UpdateLock	flash	tool	its one caller calls it only when the first fighter's move is one of the seven kinds of the switch (MOVE_IS_LOCK)
+maybe-uninitialized	src/main/fighter_hit.c	fight_TestBladesOnBodies	near_end	tool	a sweep after the first is there only for a live sub-weapon or a pole arm, the two cases that set it
+maybe-uninitialized	src/main/fighter_hit.c	fight_TestBladesOnBodies	far_end	tool	as near_end
+maybe-uninitialized	src/main/fighter_hit.c	fight_TestBladesOnBodies	blade	tool	as near_end; after the sweeps it is read only for a hit that was not a shot, which a sweep made
+maybe-uninitialized	src/main/fighter_hit.c	fighter_TestBodyInSweep	test_cores	tool	as near_end of fight_TestBladesOnBodies, which passes it
+maybe-uninitialized	src/main/fighter_hit.c	fight_TestBladesOnBodies	index	tool	it is read only when a body point was hit, and the nearest of those is always found
+maybe-uninitialized	src/main/menu_pages.c	menu_AssignButton	button	tool	its one caller calls it only when one of the four buttons was pressed
+analyzer-use-of-uninitialized-value	src/main/menu_pages.c	menu_AssignButton	button	tool	its one caller calls it only when one of the four buttons was pressed
+maybe-uninitialized	src/main/menu_run.c	menu_RunOptions	result	tool	g_menu_options_step is only ever one of the six steps of the switch
+analyzer-use-of-uninitialized-value	src/main/menu_run.c	menu_RunOptions	result	tool	g_menu_options_step is only ever one of the six steps of the switch
+maybe-uninitialized	src/main/model_face.c	model_SetFace	parts	tool	a face is 0 to 5 or MODEL_FACE_RESTORE: the fighters set two of them, a replay keeps what was set
+analyzer-use-of-uninitialized-value	src/main/model_face.c	model_SetFace	parts	tool	a face is 0 to 5 or MODEL_FACE_RESTORE: the fighters set two of them, a replay keeps what was set
+maybe-uninitialized	src/main/motion_decode.c	motion_DecodeFrame	change	tool	a code is two bits of the stream: the four values handled
+analyzer-use-of-uninitialized-value	src/main/motion_decode.c	motion_DecodeFrame	change	tool	a code is two bits of the stream: the four values handled
+maybe-uninitialized	src/main/resource.c	resource_DropStageAreas	cells	tool	g_resource_stage_has_areas is set only for the three stages of the switch
+analyzer-use-of-uninitialized-value	src/main/resource.c	resource_DropStageAreas	cells	tool	g_resource_stage_has_areas is set only for the three stages of the switch
+analyzer-use-of-uninitialized-value	src/main/eff.c	eff_SpawnParticles	angle_mask	tool	every caller's kind is under PARTICLES_END
+analyzer-use-of-uninitialized-value	src/main/object.c	object_HitFighters	core_hit	tool	set in the loop whenever `hit` is, and read only if `hit` is
+analyzer-out-of-bounds	src/main/font.c	font_Printf	*	tool	va_arg steps past the last named parameter, which is what it is for
+analyzer-out-of-bounds	src/main/menu_pages.c	menu_StepNudge	*	tool	the loop goes round twice, over steps[0] and steps[1]; the analyser takes it round a third time
+return-type	src/main/fighter_hit.c	fighter_TakeHit	*	tool	every body point has a case, and every case returns
+analyzer-out-of-bounds	src/main/render.c	reloc_KeepListedEntries	*	tool	as font_Printf: va_arg
+analyzer-out-of-bounds	src/main/snd.c	snd_LoadStageVabs	*	tool	the loop goes round two or three times, over the three entries; the analyser takes it round a fourth
+analyzer-use-of-uninitialized-value	src/main/math.c	math_HsvToRgb	*	tool	a hue is 0 to ONE and ONE is made 0: the six sextants of the switch (nothing calls the function)
+maybe-uninitialized	src/main/cpu.c	cpu_Decide	work3	original	mirroring an opponent that neither walks nor steps, the footwork goes by whatever the variable last held (STATUS.md)
+analyzer-out-of-bounds	src/main/object.c	object_Update	*	original	an object chanbara has just let go (kind -1) is still looked up in the table of kinds (STATUS.md)
+uninitialized	src/main/main.c	main	skipped	original	the first frame tells pad_Update of a skipped frame nothing has set (STATUS.md)
+uninitialized	src/main/main.c	main	frame_db	original	passed to disp_ShowBootImage, which uses only its first argument (STATUS.md)
+analyzer-use-of-uninitialized-value	src/main/main.c	main	frame_db	original	passed to disp_ShowBootImage, which uses only its first argument (STATUS.md)
+uninitialized	src/main/main.c	main	index	original	as frame_db
+analyzer-use-of-uninitialized-value	src/main/main.c	main	index	original	as frame_db
+function-called	src/main/select.c	sprite_Draw	*	original	font_Printf is called with the text alone, through a cast: one argument short
+array-bounds	src/main/fight.c	fight_UpdateMode	*	ours	the two sides' points are two variables side by side, read as an array; one array would be reached through $gp (STYLE.md, Structure)
+analyzer-out-of-bounds	src/main/fight.c	fight_UpdateMode	*	ours	the two sides' points are two variables side by side, read as an array; one array would be reached through $gp (STYLE.md, Structure)
+array-bounds	src/main/fighter_hit.c	fighter_TakeHit	*	ours	the blow's x, y and z are three variables side by side, read as one vector, for the same reason (fight.h)
+return-type	src/main/snd.c	snd_Play	*	ours	declared to return a value and returns none, as the bytes need (snd.h); no caller uses one
+return-type	src/main/fighter_hit.c	fighter_TryDropSecondSword	*	ours	the same (fighter.h); no caller uses one
+return-type	src/main/eff.c	eff_SetUpParticles	*	ours	the same; no caller uses one
+function-called	src/main/hud.c	hud_DrawBestTimes	*	ours	a FAKE note: AddPrim called as if it were undeclared, for the bytes
+shadow	include/math.h	hit_FrameTriangle	*	ours	MATH_SQRT's own `lz` inside a function that has one for the same thing; neither is read for the other

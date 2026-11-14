@@ -1,0 +1,5 @@
+/* LIBSND UT_ROFF: SsUtReverbOff. */
+#include "common.h"
+#include "libsnd_i.h"
+
+void SsUtReverbOff(void) { SpuSetReverb(0); }

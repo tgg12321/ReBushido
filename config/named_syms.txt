@@ -1,0 +1,5 @@
+/* Addresses the linker is told, for the names in the assembly listings
+ * (asm/funcs) that no object defines. One line per name, by address. */
+D_1F800020 = 0x1F800020; /* scratchpad: render_DrawStageTiles keeps its work here */
+D_1F800110 = 0x1F800110;
+D_80000004 = 0x80000004; /* not an address: __SN_ENTRY_POINT takes its halves, 0x8000 and 4, as constants */

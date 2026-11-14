@@ -1,0 +1,4 @@
+# Functions whose `lw $dest, sym($src)` the original assembler expanded through
+# $dest itself, not $at. One name per line. Only libcomb's _dws does; why that
+# one module differs is not known (an older assembler built it, most likely).
+_dws

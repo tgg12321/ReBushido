@@ -1,0 +1,60 @@
+# tools/
+
+What each thing here is for. Unless it says otherwise a script runs from the
+repository root; the ones that read the build's output run inside WSL after a
+build.
+
+## Building
+
+| | |
+|---|---|
+| `setup_wsl.sh` | One-time set-up on Ubuntu: packages, the Python virtualenv, the compiler |
+| `build_cc1.sh` | Builds the compiler, GCC 2.7.2's `cc1`, into `gcc-2.7.2/` ([`docs/COMPILER.md`](../docs/COMPILER.md)) |
+| `cc1-reorg-negate-rtx-decl.patch` | The one change made to the compiler's source: a missing declaration that crashes it on a 64-bit host |
+| `build.sh` | `bash tools/build.sh [check\|clean-check\|movovl\|shift\|modern]`: activates the virtualenv and runs `make`, hiding the assembler's noise and exiting with `make`'s status; `bash tools/build.sh test` runs the tests |
+| `checks.sh` | `make checks` (`bash tools/build.sh checks`): every check GitHub Actions runs, in its order (the counts, the lint, `modern`, `test`, the game's bytes, the overlay's, `shift`), each one's output in `build/checks/<name>.log`, and a summary; exit 1 if any failed. The list is the workflow's: change both together |
+| `maspsx/` | The stand-in for Sony's assembler ASPSX 2.34: a modified copy of [mkst/maspsx](https://github.com/mkst/maspsx) |
+| `make_psexe.py`, `elf32.py` | Put the PS-X EXE header in front of the linked image; the small ELF reader it uses |
+| `gcc-2.7.2/` | The compiler's source and binary (not in git; made by `build_cc1.sh`) |
+
+## Checking the source
+
+| | |
+|---|---|
+| `count.py` | Counts what `docs/STATUS.md` reports: functions in C and in assembly, listings, `FAKE` notes by kind, `goto`s by verdict, casts, the linker scripts' lines and gaps, files, `unkNN` and `D_` names. It checks every `FAKE` note and `goto` of the source against the tables of `docs/FAKES.md`; `--check` fails if they disagree (a gate), `--notes` lists each note with its kind. Needs no build |
+| `casts.py` | Counts the casts of the game's files and the overlay's own, by kind; `count.py` runs it |
+| `lint.py` | Counts the checklist of `docs/STYLE.md` in the game's own files, per file and in total: contentless names, bare numbers, `extern` and prototypes in `.c` files, declarations in the wrong header, `unkNN`, missing comments and the rest (its docstring lists them). `--file` lists a file's findings, `--list <check>` one check's; `--check` fails if a count is over `lint_baseline.tsv` (a gate), `--update` rewrites that. Needs no build |
+| `shift_test.py` | `make shift`: relinks with padding, fails if anything depends on where code or data is, and reports the room left below the fixed buffers |
+| `modern/check.py` | `make modern`: gives the game's C (`src/main/*.c`, `movovl/src/*.c`) to the host's modern `gcc` as 32-bit code, with `-Wall -Wextra`, more warnings and `-fanalyzer`, only for what it says: nothing it makes is used. `modern/shim.h` and the headers it rewrites into `build/modern/include/` stand in for what only the old compiler or the PlayStation has (assembly functions, GTE macros, a cast that is assigned to). Writes `build/modern/report.txt`; `--check` fails on a finding of a serious kind (something read before it is set, an index past an array, a wrong format, a missing return) that `modern/baseline.tsv` does not have, `--update` rewrites that, `--raw <file>` shows the compiler's own text. `modern/verdicts.tsv` holds what was decided about each finding read: the tool is wrong, the original's bug, or how the bytes need it. Needs WSL's `gcc`, no build |
+| `../tests/run.py` | `make test` (`bash tools/build.sh test [-v] [name...]`): builds the game's pure functions for the host, from the game's own `.c` files, and compares what they compute with real maths, hand-made cases and the disc's data; a line a test, exit 1 if one fails. The tests, how to add one and what they stand on: [`tests/README.md`](../tests/README.md). Needs WSL's `gcc` and `python3`, no build; the disc's tests are skipped without the disc |
+
+## Working on the source
+
+| | |
+|---|---|
+| `format.py` | `python tools/format.py <files>`: clang-format with the repository's `.clang-format`; `--check --all` says whether every C file is as the formatter leaves it |
+| `normalize_lf.py` | Makes a file's line endings LF |
+| `rename.py` | Whole-word rename, from a map file (`old new` a line), across everything the build reads; renames a function's listing in `asm/funcs/` too |
+| `objdiff.py` | Per-function comparison of any two object files: which functions changed, and how ([`docs/MATCHING.md`](../docs/MATCHING.md), "The loop") |
+| `listings.py` | Checks the names in `asm/funcs/` against the build; `--write <function>...` writes the disassembly of any function of the build into `build/reference/` |
+| `symbol_addrs.py` | Writes `config/symbol_addrs.txt`, every symbol and its address with the functions marked, from the built ELF; `--check` says whether it is current |
+
+## The disc and its files
+
+Formats and usage: [`docs/formats/`](../docs/formats/README.md). These need
+your own copy of the disc.
+
+| | |
+|---|---|
+| `extract_iso.py` | Extracts the files of a disc image to `disc/` |
+| `build_disc.py` | Builds a disc image from the original plus a rebuilt executable and replaced files |
+| `unpack_all.py` | An inventory of every asset file under `disc/` |
+| `inspect_ndata.py`, `repack_ndata.py` | The NDATA archive (models, stages, weapons, cutscenes) |
+| `inspect_bbm.py`, `inspect_windat.py` | Motion files and the win-pose table |
+| `inspect_stage.py`, `repack_stage.py` | `STAGE*.BIN` and the other container files |
+| `inspect_bnk.py`, `repack_bnk.py`, `repack_vab.py` | The `.BNK` texture blocks and the `.SE` sound banks |
+| `inspect_tim.py`, `repack_tim.py` | TIM pictures, to and from PNG |
+| `inspect_str.py`, `inspect_movovl.py` | The opening movie's stream and the movie overlay's executable |
+
+Each `repack_*` has a `--roundtrip` mode that unpacks and repacks the disc's
+own files and checks the result is identical.

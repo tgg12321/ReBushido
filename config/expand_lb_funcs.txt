@@ -1,0 +1,3 @@
+# Functions whose `lb` the original assembler wrote as lbu, sll, sra. One name
+# per line. Only object_InitSubWeapons has it; the rule behind it is not known.
+object_InitSubWeapons

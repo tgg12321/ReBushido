@@ -1,0 +1,39 @@
+ReBushido
+=========
+
+What the licence covers
+-----------------------
+The file LICENSE (GNU Affero General Public License, version 3 or later)
+covers the work made for this project: the tools, the tests, the build
+files, the documentation, the names and comments in the source, and every
+change made on the "rebushido" branch.
+
+What it does not cover
+----------------------
+Bushido Blade 2 is the property of its rights holders (Square / Lightweight,
+1998). The source in this repository is a reconstruction of that game's
+program, written so that it compiles to the same bytes; the program's
+behaviour and its data remain theirs. This repository contains none of the
+game's assets (models, textures, sound, video, the disc image). To build a
+playable disc you need your own copy of the game.
+
+The PlayStation library code under src/main/psxsdk/, include/psxsdk/ and
+movovl/sdk/ is a reconstruction of Sony's PsyQ libraries, which remain
+Sony's.
+
+This project is not affiliated with or endorsed by Square Enix, Lightweight
+or Sony Interactive Entertainment.
+
+Credits
+-------
+sotn-decomp (https://github.com/Xeeynamo/sotn-decomp), licensed AGPL-3.0
+with some files MIT: the overlay's reconstructions of Sony's libcd and
+libpress modules (movovl/sdk/) were written from this game's own listings
+with sotn-decomp's files open as a reference, and have the same shapes
+where the compiled code is the same.
+
+maspsx (https://github.com/mkst/maspsx), MIT: included under tools/maspsx/
+with its own licence file.
+
+decompals/mips-gcc-2.7.2: the compiler the build uses, built by
+tools/build_cc1.sh; not included here.

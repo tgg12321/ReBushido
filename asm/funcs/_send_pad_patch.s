@@ -1,0 +1,10 @@
+glabel _send_pad_patch
+    /* 698A4 800790A4 24105500 */  and        $v0, $v0, $s5
+    /* 698A8 800790A8 00000000 */  nop
+    /* 698AC 800790AC 00000000 */  nop
+    /* 698B0 800790B0 00000000 */  nop
+endlabel _send_pad_patch
+dlabel D_800790B4
+    /* 698B4 800790B4 00000000 */  nop
+    /* 698B8 800790B8 00000000 */  nop
+    /* 698BC 800790BC 00000000 */  nop

@@ -1,0 +1,33 @@
+# Build output
+build/
+
+# The disc image and everything taken from it (copyrighted game data)
+disc/
+*.bin
+*.cue
+*.iso
+
+# The compiler, built by tools/build_cc1.sh, and Sony's own (proprietary;
+# comparison only, never a build path: docs/COMPILER.md)
+tools/gcc-2.7.2/
+tools/cc1psx.exe
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Scratch
+tmp/
+*.log
+
+# Claude Code: only the shared settings are tracked
+.claude/*
+!.claude/settings.json
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*~
+*.lnk

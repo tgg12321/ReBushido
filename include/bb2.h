@@ -1,0 +1,67 @@
+#ifndef BB2_H
+#define BB2_H
+
+/* Everything a file of the game's code (src/main/) may use: Sony's libraries
+ * and each subsystem's header. Nothing is declared here. */
+
+#include "common.h"
+#include <psxsdk/kernel.h>
+#include <psxsdk/libapi.h>
+#include <psxsdk/libc.h>
+#include <psxsdk/libcd.h>
+#include <psxsdk/libcomb.h>
+#include <psxsdk/libetc.h>
+#include <psxsdk/libgpu.h>
+#include <psxsdk/libgte.h>
+#include <psxsdk/libsnd.h>
+#include <psxsdk/libspu.h>
+
+/* The system: boot, display, pad, disc, memory. */
+#include "sys.h"
+#include "disp.h"
+#include "pad.h"
+#include "cdrom.h"
+#include "arena.h"
+#include "ndata.h"
+#include "resource.h"
+#include "memcard.h"
+#include "link.h"
+#include "snd.h"
+
+/* The scene and how it is drawn. */
+#include "math.h"
+#include "node.h"
+#include "mesh.h"
+#include "model.h"
+#include "light.h"
+#include "render.h"
+#include "tex.h"
+#include "stage.h"
+#include "wave.h"
+#include "scene.h"
+#include "cloth.h"
+#include "eff.h"
+#include "camera.h"
+
+/* What is drawn over the scene, and the menus. */
+#include "sprite.h"
+#include "font.h"
+#include "hud.h"
+#include "menu.h"
+#include "select.h"
+#include "narration.h"
+#include "staff.h"
+
+/* The fight. */
+#include "collision.h"
+#include "motion.h"
+#include "cutscene.h"
+#include "weapon.h"
+#include "object.h"
+#include "cpu.h"
+#include "fighter.h"
+#include "fight.h"
+#include "story.h"
+#include "replay.h"
+
+#endif /* BB2_H */

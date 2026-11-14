@@ -1,0 +1,88 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Every check the project has, each a step of its own so that a failure names
+# itself. A check that fails does not stop the ones after it (`!cancelled()`),
+# so one run shows everything that is wrong. `make checks` (tools/checks.sh)
+# runs the same list locally: keep the two the same.
+#
+# Nothing here needs the disc, the virtualenv or a Python package: the tools
+# use the standard library, and the two tests that read the disc say they
+# are skipped.
+
+jobs:
+  build:
+    # The same release the project is built on: another one's cross binutils
+    # may assemble differently, and another gcc's analyser finds other things
+    # (tools/modern/baseline.tsv is gcc 13.3's, and check.py says so when it
+    # runs under another).
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # The first four need no build of the game and nothing installed: the
+      # runner's python3 and gcc. `modern` and `test` compile with `gcc -m32`
+      # but link against no library (`modern` links nothing; a test is a
+      # static program with its own start-up, tests/runtime/), so no 32-bit
+      # package (gcc-multilib, libc6-dev-i386) is wanted.
+
+      - name: Counts (tools/count.py --check)
+        run: python3 tools/count.py --check
+
+      - name: Lint (tools/lint.py --check)
+        if: ${{ !cancelled() }}
+        run: python3 tools/lint.py --check
+
+      - name: The game's C through a modern gcc (make modern)
+        if: ${{ !cancelled() }}
+        run: |
+          gcc --version | head -n 1
+          make modern
+
+      - name: Host tests of what the game's C computes (make test)
+        if: ${{ !cancelled() }}
+        run: make test
+
+      # The build: the cross assembler, linker and preprocessor, and the
+      # compiler, GCC 2.7.2, built from source once and cached.
+
+      - name: Install the MIPS binutils and preprocessor
+        if: ${{ !cancelled() }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils-mipsel-linux-gnu cpp-mipsel-linux-gnu
+
+      - name: Cache the compiler
+        if: ${{ !cancelled() }}
+        uses: actions/cache@v4
+        with:
+          path: tools/gcc-2.7.2/build/cc1
+          key: cc1-${{ runner.os }}-${{ hashFiles('tools/build_cc1.sh', 'tools/cc1-reorg-negate-rtx-decl.patch') }}
+
+      - name: Build the compiler
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -x tools/gcc-2.7.2/build/cc1 ]; then
+            echo "cc1 restored from the cache"
+          else
+            rm -rf tools/gcc-2.7.2
+            bash tools/build_cc1.sh
+          fi
+
+      - name: Build the game and check its SHA1 (make check)
+        id: game
+        if: ${{ !cancelled() }}
+        run: make -j4 check
+
+      - name: Build the movie overlay and check its SHA1 (make movovl)
+        if: ${{ !cancelled() }}
+        run: make movovl
+
+      # Relinks the objects the game's build made, so it waits for that.
+      - name: Relink with padding, nothing may depend on an address (make shift)
+        if: ${{ !cancelled() && steps.game.outcome == 'success' }}
+        run: make shift

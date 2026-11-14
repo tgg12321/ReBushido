@@ -1,0 +1,5 @@
+# Functions where a branch whose delay slot the assembler could not fill keeps
+# pointing at the label, while the filled ones point one instruction past it.
+# One name per line. Only `main` (its loop head) needs it said; elsewhere the
+# compiler's own output already agrees with the original.
+main

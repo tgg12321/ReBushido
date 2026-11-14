@@ -1,0 +1,28 @@
+GCC 2.7.2, reorg.c: declare negate_rtx.
+
+negate_rtx is declared only in expr.h, which reorg.c does not include. On a
+64-bit host the implicit declaration cuts the returned pointer to 32 bits and
+cc1 crashes in fill_slots_from_thread. The declaration changes nothing the
+compiler emits. Applied by tools/build_cc1.sh to
+decompals/mips-gcc-2.7.2 @ 43d1cdb67ed135879869b5266f01efaaada5e35a; it is the
+only change made to the compiler (docs/COMPILER.md).
+
+diff --git a/reorg.c b/reorg.c
+--- a/reorg.c
++++ b/reorg.c
+@@ -130,6 +130,15 @@
+ #include "obstack.h"
+ #include "insn-attr.h"
+ 
++/* BB2 crash fix 2026-08-24 (owner ruling, decisions.md "cc1 fork-crash fix"):
++   negate_rtx is declared only in expr.h, which this file does not include.
++   On a 64-bit host the K&R implicit declaration truncates the returned rtx
++   pointer to 32 bits, and the garbage operand SIGSEGVs insn-recog via
++   arith_operand (fill_slots_from_thread increment-compensation path,
++   line ~3646). One-line acceptance fix; codegen pinned by the full-build
++   SHA1 oracle. */
++extern rtx negate_rtx PROTO((enum machine_mode, rtx));
++
+ #ifdef DELAY_SLOTS
+ 
+ #define obstack_chunk_alloc xmalloc
