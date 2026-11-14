@@ -50,6 +50,18 @@
 #endif
 #define RB_QUICK_BOOT (REBUSHIDO && RB_QUICK_BOOT_BUILD)
 
+/* The native port (docs/PORT.md): the same source built for a PC. Where
+ * the PlayStation program has assembly, the port has C beside it, chosen
+ * by this switch: the functions the authors wrote in assembly, and the
+ * GTE, which is a coprocessor there and src/port/gte.c here. No
+ * PlayStation build turns it on. The builds for the host do, by giving
+ * RB_PORT_BUILD: the host tests and the modern compiler's run with the
+ * master switch on (`make rebushido-test`, `make rebushido-modern`). */
+#ifndef RB_PORT_BUILD
+#define RB_PORT_BUILD 0
+#endif
+#define RB_PORT (REBUSHIDO && RB_PORT_BUILD)
+
 /* ---- the fixes of the original's bugs ---- */
 
 /* Each is on only while the player's "Bugfixes" setting is

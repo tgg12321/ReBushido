@@ -75,4 +75,9 @@
 #include "rb_quickboot.h"
 #endif
 
+/* What only the native port has (src/port/). */
+#if RB_PORT
+#include "port_gte.h"
+#endif
+
 #endif /* BB2_H */

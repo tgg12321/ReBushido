@@ -7,7 +7,10 @@
     python3 tests/run.py --list        the tests' names
     python3 tests/run.py --rebushido   the same tests with ReBushido's master switch on
                                        (include/rebushido.h), and ReBushido's own,
-                                       tests/rebushido/NAME.c, named rebushido/NAME
+                                       tests/rebushido/NAME.c, named rebushido/NAME;
+                                       and with the port's switch on (RB_PORT: the
+                                       C beside the assembly, the GTE in C), and the
+                                       port's own, tests/port/NAME.c, named port/NAME
 
 `make test` and `tools/build.sh test` run them all; `make rebushido-test`
 runs them with --rebushido, into build/rebushido/tests/. Run it in WSL or on
@@ -34,8 +37,10 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tests'))
 sys.path.insert(0, os.path.join(ROOT, 'tools', 'modern'))
+sys.path.insert(0, os.path.join(ROOT, 'tools'))
 
 import check as modern  # noqa: E402  (tools/modern/check.py)
+import port_gte_macros  # noqa: E402  (tools/port_gte_macros.py)
 import support  # noqa: E402
 
 OUT_DIR = 'build/tests'
@@ -43,12 +48,19 @@ OUT_DIR = 'build/tests'
 # and what switches the source over.
 REBUSHIDO_OUT_DIR = 'build/rebushido/tests'
 REBUSHIDO_TESTS = 'rebushido'
-REBUSHIDO_DEFS = ['-DREBUSHIDO=1']
+# The run with --rebushido is the port's as well (docs/PORT.md): the port's
+# switch is on, so a function that is assembly on the PlayStation is its C,
+# and Sony's GTE macros are C on the port's GTE (tools/port_gte_macros.py
+# writes those headers, which go ahead of every other). The port's own tests
+# are in tests/port/.
+PORT_TESTS = 'port'
+REBUSHIDO_DEFS = ['-DREBUSHIDO=1', '-DRB_PORT_BUILD=1']
 # With --rebushido a test of the game's is linked with the settings too, as
 # they are when the game starts: a file of the game's may ask them, and with
-# every one at its default it has to do what the original does. ReBushido's
-# own tests include what they test.
-REBUSHIDO_SOURCES = ['src/rebushido/settings.c']
+# every one at its default it has to do what the original does; and with
+# the port's GTE, which the GTE macros of the game's files call. ReBushido's
+# and the port's own tests include what they test.
+REBUSHIDO_SOURCES = ['src/rebushido/settings.c', 'src/port/gte.c']
 
 # As tools/modern/check.py compiles the game, and then: -fwrapv, since the
 # game's arithmetic wraps as the PlayStation's does; each function in a
@@ -71,9 +83,12 @@ POLLHOST_OLD = '#define\tpollhost()\tasm("break 1024")'
 POLLHOST_NEW = '#define pollhost()'
 
 
-def write_headers():
-    """The headers tools/modern/check.py rewrites, and one more."""
+def write_headers(rebushido=False):
+    """The headers tools/modern/check.py rewrites, and one more; for the
+    port, Sony's GTE macros as C."""
     modern.write_headers()
+    if rebushido:
+        port_gte_macros.write_headers()
     with open('include/psxsdk/libsn.h', encoding='utf-8') as f:
         text = f.read()
     if POLLHOST_OLD not in text:
@@ -83,16 +98,18 @@ def write_headers():
         f.write(text.replace(POLLHOST_OLD, POLLHOST_NEW))
 
 
-def include_flags():
-    return ['-I' + OUT_DIR + '/include', '-I' + modern.OUT_DIR + '/include', '-Iinclude', '-Itests', '-I.']
+def include_flags(rebushido=False):
+    port = ['-I' + port_gte_macros.OUT_DIR] if rebushido else []
+    return port + ['-I' + OUT_DIR + '/include', '-I' + modern.OUT_DIR + '/include', '-Iinclude', '-Itests', '-I.']
 
 
 def test_names(rebushido=False):
     names = sorted(f[:-2] for f in os.listdir('tests') if f.endswith('.c'))
     if rebushido:
-        own = os.listdir('tests/' + REBUSHIDO_TESTS)
-        names += sorted('%s/%s' % (REBUSHIDO_TESTS, os.path.splitext(f)[0]) for f in own
-                        if f.endswith('.c') or (f.endswith('.py') and f[:-3] + '.c' not in own))
+        for folder in (REBUSHIDO_TESTS, PORT_TESTS):
+            own = os.listdir('tests/' + folder)
+            names += sorted('%s/%s' % (folder, os.path.splitext(f)[0]) for f in own
+                            if f.endswith('.c') or (f.endswith('.py') and f[:-3] + '.c' not in own))
     return names
 
 
@@ -125,7 +142,7 @@ def build(name, defs, sources):
     compiler's complaint."""
     program = '%s/%s' % (OUT_DIR, name)
     os.makedirs(os.path.dirname(program), exist_ok=True)
-    cmd = (['gcc'] + COMPILE_FLAGS + include_flags() + modern.DEFS + defs + LINK_FLAGS
+    cmd = (['gcc'] + COMPILE_FLAGS + include_flags(bool(defs)) + modern.DEFS + defs + LINK_FLAGS
            + ['tests/%s.c' % name] + sources + [RUNTIME, '-o', program])
     # the compiler's temporary files beside the program: /tmp is emptied
     # under a WSL that has just started
@@ -158,7 +175,7 @@ def run_one(name, verbose, defs):
             args = [str(a) for a in side.arguments()]
         except support.Skip as skip:
             return 'skip', 0, [str(skip)]
-    own = name.startswith(REBUSHIDO_TESTS + '/')
+    own = name.startswith((REBUSHIDO_TESTS + '/', PORT_TESTS + '/'))
     program, errors = build(name, defs, REBUSHIDO_SOURCES if defs and not own else [])
     if not program:
         return 'FAIL', 0, ['it does not build:'] + errors[:30]
@@ -222,9 +239,9 @@ def main():
     for name in names:
         if name not in known:
             sys.exit('run.py: no test tests/%s.c%s' % (
-                name, '' if rebushido else " (ReBushido's own run with --rebushido)"))
+                name, '' if rebushido else " (ReBushido's own and the port's run with --rebushido)"))
     os.makedirs(OUT_DIR, exist_ok=True)
-    write_headers()
+    write_headers(rebushido)
 
     tally = {'ok': 0, 'skip': 0, 'FAIL': 0}
     for name in names or known:

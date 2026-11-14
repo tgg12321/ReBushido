@@ -113,8 +113,10 @@ S_O_FILES    := $(patsubst $(ASM_DIR)/%.s,$(BUILD_DIR)/$(ASM_DIR)/%.o,$(S_FILES)
 # C source files (decompiled functions), found recursively. A TU id is the path
 # under src/ without .c (`main/tex`, `main/psxsdk/libcomb/comb`); its object is
 # build/src/<id>.o, the path bb2.ld links.
-# src/rebushido/ is the ReBushido build's alone.
-C_FILES      := $(sort $(shell find $(SRC_DIR) -name '*.c' $(if $(filter 1,$(REBUSHIDO)),,-not -path '$(RB_SRC_DIR)/*')))
+# src/rebushido/ is the ReBushido build's alone. src/port/ is the native
+# port's (docs/PORT.md): no PlayStation build compiles or links it.
+PORT_SRC_DIR := $(SRC_DIR)/port
+C_FILES      := $(sort $(shell find $(SRC_DIR) -name '*.c' -not -path '$(PORT_SRC_DIR)/*' $(if $(filter 1,$(REBUSHIDO)),,-not -path '$(RB_SRC_DIR)/*')))
 C_IDS        := $(patsubst $(SRC_DIR)/%.c,%,$(C_FILES))
 C_O_FILES    := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/$(SRC_DIR)/%.o,$(C_FILES))
 
@@ -133,7 +135,7 @@ ALL_O_FILES  := $(S_O_FILES) $(C_O_FILES) $(ASM_FUNC_O_FILES)
 # -- Top-level targets --
 .PHONY: all clean check clean-check shift movovl modern test checks \
 	rebushido rebushido-disc rebushido-patch rebushido-test rebushido-modern rb-build \
-	quickboot quickboot-compile quickboot-disc playtest playtest-discs
+	quickboot quickboot-compile quickboot-disc playtest playtest-discs gte-probe
 
 ifeq ($(REBUSHIDO),1)
 all: rb-build
@@ -232,6 +234,7 @@ PLAYTEST_QB  := QB_NAME=QuickBoot-playtest QB_MODE=FIGHT_MODE_VS QB_P1=ROSTER_MI
 PLAYTEST_BUGS := QB_MODE=FIGHT_MODE_VS QB_P1=ROSTER_VANISHER QB_P2=ROSTER_UTAMARU \
                 QB_WEAPON1=WEAPON_ID_NAGINATA QB_WEAPON2=WEAPON_ID_KATANA QB_STAGE=STAGE_LIGHTHOUSE QB_CPU2=1
 playtest-discs:
+	$(MAKE) gte-probe
 	@if [ -f "$(RETAIL_IMAGE)" ]; then \
 		$(MAKE) rebushido-disc && $(MAKE) quickboot-disc $(PLAYTEST_QB) && \
 		$(MAKE) quickboot-disc $(PLAYTEST_BUGS) QB_NAME=QuickBoot-bugs QB_BUGFIXES=0 && \
@@ -423,6 +426,47 @@ $(BUILD_DIR)/$(SRC_DIR)/%.o: $(SRC_DIR)/%.c $(PIPELINE_DEPS)
 $(BUILD_DIR)/$(ASM_DIR)/%.o: $(ASM_DIR)/%.s $(shell find $(INCLUDE_DIR) -type f)
 	@mkdir -p $(dir $@)
 	$(AS) $(AS_FLAGS) $< -o $@
+
+# -- The GTE probe --
+# A PlayStation program of the play tests' own, no part of the game
+# (tests/play/README.md, "The GTE probe"): it runs made-up cases on the
+# emulator's GTE and compares what it reads back with what the port's GTE
+# in C (src/port/gte.c) made of the same cases. So it is built in two
+# steps: the host test tests/port/gte_vectors.c writes down what the model
+# makes of every case (expected.h), and the probe is compiled with that, by
+# the game's own compiler, and linked as a program the emulator loads with
+# no disc. It needs no retail image.
+ifneq ($(REBUSHIDO),1)
+PROBE_SRC    := tests/play/probe
+PROBE_DIR    := build/probe
+PROBE_HOST   := build/rebushido/tests/port/gte_vectors
+PROBE_OBJS   := $(BUILD_DIR)/$(ASM_DIR)/header.o $(PROBE_DIR)/start.o $(PROBE_DIR)/probe.o
+
+$(PROBE_DIR)/expected.h: tests/port/gte_vectors.c $(PROBE_SRC)/cases.h $(PORT_SRC_DIR)/gte.c \
+		$(INCLUDE_DIR)/port_gte.h tests/run.py
+	@mkdir -p $(dir $@)
+	python3 tests/run.py --rebushido port/gte_vectors > /dev/null; [ -x $(PROBE_HOST) ]
+	$(PROBE_HOST) table | grep -v '^checks ' > $@
+
+$(PROBE_DIR)/probe.o: $(PROBE_SRC)/probe.c $(PROBE_SRC)/cases.h $(PROBE_DIR)/expected.h $(PIPELINE_DEPS)
+	@mkdir -p $(dir $@)
+	$(CPP) $(CPP_FLAGS) $(CPP_DEFS) -I$(PROBE_SRC) -I$(PROBE_DIR) $< | $(CC1) $(CC_FLAGS) $(WARN_FLAGS) | $(MASPSX) $(MASPSX_FLAGS) | $(AS) $(AS_FLAGS) -o $@
+
+$(PROBE_DIR)/start.o: $(PROBE_SRC)/start.s
+	@mkdir -p $(dir $@)
+	$(AS) $(AS_FLAGS) $< -o $@
+
+$(PROBE_DIR)/probe.elf: $(PROBE_OBJS) $(PROBE_SRC)/probe.ld
+	$(LD) $(LD_FLAGS) -Map $(PROBE_DIR)/probe.map -T $(PROBE_SRC)/probe.ld -o $@ $(PROBE_OBJS)
+
+$(PLAY_DIR)/GteProbe.exe: $(PROBE_DIR)/probe.elf tools/make_psexe.py tools/elf32.py
+	$(OBJCOPY) -O binary -j .main $< $(PROBE_DIR)/probe.bin
+	python3 tools/make_psexe.py $< $(PROBE_DIR)/probe.bin $@ --entry _start
+	python3 tools/playtest.py --symbols $< $(PLAY_DIR)/GteProbe.sym
+
+gte-probe: $(PLAY_DIR)/GteProbe.exe
+	@echo "OK: $(PLAY_DIR)/GteProbe.exe"
+endif
 
 # -- Clean --
 # build/play/ is kept: it holds a disc image built for a play test

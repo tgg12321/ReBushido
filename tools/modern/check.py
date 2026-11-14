@@ -13,7 +13,11 @@
                                                and src/rebushido/*.c as well; the report is
                                                build/rebushido/modern/report.txt. The baseline is
                                                the same one, the matching source's: ReBushido's
-                                               code gets no rows in it, so --update is refused
+                                               code gets no rows in it, so --update is refused.
+                                               The port's switch is on too (RB_PORT, docs/PORT.md):
+                                               the C beside each piece of assembly is read, with
+                                               src/port/*.c, and Sony's GTE macros are C on the
+                                               port's GTE (tools/port_gte_macros.py)
 
 `make modern` and `tools/build.sh modern` run `--check`; `make
 rebushido-modern` runs `--check --rebushido`. Run it in WSL: it
@@ -69,10 +73,14 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(ROOT, 'tools'))
+
+import port_gte_macros  # noqa: E402  (tools/port_gte_macros.py)
+
 OUT_DIR = 'build/modern'
 REPORT = OUT_DIR + '/report.txt'
 REBUSHIDO_REPORT = 'build/rebushido/modern/report.txt'
-REBUSHIDO_DEFS = ['-DREBUSHIDO=1']
+REBUSHIDO_DEFS = ['-DREBUSHIDO=1', '-DRB_PORT_BUILD=1']
 BASELINE = 'tools/modern/baseline.tsv'
 VERDICTS = 'tools/modern/verdicts.tsv'
 SHIM = 'tools/modern/shim.h'
@@ -114,8 +122,11 @@ def sources(rebushido=False):
     files = sorted(f for f in os.listdir('src/main') if f.endswith('.c'))
     out = [('src/main/' + f, ['-Iinclude']) for f in files]
     if rebushido:
-        files = sorted(f for f in os.listdir('src/rebushido') if f.endswith('.c'))
-        out += [('src/rebushido/' + f, ['-Iinclude']) for f in files]
+        # the port's headers for Sony's GTE macros go ahead of the others
+        out = [(path, ['-I' + port_gte_macros.OUT_DIR] + includes) for path, includes in out]
+        for folder in ('src/rebushido', 'src/port'):
+            files = sorted(f for f in os.listdir(folder) if f.endswith('.c'))
+            out += [('%s/%s' % (folder, f), ['-I' + port_gte_macros.OUT_DIR, '-Iinclude']) for f in files]
     files = sorted(f for f in os.listdir('movovl/src') if f.endswith('.c'))
     out += [('movovl/src/' + f, ['-Imovovl/include', '-Iinclude']) for f in files]
     return out
@@ -196,7 +207,9 @@ def compile_one(path, includes, analyzer, plain=True, defs=()):
     out = ''
     for flags in runs:
         cmd = ['gcc'] + BASE_FLAGS + flags
-        cmd += ['-I' + OUT_DIR + '/include'] + includes + DEFS + list(defs) + ['-']
+        port = [i for i in includes if i == '-I' + port_gte_macros.OUT_DIR]
+        cmd += port + ['-I' + OUT_DIR + '/include'] + [i for i in includes if i not in port]
+        cmd += DEFS + list(defs) + ['-']
         if not plain:
             cmd.remove('-fdiagnostics-plain-output')
         env = dict(os.environ, LC_ALL='C')
@@ -303,6 +316,8 @@ def main():
     if rebushido and '--update' in args:
         sys.exit('check.py: the baseline is the matching source\'s: --update without --rebushido')
     write_headers()
+    if rebushido:
+        port_gte_macros.write_headers()
     srcs = sources(rebushido)
 
     if '--raw' in args:

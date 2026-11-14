@@ -206,11 +206,14 @@ def write_symbols(elf_path, out_path):
 
 class Disc:
     """A disc image a test names: `retail`, or NAME for build/play/NAME.cue
-    (`rebushido` is ReBushido, `quickboot` QuickBoot: any case)."""
+    (`rebushido` is ReBushido, `quickboot` QuickBoot: any case). Where
+    build/play/ has NAME.exe and no NAME.cue it is a program the emulator
+    loads with no disc (`gteprobe`, the GTE probe)."""
 
     def __init__(self, name):
         self.name = name
         self.settings = {}
+        self.exe = None
         if name == "retail":
             self.cue, symbols, how = RETAIL_CUE, RETAIL_SYMBOLS, "your own image of the disc; REBUSHIDO_RETAIL names it"
         else:
@@ -219,7 +222,9 @@ class Disc:
                 for entry in sorted(os.listdir(PLAY_DIR)):
                     if entry.lower() == name.lower() + ".cue":
                         stem = entry[:-4]
-            self.cue = os.path.join(PLAY_DIR, stem + ".cue")
+                    elif entry.lower() == name.lower() + ".exe" and stem == name:
+                        stem, self.exe = entry[:-4], os.path.join(PLAY_DIR, entry)
+            self.cue = self.exe or os.path.join(PLAY_DIR, stem + ".cue")
             symbols = os.path.join(PLAY_DIR, stem + ".sym")
             how = "not built: make playtest builds the tests' discs, make quickboot-disc one of your own"
         for path in (self.cue, symbols):
@@ -287,7 +292,7 @@ class Test:
         self.name = os.path.splitext(os.path.basename(path))[0]
         data = load_toml(path)
         unknown = set(data) - {"about", "discs", "limit", "stall", "seconds", "input", "compare", "state",
-                               "checkpoint", "cards", "frames_from"}
+                               "checkpoint", "cards", "frames_from", "dump", "common_state"}
         if unknown:
             raise TestError("not understood: %s" % ", ".join(sorted(unknown)))
         self.about = data.get("about", "")
@@ -305,7 +310,10 @@ class Test:
         if self.cards not in CARDS:
             raise TestError("`cards` is one of %s" % ", ".join(CARDS))
         self.frames_from = data.get("frames_from")
-        self.state = dict(load_toml(STATE_FILE).get("state", {}))
+        # memory to write to a file when the run ends: NAME = "symbol:bytes"
+        self.dump = dict(data.get("dump", {}))
+        # a test of a program that is not the game has none of its values
+        self.state = dict(load_toml(STATE_FILE).get("state", {})) if data.get("common_state", True) else {}
         self.state.update(data.get("state", {}))
         self.checkpoints = [Checkpoint(t, i) for i, t in enumerate(data.get("checkpoint", []))]
         if not self.checkpoints:
@@ -347,11 +355,22 @@ class Test:
         checkpoints = self.checkpoints_of(number)
         if not checkpoints:
             raise TestError("run %d has no checkpoint" % number)
-        lines = ["limit %d" % self.limit, "stall %d" % self.stall,
-                 "alive %d" % disc.address("g_disp_frame_count"),
-                 "movie %d %d" % (disc.address("g_sys_screen"), names["SCREEN_MOVIE"]),
-                 # the program from its start to the first word of its data
-                 "text %d %d" % (PROGRAM_START & 0x1FFFFFFF, disc.address("g_sys_data_start") & 0x1FFFFFFF)]
+        lines = ["limit %d" % self.limit, "stall %d" % self.stall]
+        if disc.exe:
+            # a program of the tests' own: no frame count to watch, and
+            # its code is wherever its file was loaded
+            lines.append("text %d %d" % (PROGRAM_START & 0x1FFFFFFF,
+                                         (PROGRAM_START & 0x1FFFFFFF) + os.path.getsize(disc.exe)))
+        else:
+            lines += ["alive %d" % disc.address("g_disp_frame_count"),
+                      "movie %d %d" % (disc.address("g_sys_screen"), names["SCREEN_MOVIE"]),
+                      # the program from its start to the first word of its data
+                      "text %d %d" % (PROGRAM_START & 0x1FFFFFFF, disc.address("g_sys_data_start") & 0x1FFFFFFF)]
+        for name in sorted(self.dump):
+            m = re.fullmatch(r"\s*(.+?)\s*:\s*(\d+)\s*", self.dump[name])
+            if not m or not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+                raise TestError("dump `%s = %s`: write `name = \"symbol+offset:bytes\"`" % (name, self.dump[name]))
+            lines.append("dump %s %d %d" % (name, disc.address(m.group(1)), int(m.group(2))))
         if self.cards == "none":
             lines.append("nocards")
         for name in order:
@@ -488,7 +507,7 @@ def run_on_disc(test, disc, names, launch, number=1, label=None, cards_from=None
     # needs; the memory cards files of the run's folder, which the emulator
     # makes new and empty if they are not there.
     cmd = [EMULATOR, "-portable", folder, "-safe", "-noupdate", "-no-ui", "-interpreter", "-debugger",
-           "-fastboot", "-iso", disc.cue,
+           "-fastboot"] + (["-loadexe", disc.exe] if disc.exe else ["-iso", disc.cue]) + [
            "-memcard1", os.path.join(folder, "card1.mcd"), "-memcard2", os.path.join(folder, "card2.mcd"),
            "-dofile", start, "-run"]
     log_path = os.path.join(folder, "run.log")

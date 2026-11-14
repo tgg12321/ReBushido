@@ -18,6 +18,8 @@
 --   text LO HI         the program's code, for the check of the pc
 --   var NAME ADDR SIZE SIGNED        a value to write down at checkpoints
 --   nocards            both memory card slots are empty
+--   dump NAME ADDR SIZE              SIZE bytes of memory from ADDR, written
+--                                    to NAME.bin when the run ends
 --   in CP OFFSET PAD BUTTON HOLD     a press, OFFSET blanks after checkpoint
 --                                    number CP was reached (0: after power on)
 --   cp NAME SHOT WITHIN at N         a checkpoint at vertical blank N
@@ -44,9 +46,11 @@ local function out(s)
 end
 
 local finished = false
+local write_dumps
 local function finish(code)
     if finished then return end
     finished = true
+    pcall(write_dumps)
     log:close()
     PCSX.quit(code)
 end
@@ -70,7 +74,7 @@ local frame = 0
 local limit, stall, alive_at, text_lo, text_hi = 0, 1800, nil, 0, 0
 local movie_at, movie_value
 local no_cards = false
-local vars, checkpoints, presses = {}, {}, {}
+local vars, checkpoints, presses, dumps = {}, {}, {}, {}
 local due = {} -- [frame] = {{pad, button, down}, ...}
 local next_cp, last_cp_frame = 1, 0
 local alive_value, alive_since = -1, 0
@@ -83,6 +87,17 @@ local function read(addr, size, signed)
     for i = size - 1, 0, -1 do v = v * 256 + base[at + i] end
     if signed and v >= 2 ^ (size * 8 - 1) then v = v - 2 ^ (size * 8) end
     return v
+end
+
+-- The pieces of memory the plan asked for, each to a file of its own.
+write_dumps = function()
+    for _, d in ipairs(dumps) do
+        local bytes = {}
+        for i = 0, d.size - 1 do bytes[#bytes + 1] = string.char(read(d.addr + i, 1, false)) end
+        local f = assert(io.open(DIR .. d.name .. '.bin', 'wb'))
+        f:write(table.concat(bytes))
+        f:close()
+    end
 end
 
 local function load_plan()
@@ -102,6 +117,8 @@ local function load_plan()
             text_lo, text_hi = tonumber(w[2]), tonumber(w[3])
         elseif kind == 'nocards' then
             no_cards = true
+        elseif kind == 'dump' then
+            dumps[#dumps + 1] = {name = w[2], addr = tonumber(w[3]), size = tonumber(w[4])}
         elseif kind == 'var' then
             vars[#vars + 1] = {addr = tonumber(w[3]), size = tonumber(w[4]), signed = w[5] == '1'}
         elseif kind == 'in' then

@@ -9,7 +9,7 @@
     python tools/lint.py --update           write the baseline from the tree as it is
 
 It reads the game's own files: src/main/*.c, include/*.h, movovl/src/*.c and
-movovl/include/*.h, and ReBushido's, src/rebushido/*.c. Sony's library code
+movovl/include/*.h, and ReBushido's, src/rebushido/*.c and src/port/*.c. Sony's library code
 is not looked at. It needs no build.
 
 A file is read with both sides of every `#if RB_NAME` block in it (the
@@ -164,7 +164,8 @@ BII = set(['bb2.h'])
 
 
 def game_files():
-    return C.files('src/main/*.c', 'src/rebushido/*.c', 'include/*.h', 'movovl/src/*.c', 'movovl/include/*.h')
+    return C.files('src/main/*.c', 'src/rebushido/*.c', 'src/port/*.c', 'include/*.h', 'movovl/src/*.c',
+                   'movovl/include/*.h')
 
 
 def read(f):

@@ -59,8 +59,10 @@ def files(*patterns):
     return sorted(f.replace('\\', '/') for f in out if '/build/' not in f.replace('\\', '/'))
 
 
-# ReBushido's own files: in no area, counted apart.
-REBUSHIDO_FILES = files('src/rebushido/*.c', 'include/rebushido.h', 'include/rb_*.h')
+# ReBushido's own files, the native port's among them (src/port/,
+# include/port_*.h: docs/PORT.md): in no area, counted apart.
+REBUSHIDO_FILES = files('src/rebushido/*.c', 'src/port/*.c', 'include/rebushido.h', 'include/rb_*.h',
+                        'include/port_*.h')
 GAME_HEADERS = [f for f in files('include/*.h') if f not in REBUSHIDO_FILES]
 
 AREAS = collections.OrderedDict([
