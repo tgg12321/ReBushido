@@ -127,6 +127,13 @@ def sources(rebushido=False):
         for folder in ('src/rebushido', 'src/port'):
             files = sorted(f for f in os.listdir(folder) if f.endswith('.c'))
             out += [('%s/%s' % (folder, f), ['-I' + port_gte_macros.OUT_DIR, '-Iinclude']) for f in files]
+        # Sony's modules that are assembly on the PlayStation and have the
+        # port's C beside it: that C is read, and nothing else of Sony's
+        for folder, _, files in sorted(os.walk('src/main/psxsdk')):
+            for f in sorted(files):
+                path = '%s/%s' % (folder.replace(os.sep, '/'), f)
+                if f.endswith('.c') and '#if RB_PORT' in open(path, encoding='utf-8').read():
+                    out.append((path, ['-I' + port_gte_macros.OUT_DIR, '-Iinclude']))
     files = sorted(f for f in os.listdir('movovl/src') if f.endswith('.c'))
     out += [('movovl/src/' + f, ['-Imovovl/include', '-Iinclude']) for f in files]
     return out

@@ -762,3 +762,62 @@ void port_GteWriteControl(s32 index, u32 value) {
 u32 port_GteReadControl(s32 index) {
     return g_port_gte.control[index & (PORT_GTE_CONTROL_COUNT - 1)];
 }
+
+/* ---- runs of registers ---- */
+
+void port_GteLoadData(s32 first, const void *words, s32 count) {
+    s32 i;
+
+    for (i = 0; i < count; i++) {
+        port_GteWriteData(first + i, ((const u32 *)words)[i]);
+    }
+}
+
+void port_GteStoreData(s32 first, void *words, s32 count) {
+    s32 i;
+
+    for (i = 0; i < count; i++) {
+        ((u32 *)words)[i] = port_GteReadData(first + i);
+    }
+}
+
+void port_GteLoadControl(s32 first, const void *words, s32 count) {
+    s32 i;
+
+    for (i = 0; i < count; i++) {
+        port_GteWriteControl(first + i, ((const u32 *)words)[i]);
+    }
+}
+
+/* ---- the products of two matrices ---- */
+
+void port_GteRotateColumns(const void *matrix, u32 command, s32 *columns) {
+    const s16 *elements = (const s16 *)matrix;
+    s32 column;
+
+    for (column = 0; column < 3; column++) {
+        port_GteWriteData(
+            PORT_GTE_VXY0, ((u32)elements[M11 + column] & 0xFFFF) |
+                               ((u32)elements[M21 + column] << 16));
+        port_GteWriteData(PORT_GTE_VZ0, (u32)elements[M31 + column]);
+        port_GteCommand(command);
+        port_GteStoreData(PORT_GTE_IR1, &columns[3 * column], 3);
+    }
+}
+
+/* The results of port_GteRotateColumns, a column after a column, into
+ * a matrix's nine halfwords, a row after a row. */
+void port_GteStoreColumns(void *matrix, const s32 *columns, s32 last_as_word) {
+    s16 *elements = (s16 *)matrix;
+    s32 row;
+    s32 column;
+
+    for (row = 0; row < 3; row++) {
+        for (column = 0; column < 3; column++) {
+            elements[3 * row + column] = (s16)columns[3 * column + row];
+        }
+    }
+    if (last_as_word) {
+        ((u32 *)matrix)[M33 / 2] = (u32)columns[M33];
+    }
+}

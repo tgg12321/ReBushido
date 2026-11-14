@@ -145,6 +145,55 @@ extern u32 port_GteReadControl(s32 index);
 /* An operation, by its instruction word (0x4A180001 is RTPS). */
 extern void port_GteCommand(u32 word);
 
+/* A matrix in memory (Sony's MATRIX): nine halfwords, which are five
+ * words and five registers; with its translation, eight. */
+#define PORT_GTE_MATRIX_ELEMENTS 9
+#define PORT_GTE_MATRIX_WORDS 5
+#define PORT_GTE_MATRIX_AND_TRANSLATION_WORDS 8
+
+/* A run of registers, from `first` on, loaded from words in memory or
+ * stored to them: what the assembly does with a row of lwc2, of swc2, or
+ * of lw and ctc2. */
+extern void port_GteLoadData(s32 first, const void *words, s32 count);
+extern void port_GteStoreData(s32 first, void *words, s32 count);
+extern void port_GteLoadControl(s32 first, const void *words, s32 count);
+
+/* What the products of two matrices have in common. `matrix` is nine
+ * halfwords, a row after a row (a MATRIX's `m`). Each of its columns is
+ * loaded as vector 0 and `command` run on it (the rotation in the GTE
+ * times that column); `columns` gets the three results, IR1 to IR3 of
+ * each, a column after a column. */
+extern void port_GteRotateColumns(
+    const void *matrix, u32 command, s32 *columns);
+/* Such results stored as a matrix's nine halfwords. With `last_as_word`
+ * the ninth is stored as a word, as Sony's routines do: its sign goes
+ * into the two bytes after the matrix. */
+extern void port_GteStoreColumns(
+    void *matrix, const s32 *columns, s32 last_as_word);
+
+/* The words of the operations the C beside the assembly runs, by the
+ * names the listings have for them (include/gte_macros.inc). */
+#define PORT_GTE_CMD_RTPS 0x4A180001U
+#define PORT_GTE_CMD_RTPT 0x4A280030U
+#define PORT_GTE_CMD_RTV0 0x4A486012U     /* rotation * V0 */
+#define PORT_GTE_CMD_RTV0TR 0x4A480012U   /* ... + translation */
+#define PORT_GTE_CMD_RTIR 0x4A49E012U     /* rotation * IR */
+#define PORT_GTE_CMD_RTIR_SF0 0x4A41E012U /* ... with the fraction kept */
+#define PORT_GTE_CMD_LCIRBK 0x4A4DA412U   /* light colour * IR + background */
+#define PORT_GTE_CMD_SQR0 0x4AA00428U     /* squares, the fraction kept */
+#define PORT_GTE_CMD_SQR12 0x4AA80428U
+#define PORT_GTE_CMD_OP0 0x4B70000CU /* outer product, fraction kept */
+#define PORT_GTE_CMD_OP12 0x4B78000CU
+#define PORT_GTE_CMD_GPF0 0x4B90003DU /* IR * IR0, the fraction kept */
+#define PORT_GTE_CMD_GPF12 0x4B98003DU
+#define PORT_GTE_CMD_GPL0 0x4BA0003EU /* MAC + IR * IR0, fraction kept */
+#define PORT_GTE_CMD_GPL12 0x4BA8003EU
+#define PORT_GTE_CMD_AVSZ3 0x4B58002DU
+#define PORT_GTE_CMD_AVSZ4 0x4B68002EU
+#define PORT_GTE_CMD_DPCL 0x4A680029U
+#define PORT_GTE_CMD_DPCT 0x4AF8002AU
+#define PORT_GTE_CMD_INTPL 0x4A980011U
+
 /* ---- what Sony's macros are made of in the port ---- */
 
 /* tools/port_gte_macros.py writes each macro of Sony's inline_c.h and

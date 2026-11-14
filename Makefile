@@ -431,24 +431,40 @@ $(BUILD_DIR)/$(ASM_DIR)/%.o: $(ASM_DIR)/%.s $(shell find $(INCLUDE_DIR) -type f)
 # A PlayStation program of the play tests' own, no part of the game
 # (tests/play/README.md, "The GTE probe"): it runs made-up cases on the
 # emulator's GTE and compares what it reads back with what the port's GTE
-# in C (src/port/gte.c) made of the same cases. So it is built in two
-# steps: the host test tests/port/gte_vectors.c writes down what the model
+# in C (src/port/gte.c) made of the same cases; and it calls the game's and
+# Sony's routines that are assembly, linked into it from the matching
+# build's own objects, and compares what they do with what the C the port
+# has in their place does. So it is built in two steps: the host tests
+# tests/port/gte_vectors.c and asm_vectors.c write down what the port's C
 # makes of every case (expected.h), and the probe is compiled with that, by
 # the game's own compiler, and linked as a program the emulator loads with
 # no disc. It needs no retail image.
 ifneq ($(REBUSHIDO),1)
 PROBE_SRC    := tests/play/probe
 PROBE_DIR    := build/probe
-PROBE_HOST   := build/rebushido/tests/port/gte_vectors
-PROBE_OBJS   := $(BUILD_DIR)/$(ASM_DIR)/header.o $(PROBE_DIR)/start.o $(PROBE_DIR)/probe.o
+PROBE_HOST   := build/rebushido/tests/port
+# The routines under test, as the game has them: the assembly of math_asm.c
+# with its tables, the sine table (whose file has a function that wants
+# Sony's rsin and rcos), and every module of Sony's libgte that has the
+# port's C beside its listing (but InitGeom's, which patches the console's
+# kernel), with the two tables they read.
+PROBE_GTE_MODULES := $(patsubst $(SRC_DIR)/%.c,%,$(shell grep -l '^.if RB_PORT' $(SRC_DIR)/main/psxsdk/libgte/*.c))
+PROBE_GAME_OBJS := $(patsubst %,$(BUILD_DIR)/$(SRC_DIR)/%.o,main/math_asm main/math_sin \
+		main/psxsdk/libgte/geo_00 main/psxsdk/libgte/geo_01 main/psxsdk/libgte/sincos \
+		main/psxsdk/libgte/cstbl main/psxsdk/libgte/sqrtbl $(filter-out %/msc00,$(PROBE_GTE_MODULES)))
+PROBE_OBJS   := $(BUILD_DIR)/$(ASM_DIR)/header.o $(PROBE_DIR)/start.o $(PROBE_DIR)/probe.o \
+		$(PROBE_DIR)/listings.o $(PROBE_GAME_OBJS)
 
-$(PROBE_DIR)/expected.h: tests/port/gte_vectors.c $(PROBE_SRC)/cases.h $(PORT_SRC_DIR)/gte.c \
-		$(INCLUDE_DIR)/port_gte.h tests/run.py
+$(PROBE_DIR)/expected.h: tests/port/gte_vectors.c tests/port/asm_vectors.c tests/port/asm_vectors.py \
+		$(PROBE_SRC)/cases.h $(PROBE_SRC)/routines.h $(PORT_SRC_DIR)/gte.c $(INCLUDE_DIR)/port_gte.h \
+		$(SRC_DIR)/main/math_asm.c $(SRC_DIR)/main/render_asm.c $(wildcard $(SRC_DIR)/main/psxsdk/libgte/*.c) \
+		tests/run.py
 	@mkdir -p $(dir $@)
-	python3 tests/run.py --rebushido port/gte_vectors > /dev/null; [ -x $(PROBE_HOST) ]
-	$(PROBE_HOST) table | grep -v '^checks ' > $@
+	python3 tests/run.py --rebushido port/gte_vectors port/asm_vectors > /dev/null; \
+		[ -x $(PROBE_HOST)/gte_vectors ] && [ -x $(PROBE_HOST)/asm_vectors ]
+	{ $(PROBE_HOST)/gte_vectors table && $(PROBE_HOST)/asm_vectors table; } | grep -v '^checks ' > $@
 
-$(PROBE_DIR)/probe.o: $(PROBE_SRC)/probe.c $(PROBE_SRC)/cases.h $(PROBE_DIR)/expected.h $(PIPELINE_DEPS)
+$(PROBE_DIR)/%.o: $(PROBE_SRC)/%.c $(PROBE_SRC)/cases.h $(PROBE_SRC)/routines.h $(PROBE_DIR)/expected.h $(PIPELINE_DEPS)
 	@mkdir -p $(dir $@)
 	$(CPP) $(CPP_FLAGS) $(CPP_DEFS) -I$(PROBE_SRC) -I$(PROBE_DIR) $< | $(CC1) $(CC_FLAGS) $(WARN_FLAGS) | $(MASPSX) $(MASPSX_FLAGS) | $(AS) $(AS_FLAGS) -o $@
 

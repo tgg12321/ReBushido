@@ -176,7 +176,11 @@ def run_one(name, verbose, defs):
         except support.Skip as skip:
             return 'skip', 0, [str(skip)]
     own = name.startswith((REBUSHIDO_TESTS + '/', PORT_TESTS + '/'))
-    program, errors = build(name, defs, REBUSHIDO_SOURCES if defs and not own else [])
+    sources = REBUSHIDO_SOURCES if defs and not own else []
+    if side and hasattr(side, 'sources'):
+        # files compiled apart from the test's own and linked with it
+        sources = sources + [s for s in side.sources() if s not in sources]
+    program, errors = build(name, defs, sources)
     if not program:
         return 'FAIL', 0, ['it does not build:'] + errors[:30]
     try:

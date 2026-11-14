@@ -1,4 +1,4 @@
-about = "The port's GTE in C makes of 84,000 made-up cases what the emulator's GTE makes of them"
+about = "The port's GTE and the C beside the assembly make of 116,000 made-up cases what the emulator's GTE and the assembly make of them"
 
 # No disc: the GTE probe, a program of the tests' own (README.md, "The GTE
 # probe"). It runs every case of tests/play/probe/cases.h on the
@@ -22,11 +22,11 @@ bad_vector = "g_probe_bad+4:u32"
 # had (build/playtest/gte_model/gteprobe/bad.bin; tools/gte_probe.py
 # prints them beside the model's).
 [dump]
-bad = "g_probe_bad:4224"
+bad = "g_probe_bad:6784"
 
 [[checkpoint]]
 name = "finished"
 when = "probe_done == 1"
 within = 2900
 shot = false
-expect = ["probe_run == 84000", "probe_failed == 0"]
+expect = ["probe_run == 116000", "probe_failed == 0"]

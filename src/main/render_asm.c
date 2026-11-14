@@ -86,7 +86,59 @@ void (* const g_render_cloth_handlers[8])() = {
  * (math.h). */
 /* Assembly: trapping (15); it saves $ra and nine registers, calls nothing and
  * uses five of them. */
+#if RB_PORT
+/* In C, step for step as the assembly has it: the sines and cosines
+ * times each other in the GTE, three at a time, and the rest by the
+ * processor. The GTE's registers are left as the assembly leaves them. */
+void math_RotMatrixZYX(SVECTOR *angles, MATRIX *matrix) {
+    s32 sin_x = g_math_sin_table[angles->vx & ANGLE_MASK];
+    s32 sin_y = g_math_sin_table[angles->vy & ANGLE_MASK];
+    s32 sin_z = g_math_sin_table[angles->vz & ANGLE_MASK];
+    s32 cos_x = g_math_sin_table[(angles->vx + ANGLE_TURN / 4) & ANGLE_MASK];
+    s32 cos_y = g_math_sin_table[(angles->vy + ANGLE_TURN / 4) & ANGLE_MASK];
+    s32 cos_z = g_math_sin_table[(angles->vz + ANGLE_TURN / 4) & ANGLE_MASK];
+    s32 by_cos_z[3]; /* sin x, cos x and cos y, each times cos z */
+    s32 by_sin_z[3]; /* and times sin z */
+    s32 sums[3];
+
+    /* (sin x, cos x, cos y) * cos z */
+    port_GteWriteData(PORT_GTE_IR0, (u32)cos_z);
+    port_GteWriteData(PORT_GTE_IR1, (u32)sin_x);
+    port_GteWriteData(PORT_GTE_IR2, (u32)cos_x);
+    port_GteWriteData(PORT_GTE_IR3, (u32)cos_y);
+    port_GteCommand(PORT_GTE_CMD_GPF12);
+    port_GteStoreData(PORT_GTE_IR1, by_cos_z, 3);
+    matrix->m[2][0] = (s16)-sin_y;
+    matrix->m[0][0] = (s16)by_cos_z[2];
+
+    /* (sin x, cos x, cos y) * sin z */
+    port_GteWriteData(PORT_GTE_IR0, (u32)sin_z);
+    port_GteWriteData(PORT_GTE_IR1, (u32)sin_x);
+    port_GteWriteData(PORT_GTE_IR2, (u32)cos_x);
+    port_GteWriteData(PORT_GTE_IR3, (u32)cos_y);
+    port_GteCommand(PORT_GTE_CMD_GPF12);
+    port_GteStoreData(PORT_GTE_IR1, by_sin_z, 3);
+    matrix->m[2][1] = (s16)((sin_x * cos_y) >> 12);
+    matrix->m[1][0] = (s16)by_sin_z[2];
+    matrix->m[2][2] = (s16)((cos_x * cos_y) >> 12);
+
+    /* (cos x cos z, -sin x cos z, sin x sin z) +
+     * (sin x sin z, cos x sin z, cos x cos z) * sin y */
+    port_GteWriteData(PORT_GTE_IR0, (u32)sin_y);
+    port_GteWriteData(PORT_GTE_MAC1, (u32)by_cos_z[1]);
+    port_GteWriteData(PORT_GTE_MAC2, (u32)-by_cos_z[0]);
+    port_GteWriteData(PORT_GTE_MAC3, (u32)by_sin_z[0]);
+    port_GteWriteData(PORT_GTE_IR3, (u32)by_cos_z[1]);
+    port_GteCommand(PORT_GTE_CMD_GPL12);
+    port_GteStoreData(PORT_GTE_IR1, sums, 3);
+    matrix->m[1][1] = (s16)sums[0];
+    matrix->m[1][2] = (s16)sums[1];
+    matrix->m[0][2] = (s16)sums[2];
+    matrix->m[0][1] = (s16)(((sin_y * by_cos_z[0]) >> 12) - by_sin_z[1]);
+}
+#else
 INCLUDE_ASM("asm/funcs", math_RotMatrixZYX);
+#endif
 
 /* ---- the walk over the queue ---- */
 

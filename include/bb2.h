@@ -78,6 +78,7 @@
 /* What only the native port has (src/port/). */
 #if RB_PORT
 #include "port_gte.h"
+#include "port_platform.h"
 #endif
 
 #endif /* BB2_H */

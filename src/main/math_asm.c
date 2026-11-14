@@ -81,7 +81,26 @@ const u32 g_math_sqrt_table[128] = {
  * at a time and the rest by a jump into a run of single copies. */
 /* Assembly: trapping (20); the frame is made after the first branch; it jumps
  * by a computed address into runs of copies. */
+#if RB_PORT
+void mem_MoveWords(s32 src, s32 dest, s32 size) {
+    u32 *from = (u32 *)src;
+    u32 *to = (u32 *)dest;
+    u32 words = ((u32)size >> 2) + ((size & 3) != 0);
+    u32 i;
+
+    if (src < dest) {
+        for (i = words; i > 0; i--) {
+            to[i - 1] = from[i - 1];
+        }
+    } else {
+        for (i = 0; i < words; i++) {
+            to[i] = from[i];
+        }
+    }
+}
+#else
 INCLUDE_ASM("asm/funcs", mem_MoveWords);
+#endif
 
 /* ---- blending rotations ---- */
 
@@ -90,26 +109,182 @@ INCLUDE_ASM("asm/funcs", mem_MoveWords);
  * so that the result is a rotation. */
 /* Assembly: trapping; gte_NormalizeIR hands it three values in $t0-$t2; 0x38
  * bytes of frame for eight saved registers. */
+#if RB_PORT
+/* Defined further down. */
+static void math_NormalizeIr(s32 *unit);
+
+/* In C. Every number of the two matrices is read before the first of
+ * `out` is written, so `out` may be either of them. */
+void math_LerpRotation(MATRIX *first, MATRIX *second, s32 weight, MATRIX *out) {
+    s32 rest = ONE - weight;
+    s32 rows[4][3]; /* the first two rows of `first`, then of `second` */
+    s32 first_row[3];
+    s32 second_row[3];
+    u32 diagonal[3];
+    s32 along;
+    s32 i;
+
+    for (i = 0; i < 3; i++) {
+        rows[0][i] = first->m[0][i];
+        rows[1][i] = first->m[1][i];
+        rows[2][i] = second->m[0][i];
+        rows[3][i] = second->m[1][i];
+    }
+
+    /* The first row: blended, and made unit length. */
+    port_GteWriteData(PORT_GTE_IR0, (u32)rest);
+    port_GteLoadData(PORT_GTE_IR1, rows[0], 3);
+    port_GteCommand(PORT_GTE_CMD_GPF12);
+    port_GteWriteData(PORT_GTE_IR0, (u32)weight);
+    port_GteLoadData(PORT_GTE_IR1, rows[2], 3);
+    port_GteCommand(PORT_GTE_CMD_GPL12);
+    math_NormalizeIr(first_row);
+
+    /* The second row: blended; what it has along the first is taken off
+     * it; made unit length. */
+    port_GteWriteData(PORT_GTE_IR0, (u32)rest);
+    port_GteLoadData(PORT_GTE_IR1, rows[1], 3);
+    port_GteCommand(PORT_GTE_CMD_GPF12);
+    port_GteWriteData(PORT_GTE_IR0, (u32)weight);
+    port_GteLoadData(PORT_GTE_IR1, rows[3], 3);
+    port_GteCommand(PORT_GTE_CMD_GPL12);
+    port_GteStoreData(PORT_GTE_IR1, second_row, 3);
+    along = (s32)((u32)first_row[0] * (u32)second_row[0] +
+                  (u32)first_row[1] * (u32)second_row[1] +
+                  (u32)first_row[2] * (u32)second_row[2]) >>
+            12;
+    port_GteWriteData(PORT_GTE_IR0, 0U - (u32)along);
+    port_GteLoadData(PORT_GTE_IR1, first_row, 3);
+    port_GteLoadData(PORT_GTE_MAC1, second_row, 3);
+    port_GteCommand(PORT_GTE_CMD_GPL12);
+    math_NormalizeIr(second_row);
+
+    /* The third row: the first crossed with the second. The GTE takes
+     * the first from its rotation's diagonal, which is put back. */
+    for (i = 0; i < 3; i++) {
+        diagonal[i] = port_GteReadControl(PORT_GTE_ROTATION + 2 * i);
+        port_GteWriteControl(PORT_GTE_ROTATION + 2 * i, (u32)first_row[i]);
+    }
+    port_GteLoadData(PORT_GTE_IR1, second_row, 3);
+    port_GteCommand(PORT_GTE_CMD_OP12);
+    for (i = 0; i < 3; i++) {
+        out->m[0][i] = (s16)first_row[i];
+        out->m[1][i] = (s16)second_row[i];
+        out->m[2][i] = (s16)port_GteReadData(PORT_GTE_MAC1 + i);
+        port_GteWriteControl(PORT_GTE_ROTATION + 2 * i, diagonal[i]);
+    }
+}
+#else
 INCLUDE_ASM("asm/funcs", math_LerpRotation);
+#endif
 /* Scales the vector in the GTE's IR1..IR3 to unit length, with the table of
  * reciprocal square roots. The result is left in $t0..$t2: only assembly
  * calls it. */
 /* Assembly: trapping; its results are in $t0-$t2, not $v0. */
+#if RB_PORT
+/* gte_NormalizeIR in C. The assembly leaves its three results in
+ * registers for the assembly that called it; here they go to `unit`.
+ *
+ * The sum of the squares is brought to eight bits, its first bit at an
+ * even place, and those pick one over its root from the table; the
+ * vector times that is shifted back by half of what the sum was moved.
+ * A vector of zeroes, whose sum has no first bit, makes the assembly
+ * read outside the table (the original's behaviour: what it reads is
+ * multiplied by zeroes); here the factor is then 0. */
+static void math_NormalizeIr(s32 *unit) {
+    s32 vector[3];
+    s32 sum;
+    s32 zeroes;
+    s32 top;
+    s32 factor = 0;
+    s32 i;
+
+    port_GteStoreData(PORT_GTE_IR1, vector, 3);
+    port_GteCommand(PORT_GTE_CMD_SQR0);
+    sum = (s32)(port_GteReadData(PORT_GTE_MAC1) +
+                port_GteReadData(PORT_GTE_MAC2) +
+                port_GteReadData(PORT_GTE_MAC3));
+    port_GteWriteData(PORT_GTE_LZCS, (u32)sum);
+    zeroes = (s32)port_GteReadData(PORT_GTE_LZCR) & 0x1E; /* made even */
+    /* the sum's top eight bits, the first of them at bit 6 or 7 */
+    top = (zeroes >= 24) ? sum << (zeroes - 24) : sum >> (24 - zeroes);
+    /* the table begins at 0x40, the least a number so placed can be */
+    if (top >= 0x40 && top < 0x40 + 2 * 96) {
+        /* (the same 0x40) */
+        factor = ((const s16 *)g_math_rsqrt_table)[top - 0x40];
+    }
+    port_GteWriteData(PORT_GTE_IR0, (u32)factor);
+    port_GteLoadData(PORT_GTE_IR1, vector, 3);
+    port_GteCommand(PORT_GTE_CMD_GPF0);
+    for (i = 0; i < 3; i++) {
+        /* back down by half as far as the sum was moved up */
+        unit[i] =
+            (s32)port_GteReadData(PORT_GTE_MAC1 + i) >> ((31 - zeroes) >> 1);
+    }
+}
+#else
 INCLUDE_ASM("asm/funcs", gte_NormalizeIR);
+#endif
 
 /* ---- square roots and lengths ---- */
 
 /* The square root of a whole number, from a table: the GTE counts the
  * leading zeroes, the top bits pick the entry. */
 /* Assembly: trapping; $t scratch. */
+#if RB_PORT
+/* In C. A number below 256 is looked up as it is; a larger one by its
+ * top eight bits, taken at an even bit, and the root moved back up by
+ * half as far. A negative number has no root: the assembly reads outside
+ * the table for it (the original's behaviour), and here it is 0. */
+s32 math_Sqrt(s32 number) {
+    const s16 *roots = (const s16 *)g_math_sqrt_table;
+    s32 zeroes;
+
+    port_GteWriteData(PORT_GTE_LZCS, (u32)number);
+    if (number <= 0) {
+        return 0;
+    }
+    zeroes = (s32)port_GteReadData(PORT_GTE_LZCR) & 0x1E; /* made even */
+    /* 24 leading zeroes: a number of eight bits */
+    if (zeroes >= 24) {
+        return (s32)((u32)roots[number] >> 9);
+    }
+    /* the top eight bits' root, moved up by half as far as they were
+     * moved down */
+    return (
+        s32)((u32)(roots[number >> (24 - zeroes)] << ((31 - zeroes) >> 1)) >>
+             12);
+}
+#else
 INCLUDE_ASM("asm/funcs", math_Sqrt);
+#endif
 /* The length of (x, y, z): the GTE squares them, and the sum goes straight
  * on into math_Sqrt. */
 /* Assembly: trapping; it ends by jumping into math_Sqrt, not calling it. */
+#if RB_PORT
+/* In C. The GTE squares 16 bits of each number. */
+s32 math_Length(s32 x, s32 y, s32 z) {
+    return math_Sqrt(math_LengthSquared(x, y, z));
+}
+#else
 INCLUDE_ASM("asm/funcs", math_Length);
+#endif
 /* The same without the root. */
 /* Assembly: $t scratch; math_Length to the last two instructions. */
+#if RB_PORT
+/* In C. The GTE squares 16 bits of each number. */
+s32 math_LengthSquared(s32 x, s32 y, s32 z) {
+    port_GteWriteData(PORT_GTE_IR1, (u32)x);
+    port_GteWriteData(PORT_GTE_IR2, (u32)y);
+    port_GteWriteData(PORT_GTE_IR3, (u32)z);
+    port_GteCommand(PORT_GTE_CMD_SQR0);
+    return (
+        s32)(port_GteReadData(PORT_GTE_MAC1) + port_GteReadData(PORT_GTE_MAC2) +
+             port_GteReadData(PORT_GTE_MAC3));
+}
+#else
 INCLUDE_ASM("asm/funcs", math_LengthSquared);
+#endif
 
 /* ---- blends ---- */
 
@@ -117,8 +292,51 @@ INCLUDE_ASM("asm/funcs", math_LengthSquared);
  * and of the nine numbers of two matrices (which is not a rotation any
  * more: math_LerpRotation). Nothing calls either. */
 /* Assembly: trapping; $t scratch. Both of them. */
+#if RB_PORT
+/* One row of three halfwords blended in the GTE: `weight` of the second
+ * and the rest of the first. */
+static void math_LerpRow(
+    const s16 *first, const s16 *second, s32 weight, s16 *out) {
+    s32 row[3];
+    s32 i;
+
+    for (i = 0; i < 3; i++) {
+        row[i] = first[i];
+    }
+    port_GteWriteData(PORT_GTE_IR0, (u32)(ONE - weight));
+    port_GteLoadData(PORT_GTE_IR1, row, 3);
+    port_GteCommand(PORT_GTE_CMD_GPF12);
+    for (i = 0; i < 3; i++) {
+        row[i] = second[i];
+    }
+    port_GteWriteData(PORT_GTE_IR0, (u32)weight);
+    port_GteLoadData(PORT_GTE_IR1, row, 3);
+    port_GteCommand(PORT_GTE_CMD_GPL12);
+    for (i = 0; i < 3; i++) {
+        out[i] = (s16)port_GteReadData(PORT_GTE_IR1 + i);
+    }
+}
+
+/* In C. */
+void math_LerpSVector(
+    SVECTOR *first, SVECTOR *second, s32 weight, SVECTOR *out) {
+    math_LerpRow(&first->vx, &second->vx, weight, &out->vx);
+}
+
+/* In C. A row is read from both matrices before it is written, so `out`
+ * may be either of them. */
+void math_LerpMatrix3x3(
+    MATRIX *first, MATRIX *second, s32 weight, MATRIX *out) {
+    s32 row;
+
+    for (row = 0; row < 3; row++) {
+        math_LerpRow(first->m[row], second->m[row], weight, out->m[row]);
+    }
+}
+#else
 INCLUDE_ASM("asm/funcs", math_LerpSVector);
 INCLUDE_ASM("asm/funcs", math_LerpMatrix3x3);
+#endif
 
 /* ---- matrices ---- */
 
@@ -128,44 +346,171 @@ INCLUDE_ASM("asm/funcs", math_LerpMatrix3x3);
  * one before. */
 /* Assembly: it works in $t0-$t7 and $t9 with $a3 never touched; the packing
  * of each column is placed by hand in the GTE's wait for the one before. */
+#if RB_PORT
+/* In C. */
+void math_MulMatrix(MATRIX *first, MATRIX *second, MATRIX *out) {
+    s32 columns[PORT_GTE_MATRIX_ELEMENTS];
+
+    port_GteLoadControl(PORT_GTE_ROTATION, first, PORT_GTE_MATRIX_WORDS);
+    port_GteWriteControl(PORT_GTE_TRX, 0);
+    port_GteWriteControl(PORT_GTE_TRY, 0);
+    port_GteWriteControl(PORT_GTE_TRZ, 0);
+    port_GteRotateColumns(second->m, PORT_GTE_CMD_RTV0TR, columns);
+    port_GteStoreColumns(out->m, columns, FALSE);
+}
+#else
 INCLUDE_ASM("asm/funcs", math_MulMatrix);
+#endif
 /* A point taken through a matrix and its translation: the point as an
  * SVECTOR, and as three words. */
 /* Assembly: GTE in the delay slot; $t scratch. Both of them. */
+#if RB_PORT
+/* In C. The results are the GTE's 16-bit ones (IR), each held to 16
+ * bits. */
+void math_Transform(MATRIX *matrix, SVECTOR *point, VECTOR *out) {
+    port_GteLoadControl(
+        PORT_GTE_ROTATION, matrix, PORT_GTE_MATRIX_AND_TRANSLATION_WORDS);
+    port_GteLoadData(PORT_GTE_VXY0, point, 2);
+    port_GteCommand(PORT_GTE_CMD_RTV0TR);
+    port_GteStoreData(PORT_GTE_IR1, out, 3);
+}
+
+/* In C. Sixteen bits of each of the point's three words are taken. */
+void math_TransformVector(void *matrix, void *point, void *out) {
+    const u32 *words = (const u32 *)point;
+
+    port_GteLoadControl(
+        PORT_GTE_ROTATION, matrix, PORT_GTE_MATRIX_AND_TRANSLATION_WORDS);
+    port_GteWriteData(PORT_GTE_VXY0, (words[0] & 0xFFFF) | (words[1] << 16));
+    port_GteWriteData(PORT_GTE_VZ0, words[2]);
+    port_GteCommand(PORT_GTE_CMD_RTV0TR);
+    port_GteStoreData(PORT_GTE_IR1, out, 3);
+}
+#else
 INCLUDE_ASM("asm/funcs", math_Transform);
 INCLUDE_ASM("asm/funcs", math_TransformVector);
+#endif
 /* Loads a matrix into the GTE: with its translation, and with none. Nothing
  * calls either. */
 /* Assembly: GTE in the delay slot; $t scratch. Both of them. Sony's
  * gte_SetRotMatrix and gte_SetTransMatrix compile to other instructions. */
+#if RB_PORT
+/* In C. */
+void gte_LoadMatrix(MATRIX *matrix) {
+    port_GteLoadControl(
+        PORT_GTE_ROTATION, matrix, PORT_GTE_MATRIX_AND_TRANSLATION_WORDS);
+}
+
+/* In C. */
+void gte_LoadRotation(MATRIX *matrix) {
+    port_GteLoadControl(PORT_GTE_ROTATION, matrix, PORT_GTE_MATRIX_WORDS);
+    port_GteWriteControl(PORT_GTE_TRX, 0);
+    port_GteWriteControl(PORT_GTE_TRY, 0);
+    port_GteWriteControl(PORT_GTE_TRZ, 0);
+}
+#else
 INCLUDE_ASM("asm/funcs", gte_LoadMatrix);
 INCLUDE_ASM("asm/funcs", gte_LoadRotation);
+#endif
 /* A point through a matrix's rotation, with the translation given apart, as
  * three halfwords. Nothing calls it. */
 /* Assembly: GTE in the delay slot; $t scratch. */
+#if RB_PORT
+/* In C. */
+void math_TransformOffset(
+    MATRIX *matrix, SVECTOR *offset, SVECTOR *point, VECTOR *out) {
+    port_GteLoadControl(PORT_GTE_ROTATION, matrix, PORT_GTE_MATRIX_WORDS);
+    port_GteWriteControl(PORT_GTE_TRX, (u32)offset->vx);
+    port_GteWriteControl(PORT_GTE_TRY, (u32)offset->vy);
+    port_GteWriteControl(PORT_GTE_TRZ, (u32)offset->vz);
+    port_GteLoadData(PORT_GTE_VXY0, point, 2);
+    port_GteCommand(PORT_GTE_CMD_RTV0TR);
+    port_GteStoreData(PORT_GTE_IR1, out, 3);
+}
+#else
 INCLUDE_ASM("asm/funcs", math_TransformOffset);
+#endif
 
 /* ---- odds and ends ---- */
 
 /* The GTE's far colour, the colour of the fog, as three bytes. */
 /* Assembly: $t scratch; empty delay slot. */
+#if RB_PORT
+/* In C. The GTE keeps the far colour in sixteenths. */
+void gte_ReadFarColor(CVECTOR *color) {
+    color->r = (u8)(port_GteReadControl(PORT_GTE_RFC) >> 4);
+    color->g = (u8)(port_GteReadControl(PORT_GTE_GFC) >> 4);
+    color->b = (u8)(port_GteReadControl(PORT_GTE_BFC) >> 4);
+}
+#else
 INCLUDE_ASM("asm/funcs", gte_ReadFarColor);
+#endif
 /* Stops the game where something cannot go on: a write just past the end of
  * the scratchpad, where there is no memory. */
 /* Assembly: the address is built in $t9 with lui and ori; the compiler stores
  * through $at. */
+#if RB_PORT
+/* In C: the port has no such address; its platform layer stops the game
+ * (port_platform.h). */
+void sys_Trap(void) { port_Trap(); }
+#else
 INCLUDE_ASM("asm/funcs", sys_Trap);
+#endif
 /* render.h: the ordering-table entry for a depth. */
 /* Assembly: trapping; $t scratch. The same sum written in C comes out in
  * $v0 and $v1, with addiu and subu. */
+#if RB_PORT
+/* In C. The depth, less the bits `shift` leaves it, is a number of 11
+ * bits and above them how far to shift it; the entry counts down from
+ * the table's top. */
+s32 render_DepthToOtShifted(s32 depth, s32 shift) {
+    /* (a shift takes five bits of its count) */
+    u32 value = (u32)depth >> ((3 - shift) & 31);
+    /* the 11 bits, less the table's size */
+    s32 mantissa = (s32)(value & 0x7FF) - 0x1000;
+
+    /* shifted by what is above them, and cut to the table's size */
+    return (mantissa >> ((value >> 11) & 31)) & 0xFFF;
+}
+#else
 INCLUDE_ASM("asm/funcs", render_DepthToOtShifted);
+#endif
 
 /* ---- the collision test's two helpers (collision.h) ----
  * The last two routines of the assembly, just ahead of collision.c's code. */
 
 /* Puts (point - origin) on the two axes of a face's frame, in the GTE. */
 /* Assembly: trapping; $t scratch. */
+#if RB_PORT
+/* In C. `frame` is the address of nine halfwords: the origin, then the
+ * two axes, which become the first two rows of the GTE's rotation. Its
+ * third row is left as it was, and so is what the GTE makes of it. */
+void collision_ProjectOnFace(s32 frame, s32 x, s32 y, s32 z) {
+    const s16 *origin = (const s16 *)frame;
+    const u16 *axes = (const u16 *)frame + 3;
+    s32 i;
+
+    for (i = 0; i < 3; i++) {
+        port_GteWriteControl(
+            PORT_GTE_ROTATION + i, axes[2 * i] | ((u32)axes[2 * i + 1] << 16));
+        port_GteWriteControl(PORT_GTE_TRX + i, 0);
+    }
+    port_GteWriteData(PORT_GTE_VXY0, ((u32)(x - origin[0]) & 0xFFFF) |
+                                         ((u32)(y - origin[1]) << 16));
+    port_GteWriteData(PORT_GTE_VZ0, (u32)(z - origin[2]));
+    port_GteCommand(PORT_GTE_CMD_RTV0TR);
+}
+#else
 INCLUDE_ASM("asm/funcs", collision_ProjectOnFace);
+#endif
 /* Reads the two results back. */
 /* Assembly: $t scratch; empty delay slot. */
+#if RB_PORT
+/* In C. */
+void collision_ReadProjection(s32 *u, s32 *v) {
+    *u = (s32)port_GteReadData(PORT_GTE_IR1) >> 2;
+    *v = (s32)port_GteReadData(PORT_GTE_IR2) >> 2;
+}
+#else
 INCLUDE_ASM("asm/funcs", collision_ReadProjection);
+#endif
