@@ -66,6 +66,10 @@ tests. `make quickboot` / `quickboot-disc` build a developer's ReBushido that bo
 fight (`build/quickboot/`); `make playtest` runs the scripted play tests locally (it needs the
 retail image and PCSX-Redux: `REBUSHIDO_EMULATOR`, `REBUSHIDO_RETAIL`). A new ReBushido variable
 of eight bytes or fewer is small data; the generated link script keeps each kind's end on a word.
+The ReBushido disc opens on an options page (`RB_OPTIONS_PAGE`, `src/rebushido/options.c`) and
+keeps its settings in its own memory card file (`save.c`); a new setting is a member of
+`RbSettings`, an `RbSaveSlot` and a line of `g_rb_options`. Play tests of a ReBushido disc must
+press Start on the page first (`rb_page == RB_PAGE_UP`).
 Never edit `bb2.ld` for ReBushido. `src/rebushido/` holds ReBushido's own files (names
 `rb_*`, `g_rb_*`, `Rb*`; headers `include/rebushido.h` for the switches and `include/rb_*.h`).
 
