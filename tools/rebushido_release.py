@@ -190,7 +190,7 @@ README = """\
 
 ReBushido is a mod of Bushido Blade 2 (PlayStation, 1998), built from a
 decompilation of the game. This is a patch for your own image of the
-disc. It is not the game, and the game is not in it.
+disc. It is not the game, and is of no use without that image.
 
 What you need
 -------------
@@ -255,8 +255,9 @@ ReBushido is free software under the GNU Affero General Public License,
 version 3 or later, and comes with no warranty. Bushido Blade 2 belongs
 to its rights holders (Square / Lightweight, 1998); this project is not
 affiliated with them or with Sony. The patch holds what ReBushido's
-program has that the retail one does not: its own code, the addresses
-that moved, and the error codes of the sectors it changes.
+program has that the retail one does not: its own code, the functions
+it changes, the addresses that moved, and the error codes of the sectors
+it changes.
 """
 
 

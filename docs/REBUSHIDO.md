@@ -647,19 +647,20 @@ the image somewhere else, the result so far, or the patch itself. Only
 the last kind is carried, and the tool that makes the patch looks for
 every run of ReBushido's program in the retail image's own program
 before it carries a byte, so code that only moved is "this many bytes
-from there". The report counts what is left. For 0.1 as it stands, a
-patch of 176 KB carries 115,587 bytes:
+from there". The report (`patch-report.txt`) counts what is left. For
+0.1 as it stands the patch is 176 KB and carries about 115,700 bytes; a
+few of each kind come and go with the commit's letters in the version:
 
 | Bytes | What they are |
 |---|---|
-| 80,316 | The error codes (EDC and ECC) of the 299 sectors of the program and of the directory's. They follow from the sectors' contents, and a patch of the raw image has to carry them |
+| 80,360 | The error codes (EDC and ECC) of the 299 sectors of the program and of the directory's. They follow from the sectors' contents, and a patch of the raw image has to carry them |
 | 28,350 | Addresses inside the game's instructions and tables: the program was linked again, most of it is somewhere else, and every call and pointer to what moved has other bytes than the original's |
-| 4,092 | ReBushido's own code and data |
-| 2,588 | The seventeen functions of the game that ReBushido changes, as they compile now. Much of that is the original function's code in another shape |
-| 145 | Bytes of the original program that the tool found no run for: the same as the retail program has at that place of the same function or table |
-| 96 | The rest: the directory's record of the program's size, the program's header, two bytes of sector headers, padding |
+| 4,080 | ReBushido's own code and data |
+| 2,650 | The seventeen functions of the game that ReBushido changes, as they compile now. Much of that is the original function's code in another shape |
+| 150 | Bytes of the original program that the tool found no run for: the same as the retail program has at that place of the same function or table |
+| 100 | The rest: the directory's record of the program's size, the program's header, two bytes of sector headers, padding |
 
-So the patch does hold a little of the original as it is (the 145),
+So the patch does hold a little of the original as it is (the 150),
 and the changed functions hold more of it recompiled. What would shrink
 all of this is a link that leaves the original where it is, ReBushido's
 additions after the original's sections and a changed function moved out
