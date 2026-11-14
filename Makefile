@@ -85,10 +85,14 @@ QB_WEAPON1   ?= WEAPON_ID_KATANA
 QB_WEAPON2   ?= WEAPON_ID_KATANA
 QB_STAGE     ?= STAGE_BAMBOO_THICKET
 QB_CPU2      ?= 1
+# 1: the fight starts with the "Bugfixes" setting on (the build has no
+# options page to turn it on at).
+QB_BUGFIXES  ?= 0
 # The disc image `make quickboot-disc` writes: build/play/$(QB_NAME).bin.
 QB_NAME      ?= QuickBoot
 QB_SETTINGS  := QB_MODE=$(QB_MODE) QB_P1=$(QB_P1) QB_P2=$(QB_P2) QB_WEAPON1=$(QB_WEAPON1) \
-                QB_WEAPON2=$(QB_WEAPON2) QB_STAGE=$(QB_STAGE) QB_CPU2=$(QB_CPU2)
+                QB_WEAPON2=$(QB_WEAPON2) QB_STAGE=$(QB_STAGE) QB_CPU2=$(QB_CPU2) \
+                QB_BUGFIXES=$(QB_BUGFIXES)
 QUICKBOOT    ?= 0
 ifeq ($(REBUSHIDO)$(QUICKBOOT),11)
 BUILD_DIR    := build/quickboot
@@ -197,15 +201,24 @@ quickboot-disc: quickboot
 	@echo "OK: $(PLAY_DIR)/$(QB_NAME).cue"
 
 # The scripted play tests (tests/play/README.md): the game run in an
-# emulator with no window, on the developer's machine only. Builds the two
-# discs the tests want beside the retail one, the ReBushido disc and a
-# quick-boot disc of the tests' own, then runs the tests; where the retail
-# image or the emulator is missing the tests say what they skipped.
+# emulator with no window, on the developer's machine only. Builds the
+# discs the tests want beside the retail one, the ReBushido disc and three
+# quick-boot discs of the tests' own (a fight to play to its end, and a
+# fight that goes through two of the original's bugs, built with the
+# "Bugfixes" setting off and with it on), then runs the tests; where the
+# retail image or the emulator is missing the tests say what they skipped.
 PLAYTEST_QB  := QB_NAME=QuickBoot-playtest QB_MODE=FIGHT_MODE_VS QB_P1=ROSTER_MIKADO QB_P2=ROSTER_UTAMARU \
+                QB_WEAPON1=WEAPON_ID_NAGINATA QB_WEAPON2=WEAPON_ID_KATANA QB_STAGE=STAGE_LIGHTHOUSE QB_CPU2=1
+# The vanisher with a naginata, off the shrine's stage: its first frame
+# sweeps the shaft from a stale place, and struck it comes back at another
+# stage's place (tests/play/first_frame_sweep.toml, vanish.toml).
+PLAYTEST_BUGS := QB_MODE=FIGHT_MODE_VS QB_P1=ROSTER_VANISHER QB_P2=ROSTER_UTAMARU \
                 QB_WEAPON1=WEAPON_ID_NAGINATA QB_WEAPON2=WEAPON_ID_KATANA QB_STAGE=STAGE_LIGHTHOUSE QB_CPU2=1
 playtest-discs:
 	@if [ -f "$(RETAIL_IMAGE)" ]; then \
-		$(MAKE) rebushido-disc && $(MAKE) quickboot-disc $(PLAYTEST_QB); \
+		$(MAKE) rebushido-disc && $(MAKE) quickboot-disc $(PLAYTEST_QB) && \
+		$(MAKE) quickboot-disc $(PLAYTEST_BUGS) QB_NAME=QuickBoot-bugs QB_BUGFIXES=0 && \
+		$(MAKE) quickboot-disc $(PLAYTEST_BUGS) QB_NAME=QuickBoot-bugfixes QB_BUGFIXES=1; \
 	else \
 		echo "playtest: no retail image \"$(RETAIL_IMAGE)\" here: no disc is built"; \
 	fi

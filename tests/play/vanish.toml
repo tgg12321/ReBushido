@@ -1,0 +1,58 @@
+about = "Off the shrine's stage the vanisher, struck, comes back at another stage's place and falls; with Bugfixes on, at its own."
+discs = ["quickboot-bugs", "quickboot-bugfixes"]
+limit = 6000
+
+# The first fighter is the vanisher and walks in; the CPU's blade does the
+# rest.
+input = [
+    "fight+100 RIGHT hold 90",
+    "fight+500 RIGHT hold 90",
+]
+
+# Where it starts: the lighthouse's first pair of start positions.
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+within = 2400
+expect = [
+    "p1_roster == ROSTER_VANISHER",
+    "stage == STAGE_LIGHTHOUSE",
+    "p1_x == 3400 && p1_z == 7400",
+    "p1_vanish_count == 0",
+]
+
+# Struck, it is gone and comes back at its start position, which the
+# original reads with half the table's stride (fighter_Vanish): the
+# nineteenth stage's place is read where the tenth's second pair is.
+[[checkpoint]]
+name = "vanished"
+runs = [1]
+when = "p1_vanish_count == 1"
+within = 3000
+expect = ["rb_bugfixes == 0", "p1_x == 4000 && p1_z == -12000"]
+
+# There is no ground there: two seconds on it has fallen out of the stage.
+[[checkpoint]]
+name = "fallen"
+runs = [1]
+after = 120
+expect = ["p1_y < -1000 || p1_y > 1000", "screen == SCREEN_FIGHT_UPDATE"]
+
+# With the fix it is back where it started,
+[[checkpoint]]
+name = "vanished_fixed"
+runs = [2]
+when = "p1_vanish_count == 1"
+within = 3000
+expect = ["rb_bugfixes == 1", "p1_x == 3400 && p1_z == 7400"]
+
+# and stands there.
+[[checkpoint]]
+name = "standing"
+runs = [2]
+after = 120
+expect = [
+    "p1_y > -100 && p1_y < 100",
+    "p1_defeated == 0",
+    "screen == SCREEN_FIGHT_UPDATE",
+]

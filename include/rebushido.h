@@ -42,6 +42,79 @@
 #endif
 #define RB_QUICK_BOOT (REBUSHIDO && RB_QUICK_BOOT_BUILD)
 
+/* ---- the fixes of the original's bugs ---- */
+
+/* Each is on only while the player's "Bugfixes" setting is
+ * (g_rb_settings.bugfixes); docs/REBUSHIDO.md, "The fixes", has the table. */
+
+/* A fighter's first frame gives all three of its weapon's points a last
+ * place: the blade's far end and a pole arm's shaft were swept from where
+ * the last fight left them, or from what lay on the scratchpad
+ * (fighter_Update). */
+#define RB_FIX_FIRST_FRAME_SWEEP (REBUSHIDO && 1)
+
+/* A blade's hit gives fighter_TakeHit a place for the word it clears
+ * first: it was written at address 0 (fight_TestBladesOnBodies). */
+#define RB_FIX_HIT_NULL_WRITE (REBUSHIDO && 1)
+
+/* The vanisher comes back at its own stage's start position off the
+ * shrine's stage: the table was read with half its stride
+ * (fighter_Vanish). */
+#define RB_FIX_VANISH_PLACE (REBUSHIDO && 1)
+
+/* A splash asked for while twelve are alive is not made: it was written
+ * over the next table (eff_SpawnSplash). */
+#define RB_FIX_SPLASH_POOL (REBUSHIDO && 1)
+
+/* An object launched while twelve are loose takes the last place: it was
+ * written after the pool (object_Launch). */
+#define RB_FIX_OBJECT_POOL (REBUSHIDO && 1)
+
+/* The muzzle flashes keep an ordering-table index for every quad of all
+ * six: there was room for two flashes' and a fourth flash sent the
+ * third's quads anywhere (eff_DrawMuzzleFlashes). */
+#define RB_FIX_MUZZLE_FLASH_INDICES (REBUSHIDO && 1)
+
+/* The points and the team scores count their second drawing mode in the
+ * size they return: the caller built its next primitive over it
+ * (hud_DrawPointsAndTime, hud_DrawTeamScores). */
+#define RB_FIX_HUD_DRAW_MODE (REBUSHIDO && 1)
+
+/* The ending's picture and the count of opponents beaten move the
+ * primitive cursor on by words, not by four times as much
+ * (cutscene_EndingUpdate, fight_KillCountUpdate). */
+#define RB_FIX_PRIM_CURSOR (REBUSHIDO && 1)
+
+/* The boot image's fade walks the picture's pixels: it began 20 bytes in,
+ * so the first ten pixels never faded, and ran 20 bytes past the end
+ * (disp_ShowBootImage). */
+#define RB_FIX_BOOT_FADE (REBUSHIDO && 1)
+
+/* The first frame tells pad_Update that no frame was skipped: it was told
+ * whatever the register held (main). */
+#define RB_FIX_FIRST_FRAME_PAD (REBUSHIDO && 1)
+
+/* Coming back to chanbara's page from a fight starts the music once
+ * (menu_EnterMode). */
+#define RB_FIX_CHANBARA_MUSIC (REBUSHIDO && 1)
+
+/* A link that gave up trades nothing: the other side's unlocks, its
+ * buttons and the seed were set from what was received last
+ * (link_Connect). */
+#define RB_FIX_LINK_GIVE_UP (REBUSHIDO && 1)
+
+/* The castle rooftop's backdrop meshes move by as far as the stage did:
+ * the distance was not passed (resource_OnStageMoved). */
+#define RB_FIX_ROOFTOP_REBASE (REBUSHIDO && 1)
+
+/* A splash's drops begin to fade at full brightness: the first frame of
+ * the fade had a blue that did not fit its byte (eff_DrawSplashes). */
+#define RB_FIX_SPLASH_FADE (REBUSHIDO && 1)
+
+/* The dirt puff is drawn with its frame's 32 rows of texture, not 33
+ * (eff_SetUpParticles). */
+#define RB_FIX_DIRT_PUFF_ROW (REBUSHIDO && 1)
+
 /* ---- what only the ReBushido build has ---- */
 
 #if REBUSHIDO

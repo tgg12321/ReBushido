@@ -1152,6 +1152,10 @@ s32 eff_DrawMuzzleFlashes(void) {
     s32 slot_bit;
     SVECTOR *quad_vertices;
     POLY_FT4 *quads_end;
+#if RB_FIX_MUZZLE_FLASH_INDICES
+    /* an index for every quad of every flash */
+    u16 rb_ot_indices[MUZZLE_FLASH_COUNT * MUZZLE_FLASH_QUADS];
+#endif
 
     /* FAKE: the work area, held in the quad pointer */
     quad = (POLY_FT4 *)g_eff_work;
@@ -1163,6 +1167,13 @@ s32 eff_DrawMuzzleFlashes(void) {
     quad_ot_indices = ((MuzzleFlashWork *)quad)->ot_indices;
     scale = ((MuzzleFlashWork *)quad)->scale;
     gray = &((MuzzleFlashWork *)quad)->gray;
+#if RB_FIX_MUZZLE_FLASH_INDICES
+    /* the work area has room for six indices, two flashes' quads, with
+     * the size of the flash being made straight after them */
+    if (g_rb_settings.bugfixes) {
+        quad_ot_indices = rb_ot_indices;
+    }
+#endif
     quad = g_eff_next_prim;
     for (slot_index = 0; slot_index < MUZZLE_FLASH_COUNT; slot_index++) {
         slot_bit = 1 << slot_index;
@@ -1294,6 +1305,13 @@ s32 eff_SpawnSplash(void) {
             break;
         }
     }
+#if RB_FIX_SPLASH_POOL
+    /* no place is free: the thirteenth splash is not made, where it was
+     * written over the start of the next table */
+    if (g_rb_settings.bugfixes && slot_index == SPLASH_COUNT) {
+        return 1;
+    }
+#endif
     position = g_eff_position;
     g_eff_splash_positions[slot_index].x = position[0];
     g_eff_splash_positions[slot_index].y = position[1];
@@ -1481,6 +1499,14 @@ s32 eff_DrawSplashes(void) {
                              * own: the original's behaviour. */
                             *fade = g_eff_splash_ages[slot_index] -
                                     (SPLASH_FRAMES - 1);
+#if RB_FIX_SPLASH_FADE
+                            /* the fade's first frame is at the full
+                             * colour, five frames' worth: six made a
+                             * blue that did not fit its byte */
+                            if (g_rb_settings.bugfixes && *fade < -5) {
+                                *fade = -5; /* five frames from the end */
+                            }
+#endif
                             /* 128 at five frames from the end */
                             red_green_level = (*fade * -128 / 5) & 0xFF;
                             /* 255 at five frames from the end */
@@ -2908,7 +2934,15 @@ static u8 eff_SetUpParticles(s32 kind, s32 set) {
         /* the height is not one less, as the others are: a row more than
          * the frame has is drawn (the original's behaviour) */
         *tex_width = DIRT_PUFF_TEX_SIZE - 1;
-        *tex_height = DIRT_PUFF_TEX_SIZE;
+#if RB_FIX_DIRT_PUFF_ROW
+        if (g_rb_settings.bugfixes) {
+            /* the frame's own rows, as the width */
+            *tex_height = DIRT_PUFF_TEX_SIZE - 1;
+        } else
+#endif
+        {
+            *tex_height = DIRT_PUFF_TEX_SIZE;
+        }
         *g_eff_base_width = DIRT_PUFF_WIDTH;
         *g_eff_base_height = DIRT_PUFF_HEIGHT;
         *g_eff_tpage = EFF_PAGE_RIGHT;

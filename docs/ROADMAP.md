@@ -10,17 +10,23 @@ No dates.
    where the player sets "Bugfixes" and the picture, and a file of
    ReBushido's own on the memory card that keeps the choices
    ([`REBUSHIDO.md`](REBUSHIDO.md), "The options page"). The game's save
-   is never touched. The two settings are kept and nothing reads them
-   until items 4 to 7.
+   is never touched. "Bugfixes" is read by item 4; nothing reads
+   "Graphics" until items 5 to 7.
 3. **Scripted play tests.** Done, so that everything after it can be
    tried. The game run in an emulator with no window, by
    script, on the developer's machine only (`make playtest`,
    [`tests/play/README.md`](../tests/play/README.md)); and a build that
    boots straight into a chosen fight, for people and for agents
    (`make quickboot-disc`, [`REBUSHIDO.md`](REBUSHIDO.md)).
-4. **The bug fixes.** The list is in [`STATUS.md`](STATUS.md), "Suspected
-   bugs and oddities of the original". Each is behind the "Bugfixes"
-   setting; one that changes how the game plays by much gets its own.
+4. **The bug fixes.** Done for the bugs that are plainly mistakes and
+   whose fix changes nothing for a player who never met them: fifteen,
+   all behind the "Bugfixes" setting ([`REBUSHIDO.md`](REBUSHIDO.md),
+   "The fixes"). The list they come from is in [`STATUS.md`](STATUS.md),
+   "Suspected bugs and oddities of the original". Left to decide, one by
+   one: the bugs whose fix changes how a fight plays, what the CPU does
+   or what everybody has seen and heard (the same section, "Left as the
+   original has it"); one of those that is fixed gets a setting of its
+   own if it changes how the game plays by much.
 5. **Widescreen.** A wide picture for the fight and the menus.
 6. **The 640 by 480 mode.**
 7. **60 frames a second**, after measuring what rate the game runs at and

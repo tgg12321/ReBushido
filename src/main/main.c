@@ -340,6 +340,12 @@ static void disp_ShowBootImage(u8 *file_buffer, void *unused1, s32 unused2) {
                 (u16 *)(file_buffer + TIM_PIXELS_NO_CLUT + TIM_PIXELS_NO_CLUT);
             s32 j;
 
+#if RB_FIX_BOOT_FADE
+            /* from the first pixel to the last */
+            if (g_rb_settings.bugfixes) {
+                pixel_cursor = (u16 *)(file_buffer + TIM_PIXELS_NO_CLUT);
+            }
+#endif
             for (j = 0; j < rect.w * rect.h; j++, pixel_cursor++) {
                 u16 pixel = *pixel_cursor;
                 s32 red = pixel & PIXEL_PART_MASK;
@@ -595,6 +601,13 @@ void main(void) {
 #endif
     g_sys_skip_frames = 0;
     g_disp_frame_count = 0;
+#if RB_FIX_FIRST_FRAME_PAD
+    /* no frame has gone unshown yet: the first pad_Update was told
+     * whatever the register held */
+    if (g_rb_settings.bugfixes) {
+        skipped = 0;
+    }
+#endif
 
     for (;;) {
         /* A fresh ordering table and primitive buffer for this frame. */

@@ -36,7 +36,12 @@ ENUMS = {
     "QB_WEAPON2": ("the second fighter's weapon", "include/weapon.h", "WeaponId", ("WEAPON_ID_COUNT",)),
     "QB_STAGE": ("the stage", "include/stage.h", "StageIndex", ()),
 }
-ORDER = ("QB_MODE", "QB_P1", "QB_P2", "QB_WEAPON1", "QB_WEAPON2", "QB_STAGE", "QB_CPU2")
+ORDER = ("QB_MODE", "QB_P1", "QB_P2", "QB_WEAPON1", "QB_WEAPON2", "QB_STAGE", "QB_CPU2", "QB_BUGFIXES")
+# the two that are a 0 or a 1, and what each is
+FLAGS = {
+    "QB_CPU2": "whether the CPU plays the second fighter",
+    "QB_BUGFIXES": "whether the fight starts with the Bugfixes setting on",
+}
 DISC_NAME = re.compile(r"QuickBoot[\w-]*$")
 
 
@@ -50,7 +55,7 @@ def members(header, enum):
 
 
 def legal(variable):
-    if variable == "QB_CPU2":
+    if variable in FLAGS:
         return ["0", "1"]
     if variable == "QB_MODE":
         return [name for name in members(*ENUMS[variable][1:3]) if name in MODES]
@@ -97,8 +102,8 @@ def write(out, args):
 def show():
     print("The variables of `make quickboot` and `make quickboot-disc`, and what each can be:\n")
     for name in ORDER:
-        if name == "QB_CPU2":
-            print("QB_CPU2: whether the CPU plays the second fighter\n    0  1\n")
+        if name in FLAGS:
+            print("%s: %s\n    0  1\n" % (name, FLAGS[name]))
             continue
         print("%s: %s (enum %s, %s)" % (name, ENUMS[name][0], ENUMS[name][2], ENUMS[name][1]))
         for value in legal(name):

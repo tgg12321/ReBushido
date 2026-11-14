@@ -53,6 +53,14 @@ python3 tests/run.py --rebushido -v rebushido/settings # one, showing what it pr
   and its mode started once. `rebushido/play_state` holds the offsets the
   play tests read the fighters at (`tests/play/state.toml`) to the
   structures of `include/`.
+- A test of one of ReBushido's fixes is `tests/rebushido/fix_NAME.c`: it
+  includes the game's file that has the fix and runs the function with
+  the "Bugfixes" setting off, for what the original does, and on
+  ([`docs/REBUSHIDO.md`](../docs/REBUSHIDO.md), "The fixes"). There are
+  five: the boot image's fade, where the vanisher comes back, the size
+  the team battle's counters return, and a splash and a loose object
+  when their tables are full. The last two run only the fixed side at
+  the full table: there the original writes outside it.
 - The game's tests are linked with `src/rebushido/settings.c` in this run,
   the settings as they are when the game starts. A file of the game's whose
   change asks a setting therefore still has to compute what the original

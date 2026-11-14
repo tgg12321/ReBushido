@@ -527,37 +527,44 @@ s32 link_Connect(void) {
     menu_HideLinkPicture();
     pad_ResetState();
 
-    g_link_send_payload = link_PackUnlockMask(g_saved_record.unlock_mask);
-    link_ExchangeIdle();
-    VSync(1);
-    link_ExchangeIdle();
-    g_link_peer_unlock_mask =
-        link_UnpackUnlockMask((g_link_recv_check_word >> 16));
-
-    g_link_send_payload = pad_PackButtonConfig();
-    VSync(1);
-    link_ExchangeIdle();
-    VSync(1);
-    link_ExchangeIdle();
-    VSync(1);
-    link_ExchangeIdle();
-    pad_SetRemoteButtonConfig((g_link_recv_check_word >> 16));
-
-    g_link_send_payload = rand();
-    VSync(1);
-    link_ExchangeIdle();
-    VSync(1);
-    link_ExchangeIdle();
-    VSync(1);
-    link_ExchangeIdle();
+#if RB_FIX_LINK_GIVE_UP
+    if (g_rb_settings.bugfixes && result < 0) {
+        /* given up: the link is shut, and there is nothing to trade */
+    } else
+#endif
     {
-        s32 seed;
-        if (g_link_side == 0) {
-            seed = g_link_send_payload;
-        } else {
-            seed = g_link_recv_check_word >> 16;
+        g_link_send_payload = link_PackUnlockMask(g_saved_record.unlock_mask);
+        link_ExchangeIdle();
+        VSync(1);
+        link_ExchangeIdle();
+        g_link_peer_unlock_mask =
+            link_UnpackUnlockMask((g_link_recv_check_word >> 16));
+
+        g_link_send_payload = pad_PackButtonConfig();
+        VSync(1);
+        link_ExchangeIdle();
+        VSync(1);
+        link_ExchangeIdle();
+        VSync(1);
+        link_ExchangeIdle();
+        pad_SetRemoteButtonConfig((g_link_recv_check_word >> 16));
+
+        g_link_send_payload = rand();
+        VSync(1);
+        link_ExchangeIdle();
+        VSync(1);
+        link_ExchangeIdle();
+        VSync(1);
+        link_ExchangeIdle();
+        {
+            s32 seed;
+            if (g_link_side == 0) {
+                seed = g_link_send_payload;
+            } else {
+                seed = g_link_recv_check_word >> 16;
+            }
+            g_fight_rng_seed = seed;
         }
-        g_fight_rng_seed = seed;
     }
     disp_Blank();
     disp_Show();

@@ -650,7 +650,14 @@ static void resource_OnStageMoved(s32 block_id, s32 delta) {
         /* The original's behaviour: the delta is not passed, so the
          * backdrop's meshes are moved by whatever the last call left in the
          * register. */
-        reloc_RebaseBlock(RELOC_STAGE_PROPS);
+#if RB_FIX_ROOFTOP_REBASE
+        if (g_rb_settings.bugfixes) {
+            reloc_RebaseBlock(RELOC_STAGE_PROPS, delta);
+        } else
+#endif
+        {
+            reloc_RebaseBlock(RELOC_STAGE_PROPS);
+        }
         break;
     case STAGE_KIMIGAURA_COAST:
         wave_RebaseBuffer(delta);

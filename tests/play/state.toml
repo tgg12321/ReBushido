@@ -39,6 +39,7 @@ p1_cpu = "g_fighters+0x006:s16"
 p1_character = "g_fighters+0x00A:s16"      # enum CharacterId
 p1_roster = "g_fighters+0x00C:s16"         # enum RosterId
 p1_weapon = "g_fighters+0x00E:s16"         # enum WeaponId
+p1_frames_alive = "g_fighters+0x03C:s16"   # frames since it was set up for the fight
 p1_defeated = "g_fighters+0x096:s16"
 p1_x = "g_fighters+0x0B8:s32"              # foot_pos
 p1_y = "g_fighters+0x0BC:s32"
@@ -47,11 +48,13 @@ p1_off_arm_ok = "g_fighters+0x26C:s16"
 p1_leg_wounds = "g_fighters+0x26E:s16"
 p1_arm_wounds = "g_fighters+0x270:s16"
 p1_body_wounds = "g_fighters+0x272:s16"
+p1_vanish_count = "g_fighters+0x34C:u8"    # ROSTER_VANISHER: times it has vanished
 
 p2_cpu = "g_fighters+0x44C+0x006:s16"
 p2_character = "g_fighters+0x44C+0x00A:s16"
 p2_roster = "g_fighters+0x44C+0x00C:s16"
 p2_weapon = "g_fighters+0x44C+0x00E:s16"
+p2_frames_alive = "g_fighters+0x44C+0x03C:s16"
 p2_defeated = "g_fighters+0x44C+0x096:s16"
 p2_x = "g_fighters+0x44C+0x0B8:s32"
 p2_y = "g_fighters+0x44C+0x0BC:s32"
@@ -60,6 +63,7 @@ p2_off_arm_ok = "g_fighters+0x44C+0x26C:s16"
 p2_leg_wounds = "g_fighters+0x44C+0x26E:s16"
 p2_arm_wounds = "g_fighters+0x44C+0x270:s16"
 p2_body_wounds = "g_fighters+0x44C+0x272:s16"
+p2_vanish_count = "g_fighters+0x44C+0x34C:u8"
 
 # -- ReBushido (rb_options.h, rb_save.h, rb_settings.h). The retail disc
 # has none of these, and a quick-boot disc only the settings: a value whose

@@ -283,7 +283,17 @@ static void fighter_Vanish(Fighter *fighter) {
          * point. A stage has 24 halfwords in the table and this steps 12
          * a stage, so past the first stage it is another stage's place:
          * the original's behaviour. */
-        start_position_cursor += g_fight_stage * 12 + fighter_index * 3;
+#if RB_FIX_VANISH_PLACE
+        if (g_rb_settings.bugfixes) {
+            /* this stage's place: 24 halfwords a stage */
+            start_position_cursor += g_fight_stage * FIGHT_START_STAGE_SIZE +
+                                     fighter_index * FIGHT_START_POINT_SIZE;
+        } else
+#endif
+        {
+            /* the original's: 12 halfwords a stage */
+            start_position_cursor += g_fight_stage * 12 + fighter_index * 3;
+        }
         shift.vx = start_position_cursor[0];
         shift.vz = start_position_cursor[2];
     }
@@ -2272,8 +2282,20 @@ static void fight_TestBladesOnBodies(s32 paired) {
          * fighter_TakeHit reads it as 0 or not when no object struck. No
          * place is given for what it writes first (the original's
          * behaviour: see fighter_TakeHit) */
-        fighter_TakeHit(0, fighter, index, facing, kills,
-                        (LooseObjectKind *)blade, by_sidearm, NULL);
+#if RB_FIX_HIT_NULL_WRITE
+        if (g_rb_settings.bugfixes) {
+            /* a place for that word, which nothing reads here: it was
+             * written at address 0 */
+            s32 clashed;
+
+            fighter_TakeHit(0, fighter, index, facing, kills,
+                            (LooseObjectKind *)blade, by_sidearm, &clashed);
+        } else
+#endif
+        {
+            fighter_TakeHit(0, fighter, index, facing, kills,
+                            (LooseObjectKind *)blade, by_sidearm, NULL);
+        }
         other->attack_armed = 0;
     }
 }

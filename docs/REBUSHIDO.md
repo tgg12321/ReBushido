@@ -9,10 +9,11 @@ does.
 This page is the branch's rules, how to build and play it, how a change is
 written and how it is tested. What is planned, in order, is in
 [`ROADMAP.md`](ROADMAP.md). As it stands the branch is the foundation, the
-options page at boot with the settings' own file on the memory card, and
-the tools for trying a change (a build that boots straight into a fight,
-and play tests in an emulator). The two settings are kept and nothing
-reads them yet: no change to the game itself is in.
+options page at boot with the settings' own file on the memory card, the
+tools for trying a change (a build that boots straight into a fight, and
+play tests in an emulator), and fifteen fixes of the original's bugs,
+which the "Bugfixes" setting turns on ("The fixes"). Nothing reads the
+"Graphics" setting yet.
 
 ## The rules
 
@@ -69,13 +70,13 @@ The build ends with a report:
 
 ```
 build/rebushido/rebushido.exe: ReBushido 0.1-dev (1a2b3c4d5)
-  file     612352 bytes; loaded at 0x80010000 to 0x800A5000
-  program  ends at 0x801092B0, its zeroed variables included
-           0x19D0 bytes more than the matching build (build/bb2.elf)
-  room     0x4850 bytes below the first fixed buffer (0x8010DB00, SYS_SOUND_VAB_ADDR)
-           0xCF550 below the movie overlay and the primitive buffers (0x801D8800)
-           0xF6D40 below the stack's top (0x801FFFF0)
-  gp       the small data ends 0x8BC from gp, which reaches 0x7FFF
+  file     614400 bytes; loaded at 0x80010000 to 0x800A5800
+  program  ends at 0x801095D0, its zeroed variables included
+           0x1CF0 bytes more than the matching build (build/bb2.elf)
+  room     0x4530 bytes below the first fixed buffer (0x8010DB00, SYS_SOUND_VAB_ADDR)
+           0xCF230 below the movie overlay and the primitive buffers (0x801D8800)
+           0xF6A20 below the stack's top (0x801FFFF0)
+  gp       the small data ends 0x8B8 from gp, which reaches 0x7FFF
 OK: rebushido fits
 ```
 
@@ -92,7 +93,7 @@ emulator as any disc. It has the retail serial, so an emulator with a card
 per game gives it the retail game's memory card; ReBushido's settings are
 a second file on that card, beside the game's save ("The options page").
 
-The executable is three sectors longer than the retail one and does not
+The executable is four sectors longer than the retail one and does not
 fit where that was, so the image has it after the last file, and the
 drive seeks there and back as the disc boots. In the emulator the boot
 image comes up about 160 vertical blanks later than on the retail disc,
@@ -116,8 +117,9 @@ buttons do, and a line about the memory card.
 
 Up and down choose a row, left and right change it (each goes round at
 the ends), Start or cross goes on into the game. It comes up at every
-boot. Both settings start as the original, and nothing reads them yet:
-the changes of the roadmap's later items will.
+boot. Both settings start as the original. "Bugfixes" turns the fixes
+on ("The fixes"); nothing reads "Graphics" yet: the changes of the
+roadmap's later items will.
 
 The switch is `RB_OPTIONS_PAGE`. With it on, `main` calls
 `rb_RunOptionsPage` (`src/rebushido/options.c`) after the game is set up
@@ -190,6 +192,71 @@ a real console or Sony's BIOS, a card the BIOS reports as new (the
 emulator's never does), an unformatted card, a full one, a card pulled
 out during the write.
 
+## The fixes
+
+"Bugfixes" on the options page turns on fifteen fixes of the original's
+bugs, all together. With it off the game does what the original does
+(`same_as_original` holds it to that). Each fix has a switch of its own
+in `include/rebushido.h` as well, so that a build can leave one out.
+
+They are the bugs of [`STATUS.md`](STATUS.md), "Suspected bugs and
+oddities of the original", that are plainly mistakes, have a small fix,
+and change nothing for a player who never met the bug. In the last
+column, "run" is a play test that shows the game doing one thing with
+the setting off and the other with it on; "host" is a host test of the
+function (`tests/rebushido/fix_*.c`); "read" is neither: the fix was
+read, and compiles.
+
+| What the original does, and the fix | Where | Switch | Tested |
+|---|---|---|---|
+| A fighter's first frame gives a last place to the first of its weapon's three points only. The blade's far end and a pole arm's shaft are swept, that frame, from where the fight before left them, or from what lay on the scratchpad. Fixed: all three get one | `fighter_Update` | `RB_FIX_FIRST_FRAME_SWEEP` | run: `first_frame_sweep` |
+| A blade's hit has `fighter_TakeHit` clear a word at address 0. Fixed: it is given a place | `fight_TestBladesOnBodies` | `RB_FIX_HIT_NULL_WRITE` | read. The hits of `bugfixes_fight` and `vanish` go through it; the write itself cannot be seen in the emulator, whose memory has 0 there already |
+| Off the shrine's stage the vanisher, struck, comes back at another stage's start position (the table is read with half its stride), and where that is off the ground it falls for ever. Fixed: its own stage's. No mode of the game puts the vanisher on another stage | `fighter_Vanish` | `RB_FIX_VANISH_PLACE` | run: `vanish`; host: `fix_vanish` |
+| A splash asked for while twelve are alive is written over the start of the next table. Fixed: it is not made | `eff_SpawnSplash` | `RB_FIX_SPLASH_POOL` | host: `fix_splash_pool`, the fixed side only |
+| An object launched while twelve are loose is written after the pool. Fixed: it takes the last one's place | `object_Launch` | `RB_FIX_OBJECT_POOL` | host: `fix_object_pool`, the fixed side only |
+| The muzzle flashes keep six ordering-table indices, two flashes' quads, with the size of the flash being made straight after them: with four alive the third's quads are linked in wherever the fourth's size says. Fixed: an index for every quad of all six | `eff_DrawMuzzleFlashes` | `RB_FIX_MUZZLE_FLASH_INDICES` | read |
+| The team battle's points and its scores each link a second drawing mode just past the size they return, where the caller builds what it draws next. Fixed: the size counts it | `hud_DrawPointsAndTime`, `hud_DrawTeamScores` | `RB_FIX_HUD_DRAW_MODE` | host: `fix_hud_draw_mode` |
+| The ending's picture and the count of opponents beaten move the primitive cursor on four times as far as they drew. Fixed: as far | `cutscene_EndingUpdate`, `fight_KillCountUpdate` | `RB_FIX_PRIM_CURSOR` | read |
+| The boot image's fade starts 20 bytes into the pixels and runs 20 bytes past them: the first ten pixels never fade. Fixed: the picture's pixels. Nothing to see with the game's picture, whose first ten pixels are black | `disp_ShowBootImage` | `RB_FIX_BOOT_FADE` | host: `fix_boot_fade` |
+| The first frame's `pad_Update` is told whether a frame was skipped from a variable nothing has set. Fixed: none was | `main` | `RB_FIX_FIRST_FRAME_PAD` | read |
+| Coming back to chanbara's page from a fight starts the pages' music twice. Fixed: once | `menu_EnterMode` | `RB_FIX_CHANBARA_MUSIC` | read |
+| A link that gave up still makes its three trades, and takes the other side's unlocks, its buttons and the fight's seed from whatever was received last. Fixed: it trades nothing | `link_Connect` | `RB_FIX_LINK_GIVE_UP` | read |
+| When the arena moves the castle rooftop's stage, the backdrop's meshes are moved without being told how far. Fixed: by as far as the stage. The original gets away with it: as it is compiled, the register still holds the distance from the call before | `resource_OnStageMoved` | `RB_FIX_ROOFTOP_REBASE` | read |
+| A splash's drops begin to fade a frame early, with a blue that does not fit its byte: one frame of the wrong colour. Fixed: that frame is at the full colour | `eff_DrawSplashes` | `RB_FIX_SPLASH_FADE` | read |
+| The dirt puff is drawn with 33 rows of a texture whose frame has 32. Fixed: 32 | `eff_SetUpParticles` | `RB_FIX_DIRT_PUFF_ROW` | read |
+
+Every play test with the setting on runs the fixed code where the fight
+goes through it, and `bugfixes_fight` plays a whole versus fight that
+way, from the options page to the menu after the fight, with no crash.
+The two pools' host tests have only the fixed side because the original
+writes outside its tables there, which a test cannot ask a program to
+do. Together the fifteen take 0x320 bytes.
+
+**Left as the original has it.** These are in that list too, and no fix
+of this kind fits them:
+
+- They change how a fight plays, or what the CPU does: the CPU's two
+  tests of its own move where the opponent's was meant, its reach tables
+  that disagree and its footwork read from a variable nothing set; the
+  leaping attack's fall; the body points' reach scaled once for a
+  fighter's size; the blow's direction taken from the last sweep tested;
+  the second weapon's last places reset when the main weapon goes live;
+  the sweeps of a pole arm with a live sub-weapon.
+- They change what everybody has seen or heard, or what was meant is
+  not known: a mortal wound that bleeds once (the timer is cleared every
+  frame, which may be the authors' way of turning the rest off); the
+  splashes, the dust and the hit flashes drawn 3.9 times their
+  constants' size; the drops black until they fade; the particles' two
+  tests in the wrong order; the lock flash's other texture; the cloth
+  under the ground and its last spring; the reverb's depth taken from
+  the stage's number; a stage piece's rotation test; the fogged model's
+  extra colour tables; the tiny model's camera; the unlock bits' clans;
+  the save file's table of patches.
+- They do no harm, or cannot happen with the game's data: the name
+  compared a byte too far, the table of kinds read one entry early, a
+  ninth cloth and a ninth spring, the weapon file's wrong table entry,
+  and everything that is only said twice or never called.
+
 ## Booting straight into a fight
 
 This is a developer's tool, for trying a change without the opening and the
@@ -218,6 +285,7 @@ The fight is chosen by variables given to `make`, by the game's own names.
 | `QB_WEAPON1`, `QB_WEAPON2` | Their weapons | a member of `enum WeaponId` (`include/weapon.h`): `WEAPON_ID_KATANA`, `WEAPON_ID_LONG_SWORD`, `WEAPON_ID_NODACHI`, `WEAPON_ID_BROADSWORD`, `WEAPON_ID_NAGINATA`, `WEAPON_ID_YARI`, `WEAPON_ID_LONG_GUN`, `WEAPON_ID_SHORT_GUN` | `WEAPON_ID_KATANA` for both |
 | `QB_STAGE` | The stage | a member of `enum StageIndex` (`include/stage.h`): `STAGE_MAIN_TATARA_SHRINE` to `STAGE_SHAINTO_CEMETERY`, and the modes' own | `STAGE_BAMBOO_THICKET` |
 | `QB_CPU2` | Whether the CPU plays the second fighter | `0`, `1` | `1` |
+| `QB_BUGFIXES` | Whether the fight starts with the "Bugfixes" setting on (the build has no options page to turn it on at) | `0`, `1` | `0` |
 | `QB_NAME` | The disc's name in `build/play/` | begins with `QuickBoot` | `QuickBoot` |
 
 A name the game does not have stops the build, which lists the names it
@@ -249,8 +317,8 @@ which is off in the ReBushido build as well as in the matching one; only
 the movie's screen. That function does what the main menu does when it
 first opens (no stage in memory, no sound bank but the common one), writes
 the choice into `g_fight_config` and calls `fight_StartMode`. The build is
-in `build/quickboot/`, so the ReBushido build is not disturbed; it is 0x190
-bytes larger than the matching build, with 0x6090 bytes of room, and has
+in `build/quickboot/`, so the ReBushido build is not disturbed; it is 0x4B0
+bytes larger than the matching build, with 0x5D70 bytes of room, and has
 no options page. `make rebushido` compiles the two files that ask the switch
 with it on, so the checks keep quick boot compiling, and
 `tests/rebushido/quickboot.c` runs `rb_QuickBoot` on the host.
@@ -262,7 +330,8 @@ The program, its zeroed variables included, ends a little under
 (`include/sys.h`): the first is the common sound bank at `0x8010DB00`. The
 matching program ends `0x6220` bytes (about 25 KB) below it, and that is
 what ReBushido's code and data can grow by as things are. The options
-page and the settings' file take `0x19A0` of it; `0x4850` is left. `make rebushido`
+page and the settings' file take `0x19A0` of it and the fixes `0x320`;
+`0x4530` is left. `make rebushido`
 fails, saying so, when the program would run into that buffer. Past that
 the buffers have to be moved up, which is a change like any other: they are
 constants in `include/sys.h`.
@@ -430,7 +499,7 @@ The last three are ReBushido's:
 | Check | Command | Fails when |
 |---|---|---|
 | The build | `make rebushido` | the ReBushido build does not compile or link, does not fit below the fixed buffers, its small data is out of `gp`'s reach, an object was left out of the link, or its version text is missing; or a file that asks `RB_QUICK_BOOT` does not compile with it on |
-| Tests | `make rebushido-test` | a host test fails with the master switch on. These are the game's tests, linked with the settings at their defaults, so they also show that a change does nothing until its setting is on; and ReBushido's own in `tests/rebushido/`: the settings, the options page's table, the settings' file (its checksum, its header, and every kind of file that must not be read), quick boot, and the offsets the play tests read memory at |
+| Tests | `make rebushido-test` | a host test fails with the master switch on. These are the game's tests, linked with the settings at their defaults, so they also show that a change does nothing until its setting is on; and ReBushido's own in `tests/rebushido/`: the settings, the options page's table, the settings' file (its checksum, its header, and every kind of file that must not be read), quick boot, the offsets the play tests read memory at, and five of the fixes with the setting off and on (`fix_*`) |
 | Modern | `make rebushido-modern` | the host's `gcc` finds something serious in the source with the master switch on that `tools/modern/baseline.tsv` does not have |
 
 The counts and the lint understand the switches. `tools/count.py` counts
@@ -447,7 +516,7 @@ None of those ten runs the game. The play tests do
 bash tools/build.sh playtest      # from Windows: wsl bash tools/build.sh playtest
 ```
 
-builds the ReBushido disc and a quick-boot disc and runs six tests in an
+builds the ReBushido disc and three quick-boot discs and runs nine tests in an
 emulator (PCSX-Redux) with no window, pressing the pads by script and
 reading the game's memory by the names of the source:
 
@@ -459,6 +528,9 @@ reading the game's memory by the names of the source:
 | `options_no_card` | With no card in either slot the page comes up at once and says so, the choice holds, and the game reaches its top menu |
 | `quickboot` | A quick-boot disc is in the fight it was built for, with no input |
 | `fight_end` | From a quick boot, a fight to a kill, the menu after it, and a rematch, with no crash |
+| `bugfixes_fight` | With Bugfixes turned on at the options page: the opening, the menus, a versus fight to a kill, the replay and the menu after, with no crash |
+| `first_frame_sweep` | A naginata's first frame sweeps its shaft from a stale place; with Bugfixes on, from where it is |
+| `vanish` | Off the shrine's stage the vanisher, struck, comes back at another stage's place and falls out of the stage; with Bugfixes on it comes back where it started and stands |
 
 They are not among the checks and GitHub Actions does not run them: they
 need your own retail image and the emulator, which are never in the
@@ -483,7 +555,8 @@ that follows a two-point weapon sweeps its shaft, on its first frame, from
 whatever the scratchpad held), which a build laid out differently can
 show as a difference in a fight's first frames. The test's fight is katana
 against katana and does not go through it, and the two discs agree at
-every checkpoint.
+every checkpoint. ("Bugfixes" takes that read away: "The fixes", the
+first row.)
 
 ## Keeping up with `decomp`
 

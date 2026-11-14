@@ -1,0 +1,98 @@
+about = "With Bugfixes turned on at the options page: boot, menus, a versus fight to its end, with no crash."
+discs = ["rebushido"]
+limit = 12000
+seconds = 240
+
+# The presses of same_as_original, after Bugfixes is turned on at the
+# options page.
+input = [
+    "page+30 RIGHT",
+    "page+60 START",
+    # the opening movie, the title, the memory card's message
+    "movie+300 START", "movie+600 CROSS", "movie+900 START",
+    # the top menu: down three rows to Vs. Mode
+    "menu+30 DOWN", "menu+60 DOWN", "menu+90 DOWN", "menu+150 CROSS",
+    # character select: each pad takes the fighter and the weapon under its
+    # cursor, then the first pad takes the stage
+    "select+280 CROSS", "select+320 P2 CROSS", "select+580 CROSS", "select+620 P2 CROSS",
+    "select+1180 CROSS",
+    # the fight: both walk in, then each strikes on its own beat
+    "fight+100 RIGHT hold 40", "fight+100 P2 LEFT hold 20",
+    "fight+145 CIRCLE", "fight+205 CROSS", "fight+265 CIRCLE", "fight+325 CROSS",
+    "fight+385 CIRCLE", "fight+445 CROSS", "fight+505 CIRCLE", "fight+565 CROSS",
+    "fight+625 CIRCLE", "fight+685 CROSS", "fight+745 CIRCLE", "fight+805 CROSS",
+    "fight+865 CIRCLE", "fight+925 CROSS", "fight+985 CIRCLE", "fight+1045 CROSS",
+    "fight+1105 CIRCLE", "fight+1165 CROSS", "fight+1225 CIRCLE", "fight+1285 CROSS",
+    "fight+1345 CIRCLE", "fight+1405 CROSS", "fight+1465 CIRCLE", "fight+1525 CROSS",
+    "fight+1585 CIRCLE", "fight+1645 CROSS", "fight+1705 CIRCLE", "fight+1765 CROSS",
+    "fight+130 P2 CIRCLE", "fight+200 P2 CIRCLE", "fight+270 P2 CIRCLE", "fight+340 P2 CIRCLE",
+    "fight+410 P2 CIRCLE", "fight+480 P2 CIRCLE", "fight+550 P2 CIRCLE", "fight+620 P2 CIRCLE",
+    "fight+690 P2 CIRCLE", "fight+760 P2 CIRCLE", "fight+830 P2 CIRCLE", "fight+900 P2 CIRCLE",
+    "fight+970 P2 CIRCLE", "fight+1040 P2 CIRCLE", "fight+1110 P2 CIRCLE", "fight+1180 P2 CIRCLE",
+    "fight+1250 P2 CIRCLE", "fight+1320 P2 CIRCLE", "fight+1390 P2 CIRCLE", "fight+1460 P2 CIRCLE",
+    "fight+1530 P2 CIRCLE", "fight+1600 P2 CIRCLE", "fight+1670 P2 CIRCLE", "fight+1740 P2 CIRCLE",
+]
+
+[[checkpoint]]
+name = "page"
+when = "rb_page == RB_PAGE_UP"
+within = 2000
+shot = false
+expect = ["rb_bugfixes == 0"]
+
+# The page is left with the setting on, and it is written to the card.
+[[checkpoint]]
+name = "left"
+when = "rb_page == RB_PAGE_DONE"
+within = 600
+expect = ["rb_bugfixes == 1", "rb_save == RB_SAVE_WRITTEN"]
+
+# The boot image has come and gone (its fade is one of the fixes).
+[[checkpoint]]
+name = "movie"
+when = "screen == SCREEN_MOVIE"
+within = 2000
+shot = false
+
+[[checkpoint]]
+name = "menu"
+when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && screen_frames >= 120"
+within = 3000
+expect = ["rb_bugfixes == 1"]
+
+[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 1500
+
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+within = 4000
+expect = ["mode == FIGHT_MODE_VS", "p1_cpu == 0", "p2_cpu == 0", "rb_bugfixes == 1"]
+
+[[checkpoint]]
+name = "fight_12s"
+after = 720
+expect = ["screen == SCREEN_FIGHT_UPDATE"]
+
+[[checkpoint]]
+name = "kill"
+when = "winner != FIGHT_NOBODY"
+within = 3000
+expect = ["p1_defeated + p2_defeated == 1"]
+
+[[checkpoint]]
+name = "replay"
+when = "screen == SCREEN_REPLAY_UPDATE"
+within = 1000
+
+[[checkpoint]]
+name = "after_fight"
+when = "screen == SCREEN_AFTER_FIGHT_UPDATE"
+within = 3000
+
+[[checkpoint]]
+name = "after_fight_1s"
+after = 60
+expect = ["wins_p1 + wins_p2 == 1", "rb_bugfixes == 1"]

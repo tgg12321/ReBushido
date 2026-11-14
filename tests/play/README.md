@@ -25,21 +25,24 @@ python tools/playtest.py [name...]          # the tests alone, with the discs al
 python tools/playtest.py --list
 ```
 
-About three minutes for the six tests, after up to a minute of building
+About three minutes for the nine tests, after up to two minutes of building
 discs; the tool holds a run to five minutes and the suite to ten. It
 prints a table and exits 1 if a test failed:
 
 ```
   test             result   time
-  boot             ok        12s
-  fight_end        ok        40s
-  options_no_card  ok        12s
-  options_page     ok        19s
-  quickboot        ok         8s
-  same_as_original ok        82s
+  boot             ok         9s
+  bugfixes_fight   ok        29s
+  fight_end        ok        26s
+  first_frame_sweep ok        13s
+  options_no_card  ok         9s
+  options_page     ok        14s
+  quickboot        ok         7s
+  same_as_original ok        58s
+  vanish           ok        19s
   emulator processes left running: 0
-  pictures and logs: build/playtest/<test>/<disc>/   (174s in all)
-OK: play tests: 6 passed, 0 skipped
+  pictures and logs: build/playtest/<test>/<disc>/   (184s in all)
+OK: play tests: 9 passed, 0 skipped
 ```
 
 What it needs, and where it looks:
@@ -56,14 +59,18 @@ Python. Started inside WSL (`make playtest`), the tool starts itself again
 with `python.exe`. On Linux proper it runs the emulator named by
 `REBUSHIDO_EMULATOR` directly; that way has not been tried.
 
-`make playtest` builds two discs into `build/play/` before it runs the
+`make playtest` builds four discs into `build/play/` before it runs the
 tests, each with a table of its names (`.sym`) beside it:
 
 - `ReBushido.cue`, the ReBushido disc (`make rebushido-disc`);
 - `QuickBoot-playtest.cue`, a quick-boot disc of the tests' own
   ([`docs/REBUSHIDO.md`](../../docs/REBUSHIDO.md), "Booting straight into a
   fight"): Mikado with a naginata against Utamaru, played by the CPU, at
-  the lighthouse (`PLAYTEST_QB` in the `Makefile`).
+  the lighthouse (`PLAYTEST_QB` in the `Makefile`);
+- `QuickBoot-bugs.cue` and `QuickBoot-bugfixes.cue`, one fight that goes
+  through two of the original's bugs, built with the "Bugfixes" setting
+  off and with it on (`QB_BUGFIXES`): the vanisher with a naginata
+  against Utamaru, played by the CPU, at the lighthouse (`PLAYTEST_BUGS`).
 
 A test whose disc is not there is skipped, saying which.
 
@@ -88,6 +95,9 @@ alone. Everything else is compared as before, the game's own frame count
 retail program has none.
 | `quickboot` | quick boot | With no input the disc is in the fight it was built for: the mode, both fighters, their weapons, the stage, who plays the second fighter; within thirty seconds of the console's time |
 | `fight_end` | quick boot | The first fighter walks in and strikes until one of the two is cut down; the replay and the winner's view pass; the menu after the fight comes up; Rematch starts the fight again. No crash on the way |
+| `bugfixes_fight` | ReBushido | Right on the options page turns Bugfixes on, Start leaves it and the setting is written to the card; then the presses of `same_as_original`: the opening, the menus, a versus fight to a kill, the replay, the menu after. The setting is still on at the end and nothing crashed |
+| `first_frame_sweep` | the bugs' fight, off and on | On the first fighter's first frame the hit tests' scratch has the sweep of its naginata's shaft: with the setting off the shaft's far end was swept from nowhere (0, 0, 0: the first fight since power on left nothing else), with it on from where it is |
+| `vanish` | the bugs' fight, off and on | The CPU strikes the vanisher. With the setting off it comes back at (4000, -12000), another stage's start position, and two seconds later has fallen out of the stage; with it on it comes back at (3400, 7400), where it started, and stands |
 
 ## What a run is
 
@@ -199,8 +209,9 @@ order of the file, each one looked for only after the one before it:
 
 **Values** are the names of [`state.toml`](state.toml): the screen, the
 menu's page, the mode and the stage, the random numbers, the frame counts,
-and for each fighter who it is, where it stands, whether it has fallen and
-its wounds, and ReBushido's (`rb_page`, `rb_row`, `rb_card`, `rb_save`,
+and for each fighter who it is, where it stands, whether it has fallen, its
+wounds, how many frames it has been in the fight and how often it has
+vanished, and ReBushido's (`rb_page`, `rb_row`, `rb_card`, `rb_save`,
 `rb_bugfixes`, `rb_graphics`). Each is a name of the source and an offset,
 so it is read at the right place on any build. A disc whose program does
 not have the name (the retail disc has no `g_rb_...`) has no such value:
@@ -214,8 +225,8 @@ to the headers in `make rebushido-test`).
 `rb_settings.h`, `rb_save.h`, `rb_options.h` and `src/main/menu_screen.c`
 can be written for its number (`SCREEN_FIGHT_UPDATE`, `FIGHT_NOBODY`,
 `ROSTER_MIKADO`, `RB_PAGE_UP`, `RB_SAVE_WRITTEN`). On a quick-boot
-disc `QB_MODE`, `QB_P1`, `QB_P2`, `QB_WEAPON1`, `QB_WEAPON2`, `QB_STAGE`
-and `QB_CPU2` are what the disc was built to start.
+disc `QB_MODE`, `QB_P1`, `QB_P2`, `QB_WEAPON1`, `QB_WEAPON2`, `QB_STAGE`,
+`QB_CPU2` and `QB_BUGFIXES` are what the disc was built to start.
 
 To see what a new test does before it claims anything, give it checkpoints
 with `at` or `after` and no `expect`, run it, and look at the pictures and

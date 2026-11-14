@@ -1240,6 +1240,12 @@ s32 hud_DrawTeamScores(u32 packed_scores, s32 prims, s32 ot_index) {
     AddPrim(g_disp_ot + ot_index, tile);
     SetDrawMode(dr_mode, 1, 0, sprite_GetTPage(&g_hud_name_sheet, 0), 0);
     AddPrim(g_disp_ot + ot_index, dr_mode);
+#if RB_FIX_HUD_DRAW_MODE
+    /* the second drawing mode is part of what was built */
+    if (g_rb_settings.bugfixes) {
+        return end_addr - prims + sizeof(DR_MODE);
+    }
+#endif
     return end_addr - prims;
 }
 
@@ -1431,6 +1437,12 @@ s32 hud_DrawPointsAndTime(
         dr_mode, 1, 0,
         sprite_GetTPage(&g_hud_counter_sheets[COUNTER_SHEET_LABELS], 0), 0);
     AddPrim(g_disp_ot + ot_index, dr_mode);
+#if RB_FIX_HUD_DRAW_MODE
+    /* the second drawing mode is part of what was built */
+    if (g_rb_settings.bugfixes) {
+        return end_addr - prims + sizeof(DR_MODE);
+    }
+#endif
     return end_addr - prims;
 }
 

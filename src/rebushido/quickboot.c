@@ -30,6 +30,9 @@
 #ifndef RB_QB_CPU2
 #define RB_QB_CPU2 1
 #endif
+#ifndef RB_QB_BUGFIXES
+#define RB_QB_BUGFIXES 0
+#endif
 
 /* The fight the build chose (rb_quickboot.h). */
 const s8 g_rb_quick_boot[7] = {
@@ -54,6 +57,8 @@ void rb_QuickBoot(void) {
     g_fight_config.weapon[1] = RB_QB_WEAPON2;
     g_fight_config.stage = RB_QB_STAGE;
     g_fight_config.is_cpu[1] = RB_QB_CPU2;
+    /* there is no options page to turn the fixes on at */
+    g_rb_settings.bugfixes = RB_QB_BUGFIXES;
     fight_StartMode();
 }
 

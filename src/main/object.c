@@ -266,6 +266,14 @@ static LooseObject *object_Launch(Fighter *fighter, s32 kind) {
             break;
         }
     }
+#if RB_FIX_OBJECT_POOL
+    /* no place is free: the new object takes the last one's, where it
+     * was written after the pool */
+    if (g_rb_settings.bugfixes && i == OBJECT_COUNT) {
+        i = OBJECT_COUNT - 1;
+        obj = &g_object_pool[i];
+    }
+#endif
     obj->slot = i;
     obj->kind = kind;
     obj->drop_state = OBJECT_DROP_NONE;

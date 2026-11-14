@@ -24,6 +24,7 @@ MEMBERS = {
     'character': 'Fighter.character',
     'roster': 'Fighter.roster_id',
     'weapon': 'Fighter.weapon_id',
+    'frames_alive': 'Fighter.frames_alive',
     'defeated': 'Fighter.is_defeated',
     'x': 'Fighter.foot_pos.vx',
     'y': 'Fighter.foot_pos.vy',
@@ -32,6 +33,7 @@ MEMBERS = {
     'leg_wounds': 'Fighter.leg_wounds',
     'arm_wounds': 'Fighter.arm_wounds',
     'body_wounds': 'Fighter.body_wounds',
+    'vanish_count': 'Fighter.vanish_count',
     'rb_bugfixes': 'RbSettings.bugfixes',
     'rb_graphics': 'RbSettings.graphics',
 }

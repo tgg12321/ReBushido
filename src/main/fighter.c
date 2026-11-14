@@ -2594,6 +2594,16 @@ void fighter_Update(s32 fighter_index, PadState *pad) {
      * scratchpad (see fight_UpdateFighterPair). */
     if (fighter->frames_alive == 1) {
         fighter->prev_weapon_points[0] = SPAD->weapon_points[fighter_index][0];
+#if RB_FIX_FIRST_FRAME_SWEEP
+        /* the second and the third have no last place either: this
+         * frame's sweeps were made from stale ones */
+        if (g_rb_settings.bugfixes) {
+            fighter->prev_weapon_points[1] =
+                SPAD->weapon_points[fighter_index][1];
+            fighter->prev_weapon_points[2] =
+                SPAD->weapon_points[fighter_index][2];
+        }
+#endif
     }
     if (fighter->sub_weapon_live_state == WEAPON_LIVE_FIRST_FRAME) {
         fighter->sub_weapon_live_state = WEAPON_LIVE_ON;

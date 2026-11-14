@@ -9,12 +9,14 @@
 #define RB_QB_WEAPON2 WEAPON_ID_SHORT_GUN
 #define RB_QB_STAGE STAGE_SNAKE_CLIFF
 #define RB_QB_CPU2 1
+#define RB_QB_BUGFIXES 1
 #include "src/rebushido/quickboot.c"
 #include "runtime/runtime.h"
 
 /* What quick boot touches of the game, stood in for. */
 FightConfig g_fight_config;
 s8 g_fight_loaded_stage;
+RbSettings g_rb_settings;
 static s32 g_test_vabs_closed;
 static s32 g_test_modes_started;
 /* what was asked for when the mode was started */
@@ -51,6 +53,9 @@ void test_Main(void) {
     CHECK_EQ(g_test_started_with.stage, STAGE_SNAKE_CLIFF);
     CHECK_EQ(g_test_started_with.is_cpu[0], 0);
     CHECK_EQ(g_test_started_with.is_cpu[1], 1);
+    /* the fixes are on, as the build asked, and the picture is left */
+    CHECK_EQ(g_rb_settings.bugfixes, 1);
+    CHECK_EQ(g_rb_settings.graphics, RB_GRAPHICS_ORIGINAL);
     /* and what it does not choose is left alone */
     CHECK_EQ(g_test_started_with.cpu_levels[0], FIGHT_CPU_LEVEL_DEFAULT);
     CHECK_EQ(g_test_started_with.cpu_levels[1], FIGHT_CPU_LEVEL_DEFAULT);

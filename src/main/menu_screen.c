@@ -335,7 +335,14 @@ static void menu_EnterMode(s32 mode) {
             menu_StartMusic();
         }
         /* a second time after a fight: the original's behaviour */
-        menu_StartMusic();
+#if RB_FIX_CHANBARA_MUSIC
+        if (g_rb_settings.bugfixes && g_menu_reopen_mode) {
+            /* it has just been started */
+        } else
+#endif
+        {
+            menu_StartMusic();
+        }
         return;
 
     case FIGHT_MODE_NETWORK:

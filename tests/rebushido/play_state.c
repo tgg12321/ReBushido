@@ -14,6 +14,7 @@ void test_Main(void) {
     WHERE(Fighter, character);
     WHERE(Fighter, roster_id);
     WHERE(Fighter, weapon_id);
+    WHERE(Fighter, frames_alive);
     WHERE(Fighter, is_defeated);
     WHERE(Fighter, foot_pos.vx);
     WHERE(Fighter, foot_pos.vy);
@@ -22,6 +23,7 @@ void test_Main(void) {
     WHERE(Fighter, leg_wounds);
     WHERE(Fighter, arm_wounds);
     WHERE(Fighter, body_wounds);
+    WHERE(Fighter, vanish_count);
     WHERE(FightConfig, roster[0]);
     WHERE(FightConfig, roster[1]);
     WHERE(FightConfig, weapon[0]);
@@ -31,6 +33,15 @@ void test_Main(void) {
     WHERE(FightConfig, mode);
     WHERE(RbSettings, bugfixes);
     WHERE(RbSettings, graphics);
+    /* the hit tests' scratch, which first_frame_sweep.toml reads by
+     * address: a sweep's far end as it is and as it was */
+    CHECK_EQ(SCRATCHPAD, 0x1F800000);
+    CHECK_EQ(__builtin_offsetof(
+                 FightScratch, tail.weapon_hit.point_slots.work_points[1]),
+             0x2C4);
+    CHECK_EQ(__builtin_offsetof(
+                 FightScratch, tail.weapon_hit.point_slots.work_points[3]),
+             0x2DC);
     /* the second fighter is one Fighter further */
     test_Print("Fighter %d\n", (int)sizeof(Fighter));
     CHECK_EQ(sizeof(g_fighters) / sizeof(g_fighters[0]), 2);

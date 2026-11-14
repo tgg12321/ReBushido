@@ -211,7 +211,15 @@ void cutscene_EndingUpdate(void) {
     /* the size is in bytes and the cursor counts words: it moves on four
      * times as far as the picture takes, where the other screens divide by
      * 4 (the original's behaviour) */
-    g_disp_prim_cursor += hud_DrawEndingPicture((s32)g_disp_prim_cursor, 1);
+#if RB_FIX_PRIM_CURSOR
+    if (g_rb_settings.bugfixes) {
+        g_disp_prim_cursor +=
+            hud_DrawEndingPicture((s32)g_disp_prim_cursor, 1) / 4;
+    } else
+#endif
+    {
+        g_disp_prim_cursor += hud_DrawEndingPicture((s32)g_disp_prim_cursor, 1);
+    }
     if (cutscene_RunFrame() == 0 || (g_pad_state.pressed & PAD_ANY(PADRdown))) {
         if ((g_fight_ending == ENDING_CHANBARA_FAST ||
              g_fight_ending == ENDING_CHANBARA_FAST + 1) &&
@@ -494,8 +502,16 @@ void fight_KillCountUpdate(void) {
 
     /* (not divided by 4, as in cutscene_EndingUpdate: the original's
      * behaviour) */
-    g_disp_prim_cursor +=
-        hud_DrawKillCount(g_vscpu_count, (s32)g_disp_prim_cursor, 1);
+#if RB_FIX_PRIM_CURSOR
+    if (g_rb_settings.bugfixes) {
+        g_disp_prim_cursor +=
+            hud_DrawKillCount(g_vscpu_count, (s32)g_disp_prim_cursor, 1) / 4;
+    } else
+#endif
+    {
+        g_disp_prim_cursor +=
+            hud_DrawKillCount(g_vscpu_count, (s32)g_disp_prim_cursor, 1);
+    }
     g_sys_screen_frames++;
     if (g_sys_screen_frames > KILL_COUNT_FRAMES ||
         (g_pad_state.pressed & PAD_ANY(PADRdown))) {
