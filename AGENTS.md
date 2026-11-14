@@ -64,7 +64,7 @@ writes from `bb2.ld` each time; `make rebushido-disc` makes a disc image in `bui
 retail image at the repository root; `make rebushido-test` and `make rebushido-modern` are its
 tests. `make quickboot` / `quickboot-disc` build a developer's ReBushido that boots into a chosen
 fight (`build/quickboot/`); `make playtest` runs the scripted play tests locally (it needs the
-retail image and PCSX-Redux: `REBUSHIDO_EMULATOR`, `REBUSHIDO_RETAIL`). A new ReBushido variable
+retail image and PCSX-Redux: `REBUSHIDO_EMULATOR`, `REBUSHIDO_RETAIL`); `QB_BUGFIXES=1` starts a quick-boot fight with the Bugfixes setting on. A new ReBushido variable
 of eight bytes or fewer is small data; the generated link script keeps each kind's end on a word.
 The ReBushido disc opens on an options page (`RB_OPTIONS_PAGE`, `src/rebushido/options.c`) and
 keeps its settings in its own memory card file (`save.c`); a new setting is a member of

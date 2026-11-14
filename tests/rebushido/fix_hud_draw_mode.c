@@ -15,13 +15,19 @@ static s32 g_test_mode_count;
 static s32 g_test_modes_linked;
 
 s32 sprite_Draw(SpriteDraw *draw) { return draw->sprt_out + sizeof(SPRT); }
+
 s32 sprite_DrawScaled(SpriteDraw *draw, s32 mode) {
     return draw->ft4_out + sizeof(POLY_FT4);
 }
+
 s32 sprite_GetTPage(SpriteSheet *sheet, s32 abr_bits) { return 0; }
+
 void SetTile(TILE *p) {}
+
 void SetPolyFT4(POLY_FT4 *p) {}
+
 void SetSemiTrans(void *p, s32 abe) {}
+
 void SetShadeTex(void *p, s32 tge) {}
 
 void SetDrawMode(DR_MODE *p, s32 dfe, s32 dtd, s32 tpage, RECT *tw) {

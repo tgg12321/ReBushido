@@ -5,9 +5,9 @@
 
 /* A table of start positions in which every point says where it is: its
  * x is stage * 100 + pair * 10 + point, its z the same and 5000 more. */
-static s16 g_test_starts[STAGE_COUNT][FIGHT_START_PAIRS][2]
-                        [FIGHT_START_POINT_SIZE];
-#define TEST_X(stage, pair, point) ((stage)*100 + (pair)*10 + (point))
+static s16
+    g_test_starts[STAGE_COUNT][FIGHT_START_PAIRS][2][FIGHT_START_POINT_SIZE];
+#define TEST_X(stage, pair, point) ((stage) * 100 + (pair) * 10 + (point))
 #define TEST_Z(stage, pair, point) (TEST_X(stage, pair, point) + 5000)
 
 /* What vanishing touches of the fight, stood in for. */

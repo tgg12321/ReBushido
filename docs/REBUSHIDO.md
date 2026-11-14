@@ -21,12 +21,14 @@ which the "Bugfixes" setting turns on ("The fixes"). Nothing reads the
    off the branch builds the original executable byte for byte, and the
    checks hold it to that on every push. That is how the branch knows that
    nothing leaked outside its switch.
-2. **ReBushido is a PlayStation program.** It has to run on the original
-   console and on emulators. A native port is not part of this.
+2. **ReBushido is a PlayStation program first.** It has to run on the
+   original console and on emulators. A native port of the same source is
+   planned beside it ([`ROADMAP.md`](ROADMAP.md)), not instead of it.
 3. **The player chooses at boot.** One "Bugfixes" setting turns every fix
    on; only a fix that changes how the game plays by much gets a setting of
    its own. One setting switches between the original and the enhanced
-   picture (a wide picture, the 640 by 480 mode, up to 60 frames a second).
+   picture (a wide picture, high resolution, a high frame rate: mostly the
+   port's work).
    So most changes ask a setting while the game runs, as well as being
    behind their switch. With nothing chosen everything is as the original.
 4. **A release is a patch file** against the player's own retail disc, never

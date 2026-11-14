@@ -33,6 +33,9 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   run).
 - `wsl bash tools/build.sh rebushido` builds it into `build/rebushido/`.
   Never edit `bb2.ld` for ReBushido.
+- A fix of an original bug is `RB_FIX_<NAME>` plus
+  `if (g_rb_settings.bugfixes)`; the table is in `docs/REBUSHIDO.md`,
+  "The fixes".
 - `wsl bash tools/build.sh playtest` runs the play tests in an emulator
   with no window (`tests/play/README.md`); run it before pushing a change
   to the game. It is not one of the ten checks.

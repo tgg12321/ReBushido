@@ -15,12 +15,19 @@
 static s32 g_test_loads;
 
 void SetDispMask(s32 mask) {}
+
 DISPENV *SetDefDispEnv(DISPENV *env, s32 x, s32 y, s32 w, s32 h) { return env; }
+
 DISPENV *PutDispEnv(DISPENV *env) { return env; }
+
 s32 DrawSync(s32 mode) { return 0; }
+
 s32 VSync(s32 mode) { return 0; }
+
 void cdrom_WaitIdle(void) {}
+
 s32 cdrom_GetFileIndex(s32 group, s32 file) { return 0; }
+
 s32 cdrom_StartRead(s32 file_index, s32 dest) { return 0; }
 
 s32 LoadImage(RECT *rect, u32 *p) {

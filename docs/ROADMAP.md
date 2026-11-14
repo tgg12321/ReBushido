@@ -11,7 +11,7 @@ No dates.
    ReBushido's own on the memory card that keeps the choices
    ([`REBUSHIDO.md`](REBUSHIDO.md), "The options page"). The game's save
    is never touched. "Bugfixes" is read by item 4; nothing reads
-   "Graphics" until items 5 to 7.
+   "Graphics" until item 7.
 3. **Scripted play tests.** Done, so that everything after it can be
    tried. The game run in an emulator with no window, by
    script, on the developer's machine only (`make playtest`,
@@ -27,11 +27,16 @@ No dates.
    or what everybody has seen and heard (the same section, "Left as the
    original has it"); one of those that is fixed gets a setting of its
    own if it changes how the game plays by much.
-5. **Widescreen.** A wide picture for the fight and the menus.
-6. **The 640 by 480 mode.**
-7. **60 frames a second**, after measuring what rate the game runs at and
-   what a frame costs.
-8. **Release tooling.** A patch file against the retail disc, and the tool
-   that makes it and applies it.
-
-Later, and outside this roadmap: a native port.
+5. **Release tooling.** A patch file against the retail disc, and the tool
+   that makes it and applies it; then a first release.
+6. **The native port.** A build of the same source for a PC, beside the
+   PlayStation one. First a C equivalent beside each piece of assembly
+   (the GTE operations, the BIOS calls, the functions the authors wrote
+   in assembly), checked by host tests; the PlayStation build keeps the
+   assembly, and `decomp` is not touched. Then Sony's libraries
+   (graphics, sound, disc, pad, memory card) answered by PC code: the
+   menu in a window, then a fight, then sound. The game's code stays C.
+7. **The picture.** A wide picture, high resolution and a high frame rate
+   on the port, which is what "Graphics: Remastered" will mean. On the
+   PlayStation build only what is cheap: about 17 KB is left there before
+   a fixed buffer has to move.
