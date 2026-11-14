@@ -70,6 +70,13 @@ The ReBushido disc opens on an options page (`RB_OPTIONS_PAGE`, `src/rebushido/o
 keeps its settings in its own memory card file (`save.c`); a new setting is a member of
 `RbSettings`, an `RbSaveSlot` and a line of `g_rb_options`. Play tests of a ReBushido disc must
 press Start on the page first (`rb_page == RB_PAGE_UP`).
+`make rebushido-patch` (`RB_RELEASE=1` for a release) writes `build/release/ReBushido-<version>.bps`,
+a BPS patch against the retail image, with a players' README and a copy of
+`tools/rebushido_patch.py`, which makes and applies it with the standard library alone. The
+version number is `RB_VERSION_NUMBER` in `include/rebushido.h`. The ReBushido EXE leaves out its
+trailing zeroed small variables (`make_psexe.py --zeroed-from`), so it fits the retail program's
+place on the disc plus the three empty sectors after it; when it outgrows that, `build_disc.py`
+puts it at the end of the image.
 Never edit `bb2.ld` for ReBushido. `src/rebushido/` holds ReBushido's own files (names
 `rb_*`, `g_rb_*`, `Rb*`; headers `include/rebushido.h` for the switches and `include/rb_*.h`).
 

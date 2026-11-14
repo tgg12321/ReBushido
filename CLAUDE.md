@@ -41,6 +41,10 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   to the game. It is not one of the ten checks.
 - To try a change quickly: `wsl bash tools/build.sh quickboot-disc QB_...`
   (`docs/REBUSHIDO.md`, "Booting straight into a fight").
+- `wsl bash tools/build.sh rebushido-patch` makes a trial patch in
+  `build/release/`; `RB_RELEASE=1` makes a release's and needs a clean
+  tree. Tagging and publishing are the owner's. Nothing in
+  `build/release/` is ever committed.
 - Merge `decomp` into `main`, never the reverse.
 
 ## Working on `decomp`

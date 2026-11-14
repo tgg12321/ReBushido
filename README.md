@@ -3,8 +3,9 @@
 A modded version of *Bushido Blade 2* (PlayStation, 1998, SLUS-00663): bug
 fixes and enhancements, built on a complete decompilation of the game.
 
-- **`main`** (this branch) is ReBushido. Early days: so far it is the
-  foundation only, and plays as the original.
+- **`main`** (this branch) is ReBushido. Early days: an options page at
+  boot and fifteen bug fixes you can switch on. With nothing switched on it
+  plays as the original.
 - **[`decomp`](../../tree/decomp)** is the decompilation by itself. It builds
   the original executable byte for byte (`SLUS_006.63`, SHA1
   `62efab4f73f992798c43e8c730aa43baa10bb4fa`) and nothing on it changes how
@@ -17,7 +18,8 @@ change; [`docs/ROADMAP.md`](docs/ROADMAP.md) says what is planned.
 
 No game files are in this repository. To play anything built from it you need
 your own copy of the North American disc. A release is a patch for your image
-of it: see [Releases](../../releases) and [`docs/REBUSHIDO.md`](docs/REBUSHIDO.md), "Applying the patch".
+of it (none is out yet): see [Releases](../../releases) and
+[`docs/REBUSHIDO.md`](docs/REBUSHIDO.md), "Applying the patch".
 
 ## Status
 
