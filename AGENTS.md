@@ -77,6 +77,10 @@ version number is `RB_VERSION_NUMBER` in `include/rebushido.h`. The ReBushido EX
 trailing zeroed small variables (`make_psexe.py --zeroed-from`), so it fits the retail program's
 place on the disc plus the three empty sectors after it; when it outgrows that, `build_disc.py`
 puts it at the end of the image.
+The native port: no program yet. `RB_PORT` is on only in `make rebushido-test` and
+`make rebushido-modern`, which build and test `src/port/` and the C beside the assembly;
+`tools/port_gte_macros.py` writes Sony's GTE macros as C into `build/port/include/`;
+`make gte-probe` builds the play tests' probe (`build/play/GteProbe.exe`).
 Never edit `bb2.ld` for ReBushido. `src/rebushido/` holds ReBushido's own files (names
 `rb_*`, `g_rb_*`, `Rb*`; headers `include/rebushido.h` for the switches and `include/rb_*.h`).
 

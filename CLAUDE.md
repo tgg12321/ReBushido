@@ -45,6 +45,13 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   `build/release/`; `RB_RELEASE=1` makes a release's and needs a clean
   tree. Tagging and publishing are the owner's. Nothing in
   `build/release/` is ever committed.
+- The native port ([docs/PORT.md](docs/PORT.md)) is behind `RB_PORT`: C
+  beside each `INCLUDE_ASM` in the `#if`, the original line in the
+  `#else`; port-only code in `src/port/` (`port_` names), which no
+  PlayStation build compiles.
+- After changing `src/port/gte.c`, the C beside the assembly, or
+  `tests/play/probe/`: `wsl bash tools/build.sh playtest gte_model`, then
+  copy the new `AGREED` numbers into `tests/port/*_vectors.py`.
 - Merge `decomp` into `main`, never the reverse.
 
 ## Working on `decomp`
