@@ -27,7 +27,10 @@ ld   writes the ReBushido build's linker script from bb2.ld, which stays the
      the build, and `fit` checks that every object was read. Each object's section in
      .main is also put on a 4-byte boundary. In the original every one
      already is, so this moves nothing until a file's data changes length,
-     and then keeps the file after it from starting off a word.
+     and then keeps the file after it from starting off a word. The end of
+     each kind in .main is put on one too, for the same reason: the zeroed
+     variables begin where the small data ends, and the start-up code
+     clears them a word at a time.
 
      The places in bb2.ld that the additions go to are found by the lines
      in ANCHORS; if bb2.ld loses one the build stops and says which.
@@ -149,15 +152,22 @@ def write_script(out, objects):
         places.append((next(i for i in range(start, len(lines)) if lines[i].strip() == "}"), kind))
     indent = " " * 8
     for at, kind in sorted(places, reverse=True):
-        if not added[kind]:
-            continue
-        block = [indent + "/* ReBushido: what %s does not place. */" % BASE_SCRIPT]
+        in_main = kind in ANCHORS and kind != "large"
+        block = []
+        if added[kind]:
+            block.append(indent + "/* ReBushido: what %s does not place. */" % BASE_SCRIPT)
         for entry in added[kind]:
-            if kind in ANCHORS and kind != "large":
+            if in_main:
                 block.append(indent + ". = ALIGN(4);")
             block.append(indent + entry)
-        if kind == "small":
+        if added[kind] and kind == "small":
             block.append(indent + ". = ALIGN(8);")
+        if in_main:
+            # The kind ends on a word as well, whatever its last section's
+            # length: the next kind begins there, and the start-up code
+            # clears the zeroed variables from main_SBSS_START a word at a
+            # time, which the console refuses at an odd address.
+            block.append(indent + ". = ALIGN(4);")
         lines[at:at] = block
 
     head = ["/* Written by tools/rebushido.py from %s for the ReBushido build: do not" % BASE_SCRIPT,
