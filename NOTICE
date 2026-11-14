@@ -35,5 +35,17 @@ where the compiled code is the same.
 maspsx (https://github.com/mkst/maspsx), MIT: included under tools/maspsx/
 with its own licence file.
 
-decompals/mips-gcc-2.7.2: the compiler the build uses, built by
-tools/build_cc1.sh; not included here.
+decompals/mips-gcc-2.7.2 (https://github.com/decompals/mips-gcc-2.7.2): the
+compiler the build uses, built by tools/build_cc1.sh; not included here.
+
+splat (https://github.com/ethteck/splat): the splitter the project started
+from. decomp-permuter (https://github.com/simonlindholm/decomp-permuter) and
+m2c (https://github.com/matt-kempster/m2c) were used throughout the
+decompilation. None of the three is included here.
+
+Other PlayStation decompilation projects whose conventions this one leans
+on: psy-q-decomp (https://github.com/sozud/psy-q-decomp), rood-reverse
+(https://github.com/ser-pounce/rood-reverse), ff7-decomp
+(https://github.com/Xeeynamo/ff7-decomp), silent-hill-decomp
+(https://github.com/Vatuu/silent-hill-decomp), chrono-cross-decomp
+(https://github.com/jdperos/chrono-cross-decomp).
