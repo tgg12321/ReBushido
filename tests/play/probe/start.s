@@ -8,8 +8,9 @@
 .section .text, "ax"
 
 # Where the program starts. The coprocessor is switched on (bit 30 of the
-# status register), then the C side runs and the program idles: the
-# emulator's script reads the results out of memory.
+# status register) and the global pointer set, which the game's C that is
+# linked in reaches its small variables through; then the C side runs and
+# the program idles: the emulator's script reads the results out of memory.
 .globl _start
 .type _start, @function
 _start:
@@ -19,6 +20,8 @@ _start:
     mtc0    $t0, $12
     nop
     nop
+    lui     $gp, %hi(_gp)
+    addiu   $gp, $gp, %lo(_gp)
     jal     probe_Main
      nop
 1:
@@ -97,3 +100,65 @@ probe_RunCommand:
     addu    $t0, $t0, $t1
     jr      $t0
      nop
+
+# u32 probe_CallRegs(u32 *regs, void *routine): calls one of the renderer's
+# listings, which take what they work on in registers C does not pass
+# anything in. `regs` is thirteen words that go into $a0 to $a3, $s0 to $s7
+# and $fp before the call; after it $s0 to $s7 and $fp are put back there
+# and $v0 is the fourteenth.
+.globl probe_CallRegs
+.type probe_CallRegs, @function
+probe_CallRegs:
+    addiu   $sp, $sp, -0x40
+    sw      $ra, 0x3C($sp)
+    sw      $fp, 0x38($sp)
+    sw      $s7, 0x34($sp)
+    sw      $s6, 0x30($sp)
+    sw      $s5, 0x2C($sp)
+    sw      $s4, 0x28($sp)
+    sw      $s3, 0x24($sp)
+    sw      $s2, 0x20($sp)
+    sw      $s1, 0x1C($sp)
+    sw      $s0, 0x18($sp)
+    sw      $a0, 0x10($sp)
+    addu    $t8, $a0, $zero
+    addu    $t9, $a1, $zero
+    lw      $s0, 16($t8)
+    lw      $s1, 20($t8)
+    lw      $s2, 24($t8)
+    lw      $s3, 28($t8)
+    lw      $s4, 32($t8)
+    lw      $s5, 36($t8)
+    lw      $s6, 40($t8)
+    lw      $s7, 44($t8)
+    lw      $fp, 48($t8)
+    lw      $a0, 0($t8)
+    lw      $a1, 4($t8)
+    lw      $a2, 8($t8)
+    lw      $a3, 12($t8)
+    jalr    $t9
+     nop
+    lw      $t8, 0x10($sp)
+    nop
+    sw      $s0, 16($t8)
+    sw      $s1, 20($t8)
+    sw      $s2, 24($t8)
+    sw      $s3, 28($t8)
+    sw      $s4, 32($t8)
+    sw      $s5, 36($t8)
+    sw      $s6, 40($t8)
+    sw      $s7, 44($t8)
+    sw      $fp, 48($t8)
+    sw      $v0, 52($t8)
+    lw      $ra, 0x3C($sp)
+    lw      $fp, 0x38($sp)
+    lw      $s7, 0x34($sp)
+    lw      $s6, 0x30($sp)
+    lw      $s5, 0x2C($sp)
+    lw      $s4, 0x28($sp)
+    lw      $s3, 0x24($sp)
+    lw      $s2, 0x20($sp)
+    lw      $s1, 0x1C($sp)
+    lw      $s0, 0x18($sp)
+    jr      $ra
+     addiu  $sp, $sp, 0x40

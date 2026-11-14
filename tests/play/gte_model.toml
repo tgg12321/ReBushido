@@ -7,8 +7,8 @@ about = "The port's GTE and the C beside the assembly make of 116,000 made-up ca
 discs = ["gteprobe"]
 common_state = false
 cards = "none"
-limit = 3000
-seconds = 120
+limit = 30000
+seconds = 280
 
 [state]
 probe_done = "g_probe_done:u32"
@@ -23,10 +23,15 @@ bad_vector = "g_probe_bad+4:u32"
 # prints them beside the model's).
 [dump]
 bad = "g_probe_bad:6784"
+# The arena and the scratchpad as the first of the renderer's cases that
+# differed left them (render.bin).
+render = "g_probe_render_dump:46080"
+# How many cases of each of the renderer's routines differed.
+render_failed = "g_probe_render_failed:256"
 
 [[checkpoint]]
 name = "finished"
 when = "probe_done == 1"
-within = 2900
+within = 29900
 shot = false
-expect = ["probe_run == 116000", "probe_failed == 0"]
+expect = ["probe_run == 124000", "probe_failed == 0"]

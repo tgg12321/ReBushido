@@ -193,6 +193,10 @@ extern void port_GteStoreColumns(
 #define PORT_GTE_CMD_DPCL 0x4A680029U
 #define PORT_GTE_CMD_DPCT 0x4AF8002AU
 #define PORT_GTE_CMD_INTPL 0x4A980011U
+#define PORT_GTE_CMD_NCLIP 0x4B400006U /* which way a triangle faces */
+#define PORT_GTE_CMD_NCS 0x4AC8041EU   /* a normal lit */
+#define PORT_GTE_CMD_NCT 0x4AD80420U   /* three normals lit */
+#define PORT_GTE_CMD_NCCS 0x4B08041BU  /* a normal lit and coloured */
 
 /* ---- what Sony's macros are made of in the port ---- */
 

@@ -172,6 +172,44 @@ extern void reloc_RebaseBlock();
 extern s32 reloc_KeepSelectedEntries(s32 *file, s16 *selected);
 extern s32 reloc_CopySelectedEntries(s32 src, s32 *dest, s16 *selected);
 
+/* ---- the native port (docs/PORT.md, "The renderer in C") ---- */
+#if RB_PORT
+#include "light.h"
+#include "node.h"
+
+/* Where the walk over the queue is. The renderer's assembly keeps these
+ * in registers from one routine to the next; the port's C keeps them
+ * here. */
+typedef struct {
+    void **queue;        /* the next node of the queue */
+    SceneNode *node;     /* the node being drawn */
+    u8 *mesh;            /* the place in its mesh: the mesh cursor */
+    void (**handlers)(); /* the handler table in use */
+    s32 scale_shift;     /* bits the node's coordinates are scaled down by */
+    MATRIX *view;        /* the view matrix */
+    LightSetup *lights;  /* the node's light setup */
+} RenderWalk;
+
+extern RenderWalk g_render_walk;
+
+/* The colour outlined models are drawn in, 0xRRGGBB, which the assembly
+ * has in its instructions (render_SetOutlineColor). */
+#define RENDER_OUTLINE_GRAY 0x808080
+#define RENDER_OUTLINE_COLOR_MASK 0xFFFFFF
+extern s32 g_render_outline_color;
+
+/* The tiny model's ordering table (model_tiny.c). */
+extern u32 *g_render_tiny_ot;
+
+/* What the assembly names and no header declared: the view matrix
+ * render_Flush works out, the colour of each normal of the body being
+ * drawn, and the routine that fills that table (it returns the end of the
+ * list of normals). */
+extern MATRIX g_render_view_matrix;
+extern CVECTOR g_render_skin_colors[500];
+extern u8 *render_LightSkin(u8 *normals, MATRIX **matrices);
+#endif
+
 /* Used only inside render.c. */
 extern void (*g_render_handlers[])();
 

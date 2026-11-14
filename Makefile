@@ -450,21 +450,26 @@ PROBE_HOST   := build/rebushido/tests/port
 # kernel), with the two tables they read.
 PROBE_GTE_MODULES := $(patsubst $(SRC_DIR)/%.c,%,$(shell grep -l '^.if RB_PORT' $(SRC_DIR)/main/psxsdk/libgte/*.c))
 PROBE_GAME_OBJS := $(patsubst %,$(BUILD_DIR)/$(SRC_DIR)/%.o,main/math_asm main/math_sin \
+		main/render_asm main/render_skin_asm main/render \
 		main/psxsdk/libgte/geo_00 main/psxsdk/libgte/geo_01 main/psxsdk/libgte/sincos \
 		main/psxsdk/libgte/cstbl main/psxsdk/libgte/sqrtbl $(filter-out %/msc00,$(PROBE_GTE_MODULES)))
 PROBE_OBJS   := $(BUILD_DIR)/$(ASM_DIR)/header.o $(PROBE_DIR)/start.o $(PROBE_DIR)/probe.o \
-		$(PROBE_DIR)/listings.o $(PROBE_GAME_OBJS)
+		$(PROBE_DIR)/render_stubs.o $(PROBE_GAME_OBJS)
 
 $(PROBE_DIR)/expected.h: tests/port/gte_vectors.c tests/port/asm_vectors.c tests/port/asm_vectors.py \
-		$(PROBE_SRC)/cases.h $(PROBE_SRC)/routines.h $(PORT_SRC_DIR)/gte.c $(INCLUDE_DIR)/port_gte.h \
-		$(SRC_DIR)/main/math_asm.c $(SRC_DIR)/main/render_asm.c $(wildcard $(SRC_DIR)/main/psxsdk/libgte/*.c) \
-		tests/run.py
+		tests/port/render_vectors.c tests/port/render_vectors.py \
+		$(PROBE_SRC)/cases.h $(PROBE_SRC)/routines.h $(PROBE_SRC)/render_cases.h \
+		$(PORT_SRC_DIR)/gte.c $(INCLUDE_DIR)/port_gte.h $(INCLUDE_DIR)/render.h \
+		$(SRC_DIR)/main/math_asm.c $(SRC_DIR)/main/render_asm.c $(SRC_DIR)/main/render_skin_asm.c \
+		$(SRC_DIR)/main/render.c $(wildcard $(SRC_DIR)/main/psxsdk/libgte/*.c) tests/run.py
 	@mkdir -p $(dir $@)
-	python3 tests/run.py --rebushido port/gte_vectors port/asm_vectors > /dev/null; \
-		[ -x $(PROBE_HOST)/gte_vectors ] && [ -x $(PROBE_HOST)/asm_vectors ]
-	{ $(PROBE_HOST)/gte_vectors table && $(PROBE_HOST)/asm_vectors table; } | grep -v '^checks ' > $@
+	python3 tests/run.py --rebushido port/gte_vectors port/asm_vectors port/render_vectors > /dev/null; \
+		[ -x $(PROBE_HOST)/gte_vectors ] && [ -x $(PROBE_HOST)/asm_vectors ] && [ -x $(PROBE_HOST)/render_vectors ]
+	{ $(PROBE_HOST)/gte_vectors table && $(PROBE_HOST)/asm_vectors table && $(PROBE_HOST)/render_vectors table; } \
+		| grep -v '^checks ' > $@
 
-$(PROBE_DIR)/%.o: $(PROBE_SRC)/%.c $(PROBE_SRC)/cases.h $(PROBE_SRC)/routines.h $(PROBE_DIR)/expected.h $(PIPELINE_DEPS)
+$(PROBE_DIR)/%.o: $(PROBE_SRC)/%.c $(PROBE_SRC)/cases.h $(PROBE_SRC)/routines.h $(PROBE_SRC)/render_cases.h \
+		$(PROBE_DIR)/expected.h $(PIPELINE_DEPS)
 	@mkdir -p $(dir $@)
 	$(CPP) $(CPP_FLAGS) $(CPP_DEFS) -I$(PROBE_SRC) -I$(PROBE_DIR) $< | $(CC1) $(CC_FLAGS) $(WARN_FLAGS) | $(MASPSX) $(MASPSX_FLAGS) | $(AS) $(AS_FLAGS) -o $@
 

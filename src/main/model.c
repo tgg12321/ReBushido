@@ -674,6 +674,13 @@ loop2:
     }
 }
 
+#if RB_PORT
+/* In C: the port's outline routines read the colour from a variable
+ * (render.h), so there are no instructions to rewrite. */
+void render_SetOutlineColor(s32 color) {
+    g_render_outline_color = color & RENDER_OUTLINE_COLOR_MASK;
+}
+#else
 /* Sets the colour outlined models are drawn in, 0xRRGGBB. The outline
  * routines are assembly with the colour as a constant in their code, so the
  * instructions that load it are rewritten: four pairs of places, each place
@@ -703,6 +710,7 @@ void render_SetOutlineColor(s32 color) {
         site++;
     } while (pair < 4);
 }
+#endif
 
 /* The arena moved the model of slot `slot` by `delta` bytes: moves every
  * pointer the model holds into itself. */
