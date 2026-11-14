@@ -7,6 +7,8 @@ seconds = 240
 # reached when the game gets there, so a disc that boots or loads a little
 # later is still pressed at the same moments of the game.
 input = [
+    # ReBushido's options page, left as it comes up (the second run only)
+    "page+30 START",
     # the opening movie, the title, the memory card's message
     "movie+300 START", "movie+600 CROSS", "movie+900 START",
     # the top menu: down three rows to Vs. Mode
@@ -33,10 +35,21 @@ input = [
 ]
 
 # At every checkpoint the two discs must agree in every value of
-# state.toml (the screen, the mode, the fighters' places and wounds, the
-# random numbers, the frame counts), in the vertical blank it was reached
-# at, and in the picture, pixel for pixel.
+# state.toml that both have (the screen, the mode, the fighters' places and
+# wounds, the random numbers, the frame counts), in the picture, pixel for
+# pixel, and in the vertical blank it was reached at, counted from the
+# checkpoint `movie`: ReBushido gets there later, by its options page and
+# by where its program is on the disc (README.md).
 compare = ["*"]
+frames_from = "movie"
+
+# The options page, which only ReBushido has.
+[[checkpoint]]
+name = "page"
+runs = [2]
+when = "rb_page == RB_PAGE_UP"
+within = 2000
+expect = ["rb_bugfixes == 0", "rb_graphics == RB_GRAPHICS_ORIGINAL"]
 
 [[checkpoint]]
 name = "movie"

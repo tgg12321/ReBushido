@@ -60,3 +60,13 @@ p2_off_arm_ok = "g_fighters+0x44C+0x26C:s16"
 p2_leg_wounds = "g_fighters+0x44C+0x26E:s16"
 p2_arm_wounds = "g_fighters+0x44C+0x270:s16"
 p2_body_wounds = "g_fighters+0x44C+0x272:s16"
+
+# -- ReBushido (rb_options.h, rb_save.h, rb_settings.h). The retail disc
+# has none of these, and a quick-boot disc only the settings: a value whose
+# symbol a disc does not have is not read on it, and not compared. --
+rb_page = "g_rb_page_state:u8"             # enum RbPageState
+rb_row = "g_rb_page_row:u8"                # the row the cursor is on
+rb_card = "g_rb_card_status:u8"            # enum RbCardStatus
+rb_save = "g_rb_save_result:u8"            # enum RbSaveResult
+rb_bugfixes = "g_rb_settings+0:u8"
+rb_graphics = "g_rb_settings+1:u8"         # enum RbGraphics

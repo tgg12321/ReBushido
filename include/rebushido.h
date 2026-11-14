@@ -24,6 +24,13 @@
  * The version text and the settings are in files that only the ReBushido
  * build has (src/rebushido/), which need no switch. */
 
+/* The options page: before the boot image the program shows a page where
+ * the player sets ReBushido's settings, read from and written to a file
+ * of ReBushido's own on the memory card (src/rebushido/options.c, save.c;
+ * docs/REBUSHIDO.md, "The options page"). The quick-boot build has no
+ * page. */
+#define RB_OPTIONS_PAGE (REBUSHIDO && 1)
+
 /* Quick boot, a developer's tool and no part of the game: the program
  * skips the boot image, the opening and the menus and starts one fight,
  * which the build chose (src/rebushido/quickboot.c). It is off in the

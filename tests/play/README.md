@@ -25,18 +25,21 @@ python tools/playtest.py [name...]          # the tests alone, with the discs al
 python tools/playtest.py --list
 ```
 
-About two minutes for the four tests, after up to a minute of building
-discs; the tool holds a run to five minutes and the suite to ten. It prints a table and exits 1 if a test failed:
+About three minutes for the six tests, after up to a minute of building
+discs; the tool holds a run to five minutes and the suite to ten. It
+prints a table and exits 1 if a test failed:
 
 ```
   test             result   time
-  boot             ok        10s
-  fight_end        ok        31s
+  boot             ok        12s
+  fight_end        ok        40s
+  options_no_card  ok        12s
+  options_page     ok        19s
   quickboot        ok         8s
-  same_as_original ok        64s
+  same_as_original ok        82s
   emulator processes left running: 0
-  pictures and logs: build/playtest/<test>/<disc>/   (113s in all)
-OK: play tests: 4 passed, 0 skipped
+  pictures and logs: build/playtest/<test>/<disc>/   (174s in all)
+OK: play tests: 6 passed, 0 skipped
 ```
 
 What it needs, and where it looks:
@@ -69,7 +72,20 @@ A test whose disc is not there is skipped, saying which.
 | Test | Disc | What it shows |
 |---|---|---|
 | `boot` | retail | The disc boots, the opening is skipped, and the top menu is up |
-| `same_as_original` | retail, then ReBushido | The same presses on both: boot, the menus, a versus fight, a kill, the replay, the menu after. At each of eleven checkpoints every value of `state.toml`, the vertical blank it was reached at and the picture are the same on both discs. This is the test that says "ReBushido with nothing turned on is the original" |
+| `same_as_original` | retail, then ReBushido | The same presses on both, after Start on ReBushido's options page with nothing changed: the opening, the menus, a versus fight, a kill, the replay, the menu after. At each of eleven checkpoints every value of `state.toml` that both programs have, the vertical blanks since the first of them and the picture are the same on both discs. This is the test that says "ReBushido with nothing turned on is the original" |
+| `options_page` | ReBushido, twice, the second time with the first's cards | The options page comes up with the original's settings and a card it can save to; right and left turn Bugfixes on and off, down and left make Graphics "Remastered"; Start leaves it, the settings' file is written, and the game reaches its top menu. The second boot comes up with "Remastered" read from the card, and leaving it writes nothing |
+| `options_no_card` | ReBushido, no card in either slot | The page comes up without waiting and says there is no card; the choice holds; leaving it takes no time and asks nothing; the game reaches its top menu |
+
+What `same_as_original` had to give up when the options page came: the
+ReBushido disc reaches every checkpoint 270 vertical blanks later than the
+retail disc (the page, read from the card and left by a press, is 108 of
+them; the other 162 are the drive, since the larger program is no longer
+where the retail one was on the disc). So the blank a checkpoint is
+reached at is compared as blanks since the checkpoint `movie`
+(`frames_from`), and `movie` itself, the first, by its values and picture
+alone. Everything else is compared as before, the game's own frame count
+(`frames`) outright. The values that begin `rb_` are not compared: the
+retail program has none.
 | `quickboot` | quick boot | With no input the disc is in the fight it was built for: the mode, both fighters, their weapons, the stage, who plays the second fighter; within thirty seconds of the console's time |
 | `fight_end` | quick boot | The first fighter walks in and strikes until one of the two is cut down; the replay and the winner's view pass; the menu after the fight comes up; Rematch starts the fight again. No crash on the way |
 
@@ -81,6 +97,9 @@ presses buttons at the blanks the test names, and at each **checkpoint**
 writes down the values of the game's memory that `state.toml` names and
 takes a picture. Afterwards it checks what the test claims about those
 values.
+
+A test with several discs is a run on each, in order; a disc named twice
+is run twice (the second run's folder is `<disc>-2`).
 
 A run ends when its last checkpoint is reached. It fails if a checkpoint
 is not reached in time, if what the test claims does not hold, or if the
@@ -148,7 +167,9 @@ expect = [
 | `discs` | The discs to run on, in order: `retail`, or the name of an image in `build/play/` without `.cue` and in any case (`rebushido`, `quickboot`, `quickboot-playtest`) |
 | `limit` | The vertical blank the run ends at, at the latest |
 | `input` | The presses (below) |
-| `compare` | With two discs or more: what must be the same on every disc as on the first, at every checkpoint. Names of `state.toml`, `frame` (the blank the checkpoint was reached at), `picture` (the screenshot, pixel for pixel); `["*"]` is all of them |
+| `compare` | With two discs or more: what must be the same on every disc as on the first, at every checkpoint both runs have. Names of `state.toml`, `frame` (the blank the checkpoint was reached at), `picture` (the screenshot, pixel for pixel); `["*"]` is all of them. A value that one of the two programs does not have is not compared |
+| `frames_from` | A checkpoint's name: `frame` is compared as the blanks since that checkpoint, at the checkpoints after it, and not at all up to it. For discs that reach the game's first screen at different times |
+| `cards` | The memory cards: `"new"` (two new, empty, formatted cards in every run; this if not given), `"keep"` (every run after the first starts with the cards the run before left), `"none"` (no card in either slot) |
 | `stall` | Vertical blanks without a frame that count as a crash (1800) |
 | `seconds` | The run's time limit (180; 285 at most) |
 | `[state]` | More values for this test alone, written as in `state.toml` |
@@ -174,19 +195,25 @@ order of the file, each one looked for only after the one before it:
 | `within` | Give up, and fail, this many blanks after the checkpoint before it (if not given, at `limit`) |
 | `expect` | What must hold there: expressions of values, numbers and names, with `+ - * & \| == != < <= > >= && \|\|` and brackets; `frame` is the blank it was reached at |
 | `shot` | `false`: no picture |
+| `runs` | The runs that have this checkpoint, counted from 1 in the order of `discs` (`runs = [2]`); every run if not given. A press timed from a checkpoint is made only in the runs that have it |
 
 **Values** are the names of [`state.toml`](state.toml): the screen, the
 menu's page, the mode and the stage, the random numbers, the frame counts,
 and for each fighter who it is, where it stands, whether it has fallen and
-its wounds. Each is a name of the source and an offset, so it is read at
-the right place on any build. Add to that file what a new test needs (and,
-for a member of a structure, to `tests/rebushido/play_state.py`, which
-holds the offsets to the headers in `make rebushido-test`).
+its wounds, and ReBushido's (`rb_page`, `rb_row`, `rb_card`, `rb_save`,
+`rb_bugfixes`, `rb_graphics`). Each is a name of the source and an offset,
+so it is read at the right place on any build. A disc whose program does
+not have the name (the retail disc has no `g_rb_...`) has no such value:
+it is not written down there, and a checkpoint of that run that asks it
+is an error. Add to that file what a new test needs (and, for a member of
+a structure, to `tests/rebushido/play_state.py`, which holds the offsets
+to the headers in `make rebushido-test`).
 
 **Names**: any member of an enum, or `#define` of a plain number, in
-`include/sys.h`, `fight.h`, `fighter.h`, `stage.h`, `weapon.h`, `menu.h`
-and `src/main/menu_screen.c` can be written for its number
-(`SCREEN_FIGHT_UPDATE`, `FIGHT_NOBODY`, `ROSTER_MIKADO`). On a quick-boot
+`include/sys.h`, `fight.h`, `fighter.h`, `stage.h`, `weapon.h`, `menu.h`,
+`rb_settings.h`, `rb_save.h`, `rb_options.h` and `src/main/menu_screen.c`
+can be written for its number (`SCREEN_FIGHT_UPDATE`, `FIGHT_NOBODY`,
+`ROSTER_MIKADO`, `RB_PAGE_UP`, `RB_SAVE_WRITTEN`). On a quick-boot
 disc `QB_MODE`, `QB_P1`, `QB_P2`, `QB_WEAPON1`, `QB_WEAPON2`, `QB_STAGE`
 and `QB_CPU2` are what the disc was built to start.
 
@@ -207,8 +234,10 @@ pcsx-redux.main -portable <run's folder> -safe -noupdate -no-ui -interpreter -de
 ```
 
 - `-no-ui` runs it with no window and with a silent sound driver; `-safe`
-  keeps it from reading anybody's settings; the memory cards are new and
-  empty in every run.
+  keeps it from reading anybody's settings; the memory cards are files in
+  the run's folder, new and empty unless the test says `cards = "keep"`,
+  and with `cards = "none"` the emulator is told that both slots are
+  empty.
 - On Windows it is started on a desktop of its own, with the system's
   error boxes off, in a job that is ended as a whole
   (`tools/play/launch.py`): a window or a dialog, if one were ever

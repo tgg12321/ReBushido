@@ -29,6 +29,8 @@ void test_Main(void) {
     WHERE(FightConfig, is_cpu[1]);
     WHERE(FightConfig, stage);
     WHERE(FightConfig, mode);
+    WHERE(RbSettings, bugfixes);
+    WHERE(RbSettings, graphics);
     /* the second fighter is one Fighter further */
     test_Print("Fighter %d\n", (int)sizeof(Fighter));
     CHECK_EQ(sizeof(g_fighters) / sizeof(g_fighters[0]), 2);

@@ -70,6 +70,8 @@
 /* What only the ReBushido build has (src/rebushido/). */
 #if REBUSHIDO
 #include "rb_settings.h"
+#include "rb_save.h"
+#include "rb_options.h"
 #include "rb_quickboot.h"
 #endif
 

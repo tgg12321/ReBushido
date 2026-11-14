@@ -1,0 +1,43 @@
+about = "The options page with no memory card in either slot: it says so, keeps the choice for the session, and the game goes on."
+discs = ["rebushido"]
+cards = "none"
+limit = 6000
+
+input = [
+    "page+30 RIGHT",
+    "page+60 START",
+    # the opening movie, the title, the memory card's message
+    "movie+300 START", "movie+600 CROSS", "movie+900 START",
+]
+
+# The page is up without having waited for a card.
+[[checkpoint]]
+name = "page"
+when = "rb_page == RB_PAGE_UP"
+within = 2000
+expect = ["rb_card == RB_CARD_NONE", "rb_save == RB_SAVE_NOTHING", "rb_bugfixes == 0"]
+
+# A second later it still says there is no card.
+[[checkpoint]]
+name = "page_1s"
+after = 55
+expect = ["rb_card == RB_CARD_NONE", "rb_bugfixes == 1"]
+
+# Leaving it writes nothing, shows no question and takes no time.
+[[checkpoint]]
+name = "left"
+when = "rb_page == RB_PAGE_DONE"
+within = 60
+expect = ["rb_save == RB_SAVE_FAILED", "rb_bugfixes == 1"]
+
+[[checkpoint]]
+name = "movie"
+when = "screen == SCREEN_MOVIE"
+within = 1000
+shot = false
+
+[[checkpoint]]
+name = "menu"
+when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && screen_frames >= 120"
+within = 3000
+expect = ["loaded_stage == -1", "rb_bugfixes == 1"]

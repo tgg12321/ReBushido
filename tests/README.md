@@ -42,7 +42,13 @@ python3 tests/run.py --rebushido -v rebushido/settings # one, showing what it pr
   named `rebushido/NAME`, made like any other; it includes the file of
   `src/rebushido/` it tests. It runs only with `--rebushido`.
   `rebushido/settings` checks that every setting starts as the original's
-  behaviour and goes back to it. `rebushido/quickboot` runs quick boot's
+  behaviour and goes back to it. `rebushido/options` holds the options
+  page's table to the page and the file: every setting has a row and a
+  place of its own, its name and choices fit, the cursor and the choices
+  go round. `rebushido/save` packs the settings' file and reads it back,
+  checks its header and checksum against Python's `zlib` and Shift-JIS,
+  and that a spoiled file, another version's or an empty one is refused
+  with the settings untouched. `rebushido/quickboot` runs quick boot's
   one function with the game stood in for: the chosen fight is asked for
   and its mode started once. `rebushido/play_state` holds the offsets the
   play tests read the fighters at (`tests/play/state.toml`) to the

@@ -1,5 +1,6 @@
 /* ReBushido's version, as text in the executable, so that a build can be
- * told from another and from the retail game. Nothing shows it yet. */
+ * told from another and from the retail game. The options page shows it
+ * (options.c). */
 #include "common.h"
 #include "bb2.h"
 

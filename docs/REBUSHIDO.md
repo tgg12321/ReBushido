@@ -8,9 +8,11 @@ does.
 
 This page is the branch's rules, how to build and play it, how a change is
 written and how it is tested. What is planned, in order, is in
-[`ROADMAP.md`](ROADMAP.md). As it stands the branch is the foundation and
+[`ROADMAP.md`](ROADMAP.md). As it stands the branch is the foundation, the
+options page at boot with the settings' own file on the memory card, and
 the tools for trying a change (a build that boots straight into a fight,
-and play tests in an emulator): no change to the game is in it yet.
+and play tests in an emulator). The two settings are kept and nothing
+reads them yet: no change to the game itself is in.
 
 ## The rules
 
@@ -67,13 +69,13 @@ The build ends with a report:
 
 ```
 build/rebushido/rebushido.exe: ReBushido 0.1-dev (1a2b3c4d5)
-  file     606208 bytes; loaded at 0x80010000 to 0x800A3800
-  program  ends at 0x80107920, its zeroed variables included
-           0x40 bytes more than the matching build (build/bb2.elf)
-  room     0x61E0 bytes below the first fixed buffer (0x8010DB00, SYS_SOUND_VAB_ADDR)
-           0xD0EE0 below the movie overlay and the primitive buffers (0x801D8800)
-           0xF86D0 below the stack's top (0x801FFFF0)
-  gp       the small data ends 0x870 from gp, which reaches 0x7FFF
+  file     612352 bytes; loaded at 0x80010000 to 0x800A5000
+  program  ends at 0x801092B0, its zeroed variables included
+           0x19D0 bytes more than the matching build (build/bb2.elf)
+  room     0x4850 bytes below the first fixed buffer (0x8010DB00, SYS_SOUND_VAB_ADDR)
+           0xCF550 below the movie overlay and the primitive buffers (0x801D8800)
+           0xF6D40 below the stack's top (0x801FFFF0)
+  gp       the small data ends 0x8BC from gp, which reaches 0x7FFF
 OK: rebushido fits
 ```
 
@@ -87,12 +89,106 @@ committed.
 another place). The image is only read. The result is
 `build/play/ReBushido.cue` with its `.bin` beside it: load the `.cue` in an
 emulator as any disc. It has the retail serial, so an emulator with a card
-per game gives it the retail game's memory card.
+per game gives it the retail game's memory card; ReBushido's settings are
+a second file on that card, beside the game's save ("The options page").
+
+The executable is three sectors longer than the retail one and does not
+fit where that was, so the image has it after the last file, and the
+drive seeks there and back as the disc boots. In the emulator the boot
+image comes up about 160 vertical blanks later than on the retail disc,
+the options page not counted.
 
 `build/play/` is not in git and `make clean` leaves it alone. Other images
 there (the shifted disc of the play test, `BB2_shifted.*`) are not touched.
 Beside the image the build writes `ReBushido.sym`, the names of the program
 and their addresses, which the play tests read.
+
+## The options page
+
+A ReBushido disc shows a page of its own first, before the boot image and
+the opening: the name and the version, a row for each setting, what the
+buttons do, and a line about the memory card.
+
+| Row | Choices | |
+|---|---|---|
+| Bugfixes | Off, On | `g_rb_settings.bugfixes` |
+| Graphics | Original, Remastered | `g_rb_settings.graphics`, an `RbGraphics` |
+
+Up and down choose a row, left and right change it (each goes round at
+the ends), Start or cross goes on into the game. It comes up at every
+boot. Both settings start as the original, and nothing reads them yet:
+the changes of the roadmap's later items will.
+
+The switch is `RB_OPTIONS_PAGE`. With it on, `main` calls
+`rb_RunOptionsPage` (`src/rebushido/options.c`) after the game is set up
+and before it shows the boot image; the quick-boot build does not. The
+page has a loop of its own, like the pause menu's: a 320 by 240 screen,
+as the boot image's, drawn in the game's built-in font (`font.c`) and
+plain rectangles, the title in the same font at twice the size. It reads
+the pads from the driver's packets and leaves `g_pad_state` alone, and
+when it is done video memory is black again.
+
+**The rows are a table**, `g_rb_options` (`src/rebushido/settings.c`): a
+name, the names of the choices, the member of `g_rb_settings`, and the
+setting's place in the file. A new setting is a member of `RbSettings`,
+a new `RbSaveSlot` and a line of that table; the page, the file and
+`rb_ResetSettings` follow. `tests/rebushido/options.c` fails if a row
+does not fit the page or two share a place.
+
+**The settings' file** is ReBushido's own, on the card in slot 1:
+`BASLUS-00663REBUSHI`, one block, titled "ReBushido Settings", with an
+icon drawn for it (`src/rebushido/save.c`, `include/rb_save.h`). The
+game's save, `BASLUS-00663BUSHIDO2`, is never opened, written, renamed
+or formatted over, and the retail game does not see the new file: it
+looks for its own by name. A card goes between the two discs either way.
+
+| Offset | |
+|---|---|
+| 0x000 | Sony's header: `SC`, one icon frame, one block, the title in Shift-JIS, the icon's sixteen colours and its 16 by 16 picture |
+| 0x100 | `RBST` |
+| 0x104 | the format's version, 1 |
+| 0x105 | how many of the values mean something (2) |
+| 0x108 | 32 values, a byte each: the setting whose `RbSaveSlot` is that place; zero where there is none yet |
+| 0x128 | the CRC-32 of the 0x28 bytes from 0x100, low byte first |
+
+0x200 bytes are written, zero after the checksum. A place is a setting's
+for ever, so a file from an older version lacks only the newer settings
+(they are as the original) and one from a newer version has values this
+one skips. A value with no such choice is taken as the original's. A file
+with other letters, another version or a wrong checksum is not read, and
+the settings are as the original.
+
+The file is read before the page takes the pad, with the page on show
+("Reading the memory card"), and written when the player leaves the
+page, only if a setting is not what it was when the page came up. So a
+card with no settings' file stays without one until something is
+changed, and a file that could not be read is left as it is until then.
+
+**Nothing waits on the card and nothing is asked.** While the page is up
+it looks at the card every few frames and its last line says what it
+found: the settings will be saved, or there is no card, an unformatted
+one (never formatted here) or a full one, and they will not be. The
+choice then holds until the console is switched off. If a write fails on
+a card that was ready, the page says so for two and a half seconds and
+the game goes on.
+
+How the card is used: the look at the card is the game's own probe
+(`memcard_ProbeCard`: `_card_info`, then `_card_clear` for a new card
+and `_card_load` for its directory), written again in `save.c` because
+the game's keeps what it found in variables of its own, and those must
+be, when the game first looks at the card in the main menu, as the
+retail game has them. The directory and the file are then read and
+written by the game's routines (`memcard_ReadDirectory`,
+`memcard_FileExists`, `memcard_ReadFile`, `memcard_WriteFile`), one
+thing at a time, and the look in flight is finished before the page
+ends. The game does nothing with the card until the main menu, long
+after.
+
+Tried in the emulator, with its own BIOS: a new card, a second boot with
+the card the first left, and no card (the play tests below). Not tried:
+a real console or Sony's BIOS, a card the BIOS reports as new (the
+emulator's never does), an unformatted card, a full one, a card pulled
+out during the write.
 
 ## Booting straight into a fight
 
@@ -153,8 +249,9 @@ which is off in the ReBushido build as well as in the matching one; only
 the movie's screen. That function does what the main menu does when it
 first opens (no stage in memory, no sound bank but the common one), writes
 the choice into `g_fight_config` and calls `fight_StartMode`. The build is
-in `build/quickboot/`, so the ReBushido build is not disturbed; it is 0x70
-bytes larger, with 0x6170 bytes of room. `make rebushido` compiles the two files that ask the switch
+in `build/quickboot/`, so the ReBushido build is not disturbed; it is 0x190
+bytes larger than the matching build, with 0x6090 bytes of room, and has
+no options page. `make rebushido` compiles the two files that ask the switch
 with it on, so the checks keep quick boot compiling, and
 `tests/rebushido/quickboot.c` runs `rb_QuickBoot` on the host.
 
@@ -164,7 +261,8 @@ The program, its zeroed variables included, ends a little under
 `0x80108000`. Above it the game keeps buffers at fixed addresses
 (`include/sys.h`): the first is the common sound bank at `0x8010DB00`. The
 matching program ends `0x6220` bytes (about 25 KB) below it, and that is
-what ReBushido's code and data can grow by as things are. `make rebushido`
+what ReBushido's code and data can grow by as things are. The options
+page and the settings' file take `0x19A0` of it; `0x4850` is left. `make rebushido`
 fails, saying so, when the program would run into that buffer. Past that
 the buffers have to be moved up, which is a change like any other: they are
 constants in `include/sys.h`.
@@ -294,8 +392,9 @@ code, and need that.
 **3. Ask the setting.** `g_rb_settings` (`include/rb_settings.h`) holds what
 the player chose: `g_rb_settings.bugfixes` for a fix,
 `g_rb_settings.graphics == RB_GRAPHICS_ENHANCED` for the picture. A fix that
-needs a setting of its own gets a member there, and its default in
-`src/rebushido/settings.c` is the original's behaviour.
+needs a setting of its own gets a member there, a place in the settings'
+file and a row of `g_rb_options` ("The options page"); its 0 is the
+original's behaviour.
 
 **4. Put new code of any size in `src/rebushido/`.** A new file there needs
 no line anywhere: the Makefile finds it, compiles it like a file of the
@@ -331,7 +430,7 @@ The last three are ReBushido's:
 | Check | Command | Fails when |
 |---|---|---|
 | The build | `make rebushido` | the ReBushido build does not compile or link, does not fit below the fixed buffers, its small data is out of `gp`'s reach, an object was left out of the link, or its version text is missing; or a file that asks `RB_QUICK_BOOT` does not compile with it on |
-| Tests | `make rebushido-test` | a host test fails with the master switch on. These are the game's tests, linked with the settings at their defaults, so they also show that a change does nothing until its setting is on; and ReBushido's own in `tests/rebushido/`: the settings, quick boot, and the offsets the play tests read memory at |
+| Tests | `make rebushido-test` | a host test fails with the master switch on. These are the game's tests, linked with the settings at their defaults, so they also show that a change does nothing until its setting is on; and ReBushido's own in `tests/rebushido/`: the settings, the options page's table, the settings' file (its checksum, its header, and every kind of file that must not be read), quick boot, and the offsets the play tests read memory at |
 | Modern | `make rebushido-modern` | the host's `gcc` finds something serious in the source with the master switch on that `tools/modern/baseline.tsv` does not have |
 
 The counts and the lint understand the switches. `tools/count.py` counts
@@ -348,14 +447,16 @@ None of those ten runs the game. The play tests do
 bash tools/build.sh playtest      # from Windows: wsl bash tools/build.sh playtest
 ```
 
-builds the ReBushido disc and a quick-boot disc and runs four tests in an
+builds the ReBushido disc and a quick-boot disc and runs six tests in an
 emulator (PCSX-Redux) with no window, pressing the pads by script and
 reading the game's memory by the names of the source:
 
 | Test | What it shows |
 |---|---|
 | `boot` | The retail disc reaches its top menu |
-| `same_as_original` | The ReBushido disc, with every setting at its default, is in the same state as the retail disc at eleven checkpoints through boot, the menus, a versus fight, a kill, the replay and the menu after: every watched value, the vertical blank each was reached at, and the picture to the pixel |
+| `same_as_original` | The ReBushido disc, left at its options page with every setting at its default, is in the same state as the retail disc at eleven checkpoints from the opening through the menus, a versus fight, a kill, the replay and the menu after: every watched value, the vertical blanks from the first of them to each, and the picture to the pixel |
+| `options_page` | The options page comes up with the original's settings; the pad changes them; leaving it writes the settings' file and the game reaches its top menu; a second boot with the same card comes up with the changed setting and writes nothing |
+| `options_no_card` | With no card in either slot the page comes up at once and says so, the choice holds, and the game reaches its top menu |
 | `quickboot` | A quick-boot disc is in the fight it was built for, with no input |
 | `fight_end` | From a quick boot, a fight to a kill, the menu after it, and a rematch, with no crash |
 
@@ -368,7 +469,13 @@ and what must hold at each).
 
 What they do not show: the sound (the emulator runs silent), anything the
 watched values and eleven pictures do not catch, and any mode but the
-versus fight. `same_as_original` compares what `tests/play/state.toml`
+versus fight. `same_as_original` cannot compare how long the boot takes:
+the ReBushido disc has the options page, and its program is elsewhere on
+the disc, so each checkpoint is 270 vertical blanks later than on the
+retail disc. What it holds the two to is that the difference is the same
+at every checkpoint (the blanks are counted from the first one, the
+opening's screen), with the game's own count of frames, which starts
+after the page, equal outright. It compares what `tests/play/state.toml`
 names, not all of memory; the original reads leftover memory in one known
 place ([`STATUS.md`](STATUS.md), "Suspected bugs and oddities of the
 original", "The fight", the entry marked watched: a naginata or a yari

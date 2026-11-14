@@ -1,0 +1,100 @@
+about = "The options page: it comes up, the pad changes a setting, the game goes on, and a second boot with the same card has the setting."
+discs = ["rebushido", "rebushido"]
+cards = "keep"
+limit = 6000
+
+input = [
+    # the first boot: Bugfixes on and off again, down to Graphics, left
+    # round the end to "Remastered", and on into the game
+    "page+30 RIGHT", "page+60 LEFT", "page+90 DOWN", "page+120 LEFT",
+    "changed+30 START",
+    # the opening movie, the title, the memory card's message
+    "movie+300 START", "movie+600 CROSS", "movie+900 START",
+    # the second boot: straight on
+    "page_again+30 START",
+]
+
+# ---- the first boot, with a new card ----
+
+# The page is up, with the original's settings and a card it can save to.
+[[checkpoint]]
+name = "page"
+runs = [1]
+when = "rb_page == RB_PAGE_UP"
+within = 2000
+expect = [
+    "rb_bugfixes == 0",
+    "rb_graphics == RB_GRAPHICS_ORIGINAL",
+    "rb_row == 0",
+    "rb_card == RB_CARD_READY",
+    "rb_save == RB_SAVE_NOTHING",
+]
+
+[[checkpoint]]
+name = "bugfixes_on"
+runs = [1]
+after = 45
+expect = ["rb_bugfixes == 1", "rb_graphics == RB_GRAPHICS_ORIGINAL"]
+
+[[checkpoint]]
+name = "changed"
+runs = [1]
+after = 105
+expect = [
+    "rb_page == RB_PAGE_UP",
+    "rb_row == 1",
+    "rb_bugfixes == 0",
+    "rb_graphics == RB_GRAPHICS_ENHANCED",
+]
+
+# The player has left it: the file is written, and the picture is black
+# again for the boot image.
+[[checkpoint]]
+name = "left"
+runs = [1]
+when = "rb_page == RB_PAGE_DONE"
+within = 600
+expect = ["rb_save == RB_SAVE_WRITTEN", "rb_graphics == RB_GRAPHICS_ENHANCED"]
+
+# ---- the second boot, with the card the first left ----
+
+[[checkpoint]]
+name = "page_again"
+runs = [2]
+when = "rb_page == RB_PAGE_UP"
+within = 2000
+expect = [
+    "rb_save == RB_SAVE_LOADED",
+    "rb_bugfixes == 0",
+    "rb_graphics == RB_GRAPHICS_ENHANCED",
+    "rb_card == RB_CARD_READY",
+]
+
+# Nothing was changed, so nothing is written.
+[[checkpoint]]
+name = "left_again"
+runs = [2]
+when = "rb_page == RB_PAGE_DONE"
+within = 600
+expect = ["rb_save == RB_SAVE_LOADED"]
+
+# ---- both: the game goes on ----
+
+[[checkpoint]]
+name = "movie"
+when = "screen == SCREEN_MOVIE"
+within = 1000
+shot = false
+
+# The first boot is taken to the top menu: the game's own look at the card
+# finds no save of its own there, ReBushido's file or not.
+[[checkpoint]]
+name = "menu"
+runs = [1]
+when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && screen_frames >= 120"
+within = 3000
+expect = [
+    "frame_period == 1",
+    "loaded_stage == -1",
+    "rb_graphics == RB_GRAPHICS_ENHANCED",
+]

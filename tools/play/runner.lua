@@ -17,6 +17,7 @@
 --                      opening movie's player counts no frames
 --   text LO HI         the program's code, for the check of the pc
 --   var NAME ADDR SIZE SIGNED        a value to write down at checkpoints
+--   nocards            both memory card slots are empty
 --   in CP OFFSET PAD BUTTON HOLD     a press, OFFSET blanks after checkpoint
 --                                    number CP was reached (0: after power on)
 --   cp NAME SHOT WITHIN at N         a checkpoint at vertical blank N
@@ -68,6 +69,7 @@ end
 local frame = 0
 local limit, stall, alive_at, text_lo, text_hi = 0, 1800, nil, 0, 0
 local movie_at, movie_value
+local no_cards = false
 local vars, checkpoints, presses = {}, {}, {}
 local due = {} -- [frame] = {{pad, button, down}, ...}
 local next_cp, last_cp_frame = 1, 0
@@ -98,6 +100,8 @@ local function load_plan()
             movie_at, movie_value = tonumber(w[2]), tonumber(w[3])
         elseif kind == 'text' then
             text_lo, text_hi = tonumber(w[2]), tonumber(w[3])
+        elseif kind == 'nocards' then
+            no_cards = true
         elseif kind == 'var' then
             vars[#vars + 1] = {addr = tonumber(w[3]), size = tonumber(w[4]), signed = w[5] == '1'}
         elseif kind == 'in' then
@@ -267,6 +271,12 @@ guarded(function()
     set('mute', function() PCSX.settings.spu.Mute = true end)
     set('speed', function() PCSX.settings.spu.Speed = 0 end)
     set('pad2', function() PCSX.settings.pads[2].Connected = true end)
+    if no_cards then
+        set('nocards', function()
+            PCSX.settings.emulator.Mcd1Inserted = false
+            PCSX.settings.emulator.Mcd2Inserted = false
+        end)
+    end
     schedule(0, 0)
     -- The listeners are kept in globals so that they are not collected.
     PLAYTEST_BLANK = PCSX.Events.createEventListener('GPU::Vsync', on_blank)

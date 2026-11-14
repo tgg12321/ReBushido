@@ -441,12 +441,18 @@ are at the end, and what a modern compiler found is marked "found by `make moder
 
 - **ReBushido's build in the running game** (`make playtest`,
   [`tests/play/README.md`](../tests/play/README.md); on the `main` branch, on the developer's
-  machine): four scripted runs in an emulator with no window. The retail disc reaches its top menu;
-  the ReBushido disc with nothing turned on is in the same state as the retail disc at eleven
-  checkpoints through boot, the menus and a versus fight to the menu after it (the watched values,
-  the vertical blank of each, the picture to the pixel); a quick-boot disc starts the fight it was
-  built for, and that fight runs to a kill, the menu after and a rematch without a crash. Two
-  versus fights in all, with no sound.
+  machine): six scripted tests in an emulator with no window. The retail disc reaches its top menu;
+  the ReBushido disc, left at its options page with nothing turned on, is in the same state as the
+  retail disc at eleven checkpoints from the opening through the menus and a versus fight to the
+  menu after it (the watched values, the vertical blanks between them, the picture to the pixel); a
+  quick-boot disc starts the fight it was built for, and that fight runs to a kill, the menu after
+  and a rematch without a crash. Two versus fights in all, with no sound.
+- **ReBushido's options page and its file on the memory card** (the same play tests): the page
+  comes up, the pad changes a setting, the file is written, the game goes on to its top menu, and a
+  second boot with that card has the setting; with no card in either slot the page says so and the
+  game goes on. In the emulator with its own BIOS only: not on a console, and not with an
+  unformatted card, a full one or one pulled out during the write
+  ([`REBUSHIDO.md`](REBUSHIDO.md), "The options page"). The file's format is held by host tests.
 
 **Not tested, or not read**
 

@@ -102,6 +102,18 @@ typedef struct {
 /* memcard.c: BIOS card I/O */
 extern s32 g_memcard_fd;
 extern s32 g_memcard_timeout_counter;
+#if RB_OPTIONS_PAGE
+/* The card's events, which ReBushido's own look at the card waits on
+ * (src/rebushido/save.c). */
+extern s32 g_memcard_sw_event_ioe;
+extern s32 g_memcard_sw_event_err;
+extern s32 g_memcard_sw_event_timeout;
+extern s32 g_memcard_sw_event_new;
+extern s32 g_memcard_hw_event_ioe;
+extern s32 g_memcard_hw_event_err;
+extern s32 g_memcard_hw_event_timeout;
+extern s32 g_memcard_hw_event_new;
+#endif
 extern void memcard_Init(void);
 extern void memcard_Quit(void);
 extern s32 memcard_PollSwEvent(void);

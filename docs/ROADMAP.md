@@ -6,12 +6,14 @@ No dates.
 1. **The foundation.** Done. The branch, the switch for each change, the
    ReBushido build beside the matching one, the place the settings live, the
    version text, a disc to play, and the checks.
-2. **The options page and the settings' save.** A page at boot where the
-   player sets "Bugfixes" and the picture, and a file of ReBushido's own on
-   the memory card that keeps the choices. The game's save is never
-   touched.
-3. **Scripted play tests.** Done, ahead of item 2, so that everything
-   after it can be tried. The game run in an emulator with no window, by
+2. **The options page and the settings' save.** Done. A page at boot
+   where the player sets "Bugfixes" and the picture, and a file of
+   ReBushido's own on the memory card that keeps the choices
+   ([`REBUSHIDO.md`](REBUSHIDO.md), "The options page"). The game's save
+   is never touched. The two settings are kept and nothing reads them
+   until items 4 to 7.
+3. **Scripted play tests.** Done, so that everything after it can be
+   tried. The game run in an emulator with no window, by
    script, on the developer's machine only (`make playtest`,
    [`tests/play/README.md`](../tests/play/README.md)); and a build that
    boots straight into a chosen fight, for people and for agents

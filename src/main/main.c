@@ -579,6 +579,10 @@ void main(void) {
     sys_Init();
     sys_InitGame();
     SetDispMask(1);
+#if RB_OPTIONS_PAGE && !RB_QUICK_BOOT
+    /* the settings are read from the card and the player may change them */
+    rb_RunOptionsPage();
+#endif
 #if RB_QUICK_BOOT
     /* no boot image and no movie: the first screen is the fight's */
     rb_QuickBoot();

@@ -25,7 +25,8 @@ on a desktop of its own with no sound (tools/play/launch.py), ends it by a
 hard time limit, and checks after each run that no process of it is left.
 The whole suite is held to ten minutes.
 What a run wrote is in build/playtest/<test>/<disc>/: a picture of every
-checkpoint, run.log, plan.txt and the emulator's own output.
+checkpoint, run.log, plan.txt, the emulator's own output and its two
+memory cards.
 
 A disc and its names: a test reads the game's memory by the names of the
 source. For the retail disc they are config/symbol_addrs.txt; for a built
@@ -75,11 +76,15 @@ LUA_FAILURE = re.compile(r"lua.*(error|failed)|attempt to |stack traceback|synta
 
 BUTTONS = ("SELECT", "START", "UP", "RIGHT", "DOWN", "LEFT", "L1", "R1", "L2", "R2",
            "TRIANGLE", "CIRCLE", "CROSS", "SQUARE")
+# The memory cards of a test's runs: new and empty in each; or those the
+# run before left, for every run after the first; or none in either slot.
+CARDS = ("new", "keep", "none")
 TYPES = {"u8": (1, 0), "s8": (1, 1), "u16": (2, 0), "s16": (2, 1), "u32": (4, 0), "s32": (4, 1)}
 COMPARISONS = ("==", "!=", "<=", ">=", "<", ">")
 # The files whose enums and plain numbers a test can name.
 HEADERS = ("include/sys.h", "include/fight.h", "include/fighter.h", "include/stage.h", "include/weapon.h",
-           "include/menu.h", "src/main/menu_screen.c")
+           "include/menu.h", "src/main/menu_screen.c",
+           "include/rb_settings.h", "include/rb_save.h", "include/rb_options.h")
 
 
 class TestError(Exception):
@@ -269,7 +274,9 @@ class Checkpoint:
         self.within = int(table.get("within", 0))
         self.shot = bool(table.get("shot", True))
         self.expect = list(table.get("expect", []))
-        unknown = set(table) - {"name", "at", "after", "when", "within", "shot", "expect"}
+        # the runs it is part of, counted from 1 in the order of `discs`; None: all
+        self.runs = [int(n) for n in table["runs"]] if "runs" in table else None
+        unknown = set(table) - {"name", "at", "after", "when", "within", "shot", "expect", "runs"}
         if unknown:
             raise TestError("checkpoint %s: not understood: %s" % (self.name, ", ".join(sorted(unknown))))
 
@@ -280,7 +287,7 @@ class Test:
         self.name = os.path.splitext(os.path.basename(path))[0]
         data = load_toml(path)
         unknown = set(data) - {"about", "discs", "limit", "stall", "seconds", "input", "compare", "state",
-                               "checkpoint"}
+                               "checkpoint", "cards", "frames_from"}
         if unknown:
             raise TestError("not understood: %s" % ", ".join(sorted(unknown)))
         self.about = data.get("about", "")
@@ -294,6 +301,10 @@ class Test:
         self.seconds = min(int(data.get("seconds", RUN_SECONDS)), RUN_SECONDS_MAX)
         self.input = list(data.get("input", []))
         self.compare = list(data.get("compare", []))
+        self.cards = data.get("cards", "new")
+        if self.cards not in CARDS:
+            raise TestError("`cards` is one of %s" % ", ".join(CARDS))
+        self.frames_from = data.get("frames_from")
         self.state = dict(load_toml(STATE_FILE).get("state", {}))
         self.state.update(data.get("state", {}))
         self.checkpoints = [Checkpoint(t, i) for i, t in enumerate(data.get("checkpoint", []))]
@@ -302,37 +313,66 @@ class Test:
         names = [cp.name for cp in self.checkpoints]
         if len(set(names)) != len(names):
             raise TestError("two checkpoints of one name")
+        for cp in self.checkpoints:
+            for n in cp.runs or []:
+                if not 1 <= n <= len(self.discs):
+                    raise TestError("checkpoint %s: `runs` names run %d of %d" % (cp.name, n, len(self.discs)))
+        if self.frames_from is not None and self.frames_from not in names:
+            raise TestError("`frames_from`: no checkpoint `%s`" % self.frames_from)
 
-    def plan(self, disc, names):
-        """The lines of plan.txt for a run on `disc` (tools/play/runner.lua)."""
-        order = sorted(self.state)
+    def checkpoints_of(self, number):
+        """The checkpoints of run `number` (from 1), in order."""
+        return [cp for cp in self.checkpoints if cp.runs is None or number in cp.runs]
+
+    def state_of(self, disc):
+        """The values the disc has: its program defines their symbols."""
+        found = {}
+        for name in sorted(self.state):
+            m = re.fullmatch(r"\s*(.+?)\s*:\s*(\w+)\s*", self.state[name])
+            if not m or m.group(2) not in TYPES:
+                raise TestError("state `%s = %s`: write `symbol+offset:type`, the type one of %s"
+                                % (name, self.state[name], ", ".join(TYPES)))
+            symbol = re.match(r"\s*([A-Za-z_]\w*)", m.group(1))
+            if symbol and symbol.group(1) not in disc.symbols:
+                continue
+            found[name] = (disc.address(m.group(1)),) + TYPES[m.group(2)]
+        return found
+
+    def plan(self, disc, names, number=1):
+        """The lines of plan.txt for run `number` of the test, which is on
+        `disc` (tools/play/runner.lua)."""
+        state = self.state_of(disc)
+        order = sorted(state)
         index = {name: i + 1 for i, name in enumerate(order)}
+        checkpoints = self.checkpoints_of(number)
+        if not checkpoints:
+            raise TestError("run %d has no checkpoint" % number)
         lines = ["limit %d" % self.limit, "stall %d" % self.stall,
                  "alive %d" % disc.address("g_disp_frame_count"),
                  "movie %d %d" % (disc.address("g_sys_screen"), names["SCREEN_MOVIE"]),
                  # the program from its start to the first word of its data
                  "text %d %d" % (PROGRAM_START & 0x1FFFFFFF, disc.address("g_sys_data_start") & 0x1FFFFFFF)]
+        if self.cards == "none":
+            lines.append("nocards")
         for name in order:
-            m = re.fullmatch(r"\s*(.+?)\s*:\s*(\w+)\s*", self.state[name])
-            if not m or m.group(2) not in TYPES:
-                raise TestError("state `%s = %s`: write `symbol+offset:type`, the type one of %s"
-                                % (name, self.state[name], ", ".join(TYPES)))
-            size, signed = TYPES[m.group(2)]
-            lines.append("var %s %d %d %d" % (name, disc.address(m.group(1)), size, signed))
-        cp_index = {cp.name: i + 1 for i, cp in enumerate(self.checkpoints)}
+            lines.append("var %s %d %d %d" % ((name,) + state[name]))
+        cp_index = {cp.name: i + 1 for i, cp in enumerate(checkpoints)}
+        every = {cp.name for cp in self.checkpoints}
         for item in self.input:
             m = re.fullmatch(r"\s*(?:(\w[\w-]*)\s*\+\s*)?(\d+)\s+(?:P([12])\s+)?(\w+)(?:\s+hold\s+(\d+))?\s*", item)
             if not m:
                 raise TestError("input `%s`: write `FRAME BUTTON`, `CHECKPOINT+FRAMES BUTTON`, with "
                                 "`P2` before the button for the second pad and `hold N` after it" % item)
             base, frames, pad, button, hold = m.groups()
-            if base is not None and base not in cp_index:
+            if base is not None and base not in every:
                 raise TestError("input `%s`: no checkpoint `%s`" % (item, base))
+            if base is not None and base not in cp_index:
+                continue  # timed from a checkpoint this run does not have
             if button not in BUTTONS:
                 raise TestError("input `%s`: the buttons are %s" % (item, " ".join(BUTTONS)))
             lines.append("in %d %d %s %s %d" % (cp_index.get(base, 0), int(frames), pad or "1", button,
                                                int(hold or 6)))
-        for cp in self.checkpoints:
+        for cp in checkpoints:
             head = "cp %s %d %d %s" % (cp.name, cp.shot, cp.within, cp.how)
             if cp.how != "when":
                 lines.append("%s %d" % (head, int(cp.value)))
@@ -340,6 +380,9 @@ class Test:
             tests = []
             for part in re.split(r"&&|\band\b", cp.value):
                 m = re.fullmatch(r"\s*(\w+)\s*(==|!=|<=|>=|<|>)\s*(.+?)\s*", part)
+                if m and m.group(1) in self.state and m.group(1) not in index:
+                    raise TestError("checkpoint %s: the %s disc has no `%s` (%s)"
+                                    % (cp.name, disc.name, m.group(1), self.state[m.group(1)]))
                 if not m or m.group(1) not in index:
                     raise TestError("checkpoint %s: `when` is `VALUE == NUMBER`, several joined by &&, "
                                     "each VALUE a name of [state]; got `%s`" % (cp.name, part.strip()))
@@ -399,15 +442,32 @@ class Run:
         self.fatal = None   # a problem that ends the whole suite
         self.seconds = 0.0
         self.frames = 0
+        self.folder = None
 
 
-def run_on_disc(test, disc, names, launch):
-    folder = os.path.join(OUT_DIR, test.name, disc.name)
+def run_labels(discs):
+    """A name for each run: the disc's, with -2, -3 for a disc run again."""
+    labels, seen = [], {}
+    for disc in discs:
+        seen[disc.name] = seen.get(disc.name, 0) + 1
+        labels.append(disc.name if seen[disc.name] == 1 else "%s-%d" % (disc.name, seen[disc.name]))
+    return labels
+
+
+def run_on_disc(test, disc, names, launch, number=1, label=None, cards_from=None):
+    """Run `number` of the test (from 1), on `disc`, into the folder
+    `label`. `cards_from` is the folder of the run whose memory cards this
+    one starts with; without it the cards are new."""
+    folder = os.path.join(OUT_DIR, test.name, label or disc.name)
     if os.path.isdir(folder):
         shutil.rmtree(folder)
     os.makedirs(folder)
     run = Run()
-    order, lines = test.plan(disc, names)
+    run.folder = folder
+    for card in ("card1.mcd", "card2.mcd"):
+        if cards_from and os.path.isfile(os.path.join(cards_from, card)):
+            shutil.copyfile(os.path.join(cards_from, card), os.path.join(folder, card))
+    order, lines = test.plan(disc, names, number)
     if len(lines) > PLAN_LINES_MAX:
         raise TestError("the plan has %d lines; %d is the most a run is given" % (len(lines), PLAN_LINES_MAX))
     if os.path.getsize(RUNNER) > RUNNER_BYTES_MAX:
@@ -425,7 +485,8 @@ def run_on_disc(test, disc, names, launch):
         return run
     # -safe: none of the user's settings; -no-ui: no window, a silent sound
     # driver; the interpreter with the debugger, which the exception check
-    # needs; the memory cards new and empty each run.
+    # needs; the memory cards files of the run's folder, which the emulator
+    # makes new and empty if they are not there.
     cmd = [EMULATOR, "-portable", folder, "-safe", "-noupdate", "-no-ui", "-interpreter", "-debugger",
            "-fastboot", "-iso", disc.cue,
            "-memcard1", os.path.join(folder, "card1.mcd"), "-memcard2", os.path.join(folder, "card2.mcd"),
@@ -493,10 +554,12 @@ def run_on_disc(test, disc, names, launch):
 def check_test(test, discs, runs, names):
     """The test's own claims, on what the runs wrote down."""
     problems = []
-    for disc, run in zip(discs, runs):
+    labels = run_labels(discs)
+    for number, (disc, run) in enumerate(zip(discs, runs), 1):
+        label = labels[number - 1]
         for problem in run.problems:
-            problems.append("%s: %s" % (disc.name, problem))
-        for cp in test.checkpoints:
+            problems.append("%s: %s" % (label, problem))
+        for cp in test.checkpoints_of(number):
             if cp.name not in run.reached:
                 continue
             values = dict(names)
@@ -511,10 +574,19 @@ def check_test(test, discs, runs, names):
                 if not evaluate(claim, values):
                     held = ", ".join("%s = %d" % (n, values[n]) for n in sorted(set(re.findall(r"\w+", claim)))
                                      if n in run.reached[cp.name][1] or n == "frame")
-                    problems.append("%s: at `%s`, `%s` does not hold (%s)" % (disc.name, cp.name, claim, held))
-    # the discs against the first
+                    problems.append("%s: at `%s`, `%s` does not hold (%s)" % (label, cp.name, claim, held))
+    if not test.compare:
+        return problems
+    # the runs against the first, at the checkpoints both have
     first = runs[0]
-    for disc, run in zip(discs[1:], runs[1:]):
+    order = [cp.name for cp in test.checkpoints]
+    for label, run in zip(labels[1:], runs[1:]):
+        # the blank a checkpoint was reached at, counted from `frames_from`
+        since = (0, 0)
+        if test.frames_from is not None:
+            if test.frames_from not in first.reached or test.frames_from not in run.reached:
+                continue
+            since = (first.reached[test.frames_from][0], run.reached[test.frames_from][0])
         for cp in test.checkpoints:
             if cp.name not in first.reached or cp.name not in run.reached:
                 continue
@@ -523,20 +595,25 @@ def check_test(test, discs, runs, names):
                 compare = sorted(test.state) + ["frame", "picture"]
             for name in compare:
                 if name == "frame":
-                    a, b = first.reached[cp.name][0], run.reached[cp.name][0]
+                    if test.frames_from is not None and order.index(cp.name) <= order.index(test.frames_from):
+                        continue
+                    a, b = first.reached[cp.name][0] - since[0], run.reached[cp.name][0] - since[1]
                 elif name == "picture":
                     a, b = first.pictures.get(cp.name), run.pictures.get(cp.name)
                     if a != b:
                         problems.append("at `%s`, the picture on %s is not the picture on %s"
-                                        % (cp.name, discs[0].name, disc.name))
+                                        % (cp.name, labels[0], label))
                     continue
                 elif name in test.state:
+                    # a value only one of the two programs has is not compared
+                    if name not in first.reached[cp.name][1] or name not in run.reached[cp.name][1]:
+                        continue
                     a, b = first.reached[cp.name][1][name], run.reached[cp.name][1][name]
                 else:
                     raise TestError("compare: `%s` is not a name of [state], `frame`, `picture` or `*`" % name)
                 if a != b:
                     problems.append("at `%s`, %s is %d on %s and %d on %s"
-                                    % (cp.name, name, a, discs[0].name, b, disc.name))
+                                    % (cp.name, name, a, labels[0], b, label))
     return problems
 
 
@@ -614,9 +691,11 @@ def main():
             test = Test(path)
             discs = [Disc(d) for d in test.discs]
             runs = []
-            for disc in discs:
-                print("%s on %s ..." % (test.name, disc.name), flush=True)
-                run = run_on_disc(test, disc, names, launch)
+            labels = run_labels(discs)
+            for number, disc in enumerate(discs, 1):
+                print("%s on %s ..." % (test.name, labels[number - 1]), flush=True)
+                cards_from = runs[-1].folder if runs and test.cards == "keep" else None
+                run = run_on_disc(test, disc, names, launch, number, labels[number - 1], cards_from)
                 runs.append(run)
                 if run.fatal:
                     fatal = run.fatal

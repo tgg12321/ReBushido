@@ -216,8 +216,11 @@ def fit(elf_path, exe_path):
     overlay = address_of("SYS_PRIM_BUFFER_0")
     stack, = struct.unpack_from("<I", exe, 0x30)
 
-    at = exe.find(VERSION_PREFIX)
-    version = exe[at:exe.index(b"\0", at)].decode("ascii", "replace") if at >= 0 else None
+    # the text at g_rb_version, which is not the only one that begins so
+    at = (elf.symbol("g_rb_version") or load - 1) - load + 0x800
+    version = None
+    if 0x800 <= at < len(exe) and exe.startswith(VERSION_PREFIX, at):
+        version = exe[at:exe.index(b"\0", at)].decode("ascii", "replace")
 
     print("%s: %s" % (exe_path, version or "no version text"))
     print("  file     %d bytes; loaded at 0x%08X to 0x%08X" % (len(exe), load, loaded_end))

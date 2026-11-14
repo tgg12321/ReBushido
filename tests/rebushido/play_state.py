@@ -32,6 +32,8 @@ MEMBERS = {
     'leg_wounds': 'Fighter.leg_wounds',
     'arm_wounds': 'Fighter.arm_wounds',
     'body_wounds': 'Fighter.body_wounds',
+    'rb_bugfixes': 'RbSettings.bugfixes',
+    'rb_graphics': 'RbSettings.graphics',
 }
 
 
