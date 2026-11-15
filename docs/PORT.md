@@ -1364,17 +1364,22 @@ that: found by the build's count of neighbours, not by a fight).
 **How the window is proved**, with nothing shown or sounded: SDL's
 `dummy` video and audio drivers, on Linux (WSL) and on Windows 11, with
 the three plans of `port_game`, `port_other_fight` and `port_bugfixes`
-(the port's side of each: 3,880, 4,120 and 3,910 blanks). Both programs
-are the 64-bit ones, and what they are held to is the 64-bit build
-without a window.
+(the port's side of each: 3,880, 4,120 and 3,910 blanks), with no card in
+either slot, as those tests have it. Both programs are the 64-bit ones,
+and what they are held to is the 64-bit build without a window: on Linux
+`make port`'s own, on Windows the `rebushido-headless.exe` built beside
+the window (the same object, kernel32 alone). Each program is given a
+plan written for its own addresses, and a card must be ruled out on the
+command line: without `--no-cards` each reads a card of its own beside
+itself and a setting one of them saved earlier makes the runs differ.
 
 | | Linux | Windows |
 |---|---|---|
 | The trace of every watched value at every blank, against the build without a window | identical, all three (2,333, 2,457 and 2,334 lines), run as fast as the PC goes and run at the console's rate | identical, all three, both ways |
 | The same with the plan's presses made as SDL key events, read back through the layout | identical, all three | identical, all three |
 | ... and as buttons of two controllers SDL makes up (its virtual joysticks), plugged in as the run starts | identical, all three | identical, all three |
-| Every twentieth picture as SDL is handed it, against the PNG the build without a window writes at the same blank | 595 pictures, 36,556,800 pixels, none different (a PNG writes each row twice where the picture is wide, which the window leaves to SDL) | the same 595, none different |
-| Every sample as it is queued for SDL, against the build without a window's WAV | 8,779,293 samples, identical | identical |
+| Every twentieth picture as SDL is handed it, against the PNG the build without a window writes at the same blank | 688 pictures (225, 237 and 226), 42,270,720 pixels, none different (a PNG writes each row twice where the picture is wide, which the window leaves to SDL) | the same 688, and all but the last of each run are the same: in the last 4,531 pixels of 153,600 differ, the main menu's panel still fading in, because the two programs end a frame apart (in `port_bugfixes` the one without a window writes one picture more) |
+| Every sample as it is queued for SDL, against the build without a window's WAV | 10,108,350 samples, identical | identical |
 | The program without a window (`rebushido-headless.exe`, kernel32 alone) | | runs, and its trace is the same |
 | A fault made on purpose, on the game's stack (`--fault-at`) and on the sound card's thread (`--fault-in-sound`) | both reported with the address, exit code 70 | the same: the 64-bit program hears of the game's thread first and leaves the other threads to the system's last handler |
 
@@ -1392,8 +1397,8 @@ place. 33 mistakes made on purpose in the first four files, one at a
 time, each failed it.
 
 With the log and the counter on, every run of the table above was made
-again on both systems: the traces, the 595 pictures and the 8,779,293
-samples are the build without a window's still. The log of `port_game`
+again on both systems: the traces, the pictures and the samples are the
+build without a window's still. The log of `port_game`
 has its header, the screens in their order, the fight's beginning by
 name and its end; a fault made on purpose on the game's stack
 (`--fault-at`) and one on the sound card's thread (`--fault-in-sound`)
