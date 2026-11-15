@@ -387,14 +387,17 @@ static s32 port_ChooseWord(
 }
 
 int main(int argc, char **argv) {
-    static char *passed[ARGUMENTS_MAX + 4];
+    static char *passed[ARGUMENTS_MAX + 6];
     static char image_option[] = "--image";
+    static char frames_option[] = "--frames";
+    static char frames_endless[] = "2000000000";
     PortWindowOptions *options = &g_port_window_options;
     const char *config = NULL;
     char *base = SDL_GetBasePath();
     const char *beside = base != NULL ? base : "";
     s32 count = 0;
     s32 has_image = 0;
+    s32 has_end = 0;
     s32 fullscreen = 0;
     s32 no_vsync = 0;
     s32 scale = -1;
@@ -532,6 +535,9 @@ int main(int argc, char **argv) {
                 has_image = 1;
                 image = has_value ? argv[i + 1] : NULL;
             }
+            if (strcmp(word, "--frames") == 0 || strcmp(word, "--plan") == 0) {
+                has_end = 1;
+            }
             if (count == ARGUMENTS_MAX) {
                 port_Complain("too many words on the command line", "");
             }
@@ -595,6 +601,15 @@ int main(int argc, char **argv) {
         image = port_FindImage(beside);
         passed[count++] = image_option;
         passed[count++] = (char *)image;
+    }
+    if (!has_end) {
+        /* A player's session ends when the player ends it. The program
+         * without a window stops by itself after a minute of blanks
+         * unless it is told how many (src/port/plan.c), which is right
+         * for a test and ended every game played here at sixty seconds;
+         * this many blanks is a year. */
+        passed[count++] = frames_option;
+        passed[count++] = frames_endless;
     }
     passed[count] = NULL;
     {
