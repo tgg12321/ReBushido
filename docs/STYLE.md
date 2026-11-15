@@ -205,11 +205,11 @@ change".
     expect. Code that only the port has is in `src/port/`, its header
     `include/port_<file>.h`, its names `port_VerbNoun`, `g_port_noun`,
     `PortType`, `PORT_CONSTANT`: no PlayStation build compiles it.
-29. An address has two forms that are written into the original's own
+29. An address has two forms that are written into the game's own
     lines, because the port's pointers are 64 bits wide and the
     PlayStation's 32 ([`PORT.md`](PORT.md), "64 bits"); on the
-    PlayStation each is the plain expression, so no byte changes
-    (`include/common.h`):
+    PlayStation each is the plain expression, so it changes no byte
+    there (`include/common.h`):
     - a number cast to a pointer has its operand in `ADDR()`:
       `(Fighter *)ADDR(value)`. A pointer cast to a number has nothing;
     - a pointer kept in memory whose layout is fixed (a file's, the

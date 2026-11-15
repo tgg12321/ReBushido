@@ -737,14 +737,17 @@ best-times sheets in `hud.c`, whose members are slots because the main
 menu's file has the same table); a third, the build's date in `main.c`,
 which nothing reads, has no address in the port.
 
-**Why these forms and not others.** The rule on this branch is that the
-original's lines stay as they are, with the port's code beside them
-under `#if RB_PORT`. Here that would have meant an `#if` block round
-each of 250 casts and each of 800 uses of a member, which would bury the
-source. The forms above change the original's lines in place and change
-no byte of any PlayStation build: they are macros that expand to the
-original expression there, the edit is mechanical, and `decomp` is not
-touched. What was weighed against it:
+**Why these forms and not others.** The source is one source for the
+PlayStation and the PC. Port code beside the PlayStation's under `#if
+RB_PORT`, which is how the port is written where the two need different
+code, would here have meant an `#if` block round each of 250 casts and
+each of 800 uses of a member, and would bury the source. The forms above
+are written into the game's own lines and change no byte of any
+PlayStation build: they are macros that expand to the plain expression
+there, the edit is mechanical, and `decomp` is not touched. (They were
+chosen while this branch's rule was still that the original's lines
+stay as they are; the ReBushido program built before and after them is
+the same file.) What was weighed against it:
 
 - *Leaving the source alone and letting the build fix the casts*, from
   the compiler's own list of them. It keeps every line, and it hides
