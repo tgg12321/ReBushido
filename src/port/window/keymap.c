@@ -64,6 +64,10 @@ const char g_port_default_settings[] =
     "antialiasing = 2       # off, 2 or 4: the scene's edges smoothed\n"
     "aspect = 16:9          # 16:9 for a wider view of the same scene,\n"
     "                       # or 4:3 as the console\n"
+    "frame_rate = original  # original: one picture a blank, as the\n"
+    "                       # console; display: as many as the screen\n"
+    "                       # shows; or a number a second. The game\n"
+    "                       # steps at the console's rate either way\n"
     "\n"
     "# Player one, on the keyboard\n"
     "p1.up = key Up\n"
@@ -493,6 +497,23 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "aspect is W:H, as 4:3 or 16:9";
     }
+    if (port_WordsMatch(name, "frame_rate")) {
+        if (port_WordsMatch(value, "original")) {
+            settings->frame_rate = PORT_FRAME_RATE_ORIGINAL;
+            return NULL;
+        }
+        if (port_WordsMatch(value, "display")) {
+            settings->frame_rate = PORT_FRAME_RATE_DISPLAY;
+            return NULL;
+        }
+        if (!port_ReadDigits(value, &number) || number < 1 ||
+            number > PORT_FRAME_RATE_MAX) {
+            return "frame_rate is original, display, or a number of "
+                   "pictures a second";
+        }
+        settings->frame_rate = number;
+        return NULL;
+    }
     return port_ReadBinding(settings, name, value, lookup, is_default);
 }
 
@@ -567,6 +588,7 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
      * is the console's four by three whatever this says */
     settings->aspect_w = PORT_ASPECT_W_WIDE;
     settings->aspect_h = PORT_ASPECT_H_WIDE;
+    settings->frame_rate = PORT_FRAME_RATE_ORIGINAL;
     /* a name the window's library does not know leaves that one out */
     port_ReadLines(settings, text, lookup, NULL, 1);
 }

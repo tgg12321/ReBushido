@@ -361,6 +361,21 @@ typedef struct {
      * PORT_ANCHOR_MIDDLE for everything but the fight HUD's own
      * primitives, which are rectangles (a sprite or a tile). */
     s32 anchor;
+    /* The drawing offset that is already added to every corner above.
+     * The game draws its two frames into the two halves of video memory,
+     * so this differs by the picture's height from one frame to the
+     * next: a backend that holds a frame beside the frame before it
+     * takes it off before it compares the two
+     * (src/port/gl/gl_tween.c). */
+    s32 offset_x;
+    s32 offset_y;
+    /* Where this primitive is in the frame's primitive buffer, in bytes,
+     * or -1 for one that is somewhere else (a 2D primitive built in a
+     * pool of its own) or none at all. The renderer builds a frame's
+     * primitives in the order it walks the scene, so the same face of
+     * the same model is at the same offset in the frame after it: this
+     * is the name by which two frames' primitives are paired. */
+    s32 key;
 } PortRemasterPrim;
 
 /* ---- the backend ---- */
@@ -382,6 +397,10 @@ typedef struct {
 /* NULL takes the backend away, and with it everything above: the port
  * is then what it is without this file. */
 extern void port_RemasterSetBackend(const PortRemasterBackend *backend);
+/* The backend as it is, or NULL. A backend that draws a frame again
+ * between two of the game's puts itself in front of the one that draws
+ * (src/port/gl/gl_tween.c), and this is how it finds it. */
+extern const PortRemasterBackend *port_RemasterGetBackend(void);
 
 /* ---- what the GPU in C hands over (src/port/raster.c) ---- */
 

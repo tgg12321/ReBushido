@@ -1393,14 +1393,15 @@ says the same thing on the command line.
 
 At the console's rate, with no sound card, 3,880 blanks took 64.839
 seconds: 16.715 ms each. On every push `tests/port/window.c` holds the
-arithmetic to 879 cases worked out by hand: the picture's place in
+arithmetic to 881 cases worked out by hand: the picture's place in
 windows of every shape, pixels at video memory's edges, the queue
 running out and filling up with no step larger than a fade's, the clock
 going round at 32 bits, time let go, a sound card two parts in a
 thousand fast and one as slow for 20,000 blanks with nothing running
 out, every button's name, keys and sticks, a settings file's lines and
 the ones it cannot use; a log's name, which of 25 logs go, lines out
-of pieces, a rate each half second, every digit's shape, the counter's
+of pieces, a rate each half second with more pictures a second than the
+console's blanks, every digit's shape, the counter's
 place; the remastered picture's own shape in a window of every shape,
 how many times the console's lines a scale draws so that its pixels are
 square, and the five settings that choose it. 33 mistakes made on
@@ -1456,10 +1457,10 @@ sub-pixel corners, textures in perspective, no dither, true-colour
 mixing, the flat things crisp (the first step); then the stage drawn to
 the far end of it with its fog pushed out to match ("How far the stage
 is drawn"), the scene's edges smoothed ("Edges"), and a wider view of
-the scene at a wider shape of picture ("A wider picture"). What it
-leaves for the steps after it, by design and not by accident: the high
-frame rate, and new lighting and shadows ("What each later step
-needs").
+the scene at a wider shape of picture ("A wider picture"), and more
+pictures a second than the game has frames ("More pictures a second").
+What it leaves for the step after it, by design and not by accident: new
+lighting and shadows ("What each later step needs").
 
 **Three settings of a run** say how much of each (`port_remaster.h`,
 `PortRemasterView`), each of them the drawing path alone:
@@ -1812,7 +1813,18 @@ second a question of the game's own rate and not of the drawing.
 - In the prover the scale is `--gl-scale`'s; in the window it is the
   window's own size by `port_RemasterScaleFor`, worked out again
   whenever the window is resized or the game changes its display mode.
-- The frame rate and new lighting are later steps.
+- New lighting is a later step.
+- **Nobody has seen the pictures between the game's frames move**
+  ("More pictures a second"), so `frame_rate original` is still the
+  default. They were written to files and held to the two frames they
+  lie between, by the pixels and by a watched point, and that is all.
+  What may show: a face the frame after it has not — something spawned
+  or gone, or one the projection put outside the eleven bits the chip
+  holds — is drawn where it was and waits for the next frame instead of
+  moving; the 2D layer, the HUD and the clock stay at the game's rate by
+  design; a camera cut shows the game's own picture until the cut is
+  over; and a primitive the side channel has no depth for (18% of a
+  scene's) is one of those that do not move.
 - **A stage drawn whole shows where it stops.** The stages were built
   to be seen through a fog that ends 26,000 units out; at
   `draw_distance max` the ground reaches its own far edge, and on some
@@ -2183,7 +2195,9 @@ all of this.
 **The settings** are the window's, read from `rebushido.cfg` and the
 command line as the others are (`keymap.c`, `PLAYING.md`): `graphics`
 (`--graphics original|remastered`), `resolution` (`--resolution N`),
-`draw_distance`, `antialiasing` and `aspect`. The last three are a run's
+`draw_distance`, `antialiasing`, `aspect` and `frame_rate`
+(`--frame-rate original|display|N`, "More pictures a second").
+`draw_distance`, `antialiasing` and `aspect` are a run's
 and are settled before the game starts, because they choose the
 primitive buffers the game is handed; `graphics` and the window's size
 may change as it runs. With nothing said: the picture follows the
@@ -2196,10 +2210,12 @@ edges ("A wider picture"). With "Graphics: Original" the window shows the
 console's own four by three whatever the shape says.
 
 **What the log says**: the card's vendor, renderer and GL version; which
-picture a run starts with and all four settings; every F2 with the blank
+picture a run starts with and all five settings; every F2 with the blank
 it happened at; the scale each time the window's size changes it; and at
-the end which picture was on, how many times F2 was pressed, and the
-vertices and draws of the last frame.
+the end which picture was on, how many times F2 was pressed, the
+vertices and draws of the last frame, and — where more pictures a second
+were asked for — how many pictures were shown, how many of them were
+between the game's frames, and how many could not be drawn.
 
 **How it was proved.** With Graphics Original, SDL's dummy drivers and
 the three plans of `port_game`, `port_other_fight` and `port_bugfixes`:
@@ -2237,17 +2253,205 @@ counter and the fade of a resize were read from the pixels, not seen.
 What the window still needs of the remastered picture is the two steps
 after a wider one: a high frame rate and new lighting (below).
 
+### More pictures a second
+
+**The game's own rate, which does not change.** `main` waits
+`g_sys_frame_period` fields a frame and counts `g_disp_frame_count`: 2
+fields in a fight (30 frames a second) and 1 in the menus, the character
+select and the options page (60 — the console's 59.83). Everything the
+fight computes is counted in frames, so the game has to go on stepping
+at exactly that rate and computing exactly what it always did: a higher
+frame rate here is **more pictures of the same frames**, never more
+steps. A frame the game skips (`g_sys_skip_frames`, which a long disc
+read sets) is not drawn and not counted on: the frame before it stays on
+the display, and nothing of this is different for it — there is simply
+no new frame to move towards.
+
+**Which two frames a picture lies between.** The game draws frame F into
+one half of video memory and puts the *other* half, which holds frame
+F-1, on the display (`g_disp_db[i].draw` is half `i` and
+`g_disp_db[i].disp` is half `1-i`, `src/main/main.c`). So at the blank
+where frame F's primitives have just been handed to the GPU, what the
+screen shows is frame F-1, and frame F is **already worked out**. A
+picture between the two is therefore behind nothing and ahead of
+nothing: at the start of frame F-1's time on the display the picture is
+frame F-1 exactly, which is what the console shows then, and by the end
+of it the picture is frame F, which is what the console puts up at that
+instant. **There is no added latency** — a picture is never later than
+the console's own, and nothing is extrapolated.
+
+**How a frame is drawn again** (`src/port/gl/gl_tween.c`). The renderer
+that draws between frames puts itself in front of the one that draws
+(`port_RemasterGetBackend`), so it sees every primitive the decoder
+makes and every rectangle of video memory a frame writes, and hands each
+on unchanged. Of each frame it writes down:
+
+- every decoded primitive, in the order the game drew it;
+- every write of video memory **with the pixels as they were**: a frame
+  drawn again needs the screen its own clear left, not the finished one
+  the software GPU has since drawn over it. Video memory is put back
+  before anything else looks at it, and the mirror the card reads texels
+  from is sent the true pixels again (`port_GlUploadVram`);
+- three frames are kept: the frame on show, the frame after it, and the
+  one the game is building now.
+
+A picture at phase *t* is then the frame on show's own list of writes
+and primitives given to the renderer again, with each primitive that the
+frame after it has as well moved *t* of the way there. **A primitive
+with no depth from the side channel is drawn exactly where it was**: the
+2D layer, the HUD, the clock, the fonts and the menus stay at the game's
+own rate, which is where they belong.
+
+**How a corner moves.** Not in a straight line on the screen: a point
+coming towards the camera does not. With `za`, `zb` the two depths and
+`xa`, `xb` the two screen positions, the place the projection would have
+given a point moving evenly in view space is
+
+    x = ((1-t)·za·xa + t·zb·xb) / ((1-t)·za + t·zb),
+
+and the screen's own centre, which the projection added to both, falls
+out of that sum: so nothing of the projection's own numbers has to be
+carried. The depth moves evenly, and so do the texture point and the
+colour (the light on a vertex changes as it turns). The drawing offset
+is taken off both corners first and the frame on show's put back, which
+is what makes the two halves of video memory comparable. The whole-pixel
+corner, which is what the chip's rule about what it will not draw is
+applied to, is moved by the same step rather than taken from the moved
+place, so that at the first phase the picture is the game's own to the
+pixel.
+
+**Which primitive of one frame is which of the next** is the hard part.
+The renderer builds a frame's primitives in the order it walks the
+scene, so the offset in the primitive buffer (`prim->key`,
+`src/port/remaster.c`) names the same face — until the stage queues one
+cell more or fewer about the camera, which moves everything after it. In
+a fight that is nearly every frame: the offset alone paired 50 of 1,236
+faces. So the offset is tried first and a signature is what finds the
+rest: the kind of primitive, its texture page, its colour table, how it
+is painted and **the texture point of every corner**, all of which
+belong to the face of the model and not to where the model is. Faces of
+one texture — the stage's tiles — share a signature, and are told apart
+by which is nearest on the screen: the table is a signature in a square
+of 128 pixels, and the nine squares about the one a face was in are
+looked in, so a corner may move 128 pixels and still be found. That
+pairs 1,128 of 1,206. It is worked out once for a pair of frames and
+read again by every picture drawn between them.
+
+**What is not moved, and what then happens.** A primitive the frame
+after it has not (something spawned or gone), one whose corners the
+projection put off the eleven bits the chip holds, one with no depth, or
+one that moved more than 128 pixels, is drawn where the frame on show
+had it: so it waits for the next frame instead of moving. And when the
+faces that **cannot be paired are more than a quarter as many as those
+that can** (`PORT_TWEEN_CUT_SHARE`) the two frames are not one scene a
+frame apart — a camera cut, a screen that
+changed, a model replaced — and no picture is drawn at all: the window
+shows the game's own, which is exactly right. In `port_game` that is
+every blank of the menus and the loading screens, where there is nothing
+with depth to move, and the game runs at 60 there anyway.
+
+**Presentation** (`src/port/window/sdl_window.c`). The setting is
+`frame_rate = original | display | N` (`--frame-rate`), `original` with
+nothing said. With `original` the window draws one picture a vertical
+blank, waits for the blank's own moment and swaps, exactly as it did.
+Otherwise it draws a picture every slot of the rate asked for until less
+than half a slot of the blank is left; with the display waited for, the
+swap itself is the wait. **The blank is not over until its own moment**
+whatever happened in it — however many pictures were shown, and whether
+or not any lay between two frames — so the game keeps the console's
+59.83 blanks a second as before, and the pace takes up what a swap ran
+over (`pace.c`). (Leaving that last wait out was the one thing that
+showed as the game running too fast: in a menu, where there is nothing
+with depth to move and no picture between frames is drawn, the blank
+ended as soon as its one picture was shown and the game ran at the
+display's rate.) `display` takes the rate `SDL_GetCurrentDisplayMode`
+says, and
+60 where it says none. Eight pictures a blank is the most, whatever is
+asked for. The counter in the corner shows both rates and the game's own
+speed: `143.8/30.0 100%` is 143.8 pictures a second of a game stepping
+30 times a second and keeping the console's time.
+
+**How it is proved, with nothing shown**
+(`tools/port_fps_prove.py`, `--gl-tween N`). Each game frame of each of
+the three plans is drawn as N pictures, the first the frame on show and
+the last the frame after it, and three things are held:
+
+- **the first picture is the game's own, pixel for pixel.** The frame on
+  show drawn again with nothing moved must come out as the picture the
+  software GPU and the card already made. This is what proves the whole
+  of the writing-down and the drawing again: the list of primitives, the
+  pixels of video memory put back, the order of the batches;
+- **every picture in between lies between the two.** Every channel of
+  every pixel of it against the first picture and against the last: the
+  distance from the first must not fall and the distance from the last
+  must not rise, from phase to phase;
+- **the point the renderer watched** — the corner that moved farthest,
+  the same primitive at every phase — lies between its own two ends.
+
+And the game computes the same thing with the pictures on and off: the
+trace of every watched value at every blank is identical, line for line,
+for both pointer sizes (`port_game`: 2,342 lines at 64 bits and at 32;
+`port_other_fight`: 2,466). Nothing of this is in `make port` or in any
+check: `src/port/gl/` is the window's and the prover's alone.
+
+**What it measured**, with every game frame drawn as five pictures at
+twice the console's resolution (1,280 by 960):
+
+| The plan | Frames | Drawn again | Pictures | The first against the game's own | Out of order | The point off the line | A picture |
+|---|---|---|---|---|---|---|---|
+| `port_game` | 2,752 | 696 | 5,568 | **0 of 855,244,800 pixels** | 0 | 0 | 22.0 ms |
+| `port_other_fight` | 2,872 | 816 | 6,528 | **0 of 1,002,700,800** | 1 | 0 | 24.4 ms |
+| `port_bugfixes` | 2,784 | 696 | 5,568 | **0 of 855,244,800** | 0 | 0 | 24.2 ms |
+
+A picture of `port_game` is 1,201 primitives: 1,102 moved, 79 the frame
+after it has not, 18 flat (the 2D layer and the HUD). The farthest a
+corner moved was 128 pixels, which is the most that is moved at all.
+1,645 frames were not drawn again — the boot, the movie, the menus and
+the loading screens, where nothing has depth to move — and 6 were too
+large to write down. Over the whole run a picture cost 40.6 ms of the
+program's own time against 22.0 ms inside the renderer, on Mesa's
+software renderer with **no graphics card at all**; the runs took 271
+seconds against 45 with the pictures off.
+
+**The one picture out of order** is `port_other_fight`'s blank 3,206,
+where the camera swings fastest. Its first phase is farther from the
+last picture than the phase before it, by the sum of every channel of
+every pixel — and that is a weakness of the measure, not of the
+geometry: where a textured scene slides across the screen, a shift of a
+quarter of the way can line fewer texels up than a shift of none. The
+watched point is in order at every phase of it, and so is the distance
+from the *first* picture.
+
+**`port_bugfixes`' trace parts company at the options page**, as it does
+for anything that moves the program's memory about: the page reads
+memory the game never wrote ("What is left"), the Bugfixes setting then
+comes out on in one run and off in the other, and 29 of 2,346 lines
+differ from there on. Two runs of the one program that differ only in
+`--gl-scale`, with no pictures between frames at all, part at **the same
+29 lines**: nothing of this is the renderer's.
+
+A strip of the pictures of six frames one after another is in
+`build/fps/port_game/gl-0030NN-pNN.png`: the last picture of a frame
+differs from the game's own next frame in 4,314 pixels of 1,228,800
+(0.35% — the faces that appeared or went, and the HUD, which stays at the
+game's rate), and the first picture of the same frame differs from it in
+408,541 (33%). That is the whole of what the pictures in between are
+for, in two numbers.
+
+**In the window**, through SDL's `offscreen` driver on Mesa's software
+renderer (`--frame-rate 144 --no-vsync --resolution 1`, the plan of
+`port_game`): the renderer between frames starts, the log says so, and
+the game keeps the console's time — 59.8 blanks a second through the
+movie and the menus, where one picture a blank is all there is to show
+because nothing of a menu has depth. In the fight it showed about two
+pictures for each of the game's frames, and the game itself fell to
+about 15 frames a second: **a software renderer with no card has no room
+to draw a frame twice**. 4,669 pictures were shown in the run, 188 of
+them between frames. Nothing was seen; the log and the numbers are all
+there is.
+
 ### What each later step needs
 
-- **The frame rate.** The game counts its own frames in
-  `g_disp_frame_count` and waits `frame_period` blanks a frame (2 in a
-  fight: 30 a second); the fight steps once a game frame, and
-  everything that moves is counted in frames. 144 a second means either
-  the game stepping that often, which changes what it computes, or the
-  renderer drawing between steps from two poses — which is where the
-  side channel helps, since it has the exact positions to interpolate.
-  The port's clock is the sound's samples (`port_PaceBlank`), and that
-  is what would have to be split.
 - **Lighting and shadows.** Today every vertex of a model is lit by the
   GTE, by three directional lights and an ambient colour from the
   stage's `LightSetup` (`src/main/scene.c`), and the colour is in the

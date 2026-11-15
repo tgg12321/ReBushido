@@ -17,6 +17,14 @@
 
 RbSettings g_rb_settings;
 
+/* The frame's two primitive buffers, by which the decoder names where a
+ * primitive is (`prim->key`, port_remaster.h): the game's own are
+ * SYS_PRIM_BUFFER_0 and _1, and these are the made-up ones the cases
+ * below put their primitives in. */
+s32 g_disp_frame_count;
+u32 g_disp_prim_buffers[2] = {0x80100000, 0x80200000};
+u32 g_disp_prim_buffer_size = 0x13400;
+
 void port_Fail(const char *format, ...) {
     test_Count(0, __FILE__, __LINE__, "the port stopped itself: %s", format);
     for (;;) {
@@ -422,6 +430,13 @@ static void test_Side(void) {
     CHECK_EQ(prim->page_x, 10 * 64);
     CHECK_EQ(prim->page_y, 256);
     CHECK_EQ(prim->texel_bits, PORT_REMASTER_DEPTH_4);
+    /* where it is in this frame's primitive buffer, and the drawing
+     * offset that is already in its corners: what a renderer that holds
+     * a frame beside the frame before it pairs them by
+     * (src/port/gl/gl_tween.c) */
+    CHECK_EQ(prim->key, 0);
+    CHECK_EQ(prim->offset_x, 0);
+    CHECK_EQ(prim->offset_y, 0);
     CHECK_EQ(prim->clip_left, 0);
     CHECK_EQ(prim->clip_right, 639);
     CHECK_EQ(port_GetRemasterCounts()->with_depth, 1);
@@ -444,6 +459,40 @@ static void test_Side(void) {
     CHECK_EQ(g_drawn_prims[0].has_depth, FALSE);
     CHECK_EQ(g_drawn_prims[0].corner[0].x, 10 << 16);
     CHECK_EQ(g_drawn_prims[0].corner[0].depth, 0);
+    /* this frame's buffer is the first of the two, so a primitive in
+     * the second has no place in it */
+    CHECK_EQ(g_drawn_prims[0].key, -1);
+
+    /* the other frame's buffer, where the frame count is odd; a
+     * primitive a long way into it, and one in neither */
+    test_Reset();
+    g_drawn_count = 0;
+    g_disp_frame_count = 1;
+    port_RemasterSetPrim(0x80200000 + 0x400);
+    gp0(CODE(0x20) | RGB(0, 0, 0));
+    gp0(XY(1, 2));
+    gp0(XY(3, 4));
+    gp0(XY(5, 6));
+    CHECK_EQ(g_drawn_count, 1);
+    CHECK_EQ(g_drawn_prims[0].key, 0x400);
+    g_drawn_count = 0;
+    port_RemasterSetPrim(0x80200000 + 0x13400);
+    gp0(CODE(0x20) | RGB(0, 0, 0));
+    gp0(XY(1, 2));
+    gp0(XY(3, 4));
+    gp0(XY(5, 6));
+    CHECK_EQ(g_drawn_count, 1);
+    CHECK_EQ(g_drawn_prims[0].key, -1);
+    /* a word of no primitive at all */
+    g_drawn_count = 0;
+    port_RemasterSetPrim(0);
+    gp0(CODE(0x20) | RGB(0, 0, 0));
+    gp0(XY(1, 2));
+    gp0(XY(3, 4));
+    gp0(XY(5, 6));
+    CHECK_EQ(g_drawn_count, 1);
+    CHECK_EQ(g_drawn_prims[0].key, -1);
+    g_disp_frame_count = 0;
 }
 
 /* A point the GTE stored into the primitive itself, as a stage tile

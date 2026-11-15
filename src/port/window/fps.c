@@ -91,11 +91,18 @@ static char *port_PutTenths(char *out, u32 tenths) {
 }
 
 /* `59.8/30.0 100%`: pictures shown a second, the game's own frames a
- * second, and the speed against the console's (window.h). */
-void port_FormatFps(char *out, u32 shown_tenths, u32 game_tenths) {
-    /* shown tenths are thousandths times 100; so a percent is this */
+ * second, and the game's speed against the console's (window.h).
+ *
+ * The speed is of the vertical blanks and not of the pictures, because
+ * the window may draw several pictures of one frame where the display
+ * shows more than the console's 59.83 a second (gl_tween.h): the first
+ * number is then the display's and the last still says whether the game
+ * is keeping time. */
+void port_FormatFps(
+    char *out, u32 shown_tenths, u32 game_tenths, u32 blank_tenths) {
+    /* the tenths are thousandths times 100; so a percent is this */
     u32 percent =
-        (shown_tenths * PERCENT * PERCENT + CONSOLE_RATE_THOUSANDTHS / 2) /
+        (blank_tenths * PERCENT * PERCENT + CONSOLE_RATE_THOUSANDTHS / 2) /
         CONSOLE_RATE_THOUSANDTHS;
 
     out = port_PutTenths(out, shown_tenths);

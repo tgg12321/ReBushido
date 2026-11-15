@@ -45,6 +45,10 @@ extern u32 *g_disp_prim_cursor;
 /* The two primitive buffers, one per frame parity: the "common prim" of
  * the game's message, as the effects' own are the "eff prim". */
 extern u32 g_disp_prim_buffers[2];
+/* How large each of those is. The console's two are SYS_PRIM_BUFFER_SIZE;
+ * where the port draws more of the stage than the console does, its own
+ * larger pair takes their place (port_remaster.h). */
+extern u32 g_disp_prim_buffer_size;
 /* enum LoadingScreen */
 extern u8 g_disp_loading_screen;
 /* Set to make the loading screen's noise streaks come in bursts. */
