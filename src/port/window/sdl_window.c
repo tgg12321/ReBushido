@@ -118,8 +118,8 @@ s32 port_LookUpName(s32 source, const char *name) {
 /* A line for each pad's button with what presses it. */
 void port_DescribeControls(void) {
     static const char * const order[] = {
-        "up", "down", "left", "right", "cross", "circle", "square",
-        "triangle", "l1", "r1", "l2", "r2", "start", "select",
+        "up",       "down", "left", "right", "cross", "circle", "square",
+        "triangle", "l1",   "r1",   "l2",    "r2",    "start",  "select",
     };
     char line[PATH_BYTES_MAX];
     s32 pad;
@@ -190,8 +190,8 @@ static void port_WaitFor(u32 samples) {
             return;
         }
         if (left > WAIT_AWAKE) {
-            SDL_Delay((Uint32)(left - WAIT_AWAKE) * MILLISECONDS /
-                      PORT_SPU_RATE);
+            SDL_Delay(
+                (Uint32)(left - WAIT_AWAKE) * MILLISECONDS / PORT_SPU_RATE);
         }
     }
 }
@@ -202,8 +202,8 @@ static void port_WaitFor(u32 samples) {
  * game's side takes the same lock to write. */
 static void SDLCALL port_FillAudio(void *unused, Uint8 *stream, int bytes) {
     (void)unused;
-    port_ReadRing(&g_port_ring, (s16 *)(void *)stream,
-                  (u32)bytes / (2 * sizeof(s16)));
+    port_ReadRing(
+        &g_port_ring, (s16 *)(void *)stream, (u32)bytes / (2 * sizeof(s16)));
 }
 
 /* A blank's samples, as they are made (port_spu.h). */
@@ -321,8 +321,8 @@ static void port_AttachTestControllers(void) {
             SDL_CONTROLLER_BUTTON_MAX, 0);
 
         if (device < 0) {
-            port_Say("--inject pads: SDL makes no controller: %s",
-                     SDL_GetError());
+            port_Say(
+                "--inject pads: SDL makes no controller: %s", SDL_GetError());
             port_Quit(PORT_EXIT_FAILED);
         }
         port_AddController(device);
@@ -331,10 +331,11 @@ static void port_AttachTestControllers(void) {
                 SDL_GameControllerGetJoystick(g_port_controllers[pad]);
 
             SDL_JoystickSetVirtualAxis(
-                joystick, SDL_CONTROLLER_AXIS_TRIGGERLEFT, SDL_JOYSTICK_AXIS_MIN);
-            SDL_JoystickSetVirtualAxis(joystick,
-                                       SDL_CONTROLLER_AXIS_TRIGGERRIGHT,
-                                       SDL_JOYSTICK_AXIS_MIN);
+                joystick, SDL_CONTROLLER_AXIS_TRIGGERLEFT,
+                SDL_JOYSTICK_AXIS_MIN);
+            SDL_JoystickSetVirtualAxis(
+                joystick, SDL_CONTROLLER_AXIS_TRIGGERRIGHT,
+                SDL_JOYSTICK_AXIS_MIN);
         }
     }
 }
@@ -343,8 +344,8 @@ static void port_AttachTestControllers(void) {
 
 static void port_SetFullscreen(s32 on) {
     g_port_is_fullscreen = on;
-    SDL_SetWindowFullscreen(g_port_window,
-                            on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+    SDL_SetWindowFullscreen(
+        g_port_window, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
     SDL_ShowCursor(on ? SDL_DISABLE : SDL_ENABLE);
 }
 
@@ -362,15 +363,14 @@ static void port_OpenWindow(void) {
         port_Say("SDL does not start: %s", SDL_GetError());
         port_Quit(PORT_EXIT_FAILED);
     }
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,
-                g_port_settings.is_linear ? "1" : "0");
+    SDL_SetHint(
+        SDL_HINT_RENDER_SCALE_QUALITY, g_port_settings.is_linear ? "1" : "0");
     if (g_port_settings.is_fullscreen) {
         flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     }
-    g_port_window =
-        SDL_CreateWindow(WINDOW_TITLE, SDL_WINDOWPOS_CENTERED,
-                         SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT,
-                         flags);
+    g_port_window = SDL_CreateWindow(
+        WINDOW_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        WINDOW_WIDTH, WINDOW_HEIGHT, flags);
     if (g_port_window == NULL) {
         port_Say("no window: %s", SDL_GetError());
         port_Quit(PORT_EXIT_FAILED);
@@ -466,8 +466,9 @@ static void port_DrawPicture(u32 blank) {
 
     port_GetDisplay(&display);
     w = display.w < PORT_PICTURE_WIDTH_MAX ? display.w : PORT_PICTURE_WIDTH_MAX;
-    h = display.h < PORT_PICTURE_HEIGHT_MAX ? display.h
-                                            : PORT_PICTURE_HEIGHT_MAX;
+    h = display.h < PORT_PICTURE_HEIGHT_MAX
+            ? display.h
+            : PORT_PICTURE_HEIGHT_MAX;
     SDL_SetRenderDrawColor(g_port_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
     SDL_RenderClear(g_port_renderer);
     if (w <= 0 || h <= 0) {
@@ -524,17 +525,16 @@ static void port_TakeKey(const SDL_KeyboardEvent *key) {
     if (down && key->keysym.scancode == SDL_SCANCODE_ESCAPE) {
         port_Quit(PORT_EXIT_OK);
     }
-    if (down &&
-        (key->keysym.scancode == SDL_SCANCODE_F11 ||
-         (key->keysym.scancode == SDL_SCANCODE_RETURN &&
-          (key->keysym.mod & KMOD_ALT) != 0))) {
+    if (down && (key->keysym.scancode == SDL_SCANCODE_F11 ||
+                 (key->keysym.scancode == SDL_SCANCODE_RETURN &&
+                  (key->keysym.mod & KMOD_ALT) != 0))) {
         /* the window's own, and no button of a pad */
         port_SetFullscreen(!g_port_is_fullscreen);
         return;
     }
     g_port_key_events++;
-    port_ApplyInput(&g_port_settings, PORT_SOURCE_KEY, 0,
-                    (s32)key->keysym.scancode, down);
+    port_ApplyInput(
+        &g_port_settings, PORT_SOURCE_KEY, 0, (s32)key->keysym.scancode, down);
 }
 
 /* A plan's press, made as the PC's own input (port_platform.h): a key
@@ -583,8 +583,8 @@ static s32 port_InjectPress(s32 pad, u32 button, s32 down) {
             Sint16 pushed = binding->direction > 0 ? SDL_JOYSTICK_AXIS_MAX
                                                    : SDL_JOYSTICK_AXIS_MIN;
 
-            result = SDL_JoystickSetVirtualAxis(joystick, binding->code,
-                                                down ? pushed : rest);
+            result = SDL_JoystickSetVirtualAxis(
+                joystick, binding->code, down ? pushed : rest);
         }
         if (result != 0) {
             port_Say("--inject pads: SDL took no press: %s", SDL_GetError());
@@ -621,9 +621,9 @@ static void port_ReadInput(u32 blank) {
             pad = port_FindController(event.cbutton.which);
             if (pad >= 0) {
                 g_port_controller_events++;
-                port_ApplyInput(&g_port_settings, PORT_SOURCE_BUTTON, pad,
-                                event.cbutton.button,
-                                event.cbutton.state == SDL_PRESSED);
+                port_ApplyInput(
+                    &g_port_settings, PORT_SOURCE_BUTTON, pad,
+                    event.cbutton.button, event.cbutton.state == SDL_PRESSED);
             }
             break;
         case SDL_CONTROLLERAXISMOTION:

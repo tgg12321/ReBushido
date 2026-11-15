@@ -91,8 +91,8 @@ void port_ConvertDisplay(
                 u32 green = bytes[(at + 1) % (VRAM_WIDTH * 2)];
                 u32 blue = bytes[(at + 2) % (VRAM_WIDTH * 2)];
 
-                *out++ = OPAQUE | (red << RED_SHIFT) | (green << GREEN_SHIFT) |
-                         blue;
+                *out++ =
+                    OPAQUE | (red << RED_SHIFT) | (green << GREEN_SHIFT) | blue;
             }
         } else {
             for (column = 0; column < w; column++) {

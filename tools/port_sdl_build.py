@@ -73,6 +73,8 @@ HOSTED_FLAGS = ['-O2', '-g', '-std=gnu99', '-Wall', '-Wextra', '-Werror', '-D_FI
 PROGRAM_BASE = 0x08400000
 PROGRAM_END = 0x08800000
 SDL_MINGW_PLACES = ['tools/sdl2-mingw/SDL2-*', 'build/sdl2-mingw/SDL2-*']
+# A variable's own section in MinGW's assembly: `.section .data$name,"w"`.
+SECTION_LINE = re.compile(r'^(\t\.section\t\.(?:data|rdata|bss)\$\w+,"[a-z]+)"', re.M)
 SDL_PROBE = '#include <SDL.h>\nint main(void) { return SDL_Init(0); }\n'
 
 # The object of the game and the port: the variables in the PlayStation's
@@ -185,6 +187,29 @@ def check_host(target):
     return None
 
 
+def compile_for_windows(target, cmd, source, obj):
+    """A file of the game or the port for Windows, in two steps, with the
+    compiler's assembly put right between them. A Windows object's
+    sections begin on a multiple of four bytes and are that long, unless
+    the section's line says otherwise: so two neighbouring variables of two
+    bytes, each in a section of its own, would be four bytes apart, where
+    the PlayStation has them two apart and the game reads them as one
+    array (g_fight_blow_dir_x and the two after it). A `0` after a
+    variable's section's flags starts it at one byte, and the `.align` the
+    compiler writes for the variable then makes it what the variable
+    needs."""
+    proc = subprocess.run(cmd + ['-S', '-', '-o', '-'], input=source, capture_output=True, text=True,
+                          env=port_build.environment(), encoding='utf-8', errors='replace')
+    if proc.returncode != 0:
+        return proc
+    assembly, count = SECTION_LINE.subn(r'\g<1>0"', proc.stdout)
+    assembled = subprocess.run([target.cc, '-x', 'assembler', '-c', '-', '-o', obj], input=assembly,
+                               capture_output=True, text=True, env=port_build.environment(), encoding='utf-8',
+                               errors='replace')
+    assembled.stderr = proc.stderr + assembled.stderr
+    return assembled
+
+
 def compile_one(job):
     """As tools/port_build.py compiles a file, with this target's compiler
     and into its folder; `kind` is game, port (the port's own: its warnings
@@ -205,9 +230,12 @@ def compile_one(job):
             flags = [f for f in flags if f != '-w'] + port_build.PORT_WARNINGS + ['-I' + WINDOW_DIR.rstrip('/')]
         else:
             flags = flags + [port_build.INSTRUMENT]
-        cmd = [target.cc] + flags + target.game_flags + ['-MD', '-MF', obj[:-2] + '.d', '-x', 'c', '-c', '-', '-o', obj]
-        proc = subprocess.run(cmd, input=modern.modern_source(path), capture_output=True, text=True,
-                              env=port_build.environment(), encoding='utf-8', errors='replace')
+        cmd = [target.cc] + flags + target.game_flags + ['-MD', '-MF', obj[:-2] + '.d', '-x', 'c']
+        if target.windows:
+            proc = compile_for_windows(target, cmd, modern.modern_source(path), obj)
+        else:
+            proc = subprocess.run(cmd + ['-c', '-', '-o', obj], input=modern.modern_source(path), capture_output=True,
+                                  text=True, env=port_build.environment(), encoding='utf-8', errors='replace')
     if proc.returncode != 0:
         if os.path.exists(obj):
             os.remove(obj)

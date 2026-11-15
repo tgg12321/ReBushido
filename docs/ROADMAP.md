@@ -45,7 +45,9 @@ No dates.
    The second and third stages are done too: the port is a program
    (`make port`) that reads the player's disc image and runs the game
    through its menus and whole fights, the emulator's game value for
-   value. The fourth is done but for its window: the port draws, by
+   value. The fourth is done, with a window that nobody has seen yet
+   (`make port-sdl`: SDL 2, for Linux and Windows, with sound and the
+   PC's keys and controllers; [`PLAYING.md`](PLAYING.md)): the port draws, by
    the PlayStation's GPU written in C, into video memory of its own,
    and its picture is the emulator's to the pixel on the flat screens
    and but for three pixels in a thousand in a fight. No sound yet.

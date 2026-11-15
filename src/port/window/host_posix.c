@@ -68,7 +68,9 @@ static FILE *port_PosixFile(s32 file) {
     return file >= 0 && file < FILES_MAX ? g_port_posix_files[file] : NULL;
 }
 
-s32 port_HostOpen(const char *path) { return port_PosixKeep(fopen(path, "rb")); }
+s32 port_HostOpen(const char *path) {
+    return port_PosixKeep(fopen(path, "rb"));
+}
 
 s32 port_HostCreate(const char *path) {
     return port_PosixKeep(fopen(path, "wb"));
@@ -125,8 +127,8 @@ s32 port_HostMapAt(u32 address, u32 size) {
 }
 
 void *port_HostAllocate(u32 size) {
-    void *got = mmap(NULL, size, PROT_READ | PROT_WRITE,
-                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    void *got = mmap(
+        NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
     return got == MAP_FAILED ? NULL : got;
 }

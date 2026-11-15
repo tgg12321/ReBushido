@@ -26,11 +26,11 @@ typedef struct {
 } PortButtonName;
 
 static const PortButtonName g_port_pad_buttons[] = {
-    {"up", PADLup},        {"down", PADLdown},   {"left", PADLleft},
-    {"right", PADLright},  {"triangle", PADRup}, {"cross", PADRdown},
-    {"square", PADRleft},  {"circle", PADRright}, {"l1", PADL1},
-    {"l2", PADL2},         {"r1", PADR1},        {"r2", PADR2},
-    {"start", PADstart},   {"select", PADselect},
+    {"up", PADLup},       {"down", PADLdown},    {"left", PADLleft},
+    {"right", PADLright}, {"triangle", PADRup},  {"cross", PADRdown},
+    {"square", PADRleft}, {"circle", PADRright}, {"l1", PADL1},
+    {"l2", PADL2},        {"r1", PADR1},         {"r2", PADR2},
+    {"start", PADstart},  {"select", PADselect},
 };
 
 #define PAD_BUTTONS (sizeof(g_port_pad_buttons) / sizeof(g_port_pad_buttons[0]))
@@ -224,6 +224,27 @@ static void port_DropDefaults(
     settings->count = kept;
 }
 
+/* Takes a key, or a button or an axis's direction of a pad's
+ * controller, away from whatever it presses as built in: a file that
+ * gives it a new button means that button alone. */
+static void port_FreeControl(PortSettings *settings, const PortBinding *taken) {
+    s32 kept = 0;
+    s32 i;
+
+    for (i = 0; i < settings->count; i++) {
+        const PortBinding *binding = &settings->bindings[i];
+
+        if (binding->is_default && binding->source == taken->source &&
+            binding->code == taken->code &&
+            binding->direction == taken->direction &&
+            (taken->source == PORT_SOURCE_KEY || binding->pad == taken->pad)) {
+            continue;
+        }
+        settings->bindings[kept++] = *binding;
+    }
+    settings->count = kept;
+}
+
 /* `on` or `off`, and the like: 1 and which, or 0. */
 static s32 port_ReadChoice(
     const char *value, const char *first, const char *second, s32 *which) {
@@ -297,6 +318,7 @@ static const char *port_ReadBinding(
     keys = port_IsKey(binding.source);
     if (!is_default) {
         port_DropDefaults(settings, binding.pad, binding.button, keys);
+        port_FreeControl(settings, &binding);
     }
     if (settings->count == PORT_BINDINGS_MAX) {
         return "too many keys and buttons";
@@ -307,8 +329,7 @@ static const char *port_ReadBinding(
 
 /* One line, `NAME = VALUE`: NULL, or why it cannot be used. */
 static const char *port_ReadSetting(
-    PortSettings *settings, char *line, PortNameLookup lookup,
-    s32 is_default) {
+    PortSettings *settings, char *line, PortNameLookup lookup, s32 is_default) {
     char *value = line;
     char *name;
     s32 number;
@@ -424,8 +445,8 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     port_ReadLines(settings, text, lookup, NULL, 1);
 }
 
-s32 port_ReadSettings(PortSettings *settings, char *text,
-                      PortNameLookup lookup, PortComplaint complain) {
+s32 port_ReadSettings(PortSettings *settings, char *text, PortNameLookup lookup,
+                      PortComplaint complain) {
     return port_ReadLines(settings, text, lookup, complain, 0);
 }
 
@@ -444,9 +465,9 @@ void port_ApplyInput(
             continue;
         }
         if (source == PORT_SOURCE_AXIS) {
-            binding->is_down = (u8)(binding->direction > 0
-                                        ? value >= threshold
-                                        : value <= -threshold);
+            binding->is_down =
+                (u8)(binding->direction > 0 ? value >= threshold
+                                            : value <= -threshold);
         } else {
             binding->is_down = (u8)(value != 0);
         }

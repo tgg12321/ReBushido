@@ -114,11 +114,11 @@ extern void port_ReadRing(PortRing *ring, s16 *out, u32 frames);
 
 typedef struct {
     s32 is_started;
-    u32 base;         /* the PC's clock when the game's time was 0 */
-    u32 lost;         /* times time was let go */
-    u32 lost_recent;  /* ... since `window_start` */
-    u32 window_start; /* a blank's number */
-    s32 nudged;       /* samples the blanks have been moved by, in all */
+    u32 base;          /* the PC's clock when the game's time was 0 */
+    u32 lost;          /* times time was let go */
+    u32 lost_recent;   /* ... since `window_start` */
+    u32 window_start;  /* a blank's number */
+    s32 nudged;        /* samples the blanks have been moved by, in all */
     s32 queue_average; /* the queue's error, smoothed, in 256ths */
 } PortPace;
 
@@ -137,7 +137,7 @@ extern s32 port_PaceIsHeldBack(const PortPace *pace);
 
 /* What a pad's button is pressed by. */
 enum {
-    PORT_SOURCE_KEY = 1, /* a key: both pads' are on the one keyboard */
+    PORT_SOURCE_KEY = 1,    /* a key: both pads' are on the one keyboard */
     PORT_SOURCE_BUTTON = 2, /* a button of the pad's own controller */
     PORT_SOURCE_AXIS = 3,   /* a stick or a trigger pushed one way */
 };
@@ -178,13 +178,14 @@ typedef void (*PortComplaint)(s32 line, const char *why, const char *text);
 /* The layout built in, as the text of a settings file. */
 extern const char g_port_default_settings[];
 /* The settings before any file: the layout built in. */
-extern void port_SetDefaultSettings(PortSettings *settings,
-                                    PortNameLookup lookup);
+extern void port_SetDefaultSettings(
+    PortSettings *settings, PortNameLookup lookup);
 /* A settings file's text, which is cut up in place (docs/PORT.md,
- * "The settings file"). A line that binds a pad's button takes the
- * built-in keys, or the built-in controller buttons, of that button
- * away first. Returns the lines it could not use, each told to
- * `complain` if that is not NULL. */
+ * "The window"). A line that binds a pad's button takes the built-in
+ * keys, or the built-in controller buttons, of that button away first,
+ * and takes its own key or button away from whatever that pressed as
+ * built in. Returns the lines it could not use, each told to `complain`
+ * if that is not NULL. */
 extern s32 port_ReadSettings(PortSettings *settings, char *text,
                              PortNameLookup lookup, PortComplaint complain);
 /* Sony's mask for a button's name in a settings file (`cross`, `l1`,

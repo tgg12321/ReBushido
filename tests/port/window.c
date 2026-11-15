@@ -1,4 +1,5 @@
-/* The port's window, without SDL: the picture's place, the sound's queue, the clock, the keys. */
+/* The port's window, without SDL: the picture's place, the sound's queue, the
+ * clock, the keys. */
 /* The arithmetic of the native port's window (src/port/window/; docs/
  * PORT.md, "The window"), held to cases worked out by hand. Nothing here
  * opens a window or a sound card: the four files ask nothing of SDL or
@@ -148,8 +149,8 @@ static void test_Ring(void) {
     u32 i;
     s32 wrong;
 
-    port_InitRing(&ring, g_test_ring_samples, TEST_RING_FRAMES,
-                  TEST_RING_TARGET);
+    port_InitRing(
+        &ring, g_test_ring_samples, TEST_RING_FRAMES, TEST_RING_TARGET);
     /* nothing yet: silence, and that is no running out */
     port_ReadRing(&ring, g_test_heard, 50);
     CHECK_EQ(g_test_heard[0], 0);
@@ -260,12 +261,12 @@ static u32 test_RunWithCard(s32 card_rate, u32 blanks, s32 *nudged_out) {
     static s16 ring_samples[8192 * 2];
     PortRing ring;
     PortPace pace;
-    u32 now = 5000;      /* the PC's clock, in samples */
-    u32 due = 0;         /* the game's time */
+    u32 now = 5000; /* the PC's clock, in samples */
+    u32 due = 0;    /* the game's time */
     u32 fraction = 0;
-    u32 card_clock = 0;  /* the card's own clock, in samples */
-    u32 card_part = 0;   /* ... and its 100,000ths */
-    u32 card_taken = 0;  /* samples the card has asked for */
+    u32 card_clock = 0; /* the card's own clock, in samples */
+    u32 card_part = 0;  /* ... and its 100,000ths */
+    u32 card_taken = 0; /* samples the card has asked for */
     u32 blank;
     u32 start_underruns = 0;
 
@@ -284,8 +285,8 @@ static u32 test_RunWithCard(s32 card_rate, u32 blanks, s32 *nudged_out) {
         due += frames;
         port_WriteRing(&ring, g_test_sound, frames);
         now += 40; /* what the PC took to work the blank out */
-        now += port_PaceBlank(&pace, blank, now, due,
-                              (s32)ring.count - (s32)ring.target);
+        now += port_PaceBlank(
+            &pace, blank, now, due, (s32)ring.count - (s32)ring.target);
         /* what the card asked for up to now */
         card_part += (now - before) * (u32)card_rate;
         card_clock += card_part / 100000;
@@ -622,12 +623,13 @@ static void test_Keys(void) {
     /* a file: a line for a button takes its built-in key away, and
      * leaves its built-in controller button; more lines add */
     port_SetDefaultSettings(settings, test_LookUp);
-    test_ReadText("# mine\n"
-                  "\n"
-                  "p1.cross = key Space   # the long one\n"
-                  "P1.Cross = KEY Keypad 4\n"
-                  "  p2.start=pad a\r\n"
-                  "p2.up = pad -lefty\n");
+    test_ReadText(
+        "# mine\n"
+        "\n"
+        "p1.cross = key Space   # the long one\n"
+        "P1.Cross = KEY Keypad 4\n"
+        "  p2.start=pad a\r\n"
+        "p2.up = pad -lefty\n");
     CHECK_EQ(g_test_complaints, 0);
     CHECK_EQ(test_CountBindings(1, 0, PADRdown), 2);
     CHECK_EQ(test_CountBindings(0, 0, PADRdown), 1);
@@ -639,15 +641,38 @@ static void test_Keys(void) {
     port_ApplyInput(settings, PORT_SOURCE_KEY, 0, 92, 1);
     CHECK_EQ(port_GetHeldButtons(settings, 0), PADRdown);
     /* the second pad's Start is on A now, and Start does nothing; its
-     * key is as it was */
+     * key is as it was. A is Start alone: it is Cross no longer, on
+     * that pad, and still Cross on the first */
     CHECK_EQ(test_CountBindings(0, 1, PADstart), 1);
     CHECK_EQ(test_CountBindings(1, 1, PADstart), 1);
+    CHECK_EQ(test_CountBindings(0, 1, PADRdown), 0);
+    CHECK_EQ(test_CountBindings(1, 1, PADRdown), 1);
     port_ApplyInput(settings, PORT_SOURCE_BUTTON, 1, 6, 1);
     CHECK_EQ(port_GetHeldButtons(settings, 1), 0);
     port_ApplyInput(settings, PORT_SOURCE_BUTTON, 1, 0, 1);
-    CHECK_EQ(port_GetHeldButtons(settings, 1), PADRdown | PADstart);
+    CHECK_EQ(port_GetHeldButtons(settings, 1), PADstart);
+    port_ApplyInput(settings, PORT_SOURCE_BUTTON, 0, 0, 1);
+    port_ApplyInput(settings, PORT_SOURCE_KEY, 0, 92, 0);
+    CHECK_EQ(port_GetHeldButtons(settings, 0), PADRdown);
+    port_ApplyInput(settings, PORT_SOURCE_BUTTON, 0, 0, 0);
     /* its Up is the stick alone */
     CHECK_EQ(test_CountBindings(0, 1, PADLup), 1);
+    /* a key given a new button is taken from its built-in one, on
+     * whichever pad that was; the same for a stick's direction, on its
+     * own pad only; and what a file gave is never taken by a later
+     * line */
+    test_ReadText("p2.circle = key Up\n"
+                  "p1.triangle = pad +leftx\n"
+                  "p1.square = key Space\n");
+    CHECK_EQ(g_test_complaints, 0);
+    CHECK_EQ(test_CountBindings(1, 0, PADLup), 0);
+    CHECK_EQ(test_CountBindings(1, 1, PADRright), 1);
+    CHECK_EQ(
+        test_CountBindings(0, 0, PADLright), 1); /* the pad, not the stick */
+    CHECK_EQ(test_CountBindings(0, 1, PADLright), 2);
+    CHECK_EQ(test_CountBindings(0, 0, PADRup), 1);
+    CHECK_EQ(test_CountBindings(1, 0, PADRdown), 2); /* Space is both now */
+    CHECK_EQ(test_CountBindings(1, 0, PADRleft), 1);
     /* `none`: nothing presses it */
     test_ReadText("p1.select = none\n");
     CHECK_EQ(g_test_complaints, 0);
@@ -674,16 +699,17 @@ static void test_Keys(void) {
     /* lines that say nothing the port knows are counted and named, and
      * change nothing; the ones between them are used */
     port_SetDefaultSettings(settings, test_LookUp);
-    test_ReadText("p1.cross = key Nonesuch\n"   /* 1 */
-                  "p3.cross = key Z\n"          /* 2 */
-                  "p1.jump = key Z\n"           /* 3 */
-                  "p1.cross = mouse left\n"     /* 4 */
-                  "scale = huge\n"              /* 5 */
-                  "deadzone = 100\n"            /* 6 */
-                  "just words\n"                /* 7 */
-                  "p2.circle = key Space\n"     /* 8: used */
-                  "p1.cross = pad +nonesuch\n"  /* 9 */
-                  "volume = 3\n");              /* 10 */
+    test_ReadText(
+        "p1.cross = key Nonesuch\n"  /* 1 */
+        "p3.cross = key Z\n"         /* 2 */
+        "p1.jump = key Z\n"          /* 3 */
+        "p1.cross = mouse left\n"    /* 4 */
+        "scale = huge\n"             /* 5 */
+        "deadzone = 100\n"           /* 6 */
+        "just words\n"               /* 7 */
+        "p2.circle = key Space\n"    /* 8: used */
+        "p1.cross = pad +nonesuch\n" /* 9 */
+        "volume = 3\n");             /* 10 */
     CHECK_EQ(g_test_complaints, 9);
     CHECK_EQ(g_test_complaint_lines[0], 1);
     CHECK_EQ(g_test_complaint_lines[6], 7);

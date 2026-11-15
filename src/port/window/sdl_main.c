@@ -139,8 +139,8 @@ static void port_LoadSettings(const char *named, const char *beside) {
         g_port_settings_path = NULL;
         return;
     }
-    port_ReadSettings(&g_port_settings, text, port_LookUpName,
-                      port_ComplainOfLine);
+    port_ReadSettings(
+        &g_port_settings, text, port_LookUpName, port_ComplainOfLine);
     free(text);
 }
 
@@ -220,8 +220,8 @@ static const char *port_FindImage(const char *beside) {
 
     if (port_FindFileEnding(beside, ".cue", path, sizeof(path)) ||
         port_FindFileEnding(beside, ".bin", path, sizeof(path))) {
-        fprintf(stderr, "rebushido: the disc image beside the program: %s\n",
-                path);
+        fprintf(
+            stderr, "rebushido: the disc image beside the program: %s\n", path);
         return path;
     }
     if (port_AskForImage(path, sizeof(path))) {
@@ -257,8 +257,8 @@ static char *port_OwnPath(char *typed) {
 }
 
 static s32 port_ChooseWord(
-    const char *option, const char *word, const char *first,
-    const char *second, const char *third) {
+    const char *option, const char *word, const char *first, const char *second,
+    const char *third) {
     if (strcmp(word, first) == 0) {
         return 0;
     }
