@@ -833,12 +833,14 @@ one at a time, each failed it.
   for a real keyboard and a real controller: the events were SDL's own,
   made by the test.
 - The file dialog on Windows was written and read, and never opened.
-- SDL's dummy sound card is not a clock: it took samples about one part
-  in a hundred fast on Linux and a quarter slow on Windows. The steering
-  followed it as far as it goes (and the sound ran out ten times in a
-  minute on Linux, and the queue threw a quarter away on Windows, as
-  they should with such a card). How a real card behaves is not known
-  until one is heard.
+- SDL's dummy sound card is not a clock: it took samples unevenly and
+  up to one part in a hundred fast on Linux, and more than one part in
+  a hundred slow on Windows. The steering followed it as far as it goes
+  (on Linux the sound ran out 5 to 23 times in a minute; on Windows the
+  blanks were moved by the most allowed and the queue threw three
+  samples in a thousand away: as they should with such a card). Whether
+  a real card ever makes the sound run out is not known until one is
+  heard.
 - The wait for the display was never run against a display.
 - Windows was tried on one machine, Windows 11. A 32-bit Windows gives a
   program 2 GB, and the port cannot run there; nothing else is known to
