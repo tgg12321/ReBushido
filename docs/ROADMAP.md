@@ -66,15 +66,25 @@ No dates.
       layer crisp; proved with no window against the software GPU,
       pixel for pixel, at scale 1. Left of it: the window does not use
       it yet ("What the window still needs").
-   2. **Anti-aliasing.** The hook is in place (the colour buffer is the
-      port's own texture); what has to be measured first is a
-      half-transparent primitive drawn over an edge, which mixes twice
-      along it.
-   3. **No pop-in, and more to see.** The stage's cells, the fog's
-      cutoff and the ordering table's depth, which are what decide it
-      today ("What each later step needs").
-   4. **The wide picture.** The projection's centre and the four places
-      that cull to four by three.
+   2. **Anti-aliasing.** Done, by drawing the scene two or four times
+      over each way and averaging it down (`antialiasing`): exact with
+      the game's order of painting, where multisampling would mix a
+      half-transparent primitive's coverage twice along an edge, and it
+      leaves the 2D layer exactly as crisp as it was ("Edges").
+   3. **No pop-in, and more to see.** Done, by the stage's cells
+      (`draw_distance`): the console draws a disc of 26,000 units and
+      places its fog to end there, and `max` draws the stage to its own
+      far edge with the fog pushed out four times as far, its colours
+      untouched ("How far the stage is drawn"). The port hands the game
+      primitive buffers of its own for it. Left of it: a stage's
+      geometry was never meant to be seen whole, so its far edge shows
+      where the ground stops.
+   4. **The wide picture.** Done for the scene (`aspect`): the game
+      never culls to the right or the bottom, so a wider view needs
+      nothing of the projection — only that the renderer keep what the
+      console's GPU threw away at the edge of its drawing area ("A
+      wider picture"). Left of it: the HUD stays four by three in the
+      middle and does not move out to the new edges.
    5. **A high frame rate**, 144 a second: the renderer drawing between
       the game's own steps, which the side channel's exact positions
       are what makes possible.

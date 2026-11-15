@@ -79,6 +79,9 @@ Make a text file `rebushido.cfg` beside the program. A line is
 scale = integer          # fit (as large as fits), integer, or stretch
 filter = linear          # nearest (each pixel a block) or linear
 fullscreen = on
+draw_distance = max      # original, far, or max: how much of the stage
+antialiasing = 2         # off, 2 or 4: the scene's edges smoothed
+aspect = 16:9            # 4:3 as the console, or any shape you like
 p1.cross = key Space     # Space is player one's Cross, and Z no longer
 p1.circle = key Left Ctrl
 p2.start = pad a         # on player two's controller, A is Start
@@ -115,11 +118,21 @@ of work, and with it:
   already the name of where the picture goes in the window, so the new
   one will be `--resolution N`).
 
-What Remastered does **not** do yet: the wide picture, anti-aliasing,
-seeing farther (the stages still fade things in at the distance the
-console had), more than the game's own 30 or 60 pictures a second, and
-new lighting or shadows. Those are the steps after it
-([`ROADMAP.md`](ROADMAP.md), item 7).
+**The three settings of the remastered picture** are a run's: they are
+read once as it starts, and changing one means starting it again. Each
+does nothing at all while Graphics is Original.
+
+| | | |
+|---|---|---|
+| `draw_distance` | `original`, `far`, `max` | How much of the stage is drawn, and how far out its fog is placed. The console draws a disc of about 26,000 units about the camera and its fog ends there, so the ground fades into the distance; `max` draws the stage to its own far edge and pushes the fog out four times as far. The fog's colours are not touched, so a night stage stays as dark as it was. `original` with nothing said. |
+| `antialiasing` | `off`, `2`, `4` | The scene drawn that many times over each way and averaged down, which smooths its edges. The HUD, the fonts and the menus are left exactly as crisp as they were. It costs fill rate and nothing else: four times over is sixteen times the pixels. `off` with nothing said; `2` is what the measurements say to take. |
+| `aspect` | `4:3`, `16:9`, any `W:H` | The shape of the picture. A wider one is a **wider view of the same scene**, not a stretched picture: the camera keeps its height and gains width. The HUD and the menus stay four by three in the middle of it. Use it with `draw_distance max`: the stage's own choice of what to draw is cut for the console's field of view, so a wide picture at `original` has little to show at the sides. `4:3` with nothing said. |
+
+What Remastered does **not** do yet: more than the game's own 30 or 60
+pictures a second, and new lighting or shadows. Those are the steps
+after it ([`ROADMAP.md`](ROADMAP.md), item 7). The HUD does not move out
+to the edges of a wide picture yet ([`PORT.md`](PORT.md), "A wider
+picture").
 
 ## What does not work yet
 
