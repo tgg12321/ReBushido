@@ -93,14 +93,20 @@ LINK_FLAGS = ['-m32', '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none']
 # The kinds of variable, by the section the compiler puts each in.
 DATA_KINDS = ('.rodata', '.data', '.bss')
 
+# The program is linked 4 MB up from where Linux usually has one, and says
+# where its variables begin and end: an ordering table's link is the low 24
+# bits of an address, and those of the program's variables must not be
+# those of the PlayStation's RAM, which is the 2 MB from 0x80000000
+# (src/port/gpu.c, port_AddLinkRegion).
 LD_SCRIPT_TEXT = '''/* Written by tools/port_build.py: the native port's link. The game's
  * variables are in the order of the PlayStation program, kind by kind. */
 ENTRY(_start)
 SECTIONS
 {
-    . = 0x08048000 + SIZEOF_HEADERS;
+    . = 0x08400000 + SIZEOF_HEADERS;
     .text : { *(.text .text.*) }
     . = ALIGN(0x1000);
+    g_port_data_start = .;
     .rodata : {
 %(rodata)s
         *(.rodata .rodata.*)
@@ -114,6 +120,7 @@ SECTIONS
 %(bss)s
         *(.bss .bss.*) *(COMMON)
     }
+    g_port_data_end = .;
     /DISCARD/ : { *(.note.GNU-stack) *(.comment) *(.eh_frame) *(.note.gnu.property) }
 }
 '''

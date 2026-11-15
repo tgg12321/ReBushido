@@ -26,7 +26,9 @@ hard time limit, and checks after each run that no process of it is left.
 The whole suite is held to fourteen minutes.
 What a run wrote is in build/playtest/<test>/<disc>/: a picture of every
 checkpoint, run.log, plan.txt, the emulator's own output and its two
-memory cards.
+memory cards; and where a test asks, the game's memory and all of video
+memory at a checkpoint, which two runs are then compared by (tools/play/
+snapshot.py, picture.py).
 
 A disc and its names: a test reads the game's memory by the names of the
 source. For the retail disc they are config/symbol_addrs.txt; for a built
@@ -36,9 +38,10 @@ disc, the table written beside it when it was built (build/play/NAME.sym):
 
 The disc `port` is no disc and no emulator: it is the native port
 (docs/PORT.md), build/port/rebushido, a Linux program that reads the retail
-image itself. It is given the same plan and writes the same log, so a test
-with `discs = ["rebushido", "port"]` holds the port to the emulator. From
-Windows it is run through `wsl`.
+image itself. It is given the same plan and writes the same log, its pictures
+and its video memory among them, so a test with `discs = ["rebushido",
+"port"]` holds the port to the emulator. From Windows it is run through
+`wsl`.
 """
 import argparse
 import ast
@@ -334,11 +337,18 @@ class Checkpoint:
         self.count = int(table.get("count", 1))
         # the port lists the calls from here to the next checkpoint
         self.calls = bool(table.get("calls", False))
+        # video memory is written at it (README.md, "The picture"), and how
+        # many of its pixels may differ from the first run's
+        self.vram = bool(table.get("vram", False))
+        self.vram_differ = int(table.get("vram_differ", 0))
+        if self.vram_differ and not self.vram:
+            raise TestError("checkpoint %s: `vram_differ` goes with `vram = true`" % self.name)
         self.expect = list(table.get("expect", []))
         # the runs it is part of, counted from 1 in the order of `discs`; None: all
         self.runs = [int(n) for n in table["runs"]] if "runs" in table else None
         unknown = set(table) - {"name", "at", "after", "frames", "call", "count", "when", "within", "shot",
-                                "expect", "runs", "snapshot", "repeat", "calls", "at_frame"}
+                                "expect", "runs", "snapshot", "repeat", "calls", "at_frame", "vram",
+                                "vram_differ"}
         if unknown:
             raise TestError("checkpoint %s: not understood: %s" % (self.name, ", ".join(sorted(unknown))))
 
@@ -349,7 +359,8 @@ class Test:
         self.name = os.path.splitext(os.path.basename(path))[0]
         data = load_toml(path)
         unknown = set(data) - {"about", "discs", "limit", "stall", "seconds", "input", "compare", "state",
-                               "checkpoint", "cards", "frames_from", "dump", "common_state", "snapshot"}
+                               "checkpoint", "cards", "frames_from", "dump", "common_state", "snapshot",
+                               "port_gpu"}
         if unknown:
             raise TestError("not understood: %s" % ", ".join(sorted(unknown)))
         self.about = data.get("about", "")
@@ -363,6 +374,11 @@ class Test:
         self.seconds = min(int(data.get("seconds", RUN_SECONDS)), RUN_SECONDS_MAX)
         self.input = list(data.get("input", []))
         self.compare = list(data.get("compare", []))
+        # the port's GPU draws as the console, or as the emulator where the
+        # two differ (include/port_gpu.h)
+        self.port_gpu = data.get("port_gpu", "console")
+        if self.port_gpu not in ("console", "emulator"):
+            raise TestError("`port_gpu` is \"console\" or \"emulator\"")
         self.cards = data.get("cards", "new")
         if self.cards not in CARDS:
             raise TestError("`cards` is one of %s" % ", ".join(CARDS))
@@ -488,6 +504,8 @@ class Test:
         if not checkpoints:
             raise TestError("run %d has no checkpoint" % number)
         lines = ["limit %d" % self.limit, "stall %d" % self.stall]
+        if disc.port and self.port_gpu == "emulator":
+            lines.append("gpu emulator")
         if disc.exe:
             # a program of the tests' own: no frame count to watch, and
             # its code is wherever its file was loaded
@@ -545,7 +563,7 @@ class Test:
             lines.append("frame %d" % disc.address("ResetRCnt"))
         for cp in checkpoints:
             # what is written at it: 1 a picture, 2 the [snapshot] memory
-            what = cp.shot + 2 * (bool(cp.snapshot) and bool(snaps)) + 4 * cp.calls
+            what = cp.shot + 2 * (bool(cp.snapshot) and bool(snaps)) + 4 * cp.calls + 8 * cp.vram
             for piece in self.pieces_at(cp):
                 if cp.snapshot is not True:
                     what += 256 << sorted(snaps).index(piece)
@@ -859,6 +877,37 @@ def compare_snapshots(test, discs, first, run, first_label, label):
     return problems
 
 
+def compare_vram(test, first, run, first_label, label):
+    """Video memory as two runs wrote it at the checkpoints that say `vram`,
+    pixel for pixel (tools/play/picture.py). A checkpoint fails if more
+    pixels differ than its `vram_differ` allows. What differed at every
+    checkpoint, a line each, is left in the second run's folder, vram.txt;
+    `python tools/port_compare.py TEST --vram` shows it, with pictures."""
+    import picture
+    problems, lines = [], []
+    for cp in test.checkpoints:
+        if not cp.vram or cp.name not in first.reached or cp.name not in run.reached:
+            continue
+        memory = []
+        for folder in (first.folder, run.folder):
+            path = os.path.join(folder, cp.name + ".vram")
+            try:
+                memory.append(picture.read(path))
+            except (OSError, ValueError):
+                problems.append("%s was not written" % os.path.relpath(path, REPO).replace("\\", "/"))
+                break
+        if len(memory) != 2:
+            continue
+        found = picture.Difference(memory[0], memory[1])
+        lines.append("%-16s %s" % (cp.name, found.summary()))
+        if found.count > cp.vram_differ:
+            problems.append("at `%s`, video memory on %s is not that on %s: %s (%d may)"
+                            % (cp.name, first_label, label, found.summary(), cp.vram_differ))
+    with open(os.path.join(run.folder, "vram.txt"), "w", encoding="utf-8", newline="\n") as f:
+        f.write("".join(line + "\n" for line in lines))
+    return problems
+
+
 def runs_index(discs, label):
     """Which of `discs` the run called `label` was on."""
     return run_labels(discs).index(label)
@@ -907,7 +956,7 @@ def check_test(test, discs, runs, names):
             if compare == ["*"]:
                 compare = sorted(test.state) + ["frame", "picture"]
             for name in compare:
-                if name in ("dump", "snapshot"):
+                if name in ("dump", "snapshot", "vram"):
                     continue  # the pieces of memory: once, below
                 if name == "frame":
                     if test.frames_from is not None and order.index(cp.name) <= order.index(test.frames_from):
@@ -926,7 +975,7 @@ def check_test(test, discs, runs, names):
                     a, b = first.reached[cp.name][1][name], run.reached[cp.name][1][name]
                 else:
                     raise TestError("compare: `%s` is not a name of [state], `frame`, `picture`, `dump`, "
-                                    "`snapshot` or `*`" % name)
+                                    "`snapshot`, `vram` or `*`" % name)
                 if a != b:
                     problems.append("at `%s`, %s is %d on %s and %d on %s"
                                     % (cp.name, name, a, labels[0], b, label))
@@ -934,6 +983,8 @@ def check_test(test, discs, runs, names):
             problems += compare_dumps(test, first, run, labels[0], label)
         if "snapshot" in test.compare:
             problems += compare_snapshots(test, discs, first, run, labels[0], label)
+        if "vram" in test.compare:
+            problems += compare_vram(test, first, run, labels[0], label)
     return problems
 
 

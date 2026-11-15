@@ -298,6 +298,21 @@ void port_HostCatchCrashes(void (*report)(const PortCrash *crash)) {
     }
 }
 
+/* The stack pointer to the top of the memory given, no frame above the
+ * function's, and the call. */
+void port_HostCallOnStack(void (*function)(void), u32 stack_top) {
+    __asm__ volatile(
+        "movl %0, %%esp\n"
+        "xorl %%ebp, %%ebp\n"
+        "call *%1\n"
+        :
+        : "r"(stack_top), "r"(function)
+        : "memory");
+    for (;;) {
+        port_HostExit(1);
+    }
+}
+
 /* ---- start-up ---- */
 
 /* The kernel starts the program here with the argument count and the

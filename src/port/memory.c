@@ -21,7 +21,8 @@
  *                      primitives (SYS_PRIM_BUFFER_0,
  *                      SYS_PRIM_BUFFER_1), and the stack's top
  *                      (SYS_STACK_TOP), which the port gives SetSp and
- *                      does not use: the PC's stack is the system's.
+ *                      does not use: the game's stack is elsewhere
+ *                      (PORT_STACK_ADDR, port_platform.h).
  *                      Below the sound bank nothing is read or
  *                      written: the program that lives there on the
  *                      console is this one, elsewhere.
@@ -47,8 +48,8 @@
 
 const u32 g_port_low_memory[PORT_LOW_MEMORY_WORDS] = {0};
 
-/* Both pieces of the console's memory, or the program stops
- * (port_platform.h). */
+/* Both pieces of the console's memory and the game's stack, or the
+ * program stops (port_platform.h). */
 void port_MapMemory(void) {
     if (!port_HostMapAt(PORT_RAM_ADDR, PORT_RAM_SIZE)) {
         port_Fail("rebushido: the system gave no memory at 0x%08X (%u bytes): "
@@ -62,6 +63,11 @@ void port_MapMemory(void) {
                   "the PlayStation's scratchpad, which the game reaches by "
                   "address\n",
                   (u32)SCRATCHPAD, PORT_SCRATCHPAD_SIZE);
+    }
+    if (!port_HostMapAt(PORT_STACK_ADDR, PORT_STACK_SIZE)) {
+        port_Fail("rebushido: the system gave no memory at 0x%08X (%u bytes): "
+                  "the stack the game runs on\n",
+                  PORT_STACK_ADDR, PORT_STACK_SIZE);
     }
 }
 

@@ -1,0 +1,209 @@
+about = "The native port's picture against the emulator's: video memory, pixel for pixel, at the options page, the boot image, the menu, character select and through a fight."
+discs = ["rebushido", "port"]
+# The port has no memory card yet, so neither has the emulator.
+cards = "none"
+limit = 12000
+seconds = 240
+# The emulator's software GPU does two things otherwise than the console
+# is best known to do them: it does not dither a textured polygon of one
+# colour, and it loses no fraction as a colour or a texture coordinate
+# runs across a polygon (docs/PORT.md, "The picture"). For this comparison
+# the port is told to do both the emulator's way; everything else it draws
+# as it always does.
+port_gpu = "emulator"
+
+# port_game's presses: Start on the options page, the opening movie, the
+# title, the memory card's message; down the top menu to Vs. Mode; each pad
+# takes the fighter and the weapon under its cursor, the first pad the
+# stage; then the fight, counted in the game's frames, until one of the
+# two is cut down; and from the menu after it back to the main menu.
+input = [
+    "page+30 START",
+    "movie+300 START", "movie+600 CROSS", "movie+900 START",
+    "menu+30 DOWN", "menu+60 DOWN", "menu+90 DOWN", "menu+150 CROSS",
+    "select+280 CROSS", "select+320 P2 CROSS", "select+580 CROSS", "select+620 P2 CROSS",
+    "select+1180 CROSS",
+    "fight+50f RIGHT hold 20f", "fight+50f P2 LEFT hold 10f",
+    "fight+72f CIRCLE", "fight+102f CROSS", "fight+132f CIRCLE", "fight+162f CROSS",
+    "fight+192f CIRCLE", "fight+222f CROSS", "fight+252f CIRCLE", "fight+282f CROSS",
+    "fight+312f CIRCLE", "fight+342f CROSS", "fight+372f CIRCLE", "fight+402f CROSS",
+    "fight+432f CIRCLE", "fight+462f CROSS", "fight+492f CIRCLE", "fight+522f CROSS",
+    "fight+552f CIRCLE", "fight+582f CROSS", "fight+612f CIRCLE", "fight+642f CROSS",
+    "fight+672f CIRCLE", "fight+702f CROSS", "fight+732f CIRCLE", "fight+762f CROSS",
+    "fight+792f CIRCLE", "fight+822f CROSS", "fight+852f CIRCLE", "fight+882f CROSS",
+    "fight+65f P2 CIRCLE", "fight+100f P2 CIRCLE", "fight+135f P2 CIRCLE", "fight+170f P2 CIRCLE",
+    "fight+205f P2 CIRCLE", "fight+240f P2 CIRCLE", "fight+275f P2 CIRCLE", "fight+310f P2 CIRCLE",
+    "fight+345f P2 CIRCLE", "fight+380f P2 CIRCLE", "fight+415f P2 CIRCLE", "fight+450f P2 CIRCLE",
+    "fight+485f P2 CIRCLE", "fight+520f P2 CIRCLE", "fight+555f P2 CIRCLE", "fight+590f P2 CIRCLE",
+    "fight+625f P2 CIRCLE", "fight+660f P2 CIRCLE", "fight+695f P2 CIRCLE", "fight+730f P2 CIRCLE",
+    "fight+765f P2 CIRCLE", "fight+800f P2 CIRCLE", "fight+835f P2 CIRCLE", "fight+870f P2 CIRCLE",
+    "after_fight+40f DOWN", "after_fight+50f DOWN", "after_fight+60f CROSS",
+]
+
+# The game is in the same place on both, and video memory is the same but
+# for as many pixels as each checkpoint's `vram_differ` says: all 1024 by
+# 512 of it, the two buffers of the picture, the textures and the colour
+# tables (tests/play/README.md, "The picture"). What differed at each is in
+# build/playtest/port_picture/port/vram.txt, and docs/PORT.md has the
+# numbers and what they are.
+compare = ["screen", "menu_page", "rng", "mode", "stage", "winner", "vram"]
+
+# The first word of the load area (SYS_LOAD_ADDR, sys.h): 16 once the boot
+# image's file, a TIM, has been read there.
+[state]
+loaded_word = "0x80118800:u32"
+
+# ---- the screens of flat pictures: not a pixel differs ----
+
+[[checkpoint]]
+name = "page"
+when = "rb_page == RB_PAGE_UP"
+within = 2000
+shot = false
+
+# The options page as the player gets it: the font's sprites and the
+# rules' tiles of ReBushido's own page (src/rebushido/options.c).
+[[checkpoint]]
+name = "options"
+after = 20
+vram = true
+
+# The boot image is read ...
+[[checkpoint]]
+name = "boot_file"
+when = "loaded_word == 16"
+within = 1500
+shot = false
+
+# ... and a second later is on show: a picture loaded straight into video
+# memory, on a display 320 across.
+[[checkpoint]]
+name = "boot"
+after = 60
+vram = true
+
+[[checkpoint]]
+name = "movie"
+when = "screen == SCREEN_MOVIE"
+within = 1000
+shot = false
+
+# The top menu: textured sprites and tiles, half-transparent ones among
+# them, a picture copied inside video memory.
+[[checkpoint]]
+name = "menu"
+when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && screen_frames >= 120"
+within = 3000
+vram = true
+expect = ["frame_period == 1"]
+
+[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 1500
+shot = false
+
+# ---- character select: shaded polygons, and the screen's clock ----
+
+# The fighters' list. The cursor swells and shrinks by the screen's own
+# count of frames, which is not at the same number on both when this many
+# blanks have gone by (the port loads the screen's files in no time): the
+# cursor and the mark beside it are 1,624 of these pixels. The rest are
+# 204, the same ones as at select_weapon.
+[[checkpoint]]
+name = "select_fighter"
+after = 240
+vram = true
+vram_differ = 1828
+
+# The weapons' list, both fighters taken.
+[[checkpoint]]
+name = "select_weapon"
+after = 200
+vram = true
+vram_differ = 204
+
+# The two weapons crossed, and then the stages' list. What differs on
+# these three screens is single pixels of shaded and textured polygons,
+# the doors' panels and the portraits: places where a colour or a texture
+# coordinate comes out exactly halfway between two values, and the two
+# programs take it to different sides (docs/PORT.md, "The picture").
+[[checkpoint]]
+name = "select_crossed"
+after = 300
+vram = true
+vram_differ = 12
+
+[[checkpoint]]
+name = "select_stage"
+after = 300
+vram = true
+vram_differ = 58
+
+# ---- the fight: textured and shaded triangles ----
+
+# The fight's first frame. Video memory is not compared here: what is on
+# show is the loading screen, whose streaks of noise are put where rand()
+# says, and rand() is stirred by the frame's wait, which the port does not
+# share with the console (docs/PORT.md, "Time").
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+at_frame = true
+within = 4000
+expect = ["mode == FIGHT_MODE_VS"]
+
+# Every second of the fight, as a frame begins: f_1 to f_16. Both buffers
+# hold a whole frame of the fight, 307,200 pixels; from 148 to 440 of them
+# differ, and 964 in the last second, the halfway kind and the sparks and
+# dust that rand() places.
+[[checkpoint]]
+name = "f"
+frames = 30
+repeat = 16
+vram = true
+vram_differ = 964
+
+[[checkpoint]]
+name = "kill"
+when = "winner != FIGHT_NOBODY"
+at_frame = true
+within = 3000
+vram = true
+vram_differ = 586
+
+[[checkpoint]]
+name = "replay"
+when = "screen == SCREEN_REPLAY_UPDATE"
+at_frame = true
+within = 1000
+vram = true
+vram_differ = 418
+
+# The menu after the fight, over the fight's last picture.
+[[checkpoint]]
+name = "after_fight"
+when = "screen == SCREEN_AFTER_FIGHT_UPDATE"
+at_frame = true
+within = 3000
+vram = true
+vram_differ = 177
+
+[[checkpoint]]
+name = "after_fight_1s"
+frames = 30
+vram = true
+vram_differ = 173
+
+# Back in the main menu: flat pictures again.
+[[checkpoint]]
+name = "menu_again"
+when = "screen == SCREEN_MENU_UPDATE && loaded_stage == -1"
+at_frame = true
+within = 3000
+shot = false
+
+[[checkpoint]]
+name = "menu_again_1s"
+frames = 60
+vram = true
