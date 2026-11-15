@@ -25,12 +25,18 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## Working on `main` (ReBushido)
 
-- Every change is behind a switch of `include/rebushido.h`, and the
-  original's lines stay as they are (`docs/STYLE.md`, "ReBushido").
-- With the switches off the build must still match the original:
-  `wsl bash tools/build.sh checks` runs eleven checks here (the seven of
-  `decomp`, then the ReBushido build, its tests and its modern-compiler
-  run, and the native port's link).
+- Only `decomp` has to match the original's bytes. The owner
+  (2026-11-15): on `main` "optimize, organize, and do whatever we like";
+  so edit the game's code directly and cleanly here. A switch of
+  `include/rebushido.h` is for what a player turns on or off, or for
+  where the PlayStation and the PC need different code, not for keeping
+  the original's lines.
+- What guards `main` instead: the PlayStation ReBushido build must
+  build, fit and pass its play tests (`same_as_original`: with nothing
+  switched on it plays as the retail disc), and the port must pass its
+  own. `wsl bash tools/build.sh checks` runs the checks; the ones that
+  hold the switches-off build to the original's bytes are retired here
+  as changes make them fail.
 - `wsl bash tools/build.sh rebushido` builds it into `build/rebushido/`.
   Never edit `bb2.ld` for ReBushido.
 - A fix of an original bug is `RB_FIX_<NAME>` plus

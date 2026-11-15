@@ -12,9 +12,10 @@ decompiled and the build reproduces the original. A single-person project. State
 `docs/formats/`.
 
 Two branches. `decomp` is the canonical byte-matching source: no bug fix, mod or behaviour change
-goes there. `main` (this branch) is ReBushido, the modded line: every change is behind a switch of
-`include/rebushido.h`, the original's lines stay as they are, and with the switches off the build
-is still byte-identical (`docs/REBUSHIDO.md`). Merge `decomp` into `main`, never the reverse.
+goes there. `main` (this branch) is ReBushido, the modded line and the native port: its code need
+not match the original's bytes and is edited directly; what guards it is the PlayStation ReBushido
+build with its play tests and the port's tests (`docs/REBUSHIDO.md`, `docs/PORT.md`). Merge
+`decomp` into `main`, never the reverse.
 
 ## Toolchain (confirmed from binary analysis)
 
