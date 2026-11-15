@@ -423,6 +423,18 @@ static void sys_InitGame(void) {
     g_disp_prim_buffers[0] = SYS_PRIM_BUFFER_0;
     g_disp_prim_buffers[1] = SYS_PRIM_BUFFER_1;
     g_disp_prim_buffer_size = SYS_PRIM_BUFFER_SIZE;
+#if RB_REMASTER_VIEW
+    /* Where the run asks the remastered picture to draw more of the
+     * stage than the console does, the port's own primitive buffers take
+     * the place of the console's two, which cannot grow where they are
+     * (port_remaster.h). The run's draw distance is settled before the
+     * game starts, so this is asked once. */
+    if (port_RemasterPrimBuffer(0) != NULL) {
+        g_disp_prim_buffers[0] = (u32)port_RemasterPrimBuffer(0);
+        g_disp_prim_buffers[1] = (u32)port_RemasterPrimBuffer(1);
+        g_disp_prim_buffer_size = port_RemasterPrimBufferBytes();
+    }
+#endif
     g_eff_initialized = 0;
     g_snd_initialized = 0;
     snd_Startup();
@@ -657,11 +669,23 @@ void main(void) {
         }
 
         {
+#if RB_REMASTER_VIEW
+            s32 remaining = (s32)(g_disp_prim_buffers[index] +
+                                  g_disp_prim_buffer_size) -
+                            (s32)g_disp_prim_cursor;
+#else
             s32 remaining = g_disp_prim_buffers[index] + SYS_PRIM_BUFFER_SIZE -
                             (s32)g_disp_prim_cursor;
+#endif
             if (remaining < g_sys_prim_low_water) {
                 g_sys_prim_low_water = remaining;
             }
+#if RB_REMASTER_VIEW
+            /* the least the frame left of its primitive buffer, for the
+             * report of every limit the drawing path has
+             * (port_remaster.h) */
+            port_RemasterNoteRoom(remaining, (s32)g_disp_prim_buffer_size);
+#endif
             if (remaining < 0) {
                 printf("common prim over flow\n");
                 while (1) {

@@ -18,14 +18,25 @@
  *
  * The game runs on a stack of the port's own and SDL is called from it:
  * one thread, so what the game sees of a key is the same however the
- * PC's threads fall. */
+ * PC's threads fall.
+ *
+ * The picture is shown one of two ways (docs/PORT.md, "Remastered in the
+ * window"). Where the PC gives an OpenGL 3.3 core context, the window is
+ * made with one and everything is drawn through it: the remastered
+ * picture, which the card itself drew (src/port/gl/), or the software
+ * GPU's own pixels as a texture, and the counter over either. Where it
+ * does not, the window is made again without one and SDL's renderer
+ * shows the software GPU's picture, as it did before there was a card
+ * path at all; the remastered picture is then not there and F2 says so. */
 #include <SDL.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "gl.h"
 #include "port_gpu.h"
+#include "port_remaster.h"
 #include "port_spu.h"
 #include "shared.h"
 #include "sdl_window.h"
@@ -74,6 +85,19 @@ static s32 g_port_is_fullscreen;
 static s32 g_port_vsync;
 /* The picture as it is given to SDL: 0xFFRRGGBB a pixel. */
 static u32 g_port_frame[PORT_PICTURE_WIDTH_MAX * PORT_PICTURE_HEIGHT_MAX];
+
+/* The graphics card: the window's own context, and the scale the
+ * remastered renderer is drawing at (port_GlSetOptions), which follows
+ * the window's size unless a setting fixes it. */
+static SDL_GLContext g_port_gl_context;
+static s32 g_port_has_gl;
+static s32 g_port_gl_scale;
+static s32 g_port_gl_tall;
+/* How many times the picture was changed (F2), for the end's account. */
+static u32 g_port_toggles;
+/* The window's own pixels, where a test asks for them (--tap-window). */
+static u32 *g_port_window_pixels;
+static u32 g_port_window_room;
 
 static SDL_AudioDeviceID g_port_audio;
 static PortRing g_port_ring;
@@ -378,15 +402,33 @@ static void port_SetFullscreen(s32 on) {
     SDL_ShowCursor(on ? SDL_DISABLE : SDL_ENABLE);
 }
 
+/* The window's size in pixels, whichever way it is drawn into. */
+static void port_WindowSize(s32 *w, s32 *h) {
+    int across = 0;
+    int down = 0;
+
+    if (g_port_has_gl) {
+        SDL_GL_GetDrawableSize(g_port_window, &across, &down);
+    } else if (g_port_renderer != NULL) {
+        SDL_GetRendererOutputSize(g_port_renderer, &across, &down);
+    }
+    *w = across;
+    *h = down;
+}
+
 /* What the picture runs on, for the log. */
 static void port_NoteVideo(void) {
     SDL_RendererInfo info;
     SDL_DisplayMode mode;
-    int w = 0;
-    int h = 0;
+    s32 w = 0;
+    s32 h = 0;
 
     port_Note("video: driver %s", SDL_GetCurrentVideoDriver());
-    if (SDL_GetRendererInfo(g_port_renderer, &info) == 0) {
+    if (g_port_has_gl) {
+        port_Note("video: OpenGL %s", port_GlDescribe(PORT_GL_VERSION));
+        port_Note("video: card %s, %s", port_GlDescribe(PORT_GL_VENDOR),
+                  port_GlDescribe(PORT_GL_RENDERER));
+    } else if (SDL_GetRendererInfo(g_port_renderer, &info) == 0) {
         port_Note("video: renderer %s%s", info.name,
                   (info.flags & SDL_RENDERER_ACCELERATED) ? "" : " (software)");
     }
@@ -395,18 +437,142 @@ static void port_NoteVideo(void) {
         port_Note("video: display %d by %d, %d pictures a second", mode.w,
                   mode.h, mode.refresh_rate);
     }
-    SDL_GetRendererOutputSize(g_port_renderer, &w, &h);
+    port_WindowSize(&w, &h);
     port_Note("video: window %d by %d%s; vsync %s; scale %d, filter %s", w, h,
               g_port_is_fullscreen ? ", the whole screen" : "",
               g_port_vsync ? "on" : "off", g_port_settings.scale,
               g_port_settings.is_linear ? "linear" : "nearest");
 }
 
+/* ---- the graphics card ---- */
+
+/* The scale the remastered renderer draws the scene at: the setting's, or
+ * as many times the console's resolution as the window's own size asks
+ * for (port_RemasterScaleFor). */
+static s32 port_WantedScale(void) {
+    PortDisplay display;
+    s32 window_w = 0;
+    s32 window_h = 0;
+    s32 margin;
+
+    if (g_port_settings.resolution != PORT_RESOLUTION_WINDOW) {
+        return g_port_settings.resolution;
+    }
+    port_WindowSize(&window_w, &window_h);
+    port_GetDisplay(&display);
+    margin = port_RemasterMargin(
+        display.w, g_port_settings.aspect_w, g_port_settings.aspect_h);
+    return port_RemasterScaleFor(
+        window_w, window_h, display.w + 2 * margin, display.h);
+}
+
+/* The renderer's options for a scale: how many times the console's lines
+ * the picture is drawn at follows the display's own mode, so that its
+ * pixels come out square (port_TallFor). */
+static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
+    PortRemasterView view;
+    PortDisplay display;
+
+    port_RemasterGetView(&view);
+    port_GetDisplay(&display);
+    SDL_zerop(options);
+    options->scale = scale;
+    options->tall = port_TallFor(scale, display.w, display.h);
+    options->sample = view.supersample;
+    options->aspect_w = view.aspect_w;
+    options->aspect_h = view.aspect_h;
+    options->is_bilinear = FALSE;
+    options->is_exact = FALSE;
+}
+
+/* The window's context and the remastered renderer on it: NULL, or why
+ * there is none. The window must have been made with SDL_WINDOW_OPENGL.
+ * Nothing of this changes what the game computes: with no card the port
+ * is what it was. */
+static const char *port_StartGl(void) {
+    PortGlOptions options;
+    const char *problem;
+
+    g_port_gl_context = SDL_GL_CreateContext(g_port_window);
+    if (g_port_gl_context == NULL) {
+        return SDL_GetError();
+    }
+    if (SDL_GL_MakeCurrent(g_port_window, g_port_gl_context) != 0) {
+        return SDL_GetError();
+    }
+    SDL_GL_SetSwapInterval(g_port_vsync ? 1 : 0);
+    g_port_gl_scale = port_WantedScale();
+    port_GlOptionsFor(g_port_gl_scale, &options);
+    g_port_gl_tall = options.tall;
+    problem = port_GlStart(SDL_GL_GetProcAddress, &options);
+    if (problem != NULL) {
+        return problem;
+    }
+    g_port_has_gl = TRUE;
+    return NULL;
+}
+
+/* The context and the window let go, so that the window can be made
+ * again without a context (port_OpenWindow). */
+static void port_DropGl(void) {
+    if (g_port_gl_context != NULL) {
+        SDL_GL_DeleteContext(g_port_gl_context);
+        g_port_gl_context = NULL;
+    }
+    g_port_has_gl = FALSE;
+}
+
+/* Which picture is shown and what the remastered one is set to, for the
+ * log. */
+static void port_NoteGraphics(void) {
+    PortRemasterView view;
+
+    port_RemasterGetView(&view);
+    port_Note("graphics: %s%s", port_RemasterIsOn() ? "remastered" : "original",
+              g_port_has_gl ? ""
+                            : " (no graphics card: the remastered picture is "
+                              "not there and F2 does nothing)");
+    if (g_port_has_gl) {
+        port_Note("graphics: the scene %d times the console's resolution "
+                  "(%s), draw distance %s, antialiasing %d, aspect %d:%d",
+                  g_port_gl_scale,
+                  g_port_settings.resolution == PORT_RESOLUTION_WINDOW
+                      ? "the window's own size"
+                      : "as the settings fix it",
+                  port_NameRemasterDistance(view.distance), view.supersample,
+                  view.aspect_w, view.aspect_h);
+    }
+}
+
+/* The window itself, with a context for the graphics card or without
+ * one. */
+static void port_MakeWindow(s32 wants_gl) {
+    Uint32 flags = SDL_WINDOW_RESIZABLE;
+
+    if (g_port_settings.is_fullscreen) {
+        flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+    }
+    if (wants_gl) {
+        flags |= SDL_WINDOW_OPENGL;
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        SDL_GL_SetAttribute(
+            SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
+    }
+    g_port_window = SDL_CreateWindow(
+        WINDOW_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        WINDOW_WIDTH, WINDOW_HEIGHT, flags);
+}
+
 /* The window, the sound card and the controllers, at the first blank:
  * the port has its memory and its disc by then. */
 static void port_OpenWindow(void) {
     SDL_DisplayMode mode;
-    Uint32 flags = SDL_WINDOW_RESIZABLE;
 
     if (g_port_is_open) {
         return;
@@ -419,12 +585,11 @@ static void port_OpenWindow(void) {
     }
     SDL_SetHint(
         SDL_HINT_RENDER_SCALE_QUALITY, g_port_settings.is_linear ? "1" : "0");
-    if (g_port_settings.is_fullscreen) {
-        flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+    port_MakeWindow(TRUE);
+    if (g_port_window == NULL) {
+        port_Note("video: no window with OpenGL: %s", SDL_GetError());
+        port_MakeWindow(FALSE);
     }
-    g_port_window = SDL_CreateWindow(
-        WINDOW_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        WINDOW_WIDTH, WINDOW_HEIGHT, flags);
     if (g_port_window == NULL) {
         port_Say("no window: %s", SDL_GetError());
         port_Quit(PORT_EXIT_FAILED);
@@ -443,17 +608,38 @@ static void port_OpenWindow(void) {
                  mode.refresh_rate);
         g_port_vsync = 0;
     }
-    g_port_renderer = SDL_CreateRenderer(
-        g_port_window, -1, g_port_vsync ? SDL_RENDERER_PRESENTVSYNC : 0);
-    if (g_port_renderer == NULL) {
-        g_port_renderer =
-            SDL_CreateRenderer(g_port_window, -1, SDL_RENDERER_SOFTWARE);
+    if ((SDL_GetWindowFlags(g_port_window) & SDL_WINDOW_OPENGL) != 0) {
+        const char *problem = port_StartGl();
+
+        if (problem != NULL) {
+            /* no card path: the window is made again without a context,
+             * since a window made for OpenGL is no use to SDL's renderer */
+            port_Say("the remastered picture is not there: %s", problem);
+            port_Say("the console's own picture is what is shown (F2 does "
+                     "nothing). It needs OpenGL 3.3.");
+            port_DropGl();
+            SDL_DestroyWindow(g_port_window);
+            port_MakeWindow(FALSE);
+            if (g_port_window == NULL) {
+                port_Say("no window: %s", SDL_GetError());
+                port_Quit(PORT_EXIT_FAILED);
+            }
+        }
     }
-    if (g_port_renderer == NULL) {
-        port_Say("the window cannot be drawn into: %s", SDL_GetError());
-        port_Quit(PORT_EXIT_FAILED);
+    if (!g_port_has_gl) {
+        g_port_renderer = SDL_CreateRenderer(
+            g_port_window, -1, g_port_vsync ? SDL_RENDERER_PRESENTVSYNC : 0);
+        if (g_port_renderer == NULL) {
+            g_port_renderer =
+                SDL_CreateRenderer(g_port_window, -1, SDL_RENDERER_SOFTWARE);
+        }
+        if (g_port_renderer == NULL) {
+            port_Say("the window cannot be drawn into: %s", SDL_GetError());
+            port_Quit(PORT_EXIT_FAILED);
+        }
     }
     port_NoteVideo();
+    port_NoteGraphics();
     if (!g_port_window_options.no_sound) {
         port_OpenAudio();
     } else {
@@ -510,6 +696,99 @@ static void port_TapFrame(u32 blank, s32 w, s32 h, s32 is_on) {
     fclose(file);
 }
 
+/* The shape the remastered picture is shown in: the console's four by
+ * three in every mode, widened by the margin the view asks for. It is a
+ * shape and not a count of pixels, because how many pixels the renderer
+ * draws is the scale's business and the shape must not follow it. */
+static void port_RemasterShape(s32 *across, s32 *down) {
+    PortDisplay display;
+    PortRemasterView view;
+    s32 margin;
+
+    port_GetDisplay(&display);
+    port_RemasterGetView(&view);
+    margin = port_RemasterMargin(display.w, view.aspect_w, view.aspect_h);
+    *across = PORT_PICTURE_ASPECT_W * (display.w + 2 * margin);
+    *down = PORT_PICTURE_ASPECT_H * display.w;
+}
+
+/* The remastered picture, which the card drew, into the window: as large
+ * as its own shape allows, in the middle. It is as wide as the view asks
+ * for, so that shape and not always the console's four by three is what
+ * it is fitted by. */
+static void port_ShowRemastered(s32 window_w, s32 window_h) {
+    PortGlOptions options;
+    PortRect place;
+    s32 across = 0;
+    s32 down = 0;
+    s32 wanted = port_WantedScale();
+
+    port_GlOptionsFor(wanted, &options);
+    if (wanted != g_port_gl_scale || options.tall != g_port_gl_tall) {
+        /* the window was resized, or the game changed its display mode,
+         * which changes how tall a line of its picture is */
+        g_port_gl_scale = wanted;
+        g_port_gl_tall = options.tall;
+        port_GlSetOptions(&options);
+        port_Note("graphics: the scene is now %d times the console's "
+                  "resolution and %d times its lines (the window is %d by "
+                  "%d)",
+                  wanted, options.tall, window_w, window_h);
+    }
+    port_RemasterShape(&across, &down);
+    port_FitShape(
+        window_w, window_h, g_port_settings.scale, across, down, &place);
+    port_GlShowPicture(window_w, window_h, place.x, place.y, place.w, place.h,
+                       g_port_settings.is_linear);
+}
+
+/* For a test: the window's own pixels, as a player would see them, to a
+ * file of the same form as port_TapFrame's. Only the build with a
+ * graphics card has them; nothing of the game's reads them back. */
+static void port_TapWindow(u32 blank) {
+    char path[PATH_BYTES_MAX];
+    u32 head[4];
+    s32 window_w = 0;
+    s32 window_h = 0;
+    FILE *file;
+
+    if (!g_port_has_gl) {
+        return;
+    }
+    port_WindowSize(&window_w, &window_h);
+    if (window_w <= 0 || window_h <= 0) {
+        return;
+    }
+    if (g_port_window_room < (u32)(window_w * window_h)) {
+        free(g_port_window_pixels);
+        g_port_window_room = (u32)(window_w * window_h);
+        g_port_window_pixels = malloc((size_t)g_port_window_room * sizeof(u32));
+        if (g_port_window_pixels == NULL) {
+            g_port_window_room = 0;
+            return;
+        }
+    }
+    if (!port_GlReadWindow(
+            g_port_window_pixels, g_port_window_room, window_w, window_h)) {
+        return;
+    }
+    snprintf(path, sizeof(path), "%s/window-%06u.raw",
+             g_port_window_options.tap_window, blank);
+    file = fopen(path, "wb");
+    if (file == NULL) {
+        port_Say("--tap-window: %s cannot be made", path);
+        port_Quit(PORT_EXIT_FAILED);
+    }
+    head[0] = TAP_MAGIC;
+    head[1] = (u32)window_w;
+    head[2] = (u32)window_h;
+    head[3] = (u32)port_RemasterIsOn();
+    fwrite(head, sizeof(head), 1, file);
+    fwrite(g_port_window_pixels, sizeof(u32),
+           (size_t)window_w * (size_t)window_h, file);
+    fclose(file);
+}
+
 /* The displayed rectangle of video memory into the window: black where
  * the display is off or has no size. */
 static void port_DrawPicture(u32 blank) {
@@ -518,19 +797,27 @@ static void port_DrawPicture(u32 blank) {
     SDL_Rect where;
     s32 w;
     s32 h;
-    int window_w = 0;
-    int window_h = 0;
+    s32 window_w = 0;
+    s32 window_h = 0;
 
     port_GetDisplay(&display);
     w = display.w < PORT_PICTURE_WIDTH_MAX ? display.w : PORT_PICTURE_WIDTH_MAX;
     h = display.h < PORT_PICTURE_HEIGHT_MAX
             ? display.h
             : PORT_PICTURE_HEIGHT_MAX;
-    SDL_SetRenderDrawColor(g_port_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-    SDL_RenderClear(g_port_renderer);
+    port_WindowSize(&window_w, &window_h);
+    if (g_port_has_gl) {
+        port_GlClearWindow(window_w, window_h);
+    } else {
+        SDL_SetRenderDrawColor(g_port_renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+        SDL_RenderClear(g_port_renderer);
+    }
     if (w <= 0 || h <= 0) {
         return;
     }
+    /* the software GPU's picture is made whichever is shown: it is what a
+     * test takes of the picture, and what the window draws where the
+     * remastered picture is off */
     port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
                         display.is_rgb24, g_port_frame);
     if (g_port_window_options.tap_frames != NULL &&
@@ -540,9 +827,19 @@ static void port_DrawPicture(u32 blank) {
     if (!display.is_on) {
         return;
     }
+    if (g_port_has_gl) {
+        if (port_RemasterIsOn()) {
+            port_ShowRemastered(window_w, window_h);
+        } else {
+            port_FitPicture(window_w, window_h, g_port_settings.scale, &place);
+            port_GlShowPixels(
+                g_port_frame, w, h, window_w, window_h, place.x, place.y,
+                place.w, place.h, g_port_settings.is_linear, FALSE);
+        }
+        return;
+    }
     port_SizeTexture(w, h);
     SDL_UpdateTexture(g_port_texture, NULL, g_port_frame, w * BYTES_PER_PIXEL);
-    SDL_GetRendererOutputSize(g_port_renderer, &window_w, &window_h);
     port_FitPicture(window_w, window_h, g_port_settings.scale, &place);
     where.x = place.x;
     where.y = place.y;
@@ -556,6 +853,20 @@ static void port_DrawPicture(u32 blank) {
  * texture, each of its pixels a whole number of the window's, over the
  * picture: nothing of it is in the game's video memory or in what a
  * test takes of the picture. */
+/* Where the picture is in the window, whichever of the two is shown: the
+ * counter sits in a corner of it. */
+static void port_PicturePlace(s32 window_w, s32 window_h, PortRect *out) {
+    s32 across = 0;
+    s32 down = 0;
+
+    if (!g_port_has_gl || !port_RemasterIsOn()) {
+        port_FitPicture(window_w, window_h, g_port_settings.scale, out);
+        return;
+    }
+    port_RemasterShape(&across, &down);
+    port_FitShape(window_w, window_h, g_port_settings.scale, across, down, out);
+}
+
 static void port_DrawCounter(void) {
     char text[PORT_FPS_TEXT_BYTES];
     PortRect picture;
@@ -564,10 +875,33 @@ static void port_DrawCounter(void) {
     SDL_Rect where;
     s32 text_w;
     s32 i;
-    int window_w = 0;
-    int window_h = 0;
+    s32 window_w = 0;
+    s32 window_h = 0;
 
     if (!g_port_show_fps) {
+        return;
+    }
+    if (g_port_has_gl) {
+        port_FormatFps(
+            text, g_port_shown_meter.tenths, g_port_game_meter.tenths);
+        text_w = port_MeasureText(text) + 2 * COUNTER_PAD;
+        if (text_w > COUNTER_W) {
+            text_w = COUNTER_W;
+        }
+        /* the box is the text's own width here, so that the pixels given
+         * to the card are the ones shown and no more */
+        for (i = 0; i < text_w * COUNTER_H; i++) {
+            g_port_counter_pixels[i] = COUNTER_BOX;
+        }
+        port_DrawText(g_port_counter_pixels, text_w, COUNTER_H, COUNTER_PAD,
+                      COUNTER_PAD, text, COUNTER_INK);
+        port_WindowSize(&window_w, &window_h);
+        port_PicturePlace(window_w, window_h, &picture);
+        port_PlaceCounter(
+            &picture, text_w, COUNTER_H, g_port_settings.fps_corner, &place);
+        port_GlShowPixels(
+            g_port_counter_pixels, text_w, COUNTER_H, window_w, window_h,
+            place.x, place.y, place.w, place.h, FALSE, TRUE);
         return;
     }
     if (g_port_counter == NULL) {
@@ -594,7 +928,7 @@ static void port_DrawCounter(void) {
                   COUNTER_PAD, text, COUNTER_INK);
     SDL_UpdateTexture(g_port_counter, NULL, g_port_counter_pixels,
                       COUNTER_W * BYTES_PER_PIXEL);
-    SDL_GetRendererOutputSize(g_port_renderer, &window_w, &window_h);
+    port_WindowSize(&window_w, &window_h);
     port_FitPicture(window_w, window_h, g_port_settings.scale, &picture);
     port_PlaceCounter(
         &picture, text_w, COUNTER_H, g_port_settings.fps_corner, &place);
@@ -778,6 +1112,30 @@ void port_EndSession(s32 code) {
     port_CloseLog();
 }
 
+/* Original and Remastered, one after the other (port_remaster.h): F2,
+ * or the test's own `--toggle-at`. `why` names which for the log. */
+static void port_ChangePicture(const char *why) {
+    port_ToggleGraphics();
+    g_port_toggles++;
+    if (!g_port_has_gl) {
+        port_Say("%s: there is no graphics card here, so the remastered "
+                 "picture cannot be shown",
+                 why);
+        return;
+    }
+    if (port_RemasterIsOn()) {
+        /* what the game wrote into video memory while the console's
+         * picture was shown was never sent to the card: all of it goes
+         * now, so that the first remastered frame has its textures and
+         * its 2D layer */
+        port_GlRefresh();
+    }
+    port_Say("%s: the %s picture; blank %u", why,
+             port_RemasterIsOn() ? "remastered" : "original",
+             port_GetBlankCount());
+    port_NoteGraphics();
+}
+
 /* ---- the pads ---- */
 
 /* Tells the port's pads what has changed since they were last told. */
@@ -814,6 +1172,13 @@ static void port_TakeKey(const SDL_KeyboardEvent *key) {
                   (key->keysym.mod & KMOD_ALT) != 0))) {
         /* the window's own, and no button of a pad */
         port_SetFullscreen(!g_port_is_fullscreen);
+        return;
+    }
+    if (key->keysym.scancode == SDL_SCANCODE_F2) {
+        /* the window's own, and no button of a pad */
+        if (down) {
+            port_ChangePicture("F2");
+        }
         return;
     }
     if (key->keysym.scancode == SDL_SCANCODE_F3) {
@@ -935,9 +1300,29 @@ static void port_ReadInput(u32 blank) {
  * due. */
 static void port_ShowBlank(u32 blank) {
     port_OpenWindow();
+    if (g_port_has_gl) {
+        /* the frame the card drew is finished before anything is shown,
+         * where the software GPU's picture is complete too
+         * (port_remaster.h) */
+        u32 started = SDL_GetTicks();
+
+        port_RemasterShow();
+        port_GlFinishFrame();
+        port_GlNoteFrameTime((SDL_GetTicks() - started) * MILLISECONDS);
+    }
     port_DrawPicture(blank);
     port_WatchGame(blank);
     port_DrawCounter();
+    if (g_port_window_options.tap_window != NULL &&
+        blank % (u32)g_port_window_options.tap_every == 0) {
+        port_TapWindow(blank);
+    }
+    if (g_port_window_options.toggle_at > 0 &&
+        blank % (u32)g_port_window_options.toggle_at == 0) {
+        /* for a test, which cannot press a key that is no pad's button:
+         * what F2 does, at every Nth blank */
+        port_ChangePicture("--toggle-at");
+    }
     if (g_port_window_options.fault_at > 0 &&
         blank == (u32)g_port_window_options.fault_at) {
         port_FaultOnPurpose();
@@ -953,14 +1338,22 @@ static void port_ShowBlank(u32 blank) {
         port_WaitFor(port_PaceBlank(&g_port_pace, blank, port_ReadClock(),
                                     port_GetSampleCount(), queue_error));
     }
-    SDL_RenderPresent(g_port_renderer);
+    if (g_port_has_gl) {
+        SDL_GL_SwapWindow(g_port_window);
+    } else {
+        SDL_RenderPresent(g_port_renderer);
+    }
     g_port_blanks_shown++;
     if (g_port_vsync && port_PaceIsHeldBack(&g_port_pace)) {
         port_Say("the display holds the game back: it is no longer waited "
                  "for (vsync off); blank %u",
                  blank);
         g_port_vsync = 0;
-        SDL_RenderSetVSync(g_port_renderer, 0);
+        if (g_port_has_gl) {
+            SDL_GL_SetSwapInterval(0);
+        } else {
+            SDL_RenderSetVSync(g_port_renderer, 0);
+        }
     }
 }
 
@@ -993,6 +1386,15 @@ static void port_CloseWindow(s32 code) {
         g_port_audio = 0;
         port_Say("sound: ran out %u times, %u samples thrown away",
                  g_port_ring.underruns, g_port_ring.dropped);
+    }
+    if (g_port_has_gl) {
+        port_Say(
+            "graphics: the %s picture at the end, %u changes of picture "
+            "(F2); the scene %d times the console's resolution, %u "
+            "vertices and %u draws in the last frame",
+            port_RemasterIsOn() ? "remastered" : "original", g_port_toggles,
+            g_port_gl_scale, port_GlGetVertexCount(), port_GlGetDrawCount());
+        port_DropGl();
     }
     port_EndSession(code);
     SDL_Quit();

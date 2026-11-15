@@ -9,13 +9,16 @@
  *             [--scale fit|integer|stretch] [--filter nearest|linear]
  *             [--no-vsync] [--no-sound] [--no-fps] [--no-log]
  *             [--log FILE]
+ *             [--graphics original|remastered] [--resolution N]
+ *             [--draw-distance original|far|max] [--antialiasing off|2|4]
+ *             [--aspect W:H]
  *             [the options of the build without a window]
  *
  * and for the tests, which show and sound nothing:
  *
  *             [--fast] [--inject keys|pads] [--tap-frames FOLDER]
- *             [--tap-every N] [--tap-audio FILE] [--fault-at N]
- *             [--fault-in-sound N] */
+ *             [--tap-window FOLDER] [--tap-every N] [--tap-audio FILE]
+ *             [--toggle-at N] [--fault-at N] [--fault-in-sound N] */
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <dirent.h>
@@ -30,6 +33,7 @@
 #endif
 
 #include "port_host.h"
+#include "port_remaster.h"
 #include "shared.h"
 #include "sdl_window.h"
 
@@ -46,7 +50,9 @@ static const char g_port_window_usage[] =
     "  rebushido [--image FILE] [--config FILE] [--fullscreen]\n"
     "            [--scale fit|integer|stretch] [--filter nearest|linear]\n"
     "            [--no-vsync] [--no-sound] [--no-fps] [--no-log]\n"
-    "            [--log FILE]\n"
+    "            [--log FILE] [--graphics original|remastered]\n"
+    "            [--resolution N] [--draw-distance original|far|max]\n"
+    "            [--antialiasing off|2|4] [--aspect W:H]\n"
     "\n"
     "  --image FILE   your own image of the game's disc: the .cue, or the\n"
     "                 .bin of raw sectors it names. Without it the first\n"
@@ -66,9 +72,26 @@ static const char g_port_window_usage[] =
     "  --log FILE     the session's log; without it a new file in logs/\n"
     "                 beside the program, of which the newest twenty are\n"
     "                 kept\n"
+    "  --graphics W   original: the console's own picture, pixel for\n"
+    "                 pixel; remastered: the scene drawn again by the\n"
+    "                 graphics card at the window's resolution. Without\n"
+    "                 it the options page at boot says which, and F2\n"
+    "                 changes picture while the game runs\n"
+    "  --resolution N how many times the console's resolution the scene\n"
+    "                 is drawn at; 0, the default, is the window's own\n"
+    "                 size\n"
+    "  --draw-distance W   original: the console's disc of stage cells;\n"
+    "                 far: the whole wedge the camera looks down; max:\n"
+    "                 every cell of the stage, with the fog pushed out to\n"
+    "                 match\n"
+    "  --antialiasing N    the scene drawn N times over each way and\n"
+    "                 averaged down: off, 2 or 4\n"
+    "  --aspect W:H   the shape of the picture: 4:3 as the console, 16:9\n"
+    "                 for a wider view of the same scene\n"
     "\n"
     "In the window: Escape, or closing it, ends the program. F11 or\n"
-    "Alt+Enter fills the screen and comes back. F3 shows and hides the\n"
+    "Alt+Enter fills the screen and comes back. F2 changes between the\n"
+    "original picture and the remastered one. F3 shows and hides the\n"
     "counter in the corner: pictures shown a second, the game's own\n"
     "frames a second, and the speed against the console's.\n"
     "\n"
@@ -95,7 +118,10 @@ static const char g_port_window_usage_end[] =
     "--spu), and for the tests, which show and sound nothing: --fast\n"
     "(never wait), --inject keys|pads (a plan's presses as key events,\n"
     "or as two controllers SDL makes up), --tap-frames FOLDER and\n"
-    "--tap-every N (each Nth picture as SDL is given it), --tap-audio FILE\n"
+    "--tap-every N (each Nth picture as SDL is given it), --tap-window\n"
+    "FOLDER (each Nth window as a player would see it, where there is a\n"
+    "graphics card), --toggle-at N (what F2 does, at every Nth blank),\n"
+    "--tap-audio FILE\n"
     "(the samples as they are queued), --fault-at N and --fault-in-sound N\n"
     "(touch memory that is not there at vertical blank N, on the game's\n"
     "stack or on the sound card's thread: what a crash leaves in the\n"
@@ -369,6 +395,15 @@ int main(int argc, char **argv) {
     s32 no_log = 0;
     const char *log = NULL;
     const char *image = NULL;
+    /* the remastered picture's, where the command line says: -1 for what
+     * the settings file or the layout built in says */
+    s32 graphics = -1;
+    s32 resolution = -1;
+    s32 distance = -1;
+    s32 supersample = -1;
+    s32 aspect_w = -1;
+    s32 aspect_h = -1;
+    PortRemasterView view;
     s32 code;
     s32 i;
 
@@ -398,6 +433,8 @@ int main(int argc, char **argv) {
             no_log = 1;
         } else if (strcmp(word, "--log") == 0 && has_value) {
             log = argv[++i];
+        } else if (strcmp(word, "--toggle-at") == 0 && has_value) {
+            options->toggle_at = atoi(argv[++i]);
         } else if (strcmp(word, "--fault-at") == 0 && has_value) {
             options->fault_at = atoi(argv[++i]);
         } else if (strcmp(word, "--fault-in-sound") == 0 && has_value) {
@@ -417,8 +454,45 @@ int main(int argc, char **argv) {
             options->inject =
                 1 + port_ChooseWord("--inject takes keys or pads, not ",
                                     argv[++i], "keys", "pads", NULL);
+        } else if (strcmp(word, "--graphics") == 0 && has_value) {
+            graphics = port_ChooseWord(
+                "--graphics takes original or remastered, not ", argv[++i],
+                "original", "remastered", NULL);
+        } else if (strcmp(word, "--resolution") == 0 && has_value) {
+            resolution = atoi(argv[++i]);
+            if (resolution < 0 || resolution > PORT_REMASTER_SCALE_MAX) {
+                port_Complain("--resolution takes 0 (the window's own size) "
+                              "or a number up to 8, not ",
+                              argv[i]);
+            }
+        } else if (strcmp(word, "--draw-distance") == 0 && has_value) {
+            distance = port_ReadRemasterDistance(argv[++i]);
+            if (distance < 0) {
+                port_Complain(
+                    "--draw-distance takes original, far or max, not ",
+                    argv[i]);
+            }
+        } else if (strcmp(word, "--antialiasing") == 0 && has_value) {
+            const char *how = argv[++i];
+
+            supersample = strcmp(how, "off") == 0 ? 1 : atoi(how);
+            if (supersample < 1 || supersample > PORT_SUPERSAMPLE_MAX) {
+                port_Complain("--antialiasing takes off, 2 or 4, not ", how);
+            }
+        } else if (strcmp(word, "--aspect") == 0 && has_value) {
+            const char *shape = argv[++i];
+            const char *colon = strchr(shape, ':');
+
+            if (colon == NULL || atoi(shape) <= 0 || atoi(colon + 1) <= 0) {
+                port_Complain("--aspect takes W:H, as 4:3 or 16:9, not ",
+                              shape);
+            }
+            aspect_w = atoi(shape);
+            aspect_h = atoi(colon + 1);
         } else if (strcmp(word, "--tap-frames") == 0 && has_value) {
             options->tap_frames = argv[++i];
+        } else if (strcmp(word, "--tap-window") == 0 && has_value) {
+            options->tap_window = argv[++i];
         } else if (strcmp(word, "--tap-every") == 0 && has_value) {
             options->tap_every = atoi(argv[++i]);
             if (options->tap_every <= 0) {
@@ -457,6 +531,37 @@ int main(int argc, char **argv) {
     if (filter >= 0) {
         g_port_settings.is_linear = filter;
     }
+    /* the remastered picture: the command line over the settings file,
+     * and then the view a run keeps, which decides the game's primitive
+     * buffers before the game starts (port_remaster.h) */
+    if (graphics >= 0) {
+        g_port_settings.graphics =
+            graphics == 0 ? PORT_GRAPHICS_ORIGINAL : PORT_GRAPHICS_REMASTERED;
+    }
+    if (resolution >= 0) {
+        g_port_settings.resolution = resolution;
+    }
+    if (distance >= 0) {
+        g_port_settings.distance = distance;
+    }
+    if (supersample >= 0) {
+        g_port_settings.supersample = supersample;
+    }
+    if (aspect_w > 0 && aspect_h > 0) {
+        g_port_settings.aspect_w = aspect_w;
+        g_port_settings.aspect_h = aspect_h;
+    }
+    port_SetGraphics(g_port_settings.graphics);
+    view.distance = g_port_settings.distance;
+    view.supersample = g_port_settings.supersample;
+    view.aspect_w = g_port_settings.aspect_w;
+    view.aspect_h = g_port_settings.aspect_h;
+    port_RemasterSetView(&view);
+    port_RemasterGetView(&view);
+    g_port_settings.distance = view.distance;
+    g_port_settings.supersample = view.supersample;
+    g_port_settings.aspect_w = view.aspect_w;
+    g_port_settings.aspect_h = view.aspect_h;
     if (!has_image) {
         image = port_FindImage(beside);
         passed[count++] = image_option;
@@ -479,7 +584,19 @@ int main(int argc, char **argv) {
     }
 
     port_Say("ReBushido in a window. Escape ends it; F11 or Alt+Enter fills "
-             "the screen; F3 is the counter in the corner.");
+             "the screen; F2 changes picture; F3 is the counter in the "
+             "corner.");
+    port_Say("graphics: %s to start with; the remastered picture is drawn "
+             "%s, draw distance %s, antialiasing %d, aspect %d:%d.",
+             g_port_settings.graphics == PORT_GRAPHICS_ORIGINAL ? "original"
+             : g_port_settings.graphics == PORT_GRAPHICS_REMASTERED
+                 ? "remastered"
+                 : "whichever the options page says",
+             g_port_settings.resolution == PORT_RESOLUTION_WINDOW
+                 ? "at the window's own size"
+                 : "at the resolution asked for",
+             port_NameRemasterDistance(view.distance), view.supersample,
+             view.aspect_w, view.aspect_h);
     port_Say("memory cards: card1.mcd and card2.mcd beside the program "
              "unless --card1, --card2 or --no-cards says otherwise.");
     port_Say("settings: %s", g_port_settings_path != NULL

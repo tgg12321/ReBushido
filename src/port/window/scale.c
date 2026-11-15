@@ -60,6 +60,58 @@ void port_FitPicture(s32 window_w, s32 window_h, s32 mode, PortRect *out) {
     out->h = h;
 }
 
+/* The middle of the window, for a picture of its own shape (window.h):
+ * what the remastered picture needs, whose pixels are square and whose
+ * shape is the view's, not always four by three. */
+void port_FitShape(s32 window_w, s32 window_h, s32 mode, s32 picture_w,
+                   s32 picture_h, PortRect *out) {
+    s32 w = window_w;
+    s32 h = window_h;
+
+    if (window_w <= 0 || window_h <= 0 || picture_w <= 0 || picture_h <= 0) {
+        out->x = 0;
+        out->y = 0;
+        out->w = 0;
+        out->h = 0;
+        return;
+    }
+    if (mode != PORT_SCALE_STRETCH) {
+        if (window_w * picture_h >= window_h * picture_w) {
+            w = window_h * picture_w / picture_h;
+        } else {
+            h = window_w * picture_h / picture_w;
+        }
+        if (w < 1) {
+            w = 1;
+        }
+        if (h < 1) {
+            h = 1;
+        }
+    }
+    out->x = (window_w - w) / 2;
+    out->y = (window_h - h) / 2;
+    out->w = w;
+    out->h = h;
+}
+
+/* How many times the console's lines the remastered picture is drawn at,
+ * for a scale across (window.h): enough that its pixels come out square.
+ * The console's picture fills a screen of four by three whatever its
+ * mode, so a line of a 640-wide mode is twice as tall as a pixel of it is
+ * wide, and one of a 320-wide mode is square. */
+s32 port_TallFor(s32 scale, s32 picture_w, s32 picture_h) {
+    s32 tall;
+
+    if (scale < 1 || picture_w <= 0 || picture_h <= 0) {
+        return scale < 1 ? 1 : scale;
+    }
+    /* w * scale over h * tall is four by three, to the nearest whole */
+    tall = (PORT_PICTURE_ASPECT_H * picture_w * scale +
+            PORT_PICTURE_ASPECT_W * picture_h / 2) /
+           (PORT_PICTURE_ASPECT_W * picture_h);
+    return tall < 1 ? 1 : tall;
+}
+
 /* A channel of five bits as a byte, as the port's PNGs have it. */
 static u32 port_StretchChannel(u32 channel) {
     return (channel & CHANNEL_MAX) * BYTE_MAX / CHANNEL_MAX;

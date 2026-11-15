@@ -20,8 +20,12 @@ typedef struct {
     s32 is_fast;            /* never wait: as fast as the PC goes */
     s32 inject;             /* PORT_INJECT_... */
     const char *tap_frames; /* a folder for the pictures as they are shown */
+    /* ... and for the window's own pixels, which only the build with a
+     * graphics card has (docs/PORT.md, "Remastered in the window") */
+    const char *tap_window;
     s32 tap_every;          /* ... every this many blanks */
     const char *tap_audio;  /* a file for the samples as they are queued */
+    s32 toggle_at;          /* change picture at every this many blanks */
     s32 fault_at;           /* touch memory that is not there at this blank */
     s32 fault_in_sound;     /* ... on the sound card's thread, from it on */
 } PortWindowOptions;

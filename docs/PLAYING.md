@@ -83,6 +83,11 @@ scale = integer          # fit (as large as fits), integer, or stretch
 filter = linear          # nearest (each pixel a block) or linear
 fullscreen = on
 fps = off                # no counter in the corner (F3 brings it back)
+graphics = remastered    # original (the console's picture) or remastered
+resolution = 3           # how many times the console's; 0 = the window's
+draw_distance = max      # original, far, or max: how much of the stage
+antialiasing = 2         # off, 2 or 4: the scene's edges smoothed
+aspect = 16:9            # 4:3 as the console (the default), or wider
 p1.cross = key Space     # Space is player one's Cross, and Z no longer
 p1.circle = key Left Ctrl
 p2.start = pad a         # on player two's controller, A is Start
@@ -93,6 +98,40 @@ p1.select = none         # nothing presses it
 to copy lines from, and says how keys and controller buttons are named.
 A line the program cannot use is named in the console window as it
 starts.
+
+## The picture: Original and Remastered
+
+The options page at boot has a second line, **Graphics**, with
+**Original** and **Remastered** (`REBUSHIDO.md`, "The options page").
+Original is the PlayStation's own picture, pixel for pixel. Remastered
+draws the scene again with the graphics card, at the window's
+resolution: the corners where the camera really put them instead of on
+whole pixels, textures in perspective instead of sliding, true colours
+instead of the chip's five bits and its dither, and the menus, the
+fonts and the HUD crisp at the window's size (`PORT.md`,
+"Remastered").
+
+**F2 changes picture while the game runs**, at once and as often as you
+like, and `--graphics original` or `--graphics remastered` starts it
+either way; with neither, the window follows the options page. The
+window needs a graphics card that does OpenGL 3.3, which anything since
+about 2010 does. If it cannot get one it says so in the session's log
+and draws the console's picture instead, and F2 then does nothing.
+
+**The settings of the remastered picture** are a run's: they are read
+once as it starts, and changing one means starting it again. Each does
+nothing at all while Graphics is Original.
+
+| | | |
+|---|---|---|
+| `resolution` | `0`, or `1` and up | How many times the console's resolution the scene is drawn at (`--resolution N`). `0`, which is the default, takes the window's own size, so the picture is as sharp as the window is large. |
+| `draw_distance` | `original`, `far`, `max` | How much of the stage is drawn, and how far out its fog is placed. The console draws a disc of about 26,000 units about the camera and its fog ends there, so the ground fades into the distance; `far` draws about twice as much, and `max` draws the stage to its own far edge with the fog pushed out four times as far. The fog's colours are not touched, so a night stage stays as dark as it was. `far` with nothing said. |
+| `antialiasing` | `off`, `2`, `4` | The scene drawn that many times over each way and averaged down, which smooths its edges. The HUD, the fonts and the menus are left exactly as crisp as they were. It costs fill rate and nothing else: four times over is sixteen times the pixels. `2` with nothing said. |
+| `aspect` | `4:3`, `16:9`, any `W:H` | The shape of the picture. A wider one is a **wider view of the same scene**, not a stretched picture: the camera keeps its height and gains width. Use it with `draw_distance max`, which fills the sides. `4:3` with nothing said, because the HUD does not move out to the new edges yet: in a fight the counters and the clock stay in the middle band ([`PORT.md`](PORT.md), "A wider picture"). |
+
+What Remastered does **not** do yet: more than the game's own 30 or 60
+pictures a second, and new lighting or shadows. Those are the steps
+after it ([`ROADMAP.md`](ROADMAP.md), item 7).
 
 ## Where the saves are
 
@@ -133,11 +172,11 @@ for ten seconds and fades.
 ## What does not work yet
 
 - **No link cable.**
-- The picture is the PlayStation's own, at the PlayStation's size,
-  scaled up: the wide picture and the higher resolution are not made
-  yet.
 - The sound has not been heard by anybody yet, and what the port makes
   of the hardware's filters is not the console's to the last sample.
+- Nobody has yet looked at the remastered picture on a real graphics
+  card: it has been drawn only by software drivers, with no window on
+  screen ([`PORT.md`](PORT.md), "Remastered in the window").
 
 ## If something is wrong
 

@@ -42,7 +42,15 @@ typedef signed long long s64;
  * above them, whatever its sign. (A pointer made a number needs nothing:
  * the cast keeps its low 32 bits, which is all of it.) */
 #if RB_PORT
+/* The guard is the port's own headers' too: the files of the port that
+ * talk to a C library and to SDL or EGL are not compiled with the
+ * switch on, and declare the type for themselves (port_host.h,
+ * port_remaster.h). A typedef may be written twice only in C11, and
+ * those files are gnu99. */
+#ifndef PORT_ADDRESS_DEFINED
+#define PORT_ADDRESS_DEFINED
 typedef __UINTPTR_TYPE__ PortAddress;
+#endif
 #define ADDR(value) ((PortAddress)(u32)(PortAddress)(value))
 #else
 #define ADDR(value) (value)

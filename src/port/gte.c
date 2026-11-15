@@ -155,10 +155,39 @@ static void port_GteSetMacAndIr(const s64 *sums, s32 shift, s32 lm) {
 
 /* ---- the three queues ---- */
 
+/* What the projection worked out for the points now in SXY0 to SXY2,
+ * before the hardware cut them down to whole pixels and held them to
+ * eleven bits: the remastered renderer's side channel
+ * (port_remaster.h; docs/PORT.md, "Remastered"). A point whose depth is
+ * 0 is one this queue does not know: the program put it in the
+ * register itself. Nothing of the game is changed by any of it. */
+static PortPrecisePoint g_port_precise[3];
+
+/* The point of the queue that an SXY register holds, or NULL. */
+static PortPrecisePoint *port_PreciseOf(s32 index) {
+    switch (index) {
+    case PORT_GTE_SXY0:
+        return &g_port_precise[0];
+    case PORT_GTE_SXY1:
+        return &g_port_precise[1];
+    case PORT_GTE_SXY2:
+    case PORT_GTE_SXYP:
+        return &g_port_precise[2];
+    default:
+        return NULL;
+    }
+}
+
 static void port_GtePushScreenXy(u32 xy) {
     g_port_gte.data[PORT_GTE_SXY0] = g_port_gte.data[PORT_GTE_SXY1];
     g_port_gte.data[PORT_GTE_SXY1] = g_port_gte.data[PORT_GTE_SXY2];
     g_port_gte.data[PORT_GTE_SXY2] = xy;
+    g_port_precise[0] = g_port_precise[1];
+    g_port_precise[1] = g_port_precise[2];
+    g_port_precise[2].x = 0;
+    g_port_precise[2].y = 0;
+    g_port_precise[2].depth = 0;
+    g_port_precise[2].divided = 0;
 }
 
 static void port_GtePushScreenZ(s32 depth) {
@@ -317,6 +346,8 @@ static void port_GteProject(const s32 *vector, s32 shift, s32 lm, s32 last) {
     s64 sum;
     s32 x;
     s32 y;
+    s32 precise_x;
+    s32 precise_y;
     s32 i;
 
     port_GteGetMatrix(PORT_GTE_ROTATION, matrix);
@@ -352,10 +383,18 @@ static void port_GteProject(const s32 *vector, s32 shift, s32 lm, s32 last) {
     sum = port_GteCheckMac0(quotient * port_GteData16(PORT_GTE_IR1) +
                             port_GteControl32(PORT_GTE_OFX));
     x = port_GteLimit(sum >> 16, SCREEN_MIN, SCREEN_MAX, PORT_GTE_FLAG_SX);
+    precise_x = (s32)sum;
     sum = port_GteCheckMac0(quotient * port_GteData16(PORT_GTE_IR2) +
                             port_GteControl32(PORT_GTE_OFY));
     y = port_GteLimit(sum >> 16, SCREEN_MIN, SCREEN_MAX, PORT_GTE_FLAG_SY);
+    precise_y = (s32)sum;
     port_GtePushScreenXy(((u32)x & 0xFFFF) | ((u32)y << 16));
+    /* the side channel: where the point really came out, which the two
+     * halves above have lost (port_remaster.h) */
+    g_port_precise[2].x = precise_x;
+    g_port_precise[2].y = precise_y;
+    g_port_precise[2].depth = depth;
+    g_port_precise[2].divided = (s32)quotient;
 
     /* The depth cue: how far the point is towards the far colour. The
      * first two points of RTPT get none, and so set none of its bits of
@@ -710,9 +749,18 @@ void port_GteWriteData(s32 index, u32 value) {
     case PORT_GTE_LZCR:
         /* read only */
         break;
-    default:
+    default: {
+        /* a screen position the program puts in itself is not one the
+         * projection worked out: the side channel forgets it
+         * (port_remaster.h) */
+        PortPrecisePoint *precise = port_PreciseOf(index);
+
+        if (precise != NULL) {
+            precise->depth = 0;
+        }
         g_port_gte.data[index & (PORT_GTE_DATA_COUNT - 1)] = value;
         break;
+    }
     }
 }
 
@@ -773,11 +821,22 @@ void port_GteLoadData(s32 first, const void *words, s32 count) {
     }
 }
 
+/* Where a screen position is stored is how the remastered renderer
+ * finds what the projection really worked out for it: the renderer
+ * stores the points of a part onto the scratchpad and names its faces'
+ * corners among them, and a stage tile that is cut has the GTE store
+ * its corners into the primitive itself (port_remaster.h; docs/PORT.md,
+ * "Remastered"). Nothing else is different from a plain copy. */
 void port_GteStoreData(s32 first, void *words, s32 count) {
     s32 i;
 
     for (i = 0; i < count; i++) {
+        const PortPrecisePoint *precise = port_PreciseOf(first + i);
+
         ((u32 *)words)[i] = port_GteReadData(first + i);
+        if (precise != NULL && precise->depth != 0) {
+            port_RemasterNotePoint((PortAddress)&((u32 *)words)[i], precise);
+        }
     }
 }
 

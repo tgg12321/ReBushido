@@ -9,11 +9,14 @@
 
 #include "common.h"
 
-/* The port's own address type, as wide as a pointer. The files that talk
- * to the system are compiled with a C library's headers and without the
- * game's switches (tools/port_sdl_build.py), so `common.h` has not given
- * them this one. */
-#if !RB_PORT
+/* The port's own address type, as wide as a pointer. `common.h` declares
+ * it where the port's switch is on; the files that talk to the system, to
+ * a C library or to SDL, EGL and OpenGL are compiled without the game's
+ * switches (tools/port_sdl_build.py, tools/port_gl_build.py), so they
+ * declare it for themselves. The shared guard keeps the typedef to one:
+ * writing it twice is C11 and these files are gnu99. */
+#ifndef PORT_ADDRESS_DEFINED
+#define PORT_ADDRESS_DEFINED
 typedef __UINTPTR_TYPE__ PortAddress;
 #endif
 

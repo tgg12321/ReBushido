@@ -61,7 +61,45 @@ No dates.
    two, in both sizes of the program, which found and put right the
    three last places where the original reads through a pointer it never
    set (PORT.md, "Memory"). The game's code stays C.
-7. **The picture.** A wide picture, high resolution and a high frame rate
-   on the port, which is what "Graphics: Remastered" will mean. On the
-   PlayStation build only what is cheap: about 17 KB is left there before
-   a fixed buffer has to move.
+7. **The picture.** What "Graphics: Remastered" means on the port
+   ([`PORT.md`](PORT.md), "Remastered"): the scene drawn again by the
+   graphics card from the geometry the PlayStation threw away, with
+   "Graphics: Original" still the console's picture pixel for pixel. In
+   the owner's order:
+   1. **The foundation and high resolution.** Done. The side channel
+      that carries each corner's exact position and depth beside the
+      PlayStation primitive; the decoder that hands the GPU's own
+      command stream to a backend; OpenGL 3.3 core, drawing the scene
+      at N times the console's resolution with sub-pixel corners,
+      textures in perspective, no dither, true-colour mixing and the 2D
+      layer crisp; proved with no window against the software GPU,
+      pixel for pixel, at scale 1. It is in the window the player runs:
+      the window takes a 3.3 core context for it and F2 changes
+      picture while the game runs ("Remastered in the window").
+   2. **Anti-aliasing.** Done, by drawing the scene two or four times
+      over each way and averaging it down (`antialiasing`): exact with
+      the game's order of painting, where multisampling would mix a
+      half-transparent primitive's coverage twice along an edge, and it
+      leaves the 2D layer exactly as crisp as it was ("Edges").
+   3. **No pop-in, and more to see.** Done, by the stage's cells
+      (`draw_distance`): the console draws a disc of 26,000 units and
+      places its fog to end there, and `max` draws the stage to its own
+      far edge with the fog pushed out four times as far, its colours
+      untouched ("How far the stage is drawn"). The port hands the game
+      primitive buffers of its own for it. Left of it: a stage's
+      geometry was never meant to be seen whole, so its far edge shows
+      where the ground stops.
+   4. **The wide picture.** Done for the scene (`aspect`): the game
+      never culls to the right or the bottom, so a wider view needs
+      nothing of the projection to the right, and at the left only that
+      the game stop culling a face at the console's own edge ("A wider
+      picture"). Left of it: the HUD stays four by three in the middle
+      and does not move out to the new edges, so `4:3` is the default.
+   5. **A high frame rate**, 144 a second: the renderer drawing between
+      the game's own steps, which the side channel's exact positions
+      are what makes possible.
+   6. **Lighting and shadows**: the normals the mesh has and the
+      primitive does not.
+
+   On the PlayStation build only what is cheap: about 17 KB is left
+   there before a fixed buffer has to move.

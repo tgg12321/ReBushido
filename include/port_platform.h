@@ -115,6 +115,16 @@ extern const u32 g_port_low_memory[PORT_LOW_MEMORY_WORDS];
  * memory's (port_gpu.h, port_AddLinkRegion). */
 #define PORT_STACK_ADDR 0x7FC00000U
 #define PORT_STACK_SIZE 0x100000U
+/* Where the port's own two buffers of primitives go, for a run that
+ * asks the remastered picture to draw more of the stage than the
+ * console does (port_remaster.h, PORT_PRIM_BUFFER_BYTES): the
+ * console's own two cannot grow where they are, with the stack above
+ * them and the staging area below (include/sys.h). As with the stack,
+ * the address is the same in every run and its low 24 bits are no
+ * other memory's; it is given memory only for such a run, and with
+ * the console's draw distance nothing of it exists. */
+#define PORT_PRIMS_ADDR 0x7ED00000U
+#define PORT_PRIMS_SIZE 0x200000U
 /* Where the program's own variables begin and end: the link's script
  * says (tools/port_build.py). */
 extern char g_port_data_start[];

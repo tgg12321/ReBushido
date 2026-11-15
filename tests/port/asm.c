@@ -2,6 +2,7 @@
 #include "src/main/math_asm.c"
 #include "src/main/math_sin.c"
 #include "src/main/render_asm.c"
+#include "port/remaster_stub.h"
 #include "runtime/runtime.h"
 
 /* sys_Trap's end of the line, counted. */

@@ -79,7 +79,11 @@ a change there has to pass both byte checks.
 `make port` needs nothing more than the checks do. The port a person can
 play ([`docs/PLAYING.md`](docs/PLAYING.md); [`docs/PORT.md`](docs/PORT.md),
 "The window") needs SDL 2 and a C library, which nothing else here does
-and no check uses. Both programs have 64-bit pointers; `PORT_BITS=32`
+and no check uses. It needs **nothing of OpenGL at build time**, though
+it draws the remastered picture with it: the backend looks every GL
+function up through SDL as it starts ("Remastered in the window"), and
+where the machine has no OpenGL 3.3 the window shows the console's own
+picture and says so in its log. Both programs have 64-bit pointers; `PORT_BITS=32`
 builds the 32-bit one beside each, into `build/port-sdl/linux32/` or
 `windows32/`.
 
@@ -128,6 +132,26 @@ Nothing of SDL is in this repository.
 
 `python3 tools/port_sdl_build.py --host [--windows] [--bits N]` says
 whether the machine can build it, and what is missing if not.
+
+## The remastered renderer, with nothing shown
+
+The port's remastered picture ([`docs/PORT.md`](docs/PORT.md),
+"Remastered") is drawn by a graphics card, and it is proved by a
+program that uses no window and no display at all: it takes an OpenGL
+3.3 core context from EGL's surfaceless platform and draws into a
+framebuffer object, so a machine with no card draws it with Mesa's
+software driver.
+
+```bash
+python3 tools/port_gl_build.py                  # build/port-gl/rebushido-gl
+python3 tools/port_gl_prove.py --image "Bushido Blade 2 (USA).cue"
+```
+
+On Ubuntu it needs `lib32gcc-13-dev` and 32-bit EGL (`libegl-dev:i386`),
+which the window's own packages bring; `mesa-libgallium` is the software
+driver. No check uses it, and nothing of it is in `make port` or in the
+build with a window. `python3 tools/port_gl_build.py --host` says
+whether the machine can build it.
 
 ## What is checked
 

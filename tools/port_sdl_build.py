@@ -62,6 +62,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 
 import port_build  # noqa: E402  (tools/port_build.py)
+import port_layout  # noqa: E402
 from port_build import host_tests, modern  # noqa: E402
 
 OUT_DIR = 'build/port-sdl'
@@ -74,16 +75,28 @@ WINDOW_PLAIN = ['scale.c', 'ring.c', 'pace.c', 'keymap.c', 'logname.c', 'fps.c']
 WINDOW_GAME = ['gamestate.c']
 # What talks to SDL and to the C library: compiled as any program is.
 WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c']
+# The remastered renderer's backend, which talks to OpenGL and to a C
+# library and so is compiled the same way (docs/PORT.md, "Remastered in
+# the window"). It calls GL only through pointers the window looks up with
+# SDL_GL_GetProcAddress, so nothing of GL is linked to.
+GL_DIR = 'src/port/gl/'
+GL_HOSTED = ['gl_draw.c']
 # The hosts of the build without a window: not this one's on Linux, where
 # the C library's is host_posix.c; on Windows the one file is both builds'.
 OTHER_HOSTS = ('src/port/host_linux.c', 'src/port/host_windows.c')
 # (a path cut short by snprintf is what snprintf is used for)
 HOSTED_FLAGS = ['-O2', '-g', '-std=gnu99', '-Wall', '-Wextra', '-Werror', '-Wno-format-truncation', '-D_FILE_OFFSET_BITS=64',
-                '-Iinclude', '-I' + WINDOW_DIR.rstrip('/')]
-# Where the program is linked: 4 MB up, as `make port` has it, so that the
-# low 24 bits of its variables' addresses are no other memory's
-# (src/port/gpu.c, port_AddLinkRegion). They have to end below this.
-PROGRAM_BASE = 0x08400000
+                '-Iinclude', '-I' + WINDOW_DIR.rstrip('/'), '-I' + GL_DIR.rstrip('/')]
+# Where the program is linked, so that the low 24 bits of its variables'
+# addresses are no other memory's (src/port/gpu.c, port_AddLinkRegion).
+# They have to end below PROGRAM_END. The build without a window is
+# linked 4 MB up (tools/port_build.py) and has room to spare there; this
+# one carries the window, SDL and the remastered renderer's two tables as
+# well, so it begins 2 MB lower and has six megabytes. The low 24 bits
+# then run from 0x200000, where the console's 2 MB of RAM end, to
+# 0x800000, where the scratchpad is: no other region of the port's is in
+# between (include/port_platform.h).
+PROGRAM_BASE = 0x08200000
 PROGRAM_END = 0x08800000
 SDL_MINGW_PLACES = ['tools/sdl2-mingw/SDL2-*', 'build/sdl2-mingw/SDL2-*']
 # A variable's own section in MinGW's assembly, and the boundary the
@@ -171,7 +184,8 @@ class Target:
                 self.game_flags.append('-mcmodel=small')
             self.sdl = self.find_sdl(bits)
             self.sdl_flags = ['-I%s/include/SDL2' % self.sdl] if self.sdl else []
-            self.hosted = [WINDOW_DIR + f for f in WINDOW_HOSTED] + ['src/port/host_windows.c']
+            self.hosted = ([WINDOW_DIR + f for f in WINDOW_HOSTED]
+                           + [GL_DIR + f for f in GL_HOSTED] + ['src/port/host_windows.c'])
         else:
             self.cc, self.objcopy, self.nm, self.objdump = 'gcc', 'objcopy', 'nm', 'objdump'
             self.program = self.dir + '/rebushido'
@@ -181,7 +195,8 @@ class Target:
             self.game_flags = []
             self.sdl = None
             self.sdl_flags = ['-I/usr/include/SDL2', '-D_REENTRANT']
-            self.hosted = [WINDOW_DIR + f for f in WINDOW_HOSTED] + [WINDOW_DIR + 'host_posix.c']
+            self.hosted = ([WINDOW_DIR + f for f in WINDOW_HOSTED]
+                           + [GL_DIR + f for f in GL_HOSTED] + [WINDOW_DIR + 'host_posix.c'])
 
     @staticmethod
     def find_sdl(bits):
@@ -454,7 +469,9 @@ def console_layouts(target, program):
 
 
 def write_names(target, program, names_path):
-    """The program's names, as tools/port_build.py writes them."""
+    """The program's names, as tools/port_build.py writes them, and for a
+    64-bit program how each variable that grew lies against the
+    PlayStation's (port_layout.console_runs)."""
     rows = symbols_of(target, program)
     symbols = {}
     for address, letter, size, name in rows:
