@@ -22,6 +22,19 @@
  *                                   after the start), held HOLD blanks
  *   in CP OFFSET PAD BUTTON HOLD f  ... OFFSET frames of the game after
  *                                   it, held HOLD frames
+ *   poke CP OFFSET HOLD ADDR SIZE VALUE
+ *                                   writes VALUE, SIZE bytes of it (1, 2
+ *                                   or 4), at ADDR on each of HOLD
+ *                                   blanks from OFFSET after checkpoint
+ *                                   CP. **It changes what the game
+ *                                   computes**: it is a developer's way
+ *                                   of asking for a fight the menus
+ *                                   would take a long script to reach
+ *                                   (a stage, say: `make quickboot` is
+ *                                   the other way), and no test that
+ *                                   holds the port to the emulator may
+ *                                   use one. The emulator's runner does
+ *                                   not know this line
  *   cp NAME SHOT WITHIN at N        a checkpoint at vertical blank N
  *                                   (SHOT: 1 in it asks for the picture,
  *                                   2 for the `snap` memory, 8 for video
@@ -95,6 +108,9 @@
 #define IN_WORDS_FRAMES 7
 #define IN_BUTTON 4
 #define IN_HOLD 5
+#define POKE_WORDS 7
+#define POKE_SIZE 5
+#define POKES_MAX 16
 #define DUMP_WORDS 4
 #define CP_WORDS_MIN 6
 #define CP_SHOT 2
@@ -146,6 +162,20 @@ typedef struct {
     u32 down_at;   /* the blanks, or the frames, it goes down and comes */
     u32 up_at;     /* up at; 0 until its checkpoint has been reached */
 } PortPress;
+
+/* A `poke` line: a value written into the game's memory on each of a run
+ * of blanks. It changes what the game computes, and is a developer's
+ * tool alone. */
+typedef struct {
+    s32 checkpoint;
+    u32 offset;
+    u32 hold;
+    u32 address;
+    s32 size; /* 1, 2 or 4 bytes */
+    u32 value;
+    u32 first; /* the blanks it is written on; 0 until its checkpoint */
+    u32 last;
+} PortPoke;
 
 enum PortCheckpointKind {
     CHECKPOINT_AT,
@@ -210,6 +240,8 @@ static PortValue g_port_values[VALUES_MAX];
 static s32 g_port_value_count;
 static PortPress g_port_presses[PRESSES_MAX];
 static s32 g_port_press_count;
+static PortPoke g_port_pokes[POKES_MAX];
+static s32 g_port_poke_count;
 static PortCheckpoint g_port_checkpoints[CHECKPOINTS_MAX];
 static s32 g_port_checkpoint_count;
 static s32 g_port_next_checkpoint;
@@ -460,6 +492,34 @@ static void port_AddPress(char **words, s32 count) {
     press->up_at = 0;
 }
 
+/* A `poke` line: a value written into the game's memory, timed from a
+ * checkpoint. */
+static void port_AddPoke(char **words, s32 count) {
+    PortPoke *poke;
+
+    if (count != POKE_WORDS || g_port_poke_count == POKES_MAX) {
+        port_Fail("rebushido: a `poke` line is `poke CP OFFSET HOLD ADDR "
+                  "SIZE VALUE`, and there are %d at most\n",
+                  POKES_MAX);
+    }
+    poke = &g_port_pokes[g_port_poke_count++];
+    poke->checkpoint = port_PlanNumber(words[1], "poke");
+    poke->offset = (u32)port_PlanNumber(words[2], "poke");
+    poke->hold = (u32)port_PlanNumber(words[3], "poke");
+    poke->address = (u32)port_PlanNumber(words[4], "poke");
+    poke->size = port_PlanNumber(words[POKE_SIZE], "poke");
+    poke->value = (u32)port_PlanNumber(words[POKE_WORDS - 1], "poke");
+    poke->first = 0;
+    poke->last = 0;
+    if (poke->size != 1 && poke->size != 2 && poke->size != 4) {
+        port_Fail("rebushido: a `poke` writes 1, 2 or 4 bytes, not %d\n",
+                  poke->size);
+    }
+    if (poke->hold == 0) {
+        poke->hold = 1;
+    }
+}
+
 /* A `cp` line: a checkpoint, reached at a blank, some blanks after the
  * one before, or when its tests all hold. */
 static void port_AddCheckpoint(char **words, s32 count) {
@@ -610,6 +670,34 @@ static void port_SchedulePresses(s32 checkpoint, u32 blank) {
             }
         }
     }
+    for (i = 0; i < g_port_poke_count; i++) {
+        PortPoke *poke = &g_port_pokes[i];
+
+        if (poke->checkpoint == checkpoint) {
+            poke->first = blank + poke->offset;
+            poke->last = poke->first + poke->hold - 1;
+        }
+    }
+}
+
+/* The values a plan writes into the game's memory at this blank. */
+static void port_ApplyPokes(u32 now) {
+    s32 i;
+
+    for (i = 0; i < g_port_poke_count; i++) {
+        const PortPoke *poke = &g_port_pokes[i];
+
+        if (poke->last == 0 || now < poke->first || now > poke->last) {
+            continue;
+        }
+        if (poke->size == 1) {
+            *(u8 *)ADDR(poke->address) = (u8)poke->value;
+        } else if (poke->size == 2) {
+            *(u16 *)ADDR(poke->address) = (u16)poke->value;
+        } else {
+            *(u32 *)ADDR(poke->address) = poke->value;
+        }
+    }
 }
 
 /* Reads a plan, line by line (port_platform.h). */
@@ -641,6 +729,8 @@ void port_LoadPlan(const char *path) {
             port_AddValue(words, count);
         } else if (port_TextsEqual(words[0], "in")) {
             port_AddPress(words, count);
+        } else if (port_TextsEqual(words[0], "poke")) {
+            port_AddPoke(words, count);
         } else if (port_TextsEqual(words[0], "cp")) {
             port_AddCheckpoint(words, count);
         } else if (port_TextsEqual(words[0], "dump") && count == DUMP_WORDS) {
@@ -978,6 +1068,7 @@ static void port_WriteBlankPicture(u32 blank) {
  * it reaches or gives up, and the run's end. */
 void port_OnBlank(u32 blank) {
     port_PressButtons(0, blank);
+    port_ApplyPokes(blank);
     if (g_port_shots_folder != NULL && blank % g_port_shots_every == 0) {
         port_WriteBlankPicture(blank);
     }

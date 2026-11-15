@@ -24,6 +24,22 @@ typedef struct {
      * `scale` is what gives the picture square pixels; the same as
      * `scale` is what the comparison with the software GPU needs. */
     s32 tall;
+    /* How many times over each way the scene is drawn before it is
+     * averaged down to the picture: 1 (off) to PORT_SUPERSAMPLE_MAX.
+     * This is how the remastered picture's edges are smoothed
+     * (docs/PORT.md, "Remastered", "Edges"). Averaging whole blocks of
+     * `sample` by `sample` leaves the 2D layer exactly as crisp as it
+     * was, because a pixel of video memory is a block of
+     * `scale * sample` pixels of one colour and every block averaged
+     * lies inside one of those. */
+    s32 sample;
+    /* The shape of the picture: four by three is the console's, and a
+     * wider one is a wider view of the same scene, not a stretched
+     * picture (docs/PORT.md, "Remastered", "A wider picture"). The
+     * scene is drawn across the whole of it; the 2D layer stays in the
+     * four-by-three band in the middle. 0 for the console's shape. */
+    s32 aspect_w;
+    s32 aspect_h;
     s32 is_bilinear; /* texels smoothed, not blocks */
     /* The three things that make the hardware's picture the console's,
      * for the proof at scale 1 (docs/PORT.md, "Remastered"): the
@@ -68,6 +84,12 @@ extern u32 port_GlGetDrawCount(void);
 /* Pixels of the mirror of video memory sent to the card in the last
  * frame. */
 extern u32 port_GlGetUploadCount(void);
+/* Of the last frame: vertices the projection put outside the console's
+ * own 640 pixels, which only a wider picture shows, and the runs of
+ * primitives drawn across the whole of a wider picture. */
+extern u32 port_GlGetOutsideCount(void);
+extern u32 port_GlGetWideCount(void);
+
 /* Triangles of the last frame the chip itself would not have drawn:
  * more than 1023 pixels across, 511 down, or of no area. */
 extern u32 port_GlGetDroppedCount(void);

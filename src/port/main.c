@@ -256,5 +256,12 @@ s32 port_Main(s32 argc, char **argv) {
     port_AddLinkRegion(PORT_STACK_ADDR, PORT_STACK_SIZE);
     port_AddLinkRegion((u32)ADDR(g_port_data_start),
                        (u32)(g_port_data_end - g_port_data_start));
+#if RB_REMASTER_VIEW
+    /* ... and the port's own buffers of primitives, where this run draws
+     * more of the stage than the console does (port_remaster.h) */
+    if (port_RemasterPrimBufferBytes() != 0) {
+        port_AddLinkRegion(PORT_PRIMS_ADDR, PORT_PRIMS_SIZE);
+    }
+#endif
     port_HostCallOnStack(port_RunGame, PORT_STACK_ADDR + PORT_STACK_SIZE);
 }

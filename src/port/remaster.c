@@ -122,6 +122,199 @@ static PortDirtyRect g_drawn;
 /* A rectangle's size, by the two bits of its code. */
 static const s32 g_rect_sizes[] = {0, 1, 8, 16};
 
+/* ---- how much is drawn (port_remaster.h) ---- */
+
+/* The fog's reach, in 256ths of the console's, for each draw distance.
+ * The console's fog ends where its disc of cells does, so a farther
+ * stage needs a farther fog or the ground it draws is the fog's colour.
+ * The colours themselves are the stage's own and are not touched: a
+ * night stage stays as dark as it was, its gradient only reaching
+ * further. `far` doubles it, which covers the wedge the camera looks
+ * down; `max` is enough for the stage's diagonal (90,510 world units
+ * against the console's 26,000). */
+static const s32 g_fog_factors[PORT_DISTANCE_KINDS] = {
+    PORT_FOG_FACTOR_ONE, 2 * PORT_FOG_FACTOR_ONE, 4 * PORT_FOG_FACTOR_ONE};
+
+static const char *const g_distance_names[PORT_DISTANCE_KINDS] = {
+    "original", "far", "max"};
+
+static PortRemasterView g_view;
+static PortRemasterLimits g_limits;
+/* Whether the port's own primitive buffers are the game's this run
+ * (port_platform.h, PORT_PRIMS_ADDR). */
+static s32 g_prim_buffers_are_the_games;
+
+void port_RemasterDefaultView(PortRemasterView *view) {
+    view->distance = PORT_DISTANCE_ORIGINAL;
+    view->supersample = 1;
+    view->aspect_w = PORT_ASPECT_W_ORIGINAL;
+    view->aspect_h = PORT_ASPECT_H_ORIGINAL;
+}
+
+/* The greatest common divisor, for the picture's shape in its lowest
+ * terms. */
+static s32 port_GreatestDivisor(s32 first, s32 second) {
+    while (second != 0) {
+        s32 left = first % second;
+
+        first = second;
+        second = left;
+    }
+    return first;
+}
+
+/* A run's settings (port_remaster.h): each held to what there is, the
+ * smoothing down to a power of two and the shape to its lowest terms.
+ * It also settles whose primitive buffers the game is given, which it
+ * asks for once as it starts. */
+void port_RemasterSetView(const PortRemasterView *view) {
+    s32 divisor;
+
+    g_view = *view;
+    if (g_view.distance < 0 || g_view.distance >= PORT_DISTANCE_KINDS) {
+        g_view.distance = PORT_DISTANCE_ORIGINAL;
+    }
+    if (g_view.supersample < 1) {
+        g_view.supersample = 1;
+    }
+    if (g_view.supersample > PORT_SUPERSAMPLE_MAX) {
+        g_view.supersample = PORT_SUPERSAMPLE_MAX;
+    }
+    /* Down to a power of two: only those leave the 2D layer where it was
+     * (docs/PORT.md, "Remastered", "Edges"), and three was measured to
+     * move 0.7% of a flat picture's pixels. */
+    while (g_view.supersample & (g_view.supersample - 1)) {
+        g_view.supersample--;
+    }
+    if (g_view.aspect_w <= 0 || g_view.aspect_h <= 0) {
+        g_view.aspect_w = PORT_ASPECT_W_ORIGINAL;
+        g_view.aspect_h = PORT_ASPECT_H_ORIGINAL;
+    }
+    divisor = port_GreatestDivisor(g_view.aspect_w, g_view.aspect_h);
+    g_view.aspect_w /= divisor;
+    g_view.aspect_h /= divisor;
+    /* the game is given the port's own primitive buffers from now on,
+     * which it asks for once as it starts (src/main/main.c) */
+    g_prim_buffers_are_the_games = g_view.distance != PORT_DISTANCE_ORIGINAL;
+}
+
+void port_RemasterGetView(PortRemasterView *view) { *view = g_view; }
+
+/* A draw distance by its name, or -1: the tests and the port's files
+ * have no C library, so the letters are compared here. */
+s32 port_ReadRemasterDistance(const char *word) {
+    s32 i;
+    s32 j;
+
+    for (i = 0; i < PORT_DISTANCE_KINDS; i++) {
+        const char *name = g_distance_names[i];
+
+        for (j = 0; name[j] != 0 && name[j] == word[j]; j++) {
+        }
+        if (name[j] == 0 && word[j] == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+const char *port_NameRemasterDistance(s32 distance) {
+    if (distance < 0 || distance >= PORT_DISTANCE_KINDS) {
+        return "?";
+    }
+    return g_distance_names[distance];
+}
+
+s32 port_RemasterDistance(void) {
+    if (!port_RemasterIsOn()) {
+        return PORT_DISTANCE_ORIGINAL;
+    }
+    return g_view.distance;
+}
+
+s32 port_RemasterFogFactor(s32 distance) {
+    if (distance < 0 || distance >= PORT_DISTANCE_KINDS) {
+        return PORT_FOG_FACTOR_ONE;
+    }
+    return g_fog_factors[distance];
+}
+
+s32 port_RemasterNeedsFarShift(s32 distance) {
+    return distance == PORT_DISTANCE_MAX;
+}
+
+/* How much wider than the display's own rectangle the picture is, each
+ * side (port_remaster.h). */
+s32 port_RemasterMargin(s32 picture_w, s32 aspect_w, s32 aspect_h) {
+    s32 wide;
+    s32 margin;
+
+    if (picture_w <= 0 || aspect_w <= 0 || aspect_h <= 0 ||
+        aspect_w * PORT_ASPECT_H_ORIGINAL <=
+            aspect_h * PORT_ASPECT_W_ORIGINAL) {
+        return 0;
+    }
+    /* the width the shape asks for, in the same measure as the picture's
+     * own: w / h over 4 / 3 times it */
+    wide = (picture_w * aspect_w * PORT_ASPECT_H_ORIGINAL) /
+           (aspect_h * PORT_ASPECT_W_ORIGINAL);
+    if (wide > PORT_VRAM_WIDTH) {
+        wide = PORT_VRAM_WIDTH;
+    }
+    margin = (wide - picture_w) / 2;
+    return margin < 0 ? 0 : margin;
+}
+
+u32 *port_RemasterPrimBuffer(s32 which) {
+    if (!g_prim_buffers_are_the_games || which < 0 || which > 1) {
+        return NULL;
+    }
+    return (u32 *)ADDR(
+        PORT_PRIMS_ADDR + (u32)which * PORT_PRIM_BUFFER_BYTES);
+}
+
+u32 port_RemasterPrimBufferBytes(void) {
+    return g_prim_buffers_are_the_games ? PORT_PRIM_BUFFER_BYTES : 0;
+}
+
+/* ---- the limits a run came near (port_remaster.h) ---- */
+
+void port_RemasterNoteRoom(s32 prim_free, s32 prim_bytes) {
+    if (g_limits.frames == 0 || prim_free < g_limits.prim_free) {
+        g_limits.prim_free = prim_free;
+    }
+    g_limits.prim_bytes = prim_bytes;
+    g_limits.frames++;
+}
+
+/* What a frame queued of the stage, and what that left of the
+ * renderer's queue (port_remaster.h). */
+void port_RemasterNoteCells(s32 tiles, s32 nodes, s32 queue_size) {
+    s32 queue_free = queue_size - tiles - nodes;
+
+    if ((u32)tiles > g_limits.tiles) {
+        g_limits.tiles = (u32)tiles;
+    }
+    if ((u32)nodes > g_limits.nodes) {
+        g_limits.nodes = (u32)nodes;
+    }
+    if (g_limits.queue_size == 0 || queue_free < g_limits.queue_free) {
+        g_limits.queue_free = queue_free;
+    }
+    g_limits.queue_size = queue_size;
+}
+
+void port_RemasterNoteOtSlot(s32 index) {
+    if ((u32)index > g_limits.ot_farthest) {
+        g_limits.ot_farthest = (u32)index;
+    }
+}
+
+const PortRemasterLimits *port_GetRemasterLimits(void) {
+    g_limits.side_full = g_counts.full;
+    return &g_limits;
+}
+
 /* ---- which picture ---- */
 
 void port_SetGraphics(s32 which) {

@@ -559,6 +559,12 @@ static void render_LinkEntry(u32 *entry, void *prim, u32 length) {
 
 /* The same at entry `index` of the table being drawn into. */
 static void render_LinkPrim(s32 index, void *prim, u32 length) {
+#if RB_REMASTER_VIEW
+    /* the farthest slot a frame used, for the report of every limit the
+     * drawing path has: a depth beyond the table's reach is clamped to
+     * its last slot, where primitives no longer sort (port_remaster.h) */
+    port_RemasterNoteOtSlot(index);
+#endif
     render_LinkEntry(&((u32 *)ADDR(RENDER_OT))[index], prim, length);
 }
 

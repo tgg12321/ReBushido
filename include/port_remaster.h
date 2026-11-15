@@ -60,6 +60,134 @@ extern void port_ToggleGraphics(void);
  * attached. */
 extern s32 port_RemasterIsOn(void);
 
+/* ---- how much is drawn, and how (docs/PORT.md, "Remastered") ---- */
+
+/* How far the stage is drawn. The console draws the cells of a disc of
+ * thirteen cells about the camera, inside the wedge it looks down, and
+ * the stage's fog is placed to end where that disc does: everything
+ * beyond is the fog's colour and the player sees the ground end
+ * (STAGE_FAR, g_stage_near_mask). */
+enum {
+    PORT_DISTANCE_ORIGINAL, /* the console's disc of cells */
+    PORT_DISTANCE_FAR,      /* the whole wedge the camera looks down */
+    PORT_DISTANCE_MAX,      /* every cell of the stage, whichever way */
+    PORT_DISTANCE_KINDS
+};
+
+/* How many times over the picture may be drawn and averaged down, which
+ * is how the remastered picture's edges are smoothed ("Edges"). */
+#define PORT_SUPERSAMPLE_MAX 4
+
+/* The shape of the picture. The console's is four by three; a wider one
+ * is a wider view of the scene and not a stretched picture, so the
+ * number of pixels across grows with it. */
+#define PORT_ASPECT_W_ORIGINAL 4
+#define PORT_ASPECT_H_ORIGINAL 3
+
+typedef struct {
+    s32 distance;    /* PORT_DISTANCE_... */
+    s32 supersample; /* 1 (off), 2, 3 or 4 */
+    s32 aspect_w;    /* 4 by 3 as the console, 16 by 9, or the window's */
+    s32 aspect_h;
+} PortRemasterView;
+
+/* What a run was started with: the settings file's and the command
+ * line's. Each is held to what there is; the picture's shape is reduced
+ * to its lowest terms. These are a run's settings and are not changed
+ * while it runs: the primitive buffers the port hands the game are
+ * chosen from them before the game starts. */
+extern void port_RemasterSetView(const PortRemasterView *view);
+extern void port_RemasterGetView(PortRemasterView *view);
+/* The settings a run starts with, with nothing said. */
+extern void port_RemasterDefaultView(PortRemasterView *view);
+/* `original`, `far` or `max` as a setting's value says it: the number,
+ * or -1. `port_NameRemasterDistance` is the other way. */
+extern s32 port_ReadRemasterDistance(const char *word);
+extern const char *port_NameRemasterDistance(s32 distance);
+
+/* What the game's drawing code asks of this frame.
+ * PORT_DISTANCE_ORIGINAL where the remastered picture is off, so that
+ * "Graphics: Original" draws and computes exactly what it always did. */
+extern s32 port_RemasterDistance(void);
+
+/* The fog's reach and the span its levels are spread over, in 256ths of
+ * the console's, for a distance setting: pure arithmetic, which the host
+ * tests hold (tests/port/remaster.c). */
+#define PORT_FOG_FACTOR_ONE 256
+extern s32 port_RemasterFogFactor(s32 distance);
+/* Whether a distance setting needs the renderer's coarser scale for what
+ * is far off (g_scene_settings.far_shift). A stage tile's place and its
+ * depth are kept in sixteen bits after that scale: at the near scale a
+ * tile 65,536 world units off reads negative and is dropped, and the
+ * stage's grid is 90,510 units across its diagonal. */
+extern s32 port_RemasterNeedsFarShift(s32 distance);
+
+/* How many pixels of video memory wide the picture is on each side of
+ * the display's own rectangle, for the shape asked for: 0 at four by
+ * three, 106 for a 640-wide display at 16 by 9. The console's picture is
+ * 640 pixels of video memory across and 240 lines down and is shown four
+ * by three, so a pixel of it is half as wide as it is tall; the width
+ * grows in that measure. It is held so that the picture fits across
+ * video memory, which is what the remastered renderer draws into. Pure
+ * arithmetic: the host tests hold it (tests/port/remaster.c). */
+extern s32 port_RemasterMargin(s32 picture_w, s32 aspect_w, s32 aspect_h);
+
+/* ---- the primitive buffers ---- */
+
+/* The console's two primitive buffers are 0x13400 bytes each at fixed
+ * addresses in its RAM, with the stack above them and the staging area
+ * below (include/sys.h): neither can grow there. Drawing the whole of a
+ * stage fills them several times over, and the game only looks after
+ * the frame is drawn (main.c: "common prim over flow"). So where a run
+ * asks for more than the console's draw distance the port hands the
+ * game two buffers of its own, out of memory it gives itself at a fixed
+ * address whose low 24 bits are no other memory's (port_platform.h,
+ * PORT_PRIMS_ADDR), named to the ordering tables' links as the stack and
+ * the console's RAM are (port_gpu.h, port_AddLinkRegion). Nothing from
+ * `malloc` is ever given to the game.
+ *
+ * With the console's draw distance the game has the console's buffers at
+ * the console's addresses, that memory is never asked for, and nothing
+ * here is used at all. Each buffer is this large, and the two together
+ * fill PORT_PRIMS_SIZE. */
+#define PORT_PRIM_BUFFER_BYTES 0x100000U
+
+/* The buffer for frame `which` (0 or 1), or NULL where this run has the
+ * console's. */
+extern u32 *port_RemasterPrimBuffer(s32 which);
+/* How large those are; 0 where this run has the console's. */
+extern u32 port_RemasterPrimBufferBytes(void);
+
+/* ---- the limits a run came near ---- */
+
+/* Every store of a fixed size that the drawing path fills, and the least
+ * room any frame left in it. Drawing more of the stage fills all of
+ * them, so each is counted and reported. */
+typedef struct {
+    u32 frames;        /* frames these were measured over */
+    s32 prim_bytes;    /* the frame's primitive buffer is this large */
+    s32 prim_free;     /* ... and this little was left, at the worst */
+    s32 queue_size;    /* entries of the renderer's queue */
+    s32 queue_free;    /* ... left at the worst */
+    u32 ot_farthest;   /* the farthest ordering-table slot a frame used */
+    u32 tiles;         /* tiles a frame queued, at most */
+    u32 nodes;         /* ... and pieces of the stage */
+    u32 side_full;     /* times the side channel's tables were full */
+} PortRemasterLimits;
+
+/* What a frame left of its primitive buffer (src/main/main.c). Called
+ * whatever the setting, so that the original's own headroom is measured
+ * too. */
+extern void port_RemasterNoteRoom(s32 prim_free, s32 prim_bytes);
+/* How many tiles and pieces of the stage a frame queued, of the
+ * renderer's queue of `queue_size` entries (stage.c). */
+extern void port_RemasterNoteCells(s32 tiles, s32 nodes, s32 queue_size);
+/* The ordering-table slot a primitive was linked at (render_LinkPrim):
+ * the farthest any frame used says whether the table's last slots, where
+ * every greater depth is clamped, are being reached. */
+extern void port_RemasterNoteOtSlot(s32 index);
+extern const PortRemasterLimits *port_GetRemasterLimits(void);
+
 /* ---- the side channel ---- */
 
 /* What the GTE worked out for one point before the PlayStation threw it

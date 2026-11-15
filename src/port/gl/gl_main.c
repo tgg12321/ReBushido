@@ -81,7 +81,16 @@ static const char g_usage[] =
     "  --gl-compare   count the pixels the two pictures differ in\n"
     "  --gl-shots F   a PNG of the hardware's picture into this folder\n"
     "  --gl-every N   ... every N vertical blanks (60 if nothing says)\n"
-    "  --gl-original  the software GPU's picture beside each of them\n";
+    "  --gl-original  the software GPU's picture beside each of them\n"
+    "  --draw-distance W   original: the console's disc of stage cells;\n"
+    "                 far: the whole wedge the camera looks down; max:\n"
+    "                 every cell of the stage, with the fog pushed out\n"
+    "                 to match. A run's setting: it chooses the\n"
+    "                 primitive buffers before the game starts\n"
+    "  --antialiasing N    the picture drawn N times over each way and\n"
+    "                 averaged down: off (or 1), 2, 3, 4\n"
+    "  --aspect W:H   the shape of the picture: 4:3 as the console,\n"
+    "                 16:9 for a wider view of the same scene\n";
 
 /* ---- a PNG of 8-bit pixels ---- */
 
@@ -395,9 +404,11 @@ static void port_GlBlank(u32 blank) {
             }
             fprintf(stderr,
                     "gl blank %u picture %dx%d scale %d vertices %u draws %u "
-                    "uploaded %u\n",
+                    "uploaded %u outside %u wide %u dropped %u\n",
                     blank, w, h, options.scale, port_GlGetVertexCount(),
-                    port_GlGetDrawCount(), port_GlGetUploadCount());
+                    port_GlGetDrawCount(), port_GlGetUploadCount(),
+                    port_GlGetOutsideCount(), port_GlGetWideCount(),
+                    port_GlGetDroppedCount());
             fprintf(stderr,
                     "gl blank %u with_depth %u without_depth %u points %u "
                     "faces %u attached %u misses %u full %u masked %u "
@@ -458,7 +469,23 @@ static void port_GlBlank(u32 blank) {
 
 static void port_GlQuit(void) {
     const PortRemasterCounts *counts = port_GetRemasterCounts();
+    const PortRemasterLimits *limits = port_GetRemasterLimits();
+    PortRemasterView view;
     s32 kind;
+
+    port_RemasterGetView(&view);
+    fprintf(stderr,
+            "gl run view distance %s antialiasing %d aspect %d:%d\n",
+            port_NameRemasterDistance(view.distance), view.supersample,
+            view.aspect_w, view.aspect_h);
+    /* every store of a fixed size the drawing path fills, and the least
+     * room any frame left in it (docs/PORT.md, "Remastered") */
+    fprintf(stderr,
+            "gl run limits frames %u prim_bytes %d prim_free %d queue_size %d "
+            "queue_free %d ot_farthest %u tiles %u nodes %u side_full %u\n",
+            limits->frames, limits->prim_bytes, limits->prim_free,
+            limits->queue_size, limits->queue_free, limits->ot_farthest,
+            limits->tiles, limits->nodes, limits->side_full);
 
     fprintf(stderr, "gl run blanks %u hardware_time_us %llu\n", g_run.blanks,
             (unsigned long long)g_run.hardware_time);
@@ -497,11 +524,13 @@ static void port_GlQuit(void) {
 
 int main(int argc, char **argv) {
     PortGlOptions options;
+    PortRemasterView view;
     const char *passed[ARGUMENTS_MAX];
     const char *problem;
     s32 count = 0;
     s32 i;
 
+    port_RemasterDefaultView(&view);
     memset(&options, 0, sizeof(options));
     options.scale = 4;
     options.tall = 0; /* twice the scale, for square pixels */
@@ -512,7 +541,10 @@ int main(int argc, char **argv) {
     passed[count++] = argv[0];
     for (i = 1; i < argc && count < ARGUMENTS_MAX; i++) {
         const char *word = argv[i];
-        s32 has_value = i + 1 < argc;
+        /* A value never begins with a dash: so an option of the build
+         * without a window that takes none (`--trace`) is handed on by
+         * itself, whatever follows it. */
+        s32 has_value = i + 1 < argc && argv[i + 1][0] != '-';
 
         if (!strcmp(word, "--help") || !strcmp(word, "-h")) {
             printf("%s", g_usage);
@@ -538,6 +570,35 @@ int main(int argc, char **argv) {
             g_run.shots = argv[++i];
         } else if (!strcmp(word, "--filter")) {
             options.is_bilinear = !strcmp(argv[++i], "linear");
+        } else if (!strcmp(word, "--draw-distance")) {
+            view.distance = port_ReadRemasterDistance(argv[++i]);
+            if (view.distance < 0) {
+                fprintf(stderr, "rebushido-gl: --draw-distance takes "
+                                "original, far or max\n");
+                return PORT_EXIT_USAGE;
+            }
+        } else if (!strcmp(word, "--antialiasing")) {
+            const char *how = argv[++i];
+
+            view.supersample = !strcmp(how, "off") ? 1 : atoi(how);
+            if (view.supersample < 1 ||
+                view.supersample > PORT_SUPERSAMPLE_MAX) {
+                fprintf(stderr, "rebushido-gl: --antialiasing takes off, or "
+                                "2 to %d\n",
+                        PORT_SUPERSAMPLE_MAX);
+                return PORT_EXIT_USAGE;
+            }
+        } else if (!strcmp(word, "--aspect")) {
+            const char *shape = argv[++i];
+            const char *colon = strchr(shape, ':');
+
+            if (colon == NULL || atoi(shape) <= 0 || atoi(colon + 1) <= 0) {
+                fprintf(stderr,
+                        "rebushido-gl: --aspect takes W:H, as 4:3 or 16:9\n");
+                return PORT_EXIT_USAGE;
+            }
+            view.aspect_w = atoi(shape);
+            view.aspect_h = atoi(colon + 1);
         } else if (!strcmp(word, "--graphics")) {
             const char *which = argv[++i];
 
@@ -561,6 +622,11 @@ int main(int argc, char **argv) {
          * The comparison with the software GPU needs them the same. */
         options.tall = options.is_exact ? options.scale : 2 * options.scale;
     }
+    port_RemasterSetView(&view);
+    port_RemasterGetView(&view);
+    options.sample = view.supersample;
+    options.aspect_w = view.aspect_w;
+    options.aspect_h = view.aspect_h;
     problem = port_StartEgl();
     if (problem != NULL) {
         fprintf(stderr, "rebushido-gl: %s\n", problem);

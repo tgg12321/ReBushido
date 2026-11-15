@@ -195,6 +195,154 @@ static void test_Scale(void) {
     CHECK_EQ(port_RemasterScaleFor(640, 480, 0, 0), 1);
 }
 
+/* ---- what a run's settings come to (docs/PORT.md, "Remastered") ---- */
+
+/* Two texts letter for letter: the tests have no C library. */
+static s32 test_TextsAreEqual(const char *a, const char *b) {
+    s32 i;
+
+    for (i = 0; a[i] != 0 && a[i] == b[i]; i++) {
+    }
+    return a[i] == b[i];
+}
+
+static void test_View(void) {
+    PortRemasterView view;
+
+    /* with nothing said, the console's own picture in every way */
+    port_RemasterDefaultView(&view);
+    CHECK_EQ(view.distance, PORT_DISTANCE_ORIGINAL);
+    CHECK_EQ(view.supersample, 1);
+    CHECK_EQ(view.aspect_w, PORT_ASPECT_W_ORIGINAL);
+    CHECK_EQ(view.aspect_h, PORT_ASPECT_H_ORIGINAL);
+    port_RemasterSetView(&view);
+    /* ... and then the port hands the game no buffers of its own */
+    CHECK(port_RemasterPrimBuffer(0) == NULL);
+    CHECK_EQ((s32)port_RemasterPrimBufferBytes(), 0);
+
+    /* each setting's name */
+    CHECK_EQ(port_ReadRemasterDistance("original"), PORT_DISTANCE_ORIGINAL);
+    CHECK_EQ(port_ReadRemasterDistance("far"), PORT_DISTANCE_FAR);
+    CHECK_EQ(port_ReadRemasterDistance("max"), PORT_DISTANCE_MAX);
+    CHECK_EQ(port_ReadRemasterDistance("maxi"), -1);
+    CHECK_EQ(port_ReadRemasterDistance("ma"), -1);
+    CHECK_EQ(port_ReadRemasterDistance(""), -1);
+    CHECK(test_TextsAreEqual(port_NameRemasterDistance(PORT_DISTANCE_MAX),
+                             "max"));
+    CHECK(test_TextsAreEqual(port_NameRemasterDistance(-1), "?"));
+
+    /* the fog's reach for each, in 256ths of the console's */
+    CHECK_EQ(port_RemasterFogFactor(PORT_DISTANCE_ORIGINAL),
+             PORT_FOG_FACTOR_ONE);
+    CHECK_EQ(port_RemasterFogFactor(PORT_DISTANCE_FAR),
+             2 * PORT_FOG_FACTOR_ONE);
+    CHECK_EQ(port_RemasterFogFactor(PORT_DISTANCE_MAX), 4 * PORT_FOG_FACTOR_ONE);
+    CHECK_EQ(port_RemasterFogFactor(-1), PORT_FOG_FACTOR_ONE);
+    CHECK_EQ(port_RemasterFogFactor(PORT_DISTANCE_KINDS), PORT_FOG_FACTOR_ONE);
+    /* only the whole stage needs the renderer's coarser far scale */
+    CHECK_EQ(port_RemasterNeedsFarShift(PORT_DISTANCE_ORIGINAL), FALSE);
+    CHECK_EQ(port_RemasterNeedsFarShift(PORT_DISTANCE_FAR), FALSE);
+    CHECK_EQ(port_RemasterNeedsFarShift(PORT_DISTANCE_MAX), TRUE);
+
+    /* a setting out of its range is held to it, and the smoothing to a
+     * power of two, which is what leaves the 2D layer where it was */
+    view.distance = 99;
+    view.supersample = 3;
+    view.aspect_w = 32;
+    view.aspect_h = 18;
+    port_RemasterSetView(&view);
+    port_RemasterGetView(&view);
+    CHECK_EQ(view.distance, PORT_DISTANCE_ORIGINAL);
+    CHECK_EQ(view.supersample, 2);
+    /* the shape in its lowest terms */
+    CHECK_EQ(view.aspect_w, 16);
+    CHECK_EQ(view.aspect_h, 9);
+    view.supersample = 100;
+    view.aspect_w = 0;
+    view.aspect_h = -3;
+    port_RemasterSetView(&view);
+    port_RemasterGetView(&view);
+    CHECK_EQ(view.supersample, PORT_SUPERSAMPLE_MAX);
+    CHECK_EQ(view.aspect_w, PORT_ASPECT_W_ORIGINAL);
+    CHECK_EQ(view.aspect_h, PORT_ASPECT_H_ORIGINAL);
+
+    /* a run that draws further than the console is given the port's own
+     * buffers of primitives, which are not the console's two */
+    view.distance = PORT_DISTANCE_MAX;
+    port_RemasterSetView(&view);
+    CHECK_EQ((s32)port_RemasterPrimBufferBytes(), (s32)PORT_PRIM_BUFFER_BYTES);
+    CHECK(port_RemasterPrimBuffer(0) != NULL);
+    CHECK(port_RemasterPrimBuffer(1) != NULL);
+    CHECK(port_RemasterPrimBuffer(2) == NULL);
+    CHECK(port_RemasterPrimBuffer(-1) == NULL);
+    CHECK_EQ((s32)((u8 *)port_RemasterPrimBuffer(1) -
+                   (u8 *)port_RemasterPrimBuffer(0)),
+             (s32)PORT_PRIM_BUFFER_BYTES);
+    /* the two of them fill the memory the port asks for */
+    CHECK_EQ((s32)(2 * PORT_PRIM_BUFFER_BYTES), (s32)PORT_PRIMS_SIZE);
+
+    /* what the drawing code asks of a frame: the console's where the
+     * remastered picture is off, whatever the run was started with */
+    test_Reset();
+    port_SetGraphics(PORT_GRAPHICS_ORIGINAL);
+    CHECK_EQ(port_RemasterDistance(), PORT_DISTANCE_ORIGINAL);
+    port_SetGraphics(PORT_GRAPHICS_REMASTERED);
+    CHECK_EQ(port_RemasterDistance(), PORT_DISTANCE_MAX);
+    /* ... and with no backend, which is every build but the window's */
+    port_RemasterSetBackend(NULL);
+    CHECK_EQ(port_RemasterDistance(), PORT_DISTANCE_ORIGINAL);
+
+    port_RemasterDefaultView(&view);
+    port_RemasterSetView(&view);
+}
+
+/* How much wider than the console's picture each shape is. */
+static void test_Margin(void) {
+    /* the console's own shape adds nothing */
+    CHECK_EQ(port_RemasterMargin(640, 4, 3), 0);
+    CHECK_EQ(port_RemasterMargin(320, 4, 3), 0);
+    /* 16 by 9 is four thirds of it: 853 across, 106 each side */
+    CHECK_EQ(port_RemasterMargin(640, 16, 9), 106);
+    CHECK_EQ(port_RemasterMargin(320, 16, 9), 53);
+    /* 16 by 10 is less */
+    CHECK_EQ(port_RemasterMargin(640, 16, 10), 64);
+    /* a shape narrower than the console's takes nothing away */
+    CHECK_EQ(port_RemasterMargin(640, 1, 1), 0);
+    CHECK_EQ(port_RemasterMargin(640, 5, 4), 0);
+    /* a picture wider than video memory is held to it: the remastered
+     * renderer draws into a buffer of that size */
+    CHECK_EQ(port_RemasterMargin(640, 100, 9), (PORT_VRAM_WIDTH - 640) / 2);
+    /* nothing to work from */
+    CHECK_EQ(port_RemasterMargin(0, 16, 9), 0);
+    CHECK_EQ(port_RemasterMargin(640, 0, 9), 0);
+    CHECK_EQ(port_RemasterMargin(640, 16, 0), 0);
+}
+
+/* Every store of a fixed size the drawing path fills, and the least
+ * room a frame left in it. */
+static void test_Limits(void) {
+    const PortRemasterLimits *limits;
+
+    port_RemasterNoteRoom(5000, 78848);
+    port_RemasterNoteRoom(4000, 78848);
+    port_RemasterNoteRoom(9000, 78848);
+    port_RemasterNoteCells(183, 5, 640);
+    port_RemasterNoteCells(328, 8, 640);
+    port_RemasterNoteCells(100, 2, 640);
+    port_RemasterNoteOtSlot(2237);
+    port_RemasterNoteOtSlot(3341);
+    port_RemasterNoteOtSlot(900);
+    limits = port_GetRemasterLimits();
+    CHECK_EQ((s32)limits->frames, 3);
+    CHECK_EQ(limits->prim_bytes, 78848);
+    CHECK_EQ(limits->prim_free, 4000);
+    CHECK_EQ(limits->queue_size, 640);
+    CHECK_EQ(limits->queue_free, 640 - 328 - 8);
+    CHECK_EQ((s32)limits->tiles, 328);
+    CHECK_EQ((s32)limits->nodes, 8);
+    CHECK_EQ((s32)limits->ot_farthest, 3341);
+}
+
 /* ---- the side channel ---- */
 
 static void test_NotePoint(PortAddress at, s32 x, s32 y, s32 depth) {
@@ -498,6 +646,9 @@ void test_Main(void) {
     test_Which();
     test_Dirty();
     test_Scale();
+    test_View();
+    test_Margin();
+    test_Limits();
     test_Side();
     test_SideInPrimitive();
     test_Frames();

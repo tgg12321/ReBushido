@@ -20,6 +20,38 @@ void port_RemasterNoteFace(PortAddress points, const s32 *index, s32 count) {
 
 void port_RemasterAttachFace(PortAddress prim) { (void)prim; }
 
+void port_RemasterNoteOtSlot(s32 index) { (void)index; }
+
+void port_RemasterNoteCells(s32 tiles, s32 nodes, s32 queue_size) {
+    (void)tiles;
+    (void)nodes;
+    (void)queue_size;
+}
+
+void port_RemasterNoteRoom(s32 prim_free, s32 prim_bytes) {
+    (void)prim_free;
+    (void)prim_bytes;
+}
+
+s32 port_RemasterDistance(void) { return PORT_DISTANCE_ORIGINAL; }
+
+s32 port_RemasterFogFactor(s32 distance) {
+    (void)distance;
+    return PORT_FOG_FACTOR_ONE;
+}
+
+s32 port_RemasterNeedsFarShift(s32 distance) {
+    (void)distance;
+    return FALSE;
+}
+
+u32 *port_RemasterPrimBuffer(s32 which) {
+    (void)which;
+    return NULL;
+}
+
+u32 port_RemasterPrimBufferBytes(void) { return 0; }
+
 void port_RemasterNewFrame(void) {}
 
 void port_RemasterSetPrim(PortAddress prim) { (void)prim; }

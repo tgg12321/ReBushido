@@ -194,6 +194,9 @@ typedef struct {
     s32 clip_top;
     s32 clip_right;
     s32 clip_bottom;
+    /* the scene of a wider picture is drawn across the whole of it, and
+     * the console's drawing area does not reach that far */
+    s32 is_wide;
 } PortGlState;
 
 static struct {
@@ -208,10 +211,25 @@ static struct {
     GLuint array;
     GLuint blit_buffer;
     GLuint blit_array;
-    s32 scale_x;
+    GLuint resolve_program;
+    GLuint picture_texture;
+    GLuint picture_framebuffer;
+    s32 scale_x; /* a pixel of video memory is this many of the picture */
     s32 scale_y;
+    s32 sample;  /* ... and this many of those each way are averaged */
+    s32 draw_x;  /* scale_x times sample: the colour buffer's own scale */
+    s32 draw_y;
     s32 target_w;
     s32 target_h;
+    s32 picture_w; /* what the resolve pass last made */
+    s32 picture_h;
+    /* How many pixels of video memory wide the picture is on each side
+     * of the display's own rectangle (port_RemasterMargin): 0 at the
+     * console's shape. Everything the game draws is moved right by it,
+     * so that the console's 640 pixels sit in the middle and the scene,
+     * whose corners the side channel has wherever the projection put
+     * them, fills the width. */
+    s32 margin;
     GLint at_target;
     GLint at_scale;
     GLint at_vram;
@@ -223,6 +241,10 @@ static struct {
     GLint blit_at_rect;
     GLint blit_at_scale;
     GLint blit_at_vram;
+    GLint blit_at_shift;
+    GLint resolve_at_color;
+    GLint resolve_at_sample;
+    GLint resolve_at_at;
     PortGlVertex vertices[VERTICES_MAX];
     s32 count;
     PortGlState state;
@@ -238,6 +260,10 @@ static struct {
     u32 draw_count;
     u32 upload_count;
     u32 dropped;
+    u32 outside; /* vertices outside the console's own 640 pixels */
+    u32 wide;    /* runs of primitives drawn across the whole width */
+    u32 shown_outside;
+    u32 shown_wide;
     u32 shown_dropped;
     u32 shown_vertices;
     u32 shown_draws;
@@ -415,10 +441,13 @@ static const char g_gl_blit_vertex_text[] =
     "uniform vec4 u_rect;\n" /* left, top, width, height, in video memory */
     "uniform vec2 u_target;\n"
     "uniform vec2 u_scale;\n"
+    /* how far right of its own place in video memory it is drawn: the
+     * margin of a wider picture. What is read is not moved with it. */
+    "uniform float u_shift;\n"
     "out vec2 v_at;\n"
     "void main() {\n"
     "    vec2 at = u_rect.xy + a_corner * u_rect.zw;\n"
-    "    vec2 place = at * u_scale;\n"
+    "    vec2 place = (at + vec2(u_shift, 0.0)) * u_scale;\n"
     "    vec2 ndc = place / u_target * 2.0 - vec2(1.0);\n"
     "    gl_Position = vec4(ndc.x, ndc.y, 0.0, 1.0);\n"
     "    v_at = at;\n"
@@ -435,6 +464,44 @@ static const char g_gl_blit_fragment_text[] =
     "    ivec3 five = ivec3(int(pixel & 31u), int((pixel >> 5) & 31u),\n"
     "                       int((pixel >> 10) & 31u));\n"
     "    o_color = vec4(vec3(five * 255 / 31) / 255.0, 1.0);\n"
+    "}\n";
+
+/* The pass that averages the colour buffer down into the picture: a
+ * block of `sample` by `sample` of it becomes one pixel. This is what
+ * smooths the scene's edges, and it leaves the 2D layer as crisp as it
+ * was: a pixel of video memory is a block of `scale * sample` pixels of
+ * one colour, and every block averaged lies inside one of those. With
+ * `sample` 1 the pass is not run at all and the picture is read from the
+ * colour buffer itself, so the proof at scale 1 is of the same pixels it
+ * always was. */
+static const char g_gl_resolve_vertex_text[] =
+    "#version 330 core\n"
+    "layout(location = 0) in vec2 a_corner;\n" /* 0 or 1, each way */
+    "void main() {\n"
+    "    gl_Position = vec4(a_corner * 2.0 - vec2(1.0), 0.0, 1.0);\n"
+    "}\n";
+
+static const char g_gl_resolve_fragment_text[] =
+    "#version 330 core\n"
+    "uniform sampler2D u_color;\n"
+    "uniform int u_sample;\n"
+    "uniform vec2 u_at;\n" /* the picture's corner in the colour buffer */
+    "out vec4 o_color;\n"
+    "void main() {\n"
+    "    ivec2 first = ivec2(u_at) + ivec2(floor(gl_FragCoord.xy)) * u_sample;\n"
+    /* Whole numbers, so that a block of one colour comes out as that
+     * colour whatever the number of samples: a division in floating
+     * point by anything but a power of two moves some values a step, and
+     * the 2D layer must not move at all. */
+    "    int many = u_sample * u_sample;\n"
+    "    ivec3 sum = ivec3(0);\n"
+    "    for (int j = 0; j < u_sample; j++) {\n"
+    "        for (int i = 0; i < u_sample; i++) {\n"
+    "            vec3 one = texelFetch(u_color, first + ivec2(i, j), 0).rgb;\n"
+    "            sum += ivec3(one * 255.0 + vec3(0.5));\n"
+    "        }\n"
+    "    }\n"
+    "    o_color = vec4(vec3((sum + ivec3(many / 2)) / many) / 255.0, 1.0);\n"
     "}\n";
 
 /* ---- starting ---- */
@@ -532,8 +599,10 @@ static void port_GlSetUpVertexFormat(void) {
 
 /* The colour buffer: all of video memory at the scale. */
 static s32 port_GlMakeTarget(void) {
-    g_gl.target_w = PORT_VRAM_WIDTH * g_gl.scale_x;
-    g_gl.target_h = PORT_VRAM_HEIGHT * g_gl.scale_y;
+    g_gl.draw_x = g_gl.scale_x * g_gl.sample;
+    g_gl.draw_y = g_gl.scale_y * g_gl.sample;
+    g_gl.target_w = PORT_VRAM_WIDTH * g_gl.draw_x;
+    g_gl.target_h = PORT_VRAM_HEIGHT * g_gl.draw_y;
     glBindTexture(GL_TEXTURE_2D, g_gl.color_texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, g_gl.target_w, g_gl.target_h, 0,
                  GL_RGBA, GL_UNSIGNED_BYTE, NULL);
@@ -577,6 +646,13 @@ static void port_GlUploadMirror(void) {
 
 /* ---- the batches ---- */
 
+/* The picture's margin for the shape asked for and the display's
+ * rectangle as it is (port_remaster.h). */
+static void port_GlFindMargin(void) {
+    g_gl.margin = port_RemasterMargin(
+        g_gl.display_w, g_gl.options.aspect_w, g_gl.options.aspect_h);
+}
+
 static void port_GlSetState(const PortGlState *state) {
     s32 top;
 
@@ -599,10 +675,17 @@ static void port_GlSetState(const PortGlState *state) {
     } else {
         glDisable(GL_BLEND);
     }
-    top = state->clip_top * g_gl.scale_y;
-    glScissor(state->clip_left * g_gl.scale_x, top,
-              (state->clip_right - state->clip_left + 1) * g_gl.scale_x,
-              (state->clip_bottom - state->clip_top + 1) * g_gl.scale_y);
+    top = state->clip_top * g_gl.draw_y;
+    if (state->is_wide) {
+        /* the scene, across the whole of a wider picture */
+        glScissor((g_gl.display_x) * g_gl.draw_x, top,
+                  (g_gl.display_w + 2 * g_gl.margin) * g_gl.draw_x,
+                  (state->clip_bottom - state->clip_top + 1) * g_gl.draw_y);
+        return;
+    }
+    glScissor((state->clip_left + g_gl.margin) * g_gl.draw_x, top,
+              (state->clip_right - state->clip_left + 1) * g_gl.draw_x,
+              (state->clip_bottom - state->clip_top + 1) * g_gl.draw_y);
 }
 
 static void port_GlFlush(void) {
@@ -620,12 +703,15 @@ static void port_GlFlush(void) {
     glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
     glUniform1i(g_gl.at_vram, 0);
     glUniform2f(g_gl.at_target, (GLfloat)g_gl.target_w, (GLfloat)g_gl.target_h);
-    glUniform2f(g_gl.at_scale, (GLfloat)g_gl.scale_x, (GLfloat)g_gl.scale_y);
+    glUniform2f(g_gl.at_scale, (GLfloat)g_gl.draw_x, (GLfloat)g_gl.draw_y);
     glUniform1i(g_gl.at_affine, g_gl.options.is_exact ? 1 : 0);
     glUniform1i(g_gl.at_exact, g_gl.options.is_exact ? 1 : 0);
     glUniform1i(
         g_gl.at_bilinear, (g_gl.options.is_bilinear && !g_gl.options.is_exact));
     port_GlSetState(&g_gl.state);
+    if (g_gl.state.is_wide) {
+        g_gl.wide++;
+    }
     if (g_gl.state.is_half &&
         g_gl.state.blend == PORT_REMASTER_BLEND_SUBTRACT) {
         /* what is there, less this: only the texels that mix are taken
@@ -648,7 +734,8 @@ static void port_GlFlush(void) {
 static s32 port_GlStateIsSame(const PortGlState *a, const PortGlState *b) {
     return a->is_half == b->is_half && a->blend == b->blend &&
            a->clip_left == b->clip_left && a->clip_top == b->clip_top &&
-           a->clip_right == b->clip_right && a->clip_bottom == b->clip_bottom;
+           a->clip_right == b->clip_right && a->clip_bottom == b->clip_bottom &&
+           a->is_wide == b->is_wide;
 }
 
 static void port_GlWant(const PortGlState *state, s32 vertices) {
@@ -674,11 +761,16 @@ static void port_GlPutVertex(
     PortGlVertex *to = &g_gl.vertices[g_gl.count++];
 
     if (prim->has_depth && !g_gl.options.is_exact) {
-        to->x = port_GlPlace(from->x);
+        to->x = port_GlPlace(from->x) + (GLfloat)g_gl.margin;
         to->y = port_GlPlace(from->y);
     } else {
-        to->x = (GLfloat)from->ix;
+        to->x = (GLfloat)(from->ix + g_gl.margin);
         to->y = (GLfloat)from->iy;
+    }
+    if (g_gl.display_w > 0 &&
+        (to->x < (GLfloat)g_gl.margin ||
+         to->x > (GLfloat)(g_gl.margin + g_gl.display_w))) {
+        g_gl.outside++;
     }
     to->w = w;
     /* A texel's middle. The chip counts a texture point across a
@@ -775,14 +867,27 @@ static void port_GlRectangle(const PortRemasterPrim *prim, s32 flags) {
     for (i = 1; i < 4; i++) {
         quad.corner[i] = prim->corner[0];
     }
-    quad.corner[1].ix += prim->rect_w;
-    quad.corner[1].u += prim->rect_w;
-    quad.corner[2].iy += prim->rect_h;
-    quad.corner[2].v += prim->rect_h;
-    quad.corner[3].ix += prim->rect_w;
-    quad.corner[3].iy += prim->rect_h;
-    quad.corner[3].u += prim->rect_w;
-    quad.corner[3].v += prim->rect_h;
+    /* A plain rectangle that covers the console's whole width is a fade
+     * or a page of one colour, and has to cover a wider picture too, or
+     * the scene shows at the sides of it. A textured one is a picture of
+     * the console's own shape and stays where it is, four by three in
+     * the middle. */
+    if (g_gl.margin > 0 && !prim->is_textured &&
+        prim->rect_w >= g_gl.display_w && g_gl.display_w > 0) {
+        quad.corner[0].ix -= g_gl.margin;
+        quad.rect_w = prim->rect_w + 2 * g_gl.margin;
+        for (i = 1; i < 4; i++) {
+            quad.corner[i] = quad.corner[0];
+        }
+    }
+    quad.corner[1].ix += quad.rect_w;
+    quad.corner[1].u += quad.rect_w;
+    quad.corner[2].iy += quad.rect_h;
+    quad.corner[2].v += quad.rect_h;
+    quad.corner[3].ix += quad.rect_w;
+    quad.corner[3].iy += quad.rect_h;
+    quad.corner[3].u += quad.rect_w;
+    quad.corner[3].v += quad.rect_h;
     for (i = 0; i < 4; i++) {
         quad.corner[i].x = quad.corner[i].ix << PORT_REMASTER_FRACTION;
         quad.corner[i].y = quad.corner[i].iy << PORT_REMASTER_FRACTION;
@@ -817,6 +922,12 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     state.clip_top = prim->clip_top;
     state.clip_right = prim->clip_right;
     state.clip_bottom = prim->clip_bottom;
+    /* the scene of a wider picture: a primitive the projection gave a
+     * depth to, where the game was not restricting the drawing area to
+     * part of the screen (the pause menu, the replay's panels) */
+    state.is_wide = g_gl.margin > 0 && prim->has_depth &&
+                    prim->clip_left <= g_gl.display_x &&
+                    prim->clip_right >= g_gl.display_x + g_gl.display_w - 1;
     if (state.clip_right < state.clip_left ||
         state.clip_bottom < state.clip_top) {
         return;
@@ -841,6 +952,34 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
 
 /* ---- what is not a primitive ---- */
 
+/* The bands beside the console's own 640 pixels, over the lines `top`
+ * to `top + height` of video memory, cleared to black.
+ *
+ * The game clears its drawing area at the start of each frame and knows
+ * nothing of the bands, so what the scene last drew into them would
+ * stay. It has to happen here, where that clear does, and not at the
+ * top of a frame: the game draws its frame after the picture of the
+ * frame before it has been read (DrawOTag comes past the vertical blank
+ * in its loop), so a clear at the top of a frame would wipe the bands of
+ * the picture about to be read. Black is what the game clears to. */
+static void port_GlClearBands(s32 top, s32 height) {
+    s32 left = g_gl.display_x * g_gl.draw_x;
+    s32 band = g_gl.margin * g_gl.draw_x;
+    s32 right =
+        (g_gl.display_x + g_gl.margin + g_gl.display_w) * g_gl.draw_x;
+
+    if (g_gl.margin <= 0 || g_gl.display_w <= 0) {
+        return;
+    }
+    glDisable(GL_BLEND);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(left, top * g_gl.draw_y, band, height * g_gl.draw_y);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glScissor(right, top * g_gl.draw_y, band, height * g_gl.draw_y);
+    glClear(GL_COLOR_BUFFER_BIT);
+    g_gl.has_state = FALSE;
+}
+
 /* A rectangle of video memory the software GPU wrote: it is sent to the
  * card and stretched into the colour buffer, in its turn among the
  * primitives. */
@@ -863,16 +1002,33 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
     glUniform2f(
         g_gl.blit_at_target, (GLfloat)g_gl.target_w, (GLfloat)g_gl.target_h);
     glUniform2f(
-        g_gl.blit_at_scale, (GLfloat)g_gl.scale_x, (GLfloat)g_gl.scale_y);
+        g_gl.blit_at_scale, (GLfloat)g_gl.draw_x, (GLfloat)g_gl.draw_y);
     glUniform4f(g_gl.blit_at_rect, (GLfloat)rect.left, (GLfloat)rect.top,
                 (GLfloat)(rect.right - rect.left + 1),
                 (GLfloat)(rect.bottom - rect.top + 1));
+    glUniform1f(g_gl.blit_at_shift, (GLfloat)g_gl.margin);
     glDisable(GL_BLEND);
-    glDisable(GL_SCISSOR_TEST);
+    if (g_gl.margin > 0 && g_gl.display_w > 0) {
+        /* What the game wrote into video memory belongs to the
+         * console's own 640 pixels, wherever in video memory it is: the
+         * bands beside them are the scene's alone, and a rectangle of
+         * texture memory stretched into them would show its texels
+         * (docs/PORT.md, "Remastered", "A wider picture"). */
+        glEnable(GL_SCISSOR_TEST);
+        glScissor((g_gl.display_x + g_gl.margin) * g_gl.draw_x, 0,
+                  g_gl.display_w * g_gl.draw_x, g_gl.target_h);
+    } else {
+        glDisable(GL_SCISSOR_TEST);
+    }
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glEnable(GL_SCISSOR_TEST);
     g_gl.draw_count++;
     g_gl.has_state = FALSE;
+    /* a fill or a copy as wide as the console's picture is the frame's
+     * own clear: the bands go with it */
+    if (rect.right - rect.left + 1 >= g_gl.display_w) {
+        port_GlClearBands(rect.top, rect.bottom - rect.top + 1);
+    }
 }
 
 static void port_GlBegin(void) { g_gl.has_state = FALSE; }
@@ -883,6 +1039,7 @@ static void port_GlEnd(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24) {
     g_gl.display_y = y;
     g_gl.display_w = w;
     g_gl.display_h = h;
+    port_GlFindMargin();
     /* Not done: the 24-bit mode, which only the movie uses, is read
      * from the software GPU's own video memory. */
     g_gl.display_is_on = is_on && !is_rgb24;
@@ -891,6 +1048,10 @@ static void port_GlEnd(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24) {
     if (g_gl.vertex_count != 0 || g_gl.upload_count != 0) {
         g_gl.shown_dropped = g_gl.dropped;
         g_gl.dropped = 0;
+        g_gl.shown_outside = g_gl.outside;
+        g_gl.shown_wide = g_gl.wide;
+        g_gl.outside = 0;
+        g_gl.wide = 0;
         g_gl.shown_vertices = g_gl.vertex_count;
         g_gl.shown_draws = g_gl.draw_count;
         g_gl.shown_uploads = g_gl.upload_count;
@@ -907,6 +1068,12 @@ static const PortRemasterBackend g_gl_backend = {
 
 /* The two scales a PortGlOptions asks for, each held to what there
  * is. */
+static s32 port_GlSampleOf(const PortGlOptions *options) {
+    s32 sample = options->sample < 1 ? 1 : options->sample;
+
+    return sample > PORT_SUPERSAMPLE_MAX ? PORT_SUPERSAMPLE_MAX : sample;
+}
+
 static void port_GlScalesOf(
     const PortGlOptions *options, s32 *across, s32 *down) {
     *across = options->scale;
@@ -928,12 +1095,15 @@ static void port_GlScalesOf(
 void port_GlSetOptions(const PortGlOptions *options) {
     s32 across;
     s32 down;
+    s32 sample = port_GlSampleOf(options);
 
     port_GlScalesOf(options, &across, &down);
     g_gl.options = *options;
-    if (g_gl.is_started && (across != g_gl.scale_x || down != g_gl.scale_y)) {
+    if (g_gl.is_started && (across != g_gl.scale_x || down != g_gl.scale_y ||
+                            sample != g_gl.sample)) {
         g_gl.scale_x = across;
         g_gl.scale_y = down;
+        g_gl.sample = sample;
         port_GlMakeTarget();
         port_ClearDirtyRect(&g_gl.mirror);
         port_AddDirtyRect(
@@ -943,6 +1113,10 @@ void port_GlSetOptions(const PortGlOptions *options) {
     }
     g_gl.scale_x = across;
     g_gl.scale_y = down;
+    g_gl.sample = sample;
+    g_gl.draw_x = g_gl.scale_x * sample;
+    g_gl.draw_y = g_gl.scale_y * sample;
+    port_GlFindMargin();
 }
 
 void port_GlGetOptions(PortGlOptions *options) { *options = g_gl.options; }
@@ -960,6 +1134,7 @@ const char *port_GlStart(
     }
     g_gl.options = *options;
     port_GlScalesOf(options, &g_gl.scale_x, &g_gl.scale_y);
+    g_gl.sample = port_GlSampleOf(options);
     g_gl.program = port_GlMakeProgram(g_gl_vertex_text, g_gl_fragment_text);
     if (g_gl.program == 0) {
         return g_gl.problem;
@@ -980,6 +1155,16 @@ const char *port_GlStart(
     g_gl.blit_at_rect = glGetUniformLocation(g_gl.blit_program, "u_rect");
     g_gl.blit_at_scale = glGetUniformLocation(g_gl.blit_program, "u_scale");
     g_gl.blit_at_vram = glGetUniformLocation(g_gl.blit_program, "u_vram");
+    g_gl.blit_at_shift = glGetUniformLocation(g_gl.blit_program, "u_shift");
+    g_gl.resolve_program =
+        port_GlMakeProgram(g_gl_resolve_vertex_text, g_gl_resolve_fragment_text);
+    if (g_gl.resolve_program == 0) {
+        return g_gl.problem;
+    }
+    g_gl.resolve_at_color = glGetUniformLocation(g_gl.resolve_program, "u_color");
+    g_gl.resolve_at_sample =
+        glGetUniformLocation(g_gl.resolve_program, "u_sample");
+    g_gl.resolve_at_at = glGetUniformLocation(g_gl.resolve_program, "u_at");
 
     glGenTextures(1, &g_gl.vram_texture);
     glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
@@ -992,6 +1177,8 @@ const char *port_GlStart(
 
     glGenTextures(1, &g_gl.color_texture);
     glGenFramebuffers(1, &g_gl.framebuffer);
+    glGenTextures(1, &g_gl.picture_texture);
+    glGenFramebuffers(1, &g_gl.picture_framebuffer);
     if (!port_GlMakeTarget()) {
         return g_gl.problem;
     }
@@ -1021,16 +1208,71 @@ const char *port_GlStart(
     return NULL;
 }
 
+/* The display's rectangle of the colour buffer averaged down into the
+ * picture, where more than one sample a pixel is drawn. Leaves the
+ * picture's framebuffer bound, which is what is read back. */
+static s32 port_GlResolve(void) {
+    s32 w = (g_gl.display_w + 2 * g_gl.margin) * g_gl.scale_x;
+    s32 h = g_gl.display_h * g_gl.scale_y;
+
+    if (w <= 0 || h <= 0) {
+        return FALSE;
+    }
+    if (w != g_gl.picture_w || h != g_gl.picture_h) {
+        glBindTexture(GL_TEXTURE_2D, g_gl.picture_texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA,
+                     GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_gl.picture_framebuffer);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_2D, g_gl.picture_texture, 0);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) !=
+            GL_FRAMEBUFFER_COMPLETE) {
+            port_GlSay("the picture cannot be drawn into", NULL);
+            return FALSE;
+        }
+        g_gl.picture_w = w;
+        g_gl.picture_h = h;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.picture_framebuffer);
+    glViewport(0, 0, w, h);
+    glDisable(GL_BLEND);
+    glDisable(GL_SCISSOR_TEST);
+    glUseProgram(g_gl.resolve_program);
+    glBindVertexArray(g_gl.blit_array);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, g_gl.color_texture);
+    glUniform1i(g_gl.resolve_at_color, 0);
+    glUniform1i(g_gl.resolve_at_sample, g_gl.sample);
+    glUniform2f(g_gl.resolve_at_at,
+                (GLfloat)(g_gl.display_x * g_gl.draw_x),
+                (GLfloat)(g_gl.display_y * g_gl.draw_y));
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    g_gl.draw_count++;
+    /* what is drawn next is the scene again, into the colour buffer */
+    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
+    glViewport(0, 0, g_gl.target_w, g_gl.target_h);
+    glEnable(GL_SCISSOR_TEST);
+    g_gl.has_state = FALSE;
+    return TRUE;
+}
+
 void port_GlFinishFrame(void) {
     if (!g_gl.is_started) {
         return;
     }
     port_GlFlush();
+    if (g_gl.sample > 1) {
+        port_GlResolve();
+    }
     glFinish();
 }
 
 s32 port_GlReadPicture(u32 *out, u32 room, s32 *out_w, s32 *out_h) {
-    s32 w = g_gl.display_w * g_gl.scale_x;
+    s32 w = (g_gl.display_w + 2 * g_gl.margin) * g_gl.scale_x;
     s32 h = g_gl.display_h * g_gl.scale_y;
     s32 at;
 
@@ -1040,11 +1282,20 @@ s32 port_GlReadPicture(u32 *out, u32 room, s32 *out_w, s32 *out_h) {
         (u32)(w * h) > room) {
         return FALSE;
     }
-    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
     /* the buffer's lines run as video memory's do, so the first line
      * read is the picture's first */
-    glReadPixels(g_gl.display_x * g_gl.scale_x, g_gl.display_y * g_gl.scale_y,
-                 w, h, GL_RGBA, GL_UNSIGNED_BYTE, out);
+    if (g_gl.sample > 1) {
+        /* the pass that averaged the samples down drew the picture
+         * alone, so it is read from its own corner */
+        glBindFramebuffer(GL_FRAMEBUFFER, g_gl.picture_framebuffer);
+        glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, out);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
+    } else {
+        glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
+        glReadPixels(g_gl.display_x * g_gl.scale_x,
+                     g_gl.display_y * g_gl.scale_y, w, h, GL_RGBA,
+                     GL_UNSIGNED_BYTE, out);
+    }
     /* the pixels come as red, green, blue, alpha; the port's are
      * 0xFFRRGGBB */
     for (at = 0; at < h * w; at++) {
@@ -1067,3 +1318,7 @@ u32 port_GlGetDrawCount(void) { return g_gl.shown_draws; }
 u32 port_GlGetUploadCount(void) { return g_gl.shown_uploads; }
 
 u32 port_GlGetDroppedCount(void) { return g_gl.shown_dropped; }
+
+u32 port_GlGetOutsideCount(void) { return g_gl.shown_outside; }
+
+u32 port_GlGetWideCount(void) { return g_gl.shown_wide; }
