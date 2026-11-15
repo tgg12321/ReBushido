@@ -314,6 +314,15 @@ static void eff_Start(void) {
     g_eff_request->position[0] = g_eff_request->position_src[0];
     g_eff_request->position[1] = g_eff_request->position_src[1];
     g_eff_request->position[2] = g_eff_request->position_src[2];
+#if RB_PORT
+    /* (An effect that is given no direction, as a hit's flash is, reads
+     * one all the same: wherever the request's last one was, and before
+     * any, at address 0, where the console has its kernel's memory. The
+     * port has no memory there, and reads zeroes.) */
+    if (g_eff_request->direction_src == NULL) {
+        g_eff_request->direction_src = (s16 *)g_port_low_memory;
+    }
+#endif
     g_eff_request->vector[0] = g_eff_request->direction_src[0];
     g_eff_request->vector[1] = g_eff_request->direction_src[1];
     g_eff_direction = g_eff_request->vector;

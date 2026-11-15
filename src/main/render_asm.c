@@ -32,6 +32,9 @@
  * listings, and functions. The __asm__ on each line below is not an
  * instruction: it gives C the name of a label. */
 
+#if !RB_PORT
+/* (The port has no listings and so no labels: its two switches are
+ * render_SetupNode and render_DrawPart, further down.) */
 extern u8 L8004A5D0[] __asm__(".L8004A5D0");
 extern u8 L8004A614[] __asm__(".L8004A614");
 extern u8 L8004A644[] __asm__(".L8004A644");
@@ -62,6 +65,7 @@ void * const g_render_kind_jumps[16] = {
 void * const g_render_format_jumps[5] = {
     L8004A614, L8004A644, L8004A694, L8004A6F0, L8004A730,
 };
+#endif
 
 /* The routines that draw a stage tile's primitives: triangles and quads
  * (the primitive's type, less its low three bits). */

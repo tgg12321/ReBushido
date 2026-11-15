@@ -12,8 +12,9 @@ on:
 #
 # The first seven are the matching build's, with every switch of ReBushido
 # off (include/rebushido.h): the SHA1 among them is what shows that no change
-# of ReBushido's reaches the original. The last three are the ReBushido
-# build's (docs/REBUSHIDO.md).
+# of ReBushido's reaches the original. The next three are the ReBushido
+# build's (docs/REBUSHIDO.md), and the last is the native port's link
+# (docs/PORT.md).
 #
 # Nothing here needs the disc, the virtualenv or a Python package: the tools
 # use the standard library, and the two tests that read the disc say they
@@ -111,3 +112,14 @@ jobs:
       - name: ReBushido through a modern gcc (make rebushido-modern)
         if: ${{ !cancelled() }}
         run: make rebushido-modern
+
+      # The native port (docs/PORT.md): the game's C with the port's switch
+      # on and src/port/ link into one program for the runner, with no name
+      # missing and no warning in the port's own files. Like the tests it
+      # is a 32-bit program with no C library, so it wants the runner's gcc
+      # and nothing installed. It is not run here: it reads the game from
+      # the retail disc's image, which no runner has.
+
+      - name: The native port links (make port)
+        if: ${{ !cancelled() }}
+        run: make port

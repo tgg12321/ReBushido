@@ -2283,7 +2283,10 @@ static void fight_TestBladesOnBodies(s32 paired) {
          * place is given for what it writes first (the original's
          * behaviour: see fighter_TakeHit) */
 #if RB_FIX_HIT_NULL_WRITE
-        if (g_rb_settings.bugfixes) {
+        /* (the native port has no memory at address 0 to write to: it
+         * gives the place whatever the setting, which changes nothing
+         * the game does) */
+        if (g_rb_settings.bugfixes || RB_PORT) {
             /* a place for that word, which nothing reads here: it was
              * written at address 0 */
             s32 clashed;

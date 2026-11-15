@@ -1,14 +1,179 @@
 #ifndef PORT_PLATFORM_H
 #define PORT_PLATFORM_H
 
-/* What the native port's platform layer has to supply, as far as the
- * game's own C asks for it by a name of the port's (docs/PORT.md lists
- * the rest: the BIOS calls and Sony's libraries, which keep the names
- * Sony's headers declare). Nothing here is written yet: these are the
- * declarations alone. The PlayStation builds never see this header. */
+/* The native port's platform layer (docs/PORT.md, "The program"): what
+ * stands where the console, its BIOS and Sony's libraries stand on the
+ * PlayStation. Sony's functions and the BIOS's keep the names Sony's
+ * headers declare, and src/port/ defines them; what is declared here is
+ * the port's own, which its files share. The game's C asks for one name
+ * of these, port_Trap. The PlayStation builds never see this header. */
+
+#include "common.h"
+
+/* ---- stopping ---- */
 
 /* The game cannot go on (sys_Trap): on the console it writes where there
- * is no memory, and the machine stops. Does not return. */
+ * is no memory, and the machine stops. The port's does not return. (It
+ * is not declared so: the host tests have their own, which counts.) */
 extern void port_Trap(void);
+/* Ends the program: what was asked for at the end is written (the stubs
+ * that were called, the memory to dump), then it exits with `code`. */
+extern void port_Quit(s32 code) __attribute__((noreturn));
+/* What the program exits with. */
+#define PORT_EXIT_OK 0
+#define PORT_EXIT_FAILED 1 /* it could not start, or the game stopped */
+#define PORT_EXIT_USAGE 2
+
+/* ---- the game's, and the compiler's ---- */
+
+/* The game's own main (main.c), which the port's calls when the memory
+ * and the disc are there. It does not return. */
+extern void main(void);
+/* The two functions the compiler itself calls, for a structure that is
+ * cleared or compared: Sony's library has neither as C (src/port/
+ * api.c). */
+extern void *memset(void *dest, s32 value, u32 count);
+extern s32 memcmp(const void *first, const void *second, u32 count);
+
+/* ---- text (src/port/text.c) ---- */
+
+/* A function's variable arguments. (The game's sys.h has its own va_list,
+ * which walks a PlayStation's stack; the port's files use the
+ * compiler's.) */
+typedef __builtin_va_list PortArgs;
+#define PORT_ARGS_START(args, last) __builtin_va_start(args, last)
+#define PORT_ARGS_END(args) __builtin_va_end(args)
+#define PORT_ARG(args, type) __builtin_va_arg(args, type)
+
+/* printf's work, as far as the game and the port use it: %d %i %u %x %X
+ * %o %c %s %p %%, with a width (or *), `-`, `0`, a precision and an `l` or
+ * `h` that changes nothing. Writes at most `room` bytes with the 0 that
+ * ends them, and returns how many characters it wrote before that 0. */
+extern u32 port_FormatText(
+    char *out, u32 room, const char *format, PortArgs args);
+/* To the program's output: what a run is asked to print (--trace, a
+ * plan's lines, the stubs). Kept until there is a buffer of it. */
+extern void port_Print(const char *format, ...)
+    __attribute__((format(printf, 1, 2)));
+extern void port_FlushOutput(void);
+/* To the error output, at once: what went wrong, and the game's own
+ * printf. */
+extern void port_Log(const char *format, ...)
+    __attribute__((format(printf, 1, 2)));
+/* A message, then port_Quit(PORT_EXIT_FAILED). */
+extern void port_Fail(const char *format, ...)
+    __attribute__((format(printf, 1, 2), noreturn));
+
+extern u32 port_TextLength(const char *text);
+extern s32 port_TextsEqual(const char *first, const char *second);
+/* Whether `text` ends with `ending`, letters of either case. */
+extern s32 port_TextEndsWith(const char *text, const char *ending);
+/* A whole number, decimal or 0x and hexadecimal, with or without a `-`,
+ * that is all of `text`: 1 and the number, or 0. */
+extern s32 port_ParseNumber(const char *text, s32 *value);
+
+/* ---- stubs (src/port/stub.c) ---- */
+
+/* A function of Sony's or of the BIOS that the port does not do yet: it
+ * counts that it was called and gives a harmless answer. The list of them
+ * with their counts is what is left to write. */
+typedef struct PortStub {
+    const char *name;
+    u32 calls;
+    struct PortStub *next; /* the next one in the order they were first
+                            * called */
+} PortStub;
+
+extern void port_CountStub(PortStub *stub);
+/* In a stub's body: counts a call of it under `NAME`. */
+#define PORT_STUB(NAME)                                                        \
+    do {                                                                       \
+        static PortStub port_stub = {NAME, 0, NULL};                           \
+        port_CountStub(&port_stub);                                            \
+    } while (0)
+/* A line for each stub that was called, in the order of the first calls:
+ * `stub NAME COUNT`. */
+extern void port_PrintStubs(void);
+
+/* ---- memory (src/port/memory.c) ---- */
+
+/* The PlayStation's memory, at the PlayStation's addresses: the 2 MB of
+ * RAM and the kilobyte of scratchpad. */
+#define PORT_RAM_ADDR 0x80000000U
+#define PORT_RAM_SIZE 0x200000U
+#define PORT_SCRATCHPAD_SIZE 0x400U
+/* Zeroes, for the few places where the game reads at address 0, which
+ * a PC will not give a program (docs/PORT.md, "Memory"): the console has
+ * its kernel's memory there, whose first words this stands for. Nothing
+ * writes it. */
+#define PORT_LOW_MEMORY_WORDS 16
+extern const u32 g_port_low_memory[PORT_LOW_MEMORY_WORDS];
+/* Gives both memory; stops the program, saying why, if the system will
+ * not. */
+extern void port_MapMemory(void);
+/* Whether `count` bytes from `address` are in one of the two. */
+extern s32 port_IsMapped(u32 address, u32 count);
+
+/* ---- time (src/port/clock.c) ---- */
+
+/* The port's clock is a count of scan lines that moves only when the
+ * game waits (VSync) or looks at its counter (GetRCnt); a vertical blank
+ * comes every PORT_LINES_PER_BLANK of them. */
+#define PORT_LINES_PER_BLANK 263
+/* Vertical blanks since the program started. */
+extern u32 port_GetBlankCount(void);
+
+/* ---- the pads (src/port/pad.c) ---- */
+
+/* A button of pad 0 or 1 goes down or comes up; the game sees it from
+ * the next vertical blank. `button` is one of Sony's PAD... masks
+ * (libetc.h). */
+extern void port_SetPadButton(s32 pad, u32 button, s32 down);
+/* Fills the two buffers the game gave InitPAD, as the console's driver
+ * does at each vertical blank. */
+extern void port_FillPads(void);
+
+/* ---- events (src/port/event.c) ---- */
+
+/* The BIOS's DeliverEvent: every open, enabled event of this class and
+ * kind is set, for TestEvent to find. */
+extern void port_DeliverEvent(u32 desc, s32 spec);
+
+/* ---- the disc (src/port/cd.c) ---- */
+
+struct PortDisc;
+/* The disc in the drive: Sony's libcd reads its sectors from this image.
+ * NULL takes it out. */
+extern void port_InsertDisc(struct PortDisc *disc);
+
+/* ---- a run's script (src/port/plan.c) ---- */
+
+/* Reads the names the build wrote beside the program (tools/
+ * port_build.py): 1, or 0 if the file is not there. */
+extern s32 port_LoadNames(const char *path);
+/* The function `address` is in, and how far into it: NULL if the names
+ * have none. */
+extern const char *port_FindFunction(u32 address, u32 *offset);
+/* Reads a play test's plan (tools/play/runner.lua has the format): the
+ * presses and the checkpoints of a run. Stops the program if it cannot. */
+extern void port_LoadPlan(const char *path);
+/* The run ends after this many vertical blanks (--frames). */
+extern void port_SetBlankLimit(u32 blanks);
+/* Print the values of tests/play/state.toml at every vertical blank where
+ * one has changed (--trace). */
+extern void port_SetTrace(s32 on);
+/* A piece of memory to write to a file when the run ends (--dump). */
+extern void port_AddDump(const char *name, u32 address, u32 size);
+/* The folder they go into, with its last `/` (--out). */
+extern void port_SetDumpFolder(const char *folder);
+extern void port_WriteDumps(void);
+/* Called at every vertical blank: presses the plan's buttons, looks for
+ * its next checkpoint, prints the trace, ends the run at its limit. */
+extern void port_OnBlank(u32 blank);
+
+/* ---- a crash (src/port/crash.c) ---- */
+
+/* From now on a fault says where it was: the function and its callers. */
+extern void port_CatchCrashes(void);
 
 #endif /* PORT_PLATFORM_H */

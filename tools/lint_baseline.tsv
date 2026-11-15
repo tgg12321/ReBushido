@@ -37,3 +37,4 @@ src/main/snd.c	no-return	1
 src/main/snd.c	old-style	3
 src/main/tex.c	empty-params	3
 src/main/tex.c	old-style	3
+src/port/host_windows.c	includes	1

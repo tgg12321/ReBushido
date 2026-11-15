@@ -5,8 +5,8 @@
 #
 # The first seven are the matching build's, with every switch of ReBushido
 # off: the SHA1 among them is what shows that no change of ReBushido's
-# reaches the original. The last three are the ReBushido build's
-# (docs/REBUSHIDO.md).
+# reaches the original. The next three are the ReBushido build's
+# (docs/REBUSHIDO.md), and the last is the native port's link (docs/PORT.md).
 #
 # A check that fails does not stop the ones after it. What each printed is in
 # build/checks/<name>.log; its last lines are shown when it fails. Exits 1 if
@@ -51,6 +51,11 @@ check shift   make shift
 check rb-build  make -j8 rebushido
 check rb-test   make rebushido-test
 check rb-modern make rebushido-modern
+# The native port: the game's C and src/port/ link into a program for this
+# host with no name missing, the port's own files with no warning. Needs
+# no build of the game either. (Its run against the emulator is a play
+# test, port_game.)
+check port      make port
 
 echo
 for i in "${!names[@]}"; do

@@ -135,7 +135,7 @@ ALL_O_FILES  := $(S_O_FILES) $(C_O_FILES) $(ASM_FUNC_O_FILES)
 # -- Top-level targets --
 .PHONY: all clean check clean-check shift movovl modern test checks \
 	rebushido rebushido-disc rebushido-patch rebushido-test rebushido-modern rb-build \
-	quickboot quickboot-compile quickboot-disc playtest playtest-discs gte-probe
+	quickboot quickboot-compile quickboot-disc playtest playtest-discs gte-probe port
 
 ifeq ($(REBUSHIDO),1)
 all: rb-build
@@ -235,6 +235,7 @@ PLAYTEST_BUGS := QB_MODE=FIGHT_MODE_VS QB_P1=ROSTER_VANISHER QB_P2=ROSTER_UTAMAR
                 QB_WEAPON1=WEAPON_ID_NAGINATA QB_WEAPON2=WEAPON_ID_KATANA QB_STAGE=STAGE_LIGHTHOUSE QB_CPU2=1
 playtest-discs:
 	$(MAKE) gte-probe
+	$(MAKE) port
 	@if [ -f "$(RETAIL_IMAGE)" ]; then \
 		$(MAKE) rebushido-disc && $(MAKE) quickboot-disc $(PLAYTEST_QB) && \
 		$(MAKE) quickboot-disc $(PLAYTEST_BUGS) QB_NAME=QuickBoot-bugs QB_BUGFIXES=0 && \
@@ -281,9 +282,20 @@ modern:
 test:
 	python3 tests/run.py
 
+# The native port (docs/PORT.md): the game's C with the port's switch on,
+# Sony's library code where it is plain arithmetic, and src/port/, built
+# for this host into build/port/rebushido (tools/port_build.py). A 32-bit
+# x86 Linux program with no C library, as the host tests are: it needs
+# the host's gcc with -m32 and python3, and says so where that gcc cannot
+# make one. No PlayStation build has anything of it.
+#   build/port/rebushido --image "Bushido Blade 2 (USA).cue" --frames 600 --trace
+port:
+	python3 tools/port_build.py
+
 # Every check GitHub Actions runs, in its order, with a summary
 # (tools/checks.sh): the counts, the lint, modern, test, the game's bytes,
-# the overlay's, shift; then ReBushido's build, tests and modern.
+# the overlay's, shift; then ReBushido's build, tests and modern, and the
+# native port's link.
 checks:
 	bash tools/checks.sh
 

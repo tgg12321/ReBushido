@@ -12,6 +12,9 @@
 #   wsl bash tools/build.sh playtest [NAME...]    the play tests in an emulator
 #   with no window (tests/play/README.md): builds their discs, then runs them;
 #   a VARIABLE=value among the names is given to make (RB_RELEASE=1)
+#   wsl bash tools/build.sh port                  the native port, into
+#   build/port/ (docs/PORT.md): a program for this host, which reads the
+#   game from your image of the disc
 #   wsl bash tools/build.sh rebushido-patch [RB_RELEASE=1]   a release's
 #   patch, into build/release/ (docs/REBUSHIDO.md, "Making a release")
 # Exits with make's status: a build that fails is not hidden by the filter.
