@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """What a ReBushido release is made of (docs/REBUSHIDO.md, "Making a
-release"): the patch, a README for players and the tool that applies it.
+release"): the patch, a README for players and what applies it.
 
     python3 tools/rebushido_release.py --retail "Bushido Blade 2 (USA).bin" [--release]
 
@@ -10,12 +10,15 @@ writes into build/release/, which is not in git:
 
     ReBushido-<version>.bps   the patch (tools/rebushido_patch.py makes it)
     README.txt                for players
-    rebushido_patch.py        a copy of the tool, for those with no patcher
+    rebushido_patch.py        a copy of the tool, for those with Python
     patch-report.txt          what the patch carries; not for the release
 
-Then it applies the patch to the retail image and compares the result
-with the disc, byte for byte by SHA-1, and removes that copy. Exits 1 if
-they differ.
+beside the players' patcher, which `make patcher` has built there by then
+(ReBushidoPatcher.exe for Windows, ReBushidoPatcher for this host).
+
+Then it applies the patch to the retail image, with the tool and with
+this host's patcher, and compares each result with the disc, byte for
+byte by SHA-1, and removes those copies. Exits 1 if one differs.
 
 A release is no disc image and no program. The patch says "this many
 bytes from here in your image" for all it can, and carries the bytes it
@@ -44,6 +47,7 @@ DISC = "build/play/ReBushido.bin"
 EXE, ELF, MAP = ("build/rebushido/rebushido" + e for e in (".exe", ".elf", ".map"))
 MATCHING_ELF, MATCHING_MAP = "build/bb2.elf", "build/bb2.map"
 PROGRAM = "SLUS_006.63"
+PATCHER = "ReBushidoPatcher"
 SECTOR, DATA_AT, DATA_END = build_disc.SECTOR, 24, 24 + build_disc.DATA
 HEADER = 0x800
 VERSION = re.compile(r"^ReBushido (\S+) \((\S+)\)$")
@@ -184,6 +188,25 @@ def source_url():
     return re.sub(r"\.git$", "", url) or "the repository this was built from"
 
 
+def patcher_applied(patcher, patch_path, retail, out_dir):
+    """The SHA-1 of what the players' patcher makes of the retail image,
+    or None if it does not end well. The copy is removed."""
+    trip = os.path.join(out_dir, "roundtrip.bin")
+    made = (trip, os.path.splitext(trip)[0] + ".cue", trip + ".part")
+    try:
+        ran = subprocess.run([patcher, "--patch", patch_path, "--out", trip, "--yes", retail],
+                             stdin=subprocess.DEVNULL, capture_output=True, text=True, errors="replace")
+        if ran.returncode != 0 or not os.path.exists(trip):
+            print((ran.stdout + ran.stderr).strip())
+            return None
+        with open(trip, "rb") as out:
+            return rp.crc_of(out)[1]
+    finally:
+        for path in made:
+            if os.path.exists(path):
+                os.remove(path)
+
+
 README = """\
 {title}
 {rule}
@@ -206,19 +229,22 @@ is checked against these and is refused.
 
 Applying the patch
 ------------------
-With Floating IPS (Flips), or any patcher that takes BPS files: choose
-"Apply Patch", pick {patch}, then your .bin, and save the
-result as ReBushido.bin. Then copy your .cue as ReBushido.cue and change
-the file name in its first line to ReBushido.bin.
+On Windows, run ReBushidoPatcher.exe, which comes with this. Keep it in
+one folder with {patch} and double-click it, or drop
+your image on it. It asks for your image, the .bin or its .cue, checks
+it, and writes ReBushido.bin and ReBushido.cue beside it; if the image
+is not the right one it says what is wrong. Your image is only read.
+Windows may warn about a program it does not know ("More info", then
+"Run anyway"): the program is built from the source named below.
 
-Or with Python 3 and the file rebushido_patch.py that comes with this
-(nothing to install; on Windows the command may be "python" or "py"):
+Or, on any system, with Python 3 (nothing to install) and the file
+rebushido_patch.py, or with any patcher that takes BPS files, such as
+Floating IPS (then copy your .cue as ReBushido.cue and change the name
+in its first line to ReBushido.bin):
 
     python3 rebushido_patch.py apply --patch {patch} --image "Bushido Blade 2 (USA).bin" --out ReBushido.bin
 
-It checks your image, writes ReBushido.bin and ReBushido.cue beside each
-other, and says what is wrong if the image is not the right one. Your
-image is only read. The result is:
+The result is:
 
     size     {target_size:,} bytes
     CRC-32   {target_crc:08X}
@@ -257,7 +283,8 @@ to its rights holders (Square / Lightweight, 1998); this project is not
 affiliated with them or with Sony. The patch holds what ReBushido's
 program has that the retail one does not: its own code, the functions
 it changes, the addresses that moved, and the error codes of the sectors
-it changes.
+it changes. ReBushidoPatcher.exe is built from tools/patcher/patcher.c
+of that source, under the same licence.
 """
 
 
@@ -274,8 +301,12 @@ def main():
     with open(EXE, "rb") as f:
         exe = f.read()
     version, commit = version_of(Elf(ELF), exe)
+    patcher = os.path.join(args.out_dir, PATCHER)
     if args.release:
         problems = []
+        if not os.path.exists(patcher + ".exe"):
+            problems.append("no %s.exe, the players' patcher (`make patcher` builds it where mingw-w64 "
+                            "is installed)" % patcher)
         if version.endswith("-dev"):
             problems.append("the version is %s: build with RB_RELEASE=1" % version)
         if commit.endswith("-dirty") or commit == "unknown":
@@ -343,6 +374,16 @@ def main():
     if trip_sha != target_sha:
         os.remove(patch_path)
         fail("the patch applied to the retail image is not %s" % DISC)
+
+    # The same with the players' patcher, as built for this host.
+    if os.path.exists(patcher):
+        trip_sha = patcher_applied(patcher, patch_path, args.retail, args.out_dir)
+        print("  by %s    SHA-1 %s" % (PATCHER, trip_sha))
+        if trip_sha != target_sha:
+            os.remove(patch_path)
+            fail("the patch applied by %s to the retail image is not %s" % (patcher, DISC))
+    else:
+        print("  no %s: the patcher was not tried (`make patcher` builds it)" % patcher)
 
     title = "ReBushido %s (%s)" % (version, commit)
     with open(os.path.join(args.out_dir, "README.txt"), "w", encoding="utf-8", newline="\r\n") as f:

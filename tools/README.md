@@ -63,6 +63,7 @@ your own copy of the disc.
 |---|---|
 | `extract_iso.py` | Extracts the files of a disc image to `disc/` |
 | `rebushido_patch.py`, `rebushido_release.py` | A ReBushido release: the BPS patch against the retail image, made and applied with the standard library alone, and what `make rebushido-patch` puts beside it (`docs/REBUSHIDO.md`, "Making a release") |
+| `patcher/patcher.c` | The players' patcher, `ReBushidoPatcher`: one file of C that applies a release's patch to the player's image, with the "open file" window and message boxes on Windows and plain arguments and exit codes in a shell. `make patcher` builds it for the host and for Windows (mingw-w64) into `build/release/` (`docs/REBUSHIDO.md`, "Applying the patch") |
 | `build_disc.py` | Builds a disc image from the original plus a rebuilt executable and replaced files |
 | `unpack_all.py` | An inventory of every asset file under `disc/` |
 | `inspect_ndata.py`, `repack_ndata.py` | The NDATA archive (models, stages, weapons, cutscenes) |
