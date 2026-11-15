@@ -475,8 +475,7 @@ static void port_GlQuit(s32 code) {
 
     (void)code;
     port_RemasterGetView(&view);
-    fprintf(stderr,
-            "gl run view distance %s antialiasing %d aspect %d:%d\n",
+    fprintf(stderr, "gl run view distance %s antialiasing %d aspect %d:%d\n",
             port_NameRemasterDistance(view.distance), view.supersample,
             view.aspect_w, view.aspect_h);
     /* every store of a fixed size the drawing path fills, and the least
@@ -584,8 +583,9 @@ int main(int argc, char **argv) {
             view.supersample = !strcmp(how, "off") ? 1 : atoi(how);
             if (view.supersample < 1 ||
                 view.supersample > PORT_SUPERSAMPLE_MAX) {
-                fprintf(stderr, "rebushido-gl: --antialiasing takes off, or "
-                                "2 to %d\n",
+                fprintf(stderr,
+                        "rebushido-gl: --antialiasing takes off, or "
+                        "2 to %d\n",
                         PORT_SUPERSAMPLE_MAX);
                 return PORT_EXIT_USAGE;
             }

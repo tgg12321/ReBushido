@@ -514,8 +514,8 @@ static void port_AddPoke(char **words, s32 count) {
     poke->first = 0;
     poke->last = 0;
     if (poke->size != 1 && poke->size != 2 && poke->size != 4) {
-        port_Fail("rebushido: a `poke` writes 1, 2 or 4 bytes, not %d\n",
-                  poke->size);
+        port_Fail(
+            "rebushido: a `poke` writes 1, 2 or 4 bytes, not %d\n", poke->size);
     }
     if (poke->hold == 0) {
         poke->hold = 1;

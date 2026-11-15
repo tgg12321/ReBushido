@@ -175,15 +175,15 @@ extern u32 port_RemasterPrimBufferBytes(void);
  * room any frame left in it. Drawing more of the stage fills all of
  * them, so each is counted and reported. */
 typedef struct {
-    u32 frames;        /* frames these were measured over */
-    s32 prim_bytes;    /* the frame's primitive buffer is this large */
-    s32 prim_free;     /* ... and this little was left, at the worst */
-    s32 queue_size;    /* entries of the renderer's queue */
-    s32 queue_free;    /* ... left at the worst */
-    u32 ot_farthest;   /* the farthest ordering-table slot a frame used */
-    u32 tiles;         /* tiles a frame queued, at most */
-    u32 nodes;         /* ... and pieces of the stage */
-    u32 side_full;     /* times the side channel's tables were full */
+    u32 frames;      /* frames these were measured over */
+    s32 prim_bytes;  /* the frame's primitive buffer is this large */
+    s32 prim_free;   /* ... and this little was left, at the worst */
+    s32 queue_size;  /* entries of the renderer's queue */
+    s32 queue_free;  /* ... left at the worst */
+    u32 ot_farthest; /* the farthest ordering-table slot a frame used */
+    u32 tiles;       /* tiles a frame queued, at most */
+    u32 nodes;       /* ... and pieces of the stage */
+    u32 side_full;   /* times the side channel's tables were full */
 } PortRemasterLimits;
 
 /* What a frame left of its primitive buffer (src/main/main.c). Called
@@ -210,7 +210,7 @@ extern const PortRemasterLimits *port_GetRemasterLimits(void);
 #define PORT_REMASTER_ONE (1 << PORT_REMASTER_FRACTION)
 
 typedef struct {
-    s32 x;       /* 16.16 pixels, before the drawing offset */
+    s32 x; /* 16.16 pixels, before the drawing offset */
     s32 y;
     s32 depth;   /* the sum the GTE shifted into SZ, not held to 16 bits */
     s32 divided; /* h / depth, 16 bits of fraction, as SXY was made with */
@@ -380,14 +380,14 @@ enum {
 typedef struct {
     u32 seen[PORT_REMASTER_COUNT_KINDS];  /* commands the GPU was given */
     u32 drawn[PORT_REMASTER_COUNT_KINDS]; /* ... that the backend drew */
-    u32 with_depth;   /* primitives whose every corner had a depth */
+    u32 with_depth;    /* primitives whose every corner had a depth */
     u32 without_depth; /* ... and that had not: drawn flat */
-    u32 points;       /* points the GTE wrote down */
-    u32 faces;        /* faces the renderer said */
-    u32 attached;     /* primitives a face was attached to */
-    u32 point_misses; /* corners whose point was not written down */
-    u32 full;         /* times a table was full and something was lost */
-    u32 masked;       /* primitives drawn while the mask bit was in use */
+    u32 points;        /* points the GTE wrote down */
+    u32 faces;         /* faces the renderer said */
+    u32 attached;      /* primitives a face was attached to */
+    u32 point_misses;  /* corners whose point was not written down */
+    u32 full;          /* times a table was full and something was lost */
+    u32 masked;        /* primitives drawn while the mask bit was in use */
     /* textured primitives whose page this frame had drawn into: their
      * texture is pixels the software GPU made, which the backend's
      * mirror of video memory has at the console's resolution and not

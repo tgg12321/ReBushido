@@ -53,9 +53,8 @@ static void test_Place(void) {
     test_CheckPlace(-5, 480, PORT_SCALE_STRETCH, 0, 0, 0, 0);
 }
 
-static void test_CheckShape(s32 window_w, s32 window_h, s32 mode,
-                            s32 picture_w, s32 picture_h, s32 x, s32 y, s32 w,
-                            s32 h) {
+static void test_CheckShape(s32 window_w, s32 window_h, s32 mode, s32 picture_w,
+                            s32 picture_h, s32 x, s32 y, s32 w, s32 h) {
     PortRect place;
 
     port_FitShape(window_w, window_h, mode, picture_w, picture_h, &place);

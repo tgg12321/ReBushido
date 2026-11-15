@@ -135,7 +135,7 @@ static const s32 g_rect_sizes[] = {0, 1, 8, 16};
 static const s32 g_fog_factors[PORT_DISTANCE_KINDS] = {
     PORT_FOG_FACTOR_ONE, 2 * PORT_FOG_FACTOR_ONE, 4 * PORT_FOG_FACTOR_ONE};
 
-static const char *const g_distance_names[PORT_DISTANCE_KINDS] = {
+static const char * const g_distance_names[PORT_DISTANCE_KINDS] = {
     "original", "far", "max"};
 
 static PortRemasterView g_view;
@@ -272,8 +272,7 @@ u32 *port_RemasterPrimBuffer(s32 which) {
     if (!g_prim_buffers_are_the_games || which < 0 || which > 1) {
         return NULL;
     }
-    return (u32 *)ADDR(
-        PORT_PRIMS_ADDR + (u32)which * PORT_PRIM_BUFFER_BYTES);
+    return (u32 *)ADDR(PORT_PRIMS_ADDR + (u32)which * PORT_PRIM_BUFFER_BYTES);
 }
 
 u32 port_RemasterPrimBufferBytes(void) {
@@ -948,8 +947,7 @@ void port_RemasterCommand(const u32 *words, s32 count) {
                 (s32)(words[2] & VRAM_X_MASK),
                 (s32)((words[2] >> HALF_SHIFT) & VRAM_Y_MASK),
                 port_RemasterTransferSize(words[3] & HALF_MASK, VRAM_X_MASK),
-                port_RemasterTransferSize(
-                    words[3] >> HALF_SHIFT, VRAM_Y_MASK));
+                port_RemasterTransferSize(words[3] >> HALF_SHIFT, VRAM_Y_MASK));
         }
         break;
     case COMMAND_SETTINGS:

@@ -30,12 +30,14 @@ static PortRemasterPrim g_drawn_prims[DRAWN_MAX];
 static s32 g_drawn_count;
 static s32 g_begins;
 static s32 g_ends;
+
 static struct {
     s32 x;
     s32 y;
     s32 w;
     s32 h;
 } g_wrote;
+
 static s32 g_writes;
 
 static void test_Begin(void) { g_begins++; }
@@ -227,16 +229,17 @@ static void test_View(void) {
     CHECK_EQ(port_ReadRemasterDistance("maxi"), -1);
     CHECK_EQ(port_ReadRemasterDistance("ma"), -1);
     CHECK_EQ(port_ReadRemasterDistance(""), -1);
-    CHECK(test_TextsAreEqual(port_NameRemasterDistance(PORT_DISTANCE_MAX),
-                             "max"));
+    CHECK(test_TextsAreEqual(
+        port_NameRemasterDistance(PORT_DISTANCE_MAX), "max"));
     CHECK(test_TextsAreEqual(port_NameRemasterDistance(-1), "?"));
 
     /* the fog's reach for each, in 256ths of the console's */
-    CHECK_EQ(port_RemasterFogFactor(PORT_DISTANCE_ORIGINAL),
-             PORT_FOG_FACTOR_ONE);
-    CHECK_EQ(port_RemasterFogFactor(PORT_DISTANCE_FAR),
-             2 * PORT_FOG_FACTOR_ONE);
-    CHECK_EQ(port_RemasterFogFactor(PORT_DISTANCE_MAX), 4 * PORT_FOG_FACTOR_ONE);
+    CHECK_EQ(
+        port_RemasterFogFactor(PORT_DISTANCE_ORIGINAL), PORT_FOG_FACTOR_ONE);
+    CHECK_EQ(
+        port_RemasterFogFactor(PORT_DISTANCE_FAR), 2 * PORT_FOG_FACTOR_ONE);
+    CHECK_EQ(
+        port_RemasterFogFactor(PORT_DISTANCE_MAX), 4 * PORT_FOG_FACTOR_ONE);
     CHECK_EQ(port_RemasterFogFactor(-1), PORT_FOG_FACTOR_ONE);
     CHECK_EQ(port_RemasterFogFactor(PORT_DISTANCE_KINDS), PORT_FOG_FACTOR_ONE);
     /* only the whole stage needs the renderer's coarser far scale */

@@ -670,9 +670,9 @@ void main(void) {
 
         {
 #if RB_REMASTER_VIEW
-            s32 remaining = (s32)(g_disp_prim_buffers[index] +
-                                  g_disp_prim_buffer_size) -
-                            (s32)g_disp_prim_cursor;
+            s32 remaining =
+                (s32)(g_disp_prim_buffers[index] + g_disp_prim_buffer_size) -
+                (s32)g_disp_prim_cursor;
 #else
             s32 remaining = g_disp_prim_buffers[index] + SYS_PRIM_BUFFER_SIZE -
                             (s32)g_disp_prim_cursor;

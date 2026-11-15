@@ -455,9 +455,9 @@ int main(int argc, char **argv) {
                 1 + port_ChooseWord("--inject takes keys or pads, not ",
                                     argv[++i], "keys", "pads", NULL);
         } else if (strcmp(word, "--graphics") == 0 && has_value) {
-            graphics = port_ChooseWord(
-                "--graphics takes original or remastered, not ", argv[++i],
-                "original", "remastered", NULL);
+            graphics =
+                port_ChooseWord("--graphics takes original or remastered, not ",
+                                argv[++i], "original", "remastered", NULL);
         } else if (strcmp(word, "--resolution") == 0 && has_value) {
             resolution = atoi(argv[++i]);
             if (resolution < 0 || resolution > PORT_REMASTER_SCALE_MAX) {
@@ -484,8 +484,8 @@ int main(int argc, char **argv) {
             const char *colon = strchr(shape, ':');
 
             if (colon == NULL || atoi(shape) <= 0 || atoi(colon + 1) <= 0) {
-                port_Complain("--aspect takes W:H, as 4:3 or 16:9, not ",
-                              shape);
+                port_Complain(
+                    "--aspect takes W:H, as 4:3 or 16:9, not ", shape);
             }
             aspect_w = atoi(shape);
             aspect_h = atoi(colon + 1);

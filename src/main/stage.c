@@ -203,8 +203,7 @@ void stage_QueueFog(s32 stage, s32 eye_distance) {
                 *(s16 *)((u8 *)g_stage_fog_settings + 2 + index));
             stage_QueueFogMoves(
                 eye_distance, STAGE_MODEL_FOG_LEVELS, g_stage_model_fog_moves,
-                span_limit,
-                *(s16 *)((u8 *)g_stage_fog_settings + 2 + index));
+                span_limit, *(s16 *)((u8 *)g_stage_fog_settings + 2 + index));
 #else
             stage_QueueFogMoves(
                 eye_distance, STAGE_FOG_LEVELS, g_stage_fog_moves,

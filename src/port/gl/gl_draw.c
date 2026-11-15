@@ -227,8 +227,8 @@ static struct {
     s32 host_h;
     s32 scale_x; /* a pixel of video memory is this many of the picture */
     s32 scale_y;
-    s32 sample;  /* ... and this many of those each way are averaged */
-    s32 draw_x;  /* scale_x times sample: the colour buffer's own scale */
+    s32 sample; /* ... and this many of those each way are averaged */
+    s32 draw_x; /* scale_x times sample: the colour buffer's own scale */
     s32 draw_y;
     s32 target_w;
     s32 target_h;
@@ -535,9 +535,9 @@ static const char g_gl_resolve_fragment_text[] =
 static const char g_gl_show_vertex_text[] =
     "#version 330 core\n"
     "layout(location = 0) in vec2 a_corner;\n" /* 0 or 1, each way */
-    "uniform vec4 u_dest;\n"    /* in the window's pixels */
+    "uniform vec4 u_dest;\n"                   /* in the window's pixels */
     "uniform vec2 u_window;\n"
-    "uniform vec4 u_source;\n"  /* in the texture's texels */
+    "uniform vec4 u_source;\n" /* in the texture's texels */
     "uniform vec2 u_texture;\n"
     "out vec2 v_at;\n"
     "void main() {\n"
@@ -1020,8 +1020,7 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
 static void port_GlClearBands(s32 top, s32 height) {
     s32 left = g_gl.display_x * g_gl.draw_x;
     s32 band = g_gl.margin * g_gl.draw_x;
-    s32 right =
-        (g_gl.display_x + g_gl.margin + g_gl.display_w) * g_gl.draw_x;
+    s32 right = (g_gl.display_x + g_gl.margin + g_gl.display_w) * g_gl.draw_x;
 
     if (g_gl.margin <= 0 || g_gl.display_w <= 0) {
         return;
@@ -1056,8 +1055,7 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
     glUniform1i(g_gl.blit_at_vram, 0);
     glUniform2f(
         g_gl.blit_at_target, (GLfloat)g_gl.target_w, (GLfloat)g_gl.target_h);
-    glUniform2f(
-        g_gl.blit_at_scale, (GLfloat)g_gl.draw_x, (GLfloat)g_gl.draw_y);
+    glUniform2f(g_gl.blit_at_scale, (GLfloat)g_gl.draw_x, (GLfloat)g_gl.draw_y);
     glUniform4f(g_gl.blit_at_rect, (GLfloat)rect.left, (GLfloat)rect.top,
                 (GLfloat)(rect.right - rect.left + 1),
                 (GLfloat)(rect.bottom - rect.top + 1));
@@ -1218,12 +1216,13 @@ const char *port_GlStart(
     g_gl.blit_at_scale = glGetUniformLocation(g_gl.blit_program, "u_scale");
     g_gl.blit_at_vram = glGetUniformLocation(g_gl.blit_program, "u_vram");
     g_gl.blit_at_shift = glGetUniformLocation(g_gl.blit_program, "u_shift");
-    g_gl.resolve_program =
-        port_GlMakeProgram(g_gl_resolve_vertex_text, g_gl_resolve_fragment_text);
+    g_gl.resolve_program = port_GlMakeProgram(
+        g_gl_resolve_vertex_text, g_gl_resolve_fragment_text);
     if (g_gl.resolve_program == 0) {
         return g_gl.problem;
     }
-    g_gl.resolve_at_color = glGetUniformLocation(g_gl.resolve_program, "u_color");
+    g_gl.resolve_at_color =
+        glGetUniformLocation(g_gl.resolve_program, "u_color");
     g_gl.resolve_at_sample =
         glGetUniformLocation(g_gl.resolve_program, "u_sample");
     g_gl.resolve_at_at = glGetUniformLocation(g_gl.resolve_program, "u_at");
@@ -1321,8 +1320,7 @@ static s32 port_GlResolve(void) {
     glBindTexture(GL_TEXTURE_2D, g_gl.color_texture);
     glUniform1i(g_gl.resolve_at_color, 0);
     glUniform1i(g_gl.resolve_at_sample, g_gl.sample);
-    glUniform2f(g_gl.resolve_at_at,
-                (GLfloat)(g_gl.display_x * g_gl.draw_x),
+    glUniform2f(g_gl.resolve_at_at, (GLfloat)(g_gl.display_x * g_gl.draw_x),
                 (GLfloat)(g_gl.display_y * g_gl.draw_y));
     glDrawArrays(GL_TRIANGLES, 0, 6);
     g_gl.draw_count++;
@@ -1366,9 +1364,9 @@ s32 port_GlReadPicture(u32 *out, u32 room, s32 *out_w, s32 *out_h) {
         glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
     } else {
         glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
-        glReadPixels(g_gl.display_x * g_gl.scale_x,
-                     g_gl.display_y * g_gl.scale_y, w, h, GL_RGBA,
-                     GL_UNSIGNED_BYTE, out);
+        glReadPixels(
+            g_gl.display_x * g_gl.scale_x, g_gl.display_y * g_gl.scale_y, w, h,
+            GL_RGBA, GL_UNSIGNED_BYTE, out);
     }
     /* the pixels come as red, green, blue, alpha; the port's are
      * 0xFFRRGGBB */
@@ -1430,10 +1428,10 @@ static void port_GlLeaveWindow(void) {
 }
 
 /* A rectangle of a texture into a rectangle of the window. */
-static void port_GlPresent(GLuint texture, s32 texture_w, s32 texture_h,
-                           s32 source_x, s32 source_y, s32 source_w,
-                           s32 source_h, s32 window_w, s32 window_h, s32 x,
-                           s32 y, s32 w, s32 h, s32 is_linear, s32 is_over) {
+static void port_GlPresent(
+    GLuint texture, s32 texture_w, s32 texture_h, s32 source_x, s32 source_y,
+    s32 source_w, s32 source_h, s32 window_w, s32 window_h, s32 x, s32 y, s32 w,
+    s32 h, s32 is_linear, s32 is_over) {
     GLint filter = is_linear ? GL_LINEAR : GL_NEAREST;
 
     glUseProgram(g_gl.show_program);
@@ -1443,14 +1441,12 @@ static void port_GlPresent(GLuint texture, s32 texture_w, s32 texture_h,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
     glUniform1i(g_gl.show_at_picture, 0);
-    glUniform4f(g_gl.show_at_dest, (GLfloat)x, (GLfloat)y, (GLfloat)w,
-                (GLfloat)h);
-    glUniform2f(
-        g_gl.show_at_window, (GLfloat)window_w, (GLfloat)window_h);
+    glUniform4f(
+        g_gl.show_at_dest, (GLfloat)x, (GLfloat)y, (GLfloat)w, (GLfloat)h);
+    glUniform2f(g_gl.show_at_window, (GLfloat)window_w, (GLfloat)window_h);
     glUniform4f(g_gl.show_at_source, (GLfloat)source_x, (GLfloat)source_y,
                 (GLfloat)source_w, (GLfloat)source_h);
-    glUniform2f(
-        g_gl.show_at_texture, (GLfloat)texture_w, (GLfloat)texture_h);
+    glUniform2f(g_gl.show_at_texture, (GLfloat)texture_w, (GLfloat)texture_h);
     glUniform1i(g_gl.show_at_over, is_over ? 1 : 0);
     if (is_over) {
         glEnable(GL_BLEND);
@@ -1477,8 +1473,8 @@ void port_GlClearWindow(s32 window_w, s32 window_h) {
     port_GlLeaveWindow();
 }
 
-s32 port_GlShowPicture(s32 window_w, s32 window_h, s32 x, s32 y, s32 w, s32 h,
-                       s32 is_linear) {
+s32 port_GlShowPicture(
+    s32 window_w, s32 window_h, s32 x, s32 y, s32 w, s32 h, s32 is_linear) {
     s32 picture_w = (g_gl.display_w + 2 * g_gl.margin) * g_gl.scale_x;
     s32 picture_h = g_gl.display_h * g_gl.scale_y;
 
@@ -1502,9 +1498,9 @@ s32 port_GlShowPicture(s32 window_w, s32 window_h, s32 x, s32 y, s32 w, s32 h,
     return TRUE;
 }
 
-s32 port_GlShowPixels(const u32 *pixels, s32 pixels_w, s32 pixels_h,
-                      s32 window_w, s32 window_h, s32 x, s32 y, s32 w, s32 h,
-                      s32 is_linear, s32 is_over) {
+s32 port_GlShowPixels(
+    const u32 *pixels, s32 pixels_w, s32 pixels_h, s32 window_w, s32 window_h,
+    s32 x, s32 y, s32 w, s32 h, s32 is_linear, s32 is_over) {
     if (!g_gl.is_started || pixels_w <= 0 || pixels_h <= 0 || w <= 0 ||
         h <= 0) {
         return FALSE;
@@ -1522,9 +1518,9 @@ s32 port_GlShowPixels(const u32 *pixels, s32 pixels_w, s32 pixels_h,
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, pixels_w, pixels_h, GL_BGRA,
                     GL_UNSIGNED_BYTE, pixels);
     port_GlTakeWindow(window_w, window_h);
-    port_GlPresent(g_gl.host_texture, pixels_w, pixels_h, 0, 0, pixels_w,
-                   pixels_h, window_w, window_h, x, y, w, h, is_linear,
-                   is_over);
+    port_GlPresent(
+        g_gl.host_texture, pixels_w, pixels_h, 0, 0, pixels_w, pixels_h,
+        window_w, window_h, x, y, w, h, is_linear, is_over);
     port_GlLeaveWindow();
     return TRUE;
 }

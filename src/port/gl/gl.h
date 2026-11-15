@@ -101,16 +101,16 @@ extern void port_GlClearWindow(s32 window_w, s32 window_h);
 /* The picture into the rectangle `x`, `y`, `w` by `h` of the window, `y`
  * from its top. `is_linear` smooths it where the rectangle is not a whole
  * multiple of the picture. FALSE if there is no picture to draw. */
-extern s32 port_GlShowPicture(s32 window_w, s32 window_h, s32 x, s32 y, s32 w,
-                              s32 h, s32 is_linear);
+extern s32 port_GlShowPicture(
+    s32 window_w, s32 window_h, s32 x, s32 y, s32 w, s32 h, s32 is_linear);
 
 /* Pixels of the host's own (0xAARRGGBB each, a row after a row from the
  * top) into the same kind of rectangle: the software GPU's picture where
  * that is what is shown, and the counter in the corner over it
  * (`is_over`: what is there shows through where the pixels are clear). */
-extern s32 port_GlShowPixels(const u32 *pixels, s32 pixels_w, s32 pixels_h,
-                             s32 window_w, s32 window_h, s32 x, s32 y, s32 w,
-                             s32 h, s32 is_linear, s32 is_over);
+extern s32 port_GlShowPixels(
+    const u32 *pixels, s32 pixels_w, s32 pixels_h, s32 window_w, s32 window_h,
+    s32 x, s32 y, s32 w, s32 h, s32 is_linear, s32 is_over);
 
 /* The window's own pixels as they are now, 0xFFRRGGBB each, a row after a
  * row from the top: at most `room` of them. For a test's picture of what

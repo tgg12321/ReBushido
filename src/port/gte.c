@@ -835,7 +835,7 @@ void port_GteStoreData(s32 first, void *words, s32 count) {
 
         ((u32 *)words)[i] = port_GteReadData(first + i);
         if (precise != NULL && precise->depth != 0) {
-            port_RemasterNotePoint((PortAddress)&((u32 *)words)[i], precise);
+            port_RemasterNotePoint((PortAddress) & ((u32 *)words)[i], precise);
         }
     }
 }
