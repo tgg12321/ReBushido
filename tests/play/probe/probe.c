@@ -48,6 +48,14 @@ static u32 probe_CallWalk(void *routine, u32 a0, u32 a1, u32 a2, u32 a3);
     (g_probe_walk.mesh = (u8 *)probe_CallWalk(                                 \
          render_DrawSkinnedMesh, (u32)(bones), (u32)(start), (u32)(view),      \
          (u32)(depth_shift)))
+/* The cloth's walk and the tiles' take their arguments as C functions
+ * do, but leave the mesh cursor's register changed, which a C function
+ * may not: they are called like the others. */
+#define PROBE_DRAW_CLOTH(node, scale_shift)                                    \
+    probe_CallWalk(render_DrawCloth, (u32)(node), (u32)(scale_shift), 0, 0)
+#define PROBE_DRAW_TILES(queue, tile, view)                                    \
+    probe_CallWalk(                                                            \
+        render_DrawStageTiles, (u32)(queue), (u32)(tile), (u32)(view), 0)
 
 #include "render_cases.h"
 

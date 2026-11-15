@@ -37,10 +37,10 @@ No dates.
    counted, and the stages). First a C equivalent beside each piece of
    assembly, checked by host tests and against the emulator; the
    PlayStation build keeps the assembly, and `decomp` is not touched.
-   Begun: the GTE is in C, with every instruction of the game's that
-   reaches it, and so are Sony's libgte and the game's maths routines,
-   68 of the 138 functions that are assembly; the renderer's 51 are
-   left. Then Sony's libraries (graphics, sound, disc, pad, memory card)
+   That first stage is done: the GTE is in C, with every instruction of
+   the game's that reaches it, and so are Sony's libgte, the game's
+   maths routines and the renderer, 119 of the 138 functions that are
+   assembly (the other 19 need no C). Then Sony's libraries (graphics, sound, disc, pad, memory card)
    answered by PC code: the menu in a window, then a fight, then sound.
    The game's code stays C.
 7. **The picture.** A wide picture, high resolution and a high frame rate

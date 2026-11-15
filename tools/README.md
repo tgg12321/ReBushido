@@ -41,7 +41,7 @@ PCSX-Redux. How to run them and how a test is written:
 | `playtest.py` | `make playtest` (`bash tools/build.sh playtest [name...]`; `python tools/playtest.py [name...]` with the discs already built): runs the tests of `tests/play/` in the emulator with no window, one run at a time, each ended by a time limit; a table of test, result and time, exit 1 if one failed; "skipped", and exit 0, where the emulator or a disc is missing. Pictures and logs go to `build/playtest/`. `--symbols ELF OUT` writes the table of a built disc's names, which the disc targets run |
 | `play/runner.lua` | The emulator's side: the one script it is given. It reads the run's plan (data, not generated Lua), presses the pads, writes down the watched values at each checkpoint, takes the pictures, and ends the run on a crash (an exception, the program counter astray, no frame for too long) |
 | `play/launch.py` | Starts the emulator so that nothing of it is seen or left: on Windows on a desktop of its own, with the system's error boxes off, in a job that is ended as a whole; reports any visible window and any process left |
-| `gte_probe.py` | After the play test `gte_model` has failed: the cases the emulator and the native port's C made different things of, register by register (it reads what the probe left, and runs the host tests' programs for the port's side). `tests/play/README.md`, "The GTE probe" |
+| `gte_probe.py` | After the play test `gte_model` has failed: the cases the emulator and the native port's C made different things of, register by register, and for a case of the renderer's word by word of memory (it reads what the probe left, and runs the host tests' programs for the port's side). `tests/play/README.md`, "The GTE probe" |
 
 ## Working on the source
 

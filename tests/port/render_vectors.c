@@ -11,13 +11,13 @@
 u32 *g_disp_prim_cursor;
 u32 *g_render_tiny_ot;
 LightSetup g_light_setups[LIGHT_SETUP_COUNT];
-s32 g_render_outline_color_set; /* how often the colour was set */
+SceneSettings g_scene_settings;
+MATRIX g_model_tiny_matrix;
 
 /* The game's own function is in model.c with the models; this is the
  * line the port has there. */
 void render_SetOutlineColor(s32 color) {
     g_render_outline_color = color & RENDER_OUTLINE_COLOR_MASK;
-    g_render_outline_color_set++;
 }
 
 /* sys_Trap's end of the line; no case runs it. */
@@ -41,6 +41,11 @@ void port_Trap(void){}
     (render_DrawSkinnedMesh(                                                   \
          (s32)(matrices), (s32)(mesh), (s32)(view), (s32)(depth_shift)),       \
      PROBE_WALK_OUT())
+
+#define PROBE_DRAW_CLOTH(node, scale_shift)                                    \
+    (g_render_walk.node = (node), render_DrawCloth((s32)(scale_shift)))
+#define PROBE_DRAW_TILES(queue, tile, view)                                    \
+    render_DrawStageTiles(queue, tile, view)
 
 #include "play/probe/render_cases.h"
 

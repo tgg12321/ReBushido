@@ -577,7 +577,7 @@ reading the game's memory by the names of the source:
 | `bugfixes_fight` | With Bugfixes turned on at the options page: the opening, the menus, a versus fight to a kill, the replay and the menu after, with no crash |
 | `first_frame_sweep` | A naginata's first frame sweeps its shaft from a stale place; with Bugfixes on, from where it is |
 | `vanish` | Off the shrine's stage the vanisher, struck, comes back at another stage's place and falls out of the stage; with Bugfixes on it comes back where it started and stands |
-| `gte_model` | The native port's GTE in C, and its C beside the assembly, make of 116,000 made-up cases what the emulator's GTE and the assembly make of them ([`PORT.md`](PORT.md)). It runs a program of the tests' own with no disc |
+| `gte_model` | The native port's GTE in C, and its C beside the assembly, make of 125,800 made-up cases what the emulator's GTE and the assembly make of them ([`PORT.md`](PORT.md)). It runs a program of the tests' own with no disc |
 
 They are not among the checks and GitHub Actions does not run them: they
 need your own retail image and the emulator, which are never in the

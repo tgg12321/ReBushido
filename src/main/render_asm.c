@@ -260,6 +260,170 @@ RenderWalk g_render_walk;
 #define SKIN_CARRY_SIZE 6
 #define SKIN_CARRY_END 0xFFFF
 
+/* A cloth's node is followed by a pointer to its points, each this many
+ * bytes and beginning with where it is, in units of 1/128. The table of
+ * the cloth's routines has the four that draw it as outlines after the
+ * four that draw it. */
+#define CLOTH_NODE_POINTS 0x60
+#define CLOTH_POINT_SIZE 0x40
+#define CLOTH_POINT_SHIFT 7
+#define CLOTH_OUTLINE_HANDLERS 4
+/* A group's routine is found by its type less its low three bits. */
+#define CLOTH_TYPE_SHIFT 3
+
+/* ---- the walk over the queue ---- */
+
+/* What the setup of a node keeps on the scratchpad: where the node is
+ * from the camera, scaled down, as a vector; the view times the node's
+ * matrix (for a shadow, the matrix that flattens it); and the lights
+ * turned into the node's space. */
+#define RENDER_NODE_PLACE ((s16 *)(SCRATCHPAD + 0x20))
+#define RENDER_NODE_MATRIX ((MATRIX *)(SCRATCHPAD + 0x28))
+#define RENDER_NODE_LIGHTS ((MATRIX *)(SCRATCHPAD + 0x48))
+/* The word after a SceneNode in the records that begin with one: a
+ * shadow's ground height, a body's list of bone matrices. */
+#define RENDER_NODE_EXTRA 0x58
+/* A node's coordinates are scaled down by two bits, by one if it is
+ * nearer the camera than the second of these any way, by none if nearer
+ * than the first; a body has its own two. */
+#define RENDER_NEAR 0x4A00
+#define RENDER_FAR 0xA500
+#define RENDER_SKIN_NEAR 0x5A00
+#define RENDER_SKIN_FAR 0xB500
+/* The formats of a part's vertices past the two of mesh.h: the tiny
+ * model's; none, which no mesh has; and packed, drawn with the packed
+ * table. */
+#define RENDER_FORMAT_TINY 2
+#define RENDER_FORMAT_NONE 3
+#define RENDER_FORMAT_PACKED 4
+/* Where the outline routines start in the usual table. */
+#define RENDER_OUTLINE_HANDLERS 44
+/* The middle of the screen the scene is projected about, and the tiny
+ * model's. */
+#define RENDER_CENTER_X 320
+#define RENDER_CENTER_Y 120
+#define TINY_CENTER_X 80
+#define TINY_CENTER_Y 60
+
+/* ---- stage tiles ---- */
+
+/* What the tiles' routines keep on the scratchpad. The walk over the
+ * tiles: the corners' depths; the view as it is (four words and a
+ * halfword) and scaled down with its second row halved (nine halfwords);
+ * the part's vertices; where the camera is; the renderer's options; how
+ * far a depth is shifted down; the tiles' table of mesh pointers. */
+#define RENDER_TILE_DEPTHS ((s16 *)(SCRATCHPAD + 0x110))
+#define TILE_VIEW ((u32 *)(SCRATCHPAD + 0x188))
+#define TILE_SCALED_VIEW ((s16 *)(SCRATCHPAD + 0x19C))
+#define TILE_VERTICES (*(s16 **)(SCRATCHPAD + 0x1B0))
+#define TILE_CAMERA ((s32 *)(SCRATCHPAD + 0x1B4))
+#define TILE_OPTIONS (*(s32 *)(SCRATCHPAD + 0x1C0))
+#define TILE_DEPTH_SHIFT (*(s16 *)(SCRATCHPAD + 0x1C6))
+#define TILE_MESHES (*(s32 *)(SCRATCHPAD + 0x1C8))
+/* The routines that draw a group: the top half of a quad's colour word;
+ * the face's colour table and texture page; its colour once lit; how
+ * many faces are left; the vertices; the ordering-table entry a cut face
+ * is linked at; the tile's flags, whose low byte is how often to cut and
+ * whose next has the blending bit; the corners' texture points; and the
+ * levels of the cutting, which start four bytes on for a quad. */
+#define TILE_CODE (*(u16 *)(SCRATCHPAD + 0x1C4))
+#define TILE_CLUT (*(u16 *)(SCRATCHPAD + 0x1CC))
+#define TILE_TPAGE (*(u16 *)(SCRATCHPAD + 0x1CE))
+#define TILE_COLOR (*(u32 *)(SCRATCHPAD + 0x1D0))
+#define TILE_LEFT (*(s32 *)(SCRATCHPAD + 0x1D4))
+#define TILE_SPLIT_VERTICES (*(s16 **)(SCRATCHPAD + 0x1D8))
+#define TILE_ENTRY (*(u32 **)(SCRATCHPAD + 0x1DC))
+#define TILE_FLAGS (*(s16 *)(SCRATCHPAD + 0x1E0))
+#define TILE_CUTS (*(s8 *)(SCRATCHPAD + 0x1E0))
+#define TILE_BLEND (*(s8 *)(SCRATCHPAD + 0x1E1))
+#define TILE_UV ((u16 *)(SCRATCHPAD + 0x1E2))
+#define TILE_FRAMES_FT3 ((TileFrame *)(SCRATCHPAD + 0x210))
+#define TILE_FRAMES_FT4 ((TileFrame *)(SCRATCHPAD + 0x214))
+
+/* A tile in the queue, in bytes: its kind and no flags in a halfword (a
+ * tile is not a node), the block and entry of its mesh, its flags, and
+ * where it is on the ground. */
+#define RENDER_KIND_TILE 12
+#define TILE_BLOCK 2
+#define TILE_MESH 4
+#define TILE_FLAGS_AT 6
+#define TILE_X 8
+#define TILE_Z 12
+/* The tiles are lit by this light setup, and their meshes are of this
+ * block. */
+#define TILE_LIGHT_SETUP 4
+#define TILE_MESH_BLOCK 7
+/* A group's routine is found by its type less its low three bits. */
+#define TILE_TYPE_SHIFT 3
+
+/* The third byte of a tile's record: bit 0 sorts a quad a thousand
+ * farther off, and the two bits above it take cuts away from the tile's
+ * (0: the face is never cut). */
+#define EMIT_TILE_BITS 2
+#define TILE_FAR_BIT 1
+#define TILE_FAR_BIAS 1000
+#define TILE_CUT_FIELD(bits) (((bits) >> 1) & 3)
+/* The blending bit of a primitive's code, in its colour word. */
+#define TILE_BLEND_SHIFT 25
+/* A face is drawn only if a corner is above this line of the screen. */
+#define TILE_SCREEN_HEIGHT 240
+#define RENDER_HALF_SIGN 0x8000
+/* The renderer's options, as the tiles read them: the low two bits say
+ * how a face's texture points are scaled down (not at all; by the tile's
+ * cuts; by the face's size on the screen; by both), and the next colours
+ * the cut faces by how often they were cut. */
+#define TILE_OPTION_SHRINK 3
+#define TILE_SHRINK_BY_CUTS 1
+#define TILE_SHRINK_BY_SIZE 2
+#define TILE_OPTION_SHOW_CUTS 4
+/* The sizes on the screen under which a triangle's texture is taken
+ * smaller, twice and once; and a quad's. */
+#define TILE_FT3_SMALLEST 0x200
+#define TILE_FT3_SMALL 0x300
+#define TILE_FT4_SMALLEST 0x400
+#define TILE_FT4_SMALL 0x700
+/* The colours of a cut face, with the option that shows the cuts. */
+#define TILE_CUT_ONCE 0xFFFFFF00
+#define TILE_CUT_MORE 0xFFFF4000
+/* The v of a texture point. */
+#define TILE_V_MASK 0xFF00
+
+/* A corner of a face being cut: where it is and its texture point. */
+typedef struct {
+    s16 x;
+    s16 y;
+    s16 z;
+    u16 uv;
+} TileCorner;
+
+/* A level of the cutting, on the scratchpad as the listing has it: the
+ * listing's return address, which the C leaves alone; how many cuts are
+ * still to make; the corners. A triangle's fourth is a spare. */
+typedef struct {
+    u32 return_address;
+    s16 cuts_left;
+    s16 pad06;
+    TileCorner corner[4];
+} TileFrame;
+
+/* What the cutting keeps in registers: where the next primitive is
+ * built, the ordering table, and the link the next primitive gets, which
+ * is the last one built. */
+typedef struct {
+    u32 *prim;
+    u32 *ot;
+    u32 chain;
+} TileSplit;
+
+/* A routine of g_render_tile_handlers. */
+typedef s16 *(*TileHandler)(s32 count, s16 *vertices, s16 *records, s32 flags);
+
+/* Defined further down. */
+static void render_SplitFT3(TileSplit *split, TileFrame *frame, s32 cuts);
+static void render_SplitFT4(TileSplit *split, TileFrame *frame, s32 cuts);
+static void render_SplitMidpoint(
+    const TileCorner *first, const TileCorner *second, TileCorner *middle);
+
 /* In a record that begins with a SceneNode: how much of its light a tinted
  * face keeps, ONE for all of it. */
 #define RENDER_NODE_TINT 0x60
@@ -358,13 +522,18 @@ static s32 render_FaceDepth4(const RenderFace *face, const s16 *depths) {
 
 /* The ordering-table index of a depth: render_DepthToOt's sum (render.c),
  * with the console's shifts. */
-static s32 render_OtIndex(u32 depth) {
-    u32 scaled = depth >> (RENDER_DEPTH_SHIFT & RENDER_SHIFT_MASK);
+static s32 render_OtIndexShifted(u32 depth, s32 shift) {
+    u32 scaled = depth >> (shift & RENDER_SHIFT_MASK);
     u32 octave = scaled >> RENDER_OCTAVE_SHIFT;
     s32 fraction =
         (s32)(scaled & (RENDER_OCTAVE - 1)) - (RENDER_OT_FARTHEST + 1);
 
     return (fraction >> (octave & RENDER_SHIFT_MASK)) & RENDER_OT_FARTHEST;
+}
+
+/* The same, scaled down as the mesh being drawn is. */
+static s32 render_OtIndex(u32 depth) {
+    return render_OtIndexShifted(depth, RENDER_DEPTH_SHIFT);
 }
 
 /* Links a primitive of `length` words in at an entry of an ordering
@@ -379,6 +548,201 @@ static void render_LinkEntry(u32 *entry, void *prim, u32 length) {
 /* The same at entry `index` of the table being drawn into. */
 static void render_LinkPrim(s32 index, void *prim, u32 length) {
     render_LinkEntry(&((u32 *)RENDER_OT)[index], prim, length);
+}
+
+/* A light setup's ambient colour into the GTE: its three bytes, each
+ * times sixteen. */
+static void render_LoadBackColor(const LightSetup *lights) {
+    u32 color = RENDER_WORD(lights->back, 0);
+
+    port_GteWriteControl(PORT_GTE_RBK, (color << 4) & RENDER_COLOR_FIELD);
+    port_GteWriteControl(PORT_GTE_GBK, (color >> 4) & RENDER_COLOR_FIELD);
+    port_GteWriteControl(PORT_GTE_BBK, (color >> 12) & RENDER_COLOR_FIELD);
+}
+
+/* The vector the GTE has just turned becomes its translation, with y
+ * halved: the frame is half height. */
+static void render_LoadHalfHeightTranslation(void) {
+    port_GteWriteControl(PORT_GTE_TRX, port_GteReadData(PORT_GTE_IR1));
+    port_GteWriteControl(
+        PORT_GTE_TRY, (s32)port_GteReadData(PORT_GTE_IR2) >> 1);
+    port_GteWriteControl(PORT_GTE_TRZ, port_GteReadData(PORT_GTE_IR3));
+}
+
+/* How many times a tile's face has its texture points halved, by the
+ * renderer's options: `area` is its size on the screen, under `smallest`
+ * twice and under `small` once. */
+static s32 render_TileShrink(s32 area, s32 smallest, s32 small) {
+    s32 by_size = (area < smallest) + (area < small);
+
+    switch (TILE_OPTIONS & TILE_OPTION_SHRINK) {
+    case 0:
+        return 0;
+    case TILE_SHRINK_BY_CUTS:
+        return 2 - TILE_CUTS;
+    case TILE_SHRINK_BY_SIZE:
+        return by_size;
+    default:
+        return (TILE_CUTS < by_size) ? by_size - TILE_CUTS : 0;
+    }
+}
+
+/* A texture point with u and v each halved `shrink` times. */
+static u32 render_ShrinkUv(u32 uv, s32 shrink) {
+    u32 mask;
+
+    if (shrink == 0) {
+        return uv;
+    }
+    mask = 0xFFU >> (shrink & RENDER_SHIFT_MASK);
+    mask |= mask << 8;
+    return (uv >> (shrink & RENDER_SHIFT_MASK)) & mask;
+}
+
+/* A primitive of the cutting finished: the lit colour, and the link to
+ * the one built before it. */
+static void render_ChainTile(TileSplit *split, u32 length) {
+    u32 *prim = split->prim;
+
+    prim[0] = split->chain;
+    prim[1] = TILE_COLOR;
+    split->chain = ((u32)prim & RENDER_LINK_MASK) | RENDER_LINK_LENGTH(length);
+    split->prim = prim + length + 1;
+}
+
+/* One face of a tile, a triangle or a quad: drawn if it faces the camera,
+ * is on the screen and between the cutoff and the fog's end; whole, or
+ * cut. */
+static void render_EmitTile(TileSplit *split, u8 *record, s32 quad) {
+    s32 corner_count = quad ? 4 : 3;
+    TileFrame *frame = quad ? TILE_FRAMES_FT4 : TILE_FRAMES_FT3;
+    u32 length =
+        quad ? RENDER_PRIM_LENGTH(POLY_FT4) : RENDER_PRIM_LENGTH(POLY_FT3);
+    /* a triangle's members are where a quad's first three are */
+    POLY_FT4 *prim = (POLY_FT4 *)split->prim;
+    u32 color = RENDER_WORD(record, 0);
+    RenderFace face;
+    s16 *vertex;
+    u32 *entry;
+    s32 area;
+    s32 depth;
+    s32 index;
+    s32 shrink;
+    s32 cuts;
+    s32 above;
+    s32 i;
+
+    color |= (u32)(TILE_BLEND & 1) << TILE_BLEND_SHIFT;
+    port_GteWriteData(PORT_GTE_RGBC, color);
+    if (quad) {
+        TILE_CODE = (u16)(color >> 16);
+    }
+    render_LoadFace(
+        &face, RENDER_WORD(record, quad ? EMIT_FT4_CORNERS : EMIT_CORNERS3),
+        corner_count);
+    if (render_FaceOffScreen(&face) || !render_FaceFront()) {
+        return;
+    }
+    area = -(s32)port_GteReadData(PORT_GTE_MAC0);
+    /* some corner above the bottom of the screen; the deepest corner */
+    above = 0;
+    depth = RENDER_TILE_DEPTHS[face.index[0]];
+    for (i = 0; i < corner_count; i++) {
+        above |= ((s32)face.xy[i] >> 16) - TILE_SCREEN_HEIGHT;
+        if (depth < RENDER_TILE_DEPTHS[face.index[i]]) {
+            depth = RENDER_TILE_DEPTHS[face.index[i]];
+        }
+    }
+    if (!(above & RENDER_HALF_SIGN)) {
+        return;
+    }
+    if (quad && (record[EMIT_TILE_BITS] & TILE_FAR_BIT)) {
+        depth += TILE_FAR_BIAS;
+    }
+    index = render_OtIndexShifted(depth, TILE_DEPTH_SHIFT);
+    if (RENDER_FOG_OT_INDEX < index || index < RENDER_OT_CUTOFF) {
+        return;
+    }
+    if (quad) {
+        port_GteWriteData(PORT_GTE_VZ0, RENDER_HALF(record, EMIT_FT4_NORMAL_Z));
+        port_GteLoadData(PORT_GTE_VXY0, record + EMIT_FT4_NORMAL_XY, 1);
+    } else {
+        port_GteLoadData(PORT_GTE_VXY0, record + EMIT_FT3_NORMAL, 2);
+    }
+    TILE_CLUT = RENDER_HALF(record, EMIT_CLUT);
+    TILE_TPAGE = RENDER_HALF(record, EMIT_TPAGE);
+    port_GteCommand(PORT_GTE_CMD_NCS);
+    shrink = quad ? render_TileShrink(area, TILE_FT4_SMALLEST, TILE_FT4_SMALL)
+                  : render_TileShrink(area, TILE_FT3_SMALLEST, TILE_FT3_SMALL);
+    for (i = 0; i < corner_count; i++) {
+        TILE_UV[i] = (u16)render_ShrinkUv(
+            RENDER_HALF(record, EMIT_UV0 + i * sizeof(u16)), shrink);
+    }
+    cuts = 0;
+    if (TILE_CUT_FIELD(record[EMIT_TILE_BITS]) != 0) {
+        cuts = TILE_CUTS - (TILE_CUT_FIELD(record[EMIT_TILE_BITS]) - 1);
+    }
+    if (cuts <= 0) {
+        RENDER_WORD_OF(prim->x0) = face.xy[0];
+        RENDER_WORD_OF(prim->x1) = face.xy[1];
+        RENDER_WORD_OF(prim->x2) = face.xy[2];
+        RENDER_WORD_OF(prim->u0) = TILE_UV[0] | (TILE_CLUT << 16);
+        RENDER_WORD_OF(prim->u1) = TILE_UV[1] | (TILE_TPAGE << 16);
+        RENDER_HALF_OF(prim->u2) = TILE_UV[2];
+        if (quad) {
+            RENDER_WORD_OF(prim->x3) = face.xy[3];
+            RENDER_HALF_OF(prim->u3) = TILE_UV[3];
+        }
+        port_GteStoreData(PORT_GTE_RGB2, &prim->r0, 1);
+        render_LinkEntry(&split->ot[index], prim, length);
+        split->prim += length + 1;
+        return;
+    }
+    if (TILE_OPTIONS & TILE_OPTION_SHOW_CUTS) {
+        color = (RENDER_WORD(record, 0) | RENDER_LINK_MASK) & TILE_CUT_ONCE;
+        if (cuts != 1) {
+            color &= TILE_CUT_MORE;
+        }
+        port_GteWriteData(PORT_GTE_RGB2, color);
+    }
+    entry = &split->ot[index];
+    split->chain = *entry | RENDER_LINK_LENGTH(length);
+    TILE_ENTRY = entry;
+    port_GteStoreData(PORT_GTE_RGB2, &TILE_COLOR, 1);
+    for (i = 0; i < corner_count; i++) {
+        vertex = TILE_SPLIT_VERTICES + 3 * face.index[i];
+        frame->corner[i].x = vertex[0];
+        frame->corner[i].y = vertex[1];
+        frame->corner[i].z = vertex[2];
+        frame->corner[i].uv = TILE_UV[i];
+    }
+    if (quad) {
+        render_SplitFT4(split, frame, cuts);
+    } else {
+        render_SplitFT3(split, frame, cuts);
+    }
+    *TILE_ENTRY = split->chain & RENDER_LINK_MASK;
+}
+
+/* render_EmitSplitFT3 and render_EmitSplitFT4: a group of a tile's
+ * faces. */
+static s16 *render_EmitTiles(
+    s32 count, s16 *vertices, s16 *records, s32 flags, s32 quad) {
+    u8 *record = (u8 *)records;
+    TileSplit split;
+    s32 left = count - 1;
+
+    TILE_FLAGS = (s16)flags;
+    TILE_SPLIT_VERTICES = vertices;
+    split.prim = g_disp_prim_cursor;
+    split.ot = (u32 *)RENDER_OT;
+    do {
+        TILE_LEFT = left;
+        render_EmitTile(&split, record, quad);
+        record += EMIT_FT3_SIZE;
+    } while (left-- != 0);
+    g_disp_prim_cursor = split.prim;
+    return (s16 *)record;
 }
 
 /* What the eight outline routines have in common, for triangles: the
@@ -462,6 +826,221 @@ static void render_EmitOutline4(s32 count, s32 stride, s32 corners_offset,
         render_LinkPrim(index, &prim[0], RENDER_PRIM_LENGTH(LINE_F3));
         render_LinkPrim(index, &prim[1], RENDER_PRIM_LENGTH(LINE_F3));
         prim += 2;
+    }
+    g_render_walk.mesh = record;
+    g_disp_prim_cursor = (u32 *)prim;
+}
+
+/* The depth a face drawn from both sides is sorted by. Cloth is sorted
+ * eighty nearer than it is where it faces the camera, and seventy-nine
+ * farther where it faces away: the number, turned as the normal is. */
+#define CLOTH_DEPTH_BIAS 0xFFFFFFB0U
+
+static u32 render_SidedDepth(s32 depth, u32 flip, s32 cloth) {
+    if (cloth) {
+        return (u32)depth + (flip ^ CLOTH_DEPTH_BIAS);
+    }
+    return (u32)depth;
+}
+
+/* render_EmitTwoSidedFT3 and render_EmitClothFT3: flat textured
+ * triangles drawn whichever way they face. */
+static void render_EmitBothSidesFT3(s32 count, s32 cloth) {
+    u8 *record = g_render_walk.mesh;
+    POLY_FT3 *prim = (POLY_FT3 *)g_disp_prim_cursor;
+    RenderFace face;
+    s32 depth;
+    u32 flip;
+
+    if (count == 0) {
+        return;
+    }
+    for (; count != 0; count--, record += EMIT_FT3_SIZE) {
+        port_GteLoadData(PORT_GTE_RGBC, record, 1);
+        render_LoadFace(&face, RENDER_WORD(record, EMIT_CORNERS3), 3);
+        if (render_FaceOffScreen(&face)) {
+            continue;
+        }
+        flip = render_FaceFront() ? 0 : RENDER_FLIP;
+        depth = render_FaceDepth3(&face, RENDER_DEPTHS);
+        RENDER_WORD_OF(prim->x0) = face.xy[0];
+        RENDER_WORD_OF(prim->x1) = face.xy[1];
+        RENDER_WORD_OF(prim->x2) = face.xy[2];
+        if (depth <= 0 || (depth << RENDER_AVERAGE_SHIFT) >= RENDER_DEPTH_END) {
+            continue;
+        }
+        port_GteWriteData(
+            PORT_GTE_VXY0, RENDER_WORD(record, EMIT_FT3_NORMAL) ^ flip);
+        port_GteWriteData(
+            PORT_GTE_VZ0,
+            RENDER_WORD(record, EMIT_FT3_NORMAL + sizeof(u32)) ^ flip);
+        port_GteCommand(PORT_GTE_CMD_NCS);
+        port_GteStoreData(PORT_GTE_RGB2, &prim->r0, 1);
+        RENDER_WORD_OF(prim->u0) = EMIT_UV0_CLUT(record);
+        RENDER_WORD_OF(prim->u1) = EMIT_UV1_TPAGE(record);
+        RENDER_HALF_OF(prim->u2) = RENDER_HALF(record, EMIT_UV2);
+        render_LinkPrim(render_OtIndex(render_SidedDepth(
+                            depth << RENDER_AVERAGE_SHIFT, flip, cloth)),
+                        prim, RENDER_PRIM_LENGTH(POLY_FT3));
+        prim++;
+    }
+    g_render_walk.mesh = record;
+    g_disp_prim_cursor = (u32 *)prim;
+}
+
+/* render_EmitTwoSidedFT4 and render_EmitClothFT4. */
+static void render_EmitBothSidesFT4(s32 count, s32 cloth) {
+    u8 *record = g_render_walk.mesh;
+    POLY_FT4 *prim = (POLY_FT4 *)g_disp_prim_cursor;
+    RenderFace face;
+    s32 depth;
+    u32 flip;
+
+    if (count == 0) {
+        return;
+    }
+    for (; count != 0; count--, record += EMIT_FT4_SIZE) {
+        port_GteLoadData(PORT_GTE_RGBC, record, 1);
+        render_LoadFace(&face, RENDER_WORD(record, EMIT_FT4_CORNERS), 4);
+        if (render_FaceOffScreen(&face)) {
+            continue;
+        }
+        flip = render_FaceFront() ? 0 : RENDER_FLIP;
+        depth = render_FaceDepth4(&face, RENDER_DEPTHS);
+        if (depth <= 0 || depth >= RENDER_DEPTH_END) {
+            continue;
+        }
+        RENDER_WORD_OF(prim->x0) = face.xy[0];
+        RENDER_WORD_OF(prim->x1) = face.xy[1];
+        RENDER_WORD_OF(prim->x2) = face.xy[2];
+        RENDER_WORD_OF(prim->x3) = face.xy[3];
+        port_GteWriteData(
+            PORT_GTE_VZ0, RENDER_HALF(record, EMIT_FT4_NORMAL_Z) ^ flip);
+        port_GteWriteData(
+            PORT_GTE_VXY0, RENDER_WORD(record, EMIT_FT4_NORMAL_XY) ^ flip);
+        port_GteCommand(PORT_GTE_CMD_NCS);
+        port_GteStoreData(PORT_GTE_RGB2, &prim->r0, 1);
+        RENDER_WORD_OF(prim->u0) = EMIT_UV0_CLUT(record);
+        RENDER_WORD_OF(prim->u1) = EMIT_UV1_TPAGE(record);
+        RENDER_HALF_OF(prim->u2) = RENDER_HALF(record, EMIT_UV2);
+        RENDER_HALF_OF(prim->u3) = RENDER_HALF(record, EMIT_UV3);
+        render_LinkPrim(render_OtIndex(render_SidedDepth(depth, flip, cloth)),
+                        prim, RENDER_PRIM_LENGTH(POLY_FT4));
+        prim++;
+    }
+    g_render_walk.mesh = record;
+    g_disp_prim_cursor = (u32 *)prim;
+}
+
+/* render_EmitTwoSidedGT3 and render_EmitClothGT3. */
+static void render_EmitBothSidesGT3(s32 count, s32 cloth) {
+    u8 *record = g_render_walk.mesh;
+    POLY_GT3 *prim = (POLY_GT3 *)g_disp_prim_cursor;
+    RenderFace face;
+    s32 depth;
+    u32 flip;
+    u32 depths01; /* the first normal's z under the second's */
+
+    if (count == 0) {
+        return;
+    }
+    port_GteLoadData(PORT_GTE_RGBC, record, 1);
+    for (; count != 0; count--, record += EMIT_GT3_SIZE) {
+        render_LoadFace(&face, RENDER_WORD(record, EMIT_CORNERS3), 3);
+        if (render_FaceOffScreen(&face)) {
+            continue;
+        }
+        flip = render_FaceFront() ? 0 : RENDER_FLIP;
+        depth = render_FaceDepth3(&face, RENDER_DEPTHS);
+        RENDER_WORD_OF(prim->x0) = face.xy[0];
+        RENDER_WORD_OF(prim->x1) = face.xy[1];
+        RENDER_WORD_OF(prim->x2) = face.xy[2];
+        if (depth <= 0 || (depth << RENDER_AVERAGE_SHIFT) >= RENDER_DEPTH_END) {
+            continue;
+        }
+        depths01 = RENDER_WORD(record, EMIT_GT3_NORMAL_Z01) ^ flip;
+        port_GteWriteData(
+            PORT_GTE_VXY0, RENDER_WORD(record, EMIT_GT3_NORMAL_XY0) ^ flip);
+        port_GteWriteData(PORT_GTE_VZ0, depths01);
+        port_GteWriteData(
+            PORT_GTE_VXY1, RENDER_WORD(record, EMIT_GT3_NORMAL_XY1) ^ flip);
+        port_GteWriteData(PORT_GTE_VZ1, depths01 >> 16);
+        port_GteWriteData(
+            PORT_GTE_VXY2, RENDER_WORD(record, EMIT_GT3_NORMAL_XY2) ^ flip);
+        port_GteWriteData(
+            PORT_GTE_VZ2, RENDER_WORD(record, EMIT_GT3_NORMAL_Z2) ^ flip);
+        port_GteCommand(PORT_GTE_CMD_NCT);
+        RENDER_WORD_OF(prim->u0) = EMIT_UV0_CLUT(record);
+        RENDER_WORD_OF(prim->u1) = EMIT_UV1_TPAGE(record);
+        RENDER_HALF_OF(prim->u2) = RENDER_HALF(record, EMIT_UV2);
+        render_LinkPrim(render_OtIndex(render_SidedDepth(
+                            depth << RENDER_AVERAGE_SHIFT, flip, cloth)),
+                        prim, RENDER_PRIM_LENGTH(POLY_GT3));
+        port_GteStoreData(PORT_GTE_RGB0, &prim->r0, 1);
+        port_GteStoreData(PORT_GTE_RGB1, &prim->r1, 1);
+        port_GteStoreData(PORT_GTE_RGB2, &prim->r2, 1);
+        prim++;
+    }
+    g_render_walk.mesh = record;
+    g_disp_prim_cursor = (u32 *)prim;
+}
+
+/* render_EmitTwoSidedGT4 and render_EmitClothGT4. */
+static void render_EmitBothSidesGT4(s32 count, s32 cloth) {
+    u8 *record = g_render_walk.mesh;
+    POLY_GT4 *prim = (POLY_GT4 *)g_disp_prim_cursor;
+    RenderFace face;
+    s32 depth;
+    u32 flip;
+    u32 depths; /* two normals' z, one under the other */
+
+    if (count == 0) {
+        return;
+    }
+    port_GteLoadData(PORT_GTE_RGBC, record, 1);
+    for (; count != 0; count--, record += EMIT_GT4_SIZE) {
+        render_LoadFace(&face, RENDER_WORD(record, EMIT_GT4_CORNERS), 4);
+        if (render_FaceOffScreen(&face)) {
+            continue;
+        }
+        flip = render_FaceFront() ? 0 : RENDER_FLIP;
+        depth = render_FaceDepth4(&face, RENDER_DEPTHS);
+        if (depth <= 0 || depth >= RENDER_DEPTH_END) {
+            continue;
+        }
+        RENDER_WORD_OF(prim->x0) = face.xy[0];
+        RENDER_WORD_OF(prim->x1) = face.xy[1];
+        RENDER_WORD_OF(prim->x2) = face.xy[2];
+        RENDER_WORD_OF(prim->x3) = face.xy[3];
+        /* The face's own normal lights the first corner. */
+        depths = RENDER_WORD(record, EMIT_GT4_NORMAL_Z_FACE_0) ^ flip;
+        port_GteWriteData(
+            PORT_GTE_VXY0, RENDER_WORD(record, EMIT_GT4_NORMAL_XY_FACE) ^ flip);
+        port_GteWriteData(PORT_GTE_VZ0, depths);
+        port_GteCommand(PORT_GTE_CMD_NCS);
+        port_GteStoreData(PORT_GTE_RGB2, &prim->r0, 1);
+        /* The other three have a normal each. */
+        port_GteWriteData(
+            PORT_GTE_VXY0, RENDER_WORD(record, EMIT_GT4_NORMAL_XY0));
+        port_GteWriteData(PORT_GTE_VZ0, depths >> 16);
+        depths = RENDER_WORD(record, EMIT_GT4_NORMAL_Z12) ^ flip;
+        port_GteWriteData(
+            PORT_GTE_VXY1, RENDER_WORD(record, EMIT_GT4_NORMAL_XY1) ^ flip);
+        port_GteWriteData(PORT_GTE_VZ1, depths);
+        port_GteWriteData(
+            PORT_GTE_VXY2, RENDER_WORD(record, EMIT_GT4_NORMAL_XY2));
+        port_GteWriteData(PORT_GTE_VZ2, depths >> 16);
+        port_GteCommand(PORT_GTE_CMD_NCT);
+        RENDER_WORD_OF(prim->u0) = EMIT_UV0_CLUT(record);
+        RENDER_WORD_OF(prim->u1) = EMIT_UV1_TPAGE(record);
+        RENDER_HALF_OF(prim->u2) = RENDER_HALF(record, EMIT_UV2);
+        RENDER_HALF_OF(prim->u3) = RENDER_HALF(record, EMIT_UV3);
+        render_LinkPrim(render_OtIndex(render_SidedDepth(depth, flip, cloth)),
+                        prim, RENDER_PRIM_LENGTH(POLY_GT4));
+        port_GteStoreData(PORT_GTE_RGB0, &prim->r1, 1);
+        port_GteStoreData(PORT_GTE_RGB1, &prim->r2, 1);
+        port_GteStoreData(PORT_GTE_RGB2, &prim->r3, 1);
+        prim++;
     }
     g_render_walk.mesh = record;
     g_disp_prim_cursor = (u32 *)prim;
@@ -578,7 +1157,349 @@ INCLUDE_ASM("asm/funcs", math_RotMatrixZYX);
 
 /* Assembly: trapping; it jumps through the two tables above to labels in
  * render_DrawGroups, which jump back; what it calls shares its registers. */
+#if RB_PORT
+/* What render_DrawQueue is made of in C: the setup of each kind of node,
+ * which the listing has after render_DrawGroups, and the drawing of a
+ * part by the format of its vertices. */
+
+/* Defined further down. */
+static void render_ProjectVertices(s32 count, u32 *points, s16 *depths);
+static void render_ProjectPackedVertices(s32 count, u32 *points, s16 *depths);
+static void render_DrawGroups(void);
+static void **render_DrawStageTiles(void **queue, u8 *tile, MATRIX *view);
+static void render_DrawCloth(s32 scale_shift);
+
+/* How far the node is from a place, each way, into `offset`; and the
+ * three distances' bits together, which is as good as the largest for
+ * telling how far to scale the node down. */
+static s32 render_NodeOffset(
+    const SceneNode *node, const s32 *from, s32 *offset) {
+    s32 reach = 0;
+    s32 i;
+
+    for (i = 0; i < 3; i++) {
+        offset[i] = node->world.t[i] - from[i];
+        reach |= (offset[i] < 0) ? -offset[i] : offset[i];
+    }
+    return reach;
+}
+
+/* That offset scaled down, onto the scratchpad. */
+static void render_StoreNodePlace(const s32 *offset, s32 shift) {
+    s32 i;
+
+    for (i = 0; i < 3; i++) {
+        RENDER_NODE_PLACE[i] = (s16)(offset[i] >> (shift & RENDER_SHIFT_MASK));
+    }
+}
+
+/* The node's place turned by a rotation, five words of it; the result
+ * is left in the GTE's vector. */
+static void render_TurnNodePlace(const void *rotation) {
+    port_GteLoadControl(PORT_GTE_ROTATION, rotation, PORT_GTE_MATRIX_WORDS);
+    render_ClearTranslation();
+    port_GteLoadData(PORT_GTE_VXY0, RENDER_NODE_PLACE, 2);
+    port_GteCommand(PORT_GTE_CMD_RTV0TR);
+}
+
+/* A matrix's nine numbers scaled down by `shift`, the second row by one
+ * more (the frame is half height): what the vertices are projected
+ * through. */
+static void render_ScaleRotation(const s16 *matrix, s32 shift, s32 *scaled) {
+    s32 i;
+
+    for (i = 0; i < PORT_GTE_MATRIX_ELEMENTS; i++) {
+        scaled[i] = matrix[i] >> ((shift + (i / 3 == 1)) & RENDER_SHIFT_MASK);
+    }
+}
+
+/* That, into the GTE. */
+static void render_LoadScaledRotation(const s16 *matrix, s32 shift) {
+    s32 scaled[PORT_GTE_MATRIX_ELEMENTS];
+    u32 words[PORT_GTE_MATRIX_WORDS];
+    s32 i;
+
+    render_ScaleRotation(matrix, shift, scaled);
+    for (i = 0; i < PORT_GTE_MATRIX_WORDS - 1; i++) {
+        words[i] = (scaled[2 * i] & 0xFFFF) | (scaled[2 * i + 1] << 16);
+    }
+    words[PORT_GTE_MATRIX_WORDS - 1] = scaled[PORT_GTE_MATRIX_ELEMENTS - 1];
+    port_GteLoadControl(PORT_GTE_ROTATION, words, PORT_GTE_MATRIX_WORDS);
+}
+
+/* And into nine halfwords of memory. */
+static void render_StoreScaledRotation(const s16 *matrix, s32 shift, s16 *out) {
+    s32 scaled[PORT_GTE_MATRIX_ELEMENTS];
+    s32 i;
+
+    render_ScaleRotation(matrix, shift, scaled);
+    for (i = 0; i < PORT_GTE_MATRIX_ELEMENTS; i++) {
+        out[i] = (s16)scaled[i];
+    }
+}
+
+/* The node's light setup, and its lights' colours into the GTE. */
+static LightSetup *render_NodeLights(const SceneNode *node) {
+    LightSetup *lights = &g_light_setups[node->light_setup_index];
+
+    g_render_walk.lights = lights;
+    return lights;
+}
+
+/* The lights turned into the node's space, into the GTE. */
+static void render_LoadTurnedLights(LightSetup *lights, SceneNode *node) {
+    math_MulMatrix(&lights->lmat, &node->world, RENDER_NODE_LIGHTS);
+    port_GteLoadControl(
+        PORT_GTE_LIGHT, RENDER_NODE_LIGHTS, PORT_GTE_MATRIX_WORDS);
+}
+
+/* Sets the GTE up for a node by its kind. Returns whether the node's
+ * mesh is then to be walked: the kinds that are drawn by a routine of
+ * their own are drawn here, and the kinds that are not drawn are left. */
+static s32 render_SetupNode(SceneNode *node) {
+    MATRIX *view = g_render_walk.view;
+    LightSetup *lights;
+    s32 offset[3];
+    s32 reach;
+    s32 shift;
+    s32 i;
+
+    switch (node->kind) {
+    case NODE_KIND_ROTATED:
+        reach =
+            render_NodeOffset(node, g_node_camera_root_ptr->world.t, offset);
+        shift = 2 - (reach < RENDER_NEAR) - (reach < RENDER_FAR);
+        g_render_walk.scale_shift = shift;
+        render_StoreNodePlace(offset, shift);
+        lights = render_NodeLights(node);
+        render_LoadTurnedLights(lights, node);
+        port_GteLoadControl(
+            PORT_GTE_LIGHT_COLOR, &lights->cmat, PORT_GTE_MATRIX_WORDS);
+        math_MulMatrix(view, &node->world, RENDER_NODE_MATRIX);
+        render_TurnNodePlace(view);
+        render_LoadBackColor(lights);
+        render_LoadHalfHeightTranslation();
+        render_LoadScaledRotation((s16 *)RENDER_NODE_MATRIX->m, shift);
+        return TRUE;
+
+    case NODE_KIND_UNROTATED:
+        /* The listing works a scale out from the distance and then takes
+         * this one. */
+        render_NodeOffset(node, g_node_camera_root_ptr->world.t, offset);
+        shift = 2;
+        g_render_walk.scale_shift = shift;
+        render_StoreNodePlace(offset, shift);
+        render_TurnNodePlace(view);
+        lights = render_NodeLights(node);
+        render_LoadHalfHeightTranslation();
+        port_GteLoadControl(
+            PORT_GTE_LIGHT, &lights->lmat, PORT_GTE_MATRIX_WORDS);
+        port_GteLoadControl(
+            PORT_GTE_LIGHT_COLOR, &lights->cmat, PORT_GTE_MATRIX_WORDS);
+        render_LoadBackColor(lights);
+        render_LoadScaledRotation((s16 *)view->m, shift);
+        return TRUE;
+
+    case NODE_KIND_SHADOW:
+        /* The matrix that flattens the parent onto the ground, behind
+         * the view. The view matrix's own translation is used to carry
+         * the shadow's place; no light is loaded, the shadow being
+         * black. */
+        light_ProjectShadow(&node->parent->world, RENDER_NODE_MATRIX,
+                            (s32)RENDER_WORD(node, RENDER_NODE_EXTRA));
+        for (i = 0; i < 3; i++) {
+            offset[i] =
+                RENDER_NODE_MATRIX->t[i] - g_node_camera_root_ptr->world.t[i];
+        }
+        shift = 2;
+        render_StoreNodePlace(offset, shift);
+        render_TurnNodePlace(view);
+        port_GteStoreData(PORT_GTE_IR1, view->t, 3);
+        MulMatrix2(view, RENDER_NODE_MATRIX);
+        port_GteWriteControl(PORT_GTE_TRX, view->t[0]);
+        port_GteWriteControl(PORT_GTE_TRY, view->t[1] >> 1);
+        port_GteWriteControl(PORT_GTE_TRZ, view->t[2]);
+        render_LoadScaledRotation((s16 *)RENDER_NODE_MATRIX->m, shift);
+        g_render_walk.scale_shift = shift;
+        return TRUE;
+
+    case NODE_KIND_SKINNED:
+        reach =
+            render_NodeOffset(node, g_node_camera_root_ptr->world.t, offset);
+        shift = 2 - (reach < RENDER_SKIN_NEAR) - (reach < RENDER_SKIN_FAR);
+        g_render_walk.scale_shift = shift;
+        lights = render_NodeLights(node);
+        port_GteLoadControl(
+            PORT_GTE_LIGHT_COLOR, &lights->cmat, PORT_GTE_MATRIX_WORDS);
+        render_LoadBackColor(lights);
+        RENDER_DEPTH_SHIFT = shift;
+        render_DrawSkinned((s32)RENDER_WORD(node, RENDER_NODE_EXTRA),
+                           (s32)g_reloc_tables[node->mesh_block][node->mesh],
+                           node->light_setup_index, (u8 *)node);
+        return FALSE;
+
+    case RENDER_KIND_TILE:
+        g_render_walk.queue =
+            render_DrawStageTiles(g_render_walk.queue, (u8 *)node, view);
+        return FALSE;
+
+    case NODE_KIND_CLOTH:
+        /* The cloth's points are in the world: the view alone, its
+         * second row halved, and no translation. */
+        reach =
+            render_NodeOffset(node, g_node_camera_root_ptr->world.t, offset);
+        shift = 2 - (reach < RENDER_NEAR) - (reach < RENDER_FAR);
+        g_render_walk.scale_shift = shift;
+        lights = render_NodeLights(node);
+        render_LoadTurnedLights(lights, node);
+        port_GteLoadControl(
+            PORT_GTE_LIGHT_COLOR, &lights->cmat, PORT_GTE_MATRIX_WORDS);
+        render_LoadBackColor(lights);
+        port_GteWriteControl(PORT_GTE_ROTATION, RENDER_WORD(view, 0));
+        port_GteWriteControl(PORT_GTE_ROTATION + 1,
+                             (u16)view->m[0][2] | ((view->m[1][0] >> 1) << 16));
+        port_GteWriteControl(
+            PORT_GTE_ROTATION + 2,
+            ((view->m[1][1] >> 1) & 0xFFFF) | ((view->m[1][2] >> 1) << 16));
+        port_GteLoadControl(PORT_GTE_ROTATION + 3, &view->m[2][0], 2);
+        render_ClearTranslation();
+        render_DrawCloth(shift);
+        return FALSE;
+
+    case NODE_KIND_WAVE:
+        render_NodeOffset(node, g_node_camera_root_ptr->world.t, offset);
+        shift = g_scene_settings.far_shift;
+        g_render_walk.scale_shift = shift;
+        render_StoreNodePlace(offset, shift);
+        render_TurnNodePlace(view);
+        lights = render_NodeLights(node);
+        render_LoadHalfHeightTranslation();
+        port_GteLoadControl(
+            PORT_GTE_LIGHT, &lights->lmat, PORT_GTE_MATRIX_WORDS);
+        port_GteLoadControl(
+            PORT_GTE_LIGHT_COLOR, &lights->cmat, PORT_GTE_MATRIX_WORDS);
+        render_LoadBackColor(lights);
+        /* the scaled view is kept on the scratchpad for the surf */
+        render_StoreScaledRotation(
+            (s16 *)view->m, shift, (s16 *)RENDER_NODE_MATRIX->m);
+        port_GteLoadControl(
+            PORT_GTE_ROTATION, RENDER_NODE_MATRIX, PORT_GTE_MATRIX_WORDS);
+        TILE_OPTIONS = g_render_options;
+        wave_Draw();
+        return FALSE;
+
+    case NODE_KIND_TINY:
+        /* Seen through the tiny model's matrix in place of the camera's.
+         * The listing works a scale out and then takes this one. */
+        render_NodeOffset(node, g_model_tiny_matrix.t, offset);
+        shift = 1;
+        g_render_walk.scale_shift = shift;
+        render_StoreNodePlace(offset, shift);
+        lights = render_NodeLights(node);
+        render_LoadTurnedLights(lights, node);
+        port_GteLoadControl(
+            PORT_GTE_LIGHT_COLOR, &lights->cmat, PORT_GTE_MATRIX_WORDS);
+        math_MulMatrix(&g_model_tiny_matrix, &node->world, RENDER_NODE_MATRIX);
+        render_TurnNodePlace(&g_model_tiny_matrix);
+        render_LoadBackColor(lights);
+        render_LoadHalfHeightTranslation();
+        render_LoadScaledRotation((s16 *)RENDER_NODE_MATRIX->m, shift);
+        return TRUE;
+
+    default:
+        return FALSE;
+    }
+}
+
+/* Projects a part's vertices and draws its groups, by the format the
+ * vertices are stored in. */
+static void render_DrawPart(s32 count, s32 format) {
+    RENDER_DEPTH_SHIFT = 3 - g_render_walk.scale_shift;
+    switch (format) {
+    case MESH_PREBUILT:
+        render_ProjectVertices(count, RENDER_POINTS, RENDER_DEPTHS);
+        render_DrawGroups();
+        return;
+
+    case MESH_COMPACT:
+        /* A node drawn as outlines uses the second half of the usual
+         * table. */
+        render_ProjectPackedVertices(count, RENDER_POINTS, RENDER_DEPTHS);
+        g_render_walk.handlers = g_render_handlers;
+        if (g_render_walk.node->draw_flags & NODE_DRAW_OUTLINE) {
+            g_render_walk.handlers += RENDER_OUTLINE_HANDLERS;
+        }
+        break;
+
+    case RENDER_FORMAT_TINY:
+        /* The tiny model is projected about another point of the
+         * screen. */
+        port_GteWriteControl(PORT_GTE_OFX, TINY_CENTER_X << 16);
+        port_GteWriteControl(PORT_GTE_OFY, TINY_CENTER_Y << 16);
+        render_ProjectVertices(count, RENDER_POINTS, RENDER_DEPTHS);
+        port_GteWriteControl(PORT_GTE_OFX, RENDER_CENTER_X << 16);
+        port_GteWriteControl(PORT_GTE_OFY, RENDER_CENTER_Y << 16);
+        g_render_walk.handlers = g_render_tiny_handlers;
+        break;
+
+    case RENDER_FORMAT_NONE:
+        render_ProjectFormat3();
+        g_render_walk.handlers = g_render_handlers;
+        break;
+
+    case RENDER_FORMAT_PACKED:
+        render_ProjectPackedVertices(count, RENDER_POINTS, RENDER_DEPTHS);
+        g_render_walk.handlers = g_render_packed_handlers;
+        break;
+
+    default:
+        return;
+    }
+    render_DrawGroups();
+    g_render_walk.handlers = (void (**)())RENDER_HANDLERS;
+}
+
+/* In C: the two tables of labels are two switches, render_SetupNode by
+ * the node's kind and render_DrawPart by the format of a part's
+ * vertices, and the registers the listings share are g_render_walk. A
+ * kind or a format past the end of its table, which the listing would
+ * jump through whatever follows the table for, draws nothing. */
+void render_DrawQueue(void) {
+    SceneNode *node;
+    u32 part;
+
+    if (g_render_queue_end == g_render_queue) {
+        return;
+    }
+    g_render_walk.queue = g_render_queue;
+    g_render_walk.scale_shift = 0;
+    g_render_walk.view = &g_render_view_matrix;
+    g_render_walk.handlers = (void (**)())RENDER_HANDLERS;
+    do {
+        node = *g_render_walk.queue++;
+        g_render_walk.node = node;
+        if (render_SetupNode(node)) {
+            /* The node's mesh: a row of parts, each a word (how many
+             * vertices, and above that their format), the vertices and
+             * the groups; a halfword that is not zero says another
+             * follows. No vertices ends the mesh. */
+            g_render_walk.mesh =
+                (u8 *)g_reloc_tables[node->mesh_block][node->mesh];
+            do {
+                part = RENDER_WORD(g_render_walk.mesh, 0);
+                g_render_walk.mesh += sizeof(u32);
+                if ((part & 0xFFFF) == 0) {
+                    break;
+                }
+                render_DrawPart(part & 0xFFFF, part >> 16);
+                g_render_walk.mesh += sizeof(u16);
+            } while (RENDER_HALF(g_render_walk.mesh, -(s32)sizeof(u16)) != 0);
+        }
+    } while (g_render_walk.queue != g_render_queue_end);
+}
+#else
 INCLUDE_ASM("asm/funcs", render_DrawQueue);
+#endif
 
 /* Projecting a part's vertices: stored as SVECTORs, and stored packed, three
  * halfwords each. */
@@ -676,12 +1597,265 @@ INCLUDE_ASM("asm/funcs", render_DrawGroups);
 /* Assembly: trapping, all six. The four that split keep their state in
  * $s1-$s7 and $fp between them and save none of it; render_DrawStageTiles
  * can leave through a jump to sys_Trap. */
+#if RB_PORT
+/* In C: the listing keeps its saved registers on the scratchpad, and the
+ * levels of the cutting have their return addresses there; the C writes
+ * neither. Everything else the listing keeps there the C keeps there
+ * too. */
+s16 *render_EmitSplitFT3(s32 count, s16 *vertices, s16 *records, s32 flags) {
+    return render_EmitTiles(count, vertices, records, flags, FALSE);
+}
+#else
 INCLUDE_ASM("asm/funcs", render_EmitSplitFT3);
+#endif
+#if RB_PORT
+/* In C: the frames are an array on the scratchpad (TileFrame), a level a
+ * frame; what the listing keeps in registers between the levels is
+ * `split`. The four smaller triangles are made in the listing's order:
+ * the first corner's, the middle one, the third corner's, the second's. */
+static void render_SplitFT3(TileSplit *split, TileFrame *frame, s32 cuts) {
+    TileFrame *next = frame + 1;
+    POLY_FT3 *prim = (POLY_FT3 *)split->prim;
+
+    if (cuts == 0) {
+        port_GteLoadData(PORT_GTE_VXY0, frame->corner, 2 * RENDER_RUN);
+        port_GteCommand(PORT_GTE_CMD_RTPT);
+        RENDER_WORD_OF(prim->u0) = frame->corner[0].uv | (TILE_CLUT << 16);
+        RENDER_WORD_OF(prim->u1) = frame->corner[1].uv | (TILE_TPAGE << 16);
+        RENDER_HALF_OF(prim->u2) = frame->corner[2].uv;
+        port_GteStoreData(PORT_GTE_SXY0, &prim->x0, 1);
+        port_GteStoreData(PORT_GTE_SXY1, &prim->x1, 1);
+        port_GteStoreData(PORT_GTE_SXY2, &prim->x2, 1);
+        render_ChainTile(split, RENDER_PRIM_LENGTH(POLY_FT3));
+        return;
+    }
+    next->cuts_left = (s16)(cuts - 1);
+    next->corner[0] = frame->corner[0];
+    render_SplitMidpoint(
+        &frame->corner[0], &frame->corner[1], &next->corner[1]);
+    render_SplitMidpoint(
+        &frame->corner[0], &frame->corner[2], &next->corner[2]);
+    render_SplitFT3(split, next, next->cuts_left);
+    render_SplitMidpoint(
+        &frame->corner[1], &frame->corner[2], &next->corner[0]);
+    render_SplitFT3(split, next, next->cuts_left);
+    next->corner[3] = next->corner[1];
+    next->corner[1] = frame->corner[2];
+    render_SplitFT3(split, next, next->cuts_left);
+    next->corner[1] = next->corner[3];
+    next->corner[2] = frame->corner[1];
+    render_SplitFT3(split, next, next->cuts_left);
+}
+#else
 INCLUDE_ASM("asm/funcs", render_SplitFT3);
+#endif
+#if RB_PORT
+/* In C: as render_EmitSplitFT3. */
+s16 *render_EmitSplitFT4(s32 count, s16 *vertices, s16 *records, s32 flags) {
+    return render_EmitTiles(count, vertices, records, flags, TRUE);
+}
+#else
 INCLUDE_ASM("asm/funcs", render_EmitSplitFT4);
+#endif
+#if RB_PORT
+/* In C: as render_SplitFT3. The four smaller quads meet at the middle of
+ * the first and fourth corners, and are made in the order of the first
+ * corner's, the second's, the fourth's, the third's. */
+static void render_SplitFT4(TileSplit *split, TileFrame *frame, s32 cuts) {
+    TileFrame *next = frame + 1;
+    POLY_FT4 *prim = (POLY_FT4 *)split->prim;
+
+    if (cuts == 0) {
+        port_GteLoadData(PORT_GTE_VXY0, frame->corner, 2 * RENDER_RUN);
+        port_GteCommand(PORT_GTE_CMD_RTPT);
+        RENDER_WORD_OF(prim->u0) = frame->corner[0].uv | (TILE_CLUT << 16);
+        RENDER_WORD_OF(prim->u1) = frame->corner[1].uv | (TILE_TPAGE << 16);
+        RENDER_HALF_OF(prim->u2) = frame->corner[2].uv;
+        RENDER_HALF_OF(prim->u3) = frame->corner[3].uv;
+        port_GteStoreData(PORT_GTE_SXY0, &prim->x0, 1);
+        port_GteStoreData(PORT_GTE_SXY1, &prim->x1, 1);
+        port_GteStoreData(PORT_GTE_SXY2, &prim->x2, 1);
+        port_GteLoadData(PORT_GTE_VXY0, &frame->corner[3], 2);
+        port_GteCommand(PORT_GTE_CMD_RTPS);
+        port_GteStoreData(PORT_GTE_SXY2, &prim->x3, 1);
+        render_ChainTile(split, RENDER_PRIM_LENGTH(POLY_FT4));
+        return;
+    }
+    next->cuts_left = (s16)(cuts - 1);
+    next->corner[0] = frame->corner[0];
+    render_SplitMidpoint(
+        &frame->corner[0], &frame->corner[1], &next->corner[1]);
+    render_SplitMidpoint(
+        &frame->corner[0], &frame->corner[2], &next->corner[2]);
+    render_SplitMidpoint(
+        &frame->corner[0], &frame->corner[3], &next->corner[3]);
+    render_SplitFT4(split, next, next->cuts_left);
+    next->corner[0] = frame->corner[1];
+    render_SplitMidpoint(
+        &frame->corner[1], &frame->corner[3], &next->corner[2]);
+    render_SplitFT4(split, next, next->cuts_left);
+    next->corner[0] = frame->corner[3];
+    render_SplitMidpoint(
+        &frame->corner[2], &frame->corner[3], &next->corner[1]);
+    render_SplitFT4(split, next, next->cuts_left);
+    next->corner[0] = frame->corner[2];
+    render_SplitMidpoint(
+        &frame->corner[0], &frame->corner[2], &next->corner[2]);
+    render_SplitFT4(split, next, next->cuts_left);
+}
+#else
 INCLUDE_ASM("asm/funcs", render_SplitFT4);
+#endif
+#if RB_PORT
+/* In C: the two bytes of the texture point are averaged apart. */
+static void render_SplitMidpoint(
+    const TileCorner *first, const TileCorner *second, TileCorner *middle) {
+    s32 x = (first->x + second->x) >> 1;
+    s32 y = (first->y + second->y) >> 1;
+    s32 z = (first->z + second->z) >> 1;
+    u32 u = ((first->uv & 0xFF) + (second->uv & 0xFF)) >> 1;
+    u32 v = ((first->uv & TILE_V_MASK) + (second->uv & TILE_V_MASK)) >> 1;
+
+    middle->x = (s16)x;
+    middle->y = (s16)y;
+    middle->z = (s16)z;
+    middle->uv = (u16)((u & 0xFF) | (v & TILE_V_MASK));
+}
+#else
 INCLUDE_ASM("asm/funcs", render_SplitMidpoint);
+#endif
+#if RB_PORT
+/* In C: a C function in the listing too, called by the walk over the
+ * queue. The view is kept twice on the scratchpad: as it is, to turn the
+ * tile's place into the view, and scaled down with its second row halved,
+ * to project the tile's vertices. A mesh that does not end after its one
+ * part stops the game. */
+static void **render_DrawStageTiles(void **queue, u8 *tile, MATRIX *view) {
+    s32 far_shift = g_scene_settings.far_shift;
+    s32 shift = far_shift & RENDER_SHIFT_MASK;
+    u32 *view_words = (u32 *)view;
+    LightSetup *lights = &g_light_setups[TILE_LIGHT_SETUP];
+    TileHandler *handlers = (TileHandler *)g_render_tile_handlers;
+    u8 *mesh;
+    s32 row[3];
+    s32 place[3];
+    s32 high_shift;
+    s32 count;
+    s32 type;
+    s32 flags;
+    s32 i;
+
+    TILE_DEPTH_SHIFT = (s16)(3 - far_shift);
+    TILE_MESHES = (s32)g_reloc_tables[TILE_MESH_BLOCK];
+    TILE_OPTIONS = g_render_options;
+    for (i = 0; i < 4; i++) {
+        TILE_VIEW[i] = view_words[i];
+    }
+    RENDER_HALF_OF(TILE_VIEW[4]) = view->m[2][2];
+    /* The scaled view: each word's low half and high half, shifted
+     * down. The listing shifts a high half down as the word it is in,
+     * by sixteen bits and the scale at once. */
+    high_shift = (far_shift + 16) & RENDER_SHIFT_MASK;
+    for (i = 0; i < 4; i++) {
+        TILE_SCALED_VIEW[2 * i] = (s16)((s16)view_words[i] >> shift);
+        TILE_SCALED_VIEW[2 * i + 1] = (s16)((s32)view_words[i] >> high_shift);
+    }
+    TILE_SCALED_VIEW[PORT_GTE_MATRIX_ELEMENTS - 1] =
+        (s16)(view->m[2][2] >> shift);
+    /* The three numbers of the second row once more. */
+    row[0] = ((s32)view_words[1] >> high_shift) >> 1;
+    row[1] = ((s16)view_words[2] >> shift) >> 1;
+    row[2] = ((s32)view_words[2] >> high_shift) >> 1;
+    for (i = 0; i < 3; i++) {
+        TILE_SCALED_VIEW[3 + i] = (s16)row[i];
+    }
+
+    for (i = 0; i < 3; i++) {
+        TILE_CAMERA[i] = g_node_camera_root_ptr->world.t[i];
+    }
+    port_GteLoadControl(PORT_GTE_LIGHT, &lights->lmat, PORT_GTE_MATRIX_WORDS);
+    port_GteLoadControl(
+        PORT_GTE_LIGHT_COLOR, &lights->cmat, PORT_GTE_MATRIX_WORDS);
+    render_LoadBackColor(lights);
+
+    for (;;) {
+        /* Where the tile is from the camera, turned into the view: the
+         * translation its vertices are projected with. A tile is on the
+         * ground. */
+        place[0] = (s32)(RENDER_WORD(tile, TILE_X) - TILE_CAMERA[0]) >> shift;
+        place[1] = (0 - TILE_CAMERA[1]) >> shift;
+        place[2] = (s32)(RENDER_WORD(tile, TILE_Z) - TILE_CAMERA[2]) >> shift;
+        port_GteWriteData(
+            PORT_GTE_VXY0, (place[0] & 0xFFFF) | (place[1] << 16));
+        port_GteWriteData(PORT_GTE_VZ0, place[2]);
+        port_GteLoadControl(
+            PORT_GTE_ROTATION, TILE_VIEW, PORT_GTE_MATRIX_WORDS);
+        render_ClearTranslation();
+        port_GteCommand(PORT_GTE_CMD_RTV0TR);
+        render_LoadHalfHeightTranslation();
+        port_GteLoadControl(
+            PORT_GTE_ROTATION, TILE_SCALED_VIEW, PORT_GTE_MATRIX_WORDS);
+
+        mesh = (u8 *)g_reloc_tables[RENDER_SHALF(
+            tile, TILE_BLOCK)][RENDER_SHALF(tile, TILE_MESH)];
+        flags = RENDER_SHALF(tile, TILE_FLAGS_AT);
+        count = RENDER_HALF(mesh, 0);
+        mesh += sizeof(u32);
+        if (count != 0) {
+            TILE_VERTICES = (s16 *)mesh;
+            if (count == 4) {
+                /* The usual tile: three corners at once, then the
+                 * fourth. */
+                for (i = 0; i < RENDER_RUN; i++) {
+                    port_GteWriteData(
+                        PORT_GTE_VXY0 + 2 * i, RENDER_WORD(mesh, 0));
+                    port_GteWriteData(
+                        PORT_GTE_VZ0 + 2 * i, RENDER_HALF(mesh, sizeof(u32)));
+                    mesh += PACKED_VERTEX_SIZE;
+                }
+                port_GteCommand(PORT_GTE_CMD_RTPT);
+                render_StoreProjected(RENDER_POINTS, RENDER_TILE_DEPTHS);
+                port_GteWriteData(PORT_GTE_VXY0, RENDER_WORD(mesh, 0));
+                port_GteWriteData(PORT_GTE_VZ0, RENDER_HALF(mesh, sizeof(u32)));
+                mesh += PACKED_VERTEX_SIZE;
+                port_GteCommand(PORT_GTE_CMD_RTPS);
+                RENDER_TILE_DEPTHS[RENDER_RUN] =
+                    (s16)port_GteReadData(PORT_GTE_SZ3);
+                port_GteStoreData(PORT_GTE_SXY2, &RENDER_POINTS[RENDER_RUN], 1);
+            } else {
+                g_render_walk.mesh = mesh;
+                render_ProjectPackedVertices(
+                    count, RENDER_POINTS, RENDER_TILE_DEPTHS);
+                mesh = g_render_walk.mesh;
+            }
+            do {
+                count = RENDER_HALF(mesh, 0);
+                type = RENDER_HALF(mesh, sizeof(u16));
+                mesh += 2 * sizeof(u16);
+                mesh = (u8 *)handlers[type >> TILE_TYPE_SHIFT](
+                    count, TILE_VERTICES, (s16 *)mesh, flags);
+            } while (RENDER_HALF(mesh, 0) != 0);
+            mesh += sizeof(u16);
+            if (RENDER_HALF(mesh, 0) != 0) {
+                sys_Trap();
+                return queue;
+            }
+        }
+        /* Go on if the next thing in the queue is a tile too. */
+        if (g_render_queue_end == queue) {
+            break;
+        }
+        tile = *queue;
+        if (RENDER_SHALF(tile, 0) != RENDER_KIND_TILE) {
+            break;
+        }
+        queue++;
+    }
+    return queue;
+}
+#else
 INCLUDE_ASM("asm/funcs", render_DrawStageTiles);
+#endif
 
 /* ---- cloth's routines ---- */
 
@@ -689,10 +1863,32 @@ INCLUDE_ASM("asm/funcs", render_DrawStageTiles);
  * and sorted a little farther off. */
 /* Assembly: trapping, all four; each saves $ra and calls nothing; the mesh
  * cursor comes in $s0 and is left moved on. */
+#if RB_PORT
+/* In C: render_EmitTwoSidedFT3 with the depth it is sorted by moved a
+ * little: nearer for a face seen from its front, farther for one seen
+ * from behind. */
+void render_EmitClothFT3(s32 count) { render_EmitBothSidesFT3(count, TRUE); }
+#else
 INCLUDE_ASM("asm/funcs", render_EmitClothFT3);
+#endif
+#if RB_PORT
+/* In C: as render_EmitClothFT3 is to render_EmitTwoSidedFT3. */
+void render_EmitClothFT4(s32 count) { render_EmitBothSidesFT4(count, TRUE); }
+#else
 INCLUDE_ASM("asm/funcs", render_EmitClothFT4);
+#endif
+#if RB_PORT
+/* In C: as render_EmitClothFT3 is to render_EmitTwoSidedFT3. */
+void render_EmitClothGT3(s32 count) { render_EmitBothSidesGT3(count, TRUE); }
+#else
 INCLUDE_ASM("asm/funcs", render_EmitClothGT3);
+#endif
+#if RB_PORT
+/* In C: as render_EmitClothFT3 is to render_EmitTwoSidedFT3. */
+void render_EmitClothGT4(s32 count) { render_EmitBothSidesGT4(count, TRUE); }
+#else
 INCLUDE_ASM("asm/funcs", render_EmitClothGT4);
+#endif
 
 /* ---- the routines of the handler tables ----
  * The comment at the tables in render.c says what each variant is. */
@@ -809,7 +2005,67 @@ INCLUDE_ASM("asm/funcs", render_EmitPackedGT4);
 /* Assembly: both trapping (27 and 85); the handlers they call share their
  * registers; render_DrawSkinnedMesh's frame is 0x8C bytes, and the compiler's
  * is always a multiple of 8. */
+#if RB_PORT
+/* In C: the node is g_render_walk.node. The count at the head of the mesh
+ * is how many of the mesh's own vertices are stepped over, and how many
+ * threes of the cloth's points are projected: three times as many points
+ * as the mesh has vertices, as in the listing. The first group is drawn
+ * without its count being looked at. */
+static void render_DrawCloth(s32 scale_shift) {
+    SceneNode *node = g_render_walk.node;
+    SceneNode *camera = g_node_camera_root_ptr;
+    u8 *mesh = (u8 *)g_reloc_tables[node->mesh_block][node->mesh];
+    u8 *cloth_point;
+    u32 *points = RENDER_POINTS;
+    s16 *depths = RENDER_DEPTHS;
+    s32 shift = scale_shift & RENDER_SHIFT_MASK;
+    s32 count = RENDER_HALF(mesh, 0);
+    s32 type;
+    s32 place[3];
+    s32 i;
+    s32 j;
+
+    if (count == 0) {
+        return;
+    }
+    mesh += sizeof(u32) + count * PACKED_VERTEX_SIZE;
+    mesh += (u32)mesh & (sizeof(u32) - 1);
+    cloth_point = *(u8 **)((u8 *)node + CLOTH_NODE_POINTS);
+    for (; count != 0; count--) {
+        for (i = 0; i < RENDER_RUN; i++) {
+            for (j = 0; j < 3; j++) {
+                place[j] = (((s32)RENDER_WORD(cloth_point, j * sizeof(s32)) >>
+                             CLOTH_POINT_SHIFT) -
+                            camera->world.t[j]) >>
+                           shift;
+            }
+            port_GteWriteData(
+                PORT_GTE_VXY0 + 2 * i, (place[0] & 0xFFFF) | (place[1] << 16));
+            port_GteWriteData(PORT_GTE_VZ0 + 2 * i, place[2]);
+            cloth_point += CLOTH_POINT_SIZE;
+        }
+        port_GteCommand(PORT_GTE_CMD_RTPT);
+        render_StoreProjected(points, depths);
+        points += RENDER_RUN;
+        depths += RENDER_RUN;
+    }
+    RENDER_DEPTH_SHIFT = 3 - scale_shift;
+    g_render_walk.mesh = mesh;
+    do {
+        count = RENDER_HALF(g_render_walk.mesh, 0);
+        type = RENDER_HALF(g_render_walk.mesh, sizeof(u16));
+        g_render_walk.mesh += 2 * sizeof(u16);
+        type >>= CLOTH_TYPE_SHIFT;
+        if (node->draw_flags & NODE_DRAW_OUTLINE) {
+            type += CLOTH_OUTLINE_HANDLERS;
+        }
+        g_render_cloth_handlers[type](count);
+    } while (RENDER_HALF(g_render_walk.mesh, 0) != 0);
+    g_render_walk.mesh += sizeof(u16);
+}
+#else
 INCLUDE_ASM("asm/funcs", render_DrawCloth);
+#endif
 #if RB_PORT
 /* In C: the mesh cursor past the mesh is left in g_render_walk.mesh,
  * where the listing returns it. A section's vertices come in five lists,
@@ -1235,45 +2491,7 @@ INCLUDE_ASM("asm/funcs", render_EmitSkinGT4);
 /* In C: a face seen from behind has its normal's three numbers turned bit
  * for bit (each one less than its negative) before it is lit. */
 void render_EmitTwoSidedFT3(s32 count) {
-    u8 *record = g_render_walk.mesh;
-    POLY_FT3 *prim = (POLY_FT3 *)g_disp_prim_cursor;
-    RenderFace face;
-    s32 depth;
-    u32 flip;
-
-    if (count == 0) {
-        return;
-    }
-    for (; count != 0; count--, record += EMIT_FT3_SIZE) {
-        port_GteLoadData(PORT_GTE_RGBC, record, 1);
-        render_LoadFace(&face, RENDER_WORD(record, EMIT_CORNERS3), 3);
-        if (render_FaceOffScreen(&face)) {
-            continue;
-        }
-        flip = render_FaceFront() ? 0 : RENDER_FLIP;
-        depth = render_FaceDepth3(&face, RENDER_DEPTHS);
-        RENDER_WORD_OF(prim->x0) = face.xy[0];
-        RENDER_WORD_OF(prim->x1) = face.xy[1];
-        RENDER_WORD_OF(prim->x2) = face.xy[2];
-        if (depth <= 0 || (depth << RENDER_AVERAGE_SHIFT) >= RENDER_DEPTH_END) {
-            continue;
-        }
-        port_GteWriteData(
-            PORT_GTE_VXY0, RENDER_WORD(record, EMIT_FT3_NORMAL) ^ flip);
-        port_GteWriteData(
-            PORT_GTE_VZ0,
-            RENDER_WORD(record, EMIT_FT3_NORMAL + sizeof(u32)) ^ flip);
-        port_GteCommand(PORT_GTE_CMD_NCS);
-        port_GteStoreData(PORT_GTE_RGB2, &prim->r0, 1);
-        RENDER_WORD_OF(prim->u0) = EMIT_UV0_CLUT(record);
-        RENDER_WORD_OF(prim->u1) = EMIT_UV1_TPAGE(record);
-        RENDER_HALF_OF(prim->u2) = RENDER_HALF(record, EMIT_UV2);
-        render_LinkPrim(render_OtIndex(depth << RENDER_AVERAGE_SHIFT), prim,
-                        RENDER_PRIM_LENGTH(POLY_FT3));
-        prim++;
-    }
-    g_render_walk.mesh = record;
-    g_disp_prim_cursor = (u32 *)prim;
+    render_EmitBothSidesFT3(count, FALSE);
 }
 #else
 INCLUDE_ASM("asm/funcs", render_EmitTwoSidedFT3);
@@ -1281,46 +2499,7 @@ INCLUDE_ASM("asm/funcs", render_EmitTwoSidedFT3);
 #if RB_PORT
 /* In C: as render_EmitTwoSidedFT3 does it for a triangle. */
 void render_EmitTwoSidedFT4(s32 count) {
-    u8 *record = g_render_walk.mesh;
-    POLY_FT4 *prim = (POLY_FT4 *)g_disp_prim_cursor;
-    RenderFace face;
-    s32 depth;
-    u32 flip;
-
-    if (count == 0) {
-        return;
-    }
-    for (; count != 0; count--, record += EMIT_FT4_SIZE) {
-        port_GteLoadData(PORT_GTE_RGBC, record, 1);
-        render_LoadFace(&face, RENDER_WORD(record, EMIT_FT4_CORNERS), 4);
-        if (render_FaceOffScreen(&face)) {
-            continue;
-        }
-        flip = render_FaceFront() ? 0 : RENDER_FLIP;
-        depth = render_FaceDepth4(&face, RENDER_DEPTHS);
-        if (depth <= 0 || depth >= RENDER_DEPTH_END) {
-            continue;
-        }
-        RENDER_WORD_OF(prim->x0) = face.xy[0];
-        RENDER_WORD_OF(prim->x1) = face.xy[1];
-        RENDER_WORD_OF(prim->x2) = face.xy[2];
-        RENDER_WORD_OF(prim->x3) = face.xy[3];
-        port_GteWriteData(
-            PORT_GTE_VZ0, RENDER_HALF(record, EMIT_FT4_NORMAL_Z) ^ flip);
-        port_GteWriteData(
-            PORT_GTE_VXY0, RENDER_WORD(record, EMIT_FT4_NORMAL_XY) ^ flip);
-        port_GteCommand(PORT_GTE_CMD_NCS);
-        port_GteStoreData(PORT_GTE_RGB2, &prim->r0, 1);
-        RENDER_WORD_OF(prim->u0) = EMIT_UV0_CLUT(record);
-        RENDER_WORD_OF(prim->u1) = EMIT_UV1_TPAGE(record);
-        RENDER_HALF_OF(prim->u2) = RENDER_HALF(record, EMIT_UV2);
-        RENDER_HALF_OF(prim->u3) = RENDER_HALF(record, EMIT_UV3);
-        render_LinkPrim(
-            render_OtIndex(depth), prim, RENDER_PRIM_LENGTH(POLY_FT4));
-        prim++;
-    }
-    g_render_walk.mesh = record;
-    g_disp_prim_cursor = (u32 *)prim;
+    render_EmitBothSidesFT4(count, FALSE);
 }
 #else
 INCLUDE_ASM("asm/funcs", render_EmitTwoSidedFT4);
@@ -1330,54 +2509,7 @@ INCLUDE_ASM("asm/funcs", render_EmitTwoSidedFT4);
  * A face seen from behind has every number of its three normals turned bit
  * for bit. */
 void render_EmitTwoSidedGT3(s32 count) {
-    u8 *record = g_render_walk.mesh;
-    POLY_GT3 *prim = (POLY_GT3 *)g_disp_prim_cursor;
-    RenderFace face;
-    s32 depth;
-    u32 flip;
-    u32 depths01; /* the first normal's z under the second's */
-
-    if (count == 0) {
-        return;
-    }
-    port_GteLoadData(PORT_GTE_RGBC, record, 1);
-    for (; count != 0; count--, record += EMIT_GT3_SIZE) {
-        render_LoadFace(&face, RENDER_WORD(record, EMIT_CORNERS3), 3);
-        if (render_FaceOffScreen(&face)) {
-            continue;
-        }
-        flip = render_FaceFront() ? 0 : RENDER_FLIP;
-        depth = render_FaceDepth3(&face, RENDER_DEPTHS);
-        RENDER_WORD_OF(prim->x0) = face.xy[0];
-        RENDER_WORD_OF(prim->x1) = face.xy[1];
-        RENDER_WORD_OF(prim->x2) = face.xy[2];
-        if (depth <= 0 || (depth << RENDER_AVERAGE_SHIFT) >= RENDER_DEPTH_END) {
-            continue;
-        }
-        depths01 = RENDER_WORD(record, EMIT_GT3_NORMAL_Z01) ^ flip;
-        port_GteWriteData(
-            PORT_GTE_VXY0, RENDER_WORD(record, EMIT_GT3_NORMAL_XY0) ^ flip);
-        port_GteWriteData(PORT_GTE_VZ0, depths01);
-        port_GteWriteData(
-            PORT_GTE_VXY1, RENDER_WORD(record, EMIT_GT3_NORMAL_XY1) ^ flip);
-        port_GteWriteData(PORT_GTE_VZ1, depths01 >> 16);
-        port_GteWriteData(
-            PORT_GTE_VXY2, RENDER_WORD(record, EMIT_GT3_NORMAL_XY2) ^ flip);
-        port_GteWriteData(
-            PORT_GTE_VZ2, RENDER_WORD(record, EMIT_GT3_NORMAL_Z2) ^ flip);
-        port_GteCommand(PORT_GTE_CMD_NCT);
-        RENDER_WORD_OF(prim->u0) = EMIT_UV0_CLUT(record);
-        RENDER_WORD_OF(prim->u1) = EMIT_UV1_TPAGE(record);
-        RENDER_HALF_OF(prim->u2) = RENDER_HALF(record, EMIT_UV2);
-        render_LinkPrim(render_OtIndex(depth << RENDER_AVERAGE_SHIFT), prim,
-                        RENDER_PRIM_LENGTH(POLY_GT3));
-        port_GteStoreData(PORT_GTE_RGB0, &prim->r0, 1);
-        port_GteStoreData(PORT_GTE_RGB1, &prim->r1, 1);
-        port_GteStoreData(PORT_GTE_RGB2, &prim->r2, 1);
-        prim++;
-    }
-    g_render_walk.mesh = record;
-    g_disp_prim_cursor = (u32 *)prim;
+    render_EmitBothSidesGT3(count, FALSE);
 }
 #else
 INCLUDE_ASM("asm/funcs", render_EmitTwoSidedGT3);
@@ -1388,63 +2520,7 @@ INCLUDE_ASM("asm/funcs", render_EmitTwoSidedGT3);
  * second corner's whole, but of the first and third corners' only z: their
  * x and y go to the lights as they are. The C does the same. */
 void render_EmitTwoSidedGT4(s32 count) {
-    u8 *record = g_render_walk.mesh;
-    POLY_GT4 *prim = (POLY_GT4 *)g_disp_prim_cursor;
-    RenderFace face;
-    s32 depth;
-    u32 flip;
-    u32 depths; /* two normals' z, one under the other */
-
-    if (count == 0) {
-        return;
-    }
-    port_GteLoadData(PORT_GTE_RGBC, record, 1);
-    for (; count != 0; count--, record += EMIT_GT4_SIZE) {
-        render_LoadFace(&face, RENDER_WORD(record, EMIT_GT4_CORNERS), 4);
-        if (render_FaceOffScreen(&face)) {
-            continue;
-        }
-        flip = render_FaceFront() ? 0 : RENDER_FLIP;
-        depth = render_FaceDepth4(&face, RENDER_DEPTHS);
-        if (depth <= 0 || depth >= RENDER_DEPTH_END) {
-            continue;
-        }
-        RENDER_WORD_OF(prim->x0) = face.xy[0];
-        RENDER_WORD_OF(prim->x1) = face.xy[1];
-        RENDER_WORD_OF(prim->x2) = face.xy[2];
-        RENDER_WORD_OF(prim->x3) = face.xy[3];
-        /* The face's own normal lights the first corner. */
-        depths = RENDER_WORD(record, EMIT_GT4_NORMAL_Z_FACE_0) ^ flip;
-        port_GteWriteData(
-            PORT_GTE_VXY0, RENDER_WORD(record, EMIT_GT4_NORMAL_XY_FACE) ^ flip);
-        port_GteWriteData(PORT_GTE_VZ0, depths);
-        port_GteCommand(PORT_GTE_CMD_NCS);
-        port_GteStoreData(PORT_GTE_RGB2, &prim->r0, 1);
-        /* The other three have a normal each. */
-        port_GteWriteData(
-            PORT_GTE_VXY0, RENDER_WORD(record, EMIT_GT4_NORMAL_XY0));
-        port_GteWriteData(PORT_GTE_VZ0, depths >> 16);
-        depths = RENDER_WORD(record, EMIT_GT4_NORMAL_Z12) ^ flip;
-        port_GteWriteData(
-            PORT_GTE_VXY1, RENDER_WORD(record, EMIT_GT4_NORMAL_XY1) ^ flip);
-        port_GteWriteData(PORT_GTE_VZ1, depths);
-        port_GteWriteData(
-            PORT_GTE_VXY2, RENDER_WORD(record, EMIT_GT4_NORMAL_XY2));
-        port_GteWriteData(PORT_GTE_VZ2, depths >> 16);
-        port_GteCommand(PORT_GTE_CMD_NCT);
-        RENDER_WORD_OF(prim->u0) = EMIT_UV0_CLUT(record);
-        RENDER_WORD_OF(prim->u1) = EMIT_UV1_TPAGE(record);
-        RENDER_HALF_OF(prim->u2) = RENDER_HALF(record, EMIT_UV2);
-        RENDER_HALF_OF(prim->u3) = RENDER_HALF(record, EMIT_UV3);
-        render_LinkPrim(
-            render_OtIndex(depth), prim, RENDER_PRIM_LENGTH(POLY_GT4));
-        port_GteStoreData(PORT_GTE_RGB0, &prim->r1, 1);
-        port_GteStoreData(PORT_GTE_RGB1, &prim->r2, 1);
-        port_GteStoreData(PORT_GTE_RGB2, &prim->r3, 1);
-        prim++;
-    }
-    g_render_walk.mesh = record;
-    g_disp_prim_cursor = (u32 *)prim;
+    render_EmitBothSidesGT4(count, FALSE);
 }
 #else
 INCLUDE_ASM("asm/funcs", render_EmitTwoSidedGT4);

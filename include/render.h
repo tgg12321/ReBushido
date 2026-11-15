@@ -208,6 +208,17 @@ extern u32 *g_render_tiny_ot;
 extern MATRIX g_render_view_matrix;
 extern CVECTOR g_render_skin_colors[500];
 extern u8 *render_LightSkin(u8 *normals, MATRIX **matrices);
+
+/* What the walk over the queue reaches in render.c: the two tables it
+ * chooses for some parts, and the C that draws a fighter's body. */
+extern void (*g_render_packed_handlers[32])();
+extern void (*g_render_tiny_handlers[32])();
+extern void render_DrawSkinned(
+    s32 matrices, s32 mesh, s16 light_setup_index, u8 *node);
+/* The projection of a part of format 3, which does nothing
+ * (render_asm.c). */
+extern void render_ProjectFormat3(void);
+
 #endif
 
 /* Used only inside render.c. */

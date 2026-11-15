@@ -25,7 +25,7 @@ python tools/playtest.py [name...]          # the tests alone, with the discs al
 python tools/playtest.py --list
 ```
 
-About three and a half minutes for the ten tests, after up to two minutes
+About four and a half minutes for the ten tests, after up to two minutes
 of building discs; the tool holds a run to five minutes and the suite to
 ten. It prints a table and exits 1 if a test failed:
 
@@ -35,14 +35,14 @@ ten. It prints a table and exits 1 if a test failed:
   bugfixes_fight   ok        29s
   fight_end        ok        26s
   first_frame_sweep ok        13s
-  gte_model        ok        14s
+  gte_model        ok        79s
   options_no_card  ok         9s
   options_page     ok        14s
   quickboot        ok         7s
   same_as_original ok        58s
   vanish           ok        19s
   emulator processes left running: 0
-  pictures and logs: build/playtest/<test>/<disc>/   (198s in all)
+  pictures and logs: build/playtest/<test>/<disc>/   (263s in all)
 OK: play tests: 10 passed, 0 skipped
 ```
 
@@ -102,7 +102,7 @@ retail program has none.
 | `bugfixes_fight` | ReBushido | Right on the options page turns Bugfixes on, Start leaves it and the setting is written to the card; then the presses of `same_as_original`: the opening, the menus, a versus fight to a kill, the replay, the menu after. The setting is still on at the end and nothing crashed |
 | `first_frame_sweep` | the bugs' fight, off and on | On the first fighter's first frame the hit tests' scratch has the sweep of its naginata's shaft: with the setting off the shaft's far end was swept from nowhere (0, 0, 0: the first fight since power on left nothing else), with it on from where it is |
 | `vanish` | the bugs' fight, off and on | The CPU strikes the vanisher. With the setting off it comes back at (4000, -12000), another stage's start position, and two seconds later has fallen out of the stage; with it on it comes back at (3400, 7400), where it started, and stands |
-| `gte_model` | the GTE probe, no disc | The native port's C does what the PlayStation's coprocessor and assembly do: 116,000 made-up cases come out the same on the emulator and on the host ("The GTE probe") |
+| `gte_model` | the GTE probe, no disc | The native port's C does what the PlayStation's coprocessor and assembly do: 125,800 made-up cases come out the same on the emulator and on the host ("The GTE probe") |
 
 ## The GTE probe
 
@@ -124,17 +124,31 @@ loaded by the emulator with no disc:
   probe from the matching build's own objects: they are the game's
   listings.
 
+- **The renderer.** For each of 49 things, 200 cases: the routines of
+  the handler tables on a group of records, the projections, a part's
+  groups, a fighter's body, a cloth, stage tiles, and the walk over a
+  whole queue of nodes. A case makes up a mesh, the scratchpad and what
+  else the routine reads, loads the registers and runs it; what is taken
+  is all it could have written, word for word: the ordering tables, the
+  primitives, the mesh, the scratchpad, the cursors, and the 64
+  registers. The probe and the host test keep all of that at the same
+  addresses, so links and pointers are compared as they are. The
+  renderer's listings are linked from the matching build's objects with
+  the game's own `render.c`.
+
 Every number of a case is made up by a generator from the case's place in
-the list (`cases.h`, `routines.h`); nothing is the game's data. The same
-two files are compiled into two host tests, `tests/port/gte_vectors.c`
-and `asm_vectors.c`, which run the same cases on the port's C. When the
+the list (`cases.h`, `routines.h`, `render_cases.h`); nothing is the
+game's data. The same files are compiled into three host tests,
+`tests/port/gte_vectors.c`, `asm_vectors.c` and `render_vectors.c`, which
+run the same cases on the port's C. When the
 probe is built those write down a number for each case, which is compiled
 into the probe; the probe compares as it goes and leaves the count of
 cases that differed where the test reads it.
 
 ```
 wsl bash tools/build.sh playtest gte_model   # build the probe, run it
-wsl python3 tools/gte_probe.py               # the cases that differed, register by register
+wsl python3 tools/gte_probe.py               # the cases that differed, register by register;
+                                             # for the renderer, word by word of memory as well
 ```
 
 The emulator's GTE is itself somebody's reading of the hardware: the test
@@ -143,8 +157,8 @@ console. What the port took from the emulator where the two might differ
 is in `docs/PORT.md`, "How it is proved".
 
 After a change to the port's C or to the cases, the numbers the host
-tests hold on every push (`AGREED` in `tests/port/gte_vectors.py` and
-`asm_vectors.py`) are no longer the C's: run this test, and when it
+tests hold on every push (`AGREED` in `tests/port/gte_vectors.py`,
+`asm_vectors.py` and `render_vectors.py`) are no longer the C's: run this test, and when it
 passes copy the new numbers in, as those files say.
 
 ## What a run is

@@ -1,9 +1,11 @@
-about = "The port's GTE and the C beside the assembly make of 116,000 made-up cases what the emulator's GTE and the assembly make of them"
+about = "The port's GTE and the C beside the assembly make of 125,800 made-up cases what the emulator's GTE and the assembly make of them"
 
 # No disc: the GTE probe, a program of the tests' own (README.md, "The GTE
 # probe"). It runs every case of tests/play/probe/cases.h on the
 # emulator's coprocessor and compares the 64 registers it reads back with
-# what src/port/gte.c made of the same case.
+# what src/port/gte.c made of the same case; then the routines that are
+# assembly, and the renderer on made-up meshes (cases.h, routines.h and
+# render_cases.h there).
 discs = ["gteprobe"]
 common_state = false
 cards = "none"
@@ -34,4 +36,4 @@ name = "finished"
 when = "probe_done == 1"
 within = 29900
 shot = false
-expect = ["probe_run == 124000", "probe_failed == 0"]
+expect = ["probe_run == 125800", "probe_failed == 0"]

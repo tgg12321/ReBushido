@@ -92,12 +92,13 @@ The port's own tests are `tests/port/NAME.c`, named `port/NAME`:
 | `port/asm` | the C beside the assembly: the game's `math_asm.c` and `math_RotMatrixZYX`, Sony's libgte | real square roots; rotations made from real sines, and for Sony's from Sony's table of sines; products and scalings in whole numbers; a blend of two rotations is a rotation; cases by hand |
 | `port/gte_vectors` | the GTE on the probe's 84,000 made-up cases | the numbers written down when the emulator's GTE last made the same of them |
 | `port/asm_vectors` | the C beside the assembly on the probe's 32,000 | the numbers written down when the assembly itself last made the same of them, on the emulator |
+| `port/render_vectors` | the renderer's C on the probe's 9,800 made-up meshes and queues | the numbers written down when the renderer's listings last left the same in memory and in the GTE, on the emulator |
 
-The last two are the host's half of the play test `gte_model`
+The last three are the host's half of the play test `gte_model`
 ([`play/README.md`](play/README.md), "The GTE probe"): the emulator is
 not there on every push, so what is held is that the C still gives what
 it gave when the emulator last agreed. A test's Python side may name
-more source files to compile apart and link (`sources()`); those two and
+more source files to compile apart and link (`sources()`); those three and
 `port/asm` do, for Sony's modules, each of which is a file of its own.
 
 ## Play tests
@@ -228,9 +229,9 @@ MIPS: the SHA1 is the check of that.
 
 ## What is not tested
 
-- Assembly: the renderer. (The other routines that are assembly,
-  `math_Sqrt`, `math_MulMatrix`, `mem_MoveWords` and the rest, are run as
-  the C the port has beside them: "The native port".)
+- Assembly as assembly: the plain run has no body for a function that
+  is a listing. With `--rebushido` each is run as the C the port has
+  beside it, the renderer too: "The native port".
 - What works through the GTE: the blade tests of `hit_test.c`,
   `math_MatrixToAngles`, `math_TurnAngles`, `math_ScaleAlong`,
   `math_TriangleHeading`, the cloth's step. With the port's GTE they can

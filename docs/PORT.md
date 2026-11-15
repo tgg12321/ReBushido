@@ -9,8 +9,8 @@ ReBushido PlayStation program.
 
 This page is what stands between the source and a PC, counted; what has
 been done about it; the stages that are left; and the decisions that are
-the owner's. **No port runs yet.** What exists is the first stage: C for
-the assembly, with its proof.
+the owner's. **No port runs yet.** What exists is the first stage, whole:
+C for the assembly, with its proof.
 
 ## Where it stands
 
@@ -18,7 +18,7 @@ the assembly, with its proof.
 |---|---|
 | The GTE, the PlayStation's geometry coprocessor, in C | done: `src/port/gte.c`, every operation the hardware has |
 | The game's GTE instructions (Sony's macros) as calls into it | done, by `tools/port_gte_macros.py` |
-| C beside the assembly functions | 68 of 138: Sony's libgte (48) and the game's maths (20). The renderer's 51 are left |
+| C beside the assembly functions | 119 of 138: Sony's libgte (48), the game's maths (20) and the renderer (51). The other 19 need none (below) |
 | BIOS calls | named below; nothing written |
 | Sony's libraries, a window, sound, the disc | not begun |
 
@@ -62,7 +62,7 @@ of `asm/funcs/`, which the source includes with `INCLUDE_ASM`: 139 files,
 | The GTE itself | 22 operations; the listings run 16 of them, by 24 instruction words, 195 times | the console | `src/port/gte.c`: the 64 registers and every operation, with their limits, flags and the division | done |
 | Sony's libgte in assembly | 48 functions | `src/main/psxsdk/libgte/`, 33 files | C beside each | done |
 | The game's maths in assembly | 20 functions: the 19 of `math_asm.c` and `math_RotMatrixZYX` | `math_asm.c`, `render_asm.c` | C beside each. `sys_Trap` becomes `port_Trap`, which the port supplies | done |
-| The renderer | 51 functions, 8,029 instructions, and the data listing | `render_asm.c` (50), `render_skin_asm.c` | C. They are not C functions as they stand: they pass the mesh cursor, the scratchpad and the handler table to each other in fixed registers, jump into each other through two tables of labels, and eight of them have their outline colour written into their instructions while the game runs (`render_SetOutlineColor`). The C has to give all that a form: a structure for the shared state, calls for the jumps, a variable for the colour | left |
+| The renderer | 51 functions, 8,029 instructions, and the data listing | `render_asm.c` (50), `render_skin_asm.c` | C beside each ("The renderer in C"). They are not C functions as they stand: they pass the mesh cursor, the scratchpad and the handler table to each other in fixed registers, jump into each other through two tables of labels, and eight of them have their outline colour written into their instructions while the game runs (`render_SetOutlineColor`). The C gives all that a form: a structure for the shared state, two switches for the jumps, a variable for the colour | done |
 | BIOS calls | 40 two-instruction jumps (`BIOS_A_FUNCTION` and its like), 2 system calls, `_96_remove` | `src/main/psxsdk/libapi/`, `libcard/` | Not C equivalents: the kernel does not exist on a PC. The port supplies what the game calls (below) | named |
 | Sony's other assembly | 8 functions that patch the kernel's pad and card drivers, `_patch_gte`, `setjmp`, `SetSp` | `libapi/`, `libcard/`, `libc2/`, `libgte/patchgte.c` | None: they serve Sony's interrupt and driver code, which the port replaces whole | not needed |
 | Start-up | the PS-X EXE header, `__SN_ENTRY_POINT`, `__main`, `__do_global_dtors` | `asm/header.s`, `libsn/snmain.c` | The PC's own start-up; `main` is the game's | not needed |
@@ -91,6 +91,80 @@ The other kernel entries (`InitHeap`, `FlushCache`, `GPU_cw`,
 `ResetEntryInt`, `HookEntryInt`, `AddDrv`, `DelDrv`, `SysEnqIntRP`,
 `SysDeqIntRP`, `_card_write`, `_new_card`, `_96_remove`) are reached only
 from inside Sony's libraries.
+
+## The renderer in C
+
+The 50 routines of `render_asm.c` and `render_LightSkin` have C beside
+them under `RB_PORT`, in the same files.
+
+**What the routines share.** The listings keep where the walk over the
+queue is in registers, from one routine to the next. In C that is one
+structure, `g_render_walk` (`render.h`):
+
+| Member | The listings' register | |
+|---|---|---|
+| `queue` | `$s7` | the next node of the queue |
+| `node` | `$s2` | the node being drawn |
+| `mesh` | `$s0` | the mesh cursor: every routine reads it and leaves it moved on |
+| `handlers` | `$s4` | the handler table in use |
+| `scale_shift` | `$s5` | how many bits the node's coordinates are scaled down by |
+| `view` | `$s6`, `$fp` | the view matrix |
+| `lights` | `$s3` | the node's light setup |
+
+A routine of the handler tables is `void render_Emit...(s32 count)`: it
+is given its group's count, as the listing is in `$a0`, and finds its
+records at `g_render_walk.mesh`. The tables themselves (`render.c`) are
+not changed. What the listings keep on the scratchpad stays there, at
+the same places: the words `render.h` names, the projected points and
+their depths, the work area of the stage tiles. The C reaches it by the
+console's address, which is what "Memory at the PlayStation's
+addresses" (below) is for.
+
+**The two tables of labels** are two switches. `g_render_kind_jumps`,
+by the node's kind, is `render_SetupNode`: it loads the GTE for the kind
+and says whether the node's mesh is then walked (a mesh turned by its
+node, one only placed, a shadow, the tiny model), or draws the node by
+its own routine (a fighter's body, a run of stage tiles, a cloth, the
+surf). `g_render_format_jumps`, by the format of a part's vertices, is
+`render_DrawPart`: SVECTORs with the table in use; packed with the usual
+table, or its second half for a node drawn as outlines; the tiny
+model's, about its own point of the screen; none; packed with the packed
+table.
+
+**The outline colour** is a variable, `g_render_outline_color`, where
+the listings have it in two instructions of each of eight routines.
+`render_SetOutlineColor` (`model.c`) sets it.
+
+**What is one function in C and several listings.** The eight outline
+routines are two (triangles, quads); the four two-sided routines and the
+four of cloth are four, cloth differing by the depth a face is sorted
+at; `render_EmitF3` and `render_EmitTinyF3` are one; the two routines
+that draw a stage tile's faces are one, and their cutting keeps its
+levels where the listings do, as an array of frames on the scratchpad;
+`render_EmitPackedGT3` and `GT4` call the routines whose listings they
+repeat.
+
+**Where the C is not the listing.** The listings leave return addresses
+and saved registers on the scratchpad (`render_DrawGroups`, the two tile
+routines and their cutting); the C writes nothing there. A handler given
+a group of no faces stores a register it never loaded as the primitive
+cursor; the C leaves the cursor (the walks never pass such a group). A
+node's kind or a part's format past the end of its table, which the
+listing would jump through whatever follows the table for, draws
+nothing. Everything else is the listing's, the odd things too: the
+points a face writes before its depth is known, the colour some routines
+load once for a whole group, the normals `render_EmitTwoSidedGT4` turns
+only in part, the scale two kinds of node work out and then do not use.
+
+**What makes it a 32-bit program.** An ordering-table link is 24 bits
+of a primitive's address (`render_LinkEntry`, the tiles' chain), and
+some primitives are in the mesh itself. Addresses are kept in 32-bit
+words of the scratchpad (the ordering table, the handler table, a tile's
+vertices and its ordering-table entry) and in 4-byte slots of the data:
+the tables of mesh pointers, the list of a body's bone matrices, the
+pointer after a body's or a cloth's node, a shadow's parent. The mesh
+cursor is brought to a whole word by its address. With 64-bit pointers
+each of these has to change; none is hidden.
 
 ## Everything else
 
@@ -197,18 +271,60 @@ uses `VSyncCallback`.
   routines as the game has them and calls each with 500 made-up cases;
   the host calls the C. What each wrote, and the GTE's 64 registers after
   it, agree for all 32,000 cases of 64 routines.
+- **The renderer against its listings.** The probe links the renderer as
+  the game has it (`render_asm.c`, `render_skin_asm.c` and `render.c`,
+  the matching build's own objects) and runs 200 made-up cases of each
+  of 49 things: the 38 routines of the handler tables and the two no
+  table has, each on a group of its own records; the two projections;
+  `render_DrawGroups` with each of the three tables the walk chooses,
+  every type of a table in some cases; `render_LightSkin`; a whole
+  skinned mesh of thirteen sections, by itself and through
+  `render_DrawSkinned` with the game's two tables; a cloth; the two tile
+  routines, cut up to three times; a run of tiles; and
+  `render_DrawQueue` on queues of two to five nodes of every kind, with
+  every format of part. A case makes up the mesh, the scratchpad, the
+  nodes, matrices and lights, and the GTE's registers; faces come out
+  drawn, turned away, off the screen, too near, too far and behind the
+  camera, and the cutoff, the fog's end and the distances at which a
+  node is scaled down are hit exactly in some. Both programs keep what
+  a routine reads and writes at the same addresses, so what is compared
+  is every word as it is: the ordering tables with their links, the
+  primitives (the ones a routine began and gave up too), the mesh, the
+  nodes, the scratchpad, where the cursors were left, the colours of a
+  body's normals, and the GTE's 64 registers. All 9,800 agree.
 - **By hand and by real maths**, on every push: `tests/port/gte.c` (each
   operation's limits and flags, worked out by hand; the division against
   true division) and `tests/port/asm.c` (roots against real roots,
   rotations against real rotations, products against whole-number
   arithmetic).
-- **On every push, without the emulator:** `tests/port/gte_vectors` and
-  `asm_vectors` run the probe's cases on the host and hold the results to
-  the numbers written down when the emulator last agreed.
+- **On every push, without the emulator:** `tests/port/gte_vectors`,
+  `asm_vectors` and `render_vectors` run the probe's cases on the host
+  and hold the results to the numbers written down when the emulator
+  last agreed.
+- **Deliberate mistakes.** 122 one-line mistakes were put into the
+  renderer's C, one at a time: 117 changed a number the host test holds
+  (or stopped it), and those numbers are what the probe compares. The
+  other five change nothing at all, and were looked at: a cursor moved
+  on after its last use, a translation cleared that the product before
+  it had cleared already, a starting value every kind of node replaces,
+  two operations that do not touch each other swapped, and a shift
+  count that differs only where the result is nothing either way.
+  Twelve more went through the emulator itself, to see the probe say
+  so. The mistakes that slipped through at first were all of one sort,
+  a comparison one off at a limit no case stood exactly on; the cases
+  now stand on each of those limits (the cutoff, the fog's end, the
+  sizes and distances things change at).
 
 Not proved that way: `InitGeom` (it patches the console's kernel; its
 register values are checked by hand), `sys_Trap`, and anything the
-emulator's GTE itself has wrong. Where the emulator and what is written
+emulator's GTE itself has wrong. Of the renderer: what "Where the C is
+not the listing" names (those words of the scratchpad are left out of
+the comparison), a mesh that ends wrongly and so stops the game, and the
+two functions of the game's C the walk calls for a shadow and for the
+surf, which both programs have stand-ins for. The cases are made up, so
+a mesh of the game's that does something no made-up one does is not
+covered: the first whole frame drawn by the port, at stage 4, is the
+check of that. Where the emulator and what is written
 about the hardware might differ, the port has the emulator's reading, and
 the comments in `src/port/gte.c` say where: the depth cue of the first
 two points of `RTPT`, which sets no flag; and three corners the game
@@ -225,11 +341,10 @@ the one place the C does not do what the assembly does.
 
 Each ends with something that can be shown.
 
-1. **C for the assembly.** The GTE and the maths are done. Left: the
-   renderer's 51 functions. *Done when* the probe, or a play test,
-   holds each to its listing as the maths routines are held: the
-   primitives the C builds from a made-up mesh are the bytes the assembly
-   builds.
+1. **C for the assembly.** Done: the GTE, the maths and the renderer,
+   each held to its listing by the probe. (The two tables of labels at
+   the top of `render_asm.c` still name the listings: stage 2 puts them
+   behind the switch when the program is first linked.)
 2. **A program that links.** The game's C, the port's, and an empty
    platform layer: every Sony function the game calls, defined to do
    nothing or to fail. *Done when* `make port` links with no name

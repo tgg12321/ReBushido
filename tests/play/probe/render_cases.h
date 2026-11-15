@@ -27,6 +27,8 @@
  *   PROBE_PROJECT(routine, count, points, depths)
  *   PROBE_DRAW_GROUPS()
  *   PROBE_DRAW_SKINNED_MESH(matrices, mesh, view, depth_shift)
+ *   PROBE_DRAW_CLOTH(node, scale_shift)
+ *   PROBE_DRAW_TILES(queue, tile, view)    which gives the queue cursor
  *
  * each reading and leaving the mesh cursor, the node and the handler
  * table in g_probe_walk. */
@@ -106,6 +108,17 @@ extern s32 render_DepthToOt(s32 depth);
  * one of the registers the case loads. */
 static s32 g_probe_depth_scale;
 
+/* What a case leaves on the scratchpad that is not compared, for the
+ * routines that draw a stage tile's faces: the listings keep their saved
+ * registers there, and a return address for each level of their
+ * cutting, which the C has no use for. 1: the triangles' routine ran;
+ * 2: the quads'. */
+static s32 g_probe_tile_leavings;
+#define PROBE_TILE_SAVED 10       /* registers saved */
+#define PROBE_TILE_FT3_SAVED 0x7A /* the first's word, for triangles */
+#define PROBE_TILE_FT3_FRAME 0x8E /* the first return address's word */
+#define PROBE_TILE_FRAME_WORDS 10
+
 /* What the routines pass each other in registers. */
 typedef struct {
     u8 *mesh;
@@ -155,14 +168,18 @@ static void probe_FillWords(u32 *words, s32 count, u32 seed) {
  * scratchpad set. */
 static void probe_RenderBegin(u32 *state, s32 wild) {
     u32 pick = probe_Random(state);
+    u32 above = ((pick & 0xE0000000) == 0) ? 0x10000000 : 0;
     s32 i;
 
     probe_FillWords(PROBE_PRIMS, PROBE_ARENA_WORDS - 0x1100, pick);
+    /* An entry of an ordering table is a link, and in one case of eight
+     * has a bit above it as well: a routine adds a primitive's length to
+     * what is there. */
     for (i = 0; i < PROBE_OT_WORDS; i++) {
-        PROBE_OT[i] = (0xC00000 + 4 * (u32)i) ^ (pick & 0xFFF0);
+        PROBE_OT[i] = ((0xC00000 + 4 * (u32)i) ^ (pick & 0xFFF0)) | above;
     }
     for (i = 0; i < PROBE_TINY_OT_WORDS; i++) {
-        PROBE_TINY_OT[i] = (0xD00000 + 4 * (u32)i) ^ (pick & 0xFFF0);
+        PROBE_TINY_OT[i] = ((0xD00000 + 4 * (u32)i) ^ (pick & 0xFFF0)) | above;
     }
     probe_FillWords(PROBE_SCRATCH, PROBE_SCRATCH_WORDS, ~pick);
     PROBE_SCRATCH[PROBE_SCRATCH_DEPTH_SHIFT] = (pick >> 12) & (wild ? 7 : 3);
@@ -174,6 +191,7 @@ static void probe_RenderBegin(u32 *state, s32 wild) {
     g_disp_prim_cursor = PROBE_PRIMS;
     g_render_tiny_ot = PROBE_TINY_OT;
     probe_FillWords((u32 *)g_render_skin_colors, PROBE_SKIN_COLORS, pick * 3);
+    g_probe_tile_leavings = 0;
     g_probe_walk.mesh = PROBE_MESH;
     g_probe_walk.node = PROBE_WORK;
     g_probe_walk.handlers = NULL;
@@ -270,8 +288,23 @@ static void probe_MakeNode(u32 *state) {
 
 /* What a case left, into `out`: PROBE_RENDER_RESULTS words. */
 static void probe_RenderEnd(u32 *out) {
+    s32 quad;
+    s32 i;
+
     PROBE_SCRATCH[PROBE_SCRATCH_RETURN] = 0;
     PROBE_SCRATCH[PROBE_SCRATCH_HANDLERS] = 0;
+    /* the quads' routine keeps everything one word further on */
+    for (quad = 0; quad < 2; quad++) {
+        if (g_probe_tile_leavings & (1 << quad)) {
+            for (i = 0; i < PROBE_TILE_SAVED; i++) {
+                PROBE_SCRATCH[PROBE_TILE_FT3_SAVED + quad + i] = 0;
+            }
+            for (i = PROBE_TILE_FT3_FRAME + quad; i < PROBE_SCRATCH_WORDS;
+                 i += PROBE_TILE_FRAME_WORDS) {
+                PROBE_SCRATCH[i] = 0;
+            }
+        }
+    }
     out[PROBE_RENDER_MESH_END] = (u32)g_probe_walk.mesh;
     out[PROBE_RENDER_PRIM_END] = (u32)g_disp_prim_cursor;
     out[PROBE_RENDER_OT] = probe_Hash(PROBE_OT, PROBE_OT_WORDS);
@@ -314,6 +347,10 @@ typedef struct {
     X(render_EmitTwoSidedFT4,    0x18, 0x0E, 4, 0, 0)                          \
     X(render_EmitTwoSidedGT3,    0x24, 0x0C, 3, 0, 0)                          \
     X(render_EmitTwoSidedGT4,    0x2C, 0x10, 4, 0, 0)                          \
+    X(render_EmitClothFT3,       0x18, 0x0C, 3, 0, 0)                          \
+    X(render_EmitClothFT4,       0x18, 0x0E, 4, 0, 0)                          \
+    X(render_EmitClothGT3,       0x24, 0x0C, 3, 0, 0)                          \
+    X(render_EmitClothGT4,       0x2C, 0x10, 4, 0, 0)                          \
     X(render_EmitTintedFT3,      0x18, 0x0C, 3, 0, 0)                          \
     X(render_EmitTintedFT4,      0x18, 0x0E, 4, 0, 0)                          \
     X(render_EmitBlackF3,        0x04, 0x00, 3, 0, 0)                          \
@@ -413,8 +450,12 @@ static void probe_DoEmit(const ProbeEmit *emit, u32 *state, u32 *out) {
 
 /* ---- projecting a part's vertices ---- */
 
-/* The listings' two routines, which no header declares. */
+/* The listings' routines that no header declares, for the probe: only
+ * the assembly calls them. In the port's C they are not seen outside
+ * their file, which the host test includes. */
 #ifndef PROBE_HOST
+extern void render_DrawStageTiles();
+extern void render_DrawCloth();
 extern void render_ProjectVertices();
 extern void render_ProjectPackedVertices();
 extern void render_DrawGroups();
@@ -478,6 +519,17 @@ static const ProbeType g_probe_tiny_types[] = {
     {0, 0x38, 0x28, 3}, {8, 0x40, 0x30, 4},
 };
 /* clang-format on */
+/* The types of the usual table that a node drawn as outlines can have:
+ * the ones with an outline routine forty-four entries on. */
+/* clang-format off */
+static const ProbeType g_probe_outlined_types[] = {
+    {4, 0x18, 0x0C, 3},  {6, 0x18, 0x0C, 3},
+    {12, 0x18, 0x0E, 4}, {14, 0x18, 0x0E, 4},
+    {20, 0x24, 0x0C, 3}, {22, 0x24, 0x0C, 3},
+    {28, 0x2C, 0x10, 4}, {30, 0x2C, 0x10, 4},
+};
+/* clang-format on */
+#define PROBE_OUTLINED_TYPE_COUNT 8
 #define PROBE_USUAL_TYPE_COUNT 22
 #define PROBE_PACKED_TYPE_COUNT 10
 #define PROBE_TINY_TYPE_COUNT 2
@@ -486,9 +538,10 @@ static const ProbeType g_probe_tiny_types[] = {
 extern void (*g_render_packed_handlers[])();
 extern void (*g_render_tiny_handlers[])();
 
-/* Groups for one of the three tables, ended by a count of none, at
- * `mesh`; returns the end. In a long case every type of the table is
- * there. */
+/* Groups for one of the three tables (0 the usual, 1 the packed, 2 the
+ * tiny model's), or for the usual table's outlines (3), ended by a count
+ * of none, at `mesh`; returns the end. In a long case every type of the
+ * table is there. */
 static u8 *probe_MakeGroups(u32 *state, u8 *mesh, s32 table, s32 every_type) {
     const ProbeType *types = g_probe_usual_types;
     s32 type_count = PROBE_USUAL_TYPE_COUNT;
@@ -498,6 +551,9 @@ static u8 *probe_MakeGroups(u32 *state, u8 *mesh, s32 table, s32 every_type) {
 
     if (table == 1) {
         type_count = PROBE_PACKED_TYPE_COUNT;
+    } else if (table == 3) {
+        types = g_probe_outlined_types;
+        type_count = PROBE_OUTLINED_TYPE_COUNT;
     } else if (table == 2) {
         types = g_probe_tiny_types;
         type_count = PROBE_TINY_TYPE_COUNT;
@@ -643,9 +699,10 @@ static void probe_MakeSkinHandlers(void) {
  * normals, and thirteen sections, each its five lists of vertices, a
  * halfword, its groups from the next whole word, and (but after the
  * last) the points carried over and where the next section's points go.
- * `type_count` is how many of g_probe_skin_types its groups may be. */
-static void probe_MakeSkinnedMesh(u32 *state, s32 wild, s32 type_count) {
-    u8 *mesh = PROBE_MESH;
+ * `type_count` is how many of g_probe_skin_types its groups may be.
+ * Returns the next whole word after it. */
+static u8 *probe_MakeSkinnedMesh(
+    u32 *state, u8 *mesh, s32 wild, s32 type_count) {
     s32 section;
     s32 count;
     s32 i;
@@ -735,6 +792,7 @@ static void probe_MakeSkinnedMesh(u32 *state, s32 wild, s32 type_count) {
         mesh = probe_PutHalf(
             mesh, PROBE_POINT_COUNT + (s32)(probe_Random(state) % 40));
     }
+    return mesh + ((u32)mesh & 3);
 }
 
 /* What a body's walk works from: the camera, the bones, the lights. */
@@ -763,7 +821,7 @@ static void probe_DoDrawSkinnedMesh(u32 *state, s32 wild, u32 *out) {
     probe_MakeSkinHandlers();
     PROBE_SCRATCH[PROBE_SCRATCH_HANDLERS] = (u32)g_probe_skin_handlers;
     probe_MakeSkinnedMesh(
-        state, wild,
+        state, PROBE_MESH, wild,
         (pick & 1) ? PROBE_SKIN_TYPE_COUNT : PROBE_SKIN_OUTLINE_TYPE_COUNT);
     PROBE_DRAW_SKINNED_MESH(
         PROBE_BONE_LIST, PROBE_MESH, PROBE_VIEW, (pick >> 1) & 3);
@@ -783,10 +841,518 @@ static void probe_DoDrawSkinned(u32 *state, s32 wild, u32 *out) {
     probe_MakeLights(state, &g_light_setups[setup]);
     probe_MakeBone(state, &g_render_view_matrix);
     probe_MakeSkinnedMesh(
-        state, wild,
+        state, PROBE_MESH, wild,
         outline ? PROBE_SKIN_OUTLINE_TYPE_COUNT : PROBE_SKIN_TYPE_COUNT);
     render_DrawSkinned(
         (s32)PROBE_BONE_LIST, (s32)PROBE_MESH, (s16)setup, PROBE_WORK);
+    g_probe_walk.mesh = NULL;
+}
+
+/* ---- a cloth ---- */
+
+/* The cloth's points, sixty-four bytes each, and the table of mesh
+ * pointers its node names its mesh in. */
+#define PROBE_CLOTH_POINTS (PROBE_WORK + 0x500)
+#define PROBE_CLOTH_POINT_SIZE 0x40
+#define PROBE_MESH_TABLE ((s32 *)(PROBE_WORK + 0x900))
+
+/* The record of each of a cloth's four kinds of group, by its type less
+ * its low three bits. */
+/* clang-format off */
+static const ProbeType g_probe_cloth_types[] = {
+    {0, 0x18, 0x0C, 3}, {8, 0x18, 0x0E, 4},
+    {16, 0x24, 0x0C, 3}, {24, 0x2C, 0x10, 4},
+};
+/* clang-format on */
+
+/* A node whose mesh is the one at the start of the mesh's room: a block
+ * and an entry of the tables of mesh pointers. */
+static void probe_MakeMeshNode(u32 *state, SceneNode *node) {
+    s32 block = (s32)(probe_Random(state) % RELOC_BLOCK_COUNT);
+    s32 entry = (s32)(probe_Random(state) % 8);
+
+    node->mesh_block = (s16)block;
+    node->mesh = (s16)entry;
+    g_reloc_tables[block] = PROBE_MESH_TABLE;
+    PROBE_MESH_TABLE[entry] = (s32)PROBE_MESH;
+}
+
+/* A cloth's mesh at `mesh` and its points: the count, the mesh's own
+ * vertices, and the groups from the next whole word; three points for
+ * each of the mesh's vertices, in units of 1/128. Returns the next whole
+ * word after the mesh. */
+static u8 *probe_MakeClothMesh(u32 *state, u8 *mesh, s32 wild) {
+    u32 pick = probe_Random(state);
+    s32 count = 1 + (s32)(pick % 4);
+    s32 groups = 1 + (s32)((pick >> 4) % 3);
+    s32 i;
+    s32 j;
+
+    for (i = 0; i < 3 * count; i++) {
+        s32 *point = (s32 *)(PROBE_CLOTH_POINTS + i * PROBE_CLOTH_POINT_SIZE);
+
+        for (j = 0; j < 3; j++) {
+            point[j] = (s32)probe_Signed(state, wild ? 23 : 21);
+        }
+    }
+    *(u32 *)mesh = (u32)count | (probe_Random(state) << 16);
+    mesh += 4;
+    for (i = 0; i < count; i++) {
+        mesh = probe_PutVertex(state, mesh, 12);
+    }
+    mesh += (u32)mesh & 3;
+    for (i = 0; i < groups; i++) {
+        const ProbeType *type = &g_probe_cloth_types[probe_Random(state) & 3];
+        s32 records = 1 + (s32)(probe_Random(state) % 3);
+
+        mesh = probe_PutHalf(mesh, records);
+        mesh = probe_PutHalf(mesh, type->type + (s32)(probe_Random(state) & 7));
+        for (j = 0; j < records; j++) {
+            /* the corners are among the points the walk has projected */
+            mesh = probe_MakeRecord(
+                state, mesh, type->size, type->corners_at, type->corner_count);
+        }
+    }
+    mesh = probe_PutHalf(mesh, 0);
+    return mesh + ((u32)mesh & 3);
+}
+
+static void probe_DoDrawCloth(u32 *state, s32 wild, u32 *out) {
+    u32 pick = probe_Random(state);
+    SceneNode *node = (SceneNode *)PROBE_WORK;
+    s32 i;
+
+    probe_MakeNode(state);
+    probe_MakeMeshNode(state, node);
+    node->draw_flags = (u8)((pick >> 8) & 1);
+    *(u8 **)(PROBE_WORK + 0x60) = PROBE_CLOTH_POINTS;
+    probe_FillWords((u32 *)PROBE_CAMERA, sizeof(SceneNode) / 4, pick);
+    for (i = 0; i < 3; i++) {
+        PROBE_CAMERA->world.t[i] = (s32)probe_Signed(state, 14);
+    }
+    g_node_camera_root_ptr = PROBE_CAMERA;
+    probe_MakeClothMesh(state, PROBE_MESH, wild);
+    PROBE_DRAW_CLOTH(node, (pick >> 9) & 3);
+    g_probe_walk.mesh = NULL;
+}
+
+/* ---- stage tiles ---- */
+
+/* Where the tiles' routines keep the corners' depths, the renderer's
+ * options and how far a depth is shifted down, on the scratchpad. */
+#define PROBE_TILE_DEPTHS ((s16 *)(SCRATCHPAD + 0x110))
+#define PROBE_TILE_OPTIONS (*(s32 *)(SCRATCHPAD + 0x1C0))
+#define PROBE_TILE_DEPTH_SHIFT (*(s16 *)(SCRATCHPAD + 0x1C6))
+
+/* Where the fog ends and where drawing starts: in most cases far and
+ * near, so that faces are drawn; in some anywhere. */
+static void probe_MakeTileLimits(u32 pick) {
+    PROBE_SCRATCH[PROBE_SCRATCH_FOG] =
+        (pick & 0x3000) ? 0xFFF : ((pick >> 16) & 0xFFF);
+    PROBE_SCRATCH[PROBE_SCRATCH_CUTOFF] =
+        (pick & 0xC000) ? ((pick >> 16) & 0xFF) : ((pick >> 20) & 0xFFF);
+}
+
+/* A group of a tile's faces, by itself: the projected points, forty
+ * packed vertices they came from, and the records. In one case of four
+ * the points are close together, so that the faces are small on the
+ * screen. `quad`: the quads' routine. */
+static void probe_DoSplit(u32 *state, u32 *out, s32 quad) {
+    u32 pick = probe_Random(state);
+    s32 count = 1 + (s32)(pick % 3);
+    s16 *vertices = (s16 *)PROBE_MESH;
+    u8 *record = PROBE_MESH + 0x100;
+    s32 flags = (s32)((pick >> 4) & 3) | ((pick & 0x40) ? 0x100 : 0);
+    s32 i;
+
+    probe_MakePoints(state, PROBE_TILE_DEPTHS);
+    if ((pick & 0x300000) == 0) {
+        for (i = 0; i < PROBE_POINT_COUNT; i++) {
+            PROBE_POINTS[i] = (100 + probe_Random(state) % 48) |
+                              ((80 + probe_Random(state) % 48) << 16);
+        }
+    }
+    for (i = 0; i < 3 * PROBE_POINT_COUNT; i++) {
+        vertices[i] = (s16)probe_Signed(state, 12);
+    }
+    PROBE_TILE_OPTIONS = (s32)((pick >> 8) & 7);
+    PROBE_TILE_DEPTH_SHIFT = (s16)((pick >> 11) & 3);
+    probe_MakeTileLimits(probe_Random(state));
+    for (i = 0; i < count; i++) {
+        probe_MakeRecord(
+            state, record + i * 0x18, 0x18, quad ? 0x0E : 0x0C, quad ? 4 : 3);
+    }
+    /* In one case of eight the first face faces the camera and is on the
+     * screen exactly one of the sizes under which a face's texture is
+     * taken smaller: a right angle of 32 by the size over 32. */
+    if ((pick & 0x1C000000) == 0) {
+        static const u8 sides[4] = {16, 24, 32, 56};
+        u32 side = sides[(quad ? 2 : 0) + ((pick >> 29) & 1)];
+        u8 *corners = record + (quad ? 0x0E : 0x0C);
+
+        PROBE_POINTS[0] = 100 | (100 << 16);
+        PROBE_POINTS[1] = 100 | (132 << 16);
+        PROBE_POINTS[2] = (100 + side) | (100 << 16);
+        PROBE_POINTS[3] = (100 + side) | (132 << 16);
+        for (i = 0; i < 4; i++) {
+            corners[i] = (u8)i;
+            PROBE_TILE_DEPTHS[i] = (s16)(0x200 + (probe_Random(state) & 0xFFF));
+        }
+    }
+    /* In one case of four the cutoff or the fog's end is the entry of
+     * the first face, or the one beside it. */
+    if ((pick & 0xC00000) == 0) {
+        const u8 *corners = record + (quad ? 0x0E : 0x0C);
+        s32 depth = PROBE_TILE_DEPTHS[corners[0]];
+        s32 index;
+
+        for (i = 1; i < (quad ? 4 : 3); i++) {
+            if (depth < PROBE_TILE_DEPTHS[corners[i]]) {
+                depth = PROBE_TILE_DEPTHS[corners[i]];
+            }
+        }
+        if (quad && (record[2] & 1)) {
+            depth += 1000;
+        }
+        index = render_DepthToOtShifted(depth, 3 - PROBE_TILE_DEPTH_SHIFT);
+        if (pick & 0x1000000) {
+            PROBE_SCRATCH[PROBE_SCRATCH_CUTOFF] =
+                (u32)index + ((pick >> 25) & 1);
+        } else {
+            PROBE_SCRATCH[PROBE_SCRATCH_FOG] = (u32)index - ((pick >> 25) & 1);
+        }
+    }
+    if (quad) {
+        out[PROBE_RENDER_VALUE] =
+            (u32)render_EmitSplitFT4(count, vertices, (s16 *)record, flags);
+    } else {
+        out[PROBE_RENDER_VALUE] =
+            (u32)render_EmitSplitFT3(count, vertices, (s16 *)record, flags);
+    }
+    g_probe_tile_leavings = quad ? 2 : 1;
+}
+
+static void probe_DoEmitSplitFT3(u32 *state, s32 wild, u32 *out) {
+    probe_DoSplit(state, out, FALSE);
+}
+
+static void probe_DoEmitSplitFT4(u32 *state, s32 wild, u32 *out) {
+    probe_DoSplit(state, out, TRUE);
+}
+
+/* A tile's record in the queue, sixteen bytes: its kind in a halfword,
+ * the block and entry of its mesh, its flags (how often its faces are
+ * cut, and the blending bit), and where it is. */
+#define PROBE_TILES (PROBE_WORK + 0xA00)
+#define PROBE_TILE_SIZE 0x10
+#define PROBE_TILE_KIND 12
+#define PROBE_TILE_BLOCK 7
+
+/* A tile's mesh at `mesh`: how many vertices, the vertices, and one or
+ * two groups of triangles or quads whose corners are among them, from
+ * the next whole word; then the two halfwords of nothing that end it.
+ * Returns the next whole word after it. */
+static u8 *probe_MakeTileMesh(u32 *state, u8 *mesh) {
+    u32 pick = probe_Random(state);
+    s32 count = (pick & 1) ? 4 : 3 + (s32)((pick >> 1) % 5);
+    s32 groups = 1 + (s32)((pick >> 4) & 1);
+    s32 i;
+    s32 j;
+    s32 k;
+
+    *(u32 *)mesh = (u32)count | (pick & 0xFFFF0000);
+    mesh += 4;
+    for (i = 0; i < count; i++) {
+        mesh = probe_PutVertex(state, mesh, 12);
+    }
+    mesh += (u32)mesh & 3;
+    for (i = 0; i < groups; i++) {
+        s32 quad = (s32)(probe_Random(state) & 1);
+        s32 records = 1 + (s32)(probe_Random(state) & 1);
+
+        mesh = probe_PutHalf(mesh, records);
+        mesh = probe_PutHalf(
+            mesh, (quad ? 8 : 0) + (s32)(probe_Random(state) & 7));
+        for (j = 0; j < records; j++) {
+            u8 *corners = mesh + (quad ? 0x0E : 0x0C);
+
+            mesh = probe_MakeRecord(state, mesh, 0x18, 0, 0);
+            for (k = 0; k < 4; k++) {
+                corners[k] = (u8)(probe_Random(state) % count);
+            }
+        }
+    }
+    mesh = probe_PutHalf(mesh, 0);
+    mesh = probe_PutHalf(mesh, 0);
+    return mesh + ((u32)mesh & 3);
+}
+
+/* `count` tiles at PROBE_TILES and their meshes from `mesh` on, which
+ * are entries `first_entry` and up of the tiles' block. Returns the end
+ * of the meshes. */
+static u8 *probe_MakeTiles(u32 *state, u8 *mesh, s32 count, s32 first_entry) {
+    s32 i;
+
+    g_reloc_tables[PROBE_TILE_BLOCK] = PROBE_MESH_TABLE;
+    for (i = 0; i < count; i++) {
+        u8 *tile = PROBE_TILES + i * PROBE_TILE_SIZE;
+        u32 pick = probe_Random(state);
+
+        *(s16 *)(tile + 0) = PROBE_TILE_KIND;
+        *(s16 *)(tile + 2) = PROBE_TILE_BLOCK;
+        *(s16 *)(tile + 4) = (s16)(first_entry + i);
+        *(s16 *)(tile + 6) = (s16)((pick % 3) | ((pick & 0x10) ? 0x100 : 0));
+        *(s32 *)(tile + 8) = (s32)probe_Signed(state, 15);
+        *(s32 *)(tile + 12) = (s32)probe_Signed(state, 15);
+        PROBE_MESH_TABLE[first_entry + i] = (s32)mesh;
+        mesh = probe_MakeTileMesh(state, mesh);
+    }
+    return mesh;
+}
+
+/* What the walk over the tiles works from: the camera, the view, the
+ * lights of the tiles' setup, how far the far view is scaled down, the
+ * renderer's options. */
+static void probe_MakeTileScene(u32 *state) {
+    u32 pick = probe_Random(state);
+    s32 i;
+
+    probe_FillWords(
+        (u32 *)PROBE_CAMERA, sizeof(SceneNode) / 4, probe_Random(state));
+    for (i = 0; i < 3; i++) {
+        PROBE_CAMERA->world.t[i] = (s32)probe_Signed(state, 14);
+    }
+    g_node_camera_root_ptr = PROBE_CAMERA;
+    probe_MakeBone(state, PROBE_VIEW);
+    probe_MakeLights(state, &g_light_setups[4]);
+    g_scene_settings.far_shift = (s16)(pick % 3);
+    g_render_options = (s32)((pick >> 4) & 7);
+    probe_MakeTileLimits(probe_Random(state));
+}
+
+/* One to three tiles in the queue, and after them the queue's end, a
+ * node, or a tile that is marked and so not one of the run. */
+static void probe_DoDrawStageTiles(u32 *state, s32 wild, u32 *out) {
+    u32 pick = probe_Random(state);
+    s32 count = 1 + (s32)(pick % 3);
+    s32 i;
+
+    probe_MakeNode(state);
+    probe_MakePoints(state, PROBE_TILE_DEPTHS);
+    probe_MakeTileScene(state);
+    probe_MakeTiles(state, PROBE_MESH, count + 1, 0);
+    for (i = 0; i < count + 1; i++) {
+        g_render_queue[i] = PROBE_TILES + i * PROBE_TILE_SIZE;
+    }
+    g_render_queue_end = &g_render_queue[count];
+    if (pick & 0x10) {
+        /* something that is not a tile after them */
+        g_render_queue[count] = PROBE_WORK;
+        PROBE_WORK[0] = (u8)((pick & 0x20) ? 0 : PROBE_TILE_KIND);
+        PROBE_WORK[1] = 1;
+        g_render_queue_end = &g_render_queue[count + 1];
+    } else if (pick & 0x40) {
+        /* one tile more than the walk is given, which it takes too */
+        g_render_queue_end = &g_render_queue[count + 1];
+    }
+    out[PROBE_RENDER_VALUE] =
+        (u32)((void **)PROBE_DRAW_TILES(
+                  &g_render_queue[1], PROBE_TILES, PROBE_VIEW) -
+              g_render_queue);
+    g_probe_walk.mesh = NULL;
+    g_probe_tile_leavings = 3;
+}
+
+/* ---- the walk over the queue ---- */
+
+/* The nodes of a case, 128 bytes each (a SceneNode and what some kinds
+ * have after it), the parent a shadow's node names, and the tiny
+ * model's matrix. */
+#define PROBE_NODES (PROBE_WORK + 0xB00)
+#define PROBE_NODE_SIZE 0x80
+#define PROBE_NODE_COUNT 5
+#define PROBE_PARENT ((SceneNode *)(PROBE_WORK + 0x180))
+/* After a SceneNode: a word (a shadow's ground height, a body's bones),
+ * and two words on a halfword (how much light a tinted face keeps) or a
+ * pointer (a cloth's points). */
+#define PROBE_NODE_EXTRA 0x58
+#define PROBE_NODE_MORE 0x60
+
+/* A part of a mesh at `mesh`: the word that says how many vertices and
+ * in which format, the vertices, the groups for the table that format
+ * is drawn with, and the halfword that says whether another part
+ * follows. Returns the end. */
+static u8 *probe_MakePart(
+    u32 *state, u8 *mesh, s32 format, s32 outline, s32 more) {
+    s32 count = 1 + (s32)(probe_Random(state) % 3);
+    s32 table = 0;
+    s32 i;
+
+    if (format == 1 || format == 4) {
+        count = 3 + (s32)(probe_Random(state) % 7);
+    }
+    *(u32 *)mesh = (u32)count | ((u32)format << 16);
+    mesh += 4;
+    if (format == 0 || format == 2) {
+        /* threes of vertices, eight bytes each */
+        for (i = 0; i < 3 * count; i++) {
+            mesh = probe_PutVertex(state, mesh, 12);
+            mesh = probe_PutHalf(mesh, (s32)probe_Random(state));
+        }
+    } else if (format != 3) {
+        for (i = 0; i < count; i++) {
+            mesh = probe_PutVertex(state, mesh, 12);
+        }
+        mesh += (u32)mesh & 3;
+    }
+    if (format == 2) {
+        table = 2;
+    } else if (format == 4) {
+        table = 1;
+    } else if (format == 1 && outline) {
+        table = 3;
+    }
+    mesh = probe_MakeGroups(state, mesh, table, FALSE);
+    return probe_PutHalf(mesh, more);
+}
+
+/* A mesh of one or two parts and the end of the mesh after them, at
+ * `mesh`; returns the end. `tiny`: the tiny model's format. */
+static u8 *probe_MakePartsMesh(u32 *state, u8 *mesh, s32 tiny, s32 outline) {
+    static const u8 formats[8] = {0, 1, 4, 0, 1, 4, 3, 1};
+    s32 parts = 1 + (s32)(probe_Random(state) & 1);
+    s32 i;
+
+    for (i = 0; i < parts; i++) {
+        s32 format = tiny ? 2 : formats[probe_Random(state) & 7];
+
+        mesh = probe_MakePart(state, mesh, format, outline, i + 1 < parts);
+    }
+    /* a part of no vertices ends a mesh that says another follows */
+    *(u32 *)mesh = probe_Random(state) << 16;
+    return mesh + 4;
+}
+
+/* A queue of two to five nodes of any kinds, each with what its kind
+ * needs: the four kinds whose mesh the walk goes through itself, a
+ * fighter's body, a run of stage tiles, a cloth, the surf, and kinds
+ * that are not drawn. In one case of sixteen the queue is empty. */
+static void probe_DoDrawQueue(u32 *state, s32 wild, u32 *out) {
+    static const u8 kinds[16] = {
+        NODE_KIND_ROTATED,
+        NODE_KIND_UNROTATED,
+        NODE_KIND_SHADOW,
+        NODE_KIND_SKINNED,
+        PROBE_TILE_KIND,
+        NODE_KIND_CLOTH,
+        NODE_KIND_WAVE,
+        NODE_KIND_TINY,
+        NODE_KIND_ROTATED,
+        NODE_KIND_UNROTATED,
+        NODE_KIND_SHADOW,
+        NODE_KIND_TINY,
+        2,
+        7,
+        11,
+        NODE_KIND_ROTATED,
+    };
+    u32 pick = probe_Random(state);
+    s32 count = 2 + (s32)(pick % (PROBE_NODE_COUNT - 1));
+    u8 *mesh = PROBE_MESH;
+    s32 queued = 0;
+    s32 entry = 0;
+    s32 once = 0; /* the kinds a case has one of at most, a bit each */
+    s32 i;
+
+    probe_MakePoints(state, PROBE_DEPTHS);
+    probe_MakeTileScene(state);
+    probe_MakeBone(state, &g_render_view_matrix);
+    probe_MakeBone(state, &g_model_tiny_matrix);
+    probe_MakeBone(state, &PROBE_PARENT->world);
+    probe_MakeBones(state);
+    for (i = 0; i < LIGHT_SETUP_COUNT; i++) {
+        probe_MakeLights(state, &g_light_setups[i]);
+    }
+    for (i = 0; i < RELOC_BLOCK_COUNT; i++) {
+        g_reloc_tables[i] = PROBE_MESH_TABLE;
+    }
+    PROBE_SCRATCH[PROBE_SCRATCH_HANDLERS] = (u32)g_render_handlers;
+    if ((pick & 0xF00) == 0) {
+        count = 0;
+    }
+    for (i = 0; i < count; i++) {
+        SceneNode *node = (SceneNode *)(PROBE_NODES + i * PROBE_NODE_SIZE);
+        u32 roll = probe_Random(state);
+        s32 kind = kinds[roll & 15];
+        s32 outline = (s32)((roll >> 4) & 1);
+        s32 j;
+
+        if (kind == NODE_KIND_SKINNED || kind == PROBE_TILE_KIND ||
+            kind == NODE_KIND_CLOTH) {
+            if (once & (1 << (kind & 3))) {
+                kind = NODE_KIND_ROTATED;
+            }
+            once |= 1 << (kind & 3);
+        }
+        probe_FillWords((u32 *)node, PROBE_NODE_SIZE / 4, roll);
+        node->kind = (u8)kind;
+        node->draw_flags = (u8)outline;
+        node->mesh_block = (s16)((roll >> 8) % RELOC_BLOCK_COUNT);
+        node->mesh = (s16)entry;
+        node->light_setup_index = (s16)((roll >> 16) % LIGHT_SETUP_COUNT);
+        node->parent = PROBE_PARENT;
+        probe_MakeBone(state, &node->world);
+        for (j = 0; j < 3; j++) {
+            node->world.t[j] =
+                (s32)probe_Signed(state, 14 + (s32)((roll >> 20) & 3));
+        }
+        /* In one node of two the distance from the camera is one of
+         * the two at which a node of its kind is scaled down further,
+         * or one less. */
+        if (((roll >> 22) & 1) == 0) {
+            static const s32 steps[4] = {0x4A00, 0xA500, 0x5A00, 0xB500};
+
+            for (j = 0; j < 3; j++) {
+                node->world.t[j] = PROBE_CAMERA->world.t[j];
+            }
+            node->world.t[(roll >> 27) % 3] +=
+                steps[((kind == NODE_KIND_SKINNED) ? 2 : 0) +
+                      ((roll >> 24) & 1)] -
+                (s32)((roll >> 26) & 1);
+        }
+        *(s32 *)((u8 *)node + PROBE_NODE_EXTRA) = (s32)probe_Signed(state, 12);
+        *(s16 *)((u8 *)node + PROBE_NODE_MORE) =
+            (s16)(probe_Random(state) & 0x1FFF);
+        if (kind == PROBE_TILE_KIND) {
+            /* a run of one or two tiles in the node's place */
+            s32 tiles = 1 + (s32)((roll >> 5) & 1);
+
+            mesh = probe_MakeTiles(state, mesh, tiles, entry);
+            for (j = 0; j < tiles; j++) {
+                g_render_queue[queued++] = PROBE_TILES + j * PROBE_TILE_SIZE;
+            }
+            entry += tiles;
+            g_probe_tile_leavings = 3;
+            continue;
+        }
+        g_render_queue[queued++] = node;
+        PROBE_MESH_TABLE[entry] = (s32)mesh;
+        if (kind == NODE_KIND_SKINNED) {
+            *(MATRIX ***)((u8 *)node + PROBE_NODE_EXTRA) = PROBE_BONE_LIST;
+            mesh = probe_MakeSkinnedMesh(state, mesh, wild,
+                                         outline ? PROBE_SKIN_OUTLINE_TYPE_COUNT
+                                                 : PROBE_SKIN_TYPE_COUNT);
+        } else if (kind == NODE_KIND_CLOTH) {
+            *(u8 **)((u8 *)node + PROBE_NODE_MORE) = PROBE_CLOTH_POINTS;
+            mesh = probe_MakeClothMesh(state, mesh, wild);
+        } else {
+            mesh = probe_MakePartsMesh(
+                state, mesh, kind == NODE_KIND_TINY, outline);
+        }
+        entry++;
+    }
+    g_render_queue_end = &g_render_queue[queued];
+    render_DrawQueue();
     g_probe_walk.mesh = NULL;
 }
 
@@ -800,7 +1366,12 @@ static void probe_DoDrawSkinned(u32 *state, s32 wild, u32 *out) {
     X(DrawGroups)                                                              \
     X(LightSkin)                                                               \
     X(DrawSkinnedMesh)                                                         \
-    X(DrawSkinned)
+    X(DrawSkinned)                                                             \
+    X(DrawCloth)                                                               \
+    X(EmitSplitFT3)                                                            \
+    X(EmitSplitFT4)                                                            \
+    X(DrawStageTiles)                                                          \
+    X(DrawQueue)
 
 typedef void (*ProbeRenderRoutine)(u32 *state, s32 wild, u32 *out);
 
