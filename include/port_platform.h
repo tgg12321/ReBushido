@@ -197,6 +197,24 @@ extern void port_OnFrame(void);
 extern void __cyg_profile_func_enter(void *function, void *call_site);
 extern void __cyg_profile_func_exit(void *function, void *call_site);
 
+/* ---- the window (src/port/window/; docs/PORT.md, "The window") ---- */
+
+/* What the build with a window hangs on the port. Each is NULL in the
+ * build without one, and then nothing is called: that build does what
+ * it did. None of them changes what the game computes. */
+/* At a vertical blank, after the plan's presses and before the pads'
+ * packets are filled: the PC's keys and controllers are read. */
+extern void (*g_port_input_hook)(u32 blank);
+/* At a vertical blank's end, when its sound is made: the picture is
+ * shown, and the blank waited for by the PC's clock. */
+extern void (*g_port_blank_hook)(u32 blank);
+/* A press of a plan's, in place of port_SetPadButton if it returns 1:
+ * the window presses a key or a controller's button for it, so that a
+ * plan can go through the PC's own input. */
+extern s32 (*g_port_press_hook)(s32 pad, u32 button, s32 down);
+/* As port_Quit ends the program, after what it writes. */
+extern void (*g_port_quit_hook)(void);
+
 /* ---- a crash (src/port/crash.c) ---- */
 
 /* From now on a fault says where it was: the function and its callers. */

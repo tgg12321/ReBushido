@@ -9,20 +9,27 @@ ReBushido PlayStation program.
 
 This page is what stands between the source and a PC, counted; what has
 been done about it; the stages that are left; and the decisions that are
-the owner's. **The port is a program that draws and sounds, with no
-window and no sound card:** it links, gives the game the PlayStation's
-memory, reads the player's disc image, and runs the game's own `main`
-through start-up, the options page, the menus and character select,
-through a whole fight and back to the menu, with no pads but a
-script's. What the game draws goes into the port's own video memory, by
-a GPU in C, and from there to files; its sound is made by a sound chip
-in C and can be written to a file. All that way it is held to the
-emulator: the game's values in three fights, and the picture pixel for
-pixel in two, and the sound chip's memory and registers in one. It is a
-64-bit program, and a 32-bit one beside it that does the same to the
-byte ("64 bits"). Stages 1 to 3 of the seven below are done, stage 4 but
-for its window, of stage 5 the fight itself, and of stage 6 everything
-but the card.
+the owner's. **The port is a program that draws and sounds, and a
+second build of it has a window, a sound card and the PC's keys and
+controllers:** it links, gives the game the PlayStation's memory, reads
+the player's disc image, and runs the game's own `main` through
+start-up, the options page, the menus and character select, through a
+whole fight and back to the menu, by a script's pads or a person's.
+What the game draws goes into the port's own video memory, by a GPU in
+C, and from there to files or to the window; its sound is made by a
+sound chip in C and goes to a file or to the sound card. All that way
+it is held to the emulator: the game's values in three fights, the
+picture pixel for pixel in two, and the sound chip's memory and
+registers in one; what is heard is compared only in part. The window is
+held to the build without one, by numbers, on Linux and on Windows
+("The window"). It is a 64-bit program, and a 32-bit one beside it that
+does the same to the byte ("64 bits"). Stages 1 to 3 of the seven below
+are done; stages 4 and 5 as far as a machine can tell; and of stage 6
+everything but the card and the comparison of what is heard. Beyond the
+seven, the roadmap's item 7: the scene drawn again by a graphics card at
+the window's resolution, from the geometry the PlayStation threw away,
+which is what "Graphics: Remastered" means ("Remastered") — proved with
+nothing shown, and not yet hung on the window.
 
 ## Where it stands
 
@@ -35,11 +42,13 @@ but the card.
 | BIOS calls and Sony's libraries | every one the game calls is defined: done for real where it only works on memory or the port has the thing (the disc, time, the pads' packets, events), a stub that is counted where it has not (the memory card, the link, the movie) |
 | Memory | done: the RAM and the scratchpad at the console's addresses ("Memory") |
 | The disc | done: sectors from the player's image, under the game's own disc code ("The disc"), and its XA sound ("Sound") |
-| Sound | done into a file, not yet a sound card: Sony's libsnd and libspu on a sound chip in C, the disc's music ("Sound"). The chip's memory, its registers and the library's are the emulator's through a fight; what is heard is compared only in part |
+| Sound | done, into a file and, in the build with a window, to a sound card: Sony's libsnd and libspu on a sound chip in C, the disc's music ("Sound"). The chip's memory, its registers and the library's are the emulator's through a fight; what is heard is compared only in part |
 | A fight | done, by a script's pads: three whole fights are the emulator's, frame for frame ("How it is proved") |
 | The picture | done, into the port's own video memory and out to files: `src/port/raster.c`, the PlayStation's GPU in C. The flat screens are the emulator's to the pixel, a fight's frames but for three pixels in a thousand ("The picture") |
 | 64 bits | done on Linux: the program has 64-bit pointers, the game's addresses stay 32-bit numbers below 4 GB, and it is held to the 32-bit program and to the emulator ("64 bits"). Windows' side is compiled and not linked |
-| A window, a sound card, real pads, the card, movies | not begun |
+| A window, a sound card, the PC's keys and controllers | built on SDL 2 for Linux and for Windows (`make port-sdl`, `make port-sdl-windows`) and held to the build without a window by numbers: the same traces, pictures and samples. **Not yet seen or heard by anyone** ("The window") |
+| "Graphics: Remastered" | the scene drawn again by a graphics card at the window's resolution, from the geometry the PlayStation threw away: OpenGL 3.3 core, high resolution, sub-pixel corners, textures in perspective, true-colour mixing, the 2D layer crisp; then supersampled edges, the whole stage drawn, and a wider picture at 16:9. Proved with nothing shown, against the software GPU's own picture; not yet hung on the window ("Remastered") |
+| The memory card, movies | not begun |
 
 ## The switch
 
@@ -101,10 +110,11 @@ Everything the program asks of the operating system goes through
 `include/port_host.h`: a dozen functions (write, open, read at an
 offset, memory at an address, catch a fault, exit). `src/port/
 host_linux.c` defines them on the kernel's own calls.
-`src/port/host_windows.c` defines them on kernel32; MinGW's compilers
-make an object of it for either size, and it has **not been linked or
-run**. When the port takes SDL for its window it will need a C library,
-and that file is where it changes.
+`src/port/host_windows.c` defines them on kernel32: built with MinGW
+and run on Windows, with a window and without ("The window"). As a
+64-bit program it is compiled and not yet run. The build with a window
+has a C library, because SDL has one; on Linux its host is
+`src/port/window/host_posix.c`.
 
 The program's options: `--image` (the `.cue` or the `.bin`), `--frames
 N` (end after N vertical blanks; 3,600 if nothing says), `--trace` (the
@@ -154,8 +164,8 @@ The game's own variables are the PC program's, placed by its linker.
 What the game reaches by a number written into its source is given
 memory at that number (`src/port/memory.c`): the 2 MB of RAM at
 `0x80000000` and the kilobyte of scratchpad at `0x1F800000`, by `mmap`
-at a fixed address on Linux (`VirtualAlloc` on Windows, not tried), in
-the 64-bit program as in the 32-bit one. The
+at a fixed address on Linux (`VirtualAlloc` on Windows), in the 64-bit
+program as in the 32-bit one. The
 game's stack is a third piece, a megabyte at `0x7FC00000`, which is the
 port's choice and not the console's ("The picture", "Where the links
 point"). If the system will not give one of them, the program says so
@@ -332,9 +342,9 @@ first frame; nothing that decides a fight has been seen to differ.
 
 ### Sound
 
-The port makes the game's sound and has no sound card yet: it mixes into
-memory, and `--wav FILE` writes a run's sound as a WAV file. A later
-stage plays the same samples as they are made.
+The port makes the game's sound: it mixes into memory, and `--wav FILE`
+writes a run's sound as a WAV file. The build with a window plays the
+same samples as they are made ("The window").
 
 **The boundary is the sound chip's registers.** Sony's libsnd and libspu
 are compiled into the port as they are, 46 and 33 modules: they are
@@ -527,8 +537,8 @@ its area; `ClearImage`'s fill or drawn rectangle; `LoadImage`,
 start, range and mode; and `DrawOTag`, which walks an ordering table by
 its 24-bit links and gives the GPU each primitive's words. What Sony's
 keeps in a queue until the GPU is free is done at once, so `DrawSync`
-never waits. There is no window: the picture is that memory, and a run
-writes it to files.
+never waits. The picture is that memory: a run writes it to files, and
+the build with a window shows it ("The window").
 
 **What it draws**, as the chip is publicly known to:
 
@@ -654,6 +664,663 @@ dither. The options page differs in 790, the dither of its title.
   horizontal range. The 24-bit mode, which only the movie uses, is read
   for a PNG and nowhere else.
 
+### The window
+
+A second build of the port has a window, a sound card and the PC's keys
+and controllers, by SDL 2: `make port-sdl` on Linux,
+`make port-sdl-windows` for Windows. It is for a person to play
+([`PLAYING.md`](PLAYING.md)). **Nobody has yet looked at the window or
+listened to it.** It was built, and run only with SDL told to show and
+sound nothing, and what it hands SDL was compared with the build
+without a window by numbers ("How the window is proved"). The first
+person to see it will be the owner.
+
+The build without a window (`make port`) is not changed by it and stays
+the one the checks and the play tests use: it needs nothing installed,
+and this one needs SDL and a C library.
+
+**How it hangs on the port.** The port calls out at four places, through
+pointers that are empty in the build without a window
+(`include/port_platform.h`, `port_spu.h`): at a vertical blank before
+the pads' packets are filled, at a blank's end, as a blank's samples are
+made, and as the program ends. The window's files are
+`src/port/window/`:
+
+| File | |
+|---|---|
+| `scale.c`, `ring.c`, `pace.c`, `keymap.c`, `window.h` | the arithmetic: where the picture goes in the window, the queue of samples, when a blank is due, which key is which button, the settings file. No SDL and no C library in them, so the host tests run them on every push (`tests/port/window.c`) |
+| `sdl_window.c` | the window, the sound card and the controllers, on SDL |
+| `sdl_main.c` | where the program starts: its own options, the settings file, the disc image when none is named |
+| `host_posix.c` | `port_host.h` on a C library, for Linux (Windows has `src/port/host_windows.c`) |
+
+One thread does everything but hand samples to the sound card: SDL is
+called from the game's own stack, at the blank, so what the game sees of
+a key does not depend on how the PC's threads fall.
+
+**How it is built** (`tools/port_sdl_build.py`). The game defines names
+a C library has too: `main`, `printf`, `memcpy`, `rand`, and `open`,
+`read`, `write` and `close`, which are the BIOS's memory-card files. A
+program linked with a C library would give SDL the game's `open`. So
+everything of the game and the port is first linked into one object,
+and every name in it is made that object's own, except the port's
+(`port_...`, `g_port_...`). What the object still asks for is listed,
+and the build fails if it is anything but the host's functions. The
+game's variables keep the PlayStation's order inside the object, and the
+build counts the neighbours as `make port` does: the same 774 of 993 on
+Linux.
+
+What it needs, and nothing of it is needed by any check:
+
+- **Linux:** `gcc -m32`, a 32-bit C library and 32-bit SDL 2. On Ubuntu:
+  `sudo dpkg --add-architecture i386 && sudo apt update && sudo apt
+  install lib32gcc-13-dev libsdl2-dev:i386 libsdl2-dev`. **Not
+  `gcc-multilib`:** it removes the MIPS cross compiler the PlayStation
+  builds use.
+- **Windows:** MinGW's `i686-w64-mingw32-gcc`, in WSL or on Linux (`apt
+  install gcc-mingw-w64-i686`), and SDL 2's development package for
+  MinGW (`BUILD.md`, "The port with a window"). The build writes
+  `build/port-sdl/rebushido.exe`, puts `SDL2.dll` beside it, and also
+  writes `rebushido-headless.exe`, the program without a window for
+  Windows.
+
+**The picture.** At each blank the displayed rectangle of the port's
+video memory is turned into pixels of eight bits a channel (five bits
+stretched as the port's PNGs stretch them) and given to SDL as a
+texture, which SDL scales into the window. Nothing is drawn another way:
+it is what the GPU in C drew. The game sets three sizes: 640 by 240 for
+nearly everything, 320 by 240 for one screen, and the chip's own 256 by
+240 before it has set any. All fill a screen of four by three, so the
+picture is placed as the largest four by three the window holds
+(`scale = fit`), or as 320 by 240 a whole number of times (`integer`),
+or over all of the window (`stretch`); each pixel a block (`filter =
+nearest`) or smoothed (`linear`). The window can be resized; F11 or
+Alt+Enter fills the screen and comes back. With the display blanked the
+window is black.
+
+**Time.** The game's clock is still the port's count of scan lines, and
+nothing the game computes waits for anything: a blank's pads are read,
+its sound mixed and its picture drawn, and only then does the window
+wait until the blank is due. The game's time is the samples it has
+mixed, 737 and 341/2500 a blank (the sound's own constants), so a blank
+is due every 16.715 ms: the console's 59.83 a second. The PC's clock is
+read in the same unit, and most of a wait is slept and its last three
+milliseconds watched out. If the program was held up for more than a
+tenth of a second (a window dragged, the PC asleep), the time lost is
+let go and not caught up.
+
+The picture waits for the display (vsync) where the display shows 59
+pictures a second or more, which is no cost at 60: the game's rate is a
+little under the display's, so one picture in about 350 is shown twice.
+A slower display would hold the game back; the port then says so and
+stops waiting for it, at the start if the display says its rate, or
+when time has been let go three times in half a minute.
+
+**The sound card and the clock.** The card plays 44,100 samples a second
+by its own crystal and the PC's clock counts by another. So the length
+of the queue of samples steers the blanks: where the queue is longer
+than it should be each blank comes later, where shorter sooner, by at
+most eight samples' time in a blank's 737 (one part in a hundred; a
+card is off by far less). In the long run the game keeps the sound
+card's time, and no sample is dropped or made up to do it.
+
+**Sound.** SDL's default device, 44,100 a second, stereo, 16 bits, asked
+for 1,024 samples at a time; SDL converts where the card wants
+otherwise. Each blank's samples go into a queue of 8,192 that is kept
+2,560 long (58 ms), and SDL's thread takes them from it. From a sound
+being made to its being heard is that and the card's own buffer (23
+ms): about 80 ms. If the card asks for more than is waiting, the last
+sample fades to silence over 128 samples, and play begins again, fading
+in, only when the queue has its length back: a stall is a short silence
+with soft edges, not a crackle. If the queue is ever full, its oldest
+samples go.
+
+**The pads.** The game reads a digital pad's buttons, and takes both
+kinds of analog pad for digital ones without reading a stick (`pad.c`);
+so the port's two pads are digital, and a controller's left stick
+pushed past the dead zone is the direction's button. The first
+controller plugged in is player one's, the second player two's, at any
+time: one that is pulled out lets go of what it held, and the next one
+plugged in takes the free place. Both players also have keys. The
+layout built in:
+
+| | Player one | Player two | A controller |
+|---|---|---|---|
+| Up, Down, Left, Right | the arrow keys | I, K, J, L | the direction pad, the left stick |
+| Cross, Circle | Z, X | G, H | A, B (the lowest and the right of the four) |
+| Square, Triangle | A, S | T, Y | X, Y |
+| L1, R1 | Q, W | R, U | the shoulders |
+| L2, R2 | 1, 2 | 5, 6 | the triggers |
+| Start, Select | Enter, Right Shift | P, O | Start, Back |
+
+Escape, or closing the window, ends the program. The program says the
+layout in use on its error output as it starts.
+
+**The settings file** is `rebushido.cfg` beside the program, or the one
+`--config FILE` names; with none, everything is as built in, and
+`rebushido --help` prints the built-in settings as such a file, to copy
+from. A line is `name = value`, and `#` begins a comment:
+
+```
+scale = integer            # fit, integer or stretch
+filter = nearest           # nearest or linear
+fullscreen = off           # on or off
+vsync = on                 # on or off
+deadzone = 40              # how far a stick counts, in parts of 100
+p1.cross = key Space       # takes Z away from player one's Cross
+p1.cross = key Keypad 0    # ... and a second key for it
+p2.start = pad a           # player two's controller: A is Start
+p1.r2 = pad +righttrigger  # an axis pushed one way: + or -
+p2.select = none           # nothing presses it
+```
+
+A line for a pad's button takes the built-in keys of that button away
+(or its built-in controller buttons, for a `pad` line) and adds its own,
+and takes its own key or button away from whatever that pressed as
+built in; more lines add more. The names are SDL's: a key's as SDL names it (`Up`,
+`Space`, `Return`, `Left Shift`, `Keypad 4`), a controller's button
+`a`, `b`, `x`, `y`, `back`, `start`, `leftshoulder`, `rightshoulder`,
+`dpup`, `dpdown`, `dpleft`, `dpright`, an axis `leftx`, `lefty`,
+`rightx`, `righty`, `lefttrigger`, `righttrigger`. A line the port
+cannot use is said, with why, and the rest is used. There is no page
+for any of this in the game.
+
+**The game's data.** `--image FILE` as before. Without it the first
+`.cue`, or else the first `.bin`, beside the program is taken; if there
+is none, on Windows the system's dialog for choosing a file opens, and
+elsewhere the program says what it needs and ends. **The memory card is
+still a stub:** the game finds no card, so its settings and what a
+player has unlocked are not kept from one run to the next.
+
+**Windows.** The program is 32-bit, linked at `0x08400000` with address
+randomisation off and marked as able to use addresses from 2 GB up
+(`--large-address-aware`), which the PlayStation's RAM at `0x80000000`
+needs. On a 64-bit Windows such a program has all 4 GB, and the three
+pieces of memory were free where they were tried (Windows 11): the RAM,
+the scratchpad and the game's stack at `0x7FC00000`. They are asked for
+before SDL starts. If one is taken the program says which and stops.
+Three things Windows has its own way (`src/port/host_windows.c`):
+
+- Addresses are given in blocks of 64 KB, and the sound chip's registers
+  are 4 KB past the scratchpad: whole blocks are kept, and a piece
+  inside one already kept only has its pages made usable.
+- Windows keeps where a thread's stack is, and passes a fault to nobody
+  while the stack pointer is outside it. The switch to the game's stack
+  tells it the new stack's two ends.
+- A stack has a chain of fault handlers. The game's stack is given one
+  of the port's at its top, which is asked only when nothing above it
+  took the fault (a system library's own handlers among them), and
+  reports as on Linux; before the switch the system's last filter does
+  the same.
+
+Two things MinGW's compiler has its own way, which the build sets
+right: bitfields are laid out as on every other host
+(`-mno-ms-bitfields`), and a small variable's section, which a Windows
+object pads to four bytes, is kept as small as the variable (three
+neighbours of two bytes that the game reads as one array,
+`g_fight_blow_dir_x` and the two after it, were four bytes apart before
+that: found by the build's count of neighbours, not by a fight).
+
+**How the window is proved**, with nothing shown or sounded: SDL's
+`dummy` video and audio drivers, on Linux (WSL) and on Windows 11, with
+the three plans of `port_game`, `port_other_fight` and `port_bugfixes`
+(the port's side of each: 3,880, 4,120 and 3,910 blanks).
+
+| | Linux | Windows |
+|---|---|---|
+| The trace of every watched value at every blank, against the build without a window | identical, all three, run as fast as the PC goes and run at the console's rate | identical, all three, both ways |
+| The same with the plan's presses made as SDL key events, read back through the layout | identical; the memory written at every checkpoint is byte for byte that of the run pressed by the plan | identical; the same |
+| ... and as buttons of two controllers SDL makes up (its virtual joysticks), plugged in as the run starts | identical; the same | identical; the same |
+| Every twentieth picture as SDL is handed it, against the PNG the build without a window writes at the same blank | 595 pictures, 87,644,160 pixels, none different | the same 595, none different |
+| Every sample as it is queued for SDL, against the build without a window's WAV | 8,779,293 samples, identical | identical |
+| The program without a window (`rebushido-headless.exe`, kernel32 alone) | | its three traces identical to Linux's |
+| A fault made on purpose in a program of the host file alone, on the game's stack and before it | reported with its address, exit code 70 | the same, with and without a C runtime |
+
+At the console's rate, with no sound card, 3,880 blanks took 64.839
+seconds: 16.715 ms each. On every push `tests/port/window.c` holds the
+arithmetic to 462 cases worked out by hand: the picture's place in
+windows of every shape, pixels at video memory's edges, the queue
+running out and filling up with no step larger than a fade's, the clock
+going round at 32 bits, time let go, a sound card two parts in a
+thousand fast and one as slow for 20,000 blanks with nothing running
+out, every button's name, keys and sticks, a settings file's lines and
+the ones it cannot use. 33 mistakes made on purpose in the four files,
+one at a time, each failed it.
+
+**Not proved, and what may be wrong:**
+
+- Nobody has seen the window or heard the sound. That the picture
+  handed to SDL is right is proved; that SDL shows it the right way up,
+  in the right colours and at the right size is read from SDL's
+  documents and not seen. The same for the sound card, for full screen,
+  for a real keyboard and a real controller: the events were SDL's own,
+  made by the test.
+- The file dialog on Windows was written and read, and never opened.
+- SDL's dummy sound card is not a clock: it took samples unevenly and
+  up to one part in a hundred fast on Linux, and more than one part in
+  a hundred slow on Windows. The steering followed it as far as it goes
+  (on Linux the sound ran out 5 to 23 times in a minute; on Windows the
+  blanks were moved by the most allowed and the queue threw three
+  samples in a thousand away: as they should with such a card). Whether
+  a real card ever makes the sound run out is not known until one is
+  heard.
+- The wait for the display was never run against a display.
+- Windows was tried on one machine, Windows 11. A 32-bit Windows gives a
+  program 2 GB, and the port cannot run there; nothing else is known to
+  be at the three addresses, and nothing promises it.
+- The Linux program is 32-bit and needs 32-bit SDL 2 where it runs.
+- A program started by a double click whose disc image cannot be read
+  says so in a console window that then closes.
+- The game's stack is a megabyte, and SDL and the display's driver now
+  run on it too.
+
+### Remastered
+
+"Graphics: Remastered" (`g_rb_settings.graphics`, the options page's
+second line) on the port means **the scene drawn again, by the graphics
+card, at the window's resolution, from the geometry the PlayStation
+threw away**. With "Graphics: Original" nothing of this runs and the
+port draws exactly what it drew before: the software GPU's picture, the
+same pixels, still the one the play tests compare with the emulator.
+
+This is the first step of the roadmap's item 7. What it does now: high
+resolution, sub-pixel corners, textures in perspective, no dither,
+true-colour mixing, the flat things crisp. What it leaves for the steps
+after it, by design and not by accident: the draw distance, the wide
+picture, the high frame rate, and new lighting and shadows ("What each
+later step needs").
+
+#### Why the card, and not a wider rasteriser
+
+The owner's list is high resolution, then anti-aliasing, then no pop-in
+and more to see, then the wide picture, then 144 pictures a second, then
+better lighting and shadows. The last three are what decides it: a
+software rasteriser could be made wider, but lighting a fighter's
+vertices and sorting a stage at 144 Hz with 4 by 8 times the pixels is
+work a card does for nothing and a PC's processor does not. The
+measurement here, on this machine with Mesa's software driver
+(llvmpipe, no card at all), is half a millisecond a frame at the
+console's resolution: a real card at 8 by 16 the pixels has room that a
+rasteriser in C, which takes about 6 ms a frame at 1x, does not.
+
+OpenGL 3.3 core through SDL is what the window already has to hand on
+both systems, and the headless prover gets the same context from EGL.
+Nothing is vendored: the names of the 45 GL functions this uses are
+declared in `src/port/gl/gl_draw.c` and looked up through the host
+(`SDL_GL_GetProcAddress`, `eglGetProcAddress`).
+
+#### The side channel
+
+A PlayStation primitive is already flattened: whole-pixel screen
+coordinates held to eleven bits, no depth, and a texture that runs
+evenly across the screen instead of in perspective. That is where the
+wobble and the warping come from, and no amount of resolution mends it.
+So the renderer's own arithmetic is kept, beside the primitive, and the
+hardware draws from that.
+
+**What is kept.** The GTE's projection (`port_GteProject`,
+`src/port/gte.c`) works out the screen position with sixteen bits of
+fraction in MAC0 and then shifts it down and holds it to eleven bits.
+Both halves are now written down, with the depth before it was held to
+sixteen bits and the quotient the projection divided by
+(`PortPrecisePoint`, `include/port_remaster.h`). Three of them stand
+for the three screen positions the coprocessor keeps, and a position
+the program puts in a register itself clears the one it lands on.
+
+**How it reaches the primitive.** Two things carry it:
+
+- *Where a point was stored.* `port_GteStoreData` writes down the exact
+  point under the address it stored the whole-pixel one at. The
+  renderer stores a part's points onto the scratchpad and names its
+  faces' corners among them; a stage tile that is cut has the GTE store
+  its corners into the primitive itself, and that address is the
+  primitive's own word, which is enough by itself.
+- *Which points a face is.* `render_LoadFace` (`src/main/render_asm.c`)
+  is where every one of the fifty emitters looks its face's corners up,
+  and `render_LinkEntry` is where every primitive of the scene is
+  linked into an ordering table. Two lines, one in each, say "this face
+  is these points" and "that face became this primitive". The side
+  channel is then a table from a primitive's address to its corners.
+
+Those two lines, and the one in `port_GteStoreData`, are the whole of
+what the renderer gives up. Nothing is computed differently and nothing
+of the game's memory is written: the traces of the three play tests are
+the same with the remastered renderer on and off ("How it is proved").
+
+**Why not keyed by the primitive's address alone**, as a side channel
+usually is: the renderer writes a primitive's corners from the
+scratchpad, so the primitive's own words are not where the GTE put
+them. Keying the *points* by where they were stored and the *faces* by
+the primitive they became covers both the ordinary path and the cut
+tiles, with no table of exceptions.
+
+**What is forgotten, and when.** Both tables are open tables of 8,192
+slots whose entries carry the frame they were written in; a new frame
+begins where the game clears the next frame's ordering table
+(`ClearOTagR`). An entry of the frame before the last counts as
+nothing, which is safe because the game has two primitive buffers and
+two ordering tables and uses them on alternate frames: nothing of a
+frame's own can have been written over. When every slot a key could
+have is another live entry's, the oldest goes and that primitive is
+drawn flat; that happened 114 times in 687,410 faces of a whole run.
+
+#### How a primitive gets to the card
+
+The software GPU is not changed and not bypassed. `port_RunCommand`
+(`src/port/raster.c`) draws the command as it always did, and then
+hands the same words to `port_RemasterCommand`, which decodes them
+again — the same corners, colours, texture points, page, colour table,
+window, drawing area and mix that `port_SetUpPaint` works out — and
+adds, for each corner, the exact position and depth the side channel
+has for it. `DrawOTag` says which primitive the words belong to. The
+decoded primitive (`PortRemasterPrim`) goes to a backend through four
+function pointers; with no backend attached (`make port`, every check,
+and the window with "Graphics: Original") every one of these returns at
+once.
+
+So the hardware path never sees the game, only the GPU's own command
+stream: a primitive kind that is added or a mode that changes reaches
+it without a line of new code, and a primitive it cannot draw is
+counted rather than lost.
+
+#### What the card draws into
+
+The colour buffer is **all of video memory at the scale**: 1024 by 512
+pixels times `scale` across and `tall` down. A scale of 4 and 8 is
+2,560 by 1,920 for a 640 by 240 display — square pixels, because a line
+of the console's picture is two lines of the screen.
+
+- A **polygon** is drawn where the GTE really projected it, with
+  sixteen bits of fraction, as two triangles for a four-sided one, as
+  the chip does. `gl_Position` is `(x·w, y·w, 0, w)` with `w` the
+  corner's depth, so the card's own perspective divide puts the corner
+  back where it belongs and interpolates the texture in perspective. A
+  colour runs evenly across the screen (`noperspective`), as the chip's
+  does.
+- A **texel** is read from a mirror of the software GPU's video memory,
+  a 1024 by 512 texture of 16-bit words, by the shader: four bits or
+  eight through the colour table or fifteen as they are, through the
+  texture window, a texel of nothing not drawn. Nothing is decoded on
+  the processor and no texture is cached by page: the mirror is the
+  whole of video memory, so a colour table that is tinted, a texture
+  that is scrolled and a page that is loaded over are right by
+  construction.
+- **Rectangles, sprites, the fonts, the menus and the options page**
+  have no side data and are drawn as they are, whole-pixel, at the
+  scale: crisp, and in their proper places.
+- The **four mixes** are the card's blending at eight bits a channel
+  instead of the chip's five: half and half by `SRC_ALPHA`, added and a
+  quarter added by `ONE, ONE_MINUS_SRC_ALPHA` with the shader setting
+  the alpha, and "what is there less this" by the reverse subtraction.
+  Where a texture mixes only at the texels whose top bit is set, the
+  alpha says which; the subtracting mix cannot say that with one
+  blending state, so its batch is drawn twice, once for each kind of
+  texel.
+- **Dithering** is off: the pattern is there to hide the chip's five
+  bits a channel, and nothing here has five bits a channel.
+- The **drawing area** is the scissor, and the drawing offset is in
+  every corner, as the chip has it.
+- **What the chip would not draw is not drawn.** A triangle that spans
+  more than 1023 pixels across or 511 down, or has no area, is left out
+  by the same whole-pixel rule the software GPU uses: a corner the
+  projection put far off the screen is held to eleven bits with a sign,
+  so a polygon that is partly behind the camera comes out spanning the
+  whole range, and the game counts on the chip dropping it. Leaving
+  this out was the one thing that showed as a wrong picture: a stage's
+  surf drew a bright band across the water (`port_GlIsDrawn`).
+- Primitives are **batched** in the order the game drew them, and the
+  batch is flushed when the mix, the drawing area or the buffer's room
+  changes, and whenever the game writes video memory: the ordering
+  table's order is the order the card draws in, so the painter's order
+  the game sorts by is kept exactly. A fight frame comes to about 5,400
+  vertices in 113 draws, and 110 of those draws are the fills and
+  copies the game makes in the middle of the frame — its fog is 31
+  colour tables copied each frame — each of which ends the batch
+  before it. Everything else about a frame is one draw.
+
+**The texture filter is nearest, and that is the default.** The game's
+textures are 4-bit and small, and its pages pack unrelated textures
+against each other with no border: smoothing reads a neighbour that
+belongs to another texture, so an edge bleeds. A bilinear filter is
+written (`--filter linear`, four decoded texels, those that are nothing
+left out so that an edge does not bleed into black), and it is for the
+owner to look at; nearest is what the game was drawn for.
+
+**Anti-aliasing is not done**, and the hook is where it goes: the
+colour buffer is a texture of the port's own, so turning it into a
+multisampled one and resolving it is a change to `port_GlMakeTarget`
+and nothing else. Why it was left: with primitives in painter's order
+and no depth buffer, multisampling is correct (every sample of a
+coverage mask is blended in the same order), but the mixes above are
+done at a sample's own coverage, and a half-transparent primitive drawn
+over an edge then mixes twice along it. The honest first look is the
+high resolution alone, which the owner can see; the step after it
+should measure the edges.
+
+#### What the game does to video memory, and what becomes of it
+
+Everything the game makes by moving pixels about is drawn by stretching
+the mirror of video memory into the colour buffer, in its turn among
+the primitives: a fill, a copy inside video memory, or a load from the
+program says which rectangle changed, the batch so far is flushed, that
+rectangle is sent to the card and drawn at the scale. So these all
+work, and all of them keep the console's own resolution, which is what
+they are:
+
+| What the game does | Where | How it comes out |
+|---|---|---|
+| The loading screens' picture, and the noise over them | `disp_DrawLoadingScreen` | a load from the program, then rectangles drawn over it |
+| The fades and the grayscale | `disp_`, `tex_TintClut` | colour tables written in video memory: the mirror has them, so a fogged or tinted texture is right |
+| The stage's fog | `stage_QueueFog` | copies inside video memory, 31 rows of colour tables a frame |
+| The character select's portraits | `select.c`'s sprite pools | loads from the program into pages, then textured rectangles |
+| The replay and the menus over the scene | 2D primitives | drawn as they are, crisp |
+| The movie | the overlay, 24-bit mode | **not done**: the display in the mode of three bytes a pixel is left to the software GPU's picture |
+
+**Nothing reads back what the card drew.** The game reads video memory
+with `StoreImage`, and that is the software GPU's, which is still
+exact. A texture made by drawing polygons into video memory would be
+the one thing the mirror could be stale for, and the port counts it: in
+the three play tests, 0 textured primitives of 1.5 million read a page
+this frame had drawn into.
+
+#### How it is proved, with nothing shown
+
+There is no window and no display. The prover
+(`src/port/gl/gl_main.c`, built by `tools/port_gl_build.py` into
+`build/port-gl/rebushido-gl`) takes an OpenGL 3.3 core context from
+EGL's surfaceless platform and draws into a framebuffer object; Mesa's
+software driver is the card. Nothing was installed for it: Ubuntu
+24.04's `libegl-dev`, `libegl-mesa0` and `mesa-libgallium`, which the
+window's own needs already brought in, are enough, in 32 bits as the
+port is. It is run by `tools/port_gl_prove.py`, which writes each play
+test's plan for the port, runs it three ways and prints what it
+measured.
+
+**At scale 1, with everything that changes a value turned off**
+(`--gl-exact`: the corners where the PlayStation held them, the texture
+flat across the polygon, five bits a channel with the chip's own
+dither), the hardware's picture is compared with the software GPU's,
+pixel for pixel, every twentieth blank of each of the three plans. A
+blank at which the display is blanked, or in the mode of three bytes a
+pixel, is not compared: there is nothing on show to hold to anything.
+
+| The plan | Pictures | The same | Pixels | That differ | ... within one step | ... further |
+|---|---|---|---|---|---|---|
+| `port_game` | 184 | 36 | 27,571,200 | 633,002 (2.3%) | 602,083 (95%) | 30,919 (168 a picture) |
+| `port_other_fight` | 196 | 39 | 29,414,400 | 6,809,595 (23%) | 5,613,851 (82%) | 1,195,744 (6,100 a picture) |
+| `port_bugfixes` | 186 | 37 | 27,648,000 | 645,040 (2.3%) | 613,469 (95%) | 31,571 (170 a picture) |
+
+A *step* is one of a five-bit channel's 31, eight of a byte's 255: a
+pixel that differs by a step or less is the same colour the chip can
+show, one value along. The pictures that are the same to the pixel are
+the options page, the boot image, the menus and the character select —
+everything the game draws flat. The second fight's stage is the cave,
+whose walls are one texture across the whole screen close to the
+camera, and that is where the pixels beyond a step are.
+
+What differs, and why:
+
+- **Pixels that mix.** The chip mixes at five bits a channel and the
+  card at eight, so a half-transparent pixel comes out within half a
+  step of the chip's value and almost never on it. That is most of the
+  count above: the menu's panel, the clouds, the character select's
+  grid. They are all within one step (eight of a byte's 255).
+- **Shaded polygons.** The chip interpolates a colour as whole numbers
+  with twelve bits of fraction from the triangle's leftmost corner; the
+  card interpolates in floating point from the pixel's middle. The two
+  agree to a step.
+- **A texel's edge on a pixel's middle.** Where the texture coordinate
+  comes out exactly whole at a pixel, which of the two texels is read
+  follows from the last bit of the arithmetic, and the two arithmetics
+  are not the same: the chip walks the polygon in whole numbers with
+  twelve bits of fraction from its leftmost corner, and the card
+  interpolates in floating point from the pixel's middle. These are the
+  pixels that differ by more than a step, and they are the seams of a
+  texture: 168 a picture on the rooftop, 6,100 a picture in the cave,
+  where one texture is spread over the whole screen close to the
+  camera. It is the same kind of difference as the halfway values the
+  port already has against the emulator ("The picture"), and at the
+  resolution the remastered picture is really drawn at there is no
+  seam to put wrong: this is a cost of the comparison, not of the
+  renderer.
+
+**With the renderer on and off, the game computes the same thing.** The
+trace of every watched value at every blank of the three plans is
+identical, line for line, with `--graphics remastered` and `--graphics
+original`.
+
+**The software GPU is untouched.** The build without a window, before
+this work and after it, run on the three plans: the traces are
+identical line for line (2,339, 2,463 and 2,340 lines) and all
+1,048,576 bytes of video memory at the end of each run are identical.
+(The two programs were built from the two trees and run side by side;
+the script that does it was scratch and is not kept.)
+
+**No kind of primitive is missed.** Every command the GPU is given is
+counted by kind, and every one the backend drew: in the three plans the
+two counts are equal for every kind of polygon, line and rectangle (the
+fills, copies and loads are not primitives and are counted apart).
+
+**Pictures.** At scale 3 across and 6 down, the hardware's picture and
+the software GPU's are written side by side at the same blanks
+(`build/remaster/<plan>/gl-*.png` and `software-*.png`).
+
+**What a frame costs**, on this machine with no graphics card at all
+(Mesa's llvmpipe, 32-bit), over the whole of `port_game`'s 3,880
+blanks with nothing read back:
+
+| | The run | The hardware path, a frame |
+|---|---|---|
+| Graphics: Original (the software GPU alone) | 5.88 s | nothing |
+| Remastered, 1 by 1 (the console's own resolution) | 24.64 s | 0.47 ms |
+| Remastered, 2 by 4 (1,280 by 960) | 29.02 s | 1.17 ms |
+| Remastered, 4 by 8 (2,560 by 1,920) | 44.08 s | 3.20 ms |
+
+The software GPU draws a frame of its own in about 1.5 ms (the whole
+run, less the game, over the blanks), so a software rasteriser four
+times across and eight down would be some fifty times that. 3.2 ms a
+frame at 2,560 by 1,920 **with no card** is what makes 144 pictures a
+second a question of the game's own rate and not of the drawing.
+
+#### What is not done, and what may be wrong
+
+- Nobody has seen any of it on a screen. The pictures are files; the
+  window does not use this path yet ("What the window still needs").
+- The movie's 24-bit display is the software GPU's picture.
+- The mask bit is not drawn: the game never uses it (0 primitives of
+  1.5 million in the three plans were drawn with it set or looked at).
+- Lines are not drawn by the hardware path. The game drew none in any
+  of the three plans — the renderer's outline routines, which are the
+  only lines it has, are not reached by anything the plans do. When
+  something does reach them they will be counted as not drawn, which is
+  what the counts are for.
+- The window's own resolution does not reach the renderer yet: the
+  scale is chosen by `--gl-scale`, and `port_RemasterScaleFor` is the
+  arithmetic that will choose it from the window's size.
+- Anti-aliasing, the draw distance, the wide picture, the frame rate
+  and new lighting are later steps.
+- A primitive whose corners the GTE did not project — a 2D one, or one
+  of the 18% of the scene's that the side channel has no depth for — is
+  drawn flat, exactly where the PlayStation put it. That is right for
+  the 2D layer; for the rest it is the console's picture at a higher
+  resolution and nothing worse.
+- **A thin seam where two textured polygons meet.** The chip counts a
+  texture point across a polygon in steps of its own and starts half a
+  step in; the hardware path starts half a texel in, which is the same
+  thing only where one texel is one pixel. Where a texture is drawn
+  larger or smaller than it is, the two part by up to half a texel, and
+  at the join between two polygons of different pages that shows as a
+  line a pixel or two wide: 609 pixels of 153,600 on the screen where
+  the stage is chosen, whose map is two textures side by side. Half a
+  step is what the side channel would have to carry for it, or the
+  attribute would have to be interpolated from the pixel's corner
+  rather than its middle.
+
+#### What the window still needs
+
+The hardware path is written to hang on the window the same way it
+hangs on the prover. What `src/port/window/` needs, when the window's
+own work settles:
+
+- the window made with `SDL_WINDOW_OPENGL` and a 3.3 core context
+  (`SDL_GL_SetAttribute`, `SDL_GL_CreateContext`), and
+  `port_GlStart(SDL_GL_GetProcAddress, &options)` once it is current;
+- at a blank, where `port_DrawPicture` is: with the remastered picture
+  on, `port_RemasterShow()` and then the colour buffer's display
+  rectangle drawn into the window (one textured quad, or
+  `glBlitFramebuffer`) and `SDL_GL_SwapWindow`; with it off, what the
+  window does today;
+- F2 calling `port_ToggleGraphics()`, and `--graphics
+  original|remastered` calling `port_SetGraphics`;
+- the scale from `port_RemasterScaleFor(window_w, window_h, picture_w,
+  picture_h)` whenever the window is resized, and `port_GlSetOptions`
+  with it and twice it for `tall`; an option to force it, which cannot
+  be called `--scale` because the window already uses that name for
+  where the picture goes (`--resolution N`).
+
+#### What each later step needs
+
+- **The draw distance and the fog.** What is drawn at all is decided
+  before the renderer: `g_stage_view_masks` and
+  `g_stage_first_person_masks` (`src/main/stage_data.c`, 64 ways the
+  camera can look by 32 rows of cells, a bit a cell of 2,000 units),
+  `STAGE_WINDOW` (31 cells each way) and `g_stage_detail_pattern` (how
+  often a tile near the camera is cut). What is drawn is then cut off
+  by depth: `RENDER_FOG_OT_INDEX` (from `stage_GetFogOtIndex`, the
+  stage's fog, `FOG_MIN_SPAN` 6,000 units in `stage.c`),
+  `RENDER_OT_CUTOFF` and `render_SetClipNear`. The ordering table is
+  4,096 entries deep and `render_DepthToOt` spreads a depth over it in
+  octaves, so drawing farther means the table's depth as much as the
+  masks. The fog itself is 31 rows of colour tables copied in video
+  memory each frame; a fog the card computes would be a colour in the
+  shader instead, and the copies could stay for the software picture.
+- **The wide picture.** The projection is about `RENDER_CENTER_X` 320
+  and `RENDER_CENTER_Y` 120 (the GTE's OFX and OFY), with H the
+  distance to the screen. What culls to four by three: a face is
+  dropped when every corner is off the left or above the top
+  (`render_FaceOffScreen`, the sign bits of the packed position), a
+  stage tile when no corner is above line 240 (`TILE_SCREEN_HEIGHT`),
+  and the GTE holds a projected x to ±1024, which a wide picture would
+  reach. The stage's view masks above assume the field of view the
+  centre and H give. The 2D layer is laid out for 320 or 640 across and
+  would want its own placing, not stretching.
+- **The frame rate.** The game counts its own frames in
+  `g_disp_frame_count` and waits `frame_period` blanks a frame (2 in a
+  fight: 30 a second); the fight steps once a game frame, and
+  everything that moves is counted in frames. 144 a second means either
+  the game stepping that often, which changes what it computes, or the
+  renderer drawing between steps from two poses — which is where the
+  side channel helps, since it has the exact positions to interpolate.
+  The port's clock is the sound's samples (`port_PaceBlank`), and that
+  is what would have to be split.
+- **Lighting and shadows.** Today every vertex of a model is lit by the
+  GTE, by three directional lights and an ambient colour from the
+  stage's `LightSetup` (`src/main/scene.c`), and the colour is in the
+  primitive. A shadow is the model flattened by a matrix
+  (`render_SetupNode`) and drawn in black (`render_EmitBlackF3`,
+  `render_EmitBlackF4`); there is no shadow of one thing on another and
+  no light that moves. Better lighting means the normals, which the
+  mesh has and the primitive does not: the side channel is where they
+  would go, beside the position and the depth.
 ## 64 bits
 
 The port is built with 64-bit pointers and with 32-bit ones, from the
@@ -949,7 +1616,6 @@ No run of the tests reaches them.
   out one by one.
 - The 32-bit program is still built and tested. It can go when the
   window's build is 64 bits too.
-
 ## The assembly
 
 Everything in the build that is not C, by kind. "Listings" are the files
@@ -1362,18 +2028,21 @@ Each ends with something that can be shown.
    tests' checkpoints are the emulator's, pixel for pixel, with no window
    open; then the menu in a window. The first half is done as far as it
    can be: the flat screens to the pixel, a fight but for three pixels
-   in a thousand, each one accounted for ("The picture"). Left of it:
-   the window.
+   in a thousand, each one accounted for ("The picture"). The window is
+   built ("The window"). Left of it: someone to look at it.
 5. **Pads, time, a fight.** *Done when* a scripted fight on the port goes
    through the same watched values as the same script on the emulator.
    That part is done, in three fights to their ends ("How it is
-   proved"). Left of it: the PC's own pads and the PC's own time, which
-   come with the window.
+   proved"). The PC's own keys, controllers and time are in the build
+   with a window, and a plan's presses made as key and controller events
+   give the same fights ("The window"). Left of it: a person at the
+   keys.
 6. **Sound.** The sound chip, Sony's sequencer, the disc's audio.
    Done into a file ("Sound"): the game's effects and music are in a
    run's WAV, the game's state is what it was, and the chip's memory
-   and registers are the emulator's (`port_sound`). Left of it: a sound
-   card (with the window's library).
+   and registers are the emulator's (`port_sound`). The build with a
+   window gives the same samples to a sound card ("The window"). Left
+   of it: someone to listen, and the comparison of what is heard.
 7. **The rest.** Movies, the memory card as a file, the link (or
    nothing in its place).
 
@@ -1414,9 +2083,10 @@ link's three. Sound has no stub left ("Sound").
   to read ("What the comparison found"). The port's are addresses of
   its own stack, which is at the same place in every run, so a run is
   still the same twice; they are not the console's.
-- The picture has no window, and the two things the port draws as the
-  chip and not as the emulator are proved by made-up cases alone ("The
-  picture", with what is not sure).
+- The window has been seen by nobody, and its sound heard by nobody
+  ("The window", with what is not proved). The two things the port
+  draws as the chip and not as the emulator are proved by made-up cases
+  alone ("The picture", with what is not sure).
 - The picture is drawn when the game asks, with no time taken: a frame
   the console would not have finished drawing is finished here.
 - What a function leaves in the result's register when it returns
@@ -1433,7 +2103,7 @@ link's three. Sound has no stub left ("Sound").
 - What is heard is compared with the emulator's only in part and by
   hand, and where the hardware's filters are not reproduced it is not
   the console's to the sample; the music is a tenth louder than the
-  emulator's ("Sound"). There is no sound card.
+  emulator's ("Sound").
 - An address of the game's own variables has no top bit on a PC. One
   place tested it and is put right (`snd_FlushQueue`); linking the
   variables above `0x80000000` would end the kind.
@@ -1441,9 +2111,14 @@ link's three. Sound has no stub left ("Sound").
   PlayStation in the 32-bit program, and 248 in the 64-bit one
   ("Memory"). None is known to matter; none has been ruled out one by
   one.
-- `src/port/host_windows.c` has been compiled and never linked or run;
-  macOS on Apple's processors may not allow the memory the port needs
-  ("64 bits", "What is left of it").
+- `src/port/host_windows.c` has been compiled and never linked or run
+  as a 64-bit program; macOS on Apple's processors may not allow the
+  memory the port needs ("64 bits", "What is left of it").
+- The build with a window is a 32-bit program on both systems. On
+  Windows it runs where a 32-bit program may have all 4 GB (a 64-bit
+  Windows); building the window's side at 64 bits ends that.
+- The memory card is a stub in the window too: nothing a player sets or
+  unlocks is kept.
 - The build compiles more than it must: the headers it writes are
   written again each time, so most files are compiled again (twenty
   seconds).
@@ -1454,8 +2129,7 @@ link's three. Sound has no stub left ("Sound").
 |---|---|---|
 | A 32-bit program first, or 64-bit from the start | 32-bit first; done, and 64-bit after it, done ("64 bits") | The source keeps addresses in 32-bit integers at some 300 places, relocates nine kinds of file in place into 4-byte slots and saves 22 addresses to the card: as a 32-bit program all of it works as written. The 64-bit program was then a stage of its own with the port already playing, and the 32-bit one is what it is held to |
 | Memory at the PlayStation's addresses, or everything moved | At the PlayStation's addresses, in both sizes | A program linked low can ask for memory at `0x80010000` and `0x1F800000`, whatever the size of its pointers. The twelve fixed addresses, the 24-bit links and the save file's patches then need no change at all. Where a system will not give a program memory below 4 GB (Apple's processors, perhaps), this is the decision to take again |
-| A library for the window, the pads and sound | SDL 2 | One library does all three on Windows, Linux and macOS, and its licence sits with this project's. It has to be downloaded; nothing has been |
-| The game's data: the disc image, or files taken out of it | The player's disc image | The game asks for sectors, never for names, so an image answers it directly; the music is tracks and streams that only the image has in one piece; and no tool has to unpack game data. Loose files can come later for modding |
+| A library for the window, the pads and sound | SDL 2 | One library does all three on Windows, Linux and macOS, and its licence sits with this project's. Taken: "The window". SDL is linked to, and none of it is in this repository || The game's data: the disc image, or files taken out of it | The player's disc image | The game asks for sectors, never for names, so an image answers it directly; the music is tracks and streams that only the image has in one piece; and no tool has to unpack game data. Loose files can come later for modding |
 | The first renderer: software as the console draws, or the PC's graphics card | Software first | It can be held to the emulator's picture pixel for pixel by the tests there already are, and needs nothing installed. The hardware renderer is then the roadmap's next item, behind the same list of primitives |
 | The movies | Decode them in the port, in C | The overlay is a separate PlayStation program started through the BIOS; on a PC a function that plays a movie is simpler than a program loader, and the decoder chip has to be written in C either way |
 | The frame's wait | A fixed number of calls, for now: one for each scan line waited ("Time"); to be looked at again at stage 5 | The original calls `rand()` for as long as the frame has time left, so its random numbers depend on the machine's speed. The port needs a rule; none reproduces a console exactly |

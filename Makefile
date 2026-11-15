@@ -136,7 +136,7 @@ ALL_O_FILES  := $(S_O_FILES) $(C_O_FILES) $(ASM_FUNC_O_FILES)
 .PHONY: all clean check clean-check shift movovl modern test checks \
 	rebushido rebushido-disc rebushido-patch rebushido-test rebushido-modern rb-build \
 	quickboot quickboot-compile quickboot-disc playtest playtest-discs gte-probe port \
-	patcher
+	patcher port-sdl port-sdl-windows
 
 ifeq ($(REBUSHIDO),1)
 all: rb-build
@@ -338,6 +338,18 @@ else
 	python3 tools/port_build.py --bits $(PORT_BITS)
 	python3 tools/port_order.py --check --bits $(PORT_BITS)
 endif
+
+# The native port with a window (docs/PORT.md, "The window"): the same
+# program with SDL 2 and a C library, for a person to play, into
+# build/port-sdl/ (tools/port_sdl_build.py, which says what each needs
+# installed). Local: no check builds them, and `make port` stays the
+# program the checks and the play tests use.
+#   build/port-sdl/rebushido --image "Bushido Blade 2 (USA).cue"
+port-sdl:
+	python3 tools/port_sdl_build.py
+
+port-sdl-windows:
+	python3 tools/port_sdl_build.py --windows
 
 # Every check GitHub Actions runs, in its order, with a summary
 # (tools/checks.sh): the counts, the lint, modern, test, the game's bytes,

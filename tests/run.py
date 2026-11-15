@@ -66,7 +66,7 @@ REBUSHIDO_DEFS = ['-DREBUSHIDO=1', '-DRB_PORT_BUILD=1']
 # every one at its default it has to do what the original does; and with
 # the port's GTE, which the GTE macros of the game's files call. ReBushido's
 # and the port's own tests include what they test.
-REBUSHIDO_SOURCES = ['src/rebushido/settings.c', 'src/port/gte.c']
+REBUSHIDO_SOURCES = ['src/rebushido/settings.c', 'src/port/gte.c', 'src/port/remaster.c']
 
 # As tools/modern/check.py compiles the game, and then: -fwrapv, since the
 # game's arithmetic wraps as the PlayStation's does; each function in a

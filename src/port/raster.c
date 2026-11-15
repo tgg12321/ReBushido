@@ -1129,14 +1129,41 @@ static void port_RunCommand(const u32 *words) {
     }
 }
 
+/* The drawing state as it is (port_gpu.h), for the remastered
+ * renderer: it paints a primitive as this file has just painted it. */
+void port_GetGpuState(PortGpuState *state) {
+    const PortGpu *gpu = &g_port_gpu;
+
+    state->mode = gpu->mode;
+    state->window_and_u = gpu->window_and_u;
+    state->window_or_u = gpu->window_or_u;
+    state->window_and_v = gpu->window_and_v;
+    state->window_or_v = gpu->window_or_v;
+    state->clip_left = gpu->clip_left;
+    state->clip_top = gpu->clip_top;
+    state->clip_right = gpu->clip_right;
+    state->clip_bottom = gpu->clip_bottom;
+    state->offset_x = gpu->offset_x;
+    state->offset_y = gpu->offset_y;
+    state->mask_set = gpu->mask_set;
+    state->mask_check = gpu->mask_check;
+}
+
 /* A word to GP0 (port_gpu.h): pixels of a load that is under way, the
  * next word of a line of many points, or a word of a command, which is
- * run when its last has come. */
+ * run when its last has come. The remastered renderer is given each
+ * command as well, once this file has drawn it (port_remaster.h): it
+ * then sees the drawing mode a textured polygon brought with it, and
+ * video memory as the command left it. */
 void port_WriteGp0(u32 word) {
     PortGpu *gpu = &g_port_gpu;
 
     if (gpu->load.is_active) {
         port_LoadWord(word);
+        if (!gpu->load.is_active) {
+            port_RemasterLoadedVram(
+                gpu->load.x, gpu->load.y, gpu->load.w, gpu->load.h);
+        }
         return;
     }
     if (gpu->is_in_line) {
@@ -1148,8 +1175,11 @@ void port_WriteGp0(u32 word) {
     }
     gpu->words[gpu->count++] = word;
     if (gpu->count == gpu->needed) {
+        s32 words = gpu->needed;
+
         gpu->count = 0;
         port_RunCommand(gpu->words);
+        port_RemasterCommand(gpu->words, words);
     }
 }
 

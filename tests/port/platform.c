@@ -13,6 +13,7 @@
 #include "src/port/gpu.c"
 #include "src/port/text.c"
 #include "src/port/stub.c"
+#include "port/remaster_stub.h"
 #include "runtime/runtime.h"
 
 /* ---- what those files want of the rest of the port ---- */

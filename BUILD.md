@@ -66,11 +66,77 @@ WSL with the virtualenv active you can also call `make` directly:
 | `make clean` | Delete `build/` (but not `build/play/`, the disc images) |
 | `make rebushido`, `rebushido-disc`, `rebushido-test`, `rebushido-modern` | The ReBushido build, into `build/rebushido/`, its disc and its checks ([`docs/REBUSHIDO.md`](docs/REBUSHIDO.md)); they leave the matching build alone |
 | `make quickboot`, `quickboot-disc` | A ReBushido build that boots straight into a chosen fight, into `build/quickboot/`, and its disc: a developer's tool ([`docs/REBUSHIDO.md`](docs/REBUSHIDO.md), "Booting straight into a fight") |
+| `make port` | The native port without a window, `build/port/rebushido`: one of the checks ([`docs/PORT.md`](docs/PORT.md)) |
+| `make port-sdl`, `port-sdl-windows` | The native port with a window, for this host and for Windows, into `build/port-sdl/`. Not one of the checks: it needs SDL 2 ("The port with a window", below) |
 | `make playtest` | The play tests: the game run by script in an emulator with no window ([`tests/play/README.md`](tests/play/README.md)). Not one of the checks: it needs your retail image and PCSX-Redux, and says what it skipped without them |
 
 `tools/build.sh` exits with `make`'s status, so a script can rely on it.
 The overlay builds 43 of Sony's library modules from `src/main/psxsdk/`, so
 a change there has to pass both byte checks.
+
+## The port with a window
+
+`make port` needs nothing more than the checks do. The port a person can
+play ([`docs/PLAYING.md`](docs/PLAYING.md); [`docs/PORT.md`](docs/PORT.md),
+"The window") needs SDL 2 and a 32-bit C library, which nothing else here
+does and no check uses.
+
+For Linux (and WSL), the program `build/port-sdl/rebushido`:
+
+```bash
+sudo dpkg --add-architecture i386 && sudo apt update
+sudo apt install lib32gcc-13-dev libsdl2-dev:i386 libsdl2-dev
+bash tools/build.sh port-sdl
+```
+
+**Do not install `gcc-multilib` for it:** on Ubuntu 24.04 it removes
+`gcc-mipsel-linux-gnu`. `lib32gcc-13-dev` is the part of it that is
+needed. The three packages bring some three hundred others with them, the
+32-bit libraries SDL stands on, and update a few that are installed in
+both sizes.
+
+For Windows, built with MinGW in WSL or on Linux,
+`build/port-sdl/rebushido.exe` with `SDL2.dll` beside it:
+
+```bash
+sudo apt install gcc-mingw-w64-i686
+mkdir -p tools/sdl2-mingw
+curl -L -o /tmp/SDL2-mingw.tar.gz \
+    https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-devel-2.32.10-mingw.tar.gz
+tar -xzf /tmp/SDL2-mingw.tar.gz -C tools/sdl2-mingw SDL2-2.32.10/i686-w64-mingw32
+bash tools/build.sh port-sdl-windows
+```
+
+That file is SDL's own development package for MinGW, from the SDL
+project's releases: 13,892,870 bytes, SHA-256
+`83a5d74012311edc3c0d40ea6faecbe57ad692aa033fa5dc273cc937e3938ff2`. Any
+SDL 2 from 2.0.18 on will do (SDL 3 is another library). `tools/sdl2-mingw/`
+is ignored by git; `SDL2_MINGW=/path/to/SDL2-2.x.y` names another place, and
+`build/sdl2-mingw/` is looked in as well (`make clean` empties that one).
+Nothing of SDL is in this repository.
+
+`python3 tools/port_sdl_build.py --host [--windows]` says whether the
+machine can build it, and what is missing if not.
+
+## The remastered renderer, with nothing shown
+
+The port's remastered picture ([`docs/PORT.md`](docs/PORT.md),
+"Remastered") is drawn by a graphics card, and it is proved by a
+program that uses no window and no display at all: it takes an OpenGL
+3.3 core context from EGL's surfaceless platform and draws into a
+framebuffer object, so a machine with no card draws it with Mesa's
+software driver.
+
+```bash
+python3 tools/port_gl_build.py                  # build/port-gl/rebushido-gl
+python3 tools/port_gl_prove.py --image "Bushido Blade 2 (USA).cue"
+```
+
+On Ubuntu it needs `lib32gcc-13-dev` and 32-bit EGL (`libegl-dev:i386`),
+which the window's own packages bring; `mesa-libgallium` is the software
+driver. No check uses it, and nothing of it is in `make port` or in the
+build with a window. `python3 tools/port_gl_build.py --host` says
+whether the machine can build it.
 
 ## What is checked
 

@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""Builds the prover of the port's remastered renderer: the port with an
+OpenGL 3.3 core context made through EGL, with no window, no display and
+no surface (docs/PORT.md, "Remastered").
+
+    python3 tools/port_gl_build.py           -> build/port-gl/rebushido-gl
+    python3 tools/port_gl_build.py --host    -> whether this host can
+
+It is the build with a window (tools/port_sdl_build.py) with EGL in
+place of SDL and src/port/gl/ in place of src/port/window/'s two files:
+everything of the game and the port is linked into one object whose
+names are its own, so that the C library's `open`, `read`, `main` and
+`printf` are not given the game's.
+
+What it needs on Linux: gcc -m32, a 32-bit C library and 32-bit EGL
+(Ubuntu: lib32gcc-13-dev libegl-dev:i386, which come with the window's
+own needs). Mesa's software driver (mesa-libgallium) is the GL. Nothing
+of this is needed by any check: no check has a graphics card.
+"""
+import concurrent.futures
+import os
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, 'tools'))
+
+import port_build  # noqa: E402
+import port_sdl_build as sdl  # noqa: E402
+from port_build import host_tests, modern  # noqa: E402
+
+OUT_DIR = 'build/port-gl'
+GL_DIR = 'src/port/gl/'
+# What talks to EGL and to the C library.
+GL_HOSTED = ['gl_draw.c', 'gl_main.c']
+# The window's own arithmetic, which this program uses to make the
+# software GPU's picture for the comparison; and its host.
+WINDOW_PLAIN = ['scale.c', 'ring.c', 'pace.c', 'keymap.c']
+WINDOW_HOST = 'src/port/window/host_posix.c'
+EGL_PROBE = ('#include <EGL/egl.h>\nint main(void) '
+             '{ return eglGetDisplay(EGL_DEFAULT_DISPLAY) == 0; }\n')
+
+
+class Target(sdl.Target):
+    """The one program: Linux, 32-bit, EGL."""
+
+    def __init__(self):
+        sdl.OUT_DIR = OUT_DIR
+        super().__init__(False)
+        self.program = OUT_DIR + '/rebushido-gl'
+        self.sdl = None
+        self.sdl_flags = []
+        self.hosted = [GL_DIR + f for f in GL_HOSTED] + [WINDOW_HOST]
+
+    def link_flags(self):
+        return ['-m32', '-no-pie', '-lEGL', '-Wl,-Ttext-segment=0x%X' % sdl.PROGRAM_BASE]
+
+
+def check_host(target):
+    """None, or why this host cannot build it."""
+    os.makedirs(target.dir, exist_ok=True)
+    probe = target.dir + '/egl_probe'
+    proc = sdl.run([target.cc, '-m32', '-x', 'c', '-', '-o', probe, '-lEGL'], input=EGL_PROBE)
+    if proc.returncode != 0:
+        return ('%s cannot make a 32-bit program with EGL: %s\n'
+                'port-gl: on Ubuntu: sudo apt install lib32gcc-13-dev libegl-dev:i386 '
+                '(not gcc-multilib: it removes the MIPS compiler)'
+                % (target.cc, (proc.stderr.strip().split('\n') or ['?'])[-1]))
+    os.remove(probe)
+    return None
+
+
+def main():
+    os.chdir(ROOT)
+    target = Target()
+    # the files that talk to EGL see src/port/gl/ and the window's header
+    sdl.HOSTED_FLAGS = sdl.HOSTED_FLAGS + ['-I' + GL_DIR.rstrip('/'), '-Isrc/port/window']
+    problem = check_host(target)
+    if problem:
+        print('port-gl: %s' % problem)
+        return 1
+    if '--host' in sys.argv[1:]:
+        print('port-gl: this host can build it (%s)' % target.cc)
+        return 0
+    os.makedirs(target.obj_dir, exist_ok=True)
+    host_tests.OUT_DIR = OUT_DIR
+    os.makedirs(port_build.OUT_DIR, exist_ok=True)
+    host_tests.write_headers(True)
+
+    flags = port_build.GAME_FLAGS + host_tests.include_flags(True) + modern.DEFS + host_tests.REBUSHIDO_DEFS
+    flags += ['-DRB_GIT_HASH="%s"' % port_build.git_hash()]
+    stamp = max(os.path.getmtime(p) for p in (__file__, sdl.__file__, port_build.__file__, 'tests/run.py',
+                                              'tools/modern/check.py', 'tools/port_gte_macros.py', modern.SHIM))
+    jobs = [(target, path, 'port' if own else 'game', flags, stamp)
+            for path, own in port_build.sources() if path not in sdl.OTHER_HOSTS]
+    jobs += [(target, 'src/port/window/' + f, 'port', flags, stamp) for f in WINDOW_PLAIN]
+    jobs += [(target, path, 'hosted', flags, stamp) for path in target.hosted]
+    game, hosted, failed, built = [], [], 0, 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+        for job, (path, obj, compiled, messages) in zip(jobs, pool.map(sdl.compile_one, jobs)):
+            built += compiled
+            if obj is None:
+                failed += 1
+                print('port-gl: %s does not compile:' % path)
+                print('\n'.join('    ' + line for line in messages.strip().split('\n')[:40]))
+            elif job[2] == 'hosted':
+                hosted.append(obj)
+            else:
+                game.append(obj)
+    if failed:
+        print('FAILED: port-gl: %d files do not compile' % failed)
+        return 1
+    blob = sdl.link_blob(target, game)
+    if blob is None:
+        print("FAILED: port-gl: the game's object does not link")
+        return 1
+    if not sdl.link_program(target, target.program, [blob] + hosted, target.link_flags()):
+        return 1
+    print('OK: port-gl: %s: %d files (%d compiled now)' % (target.program, len(game) + len(hosted), built))
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

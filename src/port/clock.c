@@ -35,6 +35,11 @@ static u32 g_port_counter_base;
 static u32 g_port_vsync_blank;
 static u32 g_port_vsync_line;
 
+/* The window's two turns at a vertical blank (port_platform.h): nothing
+ * in the build without one. */
+void (*g_port_input_hook)(u32 blank);
+void (*g_port_blank_hook)(u32 blank);
+
 u32 port_GetBlankCount(void) {
     return g_port_clock_lines / PORT_LINES_PER_BLANK;
 }
@@ -53,9 +58,15 @@ static void port_AdvanceClock(u32 line) {
         g_port_clock_lines = next_blank;
         /* the script's presses first: the pads are read at this blank */
         port_OnBlank(next_blank / PORT_LINES_PER_BLANK);
+        if (g_port_input_hook != NULL) {
+            g_port_input_hook(next_blank / PORT_LINES_PER_BLANK);
+        }
         port_FillPads();
         /* the sound library's tick, and a blank's worth of sound */
         port_RunSoundBlank(next_blank / PORT_LINES_PER_BLANK);
+        if (g_port_blank_hook != NULL) {
+            g_port_blank_hook(next_blank / PORT_LINES_PER_BLANK);
+        }
     }
 }
 
