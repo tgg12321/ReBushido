@@ -599,6 +599,32 @@ void fighter_StartMove(s32 fighter_index, MoveScript *move, s32 is_common) {
     }
 }
 
+#if RB_PORT
+/* (The native port.) fighter_Update below starts a move as
+ *
+ *     fighter_StartMove(index, motion_GetMove(fighter, id,
+ *                                             &fighter->move_is_common),
+ *                       fighter->move_is_common);
+ *
+ * and means the third argument to be what motion_GetMove has just
+ * written: whether the move it found is in the common file. C does not
+ * say which argument is worked out first. The PlayStation's compiler
+ * makes the call first and reads the member after it; a PC's reads the
+ * member first, and then starts a fighter's own move with the common
+ * file's motion, or the other way about (docs/PORT.md, "What the
+ * PlayStation's compiler decided"). So in the port fighter_StartMove is
+ * given where the flag is, and reads it when every argument has been
+ * worked out: from here to the end of this file, without a line of
+ * fighter_Update changed. */
+static void fighter_StartMoveAfterLookup(
+    s32 fighter_index, MoveScript *move, const s16 *is_common) {
+    fighter_StartMove(fighter_index, move, *is_common);
+}
+
+#define fighter_StartMove(fighter_index, move, is_common)                      \
+    fighter_StartMoveAfterLookup(fighter_index, move, &(is_common))
+#endif
+
 /* ---- where the fighters start ----
  *
  * A stage has four pairs of start positions, a point for each fighter: 24

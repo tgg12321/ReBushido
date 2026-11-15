@@ -52,9 +52,10 @@ check rb-build  make -j8 rebushido
 check rb-test   make rebushido-test
 check rb-modern make rebushido-modern
 # The native port: the game's C and src/port/ link into a program for this
-# host with no name missing, the port's own files with no warning. Needs
-# no build of the game either. (Its run against the emulator is a play
-# test, port_game.)
+# host with no name missing, the port's own files with no warning, and no
+# place where the order of evaluation may matter that has not been looked
+# at (tools/port_order.py). Needs no build of the game either. (Its runs
+# against the emulator are play tests, port_game and two more.)
 check port      make port
 
 echo

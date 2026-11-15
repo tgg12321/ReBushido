@@ -305,6 +305,33 @@ static EffWork *g_eff_work;
  * nothing ever sets it. */
 static s16 g_eff_dirt_is_grass[2];
 
+#if RB_PORT
+/* (The native port.) Runs handler `index` of g_eff_handlers and says
+ * whether its effect lives on, as the PlayStation has it. Eleven first
+ * handlers, the flashes', return nothing, and what they are called for is
+ * stored as that all the same: on the PlayStation it is what their last
+ * instructions left in the result's register, which in each of the eleven
+ * is the 1 they have just put in g_eff_stage. So those effects live. A
+ * PC's register holds something else, and its low byte is what would be
+ * stored: a clash's spark, a blunt hit's flash would be over before they
+ * were drawn (docs/PORT.md, "What the PlayStation's compiler decided"). */
+static s32 eff_RunHandler(s32 index) {
+    void *handler = g_eff_handlers[index];
+
+    if (handler == eff_SpawnLockFlash || handler == eff_SpawnClashSpark0 ||
+        handler == eff_SpawnClashSpark1 || handler == eff_SpawnClashStreak0 ||
+        handler == eff_SpawnClashStreak1 ||
+        handler == eff_SpawnMatchedStreak0 ||
+        handler == eff_SpawnMatchedStreak1 || handler == eff_SpawnBluntHit0 ||
+        handler == eff_SpawnBluntHit1 || handler == eff_SpawnArmorSpark0 ||
+        handler == eff_SpawnArmorSpark1) {
+        ((void (*)(void))handler)();
+        return 1;
+    }
+    return ((EffHandler)handler)();
+}
+#endif
+
 /* Starts the effect g_eff_request asks for: gives its first handler the
  * place and direction, and lights the light if the request wants it. */
 static void eff_Start(void) {
@@ -329,9 +356,14 @@ static void eff_Start(void) {
     g_eff_request->vector[2] = g_eff_request->direction_src[2];
     g_eff_position = g_eff_request->position;
 
+#if RB_PORT
+    alive = eff_RunHandler(g_eff_first_handler[g_eff_request->effect.id] +
+                           g_eff_stage[g_eff_request->effect.id]);
+#else
     alive = ((EffHandler)
                  g_eff_handlers[g_eff_first_handler[g_eff_request->effect.id] +
                                 g_eff_stage[g_eff_request->effect.id]])();
+#endif
     *g_eff_request->alive_dest = alive;
 
     if (g_eff_request->effect.word & EFF_LIT) {
@@ -361,8 +393,12 @@ static void eff_Step(void) {
     eff_SetViewMatrix(angles, origin, g_eff_view_matrix);
 
     effect = g_eff_request->effect.id;
+#if RB_PORT
+    alive = eff_RunHandler(g_eff_first_handler[effect] + g_eff_stage[effect]);
+#else
     alive = ((EffHandler)g_eff_handlers[g_eff_first_handler[effect] +
                                         g_eff_stage[effect]])();
+#endif
 
     *g_eff_request->alive_dest = alive;
 }

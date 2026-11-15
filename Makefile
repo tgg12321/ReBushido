@@ -287,10 +287,14 @@ test:
 # for this host into build/port/rebushido (tools/port_build.py). A 32-bit
 # x86 Linux program with no C library, as the host tests are: it needs
 # the host's gcc with -m32 and python3, and says so where that gcc cannot
-# make one. No PlayStation build has anything of it.
+# make one. No PlayStation build has anything of it. Then the places where
+# this compiler may evaluate an expression in another order than the
+# PlayStation's did are held to the list of those that were looked at
+# (tools/port_order.py, config/port_order.txt).
 #   build/port/rebushido --image "Bushido Blade 2 (USA).cue" --frames 600 --trace
 port:
 	python3 tools/port_build.py
+	python3 tools/port_order.py --check
 
 # Every check GitHub Actions runs, in its order, with a summary
 # (tools/checks.sh): the counts, the lint, modern, test, the game's bytes,

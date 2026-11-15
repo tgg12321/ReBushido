@@ -1,0 +1,5 @@
+# Places where the order of evaluation is the compiler's choice and the port's
+# compiler may choose otherwise than the PlayStation's (tools/port_order.py),
+# each looked at, with why it makes no difference. Written by --update, which
+# keeps the reasons; a place with none has not been looked at.
+src/main/collision.c read *: g_collision_cast = g_collision_cast;  # collision_WalkCells stores what test_cell returns through g_collision_cast; the two functions test_cell can be (collision_TestCell, collision_TestCellFine) and what they call do not set that pointer: only the four that begin a cast do, before the walk
