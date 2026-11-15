@@ -61,15 +61,27 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   where the order an expression is evaluated in may matter is fixed under
   `RB_PORT` (the call first) or added to `config/port_order.txt` with its
   reason (`--update`).
-- Port against emulator: three play tests (`port_game`,
-  `port_other_fight`, `port_bugfixes`); to find a divergence,
+- Port against emulator: four play tests (`port_game`,
+  `port_other_fight`, `port_bugfixes`, `port_picture`); to find a
+  divergence,
   `tests/play/README.md`, "Finding where two runs part"
   (`tools/port_compare.py`). In a fight, time presses and checkpoints in
   game frames (`72f`, `frames =`), not blanks. The play tests take about
-  six minutes.
+  nine minutes: run `playtest` in the background or with a timeout over
+  ten minutes, and only one run at a time on the machine.
+- The port's GPU is `src/port/raster.c`; change it with
+  `tests/port/raster.c` and the play tests `port_picture` and
+  `port_other_fight`, which hold video memory to the emulator's at a
+  number of pixels per checkpoint (`vram_differ`).
+  `python tools/port_compare.py port_picture --vram` shows what differs.
+  A test of the port's picture says `port_gpu = "emulator"`.
 - The owner's choices for the port: a 32-bit build first, SDL 2, the
   player's disc image for the data, a software renderer that matches the
   PlayStation first, movies decoded in the port.
+- `wsl bash tools/build.sh patcher` builds the players' patcher into
+  `build/release/` (`ReBushidoPatcher.exe` needs `mingw-w64` in WSL).
+  Never run the `.exe` without an image argument from an agent: it opens
+  a dialog.
 - Merge `decomp` into `main`, never the reverse.
 
 ## Working on `decomp`

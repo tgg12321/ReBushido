@@ -73,14 +73,19 @@ press Start on the page first (`rb_page == RB_PAGE_UP`).
 `make rebushido-patch` (`RB_RELEASE=1` for a release) writes `build/release/ReBushido-<version>.bps`,
 a BPS patch against the retail image, with a players' README and a copy of
 `tools/rebushido_patch.py`, which makes and applies it with the standard library alone. The
-version number is `RB_VERSION_NUMBER` in `include/rebushido.h`. The ReBushido EXE leaves out its
+version number is `RB_VERSION_NUMBER` in `include/rebushido.h`. A release ships the project's own
+patcher, `ReBushidoPatcher.exe` (`tools/patcher/patcher.c`, C99, built by `make patcher`), beside
+the patch; `tests/rebushido/patcher.py` holds it to `tools/rebushido_patch.py`, which stays the
+reference for the format. The ReBushido EXE leaves out its
 trailing zeroed small variables (`make_psexe.py --zeroed-from`), so it fits the retail program's
 place on the disc plus the three empty sectors after it; when it outgrows that, `build_disc.py`
 puts it at the end of the image.
 The native port: `make port` builds `build/port/rebushido`, a 32-bit Linux program with no C
 library, from the game's C with `RB_PORT` on, Sony's library code that is plain arithmetic, and
 `src/port/` (`docs/PORT.md`). All OS calls go through `include/port_host.h`. A new Sony or BIOS
-function the game calls must be defined in `src/port/` or the port's link fails. `RB_PORT` is
+function the game calls must be defined in `src/port/` or the port's link fails. The port draws by
+a software GPU (`src/port/raster.c`) into its own video memory; `build/port/rebushido --shots DIR`
+writes frames. `RB_PORT` is
 also on in `make rebushido-test` and `make rebushido-modern`, which test the C beside the assembly;
 `tools/port_gte_macros.py` writes Sony's GTE macros as C into `build/port/include/`;
 `make gte-probe` builds the play tests' probe (`build/play/GteProbe.exe`).
