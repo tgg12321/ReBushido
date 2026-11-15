@@ -57,6 +57,16 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
 - `wsl bash tools/build.sh port` builds the native port into
   `build/port/`; it runs as `build/port/rebushido --image <.cue>` and is
   held to the emulator by the play test `port_game`.
+- `make port` also runs `python3 tools/port_order.py --check`: a place
+  where the order an expression is evaluated in may matter is fixed under
+  `RB_PORT` (the call first) or added to `config/port_order.txt` with its
+  reason (`--update`).
+- Port against emulator: three play tests (`port_game`,
+  `port_other_fight`, `port_bugfixes`); to find a divergence,
+  `tests/play/README.md`, "Finding where two runs part"
+  (`tools/port_compare.py`). In a fight, time presses and checkpoints in
+  game frames (`72f`, `frames =`), not blanks. The play tests take about
+  six minutes.
 - The owner's choices for the port: a 32-bit build first, SDL 2, the
   player's disc image for the data, a software renderer that matches the
   PlayStation first, movies decoded in the port.
