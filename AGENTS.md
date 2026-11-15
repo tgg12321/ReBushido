@@ -91,6 +91,12 @@ writes frames. The port compiles Sony's libsnd and libspu (all but libspu's `spu
 also on in `make rebushido-test` and `make rebushido-modern`, which test the C beside the assembly;
 `tools/port_gte_macros.py` writes Sony's GTE macros as C into `build/port/include/`;
 `make gte-probe` builds the play tests' probe (`build/play/GteProbe.exe`).
+The port is built with 64-bit pointers into `build/port/` and with 32-bit ones into
+`build/port32/`; the game's addresses stay 32-bit numbers below 4 GB. In the game's files a number
+cast to a pointer is `(T *)ADDR(x)`, and a pointer in memory whose layout is fixed (a file, the
+scratchpad, the arena) is a `PTR32` slot read with `PTR()` and written with `SET_PTR()`. A
+structure that keeps ordinary pointers is listed in `config/port_layout.txt`. `make port` fails on
+a cast without `ADDR()`, a slot without `PTR()`, or a structure that grew and is not listed.
 Never edit `bb2.ld` for ReBushido. `src/rebushido/` holds ReBushido's own files (names
 `rb_*`, `g_rb_*`, `Rb*`; headers `include/rebushido.h` for the switches and `include/rb_*.h`).
 

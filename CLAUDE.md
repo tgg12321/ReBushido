@@ -81,7 +81,18 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   number of pixels per checkpoint (`vram_differ`).
   `python tools/port_compare.py port_picture --vram` shows what differs.
   A test of the port's picture says `port_gpu = "emulator"`.
-- The owner's choices for the port: a 32-bit build first, SDL 2, the
+- The port is a 64-bit program; `make port` builds and checks both
+  sizes (`build/port/`, `build/port32/`). New code that makes a pointer
+  of a number uses `ADDR()`; a pointer member of anything laid over a
+  file, the scratchpad or the arena is a `PTR32` slot (`docs/PORT.md`,
+  "64 bits"; `docs/STYLE.md`, 29).
+- The port's window build is run by agents only with
+  `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy`: no visible window, sound
+  or dialog. Never install `gcc-multilib` in the build's WSL: it removes
+  the MIPS cross compiler.
+- New agents are Opus, in parallel, each in its own worktree; only one
+  agent at a time may run the emulator (the play tests have no lock).
+- The owner's choices for the port: 64 bits, SDL 2, the
   player's disc image for the data, a software renderer that matches the
   PlayStation first, movies decoded in the port.
 - The port's sound: Sony's libsnd and libspu are compiled in; the chip
