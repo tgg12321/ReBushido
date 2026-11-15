@@ -16,6 +16,14 @@ static s32 g_test_modes_linked;
 
 s32 sprite_Draw(SpriteDraw *draw) { return draw->sprt_out + sizeof(SPRT); }
 
+#if RB_REMASTER_VIEW
+/* Which edge of a wider remastered picture a group of the HUD belongs to
+ * (port_remaster.h): nothing is drawn here, so it goes nowhere. */
+void port_RemasterSetAnchor(s32 anchor) {}
+
+void port_RemasterNoteAnchored(PortAddress prim) {}
+#endif
+
 s32 sprite_DrawScaled(SpriteDraw *draw, s32 mode) {
     return draw->ft4_out + sizeof(POLY_FT4);
 }

@@ -1694,15 +1694,18 @@ pixel, is not compared: there is nothing on show to hold to anything.
 
 | The plan | Pictures | The same | Pixels | That differ | ... within one step | ... further |
 |---|---|---|---|---|---|---|
-| `port_game` | 184 | 37 | 27,494,400 | 600,577 (2.2%) | 569,696 (95%) | 30,881 (168 a picture) |
-| `port_other_fight` | 196 | 41 | 29,337,600 | 6,644,816 (23%) | 5,478,592 (82%) | 1,166,224 (5,950 a picture) |
-| `port_bugfixes` | 188 | 39 | 27,878,400 | 613,035 (2.2%) | 582,021 (95%) | 31,014 (165 a picture) |
+| `port_game` | 183 | 35 | 27,417,600 | 612,850 (2.2%) | 581,940 (95%) | 30,910 (169 a picture) |
+| `port_other_fight` | 195 | 33 | 29,260,800 | 6,789,077 (23%) | 5,593,381 (82%) | 1,195,696 (6,131 a picture) |
+| `port_bugfixes` | 186 | 37 | 27,648,000 | 639,084 (2.3%) | 607,554 (95%) | 31,530 (169 a picture) |
 
-(Measured again on the tree that hangs this on the window. When the
-renderer was written, on an older tree, the same runs gave 184, 196 and
-186 pictures and 633,002, 6,809,595 and 645,040 pixels that differ: the
-same picture to within a twentieth of the count, the game's own code
-having moved on in between.)
+(Measured again on the tree that puts the HUD at the picture's edges,
+where a run of a plan that says `nocards` has no memory card at all and
+reaches each checkpoint a few blanks sooner, so the pictures are not the
+same frames. The tree before it gave 184, 196 and 188 pictures and
+600,577, 6,644,816 and 613,035 pixels that differ, and the tree the
+renderer was written on 633,002, 6,809,595 and 645,040: the same picture
+to within a twentieth of the count each time, the game's own code having
+moved on in between.)
 
 A *step* is one of a five-bit channel's 31, eight of a byte's 255: a
 pixel that differs by a step or less is the same colour the chip can
@@ -1741,11 +1744,12 @@ What differs, and why:
 **With the renderer on and off, the game computes the same thing.** The
 trace of every watched value at every blank of the three plans is
 identical, line for line, with `--graphics remastered` and `--graphics
-original`. (It was, on the tree this was measured on. On a later tree
-`port_bugfixes` parts company at the options page, and so do two runs of
-the one program that differ only in `--gl-scale`: the page reads memory
-the game never wrote, so the picture's settings move what it finds.
-Nothing of the renderer is in it — see "What is left".) **And with each of the three settings**: the traces of
+original`: 2,333, 2,457 and 2,334 lines on this tree. (For a while
+`port_bugfixes` parted company at the options page, and so did two runs
+of the one program that differed only in `--gl-scale`. That was a memory
+card image left beside the program by the run before, not the renderer
+and not a read of memory the game never wrote; the plan says `nocards`
+and the port obeys it now — see "What is left".) **And with each of the three settings**: the traces of
 `port_game` with `draw_distance far` and `max`, and with the remastered
 picture off but the run started with `max` (so that the game has the
 port's own primitive buffers), are all the same 2,340 lines as the run
@@ -2069,7 +2073,11 @@ So the whole of it is in the drawing path:
 **Measured.** The middle 640 pixels of a 16 by 9 picture against the
 same frame at four by three: **25 pixels of 1,228,800 differ**, all of
 them where a polygon now carries on past the old edge instead of being
-cut at it.
+cut at it. (Measured again with the HUD at the edges, on three frames of
+a fight at scale 2: 15,308, 16,470 and 17,096 pixels of the middle
+differ, which is the HUD leaving it; **under the HUD's own rows, 24, 21
+and 18 do** — the same polygons as before. Outside a fight the middle is
+what it was: the menus and character select differ in 0 to 93 pixels.)
 
 **Draw the stage further with it.** The stage's cells are chosen by a
 wedge cut for the console's field of view, so a wider view at
@@ -2120,6 +2128,22 @@ console's shape — the margin is 0 and every anchor is a shift of nothing.
 window keep the console's shape with nothing said, so that their picture
 can still be held to the software GPU's pixel for pixel
 (`tools/port_gl_prove.py`).
+
+**How the HUD's edges were proved.** The program as it was before this
+and the program after it, on `port_game`'s plan with no card in either
+slot:
+
+| | Before against after |
+|---|---|
+| With "Graphics: Original": the trace of every watched value at every blank | identical, 2,333 lines |
+| ... and all of video memory at the end of the run | identical, all 1,048,576 bytes |
+| With the remastered picture at the console's shape: the trace | identical, 2,333 lines |
+| ... and every picture of the run at scale 2 (1,228,800 pixels each) | identical, all 35, no pixel different |
+
+And the renderer's own prover (`tools/port_gl_prove.py`) on the three
+plans: the game computes the same thing with the remastered picture on
+and off, 2,333, 2,457 and 2,334 lines, `port_bugfixes` among them (the
+card image it used to read is gone; see "What is left").
 
 ### Remastered in the window
 

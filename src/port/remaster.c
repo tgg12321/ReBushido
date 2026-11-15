@@ -537,6 +537,8 @@ static const FaceSlot *port_FindFace(PortAddress prim) {
 
 void port_RemasterSetAnchor(s32 anchor) { g_anchor = anchor; }
 
+/* A primitive of the fight's HUD, written down under its address with
+ * the edge the game said it belongs to (port_remaster.h). */
 void port_RemasterNoteAnchored(PortAddress prim) {
     u32 slot;
     u32 i;

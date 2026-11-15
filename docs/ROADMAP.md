@@ -89,12 +89,15 @@ No dates.
       primitive buffers of its own for it. Left of it: a stage's
       geometry was never meant to be seen whole, so its far edge shows
       where the ground stops.
-   4. **The wide picture.** Done for the scene (`aspect`): the game
-      never culls to the right or the bottom, so a wider view needs
-      nothing of the projection to the right, and at the left only that
-      the game stop culling a face at the console's own edge ("A wider
-      picture"). Left of it: the HUD stays four by three in the middle
-      and does not move out to the new edges, so `4:3` is the default.
+   4. **The wide picture.** Done (`aspect`, and `16:9` is what the
+      window shows with nothing said): the game never culls to the right
+      or the bottom, so a wider view needs nothing of the projection to
+      the right, and at the left only that the game stop culling a face
+      at the console's own edge. The fight's counters, clocks and points
+      are drawn at the picture's own edges, each group saying which edge
+      it belongs to while it builds its primitives, while the menus, the
+      select screens and the loading pictures stay four by three in the
+      middle ("A wider picture").
    5. **A high frame rate**, 144 a second: the renderer drawing between
       the game's own steps, which the side channel's exact positions
       are what makes possible.
