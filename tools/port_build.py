@@ -70,7 +70,9 @@ STATE = 'tests/play/state.toml'
 SONY = 'src/main/psxsdk/'
 SONY_FOLDERS = {'libgte': ('patchgte.c',), 'libsnd': (), 'libspu': ('spu.c',)}
 SONY_FILES = ['libgpu/prim.c', 'libgpu/ext.c', 'libetc/vmode.c', 'libc2/memcpy.c', 'libc2/memmove.c', 'libc2/memchr.c',
-              'libc2/strcpy.c', 'libc2/strlen.c', 'libc2/rand.c', 'libc2/ctype.c']
+              'libc2/strcpy.c', 'libc2/strlen.c', 'libc2/rand.c', 'libc2/ctype.c',
+              # _card_clear, which is Sony's C over two BIOS calls the port supplies
+              'libcard/card.c']
 # Files of src/rebushido/ that are another build's.
 NOT_THE_PORTS = ('quickboot.c',)
 
@@ -89,8 +91,12 @@ GAME_FLAGS += ['-I' + SONY + folder for folder in sorted(SONY_FOLDERS)]
 INSTRUMENT = '-finstrument-functions'
 # -Wstrict-prototypes is left out: Sony's headers, which the port's files
 # include for the names they define, declare functions with no parameters
-# written (`s32 (*func)()`).
-PORT_WARNINGS = [f for f in modern.WARN_FLAGS if f != '-Wstrict-prototypes'] + ['-Werror']
+# written (`s32 (*func)()`). -Wredundant-decls too, for the one of those the
+# port has to define: include/port_card.h declares _new_card with the
+# parameter Sony's libapi.h leaves out, so that it can be defined at all
+# (docs/PORT.md, "The memory card").
+PORT_WARNINGS = ([f for f in modern.WARN_FLAGS
+                  if f not in ('-Wstrict-prototypes', '-Wredundant-decls')] + ['-Werror'])
 LINK_FLAGS = ['-m32', '-nostdlib', '-static', '-no-pie', '-Wl,--build-id=none']
 # The kinds of variable, by the section the compiler puts each in.
 DATA_KINDS = ('.rodata', '.data', '.bss')

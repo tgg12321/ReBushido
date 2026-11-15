@@ -390,7 +390,10 @@ and in the source describe the original.
   crests' bits count for nothing.
 - The movie player's wait for a frame never ends on its timeout: nothing marks the frame done.
 - A save file carries a table of 16-bit values and RAM addresses that the loader writes, and a flag
-  (`SAVE_FLAG_PATCHES_ONLY`) to apply only that: a development leftover the game never sets.
+  (`SAVE_FLAG_PATCHES_ONLY`) to apply only that: a development leftover the game never sets. On the
+  native port the memory card hands the game an empty table, so that no save file from anywhere can
+  write memory there ([`PORT.md`](PORT.md), "The memory card"); the PlayStation builds are as they
+  were.
 
 **Suspected, not settled**
 - `fight_TestBladesOnBodies` (by reading): with only the sub-weapon live its one

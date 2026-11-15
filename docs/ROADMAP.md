@@ -48,7 +48,10 @@ No dates.
    value. The fourth is done but for its window: the port draws, by
    the PlayStation's GPU written in C, into video memory of its own,
    and its picture is the emulator's to the pixel on the flat screens
-   and but for three pixels in a thousand in a fight. No sound yet.
+   and but for three pixels in a thousand in a fight. Its sound is made
+   by a sound chip in C and goes to a file, not yet to a sound card. Its
+   memory card is a standard card image, and the card it writes for the
+   options page is byte for byte the one the emulator's BIOS wrote.
    The game's code stays C.
 7. **The picture.** A wide picture, high resolution and a high frame rate
    on the port, which is what "Graphics: Remastered" will mean. On the

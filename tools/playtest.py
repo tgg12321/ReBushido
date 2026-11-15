@@ -699,6 +699,13 @@ def run_port(test, folder, log_path, port_log):
     time limit."""
     cmd = ["./" + host_path(PORT_PROGRAM), "--image", host_path(RETAIL_CUE),
            "--plan", host_path(os.path.join(folder, "plan.txt")), "--out", host_path(folder)]
+    # the memory cards are the run's folder's own files, as the emulator's
+    # are: the port makes one, formatted and empty, where there is none
+    if test.cards == "none":
+        cmd.append("--no-cards")
+    else:
+        cmd += ["--card1", host_path(os.path.join(folder, "card1.mcd")),
+                "--card2", host_path(os.path.join(folder, "card2.mcd"))]
     if os.name == "nt":
         cmd = ["wsl", "-e"] + cmd
     with open(log_path, "wb") as out, open(port_log, "wb") as err:
@@ -713,8 +720,6 @@ def run_port(test, folder, log_path, port_log):
 
 def run_on_port(test, run, order, folder):
     """A run on the native port: what its log says, and how it ended."""
-    if test.cards != "none":
-        raise TestError("the port has no memory card yet: a test on it says `cards = \"none\"`")
     log_path = os.path.join(folder, "run.log")
     port_log = os.path.join(folder, "port.log")
     start = time.time()
