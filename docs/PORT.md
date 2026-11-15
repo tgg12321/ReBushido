@@ -929,6 +929,14 @@ No run of the tests reaches them.
   allocations may be above 4 GB, which is right as long as the game is
   never given one. The program must still be linked without position
   independence, at its fixed address.
+- Floating point, when the window or the sound card wants it. Every
+  file of the 64-bit program is compiled without the processor's vector
+  instructions today (`-mno-sse`, `tools/port_build.py`, `NO_VECTORS`),
+  and a 64-bit compiler does its floating point with those. A file that
+  needs them has to be compiled with them, and then must not copy or
+  clear one of the game's arrays itself: the compiler would take such
+  an array to start on a 16-byte boundary, which the build has taken
+  away so that the game's variables stay neighbours.
 - 123 pairs of neighbouring variables are not as far apart in the
   32-bit program as on the PlayStation; in the 64-bit one 248 are not,
   137 of them because the first has pointers, which are twice as wide.
