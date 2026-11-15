@@ -2251,8 +2251,8 @@ on unchanged. Of each frame it writes down:
   the software GPU has since drawn over it. Video memory is put back
   before anything else looks at it, and the mirror the card reads texels
   from is sent the true pixels again (`port_GlUploadVram`);
-- three frames are kept, which is what the two on show and the one being
-  built need.
+- three frames are kept: the frame on show, the frame after it, and the
+  one the game is building now.
 
 A picture at phase *t* is then the frame on show's own list of writes
 and primitives given to the renderer again, with each primitive that the
@@ -2349,8 +2349,53 @@ the last the frame after it, and three things are held:
 
 And the game computes the same thing with the pictures on and off: the
 trace of every watched value at every blank is identical, line for line,
-for both pointer sizes. Nothing of this is in `make port` or in any
+for both pointer sizes (`port_game`: 2,342 lines at 64 bits and at 32;
+`port_other_fight`: 2,466). Nothing of this is in `make port` or in any
 check: `src/port/gl/` is the window's and the prover's alone.
+
+**What it measured**, with every game frame drawn as five pictures at
+twice the console's resolution (1,280 by 960):
+
+| The plan | Frames | Drawn again | Pictures | The first against the game's own | Out of order | The point off the line | A picture |
+|---|---|---|---|---|---|---|---|
+| `port_game` | 2,752 | 696 | 5,568 | **0 of 855,244,800 pixels** | 0 | 0 | 22.0 ms |
+| `port_other_fight` | 2,872 | 816 | 6,528 | **0 of 1,002,700,800** | 1 | 0 | 24.4 ms |
+| `port_bugfixes` | 2,784 | 696 | 5,568 | **0 of 855,244,800** | 0 | 0 | 24.2 ms |
+
+A picture of `port_game` is 1,201 primitives: 1,102 moved, 79 the frame
+after it has not, 18 flat (the 2D layer and the HUD). The farthest a
+corner moved was 128 pixels, which is the most that is moved at all.
+1,645 frames were not drawn again — the boot, the movie, the menus and
+the loading screens, where nothing has depth to move — and 6 were too
+large to write down. Over the whole run a picture cost 40.6 ms of the
+program's own time against 22.0 ms inside the renderer, on Mesa's
+software renderer with **no graphics card at all**; the runs took 271
+seconds against 45 with the pictures off.
+
+**The one picture out of order** is `port_other_fight`'s blank 3,206,
+where the camera swings fastest. Its first phase is farther from the
+last picture than the phase before it, by the sum of every channel of
+every pixel — and that is a weakness of the measure, not of the
+geometry: where a textured scene slides across the screen, a shift of a
+quarter of the way can line fewer texels up than a shift of none. The
+watched point is in order at every phase of it, and so is the distance
+from the *first* picture.
+
+**`port_bugfixes`' trace parts company at the options page**, as it does
+for anything that moves the program's memory about: the page reads
+memory the game never wrote ("What is left"), the Bugfixes setting then
+comes out on in one run and off in the other, and 29 of 2,346 lines
+differ from there on. Two runs of the one program that differ only in
+`--gl-scale`, with no pictures between frames at all, part at **the same
+29 lines**: nothing of this is the renderer's.
+
+A strip of the pictures of six frames one after another is in
+`build/fps/port_game/gl-0030NN-pNN.png`: the last picture of a frame
+differs from the game's own next frame in 4,314 pixels of 1,228,800
+(0.35% — the faces that appeared or went, and the HUD, which stays at the
+game's rate), and the first picture of the same frame differs from it in
+408,541 (33%). That is the whole of what the pictures in between are
+for, in two numbers.
 
 **In the window**, through SDL's `offscreen` driver on Mesa's software
 renderer (`--frame-rate 144 --no-vsync --resolution 1`, the plan of
