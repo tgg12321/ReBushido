@@ -90,15 +90,45 @@ to copy lines from, and says how keys and controller buttons are named.
 A line the program cannot use is named in the console window as it
 starts.
 
+## The picture: Original and Remastered
+
+The options page at boot has a second line, **Graphics**, with
+**Original** and **Remastered** (`REBUSHIDO.md`, "The options page").
+Original is the PlayStation's own picture, pixel for pixel. Remastered
+draws the scene again with the graphics card, at the window's
+resolution: the corners where the camera really put them instead of on
+whole pixels, textures in perspective instead of sliding, true colours
+instead of the chip's five bits and its dither, and the menus, the
+fonts and the HUD crisp at the window's size (`PORT.md`,
+"Remastered").
+
+**The window does not use it yet.** The renderer is written and proved
+with no window, by drawing both pictures and comparing them
+(`tools/port_gl_prove.py`); hanging it on the window is the next piece
+of work, and with it:
+
+- **F2** switches between Original and Remastered while the game runs,
+  and `--graphics original` or `--graphics remastered` starts it either
+  way (the options page's choice is what it follows if neither says);
+- an option forces how many times the console's resolution the scene is
+  drawn at, instead of the window's own size choosing (`--scale` is
+  already the name of where the picture goes in the window, so the new
+  one will be `--resolution N`).
+
+What Remastered does **not** do yet: the wide picture, anti-aliasing,
+seeing farther (the stages still fade things in at the distance the
+console had), more than the game's own 30 or 60 pictures a second, and
+new lighting or shadows. Those are the steps after it
+([`ROADMAP.md`](ROADMAP.md), item 7).
+
 ## What does not work yet
 
 - **No memory card.** The game finds no card: the settings of its
   options and what you have unlocked are not kept when you close it.
 - **No movies.** The opening movie is left out.
 - **No link cable.**
-- The picture is the PlayStation's own, at the PlayStation's size,
-  scaled up: the wide picture and the higher resolution are not made
-  yet.
+- The window draws the PlayStation's own picture, scaled up; the
+  remastered one is not hung on it yet (above).
 - The sound has not been compared with a console's.
 
 ## If something is wrong

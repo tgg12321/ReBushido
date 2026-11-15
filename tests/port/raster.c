@@ -15,6 +15,24 @@
 #include "runtime/runtime.h"
 
 /* ---- what those files want of the rest of the port ---- */
+/* The remastered renderer is not in this test: what the GPU is given
+ * goes nowhere else (tests/port/remaster.c holds that side). */
+void port_RemasterCommand(const u32 *words, s32 count) {
+    (void)words;
+    (void)count;
+}
+
+void port_RemasterLoadedVram(s32 x, s32 y, s32 w, s32 h) {
+    (void)x;
+    (void)y;
+    (void)w;
+    (void)h;
+}
+
+void port_RemasterNewFrame(void) {}
+
+void port_RemasterSetPrim(PortAddress prim) { (void)prim; }
+
 
 void port_Fail(const char *format, ...) {
     test_Count(0, __FILE__, __LINE__, "the port stopped itself: %s", format);

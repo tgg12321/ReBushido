@@ -52,7 +52,34 @@ No dates.
    and its picture is the emulator's to the pixel on the flat screens
    and but for three pixels in a thousand in a fight. No sound yet.
    The game's code stays C.
-7. **The picture.** A wide picture, high resolution and a high frame rate
-   on the port, which is what "Graphics: Remastered" will mean. On the
-   PlayStation build only what is cheap: about 17 KB is left there before
-   a fixed buffer has to move.
+7. **The picture.** What "Graphics: Remastered" means on the port
+   ([`PORT.md`](PORT.md), "Remastered"): the scene drawn again by the
+   graphics card from the geometry the PlayStation threw away, with
+   "Graphics: Original" still the console's picture pixel for pixel. In
+   the owner's order:
+   1. **The foundation and high resolution.** Done. The side channel
+      that carries each corner's exact position and depth beside the
+      PlayStation primitive; the decoder that hands the GPU's own
+      command stream to a backend; OpenGL 3.3 core, drawing the scene
+      at N times the console's resolution with sub-pixel corners,
+      textures in perspective, no dither, true-colour mixing and the 2D
+      layer crisp; proved with no window against the software GPU,
+      pixel for pixel, at scale 1. Left of it: the window does not use
+      it yet ("What the window still needs").
+   2. **Anti-aliasing.** The hook is in place (the colour buffer is the
+      port's own texture); what has to be measured first is a
+      half-transparent primitive drawn over an edge, which mixes twice
+      along it.
+   3. **No pop-in, and more to see.** The stage's cells, the fog's
+      cutoff and the ordering table's depth, which are what decide it
+      today ("What each later step needs").
+   4. **The wide picture.** The projection's centre and the four places
+      that cull to four by three.
+   5. **A high frame rate**, 144 a second: the renderer drawing between
+      the game's own steps, which the side channel's exact positions
+      are what makes possible.
+   6. **Lighting and shadows**: the normals the mesh has and the
+      primitive does not.
+
+   On the PlayStation build only what is cheap: about 17 KB is left
+   there before a fixed buffer has to move.
