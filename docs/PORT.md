@@ -1391,7 +1391,7 @@ itself and a setting one of them saved earlier makes the runs differ.
 
 At the console's rate, with no sound card, 3,880 blanks took 64.839
 seconds: 16.715 ms each. On every push `tests/port/window.c` holds the
-arithmetic to 791 cases worked out by hand: the picture's place in
+arithmetic to 879 cases worked out by hand: the picture's place in
 windows of every shape, pixels at video memory's edges, the queue
 running out and filling up with no step larger than a fade's, the clock
 going round at 32 bits, time let go, a sound card two parts in a
@@ -1399,8 +1399,10 @@ thousand fast and one as slow for 20,000 blanks with nothing running
 out, every button's name, keys and sticks, a settings file's lines and
 the ones it cannot use; a log's name, which of 25 logs go, lines out
 of pieces, a rate each half second, every digit's shape, the counter's
-place. 33 mistakes made on purpose in the first four files, one at a
-time, each failed it.
+place; the remastered picture's own shape in a window of every shape,
+how many times the console's lines a scale draws so that its pixels are
+square, and the five settings that choose it. 33 mistakes made on
+purpose in the first four files, one at a time, each failed it.
 
 With the log and the counter on, every run of the table above was made
 again on both systems: the traces, the pictures and the samples are the
@@ -1779,8 +1781,10 @@ second a question of the game's own rate and not of the drawing.
 
 ### What is not done, and what may be wrong
 
-- Nobody has seen any of it on a screen. The pictures are files; the
-  window does not use this path yet ("What the window still needs").
+- Nobody has seen any of it on a screen, and nothing of it has run on a
+  real graphics card: the pictures are files, drawn by Mesa's software
+  renderer. The window the player runs does use this path
+  ("Remastered in the window").
 - The movie's 24-bit display is the software GPU's picture.
 - The mask bit is not drawn: the game never uses it (0 primitives of
   1.5 million in the three plans were drawn with it set or looked at).
@@ -1789,9 +1793,9 @@ second a question of the game's own rate and not of the drawing.
   only lines it has, are not reached by anything the plans do. When
   something does reach them they will be counted as not drawn, which is
   what the counts are for.
-- The window's own resolution does not reach the renderer yet: the
-  scale is chosen by `--gl-scale`, and `port_RemasterScaleFor` is the
-  arithmetic that will choose it from the window's size.
+- In the prover the scale is `--gl-scale`'s; in the window it is the
+  window's own size by `port_RemasterScaleFor`, worked out again
+  whenever the window is resized or the game changes its display mode.
 - The frame rate and new lighting are later steps.
 - **A stage drawn whole shows where it stops.** The stages were built
   to be seen through a fog that ends 26,000 units out; at
@@ -2003,10 +2007,27 @@ offset, no projection distance, no clip — for the simple reason that
 face is dropped only when every corner is off the left or above the top
 (`render_FaceOffScreen`, the sign bits of the packed position), and a
 stage tile also when no corner is above line 240. Everything to the
-sides is already projected and already emitted; the console's GPU
+right is already projected and already emitted; the console's GPU
 throws it away at the edge of its 640-pixel drawing area, and the
 remastered renderer, which has every corner where the projection really
 put it, need only keep it.
+
+**The left is the one edge the game does cull at**, and that is in the
+drawing code and not in the projection: a face every corner of which has
+a negative screen x is dropped before a primitive is ever built, so a
+wider picture showed black wedges in the new left band where the ground
+and a wall ended at the console's edge. Under the remaster's own switch
+the test is against the picture's own edge instead, which is
+`port_RemasterLeftMargin()` pixels further out: the margin is worked out
+once a frame where the game clears its ordering table
+(`port_RemasterNewFrame`), so that every face of a frame is cut at the
+same place, and it is 0 with the original picture or the console's shape,
+where this is the console's own test to the instruction. A face is looked
+at thousands of times a frame, so the test reads a cached number and
+calls nothing. The tiles go through the same test, so one change covers
+the stage, the fighters, the cloth and the effects; the tiles' own extra
+test is the bottom of the screen, which a wider picture does not
+touch.
 
 So the whole of it is in the drawing path:
 
@@ -2043,36 +2064,112 @@ wedge cut for the console's field of view, so a wider view at
 cells. `max` is what fills a wide picture, and the two settings are
 meant to be used together.
 
-**What is not done.** The HUD stays four by three: the WINS counters
-(`COUNTER_LEFT_X` 80, `COUNTER_RIGHT_X` 521 in `hud.c`) and the rest of
-the 2D layer sit in the middle band and do not move out to the new
-edges. Moving them wants a word from each emitter saying what it is
-anchored to, which the side channel does not carry yet — the emitters
-themselves are already apart from the scene's (`hud.c`, `menu_pages.c`,
-`select.c`, `font.c` against `render_asm.c`), so it is a matter of
-saying so, not of finding out. The default is `4:3` until that is done.
+**What is not done: the HUD's own edges.** The HUD stays four by three:
+the WINS counters (`COUNTER_LEFT_X` 80, `COUNTER_RIGHT_X` 521 in
+`hud.c`), the chanbara clock (`TIME_MINUTES_X` 418 to `TIME_RULE_END_X`
+568) and the team's points sit in the middle band and do not move out to
+the new edges. **The default is `4:3` until they do.**
 
-### What the window still needs
+What moving them needs, as far as it has been read:
 
-The hardware path is written to hang on the window the same way it
-hangs on the prover. What `src/port/window/` needs, when the window's
-own work settles:
+- a shift each sprite and tile of the fight's HUD is drawn with — left by
+  the margin for what is anchored to the left edge, right by it for the
+  right — set around each group in `hud_DrawWinCounts`,
+  `hud_DrawTimeAndCount`, `hud_DrawOpponentCount`, `hud_DrawPointsAndTime`
+  and `hud_DrawKillCount` (`src/main/hud.c`). It cannot be done by
+  changing the constants alone: most of those elements take their x from
+  a sprite cell table (`g_hud_win_count_cells`, `g_hud_digit_cells`),
+  so the shift belongs in `sprite_Draw` and at the few places in `hud.c`
+  that set a tile's `x0` itself;
+- the pause menu, the menus, character select and the loading pictures
+  must **not** move: they are the other callers of the same sprite code,
+  so the shift has to be set and cleared around the fight's HUD alone,
+  not held on;
+- the drawing path must let those primitives into the bands. A primitive
+  with no depth keeps the console's own drawing area today
+  (`port_GlDraw`, `state.is_wide`), which would cut a counter moved out
+  of it: the rule has to widen for them, and widening it for every
+  full-width 2D primitive would also let anything else the console
+  clipped at its edge show in the band, which is not measured;
+- and then the measurement of "the middle 640 pixels differ in 25
+  pixels" has to be made again, since the middle band's own contents
+  change.
 
-- the window made with `SDL_WINDOW_OPENGL` and a 3.3 core context
-  (`SDL_GL_SetAttribute`, `SDL_GL_CreateContext`), and
-  `port_GlStart(SDL_GL_GetProcAddress, &options)` once it is current;
-- at a blank, where `port_DrawPicture` is: with the remastered picture
-  on, `port_RemasterShow()` and then the colour buffer's display
-  rectangle drawn into the window (one textured quad, or
-  `glBlitFramebuffer`) and `SDL_GL_SwapWindow`; with it off, what the
-  window does today;
-- F2 calling `port_ToggleGraphics()`, and `--graphics
-  original|remastered` calling `port_SetGraphics`;
-- the scale from `port_RemasterScaleFor(window_w, window_h, picture_w,
-  picture_h)` whenever the window is resized, and `port_GlSetOptions`
-  with it and twice it for `tall`; an option to force it, which cannot
-  be called `--scale` because the window already uses that name for
-  where the picture goes (`--resolution N`).
+### Remastered in the window
+
+The window the player runs shows either picture, and **F2 changes between
+them while the game runs** (`src/port/window/sdl_window.c`). What the
+prover does with EGL and no display, the window does with SDL:
+
+- the window is made with `SDL_WINDOW_OPENGL` and a 3.3 core context is
+  asked for (`SDL_GL_SetAttribute`, `SDL_GL_CreateContext`), and
+  `port_GlStart(SDL_GL_GetProcAddress, &options)` hands the renderer the
+  context. Nothing of OpenGL is linked to: `gl_draw.c` looks every
+  function up through SDL, so the program needs no GL library at build
+  time and runs where there is none;
+- at a blank's end `port_RemasterShow()` and `port_GlFinishFrame()`
+  finish the card's frame, and then the picture goes into the window:
+  `port_GlShowPicture`, one textured quad of the colour buffer into the
+  rectangle `port_FitShape` gives it, and `SDL_GL_SwapWindow`. The
+  picture's pixels are square and it is as wide as the view asks for, so
+  its own shape and not the console's four by three is what it is fitted
+  by;
+- with Graphics Original the same path shows the software GPU's own
+  pixels as a texture (`port_GlShowPixels`), so that one context draws
+  both pictures and F2 costs nothing but a different source;
+- the counter in the corner (F3) is its own few pixels over either
+  picture, by the same call with the box's alpha kept; the session's log
+  is the window's as it was.
+
+**Where there is no OpenGL 3.3** — an old card, or SDL told to show
+nothing — the window is made again without a context and SDL's renderer
+shows the software GPU's picture, exactly as it did before there was a
+card path: the remastered renderer has no backend then, so
+`port_RemasterIsOn` is false whatever F2 or a setting says, and the log
+says why. This is the path every headless run takes (`SDL_VIDEODRIVER=dummy`
+has no GL at all), which is why the window's own proof is untouched by
+all of this.
+
+**The settings** are the window's, read from `rebushido.cfg` and the
+command line as the others are (`keymap.c`, `PLAYING.md`): `graphics`
+(`--graphics original|remastered`), `resolution` (`--resolution N`),
+`draw_distance`, `antialiasing` and `aspect`. The last three are a run's
+and are settled before the game starts, because they choose the
+primitive buffers the game is handed; `graphics` and the window's size
+may change as it runs. With nothing said: the picture follows the
+options page, the scene is drawn at as many times the console's
+resolution as the window's size asks for (`port_RemasterScaleFor`, which
+is recomputed when the window is resized or the game changes its display
+mode), the draw distance is `far`, the smoothing is 2, and the shape is
+the console's four by three.
+
+**What the log says**: the card's vendor, renderer and GL version; which
+picture a run starts with and all four settings; every F2 with the blank
+it happened at; the scale each time the window's size changes it; and at
+the end which picture was on, how many times F2 was pressed, and the
+vertices and draws of the last frame.
+
+**How it was proved.** With Graphics Original, SDL's dummy drivers and
+the three plans of `port_game`, `port_other_fight` and `port_bugfixes`:
+the trace of every watched value is the build without a window's, line
+for line, and every twentieth picture as SDL is handed it is that
+build's PNG pixel for pixel — the numbers of "How the window is proved"
+again, on this tree. With Graphics Remastered the window was run through
+SDL's `offscreen` driver on Mesa's software renderer (`llvmpipe`), which
+gives a real 3.3 core context with nothing on screen: the card path
+starts, the scale follows the window, F2 changes picture at a blank, and
+the window's own pixels were read back and written as PNGs
+(`--tap-window`, `build/remaster3/`).
+
+**Not proved**: nobody has seen a window on a real graphics card. The
+picture was drawn only by Mesa's software renderer, with no window on
+screen, so what a driver makes of the shaders, how full screen behaves
+and whether a card keeps up at 30 frames a second are not known. The
+counter and the fade of a resize were read from the pixels, not seen.
+
+What the window still needs of the remastered picture is the HUD's own
+edges ("A wider picture") and the two steps after it, a high frame rate
+and new lighting (below).
 
 ### What each later step needs
 

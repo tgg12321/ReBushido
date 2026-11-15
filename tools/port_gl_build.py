@@ -50,22 +50,21 @@ class Target(sdl.Target):
 
     def __init__(self, bits):
         sdl.OUT_DIR = OUT_DIR
-        self.bits = bits
-        super().__init__(False)
+        super().__init__(False, bits)
         self.program = OUT_DIR + '/rebushido-gl'
         self.sdl = None
         self.sdl_flags = []
         self.hosted = [GL_DIR + f for f in GL_HOSTED] + [WINDOW_HOST]
 
     def link_flags(self):
-        return self.size_flags() + ['-no-pie', '-lEGL', '-Wl,-Ttext-segment=0x%X' % sdl.PROGRAM_BASE]
+        return [self.size_flag, '-no-pie', '-lEGL', '-Wl,-Ttext-segment=0x%X' % sdl.PROGRAM_BASE]
 
 
 def check_host(target):
     """None, or why this host cannot build it."""
     os.makedirs(target.dir, exist_ok=True)
     probe = target.dir + '/egl_probe'
-    proc = sdl.run([target.cc] + target.size_flags() + ['-x', 'c', '-', '-o', probe, '-lEGL'], input=EGL_PROBE)
+    proc = sdl.run([target.cc, target.size_flag] + ['-x', 'c', '-', '-o', probe, '-lEGL'], input=EGL_PROBE)
     if proc.returncode != 0:
         return ('%s cannot make a %d-bit program with EGL: %s\n'
                 'port-gl: on Ubuntu: sudo apt install libegl-dev%s'
@@ -101,11 +100,12 @@ def main():
     host_tests.write_headers(True)
 
     flags = port_build.GAME_FLAGS + host_tests.include_flags(True) + modern.DEFS + host_tests.REBUSHIDO_DEFS
-    flags += ['-DRB_GIT_HASH="%s"' % port_build.git_hash()] + port_build.GAME_ERRORS
+    flags += port_build.MOVOVL_INCLUDES
+    flags += ['-DRB_GIT_HASH="%s"' % port_build.git_hash()]
     stamp = max(os.path.getmtime(p) for p in (__file__, sdl.__file__, port_build.__file__, 'tests/run.py',
                                               'tools/modern/check.py', 'tools/port_gte_macros.py', modern.SHIM))
-    jobs = [(target, path, 'port' if own else 'game', flags, stamp)
-            for path, own in port_build.sources() if path not in sdl.OTHER_HOSTS]
+    jobs = [(target, path, 'port' if own else 'game', flags + mine, stamp)
+            for path, own, mine in port_build.sources() if path not in sdl.OTHER_HOSTS]
     jobs += [(target, 'src/port/window/' + f, 'port', flags, stamp) for f in WINDOW_PLAIN]
     jobs += [(target, path, 'hosted', flags, stamp) for path in target.hosted]
     game, hosted, failed, built = [], [], 0, 0

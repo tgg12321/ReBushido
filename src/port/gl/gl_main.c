@@ -467,12 +467,13 @@ static void port_GlBlank(u32 blank) {
     fflush(stderr);
 }
 
-static void port_GlQuit(void) {
+static void port_GlQuit(s32 code) {
     const PortRemasterCounts *counts = port_GetRemasterCounts();
     const PortRemasterLimits *limits = port_GetRemasterLimits();
     PortRemasterView view;
     s32 kind;
 
+    (void)code;
     port_RemasterGetView(&view);
     fprintf(stderr,
             "gl run view distance %s antialiasing %d aspect %d:%d\n",

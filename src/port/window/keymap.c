@@ -54,6 +54,17 @@ const char g_port_default_settings[] =
     "fps_corner = top-left  # top-left, top-right, bottom-left,\n"
     "                       # bottom-right\n"
     "\n"
+    "# The remastered picture (F2 changes picture while the game runs).\n"
+    "# These four are a run's: changing one means starting it again.\n"
+    "graphics = follow      # original, remastered, or follow (the\n"
+    "                       # options page at boot says which)\n"
+    "resolution = 0         # how many times the console's; 0 is the\n"
+    "                       # window's own size\n"
+    "draw_distance = far    # original, far or max: how much of the stage\n"
+    "antialiasing = 2       # off, 2 or 4: the scene's edges smoothed\n"
+    "aspect = 4:3           # 4:3 as the console, or 16:9 for a wider\n"
+    "                       # view of the same scene\n"
+    "\n"
     "# Player one, on the keyboard\n"
     "p1.up = key Up\n"
     "p1.down = key Down\n"
@@ -176,6 +187,39 @@ static s32 port_ReadDigits(const char *text, s32 *value) {
     }
     *value = total;
     return digits != 0 && *text == 0;
+}
+
+/* `W:H`, the picture's shape, into the settings: 1 if it is one. */
+static s32 port_ReadShape(const char *text, PortSettings *settings) {
+    s32 across = 0;
+    s32 down = 0;
+    s32 digits = 0;
+
+    for (; *text >= '0' && *text <= '9'; text++) {
+        across = across * 10 + (*text - '0');
+        digits++;
+    }
+    if (digits == 0 || digits > 4 || *text != ':') {
+        return 0;
+    }
+    text++;
+    digits = 0;
+    for (; *text >= '0' && *text <= '9'; text++) {
+        down = down * 10 + (*text - '0');
+        digits++;
+    }
+    if (digits == 0 || digits > 4 || *text != 0 || across <= 0 || down <= 0) {
+        return 0;
+    }
+    /* a picture narrower than the console's is the console's: the scene
+     * is never cut to less than the console showed */
+    if (across * PORT_ASPECT_H_ORIGINAL < down * PORT_ASPECT_W_ORIGINAL) {
+        across = PORT_ASPECT_W_ORIGINAL;
+        down = PORT_ASPECT_H_ORIGINAL;
+    }
+    settings->aspect_w = across;
+    settings->aspect_h = down;
+    return 1;
 }
 
 /* ---- the buttons' names ---- */
@@ -400,6 +444,55 @@ static const char *port_ReadSetting(
         settings->deadzone = number;
         return NULL;
     }
+    if (port_WordsMatch(name, "graphics")) {
+        if (port_WordsMatch(value, "original")) {
+            settings->graphics = PORT_GRAPHICS_ORIGINAL;
+        } else if (port_WordsMatch(value, "remastered")) {
+            settings->graphics = PORT_GRAPHICS_REMASTERED;
+        } else if (port_WordsMatch(value, "follow")) {
+            settings->graphics = PORT_GRAPHICS_FOLLOW;
+        } else {
+            return "graphics is original, remastered or follow";
+        }
+        return NULL;
+    }
+    if (port_WordsMatch(name, "resolution")) {
+        if (!port_ReadDigits(value, &number) || number < 0 ||
+            number > PORT_REMASTER_SCALE_MAX) {
+            return "resolution is 0 (the window's own size) or a number up "
+                   "to 8";
+        }
+        settings->resolution = number;
+        return NULL;
+    }
+    if (port_WordsMatch(name, "draw_distance")) {
+        /* the renderer's own names, so that they are said in one place,
+         * and letters of either case as every other value here */
+        for (number = 0; number < PORT_DISTANCE_KINDS; number++) {
+            if (port_WordsMatch(value, port_NameRemasterDistance(number))) {
+                settings->distance = number;
+                return NULL;
+            }
+        }
+        return "draw_distance is original, far or max";
+    }
+    if (port_WordsMatch(name, "antialiasing")) {
+        if (port_WordsMatch(value, "off")) {
+            settings->supersample = 1;
+            return NULL;
+        }
+        if (!port_ReadDigits(value, &number) || number < 1 ||
+            number > PORT_SUPERSAMPLE_MAX) {
+            return "antialiasing is off, 2 or 4";
+        }
+        settings->supersample = number;
+        return NULL;
+    }
+    if (port_WordsMatch(name, "aspect")) {
+        return port_ReadShape(value, settings)
+                   ? NULL
+                   : "aspect is W:H, as 4:3 or 16:9";
+    }
     return port_ReadBinding(settings, name, value, lookup, is_default);
 }
 
@@ -465,6 +558,12 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->deadzone = PORT_DEADZONE_DEFAULT;
     settings->fps = 1;
     settings->fps_corner = PORT_CORNER_TOP_LEFT;
+    settings->graphics = PORT_GRAPHICS_FOLLOW;
+    settings->resolution = PORT_RESOLUTION_WINDOW;
+    settings->distance = PORT_DISTANCE_FAR;
+    settings->supersample = 2;
+    settings->aspect_w = PORT_ASPECT_W_ORIGINAL;
+    settings->aspect_h = PORT_ASPECT_H_ORIGINAL;
     /* a name the window's library does not know leaves that one out */
     port_ReadLines(settings, text, lookup, NULL, 1);
 }

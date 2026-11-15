@@ -108,6 +108,8 @@ RenderWalk g_render_walk;
  * screen. */
 #define RENDER_ABOVE 0x80000000U
 #define RENDER_LEFT 0x8000
+/* A screen point's x, which is its low halfword with a sign. */
+#define RENDER_POINT_X(point) ((s32)(s16)(u16)(point))
 
 /* What turns a normal round for a face seen from behind. */
 #define RENDER_FLIP 0xFFFFFFFFU
@@ -442,6 +444,10 @@ typedef struct {
     u32 xy[4];
     s32 index[4];
     u32 all;
+    /* how many of those are this face's: the wider picture's own test
+     * looks at each corner, where the console's looks only at `all`
+     * (render_FaceOffScreen) */
+    s32 count;
 } RenderFace;
 
 /* Three projected points and their depths from the GTE to the
@@ -487,6 +493,7 @@ static void render_LoadFace(RenderFace *face, u32 corners, s32 corner_count) {
     s32 i;
 
     face->all = RENDER_FLIP;
+    face->count = corner_count;
     for (i = 0; i < corner_count; i++) {
         face->index[i] = RENDER_CORNER(corners, i);
         face->xy[i] = RENDER_POINTS[face->index[i]];
@@ -501,8 +508,34 @@ static void render_LoadFace(RenderFace *face, u32 corners, s32 corner_count) {
     port_GteCommand(PORT_GTE_CMD_NCLIP);
 }
 
-/* Whether every corner is above the screen, or every corner left of it. */
+/* Whether every corner is above the screen, or every corner left of it.
+ *
+ * The console's test is the sign bits of the packed corners and nothing
+ * more: its screen begins at x 0, so a corner left of that is off the
+ * picture. A wider remastered picture reaches further left than the
+ * console's screen, and a face every corner of which is off the console's
+ * left edge may still be seen in the new band: there the test is against
+ * the picture's own edge, which is `port_RemasterLeftMargin` pixels
+ * further out (port_remaster.h; docs/PORT.md, "A wider picture"). The
+ * margin is 0 with the original picture or the console's shape, and then
+ * this is the console's own test. Nothing to the right or the bottom is
+ * ever culled here, so a wider picture needs nothing of them. */
 static s32 render_FaceOffScreen(const RenderFace *face) {
+    s32 margin = port_RemasterLeftMargin();
+
+    if (margin != 0) {
+        s32 i;
+
+        if ((face->all & RENDER_ABOVE) != 0) {
+            return TRUE;
+        }
+        for (i = 0; i < face->count; i++) {
+            if (RENDER_POINT_X(face->xy[i]) >= -margin) {
+                return FALSE;
+            }
+        }
+        return TRUE;
+    }
     return (face->all & (RENDER_ABOVE | RENDER_LEFT)) != 0;
 }
 

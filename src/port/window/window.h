@@ -45,6 +45,19 @@ typedef struct {
  * rectangle with none. */
 extern void port_FitPicture(
     s32 window_w, s32 window_h, s32 mode, PortRect *out);
+/* The same for a picture of `picture_w` by `picture_h` square pixels,
+ * whose shape need not be four by three: the remastered picture's, which
+ * is as wide as the view asks for and as large as the window already, so
+ * it has no whole-multiple choice (PORT_SCALE_INTEGER is `fit` for it). */
+extern void port_FitShape(s32 window_w, s32 window_h, s32 mode, s32 picture_w,
+                          s32 picture_h, PortRect *out);
+/* How many times the console's lines the remastered picture is drawn at,
+ * when it is drawn `scale` times across: enough that a pixel of it is
+ * square. The console's picture fills four by three in every mode, so a
+ * 640-wide one has lines twice as tall as a pixel is wide (twice the
+ * scale) and a 320-wide one has square pixels already (the scale
+ * itself). */
+extern s32 port_TallFor(s32 scale, s32 picture_w, s32 picture_h);
 /* A pixel of video memory as 0xFFRRGGBB: each channel's five bits
  * stretched to eight, as the port's PNGs have them (picture.c). */
 extern u32 port_ConvertPixel(u16 pixel);
@@ -159,6 +172,11 @@ typedef struct {
     u32 button; /* one of Sony's PAD... masks */
 } PortBinding;
 
+/* How many times the console's resolution the remastered picture is drawn
+ * at; 0 for as many as the window's own size asks for
+ * (port_RemasterScaleFor). */
+#define PORT_RESOLUTION_WINDOW 0
+
 typedef struct {
     PortBinding bindings[PORT_BINDINGS_MAX];
     s32 count;
@@ -169,6 +187,15 @@ typedef struct {
     s32 deadzone;      /* parts of a hundred */
     s32 fps;           /* the counter in the corner is shown */
     s32 fps_corner;    /* PORT_CORNER_... */
+    /* the remastered picture (port_remaster.h; docs/PORT.md,
+     * "Remastered in the window"): which picture a run starts with, how
+     * large the scene is drawn, and the three settings of the view */
+    s32 graphics;    /* PORT_GRAPHICS_... */
+    s32 resolution;  /* PORT_RESOLUTION_WINDOW, or 1 and up */
+    s32 distance;    /* PORT_DISTANCE_... */
+    s32 supersample; /* 1 (off), 2 or 4 */
+    s32 aspect_w;    /* the picture's shape: 4 by 3, 16 by 9 */
+    s32 aspect_h;
 } PortSettings;
 
 /* The number of the key, button or axis of this name, as the window's

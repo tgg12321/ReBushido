@@ -140,6 +140,9 @@ static const char *const g_distance_names[PORT_DISTANCE_KINDS] = {
 
 static PortRemasterView g_view;
 static PortRemasterLimits g_limits;
+/* How far left of the console's screen this frame's picture reaches
+ * (port_RemasterLeftMargin), worked out once a frame. */
+static s32 g_left_margin;
 /* Whether the port's own primitive buffers are the game's this run
  * (port_platform.h, PORT_PRIMS_ADDR). */
 static s32 g_prim_buffers_are_the_games;
@@ -517,7 +520,29 @@ static const FaceSlot *port_FindFace(PortAddress prim) {
     return NULL;
 }
 
+/* The left margin for this frame (port_remaster.h): the picture's own
+ * shape against the display's rectangle, or 0 where the original picture
+ * is shown. It is settled at the top of a frame and not touched again, so
+ * that every face of that frame is cut off at the same edge. */
+static void port_RemasterFindLeftMargin(void) {
+    PortDisplay display;
+
+    if (!port_RemasterIsOn()) {
+        g_left_margin = 0;
+        return;
+    }
+    port_GetDisplay(&display);
+    g_left_margin =
+        port_RemasterMargin(display.w, g_view.aspect_w, g_view.aspect_h);
+}
+
+s32 port_RemasterLeftMargin(void) { return g_left_margin; }
+
+/* The frame the side channel is writing down begins (port_remaster.h):
+ * the game has cleared this frame's ordering table and is about to build
+ * its primitives. What the picture's own edges are is settled here. */
 void port_RemasterNewFrame(void) {
+    port_RemasterFindLeftMargin();
     if (g_backend == NULL) {
         return;
     }

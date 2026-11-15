@@ -132,6 +132,17 @@ extern s32 port_RemasterNeedsFarShift(s32 distance);
  * arithmetic: the host tests hold it (tests/port/remaster.c). */
 extern s32 port_RemasterMargin(s32 picture_w, s32 aspect_w, s32 aspect_h);
 
+/* The same margin for the picture as it is now, in the game's own screen
+ * pixels, or 0 with the original picture or the console's shape. The
+ * game's drawing code asks it where it would cut a face off at the left
+ * edge of the console's screen (src/main/render_asm.c,
+ * render_FaceOffScreen): in a wider picture that face may still be seen
+ * in the left band, so the test is against the picture's own edge. It is
+ * worked out once a frame, where the game clears its ordering table
+ * (port_RemasterNewFrame), and only read after that: a face is looked at
+ * thousands of times a frame. */
+extern s32 port_RemasterLeftMargin(void);
+
 /* ---- the primitive buffers ---- */
 
 /* The console's two primitive buffers are 0x13400 bytes each at fixed

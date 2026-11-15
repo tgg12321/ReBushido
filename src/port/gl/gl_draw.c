@@ -19,6 +19,7 @@
  * checks do not have it. */
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "common.h"
@@ -85,6 +86,10 @@ typedef ptrdiff_t GLintptr;
 #define GL_PACK_ALIGNMENT 0x0D05
 #define GL_VERSION 0x1F02
 #define GL_RENDERER 0x1F01
+#define GL_VENDOR 0x1F00
+/* The window's own framebuffer, and the order the host's pixels are in. */
+#define GL_WINDOW_FRAMEBUFFER 0
+#define GL_BGRA 0x80E1
 
 /* Every GL function this file calls: the name, and the type of the
  * pointer it is kept in. */
@@ -214,6 +219,12 @@ static struct {
     GLuint resolve_program;
     GLuint picture_texture;
     GLuint picture_framebuffer;
+    /* what shows the picture in a window, and the texture the host's own
+     * pixels are given to the card in (port_GlShowPixels) */
+    GLuint show_program;
+    GLuint host_texture;
+    s32 host_w;
+    s32 host_h;
     s32 scale_x; /* a pixel of video memory is this many of the picture */
     s32 scale_y;
     s32 sample;  /* ... and this many of those each way are averaged */
@@ -245,7 +256,19 @@ static struct {
     GLint resolve_at_color;
     GLint resolve_at_sample;
     GLint resolve_at_at;
-    PortGlVertex vertices[VERTICES_MAX];
+    GLint show_at_picture;
+    GLint show_at_dest;
+    GLint show_at_window;
+    GLint show_at_source;
+    GLint show_at_texture;
+    GLint show_at_over;
+    /* VERTICES_MAX of them, asked for as the backend starts: two and a
+     * half megabytes, which is more than the window's program may keep
+     * in its own variables (tools/port_sdl_build.py: they all have to
+     * fit in four megabytes, so that their low 24 bits are no other
+     * memory's). Nothing of the game's is ever in memory from malloc;
+     * this is the backend's own. */
+    PortGlVertex *vertices;
     s32 count;
     PortGlState state;
     s32 has_state;
@@ -502,6 +525,38 @@ static const char g_gl_resolve_fragment_text[] =
     "        }\n"
     "    }\n"
     "    o_color = vec4(vec3((sum + ivec3(many / 2)) / many) / 255.0, 1.0);\n"
+    "}\n";
+
+/* The pass that puts a picture into the window: a rectangle of a texture
+ * into a rectangle of the window's own framebuffer, which is the only
+ * thing drawn there (src/port/window/sdl_window.c). Both rectangles are
+ * counted in pixels from the top left, as the picture's own lines run.
+ * `u_over` keeps the texture's alpha, for the counter in the corner. */
+static const char g_gl_show_vertex_text[] =
+    "#version 330 core\n"
+    "layout(location = 0) in vec2 a_corner;\n" /* 0 or 1, each way */
+    "uniform vec4 u_dest;\n"    /* in the window's pixels */
+    "uniform vec2 u_window;\n"
+    "uniform vec4 u_source;\n"  /* in the texture's texels */
+    "uniform vec2 u_texture;\n"
+    "out vec2 v_at;\n"
+    "void main() {\n"
+    "    vec2 at = u_dest.xy + a_corner * u_dest.zw;\n"
+    /* the window's lines run down from the top, the framebuffer's up */
+    "    gl_Position = vec4(at.x / u_window.x * 2.0 - 1.0,\n"
+    "                       1.0 - at.y / u_window.y * 2.0, 0.0, 1.0);\n"
+    "    v_at = (u_source.xy + a_corner * u_source.zw) / u_texture;\n"
+    "}\n";
+
+static const char g_gl_show_fragment_text[] =
+    "#version 330 core\n"
+    "uniform sampler2D u_picture;\n"
+    "uniform int u_over;\n"
+    "in vec2 v_at;\n"
+    "out vec4 o_color;\n"
+    "void main() {\n"
+    "    vec4 texel = texture(u_picture, v_at);\n"
+    "    o_color = vec4(texel.rgb, u_over != 0 ? texel.a : 1.0);\n"
     "}\n";
 
 /* ---- starting ---- */
@@ -1132,6 +1187,13 @@ const char *port_GlStart(
     if (!port_GlFindFunctions(getproc)) {
         return g_gl.problem;
     }
+    if (g_gl.vertices == NULL) {
+        g_gl.vertices = malloc(VERTICES_MAX * sizeof(*g_gl.vertices));
+        if (g_gl.vertices == NULL) {
+            port_GlSay("there is no memory for the vertices of a frame", NULL);
+            return g_gl.problem;
+        }
+    }
     g_gl.options = *options;
     port_GlScalesOf(options, &g_gl.scale_x, &g_gl.scale_y);
     g_gl.sample = port_GlSampleOf(options);
@@ -1165,6 +1227,18 @@ const char *port_GlStart(
     g_gl.resolve_at_sample =
         glGetUniformLocation(g_gl.resolve_program, "u_sample");
     g_gl.resolve_at_at = glGetUniformLocation(g_gl.resolve_program, "u_at");
+    g_gl.show_program =
+        port_GlMakeProgram(g_gl_show_vertex_text, g_gl_show_fragment_text);
+    if (g_gl.show_program == 0) {
+        return g_gl.problem;
+    }
+    g_gl.show_at_picture = glGetUniformLocation(g_gl.show_program, "u_picture");
+    g_gl.show_at_dest = glGetUniformLocation(g_gl.show_program, "u_dest");
+    g_gl.show_at_window = glGetUniformLocation(g_gl.show_program, "u_window");
+    g_gl.show_at_source = glGetUniformLocation(g_gl.show_program, "u_source");
+    g_gl.show_at_texture = glGetUniformLocation(g_gl.show_program, "u_texture");
+    g_gl.show_at_over = glGetUniformLocation(g_gl.show_program, "u_over");
+    glGenTextures(1, &g_gl.host_texture);
 
     glGenTextures(1, &g_gl.vram_texture);
     glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
@@ -1299,6 +1373,186 @@ s32 port_GlReadPicture(u32 *out, u32 room, s32 *out_w, s32 *out_h) {
     /* the pixels come as red, green, blue, alpha; the port's are
      * 0xFFRRGGBB */
     for (at = 0; at < h * w; at++) {
+        u32 pixel = out[at];
+
+        out[at] = 0xFF000000U | ((pixel & 0xFF) << 16) | (pixel & 0xFF00) |
+                  ((pixel >> 16) & 0xFF);
+    }
+    return TRUE;
+}
+
+/* ---- into a window (gl.h) ---- */
+
+void port_GlRefresh(void) {
+    if (!g_gl.is_started) {
+        return;
+    }
+    port_ClearDirtyRect(&g_gl.mirror);
+    port_AddDirtyRect(&g_gl.mirror, 0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
+    port_GlWroteVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
+}
+
+const char *port_GlDescribe(s32 which) {
+    const char *text;
+
+    if (!g_gl.is_started) {
+        return "?";
+    }
+    switch (which) {
+    case PORT_GL_VENDOR:
+        text = glGetString(GL_VENDOR);
+        break;
+    case PORT_GL_RENDERER:
+        text = glGetString(GL_RENDERER);
+        break;
+    default:
+        text = glGetString(GL_VERSION);
+        break;
+    }
+    return text != NULL ? text : "?";
+}
+
+/* The window's framebuffer, ready to be drawn into: nothing of the game's
+ * drawing state holds while it is bound. */
+static void port_GlTakeWindow(s32 window_w, s32 window_h) {
+    glBindFramebuffer(GL_FRAMEBUFFER, GL_WINDOW_FRAMEBUFFER);
+    glViewport(0, 0, window_w, window_h);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+}
+
+/* The colour buffer again, as the game's drawing left it. */
+static void port_GlLeaveWindow(void) {
+    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
+    glViewport(0, 0, g_gl.target_w, g_gl.target_h);
+    glEnable(GL_SCISSOR_TEST);
+    g_gl.has_state = FALSE;
+}
+
+/* A rectangle of a texture into a rectangle of the window. */
+static void port_GlPresent(GLuint texture, s32 texture_w, s32 texture_h,
+                           s32 source_x, s32 source_y, s32 source_w,
+                           s32 source_h, s32 window_w, s32 window_h, s32 x,
+                           s32 y, s32 w, s32 h, s32 is_linear, s32 is_over) {
+    GLint filter = is_linear ? GL_LINEAR : GL_NEAREST;
+
+    glUseProgram(g_gl.show_program);
+    glBindVertexArray(g_gl.blit_array);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+    glUniform1i(g_gl.show_at_picture, 0);
+    glUniform4f(g_gl.show_at_dest, (GLfloat)x, (GLfloat)y, (GLfloat)w,
+                (GLfloat)h);
+    glUniform2f(
+        g_gl.show_at_window, (GLfloat)window_w, (GLfloat)window_h);
+    glUniform4f(g_gl.show_at_source, (GLfloat)source_x, (GLfloat)source_y,
+                (GLfloat)source_w, (GLfloat)source_h);
+    glUniform2f(
+        g_gl.show_at_texture, (GLfloat)texture_w, (GLfloat)texture_h);
+    glUniform1i(g_gl.show_at_over, is_over ? 1 : 0);
+    if (is_over) {
+        glEnable(GL_BLEND);
+        glBlendEquation(GL_FUNC_ADD);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    if (is_over) {
+        glDisable(GL_BLEND);
+    }
+    /* the filters are the drawing path's own again: it reads texels as
+     * blocks, whatever the picture is shown with */
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+}
+
+void port_GlClearWindow(s32 window_w, s32 window_h) {
+    if (!g_gl.is_started) {
+        return;
+    }
+    port_GlTakeWindow(window_w, window_h);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    port_GlLeaveWindow();
+}
+
+s32 port_GlShowPicture(s32 window_w, s32 window_h, s32 x, s32 y, s32 w, s32 h,
+                       s32 is_linear) {
+    s32 picture_w = (g_gl.display_w + 2 * g_gl.margin) * g_gl.scale_x;
+    s32 picture_h = g_gl.display_h * g_gl.scale_y;
+
+    if (!g_gl.is_started || !g_gl.display_is_on || picture_w <= 0 ||
+        picture_h <= 0 || w <= 0 || h <= 0) {
+        return FALSE;
+    }
+    port_GlTakeWindow(window_w, window_h);
+    if (g_gl.sample > 1) {
+        /* the pass that averaged the samples down drew the picture alone */
+        port_GlPresent(g_gl.picture_texture, g_gl.picture_w, g_gl.picture_h, 0,
+                       0, picture_w, picture_h, window_w, window_h, x, y, w, h,
+                       is_linear, FALSE);
+    } else {
+        port_GlPresent(g_gl.color_texture, g_gl.target_w, g_gl.target_h,
+                       g_gl.display_x * g_gl.scale_x,
+                       g_gl.display_y * g_gl.scale_y, picture_w, picture_h,
+                       window_w, window_h, x, y, w, h, is_linear, FALSE);
+    }
+    port_GlLeaveWindow();
+    return TRUE;
+}
+
+s32 port_GlShowPixels(const u32 *pixels, s32 pixels_w, s32 pixels_h,
+                      s32 window_w, s32 window_h, s32 x, s32 y, s32 w, s32 h,
+                      s32 is_linear, s32 is_over) {
+    if (!g_gl.is_started || pixels_w <= 0 || pixels_h <= 0 || w <= 0 ||
+        h <= 0) {
+        return FALSE;
+    }
+    glBindTexture(GL_TEXTURE_2D, g_gl.host_texture);
+    if (pixels_w != g_gl.host_w || pixels_h != g_gl.host_h) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pixels_w, pixels_h, 0, GL_BGRA,
+                     GL_UNSIGNED_BYTE, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        g_gl.host_w = pixels_w;
+        g_gl.host_h = pixels_h;
+    }
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, pixels_w, pixels_h, GL_BGRA,
+                    GL_UNSIGNED_BYTE, pixels);
+    port_GlTakeWindow(window_w, window_h);
+    port_GlPresent(g_gl.host_texture, pixels_w, pixels_h, 0, 0, pixels_w,
+                   pixels_h, window_w, window_h, x, y, w, h, is_linear,
+                   is_over);
+    port_GlLeaveWindow();
+    return TRUE;
+}
+
+s32 port_GlReadWindow(u32 *out, u32 room, s32 window_w, s32 window_h) {
+    s32 line;
+    s32 at;
+
+    if (!g_gl.is_started || window_w <= 0 || window_h <= 0 ||
+        (u32)(window_w * window_h) > room) {
+        return FALSE;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, GL_WINDOW_FRAMEBUFFER);
+    glReadPixels(0, 0, window_w, window_h, GL_RGBA, GL_UNSIGNED_BYTE, out);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
+    /* the window's lines come up from the bottom, and the pixels as red,
+     * green, blue, alpha; the port's are 0xFFRRGGBB from the top */
+    for (line = 0; line < window_h / 2; line++) {
+        s32 other = window_h - 1 - line;
+
+        for (at = 0; at < window_w; at++) {
+            u32 one = out[line * window_w + at];
+
+            out[line * window_w + at] = out[other * window_w + at];
+            out[other * window_w + at] = one;
+        }
+    }
+    for (at = 0; at < window_w * window_h; at++) {
         u32 pixel = out[at];
 
         out[at] = 0xFF000000U | ((pixel & 0xFF) << 16) | (pixel & 0xFF00) |

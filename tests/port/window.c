@@ -53,6 +53,57 @@ static void test_Place(void) {
     test_CheckPlace(-5, 480, PORT_SCALE_STRETCH, 0, 0, 0, 0);
 }
 
+static void test_CheckShape(s32 window_w, s32 window_h, s32 mode,
+                            s32 picture_w, s32 picture_h, s32 x, s32 y, s32 w,
+                            s32 h) {
+    PortRect place;
+
+    port_FitShape(window_w, window_h, mode, picture_w, picture_h, &place);
+    CHECK_EQ(place.x, x);
+    CHECK_EQ(place.y, y);
+    CHECK_EQ(place.w, w);
+    CHECK_EQ(place.h, h);
+}
+
+/* The remastered picture's place: its own shape, whatever that is
+ * (window.h, port_FitShape). */
+static void test_Shape(void) {
+    /* four by three, as the console: the same as port_FitPicture's */
+    test_CheckShape(1920, 1080, PORT_SCALE_FIT, 1280, 960, 240, 0, 1440, 1080);
+    test_CheckShape(1000, 1000, PORT_SCALE_FIT, 640, 480, 0, 125, 1000, 750);
+    /* 16 by 9: a wide screen is nearly filled (the picture is 1704 by
+     * 960, a hair narrower than 16 by 9, so a pixel is left each side),
+     * and a four-by-three window gets bars above and below */
+    test_CheckShape(1920, 1080, PORT_SCALE_FIT, 1704, 960, 1, 0, 1917, 1080);
+    test_CheckShape(960, 720, PORT_SCALE_FIT, 852, 480, 0, 90, 960, 540);
+    /* a picture 16 by 10 in a window 16 by 9: bars left and right */
+    test_CheckShape(1600, 900, PORT_SCALE_FIT, 1600, 1000, 80, 0, 1440, 900);
+    /* the whole multiple has no meaning for it: `integer` is `fit` */
+    test_CheckShape(960, 720, PORT_SCALE_INTEGER, 852, 480, 0, 90, 960, 540);
+    /* all of the window */
+    test_CheckShape(1920, 1080, PORT_SCALE_STRETCH, 852, 480, 0, 0, 1920, 1080);
+    /* a sliver still has a picture */
+    test_CheckShape(1, 500, PORT_SCALE_FIT, 852, 480, 0, 249, 1, 1);
+    /* no window, or no picture, no place */
+    test_CheckShape(0, 720, PORT_SCALE_FIT, 852, 480, 0, 0, 0, 0);
+    test_CheckShape(960, 720, PORT_SCALE_FIT, 0, 480, 0, 0, 0, 0);
+    test_CheckShape(960, 720, PORT_SCALE_FIT, 852, -1, 0, 0, 0, 0);
+    /* how many times the console's lines a scale draws, so that the
+     * remastered picture's pixels are square (port_TallFor) */
+    CHECK_EQ(port_TallFor(1, 640, 240), 2);
+    CHECK_EQ(port_TallFor(3, 640, 240), 6);
+    CHECK_EQ(port_TallFor(1, 320, 240), 1);
+    CHECK_EQ(port_TallFor(4, 320, 240), 4);
+    /* 640 by 480 has square pixels of its own: the scale itself */
+    CHECK_EQ(port_TallFor(2, 640, 480), 2);
+    /* a 256-wide mode has no whole number: the nearest */
+    CHECK_EQ(port_TallFor(5, 256, 240), 4);
+    /* and nothing sensible is still something */
+    CHECK_EQ(port_TallFor(0, 640, 240), 1);
+    CHECK_EQ(port_TallFor(3, 0, 240), 3);
+    CHECK_EQ(port_TallFor(3, 640, 0), 3);
+}
+
 static u16 g_test_vram[1024 * 512];
 
 static void test_Pixels(void) {
@@ -725,6 +776,74 @@ static void test_Keys(void) {
     CHECK(binding != NULL && binding->code == 44);
 }
 
+/* ---- the remastered picture's settings ---- */
+
+/* The five lines of a settings file that say which picture is shown and
+ * how it is drawn (keymap.c; docs/PORT.md, "Remastered in the window").
+ * The words of the draw distance are the renderer's own
+ * (port_ReadRemasterDistance), which is why this test is linked with it
+ * (window.py). */
+static void test_Graphics(void) {
+    port_SetDefaultSettings(&g_test_settings, test_LookUp);
+    /* what the layout built in says: the options page chooses the
+     * picture, the window's size the resolution */
+    CHECK_EQ(g_test_settings.graphics, PORT_GRAPHICS_FOLLOW);
+    CHECK_EQ(g_test_settings.resolution, PORT_RESOLUTION_WINDOW);
+    CHECK_EQ(g_test_settings.distance, PORT_DISTANCE_FAR);
+    CHECK_EQ(g_test_settings.supersample, 2);
+    CHECK_EQ(g_test_settings.aspect_w, PORT_ASPECT_W_ORIGINAL);
+    CHECK_EQ(g_test_settings.aspect_h, PORT_ASPECT_H_ORIGINAL);
+    test_ReadText("graphics = remastered\nresolution = 4\n"
+                  "draw_distance = max\nantialiasing = 4\naspect = 16:9\n");
+    CHECK_EQ(g_test_complaints, 0);
+    CHECK_EQ(g_test_settings.graphics, PORT_GRAPHICS_REMASTERED);
+    CHECK_EQ(g_test_settings.resolution, 4);
+    CHECK_EQ(g_test_settings.distance, PORT_DISTANCE_MAX);
+    CHECK_EQ(g_test_settings.supersample, 4);
+    CHECK_EQ(g_test_settings.aspect_w, 16);
+    CHECK_EQ(g_test_settings.aspect_h, 9);
+    /* letters of either case, `off` for no smoothing, `original` for the
+     * console's own distance, and the window's own size again */
+    test_ReadText("graphics = Original\nresolution = 0\n"
+                  "draw_distance = Original\nantialiasing = OFF\n"
+                  "aspect = 4:3\n");
+    CHECK_EQ(g_test_complaints, 0);
+    CHECK_EQ(g_test_settings.graphics, PORT_GRAPHICS_ORIGINAL);
+    CHECK_EQ(g_test_settings.resolution, PORT_RESOLUTION_WINDOW);
+    CHECK_EQ(g_test_settings.distance, PORT_DISTANCE_ORIGINAL);
+    CHECK_EQ(g_test_settings.supersample, 1);
+    CHECK_EQ(g_test_settings.aspect_w, 4);
+    CHECK_EQ(g_test_settings.aspect_h, 3);
+    /* `follow` is the options page again */
+    test_ReadText("graphics = follow\n");
+    CHECK_EQ(g_test_complaints, 0);
+    CHECK_EQ(g_test_settings.graphics, PORT_GRAPHICS_FOLLOW);
+    /* a shape narrower than the console's is the console's: the scene is
+     * never cut to less than it showed */
+    test_ReadText("aspect = 5:4\n");
+    CHECK_EQ(g_test_complaints, 0);
+    CHECK_EQ(g_test_settings.aspect_w, PORT_ASPECT_W_ORIGINAL);
+    CHECK_EQ(g_test_settings.aspect_h, PORT_ASPECT_H_ORIGINAL);
+    /* a shape in its own terms is kept as it is written: the renderer
+     * reduces it (port_RemasterSetView) */
+    test_ReadText("aspect = 32:18\n");
+    CHECK_EQ(g_test_complaints, 0);
+    CHECK_EQ(g_test_settings.aspect_w, 32);
+    CHECK_EQ(g_test_settings.aspect_h, 18);
+    /* and the lines it cannot use: each leaves the setting alone */
+    test_ReadText("graphics = better\nresolution = 9\nresolution = -1\n"
+                  "draw_distance = farther\nantialiasing = 5\n"
+                  "antialiasing = some\naspect = 16\naspect = 16:\n"
+                  "aspect = :9\naspect = 0:9\n");
+    CHECK_EQ(g_test_complaints, 10);
+    CHECK_EQ(g_test_settings.graphics, PORT_GRAPHICS_FOLLOW);
+    CHECK_EQ(g_test_settings.resolution, PORT_RESOLUTION_WINDOW);
+    CHECK_EQ(g_test_settings.distance, PORT_DISTANCE_ORIGINAL);
+    CHECK_EQ(g_test_settings.supersample, 1);
+    CHECK_EQ(g_test_settings.aspect_w, 32);
+    CHECK_EQ(g_test_settings.aspect_h, 18);
+}
+
 /* ---- the session's log ---- */
 
 #define TEST_LOGS 25
@@ -1019,6 +1138,8 @@ static void test_Counter(void) {
 
 void test_Main(void) {
     test_Place();
+    test_Shape();
+    test_Graphics();
     test_Pixels();
     test_Ring();
     test_Pace();

@@ -73,8 +73,9 @@ No dates.
       at N times the console's resolution with sub-pixel corners,
       textures in perspective, no dither, true-colour mixing and the 2D
       layer crisp; proved with no window against the software GPU,
-      pixel for pixel, at scale 1. Left of it: the window does not use
-      it yet ("What the window still needs").
+      pixel for pixel, at scale 1. It is in the window the player runs:
+      the window takes a 3.3 core context for it and F2 changes
+      picture while the game runs ("Remastered in the window").
    2. **Anti-aliasing.** Done, by drawing the scene two or four times
       over each way and averaging it down (`antialiasing`): exact with
       the game's order of painting, where multisampling would mix a
@@ -90,10 +91,10 @@ No dates.
       where the ground stops.
    4. **The wide picture.** Done for the scene (`aspect`): the game
       never culls to the right or the bottom, so a wider view needs
-      nothing of the projection — only that the renderer keep what the
-      console's GPU threw away at the edge of its drawing area ("A
-      wider picture"). Left of it: the HUD stays four by three in the
-      middle and does not move out to the new edges.
+      nothing of the projection to the right, and at the left only that
+      the game stop culling a face at the console's own edge ("A wider
+      picture"). Left of it: the HUD stays four by three in the middle
+      and does not move out to the new edges, so `4:3` is the default.
    5. **A high frame rate**, 144 a second: the renderer drawing between
       the game's own steps, which the side channel's exact positions
       are what makes possible.

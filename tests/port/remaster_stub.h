@@ -54,6 +54,8 @@ u32 port_RemasterPrimBufferBytes(void) { return 0; }
 
 void port_RemasterNewFrame(void) {}
 
+s32 port_RemasterLeftMargin(void) { return 0; }
+
 void port_RemasterSetPrim(PortAddress prim) { (void)prim; }
 
 void port_RemasterCommand(const u32 *words, s32 count) {

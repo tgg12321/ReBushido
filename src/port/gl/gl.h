@@ -74,6 +74,49 @@ extern s32 port_GlReadPicture(u32 *out, u32 room, s32 *out_w, s32 *out_h);
  * reads it back. */
 extern void port_GlFinishFrame(void);
 
+/* ---- into a window (src/port/window/sdl_window.c) ---- */
+
+/* What the card says it is, for the session's log. */
+enum {
+    PORT_GL_VENDOR,
+    PORT_GL_RENDERER,
+    PORT_GL_VERSION,
+};
+
+extern const char *port_GlDescribe(s32 which);
+
+/* Video memory's mirror sent to the card again, all of it. The decoder
+ * tells the backend only what the game writes while the remastered
+ * picture is on (port_remaster.h), so what was written while it was off
+ * has to be taken in when it comes back: the window calls this whenever
+ * the picture changes. */
+extern void port_GlRefresh(void);
+
+/* The window, `window_w` by `window_h` pixels, cleared to black. The
+ * window's own framebuffer is drawn into: the colour buffer is left
+ * bound again afterwards, so the game's next primitive goes where it
+ * did. */
+extern void port_GlClearWindow(s32 window_w, s32 window_h);
+
+/* The picture into the rectangle `x`, `y`, `w` by `h` of the window, `y`
+ * from its top. `is_linear` smooths it where the rectangle is not a whole
+ * multiple of the picture. FALSE if there is no picture to draw. */
+extern s32 port_GlShowPicture(s32 window_w, s32 window_h, s32 x, s32 y, s32 w,
+                              s32 h, s32 is_linear);
+
+/* Pixels of the host's own (0xAARRGGBB each, a row after a row from the
+ * top) into the same kind of rectangle: the software GPU's picture where
+ * that is what is shown, and the counter in the corner over it
+ * (`is_over`: what is there shows through where the pixels are clear). */
+extern s32 port_GlShowPixels(const u32 *pixels, s32 pixels_w, s32 pixels_h,
+                             s32 window_w, s32 window_h, s32 x, s32 y, s32 w,
+                             s32 h, s32 is_linear, s32 is_over);
+
+/* The window's own pixels as they are now, 0xFFRRGGBB each, a row after a
+ * row from the top: at most `room` of them. For a test's picture of what
+ * a player would see; nothing else reads them back. */
+extern s32 port_GlReadWindow(u32 *out, u32 room, s32 window_w, s32 window_h);
+
 /* What the last frame cost, in microseconds of the PC's clock, as the
  * host measures it: the caller gives the time. */
 extern void port_GlNoteFrameTime(u32 microseconds);
