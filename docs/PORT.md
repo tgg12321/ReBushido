@@ -752,8 +752,9 @@ p2.select = none           # nothing presses it
 ```
 
 A line for a pad's button takes the built-in keys of that button away
-(or its built-in controller buttons, for a `pad` line) and adds its own;
-more lines add more. The names are SDL's: a key's as SDL names it (`Up`,
+(or its built-in controller buttons, for a `pad` line) and adds its own,
+and takes its own key or button away from whatever that pressed as
+built in; more lines add more. The names are SDL's: a key's as SDL names it (`Up`,
 `Space`, `Return`, `Left Shift`, `Keypad 4`), a controller's button
 `a`, `b`, `x`, `y`, `back`, `start`, `leftshoulder`, `rightshoulder`,
 `dpup`, `dpdown`, `dpleft`, `dpright`, an axis `leftx`, `lefty`,
@@ -783,8 +784,11 @@ Three things Windows has its own way (`src/port/host_windows.c`):
 - Windows keeps where a thread's stack is, and passes a fault to nobody
   while the stack pointer is outside it. The switch to the game's stack
   tells it the new stack's two ends.
-- A fault of the game's is caught first of all (a vectored handler),
-  on the game's thread only, and reported as on Linux.
+- A stack has a chain of fault handlers. The game's stack is given one
+  of the port's at its top, which is asked only when nothing above it
+  took the fault (a system library's own handlers among them), and
+  reports as on Linux; before the switch the system's last filter does
+  the same.
 
 Two things MinGW's compiler has its own way, which the build sets
 right: bitfields are laid out as on every other host
@@ -807,17 +811,18 @@ the three plans of `port_game`, `port_other_fight` and `port_bugfixes`
 | Every twentieth picture as SDL is handed it, against the PNG the build without a window writes at the same blank | 595 pictures, 87,644,160 pixels, none different | the same 595, none different |
 | Every sample as it is queued for SDL, against the build without a window's WAV | 8,779,293 samples, identical | identical |
 | The program without a window (`rebushido-headless.exe`, kernel32 alone) | | its three traces identical to Linux's |
-| A fault on the game's stack, made on purpose in a program of the host file alone | reported with its address, exit code 70 | the same, with and without a C runtime |
+| A fault made on purpose in a program of the host file alone, on the game's stack and before it | reported with its address, exit code 70 | the same, with and without a C runtime |
 
 At the console's rate, with no sound card, 3,880 blanks took 64.839
 seconds: 16.715 ms each. On every push `tests/port/window.c` holds the
-arithmetic to 451 cases worked out by hand: the picture's place in
+arithmetic to 462 cases worked out by hand: the picture's place in
 windows of every shape, pixels at video memory's edges, the queue
 running out and filling up with no step larger than a fade's, the clock
 going round at 32 bits, time let go, a sound card two parts in a
 thousand fast and one as slow for 20,000 blanks with nothing running
 out, every button's name, keys and sticks, a settings file's lines and
-the ones it cannot use.
+the ones it cannot use. 33 mistakes made on purpose in the four files,
+one at a time, each failed it.
 
 **Not proved, and what may be wrong:**
 
@@ -835,8 +840,6 @@ the ones it cannot use.
   they should with such a card). How a real card behaves is not known
   until one is heard.
 - The wait for the display was never run against a display.
-- On Windows a fault inside a system library on the game's thread that
-  the library means to handle itself would be taken for the game's.
 - Windows was tried on one machine, Windows 11. A 32-bit Windows gives a
   program 2 GB, and the port cannot run there; nothing else is known to
   be at the three addresses, and nothing promises it.

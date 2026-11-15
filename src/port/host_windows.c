@@ -153,12 +153,104 @@ void *port_HostAllocate(u32 size) {
     return VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 }
 
+/* What a fault was, to the port's report, and the program's end. */
+static void port_WindowsReport(
+    const EXCEPTION_RECORD *record, const CONTEXT *context) {
+    PortCrash crash;
+
+    switch (record->ExceptionCode) {
+    case EXCEPTION_ACCESS_VIOLATION:
+    case EXCEPTION_IN_PAGE_ERROR:
+    case EXCEPTION_STACK_OVERFLOW:
+        crash.what = "memory that is not there was touched";
+        break;
+    case EXCEPTION_INT_DIVIDE_BY_ZERO:
+        crash.what = "a division by zero";
+        break;
+    case EXCEPTION_ILLEGAL_INSTRUCTION:
+    case EXCEPTION_PRIV_INSTRUCTION:
+        crash.what = "what is not an instruction was run";
+        break;
+    default:
+        crash.what = "the system stopped the program";
+        break;
+    }
+    crash.address = record->NumberParameters >= 2
+                        ? (u32)record->ExceptionInformation[1]
+                        : 0;
+#if defined(__i386__)
+    crash.pc = (u32)context->Eip;
+    crash.frame = (u32)context->Ebp;
+    crash.stack = (u32)context->Esp;
+#elif defined(__x86_64__)
+    crash.pc = (u32)context->Rip;
+    crash.frame = (u32)context->Rbp;
+    crash.stack = (u32)context->Rsp;
+#else
+#error "host_windows.c: this processor's registers are not written here"
+#endif
+    g_port_windows_report(&crash);
+    ExitProcess(PORT_EXIT_CRASH);
+}
+
+/* The system calls this for a fault nothing else took, while the
+ * program is still on the stack it was started on. */
+static LONG WINAPI port_WindowsOnFault(EXCEPTION_POINTERS *fault) {
+    port_WindowsReport(fault->ExceptionRecord, fault->ContextRecord);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
+#if defined(__i386__)
+/* ... and this one on the game's stack: the last handler of that
+ * stack's chain, which port_HostCallOnStack puts at its top. It is asked
+ * only when nothing above it took the fault, a system library's own
+ * handlers among them. */
+static EXCEPTION_DISPOSITION __cdecl port_WindowsOnGameFault(
+    EXCEPTION_RECORD *record, void *frame, CONTEXT *context, void *dispatch) {
+    (void)frame;
+    (void)dispatch;
+    if ((record->ExceptionFlags &
+         (EXCEPTION_UNWINDING | EXCEPTION_EXIT_UNWIND)) == 0) {
+        port_WindowsReport(record, context);
+    }
+    return ExceptionContinueSearch;
+}
+#else
+/* Where a stack has no chain of handlers (64-bit Windows keeps tables
+ * instead): the system calls this first for every fault of the program.
+ * The game's thread touching memory it does not have, dividing by zero
+ * or running what is not an instruction is taken for the game's.
+ * WRITTEN AND NOT BUILT OR RUN: the port is a 32-bit program so far. */
+static LONG WINAPI port_WindowsOnFirstFault(EXCEPTION_POINTERS *fault) {
+    DWORD code = fault->ExceptionRecord->ExceptionCode;
+
+    if (GetCurrentThreadId() == g_port_windows_thread &&
+        (code == EXCEPTION_ACCESS_VIOLATION ||
+         code == EXCEPTION_INT_DIVIDE_BY_ZERO ||
+         code == EXCEPTION_ILLEGAL_INSTRUCTION)) {
+        port_WindowsReport(fault->ExceptionRecord, fault->ContextRecord);
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
+void port_HostCatchCrashes(void (*report)(const PortCrash *crash)) {
+    g_port_windows_report = report;
+    g_port_windows_thread = GetCurrentThreadId();
+    SetUnhandledExceptionFilter(port_WindowsOnFault);
+#if !defined(__i386__)
+    AddVectoredExceptionHandler(1, port_WindowsOnFirstFault);
+#endif
+}
+
 /* The stack pointer to the top of the memory given, no frame above the
  * function's, and the call, as on Linux. Windows also keeps where the
- * thread's stack is, and will not hand a fault on to anyone while the
- * stack pointer is outside it: so it is told the new stack's two ends,
- * and that no handler of the old stack's is left. (A fault of the
- * game's is caught before any of that is looked at, below.) */
+ * thread's stack is, and hands a fault to nobody while the stack
+ * pointer is outside it: so the thread's own record is told the new
+ * stack's two ends. That record begins with the chain of the stack's
+ * fault handlers, the stack's top and the stack's bottom; the old
+ * stack's handlers are left behind with it, and the new chain is one
+ * handler, the port's, in two words at the new stack's top. */
 void port_HostCallOnStack(void (*function)(void), u32 stack_top) {
     ULONG_PTR top = stack_top;
     ULONG_PTR bottom = top;
@@ -167,18 +259,19 @@ void port_HostCallOnStack(void (*function)(void), u32 stack_top) {
     if (VirtualQuery((void *)(top - 1), &memory, sizeof(memory)) != 0) {
         bottom = (ULONG_PTR)memory.AllocationBase;
     }
-    /* the thread's own record begins with its chain of handlers, the
-     * stack's top and the stack's bottom */
 #if defined(__i386__)
     __asm__ volatile(
-        "movl $-1, %%fs:0\n"
         "movl %0, %%fs:4\n"
         "movl %2, %%fs:8\n"
         "movl %0, %%esp\n"
+        "pushl %3\n"
+        "pushl $-1\n"
+        "movl %%esp, %%fs:0\n"
+        "subl $8, %%esp\n"
         "xorl %%ebp, %%ebp\n"
         "call *%1\n"
         :
-        : "r"(top), "r"(function), "r"(bottom)
+        : "r"(top), "r"(function), "r"(bottom), "r"(port_WindowsOnGameFault)
         : "memory");
 #elif defined(__x86_64__)
     __asm__ volatile(
@@ -197,58 +290,6 @@ void port_HostCallOnStack(void (*function)(void), u32 stack_top) {
     for (;;) {
         port_HostExit(1);
     }
-}
-
-/* The system calls this first for every fault of the program, before
- * it looks for anyone else to handle it. The game's thread touching
- * memory it does not have, dividing by zero or running what is not an
- * instruction is the game's fault: says what and where, and ends the
- * program. Everything else is passed on. */
-static LONG WINAPI port_WindowsOnFault(EXCEPTION_POINTERS *fault) {
-    PortCrash crash;
-
-    if (GetCurrentThreadId() != g_port_windows_thread) {
-        return EXCEPTION_CONTINUE_SEARCH;
-    }
-    switch (fault->ExceptionRecord->ExceptionCode) {
-    case EXCEPTION_ACCESS_VIOLATION:
-    case EXCEPTION_IN_PAGE_ERROR:
-    case EXCEPTION_STACK_OVERFLOW:
-        crash.what = "memory that is not there was touched";
-        break;
-    case EXCEPTION_INT_DIVIDE_BY_ZERO:
-        crash.what = "a division by zero";
-        break;
-    case EXCEPTION_ILLEGAL_INSTRUCTION:
-    case EXCEPTION_PRIV_INSTRUCTION:
-        crash.what = "what is not an instruction was run";
-        break;
-    default:
-        return EXCEPTION_CONTINUE_SEARCH;
-    }
-    crash.address = fault->ExceptionRecord->NumberParameters >= 2
-                        ? (u32)fault->ExceptionRecord->ExceptionInformation[1]
-                        : 0;
-#if defined(__i386__)
-    crash.pc = (u32)fault->ContextRecord->Eip;
-    crash.frame = (u32)fault->ContextRecord->Ebp;
-    crash.stack = (u32)fault->ContextRecord->Esp;
-#elif defined(__x86_64__)
-    crash.pc = (u32)fault->ContextRecord->Rip;
-    crash.frame = (u32)fault->ContextRecord->Rbp;
-    crash.stack = (u32)fault->ContextRecord->Rsp;
-#else
-#error "host_windows.c: this processor's registers are not written here"
-#endif
-    g_port_windows_report(&crash);
-    ExitProcess(PORT_EXIT_CRASH);
-    return EXCEPTION_CONTINUE_SEARCH;
-}
-
-void port_HostCatchCrashes(void (*report)(const PortCrash *crash)) {
-    g_port_windows_report = report;
-    g_port_windows_thread = GetCurrentThreadId();
-    AddVectoredExceptionHandler(1, port_WindowsOnFault);
 }
 
 /* Where the program without a C runtime starts. Its arguments out of
