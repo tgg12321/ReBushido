@@ -241,6 +241,21 @@ static const char *port_FindImage(const char *beside) {
 
 /* ---- the program ---- */
 
+/* The program's own path, which the port reads its names beside
+ * (rebushido.sym, or rebushido.exe.sym): as it was started, or on
+ * Windows as the system has it, whatever was typed. */
+static char *port_OwnPath(char *typed) {
+#if defined(_WIN32)
+    static char path[PATH_BYTES_MAX];
+    DWORD length = GetModuleFileNameA(NULL, path, sizeof(path));
+
+    if (length != 0 && length < sizeof(path)) {
+        return path;
+    }
+#endif
+    return typed;
+}
+
 static s32 port_ChooseWord(
     const char *option, const char *word, const char *first,
     const char *second, const char *third) {
@@ -275,7 +290,7 @@ int main(int argc, char **argv) {
     SDL_SetMainReady();
     options->tap_every = 1;
     if (argc > 0) {
-        passed[count++] = argv[0];
+        passed[count++] = port_OwnPath(argv[0]);
     }
     for (i = 1; i < argc; i++) {
         const char *word = argv[i];

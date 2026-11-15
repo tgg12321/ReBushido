@@ -100,8 +100,9 @@ extern void port_ReadRing(PortRing *ring, s16 *out, u32 frames);
  * time lost is let go. A tenth of a second. */
 #define PORT_PACE_LOST 4410
 /* The most a blank is moved to keep the sound's queue at its length:
- * four samples in a blank's 737, half a part in a hundred. */
-#define PORT_PACE_NUDGE_MAX 4
+ * eight samples in a blank's 737, a part in a hundred, which is ten
+ * times what a sound card's clock is ever off by. */
+#define PORT_PACE_NUDGE_MAX 8
 /* The queue may be this far from its length before anything is moved. */
 #define PORT_PACE_SLACK 128
 /* A step for each this many samples the queue is off by. */

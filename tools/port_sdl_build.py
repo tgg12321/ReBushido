@@ -79,7 +79,7 @@ SDL_PROBE = '#include <SDL.h>\nint main(void) { return SDL_Init(0); }\n'
 # order, kind by kind, and marks at each kind's two ends.
 BLOB_LD_TEXT = '''/* Written by tools/port_sdl_build.py: the game and the port as one object.
  * The game's variables are in the order of the PlayStation program. */
-SECTIONS
+%(format)sSECTIONS
 {
     %(rodata_name)s : {
         %(under)sg_port_blob_rodata = .;
@@ -235,7 +235,10 @@ def write_blob_script(target, objects, path):
                     variable = name[len(here) + 1:]
                     if name.startswith(here + target.dot) and variable in playstation:
                         found[kind].add(variable)
-    words = {'under': target.under, 'dot': target.dot, 'rodata_name': target.kinds['.rodata']}
+    words = {'under': target.under, 'dot': target.dot, 'rodata_name': target.kinds['.rodata'],
+             # an object, not a program: MinGW's linker takes a script of its
+             # own for the second unless it is told
+             'format': 'OUTPUT_FORMAT(pe-i386)\n' if target.windows else ''}
     for kind, here in target.kinds.items():
         ordered = sorted(found[kind], key=lambda name: playstation[name])
         words[kind[1:]] = '\n'.join('        *(%s%s%s)' % (here, target.dot, name) for name in ordered)
@@ -290,8 +293,8 @@ def link_blob(target, objects):
         return None
     # what it still asks for: the host's functions, the two ends of its own
     # variables (given at the link, below), and on Windows what the compiler
-    # itself calls
-    allowed = re.compile(r'^_?(port_Host\w+|g_port_data_(start|end)|_chkstk_ms|__main|_alloca)$')
+    # and the linker themselves call
+    allowed = re.compile(r'^_?(port_Host\w+|g_port_data_(start|end)|_chkstk_ms|__main|_alloca|_pei386_runtime_relocator)$')
     strangers = [name for name in undefined_of(target, blob) if not allowed.match(name)]
     if strangers:
         print("port-sdl: the game's object asks for names that are not the host's: %s" % ' '.join(strangers))
