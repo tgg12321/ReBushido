@@ -42,7 +42,7 @@ ten. It prints a table and exits 1 if a test failed:
   same_as_original ok        58s
   vanish           ok        19s
   emulator processes left running: 0
-  pictures and logs: build/playtest/<test>/<disc>/   (263s in all)
+  pictures and logs: build/playtest/<test>/<disc>/   (279s in all)
 OK: play tests: 10 passed, 0 skipped
 ```
 
