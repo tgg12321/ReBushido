@@ -1239,6 +1239,17 @@ second a question of the game's own rate and not of the drawing.
   drawn flat, exactly where the PlayStation put it. That is right for
   the 2D layer; for the rest it is the console's picture at a higher
   resolution and nothing worse.
+- **A thin seam where two textured polygons meet.** The chip counts a
+  texture point across a polygon in steps of its own and starts half a
+  step in; the hardware path starts half a texel in, which is the same
+  thing only where one texel is one pixel. Where a texture is drawn
+  larger or smaller than it is, the two part by up to half a texel, and
+  at the join between two polygons of different pages that shows as a
+  line a pixel or two wide: 609 pixels of 153,600 on the screen where
+  the stage is chosen, whose map is two textures side by side. Half a
+  step is what the side channel would have to carry for it, or the
+  attribute would have to be interpolated from the pixel's corner
+  rather than its middle.
 
 #### What the window still needs
 
