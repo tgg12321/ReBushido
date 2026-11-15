@@ -135,7 +135,8 @@ ALL_O_FILES  := $(S_O_FILES) $(C_O_FILES) $(ASM_FUNC_O_FILES)
 # -- Top-level targets --
 .PHONY: all clean check clean-check shift movovl modern test checks \
 	rebushido rebushido-disc rebushido-patch rebushido-test rebushido-modern rb-build \
-	quickboot quickboot-compile quickboot-disc playtest playtest-discs gte-probe port
+	quickboot quickboot-compile quickboot-disc playtest playtest-discs gte-probe port \
+	patcher
 
 ifeq ($(REBUSHIDO),1)
 all: rb-build
@@ -178,10 +179,34 @@ rebushido-disc: rebushido
 	python3 tools/playtest.py --symbols build/rebushido/rebushido.elf $(PLAY_DIR)/ReBushido.sym
 	@echo "OK: $(PLAY_DIR)/ReBushido.cue"
 
+# The players' patcher (tools/patcher/patcher.c; docs/REBUSHIDO.md,
+# "Applying the patch"): one file of C that applies a release's patch,
+# built for this host and, where mingw-w64 is installed, for Windows, into
+# build/release/. The Windows one is linked whole (-static), so that it
+# asks a player's machine for nothing but the system's own libraries.
+PATCHER_DIR    := build/release
+PATCHER_SRC    := tools/patcher/patcher.c
+PATCHER_CFLAGS := -std=c99 -O2 -Wall -Wextra
+PATCHER_LIBS   := -lcomdlg32 -lshell32
+HOST_CC        ?= cc
+MINGW_CC       ?= x86_64-w64-mingw32-gcc
+patcher:
+	@mkdir -p $(PATCHER_DIR)
+	$(HOST_CC) $(PATCHER_CFLAGS) -o $(PATCHER_DIR)/ReBushidoPatcher $(PATCHER_SRC)
+	@if command -v $(MINGW_CC) > /dev/null 2>&1; then \
+		$(MINGW_CC) $(PATCHER_CFLAGS) -static -s -o $(PATCHER_DIR)/ReBushidoPatcher.exe $(PATCHER_SRC) $(PATCHER_LIBS) && \
+		echo "OK: $(PATCHER_DIR)/ReBushidoPatcher and ReBushidoPatcher.exe"; \
+	else \
+		rm -f $(PATCHER_DIR)/ReBushidoPatcher.exe; \
+		echo "patcher: no $(MINGW_CC) here (apt install mingw-w64): ReBushidoPatcher.exe, the Windows program, is not built"; \
+		echo "OK: $(PATCHER_DIR)/ReBushidoPatcher"; \
+	fi
+
 # What a release is made of (docs/REBUSHIDO.md, "Making a release"): the
 # matching build, which must match, the ReBushido disc, and from the two
 # images a patch with a README for players in build/release/
-# (tools/rebushido_release.py), tried on the retail image before it is
+# (tools/rebushido_release.py) beside the patcher; the patch's own tool
+# and the patcher are both tried on the retail image before the patch is
 # kept. RB_RELEASE=1 builds the version without -dev and refuses a tree
 # with anything uncommitted; without it the patch is a trial. It needs the
 # retail image, so it is no check: where there is none it says so.
@@ -191,7 +216,7 @@ rebushido-patch:
 	elif [ "$(RB_RELEASE)" = 1 ] && [ -n "$$(git status --porcelain)" ]; then \
 		echo "rebushido-patch: no release from a tree with changes or files that are not committed"; exit 1; \
 	else \
-		$(MAKE) check && $(MAKE) rebushido-disc && \
+		$(MAKE) check && $(MAKE) rebushido-disc && $(MAKE) patcher && \
 		python3 tools/rebushido_release.py --retail "$(RETAIL_IMAGE)" $(if $(filter 1,$(RB_RELEASE)),--release); \
 	fi
 

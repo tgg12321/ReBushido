@@ -59,7 +59,13 @@ python3 tests/run.py --rebushido -v rebushido/settings # one, showing what it pr
   (`tools/rebushido_patch.py`): the format's numbers, a patch written by
   hand with every kind of action, round trips of patches it makes, and a
   damaged patch, a lying one and a wrong source refused. Its bytes are
-  made up in the test; it reads nothing of the game.
+  made up in the test; it reads nothing of the game. `rebushido/patcher`
+  is the players' patcher (`tools/patcher/patcher.c`), which is C for
+  the player's machine: the test builds it with the host's `cc`, as
+  `make patcher` does, into `build/tests/patcher/`, runs it on patches
+  the tool makes and on ones written by hand, and compares what it
+  writes, and what it refuses and with which exit code, with the tool.
+  Made-up bytes again.
 - A test of one of ReBushido's fixes is `tests/rebushido/fix_NAME.c`: it
   includes the game's file that has the fix and runs the function with
   the "Bugfixes" setting off, for what the original does, and on

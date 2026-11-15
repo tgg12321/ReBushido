@@ -62,7 +62,8 @@ From a Windows shell put `wsl` in front, as with the other commands.
 |---|---|
 | `make rebushido` | Compiles the source with the master switch on, and the files of `src/rebushido/`, into `build/rebushido/`; links `build/rebushido/rebushido.exe`; prints its size and the room left, and fails if it does not fit |
 | `make rebushido-disc` | The same, then `build/play/ReBushido.bin` and `.cue`: the retail image with that executable in place of the game's |
-| `make rebushido-patch` | The matching build and the ReBushido disc, then `build/release/`: the patch `ReBushido-<version>.bps`, a `README.txt` for players and a copy of the tool that applies it ("Making a release"). `RB_RELEASE=1` makes it a release's |
+| `make rebushido-patch` | The matching build and the ReBushido disc, then `build/release/`: the players' patcher, the patch `ReBushido-<version>.bps`, a `README.txt` for players and a copy of the Python tool that applies it ("Making a release"). `RB_RELEASE=1` makes it a release's |
+| `make patcher` | The players' patcher (`tools/patcher/patcher.c`) into `build/release/`: `ReBushidoPatcher` for this host and, where `x86_64-w64-mingw32-gcc` is installed, `ReBushidoPatcher.exe` for Windows ("Applying the patch"). Needs no image and no build of the game |
 | `make rebushido-test` | The host tests with the master switch on, and ReBushido's own (`tests/rebushido/`); with the native port's switch on as well, and the port's own (`tests/port/`; [`PORT.md`](PORT.md)) |
 | `make rebushido-modern` | `make modern` with the master switch on, `src/rebushido/` included; and the port's switch, with `src/port/` and the C beside the assembly |
 | `make quickboot` | The ReBushido build with quick boot on, into `build/quickboot/`: a program that starts one fight in place of the opening and the menus (below, "Booting straight into a fight") |
@@ -124,28 +125,50 @@ and their addresses, which the play tests read.
 
 ## Applying the patch
 
-For players. A release is three files: `ReBushido-<version>.bps`, the
-patch; `README.txt`, which says all of this; and `rebushido_patch.py`.
-The patch is for one image and no other: *Bushido Blade 2*, the North
+For players. A release is four files: `ReBushidoPatcher.exe`, the
+project's own patcher for Windows; `ReBushido-<version>.bps`, the patch;
+`README.txt`, which says all of this; and `rebushido_patch.py`. The
+patch is for one image and no other: *Bushido Blade 2*, the North
 American disc (SLUS-00663), as a single `.bin` of 701,714,496 bytes with
 its `.cue` (the README has its CRC-32 and SHA-1).
 
-- With [Floating IPS](https://github.com/Alcaro/Flips) (Flips), or
-  another patcher that takes BPS files: apply the patch to the `.bin`,
-  save the result as `ReBushido.bin`, copy the `.cue` as `ReBushido.cue`
-  and change the file's name in its first line.
-- Or with Python 3, nothing installed, on Windows, macOS or Linux:
+- On Windows: keep `ReBushidoPatcher.exe` in one folder with the `.bps`
+  and double-click it, or drop the image on it. It asks for the image
+  (the `.bin` or its `.cue`) in the usual "open file" window, checks it
+  by its size and CRC-32, writes `ReBushido.bin` and `ReBushido.cue`
+  beside it, and says in a message box where they are, or what is wrong:
+  an image the patch is not for (another region's disc, another dump, an
+  `.iso`, an image already patched, with the size and CRC-32 it wants
+  and those it found), a patch that is missing or damaged, a full disk.
+  It asks before it replaces a result that is already there, and where
+  to save when it cannot write in the image's folder. The image is only
+  read. Nothing else is needed, and nothing is installed.
+- Or with Python 3, nothing installed, on Windows, macOS or Linux
+  (`python3 rebushido_patch.py apply --patch ReBushido-0.1.bps --image
+  "Bushido Blade 2 (USA).bin" --out ReBushido.bin`), or with
+  [Floating IPS](https://github.com/Alcaro/Flips) or another patcher that
+  takes BPS files (then copy the `.cue` as `ReBushido.cue` and change the
+  file's name in its first line).
 
-  ```
-  python3 rebushido_patch.py apply --patch ReBushido-0.1.bps --image "Bushido Blade 2 (USA).bin" --out ReBushido.bin
-  ```
+The patcher is one file of C, `tools/patcher/patcher.c`, and builds
+anywhere with a plain C compiler (`make patcher`, below). In a shell it
+asks nothing and opens no window:
 
-  It checks the image first, by its size and CRC-32, and says what is
-  wrong with one the patch is not for (another region's disc, another
-  dump, an `.iso`, an image already patched). Then it writes
-  `ReBushido.bin` and `ReBushido.cue`. The image is only read, and
-  `--out` may not be the image; a file already there is left alone
-  without `--force`.
+```
+ReBushidoPatcher [--patch X.bps] [--out Y.bin] [--yes] image.bin
+```
+
+Without `--patch` it takes the one `ReBushido-*.bps` in its own folder;
+without `--out` it writes `ReBushido.bin` in the image's folder; `--yes`
+writes over a result that is there. It ends with 0 when the image is
+made, 1 when a file cannot be read or written (a full disk too), 2 for
+wrong arguments, 3 when the patch is missing, damaged or asks for bytes
+that are not there, 4 when the image is not the one the patch is for,
+and 5 when the result is already there. The patch's own checksum and the
+image's size and checksum are checked before anything is written; the
+result is written under a temporary name (`ReBushido.bin.part`) and gets
+its name only when its checksum holds. It keeps the patch and one
+megabyte in memory: the image is read from its file, whatever its size.
 
 Load `ReBushido.cue` in an emulator. The saves are the retail game's and
 go both ways ("The options page" has what ReBushido adds to the card).
@@ -548,7 +571,7 @@ three before it are ReBushido's:
 | Check | Command | Fails when |
 |---|---|---|
 | The build | `make rebushido` | the ReBushido build does not compile or link, does not fit below the fixed buffers, its small data is out of `gp`'s reach, an object was left out of the link, or its version text is missing; or a file that asks `RB_QUICK_BOOT` does not compile with it on |
-| Tests | `make rebushido-test` | a host test fails with the master switch on, which is also the native port's build for the host ([`PORT.md`](PORT.md): the port's switch is on, and its tests in `tests/port/` run). These are the game's tests, linked with the settings at their defaults, so they also show that a change does nothing until its setting is on; and ReBushido's own in `tests/rebushido/`: the settings, the options page's table, the settings' file (its checksum, its header, and every kind of file that must not be read), the release's patch tool on made-up bytes (round trips, a damaged patch and a wrong source refused), quick boot, the offsets the play tests read memory at, and five of the fixes with the setting off and on (`fix_*`) |
+| Tests | `make rebushido-test` | a host test fails with the master switch on, which is also the native port's build for the host ([`PORT.md`](PORT.md): the port's switch is on, and its tests in `tests/port/` run). These are the game's tests, linked with the settings at their defaults, so they also show that a change does nothing until its setting is on; and ReBushido's own in `tests/rebushido/`: the settings, the options page's table, the settings' file (its checksum, its header, and every kind of file that must not be read), the release's patch tool on made-up bytes (round trips, a damaged patch and a wrong source refused) and the players' patcher, built for the host, held to it, quick boot, the offsets the play tests read memory at, and five of the fixes with the setting off and on (`fix_*`) |
 | Modern | `make rebushido-modern` | the host's `gcc` finds something serious in the source with the master switch on that `tools/modern/baseline.tsv` does not have; the port's switch is on too, so that reads `src/port/` and the C beside the assembly |
 
 The counts and the lint understand the switches. `tools/count.py` counts
@@ -615,9 +638,12 @@ first row.)
 
 ## Making a release
 
-A release is a patch against the retail image, a README and the tool
-that applies the patch: never an image, never the program. Nothing of it
-is committed (`build/` is not in git).
+A release is a patch against the retail image, a README and what applies
+the patch, the players' patcher and the Python tool: never an image,
+never the game's program. Nothing of it is committed (`build/` is not in
+git). `ReBushidoPatcher.exe` is a program of this project, under its
+licence (AGPL) like the rest; the README it ships with names the
+repository, which is where its source is.
 
 1. **The version.** `RB_VERSION_NUMBER` in `include/rebushido.h` is the
    number (`"0.1"`). Commit and push everything; wait for the checks.
@@ -629,22 +655,30 @@ is committed (`build/` is not in git).
 
    It builds the matching program and stops if that does not match,
    builds ReBushido with the version `ReBushido 0.1 (<commit>)` (no
-   `-dev`; a tree with changes is refused), makes the disc, and writes
-   into `build/release/`: `ReBushido-0.1.bps`, `README.txt`,
+   `-dev`; a tree with changes is refused), makes the disc, builds the
+   patcher (`make patcher`: `ReBushidoPatcher.exe` with
+   `x86_64-w64-mingw32-gcc`, the package `mingw-w64`, and
+   `ReBushidoPatcher` for this host; without mingw it says so and builds
+   only the second, and a release is refused), and writes into
+   `build/release/`, beside the two: `ReBushido-0.1.bps`, `README.txt`,
    `rebushido_patch.py` and `patch-report.txt`. It applies the patch to
-   the retail image and compares the result with the disc by SHA-1
-   before it says OK. Without `RB_RELEASE=1` the same is made as a
-   trial, `ReBushido-0.1-dev.bps`.
+   the retail image, with the Python tool and with this host's patcher,
+   and compares each result with the disc by SHA-1 before it says OK.
+   Without `RB_RELEASE=1` the same is made as a trial,
+   `ReBushido-0.1-dev.bps`.
 3. **Test that disc**: `bash tools/build.sh playtest RB_RELEASE=1`. The
    `RB_RELEASE=1` matters: without it the discs are built again with
    `-dev` in the version, and the tests run another image than the one
    the patch makes. Afterwards the SHA-1 of `build/play/ReBushido.bin`
-   is still the one `README.txt` gives for the result. Try the patch in
-   Flips as well, once (below).
+   is still the one `README.txt` gives for the result. Run
+   `ReBushidoPatcher.exe` on Windows as a player would, once, by a
+   double click: its windows are the one part no test reaches (below).
+   Try the patch in Flips as well, once.
 4. **Tag and publish**: `git tag v0.1 && git push origin v0.1`, then a
-   GitHub release of that tag with the three files attached
-   (`ReBushido-0.1.bps`, `README.txt`, `rebushido_patch.py`) and the
-   notes. `patch-report.txt` is for you.
+   GitHub release of that tag with the four files attached
+   (`ReBushidoPatcher.exe`, `ReBushido-0.1.bps`, `README.txt`,
+   `rebushido_patch.py`) and the notes. `patch-report.txt` and
+   `ReBushidoPatcher`, this host's build, are for you.
 5. **Afterwards** raise `RB_VERSION_NUMBER` for the next one.
 
 **The patch** is a BPS file (`tools/rebushido_patch.py` has the format at
@@ -676,10 +710,29 @@ whole: then nothing moves, no address changes, and only the sectors
 ReBushido touches differ, with their error codes. That is a redesign of
 `tools/rebushido.py`'s script and has not been done.
 
+**The patcher** (`tools/patcher/patcher.c`) applies a patch as the
+Python tool does, written from that tool and from no other patcher.
+`tests/rebushido/patcher.py`, one of the tests of `make rebushido-test`,
+builds it for the host and holds it to the tool on made-up bytes: the
+same results for the patches the tool makes and for one written by hand
+with every kind of action, and a damaged patch, a wrong image, a copy
+from outside the image or the result and a result already there each
+refused with its code and nothing written. On the retail image the
+Windows program and the Linux one each made the disc, to the SHA-1, and
+the Windows one was run in folders with names in other alphabets. The
+Windows program is linked whole and asks for `KERNEL32`, `USER32`,
+`SHELL32`, `comdlg32` and `msvcrt`, which every Windows has. Not tried:
+its windows (the "open file" and "save" windows, the message boxes, and
+telling a double click from a shell, which it does by whether the
+console is its own and its output a screen), which no test can open; a
+build on macOS; a path longer than Windows's 260 characters. It is not
+signed, so Windows may warn before it runs a downloaded copy, as the
+README says.
+
 Not known: whether Flips takes the patch. The format is written from
-its description, and the tool's own applier and its tests
-(`tests/rebushido/patch.py`) agree with it, but no other patcher has
-been tried, and neither has an image of 700 MB in one.
+its description, and the tool's own applier, the patcher and their tests
+(`tests/rebushido/patch.py`, `patcher.py`) agree with it, but no other
+patcher has been tried, and neither has an image of 700 MB in one.
 
 ## Keeping up with `decomp`
 

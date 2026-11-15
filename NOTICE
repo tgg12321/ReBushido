@@ -6,7 +6,10 @@ What the licence covers
 The file LICENSE (GNU Affero General Public License, version 3 or later)
 covers the work made for this project: the tools, the tests, the build
 files, the documentation, the names and comments in the source, and every
-change ReBushido makes to the game.
+change ReBushido makes to the game. A release's ReBushidoPatcher.exe is
+built from tools/patcher/ and is under the same licence; it is linked with
+the start-up code of the mingw-w64 runtime and of GCC, whose own terms
+allow that.
 
 What it does not cover
 ----------------------
