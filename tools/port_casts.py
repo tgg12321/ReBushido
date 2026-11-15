@@ -201,8 +201,9 @@ def find():
     port_build.host_tests.OUT_DIR = port_build.OUT_DIR
     port_build.host_tests.write_headers(True)
     flags = (port_build.GAME_FLAGS + port_build.host_tests.include_flags(True) + port_build.modern.DEFS
-             + port_build.host_tests.REBUSHIDO_DEFS + ['-DRB_GIT_HASH="casts"'])
-    jobs = [(path, flags, folder) for path, own in port_build.sources() if not own]
+             + port_build.host_tests.REBUSHIDO_DEFS + port_build.MOVOVL_INCLUDES
+             + ['-DRB_GIT_HASH="casts"'])
+    jobs = [(path, flags + mine, folder) for path, own, mine in port_build.sources() if not own]
     found = set()
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
         for path, casts, problem in pool.map(dump_one, jobs):

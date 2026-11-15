@@ -20,6 +20,7 @@
 #include "port_disc.h"
 #include "port_gpu.h"
 #include "port_host.h"
+#include "port_movie.h"
 #include "port_spu.h"
 #include "bb2.h"
 
@@ -84,6 +85,7 @@ void port_Quit(s32 code) {
         g_port_quitting = 1;
         port_WriteDumps();
         port_WriteSpuDump();
+        port_PrintMovieSummary();
         if (port_IsWavOn()) {
             port_PrintSoundSummary();
             port_WriteWav();

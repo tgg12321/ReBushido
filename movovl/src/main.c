@@ -33,13 +33,17 @@
         (v) = 255;                                                             \
     }
 
-/* What the game passes in argv (sys_ExecMovieOverlay in the main program). */
+/* What the game passes in argv (sys_ExecMovieOverlay in the main program):
+ * six words, so its pointers are four bytes wide wherever this is compiled
+ * (PTR32, include/common.h; docs/PORT.md, "64 bits"). On the PlayStation
+ * each is the plain pointer and the bytes are what they always were. */
 typedef struct {
-    CdlFILE *movie_file;
+    PTR32(CdlFILE *) movie_file;
     u32 end_frame; /* the movie stops here */
-    MovieRing *ring;
-    MovieWork *work; /* also where the title picture's file is read first */
-    CdlLOC *still_loc;
+    PTR32(MovieRing *) ring;
+    /* also where the title picture's file is read first */
+    PTR32(MovieWork *) work;
+    PTR32(CdlLOC *) still_loc;
     u32 still_frame; /* the title picture is shown from here on */
 } MovieArgs;
 
@@ -92,12 +96,13 @@ void main(s32 argc, MovieArgs *args) {
     sys_SetCdVolume(CD_VOLUME_MAX, 0, CD_VOLUME_MAX, 0);
 
     /* Load the title picture off screen. */
-    CdControl(CdlSetloc, (u8 *)args->still_loc, NULL);
-    CdRead(STILL_SECTORS, (u32 *)args->work, CdlModeSpeed);
+    CdControl(CdlSetloc, (u8 *)PTR(args->still_loc), NULL);
+    CdRead(STILL_SECTORS, (u32 *)PTR(args->work), CdlModeSpeed);
     while (CdReadSync(1, NULL) > 0) {
         VSync(0);
     }
-    LoadImage(&g_still_rect, (u32 *)((u8 *)args->work + TIM_PIXELS_NO_CLUT));
+    LoadImage(
+        &g_still_rect, (u32 *)((u8 *)PTR(args->work) + TIM_PIXELS_NO_CLUT));
     DrawSync(0);
 
     /* The movie is shown in 24-bit colour. */
@@ -111,8 +116,8 @@ void main(s32 argc, MovieArgs *args) {
     SetDispMask(1);
     VSync(4);
 
-    movie_SetArgs(args->movie_file, args->end_frame, args->ring, args->work,
-                  args->still_frame);
+    movie_SetArgs(PTR(args->movie_file), args->end_frame, PTR(args->ring),
+                  PTR(args->work), args->still_frame);
     movie_Start();
     buffer = 0;
     pad = 0;

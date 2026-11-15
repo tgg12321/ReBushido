@@ -558,6 +558,7 @@ def main():
     host_tests.write_headers(True)
 
     flags = port_build.GAME_FLAGS + host_tests.include_flags(True) + modern.DEFS + host_tests.REBUSHIDO_DEFS
+    flags += port_build.MOVOVL_INCLUDES
     flags += ['-DRB_GIT_HASH="%s"' % port_build.git_hash()]
     stamp = max(os.path.getmtime(p) for p in (__file__, port_build.__file__, 'tests/run.py', 'tools/modern/check.py',
                                               'tools/port_gte_macros.py', modern.SHIM))
@@ -570,8 +571,8 @@ def main():
         if os.path.exists(version):
             os.remove(version)
 
-    jobs = [(target, path, 'port' if own else 'game', flags, stamp)
-            for path, own in port_build.sources() if path not in OTHER_HOSTS]
+    jobs = [(target, path, 'port' if own else 'game', flags + mine, stamp)
+            for path, own, mine in port_build.sources() if path not in OTHER_HOSTS]
     jobs += [(target, WINDOW_DIR + f, 'port', flags, stamp) for f in WINDOW_PLAIN + WINDOW_GAME]
     jobs += [(target, path, 'hosted', flags, stamp) for path in target.hosted]
     game, hosted, failed, built = [], [], 0, 0

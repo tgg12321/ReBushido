@@ -126,7 +126,12 @@ def sources(rebushido=False):
         out = [(path, ['-I' + port_gte_macros.OUT_DIR] + includes) for path, includes in out]
         for folder in ('src/rebushido', 'src/port'):
             files = sorted(f for f in os.listdir(folder) if f.endswith('.c'))
-            out += [('%s/%s' % (folder, f), ['-I' + port_gte_macros.OUT_DIR, '-Iinclude']) for f in files]
+            # the movie player's own headers: the port's movie files read
+            # Sony's streaming header out of movovl/ (docs/PORT.md)
+            out += [('%s/%s' % (folder, f),
+                     ['-I' + port_gte_macros.OUT_DIR, '-Iinclude', '-Imovovl/include',
+                      '-Imovovl/sdk/libcd', '-I.'])
+                    for f in files]
         # Sony's modules that the port has something of its own in: the C
         # beside what is assembly on the PlayStation, and the one table an
         # address cannot be written into (libsnd's ssstart.c). Nothing else

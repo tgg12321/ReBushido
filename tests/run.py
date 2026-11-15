@@ -109,7 +109,11 @@ def write_headers(rebushido=False):
 
 def include_flags(rebushido=False):
     port = ['-I' + port_gte_macros.OUT_DIR] if rebushido else []
-    return port + ['-I' + OUT_DIR + '/include', '-I' + modern.OUT_DIR + '/include', '-Iinclude', '-Itests', '-I.']
+    # the movie player's own headers: the port compiles its C (docs/PORT.md,
+    # "The movie"), and tests/port/mdec.c runs it
+    movovl = ['-Imovovl/include', '-Imovovl/sdk/libcd']
+    return (port + ['-I' + OUT_DIR + '/include', '-I' + modern.OUT_DIR + '/include', '-Iinclude', '-Itests', '-I.']
+            + movovl)
 
 
 def test_names(rebushido=False):
@@ -273,7 +277,11 @@ def main():
         for name in names or known:
             if BITS != 32 and python_alone(name):
                 continue    # no program: it has run
-            if BITS not in getattr(python_side(name), 'BITS', (32, 64)):
+            sizes_for = getattr(python_side(name), 'BITS', (32, 64))
+            if not isinstance(sizes_for, (tuple, list)) or set(sizes_for) - {32, 64}:
+                sys.exit("tests/run.py: %s: a test's Python side says which sizes of pointer it "
+                         'is for in `BITS`, as (32,) or (32, 64); this one has %r' % (name, sizes_for))
+            if BITS not in sizes_for:
                 continue    # its Python side says which sizes it is for
             state, count, lines = run_one(name, verbose, defs)
             tally[state] += 1

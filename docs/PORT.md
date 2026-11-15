@@ -13,8 +13,8 @@ the owner's. **The port is a program that draws and sounds, and a
 second build of it has a window, a sound card and the PC's keys and
 controllers:** it links, gives the game the PlayStation's memory, reads
 the player's disc image, and runs the game's own `main` through
-start-up, the options page, the menus and character select, through a
-whole fight and back to the menu, by a script's pads or a person's.
+start-up, the options page, the opening movie, the menus and character
+select, through a whole fight and back to the menu, by a script's pads or a person's.
 What the game draws goes into the port's own video memory, by a GPU in
 C, and from there to files or to the window; its sound is made by a
 sound chip in C and goes to a file or to the sound card. All that way
@@ -25,7 +25,7 @@ numbers, on Linux and on Windows ("The window"). It is a 64-bit
 program, and a 32-bit one beside it that does the same to the byte
 ("64 bits"). Stages 1 to 3 of the seven below are done, stages 4 and 5
 as far as a machine can tell, stage 6 but for someone to listen, and
-of stage 7 the memory card.
+of stage 7 the memory card and the movie.
 
 ## Where it stands
 
@@ -35,7 +35,7 @@ of stage 7 the memory card.
 | The game's GTE instructions (Sony's macros) as calls into it | done, by `tools/port_gte_macros.py` |
 | C beside the assembly functions | 119 of 138: Sony's libgte (48), the game's maths (20) and the renderer (51). The other 19 need none (below) |
 | A program that links | done: `make port` builds `build/port/rebushido` from the game's C, with no name missing ("The program") |
-| BIOS calls and Sony's libraries | every one the game calls is defined: done for real where it only works on memory or the port has the thing (the disc, time, the pads' packets, events, the memory card), a stub that is counted where it has not (the link, the movie) |
+| BIOS calls and Sony's libraries | every one the game calls is defined: done for real where it only works on memory or the port has the thing (the disc, time, the pads' packets, events, the memory card, the movie), a stub that is counted where it has not (the link) |
 | Memory | done: the RAM and the scratchpad at the console's addresses ("Memory") |
 | The disc | done: sectors from the player's image, under the game's own disc code ("The disc"), and its XA sound ("Sound") |
 | Sound | done, into a file and, in the build with a window, to a sound card: Sony's libsnd and libspu on a sound chip in C, the disc's music ("Sound"). The chip's memory, its registers and the library's are the emulator's through a fight; what is heard is compared only in part |
@@ -44,7 +44,7 @@ of stage 7 the memory card.
 | 64 bits | done: the program has 64-bit pointers, the game's addresses stay 32-bit numbers below 4 GB, and it is held to the 32-bit program and to the emulator ("64 bits") |
 | A window, a sound card, the PC's keys and controllers | built on SDL 2 for Linux and for Windows (`make port-sdl`, `make port-sdl-windows`) and held to the build without a window by numbers: the same traces, pictures and samples ("The window") |
 | The memory card | done: a standard card image of 128 KB a slot, under the BIOS calls the game makes ("The memory card"). The card the port writes for the options page is byte for byte the one the emulator's BIOS wrote |
-| Movies | not begun |
+| The movie | done: the opening plays, 3,320 frames of 320 by 240 at 29.97 a second, by the overlay's own C over a picture decompressor in C ("The movie"). Its sound is the drive's own, as the console has it |
 
 ## The switch
 
@@ -144,8 +144,9 @@ console.** By library:
 | libgpu | Sony's `prim.c` (the primitives' set-up, `GetTPage`, `AddPrim`) and `ext.c` (`SetDefDrawEnv`, `SetDefDispEnv`). The module that talks to the GPU is the port's (`gpu.c`), all of what the game calls, on the port's GPU (`raster.c`): it writes the words Sony's writes the console's ("The picture") |
 | libc | Sony's `memcpy`, `memmove`, `memchr`, `strcpy`, `strlen`, `rand`, `toupper`. The port's: `printf` and `sprintf` (Sony's walk a PlayStation's argument list), and `memset` and `memcmp`, which the compiler calls |
 | libetc | Sony's `GetVideoMode`. The port's: `VSync` (`clock.c`), `ResetCallback`, `StopCallback` (nothing), and the interrupts' callbacks, of which the vertical blank's is run (`sound.c`) |
-| libcd | the port's, all of it, over the disc image (`cd.c`), with the XA sound the drive plays (`xa.c`) |
-| libapi | the port's: the counters (`clock.c`), the pads (`pad.c`), events (`event.c`), the memory card and the BIOS's files (`card.c`), and nothing for `SetSp`, `SetMem` and the critical section. `Exec` is a stub |
+| libcd | the port's, all of it, over the disc image (`cd.c`), with the XA sound the drive plays (`xa.c`). Its streaming half, which only the movie uses, is Sony's own but for the two modules that talk to the drive ("The movie") |
+| libpress | the port's (`mdec.c`): the picture decompressor and the chip under it ("The movie") |
+| libapi | the port's: the counters (`clock.c`), the pads (`pad.c`), events (`event.c`), the memory card and the BIOS's files (`card.c`), and nothing for `SetSp`, `SetMem` and the critical section. `Exec` runs the movie player (`movie.c`) |
 | libsnd, libspu | Sony's, all of both but the one module of libspu that talks to the chip, which is the port's on its sound chip in C ("Sound") |
 | libcomb | the port's, all stubs: nothing at the cable's other end |
 | libcard | Sony's `card.c` (`_card_clear`, which is two BIOS calls the port supplies); the rest is BIOS jumps and the kernel patch, which the port's card code stands for |
@@ -841,6 +842,261 @@ window. All three are built and run.
 needs the window's own way of asking for one), and a per-user folder for
 the images.
 
+## The movie
+
+The game has one movie: the opening, `STR/OPENING.STR`, played once at
+boot by `sys_MovieScreen` (`fight_after.c`), the only place in the game
+that launches one. The endings and the staff roll are the engine's own
+scenes, not streams. On the console the game shuts its sound, card and
+pads down, reads the second program `STR/MOVOVL.EXE` over its primitive
+buffers and runs it with the BIOS's `Exec`, handing it six words: the
+movie's place on the disc, the frame to stop at (3,320), the two pieces
+of memory to work in, the title picture's place and the frame from which
+that picture is shown (2,817). `docs/formats/MOVOVL.md` has the whole of
+it.
+
+**The boundary.** The overlay's own C is compiled into the port and the
+port's `Exec` calls its `main`, over the port's libcd, libgpu, libetc and
+a picture decompressor of the port's own. So the movie behaves as on the
+console by construction: the play loop, the two frame buffers, the switch
+to the title picture, the ten seconds' hold, the fade in 64 steps and the
+cross button that skips are the overlay's own lines, unchanged. Piece by
+piece:
+
+| What | In the port | Why |
+|---|---|---|
+| `movovl/src/main.c`, `movie.c` (the overlay's own 16 functions) | the overlay's, as they are | plain C over Sony's libraries. Its `main` is compiled under the name `port_MovieOverlayMain`, because the game's `main` is in the same program; nothing else of it clashes with a name of the game's (`tools/port_build.py`, `MOVOVL_FILES`) |
+| libcd's streaming, 9 modules (`StSetRing`, `StClearRing`, `StSetStream`, `StSetMask`, `StFreeRing`, `StGetBackloc`, `init_ring_status`, `data_ready_callback`, `CdRead2`) | Sony's, as they are | plain C on the ring buffer |
+| `StGetNext` | Sony's, with the port's wrapper around it (`-DStGetNext=port_StGetNextRing`) | it is where the player waits for the drive; on a PC that wait has to let time pass (below) |
+| `StCdInterrupt`, `StUnSetRing` (libcd `C_011`, `C_003`) | the port's (`src/port/stream.c`) | they read the drive's registers and move a sector by the DMA controller |
+| libpress, the whole module | the port's (`src/port/mdec.c`) | Sony's module holds both the `DecDCT...` calls and the driver that writes the chip's registers and starts its two DMA channels; it cannot be split without editing `movovl/`, so the port supplies the module, and its `DecDCT...` calls do what Sony's do |
+| `DecDCTvlc` | the port's (`src/port/mdec.c`) | the original is hand-written assembly (`movovl/asm/libpress_vlc.s`): there is no C to compile |
+| libetc's older pad reader (`PadInit`, `PadRead`, `PadStop`) | Sony's, over the port's `PAD_init` and `PAD_dr` (`pad.c`) | plain C over two BIOS calls, which the port supplies: both pads' buttons in one word, a bit clear for each held |
+
+Nothing of `movovl/` is changed: the overlay still builds byte for byte
+(`wsl bash tools/build.sh movovl`). The two names the port needs under
+another spelling are changed with `-D` on the compiler's command line.
+
+**What the game does is untouched.** `sys_Exec` still shuts everything
+down and still reads the 122,880 bytes of `MOVOVL.EXE` off the disc into
+`0x801D8800`, as the console has them while the movie runs; only the jump
+into them is a call of the C instead.
+
+**The stream.** `OPENING.STR` is 19,511 sectors of 2,048 bytes: 14,541 of
+picture, 2,077 of sound and the rest the tail the file is padded out
+with. A picture sector is a 32-byte header (what it says it is, the
+sector's place in its frame and how many the frame has, the frame's
+number and size, the picture's size, and the frame's own four halfwords:
+the length of the decoded data, `0x3800`, the quantisation scale and the
+version) and 2,016 bytes of bitstream. The frames are 1 to 3,320, 320 by
+240 pixels, **version 2**, four to six sectors each (5.0054 on average),
+and their quantisation scale runs from 1 to 25 from frame to frame. At
+the drive's 150 sectors a second that is **29.97 frames a second** and
+110.8 seconds of picture; the sound is one stereo XA stream, four bits a
+sample at 37,800 a second, 18.75 sectors a second, and it runs 130
+seconds, to the end of the file.
+
+In the port the drive turns by the port's own clock (`src/port/
+stream.c`): a sector passes under the head every 20,979/200 scan lines,
+which is 150 a second of the clock the sound is counted in, and each is
+read from the image and handed either to the drive's sound decoder
+(`xa.c`, as on the console) or to the streaming library's ring. The
+handler that fills the ring is Sony's own, written again without the
+drive's registers and the DMA: the same slots, the same wrap, the same
+giving back of a frame whose sectors came out of order, and the same call
+of `data_ready_callback` when a frame's last sector is in. A read is a
+stream, and not a file's sectors, when the streaming library has hung its
+callback on the drive (`CdDataCallback`); `CdInit` takes it off again, as
+Sony's does, which is what ends a stream the player left running when the
+cross button skipped it.
+
+**The wait.** The player asks `StGetNext` over and over until a whole
+frame is in the ring, with no `VSync` in that loop: on the console the
+drive's interrupt fills the ring meanwhile. The port has no interrupts,
+so each try that finds nothing moves the clock on one scan line
+(`port_WaitOneLine`, `clock.c`) and turns the drive. Time therefore
+passes in that wait as it does on the console -- the sound is mixed, the
+pads are read, the blanks go by -- and the loop settles at the drive's
+own rate: a frame every two blanks, which is the movie's 29.97 a second.
+A run of the whole movie drops no sector.
+
+**The chip** (`src/port/mdec.c`), written from what is published of the
+MDEC and from the format, with no emulator's code:
+
+- `DecDCTvlc` expands a frame's bitstream into run-level halfwords. The
+  bitstream is 16-bit little-endian words read from the top bit down:
+  ten bits of the lowest coefficient of each block, then variable-length
+  codes, each a run of zeroes and the next coefficient's size, until the
+  code that ends the block, with an escape code for six bits of run and
+  ten of value. The code table is MPEG-1's for the coefficients of a
+  block, 224 codes; the port's copy of it is held on every push to the
+  table the original library itself looks codes up in, which the
+  decompilation of the overlay has (`tests/port/mdec.py` reads
+  `movovl/asm/data/libpress_vlc.data.s`). Version 3, which codes the
+  lowest coefficient as a difference, is not written: the game's one
+  movie is version 2, and a frame that says otherwise stops the movie
+  and says so;
+- the chip makes an 8 by 8 block of each run of pairs, laid out along the
+  zigzag, the lowest coefficient times the first entry of the
+  quantisation table and the rest times their entry and the frame's
+  scale, each held to ten bits with a sign. The quantisation table and
+  the cosine table are the ones Sony's library loads the chip with, and
+  the test holds the port's copies to those words;
+- the inverse cosine transform is two passes of the rows times the cosine
+  table, each leaving the answer turned about its diagonal, with the
+  table brought down by eight and each sum by 8,192 with half of that
+  added: that is the arithmetic the chip is described as having. A row of
+  nothing is skipped, which is where most of a frame's work is saved;
+- six blocks make a macroblock of 16 by 16 pixels: Cr, Cb and the four of
+  brightness (top left, top right, bottom left, bottom right), the two
+  colours read at half the width and height. Red, green and blue are the
+  usual 1.402, 0.3437, 0.7143 and 1.772, in 16,384ths;
+- the output is 24-bit or 15-bit as the command word says, with the top
+  bit of a 15-bit pixel set or not as it says: a macroblock is 16 rows of
+  16 pixels, one macroblock after another. That is what the player loads
+  into video memory in 20 strips of 16 pixels (`LoadImage`);
+- a transfer out is done as it is asked for and the callback that ends
+  one on the console runs at once, as the port does the sound chip's
+  (`sound.c`). A callback that asks for the next slice is answered by a
+  loop, not by calling into the chip again.
+
+**Not sure about the chip**, and marked in the file:
+
+- which way the transform rounds a negative sum (an arithmetic shift here)
+  and a negative entry of the cosine table divided by eight (towards
+  zero here);
+- the fixed-point constants of the step to red, green and blue, and
+  which way they round. What this is expected to cost against the
+  emulator is written in `tests/play/port_movie.toml`: a pixel one step
+  away in a channel here and there, and nothing structured;
+- a frame that asks the chip for more than its run-level data holds is
+  filled with black and counted.
+
+**The movie's sound**, and how the port came to be silent and is not.
+The game's own code says nothing turns the sound chip's CD input on
+before the main menu: `sys_Exec` calls `snd_Quit` before the player
+starts, `SsInit`'s `SpuInit` has set the chip's CD volume to 0
+(`_spu_init`, `src/main/psxsdk/libspu/spu.c`), and
+`snd_EnableCdAudio` (`cdrom.c`) is first called at the menu, which the
+movie is long over by. So the port's movie had a picture and no sound.
+
+**The emulator says otherwise, and it is right.** Read at three moments
+of the movie (`port_movie`, and a run of its own), the emulator's chip
+has its CD volume at `0x3FFF` on each side, its main volume at `0x3FFF`
+and its control register at `0xC001` -- the disc's input taken -- from
+the moment the player starts until the movie ends, when they go back to
+`0` and `0xC000`. What sets them is **Sony's libcd**: `CD_initvol`
+(`src/main/psxsdk/libcd/bios.c`), which `CdInit` reaches through
+`CdReset(1)`, writes exactly those three registers, and `sys_Exec` calls
+`CdInit` as it hands the machine over. The port's libcd is its own
+(`cd.c`) and did not do that part of Sony's, so the port's chip
+multiplied the disc's sound by 0. It does it now
+(`port_InitCdSpuVolume`, `sound.c`, called from the port's `CdInit`),
+and:
+
+- the port's movie has sound: 127.5 seconds of it in a run's WAV, peak
+  20,132 and 25,336, RMS 4,182 and 4,011 (`tools/port_wav.py`);
+- at all three checkpoints of `port_movie` the port's sound memory and
+  every register a program writes are the emulator's.
+
+The player sets the *drive's* volume to its maximum (`CdMix`) and mutes
+it again when the movie ends; the port's drive did that already. One
+thing of the chip's is still not the port's: its control register's CD
+bit is written and not read -- the port's chip mixes the disc in by the
+CD volume alone, which Sony's library sets and clears together with the
+bit, so nothing turns on it.
+
+**What a run says.** A run that played a movie ends with four lines: the
+sectors the drive gave the stream and how they were split, the frames the
+player took out of the ring with the first and last of them and the
+picture's size, the blanks the stream ran between, and what the chip made
+of it. With the retail image, played to its end:
+
+```
+movie sectors 16618 picture 14541 sound 2077 dropped 0
+movie frames 3320 first 1 last 3320 size 320x240
+movie blanks 281 to 6908
+movie decoded 3319 frames 995700 macroblocks, 0 short
+```
+
+6,627 blanks for 3,320 frames is 1.996 blanks a frame, which is the
+disc's own 29.97 a second; 995,700 macroblocks is 300 for each of the
+3,319 frames that were decoded (the last is read and not decoded: the
+player stops at the end frame). The whole screen takes 7,334 blanks: 110.8
+seconds of movie, ten of the title picture held and 64 frames of fade.
+
+**How it is proved.** By made-up data on every push
+(`tests/port/mdec.c`, with `mdec.py` working the answers out a second
+time): the bit reader; the chip's two tables against the words Sony's
+library loads it with; every one of the 224 codes read back out of a
+bitstream, and the whole table against the original library's own lookup
+tables; a frame's bitstream expanded, with an escape code in every block
+and the padding at the end; a block of one coefficient, whose 64 values
+are worked out by hand; five blocks of several coefficients at five
+quantisation scales, against the chip's arithmetic written out again in
+Python and against a real inverse cosine transform in floating point
+(within 2); the step to red, green and blue by hand; a whole macroblock
+through the chip in 24-bit and in 15-bit colour, with and without the
+mask bit; and the ring, with made-up sectors in order, a sector of sound
+among them, a frame whose middle sector never comes, the ring's wrap, and
+the drive's rate at both speeds.
+
+With the retail image, on the port alone: the movie plays to its end,
+3,320 frames of 320 by 240, no sector dropped, the picture written out as
+PNGs. The frames were looked at (the first, a dark one, two close-ups,
+the title drawing itself, the title picture, the fade): they are the
+film, with the softness and the ringing the MDEC gives at these
+quantisation scales and nothing else -- no block out of place, no seam
+between two of the 20 strips a frame is loaded in, no colour cast. The
+cross button skips it at any moment and the game goes on. The three play
+tests' runs are what they were: every one of the 54 watched values at
+every checkpoint is the same as before the movie existed, in all three,
+and only the blank each checkpoint falls at has moved (below).
+
+**What the blanks do.** The three port plans press cross at `movie+600`,
+600 blanks after the game reaches the movie screen, so the movie now
+costs the port 601 blanks where it cost it none. Measured, by running
+each plan with the movie and without it: `page` and `movie` are at the
+same blank as before, and every checkpoint from `menu` on has moved by
+exactly +601, with every watched value the same. `port_game` ends at
+blank 4,481 where it ended at 3,880; `port_other_fight` at 4,721;
+`port_bugfixes` at 4,511. All three are far inside their limit of 12,000,
+and nothing in them is counted in blanks across the movie, so no plan
+needs changing. The emulator's side does not move at all: it always
+played the movie. What this does is bring the two closer: the port is now
+at the top menu at blank 1,098 where it was at 497 and the emulator is at
+1,902.
+
+**A frame of the movie against the emulator's, pixel for pixel.** The two
+programs are at different frames of the movie at the same vertical blank
+(measured: the emulator is at a given frame 570 blanks after the port,
+which is the blank it reaches the movie screen at, 835 against 276, and
+the time it spends reading the player and the title picture, which the
+port spends none on), so the two were lined up by the pictures
+themselves: twelve of the port's, 81 of the emulator's two blanks apart
+over the same stretch, and every pair compared. One pair fits and its
+neighbours are plainly worse, which is what says the two are the same
+frame of the movie. On that pair, of the 76,800 pixels:
+
+| | |
+|---|---|
+| Pixels with every channel within 1 | 66,144 (86.1%) |
+| ... within 2 | 76,071 (99.05%) |
+| Pixels more than 2 apart in a channel | 729 (0.95%), the largest difference 7 of 255 |
+| The mean signed difference | red -0.18, green +0.49, blue -0.18: no cast |
+| Where the far pixels are against the 16-pixel macroblock grid | spread evenly, 32 to 65 in each of the sixteen columns and 30 to 62 in each of the sixteen rows: no seam, no block out of place |
+| The runs of far pixels along a row | 316 single, 104 of two, nine of six, two of eight: detail edges |
+
+So the frame is the emulator's but for rounding in the inverse cosine
+transform and in the step to red, green and blue, which is where
+`mdec.c` says it is not sure of the hardware. It is a little looser than
+was guessed before it was run (no channel more than 2 apart and nine in
+ten within 1): the largest is 7 and 86 in a hundred are within 1.
+
+**What is left**: version 3 frames, which this game has none of; and the
+sound compared with the emulator's sample for sample, which the chip's
+own comparison stands in for ("Sound").
+
 ## The window
 
 A second build of the port has a window, a sound card and the PC's keys
@@ -1486,7 +1742,7 @@ of `asm/funcs/`, which the source includes with `INCLUDE_ASM`: 139 files,
 | Sony's other assembly | 8 functions that patch the kernel's pad and card drivers, `_patch_gte`, `setjmp`, `SetSp` | `libapi/`, `libcard/`, `libc2/`, `libgte/patchgte.c` | None: they serve Sony's interrupt and driver code, which the port replaces whole | not needed |
 | Start-up | the PS-X EXE header, `__SN_ENTRY_POINT`, `__main`, `__do_global_dtors` | `asm/header.s`, `libsn/snmain.c` | The PC's own start-up; `main` is the game's | not needed |
 | The development host's file calls | `PCopen`, `PCclose`, `PClseek`, `_SN_read`, and `pollhost` (a `break`) | `libsn/` | The game's two loaders that use them (`main.c`) are never reached on a retail disc; the port leaves them out or gives them the PC's files | not needed |
-| The movie overlay | its entry, one BIOS jump, the bitstream decoder (279 instructions and its tables) and the DMA routine (120) | `movovl/asm/` | See "The movie overlay" | left |
+| The movie overlay | its entry, one BIOS jump, the bitstream decoder (279 instructions and its tables) and the DMA routine (120) | `movovl/asm/` | The overlay's own C is compiled into the port; the bitstream decoder is written again in C and the DMA routine's work is the port's ("The movie") | done |
 
 ### The BIOS calls the game makes
 
@@ -1505,7 +1761,8 @@ the nothings are done, `Exec` returns at once.
 | The pads | `InitPAD`, `StartPAD`, `StopPAD`, `ChangeClearPAD` 2 | B(12) to B(15), B(5B) | The two buffers `InitPAD` is given, filled once a frame in the console's packet form from the PC's keyboard and controllers |
 | The counters | `SetRCnt`, `StartRCnt`, `GetRCnt` 7, `ResetRCnt` 8 | Sony's C over `ChangeClearRCnt` C(0A) | A count of scan lines made from the PC's clock: the frame loop waits on it ("Timing") |
 | Interrupts off and on | `EnterCriticalSection` 5, `ExitCriticalSection` 4 | system calls 1 and 2 | Nothing, or a lock if the port runs sound or the disc on a thread of its own |
-| Running the movie | `Exec`, `SetSp`, `SetMem` | A(43), A(9F) | A call ("The movie overlay"); the other two are nothing |
+| Running the movie | `Exec`, `SetSp`, `SetMem` | A(43), A(9F) | A call of the movie player's own `main`, which is compiled into the port ("The movie"); the other two are nothing |
+| The movie player's pads | `PAD_init`, `PAD_dr` | B(15), B(16) | Both pads' buttons in one word, a bit clear for each one held ("The movie") |
 | Stopping | `sys_Trap` | (a write to an address with no memory) | `port_Trap` (`include/port_platform.h`): report and stop |
 
 The other kernel entries (`InitHeap`, `FlushCache`, `GPU_cw`,
@@ -1783,8 +2040,10 @@ points below. Stages two and three, the program, by the last three.
     `SsVabOpenHeadSticky` fills in as it opens a bank: a stub's answer.
     Sony's own code fills them in now ("Sound"), and `port_sound`
     holds the whole header to the emulator's.
-  - *The movie's work area* (the 2 KB before the load area) differs:
-    only the emulator played a movie. Not in the test.
+  - *The movie's work area* (the 2 KB before the load area) differed:
+    only the emulator played a movie. Both do now ("The movie"); it is
+    still not in the test, because the two stop the movie at different
+    frames of it.
   - *The fight after its first presses.* With the presses of
     `same_as_original` the port's fight left the emulator's at the first
     strike, by one frame: a press timed an odd number of blanks from a
@@ -1837,6 +2096,13 @@ points below. Stages two and three, the program, by the last three.
   `tests/port/memory.py` (the fixed addresses).
 - **The sound by made-up waveforms and sectors**, on every push:
   `tests/port/spu.c` and `xa.c` ("Sound").
+- **The movie by made-up bits, blocks and sectors**, on every push:
+  `tests/port/mdec.c` and `mdec.py`, whose code table is held to the
+  original library's own ("The movie"). Against the emulator: the play
+  test `port_movie` -- the game's state through the whole movie and
+  after it, the title picture to the pixel, and the sound chip at three
+  moments of it -- and a frame of the movie pixel for pixel, lined up by
+  hand ("The movie").
 - **`make port` on every push**: the program links with no name
   missing and the port's files have no warning, with 64-bit pointers
   and with 32-bit ones; and the three checks of "64 bits" (the layouts,
@@ -1905,31 +2171,26 @@ Each ends with something that can be shown.
 7. **The rest.** Movies, the memory card as a file, the link (or
    nothing in its place). The card is done ("The memory card"): a
    standard card image a slot, with the BIOS's calls over it, and the
-   image the port writes is the emulator's own byte for byte.
+   image the port writes is the emulator's own byte for byte. So is the
+   movie ("The movie"): the opening plays, by the overlay's own C over a
+   picture decompressor in C.
 
 The wide picture and the high resolution are the roadmap's next item and
 build on stage 4.
 
 ## What is left
 
-How far the program gets today: with `port_game`'s presses, through a
-versus fight to its kill, the replay, the menu after it and back to the
-main menu, as the emulator does. Nothing stops it; what it cannot do is
-listed here.
+How far the program gets today: with `port_game`'s presses, through the
+opening movie, a versus fight to its kill, the replay, the menu after it
+and back to the main menu, as the emulator does. Nothing stops it; what
+it cannot do is listed here.
 
-**The stubs the game called on the way** to the fight's first second,
-with how often, are the list of what stage 7 writes (a whole fight
-and the way back to the menu call the same ones, more often, and no
-other):
-
-| Stage | Stub | Calls |
-|---|---|---|
-| 7, the movie | `Exec` | 1 |
-
-Not called on that way, and stubs too: a CD audio track (`CdlPlay`) and
-the link's three. Sound has no stub left ("Sound"), and neither has the
-memory card ("The memory card"); a name that is not a card's file is the
-link cable's port, which is still a stub.
+**No stub is called on the way** to the fight's first second, or in a
+whole fight and back to the menu: a run ends with no `stub` line at all.
+What is still a stub, and never called on that way: a CD audio track
+(`CdlPlay`), which the disc has none of, and the link cable's three. A
+name that is not a card's file is the link cable's port, which is a stub
+too.
 
 **Known, and not done:**
 
@@ -1987,5 +2248,5 @@ link cable's port, which is still a stub.
 | A library for the window, the pads and sound | SDL 2 | One library does all three on Windows, Linux and macOS, and its licence sits with this project's. Taken: "The window". SDL is linked to, and none of it is in this repository |
 | The game's data: the disc image, or files taken out of it | The player's disc image | The game asks for sectors, never for names, so an image answers it directly; the music is tracks and streams that only the image has in one piece; and no tool has to unpack game data. Loose files can come later for modding |
 | The first renderer: software as the console draws, or the PC's graphics card | Software first | It can be held to the emulator's picture pixel for pixel by the tests there already are, and needs nothing installed. The hardware renderer is then the roadmap's next item, behind the same list of primitives |
-| The movies | Decode them in the port, in C | The overlay is a separate PlayStation program started through the BIOS; on a PC a function that plays a movie is simpler than a program loader, and the decoder chip has to be written in C either way |
+| The movies | Decode them in the port, in C | Settled, and done ("The movie"): the overlay's own C is compiled into the port and its `main` is called where the console would run the program it has just read; under it are the picture decompressor and the drive's streaming, in C |
 | The frame's wait | A fixed number of calls, for now: one for each scan line waited ("Time"); to be looked at again at stage 5 | The original calls `rand()` for as long as the frame has time left, so its random numbers depend on the machine's speed. The port needs a rule; none reproduces a console exactly |

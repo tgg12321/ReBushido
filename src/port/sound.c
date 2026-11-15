@@ -97,6 +97,11 @@ enum {
  * of what is less than one. */
 #define RESET_ADDRESS_SHIFT 3
 #define RESET_ADDRESS_MASK 7
+/* What Sony's libcd puts in the chip's volumes and its control register
+ * as the drive's library starts (CD_initvol): half of full scale, and the
+ * chip on and unmuted with the disc's input taken (bit 0). */
+#define SPU_CD_INIT_VOLUME 0x3FFF
+#define SPU_CD_INIT_CONTROL 0xC001
 /* The keys and switches Sony's library can hold back for an interrupt
  * to write (it never does here). */
 #define REQUESTS 10
@@ -156,6 +161,24 @@ static void port_MapSpu(void) {
     }
     port_AttachSpu((u16 *)PORT_SPU_REGS_ADDR);
     g_port_spu_mapped = 1;
+}
+
+/* What Sony's libcd does to the sound chip as the drive's library starts
+ * (CD_initvol, src/main/psxsdk/libcd/bios.c, which CdInit reaches through
+ * CdReset(1)): the disc's sound at half of full scale and the chip's CD
+ * input on, and the main volume at half of full scale as well unless
+ * something is in the external input. The port's libcd is its own
+ * (src/port/cd.c) and this is the part of Sony's that it has to do, or
+ * the chip multiplies the disc's sound by 0 (port_spu.h). */
+void port_InitCdSpuVolume(void) {
+    port_MapSpu();
+    if (_spu_RXX->rxx.ex_vol.left == 0 && _spu_RXX->rxx.ex_vol.right == 0) {
+        _spu_RXX->rxx.main_vol.left = SPU_CD_INIT_VOLUME;
+        _spu_RXX->rxx.main_vol.right = SPU_CD_INIT_VOLUME;
+    }
+    _spu_RXX->rxx.cd_vol.left = SPU_CD_INIT_VOLUME;
+    _spu_RXX->rxx.cd_vol.right = SPU_CD_INIT_VOLUME;
+    _spu_RXX->rxx.spucnt = SPU_CD_INIT_CONTROL;
 }
 
 /* ---- interrupts ---- */

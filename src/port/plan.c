@@ -105,6 +105,8 @@
 #define CP_SPU_BIT 16
 /* A screenshot's pixels are 16 bits. */
 #define PICTURE_BITS 16
+/* The mode the movie player sets: red, green and blue a byte each. */
+#define PICTURE_BITS_RGB24 24
 /* The digits of a blank's number in a picture's name. */
 #define BLANK_DIGITS 6
 #define DECIMAL 10
@@ -841,8 +843,8 @@ static void port_WriteCheckpointPicture(const char *checkpoint) {
                   checkpoint);
     }
     port_HostClose(file);
-    port_Print(
-        "shot %s %d %d %d\n", checkpoint, display.w, display.h, PICTURE_BITS);
+    port_Print("shot %s %d %d %d\n", checkpoint, display.w, display.h,
+               display.is_rgb24 ? PICTURE_BITS_RGB24 : PICTURE_BITS);
 }
 
 /* All of video memory at a checkpoint, to CHECKPOINT.vram. */

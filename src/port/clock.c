@@ -48,6 +48,8 @@ u32 port_GetBlankCount(void) {
     return g_port_clock_lines / PORT_LINES_PER_BLANK;
 }
 
+u32 port_GetLineCount(void) { return g_port_clock_lines; }
+
 /* Moves the clock on to `line`, with whatever a vertical blank on the way
  * brings. */
 static void port_AdvanceClock(u32 line) {
@@ -104,6 +106,12 @@ s32 VSync(s32 mode) {
     g_port_vsync_line = g_port_clock_lines;
     return lines;
 }
+
+/* One scan line, with whatever a vertical blank on the way brings
+ * (port_platform.h). The movie's player waits on the drive in a loop of
+ * its own, with no VSync in it (src/port/stream.c): this is what lets
+ * time pass in such a wait, as it passes on the console. */
+void port_WaitOneLine(void) { port_AdvanceClock(g_port_clock_lines + 1); }
 
 /* ---- the root counters ---- */
 

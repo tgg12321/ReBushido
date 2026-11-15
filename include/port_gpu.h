@@ -77,8 +77,10 @@ extern void port_AddLinkRegion(u32 address, u32 size);
 /* ---- pictures (src/port/picture.c) ---- */
 
 /* The displayed rectangle as the emulator's script writes a screenshot:
- * its 16-bit pixels, a row after a row. Returns 1 if all was written;
- * the size is the display's. */
+ * the bytes of video memory a row after a row, which are 16-bit pixels,
+ * or red, green and blue where the display is in the 24-bit mode the
+ * movie uses. Returns 1 if all was written; the size is the display's,
+ * and port_GetDisplay says which depth. */
 extern s32 port_WriteDisplayPixels(s32 file);
 /* The same as a PNG, each line twice where the picture is 640 or 512
  * across and half as high. */

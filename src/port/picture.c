@@ -242,32 +242,33 @@ s32 port_WriteDisplayPng(s32 file) {
     return !out->failed;
 }
 
-/* A row of the display after a row, as video memory has them
- * (port_gpu.h). */
+/* A row of the display after a row, as video memory has them, in the
+ * display's own depth (port_gpu.h): two bytes a pixel, or three where
+ * the display is in the 24-bit mode the movie uses. */
 s32 port_WriteDisplayPixels(s32 file) {
     PortDisplay display;
+    const u8 *bytes = (const u8 *)g_port_vram;
+    s32 line_bytes = PORT_VRAM_WIDTH * (s32)sizeof(u16);
     s32 y;
 
     port_GetDisplay(&display);
     for (y = 0; y < display.h; y++) {
         s32 line = (display.y + y) & (PORT_VRAM_HEIGHT - 1);
-        s32 x = display.x & (PORT_VRAM_WIDTH - 1);
-        s32 w = display.w;
+        s32 at = (display.x & (PORT_VRAM_WIDTH - 1)) * (s32)sizeof(u16);
+        s32 left = display.w * (display.is_rgb24 ? RGB24_BYTES : 2);
 
         /* a display that runs off video memory's right edge goes on at
          * its left */
-        if (x + w > PORT_VRAM_WIDTH) {
-            u32 first = (u32)(PORT_VRAM_WIDTH - x);
+        if (at + left > line_bytes) {
+            u32 first = (u32)(line_bytes - at);
 
-            if (!port_HostAppend(file, &g_port_vram[line * PORT_VRAM_WIDTH + x],
-                                 first * sizeof(u16))) {
+            if (!port_HostAppend(file, &bytes[line * line_bytes + at], first)) {
                 return 0;
             }
-            w -= (s32)first;
-            x = 0;
+            left -= (s32)first;
+            at = 0;
         }
-        if (!port_HostAppend(file, &g_port_vram[line * PORT_VRAM_WIDTH + x],
-                             (u32)w * sizeof(u16))) {
+        if (!port_HostAppend(file, &bytes[line * line_bytes + at], (u32)left)) {
             return 0;
         }
     }

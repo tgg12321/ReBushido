@@ -122,14 +122,22 @@ card file from an emulator works here.
 `tools/card.py` lists, checks and opens up a card image, whoever wrote it
 (`python tools/card.py list card1.mcd`).
 
+## The opening movie
+
+The opening plays, with its sound, and **cross skips it** -- only cross,
+at any moment. It is the game's own player, decoded by the port
+([`PORT.md`](PORT.md), "The movie"): 3,320 frames of 320 by 240 at 29.97
+a second, about a minute and fifty, and then the title picture is held
+for ten seconds and fades.
+
 ## What does not work yet
 
-- **No movies.** The opening movie is left out.
 - **No link cable.**
 - The picture is the PlayStation's own, at the PlayStation's size,
   scaled up: the wide picture and the higher resolution are not made
   yet.
-- The sound has not been compared with a console's.
+- The sound has not been heard by anybody yet, and what the port makes
+  of the hardware's filters is not the console's to the last sample.
 
 ## If something is wrong
 

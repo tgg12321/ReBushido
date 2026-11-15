@@ -127,8 +127,17 @@ extern u32 port_GetSampleCount(void);
  * mixed. */
 extern void port_RunSoundBlank(u32 blank);
 /* Called with each blank's samples as they are made, if not NULL: the
- * window's sound card (src/port/window/). */
+ * window's sound card (src/port/window/). It may be called more than
+ * once in a blank: the blank's samples are made in two pieces, before
+ * the sound library's tick and after it. */
 extern void (*g_port_sound_hook)(const s16 *samples, u32 frames);
+/* What Sony's libcd does to the chip as the drive's library starts
+ * (CD_initvol): the disc's sound at half of full scale and the chip's CD
+ * input on. The port's libcd is its own, so its CdInit calls this
+ * (src/port/cd.c); without it the chip multiplies the disc's sound by 0
+ * until the game turns the disc's sound on for itself, and the opening
+ * movie, which runs before that, is silent. */
+extern void port_InitCdSpuVolume(void);
 /* What the run's sound did, to the program's output: `sound ...` lines.
  * Only a run that keeps its sound says it. */
 extern void port_PrintSoundSummary(void);

@@ -7,6 +7,33 @@
  * for the system's (port_host.h). */
 #include "common.h"
 #include <psxsdk/libcd.h>
+#include "port_movie.h"
+
+/* The movie's stream (src/port/stream.c), which the drive hands a
+ * sector to while a movie plays: no movie plays here, so the drive
+ * works as it does for a file's sectors (tests/port/mdec.c runs the
+ * stream itself). */
+s32 port_StreamArmed(void) { return 0; }
+
+void port_StartDiscStream(s32 sector, s32 double_speed) {
+    (void)sector;
+    (void)double_speed;
+}
+
+void port_StopDiscStream(void) {}
+
+s32 port_PumpStream(void) { return 0; }
+
+/* What Sony's libcd does to the sound chip as it starts (src/port/
+ * sound.c): there is no chip here, and what this test is about is the
+ * drive. */
+void port_InitCdSpuVolume(void) {}
+
+void (*CdDataCallback(void (*func)()))() {
+    (void)func;
+    return NULL;
+}
+
 #include "src/port/disc.c"
 #include "src/port/cd.c"
 #include "src/port/xa.c"
