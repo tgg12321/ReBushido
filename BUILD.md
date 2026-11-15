@@ -145,6 +145,9 @@ software driver.
 ```bash
 python3 tools/port_gl_build.py                  # build/port-gl/rebushido-gl
 python3 tools/port_gl_prove.py --image "Bushido Blade 2 (USA).cue"
+# the pictures it draws between the game's frames (docs/PORT.md,
+# "More pictures a second"), into build/fps/
+python3 tools/port_fps_prove.py --image "Bushido Blade 2 (USA).cue"
 ```
 
 On Ubuntu it needs `lib32gcc-13-dev` and 32-bit EGL (`libegl-dev:i386`),

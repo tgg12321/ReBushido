@@ -1117,6 +1117,28 @@ static void port_GlEnd(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24) {
 static const PortRemasterBackend g_gl_backend = {
     port_GlBegin, port_GlDraw, port_GlWroteVram, port_GlEnd};
 
+const PortRemasterBackend *port_GlBackend(void) { return &g_gl_backend; }
+
+void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h) {
+    if (!g_gl.is_started || w <= 0 || h <= 0) {
+        return;
+    }
+    port_AddDirtyRect(&g_gl.mirror, x, y, w, h);
+    port_GlUploadMirror();
+}
+
+void port_GlSaveCounts(u32 *three) {
+    three[0] = g_gl.vertex_count;
+    three[1] = g_gl.draw_count;
+    three[2] = g_gl.upload_count;
+}
+
+void port_GlLoadCounts(const u32 *three) {
+    g_gl.vertex_count = three[0];
+    g_gl.draw_count = three[1];
+    g_gl.upload_count = three[2];
+}
+
 /* ---- what the host asks for ---- */
 
 /* The two scales a PortGlOptions asks for, each held to what there

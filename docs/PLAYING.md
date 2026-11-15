@@ -88,6 +88,7 @@ resolution = 3           # how many times the console's; 0 = the window's
 draw_distance = max      # original, far, or max: how much of the stage
 antialiasing = 2         # off, 2 or 4: the scene's edges smoothed
 aspect = 16:9            # 4:3 as the console (the default), or wider
+frame_rate = display     # original (the default), display, or a number
 p1.cross = key Space     # Space is player one's Cross, and Z no longer
 p1.circle = key Left Ctrl
 p2.start = pad a         # on player two's controller, A is Start
@@ -129,9 +130,38 @@ nothing at all while Graphics is Original.
 | `antialiasing` | `off`, `2`, `4` | The scene drawn that many times over each way and averaged down, which smooths its edges. The HUD, the fonts and the menus are left exactly as crisp as they were. It costs fill rate and nothing else: four times over is sixteen times the pixels. `2` with nothing said. |
 | `aspect` | `4:3`, `16:9`, any `W:H` | The shape of the picture. A wider one is a **wider view of the same scene**, not a stretched picture: the camera keeps its height and gains width. Use it with `draw_distance max`, which fills the sides. `4:3` with nothing said, because the HUD does not move out to the new edges yet: in a fight the counters and the clock stay in the middle band ([`PORT.md`](PORT.md), "A wider picture"). |
 
-What Remastered does **not** do yet: more than the game's own 30 or 60
-pictures a second, and new lighting or shadows. Those are the steps
-after it ([`ROADMAP.md`](ROADMAP.md), item 7).
+## More pictures a second
+
+The game steps 30 times a second in a fight and 60 in the menus, as the
+console does, and it has to go on doing exactly that: it is the same
+game. So a higher frame rate is **more pictures of the same frames**,
+not more frames. The renderer keeps the scene of the frame on show and
+the scene of the frame after it — which the game has already worked out,
+because the console shows a frame one blank after it is drawn — and
+draws the scene again at any point between the two, every corner moved
+part of the way as the camera's own projection would move it. The HUD,
+the clock and the menus stay at the game's own rate, where they belong.
+**Nothing is guessed ahead and nothing is held back: a picture is never
+later than the console's own**, so this costs no input lag.
+
+| | | |
+|---|---|---|
+| `frame_rate` | `original`, `display`, a number | `original`, which is the default, draws one picture a vertical blank — the console's 59.83 a second, exactly as the window did before. `display` draws as many pictures a second as your screen shows, so 144 on a 144 Hz screen. A number asks for that many. `--frame-rate original|display|N` says it on the command line. It needs Graphics Remastered; with Original it does nothing. |
+
+The counter in the corner (F3) shows both rates: `143.8/30.0` is 143.8
+pictures a second of a game stepping 30 times a second.
+
+**Why `original` is still the default.** Everything about it has been
+measured and nothing about it has been *seen*: the pictures between two
+frames were written to files and held to the two they lie between, but
+nobody has yet watched them move on a screen ([`PORT.md`](PORT.md),
+"More pictures a second"). Turn it on and tell the owner how it looks.
+What may show: a weapon or a spark that appears or vanishes between two
+frames waits for the next frame rather than fading in, and a camera cut
+shows the console's own picture until the cut is over.
+
+What Remastered does **not** do yet: new lighting or shadows. That is
+the step after it ([`ROADMAP.md`](ROADMAP.md), item 7).
 
 ## Where the saves are
 
@@ -177,6 +207,10 @@ for ten seconds and fades.
 - Nobody has yet looked at the remastered picture on a real graphics
   card: it has been drawn only by software drivers, with no window on
   screen ([`PORT.md`](PORT.md), "Remastered in the window").
+- Nobody has watched the pictures between the game's frames move either,
+  which is why `frame_rate` is `original` until someone does. On a
+  machine with no card at all there is no room to draw a frame twice:
+  the fight slowed to about half speed in the one run that was made.
 
 ## If something is wrong
 

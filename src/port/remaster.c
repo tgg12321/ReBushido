@@ -347,6 +347,8 @@ void port_RemasterSetBackend(const PortRemasterBackend *backend) {
     g_backend = backend;
 }
 
+const PortRemasterBackend *port_RemasterGetBackend(void) { return g_backend; }
+
 const PortRemasterCounts *port_GetRemasterCounts(void) { return &g_counts; }
 
 const PortRemasterCounts *port_GetRemasterFrameCounts(void) {
@@ -684,6 +686,25 @@ static void port_RemasterCornerColor(PortRemasterCorner *corner, u32 color) {
     corner->b = (s32)((color >> BLUE_SHIFT) & BYTE_MASK);
 }
 
+/* Where the primitive whose words are being drawn is in the frame's
+ * primitive buffer, in bytes, or -1 (port_remaster.h). The frame being
+ * drawn is the one the game has just built: DrawOTag comes before
+ * g_disp_frame_count is counted on (src/main/main.c). */
+static s32 port_RemasterPrimKey(void) {
+    u32 base;
+    u32 offset;
+
+    if (g_prim == 0) {
+        return -1;
+    }
+    base = g_disp_prim_buffers[g_disp_frame_count & 1];
+    offset = (u32)g_prim - base;
+    if (base == 0 || offset >= g_disp_prim_buffer_size) {
+        return -1;
+    }
+    return (s32)offset;
+}
+
 /* The paint of a primitive: the drawing mode as it is now, with the
  * page a textured polygon brought with it already in it (the software
  * GPU drew the command before this is called). */
@@ -711,6 +732,9 @@ static void port_RemasterPaint(
     prim->clip_bottom = state->clip_bottom;
     prim->mask_set = state->mask_set;
     prim->mask_check = state->mask_check;
+    prim->offset_x = state->offset_x;
+    prim->offset_y = state->offset_y;
+    prim->key = port_RemasterPrimKey();
 }
 
 /* What this primitive covers of video memory, for the count of textures

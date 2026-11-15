@@ -95,9 +95,16 @@ No dates.
       the game stop culling a face at the console's own edge ("A wider
       picture"). Left of it: the HUD stays four by three in the middle
       and does not move out to the new edges, so `4:3` is the default.
-   5. **A high frame rate**, 144 a second: the renderer drawing between
-      the game's own steps, which the side channel's exact positions
-      are what makes possible.
+   5. **A high frame rate**, 144 a second. Done (`frame_rate`): the
+      game steps at the console's rate and computes what it always did,
+      and the renderer draws the frame on show again with the frame
+      after it — which the game has already worked out, since the
+      console puts a frame up a blank after it is drawn — mixed in, each
+      corner moved as the projection would move it ("More pictures a
+      second"). It costs no input lag. Left of it: nobody has seen it
+      move, so `original` is still the default; a face the next frame
+      has not waits for that frame instead of moving, and a camera cut
+      shows the game's own picture.
    6. **Lighting and shadows**: the normals the mesh has and the
       primitive does not.
 

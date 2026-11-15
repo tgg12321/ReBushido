@@ -23,6 +23,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_tween.h"
 #include "port_gpu.h"
 #include "port_host.h"
 #include "port_remaster.h"
@@ -41,6 +42,11 @@
 
 static u32 g_picture[PICTURE_PIXELS_MAX];
 static u32 g_software[PORT_PICTURE_WIDTH_MAX * PORT_PICTURE_HEIGHT_MAX];
+/* The pictures of one game frame, for the check that each lies between
+ * the two it is drawn from (--gl-tween): the first phase's and the
+ * last's are kept, and each in between is held to them. */
+static u32 *g_first_phase;
+static u32 *g_last_phase;
 
 static struct {
     const char *shots;
@@ -57,7 +63,26 @@ static struct {
     u32 worst;           /* the largest difference of a channel, 0 to 255 */
     u64 hardware_time;   /* microseconds */
     u64 software_frames; /* frames the software GPU drew */
+    /* pictures between the game's frames (gl_tween.h) */
+    s32 tween;              /* pictures a game frame: 1 is off */
+    s32 strip_at;           /* the first blank of the strip of pictures */
+    s32 strip_blanks;       /* how many blanks of it */
+    u32 generation;         /* frames the tween has written down */
+    u32 tween_drawn;        /* pictures between frames drawn */
+    u32 tween_missed;       /* ... asked for and not drawn (a cut) */
+    u64 tween_time;         /* microseconds they took */
+    u32 checked;            /* game frames whose phases were checked */
+    u32 out_of_order;       /* ... whose pictures do not lie between */
+    u32 point_out_of_line;  /* phases whose watched point does not */
+    u32 identity;           /* frames drawn again at phase 0 */
+    u32 identity_pixels;    /* ... pixels held to the game's own picture */
+    u32 identity_different; /* ... that are not the same */
 } g_run;
+
+/* The most pictures a game frame may be drawn as, for the prover's
+ * check: it keeps the sum of the differences of each from the two
+ * ends. */
+#define PHASES_MAX 16
 
 static const char g_usage[] =
     "rebushido-gl: the port's remastered renderer, drawn with no window\n"
@@ -90,7 +115,13 @@ static const char g_usage[] =
     "  --antialiasing N    the picture drawn N times over each way and\n"
     "                 averaged down: off (or 1), 2, 3, 4\n"
     "  --aspect W:H   the shape of the picture: 4:3 as the console,\n"
-    "                 16:9 for a wider view of the same scene\n";
+    "                 16:9 for a wider view of the same scene\n"
+    "  --gl-tween N   draw each game frame as N pictures, the first the\n"
+    "                 frame on show and the last the frame after it, and\n"
+    "                 check that each of the others lies between them\n"
+    "                 (gl_tween.h). Not with --gl-compare\n"
+    "  --gl-strip B,N every picture of N blanks from blank B as a PNG\n"
+    "                 into --gl-shots, a strip of what a screen shows\n";
 
 /* ---- a PNG of 8-bit pixels ---- */
 
@@ -367,6 +398,183 @@ static u32 port_Compare(s32 w, s32 h) {
     return picture_worst;
 }
 
+/* ---- the pictures between two frames (gl_tween.h) ---- */
+
+/* How far two pictures are apart: every channel of every pixel added
+ * up. It is not a measure of anything in itself; what it is for is the
+ * order of the pictures of one game frame, which must run evenly from
+ * the frame on show to the frame after it. */
+static u64 port_PicturesApart(const u32 *one, const u32 *two, s32 pixels) {
+    u64 sum = 0;
+    s32 i;
+
+    for (i = 0; i < pixels; i++) {
+        s32 channel;
+
+        for (channel = 0; channel < 3; channel++) {
+            s32 a = (s32)((one[i] >> (channel * 8)) & 0xFF);
+            s32 b = (s32)((two[i] >> (channel * 8)) & 0xFF);
+
+            sum += (u64)(a > b ? a - b : b - a);
+        }
+    }
+    return sum;
+}
+
+static s32 port_InStrip(u32 blank) {
+    return g_run.strip_at >= 0 && blank >= (u32)g_run.strip_at &&
+           blank < (u32)(g_run.strip_at + g_run.strip_blanks);
+}
+
+/* A game frame drawn as `--gl-tween` pictures: the first is the frame on
+ * show drawn again as it is, which must come out as the game's own
+ * picture to the pixel, and the last is the frame after it. Each is
+ * measured against those two and the point the renderer watched is
+ * held to the line between its ends. */
+static void port_GlTweenPhases(u32 blank) {
+    char path[PATH_BYTES_MAX];
+    u64 from_first[PHASES_MAX];
+    u64 from_last[PHASES_MAX];
+    s32 point_x[PHASES_MAX];
+    s32 point_y[PHASES_MAX];
+    s32 w = 0;
+    s32 h = 0;
+    s32 live_w = 0;
+    s32 live_h = 0;
+    s32 writes = g_run.shots != NULL && port_InStrip(blank);
+    s32 out_of_order = 0;
+    s32 key = 0;
+    s32 phase;
+
+    if (g_run.tween < 2 || g_run.tween > PHASES_MAX || !port_TweenCanDraw()) {
+        return;
+    }
+    if (g_first_phase == NULL) {
+        g_first_phase = malloc(PICTURE_PIXELS_MAX * sizeof(u32));
+        g_last_phase = malloc(PICTURE_PIXELS_MAX * sizeof(u32));
+        if (g_first_phase == NULL || g_last_phase == NULL) {
+            g_run.tween = 1;
+            return;
+        }
+    }
+    /* the game's own picture, which the first phase must come out as */
+    if (!port_GlReadPicture(
+            g_first_phase, PICTURE_PIXELS_MAX, &live_w, &live_h)) {
+        return;
+    }
+    for (phase = 0; phase < g_run.tween; phase++) {
+        s32 at = (s32)(((s64)phase * PORT_TWEEN_ONE) / (g_run.tween - 1));
+        u32 started = port_Microseconds();
+        s32 point = 0;
+
+        if (!port_TweenDraw(at)) {
+            g_run.tween_missed++;
+            return;
+        }
+        g_run.tween_time += port_Microseconds() - started;
+        g_run.tween_drawn++;
+        if (!port_GlReadPicture(g_picture, PICTURE_PIXELS_MAX, &w, &h) ||
+            w != live_w || h != live_h) {
+            return;
+        }
+        point = port_TweenTrack(&key, &point_x[phase], &point_y[phase]);
+        if (!point) {
+            point_x[phase] = 0;
+            point_y[phase] = 0;
+        }
+        if (phase == 0) {
+            /* the frame on show, drawn again as it is: the game's own
+             * picture, pixel for pixel */
+            u32 different = 0;
+            s32 i;
+
+            for (i = 0; i < w * h; i++) {
+                if ((g_picture[i] & 0xFFFFFF) !=
+                    (g_first_phase[i] & 0xFFFFFF)) {
+                    different++;
+                }
+            }
+            g_run.identity++;
+            g_run.identity_pixels += (u32)(w * h);
+            g_run.identity_different += different;
+            memcpy(g_first_phase, g_picture, (size_t)(w * h) * sizeof(u32));
+            fprintf(stderr, "gl tween blank %u identity %dx%d different %u\n",
+                    blank, w, h, different);
+        } else if (phase == g_run.tween - 1) {
+            memcpy(g_last_phase, g_picture, (size_t)(w * h) * sizeof(u32));
+        } else {
+            from_first[phase] =
+                port_PicturesApart(g_picture, g_first_phase, w * h);
+        }
+        if (writes) {
+            snprintf(path, sizeof(path), "%s/gl-%06u-p%02d.png", g_run.shots,
+                     blank, phase);
+            port_WritePng(path, g_picture, w, h, FALSE);
+        }
+    }
+    /* the pictures in between, against the two ends */
+    from_first[0] = 0;
+    from_last[0] = port_PicturesApart(g_first_phase, g_last_phase, w * h);
+    from_first[g_run.tween - 1] = from_last[0];
+    from_last[g_run.tween - 1] = 0;
+    /* the pictures in between were not kept, so each is drawn once more
+     * and measured against the last phase as well */
+    for (phase = 1; phase < g_run.tween - 1; phase++) {
+        s32 at = (s32)(((s64)phase * PORT_TWEEN_ONE) / (g_run.tween - 1));
+
+        if (!port_TweenDraw(at) ||
+            !port_GlReadPicture(g_picture, PICTURE_PIXELS_MAX, &w, &h)) {
+            return;
+        }
+        g_run.tween_drawn++;
+        from_last[phase] = port_PicturesApart(g_picture, g_last_phase, w * h);
+    }
+    for (phase = 1; phase < g_run.tween; phase++) {
+        if (from_first[phase] < from_first[phase - 1] ||
+            from_last[phase] > from_last[phase - 1]) {
+            out_of_order++;
+        }
+        /* the watched point, on the line between its two ends */
+        if (phase < g_run.tween - 1) {
+            s32 one = point_x[0];
+            s32 two = point_x[g_run.tween - 1];
+            s32 here = point_x[phase];
+            s32 low = one < two ? one : two;
+            s32 high = one < two ? two : one;
+
+            if (here < low - PORT_REMASTER_ONE ||
+                here > high + PORT_REMASTER_ONE) {
+                g_run.point_out_of_line++;
+            }
+        }
+    }
+    g_run.checked++;
+    if (out_of_order != 0) {
+        g_run.out_of_order++;
+    }
+    fprintf(stderr, "gl tween blank %u phases %d out_of_order %d key %d\n",
+            blank, g_run.tween, out_of_order, key);
+    for (phase = 0; phase < g_run.tween; phase++) {
+        fprintf(stderr,
+                "gl tween blank %u phase %d from_first %llu from_last %llu "
+                "point %d %d\n",
+                blank, phase, (unsigned long long)from_first[phase],
+                (unsigned long long)from_last[phase],
+                point_x[phase] >> PORT_REMASTER_FRACTION,
+                point_y[phase] >> PORT_REMASTER_FRACTION);
+    }
+    {
+        const PortTweenCounts *counts = port_TweenGetCounts();
+
+        fprintf(
+            stderr,
+            "gl tween blank %u prims %u mixed %u unpaired %u flat %u "
+            "widest_step %u cuts %u overflowed %u\n",
+            blank, counts->prims, counts->mixed, counts->unpaired, counts->flat,
+            counts->widest_step, counts->cuts, counts->overflowed);
+    }
+}
+
 static void port_GlBlank(u32 blank) {
     PortDisplay display;
     char path[PATH_BYTES_MAX];
@@ -464,6 +672,14 @@ static void port_GlBlank(u32 blank) {
             g_run.not_shown++;
         }
     }
+    /* The pictures between the frame on show and the frame the game has
+     * just drawn. It comes last because it leaves one of them in the
+     * colour buffer, which the game draws over next frame: so
+     * `--gl-tween` and `--gl-compare` are not asked for together. */
+    if (g_run.tween > 1 && port_TweenGeneration() != g_run.generation) {
+        g_run.generation = port_TweenGeneration();
+        port_GlTweenPhases(blank);
+    }
     fflush(stderr);
 }
 
@@ -517,6 +733,26 @@ static void port_GlQuit(s32 code) {
                 g_run.compared, g_run.pixels, g_run.different, g_run.close,
                 g_run.worst);
     }
+    if (g_run.tween > 1) {
+        const PortTweenCounts *tween = port_TweenGetCounts();
+
+        fprintf(stderr,
+                "gl run tween pictures %d frames %u drawn %u missed %u "
+                "cuts %u overflowed %u time_us %llu\n",
+                g_run.tween, tween->frames, g_run.tween_drawn,
+                g_run.tween_missed, tween->cuts, tween->overflowed,
+                (unsigned long long)g_run.tween_time);
+        if (g_run.tween_drawn != 0) {
+            fprintf(stderr, "gl run tween per_picture_us %llu\n",
+                    (unsigned long long)(g_run.tween_time / g_run.tween_drawn));
+        }
+        fprintf(
+            stderr,
+            "gl run tween checked %u out_of_order %u point_out_of_line %u "
+            "identity %u identity_pixels %u identity_different %u\n",
+            g_run.checked, g_run.out_of_order, g_run.point_out_of_line,
+            g_run.identity, g_run.identity_pixels, g_run.identity_different);
+    }
     fflush(stderr);
 }
 
@@ -537,6 +773,9 @@ int main(int argc, char **argv) {
     options.is_bilinear = FALSE;
     options.is_exact = FALSE;
     g_run.every = 60;
+    g_run.tween = 1;
+    g_run.strip_at = -1;
+    g_run.strip_blanks = 0;
     port_MakeCrcTable();
     passed[count++] = argv[0];
     for (i = 1; i < argc && count < ARGUMENTS_MAX; i++) {
@@ -568,6 +807,19 @@ int main(int argc, char **argv) {
             }
         } else if (!strcmp(word, "--gl-shots")) {
             g_run.shots = argv[++i];
+        } else if (!strcmp(word, "--gl-tween")) {
+            g_run.tween = atoi(argv[++i]);
+            if (g_run.tween < 1 || g_run.tween > PHASES_MAX) {
+                fprintf(stderr, "rebushido-gl: --gl-tween takes 1 to %d\n",
+                        PHASES_MAX);
+                return PORT_EXIT_USAGE;
+            }
+        } else if (!strcmp(word, "--gl-strip")) {
+            const char *where = argv[++i];
+            const char *comma = strchr(where, ',');
+
+            g_run.strip_at = atoi(where);
+            g_run.strip_blanks = comma != NULL ? atoi(comma + 1) : 1;
         } else if (!strcmp(word, "--filter")) {
             options.is_bilinear = !strcmp(argv[++i], "linear");
         } else if (!strcmp(word, "--draw-distance")) {
@@ -637,6 +889,13 @@ int main(int argc, char **argv) {
     if (problem != NULL) {
         fprintf(stderr, "rebushido-gl: %s\n", problem);
         return PORT_EXIT_FAILED;
+    }
+    if (g_run.tween > 1) {
+        problem = port_TweenStart();
+        if (problem != NULL) {
+            fprintf(stderr, "rebushido-gl: %s\n", problem);
+            return PORT_EXIT_FAILED;
+        }
     }
     g_port_blank_hook = port_GlBlank;
     g_port_quit_hook = port_GlQuit;

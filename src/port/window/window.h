@@ -177,6 +177,20 @@ typedef struct {
  * (port_RemasterScaleFor). */
 #define PORT_RESOLUTION_WINDOW 0
 
+/* How many pictures a second the window draws (docs/PORT.md,
+ * "Remastered", "More pictures a second"). The game steps at the
+ * console's own rate whatever this says, and computes exactly what it
+ * always did: the pictures in between are drawn from the frames it has
+ * already worked out. */
+#define PORT_FRAME_RATE_ORIGINAL 0   /* one picture a blank, as the console */
+#define PORT_FRAME_RATE_DISPLAY (-1) /* as many as the display shows */
+/* The most pictures a blank may be drawn as, whatever the rate asks
+ * for: a guard, so that a display that does not wait cannot hold the
+ * game up by drawing for ever. */
+#define PORT_PICTURES_A_BLANK_MAX 8
+/* A rate a setting may ask for. */
+#define PORT_FRAME_RATE_MAX 1000
+
 typedef struct {
     PortBinding bindings[PORT_BINDINGS_MAX];
     s32 count;
@@ -196,6 +210,7 @@ typedef struct {
     s32 supersample; /* 1 (off), 2 or 4 */
     s32 aspect_w;    /* the picture's shape: 4 by 3, 16 by 9 */
     s32 aspect_h;
+    s32 frame_rate; /* PORT_FRAME_RATE_..., or pictures a second */
 } PortSettings;
 
 /* The number of the key, button or axis of this name, as the window's
@@ -320,7 +335,8 @@ extern void port_CountFps(PortFpsMeter *meter, u32 now, u32 events);
  * vertical blank in a fight, every blank in the main menu), and the
  * pictures shown as parts in a hundred of the console's 59.83. */
 #define PORT_FPS_TEXT_BYTES 32
-extern void port_FormatFps(char *out, u32 shown_tenths, u32 game_tenths);
+extern void port_FormatFps(
+    char *out, u32 shown_tenths, u32 game_tenths, u32 blank_tenths);
 
 /* The digits' shapes: 5 by 7, a column between two. */
 #define PORT_GLYPH_W 5

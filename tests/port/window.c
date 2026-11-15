@@ -1026,17 +1026,23 @@ static void test_Counter(void) {
 
     /* the text: shown, the game's, and the speed against the console's
      * 59.826 */
-    port_FormatFps(text, 598, 299);
+    port_FormatFps(text, 598, 299, 598);
     CHECK(test_StringsEqual(text, "59.8/29.9 100%"));
-    port_FormatFps(text, 600, 300);
+    port_FormatFps(text, 600, 300, 600);
     CHECK(test_StringsEqual(text, "60.0/30.0 100%"));
-    port_FormatFps(text, 0, 0);
+    port_FormatFps(text, 0, 0, 0);
     CHECK(test_StringsEqual(text, "0.0/0.0 0%"));
-    port_FormatFps(text, 299, 150);
+    port_FormatFps(text, 299, 150, 299);
     CHECK(test_StringsEqual(text, "29.9/15.0 50%"));
-    port_FormatFps(text, 1200, 600);
+    port_FormatFps(text, 1200, 600, 1200);
     CHECK(test_StringsEqual(text, "120.0/60.0 201%"));
-    port_FormatFps(text, 9999, 9999);
+    /* more pictures a second than the console's blanks: the speed is
+     * still the blanks' (gl_tween.h) */
+    port_FormatFps(text, 1440, 300, 598);
+    CHECK(test_StringsEqual(text, "144.0/30.0 100%"));
+    port_FormatFps(text, 1440, 300, 299);
+    CHECK(test_StringsEqual(text, "144.0/30.0 50%"));
+    port_FormatFps(text, 9999, 9999, 9999);
     CHECK(port_MeasureText(text) + 4 <= 112); /* the widest fits its box */
 
     /* every letter of the text has a shape of five by seven, no two

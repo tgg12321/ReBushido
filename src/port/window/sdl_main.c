@@ -11,7 +11,7 @@
  *             [--log FILE]
  *             [--graphics original|remastered] [--resolution N]
  *             [--draw-distance original|far|max] [--antialiasing off|2|4]
- *             [--aspect W:H]
+ *             [--aspect W:H] [--frame-rate original|display|N]
  *             [the options of the build without a window]
  *
  * and for the tests, which show and sound nothing:
@@ -53,6 +53,7 @@ static const char g_port_window_usage[] =
     "            [--log FILE] [--graphics original|remastered]\n"
     "            [--resolution N] [--draw-distance original|far|max]\n"
     "            [--antialiasing off|2|4] [--aspect W:H]\n"
+    "            [--frame-rate original|display|N]\n"
     "\n"
     "  --image FILE   your own image of the game's disc: the .cue, or the\n"
     "                 .bin of raw sectors it names. Without it the first\n"
@@ -88,6 +89,13 @@ static const char g_port_window_usage[] =
     "                 averaged down: off, 2 or 4\n"
     "  --aspect W:H   the shape of the picture: 4:3 as the console, 16:9\n"
     "                 for a wider view of the same scene\n"
+    "  --frame-rate W  original: one picture a vertical blank, as the\n"
+    "                 console; display: as many pictures a second as the\n"
+    "                 screen shows; or a number of them. The game steps\n"
+    "                 at the console's own rate whatever this says: a\n"
+    "                 picture between two of its frames is drawn from\n"
+    "                 frames it has worked out already. It needs the\n"
+    "                 remastered picture\n"
     "\n"
     "In the window: Escape, or closing it, ends the program. F11 or\n"
     "Alt+Enter fills the screen and comes back. F2 changes between the\n"
@@ -403,6 +411,8 @@ int main(int argc, char **argv) {
     s32 supersample = -1;
     s32 aspect_w = -1;
     s32 aspect_h = -1;
+    s32 frame_rate = PORT_FRAME_RATE_ORIGINAL;
+    s32 has_frame_rate = 0;
     PortRemasterView view;
     s32 code;
     s32 i;
@@ -489,6 +499,22 @@ int main(int argc, char **argv) {
             }
             aspect_w = atoi(shape);
             aspect_h = atoi(colon + 1);
+        } else if (strcmp(word, "--frame-rate") == 0 && has_value) {
+            const char *how = argv[++i];
+
+            if (strcmp(how, "original") == 0) {
+                frame_rate = PORT_FRAME_RATE_ORIGINAL;
+            } else if (strcmp(how, "display") == 0) {
+                frame_rate = PORT_FRAME_RATE_DISPLAY;
+            } else {
+                frame_rate = atoi(how);
+                if (frame_rate < 1 || frame_rate > PORT_FRAME_RATE_MAX) {
+                    port_Complain("--frame-rate takes original, display or a "
+                                  "number of pictures a second, not ",
+                                  how);
+                }
+            }
+            has_frame_rate = 1;
         } else if (strcmp(word, "--tap-frames") == 0 && has_value) {
             options->tap_frames = argv[++i];
         } else if (strcmp(word, "--tap-window") == 0 && has_value) {
@@ -546,6 +572,9 @@ int main(int argc, char **argv) {
     }
     if (supersample >= 0) {
         g_port_settings.supersample = supersample;
+    }
+    if (has_frame_rate) {
+        g_port_settings.frame_rate = frame_rate;
     }
     if (aspect_w > 0 && aspect_h > 0) {
         g_port_settings.aspect_w = aspect_w;

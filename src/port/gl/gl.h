@@ -63,6 +63,26 @@ extern void port_GlGetOptions(PortGlOptions *options);
 /* Whether the backend is there and its context is current. */
 extern s32 port_GlIsStarted(void);
 
+/* The four functions the decoder calls, as this file has them. The
+ * renderer that draws a frame again between two of the game's puts
+ * itself in front of these and calls them itself (gl_tween.c). */
+extern const PortRemasterBackend *port_GlBackend(void);
+
+/* A rectangle of video memory into the mirror the card reads texels
+ * from, and nothing else: no batch is flushed and nothing is drawn.
+ * `port_GlWroteVram` is the game's own write, which is also drawn into
+ * the colour buffer; this is for a caller that has changed what
+ * `g_port_vram` holds and has to put it back (gl_tween.c). */
+extern void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h);
+
+/* The counts of the frame being drawn (vertices, draws, pixels of the
+ * mirror sent), three words, kept aside and put back: a picture drawn
+ * between two of the game's frames is not one of them and is not
+ * counted with them (gl_tween.c). */
+#define PORT_GL_COUNTS 3
+extern void port_GlSaveCounts(u32 *three);
+extern void port_GlLoadCounts(const u32 *three);
+
 /* The display's rectangle of the colour buffer, as 0xFFRRGGBB a pixel,
  * a row after a row from the top, into `out`: at most `room` pixels.
  * `out_w` and `out_h` are what it wrote. 0 if there is nothing to
