@@ -118,6 +118,26 @@ Nothing of SDL is in this repository.
 `python3 tools/port_sdl_build.py --host [--windows]` says whether the
 machine can build it, and what is missing if not.
 
+## The remastered renderer, with nothing shown
+
+The port's remastered picture ([`docs/PORT.md`](docs/PORT.md),
+"Remastered") is drawn by a graphics card, and it is proved by a
+program that uses no window and no display at all: it takes an OpenGL
+3.3 core context from EGL's surfaceless platform and draws into a
+framebuffer object, so a machine with no card draws it with Mesa's
+software driver.
+
+```bash
+python3 tools/port_gl_build.py                  # build/port-gl/rebushido-gl
+python3 tools/port_gl_prove.py --image "Bushido Blade 2 (USA).cue"
+```
+
+On Ubuntu it needs `lib32gcc-13-dev` and 32-bit EGL (`libegl-dev:i386`),
+which the window's own packages bring; `mesa-libgallium` is the software
+driver. No check uses it, and nothing of it is in `make port` or in the
+build with a window. `python3 tools/port_gl_build.py --host` says
+whether the machine can build it.
+
 ## What is checked
 
 GitHub Actions runs eleven checks on every push and pull request
