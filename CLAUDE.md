@@ -90,6 +90,13 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy`: no visible window, sound
   or dialog. Never install `gcc-multilib` in the build's WSL: it removes
   the MIPS cross compiler.
+- The window's remastered picture (OpenGL 3.3, F2, `src/port/gl/`) is
+  proved with `SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy
+  LIBGL_ALWAYS_SOFTWARE=1` (the dummy driver has no OpenGL);
+  `--tap-window FOLDER` writes the window's own pixels.
+- `same_as_original` failed once in a full play-test run (2026-11-15)
+  and passed three times alone on the same tree: rerun it alone before
+  reading a failure of it as a regression.
 - Where the original reads or writes through a pointer it never set
   (address 0), the port's code is under `RB_PORT` with the console's
   value explained in a comment; the table is in `docs/PORT.md`,
