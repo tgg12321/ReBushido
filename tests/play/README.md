@@ -25,7 +25,7 @@ python tools/playtest.py [name...]          # the tests alone, with the discs al
 python tools/playtest.py --list
 ```
 
-About four and a half minutes for the ten tests, after up to two minutes
+About five minutes for the eleven tests, after up to two minutes
 of building discs; the tool holds a run to five minutes and the suite to
 ten. It prints a table and exits 1 if a test failed:
 
@@ -38,12 +38,13 @@ ten. It prints a table and exits 1 if a test failed:
   gte_model        ok        79s
   options_no_card  ok         9s
   options_page     ok        14s
+  port_game        ok        23s
   quickboot        ok         7s
   same_as_original ok        58s
   vanish           ok        19s
   emulator processes left running: 0
-  pictures and logs: build/playtest/<test>/<disc>/   (279s in all)
-OK: play tests: 10 passed, 0 skipped
+  pictures and logs: build/playtest/<test>/<disc>/   (302s in all)
+OK: play tests: 11 passed, 0 skipped
 ```
 
 What it needs, and where it looks:
@@ -73,8 +74,10 @@ tests, each with a table of its names (`.sym`) beside it:
   off and with it on (`QB_BUGFIXES`): the vanisher with a naginata
   against Utamaru, played by the CPU, at the lighthouse (`PLAYTEST_BUGS`).
 
-And one program that is no disc: `GteProbe.exe` (`make gte-probe`), which
-needs no retail image ("The GTE probe").
+And two programs that are no disc: `GteProbe.exe` (`make gte-probe`), which
+needs no retail image ("The GTE probe"), and the native port,
+`build/port/rebushido` (`make port`), which reads the retail image itself
+("The port as a disc").
 
 A test whose disc is not there is skipped, saying which.
 
@@ -102,6 +105,7 @@ retail program has none.
 | `bugfixes_fight` | ReBushido | Right on the options page turns Bugfixes on, Start leaves it and the setting is written to the card; then the presses of `same_as_original`: the opening, the menus, a versus fight to a kill, the replay, the menu after. The setting is still on at the end and nothing crashed |
 | `first_frame_sweep` | the bugs' fight, off and on | On the first fighter's first frame the hit tests' scratch has the sweep of its naginata's shaft: with the setting off the shaft's far end was swept from nowhere (0, 0, 0: the first fight since power on left nothing else), with it on from where it is |
 | `vanish` | the bugs' fight, off and on | The CPU strikes the vanisher. With the setting off it comes back at (4000, -12000), another stage's start position, and two seconds later has fallen out of the stage; with it on it comes back at (3400, 7400), where it started, and stands |
+| `port_game` | ReBushido, then the native port | The port is the game: the same presses on the emulator and on the port, from power on through the options page, the top menu and character select into a versus fight and a second of it. At each of six checkpoints every value of `state.toml` but the count of frames shown is the same on both, the random numbers among them, and so is the memory the game loaded from the disc: the effects' tables and 256 KB of the stage ("The port as a disc") |
 | `gte_model` | the GTE probe, no disc | The native port's C does what the PlayStation's coprocessor and assembly do: 125,800 made-up cases come out the same on the emulator and on the host ("The GTE probe") |
 
 ## The GTE probe
@@ -160,6 +164,43 @@ After a change to the port's C or to the cases, the numbers the host
 tests hold on every push (`AGREED` in `tests/port/gte_vectors.py`,
 `asm_vectors.py` and `render_vectors.py`) are no longer the C's: run this test, and when it
 passes copy the new numbers in, as those files say.
+
+## The port as a disc
+
+The native port ([`docs/PORT.md`](../../docs/PORT.md)) is the game's C
+built for a PC. It has no picture, sound or pads yet, but it follows a
+plan: the same file the emulator's script is given, and it writes the same
+log. So a test names it as a disc, `port`, and the tool runs
+`build/port/rebushido --image <the retail .cue> --plan <plan> --out
+<folder>` in the emulator's place (through `wsl` when the tool runs on
+Windows). No emulator starts for that run.
+
+`port_game` runs the ReBushido disc on the emulator and then the port,
+and `compare` holds the second to the first. What such a test has to do
+differently from one on two discs:
+
+- `cards = "none"`: the port has no memory card, so the emulator is given
+  none either.
+- No pictures, and no `frame`: the port's vertical blanks are not the
+  console's. It shows no movie and reads the disc in no time, so it
+  reaches every checkpoint sooner (the fight's first frame at blank 2,340
+  where the emulator is at 4,278). The game's own `frames` differs for
+  the same reason and is not compared.
+- `compare` may name `dump`: each piece of memory the test's `[dump]`
+  names is then compared between the two runs, byte for byte, at the end
+  of the run. The two files are in the runs' folders and nowhere else.
+- A press is timed from a checkpoint, in blanks, and the game takes a
+  frame of two blanks: a press at an odd number of blanks after a
+  checkpoint can fall into the next frame on one and not on the other,
+  because the emulator sees a checkpoint when the frame's work is done
+  and the port, where that work takes no time, a blank earlier or later.
+  `port_game` stops before the first such press. (With the fight's
+  presses one blank earlier the port follows the emulator's fight of
+  `same_as_original` for 330 blanks more; docs/PORT.md, "What is left".)
+
+The port's own output is `port.log` in the run's folder; the lines of
+`run.log` that begin `stub` are what the game asked for that the port
+does not do yet, with how often.
 
 ## What a run is
 

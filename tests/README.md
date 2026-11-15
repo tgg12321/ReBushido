@@ -93,8 +93,11 @@ The port's own tests are `tests/port/NAME.c`, named `port/NAME`:
 | `port/gte_vectors` | the GTE on the probe's 84,000 made-up cases | the numbers written down when the emulator's GTE last made the same of them |
 | `port/asm_vectors` | the C beside the assembly on the probe's 32,000 | the numbers written down when the assembly itself last made the same of them, on the emulator |
 | `port/render_vectors` | the renderer's C on the probe's 9,800 made-up meshes and queues | the numbers written down when the renderer's listings last left the same in memory and in the GTE, on the emulator |
+| `port/disc` | the reader of a disc image (`src/port/disc.c`) and Sony's libcd on top of it (`src/port/cd.c`) | an image of forty sectors made up in memory, none of the game's: positions to sectors and back, the image by its `.bin` and by its `.cue`, every sector's bytes, data across sectors, a sector of sound, one with no sync, one that says it is another, the end of the image; then a read as the game's disc code asks for one, sector by sector in a callback |
+| `port/platform` | the port's clock, pads, events, primitives and printf (`src/port/`) | cases by hand: `VSync` as Sony's waits, the frame's wait and its count of `rand()` calls, a pad's packet, an event set and asked, the words of a mode, area and offset primitive, formats and what they print |
+| `port/memory` | the list of fixed addresses in `src/port/memory.c` | the game's source itself: every address written into it is memory the port maps, above the program, and in the list |
 
-The last three are the host's half of the play test `gte_model`
+`port/gte_vectors`, `asm_vectors` and `render_vectors` are the host's half of the play test `gte_model`
 ([`play/README.md`](play/README.md), "The GTE probe"): the emulator is
 not there on every push, so what is held is that the C still gives what
 it gave when the emulator last agreed. A test's Python side may name

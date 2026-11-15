@@ -42,6 +42,10 @@ No dates.
    maths routines and the renderer, 119 of the 138 functions that are
    assembly (the other 19 need no C). Then Sony's libraries (graphics, sound, disc, pad, memory card)
    answered by PC code: the menu in a window, then a fight, then sound.
+   The second and third stages are done too: the port is a program
+   (`make port`) that reads the player's disc image and runs the game
+   through its menus into a fight, with no picture or sound yet, and is
+   the emulator's game value for value up to the fight's first second.
    The game's code stays C.
 7. **The picture.** A wide picture, high resolution and a high frame rate
    on the port, which is what "Graphics: Remastered" will mean. On the

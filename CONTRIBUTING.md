@@ -20,7 +20,7 @@ work.
 ## Before you open a pull request
 
 - `wsl bash tools/build.sh checks` (or `make checks` inside WSL or Linux)
-  must print `OK: all 10 checks pass` on this branch (`OK: all 7 checks
+  must print `OK: all 11 checks pass` on this branch (`OK: all 7 checks
   pass` on `decomp`). GitHub Actions runs the same checks.
 - If you have your own retail image and PCSX-Redux, run the play tests
   as well when the change is to the game: `wsl bash tools/build.sh

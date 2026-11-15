@@ -50,7 +50,7 @@ Set up as [`BUILD.md`](../BUILD.md) says; ReBushido needs nothing more.
 bash tools/build.sh check             # the matching build, as on main
 bash tools/build.sh rebushido         # the ReBushido build; ends with "OK: rebushido fits"
 bash tools/build.sh rebushido-disc    # and a disc image to play (needs your retail image)
-bash tools/build.sh checks            # every check; "OK: all 10 checks pass"
+bash tools/build.sh checks            # every check; "OK: all 11 checks pass"
 bash tools/build.sh quickboot-disc    # a disc that boots straight into a fight (a developer's tool)
 bash tools/build.sh playtest          # the play tests, in an emulator with no window
 bash tools/build.sh rebushido-patch   # a release's patch, into build/release/ (needs your retail image)
@@ -531,8 +531,8 @@ in ReBushido's side is marked `FAKE`: it has no bytes to match.
 
 ## How it is tested
 
-`bash tools/build.sh checks` runs ten checks and prints a summary; GitHub
-Actions runs the same ten on every push to `main` and on pull requests.
+`bash tools/build.sh checks` runs eleven checks and prints a summary; GitHub
+Actions runs the same eleven on every push to `main` and on pull requests.
 
 The first seven are `decomp`'s, on the source with every switch off: the
 counts, the lint, `modern`, the tests, the game's SHA1, the overlay's SHA1
@@ -540,7 +540,8 @@ and `shift`. The SHA1 is the one that matters most here: a change that
 reaches the original, through a missing `#if` or a moved original line,
 fails it.
 
-The last three are ReBushido's:
+The eleventh is the native port's: `make port` fails when the port does
+not link ([`PORT.md`](PORT.md)). The three before it are ReBushido's:
 
 | Check | Command | Fails when |
 |---|---|---|
@@ -562,7 +563,7 @@ None of those ten runs the game. The play tests do
 bash tools/build.sh playtest      # from Windows: wsl bash tools/build.sh playtest
 ```
 
-builds the ReBushido disc and three quick-boot discs and runs ten tests in an
+builds the ReBushido disc and three quick-boot discs and runs eleven tests in an
 emulator (PCSX-Redux) with no window, pressing the pads by script and
 reading the game's memory by the names of the source:
 
@@ -577,6 +578,7 @@ reading the game's memory by the names of the source:
 | `bugfixes_fight` | With Bugfixes turned on at the options page: the opening, the menus, a versus fight to a kill, the replay and the menu after, with no crash |
 | `first_frame_sweep` | A naginata's first frame sweeps its shaft from a stale place; with Bugfixes on, from where it is |
 | `vanish` | Off the shrine's stage the vanisher, struck, comes back at another stage's place and falls out of the stage; with Bugfixes on it comes back where it started and stands |
+| `port_game` | The native port is the game: the same presses on the emulator and on the port, from power on into a versus fight; at six checkpoints every watched value but the count of frames shown is the same, and so is the memory loaded from the disc ([`PORT.md`](PORT.md)) |
 | `gte_model` | The native port's GTE in C, and its C beside the assembly, make of 125,800 made-up cases what the emulator's GTE and the assembly make of them ([`PORT.md`](PORT.md)). It runs a program of the tests' own with no disc |
 
 They are not among the checks and GitHub Actions does not run them: they

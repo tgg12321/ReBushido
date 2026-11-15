@@ -74,11 +74,12 @@ a change there has to pass both byte checks.
 
 ## What is checked
 
-GitHub Actions runs ten checks on every push and pull request
+GitHub Actions runs eleven checks on every push and pull request
 (`.github/workflows/build.yml`), each a step of its own, and one that fails
 does not stop the rest: `decomp`'s seven, on the source with every switch of
-ReBushido off, and three for the ReBushido build. All of them locally, in
-the same order, with a summary at the end (about three minutes):
+ReBushido off, three for the ReBushido build, and one for the native port.
+All of them locally, in the same order, with a summary at the end (about
+three and a half minutes):
 
 ```bash
 bash tools/build.sh checks        # or `make checks`; from Windows, `wsl bash tools/build.sh checks`
@@ -96,8 +97,9 @@ bash tools/build.sh checks        # or `make checks`; from Windows, `wsl bash to
 | ReBushido, the build | `make rebushido` | the ReBushido build does not compile, link or fit ([`docs/REBUSHIDO.md`](docs/REBUSHIDO.md)) |
 | ReBushido, tests | `make rebushido-test` | a host test fails with ReBushido's master switch on; the native port's C is built and tested in this run ([`docs/PORT.md`](docs/PORT.md)) |
 | ReBushido, modern | `make rebushido-modern` | the host's `gcc` finds something serious and new with the master switch on, the port's C included |
+| The port | `make port` | the native port does not link: a name the game's C uses is defined nowhere, or one of the port's own files has a warning ([`docs/PORT.md`](docs/PORT.md)) |
 
-The first four and the last two need no build of the game and nothing but `python3` and the
+The first four and the last three need no build of the game and nothing but `python3` and the
 host's `gcc`: no virtualenv, no 32-bit packages (`-m32` is used, but nothing
 is linked against a library). CI has no disc, so there two of the thirteen
 tests are skipped, saying so, and two more do the part that needs none; with

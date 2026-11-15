@@ -1,0 +1,95 @@
+about = "The native port against the emulator: the same presses on the ReBushido disc and on the port, from power on into a versus fight."
+discs = ["rebushido", "port"]
+# The port has no memory card yet, so neither has the emulator.
+cards = "none"
+limit = 9000
+seconds = 240
+
+# The presses of same_as_original, as far as the fight's first frame: Start
+# on the options page with nothing changed, the opening movie, the title,
+# the memory card's message; down three rows of the top menu to Vs. Mode;
+# each pad takes the fighter and the weapon under its cursor, then the
+# first pad takes the stage.
+input = [
+    "page+30 START",
+    "movie+300 START", "movie+600 CROSS", "movie+900 START",
+    "menu+30 DOWN", "menu+60 DOWN", "menu+90 DOWN", "menu+150 CROSS",
+    "select+280 CROSS", "select+320 P2 CROSS", "select+580 CROSS", "select+620 P2 CROSS",
+    "select+1180 CROSS",
+]
+
+# What must be the same on the port as on the emulator at every checkpoint
+# (docs/PORT.md, "How it is proved"): every value of state.toml but one.
+# `frames`, the frames shown since power on, is left out because the
+# port's time is not the console's: it shows no movie, and a load takes it
+# fewer frames. The game's random numbers are among what is compared. Then
+# the memory the game loaded from the disc, byte for byte ([dump]).
+compare = [
+    "screen", "screen_frames", "frame_period", "menu_page", "rng",
+    "mode", "stage", "loaded_stage", "winner", "defeat_frames", "wins_p1", "wins_p2",
+    "config_roster_p1", "config_roster_p2", "config_weapon_p1", "config_weapon_p2",
+    "config_cpu_p2", "config_stage", "config_mode",
+    "p1_cpu", "p1_character", "p1_roster", "p1_weapon", "p1_frames_alive", "p1_defeated",
+    "p1_x", "p1_y", "p1_z", "p1_off_arm_ok", "p1_leg_wounds", "p1_arm_wounds", "p1_body_wounds",
+    "p1_vanish_count",
+    "p2_cpu", "p2_character", "p2_roster", "p2_weapon", "p2_frames_alive", "p2_defeated",
+    "p2_x", "p2_y", "p2_z", "p2_off_arm_ok", "p2_leg_wounds", "p2_arm_wounds", "p2_body_wounds",
+    "p2_vanish_count",
+    "rb_page", "rb_row", "rb_card", "rb_save", "rb_bugfixes", "rb_graphics",
+    "dump",
+]
+
+# What the game has read from the disc by the fight's first frame, where
+# the game put it (include/sys.h): the effects' tables and textures, as far
+# as the movie player's work area, which only the emulator's movie has
+# written; and the first 256 KB of the load area, which hold the stage.
+# Compared between the two runs and kept nowhere. (The common sound bank
+# at 0x8010DB00 is not here: Sony's library fills in words of its header
+# as it opens it, and the port's sound is a stub. docs/PORT.md.)
+[dump]
+effects = "0x8010E800:38912"
+load_area = "0x80118800:262144"
+
+# The options page is up, and has found no card.
+[[checkpoint]]
+name = "page"
+when = "rb_page == RB_PAGE_UP"
+within = 2000
+shot = false
+expect = ["rb_card == RB_CARD_NONE", "rb_bugfixes == 0", "rb_graphics == RB_GRAPHICS_ORIGINAL"]
+
+[[checkpoint]]
+name = "movie"
+when = "screen == SCREEN_MOVIE"
+within = 1000
+shot = false
+
+[[checkpoint]]
+name = "menu"
+when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && screen_frames >= 120"
+within = 3000
+shot = false
+expect = ["frame_period == 1", "loaded_stage == -1"]
+
+[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 1500
+shot = false
+
+# The fight's first frame: both fighters are set up and stand where the
+# stage puts them.
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+within = 4000
+shot = false
+expect = ["mode == FIGHT_MODE_VS", "p1_cpu == 0", "p2_cpu == 0", "loaded_stage == stage"]
+
+# A second of the fight with no button pressed: thirty frames of both
+# fighters, and of everything the fight runs.
+[[checkpoint]]
+name = "fight_1s"
+after = 60
+shot = false
+expect = ["p1_frames_alive == 30", "p2_frames_alive == 30", "winner == FIGHT_NOBODY"]

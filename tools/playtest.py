@@ -33,6 +33,12 @@ source. For the retail disc they are config/symbol_addrs.txt; for a built
 disc, the table written beside it when it was built (build/play/NAME.sym):
 
     python3 tools/playtest.py --symbols build/rebushido/rebushido.elf build/play/ReBushido.sym
+
+The disc `port` is no disc and no emulator: it is the native port
+(docs/PORT.md), build/port/rebushido, a Linux program that reads the retail
+image itself. It is given the same plan and writes the same log, so a test
+with `discs = ["rebushido", "port"]` holds the port to the emulator. From
+Windows it is run through `wsl`.
 """
 import argparse
 import ast
@@ -56,6 +62,11 @@ RUNNER = os.path.join(REPO, "tools", "play", "runner.lua")
 EMULATOR = os.environ.get("REBUSHIDO_EMULATOR") or os.path.join(REPO, "tmp", "pcsx-redux", "pcsx-redux.main")
 RETAIL_CUE = os.environ.get("REBUSHIDO_RETAIL") or os.path.join(REPO, "Bushido Blade 2 (USA).cue")
 RETAIL_SYMBOLS = os.path.join(REPO, "config", "symbol_addrs.txt")
+# The native port: its program, and the names tools/port_build.py wrote.
+PORT_PROGRAM = os.path.join(REPO, "build", "port", "rebushido")
+PORT_SYMBOLS = PORT_PROGRAM + ".sym"
+# What the port exits with when the game crashed (include/port_host.h).
+PORT_EXIT_CRASH = 70
 
 # Where the program is loaded.
 PROGRAM_START = 0x80010000
@@ -178,6 +189,16 @@ def header_names():
 
 # ---- discs and their names ----
 
+def read_port_symbols(path):
+    """The names of the native port's program: its `sym ADDRESS KIND SIZE
+    NAME` lines."""
+    symbols = {}
+    with open(path, encoding="utf-8") as f:
+        for m in re.finditer(r"^sym ([0-9a-f]+) \w \d+ (\w+)$", f.read(), re.M):
+            symbols.setdefault(m.group(2), int(m.group(1), 16))
+    return symbols
+
+
 def read_symbols(path):
     symbols = {}
     with open(path, encoding="utf-8") as f:
@@ -208,12 +229,21 @@ class Disc:
     """A disc image a test names: `retail`, or NAME for build/play/NAME.cue
     (`rebushido` is ReBushido, `quickboot` QuickBoot: any case). Where
     build/play/ has NAME.exe and no NAME.cue it is a program the emulator
-    loads with no disc (`gteprobe`, the GTE probe)."""
+    loads with no disc (`gteprobe`, the GTE probe). `port` is the native
+    port's program, which is run in the emulator's place."""
 
     def __init__(self, name):
         self.name = name
         self.settings = {}
         self.exe = None
+        self.port = name == "port"
+        if self.port:
+            for path in (PORT_PROGRAM, PORT_SYMBOLS):
+                if not os.path.exists(path):
+                    raise Skip("no %s (not built: make port)" % os.path.relpath(path, REPO).replace("\\", "/"))
+            self.cue = PORT_PROGRAM
+            self.symbols = read_port_symbols(PORT_SYMBOLS)
+            return
         if name == "retail":
             self.cue, symbols, how = RETAIL_CUE, RETAIL_SYMBOLS, "your own image of the disc; REBUSHIDO_RETAIL names it"
         else:
@@ -473,6 +503,84 @@ def run_labels(discs):
     return labels
 
 
+def read_log(run, log_path, order, folder):
+    """What a run's log says, into `run`. Returns how the run ended: done,
+    limit, miss, crash, error, or None if the log does not say."""
+    ended = None
+    if os.path.exists(log_path):
+        with open(log_path, encoding="utf-8", errors="replace") as f:
+            for line in f.read().splitlines():
+                word = line.split(" ")
+                if word[0] == "cp" and len(word) == 3 + len(order):
+                    run.reached[word[1]] = (int(word[2]), dict(zip(order, (int(v) for v in word[3:]))))
+                    run.frames = int(word[2])
+                elif word[0] == "shot" and len(word) == 5:
+                    run.pictures[word[1]] = convert_shot(folder, word[1], int(word[2]), int(word[3]), int(word[4]))
+                elif word[0] in ("done", "limit"):
+                    ended = word[0]
+                elif word[0] == "miss":
+                    ended = "miss"
+                    run.problems.append("checkpoint `%s` was not reached (gave up at blank %s)" % (word[1], word[2]))
+                elif word[0] == "crash":
+                    ended = "crash"
+                    run.problems.append("the game crashed: " + " ".join(word[1:]))
+                elif word[0] == "error":
+                    ended = "error"
+                    run.fatal = "tools/play/runner.lua failed: " + " ".join(word[1:])
+                elif word[0] == "set" and word[-1] != "ok":
+                    run.problems.append("the emulator did not take a setting: " + " ".join(word[1:]))
+    return ended
+
+
+def host_path(path):
+    """A path of the checkout as the port's program is given it: from the
+    checkout's folder, which is where it is started."""
+    relative = os.path.relpath(path, REPO)
+    if relative.startswith(".."):
+        raise Skip("the port is given paths inside the checkout, and %s is not" % path)
+    return relative.replace("\\", "/")
+
+
+def run_port(test, folder, log_path, port_log):
+    """The native port in the emulator's place: the same plan, the same
+    log. Returns the program's exit code, None if it was stopped at the
+    time limit."""
+    cmd = ["./" + host_path(PORT_PROGRAM), "--image", host_path(RETAIL_CUE),
+           "--plan", host_path(os.path.join(folder, "plan.txt")), "--out", host_path(folder)]
+    if os.name == "nt":
+        cmd = ["wsl", "-e"] + cmd
+    with open(log_path, "wb") as out, open(port_log, "wb") as err:
+        try:
+            return subprocess.run(cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
+                                  timeout=test.seconds).returncode
+        except subprocess.TimeoutExpired:
+            return None
+        except OSError as e:
+            raise Skip("the port's program does not run here (%s)" % e)
+
+
+def run_on_port(test, run, order, folder):
+    """A run on the native port: what its log says, and how it ended."""
+    if test.cards != "none":
+        raise TestError("the port has no memory card yet: a test on it says `cards = \"none\"`")
+    log_path = os.path.join(folder, "run.log")
+    port_log = os.path.join(folder, "port.log")
+    start = time.time()
+    code = run_port(test, folder, log_path, port_log)
+    run.seconds = time.time() - start
+    ended = read_log(run, log_path, order, folder)
+    with open(port_log, encoding="utf-8", errors="replace") as f:
+        said = [line for line in f.read().splitlines() if line.startswith("rebushido:")]
+    if code is None:
+        run.problems.append("stopped at the time limit of %d seconds (blank %d)" % (test.seconds, run.frames))
+    elif code == PORT_EXIT_CRASH or (code != 0 and ended != "miss"):
+        run.problems.append("the port stopped (exit code %d): %s" % (code, " / ".join(said[:4]) or "it said nothing"))
+    elif ended is None:
+        run.problems.append("the port ended before the run did; see %s"
+                            % os.path.relpath(port_log, REPO).replace("\\", "/"))
+    return run
+
+
 def run_on_disc(test, disc, names, launch, number=1, label=None, cards_from=None):
     """Run `number` of the test (from 1), on `disc`, into the folder
     `label`. `cards_from` is the folder of the run whose memory cards this
@@ -497,6 +605,9 @@ def run_on_disc(test, disc, names, launch, number=1, label=None, cards_from=None
     with open(start, "w", encoding="utf-8", newline="\n") as f:
         f.write("PLAYTEST_DIR = [==[%s]==]\ndofile([==[%s]==])\n"
                 % (folder.replace("\\", "/") + "/", RUNNER.replace("\\", "/")))
+
+    if disc.port:
+        return run_on_port(test, run, order, folder)
 
     running = launch.emulators_running()
     if running:
@@ -525,29 +636,7 @@ def run_on_disc(test, disc, names, launch, number=1, label=None, cards_from=None
     result = launch.run(cmd, folder, emulator_log, test.seconds, watch)
     run.seconds = result.seconds
 
-    ended = None
-    if os.path.exists(log_path):
-        with open(log_path, encoding="utf-8", errors="replace") as f:
-            for line in f.read().splitlines():
-                word = line.split(" ")
-                if word[0] == "cp" and len(word) == 3 + len(order):
-                    run.reached[word[1]] = (int(word[2]), dict(zip(order, (int(v) for v in word[3:]))))
-                    run.frames = int(word[2])
-                elif word[0] == "shot" and len(word) == 5:
-                    run.pictures[word[1]] = convert_shot(folder, word[1], int(word[2]), int(word[3]), int(word[4]))
-                elif word[0] in ("done", "limit"):
-                    ended = word[0]
-                elif word[0] == "miss":
-                    ended = "miss"
-                    run.problems.append("checkpoint `%s` was not reached (gave up at blank %s)" % (word[1], word[2]))
-                elif word[0] == "crash":
-                    ended = "crash"
-                    run.problems.append("the game crashed: " + " ".join(word[1:]))
-                elif word[0] == "error":
-                    ended = "error"
-                    run.fatal = "tools/play/runner.lua failed: " + " ".join(word[1:])
-                elif word[0] == "set" and word[-1] != "ok":
-                    run.problems.append("the emulator did not take a setting: " + " ".join(word[1:]))
+    ended = read_log(run, log_path, order, folder)
     with open(emulator_log, encoding="utf-8", errors="replace") as f:
         for line in f.read().splitlines():
             if LUA_FAILURE.search(line) and not run.fatal:
@@ -568,6 +657,27 @@ def run_on_disc(test, disc, names, launch, number=1, label=None, cards_from=None
     elif result.code != 0 and not run.fatal:
         run.problems.append("the emulator's exit code was %s" % result.code)
     return run
+
+
+def compare_dumps(test, first, run, first_label, label):
+    """The pieces of memory two runs wrote at their ends ([dump]), byte for
+    byte. Nothing of them is kept but the two files in the runs' folders."""
+    problems = []
+    for name in sorted(test.dump):
+        pieces = []
+        for folder in (first.folder, run.folder):
+            path = os.path.join(folder, name + ".bin")
+            if not os.path.isfile(path):
+                problems.append("%s was not written" % os.path.relpath(path, REPO).replace("\\", "/"))
+                break
+            with open(path, "rb") as f:
+                pieces.append(f.read())
+        if len(pieces) == 2 and pieces[0] != pieces[1]:
+            differing = [i for i, (a, b) in enumerate(zip(*pieces)) if a != b]
+            problems.append("the memory `%s` on %s is not that on %s: %d of %d bytes differ, the first at +0x%X"
+                            % (name, first_label, label, len(differing) + abs(len(pieces[0]) - len(pieces[1])),
+                               len(pieces[0]), differing[0] if differing else min(map(len, pieces))))
+    return problems
 
 
 def check_test(test, discs, runs, names):
@@ -613,6 +723,8 @@ def check_test(test, discs, runs, names):
             if compare == ["*"]:
                 compare = sorted(test.state) + ["frame", "picture"]
             for name in compare:
+                if name == "dump":
+                    continue  # the pieces of memory: once, below
                 if name == "frame":
                     if test.frames_from is not None and order.index(cp.name) <= order.index(test.frames_from):
                         continue
@@ -629,10 +741,13 @@ def check_test(test, discs, runs, names):
                         continue
                     a, b = first.reached[cp.name][1][name], run.reached[cp.name][1][name]
                 else:
-                    raise TestError("compare: `%s` is not a name of [state], `frame`, `picture` or `*`" % name)
+                    raise TestError("compare: `%s` is not a name of [state], `frame`, `picture`, `dump` or `*`"
+                                    % name)
                 if a != b:
                     problems.append("at `%s`, %s is %d on %s and %d on %s"
                                     % (cp.name, name, a, labels[0], b, label))
+        if "dump" in test.compare:
+            problems += compare_dumps(test, first, run, labels[0], label)
     return problems
 
 

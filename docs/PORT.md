@@ -9,8 +9,13 @@ ReBushido PlayStation program.
 
 This page is what stands between the source and a PC, counted; what has
 been done about it; the stages that are left; and the decisions that are
-the owner's. **No port runs yet.** What exists is the first stage, whole:
-C for the assembly, with its proof.
+the owner's. **The port is a program now, with nothing to see or hear:**
+it links, gives the game the PlayStation's memory, reads the player's
+disc image, and runs the game's own `main` through start-up, the options
+page, the menus and character select into a fight, with no picture, no
+sound and no pads but a script's. Up to the fight's first second it is
+held to the emulator, value for value. Stages 1 to 3 of the seven below
+are done.
 
 ## Where it stands
 
@@ -19,18 +24,22 @@ C for the assembly, with its proof.
 | The GTE, the PlayStation's geometry coprocessor, in C | done: `src/port/gte.c`, every operation the hardware has |
 | The game's GTE instructions (Sony's macros) as calls into it | done, by `tools/port_gte_macros.py` |
 | C beside the assembly functions | 119 of 138: Sony's libgte (48), the game's maths (20) and the renderer (51). The other 19 need none (below) |
-| BIOS calls | named below; nothing written |
-| Sony's libraries, a window, sound, the disc | not begun |
+| A program that links | done: `make port` builds `build/port/rebushido` from the game's C, with no name missing ("The program") |
+| BIOS calls and Sony's libraries | every one the game calls is defined: done for real where it only works on memory or the port has the thing (the disc, time, the pads' packets, events), a stub that is counted where it has not (the picture, sound, the memory card, the link, the movie) |
+| Memory | done: the RAM and the scratchpad at the console's addresses ("Memory") |
+| The disc | done for data: sectors from the player's image, under the game's own disc code ("The disc"). Its sound is a stub |
+| A window, the picture, sound, real pads, the card, movies | not begun |
 
 ## The switch
 
 `RB_PORT` (`include/rebushido.h`) says "this is the port" at compile time.
 It is `(REBUSHIDO && RB_PORT_BUILD)`: off in every PlayStation build, on
-where a build gives `RB_PORT_BUILD`. Today that is the two builds for the
-host: `make rebushido-test` and `make rebushido-modern`
-(`tests/run.py --rebushido`, `tools/modern/check.py --rebushido`). So the
-checks that run on every push compile and run the port's C, and the
-checks with the switches off still see the source exactly as before.
+where a build gives `RB_PORT_BUILD`. That is the three builds for the
+host: `make port`, the program itself, and `make rebushido-test` and
+`make rebushido-modern` (`tests/run.py --rebushido`,
+`tools/modern/check.py --rebushido`). So the checks that run on every
+push compile, link and test the port's C, and the checks with the
+switches off still see the source exactly as before.
 
 Where a function is assembly, the port's C sits beside it and the
 original's line stays as it is:
@@ -50,6 +59,180 @@ and its names are `port_VerbNoun`, `g_port_noun`, `PortType`,
 are: the `Makefile` leaves `src/port/` out of every PlayStation build.
 Its tests are `tests/port/`.
 
+## The program
+
+```
+make port                                   # in WSL or on Linux; wsl bash tools/build.sh port
+build/port/rebushido --image "Bushido Blade 2 (USA).cue" --frames 600 --trace
+```
+
+`tools/port_build.py` compiles every file of `src/main/` and
+`src/rebushido/` (quick boot's aside) with the port's switch on, as the
+host tests compile them, the part of Sony's library code the next
+section names, and `src/port/`, and links them into
+`build/port/rebushido`. It is a 32-bit x86 Linux program linked with no
+C library, exactly as the host tests are, because a 32-bit C library is
+not installed on the machines that build this (nor on GitHub's): it
+needs the host's `gcc` with `-m32` and `python3`, and where that `gcc`
+cannot make such a program the build says so and fails. The game's files
+are compiled with their warnings off, which `make rebushido-modern`
+reads; the port's own with that check's warnings as errors, less
+`-Wstrict-prototypes`, which Sony's headers themselves fail.
+
+Everything the program asks of the operating system goes through
+`include/port_host.h`: a dozen functions (write, open, read at an
+offset, memory at an address, catch a fault, exit). `src/port/
+host_linux.c` defines them on the kernel's own calls.
+`src/port/host_windows.c` defines them on kernel32 and has **not been
+built or run**. When the port takes SDL for its window it will need a C
+library, and that file is where it changes.
+
+The program's options: `--image` (the `.cue` or the `.bin`), `--frames
+N` (end after N vertical blanks; 3,600 if nothing says), `--trace` (the
+values of `tests/play/state.toml` at every blank where one changed),
+`--plan FILE` (a play test's plan: presses, checkpoints, a limit),
+`--dump NAME=ADDRESS:BYTES` and `--out FOLDER` (memory to a file at the
+end). It ends by printing a line for each stub the game called, with
+how often. Pads are pressed only by a plan: a line `in 0 300 1 START 6`
+is Start on the first pad at blank 300 for six blanks
+(`tests/play/README.md`, "The port as a disc").
+
+A fault does not end it silently: it says what, at which address, in
+which function and called from which, and where the game was
+(`src/port/crash.c`; the names are in `build/port/rebushido.sym`, which
+the build writes beside the program). The game's own stop, `sys_Trap`,
+says the same.
+
+### Sony's libraries in the port
+
+The rule: **Sony's code is compiled into the port where it is plain C
+that only works on memory, and is replaced where it touches the
+console.** By library:
+
+| Library | In the port |
+|---|---|
+| libgte | Sony's own, all of it but `patchgte.c` (which patches the kernel): the C modules as they are, the assembly ones by the C beside them, on `src/port/gte.c` |
+| libgpu | Sony's `prim.c` (the primitives' set-up, `GetTPage`, `AddPrim`) and `ext.c` (`SetDefDrawEnv`, `SetDefDispEnv`). The module that talks to the GPU is the port's (`gpu.c`): `ClearOTagR` and the mode, area and offset primitives are done as Sony's does them for the ordinary GPU; `ResetGraph`, `SetDispMask`, `PutDispEnv`, `PutDrawEnv`, `DrawOTag`, `ClearImage`, `LoadImage`, `StoreImage`, `MoveImage` are stubs |
+| libc | Sony's `memcpy`, `memmove`, `memchr`, `strcpy`, `strlen`, `rand`, `toupper`. The port's: `printf` and `sprintf` (Sony's walk a PlayStation's argument list), and `memset` and `memcmp`, which the compiler calls |
+| libetc | Sony's `GetVideoMode`. The port's: `VSync` (`clock.c`), `ResetCallback`, `StopCallback` (nothing) |
+| libcd | the port's, all of it, over the disc image (`cd.c`) |
+| libapi | the port's: the counters (`clock.c`), the pads (`pad.c`), events (`event.c`), and nothing for `SetSp`, `SetMem` and the critical section. The card's calls and the files are stubs that answer "no card"; `Exec` is a stub |
+| libsnd, libspu | the port's, all stubs (`sound.c`) |
+| libcomb | the port's, all stubs: nothing at the cable's other end |
+| libcard, libsn | not needed: the first is inside Sony's card code, the second is the development host's files, which nothing reaches |
+
+A stub counts its calls and gives the answer the library gives when all
+is well, where the game would otherwise stop or wait for ever: a sound
+bank opens, a transfer is done, no voice sounds, no card is in the
+slot. Three change less of the game's memory than the console does:
+`StoreImage` and `SpuRead` leave the buffer they were given as it was,
+and `SsVabOpenHeadSticky` does not fill in the words of a bank's header
+that Sony's does.
+
+### Memory
+
+The game's own variables are the PC program's, placed by its linker.
+What the game reaches by a number written into its source is given
+memory at that number (`src/port/memory.c`): the 2 MB of RAM at
+`0x80000000` and the kilobyte of scratchpad at `0x1F800000`, by `mmap`
+at a fixed address on Linux (`VirtualAlloc` on Windows, not tried). If
+the system will not give either, the program says so and stops. The
+twelve addresses are the scratchpad and the eleven of `include/sys.h`
+and `motion.h`; `tests/port/memory.py` reads the game's source on every
+push and fails if it has an address that is not in the mapped memory,
+is below the first of them, or is not in the list at the top of
+`memory.c`. Below the common sound bank the mapped RAM is unused: the
+program that lives there on the console is the PC program, elsewhere.
+
+Two things the PlayStation gives the game for nothing had to be given
+it here:
+
+- **Neighbours.** The game reads some variables as one array: the
+  blow's direction is three, a side's points two. On the PlayStation
+  they are next to each other because `bb2.ld` puts them so; a PC's
+  linker put them in the reverse order. So the port's link is by a
+  script the build writes, with each variable in a section of its own
+  and the sections in the PlayStation's order
+  (`config/symbol_addrs.txt`), kind by kind, and no array padded out
+  (`-malign-data=abi`). The build counts the result: 710 of the game's
+  928 pairs of neighbours are exactly as far apart as on the
+  PlayStation, and the 218 others are in `build/port/layout.txt`: 67
+  are strings, which the console starts on a word; the rest are small
+  variables the console's small-data sections pad to a word, and places
+  where another file's unnamed data lies between two on the console.
+- **Address 0.** The console has its kernel's memory there, so the
+  original reads and writes through pointers it never set, and nothing
+  happens. A PC stops the program. Linux will not map address 0 for a
+  program, so each place is given somewhere else, under `RB_PORT`, with
+  a note: the word `fighter_TakeHit` clears first (the port passes the
+  place the "Bugfixes" setting does, whatever the setting, which
+  changes nothing the game does) and the direction an effect was never
+  given (`eff_Start`: zeroes). Two were found on the way to a fight's
+  end; the next one will stop the port and say where.
+
+**For 64-bit**, the mapping itself can stay: a 64-bit process can still
+have memory at these two addresses, and a program linked without
+position independence has its own variables below 4 GB as well, so an
+address still fits the game's 32-bit words. What cannot stay is the
+size of a pointer inside a structure: the 41 structures with pointers,
+the nine kinds of file relocated in place into 4-byte slots, the
+handler tables and the queue the renderer walks, and the two functions
+that walk their arguments on the stack. That is the 64-bit stage's
+work, and "What makes it a 32-bit program" above is the renderer's part
+of the list.
+
+### The disc
+
+`src/port/disc.c` reads the player's image: the `.bin` of raw 2,352-byte
+sectors, opened by itself or through its `.cue`'s first `FILE` line. It
+hands out a sector by number, checked for its sync and for saying it is
+that sector, and the 2,048 bytes of data of a run of mode 2 form 1
+sectors. It knows nothing of the game.
+
+`src/port/cd.c` is Sony's libcd on top of it, and the game's own disc
+code (`cdrom.c`, its table of files, its state machine, its callback)
+runs unchanged above that. There is no drive to wait for, so the
+simplest behaviour that the game's code accepts was chosen:
+
+- a command is done when it is given, and `CdSync` says "complete" from
+  the next time it is asked;
+- a read's sectors all arrive the next time the game asks the drive
+  anything, one call of the game's callback each, in order, until the
+  callback pauses the drive, as it does after the last;
+- `CdRead`, Sony's blocking reader, which the game uses for the movie
+  player, has read everything when it returns.
+
+A sector that cannot be read (past the end of the image, or not a
+sector) reaches the game as the drive's error, and the port says which
+sector on its error output. Sound off the disc is a stub: an XA stream
+or a CD audio track is counted, and the drive's position moves at the
+disc's speed by the port's clock while it "plays", because the game
+finds the end of a piece of music by asking where the drive is.
+
+So a load takes the frames its commands take and none for its sectors:
+the port is at the top menu at blank 497 where the emulator is at
+1,902.
+
+### Time
+
+The port's clock is a count of scan lines that only the game moves
+(`src/port/clock.c`): `VSync` moves it to the vertical blank it waits
+for, as Sony's does (263 lines a blank); `GetRCnt` of the scan line
+counter moves it one line each time it is asked. What the game computes
+between two waits takes no time. Nothing reads the PC's clock, so a run
+is the same every time and on every machine.
+
+**The frame's wait** (the owner's last open decision, settled for now by
+that rule): `main` asks the counter until it has reached half a field
+short of the frame, calling `rand()` each time, so on the port the wait
+is exactly 384 calls of `rand()` in a frame of two fields and 128 in a
+frame of one, and none in a frame that waited inside itself, as a load
+does. The console's count is whatever time was left. The game's own
+random numbers (`rng_Next`) do not come from `rand()`, and they are the
+emulator's all the way into the fight; what `rand()` feeds is effects,
+the loading screen's noise and a few choices at a fight's start, none
+of which the comparison so far has seen differ.
+
 ## The assembly
 
 Everything in the build that is not C, by kind. "Listings" are the files
@@ -63,7 +246,7 @@ of `asm/funcs/`, which the source includes with `INCLUDE_ASM`: 139 files,
 | Sony's libgte in assembly | 48 functions | `src/main/psxsdk/libgte/`, 33 files | C beside each | done |
 | The game's maths in assembly | 20 functions: the 19 of `math_asm.c` and `math_RotMatrixZYX` | `math_asm.c`, `render_asm.c` | C beside each. `sys_Trap` becomes `port_Trap`, which the port supplies | done |
 | The renderer | 51 functions, 8,029 instructions, and the data listing | `render_asm.c` (50), `render_skin_asm.c` | C beside each ("The renderer in C"). They are not C functions as they stand: they pass the mesh cursor, the scratchpad and the handler table to each other in fixed registers, jump into each other through two tables of labels, and eight of them have their outline colour written into their instructions while the game runs (`render_SetOutlineColor`). The C gives all that a form: a structure for the shared state, two switches for the jumps, a variable for the colour | done |
-| BIOS calls | 40 two-instruction jumps (`BIOS_A_FUNCTION` and its like), 2 system calls, `_96_remove` | `src/main/psxsdk/libapi/`, `libcard/` | Not C equivalents: the kernel does not exist on a PC. The port supplies what the game calls (below) | named |
+| BIOS calls | 40 two-instruction jumps (`BIOS_A_FUNCTION` and its like), 2 system calls, `_96_remove` | `src/main/psxsdk/libapi/`, `libcard/` | Not C equivalents: the kernel does not exist on a PC. The port supplies what the game calls (below) | defined; the card's and `Exec` are stubs |
 | Sony's other assembly | 8 functions that patch the kernel's pad and card drivers, `_patch_gte`, `setjmp`, `SetSp` | `libapi/`, `libcard/`, `libc2/`, `libgte/patchgte.c` | None: they serve Sony's interrupt and driver code, which the port replaces whole | not needed |
 | Start-up | the PS-X EXE header, `__SN_ENTRY_POINT`, `__main`, `__do_global_dtors` | `asm/header.s`, `libsn/snmain.c` | The PC's own start-up; `main` is the game's | not needed |
 | The development host's file calls | `PCopen`, `PCclose`, `PClseek`, `_SN_read`, and `pollhost` (a `break`) | `libsn/` | The game's two loaders that use them (`main.c`) are never reached on a retail disc; the port leaves them out or gives them the PC's files | not needed |
@@ -73,8 +256,11 @@ of `asm/funcs/`, which the source includes with `INCLUDE_ASM`: 139 files,
 
 Sony's headers already declare these (`include/psxsdk/libapi.h`,
 `kernel.h`), and the game's code calls them by those names; the port's
-platform layer has to define them. Counted in the game's own code and
-ReBushido's, not in Sony's.
+platform layer defines them (`src/port/`). Counted in the game's own
+code and ReBushido's, not in Sony's. The last column is what the
+finished port supplies; what it supplies today is in "Sony's libraries
+in the port": events, the counters, the pads' packets and the nothings
+are done, the card answers "no card", `Exec` returns at once.
 
 | What for | Calls | Kernel entries | What the port supplies |
 |---|---|---|---|
@@ -261,6 +447,9 @@ uses `VSyncCallback`.
 
 ## How it is proved
 
+Stage one, the C for the assembly, is proved by the probe, the first six
+points below. Stages two and three, the program, by the last three.
+
 - **The GTE against the emulator's.** A PlayStation program of the tests'
   own, the probe, runs 2,000 made-up cases of each of 42 instruction
   words on the emulator's GTE: all 64 registers loaded, the operation,
@@ -315,6 +504,56 @@ uses `VSyncCallback`.
   now stand on each of those limits (the cutoff, the fog's end, the
   sizes and distances things change at).
 
+- **The program against the emulator.** The play test `port_game`
+  ([`tests/play/README.md`](../tests/play/README.md), "The port as a
+  disc") gives the emulator, with the ReBushido disc and no memory card,
+  and then the port, with the retail image, the same plan: Start on the
+  options page, past the opening and the title, down the top menu to
+  Vs. Mode, both pads through character select, into the fight and a
+  second of it. At each of six checkpoints (the page, the first screen,
+  the top menu, character select, the fight's first frame, the fight a
+  second in) every value of `state.toml` is the same on both, 53 of the
+  54: the screen and its frame count, the menu's page, the game's
+  random numbers, the mode, the stage, what was asked for, and both
+  fighters' places, wounds and frames. The one left out is the count of
+  frames shown since power on, which is timing (the port shows no movie
+  and loads in no time). At the end the memory the game loaded from the
+  disc is compared byte for byte, live, between the two runs and kept
+  nowhere: the effects' tables and textures (38,912 bytes) and the
+  first 256 KB of the load area, which hold the stage. All of it
+  agrees. It runs where the retail image and the emulator are, and is
+  skipped, saying so, where they are not.
+- **What the comparison found**, and what was done:
+  - *The common sound bank* (3,328 bytes at `0x8010DB00`) differs in
+    524 bytes, all in the words of its header that Sony's
+    `SsVabOpenHeadSticky` fills in as it opens a bank. A stub's answer:
+    stage 6. It is not in the test.
+  - *The movie's work area* (the 2 KB before the load area) differs:
+    only the emulator played a movie. Not in the test.
+  - *The fight after its first presses.* With the presses of
+    `same_as_original` the port's fight left the emulator's at the first
+    strike, by one frame: a press timed an odd number of blanks from a
+    checkpoint falls into the next frame on one and not on the other.
+    Timing. With the fight's presses one blank earlier the port follows
+    the emulator for 330 blanks of the fight, strikes and random numbers
+    included.
+  - *The first clash of blades*, at about blank 335 of that fight: the
+    emulator's second fighter stands, the port's leaves the ground.
+    **Not explained.** It is not `rand()` (the same with half the
+    calls), and not the order of the blow's three variables, which was
+    wrong and is put right ("Memory"). It is where stage 5 begins.
+  - *Two crashes*, both the original's use of address 0 ("Memory").
+- **The reader and the platform layer by made-up cases**, on every
+  push: `tests/port/disc.c` (an image of forty made-up sectors:
+  addressing, the data's offsets, reading across sectors, a sector of
+  sound, a broken one, the end of the image, and a read through the
+  port's libcd as the game asks for one), `tests/port/platform.c` (the
+  clock, the frame's wait and its count of `rand()` calls, a pad's
+  packet, events, the primitives' words, `printf`) and
+  `tests/port/memory.py` (the fixed addresses).
+- **`make port` on every push**: the program links with no name
+  missing and the port's files have no warning.
+
 Not proved that way: `InitGeom` (it patches the console's kernel; its
 register values are checked by hand), `sys_Trap`, and anything the
 emulator's GTE itself has wrong. Of the renderer: what "Where the C is
@@ -343,17 +582,15 @@ Each ends with something that can be shown.
 
 1. **C for the assembly.** Done: the GTE, the maths and the renderer,
    each held to its listing by the probe. (The two tables of labels at
-   the top of `render_asm.c` still name the listings: stage 2 puts them
-   behind the switch when the program is first linked.)
-2. **A program that links.** The game's C, the port's, and an empty
-   platform layer: every Sony function the game calls, defined to do
-   nothing or to fail. *Done when* `make port` links with no name
-   missing, on the host, and the program runs to its first frame's wait.
-3. **Memory and the disc.** The fixed buffers and the scratchpad given
-   memory; the disc's sectors read from the player's image. *Done when*
-   the game's own loaders have read the files of the boot, the menus and
-   a fight, and the values the play tests watch are the emulator's at the
-   same checkpoints.
+   the top of `render_asm.c` named the listings; they are behind the
+   switch now.)
+2. **A program that links.** Done: `make port`, 141 files, no name
+   missing ("The program").
+3. **Memory and the disc.** Done: the game's own loaders read the files
+   of the boot, the menus and a fight from the image, and the values
+   the play tests watch are the emulator's at six checkpoints, into the
+   fight ("How it is proved"). Left of it: nothing that this stage
+   named; what was found beyond it is under "What is left".
 4. **The picture.** The ordering table drawn by a rasteriser in C that
    does what the console's GPU does. *Done when* the pictures at the play
    tests' checkpoints are the emulator's, pixel for pixel, with no window
@@ -367,6 +604,65 @@ Each ends with something that can be shown.
 The wide picture and the high resolution are the roadmap's next item and
 build on stage 4.
 
+## What is left
+
+How far the program gets today: with `port_game`'s presses, into a
+versus fight, which then runs for as long as it is left to (a hundred
+seconds of it were run, 3,700 blanks, with `same_as_original`'s presses:
+no crash, no winner, because the fight is not the emulator's from the
+first clash on). Nothing stops it; what it cannot do is listed here.
+
+**The stubs the game called on the way** to the fight's first second,
+with how often, are the list of what stages 4 to 7 write:
+
+| Stage | Stub | Calls |
+|---|---|---|
+| 4, the picture | `DrawOTag`, `PutDrawEnv` | 1,670 each |
+| | `PutDispEnv` | 1,590 |
+| | `LoadImage` | 387 |
+| | `SetDispMask`, `ResetGraph`, `ClearImage` | 13, 10, 5 |
+| | `StoreImage`, `MoveImage` | 4, 2 |
+| 6, sound | `SpuGetAllKeysStatus` | 2,443 |
+| | `SsVabClose` | 60 |
+| | `SsUtSetVVol`, `SsUtAllKeyOff` | 48, 47 |
+| | `CdMix` | 40 |
+| | `SpuGetKeyStatus`, `SsUtKeyOnV` | 15 each |
+| | `SsVabOpenHeadSticky`, `SsVabTransBody`, `SsVabTransCompleted`, `SsUtGetVBaddrInSB` | 11 each |
+| | `SsVabFakeHead`, `SsVabFakeBody` | 10 each |
+| | the reverb's three (`SsUtReverbOff`, `SsUtSetReverbType`, `SsUtSetReverbDepth`) | 4 each |
+| | an XA stream started (`CdlReadS`), `SsSetSerialAttr`, `SsSetSerialVol` | 3 each |
+| | `SsInit`, `SsStart`, `SsSetTickMode`, `SsSetReservedVoice`, `SsSetMVol`, `SsSetStereo`, `SsSetAutoKeyOffMode` | 2 each |
+| | `SsEnd`, `SsQuit` | 1 each |
+| 7, the card | `_card_info` | 24 |
+| | `InitCARD`, `StartCARD`, `_bu_init` | 2 each |
+| | `StopCARD` | 1 |
+| 7, the movie | `Exec` | 1 |
+
+Not called on that way, and stubs too: the card's files (`open`,
+`close`, `read`, `write`, `firstfile`, `nextfile`, `format`),
+`_card_load`, `_card_clear`, a CD audio track (`CdlPlay`), `SpuRead`,
+`SpuWrite`, `SpuSetTransferStartAddr`, `SpuIsTransferCompleted`,
+`SpuClearReverbWorkArea`, `SsUtReverbOn`, and the link's three.
+
+**Known, and not done:**
+
+- The first clash of blades goes otherwise than on the emulator ("How
+  it is proved"). Until it is explained, a fight on the port is not the
+  game's fight.
+- A press an odd number of blanks from a checkpoint lands a frame off.
+  The cure is in the plan's follower, not the game: time presses from
+  the game's frames, or have the port take a checkpoint at the blank
+  the emulator would. Stage 5.
+- Address 0: two places are given somewhere else to read and write; the
+  others, if there are others, are not found.
+- 218 pairs of neighbouring variables are not as far apart as on the
+  PlayStation. None is known to matter; none has been ruled out one by
+  one.
+- `src/port/host_windows.c` has never been compiled.
+- The build compiles more than it must: the headers it writes are
+  written again each time, so most files are compiled again (twenty
+  seconds).
+
 ## The owner's decisions
 
 | Decision | Recommended | Why |
@@ -377,4 +673,4 @@ build on stage 4.
 | The game's data: the disc image, or files taken out of it | The player's disc image | The game asks for sectors, never for names, so an image answers it directly; the music is tracks and streams that only the image has in one piece; and no tool has to unpack game data. Loose files can come later for modding |
 | The first renderer: software as the console draws, or the PC's graphics card | Software first | It can be held to the emulator's picture pixel for pixel by the tests there already are, and needs nothing installed. The hardware renderer is then the roadmap's next item, behind the same list of primitives |
 | The movies | Decode them in the port, in C | The overlay is a separate PlayStation program started through the BIOS; on a PC a function that plays a movie is simpler than a program loader, and the decoder chip has to be written in C either way |
-| The frame's wait | To be decided at stage 5 | The original calls `rand()` for as long as the frame has time left, so its random numbers depend on the machine's speed. The port needs a rule (a fixed number of calls is the simplest); none reproduces a console exactly |
+| The frame's wait | A fixed number of calls, for now: one for each scan line waited ("Time"); to be looked at again at stage 5 | The original calls `rand()` for as long as the frame has time left, so its random numbers depend on the machine's speed. The port needs a rule; none reproduces a console exactly |
