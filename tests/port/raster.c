@@ -12,6 +12,7 @@
 #include "src/port/raster.c"
 #include "src/port/gpu.c"
 #include "src/port/picture.c"
+#include "port/remaster_stub.h"
 #include "runtime/runtime.h"
 
 /* ---- what those files want of the rest of the port ---- */

@@ -25,7 +25,12 @@ numbers, on Linux and on Windows ("The window"). It is a 64-bit
 program, and a 32-bit one beside it that does the same to the byte
 ("64 bits"). Stages 1 to 3 of the seven below are done, stages 4 and 5
 as far as a machine can tell, stage 6 but for someone to listen, and
-of stage 7 the memory card and the movie.
+of stage 7 the memory card and the movie. Beyond the seven, the
+roadmap's item 7: the scene drawn again by a graphics card at the
+window's resolution, from the geometry the PlayStation threw away,
+which is what "Graphics: Remastered" means ("Remastered"); the window
+takes an OpenGL 3.3 context for it and F2 changes picture as the game
+runs ("The window", "Remastered in the window").
 
 ## Where it stands
 
@@ -43,6 +48,7 @@ of stage 7 the memory card and the movie.
 | The picture | done, into the port's own video memory and out to files: `src/port/raster.c`, the PlayStation's GPU in C. The flat screens are the emulator's to the pixel, a fight's frames but for three pixels in a thousand ("The picture") |
 | 64 bits | done: the program has 64-bit pointers, the game's addresses stay 32-bit numbers below 4 GB, and it is held to the 32-bit program and to the emulator ("64 bits") |
 | A window, a sound card, the PC's keys and controllers | built on SDL 2 for Linux and for Windows (`make port-sdl`, `make port-sdl-windows`) and held to the build without a window by numbers: the same traces, pictures and samples ("The window") |
+| "Graphics: Remastered" | done in the window: the scene drawn again by a graphics card at the window's resolution, from the geometry the PlayStation threw away — OpenGL 3.3 core, high resolution, sub-pixel corners, textures in perspective, true-colour mixing, the 2D layer crisp; supersampled edges, the whole stage drawn, and a wider picture at 16:9. Proved with nothing shown against the software GPU's own picture, and hung on the window, where F2 changes picture as the game runs ("Remastered", "Remastered in the window") |
 | The memory card | done: a standard card image of 128 KB a slot, under the BIOS calls the game makes ("The memory card"). The card the port writes for the options page is byte for byte the one the emulator's BIOS wrote |
 | The movie | done: the opening plays, 3,320 frames of 320 by 240 at 29.97 a second, by the overlay's own C over a picture decompressor in C ("The movie"). Its sound is the drive's own, as the console has it |
 
@@ -1431,6 +1437,663 @@ are both in the log with the function's name, on Linux and on Windows.
   every register: the host's interface keeps three of them.
 - The game's stack is a megabyte, and SDL and the display's driver now
   run on it too.
+
+## Remastered
+
+"Graphics: Remastered" (`g_rb_settings.graphics`, the options page's
+second line) on the port means **the scene drawn again, by the graphics
+card, at the window's resolution, from the geometry the PlayStation
+threw away**. With "Graphics: Original" nothing of this runs and the
+port draws exactly what it drew before: the software GPU's picture, the
+same pixels, still the one the play tests compare with the emulator.
+
+This is the roadmap's item 7. What it does now: high resolution,
+sub-pixel corners, textures in perspective, no dither, true-colour
+mixing, the flat things crisp (the first step); then the stage drawn to
+the far end of it with its fog pushed out to match ("How far the stage
+is drawn"), the scene's edges smoothed ("Edges"), and a wider view of
+the scene at a wider shape of picture ("A wider picture"). What it
+leaves for the steps after it, by design and not by accident: the high
+frame rate, and new lighting and shadows ("What each later step
+needs").
+
+**Three settings of a run** say how much of each (`port_remaster.h`,
+`PortRemasterView`), each of them the drawing path alone:
+
+| | | |
+|---|---|---|
+| `draw_distance` | `original`, `far`, `max` | how many of the stage's cells are queued, and how far out the stage's fog is placed |
+| `antialiasing` | `off`, `2`, `4` | how many times over each way the scene is drawn before it is averaged down |
+| `aspect` | `4:3`, `16:9`, any `W:H` | the shape of the picture: a wider one is a wider view of the same scene |
+
+They are a run's and are settled before the game starts: the primitive
+buffers the port hands the game are chosen from the first of them. Every
+one of them is `original`, `off` and `4:3` with nothing said, so a run
+that asks for none of them is the first step's picture to the pixel.
+With "Graphics: Original" none of them does anything at all, whatever
+the run was started with, and the game computes and draws what it always
+did.
+
+### Why the card, and not a wider rasteriser
+
+The owner's list is high resolution, then anti-aliasing, then no pop-in
+and more to see, then the wide picture, then 144 pictures a second, then
+better lighting and shadows. The last three are what decides it: a
+software rasteriser could be made wider, but lighting a fighter's
+vertices and sorting a stage at 144 Hz with 4 by 8 times the pixels is
+work a card does for nothing and a PC's processor does not. The
+measurement here, on this machine with Mesa's software driver
+(llvmpipe, no card at all), is half a millisecond a frame at the
+console's resolution: a real card at 8 by 16 the pixels has room that a
+rasteriser in C, which takes about 6 ms a frame at 1x, does not.
+
+OpenGL 3.3 core through SDL is what the window already has to hand on
+both systems, and the headless prover gets the same context from EGL.
+Nothing is vendored: the names of the 45 GL functions this uses are
+declared in `src/port/gl/gl_draw.c` and looked up through the host
+(`SDL_GL_GetProcAddress`, `eglGetProcAddress`).
+
+### The side channel
+
+A PlayStation primitive is already flattened: whole-pixel screen
+coordinates held to eleven bits, no depth, and a texture that runs
+evenly across the screen instead of in perspective. That is where the
+wobble and the warping come from, and no amount of resolution mends it.
+So the renderer's own arithmetic is kept, beside the primitive, and the
+hardware draws from that.
+
+**What is kept.** The GTE's projection (`port_GteProject`,
+`src/port/gte.c`) works out the screen position with sixteen bits of
+fraction in MAC0 and then shifts it down and holds it to eleven bits.
+Both halves are now written down, with the depth before it was held to
+sixteen bits and the quotient the projection divided by
+(`PortPrecisePoint`, `include/port_remaster.h`). Three of them stand
+for the three screen positions the coprocessor keeps, and a position
+the program puts in a register itself clears the one it lands on.
+
+**How it reaches the primitive.** Two things carry it:
+
+- *Where a point was stored.* `port_GteStoreData` writes down the exact
+  point under the address it stored the whole-pixel one at. The
+  renderer stores a part's points onto the scratchpad and names its
+  faces' corners among them; a stage tile that is cut has the GTE store
+  its corners into the primitive itself, and that address is the
+  primitive's own word, which is enough by itself.
+- *Which points a face is.* `render_LoadFace` (`src/main/render_asm.c`)
+  is where every one of the fifty emitters looks its face's corners up,
+  and `render_LinkEntry` is where every primitive of the scene is
+  linked into an ordering table. Two lines, one in each, say "this face
+  is these points" and "that face became this primitive". The side
+  channel is then a table from a primitive's address to its corners.
+
+Those two lines, and the one in `port_GteStoreData`, are the whole of
+what the renderer gives up. Nothing is computed differently and nothing
+of the game's memory is written: the traces of the three play tests are
+the same with the remastered renderer on and off ("How it is proved").
+
+**Why not keyed by the primitive's address alone**, as a side channel
+usually is: the renderer writes a primitive's corners from the
+scratchpad, so the primitive's own words are not where the GTE put
+them. Keying the *points* by where they were stored and the *faces* by
+the primitive they became covers both the ordinary path and the cut
+tiles, with no table of exceptions.
+
+**What is forgotten, and when.** Both tables are open tables of 8,192
+slots whose entries carry the frame they were written in; a new frame
+begins where the game clears the next frame's ordering table
+(`ClearOTagR`). An entry of the frame before the last counts as
+nothing, which is safe because the game has two primitive buffers and
+two ordering tables and uses them on alternate frames: nothing of a
+frame's own can have been written over. When every slot a key could
+have is another live entry's, the oldest goes and that primitive is
+drawn flat; that happened 114 times in 687,410 faces of a whole run.
+
+### How a primitive gets to the card
+
+The software GPU is not changed and not bypassed. `port_RunCommand`
+(`src/port/raster.c`) draws the command as it always did, and then
+hands the same words to `port_RemasterCommand`, which decodes them
+again — the same corners, colours, texture points, page, colour table,
+window, drawing area and mix that `port_SetUpPaint` works out — and
+adds, for each corner, the exact position and depth the side channel
+has for it. `DrawOTag` says which primitive the words belong to. The
+decoded primitive (`PortRemasterPrim`) goes to a backend through four
+function pointers; with no backend attached (`make port`, every check,
+and the window with "Graphics: Original") every one of these returns at
+once.
+
+So the hardware path never sees the game, only the GPU's own command
+stream: a primitive kind that is added or a mode that changes reaches
+it without a line of new code, and a primitive it cannot draw is
+counted rather than lost.
+
+### What the card draws into
+
+The colour buffer is **all of video memory at the scale**: 1024 by 512
+pixels times `scale` across and `tall` down. A scale of 4 and 8 is
+2,560 by 1,920 for a 640 by 240 display — square pixels, because a line
+of the console's picture is two lines of the screen.
+
+- A **polygon** is drawn where the GTE really projected it, with
+  sixteen bits of fraction, as two triangles for a four-sided one, as
+  the chip does. `gl_Position` is `(x·w, y·w, 0, w)` with `w` the
+  corner's depth, so the card's own perspective divide puts the corner
+  back where it belongs and interpolates the texture in perspective. A
+  colour runs evenly across the screen (`noperspective`), as the chip's
+  does.
+- A **texel** is read from a mirror of the software GPU's video memory,
+  a 1024 by 512 texture of 16-bit words, by the shader: four bits or
+  eight through the colour table or fifteen as they are, through the
+  texture window, a texel of nothing not drawn. Nothing is decoded on
+  the processor and no texture is cached by page: the mirror is the
+  whole of video memory, so a colour table that is tinted, a texture
+  that is scrolled and a page that is loaded over are right by
+  construction.
+- **Rectangles, sprites, the fonts, the menus and the options page**
+  have no side data and are drawn as they are, whole-pixel, at the
+  scale: crisp, and in their proper places.
+- The **four mixes** are the card's blending at eight bits a channel
+  instead of the chip's five: half and half by `SRC_ALPHA`, added and a
+  quarter added by `ONE, ONE_MINUS_SRC_ALPHA` with the shader setting
+  the alpha, and "what is there less this" by the reverse subtraction.
+  Where a texture mixes only at the texels whose top bit is set, the
+  alpha says which; the subtracting mix cannot say that with one
+  blending state, so its batch is drawn twice, once for each kind of
+  texel.
+- **Dithering** is off: the pattern is there to hide the chip's five
+  bits a channel, and nothing here has five bits a channel.
+- The **drawing area** is the scissor, and the drawing offset is in
+  every corner, as the chip has it.
+- **What the chip would not draw is not drawn.** A triangle that spans
+  more than 1023 pixels across or 511 down, or has no area, is left out
+  by the same whole-pixel rule the software GPU uses: a corner the
+  projection put far off the screen is held to eleven bits with a sign,
+  so a polygon that is partly behind the camera comes out spanning the
+  whole range, and the game counts on the chip dropping it. Leaving
+  this out was the one thing that showed as a wrong picture: a stage's
+  surf drew a bright band across the water (`port_GlIsDrawn`).
+- Primitives are **batched** in the order the game drew them, and the
+  batch is flushed when the mix, the drawing area or the buffer's room
+  changes, and whenever the game writes video memory: the ordering
+  table's order is the order the card draws in, so the painter's order
+  the game sorts by is kept exactly. A fight frame comes to about 5,400
+  vertices in 113 draws, and 110 of those draws are the fills and
+  copies the game makes in the middle of the frame — its fog is 31
+  colour tables copied each frame — each of which ends the batch
+  before it. Everything else about a frame is one draw.
+
+**The texture filter is nearest, and that is the default.** The game's
+textures are 4-bit and small, and its pages pack unrelated textures
+against each other with no border: smoothing reads a neighbour that
+belongs to another texture, so an edge bleeds. A bilinear filter is
+written (`--filter linear`, four decoded texels, those that are nothing
+left out so that an edge does not bleed into black), and it is for the
+owner to look at; nearest is what the game was drawn for.
+
+**Anti-aliasing is not done**, and the hook is where it goes: the
+colour buffer is a texture of the port's own, so turning it into a
+multisampled one and resolving it is a change to `port_GlMakeTarget`
+and nothing else. Why it was left: with primitives in painter's order
+and no depth buffer, multisampling is correct (every sample of a
+coverage mask is blended in the same order), but the mixes above are
+done at a sample's own coverage, and a half-transparent primitive drawn
+over an edge then mixes twice along it. The honest first look is the
+high resolution alone, which the owner can see; the step after it
+should measure the edges.
+
+### What the game does to video memory, and what becomes of it
+
+Everything the game makes by moving pixels about is drawn by stretching
+the mirror of video memory into the colour buffer, in its turn among
+the primitives: a fill, a copy inside video memory, or a load from the
+program says which rectangle changed, the batch so far is flushed, that
+rectangle is sent to the card and drawn at the scale. So these all
+work, and all of them keep the console's own resolution, which is what
+they are:
+
+| What the game does | Where | How it comes out |
+|---|---|---|
+| The loading screens' picture, and the noise over them | `disp_DrawLoadingScreen` | a load from the program, then rectangles drawn over it |
+| The fades and the grayscale | `disp_`, `tex_TintClut` | colour tables written in video memory: the mirror has them, so a fogged or tinted texture is right |
+| The stage's fog | `stage_QueueFog` | copies inside video memory, 31 rows of colour tables a frame |
+| The character select's portraits | `select.c`'s sprite pools | loads from the program into pages, then textured rectangles |
+| The replay and the menus over the scene | 2D primitives | drawn as they are, crisp |
+| The movie | the overlay, 24-bit mode | **not done**: the display in the mode of three bytes a pixel is left to the software GPU's picture |
+
+**Nothing reads back what the card drew.** The game reads video memory
+with `StoreImage`, and that is the software GPU's, which is still
+exact. A texture made by drawing polygons into video memory would be
+the one thing the mirror could be stale for, and the port counts it: in
+the three play tests, 0 textured primitives of 1.5 million read a page
+this frame had drawn into.
+
+### How it is proved, with nothing shown
+
+There is no window and no display. The prover
+(`src/port/gl/gl_main.c`, built by `tools/port_gl_build.py` into
+`build/port-gl/rebushido-gl`) takes an OpenGL 3.3 core context from
+EGL's surfaceless platform and draws into a framebuffer object; Mesa's
+software driver is the card. Nothing was installed for it: Ubuntu
+24.04's `libegl-dev`, `libegl-mesa0` and `mesa-libgallium`, which the
+window's own needs already brought in, are enough, in 32 bits as the
+port is. It is run by `tools/port_gl_prove.py`, which writes each play
+test's plan for the port, runs it three ways and prints what it
+measured.
+
+**At scale 1, with everything that changes a value turned off**
+(`--gl-exact`: the corners where the PlayStation held them, the texture
+flat across the polygon, five bits a channel with the chip's own
+dither), the hardware's picture is compared with the software GPU's,
+pixel for pixel, every twentieth blank of each of the three plans. A
+blank at which the display is blanked, or in the mode of three bytes a
+pixel, is not compared: there is nothing on show to hold to anything.
+
+| The plan | Pictures | The same | Pixels | That differ | ... within one step | ... further |
+|---|---|---|---|---|---|---|
+| `port_game` | 184 | 36 | 27,571,200 | 633,002 (2.3%) | 602,083 (95%) | 30,919 (168 a picture) |
+| `port_other_fight` | 196 | 39 | 29,414,400 | 6,809,595 (23%) | 5,613,851 (82%) | 1,195,744 (6,100 a picture) |
+| `port_bugfixes` | 186 | 37 | 27,648,000 | 645,040 (2.3%) | 613,469 (95%) | 31,571 (170 a picture) |
+
+A *step* is one of a five-bit channel's 31, eight of a byte's 255: a
+pixel that differs by a step or less is the same colour the chip can
+show, one value along. The pictures that are the same to the pixel are
+the options page, the boot image, the menus and the character select —
+everything the game draws flat. The second fight's stage is the cave,
+whose walls are one texture across the whole screen close to the
+camera, and that is where the pixels beyond a step are.
+
+What differs, and why:
+
+- **Pixels that mix.** The chip mixes at five bits a channel and the
+  card at eight, so a half-transparent pixel comes out within half a
+  step of the chip's value and almost never on it. That is most of the
+  count above: the menu's panel, the clouds, the character select's
+  grid. They are all within one step (eight of a byte's 255).
+- **Shaded polygons.** The chip interpolates a colour as whole numbers
+  with twelve bits of fraction from the triangle's leftmost corner; the
+  card interpolates in floating point from the pixel's middle. The two
+  agree to a step.
+- **A texel's edge on a pixel's middle.** Where the texture coordinate
+  comes out exactly whole at a pixel, which of the two texels is read
+  follows from the last bit of the arithmetic, and the two arithmetics
+  are not the same: the chip walks the polygon in whole numbers with
+  twelve bits of fraction from its leftmost corner, and the card
+  interpolates in floating point from the pixel's middle. These are the
+  pixels that differ by more than a step, and they are the seams of a
+  texture: 168 a picture on the rooftop, 6,100 a picture in the cave,
+  where one texture is spread over the whole screen close to the
+  camera. It is the same kind of difference as the halfway values the
+  port already has against the emulator ("The picture"), and at the
+  resolution the remastered picture is really drawn at there is no
+  seam to put wrong: this is a cost of the comparison, not of the
+  renderer.
+
+**With the renderer on and off, the game computes the same thing.** The
+trace of every watched value at every blank of the three plans is
+identical, line for line, with `--graphics remastered` and `--graphics
+original`. **And with each of the three settings**: the traces of
+`port_game` with `draw_distance far` and `max`, and with the remastered
+picture off but the run started with `max` (so that the game has the
+port's own primitive buffers), are all the same 2,340 lines as the run
+with the picture off and nothing asked for.
+
+**The build without a window draws and computes what it did before.**
+With `RB_REMASTER_VIEW` off the game's files are exactly what they were
+before this work, so `make port` built both ways and run on the three
+plans is the before and the after: the traces are identical (2,340,
+2,464 and 2,341 lines) and all 1,048,576 bytes of video memory at the
+end of each run are identical.
+
+**The software GPU is untouched.** The build without a window, before
+this work and after it, run on the three plans: the traces are
+identical line for line (2,339, 2,463 and 2,340 lines) and all
+1,048,576 bytes of video memory at the end of each run are identical.
+(The two programs were built from the two trees and run side by side;
+the script that does it was scratch and is not kept.)
+
+**No kind of primitive is missed.** Every command the GPU is given is
+counted by kind, and every one the backend drew: in the three plans the
+two counts are equal for every kind of polygon, line and rectangle (the
+fills, copies and loads are not primitives and are counted apart).
+
+**Pictures.** At scale 3 across and 6 down, the hardware's picture and
+the software GPU's are written side by side at the same blanks
+(`build/remaster/<plan>/gl-*.png` and `software-*.png`).
+
+**What a frame costs**, on this machine with no graphics card at all
+(Mesa's llvmpipe, 32-bit), over the whole of `port_game`'s 3,880
+blanks with nothing read back:
+
+| | The run | The hardware path, a frame |
+|---|---|---|
+| Graphics: Original (the software GPU alone) | 5.88 s | nothing |
+| Remastered, 1 by 1 (the console's own resolution) | 24.64 s | 0.47 ms |
+| Remastered, 2 by 4 (1,280 by 960) | 29.02 s | 1.17 ms |
+| Remastered, 4 by 8 (2,560 by 1,920) | 44.08 s | 3.20 ms |
+
+The software GPU draws a frame of its own in about 1.5 ms (the whole
+run, less the game, over the blanks), so a software rasteriser four
+times across and eight down would be some fifty times that. 3.2 ms a
+frame at 2,560 by 1,920 **with no card** is what makes 144 pictures a
+second a question of the game's own rate and not of the drawing.
+
+### What is not done, and what may be wrong
+
+- Nobody has seen any of it on a screen. The pictures are files; the
+  window does not use this path yet ("What the window still needs").
+- The movie's 24-bit display is the software GPU's picture.
+- The mask bit is not drawn: the game never uses it (0 primitives of
+  1.5 million in the three plans were drawn with it set or looked at).
+- Lines are not drawn by the hardware path. The game drew none in any
+  of the three plans — the renderer's outline routines, which are the
+  only lines it has, are not reached by anything the plans do. When
+  something does reach them they will be counted as not drawn, which is
+  what the counts are for.
+- The window's own resolution does not reach the renderer yet: the
+  scale is chosen by `--gl-scale`, and `port_RemasterScaleFor` is the
+  arithmetic that will choose it from the window's size.
+- The frame rate and new lighting are later steps.
+- **A stage drawn whole shows where it stops.** The stages were built
+  to be seen through a fog that ends 26,000 units out; at
+  `draw_distance max` the ground reaches its own far edge, and on some
+  stages that edge is a straight cut with nothing behind it. It is the
+  stage's data and not a fault of the drawing: the cells simply end.
+  What would hide it is a backdrop at the far edge, which only the
+  castle rooftop has (`BACKDROP_DISTANCE`, `stage_hooks.c`).
+- **The level of detail still steps.** A tile within three cells of the
+  camera is cut into sixteen, within six into four, and beyond that not
+  at all (`stage_ResetCellFlags`, `g_stage_detail_pattern`). On ground
+  that is not flat the shape changes a little at those two distances,
+  and the remastered picture shows it more clearly than the console's
+  does. It was left alone: cutting every tile sixteen ways would be
+  sixteen times the primitives for the whole stage, which is the one
+  thing that would fill the buffers.
+- **The smoothing is held to a power of two.** Three times over moves
+  8,983 pixels of a flat picture of 1,228,800, where two and four move
+  7. The reason was looked for and not found, so the setting takes 2
+  and 4 and rounds anything else down.
+- **The HUD does not move out to the edges of a wide picture** ("A
+  wider picture", "What is not done").
+- A primitive whose corners the GTE did not project — a 2D one, or one
+  of the 18% of the scene's that the side channel has no depth for — is
+  drawn flat, exactly where the PlayStation put it. That is right for
+  the 2D layer; for the rest it is the console's picture at a higher
+  resolution and nothing worse.
+- **A thin seam where two textured polygons meet.** The chip counts a
+  texture point across a polygon in steps of its own and starts half a
+  step in; the hardware path starts half a texel in, which is the same
+  thing only where one texel is one pixel. Where a texture is drawn
+  larger or smaller than it is, the two part by up to half a texel, and
+  at the join between two polygons of different pages that shows as a
+  line a pixel or two wide: 609 pixels of 153,600 on the screen where
+  the stage is chosen, whose map is two textures side by side. Half a
+  step is what the side channel would have to carry for it, or the
+  attribute would have to be interpolated from the pixel's corner
+  rather than its middle.
+
+### How far the stage is drawn
+
+**What the console's limit is.** `stage_Draw` (`src/main/stage.c`) walks
+a window of 31 by 31 cells of 2,000 units about the camera and queues
+the tiles and pieces of the cells a mask names. The mask is one of 64,
+by the way the camera looks (`g_stage_view_masks`, `stage_data.c`): a
+wedge that reaches 15 cells ahead and is 8 to 11 cells wide. In the
+usual view that wedge is **anded with `g_stage_near_mask`**, a disc of
+13 cells — 26,000 units, which is `STAGE_FAR`. The window is 31 cells of
+the stage's 32, so the window is not the limit: the wedge and that disc
+are. The game's own far view (`stage_SetFarView`, which
+`camera_UpdateSideView` turns on when the camera is far from its focus)
+drops the disc and adds `stage_QueueFarCells`, the cells outside the
+window.
+
+**The fog ends where the disc does.** The stage's fog is not a shader:
+it is 31 rows of colour tables, each blended further towards the
+stage's far colour, copied in video memory by `DR_MOVE` primitives
+linked into the ordering table at even steps of depth
+(`stage_QueueFog`, `stage_BuildFogLevels`). The steps run from the
+camera's focus to `STAGE_FAR` and cover at most the stage's own span
+(`g_stage_fog_spans`, 13,242 to 32,000 units), and the most fogged copy
+is linked at the table's last slot — so everything beyond the fog is
+drawn in the fog's colour. That is why the ground ends in darkness on a
+night stage: not a clip, a colour.
+
+**Which side of the line.** Every one of those is the drawing path
+alone. The masks, `g_stage_cell_flags`, `g_scene_settings.far_view` and
+`far_shift` are read by `stage.c` and the renderer and by nothing else;
+the stage's collision has its own grid (`g_collision_grid`), its
+obstacles their own table (`g_fight_obstacles`), and the opponents'
+navigation its own (`g_cpu_stage_obstacles`). Nothing about what is
+queued for drawing reaches a fighter, a hit, the random numbers or the
+sound.
+
+**What the port does** (`#if RB_REMASTER_VIEW`, five places in
+`stage.c`):
+
+| `draw_distance` | The cells | The fog |
+|---|---|---|
+| `original` | the wedge and the disc, as the console | as the console |
+| `far` | the whole wedge, and the cells outside the window | twice as far |
+| `max` | every cell of the stage, whichever way the camera looks | four times as far |
+
+The fog's colours are not touched, only where its levels are placed, so
+a night stage stays as dark as it was and its gradient reaches further.
+`max` also sets `g_scene_settings.far_shift` to 2: a tile's place and
+its depth are kept in sixteen bits after the renderer's scale, and at
+the near scale a tile 65,536 world units off reads negative and is
+dropped, where the stage's grid is 90,510 units across its diagonal. The
+cost of that scale is that a tile's place is kept to four units instead
+of two, which is what the game's own far view already does.
+
+**The limits, found and measured.** Each is counted every frame of every
+run and reported (`port_remaster.h`, `PortRemasterLimits`; the prover
+prints `gl run limits`):
+
+Over a whole run on **each of the game's 32 fight stages**, with the
+first fighter run across it (`tools/port_remaster_prove.py --stages
+0-31`; the table is `build/remaster2/step3/measured.tsv`):
+
+| What | How large | The worst frame of any stage |
+|---|---|---|
+| A frame's primitive buffer | 0x13400 (78,848) bytes on the console, at a fixed address in its RAM (`SYS_PRIM_BUFFER_0`) | 54,476 bytes used at `original` (the shrine), 56,468 at `max` (the parking lot) |
+| The renderer's queue | `RENDER_QUEUE_SIZE` 640 entries | 198 at `original`, 547 at `max` (the dump site) |
+| The ordering table | 4,096 entries; a depth beyond its reach is clamped to the last | the farthest slot used was 3,341 |
+| The side channel's two tables | 8,192 slots each, 8 probes | full 114 times of 687,410 primitives at `original` and 89 times in a run at `max` |
+
+So the console's own primitive buffer would in fact have held the whole
+of every one of the 32 stages, with 22,380 bytes to spare. It is not relied on: the
+game only looks after the frame is drawn, and an overflow prints
+`common prim over flow` and hangs for ever (`src/main/main.c`). **Where
+a run asks for more than the console's draw distance the port hands the
+game two buffers of its own**, a megabyte each, out of memory it gives
+itself at `PORT_PRIMS_ADDR` (`include/port_platform.h`) — a fixed
+address, as the game's stack is, whose low 24 bits are no other
+memory's, named to the ordering tables' links like the console's RAM
+(`port_AddLinkRegion`). Nothing from `malloc` is ever given to the game.
+With `draw_distance original` that memory is never asked for and the
+game has the console's buffers at the console's addresses.
+
+The ordering table never saturates: `render_DepthToOtShifted` spreads a
+depth over the table in octaves of doubling width, and the farthest
+slot any frame reached was 3,341 of 4,096 — the same with the stage
+drawn whole, because the far cells land in the octaves the table has
+room for. Nothing sorts wrongly at the new distances.
+
+**What it is worth.** Over those 32 runs, `max` queues 1.1 to 2.9 times
+the tiles (the dump site most, 184 to 535) and draws 0.2 to 5.8 per cent
+more primitives (the parking lot most, 551,055 to 582,996). The extra tiles are mostly behind the camera or outside the
+view and are thrown away by the renderer for nothing, which is why the
+primitive count moves so little. **What the player sees is not the
+primitives but the fog**: at `original` the ground fades to the fog's
+colour a few thousand units out, and at `max` the stage is drawn and
+lit to its own far edge.
+
+### Edges
+
+The scene is drawn **two or four times over each way and averaged
+down** (`antialiasing`): the colour buffer is `scale * sample` pixels to
+a pixel of video memory, and a pass at the end of the frame makes the
+picture by averaging each block of `sample` by `sample`
+(`port_GlResolve`, `src/port/gl/gl_draw.c`). With `off` there is no
+second pass at all and the picture is read from the colour buffer
+itself, so the first step's proof at scale 1 is of the same pixels it
+always was.
+
+**Why this and not the usual two.** The step before left a warning: the
+game's primitives are painted in the order of the ordering table and
+many of them are half-transparent, so anything that mixes coverage with
+colour mixes twice.
+
+- *Multisampling* keeps one colour and several coverage masks a pixel.
+  Where a half-transparent primitive is painted over an edge that is
+  already part-covered, the coverage is folded in once when the edge is
+  resolved and again when the primitive is mixed: the edge shows
+  through what should hide it. There is no order to draw in that avoids
+  it, because the game's order is the ordering table's.
+- *A filter over the finished picture* (FXAA and its like) is the
+  cheapest, and it cannot tell the scene from the 2D layer: it would
+  soften the HUD, the fonts and the menus, which are the one thing in
+  this picture that is exactly right. Drawing the 2D layer after it
+  would mean telling the two apart in the stream of primitives, which
+  the side channel can do (a primitive the projection gave a depth to is
+  the scene) — but then the filter would still work on a picture whose
+  texels are blocks, and guess edges that are texture and not geometry.
+- *Drawing it more times over* is exact with any order of painting,
+  because every mix happens at the finer resolution and the averaging
+  comes after all of it. And it leaves the 2D layer exactly where it
+  was: a pixel of video memory is a block of `scale * sample` pixels of
+  one colour, every block of `sample` averaged lies inside one of
+  those, and the averaging is done in whole numbers.
+
+**Measured.** A flat picture the game draws (the top menu, 1,228,800
+pixels at 2 by 4) against the same picture with no smoothing: **7
+pixels differ at `2` and 7 at `4`**, the worst channel by 12 and 31.
+(Three times over moves 8,983 of them, which is why the setting is held
+to a power of two; the reason was looked for and not found.) A sword's
+edge, a fighter against the sky and the HUD's letters, cropped and
+enlarged: `build/remaster2/step2/sword.png`, `fighter.png`, `hud.png`,
+each with no smoothing, 2 and 4 side by side.
+
+**What a frame costs**, on this machine with no graphics card at all
+(Mesa's llvmpipe), the hardware path alone over a whole run at 2 across
+and 4 down:
+
+| `antialiasing` | The colour buffer | A frame |
+|---|---|---|
+| `off` | 2,048 by 2,048 | 1.27 ms |
+| `2` | 4,096 by 4,096 | 5.80 ms |
+| `4` | 8,192 by 8,192 | 23.0 ms |
+
+Four times over is sixteen times the pixels and costs eighteen times as
+much, which says the cost is fill rate and nothing else. A real card
+fills at least a hundred times faster than llvmpipe does, so `2` at a
+1080p window is of the order of a tenth of a millisecond there and `4`
+half of one; the colour buffer is 64 MB at `2` and 256 MB at `4`, which
+is the number to watch on a small card, and it is all of video memory's
+1024 by 512 at the scale, most of which is never shown. **Default:
+`off` until someone has looked at it on a screen**; `2` is what the
+measurements say to take.
+
+### A wider picture
+
+`aspect 16:9` makes the picture **a wider view of the same scene, not a
+stretched one**: the vertical field of view is the console's and the
+horizontal grows. Nothing of the game's projection changes — no screen
+offset, no projection distance, no clip — for the simple reason that
+**the game never culls to the right or the bottom of its screen**: a
+face is dropped only when every corner is off the left or above the top
+(`render_FaceOffScreen`, the sign bits of the packed position), and a
+stage tile also when no corner is above line 240. Everything to the
+sides is already projected and already emitted; the console's GPU
+throws it away at the edge of its 640-pixel drawing area, and the
+remastered renderer, which has every corner where the projection really
+put it, need only keep it.
+
+So the whole of it is in the drawing path:
+
+- the picture is `port_RemasterMargin(640, 16, 9)` = 106 pixels of video
+  memory wider on each side, 852 in all, which still fits across video
+  memory's 1024 — the colour buffer the renderer draws into;
+- everything the game draws is placed 106 pixels to the right, so that
+  the console's own 640 sit in the middle of it;
+- a primitive the projection gave a depth to — the scene — is drawn with
+  the drawing area widened to the whole picture, where the game was not
+  restricting that area to part of the screen (the pause menu, the
+  replay's panels); the 2D layer keeps the console's own area and stays
+  four by three in the middle;
+- the two bands beside the console's picture are cleared where the game
+  clears its own drawing area, which is the moment that matters: the
+  game draws its frame after the picture of the frame before it has been
+  read (`DrawOTag` comes past the vertical blank in its loop), so a
+  clear at the top of a frame wipes the bands of the picture about to be
+  read;
+- what the game wrote into video memory — a fill, a copy, the loading
+  screens, the portraits — is stretched into the console's 640 alone and
+  not into the bands, which are the scene's; a plain rectangle as wide
+  as the console's picture is a fade or a page of one colour and is
+  widened to cover all of it.
+
+**Measured.** The middle 640 pixels of a 16 by 9 picture against the
+same frame at four by three: **25 pixels of 1,228,800 differ**, all of
+them where a polygon now carries on past the old edge instead of being
+cut at it.
+
+**Draw the stage further with it.** The stage's cells are chosen by a
+wedge cut for the console's field of view, so a wider view at
+`draw_distance original` has nothing to show at the sides past about 15
+cells. `max` is what fills a wide picture, and the two settings are
+meant to be used together.
+
+**What is not done.** The HUD stays four by three: the WINS counters
+(`COUNTER_LEFT_X` 80, `COUNTER_RIGHT_X` 521 in `hud.c`) and the rest of
+the 2D layer sit in the middle band and do not move out to the new
+edges. Moving them wants a word from each emitter saying what it is
+anchored to, which the side channel does not carry yet — the emitters
+themselves are already apart from the scene's (`hud.c`, `menu_pages.c`,
+`select.c`, `font.c` against `render_asm.c`), so it is a matter of
+saying so, not of finding out. The default is `4:3` until that is done.
+
+### What the window still needs
+
+The hardware path is written to hang on the window the same way it
+hangs on the prover. What `src/port/window/` needs, when the window's
+own work settles:
+
+- the window made with `SDL_WINDOW_OPENGL` and a 3.3 core context
+  (`SDL_GL_SetAttribute`, `SDL_GL_CreateContext`), and
+  `port_GlStart(SDL_GL_GetProcAddress, &options)` once it is current;
+- at a blank, where `port_DrawPicture` is: with the remastered picture
+  on, `port_RemasterShow()` and then the colour buffer's display
+  rectangle drawn into the window (one textured quad, or
+  `glBlitFramebuffer`) and `SDL_GL_SwapWindow`; with it off, what the
+  window does today;
+- F2 calling `port_ToggleGraphics()`, and `--graphics
+  original|remastered` calling `port_SetGraphics`;
+- the scale from `port_RemasterScaleFor(window_w, window_h, picture_w,
+  picture_h)` whenever the window is resized, and `port_GlSetOptions`
+  with it and twice it for `tall`; an option to force it, which cannot
+  be called `--scale` because the window already uses that name for
+  where the picture goes (`--resolution N`).
+
+### What each later step needs
+
+- **The frame rate.** The game counts its own frames in
+  `g_disp_frame_count` and waits `frame_period` blanks a frame (2 in a
+  fight: 30 a second); the fight steps once a game frame, and
+  everything that moves is counted in frames. 144 a second means either
+  the game stepping that often, which changes what it computes, or the
+  renderer drawing between steps from two poses — which is where the
+  side channel helps, since it has the exact positions to interpolate.
+  The port's clock is the sound's samples (`port_PaceBlank`), and that
+  is what would have to be split.
+- **Lighting and shadows.** Today every vertex of a model is lit by the
+  GTE, by three directional lights and an ambient colour from the
+  stage's `LightSetup` (`src/main/scene.c`), and the colour is in the
+  primitive. A shadow is the model flattened by a matrix
+  (`render_SetupNode`) and drawn in black (`render_EmitBlackF3`,
+  `render_EmitBlackF4`); there is no shadow of one thing on another and
+  no light that moves. Better lighting means the normals, which the
+  mesh has and the primitive does not: the side channel is where they
+  would go, beside the position and the depth.
 
 ## 64 bits
 

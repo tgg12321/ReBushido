@@ -130,6 +130,10 @@ u32 *ClearOTagR(u32 *ot, s32 count) {
     if (count > 0) {
         ot[0] = LINK_END;
     }
+    /* the frame the remastered renderer's side channel is writing down
+     * begins here: the game clears this frame's table and then builds
+     * its primitives (port_remaster.h) */
+    port_RemasterNewFrame();
     return ot;
 }
 
@@ -307,9 +311,13 @@ void DrawOTag(u32 *first) {
         u32 length = tag >> LINK_LENGTH_SHIFT;
         u32 i;
 
+        /* which primitive these words are, for the remastered
+         * renderer's side channel (port_remaster.h) */
+        port_RemasterSetPrim((PortAddress)prim);
         for (i = 1; i <= length; i++) {
             port_WriteGp0(prim[i]);
         }
+        port_RemasterSetPrim(0);
         if ((tag & LINK_MASK) == LINK_END) {
             return;
         }

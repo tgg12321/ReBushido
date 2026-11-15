@@ -62,6 +62,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 
 import port_build  # noqa: E402  (tools/port_build.py)
+import port_layout  # noqa: E402
 from port_build import host_tests, modern  # noqa: E402
 
 OUT_DIR = 'build/port-sdl'
@@ -454,7 +455,9 @@ def console_layouts(target, program):
 
 
 def write_names(target, program, names_path):
-    """The program's names, as tools/port_build.py writes them."""
+    """The program's names, as tools/port_build.py writes them, and for a
+    64-bit program how each variable that grew lies against the
+    PlayStation's (port_layout.console_runs)."""
     rows = symbols_of(target, program)
     symbols = {}
     for address, letter, size, name in rows:
@@ -604,7 +607,7 @@ def main():
         # the program without a window, a C library or SDL: kernel32 alone,
         # started at the host file's own entry
         plain = target.dir + '/host_windows_plain.o'
-        proc = run([target.cc] + [f for f in HOSTED_FLAGS if not f.startswith('-D_FILE')]
+        proc = run([target.cc] + target.size_flags() + [f for f in HOSTED_FLAGS if not f.startswith('-D_FILE')]
                    + ['-DPORT_NO_C_RUNTIME', '-c', 'src/port/host_windows.c', '-o', plain])
         if proc.returncode != 0:
             print('\n'.join('    ' + line for line in proc.stderr.split('\n')[:40]))

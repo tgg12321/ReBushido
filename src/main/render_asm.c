@@ -492,6 +492,11 @@ static void render_LoadFace(RenderFace *face, u32 corners, s32 corner_count) {
         face->xy[i] = RENDER_POINTS[face->index[i]];
         face->all &= face->xy[i];
     }
+    /* the remastered renderer's side channel: which points these
+     * corners are, so that the primitive this face becomes can be drawn
+     * where the projection really put it (port_remaster.h) */
+    port_RemasterNoteFace(
+        (PortAddress)RENDER_POINTS, face->index, corner_count);
     port_GteLoadData(PORT_GTE_SXY0, face->xy, 3);
     port_GteCommand(PORT_GTE_CMD_NCLIP);
 }
@@ -547,10 +552,19 @@ static void render_LinkEntry(u32 *entry, void *prim, u32 length) {
 
     *entry = (u32)prim & RENDER_LINK_MASK;
     *(u32 *)prim = next | RENDER_LINK_LENGTH(length);
+    /* the remastered renderer's side channel: this primitive is the
+     * face render_LoadFace last looked up (port_remaster.h) */
+    port_RemasterAttachFace((PortAddress)prim);
 }
 
 /* The same at entry `index` of the table being drawn into. */
 static void render_LinkPrim(s32 index, void *prim, u32 length) {
+#if RB_REMASTER_VIEW
+    /* the farthest slot a frame used, for the report of every limit the
+     * drawing path has: a depth beyond the table's reach is clamped to
+     * its last slot, where primitives no longer sort (port_remaster.h) */
+    port_RemasterNoteOtSlot(index);
+#endif
     render_LinkEntry(&((u32 *)ADDR(RENDER_OT))[index], prim, length);
 }
 

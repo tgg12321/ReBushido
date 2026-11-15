@@ -70,6 +70,17 @@ void port_MapMemory(void) {
                   "the stack the game runs on\n",
                   PORT_STACK_ADDR, PORT_STACK_SIZE);
     }
+#if RB_REMASTER_VIEW
+    /* ... and the port's own buffers of primitives, where this run
+     * draws more of the stage than the console does (port_remaster.h) */
+    if (port_RemasterPrimBufferBytes() != 0 &&
+        !port_HostMapAt(PORT_PRIMS_ADDR, PORT_PRIMS_SIZE)) {
+        port_Fail("rebushido: the system gave no memory at 0x%08X (%u bytes): "
+                  "the primitives of a frame drawn further than the "
+                  "console's\n",
+                  PORT_PRIMS_ADDR, PORT_PRIMS_SIZE);
+    }
+#endif
 }
 
 s32 port_IsMapped(u32 address, u32 count) {

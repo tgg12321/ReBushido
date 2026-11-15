@@ -61,6 +61,28 @@ static s32 g_stage_view_yaw;
 /* The fog is never shallower than this, in world units. */
 #define FOG_MIN_SPAN 6000
 
+#if RB_REMASTER_VIEW
+/* Every cell of the window, for the remastered picture's `max` draw
+ * distance: the stage drawn whichever way the camera looks, in place of
+ * the wedge of the 64 masks (port_remaster.h). The window is 31 cells of
+ * the stage's 32, so this and the cells outside it are the whole
+ * stage. */
+static s32 g_stage_whole_mask[STAGE_WINDOW] = {
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+
+/* Where the scene ends and how deep the fog is, with the remastered
+ * picture's draw distance (port_remaster.h): the console's numbers times
+ * a factor of 256ths. The stage's fog colours are not touched, so a
+ * night stage stays a night stage; its gradient reaches further.
+ * Drawing only: nothing the game computes is read from these. */
+#define STAGE_FAR_NOW(far)                                                     \
+    ((s32)(((far) * port_RemasterFogFactor(port_RemasterDistance())) /         \
+           PORT_FOG_FACTOR_ONE))
+#else
+#define STAGE_FAR_NOW(far) (far)
+#endif
+
 /* The stage's colour tables in video memory: one row, with the fogged
  * copies in the rows under it. */
 #define FOG_CLUT_X 0
@@ -141,9 +163,9 @@ void stage_QueueFog(s32 stage, s32 eye_distance) {
              * scene ends */
             s32 far = stage_IsFirstPerson();
             if (!far) {
-                far = STAGE_FAR;
+                far = STAGE_FAR_NOW(STAGE_FAR);
             } else {
-                far = STAGE_FAR_FIRST_PERSON;
+                far = STAGE_FAR_NOW(STAGE_FAR_FIRST_PERSON);
             }
             span = far - eye_distance;
         }
@@ -172,6 +194,18 @@ void stage_QueueFog(s32 stage, s32 eye_distance) {
         {
             /* FAKE: g_stage_fog_settings[stage][1], with no index */
             s32 index = stage * 4;
+#if RB_REMASTER_VIEW
+            /* the stage's own fog depth, pushed out with the scene's end
+             * where the remastered picture draws further */
+            s32 span_limit = STAGE_FAR_NOW(*span_limit_entry);
+            stage_QueueFogMoves(
+                eye_distance, STAGE_FOG_LEVELS, g_stage_fog_moves, span_limit,
+                *(s16 *)((u8 *)g_stage_fog_settings + 2 + index));
+            stage_QueueFogMoves(
+                eye_distance, STAGE_MODEL_FOG_LEVELS, g_stage_model_fog_moves,
+                span_limit,
+                *(s16 *)((u8 *)g_stage_fog_settings + 2 + index));
+#else
             stage_QueueFogMoves(
                 eye_distance, STAGE_FOG_LEVELS, g_stage_fog_moves,
                 *span_limit_entry,
@@ -180,6 +214,7 @@ void stage_QueueFog(s32 stage, s32 eye_distance) {
                 eye_distance, STAGE_MODEL_FOG_LEVELS, g_stage_model_fog_moves,
                 *span_limit_entry,
                 *(s16 *)((u8 *)g_stage_fog_settings + 2 + index));
+#endif
         }
     }
 }
@@ -210,9 +245,9 @@ static void stage_QueueFogMoves(
         depth_delta = g_stage_far_fog_span;
     } else {
         if (!stage_IsFirstPerson()) {
-            depth_delta = STAGE_FAR - move_depth;
+            depth_delta = STAGE_FAR_NOW(STAGE_FAR) - move_depth;
         } else {
-            depth_delta = STAGE_FAR_FIRST_PERSON - move_depth;
+            depth_delta = STAGE_FAR_NOW(STAGE_FAR_FIRST_PERSON) - move_depth;
         }
     }
 
@@ -636,6 +671,10 @@ void stage_Draw(s32 eye_distance) {
     void **queue;
     s32 yaw;
     s32 index;
+#if RB_REMASTER_VIEW
+    s32 draw_distance;
+    s32 tiles_queued;
+#endif
 
     view_cell_x = (g_node_camera_root_ptr->local.t[0] + STAGE_HALF_SIZE) /
                   STAGE_CELL_SIZE;
@@ -653,8 +692,35 @@ void stage_Draw(s32 eye_distance) {
     window_z = view_cell_z - STAGE_WINDOW / 2;
     /* a turn is 64 times STAGE_VIEW_YAWS */
     index = (yaw >> 6) & (STAGE_VIEW_YAWS - 1);
+#if RB_REMASTER_VIEW
+    /* The remastered picture draws the stage further (port_remaster.h).
+     * `far` is the whole wedge the camera looks down, with no disc of
+     * near cells taken out of it, and the cells outside the window after
+     * it, which is what the game's own far view draws; `max` is every
+     * cell of the stage, whichever way the camera looks.
+     *
+     * Drawing only: which cells are drawn is read by this file and by
+     * the renderer and by nothing else, and the stage's collision, its
+     * obstacles and the opponents' navigation have data of their own
+     * (g_collision_grid, g_fight_obstacles, g_cpu_stage_obstacles). */
+    draw_distance = port_RemasterDistance();
+    if (draw_distance != PORT_DISTANCE_ORIGINAL && !g_stage_first_person &&
+        port_RemasterNeedsFarShift(draw_distance)) {
+        /* A tile's place and depth are kept in sixteen bits after the
+         * renderer's scale: at the near scale a tile 65,536 world units
+         * off reads negative and is dropped, and the stage's grid is
+         * 90,510 across its diagonal. */
+        g_scene_settings.far_shift = 2;
+    }
+#endif
     if (g_stage_first_person) {
         mask = g_stage_first_person_masks[index];
+#if RB_REMASTER_VIEW
+    } else if (draw_distance == PORT_DISTANCE_MAX) {
+        mask = g_stage_whole_mask;
+    } else if (draw_distance == PORT_DISTANCE_FAR) {
+        mask = g_stage_view_masks[index];
+#endif
     } else if (g_scene_settings.far_view.value & 1) {
         mask = g_stage_view_masks[index];
     } else {
@@ -730,9 +796,21 @@ void stage_Draw(s32 eye_distance) {
         }
     }
 
-    if ((g_scene_settings.far_view.value & 1) && !g_stage_first_person) {
+    if ((g_scene_settings.far_view.value & 1
+#if RB_REMASTER_VIEW
+         || draw_distance != PORT_DISTANCE_ORIGINAL
+#endif
+         ) &&
+        !g_stage_first_person) {
         seen = stage_QueueFarCells(window_x, window_z, seen);
     }
+#if RB_REMASTER_VIEW
+    /* what this frame's draw distance came to, for the report of every
+     * limit the drawing path has (port_remaster.h) */
+    tiles_queued = (s32)(g_render_queue_end - (void **)g_render_queue);
+    port_RemasterNoteCells(
+        tiles_queued, (s32)(seen - g_stage_seen_nodes), RENDER_QUEUE_SIZE);
+#endif
     while (seen != g_stage_seen_nodes) {
         seen--;
         *g_render_queue_end = *seen;

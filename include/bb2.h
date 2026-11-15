@@ -79,6 +79,7 @@
 #if RB_PORT
 #include "port_gte.h"
 #include "port_platform.h"
+#include "port_remaster.h"
 #endif
 
 #endif /* BB2_H */

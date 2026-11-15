@@ -52,6 +52,29 @@ extern u32 port_GetGpuStatus(void);
  * is for that and nothing else, and it is off unless asked for. */
 extern void port_SetGpuLikeEmulator(s32 is_on);
 
+/* ---- what the drawing commands have set ---- */
+
+/* The drawing state a primitive is painted with. The remastered
+ * renderer reads it to paint a primitive as the software GPU has just
+ * painted it (port_remaster.h); nothing else needs it. */
+typedef struct {
+    u32 mode;         /* E1's bits, with a textured polygon's own page */
+    s32 window_and_u; /* E2: a texture point is anded with the one and */
+    s32 window_or_u;  /* then ored with the other */
+    s32 window_and_v;
+    s32 window_or_v;
+    s32 clip_left; /* E3 and E4: the drawing area, its last pixels in */
+    s32 clip_top;
+    s32 clip_right;
+    s32 clip_bottom;
+    s32 offset_x; /* E5 */
+    s32 offset_y;
+    s32 mask_set;   /* E6: ored into every pixel drawn */
+    s32 mask_check; /* ... and a pixel that has this is left alone */
+} PortGpuState;
+
+extern void port_GetGpuState(PortGpuState *state);
+
 /* ---- what is on show ---- */
 
 typedef struct {

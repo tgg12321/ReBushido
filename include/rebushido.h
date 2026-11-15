@@ -62,6 +62,17 @@
 #endif
 #define RB_PORT (REBUSHIDO && RB_PORT_BUILD)
 
+/* What "Graphics: Remastered" adds to the picture on a PC and cannot add
+ * on a PlayStation (docs/PORT.md, "Remastered"): the stage drawn out to a
+ * far greater distance with its fog pushed out to match, the edges
+ * smoothed, and a wider view at a wider shape of picture. It is the port
+ * alone, so it rides on that switch and is off in every PlayStation
+ * build: there "Graphics: Remastered" is still what it was. What the
+ * game computes is the same with it on and off; only what is drawn
+ * differs. The run's own settings choose how much (port_remaster.h,
+ * PortRemasterView). */
+#define RB_REMASTER_VIEW (REBUSHIDO && RB_PORT_BUILD)
+
 /* ---- the fixes of the original's bugs ---- */
 
 /* Each is on only while the player's "Bugfixes" setting is

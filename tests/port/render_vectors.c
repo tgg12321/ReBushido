@@ -5,6 +5,7 @@
 #include "src/main/render_skin_asm.c"
 #include "src/main/render.c"
 #include "play/probe/cases.h"
+#include "port/remaster_stub.h"
 #include "runtime/runtime.h"
 
 /* What the renderer's routines reach that is not in the files above. */

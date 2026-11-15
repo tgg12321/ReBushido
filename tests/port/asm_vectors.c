@@ -4,6 +4,7 @@
 #include "src/main/render_asm.c"
 #include "play/probe/cases.h"
 #include "play/probe/routines.h"
+#include "port/remaster_stub.h"
 #include "runtime/runtime.h"
 
 /* sys_Trap's end of the line; no case runs it. */
