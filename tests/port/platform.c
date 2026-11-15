@@ -13,25 +13,8 @@
 #include "src/port/gpu.c"
 #include "src/port/text.c"
 #include "src/port/stub.c"
+#include "port/remaster_stub.h"
 #include "runtime/runtime.h"
-
-/* The remastered renderer is not in this test: what the GPU is given
- * goes nowhere else (tests/port/remaster.c holds that side). */
-void port_RemasterCommand(const u32 *words, s32 count) {
-    (void)words;
-    (void)count;
-}
-
-void port_RemasterLoadedVram(s32 x, s32 y, s32 w, s32 h) {
-    (void)x;
-    (void)y;
-    (void)w;
-    (void)h;
-}
-
-void port_RemasterNewFrame(void) {}
-
-void port_RemasterSetPrim(PortAddress prim) { (void)prim; }
 
 /* ---- what those files want of the rest of the port ---- */
 
