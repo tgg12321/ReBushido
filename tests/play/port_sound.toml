@@ -3,7 +3,8 @@
 # and the registers a program writes (README.md, "The sound").
 about = "The native port's sound against the emulator: port_game's run, comparing what Sony's sound libraries keep in memory (the sound bank's header, where each bank is in sound memory, what each voice's registers were last set to, each voice's record and envelope level, the keys) and the sound chip itself: sound memory and the registers."
 discs = ["rebushido", "port"]
-# The port has no memory card yet, so neither has the emulator.
+# No memory card in either slot, on the port as in the emulator: what
+# this test compares is the fight, and the card's own test is port_card.
 cards = "none"
 limit = 12000
 seconds = 240

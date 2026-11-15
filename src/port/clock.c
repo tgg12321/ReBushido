@@ -19,8 +19,12 @@
  * the frame's length, calling rand() each time. On the console the
  * number of those calls is whatever time the frame had left. Here it is
  * the number of lines asked for: 384 calls in a frame of two fields, 128
- * in a frame of one, every frame. */
+ * in a frame of one, every frame.
+ *
+ * What a vertical blank brings is the pads' packets, the card driver's
+ * turn and a blank's worth of sound, in that order (port_AdvanceClock). */
 #include "common.h"
+#include "port_card.h"
 #include "port_spu.h"
 #include "bb2.h"
 
@@ -62,6 +66,9 @@ static void port_AdvanceClock(u32 line) {
             g_port_input_hook(next_blank / PORT_LINES_PER_BLANK);
         }
         port_FillPads();
+        /* the card driver's turn, which the console's takes beside the
+         * pads': a card operation that is done by now reports itself */
+        port_RunCardBlank(next_blank / PORT_LINES_PER_BLANK);
         /* the sound library's tick, and a blank's worth of sound */
         port_RunSoundBlank(next_blank / PORT_LINES_PER_BLANK);
         if (g_port_blank_hook != NULL) {

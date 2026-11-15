@@ -174,24 +174,34 @@ file's findings; `--check` fails if a count went up.
 
 ## ReBushido
 
-On the `main` branch everything above holds, and these as well. The
-whole of it, with examples, is [`REBUSHIDO.md`](REBUSHIDO.md), "Writing a
-change".
+On the `main` branch the names, the structure, the comments and the
+checklist above all hold; the gates are the ones rule 24 names, not the
+SHA1. The whole of it, with examples, is
+[`REBUSHIDO.md`](REBUSHIDO.md), "Writing a change".
 
-23. Every change is behind a switch of its own, `RB_NAME`, defined in
-    `include/rebushido.h` as `(REBUSHIDO && 1)` with a comment saying what
-    the change is; a fix is `RB_FIX_...`. The source asks `#if RB_NAME`,
-    never `#ifdef`, and only switches go in such an `#if`. (A developer's
-    build of its own, like quick boot, is `(REBUSHIDO && RB_NAME_BUILD)`:
-    off unless the build gives that name.) [rb-flag]
-24. The original's lines stay as they are, once: not deleted, not copied
-    into ReBushido's side, not reworded. What is added goes in an `#if`;
-    what is replaced goes in the `#if` and the original in its `#else`;
-    what the player can turn off is
-    `#if RB_NAME` / `if (g_rb_settings...) { ... } else` / `#endif` /
-    `{ the original's lines }`.
-25. Each side of an `#if RB_NAME` block is whole statements or
-    declarations with its braces closed.
+23. A switch of its own, `RB_NAME`, is for **what a player turns on or
+    off** and for **where the PlayStation and the PC need different
+    code** — not for keeping the original's lines. It is defined in
+    `include/rebushido.h` as `(REBUSHIDO && 1)` with a comment saying
+    what the change is; a fix is `RB_FIX_...`. The source asks
+    `#if RB_NAME`, never `#ifdef`, and only switches go in such an
+    `#if`. (A developer's build of its own, like quick boot, is
+    `(REBUSHIDO && RB_NAME_BUILD)`: off unless the build gives that
+    name.) [rb-flag]
+24. Only `decomp` has to match the original's bytes. On `main` the
+    game's code is edited directly and cleanly: a line may be moved,
+    reworded, joined or dropped, and a function rewritten, where that
+    reads better. What guards it instead is the PlayStation ReBushido
+    build — it has to build, fit and pass its play tests, and
+    `same_as_original` says that with nothing switched on it plays as
+    the retail disc — and the port's own tests. A byte-match check that
+    a legitimate change makes fail is retired here, in
+    `tools/checks.sh` and `.github/workflows/build.yml` together.
+25. Where a switch is used, each side of the `#if RB_NAME` block is
+    whole statements or declarations with its braces closed. What the
+    player can turn off asks the setting inside the `#if`:
+    `#if RB_NAME` / `if (g_rb_settings...) { ... } else { ... }` /
+    `#endif`.
 26. What the player can turn off asks `g_rb_settings` (`rb_settings.h`),
     whose defaults are the original's behaviour.
 27. New code of any size is in `src/rebushido/`, its header

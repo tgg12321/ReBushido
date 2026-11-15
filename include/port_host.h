@@ -52,6 +52,15 @@ extern u32 port_HostReadAt(s32 file, u32 offset, void *dest, u32 count);
 /* Appends to a file made by port_HostCreate. Returns 1 if all of it was
  * written. */
 extern s32 port_HostAppend(s32 file, const void *bytes, u32 count);
+/* A file that is there already, for reading and writing in place (the
+ * memory card's image): a number that is not negative, or -1. */
+extern s32 port_HostOpenReadWrite(const char *path);
+/* `count` bytes to `offset` of such a file. Returns 1 if all of them were
+ * written. */
+extern s32 port_HostWriteAt(s32 file, u32 offset, const void *bytes, u32 count);
+/* Asks the system to put what has been written on the disc, so that what
+ * the game has been told is saved survives a crash. */
+extern void port_HostFlush(s32 file);
 
 /* `size` bytes of zeroed memory that can be read and written, at exactly
  * `address`: 1, or 0 if the system will not give memory there (something

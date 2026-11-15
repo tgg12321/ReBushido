@@ -1,6 +1,7 @@
 about = "The native port against the emulator with Bugfixes on: the fight of port_game with the setting turned on at the options page."
 discs = ["rebushido", "port"]
-# The port has no memory card yet, so neither has the emulator.
+# No memory card in either slot, on the port as in the emulator: what
+# this test compares is the fight, and the card's own test is port_card.
 cards = "none"
 limit = 12000
 seconds = 240

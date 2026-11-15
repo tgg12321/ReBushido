@@ -24,7 +24,8 @@ registers in one. The window is held to the build without one, by
 numbers, on Linux and on Windows ("The window"). It is a 64-bit
 program, and a 32-bit one beside it that does the same to the byte
 ("64 bits"). Stages 1 to 3 of the seven below are done, stages 4 and 5
-as far as a machine can tell, and of stage 6 everything but the card.
+as far as a machine can tell, stage 6 but for someone to listen, and
+of stage 7 the memory card.
 
 ## Where it stands
 
@@ -34,7 +35,7 @@ as far as a machine can tell, and of stage 6 everything but the card.
 | The game's GTE instructions (Sony's macros) as calls into it | done, by `tools/port_gte_macros.py` |
 | C beside the assembly functions | 119 of 138: Sony's libgte (48), the game's maths (20) and the renderer (51). The other 19 need none (below) |
 | A program that links | done: `make port` builds `build/port/rebushido` from the game's C, with no name missing ("The program") |
-| BIOS calls and Sony's libraries | every one the game calls is defined: done for real where it only works on memory or the port has the thing (the disc, time, the pads' packets, events), a stub that is counted where it has not (the memory card, the link, the movie) |
+| BIOS calls and Sony's libraries | every one the game calls is defined: done for real where it only works on memory or the port has the thing (the disc, time, the pads' packets, events, the memory card), a stub that is counted where it has not (the link, the movie) |
 | Memory | done: the RAM and the scratchpad at the console's addresses ("Memory") |
 | The disc | done: sectors from the player's image, under the game's own disc code ("The disc"), and its XA sound ("Sound") |
 | Sound | done, into a file and, in the build with a window, to a sound card: Sony's libsnd and libspu on a sound chip in C, the disc's music ("Sound"). The chip's memory, its registers and the library's are the emulator's through a fight; what is heard is compared only in part |
@@ -42,7 +43,8 @@ as far as a machine can tell, and of stage 6 everything but the card.
 | The picture | done, into the port's own video memory and out to files: `src/port/raster.c`, the PlayStation's GPU in C. The flat screens are the emulator's to the pixel, a fight's frames but for three pixels in a thousand ("The picture") |
 | 64 bits | done: the program has 64-bit pointers, the game's addresses stay 32-bit numbers below 4 GB, and it is held to the 32-bit program and to the emulator ("64 bits") |
 | A window, a sound card, the PC's keys and controllers | built on SDL 2 for Linux and for Windows (`make port-sdl`, `make port-sdl-windows`) and held to the build without a window by numbers: the same traces, pictures and samples ("The window") |
-| The memory card, movies | not begun |
+| The memory card | done: a standard card image of 128 KB a slot, under the BIOS calls the game makes ("The memory card"). The card the port writes for the options page is byte for byte the one the emulator's BIOS wrote |
+| Movies | not begun |
 
 ## The switch
 
@@ -117,9 +119,10 @@ values of `tests/play/state.toml` at every blank where one changed),
 end), `--shots FOLDER`, `--every N` and `--vram FILE` (the picture as
 PNGs, and video memory: "The picture"), `--wav FILE` (the run's sound,
 with a line for each voice started and each sound the game asked for)
-and `--spu FILE` (sound memory and the chip's registers at the end:
-"Sound"). It ends by printing a line for each stub the game called, with
-how often. Pads are pressed only by a plan: a line `in 0 300 1 START 6`
+`--spu FILE` (sound memory and the chip's registers at the end:
+"Sound"), and `--card1 FILE`, `--card2 FILE` and `--no-cards` (the memory
+cards: "The memory card"). It ends by printing a line for each stub the
+game called, with how often. Pads are pressed only by a plan: a line `in 0 300 1 START 6`
 is Start on the first pad at blank 300 for six blanks
 (`tests/play/README.md`, "The port as a disc").
 
@@ -142,10 +145,11 @@ console.** By library:
 | libc | Sony's `memcpy`, `memmove`, `memchr`, `strcpy`, `strlen`, `rand`, `toupper`. The port's: `printf` and `sprintf` (Sony's walk a PlayStation's argument list), and `memset` and `memcmp`, which the compiler calls |
 | libetc | Sony's `GetVideoMode`. The port's: `VSync` (`clock.c`), `ResetCallback`, `StopCallback` (nothing), and the interrupts' callbacks, of which the vertical blank's is run (`sound.c`) |
 | libcd | the port's, all of it, over the disc image (`cd.c`), with the XA sound the drive plays (`xa.c`) |
-| libapi | the port's: the counters (`clock.c`), the pads (`pad.c`), events (`event.c`), and nothing for `SetSp`, `SetMem` and the critical section. The card's calls and the files are stubs that answer "no card"; `Exec` is a stub |
+| libapi | the port's: the counters (`clock.c`), the pads (`pad.c`), events (`event.c`), the memory card and the BIOS's files (`card.c`), and nothing for `SetSp`, `SetMem` and the critical section. `Exec` is a stub |
 | libsnd, libspu | Sony's, all of both but the one module of libspu that talks to the chip, which is the port's on its sound chip in C ("Sound") |
 | libcomb | the port's, all stubs: nothing at the cable's other end |
-| libcard, libsn | not needed: the first is inside Sony's card code, the second is the development host's files, which nothing reaches |
+| libcard | Sony's `card.c` (`_card_clear`, which is two BIOS calls the port supplies); the rest is BIOS jumps and the kernel patch, which the port's card code stands for |
+| libsn | not needed: the development host's files, which nothing reaches |
 
 A stub counts its calls and gives the answer the library gives when all
 is well, where the game would otherwise stop or wait for ever: no card
@@ -656,6 +660,186 @@ dither. The options page differs in 790, the dither of its title.
 - The displayed rectangle is as wide as the mode says, whatever the
   horizontal range. The 24-bit mode, which only the movie uses, is read
   for a PNG and nowhere else.
+
+## The memory card
+
+The port has the PlayStation's memory card: a **standard raw card image**
+of 128 KB, one file a slot, under the BIOS calls the game makes
+(`src/port/card.c`, `include/port_card.h`). So a save the port writes is
+an ordinary PlayStation memory card file, which an emulator or a card tool
+opens, and a card file an emulator left works here. There is nothing of
+the port's own in it.
+
+**The boundary is the BIOS's**, because that is where the game's card code
+is (`memcard.c`, `memcard_save.c`) and ReBushido's settings code with it
+(`src/rebushido/save.c`): the game starts something on the card and waits
+for the events the driver reports through.
+
+| | |
+|---|---|
+| `InitCARD`, `StartCARD`, `StopCARD`, `_bu_init` | the driver up and down. Every card is one it has not been told about, as after power on; nothing is open |
+| `_card_info` | is a card in the slot, and is it one the driver has not been told about? |
+| `_card_load` | read the card's directory |
+| `_new_card`, `_card_write` | Sony's `_card_clear` is these two (`libcard/card.c`, which the port compiles): the driver stops calling the card new, and a frame is written to prove the card takes one |
+| `open`, `close`, `read`, `write` | the card's files, by the names `bu00:...` (slot 1) and `bu10:...` (slot 2). A name that is not a card's is the link cable's port, as before |
+| `firstfile`, `nextfile` | the directory, with `*` and `?` in the pattern |
+| `delete`, `format` | the game calls neither; the boundary is the BIOS's and the host test and `tools/card.py` use them |
+
+**The images.** `--card1 FILE` and `--card2 FILE` name them; `--no-cards`
+empties both slots. Where an option does not say, a slot's image is
+`card1.mcd` or `card2.mcd` **beside the program**, which is where the
+program's own folder is writable in every way the port is run today (the
+build's folder, and a release's folder for a player). A per-user data
+folder is the window's stage to choose, with the rest of a player's
+settings. A file that is not there is made, formatted and empty, the first
+time the game looks at that slot; a file that is not 128 KB, or that
+cannot be opened or made, leaves the slot empty and the port says so once
+on its error output, which is a state the game is written for.
+
+**The format** is the card's own, which is public knowledge and is written
+out from the rules in `src/port/card.c` and again in `tools/card.py` and
+in the host test, with no emulator's code read. A card is a header block
+and fifteen blocks of 8192 bytes; a block is 64 frames of 128 bytes, which
+is what the card reads and writes at a time. The header block is the
+identifier (`MC`), a directory frame for each of the fifteen blocks, the
+list of twenty broken frames and the twenty frames that replace them, and
+the identifier again in the last frame; every frame's last byte is the
+exclusive or of its other 127. A directory frame holds the block's state
+(a file's first block, a middle one, the last; free, keeping the low half
+of what it was, as the BIOS's delete leaves it; unusable), the whole
+file's size in the frame of its first block, the next block of the file,
+and the file's name of at most twenty characters.
+
+**The events, and what the game waits for.** A software event (`SwCARD`)
+is what a whole operation reports, and the game polls for it once a frame
+(`memcard_PollSwEvent`, `rb_PollLookEvent`), giving up after 120 polls. A
+hardware event (`HwCARD`) is the card itself answering, and the game waits
+for one in loops with **no vertical blank in them** (`memcard_WaitHwEvent`,
+and `_card_clear` inside `memcard_ProbeCard`), where the port's clock does
+not move at all: those are reported the moment the call returns, as they
+must be. The whole table is in `tests/port/card.c`, with the source of
+each row; in short:
+
+| Call | Software event | Hardware event |
+|---|---|---|
+| `_card_info`, a card the driver has not been told about | `EvSpNEW` after 1 blank | |
+| `_card_info`, a card it has | `EvSpIOE` after 1 blank | |
+| `_card_info`, an empty slot | `EvSpTIMOUT` after 1 blank | |
+| `_card_load`, a formatted card | `EvSpIOE` after 16 blanks | |
+| `_card_load`, a card that is not formatted | `EvSpNEW` after 16 blanks | |
+| `_card_load`, an empty slot or an image that cannot be read | `EvSpTIMOUT` after 16 blanks | |
+| `_new_card` | | |
+| `_card_write` | `EvSpIOE` at once | `EvSpIOE` at once; `EvSpTIMOUT` with no card |
+| `read`, `write` of N bytes | `EvSpIOE` after (N + 127) / 128 blanks | `EvSpIOE` at once; `EvSpERROR` if the system refuses it |
+| `open`, `close`, `firstfile`, `nextfile`, `delete`, `format` | | |
+
+`EvSpNEW` from `_card_load` is how the game reads "the card is not
+formatted" (`memcard.c`, `PROBE_WAIT_LOAD`; `save.c`, `LOOK_WAIT_LOAD`),
+so that is what the port gives for a card whose identifier or whose
+directory frames do not hold. A read or a write the host refuses is the
+card's error, which the game turns into "the load failed" or "the save
+failed"; the port never gives `EvSpERROR` for a card that is simply
+missing, because the game's own handling of a card error at a save screen
+is to wait for ever (`memcard_RunRequest` has no arm for it: one of the
+original's bugs, `STATUS.md`).
+
+**The timing**, and what it is assumed from: **a frame of 128 bytes a
+vertical blank**. The console's BIOS driver moves one frame at each of its
+turns, which the vertical blank's interrupt gives it, and a whole block of
+64 frames then takes 64 blanks, which is the second a console is known to
+take to write one block. So `_card_info` is one command and takes 1 blank;
+`_card_load` is the identifier's frame and the fifteen directory frames,
+16 blanks; a read or a write of the 512 bytes either save file is, 4
+blanks. Nothing waits on the host's clock: a run is the same every time,
+as the rest of the port is ("Time"). A card operation that is done by now
+reports itself at the port's next vertical blank, beside the pads
+(`clock.c`, `port_RunCardBlank`).
+
+**What is not the console's**, and is marked in the file:
+
+- Making a file takes no blanks: the console's BIOS writes a directory
+  frame there, which would be one.
+- `format` is done when it returns; the console takes about a second over
+  the header block's 64 frames. It writes the header block alone and
+  leaves the blocks' own bytes, as the BIOS does.
+- `_card_clear` writes the last frame of the header block from address 0,
+  which the port has no memory for; the port writes nothing there. On a
+  formatted card that frame holds the identifier again, and the emulator's
+  own cards show it untouched after the game has run.
+- A card cannot be taken out or put in while the program runs: it is
+  there, or the slot is empty, from the start. The game's "the card was
+  pulled out" paths are therefore never taken.
+- There is no multitap: only card 0 of each of the two ports answers.
+
+**The patch table.** The game's save holds a table of 22 addresses of the
+PlayStation's memory and halfwords that `memcard_UnpackSaveData` writes
+into them as it loads ("Everything else", and `STATUS.md`: a development
+leftover the game always writes empty). On a PC a save file from anywhere
+would be a way to write anything anywhere. The port's `read` of the game's
+own save (`BASLUS-00663BUSHIDO2`) therefore hands the game **an empty
+table** and says once on its error output that it did; the record itself
+is loaded as it is, and a record marked "patches only" then applies
+nothing. The game's own lines are not touched, on either build: the
+PlayStation program still does what it always did, and `tests/save_record.c`
+still holds it to that.
+
+**What is proved.**
+
+- **On every push, by made-up data alone** (`tests/port/card.c` and its
+  `.py`, 550 checks): the card as a format leaves it, frame by frame, with
+  every frame's exclusive or worked out a second time in Python from the
+  rules and a third by `tools/card.py`; the events of each call and the
+  blanks each takes, against the table above; a file made, written, read
+  back and deleted, and its blocks had again; a file of three blocks, its
+  directory frames linked first, middle and last and its bytes written and
+  read across them; the directory with `*` and `?` in the pattern; a full
+  card (fifteen files of a block, and a file of all fifteen), and the file
+  too many; a card that is not formatted, a damaged directory frame, a
+  damaged identifier and an image that is not 128 KB; two slots, each with
+  its own card; `--no-cards`; a name of twenty characters, which has no
+  zero after it in the directory; and the patch table refused, with the
+  rest of the save coming back whole and another file's bytes untouched.
+  No image of a real card is read: the test's host files are memory.
+- **The emulator's own cards, without running the emulator.** The card
+  the port writes for the options page's round trip, with the retail image
+  and the port alone, is **byte for byte** the card PCSX-Redux's BIOS code
+  wrote in the play test `options_page` (`build/playtest/options_page/
+  rebushido/card1.mcd`), and a card the port makes new is byte for byte
+  the empty formatted one the emulator makes. The other way too: given a
+  copy of the emulator's card, the port reads ReBushido's settings off it
+  (`rb_save` is `RB_SAVE_LOADED` and the setting is the one the emulator
+  wrote).
+- **The round trips, on the port with the retail image.** The options
+  page: one boot changes a setting, leaves the page and the file is
+  written; a second boot with the same card comes up with the setting
+  read back. The game's own save: from the top menu's Options, Memory
+  Card, Save, the game writes `BASLUS-00663BUSHIDO2`, one block; a second
+  boot finds it at the top menu, asks whether to load it and loads it,
+  with the unlocks it saved. A save with a patch in its table loads, and
+  the address it names is not written.
+- **The three plans that run with no card** (`port_game`,
+  `port_other_fight`, `port_bugfixes`) give the same checkpoint values at
+  the same blanks as before the card was written, to the line.
+- **Against the emulator**: the play test `port_card`, four boots with one
+  card passed from each to the next, the first two in the emulator and the
+  last two on the port. It passes: every value it compares is the same on
+  all four runs, and afterwards the four card images are **one file, byte
+  for byte** -- a card of 131,072 bytes with `BASLUS-00663REBUSHI` of one
+  block and fourteen blocks free. So the settings' file was written by the
+  console's own BIOS code through the emulator and read back twice by the
+  port, which wrote nothing.
+
+**The window build** needs nothing of its own: the card is the same
+boundary over the same three calls of `port_host.h` (a file opened for
+reading and writing, written at an offset, and pushed out to the disc),
+which `src/port/host_windows.c` has on kernel32 (`CreateFileA`,
+`SetFilePointerEx`, `WriteFile`, `FlushFileBuffers`) and
+`src/port/window/host_posix.c` on a C library, for the build with a
+window. All three are built and run.
+
+**What is left**: a card taken out or put in while the program runs (which
+needs the window's own way of asking for one), and a per-user folder for
+the images.
 
 ## The window
 
@@ -1298,7 +1482,7 @@ of `asm/funcs/`, which the source includes with `INCLUDE_ASM`: 139 files,
 | Sony's libgte in assembly | 48 functions | `src/main/psxsdk/libgte/`, 33 files | C beside each | done |
 | The game's maths in assembly | 20 functions: the 19 of `math_asm.c` and `math_RotMatrixZYX` | `math_asm.c`, `render_asm.c` | C beside each. `sys_Trap` becomes `port_Trap`, which the port supplies | done |
 | The renderer | 51 functions, 8,029 instructions, and the data listing | `render_asm.c` (50), `render_skin_asm.c` | C beside each ("The renderer in C"). They are not C functions as they stand: they pass the mesh cursor, the scratchpad and the handler table to each other in fixed registers, jump into each other through two tables of labels, and eight of them have their outline colour written into their instructions while the game runs (`render_SetOutlineColor`). The C gives all that a form: a structure for the shared state, two switches for the jumps, a variable for the colour | done |
-| BIOS calls | 40 two-instruction jumps (`BIOS_A_FUNCTION` and its like), 2 system calls, `_96_remove` | `src/main/psxsdk/libapi/`, `libcard/` | Not C equivalents: the kernel does not exist on a PC. The port supplies what the game calls (below) | defined; the card's and `Exec` are stubs |
+| BIOS calls | 40 two-instruction jumps (`BIOS_A_FUNCTION` and its like), 2 system calls, `_96_remove` | `src/main/psxsdk/libapi/`, `libcard/` | Not C equivalents: the kernel does not exist on a PC. The port supplies what the game calls (below) | defined; `Exec` is a stub |
 | Sony's other assembly | 8 functions that patch the kernel's pad and card drivers, `_patch_gte`, `setjmp`, `SetSp` | `libapi/`, `libcard/`, `libc2/`, `libgte/patchgte.c` | None: they serve Sony's interrupt and driver code, which the port replaces whole | not needed |
 | Start-up | the PS-X EXE header, `__SN_ENTRY_POINT`, `__main`, `__do_global_dtors` | `asm/header.s`, `libsn/snmain.c` | The PC's own start-up; `main` is the game's | not needed |
 | The development host's file calls | `PCopen`, `PCclose`, `PClseek`, `_SN_read`, and `pollhost` (a `break`) | `libsn/` | The game's two loaders that use them (`main.c`) are never reached on a retail disc; the port leaves them out or gives them the PC's files | not needed |
@@ -1311,8 +1495,8 @@ Sony's headers already declare these (`include/psxsdk/libapi.h`,
 platform layer defines them (`src/port/`). Counted in the game's own
 code and ReBushido's, not in Sony's. The last column is what the
 finished port supplies; what it supplies today is in "Sony's libraries
-in the port": events, the counters, the pads' packets and the nothings
-are done, the card answers "no card", `Exec` returns at once.
+in the port": events, the counters, the pads' packets, the memory card and
+the nothings are done, `Exec` returns at once.
 
 | What for | Calls | Kernel entries | What the port supplies |
 |---|---|---|---|
@@ -1427,7 +1611,9 @@ Besides:
   scratchpad, or read by the renderer's assembly at fixed offsets
   (`SceneNode`, `Model`, the cloth's).
 - The save file's record (`SaveData`) holds 22 addresses of the
-  PlayStation's memory, which are written into on load.
+  PlayStation's memory, which are written into on load. On the port the
+  card hands the game an empty table of them ("The memory card", "The
+  patch table").
 
 **Fixed addresses.** Twelve constants: the scratchpad at `0x1F800000`
 (`SCRATCHPAD`, used 457 times in C through 17 names, and by 47 of the
@@ -1637,6 +1823,10 @@ points below. Stages two and three, the program, by the last three.
   what differs counted ("The picture").
 - **The GPU by made-up cases**, on every push: `tests/port/raster.c`,
   404 checks of pixels worked out by hand ("The picture").
+- **The memory card by made-up images**, on every push:
+  `tests/port/card.c` and its `.py` ("The memory card"), and the card the
+  port writes with the retail image held to the one the emulator's BIOS
+  wrote, which needs no emulator run.
 - **The reader and the platform layer by made-up cases**, on every
   push: `tests/port/disc.c` (an image of forty made-up sectors:
   addressing, the data's offsets, reading across sectors, a sector of
@@ -1713,7 +1903,9 @@ Each ends with something that can be shown.
    window gives the same samples to a sound card ("The window"). Left
    of it: someone to listen.
 7. **The rest.** Movies, the memory card as a file, the link (or
-   nothing in its place).
+   nothing in its place). The card is done ("The memory card"): a
+   standard card image a slot, with the BIOS's calls over it, and the
+   image the port writes is the emulator's own byte for byte.
 
 The wide picture and the high resolution are the roadmap's next item and
 build on stage 4.
@@ -1732,15 +1924,12 @@ other):
 
 | Stage | Stub | Calls |
 |---|---|---|
-| 7, the card | `_card_info` | 24 |
-| | `InitCARD`, `StartCARD`, `_bu_init` | 2 each |
-| | `StopCARD` | 1 |
 | 7, the movie | `Exec` | 1 |
 
-Not called on that way, and stubs too: the card's files (`open`,
-`close`, `read`, `write`, `firstfile`, `nextfile`, `format`),
-`_card_load`, `_card_clear`, a CD audio track (`CdlPlay`), and the
-link's three. Sound has no stub left ("Sound").
+Not called on that way, and stubs too: a CD audio track (`CdlPlay`) and
+the link's three. Sound has no stub left ("Sound"), and neither has the
+memory card ("The memory card"); a name that is not a card's file is the
+link cable's port, which is still a stub.
 
 **Known, and not done:**
 

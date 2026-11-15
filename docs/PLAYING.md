@@ -94,10 +94,36 @@ to copy lines from, and says how keys and controller buttons are named.
 A line the program cannot use is named in the console window as it
 starts.
 
+## Where the saves are
+
+ReBushido saves what the game saves, in the same way: **memory card
+files**, written in the PlayStation's own card format. There are two of
+them, and the game never touches ReBushido's:
+
+| The file | What it holds |
+|---|---|
+| `BASLUS-00663BUSHIDO2` | the game's own save: the fighters unlocked, chanbara's best times and the game's options. One block |
+| `BASLUS-00663REBUSHI` | ReBushido's settings, which the options page sets. One block |
+
+On a PlayStation, and in an emulator, they are on the memory card in slot
+1, as any save is. In the port each slot is a file on the computer: an
+ordinary raw memory card image of 128 KB, the same thing an emulator's
+card file is. So a card tool or an emulator opens the port's card, and a
+card file from an emulator works here.
+
+- Slot 1 is `card1.mcd` and slot 2 is `card2.mcd`, **beside the
+  program**, unless `--card1 FILE` or `--card2 FILE` says otherwise.
+- A file that is not there is made the first time the game looks at that
+  slot: formatted and empty, as a new card is.
+- `--no-cards` leaves both slots empty, as a console with no card in it.
+- What the game has been told is saved is on the disc before the message
+  goes away: every write goes through to the file at once.
+
+`tools/card.py` lists, checks and opens up a card image, whoever wrote it
+(`python tools/card.py list card1.mcd`).
+
 ## What does not work yet
 
-- **No memory card.** The game finds no card: the settings of its
-  options and what you have unlocked are not kept when you close it.
 - **No movies.** The opening movie is left out.
 - **No link cable.**
 - The picture is the PlayStation's own, at the PlayStation's size,

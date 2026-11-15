@@ -4,6 +4,7 @@
  *             [--plan FILE] [--dump NAME=ADDRESS:BYTES] [--out FOLDER]
  *             [--shots FOLDER] [--every N] [--vram FILE]
  *             [--wav FILE] [--spu FILE]
+ *             [--card1 FILE] [--card2 FILE] [--no-cards]
  *
  * It gives the game the PlayStation's memory and the player's disc
  * image, and then calls the game's own main, which never returns: the
@@ -11,8 +12,11 @@
  * (port_OnBlank). There is no window and no sound card yet, and the
  * pads are pressed only by a plan; the picture is drawn into the port's
  * video memory and the sound is made by the port's sound chip, and both
- * are written to files when a run asks. */
+ * are written to files when a run asks. The memory cards are two card
+ * images beside the program, unless --card1, --card2 or --no-cards says
+ * otherwise (port_card.h). */
 #include "common.h"
+#include "port_card.h"
 #include "port_disc.h"
 #include "port_gpu.h"
 #include "port_host.h"
@@ -41,6 +45,7 @@ static const char g_port_usage[] =
     "            [--dump NAME=ADDRESS:BYTES] [--out FOLDER]\n"
     "            [--shots FOLDER] [--every N] [--vram FILE]\n"
     "            [--wav FILE] [--spu FILE]\n"
+    "            [--card1 FILE] [--card2 FILE] [--no-cards]\n"
     "\n"
     "  --image FILE   your own image of the game's disc: the .cue, or the\n"
     "                 .bin of raw sectors it names\n"
@@ -62,6 +67,11 @@ static const char g_port_usage[] =
     "                 ends, with a line for each voice started\n"
     "  --spu FILE     write sound memory and the sound chip's registers\n"
     "                 there when the run ends\n"
+    "  --card1 FILE   the memory card in slot 1, a card image of 128 KB\n"
+    "                 (card1.mcd beside the program if this does not say);\n"
+    "                 a file that is not there is made, formatted and empty\n"
+    "  --card2 FILE   the memory card in slot 2 (card2.mcd beside it)\n"
+    "  --no-cards     no memory card in either slot\n"
     "\n"
     "At the end it prints a line for each thing the game asked for that\n"
     "the port does not do yet, with how often: stub NAME COUNT.\n";
@@ -194,6 +204,8 @@ s32 port_Main(s32 argc, char **argv) {
 
         if (port_TextsEqual(word, "--trace")) {
             port_SetTrace(1);
+        } else if (port_TextsEqual(word, "--no-cards")) {
+            port_SetCardsOff();
         } else if (
             port_TextsEqual(word, "--help") || port_TextsEqual(word, "-h")) {
             port_Print("%s", g_port_usage);
@@ -209,6 +221,10 @@ s32 port_Main(s32 argc, char **argv) {
             port_StartWav(argv[++i]);
         } else if (port_TextsEqual(word, "--spu")) {
             port_SetSpuDump(argv[++i]);
+        } else if (port_TextsEqual(word, "--card1")) {
+            port_SetCardPath(0, argv[++i]);
+        } else if (port_TextsEqual(word, "--card2")) {
+            port_SetCardPath(1, argv[++i]);
         } else if (port_TextsEqual(word, "--out")) {
             port_SetDumpFolder(port_FolderPrefix(argv[++i], out_folder));
         } else if (port_TextsEqual(word, "--shots")) {
@@ -228,6 +244,10 @@ s32 port_Main(s32 argc, char **argv) {
         } else {
             port_UsageError("not known: ", word);
         }
+    }
+    if (argc > 0) {
+        /* the slots no option named: a card image beside the program */
+        port_SetDefaultCardPaths(argv[0]);
     }
     if (image == NULL) {
         port_UsageError("no --image: the game is read from your own image "

@@ -113,6 +113,7 @@ retail program has none.
 | `port_other_fight` | ReBushido, then the native port | The same in another fight: each pad takes another weapon (a nodachi against a broadsword) and the first another stage. 31 checkpoints. Through the fight video memory is compared as well, at 24 of them ("The picture") |
 | `port_picture` | ReBushido, then the native port | The port's picture is the emulator's: all of video memory, pixel for pixel, at 28 checkpoints from the options page through the boot image, the top menu, the four steps of character select, sixteen seconds of a fight, the kill, the replay and the menu after, and back in the main menu. Not a pixel differs on the options page, the boot image and the menus; up to three in a thousand in the fight, each checkpoint held to the number that was measured ("The picture") |
 | `port_bugfixes` | ReBushido, then the native port | The same with Bugfixes on: `port_game`'s presses after right on the options page. The setting is on at every checkpoint |
+| `port_card` | ReBushido twice, then the native port twice, one card passed from each run to the next | The port's memory card is the console's: the options page's round trip over four boots, the first two in the emulator and the last two on the port, so that the settings' file is written by the console's own BIOS code and read back by the port. Afterwards the four card images are the same file, byte for byte (`docs/PORT.md`, "The memory card") |
 | `port_sound` | ReBushido, then the native port | The port's sound is the emulator's: `port_game`'s run, comparing what Sony's sound libraries keep in memory (the common bank's header, where each bank is in sound memory, each voice's registers as last set, the library's record of each voice with its envelope's level, the keys, the reverb, the disc's volume) and, at twenty checkpoints, the sound chip itself: all of sound memory but the chip's own first 4 KB, and every register a program writes ("The sound") |
 | `gte_model` | the GTE probe, no disc | The native port's C does what the PlayStation's coprocessor and assembly do: 125,800 made-up cases come out the same on the emulator and on the host ("The GTE probe") |
 
@@ -188,8 +189,13 @@ disc on the emulator and then the port, and `compare` holds the second
 to the first. What such a test has to do differently from one on two
 discs:
 
-- `cards = "none"`: the port has no memory card, so the emulator is given
-  none either.
+- `cards` is the port's too: the images are `card1.mcd` and `card2.mcd`
+  of the run's folder, the same files the emulator is given, and the port
+  makes one, formatted and empty, where there is none
+  ([`docs/PORT.md`](../../docs/PORT.md), "The memory card"). With
+  `cards = "none"` it is given `--no-cards` and both slots are empty.
+  `port_game`, `port_other_fight` and `port_bugfixes` say `cards =
+  "none"`, so that what they compare is the fight and not the card.
 - No `frame`: the port's vertical blanks are not the console's. It
   shows no movie and reads the disc in no time, so it reaches every
   checkpoint sooner (the fight's first frame at blank 2,340 where the

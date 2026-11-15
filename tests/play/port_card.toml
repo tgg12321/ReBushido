@@ -1,0 +1,141 @@
+# The native port's memory card against the emulator's real one
+# (docs/PORT.md, "The memory card"): the options page's round trip, four
+# boots with one card passed from each to the next, the first two in the
+# emulator and the last two on the port. So the settings' file is written
+# by the console's own BIOS code through the emulator and read back by the
+# port, which is the cross-check that the port's card is an ordinary
+# PlayStation card.
+#
+# After a run, the four card images are compared by hand, which the
+# snapshot machinery cannot do (it compares the game's memory, not the
+# host's files):
+#
+#   python tools/card.py check build/playtest/port_card/rebushido/card1.mcd
+#   python tools/card.py check build/playtest/port_card/port-2/card1.mcd
+#   python tools/card.py list  build/playtest/port_card/port-2/card1.mcd
+#   cmp build/playtest/port_card/rebushido/card1.mcd \
+#       build/playtest/port_card/port-2/card1.mcd
+#
+# The last card must be the first's byte for byte: the port read it and
+# wrote nothing. Measured: all four are identical, each a card image of
+# 131,072 bytes with one file, BASLUS-00663REBUSHI of one block, and
+# fourteen blocks free. And the settings' file's own bytes:
+#
+#   python tools/card.py extract build/playtest/port_card/port-2/card1.mcd \
+#       BASLUS-00663REBUSHI build/playtest/port_card/settings.bin
+about = "The native port's memory card: the options page's round trip over four boots with one card, the first two in the emulator and the last two on the port, so that the port reads back what the console's own BIOS wrote."
+discs = ["rebushido", "rebushido", "port", "port"]
+# One card, passed from each run to the next: run 1 gets a new one.
+cards = "keep"
+limit = 6000
+seconds = 240
+
+input = [
+    # the first boot: Bugfixes on and off again, down to Graphics, left
+    # round the end to "Remastered", and on into the game
+    "page+30 RIGHT", "page+60 LEFT", "page+90 DOWN", "page+120 LEFT",
+    "changed+30 START",
+    # the boots after it: straight on, with nothing changed
+    "page_again+30 START",
+    # the opening movie, the title, the memory card's message
+    "movie+300 START", "movie+600 CROSS", "movie+900 START",
+]
+
+# What must be the same on every run as on the first, at the checkpoints
+# they share. Not `frame`: the port's vertical blanks are not the console's
+# (README.md, "The port as a disc"). Not `rb_save`: the first boot writes
+# the file and the three after it read it. Not `rb_row` either: the first
+# boot leaves the page's cursor on the row it changed.
+compare = [
+    "screen", "frame_period", "menu_page", "loaded_stage",
+    "rb_page", "rb_card", "rb_bugfixes", "rb_graphics",
+]
+
+# ---- the first boot: a new card, and the settings are written to it ----
+
+[[checkpoint]]
+name = "page"
+runs = [1]
+when = "rb_page == RB_PAGE_UP"
+within = 2000
+shot = false
+expect = [
+    "rb_bugfixes == 0",
+    "rb_graphics == RB_GRAPHICS_ORIGINAL",
+    "rb_row == 0",
+    "rb_card == RB_CARD_READY",
+    "rb_save == RB_SAVE_NOTHING",
+]
+
+[[checkpoint]]
+name = "changed"
+runs = [1]
+after = 150
+shot = false
+expect = [
+    "rb_page == RB_PAGE_UP",
+    "rb_row == 1",
+    "rb_bugfixes == 0",
+    "rb_graphics == RB_GRAPHICS_ENHANCED",
+]
+
+[[checkpoint]]
+name = "left"
+runs = [1]
+when = "rb_page == RB_PAGE_DONE"
+within = 600
+shot = false
+expect = ["rb_save == RB_SAVE_WRITTEN", "rb_graphics == RB_GRAPHICS_ENHANCED"]
+
+# ---- the three boots after it: the file is read back ----
+
+# Runs 2 and 3 read the file the emulator's BIOS wrote; run 4 reads the
+# one run 3 left, which is the same card untouched.
+[[checkpoint]]
+name = "page_again"
+runs = [2, 3, 4]
+when = "rb_page == RB_PAGE_UP"
+within = 2000
+shot = false
+expect = [
+    "rb_save == RB_SAVE_LOADED",
+    "rb_bugfixes == 0",
+    "rb_graphics == RB_GRAPHICS_ENHANCED",
+    "rb_card == RB_CARD_READY",
+]
+
+[[checkpoint]]
+name = "page_again_shown"
+runs = [2, 3, 4]
+after = 10
+
+# Nothing was changed, so nothing is written.
+[[checkpoint]]
+name = "left_again"
+runs = [2, 3, 4]
+when = "rb_page == RB_PAGE_DONE"
+within = 600
+shot = false
+expect = ["rb_save == RB_SAVE_LOADED"]
+
+# ---- every boot: the game goes on, and finds the card itself ----
+
+[[checkpoint]]
+name = "movie"
+when = "screen == SCREEN_MOVIE"
+within = 1000
+shot = false
+
+# The game's own look at the card at the top menu finds no save of its
+# own: ReBushido's file is not the game's, and no run here makes one.
+[[checkpoint]]
+name = "menu"
+when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && screen_frames >= 120"
+within = 3000
+shot = false
+expect = [
+    "frame_period == 1",
+    "loaded_stage == -1",
+    "rb_graphics == RB_GRAPHICS_ENHANCED",
+    "rb_card == RB_CARD_READY",
+]

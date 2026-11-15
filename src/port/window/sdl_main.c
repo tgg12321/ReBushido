@@ -72,8 +72,10 @@ static const char g_port_window_usage[] =
     "counter in the corner: pictures shown a second, the game's own\n"
     "frames a second, and the speed against the console's.\n"
     "\n"
-    "There is no memory card yet: the game finds none, so settings and\n"
-    "what a player has unlocked are not kept from one run to the next.\n"
+    "The memory cards are card1.mcd and card2.mcd beside the program,\n"
+    "card images of 128 KB that an emulator or a card tool opens; one\n"
+    "that is not there is made, formatted and empty. --card1 FILE,\n"
+    "--card2 FILE and --no-cards say otherwise.\n"
     "\n"
     "The settings file, with everything as it is when there is none. The\n"
     "first controller plugged in is player one's, the second player\n"
@@ -478,7 +480,8 @@ int main(int argc, char **argv) {
 
     port_Say("ReBushido in a window. Escape ends it; F11 or Alt+Enter fills "
              "the screen; F3 is the counter in the corner.");
-    port_Say("no memory card yet: settings and unlocks are not kept.");
+    port_Say("memory cards: card1.mcd and card2.mcd beside the program "
+             "unless --card1, --card2 or --no-cards says otherwise.");
     port_Say("settings: %s", g_port_settings_path != NULL
                                  ? g_port_settings_path
                                  : "the ones built in (--help shows them)");

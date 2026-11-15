@@ -114,6 +114,32 @@ s32 port_HostAppend(s32 file, const void *bytes, u32 count) {
     return stream != NULL && fwrite(bytes, 1, count, stream) == count;
 }
 
+/* A file that is there already, read and written in place (port_host.h):
+ * the memory card's image. */
+s32 port_HostOpenReadWrite(const char *path) {
+    return port_PosixKeep(fopen(path, "r+b"));
+}
+
+/* Writes all of it at `offset` (port_host.h). */
+s32 port_HostWriteAt(s32 file, u32 offset, const void *bytes, u32 count) {
+    FILE *stream = port_PosixFile(file);
+
+    if (stream == NULL || fseeko(stream, (off_t)offset, SEEK_SET) != 0) {
+        return 0;
+    }
+    return fwrite(bytes, 1, count, stream) == count;
+}
+
+/* What has been written, on the disc (port_host.h): the library's buffer
+ * out first, then the system's. */
+void port_HostFlush(s32 file) {
+    FILE *stream = port_PosixFile(file);
+
+    if (stream != NULL && fflush(stream) == 0) {
+        fsync(fileno(stream));
+    }
+}
+
 /* Whole pages at exactly `address`, or nothing (port_host.h). */
 s32 port_HostMapAt(u32 address, u32 size) {
     void *wanted = (void *)(uintptr_t)address;

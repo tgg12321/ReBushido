@@ -22,6 +22,8 @@ typedef __INTPTR_TYPE__ LinuxWord;
 #define LINUX_SEEK_END 2
 #define LINUX_O_RDONLY 0
 #define LINUX_O_WRONLY 1
+#define LINUX_O_RDWR 2
+#define LINUX_O_RDWR 2
 #define LINUX_O_CREAT 0x40
 #define LINUX_O_TRUNC 0x200
 #define LINUX_O_LARGEFILE 0x8000
@@ -65,6 +67,7 @@ enum {
     LINUX_RT_SIGACTION = 13,
     LINUX_RT_SIGRETURN = 15,
     LINUX_EXIT = 60,
+    LINUX_FSYNC = 74,
     LINUX_SIGALTSTACK = 131,
 };
 
@@ -114,6 +117,7 @@ enum {
     LINUX_CLOSE = 6,
     LINUX_LSEEK = 19,
     LINUX_MUNMAP = 91,
+    LINUX_FSYNC = 118,
     LINUX_RT_SIGACTION = 174,
     LINUX_SIGALTSTACK = 186,
     LINUX_MMAP2 = 192, /* the offset in pages, the six arguments in registers */
@@ -241,6 +245,36 @@ s32 port_HostAppend(s32 file, const void *bytes, u32 count) {
     }
     return 1;
 }
+
+/* A file that is there already, read and written in place (port_host.h). */
+s32 port_HostOpenReadWrite(const char *path) {
+    LinuxWord file = port_LinuxCall(
+        LINUX_OPEN, (LinuxWord)path, LINUX_O_RDWR | LINUX_O_LARGEFILE, 0);
+
+    return LINUX_IS_ERROR(file) ? -1 : (s32)file;
+}
+
+/* Writes all of it at `offset` (port_host.h). */
+s32 port_HostWriteAt(s32 file, u32 offset, const void *bytes, u32 count) {
+    u32 done = 0;
+
+    if (LINUX_IS_ERROR(port_LinuxCall(
+            LINUX_LSEEK, file, (LinuxWord)offset, LINUX_SEEK_SET))) {
+        return 0;
+    }
+    while (done < count) {
+        LinuxWord wrote = port_LinuxCall(
+            LINUX_WRITE, file, (LinuxWord)((const char *)bytes + done),
+            (LinuxWord)(count - done));
+        if (wrote <= 0) {
+            return 0;
+        }
+        done += (u32)wrote;
+    }
+    return 1;
+}
+
+void port_HostFlush(s32 file) { port_LinuxCall(LINUX_FSYNC, file, 0, 0); }
 
 /* Whole pages at exactly `address`, or nothing (port_host.h). */
 s32 port_HostMapAt(u32 address, u32 size) {

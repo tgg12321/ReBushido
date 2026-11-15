@@ -41,6 +41,14 @@ void port_RunSoundBlank(u32 blank) {
     g_seen_sound_blanks++;
 }
 
+/* The card driver's turn at a vertical blank (card.c), counted. */
+static u32 g_seen_card_blanks;
+
+void port_RunCardBlank(u32 blank) {
+    (void)blank;
+    g_seen_card_blanks++;
+}
+
 void port_Quit(s32 code) {
     test_Count(0, __FILE__, __LINE__, "the port stopped itself (%d)", code);
     for (;;) {
@@ -135,6 +143,7 @@ static void test_Clock(void) {
     CHECK_EQ(g_seen_blanks, port_GetBlankCount());
     /* and the sound had its turn at every one */
     CHECK_EQ(g_seen_sound_blanks, port_GetBlankCount());
+    CHECK_EQ(g_seen_card_blanks, port_GetBlankCount());
     /* the counter of vertical blanks, which Sony's sound library sets up
      * for its tick, is taken and is not the game's frame */
     before = port_GetBlankCount();
@@ -192,7 +201,9 @@ static void test_Pads(void) {
     CHECK_EQ((u16) ~((packets[1][2] << 8) | packets[1][3]), PADRdown);
 }
 
-/* ---- events, and the card that is not there ---- */
+/* ---- events ---- */
+/* The memory card, which is what the game uses them for, is its own test
+ * (tests/port/card.c). */
 
 static void test_Events(void) {
     s32 timeout = OpenEvent(SwCARD, EvSpTIMOUT, EvMdNOINTR, 0);
@@ -215,19 +226,6 @@ static void test_Events(void) {
     CHECK_EQ(TestEvent(hw_timeout), 0);
     CHECK_EQ(TestEvent(timeout), 1);
     CHECK_EQ(TestEvent(timeout), 0);
-    /* no card: nothing answers a question about one */
-    CHECK_EQ(_card_info(0), 1);
-    CHECK_EQ(TestEvent(done), 0);
-    CHECK_EQ(TestEvent(timeout), 1);
-    CHECK_EQ(TestEvent(hw_timeout), 0);
-    CHECK_EQ(_card_clear(0), 1);
-    CHECK_EQ(TestEvent(hw_timeout), 1);
-    CHECK_EQ(_card_load(0x10), 1);
-    CHECK_EQ(TestEvent(timeout), 1);
-    /* a card's file cannot be opened; the serial port can */
-    CHECK_EQ(open("bu00:BASLUS-00663BB2", 1), -1);
-    CHECK(open("sio:", 1) != -1);
-    CHECK(firstfile("bu00:*", NULL) == NULL);
     /* a closed event's place is used again, and its number means nothing */
     closed = done;
     CHECK_EQ(CloseEvent(done), 1);

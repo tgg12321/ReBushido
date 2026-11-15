@@ -124,6 +124,24 @@ s32 port_HostAppend(s32 file, const void *bytes, u32 count) {
            wrote == count;
 }
 
+s32 port_HostOpenReadWrite(const char *path) {
+    return port_WindowsKeep(
+        CreateFileA(path, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
+                    FILE_ATTRIBUTE_NORMAL, NULL));
+}
+
+s32 port_HostWriteAt(s32 file, u32 offset, const void *bytes, u32 count) {
+    LARGE_INTEGER at;
+    DWORD wrote = 0;
+
+    at.QuadPart = offset;
+    return SetFilePointerEx(g_port_windows_files[file], at, NULL, FILE_BEGIN) &&
+           WriteFile(g_port_windows_files[file], bytes, count, &wrote, NULL) &&
+           wrote == count;
+}
+
+void port_HostFlush(s32 file) { FlushFileBuffers(g_port_windows_files[file]); }
+
 /* Memory at an address. Windows gives addresses in blocks of 64 KB: a
  * piece that begins inside a block cannot be asked for by itself, and
  * the page of the sound chip's registers is 4 KB past the scratchpad.

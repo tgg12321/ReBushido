@@ -1,6 +1,7 @@
 about = "The native port against the emulator: the same presses on the ReBushido disc and on the port, from power on through a whole versus fight and back to the menu."
 discs = ["rebushido", "port"]
-# The port has no memory card yet, so neither has the emulator.
+# No memory card in either slot, on the port as in the emulator: what
+# this test compares is the fight, and the card's own test is port_card.
 cards = "none"
 limit = 12000
 seconds = 240

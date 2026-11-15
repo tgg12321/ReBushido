@@ -18,10 +18,14 @@ makes a release's patch ("Making a release"). Nothing reads the
 
 ## The rules
 
-1. **Every change sits behind a compile-time switch.** With all switches
-   off the branch builds the original executable byte for byte, and the
-   checks hold it to that on every push. That is how the branch knows that
-   nothing leaked outside its switch.
+1. **What a player turns on or off sits behind a compile-time switch**,
+   and so does what the PlayStation and the PC need different code for.
+   Only `decomp` has to build the original executable byte for byte; on
+   this branch the game's code is edited directly and cleanly, and what
+   says that nothing leaked is the play tests, `same_as_original` above
+   all: with nothing switched on it plays as the retail disc. A
+   byte-match check that a legitimate change makes fail is retired here
+   ("How it is tested").
 2. **ReBushido is a PlayStation program first.** It has to run on the
    original console and on emulators. A native port of the same source is
    planned beside it ([`ROADMAP.md`](ROADMAP.md)), not instead of it.
@@ -486,9 +490,10 @@ build of its own ("Booting straight into a fight"), off in ReBushido as
 well unless the build gives that name. A switch of that kind ends in
 `_BUILD` on its right-hand side; the tools know it by that.
 
-**2. Leave the original's lines as they are, once.** They are not deleted,
-not copied into ReBushido's side and not reworded: the diff against `decomp`
-should show what was added and nothing else. The shapes:
+**2. Edit the game's lines directly, and read the shapes below for a
+switch.** A line may be moved, reworded, joined or dropped and a function
+rewritten, where that reads better: the gate is the play tests, not the
+diff against `decomp`. Where a switch is wanted, these are its shapes:
 
 Something added:
 
@@ -508,9 +513,8 @@ Something replaced, with no setting:
 #endif
 ```
 
-Something the player can turn off, which is most changes. The original's
-lines go in a block of their own; with the switch off the braces are all
-that is left, and they cost no byte:
+Something the player can turn off, which is most changes. The behaviour
+with the setting off goes in a block of its own:
 
 ```c
 #if RB_FIX_REPLAY_RING
@@ -737,6 +741,5 @@ patcher has been tried, and neither has an image of 700 MB in one.
 ## Keeping up with `decomp`
 
 `decomp` goes on being corrected (names, comments, a truer type). Merge it
-into `main` often (`git merge decomp`), and never the other way. Because
-the original's lines stay as they are on this branch, such merges are
-mostly clean.
+into `main` often (`git merge decomp`), and never the other way. Where this branch has rewritten a function that `decomp` then
+corrects, such a merge wants reading; elsewhere it is clean.

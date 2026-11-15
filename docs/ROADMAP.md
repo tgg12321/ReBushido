@@ -53,7 +53,9 @@ No dates.
    the flat screens and but for three pixels in a thousand in a fight.
    The sixth is done too: the sound chip and Sony's sequencer in C, the
    chip's memory and registers the emulator's through a fight, and the
-   same samples to a sound card in the window.
+   same samples to a sound card in the window. Its memory card is a
+   standard card image, and the card it writes for the options page is
+   byte for byte the one the emulator's BIOS wrote.
    The game's code stays C.
 7. **The picture.** A wide picture, high resolution and a high frame rate
    on the port, which is what "Graphics: Remastered" will mean. On the
