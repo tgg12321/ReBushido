@@ -12,6 +12,10 @@ disc/
 tools/gcc-2.7.2/
 tools/cc1psx.exe
 
+# SDL 2's development package for MinGW, for the port's Windows build
+# (BUILD.md, "The port with a window"): downloaded, never committed
+tools/sdl2-mingw/
+
 # Python
 .venv/
 __pycache__/
