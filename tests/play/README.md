@@ -112,7 +112,7 @@ retail program has none.
 | `port_other_fight` | ReBushido, then the native port | The same in another fight: each pad takes another weapon (a nodachi against a broadsword) and the first another stage. 31 checkpoints. Through the fight video memory is compared as well, at 24 of them ("The picture") |
 | `port_picture` | ReBushido, then the native port | The port's picture is the emulator's: all of video memory, pixel for pixel, at 28 checkpoints from the options page through the boot image, the top menu, the four steps of character select, sixteen seconds of a fight, the kill, the replay and the menu after, and back in the main menu. Not a pixel differs on the options page, the boot image and the menus; up to three in a thousand in the fight, each checkpoint held to the number that was measured ("The picture") |
 | `port_bugfixes` | ReBushido, then the native port | The same with Bugfixes on: `port_game`'s presses after right on the options page. The setting is on at every checkpoint |
-| `port_sound` | ReBushido, then the native port | **Not yet run against the emulator.** `port_game`'s run, comparing what Sony's sound libraries keep in memory: the common bank's header, where each bank is in sound memory, each voice's registers as last set, the library's record of each voice, the keys, the reverb, the disc's volume ([`docs/PORT.md`](../../docs/PORT.md), "Sound") |
+| `port_sound` | ReBushido, then the native port | The port's sound is the emulator's: `port_game`'s run, comparing what Sony's sound libraries keep in memory (the common bank's header, where each bank is in sound memory, each voice's registers as last set, the library's record of each voice with its envelope's level, the keys, the reverb, the disc's volume) and, at twenty checkpoints, the sound chip itself: all of sound memory but the chip's own first 4 KB, and every register a program writes ("The sound") |
 | `gte_model` | the GTE probe, no disc | The native port's C does what the PlayStation's coprocessor and assembly do: 125,800 made-up cases come out the same on the emulator and on the host ("The GTE probe") |
 
 ## The GTE probe
@@ -305,7 +305,7 @@ expect = [
 | `discs` | The discs to run on, in order: `retail`, or the name of an image in `build/play/` without `.cue` and in any case (`rebushido`, `quickboot`, `quickboot-playtest`). A name that is a program there and no image (`gteprobe`: `GteProbe.exe`) is loaded with no disc |
 | `limit` | The vertical blank the run ends at, at the latest |
 | `input` | The presses (below) |
-| `compare` | With two discs or more: what must be the same on every disc as on the first, at every checkpoint both runs have. Names of `state.toml`, `frame` (the blank the checkpoint was reached at), `picture` (the screenshot, pixel for pixel), `vram` (video memory at the checkpoints that say `vram`: "The picture"); `["*"]` is the values, `frame` and `picture`. A value that one of the two programs does not have is not compared |
+| `compare` | With two discs or more: what must be the same on every disc as on the first, at every checkpoint both runs have. Names of `state.toml`, `frame` (the blank the checkpoint was reached at), `picture` (the screenshot, pixel for pixel), `vram` (video memory at the checkpoints that say `vram`: "The picture"), `spu` (the sound chip at the checkpoints that say `spu`: "The sound"); `["*"]` is the values, `frame` and `picture`. A value that one of the two programs does not have is not compared |
 | `frames_from` | A checkpoint's name: `frame` is compared as the blanks since that checkpoint, at the checkpoints after it, and not at all up to it. For discs that reach the game's first screen at different times |
 | `cards` | The memory cards: `"new"` (two new, empty, formatted cards in every run; this if not given), `"keep"` (every run after the first starts with the cards the run before left), `"none"` (no card in either slot) |
 | `stall` | Vertical blanks without a frame that count as a crash (1800) |
@@ -351,6 +351,7 @@ order of the file, each one looked for only after the one before it:
 | `snapshot` | `true`: the memory of `[snapshot]` is written here; or a list of its names, for only those |
 | `vram` | `true`: all of video memory is written here, to `NAME.vram` ("The picture") |
 | `vram_differ` | With `vram`: how many of its pixels may differ from the first run's (none, if not given) |
+| `spu` | `true`: the sound chip is written here, to `NAME.spu` ("The sound") |
 | `calls` | `true`: on the native port, every function called from here to the next checkpoint is a line of `NAME.calls` in the run's folder, indented by how deep the call is |
 | `within` | Give up, and fail, this many blanks after the checkpoint before it (if not given, at `limit`) |
 | `expect` | What must hold there: expressions of values, numbers and names, with `+ - * & \| == != < <= > >= && \|\|` and brackets; `frame` is the blank it was reached at |
@@ -483,6 +484,31 @@ The picture on show, which every checkpoint takes unless it says `shot
 = false`, is the displayed rectangle of the same memory, as a PNG; the
 port's is written by the same rule as the emulator's. `picture` in
 `compare` holds two runs' to each other with nothing allowed to differ.
+
+## The sound
+
+A checkpoint that says `spu = true` writes the sound chip as it is at
+that moment to `CHECKPOINT.spu` in the run's folder: sound memory, 512
+KB, and then the chip's 256 registers of 16 bits. The native port
+writes its own chip's (`src/port/spu.c`). The emulator gives a script
+no way to its sound chip but one, its whole saved state, so its script
+writes that, 22 MB, as `CHECKPOINT.state`; the tool cuts the chip's two
+pieces out of it and removes it (`tools/play/spu.py`).
+
+With `spu` in `compare`, each run's chip is held to the first run's at
+those checkpoints, and nothing may differ of what is compared:
+
+- sound memory from `0x1000` on, byte for byte: every bank's waveforms
+  and the reverb's work area. The first `0x1000` bytes are the chip's
+  own buffers of the last samples of the disc's sound and of two
+  voices, which depend on the very sample the checkpoint fell on;
+- the registers a program writes. Not a voice's envelope level and loop
+  address, the keys on and off, the voices that reached an end and the
+  port for data written by hand: those are the chip's own or are taken
+  away by it, and the emulator's state has them only as last written.
+
+What differed at each checkpoint is a line of `spu.txt` in the second
+run's folder. `port_sound` is the test that does this.
 
 ## Finding where two runs part
 

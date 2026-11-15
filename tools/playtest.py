@@ -343,12 +343,14 @@ class Checkpoint:
         self.vram_differ = int(table.get("vram_differ", 0))
         if self.vram_differ and not self.vram:
             raise TestError("checkpoint %s: `vram_differ` goes with `vram = true`" % self.name)
+        # sound memory is written at it (README.md, "The sound")
+        self.spu = bool(table.get("spu", False))
         self.expect = list(table.get("expect", []))
         # the runs it is part of, counted from 1 in the order of `discs`; None: all
         self.runs = [int(n) for n in table["runs"]] if "runs" in table else None
         unknown = set(table) - {"name", "at", "after", "frames", "call", "count", "when", "within", "shot",
                                 "expect", "runs", "snapshot", "repeat", "calls", "at_frame", "vram",
-                                "vram_differ"}
+                                "vram_differ", "spu"}
         if unknown:
             raise TestError("checkpoint %s: not understood: %s" % (self.name, ", ".join(sorted(unknown))))
 
@@ -563,7 +565,7 @@ class Test:
             lines.append("frame %d" % disc.address("ResetRCnt"))
         for cp in checkpoints:
             # what is written at it: 1 a picture, 2 the [snapshot] memory
-            what = cp.shot + 2 * (bool(cp.snapshot) and bool(snaps)) + 4 * cp.calls + 8 * cp.vram
+            what = cp.shot + 2 * (bool(cp.snapshot) and bool(snaps)) + 4 * cp.calls + 8 * cp.vram + 16 * cp.spu
             for piece in self.pieces_at(cp):
                 if cp.snapshot is not True:
                     what += 256 << sorted(snaps).index(piece)
@@ -908,6 +910,46 @@ def compare_vram(test, first, run, first_label, label):
     return problems
 
 
+def compare_spu(test, first, run, first_label, label):
+    """The sound chip as two runs wrote it at the checkpoints that say
+    `spu`: sound memory and the registers a program writes
+    (tools/play/spu.py). The emulator's is cut out of the whole state its
+    script wrote, CHECKPOINT.state, which is then removed: 22 MB each. What
+    differed at every checkpoint, a line each, is left in the second run's
+    folder, spu.txt."""
+    import spu
+    problems, lines = [], []
+    for cp in test.checkpoints:
+        if not cp.spu or cp.name not in first.reached or cp.name not in run.reached:
+            continue
+        chips = []
+        for folder in (first.folder, run.folder):
+            path = os.path.join(folder, cp.name + ".spu")
+            state = os.path.join(folder, cp.name + ".state")
+            try:
+                if os.path.exists(state):
+                    with open(state, "rb") as f:
+                        chip = spu.extract(f.read())
+                    with open(path, "wb") as f:
+                        f.write(chip)
+                    os.remove(state)
+                chips.append(spu.read(path))
+            except (OSError, ValueError) as e:
+                problems.append("%s was not written, or is not the sound chip (%s)"
+                                % (os.path.relpath(path, REPO).replace("\\", "/"), e))
+                break
+        if len(chips) != 2:
+            continue
+        found = spu.Difference(chips[0], chips[1])
+        lines.append("%-16s %s" % (cp.name, found.summary()))
+        if found.count:
+            problems.append("at `%s`, the sound chip on %s is not that on %s: %s"
+                            % (cp.name, first_label, label, found.summary()))
+    with open(os.path.join(run.folder, "spu.txt"), "w", encoding="utf-8", newline="\n") as f:
+        f.write("".join(line + "\n" for line in lines))
+    return problems
+
+
 def runs_index(discs, label):
     """Which of `discs` the run called `label` was on."""
     return run_labels(discs).index(label)
@@ -956,7 +998,7 @@ def check_test(test, discs, runs, names):
             if compare == ["*"]:
                 compare = sorted(test.state) + ["frame", "picture"]
             for name in compare:
-                if name in ("dump", "snapshot", "vram"):
+                if name in ("dump", "snapshot", "vram", "spu"):
                     continue  # the pieces of memory: once, below
                 if name == "frame":
                     if test.frames_from is not None and order.index(cp.name) <= order.index(test.frames_from):
@@ -975,7 +1017,7 @@ def check_test(test, discs, runs, names):
                     a, b = first.reached[cp.name][1][name], run.reached[cp.name][1][name]
                 else:
                     raise TestError("compare: `%s` is not a name of [state], `frame`, `picture`, `dump`, "
-                                    "`snapshot`, `vram` or `*`" % name)
+                                    "`snapshot`, `vram`, `spu` or `*`" % name)
                 if a != b:
                     problems.append("at `%s`, %s is %d on %s and %d on %s"
                                     % (cp.name, name, a, labels[0], b, label))
@@ -985,6 +1027,8 @@ def check_test(test, discs, runs, names):
             problems += compare_snapshots(test, discs, first, run, labels[0], label)
         if "vram" in test.compare:
             problems += compare_vram(test, first, run, labels[0], label)
+        if "spu" in test.compare:
+            problems += compare_spu(test, first, run, labels[0], label)
     return problems
 
 

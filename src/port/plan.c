@@ -72,6 +72,7 @@
 #include "common.h"
 #include "port_gpu.h"
 #include "port_host.h"
+#include "port_spu.h"
 #include "bb2.h"
 
 #define VALUES_MAX 128
@@ -101,6 +102,7 @@
 #define CP_SNAP_BIT 2
 #define CP_CALLS_BIT 4
 #define CP_VRAM_BIT 8
+#define CP_SPU_BIT 16
 /* A screenshot's pixels are 16 bits. */
 #define PICTURE_BITS 16
 /* The digits of a blank's number in a picture's name. */
@@ -180,6 +182,7 @@ typedef struct {
     s32 kind;
     s32 picture;  /* the picture is written at it */
     s32 vram;     /* video memory is written at it */
+    s32 spu;      /* sound memory is written at it */
     s32 snap;     /* the `snap` memory is written at it */
     u32 snaps;    /* which: a bit a `snap` line; 0 for all */
     s32 at_frame; /* CHECKPOINT_WHEN: only as a frame begins */
@@ -474,6 +477,7 @@ static void port_AddCheckpoint(char **words, s32 count) {
         (port_PlanNumber(words[CP_SHOT], "cp") & CP_PICTURE_BIT) != 0;
     checkpoint->vram =
         (port_PlanNumber(words[CP_SHOT], "cp") & CP_VRAM_BIT) != 0;
+    checkpoint->spu = (port_PlanNumber(words[CP_SHOT], "cp") & CP_SPU_BIT) != 0;
     checkpoint->snap =
         (port_PlanNumber(words[CP_SHOT], "cp") & CP_SNAP_BIT) != 0;
     checkpoint->calls =
@@ -840,6 +844,19 @@ static void port_WriteCheckpointVram(const char *checkpoint) {
     port_HostClose(file);
 }
 
+/* Sound memory and the sound chip's registers at a checkpoint, to
+ * CHECKPOINT.spu. */
+static void port_WriteCheckpointSpu(const char *checkpoint) {
+    s32 file = port_CreateRunFile(checkpoint, ".spu", "", "");
+
+    if (file < 0 || !port_WriteSpu(file)) {
+        port_Fail("rebushido: sound memory at checkpoint `%s` cannot be "
+                  "written\n",
+                  checkpoint);
+    }
+    port_HostClose(file);
+}
+
 /* The checkpoints the run is at, one after another, and the run's end
  * at the last. */
 static void port_TakeCheckpoints(u32 blank, s32 event) {
@@ -858,6 +875,9 @@ static void port_TakeCheckpoints(u32 blank, s32 event) {
             }
             if (checkpoint->vram) {
                 port_WriteCheckpointVram(checkpoint->name);
+            }
+            if (checkpoint->spu) {
+                port_WriteCheckpointSpu(checkpoint->name);
             }
             /* the list of calls ends here, and this one's begins */
             if (g_port_calls_file >= 0) {

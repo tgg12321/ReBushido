@@ -129,7 +129,10 @@ extern void port_RunSoundBlank(u32 blank);
 /* What the run's sound did, to the program's output: `sound ...` lines.
  * Only a run that keeps its sound says it. */
 extern void port_PrintSoundSummary(void);
-/* Sound memory and then the registers to a file, when the run ends. */
+/* Sound memory and then the registers, PORT_SPU_RAM_BYTES and
+ * PORT_SPU_REG_COUNT halfwords, to a file that is open: 1 if written. */
+extern s32 port_WriteSpu(s32 file);
+/* The same to a file of this name, when the run ends. */
 extern void port_SetSpuDump(const char *path);
 extern void port_WriteSpuDump(void);
 

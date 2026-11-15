@@ -31,8 +31,9 @@
 --                                    held HOLD frames
 --   cp NAME SHOT WITHIN at N         a checkpoint at vertical blank N (SHOT:
 --                                    1 a picture, 2 the `snap` memory, 8 all
---                                    of video memory, added; 4 is the port's
---                                    alone; from 256 up, a bit for each `snap`
+--                                    of video memory, 16 the emulator's whole
+--                                    state (for its sound memory), added; 4
+--                                    is the port's alone; from 256 up, a bit for each `snap`
 --                                    line that is written, the first line's
 --                                    lowest: all if none)
 --   cp NAME SHOT WITHIN after N      ... N blanks after the one before
@@ -179,7 +180,7 @@ local function load_plan()
         elseif kind == 'cp' then
             local what = tonumber(w[3])
             local cp = {name = w[2], shot = bit.band(what, 1) ~= 0, snap = bit.band(what, 2) ~= 0,
-                        vram = bit.band(what, 8) ~= 0,
+                        vram = bit.band(what, 8) ~= 0, state = bit.band(what, 16) ~= 0,
                         which = bit.rshift(what, 8), within = tonumber(w[4]), how = w[5], tests = {}}
             if cp.how == 'when' or cp.how == 'whenf' then
                 for i = 6, #w, 3 do
@@ -244,6 +245,15 @@ local function write_vram(name)
     f:close()
 end
 
+-- The emulator's whole state as it is now, as it saves it, to NAME.state:
+-- the one way a script has to its sound chip, whose memory and registers
+-- are in it (tools/play/spu.py reads them out).
+local function write_state(name)
+    local f = Support.File.open(DIR .. name .. '.state', 'TRUNCATE')
+    f:writeMoveSlice(PCSX.createSaveState())
+    f:close()
+end
+
 local function values()
     local t = {}
     for i = 1, #vars do t[i] = string.format('%d', value_of(i)) end
@@ -296,6 +306,7 @@ local function take_checkpoints(event)
             if cp.shot then shot(cp.name) end
             if cp.snap then write_snaps(cp.name, cp.which) end
             if cp.vram then write_vram(cp.name) end
+            if cp.state then write_state(cp.name) end
             last_cp_frame, last_cp_game_frame = frame, game_frame
             schedule(next_cp, frame)
             next_cp = next_cp + 1

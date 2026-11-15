@@ -1,10 +1,7 @@
-# NOT YET RUN AGAINST THE EMULATOR. Written with the port's sound (stage
-# 6 of docs/PORT.md), where no emulator could be run; the port's half of it
-# has been run by itself and reaches every checkpoint. The first run against
-# the emulator is what says which of [snapshot]'s sound pieces are the same
-# on both to the byte and which need a hole or a looser checkpoint: see
-# "what may differ" below, and docs/PORT.md, "Sound".
-about = "The native port's sound against the emulator: port_game's run, comparing what Sony's sound libraries keep in memory: the sound bank's header, where each bank is in sound memory, what each voice's registers were last set to, the keys."
+# The port's sound against the emulator's (docs/PORT.md, "Sound"): what
+# Sony's libraries keep in memory, and the sound chip itself, its memory
+# and the registers a program writes (README.md, "The sound").
+about = "The native port's sound against the emulator: port_game's run, comparing what Sony's sound libraries keep in memory (the sound bank's header, where each bank is in sound memory, what each voice's registers were last set to, each voice's record and envelope level, the keys) and the sound chip itself: sound memory and the registers."
 discs = ["rebushido", "port"]
 # The port has no memory card yet, so neither has the emulator.
 cards = "none"
@@ -61,7 +58,7 @@ compare = [
     "p2_x", "p2_y", "p2_z", "p2_off_arm_ok", "p2_leg_wounds", "p2_arm_wounds", "p2_body_wounds",
     "p2_vanish_count",
     "rb_page", "rb_row", "rb_card", "rb_save", "rb_bugfixes", "rb_graphics",
-    "snapshot",
+    "snapshot", "spu",
 ]
 
 # Both fighters, every byte (Fighter, fighter.h: 0x44C bytes each), but
@@ -108,10 +105,9 @@ sound_bank_places = "g_snd_vab_spu_addrs:64"
 # are what the chip is given at the next tick.
 sound_voice_registers = "_svm_sreg_buf:384"
 # The library's record of each voice (struct SpuVoice, libsnd_i.h, 54
-# bytes each): bank, program, tone, note, whether it plays. Left out: the
-# envelope's level as read from the chip at the last tick (offset 6 of
-# each), which depends on the sample the tick fell on.
-sound_voices = "_svm_voice:1296 except 6:2 60:2 114:2 168:2 222:2 276:2 330:2 384:2 438:2 492:2 546:2 600:2 654:2 708:2 762:2 816:2 870:2 924:2 978:2 1032:2 1086:2 1140:2 1194:2 1248:2"
+# bytes each): bank, program, tone, note, whether it plays, and the
+# envelope's level as the library read it from the chip at its last tick.
+sound_voices = "_svm_voice:1296"
 # The voices the library has keyed on and not off.
 sound_keys = "_spu_keystat:4"
 # The reverb as the library has set it: mode, depth, delay, feedback.
@@ -119,14 +115,16 @@ sound_reverb = "_spu_rev_attr:20"
 # The disc's volume as the game last set it.
 sound_disc_volume = "g_cdrom_mix:4"
 #
-# What may differ, and is then timing and not a fault: the game gives a
-# sound the first voice that is not sounding, which it asks the chip
-# (SpuGetKeyStatus reads the envelope's level). The port's tick falls at
-# the vertical blank and the emulator's inside a frame, and a load takes
-# the port fewer blanks, so a sound that ends within a frame of another's
-# start may leave its voice free on one and not on the other: the same
-# sounds, on other voices. sound_keys is all of the library's keys since
-# the last key off of all, so it differs wherever sound_voices does.
+# Which voice a sound gets is in all of these, and is a matter of a
+# moment: the game gives a sound the first voice that is not sounding,
+# which it asks the chip at the top of its frame, just after the blank
+# (SpuGetKeyStatus reads the envelope's level). A footstep is as long as
+# the time to the next one. The port makes the samples up to the blank,
+# runs the library's tick, and makes a few more before the game goes on
+# (src/port/sound.c, BLANK_HEAD_FRAMES), which is where the console is
+# then; with the tick anywhere else in the blank's samples the same
+# sounds are on other voices from the fight's 68th frame, and this test
+# says so.
 
 # The options page is up, and has found no card.
 [[checkpoint]]
@@ -144,6 +142,7 @@ shot = false
 
 [[checkpoint]]
 name = "menu"
+spu = true
 when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && screen_frames >= 120"
 within = 3000
 shot = false
@@ -161,6 +160,7 @@ shot = false
 # stage puts them.
 [[checkpoint]]
 name = "fight"
+spu = true
 when = "screen == SCREEN_FIGHT_UPDATE"
 at_frame = true
 within = 4000
@@ -171,6 +171,7 @@ expect = ["mode == FIGHT_MODE_VS", "p1_cpu == 0", "p2_cpu == 0", "loaded_stage =
 # Every second of the fight, as a frame begins: f_1 to f_16.
 [[checkpoint]]
 name = "f"
+spu = true
 frames = 30
 repeat = 16
 shot = false
@@ -179,6 +180,7 @@ snapshot = ["fighters", "sound_bank", "sound_bank_starts", "sound_bank_sizes", "
 # One of the two is cut down.
 [[checkpoint]]
 name = "kill"
+spu = true
 when = "winner != FIGHT_NOBODY"
 at_frame = true
 within = 3000
@@ -213,6 +215,7 @@ expect = ["wins_p1 + wins_p2 == 1"]
 # Back in the menu, with no stage in memory, and a second of it.
 [[checkpoint]]
 name = "menu_again"
+spu = true
 when = "screen == SCREEN_MENU_UPDATE && loaded_stage == -1"
 at_frame = true
 within = 3000

@@ -18,7 +18,7 @@ script's. What the game draws goes into the port's own video memory, by
 a GPU in C, and from there to files; its sound is made by a sound chip
 in C and can be written to a file. All that way it is held to the
 emulator: the game's values in three fights, and the picture pixel for
-pixel in two. The sound has not been compared yet. Stages 1 to 3 of the
+pixel in two, and the sound chip's memory and registers in one. Stages 1 to 3 of the
 seven below are done, stage 4 but for its window, of stage 5 the fight
 itself, and of stage 6 everything but the card.
 
@@ -33,7 +33,7 @@ itself, and of stage 6 everything but the card.
 | BIOS calls and Sony's libraries | every one the game calls is defined: done for real where it only works on memory or the port has the thing (the disc, time, the pads' packets, events), a stub that is counted where it has not (the memory card, the link, the movie) |
 | Memory | done: the RAM and the scratchpad at the console's addresses ("Memory") |
 | The disc | done: sectors from the player's image, under the game's own disc code ("The disc"), and its XA sound ("Sound") |
-| Sound | done into a file, not yet a sound card: Sony's libsnd and libspu on a sound chip in C, the disc's music ("Sound"). Not yet compared with the emulator |
+| Sound | done into a file, not yet a sound card: Sony's libsnd and libspu on a sound chip in C, the disc's music ("Sound"). The chip's memory, its registers and the library's are the emulator's through a fight; what is heard is compared only in part |
 | A fight | done, by a script's pads: three whole fights are the emulator's, frame for frame ("How it is proved") |
 | The picture | done, into the port's own video memory and out to files: `src/port/raster.c`, the PlayStation's GPU in C. The flat screens are the emulator's to the pixel, a fight's frames but for three pixels in a thousand ("The picture") |
 | A window, a sound card, real pads, the card, movies | not begun |
@@ -353,8 +353,15 @@ when it next makes samples, and clears them. Sony's library writes them
 once a tick, the keys off and then the keys on, which is the order the
 chip takes them in.
 
-**The clock.** At each vertical blank (`clock.c`) the tick runs, then
-the chip makes one blank's samples. A blank is 263 scan lines of an NTSC
+**The clock.** At each vertical blank (`clock.c`) the chip makes the
+samples up to the blank, the tick runs, and the chip makes 32 samples
+more before the game's code goes on. The game asks which voices are free
+at the top of its frame, a fraction of a millisecond after the blank on
+the console, and a footstep is as long as the time to the next: with the
+tick before all of a blank's samples the port gave each footstep the
+voice of the one before, where the console gives it another. The
+emulator said so, at the fight's 68th frame; with the tick where it is
+now the two agree, voice for voice and level for level. A blank is 263 scan lines of an NTSC
 console at 15,734.2657 lines a second (4.5 MHz / 286), and the chip
 makes 44,100 samples a second: 737 and 341/2500 samples a blank. The
 fraction is carried, so a blank is 737 or 738 samples and a run's sound
@@ -417,13 +424,16 @@ owner's to decide.
   sustain level after each sample of the decay, so a sustain level of
   everything ends the decay before it steps, unless the decay is the
   fastest. That is one reading of what is written.
-- Not done, because the game uses none: the chip's capture of the disc
-  and two voices into the start of sound memory, the interrupt at an
-  address, the external input, CD audio tracks.
+- Not done, because the game uses none: the interrupt at an address,
+  the external input, CD audio tracks. (The chip's own buffers of the
+  disc's and two voices' last samples, at the start of sound memory,
+  are written, as the console writes them: the game reads none, and
+  they are how the emulator's samples were looked at.)
 - The game sets the disc's volume to 0xFF, which is twice, and the
   fight's loudest moments are then more than 16 bits hold: 0.03% to
-  0.05% of a run's samples are held at the limit. Whether the console
-  clips there as often is for the emulator to say.
+  0.05% of a run's samples are held at the limit. The emulator's music
+  is 0.905 of the port's in level (below), so it would clip less
+  often; which of the two the console is, is not known.
 
 **How it is proved.** On every push, by made-up data alone
 (`tests/port/spu.c`, `xa.c`, and their `.py`, which work the answers out
@@ -450,13 +460,56 @@ menus and the fight, 102 sounds in a fight of 507 frames, each on a
 voice at the blank it was asked for, and no voice left sounding but the
 one started a blank before the end.
 
-**Not proved:** that it is the console's sound. No emulator was run on
-it. `tests/play/port_sound.toml` is written for that and has not been
-run: it compares what Sony's libraries keep in the PlayStation's RAM
-(the bank's header, where each bank is in sound memory, each voice's
-registers as last set, the keys). Sound memory itself and the chip's
-own registers are not in RAM: `--spu FILE` writes the port's for the
-day the emulator's can be had.
+**Against the emulator** (the play test `port_sound`,
+[`tests/play/README.md`](../tests/play/README.md), "The sound"):
+`port_game`'s run, and at the top menu, the fight's first frame, every
+second of the fight, the kill, the replay, the menu after and the main
+menu again:
+
+- what Sony's libraries keep in the PlayStation's RAM is the same on
+  both: the common bank's header (the 524 bytes too), where each bank is
+  in sound memory and how long, each voice's registers as last set, the
+  library's record of each voice with the envelope's level as it read it
+  from the chip at its last tick, the keys, the reverb, the disc's
+  volume. Frame by frame through the fight's first 150 frames the same
+  held (a run by hand), but for the disc's volume in five of them: the
+  port's drive seeks in no time, so its music is up five frames sooner;
+- the chip itself: all of sound memory from `0x1000` on is the same,
+  byte for byte, at every one of the twenty checkpoints (every bank's
+  waveforms, where the game moved them to close the holes, the reverb's
+  work area), and so is every register a program writes. The emulator's
+  chip is reached by the one way a script has: its whole saved state.
+  Not compared: the first `0x1000` bytes, which are the chip's buffers
+  of recent samples, and the registers that are the chip's own or that
+  the port's chip takes away (a voice's envelope level and loop
+  address, the keys, the voices that ended, the port for data by hand):
+  the emulator's state has those only as last written.
+
+**What is heard** was compared once, by hand, through those buffers of
+recent samples, 512 of each (11.6 ms) at each checkpoint:
+
+- what voices 1 and 3 play, wherever one was sounding (eight buffers
+  at seven checkpoints): lined up, in four of them half the samples
+  differ by 1 or less, of amplitudes in the thousands, and in two of
+  those nine in ten by 5 or less; in the other four the middle
+  difference is 2, 6, 37 and 50, where the sound was quiet or was
+  beginning or ending in the buffer, which is also where the largest
+  differences are. So the decoder, the interpolation and the envelope
+  are near the emulator's to the last bit or two; they were not held to
+  it sample for sample;
+- the disc's music at the top menu: the emulator's 11.6 ms are in the
+  port's WAV, with a correlation of 0.9985 on each side, at 0.905 of
+  the port's level; what is left after that is 4% of the signal, which
+  is the two ways of bringing 37,800 samples a second to 44,100. The
+  level is not explained: the port takes the drive's volume of 0xFF
+  for 255/128.
+
+**Not proved:** the reverb against the emulator (`port_game`'s stage has
+none); the mix as it leaves the chip (the emulator has no way to write
+its sound to a file with no window; the buffers above are before the
+voices' and the main volume); and that the emulator is the console.
+`--spu FILE` writes the port's sound memory and registers at a run's
+end.
 ### The picture
 
 The port has the PlayStation's GPU in C (`src/port/raster.c`,
@@ -901,8 +954,8 @@ points below. Stages two and three, the program, by the last three.
   - *The common sound bank* (3,328 bytes at `0x8010DB00`) differed in
     524 bytes, all in the words of its header that Sony's
     `SsVabOpenHeadSticky` fills in as it opens a bank: a stub's answer.
-    Sony's own code fills them in now ("Sound"); the comparison with
-    the emulator is `port_sound`, which has not been run.
+    Sony's own code fills them in now ("Sound"), and `port_sound`
+    holds the whole header to the emulator's.
   - *The movie's work area* (the 2 KB before the load area) differs:
     only the emulator played a movie. Not in the test.
   - *The fight after its first presses.* With the presses of
@@ -1008,9 +1061,9 @@ Each ends with something that can be shown.
    come with the window.
 6. **Sound.** The sound chip, Sony's sequencer, the disc's audio.
    Done into a file ("Sound"): the game's effects and music are in a
-   run's WAV, and the game's state is what it was. Left of it: a sound
-   card (with the window's library), and the comparison with the
-   emulator, which is written and not run.
+   run's WAV, the game's state is what it was, and the chip's memory
+   and registers are the emulator's (`port_sound`). Left of it: a sound
+   card (with the window's library).
 7. **The rest.** Movies, the memory card as a file, the link (or
    nothing in its place).
 
@@ -1063,9 +1116,10 @@ link's three. Sound has no stub left ("Sound").
   seen.
 - Address 0: two places are given somewhere else to read and write; the
   others, if there are others, are not found.
-- The sound has not been compared with the emulator's, and where the
-  hardware's filters are not reproduced it is not the console's to the
-  sample ("Sound"). There is no sound card.
+- What is heard is compared with the emulator's only in part and by
+  hand, and where the hardware's filters are not reproduced it is not
+  the console's to the sample; the music is a tenth louder than the
+  emulator's ("Sound"). There is no sound card.
 - An address of the game's own variables has no top bit on a PC. One
   place tested it and is put right (`snd_FlushQueue`); linking the
   variables above `0x80000000` would end the kind.

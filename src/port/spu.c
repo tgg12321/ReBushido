@@ -28,10 +28,8 @@
  *     the way up;
  *   - a volume that sweeps is stepped as an envelope is, which is right
  *     for a rising one and a guess for the rest; the game sets none;
- *   - the few samples the chip takes to start a voice after its key,
- *     the capture of the disc's and two voices' sound into the start of
- *     sound memory, and the interrupt at an address are not done: the
- *     game uses none of them;
+ *   - the few samples the chip takes to start a voice after its key and
+ *     the interrupt at an address are not done: the game uses neither;
  *   - a waveform whose block names a filter above the fifth is played
  *     with none.
  */
@@ -268,6 +266,15 @@ enum {
 };
 
 #define ADDRESS_UNIT 8
+/* The start of sound memory is the chip's own: four buffers of 512
+ * samples that it goes round writing, a sample each at every sample it
+ * makes: the disc's left and right as they come in, and what voices 1
+ * and 3 play, under their envelopes. */
+#define CAPTURE_BYTES 0x400
+#define CAPTURE_CD_LEFT 0x000
+#define CAPTURE_CD_RIGHT 0x400
+#define CAPTURE_VOICE_1 0x800
+#define CAPTURE_VOICE_3 0xC00
 /* A register of a bit a voice is two halfwords: sixteen voices in the
  * first. */
 #define VOICES_PER_HALFWORD 16
@@ -306,6 +313,7 @@ static struct {
     s32 reverb_held[2];
     s32 reverb_before[2];
     s32 reverb_now[2];
+    u32 capture; /* where in its four buffers the chip writes next */
     PortSpuCounts counts;
     u8 ram[PORT_SPU_RAM_BYTES];
 } g_port_spu;
@@ -805,6 +813,13 @@ static void port_RunSpuReverb(const s32 *in, s32 *out, u32 control) {
 
 /* ---- the chip ---- */
 
+/* A sample into one of the chip's four buffers at the start of sound
+ * memory. */
+static void port_CaptureSpuSample(u32 buffer, s32 sample) {
+    g_port_spu.ram[buffer + g_port_spu.capture] = (u8)sample;
+    g_port_spu.ram[buffer + g_port_spu.capture + 1] = (u8)(sample >> 8);
+}
+
 void port_AttachSpu(u16 *regs) {
     u8 *bytes = (u8 *)&g_port_spu;
     u32 i;
@@ -867,6 +882,12 @@ void port_RunSpu(const s16 *cd, s16 *out, u32 frames) {
                 }
             }
         }
+        port_CaptureSpuSample(CAPTURE_CD_LEFT, cd != NULL ? cd[frame * 2] : 0);
+        port_CaptureSpuSample(
+            CAPTURE_CD_RIGHT, cd != NULL ? cd[frame * 2 + 1] : 0);
+        port_CaptureSpuSample(CAPTURE_VOICE_1, g_port_spu.voices[1].out);
+        port_CaptureSpuSample(CAPTURE_VOICE_3, g_port_spu.voices[3].out);
+        g_port_spu.capture = (g_port_spu.capture + 2) & (CAPTURE_BYTES - 1);
         heard[0] = port_ClampSample(heard[0]);
         heard[1] = port_ClampSample(heard[1]);
         port_RunSpuReverb(heard, wet, control);

@@ -464,6 +464,17 @@ static void test_Mixer(void) {
     g_made_regs[PORT_SPU_KEY_ON] = 0x3F;
     made_Run(64);
     CHECK_EQ(g_made_out[2 * 63], -32766);
+    /* the chip keeps what voices 1 and 3 play, under their envelopes
+     * and before their volumes, after the disc's two buffers: here both
+     * are at the bottom of the scale, and voice 2 has no such buffer */
+    {
+        const u8 *ram = port_GetSpuRam();
+        u32 at = (g_port_spu.capture + CAPTURE_BYTES - 2) % CAPTURE_BYTES;
+
+        CHECK((s16)(ram[0x800 + at] | (ram[0x801 + at] << 8)) < -0x7F00);
+        CHECK((s16)(ram[0xC00 + at] | (ram[0xC01 + at] << 8)) < -0x7F00);
+        CHECK_EQ(g_port_spu.capture, 2 * 128);
+    }
     /* a volume with the top bit of its fifteen set is below nothing,
      * and turns the sound over: 0x4000 is all of it, the other way */
     made_Voice(0)[PORT_SPU_VOICE_VOLUME_LEFT] = 0x4000;
@@ -500,6 +511,17 @@ static void test_Mixer(void) {
         /* -20000 at 32767/32768 is -20000 (rounded down); at the main
          * volume -19998.8, rounded down */
         CHECK_EQ(g_made_out[2 * 15 + 1], -19999);
+        /* the chip keeps the disc's last samples as they came in at the
+         * start of sound memory, left and then right, 512 of each, a
+         * sample at every sample it makes, heard or not: 32 so far */
+        CHECK_EQ(
+            (s16)(port_GetSpuRam()[0] | (port_GetSpuRam()[1] << 8)), 20000);
+        CHECK_EQ(
+            (s16)(port_GetSpuRam()[62] | (port_GetSpuRam()[63] << 8)), 20000);
+        CHECK_EQ(port_GetSpuRam()[64] | port_GetSpuRam()[65], 0);
+        CHECK_EQ(
+            (s16)(port_GetSpuRam()[0x400] | (port_GetSpuRam()[0x401] << 8)),
+            -20000);
     }
 }
 

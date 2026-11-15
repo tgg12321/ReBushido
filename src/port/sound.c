@@ -19,10 +19,13 @@
  *     uses is the vertical blank's, on which the sound library's tick
  *     runs: it runs at each blank of the port's clock.
  *
- * At each vertical blank (port_RunSoundBlank, from clock.c) the tick
- * runs, which is where the library writes the keys and the voices'
- * registers, and then the chip makes the samples of one blank. A blank
- * is 263 scan lines of an NTSC console, 15,734.2657 of them a second
+ * At each vertical blank (port_RunSoundBlank, from clock.c) the chip
+ * makes the samples up to the blank, the tick runs, which is where the
+ * library writes the keys and the voices' registers, and the chip makes
+ * a few samples more: the game's code, which in the port takes no time,
+ * runs on the console in the first moments after the blank, and asks
+ * the chip there which voices are still sounding (BLANK_HEAD_FRAMES).
+ * A blank is 263 scan lines of an NTSC console, 15,734.2657 of them a second
  * (4.5 MHz / 286), and the chip makes 44,100 samples a second: 737 and
  * 341/2500 samples a blank. The fraction is carried, so a blank is 737
  * samples or 738 and a run's sound is the same every time. */
@@ -47,6 +50,18 @@
 #define BLANK_FRAMES 737
 #define BLANK_FRACTION 341
 #define BLANK_FRACTION_ONE 2500
+/* Of a blank's samples, those made after the tick and before the game's
+ * code goes on: the game asks which voices are free at the top of its
+ * frame (snd_FlushQueue, main.c), a fraction of a millisecond after the
+ * blank on the console, when a voice the tick has just keyed on is
+ * sounding already and the blank that follows has not yet been played.
+ * The number is the port's: a voice is sounding after one sample, and
+ * the console's own delay is some tens. With the tick before all of the
+ * blank's samples, a sound as long as the time between two of the same
+ * (a footstep) had always just ended when the next was asked for, and
+ * took its voice, where the console gives the next another voice: the
+ * emulator said so (tests/play/port_sound.toml). */
+#define BLANK_HEAD_FRAMES 32
 
 /* The DMA controller moves 64 bytes at a time: a transfer is rounded up
  * to that. */
@@ -406,10 +421,23 @@ static void port_LogAsked(void) {
     }
 }
 
-/* A vertical blank (port_spu.h). */
-void port_RunSoundBlank(u32 blank) {
+/* The next `frames` samples: the drive goes on, the disc's sound and
+ * the chip's are made, and kept if the run keeps its sound. */
+static void port_MixSound(u32 frames) {
     static s16 cd[(BLANK_FRAMES + 1) * 2];
     static s16 out[(BLANK_FRAMES + 1) * 2];
+
+    port_PlayDisc(frames);
+    port_ReadCdAudio(cd, frames);
+    port_RunSpu(cd, out, frames);
+    g_port_sample_count += frames;
+    if (port_IsWavOn()) {
+        port_AppendWav(out, frames);
+    }
+}
+
+/* A vertical blank (port_spu.h). */
+void port_RunSoundBlank(u32 blank) {
     u32 frames = BLANK_FRAMES;
 
     g_port_sound_blank = blank;
@@ -418,6 +446,7 @@ void port_RunSoundBlank(u32 blank) {
         g_port_blank_fraction -= BLANK_FRACTION_ONE;
         frames++;
     }
+    port_MixSound(frames - BLANK_HEAD_FRAMES);
     if (port_IsWavOn()) {
         g_port_spu_key_on_hook = port_LogKeyOn;
         port_LogAsked();
@@ -428,13 +457,7 @@ void port_RunSoundBlank(u32 blank) {
     if (g_port_vsync_callback != NULL) {
         g_port_vsync_callback();
     }
-    port_PlayDisc(frames);
-    port_ReadCdAudio(cd, frames);
-    port_RunSpu(cd, out, frames);
-    g_port_sample_count += frames;
-    if (port_IsWavOn()) {
-        port_AppendWav(out, frames);
-    }
+    port_MixSound(BLANK_HEAD_FRAMES);
 }
 
 /* ---- the end of a run ---- */
@@ -466,18 +489,26 @@ void port_PrintSoundSummary(void) {
 
 void port_SetSpuDump(const char *path) { g_port_spu_dump_path = path; }
 
-/* Sound memory, then the registers (port_spu.h). */
+/* Sound memory, then the registers, to a file that is open
+ * (port_spu.h). */
+s32 port_WriteSpu(s32 file) {
+    static const u16 no_registers[PORT_SPU_REG_COUNT];
+    const void *registers =
+        g_port_spu_mapped ? (const void *)PORT_SPU_REGS_ADDR : no_registers;
+
+    return port_HostAppend(file, port_GetSpuRam(), PORT_SPU_RAM_BYTES) &&
+           port_HostAppend(file, registers, PORT_SPU_REG_COUNT * sizeof(u16));
+}
+
+/* The same when the run ends, to the file --spu named. */
 void port_WriteSpuDump(void) {
     s32 file;
 
-    if (g_port_spu_dump_path == NULL || !g_port_spu_mapped) {
+    if (g_port_spu_dump_path == NULL) {
         return;
     }
     file = port_HostCreate(g_port_spu_dump_path);
-    if (file < 0 ||
-        !port_HostAppend(file, port_GetSpuRam(), PORT_SPU_RAM_BYTES) ||
-        !port_HostAppend(file, (const void *)PORT_SPU_REGS_ADDR,
-                         PORT_SPU_REG_COUNT * sizeof(u16))) {
+    if (file < 0 || !port_WriteSpu(file)) {
         port_Log("rebushido: %s cannot be written\n", g_port_spu_dump_path);
     }
     if (file >= 0) {
