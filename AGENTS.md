@@ -85,7 +85,8 @@ library, from the game's C with `RB_PORT` on, Sony's library code that is plain 
 `src/port/` (`docs/PORT.md`). All OS calls go through `include/port_host.h`. A new Sony or BIOS
 function the game calls must be defined in `src/port/` or the port's link fails. The port draws by
 a software GPU (`src/port/raster.c`) into its own video memory; `build/port/rebushido --shots DIR`
-writes frames. `RB_PORT` is
+writes frames. The port compiles Sony's libsnd and libspu (all but libspu's `spu.c`) over
+`src/port/spu.c`; a change in `src/main/psxsdk/libsnd/` or `libspu/` is in the port too. `RB_PORT` is
 also on in `make rebushido-test` and `make rebushido-modern`, which test the C beside the assembly;
 `tools/port_gte_macros.py` writes Sony's GTE macros as C into `build/port/include/`;
 `make gte-probe` builds the play tests' probe (`build/play/GteProbe.exe`).

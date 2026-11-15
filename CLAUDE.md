@@ -61,9 +61,9 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   where the order an expression is evaluated in may matter is fixed under
   `RB_PORT` (the call first) or added to `config/port_order.txt` with its
   reason (`--update`).
-- Port against emulator: four play tests (`port_game`,
-  `port_other_fight`, `port_bugfixes`, `port_picture`); to find a
-  divergence,
+- Port against emulator: five play tests (`port_game`,
+  `port_other_fight`, `port_bugfixes`, `port_picture`, `port_sound`); to
+  find a divergence,
   `tests/play/README.md`, "Finding where two runs part"
   (`tools/port_compare.py`). In a fight, time presses and checkpoints in
   game frames (`72f`, `frames =`), not blanks. The play tests take about
@@ -78,6 +78,11 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
 - The owner's choices for the port: a 32-bit build first, SDL 2, the
   player's disc image for the data, a software renderer that matches the
   PlayStation first, movies decoded in the port.
+- The port's sound: Sony's libsnd and libspu are compiled in; the chip
+  is `src/port/spu.c`. `build/port/rebushido ... --wav FILE` keeps a
+  run's sound and `python tools/port_wav.py FOLDER` reads it by numbers;
+  `port_sound` holds the library's state and the chip's memory and
+  registers to the emulator's.
 - `wsl bash tools/build.sh patcher` builds the players' patcher into
   `build/release/` (`ReBushidoPatcher.exe` needs `mingw-w64` in WSL).
   Never run the `.exe` without an image argument from an agent: it opens
