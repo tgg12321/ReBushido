@@ -1692,9 +1692,15 @@ pixel, is not compared: there is nothing on show to hold to anything.
 
 | The plan | Pictures | The same | Pixels | That differ | ... within one step | ... further |
 |---|---|---|---|---|---|---|
-| `port_game` | 184 | 36 | 27,571,200 | 633,002 (2.3%) | 602,083 (95%) | 30,919 (168 a picture) |
-| `port_other_fight` | 196 | 39 | 29,414,400 | 6,809,595 (23%) | 5,613,851 (82%) | 1,195,744 (6,100 a picture) |
-| `port_bugfixes` | 186 | 37 | 27,648,000 | 645,040 (2.3%) | 613,469 (95%) | 31,571 (170 a picture) |
+| `port_game` | 184 | 37 | 27,494,400 | 600,577 (2.2%) | 569,696 (95%) | 30,881 (168 a picture) |
+| `port_other_fight` | 196 | 41 | 29,337,600 | 6,644,816 (23%) | 5,478,592 (82%) | 1,166,224 (5,950 a picture) |
+| `port_bugfixes` | 188 | 39 | 27,878,400 | 613,035 (2.2%) | 582,021 (95%) | 31,014 (165 a picture) |
+
+(Measured again on the tree that hangs this on the window. When the
+renderer was written, on an older tree, the same runs gave 184, 196 and
+186 pictures and 633,002, 6,809,595 and 645,040 pixels that differ: the
+same picture to within a twentieth of the count, the game's own code
+having moved on in between.)
 
 A *step* is one of a five-bit channel's 31, eight of a byte's 255: a
 pixel that differs by a step or less is the same colour the chip can
@@ -1733,7 +1739,11 @@ What differs, and why:
 **With the renderer on and off, the game computes the same thing.** The
 trace of every watched value at every blank of the three plans is
 identical, line for line, with `--graphics remastered` and `--graphics
-original`. **And with each of the three settings**: the traces of
+original`. (It was, on the tree this was measured on. On a later tree
+`port_bugfixes` parts company at the options page, and so do two runs of
+the one program that differ only in `--gl-scale`: the page reads memory
+the game never wrote, so the picture's settings move what it finds.
+Nothing of the renderer is in it — see "What is left".) **And with each of the three settings**: the traces of
 `port_game` with `draw_distance far` and `max`, and with the remastered
 picture off but the run started with `max` (so that the game has the
 port's own primitive buffers), are all the same 2,340 lines as the run
@@ -2152,14 +2162,29 @@ vertices and draws of the last frame.
 **How it was proved.** With Graphics Original, SDL's dummy drivers and
 the three plans of `port_game`, `port_other_fight` and `port_bugfixes`:
 the trace of every watched value is the build without a window's, line
-for line, and every twentieth picture as SDL is handed it is that
-build's PNG pixel for pixel — the numbers of "How the window is proved"
-again, on this tree. With Graphics Remastered the window was run through
+for line (2,333, 2,457 and 2,334 lines), and every twentieth picture as
+SDL is handed it is that build's PNG pixel for pixel — 685 pictures,
+94,556,160 pixels, none different, none missing. That is "How the window
+is proved" again, on this tree, and it is the path a machine with no
+OpenGL takes as well, since SDL's dummy driver has none. With Graphics Remastered the window was run through
 SDL's `offscreen` driver on Mesa's software renderer (`llvmpipe`), which
 gives a real 3.3 core context with nothing on screen: the card path
-starts, the scale follows the window, F2 changes picture at a blank, and
-the window's own pixels were read back and written as PNGs
-(`--tap-window`, `build/remaster3/`).
+starts (OpenGL 4.5 core, Mesa 25.2, llvmpipe), the scale follows the
+window (3 at 960 by 720 where the game's display is 320 wide, 2 where it
+is 640), the picture changes at a blank, and the window's own pixels
+were read back and written as PNGs (`--tap-window`). A fight at 16:9 and
+`draw_distance max` drew about 31 of the game's frames a second on that
+software renderer, which is the console's own rate.
+
+**The wider picture's left band, measured.** The same frame of the same
+fight at 16:9, with the face test against the picture's edge and against
+the console's: of the two bands' 171,360 pixels 3,869 differ, and 3,505
+of those went from black to drawn — the wedges where the ground and the
+far wall stopped. 152 pixels of the middle differ too, where a face that
+was dropped altogether reaches back into the console's own 640: a wider
+picture's middle is no longer the four-by-three picture to the pixel,
+which is the price of filling the band and is only paid when the picture
+is widened.
 
 **Not proved**: nobody has seen a window on a real graphics card. The
 picture was drawn only by Mesa's software renderer, with no window on
@@ -3009,6 +3034,20 @@ too.
   looking has gone; the others, if there are others, are not found. A
   mode the sweep does not reach may hold one: the table of best times
   after a whole chanbara run, a story ending, the staff roll.
+- **There is at least one more place where the game reads what it never
+  wrote, and it is on the options page.** In `port_bugfixes`, whose plan
+  presses Right on that page, what the page makes of that press follows
+  the port's own memory: the same program and the same plan, with only
+  `--gl-scale 1` against `--gl-scale 4` — a number that chooses how large
+  the card draws and that the game cannot see — end with the Bugfixes
+  setting on in one run and off in the other, deterministically. Moving
+  any code of the game's moves which way it falls, which is why the
+  remastered renderer's own prover reports the trace with it on and off
+  as the same on one build and not on another. It is not the remastered
+  picture doing it: with the picture original the two builds agree to the
+  line. Finding it means watching the page's input for a read of memory
+  the game never wrote (`rb_StepOption`, `options.c`, and what the page
+  keeps between frames).
 - What is heard is compared with the emulator's only in part and by
   hand, and where the hardware's filters are not reproduced it is not
   the console's to the sample; the music is a tenth louder than the
