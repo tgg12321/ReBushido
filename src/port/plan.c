@@ -556,6 +556,18 @@ static void port_AddSnap(const char *name, u32 address, u32 size) {
     g_port_snap_count++;
 }
 
+/* The window's keyboard and controllers in a plan's place
+ * (port_platform.h): nothing in the build without one. */
+s32 (*g_port_press_hook)(s32 pad, u32 button, s32 down);
+
+/* A press of the plan's: the pad's button itself, unless the window
+ * takes it to press a key or a controller's button for it. */
+static void port_PressPlanButton(s32 pad, u32 button, s32 down) {
+    if (g_port_press_hook == NULL || !g_port_press_hook(pad, button, down)) {
+        port_SetPadButton(pad, button, down);
+    }
+}
+
 /* The presses that go down or come up now: those counted in frames as a
  * frame of the game begins, the others at a vertical blank. */
 static void port_PressButtons(s32 in_frames, u32 now) {
@@ -568,10 +580,10 @@ static void port_PressButtons(s32 in_frames, u32 now) {
             continue;
         }
         if (press->down_at == now) {
-            port_SetPadButton(press->pad, press->button, 1);
+            port_PressPlanButton(press->pad, press->button, 1);
         }
         if (press->up_at == now) {
-            port_SetPadButton(press->pad, press->button, 0);
+            port_PressPlanButton(press->pad, press->button, 0);
         }
     }
 }
@@ -590,7 +602,7 @@ static void port_SchedulePresses(s32 checkpoint, u32 blank) {
             press->up_at = press->down_at + press->hold;
             /* no frame after it: now */
             if (press->in_frames && press->offset == 0) {
-                port_SetPadButton(press->pad, press->button, 1);
+                port_PressPlanButton(press->pad, press->button, 1);
             }
         }
     }

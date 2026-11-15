@@ -406,6 +406,10 @@ static void port_LogAsked(void) {
     }
 }
 
+/* The window's sound card (port_spu.h): nothing in the build without
+ * one. */
+void (*g_port_sound_hook)(const s16 *samples, u32 frames);
+
 /* A vertical blank (port_spu.h). */
 void port_RunSoundBlank(u32 blank) {
     static s16 cd[(BLANK_FRAMES + 1) * 2];
@@ -434,6 +438,9 @@ void port_RunSoundBlank(u32 blank) {
     g_port_sample_count += frames;
     if (port_IsWavOn()) {
         port_AppendWav(out, frames);
+    }
+    if (g_port_sound_hook != NULL) {
+        g_port_sound_hook(out, frames);
     }
 }
 
