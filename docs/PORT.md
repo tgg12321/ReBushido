@@ -12,10 +12,10 @@ been done about it; the stages that are left; and the decisions that are
 the owner's. **The port is a program now, with nothing to see or hear:**
 it links, gives the game the PlayStation's memory, reads the player's
 disc image, and runs the game's own `main` through start-up, the options
-page, the menus and character select into a fight, with no picture, no
-sound and no pads but a script's. Up to the fight's first second it is
-held to the emulator, value for value. Stages 1 to 3 of the seven below
-are done.
+page, the menus and character select, through a whole fight and back to
+the menu, with no picture, no sound and no pads but a script's. All that
+way it is held to the emulator, value for value, in three fights. Stages
+1 to 3 of the seven below are done, and of stage 5 the fight itself.
 
 ## Where it stands
 
@@ -28,6 +28,7 @@ are done.
 | BIOS calls and Sony's libraries | every one the game calls is defined: done for real where it only works on memory or the port has the thing (the disc, time, the pads' packets, events), a stub that is counted where it has not (the picture, sound, the memory card, the link, the movie) |
 | Memory | done: the RAM and the scratchpad at the console's addresses ("Memory") |
 | The disc | done for data: sectors from the player's image, under the game's own disc code ("The disc"). Its sound is a stub |
+| A fight | done, by a script's pads: three whole fights are the emulator's, frame for frame ("How it is proved") |
 | A window, the picture, sound, real pads, the card, movies | not begun |
 
 ## The switch
@@ -78,6 +79,10 @@ cannot make such a program the build says so and fails. The game's files
 are compiled with their warnings off, which `make rebushido-modern`
 reads; the port's own with that check's warnings as errors, less
 `-Wstrict-prototypes`, which Sony's headers themselves fail.
+The game's files are also compiled so that every function says when it
+begins and ends (`-finstrument-functions`): a run's script can then
+stop at a call of any of them, and list the calls of a frame
+(`tests/play/README.md`, "Finding where two runs part").
 
 Everything the program asks of the operating system goes through
 `include/port_host.h`: a dozen functions (write, open, read at an
@@ -170,6 +175,68 @@ it here:
   given (`eff_Start`: zeroes). Two were found on the way to a fight's
   end; the next one will stop the port and say where.
 
+### What the PlayStation's compiler decided
+
+Two more things the game has on the PlayStation and C does not promise.
+Both were found by the fight: the port's left the emulator's at the first
+clash of blades, and after that was put right a clash's spark was missing.
+
+**The order of evaluation.** C leaves open the order in which the
+operands of an operator and the arguments of a call are worked out. GCC
+2.7.2 for MIPS, measured on the compiler itself, makes the calls of one
+expression in the order they are written and reads a variable or a
+member that is an operand as late as it can, after those calls. A modern
+GCC for x86 works a call's arguments out from the last to the first and
+reads memory as it comes to it. `fighter_Update` starts a move as
+
+```c
+fighter_StartMove(index,
+                  motion_GetMove(fighter, id, &fighter->move_is_common),
+                  fighter->move_is_common);
+```
+
+and means the third argument to be what `motion_GetMove` has just
+written: whether the move it found is in the common file or the
+fighter's own. The PlayStation passes that. The port passed what the
+member held before, so the first time a move of one file followed a move
+of the other (the fight's 166th frame: the second fighter's parry, at
+the first clash) the move was started with the other file's motion, and
+the fighter left the ground. Seven calls in `fighter_Update` are written
+so. In the port `fighter_StartMove` is given where the flag is and reads
+it when every argument has been worked out (`fighter.c`, under
+`RB_PORT`), with no line of `fighter_Update` changed.
+
+Nothing warns of such a place, so `tools/port_order.py` finds them all:
+it reads the statements the port's compiler made of every file, in the
+order it will run them, and reports each statement of the source in
+which a variable or member is read before a call that may write it (the
+call's own writes and those of everything it calls, by variable, by
+member's name, and through bare pointers to whatever has its address
+taken), or two calls in two arguments are made in the other order than
+written and one may write what the other uses. In the whole port that
+is the seven calls above, and one more place twice, which was looked at
+and does not matter (`config/port_order.txt`, with why). 68 other
+places are evaluated in another order than on the PlayStation and
+cannot matter (`--all` lists them): a table's sine beside a member,
+`rand()` beside a member. `make port` runs it on every push and fails
+on a place that is not in the list.
+
+**A result that nothing returned.** The effects' handlers are called
+through a table for a number, whether the effect lives on
+(`eff_Start`, `eff_Step`). Eleven first handlers, the flashes', are
+`void` and return nothing. On the PlayStation the number is then
+whatever their last instructions left in the result's register, and in
+each of the eleven that is the 1 they have just stored in `g_eff_stage`:
+the effect lives. On a PC the register holds something else, and a
+clash's spark, a lock's flash, a blunt hit's and an armour's were over
+before they were drawn. The port calls the handlers through
+`eff_RunHandler` (`eff.c`, under `RB_PORT`), which gives 1 for those
+eleven: what the PlayStation's register holds, read from the listings
+of all eleven. Four more functions end without the value they are
+declared to return (`snd_Play`, `fighter_TryDropSecondSword`,
+`eff_SetUpParticles`, and `font_Printf` called with the text alone in
+`select.c`); no caller uses what they return.
+
 **For 64-bit**, the mapping itself can stay: a 64-bit process can still
 have memory at these two addresses, and a program linked without
 position independence has its own variables below 4 GB as well, so an
@@ -211,7 +278,8 @@ finds the end of a piece of music by asking where the drive is.
 
 So a load takes the frames its commands take and none for its sectors:
 the port is at the top menu at blank 497 where the emulator is at
-1,902.
+1,902. A script that has to press at the same moment of the game on both
+counts the game's frames, not blanks ("Time").
 
 ### Time
 
@@ -222,6 +290,16 @@ counter moves it one line each time it is asked. What the game computes
 between two waits takes no time. Nothing reads the PC's clock, so a run
 is the same every time and on every machine.
 
+**A frame of the game** begins where the game resets its counter of scan
+lines, once a frame, after the wait for the blank (`ResetRCnt`,
+`main.c`). The port tells a run's script there (`port_OnFrame`), and
+the emulator's script stops at the same function, so a press or a
+checkpoint counted in frames is at the same moment of the game on both,
+however many blanks either took to get there. Counted in blanks it is
+not: the emulator's blank falls while a frame is being worked out or
+waited out, the port's always after, and a press an odd number of
+blanks from a checkpoint landed in the next frame on one of the two.
+
 **The frame's wait** (the owner's last open decision, settled for now by
 that rule): `main` asks the counter until it has reached half a field
 short of the frame, calling `rand()` each time, so on the port the wait
@@ -229,9 +307,11 @@ is exactly 384 calls of `rand()` in a frame of two fields and 128 in a
 frame of one, and none in a frame that waited inside itself, as a load
 does. The console's count is whatever time was left. The game's own
 random numbers (`rng_Next`) do not come from `rand()`, and they are the
-emulator's all the way into the fight; what `rand()` feeds is effects,
-the loading screen's noise and a few choices at a fight's start, none
-of which the comparison so far has seen differ.
+emulator's through three whole fights; what `rand()` feeds is effects,
+the loading screen's noise and a few choices at a fight's start. The
+effects' own memory is therefore not the emulator's once a fight is
+under way (the particles' places), and is compared only on the fight's
+first frame; nothing that decides a fight has been seen to differ.
 
 ## The assembly
 
@@ -504,25 +584,36 @@ points below. Stages two and three, the program, by the last three.
   now stand on each of those limits (the cutoff, the fog's end, the
   sizes and distances things change at).
 
-- **The program against the emulator.** The play test `port_game`
+- **The program against the emulator.** Three play tests
   ([`tests/play/README.md`](../tests/play/README.md), "The port as a
-  disc") gives the emulator, with the ReBushido disc and no memory card,
+  disc") give the emulator, with the ReBushido disc and no memory card,
   and then the port, with the retail image, the same plan: Start on the
   options page, past the opening and the title, down the top menu to
-  Vs. Mode, both pads through character select, into the fight and a
-  second of it. At each of six checkpoints (the page, the first screen,
-  the top menu, character select, the fight's first frame, the fight a
-  second in) every value of `state.toml` is the same on both, 53 of the
-  54: the screen and its frame count, the menu's page, the game's
-  random numbers, the mode, the stage, what was asked for, and both
-  fighters' places, wounds and frames. The one left out is the count of
-  frames shown since power on, which is timing (the port shows no movie
-  and loads in no time). At the end the memory the game loaded from the
-  disc is compared byte for byte, live, between the two runs and kept
-  nowhere: the effects' tables and textures (38,912 bytes) and the
+  Vs. Mode, both pads through character select, a fight until one of
+  the two is cut down, the replay, the menu after the fight, and from
+  it back to the main menu. `port_game` is the fight of
+  `same_as_original` (a kill on the fight's 507th frame);
+  `port_other_fight` has other weapons and another stage (a nodachi
+  against a broadsword, a kill on the 626th frame); `port_bugfixes` is
+  the first with Bugfixes turned on at the options page. In each, at
+  the page, the first screen, the top menu, character select, the
+  fight's first frame, every second of the fight, the kill, the replay,
+  the menu after and the main menu again (27 to 31 checkpoints), every
+  value of `state.toml` is the same on both, 53 of the 54: the screen
+  and its frame count, the menu's page, the game's random numbers, the
+  mode, the stage, what was asked for, and both fighters' places,
+  wounds and frames. The one left out is the count of frames shown
+  since power on, which is timing (the port shows no movie and loads in
+  no time). From the fight's first frame on, both fighters' whole
+  structures are compared as well, 2,200 bytes, at every one of those
+  checkpoints, an address counting as the same if it is the same place
+  of the same name; what is left out of them is below. On the fight's
+  first frame the memory the game loaded from the disc is compared byte
+  for byte: the effects' tables and textures (38,912 bytes) and the
   first 256 KB of the load area, which hold the stage. All of it
-  agrees. It runs where the retail image and the emulator are, and is
-  skipped, saying so, where they are not.
+  agrees. The memory is compared live, between the two runs, and kept
+  nowhere. The tests run where the retail image and the emulator are,
+  and are skipped, saying so, where they are not.
 - **What the comparison found**, and what was done:
   - *The common sound bank* (3,328 bytes at `0x8010DB00`) differs in
     524 bytes, all in the words of its header that Sony's
@@ -534,15 +625,35 @@ points below. Stages two and three, the program, by the last three.
     `same_as_original` the port's fight left the emulator's at the first
     strike, by one frame: a press timed an odd number of blanks from a
     checkpoint falls into the next frame on one and not on the other.
-    Timing. With the fight's presses one blank earlier the port follows
-    the emulator for 330 blanks of the fight, strikes and random numbers
-    included.
-  - *The first clash of blades*, at about blank 335 of that fight: the
-    emulator's second fighter stands, the port's leaves the ground.
-    **Not explained.** It is not `rand()` (the same with half the
-    calls), and not the order of the blow's three variables, which was
-    wrong and is put right ("Memory"). It is where stage 5 begins.
+    Timing: the fight's presses and checkpoints are counted in the
+    game's frames now ("Time").
+  - *The first clash of blades*, on the fight's 166th frame: the
+    emulator's second fighter stands, the port's leaves the ground. The
+    order of evaluation ("What the PlayStation's compiler decided"),
+    put right. It was found by comparing all of the game's variables,
+    the mapped memory and the scratchpad frame by frame, and then
+    inside the frame at the calls of one function after another
+    (`tools/port_compare.py`): everything agreed as `fighter_StartMove`
+    was called and not after it.
+  - *A clash's spark*, on the 323rd frame: the emulator has one and the
+    port had none. A result that nothing returned (the same section),
+    put right. It changed no fighter's place or wound; it showed as
+    what the spark leaves on the scratchpad, which the fighters keep
+    for a weapon's third point and an off-hand weapon they do not have.
+  - *Words off the stack*, which stay different and are left out of
+    the comparison of the fighters, 28 bytes of the 2,200: the fourth,
+    unused word of `foot_pos` and of `prev_foot_pos`, which
+    `fighter_Update` copies from a local it sets three words of; the
+    pad's types and answers, which `pad_ClearState` leaves as they were
+    on the frames with no pad; and in the second fighter the last word
+    of the off-hand weapon's last places, read from the scratchpad
+    where a cast through the stage left such a word. The PlayStation
+    has an address of its own program there, the port an address of a
+    PC's stack or nothing. Nothing reads them that the comparison has
+    seen: were one read, the fights would differ.
   - *Two crashes*, both the original's use of address 0 ("Memory").
+    What the emulator has at address 0 was read: zeroes, as the port
+    gives.
 - **The reader and the platform layer by made-up cases**, on every
   push: `tests/port/disc.c` (an image of forty made-up sectors:
   addressing, the data's offsets, reading across sectors, a sector of
@@ -597,6 +708,9 @@ Each ends with something that can be shown.
    open; then the menu in a window.
 5. **Pads, time, a fight.** *Done when* a scripted fight on the port goes
    through the same watched values as the same script on the emulator.
+   That part is done, in three fights to their ends ("How it is
+   proved"). Left of it: the PC's own pads and the PC's own time, which
+   come with the window.
 6. **Sound.** The sound chip, Sony's sequencer, the disc's audio.
 7. **The rest.** Movies, the memory card as a file, the link (or
    nothing in its place).
@@ -606,14 +720,15 @@ build on stage 4.
 
 ## What is left
 
-How far the program gets today: with `port_game`'s presses, into a
-versus fight, which then runs for as long as it is left to (a hundred
-seconds of it were run, 3,700 blanks, with `same_as_original`'s presses:
-no crash, no winner, because the fight is not the emulator's from the
-first clash on). Nothing stops it; what it cannot do is listed here.
+How far the program gets today: with `port_game`'s presses, through a
+versus fight to its kill, the replay, the menu after it and back to the
+main menu, as the emulator does. Nothing stops it; what it cannot do is
+listed here.
 
 **The stubs the game called on the way** to the fight's first second,
-with how often, are the list of what stages 4 to 7 write:
+with how often, are the list of what stages 4 to 7 write (a whole fight
+and the way back to the menu call the same ones, more often, and no
+other):
 
 | Stage | Stub | Calls |
 |---|---|---|
@@ -646,13 +761,20 @@ Not called on that way, and stubs too: the card's files (`open`,
 
 **Known, and not done:**
 
-- The first clash of blades goes otherwise than on the emulator ("How
-  it is proved"). Until it is explained, a fight on the port is not the
-  game's fight.
-- A press an odd number of blanks from a checkpoint lands a frame off.
-  The cure is in the plan's follower, not the game: time presses from
-  the game's frames, or have the port take a checkpoint at the blank
-  the emulator would. Stage 5.
+- Three fights are proved, all of two players, of the same two
+  fighters, each ended by a cut. Not run against the emulator: a fighter
+  played by the CPU, the other modes, guns, thrown things, a fall from
+  a stage, a lock of blades.
+- Words off the stack differ, in padding and in places nothing was seen
+  to read ("What the comparison found"). The port's are a PC's stack
+  addresses, which the system moves from run to run: if the game ever
+  acted on one, the port's run would not be the same twice. No run so
+  far has differed from another.
+- What a function leaves in the result's register when it returns
+  nothing was looked for by the compiler's warnings and by reading the
+  one table of handlers that is called for a result; a `void` function
+  reached through some other pointer for a result would not have been
+  seen.
 - Address 0: two places are given somewhere else to read and write; the
   others, if there are others, are not found.
 - 218 pairs of neighbouring variables are not as far apart as on the

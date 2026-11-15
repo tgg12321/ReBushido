@@ -25,26 +25,28 @@ python tools/playtest.py [name...]          # the tests alone, with the discs al
 python tools/playtest.py --list
 ```
 
-About five minutes for the eleven tests, after up to two minutes
-of building discs; the tool holds a run to five minutes and the suite to
-ten. It prints a table and exits 1 if a test failed:
+About six minutes for the thirteen tests, after up to two minutes of
+building discs; the tool holds a run to five minutes and the
+suite to fourteen. It prints a table and exits 1 if a test failed:
 
 ```
   test             result   time
-  boot             ok         9s
-  bugfixes_fight   ok        29s
-  fight_end        ok        26s
+  boot             ok        10s
+  bugfixes_fight   ok        31s
+  fight_end        ok        28s
   first_frame_sweep ok        13s
-  gte_model        ok        79s
+  gte_model        ok        76s
   options_no_card  ok         9s
-  options_page     ok        14s
-  port_game        ok        23s
+  options_page     ok        15s
+  port_bugfixes    ok        33s
+  port_game        ok        32s
+  port_other_fight ok        33s
   quickboot        ok         7s
-  same_as_original ok        58s
-  vanish           ok        19s
+  same_as_original ok        60s
+  vanish           ok        17s
   emulator processes left running: 0
-  pictures and logs: build/playtest/<test>/<disc>/   (302s in all)
-OK: play tests: 11 passed, 0 skipped
+  pictures and logs: build/playtest/<test>/<disc>/   (364s in all)
+OK: play tests: 13 passed, 0 skipped
 ```
 
 What it needs, and where it looks:
@@ -105,7 +107,9 @@ retail program has none.
 | `bugfixes_fight` | ReBushido | Right on the options page turns Bugfixes on, Start leaves it and the setting is written to the card; then the presses of `same_as_original`: the opening, the menus, a versus fight to a kill, the replay, the menu after. The setting is still on at the end and nothing crashed |
 | `first_frame_sweep` | the bugs' fight, off and on | On the first fighter's first frame the hit tests' scratch has the sweep of its naginata's shaft: with the setting off the shaft's far end was swept from nowhere (0, 0, 0: the first fight since power on left nothing else), with it on from where it is |
 | `vanish` | the bugs' fight, off and on | The CPU strikes the vanisher. With the setting off it comes back at (4000, -12000), another stage's start position, and two seconds later has fallen out of the stage; with it on it comes back at (3400, 7400), where it started, and stands |
-| `port_game` | ReBushido, then the native port | The port is the game: the same presses on the emulator and on the port, from power on through the options page, the top menu and character select into a versus fight and a second of it. At each of six checkpoints every value of `state.toml` but the count of frames shown is the same on both, the random numbers among them, and so is the memory the game loaded from the disc: the effects' tables and 256 KB of the stage ("The port as a disc") |
+| `port_game` | ReBushido, then the native port | The port is the game: the same presses on the emulator and on the port, from power on through the options page, the top menu and character select, a versus fight to a kill, the replay, the menu after and back to the main menu. At each of 27 checkpoints, one for every second of the fight, every value of `state.toml` but the count of frames shown is the same on both, the random numbers among them; from the fight's first frame on so are both fighters' whole structures, and on that frame the memory the game loaded from the disc: the effects' tables and 256 KB of the stage ("The port as a disc") |
+| `port_other_fight` | ReBushido, then the native port | The same in another fight: each pad takes another weapon (a nodachi against a broadsword) and the first another stage. 31 checkpoints |
+| `port_bugfixes` | ReBushido, then the native port | The same with Bugfixes on: `port_game`'s presses after right on the options page. The setting is on at every checkpoint |
 | `gte_model` | the GTE probe, no disc | The native port's C does what the PlayStation's coprocessor and assembly do: 125,800 made-up cases come out the same on the emulator and on the host ("The GTE probe") |
 
 ## The GTE probe
@@ -175,9 +179,10 @@ log. So a test names it as a disc, `port`, and the tool runs
 <folder>` in the emulator's place (through `wsl` when the tool runs on
 Windows). No emulator starts for that run.
 
-`port_game` runs the ReBushido disc on the emulator and then the port,
-and `compare` holds the second to the first. What such a test has to do
-differently from one on two discs:
+`port_game`, `port_other_fight` and `port_bugfixes` run the ReBushido
+disc on the emulator and then the port, and `compare` holds the second
+to the first. What such a test has to do differently from one on two
+discs:
 
 - `cards = "none"`: the port has no memory card, so the emulator is given
   none either.
@@ -189,14 +194,28 @@ differently from one on two discs:
 - `compare` may name `dump`: each piece of memory the test's `[dump]`
   names is then compared between the two runs, byte for byte, at the end
   of the run. The two files are in the runs' folders and nowhere else.
-- A press is timed from a checkpoint, in blanks, and the game takes a
-  frame of two blanks: a press at an odd number of blanks after a
-  checkpoint can fall into the next frame on one and not on the other,
-  because the emulator sees a checkpoint when the frame's work is done
-  and the port, where that work takes no time, a blank earlier or later.
-  `port_game` stops before the first such press. (With the fight's
-  presses one blank earlier the port follows the emulator's fight of
-  `same_as_original` for 330 blanks more; docs/PORT.md, "What is left".)
+- In the fight, presses and checkpoints are counted in **the game's
+  frames**, not in blanks (`"fight+72f CIRCLE"`, `frames = 30`,
+  `at_frame = true`: "Writing a test"). The game takes a frame of two
+  blanks, and a blank falls while the emulator is still working a frame
+  out or waiting it out, but on the port, where that work takes no
+  time, always after it: a press an odd number of blanks from a
+  checkpoint fell into the next frame on one and not on the other, and
+  a checkpoint's values were of half a frame on one. A frame of the game
+  begins at the same moment of the game on both. Up to the fight the
+  presses are in blanks: the menu runs a frame a blank, and the two get
+  to its pages at different blanks and frames anyway, since the port
+  loads in no time.
+- `compare` names `snapshot`: the memory `[snapshot]` names, written at
+  the checkpoints that say so and compared between the two runs ("Memory
+  at a checkpoint"). The port's variables are not where the
+  PlayStation's are, so a piece is named by a symbol, and an address
+  inside it is the same if it is the same place of the same name.
+
+What is left out of the fighters' structures there (`except`), and why,
+is in each test's file and in `docs/PORT.md`, "What the comparison
+found": words copied off the stack, which is not the same stack on a
+PC.
 
 The port's own output is `port.log` in the run's folder; the lines of
 `run.log` that begin `stub` are what the game asked for that the port
@@ -288,6 +307,7 @@ expect = [
 | `[state]` | More values for this test alone, written as in `state.toml` |
 | `common_state` | `false`: the test has only its own `[state]`, none of `state.toml`'s. For a program that is not the game |
 | `[dump]` | Memory to write to a file when the run ends, for looking into a failure: `NAME = "symbol+offset:bytes"` writes `NAME.bin` into the run's folder |
+| `[snapshot]` | Memory to write at the checkpoints that say `snapshot`, and to compare if `compare` names `snapshot` ("Memory at a checkpoint") |
 
 **A press** is `"WHEN BUTTON"`: `"5200 START"` presses Start at vertical
 blank 5200 from power on, `"menu+30 DOWN"` thirty blanks after the
@@ -298,6 +318,16 @@ START UP RIGHT DOWN LEFT L1 R1 L2 R2 TRIANGLE CIRCLE CROSS SQUARE`. Time a
 press from a checkpoint wherever you can: a build that boots or loads a
 little later is then still pressed at the same moments of the game.
 
+An `f` after the number counts **frames of the game** in place of
+blanks: `"fight+72f CIRCLE"` goes down as the 72nd frame after the
+checkpoint `fight` begins, and the game reads it in the frame after
+that; `hold 20f` holds it twenty frames (three if not given). A frame
+of the game begins where the game resets its counter of scan lines,
+once a frame (`ResetRCnt`, `main.c`): the emulator's script stops
+there. Two programs that take different numbers of blanks to work a
+frame out, as the emulator and the native port do, are then pressed in
+the same frame.
+
 **A checkpoint** (`[[checkpoint]]`, as many as wanted) is reached in the
 order of the file, each one looked for only after the one before it:
 
@@ -307,6 +337,12 @@ order of the file, each one looked for only after the one before it:
 | `when` | Reached when this holds: `VALUE == NUMBER`, several joined by `&&`. A value is a name of `state.toml`; the comparisons are `== != < <= > >=` |
 | `at` | Or: reached at this vertical blank from power on |
 | `after` | Or: this many blanks after the checkpoint before it |
+| `frames` | Or: this many frames of the game after the checkpoint before it, at the moment the last of them begins: its values are those of whole frames |
+| `call` | Or: when the function of this name is next called; `count = N` waits for the Nth call. For looking inside a frame ("Finding where two runs part") |
+| `at_frame` | With `when`: `true` looks for it only as a frame of the game begins, not at a blank, which can fall in the middle of one |
+| `repeat` | With `after`, `frames` or `call`: this many checkpoints one after another, `NAME_1` to `NAME_N` |
+| `snapshot` | `true`: the memory of `[snapshot]` is written here; or a list of its names, for only those |
+| `calls` | `true`: on the native port, every function called from here to the next checkpoint is a line of `NAME.calls` in the run's folder, indented by how deep the call is |
 | `within` | Give up, and fail, this many blanks after the checkpoint before it (if not given, at `limit`) |
 | `expect` | What must hold there: expressions of values, numbers and names, with `+ - * & \| == != < <= > >= && \|\|` and brackets; `frame` is the blank it was reached at |
 | `shot` | `false`: no picture |
@@ -337,6 +373,92 @@ To see what a new test does before it claims anything, give it checkpoints
 with `at` or `after` and no `expect`, run it, and look at the pictures and
 at `run.log` (each `cp` line is a checkpoint's blank and every value, in
 the order of `plan.txt`'s `var` lines).
+
+## Memory at a checkpoint
+
+`[snapshot]` names pieces of the game's memory, as `[dump]` does, and a
+checkpoint that says `snapshot = true` (or names some of them) writes
+them as they are at that moment, to `CHECKPOINT.NAME.snap` in the run's
+folder:
+
+```toml
+compare = ["rng", "p1_x", "snapshot"]
+
+[snapshot]
+fighters = "g_fighters:0x898 except 0xC4:4 0xD4:4"   # both fighters, but two words
+scratch = "0x1F800000:1024"                          # the scratchpad
+variables = "variables"                              # every variable both programs have
+
+[[checkpoint]]
+name = "f"
+frames = 30
+repeat = 16
+snapshot = ["fighters"]
+```
+
+With `snapshot` in `compare`, each piece of a run is held to the same
+piece of the first run, at every checkpoint both wrote it:
+
+- A piece named by a symbol is the same structure in both programs,
+  wherever each has it, and is compared from its start, byte for byte.
+  `except OFFSET:BYTES ...` leaves bytes of it out: say why beside it.
+- A word that differs is still the same if both words are addresses of
+  the same place of the same name: a pointer to a variable or a
+  function of the program, which the ReBushido disc and the native port
+  do not have at one address.
+- `variables` is every variable the test's discs all have, each
+  compared with the one of its name. It needs the variables' sizes,
+  which only the port's table of names has, so one of the discs is
+  `port`. It is for finding a difference, not for a test that is kept:
+  the ordering tables, the sound's and the disc's state are never the
+  same on the port.
+
+A test that fails names the first places; the rest is
+`tools/port_compare.py`'s.
+
+## Finding where two runs part
+
+When the port (or a changed disc) stops doing what the other run does,
+find the first frame and the first value that differ, then the function
+that made them. This is how the two faults of the port's first fight
+were found (`docs/PORT.md`, "What the comparison found").
+
+1. **The frame.** Copy the test to a scratch file (`tmp/x.toml`; a
+   test can be anywhere), give it `[snapshot]` with what could matter
+   (`fighters`, `scratch`, then `variables` and the mapped memory,
+   `ram = "0x8010DB00:0xF2500"`), and in place of its later checkpoints
+   one `frames = 1` with `repeat` and `snapshot = true`. Run it, then:
+
+   ```
+   python tools/port_compare.py tmp/x.toml --new      # what differs at each checkpoint
+                                                      # and did not at the one before
+   python tools/port_compare.py tmp/x.toml f_167 --only fighters
+   ```
+
+   Every line is a run of bytes: the piece, the variable and the offset
+   into it, the bytes on the first run and on the second. Much of
+   `variables` differs from the first frame and for good (the frame
+   count, the ordering tables, sound); `--new` leaves that out after
+   the first checkpoint.
+2. **The function.** Give the checkpoint before the frame that differs
+   `calls = true`: the port then lists every function it calls in that
+   frame (`NAME.calls`). Put checkpoints at calls of them, in the order
+   they are called (`call = "fighter_Update"`, `count = 2` for the
+   second call, `snapshot = true`), and compare again: the difference
+   is made between the last checkpoint that agrees and the first that
+   does not. Narrow it with the calls in between. A checkpoint at a call
+   is reached on the emulator by a breakpoint at the function and on the
+   port by the function itself, which is compiled to say when it begins.
+3. **Why.** Both programs then run the same C from the same memory to a
+   different result. The causes so far: the order in which a call's
+   arguments were worked out (`tools/port_order.py` finds every such
+   place); what a function that returns nothing left where a result is
+   read; memory nothing set, which is whatever was there.
+
+`tools/port_compare.py` reads what a run of `tools/playtest.py` left and
+runs nothing: `--first` stops at the first checkpoint that differs,
+`--lines N` shows more of one, `--runs A B` takes two other runs of the
+test, `--holes` shows what `except` leaves out as well.
 
 ## How the emulator is run
 

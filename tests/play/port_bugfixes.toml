@@ -1,0 +1,174 @@
+about = "The native port against the emulator with Bugfixes on: the fight of port_game with the setting turned on at the options page."
+discs = ["rebushido", "port"]
+# The port has no memory card yet, so neither has the emulator.
+cards = "none"
+limit = 12000
+seconds = 240
+
+# The presses of port_game, after right on the options page, which turns
+# Bugfixes on (there is no card to write it to).
+input = [
+    "page+30 RIGHT", "page+60 START",
+    "movie+300 START", "movie+600 CROSS", "movie+900 START",
+    "menu+30 DOWN", "menu+60 DOWN", "menu+90 DOWN", "menu+150 CROSS",
+    "select+280 CROSS", "select+320 P2 CROSS", "select+580 CROSS", "select+620 P2 CROSS",
+    "select+1180 CROSS",
+    # The fight, counted in the game's frames (README.md, "A press"): both
+    # walk in, then each strikes on its own beat until one is cut down.
+    "fight+50f RIGHT hold 20f", "fight+50f P2 LEFT hold 10f",
+    "fight+72f CIRCLE", "fight+102f CROSS", "fight+132f CIRCLE", "fight+162f CROSS",
+    "fight+192f CIRCLE", "fight+222f CROSS", "fight+252f CIRCLE", "fight+282f CROSS",
+    "fight+312f CIRCLE", "fight+342f CROSS", "fight+372f CIRCLE", "fight+402f CROSS",
+    "fight+432f CIRCLE", "fight+462f CROSS", "fight+492f CIRCLE", "fight+522f CROSS",
+    "fight+552f CIRCLE", "fight+582f CROSS", "fight+612f CIRCLE", "fight+642f CROSS",
+    "fight+672f CIRCLE", "fight+702f CROSS", "fight+732f CIRCLE", "fight+762f CROSS",
+    "fight+792f CIRCLE", "fight+822f CROSS", "fight+852f CIRCLE", "fight+882f CROSS",
+    "fight+65f P2 CIRCLE", "fight+100f P2 CIRCLE", "fight+135f P2 CIRCLE", "fight+170f P2 CIRCLE",
+    "fight+205f P2 CIRCLE", "fight+240f P2 CIRCLE", "fight+275f P2 CIRCLE", "fight+310f P2 CIRCLE",
+    "fight+345f P2 CIRCLE", "fight+380f P2 CIRCLE", "fight+415f P2 CIRCLE", "fight+450f P2 CIRCLE",
+    "fight+485f P2 CIRCLE", "fight+520f P2 CIRCLE", "fight+555f P2 CIRCLE", "fight+590f P2 CIRCLE",
+    "fight+625f P2 CIRCLE", "fight+660f P2 CIRCLE", "fight+695f P2 CIRCLE", "fight+730f P2 CIRCLE",
+    "fight+765f P2 CIRCLE", "fight+800f P2 CIRCLE", "fight+835f P2 CIRCLE", "fight+870f P2 CIRCLE",
+    # The menu after the fight: down two rows to the main menu, and take it.
+    "after_fight+40f DOWN", "after_fight+50f DOWN", "after_fight+60f CROSS",
+]
+
+# What must be the same on the port as on the emulator at every checkpoint
+# (docs/PORT.md, "How it is proved"): every value of state.toml but one.
+# `frames`, the frames shown since power on, is left out because the
+# port's time is not the console's: it shows no movie, and a load takes it
+# fewer frames. The game's random numbers are among what is compared. Then
+# the memory of [snapshot] at the checkpoints that say `snapshot`: both
+# fighters' whole structures at every one, and on the fight's first frame
+# what the game has loaded from the disc.
+compare = [
+    "screen", "screen_frames", "frame_period", "menu_page", "rng",
+    "mode", "stage", "loaded_stage", "winner", "defeat_frames", "wins_p1", "wins_p2",
+    "config_roster_p1", "config_roster_p2", "config_weapon_p1", "config_weapon_p2",
+    "config_cpu_p2", "config_stage", "config_mode",
+    "p1_cpu", "p1_character", "p1_roster", "p1_weapon", "p1_frames_alive", "p1_defeated",
+    "p1_x", "p1_y", "p1_z", "p1_off_arm_ok", "p1_leg_wounds", "p1_arm_wounds", "p1_body_wounds",
+    "p1_vanish_count",
+    "p2_cpu", "p2_character", "p2_roster", "p2_weapon", "p2_frames_alive", "p2_defeated",
+    "p2_x", "p2_y", "p2_z", "p2_off_arm_ok", "p2_leg_wounds", "p2_arm_wounds", "p2_body_wounds",
+    "p2_vanish_count",
+    "rb_page", "rb_row", "rb_card", "rb_save", "rb_bugfixes", "rb_graphics",
+    "snapshot",
+]
+
+# Both fighters, every byte (Fighter, fighter.h: 0x44C bytes each), but
+# the words that hold whatever was on the stack, which is not the same
+# stack on a PC (docs/PORT.md, "What the comparison found"): in each
+# fighter the fourth, unused word of foot_pos and of prev_foot_pos (0xC4,
+# 0xD4), copied from a local of fighter_Update that sets three; the pad's
+# types and answers (0x24, eight bytes), which pad_ClearState leaves as
+# they were on the frames with no pad; and in the second fighter the last
+# word of the off-hand weapon's last places (0x248), read from the
+# scratchpad, where a cast through the stage left such a word.
+[snapshot]
+fighters = "g_fighters:0x898 except 0x24:8 0xC4:4 0xD4:4 0x470:8 0x510:4 0x520:4 0x694:4"
+
+# What the game has read from the disc by the fight's first frame, where
+# the game put it (include/sys.h): the effects' tables and textures, as
+# far as the movie player's work area, which only the emulator's movie has
+# written; and the first 256 KB of the load area, which hold the stage.
+# (The common sound bank at 0x8010DB00 is not here: Sony's library fills
+# in words of its header as it opens it, and the port's sound is a stub.
+# docs/PORT.md.)
+effects = "0x8010E800:38912"
+load_area = "0x80118800:262144"
+
+# The options page is up, and has found no card.
+[[checkpoint]]
+name = "page"
+when = "rb_page == RB_PAGE_UP"
+within = 2000
+shot = false
+expect = ["rb_card == RB_CARD_NONE", "rb_bugfixes == 0", "rb_graphics == RB_GRAPHICS_ORIGINAL"]
+
+[[checkpoint]]
+name = "movie"
+when = "screen == SCREEN_MOVIE"
+within = 1000
+shot = false
+expect = ["rb_bugfixes == 1"]
+
+[[checkpoint]]
+name = "menu"
+when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && screen_frames >= 120"
+within = 3000
+shot = false
+expect = ["frame_period == 1", "loaded_stage == -1"]
+
+[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 1500
+shot = false
+
+# The fight's first frame: both fighters are set up and stand where the
+# stage puts them.
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+at_frame = true
+within = 4000
+shot = false
+snapshot = true
+expect = ["mode == FIGHT_MODE_VS", "p1_cpu == 0", "p2_cpu == 0", "loaded_stage == stage", "rb_bugfixes == 1"]
+
+# Every second of the fight, as a frame begins: f_1 to f_16.
+[[checkpoint]]
+name = "f"
+frames = 30
+repeat = 16
+shot = false
+snapshot = ["fighters"]
+
+# One of the two is cut down.
+[[checkpoint]]
+name = "kill"
+when = "winner != FIGHT_NOBODY"
+at_frame = true
+within = 3000
+shot = false
+snapshot = ["fighters"]
+expect = ["p1_defeated + p2_defeated == 1", "p1_frames_alive == 507"]
+
+[[checkpoint]]
+name = "replay"
+when = "screen == SCREEN_REPLAY_UPDATE"
+at_frame = true
+within = 1000
+shot = false
+snapshot = ["fighters"]
+
+# The menu after the fight, and a second of it.
+[[checkpoint]]
+name = "after_fight"
+when = "screen == SCREEN_AFTER_FIGHT_UPDATE"
+at_frame = true
+within = 3000
+shot = false
+snapshot = ["fighters"]
+
+[[checkpoint]]
+name = "after_fight_1s"
+frames = 30
+shot = false
+snapshot = ["fighters"]
+expect = ["wins_p1 + wins_p2 == 1"]
+
+# Back in the menu, with no stage in memory, and a second of it.
+[[checkpoint]]
+name = "menu_again"
+when = "screen == SCREEN_MENU_UPDATE && loaded_stage == -1"
+at_frame = true
+within = 3000
+shot = false
+
+[[checkpoint]]
+name = "menu_again_1s"
+frames = 60
+shot = false
+expect = ["frame_period == 1"]
