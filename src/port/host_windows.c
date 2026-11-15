@@ -9,8 +9,8 @@
  *     port_WindowsStart (the linker's -e), with no C runtime's start-up.
  *
  * It has to be a 32-bit program that may use addresses from 2 GB up
- * (the linker's --large-address-aware: the PlayStation's RAM is at
- * 0x80000000), linked without address randomisation and at an address
+ * (the linker's --large-address-aware: the PlayStation's RAM begins at
+ * exactly 2 GB), linked without address randomisation and at an address
  * of the port's choosing, so that nothing of the system's is where the
  * PlayStation's memory goes; if something is, it says so and stops, as
  * on Linux. */
@@ -254,8 +254,6 @@ void port_HostCatchCrashes(void (*report)(const PortCrash *crash)) {
 /* Where the program without a C runtime starts. Its arguments out of
  * its command line, cut in place: apart by spaces, a piece in double
  * quotes kept whole. */
-extern void port_WindowsStart(void);
-
 void port_WindowsStart(void) {
     static char *arguments[ARGUMENTS_MAX];
     char *at = GetCommandLineA();
@@ -291,14 +289,10 @@ void port_WindowsStart(void) {
 /* What MinGW's compiler calls at the top of a function named `main`,
  * for a C runtime's start-up work: there is none, and the game's own
  * function has that name. */
-extern void __main(void);
-
 void __main(void) {}
 
 /* What MinGW's linker has every program call at its start to put right
  * the addresses it could not: the port has none of those. */
-extern void _pei386_runtime_relocator(void);
-
 void _pei386_runtime_relocator(void) {}
 #endif
 
