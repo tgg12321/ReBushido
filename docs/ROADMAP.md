@@ -44,8 +44,11 @@ No dates.
    answered by PC code: the menu in a window, then a fight, then sound.
    The second and third stages are done too: the port is a program
    (`make port`) that reads the player's disc image and runs the game
-   through its menus into a fight, with no picture or sound yet, and is
-   the emulator's game value for value up to the fight's first second.
+   through its menus and whole fights, the emulator's game value for
+   value. The fourth is done but for its window: the port draws, by
+   the PlayStation's GPU written in C, into video memory of its own,
+   and its picture is the emulator's to the pixel on the flat screens
+   and but for three pixels in a thousand in a fight. No sound yet.
    The game's code stays C.
 7. **The picture.** A wide picture, high resolution and a high frame rate
    on the port, which is what "Graphics: Remastered" will mean. On the

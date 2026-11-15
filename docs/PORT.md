@@ -9,13 +9,16 @@ ReBushido PlayStation program.
 
 This page is what stands between the source and a PC, counted; what has
 been done about it; the stages that are left; and the decisions that are
-the owner's. **The port is a program now, with nothing to see or hear:**
-it links, gives the game the PlayStation's memory, reads the player's
-disc image, and runs the game's own `main` through start-up, the options
-page, the menus and character select, through a whole fight and back to
-the menu, with no picture, no sound and no pads but a script's. All that
-way it is held to the emulator, value for value, in three fights. Stages
-1 to 3 of the seven below are done, and of stage 5 the fight itself.
+the owner's. **The port is a program that draws, with no window and
+nothing to hear:** it links, gives the game the PlayStation's memory,
+reads the player's disc image, and runs the game's own `main` through
+start-up, the options page, the menus and character select, through a
+whole fight and back to the menu, with no sound and no pads but a
+script's. What the game draws goes into the port's own video memory, by
+a GPU in C, and from there to files. All that way it is held to the
+emulator: the game's values in three fights, and the picture pixel for
+pixel in two. Stages 1 to 3 of the seven below are done, stage 4 but
+for its window, and of stage 5 the fight itself.
 
 ## Where it stands
 
@@ -29,7 +32,8 @@ way it is held to the emulator, value for value, in three fights. Stages
 | Memory | done: the RAM and the scratchpad at the console's addresses ("Memory") |
 | The disc | done for data: sectors from the player's image, under the game's own disc code ("The disc"). Its sound is a stub |
 | A fight | done, by a script's pads: three whole fights are the emulator's, frame for frame ("How it is proved") |
-| A window, the picture, sound, real pads, the card, movies | not begun |
+| The picture | done, into the port's own video memory and out to files: `src/port/raster.c`, the PlayStation's GPU in C. The flat screens are the emulator's to the pixel, a fight's frames but for three pixels in a thousand ("The picture") |
+| A window, sound, real pads, the card, movies | not begun |
 
 ## The switch
 
@@ -97,8 +101,9 @@ N` (end after N vertical blanks; 3,600 if nothing says), `--trace` (the
 values of `tests/play/state.toml` at every blank where one changed),
 `--plan FILE` (a play test's plan: presses, checkpoints, a limit),
 `--dump NAME=ADDRESS:BYTES` and `--out FOLDER` (memory to a file at the
-end). It ends by printing a line for each stub the game called, with
-how often. Pads are pressed only by a plan: a line `in 0 300 1 START 6`
+end), `--shots FOLDER`, `--every N` and `--vram FILE` (the picture as
+PNGs, and video memory: "The picture"). It ends by printing a line for
+each stub the game called, with how often. Pads are pressed only by a plan: a line `in 0 300 1 START 6`
 is Start on the first pad at blank 300 for six blanks
 (`tests/play/README.md`, "The port as a disc").
 
@@ -117,7 +122,7 @@ console.** By library:
 | Library | In the port |
 |---|---|
 | libgte | Sony's own, all of it but `patchgte.c` (which patches the kernel): the C modules as they are, the assembly ones by the C beside them, on `src/port/gte.c` |
-| libgpu | Sony's `prim.c` (the primitives' set-up, `GetTPage`, `AddPrim`) and `ext.c` (`SetDefDrawEnv`, `SetDefDispEnv`). The module that talks to the GPU is the port's (`gpu.c`): `ClearOTagR` and the mode, area and offset primitives are done as Sony's does them for the ordinary GPU; `ResetGraph`, `SetDispMask`, `PutDispEnv`, `PutDrawEnv`, `DrawOTag`, `ClearImage`, `LoadImage`, `StoreImage`, `MoveImage` are stubs |
+| libgpu | Sony's `prim.c` (the primitives' set-up, `GetTPage`, `AddPrim`) and `ext.c` (`SetDefDrawEnv`, `SetDefDispEnv`). The module that talks to the GPU is the port's (`gpu.c`), all of what the game calls, on the port's GPU (`raster.c`): it writes the words Sony's writes the console's ("The picture") |
 | libc | Sony's `memcpy`, `memmove`, `memchr`, `strcpy`, `strlen`, `rand`, `toupper`. The port's: `printf` and `sprintf` (Sony's walk a PlayStation's argument list), and `memset` and `memcmp`, which the compiler calls |
 | libetc | Sony's `GetVideoMode`. The port's: `VSync` (`clock.c`), `ResetCallback`, `StopCallback` (nothing) |
 | libcd | the port's, all of it, over the disc image (`cd.c`) |
@@ -129,9 +134,9 @@ console.** By library:
 A stub counts its calls and gives the answer the library gives when all
 is well, where the game would otherwise stop or wait for ever: a sound
 bank opens, a transfer is done, no voice sounds, no card is in the
-slot. Three change less of the game's memory than the console does:
-`StoreImage` and `SpuRead` leave the buffer they were given as it was,
-and `SsVabOpenHeadSticky` does not fill in the words of a bank's header
+slot. Two change less of the game's memory than the console does:
+`SpuRead` leaves the buffer it was given as it was, and
+`SsVabOpenHeadSticky` does not fill in the words of a bank's header
 that Sony's does.
 
 ### Memory
@@ -140,8 +145,11 @@ The game's own variables are the PC program's, placed by its linker.
 What the game reaches by a number written into its source is given
 memory at that number (`src/port/memory.c`): the 2 MB of RAM at
 `0x80000000` and the kilobyte of scratchpad at `0x1F800000`, by `mmap`
-at a fixed address on Linux (`VirtualAlloc` on Windows, not tried). If
-the system will not give either, the program says so and stops. The
+at a fixed address on Linux (`VirtualAlloc` on Windows, not tried). The
+game's stack is a third piece, a megabyte at `0x7FC00000`, which is the
+port's choice and not the console's ("The picture", "Where the links
+point"). If the system will not give one of them, the program says so
+and stops. The
 twelve addresses are the scratchpad and the eleven of `include/sys.h`
 and `motion.h`; `tests/port/memory.py` reads the game's source on every
 push and fails if it has an address that is not in the mapped memory,
@@ -312,6 +320,145 @@ the loading screen's noise and a few choices at a fight's start. The
 effects' own memory is therefore not the emulator's once a fight is
 under way (the particles' places), and is compared only on the fight's
 first frame; nothing that decides a fight has been seen to differ.
+
+### The picture
+
+The port has the PlayStation's GPU in C (`src/port/raster.c`,
+`include/port_gpu.h`): the 1024 by 512 pixels of video memory and what
+the words written to the chip's two ports do to them. Sony's libgpu in
+the port (`src/port/gpu.c`) writes it the words Sony's own writes the
+console's: a drawing environment's primitive, with the fill that clears
+its area; `ClearImage`'s fill or drawn rectangle; `LoadImage`,
+`StoreImage` and `MoveImage` as the three copy commands; the display's
+start, range and mode; and `DrawOTag`, which walks an ordering table by
+its 24-bit links and gives the GPU each primitive's words. What Sony's
+keeps in a queue until the GPU is free is done at once, so `DrawSync`
+never waits. There is no window: the picture is that memory, and a run
+writes it to files.
+
+**What it draws**, as the chip is publicly known to:
+
+- triangles and four-sided polygons, flat, shaded, textured or both; a
+  four-sided one is two triangles, the first three corners and the last
+  three. A triangle covers the pixels inside it and those on its top
+  and left edges, not on its right and bottom ones, so nothing along a
+  shared edge is left out or drawn twice;
+- a colour or a texture coordinate as a plane over the triangle, with
+  twelve bits of fraction, from the corner furthest left;
+- textures of 4 bits and 8 through a colour table and of 15 bits, the
+  texture window, a texel of nothing left undrawn, a texel times the
+  colour (128 is one) or as it is;
+- the four ways of mixing a half-transparent primitive with what is
+  there, on a textured one only where the texel's top bit is set;
+- the mask bit, set and looked at;
+- dithering by the chip's four-by-four pattern, on shaded and on
+  modulated polygons and on lines, never on a flat polygon, a rectangle
+  or a texture drawn as it is;
+- lines of one piece and of many points, flat and shaded;
+- rectangles of their own size and of the three fixed ones, textured or
+  not; the fill; the three copies, in, out and across;
+- the drawing area, the offset, the limit of 1023 by 511 on a
+  primitive, coordinates of eleven bits with a sign;
+- the display's rectangle, by its start, its mode's width and its lines.
+
+**Where the links point.** A link is the low 24 bits of an address, and
+the port's memory is in several places that differ above those bits. The
+places primitives may be are named once (`port_AddLinkRegion`): the
+console's RAM, the scratchpad, the program's own variables and the
+game's stack. So that no two of them have the same low 24 bits, the
+program is linked 4 MB higher than Linux usually has one
+(`tools/port_build.py`), and the game runs on a stack of the port's own,
+a megabyte at `0x7FC00000` (`PORT_STACK_ADDR`), not the system's, which
+is somewhere else in every run. A link that is in none of the places, or
+in two, stops the port, which says so.
+
+**Frames out.** `--shots FOLDER` writes the displayed rectangle as a PNG
+every sixty vertical blanks (`--every N`: every N), by an encoder of the
+port's own (`src/port/picture.c`: 8 bits a channel, the pixels stored,
+not packed); `--vram FILE` writes all of video memory when the run ends.
+Under a plan, a checkpoint writes its picture as the emulator's script
+does and, where the test asks, video memory whole
+([`tests/play/README.md`](../tests/play/README.md), "The picture").
+
+**How it is held to the emulator.** PCSX-Redux run with no window draws
+with its software GPU, and its Lua gives that GPU's video memory
+(`PCSX.GPU.getVRAM()`). A play test's checkpoint can ask for it
+(`vram = true`); the port writes its own at the same checkpoint, and the
+two are compared pixel for pixel, all 524,288, the textures and colour
+tables beside the picture's two buffers. Two tests do: `port_picture`,
+through every kind of screen, and `port_other_fight`, a second stage.
+On every push `tests/port/raster.c` holds the GPU to 404 pixels and
+counts worked out by hand, or by the fill rule written a second way:
+shared edges, each texture depth, each mix, the mask, the pattern,
+clipping, lines, the copies, the walk over an ordering table, the PNG.
+
+**Two things the emulator's GPU does otherwise**, found by the
+comparison. The port does them as the chip is best known to, and has a
+switch that does them the emulator's way (`port_SetGpuLikeEmulator`, a
+test's `port_gpu = "emulator"`), which the two tests set and nothing else
+does:
+
+- *Dithering a flat textured polygon.* The console dithers a polygon
+  whose texture is multiplied by a colour, shaded or not; the emulator
+  only the shaded ones. The stages' floors and walls are such polygons.
+- *How fine a texture coordinate is.* With twelve bits of fraction a
+  coordinate falls behind by up to a 4096th of a step for each pixel
+  across. On a wall hundreds of pixels wide and close to the camera,
+  where one texel is sixteen pixels, that moves the texture's seams two
+  or three pixels; the emulator's are where exact arithmetic puts them.
+
+**The numbers.** With the switch set, of the 524,288 pixels of video
+memory, at each checkpoint:
+
+| Checkpoint | Pixels that differ | What they are |
+|---|---|---|
+| The options page; the boot image; the top menu, before the fight and after it | 0 | |
+| Character select: the fighters' list | 1,828 | 1,624 are the cursor and its mark, which swell and shrink by the screen's own count of frames: the port, which loads the screen's files in no time, is at another count. The other 204 are the ones the next screen has too |
+| ... the weapons' list; the weapons crossed; the stages' list | 204; 12; 58 | halfway values (below) |
+| The first fight, each of its 16 seconds | 148 to 440, and 964 in the last | halfway values; in the last seconds also the dust and sparks `rand()` places |
+| ... the kill; the replay; the menu after it, twice | 586; 418; 177 and 173 | the same |
+| The second fight (`port_other_fight`), each of its 20 seconds | 294 to 906 | the same |
+| ... the kill; the replay; the menu after it, twice | 965; 721; 593 and 494 | the same |
+
+Each fight checkpoint holds two whole frames, 307,200 pixels, so at most
+three in a thousand differ. A *halfway value* is a colour or a texture
+coordinate that comes out exactly between two whole numbers at a pixel:
+the port, with the switch set, takes the higher; the emulator, which
+walks down a triangle's edge and then across with fractions of its own,
+has lost a little by then and takes the lower about one time in six.
+Which it will be follows from its arithmetic, which is not known here:
+3,042 such pixels of four frames were tried against eleven guesses at
+it, and the best explains 93 in a hundred. Everything else
+is the same: which pixels a primitive covers, the order they are drawn
+in, the textures, the mixes, the pattern. The test allows each
+checkpoint exactly what was measured.
+
+Not compared: the fight's first frame, where the loading screen's noise
+is on show (41,000 pixels differ: `rand()` places the streaks, and the
+frame's wait stirs it, "Time").
+
+Without the switch, as the port draws when nothing asks otherwise, the
+same checkpoints differ in 96,000 to 111,000 pixels in the first fight,
+all but 400 to 800 of them by one step of a channel's 31: the floor's
+dither. The options page differs in 790, the dither of its title.
+
+**Not sure, and not done** (each is marked in `raster.c`):
+
+- The twelve bits of fraction and the corner the values are counted
+  from are what is written of the chip, and nothing here could check
+  them against one. If the chip is finer, the port is wrong where the
+  emulator is right, by the two or three pixels above.
+- A line's pixel when the true line passes exactly between two: the
+  port takes the one away from the line's start. A flat line is dithered
+  like a shaded one.
+- A copy inside video memory whose two rectangles overlap is done a
+  pixel at a time from the top left; the chip is said to work in pieces.
+- With the display interlaced and drawing on it forbidden, the chip
+  leaves out the lines of the field on show. Not done: the game's
+  display never is.
+- The displayed rectangle is as wide as the mode says, whatever the
+  horizontal range. The 24-bit mode, which only the movie uses, is read
+  for a PNG and nowhere else.
 
 ## The assembly
 
@@ -654,6 +801,11 @@ points below. Stages two and three, the program, by the last three.
   - *Two crashes*, both the original's use of address 0 ("Memory").
     What the emulator has at address 0 was read: zeroes, as the port
     gives.
+- **The picture against the emulator's**, in `port_picture` and
+  `port_other_fight`: video memory at 28 and at 24 checkpoints, with
+  what differs counted ("The picture").
+- **The GPU by made-up cases**, on every push: `tests/port/raster.c`,
+  404 checks of pixels worked out by hand ("The picture").
 - **The reader and the platform layer by made-up cases**, on every
   push: `tests/port/disc.c` (an image of forty made-up sectors:
   addressing, the data's offsets, reading across sectors, a sector of
@@ -673,8 +825,9 @@ the comparison), a mesh that ends wrongly and so stops the game, and the
 two functions of the game's C the walk calls for a shadow and for the
 surf, which both programs have stand-ins for. The cases are made up, so
 a mesh of the game's that does something no made-up one does is not
-covered: the first whole frame drawn by the port, at stage 4, is the
-check of that. Where the emulator and what is written
+covered by them: the whole frames the port now draws are the check of
+that, and in two fights' frames no primitive is out of place ("The
+picture"). Where the emulator and what is written
 about the hardware might differ, the port has the emulator's reading, and
 the comments in `src/port/gte.c` say where: the depth cue of the first
 two points of `RTPT`, which sets no flag; and three corners the game
@@ -705,7 +858,10 @@ Each ends with something that can be shown.
 4. **The picture.** The ordering table drawn by a rasteriser in C that
    does what the console's GPU does. *Done when* the pictures at the play
    tests' checkpoints are the emulator's, pixel for pixel, with no window
-   open; then the menu in a window.
+   open; then the menu in a window. The first half is done as far as it
+   can be: the flat screens to the pixel, a fight but for three pixels
+   in a thousand, each one accounted for ("The picture"). Left of it:
+   the window.
 5. **Pads, time, a fight.** *Done when* a scripted fight on the port goes
    through the same watched values as the same script on the emulator.
    That part is done, in three fights to their ends ("How it is
@@ -732,11 +888,6 @@ other):
 
 | Stage | Stub | Calls |
 |---|---|---|
-| 4, the picture | `DrawOTag`, `PutDrawEnv` | 1,670 each |
-| | `PutDispEnv` | 1,590 |
-| | `LoadImage` | 387 |
-| | `SetDispMask`, `ResetGraph`, `ClearImage` | 13, 10, 5 |
-| | `StoreImage`, `MoveImage` | 4, 2 |
 | 6, sound | `SpuGetAllKeysStatus` | 2,443 |
 | | `SsVabClose` | 60 |
 | | `SsUtSetVVol`, `SsUtAllKeyOff` | 48, 47 |
@@ -766,10 +917,14 @@ Not called on that way, and stubs too: the card's files (`open`,
   played by the CPU, the other modes, guns, thrown things, a fall from
   a stage, a lock of blades.
 - Words off the stack differ, in padding and in places nothing was seen
-  to read ("What the comparison found"). The port's are a PC's stack
-  addresses, which the system moves from run to run: if the game ever
-  acted on one, the port's run would not be the same twice. No run so
-  far has differed from another.
+  to read ("What the comparison found"). The port's are addresses of
+  its own stack, which is at the same place in every run, so a run is
+  still the same twice; they are not the console's.
+- The picture has no window, and the two things the port draws as the
+  chip and not as the emulator are proved by made-up cases alone ("The
+  picture", with what is not sure).
+- The picture is drawn when the game asks, with no time taken: a frame
+  the console would not have finished drawing is finished here.
 - What a function leaves in the result's register when it returns
   nothing was looked for by the compiler's warnings and by reading the
   one table of handlers that is called for a result; a `void` function

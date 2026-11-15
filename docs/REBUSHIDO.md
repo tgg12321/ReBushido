@@ -565,7 +565,7 @@ None of those ten runs the game. The play tests do
 bash tools/build.sh playtest      # from Windows: wsl bash tools/build.sh playtest
 ```
 
-builds the ReBushido disc and three quick-boot discs and runs thirteen tests in an
+builds the ReBushido disc and three quick-boot discs and runs fourteen tests in an
 emulator (PCSX-Redux) with no window, pressing the pads by script and
 reading the game's memory by the names of the source:
 
@@ -581,7 +581,8 @@ reading the game's memory by the names of the source:
 | `first_frame_sweep` | A naginata's first frame sweeps its shaft from a stale place; with Bugfixes on, from where it is |
 | `vanish` | Off the shrine's stage the vanisher, struck, comes back at another stage's place and falls out of the stage; with Bugfixes on it comes back where it started and stands |
 | `port_game` | The native port is the game: the same presses on the emulator and on the port, from power on through a whole versus fight and back to the main menu; at 27 checkpoints, one every second of the fight, every watched value but the count of frames shown is the same, and so are both fighters' whole structures and, on the fight's first frame, the memory loaded from the disc ([`PORT.md`](PORT.md)) |
-| `port_other_fight` | The same in a fight with other weapons on another stage |
+| `port_other_fight` | The same in a fight with other weapons on another stage, with the picture compared through the fight |
+| `port_picture` | The native port's picture is the emulator's: all of video memory, pixel for pixel, on the options page, the boot image, the menus, character select and through a fight ([`PORT.md`](PORT.md), "The picture") |
 | `port_bugfixes` | The same with Bugfixes turned on at the options page |
 | `gte_model` | The native port's GTE in C, and its C beside the assembly, make of 125,800 made-up cases what the emulator's GTE and the assembly make of them ([`PORT.md`](PORT.md)). It runs a program of the tests' own with no disc |
 

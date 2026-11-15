@@ -109,7 +109,7 @@ shot = false
 # count of frames, which is not at the same number on both when this many
 # blanks have gone by (the port loads the screen's files in no time): the
 # cursor and the mark beside it are 1,624 of these pixels. The rest are
-# 204, the same ones as at select_weapon.
+# the 204 that select_weapon has too.
 [[checkpoint]]
 name = "select_fighter"
 after = 240

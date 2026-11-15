@@ -444,9 +444,10 @@ and in the source describe the original.
 
 - **ReBushido's build in the running game** (`make playtest`,
   [`tests/play/README.md`](../tests/play/README.md); on the `main` branch, on the developer's
-  machine): thirteen scripted tests in an emulator with no window (nine of the game; the tenth holds
-  the native port's C to the emulator's GTE and to the assembly, and the last three the port's
-  program to the emulator's game from power on through three whole fights, [`PORT.md`](PORT.md)). The retail
+  machine): fourteen scripted tests in an emulator with no window (nine of the game; the tenth holds
+  the native port's C to the emulator's GTE and to the assembly, the next three the port's
+  program to the emulator's game from power on through three whole fights, and the last the port's
+  picture to the emulator's, pixel for pixel, [`PORT.md`](PORT.md)). The retail
   disc reaches its top menu;
   the ReBushido disc, left at its options page with nothing turned on, is in the same state as the
   retail disc at eleven checkpoints from the opening through the menus and a versus fight to the
