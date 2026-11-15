@@ -82,6 +82,9 @@ NOT_THE_PORTS = ('quickboot.c',)
 # bytes); frame pointers kept so that a crash can say who called.
 GAME_FLAGS = [f for f in host_tests.COMPILE_FLAGS if f != '-ffunction-sections']
 GAME_FLAGS += ['-malign-data=abi', '-fno-omit-frame-pointer', '-g']
+# Each function says when it begins and ends (src/port/plan.c), so that a
+# run's plan can stop at a call of one and list the calls of a frame.
+INSTRUMENT = '-finstrument-functions'
 # -Wstrict-prototypes is left out: Sony's headers, which the port's files
 # include for the names they define, declare functions with no parameters
 # written (`s32 (*func)()`).
@@ -198,6 +201,8 @@ def compile_one(job):
     if own:
         # the port's own: its warnings on, and errors
         flags = [f for f in flags if f != '-w'] + PORT_WARNINGS
+    else:
+        flags = flags + [INSTRUMENT]
     cmd = ['gcc'] + flags + ['-MD', '-MF', obj[:-2] + '.d', '-x', 'c', '-c', '-', '-o', obj]
     proc = subprocess.run(cmd, input=modern.modern_source(path), capture_output=True, text=True,
                           env=environment(), encoding='utf-8', errors='replace')

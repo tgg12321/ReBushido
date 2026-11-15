@@ -27,6 +27,10 @@ void port_OnBlank(u32 blank) {
     g_seen_last_blank = blank;
 }
 
+static u32 g_seen_frames;
+
+void port_OnFrame(void) { g_seen_frames++; }
+
 void port_HostWrite(s32 stream, const char *bytes, u32 count) {}
 
 void port_Quit(s32 code) {
@@ -121,6 +125,8 @@ static void test_Clock(void) {
 
     /* every blank was told to the rest of the port, once, in order */
     CHECK_EQ(g_seen_blanks, port_GetBlankCount());
+    /* a frame of the game for each reset of the scan lines' counter */
+    CHECK_EQ(g_seen_frames, 17);
     CHECK_EQ(g_seen_out_of_order, 0);
     /* a counter that is not the scan lines' is not the port's */
     CHECK_EQ(GetRCnt(RCntCNT2), 0);

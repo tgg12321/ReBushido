@@ -23,7 +23,7 @@ The emulator is a Windows program here, so under WSL this starts itself
 again with Windows' python (python.exe). It runs one emulator at a time,
 on a desktop of its own with no sound (tools/play/launch.py), ends it by a
 hard time limit, and checks after each run that no process of it is left.
-The whole suite is held to ten minutes.
+The whole suite is held to fourteen minutes.
 What a run wrote is in build/playtest/<test>/<disc>/: a picture of every
 checkpoint, run.log, plan.txt, the emulator's own output and its two
 memory cards.
@@ -53,6 +53,7 @@ import zlib
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "tools"))
+sys.path.insert(0, os.path.join(REPO, "tools", "play"))
 
 TESTS_DIR = os.path.join(REPO, "tests", "play")
 STATE_FILE = os.path.join(TESTS_DIR, "state.toml")
@@ -76,14 +77,23 @@ RUN_SECONDS_MAX = 285
 # The emulator has said nothing for this long: it hangs.
 SILENT_SECONDS = 60
 # All the runs together; a test that would start after this is not run.
-SUITE_SECONDS = 570
+SUITE_SECONDS = 840
+# The lines a test's failure gives to memory that differs ([snapshot]).
+SNAPSHOT_PROBLEMS_MAX = 8
 # What the fixed script and a plan may weigh. The script is small and the
 # plan is data, so neither comes near what LuaJIT can load; a file past
 # these is not what this tool wrote.
 RUNNER_BYTES_MAX = 40000
-PLAN_LINES_MAX = 4000
+PLAN_LINES_MAX = 6000
 # The emulator's output when a script of its Lua fails.
 LUA_FAILURE = re.compile(r"lua.*(error|failed)|attempt to |stack traceback|syntax error", re.I)
+
+# How long a press is held where the test does not say: vertical blanks,
+# or frames of the game for a press counted in those.
+HOLD_BLANKS = 6
+HOLD_FRAMES = 3
+# The checkpoints a run may have (src/port/plan.c holds as many).
+CHECKPOINTS_MAX = 2048
 
 BUTTONS = ("SELECT", "START", "UP", "RIGHT", "DOWN", "LEFT", "L1", "R1", "L2", "R2",
            "TRIANGLE", "CIRCLE", "CROSS", "SQUARE")
@@ -190,13 +200,16 @@ def header_names():
 # ---- discs and their names ----
 
 def read_port_symbols(path):
-    """The names of the native port's program: its `sym ADDRESS KIND SIZE
-    NAME` lines."""
-    symbols = {}
+    """The names of the native port's program, and its variables' sizes:
+    its `sym ADDRESS KIND SIZE NAME` lines."""
+    symbols, sizes = {}, {}
     with open(path, encoding="utf-8") as f:
-        for m in re.finditer(r"^sym ([0-9a-f]+) \w \d+ (\w+)$", f.read(), re.M):
-            symbols.setdefault(m.group(2), int(m.group(1), 16))
-    return symbols
+        for m in re.finditer(r"^sym ([0-9a-f]+) (\w) (\d+) (\w+)$", f.read(), re.M):
+            if m.group(4) not in symbols:
+                symbols[m.group(4)] = int(m.group(1), 16)
+                if m.group(2) == "o":
+                    sizes[m.group(4)] = int(m.group(3))
+    return symbols, sizes
 
 
 def read_symbols(path):
@@ -236,13 +249,14 @@ class Disc:
         self.name = name
         self.settings = {}
         self.exe = None
+        self.sizes = {}  # the variables' sizes, where the names' table has them
         self.port = name == "port"
         if self.port:
             for path in (PORT_PROGRAM, PORT_SYMBOLS):
                 if not os.path.exists(path):
                     raise Skip("no %s (not built: make port)" % os.path.relpath(path, REPO).replace("\\", "/"))
             self.cue = PORT_PROGRAM
-            self.symbols = read_port_symbols(PORT_SYMBOLS)
+            self.symbols, self.sizes = read_port_symbols(PORT_SYMBOLS)
             return
         if name == "retail":
             self.cue, symbols, how = RETAIL_CUE, RETAIL_SYMBOLS, "your own image of the disc; REBUSHIDO_RETAIL names it"
@@ -301,17 +315,30 @@ class Checkpoint:
         self.name = table.get("name") or "checkpoint%d" % (index + 1)
         if not re.fullmatch(r"[A-Za-z0-9_-]+", self.name) or self.name == "failure":
             raise TestError("a checkpoint cannot be called `%s`" % self.name)
-        hows = [k for k in ("at", "after", "when") if k in table]
+        hows = [k for k in ("at", "after", "frames", "call", "when") if k in table]
         if len(hows) != 1:
-            raise TestError("checkpoint %s: give one of `at`, `after`, `when`" % self.name)
+            raise TestError("checkpoint %s: give one of `at`, `after`, `frames`, `call`, `when`" % self.name)
         self.how = hows[0]
         self.value = table[self.how]
         self.within = int(table.get("within", 0))
         self.shot = bool(table.get("shot", True))
+        # the [snapshot] memory written at it: all of it, or the pieces named
+        self.snapshot = table.get("snapshot", False)
+        if not isinstance(self.snapshot, (bool, list)):
+            raise TestError("checkpoint %s: `snapshot` is true, or a list of [snapshot]'s names" % self.name)
+        # `when`, looked for only as a frame of the game begins
+        self.at_frame = bool(table.get("at_frame", False))
+        if self.at_frame and self.how != "when":
+            raise TestError("checkpoint %s: `at_frame` goes with `when`" % self.name)
+        # `call`: the call of the function that is waited for (the first)
+        self.count = int(table.get("count", 1))
+        # the port lists the calls from here to the next checkpoint
+        self.calls = bool(table.get("calls", False))
         self.expect = list(table.get("expect", []))
         # the runs it is part of, counted from 1 in the order of `discs`; None: all
         self.runs = [int(n) for n in table["runs"]] if "runs" in table else None
-        unknown = set(table) - {"name", "at", "after", "when", "within", "shot", "expect", "runs"}
+        unknown = set(table) - {"name", "at", "after", "frames", "call", "count", "when", "within", "shot",
+                                "expect", "runs", "snapshot", "repeat", "calls", "at_frame"}
         if unknown:
             raise TestError("checkpoint %s: not understood: %s" % (self.name, ", ".join(sorted(unknown))))
 
@@ -322,7 +349,7 @@ class Test:
         self.name = os.path.splitext(os.path.basename(path))[0]
         data = load_toml(path)
         unknown = set(data) - {"about", "discs", "limit", "stall", "seconds", "input", "compare", "state",
-                               "checkpoint", "cards", "frames_from", "dump", "common_state"}
+                               "checkpoint", "cards", "frames_from", "dump", "common_state", "snapshot"}
         if unknown:
             raise TestError("not understood: %s" % ", ".join(sorted(unknown)))
         self.about = data.get("about", "")
@@ -342,10 +369,28 @@ class Test:
         self.frames_from = data.get("frames_from")
         # memory to write to a file when the run ends: NAME = "symbol:bytes"
         self.dump = dict(data.get("dump", {}))
+        # memory to write at the checkpoints that say `snapshot = true`
+        self.snapshot = dict(data.get("snapshot", {}))
+        # the discs of the test, once they are known: `variables` is what
+        # all of them have (set_discs)
+        self.variables = None
         # a test of a program that is not the game has none of its values
         self.state = dict(load_toml(STATE_FILE).get("state", {})) if data.get("common_state", True) else {}
         self.state.update(data.get("state", {}))
-        self.checkpoints = [Checkpoint(t, i) for i, t in enumerate(data.get("checkpoint", []))]
+        self.checkpoints = []
+        for i, table in enumerate(data.get("checkpoint", [])):
+            times = int(table.get("repeat", 1))
+            if times < 1 or (times > 1 and not ({"after", "frames", "call"} & set(table))):
+                raise TestError("checkpoint %s: `repeat` is for a checkpoint reached `after`, `frames` or `call`"
+                                % table.get("name", i + 1))
+            if times == 1:
+                self.checkpoints.append(Checkpoint(table, i))
+            # NAME_1 to NAME_N, one after another
+            for n in range(1, times + 1 if times > 1 else 0):
+                self.checkpoints.append(Checkpoint(dict(table, name="%s_%d" % (table.get("name", "checkpoint"), n)),
+                                                   i))
+        if len(self.checkpoints) > CHECKPOINTS_MAX:
+            raise TestError("%d checkpoints; %d is the most" % (len(self.checkpoints), CHECKPOINTS_MAX))
         if not self.checkpoints:
             raise TestError("no checkpoint")
         names = [cp.name for cp in self.checkpoints]
@@ -357,6 +402,63 @@ class Test:
                     raise TestError("checkpoint %s: `runs` names run %d of %d" % (cp.name, n, len(self.discs)))
         if self.frames_from is not None and self.frames_from not in names:
             raise TestError("`frames_from`: no checkpoint `%s`" % self.frames_from)
+
+    def set_discs(self, discs):
+        """The discs the test runs on: what `variables` of [snapshot] is,
+        the variables all of them have."""
+        if "variables" not in self.snapshot.values():
+            return
+        import snapshot
+        sizes = [disc.sizes for disc in discs if disc.sizes]
+        if not sizes:
+            raise TestError("[snapshot] `variables` needs the variables' sizes, which only the port's names have: "
+                            "one of the discs has to be `port`")
+        # on a PlayStation program, from the first word of its data
+        starts = [None if disc.port else disc.address("g_sys_data_start") for disc in discs]
+        self.variables = snapshot.common_variables([disc.symbols for disc in discs], sizes[0], starts)
+        if not self.variables:
+            raise TestError("[snapshot] `variables`: the discs have no variable in common")
+
+    def snapshot_of(self, disc):
+        """{name: (address, bytes)} of [snapshot] on a disc."""
+        found = {}
+        for name in sorted(self.snapshot):
+            spec = self.snapshot[name]
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+                raise TestError("snapshot `%s`: a name of letters, digits, _ and -" % name)
+            if spec == "variables":
+                if self.variables is None:
+                    raise TestError("[snapshot] `variables`: the test's discs are not known")
+                import snapshot
+                found[name] = snapshot.variables_range(disc.symbols, self.variables)
+                continue
+            m = re.fullmatch(r"\s*(.+?)\s*:\s*(0[xX][0-9A-Fa-f]+|\d+)\s*", spec.partition(" except ")[0])
+            if not m:
+                raise TestError("snapshot `%s = %s`: write `name = \"symbol+offset:bytes\"`, with "
+                                "` except OFFSET:BYTES ...` after it for what is not compared, or \"variables\""
+                                % (name, spec))
+            found[name] = (disc.address(m.group(1)), int(m.group(2), 0))
+        return found
+
+    def pieces_at(self, cp):
+        """The names of [snapshot] that are written at a checkpoint."""
+        if cp.snapshot is True:
+            return sorted(self.snapshot)
+        for name in cp.snapshot or []:
+            if name not in self.snapshot:
+                raise TestError("checkpoint %s: [snapshot] has no `%s`" % (cp.name, name))
+        return sorted(cp.snapshot or [])
+
+    def snapshot_holes(self, name):
+        """The (offset, bytes) of a [snapshot] piece that are not compared:
+        what follows `except` in it."""
+        holes = []
+        for hole in self.snapshot[name].partition(" except ")[2].split():
+            m = re.fullmatch(r"(0[xX][0-9A-Fa-f]+|\d+):(0[xX][0-9A-Fa-f]+|\d+)", hole)
+            if not m:
+                raise TestError("snapshot `%s`: after `except`, OFFSET:BYTES and no `%s`" % (name, hole))
+            holes.append((int(m.group(1), 0), int(m.group(2), 0)))
+        return holes
 
     def checkpoints_of(self, number):
         """The checkpoints of run `number` (from 1), in order."""
@@ -401,28 +503,58 @@ class Test:
             if not m or not re.fullmatch(r"[A-Za-z0-9_-]+", name):
                 raise TestError("dump `%s = %s`: write `name = \"symbol+offset:bytes\"`" % (name, self.dump[name]))
             lines.append("dump %s %d %d" % (name, disc.address(m.group(1)), int(m.group(2))))
+        snaps = self.snapshot_of(disc)
+        for name in sorted(snaps):
+            lines.append("snap %s %d %d" % ((name,) + snaps[name]))
         if self.cards == "none":
             lines.append("nocards")
         for name in order:
             lines.append("var %s %d %d %d" % ((name,) + state[name]))
         cp_index = {cp.name: i + 1 for i, cp in enumerate(checkpoints)}
         every = {cp.name for cp in self.checkpoints}
+        in_frames = any(cp.how == "frames" or cp.at_frame for cp in checkpoints)
         for item in self.input:
-            m = re.fullmatch(r"\s*(?:(\w[\w-]*)\s*\+\s*)?(\d+)\s+(?:P([12])\s+)?(\w+)(?:\s+hold\s+(\d+))?\s*", item)
+            m = re.fullmatch(r"\s*(?:(\w[\w-]*)\s*\+\s*)?(\d+)(f?)\s+(?:P([12])\s+)?(\w+)"
+                             r"(?:\s+hold\s+(\d+)(f?))?\s*", item)
             if not m:
-                raise TestError("input `%s`: write `FRAME BUTTON`, `CHECKPOINT+FRAMES BUTTON`, with "
-                                "`P2` before the button for the second pad and `hold N` after it" % item)
-            base, frames, pad, button, hold = m.groups()
+                raise TestError("input `%s`: write `BLANK BUTTON`, `CHECKPOINT+BLANKS BUTTON` or "
+                                "`CHECKPOINT+FRAMESf BUTTON`, with `P2` before the button for the second pad "
+                                "and `hold N` (or `hold Nf`) after it" % item)
+            base, frames, unit, pad, button, hold, hold_unit = m.groups()
+            if unit and base is None:
+                raise TestError("input `%s`: a press counted in the game's frames is timed from a checkpoint" % item)
+            if hold is not None and hold_unit != unit:
+                raise TestError("input `%s`: `hold` is in frames (`hold 3f`) where the press is, in blanks where "
+                                "it is not" % item)
+            if hold is not None and int(hold) < 1:
+                raise TestError("input `%s`: held for one at least" % item)
             if base is not None and base not in every:
                 raise TestError("input `%s`: no checkpoint `%s`" % (item, base))
             if base is not None and base not in cp_index:
                 continue  # timed from a checkpoint this run does not have
             if button not in BUTTONS:
                 raise TestError("input `%s`: the buttons are %s" % (item, " ".join(BUTTONS)))
-            lines.append("in %d %d %s %s %d" % (cp_index.get(base, 0), int(frames), pad or "1", button,
-                                               int(hold or 6)))
+            in_frames |= bool(unit)
+            lines.append("in %d %d %s %s %d%s" % (cp_index.get(base, 0), int(frames), pad or "1", button,
+                                                 int(hold or (HOLD_FRAMES if unit else HOLD_BLANKS)),
+                                                 " f" if unit else ""))
+        if in_frames and not disc.port:
+            # where the emulator stops to count the game's frames
+            if disc.exe:
+                raise TestError("the game's frames are counted only on a disc of the game")
+            lines.append("frame %d" % disc.address("ResetRCnt"))
         for cp in checkpoints:
-            head = "cp %s %d %d %s" % (cp.name, cp.shot, cp.within, cp.how)
+            # what is written at it: 1 a picture, 2 the [snapshot] memory
+            what = cp.shot + 2 * (bool(cp.snapshot) and bool(snaps)) + 4 * cp.calls
+            for piece in self.pieces_at(cp):
+                if cp.snapshot is not True:
+                    what += 256 << sorted(snaps).index(piece)
+            head = "cp %s %d %d %s" % (cp.name, what, cp.within, "whenf" if cp.at_frame else cp.how)
+            if cp.how == "call":
+                if cp.count < 1:
+                    raise TestError("checkpoint %s: `count` is 1 or more" % cp.name)
+                lines.append("%s %d %d" % (head, disc.address(str(cp.value)), cp.count))
+                continue
             if cp.how != "when":
                 lines.append("%s %d" % (head, int(cp.value)))
                 continue
@@ -680,6 +812,58 @@ def compare_dumps(test, first, run, first_label, label):
     return problems
 
 
+def compare_snapshots(test, discs, first, run, first_label, label):
+    """The memory two runs wrote at the checkpoints that asked for it
+    ([snapshot]), each piece against the one of its name: byte for byte,
+    but that an address of the same place of the same name is the same
+    (tools/play/snapshot.py). The first few places that differ are named;
+    `python tools/port_compare.py TEST` shows them all."""
+    import snapshot
+    disc_a, disc_b = discs[0], discs[runs_index(discs, label)]
+    names_a, names_b = snapshot.Names(disc_a.symbols), snapshot.Names(disc_b.symbols)
+    pieces_a, pieces_b = test.snapshot_of(disc_a), test.snapshot_of(disc_b)
+    problems = []
+    for cp in test.checkpoints:
+        if not cp.snapshot or cp.name not in first.reached or cp.name not in run.reached:
+            continue
+        for name in test.pieces_at(cp):
+            memory = []
+            for folder in (first.folder, run.folder):
+                path = os.path.join(folder, "%s.%s.snap" % (cp.name, name))
+                if not os.path.isfile(path):
+                    problems.append("%s was not written" % os.path.relpath(path, REPO).replace("\\", "/"))
+                    break
+                with open(path, "rb") as f:
+                    memory.append(f.read())
+            if len(memory) != 2:
+                continue
+            if test.snapshot[name] == "variables":
+                found = snapshot.variable_differences(memory[0], memory[1], pieces_a[name][0], pieces_b[name][0],
+                                                      names_a, names_b, test.variables)
+                where = ["%s+0x%X" % (variable, offset) for variable, offset, _ in found]
+                count = sum(length for _, _, length in found)
+            else:
+                memory[1] = snapshot.without(memory[0], memory[1], test.snapshot_holes(name))
+                found = snapshot.differences(memory[0], memory[1], pieces_a[name][0], pieces_b[name][0],
+                                             names_a, names_b)
+                where = ["+0x%X" % offset for offset, _ in found]
+                count = sum(length for _, length in found)
+            if found:
+                problems.append("at `%s`, the memory `%s` on %s is not that on %s: %d bytes in %d places, at %s%s"
+                                % (cp.name, name, first_label, label, count, len(found), ", ".join(where[:4]),
+                                   " ..." if len(where) > 4 else ""))
+            if len(problems) >= SNAPSHOT_PROBLEMS_MAX:
+                problems.append("(and no more of the memory is compared: python tools/port_compare.py %s)"
+                                % test.name)
+                return problems
+    return problems
+
+
+def runs_index(discs, label):
+    """Which of `discs` the run called `label` was on."""
+    return run_labels(discs).index(label)
+
+
 def check_test(test, discs, runs, names):
     """The test's own claims, on what the runs wrote down."""
     problems = []
@@ -723,7 +907,7 @@ def check_test(test, discs, runs, names):
             if compare == ["*"]:
                 compare = sorted(test.state) + ["frame", "picture"]
             for name in compare:
-                if name == "dump":
+                if name in ("dump", "snapshot"):
                     continue  # the pieces of memory: once, below
                 if name == "frame":
                     if test.frames_from is not None and order.index(cp.name) <= order.index(test.frames_from):
@@ -741,13 +925,15 @@ def check_test(test, discs, runs, names):
                         continue
                     a, b = first.reached[cp.name][1][name], run.reached[cp.name][1][name]
                 else:
-                    raise TestError("compare: `%s` is not a name of [state], `frame`, `picture`, `dump` or `*`"
-                                    % name)
+                    raise TestError("compare: `%s` is not a name of [state], `frame`, `picture`, `dump`, "
+                                    "`snapshot` or `*`" % name)
                 if a != b:
                     problems.append("at `%s`, %s is %d on %s and %d on %s"
                                     % (cp.name, name, a, labels[0], b, label))
         if "dump" in test.compare:
             problems += compare_dumps(test, first, run, labels[0], label)
+        if "snapshot" in test.compare:
+            problems += compare_snapshots(test, discs, first, run, labels[0], label)
     return problems
 
 
@@ -805,7 +991,6 @@ def main():
             print("playtest: skipped: no %s (%s)" % (path, what))
             return 0
 
-    sys.path.insert(0, os.path.join(REPO, "tools", "play"))
     import launch
 
     names = header_names()
@@ -824,6 +1009,7 @@ def main():
         try:
             test = Test(path)
             discs = [Disc(d) for d in test.discs]
+            test.set_discs(discs)
             runs = []
             labels = run_labels(discs)
             for number, disc in enumerate(discs, 1):

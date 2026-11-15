@@ -170,6 +170,16 @@ extern void port_WriteDumps(void);
 /* Called at every vertical blank: presses the plan's buttons, looks for
  * its next checkpoint, prints the trace, ends the run at its limit. */
 extern void port_OnBlank(u32 blank);
+/* Called as each frame of the game begins, which is where the game
+ * resets its counter of scan lines: the plan's presses and checkpoints
+ * that are counted in the game's frames. */
+extern void port_OnFrame(void);
+/* What the compiler calls as each function of the game's files begins
+ * and ends (tools/port_build.py compiles them with
+ * -finstrument-functions): a checkpoint that waits for a call of a
+ * function, and the list of a frame's calls. */
+extern void __cyg_profile_func_enter(void *function, void *call_site);
+extern void __cyg_profile_func_exit(void *function, void *call_site);
 
 /* ---- a crash (src/port/crash.c) ---- */
 

@@ -101,12 +101,16 @@ s32 SetRCnt(u32 spec, s32 target, s32 mode) {
 
 s32 StartRCnt(u32 spec) { return spec == RCntCNT1; }
 
+/* The game resets the counter of scan lines once a frame, as the frame
+ * begins (main.c, after the wait for the vertical blank): that is where
+ * a run's script counts the game's frames (plan.c). */
 s32 ResetRCnt(u32 spec) {
     if (spec != RCntCNT1) {
         PORT_STUB("ResetRCnt (a counter other than the scan lines')");
         return 0;
     }
     g_port_counter_base = g_port_clock_lines;
+    port_OnFrame();
     return 1;
 }
 

@@ -11,18 +11,47 @@
  *   limit N                         the run ends at vertical blank N
  *   var NAME ADDR SIZE SIGNED       a value to write down
  *   dump NAME ADDR SIZE             memory written to NAME.bin at the end
+ *   snap NAME ADDR SIZE             memory written to CP.NAME.snap at
+ *                                   every checkpoint CP that asks for it
  *   in CP OFFSET PAD BUTTON HOLD    a press, OFFSET blanks after
  *                                   checkpoint number CP was reached (0:
  *                                   after the start), held HOLD blanks
+ *   in CP OFFSET PAD BUTTON HOLD f  ... OFFSET frames of the game after
+ *                                   it, held HOLD frames
  *   cp NAME SHOT WITHIN at N        a checkpoint at vertical blank N
+ *                                   (SHOT: 2 in it asks for the `snap`
+ *                                   memory, and from 256 up it has a bit
+ *                                   for each `snap` line that is written,
+ *                                   the first line's lowest: all if none.
+ *                                   The port has no picture)
  *   cp NAME SHOT WITHIN after N     ... N blanks after the one before
+ *   cp NAME SHOT WITHIN frames N    ... N frames of the game after it,
+ *                                   as the Nth begins
+ *   cp NAME SHOT WITHIN call ADDR N ... as the function at ADDR is called
+ *                                   for the Nth time after it
+ *
+ * A checkpoint whose SHOT has 4 in it begins a list of calls: from it to
+ * the next checkpoint every function of the game that is called is a
+ * line of CP.calls, its name after a space for each call it is inside.
+ * (Only the port writes one: the game's files are compiled so that each
+ * function says when it begins and ends, -finstrument-functions.)
  *   cp NAME SHOT WITHIN when V OP X [V OP X ...]
  *                                   ... when value number V compares so
  *                                   with X, every one of them; given up
  *                                   WITHIN blanks after the one before
+ *   cp NAME SHOT WITHIN whenf V OP X [V OP X ...]
+ *                                   ... the same, looked for only as a
+ *                                   frame of the game begins
  *
- * The emulator's other lines (stall, alive, movie, text, nocards) are
- * read and not used. What a run prints:
+ * A frame of the game begins where the game resets its counter of scan
+ * lines (ResetRCnt, clock.c), once a frame: port_OnFrame. The emulator
+ * is told that function's address by a `frame` line and stops there. A
+ * press or a checkpoint counted in frames is so at the same moment of
+ * the game on both, however long either took to get there; one counted
+ * in blanks is not, because the port computes a frame in no time.
+ *
+ * The emulator's other lines (stall, alive, movie, text, nocards, frame)
+ * are read and not used. What a run prints:
  *
  *   cp NAME BLANK VALUE...          a checkpoint, with every value
  *   miss NAME BLANK                 a checkpoint not reached in time
@@ -40,9 +69,10 @@
 
 #define VALUES_MAX 128
 #define PRESSES_MAX 1024
-#define CHECKPOINTS_MAX 64
+#define CHECKPOINTS_MAX 2048
 #define TESTS_MAX 8
 #define DUMPS_MAX 16
+#define SNAPS_MAX 16
 #define WORDS_MAX 40
 #define FILE_BYTES_MAX 0x800000
 /* How many words each kind of line has, and where a checkpoint's line
@@ -54,10 +84,20 @@
 #define SYM_SIZE 3
 #define SYM_NAME 4
 #define IN_WORDS 6
+#define IN_WORDS_FRAMES 7
 #define IN_BUTTON 4
 #define IN_HOLD 5
 #define DUMP_WORDS 4
 #define CP_WORDS_MIN 6
+#define CP_SHOT 2
+#define CP_SNAP_BIT 2
+#define CP_CALLS_BIT 4
+#define CP_SNAPS_SHIFT 8
+#define CP_CALL_WORDS 7
+#define CP_CALL_COUNT 6
+#define CALL_INDENT_MAX 64
+/* A file of the run's folder is named by the folder and four pieces. */
+#define RUN_FILE_PIECES 5
 #define CP_WITHIN 3
 #define CP_HOW 4
 #define CP_FIRST_TEST 5
@@ -86,14 +126,24 @@ typedef struct {
     s32 pad;
     u32 button;
     u32 hold;
-    u32 down_at; /* the blanks it goes down and comes up; 0 until its */
-    u32 up_at;   /* checkpoint has been reached */
+    s32 in_frames; /* the offset and the hold are frames of the game */
+    u32 down_at;   /* the blanks, or the frames, it goes down and comes */
+    u32 up_at;     /* up at; 0 until its checkpoint has been reached */
 } PortPress;
 
 enum PortCheckpointKind {
     CHECKPOINT_AT,
     CHECKPOINT_AFTER,
     CHECKPOINT_WHEN,
+    CHECKPOINT_FRAMES,
+    CHECKPOINT_CALL,
+};
+
+/* Where a run is when it looks for its next checkpoint. */
+enum PortEvent {
+    EVENT_BLANK, /* a vertical blank */
+    EVENT_FRAME, /* a frame of the game begins */
+    EVENT_CALL,  /* the function the checkpoint waits for is called */
 };
 
 enum PortCompare {
@@ -114,8 +164,13 @@ typedef struct {
 typedef struct {
     const char *name;
     s32 kind;
+    s32 snap;     /* the `snap` memory is written at it */
+    u32 snaps;    /* which: a bit a `snap` line; 0 for all */
+    s32 at_frame; /* CHECKPOINT_WHEN: only as a frame begins */
+    s32 calls;    /* the list of calls begins at it */
     u32 within;
-    u32 blanks;
+    u32 blanks;   /* or frames of the game, or calls of `function` */
+    u32 function; /* CHECKPOINT_CALL: the function's address */
     PortTest tests[TESTS_MAX];
     s32 test_count;
 } PortCheckpoint;
@@ -140,8 +195,22 @@ static PortCheckpoint g_port_checkpoints[CHECKPOINTS_MAX];
 static s32 g_port_checkpoint_count;
 static s32 g_port_next_checkpoint;
 static u32 g_port_last_checkpoint_blank;
+/* The frames of the game that have begun, and how many had at the last
+ * checkpoint. */
+static u32 g_port_frame;
+static u32 g_port_last_checkpoint_frame;
 static PortDump g_port_dumps[DUMPS_MAX];
 static s32 g_port_dump_count;
+static PortDump g_port_snaps[SNAPS_MAX];
+static s32 g_port_snap_count;
+/* The function the next checkpoint waits for, 0 if it waits for none,
+ * and its calls since the last checkpoint. */
+static u32 g_port_awaited_function;
+static u32 g_port_awaited_calls;
+/* The list of calls being written, -1 if none is, and how many calls
+ * the game is inside. */
+static s32 g_port_calls_file = -1;
+static s32 g_port_call_depth;
 static PortFunction *g_port_functions;
 static u32 g_port_function_count;
 static u32 g_port_blank_limit = DEFAULT_BLANK_LIMIT;
@@ -350,9 +419,10 @@ static s32 port_CompareKind(const char *word) {
 static void port_AddPress(char **words, s32 count) {
     PortPress *press;
 
-    if (count != IN_WORDS || g_port_press_count == PRESSES_MAX) {
+    if ((count != IN_WORDS && count != IN_WORDS_FRAMES) ||
+        g_port_press_count == PRESSES_MAX) {
         port_Fail("rebushido: an `in` line is `in CP OFFSET PAD BUTTON "
-                  "HOLD`, and there are %d at most\n",
+                  "HOLD [f]`, and there are %d at most\n",
                   PRESSES_MAX);
     }
     press = &g_port_presses[g_port_press_count++];
@@ -361,6 +431,7 @@ static void port_AddPress(char **words, s32 count) {
     press->pad = port_PlanNumber(words[3], "in") - 1;
     press->button = port_ButtonMask(words[IN_BUTTON]);
     press->hold = (u32)port_PlanNumber(words[IN_HOLD], "in");
+    press->in_frames = count == IN_WORDS_FRAMES;
     press->down_at = 0;
     press->up_at = 0;
 }
@@ -378,6 +449,14 @@ static void port_AddCheckpoint(char **words, s32 count) {
     }
     checkpoint = &g_port_checkpoints[g_port_checkpoint_count++];
     checkpoint->name = words[1];
+    checkpoint->snap =
+        (port_PlanNumber(words[CP_SHOT], "cp") & CP_SNAP_BIT) != 0;
+    checkpoint->calls =
+        (port_PlanNumber(words[CP_SHOT], "cp") & CP_CALLS_BIT) != 0;
+    checkpoint->snaps =
+        (u32)port_PlanNumber(words[CP_SHOT], "cp") >> CP_SNAPS_SHIFT;
+    checkpoint->at_frame = port_TextsEqual(words[CP_HOW], "whenf");
+    checkpoint->function = 0;
     checkpoint->within = (u32)port_PlanNumber(words[CP_WITHIN], "cp");
     checkpoint->test_count = 0;
     checkpoint->blanks = 0;
@@ -387,7 +466,16 @@ static void port_AddCheckpoint(char **words, s32 count) {
     } else if (port_TextsEqual(words[CP_HOW], "after")) {
         checkpoint->kind = CHECKPOINT_AFTER;
         checkpoint->blanks = (u32)port_PlanNumber(words[CP_FIRST_TEST], "cp");
-    } else if (port_TextsEqual(words[CP_HOW], "when")) {
+    } else if (port_TextsEqual(words[CP_HOW], "frames")) {
+        checkpoint->kind = CHECKPOINT_FRAMES;
+        checkpoint->blanks = (u32)port_PlanNumber(words[CP_FIRST_TEST], "cp");
+    } else if (
+        port_TextsEqual(words[CP_HOW], "call") && count == CP_CALL_WORDS) {
+        checkpoint->kind = CHECKPOINT_CALL;
+        checkpoint->function = (u32)port_PlanNumber(words[CP_FIRST_TEST], "cp");
+        checkpoint->blanks = (u32)port_PlanNumber(words[CP_CALL_COUNT], "cp");
+    } else if (port_TextsEqual(words[CP_HOW], "when") ||
+               port_TextsEqual(words[CP_HOW], "whenf")) {
         checkpoint->kind = CHECKPOINT_WHEN;
         for (i = CP_FIRST_TEST; i + 2 < count; i += TEST_WORDS) {
             PortTest *test;
@@ -431,8 +519,40 @@ void port_AddDump(const char *name, u32 address, u32 size) {
     g_port_dump_count++;
 }
 
+/* A piece of memory to write out at each checkpoint that asks for it:
+ * the PlayStation's, or the program's own variables. */
+static void port_AddSnap(const char *name, u32 address, u32 size) {
+    if (g_port_snap_count == SNAPS_MAX) {
+        port_Fail("rebushido: %d `snap` lines at most\n", SNAPS_MAX);
+    }
+    g_port_snaps[g_port_snap_count].name = name;
+    g_port_snaps[g_port_snap_count].address = address;
+    g_port_snaps[g_port_snap_count].size = size;
+    g_port_snap_count++;
+}
+
+/* The presses that go down or come up now: those counted in frames as a
+ * frame of the game begins, the others at a vertical blank. */
+static void port_PressButtons(s32 in_frames, u32 now) {
+    s32 i;
+
+    for (i = 0; i < g_port_press_count; i++) {
+        const PortPress *press = &g_port_presses[i];
+
+        if (press->in_frames != in_frames || press->up_at == 0) {
+            continue;
+        }
+        if (press->down_at == now) {
+            port_SetPadButton(press->pad, press->button, 1);
+        }
+        if (press->up_at == now) {
+            port_SetPadButton(press->pad, press->button, 0);
+        }
+    }
+}
+
 /* The presses timed from checkpoint `checkpoint` (0: the start), which
- * was reached at `blank`. */
+ * was reached at `blank`, g_port_frame frames of the game into the run. */
 static void port_SchedulePresses(s32 checkpoint, u32 blank) {
     s32 i;
 
@@ -440,8 +560,13 @@ static void port_SchedulePresses(s32 checkpoint, u32 blank) {
         PortPress *press = &g_port_presses[i];
 
         if (press->checkpoint == checkpoint) {
-            press->down_at = blank + press->offset;
+            press->down_at =
+                (press->in_frames ? g_port_frame : blank) + press->offset;
             press->up_at = press->down_at + press->hold;
+            /* no frame after it: now */
+            if (press->in_frames && press->offset == 0) {
+                port_SetPadButton(press->pad, press->button, 1);
+            }
         }
     }
 }
@@ -475,12 +600,20 @@ void port_LoadPlan(const char *path) {
         } else if (port_TextsEqual(words[0], "cp")) {
             port_AddCheckpoint(words, count);
         } else if (port_TextsEqual(words[0], "dump") && count == DUMP_WORDS) {
-            port_AddDump(words[1], (u32)port_PlanNumber(words[2], "dump"),
-                         (u32)port_PlanNumber(words[DUMP_WORDS - 1], "dump"));
+            u32 address = (u32)port_PlanNumber(words[2], "dump");
+            u32 size = (u32)port_PlanNumber(words[DUMP_WORDS - 1], "dump");
+
+            port_AddDump(words[1], address, size);
+        } else if (port_TextsEqual(words[0], "snap") && count == DUMP_WORDS) {
+            u32 address = (u32)port_PlanNumber(words[2], "snap");
+            u32 size = (u32)port_PlanNumber(words[DUMP_WORDS - 1], "snap");
+
+            port_AddSnap(words[1], address, size);
         } else if (!port_TextsEqual(words[0], "stall") &&
                    !port_TextsEqual(words[0], "alive") &&
                    !port_TextsEqual(words[0], "movie") &&
                    !port_TextsEqual(words[0], "text") &&
+                   !port_TextsEqual(words[0], "frame") &&
                    !port_TextsEqual(words[0], "nocards")) {
             port_Fail("rebushido: the plan has a line of a kind not known: "
                       "%s\n",
@@ -532,10 +665,27 @@ static s32 port_TestHolds(const PortTest *test) {
     }
 }
 
-/* Whether the run has come to a checkpoint, at this blank. */
-static s32 port_CheckpointReached(const PortCheckpoint *checkpoint, u32 blank) {
+/* Whether the run has come to a checkpoint. One counted in frames is
+ * reached only as a frame of the game begins, one that waits for a
+ * function only as that is called, every other kind only at a blank. */
+static s32 port_CheckpointReached(
+    const PortCheckpoint *checkpoint, u32 blank, s32 event) {
     s32 i;
 
+    if (checkpoint->kind == CHECKPOINT_FRAMES) {
+        return event == EVENT_FRAME &&
+               g_port_frame >=
+                   g_port_last_checkpoint_frame + checkpoint->blanks;
+    }
+    if (checkpoint->kind == CHECKPOINT_CALL) {
+        return event == EVENT_CALL &&
+               g_port_awaited_calls >= checkpoint->blanks;
+    }
+    if (event != (checkpoint->kind == CHECKPOINT_WHEN && checkpoint->at_frame
+                      ? EVENT_FRAME
+                      : EVENT_BLANK)) {
+        return 0;
+    }
     if (checkpoint->kind == CHECKPOINT_AT) {
         return blank >= checkpoint->blanks;
     }
@@ -585,35 +735,85 @@ static void port_PrintTrace(u32 blank) {
     g_port_trace_started = 1;
 }
 
-/* A vertical blank (port_platform.h): the presses due at it, the trace,
- * the checkpoints it reaches or gives up, and the run's end. */
-void port_OnBlank(u32 blank) {
+/* A file of the run's folder: the folder and the pieces of the name. */
+static s32 port_CreateRunFile(const char *first, const char *second,
+                              const char *third, const char *fourth) {
+    char path[PATH_BYTES_MAX];
+    const char *pieces[RUN_FILE_PIECES];
+    u32 length = 0;
+    u32 piece;
+
+    pieces[0] = g_port_dump_folder;
+    pieces[1] = first;
+    pieces[2] = second;
+    pieces[3] = third;
+    pieces[4] = fourth;
+    for (piece = 0; piece < sizeof(pieces) / sizeof(pieces[0]); piece++) {
+        const char *text = pieces[piece];
+
+        for (; *text != 0 && length + 1 < sizeof(path); text++) {
+            path[length++] = *text;
+        }
+    }
+    path[length] = 0;
+    return port_HostCreate(path);
+}
+
+/* The `snap` memory as it is now, each piece to CHECKPOINT.NAME.snap:
+ * the pieces `which` has a bit for, all of them if it has none. */
+static void port_WriteSnaps(const char *checkpoint, u32 which) {
     s32 i;
 
-    for (i = 0; i < g_port_press_count; i++) {
-        const PortPress *press = &g_port_presses[i];
+    for (i = 0; i < g_port_snap_count; i++) {
+        const PortDump *snap = &g_port_snaps[i];
+        s32 file;
 
-        if (press->down_at == blank && press->down_at != 0) {
-            port_SetPadButton(press->pad, press->button, 1);
+        if (which != 0 && (which & (1U << i)) == 0) {
+            continue;
         }
-        if (press->up_at == blank && press->up_at != 0) {
-            port_SetPadButton(press->pad, press->button, 0);
+        file = port_CreateRunFile(checkpoint, ".", snap->name, ".snap");
+        if (file < 0 ||
+            !port_HostAppend(file, (const void *)snap->address, snap->size)) {
+            port_Fail("rebushido: the memory `%s` at checkpoint `%s` cannot "
+                      "be written\n",
+                      snap->name, checkpoint);
         }
+        port_HostClose(file);
     }
-    if (g_port_trace) {
-        port_PrintTrace(blank);
-    }
+}
+
+/* The checkpoints the run is at, one after another, and the run's end
+ * at the last. */
+static void port_TakeCheckpoints(u32 blank, s32 event) {
     while (g_port_next_checkpoint < g_port_checkpoint_count) {
         const PortCheckpoint *checkpoint =
             &g_port_checkpoints[g_port_next_checkpoint];
 
-        if (port_CheckpointReached(checkpoint, blank)) {
+        if (port_CheckpointReached(checkpoint, blank, event)) {
             port_Print("cp %s %u", checkpoint->name, blank);
             port_PrintValues();
+            if (checkpoint->snap) {
+                port_WriteSnaps(checkpoint->name, checkpoint->snaps);
+            }
+            /* the list of calls ends here, and this one's begins */
+            if (g_port_calls_file >= 0) {
+                port_HostClose(g_port_calls_file);
+                g_port_calls_file = -1;
+            }
+            if (checkpoint->calls) {
+                g_port_calls_file =
+                    port_CreateRunFile(checkpoint->name, ".calls", "", "");
+            }
             g_port_next_checkpoint++;
-            port_SchedulePresses(g_port_next_checkpoint, blank);
+            g_port_awaited_calls = 0;
+            g_port_awaited_function =
+                g_port_next_checkpoint < g_port_checkpoint_count
+                    ? g_port_checkpoints[g_port_next_checkpoint].function
+                    : 0;
             g_port_last_checkpoint_blank = blank;
-        } else if (checkpoint->within > 0 &&
+            g_port_last_checkpoint_frame = g_port_frame;
+            port_SchedulePresses(g_port_next_checkpoint, blank);
+        } else if (event == EVENT_BLANK && checkpoint->within > 0 &&
                    blank - g_port_last_checkpoint_blank > checkpoint->within) {
             port_Print("miss %s %u\n", checkpoint->name, blank);
             port_Print("cp (failure) %u", blank);
@@ -628,6 +828,16 @@ void port_OnBlank(u32 blank) {
         port_Print("done %u\n", blank);
         port_Quit(PORT_EXIT_OK);
     }
+}
+
+/* A vertical blank (port_platform.h): the presses due at it, the trace,
+ * the checkpoints it reaches or gives up, and the run's end. */
+void port_OnBlank(u32 blank) {
+    port_PressButtons(0, blank);
+    if (g_port_trace) {
+        port_PrintTrace(blank);
+    }
+    port_TakeCheckpoints(blank, EVENT_BLANK);
     if (blank >= g_port_blank_limit) {
         if (g_port_next_checkpoint < g_port_checkpoint_count) {
             port_Print("miss %s %u\n",
@@ -641,6 +851,52 @@ void port_OnBlank(u32 blank) {
     }
 }
 
+/* A frame of the game begins (port_platform.h): the presses and the
+ * checkpoints that are counted in its frames. */
+void port_OnFrame(void) {
+    g_port_frame++;
+    port_PressButtons(1, g_port_frame);
+    port_TakeCheckpoints(port_GetBlankCount(), EVENT_FRAME);
+}
+
+/* A function of the game begins: the compiler calls this at the top of
+ * every function of the files tools/port_build.py compiles with
+ * -finstrument-functions, which are the game's and Sony's and none of
+ * the port's own. A line of the list of calls, if one is being written,
+ * and the checkpoint that waits for this function. */
+void __cyg_profile_func_enter(void *function, void *call_site) {
+    (void)call_site;
+    if (g_port_calls_file >= 0) {
+        char line[CALL_INDENT_MAX + PATH_BYTES_MAX];
+        u32 offset = 0;
+        const char *name = port_FindFunction((u32)function, &offset);
+        u32 length = 0;
+        s32 i;
+
+        for (i = 0; i < g_port_call_depth && i < CALL_INDENT_MAX; i++) {
+            line[length++] = ' ';
+        }
+        for (; name != NULL && *name != 0 && length + 2 < sizeof(line);
+             name++) {
+            line[length++] = *name;
+        }
+        line[length++] = '\n';
+        port_HostAppend(g_port_calls_file, line, length);
+    }
+    g_port_call_depth++;
+    if ((u32)function == g_port_awaited_function) {
+        g_port_awaited_calls++;
+        port_TakeCheckpoints(port_GetBlankCount(), EVENT_CALL);
+    }
+}
+
+/* ... and ends. */
+void __cyg_profile_func_exit(void *function, void *call_site) {
+    (void)function;
+    (void)call_site;
+    g_port_call_depth--;
+}
+
 /* ---- the end ---- */
 
 void port_SetDumpFolder(const char *folder) { g_port_dump_folder = folder; }
@@ -648,31 +904,16 @@ void port_SetDumpFolder(const char *folder) { g_port_dump_folder = folder; }
 /* Each dump to its file: the folder, the dump's name, ".bin"
  * (port_platform.h). */
 void port_WriteDumps(void) {
-    char path[PATH_BYTES_MAX];
     s32 i;
 
     for (i = 0; i < g_port_dump_count; i++) {
         const PortDump *dump = &g_port_dumps[i];
-        const char *pieces[3];
-        u32 length = 0;
-        s32 file;
-        u32 piece;
+        s32 file = port_CreateRunFile(dump->name, ".bin", "", "");
 
-        pieces[0] = g_port_dump_folder;
-        pieces[1] = dump->name;
-        pieces[2] = ".bin";
-        for (piece = 0; piece < sizeof(pieces) / sizeof(pieces[0]); piece++) {
-            const char *text = pieces[piece];
-
-            for (; *text != 0 && length + 1 < sizeof(path); text++) {
-                path[length++] = *text;
-            }
-        }
-        path[length] = 0;
-        file = port_HostCreate(path);
         if (file < 0 ||
             !port_HostAppend(file, (const void *)dump->address, dump->size)) {
-            port_Log("rebushido: %s cannot be written\n", path);
+            port_Log(
+                "rebushido: the dump `%s` cannot be written\n", dump->name);
         }
         if (file >= 0) {
             port_HostClose(file);
