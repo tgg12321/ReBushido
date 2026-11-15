@@ -9,6 +9,14 @@
 
 #include "common.h"
 
+/* An address as a whole number, as wide as a pointer: common.h declares
+ * it where the port's switch is on, and the files that talk to a C
+ * library and to SDL or EGL are not compiled with it on. */
+#ifndef PORT_ADDRESS_DEFINED
+#define PORT_ADDRESS_DEFINED
+typedef __UINTPTR_TYPE__ PortAddress;
+#endif
+
 /* Where the system starts the program is the host file's; it calls this
  * with the program's arguments (the first is the program's own path) and
  * ends the program with what it returns (src/port/main.c). */

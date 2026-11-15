@@ -53,6 +53,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 
 import port_build  # noqa: E402  (tools/port_build.py)
+import port_layout  # noqa: E402
 from port_build import host_tests, modern  # noqa: E402
 
 OUT_DIR = 'build/port-sdl'
@@ -108,6 +109,16 @@ BLOB_LD_TEXT = '''/* Written by tools/port_sdl_build.py: the game and the port a
 class Target:
     """What differs between the two programs."""
 
+    # The size of the program's pointers, for the compiler and the linker.
+    # The window's build is 32-bit (docs/PORT.md, "The window"); the
+    # prover of the remastered renderer chooses (tools/port_gl_build.py).
+    bits = 32
+
+    def size_flags(self):
+        """What says the size of a pointer to this target's compiler.
+        Nothing for MinGW, whose compiler is of one size."""
+        return [] if self.windows else ['-m%d' % self.bits]
+
     def __init__(self, windows):
         self.windows = windows
         self.name = 'windows' if windows else 'linux'
@@ -157,7 +168,7 @@ class Target:
             return ['-L%s/lib' % self.sdl, '-lSDL2', '-lcomdlg32', '-static-libgcc',
                     '-Wl,--image-base=0x%X' % PROGRAM_BASE, '-Wl,--large-address-aware',
                     '-Wl,--disable-dynamicbase']
-        return ['-m32', '-no-pie', '-lSDL2', '-Wl,-Ttext-segment=0x%X' % PROGRAM_BASE]
+        return self.size_flags() + ['-no-pie', '-lSDL2', '-Wl,-Ttext-segment=0x%X' % PROGRAM_BASE]
 
 
 def run(cmd, **more):
@@ -174,7 +185,7 @@ def check_host(target):
                 '(github.com/libsdl-org/SDL/releases) and name its SDL2-2.x.y folder with SDL2_MINGW, or put it '
                 'in tools/sdl2-mingw/ (BUILD.md)')
     probe = target.dir + '/sdl_probe' + ('.exe' if target.windows else '')
-    proc = run([target.cc] + (['-DSDL_MAIN_HANDLED'] if target.windows else ['-m32']) + target.sdl_flags
+    proc = run([target.cc] + (['-DSDL_MAIN_HANDLED'] if target.windows else target.size_flags()) + target.sdl_flags
                + ['-x', 'c', '-', '-o', probe] + [f for f in target.link_flags() if not f.startswith('-Wl,-T')],
                input=SDL_PROBE)
     if proc.returncode != 0:
@@ -222,7 +233,7 @@ def compile_one(job):
         if newest is not None and newest < made and os.path.getmtime(path) < made and stamp < made:
             return path, obj, False, ''
     if kind == 'hosted':
-        cmd = [target.cc] + ([] if target.windows else ['-m32']) + HOSTED_FLAGS + target.sdl_flags
+        cmd = [target.cc] + target.size_flags() + HOSTED_FLAGS + target.sdl_flags
         cmd += ['-MD', '-MF', obj[:-2] + '.d', '-c', path, '-o', obj]
         proc = run(cmd)
     else:
@@ -309,7 +320,7 @@ def link_blob(target, objects):
     listing = target.dir + '/objects.txt'
     with open(listing, 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(objects) + '\n')
-    proc = run([target.cc] + ([] if target.windows else ['-m32']) + ['-nostdlib', '-r', '-Wl,-T,' + script,
+    proc = run([target.cc] + target.size_flags() + ['-nostdlib', '-r', '-Wl,-T,' + script,
                                                                     '-o', whole, '@' + listing])
     if proc.returncode != 0:
         print('\n'.join('    ' + line for line in proc.stderr.split('\n')[:30]))
@@ -331,16 +342,23 @@ def link_blob(target, objects):
 
 
 def write_names(target, program, names_path):
-    """The program's names, as tools/port_build.py writes them."""
+    """The program's names, as tools/port_build.py writes them, and for a
+    64-bit program how each variable that grew lies against the
+    PlayStation's (port_layout.console_runs)."""
     rows = symbols_of(target, program)
     symbols = {}
     for address, letter, size, name in rows:
         if letter.isupper() or name not in symbols:
             symbols[name] = address
+    layouts = port_layout.console_runs(program) if target.bits == 64 and not target.windows else {}
     with open(names_path, 'w', encoding='utf-8', newline='\n') as f:
         f.write('# The names of %s, for the program itself: written by tools/port_sdl_build.py.\n' % program)
-        for line in port_build.state_lines(symbols):
+        for line in port_build.state_lines(symbols, layouts):
             f.write(line + '\n')
+        for name in sorted(layouts):
+            f.write('layout %s %d\n' % (name, layouts[name][0]))
+            for run in layouts[name][1]:
+                f.write('run %d %d %d\n' % run)
         for address, letter, size, name in sorted(set(rows)):
             if letter.lower() in 'tdbr' and re.fullmatch(r'\w+', name):
                 f.write('sym %08x %s %d %s\n' % (address, 'f' if letter.lower() == 't' else 'o', size, name))
@@ -467,7 +485,7 @@ def main():
         # the program without a window, a C library or SDL: kernel32 alone,
         # started at the host file's own entry
         plain = target.dir + '/host_windows_plain.o'
-        proc = run([target.cc] + [f for f in HOSTED_FLAGS if not f.startswith('-D_FILE')]
+        proc = run([target.cc] + target.size_flags() + [f for f in HOSTED_FLAGS if not f.startswith('-D_FILE')]
                    + ['-DPORT_NO_C_RUNTIME', '-c', 'src/port/host_windows.c', '-o', plain])
         if proc.returncode != 0:
             print('\n'.join('    ' + line for line in proc.stderr.split('\n')[:40]))

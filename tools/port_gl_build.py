@@ -3,8 +3,9 @@
 OpenGL 3.3 core context made through EGL, with no window, no display and
 no surface (docs/PORT.md, "Remastered").
 
-    python3 tools/port_gl_build.py           -> build/port-gl/rebushido-gl
-    python3 tools/port_gl_build.py --host    -> whether this host can
+    python3 tools/port_gl_build.py            -> build/port-gl/rebushido-gl
+    python3 tools/port_gl_build.py --bits 32  -> of 32-bit pointers
+    python3 tools/port_gl_build.py --host     -> whether this host can
 
 It is the build with a window (tools/port_sdl_build.py) with EGL in
 place of SDL and src/port/gl/ in place of src/port/window/'s two files:
@@ -12,10 +13,14 @@ everything of the game and the port is linked into one object whose
 names are its own, so that the C library's `open`, `read`, `main` and
 `printf` are not given the game's.
 
-What it needs on Linux: gcc -m32, a 32-bit C library and 32-bit EGL
-(Ubuntu: lib32gcc-13-dev libegl-dev:i386, which come with the window's
-own needs). Mesa's software driver (mesa-libgallium) is the GL. Nothing
-of this is needed by any check: no check has a graphics card.
+It is built with 64-bit pointers, as the port is (docs/PORT.md, "64
+bits"), or with 32-bit ones (`--bits 32`, `PORT_BITS`).
+
+What it needs on Linux: gcc, a C library and EGL of the size asked for
+(Ubuntu, 64 bits: libegl-dev, which is there for any desktop; 32 bits:
+lib32gcc-13-dev libegl-dev:i386, which come with the window's own
+needs). Mesa's software driver (mesa-libgallium) is the GL. Nothing of
+this is needed by any check: no check has a graphics card.
 """
 import concurrent.futures
 import os
@@ -41,10 +46,11 @@ EGL_PROBE = ('#include <EGL/egl.h>\nint main(void) '
 
 
 class Target(sdl.Target):
-    """The one program: Linux, 32-bit, EGL."""
+    """The one program: Linux, EGL, pointers of the size asked for."""
 
-    def __init__(self):
+    def __init__(self, bits):
         sdl.OUT_DIR = OUT_DIR
+        self.bits = bits
         super().__init__(False)
         self.program = OUT_DIR + '/rebushido-gl'
         self.sdl = None
@@ -52,34 +58,42 @@ class Target(sdl.Target):
         self.hosted = [GL_DIR + f for f in GL_HOSTED] + [WINDOW_HOST]
 
     def link_flags(self):
-        return ['-m32', '-no-pie', '-lEGL', '-Wl,-Ttext-segment=0x%X' % sdl.PROGRAM_BASE]
+        return self.size_flags() + ['-no-pie', '-lEGL', '-Wl,-Ttext-segment=0x%X' % sdl.PROGRAM_BASE]
 
 
 def check_host(target):
     """None, or why this host cannot build it."""
     os.makedirs(target.dir, exist_ok=True)
     probe = target.dir + '/egl_probe'
-    proc = sdl.run([target.cc, '-m32', '-x', 'c', '-', '-o', probe, '-lEGL'], input=EGL_PROBE)
+    proc = sdl.run([target.cc] + target.size_flags() + ['-x', 'c', '-', '-o', probe, '-lEGL'], input=EGL_PROBE)
     if proc.returncode != 0:
-        return ('%s cannot make a 32-bit program with EGL: %s\n'
-                'port-gl: on Ubuntu: sudo apt install lib32gcc-13-dev libegl-dev:i386 '
-                '(not gcc-multilib: it removes the MIPS compiler)'
-                % (target.cc, (proc.stderr.strip().split('\n') or ['?'])[-1]))
+        return ('%s cannot make a %d-bit program with EGL: %s\n'
+                'port-gl: on Ubuntu: sudo apt install libegl-dev%s'
+                % (target.cc, target.bits, (proc.stderr.strip().split('\n') or ['?'])[-1],
+                   '' if target.bits == 64 else
+                   ':i386 lib32gcc-13-dev   (not gcc-multilib: it removes the MIPS compiler)'))
     os.remove(probe)
     return None
 
 
 def main():
     os.chdir(ROOT)
-    target = Target()
+    args = sys.argv[1:]
+    bits = port_build.bits_of(args)
+    if bits is None:
+        return 1
+    # the game's files are compiled for this size: -m64 and no vector
+    # instructions, or -m32 (tools/port_build.py, set_bits)
+    port_build.set_bits(bits)
+    target = Target(bits)
     # the files that talk to EGL see src/port/gl/ and the window's header
     sdl.HOSTED_FLAGS = sdl.HOSTED_FLAGS + ['-I' + GL_DIR.rstrip('/'), '-Isrc/port/window']
     problem = check_host(target)
     if problem:
         print('port-gl: %s' % problem)
         return 1
-    if '--host' in sys.argv[1:]:
-        print('port-gl: this host can build it (%s)' % target.cc)
+    if '--host' in args:
+        print('port-gl: this host can build it (%s, %d-bit)' % (target.cc, bits))
         return 0
     os.makedirs(target.obj_dir, exist_ok=True)
     host_tests.OUT_DIR = OUT_DIR
@@ -87,7 +101,7 @@ def main():
     host_tests.write_headers(True)
 
     flags = port_build.GAME_FLAGS + host_tests.include_flags(True) + modern.DEFS + host_tests.REBUSHIDO_DEFS
-    flags += ['-DRB_GIT_HASH="%s"' % port_build.git_hash()]
+    flags += ['-DRB_GIT_HASH="%s"' % port_build.git_hash()] + port_build.GAME_ERRORS
     stamp = max(os.path.getmtime(p) for p in (__file__, sdl.__file__, port_build.__file__, 'tests/run.py',
                                               'tools/modern/check.py', 'tools/port_gte_macros.py', modern.SHIM))
     jobs = [(target, path, 'port' if own else 'game', flags, stamp)
@@ -115,7 +129,8 @@ def main():
         return 1
     if not sdl.link_program(target, target.program, [blob] + hosted, target.link_flags()):
         return 1
-    print('OK: port-gl: %s: %d files (%d compiled now)' % (target.program, len(game) + len(hosted), built))
+    print('OK: port-gl: %s: %d-bit, %d files (%d compiled now)'
+          % (target.program, bits, len(game) + len(hosted), built))
     return 0
 
 

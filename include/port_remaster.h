@@ -29,8 +29,14 @@
 
 /* An address as a whole number: as wide as a pointer on either system.
  * The port's files are compiled with no C library and no system headers
- * (-nostdinc), so this comes from the compiler itself, not <stdint.h>. */
+ * (-nostdinc), so this comes from the compiler itself, not <stdint.h>.
+ * common.h declares it where the port's switch is on; the backend's
+ * files, which talk to a C library and to SDL or EGL, are not compiled
+ * with it on. */
+#ifndef PORT_ADDRESS_DEFINED
+#define PORT_ADDRESS_DEFINED
 typedef __UINTPTR_TYPE__ PortAddress;
+#endif
 
 /* ---- which picture ---- */
 
