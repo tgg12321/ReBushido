@@ -11,6 +11,7 @@
 #include "common.h"
 #include "port_disc.h"
 #include "port_host.h"
+#include "port_spu.h"
 #include "bb2.h"
 
 #define PATH_BYTES_MAX 1024
@@ -36,15 +37,26 @@ static const char g_port_usage[] =
     "  --dump NAME=ADDRESS:BYTES   write that much of the PlayStation's\n"
     "                 memory to NAME.bin when the run ends\n"
     "  --out FOLDER   where the dumps go\n"
+    "  --wav FILE     keep the run's sound and write it there when the run\n"
+    "                 ends, with a line for each voice started\n"
+    "  --spu FILE     write sound memory and the sound chip's registers\n"
+    "                 there when the run ends\n"
     "\n"
     "At the end it prints a line for each thing the game asked for that\n"
     "the port does not do yet, with how often: stub NAME COUNT.\n";
 
+/* The end of a run (port_platform.h): what it was asked to write, the
+ * stubs it called, and out. */
 void port_Quit(s32 code) {
     /* once: what is written at the end may itself fail */
     if (!g_port_quitting) {
         g_port_quitting = 1;
         port_WriteDumps();
+        port_WriteSpuDump();
+        if (port_IsWavOn()) {
+            port_PrintSoundSummary();
+            port_WriteWav();
+        }
         port_PrintStubs();
     }
     port_FlushOutput();
@@ -151,6 +163,10 @@ s32 port_Main(s32 argc, char **argv) {
             image = argv[++i];
         } else if (port_TextsEqual(word, "--plan")) {
             plan = argv[++i];
+        } else if (port_TextsEqual(word, "--wav")) {
+            port_StartWav(argv[++i]);
+        } else if (port_TextsEqual(word, "--spu")) {
+            port_SetSpuDump(argv[++i]);
         } else if (port_TextsEqual(word, "--out")) {
             port_SetDumpFolder(port_FolderPrefix(argv[++i]));
         } else if (port_TextsEqual(word, "--dump")) {

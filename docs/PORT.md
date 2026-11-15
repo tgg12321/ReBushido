@@ -9,13 +9,15 @@ ReBushido PlayStation program.
 
 This page is what stands between the source and a PC, counted; what has
 been done about it; the stages that are left; and the decisions that are
-the owner's. **The port is a program now, with nothing to see or hear:**
+the owner's. **The port is a program now, with nothing to see:**
 it links, gives the game the PlayStation's memory, reads the player's
 disc image, and runs the game's own `main` through start-up, the options
 page, the menus and character select, through a whole fight and back to
-the menu, with no picture, no sound and no pads but a script's. All that
-way it is held to the emulator, value for value, in three fights. Stages
-1 to 3 of the seven below are done, and of stage 5 the fight itself.
+the menu, with no picture and no pads but a script's. All that way it is
+held to the emulator, value for value, in three fights. Its sound is
+made and can be written to a file; there is no sound card in it yet.
+Stages 1 to 3 of the seven below are done, of stage 5 the fight itself,
+and of stage 6 everything but the card.
 
 ## Where it stands
 
@@ -25,11 +27,12 @@ way it is held to the emulator, value for value, in three fights. Stages
 | The game's GTE instructions (Sony's macros) as calls into it | done, by `tools/port_gte_macros.py` |
 | C beside the assembly functions | 119 of 138: Sony's libgte (48), the game's maths (20) and the renderer (51). The other 19 need none (below) |
 | A program that links | done: `make port` builds `build/port/rebushido` from the game's C, with no name missing ("The program") |
-| BIOS calls and Sony's libraries | every one the game calls is defined: done for real where it only works on memory or the port has the thing (the disc, time, the pads' packets, events), a stub that is counted where it has not (the picture, sound, the memory card, the link, the movie) |
+| BIOS calls and Sony's libraries | every one the game calls is defined: done for real where it only works on memory or the port has the thing (the disc, time, the pads' packets, events), a stub that is counted where it has not (the picture, the memory card, the link, the movie) |
 | Memory | done: the RAM and the scratchpad at the console's addresses ("Memory") |
-| The disc | done for data: sectors from the player's image, under the game's own disc code ("The disc"). Its sound is a stub |
+| The disc | done: sectors from the player's image, under the game's own disc code ("The disc"), and its XA sound ("Sound") |
+| Sound | done into a file, not yet a sound card: Sony's libsnd and libspu on a sound chip in C, the disc's music ("Sound"). Not yet compared with the emulator |
 | A fight | done, by a script's pads: three whole fights are the emulator's, frame for frame ("How it is proved") |
-| A window, the picture, sound, real pads, the card, movies | not begun |
+| A window, the picture, a sound card, real pads, the card, movies | not begun |
 
 ## The switch
 
@@ -97,7 +100,9 @@ N` (end after N vertical blanks; 3,600 if nothing says), `--trace` (the
 values of `tests/play/state.toml` at every blank where one changed),
 `--plan FILE` (a play test's plan: presses, checkpoints, a limit),
 `--dump NAME=ADDRESS:BYTES` and `--out FOLDER` (memory to a file at the
-end). It ends by printing a line for each stub the game called, with
+end), `--wav FILE` (the run's sound, with a line for each voice started
+and each sound the game asked for) and `--spu FILE` (sound memory and
+the chip's registers at the end). It ends by printing a line for each stub the game called, with
 how often. Pads are pressed only by a plan: a line `in 0 300 1 START 6`
 is Start on the first pad at blank 300 for six blanks
 (`tests/play/README.md`, "The port as a disc").
@@ -119,20 +124,17 @@ console.** By library:
 | libgte | Sony's own, all of it but `patchgte.c` (which patches the kernel): the C modules as they are, the assembly ones by the C beside them, on `src/port/gte.c` |
 | libgpu | Sony's `prim.c` (the primitives' set-up, `GetTPage`, `AddPrim`) and `ext.c` (`SetDefDrawEnv`, `SetDefDispEnv`). The module that talks to the GPU is the port's (`gpu.c`): `ClearOTagR` and the mode, area and offset primitives are done as Sony's does them for the ordinary GPU; `ResetGraph`, `SetDispMask`, `PutDispEnv`, `PutDrawEnv`, `DrawOTag`, `ClearImage`, `LoadImage`, `StoreImage`, `MoveImage` are stubs |
 | libc | Sony's `memcpy`, `memmove`, `memchr`, `strcpy`, `strlen`, `rand`, `toupper`. The port's: `printf` and `sprintf` (Sony's walk a PlayStation's argument list), and `memset` and `memcmp`, which the compiler calls |
-| libetc | Sony's `GetVideoMode`. The port's: `VSync` (`clock.c`), `ResetCallback`, `StopCallback` (nothing) |
-| libcd | the port's, all of it, over the disc image (`cd.c`) |
+| libetc | Sony's `GetVideoMode`. The port's: `VSync` (`clock.c`), `ResetCallback`, `StopCallback` (nothing), and the interrupts' callbacks, of which the vertical blank's is run (`sound.c`) |
+| libcd | the port's, all of it, over the disc image (`cd.c`), with the XA sound the drive plays (`xa.c`) |
 | libapi | the port's: the counters (`clock.c`), the pads (`pad.c`), events (`event.c`), and nothing for `SetSp`, `SetMem` and the critical section. The card's calls and the files are stubs that answer "no card"; `Exec` is a stub |
-| libsnd, libspu | the port's, all stubs (`sound.c`) |
+| libsnd, libspu | Sony's, all of both but the one module of libspu that talks to the chip, which is the port's on its sound chip in C ("Sound") |
 | libcomb | the port's, all stubs: nothing at the cable's other end |
 | libcard, libsn | not needed: the first is inside Sony's card code, the second is the development host's files, which nothing reaches |
 
 A stub counts its calls and gives the answer the library gives when all
-is well, where the game would otherwise stop or wait for ever: a sound
-bank opens, a transfer is done, no voice sounds, no card is in the
-slot. Three change less of the game's memory than the console does:
-`StoreImage` and `SpuRead` leave the buffer they were given as it was,
-and `SsVabOpenHeadSticky` does not fill in the words of a bank's header
-that Sony's does.
+is well, where the game would otherwise stop or wait for ever: no card
+is in the slot. One changes less of the game's memory than the console
+does: `StoreImage` leaves the buffer it was given as it was.
 
 ### Memory
 
@@ -141,7 +143,9 @@ What the game reaches by a number written into its source is given
 memory at that number (`src/port/memory.c`): the 2 MB of RAM at
 `0x80000000` and the kilobyte of scratchpad at `0x1F800000`, by `mmap`
 at a fixed address on Linux (`VirtualAlloc` on Windows, not tried). If
-the system will not give either, the program says so and stops. The
+the system will not give either, the program says so and stops. (The
+sound chip's registers are a third piece, at `0x1F801000`, which only
+Sony's sound libraries reach: "Sound".) The
 twelve addresses are the scratchpad and the eleven of `include/sys.h`
 and `motion.h`; `tests/port/memory.py` reads the game's source on every
 push and fails if it has an address that is not in the mapped memory,
@@ -159,9 +163,9 @@ it here:
   script the build writes, with each variable in a section of its own
   and the sections in the PlayStation's order
   (`config/symbol_addrs.txt`), kind by kind, and no array padded out
-  (`-malign-data=abi`). The build counts the result: 710 of the game's
-  928 pairs of neighbours are exactly as far apart as on the
-  PlayStation, and the 218 others are in `build/port/layout.txt`: 67
+  (`-malign-data=abi`). The build counts the result: 774 of the game's
+  993 pairs of neighbours are exactly as far apart as on the
+  PlayStation, and the 219 others are in `build/port/layout.txt`: 67
   are strings, which the console starts on a word; the rest are small
   variables the console's small-data sections pad to a word, and places
   where another file's unnamed data lies between two on the console.
@@ -271,10 +275,11 @@ simplest behaviour that the game's code accepts was chosen:
 
 A sector that cannot be read (past the end of the image, or not a
 sector) reaches the game as the drive's error, and the port says which
-sector on its error output. Sound off the disc is a stub: an XA stream
-or a CD audio track is counted, and the drive's position moves at the
-disc's speed by the port's clock while it "plays", because the game
-finds the end of a piece of music by asking where the drive is.
+sector on its error output. Sound off the disc is the drive's too: an
+XA stream is played ("Sound"), and the drive's position moves at the
+disc's speed by the sound's clock while it plays, because the game
+finds the end of a piece of music by asking where the drive is. A CD
+audio track is a stub that is counted: the game asks for none.
 
 So a load takes the frames its commands take and none for its sectors:
 the port is at the top menu at blank 497 where the emulator is at
@@ -312,6 +317,139 @@ the loading screen's noise and a few choices at a fight's start. The
 effects' own memory is therefore not the emulator's once a fight is
 under way (the particles' places), and is compared only on the fight's
 first frame; nothing that decides a fight has been seen to differ.
+
+### Sound
+
+The port makes the game's sound and has no sound card yet: it mixes into
+memory, and `--wav FILE` writes a run's sound as a WAV file. A later
+stage plays the same samples as they are made.
+
+**The boundary is the sound chip's registers.** Sony's libsnd and libspu
+are compiled into the port as they are, 46 and 33 modules: they are
+plain C that keeps tables, works volumes and pitches out, and writes the
+chip's registers. So a call of the game's does what it does on the
+console, the 524 bytes `SsVabOpenHeadSticky` fills into a bank's header
+included. Under them is the chip in C (`src/port/spu.c`), which reads
+the registers. By module:
+
+| | In the port | Why |
+|---|---|---|
+| libsnd, all 46 modules | Sony's | plain C. `SSINIT` writes the registers by their address, `0x1F801C00`, so the port has memory there: a page at the console's own place (`sound.c`) |
+| libspu, 33 of 34 modules | Sony's | plain C on the registers, through one pointer |
+| libspu `SPU` (`spu.c`: the reset, transfers by the DMA controller, the timing loops) | the port's (`sound.c`) | it talks to the chip and the DMA controller. The reset writes what Sony's writes, without the waits. A transfer to or from sound memory is done whole when it is asked for, rounded up to the DMA's 64 bytes as on the console, and its interrupt is raised at once: the game waits for it in a loop with no frame between |
+| `InterruptCallback`, `VSyncCallback`, `DMACallback`, `DeliverEvent`, `WaitEvent`, `DisableEvent` | the port's | the library hangs its tick on the vertical blank's interrupt (`SsStart`, at `SS_TICK60` on an NTSC console). The port runs it at each blank of its own clock |
+| libcd's sound (`CdMix`, an XA stream, mute) | the port's (`cd.c`, `xa.c`) | the drive |
+
+The one thing a register write does on the console that plain memory
+cannot is start or stop a voice. The chip takes the two key registers
+when it next makes samples, and clears them. Sony's library writes them
+once a tick, the keys off and then the keys on, which is the order the
+chip takes them in.
+
+**The clock.** At each vertical blank (`clock.c`) the tick runs, then
+the chip makes one blank's samples. A blank is 263 scan lines of an NTSC
+console at 15,734.2657 lines a second (4.5 MHz / 286), and the chip
+makes 44,100 samples a second: 737 and 341/2500 samples a blank. The
+fraction is carried, so a blank is 737 or 738 samples and a run's sound
+is the same every time. The count of samples is the sound's clock, and
+the drive goes by it.
+
+**The chip** (`src/port/spu.c`), written from what is publicly known of
+the hardware, with no emulator's code: 24 voices and 512 KB of sound
+memory; a waveform's blocks decoded with the five filters and the three
+flags (loop start, end, repeat) and the bit that says a voice reached
+an end; the pitch counter and the four-point interpolation, whose table
+of 512 numbers is the chip's own (no formula is known that gives it: a
+Gaussian comes within 320 of 23,000 at best); the envelope with its
+rates, steps and exponential modes; fixed volumes, and sweeps stepped
+as an envelope is; noise and one voice's pitch moved by another, which
+the game never uses (a run counts their samples: none in three fights);
+the reverb, the documented network of two reflections, four combs and
+two all-pass filters at half the rate, with libspu's own settings for
+each mode; the disc's sound mixed in at its volume; the sum held within
+16 bits, then the main volume.
+
+**The music is XA.** Every piece of music and speech the game has is an
+XA stream: eight stereo streams at 37,800 samples a second interleaved
+in a file, one chosen by channel (`cdrom_StartAudio`; its other path,
+CD audio tracks, is never taken: the stream number is a byte and cannot
+be negative, and the disc is one track of data). The drive plays it
+itself on the console. In the port, while a stream plays the drive's
+place moves 150 sectors a second by the sound's clock, each sector that
+passes is read from the image, and if it is sound of the file and
+channel the game chose it is decoded (`xa.c`: four or eight bits, mono
+or stereo, 37,800 or 18,900 a second), brought to 44,100 a second and
+given the drive's four volumes (`CdMix`: 0x80 is all of a side, and the
+game sets 0xFF). The game finds a piece's end by asking where the drive
+is, as before; the drive's place went by blanks at sixty a second
+then, and goes by samples now, which is the console's 59.83.
+
+**What a PC's addresses hid.** `snd_FlushQueue` takes a bank for open
+if its address has the top bit set, which every address of the
+PlayStation's RAM has. The fight's banks are kept among the game's own
+variables (`g_arena`, `g_snd_stage_vab_buffer`), and a PC's addresses
+of those have no such bit: every sound of a fight was dropped, where
+only the menus' sounded (their bank is in the mapped RAM). The stubs
+had hidden it. In the port a sound whose bank is open at such an
+address is started by `snd_StartQueuedSound` (`snd.c`, under
+`RB_PORT`). It is the one such test the game makes; linking the port's
+variables above `0x80000000` would end the whole kind, and is the
+owner's to decide.
+
+**What is not the console's**, and is marked in the files:
+
+- The reverb's way down to half the rate and up again: the chip filters
+  with 39 coefficients; the port averages two samples and draws a line
+  between two answers.
+- XA's way from 37,800 to 44,100: the drive filters with seven tables
+  of 29 coefficients; the port draws a cubic through four samples.
+- The few samples the chip takes to start a voice after its key; a
+  sweep that falls or is turned over; a waveform block that names a
+  sixth filter or more (played with none).
+- A decay's first step: the port asks whether the level is under the
+  sustain level after each sample of the decay, so a sustain level of
+  everything ends the decay before it steps, unless the decay is the
+  fastest. That is one reading of what is written.
+- Not done, because the game uses none: the chip's capture of the disc
+  and two voices into the start of sound memory, the interrupt at an
+  address, the external input, CD audio tracks.
+- The game sets the disc's volume to 0xFF, which is twice, and the
+  fight's loudest moments are then more than 16 bits hold: 0.03% to
+  0.05% of a run's samples are held at the limit. Whether the console
+  clips there as often is for the emulator to say.
+
+**How it is proved.** On every push, by made-up data alone
+(`tests/port/spu.c`, `xa.c`, and their `.py`, which work the answers out
+a second time from the rules as written, not from the port's code):
+blocks of every filter and shift, by hand and by a second decoder; the
+flags, the keys and the ended bits, sample by sample; the interpolation
+against its table, and the table against what such a table must be
+(512 weights that rise smoothly, the four of any place adding up to one
+within a part in 32,000); the envelope's every kind at ten rates and a
+whole envelope on a voice; the mixer's limits; a click through each of
+Sony's nine reverb modes, which comes back, never louder, and dies away;
+XA sectors in each of the format's forms; a straight line through the
+change of rate; the drive's volumes; and the drive's place and the
+sectors it plays (`tests/port/disc.c`). In the three fights the game's
+state is what it was before there was sound: the trace of every watched
+value at every blank is identical, and the fighters' memory at every
+checkpoint differs only in addresses of the same places (the program
+grew) and the words off the stack. The common sound bank's header now
+has the 524 bytes it lacked. The sound itself was looked at by numbers
+(`--wav` and `tools/port_wav.py`: each section's length, peak and RMS,
+the voices started against the sounds the game asked for, blank by
+blank) and as pictures: the menus' sounds at the presses, music in the
+menus and the fight, 102 sounds in a fight of 507 frames, each on a
+voice at the blank it was asked for, and no voice left sounding but the
+one started a blank before the end.
+
+**Not proved:** that it is the console's sound. No emulator was run on
+it. `tests/play/port_sound.toml` is written for that and has not been
+run: it compares what Sony's libraries keep in the PlayStation's RAM
+(the bank's header, where each bank is in sound memory, each voice's
+registers as last set, the keys). Sound memory itself and the chip's
+own registers are not in RAM: `--spu FILE` writes the port's for the
+day the emulator's can be had.
 
 ## The assembly
 
@@ -615,10 +753,11 @@ points below. Stages two and three, the program, by the last three.
   nowhere. The tests run where the retail image and the emulator are,
   and are skipped, saying so, where they are not.
 - **What the comparison found**, and what was done:
-  - *The common sound bank* (3,328 bytes at `0x8010DB00`) differs in
+  - *The common sound bank* (3,328 bytes at `0x8010DB00`) differed in
     524 bytes, all in the words of its header that Sony's
-    `SsVabOpenHeadSticky` fills in as it opens a bank. A stub's answer:
-    stage 6. It is not in the test.
+    `SsVabOpenHeadSticky` fills in as it opens a bank: a stub's answer.
+    Sony's own code fills them in now ("Sound"); the comparison with
+    the emulator is `port_sound`, which has not been run.
   - *The movie's work area* (the 2 KB before the load area) differs:
     only the emulator played a movie. Not in the test.
   - *The fight after its first presses.* With the presses of
@@ -662,6 +801,8 @@ points below. Stages two and three, the program, by the last three.
   clock, the frame's wait and its count of `rand()` calls, a pad's
   packet, events, the primitives' words, `printf`) and
   `tests/port/memory.py` (the fixed addresses).
+- **The sound by made-up waveforms and sectors**, on every push:
+  `tests/port/spu.c` and `xa.c` ("Sound").
 - **`make port` on every push**: the program links with no name
   missing and the port's files have no warning.
 
@@ -695,7 +836,7 @@ Each ends with something that can be shown.
    each held to its listing by the probe. (The two tables of labels at
    the top of `render_asm.c` named the listings; they are behind the
    switch now.)
-2. **A program that links.** Done: `make port`, 141 files, no name
+2. **A program that links.** Done: `make port`, 223 files, no name
    missing ("The program").
 3. **Memory and the disc.** Done: the game's own loaders read the files
    of the boot, the menus and a fight from the image, and the values
@@ -712,6 +853,10 @@ Each ends with something that can be shown.
    proved"). Left of it: the PC's own pads and the PC's own time, which
    come with the window.
 6. **Sound.** The sound chip, Sony's sequencer, the disc's audio.
+   Done into a file ("Sound"): the game's effects and music are in a
+   run's WAV, and the game's state is what it was. Left of it: a sound
+   card (with the window's library), and the comparison with the
+   emulator, which is written and not run.
 7. **The rest.** Movies, the memory card as a file, the link (or
    nothing in its place).
 
@@ -737,17 +882,6 @@ other):
 | | `LoadImage` | 387 |
 | | `SetDispMask`, `ResetGraph`, `ClearImage` | 13, 10, 5 |
 | | `StoreImage`, `MoveImage` | 4, 2 |
-| 6, sound | `SpuGetAllKeysStatus` | 2,443 |
-| | `SsVabClose` | 60 |
-| | `SsUtSetVVol`, `SsUtAllKeyOff` | 48, 47 |
-| | `CdMix` | 40 |
-| | `SpuGetKeyStatus`, `SsUtKeyOnV` | 15 each |
-| | `SsVabOpenHeadSticky`, `SsVabTransBody`, `SsVabTransCompleted`, `SsUtGetVBaddrInSB` | 11 each |
-| | `SsVabFakeHead`, `SsVabFakeBody` | 10 each |
-| | the reverb's three (`SsUtReverbOff`, `SsUtSetReverbType`, `SsUtSetReverbDepth`) | 4 each |
-| | an XA stream started (`CdlReadS`), `SsSetSerialAttr`, `SsSetSerialVol` | 3 each |
-| | `SsInit`, `SsStart`, `SsSetTickMode`, `SsSetReservedVoice`, `SsSetMVol`, `SsSetStereo`, `SsSetAutoKeyOffMode` | 2 each |
-| | `SsEnd`, `SsQuit` | 1 each |
 | 7, the card | `_card_info` | 24 |
 | | `InitCARD`, `StartCARD`, `_bu_init` | 2 each |
 | | `StopCARD` | 1 |
@@ -755,9 +889,8 @@ other):
 
 Not called on that way, and stubs too: the card's files (`open`,
 `close`, `read`, `write`, `firstfile`, `nextfile`, `format`),
-`_card_load`, `_card_clear`, a CD audio track (`CdlPlay`), `SpuRead`,
-`SpuWrite`, `SpuSetTransferStartAddr`, `SpuIsTransferCompleted`,
-`SpuClearReverbWorkArea`, `SsUtReverbOn`, and the link's three.
+`_card_load`, `_card_clear`, a CD audio track (`CdlPlay`), and the
+link's three. Sound has no stub left ("Sound").
 
 **Known, and not done:**
 
@@ -777,7 +910,13 @@ Not called on that way, and stubs too: the card's files (`open`,
   seen.
 - Address 0: two places are given somewhere else to read and write; the
   others, if there are others, are not found.
-- 218 pairs of neighbouring variables are not as far apart as on the
+- The sound has not been compared with the emulator's, and where the
+  hardware's filters are not reproduced it is not the console's to the
+  sample ("Sound"). There is no sound card.
+- An address of the game's own variables has no top bit on a PC. One
+  place tested it and is put right (`snd_FlushQueue`); linking the
+  variables above `0x80000000` would end the kind.
+- 219 pairs of neighbouring variables are not as far apart as on the
   PlayStation. None is known to matter; none has been ruled out one by
   one.
 - `src/port/host_windows.c` has never been compiled.

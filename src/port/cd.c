@@ -18,22 +18,29 @@
  * send, and none for the sectors: fewer than on the console, and always
  * the same number.
  *
- * Sound off the disc is not done: an XA stream or a CD audio track is a
- * stub that is counted. The drive's position still moves while one
- * "plays", at the disc's speed by the port's clock, because the game
- * finds the end of a piece of music by asking where the drive is. */
+ * Sound off the disc (docs/PORT.md, "Sound"): while a stream of XA
+ * sound plays, the drive's position moves at the disc's speed by the
+ * sound's clock, which is the port's clock counted in samples
+ * (port_GetSampleCount), because the game finds the end of a piece of
+ * music by asking where the drive is; and each sector that passes under
+ * the drive, if it is sound of the file and channel the game chose,
+ * goes to the decoder (xa.c). A CD audio track is still a stub that is
+ * counted, and only the position moves: the game's disc has none, and
+ * the game never asks for one. */
 #include "common.h"
 #include "port_disc.h"
+#include "port_spu.h"
 #include "bb2.h"
 
 #define RESULT_BYTES 8
 /* With CdlModeSize1 a sector is handed over from its own position on:
  * 2340 bytes. Without it, the 2048 of its data. */
 #define SIZE1_OFFSET PORT_DISC_SYNC_BYTES
-/* Sectors a second at the drive's two speeds, and vertical blanks a
- * second. */
+/* Sectors a second at the drive's single speed. */
 #define SECTORS_PER_SECOND 75
-#define BLANKS_PER_SECOND 60
+/* A sector's own file and channel, in its subheader. */
+#define SUBHEADER_FILE (PORT_DISC_SYNC_BYTES + PORT_DISC_HEADER_BYTES)
+#define SUBHEADER_CHANNEL (SUBHEADER_FILE + 1)
 /* The answers of CdlGetlocP and CdlGetTN, by byte. */
 #define GETLOCP_TRACK 0
 #define GETLOCP_INDEX 1
@@ -58,10 +65,14 @@ typedef struct {
      * callback */
     s32 reading;
     s32 next_sector;
-    /* sound is "playing" from stream_sector since the blank stream_blank */
+    /* sound is playing from stream_sector since the sample
+     * stream_sample of the sound's clock; if it is an XA stream, the
+     * sectors before next_sound have been given to the decoder */
     s32 streaming;
     s32 stream_sector;
-    u32 stream_blank;
+    u32 stream_sample;
+    s32 stream_is_xa;
+    s32 next_sound;
     /* the sector CdGetSector hands out, and how far it has */
     u8 sector[PORT_DISC_SECTOR_BYTES];
     u32 sector_cursor;
@@ -92,10 +103,10 @@ s32 CdPosToInt(CdlLOC *loc) {
            PORT_DISC_LEAD_IN;
 }
 
-/* Where the drive is now. */
-static s32 port_CdNowAt(void) {
-    u32 blanks;
-    s32 speed;
+/* Where the drive is, or will be `ahead` samples from now. */
+static s32 port_CdAtSample(u32 ahead) {
+    u32 samples;
+    u32 speed;
 
     if (g_port_cd.reading) {
         return g_port_cd.next_sector;
@@ -103,12 +114,17 @@ static s32 port_CdNowAt(void) {
     if (!g_port_cd.streaming) {
         return g_port_cd.position;
     }
-    blanks = port_GetBlankCount() - g_port_cd.stream_blank;
+    samples = port_GetSampleCount() + ahead - g_port_cd.stream_sample;
     speed = (g_port_cd.mode & CdlModeSpeed) ? 2 * SECTORS_PER_SECOND
                                             : SECTORS_PER_SECOND;
+    /* whole seconds apart, so that an hour's samples fit the product */
     return g_port_cd.stream_sector +
-           (s32)(blanks * (u32)speed / BLANKS_PER_SECOND);
+           (s32)(samples / PORT_SPU_RATE * speed +
+                 samples % PORT_SPU_RATE * speed / PORT_SPU_RATE);
 }
+
+/* Where the drive is now. */
+static s32 port_CdNowAt(void) { return port_CdAtSample(0); }
 
 /* ---- commands ---- */
 
@@ -116,13 +132,48 @@ static void port_CdStopMoving(void) {
     g_port_cd.position = port_CdNowAt();
     g_port_cd.reading = 0;
     g_port_cd.streaming = 0;
+    g_port_cd.stream_is_xa = 0;
     g_port_cd.status &= (u8) ~(CdlStatRead | CdlStatPlay | CdlStatSeek);
 }
 
-static void port_CdStartStream(void) {
+static void port_CdStartStream(s32 is_xa) {
     g_port_cd.streaming = 1;
     g_port_cd.stream_sector = g_port_cd.position;
-    g_port_cd.stream_blank = port_GetBlankCount();
+    g_port_cd.stream_sample = port_GetSampleCount();
+    g_port_cd.stream_is_xa = is_xa;
+    g_port_cd.next_sound = g_port_cd.position;
+    if (is_xa) {
+        port_ResetCdAudio();
+    }
+}
+
+/* The drive goes on for `frames` samples (port_spu.h): the sectors of
+ * an XA stream that pass under it in that time go to the decoder, each
+ * if it is sound and, where the mode says to choose, of the file and
+ * channel chosen. One that cannot be read is passed over, as the drive
+ * passes over a sector it cannot make out. */
+void port_PlayDisc(u32 frames) {
+    u8 raw[PORT_DISC_SECTOR_BYTES];
+    s32 end;
+
+    if (!g_port_cd.streaming || !g_port_cd.stream_is_xa ||
+        g_port_cd.disc == NULL) {
+        return;
+    }
+    end = port_CdAtSample(frames);
+    for (; g_port_cd.next_sound < end; g_port_cd.next_sound++) {
+        if (g_port_cd.next_sound < 0 ||
+            port_ReadDiscSector(g_port_cd.disc, (u32)g_port_cd.next_sound,
+                                raw) != PORT_DISC_OK) {
+            continue;
+        }
+        if ((g_port_cd.mode & CdlModeSF) &&
+            (raw[SUBHEADER_FILE] != g_port_cd.filter.file ||
+             raw[SUBHEADER_CHANNEL] != g_port_cd.filter.chan)) {
+            continue;
+        }
+        port_FeedXaSector(raw);
+    }
 }
 
 /* Does a command; the drive's answer is left in g_port_cd.result. Returns
@@ -137,8 +188,12 @@ static s32 port_CdCommand(u8 com, const u8 *argument) {
     switch (com) {
     case CdlNop:
     case CdlStandby:
+        break;
     case CdlMute:
+        port_MuteCdAudio(1);
+        break;
     case CdlDemute:
+        port_MuteCdAudio(0);
         break;
     case CdlSetloc:
         if (argument != NULL) {
@@ -172,9 +227,8 @@ static s32 port_CdCommand(u8 com, const u8 *argument) {
         port_CdStopMoving();
         g_port_cd.status |= CdlStatRead;
         if (g_port_cd.mode & CdlModeRT) {
-            /* the sound chip would be playing these sectors */
-            PORT_STUB("CdControl: an XA stream (CdlReadS, sound)");
-            port_CdStartStream();
+            /* the drive plays these sectors itself (port_PlayDisc) */
+            port_CdStartStream(1);
         } else {
             g_port_cd.reading = 1;
             g_port_cd.next_sector = g_port_cd.position;
@@ -184,7 +238,7 @@ static s32 port_CdCommand(u8 com, const u8 *argument) {
         PORT_STUB("CdControl: a CD audio track (CdlPlay, sound)");
         port_CdStopMoving();
         g_port_cd.status |= CdlStatPlay;
-        port_CdStartStream();
+        port_CdStartStream(0);
         break;
     case CdlPause:
     case CdlStop:
@@ -289,6 +343,8 @@ s32 CdInit(void) {
     g_port_cd.status = CdlStatStandby;
     g_port_cd.result[0] = g_port_cd.status;
     g_port_cd.sync = CdlComplete;
+    port_ResetCdAudio();
+    port_MuteCdAudio(0);
     return 1;
 }
 
@@ -300,8 +356,7 @@ s32 CdSetDebug(s32 level) {
 void CdFlush(void) { g_port_cd.sync = CdlComplete; }
 
 s32 CdMix(CdlATV *vol) {
-    PORT_STUB("CdMix (sound)");
-    (void)vol;
+    port_SetCdMix(vol->val0, vol->val1, vol->val2, vol->val3);
     return 1;
 }
 

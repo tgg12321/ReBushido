@@ -21,6 +21,7 @@
  * the number of lines asked for: 384 calls in a frame of two fields, 128
  * in a frame of one, every frame. */
 #include "common.h"
+#include "port_spu.h"
 #include "bb2.h"
 
 #define COUNTER_MASK 0xFFFF
@@ -53,6 +54,8 @@ static void port_AdvanceClock(u32 line) {
         /* the script's presses first: the pads are read at this blank */
         port_OnBlank(next_blank / PORT_LINES_PER_BLANK);
         port_FillPads();
+        /* the sound library's tick, and a blank's worth of sound */
+        port_RunSoundBlank(next_blank / PORT_LINES_PER_BLANK);
     }
 }
 
@@ -87,10 +90,16 @@ s32 VSync(s32 mode) {
 /* ---- the root counters ---- */
 
 /* Only the counter of scan lines is the port's: the game uses no other.
- * It counts freely, whatever target and mode it is given. */
+ * It counts freely, whatever target and mode it is given. Sony's sound
+ * library sets the counter of vertical blanks up for its tick, which
+ * needs nothing: the blank's interrupt is the port's clock itself
+ * (sound.c). */
 s32 SetRCnt(u32 spec, s32 target, s32 mode) {
     (void)target;
     (void)mode;
+    if (spec == RCntCNT3) {
+        return 1;
+    }
     if (spec != RCntCNT1) {
         PORT_STUB("SetRCnt (a counter other than the scan lines')");
         return 0;
@@ -99,12 +108,15 @@ s32 SetRCnt(u32 spec, s32 target, s32 mode) {
     return 1;
 }
 
-s32 StartRCnt(u32 spec) { return spec == RCntCNT1; }
+s32 StartRCnt(u32 spec) { return spec == RCntCNT1 || spec == RCntCNT3; }
 
 /* The game resets the counter of scan lines once a frame, as the frame
  * begins (main.c, after the wait for the vertical blank): that is where
  * a run's script counts the game's frames (plan.c). */
 s32 ResetRCnt(u32 spec) {
+    if (spec == RCntCNT3) {
+        return 1;
+    }
     if (spec != RCntCNT1) {
         PORT_STUB("ResetRCnt (a counter other than the scan lines')");
         return 0;

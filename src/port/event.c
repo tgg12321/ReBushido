@@ -82,6 +82,17 @@ s32 EnableEvent(s32 event) {
     return 1;
 }
 
+/* Sony's sound library closes its event and then disables it. */
+s32 DisableEvent(s32 event) {
+    PortEvent *found = port_FindEvent(event);
+
+    if (found == NULL) {
+        return 0;
+    }
+    found->enabled = 0;
+    return 1;
+}
+
 s32 TestEvent(s32 event) {
     PortEvent *found = port_FindEvent(event);
 

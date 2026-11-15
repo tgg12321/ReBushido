@@ -68,7 +68,7 @@ STATE = 'tests/play/state.toml'
 # single files of others. Everything else of Sony's is the port's to supply
 # (src/port/). libgte's one file left out patches the console's kernel.
 SONY = 'src/main/psxsdk/'
-SONY_FOLDERS = {'libgte': ('patchgte.c',)}
+SONY_FOLDERS = {'libgte': ('patchgte.c',), 'libsnd': (), 'libspu': ('spu.c',)}
 SONY_FILES = ['libgpu/prim.c', 'libgpu/ext.c', 'libetc/vmode.c', 'libc2/memcpy.c', 'libc2/memmove.c', 'libc2/memchr.c',
               'libc2/strcpy.c', 'libc2/strlen.c', 'libc2/rand.c', 'libc2/ctype.c']
 # Files of src/rebushido/ that are another build's.
@@ -82,6 +82,8 @@ NOT_THE_PORTS = ('quickboot.c',)
 # bytes); frame pointers kept so that a crash can say who called.
 GAME_FLAGS = [f for f in host_tests.COMPILE_FLAGS if f != '-ffunction-sections']
 GAME_FLAGS += ['-malign-data=abi', '-fno-omit-frame-pointer', '-g']
+# Sony's modules include their library's own header by its name alone.
+GAME_FLAGS += ['-I' + SONY + folder for folder in sorted(SONY_FOLDERS)]
 # Each function says when it begins and ends (src/port/plan.c), so that a
 # run's plan can stop at a call of one and list the calls of a frame.
 INSTRUMENT = '-finstrument-functions'

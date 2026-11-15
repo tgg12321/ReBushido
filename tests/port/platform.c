@@ -33,6 +33,14 @@ void port_OnFrame(void) { g_seen_frames++; }
 
 void port_HostWrite(s32 stream, const char *bytes, u32 count) {}
 
+/* The sound's turn at a vertical blank (sound.c), counted. */
+static u32 g_seen_sound_blanks;
+
+void port_RunSoundBlank(u32 blank) {
+    (void)blank;
+    g_seen_sound_blanks++;
+}
+
 void port_Quit(s32 code) {
     test_Count(0, __FILE__, __LINE__, "the port stopped itself (%d)", code);
     for (;;) {
@@ -125,6 +133,15 @@ static void test_Clock(void) {
 
     /* every blank was told to the rest of the port, once, in order */
     CHECK_EQ(g_seen_blanks, port_GetBlankCount());
+    /* and the sound had its turn at every one */
+    CHECK_EQ(g_seen_sound_blanks, port_GetBlankCount());
+    /* the counter of vertical blanks, which Sony's sound library sets up
+     * for its tick, is taken and is not the game's frame */
+    before = port_GetBlankCount();
+    CHECK_EQ(SetRCnt(RCntCNT3, 1, 0x1000), 1);
+    CHECK_EQ(ResetRCnt(RCntCNT3), 1);
+    CHECK_EQ(StartRCnt(RCntCNT3), 1);
+    CHECK_EQ(port_GetBlankCount(), before);
     /* a frame of the game for each reset of the scan lines' counter */
     CHECK_EQ(g_seen_frames, 17);
     CHECK_EQ(g_seen_out_of_order, 0);

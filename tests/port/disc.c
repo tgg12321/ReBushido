@@ -9,6 +9,7 @@
 #include <psxsdk/libcd.h>
 #include "src/port/disc.c"
 #include "src/port/cd.c"
+#include "src/port/xa.c"
 #include "src/port/text.c"
 #include "src/port/stub.c"
 #include "runtime/runtime.h"
@@ -126,9 +127,11 @@ void port_Quit(s32 code) {
     }
 }
 
-static u32 g_made_blank;
+/* The sound's clock, which the drive goes by while it plays (sound.c):
+ * here the test moves it. */
+static u32 g_made_samples;
 
-u32 port_GetBlankCount(void) { return g_made_blank; }
+u32 port_GetSampleCount(void) { return g_made_samples; }
 
 /* ---- the reader ---- */
 
@@ -382,23 +385,91 @@ static void test_Drive(void) {
     }
     CHECK_EQ(wrong, 0);
 
-    /* sound "playing": the drive's place moves with the clock, 150
-     * sectors a second at double speed, and stops where it is paused */
+    /* sound playing: the drive's place moves with the sound's clock,
+     * 150 sectors a second at double speed (44,100 samples), and stops
+     * where it is paused */
     result[0] = CdlModeSpeed | CdlModeRT | CdlModeSF;
     CdControlF(CdlSetmode, result);
     CdIntToPos(1000, &loc);
     CdControlF(CdlSetloc, (u8 *)&loc);
     CdControlF(CdlReadS, NULL);
-    g_made_blank += 60;
+    g_made_samples += 44100;
     CdControlF(CdlGetlocP, NULL);
     CHECK_EQ(CdSync(1, result), CdlComplete);
     CHECK_EQ(CdPosToInt((CdlLOC *)&result[5]), 1150);
-    g_made_blank += 2;
+    /* a thirtieth of a second: five sectors */
+    g_made_samples += 1470;
     CdControlF(CdlPause, NULL);
-    g_made_blank += 600;
+    g_made_samples += 441000;
     CdControlF(CdlGetlocP, NULL);
     CdSync(1, result);
     CHECK_EQ(CdPosToInt((CdlLOC *)&result[5]), 1155);
+    /* an hour on, at single speed: 75 sectors a second */
+    result[0] = CdlModeRT;
+    CdControlF(CdlSetmode, result);
+    CdIntToPos(0, &loc);
+    CdControlF(CdlSetloc, (u8 *)&loc);
+    CdControlF(CdlReadS, NULL);
+    g_made_samples += 3600U * 44100U;
+    CdControlF(CdlGetlocP, NULL);
+    CdSync(1, result);
+    CHECK_EQ(CdPosToInt((CdlLOC *)&result[5]), 3600 * 75);
+    CdControlF(CdlPause, NULL);
+
+    /* the sectors that pass under the drive while it plays go to the
+     * decoder if they are sound of the file and channel chosen: the
+     * image has one sector of sound, MADE_FORM2, of file 1, channel 0 */
+    {
+        CdlFILTER filter;
+        u32 before = port_GetXaSectorCount();
+
+        result[0] = CdlModeSpeed | CdlModeRT | CdlModeSF;
+        CdControlF(CdlSetmode, result);
+        filter.file = 1;
+        filter.chan = 0;
+        CdControlB(CdlSetfilter, (u8 *)&filter, NULL);
+        CdIntToPos(MADE_FORM2 - 2, &loc);
+        CdControlF(CdlSetloc, (u8 *)&loc);
+        CdControlF(CdlReadS, NULL);
+        /* 294 samples are a sector at double speed: two sectors pass,
+         * neither of them sound */
+        port_PlayDisc(2 * 294);
+        CHECK_EQ(port_GetXaSectorCount(), before);
+        g_made_samples += 2 * 294;
+        /* the next is the sector of sound, and is taken once */
+        port_PlayDisc(294);
+        CHECK_EQ(port_GetXaSectorCount(), before + 1);
+        g_made_samples += 294;
+        port_PlayDisc(294);
+        CHECK_EQ(port_GetXaSectorCount(), before + 1);
+        /* its 4032 samples of one channel wait to be played */
+        CHECK_EQ(g_port_xa.queue_count, 18 * 8 * 28);
+        /* a new stream forgets them; with another channel chosen the
+         * sector is passed over */
+        filter.chan = 5;
+        CdControlB(CdlSetfilter, (u8 *)&filter, NULL);
+        CdIntToPos(MADE_FORM2, &loc);
+        CdControlF(CdlSetloc, (u8 *)&loc);
+        CdControlF(CdlReadS, NULL);
+        CHECK_EQ(g_port_xa.queue_count, 0);
+        port_PlayDisc(3 * 294);
+        CHECK_EQ(port_GetXaSectorCount(), before + 1);
+        /* and with no choosing asked for, it is played whatever it is */
+        result[0] = CdlModeSpeed | CdlModeRT;
+        CdControlF(CdlSetmode, result);
+        CdControlF(CdlSetloc, (u8 *)&loc);
+        CdControlF(CdlReadS, NULL);
+        port_PlayDisc(294);
+        CHECK_EQ(port_GetXaSectorCount(), before + 2);
+        /* past the end of the image nothing is played, and nothing
+         * stops */
+        CdIntToPos(MADE_SECTORS - 1, &loc);
+        CdControlF(CdlSetloc, (u8 *)&loc);
+        CdControlF(CdlReadS, NULL);
+        port_PlayDisc(10 * 294);
+        CHECK_EQ(port_GetXaSectorCount(), before + 2);
+        CdControlF(CdlPause, NULL);
+    }
     port_InsertDisc(NULL);
 }
 

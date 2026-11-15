@@ -556,6 +556,41 @@ s32 snd_Play(s32 sound, s32 right, s32 left) {
     }
 }
 
+#if RB_PORT
+/* (The native port.) Starts queued sound `i` on the first voice from
+ * `next_voice` on that is not playing, as snd_FlushQueue below does for a
+ * sound whose bank it takes for open, and returns the voice the next
+ * sound's search begins at. snd_FlushQueue takes a bank for open if its
+ * address has the top bit set, which every address of the PlayStation's
+ * RAM has. The fight's banks are kept among the game's own variables (the
+ * arena, the stage's buffer), and on a PC those have addresses without
+ * that bit: every sound of a fight was dropped. So a sound whose bank is
+ * open and is at such an address is started here (docs/PORT.md,
+ * "Sound"). */
+static s16 snd_StartQueuedSound(s16 i, s16 next_voice) {
+    SoundDef *def = g_snd_queue[i].sound;
+    u16 vab = def->vab;
+    u32 *key_on;
+    s16 voice;
+
+    for (voice = next_voice; voice < SND_VOICE_COUNT; voice++) {
+        if (SpuGetKeyStatus(1 << voice) != SPU_ON) {
+            if (vab == SND_VAB_CLASS_2 &&
+                g_snd_vabs[SND_VAB_CLASS_2] == g_snd_vabs[SND_VAB_CLASS_1]) {
+                vab = SND_VAB_CLASS_1;
+            }
+            key_on = &((u32 *)g_snd_vabs[vab]->key_on_table)[def->key];
+            SsUtKeyOnV(
+                voice, vab, KEY_ON_PROGRAM(*key_on), KEY_ON_TONE(*key_on),
+                KEY_ON_NOTE(*key_on), KEY_ON_FINE(*key_on), g_snd_queue[i].left,
+                g_snd_queue[i].right);
+            return voice + 1;
+        }
+    }
+    return next_voice;
+}
+#endif
+
 /* Starts each queued sound whose bank is loaded on the next voice that is
  * not playing, and empties the queue. A sound that finds no free voice is
  * dropped. */
@@ -572,6 +607,14 @@ void snd_FlushQueue(void) {
     next_voice = 0;
     for (i = 0; i < SND_QUEUE_SIZE; i++) {
         def = g_snd_queue[i].sound;
+#if RB_PORT
+        /* (a bank that is open at a PC's address, which the test below
+         * does not take for open: snd_StartQueuedSound) */
+        if (def && g_snd_vabs[def->vab] != NULL &&
+            (s32)g_snd_vabs[def->vab] >= 0) {
+            next_voice = snd_StartQueuedSound(i, next_voice);
+        }
+#endif
         /* a bank that is open: its address in RAM has the top bit set, and
          * the original tests the sign */
         if (def && (s32)g_snd_vabs[def->vab] < 0) {
