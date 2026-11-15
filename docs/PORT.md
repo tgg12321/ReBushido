@@ -24,7 +24,11 @@ registers in one; what is heard is compared only in part. The window is
 held to the build without one, by numbers, on Linux and on Windows
 ("The window"). Stages 1 to 3 of the seven below are done; stages 4 and
 5 as far as a machine can tell; and of stage 6 everything but the
-comparison of what is heard.
+comparison of what is heard. Beyond the seven, the first step of the
+roadmap's item 7: the scene drawn again by a graphics card at the
+window's resolution, from the geometry the PlayStation threw away,
+which is what "Graphics: Remastered" means ("Remastered") — done and
+proved with nothing shown, and not yet hung on the window.
 
 ## Where it stands
 
@@ -41,6 +45,7 @@ comparison of what is heard.
 | A fight | done, by a script's pads: three whole fights are the emulator's, frame for frame ("How it is proved") |
 | The picture | done, into the port's own video memory and out to files: `src/port/raster.c`, the PlayStation's GPU in C. The flat screens are the emulator's to the pixel, a fight's frames but for three pixels in a thousand ("The picture") |
 | A window, a sound card, the PC's keys and controllers | built on SDL 2 for Linux and for Windows (`make port-sdl`, `make port-sdl-windows`) and held to the build without a window by numbers: the same traces, pictures and samples. **Not yet seen or heard by anyone** ("The window") |
+| "Graphics: Remastered" | the scene drawn again by a graphics card at the window's resolution, from the geometry the PlayStation threw away: OpenGL 3.3 core, high resolution, sub-pixel corners, textures in perspective, true-colour mixing, the 2D layer crisp. Done and proved with nothing shown, against the software GPU's own picture; not yet hung on the window ("Remastered") |
 | The memory card, movies | not begun |
 
 ## The switch
