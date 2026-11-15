@@ -108,8 +108,9 @@ Never edit `bb2.ld` for ReBushido. `src/rebushido/` holds ReBushido's own files 
 
 ## The gates
 
-GitHub Actions runs seven checks on every push (`.github/workflows/build.yml`), and
-`wsl bash tools/build.sh checks` (`make checks`) runs the same seven locally and prints a summary
+GitHub Actions runs eleven checks on every push to `main` (seven on `decomp`;
+`.github/workflows/build.yml`), and
+`wsl bash tools/build.sh checks` (`make checks`) runs the same ones locally and prints a summary
 (`BUILD.md`, "What is checked"). `tools/checks.sh` and the workflow hold the same list: change both
 together.
 

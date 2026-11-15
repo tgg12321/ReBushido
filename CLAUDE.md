@@ -67,9 +67,9 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   where the order an expression is evaluated in may matter is fixed under
   `RB_PORT` (the call first) or added to `config/port_order.txt` with its
   reason (`--update`).
-- Port against emulator: five play tests (`port_game`,
-  `port_other_fight`, `port_bugfixes`, `port_picture`, `port_sound`); to
-  find a divergence,
+- Port against emulator: seven play tests (`port_game`,
+  `port_other_fight`, `port_bugfixes`, `port_picture`, `port_sound`,
+  `port_card`, `port_movie`); to find a divergence,
   `tests/play/README.md`, "Finding where two runs part"
   (`tools/port_compare.py`). In a fight, time presses and checkpoints in
   game frames (`72f`, `frames =`), not blanks. The play tests take about
@@ -90,6 +90,16 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy`: no visible window, sound
   or dialog. Never install `gcc-multilib` in the build's WSL: it removes
   the MIPS cross compiler.
+- Where the original reads or writes through a pointer it never set
+  (address 0), the port's code is under `RB_PORT` with the console's
+  value explained in a comment; the table is in `docs/PORT.md`,
+  "Memory".
+- To drive a mode of the game on the port with no emulator: run both
+  sizes with the same `--plan` and `--no-cards` and compare the traces.
+  On Windows capture a program's output with `pwsh`, not Windows
+  PowerShell 5.1, whose `>` rewrites the bytes as UTF-16.
+- `tools/lint.py` and `tools/count.py` read `src/port/*.c`, not
+  `src/port/window/`.
 - New agents are Opus, in parallel, each in its own worktree; only one
   agent at a time may run the emulator (the play tests have no lock).
 - The owner's choices for the port: 64 bits, SDL 2, the
