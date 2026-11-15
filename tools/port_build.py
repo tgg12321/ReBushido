@@ -13,6 +13,10 @@ game's own C with the port's switch on (RB_PORT, include/rebushido.h):
   - Sony's library code only where it is plain arithmetic on memory
     (SONY_FOLDERS and SONY_FILES below; the rule is in docs/PORT.md,
     "Sony's libraries in the port");
+  - the movie player, which on the console is a second PlayStation
+    program: the C of movovl/ that is plain C over memory (MOVOVL_FILES;
+    docs/PORT.md, "The movie"), with two names changed on the command
+    line so that they do not clash with the game's;
   - src/port/: the GTE, the platform layer (every other function of Sony's
     and of the BIOS the game calls), memory, the disc image's reader.
 
@@ -74,6 +78,35 @@ SONY_FILES = ['libgpu/prim.c', 'libgpu/ext.c', 'libetc/vmode.c', 'libc2/memcpy.c
 # Files of src/rebushido/ that are another build's.
 NOT_THE_PORTS = ('quickboot.c',)
 
+# The movie player (docs/PORT.md, "The movie"). The overlay is a second
+# PlayStation program with its own main and its own copies of 43 of Sony's
+# library modules; the port compiles the files of it that are plain C over
+# memory, as it does the rest of Sony's code, and supplies what talks to the
+# console (src/port/mdec.c, stream.c). Its own main is compiled under
+# another name, because the game's main is in the same program; nothing else
+# of it clashes with a name of the game's.
+MOVOVL_FILES = [
+    ('movovl/src/main.c', ['-Dmain=port_MovieOverlayMain']),
+    ('movovl/src/movie.c', []),
+    # libcd's streaming half, less the two modules that talk to the drive
+    # (c_003 clears its registers, c_011 takes a sector in by the DMA).
+    # StGetNext is compiled under another name: the port's waits on the
+    # drive around it (src/port/stream.c).
+    ('movovl/sdk/libcd/c_002.c', []),
+    ('movovl/sdk/libcd/c_004.c', []),
+    ('movovl/sdk/libcd/c_005.c', []),
+    ('movovl/sdk/libcd/c_007.c', []),
+    ('movovl/sdk/libcd/c_008.c', []),
+    ('movovl/sdk/libcd/c_009.c', ['-DStGetNext=port_StGetNextRing']),
+    ('movovl/sdk/libcd/c_010.c', []),
+    ('movovl/sdk/libcd/cdread2.c', []),
+    ('movovl/sdk/libcd/cdrom.c', []),
+    # libetc's older pad interface, over the BIOS's reader (src/port/pad.c).
+    ('movovl/sdk/libetc/pad.c', []),
+]
+# What those files include by name.
+MOVOVL_INCLUDES = ['-Imovovl/include', '-Imovovl/sdk/libcd']
+
 # As tests/run.py compiles the game, and then: no section of its own for a
 # function (nothing is dropped at the link: every name the game's code uses
 # has to be there), but one for each variable, which the link puts in the
@@ -131,15 +164,16 @@ HOST_PROBE = 'void _start(void) { for (;;) { } }\n'
 
 
 def sources():
-    """(path, the port's own) for each file of the program."""
-    out = [('src/main/' + f, False) for f in sorted(os.listdir('src/main')) if f.endswith('.c')]
-    out += [('src/rebushido/' + f, False) for f in sorted(os.listdir('src/rebushido'))
+    """(path, the port's own, flags of its own) for each file of the program."""
+    out = [('src/main/' + f, False, []) for f in sorted(os.listdir('src/main')) if f.endswith('.c')]
+    out += [('src/rebushido/' + f, False, []) for f in sorted(os.listdir('src/rebushido'))
             if f.endswith('.c') and f not in NOT_THE_PORTS]
     for folder in sorted(SONY_FOLDERS):
-        out += [(SONY + folder + '/' + f, False) for f in sorted(os.listdir(SONY + folder))
+        out += [(SONY + folder + '/' + f, False, []) for f in sorted(os.listdir(SONY + folder))
                 if f.endswith('.c') and f not in SONY_FOLDERS[folder]]
-    out += [(SONY + f, False) for f in SONY_FILES]
-    out += [('src/port/' + f, True) for f in sorted(os.listdir('src/port')) if f.endswith('.c')]
+    out += [(SONY + f, False, []) for f in SONY_FILES]
+    out += [(path, False, flags) for path, flags in MOVOVL_FILES]
+    out += [('src/port/' + f, True, []) for f in sorted(os.listdir('src/port')) if f.endswith('.c')]
     return out
 
 
@@ -200,7 +234,7 @@ def newest_input(obj):
 
 
 def compile_one(job):
-    path, own, flags, stamp = job
+    path, own, mine, flags, stamp = job
     obj = object_of(path)
     if os.path.exists(obj):
         newest = newest_input(obj)
@@ -212,6 +246,7 @@ def compile_one(job):
         flags = [f for f in flags if f != '-w'] + PORT_WARNINGS
     else:
         flags = flags + [INSTRUMENT]
+    flags = flags + mine
     cmd = ['gcc'] + flags + ['-MD', '-MF', obj[:-2] + '.d', '-x', 'c', '-c', '-', '-o', obj]
     proc = subprocess.run(cmd, input=modern.modern_source(path), capture_output=True, text=True,
                           env=environment(), encoding='utf-8', errors='replace')
@@ -321,7 +356,7 @@ def main():
     os.chdir(ROOT)
     args = sys.argv[1:]
     if '--list' in args:
-        for path, own in sources():
+        for path, own, mine in sources():
             print(path)
         return 0
     problem = check_host()
@@ -337,7 +372,8 @@ def main():
     host_tests.OUT_DIR = OUT_DIR
     host_tests.write_headers(True)
 
-    flags = GAME_FLAGS + host_tests.include_flags(True) + modern.DEFS + host_tests.REBUSHIDO_DEFS
+    flags = (GAME_FLAGS + host_tests.include_flags(True) + modern.DEFS + host_tests.REBUSHIDO_DEFS
+             + MOVOVL_INCLUDES)
     flags += ['-DRB_GIT_HASH="%s"' % git_hash()]
     # a change to how it is built builds everything again
     stamp = max(os.path.getmtime(p) for p in (__file__, 'tests/run.py', 'tools/modern/check.py',
@@ -351,7 +387,7 @@ def main():
         if os.path.exists(version):
             os.remove(version)
 
-    jobs = [(path, own, flags, stamp) for path, own in sources()]
+    jobs = [(path, own, mine, flags, stamp) for path, own, mine in sources()]
     objects, failed, built = [], 0, 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
         for path, obj, compiled, messages in pool.map(compile_one, jobs):

@@ -1,0 +1,155 @@
+about = "The opening movie on the native port against the emulator: the picture it leaves on show, the sound chip while it plays, and the game's state when it is over. NOT YET RUN."
+
+# ---- not yet run ----
+#
+# This test was written with the movie (docs/PORT.md, "The movie") and has
+# never been run: the emulator and the retail image are the owner's. Three
+# things in it are measurements, not yet numbers, and whoever runs it first
+# fills them in:
+#
+#   - `vram_differ` at `still_vram`: how many of the 524,288 pixels of
+#     video memory differ there. It will be a large number and that is
+#     expected: the two display buffers hold the last movie frame each
+#     program decoded, and the two are not at the same frame of the movie
+#     (below). What must be 0 is the *picture*, the displayed rectangle,
+#     which at that moment is the title picture and not the movie: that is
+#     what `compare` names `picture` for;
+#   - whether the sound chip's registers are the same while the movie
+#     plays (`spu = true` at the three checkpoints during it). The port
+#     has them as the game and Sony's libraries left them, and with those
+#     the disc's sound is not mixed in at all: `snd_Quit` runs before the
+#     player starts, `SsInit`'s SpuInit has cleared the chip's CD volume
+#     (`_spu_init`, src/main/psxsdk/libspu/spu.c), and nothing turns it on
+#     again before the main menu (`snd_EnableCdAudio`, src/main/cdrom.c).
+#     So the port's movie has a picture and no sound. If the emulator's
+#     chip has a CD volume there, the port is wrong somewhere and this
+#     test says where;
+#   - `within` at `menu`, which depends on how long the emulator's movie
+#     takes.
+#
+# **The two are not at the same frame of the movie.** Both read the stream
+# at the disc's own speed, 150 sectors a second, so both play it at the
+# same rate (29.97 frames a second: 5.0054 sectors a frame); but the
+# emulator loads MOVOVL.EXE and TITLE.TIM off the disc before the stream
+# starts and the port loads them in no time, so the emulator is some
+# blanks behind from the first frame on. The checkpoints below are
+# therefore at blanks where *both* are showing the title picture, which is
+# a file and not a decoded frame, and nowhere else.
+#
+# **A frame of the movie, pixel for pixel**, is the comparison this test
+# cannot make and that is worth making by hand once: run the port with
+# `--shots` and take the emulator's picture at the same *movie frame*
+# (which is in the stream's own sector headers), and compare them. What to
+# expect, and why: the port's chip is the MDEC written from what is
+# published of it (src/port/mdec.c). Two things in it are not known to the
+# bit -- which way the inverse cosine transform rounds a negative sum, and
+# the fixed-point constants of the step from brightness and colour
+# difference to red, green and blue -- so a pixel may come out one step
+# away from the emulator's in a channel. Expect: no pixel more than 2 away
+# in any of red, green and blue, at least nine in ten of the 76,800 within
+# 1, and no run of neighbouring pixels far apart. A whole block or
+# macroblock in the wrong place, a colour cast over the frame, or a seam
+# between two 16-pixel strips is not rounding: it is a fault.
+
+discs = ["rebushido", "port"]
+# The port has no memory card yet, so neither has the emulator.
+cards = "none"
+limit = 20000
+seconds = 900
+
+# Start on the options page with nothing changed, then nothing at all
+# until the movie has played itself out: no cross, so it runs to its end
+# frame, holds the title picture and fades it. Then the memory card's
+# message, and the top menu.
+#
+# (The cross button *skipping* the movie is already held to the emulator
+# by port_game, port_picture and port_bugfixes, which all press it at
+# movie+600 and compare every watched value from the menu on.)
+input = [
+    "page+30 START",
+    "ended+120 START",
+]
+
+# Every value of state.toml that both programs have, the picture on show
+# at the checkpoints that take one, and the sound chip's registers and
+# memory at the checkpoints that say `spu`. `frames`, the count of frames
+# shown since power on, is left out: the port loads in no time, so it is
+# not at the same number (docs/PORT.md, "How it is proved").
+compare = [
+    "screen", "screen_frames", "menu_page", "rng", "mode", "stage",
+    "rb_page", "rb_row", "rb_card", "rb_save", "rb_bugfixes", "rb_graphics",
+    "picture", "spu",
+]
+
+# The options page is up and has found no card.
+[[checkpoint]]
+name = "page"
+when = "rb_page == RB_PAGE_UP"
+within = 2000
+shot = false
+expect = ["rb_card == RB_CARD_NONE", "rb_bugfixes == 0"]
+
+# The game has handed the machine to the movie player.
+[[checkpoint]]
+name = "movie"
+when = "screen == SCREEN_MOVIE"
+within = 1000
+shot = false
+
+# Two seconds in: the player has set the display to 24-bit colour and the
+# first frames are being decoded. No picture is compared here (the two are
+# at different frames of the movie); the sound chip is.
+[[checkpoint]]
+name = "movie_2s"
+after = 120
+shot = false
+spu = true
+
+# A minute in, in the middle of the movie.
+[[checkpoint]]
+name = "movie_60s"
+after = 3480
+shot = false
+spu = true
+
+# The title picture has been on show for some seconds and is held for ten
+# in all, while the movie goes on decoding unseen for its sound. The
+# displayed rectangle here is the picture the player read off the disc
+# (STR/TITLE.TIM) and put in video memory at x 480, not a decoded frame,
+# so it is the same on both to the pixel. This checkpoint is 6,500 blanks
+# after `movie` (a checkpoint's `after` counts from the one before it):
+# the port shows the still from +5,630 and holds it to +7,270, and the
+# emulator is behind by the time it takes to load the player and the
+# picture, which has to be under 870 blanks for this to fall inside both.
+[[checkpoint]]
+name = "still"
+after = 2900
+shot = true
+spu = true
+
+# The same moment, with all of video memory: the count is a measurement,
+# because the two display buffers hold different frames of the movie.
+[[checkpoint]]
+name = "still_vram"
+after = 2
+shot = false
+vram = true
+vram_differ = 0
+
+# The movie is over: the player faded the title picture out and returned,
+# and the game has set itself up again and gone to the menu. From here on
+# the two are at the same place in the game again.
+[[checkpoint]]
+name = "ended"
+when = "screen == SCREEN_MENU_UPDATE"
+within = 4000
+at_frame = true
+shot = false
+
+# The memory card's message is dismissed and the top menu is up: the same
+# picture on both, as port_picture has it after a skipped movie.
+[[checkpoint]]
+name = "menu"
+when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && screen_frames >= 120"
+within = 3000
+expect = ["frame_period == 1"]

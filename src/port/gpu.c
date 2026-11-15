@@ -284,6 +284,18 @@ static const u32 *port_FollowLink(u32 link) {
     return found;
 }
 
+/* Draws one primitive: its words after the first go to the GPU, and its
+ * link is not followed. */
+void DrawPrim(void *first) {
+    const u32 *prim = first;
+    u32 length = prim[0] >> LINK_LENGTH_SHIFT;
+    u32 i;
+
+    for (i = 1; i <= length; i++) {
+        port_WriteGp0(prim[i]);
+    }
+}
+
 /* Draws a list of primitives: each one's words after the first go to
  * the GPU, and its link names the next. */
 void DrawOTag(u32 *first) {

@@ -29,20 +29,6 @@ s32 ResetCallback(void) { return 0; }
 
 s32 StopCallback(void) { return 0; }
 
-/* ---- running another program: the movie ---- */
-
-/* The game runs the movie player, a second PlayStation program it has
- * just read from the disc, and goes on when that returns. The port will
- * play the movie itself here (stage 7); until then there is no movie,
- * and the game goes on at once. */
-s32 Exec(struct EXEC *exec, s32 argc, char **argv) {
-    PORT_STUB("Exec (the movie player: no movie)");
-    (void)exec;
-    (void)argc;
-    (void)argv;
-    return 1;
-}
-
 /* ---- the link cable: nothing at the other end ---- */
 
 void AddCOMB(void) { PORT_STUB("AddCOMB (link cable)"); }

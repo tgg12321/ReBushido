@@ -100,7 +100,11 @@ def write_headers(rebushido=False):
 
 def include_flags(rebushido=False):
     port = ['-I' + port_gte_macros.OUT_DIR] if rebushido else []
-    return port + ['-I' + OUT_DIR + '/include', '-I' + modern.OUT_DIR + '/include', '-Iinclude', '-Itests', '-I.']
+    # the movie player's own headers: the port compiles its C (docs/PORT.md,
+    # "The movie"), and tests/port/mdec.c runs it
+    movovl = ['-Imovovl/include', '-Imovovl/sdk/libcd']
+    return (port + ['-I' + OUT_DIR + '/include', '-I' + modern.OUT_DIR + '/include', '-Iinclude', '-Itests', '-I.']
+            + movovl)
 
 
 def test_names(rebushido=False):

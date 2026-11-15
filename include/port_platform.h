@@ -131,8 +131,13 @@ extern s32 port_IsMapped(u32 address, u32 count);
  * game waits (VSync) or looks at its counter (GetRCnt); a vertical blank
  * comes every PORT_LINES_PER_BLANK of them. */
 #define PORT_LINES_PER_BLANK 263
-/* Vertical blanks since the program started. */
+/* Vertical blanks since the program started, and scan lines. */
 extern u32 port_GetBlankCount(void);
+extern u32 port_GetLineCount(void);
+/* Moves the clock on one scan line, running a vertical blank if one
+ * falls there: for a wait that is not the game's own VSync (the movie's
+ * wait on the drive, src/port/stream.c). */
+extern void port_WaitOneLine(void);
 
 /* ---- the pads (src/port/pad.c) ---- */
 

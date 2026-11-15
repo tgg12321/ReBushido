@@ -29,6 +29,7 @@
  * the game never asks for one. */
 #include "common.h"
 #include "port_disc.h"
+#include "port_movie.h"
 #include "port_spu.h"
 #include "bb2.h"
 
@@ -85,6 +86,16 @@ static PortCd g_port_cd;
 
 void port_InsertDisc(struct PortDisc *disc) { g_port_cd.disc = disc; }
 
+/* A raw sector of the disc in the drive (port_movie.h): what the movie's
+ * stream reads as each sector passes under the head. */
+s32 port_DriveReadSector(s32 sector, u8 *raw) {
+    if (g_port_cd.disc == NULL || sector < 0) {
+        return 0;
+    }
+    return port_ReadDiscSector(g_port_cd.disc, (u32)sector, raw) ==
+           PORT_DISC_OK;
+}
+
 /* ---- positions ---- */
 
 CdlLOC *CdIntToPos(s32 sector, CdlLOC *loc) {
@@ -133,6 +144,7 @@ static void port_CdStopMoving(void) {
     g_port_cd.reading = 0;
     g_port_cd.streaming = 0;
     g_port_cd.stream_is_xa = 0;
+    port_StopDiscStream();
     g_port_cd.status &= (u8) ~(CdlStatRead | CdlStatPlay | CdlStatSeek);
 }
 
@@ -156,6 +168,11 @@ void port_PlayDisc(u32 frames) {
     u8 raw[PORT_DISC_SECTOR_BYTES];
     s32 end;
 
+    /* a movie's stream turns the drive itself, by the scan line the
+     * clock has reached, and takes the picture as well as the sound */
+    if (port_PumpStream()) {
+        return;
+    }
     if (!g_port_cd.streaming || !g_port_cd.stream_is_xa ||
         g_port_cd.disc == NULL) {
         return;
@@ -226,7 +243,14 @@ static s32 port_CdCommand(u8 com, const u8 *argument) {
     case CdlReadS:
         port_CdStopMoving();
         g_port_cd.status |= CdlStatRead;
-        if (g_port_cd.mode & CdlModeRT) {
+        if (port_StreamArmed()) {
+            /* a movie: its sectors pass under the head at the disc's
+             * own speed, the picture into the streaming library's ring
+             * and the sound to the drive's decoder (stream.c) */
+            port_CdStartStream(1);
+            port_StartDiscStream(
+                g_port_cd.position, (g_port_cd.mode & CdlModeSpeed) != 0);
+        } else if (g_port_cd.mode & CdlModeRT) {
             /* the drive plays these sectors itself (port_PlayDisc) */
             port_CdStartStream(1);
         } else {
@@ -343,6 +367,10 @@ s32 CdInit(void) {
     g_port_cd.status = CdlStatStandby;
     g_port_cd.result[0] = g_port_cd.status;
     g_port_cd.sync = CdlComplete;
+    /* Sony's takes the library's callbacks off the drive as well, which
+     * is what ends a stream the movie player left running when the
+     * cross button skipped it (stream.c). */
+    CdDataCallback(NULL);
     port_ResetCdAudio();
     port_MuteCdAudio(0);
     return 1;

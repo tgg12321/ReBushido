@@ -6,6 +6,7 @@
  * a run's script (plan.c): two digital pads, always plugged in. The
  * PC's keyboard and controllers are stage 5 of docs/PORT.md. */
 #include "common.h"
+#include "port_movie.h"
 #include "bb2.h"
 
 /* A pad's packet: a status byte (0 when the pad answered, 0xFF before
@@ -86,3 +87,28 @@ void StopPAD(void) { g_port_pads_started = 0; }
 /* Whether the pad driver or the game answers the vertical blank's
  * interrupt: the port has no interrupts. */
 void ChangeClearPAD(s32 clear) { (void)clear; }
+
+/* ---- the older interface, which the movie player uses ---- */
+
+/* The BIOS's own pad reader, under Sony's libetc (movovl/sdk/libetc/
+ * pad.c): PAD_init is given one word to keep both pads' buttons in, a
+ * bit clear for each button held, the first pad in the low half and the
+ * second in the high, and PAD_dr fills it in. The movie player asks for
+ * it each time round its loop (movovl/src/main.c), which is where the
+ * cross button skips the movie. */
+static s32 *g_port_pad_word;
+
+void PAD_init(s32 type, s32 *buf) {
+    (void)type;
+    g_port_pad_word = buf;
+    if (buf != NULL) {
+        *buf = -1;
+    }
+}
+
+void PAD_dr(void) {
+    if (g_port_pad_word != NULL) {
+        *g_port_pad_word = (s32)~((g_port_pad_held[0] & 0xFFFF) |
+                                  (g_port_pad_held[1] << 16));
+    }
+}
