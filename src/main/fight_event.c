@@ -97,6 +97,26 @@ void fighter_ReadMarks(Fighter *fighter) {
 #define SND_PAN_NEAR_RANGE 30000
 #define SND_PAN_FAR_RANGE 10000
 
+/* The view a sound is heard from. As a story fight begins the henchman's
+ * shout is placed before a camera has been chosen (story_HenchmanShout,
+ * fight.c), and the original reads the view through a pointer that is
+ * still NULL: on the console that is address 0, where the kernel's
+ * memory is zeroes as far as the words read here -- the eye at 0x20 and
+ * the heading at 0x12 -- which was read out of the emulator. A PC has no
+ * memory at address 0, so the port reads the zeroes it keeps for such a
+ * place (docs/PORT.md, "Memory"). On the PlayStation this is
+ * `g_camera_current` and nothing else. */
+#if RB_PORT
+static const CameraView *snd_Listener(void) {
+    return g_camera_current != NULL ? g_camera_current
+                                    : (const CameraView *)g_port_low_memory;
+}
+
+#define SND_LISTENER snd_Listener()
+#else
+#define SND_LISTENER g_camera_current
+#endif
+
 /* Plays a sound as heard from the camera. The volume falls with distance
  * (the distance is a table square root; past the table it is scaled by the
  * number's leading zeros). The camera's heading gives how far to one side
@@ -113,9 +133,9 @@ void snd_PlayAt(s32 sound, s32 *position) {
     s32 right_volume;
     s32 left_volume;
 
-    dx = g_camera_current->eye.x - position[0];
-    dy = g_camera_current->eye.y - position[1];
-    dz = g_camera_current->eye.z - position[2];
+    dx = SND_LISTENER->eye.x - position[0];
+    dy = SND_LISTENER->eye.y - position[1];
+    dz = SND_LISTENER->eye.z - position[2];
 
     if (((dx + SND_HEARING_RANGE) > 2U * SND_HEARING_RANGE) ||
         ((dz + SND_HEARING_RANGE) > 2U * SND_HEARING_RANGE)) {
@@ -151,7 +171,7 @@ void snd_PlayAt(s32 sound, s32 *position) {
         distance_scale = 0;
     }
 
-    listener_yaw = g_camera_current->angles.vy;
+    listener_yaw = SND_LISTENER->angles.vy;
     /* how far the sound is to the camera's side */
     pan_offset =
         ((dx * g_math_sin_table[(listener_yaw + ANGLE_TURN / 4) & ANGLE_MASK]) +

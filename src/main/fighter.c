@@ -189,16 +189,36 @@ void motion_LoadFighterFiles(
     }
 }
 
+/* Gives each decoder the stream of the file it reads: the common file's,
+ * and each of the two motion-file slots that holds a file. */
 void motion_OpenStreams(void) {
     motion_OpenStream(MOTION_DECODER_COMMON, g_motion_common_sections.stream);
     if (g_motion_loaded_sets[0]) {
         motion_OpenStream(
             MOTION_DECODER_FILE, g_motion_fighter_sections[0].stream);
     }
+    /* In chanbara the room of the second fighter's motion file holds the
+     * pack of opponent models instead, and g_motion_loaded_sets[1] is
+     * MOTION_SET_PACK to say so (fight.c, motion_LoadChanbaraPack): there
+     * is no stream, and g_motion_fighter_sections[1].stream is still the
+     * null it was at power on. The console reads its kernel's memory at
+     * address 0 and fills the second file's decoder with nonsense, which
+     * nothing then reads: both fighters fight with the one motion set, so
+     * motion_AttachFighter puts them both on the first file's decoder. A
+     * PC has nothing at address 0 and stops the program (docs/PORT.md,
+     * "Memory"), so the port leaves the decoder alone. */
+#if RB_PORT
+    if (g_motion_loaded_sets[1] != 0 &&
+        g_motion_loaded_sets[1] != MOTION_SET_PACK) {
+        motion_OpenStream(
+            MOTION_DECODER_FILE + 1, g_motion_fighter_sections[1].stream);
+    }
+#else
     if (g_motion_loaded_sets[1]) {
         motion_OpenStream(
             MOTION_DECODER_FILE + 1, g_motion_fighter_sections[1].stream);
     }
+#endif
 }
 
 /* Finds the file the fighter's motion set is in, and which of its three

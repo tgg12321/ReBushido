@@ -192,23 +192,32 @@ it here:
   every array of 16 bytes or more on a 16-byte one), so the build sets
   the boundary in each object after it is compiled
   (`tools/port_build.py`, `cap_alignment`). The build counts the
-  result: in the 32-bit program 868 of the game's 991 pairs of
+  result: in the 32-bit program 871 of the game's 991 pairs of
   neighbours are exactly as far apart as on the PlayStation, and the
-  123 others are in `build/port32/layout.txt`: nearly all are closer
+  120 others are in `build/port32/layout.txt`: nearly all are closer
   together than on the console, where another file's unnamed data lies
   between the two or a small variable is padded to a word. In the
-  64-bit program 743 are; of its 248 others, 137 follow a variable
+  64-bit program 746 are; of its 245 others, 137 follow a variable
   that has pointers in it, which are twice as wide there, and the rest
   are the 32-bit program's (`build/port/layout.txt`).
 - **Address 0.** The console has its kernel's memory there, so the
   original reads and writes through pointers it never set, and nothing
   happens. A PC stops the program. Linux will not map address 0 for a
-  program, so each place is given somewhere else, under `RB_PORT`, with
-  a note: the word `fighter_TakeHit` clears first (the port passes the
-  place the "Bugfixes" setting does, whatever the setting, which
-  changes nothing the game does) and the direction an effect was never
-  given (`eff_Start`: zeroes). Two were found on the way to a fight's
-  end; the next one will stop the port and say where.
+  program, so each place is given somewhere else, or left alone, under
+  `RB_PORT`, with a note where it is:
+
+  | Where | What it reaches through a null | What the port does |
+  | --- | --- | --- |
+  | `fighter_TakeHit` | the word it clears first | writes the word the "Bugfixes" setting clears, whatever the setting; nothing the game does changes |
+  | `eff_Start` | the direction an effect was never given | reads `g_port_low_memory`, sixteen words of zeroes, which is what the console has there |
+  | `snd_PlayAt`, from `story_HenchmanShout` | the camera a shout is placed by, before a story fight has chosen one | the same zeroes, so the shout is placed as the console places it (`fight_event.c`) |
+  | `motion_OpenStreams` | in chanbara the second fighter's motion file, whose room holds the pack of opponent models instead | leaves that decoder alone: both fighters fight with the one motion set, so nothing reads it (`fighter.c`) |
+  | `fight_after.c`, after a kaishaku | the same, and the first slot too | opens the streams of the slots that hold a file |
+  | `select_DrawTeamHeading` | the heading after the last, as a side takes its last weapon in the team battle | draws the heading of the step it is drawing, which is the last (`select_team.c`) |
+
+  The first two were found on the way to a fight's end, the others by
+  the sweep of the menu's rows ("How it is proved"). The next one will
+  stop the port and say where.
 
 ### What the PlayStation's compiler decided
 
@@ -1143,9 +1152,9 @@ and the build fails if it is anything but the host's functions. The
 game's variables keep the PlayStation's order inside the object, each
 given the boundary the PlayStation's compiler gives it, and the build
 counts the neighbours as `make port` does: the 64-bit program for Linux
-has the same 743 of 991 as `make port`'s own, 137 of the others
+has the same 746 of 991 as `make port`'s own, 137 of the others
 following a variable whose pointers are wider; the one for Windows has
-663 of 1,030 with 139 such (a Windows program's names carry no sizes, so
+666 of 1,030 with 139 such (a Windows program's names carry no sizes, so
 the pairs are counted differently). On Windows the boundary is set in the
 object itself, as it is on Linux, because a Windows object's sections
 would otherwise be padded out to it (`cap_alignment_coff`).
@@ -1654,9 +1663,11 @@ No run of the tests reaches them.
   the same files in the five that ran to their end; and both fighters
   are the same member for member at all 260 checkpoints, but for the
   first eight bytes of a CPU fighter's pad (`cpu_pad`), which are words
-  off the stack like the player's pad's. Two of the seven stop, the
-  same way in both sizes: the story's first fight reads through a
-  pointer that is not set yet ("What is left").
+  off the stack like the player's pad's. Two of the seven stopped the
+  same way in both sizes, on the story's first fight reading through a
+  pointer that was not set yet; that place is put right, and the sweep
+  of the rows that followed ("How it is proved") drives every one of
+  them to its end.
 - **The 64-bit program against the emulator**: the five play tests
   (`port_game`, `port_other_fight`, `port_bugfixes`, `port_picture`,
   `port_sound`), with no tolerance changed and no comparison taken out.
@@ -2109,6 +2120,21 @@ points below. Stages two and three, the program, by the last three.
   the casts, the order of evaluation in each size).
 - **The 64-bit program against the 32-bit one**, and every host test
   as a 64-bit program ("64 bits", "What is proved").
+- **Every row of the menu, by hand once**: ten runs of the port alone,
+  both sizes, driven by plans of their own into each mode and through
+  its first fight or two (story's narration, first two fights and the
+  menu that follows a loss; versus the CPU to a kill, the menu after a
+  fight and back; practice, with the pause menu it opens on and its
+  toggles; versus with two pads, other fighters, weapons and stage;
+  giving up, so that the kaishaku's cutscene runs; the team battle's
+  rules, clans, three fighters and three weapons a side, and its first
+  bout; the link cable's row with nothing at the other end; the game's
+  options page, each row of it and its card menu, which writes the
+  game's own save file; slash mode and the gunners, from a save written
+  for the sweep). Three crashes of the kind "Memory" names were found
+  this way and put right; after them every run reaches its end, and the
+  two sizes' traces are the same line for line. The plans are not kept:
+  they are a sweep by hand, not a test of every push.
 
 Not proved that way: `InitGeom` (it patches the console's kernel; its
 register values are checked by hand), `sys_Trap`, and anything the
@@ -2213,12 +2239,11 @@ too.
   one table of handlers that is called for a result; a `void` function
   reached through some other pointer for a result would not have been
   seen.
-- Address 0: two places are given somewhere else to read and write. A
-  third is found and not put right: as a story fight begins, the
-  henchman's shout is placed by the camera before a camera is chosen
-  (`story_HenchmanShout`, `snd_PlayAt` reading `g_camera_current`), and
-  the port stops there, in either size. The story cannot be played on
-  the port until it is. The others, if there are others, are not found.
+- Address 0: six places are found and put right ("Memory"). Three of
+  them were found by driving every row of the menu, which is as far as
+  looking has gone; the others, if there are others, are not found. A
+  mode the sweep does not reach may hold one: the table of best times
+  after a whole chanbara run, a story ending, the staff roll.
 - What is heard is compared with the emulator's only in part and by
   hand, and where the hardware's filters are not reproduced it is not
   the console's to the sample; the music is a tenth louder than the
@@ -2233,8 +2258,10 @@ too.
 - macOS on Apple's processors may not allow the memory the port needs
   ("64 bits", "What is left of it"); nothing of the port has been built
   there.
-- The memory card is a stub in the window too: nothing a player sets or
-  unlocks is kept.
+- The game's own save file is written and read on the port (the options
+  page's card menu, driven by the sweep), but no run has put a save
+  back on an emulator to be read by the console's own code: what is
+  cross-checked that way is ReBushido's file (`port_card`).
 - The build compiles more than it must: the headers it writes are
   written again each time, so most files are compiled again (twenty
   seconds).

@@ -55,8 +55,12 @@ No dates.
    chip's memory and registers the emulator's through a fight, and the
    same samples to a sound card in the window. Its memory card is a
    standard card image, and the card it writes for the options page is
-   byte for byte the one the emulator's BIOS wrote.
-   The game's code stays C.
+   byte for byte the one the emulator's BIOS wrote. The opening movie
+   plays, decoded in the port, with the sound the console has. Every row
+   of the top menu has been driven into its mode and through a fight or
+   two, in both sizes of the program, which found and put right the
+   three last places where the original reads through a pointer it never
+   set (PORT.md, "Memory"). The game's code stays C.
 7. **The picture.** A wide picture, high resolution and a high frame rate
    on the port, which is what "Graphics: Remastered" will mean. On the
    PlayStation build only what is cheap: about 17 KB is left there before

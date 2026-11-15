@@ -512,6 +512,20 @@ static void select_DrawTeamHeading(MenuDrawCtx *ctx, s32 side, s16 heading) {
     SpriteDraw draw;
     s32 ot_index;
 
+#if RB_PORT
+    /* The file has a heading for each step after the rules, and the step
+     * the caller passes is the one the step's own handler has just left
+     * the side on: as a side takes its last weapon the handler moves it to
+     * TEAM_STEP_READY, and the heading asked for is then one past the
+     * three there are. The console reads the zero that ends the list, and
+     * draws a sheet from its kernel's memory at address 6; a PC has
+     * nothing at address 0 and the program stops (docs/PORT.md,
+     * "Memory"). The heading of the step that is being drawn is the last
+     * one, which is what TEAM_STEP_READY itself asks for. */
+    if (heading > TEAM_STEP_WEAPONS - 1) {
+        heading = TEAM_STEP_WEAPONS - 1;
+    }
+#endif
     ot_index = TEAM_LAYER_SIDE_1 + TEAM_PANEL_LAYER_PAGE;
     draw.semi = 0;
     draw.has_color = 0;

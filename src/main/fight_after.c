@@ -645,8 +645,23 @@ void cutscene_KaishakuUpdate(void) {
         }
         /* the cutscene read through the motion files' streams */
         motion_OpenStream(0, g_motion_common_sections.stream);
+#if RB_PORT
+        /* Only the slots that hold a motion file: when the two fighters
+         * fight with the one set, or in chanbara, the other slot's stream
+         * is the null it was at power on, and what the console reads
+         * through it is its kernel's memory at address 0 (fighter.c,
+         * motion_OpenStreams). Nothing then reads that decoder. */
+        if (g_motion_loaded_sets[0] != 0) {
+            motion_OpenStream(1, g_motion_fighter_sections[0].stream);
+        }
+        if (g_motion_loaded_sets[1] != 0 &&
+            g_motion_loaded_sets[1] != MOTION_SET_PACK) {
+            motion_OpenStream(2, g_motion_fighter_sections[1].stream);
+        }
+#else
         motion_OpenStream(1, g_motion_fighter_sections[0].stream);
         motion_OpenStream(2, g_motion_fighter_sections[1].stream);
+#endif
         if (g_fight_mode == FIGHT_MODE_STORY &&
             g_story_player_roster != STORY_NO_ROSTER) {
             snd_EndFight();

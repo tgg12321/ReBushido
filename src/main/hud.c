@@ -1917,8 +1917,17 @@ s32 hud_DrawBestTimes(s32 prims, s32 ot_index, s32 rank) {
     AddPrim(g_disp_ot + ot_index, (void *)ADDR(tile_out_addr));
 
     SetDrawMode((void *)ADDR(dr_mode_out_addr), 1, 0, 0, 0);
+#if RB_PORT
+    /* The original calls AddPrim as if it were undeclared, passing the
+     * primitive's address as a number. A 64-bit compiler reads all of
+     * the register the number went in, whose upper half is whatever it
+     * held, and the call writes through a bad pointer: the port calls
+     * AddPrim as it is declared, with the same two arguments. */
+    AddPrim(g_disp_ot + ot_index, (void *)ADDR(dr_mode_out_addr));
+#else
     /* FAKE: AddPrim(...), not called as if it were undeclared */
     ((s32(*)())AddPrim)(g_disp_ot + ot_index, dr_mode_out_addr);
+#endif
     dr_mode_out_addr += sizeof(DR_MODE);
     return end_addr - prims;
 }
@@ -2026,12 +2035,27 @@ static s16 g_hud_best_times_name_xs[20] = {
     425, 445, 459, 430, 443, 408, 433, 426, 411, 428, /* GENGORO.. */
 };
 
+/* A sheet with the cells that follow it, as a resource file has them.
+ * SpriteSheet ends in an array of no elements (sprite.h), which the
+ * PlayStation's compiler fills in all the same and lays after the sheet;
+ * a modern compiler leaves them out ("excess elements in array
+ * initializer"). So the two are declared as what they are, the sheet and
+ * then its cells, which comes to the same bytes either way: a sheet is
+ * twelve bytes and a cell eight, and both are of two-byte alignment.
+ * HUD_SHEET() is the sheet's own address. */
+#define HUD_SHEET_WITH_CELLS(how_many)                                         \
+    struct {                                                                   \
+        SpriteSheet sheet;                                                     \
+        SpriteCell cells[how_many];                                            \
+    }
+#define HUD_SHEET(name) (&(name).sheet)
+
 /* The best times: the title, the three ranks, and the marks between the
  * digits of a time (three for each row and three for the total). The cells
  * follow their sheet, as in a resource file. */
 /* clang-format off */
-static SpriteSheet g_hud_best_times_title_sheet = {
-    0x1E, 0x00, 6, 0xFF, 944, 510, 0, 0,
+static HUD_SHEET_WITH_CELLS(7) g_hud_best_times_title_sheet = {
+    {0x1E, 0x00, 6, 0xFF, 944, 510, 0, 0},
     {{145, 58, 0, 0, 64, 12},
      {209, 58, 64, 0, 64, 12},
      {273, 58, 128, 0, 64, 12},
@@ -2040,14 +2064,14 @@ static SpriteSheet g_hud_best_times_title_sheet = {
      {465, 58, 64, 12, 30, 12},
      {0, 0, 0, 0, 0, 0}},
 };
-static SpriteSheet g_hud_best_times_rank_sheet = {
-    0x1E, 0x00, 3, 0xFF, 912, 511, 0, 40,
+static HUD_SHEET_WITH_CELLS(3) g_hud_best_times_rank_sheet = {
+    {0x1E, 0x00, 3, 0xFF, 912, 511, 0, 40},
     {{107, 80, 0, 0, 21, 12},
      {107, 106, 21, 0, 21, 12},
      {107, 132, 42, 0, 21, 12}},
 };
-static SpriteSheet g_hud_best_times_mark_sheet = {
-    0x1E, 0x00, 12, 0xFF, 896, 511, 250, 26,
+static HUD_SHEET_WITH_CELLS(12) g_hud_best_times_mark_sheet = {
+    {0x1E, 0x00, 12, 0xFF, 896, 511, 250, 26},
     {{230, 78, 0, 0, 3, 4},
      {286, 78, 0, 0, 3, 4},
      {291, 78, 0, 0, 3, 4},
@@ -2077,9 +2101,10 @@ static BestTimesSheets g_hud_best_times_sheets;
 static void hud_FillBestTimesSheets(void) {
     BestTimesSheets *sheets = &g_hud_best_times_sheets;
 
-    SET_PTR(sheets->own_cell_sheets[0], &g_hud_best_times_title_sheet);
-    SET_PTR(sheets->own_cell_sheets[1], &g_hud_best_times_rank_sheet);
-    SET_PTR(sheets->own_cell_sheets[2], &g_hud_best_times_mark_sheet);
+    SET_PTR(
+        sheets->own_cell_sheets[0], HUD_SHEET(g_hud_best_times_title_sheet));
+    SET_PTR(sheets->own_cell_sheets[1], HUD_SHEET(g_hud_best_times_rank_sheet));
+    SET_PTR(sheets->own_cell_sheets[2], HUD_SHEET(g_hud_best_times_mark_sheet));
     SET_PTR(sheets->character_sheet, &g_hud_name_sheet);
     SET_PTR(sheets->character_cells, g_hud_name_8_tail_cells);
     SET_PTR(sheets->digit_sheet, &g_hud_best_times_digit_sheet);
@@ -2088,8 +2113,9 @@ static void hud_FillBestTimesSheets(void) {
 }
 #else
 static BestTimesSheets g_hud_best_times_sheets = {
-    {&g_hud_best_times_title_sheet, &g_hud_best_times_rank_sheet,
-     &g_hud_best_times_mark_sheet},
+    {HUD_SHEET(g_hud_best_times_title_sheet),
+     HUD_SHEET(g_hud_best_times_rank_sheet),
+     HUD_SHEET(g_hud_best_times_mark_sheet)},
     &g_hud_name_sheet,
     g_hud_name_8_tail_cells,
     &g_hud_best_times_digit_sheet,

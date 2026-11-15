@@ -25,29 +25,32 @@ python tools/playtest.py [name...]          # the tests alone, with the discs al
 python tools/playtest.py --list
 ```
 
-About eight minutes for the fourteen tests, after up to two minutes of
+About ten minutes for the seventeen tests, after up to two minutes of
 building discs; the tool holds a run to five minutes and the
 suite to fourteen. It prints a table and exits 1 if a test failed:
 
 ```
   test             result   time
   boot             ok        10s
-  bugfixes_fight   ok        31s
-  fight_end        ok        28s
-  first_frame_sweep ok        13s
-  gte_model        ok        76s
+  bugfixes_fight   ok        32s
+  fight_end        ok        29s
+  first_frame_sweep ok        14s
+  gte_model        ok        79s
   options_no_card  ok         9s
   options_page     ok        15s
-  port_bugfixes    ok        35s
-  port_game        ok        35s
-  port_other_fight ok        61s
-  port_picture     ok        63s
+  port_bugfixes    ok        39s
+  port_card        ok        23s
+  port_game        ok        38s
+  port_movie       ok        57s
+  port_other_fight ok        43s
+  port_picture     ok        45s
+  port_sound       ok        41s
   quickboot        ok         7s
-  same_as_original ok        60s
-  vanish           ok        17s
+  same_as_original ok        62s
+  vanish           ok        18s
   emulator processes left running: 0
-  pictures and logs: build/playtest/<test>/<disc>/   (459s in all)
-OK: play tests: 14 passed, 0 skipped
+  pictures and logs: build/playtest/<test>/<disc>/   (561s in all)
+OK: play tests: 17 passed, 0 skipped
 ```
 
 What it needs, and where it looks:
@@ -115,7 +118,7 @@ retail program has none.
 | `port_bugfixes` | ReBushido, then the native port | The same with Bugfixes on: `port_game`'s presses after right on the options page. The setting is on at every checkpoint |
 | `port_card` | ReBushido twice, then the native port twice, one card passed from each run to the next | The port's memory card is the console's: the options page's round trip over four boots, the first two in the emulator and the last two on the port, so that the settings' file is written by the console's own BIOS code and read back by the port. Afterwards the four card images are the same file, byte for byte (`docs/PORT.md`, "The memory card") |
 | `port_sound` | ReBushido, then the native port | The port's sound is the emulator's: `port_game`'s run, comparing what Sony's sound libraries keep in memory (the common bank's header, where each bank is in sound memory, each voice's registers as last set, the library's record of each voice with its envelope's level, the keys, the reverb, the disc's volume) and, at twenty checkpoints, the sound chip itself: all of sound memory but the chip's own first 4 KB, and every register a program writes ("The sound") |
-| `port_movie` | ReBushido, then the native port | **Not yet run.** The opening movie: the port plays it to its end, and what is compared is the picture on show while the title still is held (a file, not a decoded frame: the same to the pixel), the sound chip's registers at three moments of the movie, and the game's state when it is over (docs/PORT.md, "The movie"). The test's own comments say what is still a measurement and what a frame of the movie would be worth comparing within |
+| `port_movie` | ReBushido, then the native port | The opening movie: the port plays it to its end, and what is compared is the game's state through the whole movie and after it, the title picture to the pixel, all of video memory at that moment (the two display buffers hold the last frame each program decoded, at different frames of it: 74,241 pixels differ, the number the test holds), and the sound chip at three moments of the movie, which is what showed that the console's movie is not silent (docs/PORT.md, "The movie") |
 | `gte_model` | the GTE probe, no disc | The native port's C does what the PlayStation's coprocessor and assembly do: 125,800 made-up cases come out the same on the emulator and on the host ("The GTE probe") |
 
 ## The GTE probe
