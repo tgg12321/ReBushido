@@ -100,7 +100,7 @@ const char *port_GetLogPath(void) {
     return g_port_log != NULL ? g_port_log_path : NULL;
 }
 
-static void port_MakeFolder(const char *path) {
+void port_MakeFolder(const char *path) {
 #if defined(_WIN32)
     _mkdir(path);
 #else

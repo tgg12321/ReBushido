@@ -18,7 +18,8 @@
  *
  *             [--fast] [--inject keys|pads] [--tap-frames FOLDER]
  *             [--tap-window FOLDER] [--tap-every N] [--tap-audio FILE]
- *             [--toggle-at N] [--fault-at N] [--fault-in-sound N] */
+ *             [--toggle-at N] [--shot-at N] [--fault-at N]
+ *             [--fault-in-sound N] */
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <dirent.h>
@@ -101,7 +102,9 @@ static const char g_port_window_usage[] =
     "Alt+Enter fills the screen and comes back. F2 changes between the\n"
     "original picture and the remastered one. F3 shows and hides the\n"
     "counter in the corner: pictures shown a second, the game's own\n"
-    "frames a second, and the speed against the console's.\n"
+    "frames a second, and the speed against the console's. F12 keeps a\n"
+    "picture of the window as a PNG in screenshots/ beside the program,\n"
+    "and the session's log says where it went.\n"
     "\n"
     "The memory cards are card1.mcd and card2.mcd beside the program,\n"
     "card images of 128 KB that an emulator or a card tool opens; one\n"
@@ -129,7 +132,8 @@ static const char g_port_window_usage_end[] =
     "--tap-every N (each Nth picture as SDL is given it), --tap-window\n"
     "FOLDER (each Nth window as a player would see it, where there is a\n"
     "graphics card), --toggle-at N (what F2 does, at every Nth blank),\n"
-    "--tap-audio FILE\n"
+    "--shot-at N (what F12 does, at blank N), --window WxH (the window\n"
+    "that size as it opens), --tap-audio FILE\n"
     "(the samples as they are queued), --fault-at N and --fault-in-sound N\n"
     "(touch memory that is not there at vertical blank N, on the game's\n"
     "stack or on the sound card's thread: what a crash leaves in the\n"
@@ -448,6 +452,18 @@ int main(int argc, char **argv) {
             log = argv[++i];
         } else if (strcmp(word, "--toggle-at") == 0 && has_value) {
             options->toggle_at = atoi(argv[++i]);
+        } else if (strcmp(word, "--shot-at") == 0 && has_value) {
+            options->shot_at = atoi(argv[++i]);
+        } else if (strcmp(word, "--window") == 0 && has_value) {
+            const char *size = argv[++i];
+            const char *by = strchr(size, 'x');
+
+            options->window_w = atoi(size);
+            options->window_h = by != NULL ? atoi(by + 1) : 0;
+            if (options->window_w <= 0 || options->window_h <= 0) {
+                port_Complain(
+                    "--window takes a size like 1280x720, not ", size);
+            }
         } else if (strcmp(word, "--fault-at") == 0 && has_value) {
             options->fault_at = atoi(argv[++i]);
         } else if (strcmp(word, "--fault-in-sound") == 0 && has_value) {
@@ -629,7 +645,8 @@ int main(int argc, char **argv) {
 
     port_Say("ReBushido in a window. Escape ends it; F11 or Alt+Enter fills "
              "the screen; F2 changes picture; F3 is the counter in the "
-             "corner.");
+             "corner; F12 keeps a picture of the window in "
+             "screenshots/.");
     port_Say("graphics: %s to start with; the remastered picture is drawn "
              "%s, draw distance %s, antialiasing %d, aspect %d:%d.",
              g_port_settings.graphics == PORT_GRAPHICS_ORIGINAL ? "original"

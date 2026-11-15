@@ -52,15 +52,24 @@ static struct {
     const char *shots;
     u32 every;
     s32 compares;
+    s32 blocks; /* the picture held to the console's, block for block */
     s32 writes_original;
     u32 blanks;
     /* how far the two pictures were apart, over the whole run */
-    u32 compared;        /* pictures compared */
-    u32 not_shown;       /* ... and blanks where the display was off */
-    u32 pixels;          /* pixels compared */
-    u32 different;       /* ... that are not the same */
-    u32 close;           /* ... and are within one step of a channel */
-    u32 worst;           /* the largest difference of a channel, 0 to 255 */
+    u32 compared;  /* pictures compared */
+    u32 not_shown; /* ... and blanks where the display was off */
+    u32 pixels;    /* pixels compared */
+    u32 different; /* ... that are not the same */
+    u32 close;     /* ... and are within one step of a channel */
+    u32 worst;     /* the largest difference of a channel, 0 to 255 */
+    /* the blocks of --gl-blocks */
+    u32 block_pictures;
+    u32 block_count;     /* pixels of the console's picture looked at */
+    u32 block_uneven;    /* ... whose block is not of one colour */
+    u32 block_different; /* ... whose block is not the console's colour */
+    u32 block_far;       /* ... and is more than one step from it */
+    u32 block_worst;
+    u32 flat_frames;     /* frames in a row with nothing of the scene in them */
     u64 hardware_time;   /* microseconds */
     u64 software_frames; /* frames the software GPU drew */
     /* pictures between the game's frames (gl_tween.h) */
@@ -77,6 +86,9 @@ static struct {
     u32 identity;           /* frames drawn again at phase 0 */
     u32 identity_pixels;    /* ... pixels held to the game's own picture */
     u32 identity_different; /* ... that are not the same */
+    u32 still;              /* frames whose scene did not move at all */
+    u32 still_moved;        /* ... whose pictures in between are not it */
+    u32 off_the_line;       /* corners not between the two frames' own */
 } g_run;
 
 /* The most pictures a game frame may be drawn as, for the prover's
@@ -104,6 +116,9 @@ static const char g_usage[] =
     "                 them, the texture flat, five bits a channel with\n"
     "                 the chip's dither. For the comparison at scale 1\n"
     "  --gl-compare   count the pixels the two pictures differ in\n"
+    "  --gl-blocks    hold the picture to the console's own scaled up by\n"
+    "                 whole blocks: what the game draws flat must come\n"
+    "                 out as the console's picture at every scale\n"
     "  --gl-shots F   a PNG of the hardware's picture into this folder\n"
     "  --gl-every N   ... every N vertical blanks (60 if nothing says)\n"
     "  --gl-original  the software GPU's picture beside each of them\n"
@@ -398,6 +413,94 @@ static u32 port_Compare(s32 w, s32 h) {
     return picture_worst;
 }
 
+/* How far apart two colours of three channels are, the worst channel. */
+static u32 port_ChannelsApart(u32 one, u32 two) {
+    u32 worst = 0;
+    s32 channel;
+
+    for (channel = 0; channel < 3; channel++) {
+        s32 a = (s32)((one >> (channel * 8)) & 0xFF);
+        s32 b = (s32)((two >> (channel * 8)) & 0xFF);
+        u32 apart = (u32)(a > b ? a - b : b - a);
+
+        if (apart > worst) {
+            worst = apart;
+        }
+    }
+    return worst;
+}
+
+/* The remastered picture against the software GPU's own, scaled up by
+ * whole blocks (--gl-blocks): a pixel of video memory is `scale` by
+ * `tall` pixels of the picture, so everything the game draws flat --
+ * the options page, the menus, the select screens -- must come out as
+ * the console's own picture, block for block, at every scale and at
+ * both scales unlike. Only a picture with no scene in it is asked
+ * (`flat_frames`). What is counted for each pixel of the
+ * console's picture: whether its block is of one colour at all, and how
+ * far that colour is from the console's. The bands beside the console's
+ * 640 pixels in a wider picture are the scene's alone and are left out.
+ *
+ * What a flat screen may still differ in: a pixel that mixes, which the
+ * card mixes at eight bits a channel and the chip at five (within one
+ * step), and the edge of a flat polygon that is not up and down, which
+ * the card draws at the picture's own resolution and not the console's
+ * (sharper, and the pixels of the block are then not all of one
+ * colour). */
+static void port_CompareBlocks(s32 w, s32 h, s32 software_w, s32 software_h,
+                               s32 scale_x, s32 scale_y, s32 margin) {
+    s32 x;
+    s32 y;
+
+    if (scale_x < 1 || scale_y < 1 || software_w <= 0 || software_h <= 0 ||
+        (software_w + 2 * margin) * scale_x != w || software_h * scale_y != h) {
+        return;
+    }
+    g_run.block_pictures++;
+    for (y = 0; y < software_h; y++) {
+        for (x = 0; x < software_w; x++) {
+            u32 want = g_software[y * software_w + x] & 0xFFFFFF;
+            u32 first = 0;
+            u32 worst = 0;
+            s32 uneven = 0;
+            s32 i;
+            s32 j;
+
+            for (j = 0; j < scale_y; j++) {
+                for (i = 0; i < scale_x; i++) {
+                    u32 got = g_picture[(y * scale_y + j) * w +
+                                        (margin + x) * scale_x + i] &
+                              0xFFFFFF;
+                    u32 apart = port_ChannelsApart(got, want);
+
+                    if (i == 0 && j == 0) {
+                        first = got;
+                    } else if (got != first) {
+                        uneven = 1;
+                    }
+                    if (apart > worst) {
+                        worst = apart;
+                    }
+                }
+            }
+            g_run.block_count++;
+            if (uneven) {
+                g_run.block_uneven++;
+            }
+            if (worst != 0) {
+                g_run.block_different++;
+                /* a channel of five bits is eight of a byte */
+                if (worst > 8) {
+                    g_run.block_far++;
+                }
+            }
+            if (worst > g_run.block_worst) {
+                g_run.block_worst = worst;
+            }
+        }
+    }
+}
+
 /* ---- the pictures between two frames (gl_tween.h) ---- */
 
 /* How far two pictures are apart: every channel of every pixel added
@@ -552,6 +655,28 @@ static void port_GlTweenPhases(u32 blank) {
     if (out_of_order != 0) {
         g_run.out_of_order++;
     }
+    {
+        const PortTweenCounts *counts = port_TweenGetCounts();
+
+        g_run.off_the_line += counts->off_the_line;
+        /* A scene that did not move at all between the two frames: every
+         * picture in between must be that scene, pixel for pixel. A
+         * picture that is not says a partner was wrongly found, or that
+         * the two halves of video memory were not taken off. */
+        if (counts->widest_step == 0) {
+            s32 moved = 0;
+
+            g_run.still++;
+            for (phase = 1; phase < g_run.tween; phase++) {
+                if (from_first[phase] != 0) {
+                    moved = 1;
+                }
+            }
+            if (moved) {
+                g_run.still_moved++;
+            }
+        }
+    }
     fprintf(stderr, "gl tween blank %u phases %d out_of_order %d key %d\n",
             blank, g_run.tween, out_of_order, key);
     for (phase = 0; phase < g_run.tween; phase++) {
@@ -566,12 +691,14 @@ static void port_GlTweenPhases(u32 blank) {
     {
         const PortTweenCounts *counts = port_TweenGetCounts();
 
-        fprintf(
-            stderr,
-            "gl tween blank %u prims %u mixed %u unpaired %u flat %u "
-            "widest_step %u cuts %u overflowed %u\n",
-            blank, counts->prims, counts->mixed, counts->unpaired, counts->flat,
-            counts->widest_step, counts->cuts, counts->overflowed);
+        fprintf(stderr,
+                "gl tween blank %u prims %u mixed %u unpaired %u flat %u "
+                "widest_step %u cuts %u overflowed %u keyed %u searched %u "
+                "clashes %u off_the_line %u\n",
+                blank, counts->prims, counts->mixed, counts->unpaired,
+                counts->flat, counts->widest_step, counts->cuts,
+                counts->overflowed, counts->keyed, counts->searched,
+                counts->clashes, counts->off_the_line);
     }
 }
 
@@ -587,8 +714,8 @@ static void port_GlBlank(u32 blank) {
 
     g_run.blanks = blank;
     port_GetDisplay(&display);
-    wanted =
-        (g_run.shots != NULL || g_run.compares) && blank % g_run.every == 0;
+    wanted = (g_run.shots != NULL || g_run.compares || g_run.blocks) &&
+             blank % g_run.every == 0;
     started = port_Microseconds();
     port_RemasterShow();
     port_GlFinishFrame();
@@ -665,6 +792,32 @@ static void port_GlBlank(u32 blank) {
                     "gl blank %u not compared: hardware %dx%d software %dx%d\n",
                     blank, w, h, software_w, software_h);
             }
+            /* The blocks are asked of a picture with no scene in it:
+             * everything the game draws flat is the console's own
+             * picture scaled up, and a scene is not. The frame being
+             * drawn and the one before it must both have been flat,
+             * since the picture read back is the one on show. */
+            if (counts->with_depth == 0) {
+                g_run.flat_frames++;
+            } else {
+                g_run.flat_frames = 0;
+            }
+            if (g_run.blocks && software_w > 0 && g_run.flat_frames >= 2) {
+                u32 before = g_run.block_different;
+                u32 uneven = g_run.block_uneven;
+                u32 far = g_run.block_far;
+
+                port_CompareBlocks(
+                    w, h, software_w, software_h, options.scale, options.tall,
+                    port_RemasterMargin(
+                        display.w, options.aspect_w, options.aspect_h));
+                fprintf(stderr,
+                        "gl blank %u blocks %dx%d of %dx%d uneven %u "
+                        "different %u far %u\n",
+                        blank, software_w, software_h, options.scale,
+                        options.tall, g_run.block_uneven - uneven,
+                        g_run.block_different - before, g_run.block_far - far);
+            }
         } else if (g_run.compares) {
             /* the display is blanked, or in the mode of three bytes a
              * pixel, which the hardware path leaves to the software
@@ -696,12 +849,14 @@ static void port_GlQuit(s32 code) {
             view.aspect_w, view.aspect_h);
     /* every store of a fixed size the drawing path fills, and the least
      * room any frame left in it (docs/PORT.md, "Remastered") */
-    fprintf(stderr,
-            "gl run limits frames %u prim_bytes %d prim_free %d queue_size %d "
-            "queue_free %d ot_farthest %u tiles %u nodes %u side_full %u\n",
-            limits->frames, limits->prim_bytes, limits->prim_free,
-            limits->queue_size, limits->queue_free, limits->ot_farthest,
-            limits->tiles, limits->nodes, limits->side_full);
+    fprintf(
+        stderr,
+        "gl run limits frames %u prim_bytes %d prim_free %d queue_size %d "
+        "queue_free %d ot_farthest %u tiles %u tiles_least %u nodes %u "
+        "side_full %u\n",
+        limits->frames, limits->prim_bytes, limits->prim_free,
+        limits->queue_size, limits->queue_free, limits->ot_farthest,
+        limits->tiles, limits->tiles_least, limits->nodes, limits->side_full);
 
     fprintf(stderr, "gl run blanks %u hardware_time_us %llu\n", g_run.blanks,
             (unsigned long long)g_run.hardware_time);
@@ -733,6 +888,13 @@ static void port_GlQuit(s32 code) {
                 g_run.compared, g_run.pixels, g_run.different, g_run.close,
                 g_run.worst);
     }
+    if (g_run.block_pictures != 0) {
+        fprintf(stderr,
+                "gl run blocks pictures %u pixels %u uneven %u different %u "
+                "far %u worst %u\n",
+                g_run.block_pictures, g_run.block_count, g_run.block_uneven,
+                g_run.block_different, g_run.block_far, g_run.block_worst);
+    }
     if (g_run.tween > 1) {
         const PortTweenCounts *tween = port_TweenGetCounts();
 
@@ -752,6 +914,11 @@ static void port_GlQuit(s32 code) {
             "identity %u identity_pixels %u identity_different %u\n",
             g_run.checked, g_run.out_of_order, g_run.point_out_of_line,
             g_run.identity, g_run.identity_pixels, g_run.identity_different);
+        fprintf(stderr,
+                "gl run tween keyed %u far_keyed %u searched %u clashes %u "
+                "off_the_line %u still %u still_moved %u\n",
+                tween->keyed, tween->far_keyed, tween->searched, tween->clashes,
+                g_run.off_the_line, g_run.still, g_run.still_moved);
     }
     fflush(stderr);
 }
@@ -792,6 +959,8 @@ int main(int argc, char **argv) {
             options.is_exact = TRUE;
         } else if (!strcmp(word, "--gl-compare")) {
             g_run.compares = TRUE;
+        } else if (!strcmp(word, "--gl-blocks")) {
+            g_run.blocks = TRUE;
         } else if (!strcmp(word, "--gl-original")) {
             g_run.writes_original = TRUE;
         } else if (!has_value) {

@@ -110,5 +110,9 @@ extern s32 port_WriteDisplayPixels(s32 file);
 extern s32 port_WriteDisplayPng(s32 file);
 /* All of video memory, 1,048,576 bytes. */
 extern s32 port_WriteVram(s32 file);
+/* Pixels of the host's own as a PNG, 0xAARRGGBB each, a row after a row
+ * from the top: the window's own pixels, where the player asks for a
+ * picture of what is on the screen (F12; docs/PLAYING.md). */
+extern s32 port_WritePixelsPng(s32 file, const u32 *pixels, s32 w, s32 h);
 
 #endif /* PORT_GPU_H */

@@ -1596,7 +1596,21 @@ of the console's picture is two lines of the screen.
   construction.
 - **Rectangles, sprites, the fonts, the menus and the options page**
   have no side data and are drawn as they are, whole-pixel, at the
-  scale: crisp, and in their proper places.
+  scale: crisp, and in their proper places. **Such a primitive's texel
+  and colour are read once for each pixel of video memory**, not once
+  for each pixel of the picture: the chip settled them at the pixel's
+  own whole coordinate, so the shader steps back from the pixel it is
+  drawing to the corner of the block of `scale` by `tall` pixels it
+  lies in and reads them there (the flag `FLAG_FLAT`, and `dFdx` of the
+  two, which are exact because both run evenly across such a
+  primitive). Without that step the half-texel the chip starts in by is
+  half a *picture* pixel and not half a pixel of video memory, so the
+  right part of every block shows the next texel along: at the console's
+  resolution it is nothing, at eight times it is half the block. That
+  was what made the menus come apart into black lines on a real card —
+  where the next texel along is nothing, the fragment is thrown away
+  and the background shows through. `--gl-blocks` measures it ("How it
+  is proved, with nothing shown").
 - The **four mixes** are the card's blending at eight bits a channel
   instead of the chip's five: half and half by `SRC_ALPHA`, added and a
   quarter added by `ONE, ONE_MINUS_SRC_ALPHA` with the shader setting
@@ -1684,6 +1698,43 @@ window's own needs already brought in, are enough, in 32 bits as the
 port is. It is run by `tools/port_gl_prove.py`, which writes each play
 test's plan for the port, runs it three ways and prints what it
 measured.
+
+**At any scale, and at two scales unlike each other, what the game
+draws flat must be the console's own picture scaled up by whole
+blocks** (`--gl-blocks`). A pixel of video memory is a block of `scale`
+by `tall` pixels of the remastered picture, so for every pixel of the
+console's own picture the prover asks two things of its block: that it
+is of one colour at all, and that the colour is the console's. The
+bands beside the console's 640 pixels in a wider picture are the
+scene's alone and are left out. What a flat screen may still differ in
+is a pixel that mixes, which the card mixes at eight bits a channel and
+the chip at five, and the edge of a flat polygon that is not up and
+down, which the card draws at the picture's own resolution.
+
+Measured over the boot, the options page, the top menu and the
+character select, with `aspect 16:9`, every twentieth blank:
+
+| The scale | Pictures | Pixels | | Blocks not of one colour | Blocks not the console's colour | ... by more than a step | The worst channel |
+|---|---|---|---|---|---|---|---|
+| 4 across, 3 down | 28 | 3,686,400 | before | 645,949 | 1,170,316 | 515,940 | 255 |
+| | | | after | **0** | 968,059 | 7,439 | 11 |
+| 8 across, 6 down | 8 | 614,400 | before | 4,066 | 9,719 | 4,066 | 255 |
+| | | | after | **0** | 7,904 | **0** | 7 |
+| 4 across, 8 down | 8 | 614,400 | before | 4,066 | 9,719 | 4,066 | 255 |
+| | | | after | **0** | 7,904 | **0** | 7 |
+
+The 255 is the measure of the defect: black where the console has a
+colour. What is left is the pixels that mix, which the card mixes at
+eight bits a channel and the chip at five: that is the whole of the
+"not the console's colour" column, and two of a five-bit step is as far
+as any of it goes. `tools/port_gl_prove.py` runs this on each of the
+three plans and fails the run if any block is broken up or any pixel is
+more than two steps out.
+
+(At 8 across the 640-wide screens come to more pixels than the prover
+keeps a picture in, so only the 320-wide ones — the boot and the
+options page — are measured there. The run at 4 across covers every
+flat screen.)
 
 **At scale 1, with everything that changes a value turned off**
 (`--gl-exact`: the corners where the PlayStation held them, the texture
@@ -1837,9 +1888,18 @@ second a question of the game's own rate and not of the drawing.
   at all (`stage_ResetCellFlags`, `g_stage_detail_pattern`). On ground
   that is not flat the shape changes a little at those two distances,
   and the remastered picture shows it more clearly than the console's
-  does. It was left alone: cutting every tile sixteen ways would be
-  sixteen times the primitives for the whole stage, which is the one
-  thing that would fill the buffers.
+  does. Giving every cell the finest detail, so that nothing of the
+  ground ever changes shape, was written and measured and taken out
+  again. The primitive buffer holds it — 95 KB of the port's megabyte —
+  but the side channel does not: a tile that is cut has the GTE store
+  its corners into the primitive itself, so sixteen ways instead of one
+  is sixteen times the addresses in a table of 8,192 slots. In a fight
+  it was full 845,713 times instead of 99, and the share of the scene
+  drawn flat — the corners at the console's whole pixels, the texture
+  not in perspective — went from 16% to 31%. A worse picture for a
+  steadier one is not a trade worth making; what it needs first is a
+  side channel that does not key a point by the address it was stored
+  at.
 - **The smoothing is held to a power of two.** Three times over moves
   8,983 pixels of a flat picture of 1,228,800, where two and four move
   7. The reason was looked for and not found, so the setting takes 2
@@ -1847,10 +1907,22 @@ second a question of the game's own rate and not of the drawing.
 - **The HUD does not move out to the edges of a wide picture** ("A
   wider picture", "What is not done").
 - A primitive whose corners the GTE did not project — a 2D one, or one
-  of the 18% of the scene's that the side channel has no depth for — is
-  drawn flat, exactly where the PlayStation put it. That is right for
-  the 2D layer; for the rest it is the console's picture at a higher
-  resolution and nothing worse.
+  of the scene's that the side channel has no depth for — is drawn
+  flat, exactly where the PlayStation put it. That is right for the 2D
+  layer; for the rest it is the console's picture at a higher
+  resolution and nothing worse. **How much of the scene that is**, over
+  a whole fight with the camera swung right round at `draw_distance
+  max`: of 927,425 polygons, 62,207 (6.7%) were drawn flat, and all
+  107,070 rectangles, which have no depth by nature. Such a polygon
+  sits at the console's own whole pixel while the ones about it sit
+  where the projection really put them, so the two part by up to half a
+  pixel of video memory — four pixels of the picture at eight times the
+  resolution — and which of them it is changes from frame to frame.
+  Which primitives they are was not traced; where to look is the
+  drawing that works out a screen position itself instead of having the
+  GTE store one (the shadows, the effects, the cloth). Nothing here can
+  recover what was never written down: covering them means more lines
+  of the side channel in the game's own drawing code.
 - **A thin seam where two textured polygons meet.** The chip counts a
   texture point across a polygon in steps of its own and starts half a
   step in; the hardware path starts half a texel in, which is the same
@@ -1861,7 +1933,12 @@ second a question of the game's own rate and not of the drawing.
   the stage is chosen, whose map is two textures side by side. Half a
   step is what the side channel would have to carry for it, or the
   attribute would have to be interpolated from the pixel's corner
-  rather than its middle.
+  rather than its middle. (**The scale no longer makes it worse for a
+  flat primitive**: the attribute is read at the corner of the block of
+  picture pixels that one pixel of video memory is, so what is left is
+  this rounding at the console's own resolution and not a strip of the
+  block that grows with the scale. The 609 pixels are measured at scale
+  1, where the two are the same point and the step back is nothing.)
 
 ### How far the stage is drawn
 
@@ -1915,6 +1992,17 @@ the near scale a tile 65,536 world units off reads negative and is
 dropped, where the stage's grid is 90,510 units across its diagonal. The
 cost of that scale is that a tile's place is kept to four units instead
 of two, which is what the game's own far view already does.
+
+**`max` is what the window starts with** (`keymap.c`, and the settings
+file it writes). It is the only one of the three that draws the same
+cells whichever way the camera looks: `original` and `far` both take
+the wedge of the 64 masks for the way the camera is facing, so a cell
+near the camera comes into the picture and goes out again as the camera
+turns, which on a real screen is a stage that flickers at its edges.
+With `max` the mask is every cell, and the count of tiles a frame
+queued is the same every frame — the prover prints both ends of it
+(`tiles` and `tiles_least` of `gl run limits`; 328 and 328 over a whole
+fight with the camera swung right round).
 
 **The limits, found and measured.** Each is counted every frame of every
 run and reported (`port_remaster.h`, `PortRemasterLimits`; the prover
@@ -2181,7 +2269,19 @@ prover does with EGL and no display, the window does with SDL:
   both pictures and F2 costs nothing but a different source;
 - the counter in the corner (F3) is its own few pixels over either
   picture, by the same call with the box's alpha kept; the session's log
-  is the window's as it was.
+  is the window's as it was;
+- **F12 keeps a picture of the window** as the player sees it: the
+  window's own pixels read back (`port_GlReadWindow`, or SDL's renderer
+  where there is no card) and written as a PNG into a `screenshots/`
+  folder beside the program, named for the date, the time of day and a
+  number, with a line of the log saying where it went
+  (`port_TakeShot`, `port_WritePixelsPng`; `PLAYING.md`). It is taken
+  after everything of the blank has been drawn and before it is shown,
+  so it is exactly what the screen is about to hold, bands and all.
+  `--shot-at N` does the same at one blank, for a test, since no plan
+  can press a key that is no pad's button; `--window WxH` opens the
+  window at a size this machine's screen may not have, which is how a
+  player's 2,560 by 1,369 is reproduced here.
 
 **Where there is no OpenGL 3.3** — an old card, or SDL told to show
 nothing — the window is made again without a context and SDL's renderer
@@ -2204,7 +2304,7 @@ may change as it runs. With nothing said: the picture follows the
 options page, the scene is drawn at as many times the console's
 resolution as the window's size asks for (`port_RemasterScaleFor`, which
 is recomputed when the window is resized or the game changes its display
-mode), the draw distance is `far`, the smoothing is 2, and the shape is
+mode), the draw distance is `max`, the smoothing is 2, and the shape is
 `16:9`, the wider view of the same scene with the fight's HUD at its
 edges ("A wider picture"). With "Graphics: Original" the window shows the
 console's own four by three whatever the shape says.
@@ -2244,14 +2344,23 @@ picture's middle is no longer the four-by-three picture to the pixel,
 which is the price of filling the band and is only paid when the picture
 is widened.
 
-**Not proved**: nobody has seen a window on a real graphics card. The
-picture was drawn only by Mesa's software renderer, with no window on
-screen, so what a driver makes of the shaders, how full screen behaves
-and whether a card keeps up at 30 frames a second are not known. The
+**What a real card showed.** The first run on one (an NVIDIA RTX 3090,
+OpenGL 3.3, a window of 2,560 by 1,369 on a screen of 2,560 by 1,440)
+found the menus full of black lines that are not in the game: the sample
+point of a flat primitive, which had been right only at the console's
+own resolution ("What the card draws into"). It is mended, and
+`--gl-blocks` is the measure that holds it mended. The same run was
+reproduced here with `--window 2560x1369` through SDL's `offscreen`
+driver, which is what that option is for: the window opens at a size
+this machine's screen has not, and `--shot-at N` keeps its pixels.
+
+**Not proved**: everything but that one session is still Mesa's
+software renderer with no window on screen, so how full screen behaves
+and whether a card keeps up are known for one machine and no other. The
 counter and the fade of a resize were read from the pixels, not seen.
 
-What the window still needs of the remastered picture is the two steps
-after a wider one: a high frame rate and new lighting (below).
+What the window still needs of the remastered picture is new lighting
+(below).
 
 ### More pictures a second
 
@@ -2337,6 +2446,38 @@ looked in, so a corner may move 128 pixels and still be found. That
 pairs 1,128 of 1,206. It is worked out once for a pair of frames and
 read again by every picture drawn between them.
 
+**The pairing is one-to-one.** Every primitive of the frame after the
+one on show is marked as it is taken, and the search passes over those
+already taken. Without that, two faces of the same texture a little
+apart — which is what a stage's ground is made of, every tile the same
+signature — take the same partner, and one of them is then drawn
+stretched from its own place to the other's: a tile that flies across
+the picture while the camera turns. In a fight with the camera swinging
+right round at `draw_distance max`, the nearest partner was one already
+taken **twice in a frame** (`clashes`, which the prover prints: it is
+how many such pairs there would otherwise have been), and 73 times a
+frame in a tree that cut every tile sixteen ways, where the ground has
+sixteen times as many faces of the one texture. Those are the dark
+tiles that appeared and went in a frame or two on a real card.
+
+It costs something in one measure. Over a fight whose camera swings
+right round, 30 of 718 frames now have a picture that is not farther
+from the first than the picture before it, where 3 of 718 did: the old
+pairing always took the *nearest* face of the same texture, which is
+what makes that sum smallest, and what makes it wrong. The measure of
+the geometry itself — every corner between its own two ends — is 0
+either way.
+
+The offsets are taken first and the search runs after them, so a face
+whose place in the buffer is proof of itself cannot be given away to a
+neighbour by the search. And **where most of the scene was found by its
+place** — more than half of it — the renderer walked the scene the same
+way in both frames, and the places of the rest are taken as well
+however far the corner moved (`far_keyed`): a face of the ground can
+cross half the screen while the camera swings, which is further than
+any search is allowed to look. It is asked for only after the count, so
+a frame whose walk had moved on is not trusted that way at all.
+
 **What is not moved, and what then happens.** A primitive the frame
 after it has not (something spawned or gone), one whose corners the
 projection put off the eleven bits the chip holds, one with no depth, or
@@ -2349,6 +2490,15 @@ changed, a model replaced — and no picture is drawn at all: the window
 shows the game's own, which is exactly right. In `port_game` that is
 every blank of the menus and the loading screens, where there is nothing
 with depth to move, and the game runs at 60 there anyway.
+
+**The window's own path** was run headless as well, through SDL's
+`offscreen` driver: at `--frame-rate 120`, with the scene at the
+console's own resolution so that a blank has time left in it on a
+software renderer, a run drew 59 pictures between the game's frames and
+1,272 blanks where the two frames were unlike. At a larger scale
+llvmpipe is slower than the blank itself and there is no time left to
+draw one in, which is why the measurements above are the prover's and
+not the window's.
 
 **Presentation** (`src/port/window/sdl_window.c`). The setting is
 `frame_rate = original | display | N` (`--frame-rate`), `original` with
@@ -2386,7 +2536,18 @@ the last the frame after it, and three things are held:
   distance from the first must not fall and the distance from the last
   must not rise, from phase to phase;
 - **the point the renderer watched** — the corner that moved farthest,
-  the same primitive at every phase — lies between its own two ends.
+  the same primitive at every phase — lies between its own two ends;
+- **every corner of every primitive lies between its own two ends**
+  (`off_the_line`, counted as each picture is drawn: a pixel either
+  side is allowed for the rounding of the two). This is the one that a
+  partner wrongly found shows in, since such a corner is pulled towards
+  a place that is not its own. It was 0 in 5,744 pictures of a fight
+  whose camera swung right round;
+- **a scene that did not move at all is drawn exactly as it is**
+  (`still`, `still_moved`): where the farthest corner moved 0 pixels
+  between the two frames, every picture in between must be the frame on
+  show, pixel for pixel. A fight paused with Start, where nothing of the
+  scene moves, gave `still 1 still_moved 0`.
 
 And the game computes the same thing with the pictures on and off: the
 trace of every watched value at every blank is identical, line for line,

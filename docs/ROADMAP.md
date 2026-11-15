@@ -86,9 +86,13 @@ No dates.
       places its fog to end there, and `max` draws the stage to its own
       far edge with the fog pushed out four times as far, its colours
       untouched ("How far the stage is drawn"). The port hands the game
-      primitive buffers of its own for it. Left of it: a stage's
-      geometry was never meant to be seen whole, so its far edge shows
-      where the ground stops.
+      primitive buffers of its own for it, and `max` is what the window
+      starts with: it is the only setting that draws the same cells
+      whichever way the camera looks, so nothing of the stage comes and
+      goes as the camera turns. Left of it: a stage's geometry was never
+      meant to be seen whole, so its far edge shows where the ground
+      stops, and a tile still changes shape at the two rings where the
+      console's level of detail steps.
    4. **The wide picture.** Done (`aspect`, and `16:9` is what the
       window shows with nothing said): the game never culls to the right
       or the bottom, so a wider view needs nothing of the projection to
@@ -104,10 +108,9 @@ No dates.
       after it — which the game has already worked out, since the
       console puts a frame up a blank after it is drawn — mixed in, each
       corner moved as the projection would move it ("More pictures a
-      second"). It costs no input lag. Left of it: nobody has seen it
-      move, so `original` is still the default; a face the next frame
-      has not waits for that frame instead of moving, and a camera cut
-      shows the game's own picture.
+      second"). It costs no input lag. Left of it: `original` is still
+      the default; a face the next frame has not waits for that frame
+      instead of moving, and a camera cut shows the game's own picture.
    6. **Lighting and shadows**: the normals the mesh has and the
       primitive does not.
 

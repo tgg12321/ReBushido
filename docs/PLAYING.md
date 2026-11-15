@@ -73,6 +73,14 @@ the counter in the corner: `59.8/30.0 100%` is the pictures shown a
 second, the game's own frames a second (30 in a fight and 60 in the
 main menu are full speed), and the speed against the console's.
 
+**F12 keeps a picture of the window**, exactly the pixels on the screen
+at that moment, as a PNG in a `screenshots/` folder beside the program
+(`shot-20261115-162200-000.png`: the date, the time of day, and a
+number for pictures taken in the same second). The session's log says
+where each one went. Nothing is scaled or cut: a window of 2,560 by
+1,369 gives a picture of 2,560 by 1,369, with the black bands at its
+sides or top if the picture does not fill it.
+
 ## Changing the keys and the picture
 
 Make a text file `rebushido.cfg` beside the program. A line is
@@ -85,7 +93,7 @@ fullscreen = on
 fps = off                # no counter in the corner (F3 brings it back)
 graphics = remastered    # original (the console's picture) or remastered
 resolution = 3           # how many times the console's; 0 = the window's
-draw_distance = max      # original, far, or max: how much of the stage
+draw_distance = far      # original, far, or max: how much of the stage
 antialiasing = 2         # off, 2 or 4: the scene's edges smoothed
 aspect = 4:3             # the console's shape; 16:9 is the default
 frame_rate = display     # original (the default), display, or a number
@@ -126,7 +134,7 @@ nothing at all while Graphics is Original.
 | | | |
 |---|---|---|
 | `resolution` | `0`, or `1` and up | How many times the console's resolution the scene is drawn at (`--resolution N`). `0`, which is the default, takes the window's own size, so the picture is as sharp as the window is large. |
-| `draw_distance` | `original`, `far`, `max` | How much of the stage is drawn, and how far out its fog is placed. The console draws a disc of about 26,000 units about the camera and its fog ends there, so the ground fades into the distance; `far` draws about twice as much, and `max` draws the stage to its own far edge with the fog pushed out four times as far. The fog's colours are not touched, so a night stage stays as dark as it was. `far` with nothing said. |
+| `draw_distance` | `original`, `far`, `max` | How much of the stage is drawn, and how far out its fog is placed. The console draws a disc of about 26,000 units about the camera and its fog ends there, so the ground fades into the distance; `far` draws about twice as much, and `max` draws the stage to its own far edge with the fog pushed out four times as far. The fog's colours are not touched, so a night stage stays as dark as it was. **`max` with nothing said**: it is the only one of the three that draws the same cells whichever way the camera looks, so nothing of the stage comes and goes as the camera turns. |
 | `antialiasing` | `off`, `2`, `4` | The scene drawn that many times over each way and averaged down, which smooths its edges. The HUD, the fonts and the menus are left exactly as crisp as they were. It costs fill rate and nothing else: four times over is sixteen times the pixels. `2` with nothing said. |
 | `aspect` | `4:3`, `16:9`, any `W:H` | The shape of the picture. A wider one is a **wider view of the same scene**, not a stretched picture: the camera keeps its height and gains width. Use it with `draw_distance max`, which fills the sides. `16:9` with nothing said; the fight's counters, clocks and points are drawn at the new edges, while the menus, the select screens and the loading pictures keep the console's shape in the middle ([`PORT.md`](PORT.md), "A wider picture"). |
 

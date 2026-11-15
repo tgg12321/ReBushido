@@ -14,7 +14,12 @@ For each play test's plan it runs build/port-gl/rebushido-gl twice:
     dither), comparing every picture with the software GPU's own,
     pixel for pixel;
   - at the scale asked for, writing the hardware's picture and the
-    software GPU's side by side as PNGs.
+    software GPU's side by side as PNGs;
+  - at two scales unlike each other with the wider shape, holding every
+    picture that has no scene in it to the console's own picture scaled
+    up by whole blocks (--gl-blocks): what the game draws flat must be
+    the console's picture at any scale, which is what the first run on
+    a real card found it was not (docs/PORT.md, "Remastered").
 
 It also runs the game once with the remastered renderer on and once
 with it off and holds the two traces to each other: the game must
@@ -65,13 +70,21 @@ def run(args, log, quiet=False):
 def numbers_of(log):
     """What a run printed: the comparison and the counts."""
     out = {'pictures': 0, 'pixels': 0, 'different': 0, 'close': 0, 'worst': 0,
-           'per_frame_us': 0, 'blanks': 0, 'kinds': [], 'missing': []}
+           'per_frame_us': 0, 'blanks': 0, 'kinds': [], 'missing': [],
+           'block_pictures': 0, 'block_pixels': 0, 'block_uneven': 0,
+           'block_different': 0, 'block_far': 0, 'block_worst': 0}
     with open(log, encoding='utf-8', errors='replace') as f:
         for line in f:
             m = re.search(r'gl run compared (\d+) pictures (\d+) pixels different (\d+) close (\d+) worst (\d+)', line)
             if m:
                 out.update(pictures=int(m.group(1)), pixels=int(m.group(2)), different=int(m.group(3)),
                            close=int(m.group(4)), worst=int(m.group(5)))
+            m = re.search(r'gl run blocks pictures (\d+) pixels (\d+) uneven (\d+) '
+                          r'different (\d+) far (\d+) worst (\d+)', line)
+            if m:
+                out.update(block_pictures=int(m.group(1)), block_pixels=int(m.group(2)),
+                           block_uneven=int(m.group(3)), block_different=int(m.group(4)),
+                           block_far=int(m.group(5)), block_worst=int(m.group(6)))
             m = re.search(r'gl run per_frame_us (\d+)', line)
             if m:
                 out['per_frame_us'] = int(m.group(1))
@@ -91,6 +104,19 @@ def numbers_of(log):
                                           'misses', 'full', 'masked', 'texture_from_drawn']):
                     out[name] = int(m.group(i + 1))
     return out
+
+
+# Two of a five-bit channel's steps, in a byte's 255: what a pixel that
+# mixes may be out by, since the card mixes at eight bits a channel and
+# the chip at five.
+BLOCK_WORST_MAX = 16
+
+
+def blocks_hold(got):
+    """Whether a run's flat screens are the console's own picture: no
+    block of one of its pixels is broken up, and none is further from
+    the console's colour than mixing can account for."""
+    return got['block_uneven'] == 0 and got['block_worst'] <= BLOCK_WORST_MAX
 
 
 def trace_of(log):
@@ -136,6 +162,15 @@ def main():
             run(common + ['--graphics', 'remastered', '--gl-scale', str(args.scale), '--gl-shots', folder,
                           '--gl-every', str(args.every), '--gl-original'],
                 os.path.join(folder, 'pictures.log'))
+        print('%s: scale 4 across and 3 down, the flat screens block for block'
+              % name)
+        run(common + ['--graphics', 'remastered', '--gl-scale', '4', '--gl-tall', '3',
+                      '--aspect', '16:9', '--gl-blocks', '--gl-every', '20'],
+            os.path.join(folder, 'blocks.log'))
+        blocks = numbers_of(os.path.join(folder, 'blocks.log'))
+        for key in ('block_pictures', 'block_pixels', 'block_uneven',
+                    'block_different', 'block_far', 'block_worst'):
+            exact[key] = blocks[key]
         print('%s: the game with the remastered renderer on and off' % name)
         run(common + ['--graphics', 'remastered', '--trace'], os.path.join(folder, 'trace_on.log'), quiet=True)
         run(common + ['--graphics', 'original', '--trace'], os.path.join(folder, 'trace_off.log'), quiet=True)
@@ -154,12 +189,23 @@ def main():
         if exact['missing']:
             print('    primitives the hardware did not draw: %s' % ', '.join(exact['missing']))
         print('    kinds: %s' % ', '.join('%s %d' % (kind, seen) for kind, seen, _ in exact['kinds']))
+        # what the game draws flat, block for block against the console's
+        # own picture at a scale of 4 across and 3 down
+        print('    blocks: %d pictures, %d pixels, %d not of one colour, '
+              '%d not the console\'s colour, %d by more than a step '
+              '(worst %d): %s'
+              % (exact['block_pictures'], exact['block_pixels'], exact['block_uneven'],
+                 exact['block_different'], exact['block_far'], exact['block_worst'],
+                 'ok' if blocks_hold(exact)
+                 else 'NO (a flat screen is not the console\'s picture)'))
         print('    with depth %d, without %d, points %d, faces %d, attached %d, misses %d, table full %d, '
               'masked %d, textures from drawn pixels %d'
               % (exact.get('with_depth', 0), exact.get('without_depth', 0), exact.get('points', 0),
                  exact.get('faces', 0), exact.get('attached', 0), exact.get('misses', 0), exact.get('full', 0),
                  exact.get('masked', 0), exact.get('texture_from_drawn', 0)))
-    return 0 if all(row[2] for row in rows) else 1
+    traces_agree = all(row[2] for row in rows)
+    blocks_agree = all(blocks_hold(row[1]) for row in rows)
+    return 0 if traces_agree and blocks_agree else 1
 
 
 if __name__ == '__main__':

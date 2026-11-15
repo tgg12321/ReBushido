@@ -788,7 +788,9 @@ static void test_Graphics(void) {
      * picture, the window's size the resolution */
     CHECK_EQ(g_test_settings.graphics, PORT_GRAPHICS_FOLLOW);
     CHECK_EQ(g_test_settings.resolution, PORT_RESOLUTION_WINDOW);
-    CHECK_EQ(g_test_settings.distance, PORT_DISTANCE_FAR);
+    /* the whole stage, so that nothing of it comes and goes as the
+     * camera turns */
+    CHECK_EQ(g_test_settings.distance, PORT_DISTANCE_MAX);
     CHECK_EQ(g_test_settings.supersample, 2);
     /* the wider picture is what the window shows with nothing said */
     CHECK_EQ(g_test_settings.aspect_w, PORT_ASPECT_W_WIDE);

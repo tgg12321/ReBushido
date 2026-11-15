@@ -166,7 +166,7 @@ def plan_for(toml_path, out, stage, limit):
 LIMITS = re.compile(
     r'gl run limits frames (\d+) prim_bytes (-?\d+) prim_free (-?\d+) '
     r'queue_size (-?\d+) queue_free (-?\d+) ot_farthest (\d+) tiles (\d+) '
-    r'nodes (\d+) side_full (\d+)')
+    r'tiles_least (\d+) nodes (\d+) side_full (\d+)')
 FRAME = re.compile(
     r'gl blank (\d+) picture (\d+)x(\d+) scale (\d+) vertices (\d+) '
     r'draws (\d+) uploaded (\d+)')
@@ -178,7 +178,8 @@ STAGE_TRACE = re.compile(r'\bloaded_stage=(-?\d+)')
 def numbers_of(log, err):
     """What a run measured."""
     out = {'frames': 0, 'prim_bytes': 0, 'prim_free': 0, 'queue_size': 0,
-           'queue_free': 0, 'ot_farthest': 0, 'tiles': 0, 'nodes': 0,
+           'queue_free': 0, 'ot_farthest': 0, 'tiles': 0, 'tiles_least': 0,
+           'nodes': 0,
            'side_full': 0, 'per_frame_us': 0, 'vertices': [], 'prims': 0,
            'stages': set()}
     with open(err, encoding='utf-8', errors='replace') as f:
@@ -187,7 +188,8 @@ def numbers_of(log, err):
             if m:
                 for i, name in enumerate(['frames', 'prim_bytes', 'prim_free',
                                           'queue_size', 'queue_free',
-                                          'ot_farthest', 'tiles', 'nodes',
+                                          'ot_farthest', 'tiles',
+                                          'tiles_least', 'nodes',
                                           'side_full']):
                     out[name] = int(m.group(i + 1))
             m = PER_FRAME.search(line)
@@ -289,22 +291,25 @@ def main():
             got['seconds'] = seconds
             rows.append((stage, name, got))
             print('%-24s %-22s prims %7d vertices mean %6d worst %7d  '
-                  'tiles %4d  prim_free %7d of %7d  queue_free %4d  '
+                  'tiles %4d to %4d  prim_free %7d of %7d  queue_free %4d  '
                   'ot %4d  side_full %5d  %5.1f s'
                   % (STAGE_NAMES[stage], name, got['prims'],
-                     got['vertices_mean'], got['vertices_worst'], got['tiles'],
-                     got['prim_free'], got['prim_bytes'], got['queue_free'],
+                     got['vertices_mean'], got['vertices_worst'],
+                     got['tiles_least'], got['tiles'], got['prim_free'],
+                     got['prim_bytes'], got['queue_free'],
                      got['ot_farthest'], got['side_full'], seconds))
             sys.stdout.flush()
     table = os.path.join(out, 'measured.tsv')
     with open(table, 'w', encoding='utf-8', newline='\n') as f:
         f.write('stage\tname\tsetting\tprims\tvertices_mean\tvertices_worst\t'
-                'tiles\tnodes\tprim_free\tprim_bytes\tqueue_free\tot_farthest\t'
+                'tiles\ttiles_least\tnodes\tprim_free\tprim_bytes\t'
+                'queue_free\tot_farthest\t'
                 'side_full\tper_frame_us\tseconds\tloaded_stages\n')
         for stage, name, got in rows:
-            f.write('%d\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.1f\t%s\n'
+            f.write('%d\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%.1f\t%s\n'
                     % (stage, STAGE_NAMES[stage], name, got['prims'],
                        got['vertices_mean'], got['vertices_worst'], got['tiles'],
+                       got['tiles_least'],
                        got['nodes'], got['prim_free'], got['prim_bytes'],
                        got['queue_free'], got['ot_farthest'], got['side_full'],
                        got['per_frame_us'], got['seconds'],

@@ -33,10 +33,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "gl.h"
 #include "gl_tween.h"
 #include "port_gpu.h"
+#include "port_host.h"
 #include "port_remaster.h"
 #include "port_spu.h"
 #include "shared.h"
@@ -71,6 +73,11 @@
 #define COUNTER_PAD 2
 #define COUNTER_BOX 0xB0000000U
 #define COUNTER_INK 0xFFFFFFFFU
+/* The player's own pictures of the window (F12): the folder they go in,
+ * beside the program, and how the files are named. */
+#define SHOTS_FOLDER "screenshots"
+#define SHOT_EPOCH_YEAR 1900
+#define SHOT_NUMBERS 1000
 /* The log's line every ten seconds, and its count of the sound running
  * out every minute, in vertical blanks. */
 #define BEAT_BLANKS 600
@@ -99,9 +106,12 @@ static s32 g_port_gl_scale;
 static s32 g_port_gl_tall;
 /* How many times the picture was changed (F2), for the end's account. */
 static u32 g_port_toggles;
-/* The window's own pixels, where a test asks for them (--tap-window). */
+/* The window's own pixels, where a test asks for them (--tap-window) or
+ * the player does (F12), and how many pictures F12 has taken. */
 static u32 *g_port_window_pixels;
 static u32 g_port_window_room;
+static s32 g_port_wants_shot;
+static u32 g_port_shots_taken;
 
 static SDL_AudioDeviceID g_port_audio;
 static PortRing g_port_ring;
@@ -633,7 +643,11 @@ static void port_MakeWindow(s32 wants_gl) {
     }
     g_port_window = SDL_CreateWindow(
         WINDOW_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        WINDOW_WIDTH, WINDOW_HEIGHT, flags);
+        g_port_window_options.window_w > 0 ? g_port_window_options.window_w
+                                           : WINDOW_WIDTH,
+        g_port_window_options.window_h > 0 ? g_port_window_options.window_h
+                                           : WINDOW_HEIGHT,
+        flags);
 }
 
 /* The window, the sound card and the controllers, at the first blank:
@@ -812,6 +826,34 @@ static void port_ShowRemastered(s32 window_w, s32 window_h) {
                        g_port_settings.is_linear);
 }
 
+/* ---- a picture of the window, for the player (F12) ---- */
+
+/* The window's own pixels into `g_port_window_pixels`, 0xFFRRGGBB each,
+ * a row after a row from the top: the card's framebuffer where there is
+ * one, and SDL's renderer where there is not. FALSE if they cannot be
+ * read or there is no room for them. */
+static s32 port_ReadWindowPixels(s32 window_w, s32 window_h) {
+    if (window_w <= 0 || window_h <= 0) {
+        return FALSE;
+    }
+    if (g_port_window_room < (u32)(window_w * window_h)) {
+        free(g_port_window_pixels);
+        g_port_window_room = (u32)(window_w * window_h);
+        g_port_window_pixels = malloc((size_t)g_port_window_room * sizeof(u32));
+        if (g_port_window_pixels == NULL) {
+            g_port_window_room = 0;
+            return FALSE;
+        }
+    }
+    if (g_port_has_gl) {
+        return port_GlReadWindow(
+            g_port_window_pixels, g_port_window_room, window_w, window_h);
+    }
+    return SDL_RenderReadPixels(
+               g_port_renderer, NULL, SDL_PIXELFORMAT_ARGB8888,
+               g_port_window_pixels, window_w * BYTES_PER_PIXEL) == 0;
+}
+
 /* For a test: the window's own pixels, as a player would see them, to a
  * file of the same form as port_TapFrame's. Only the build with a
  * graphics card has them; nothing of the game's reads them back. */
@@ -826,20 +868,7 @@ static void port_TapWindow(u32 blank) {
         return;
     }
     port_WindowSize(&window_w, &window_h);
-    if (window_w <= 0 || window_h <= 0) {
-        return;
-    }
-    if (g_port_window_room < (u32)(window_w * window_h)) {
-        free(g_port_window_pixels);
-        g_port_window_room = (u32)(window_w * window_h);
-        g_port_window_pixels = malloc((size_t)g_port_window_room * sizeof(u32));
-        if (g_port_window_pixels == NULL) {
-            g_port_window_room = 0;
-            return;
-        }
-    }
-    if (!port_GlReadWindow(
-            g_port_window_pixels, g_port_window_room, window_w, window_h)) {
+    if (!port_ReadWindowPixels(window_w, window_h)) {
         return;
     }
     snprintf(path, sizeof(path), "%s/window-%06u.raw",
@@ -857,6 +886,51 @@ static void port_TapWindow(u32 blank) {
     fwrite(g_port_window_pixels, sizeof(u32),
            (size_t)window_w * (size_t)window_h, file);
     fclose(file);
+}
+
+/* The window as the player sees it, into
+ * `screenshots/shot-YYYYMMDD-HHMMSS-NNN.png` beside the program, and a
+ * line of the log saying where it went (docs/PLAYING.md). The picture is
+ * taken after everything of the blank has been drawn and before it is
+ * shown, so it is exactly what the screen is about to hold. */
+static void port_TakeShot(void) {
+    char path[PATH_BYTES_MAX];
+    char folder[PATH_BYTES_MAX];
+    char *base = SDL_GetBasePath();
+    const char *beside = base != NULL ? base : "";
+    time_t now = time(NULL);
+    const struct tm *when = localtime(&now);
+    s32 window_w = 0;
+    s32 window_h = 0;
+    s32 file;
+    s32 written;
+
+    port_WindowSize(&window_w, &window_h);
+    if (!port_ReadWindowPixels(window_w, window_h) || when == NULL) {
+        port_Say("F12: the window's pixels cannot be read");
+        SDL_free(base);
+        return;
+    }
+    snprintf(folder, sizeof(folder), "%s%s", beside, SHOTS_FOLDER);
+    port_MakeFolder(folder);
+    snprintf(path, sizeof(path), "%s/shot-%04d%02d%02d-%02d%02d%02d-%03u.png",
+             folder, when->tm_year + SHOT_EPOCH_YEAR, when->tm_mon + 1,
+             when->tm_mday, when->tm_hour, when->tm_min, when->tm_sec,
+             g_port_shots_taken % SHOT_NUMBERS);
+    SDL_free(base);
+    file = port_HostCreate(path);
+    written = file >= 0 && port_WritePixelsPng(
+                               file, g_port_window_pixels, window_w, window_h);
+    if (file >= 0) {
+        port_HostClose(file);
+    }
+    g_port_shots_taken++;
+    if (!written) {
+        port_Say("F12: the picture %s cannot be written", path);
+        return;
+    }
+    port_Say(
+        "F12: a picture of the window, %d by %d: %s", window_w, window_h, path);
 }
 
 /* The displayed rectangle of video memory into the window: black where
@@ -1266,6 +1340,15 @@ static void port_TakeKey(const SDL_KeyboardEvent *key) {
         }
         return;
     }
+    if (key->keysym.scancode == SDL_SCANCODE_F12) {
+        /* the window's own, and no button of a pad: the picture itself is
+         * taken at the end of the blank, where everything of it has been
+         * drawn and nothing shown yet */
+        if (down) {
+            g_port_wants_shot = TRUE;
+        }
+        return;
+    }
     g_port_key_events++;
     port_ApplyInput(
         &g_port_settings, PORT_SOURCE_KEY, 0, (s32)key->keysym.scancode, down);
@@ -1512,6 +1595,16 @@ static void port_ShowBlank(u32 blank) {
         blank % (u32)g_port_window_options.tap_every == 0) {
         port_TapWindow(blank);
     }
+    if (g_port_window_options.shot_at > 0 &&
+        blank == (u32)g_port_window_options.shot_at) {
+        /* for a test, which cannot press a key that is no pad's button:
+         * what F12 does, at one blank */
+        g_port_wants_shot = TRUE;
+    }
+    if (g_port_wants_shot) {
+        g_port_wants_shot = FALSE;
+        port_TakeShot();
+    }
     if (g_port_window_options.toggle_at > 0 &&
         blank % (u32)g_port_window_options.toggle_at == 0) {
         /* for a test, which cannot press a key that is no pad's button:
@@ -1573,6 +1666,10 @@ static void port_CloseWindow(s32 code) {
              "told to the pads; %u presses of a plan made as the PC's input",
              g_port_key_events, g_port_controller_events, g_port_pad_changes,
              g_port_injected);
+    if (g_port_shots_taken != 0) {
+        port_Say("pictures: %u of the window kept in %s (F12)",
+                 g_port_shots_taken, SHOTS_FOLDER);
+    }
     if (g_port_audio != 0) {
         SDL_CloseAudioDevice(g_port_audio);
         g_port_audio = 0;

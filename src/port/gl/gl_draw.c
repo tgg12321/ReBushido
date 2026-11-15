@@ -171,6 +171,11 @@ PORT_GL_FUNCTIONS
 #define FLAG_RAW 2
 #define FLAG_HALF 4
 #define FLAG_DITHERED 8
+/* The primitive is flat on the screen, as the chip drew it: the 2D
+ * layer, and anything of the scene the side channel has no depth for.
+ * Such a one is sampled once for each pixel of video memory and not once
+ * for each pixel of the picture (the shader's `snap`). */
+#define FLAG_FLAT 16
 
 /* Which fragments a draw keeps, where a half-transparent primitive's
  * texels do not all mix (the mix that subtracts needs two draws). */
@@ -386,11 +391,36 @@ static const char g_gl_fragment_text[] =
     "}\n"
     "void main() {\n"
     "    vec2 uv = (u_affine != 0) ? v_texture_flat : v_texture;\n"
-    /* the chip works in whole numbers: a colour that comes out of the
-     * interpolation as 203.99999 is the 204 it means */
-    "    vec3 color = (u_exact != 0) ? floor(v_color + vec3(0.5)) : v_color;\n"
+    "    vec3 color = v_color;\n"
     "    bool mixes = (v_flags.w & 4u) != 0u;\n"
     "    ivec2 pixel = ivec2(floor(gl_FragCoord.xy / u_scale));\n"
+    /* A flat primitive is the chip's own picture at a larger scale, and
+     * the chip settled its texel and its colour once for each pixel of
+     * video memory: so the point they are read at is that pixel's own
+     * corner, where the chip's arithmetic began, and not this pixel's
+     * middle part of the way across it. Both vary evenly across the
+     * primitive (`noperspective`), so a derivative is their exact step
+     * and stepping back by the place in the block is exact as well.
+     * Without this the right part of every block of a texture is the
+     * next texel's, which at eight times the resolution is half the
+     * block: the menus come apart (docs/PORT.md, "Remastered").
+     *
+     * The four derivatives are taken where every fragment takes them,
+     * not inside the test: a derivative asked for where the fragments of
+     * a block of four do not all ask is undefined, and the block at the
+     * edge of a flat primitive holds fragments of another. */
+    "    vec2 uv_across = dFdx(v_texture_flat);\n"
+    "    vec2 uv_down = dFdy(v_texture_flat);\n"
+    "    vec3 color_across = dFdx(v_color);\n"
+    "    vec3 color_down = dFdy(v_color);\n"
+    "    if ((v_flags.w & 16u) != 0u) {\n"
+    "        vec2 back = mod(floor(gl_FragCoord.xy), u_scale);\n"
+    "        uv = v_texture_flat - back.x * uv_across - back.y * uv_down;\n"
+    "        color -= back.x * color_across + back.y * color_down;\n"
+    "    }\n"
+    /* the chip works in whole numbers: a colour that comes out of the
+     * interpolation as 203.99999 is the 204 it means */
+    "    if (u_exact != 0) { color = floor(color + vec3(0.5)); }\n"
     "    float shade = 1.0;\n"
     "    if ((v_flags.w & 1u) != 0u) {\n"
     "        uint texel = 0u;\n"
@@ -974,6 +1004,12 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     }
     if (prim->is_dithered) {
         flags |= FLAG_DITHERED;
+    }
+    /* drawn where the chip put it, by whole pixels of video memory: so
+     * its texel and its colour are read as the chip read them, once a
+     * pixel of video memory (the shader) */
+    if (!prim->has_depth || prim->kind == PORT_REMASTER_RECT) {
+        flags |= FLAG_FLAT;
     }
     state.is_half = prim->is_half;
     state.blend = prim->blend;

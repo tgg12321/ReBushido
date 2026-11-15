@@ -223,6 +223,9 @@ typedef struct {
     s32 queue_free;  /* ... left at the worst */
     u32 ot_farthest; /* the farthest ordering-table slot a frame used */
     u32 tiles;       /* tiles a frame queued, at most */
+    u32 tiles_least; /* ... and at least: the two are equal where the
+                      * whole stage is drawn, whichever way the camera
+                      * looks, and nothing of it comes and goes */
     u32 nodes;       /* ... and pieces of the stage */
     u32 side_full;   /* times the side channel's tables were full */
 } PortRemasterLimits;

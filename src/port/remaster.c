@@ -311,6 +311,11 @@ void port_RemasterNoteCells(s32 tiles, s32 nodes, s32 queue_size) {
     if ((u32)tiles > g_limits.tiles) {
         g_limits.tiles = (u32)tiles;
     }
+    /* and the fewest any frame queued: with the whole stage drawn the
+     * two are equal, which is what says that no tile comes and goes */
+    if (g_limits.queue_size == 0 || (u32)tiles < g_limits.tiles_least) {
+        g_limits.tiles_least = (u32)tiles;
+    }
     if ((u32)nodes > g_limits.nodes) {
         g_limits.nodes = (u32)nodes;
     }

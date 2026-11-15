@@ -60,7 +60,7 @@ const char g_port_default_settings[] =
     "                       # options page at boot says which)\n"
     "resolution = 0         # how many times the console's; 0 is the\n"
     "                       # window's own size\n"
-    "draw_distance = far    # original, far or max: how much of the stage\n"
+    "draw_distance = max    # original, far or max: how much of the stage\n"
     "antialiasing = 2       # off, 2 or 4: the scene's edges smoothed\n"
     "aspect = 16:9          # 16:9 for a wider view of the same scene,\n"
     "                       # or 4:3 as the console\n"
@@ -581,7 +581,10 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->fps_corner = PORT_CORNER_TOP_LEFT;
     settings->graphics = PORT_GRAPHICS_FOLLOW;
     settings->resolution = PORT_RESOLUTION_WINDOW;
-    settings->distance = PORT_DISTANCE_FAR;
+    /* the whole stage, every frame: nothing of it comes and goes
+     * as the camera turns (docs/PORT.md, "How far the stage is
+     * drawn") */
+    settings->distance = PORT_DISTANCE_MAX;
     settings->supersample = 2;
     /* the remastered picture is a wider view of the same scene, with the
      * fight's HUD at its edges (port_remaster.h); "Graphics: Original"

@@ -40,9 +40,19 @@ typedef struct {
     u32 mixed;    /* ... whose corners were moved part of the way */
     u32 unpaired; /* ... that the frame after it has not, or not near */
     u32 flat;     /* ... that have no depth: the 2D layer, the HUD */
+    /* of the last pair of frames: how the partners were found */
+    u32 keyed;     /* by the place in the primitive buffer, which is sure */
+    u32 far_keyed; /* ... of those, ones that moved farther than a search
+                    * is allowed, taken because the walk was the same */
+    u32 searched;  /* ... and by the nearest of the same signature */
+    u32 clashes;   /* ... where the nearest was another's already */
     /* how far the farthest corner moved between the two frames, in
      * whole pixels, over the last picture */
     u32 widest_step;
+    /* corners of the last picture that do not lie between the two
+     * frames' own places for them: none may, and the number is kept so
+     * that a run can say so (docs/PORT.md) */
+    u32 off_the_line;
 } PortTweenCounts;
 
 /* Takes the renderer that draws (port_GlBackend) and puts itself in

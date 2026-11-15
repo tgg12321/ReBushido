@@ -182,34 +182,26 @@ static void port_ReadDisplayPixel(
     }
 }
 
-/* The signature, the header, the pixels as one zlib stream of stored
- * blocks, and the end (port_gpu.h). */
-s32 port_WriteDisplayPng(s32 file) {
+/* The signature, the header and the start of the one zlib stream of
+ * stored blocks that holds a picture of `w` by `h` pixels. The rows
+ * follow, each a byte that says "no filter" and then three bytes a
+ * pixel, through port_PutDataByte. */
+static void port_BeginPng(s32 file, s32 w, s32 h) {
     PortPictureFile *out = &g_port_picture;
     static const u8 signature[PNG_SIGNATURE_BYTES] = {
         0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n', /* every PNG's */
     };
-    PortDisplay display;
-    s32 repeat;
-    u32 data_bytes;
-    u32 blocks;
-    s32 x;
-    s32 y;
+    u32 data_bytes = (u32)h * (u32)(1 + w * CHANNELS);
+    u32 blocks = (data_bytes + ZLIB_BLOCK_MAX - 1) / ZLIB_BLOCK_MAX;
     s32 i;
-    u8 rgb[CHANNELS];
 
-    port_GetDisplay(&display);
-    repeat = display.w >= WIDE_RATIO * display.h ? 2 : 1;
-    /* each line is a byte that says "no filter" and its pixels */
-    data_bytes = (u32)(display.h * repeat) * (u32)(1 + display.w * CHANNELS);
-    blocks = (data_bytes + ZLIB_BLOCK_MAX - 1) / ZLIB_BLOCK_MAX;
     port_BeginPicture(file);
     for (i = 0; i < PNG_SIGNATURE_BYTES; i++) {
         port_PutByte(signature[i]);
     }
     port_BeginChunk(PNG_HEADER_BYTES, "IHDR");
-    port_PutWord((u32)display.w);
-    port_PutWord((u32)(display.h * repeat));
+    port_PutWord((u32)w);
+    port_PutWord((u32)h);
     port_PutByte(PNG_DEPTH);
     port_PutByte(PNG_COLOR_RGB);
     port_PutByte(0); /* the one way of packing, no filter, no interlace */
@@ -225,6 +217,32 @@ s32 port_WriteDisplayPng(s32 file) {
     out->adler_high = 0;
     out->block_left = 0;
     out->data_left = data_bytes;
+}
+
+/* The sum after the rows, the end, and whether it all went through. */
+static s32 port_EndPng(void) {
+    PortPictureFile *out = &g_port_picture;
+
+    port_PutWord((out->adler_high << ADLER_SHIFT) | out->adler_low);
+    port_EndChunk();
+    port_BeginChunk(0, "IEND");
+    port_EndChunk();
+    port_FlushPicture();
+    return !out->failed;
+}
+
+/* The displayed rectangle of video memory as a PNG (port_gpu.h). */
+s32 port_WriteDisplayPng(s32 file) {
+    PortDisplay display;
+    s32 repeat;
+    s32 x;
+    s32 y;
+    s32 i;
+    u8 rgb[CHANNELS];
+
+    port_GetDisplay(&display);
+    repeat = display.w >= WIDE_RATIO * display.h ? 2 : 1;
+    port_BeginPng(file, display.w, display.h * repeat);
     for (y = 0; y < display.h * repeat; y++) {
         port_PutDataByte(0);
         for (x = 0; x < display.w; x++) {
@@ -234,12 +252,30 @@ s32 port_WriteDisplayPng(s32 file) {
             }
         }
     }
-    port_PutWord((out->adler_high << ADLER_SHIFT) | out->adler_low);
-    port_EndChunk();
-    port_BeginChunk(0, "IEND");
-    port_EndChunk();
-    port_FlushPicture();
-    return !out->failed;
+    return port_EndPng();
+}
+
+/* Pixels of the host's own as a PNG (port_gpu.h): what the window hands
+ * the player who asks for a picture of it. */
+s32 port_WritePixelsPng(s32 file, const u32 *pixels, s32 w, s32 h) {
+    s32 x;
+    s32 y;
+
+    if (pixels == NULL || w <= 0 || h <= 0) {
+        return 0;
+    }
+    port_BeginPng(file, w, h);
+    for (y = 0; y < h; y++) {
+        port_PutDataByte(0);
+        for (x = 0; x < w; x++) {
+            u32 pixel = pixels[y * w + x];
+
+            port_PutDataByte((pixel >> (2 * BITS_PER_BYTE)) & BYTE_MASK);
+            port_PutDataByte((pixel >> BITS_PER_BYTE) & BYTE_MASK);
+            port_PutDataByte(pixel & BYTE_MASK);
+        }
+    }
+    return port_EndPng();
 }
 
 /* A row of the display after a row, as video memory has them, in the

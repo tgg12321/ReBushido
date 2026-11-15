@@ -26,8 +26,13 @@ typedef struct {
     s32 tap_every;         /* ... every this many blanks */
     const char *tap_audio; /* a file for the samples as they are queued */
     s32 toggle_at;         /* change picture at every this many blanks */
-    s32 fault_at;          /* touch memory that is not there at this blank */
-    s32 fault_in_sound;    /* ... on the sound card's thread, from it on */
+    s32 shot_at;           /* what F12 does, at this blank */
+    /* the window's size as it opens, where a run asks for one: for a
+     * test of a size a player's screen has and this machine has not */
+    s32 window_w;
+    s32 window_h;
+    s32 fault_at;       /* touch memory that is not there at this blank */
+    s32 fault_in_sound; /* ... on the sound card's thread, from it on */
 } PortWindowOptions;
 
 extern PortSettings g_port_settings;
@@ -56,6 +61,9 @@ extern void port_OpenLog(const char *named, const char *beside);
 extern void port_CloseLog(void);
 /* The log's path, or NULL if the session has none. */
 extern const char *port_GetLogPath(void);
+/* A folder, if it is not there already: the log's own, and the one the
+ * player's pictures of the window go in (F12). */
+extern void port_MakeFolder(const char *path);
 /* The session's last lines, with the code the program ends with; where
  * it ends because something went wrong, the player is told where the
  * log is. Then the log is shut. */

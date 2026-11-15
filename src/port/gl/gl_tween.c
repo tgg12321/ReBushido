@@ -119,6 +119,10 @@ static struct {
      * picture drawn between them: finding them is most of the work, and
      * it does not change from one phase to the next. */
     s32 *pair;
+    /* The other way about: which primitive of the frame on show has
+     * taken each primitive of the frame after it, so that no two take
+     * the same one. */
+    s32 *taken;
     u32 pair_frames; /* the generation the pairing was worked out for */
     s32 is_one_scene;
     /* the point watched from phase to phase (gl_tween.h) */
@@ -321,6 +325,15 @@ s32 port_TweenPairs(
     return port_TweenStep(before, after) <= PORT_TWEEN_STEP_MAX;
 }
 
+/* Whether `here` lies between `one` and `two`, a pixel either side
+ * allowed for the rounding of the two ends. */
+static s32 port_TweenBetween(s32 here, s32 one, s32 two) {
+    s32 low = one < two ? one : two;
+    s32 high = one < two ? two : one;
+
+    return here >= low - 1 && here <= high + 1;
+}
+
 /* One primitive of the frame on show, moved part of the way towards the
  * frame after it. */
 static void port_TweenMixPrim(
@@ -366,6 +379,18 @@ static void port_TweenMixPrim(
                  0, port_TweenPlainY(after, i) - port_TweenPlainY(before, i),
                  phase))
             << PORT_REMASTER_FRACTION);
+        /* and it lies between the two frames' own places for it: a
+         * corner that does not is a partner wrongly found or a mistake
+         * in the arithmetic, and would be a polygon stretched across the
+         * picture. Counted, never corrected: it must be none. */
+        if (!port_TweenBetween(
+                port_TweenPlainX(out, i), port_TweenPlainX(before, i),
+                port_TweenPlainX(after, i)) ||
+            !port_TweenBetween(
+                port_TweenPlainY(out, i), port_TweenPlainY(before, i),
+                port_TweenPlainY(after, i))) {
+            g_tween.counts.off_the_line++;
+        }
     }
 }
 
@@ -470,14 +495,23 @@ static s32 port_TweenAtKey(const TweenFrame *frame, s32 key) {
 }
 
 /* Which primitive of `frame` is the same face of the same model one
- * frame on: the one at the same offset in the primitive buffer where
- * that is still the same face, and otherwise the nearest of those with
- * the same signature. TWEEN_EMPTY where there is none near enough. */
-static s32 port_TweenFind(
-    const TweenFrame *frame, const PortRemasterPrim *prim, u32 signature) {
+ * frame on, where its place in the primitive buffer has moved: the
+ * nearest of those with the same signature that no other primitive has
+ * taken yet. TWEEN_EMPTY where there is none near enough.
+ *
+ * `taken` says which of `frame`'s primitives are another's partner
+ * already, and is what makes the pairing one-to-one. Without it two
+ * faces of one texture a little apart — which a stage's ground is made
+ * of, every tile the same signature — can both take the same partner,
+ * and one of them is then drawn stretched from its own place to the
+ * other's: a tile that flies across the picture as the camera turns.
+ * `clashes` counts the times the nearest partner was taken, which is
+ * how many such pairs there would otherwise have been. */
+static s32 port_TweenFind(const TweenFrame *frame, const PortRemasterPrim *prim,
+                          u32 signature, const s32 *taken, u32 *clashes) {
     s32 best = TWEEN_EMPTY;
     s32 best_step = PORT_TWEEN_STEP_MAX + 1;
-    s32 at_key;
+    s32 nearest_step = PORT_TWEEN_STEP_MAX + 1;
     s32 cell_x;
     s32 cell_y;
     s32 dx;
@@ -485,10 +519,6 @@ static s32 port_TweenFind(
 
     if (!prim->has_depth || !port_TweenIsOnScreen(prim)) {
         return TWEEN_EMPTY;
-    }
-    at_key = port_TweenAtKey(frame, prim->key);
-    if (at_key != TWEEN_EMPTY && port_TweenPairs(prim, &frame->prim[at_key])) {
-        return at_key;
     }
     cell_x = port_TweenCellX(prim);
     cell_y = port_TweenCellY(prim);
@@ -510,13 +540,23 @@ static s32 port_TweenFind(
                     continue;
                 }
                 step = port_TweenStep(prim, &frame->prim[at]);
-                if (step < best_step &&
-                    port_TweenIsOnScreen(&frame->prim[at])) {
+                if (step > PORT_TWEEN_STEP_MAX ||
+                    !port_TweenIsOnScreen(&frame->prim[at])) {
+                    continue;
+                }
+                if (step < nearest_step) {
+                    nearest_step = step;
+                }
+                if ((taken == NULL || taken[at] == TWEEN_EMPTY) &&
+                    step < best_step) {
                     best_step = step;
                     best = at;
                 }
             }
         }
+    }
+    if (nearest_step < best_step && clashes != NULL) {
+        *clashes += 1;
     }
     return best;
 }
@@ -645,7 +685,9 @@ const char *port_TweenStart(void) {
     }
     g_tween.saved = malloc(TWEEN_WORDS_MAX * sizeof(u16));
     g_tween.pair = malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.pair));
-    if (g_tween.saved == NULL || g_tween.pair == NULL) {
+    g_tween.taken = malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.taken));
+    if (g_tween.saved == NULL || g_tween.pair == NULL ||
+        g_tween.taken == NULL) {
         port_TweenStop();
         return "there is no memory to keep video memory in";
     }
@@ -669,8 +711,10 @@ void port_TweenStop(void) {
     }
     free(g_tween.saved);
     free(g_tween.pair);
+    free(g_tween.taken);
     g_tween.saved = NULL;
     g_tween.pair = NULL;
+    g_tween.taken = NULL;
     g_tween.real = NULL;
     g_tween.is_on = FALSE;
     g_tween.ready = 0;
@@ -786,23 +830,90 @@ static void port_TweenPairFrames(void) {
     const TweenFrame *after = port_TweenAfter();
     s32 paired = 0;
     s32 unpaired = 0;
+    s32 scene = 0; /* primitives of the frame on show that have a depth */
     s32 i;
 
     if (g_tween.pair_frames == g_tween.generation) {
         return;
     }
     g_tween.pair_frames = g_tween.generation;
+    g_tween.counts.keyed = 0;
+    g_tween.counts.far_keyed = 0;
+    g_tween.counts.searched = 0;
+    g_tween.counts.clashes = 0;
+    for (i = 0; i < after->prim_count; i++) {
+        g_tween.taken[i] = TWEEN_EMPTY;
+    }
+    /* The sure partners first: the primitive at the same offset in the
+     * frame's primitive buffer, which is the same face of the same model
+     * whenever the renderer walked the scene the same way. Each is
+     * marked taken, so that the search that follows cannot give a face
+     * away to a neighbour of the same texture. */
     for (i = 0; i < shown->prim_count; i++) {
         const PortRemasterPrim *one = &shown->prim[i];
+        s32 at;
 
+        g_tween.pair[i] = TWEEN_EMPTY;
         if (!one->has_depth) {
-            g_tween.pair[i] = TWEEN_EMPTY;
             continue;
         }
-        g_tween.pair[i] = port_TweenFind(after, one, shown->sig[i]);
-        if (g_tween.pair[i] == TWEEN_EMPTY) {
+        scene++;
+        at = port_TweenAtKey(after, one->key);
+        if (at != TWEEN_EMPTY && g_tween.taken[at] == TWEEN_EMPTY &&
+            port_TweenPairs(one, &after->prim[at])) {
+            g_tween.pair[i] = at;
+            g_tween.taken[at] = i;
+            g_tween.counts.keyed++;
+        }
+    }
+    /* Where most of the scene was found by its place in the buffer, the
+     * renderer walked the scene the same way both frames and a place is
+     * proof of itself: so the rest of the places are taken as well,
+     * however far the corner moved. That is what a camera swinging round
+     * needs — a face of the ground can cross half the screen in a frame,
+     * and the step a search is allowed is a fraction of that — and it is
+     * safe only because it is asked for after the count: a frame whose
+     * walk had moved on would have found few by their place and is not
+     * trusted here at all. */
+    if (g_tween.counts.keyed * 2 >= (u32)scene && scene != 0) {
+        for (i = 0; i < shown->prim_count; i++) {
+            const PortRemasterPrim *one = &shown->prim[i];
+            s32 at;
+
+            if (!one->has_depth || g_tween.pair[i] != TWEEN_EMPTY) {
+                continue;
+            }
+            at = port_TweenAtKey(after, one->key);
+            if (at != TWEEN_EMPTY && g_tween.taken[at] == TWEEN_EMPTY &&
+                port_TweenSameKind(one, &after->prim[at]) &&
+                port_TweenIsOnScreen(one) &&
+                port_TweenIsOnScreen(&after->prim[at])) {
+                g_tween.pair[i] = at;
+                g_tween.taken[at] = i;
+                g_tween.counts.keyed++;
+                g_tween.counts.far_keyed++;
+            }
+        }
+    }
+    for (i = 0; i < shown->prim_count; i++) {
+        const PortRemasterPrim *one = &shown->prim[i];
+        s32 at;
+
+        if (!one->has_depth) {
+            continue;
+        }
+        if (g_tween.pair[i] != TWEEN_EMPTY) {
+            paired++;
+            continue;
+        }
+        at = port_TweenFind(
+            after, one, shown->sig[i], g_tween.taken, &g_tween.counts.clashes);
+        g_tween.pair[i] = at;
+        if (at == TWEEN_EMPTY) {
             unpaired++;
         } else {
+            g_tween.taken[at] = i;
+            g_tween.counts.searched++;
             paired++;
         }
     }
@@ -840,6 +951,7 @@ s32 port_TweenDraw(s32 phase) {
     g_tween.counts.unpaired = 0;
     g_tween.counts.flat = 0;
     g_tween.counts.widest_step = 0;
+    g_tween.counts.off_the_line = 0;
     g_tween.has_track = FALSE;
     port_GlSaveCounts(aside);
     none[0] = 0;
