@@ -77,12 +77,19 @@ static void port_PrintCallers(PortAddress frame) {
     }
 }
 
+/* The window's turn after a fault's report (port_platform.h): nothing in
+ * the build without one. */
+void (*g_port_crash_hook)(void);
+
 static void port_PrintGameState(void) {
     port_Log("rebushido:   at vertical blank %u; the game's screen %d, its "
              "frame %d\n",
              port_GetBlankCount(), g_sys_screen, g_disp_frame_count);
 }
 
+/* What the host calls for a fault: what happened and where, the
+ * instruction's own function, where the game was, the chain of callers,
+ * and whatever the window has to add to it. */
 static void port_ReportCrash(const PortCrash *crash) {
     char text[ADDRESS_TEXT_BYTES];
 
@@ -91,6 +98,9 @@ static void port_ReportCrash(const PortCrash *crash) {
     port_PrintPlace("in", crash->pc);
     port_PrintGameState();
     port_PrintCallers(crash->frame);
+    if (g_port_crash_hook != NULL) {
+        g_port_crash_hook();
+    }
 }
 
 void port_CatchCrashes(void) { port_HostCatchCrashes(port_ReportCrash); }

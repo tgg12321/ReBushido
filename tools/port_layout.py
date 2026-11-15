@@ -69,8 +69,8 @@ TRANSPARENT = ('DW_TAG_typedef', 'DW_TAG_const_type', 'DW_TAG_volatile_type')
 class Debug:
     """A program's debug information, as far as types and variables go."""
 
-    def __init__(self, path):
-        text = subprocess.run(['readelf', '--debug-dump=info', path], capture_output=True, text=True,
+    def __init__(self, path, reader=('readelf', '--debug-dump=info')):
+        text = subprocess.run(list(reader) + [path], capture_output=True, text=True,
                               errors='replace', env=dict(os.environ, LC_ALL='C')).stdout
         self.dies = {}
         stack = []
@@ -432,14 +432,14 @@ def probe_debug(bits):
     return Debug(out)
 
 
-def console_runs(program):
+def console_runs(program, reader=('readelf', '--debug-dump=info')):
     """{variable: (bytes on the PlayStation, [(offset there, offset here,
     bytes)])} for the variables of a 64-bit program whose type is not laid
     out as the PlayStation has it: which bytes of the port's variable are
     which of the console's. A pointer's four bytes there are the low four
     of its eight here. The PlayStation's layout is the 32-bit one of the
     same headers, which `--check` holds to the PlayStation's own."""
-    here = Debug(program)
+    here = Debug(program, reader)
     there = probe_debug(32)
     kinds = {}
     for die in there.dies.values():

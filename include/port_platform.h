@@ -197,6 +197,35 @@ extern void port_OnFrame(void);
 extern void __cyg_profile_func_enter(void *function, void *call_site);
 extern void __cyg_profile_func_exit(void *function, void *call_site);
 
+/* ---- the window (src/port/window/; docs/PORT.md, "The window") ---- */
+
+/* What the build with a window hangs on the port. Each is NULL in the
+ * build without one, and then nothing is called: that build does what
+ * it did. None of them changes what the game computes. */
+/* At a vertical blank, after the plan's presses and before the pads'
+ * packets are filled: the PC's keys and controllers are read. */
+extern void (*g_port_input_hook)(u32 blank);
+/* At a vertical blank's end, when its sound is made: the picture is
+ * shown, and the blank waited for by the PC's clock. */
+extern void (*g_port_blank_hook)(u32 blank);
+/* A press of a plan's, in place of port_SetPadButton if it returns 1:
+ * the window presses a key or a controller's button for it, so that a
+ * plan can go through the PC's own input. */
+extern s32 (*g_port_press_hook)(s32 pad, u32 button, s32 down);
+/* As port_Quit ends the program, after what it writes, with the code
+ * it ends with. */
+extern void (*g_port_quit_hook)(s32 code);
+/* After a fault's report (crash.c): what the session's log adds to it. */
+extern void (*g_port_crash_hook)(void);
+/* The disc's drive begins to read data at a sector (`kind` 1), begins
+ * to play a stream of sound there (2), or stops reading at one (0). */
+extern void (*g_port_disc_hook)(s32 kind, u32 sector);
+/* The last functions of the game that began, for a fault's report: a
+ * ring, the newest at (g_port_recent_call_count - 1) modulo its size. */
+#define PORT_RECENT_CALLS 32
+extern u32 g_port_recent_calls[PORT_RECENT_CALLS];
+extern u32 g_port_recent_call_count;
+
 /* ---- a crash (src/port/crash.c) ---- */
 
 /* From now on a fault says where it was: the function and its callers. */

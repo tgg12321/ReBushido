@@ -9,20 +9,22 @@ ReBushido PlayStation program.
 
 This page is what stands between the source and a PC, counted; what has
 been done about it; the stages that are left; and the decisions that are
-the owner's. **The port is a program that draws and sounds, with no
-window and no sound card:** it links, gives the game the PlayStation's
-memory, reads the player's disc image, and runs the game's own `main`
-through start-up, the options page, the menus and character select,
-through a whole fight and back to the menu, with no pads but a
-script's. What the game draws goes into the port's own video memory, by
-a GPU in C, and from there to files; its sound is made by a sound chip
-in C and can be written to a file. All that way it is held to the
-emulator: the game's values in three fights, and the picture pixel for
-pixel in two, and the sound chip's memory and registers in one. It is a
-64-bit program, and a 32-bit one beside it that does the same to the
-byte ("64 bits"). Stages 1 to 3 of the seven below are done, stage 4 but
-for its window, of stage 5 the fight itself, and of stage 6 everything
-but the card.
+the owner's. **The port is a program that draws and sounds, and a
+second build of it has a window, a sound card and the PC's keys and
+controllers:** it links, gives the game the PlayStation's memory, reads
+the player's disc image, and runs the game's own `main` through
+start-up, the options page, the menus and character select, through a
+whole fight and back to the menu, by a script's pads or a person's.
+What the game draws goes into the port's own video memory, by a GPU in
+C, and from there to files or to the window; its sound is made by a
+sound chip in C and goes to a file or to the sound card. All that way
+it is held to the emulator: the game's values in three fights, and the
+picture pixel for pixel in two, and the sound chip's memory and
+registers in one. The window is held to the build without one, by
+numbers, on Linux and on Windows ("The window"). It is a 64-bit
+program, and a 32-bit one beside it that does the same to the byte
+("64 bits"). Stages 1 to 3 of the seven below are done, stages 4 and 5
+as far as a machine can tell, and of stage 6 everything but the card.
 
 ## Where it stands
 
@@ -35,11 +37,12 @@ but the card.
 | BIOS calls and Sony's libraries | every one the game calls is defined: done for real where it only works on memory or the port has the thing (the disc, time, the pads' packets, events), a stub that is counted where it has not (the memory card, the link, the movie) |
 | Memory | done: the RAM and the scratchpad at the console's addresses ("Memory") |
 | The disc | done: sectors from the player's image, under the game's own disc code ("The disc"), and its XA sound ("Sound") |
-| Sound | done into a file, not yet a sound card: Sony's libsnd and libspu on a sound chip in C, the disc's music ("Sound"). The chip's memory, its registers and the library's are the emulator's through a fight; what is heard is compared only in part |
+| Sound | done, into a file and, in the build with a window, to a sound card: Sony's libsnd and libspu on a sound chip in C, the disc's music ("Sound"). The chip's memory, its registers and the library's are the emulator's through a fight; what is heard is compared only in part |
 | A fight | done, by a script's pads: three whole fights are the emulator's, frame for frame ("How it is proved") |
 | The picture | done, into the port's own video memory and out to files: `src/port/raster.c`, the PlayStation's GPU in C. The flat screens are the emulator's to the pixel, a fight's frames but for three pixels in a thousand ("The picture") |
-| 64 bits | done on Linux: the program has 64-bit pointers, the game's addresses stay 32-bit numbers below 4 GB, and it is held to the 32-bit program and to the emulator ("64 bits"). Windows' side is compiled and not linked |
-| A window, a sound card, real pads, the card, movies | not begun |
+| 64 bits | done: the program has 64-bit pointers, the game's addresses stay 32-bit numbers below 4 GB, and it is held to the 32-bit program and to the emulator ("64 bits") |
+| A window, a sound card, the PC's keys and controllers | built on SDL 2 for Linux and for Windows (`make port-sdl`, `make port-sdl-windows`) and held to the build without a window by numbers: the same traces, pictures and samples ("The window") |
+| The memory card, movies | not begun |
 
 ## The switch
 
@@ -101,10 +104,10 @@ Everything the program asks of the operating system goes through
 `include/port_host.h`: a dozen functions (write, open, read at an
 offset, memory at an address, catch a fault, exit). `src/port/
 host_linux.c` defines them on the kernel's own calls.
-`src/port/host_windows.c` defines them on kernel32; MinGW's compilers
-make an object of it for either size, and it has **not been linked or
-run**. When the port takes SDL for its window it will need a C library,
-and that file is where it changes.
+`src/port/host_windows.c` defines them on kernel32: built with MinGW
+for either size and run on Windows, with a window and without ("The
+window"). The build with a window has a C library, because SDL has one;
+on Linux its host is `src/port/window/host_posix.c`.
 
 The program's options: `--image` (the `.cue` or the `.bin`), `--frames
 N` (end after N vertical blanks; 3,600 if nothing says), `--trace` (the
@@ -154,8 +157,8 @@ The game's own variables are the PC program's, placed by its linker.
 What the game reaches by a number written into its source is given
 memory at that number (`src/port/memory.c`): the 2 MB of RAM at
 `0x80000000` and the kilobyte of scratchpad at `0x1F800000`, by `mmap`
-at a fixed address on Linux (`VirtualAlloc` on Windows, not tried), in
-the 64-bit program as in the 32-bit one. The
+at a fixed address on Linux (`VirtualAlloc` on Windows), in the 64-bit
+program as in the 32-bit one. The
 game's stack is a third piece, a megabyte at `0x7FC00000`, which is the
 port's choice and not the console's ("The picture", "Where the links
 point"). If the system will not give one of them, the program says so
@@ -332,9 +335,9 @@ first frame; nothing that decides a fight has been seen to differ.
 
 ### Sound
 
-The port makes the game's sound and has no sound card yet: it mixes into
-memory, and `--wav FILE` writes a run's sound as a WAV file. A later
-stage plays the same samples as they are made.
+The port makes the game's sound: it mixes into memory, and `--wav FILE`
+writes a run's sound as a WAV file. The build with a window plays the
+same samples as they are made ("The window").
 
 **The boundary is the sound chip's registers.** Sony's libsnd and libspu
 are compiled into the port as they are, 46 and 33 modules: they are
@@ -527,8 +530,8 @@ its area; `ClearImage`'s fill or drawn rectangle; `LoadImage`,
 start, range and mode; and `DrawOTag`, which walks an ordering table by
 its 24-bit links and gives the GPU each primitive's words. What Sony's
 keeps in a queue until the GPU is free is done at once, so `DrawSync`
-never waits. There is no window: the picture is that memory, and a run
-writes it to files.
+never waits. The picture is that memory: a run writes it to files, and
+the build with a window shows it ("The window").
 
 **What it draws**, as the chip is publicly known to:
 
@@ -653,6 +656,327 @@ dither. The options page differs in 790, the dither of its title.
 - The displayed rectangle is as wide as the mode says, whatever the
   horizontal range. The 24-bit mode, which only the movie uses, is read
   for a PNG and nowhere else.
+
+## The window
+
+A second build of the port has a window, a sound card and the PC's keys
+and controllers, by SDL 2: `make port-sdl` on Linux,
+`make port-sdl-windows` for Windows. It is for a person to play
+([`PLAYING.md`](PLAYING.md)). **Nobody has yet looked at the window or
+listened to it.** It was built, and run only with SDL told to show and
+sound nothing, and what it hands SDL was compared with the build
+without a window by numbers ("How the window is proved"). The first
+person to see it will be the owner.
+
+The build without a window (`make port`) is not changed by it and stays
+the one the checks and the play tests use: it needs nothing installed,
+and this one needs SDL and a C library.
+
+**How it hangs on the port.** The port calls out at four places, through
+pointers that are empty in the build without a window
+(`include/port_platform.h`, `port_spu.h`): at a vertical blank before
+the pads' packets are filled, at a blank's end, as a blank's samples are
+made, and as the program ends. The window's files are
+`src/port/window/`:
+
+| File | |
+|---|---|
+| `scale.c`, `ring.c`, `pace.c`, `keymap.c`, `logname.c`, `fps.c`, `window.h` | the arithmetic: where the picture goes in the window, the queue of samples, when a blank is due, which key is which button, the settings file, a log's name and lines, the counter's rate, digits and place. No SDL and no C library in them, so the host tests run them on every push (`tests/port/window.c`) |
+| `gamestate.c` | reads the game's variables out for the log, and has the names the log gives screens, modes, fighters, weapons and stages. It only reads |
+| `sdl_window.c` | the window, the sound card and the controllers, on SDL; the counter; the log's notes of the game |
+| `sdl_log.c` | the session's log file |
+| `sdl_main.c` | where the program starts: its own options, the settings file, the disc image when none is named |
+| `host_posix.c` | `port_host.h` on a C library, for Linux (Windows has `src/port/host_windows.c`) |
+
+One thread does everything but hand samples to the sound card: SDL is
+called from the game's own stack, at the blank, so what the game sees of
+a key does not depend on how the PC's threads fall.
+
+**How it is built** (`tools/port_sdl_build.py`). The game defines names
+a C library has too: `main`, `printf`, `memcpy`, `rand`, and `open`,
+`read`, `write` and `close`, which are the BIOS's memory-card files. A
+program linked with a C library would give SDL the game's `open`. So
+everything of the game and the port is first linked into one object,
+and every name in it is made that object's own, except the port's
+(`port_...`, `g_port_...`). What the object still asks for is listed,
+and the build fails if it is anything but the host's functions. The
+game's variables keep the PlayStation's order inside the object, each
+given the boundary the PlayStation's compiler gives it, and the build
+counts the neighbours as `make port` does: the 64-bit program for Linux
+has the same 743 of 991 as `make port`'s own, 137 of the others
+following a variable whose pointers are wider; the one for Windows has
+663 of 1,030 with 139 such (a Windows program's names carry no sizes, so
+the pairs are counted differently). On Windows the boundary is set in the
+object itself, as it is on Linux, because a Windows object's sections
+would otherwise be padded out to it (`cap_alignment_coff`).
+
+The program has 64-bit pointers, and the 32-bit one is built beside it by
+`PORT_BITS=32`, into `build/port-sdl/linux32/` or `windows32/`. What it
+needs, and nothing of it is needed by any check:
+
+- **Linux:** `gcc` and `libsdl2-dev`. For the 32-bit program as well, on
+  Ubuntu: `sudo dpkg --add-architecture i386 && sudo apt update && sudo
+  apt install lib32gcc-13-dev libsdl2-dev:i386`. **Not
+  `gcc-multilib`:** it removes the MIPS cross compiler the PlayStation
+  builds use.
+- **Windows:** MinGW's `x86_64-w64-mingw32-gcc` (`i686-w64-mingw32-gcc`
+  for the 32-bit program), in WSL or on Linux (`apt install
+  gcc-mingw-w64-x86-64 gcc-mingw-w64-i686`), and SDL 2's development
+  package for MinGW, whose two halves are each size's (`BUILD.md`, "The
+  port with a window"). The build writes
+  `build/port-sdl/windows/rebushido.exe`, puts `SDL2.dll` beside it, and
+  also writes `rebushido-headless.exe`, the program without a window for
+  Windows. The 64-bit program is compiled `-mcmodel=small`, because
+  without it the compiler reaches a variable of another file through a
+  shared slot that cannot survive the link into one object.
+
+**The picture.** At each blank the displayed rectangle of the port's
+video memory is turned into pixels of eight bits a channel (five bits
+stretched as the port's PNGs stretch them) and given to SDL as a
+texture, which SDL scales into the window. Nothing is drawn another way:
+it is what the GPU in C drew. The game sets three sizes: 640 by 240 for
+nearly everything, 320 by 240 for one screen, and the chip's own 256 by
+240 before it has set any. All fill a screen of four by three, so the
+picture is placed as the largest four by three the window holds
+(`scale = fit`), or as 320 by 240 a whole number of times (`integer`),
+or over all of the window (`stretch`); each pixel a block (`filter =
+nearest`) or smoothed (`linear`). The window can be resized; F11 or
+Alt+Enter fills the screen and comes back. With the display blanked the
+window is black.
+
+**Time.** The game's clock is still the port's count of scan lines, and
+nothing the game computes waits for anything: a blank's pads are read,
+its sound mixed and its picture drawn, and only then does the window
+wait until the blank is due. The game's time is the samples it has
+mixed, 737 and 341/2500 a blank (the sound's own constants), so a blank
+is due every 16.715 ms: the console's 59.83 a second. The PC's clock is
+read in the same unit, and most of a wait is slept and its last three
+milliseconds watched out. If the program was held up for more than a
+tenth of a second (a window dragged, the PC asleep), the time lost is
+let go and not caught up.
+
+The picture waits for the display (vsync) where the display shows 59
+pictures a second or more, which is no cost at 60: the game's rate is a
+little under the display's, so one picture in about 350 is shown twice.
+A slower display would hold the game back; the port then says so and
+stops waiting for it, at the start if the display says its rate, or
+when time has been let go three times in half a minute.
+
+**The sound card and the clock.** The card plays 44,100 samples a second
+by its own crystal and the PC's clock counts by another. So the length
+of the queue of samples steers the blanks: where the queue is longer
+than it should be each blank comes later, where shorter sooner, by at
+most eight samples' time in a blank's 737 (one part in a hundred; a
+card is off by far less). In the long run the game keeps the sound
+card's time, and no sample is dropped or made up to do it.
+
+**Sound.** SDL's default device, 44,100 a second, stereo, 16 bits, asked
+for 1,024 samples at a time; SDL converts where the card wants
+otherwise. Each blank's samples go into a queue of 8,192 that is kept
+2,560 long (58 ms), and SDL's thread takes them from it. From a sound
+being made to its being heard is that and the card's own buffer (23
+ms): about 80 ms. If the card asks for more than is waiting, the last
+sample fades to silence over 128 samples, and play begins again, fading
+in, only when the queue has its length back: a stall is a short silence
+with soft edges, not a crackle. If the queue is ever full, its oldest
+samples go.
+
+**The pads.** The game reads a digital pad's buttons, and takes both
+kinds of analog pad for digital ones without reading a stick (`pad.c`);
+so the port's two pads are digital, and a controller's left stick
+pushed past the dead zone is the direction's button. The first
+controller plugged in is player one's, the second player two's, at any
+time: one that is pulled out lets go of what it held, and the next one
+plugged in takes the free place. Both players also have keys. The
+layout built in:
+
+| | Player one | Player two | A controller |
+|---|---|---|---|
+| Up, Down, Left, Right | the arrow keys | I, K, J, L | the direction pad, the left stick |
+| Cross, Circle | Z, X | G, H | A, B (the lowest and the right of the four) |
+| Square, Triangle | A, S | T, Y | X, Y |
+| L1, R1 | Q, W | R, U | the shoulders |
+| L2, R2 | 1, 2 | 5, 6 | the triggers |
+| Start, Select | Enter, Right Shift | P, O | Start, Back |
+
+Escape, or closing the window, ends the program. The program says the
+layout in use on its error output as it starts.
+
+**The settings file** is `rebushido.cfg` beside the program, or the one
+`--config FILE` names; with none, everything is as built in, and
+`rebushido --help` prints the built-in settings as such a file, to copy
+from. A line is `name = value`, and `#` begins a comment:
+
+```
+scale = integer            # fit, integer or stretch
+filter = nearest           # nearest or linear
+fullscreen = off           # on or off
+vsync = on                 # on or off
+deadzone = 40              # how far a stick counts, in parts of 100
+p1.cross = key Space       # takes Z away from player one's Cross
+p1.cross = key Keypad 0    # ... and a second key for it
+p2.start = pad a           # player two's controller: A is Start
+p1.r2 = pad +righttrigger  # an axis pushed one way: + or -
+p2.select = none           # nothing presses it
+```
+
+A line for a pad's button takes the built-in keys of that button away
+(or its built-in controller buttons, for a `pad` line) and adds its own,
+and takes its own key or button away from whatever that pressed as
+built in; more lines add more. The names are SDL's: a key's as SDL names it (`Up`,
+`Space`, `Return`, `Left Shift`, `Keypad 4`), a controller's button
+`a`, `b`, `x`, `y`, `back`, `start`, `leftshoulder`, `rightshoulder`,
+`dpup`, `dpdown`, `dpleft`, `dpright`, an axis `leftx`, `lefty`,
+`rightx`, `righty`, `lefttrigger`, `righttrigger`. A line the port
+cannot use is said, with why, and the rest is used. There is no page
+for any of this in the game.
+
+**The session's log.** Every session writes one, always:
+`logs/rebushido-YYYYMMDD-HHMMSS.log` beside the program, the newest
+twenty kept (if the program's folder cannot be written to, in the
+folder SDL names for a program's own files; the console says where;
+`--log FILE` names it, `--no-log` leaves it out). Everything the port
+prints, to either output, goes into it too, a line at a time, each
+written out as it ends and with the seconds since the start before it:
+so what was said before a crash is in the file. It begins with the
+version, the system and its bits, SDL's version, the command line, the
+image (each file's size and a CRC-32 of its first megabyte), the
+settings file and any line of it not used, the pads' layout; then, as
+the window opens, the video driver, renderer, display and vsync, the
+sound driver, device and form, and each controller as it is found.
+While the game runs it notes each change of the game's screen, a
+fight's beginning (mode, stage, both fighters and weapons, by name) and
+its end, every read of the disc (first sector and how many; the game
+knows files by position, so there is no name), a controller plugged in
+or pulled out, vsync given up, time let go, the sound running out
+(counted by the minute), and a line every ten seconds with the blank,
+the game's frame, both rates and the queue's length. At a fault the
+port's report goes in (what, the address, the function, its callers,
+the blank, the screen and frame), then the last 32 functions of the
+game that began (a ring the build's instrumentation fills, one that
+repeats kept once), the fight's mode, stage and fighters, and the file
+is shut before anything else is tried; on Windows a box then tells the
+player the game stopped and where the log is. The port's own stops, a
+start that failed and an ordinary end are each said, with how long the
+session was. The log is the window build's alone: the build without a
+window has two more empty pointers and the ring of the last calls
+(`include/port_platform.h`), and prints what it printed.
+
+**The counter.** In a corner of the picture, top left unless the
+settings say otherwise (`fps = on|off`, `fps_corner = top-left|
+top-right|bottom-left|bottom-right`, `--no-fps`; F3 shows and hides
+it): `59.8/30.0 100%` is the pictures shown a second, the game's own
+frames a second, and the pictures as parts in a hundred of the
+console's 59.83. The game works a frame out every second blank in a
+fight and every blank in the main menu, so 30 in a fight is full speed.
+It is drawn by the window, in digits of its own of five pixels by
+seven, as a small texture over the picture after the picture has been
+handed to SDL: nothing of it is in the game's video memory, and a run's
+pictures are compared without it. Each of its pixels is a whole number
+of the window's, as many as the picture's 240 lines are, so it grows
+with the window and stays sharp. On by default for now.
+
+**The game's data.** `--image FILE` as before. Without it the first
+`.cue`, or else the first `.bin`, beside the program is taken; if there
+is none, on Windows the system's dialog for choosing a file opens, and
+elsewhere the program says what it needs and ends. **The memory card is
+still a stub:** the game finds no card, so its settings and what a
+player has unlocked are not kept from one run to the next.
+
+**Windows.** The program is 32-bit, linked at `0x08400000` with address
+randomisation off and marked as able to use addresses from 2 GB up
+(`--large-address-aware`), which the PlayStation's RAM at `0x80000000`
+needs. On a 64-bit Windows such a program has all 4 GB, and the three
+pieces of memory were free where they were tried (Windows 11): the RAM,
+the scratchpad and the game's stack at `0x7FC00000`. They are asked for
+before SDL starts. If one is taken the program says which and stops.
+Three things Windows has its own way (`src/port/host_windows.c`):
+
+- Addresses are given in blocks of 64 KB, and the sound chip's registers
+  are 4 KB past the scratchpad: whole blocks are kept, and a piece
+  inside one already kept only has its pages made usable.
+- Windows keeps where a thread's stack is, and passes a fault to nobody
+  while the stack pointer is outside it. The switch to the game's stack
+  tells it the new stack's two ends.
+- A stack has a chain of fault handlers. The game's stack is given one
+  of the port's at its top, which is asked only when nothing above it
+  took the fault (a system library's own handlers among them), and
+  reports as on Linux; before the switch the system's last filter does
+  the same.
+
+Two things MinGW's compiler has its own way, which the build sets
+right: bitfields are laid out as on every other host
+(`-mno-ms-bitfields`), and a small variable's section, which a Windows
+object pads to four bytes, is kept as small as the variable (three
+neighbours of two bytes that the game reads as one array,
+`g_fight_blow_dir_x` and the two after it, were four bytes apart before
+that: found by the build's count of neighbours, not by a fight).
+
+**How the window is proved**, with nothing shown or sounded: SDL's
+`dummy` video and audio drivers, on Linux (WSL) and on Windows 11, with
+the three plans of `port_game`, `port_other_fight` and `port_bugfixes`
+(the port's side of each: 3,880, 4,120 and 3,910 blanks). Both programs
+are the 64-bit ones, and what they are held to is the 64-bit build
+without a window.
+
+| | Linux | Windows |
+|---|---|---|
+| The trace of every watched value at every blank, against the build without a window | identical, all three (2,333, 2,457 and 2,334 lines), run as fast as the PC goes and run at the console's rate | identical, all three, both ways |
+| The same with the plan's presses made as SDL key events, read back through the layout | identical, all three | identical, all three |
+| ... and as buttons of two controllers SDL makes up (its virtual joysticks), plugged in as the run starts | identical, all three | identical, all three |
+| Every twentieth picture as SDL is handed it, against the PNG the build without a window writes at the same blank | 595 pictures, 36,556,800 pixels, none different (a PNG writes each row twice where the picture is wide, which the window leaves to SDL) | the same 595, none different |
+| Every sample as it is queued for SDL, against the build without a window's WAV | 8,779,293 samples, identical | identical |
+| The program without a window (`rebushido-headless.exe`, kernel32 alone) | | runs, and its trace is the same |
+| A fault made on purpose, on the game's stack (`--fault-at`) and on the sound card's thread (`--fault-in-sound`) | both reported with the address, exit code 70 | the same: the 64-bit program hears of the game's thread first and leaves the other threads to the system's last handler |
+
+At the console's rate, with no sound card, 3,880 blanks took 64.839
+seconds: 16.715 ms each. On every push `tests/port/window.c` holds the
+arithmetic to 791 cases worked out by hand: the picture's place in
+windows of every shape, pixels at video memory's edges, the queue
+running out and filling up with no step larger than a fade's, the clock
+going round at 32 bits, time let go, a sound card two parts in a
+thousand fast and one as slow for 20,000 blanks with nothing running
+out, every button's name, keys and sticks, a settings file's lines and
+the ones it cannot use; a log's name, which of 25 logs go, lines out
+of pieces, a rate each half second, every digit's shape, the counter's
+place. 33 mistakes made on purpose in the first four files, one at a
+time, each failed it.
+
+With the log and the counter on, every run of the table above was made
+again on both systems: the traces, the 595 pictures and the 8,779,293
+samples are the build without a window's still. The log of `port_game`
+has its header, the screens in their order, the fight's beginning by
+name and its end; a fault made on purpose on the game's stack
+(`--fault-at`) and one on the sound card's thread (`--fault-in-sound`)
+are both in the log with the function's name, on Linux and on Windows.
+
+**Not proved, and what may be wrong:**
+
+- Nobody has seen the window or heard the sound. That the picture
+  handed to SDL is right is proved; that SDL shows it the right way up,
+  in the right colours and at the right size is read from SDL's
+  documents and not seen. The same for the sound card, for full screen,
+  for a real keyboard and a real controller: the events were SDL's own,
+  made by the test.
+- The file dialog on Windows and the box that says the game stopped
+  were written and read, and never opened. The counter was never seen:
+  its pixels are tested, its look is not.
+- SDL's dummy sound card is not a clock: it took samples unevenly and
+  up to one part in a hundred fast on Linux, and more than one part in
+  a hundred slow on Windows. The steering followed it as far as it goes
+  (on Linux the sound ran out 5 to 23 times in a minute; on Windows the
+  blanks were moved by the most allowed and the queue threw three
+  samples in a thousand away: as they should with such a card). Whether
+  a real card ever makes the sound run out is not known until one is
+  heard.
+- The wait for the display was never run against a display.
+- Windows was tried on one machine, Windows 11, and only as a 64-bit
+  program. Nothing else is known to be at the three addresses the port
+  asks for, and nothing promises it.
+- A fault's report has the address, the function and its callers, not
+  every register: the host's interface keeps three of them.
+- The game's stack is a megabyte, and SDL and the display's driver now
+  run on it too.
 
 ## 64 bits
 
@@ -913,30 +1237,40 @@ No run of the tests reaches them.
 
 ### What is left of it
 
-- `src/port/host_windows.c` is written for both sizes and compiled to
-  an object by MinGW's two compilers with no warning; it has not been
-  linked or run. Windows gives memory at an address in blocks of 64 KB,
-  which it now allows for (the sound chip's page is in the scratchpad's
-  block); it does not yet tell the system of the game's stack, which
-  the system wants to know of before it will call a fault's handler.
+- `src/port/host_windows.c` is built and run in both sizes, with a
+  window and without ("The window"). Windows gives memory at an address
+  in blocks of 64 KB, which it allows for (the sound chip's page is in
+  the scratchpad's block), and it tells the system where the game's
+  stack is, which the system wants to know of before it will hand a
+  fault to a handler of that stack's. A 64-bit program has no such
+  chain of handlers, so the game's thread is taken by a handler the
+  system calls first for every fault.
 - macOS: an Intel Mac's 64-bit program can be linked low and have the
   memory. On Apple's own processors a program's first 4 GB are kept
   empty by the system, and whether that can be turned off is not known
   here; if not, "everything below 4 GB" does not hold there and the
   port needs another way (the console's memory at an offset, the slots
   as offsets into it).
-- A C library, when the port takes one for its window: its own
-  allocations may be above 4 GB, which is right as long as the game is
-  never given one. The program must still be linked without position
-  independence, at its fixed address.
-- Floating point, when the window or the sound card wants it. Every
-  file of the 64-bit program is compiled without the processor's vector
-  instructions today (`-mno-sse`, `tools/port_build.py`, `NO_VECTORS`),
-  and a 64-bit compiler does its floating point with those. A file that
-  needs them has to be compiled with them, and then must not copy or
-  clear one of the game's arrays itself: the compiler would take such
-  an array to start on a 16-byte boundary, which the build has taken
-  away so that the game's variables stay neighbours.
+- A C library is taken, in the build with a window ("The window"): its
+  own allocations may be above 4 GB, and none is given to the game.
+  Memory the port hands the game's code is the mapped memory, the
+  program's own variables and the game's stack, all below 4 GB; the
+  window asks the library for one thing only, the settings file's text,
+  which the window's own code reads and the game never sees. Either
+  program is still linked without position independence, at its fixed
+  address.
+- Floating point is in the window's SDL files and nowhere else. Every
+  file of the game, of Sony's and of `src/port/` is compiled without the
+  processor's vector instructions (`-mno-sse -mno-mmx`,
+  `tools/port_build.py`, `NO_VECTORS`), because a 64-bit compiler would
+  want the 16-byte boundaries the build takes away so that the game's
+  variables stay neighbours. The files that talk to SDL and to the C
+  library (`src/port/window/sdl_*.c`, `host_posix.c`,
+  `src/port/host_windows.c`) are compiled apart, with those instructions
+  and with floating point, and none of them copies or clears an array of
+  the game's: they read the port's video memory a pixel at a time
+  (`port_ConvertDisplay`, in a file of the game's kind) and hand SDL
+  buffers of their own.
 - 123 pairs of neighbouring variables are not as far apart in the
   32-bit program as on the PlayStation; in the 64-bit one 248 are not,
   137 of them because the first has pointers, which are twice as wide.
@@ -947,8 +1281,9 @@ No run of the tests reaches them.
   or more, would have made it 485.) None is known to matter and the two
   programs' runs do not differ, but as before they have not been ruled
   out one by one.
-- The 32-bit program is still built and tested. It can go when the
-  window's build is 64 bits too.
+- The 32-bit program is still built and tested, and so is the 32-bit
+  window build (`PORT_BITS=32`), which costs only a flag. Comparing the
+  two sizes is the cheapest proof there is, so both stay for now.
 
 ## The assembly
 
@@ -1362,18 +1697,21 @@ Each ends with something that can be shown.
    tests' checkpoints are the emulator's, pixel for pixel, with no window
    open; then the menu in a window. The first half is done as far as it
    can be: the flat screens to the pixel, a fight but for three pixels
-   in a thousand, each one accounted for ("The picture"). Left of it:
-   the window.
+   in a thousand, each one accounted for ("The picture"). The window is
+   built ("The window"). Left of it: someone to look at it.
 5. **Pads, time, a fight.** *Done when* a scripted fight on the port goes
    through the same watched values as the same script on the emulator.
    That part is done, in three fights to their ends ("How it is
-   proved"). Left of it: the PC's own pads and the PC's own time, which
-   come with the window.
+   proved"). The PC's own keys, controllers and time are in the build
+   with a window, and a plan's presses made as key and controller events
+   give the same fights ("The window"). Left of it: a person at the
+   keys.
 6. **Sound.** The sound chip, Sony's sequencer, the disc's audio.
    Done into a file ("Sound"): the game's effects and music are in a
    run's WAV, the game's state is what it was, and the chip's memory
-   and registers are the emulator's (`port_sound`). Left of it: a sound
-   card (with the window's library).
+   and registers are the emulator's (`port_sound`). The build with a
+   window gives the same samples to a sound card ("The window"). Left
+   of it: someone to listen.
 7. **The rest.** Movies, the memory card as a file, the link (or
    nothing in its place).
 
@@ -1414,9 +1752,10 @@ link's three. Sound has no stub left ("Sound").
   to read ("What the comparison found"). The port's are addresses of
   its own stack, which is at the same place in every run, so a run is
   still the same twice; they are not the console's.
-- The picture has no window, and the two things the port draws as the
-  chip and not as the emulator are proved by made-up cases alone ("The
-  picture", with what is not sure).
+- The window has been seen by nobody, and its sound heard by nobody
+  ("The window", with what is not proved). The two things the port
+  draws as the chip and not as the emulator are proved by made-up cases
+  alone ("The picture", with what is not sure).
 - The picture is drawn when the game asks, with no time taken: a frame
   the console would not have finished drawing is finished here.
 - What a function leaves in the result's register when it returns
@@ -1433,7 +1772,7 @@ link's three. Sound has no stub left ("Sound").
 - What is heard is compared with the emulator's only in part and by
   hand, and where the hardware's filters are not reproduced it is not
   the console's to the sample; the music is a tenth louder than the
-  emulator's ("Sound"). There is no sound card.
+  emulator's ("Sound"). Nobody has listened to the sound card.
 - An address of the game's own variables has no top bit on a PC. One
   place tested it and is put right (`snd_FlushQueue`); linking the
   variables above `0x80000000` would end the kind.
@@ -1441,9 +1780,11 @@ link's three. Sound has no stub left ("Sound").
   PlayStation in the 32-bit program, and 248 in the 64-bit one
   ("Memory"). None is known to matter; none has been ruled out one by
   one.
-- `src/port/host_windows.c` has been compiled and never linked or run;
-  macOS on Apple's processors may not allow the memory the port needs
-  ("64 bits", "What is left of it").
+- macOS on Apple's processors may not allow the memory the port needs
+  ("64 bits", "What is left of it"); nothing of the port has been built
+  there.
+- The memory card is a stub in the window too: nothing a player sets or
+  unlocks is kept.
 - The build compiles more than it must: the headers it writes are
   written again each time, so most files are compiled again (twenty
   seconds).
@@ -1454,7 +1795,7 @@ link's three. Sound has no stub left ("Sound").
 |---|---|---|
 | A 32-bit program first, or 64-bit from the start | 32-bit first; done, and 64-bit after it, done ("64 bits") | The source keeps addresses in 32-bit integers at some 300 places, relocates nine kinds of file in place into 4-byte slots and saves 22 addresses to the card: as a 32-bit program all of it works as written. The 64-bit program was then a stage of its own with the port already playing, and the 32-bit one is what it is held to |
 | Memory at the PlayStation's addresses, or everything moved | At the PlayStation's addresses, in both sizes | A program linked low can ask for memory at `0x80010000` and `0x1F800000`, whatever the size of its pointers. The twelve fixed addresses, the 24-bit links and the save file's patches then need no change at all. Where a system will not give a program memory below 4 GB (Apple's processors, perhaps), this is the decision to take again |
-| A library for the window, the pads and sound | SDL 2 | One library does all three on Windows, Linux and macOS, and its licence sits with this project's. It has to be downloaded; nothing has been |
+| A library for the window, the pads and sound | SDL 2 | One library does all three on Windows, Linux and macOS, and its licence sits with this project's. Taken: "The window". SDL is linked to, and none of it is in this repository |
 | The game's data: the disc image, or files taken out of it | The player's disc image | The game asks for sectors, never for names, so an image answers it directly; the music is tracks and streams that only the image has in one piece; and no tool has to unpack game data. Loose files can come later for modding |
 | The first renderer: software as the console draws, or the PC's graphics card | Software first | It can be held to the emulator's picture pixel for pixel by the tests there already are, and needs nothing installed. The hardware renderer is then the roadmap's next item, behind the same list of primitives |
 | The movies | Decode them in the port, in C | The overlay is a separate PlayStation program started through the BIOS; on a PC a function that plays a movie is simpler than a program loader, and the decoder chip has to be written in C either way |

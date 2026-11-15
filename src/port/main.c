@@ -28,6 +28,10 @@
 static PortDisc g_port_disc;
 static s32 g_port_quitting;
 
+/* The window's turn as the program ends (port_platform.h): nothing in
+ * the build without one. */
+void (*g_port_quit_hook)(s32 code);
+
 static const char g_port_usage[] =
     "rebushido: the native port of ReBushido, as far as it goes: the game\n"
     "with no window, sound card or pads; its picture and its sound go to\n"
@@ -75,6 +79,9 @@ void port_Quit(s32 code) {
             port_WriteWav();
         }
         port_PrintStubs();
+        if (g_port_quit_hook != NULL) {
+            g_port_quit_hook(code);
+        }
     }
     port_FlushOutput();
     port_HostExit(code);

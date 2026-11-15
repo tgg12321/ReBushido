@@ -45,10 +45,15 @@ No dates.
    The second and third stages are done too: the port is a program
    (`make port`) that reads the player's disc image and runs the game
    through its menus and whole fights, the emulator's game value for
-   value. The fourth is done but for its window: the port draws, by
-   the PlayStation's GPU written in C, into video memory of its own,
-   and its picture is the emulator's to the pixel on the flat screens
-   and but for three pixels in a thousand in a fight. No sound yet.
+   value. The fourth is done, with a window that nobody has seen yet
+   (`make port-sdl`: SDL 2, for Linux and Windows, 64-bit programs, with
+   sound and the PC's keys and controllers; [`PLAYING.md`](PLAYING.md)):
+   the port draws, by the PlayStation's GPU written in C, into video
+   memory of its own, and its picture is the emulator's to the pixel on
+   the flat screens and but for three pixels in a thousand in a fight.
+   The sixth is done too: the sound chip and Sony's sequencer in C, the
+   chip's memory and registers the emulator's through a fight, and the
+   same samples to a sound card in the window.
    The game's code stays C.
 7. **The picture.** A wide picture, high resolution and a high frame rate
    on the port, which is what "Graphics: Remastered" will mean. On the

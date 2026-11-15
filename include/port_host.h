@@ -9,6 +9,14 @@
 
 #include "common.h"
 
+/* The port's own address type, as wide as a pointer. The files that talk
+ * to the system are compiled with a C library's headers and without the
+ * game's switches (tools/port_sdl_build.py), so `common.h` has not given
+ * them this one. */
+#if !RB_PORT
+typedef __UINTPTR_TYPE__ PortAddress;
+#endif
+
 /* Where the system starts the program is the host file's; it calls this
  * with the program's arguments (the first is the program's own path) and
  * ends the program with what it returns (src/port/main.c). */
@@ -25,6 +33,10 @@ extern void port_HostExit(s32 code) __attribute__((noreturn));
 #define PORT_HOST_OUTPUT 1
 #define PORT_HOST_ERRORS 2
 extern void port_HostWrite(s32 stream, const char *bytes, u32 count);
+/* If not NULL, given everything port_HostWrite is, as well: the session's
+ * log of the build with a window (src/port/window/). The hosts of that
+ * build define it; the host with no C library has no use for it. */
+extern void (*g_port_host_tee)(s32 stream, const char *bytes, u32 count);
 
 /* A file, for reading, or made new for writing: a number that is not
  * negative, or -1. */

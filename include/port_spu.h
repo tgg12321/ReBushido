@@ -126,6 +126,9 @@ extern u32 port_GetSampleCount(void);
  * runs (the sound library's tick), then the samples of one blank are
  * mixed. */
 extern void port_RunSoundBlank(u32 blank);
+/* Called with each blank's samples as they are made, if not NULL: the
+ * window's sound card (src/port/window/). */
+extern void (*g_port_sound_hook)(const s16 *samples, u32 frames);
 /* What the run's sound did, to the program's output: `sound ...` lines.
  * Only a run that keeps its sound says it. */
 extern void port_PrintSoundSummary(void);

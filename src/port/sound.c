@@ -421,8 +421,13 @@ static void port_LogAsked(void) {
     }
 }
 
+/* The window's sound card (port_spu.h): nothing in the build without
+ * one. */
+void (*g_port_sound_hook)(const s16 *samples, u32 frames);
+
 /* The next `frames` samples: the drive goes on, the disc's sound and
- * the chip's are made, and kept if the run keeps its sound. */
+ * the chip's are made, and kept if the run keeps its sound or a sound
+ * card is playing it. */
 static void port_MixSound(u32 frames) {
     static s16 cd[(BLANK_FRAMES + 1) * 2];
     static s16 out[(BLANK_FRAMES + 1) * 2];
@@ -433,6 +438,9 @@ static void port_MixSound(u32 frames) {
     g_port_sample_count += frames;
     if (port_IsWavOn()) {
         port_AppendWav(out, frames);
+    }
+    if (g_port_sound_hook != NULL) {
+        g_port_sound_hook(out, frames);
     }
 }
 
