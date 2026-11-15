@@ -17,6 +17,9 @@
  *   dump NAME ADDR SIZE             memory written to NAME.bin at the end
  *   snap NAME ADDR SIZE             memory written to CP.NAME.snap at
  *                                   every checkpoint CP that asks for it
+ *   nocards                         neither slot has a memory card: the
+ *                                   run reads and writes none, whatever
+ *                                   is beside the program
  *   in CP OFFSET PAD BUTTON HOLD    a press, OFFSET blanks after
  *                                   checkpoint number CP was reached (0:
  *                                   after the start), held HOLD blanks
@@ -67,8 +70,8 @@
  * the game on both, however long either took to get there; one counted
  * in blanks is not, because the port computes a frame in no time.
  *
- * The emulator's other lines (stall, alive, movie, text, nocards, frame)
- * are read and not used. What a run prints:
+ * The emulator's other lines (stall, alive, movie, text, frame) are read
+ * and not used. What a run prints:
  *
  *   cp NAME BLANK VALUE...          a checkpoint, with every value
  *   shot NAME WIDTH HEIGHT 16       its picture, written to NAME.raw: the
@@ -83,6 +86,7 @@
  * tests/play/state.toml at this program's addresses, and its `sym` lines
  * every function, for a crash to say where it was. */
 #include "common.h"
+#include "port_card.h"
 #include "port_gpu.h"
 #include "port_host.h"
 #include "port_spu.h"
@@ -745,6 +749,14 @@ void port_LoadPlan(const char *path) {
             u32 size = (u32)port_PlanNumber(words[DUMP_WORDS - 1], "snap");
 
             port_AddSnap(words[1], address, size);
+        } else if (port_TextsEqual(words[0], "nocards") && count == 1) {
+            /* A test that says its runs have no memory card means it of
+             * every run of the plan, not of the ones a command line
+             * remembers to say it to: without this the card image the
+             * port makes beside the program is read by the run after,
+             * and a setting a run changed on the options page is loaded
+             * by the next one (docs/PORT.md, "The memory card"). */
+            port_SetCardsOff();
         } else if (!port_TextsEqual(words[0], "stall") &&
                    !port_TextsEqual(words[0], "alive") &&
                    !port_TextsEqual(words[0], "movie") &&

@@ -87,7 +87,7 @@ graphics = remastered    # original (the console's picture) or remastered
 resolution = 3           # how many times the console's; 0 = the window's
 draw_distance = max      # original, far, or max: how much of the stage
 antialiasing = 2         # off, 2 or 4: the scene's edges smoothed
-aspect = 16:9            # 4:3 as the console (the default), or wider
+aspect = 4:3             # the console's shape; 16:9 is the default
 p1.cross = key Space     # Space is player one's Cross, and Z no longer
 p1.circle = key Left Ctrl
 p2.start = pad a         # on player two's controller, A is Start
@@ -127,7 +127,7 @@ nothing at all while Graphics is Original.
 | `resolution` | `0`, or `1` and up | How many times the console's resolution the scene is drawn at (`--resolution N`). `0`, which is the default, takes the window's own size, so the picture is as sharp as the window is large. |
 | `draw_distance` | `original`, `far`, `max` | How much of the stage is drawn, and how far out its fog is placed. The console draws a disc of about 26,000 units about the camera and its fog ends there, so the ground fades into the distance; `far` draws about twice as much, and `max` draws the stage to its own far edge with the fog pushed out four times as far. The fog's colours are not touched, so a night stage stays as dark as it was. `far` with nothing said. |
 | `antialiasing` | `off`, `2`, `4` | The scene drawn that many times over each way and averaged down, which smooths its edges. The HUD, the fonts and the menus are left exactly as crisp as they were. It costs fill rate and nothing else: four times over is sixteen times the pixels. `2` with nothing said. |
-| `aspect` | `4:3`, `16:9`, any `W:H` | The shape of the picture. A wider one is a **wider view of the same scene**, not a stretched picture: the camera keeps its height and gains width. Use it with `draw_distance max`, which fills the sides. `4:3` with nothing said, because the HUD does not move out to the new edges yet: in a fight the counters and the clock stay in the middle band ([`PORT.md`](PORT.md), "A wider picture"). |
+| `aspect` | `4:3`, `16:9`, any `W:H` | The shape of the picture. A wider one is a **wider view of the same scene**, not a stretched picture: the camera keeps its height and gains width. Use it with `draw_distance max`, which fills the sides. `16:9` with nothing said; the fight's counters, clocks and points are drawn at the new edges, while the menus, the select screens and the loading pictures keep the console's shape in the middle ([`PORT.md`](PORT.md), "A wider picture"). |
 
 What Remastered does **not** do yet: more than the game's own 30 or 60
 pictures a second, and new lighting or shadows. Those are the steps

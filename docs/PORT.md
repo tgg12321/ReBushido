@@ -1375,9 +1375,11 @@ either slot, as those tests have it. Both programs are the 64-bit ones,
 and what they are held to is the 64-bit build without a window: on Linux
 `make port`'s own, on Windows the `rebushido-headless.exe` built beside
 the window (the same object, kernel32 alone). Each program is given a
-plan written for its own addresses, and a card must be ruled out on the
-command line: without `--no-cards` each reads a card of its own beside
-itself and a setting one of them saved earlier makes the runs differ.
+plan written for its own addresses, and a card must be ruled out: a
+program that reads a card of its own beside itself loads a setting a run
+before it saved there, and the runs differ. The plans of those three
+tests say `nocards` and the port obeys it ("What is left"); `--no-cards`
+says the same thing on the command line.
 
 | | Linux | Windows |
 |---|---|---|
@@ -2049,8 +2051,9 @@ So the whole of it is in the drawing path:
 - a primitive the projection gave a depth to — the scene — is drawn with
   the drawing area widened to the whole picture, where the game was not
   restricting that area to part of the screen (the pause menu, the
-  replay's panels); the 2D layer keeps the console's own area and stays
-  four by three in the middle;
+  replay's panels), and so is a group of the fight's HUD the game
+  anchored to an edge ("The HUD's own edges"); the rest of the 2D layer
+  keeps the console's own area and stays four by three in the middle;
 - the two bands beside the console's picture are cleared where the game
   clears its own drawing area, which is the moment that matters: the
   game draws its frame after the picture of the frame before it has been
@@ -2074,36 +2077,49 @@ wedge cut for the console's field of view, so a wider view at
 cells. `max` is what fills a wide picture, and the two settings are
 meant to be used together.
 
-**What is not done: the HUD's own edges.** The HUD stays four by three:
-the WINS counters (`COUNTER_LEFT_X` 80, `COUNTER_RIGHT_X` 521 in
+**The HUD's own edges.** The fight's HUD is built at the console's places
+— the WINS counters (`COUNTER_LEFT_X` 80, `COUNTER_RIGHT_X` 521 in
 `hud.c`), the chanbara clock (`TIME_MINUTES_X` 418 to `TIME_RULE_END_X`
-568) and the team's points sit in the middle band and do not move out to
-the new edges. **The default is `4:3` until they do.**
+568), the team battle's points and warnings — which sit in the middle
+band of a wider picture. Each group of it is drawn at the picture's own
+edge instead:
 
-What moving them needs, as far as it has been read:
+- **the game says which edge a group belongs to, and nothing more**
+  (`port_RemasterSetAnchor`, `PORT_ANCHOR_LEFT` and `PORT_ANCHOR_RIGHT`):
+  the primitives themselves are built exactly where they always were, so
+  nothing the game computes changes and the picture the software GPU
+  draws into video memory is the same to the pixel. "Graphics: Original"
+  is untouched by all of this, and so is every test that holds video
+  memory to the emulator's;
+- a sprite says so where it is linked (`sprite_Draw`, `select.c`) and a
+  tile at the few places in `hud.c` that build one, each under
+  `RB_REMASTER_VIEW`: two macros that are nothing at all on a
+  PlayStation (`HUD_ANCHOR`, `HUD_ANCHOR_PRIM`). The groups are those of
+  `hud_DrawWinCounts` (and `hud_DrawOpponentCount` through it),
+  `hud_DrawTimeAndCount` and `hud_DrawPointsAndTime`; each puts the
+  anchor back to the middle when it has built its own, and a new frame
+  clears it;
+- the side channel keeps those primitives by address, as it keeps a face
+  (a third open table of 256 slots, two frames deep), and the decoder
+  hands the backend each primitive's anchor. Only a rectangle — a sprite
+  or a tile — is looked up, which is all the HUD is, so the scene's
+  thousands of polygons a frame cost nothing;
+- the backend draws an anchored primitive a margin further out
+  (`port_GlPutVertex`) and widens its drawing area to the whole picture,
+  which the scene already had (`port_GlDraw`, `state.is_wide`). Every
+  other flat primitive keeps the console's own area: the pause menu, the
+  menus, character select, the loading pictures, the captions, the team
+  battle's table and the kill count are the other callers of the same
+  sprite code, they say nothing, and they stay four by three in the
+  middle of a pillarboxed picture.
 
-- a shift each sprite and tile of the fight's HUD is drawn with — left by
-  the margin for what is anchored to the left edge, right by it for the
-  right — set around each group in `hud_DrawWinCounts`,
-  `hud_DrawTimeAndCount`, `hud_DrawOpponentCount`, `hud_DrawPointsAndTime`
-  and `hud_DrawKillCount` (`src/main/hud.c`). It cannot be done by
-  changing the constants alone: most of those elements take their x from
-  a sprite cell table (`g_hud_win_count_cells`, `g_hud_digit_cells`),
-  so the shift belongs in `sprite_Draw` and at the few places in `hud.c`
-  that set a tile's `x0` itself;
-- the pause menu, the menus, character select and the loading pictures
-  must **not** move: they are the other callers of the same sprite code,
-  so the shift has to be set and cleared around the fight's HUD alone,
-  not held on;
-- the drawing path must let those primitives into the bands. A primitive
-  with no depth keeps the console's own drawing area today
-  (`port_GlDraw`, `state.is_wide`), which would cut a counter moved out
-  of it: the rule has to widen for them, and widening it for every
-  full-width 2D primitive would also let anything else the console
-  clipped at its edge show in the band, which is not measured;
-- and then the measurement of "the middle 640 pixels differ in 25
-  pixels" has to be made again, since the middle band's own contents
-  change.
+Where the console's picture is shown — the original picture, or the
+console's shape — the margin is 0 and every anchor is a shift of nothing.
+**The default shape of the remastered picture in the window is `16:9`**
+(`PORT_ASPECT_W_WIDE`, `src/port/window/keymap.c`); the builds with no
+window keep the console's shape with nothing said, so that their picture
+can still be held to the software GPU's pixel for pixel
+(`tools/port_gl_prove.py`).
 
 ### Remastered in the window
 
@@ -2151,7 +2167,9 @@ options page, the scene is drawn at as many times the console's
 resolution as the window's size asks for (`port_RemasterScaleFor`, which
 is recomputed when the window is resized or the game changes its display
 mode), the draw distance is `far`, the smoothing is 2, and the shape is
-the console's four by three.
+`16:9`, the wider view of the same scene with the fight's HUD at its
+edges ("A wider picture"). With "Graphics: Original" the window shows the
+console's own four by three whatever the shape says.
 
 **What the log says**: the card's vendor, renderer and GL version; which
 picture a run starts with and all four settings; every F2 with the blank
@@ -2192,9 +2210,8 @@ screen, so what a driver makes of the shaders, how full screen behaves
 and whether a card keeps up at 30 frames a second are not known. The
 counter and the fade of a resize were read from the pixels, not seen.
 
-What the window still needs of the remastered picture is the HUD's own
-edges ("A wider picture") and the two steps after it, a high frame rate
-and new lighting (below).
+What the window still needs of the remastered picture is the two steps
+after a wider one: a high frame rate and new lighting (below).
 
 ### What each later step needs
 
@@ -3034,20 +3051,22 @@ too.
   looking has gone; the others, if there are others, are not found. A
   mode the sweep does not reach may hold one: the table of best times
   after a whole chanbara run, a story ending, the staff roll.
-- **There is at least one more place where the game reads what it never
-  wrote, and it is on the options page.** In `port_bugfixes`, whose plan
-  presses Right on that page, what the page makes of that press follows
-  the port's own memory: the same program and the same plan, with only
-  `--gl-scale 1` against `--gl-scale 4` — a number that chooses how large
-  the card draws and that the game cannot see — end with the Bugfixes
-  setting on in one run and off in the other, deterministically. Moving
-  any code of the game's moves which way it falls, which is why the
-  remastered renderer's own prover reports the trace with it on and off
-  as the same on one build and not on another. It is not the remastered
-  picture doing it: with the picture original the two builds agree to the
-  line. Finding it means watching the page's input for a read of memory
-  the game never wrote (`rb_StepOption`, `options.c`, and what the page
-  keeps between frames).
+- **What looked like one more place where the game reads what it never
+  wrote, on the options page, was no such thing**: it was a memory card
+  image left behind between runs.
+  The plan of a play test whose runs have no card says `nocards`, and the
+  port read that line and did nothing with it: only `--no-cards` on the
+  command line, which `tools/playtest.py` passes and the renderer's own
+  provers do not, emptied the slots. So a run of `port_bugfixes` made
+  `card1.mcd` beside the program, turned Bugfixes on at the options page
+  and wrote it there; the run after it loaded that file and the plan's
+  Right turned the setting back off. Two runs of the same program and the
+  same plan therefore ended with it on and off, deterministically, by
+  whatever had run before them — `--gl-scale 1` against `--gl-scale 4`
+  only chose which went first. The plan's line is now obeyed
+  (`port_LoadPlan`, `src/port/plan.c`), so a run of a plan that says it
+  has no card has none whatever is beside the program: the two scales now
+  trace the same, line for line, with that stale card image still there.
 - What is heard is compared with the emulator's only in part and by
   hand, and where the hardware's filters are not reproduced it is not
   the console's to the sample; the music is a tenth louder than the

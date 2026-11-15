@@ -83,6 +83,12 @@ enum {
  * number of pixels across grows with it. */
 #define PORT_ASPECT_W_ORIGINAL 4
 #define PORT_ASPECT_H_ORIGINAL 3
+/* What the window the player runs shows the remastered picture at with
+ * nothing said (src/port/window/keymap.c). The builds with no window of
+ * their own keep the console's shape, so that their picture can still be
+ * held to the software GPU's pixel for pixel (tools/port_gl_prove.py). */
+#define PORT_ASPECT_W_WIDE 16
+#define PORT_ASPECT_H_WIDE 9
 
 typedef struct {
     s32 distance;    /* PORT_DISTANCE_... */
@@ -142,6 +148,41 @@ extern s32 port_RemasterMargin(s32 picture_w, s32 aspect_w, s32 aspect_h);
  * (port_RemasterNewFrame), and only read after that: a face is looked at
  * thousands of times a frame. */
 extern s32 port_RemasterLeftMargin(void);
+
+/* ---- the fight's HUD at a wider picture's edges ---- */
+
+/* A wider picture has a band of its own each side of the console's 640
+ * pixels, and the fight's HUD is built at the console's places in the
+ * middle of it: the WINS counters, chanbara's clock, the team battle's
+ * points and warnings. Each group of it says which edge it belongs to
+ * while its primitives are built (src/main/hud.c), and the backend draws
+ * those primitives that much further out.
+ *
+ * Nothing the game computes changes and nothing of video memory does:
+ * the game's primitives are built where they always were, so the
+ * software GPU draws the console's own picture and "Graphics: Original"
+ * is untouched. The shift is the backend's, and it is 0 at the console's
+ * shape, where the margin is.
+ *
+ * Only the fight's HUD says it. The menus, the two select screens, the
+ * loading pictures, the panels and the tables after a fight are the
+ * other callers of the same sprite code (sprite_Draw): they say nothing
+ * and stay four by three in the middle. */
+enum {
+    PORT_ANCHOR_MIDDLE = 0, /* where the console has it */
+    PORT_ANCHOR_LEFT = -1,  /* out to the picture's left edge */
+    PORT_ANCHOR_RIGHT = 1   /* ... and to its right */
+};
+
+/* Which edge the primitives built from now on belong to. A group of the
+ * HUD puts it back to PORT_ANCHOR_MIDDLE when it has built its own, and
+ * a new frame clears it. */
+extern void port_RemasterSetAnchor(s32 anchor);
+/* The primitive at `prim` is one of them: it is written down under that
+ * address with the anchor as it is now, as a face is
+ * (port_RemasterNoteFace). Nothing is kept with no backend attached or
+ * at PORT_ANCHOR_MIDDLE, which is every primitive but the fight HUD's. */
+extern void port_RemasterNoteAnchored(PortAddress prim);
 
 /* ---- the primitive buffers ---- */
 
@@ -316,6 +357,10 @@ typedef struct {
     /* every corner has a depth from the GTE: the texture is drawn in
      * perspective and the corners are where the GTE really put them */
     s32 has_depth;
+    /* PORT_ANCHOR_...: which edge of a wider picture this is drawn at.
+     * PORT_ANCHOR_MIDDLE for everything but the fight HUD's own
+     * primitives, which are rectangles (a sprite or a tile). */
+    s32 anchor;
 } PortRemasterPrim;
 
 /* ---- the backend ---- */

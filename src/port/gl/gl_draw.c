@@ -814,12 +814,16 @@ static void port_GlPutVertex(
     const PortRemasterPrim *prim, s32 corner, GLfloat w, s32 flags) {
     const PortRemasterCorner *from = &prim->corner[corner];
     PortGlVertex *to = &g_gl.vertices[g_gl.count++];
+    /* the margin puts the console's own 640 pixels in the middle of a
+     * wider picture; a group of the fight's HUD that the game anchored to
+     * an edge is drawn the margin further out again (port_remaster.h) */
+    GLfloat at = (GLfloat)(g_gl.margin + prim->anchor * g_gl.margin);
 
     if (prim->has_depth && !g_gl.options.is_exact) {
-        to->x = port_GlPlace(from->x) + (GLfloat)g_gl.margin;
+        to->x = port_GlPlace(from->x) + at;
         to->y = port_GlPlace(from->y);
     } else {
-        to->x = (GLfloat)(from->ix + g_gl.margin);
+        to->x = (GLfloat)from->ix + at;
         to->y = (GLfloat)from->iy;
     }
     if (g_gl.display_w > 0 &&
@@ -977,10 +981,16 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     state.clip_top = prim->clip_top;
     state.clip_right = prim->clip_right;
     state.clip_bottom = prim->clip_bottom;
-    /* the scene of a wider picture: a primitive the projection gave a
-     * depth to, where the game was not restricting the drawing area to
-     * part of the screen (the pause menu, the replay's panels) */
-    state.is_wide = g_gl.margin > 0 && prim->has_depth &&
+    /* The whole width of a wider picture, where the game was not
+     * restricting the drawing area to part of the screen (the pause
+     * menu, the replay's panels): the scene, which is a primitive the
+     * projection gave a depth to, and a group of the fight's HUD the game
+     * anchored to an edge, which is drawn out in a band and would be cut
+     * off at the console's own edge (port_remaster.h). Every other flat
+     * primitive keeps the console's drawing area and stays four by three
+     * in the middle. */
+    state.is_wide = g_gl.margin > 0 &&
+                    (prim->has_depth || prim->anchor != PORT_ANCHOR_MIDDLE) &&
                     prim->clip_left <= g_gl.display_x &&
                     prim->clip_right >= g_gl.display_x + g_gl.display_w - 1;
     if (state.clip_right < state.clip_left ||

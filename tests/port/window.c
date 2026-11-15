@@ -790,8 +790,9 @@ static void test_Graphics(void) {
     CHECK_EQ(g_test_settings.resolution, PORT_RESOLUTION_WINDOW);
     CHECK_EQ(g_test_settings.distance, PORT_DISTANCE_FAR);
     CHECK_EQ(g_test_settings.supersample, 2);
-    CHECK_EQ(g_test_settings.aspect_w, PORT_ASPECT_W_ORIGINAL);
-    CHECK_EQ(g_test_settings.aspect_h, PORT_ASPECT_H_ORIGINAL);
+    /* the wider picture is what the window shows with nothing said */
+    CHECK_EQ(g_test_settings.aspect_w, PORT_ASPECT_W_WIDE);
+    CHECK_EQ(g_test_settings.aspect_h, PORT_ASPECT_H_WIDE);
     test_ReadText("graphics = remastered\nresolution = 4\n"
                   "draw_distance = max\nantialiasing = 4\naspect = 16:9\n");
     CHECK_EQ(g_test_complaints, 0);

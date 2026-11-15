@@ -62,8 +62,8 @@ const char g_port_default_settings[] =
     "                       # window's own size\n"
     "draw_distance = far    # original, far or max: how much of the stage\n"
     "antialiasing = 2       # off, 2 or 4: the scene's edges smoothed\n"
-    "aspect = 4:3           # 4:3 as the console, or 16:9 for a wider\n"
-    "                       # view of the same scene\n"
+    "aspect = 16:9          # 16:9 for a wider view of the same scene,\n"
+    "                       # or 4:3 as the console\n"
     "\n"
     "# Player one, on the keyboard\n"
     "p1.up = key Up\n"
@@ -562,8 +562,11 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->resolution = PORT_RESOLUTION_WINDOW;
     settings->distance = PORT_DISTANCE_FAR;
     settings->supersample = 2;
-    settings->aspect_w = PORT_ASPECT_W_ORIGINAL;
-    settings->aspect_h = PORT_ASPECT_H_ORIGINAL;
+    /* the remastered picture is a wider view of the same scene, with the
+     * fight's HUD at its edges (port_remaster.h); "Graphics: Original"
+     * is the console's four by three whatever this says */
+    settings->aspect_w = PORT_ASPECT_W_WIDE;
+    settings->aspect_h = PORT_ASPECT_H_WIDE;
     /* a name the window's library does not know leaves that one out */
     port_ReadLines(settings, text, lookup, NULL, 1);
 }

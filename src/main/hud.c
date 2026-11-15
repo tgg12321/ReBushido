@@ -64,6 +64,36 @@ static u32 g_hud_noise_seed;
 /* What a sheet is dimmed with: a loser's name in the team battle's table. */
 #define DIM_GRAY 0x40
 
+/* ---- the fight's HUD at a wider picture's edges ---- */
+
+/* The counters, clocks and points over a fight are built at the console's
+ * places, which in a wider remastered picture sit in the middle band of
+ * it; what is at the sides of the console's screen belongs at the
+ * picture's own edges instead. So each group of the fight's HUD says
+ * which edge it is anchored to while it builds its primitives, and the
+ * port's renderer draws those that much further out (port_remaster.h;
+ * docs/PORT.md, "A wider picture").
+ *
+ * The primitives themselves are built exactly where they always were:
+ * nothing the game computes changes, and the picture the PlayStation's
+ * GPU draws is the same to the pixel. On a PlayStation neither of these
+ * is anything at all; in the port the shift is 0 at the console's shape
+ * and with the original picture.
+ *
+ * HUD_ANCHOR says which edge the primitives built next belong to and
+ * HUD_ANCHOR_PRIM that a tile just built is one of them (a sprite says
+ * so in sprite_Draw). A group puts the anchor back to
+ * PORT_ANCHOR_MIDDLE, so that what is drawn in the middle of the screen
+ * — the pause panel, the team battle's table, a caption, the kill count
+ * — is left where the console has it. */
+#if RB_REMASTER_VIEW
+#define HUD_ANCHOR(edge) port_RemasterSetAnchor(edge)
+#define HUD_ANCHOR_PRIM(prim) port_RemasterNoteAnchored((PortAddress)(prim))
+#else
+#define HUD_ANCHOR(edge)
+#define HUD_ANCHOR_PRIM(prim)
+#endif
+
 /* ---- the sheets ---- */
 
 /* g_hud_panel_sheets. */
@@ -703,6 +733,9 @@ s32 hud_DrawTimeAndCount(ClockTime *time, s32 count, s32 prims, s32 ot_index) {
     next_sprt = prims + sizeof(block->tiles);
     dr_mode = &block->draw_mode;
     end_addr = prims + sizeof(HudCounterPrims);
+    /* the clock and the count under it are at the right of the screen,
+     * every part of them */
+    HUD_ANCHOR(PORT_ANCHOR_RIGHT);
     for (i = 0; i < 3; i++) {
         draw.table = &g_hud_time_cells[TIME_CELL_MARKS + i];
         draw.sprt_out = next_sprt;
@@ -821,6 +854,7 @@ s32 hud_DrawTimeAndCount(ClockTime *time, s32 count, s32 prims, s32 ot_index) {
         tile->h = 1;
         SetSemiTrans(tile, 0);
         AddPrim(g_disp_ot + ot_index, tile);
+        HUD_ANCHOR_PRIM(tile);
         tile++;
         draw.y = g_hud_time_rule_origins[j].y;
         draw.header = &g_hud_counter_sheets[COUNTER_SHEET_RULE_END];
@@ -832,6 +866,7 @@ s32 hud_DrawTimeAndCount(ClockTime *time, s32 count, s32 prims, s32 ot_index) {
         draw.sprt_out = next_sprt;
         next_sprt = sprite_Draw(&draw);
     }
+    HUD_ANCHOR(PORT_ANCHOR_MIDDLE);
     SetDrawMode(
         dr_mode, 1, 0,
         sprite_GetTPage(&g_hud_counter_sheets[COUNTER_SHEET_DIGITS], 0), 0);
@@ -867,6 +902,8 @@ s32 hud_DrawWinCounts(
     end_addr = prims + sizeof(HudCounterPrims);
     draw.ot_index = ot_index;
     for (i = 0; i < 2; i++) {
+        /* the right count's label, then the left one's */
+        HUD_ANCHOR(i == 0 ? PORT_ANCHOR_RIGHT : PORT_ANCHOR_LEFT);
         if (left_count < 0) {
             draw.table = &g_hud_opponent_label_cell;
             if (right_count == 1) {
@@ -890,6 +927,8 @@ s32 hud_DrawWinCounts(
     draw.y = COUNTER_DIGITS_Y;
     draw.ot_index = ot_index;
     for (j = 0; j < 2; j++) {
+        /* the right count first, as the labels were */
+        HUD_ANCHOR(j == 0 ? PORT_ANCHOR_RIGHT : PORT_ANCHOR_LEFT);
         if (j != 0) {
             digits[0] = digits[1] = left_count;
         } else {
@@ -928,6 +967,8 @@ s32 hud_DrawWinCounts(
     draw.semi = 0;
     draw.ot_index = ot_index;
     for (j = 0; j < 2; j++) {
+        /* the right rule and the piece at its end, then the left pair */
+        HUD_ANCHOR(j == 0 ? PORT_ANCHOR_RIGHT : PORT_ANCHOR_LEFT);
         SetTile(tile);
         setRGB0(tile, RULE_R, RULE_G, RULE_B);
         tile->x0 =
@@ -937,6 +978,7 @@ s32 hud_DrawWinCounts(
         tile->h = 1;
         SetSemiTrans(tile, 0);
         AddPrim(g_disp_ot + ot_index, tile);
+        HUD_ANCHOR_PRIM(tile);
         tile++;
         draw.y = COUNTER_RULE_Y;
         draw.header = &g_hud_counter_sheets[COUNTER_SHEET_RULE_END];
@@ -951,6 +993,7 @@ s32 hud_DrawWinCounts(
             break;
         }
     }
+    HUD_ANCHOR(PORT_ANCHOR_MIDDLE);
     SetDrawMode(
         dr_mode, 1, 0,
         sprite_GetTPage(&g_hud_counter_sheets[COUNTER_SHEET_DIGITS], 0), 0);
@@ -1294,6 +1337,10 @@ s32 hud_DrawPointsAndTime(
             mark_slot_count = g_game_settings.win_target_index + 1;
         }
         for (side_index = 0; side_index < 2; side_index++) {
+            /* the first side's marks run right from the left edge and
+             * the second's left from the right */
+            HUD_ANCHOR(side_index == 0 ? PORT_ANCHOR_LEFT
+                                       : PORT_ANCHOR_RIGHT);
             for (k = 0; k < mark_slot_count; k++) {
                 if (side_index != 0) {
                     draw.x = mark_group_index * MARK_SHRINK + MARK_RIGHT_X -
@@ -1312,6 +1359,7 @@ s32 hud_DrawPointsAndTime(
             }
         }
     }
+    HUD_ANCHOR(PORT_ANCHOR_MIDDLE);
     SetDrawMode(dr_mode, 1, 0, sprite_GetTPage(&g_hud_point_sheets[0], 0), 0);
     AddPrim(g_disp_ot + ot_index, dr_mode);
     /* one more DR_MODE, past the size this function returns: what the
@@ -1325,6 +1373,9 @@ s32 hud_DrawPointsAndTime(
     draw.ot_index = ot_index;
     for (k = 0; k < 2; k++) {
         for (j = 0; j < 2; j++) {
+            /* the first side's labels at the left, the second's at the
+             * right */
+            HUD_ANCHOR(j == 0 ? PORT_ANCHOR_LEFT : PORT_ANCHOR_RIGHT);
             draw.x = j * POINT_LABEL_SIDE_2_X;
             draw.table = &g_hud_point_label_cells[k];
             draw.sprt_out = next_sprt;
@@ -1341,6 +1392,9 @@ s32 hud_DrawPointsAndTime(
     draw.ot_index = ot_index;
     for (k = 0; k < 2; k++) {
         for (j = 0; j < 2; j++) {
+            /* the first side's rule is at the left and the second's at
+             * the right */
+            HUD_ANCHOR(j == 0 ? PORT_ANCHOR_LEFT : PORT_ANCHOR_RIGHT);
             SetTile(tile);
             setRGB0(tile, RULE_R, RULE_G, RULE_B);
             tile->x0 = COUNTER_LEFT_RULE_X + j * POINT_RULE_SIDE_2_X +
@@ -1350,7 +1404,12 @@ s32 hud_DrawPointsAndTime(
             tile->h = 1;
             SetSemiTrans(tile, 0);
             AddPrim(g_disp_ot + ot_index, tile);
+            HUD_ANCHOR_PRIM(tile);
             tile++;
+            /* the pieces at the rules' ends are the other way round in
+             * the table: g_hud_point_rule_cells[0] is the right rule's
+             * (hud_data.c) */
+            HUD_ANCHOR(j == 0 ? PORT_ANCHOR_RIGHT : PORT_ANCHOR_LEFT);
             draw.y = k * POINT_ROW_PITCH + COUNTER_RULE_Y;
             draw.header = &g_hud_counter_sheets[COUNTER_SHEET_RULE_END];
             draw.table = &g_hud_point_rule_cells[j][0];
@@ -1368,6 +1427,8 @@ s32 hud_DrawPointsAndTime(
     draw.y = COUNTER_DIGITS_Y;
     draw.semi = 0;
     draw.ot_index = ot_index;
+    /* the time left is in the middle of the screen and stays there */
+    HUD_ANCHOR(PORT_ANCHOR_MIDDLE);
     for (j = 0; j < 2; j++) {
         /* Three turns for a number of two digits (the seconds have three
          * only under the two-minute limit): the third sets nothing, and

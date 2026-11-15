@@ -24,6 +24,9 @@
  * nothing. A frame of the fight has about two thousand of each. */
 #define POINT_SLOTS 8192
 #define FACE_SLOTS 8192
+/* The third table is the fight HUD's primitives that a wider picture
+ * draws at its own edges (port_remaster.h): a frame has some forty. */
+#define ANCHOR_SLOTS 256
 #define PROBES 8
 
 typedef struct {
@@ -39,6 +42,12 @@ typedef struct {
     PortPrecisePoint point[PORT_REMASTER_CORNERS];
 } FaceSlot;
 
+typedef struct {
+    PortAddress prim;
+    u32 epoch;
+    s32 anchor; /* PORT_ANCHOR_... */
+} AnchorSlot;
+
 /* A frame's own primitives are built after the frame before it was
  * drawn, so a point or a face is used in the frame it was written down
  * in. The frame before that one is kept as well, because the game has
@@ -49,7 +58,12 @@ typedef struct {
 
 static PointSlot g_point_slots[POINT_SLOTS];
 static FaceSlot g_face_slots[FACE_SLOTS];
+static AnchorSlot g_anchor_slots[ANCHOR_SLOTS];
 static u32 g_epoch = EPOCHS_KEPT;
+
+/* Which edge of a wider picture the primitives now being built belong to
+ * (port_remaster.h). */
+static s32 g_anchor;
 
 /* The face the renderer last looked up, waiting for the primitive it
  * becomes. */
@@ -519,6 +533,59 @@ static const FaceSlot *port_FindFace(PortAddress prim) {
     return NULL;
 }
 
+/* ---- the fight's HUD at the picture's edges (port_remaster.h) ---- */
+
+void port_RemasterSetAnchor(s32 anchor) { g_anchor = anchor; }
+
+void port_RemasterNoteAnchored(PortAddress prim) {
+    u32 slot;
+    u32 i;
+
+    if (g_backend == NULL || g_anchor == PORT_ANCHOR_MIDDLE) {
+        return;
+    }
+    slot = port_RemasterSlot(prim, ANCHOR_SLOTS);
+    for (i = 0; i <= PROBES; i++) {
+        AnchorSlot *found = &g_anchor_slots[(slot + i) & (ANCHOR_SLOTS - 1)];
+
+        if (i == PROBES) {
+            /* as the faces' table: the oldest of the slots it could have
+             * goes, and a counter of the HUD is drawn where the console
+             * has it */
+            found = &g_anchor_slots[slot];
+            g_counts.full++;
+            g_frame_counts.full++;
+        } else if (found->prim != prim && port_EpochIsLive(found->epoch)) {
+            continue;
+        }
+        found->prim = prim;
+        found->epoch = g_epoch;
+        found->anchor = g_anchor;
+        return;
+    }
+}
+
+/* Which edge the primitive at `prim` was built for, or
+ * PORT_ANCHOR_MIDDLE, which is everything but the fight HUD's own. */
+static s32 port_FindAnchor(PortAddress prim) {
+    u32 slot;
+    u32 i;
+
+    if (prim == 0) {
+        return PORT_ANCHOR_MIDDLE;
+    }
+    slot = port_RemasterSlot(prim, ANCHOR_SLOTS);
+    for (i = 0; i < PROBES; i++) {
+        const AnchorSlot *found =
+            &g_anchor_slots[(slot + i) & (ANCHOR_SLOTS - 1)];
+
+        if (found->prim == prim && port_EpochIsLive(found->epoch)) {
+            return found->anchor;
+        }
+    }
+    return PORT_ANCHOR_MIDDLE;
+}
+
 /* The left margin for this frame (port_remaster.h): the picture's own
  * shape against the display's rectangle, or 0 where the original picture
  * is shown. It is settled at the top of a frame and not touched again, so
@@ -542,6 +609,7 @@ s32 port_RemasterLeftMargin(void) { return g_left_margin; }
  * its primitives. What the picture's own edges are is settled here. */
 void port_RemasterNewFrame(void) {
     port_RemasterFindLeftMargin();
+    g_anchor = PORT_ANCHOR_MIDDLE;
     if (g_backend == NULL) {
         return;
     }
@@ -818,6 +886,8 @@ static void port_DecodePolygon(
     prim.rect_w = 0;
     prim.rect_h = 0;
     prim.has_depth = TRUE;
+    /* the scene, which a wider picture is wider of itself */
+    prim.anchor = PORT_ANCHOR_MIDDLE;
     if (face != NULL && face->count != corner_count) {
         face = NULL;
     }
@@ -887,6 +957,9 @@ static void port_DecodeRectangle(
     prim.kind = PORT_REMASTER_RECT;
     prim.corner_count = 1;
     prim.has_depth = FALSE;
+    /* a sprite or a tile of the fight's HUD is drawn at the picture's own
+     * edge, where the game said which edge it belongs to */
+    prim.anchor = port_FindAnchor(g_prim);
     port_RemasterCornerColor(corner, words[0]);
     corner->ix = port_RemasterPosition(
         port_RemasterPosition((s32)words[at]) + state->offset_x);

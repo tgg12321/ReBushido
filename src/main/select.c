@@ -2633,6 +2633,15 @@ s32 sprite_Draw(SpriteDraw *draw) {
                 ((void (*)())font_Printf)("warning\n");
             }
             AddPrim(g_disp_ot + draw->ot_index, sprt);
+#if RB_REMASTER_VIEW
+            /* A sprite of the fight's HUD, which a wider remastered
+             * picture draws out at its own edge (port_remaster.h): the
+             * sheet being drawn says which edge it belongs to, and says
+             * nothing for the menus, the select screens and the panels,
+             * which stay four by three in the middle. Nothing is written
+             * down for those, and nothing at all on a PlayStation. */
+            port_RemasterNoteAnchored((PortAddress)sprt);
+#endif
             sprt++;
         }
     }

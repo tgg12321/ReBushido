@@ -508,6 +508,66 @@ static void test_Frames(void) {
     CHECK_EQ(g_drawn_prims[0].has_depth, FALSE);
 }
 
+/* The fight's HUD at the edges of a wider picture: a sprite or a tile
+ * the game said belongs to an edge carries that edge to the backend, and
+ * every other primitive carries PORT_ANCHOR_MIDDLE. */
+static void test_Anchor(void) {
+    static u32 prim_words[4];
+    PortAddress prim = (PortAddress)prim_words;
+
+    test_Reset();
+    test_SetArea(0, 0, 639, 239);
+    /* a tile the game anchored to the left edge */
+    port_RemasterSetAnchor(PORT_ANCHOR_LEFT);
+    port_RemasterNoteAnchored(prim);
+    port_RemasterSetAnchor(PORT_ANCHOR_MIDDLE);
+    port_RemasterSetPrim(prim);
+    gp0(CODE(0x60) | RGB(0x10, 0x20, 0x30));
+    gp0(XY(72, 36));
+    gp0(XY(48, 1));
+    CHECK_EQ(g_drawn_count, 1);
+    CHECK_EQ(g_drawn_prims[0].kind, PORT_REMASTER_RECT);
+    CHECK_EQ(g_drawn_prims[0].anchor, PORT_ANCHOR_LEFT);
+
+    /* the next one, which nothing said anything about */
+    g_drawn_count = 0;
+    port_RemasterSetPrim(prim + 0x40);
+    gp0(CODE(0x60) | RGB(0x10, 0x20, 0x30));
+    gp0(XY(521, 36));
+    gp0(XY(48, 1));
+    CHECK_EQ(g_drawn_count, 1);
+    CHECK_EQ(g_drawn_prims[0].anchor, PORT_ANCHOR_MIDDLE);
+
+    /* a group that is built and never put back is still only its own
+     * frame's: the anchor is cleared at the top of each */
+    port_RemasterSetAnchor(PORT_ANCHOR_RIGHT);
+    port_RemasterNewFrame();
+    port_RemasterNoteAnchored(prim + 0x80);
+    g_drawn_count = 0;
+    port_RemasterSetPrim(prim + 0x80);
+    gp0(CODE(0x60) | RGB(0x10, 0x20, 0x30));
+    gp0(XY(521, 36));
+    gp0(XY(48, 1));
+    CHECK_EQ(g_drawn_count, 1);
+    CHECK_EQ(g_drawn_prims[0].anchor, PORT_ANCHOR_MIDDLE);
+
+    /* two frames on, what was written down counts as nothing */
+    test_Reset();
+    port_RemasterSetAnchor(PORT_ANCHOR_RIGHT);
+    port_RemasterNoteAnchored(prim);
+    port_RemasterSetAnchor(PORT_ANCHOR_MIDDLE);
+    port_RemasterNewFrame();
+    port_RemasterNewFrame();
+    test_SetArea(0, 0, 639, 239);
+    g_drawn_count = 0;
+    port_RemasterSetPrim(prim);
+    gp0(CODE(0x60) | RGB(0x10, 0x20, 0x30));
+    gp0(XY(521, 36));
+    gp0(XY(48, 1));
+    CHECK_EQ(g_drawn_count, 1);
+    CHECK_EQ(g_drawn_prims[0].anchor, PORT_ANCHOR_MIDDLE);
+}
+
 /* ---- what the decoder makes of the other commands ---- */
 
 static void test_Commands(void) {
@@ -655,6 +715,7 @@ void test_Main(void) {
     test_Side();
     test_SideInPrimitive();
     test_Frames();
+    test_Anchor();
     test_Commands();
     test_Original();
 }

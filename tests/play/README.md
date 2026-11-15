@@ -197,9 +197,11 @@ discs:
   of the run's folder, the same files the emulator is given, and the port
   makes one, formatted and empty, where there is none
   ([`docs/PORT.md`](../../docs/PORT.md), "The memory card"). With
-  `cards = "none"` it is given `--no-cards` and both slots are empty.
-  `port_game`, `port_other_fight` and `port_bugfixes` say `cards =
-  "none"`, so that what they compare is the fight and not the card.
+  `cards = "none"` it is given `--no-cards`, the plan says `nocards`,
+  which the port obeys by itself, and both slots are empty however the
+  program is run. `port_game`, `port_other_fight` and `port_bugfixes` say
+  `cards = "none"`, so that what they compare is the fight and not the
+  card.
 - No `frame`: the port's vertical blanks are not the console's. It
   shows no movie and reads the disc in no time, so it reaches every
   checkpoint sooner (the fight's first frame at blank 2,340 where the
