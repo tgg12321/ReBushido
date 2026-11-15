@@ -46,6 +46,11 @@ extern s32 port_HostMapAt(u32 address, u32 size);
  * back. */
 extern void *port_HostAllocate(u32 size);
 
+/* Calls `function` with the stack pointer at `stack_top`, the end of
+ * memory the port has for it. The function does not return. */
+extern void port_HostCallOnStack(void (*function)(void), u32 stack_top)
+    __attribute__((noreturn));
+
 /* What the processor was doing when the program was stopped for touching
  * memory it does not have, dividing by zero or running what is not an
  * instruction. */

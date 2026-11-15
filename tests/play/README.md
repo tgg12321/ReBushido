@@ -25,7 +25,7 @@ python tools/playtest.py [name...]          # the tests alone, with the discs al
 python tools/playtest.py --list
 ```
 
-About six minutes for the thirteen tests, after up to two minutes of
+About eight minutes for the fourteen tests, after up to two minutes of
 building discs; the tool holds a run to five minutes and the
 suite to fourteen. It prints a table and exits 1 if a test failed:
 
@@ -38,15 +38,16 @@ suite to fourteen. It prints a table and exits 1 if a test failed:
   gte_model        ok        76s
   options_no_card  ok         9s
   options_page     ok        15s
-  port_bugfixes    ok        33s
-  port_game        ok        32s
-  port_other_fight ok        33s
+  port_bugfixes    ok        35s
+  port_game        ok        35s
+  port_other_fight ok        61s
+  port_picture     ok        63s
   quickboot        ok         7s
   same_as_original ok        60s
   vanish           ok        17s
   emulator processes left running: 0
-  pictures and logs: build/playtest/<test>/<disc>/   (364s in all)
-OK: play tests: 13 passed, 0 skipped
+  pictures and logs: build/playtest/<test>/<disc>/   (459s in all)
+OK: play tests: 14 passed, 0 skipped
 ```
 
 What it needs, and where it looks:
@@ -108,7 +109,8 @@ retail program has none.
 | `first_frame_sweep` | the bugs' fight, off and on | On the first fighter's first frame the hit tests' scratch has the sweep of its naginata's shaft: with the setting off the shaft's far end was swept from nowhere (0, 0, 0: the first fight since power on left nothing else), with it on from where it is |
 | `vanish` | the bugs' fight, off and on | The CPU strikes the vanisher. With the setting off it comes back at (4000, -12000), another stage's start position, and two seconds later has fallen out of the stage; with it on it comes back at (3400, 7400), where it started, and stands |
 | `port_game` | ReBushido, then the native port | The port is the game: the same presses on the emulator and on the port, from power on through the options page, the top menu and character select, a versus fight to a kill, the replay, the menu after and back to the main menu. At each of 27 checkpoints, one for every second of the fight, every value of `state.toml` but the count of frames shown is the same on both, the random numbers among them; from the fight's first frame on so are both fighters' whole structures, and on that frame the memory the game loaded from the disc: the effects' tables and 256 KB of the stage ("The port as a disc") |
-| `port_other_fight` | ReBushido, then the native port | The same in another fight: each pad takes another weapon (a nodachi against a broadsword) and the first another stage. 31 checkpoints |
+| `port_other_fight` | ReBushido, then the native port | The same in another fight: each pad takes another weapon (a nodachi against a broadsword) and the first another stage. 31 checkpoints. Through the fight video memory is compared as well, at 24 of them ("The picture") |
+| `port_picture` | ReBushido, then the native port | The port's picture is the emulator's: all of video memory, pixel for pixel, at 28 checkpoints from the options page through the boot image, the top menu, the four steps of character select, sixteen seconds of a fight, the kill, the replay and the menu after, and back in the main menu. Not a pixel differs on the options page, the boot image and the menus; up to three in a thousand in the fight, each checkpoint held to the number that was measured ("The picture") |
 | `port_bugfixes` | ReBushido, then the native port | The same with Bugfixes on: `port_game`'s presses after right on the options page. The setting is on at every checkpoint |
 | `port_sound` | ReBushido, then the native port | **Not yet run against the emulator.** `port_game`'s run, comparing what Sony's sound libraries keep in memory: the common bank's header, where each bank is in sound memory, each voice's registers as last set, the library's record of each voice, the keys, the reverb, the disc's volume ([`docs/PORT.md`](../../docs/PORT.md), "Sound") |
 | `gte_model` | the GTE probe, no disc | The native port's C does what the PlayStation's coprocessor and assembly do: 125,800 made-up cases come out the same on the emulator and on the host ("The GTE probe") |
@@ -173,9 +175,9 @@ passes copy the new numbers in, as those files say.
 ## The port as a disc
 
 The native port ([`docs/PORT.md`](../../docs/PORT.md)) is the game's C
-built for a PC. It has no picture, sound or pads yet, but it follows a
+built for a PC. It has no window, sound or pads yet, but it follows a
 plan: the same file the emulator's script is given, and it writes the same
-log. So a test names it as a disc, `port`, and the tool runs
+log, and the same pictures. So a test names it as a disc, `port`, and the tool runs
 `build/port/rebushido --image <the retail .cue> --plan <plan> --out
 <folder>` in the emulator's place (through `wsl` when the tool runs on
 Windows). No emulator starts for that run.
@@ -187,11 +189,14 @@ discs:
 
 - `cards = "none"`: the port has no memory card, so the emulator is given
   none either.
-- No pictures, and no `frame`: the port's vertical blanks are not the
-  console's. It shows no movie and reads the disc in no time, so it
-  reaches every checkpoint sooner (the fight's first frame at blank 2,340
-  where the emulator is at 4,278). The game's own `frames` differs for
-  the same reason and is not compared.
+- No `frame`: the port's vertical blanks are not the console's. It
+  shows no movie and reads the disc in no time, so it reaches every
+  checkpoint sooner (the fight's first frame at blank 2,340 where the
+  emulator is at 4,278). The game's own `frames` differs for the same
+  reason and is not compared.
+- The port draws, so a checkpoint has a picture on it too. It is
+  compared as video memory, not as `picture` ("The picture"): the three
+  tests that are about the game's values say `shot = false`.
 - `compare` may name `dump`: each piece of memory the test's `[dump]`
   names is then compared between the two runs, byte for byte, at the end
   of the run. The two files are in the runs' folders and nowhere else.
@@ -300,7 +305,7 @@ expect = [
 | `discs` | The discs to run on, in order: `retail`, or the name of an image in `build/play/` without `.cue` and in any case (`rebushido`, `quickboot`, `quickboot-playtest`). A name that is a program there and no image (`gteprobe`: `GteProbe.exe`) is loaded with no disc |
 | `limit` | The vertical blank the run ends at, at the latest |
 | `input` | The presses (below) |
-| `compare` | With two discs or more: what must be the same on every disc as on the first, at every checkpoint both runs have. Names of `state.toml`, `frame` (the blank the checkpoint was reached at), `picture` (the screenshot, pixel for pixel); `["*"]` is all of them. A value that one of the two programs does not have is not compared |
+| `compare` | With two discs or more: what must be the same on every disc as on the first, at every checkpoint both runs have. Names of `state.toml`, `frame` (the blank the checkpoint was reached at), `picture` (the screenshot, pixel for pixel), `vram` (video memory at the checkpoints that say `vram`: "The picture"); `["*"]` is the values, `frame` and `picture`. A value that one of the two programs does not have is not compared |
 | `frames_from` | A checkpoint's name: `frame` is compared as the blanks since that checkpoint, at the checkpoints after it, and not at all up to it. For discs that reach the game's first screen at different times |
 | `cards` | The memory cards: `"new"` (two new, empty, formatted cards in every run; this if not given), `"keep"` (every run after the first starts with the cards the run before left), `"none"` (no card in either slot) |
 | `stall` | Vertical blanks without a frame that count as a crash (1800) |
@@ -309,6 +314,7 @@ expect = [
 | `common_state` | `false`: the test has only its own `[state]`, none of `state.toml`'s. For a program that is not the game |
 | `[dump]` | Memory to write to a file when the run ends, for looking into a failure: `NAME = "symbol+offset:bytes"` writes `NAME.bin` into the run's folder |
 | `[snapshot]` | Memory to write at the checkpoints that say `snapshot`, and to compare if `compare` names `snapshot` ("Memory at a checkpoint") |
+| `port_gpu` | `"emulator"`: on the native port, the GPU draws as the emulator's software GPU in the two things where that is not as the console ("The picture"). `"console"` if not given |
 
 **A press** is `"WHEN BUTTON"`: `"5200 START"` presses Start at vertical
 blank 5200 from power on, `"menu+30 DOWN"` thirty blanks after the
@@ -343,6 +349,8 @@ order of the file, each one looked for only after the one before it:
 | `at_frame` | With `when`: `true` looks for it only as a frame of the game begins, not at a blank, which can fall in the middle of one |
 | `repeat` | With `after`, `frames` or `call`: this many checkpoints one after another, `NAME_1` to `NAME_N` |
 | `snapshot` | `true`: the memory of `[snapshot]` is written here; or a list of its names, for only those |
+| `vram` | `true`: all of video memory is written here, to `NAME.vram` ("The picture") |
+| `vram_differ` | With `vram`: how many of its pixels may differ from the first run's (none, if not given) |
 | `calls` | `true`: on the native port, every function called from here to the next checkpoint is a line of `NAME.calls` in the run's folder, indented by how deep the call is |
 | `within` | Give up, and fail, this many blanks after the checkpoint before it (if not given, at `limit`) |
 | `expect` | What must hold there: expressions of values, numbers and names, with `+ - * & \| == != < <= > >= && \|\|` and brackets; `frame` is the blank it was reached at |
@@ -417,6 +425,65 @@ piece of the first run, at every checkpoint both wrote it:
 A test that fails names the first places; the rest is
 `tools/port_compare.py`'s.
 
+## The picture
+
+A checkpoint that says `vram = true` writes all of the PlayStation's
+video memory as it is at that moment to `CHECKPOINT.vram` in the run's
+folder: 1024 by 512 pixels of 16 bits, the two buffers of the picture
+with the textures and the colour tables beside and below them. The
+emulator's script takes it from the emulator's software GPU, which is
+the one it draws with when it has no window (`PCSX.GPU.getVRAM()`; the
+megabyte the emulator writes after it is not video memory and is not
+read). The native port writes its own
+([`docs/PORT.md`](../../docs/PORT.md), "The picture").
+
+With `vram` in `compare`, each run's video memory is held to the first
+run's at every checkpoint both wrote it, pixel for pixel
+(`tools/play/picture.py`). A checkpoint fails if more pixels differ than
+its `vram_differ` says, which is none unless it says. What differed at
+each checkpoint is a line of `vram.txt` in the second run's folder:
+
+```
+options          the same
+select_stage     58 pixels differ: buffer 0 29 (364,103)-(570,207); buffer 1 29 (364,343)-(570,447); 48 of them by 1 of 31 or less, the most by 3
+f_3              148 pixels differ: buffer 0 65 (14,10)-(635,223); buffer 1 83 (14,252)-(619,478); 46 of them by 1 of 31 or less, the most by 20
+```
+
+how many, in which part of video memory and inside which rectangle of
+it, and how far apart the two pixels' colours are. To look at them:
+
+```
+python tools/port_compare.py port_picture --vram          # the same lines, and for each checkpoint that
+                                                          # differs three pictures in the port's folder
+python tools/port_compare.py port_picture f_3 --vram      # one checkpoint
+```
+
+`f_3.vram-first.png` and `f_3.vram-second.png` are the two video
+memories whole, and `f_3.vram-differ.png` is the first, dimmed, with
+every pixel that differs in red.
+
+Three things to know when a test compares pictures:
+
+- **Take the checkpoint as a frame of the game begins** (`at_frame`,
+  `frames`), or where the picture stands still. What is in video memory
+  then is the frame before, drawn whole: the game draws a frame's
+  ordering table just after that moment. Both buffers are compared; in
+  a fight they hold two frames.
+- **What the game's clock moves is not at the same place on both.** The
+  port loads in no time, so a screen's own count of frames, and
+  `rand()`, which the frame's wait stirs, are elsewhere: a cursor that
+  pulses, the loading screen's noise, a fight's sparks. Compare where
+  they are not on show, or say how many pixels they are.
+- **`port_gpu = "emulator"`** for a test of the port against the
+  emulator. The emulator's GPU does two things otherwise than the
+  console is known to (`docs/PORT.md` has them), and without this the
+  port's dithered floor alone is a third of a fight's pixels.
+
+The picture on show, which every checkpoint takes unless it says `shot
+= false`, is the displayed rectangle of the same memory, as a PNG; the
+port's is written by the same rule as the emulator's. `picture` in
+`compare` holds two runs' to each other with nothing allowed to differ.
+
 ## Finding where two runs part
 
 When the port (or a changed disc) stops doing what the other run does,
@@ -459,7 +526,8 @@ were found (`docs/PORT.md`, "What the comparison found").
 `tools/port_compare.py` reads what a run of `tools/playtest.py` left and
 runs nothing: `--first` stops at the first checkpoint that differs,
 `--lines N` shows more of one, `--runs A B` takes two other runs of the
-test, `--holes` shows what `except` leaves out as well.
+test, `--holes` shows what `except` leaves out as well, `--vram`
+compares video memory too ("The picture").
 
 ## How the emulator is run
 

@@ -2,29 +2,39 @@
  *
  *   rebushido --image "Bushido Blade 2 (USA).cue" [--frames N] [--trace]
  *             [--plan FILE] [--dump NAME=ADDRESS:BYTES] [--out FOLDER]
+ *             [--shots FOLDER] [--every N] [--vram FILE]
+ *             [--wav FILE] [--spu FILE]
  *
  * It gives the game the PlayStation's memory and the player's disc
  * image, and then calls the game's own main, which never returns: the
  * run ends at a vertical blank, by --frames or by the plan
- * (port_OnBlank). There is no window, no picture and no sound yet, and
- * the pads are pressed only by a plan. */
+ * (port_OnBlank). There is no window and no sound card yet, and the
+ * pads are pressed only by a plan; the picture is drawn into the port's
+ * video memory and the sound is made by the port's sound chip, and both
+ * are written to files when a run asks. */
 #include "common.h"
 #include "port_disc.h"
+#include "port_gpu.h"
 #include "port_host.h"
 #include "port_spu.h"
 #include "bb2.h"
 
 #define PATH_BYTES_MAX 1024
+/* A picture a second, where --shots does not say how often. */
+#define SHOTS_EVERY 60
 
 static PortDisc g_port_disc;
 static s32 g_port_quitting;
 
 static const char g_port_usage[] =
-    "rebushido: the native port of ReBushido, as far as it goes: the game's\n"
-    "start-up and menus with no picture, sound or pads (docs/PORT.md)\n"
+    "rebushido: the native port of ReBushido, as far as it goes: the game\n"
+    "with no window, sound card or pads; its picture and its sound go to\n"
+    "files (docs/PORT.md)\n"
     "\n"
     "  rebushido --image FILE [--frames N] [--trace] [--plan FILE]\n"
     "            [--dump NAME=ADDRESS:BYTES] [--out FOLDER]\n"
+    "            [--shots FOLDER] [--every N] [--vram FILE]\n"
+    "            [--wav FILE] [--spu FILE]\n"
     "\n"
     "  --image FILE   your own image of the game's disc: the .cue, or the\n"
     "                 .bin of raw sectors it names\n"
@@ -37,6 +47,11 @@ static const char g_port_usage[] =
     "  --dump NAME=ADDRESS:BYTES   write that much of the PlayStation's\n"
     "                 memory to NAME.bin when the run ends\n"
     "  --out FOLDER   where the dumps go\n"
+    "  --shots FOLDER a PNG of the picture, blank-NNNNNN.png, into this\n"
+    "                 folder every sixty vertical blanks\n"
+    "  --every N      ... every N of them\n"
+    "  --vram FILE    all of video memory to this file when the run ends:\n"
+    "                 1024 by 512 pixels of 16 bits\n"
     "  --wav FILE     keep the run's sound and write it there when the run\n"
     "                 ends, with a line for each voice started\n"
     "  --spu FILE     write sound memory and the sound chip's registers\n"
@@ -94,13 +109,12 @@ static void port_ParseDump(char *word) {
     port_AddDump(word, (u32)at, (u32)bytes);
 }
 
-/* `folder` with a `/` after it, if it has none. */
-static const char *port_FolderPrefix(const char *folder) {
-    static char prefix[PATH_BYTES_MAX];
+/* `folder` with a `/` after it, if it has none, in `prefix`. */
+static const char *port_FolderPrefix(const char *folder, char *prefix) {
     u32 length = port_TextLength(folder);
     u32 i;
 
-    if (length == 0 || length + 2 > sizeof(prefix)) {
+    if (length == 0 || length + 2 > PATH_BYTES_MAX) {
         return "";
     }
     for (i = 0; i < length; i++) {
@@ -132,13 +146,23 @@ static void port_LoadOwnNames(const char *program) {
     port_LoadNames(path);
 }
 
+/* The game, on its own stack. Its main does not return. */
+static void port_RunGame(void) {
+    main();
+    port_Quit(PORT_EXIT_FAILED);
+}
+
 /* The program: its arguments, the memory, the disc, and then the game
  * (port_host.h). */
 s32 port_Main(s32 argc, char **argv) {
+    static char out_folder[PATH_BYTES_MAX];
+    static char shots_folder[PATH_BYTES_MAX];
     const char *image = NULL;
     const char *plan = NULL;
+    const char *shots = NULL;
     const char *problem;
     s32 frames = 0;
+    s32 every = SHOTS_EVERY;
     s32 i;
 
     port_CatchCrashes();
@@ -168,7 +192,15 @@ s32 port_Main(s32 argc, char **argv) {
         } else if (port_TextsEqual(word, "--spu")) {
             port_SetSpuDump(argv[++i]);
         } else if (port_TextsEqual(word, "--out")) {
-            port_SetDumpFolder(port_FolderPrefix(argv[++i]));
+            port_SetDumpFolder(port_FolderPrefix(argv[++i], out_folder));
+        } else if (port_TextsEqual(word, "--shots")) {
+            shots = port_FolderPrefix(argv[++i], shots_folder);
+        } else if (port_TextsEqual(word, "--every")) {
+            if (!port_ParseNumber(argv[++i], &every) || every <= 0) {
+                port_UsageError("--every takes a number, not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--vram")) {
+            port_SetVramPath(argv[++i]);
         } else if (port_TextsEqual(word, "--dump")) {
             port_ParseDump(argv[++i]);
         } else if (port_TextsEqual(word, "--frames")) {
@@ -196,7 +228,15 @@ s32 port_Main(s32 argc, char **argv) {
     if (frames > 0) {
         port_SetBlankLimit((u32)frames);
     }
-    main();
-    /* the game's main does not return */
-    port_Quit(PORT_EXIT_FAILED);
+    if (shots != NULL) {
+        port_SetShots(shots, (u32)every);
+    }
+    /* where primitives may be: the console's memory, the program's own
+     * variables, the game's stack */
+    port_AddLinkRegion(PORT_RAM_ADDR, PORT_RAM_SIZE);
+    port_AddLinkRegion(SCRATCHPAD, PORT_SCRATCHPAD_SIZE);
+    port_AddLinkRegion(PORT_STACK_ADDR, PORT_STACK_SIZE);
+    port_AddLinkRegion(
+        (u32)g_port_data_start, (u32)(g_port_data_end - g_port_data_start));
+    port_HostCallOnStack(port_RunGame, PORT_STACK_ADDR + PORT_STACK_SIZE);
 }

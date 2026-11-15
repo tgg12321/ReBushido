@@ -14,6 +14,10 @@ wrote at their checkpoints, laid side by side (tests/play/README.md,
                                                       (the first two if not given)
     python tools/port_compare.py TEST --holes         also what the test leaves out
                                                       of a piece (`except`)
+    python tools/port_compare.py TEST --vram          video memory, where a checkpoint
+                                                      wrote it: how many pixels differ,
+                                                      where and by how much, and three
+                                                      pictures of each that does
 
 It is for finding where the native port (docs/PORT.md) leaves the emulator,
 and works for any two runs: it reads what `python tools/playtest.py TEST`
@@ -26,6 +30,13 @@ for each run of bytes: the variable and the offset into it, and the bytes
 on each run. A word that is the address of the same place of the same name
 in both programs is not a difference (tools/play/snapshot.py). Exits 1 if
 anything differed.
+
+With --vram, video memory (tests/play/README.md, "The picture") is compared
+too, at the checkpoints that say `vram`: a line for each, and for each that
+differs CHECKPOINT.vram-first.png, CHECKPOINT.vram-second.png and
+CHECKPOINT.vram-differ.png in the second run's folder: the whole 1024 by
+512 of each run, and the first run's, dimmed, with every pixel that differs
+in red.
 """
 import argparse
 import os
@@ -35,6 +46,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, "tools"))
 sys.path.insert(0, os.path.join(REPO, "tools", "play"))
 
+import picture  # noqa: E402
 import playtest  # noqa: E402
 import snapshot  # noqa: E402
 
@@ -62,6 +74,7 @@ def main():
     ap.add_argument("--lines", type=int, default=40)
     ap.add_argument("--runs", nargs=2, metavar=("A", "B"))
     ap.add_argument("--holes", action="store_true")
+    ap.add_argument("--vram", action="store_true")
     args = ap.parse_args()
 
     try:
@@ -126,6 +139,19 @@ def main():
                 lines.append((key, "  %-18s %s+0x%X (%d): %s | %s"
                               % (piece, variable, offset, length, snapshot.show(memory[0], at_a, length),
                                  snapshot.show(memory[1], at_b, length))))
+        if args.vram and cp.vram:
+            paths = [os.path.join(folder, cp.name + ".vram") for folder in folders]
+            if all(os.path.isfile(path) for path in paths):
+                memory = [picture.read(path) for path in paths]
+                found = picture.Difference(memory[0], memory[1])
+                if found.count:
+                    key = ("vram", cp.name)
+                    now.add(key)
+                    lines.append((key, "  %-18s %s" % ("video memory", found.summary())))
+                    stem = os.path.join(folders[1], cp.name + ".vram-")
+                    picture.write_png(stem + "first.png", picture.WIDTH, picture.HEIGHT, picture.to_rgb(memory[0]))
+                    picture.write_png(stem + "second.png", picture.WIDTH, picture.HEIGHT, picture.to_rgb(memory[1]))
+                    picture.write_png(stem + "differ.png", picture.WIDTH, picture.HEIGHT, found.picture(memory[0]))
         if args.new:
             lines = [(key, line) for key, line in lines if key not in before]
         before = now

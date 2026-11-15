@@ -30,10 +30,11 @@
 --   in CP OFFSET PAD BUTTON HOLD f   ... OFFSET frames of the game after it,
 --                                    held HOLD frames
 --   cp NAME SHOT WITHIN at N         a checkpoint at vertical blank N (SHOT:
---                                    1 a picture, 2 the `snap` memory, added;
---                                    4 is the port's alone; from 256 up, a
---                                    bit for each `snap` line that is written,
---                                    the first line's lowest: all if none)
+--                                    1 a picture, 2 the `snap` memory, 8 all
+--                                    of video memory, added; 4 is the port's
+--                                    alone; from 256 up, a bit for each `snap`
+--                                    line that is written, the first line's
+--                                    lowest: all if none)
 --   cp NAME SHOT WITHIN after N      ... N blanks after the one before
 --   cp NAME SHOT WITHIN frames N     ... N frames of the game after it, at
 --                                    the moment the Nth begins
@@ -51,6 +52,9 @@
 --   hb FRAME PC ALIVE                every 300 blanks
 --   cp NAME FRAME VALUE...           a checkpoint, with every var's value
 --   shot NAME WIDTH HEIGHT BPP       a picture written to NAME.raw
+-- (Video memory is written to NAME.vram and has no line: 1024 by 512 pixels
+-- of 16 bits, the software GPU's own, and after them a megabyte that is not
+-- video memory, which the tool does not read.)
 --   miss NAME FRAME                  a checkpoint not reached in time
 --   crash WHY FRAME ...              pc / exception / stall
 --   limit FRAME                      the run's last blank came
@@ -175,6 +179,7 @@ local function load_plan()
         elseif kind == 'cp' then
             local what = tonumber(w[3])
             local cp = {name = w[2], shot = bit.band(what, 1) ~= 0, snap = bit.band(what, 2) ~= 0,
+                        vram = bit.band(what, 8) ~= 0,
                         which = bit.rshift(what, 8), within = tonumber(w[4]), how = w[5], tests = {}}
             if cp.how == 'when' or cp.how == 'whenf' then
                 for i = 6, #w, 3 do
@@ -231,6 +236,14 @@ local function shot(name)
     out(string.format('shot %s %d %d %d', name, s.width, s.height, (tonumber(s.bpp) == 0) and 16 or 24))
 end
 
+-- The whole of video memory as it is now, 1024 by 512 words of 16 bits, to
+-- NAME.vram.
+local function write_vram(name)
+    local f = Support.File.open(DIR .. name .. '.vram', 'TRUNCATE')
+    f:writeMoveSlice(PCSX.GPU.getVRAM())
+    f:close()
+end
+
 local function values()
     local t = {}
     for i = 1, #vars do t[i] = string.format('%d', value_of(i)) end
@@ -282,6 +295,7 @@ local function take_checkpoints(event)
             out('cp ' .. cp.name .. ' ' .. frame .. ' ' .. values())
             if cp.shot then shot(cp.name) end
             if cp.snap then write_snaps(cp.name, cp.which) end
+            if cp.vram then write_vram(cp.name) end
             last_cp_frame, last_cp_game_frame = frame, game_frame
             schedule(next_cp, frame)
             next_cp = next_cp + 1

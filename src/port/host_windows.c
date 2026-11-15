@@ -116,6 +116,21 @@ void *port_HostAllocate(u32 size) {
     return VirtualAlloc(NULL, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 }
 
+/* As on Linux, for a compiler that takes GCC's assembly; not built or
+ * run. */
+void port_HostCallOnStack(void (*function)(void), u32 stack_top) {
+    __asm__ volatile(
+        "movl %0, %%esp\n"
+        "xorl %%ebp, %%ebp\n"
+        "call *%1\n"
+        :
+        : "r"(stack_top), "r"(function)
+        : "memory");
+    for (;;) {
+        port_HostExit(1);
+    }
+}
+
 /* The system calls this for a fault nothing else took: says what and
  * where, and ends the program. */
 static LONG WINAPI port_WindowsOnFault(EXCEPTION_POINTERS *fault) {

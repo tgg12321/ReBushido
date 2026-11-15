@@ -9,6 +9,10 @@
  * spaces, numbers decimal:
  *
  *   limit N                         the run ends at vertical blank N
+ *   gpu emulator                    the GPU draws as the emulator's
+ *                                   where that is not as the console's
+ *                                   (port_gpu.h): for a run whose picture
+ *                                   is held to the emulator's
  *   var NAME ADDR SIZE SIGNED       a value to write down
  *   dump NAME ADDR SIZE             memory written to NAME.bin at the end
  *   snap NAME ADDR SIZE             memory written to CP.NAME.snap at
@@ -19,11 +23,11 @@
  *   in CP OFFSET PAD BUTTON HOLD f  ... OFFSET frames of the game after
  *                                   it, held HOLD frames
  *   cp NAME SHOT WITHIN at N        a checkpoint at vertical blank N
- *                                   (SHOT: 2 in it asks for the `snap`
+ *                                   (SHOT: 1 in it asks for the picture,
+ *                                   2 for the `snap` memory, 8 for video
  *                                   memory, and from 256 up it has a bit
  *                                   for each `snap` line that is written,
- *                                   the first line's lowest: all if none.
- *                                   The port has no picture)
+ *                                   the first line's lowest: all if none)
  *   cp NAME SHOT WITHIN after N     ... N blanks after the one before
  *   cp NAME SHOT WITHIN frames N    ... N frames of the game after it,
  *                                   as the Nth begins
@@ -54,6 +58,8 @@
  * are read and not used. What a run prints:
  *
  *   cp NAME BLANK VALUE...          a checkpoint, with every value
+ *   shot NAME WIDTH HEIGHT 16       its picture, written to NAME.raw: the
+ *                                   displayed rectangle's 16-bit pixels
  *   miss NAME BLANK                 a checkpoint not reached in time
  *   done BLANK                      the last checkpoint was reached
  *   limit BLANK                     the run's last blank came
@@ -64,6 +70,7 @@
  * tests/play/state.toml at this program's addresses, and its `sym` lines
  * every function, for a crash to say where it was. */
 #include "common.h"
+#include "port_gpu.h"
 #include "port_host.h"
 #include "bb2.h"
 
@@ -90,8 +97,15 @@
 #define DUMP_WORDS 4
 #define CP_WORDS_MIN 6
 #define CP_SHOT 2
+#define CP_PICTURE_BIT 1
 #define CP_SNAP_BIT 2
 #define CP_CALLS_BIT 4
+#define CP_VRAM_BIT 8
+/* A screenshot's pixels are 16 bits. */
+#define PICTURE_BITS 16
+/* The digits of a blank's number in a picture's name. */
+#define BLANK_DIGITS 6
+#define DECIMAL 10
 #define CP_SNAPS_SHIFT 8
 #define CP_CALL_WORDS 7
 #define CP_CALL_COUNT 6
@@ -164,6 +178,8 @@ typedef struct {
 typedef struct {
     const char *name;
     s32 kind;
+    s32 picture;  /* the picture is written at it */
+    s32 vram;     /* video memory is written at it */
     s32 snap;     /* the `snap` memory is written at it */
     u32 snaps;    /* which: a bit a `snap` line; 0 for all */
     s32 at_frame; /* CHECKPOINT_WHEN: only as a frame begins */
@@ -217,6 +233,11 @@ static u32 g_port_blank_limit = DEFAULT_BLANK_LIMIT;
 /* The folder the dumps are written into, with its last `/`; "" for the
  * one the program was started in. */
 static const char *g_port_dump_folder = "";
+/* The folder a PNG of the picture goes into every so many blanks, with
+ * its last `/`; NULL for none. And a file for video memory at the end. */
+static const char *g_port_shots_folder;
+static u32 g_port_shots_every;
+static const char *g_port_vram_path;
 static s32 g_port_trace;
 static s32 g_port_trace_started;
 static s32 g_port_has_plan;
@@ -449,6 +470,10 @@ static void port_AddCheckpoint(char **words, s32 count) {
     }
     checkpoint = &g_port_checkpoints[g_port_checkpoint_count++];
     checkpoint->name = words[1];
+    checkpoint->picture =
+        (port_PlanNumber(words[CP_SHOT], "cp") & CP_PICTURE_BIT) != 0;
+    checkpoint->vram =
+        (port_PlanNumber(words[CP_SHOT], "cp") & CP_VRAM_BIT) != 0;
     checkpoint->snap =
         (port_PlanNumber(words[CP_SHOT], "cp") & CP_SNAP_BIT) != 0;
     checkpoint->calls =
@@ -588,6 +613,9 @@ void port_LoadPlan(const char *path) {
         }
         if (port_TextsEqual(words[0], "limit") && count == 2) {
             g_port_blank_limit = (u32)port_PlanNumber(words[1], "limit");
+        } else if (port_TextsEqual(words[0], "gpu") && count == 2 &&
+                   port_TextsEqual(words[1], "emulator")) {
+            port_SetGpuLikeEmulator(1);
         } else if (port_TextsEqual(words[0], "var")) {
             /* the plan's values in place of the names' */
             if (!own_values) {
@@ -782,6 +810,36 @@ static void port_WriteSnaps(const char *checkpoint, u32 which) {
     }
 }
 
+/* The picture at a checkpoint, as the emulator's script writes one: the
+ * displayed rectangle's pixels to CHECKPOINT.raw, and a line that says
+ * its size. */
+static void port_WriteCheckpointPicture(const char *checkpoint) {
+    PortDisplay display;
+    s32 file = port_CreateRunFile(checkpoint, ".raw", "", "");
+
+    port_GetDisplay(&display);
+    if (file < 0 || !port_WriteDisplayPixels(file)) {
+        port_Fail("rebushido: the picture at checkpoint `%s` cannot be "
+                  "written\n",
+                  checkpoint);
+    }
+    port_HostClose(file);
+    port_Print(
+        "shot %s %d %d %d\n", checkpoint, display.w, display.h, PICTURE_BITS);
+}
+
+/* All of video memory at a checkpoint, to CHECKPOINT.vram. */
+static void port_WriteCheckpointVram(const char *checkpoint) {
+    s32 file = port_CreateRunFile(checkpoint, ".vram", "", "");
+
+    if (file < 0 || !port_WriteVram(file)) {
+        port_Fail("rebushido: video memory at checkpoint `%s` cannot be "
+                  "written\n",
+                  checkpoint);
+    }
+    port_HostClose(file);
+}
+
 /* The checkpoints the run is at, one after another, and the run's end
  * at the last. */
 static void port_TakeCheckpoints(u32 blank, s32 event) {
@@ -792,8 +850,14 @@ static void port_TakeCheckpoints(u32 blank, s32 event) {
         if (port_CheckpointReached(checkpoint, blank, event)) {
             port_Print("cp %s %u", checkpoint->name, blank);
             port_PrintValues();
+            if (checkpoint->picture) {
+                port_WriteCheckpointPicture(checkpoint->name);
+            }
             if (checkpoint->snap) {
                 port_WriteSnaps(checkpoint->name, checkpoint->snaps);
+            }
+            if (checkpoint->vram) {
+                port_WriteCheckpointVram(checkpoint->name);
             }
             /* the list of calls ends here, and this one's begins */
             if (g_port_calls_file >= 0) {
@@ -830,10 +894,60 @@ static void port_TakeCheckpoints(u32 blank, s32 event) {
     }
 }
 
-/* A vertical blank (port_platform.h): the presses due at it, the trace,
- * the checkpoints it reaches or gives up, and the run's end. */
+void port_SetShots(const char *folder, u32 every) {
+    g_port_shots_folder = folder;
+    g_port_shots_every = every;
+}
+
+void port_SetVramPath(const char *path) { g_port_vram_path = path; }
+
+/* The picture as it is at this blank, to blank-NNNNNN.png of the
+ * folder. */
+static void port_WriteBlankPicture(u32 blank) {
+    static const char stem[] = "blank-";
+    static const char ending[] = ".png";
+    char path[PATH_BYTES_MAX];
+    u32 length = 0;
+    u32 scale = 1;
+    const char *text;
+    s32 file;
+    s32 i;
+
+    for (text = g_port_shots_folder; *text != 0; text++) {
+        if (length + sizeof(stem) + BLANK_DIGITS + sizeof(ending) <
+            sizeof(path)) {
+            path[length++] = *text;
+        }
+    }
+    for (text = stem; *text != 0; text++) {
+        path[length++] = *text;
+    }
+    for (i = 1; i < BLANK_DIGITS; i++) {
+        scale *= DECIMAL;
+    }
+    for (i = 0; i < BLANK_DIGITS; i++) {
+        path[length++] = (char)('0' + (blank / scale) % DECIMAL);
+        scale /= DECIMAL;
+    }
+    for (text = ending; *text != 0; text++) {
+        path[length++] = *text;
+    }
+    path[length] = 0;
+    file = port_HostCreate(path);
+    if (file < 0 || !port_WriteDisplayPng(file)) {
+        port_Fail("rebushido: the picture %s cannot be written\n", path);
+    }
+    port_HostClose(file);
+}
+
+/* A vertical blank (port_platform.h): the presses due at it, the
+ * picture if this is a blank it is kept at, the trace, the checkpoints
+ * it reaches or gives up, and the run's end. */
 void port_OnBlank(u32 blank) {
     port_PressButtons(0, blank);
+    if (g_port_shots_folder != NULL && blank % g_port_shots_every == 0) {
+        port_WriteBlankPicture(blank);
+    }
     if (g_port_trace) {
         port_PrintTrace(blank);
     }
@@ -905,6 +1019,18 @@ void port_SetDumpFolder(const char *folder) { g_port_dump_folder = folder; }
  * (port_platform.h). */
 void port_WriteDumps(void) {
     s32 i;
+
+    if (g_port_vram_path != NULL) {
+        s32 file = port_HostCreate(g_port_vram_path);
+
+        if (file < 0 || !port_WriteVram(file)) {
+            port_Log("rebushido: video memory cannot be written to %s\n",
+                     g_port_vram_path);
+        }
+        if (file >= 0) {
+            port_HostClose(file);
+        }
+    }
 
     for (i = 0; i < g_port_dump_count; i++) {
         const PortDump *dump = &g_port_dumps[i];

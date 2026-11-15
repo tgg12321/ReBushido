@@ -2,6 +2,10 @@ about = "The native port against the emulator in another fight: other weapons, a
 discs = ["rebushido", "port"]
 # The port has no memory card yet, so neither has the emulator.
 cards = "none"
+# Video memory is compared too, through the fight (port_picture.toml has
+# the other screens): the port's GPU is told to draw as the emulator's where
+# that is not as the console's (docs/PORT.md, "The picture").
+port_gpu = "emulator"
 limit = 12000
 seconds = 240
 
@@ -65,7 +69,7 @@ compare = [
     "p2_x", "p2_y", "p2_z", "p2_off_arm_ok", "p2_leg_wounds", "p2_arm_wounds", "p2_body_wounds",
     "p2_vanish_count",
     "rb_page", "rb_row", "rb_card", "rb_save", "rb_bugfixes", "rb_graphics",
-    "snapshot",
+    "snapshot", "vram",
 ]
 
 # Both fighters, every byte (Fighter, fighter.h: 0x44C bytes each), but
@@ -134,6 +138,8 @@ name = "f"
 frames = 30
 repeat = 20
 shot = false
+vram = true
+vram_differ = 906
 snapshot = ["fighters"]
 
 # One of the two is cut down.
@@ -143,6 +149,8 @@ when = "winner != FIGHT_NOBODY"
 at_frame = true
 within = 3000
 shot = false
+vram = true
+vram_differ = 965
 snapshot = ["fighters"]
 expect = ["p1_defeated + p2_defeated == 1", "p1_frames_alive == 626"]
 
@@ -152,6 +160,8 @@ when = "screen == SCREEN_REPLAY_UPDATE"
 at_frame = true
 within = 1000
 shot = false
+vram = true
+vram_differ = 721
 snapshot = ["fighters"]
 
 # The menu after the fight, and a second of it.
@@ -161,12 +171,16 @@ when = "screen == SCREEN_AFTER_FIGHT_UPDATE"
 at_frame = true
 within = 3000
 shot = false
+vram = true
+vram_differ = 593
 snapshot = ["fighters"]
 
 [[checkpoint]]
 name = "after_fight_1s"
 frames = 30
 shot = false
+vram = true
+vram_differ = 494
 snapshot = ["fighters"]
 expect = ["wins_p1 + wins_p2 == 1"]
 

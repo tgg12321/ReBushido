@@ -4,7 +4,8 @@
     python tools/format.py <file>...      format in place
     python tools/format.py --check <file>...   exit 1 if a file would change
     python tools/format.py [--check] --all     every C file git tracks under
-                                               src/, include/, movovl/, tests/
+                                               src/, include/, movovl/, tests/,
+                                               tools/patcher/
 
 clang-format only moves whitespace, so it cannot change the built bytes. The
 Sony headers under include/psxsdk/ that are kept as shipped are skipped. Runs
@@ -25,7 +26,10 @@ def main():
     files = [a.replace("\\", "/") for a in args if not a.startswith("--")]
     if "--all" in args:
         listed = subprocess.run(
-            ["git", "ls-files", "src", "include", "movovl", "tests"], cwd=ROOT, capture_output=True, text=True
+            ["git", "ls-files", "src", "include", "movovl", "tests", "tools/patcher"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
         )
         files = listed.stdout.split()
     files = [f for f in files if os.path.basename(f) not in AS_SHIPPED and f.endswith((".c", ".h"))]

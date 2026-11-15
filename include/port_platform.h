@@ -108,8 +108,19 @@ extern void port_PrintStubs(void);
  * writes it. */
 #define PORT_LOW_MEMORY_WORDS 16
 extern const u32 g_port_low_memory[PORT_LOW_MEMORY_WORDS];
-/* Gives both memory; stops the program, saying why, if the system will
- * not. */
+/* A stack of the port's own for the game, at an address that is the
+ * same in every run: what the game leaves on its stack and reads again
+ * is then the same too, and a primitive on the stack (an ordering table
+ * of a function's own) has an address whose low 24 bits are no other
+ * memory's (port_gpu.h, port_AddLinkRegion). */
+#define PORT_STACK_ADDR 0x7FC00000U
+#define PORT_STACK_SIZE 0x100000U
+/* Where the program's own variables begin and end: the link's script
+ * says (tools/port_build.py). */
+extern char g_port_data_start[];
+extern char g_port_data_end[];
+/* Gives all three memory; stops the program, saying why, if the system
+ * will not. */
 extern void port_MapMemory(void);
 /* Whether `count` bytes from `address` are in one of the two. */
 extern s32 port_IsMapped(u32 address, u32 count);
@@ -167,6 +178,11 @@ extern void port_AddDump(const char *name, u32 address, u32 size);
 /* The folder they go into, with its last `/` (--out). */
 extern void port_SetDumpFolder(const char *folder);
 extern void port_WriteDumps(void);
+/* A PNG of the picture into this folder (with its last `/`) every
+ * `every` vertical blanks (--shots, --every). */
+extern void port_SetShots(const char *folder, u32 every);
+/* All of video memory to this file when the run ends (--vram). */
+extern void port_SetVramPath(const char *path);
 /* Called at every vertical blank: presses the plan's buttons, looks for
  * its next checkpoint, prints the trace, ends the run at its limit. */
 extern void port_OnBlank(u32 blank);
