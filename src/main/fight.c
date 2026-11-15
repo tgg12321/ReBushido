@@ -627,7 +627,7 @@ void fight_LoadStage(void) {
         }
 
         dest = g_snd_stage_vab_buffer;
-        memcpy((u8 *)dest, (u8 *)load_addr, kept_size);
+        memcpy((u8 *)dest, (u8 *)ADDR(load_addr), kept_size);
         snd_RebaseStageVabs((s32)dest - load_addr);
     }
 }
@@ -649,7 +649,7 @@ static void snd_InstallJudgeVab(void) {
         sys_Panic();
     }
     dest = g_snd_mode_vab_buffer;
-    memcpy((u8 *)dest, (u8 *)load_addr, kept_size);
+    memcpy((u8 *)dest, (u8 *)ADDR(load_addr), kept_size);
     snd_RebaseJudgeVab((s32)dest - load_addr);
 }
 
@@ -667,7 +667,7 @@ static void snd_InstallChanbaraVabs(void) {
         sys_Panic();
     }
     dest = g_snd_mode_vab_buffer;
-    memcpy((u8 *)dest, (u8 *)load_addr, kept_size);
+    memcpy((u8 *)dest, (u8 *)ADDR(load_addr), kept_size);
     snd_RebaseChanbaraVabs((s32)dest - load_addr);
 }
 

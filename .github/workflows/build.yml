@@ -115,13 +115,17 @@ jobs:
 
       # The native port (docs/PORT.md): the game's C with the port's switch
       # on and src/port/ link into one program for the runner, with no name
-      # missing and no warning in the port's own files. Like the tests it
-      # is a 32-bit program with no C library, so it wants the runner's gcc
+      # missing and no warning in the port's own files. It is built twice,
+      # with 64-bit pointers and with 32-bit ones (docs/PORT.md, "64 bits").
+      # Like the tests it has no C library, so it wants the runner's gcc
       # and nothing installed. It is not run here: it reads the game from
       # the retail disc's image, which no runner has.
-      # Then tools/port_order.py holds the places where this compiler may
+      # Then every structure's layout in the two programs and on the
+      # PlayStation is held to config/port_layout.txt (tools/port_layout.py),
+      # the 64-bit program's pointers to being made of 32-bit addresses
+      # (tools/port_casts.py), and the places where either compiler may
       # evaluate an expression in another order than the PlayStation's to
-      # config/port_order.txt.
-      - name: The native port links (make port)
+      # config/port_order.txt (tools/port_order.py).
+      - name: The native port links, both sizes (make port)
         if: ${{ !cancelled() }}
         run: make port

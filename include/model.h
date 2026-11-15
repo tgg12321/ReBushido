@@ -67,10 +67,10 @@ typedef struct ModelNode {
     /* +0x58 by the node's kind: a shadow's ground height; an extra node's
      * bone (a ModelNode *); the skinned body's list of matrices */
     s32 extra;
-    s32 unk5C;        /* +0x5C no code reads or writes it */
-    u8 *cloth_points; /* +0x60 a cloth mesh's points (ClothPoint) */
-    s32 unk64;        /* +0x64 no code reads or writes it */
-} ModelNode;          /* 0x68 bytes */
+    s32 unk5C;                /* +0x5C no code reads or writes it */
+    PTR32(u8 *) cloth_points; /* +0x60 a cloth mesh's points (ClothPoint) */
+    s32 unk64;                /* +0x64 no code reads or writes it */
+} ModelNode;                  /* 0x68 bytes */
 
 /* The word after a model node's scene node, written through a pointer and
  * not as the member `extra`. Three functions store it this way in the
@@ -106,11 +106,11 @@ typedef struct Model {
         u8 byte[4];
     } outline_color;
 
-    s32 data;                 /* +0x001C */
-    s32 staging;              /* +0x0020 where the file was read, if not
-                                 straight into `data` */
-    struct ModelCloth *cloth; /* +0x0024 null: it has none (cloth.h) */
-    s32 cloth_params;         /* +0x0028 the file's cloth section */
+    s32 data;                         /* +0x001C */
+    s32 staging;                      /* +0x0020 where the file was read, if not
+                                         straight into `data` */
+    PTR32(struct ModelCloth *) cloth; /* +0x0024 null: it has none (cloth.h) */
+    s32 cloth_params;                 /* +0x0028 the file's cloth section */
     ModelNode bones[MODEL_BONE_COUNT];     /* +0x002C */
     ModelNode shadows[MODEL_SHADOW_NODES]; /* +0x08B4 ends with mesh -1 */
     /* +0x10D4 for the bones that carry more than one mesh; ends with
@@ -118,13 +118,13 @@ typedef struct Model {
     ModelNode extra_nodes[MODEL_EXTRA_NODES];
     /* +0x18F4 the bones' world matrices in the order the body's mesh
      * sections use */
-    MATRIX *skin_matrices[MODEL_MATRIX_COUNT];
+    MatrixSlot skin_matrices[MODEL_MATRIX_COUNT];
     u8 pad1944[0x50]; /* +0x1944 */
     /* +0x1994 the same from bone 1 up */
-    MATRIX *bone_matrices[MODEL_MATRIX_COUNT];
+    MatrixSlot bone_matrices[MODEL_MATRIX_COUNT];
     u8 pad19E4[0x50]; /* +0x19E4 */
     /* +0x1A34 the node that draws each mesh */
-    ModelNode *mesh_nodes[MODEL_MESH_COUNT];
+    PTR32(ModelNode *) mesh_nodes[MODEL_MESH_COUNT];
     s16 ground_y;  /* +0x1A84 */
     u8 pad1A86[2]; /* +0x1A86 */
 } Model;           /* 0x1A88 bytes */
@@ -178,7 +178,7 @@ extern void model_Update(s32 slot, s32 pose_mode, s32 *position, s16 *rotation,
 extern void model_BlendPoses(
     s32 slot, u8 *from_frame, u8 *to_frame, s32 weight, MATRIX *scratch);
 /* The world matrices of bones 1 up, or NULL if the slot is empty. */
-extern MATRIX **model_GetBoneMatrices(s32 slot);
+extern MatrixSlot *model_GetBoneMatrices(s32 slot);
 
 /* The face. A model's face texture has spare copies of the eyes (three) and
  * of the mouth (two) beside it; a face is one of each, copied into place:

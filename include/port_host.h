@@ -13,6 +13,9 @@
  * with the program's arguments (the first is the program's own path) and
  * ends the program with what it returns (src/port/main.c). */
 extern s32 port_Main(s32 argc, char **argv);
+/* Where Windows starts the program (host_windows.c): the linker is given
+ * this name for its entry. */
+extern void port_WindowsStart(void);
 
 /* Ends the program at once. */
 extern void port_HostExit(s32 code) __attribute__((noreturn));
@@ -55,11 +58,11 @@ extern void port_HostCallOnStack(void (*function)(void), u32 stack_top)
  * memory it does not have, dividing by zero or running what is not an
  * instruction. */
 typedef struct {
-    const char *what; /* the kind of fault, in words */
-    u32 address;      /* the memory it touched, where that is known */
-    u32 pc;           /* the instruction */
-    u32 frame;        /* the frame pointer there: the chain of callers */
-    u32 stack;        /* the stack pointer there */
+    const char *what;    /* the kind of fault, in words */
+    PortAddress address; /* the memory it touched, where that is known */
+    PortAddress pc;      /* the instruction */
+    PortAddress frame;   /* the frame pointer there: the chain of callers */
+    PortAddress stack;   /* the stack pointer there */
 } PortCrash;
 
 /* From now on such a fault calls `report` and then ends the program with

@@ -73,7 +73,7 @@ typedef struct {
     s16 unk_10; /* cleared when the menu opens; not read */
     s16 unk_12; /* cleared when the menu opens; not read */
     u8 pad14[0x10];
-    MenuFile *file;
+    PTR32(MenuFile *) file;
 
     union {
         s16 half[2];
@@ -440,16 +440,16 @@ s32 menu_Load(s32 memory, GameSettings *settings) {
     MenuWork *work;
 
     g_menu_free_ram = memory;
-    g_menu_pools = (PrimPool *)memory;
+    g_menu_pools = (PrimPool *)ADDR(memory);
     file = memory + 2 * sizeof(PrimPool);
     g_menu_free_ram = file;
     resource_FreeAll();
-    sprite_LoadFile(MENU_FILE, (SpriteFileHead *)g_menu_free_ram);
-    g_menu_file = (MenuFile *)g_menu_free_ram;
-    free_ram = menu_RelocateFile((MenuFile *)g_menu_free_ram);
+    sprite_LoadFile(MENU_FILE, (SpriteFileHead *)ADDR(g_menu_free_ram));
+    g_menu_file = (MenuFile *)ADDR(g_menu_free_ram);
+    free_ram = menu_RelocateFile((MenuFile *)ADDR(g_menu_free_ram));
     g_menu_free_ram = free_ram;
-    work = (MenuWork *)sprite_InitPools(free_ram, g_menu_pools);
-    work->file = (MenuFile *)file;
+    work = (MenuWork *)ADDR(sprite_InitPools(free_ram, g_menu_pools));
+    SET_PTR(work->file, (MenuFile *)ADDR(file));
     g_menu_free_ram = (s32)work;
     g_menu_work = work;
     g_menu_free_ram = (s32)(work + 1);
@@ -550,13 +550,14 @@ static PrimPool *menu_GetPrimPool(s32 frame) {
  * is in video memory. */
 static s32 menu_RelocateFile(MenuFile *file) {
     s32 i = 0;
-    SpriteSheet ***list = &file->white_page_sheets;
+    SpriteListSlot *list = &file->white_page_sheets;
     do {
-        sprite_RelocateList(file, *list);
+        sprite_RelocateList(file, PTR(*list));
         list++;
         i++;
     } while (i < MENU_FILE_LISTS);
-    snd_LoadVab(file->head.sounds, SND_VAB_MENU, file->head.free_ram_start);
+    snd_LoadVab(
+        PTR(file->head.sounds), SND_VAB_MENU, file->head.free_ram_start);
     return file->head.free_ram_start;
 }
 
@@ -863,8 +864,8 @@ void menu_SetBackdropColor(POLY_F4 *quad) {
 static void menu_DrawPageFrame(MenuCtx *ctx, s32 panels, GpuDb *db) {
     TILE *tile;
     POLY_F4 *poly;
-    SpriteSheet **sheets;
-    SpriteSheet **sheet;
+    SpriteSheetSlot *sheets;
+    SpriteSheetSlot *sheet;
     s32 i;
     SpriteDraw draw;
 
@@ -914,12 +915,12 @@ static void menu_DrawPageFrame(MenuCtx *ctx, s32 panels, GpuDb *db) {
     draw.ot_index = MENU_LAYER_FRAME;
     draw.has_color = 0;
     draw.semi = 0;
-    sheets = ctx->file->frame_sheets;
+    sheets = PTR(ctx->file->frame_sheets);
     draw.x = 0;
     draw.y = 0;
     sheet = sheets;
     for (i = 0; i < 3; i++) {
-        draw.header = *sheet;
+        draw.header = PTR(*sheet);
         draw.table = draw.header->cells;
         draw.sprt_out = ctx->prims.sprt;
         ctx->prims.sprt = sprite_Draw(&draw);
@@ -927,7 +928,7 @@ static void menu_DrawPageFrame(MenuCtx *ctx, s32 panels, GpuDb *db) {
     }
 
     {
-        draw.header = sheets[0];
+        draw.header = PTR(sheets[0]);
         SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
     }
     AddPrim(g_disp_ot + MENU_LAYER_FRAME, ctx->prims.mode);
@@ -974,7 +975,7 @@ static void menu_DrawPageFrame(MenuCtx *ctx, s32 panels, GpuDb *db) {
 /* The white page: the three sheets of the menu's text, on white. */
 static void menu_DrawWhitePage(MenuCtx *ctx) {
     TILE *tile;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     SpriteDraw draw;
     SpriteCell *cells;
 
@@ -989,14 +990,14 @@ static void menu_DrawWhitePage(MenuCtx *ctx) {
     AddPrim(g_disp_ot + MENU_LAYER_WHITE, tile);
     ctx->prims.tile = tile + 1;
 
-    sheets = ctx->file->white_page_sheets;
+    sheets = PTR(ctx->file->white_page_sheets);
     draw.ot_index = MENU_LAYER_WHITE_TEXT;
     draw.semi = 0;
     draw.x = 0;
     draw.y = 0;
     draw.has_color = 0;
 
-    draw.header = sheets[0];
+    draw.header = PTR(sheets[0]);
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
     AddPrim(g_disp_ot + MENU_LAYER_PANEL, ctx->prims.mode);
     ctx->prims.mode++;
@@ -1006,13 +1007,13 @@ static void menu_DrawWhitePage(MenuCtx *ctx) {
     draw.sprt_out = ctx->prims.sprt;
     ctx->prims.sprt = sprite_Draw(&draw);
 
-    draw.header = sheets[1];
+    draw.header = PTR(sheets[1]);
     cells = draw.header->cells;
     draw.table = cells;
     draw.sprt_out = ctx->prims.sprt;
     ctx->prims.sprt = sprite_Draw(&draw);
 
-    draw.header = sheets[2];
+    draw.header = PTR(sheets[2]);
     cells = draw.header->cells;
     draw.table = cells;
     draw.sprt_out = ctx->prims.sprt;
@@ -1028,14 +1029,14 @@ static void menu_DrawWhitePage(MenuCtx *ctx) {
 static void menu_DrawPovChoice(MenuCtx *ctx, s32 views) {
     SpriteDraw draw;
     s32 unused[4]; /* never used; the original keeps room for it */
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     s32 home_x; /* where the half is at rest */
     s32 glow;
     SpriteCell *cells;
 
     if (views & MENU_VIEW_POV) {
-        sheets = ctx->file->top_sheets;
-        draw.header = sheets[TOP_SHEET_POV_PICTURE];
+        sheets = PTR(ctx->file->top_sheets);
+        draw.header = PTR(sheets[TOP_SHEET_POV_PICTURE]);
         if (views & MENU_VIEW_SIDE) {
             draw.x = VIEW_POV_X;
             draw.has_color = 1;
@@ -1072,7 +1073,7 @@ static void menu_DrawPovChoice(MenuCtx *ctx, s32 views) {
         draw.y = 0;
         draw.x = home_x;
         draw.has_color = 0;
-        draw.header = sheets[TOP_SHEET_POV_CAPTION];
+        draw.header = PTR(sheets[TOP_SHEET_POV_CAPTION]);
         cells = draw.header->cells;
         draw.table = cells;
         draw.sprt_out = ctx->prims.sprt;
@@ -1080,7 +1081,7 @@ static void menu_DrawPovChoice(MenuCtx *ctx, s32 views) {
         if (views & MENU_VIEW_SIDE) {
             draw.ot_index = MENU_LAYER_TOP_SIDE_VIEW;
             draw.semi = 0;
-            draw.header = sheets[TOP_SHEET_ARROWS];
+            draw.header = PTR(sheets[TOP_SHEET_ARROWS]);
             draw.x = 0;
             draw.y = 0;
             draw.has_color = 1;
@@ -1098,14 +1099,14 @@ static void menu_DrawPovChoice(MenuCtx *ctx, s32 views) {
 static void menu_DrawSideViewChoice(MenuCtx *ctx, s32 views) {
     SpriteDraw draw;
     s32 unused[4]; /* never used; the original keeps room for it */
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     s32 home_x; /* where the half is at rest */
     s32 glow;
     SpriteCell *cells;
 
     if (views & MENU_VIEW_SIDE) {
-        sheets = ctx->file->top_sheets;
-        draw.header = sheets[TOP_SHEET_SIDE_PICTURE];
+        sheets = PTR(ctx->file->top_sheets);
+        draw.header = PTR(sheets[TOP_SHEET_SIDE_PICTURE]);
         if (views & MENU_VIEW_POV) {
             draw.x = VIEW_SIDE_X;
             draw.has_color = 1;
@@ -1143,7 +1144,7 @@ static void menu_DrawSideViewChoice(MenuCtx *ctx, s32 views) {
         draw.y = 0;
         draw.x = home_x;
         draw.has_color = 0;
-        draw.header = sheets[TOP_SHEET_SIDE_CAPTION];
+        draw.header = PTR(sheets[TOP_SHEET_SIDE_CAPTION]);
         cells = draw.header->cells;
         draw.table = cells;
         draw.sprt_out = ctx->prims.sprt;
@@ -1151,7 +1152,7 @@ static void menu_DrawSideViewChoice(MenuCtx *ctx, s32 views) {
         if (views & MENU_VIEW_POV) {
             draw.ot_index = MENU_LAYER_TOP_SIDE_VIEW;
             draw.semi = 0;
-            draw.header = sheets[TOP_SHEET_ARROWS];
+            draw.header = PTR(sheets[TOP_SHEET_ARROWS]);
             draw.x = 0;
             draw.y = 0;
             draw.has_color = 1;
@@ -1168,7 +1169,7 @@ static void menu_DrawSideViewChoice(MenuCtx *ctx, s32 views) {
 
 /* The modes' names in English, all at once. Nothing calls it. */
 static void menu_DrawModeCaptions(MenuCtx *ctx, SpriteDraw *draw) {
-    draw->header = ctx->file->top_sheets[TOP_SHEET_MODE_CAPTIONS];
+    draw->header = PTR(PTR(ctx->file->top_sheets)[TOP_SHEET_MODE_CAPTIONS]);
     draw->x = 0;
     draw->y = 0;
     draw->has_color = 0;
@@ -1184,7 +1185,7 @@ static void menu_DrawModeCaptions(MenuCtx *ctx, SpriteDraw *draw) {
 
 /* The top menu's title. */
 static void menu_DrawTopTitle(MenuCtx *ctx, SpriteDraw *draw) {
-    draw->header = ctx->file->top_sheets[TOP_SHEET_TITLE];
+    draw->header = PTR(PTR(ctx->file->top_sheets)[TOP_SHEET_TITLE]);
     draw->x = 0;
     draw->y = 0;
     draw->has_color = 0;
@@ -1206,7 +1207,7 @@ static void menu_DrawTopTitle(MenuCtx *ctx, SpriteDraw *draw) {
  * on. */
 static void menu_DrawRowUnderline(MenuCtx *ctx, SpriteDraw *draw, s32 row) {
     TILE *tile;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     s32 abr_bits;
 
     tile = ctx->prims.tile;
@@ -1256,13 +1257,13 @@ static void menu_DrawRowUnderline(MenuCtx *ctx, SpriteDraw *draw, s32 row) {
 
     tile = tile + 1;
     ctx->prims.tile = tile;
-    sheets = ctx->file->top_sheets;
+    sheets = PTR(ctx->file->top_sheets);
     {
         SpriteCell *cells;
         /* FAKE: draw->header, through a pointer */
         SpriteSheet **header = &draw->header;
 
-        *header = sheets[TOP_SHEET_UNDERLINE_LEFT];
+        *header = PTR(sheets[TOP_SHEET_UNDERLINE_LEFT]);
         if (TOP_ROW == row) {
             draw->col_g = 0;
             draw->col_r = draw->col_r >> 1;
@@ -1281,7 +1282,7 @@ static void menu_DrawRowUnderline(MenuCtx *ctx, SpriteDraw *draw, s32 row) {
         draw->sprt_out = ctx->prims.sprt;
         ctx->prims.sprt = sprite_Draw(draw);
 
-        draw->header = sheets[TOP_SHEET_UNDERLINE_RIGHT];
+        draw->header = PTR(sheets[TOP_SHEET_UNDERLINE_RIGHT]);
         cells = draw->header->cells;
         draw->table = cells;
         draw->sprt_out = ctx->prims.sprt;
@@ -1306,7 +1307,7 @@ static void menu_DrawTopRows(MenuCtx *ctx, u16 *draw_env, s32 views) {
     RECT rect;
     s16 ofs[2];
     /* one list of sheets after another */
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     /* the rows in view, then the rows that can be chosen */
     u32 row_mask;
     SpriteCell *cells;
@@ -1314,10 +1315,10 @@ static void menu_DrawTopRows(MenuCtx *ctx, u16 *draw_env, s32 views) {
     s32 bit;
     s32 row;
 
-    sheets = ctx->file->row_sheets;
+    sheets = PTR(ctx->file->row_sheets);
     row_mask = g_menu_top.rows_shown;
     bit = 0;
-    draw.header = sheets[0];
+    draw.header = PTR(sheets[0]);
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
     AddPrim(g_disp_ot + MENU_LAYER_BARS, ctx->prims.mode);
     ctx->prims.mode++;
@@ -1369,7 +1370,7 @@ static void menu_DrawTopRows(MenuCtx *ctx, u16 *draw_env, s32 views) {
             draw.semi = 1;
             draw.y = y;
         }
-        draw.header = sheets[row];
+        draw.header = PTR(sheets[row]);
         cells = draw.header->cells;
         draw.table = cells;
         draw.sprt_out = ctx->prims.sprt;
@@ -1381,13 +1382,13 @@ static void menu_DrawTopRows(MenuCtx *ctx, u16 *draw_env, s32 views) {
         menu_DrawRowUnderline(ctx, &draw, row);
     }
 
-    sheets = ctx->file->mode_caption_sheets;
+    sheets = PTR(ctx->file->mode_caption_sheets);
     draw.ot_index = MENU_LAYER_PAGE;
     draw.has_color = 0;
     draw.semi = 0;
     draw.x = 0;
     draw.y = TOP_CAPTION_Y;
-    draw.header = sheets[TOP_ROW];
+    draw.header = PTR(sheets[TOP_ROW]);
     cells = draw.header->cells;
     draw.table = cells;
     draw.sprt_out = ctx->prims.sprt;
@@ -1396,7 +1397,7 @@ static void menu_DrawTopRows(MenuCtx *ctx, u16 *draw_env, s32 views) {
     AddPrim(g_disp_ot + draw.ot_index, ctx->prims.mode);
     ctx->prims.mode++;
 
-    sheets = ctx->file->row_sheets;
+    sheets = PTR(ctx->file->row_sheets);
     rect.x = draw_env[ENV_CLIP_X];
     rect.y = draw_env[ENV_CLIP_Y];
     rect.w = draw_env[ENV_CLIP_W];
@@ -1437,7 +1438,7 @@ static void menu_DrawTopRows(MenuCtx *ctx, u16 *draw_env, s32 views) {
         draw.y = TOP_LAST_ROW_Y;
     }
     draw.ot_index = MENU_LAYER_TOP_LAST_ROW;
-    draw.header = sheets[MENU_TOP_LAST_ROW];
+    draw.header = PTR(sheets[MENU_TOP_LAST_ROW]);
     cells = draw.header->cells;
     draw.table = cells;
     draw.sprt_out = ctx->prims.sprt;
@@ -1457,8 +1458,8 @@ static void menu_DrawTopRows(MenuCtx *ctx, u16 *draw_env, s32 views) {
     AddPrim(g_disp_ot + MENU_LAYER_TOP_TITLE, ctx->prims.mode);
     ctx->prims.mode++;
 
-    sheets = ctx->file->mode_picture_sheets;
-    draw.header = sheets[TOP_ROW + MENU_TOP_ROWS];
+    sheets = PTR(ctx->file->mode_picture_sheets);
+    draw.header = PTR(sheets[TOP_ROW + MENU_TOP_ROWS]);
     draw.x = 0;
     draw.y = TOP_PICTURE_Y;
     draw.has_color = 0;
@@ -1472,8 +1473,8 @@ static void menu_DrawTopRows(MenuCtx *ctx, u16 *draw_env, s32 views) {
     AddPrim(g_disp_ot, ctx->prims.mode);
     ctx->prims.mode++;
 
-    sheets = ctx->file->mode_picture_sheets;
-    draw.header = sheets[TOP_ROW];
+    sheets = PTR(ctx->file->mode_picture_sheets);
+    draw.header = PTR(sheets[TOP_ROW]);
     draw.scale_x = 2 * SPRITE_SCALE_ONE;
     draw.x = 0;
     draw.y = 0;
@@ -1512,14 +1513,14 @@ static void menu_DrawTopRows(MenuCtx *ctx, u16 *draw_env, s32 views) {
 static void menu_DrawOptions(MenuCtx *ctx) {
     SpriteDraw draw;
     u16 rule[4];
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     s32 i;
     SpriteCell *cells;
 
     draw.has_color = 0;
     draw.ot_index = MENU_LAYER_PAGE;
-    sheets = ctx->file->option_sheets;
-    draw.header = sheets[OPTION_SHEET_TITLE];
+    sheets = PTR(ctx->file->option_sheets);
+    draw.header = PTR(sheets[OPTION_SHEET_TITLE]);
     draw.y = 0;
     draw.x = 0;
     draw.semi = 0;
@@ -1532,7 +1533,7 @@ static void menu_DrawOptions(MenuCtx *ctx) {
     ctx->prims.mode++;
     draw.x = 0;
     for (i = 0; i < OPTIONS_ROWS; i++) {
-        draw.header = sheets[i + OPTION_SHEET_ROWS];
+        draw.header = PTR(sheets[i + OPTION_SHEET_ROWS]);
         if (OPTIONS_ROW == i) {
             draw.has_color = 1;
             draw.y = g_menu_work->nudge[1];
@@ -1552,7 +1553,7 @@ static void menu_DrawOptions(MenuCtx *ctx) {
 
     draw.y = 0;
     for (i = 0; i < 2; i++) {
-        draw.header = sheets[i + OPTION_SHEET_MONITOR];
+        draw.header = PTR(sheets[i + OPTION_SHEET_MONITOR]);
         draw.x = 0;
         draw.has_color = 0;
         if (g_menu_settings->grayscale == i) {
@@ -1577,7 +1578,7 @@ static void menu_DrawOptions(MenuCtx *ctx) {
     }
 
     for (i = 0; i < 2; i++) {
-        draw.header = sheets[i + OPTION_SHEET_DIFFICULTY];
+        draw.header = PTR(sheets[i + OPTION_SHEET_DIFFICULTY]);
         draw.x = 0;
         draw.has_color = 0;
         if (g_menu_settings->easy_cpu == i) {
@@ -1603,7 +1604,7 @@ static void menu_DrawOptions(MenuCtx *ctx) {
     }
 
     for (i = 0; i < 2; i++) {
-        draw.header = sheets[i + OPTION_SHEET_MUSIC];
+        draw.header = PTR(sheets[i + OPTION_SHEET_MUSIC]);
         draw.x = 0;
         draw.has_color = 0;
         if (g_menu_settings->music_off == i) {
@@ -1628,8 +1629,8 @@ static void menu_DrawOptions(MenuCtx *ctx) {
         ctx->prims.sprt = sprite_Draw(&draw);
     }
 
-    sheets = ctx->file->option_sheets;
-    draw.header = sheets[OPTION_SHEET_ROWS];
+    sheets = PTR(ctx->file->option_sheets);
+    draw.header = PTR(sheets[OPTION_SHEET_ROWS]);
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
     AddPrim(g_disp_ot + MENU_LAYER_PAGE, ctx->prims.mode);
     ctx->prims.mode++;
@@ -1836,16 +1837,16 @@ static void menu_DrawCardMenu(MenuCtx *ctx) {
     SpriteDraw draw;
     u16 rule[4];
     s32 row;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     SpriteCell *cells;
 
     draw.y = 0;
     draw.x = 0;
     draw.ot_index = MENU_LAYER_PAGE;
     draw.has_color = 0;
-    sheets = ctx->file->card_menu_sheets;
+    sheets = PTR(ctx->file->card_menu_sheets);
     {
-        draw.header = sheets[0];
+        draw.header = PTR(sheets[0]);
         draw.semi = 0;
         cells = draw.header->cells;
         draw.table = cells;
@@ -1857,7 +1858,7 @@ static void menu_DrawCardMenu(MenuCtx *ctx) {
     ctx->prims.mode++;
 
     for (row = 0; row < CARD_MENU_ROWS; row++) {
-        draw.header = sheets[1];
+        draw.header = PTR(sheets[1]);
         cells = draw.header->cells;
         draw.table = cells;
         if (CARD_MENU_ROW == row) {
@@ -1872,8 +1873,8 @@ static void menu_DrawCardMenu(MenuCtx *ctx) {
         sheets++;
     }
 
-    sheets = ctx->file->option_sheets;
-    draw.header = sheets[OPTION_SHEET_ROWS];
+    sheets = PTR(ctx->file->option_sheets);
+    draw.header = PTR(sheets[OPTION_SHEET_ROWS]);
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
     AddPrim(g_disp_ot + MENU_LAYER_PAGE, ctx->prims.mode);
     ctx->prims.mode++;
@@ -1892,11 +1893,11 @@ static void menu_DrawCardMenu(MenuCtx *ctx) {
  * one not chosen is darkened. */
 static void menu_DrawMessageText(
     s32 message, s32 y, SpriteDraw *draw, s32 answer) {
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     SpriteCell *cells;
     s32 i, cell_index, cell_count;
 
-    sheets = g_menu_work->file->message_sheets;
+    sheets = PTR(PTR(g_menu_work->file)->message_sheets);
 
     draw->col_b = TINT_ANSWER_OFF;
     draw->col_g = TINT_ANSWER_OFF;
@@ -1904,8 +1905,8 @@ static void menu_DrawMessageText(
 
     for (i = 0; i < 2; i++) {
         /* FAKE: sheets[message * 2 + i], added in another order */
-        draw->header = *(sheets + i + message * 2);
-        if (draw->header == (SpriteSheet *)-1) {
+        draw->header = PTR(*(sheets + i + message * 2));
+        if (draw->header == (SpriteSheet *)ADDR(-1)) {
             return;
         }
 
@@ -1925,7 +1926,7 @@ static void menu_DrawMessageText(
             draw->sprt_out = (s32)g_menu_message_sprt;
             cells = draw->header->cells;
             draw->table = cells + cell_index;
-            g_menu_message_sprt = (u8 *)sprite_Draw(draw);
+            g_menu_message_sprt = (u8 *)ADDR(sprite_Draw(draw));
         }
 
         SetDrawMode(
@@ -1956,7 +1957,7 @@ void menu_DrawMessageBox(s32 message, s32 answer) {
     g_menu_message_tile = g_menu_message_tiles + frame * MESSAGE_PRIMS;
     menu_DrawMessageText(message, 0, &draw, 0);
     h = 0;
-    size = g_menu_work->file->message_sizes;
+    size = PTR(PTR(g_menu_work->file)->message_sizes);
     size += message;
     if (answer != -1) {
         w = answer ? MESSAGE_NO_WIDTH : MESSAGE_YES_WIDTH;
@@ -2026,7 +2027,7 @@ s32 menu_UpdateCardMenu(s32 held, s32 pressed) {
 static void menu_DrawKeyConfig(MenuCtx *ctx) {
     SpriteDraw draw;
     s32 player_index;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     ColorRect *rects;
     ColorRect *rect;
     ColorRect *bar;
@@ -2055,23 +2056,24 @@ static void menu_DrawKeyConfig(MenuCtx *ctx) {
     zero_window = 0;
     draw.ot_index = MENU_LAYER_PAGE;
     draw.has_color = 0;
-    sheets = ctx->file->key_config_sheets;
+    sheets = PTR(ctx->file->key_config_sheets);
     draw.y = ypos;
     draw.x = xpos;
-    draw.header = sheets[KEY_SHEET_TITLE];
+    draw.header = PTR(sheets[KEY_SHEET_TITLE]);
     draw.semi = 0;
     cells = draw.header->cells;
     draw.table = cells;
     draw.sprt_out = ctx->prims.sprt;
     ctx->prims.sprt = sprite_Draw(&draw);
-    SetDrawMode(ctx->prims.mode, 1, zero_dither,
-                sprite_GetTPage(draw.header, abr), (RECT *)(s32)zero_window);
+    SetDrawMode(
+        ctx->prims.mode, 1, zero_dither, sprite_GetTPage(draw.header, abr),
+        (RECT *)ADDR((s32)zero_window));
     AddPrim(g_disp_ot + MENU_LAYER_PAGE, ctx->prims.mode);
     ctx->prims.mode++;
 
     draw.ot_index = MENU_LAYER_KEY_PAD_BUTTONS;
     draw.has_color = 0;
-    sheets = ctx->file->key_config_sheets;
+    sheets = PTR(ctx->file->key_config_sheets);
     draw.y = ypos;
     for (player = 0; player < 2; player++) {
         draw.x = player * PLAYER_2_X;
@@ -2080,7 +2082,7 @@ static void menu_DrawKeyConfig(MenuCtx *ctx) {
                 if (g_menu_settings->button_mappings[g_menu_work->key_cursors
                                                          .half[player]] &
                     ((1 << i) << (player * MENU_BUTTONS))) {
-                    draw.header = sheets[i + KEY_SHEET_PAD_BUTTONS];
+                    draw.header = PTR(sheets[i + KEY_SHEET_PAD_BUTTONS]);
                     draw.semi = 0;
                     cells = draw.header->cells;
                     draw.table = cells;
@@ -2090,9 +2092,10 @@ static void menu_DrawKeyConfig(MenuCtx *ctx) {
             }
         }
     }
-    draw.header = sheets[KEY_SHEET_PAD_BUTTONS];
-    SetDrawMode(ctx->prims.mode, 1, zero_dither,
-                sprite_GetTPage(draw.header, abr), (RECT *)(s32)zero_window);
+    draw.header = PTR(sheets[KEY_SHEET_PAD_BUTTONS]);
+    SetDrawMode(
+        ctx->prims.mode, 1, zero_dither, sprite_GetTPage(draw.header, abr),
+        (RECT *)ADDR((s32)zero_window));
     AddPrim(g_disp_ot + MENU_LAYER_KEY_PAD_BUTTONS, ctx->prims.mode);
     ctx->prims.mode++;
 
@@ -2100,15 +2103,15 @@ static void menu_DrawKeyConfig(MenuCtx *ctx) {
     draw.y = ypos;
     draw.ot_index = MENU_LAYER_PAGE;
     draw.has_color = 0;
-    sheets = ctx->file->key_config_sheets;
-    draw.header = sheets[KEY_SHEET_PAD];
+    sheets = PTR(ctx->file->key_config_sheets);
+    draw.header = PTR(sheets[KEY_SHEET_PAD]);
     draw.semi = 0;
     cells = draw.header->cells;
     draw.table = cells;
     draw.sprt_out = ctx->prims.sprt;
     ctx->prims.sprt = sprite_Draw(&draw);
     for (i = 0; i < KEY_ROWS; i++) {
-        draw.header = sheets[i + KEY_SHEET_ROWS];
+        draw.header = PTR(sheets[i + KEY_SHEET_ROWS]);
         draw.ot_index = MENU_LAYER_PAGE;
         draw.has_color = 0;
         draw.semi = 0;
@@ -2121,13 +2124,13 @@ static void menu_DrawKeyConfig(MenuCtx *ctx) {
             ctx->prims.sprt = sprite_Draw(&draw);
         }
     }
-    sheets = ctx->file->key_config_sheets;
-    draw.header = sheets[KEY_SHEET_PAD];
+    sheets = PTR(ctx->file->key_config_sheets);
+    draw.header = PTR(sheets[KEY_SHEET_PAD]);
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, abr), 0);
     AddPrim(g_disp_ot + MENU_LAYER_PAGE, ctx->prims.mode);
     ctx->prims.mode++;
 
-    rects = g_menu_work->file->key_config_rects;
+    rects = PTR(PTR(g_menu_work->file)->key_config_rects);
     tile = ctx->prims.tile;
     for (i = 0; i < KEY_BARS; i++) {
         bar = &rects[i];
@@ -2359,7 +2362,7 @@ typedef union {
 static s32 menu_DrawKeyConfigButtons(MenuCtx *ctx) {
     SpriteDraw draw;
     KeyConfigCounts counts;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     s16 action;
     s16 button;
     s16 player_index;
@@ -2367,7 +2370,7 @@ static s32 menu_DrawKeyConfigButtons(MenuCtx *ctx) {
     SpriteCell *cells;
 
     unassigned = 0;
-    sheets = ctx->file->key_config_sheets;
+    sheets = PTR(ctx->file->key_config_sheets);
     draw.ot_index = MENU_LAYER_FRONT;
     draw.has_color = 0;
     draw.semi = 0;
@@ -2376,7 +2379,7 @@ static s32 menu_DrawKeyConfigButtons(MenuCtx *ctx) {
         counts.word = 0;
         draw.y = action * KEY_ACTION_PITCH;
         for (button = 0; button < MENU_BUTTONS; button++) {
-            draw.header = sheets[button + KEY_SHEET_BUTTONS];
+            draw.header = PTR(sheets[button + KEY_SHEET_BUTTONS]);
             cells = draw.header->cells;
             draw.table = cells;
             for (player_index = 0; player_index < 2; player_index++) {
@@ -2395,7 +2398,7 @@ static s32 menu_DrawKeyConfigButtons(MenuCtx *ctx) {
             if (counts.count[player_index] == 0) {
                 draw.x = player_index * PLAYER_2_X;
                 unassigned |= 1 << player_index;
-                draw.header = sheets[KEY_SHEET_NO_BUTTON];
+                draw.header = PTR(sheets[KEY_SHEET_NO_BUTTON]);
                 cells = draw.header->cells;
                 draw.table = cells;
                 draw.sprt_out = ctx->prims.sprt;
@@ -2406,11 +2409,11 @@ static s32 menu_DrawKeyConfigButtons(MenuCtx *ctx) {
 
     for (player_index = 0; player_index < 2; player_index++) {
         if (g_menu_work->key_cursors.word == KEY_CURSORS_ON_EXIT) {
-            draw.header = sheets[KEY_SHEET_BOTH_EXIT];
+            draw.header = PTR(sheets[KEY_SHEET_BOTH_EXIT]);
         } else if ((unassigned >> player_index) & 1) {
-            draw.header = sheets[KEY_SHEET_NO_EXIT];
+            draw.header = PTR(sheets[KEY_SHEET_NO_EXIT]);
         } else {
-            draw.header = sheets[KEY_SHEET_EXIT];
+            draw.header = PTR(sheets[KEY_SHEET_EXIT]);
         }
         draw.x = player_index * PLAYER_2_X;
         draw.y = 0;
@@ -2420,7 +2423,7 @@ static s32 menu_DrawKeyConfigButtons(MenuCtx *ctx) {
         ctx->prims.sprt = sprite_Draw(&draw);
     }
 
-    draw.header = sheets[KEY_SHEET_PAD_BUTTONS + 1];
+    draw.header = PTR(sheets[KEY_SHEET_PAD_BUTTONS + 1]);
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
     AddPrim(g_disp_ot + MENU_LAYER_FRONT, ctx->prims.mode);
     ctx->prims.mode++;
@@ -2464,13 +2467,13 @@ s32 menu_UpdateKeyConfig(s32 held, s32 pressed) {
 static void menu_DrawPractice(MenuCtx *ctx) {
     SpriteDraw draw;
     u16 rule[4];
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     s32 abr = 0;
     s16 i = 0;
     u8 dim = TINT_DIM;
 
     draw.ot_index = MENU_LAYER_PAGE;
-    sheets = ctx->file->practice_sheets;
+    sheets = PTR(ctx->file->practice_sheets);
     draw.x = 0;
     draw.has_color = 1;
 
@@ -2496,7 +2499,7 @@ static void menu_DrawPractice(MenuCtx *ctx) {
             draw.y = 0;
             draw.semi = 1;
         }
-        draw.header = sheets[i];
+        draw.header = PTR(sheets[i]);
         draw.table = draw.header->cells;
         draw.sprt_out = ctx->prims.sprt;
         ctx->prims.sprt = sprite_Draw(&draw);
@@ -2596,16 +2599,17 @@ void menu_DrawBestTimes(
     draw.semi = 0;
     draw.has_color = 0;
     draw.col_r = draw.col_g = draw.col_b = TINT_BLINK;
-    draw.header = sheets->own_cell_sheets[2];
+    draw.header = PTR(sheets->own_cell_sheets[2]);
     for (i = 0; i < 3; i++) {
-        draw.header = sheets->own_cell_sheets[i];
+        draw.header = PTR(sheets->own_cell_sheets[i]);
         draw.table = draw.header->cells;
         draw.sprt_out = *sprt;
         *sprt = sprite_Draw(&draw);
     }
-    draw.header = sheets->own_cell_sheets[0];
-    SetDrawMode((DR_MODE *)*mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
-    AddPrim(g_disp_ot + ot_index, (DR_MODE *)*mode);
+    draw.header = PTR(sheets->own_cell_sheets[0]);
+    SetDrawMode(
+        (DR_MODE *)ADDR(*mode), 1, 0, sprite_GetTPage(draw.header, 0), 0);
+    AddPrim(g_disp_ot + ot_index, (DR_MODE *)ADDR(*mode));
     *mode += sizeof(DR_MODE);
 
     rows = BEST_TIMES_ROWS + 1;
@@ -2617,10 +2621,10 @@ void menu_DrawBestTimes(
         if (who >= FIGHTERS_FIRST_TWELVE && who < FIGHTERS_ON_SELECT) {
             who -= FIGHTERS_UNNAMED;
         }
-        draw.header = sheets->character_sheet;
+        draw.header = PTR(sheets->character_sheet);
         /* a name's three cells, after the long name's three more */
-        draw.table = sheets->character_cells + 3 + who * 3;
-        draw.x = sheets->character_x_offsets[who];
+        draw.table = PTR(sheets->character_cells) + 3 + who * 3;
+        draw.x = PTR(sheets->character_x_offsets)[who];
         draw.y = i * BEST_TIMES_ROW_PITCH;
         if (i == BEST_NEW_ROW) {
             draw.x -= BEST_NEW_NAME_SHIFT;
@@ -2629,15 +2633,16 @@ void menu_DrawBestTimes(
         draw.sprt_out = *sprt;
         *sprt = sprite_Draw(&draw);
         if (who == FIGHTER_LONG_NAME) {
-            draw.table = sheets->character_cells;
+            draw.table = PTR(sheets->character_cells);
             draw.sprt_out = *sprt;
             *sprt = sprite_Draw(&draw);
         }
     }
 
-    draw.header = sheets->character_sheet;
-    SetDrawMode((DR_MODE *)*mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
-    AddPrim(g_disp_ot + ot_index, (DR_MODE *)*mode);
+    draw.header = PTR(sheets->character_sheet);
+    SetDrawMode(
+        (DR_MODE *)ADDR(*mode), 1, 0, sprite_GetTPage(draw.header, 0), 0);
+    AddPrim(g_disp_ot + ot_index, (DR_MODE *)ADDR(*mode));
     *mode += sizeof(DR_MODE);
 
     for (i = 0; i < 3; i++) {
@@ -2664,9 +2669,9 @@ void menu_DrawBestTimes(
             }
             digits[0] = digits[0] % 10;      /* the ones */
             digits[1] = digits[1] / 10 % 10; /* the tens */
-            draw.header = sheets->digit_sheet;
+            draw.header = PTR(sheets->digit_sheet);
             draw.header->ubase = digits[0] * BEST_DIGIT_WIDTH;
-            draw.table = sheets->digit_cell;
+            draw.table = PTR(sheets->digit_cell);
             draw.x = i * BEST_PAIR_PITCH + BEST_DIGIT_WIDTH;
             draw.y = k * BEST_TIMES_ROW_PITCH + BEST_DIGITS_Y;
             if (k == BEST_NEW_ROW) {
@@ -2682,9 +2687,10 @@ void menu_DrawBestTimes(
         }
     }
 
-    draw.header = sheets->digit_sheet;
-    SetDrawMode((DR_MODE *)*mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
-    AddPrim(g_disp_ot + ot_index, (DR_MODE *)*mode);
+    draw.header = PTR(sheets->digit_sheet);
+    SetDrawMode(
+        (DR_MODE *)ADDR(*mode), 1, 0, sprite_GetTPage(draw.header, 0), 0);
+    AddPrim(g_disp_ot + ot_index, (DR_MODE *)ADDR(*mode));
     *mode += sizeof(DR_MODE);
 }
 
@@ -2699,7 +2705,7 @@ static void menu_DrawChanbara(MenuCtx *ctx) {
     s32 zero = 0;
 
     draw.ot_index = MENU_LAYER_PAGE;
-    sheets = ctx->file->chanbara;
+    sheets = PTR(ctx->file->chanbara);
     draw.x = 0;
     draw.semi = zero;
 
@@ -2717,7 +2723,7 @@ static void menu_DrawChanbara(MenuCtx *ctx) {
             }
             draw.y = 0;
         }
-        draw.header = sheets->choice_sheets[i];
+        draw.header = PTR(sheets->choice_sheets[i]);
         draw.table = draw.header->cells;
         draw.sprt_out = ctx->prims.sprt;
         ctx->prims.sprt = sprite_Draw(&draw);
@@ -2815,7 +2821,7 @@ s32 menu_LoadLinkPicture(void) {
     ClearImage(&rect, 0, 0, 0);
     DrawSync(0);
     /* the pixels follow the picture's TIM header */
-    LoadImage(&rect, (u32 *)(memory + TIM_PIXELS_NO_CLUT));
+    LoadImage(&rect, (u32 *)ADDR(memory + TIM_PIXELS_NO_CLUT));
     DrawSync(0);
     PutDrawEnv(&g_disp_db[0].draw);
     PutDispEnv(&g_disp_db[1].disp);
@@ -2847,16 +2853,16 @@ static void menu_BeginDraw(MenuCtx *ctx, s32 *frame) {
     PrimPool *pool;
     frame[0]++;
     pool = menu_GetPrimPool(frame[0] & 1);
-    ctx->file = g_menu_work->file;
-    ctx->prims.f4 = pool->f4;
+    ctx->file = PTR(g_menu_work->file);
+    ctx->prims.f4 = PTR(pool->f4);
     ctx->prims.ft4 = pool->ft4;
-    ctx->prims.g4 = pool->g4;
+    ctx->prims.g4 = PTR(pool->g4);
     ctx->prims.sprt = pool->sprt;
-    ctx->prims.tile = pool->tile;
-    ctx->prims.mode = pool->mode;
-    ctx->prims.area = pool->area;
+    ctx->prims.tile = PTR(pool->tile);
+    ctx->prims.mode = PTR(pool->mode);
+    ctx->prims.area = PTR(pool->area);
     g_menu_pool = pool;
-    ctx->prims.offset = pool->offset;
+    ctx->prims.offset = PTR(pool->offset);
 }
 
 /* ---- every 2D screen: resource files and primitive pools ---- */
@@ -2891,36 +2897,38 @@ s32 sprite_InitPools(s32 memory, PrimPool *pools) {
     u8 *second_f4;
     u8 *second_sprt;
     pools[0].ft4 = memory;
-    first_f4 = (u8 *)pools[0].ft4 + PRIM_POOL_FT4_SIZE;
-    pools[0].g4 = first_f4 + PRIM_POOL_F4_SIZE;
-    pools[0].f4 = first_f4;
+    first_f4 = (u8 *)ADDR(pools[0].ft4) + PRIM_POOL_FT4_SIZE;
+    SET_PTR(pools[0].g4, first_f4 + PRIM_POOL_F4_SIZE);
+    SET_PTR(pools[0].f4, first_f4);
     first_sprt = first_f4 +
                  (PRIM_POOL_F4_SIZE + PRIM_POOL_G4_SIZE + PRIM_POOL_TILE_SIZE);
-    pools[0].tile = first_f4 + (PRIM_POOL_F4_SIZE + PRIM_POOL_G4_SIZE);
-    pools[0].mode = first_sprt + PRIM_POOL_SPRT_SIZE;
-    pools[0].area = first_sprt + (PRIM_POOL_SPRT_SIZE + PRIM_POOL_MODE_SIZE);
-    pools[0].offset =
-        first_sprt +
-        (PRIM_POOL_SPRT_SIZE + PRIM_POOL_MODE_SIZE + PRIM_POOL_AREA_SIZE);
-    pools[0].tail_region =
-        first_sprt + (PRIM_POOL_SPRT_SIZE + PRIM_POOL_MODE_SIZE +
-                      PRIM_POOL_AREA_SIZE + PRIM_POOL_OFFSET_SIZE);
+    SET_PTR(pools[0].tile, first_f4 + (PRIM_POOL_F4_SIZE + PRIM_POOL_G4_SIZE));
+    SET_PTR(pools[0].mode, first_sprt + PRIM_POOL_SPRT_SIZE);
+    SET_PTR(pools[0].area,
+            first_sprt + (PRIM_POOL_SPRT_SIZE + PRIM_POOL_MODE_SIZE));
+    SET_PTR(pools[0].offset,
+            first_sprt + (PRIM_POOL_SPRT_SIZE + PRIM_POOL_MODE_SIZE +
+                          PRIM_POOL_AREA_SIZE));
+    SET_PTR(pools[0].tail_region,
+            first_sprt + (PRIM_POOL_SPRT_SIZE + PRIM_POOL_MODE_SIZE +
+                          PRIM_POOL_AREA_SIZE + PRIM_POOL_OFFSET_SIZE));
     pools[0].sprt = (s32)first_sprt;
     pools[1].ft4 = (s32)(first_sprt + PRIM_POOL_REST_SIZE);
-    second_f4 = (u8 *)pools[1].ft4 + PRIM_POOL_FT4_SIZE;
-    pools[1].g4 = second_f4 + PRIM_POOL_F4_SIZE;
-    pools[1].f4 = second_f4;
+    second_f4 = (u8 *)ADDR(pools[1].ft4) + PRIM_POOL_FT4_SIZE;
+    SET_PTR(pools[1].g4, second_f4 + PRIM_POOL_F4_SIZE);
+    SET_PTR(pools[1].f4, second_f4);
     second_sprt = second_f4 +
                   (PRIM_POOL_F4_SIZE + PRIM_POOL_G4_SIZE + PRIM_POOL_TILE_SIZE);
-    pools[1].tile = second_f4 + (PRIM_POOL_F4_SIZE + PRIM_POOL_G4_SIZE);
-    pools[1].mode = second_sprt + PRIM_POOL_SPRT_SIZE;
-    pools[1].area = second_sprt + (PRIM_POOL_SPRT_SIZE + PRIM_POOL_MODE_SIZE);
-    pools[1].offset =
-        second_sprt +
-        (PRIM_POOL_SPRT_SIZE + PRIM_POOL_MODE_SIZE + PRIM_POOL_AREA_SIZE);
-    pools[1].tail_region =
-        second_sprt + (PRIM_POOL_SPRT_SIZE + PRIM_POOL_MODE_SIZE +
-                       PRIM_POOL_AREA_SIZE + PRIM_POOL_OFFSET_SIZE);
+    SET_PTR(pools[1].tile, second_f4 + (PRIM_POOL_F4_SIZE + PRIM_POOL_G4_SIZE));
+    SET_PTR(pools[1].mode, second_sprt + PRIM_POOL_SPRT_SIZE);
+    SET_PTR(pools[1].area,
+            second_sprt + (PRIM_POOL_SPRT_SIZE + PRIM_POOL_MODE_SIZE));
+    SET_PTR(pools[1].offset,
+            second_sprt + (PRIM_POOL_SPRT_SIZE + PRIM_POOL_MODE_SIZE +
+                           PRIM_POOL_AREA_SIZE));
+    SET_PTR(pools[1].tail_region,
+            second_sprt + (PRIM_POOL_SPRT_SIZE + PRIM_POOL_MODE_SIZE +
+                           PRIM_POOL_AREA_SIZE + PRIM_POOL_OFFSET_SIZE));
     pools[1].sprt = (s32)second_sprt;
     return (s32)(second_sprt + PRIM_POOL_REST_SIZE);
 }

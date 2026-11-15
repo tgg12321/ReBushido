@@ -151,7 +151,7 @@ void font_Printf(u8 *format, s32 first_arg, ...) {
                 percent_seen = 1;
             } else {
                 *cursor = 0;
-                sprintf(buf + strlen(buf), format_chunk, cur_arg);
+                sprintf(buf + strlen(buf), format_chunk, ADDR(cur_arg));
                 cursor = format_chunk;
                 cur_arg = va_arg(ap, s32);
             }
@@ -160,7 +160,7 @@ void font_Printf(u8 *format, s32 first_arg, ...) {
     }
 
     *cursor = 0;
-    sprintf(buf + strlen(buf), format_chunk, cur_arg);
+    sprintf(buf + strlen(buf), format_chunk, ADDR(cur_arg));
 
     cursor = buf;
     while ((ch = *cursor++) != 0) {

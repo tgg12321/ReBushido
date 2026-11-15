@@ -65,14 +65,14 @@ void stage_InitProps(void) {
     s32 i;
 
     g_stage_props.remains = (s32)(piece = stage_GetNodes());
-    prop = (StageProp *)g_stage_props.props;
+    prop = (StageProp *)ADDR(g_stage_props.props);
     for (i = 0; i < g_stage_props.count; prop++, piece++, i++) {
         prop->node.kind = NODE_KIND_ROTATED;
         prop->node.draw_flags = 0;
         prop->node.mesh = PROP_MESH_FALLING;
         prop->node.mesh_block = g_stage_props.mesh_block;
         prop->node.rotation_order = ROTATION_ORDER_ZYX;
-        prop->node.parent = NULL;
+        SET_PTR(prop->node.parent, NULL);
         prop->node.light_setup_index = LIGHT_SCENERY;
         prop->node.rot.vx = 0;
         prop->node.rot.vy = 0;
@@ -109,7 +109,7 @@ void stage_UpdateProps(void) {
     s32 fade;
     void **queue;
 
-    prop = (StageProp *)g_stage_props.props;
+    prop = (StageProp *)ADDR(g_stage_props.props);
     for (i = 0; i < g_stage_props.count; prop++, i++) {
         frame = prop->frame;
         if (frame < 0) {
@@ -119,7 +119,8 @@ void stage_UpdateProps(void) {
             work.vx = 0;
             yaw = prop->yaw;
             work.vz = 0;
-            motion = (s16 *)(g_stage_props.frames + frame * PROP_FRAME_SIZE);
+            motion =
+                (s16 *)ADDR(g_stage_props.frames + frame * PROP_FRAME_SIZE);
             work.vy = yaw;
             math_RotMatrixZYX(&work, &turn);
             work.vx = *motion++;
@@ -149,10 +150,11 @@ void stage_UpdateProps(void) {
                 /* What remains moves too, by the motion's second half. */
                 /* FAKE: a StageNode pointer of its own for the stage piece */
                 falling = prop;
-                prop = (StageProp *)((StageNode *)g_stage_props.remains + i);
+                prop =
+                    (StageProp *)((StageNode *)ADDR(g_stage_props.remains) + i);
                 last = g_stage_props.frame_count - 1;
-                motion = (s16 *)(g_stage_props.frames +
-                                 (frame + last) * PROP_FRAME_SIZE);
+                motion = (s16 *)ADDR(
+                    g_stage_props.frames + (frame + last) * PROP_FRAME_SIZE);
                 work.vx = *motion++;
                 work.vy = *motion++;
                 work.vz = *motion++;
@@ -192,7 +194,7 @@ void stage_CutProp(s32 index, s32 yaw) {
         return;
     }
 
-    prop = (StageProp *)g_stage_props.props + index;
+    prop = (StageProp *)ADDR(g_stage_props.props) + index;
     if (prop->frame != PROP_STANDING) {
         return;
     }
@@ -213,12 +215,12 @@ void stage_CutProp(s32 index, s32 yaw) {
     prop->yaw = yaw;
     prop->frame = 0;
     /* FAKE: a StageNode pointer of its own for the stage piece */
-    prop = (StageProp *)((StageNode *)g_stage_props.remains + index);
+    prop = (StageProp *)((StageNode *)ADDR(g_stage_props.remains) + index);
     prop->node.mesh = PROP_MESH_REMAINS;
     prop->node.mesh_block = g_stage_props.mesh_block;
     prop->node.rot.vy = yaw;
     prop->node.kind = NODE_KIND_ROTATED;
-    prop->node.parent = NULL;
+    SET_PTR(prop->node.parent, NULL);
     prop->node.rot.vx = 0;
     prop->node.rot.vz = 0;
     prop->node.matrix_state = NODE_MATRIX_DONE;

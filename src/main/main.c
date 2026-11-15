@@ -482,7 +482,7 @@ static void fight_RunPauseMenu(GpuDb *paused_frame_db, s32 paused_db_index) {
     while (1) {
         index = g_disp_frame_count & 1;
         g_disp_prim_cursor =
-            (u32 *)(prim_buffer_addr + (index * PAUSE_PRIM_BUFFER_SIZE));
+            (u32 *)ADDR(prim_buffer_addr + (index * PAUSE_PRIM_BUFFER_SIZE));
         g_disp_ot = &local_ot[index];
         current_db = &g_disp_db[index];
 
@@ -616,7 +616,7 @@ void main(void) {
         frame_ot = frame_db->ot;
         ClearOTagR(frame_ot, DISP_OT_SIZE);
         g_disp_ot = frame_ot;
-        g_disp_prim_cursor = (u32 *)g_disp_prim_buffers[index];
+        g_disp_prim_cursor = (u32 *)ADDR(g_disp_prim_buffers[index]);
         eff_SelectPrimBuffer(index);
         font_BeginFrame();
         pad_Update(skipped);
@@ -774,7 +774,14 @@ static RECT g_disp_boot_image_rect = {32, 96, 256, 48};
 static s32 g_sys_prim_low_water = SYS_PRIM_BUFFER_SIZE;
 /* When the program was built, and a number (400) that is not understood.
  * Nothing reads either. */
+#if RB_PORT
+/* The port has no place for the text's address: a 64-bit program's
+ * compiler cannot put an address into a 32-bit word of a table it fills
+ * (docs/PORT.md, "64 bits"). */
+static s32 g_sys_build_date_ref[2] = {0, 400};
+#else
 static s32 g_sys_build_date_ref[2] = {(s32) "Fri Aug  7 22:26:32 1998\n", 400};
+#endif
 
 /* Small variables this file's code uses. Many belong to other subsystems;
  * they are defined here because a file reaches a small variable through the

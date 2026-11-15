@@ -180,12 +180,13 @@ extern s32 hud_DrawStageCardMark(s32 place, s32 prims, s32 ot_index);
 /* The sheets a table of best times is drawn from. The main menu's records
  * page draws the same table from its own resource file. */
 typedef struct {
-    SpriteSheet *own_cell_sheets[3]; /* the title, the ranks, the marks */
-    SpriteSheet *character_sheet;    /* the characters' names */
-    SpriteCell *character_cells;     /* three cells a name, after three more */
-    SpriteSheet *digit_sheet;
-    SpriteCell *digit_cell;
-    s16 *character_x_offsets; /* where each name starts */
+    SpriteSheetSlot own_cell_sheets[3]; /* the title, the ranks, the marks */
+    SpriteSheetSlot character_sheet;    /* the characters' names */
+    PTR32(SpriteCell *)
+    character_cells; /* three cells a name, after three more */
+    SpriteSheetSlot digit_sheet;
+    PTR32(SpriteCell *) digit_cell;
+    PTR32(s16 *) character_x_offsets; /* where each name starts */
 } BestTimesSheets;
 
 extern void hud_ResetBestTimes(void);

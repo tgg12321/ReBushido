@@ -106,11 +106,11 @@ typedef struct {
         u16 id;
     } effect;
 
-    s16 *view_angles_src;
-    s32 *view_position_src;
-    s32 *position_src;
-    s16 *direction_src;
-    u8 *alive_dest; /* the effect's g_eff_alive entry */
+    PTR32(s16 *) view_angles_src;
+    PTR32(s32 *) view_position_src;
+    PTR32(s32 *) position_src;
+    PTR32(s16 *) direction_src;
+    PTR32(u8 *) alive_dest; /* the effect's g_eff_alive entry */
     s16 vector[3];
     s32 position[3];
 } EffRequest;
@@ -195,6 +195,14 @@ typedef struct {
     s16 age;   /* frames */
 } Particle;
 
+/* What the drawing functions keep on the scratchpad between them: where
+ * the next quad goes, a particle, a wave's place. Each is an address in
+ * four bytes (PTR32, common.h): the scratchpad's layout is the
+ * PlayStation's. */
+typedef PTR32(POLY_FT4 *) EffQuadSlot;
+typedef PTR32(Particle *) ParticleSlot;
+typedef PTR32(Vec3 *) Vec3Slot;
+
 #define FOOTPRINT_COUNT 10 /* a fighter; the oldest is trodden over */
 #define DUST_COUNT 16
 #define SPLASH_COUNT 12
@@ -243,7 +251,7 @@ typedef struct {
     VECTOR view_relative_position;
     SVECTOR zero_vector;
     s32 depth_cue; /* not used */
-    POLY_FT4 *quads_end;
+    EffQuadSlot quads_end;
     u32 ot_indices[DUST_COUNT]; /* of each quad made */
 } DustWork;
 
@@ -317,10 +325,10 @@ typedef struct {
     u8 blue;
     u8 pad75[3]; /* not touched */
     s16 copy;    /* which of the three vertices a quad is drawn at */
-    POLY_FT4 *quads_end;
-    POLY_FT4 *quad; /* the next to fill */
-    Particle *particle;
-    Vec3 *wave_position_entry;
+    EffQuadSlot quads_end;
+    EffQuadSlot quad; /* the next to fill */
+    ParticleSlot particle;
+    Vec3Slot wave_position_entry;
     u16 ot_indices[PARTICLE_COUNT * 3]; /* of each quad made */
     s32 random;                         /* g_eff_particle_random */
 } ParticleWork;

@@ -85,7 +85,7 @@ typedef struct {
     s16 pad5A; /* not touched */
     /* +0x5C tests the segment against one cell's faces; nonzero once
      * anything has been hit */
-    s32 (*test_cell)(s32 cell_x, s32 cell_z);
+    PTR32(s32 (*)(s32 cell_x, s32 cell_z)) test_cell;
     /* the walk: u runs along the axis the segment covers more of, v along
      * the other; both are measured in the direction of travel */
     s32 walk_start_u; /* +0x60 */

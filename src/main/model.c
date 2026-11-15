@@ -70,7 +70,7 @@ static void model_AddShadow(ModelNode *bones, ModelNode *shadow, s16 block) {
     shadow->node.mesh = 2;
     shadow->node.kind = NODE_KIND_SHADOW;
     shadow->node.draw_flags = 0;
-    shadow->node.parent = &bones[6].node; /* an arm's forearm */
+    SET_PTR(shadow->node.parent, &bones[6].node); /* an arm's forearm */
     shadow->node.matrix_state = NODE_MATRIX_DONE;
     shadow->node.rotation_order = ROTATION_ORDER_ZYX;
     shadow->node.light_setup_index = 0;
@@ -83,7 +83,7 @@ static void model_AddShadow(ModelNode *bones, ModelNode *shadow, s16 block) {
  * it. */
 static ModelNode *model_GetMeshNode(s32 slot, s32 mesh) {
     Model *model = model_Get(slot);
-    return model->mesh_nodes[mesh];
+    return PTR(model->mesh_nodes[mesh]);
 }
 
 /* Says how high the ground is under a list of shadows. */
@@ -140,13 +140,13 @@ static void model_FinishLoad(Model *model) {
     model->load_status = MODEL_STATUS_DONE;
 
     if (model->staging) {
-        file = (s32 *)model->staging;
+        file = (s32 *)ADDR(model->staging);
     } else {
-        file = (s32 *)model->data;
+        file = (s32 *)ADDR(model->data);
     }
 
     count = file[0];
-    textures = (s32 *)((s32)file + ALIGN4(file[count]));
+    textures = (s32 *)ADDR((s32)file + ALIGN4(file[count]));
 
     /* The second slot's bank stays open while the archive's pack is. */
     if (!ndata_IsPackLoaded() || model->slot != 1) {
@@ -154,11 +154,10 @@ static void model_FinishLoad(Model *model) {
     }
 
     if (count >= MODEL_FILE_WITH_VAB) {
-        kept_end = (s32 *)((s32)file + ALIGN4(file[count - 1]));
-        kept_end =
-            (s32 *)((s32)kept_end +
-                    snd_LoadVab(
-                        (SoundVab *)kept_end,
+        kept_end = (s32 *)ADDR((s32)file + ALIGN4(file[count - 1]));
+        kept_end = (s32 *)ADDR(
+            (s32)kept_end +
+            snd_LoadVab((SoundVab *)kept_end,
                         model->slot * SND_VAB_MODELS_STEP + SND_VAB_MODEL,
                         (s32)file + ALIGN4(file[count + 1])));
 
@@ -175,7 +174,7 @@ static void model_FinishLoad(Model *model) {
 
     if (model->staging) {
         mem_MoveWords(model->staging, model->data, kept_size);
-        file = (s32 *)model->data;
+        file = (s32 *)ADDR(model->data);
         /* MODEL_LOAD_HAS_VAB, tested as a bit */
         if ((model->load_flags.word >> 1) & 1) {
             snd_RebaseVab((s32)file - model->staging,
@@ -184,9 +183,10 @@ static void model_FinishLoad(Model *model) {
     }
 
     {
-        s32 *meshes = (s32 *)((s32)file + ALIGN4(file[MODEL_FILE_MESHES]));
+        s32 *meshes = (s32 *)ADDR((s32)file + ALIGN4(file[MODEL_FILE_MESHES]));
         s32 *shadow_meshes;
-        shadow_meshes = (s32 *)((s32)file + ALIGN4(file[MODEL_FILE_SHADOWS]));
+        shadow_meshes =
+            (s32 *)ADDR((s32)file + ALIGN4(file[MODEL_FILE_SHADOWS]));
         model->cloth_params = (s32)file + ALIGN4(file[MODEL_FILE_CLOTH]);
         reloc_RelocateBlock(meshes, model->mesh_block);
         reloc_RelocateBlock(shadow_meshes, model->shadow_block);
@@ -236,7 +236,7 @@ static void model_FinishLoad(Model *model) {
     g_model_texture_requests[model->slot] = 0;
 
     DrawSync(0);
-    model->cloth = (void *)(model->data + kept_size);
+    SET_PTR(model->cloth, (void *)ADDR(model->data + kept_size));
     resource_ResizeModelData(model->slot, kept_size);
 }
 
@@ -273,9 +273,9 @@ static void model_BuildSkeleton(Model *model) {
             bone->node.mesh = -1;
             parent = g_model_bones.bones[i].parent;
             if (parent != -1) {
-                bone->node.parent = &bones[parent].node;
+                SET_PTR(bone->node.parent, &bones[parent].node);
             } else {
-                bone->node.parent = NULL;
+                SET_PTR(bone->node.parent, NULL);
             }
             bone->node.local.t[0] =
                 (g_model_bones.bones[i].offset[0] * model->scale) >> 12;
@@ -305,48 +305,51 @@ static void model_SetMatrixTables(Model *model) {
 
     i = 0;
     /* one arm: the forearm */
-    model->skin_matrices[0] = &model->bones[6].node.world;
+    SET_PTR(model->skin_matrices[0], &model->bones[6].node.world);
     /* the upper arm */
-    model->skin_matrices[1] = &model->bones[5].node.world;
+    SET_PTR(model->skin_matrices[1], &model->bones[5].node.world);
     /* the shoulder */
-    model->skin_matrices[2] = &model->bones[4].node.world;
+    SET_PTR(model->skin_matrices[2], &model->bones[4].node.world);
     /* the other arm: the forearm */
-    model->skin_matrices[3] = &model->bones[10].node.world;
+    SET_PTR(model->skin_matrices[3], &model->bones[10].node.world);
     /* the upper arm */
-    model->skin_matrices[4] = &model->bones[9].node.world;
+    SET_PTR(model->skin_matrices[4], &model->bones[9].node.world);
     /* the shoulder */
-    model->skin_matrices[5] = &model->bones[8].node.world;
+    SET_PTR(model->skin_matrices[5], &model->bones[8].node.world);
     /* the head */
-    model->skin_matrices[6] = &model->bones[3].node.world;
+    SET_PTR(model->skin_matrices[6], &model->bones[3].node.world);
     /* the trunk */
-    model->skin_matrices[7] = &model->bones[2].node.world;
+    SET_PTR(model->skin_matrices[7], &model->bones[2].node.world);
     /* one leg: the shin */
-    model->skin_matrices[8] = &model->bones[17].node.world;
+    SET_PTR(model->skin_matrices[8], &model->bones[17].node.world);
     /* the thigh */
-    model->skin_matrices[9] = &model->bones[16].node.world;
+    SET_PTR(model->skin_matrices[9], &model->bones[16].node.world);
     /* the other leg: the shin */
-    model->skin_matrices[10] = &model->bones[14].node.world;
+    SET_PTR(model->skin_matrices[10], &model->bones[14].node.world);
     /* the thigh */
-    model->skin_matrices[11] = &model->bones[13].node.world;
+    SET_PTR(model->skin_matrices[11], &model->bones[13].node.world);
     /* the hips */
-    model->skin_matrices[12] = &model->bones[MODEL_WAIST_BONE].node.world;
+    SET_PTR(
+        model->skin_matrices[12], &model->bones[MODEL_WAIST_BONE].node.world);
     /* the body's root */
-    model->skin_matrices[13] = &model->bones[1].node.world;
+    SET_PTR(model->skin_matrices[13], &model->bones[1].node.world);
     /* the first arm's hand */
-    model->skin_matrices[14] = &model->bones[7].node.world;
+    SET_PTR(model->skin_matrices[14], &model->bones[7].node.world);
     /* the other arm's hand */
-    model->skin_matrices[15] = &model->bones[11].node.world;
+    SET_PTR(model->skin_matrices[15], &model->bones[11].node.world);
     /* the first leg's foot */
-    model->skin_matrices[16] = &model->bones[18].node.world;
+    SET_PTR(model->skin_matrices[16], &model->bones[18].node.world);
     /* the other leg's foot */
-    model->skin_matrices[17] = &model->bones[15].node.world;
+    SET_PTR(model->skin_matrices[17], &model->bones[15].node.world);
     /* what one hand holds */
-    model->skin_matrices[18] = &model->bones[MODEL_HAND_BONE].node.world;
+    SET_PTR(
+        model->skin_matrices[18], &model->bones[MODEL_HAND_BONE].node.world);
     /* what the other holds */
-    model->skin_matrices[19] = &model->bones[MODEL_HAND_BONE + 1].node.world;
+    SET_PTR(model->skin_matrices[19],
+            &model->bones[MODEL_HAND_BONE + 1].node.world);
     bone = &model->bones[1];
     do {
-        model->bone_matrices[i] = &bone->node.world;
+        SET_PTR(model->bone_matrices[i], &bone->node.world);
         bone++;
         i += 1;
     } while (i < MODEL_MATRIX_COUNT);
@@ -365,14 +368,14 @@ static void model_AssignMeshes(Model *model) {
 
     extra = model->extra_nodes;
     body = &model->bones[1];
-    file = (s32 *)model->data;
+    file = (s32 *)ADDR(model->data);
     pair = (u16 *)((u8 *)file + file[MODEL_FILE_MESH_BONES]);
 
     for (i = 0; i < MODEL_BODY_BONES; i++) {
         bone_used[i] = 0;
     }
     for (i = 0; i < MODEL_MESH_COUNT; i++) {
-        model->mesh_nodes[i] = NULL;
+        SET_PTR(model->mesh_nodes[i], NULL);
     }
 
     while (*pair != 0xFFFF) {
@@ -382,12 +385,12 @@ static void model_AssignMeshes(Model *model) {
         if (!bone_used[bone]) {
             body[bone].node.mesh = mesh;
             bone_used[bone] = 1;
-            model->mesh_nodes[mesh] = &body[bone];
+            SET_PTR(model->mesh_nodes[mesh], &body[bone]);
         } else {
             *extra = body[bone];
             extra->node.mesh = mesh;
             extra->extra = (s32)&body[bone];
-            model->mesh_nodes[mesh] = extra;
+            SET_PTR(model->mesh_nodes[mesh], extra);
             extra++;
         }
     }
@@ -411,7 +414,7 @@ static void model_BuildShadows(Model *model) {
             shadow->node.kind = NODE_KIND_SHADOW;
             shadow->node.draw_flags = 0;
             shadow->node.rotation_order = ROTATION_ORDER_ZYX;
-            shadow->node.parent = &body[i].node;
+            SET_PTR(shadow->node.parent, &body[i].node);
             shadow->node.matrix_state = NODE_MATRIX_DONE;
             shadow->node.light_setup_index = 0;
             shadow->node.mesh_block = model->shadow_block;
@@ -575,7 +578,7 @@ void model_Update(s32 slot, s32 pose_mode, s32 *position, s16 *rotation,
         node = model->extra_nodes;
         for (;;) {
             void **queue;
-            bone = (ModelNode *)node->extra;
+            bone = (ModelNode *)ADDR(node->extra);
             if (!bone) {
                 break;
             }
@@ -624,13 +627,13 @@ void model_BlendPoses(
     body = &model->bones[1];
     do {
         row = (*channel) * FRAME_ROW_SIZE;
-        from = (u16 *)(row + (s32)from_frame);
+        from = (u16 *)ADDR(row + (s32)from_frame);
         angles.vx = from[0];
         angles.vy = -from[1];
         angles.vz = -from[2];
         math_RotMatrixZYX(&angles, scratch);
         channel++;
-        to = (u16 *)(row + (s32)to_frame);
+        to = (u16 *)ADDR(row + (s32)to_frame);
         angles.vx = to[0];
         angles.vy = -to[1];
         angles.vz = -to[2];
@@ -737,9 +740,9 @@ void model_Rebase(s32 slot, s32 delta) {
         } while (1);
     }
     for (i = 0; i < MODEL_MESH_COUNT; i++) {
-        ModelNode *node = model->mesh_nodes[i];
+        ModelNode *node = PTR(model->mesh_nodes[i]);
         if (node) {
-            model->mesh_nodes[i] = (ModelNode *)((u8 *)node + delta);
+            SET_PTR(model->mesh_nodes[i], (ModelNode *)((u8 *)node + delta));
         }
     }
     model_SetMatrixTables(model);
@@ -751,8 +754,9 @@ static void model_RebaseNodeParents(s32 delta, ModelNode *node, s32 count) {
     s32 i;
 
     for (i = count - 1; i != -1; i--) {
-        if (node->node.parent) {
-            node->node.parent = (SceneNode *)((u8 *)node->node.parent + delta);
+        if (PTR(node->node.parent)) {
+            SET_PTR(node->node.parent,
+                    (SceneNode *)((u8 *)PTR(node->node.parent) + delta));
         }
         node++;
     }
@@ -901,13 +905,13 @@ void node_UpdateWorldMatrix(SceneNode *node) {
         func = g_math_rot_matrix_funcs[node->rotation_order];
         func(&node->rot, &node->local);
     }
-    if (node->parent) {
-        if (node->parent->matrix_state == NODE_MATRIX_REBUILD) {
-            node_UpdateWorldMatrix(node->parent);
+    if (PTR(node->parent)) {
+        if (PTR(node->parent)->matrix_state == NODE_MATRIX_REBUILD) {
+            node_UpdateWorldMatrix(PTR(node->parent));
         }
-        math_MulMatrix(&node->parent->world, &node->local, &node->world);
+        math_MulMatrix(&PTR(node->parent)->world, &node->local, &node->world);
         math_TransformVector(
-            &node->parent->world, node->local.t, node->world.t);
+            &PTR(node->parent)->world, node->local.t, node->world.t);
     } else {
         node->world = node->local;
     }
@@ -953,20 +957,20 @@ static void model_LoadExtraTextures(
         switch (slot) {
         case 0:
             if (stage_GetFoggedModel() == 0) {
-                tex_LoadGroupAtSplit((u32 *)textures, i + 1, 0, 0,
+                tex_LoadGroupAtSplit((u32 *)ADDR(textures), i + 1, 0, 0,
                                      MODEL_FOG_CLUT_DX, MODEL_FOG_CLUT_DY);
             } else {
-                tex_LoadGroup((u32 *)textures, i + 1);
+                tex_LoadGroup((u32 *)ADDR(textures), i + 1);
             }
             break;
         case 1:
             if (stage_GetFoggedModel() == slot) {
                 tex_LoadGroupAtSplit(
-                    (u32 *)textures, i + 1, MODEL_SECOND_SLOT_DX, 0,
+                    (u32 *)ADDR(textures), i + 1, MODEL_SECOND_SLOT_DX, 0,
                     MODEL_FOG_CLUT_DX, MODEL_FOG_CLUT_DY);
             } else {
                 tex_LoadGroupAt(
-                    (u32 *)textures, i + 1, MODEL_SECOND_SLOT_DX, 0);
+                    (u32 *)ADDR(textures), i + 1, MODEL_SECOND_SLOT_DX, 0);
             }
             break;
         }

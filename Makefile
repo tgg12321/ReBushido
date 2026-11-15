@@ -309,17 +309,35 @@ test:
 
 # The native port (docs/PORT.md): the game's C with the port's switch on,
 # Sony's library code where it is plain arithmetic, and src/port/, built
-# for this host into build/port/rebushido (tools/port_build.py). A 32-bit
-# x86 Linux program with no C library, as the host tests are: it needs
-# the host's gcc with -m32 and python3, and says so where that gcc cannot
-# make one. No PlayStation build has anything of it. Then the places where
-# this compiler may evaluate an expression in another order than the
-# PlayStation's did are held to the list of those that were looked at
-# (tools/port_order.py, config/port_order.txt).
+# for this host (tools/port_build.py). An x86 Linux program with no C
+# library, as the host tests are: it needs the host's gcc and python3, and
+# says so where that gcc cannot make one. No PlayStation build has anything
+# of it. It is built twice, with 64-bit pointers and with 32-bit ones
+# (docs/PORT.md, "64 bits"): the default's program is build/port/rebushido
+# and the other's is beside it, in build/port64/ or build/port32/. Then:
+#   - every structure's layout in the two programs and on the PlayStation
+#     is held to the list of those that may differ (tools/port_layout.py,
+#     config/port_layout.txt);
+#   - no pointer of the 64-bit program is made of a number that is not a
+#     32-bit address (tools/port_casts.py);
+#   - the places where either compiler may evaluate an expression in
+#     another order than the PlayStation's did are held to the list of
+#     those that were looked at (tools/port_order.py, config/port_order.txt).
+# `make port PORT_BITS=64` (or 32) builds that one program and asks only
+# what can be asked of one.
 #   build/port/rebushido --image "Bushido Blade 2 (USA).cue" --frames 600 --trace
 port:
-	python3 tools/port_build.py
-	python3 tools/port_order.py --check
+ifeq ($(PORT_BITS),)
+	python3 tools/port_build.py --bits 32
+	python3 tools/port_build.py --bits 64
+	python3 tools/port_layout.py --check
+	python3 tools/port_casts.py --check
+	python3 tools/port_order.py --check --bits 32
+	python3 tools/port_order.py --check --bits 64
+else
+	python3 tools/port_build.py --bits $(PORT_BITS)
+	python3 tools/port_order.py --check --bits $(PORT_BITS)
+endif
 
 # Every check GitHub Actions runs, in its order, with a summary
 # (tools/checks.sh): the counts, the lint, modern, test, the game's bytes,

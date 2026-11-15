@@ -313,10 +313,10 @@ static void cloth_LoadColliders(ClothUpdate *update) {
     ClothColliders *colliders;
     s32 i, j;
 
-    if (!update->colliders) {
+    if (!PTR(update->colliders)) {
         return;
     }
-    colliders = update->colliders;
+    colliders = PTR(update->colliders);
     CLOTH_SPAD->ground_y = colliders->ground_y << 7;
     for (i = 0; i < colliders->count; i++) {
         for (j = 0; j < 2; j++) {
@@ -326,7 +326,7 @@ static void cloth_LoadColliders(ClothUpdate *update) {
         }
         CLOTH_SPAD->reach[i] = colliders->reach[i] << 2;
     }
-    CLOTH_SPAD->collider_count = update->colliders->count;
+    CLOTH_SPAD->collider_count = PTR(update->colliders)->count;
 }
 
 /* The square root of a number that is not negative: from the table of
@@ -362,16 +362,16 @@ static void cloth_BeginStep(ClothUpdate *update, Cloth *cloth) {
     s32 distance; /* squared, then not */
     s32 scale;
 
-    gte_SetRotMatrix(update->matrix);
-    gte_SetTransMatrix(update->matrix);
+    gte_SetRotMatrix(PTR(update->matrix));
+    gte_SetTransMatrix(PTR(update->matrix));
 
     cloth_LoadColliders(update);
 
-    dx = update->matrix->t[0] - cloth->matrix.t[0];
+    dx = PTR(update->matrix)->t[0] - cloth->matrix.t[0];
     CLOTH_SPAD->carry[0] = dx;
-    dy = update->matrix->t[1] - cloth->matrix.t[1];
+    dy = PTR(update->matrix)->t[1] - cloth->matrix.t[1];
     CLOTH_SPAD->carry[1] = dy;
-    dz = update->matrix->t[2] - cloth->matrix.t[2];
+    dz = PTR(update->matrix)->t[2] - cloth->matrix.t[2];
     CLOTH_SPAD->carry[2] = dz;
 
     distance = (dx * dx) + (dy * dy) + (dz * dz);
@@ -392,7 +392,7 @@ static void cloth_BeginStep(ClothUpdate *update, Cloth *cloth) {
     CLOTH_SPAD->carry[1] = (CLOTH_SPAD->carry[1] * scale) >> 1;
     CLOTH_SPAD->carry[2] = (CLOTH_SPAD->carry[2] * scale) >> 1;
 
-    cloth->matrix = *update->matrix;
+    cloth->matrix = *PTR(update->matrix);
     cloth_SolveSprings(cloth);
 }
 
@@ -645,7 +645,7 @@ static void cloth_Step(ClothUpdate *update, Cloth *cloth) {
         CLOTH_SPAD->work[0] = vx;
         CLOTH_SPAD->work[1] = vy;
         CLOTH_SPAD->work[2] = vz;
-        if (update->colliders) {
+        if (PTR(update->colliders)) {
             s32 delta; /* how far under the ground, then from a focus */
 
             delta = CLOTH_SPAD->pos[1] - CLOTH_SPAD->ground_y;
@@ -795,8 +795,8 @@ static void cloth_Snap(ClothUpdate *update, Cloth *cloth) {
     s32 i;
     ClothPoint *point;
 
-    gte_SetRotMatrix(update->matrix);
-    gte_SetTransMatrix(update->matrix);
+    gte_SetRotMatrix(PTR(update->matrix));
+    gte_SetTransMatrix(PTR(update->matrix));
 
     point = cloth->points;
     for (i = 0; i < cloth->count; i++) {
@@ -811,7 +811,7 @@ static void cloth_Snap(ClothUpdate *update, Cloth *cloth) {
         point->vel_z = 0;
         point++;
     }
-    cloth->matrix = *update->matrix;
+    cloth->matrix = *PTR(update->matrix);
 }
 
 /* The highest cloth index that has been in use. Nothing reads it. */

@@ -1,0 +1,59 @@
+# The structures that are not laid out in the 64-bit port as on the PlayStation,
+# and why each may be (tools/port_layout.py; docs/PORT.md, "64 bits"). Each
+# keeps ordinary pointers, which are 8 bytes there, and so grows. A structure
+# may be here only if it is never laid over memory that something else lays
+# out (a file, the scratchpad, the console's RAM, another structure), is
+# never given room by a number written into the source, and is reached only
+# through its members' names. Every other structure with a pointer keeps it
+# in a PTR32 slot (include/common.h) and is the same in all three builds.
+#
+#   NAME  why it may grow
+
+# The fighters: two of them, the program's own array (g_fighters). No file
+# is laid over one, nothing takes its size or a member's address for an
+# array, and the play tests hold both, member by member, to the emulator's
+# (tools/playtest.py reads the 64-bit port's as the PlayStation lays them
+# out).
+Fighter  g_fighters, the program's own array; held to the emulator's member by member
+
+# A 2D screen's frame: the cursors of its primitives and the context its
+# draw functions are handed, which are locals of the function that draws
+# the frame. A MenuDrawCtx is handed to menu_DrawTitleRule as a MenuCtx, one
+# word out (the original's behaviour, select.c): in both the words are a
+# number or a pointer each, in the same order, so one word out is one
+# member out in the 64-bit port as well, and the rule is drawn where the
+# PlayStation draws it (the play test port_picture holds the screen to the
+# emulator's, pixel for pixel).
+PrimCursors   a local of the frame's draw function; its members are reached by name
+MenuCtx       a local of the frame's draw function
+MenuDrawCtx   a local of the frame's draw function
+MenuTopFrame  a local: the top menu's locals in one structure
+SpriteDraw    a local: a request to draw a sheet
+
+# The program's own tables and arrays, filled by the compiler or by name.
+ArenaBlock          g_arena_blocks, the program's own array
+BitStream           inside BitTrack
+BitTrack            g_bitstream_tracks, the program's own array
+Cloth               g_cloths, the program's own array
+ClothDesc           a local of cloth_model.c
+MotionDecoder       g_motion_decoders, the program's own array
+MotionDecoderCache  inside MotionDecoder
+MotionSections      g_motion_common_sections and g_motion_fighter_sections, the program's own
+MotionSetFile       g_motion_set_files, a table the compiler fills with the names' addresses
+NavChain            the stages' tables of obstacles (cpu_data.c), filled by the compiler
+NavSet              g_cpu_stage_obstacles, the same
+RbOption            ReBushido's table of options, filled by the compiler
+SoundRequest        g_snd_queue, the program's own array
+StageHooks          g_stage_hooks, a table of functions the compiler fills
+
+# The renderer's C (render_asm.c under RB_PORT): what the listings keep in
+# registers.
+RenderWalk  the port's own: the walk's registers as a structure
+TileSplit   the port's own: a local of the tiles' cutting
+
+# Sony's: the sequencer's state and its table of functions (libsnd), which
+# the game never gives memory of its own (it plays no sequence), and the
+# BIOS's directory entry, which the port's card stubs never fill.
+SeqStruct  Sony's libsnd, in the library's own memory
+_SsFCALL   Sony's libsnd: a table of functions
+DIRENTRY   the BIOS's directory entry: the port has no card yet

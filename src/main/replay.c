@@ -211,7 +211,7 @@ void replay_RecordFighter(Fighter *fighter) {
     frame->aim_turn = fighter->aim_turn >> 2;
     frame->aim_lean = fighter->aim_lean >> 2;
     frame->gun_aim = fighter->gun_aim >> 2;
-    frame->cur_move = fighter->cur_move;
+    SET_PTR(frame->cur_move, fighter->cur_move);
     frame->move_section_bits = 0;
 
     if (fighter->cur_move_is_common) {
@@ -395,14 +395,16 @@ void replay_PlayFrame(void) {
         fighter->move_frame = frame->move_frame;
         saved_motion_head = fighter->motion_head;
         if (frame->move_section_bits & REPLAY_MOVE_COMMON) {
-            motion_entry = &g_motion_common_sections
-                                .entries[frame->cur_move->motion_index * 2];
+            motion_entry =
+                &g_motion_common_sections
+                     .entries[PTR(frame->cur_move)->motion_index * 2];
             fighter->motion_head =
                 g_motion_common_sections.metadata + motion_entry[1];
         } else {
             work = (frame->move_section_bits >> 1) & 1;
-            motion_entry = &g_motion_fighter_sections[work]
-                                .entries[frame->cur_move->motion_index * 2];
+            motion_entry =
+                &g_motion_fighter_sections[work]
+                     .entries[PTR(frame->cur_move)->motion_index * 2];
             fighter->motion_head =
                 g_motion_fighter_sections[work].metadata + motion_entry[1];
         }

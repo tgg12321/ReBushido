@@ -12,29 +12,60 @@
 /* A frame further up the stack than this from the one before it is not
  * a frame. */
 #define FRAME_GAP_MAX 0x100000U
+/* An address is printed as eight digits where it fits 32 bits. */
+#define ADDRESS_BITS_USUAL 32
+#define ADDRESS_DIGITS_USUAL 8
+#define ADDRESS_DIGITS_WIDE 16
+#define BITS_PER_DIGIT 4
+#define DIGIT_MASK 0xF
+#define ADDRESS_TEXT_BYTES (ADDRESS_DIGITS_WIDE + 1)
 
-static void port_PrintPlace(const char *lead, u32 address) {
+/* An address as text: eight digits, or sixteen where it is past what 32
+ * bits hold, which nothing of the program's or the game's is. */
+static const char *port_AddressText(PortAddress address, char *text) {
+    static const char digits[] = "0123456789ABCDEF";
+    s32 count = ADDRESS_DIGITS_USUAL;
+    s32 i;
+
+    if (((u64)address >> ADDRESS_BITS_USUAL) != 0) {
+        count = ADDRESS_DIGITS_WIDE;
+    }
+    for (i = 0; i < count; i++) {
+        text[i] = digits[((u64)address >> ((count - 1 - i) * BITS_PER_DIGIT)) &
+                         DIGIT_MASK];
+    }
+    text[count] = 0;
+    return text;
+}
+
+/* A line for one place of the program: the function it is in and how far
+ * into it, where the names know, and the address. */
+static void port_PrintPlace(const char *lead, PortAddress address) {
+    char text[ADDRESS_TEXT_BYTES];
     u32 offset = 0;
-    const char *name = port_FindFunction(address, &offset);
+    const char *name = ((u64)address >> ADDRESS_BITS_USUAL) != 0
+                           ? NULL
+                           : port_FindFunction((u32)address, &offset);
 
     if (name != NULL) {
-        port_Log(
-            "rebushido:   %s %s+0x%X (0x%08X)\n", lead, name, offset, address);
+        port_Log("rebushido:   %s %s+0x%X (0x%s)\n", lead, name, offset,
+                 port_AddressText(address, text));
     } else {
-        port_Log("rebushido:   %s 0x%08X\n", lead, address);
+        port_Log(
+            "rebushido:   %s 0x%s\n", lead, port_AddressText(address, text));
     }
 }
 
 /* The functions that called the one whose frame is `frame`: each frame
  * begins with the caller's frame and the address it returns to. */
-static void port_PrintCallers(u32 frame) {
+static void port_PrintCallers(PortAddress frame) {
     s32 i;
 
     for (i = 0; i < CALLERS_MAX; i++) {
-        const u32 *words = (const u32 *)frame;
-        u32 next;
+        const PortAddress *words = (const PortAddress *)frame;
+        PortAddress next;
 
-        if (frame == 0 || (frame & 3) != 0) {
+        if (frame == 0 || (frame & (sizeof(frame) - 1)) != 0) {
             break;
         }
         next = words[0];
@@ -53,8 +84,10 @@ static void port_PrintGameState(void) {
 }
 
 static void port_ReportCrash(const PortCrash *crash) {
-    port_Log("rebushido: stopped: %s, address 0x%08X\n", crash->what,
-             crash->address);
+    char text[ADDRESS_TEXT_BYTES];
+
+    port_Log("rebushido: stopped: %s, address 0x%s\n", crash->what,
+             port_AddressText(crash->address, text));
     port_PrintPlace("in", crash->pc);
     port_PrintGameState();
     port_PrintCallers(crash->frame);
@@ -67,6 +100,6 @@ void port_CatchCrashes(void) { port_HostCatchCrashes(port_ReportCrash); }
 void port_Trap(void) {
     port_Log("rebushido: stopped: the game cannot go on (sys_Trap)\n");
     port_PrintGameState();
-    port_PrintCallers((u32)__builtin_frame_address(0));
+    port_PrintCallers((PortAddress)__builtin_frame_address(0));
     port_Quit(PORT_EXIT_FAILED);
 }

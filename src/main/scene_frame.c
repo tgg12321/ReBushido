@@ -120,7 +120,7 @@ static s32 scene_ReturnZero(void) { return 0; }
 
 /* The list of the world matrices of the bones of the model in slot `slot`,
  * from bone 1 up, or NULL if the slot is empty. */
-MATRIX **model_GetBoneMatrices(s32 slot) {
+MatrixSlot *model_GetBoneMatrices(s32 slot) {
     Model *model = model_Get(slot);
     if (model) {
         return model->bone_matrices;
@@ -262,7 +262,7 @@ void node_Init(SceneNode *node) {
     node->mesh = 0;
     node->kind = NODE_KIND_ROTATED;
     node->draw_flags = 0;
-    node->parent = NULL;
+    SET_PTR(node->parent, NULL);
     node->light_setup_index = LIGHT_SCENERY;
     node->rot.vx = 0;
     node->rot.vy = 0;

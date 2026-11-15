@@ -23,7 +23,8 @@ static void select_DrawBanner(MenuDrawCtx *ctx);
 static void select_DrawFrame(MenuDrawCtx *ctx);
 static void select_MoveFighterCursors(MenuDrawCtx *ctx);
 static void select_MoveWeaponCursors(MenuDrawCtx *ctx, SpriteDraw *draw);
-static void select_StageStep(MenuDrawCtx *ctx, SpriteSheet **sheets, s32 page);
+static void select_StageStep(
+    MenuDrawCtx *ctx, SpriteSheetSlot *sheets, s32 page);
 static VECTOR g_sprite_rotation_scale;
 
 /* ---- select ---- */
@@ -512,42 +513,44 @@ s32 select_Load(
     ClearOTagR(g_disp_ot, DISP_OT_SIZE);
     g_select_portrait_loaded = SELECT_PORTRAIT_NONE;
     g_select_mode = settings->menu_mode;
-    g_select_pools = (PrimPool *)memory;
+    g_select_pools = (PrimPool *)ADDR(memory);
     g_select_settings = settings;
     g_select_extra_weapons = 0;
     g_select_extra_fighters = 0;
     g_select_portrait_extra = 0;
     g_select_extra_players = extra_players;
     g_select_free_ram = memory + 2 * sizeof(PrimPool);
-    g_select_file = (SelectFile *)(memory + 2 * sizeof(PrimPool));
+    g_select_file = (SelectFile *)ADDR(memory + 2 * sizeof(PrimPool));
     resource_FreeAll();
 
     switch (g_select_mode) {
     case FIGHT_MODE_STORY:
-        sprite_LoadFile(SELECT_FILE_STORY, (SpriteFileHead *)g_select_free_ram);
+        sprite_LoadFile(
+            SELECT_FILE_STORY, (SpriteFileHead *)ADDR(g_select_free_ram));
         break;
     case FIGHT_MODE_VS:
     case FIGHT_MODE_NETWORK:
         sprite_LoadFile(
-            SELECT_FILE_TWO_PLAYERS, (SpriteFileHead *)g_select_free_ram);
+            SELECT_FILE_TWO_PLAYERS, (SpriteFileHead *)ADDR(g_select_free_ram));
         break;
     case FIGHT_MODE_PRACTICE:
         if (g_select_settings->practice_round) {
-            sprite_LoadFile(
-                SELECT_FILE_TWO_PLAYERS, (SpriteFileHead *)g_select_free_ram);
+            sprite_LoadFile(SELECT_FILE_TWO_PLAYERS,
+                            (SpriteFileHead *)ADDR(g_select_free_ram));
         } else {
-            sprite_LoadFile(
-                SELECT_FILE_ONE_PLAYER, (SpriteFileHead *)g_select_free_ram);
+            sprite_LoadFile(SELECT_FILE_ONE_PLAYER,
+                            (SpriteFileHead *)ADDR(g_select_free_ram));
         }
         break;
     case FIGHT_MODE_VSCPU:
     case FIGHT_MODE_CHANBARA:
         sprite_LoadFile(
-            SELECT_FILE_ONE_PLAYER, (SpriteFileHead *)g_select_free_ram);
+            SELECT_FILE_ONE_PLAYER, (SpriteFileHead *)ADDR(g_select_free_ram));
         break;
     }
 
-    g_select_free_ram = select_RelocateFile((SelectFile *)g_select_free_ram);
+    g_select_free_ram =
+        select_RelocateFile((SelectFile *)ADDR(g_select_free_ram));
     g_select_free_ram = sprite_InitPools(g_select_free_ram, g_select_pools);
     g_select_picks.word = -1;
     g_select_door_x = 0;
@@ -603,7 +606,7 @@ s32 select_Load(
     DrawSync(0);
     MoveImage(&rect, SPRITE_STRIP_COPY_X, SPRITE_STRIP_COPY_Y);
     DrawSync(0);
-    g_select_work = (SelectWork *)g_select_free_ram;
+    g_select_work = (SelectWork *)ADDR(g_select_free_ram);
     g_select_free_ram += sizeof(SelectWork);
     g_select_work->frames = 0;
     g_select_work->pool_frame = 0;
@@ -632,7 +635,7 @@ void sprite_LoadBottomStrip(SpriteFileHead *file) {
     rect.w = DISP_WIDTH;
     rect.h = VRAM_COLORS_HEIGHT;
     DrawSync(0);
-    LoadImage(&rect, (u32 *)data);
+    LoadImage(&rect, (u32 *)ADDR(data));
     DrawSync(0);
 }
 
@@ -656,14 +659,14 @@ void sprite_LoadFile(s32 data_file, SpriteFileHead *file) {
     rect.w = VRAM_PAGE_WIDTH;
     rect.h = VRAM_PAGE_HEIGHT;
     DrawSync(0);
-    LoadImage(&rect, (u32 *)image);
+    LoadImage(&rect, (u32 *)ADDR(image));
 
     rect.w = VRAM_PAGE_FOOT_WIDTH;
     rect.x = VRAM_PAGE_X;
     rect.y = VRAM_PAGE_HEIGHT;
     rect.h = VRAM_PAGE_FOOT_HEIGHT;
     DrawSync(0);
-    LoadImage(&rect, (u32 *)(image + VRAM_PAGE_BYTES));
+    LoadImage(&rect, (u32 *)ADDR(image + VRAM_PAGE_BYTES));
 
     sprite_LoadBottomStrip(file);
 }
@@ -672,16 +675,17 @@ void sprite_LoadFile(s32 data_file, SpriteFileHead *file) {
  * screen's sounds. Returns where the file's image began, which is free once
  * it is in video memory. */
 static s32 select_RelocateFile(SelectFile *file) {
-    sprite_RelocateList(file, file->portraits);
-    sprite_RelocateList(file, file->weapon_sheets);
-    sprite_RelocateList(file, file->door_sheets);
-    sprite_RelocateList(file, file->fighter_sheets);
-    sprite_RelocateList(file, file->weapon_row_sheets);
-    sprite_RelocateList(file, file->stage_page1_sheets);
-    sprite_RelocateList(file, file->stage_page2_sheets);
-    sprite_RelocateList(file, file->stage_page3_sheets);
-    sprite_RelocateList(file, file->cursor_sheets);
-    snd_LoadVab(file->head.sounds, SND_VAB_MENU, file->head.free_ram_start);
+    sprite_RelocateList(file, PTR(file->portraits));
+    sprite_RelocateList(file, PTR(file->weapon_sheets));
+    sprite_RelocateList(file, PTR(file->door_sheets));
+    sprite_RelocateList(file, PTR(file->fighter_sheets));
+    sprite_RelocateList(file, PTR(file->weapon_row_sheets));
+    sprite_RelocateList(file, PTR(file->stage_page1_sheets));
+    sprite_RelocateList(file, PTR(file->stage_page2_sheets));
+    sprite_RelocateList(file, PTR(file->stage_page3_sheets));
+    sprite_RelocateList(file, PTR(file->cursor_sheets));
+    snd_LoadVab(
+        PTR(file->head.sounds), SND_VAB_MENU, file->head.free_ram_start);
     return file->head.free_ram_start;
 }
 
@@ -709,14 +713,14 @@ s32 select_Update(s32 held, s32 pressed) {
     pool = select_GetPrimPool(pool_frame & 1);
     ctx.file.select = g_select_file;
     ctx.prims.ft4 = pool->ft4;
-    ctx.prims.g4 = pool->g4;
+    ctx.prims.g4 = PTR(pool->g4);
     ctx.prims.sprt = pool->sprt;
-    ctx.prims.tile = pool->tile;
-    ctx.prims.mode = pool->mode;
-    ctx.prims.area = pool->area;
+    ctx.prims.tile = PTR(pool->tile);
+    ctx.prims.mode = PTR(pool->mode);
+    ctx.prims.area = PTR(pool->area);
     g_select_pool = pool;
-    ctx.prims.offset = pool->offset;
-    ctx.tail = pool->tail_region;
+    ctx.prims.offset = PTR(pool->offset);
+    ctx.tail = PTR(pool->tail_region);
     /* not while the crossed weapons are up */
     if (g_select_step < SELECT_STEP_WEAPONS_IN ||
         g_select_step > SELECT_STEP_WEAPONS_OUT) {
@@ -780,7 +784,7 @@ static void select_DrawPortraits(MenuDrawCtx *ctx) {
     draw.y = 0;
     draw.scale_y = SPRITE_SCALE_ONE;
 
-    portraits = ctx->file.select->portraits;
+    portraits = PTR(ctx->file.select->portraits);
     sheets = portraits->sheets;
 
     for (side = 0; side < g_select_extra_players + 1 + g_select_extra_fighters;
@@ -836,7 +840,7 @@ static void select_DrawPortraits(MenuDrawCtx *ctx) {
             if (g_select_portrait_loaded != who ||
                 g_select_portrait_extra != g_select_extra_fighters) {
                 rect = g_select_portrait_rect;
-                LoadImage(&rect, (u32 *)pixels);
+                LoadImage(&rect, (u32 *)ADDR(pixels));
                 DrawSync(0);
             }
         } else {
@@ -848,9 +852,9 @@ static void select_DrawPortraits(MenuDrawCtx *ctx) {
               SELECT_FIGHTER_FIRST_CLAN) &&
             (g_select_mode != FIGHT_MODE_PRACTICE ||
              !g_select_settings->practice_round)) {
-            draw.table = portraits->side_cells[1];
+            draw.table = PTR(portraits->side_cells[1]);
         } else {
-            draw.table = portraits->side_cells[side];
+            draw.table = PTR(portraits->side_cells[side]);
         }
         draw.ft4_out = ctx->prims.ft4;
         if (side != 0) {
@@ -899,7 +903,7 @@ static void select_DrawFade(MenuDrawCtx *ctx) {
 void select_WeaponsInStep(MenuDrawCtx *ctx) {
     SpriteDraw draw;
     s32 side;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     SpriteSheet *sheet;
     s32 look;
     s16 x_offset;
@@ -930,10 +934,10 @@ void select_WeaponsInStep(MenuDrawCtx *ctx) {
     draw.ot_index = SELECT_LAYER_WEAPONS;
     draw.semi = 0;
     draw.has_color = 0;
-    sheets = g_select_file->weapon_sheets;
+    sheets = PTR(g_select_file->weapon_sheets);
     for (side = 0; side < 1 + g_select_extra_players + g_select_extra_weapons;
          side++) {
-        sheet = sheets[g_select_picks.rec[side].weapon];
+        sheet = PTR(sheets[g_select_picks.rec[side].weapon]);
         look = 1;
         if (g_select_mode == FIGHT_MODE_PRACTICE &&
             !(g_select_settings->practice_round) && side == 1) {
@@ -1010,7 +1014,7 @@ void select_WeaponsInStep(MenuDrawCtx *ctx) {
 static void select_DrawDoors(MenuDrawCtx *ctx) {
     SpriteDraw draw;
     RECT rect;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     TILE *tile;
     s16 door;
     SpriteCell *cells;
@@ -1021,10 +1025,10 @@ static void select_DrawDoors(MenuDrawCtx *ctx) {
     draw.scale_y = SPRITE_SCALE_ONE;
     draw.has_color = 0;
 
-    sheets = g_select_file->door_sheets;
+    sheets = PTR(g_select_file->door_sheets);
     draw.ot_index = SELECT_LAYER_DOORS;
     door = g_select_door & SELECT_DOOR_STATE;
-    draw.header = sheets[DOOR_SHEET_DOOR];
+    draw.header = PTR(sheets[DOOR_SHEET_DOOR]);
     cells = draw.header->cells;
     if (door >= SELECT_DOOR_LEFT_CLOSING) {
         draw.x = g_select_door_x;
@@ -1041,13 +1045,13 @@ static void select_DrawDoors(MenuDrawCtx *ctx) {
     ctx->prims.ft4 = sprite_DrawScaled(&draw, SPRITE_QUAD_NORMAL);
 
     draw.scale_y = SPRITE_SCALE_ONE;
-    draw.header = sheets[DOOR_SHEET_DOOR_OVER];
+    draw.header = PTR(sheets[DOOR_SHEET_DOOR_OVER]);
     cells = draw.header->cells;
     draw.table = cells;
     draw.ft4_out = ctx->prims.ft4;
     ctx->prims.ft4 = sprite_DrawScaled(&draw, SPRITE_QUAD_NORMAL);
 
-    draw.header = sheets[DOOR_SHEET_DOOR];
+    draw.header = PTR(sheets[DOOR_SHEET_DOOR]);
     cells = draw.header->cells;
     if (door < SELECT_DOOR_LEFT_CLOSING) {
         draw.x = -g_select_door_x + DOOR_RIGHT_X;
@@ -1064,7 +1068,7 @@ static void select_DrawDoors(MenuDrawCtx *ctx) {
     ctx->prims.ft4 = sprite_DrawScaled(&draw, SPRITE_QUAD_NORMAL);
 
     draw.scale_y = SPRITE_SCALE_ONE;
-    draw.header = sheets[DOOR_SHEET_DOOR_OVER];
+    draw.header = PTR(sheets[DOOR_SHEET_DOOR_OVER]);
     cells = draw.header->cells;
     draw.table = cells;
     draw.ft4_out = ctx->prims.ft4;
@@ -1125,7 +1129,7 @@ static void select_DrawDoors(MenuDrawCtx *ctx) {
     tile++;
     ctx->prims.tile = tile;
 
-    draw.header = sheets[DOOR_SHEET_PANEL_EDGE];
+    draw.header = PTR(sheets[DOOR_SHEET_PANEL_EDGE]);
     cells = draw.header->cells;
     draw.table = cells;
     draw.scale_y = SPRITE_SCALE_ONE;
@@ -1151,7 +1155,7 @@ void select_FighterStep(MenuDrawCtx *ctx) {
     SpriteDraw draw;
     s16 pulse_speed[2];
     u16 rule[4];
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     SpriteCell *cells;
     s16 side;
     s16 grid_col;
@@ -1161,8 +1165,8 @@ void select_FighterStep(MenuDrawCtx *ctx) {
     draw.scale_y = SPRITE_SCALE_ONE;
     draw.semi = 0;
     draw.col_r = draw.col_g = draw.col_b = TINT_EMBLEM_PICKED;
-    sheets = g_select_file->fighter_sheets;
-    draw.header = sheets[SELECT_FIGHTER_SHEET_EMBLEMS];
+    sheets = PTR(g_select_file->fighter_sheets);
+    draw.header = PTR(sheets[SELECT_FIGHTER_SHEET_EMBLEMS]);
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
     AddPrim(g_disp_ot + SELECT_LAYER_EMBLEMS_MODE, ctx->prims.mode);
     ctx->prims.mode++;
@@ -1171,7 +1175,7 @@ void select_FighterStep(MenuDrawCtx *ctx) {
     draw.ot_index = SELECT_LAYER_EMBLEMS;
     draw.x = EMBLEM_2_X;
     draw.y = EMBLEM_Y;
-    draw.header = sheets[SELECT_FIGHTER_SHEET_EMBLEMS];
+    draw.header = PTR(sheets[SELECT_FIGHTER_SHEET_EMBLEMS]);
     cells = draw.header[EMBLEM_LOOKS - 1].cells;
     draw.has_color = 0;
     for (side = 0; side < 1 + g_select_extra_players + g_select_extra_fighters;
@@ -1199,7 +1203,7 @@ void select_FighterStep(MenuDrawCtx *ctx) {
     /* the first, the same way */
     draw.x = EMBLEM_1_X;
     draw.y = EMBLEM_Y;
-    draw.header = sheets[SELECT_FIGHTER_SHEET_EMBLEMS];
+    draw.header = PTR(sheets[SELECT_FIGHTER_SHEET_EMBLEMS]);
     draw.has_color = 0;
     for (side = 0; side < 1 + g_select_extra_players + g_select_extra_fighters;
          side++) {
@@ -1225,7 +1229,7 @@ void select_FighterStep(MenuDrawCtx *ctx) {
 
     draw.x = 0;
     draw.y = 0;
-    draw.header = sheets[SELECT_FIGHTER_SHEET_NAMES];
+    draw.header = PTR(sheets[SELECT_FIGHTER_SHEET_NAMES]);
     SetDrawMode(ctx->prims.mode, 1, 0,
                 sprite_GetTPage(draw.header, SPRITE_ABR_ADD_QUARTER), 0);
     AddPrim(g_disp_ot + SELECT_LAYER_NAMES_MODE, ctx->prims.mode);
@@ -1265,8 +1269,9 @@ void select_FighterStep(MenuDrawCtx *ctx) {
                         break;
                     }
                 }
-                draw.header = sheets[g_select_grid[grid_row][grid_col].value +
-                                     SELECT_FIGHTER_SHEET_NAMES];
+                draw.header =
+                    PTR(sheets[g_select_grid[grid_row][grid_col].value +
+                               SELECT_FIGHTER_SHEET_NAMES]);
                 cells = draw.header->cells;
                 draw.table = cells;
                 draw.sprt_out = ctx->prims.sprt;
@@ -1276,7 +1281,7 @@ void select_FighterStep(MenuDrawCtx *ctx) {
                 draw.y = grid_row * GRID_ROW_PITCH;
                 draw.x = GRID_COL_X(grid_col);
                 draw.has_color = 0;
-                draw.header = sheets[SELECT_FIGHTER_SHEET_LOCKED];
+                draw.header = PTR(sheets[SELECT_FIGHTER_SHEET_LOCKED]);
                 cells = draw.header->cells;
                 draw.table = cells;
                 draw.sprt_out = ctx->prims.sprt;
@@ -1289,7 +1294,7 @@ void select_FighterStep(MenuDrawCtx *ctx) {
     draw.y = 0;
     draw.x = 0;
     draw.has_color = 0;
-    draw.header = sheets[SELECT_FIGHTER_SHEET_TITLE];
+    draw.header = PTR(sheets[SELECT_FIGHTER_SHEET_TITLE]);
     cells = draw.header->cells;
     draw.table = cells;
     draw.sprt_out = ctx->prims.sprt;
@@ -1325,7 +1330,7 @@ void select_FighterStep(MenuDrawCtx *ctx) {
  * the first pad first picks the opponent, starting from the other clan. */
 static void select_MoveFighterCursors(MenuDrawCtx *ctx) {
     SpriteDraw draw;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     s16 *col;
     s16 *row;
     u8 *flags;
@@ -1336,8 +1341,8 @@ static void select_MoveFighterCursors(MenuDrawCtx *ctx) {
     draw.semi = 0;
     draw.scale_x = SPRITE_SCALE_ONE;
     draw.scale_y = SPRITE_SCALE_ONE;
-    sheets = g_select_file->cursor_sheets;
-    draw.header = sheets[CURSOR_SHEET_SIDE_1];
+    sheets = PTR(g_select_file->cursor_sheets);
+    draw.header = PTR(sheets[CURSOR_SHEET_SIDE_1]);
     SetDrawMode(ctx->prims.mode, 1, 0,
                 sprite_GetTPage(draw.header, SPRITE_ABR_ADD_QUARTER), 0);
     AddPrim(g_disp_ot + SELECT_LAYER_CURSORS_MODE, ctx->prims.mode);
@@ -1425,7 +1430,7 @@ static void select_MoveFighterCursors(MenuDrawCtx *ctx) {
             if (g_select_fighter_stamp[side] < SELECT_STAMP_CELLS) {
                 g_select_fighter_stamp[side]++;
             }
-            draw.header = sheets[CURSOR_SHEET_STAMP];
+            draw.header = PTR(sheets[CURSOR_SHEET_STAMP]);
             draw.header->count = g_select_fighter_stamp[side];
             draw.table = draw.header->cells;
             draw.has_color = 0;
@@ -1496,9 +1501,9 @@ static void select_MoveFighterCursors(MenuDrawCtx *ctx) {
         }
         /* the first pad's cursor for the second side is the sheet after */
         if (g_select_extra_fighters != 0 && side != 0) {
-            draw.header = sheets[side + 1];
+            draw.header = PTR(sheets[side + 1]);
         } else {
-            draw.header = sheets[side];
+            draw.header = PTR(sheets[side]);
         }
         draw.table = draw.header->cells;
         draw.col_r = draw.col_g = draw.col_b = SELECT_PULSE(
@@ -1540,7 +1545,7 @@ void select_WeaponStep(MenuDrawCtx *ctx) {
     s32 abr = SPRITE_ABR_ADD_QUARTER;
     SpriteDraw draw;
     u16 rule[4];
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     s32 side;
     SpriteCell *cells;
     u8 fighter;
@@ -1551,11 +1556,11 @@ void select_WeaponStep(MenuDrawCtx *ctx) {
     draw.scale_x = SPRITE_SCALE_ONE;
     draw.scale_y = SPRITE_SCALE_ONE;
     draw.has_color = 0;
-    sheets = g_select_file->weapon_row_sheets;
+    sheets = PTR(g_select_file->weapon_row_sheets);
     /* (the original sets both twice) */
     draw.y = 0;
     draw.x = 0;
-    draw.header = sheets[SELECT_WEAPON_ROW_SHEET_TITLE];
+    draw.header = PTR(sheets[SELECT_WEAPON_ROW_SHEET_TITLE]);
     cells = draw.header->cells;
     draw.table = cells;
     draw.sprt_out = ctx->prims.sprt;
@@ -1574,7 +1579,7 @@ void select_WeaponStep(MenuDrawCtx *ctx) {
      * behaviour). */
     menu_DrawTitleRule((MenuCtx *)ctx, rule, SELECT_LAYER_TOP);
     /* the row: `side` counts its places here */
-    draw.header = sheets[SELECT_WEAPON_ROW_SHEET_WEAPONS];
+    draw.header = PTR(sheets[SELECT_WEAPON_ROW_SHEET_WEAPONS]);
     cells = draw.header[SELECT_WEAPON_PLACES - 1].cells;
     draw.table = cells;
     for (side = 0; side < SELECT_WEAPON_PLACES; side++) {
@@ -1584,11 +1589,11 @@ void select_WeaponStep(MenuDrawCtx *ctx) {
         ctx->prims.sprt = sprite_Draw(&draw);
         draw.header++;
     }
-    draw.header = sheets[SELECT_WEAPON_ROW_SHEET_WEAPONS];
+    draw.header = PTR(sheets[SELECT_WEAPON_ROW_SHEET_WEAPONS]);
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, abr), 0);
     AddPrim(g_disp_ot + SELECT_LAYER_NAMES, ctx->prims.mode);
     ctx->prims.mode++;
-    draw.header = sheets[SELECT_WEAPON_ROW_SHEET_NAMES];
+    draw.header = PTR(sheets[SELECT_WEAPON_ROW_SHEET_NAMES]);
     for (side = 0; side < 1 + g_select_extra_players + g_select_extra_weapons;
          side++) {
         fighter = g_select_picks.rec[side].fighter;
@@ -1627,7 +1632,7 @@ void select_WeaponStep(MenuDrawCtx *ctx) {
  * pick back or goes back to the grid. When every side has picked and been
  * shown, the doors stay shut and the weapons come in. */
 static void select_MoveWeaponCursors(MenuDrawCtx *ctx, SpriteDraw *draw) {
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     s32 skipped;
     SpriteCell *cells;
     s16 side;
@@ -1635,8 +1640,8 @@ static void select_MoveWeaponCursors(MenuDrawCtx *ctx, SpriteDraw *draw) {
     s16 extra;
 
     skipped = 0;
-    sheets = g_select_file->cursor_sheets;
-    draw->header = sheets[CURSOR_SHEET_SIDE_1];
+    sheets = PTR(g_select_file->cursor_sheets);
+    draw->header = PTR(sheets[CURSOR_SHEET_SIDE_1]);
     SetDrawMode(ctx->prims.mode, 1, 0,
                 sprite_GetTPage(draw->header, SPRITE_ABR_ADD_QUARTER), 0);
     AddPrim(g_disp_ot + SELECT_LAYER_CURSORS_MODE, ctx->prims.mode);
@@ -1666,7 +1671,7 @@ static void select_MoveWeaponCursors(MenuDrawCtx *ctx, SpriteDraw *draw) {
         RECT *rects;
 
         /* FAKE: weapon_rects + side * 8, in two steps */
-        rects = g_select_file->weapon_rects;
+        rects = PTR(g_select_file->weapon_rects);
         rects += side * WEAPON_ID_COUNT;
         /* the first pad, for the second side, while it picks for both */
         pad = side - extra;
@@ -1726,7 +1731,7 @@ static void select_MoveWeaponCursors(MenuDrawCtx *ctx, SpriteDraw *draw) {
                     }
                     weapon = g_select_picks.rec[side].weapon;
                     pixels = &g_select_file->weapon_pixels[weapon][clan];
-                    LoadImage(&rects[weapon], (u32 *)*pixels);
+                    LoadImage(&rects[weapon], (u32 *)ADDR(*pixels));
                     DrawSync(0);
                 } else if (g_select_pressed & PAD_OF(PADRdown, pad)) {
                     s32 clan;
@@ -1753,7 +1758,7 @@ static void select_MoveWeaponCursors(MenuDrawCtx *ctx, SpriteDraw *draw) {
                     }
                     weapon = g_select_picks.rec[side].weapon;
                     pixels = &g_select_file->weapon_pixels[weapon][clan];
-                    LoadImage(&rects[weapon], (u32 *)*pixels);
+                    LoadImage(&rects[weapon], (u32 *)ADDR(*pixels));
                     DrawSync(0);
                 } else if (g_select_pressed & PAD_OF(PADRup, pad)) {
                     snd_Play(MENU_SOUND_CANCEL, SND_VOLUME_MAX, SND_VOLUME_MAX);
@@ -1789,8 +1794,8 @@ static void select_MoveWeaponCursors(MenuDrawCtx *ctx, SpriteDraw *draw) {
                     g_select_work->weapon_frames[side]--;
                 }
                 /* (the original loads the sheets again here) */
-                sheets = g_select_file->cursor_sheets;
-                draw->header = sheets[CURSOR_SHEET_STAMP];
+                sheets = PTR(g_select_file->cursor_sheets);
+                draw->header = PTR(sheets[CURSOR_SHEET_STAMP]);
                 if (g_select_weapon_stamp[side] < SELECT_STAMP_CELLS) {
                     g_select_weapon_stamp[side]++;
                 }
@@ -1816,9 +1821,9 @@ static void select_MoveWeaponCursors(MenuDrawCtx *ctx, SpriteDraw *draw) {
                     draw->has_color = 0;
                 }
                 if (g_select_extra_weapons != 0 && side != 0) {
-                    draw->header = sheets[side + 1];
+                    draw->header = PTR(sheets[side + 1]);
                 } else {
-                    draw->header = sheets[side];
+                    draw->header = PTR(sheets[side]);
                 }
                 cells = draw->header->cells;
                 draw->table = cells;
@@ -1848,7 +1853,7 @@ static void select_MoveWeaponCursors(MenuDrawCtx *ctx, SpriteDraw *draw) {
                         MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
                     skipped = 2;
                     /* (the original works `rects` out again here) */
-                    rects = g_select_file->weapon_rects;
+                    rects = PTR(g_select_file->weapon_rects);
                     rects += side * WEAPON_ID_COUNT;
                     if (g_select_fighter_flags[g_select_picks.rec[side].hover] &
                         SELECT_FIGHTER_FIRST_CLAN) {
@@ -1858,7 +1863,7 @@ static void select_MoveWeaponCursors(MenuDrawCtx *ctx, SpriteDraw *draw) {
                     }
                     weapon = g_select_picks.rec[side].weapon;
                     pixels = &g_select_file->weapon_pixels[weapon][clan];
-                    LoadImage(&rects[weapon], (u32 *)*pixels);
+                    LoadImage(&rects[weapon], (u32 *)ADDR(*pixels));
                     DrawSync(0);
                 }
             }
@@ -1883,8 +1888,8 @@ static void select_MoveWeaponCursors(MenuDrawCtx *ctx, SpriteDraw *draw) {
         }
     }
     /* each side's clan's emblem at half size, where its cursor is */
-    sheets = g_select_file->fighter_sheets;
-    draw->header = sheets[SELECT_FIGHTER_SHEET_EMBLEMS];
+    sheets = PTR(g_select_file->fighter_sheets);
+    draw->header = PTR(sheets[SELECT_FIGHTER_SHEET_EMBLEMS]);
     draw->scale_x = SPRITE_SCALE_ONE / 2;
     draw->scale_y = SPRITE_SCALE_ONE / 2;
     draw->has_color = 0;
@@ -1954,13 +1959,13 @@ static s32 select_GetClanStage(void) {
 void select_WeaponsOutStep(MenuDrawCtx *ctx) {
     SpriteDraw draw;
     s32 side;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     SpriteSheet *sheet;
     s32 look;
     s16 width;
     s16 height;
 
-    sheets = g_select_file->weapon_sheets;
+    sheets = PTR(g_select_file->weapon_sheets);
     for (side = 0; side < 1 + g_select_extra_players + g_select_extra_weapons;
          side++) {
         if (g_select_picks.rec[side].fighter != SELECT_FIGHTER_FIXED_1 &&
@@ -1970,7 +1975,7 @@ void select_WeaponsOutStep(MenuDrawCtx *ctx) {
             draw.scale_x = SPRITE_SCALE_ONE;
             draw.scale_y = SPRITE_SCALE_ONE;
             draw.has_color = 0;
-            sheet = sheets[g_select_picks.rec[side].weapon];
+            sheet = PTR(sheets[g_select_picks.rec[side].weapon]);
             look = 1;
             if (g_select_mode == FIGHT_MODE_PRACTICE &&
                 !(g_select_settings->practice_round) && side == 1) {
@@ -2054,15 +2059,15 @@ void select_WeaponsOutStep(MenuDrawCtx *ctx) {
 
 /* SELECT_STEP_STAGE_1 to 3. */
 void select_StagePage1Step(MenuDrawCtx *ctx) {
-    select_StageStep(ctx, g_select_file->stage_page1_sheets, 0);
+    select_StageStep(ctx, PTR(g_select_file->stage_page1_sheets), 0);
 }
 
 void select_StagePage2Step(MenuDrawCtx *ctx) {
-    select_StageStep(ctx, g_select_file->stage_page2_sheets, 1);
+    select_StageStep(ctx, PTR(g_select_file->stage_page2_sheets), 1);
 }
 
 void select_StagePage3Step(MenuDrawCtx *ctx) {
-    select_StageStep(ctx, g_select_file->stage_page3_sheets, 2);
+    select_StageStep(ctx, PTR(g_select_file->stage_page3_sheets), 2);
 }
 
 /* A page of stages: six pictures in three rows of two, cut out of one
@@ -2074,12 +2079,13 @@ void select_StagePage3Step(MenuDrawCtx *ctx) {
  * link mode one place of the third page is another stage, and not there to
  * be read. `i` counts the places, then the two scrolls, the rows and the
  * pads. */
-static void select_StageStep(MenuDrawCtx *ctx, SpriteSheet **sheets, s32 page) {
+static void select_StageStep(
+    MenuDrawCtx *ctx, SpriteSheetSlot *sheets, s32 page) {
     SpriteDraw draw;
     u16 rule[4];
     RECT rect;
     u8 *codes;
-    SpriteSheet **cursor_sheets;
+    SpriteSheetSlot *cursor_sheets;
     SpriteCell *cells;
     s32 i;
     s32 col;
@@ -2087,7 +2093,7 @@ static void select_StageStep(MenuDrawCtx *ctx, SpriteSheet **sheets, s32 page) {
     u8 edge;
     u8 stage;
 
-    codes = g_select_file->stage_codes;
+    codes = PTR(g_select_file->stage_codes);
     draw.semi = 0;
     draw.has_color = 0;
     draw.ot_index = SELECT_LAYER_STAGES;
@@ -2108,8 +2114,8 @@ static void select_StageStep(MenuDrawCtx *ctx, SpriteSheet **sheets, s32 page) {
     if ((g_select_door & SELECT_DOOR_STATE) == SELECT_DOOR_OPEN) {
         draw.x = SELECT_STAGE_NAMES_X;
         draw.y = SELECT_STAGE_NAMES_Y;
-        cursor_sheets = g_select_file->cursor_sheets;
-        draw.header = cursor_sheets[CURSOR_SHEET_STAGE_NAMES];
+        cursor_sheets = PTR(g_select_file->cursor_sheets);
+        draw.header = PTR(cursor_sheets[CURSOR_SHEET_STAGE_NAMES]);
         cells = draw.header[1].cells;
         if (!(g_select_stage_row * SELECT_STAGE_PAGE_COLS +
                       g_select_stage_col ==
@@ -2136,7 +2142,7 @@ static void select_StageStep(MenuDrawCtx *ctx, SpriteSheet **sheets, s32 page) {
                 ctx->prims.sprt = sprite_Draw(&draw);
             }
         }
-        draw.header = cursor_sheets[CURSOR_SHEET_STAGE_NAMES];
+        draw.header = PTR(cursor_sheets[CURSOR_SHEET_STAGE_NAMES]);
         SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
         AddPrim(g_disp_ot + draw.ot_index, ctx->prims.mode);
         ctx->prims.mode++;
@@ -2144,7 +2150,7 @@ static void select_StageStep(MenuDrawCtx *ctx, SpriteSheet **sheets, s32 page) {
 
     draw.x = STAGES_WINDOW_X;
     draw.y = STAGES_WINDOW_Y;
-    draw.header = sheets[SELECT_STAGE_SHEET_UNDER];
+    draw.header = PTR(sheets[SELECT_STAGE_SHEET_UNDER]);
     cells = draw.header->cells;
     draw.table = cells;
     draw.sprt_out = ctx->prims.sprt;
@@ -2201,7 +2207,7 @@ static void select_StageStep(MenuDrawCtx *ctx, SpriteSheet **sheets, s32 page) {
     draw.y = 0;
     draw.x = 0;
     draw.ot_index = SELECT_LAYER_NAMES_MODE;
-    draw.header = sheets[SELECT_STAGE_SHEET_PICTURE];
+    draw.header = PTR(sheets[SELECT_STAGE_SHEET_PICTURE]);
     draw.scale_x += STAGES_SCALE_X - SPRITE_SCALE_ONE;
     draw.scale_y += STAGES_SCALE_Y - SPRITE_SCALE_ONE;
     cells = draw.header->cells;
@@ -2253,7 +2259,7 @@ static void select_StageStep(MenuDrawCtx *ctx, SpriteSheet **sheets, s32 page) {
     draw.y = 0;
     draw.x = 0;
     draw.ot_index = SELECT_LAYER_TOP;
-    draw.header = sheets[SELECT_STAGE_SHEET_TITLE];
+    draw.header = PTR(sheets[SELECT_STAGE_SHEET_TITLE]);
     cells = draw.header->cells;
     draw.table = cells;
     draw.ft4_out = ctx->prims.ft4;
@@ -2280,9 +2286,9 @@ static void select_StageStep(MenuDrawCtx *ctx, SpriteSheet **sheets, s32 page) {
                 g_select_mode != FIGHT_MODE_NETWORK ||
                 page != SELECT_STAGE_LINK_PAGE) {
                 draw.header =
-                    (sheets + (i + i))[col + SELECT_STAGE_SHEET_PLACES];
+                    PTR((sheets + (i + i))[col + SELECT_STAGE_SHEET_PLACES]);
             } else {
-                draw.header = sheets[SELECT_STAGE_SHEET_LINK_PLACE];
+                draw.header = PTR(sheets[SELECT_STAGE_SHEET_LINK_PLACE]);
             }
             cells = draw.header->cells;
             draw.table = cells;
@@ -2291,7 +2297,7 @@ static void select_StageStep(MenuDrawCtx *ctx, SpriteSheet **sheets, s32 page) {
         }
     }
     draw.has_color = 0;
-    draw.header = sheets[SELECT_STAGE_SHEET_REST];
+    draw.header = PTR(sheets[SELECT_STAGE_SHEET_REST]);
     cells = draw.header->cells;
     draw.table = cells;
     draw.ft4_out = ctx->prims.ft4;
@@ -2492,20 +2498,20 @@ static void select_DrawBannerLines(MenuDrawCtx *ctx) {
  * pictures. */
 static void select_DrawFrame(MenuDrawCtx *ctx) {
     SpriteDraw draw;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     SpriteCell *cells;
 
     draw.x = 0;
     draw.y = 0;
     draw.scale_x = SPRITE_SCALE_ONE;
     draw.scale_y = SPRITE_SCALE_ONE;
-    sheets = g_select_file->door_sheets;
-    draw.header = sheets[DOOR_SHEET_FRAME_PAGE];
+    sheets = PTR(g_select_file->door_sheets);
+    draw.header = PTR(sheets[DOOR_SHEET_FRAME_PAGE]);
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
     AddPrim(g_disp_ot + SELECT_LAYER_FRAME_MODE, ctx->prims.mode);
     ctx->prims.mode++;
     draw.has_color = 1;
-    draw.header = sheets[DOOR_SHEET_CORNERS];
+    draw.header = PTR(sheets[DOOR_SHEET_CORNERS]);
     cells = draw.header->cells;
     if (g_select_step < SELECT_STEP_STAGE_1) {
         draw.semi = 1;
@@ -2543,7 +2549,7 @@ static void select_DrawFrame(MenuDrawCtx *ctx) {
     draw.x = 0;
     draw.ot_index = SELECT_LAYER_TITLE;
     draw.semi = 0;
-    draw.header = sheets[DOOR_SHEET_TITLE];
+    draw.header = PTR(sheets[DOOR_SHEET_TITLE]);
     cells = draw.header->cells;
     draw.table = cells;
     draw.sprt_out = ctx->prims.sprt;
@@ -2555,8 +2561,9 @@ static void select_DrawFrame(MenuDrawCtx *ctx) {
     if (g_select_step < SELECT_STEP_WEAPONS_IN) {
         draw.ot_index = SELECT_LAYER_TITLE;
         draw.semi = 1;
-        draw.header = sheets[DOOR_SHEET_PICKING +
-                             g_select_work->frames % DOOR_SHEET_PICKING_COUNT];
+        draw.header =
+            PTR(sheets[DOOR_SHEET_PICKING +
+                       g_select_work->frames % DOOR_SHEET_PICKING_COUNT]);
         cells = draw.header->cells;
         draw.table = cells;
         draw.sprt_out = ctx->prims.sprt;
@@ -2589,7 +2596,7 @@ static RECT g_select_portrait_rect = {896, 384, 64, 64};
  * that are wholly off the screen. Returns where the next sprite would go. */
 s32 sprite_Draw(SpriteDraw *draw) {
     SpriteSheet *sheet = draw->header;
-    SPRT *sprt = (SPRT *)draw->sprt_out;
+    SPRT *sprt = (SPRT *)ADDR(draw->sprt_out);
     SpriteCell *cell;
     s32 clut;
     s16 i;
@@ -2675,7 +2682,7 @@ s32 sprite_DrawScaled(SpriteDraw *draw, s32 mode) {
         du0 = 0;
         dv0 = 0;
     }
-    quad = (POLY_FT4 *)draw->ft4_out;
+    quad = (POLY_FT4 *)ADDR(draw->ft4_out);
     for (i = 0; i < sheet->count; i++) {
         if (mode == SPRITE_QUAD_MIRROR_X) {
             du0 = cell->w - 1;
@@ -2802,7 +2809,7 @@ s32 mode;
     center_y = (top + bottom) / 2;
     center_x = (left + right) / 2;
     cell = draw->table;
-    quad = (POLY_FT4 *)draw->ft4_out;
+    quad = (POLY_FT4 *)ADDR(draw->ft4_out);
     du0 = 0;
     dv0 = 0;
     u_base = sheet->ubase;

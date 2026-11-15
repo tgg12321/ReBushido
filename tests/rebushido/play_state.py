@@ -9,6 +9,11 @@ import re
 import support
 
 STATE = os.path.join(support.ROOT, 'tests', 'play', 'state.toml')
+# As a 32-bit program only: the offsets of state.toml are the PlayStation's,
+# which a 32-bit program's are too. A 64-bit program lays Fighter out
+# otherwise (it has pointers), and the play tests find its members by the
+# layout the port's build writes (tools/port_layout.py, console_runs).
+BITS = (32,)
 
 # The name in state.toml -> the member play_state.c prints. The second
 # fighter's are the first's, one Fighter further.

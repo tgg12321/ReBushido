@@ -73,7 +73,7 @@ void test_Main(void) {
         CHECK_EQ(data.checksums[i], test_ByteSum(&record, sizeof(record)));
     }
     for (i = 0; i < SAVE_PATCH_COUNT; i++) {
-        CHECK(data.patch_addrs[i] == NULL);
+        CHECK(PTR(data.patch_addrs[i]) == NULL);
         CHECK_EQ(data.patch_values[i], 0);
     }
     CHECK_EQ(data.unused, 0);
@@ -114,9 +114,9 @@ void test_Main(void) {
     {
         u16 outside = 0x1111;
 
-        data.patch_addrs[0] = &ram[4];
+        SET_PTR(data.patch_addrs[0], &ram[4]);
         data.patch_values[0] = 0xBEEF;
-        data.patch_addrs[1] = &outside;
+        SET_PTR(data.patch_addrs[1], &outside);
         data.patch_values[1] = 0x2222;
         CHECK_EQ(memcard_UnpackSaveData(&data), 1);
         CHECK_EQ(ram[4], 0xBEEF);

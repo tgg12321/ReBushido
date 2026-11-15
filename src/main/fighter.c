@@ -69,12 +69,15 @@ static void motion_LoadCommonFile(void) {
     cdrom_WaitIdle();
     file = g_motion_common_file;
     /* four words of offsets after the first, then the moves */
-    g_motion_common_sections.moves = (u16 *)(file + 0x14);
-    g_motion_common_sections.entries = (u16 *)(file + *(s32 *)(file + 4));
+    g_motion_common_sections.moves = (u16 *)ADDR(file + 0x14);
+    g_motion_common_sections.entries =
+        (u16 *)ADDR(file + *(s32 *)ADDR(file + 4));
     /* the third word */
-    g_motion_common_sections.metadata = (u8 *)(file + *(s32 *)(file + 8));
+    g_motion_common_sections.metadata =
+        (u8 *)ADDR(file + *(s32 *)ADDR(file + 8));
     /* the fifth word; nothing reads the fourth */
-    g_motion_common_sections.stream = (u32 *)(file + *(s32 *)(file + 0x10));
+    g_motion_common_sections.stream =
+        (u32 *)ADDR(file + *(s32 *)ADDR(file + 0x10));
     g_motion_common_loaded = 1;
 }
 
@@ -166,21 +169,21 @@ void motion_LoadFighterFiles(
                 (s32)g_motion_fighter_files[i]);
             cdrom_WaitIdle();
             /* the moves follow the file's rows of per-stance moves */
-            g_motion_fighter_sections[i].moves =
-                (u16 *)((s32)g_motion_fighter_files[i] + 0x6C +
-                        (g_motion_fighter_files[i]->stance_move_rows - 1) * 6);
+            g_motion_fighter_sections[i].moves = (u16 *)ADDR(
+                (s32)g_motion_fighter_files[i] + 0x6C +
+                (g_motion_fighter_files[i]->stance_move_rows - 1) * 6);
             g_motion_fighter_sections[i].entries =
-                (u16 *)((s32)g_motion_fighter_files[i] +
-                        g_motion_fighter_files[i]->section_offsets[0]);
+                (u16 *)ADDR((s32)g_motion_fighter_files[i] +
+                            g_motion_fighter_files[i]->section_offsets[0]);
             g_motion_fighter_sections[i].metadata =
-                (u8 *)((s32)g_motion_fighter_files[i] +
-                       g_motion_fighter_files[i]->section_offsets[1]);
+                (u8 *)ADDR((s32)g_motion_fighter_files[i] +
+                           g_motion_fighter_files[i]->section_offsets[1]);
             g_motion_fighter_sections[i].cpu_scripts =
-                (u16 *)((s32)g_motion_fighter_files[i] +
-                        g_motion_fighter_files[i]->section_offsets[2]);
+                (u16 *)ADDR((s32)g_motion_fighter_files[i] +
+                            g_motion_fighter_files[i]->section_offsets[2]);
             g_motion_fighter_sections[i].stream =
-                (u32 *)((s32)g_motion_fighter_files[i] +
-                        g_motion_fighter_files[i]->section_offsets[3]);
+                (u32 *)ADDR((s32)g_motion_fighter_files[i] +
+                            g_motion_fighter_files[i]->section_offsets[3]);
             g_motion_loaded_sets[i] = sets_to_load[i];
         }
     }
@@ -2737,7 +2740,7 @@ void fighter_Update(s32 fighter_index, PadState *pad) {
          (fighter->move_kind == MOVE_KIND_PAIRED &&
           fighter_index != g_fight_paired_move_initiator &&
           fighter->paired_hit_frame == fighter->move_frame))) {
-        MATRIX **bone_matrices = model_GetBoneMatrices(fighter_index);
+        MatrixSlot *bone_matrices = model_GetBoneMatrices(fighter_index);
         if (g_fight_mode != FIGHT_MODE_STORY ||
             g_fighter_clans[g_fighters[0].character] == 0 ||
             g_story_chapter != 1 || fighter_index != g_story_chapter) {
@@ -2749,7 +2752,7 @@ void fighter_Update(s32 fighter_index, PadState *pad) {
                 fighter,
                 g_object_dropped_weapon_kinds
                     [g_fighter_clans[fighter->character]][fighter->weapon_id],
-                (Vec3 *)bone_matrices[FIGHTER_BONE_WEAPON_HAND]->t);
+                (Vec3 *)PTR(bone_matrices[FIGHTER_BONE_WEAPON_HAND])->t);
         }
         fighter->is_defeated = 1;
         if (g_fight_winner == FIGHT_NOBODY) {

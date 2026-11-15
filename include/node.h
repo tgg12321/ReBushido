@@ -10,6 +10,10 @@
 #include "common.h"
 #include <psxsdk/libgte.h>
 
+/* A matrix's address in four bytes (PTR32, common.h): an entry of a
+ * model's lists of its bones' matrices, which the renderer walks. */
+typedef PTR32(MATRIX *) MatrixSlot;
+
 /* How a node is drawn (SceneNode.kind). */
 enum NodeKind {
     NODE_KIND_ROTATED = 0,   /* a mesh, lit by the node's light setup */
@@ -57,18 +61,18 @@ enum RotationOrder {
  * the matrix built from them, `world` the result of applying the parent's
  * world matrix to it (node_UpdateWorldMatrix). */
 typedef struct SceneNode {
-    u8 kind;                  /* +0x00 enum NodeKind */
-    u8 draw_flags;            /* +0x01 NODE_DRAW_... */
-    s16 mesh;                 /* +0x02 */
-    s16 mesh_block;           /* +0x04 */
-    s16 matrix_state;         /* +0x06 enum NodeMatrixState */
-    s16 rotation_order;       /* +0x08 enum RotationOrder */
-    s16 light_setup_index;    /* +0x0A which LightSetup lights it (light.h) */
-    struct SceneNode *parent; /* +0x0C */
-    SVECTOR rot;              /* +0x10 */
-    MATRIX world;             /* +0x18 */
-    MATRIX local;             /* +0x38 */
-} SceneNode;                  /* 0x58 bytes */
+    u8 kind;               /* +0x00 enum NodeKind */
+    u8 draw_flags;         /* +0x01 NODE_DRAW_... */
+    s16 mesh;              /* +0x02 */
+    s16 mesh_block;        /* +0x04 */
+    s16 matrix_state;      /* +0x06 enum NodeMatrixState */
+    s16 rotation_order;    /* +0x08 enum RotationOrder */
+    s16 light_setup_index; /* +0x0A which LightSetup lights it (light.h) */
+    PTR32(struct SceneNode *) parent; /* +0x0C */
+    SVECTOR rot;                      /* +0x10 */
+    MATRIX world;                     /* +0x18 */
+    MATRIX local;                     /* +0x38 */
+} SceneNode;                          /* 0x58 bytes */
 
 /* A node that is nobody's. Every node in the game is 0x68 bytes: the scene
  * node, then sixteen that are its owner's (a model's ModelNode, the stage's

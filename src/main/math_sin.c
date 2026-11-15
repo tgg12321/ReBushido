@@ -30,7 +30,7 @@ static void math_LerpFramePointPolar(s16 *first_position, s16 *second_position,
     second.vz = -second.vz;
 
     LoadAverage12(&first, &second, ONE - interp_weight, interp_weight,
-                  (VECTOR *)out_addr);
+                  (VECTOR *)ADDR(out_addr));
 }
 
 /* A point between two of a motion frame's points: `weight` of the
@@ -48,7 +48,8 @@ void math_LerpFramePoint(
     second_vector++;
     second.vy = -second_vector[0];
     second.vz = -second_vector[1];
-    LoadAverage12(&first, &second, ONE - weight, weight, (VECTOR *)out_addr);
+    LoadAverage12(
+        &first, &second, ONE - weight, weight, (VECTOR *)ADDR(out_addr));
 }
 
 /* The sine of each of the ANGLE_TURN (4096) angles in a turn, 1.0 being ONE

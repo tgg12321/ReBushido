@@ -41,15 +41,15 @@ typedef struct {
  *   video memory over the first when its turn comes. */
 typedef struct {
     SpriteFileHead head;
-    SpriteCell *strip_cells;
-    SpriteSheet **picture_1_sheets;
-    SpriteSheet **picture_2_sheets;
-    SpriteSheet **left_sheets;
-    SpriteSheet **right_sheets;
-    SpriteSheet **line_sheets;
-    NarrationLine *lines;
-    s16 *scene_starts;
-    s16 *scene_ends;
+    PTR32(SpriteCell *) strip_cells;
+    SpriteListSlot picture_1_sheets;
+    SpriteListSlot picture_2_sheets;
+    SpriteListSlot left_sheets;
+    SpriteListSlot right_sheets;
+    SpriteListSlot line_sheets;
+    PTR32(NarrationLine *) lines;
+    PTR32(s16 *) scene_starts;
+    PTR32(s16 *) scene_ends;
     s32 picture_2_pixels[NARRATION_STRIPS];
 } NarrationFile;
 

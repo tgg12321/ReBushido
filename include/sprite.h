@@ -52,6 +52,12 @@ typedef struct {
     SpriteCell cells[0];
 } SpriteSheet;
 
+/* A sheet's address as a resource file keeps it: an entry of one of its
+ * lists of sheets, four bytes (PTR32, common.h). */
+typedef PTR32(SpriteSheet *) SpriteSheetSlot;
+/* ... and the address of such a list, as a file's head keeps it. */
+typedef PTR32(SpriteSheetSlot *) SpriteListSlot;
+
 /* A request to draw a sheet. The primitives are built where sprt_out or
  * ft4_out points (which of the two depends on the function) and linked into
  * entry ot_index of the display's ordering table. */
@@ -128,7 +134,7 @@ extern s32 sprite_GetTPage(SpriteSheet *sheet, s32 abr_bits);
  * tables, in colour and in grayscale. What follows the head is each file's
  * own, mostly lists of sheets. */
 typedef struct {
-    struct SoundVab *sounds;
+    PTR32(struct SoundVab *) sounds;
     s32 free_ram_start;
     s32 image;
     s32 bottom_strip;
@@ -140,14 +146,14 @@ typedef struct {
  * are in the opposite order to PrimCursors. */
 typedef struct {
     s32 ft4;
-    void *f4;
-    void *g4;
-    void *tile;
+    PTR32(void *) f4;
+    PTR32(void *) g4;
+    PTR32(void *) tile;
     s32 sprt;
-    void *mode;
-    void *area;
-    void *offset;
-    void *tail_region;
+    PTR32(void *) mode;
+    PTR32(void *) area;
+    PTR32(void *) offset;
+    PTR32(void *) tail_region;
     /* two more words, which sprite_InitPools leaves alone and no code
      * reads */
     s32 unk_24;

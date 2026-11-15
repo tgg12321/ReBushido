@@ -75,7 +75,9 @@ static s16 *g_wave_quads; /* the surf's quads, in the stage's arena block */
 static s32 g_wave_sample_column;
 static s32 g_wave_sample_weight;
 
-void wave_SetBuffer(s32 buffer_addr) { g_wave_quads = (s16 *)buffer_addr; }
+void wave_SetBuffer(s32 buffer_addr) {
+    g_wave_quads = (s16 *)ADDR(buffer_addr);
+}
 
 /* Builds the quads of the sheet in the buffer, in the form the renderer
  * draws meshes from: twelve halfwords a quad.
@@ -205,7 +207,7 @@ s32 wave_Init(void) {
         node->rot.vy = 0;
         node->rot.vz = 0;
         node->rotation_order = ROTATION_ORDER_ZYX;
-        node->parent = NULL;
+        SET_PTR(node->parent, NULL);
         node->matrix_state = NODE_MATRIX_REBUILD;
         node_UpdateWorldMatrix(node);
     }

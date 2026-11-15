@@ -16,7 +16,7 @@
 /* One fighter in one recorded frame: enough of the fighter record to pose and
  * draw it again. */
 typedef struct ReplayFighterFrame {
-    MoveScript *cur_move;
+    PTR32(MoveScript *) cur_move;
     s16 pos_x;
     s16 pos_y;
     s16 pos_z;

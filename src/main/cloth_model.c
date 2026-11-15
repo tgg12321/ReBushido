@@ -68,7 +68,7 @@ void cloth_SendSceneColliders(void) {
  * pieces. */
 void cloth_UpdateModel(Model *model) {
     ModelCloth *cloth;
-    cloth = model->cloth;
+    cloth = PTR(model->cloth);
     if (!cloth) {
         return;
     }
@@ -96,7 +96,7 @@ static void cloth_MoveColliders(ModelCloth *cloth) {
     for (i = 0; i < cloth->count; i++) {
         ClothBoneColliders *colliders = &cloth->pieces[i].colliders;
         for (j = 0; j < colliders->count; j++) {
-            MATRIX *matrix = &colliders->bones[j]->node.world;
+            MATRIX *matrix = &PTR(colliders->bones[j])->node.world;
             math_Transform(matrix, &colliders->local_foci[j][0],
                            &colliders->world.foci[j][0]);
             math_Transform(matrix, &colliders->local_foci[j][1],
@@ -123,14 +123,14 @@ void cloth_SetupModel(Model *model, s32 resize_data) {
     ModelNode *node;
     s32 mesh;
 
-    cloth = model->cloth;
+    cloth = PTR(model->cloth);
     if (!cloth) {
         return;
     }
-    params = (s16 *)model->cloth_params;
+    params = (s16 *)ADDR(model->cloth_params);
     data = cloth->data;
     if (*params == CLOTH_FILE_END) {
-        model->cloth = NULL;
+        SET_PTR(model->cloth, NULL);
         return;
     }
     cloth->count = 0;
@@ -143,9 +143,9 @@ void cloth_SetupModel(Model *model, s32 resize_data) {
                 sys_Trap();
             }
             piece = &cloth->pieces[cloth->count];
-            node = model->mesh_nodes[mesh];
-            piece->data = data;
-            piece->node = node;
+            node = PTR(model->mesh_nodes[mesh]);
+            SET_PTR(piece->data, data);
+            SET_PTR(piece->node, node);
             data = cloth_CreatePiece(piece, params, data);
             cloth->updates[cloth->count] = piece->update;
             node->node.kind = NODE_KIND_CLOTH;
@@ -166,7 +166,7 @@ void cloth_SetupModel(Model *model, s32 resize_data) {
         }
     }
     if (resize_data) {
-        resource_ResizeModelData(model->slot, data - (u8 *)model->data);
+        resource_ResizeModelData(model->slot, data - (u8 *)ADDR(model->data));
     }
 }
 
@@ -193,9 +193,9 @@ static u8 *cloth_CreatePiece(ClothPiece *piece, s16 *params, u8 *data) {
     s16 *face;
     u16 *dst;
 
-    node = piece->node;
+    node = PTR(piece->node);
     dst = (u16 *)data;
-    src = (u16 *)g_reloc_tables[node->node.mesh_block][node->node.mesh];
+    src = (u16 *)ADDR(g_reloc_tables[node->node.mesh_block][node->node.mesh]);
     count = *src;
     desc.count = count;
     desc.vertices = (SVECTOR *)data;
@@ -295,14 +295,14 @@ static u8 *cloth_CreatePiece(ClothPiece *piece, s16 *params, u8 *data) {
     /* -1 if every cloth is in use, which nothing here looks for: the
      * original's behaviour */
     piece->cloth = cloth_Create(&desc);
-    node->cloth_points = desc.buffer;
+    SET_PTR(node->cloth_points, desc.buffer);
     piece->colliders.count = 0;
     piece->colliders.world.count = 0;
     data = ((u32)data & 3) ? data + 2 : data;
     piece->update.cloth = piece->cloth;
-    piece->update.matrix = &node->node.world;
-    piece->update.buffer = node->cloth_points;
-    piece->update.colliders = &piece->colliders.world;
+    SET_PTR(piece->update.matrix, &node->node.world);
+    SET_PTR(piece->update.buffer, PTR(node->cloth_points));
+    SET_PTR(piece->update.colliders, &piece->colliders.world);
     piece->update.snap = 0;
     piece->update.unk3 = 0;
     return data;
@@ -343,7 +343,7 @@ static void cloth_ReadColliders(Model *model, ClothPiece *piece, s16 *params) {
     if (bone != CLOTH_FILE_NEXT) {
         do {
             params++;
-            colliders->bones[count] = &model->bones[bone + 1];
+            SET_PTR(colliders->bones[count], &model->bones[bone + 1]);
             colliders->local_foci[count][0].vx = *params++;
             colliders->local_foci[count][0].vy = *params++;
             colliders->local_foci[count][0].vz = *params++;
@@ -368,7 +368,7 @@ static s32 cloth_AlignUp4(s32 value) {
 }
 
 void cloth_RequestRebuild(Model *model) {
-    ModelCloth *cloth = model->cloth;
+    ModelCloth *cloth = PTR(model->cloth);
     if (cloth) {
         cloth->rebuild_request = 1;
     }
@@ -377,7 +377,7 @@ void cloth_RequestRebuild(Model *model) {
 void cloth_RequestSnap(s32 slot) {
     Model *model = model_Get(slot);
     if (model) {
-        ModelCloth *cloth = model->cloth;
+        ModelCloth *cloth = PTR(model->cloth);
         if (cloth) {
             cloth->snap_request = 1;
         }
@@ -401,7 +401,7 @@ static void cloth_ClearSnap(ModelCloth *cloth) {
 }
 
 void cloth_SetGround(Model *model, s32 ground_y) {
-    ModelCloth *cloth = model->cloth;
+    ModelCloth *cloth = PTR(model->cloth);
     if (cloth) {
         s32 i;
         for (i = 0; i < cloth->count; i++) {
@@ -413,7 +413,7 @@ void cloth_SetGround(Model *model, s32 ground_y) {
 void cloth_FreeModel(Model *model) {
     ModelCloth *cloth;
     s32 i;
-    cloth = model->cloth;
+    cloth = PTR(model->cloth);
     if (cloth) {
         for (i = 0; i < cloth->count; i++) {
             cloth_Free(cloth->pieces[i].cloth);
@@ -431,10 +431,10 @@ void cloth_FreeModelAt(s32 slot) {
 /* The pieces hold addresses inside the data that moved, so they are made
  * again on the next update. */
 void cloth_RebaseModel(Model *model, s32 delta) {
-    ModelCloth *cloth = model->cloth;
+    ModelCloth *cloth = PTR(model->cloth);
     if (cloth) {
         cloth = (ModelCloth *)((u8 *)cloth + delta);
-        model->cloth = cloth;
+        SET_PTR(model->cloth, cloth);
         model->cloth_params = model->cloth_params + delta;
         cloth->rebuild_request = 1;
     }

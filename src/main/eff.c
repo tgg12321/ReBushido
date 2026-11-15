@@ -338,22 +338,22 @@ static void eff_Start(void) {
     s32 alive;
 
     g_eff_stage[g_eff_request->effect.id] = 0;
-    g_eff_request->position[0] = g_eff_request->position_src[0];
-    g_eff_request->position[1] = g_eff_request->position_src[1];
-    g_eff_request->position[2] = g_eff_request->position_src[2];
+    g_eff_request->position[0] = PTR(g_eff_request->position_src)[0];
+    g_eff_request->position[1] = PTR(g_eff_request->position_src)[1];
+    g_eff_request->position[2] = PTR(g_eff_request->position_src)[2];
 #if RB_PORT
     /* (An effect that is given no direction, as a hit's flash is, reads
      * one all the same: wherever the request's last one was, and before
      * any, at address 0, where the console has its kernel's memory. The
      * port has no memory there, and reads zeroes.) */
-    if (g_eff_request->direction_src == NULL) {
-        g_eff_request->direction_src = (s16 *)g_port_low_memory;
+    if (PTR(g_eff_request->direction_src) == NULL) {
+        SET_PTR(g_eff_request->direction_src, (s16 *)g_port_low_memory);
     }
 #endif
-    g_eff_request->vector[0] = g_eff_request->direction_src[0];
-    g_eff_request->vector[1] = g_eff_request->direction_src[1];
+    g_eff_request->vector[0] = PTR(g_eff_request->direction_src)[0];
+    g_eff_request->vector[1] = PTR(g_eff_request->direction_src)[1];
     g_eff_direction = g_eff_request->vector;
-    g_eff_request->vector[2] = g_eff_request->direction_src[2];
+    g_eff_request->vector[2] = PTR(g_eff_request->direction_src)[2];
     g_eff_position = g_eff_request->position;
 
 #if RB_PORT
@@ -364,7 +364,7 @@ static void eff_Start(void) {
                  g_eff_handlers[g_eff_first_handler[g_eff_request->effect.id] +
                                 g_eff_stage[g_eff_request->effect.id]])();
 #endif
-    *g_eff_request->alive_dest = alive;
+    *PTR(g_eff_request->alive_dest) = alive;
 
     if (g_eff_request->effect.word & EFF_LIT) {
         g_eff_light_frames = EFF_LIGHT_FRAMES;
@@ -382,14 +382,14 @@ static void eff_Step(void) {
 
     request = g_eff_request;
     angles = g_eff_view_angles;
-    angles[0] = request->view_angles_src[0];
-    angles[1] = request->view_angles_src[1];
-    angles[2] = request->view_angles_src[2];
+    angles[0] = PTR(request->view_angles_src)[0];
+    angles[1] = PTR(request->view_angles_src)[1];
+    angles[2] = PTR(request->view_angles_src)[2];
 
     origin = g_eff_view_origin;
-    origin[0] = request->view_position_src[0];
-    origin[1] = request->view_position_src[1];
-    origin[2] = request->view_position_src[2];
+    origin[0] = PTR(request->view_position_src)[0];
+    origin[1] = PTR(request->view_position_src)[1];
+    origin[2] = PTR(request->view_position_src)[2];
     eff_SetViewMatrix(angles, origin, g_eff_view_matrix);
 
     effect = g_eff_request->effect.id;
@@ -400,7 +400,7 @@ static void eff_Step(void) {
                                         g_eff_stage[effect]])();
 #endif
 
-    *g_eff_request->alive_dest = alive;
+    *PTR(g_eff_request->alive_dest) = alive;
 }
 
 /* Ends every effect at once. */
@@ -456,7 +456,7 @@ s32 eff_LoadTextures(s32 buffer, s32 quads) {
     rect.w = EFF_VRAM_WIDTH;
     rect.h = EFF_VRAM_HEIGHT;
     DrawSync(0);
-    LoadImage(&rect, (u32 *)buf);
+    LoadImage(&rect, (u32 *)ADDR(buf));
     DrawSync(0);
     rect.w = EFF_VRAM_MODE_WIDTH;
     rect.y = EFF_VRAM_HEIGHT;
@@ -467,8 +467,8 @@ s32 eff_LoadTextures(s32 buffer, s32 quads) {
     eff_Reset();
     srand(rand());
     second_buffer = quads + EFF_PRIM_COUNT * sizeof(POLY_FT4);
-    g_eff_first_prim_buffer = (POLY_FT4 *)quads;
-    g_eff_second_prim_buffer = (POLY_FT4 *)second_buffer;
+    g_eff_first_prim_buffer = (POLY_FT4 *)ADDR(quads);
+    g_eff_second_prim_buffer = (POLY_FT4 *)ADDR(second_buffer);
     return second_buffer + EFF_PRIM_COUNT * sizeof(POLY_FT4);
 }
 
@@ -513,8 +513,8 @@ static void eff_BindScratch(s16 *view_angles, s32 *view_position) {
     g_eff_flash_rate = &EFF_SPAD->flash_rate;
     g_eff_clut_tex = &EFF_SPAD->first_clut_tex;
     g_eff_work = &EFF_SPAD->work;
-    EFF_SPAD->request.view_angles_src = view_angles;
-    EFF_SPAD->request.view_position_src = view_position;
+    SET_PTR(EFF_SPAD->request.view_angles_src, view_angles);
+    SET_PTR(EFF_SPAD->request.view_position_src, view_position);
 }
 
 /* A frame of the effects: runs the handler of every one that is alive, seen
@@ -525,7 +525,7 @@ void eff_Update(s16 *view_angles, s32 *view_position) {
     s32 effect;
     eff_BindScratch(view_angles, view_position);
     for (effect = 0; effect < EFF_COUNT; effect++) {
-        g_eff_request->alive_dest = &g_eff_alive[effect];
+        SET_PTR(g_eff_request->alive_dest, &g_eff_alive[effect]);
         if (g_eff_alive[effect]) {
             g_eff_request->effect.word = effect;
             eff_Step();
@@ -562,9 +562,9 @@ void eff_StartMuzzleFlash(s32 *position, s16 *src_angles) {
     angles[1] = src_angles[1];
     g_eff_request = &g_eff_start_request;
     angles[2] = src_angles[2];
-    g_eff_start_request.direction_src = angles;
-    g_eff_start_request.position_src = position;
-    g_eff_start_request.alive_dest = &g_eff_alive[EFF_MUZZLE_FLASH];
+    SET_PTR(g_eff_start_request.direction_src, angles);
+    SET_PTR(g_eff_start_request.position_src, position);
+    SET_PTR(g_eff_start_request.alive_dest, &g_eff_alive[EFF_MUZZLE_FLASH]);
     g_eff_start_request.effect.word = EFF_MUZZLE_FLASH | EFF_NEW | EFF_LIT;
     eff_Start();
     g_eff_light_position.vx = position[0];
@@ -580,16 +580,16 @@ void eff_StartMuzzleFlash(s32 *position, s16 *src_angles) {
 /* A blade goes into a body. */
 void eff_StartHitFlash(s32 *position) {
     g_eff_request = &g_eff_start_request;
-    g_eff_start_request.position_src = position;
+    SET_PTR(g_eff_start_request.position_src, position);
     if (g_eff_alive[EFF_HIT_FLASH_0] && g_eff_alive[EFF_HIT_FLASH_1]) {
         g_eff_alive[EFF_HIT_FLASH_1] = 0;
         g_eff_alive[EFF_HIT_FLASH_0] = 0;
     }
     if (!g_eff_alive[EFF_HIT_FLASH_0]) {
-        g_eff_request->alive_dest = &g_eff_alive[EFF_HIT_FLASH_0];
+        SET_PTR(g_eff_request->alive_dest, &g_eff_alive[EFF_HIT_FLASH_0]);
         g_eff_request->effect.word = EFF_HIT_FLASH_0 | EFF_NEW | EFF_LIT;
     } else if (!g_eff_alive[EFF_HIT_FLASH_1]) {
-        g_eff_start_request.alive_dest = &g_eff_alive[EFF_HIT_FLASH_1];
+        SET_PTR(g_eff_start_request.alive_dest, &g_eff_alive[EFF_HIT_FLASH_1]);
         g_eff_start_request.effect.word = EFF_HIT_FLASH_1 | EFF_NEW | EFF_LIT;
     }
     eff_Start();
@@ -602,8 +602,8 @@ void eff_StartHitFlash(s32 *position) {
 /* Locked blades grind: a flash, and the frames to wait before the next. */
 s32 eff_StartLockFlash(s32 *position) {
     g_eff_request = &g_eff_start_request;
-    g_eff_start_request.position_src = position;
-    g_eff_start_request.alive_dest = &g_eff_alive[EFF_LOCK_FLASH];
+    SET_PTR(g_eff_start_request.position_src, position);
+    SET_PTR(g_eff_start_request.alive_dest, &g_eff_alive[EFF_LOCK_FLASH]);
     g_eff_start_request.effect.word = EFF_LOCK_FLASH | EFF_NEW | EFF_LIT;
     eff_Start();
     g_eff_light_position.vx = position[0];
@@ -617,8 +617,8 @@ s32 eff_StartLockFlash(s32 *position) {
  * last. */
 s32 eff_StartLockFlashSlow(s32 *position) {
     g_eff_request = &g_eff_start_request;
-    g_eff_start_request.position_src = position;
-    g_eff_start_request.alive_dest = &g_eff_alive[EFF_LOCK_FLASH_RATED];
+    SET_PTR(g_eff_start_request.position_src, position);
+    SET_PTR(g_eff_start_request.alive_dest, &g_eff_alive[EFF_LOCK_FLASH_RATED]);
     g_eff_start_request.effect.word =
         EFF_LOCK_FLASH_RATED | EFF_NEW | EFF_LIT | EFF_RATE(LOCK_FLASH_SLOW);
     eff_Start();
@@ -632,8 +632,8 @@ s32 eff_StartLockFlashSlow(s32 *position) {
 /* The same, played twice as fast. */
 s32 eff_StartLockFlashMedium(s32 *position) {
     g_eff_request = &g_eff_start_request;
-    g_eff_start_request.position_src = position;
-    g_eff_start_request.alive_dest = &g_eff_alive[EFF_LOCK_FLASH_RATED];
+    SET_PTR(g_eff_start_request.position_src, position);
+    SET_PTR(g_eff_start_request.alive_dest, &g_eff_alive[EFF_LOCK_FLASH_RATED]);
     g_eff_start_request.effect.word =
         EFF_LOCK_FLASH_RATED | EFF_NEW | EFF_LIT | EFF_RATE(LOCK_FLASH_MEDIUM);
     eff_Start();
@@ -647,8 +647,8 @@ s32 eff_StartLockFlashMedium(s32 *position) {
 /* And three times as fast. */
 s32 eff_StartLockFlashFast(s32 *position) {
     g_eff_request = &g_eff_start_request;
-    g_eff_start_request.position_src = position;
-    g_eff_start_request.alive_dest = &g_eff_alive[EFF_LOCK_FLASH_RATED];
+    SET_PTR(g_eff_start_request.position_src, position);
+    SET_PTR(g_eff_start_request.alive_dest, &g_eff_alive[EFF_LOCK_FLASH_RATED]);
     g_eff_start_request.effect.word =
         EFF_LOCK_FLASH_RATED | EFF_NEW | EFF_LIT | EFF_RATE(LOCK_FLASH_FAST);
     eff_Start();
@@ -662,16 +662,17 @@ s32 eff_StartLockFlashFast(s32 *position) {
 /* Two weapons touch. */
 void eff_StartClashSpark(s32 *position) {
     g_eff_request = &g_eff_start_request;
-    g_eff_start_request.position_src = position;
+    SET_PTR(g_eff_start_request.position_src, position);
     if (g_eff_alive[EFF_CLASH_SPARK_0] && g_eff_alive[EFF_CLASH_SPARK_1]) {
         g_eff_alive[EFF_CLASH_SPARK_1] = 0;
         g_eff_alive[EFF_CLASH_SPARK_0] = 0;
     }
     if (!g_eff_alive[EFF_CLASH_SPARK_0]) {
-        g_eff_request->alive_dest = &g_eff_alive[EFF_CLASH_SPARK_0];
+        SET_PTR(g_eff_request->alive_dest, &g_eff_alive[EFF_CLASH_SPARK_0]);
         g_eff_request->effect.word = EFF_CLASH_SPARK_0 | EFF_NEW | EFF_LIT;
     } else if (!g_eff_alive[EFF_CLASH_SPARK_1]) {
-        g_eff_start_request.alive_dest = &g_eff_alive[EFF_CLASH_SPARK_1];
+        SET_PTR(
+            g_eff_start_request.alive_dest, &g_eff_alive[EFF_CLASH_SPARK_1]);
         g_eff_start_request.effect.word = EFF_CLASH_SPARK_1 | EFF_NEW | EFF_LIT;
     }
     eff_Start();
@@ -684,17 +685,19 @@ void eff_StartClashSpark(s32 *position) {
 /* Two attacks meet: the fighter's streak, which replaces the one it had. */
 void eff_StartClashStreak(s32 *position, s32 fighter) {
     g_eff_request = &g_eff_start_request;
-    g_eff_start_request.position_src = position;
+    SET_PTR(g_eff_start_request.position_src, position);
     switch (fighter) {
     case 0:
         g_eff_alive[EFF_CLASH_STREAK_0] = 0;
-        g_eff_start_request.alive_dest = &g_eff_alive[EFF_CLASH_STREAK_0];
+        SET_PTR(
+            g_eff_start_request.alive_dest, &g_eff_alive[EFF_CLASH_STREAK_0]);
         g_eff_start_request.effect.word =
             EFF_CLASH_STREAK_0 | EFF_NEW | EFF_LIT;
         break;
     case 1:
         g_eff_alive[EFF_CLASH_STREAK_1] = 0;
-        g_eff_start_request.alive_dest = &g_eff_alive[EFF_CLASH_STREAK_1];
+        SET_PTR(
+            g_eff_start_request.alive_dest, &g_eff_alive[EFF_CLASH_STREAK_1]);
         g_eff_start_request.effect.word =
             EFF_CLASH_STREAK_1 | EFF_NEW | EFF_LIT;
         break;
@@ -709,17 +712,19 @@ void eff_StartClashStreak(s32 *position, s32 fighter) {
 /* Two attacks of the same kind meet: the fighter's streak, likewise. */
 void eff_StartMatchedStreak(s32 *position, s32 fighter) {
     g_eff_request = &g_eff_start_request;
-    g_eff_start_request.position_src = position;
+    SET_PTR(g_eff_start_request.position_src, position);
     switch (fighter) {
     case 0:
         g_eff_alive[EFF_MATCHED_STREAK_0] = 0;
-        g_eff_start_request.alive_dest = &g_eff_alive[EFF_MATCHED_STREAK_0];
+        SET_PTR(
+            g_eff_start_request.alive_dest, &g_eff_alive[EFF_MATCHED_STREAK_0]);
         g_eff_start_request.effect.word =
             EFF_MATCHED_STREAK_0 | EFF_NEW | EFF_LIT;
         break;
     case 1:
         g_eff_alive[EFF_MATCHED_STREAK_1] = 0;
-        g_eff_start_request.alive_dest = &g_eff_alive[EFF_MATCHED_STREAK_1];
+        SET_PTR(
+            g_eff_start_request.alive_dest, &g_eff_alive[EFF_MATCHED_STREAK_1]);
         g_eff_start_request.effect.word =
             EFF_MATCHED_STREAK_1 | EFF_NEW | EFF_LIT;
         break;
@@ -734,16 +739,16 @@ void eff_StartMatchedStreak(s32 *position, s32 fighter) {
 /* A wooden sword lands. */
 void eff_StartBluntHit(s32 *position) {
     g_eff_request = &g_eff_start_request;
-    g_eff_start_request.position_src = position;
+    SET_PTR(g_eff_start_request.position_src, position);
     if (g_eff_alive[EFF_BLUNT_HIT_0] && g_eff_alive[EFF_BLUNT_HIT_1]) {
         g_eff_alive[EFF_BLUNT_HIT_1] = 0;
         g_eff_alive[EFF_BLUNT_HIT_0] = 0;
     }
     if (!g_eff_alive[EFF_BLUNT_HIT_0]) {
-        g_eff_request->alive_dest = &g_eff_alive[EFF_BLUNT_HIT_0];
+        SET_PTR(g_eff_request->alive_dest, &g_eff_alive[EFF_BLUNT_HIT_0]);
         g_eff_request->effect.word = EFF_BLUNT_HIT_0 | EFF_NEW | EFF_LIT;
     } else if (!g_eff_alive[EFF_BLUNT_HIT_1]) {
-        g_eff_start_request.alive_dest = &g_eff_alive[EFF_BLUNT_HIT_1];
+        SET_PTR(g_eff_start_request.alive_dest, &g_eff_alive[EFF_BLUNT_HIT_1]);
         g_eff_start_request.effect.word = EFF_BLUNT_HIT_1 | EFF_NEW | EFF_LIT;
     }
     eff_Start();
@@ -756,17 +761,17 @@ void eff_StartBluntHit(s32 *position) {
 /* Blood from a wound, thrown along `direction`. */
 void eff_StartBlood(s32 *position, s16 *direction) {
     g_eff_request = &g_eff_start_request;
-    g_eff_start_request.position_src = position;
-    g_eff_start_request.direction_src = direction;
+    SET_PTR(g_eff_start_request.position_src, position);
+    SET_PTR(g_eff_start_request.direction_src, direction);
     if (g_eff_alive[EFF_BLOOD_0] && g_eff_alive[EFF_BLOOD_1]) {
         g_eff_alive[EFF_BLOOD_1] = 0;
         g_eff_alive[EFF_BLOOD_0] = 0;
     }
     if (!g_eff_alive[EFF_BLOOD_0]) {
-        g_eff_request->alive_dest = &g_eff_alive[EFF_BLOOD_0];
+        SET_PTR(g_eff_request->alive_dest, &g_eff_alive[EFF_BLOOD_0]);
         g_eff_request->effect.word = EFF_BLOOD_0 | EFF_NEW | EFF_LIT;
     } else if (!g_eff_alive[EFF_BLOOD_1]) {
-        g_eff_start_request.alive_dest = &g_eff_alive[EFF_BLOOD_1];
+        SET_PTR(g_eff_start_request.alive_dest, &g_eff_alive[EFF_BLOOD_1]);
         g_eff_start_request.effect.word = EFF_BLOOD_1 | EFF_NEW | EFF_LIT;
     }
     eff_Start();
@@ -778,16 +783,16 @@ void eff_StartBlood(s32 *position, s16 *direction) {
 
 void eff_StartSplash(s32 *position) {
     g_eff_request = &g_eff_start_request;
-    g_eff_start_request.position_src = position;
-    g_eff_start_request.alive_dest = &g_eff_alive[EFF_SPLASH];
+    SET_PTR(g_eff_start_request.position_src, position);
+    SET_PTR(g_eff_start_request.alive_dest, &g_eff_alive[EFF_SPLASH]);
     g_eff_start_request.effect.word = EFF_SPLASH | EFF_NEW;
     eff_Start();
 }
 
 void eff_StartDust(s32 *position) {
     g_eff_request = &g_eff_start_request;
-    g_eff_start_request.position_src = position;
-    g_eff_start_request.alive_dest = &g_eff_alive[EFF_DUST];
+    SET_PTR(g_eff_start_request.position_src, position);
+    SET_PTR(g_eff_start_request.alive_dest, &g_eff_alive[EFF_DUST]);
     g_eff_start_request.effect.word = EFF_DUST | EFF_NEW;
     eff_Start();
 }
@@ -801,14 +806,14 @@ void eff_AddFootprint(s32 *position, s16 yaw, s32 shape_bits, s32 fighter) {
     angles[2] = 0;
     angles[0] = 0;
     angles[1] = yaw;
-    g_eff_start_request.position_src = position;
-    g_eff_start_request.direction_src = angles;
+    SET_PTR(g_eff_start_request.position_src, position);
+    SET_PTR(g_eff_start_request.direction_src, angles);
     if (fighter == 0) {
-        g_eff_start_request.alive_dest = &g_eff_alive[EFF_FOOTPRINTS_0];
+        SET_PTR(g_eff_start_request.alive_dest, &g_eff_alive[EFF_FOOTPRINTS_0]);
         g_eff_start_request.effect.word =
             shape_bits + (EFF_FOOTPRINTS_0 | EFF_NEW);
     } else {
-        g_eff_start_request.alive_dest = &g_eff_alive[EFF_FOOTPRINTS_1];
+        SET_PTR(g_eff_start_request.alive_dest, &g_eff_alive[EFF_FOOTPRINTS_1]);
         g_eff_start_request.effect.word =
             shape_bits + (EFF_FOOTPRINTS_1 | EFF_NEW);
     }
@@ -819,23 +824,23 @@ void eff_AddFootprint(s32 *position, s16 yaw, s32 shape_bits, s32 fighter) {
  * way, and a puff of dust. */
 void eff_StartBulletImpact(s32 *position, s16 *normal) {
     g_eff_request = &g_eff_start_request;
-    g_eff_start_request.position_src = position;
-    g_eff_start_request.direction_src = normal;
+    SET_PTR(g_eff_start_request.position_src, position);
+    SET_PTR(g_eff_start_request.direction_src, normal);
     if (g_eff_alive[EFF_IMPACT_0] && g_eff_alive[EFF_IMPACT_1]) {
         g_eff_alive[EFF_IMPACT_1] = 0;
         g_eff_alive[EFF_IMPACT_0] = 0;
     }
     if (!g_eff_alive[EFF_IMPACT_0]) {
-        g_eff_request->alive_dest = &g_eff_alive[EFF_IMPACT_0];
+        SET_PTR(g_eff_request->alive_dest, &g_eff_alive[EFF_IMPACT_0]);
         g_eff_request->effect.word = EFF_IMPACT_0 | EFF_NEW | EFF_LIT;
         eff_Start();
-        g_eff_request->alive_dest = &g_eff_alive[EFF_DUST];
+        SET_PTR(g_eff_request->alive_dest, &g_eff_alive[EFF_DUST]);
         g_eff_request->effect.word = EFF_DUST | EFF_NEW;
     } else if (!g_eff_alive[EFF_IMPACT_1]) {
-        g_eff_start_request.alive_dest = &g_eff_alive[EFF_IMPACT_1];
+        SET_PTR(g_eff_start_request.alive_dest, &g_eff_alive[EFF_IMPACT_1]);
         g_eff_request->effect.word = EFF_IMPACT_1 | EFF_NEW | EFF_LIT;
         eff_Start();
-        g_eff_request->alive_dest = &g_eff_alive[EFF_DUST];
+        SET_PTR(g_eff_request->alive_dest, &g_eff_alive[EFF_DUST]);
         g_eff_request->effect.word = EFF_DUST | EFF_NEW;
     }
     eff_Start();
@@ -877,18 +882,18 @@ void eff_StartThrownDirt(s32 *position, s32 yaw, s32 grass) {
     throw.vx = turned.vx;
     throw.vy = turned.vy;
     throw.vz = turned.vz;
-    g_eff_request->position_src = position;
-    g_eff_request->direction_src = &throw.vx;
+    SET_PTR(g_eff_request->position_src, position);
+    SET_PTR(g_eff_request->direction_src, &throw.vx);
     if (g_eff_alive[EFF_DIRT_0] && g_eff_alive[EFF_DIRT_1]) {
         g_eff_alive[EFF_DIRT_1] = 0;
         g_eff_alive[EFF_DIRT_0] = 0;
     }
     if (!g_eff_alive[EFF_DIRT_0]) {
-        g_eff_request->alive_dest = &g_eff_alive[EFF_DIRT_0];
+        SET_PTR(g_eff_request->alive_dest, &g_eff_alive[EFF_DIRT_0]);
         g_eff_request->effect.word = EFF_DIRT_0 | EFF_NEW;
         g_eff_dirt_is_grass[0] = grass;
     } else if (!g_eff_alive[EFF_DIRT_1]) {
-        g_eff_request->alive_dest = &g_eff_alive[EFF_DIRT_1];
+        SET_PTR(g_eff_request->alive_dest, &g_eff_alive[EFF_DIRT_1]);
         g_eff_request->effect.word = EFF_DIRT_1 | EFF_NEW;
         g_eff_dirt_is_grass[1] = grass;
     }
@@ -924,17 +929,17 @@ void eff_StartThrownWater(s32 *position, s16 yaw) {
     throw.vx = turned.vx;
     throw.vy = turned.vy;
     throw.vz = turned.vz;
-    g_eff_request->position_src = position;
-    g_eff_request->direction_src = &throw.vx;
+    SET_PTR(g_eff_request->position_src, position);
+    SET_PTR(g_eff_request->direction_src, &throw.vx);
     if (g_eff_alive[EFF_WATER_0] && g_eff_alive[EFF_WATER_1]) {
         g_eff_alive[EFF_WATER_1] = 0;
         g_eff_alive[EFF_WATER_0] = 0;
     }
     if (!g_eff_alive[EFF_WATER_0]) {
-        g_eff_request->alive_dest = &g_eff_alive[EFF_WATER_0];
+        SET_PTR(g_eff_request->alive_dest, &g_eff_alive[EFF_WATER_0]);
         g_eff_request->effect.word = EFF_WATER_0 | EFF_NEW;
     } else if (!g_eff_alive[EFF_WATER_1]) {
-        g_eff_request->alive_dest = &g_eff_alive[EFF_WATER_1];
+        SET_PTR(g_eff_request->alive_dest, &g_eff_alive[EFF_WATER_1]);
         g_eff_request->effect.word = EFF_WATER_1 | EFF_NEW;
     }
     eff_Start();
@@ -943,16 +948,17 @@ void eff_StartThrownWater(s32 *position, s16 yaw) {
 /* A hit that does nothing to an armoured fighter. */
 void eff_StartArmorSpark(s32 *position) {
     g_eff_request = &g_eff_start_request;
-    g_eff_start_request.position_src = position;
+    SET_PTR(g_eff_start_request.position_src, position);
     if (g_eff_alive[EFF_ARMOR_SPARK_0] && g_eff_alive[EFF_ARMOR_SPARK_1]) {
         g_eff_alive[EFF_ARMOR_SPARK_1] = 0;
         g_eff_alive[EFF_ARMOR_SPARK_0] = 0;
     }
     if (!g_eff_alive[EFF_ARMOR_SPARK_0]) {
-        g_eff_request->alive_dest = &g_eff_alive[EFF_ARMOR_SPARK_0];
+        SET_PTR(g_eff_request->alive_dest, &g_eff_alive[EFF_ARMOR_SPARK_0]);
         g_eff_request->effect.word = EFF_ARMOR_SPARK_0 | EFF_NEW | EFF_LIT;
     } else if (!g_eff_alive[EFF_ARMOR_SPARK_1]) {
-        g_eff_start_request.alive_dest = &g_eff_alive[EFF_ARMOR_SPARK_1];
+        SET_PTR(
+            g_eff_start_request.alive_dest, &g_eff_alive[EFF_ARMOR_SPARK_1]);
         g_eff_start_request.effect.word = EFF_ARMOR_SPARK_1 | EFF_NEW | EFF_LIT;
     }
     eff_Start();
@@ -1017,16 +1023,16 @@ void eff_DrawFlames(s16 *view_angles, s32 *view_position) {
     eff_BindScratch(view_angles, view_position);
     request = g_eff_request;
     angles = g_eff_view_angles;
-    angles[0] = request->view_angles_src[0];
+    angles[0] = PTR(request->view_angles_src)[0];
     prim = g_eff_next_prim;
-    angles[1] = request->view_angles_src[1];
-    angles[2] = request->view_angles_src[2];
+    angles[1] = PTR(request->view_angles_src)[1];
+    angles[2] = PTR(request->view_angles_src)[2];
     origin = g_eff_view_origin;
     matrix = g_eff_view_matrix;
-    origin[0] = request->view_position_src[0];
+    origin[0] = PTR(request->view_position_src)[0];
     work = &g_eff_work->flames;
-    origin[1] = request->view_position_src[1];
-    origin[2] = request->view_position_src[2];
+    origin[1] = PTR(request->view_position_src)[1];
+    origin[2] = PTR(request->view_position_src)[2];
     g_eff_flame_frame++;
     eff_SetViewMatrix(angles, origin, matrix);
     SetRotMatrix(g_eff_view_matrix);
@@ -1845,7 +1851,7 @@ s32 eff_DrawDust(void) {
     VECTOR *relative;
     SVECTOR *zero;
     s32 *depth_cue_out;
-    POLY_FT4 **quads_end;
+    EffQuadSlot *quads_end;
     POLY_FT4 *prim;
     u32 *ot_index_out;
     s16 slot_index;
@@ -1952,13 +1958,13 @@ s32 eff_DrawDust(void) {
     if (!g_eff_dust_live) {
         return 0;
     }
-    *quads_end = prim;
-    for (prim = g_eff_next_prim; prim < *quads_end; prim++, ot_index++) {
+    SET_PTR(*quads_end, prim);
+    for (prim = g_eff_next_prim; prim < PTR(*quads_end); prim++, ot_index++) {
         g_eff_ot_entry = g_disp_ot + *ot_index;
         g_eff_prim_tag = &prim->tag;
         EFF_ADD_PRIM();
     }
-    g_eff_next_prim = *quads_end;
+    g_eff_next_prim = PTR(*quads_end);
     return 1;
 }
 
@@ -2942,10 +2948,10 @@ static u8 eff_SetUpParticles(s32 kind, s32 set) {
     u16 *tex_height = &work->tex_height;
     u32 *reach_sq = &work->reach_sq;
     s16 *scan_count = &work->scan_count;
-    POLY_FT4 **quad = &work->quad;
+    EffQuadSlot *quad = &work->quad;
 
     g_eff_particle_random = &work->random;
-    *quad = g_eff_next_prim;
+    SET_PTR(*quad, g_eff_next_prim);
     *reach_sq = PARTICLE_REACH * PARTICLE_REACH;
     *g_eff_tpage = EFF_PAGE_ADD | EFF_PAGE_LEFT;
 
@@ -3049,7 +3055,7 @@ static void eff_UpdateParticles(s32 kind, s32 set) {
     u8 *red;
     u8 *green;
     u8 *blue;
-    Vec3 **wave_entry;
+    Vec3Slot *wave_entry;
     u16 *quad_ot_indices;
     s32 *random;
     s32 *out;
@@ -3057,8 +3063,8 @@ static void eff_UpdateParticles(s32 kind, s32 set) {
     SVECTOR *vertices;
     s16 *age;
     s16 *copy;
-    POLY_FT4 **quad;
-    Particle **particle;
+    EffQuadSlot *quad;
+    ParticleSlot *particle;
     u32 dist_sq;
     s16 *sxy;
 
@@ -3083,12 +3089,12 @@ static void eff_UpdateParticles(s32 kind, s32 set) {
     quad_ot_indices = work->ot_indices;
 
     for (*index = 0; *index < *scan_count; (*index)++) {
-        *particle = &g_eff_particles[set][*index];
-        if ((*particle)->state != PARTICLE_ACTIVE) {
+        SET_PTR(*particle, &g_eff_particles[set][*index]);
+        if (PTR(*particle)->state != PARTICLE_ACTIVE) {
             continue;
         }
-        (*particle)->age++;
-        *age = (*particle)->age;
+        PTR(*particle)->age++;
+        *age = PTR(*particle)->age;
         /* its colour fades with its age: red slowly from full, green from
          * 200 and blue from 100 quickly */
         *red = (*age << 2) < 0xFF ? ~(*age << 2) : 0;
@@ -3096,38 +3102,39 @@ static void eff_UpdateParticles(s32 kind, s32 set) {
         *green = (*age << 5) < 200 ? 200 - (*age << 5) : 0;
         /* over once it is too dim to see */
         if (*red <= 0x50 && *green <= 0x20) {
-            (*particle)->state = PARTICLE_ENDED;
+            PTR(*particle)->state = PARTICLE_ENDED;
             continue;
         }
         /* from 100 */
         *blue = (*age << 5) < 100 ? 100 - (*age << 5) : 0;
 
-        *wave_entry = &g_eff_particle_wave_positions[set][(*particle)->wave];
-        wave_position->vx = (*wave_entry)->x;
+        SET_PTR(*wave_entry,
+                &g_eff_particle_wave_positions[set][PTR(*particle)->wave]);
+        wave_position->vx = PTR(*wave_entry)->x;
         vertices[0].vx = wave_position->vx - g_eff_view_origin[0];
-        wave_position->vy = (*wave_entry)->y;
+        wave_position->vy = PTR(*wave_entry)->y;
         vertices[0].vy = wave_position->vy - g_eff_view_origin[1];
-        wave_position->vz = (*wave_entry)->z;
+        wave_position->vz = PTR(*wave_entry)->z;
         vertices[0].vz = wave_position->vz - g_eff_view_origin[2];
 
         gte_ApplyRotMatrix(vertices, out);
         /* the matrix `out` is the translation of (see eff.h) */
         gte_SetTransMatrix((u8 *)out - 0x14);
 
-        vertices[1].vx = (*particle)->offset_x;
-        vertices[1].vz = (*particle)->offset_z;
-        vertices[1].vy = (*particle)->offset_y;
-        step->vx = (*particle)->velocity_x / FRAMES_PER_SECOND;
-        (*particle)->offset_x += step->vx;
-        vertices[0].vx = (*particle)->offset_x;
-        step->vz = (*particle)->velocity_z / FRAMES_PER_SECOND;
-        (*particle)->offset_z += step->vz;
-        vertices[0].vz = (*particle)->offset_z;
+        vertices[1].vx = PTR(*particle)->offset_x;
+        vertices[1].vz = PTR(*particle)->offset_z;
+        vertices[1].vy = PTR(*particle)->offset_y;
+        step->vx = PTR(*particle)->velocity_x / FRAMES_PER_SECOND;
+        PTR(*particle)->offset_x += step->vx;
+        vertices[0].vx = PTR(*particle)->offset_x;
+        step->vz = PTR(*particle)->velocity_z / FRAMES_PER_SECOND;
+        PTR(*particle)->offset_z += step->vz;
+        vertices[0].vz = PTR(*particle)->offset_z;
         step->vy =
-            (*particle)->velocity_y / FRAMES_PER_SECOND +
+            PTR(*particle)->velocity_y / FRAMES_PER_SECOND +
             *age * PARTICLE_GRAVITY / (FRAMES_PER_SECOND * FRAMES_PER_SECOND);
-        (*particle)->offset_y += step->vy;
-        vertices[0].vy = (*particle)->offset_y;
+        PTR(*particle)->offset_y += step->vy;
+        vertices[0].vy = PTR(*particle)->offset_y;
         vertices[2].vx = vertices[1].vx + (step->vx >> 1);
         vertices[2].vz = vertices[1].vz + (step->vz >> 1);
         vertices[2].vy = vertices[1].vy + (step->vy >> 1);
@@ -3142,7 +3149,7 @@ static void eff_UpdateParticles(s32 kind, s32 set) {
         if ((out[0] + out[1] + out[2]) >
             *reach_sq +
                 *random * PARTICLE_REACH / (RAND_MAX + 1) * PARTICLE_REACH) {
-            (*particle)->state = PARTICLE_ENDED;
+            PTR(*particle)->state = PARTICLE_ENDED;
             continue;
         }
 
@@ -3234,61 +3241,62 @@ static void eff_UpdateParticles(s32 kind, s32 set) {
         }
         /* a corner's x and y, and its u, v and palette, written as words */
         for (; *copy >= 0; (*copy)--) {
-            quad_ot_indices[*quad - g_eff_next_prim] = *g_eff_depth;
-            *(s32 *)&(*quad)->x0 =
+            quad_ot_indices[PTR(*quad) - g_eff_next_prim] = *g_eff_depth;
+            *(s32 *)&PTR(*quad)->x0 =
                 g_eff_screen_xy[*copy] + *g_eff_left + *g_eff_top;
-            *(s32 *)&(*quad)->x1 =
+            *(s32 *)&PTR(*quad)->x1 =
                 g_eff_screen_xy[*copy] + *g_eff_right + *g_eff_top;
-            *(s32 *)&(*quad)->x2 =
+            *(s32 *)&PTR(*quad)->x2 =
                 g_eff_screen_xy[*copy] + *g_eff_left + *g_eff_bottom;
-            *(s32 *)&(*quad)->x3 =
+            *(s32 *)&PTR(*quad)->x3 =
                 g_eff_screen_xy[*copy] + *g_eff_right + *g_eff_bottom;
-            *(s32 *)&(*quad)->u0 = *g_eff_uv0 + *g_eff_clut;
-            *(s32 *)&(*quad)->u1 = *g_eff_uv1 + *g_eff_tpage;
-            *(u16 *)&(*quad)->u2 = *g_eff_uv2;
-            *(u16 *)&(*quad)->u3 = *g_eff_uv3;
-            setlen(*quad, FT4_LEN);
+            *(s32 *)&PTR(*quad)->u0 = *g_eff_uv0 + *g_eff_clut;
+            *(s32 *)&PTR(*quad)->u1 = *g_eff_uv1 + *g_eff_tpage;
+            *(u16 *)&PTR(*quad)->u2 = *g_eff_uv2;
+            *(u16 *)&PTR(*quad)->u3 = *g_eff_uv3;
+            setlen(PTR(*quad), FT4_LEN);
             if (kind < PARTICLES_IMPACT) {
-                *(s32 *)&(*quad)->r0 =
+                *(s32 *)&PTR(*quad)->r0 =
                     *red + (*green << 8) + ((FT4_CODE | FT4_SEMI_TRANS) << 24);
             } else if (kind < PARTICLES_DIRT) {
-                *(s32 *)&(*quad)->r0 =
+                *(s32 *)&PTR(*quad)->r0 =
                     *red + ((*red >> 2) << 8) + (*blue << 16) +
                     ((FT4_CODE | FT4_SEMI_TRANS) << 24);
             } else if (kind < PARTICLES_WATER) {
-                if (*quad - g_eff_prims >= EFF_PRIM_COUNT - 1) {
+                if (PTR(*quad) - g_eff_prims >= EFF_PRIM_COUNT - 1) {
                     continue;
                 }
                 /* a puff is not drawn half and half or added, but as it
                  * is */
                 if (g_game_settings.grayscale) {
                     /* dark grey */
-                    *(s32 *)&(*quad)++->r0 =
+                    *(s32 *)&NEXT_PTR(*quad)->r0 =
                         EFF_RGB(0x24, 0x24, 0x24) | FT4_CODE << 24;
                     break;
                 } else if (g_eff_dirt_is_grass[kind - PARTICLES_DIRT]) {
                     /* a green of 60 and up to 31 more, any amount */
-                    *(s32 *)&(*quad)++->r0 =
+                    *(s32 *)&NEXT_PTR(*quad)->r0 =
                         (((rand() * 4 >> 12) + 0x3C) << 8) +
                         (EFF_RGB(0x38, 0, 0x08) | FT4_CODE << 24);
                     break;
                 } else {
                     /* brown */
-                    *(s32 *)&(*quad)++->r0 =
+                    *(s32 *)&NEXT_PTR(*quad)->r0 =
                         EFF_RGB(0x78, 0x5A, 0x28) | FT4_CODE << 24;
                     break;
                 }
             } else if (kind < PARTICLES_END) {
-                if (*quad - g_eff_prims >= EFF_PRIM_COUNT - 1) {
+                if (PTR(*quad) - g_eff_prims >= EFF_PRIM_COUNT - 1) {
                     break;
                 }
                 /* pale blue */
-                *(s32 *)&(*quad)++->r0 = EFF_RGB(0x80, 0x80, 0xFF) |
-                                         (FT4_CODE | FT4_SEMI_TRANS) << 24;
+                *(s32 *)&NEXT_PTR(*quad)->r0 =
+                    EFF_RGB(0x80, 0x80, 0xFF) |
+                    (FT4_CODE | FT4_SEMI_TRANS) << 24;
                 break;
             }
-            if (*quad - g_eff_prims < EFF_PRIM_COUNT - 1) {
-                (*quad)++;
+            if (PTR(*quad) - g_eff_prims < EFF_PRIM_COUNT - 1) {
+                NEXT_PTR(*quad);
             }
         }
     }
@@ -3300,8 +3308,8 @@ static void eff_UpdateParticles(s32 kind, s32 set) {
 static u8 eff_LinkParticleQuads(s32 kind, s32 set) {
     ParticleWork *work = &g_eff_work->particles;
     s16 *quad_index = &work->index;
-    POLY_FT4 **quads_end = &work->quads_end;
-    POLY_FT4 **quad = &work->quad;
+    EffQuadSlot *quads_end = &work->quads_end;
+    EffQuadSlot *quad = &work->quad;
     u16 *quad_ot_indices = work->ot_indices;
     POLY_FT4 *made_end;
     POLY_FT4 *first_quad;
@@ -3310,20 +3318,20 @@ static u8 eff_LinkParticleQuads(s32 kind, s32 set) {
 
     g_eff_particle_random = &work->random;
     first_quad = g_eff_next_prim;
-    made_end = *quad;
+    made_end = PTR(*quad);
     quad_count = made_end - first_quad;
 
     if (quad_count != 0) {
-        *quad = first_quad;
-        *quads_end = made_end;
+        SET_PTR(*quad, first_quad);
+        SET_PTR(*quads_end, made_end);
         has_quads = 1;
         *quad_index = 0;
 
-        while (*quad < *quads_end) {
+        while (PTR(*quad) < PTR(*quads_end)) {
             u32 *prim_tag;
 
             g_eff_ot_entry = g_disp_ot + quad_ot_indices[*quad_index];
-            prim_tag = &(*quad)->tag;
+            prim_tag = &PTR(*quad)->tag;
             g_eff_prim_tag = prim_tag;
             *prim_tag =
                 (*prim_tag & PRIM_TAG_LEN) | (*g_eff_ot_entry & PRIM_TAG_ADDR);
@@ -3331,10 +3339,10 @@ static u8 eff_LinkParticleQuads(s32 kind, s32 set) {
             *g_eff_ot_entry = ((u32)g_eff_prim_tag & PRIM_TAG_ADDR) |
                               (*g_eff_ot_entry & PRIM_TAG_LEN);
 
-            (*quad)++;
+            NEXT_PTR(*quad);
             (*quad_index)++;
         }
-        g_eff_next_prim = *quads_end;
+        g_eff_next_prim = PTR(*quads_end);
     } else {
         has_quads = 0;
     }

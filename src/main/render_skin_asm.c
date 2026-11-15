@@ -30,7 +30,7 @@ CVECTOR g_render_skin_colors[500];
 /* In C: the normals are lit three at a time, so a run's last three may
  * take in what follows them in the list and write colours past the run's;
  * both cursors are then put back, and the next run writes over those. */
-u8 *render_LightSkin(u8 *normals, MATRIX **matrices) {
+u8 *render_LightSkin(u8 *normals, MatrixSlot *matrices) {
     s16 *list = (s16 *)normals;
     u32 *colors = (u32 *)g_render_skin_colors;
     s32 bone;
@@ -39,7 +39,8 @@ u8 *render_LightSkin(u8 *normals, MATRIX **matrices) {
 
     port_GteWriteData(PORT_GTE_RGBC, 0);
     while ((bone = *list++) != SKIN_LIGHT_END) {
-        math_MulMatrix(&g_light_current->lmat, matrices[bone], SKIN_LIGHTS);
+        math_MulMatrix(
+            &g_light_current->lmat, PTR(matrices[bone]), SKIN_LIGHTS);
         port_GteLoadControl(PORT_GTE_LIGHT, SKIN_LIGHTS, PORT_GTE_MATRIX_WORDS);
         count = *list++;
         do {

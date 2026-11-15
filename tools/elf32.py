@@ -1,12 +1,16 @@
-"""Minimal ELF32 little-endian reader: sections, symbols, REL relocations.
+"""Minimal ELF little-endian reader: sections, symbols, REL relocations.
 
 Shared by tools/make_psexe.py and tools/shift_test.py (no pyelftools in the venv).
+The PlayStation's files are ELF32, and all of this reads those. The native
+port's program is ELF64 where it is a 64-bit one (docs/PORT.md, "64 bits"):
+of such a file the sections and the symbols are read, not the relocations.
 """
 import struct
 import sys
 
 SHT_SYMTAB, SHT_REL = 2, 9
 SHN_ABS = 0xFFF1
+MAGIC = bytes([0x7F]) + b"ELF"
 
 
 class Elf:
@@ -14,13 +18,21 @@ class Elf:
         self.path = path
         with open(path, "rb") as f:
             self.data = d = f.read()
-        if d[:4] != b"\x7fELF" or d[4] != 1 or d[5] != 1:
-            sys.exit("elf32: %s is not an ELF32 LE file" % path)
-        shoff, = struct.unpack_from("<I", d, 0x20)
-        shentsize, shnum, shstrndx = struct.unpack_from("<HHH", d, 0x2E)
+        if d[:4] != MAGIC or d[4] not in (1, 2) or d[5] != 1:
+            sys.exit("elf32: %s is not an ELF32 or ELF64 LE file" % path)
+        self.bits = 64 if d[4] == 2 else 32
+        if self.bits == 64:
+            shoff, = struct.unpack_from("<Q", d, 0x28)
+            shentsize, shnum, shstrndx = struct.unpack_from("<HHH", d, 0x3A)
+        else:
+            shoff, = struct.unpack_from("<I", d, 0x20)
+            shentsize, shnum, shstrndx = struct.unpack_from("<HHH", d, 0x2E)
         self.secs = []
         for i in range(shnum):
-            f = struct.unpack_from("<10I", d, shoff + i * shentsize)
+            if self.bits == 64:
+                f = struct.unpack_from("<IIQQQQII", d, shoff + i * shentsize)
+            else:
+                f = struct.unpack_from("<10I", d, shoff + i * shentsize)
             self.secs.append(dict(name_off=f[0], type=f[1], flags=f[2], addr=f[3],
                                   offset=f[4], size=f[5], link=f[6], info=f[7]))
         strtab = self.secs[shstrndx]
@@ -28,8 +40,15 @@ class Elf:
             s["name"] = self.cstr(strtab["offset"] + s["name_off"])
         self.syms = []
         for s in self.secs:
-            if s["type"] == SHT_SYMTAB:
-                names = self.secs[s["link"]]["offset"]
+            if s["type"] != SHT_SYMTAB:
+                continue
+            names = self.secs[s["link"]]["offset"]
+            if self.bits == 64:
+                for off in range(s["offset"], s["offset"] + s["size"], 24):
+                    nm, info, _, ndx, val, size = struct.unpack_from("<IBBHQQ", d, off)
+                    self.syms.append(dict(name=self.cstr(names + nm), value=val, size=size,
+                                          bind=info >> 4, type=info & 0xF, shndx=ndx))
+            else:
                 for off in range(s["offset"], s["offset"] + s["size"], 16):
                     nm, val, size, info, _, ndx = struct.unpack_from("<IIIBBH", d, off)
                     self.syms.append(dict(name=self.cstr(names + nm), value=val, size=size,

@@ -11,8 +11,15 @@ extern void SsSeqCalledTbyT(void);
 
 /* How the tick is driven: sixty a second, by an interrupt not yet chosen,
  * calling SsSeqCalledTbyT. */
+#if RB_PORT
+/* In the port the function's address is put in as the tick is started
+ * (_SsStart): a 64-bit program's compiler cannot put an address into a
+ * 32-bit word of a table it fills (docs/PORT.md, "64 bits"). */
+SndSeqTickEnv _snd_seq_tick_env = {60, 1, 0, 0, 0, 0, 0x7F, 0, 0};
+#else
 SndSeqTickEnv _snd_seq_tick_env = {
     60, 1, (s32)SsSeqCalledTbyT, 0, 0, 0, 0x7F, 0, 0};
+#endif
 
 /* arg0: 1 for SsStart, 0 for SsStart2, which does not tick on the vertical
  * blank even at a rate that fits it. */
@@ -24,6 +31,9 @@ void _SsStart(s32 use_vsync) {
     while (--wait >= 0) {
     }
 
+#if RB_PORT
+    _snd_seq_tick_env.tick_func = (s32)SsSeqCalledTbyT;
+#endif
     _snd_seq_tick_env.on_vsync = 0;
     _snd_seq_tick_env.irq = 6;
     _snd_seq_tick_env.half_rate = 0;
@@ -68,7 +78,7 @@ void _SsStart(s32 use_vsync) {
 
     if (_snd_seq_tick_env.on_vsync != 0) {
         EnterCriticalSection();
-        VSyncCallback((void (*)())_snd_seq_tick_env.tick_func);
+        VSyncCallback((void (*)())ADDR(_snd_seq_tick_env.tick_func));
     } else {
         s32 de;
         s32 a1_val;
@@ -87,7 +97,7 @@ void _SsStart(s32 use_vsync) {
                 a1_val = _snd_seq_tick_env.tick_func;
             }
         }
-        InterruptCallback(de, (void (*)())a1_val);
+        InterruptCallback(de, (void (*)())ADDR(a1_val));
     }
     ExitCriticalSection();
 }
@@ -98,9 +108,9 @@ static void SsStart2(void) { _SsStart(0); }
 
 static void _SsTrapIntrVSync(void) {
     if (_snd_seq_tick_env.old_callback != 0) {
-        ((void (*)(void))_snd_seq_tick_env.old_callback)();
+        ((void (*)(void))ADDR(_snd_seq_tick_env.old_callback))();
     }
-    ((void (*)(void))_snd_seq_tick_env.tick_func)();
+    ((void (*)(void))ADDR(_snd_seq_tick_env.tick_func))();
 }
 
 /* The interrupt handler when the rate asked for is half the vertical blank:
@@ -112,6 +122,6 @@ static void _SsSeqCalledTbyT_1per2(void) {
         env->half_toggle = 1;
     } else {
         env->half_toggle = 0;
-        ((void (*)(void))env->tick_func)();
+        ((void (*)(void))ADDR(env->tick_func))();
     }
 }

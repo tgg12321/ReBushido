@@ -94,7 +94,7 @@ extern SaveRecord g_saved_record;
 typedef struct {
     SaveRecord copies[SAVE_COPIES];
     s32 checksums[SAVE_COPIES];
-    u16 *patch_addrs[SAVE_PATCH_COUNT];
+    PTR32(u16 *) patch_addrs[SAVE_PATCH_COUNT];
     u16 patch_values[SAVE_PATCH_COUNT];
     s32 unused;
 } SaveData; /* 0x100 bytes */

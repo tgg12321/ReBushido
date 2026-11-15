@@ -56,6 +56,7 @@ What it needs, and where it looks:
 |---|---|---|
 | The emulator | `tmp/pcsx-redux/pcsx-redux.main` in the checkout | `REBUSHIDO_EMULATOR` |
 | The retail disc | `Bushido Blade 2 (USA).cue` in the checkout, its `.bin` beside it | `REBUSHIDO_RETAIL` |
+| The native port, for the tests on it | `build/port/rebushido`, the size `make port` builds as its default | `REBUSHIDO_PORT` (the other size's program, `build/port32/rebushido` or `build/port64/rebushido`) |
 | A BIOS | none: the emulator's own open one (`openbios.bin`, beside its program) | |
 | Python | 3.11 or later, nothing installed | |
 
@@ -425,6 +426,28 @@ piece of the first run, at every checkpoint both wrote it:
 
 A test that fails names the first places; the rest is
 `tools/port_compare.py`'s.
+
+**A structure the 64-bit port lays out otherwise.** Where a structure
+has pointers and keeps them as ordinary ones, it is larger in the 64-bit
+port than on the PlayStation and its members are elsewhere
+([`docs/PORT.md`](../../docs/PORT.md), "64 bits"); `Fighter` is one. The
+port's build writes, beside the program, how each such variable lies
+against the PlayStation's: which bytes of the port's are which of the
+console's (`layout` and `run` lines of `build/port/rebushido.sym`, from
+`tools/port_layout.py`). Everything a test says about such a variable is
+said as the PlayStation has it, and is found in the port by that:
+
+- a value of `state.toml` inside it (`g_fighters+0x44C+0x0B8:s32`) is
+  read where the port has that member;
+- a `[snapshot]` piece that is the whole variable (`g_fighters:0x898`)
+  is written by the port as it has it, and laid out again as the
+  PlayStation's before it is compared: each member's bytes where the
+  console has the member, of a pointer the low four of its eight bytes,
+  which are all of an address. So the offsets after `except` are the
+  PlayStation's too, and a pointer is compared like any other word: by
+  the name it points at. A pointer into such a variable (one fighter's
+  to the other) is the same if it is to the same member. A piece that is
+  only part of such a variable is refused.
 
 ## The picture
 

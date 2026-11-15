@@ -228,7 +228,7 @@ static void cdrom_ReadyCallback(u8 intr, u8 *result) {
         if (CdPosToInt((CdlLOC *)header) != g_cdrom.next_sector) {
             g_cdrom.sectors_left = READ_WRONG_SECTOR;
         } else {
-            CdGetSector((void *)g_cdrom.read_cursor, SECTOR_WORDS);
+            CdGetSector((void *)ADDR(g_cdrom.read_cursor), SECTOR_WORDS);
             g_cdrom.read_cursor += SECTOR_SIZE;
             g_cdrom.sectors_left--;
             g_cdrom.next_sector++;
@@ -768,7 +768,7 @@ void cdrom_StopAndWait(void) {
 static s32 cdrom_ReadBlocking(s32 nbytes, s32 buf, s32 mode) {
     s32 left;
 
-    CdRead((nbytes + SECTOR_SIZE - 1) / SECTOR_SIZE, (u32 *)buf, mode);
+    CdRead((nbytes + SECTOR_SIZE - 1) / SECTOR_SIZE, (u32 *)ADDR(buf), mode);
     do {
         left = CdReadSync(1, NULL);
         if (left > 0) {

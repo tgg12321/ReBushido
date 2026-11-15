@@ -220,7 +220,7 @@ void weapon_Queue(s32 weapon_model, s32 where, s32 *pos, s16 *rot) {
     node->node.mesh = g_resource_weapon_slots[weapon_model] * 2;
     node->node.mesh_block = RELOC_WEAPONS;
     node->node.rotation_order = ROTATION_ORDER_ZYX;
-    node->node.parent = NULL;
+    SET_PTR(node->node.parent, NULL);
     node->node.light_setup_index = LIGHT_SCENERY;
     if (where != WEAPON_DRAW_NOWHERE) {
         if (where == WEAPON_DRAW_FREE) {
@@ -251,14 +251,14 @@ void weapon_Queue(s32 weapon_model, s32 where, s32 *pos, s16 *rot) {
             offset.vx = hand->node.local.t[0];
             offset.vy = hand->node.local.t[1];
             offset.vz = hand->node.local.t[2];
-            ApplyMatrix(&hand->node.parent->world, &offset,
+            ApplyMatrix(&PTR(hand->node.parent)->world, &offset,
                         (VECTOR *)node->node.world.t);
             node->node.world.t[0] =
-                node->node.world.t[0] + hand->node.parent->world.t[0];
+                node->node.world.t[0] + PTR(hand->node.parent)->world.t[0];
             node->node.world.t[1] =
-                node->node.world.t[1] + hand->node.parent->world.t[1];
+                node->node.world.t[1] + PTR(hand->node.parent)->world.t[1];
             node->node.world.t[2] =
-                node->node.world.t[2] + hand->node.parent->world.t[2];
+                node->node.world.t[2] + PTR(hand->node.parent)->world.t[2];
             where |= WEAPON_DRAW_HELD;
             hand->node.world = node->node.world;
             ground_y = model->ground_y;
@@ -276,7 +276,7 @@ void weapon_Queue(s32 weapon_model, s32 where, s32 *pos, s16 *rot) {
             node->node.draw_flags = 0;
             NODE_EXTRA(node) = ground_y;
             queue = g_render_queue_end;
-            node->node.parent = &node[-1].node;
+            SET_PTR(node->node.parent, &node[-1].node);
             node->node.matrix_state = NODE_MATRIX_DONE;
             node->node.rotation_order = ROTATION_ORDER_ZYX;
             node->node.light_setup_index = 0;
@@ -329,7 +329,7 @@ void weapon_QueueWorn(s32 weapon_model, s32 slot_and_side, s32 which) {
     node->node.rot.vy = *pose;
     pose++;
     node->node.rot.vz = *pose;
-    node->node.parent = &model->bones[MODEL_WAIST_BONE].node;
+    SET_PTR(node->node.parent, &model->bones[MODEL_WAIST_BONE].node);
     node->node.matrix_state = NODE_MATRIX_REBUILD;
     node_UpdateWorldMatrix(&node->node);
     queue = g_render_queue_end;
@@ -338,7 +338,7 @@ void weapon_QueueWorn(s32 weapon_model, s32 slot_and_side, s32 which) {
     node++;
     node->node.mesh = g_resource_weapon_slots[linked] * 2 + 1;
     node->node.kind = NODE_KIND_SHADOW;
-    node->node.parent = &node[-1].node;
+    SET_PTR(node->node.parent, &node[-1].node);
     node->node.draw_flags = 0;
     node->node.rotation_order = ROTATION_ORDER_ZYX;
     node->node.matrix_state = NODE_MATRIX_DONE;
@@ -373,7 +373,7 @@ s32 snd_LoadWeaponVabs(s32 pack_table_addr, s32 output_addr) {
     s32 *count_slot;
     u32 header_entry_count;
     s32 copy_end_addr;
-    s32 *table = (s32 *)pack_table_addr;
+    s32 *table = (s32 *)ADDR(pack_table_addr);
 
     count = table[0];
     header_cursor_addr = output_addr;
@@ -423,7 +423,7 @@ s32 snd_LoadWeaponVabs(s32 pack_table_addr, s32 output_addr) {
     /* The count of banks is written first: one for each fighter that has
      * one. FAKE: `~x >> 31` is `x >= 0`. */
     header_entry_count = ~slot0_selection;
-    count_slot = (s32 *)header_cursor_addr;
+    count_slot = (s32 *)ADDR(header_cursor_addr);
     header_cursor_addr += 4;
     header_entry_count >>= 31;
     if (slot1_selection >= 0) {
@@ -432,7 +432,7 @@ s32 snd_LoadWeaponVabs(s32 pack_table_addr, s32 output_addr) {
     *count_slot = header_entry_count;
 
     if (slot0_selection >= 0) {
-        *(s32 *)header_cursor_addr = SND_VAB_WEAPON_1;
+        *(s32 *)ADDR(header_cursor_addr) = SND_VAB_WEAPON_1;
         header_cursor_addr += 4;
         if (slot0_selection == 0) {
             mem_MoveWords(
@@ -445,11 +445,11 @@ s32 snd_LoadWeaponVabs(s32 pack_table_addr, s32 output_addr) {
         }
         arena_UpdatePeak(copy_end_addr);
         pack_cursor_addr += snd_LoadVab(
-            (SoundVab *)pack_cursor_addr, SND_VAB_WEAPON_1, tail_addr);
+            (SoundVab *)ADDR(pack_cursor_addr), SND_VAB_WEAPON_1, tail_addr);
     }
 
     if (slot1_selection >= 0) {
-        *(s32 *)header_cursor_addr = SND_VAB_WEAPON_2;
+        *(s32 *)ADDR(header_cursor_addr) = SND_VAB_WEAPON_2;
         if (slot1_selection == 0) {
             mem_MoveWords(
                 first_section_addr, pack_cursor_addr, first_section_size);
@@ -461,7 +461,7 @@ s32 snd_LoadWeaponVabs(s32 pack_table_addr, s32 output_addr) {
         }
         arena_UpdatePeak(copy_end_addr);
         pack_cursor_addr += snd_LoadVab(
-            (SoundVab *)pack_cursor_addr, SND_VAB_WEAPON_2, tail_addr);
+            (SoundVab *)ADDR(pack_cursor_addr), SND_VAB_WEAPON_2, tail_addr);
     }
     return pack_cursor_addr;
 }

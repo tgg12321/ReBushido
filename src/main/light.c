@@ -66,9 +66,9 @@ static void light_ApplyPointLight(s32 fighter_1_pos, s32 fighter_2_pos) {
     for (slot = 0; slot < 2; slot++) {
         setup = first_setup;
         if (slot == 0) {
-            pos = (s32 *)fighter_1_pos;
+            pos = (s32 *)ADDR(fighter_1_pos);
         } else {
-            pos = (s32 *)fighter_2_pos;
+            pos = (s32 *)ADDR(fighter_2_pos);
             setup = &g_light_setups[LIGHT_FIGHTER_2];
         }
 

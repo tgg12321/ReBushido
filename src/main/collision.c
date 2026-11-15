@@ -97,8 +97,8 @@ static s32 collision_WalkCells(s32 *hit_point, s16 *hit_normal) {
             return 0;
         }
         /* it stays inside one cell */
-        g_collision_cast->test_cell(
-            g_collision_cast->walk_cell.x, g_collision_cast->walk_cell.z);
+        PTR(g_collision_cast->test_cell)
+        (g_collision_cast->walk_cell.x, g_collision_cast->walk_cell.z);
     } else {
         /* measure from the middle of the start cell, and flip the axes it
          * travels backwards along, so that both run forwards */
@@ -160,7 +160,7 @@ static s32 collision_WalkCells(s32 *hit_point, s16 *hit_normal) {
         g_collision_cast->walk_minor_step =
             (g_collision_cast->walk_slope * COLLISION_CELL_SIZE) >> 12;
         while (--g_collision_cast->walk_steps_left != -1) {
-            if ((g_collision_cast->walk_tmp = g_collision_cast->test_cell(
+            if ((g_collision_cast->walk_tmp = PTR(g_collision_cast->test_cell)(
                      g_collision_cast->walk_cell.x,
                      g_collision_cast->walk_cell.z)) != 0) {
                 break;
@@ -185,9 +185,10 @@ static s32 collision_WalkCells(s32 *hit_point, s16 *hit_normal) {
                         g_collision_cast->walk_cell.z++;
                     }
                 }
-                if ((g_collision_cast->walk_tmp = g_collision_cast->test_cell(
-                         g_collision_cast->walk_cell.x,
-                         g_collision_cast->walk_cell.z)) != 0) {
+                if ((g_collision_cast->walk_tmp =
+                         PTR(g_collision_cast->test_cell)(
+                             g_collision_cast->walk_cell.x,
+                             g_collision_cast->walk_cell.z)) != 0) {
                     break;
                 }
             }
@@ -210,8 +211,8 @@ static s32 collision_WalkCells(s32 *hit_point, s16 *hit_normal) {
         if (g_collision_cast->walk_tmp == 0 &&
             (g_collision_cast->walk_cell.x != g_collision_cast->end_cell.x ||
              g_collision_cast->walk_cell.z != g_collision_cast->end_cell.z)) {
-            g_collision_cast->test_cell(
-                g_collision_cast->end_cell.x, g_collision_cast->end_cell.z);
+            PTR(g_collision_cast->test_cell)
+            (g_collision_cast->end_cell.x, g_collision_cast->end_cell.z);
         }
     }
     return collision_ReadHit(hit_point, hit_normal);
@@ -231,7 +232,7 @@ static void collision_CastMove(
             g_collision_cast->seg_end.vz - g_collision_cast->seg_start.vz) <
         SHORT_MOVE_SQ) {
         /* start two lengths further back */
-        g_collision_cast->test_cell = collision_TestCellFine;
+        SET_PTR(g_collision_cast->test_cell, collision_TestCellFine);
         g_collision_cast->seg_start.vx -=
             (g_collision_cast->seg_end.vx - g_collision_cast->seg_start.vx)
             << 1;
@@ -242,7 +243,7 @@ static void collision_CastMove(
             (g_collision_cast->seg_end.vz - g_collision_cast->seg_start.vz)
             << 1;
     } else {
-        g_collision_cast->test_cell = collision_TestCell;
+        SET_PTR(g_collision_cast->test_cell, collision_TestCell);
     }
     collision_WalkCells(hit_point, hit_normal);
 }
@@ -262,7 +263,7 @@ s32 collision_CastMoveWith(s32 *from, s32 *to, s32 *hit_point, s16 *hit_normal,
             g_collision_cast->seg_end.vz - g_collision_cast->seg_start.vz) <
         SHORT_MOVE_SQ) {
         /* start two lengths further back */
-        g_collision_cast->test_cell = collision_TestCellFine;
+        SET_PTR(g_collision_cast->test_cell, collision_TestCellFine);
         g_collision_cast->seg_start.vx -=
             (g_collision_cast->seg_end.vx - g_collision_cast->seg_start.vx)
             << 1;
@@ -273,7 +274,7 @@ s32 collision_CastMoveWith(s32 *from, s32 *to, s32 *hit_point, s16 *hit_normal,
             (g_collision_cast->seg_end.vz - g_collision_cast->seg_start.vz)
             << 1;
     } else {
-        g_collision_cast->test_cell = collision_TestCell;
+        SET_PTR(g_collision_cast->test_cell, collision_TestCell);
     }
     return collision_WalkCells(hit_point, hit_normal);
 }
@@ -282,7 +283,7 @@ s32 collision_Cast(s32 *from, s32 *to, s32 *hit_point, s16 *hit_normal) {
     g_collision_cast = &g_collision_own_cast;
     g_collision_own_cast.seg_start = *(VECTOR *)from;
     g_collision_cast->seg_end = *(VECTOR *)to;
-    g_collision_cast->test_cell = collision_TestCell;
+    SET_PTR(g_collision_cast->test_cell, collision_TestCell);
     return collision_WalkCells(hit_point, hit_normal);
 }
 
@@ -291,7 +292,7 @@ s32 collision_CastWith(s32 *from, s32 *to, s32 *hit_point, s16 *hit_normal,
     g_collision_cast = work_addr;
     g_collision_cast->seg_start = *(VECTOR *)from;
     g_collision_cast->seg_end = *(VECTOR *)to;
-    g_collision_cast->test_cell = collision_TestCell;
+    SET_PTR(g_collision_cast->test_cell, collision_TestCell);
     return collision_WalkCells(hit_point, hit_normal);
 }
 
@@ -335,11 +336,11 @@ static s32 collision_TestCellFine(s32 cell_x, s32 cell_z) {
         return 0;
     }
     g_collision_cast->work =
-        ((u16 *)g_collision_grid)[cell_z * COLLISION_GRID_CELLS + cell_x];
+        ((u16 *)ADDR(g_collision_grid))[cell_z * COLLISION_GRID_CELLS + cell_x];
     if (g_collision_cast->work == NO_FACES) {
         return 0;
     }
-    data = (s16 *)(g_collision_grid + g_collision_cast->work);
+    data = (s16 *)ADDR(g_collision_grid + g_collision_cast->work);
     corner_x = cell_x * COLLISION_CELL_SIZE - COLLISION_GRID_HALF;
     corner_z = cell_z * COLLISION_CELL_SIZE - COLLISION_GRID_HALF;
     g_collision_cast->local_start_x = g_collision_cast->seg_start.vx - corner_x;
@@ -517,11 +518,11 @@ static s32 collision_TestCell(s32 cell_x, s32 cell_z) {
         return 0;
     }
     g_collision_cast->work =
-        ((u16 *)g_collision_grid)[cell_z * COLLISION_GRID_CELLS + cell_x];
+        ((u16 *)ADDR(g_collision_grid))[cell_z * COLLISION_GRID_CELLS + cell_x];
     if (g_collision_cast->work == NO_FACES) {
         return 0;
     }
-    data = (s16 *)(g_collision_grid + g_collision_cast->work);
+    data = (s16 *)ADDR(g_collision_grid + g_collision_cast->work);
     corner_x = cell_x * COLLISION_CELL_SIZE - COLLISION_GRID_HALF;
     corner_z = cell_z * COLLISION_CELL_SIZE - COLLISION_GRID_HALF;
     g_collision_cast->local_start_x = g_collision_cast->seg_start.vx - corner_x;

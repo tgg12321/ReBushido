@@ -43,11 +43,11 @@ static s32 g_narration_pool_frame;
 static s32 g_narration_scene;
 
 s32 narration_RelocateFile(NarrationFile *file) {
-    sprite_RelocateList(file, file->picture_1_sheets);
-    sprite_RelocateList(file, file->picture_2_sheets);
-    sprite_RelocateList(file, file->left_sheets);
-    sprite_RelocateList(file, file->right_sheets);
-    sprite_RelocateList(file, file->line_sheets);
+    sprite_RelocateList(file, PTR(file->picture_1_sheets));
+    sprite_RelocateList(file, PTR(file->picture_2_sheets));
+    sprite_RelocateList(file, PTR(file->left_sheets));
+    sprite_RelocateList(file, PTR(file->right_sheets));
+    sprite_RelocateList(file, PTR(file->line_sheets));
     return file->head.free_ram_start;
 }
 
@@ -66,7 +66,7 @@ static void narration_Draw(MenuDrawCtx *ctx) {
     s16 *ends;
     SpriteCell *cells;
     s32 abr;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     s32 i;
     s32 x;
     s32 level;
@@ -76,9 +76,9 @@ static void narration_Draw(MenuDrawCtx *ctx) {
     draw.ot_index = NARRATION_LAYER_PICTURE;
     draw.y = NARRATION_PICTURE_Y;
     draw.semi = 0;
-    starts = g_narration_file->scene_starts;
-    cells = g_narration_file->strip_cells;
-    ends = g_narration_file->scene_ends;
+    starts = PTR(g_narration_file->scene_starts);
+    cells = PTR(g_narration_file->strip_cells);
+    ends = PTR(g_narration_file->scene_ends);
     abr = SPRITE_ABR_ADD; /* pictures and text are added to what is under */
     if (g_narration_frame < starts[g_narration_scene] + NARRATION_FADE &&
         g_narration_frame >= starts[g_narration_scene]) {
@@ -107,9 +107,9 @@ static void narration_Draw(MenuDrawCtx *ctx) {
                     g_narration_scene++;
                 }
             } else if (g_narration_frame >= starts[g_narration_scene]) {
-                sheets = g_narration_file->picture_1_sheets;
+                sheets = PTR(g_narration_file->picture_1_sheets);
                 for (i = 0; i < NARRATION_STRIPS; sheets++, i++) {
-                    draw.header = *sheets;
+                    draw.header = PTR(*sheets);
                     draw.table = cells;
                     draw.x = i * NARRATION_STRIP_WIDTH;
                     draw.sprt_out = ctx->prims.sprt;
@@ -129,10 +129,10 @@ static void narration_Draw(MenuDrawCtx *ctx) {
                 }
                 break;
             }
-            sheets = g_narration_file->right_sheets;
+            sheets = PTR(g_narration_file->right_sheets);
             for (i = 0, x = NARRATION_RIGHT_X; i < 2;
                  x += NARRATION_STRIP_WIDTH, sheets++, i++) {
-                draw.header = *sheets;
+                draw.header = PTR(*sheets);
                 draw.x = x;
                 draw.table = cells;
                 draw.sprt_out = ctx->prims.sprt;
@@ -153,10 +153,10 @@ static void narration_Draw(MenuDrawCtx *ctx) {
                 g_narration_frame >= starts[NARRATION_BOTH]) {
                 draw.has_color = 0;
             }
-            sheets = g_narration_file->left_sheets;
+            sheets = PTR(g_narration_file->left_sheets);
             for (i = 0, x = NARRATION_LEFT_X; i < 2; x += NARRATION_STRIP_WIDTH,
                 sheets++, i++) {
-                draw.header = *sheets;
+                draw.header = PTR(*sheets);
                 draw.x = x;
                 draw.table = cells;
                 draw.sprt_out = ctx->prims.sprt;
@@ -172,7 +172,7 @@ static void narration_Draw(MenuDrawCtx *ctx) {
             for (i = 0; i < NARRATION_STRIPS; i++) {
                 /* FAKE: g_narration_file->picture_2_pixels[i], by address */
                 pixels = &g_narration_file->picture_2_pixels[i];
-                LoadImage(&rect, (u32 *)(*pixels + NARRATION_TIM_PIXELS));
+                LoadImage(&rect, (u32 *)ADDR(*pixels + NARRATION_TIM_PIXELS));
                 DrawSync(0);
                 rect.x += NARRATION_STRIP_TEXELS;
             }
@@ -181,9 +181,9 @@ static void narration_Draw(MenuDrawCtx *ctx) {
         case NARRATION_PICTURE_2:
             if (g_narration_frame + 1 <
                 ends[g_narration_scene] + NARRATION_FADE) {
-                sheets = g_narration_file->picture_2_sheets;
+                sheets = PTR(g_narration_file->picture_2_sheets);
                 for (i = 0; i < NARRATION_STRIPS; sheets++, i++) {
-                    draw.header = *sheets;
+                    draw.header = PTR(*sheets);
                     draw.table = cells;
                     draw.x = i * NARRATION_STRIP_WIDTH;
                     draw.sprt_out = ctx->prims.sprt;
@@ -201,10 +201,10 @@ static void narration_Draw(MenuDrawCtx *ctx) {
     draw.ot_index = NARRATION_LAYER_TEXT;
     draw.y = 0;
     draw.x = 0;
-    sheets = g_narration_file->line_sheets;
+    sheets = PTR(g_narration_file->line_sheets);
     for (i = 0; i < NARRATION_LINES; i++) {
         /* FAKE: &g_narration_file->lines[i], summed as integers */
-        line = (NarrationLine *)(i * 4 + (s32)g_narration_file->lines);
+        line = (NarrationLine *)ADDR(i * 4 + (s32)PTR(g_narration_file->lines));
         if (g_narration_frame < line->off + NARRATION_FADE &&
             g_narration_frame >= line->on) {
             if (g_narration_frame < line->on + NARRATION_FADE) {
@@ -227,7 +227,7 @@ static void narration_Draw(MenuDrawCtx *ctx) {
                 draw.semi = 1;
                 draw.col_r = draw.col_g = draw.col_b = NARRATION_TEXT_LEVEL;
             }
-            draw.header = sheets[i];
+            draw.header = PTR(sheets[i]);
             draw.table = draw.header->cells;
             draw.sprt_out = ctx->prims.sprt;
             ctx->prims.sprt = sprite_Draw(&draw);
@@ -246,8 +246,8 @@ s32 narration_Load(s32 memory) {
     s32 free_ram;
 
     ClearOTagR(g_disp_ot, DISP_OT_SIZE);
-    file = (NarrationFile *)(memory + 2 * sizeof(PrimPool));
-    g_narration_pools = (PrimPool *)memory;
+    file = (NarrationFile *)ADDR(memory + 2 * sizeof(PrimPool));
+    g_narration_pools = (PrimPool *)ADDR(memory);
     g_narration_file = file;
     sprite_LoadFile(NARRATION_FILE, &file->head);
     free_ram = narration_RelocateFile(file);
@@ -267,18 +267,19 @@ s32 narration_Update(s32 pressed) {
     g_narration_pool_frame++;
     pool = narration_GetPrimPool(g_narration_pool_frame & 1);
     ctx.prims.ft4 = pool->ft4;
-    ctx.prims.g4 = pool->g4;
+    ctx.prims.g4 = PTR(pool->g4);
     ctx.prims.sprt = pool->sprt;
-    ctx.prims.tile = pool->tile;
-    ctx.prims.mode = pool->mode;
-    ctx.prims.area = pool->area;
-    ctx.prims.offset = pool->offset;
+    ctx.prims.tile = PTR(pool->tile);
+    ctx.prims.mode = PTR(pool->mode);
+    ctx.prims.area = PTR(pool->area);
+    ctx.prims.offset = PTR(pool->offset);
     if (g_narration_frame > 0 && (pressed & PADRdown)) {
         return 1;
     }
     narration_Draw(&ctx);
     g_narration_frame++;
-    return g_narration_frame >= g_narration_file->scene_ends[NARRATION_END];
+    return g_narration_frame >=
+           PTR(g_narration_file->scene_ends)[NARRATION_END];
 }
 
 /* Where a strip of the second picture goes in video memory: the first

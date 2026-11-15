@@ -43,7 +43,7 @@ static PrimPool *staff_GetPrimPool(s32 frame) { return &g_staff_pools[frame]; }
  * the roll, `g_staff_frame` pixels up from where it starts. */
 static void staff_DrawRoll(PrimCursors *prims) {
     SpriteDraw draw;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     s32 i;
     s32 no_abr;
 
@@ -52,7 +52,7 @@ static void staff_DrawRoll(PrimCursors *prims) {
     draw.has_color = 0;
     draw.semi = 0;
     draw.x = 0;
-    draw.header = g_staff_file->sheets[STAFF_END_CARD];
+    draw.header = PTR(g_staff_file->sheets[STAFF_END_CARD]);
     draw.y = 0;
     draw.table = draw.header->cells;
     sheets = g_staff_file->sheets;
@@ -76,8 +76,8 @@ static void staff_DrawRoll(PrimCursors *prims) {
     }
     draw.has_color = 0;
     /* Every sheet but the last, which is the card. */
-    for (i = 0; sheets[i + 1] != (SpriteSheet *)-1; i++) {
-        draw.header = sheets[i];
+    for (i = 0; PTR(sheets[i + 1]) != (SpriteSheet *)ADDR(-1); i++) {
+        draw.header = PTR(sheets[i]);
         draw.table = draw.header->cells;
         draw.y = -g_staff_frame;
         draw.sprt_out = prims->sprt;
@@ -95,8 +95,8 @@ s32 staff_LoadRoll(s32 memory) {
     StaffFile *file;
 
     ClearOTagR(g_disp_ot, DISP_OT_SIZE);
-    file = (StaffFile *)(memory + 2 * sizeof(PrimPool));
-    g_staff_pools = (PrimPool *)memory;
+    file = (StaffFile *)ADDR(memory + 2 * sizeof(PrimPool));
+    g_staff_pools = (PrimPool *)ADDR(memory);
     g_staff_file = file;
     sprite_LoadFile(STAFF_FILE, &file->head);
     sprite_InitPools(staff_GetFreeRam(file), g_staff_pools);
@@ -115,12 +115,12 @@ s32 staff_UpdateRoll(void) {
     g_staff_pool_frame++;
     pool = staff_GetPrimPool(g_staff_pool_frame & 1);
     prims.ft4 = pool->ft4;
-    prims.g4 = pool->g4;
+    prims.g4 = PTR(pool->g4);
     prims.sprt = pool->sprt;
-    prims.tile = pool->tile;
-    prims.mode = pool->mode;
-    prims.area = pool->area;
-    prims.offset = pool->offset;
+    prims.tile = PTR(pool->tile);
+    prims.mode = PTR(pool->mode);
+    prims.area = PTR(pool->area);
+    prims.offset = PTR(pool->offset);
     staff_DrawRoll(&prims);
     g_staff_frame++;
     return g_staff_frame >= STAFF_END_FRAME;

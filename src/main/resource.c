@@ -17,7 +17,7 @@ static void resource_OnCutsceneMoved(s32 block_id, s32 delta);
 /* Offsets in a file's header are used rounded down to a whole word.
  * SECTION is what is `offset` into the file at `file`, as a pointer to
  * words; SECTION_ADDR the same as an address. */
-#define SECTION(file, offset) ((s32 *)((u8 *)(file) + ALIGN4(offset)))
+#define SECTION(file, offset) ((s32 *)((u8 *)ADDR(file) + ALIGN4(offset)))
 #define SECTION_ADDR(file, offset) ((s32)SECTION(file, offset))
 
 /* A stage file's header: the number of the last offset, then the offsets
@@ -104,7 +104,7 @@ Model *resource_LoadModel(s32 slot, s32 model_id, s32 staging_addr) {
 
     block = arena_FindBlock(slot);
     if (block) {
-        model = (Model *)block->start;
+        model = (Model *)ADDR(block->start);
     } else {
         model = (Model *)arena_OpenBlock(slot);
         arena_CloseBlock(slot, (s32)model + sizeof(Model));
@@ -131,13 +131,13 @@ Model *resource_LoadModel(s32 slot, s32 model_id, s32 staging_addr) {
             /* The block stops where the file's last section, the textures,
              * starts: they are only needed until they are in video memory. */
             ndata_ReadModel(model_id, data);
-            data = SECTION_ADDR(data, ((s32 *)data)[*(s32 *)data]);
+            data = SECTION_ADDR(data, ((s32 *)ADDR(data))[*(s32 *)ADDR(data)]);
             arena_UpdatePeak(data);
         }
         arena_CloseBlock(data_block, data);
         arena_SetMoveCallback(data_block, resource_OnModelMoved);
         model->load_status = MODEL_STATUS_READ;
-        model->cloth = NULL;
+        SET_PTR(model->cloth, NULL);
         model->load_flags.word = 0;
     }
     model->slot = slot;
@@ -224,7 +224,7 @@ void resource_LoadWeaponFile(
 
     block = arena_OpenBlock(ARENA_WEAPONS);
     if (staging_addr != 0) {
-        header = (s32 *)staging_addr;
+        header = (s32 *)ADDR(staging_addr);
     } else {
         header = block;
     }
@@ -260,23 +260,25 @@ void resource_LoadWeaponFile(
         if (group_place[i] >= 0) {
             switch (work) {
             case 0:
-                tex_LoadGroupAtSplit((u32 *)textures, i, 0, 0, WEAPON_CLUT_DX,
-                                     MODEL_FOG_PLAIN_CLUT_DY);
+                tex_LoadGroupAtSplit((u32 *)ADDR(textures), i, 0, 0,
+                                     WEAPON_CLUT_DX, MODEL_FOG_PLAIN_CLUT_DY);
                 break;
             case 1:
                 tex_LoadGroupAtSplit(
-                    (u32 *)textures, i, 0, WEAPON_TEX_ROW_DY, WEAPON_CLUT_DX,
+                    (u32 *)ADDR(textures), i, 0, WEAPON_TEX_ROW_DY,
+                    WEAPON_CLUT_DX,
                     MODEL_FOG_PLAIN_CLUT_DY + WEAPON_CLUT_ROW_DY);
                 break;
             case 2:
-                tex_LoadGroupAtSplit((u32 *)textures, i, WEAPON_TEX_COLUMN_DX,
-                                     0, WEAPON_CLUT_DX + WEAPON_CLUT_COLUMN_DX,
-                                     MODEL_FOG_PLAIN_CLUT_DY);
+                tex_LoadGroupAtSplit(
+                    (u32 *)ADDR(textures), i, WEAPON_TEX_COLUMN_DX, 0,
+                    WEAPON_CLUT_DX + WEAPON_CLUT_COLUMN_DX,
+                    MODEL_FOG_PLAIN_CLUT_DY);
                 break;
             case 3:
                 tex_LoadGroupAtSplit(
-                    (u32 *)textures, i, WEAPON_TEX_COLUMN_DX, WEAPON_TEX_ROW_DY,
-                    WEAPON_CLUT_DX + WEAPON_CLUT_COLUMN_DX,
+                    (u32 *)ADDR(textures), i, WEAPON_TEX_COLUMN_DX,
+                    WEAPON_TEX_ROW_DY, WEAPON_CLUT_DX + WEAPON_CLUT_COLUMN_DX,
                     MODEL_FOG_PLAIN_CLUT_DY + WEAPON_CLUT_ROW_DY);
                 break;
             }
@@ -312,8 +314,8 @@ void resource_LoadWeaponFile(
         end_addr = reloc_CopySelectedEntries(meshes, dst, keep);
         reloc_RelocateBlock(dst, RELOC_WEAPONS);
     } else {
-        end_addr = reloc_KeepSelectedEntries((s32 *)meshes, keep);
-        reloc_RelocateBlock((s32 *)meshes, RELOC_WEAPONS);
+        end_addr = reloc_KeepSelectedEntries((s32 *)ADDR(meshes), keep);
+        reloc_RelocateBlock((s32 *)ADDR(meshes), RELOC_WEAPONS);
     }
     arena_UpdatePeak(end_addr);
 
@@ -440,7 +442,7 @@ void resource_LoadStage(s32 stage, s32 staging_addr) {
                 /* the props stand again */
                 last_section = header[0];
                 stage_ReadCells(
-                    (u16 *)SECTION_ADDR(header, header[last_section - 1]),
+                    (u16 *)ADDR(SECTION_ADDR(header, header[last_section - 1])),
                     RELOC_STAGE);
                 break;
             case STAGE_CHANBARA:
@@ -466,9 +468,9 @@ void resource_LoadStage(s32 stage, s32 staging_addr) {
 
     if (staging_addr != 0) {
         /* everything but the textures goes into the block */
-        last_section = *(s32 *)staging_addr;
-        arena_Copy(
-            staging_addr, (s32)header, ((s32 *)staging_addr)[last_section]);
+        last_section = *(s32 *)ADDR(staging_addr);
+        arena_Copy(staging_addr, (s32)header,
+                   ((s32 *)ADDR(staging_addr))[last_section]);
     }
 
     {
@@ -476,7 +478,7 @@ void resource_LoadStage(s32 stage, s32 staging_addr) {
         last_section = header[0];
         meshes = SECTION(header, meshes_offset);
         {
-            s32 *last = (s32 *)((last_section << 2) + (s32)header);
+            s32 *last = (s32 *)ADDR((last_section << 2) + (s32)header);
             cells = SECTION(header, last[-1]);
             collision_grid = SECTION_ADDR(header, header[STAGE_FILE_COLLISION]);
             unused_list = SECTION_ADDR(header, header[STAGE_FILE_UNUSED_LIST]);
@@ -485,8 +487,9 @@ void resource_LoadStage(s32 stage, s32 staging_addr) {
             tim_section = SECTION(header, last[0]);
 
             if (staging_addr != 0) {
-                textures = (s32 *)(staging_addr +
-                                   ALIGN4(((s32 *)staging_addr)[last_section]));
+                textures = (s32 *)ADDR(
+                    staging_addr +
+                    ALIGN4(((s32 *)ADDR(staging_addr))[last_section]));
             } else {
                 /* the word after the last offset: where the file ends */
                 textures = tim_section;
@@ -499,8 +502,8 @@ void resource_LoadStage(s32 stage, s32 staging_addr) {
      * their own), or for some stages where the textures do. */
     g_resource_stage_has_areas = 0;
     /* FAKE: block_end = cells */
-    block_end = (s32 *)((s32)cells - (s32)header);
-    block_end = (s32 *)((s32)block_end + (s32)header);
+    block_end = (s32 *)ADDR((s32)cells - (s32)header);
+    block_end = (s32 *)ADDR((s32)block_end + (s32)header);
     switch (stage) {
     case STAGE_TATARA_SHRINE: {
         block_end = tim_section;
@@ -515,13 +518,13 @@ void resource_LoadStage(s32 stage, s32 staging_addr) {
         block_end = tim_section;
         reloc_RelocateBlock(
             SECTION(header, header[STAGE_FILE_PROP_MESHES]), RELOC_STAGE_PROPS);
-        block_end = (s32 *)stage_SetUpProps(
-            (s16 *)SECTION_ADDR(header, header[STAGE_FILE_PROP_MOTION]),
-            RELOC_STAGE_PROPS, (s32)block_end);
+        block_end = (s32 *)ADDR(stage_SetUpProps(
+            (s16 *)ADDR(SECTION_ADDR(header, header[STAGE_FILE_PROP_MOTION])),
+            RELOC_STAGE_PROPS, (s32)block_end));
         break;
     case STAGE_KIMIGAURA_COAST:
         wave_SetBuffer((s32)block_end);
-        block_end = (s32 *)((s32)block_end + wave_GetBufferSize());
+        block_end = (s32 *)ADDR((s32)block_end + wave_GetBufferSize());
         break;
     case STAGE_CASTLE_ROOFTOP:
         block_end = tim_section;
@@ -692,7 +695,7 @@ s32 *resource_LoadTinyModel(s32 tiny_model) {
         ArenaBlock *block = arena_FindBlock(ARENA_TINY_MODEL);
 
         if (block && g_resource_tiny_model == id) {
-            header = (s32 *)block->start;
+            header = (s32 *)ADDR(block->start);
         } else {
             s32 end_addr;
             s32 *meshes;

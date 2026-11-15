@@ -775,12 +775,12 @@ static s32 ndata_ReadFromPack(s32 id, s32 dest_addr) {
     if (id == PACK_SECTION_NONE) {
         return 0;
     }
-    pack = (s32 *)g_ndata_pack;
+    pack = (s32 *)ADDR(g_ndata_pack);
     if (*pack != PACK_SECTIONS) {
         g_ndata_pack_loaded = 0;
         return 0;
     }
-    offset = (s32 *)(id * 4 + (s32)pack + 4);
+    offset = (s32 *)ADDR(id * 4 + (s32)pack + 4);
     start = *offset;
     mem_MoveWords(
         (s32)pack + ((start >> 2) << 2), dest_addr, offset[1] - start);

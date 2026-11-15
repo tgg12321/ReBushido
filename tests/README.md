@@ -214,13 +214,22 @@ be reached without hardware, it is not a candidate.
 ## The runtime, and why the tests are 32-bit
 
 The game keeps addresses in `s32` everywhere (`arena_OpenBlock`, the CD's
-destinations, the scratchpad at `0x1F800000`), so its C only means the same
-thing compiled with 32-bit pointers: the tests are built with `gcc -m32`.
+destinations, the scratchpad at `0x1F800000`), so its C as the PlayStation
+builds compile it only means the same thing compiled with 32-bit pointers:
+the tests are built with `gcc -m32`. With `--rebushido`, where the port's
+switch is on and the source's `ADDR()` and `PTR()` are what the port makes
+of them ([`docs/PORT.md`](../docs/PORT.md), "64 bits"), every test is then
+built and run a second time as a 64-bit program, and has to pass the same
+checks: 32 of the 37 are programs. A 64-bit test runs on a stack of the
+runtime's own below 4 GB and gets its memory there, because a test hands
+the game the addresses of its locals. A test whose Python side says `BITS =
+(32,)` is for that size alone (`rebushido/play_state`, which is about the
+PlayStation's offsets).
 A 32-bit C library is usually not installed (it is not in this project's
 WSL, nor on GitHub's runners), so the tests use none: each is a static
 program linked with `tests/runtime/runtime.c` and nothing else (`-nostdlib
--ffreestanding`). The runtime is about 300 lines: `_start`, and on the Linux
-system calls (`int $0x80`) a `test_Print` that knows `%d %u %x %s %c`,
+-ffreestanding`). The runtime is about 400 lines: `_start`, and on the Linux
+system calls (`int $0x80`, or `syscall` in a 64-bit program) a `test_Print` that knows `%d %u %x %s %c`,
 the check counters, `test_ReadFile`, `test_Alloc`, `test_AllocAt` (memory at
 an address of the test's choosing: the scratchpad, a page of the
 PlayStation's RAM), and `memcpy` and its like, which the compiler calls.

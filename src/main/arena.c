@@ -140,7 +140,7 @@ s32 *arena_OpenBlock(s32 block_id) {
     block->start = start;
     block->id = block_id;
     block->on_move = NULL;
-    return (s32 *)start;
+    return (s32 *)ADDR(start);
 }
 
 /* Ends the block being filled at `end_addr`: its size is from the end of
@@ -205,7 +205,7 @@ s32 *arena_GetBlockAddr(s32 block_id) {
     ArenaBlock *block = arena_FindBlock(block_id);
 
     if (block) {
-        return (s32 *)block->start;
+        return (s32 *)ADDR(block->start);
     }
     return NULL;
 }

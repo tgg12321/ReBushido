@@ -1,29 +1,22 @@
-/* The native port on Linux (port_host.h): a 32-bit x86 program that asks
- * the kernel directly for everything, with no C library, as the host
- * tests do (tests/runtime/runtime.c): a 32-bit C library is not always
- * installed, and the port so far needs a dozen calls. When the port
- * takes a library for its window and sound (docs/PORT.md) this file is
- * the one that changes. */
-#if defined(__linux__) && defined(__i386__)
+/* The native port on Linux (port_host.h): an x86 program, of 64-bit
+ * pointers or of 32-bit ones, that asks the kernel directly for
+ * everything, with no C library, as the host tests do
+ * (tests/runtime/runtime.c): a 32-bit C library is not always installed,
+ * and the port so far needs a dozen calls. When the port takes a library
+ * for its window and sound (docs/PORT.md) this file is the one that
+ * changes.
+ *
+ * The two sizes differ in how the kernel is called, in the numbers of
+ * its calls and in what it hands a fault's handler; each of those is
+ * here twice, and everything else once. */
+#if defined(__linux__) && (defined(__i386__) || defined(__x86_64__))
 
 #include "common.h"
 #include "port_host.h"
 #include "bb2.h"
 
-/* ---- system calls (32-bit x86 Linux: `int $0x80`) ---- */
-
-enum {
-    LINUX_EXIT = 1,
-    LINUX_READ = 3,
-    LINUX_WRITE = 4,
-    LINUX_OPEN = 5,
-    LINUX_CLOSE = 6,
-    LINUX_LSEEK = 19,
-    LINUX_MUNMAP = 91,
-    LINUX_RT_SIGACTION = 174,
-    LINUX_SIGALTSTACK = 186,
-    LINUX_MMAP2 = 192, /* the offset in pages, the six arguments in registers */
-};
+/* What the kernel takes and gives: a number as wide as a pointer. */
+typedef __INTPTR_TYPE__ LinuxWord;
 
 #define LINUX_SEEK_SET 0
 #define LINUX_SEEK_END 2
@@ -42,19 +35,93 @@ enum {
 #define LINUX_MAP_FIXED_NOREPLACE 0x100000
 #define LINUX_PAGE_SIZE 0x1000U
 /* The kernel's answers from -1 to -4095 are errors. */
-#define LINUX_IS_ERROR(result) ((u32)(result) > 0xFFFFF000U)
+#define LINUX_IS_ERROR(result) ((PortAddress)(result) > (PortAddress) - 4096)
+/* A file larger than this has no size the port can count
+ * (port_HostFileSize). */
+#define LINUX_FILE_SIZE_MAX 0x7FFFFFFF
 
 #define LINUX_SIGILL 4
 #define LINUX_SIGBUS 7
 #define LINUX_SIGFPE 8
 #define LINUX_SIGSEGV 11
 #define LINUX_SA_SIGINFO 0x00000004U
+#define LINUX_SA_RESTORER 0x04000000U
 #define LINUX_SA_ONSTACK 0x08000000U
 #define LINUX_SA_RESETHAND 0x80000000U
 #define LINUX_SIGNAL_SET_BYTES 8
 
-static s32 port_LinuxCall(s32 number, s32 first, s32 second, s32 third) {
-    s32 result;
+#if defined(__x86_64__)
+
+/* ---- system calls (64-bit x86 Linux: `syscall`) ---- */
+
+enum {
+    LINUX_READ = 0,
+    LINUX_WRITE = 1,
+    LINUX_OPEN = 2,
+    LINUX_CLOSE = 3,
+    LINUX_LSEEK = 8,
+    LINUX_MMAP = 9,
+    LINUX_MUNMAP = 11,
+    LINUX_RT_SIGACTION = 13,
+    LINUX_RT_SIGRETURN = 15,
+    LINUX_EXIT = 60,
+    LINUX_SIGALTSTACK = 131,
+};
+
+/* The call's number in %rax, its arguments in %rdi, %rsi, %rdx, %r10,
+ * %r8 and %r9; the kernel leaves %rcx and %r11 changed. */
+static LinuxWord port_LinuxCall6(
+    LinuxWord number, LinuxWord first, LinuxWord second, LinuxWord third,
+    LinuxWord fourth, LinuxWord fifth, LinuxWord sixth) {
+    register LinuxWord in_r10 __asm__("r10") = fourth;
+    register LinuxWord in_r8 __asm__("r8") = fifth;
+    register LinuxWord in_r9 __asm__("r9") = sixth;
+    LinuxWord result;
+
+    __asm__ volatile("syscall"
+                     : "=a"(result)
+                     : "a"(number), "D"(first), "S"(second), "d"(third),
+                       "r"(in_r10), "r"(in_r8), "r"(in_r9)
+                     : "rcx", "r11", "memory");
+    return result;
+}
+
+static LinuxWord port_LinuxCall(
+    LinuxWord number, LinuxWord first, LinuxWord second, LinuxWord third) {
+    return port_LinuxCall6(number, first, second, third, 0, 0, 0);
+}
+
+static LinuxWord port_LinuxMap(u32 address, u32 size, s32 flags) {
+    return port_LinuxCall6(LINUX_MMAP, (LinuxWord)address, (LinuxWord)size,
+                           LINUX_PROT_READ_WRITE, flags, -1, 0);
+}
+
+/* rt_sigaction's fourth argument is the size of the mask. */
+static void port_LinuxSetAction(s32 number, const void *action) {
+    port_LinuxCall6(LINUX_RT_SIGACTION, number, (LinuxWord)action, 0,
+                    LINUX_SIGNAL_SET_BYTES, 0, 0);
+}
+
+#else
+
+/* ---- system calls (32-bit x86 Linux: `int $0x80`) ---- */
+
+enum {
+    LINUX_EXIT = 1,
+    LINUX_READ = 3,
+    LINUX_WRITE = 4,
+    LINUX_OPEN = 5,
+    LINUX_CLOSE = 6,
+    LINUX_LSEEK = 19,
+    LINUX_MUNMAP = 91,
+    LINUX_RT_SIGACTION = 174,
+    LINUX_SIGALTSTACK = 186,
+    LINUX_MMAP2 = 192, /* the offset in pages, the six arguments in registers */
+};
+
+static LinuxWord port_LinuxCall(
+    LinuxWord number, LinuxWord first, LinuxWord second, LinuxWord third) {
+    LinuxWord result;
 
     __asm__ volatile("int $0x80"
                      : "=a"(result)
@@ -65,8 +132,8 @@ static s32 port_LinuxCall(s32 number, s32 first, s32 second, s32 third) {
 
 /* mmap2 takes six. The sixth goes in %ebp, which holds this function's
  * frame, so it is put there by hand around the call. */
-static s32 port_LinuxMap(u32 address, u32 size, s32 flags) {
-    s32 result;
+static LinuxWord port_LinuxMap(u32 address, u32 size, s32 flags) {
+    LinuxWord result;
     s32 no_file = -1;
 
     __asm__ volatile(
@@ -81,6 +148,20 @@ static s32 port_LinuxMap(u32 address, u32 size, s32 flags) {
     return result;
 }
 
+/* rt_sigaction's fourth argument, the size of the mask, is in %esi. */
+static void port_LinuxSetAction(s32 number, const void *action) {
+    s32 result;
+
+    __asm__ volatile("int $0x80"
+                     : "=a"(result)
+                     : "a"(LINUX_RT_SIGACTION), "b"(number), "c"(action),
+                       "d"(0), "S"(LINUX_SIGNAL_SET_BYTES)
+                     : "memory");
+    (void)result;
+}
+
+#endif
+
 void port_HostExit(s32 code) {
     for (;;) {
         port_LinuxCall(LINUX_EXIT, code, 0, 0);
@@ -92,8 +173,9 @@ void port_HostWrite(s32 stream, const char *bytes, u32 count) {
     u32 done = 0;
 
     while (done < count) {
-        s32 wrote = port_LinuxCall(
-            LINUX_WRITE, stream, (s32)(bytes + done), (s32)(count - done));
+        LinuxWord wrote =
+            port_LinuxCall(LINUX_WRITE, stream, (LinuxWord)(bytes + done),
+                           (LinuxWord)(count - done));
         if (wrote <= 0) {
             return;
         }
@@ -102,39 +184,40 @@ void port_HostWrite(s32 stream, const char *bytes, u32 count) {
 }
 
 s32 port_HostOpen(const char *path) {
-    s32 file = port_LinuxCall(
-        LINUX_OPEN, (s32)path, LINUX_O_RDONLY | LINUX_O_LARGEFILE, 0);
+    LinuxWord file = port_LinuxCall(
+        LINUX_OPEN, (LinuxWord)path, LINUX_O_RDONLY | LINUX_O_LARGEFILE, 0);
 
-    return LINUX_IS_ERROR(file) ? -1 : file;
+    return LINUX_IS_ERROR(file) ? -1 : (s32)file;
 }
 
 s32 port_HostCreate(const char *path) {
-    s32 file = port_LinuxCall(
-        LINUX_OPEN, (s32)path, LINUX_O_WRONLY | LINUX_O_CREAT | LINUX_O_TRUNC,
-        LINUX_FILE_MODE);
+    LinuxWord file = port_LinuxCall(
+        LINUX_OPEN, (LinuxWord)path,
+        LINUX_O_WRONLY | LINUX_O_CREAT | LINUX_O_TRUNC, LINUX_FILE_MODE);
 
-    return LINUX_IS_ERROR(file) ? -1 : file;
+    return LINUX_IS_ERROR(file) ? -1 : (s32)file;
 }
 
 void port_HostClose(s32 file) { port_LinuxCall(LINUX_CLOSE, file, 0, 0); }
 
 u32 port_HostFileSize(s32 file) {
-    s32 size = port_LinuxCall(LINUX_LSEEK, file, 0, LINUX_SEEK_END);
+    LinuxWord size = port_LinuxCall(LINUX_LSEEK, file, 0, LINUX_SEEK_END);
 
-    return LINUX_IS_ERROR(size) ? 0 : (u32)size;
+    return LINUX_IS_ERROR(size) || size > LINUX_FILE_SIZE_MAX ? 0 : (u32)size;
 }
 
 /* Reads until it has `count` bytes or the file ends (port_host.h). */
 u32 port_HostReadAt(s32 file, u32 offset, void *dest, u32 count) {
     u32 done = 0;
 
-    if (LINUX_IS_ERROR(
-            port_LinuxCall(LINUX_LSEEK, file, (s32)offset, LINUX_SEEK_SET))) {
+    if (LINUX_IS_ERROR(port_LinuxCall(
+            LINUX_LSEEK, file, (LinuxWord)offset, LINUX_SEEK_SET))) {
         return 0;
     }
     while (done < count) {
-        s32 got = port_LinuxCall(
-            LINUX_READ, file, (s32)((char *)dest + done), (s32)(count - done));
+        LinuxWord got =
+            port_LinuxCall(LINUX_READ, file, (LinuxWord)((char *)dest + done),
+                           (LinuxWord)(count - done));
         if (got <= 0) {
             break;
         }
@@ -148,9 +231,9 @@ s32 port_HostAppend(s32 file, const void *bytes, u32 count) {
     u32 done = 0;
 
     while (done < count) {
-        s32 wrote =
-            port_LinuxCall(LINUX_WRITE, file, (s32)((const char *)bytes + done),
-                           (s32)(count - done));
+        LinuxWord wrote = port_LinuxCall(
+            LINUX_WRITE, file, (LinuxWord)((const char *)bytes + done),
+            (LinuxWord)(count - done));
         if (wrote <= 0) {
             return 0;
         }
@@ -161,7 +244,7 @@ s32 port_HostAppend(s32 file, const void *bytes, u32 count) {
 
 /* Whole pages at exactly `address`, or nothing (port_host.h). */
 s32 port_HostMapAt(u32 address, u32 size) {
-    s32 got;
+    LinuxWord got;
 
     size = (size + LINUX_PAGE_SIZE - 1) & ~(LINUX_PAGE_SIZE - 1);
     got = port_LinuxMap(
@@ -170,16 +253,16 @@ s32 port_HostMapAt(u32 address, u32 size) {
     if (LINUX_IS_ERROR(got)) {
         return 0;
     }
-    if ((u32)got != address) {
+    if ((PortAddress)got != address) {
         /* somewhere else: not what was asked */
-        port_LinuxCall(LINUX_MUNMAP, got, (s32)size, 0);
+        port_LinuxCall(LINUX_MUNMAP, got, (LinuxWord)size, 0);
         return 0;
     }
     return 1;
 }
 
 void *port_HostAllocate(u32 size) {
-    s32 got;
+    LinuxWord got;
 
     size = (size + LINUX_PAGE_SIZE - 1) & ~(LINUX_PAGE_SIZE - 1);
     got = port_LinuxMap(0, size, LINUX_MAP_PRIVATE | LINUX_MAP_ANONYMOUS);
@@ -190,13 +273,42 @@ void *port_HostAllocate(u32 size) {
 
 /* What the kernel hands a handler that asks for it (SA_SIGINFO), as far
  * as this reads it: the faulting address in the first, the registers in
- * the second. */
+ * the second. Three numbers, then the address on a word's boundary. */
 typedef struct {
     s32 number;
     s32 error;
     s32 code;
-    u32 address;
+    PortAddress address;
 } LinuxSignalInfo;
+
+#if defined(__x86_64__)
+
+typedef struct {
+    PortAddress flags;
+    PortAddress link;
+    PortAddress stack_base;
+    s32 stack_flags;
+    PortAddress stack_size;
+    PortAddress r8_to_r15[8];
+    PortAddress rdi, rsi, rbp, rbx, rdx, rax, rcx, rsp;
+    PortAddress rip;
+} LinuxSignalContext;
+
+#define LINUX_CONTEXT_PC(context) ((context)->rip)
+#define LINUX_CONTEXT_FRAME(context) ((context)->rbp)
+#define LINUX_CONTEXT_STACK(context) ((context)->rsp)
+
+/* Where a handler returns to, which a 64-bit kernel has to be given: it
+ * asks the kernel to put back what the fault interrupted. The port's
+ * handler never returns. */
+static __attribute__((naked)) void port_LinuxRestore(void) {
+    __asm__("movl $15, %eax\n"
+            "syscall\n");
+}
+
+#define LINUX_ACTION_FLAGS LINUX_SA_RESTORER
+
+#else
 
 typedef struct {
     u32 flags;
@@ -210,9 +322,19 @@ typedef struct {
     u32 eip;
 } LinuxSignalContext;
 
+#define LINUX_CONTEXT_PC(context) ((context)->eip)
+#define LINUX_CONTEXT_FRAME(context) ((context)->ebp)
+#define LINUX_CONTEXT_STACK(context) ((context)->esp)
+
+#define port_LinuxRestore NULL
+#define LINUX_ACTION_FLAGS 0U
+
+#endif
+
+/* The flags are a word as wide as a pointer, the mask 64 signals. */
 typedef struct {
     void (*handler)(s32 number, LinuxSignalInfo *info, void *context);
-    u32 flags;
+    PortAddress flags;
     void (*restorer)(void);
     u8 mask[LINUX_SIGNAL_SET_BYTES];
 } LinuxSignalAction;
@@ -220,7 +342,7 @@ typedef struct {
 typedef struct {
     void *base;
     s32 flags;
-    u32 size;
+    PortAddress size;
 } LinuxSignalStack;
 
 /* The handler runs on a stack of its own: the fault may be the game's
@@ -250,9 +372,9 @@ static void port_LinuxOnSignal(
         break;
     }
     crash.address = info->address;
-    crash.pc = registers->eip;
-    crash.frame = registers->ebp;
-    crash.stack = registers->esp;
+    crash.pc = LINUX_CONTEXT_PC(registers);
+    crash.frame = LINUX_CONTEXT_FRAME(registers);
+    crash.stack = LINUX_CONTEXT_STACK(registers);
     g_port_linux_report(&crash);
     port_HostExit(PORT_EXIT_CRASH);
 }
@@ -274,33 +396,34 @@ void port_HostCatchCrashes(void (*report)(const PortCrash *crash)) {
     stack.base = g_port_linux_signal_stack;
     stack.flags = 0;
     stack.size = sizeof(g_port_linux_signal_stack);
-    port_LinuxCall(LINUX_SIGALTSTACK, (s32)&stack, 0, 0);
+    port_LinuxCall(LINUX_SIGALTSTACK, (LinuxWord)&stack, 0, 0);
 
     action.handler = port_LinuxOnSignal;
     /* a second fault, in the report itself, ends the program as the
      * system would have */
-    action.flags = LINUX_SA_SIGINFO | LINUX_SA_ONSTACK | LINUX_SA_RESETHAND;
-    action.restorer = NULL;
+    action.flags = LINUX_SA_SIGINFO | LINUX_SA_ONSTACK | LINUX_SA_RESETHAND |
+                   LINUX_ACTION_FLAGS;
+    action.restorer = port_LinuxRestore;
     for (i = 0; i < sizeof(action.mask); i++) {
         action.mask[i] = 0;
     }
     for (i = 0; i < sizeof(signals) / sizeof(signals[0]); i++) {
-        /* rt_sigaction's fourth argument, the size of the mask, is in
-         * %esi */
-        s32 result;
-
-        __asm__ volatile("int $0x80"
-                         : "=a"(result)
-                         : "a"(LINUX_RT_SIGACTION), "b"(signals[i]),
-                           "c"(&action), "d"(0), "S"(LINUX_SIGNAL_SET_BYTES)
-                         : "memory");
-        (void)result;
+        port_LinuxSetAction(signals[i], &action);
     }
 }
 
 /* The stack pointer to the top of the memory given, no frame above the
  * function's, and the call. */
 void port_HostCallOnStack(void (*function)(void), u32 stack_top) {
+#if defined(__x86_64__)
+    __asm__ volatile(
+        "movq %0, %%rsp\n"
+        "xorl %%ebp, %%ebp\n"
+        "call *%1\n"
+        :
+        : "r"((PortAddress)stack_top), "r"(function)
+        : "memory");
+#else
     __asm__ volatile(
         "movl %0, %%esp\n"
         "xorl %%ebp, %%ebp\n"
@@ -308,6 +431,7 @@ void port_HostCallOnStack(void (*function)(void), u32 stack_top) {
         :
         : "r"(stack_top), "r"(function)
         : "memory");
+#endif
     for (;;) {
         port_HostExit(1);
     }
@@ -316,9 +440,19 @@ void port_HostCallOnStack(void (*function)(void), u32 stack_top) {
 /* ---- start-up ---- */
 
 /* The kernel starts the program here with the argument count and the
- * arguments on the stack. */
-static void port_LinuxStart(s32 *stack) __attribute__((used, noreturn));
+ * arguments on the stack, each a word as wide as a pointer. */
+static void port_LinuxStart(PortAddress *stack) __attribute__((used, noreturn));
 
+#if defined(__x86_64__)
+__asm__(".text\n"
+        ".globl _start\n"
+        "_start:\n"
+        "    xorl %ebp, %ebp\n"
+        "    movq %rsp, %rdi\n"
+        "    andq $-16, %rsp\n"
+        "    call port_LinuxStart\n"
+        "    hlt\n");
+#else
 __asm__(".text\n"
         ".globl _start\n"
         "_start:\n"
@@ -329,9 +463,10 @@ __asm__(".text\n"
         "    pushl %eax\n"
         "    call port_LinuxStart\n"
         "    hlt\n");
+#endif
 
-static void port_LinuxStart(s32 *stack) {
-    port_HostExit(port_Main(stack[0], (char **)(stack + 1)));
+static void port_LinuxStart(PortAddress *stack) {
+    port_HostExit(port_Main((s32)stack[0], (char **)(stack + 1)));
 }
 
-#endif /* __linux__ && __i386__ */
+#endif /* __linux__, and an x86 of either size */

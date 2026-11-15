@@ -11,6 +11,10 @@ compiler decided").
     python3 tools/port_order.py --all       also the places where the order
                                             differs and it cannot matter, in
                                             brackets: for checking this tool
+    --bits N                                of the 32-bit program or the
+                                            64-bit one (PORT_BITS): the two
+                                            are two compilers' work, and
+                                            `make port` asks about both
 
 C leaves open the order in which the operands of an operator and the
 arguments of a call are evaluated. The game was compiled by GCC 2.7.2 for
@@ -395,8 +399,14 @@ def key_of(place):
 
 
 def main():
+    global OUT_DIR
     os.chdir(ROOT)
     args = sys.argv[1:]
+    bits = port_build.bits_of(args)
+    if bits is None:
+        return 1
+    port_build.set_bits(bits)
+    OUT_DIR = port_build.OUT_DIR + '/order'
     problem = port_build.check_host()
     if problem:
         print('port_order: skipped: %s' % problem)
@@ -423,8 +433,8 @@ def main():
     shown = new if '--check' in args else places
     for path, line, kind, callee, what in shown:
         print('%s:%d: %-5s %s: %s' % (path, line, kind, callee, what))
-    print('port_order: %d places where the order of evaluation is the compiler\'s and may matter; %d not in %s'
-          % (len(places), len(new), ACCEPTED))
+    print('port_order: %d-bit: %d places where the order of evaluation is the compiler\'s and may matter; '
+          '%d not in %s' % (port_build.BITS, len(places), len(new), ACCEPTED))
     if '--check' in args and new:
         print('FAILED: port_order: put the call first under RB_PORT, or look at the place and add it to the list '
               '(--update, then its reason)')

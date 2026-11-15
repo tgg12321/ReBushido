@@ -65,13 +65,13 @@ static ModelCloth *test_SetUp(u8 *file, ModelCloth *room, s32 pose) {
         g_test_nodes[mesh].node.mesh_block = 0;
         g_test_nodes[mesh].node.mesh = mesh;
         g_test_nodes[mesh].node.world = world;
-        g_test_model.mesh_nodes[mesh] = &g_test_nodes[mesh];
+        SET_PTR(g_test_model.mesh_nodes[mesh], &g_test_nodes[mesh]);
     }
-    g_test_model.cloth = room;
+    SET_PTR(g_test_model.cloth, room);
     g_test_model.cloth_params = (s32)(file + header[FILE_CLOTH]);
     cloth_FreeAll();
     cloth_SetupModel(&g_test_model, 0);
-    return g_test_model.cloth;
+    return PTR(g_test_model.cloth);
 }
 
 /* The arguments are the disc's model files (cloth.py takes them out of the
@@ -117,8 +117,8 @@ void test_Main(void) {
                 CHECK(piece->cloth >= 0);
                 CHECK(made->spring_count <= 0x100);
                 test_Print("cloth %d %d %d %d %d\n", file_index,
-                           (s32)(piece->node - g_test_nodes), pose, made->count,
-                           made->spring_count);
+                           (s32)(PTR(piece->node) - g_test_nodes), pose,
+                           made->count, made->spring_count);
                 for (j = 0; j < made->count; j++) {
                     test_Print("point %d %d %d %d\n", j, made->points[j].pin,
                                made->points[j].out_count,

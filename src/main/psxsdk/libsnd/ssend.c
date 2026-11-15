@@ -17,7 +17,7 @@ void SsEnd(void) {
         VSyncCallback(0);
         _snd_seq_tick_env.on_vsync = 0;
     } else if (_snd_seq_tick_env.irq == 0) {
-        InterruptCallback(0, (void (*)())_snd_seq_tick_env.old_callback);
+        InterruptCallback(0, (void (*)())ADDR(_snd_seq_tick_env.old_callback));
         _snd_seq_tick_env.old_callback = 0;
     } else {
         InterruptCallback(6, 0);

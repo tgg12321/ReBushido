@@ -673,9 +673,9 @@ typedef union {
  * (SegmentCast) and the renderer. */
 typedef struct {
     HitScratchPoints point_slots;
-    Vec3 *shape_points[3];       /* the shape's corners */
-    Vec3 *other_shape_points[3]; /* a second triangle's */
-    Vec3 bbox_min;               /* the box round the shape */
+    PTR32(Vec3 *) shape_points[3];       /* the shape's corners */
+    PTR32(Vec3 *) other_shape_points[3]; /* a second triangle's */
+    Vec3 bbox_min;                       /* the box round the shape */
     Vec3 bbox_max;
     Vec3 other_bbox_min;
     Vec3 other_bbox_max;

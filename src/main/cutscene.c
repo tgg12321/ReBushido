@@ -57,11 +57,12 @@ static s32 cutscene_Start(
         scene->block_base = (s32)cutscene_LoadBlock(file_id);
         file_size = 0;
     }
-    scene->flags = *(s32 *)(((CutsceneFile *)scene->block_base)->flags_offset +
-                            scene->block_base);
-    scene->frame_count =
-        *(u16 *)(((CutsceneFile *)scene->block_base)->frame_count_offset +
-                 scene->block_base);
+    scene->flags =
+        *(s32 *)ADDR(((CutsceneFile *)ADDR(scene->block_base))->flags_offset +
+                     scene->block_base);
+    scene->frame_count = *(u16 *)ADDR(
+        ((CutsceneFile *)ADDR(scene->block_base))->frame_count_offset +
+        scene->block_base);
     scene->current_frame = 0;
     /* a stage has four pairs of start positions; the scene is played at
      * the first of the pair */
@@ -167,35 +168,37 @@ static s32 cutscene_Advance(void) {
         s32 j;
 
         scene->camera_stream =
-            ((CutsceneFile *)scene->block_base)->camera_stream_offset +
+            ((CutsceneFile *)ADDR(scene->block_base))->camera_stream_offset +
             scene->block_base;
         scene->motion_streams[0] =
-            ((CutsceneFile *)scene->block_base)->motion_stream_offsets[0] +
+            ((CutsceneFile *)ADDR(scene->block_base))
+                ->motion_stream_offsets[0] +
             scene->block_base;
         scene->motion_streams[1] =
-            ((CutsceneFile *)scene->block_base)->motion_stream_offsets[1] +
+            ((CutsceneFile *)ADDR(scene->block_base))
+                ->motion_stream_offsets[1] +
             scene->block_base;
         bitstream_OpenTrack(scene->camera_stream, CUTSCENE_CAMERA_TRACK);
         for (j = 0; j < 2; j++) {
-            if (*(s32 *)scene->motion_streams[j] ==
+            if (*(s32 *)ADDR(scene->motion_streams[j]) ==
                 g_cutscene_no_fighter_tag[0]) {
                 scene->motion_streams[j] = 0;
             }
             if (scene->motion_streams[j] != 0) {
-                motion_OpenStream(j, (u32 *)scene->motion_streams[j]);
+                motion_OpenStream(j, (u32 *)ADDR(scene->motion_streams[j]));
             }
         }
         scene->face_tracks[1] = 0;
         scene->face_tracks[0] = 0;
         if (scene->flags & CUTSCENE_FACES_1) {
-            scene->face_tracks[0] =
-                ((CutsceneFile *)scene->block_base)->face_track_offsets[0] +
-                scene->block_base;
+            scene->face_tracks[0] = ((CutsceneFile *)ADDR(scene->block_base))
+                                        ->face_track_offsets[0] +
+                                    scene->block_base;
         }
         if (scene->flags & CUTSCENE_FACES_2) {
-            scene->face_tracks[1] =
-                ((CutsceneFile *)scene->block_base)->face_track_offsets[1] +
-                scene->block_base;
+            scene->face_tracks[1] = ((CutsceneFile *)ADDR(scene->block_base))
+                                        ->face_track_offsets[1] +
+                                    scene->block_base;
         }
         model = model_Get(0);
         if (model) {
@@ -291,10 +294,10 @@ static s32 cutscene_Advance(void) {
             if (scene->face_tracks[i] != 0) {
                 /* a face for every frame, four bits each */
                 model_SetFace(
-                    i,
-                    (((u32 *)scene->face_tracks[i])[scene->current_frame / 8] >>
-                     ((scene->current_frame % 8) * 4)) &
-                        0xF);
+                    i, (((u32 *)ADDR(
+                            scene->face_tracks[i]))[scene->current_frame / 8] >>
+                        ((scene->current_frame % 8) * 4)) &
+                           0xF);
             }
         }
     }

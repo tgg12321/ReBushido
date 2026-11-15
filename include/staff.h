@@ -12,7 +12,7 @@
  * the top down, the last of them the card the roll ends on. */
 typedef struct {
     SpriteFileHead head;
-    SpriteSheet *sheets[0];
+    SpriteSheetSlot sheets[0];
 } StaffFile;
 
 /* The staff roll's screen (enum Screen; fight_after.c). */

@@ -27,10 +27,14 @@ REACH = 0x10000
 
 
 class Names:
-    """A program's names by address, for finding what an address points at."""
+    """A program's names by address, for finding what an address points at.
+    `layouts` is the variables the program lays out otherwise than the
+    PlayStation does (a 64-bit port's, tools/playtest.py): a place inside
+    one is counted from the variable's start as the PlayStation has it."""
 
-    def __init__(self, symbols):
+    def __init__(self, symbols, layouts=None):
         self.symbols = symbols
+        self.layouts = layouts or {}
         self.by_address = {}
         for name, address in symbols.items():
             self.by_address.setdefault(address, []).append(name)
@@ -43,6 +47,25 @@ class Names:
         if i < 0 or address - self.addresses[i] >= REACH:
             return [], 0
         return self.by_address[self.addresses[i]], address - self.addresses[i]
+
+    def console(self, name, offset):
+        """An offset into the variable `name` as the PlayStation has the
+        variable: itself, but in a variable this program lays out
+        otherwise, where it is the offset of the same member there. A place
+        that is in no member (past the end, or between two) is given as it
+        is from the end of the last member before it."""
+        if name not in self.layouts:
+            return offset
+        size, runs = self.layouts[name]
+        before = None
+        for there, here, count in runs:
+            if here <= offset < here + count:
+                return there + offset - here
+            if here + count <= offset:
+                before = (there + count, here + count)
+        if before is None:
+            return offset
+        return before[0] + offset - before[1] if offset - before[1] < 8 else size + offset
 
     def label(self, address):
         names, offset = self.at(address)
@@ -57,6 +80,12 @@ def same_place(word_a, word_b, names_a, names_b):
     names, offset = names_a.at(word_a)
     for name in names:
         if name in names_b.symbols and names_b.symbols[name] + offset == word_b:
+            return True
+    # the same member of a variable one of the two lays out otherwise
+    others, other_offset = names_b.at(word_b)
+    for name in names:
+        if name in others and (name in names_a.layouts or name in names_b.layouts) and \
+                names_a.console(name, offset) == names_b.console(name, other_offset):
             return True
     return False
 
@@ -132,17 +161,27 @@ def variables_range(table, variables):
     return low, high - low
 
 
-def variable_differences(bytes_a, bytes_b, base_a, base_b, names_a, names_b, variables):
+def variable_differences(bytes_a, bytes_b, base_a, base_b, names_a, names_b, variables, as_console=None,
+                         sizes=None):
     """As `differences`, for the piece `variables`: each variable against
     the one of its name. Returns (name, offset, length) runs, in the order
-    of the first program's addresses."""
+    of the first program's addresses. `variables` has each one's size on
+    the PlayStation. A program that lays a variable out otherwise (the
+    64-bit port, where a pointer is 8 bytes) has its own size for it in
+    its table of `sizes`, and its function of `as_console` gives the
+    variable's bytes as the PlayStation would have them."""
     found = []
     for name in sorted(variables, key=lambda n: (names_a.symbols[n], n)):
         size = variables[name]
         at_a, at_b = names_a.symbols[name] - base_a, names_b.symbols[name] - base_b
-        if at_a < 0 or at_b < 0 or at_a + size > len(bytes_a) or at_b + size > len(bytes_b):
+        size_a, size_b = size, size
+        if sizes is not None:
+            size_a, size_b = max(size, sizes[0].get(name, size)), max(size, sizes[1].get(name, size))
+        if at_a < 0 or at_b < 0 or at_a + size_a > len(bytes_a) or at_b + size_b > len(bytes_b):
             continue
-        piece_a, piece_b = bytes_a[at_a:at_a + size], bytes_b[at_b:at_b + size]
+        piece_a, piece_b = bytes_a[at_a:at_a + size_a], bytes_b[at_b:at_b + size_b]
+        if as_console is not None:
+            piece_a, piece_b = as_console[0](name, piece_a)[:size], as_console[1](name, piece_b)[:size]
         if piece_a == piece_b:
             continue
         for offset, length in differences(piece_a, piece_b, names_a.symbols[name], names_b.symbols[name],

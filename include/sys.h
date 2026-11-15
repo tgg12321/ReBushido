@@ -137,9 +137,18 @@ extern void sys_ExecMovieOverlay(
 /* A function's variable arguments, which the game's two printing
  * functions walk for themselves: each is a word on the stack after the
  * last named one. */
+#if RB_PORT
+/* In the port they are the compiler's: a PC's arguments are not words on
+ * the stack one after the other (a 64-bit program has its first six in
+ * registers). */
+typedef __builtin_va_list va_list;
+#define va_start(ap, last) __builtin_va_start(ap, last)
+#define va_arg(ap, type) __builtin_va_arg(ap, type)
+#else
 typedef char *va_list;
 #define va_start(ap, last) ((ap) = (va_list)(&(last) + 1))
 #define va_arg(ap, type) ((type *)(void *)(ap += 4))[-1]
+#endif
 
 /* The game's own random numbers (0..0x7FFF), separate from the C library's
  * rand(). */

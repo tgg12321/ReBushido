@@ -40,12 +40,12 @@ s32 hit_FrameTriangle(WeaponHitScratch *scr) {
     s32 root_byte;
     s32 nxz_len;
 
-    scr->edge_a.x = scr->shape_points[1]->x - scr->shape_points[0]->x;
-    scr->edge_a.y = scr->shape_points[1]->y - scr->shape_points[0]->y;
-    scr->edge_a.z = scr->shape_points[1]->z - scr->shape_points[0]->z;
-    scr->edge_b.x = scr->shape_points[2]->x - scr->shape_points[0]->x;
-    scr->edge_b.y = scr->shape_points[2]->y - scr->shape_points[0]->y;
-    scr->edge_b.z = scr->shape_points[2]->z - scr->shape_points[0]->z;
+    scr->edge_a.x = PTR(scr->shape_points[1])->x - PTR(scr->shape_points[0])->x;
+    scr->edge_a.y = PTR(scr->shape_points[1])->y - PTR(scr->shape_points[0])->y;
+    scr->edge_a.z = PTR(scr->shape_points[1])->z - PTR(scr->shape_points[0])->z;
+    scr->edge_b.x = PTR(scr->shape_points[2])->x - PTR(scr->shape_points[0])->x;
+    scr->edge_b.y = PTR(scr->shape_points[2])->y - PTR(scr->shape_points[0])->y;
+    scr->edge_b.z = PTR(scr->shape_points[2])->z - PTR(scr->shape_points[0])->z;
 
     gte_OuterProduct0(&scr->edge_a, &scr->edge_b, &scr->normal.vector);
 
@@ -144,9 +144,9 @@ s32 hit_FrameTriangle(WeaponHitScratch *scr) {
 s32 hit_SphereMeetsSliver(
     s32 core, WeaponHitScratch *scr, Vec3 *center, s32 radius, s32 reach_sq) {
     if (!core) {
-        scr->angles.vx = center->x - scr->shape_points[0]->x;
-        scr->angles.vy = center->y - scr->shape_points[0]->y;
-        scr->angles.vz = center->z - scr->shape_points[0]->z;
+        scr->angles.vx = center->x - PTR(scr->shape_points[0])->x;
+        scr->angles.vy = center->y - PTR(scr->shape_points[0])->y;
+        scr->angles.vz = center->z - PTR(scr->shape_points[0])->z;
         gte_ApplyRotMatrix(&scr->angles, &scr->hit_points[0]);
     }
     {
@@ -329,9 +329,9 @@ dist_calc: {
 s32 hit_SphereMeetsTriangle(
     s32 core, WeaponHitScratch *scr, s32 *center, s32 radius, s32 reach_sq) {
     if (!core) {
-        scr->angles.vx = center[0] - scr->shape_points[0]->x;
-        scr->angles.vy = center[1] - scr->shape_points[0]->y;
-        scr->angles.vz = center[2] - scr->shape_points[0]->z;
+        scr->angles.vx = center[0] - PTR(scr->shape_points[0])->x;
+        scr->angles.vy = center[1] - PTR(scr->shape_points[0])->y;
+        scr->angles.vz = center[2] - PTR(scr->shape_points[0])->z;
         gte_ApplyRotMatrix(&scr->angles, &scr->hit_points[0]);
     }
 
@@ -438,13 +438,13 @@ s32 hit_FrameTriangleByNormal(WeaponHitScratch *scr) {
     MATRIX *mat;
     s32 xz_len;
 
-    scr->edge_a.x = scr->shape_points[1]->x - scr->shape_points[0]->x;
-    scr->edge_a.y = scr->shape_points[1]->y - scr->shape_points[0]->y;
-    scr->edge_a.z = scr->shape_points[1]->z - scr->shape_points[0]->z;
+    scr->edge_a.x = PTR(scr->shape_points[1])->x - PTR(scr->shape_points[0])->x;
+    scr->edge_a.y = PTR(scr->shape_points[1])->y - PTR(scr->shape_points[0])->y;
+    scr->edge_a.z = PTR(scr->shape_points[1])->z - PTR(scr->shape_points[0])->z;
 
-    scr->edge_b.x = scr->shape_points[2]->x - scr->shape_points[0]->x;
-    scr->edge_b.y = scr->shape_points[2]->y - scr->shape_points[0]->y;
-    scr->edge_b.z = scr->shape_points[2]->z - scr->shape_points[0]->z;
+    scr->edge_b.x = PTR(scr->shape_points[2])->x - PTR(scr->shape_points[0])->x;
+    scr->edge_b.y = PTR(scr->shape_points[2])->y - PTR(scr->shape_points[0])->y;
+    scr->edge_b.z = PTR(scr->shape_points[2])->z - PTR(scr->shape_points[0])->z;
 
     gte_OuterProduct0(&scr->edge_a, &scr->edge_b, &scr->normal.vector);
 
@@ -522,20 +522,20 @@ s32 hit_TrianglesMeet(
     /* edge A-B x ((x2,y2) - A) */
     s32 cross_ab2;
 
-    scr->angles.vx = corner_0->x - scr->shape_points[0]->x;
-    scr->angles.vy = corner_0->y - scr->shape_points[0]->y;
-    scr->angles.vz = corner_0->z - scr->shape_points[0]->z;
+    scr->angles.vx = corner_0->x - PTR(scr->shape_points[0])->x;
+    scr->angles.vy = corner_0->y - PTR(scr->shape_points[0])->y;
+    scr->angles.vz = corner_0->z - PTR(scr->shape_points[0])->z;
     gte_ldv0(&scr->angles);
     gte_rtv0();
-    scr->angles.vx = corner_1->x - scr->shape_points[0]->x;
-    scr->angles.vy = corner_1->y - scr->shape_points[0]->y;
-    scr->angles.vz = corner_1->z - scr->shape_points[0]->z;
+    scr->angles.vx = corner_1->x - PTR(scr->shape_points[0])->x;
+    scr->angles.vy = corner_1->y - PTR(scr->shape_points[0])->y;
+    scr->angles.vz = corner_1->z - PTR(scr->shape_points[0])->z;
     gte_stlvnl(&scr->relative_points[0]);
     gte_ldv0(&scr->angles);
     gte_rtv0();
-    scr->angles.vx = corner_2->x - scr->shape_points[0]->x;
-    scr->angles.vy = corner_2->y - scr->shape_points[0]->y;
-    scr->angles.vz = corner_2->z - scr->shape_points[0]->z;
+    scr->angles.vx = corner_2->x - PTR(scr->shape_points[0])->x;
+    scr->angles.vy = corner_2->y - PTR(scr->shape_points[0])->y;
+    scr->angles.vz = corner_2->z - PTR(scr->shape_points[0])->z;
     gte_stlvnl(&scr->relative_points[1]);
     gte_ApplyRotMatrix(&scr->angles, &scr->relative_points[2]);
 
@@ -734,9 +734,9 @@ void hit_FrameSegment(WeaponHitScratch *scr) {
     s32 angle;
     s32 dist;
 
-    scr->edge_a.x = scr->shape_points[1]->x - scr->shape_points[0]->x;
-    scr->edge_a.y = scr->shape_points[1]->y - scr->shape_points[0]->y;
-    scr->edge_a.z = scr->shape_points[1]->z - scr->shape_points[0]->z;
+    scr->edge_a.x = PTR(scr->shape_points[1])->x - PTR(scr->shape_points[0])->x;
+    scr->edge_a.y = PTR(scr->shape_points[1])->y - PTR(scr->shape_points[0])->y;
+    scr->edge_a.z = PTR(scr->shape_points[1])->z - PTR(scr->shape_points[0])->z;
     angle = ratan2(scr->edge_a.x, scr->edge_a.z);
     scr->angles.vy = ANGLE_TURN / 2 - angle;
 
@@ -768,9 +768,9 @@ void hit_FrameSegment(WeaponHitScratch *scr) {
 /* Whether a sphere reaches the segment that has the frame. */
 s32 hit_SphereMeetsSegment(
     WeaponHitScratch *scr, Vec3 *center, s32 radius, s32 reach_sq) {
-    scr->angles.vx = center->x - scr->shape_points[0]->x;
-    scr->angles.vy = center->y - scr->shape_points[0]->y;
-    scr->angles.vz = center->z - scr->shape_points[0]->z;
+    scr->angles.vx = center->x - PTR(scr->shape_points[0])->x;
+    scr->angles.vy = center->y - PTR(scr->shape_points[0])->y;
+    scr->angles.vz = center->z - PTR(scr->shape_points[0])->z;
     gte_ApplyRotMatrix(&scr->angles, &scr->hit_points[0]);
 
     {

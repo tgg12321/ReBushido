@@ -874,7 +874,7 @@ void stage_ReadCells(u16 *stream, s32 block_id) {
     while ((word = *stream++) != -1) {
         piece = &g_stage_nodes[count++];
         piece->node.draw_flags = 0;
-        piece->node.parent = NULL;
+        SET_PTR(piece->node.parent, NULL);
         piece->node.rotation_order = ROTATION_ORDER_ZYX;
         piece->node.light_setup_index = LIGHT_SCENERY;
         piece->node.mesh = word;

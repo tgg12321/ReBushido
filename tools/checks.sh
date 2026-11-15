@@ -52,10 +52,14 @@ check rb-build  make -j8 rebushido
 check rb-test   make rebushido-test
 check rb-modern make rebushido-modern
 # The native port: the game's C and src/port/ link into a program for this
-# host with no name missing, the port's own files with no warning, and no
-# place where the order of evaluation may matter that has not been looked
-# at (tools/port_order.py). Needs no build of the game either. (Its runs
-# against the emulator are play tests, port_game and two more.)
+# host with no name missing, the port's own files with no warning, with
+# 64-bit pointers and with 32-bit ones; no structure laid out otherwise in
+# one of them or on the PlayStation that config/port_layout.txt does not
+# name (tools/port_layout.py); no pointer of the 64-bit program made of a
+# number that is not a 32-bit address (tools/port_casts.py); and no place
+# where the order of evaluation may matter that has not been looked at
+# (tools/port_order.py). (Its runs against the emulator are play tests,
+# port_game and four more.)
 check port      make port
 
 echo

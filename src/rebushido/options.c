@@ -201,7 +201,7 @@ static void rb_DrawPage(const char *notice) {
     s32 y;
 
     g_rb_page_ot = g_rb_page_ots[index];
-    g_rb_page_prim = (u32 *)g_disp_prim_buffers[index];
+    g_rb_page_prim = (u32 *)ADDR(g_disp_prim_buffers[index]);
     ClearOTagR(g_rb_page_ot, LAYER_COUNT);
 
     rb_DrawBigText(

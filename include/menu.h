@@ -94,7 +94,7 @@ extern void menu_DebugUpdate(void);
  * and the two answers. */
 typedef struct {
     BestTimesSheets best_times;
-    SpriteSheet *choice_sheets[3];
+    SpriteSheetSlot choice_sheets[3];
 } MenuChanbaraSheets;
 
 /* MOD.BIN, the main menu's resource file. After the head come twelve lists
@@ -119,20 +119,20 @@ typedef struct {
  * from the row's bar); message_sizes how big a box each message needs. */
 typedef struct {
     SpriteFileHead head;
-    SpriteSheet **white_page_sheets;
-    SpriteSheet **row_sheets;
-    SpriteSheet **top_sheets;
-    SpriteSheet **message_sheets;
-    SpriteSheet **mode_picture_sheets;
-    SpriteSheet **option_sheets;
-    SpriteSheet **card_menu_sheets;
-    SpriteSheet **key_config_sheets;
-    SpriteSheet **frame_sheets;
-    SpriteSheet **practice_sheets;
-    MenuChanbaraSheets *chanbara;
-    SpriteSheet **mode_caption_sheets;
-    ColorRect *key_config_rects;
-    ScreenSize *message_sizes;
+    SpriteListSlot white_page_sheets;
+    SpriteListSlot row_sheets;
+    SpriteListSlot top_sheets;
+    SpriteListSlot message_sheets;
+    SpriteListSlot mode_picture_sheets;
+    SpriteListSlot option_sheets;
+    SpriteListSlot card_menu_sheets;
+    SpriteListSlot key_config_sheets;
+    SpriteListSlot frame_sheets;
+    SpriteListSlot practice_sheets;
+    PTR32(MenuChanbaraSheets *) chanbara;
+    SpriteListSlot mode_caption_sheets;
+    PTR32(ColorRect *) key_config_rects;
+    PTR32(ScreenSize *) message_sizes;
 } MenuFile;
 
 /* What the pages' draw functions are handed each frame: the file and where

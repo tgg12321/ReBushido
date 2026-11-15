@@ -319,7 +319,7 @@ RenderWalk g_render_walk;
 #define RENDER_TILE_DEPTHS ((s16 *)(SCRATCHPAD + 0x110))
 #define TILE_VIEW ((u32 *)(SCRATCHPAD + 0x188))
 #define TILE_SCALED_VIEW ((s16 *)(SCRATCHPAD + 0x19C))
-#define TILE_VERTICES (*(s16 **)(SCRATCHPAD + 0x1B0))
+#define TILE_VERTICES (*(PTR32(s16 *) *)(SCRATCHPAD + 0x1B0))
 #define TILE_CAMERA ((s32 *)(SCRATCHPAD + 0x1B4))
 #define TILE_OPTIONS (*(s32 *)(SCRATCHPAD + 0x1C0))
 #define TILE_DEPTH_SHIFT (*(s16 *)(SCRATCHPAD + 0x1C6))
@@ -335,8 +335,8 @@ RenderWalk g_render_walk;
 #define TILE_TPAGE (*(u16 *)(SCRATCHPAD + 0x1CE))
 #define TILE_COLOR (*(u32 *)(SCRATCHPAD + 0x1D0))
 #define TILE_LEFT (*(s32 *)(SCRATCHPAD + 0x1D4))
-#define TILE_SPLIT_VERTICES (*(s16 **)(SCRATCHPAD + 0x1D8))
-#define TILE_ENTRY (*(u32 **)(SCRATCHPAD + 0x1DC))
+#define TILE_SPLIT_VERTICES (*(PTR32(s16 *) *)(SCRATCHPAD + 0x1D8))
+#define TILE_ENTRY (*(PTR32(u32 *) *)(SCRATCHPAD + 0x1DC))
 #define TILE_FLAGS (*(s16 *)(SCRATCHPAD + 0x1E0))
 #define TILE_CUTS (*(s8 *)(SCRATCHPAD + 0x1E0))
 #define TILE_BLEND (*(s8 *)(SCRATCHPAD + 0x1E1))
@@ -551,7 +551,7 @@ static void render_LinkEntry(u32 *entry, void *prim, u32 length) {
 
 /* The same at entry `index` of the table being drawn into. */
 static void render_LinkPrim(s32 index, void *prim, u32 length) {
-    render_LinkEntry(&((u32 *)RENDER_OT)[index], prim, length);
+    render_LinkEntry(&((u32 *)ADDR(RENDER_OT))[index], prim, length);
 }
 
 /* A light setup's ambient colour into the GTE: its three bytes, each
@@ -711,10 +711,10 @@ static void render_EmitTile(TileSplit *split, u8 *record, s32 quad) {
     }
     entry = &split->ot[index];
     split->chain = *entry | RENDER_LINK_LENGTH(length);
-    TILE_ENTRY = entry;
+    SET_PTR(TILE_ENTRY, entry);
     port_GteStoreData(PORT_GTE_RGB2, &TILE_COLOR, 1);
     for (i = 0; i < corner_count; i++) {
-        vertex = TILE_SPLIT_VERTICES + 3 * face.index[i];
+        vertex = PTR(TILE_SPLIT_VERTICES) + 3 * face.index[i];
         frame->corner[i].x = vertex[0];
         frame->corner[i].y = vertex[1];
         frame->corner[i].z = vertex[2];
@@ -725,7 +725,7 @@ static void render_EmitTile(TileSplit *split, u8 *record, s32 quad) {
     } else {
         render_SplitFT3(split, frame, cuts);
     }
-    *TILE_ENTRY = split->chain & RENDER_LINK_MASK;
+    *PTR(TILE_ENTRY) = split->chain & RENDER_LINK_MASK;
 }
 
 /* render_EmitSplitFT3 and render_EmitSplitFT4: a group of a tile's
@@ -737,9 +737,9 @@ static s16 *render_EmitTiles(
     s32 left = count - 1;
 
     TILE_FLAGS = (s16)flags;
-    TILE_SPLIT_VERTICES = vertices;
+    SET_PTR(TILE_SPLIT_VERTICES, vertices);
     split.prim = g_disp_prim_cursor;
-    split.ot = (u32 *)RENDER_OT;
+    split.ot = (u32 *)ADDR(RENDER_OT);
     do {
         TILE_LEFT = left;
         render_EmitTile(&split, record, quad);
@@ -1309,7 +1309,7 @@ static s32 render_SetupNode(SceneNode *node) {
          * the view. The view matrix's own translation is used to carry
          * the shadow's place; no light is loaded, the shadow being
          * black. */
-        light_ProjectShadow(&node->parent->world, RENDER_NODE_MATRIX,
+        light_ProjectShadow(&PTR(node->parent)->world, RENDER_NODE_MATRIX,
                             (s32)RENDER_WORD(node, RENDER_NODE_EXTRA));
         for (i = 0; i < 3; i++) {
             offset[i] =
@@ -1460,7 +1460,7 @@ static void render_DrawPart(s32 count, s32 format) {
         return;
     }
     render_DrawGroups();
-    g_render_walk.handlers = (void (**)())RENDER_HANDLERS;
+    g_render_walk.handlers = (void (**)())ADDR(RENDER_HANDLERS);
 }
 
 /* In C: the two tables of labels are two switches, render_SetupNode by
@@ -1478,7 +1478,7 @@ void render_DrawQueue(void) {
     g_render_walk.queue = g_render_queue;
     g_render_walk.scale_shift = 0;
     g_render_walk.view = &g_render_view_matrix;
-    g_render_walk.handlers = (void (**)())RENDER_HANDLERS;
+    g_render_walk.handlers = (void (**)())ADDR(RENDER_HANDLERS);
     do {
         node = *g_render_walk.queue++;
         g_render_walk.node = node;
@@ -1488,7 +1488,7 @@ void render_DrawQueue(void) {
              * the groups; a halfword that is not zero says another
              * follows. No vertices ends the mesh. */
             g_render_walk.mesh =
-                (u8 *)g_reloc_tables[node->mesh_block][node->mesh];
+                (u8 *)ADDR(g_reloc_tables[node->mesh_block][node->mesh]);
             do {
                 part = RENDER_WORD(g_render_walk.mesh, 0);
                 g_render_walk.mesh += sizeof(u32);
@@ -1800,13 +1800,13 @@ static void **render_DrawStageTiles(void **queue, u8 *tile, MATRIX *view) {
         port_GteLoadControl(
             PORT_GTE_ROTATION, TILE_SCALED_VIEW, PORT_GTE_MATRIX_WORDS);
 
-        mesh = (u8 *)g_reloc_tables[RENDER_SHALF(
-            tile, TILE_BLOCK)][RENDER_SHALF(tile, TILE_MESH)];
+        mesh = (u8 *)ADDR(g_reloc_tables[RENDER_SHALF(
+            tile, TILE_BLOCK)][RENDER_SHALF(tile, TILE_MESH)]);
         flags = RENDER_SHALF(tile, TILE_FLAGS_AT);
         count = RENDER_HALF(mesh, 0);
         mesh += sizeof(u32);
         if (count != 0) {
-            TILE_VERTICES = (s16 *)mesh;
+            SET_PTR(TILE_VERTICES, (s16 *)mesh);
             if (count == 4) {
                 /* The usual tile: three corners at once, then the
                  * fourth. */
@@ -1837,7 +1837,7 @@ static void **render_DrawStageTiles(void **queue, u8 *tile, MATRIX *view) {
                 type = RENDER_HALF(mesh, sizeof(u16));
                 mesh += 2 * sizeof(u16);
                 mesh = (u8 *)handlers[type >> TILE_TYPE_SHIFT](
-                    count, TILE_VERTICES, (s16 *)mesh, flags);
+                    count, PTR(TILE_VERTICES), (s16 *)mesh, flags);
             } while (RENDER_HALF(mesh, 0) != 0);
             mesh += sizeof(u16);
             if (RENDER_HALF(mesh, 0) != 0) {
@@ -2018,7 +2018,7 @@ INCLUDE_ASM("asm/funcs", render_EmitPackedGT4);
 static void render_DrawCloth(s32 scale_shift) {
     SceneNode *node = g_render_walk.node;
     SceneNode *camera = g_node_camera_root_ptr;
-    u8 *mesh = (u8 *)g_reloc_tables[node->mesh_block][node->mesh];
+    u8 *mesh = (u8 *)ADDR(g_reloc_tables[node->mesh_block][node->mesh]);
     u8 *cloth_point;
     u32 *points = RENDER_POINTS;
     s16 *depths = RENDER_DEPTHS;
@@ -2034,7 +2034,7 @@ static void render_DrawCloth(s32 scale_shift) {
     }
     mesh += sizeof(u32) + count * PACKED_VERTEX_SIZE;
     mesh += (u32)mesh & (sizeof(u32) - 1);
-    cloth_point = *(u8 **)((u8 *)node + CLOTH_NODE_POINTS);
+    cloth_point = PTR(*(PTR32(u8 *) *)((u8 *)node + CLOTH_NODE_POINTS));
     for (; count != 0; count--) {
         for (i = 0; i < RENDER_RUN; i++) {
             for (j = 0; j < 3; j++) {
@@ -2083,8 +2083,8 @@ INCLUDE_ASM("asm/funcs", render_DrawCloth);
  *  - projected, three at a time: the last three may take in what follows
  *    them, and the cursor is then put back. */
 void render_DrawSkinnedMesh(s32 matrices, s32 mesh, s32 view, s32 depth_shift) {
-    MATRIX **bones = (MATRIX **)matrices;
-    MATRIX *view_matrix = (MATRIX *)view;
+    MatrixSlot *bones = (MatrixSlot *)ADDR(matrices);
+    MATRIX *view_matrix = (MATRIX *)ADDR(view);
     MATRIX *bone;
     u8 *cursor;
     u32 *points = RENDER_POINTS;
@@ -2099,11 +2099,12 @@ void render_DrawSkinnedMesh(s32 matrices, s32 mesh, s32 view, s32 depth_shift) {
     s32 to;
     s32 i;
 
-    cursor = render_LightSkin((u8 *)mesh + sizeof(u16), bones) - sizeof(u16);
+    cursor =
+        render_LightSkin((u8 *)ADDR(mesh) + sizeof(u16), bones) - sizeof(u16);
     for (;;) {
         /* The bone, scaled down, behind the view; and where it is from
          * the camera, as it is and turned into the view. */
-        bone = *bones++;
+        bone = PTR(*bones++);
         for (i = 0; i < 3; i++) {
             RENDER_SKIN_COMBINED->t[i] =
                 (bone->t[i] - g_node_camera_root_ptr->world.t[i]) >> shift;
@@ -2256,7 +2257,7 @@ void render_DrawSkinnedMesh(s32 matrices, s32 mesh, s32 view, s32 depth_shift) {
             }
             type = RENDER_HALF(g_render_walk.mesh, 0);
             g_render_walk.mesh += sizeof(u16);
-            ((void (**)())RENDER_HANDLERS)[type](count);
+            ((void (**)())ADDR(RENDER_HANDLERS))[type](count);
         }
         cursor = g_render_walk.mesh;
         if (sections_left == 0) {
@@ -3045,7 +3046,7 @@ INCLUDE_ASM("asm/funcs", render_EmitOutlineGT4);
  * follow them. A group of no faces moves the cursor back by the two
  * primitives' size, as the listing does. */
 void render_EmitF3(s32 count) {
-    render_EmitMeshF3(count, (u32 *)RENDER_OT, FALSE);
+    render_EmitMeshF3(count, (u32 *)ADDR(RENDER_OT), FALSE);
 }
 #else
 INCLUDE_ASM("asm/funcs", render_EmitF3);

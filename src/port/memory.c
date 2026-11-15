@@ -1,10 +1,11 @@
 /* The PlayStation's memory in the native port (docs/PORT.md, "Memory").
  *
  * The game's own variables are the PC program's: the compiler and the
- * linker place them, wherever they like. But the game also reaches
- * memory by a number written into its source, and keeps addresses in
- * 32-bit words and in the 24 bits of a primitive's link. So the port,
- * which is a 32-bit program, has the console's memory at the console's
+ * linker place them, wherever they like below 4 GB. But the game also
+ * reaches memory by a number written into its source, and keeps
+ * addresses in 32-bit words and in the 24 bits of a primitive's link. So
+ * the port, whether its own pointers are 32 bits wide or 64
+ * (docs/PORT.md, "64 bits"), has the console's memory at the console's
  * addresses:
  *
  *   PORT_RAM_ADDR, 2 MB   the RAM. What the game reaches there by a
@@ -54,8 +55,8 @@ void port_MapMemory(void) {
     if (!port_HostMapAt(PORT_RAM_ADDR, PORT_RAM_SIZE)) {
         port_Fail("rebushido: the system gave no memory at 0x%08X (%u bytes): "
                   "the PlayStation's RAM, which the game reaches by address\n"
-                  "rebushido: the port has to be a 32-bit program, and nothing "
-                  "else may be loaded there\n",
+                  "rebushido: nothing else may be loaded there, and the "
+                  "system has to allow a program memory at that address\n",
                   PORT_RAM_ADDR, PORT_RAM_SIZE);
     }
     if (!port_HostMapAt(SCRATCHPAD, PORT_SCRATCHPAD_SIZE)) {

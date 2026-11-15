@@ -153,7 +153,7 @@ void tex_ShiftBlock(s16 block, s16 du, s16 dv, s16 dcx, s32 dcy) {
     s16 i;
 
     for (i = 0; i < g_reloc_counts[block]; i++) {
-        RENDER_MESH_CURSOR = (u16 *)g_reloc_tables[block][i];
+        SET_PTR(RENDER_MESH_CURSOR, (u16 *)ADDR(g_reloc_tables[block][i]));
         tex_ShiftMeshAtCursor(du, dv, dcx, dcy_lo);
     }
 }
@@ -175,7 +175,7 @@ s16 dv;
 s16 dcx;
 s16 dcy;
 {
-    RENDER_MESH_CURSOR = (u16 *)g_reloc_tables[block][mesh];
+    SET_PTR(RENDER_MESH_CURSOR, (u16 *)ADDR(g_reloc_tables[block][mesh]));
     tex_ShiftMeshAtCursor(du, dv, dcx, dcy);
 }
 
@@ -195,37 +195,38 @@ static void tex_ShiftMeshAtCursor(s16 du, s16 dv, s16 dcx, s16 dcy) {
     sections_done = 0;
     do {
         /* The vertices. */
-        header = RENDER_MESH_CURSOR;
-        RENDER_MESH_CURSOR = header + 1;
+        header = PTR(RENDER_MESH_CURSOR);
+        SET_PTR(RENDER_MESH_CURSOR, header + 1);
         count = *header;
         if (count & MESH_SKINNED_FLAG) {
             skinned = 1;
             layout = MESH_SKINNED;
-            RENDER_MESH_CURSOR =
-                RENDER_MESH_CURSOR + (count & (MESH_SKINNED_FLAG - 1)) + 1;
-            if ((u32)RENDER_MESH_CURSOR & 3) {
-                RENDER_MESH_CURSOR =
-                    (u16 *)((u8 *)RENDER_MESH_CURSOR +
-                            (4 - ((u32)RENDER_MESH_CURSOR & 3)));
+            SET_PTR(RENDER_MESH_CURSOR,
+                    PTR(RENDER_MESH_CURSOR) +
+                        (count & (MESH_SKINNED_FLAG - 1)) + 1);
+            if ((u32)PTR(RENDER_MESH_CURSOR) & 3) {
+                SET_PTR(RENDER_MESH_CURSOR,
+                        (u16 *)((u8 *)PTR(RENDER_MESH_CURSOR) +
+                                (4 - ((u32)PTR(RENDER_MESH_CURSOR) & 3))));
             }
         } else {
-            RENDER_MESH_CURSOR = header + 2;
+            SET_PTR(RENDER_MESH_CURSOR, header + 2);
             layout = header[1];
             skinned = 0;
             if (layout == MESH_PREBUILT) {
-                RENDER_MESH_CURSOR += count * PREBUILT_VERTEX_SIZE;
+                ADD_PTR(RENDER_MESH_CURSOR, count * PREBUILT_VERTEX_SIZE);
             } else {
-                RENDER_MESH_CURSOR += count * VERTEX_SIZE;
+                ADD_PTR(RENDER_MESH_CURSOR, count * VERTEX_SIZE);
             }
         }
         if (layout == MESH_COMPACT) {
-            if ((u32)RENDER_MESH_CURSOR & 3) {
-                RENDER_MESH_CURSOR++;
+            if ((u32)PTR(RENDER_MESH_CURSOR) & 3) {
+                NEXT_PTR(RENDER_MESH_CURSOR);
             }
         }
         /* The groups of primitives. */
-        while ((count = *RENDER_MESH_CURSOR++) != 0) {
-            type = *RENDER_MESH_CURSOR++;
+        while ((count = *NEXT_PTR(RENDER_MESH_CURSOR)) != 0) {
+            type = *NEXT_PTR(RENDER_MESH_CURSOR);
             if ((type & PRIM_TYPE_TEXTURED) ||
                 (type >= PRIM_TYPE_SKINNED_FIRST &&
                  type <= PRIM_TYPE_SKINNED_FIRST + 3)) {
@@ -240,63 +241,72 @@ static void tex_ShiftMeshAtCursor(s16 du, s16 dv, s16 dcx, s16 dcy) {
                     while (--count != -1) {
                         switch (kind) {
                         case TEX_POLY_KIND_FT3:
-                            tex_ShiftPolyFT3((POLY_FT3 *)RENDER_MESH_CURSOR, du,
-                                             dv, dcx, dcy);
-                            tex_ShiftPolyFT3((POLY_FT3 *)RENDER_MESH_CURSOR + 1,
-                                             du, dv, dcx, dcy);
+                            tex_ShiftPolyFT3(
+                                (POLY_FT3 *)PTR(RENDER_MESH_CURSOR), du, dv,
+                                dcx, dcy);
+                            tex_ShiftPolyFT3(
+                                (POLY_FT3 *)PTR(RENDER_MESH_CURSOR) + 1, du, dv,
+                                dcx, dcy);
                             break;
                         case TEX_POLY_KIND_FT4:
-                            tex_ShiftPolyFT4((POLY_FT4 *)RENDER_MESH_CURSOR, du,
-                                             dv, dcx, dcy);
-                            tex_ShiftPolyFT4((POLY_FT4 *)RENDER_MESH_CURSOR + 1,
-                                             du, dv, dcx, dcy);
+                            tex_ShiftPolyFT4(
+                                (POLY_FT4 *)PTR(RENDER_MESH_CURSOR), du, dv,
+                                dcx, dcy);
+                            tex_ShiftPolyFT4(
+                                (POLY_FT4 *)PTR(RENDER_MESH_CURSOR) + 1, du, dv,
+                                dcx, dcy);
                             break;
                         case TEX_POLY_KIND_GT3:
-                            tex_ShiftPolyGT3((POLY_GT3 *)RENDER_MESH_CURSOR, du,
-                                             dv, dcx, dcy);
-                            tex_ShiftPolyGT3((POLY_GT3 *)RENDER_MESH_CURSOR + 1,
-                                             du, dv, dcx, dcy);
+                            tex_ShiftPolyGT3(
+                                (POLY_GT3 *)PTR(RENDER_MESH_CURSOR), du, dv,
+                                dcx, dcy);
+                            tex_ShiftPolyGT3(
+                                (POLY_GT3 *)PTR(RENDER_MESH_CURSOR) + 1, du, dv,
+                                dcx, dcy);
                             break;
                         case TEX_POLY_KIND_GT4:
-                            tex_ShiftPolyGT4((POLY_GT4 *)RENDER_MESH_CURSOR, du,
-                                             dv, dcx, dcy);
-                            tex_ShiftPolyGT4((POLY_GT4 *)RENDER_MESH_CURSOR + 1,
-                                             du, dv, dcx, dcy);
+                            tex_ShiftPolyGT4(
+                                (POLY_GT4 *)PTR(RENDER_MESH_CURSOR), du, dv,
+                                dcx, dcy);
+                            tex_ShiftPolyGT4(
+                                (POLY_GT4 *)PTR(RENDER_MESH_CURSOR) + 1, du, dv,
+                                dcx, dcy);
                             break;
                         }
-                        RENDER_MESH_CURSOR += g_render_prim_sizes[type];
+                        ADD_PTR(RENDER_MESH_CURSOR, g_render_prim_sizes[type]);
                     }
                     break;
                 case MESH_COMPACT:
                     while (--count != -1) {
-                        tex_ShiftPackedA(RENDER_MESH_CURSOR, du, dv, dcx, dcy);
-                        record = (u8 *)RENDER_MESH_CURSOR;
+                        tex_ShiftPackedA(
+                            PTR(RENDER_MESH_CURSOR), du, dv, dcx, dcy);
+                        record = (u8 *)PTR(RENDER_MESH_CURSOR);
                         switch (kind) {
                         case TEX_POLY_KIND_FT3:
                             record[COMPACT_V(0)] += dv;
                             record[COMPACT_V(1)] += dv;
                             record[COMPACT_V(2)] += dv;
-                            RENDER_MESH_CURSOR += COMPACT_FT3_SIZE;
+                            ADD_PTR(RENDER_MESH_CURSOR, COMPACT_FT3_SIZE);
                             break;
                         case TEX_POLY_KIND_FT4:
                             record[COMPACT_V(0)] += dv;
                             record[COMPACT_V(1)] += dv;
                             record[COMPACT_V(2)] += dv;
                             record[COMPACT_V(3)] += dv;
-                            RENDER_MESH_CURSOR += COMPACT_FT4_SIZE;
+                            ADD_PTR(RENDER_MESH_CURSOR, COMPACT_FT4_SIZE);
                             break;
                         case TEX_POLY_KIND_GT3:
                             record[COMPACT_V(0)] += dv;
                             record[COMPACT_V(1)] += dv;
                             record[COMPACT_V(2)] += dv;
-                            RENDER_MESH_CURSOR += COMPACT_GT3_SIZE;
+                            ADD_PTR(RENDER_MESH_CURSOR, COMPACT_GT3_SIZE);
                             break;
                         case TEX_POLY_KIND_GT4:
                             record[COMPACT_V(0)] += dv;
                             record[COMPACT_V(1)] += dv;
                             record[COMPACT_V(2)] += dv;
                             record[COMPACT_V(3)] += dv;
-                            RENDER_MESH_CURSOR += COMPACT_GT4_SIZE;
+                            ADD_PTR(RENDER_MESH_CURSOR, COMPACT_GT4_SIZE);
                             break;
                         default:
                             sys_Trap();
@@ -306,21 +316,22 @@ static void tex_ShiftMeshAtCursor(s16 du, s16 dv, s16 dcx, s16 dcy) {
                     break;
                 case MESH_SKINNED:
                     while (--count != -1) {
-                        tex_ShiftPackedB(RENDER_MESH_CURSOR, du, dv, dcx, dcy);
-                        record = (u8 *)RENDER_MESH_CURSOR;
+                        tex_ShiftPackedB(
+                            PTR(RENDER_MESH_CURSOR), du, dv, dcx, dcy);
+                        record = (u8 *)PTR(RENDER_MESH_CURSOR);
                         switch (kind) {
                         case TEX_POLY_KIND_FT3:
                             record[SKINNED_V(0)] += dv;
                             record[SKINNED_V(1)] += dv;
                             record[SKINNED_V(2)] += dv;
-                            RENDER_MESH_CURSOR += SKINNED_FT3_SIZE;
+                            ADD_PTR(RENDER_MESH_CURSOR, SKINNED_FT3_SIZE);
                             break;
                         case TEX_POLY_KIND_FT4:
                             record[SKINNED_V(0)] += dv;
                             record[SKINNED_V(1)] += dv;
                             record[SKINNED_V(2)] += dv;
                             record[SKINNED_V(3)] += dv;
-                            RENDER_MESH_CURSOR += SKINNED_FT4_SIZE;
+                            ADD_PTR(RENDER_MESH_CURSOR, SKINNED_FT4_SIZE);
                             break;
                         case TEX_POLY_KIND_GT3:
                             /* the same as the two cases above, written out
@@ -328,14 +339,14 @@ static void tex_ShiftMeshAtCursor(s16 du, s16 dv, s16 dcx, s16 dcy) {
                             record[SKINNED_V(0)] += dv;
                             record[SKINNED_V(1)] += dv;
                             record[SKINNED_V(2)] += dv;
-                            RENDER_MESH_CURSOR += SKINNED_GT3_SIZE;
+                            ADD_PTR(RENDER_MESH_CURSOR, SKINNED_GT3_SIZE);
                             break;
                         case TEX_POLY_KIND_GT4:
                             record[SKINNED_V(0)] += dv;
                             record[SKINNED_V(1)] += dv;
                             record[SKINNED_V(2)] += dv;
                             record[SKINNED_V(3)] += dv;
-                            RENDER_MESH_CURSOR += SKINNED_GT4_SIZE;
+                            ADD_PTR(RENDER_MESH_CURSOR, SKINNED_GT4_SIZE);
                             break;
                         default:
                             sys_Trap();
@@ -345,18 +356,19 @@ static void tex_ShiftMeshAtCursor(s16 du, s16 dv, s16 dcx, s16 dcy) {
                     break;
                 }
             } else if (!skinned) {
-                RENDER_MESH_CURSOR += (s16)(count * g_render_prim_sizes[type]);
+                ADD_PTR(RENDER_MESH_CURSOR,
+                        (s16)(count * g_render_prim_sizes[type]));
             } else {
                 switch (type) {
                 case PRIM_TYPE_SKINNED_F3:
-                    RENDER_MESH_CURSOR += count * SKINNED_F3_SIZE;
+                    ADD_PTR(RENDER_MESH_CURSOR, count * SKINNED_F3_SIZE);
                     break;
                 case PRIM_TYPE_SKINNED_F4:
-                    RENDER_MESH_CURSOR += count * SKINNED_F4_SIZE;
+                    ADD_PTR(RENDER_MESH_CURSOR, count * SKINNED_F4_SIZE);
                     break;
                 default:
-                    RENDER_MESH_CURSOR +=
-                        (s16)(count * g_render_prim_sizes[type]);
+                    ADD_PTR(RENDER_MESH_CURSOR,
+                            (s16)(count * g_render_prim_sizes[type]));
                     break;
                 }
             }
@@ -368,12 +380,12 @@ static void tex_ShiftMeshAtCursor(s16 du, s16 dv, s16 dcx, s16 dcy) {
                 return;
             }
             sections_done++;
-            while (*RENDER_MESH_CURSOR != 0xFFFF) {
-                RENDER_MESH_CURSOR += SKINNED_CARRY_SIZE;
+            while (*PTR(RENDER_MESH_CURSOR) != 0xFFFF) {
+                ADD_PTR(RENDER_MESH_CURSOR, SKINNED_CARRY_SIZE);
             }
-            RENDER_MESH_CURSOR++;
+            NEXT_PTR(RENDER_MESH_CURSOR);
         }
-    } while (*RENDER_MESH_CURSOR++ != 0);
+    } while (*NEXT_PTR(RENDER_MESH_CURSOR) != 0);
 }
 
 /* The four functions below shift one finished primitive: its texture-page
@@ -610,7 +622,7 @@ s32 reloc_KeepSelectedEntries(s32 *file, s16 *selected) {
     s32 *base = file;
     s32 *offset = base + 1;
     s32 count = 0;
-    s32 *dest = (s32 *)((s32)base + base[1]);
+    s32 *dest = (s32 *)ADDR((s32)base + base[1]);
     s32 mark;
     s32 *entries;
     s32 end;
@@ -635,7 +647,7 @@ s32 reloc_KeepSelectedEntries(s32 *file, s16 *selected) {
                 count++;
                 size = end - start;
                 mem_MoveWords((s32)base + start, (s32)dest, size);
-                dest = (s32 *)((s32)dest + ((size >> 2) << 2));
+                dest = (s32 *)ADDR((s32)dest + ((size >> 2) << 2));
             }
             i++;
             mark = *selected;
@@ -693,7 +705,7 @@ s32 reloc_CopySelectedEntries(s32 src, s32 *dest, s16 *selected) {
     mark_cursor++;
     if (mark != RELOC_LIST_END) {
         end_mark = RELOC_LIST_END;
-        entry = (s32 *)src;
+        entry = (s32 *)ADDR(src);
         do {
             if (mark >= 0) {
                 end = entry[1];

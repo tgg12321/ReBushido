@@ -75,7 +75,7 @@ void model_QueueTiny(s32 yaw, s32 weapon_id, s32 has_object) {
     s32 old_link; /* what the frame's table began with */
     s16 *bones;
     void **queue;
-    MATRIX **matrices;
+    MatrixSlot *matrices;
     ModelNode *node;
 
     matrices = model_GetBoneMatrices(g_model_tiny_slot);
@@ -95,18 +95,18 @@ void model_QueueTiny(s32 yaw, s32 weapon_id, s32 has_object) {
     work.vz = (g_math_sin_table[yaw & ANGLE_MASK] * work.vx) >> 12;
     work.vx =
         (g_math_sin_table[(yaw + ANGLE_TURN / 4) & ANGLE_MASK] * work.vx) >> 12;
-    node = (ModelNode *)g_model_tiny_nodes;
-    ApplyMatrix(matrices[0], &work, (VECTOR *)g_model_tiny_matrix.t);
-    g_model_tiny_matrix.t[0] += matrices[0]->t[0];
-    g_model_tiny_matrix.t[1] += matrices[1]->t[1];
-    g_model_tiny_matrix.t[2] += matrices[2]->t[2];
+    node = (ModelNode *)ADDR(g_model_tiny_nodes);
+    ApplyMatrix(PTR(matrices[0]), &work, (VECTOR *)g_model_tiny_matrix.t);
+    g_model_tiny_matrix.t[0] += PTR(matrices[0])->t[0];
+    g_model_tiny_matrix.t[1] += PTR(matrices[1])->t[1];
+    g_model_tiny_matrix.t[2] += PTR(matrices[2])->t[2];
 
     work.vx = 0;
     work.vy = 3 * ANGLE_TURN / 4 - yaw;
     work.vz = 0;
     bones = g_model_tiny_bones;
     math_RotMatrixZYX(&work, &turned);
-    math_MulMatrix(matrices[0], &turned, &turned);
+    math_MulMatrix(PTR(matrices[0]), &turned, &turned);
     /* the camera's rotation is the inverse: the transpose */
     g_model_tiny_matrix.m[0][0] = turned.m[0][0];
     g_model_tiny_matrix.m[0][1] = turned.m[1][0];
@@ -119,13 +119,13 @@ void model_QueueTiny(s32 yaw, s32 weapon_id, s32 has_object) {
     g_model_tiny_matrix.m[2][2] = turned.m[2][2];
 
     while ((bone = *bones++) >= 0) {
-        node->node.world = *matrices[bone];
+        node->node.world = *PTR(matrices[bone]);
         *g_render_queue_end++ = node;
         node++;
     }
     /* the list starts at bone 1: these are the two hand bones */
     if (weapon_id >= 0) {
-        node->node.world = *matrices[MODEL_HAND_BONE - 1];
+        node->node.world = *PTR(matrices[MODEL_HAND_BONE - 1]);
         queue = g_render_queue_end;
         node->node.mesh = weapon_id + TINY_MESH_WEAPON;
         g_render_queue_end = queue + 1;
@@ -133,7 +133,7 @@ void model_QueueTiny(s32 yaw, s32 weapon_id, s32 has_object) {
         node++;
     }
     if (has_object) {
-        node->node.world = *matrices[MODEL_HAND_BONE];
+        node->node.world = *PTR(matrices[MODEL_HAND_BONE]);
         queue = g_render_queue_end;
         node->node.mesh = TINY_MESH_OBJECT;
         g_render_queue_end = queue + 1;

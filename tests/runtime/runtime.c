@@ -1,9 +1,53 @@
 /* The test programs' start-up and their stand-in for a C library
- * (runtime.h): a 32-bit Linux program that asks the kernel directly for the
- * four things a test needs: to write its output, to read a file, to get
- * memory and to exit. Nothing here divides a 64-bit number, which would
- * need the compiler's own 32-bit library. */
+ * (runtime.h): a Linux program that asks the kernel directly for the four
+ * things a test needs: to write its output, to read a file, to get memory
+ * and to exit. A test is a 32-bit program; the port's tests are built as
+ * 64-bit programs as well (tests/run.py), so the kernel is called both
+ * ways here. Nothing here divides a 64-bit number, which would need the
+ * compiler's own 32-bit library. */
 #include "runtime.h"
+
+/* What the kernel takes and gives: a number as wide as a pointer. */
+typedef __INTPTR_TYPE__ TestWord;
+
+#if defined(__x86_64__)
+
+/* ---- system calls (64-bit x86 Linux: `syscall`) ---- */
+
+enum {
+    SYS_READ = 0,
+    SYS_WRITE = 1,
+    SYS_OPEN = 2,
+    SYS_CLOSE = 3,
+    SYS_LSEEK = 8,
+    SYS_MMAP = 9,
+    SYS_EXIT = 60,
+};
+
+/* Memory below 2 GB: the game keeps addresses in 32-bit numbers. */
+#define MAP_LOW 0x40
+
+static TestWord test_Syscall6(TestWord number, TestWord a, TestWord b,
+                              TestWord c, TestWord d, TestWord e, TestWord f) {
+    register TestWord in_r10 __asm__("r10") = d;
+    register TestWord in_r8 __asm__("r8") = e;
+    register TestWord in_r9 __asm__("r9") = f;
+    TestWord result;
+
+    __asm__ volatile("syscall"
+                     : "=a"(result)
+                     : "a"(number), "D"(a), "S"(b), "d"(c), "r"(in_r10),
+                       "r"(in_r8), "r"(in_r9)
+                     : "rcx", "r11", "memory");
+    return result;
+}
+
+static TestWord test_Syscall(
+    TestWord number, TestWord a, TestWord b, TestWord c) {
+    return test_Syscall6(number, a, b, c, 0, 0, 0);
+}
+
+#else
 
 /* ---- system calls (32-bit x86 Linux: `int $0x80`) ---- */
 
@@ -17,6 +61,19 @@ enum {
     SYS_MMAP = 90, /* the old one, which takes its six arguments in memory */
 };
 
+static TestWord test_Syscall(
+    TestWord number, TestWord a, TestWord b, TestWord c) {
+    TestWord result;
+
+    __asm__ volatile("int $0x80"
+                     : "=a"(result)
+                     : "a"(number), "b"(a), "c"(b), "d"(c)
+                     : "memory");
+    return result;
+}
+
+#endif
+
 #define STDOUT 1
 #define SEEK_SET 0
 #define SEEK_END 2
@@ -25,16 +82,8 @@ enum {
 #define MAP_FIXED 0x10
 #define MAP_ANONYMOUS 0x20
 #define PAGE_SIZE 0x1000
-
-static int test_Syscall(int number, int a, int b, int c) {
-    int result;
-
-    __asm__ volatile("int $0x80"
-                     : "=a"(result)
-                     : "a"(number), "b"(a), "c"(b), "d"(c)
-                     : "memory");
-    return result;
-}
+/* The stack a 64-bit test runs on. */
+#define STACK_SIZE 0x400000
 
 /* ---- output, kept until there is a buffer of it ---- */
 
@@ -45,8 +94,9 @@ static void test_Flush(void) {
     unsigned done = 0;
 
     while (done < g_test_output_used) {
-        int wrote = test_Syscall(SYS_WRITE, STDOUT, (int)(g_test_output + done),
-                                 (int)(g_test_output_used - done));
+        TestWord wrote =
+            test_Syscall(SYS_WRITE, STDOUT, (TestWord)(g_test_output + done),
+                         (TestWord)(g_test_output_used - done));
         if (wrote <= 0) {
             break;
         }
@@ -191,10 +241,17 @@ void test_CountEq(
 /* ---- memory and files ---- */
 
 static void *test_Map(unsigned address, unsigned size, int flags) {
+    TestWord result;
+#if defined(__x86_64__)
+    result = test_Syscall6(
+        SYS_MMAP, (TestWord)address,
+        (TestWord)((size + PAGE_SIZE - 1) & ~(unsigned)(PAGE_SIZE - 1)),
+        PROT_READ_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS | flags | (address ? 0 : MAP_LOW), -1, 0);
+#else
     /* the old mmap's arguments: address, length, protection, flags, file,
      * offset */
     int request[6];
-    int result;
 
     request[0] = (int)address;
     request[1] = (int)((size + PAGE_SIZE - 1) & ~(unsigned)(PAGE_SIZE - 1));
@@ -202,9 +259,10 @@ static void *test_Map(unsigned address, unsigned size, int flags) {
     request[3] = MAP_PRIVATE | MAP_ANONYMOUS | flags;
     request[4] = -1;
     request[5] = 0;
-    result = test_Syscall(SYS_MMAP, (int)request, 0, 0);
+    result = test_Syscall(SYS_MMAP, (TestWord)request, 0, 0);
+#endif
     /* an error is a small negative number */
-    if ((unsigned)result > 0xFFFFF000U) {
+    if ((unsigned __INTPTR_TYPE__)result > (unsigned __INTPTR_TYPE__) - 4096) {
         test_Print("FAIL the kernel gave no memory (%d bytes at 0x%x)\n",
                    (int)size, address);
         test_Flush();
@@ -220,7 +278,7 @@ void *test_AllocAt(unsigned address, unsigned size) {
 }
 
 void *test_ReadFile(const char *path, unsigned *size_out) {
-    int file = test_Syscall(SYS_OPEN, (int)path, 0, 0);
+    int file = (int)test_Syscall(SYS_OPEN, (TestWord)path, 0, 0);
     int size;
     int done = 0;
     char *contents;
@@ -228,12 +286,12 @@ void *test_ReadFile(const char *path, unsigned *size_out) {
     if (file < 0) {
         return (void *)0;
     }
-    size = test_Syscall(SYS_LSEEK, file, 0, SEEK_END);
+    size = (int)test_Syscall(SYS_LSEEK, file, 0, SEEK_END);
     test_Syscall(SYS_LSEEK, file, 0, SEEK_SET);
     contents = test_Alloc((unsigned)size + 4);
     while (done < size) {
-        int got =
-            test_Syscall(SYS_READ, file, (int)(contents + done), size - done);
+        int got = (int)test_Syscall(
+            SYS_READ, file, (TestWord)(contents + done), size - done);
         if (got <= 0) {
             break;
         }
@@ -338,20 +396,50 @@ const char *test_Arg(int index) {
 __asm__(".text\n"
         ".globl _start\n"
         "_start:\n"
+#if defined(__x86_64__)
+        "    xorl %ebp, %ebp\n"
+        "    movq %rsp, %rdi\n"
+        "    andq $-16, %rsp\n"
+        "    call test_Start\n"
+#else
         "    xorl %ebp, %ebp\n"
         "    movl %esp, %eax\n"
         "    andl $-16, %esp\n"
         "    subl $12, %esp\n"
         "    pushl %eax\n"
         "    call test_Start\n"
+#endif
         "    hlt\n");
 
-void test_Start(int *stack) {
-    g_test_arg_count = stack[0];
-    g_test_args = (char **)(stack + 1);
+/* The test, and the program's end. */
+static void test_Run(void) {
     test_Main();
     /* the last line: tests/run.py reads the counts from it */
     test_Print("checks %u failed %u\n", g_test_checks, g_test_failures);
     test_Flush();
     test_Syscall(SYS_EXIT, g_test_failures != 0, 0, 0);
+}
+
+void test_Start(TestWord *stack) {
+    g_test_arg_count = (int)stack[0];
+    g_test_args = (char **)(stack + 1);
+#if defined(__x86_64__)
+    {
+        /* A 64-bit program's stack is far above 4 GB, and a test hands
+         * the game the addresses of its locals, which the game keeps in
+         * 32 bits: the test runs on a stack of its own, low down, as the
+         * game does in the port (docs/PORT.md, "64 bits"). */
+        char *low = test_Map(0, STACK_SIZE, 0);
+
+        __asm__ volatile(
+            "movq %0, %%rsp\n"
+            "xorl %%ebp, %%ebp\n"
+            "call *%1\n"
+            :
+            : "r"(low + STACK_SIZE), "r"(test_Run)
+            : "memory");
+    }
+#else
+    test_Run();
+#endif
 }

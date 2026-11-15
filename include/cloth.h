@@ -104,28 +104,28 @@ typedef struct ClothColliders {
 
 /* One cloth to step: cloth_Update takes a list of these. */
 typedef struct {
-    s16 cloth;      /* +0x00 index in g_cloths */
-    u8 snap;        /* +0x02 bit 0: put it at rest instead */
-    u8 unk3;        /* +0x03 cleared by cloth_CreatePiece; never read */
-    MATRIX *matrix; /* +0x04 the bone's, now */
-    u8 *buffer;     /* +0x08 the cloth's points; not read */
-    ClothColliders *colliders; /* +0x0C null: none, and no ground */
-} ClothUpdate;                 /* 0x10 bytes */
+    s16 cloth;              /* +0x00 index in g_cloths */
+    u8 snap;                /* +0x02 bit 0: put it at rest instead */
+    u8 unk3;                /* +0x03 cleared by cloth_CreatePiece; never read */
+    PTR32(MATRIX *) matrix; /* +0x04 the bone's, now */
+    PTR32(u8 *) buffer;     /* +0x08 the cloth's points; not read */
+    PTR32(ClothColliders *) colliders; /* +0x0C null: none, and no ground */
+} ClothUpdate;                         /* 0x10 bytes */
 
 /* A piece's ellipsoids, each riding on a bone of the model. */
 typedef struct {
-    s32 count;                              /* +0x00 */
-    ModelNode *bones[CLOTH_COLLIDERS];      /* +0x04 */
-    ClothColliders world;                   /* +0x10 where they are now */
-    SVECTOR local_foci[CLOTH_COLLIDERS][2]; /* +0x84 in the bone's space */
-} ClothBoneColliders;                       /* 0xB4 bytes */
+    s32 count;                                 /* +0x00 */
+    PTR32(ModelNode *) bones[CLOTH_COLLIDERS]; /* +0x04 */
+    ClothColliders world;                      /* +0x10 where they are now */
+    SVECTOR local_foci[CLOTH_COLLIDERS][2];    /* +0x84 in the bone's space */
+} ClothBoneColliders;                          /* 0xB4 bytes */
 
 /* One cloth mesh of a model. */
 typedef struct {
     s16 cloth;                    /* +0x00 index in g_cloths */
     ClothUpdate update;           /* +0x04 */
-    ModelNode *node;              /* +0x14 the node that draws the mesh */
-    u8 *data;                     /* +0x18 its vertices, points and springs */
+    PTR32(ModelNode *) node;      /* +0x14 the node that draws the mesh */
+    PTR32(u8 *) data;             /* +0x18 its vertices, points and springs */
     ClothBoneColliders colliders; /* +0x1C */
 } ClothPiece;                     /* 0xD0 bytes */
 

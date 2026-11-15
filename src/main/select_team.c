@@ -169,7 +169,7 @@ static s8 g_select_team_time_choice; /* which of the two time limits */
 static void select_DrawTeamFrame(MenuDrawCtx *ctx, s32 step) {
     SpriteDraw draw;
     s32 i;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     TILE *tile;
     POLY_F4 *band;
 
@@ -187,17 +187,17 @@ static void select_DrawTeamFrame(MenuDrawCtx *ctx, s32 step) {
     draw.ot_index = TEAM_LAYER_FRAME;
     draw.has_color = 0;
     draw.semi = 0;
-    sheets = ctx->file.team_select->frame_sheets;
+    sheets = PTR(ctx->file.team_select->frame_sheets);
     draw.x = 0;
     draw.y = 0;
     for (i = 0; i < 3; i++) {
-        draw.header = sheets[i];
+        draw.header = PTR(sheets[i]);
         draw.table = draw.header->cells;
         draw.sprt_out = ctx->prims.sprt;
         ctx->prims.sprt = sprite_Draw(&draw);
     }
 
-    draw.header = *sheets;
+    draw.header = PTR(*sheets);
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
     AddPrim(g_disp_ot + TEAM_LAYER_FRAME, ctx->prims.mode);
     band = ctx->prims.f4;
@@ -245,7 +245,7 @@ static void select_DrawTeamRules(MenuDrawCtx *ctx) {
     SpriteDraw draw;
     s16 lit;
     s16 i;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     s16 rule[4];
 
     lit = (1 << g_select_team->cursor[0]) +
@@ -253,7 +253,7 @@ static void select_DrawTeamRules(MenuDrawCtx *ctx) {
           (1 << (g_select_team->win_target_index + TEAM_RULE_SHEET_POINTS)) +
           (1 << (g_select_team->time_sheet + (TEAM_RULE_SHEET_TIMES - 1)));
     draw.ot_index = TEAM_LAYER_RULES;
-    sheets = ctx->file.team_select->rule_sheets;
+    sheets = PTR(ctx->file.team_select->rule_sheets);
     for (i = 0; i < TEAM_RULE_SHEETS; i++) {
         draw.x = 0;
         draw.y = 0;
@@ -310,14 +310,14 @@ static void select_DrawTeamRules(MenuDrawCtx *ctx) {
             g_select_team_time_sheets[g_select_team->win_target_index][1] +
                     (TEAM_RULE_SHEET_TIMES - 1) ==
                 i) {
-            draw.header = sheets[i];
+            draw.header = PTR(sheets[i]);
             draw.table = draw.header->cells;
             draw.sprt_out = ctx->prims.sprt;
             ctx->prims.sprt = sprite_Draw(&draw);
         }
     }
 
-    draw.header = sheets[0];
+    draw.header = PTR(sheets[0]);
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
     AddPrim(g_disp_ot + TEAM_LAYER_RULES, ctx->prims.mode);
     ctx->prims.mode++;
@@ -478,7 +478,7 @@ static void select_DrawTeamBars(MenuDrawCtx *ctx, s32 side, s32 tall) {
     }
     tile = ctx->prims.tile;
     for (i = 0; i < g_select_team->match_count_index + TEAM_MIN_MATCHES; i++) {
-        bar = g_select_team->file->bar_rects;
+        bar = PTR(PTR(g_select_team->file)->bar_rects);
         for (j = 0; j < bars; j++) {
             SetTile(tile);
             tile->r0 = bar->r;
@@ -515,7 +515,7 @@ static void select_DrawTeamHeading(MenuDrawCtx *ctx, s32 side, s16 heading) {
     ot_index = TEAM_LAYER_SIDE_1 + TEAM_PANEL_LAYER_PAGE;
     draw.semi = 0;
     draw.has_color = 0;
-    draw.header = ctx->file.team_select->heading_sheets[heading];
+    draw.header = PTR(PTR(ctx->file.team_select->heading_sheets)[heading]);
     draw.x = side * TEAM_SIDE_X;
     draw.y = 0;
     draw.table = draw.header->cells;
@@ -537,7 +537,7 @@ static void select_DrawTeamPanel(MenuDrawCtx *ctx, s32 side) {
     SpriteDraw draw;
     RECT rect;
     u16 offset[2];
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     TILE *paper;
     s32 ot_base;
     s32 clip_x;
@@ -560,7 +560,7 @@ static void select_DrawTeamPanel(MenuDrawCtx *ctx, s32 side) {
     ctx->prims.tile = paper;
 
     /* The rail at the top, and the one that comes up with the cover. */
-    sheets = ctx->file.team_select->panel_sheets;
+    sheets = PTR(ctx->file.team_select->panel_sheets);
     draw.semi = 0;
     draw.has_color = 0;
     draw.x = side * TEAM_SIDE_X;
@@ -569,12 +569,12 @@ static void select_DrawTeamPanel(MenuDrawCtx *ctx, s32 side) {
         draw.y = (TEAM_PANEL_HEIGHT + TEAM_PANEL_RAIL_GAP -
                   g_select_team->panel_cover[side]) *
                  i;
-        draw.header = sheets[TEAM_PANEL_SHEET_RAIL_ENDS];
+        draw.header = PTR(sheets[TEAM_PANEL_SHEET_RAIL_ENDS]);
         cells = draw.header->cells;
         draw.table = cells;
         draw.sprt_out = ctx->prims.sprt;
         ctx->prims.sprt = sprite_Draw(&draw);
-        draw.header = sheets[TEAM_PANEL_SHEET_RAIL];
+        draw.header = PTR(sheets[TEAM_PANEL_SHEET_RAIL]);
         cells = draw.header->cells;
         draw.table = cells;
         draw.sprt_out = ctx->prims.sprt;
@@ -588,7 +588,7 @@ static void select_DrawTeamPanel(MenuDrawCtx *ctx, s32 side) {
 
     draw.x = side * TEAM_SIDE_X;
     draw.y = 0;
-    draw.header = sheets[TEAM_PANEL_SHEET_FRAME_1];
+    draw.header = PTR(sheets[TEAM_PANEL_SHEET_FRAME_1]);
     cells = draw.header->cells;
     draw.table = cells;
     if (side != 0) {
@@ -598,7 +598,7 @@ static void select_DrawTeamPanel(MenuDrawCtx *ctx, s32 side) {
     }
     draw.sprt_out = ctx->prims.sprt;
     ctx->prims.sprt = sprite_Draw(&draw);
-    draw.header = sheets[TEAM_PANEL_SHEET_FRAME_2];
+    draw.header = PTR(sheets[TEAM_PANEL_SHEET_FRAME_2]);
     cells = draw.header->cells;
     draw.table = cells;
     draw.sprt_out = ctx->prims.sprt;
@@ -616,8 +616,8 @@ static void select_DrawTeamPanel(MenuDrawCtx *ctx, s32 side) {
         clip_x = TEAM_PANEL_WINDOW_X;
     }
     /* Before the page: the draw area cut down to what is not covered. */
-    rect.x = g_select_team->db->draw.clip.x + clip_x;
-    rect.y = g_select_team->db->draw.clip.y + TEAM_PANEL_Y;
+    rect.x = PTR(g_select_team->db)->draw.clip.x + clip_x;
+    rect.y = PTR(g_select_team->db)->draw.clip.y + TEAM_PANEL_Y;
     rect.w = TEAM_PANEL_WINDOW_WIDTH;
     rect.h = TEAM_PANEL_HEIGHT - g_select_team->panel_cover[side];
     SetDrawArea(ctx->prims.area, &rect);
@@ -625,24 +625,24 @@ static void select_DrawTeamPanel(MenuDrawCtx *ctx, s32 side) {
     ctx->prims.area++;
 
     /* After it: the whole screen again. */
-    rect.x = g_select_team->db->draw.clip.x;
-    rect.y = g_select_team->db->draw.clip.y;
-    rect.w = g_select_team->db->draw.clip.w;
-    rect.h = g_select_team->db->draw.clip.h;
+    rect.x = PTR(g_select_team->db)->draw.clip.x;
+    rect.y = PTR(g_select_team->db)->draw.clip.y;
+    rect.w = PTR(g_select_team->db)->draw.clip.w;
+    rect.h = PTR(g_select_team->db)->draw.clip.h;
     SetDrawArea(ctx->prims.area, &rect);
     AddPrim(g_disp_ot + ot_base, ctx->prims.area);
     ctx->prims.area++;
 
     /* The same for the draw offset, which pushes the page up. */
-    offset[0] = g_select_team->db->draw.ofs[0];
+    offset[0] = PTR(g_select_team->db)->draw.ofs[0];
     offset[1] =
-        g_select_team->db->draw.ofs[1] - g_select_team->panel_scroll[side];
+        PTR(g_select_team->db)->draw.ofs[1] - g_select_team->panel_scroll[side];
     SetDrawOffset(ctx->prims.offset, offset);
     AddPrim(g_disp_ot + ot_base + TEAM_PANEL_LAYER_PAPER, ctx->prims.offset);
     ctx->prims.offset++;
 
-    offset[0] = g_select_team->db->draw.ofs[0];
-    offset[1] = g_select_team->db->draw.ofs[1];
+    offset[0] = PTR(g_select_team->db)->draw.ofs[0];
+    offset[1] = PTR(g_select_team->db)->draw.ofs[1];
     SetDrawOffset(ctx->prims.offset, offset);
     AddPrim(g_disp_ot + ot_base, ctx->prims.offset);
     ctx->prims.offset++;
@@ -711,7 +711,7 @@ static void select_StepTeamPanels(void) {
  * glowing; the two clans' emblems; and the page itself. */
 static void select_DrawTeamClans(MenuDrawCtx *ctx, s32 side) {
     SpriteDraw draw;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     s16 i;
     SpriteCell *cells;
     s32 no_abr;
@@ -723,8 +723,8 @@ static void select_DrawTeamClans(MenuDrawCtx *ctx, s32 side) {
     } else {
         draw.ot_index = TEAM_LAYER_SIDE_1 + TEAM_PANEL_LAYER_PAGE;
     }
-    sheets = ctx->file.team_select->clan_sheets;
-    draw.header = sheets[side + TEAM_CLAN_SHEET_CURSORS];
+    sheets = PTR(ctx->file.team_select->clan_sheets);
+    draw.header = PTR(sheets[side + TEAM_CLAN_SHEET_CURSORS]);
     draw.x = side * TEAM_SIDE_X;
     cells = draw.header->cells;
     draw.table = cells;
@@ -735,9 +735,9 @@ static void select_DrawTeamClans(MenuDrawCtx *ctx, s32 side) {
     draw.sprt_out = ctx->prims.sprt;
     ctx->prims.sprt = sprite_Draw(&draw);
     draw.has_color = 0;
-    sheets = ctx->file.team_select->name_sheets;
+    sheets = PTR(ctx->file.team_select->name_sheets);
     i = 0;
-    draw.header = sheets[TEAM_NAME_SHEET_EMBLEMS];
+    draw.header = PTR(sheets[TEAM_NAME_SHEET_EMBLEMS]);
     draw.x = side * TEAM_SIDE_X + TEAM_CLAN_EMBLEM_X;
     draw.y = TEAM_CLAN_EMBLEM_Y;
     cells = draw.header->cells;
@@ -751,9 +751,9 @@ static void select_DrawTeamClans(MenuDrawCtx *ctx, s32 side) {
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, no_abr), 0);
     AddPrim(g_disp_ot + draw.ot_index, ctx->prims.mode);
     ctx->prims.mode++;
-    sheets = ctx->file.team_select->clan_sheets;
+    sheets = PTR(ctx->file.team_select->clan_sheets);
     do {
-        draw.header = sheets[i];
+        draw.header = PTR(sheets[i]);
         draw.x = side * TEAM_SIDE_X;
         draw.y = 0;
         cells = draw.header->cells;
@@ -831,7 +831,8 @@ static void select_DrawTeamStrike(
     s16 row;
     draw.semi = semi;
     draw.col_r = draw.col_g = draw.col_b = TEAM_STRIKE_GLOW;
-    draw.header = ctx->file.team_select->name_sheets[TEAM_NAME_SHEET_STRIKE];
+    draw.header =
+        PTR(PTR(ctx->file.team_select->name_sheets)[TEAM_NAME_SHEET_STRIKE]);
     draw.table = draw.header->cells;
     if (grid_index < TEAM_CLAN_FIGHTERS) {
         column = grid_index / TEAM_GRID_ROWS;
@@ -865,7 +866,7 @@ static void select_DrawTeamStrike(
 static void select_DrawTeamFighters(
     MenuDrawCtx *ctx, s32 clan, s16 *fighters, s32 side) {
     SpriteDraw draw;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     s32 no_abr;
     s16 i;
     /* Where a sheet has three headers these are the third header's cells. */
@@ -874,8 +875,8 @@ static void select_DrawTeamFighters(
     no_abr = 0;
     draw.semi = 0;
     draw.has_color = 0;
-    sheets = ctx->file.team_select->name_sheets;
-    draw.header = sheets[TEAM_NAME_SHEET_EMBLEMS];
+    sheets = PTR(ctx->file.team_select->name_sheets);
+    draw.header = PTR(sheets[TEAM_NAME_SHEET_EMBLEMS]);
     draw.x = side * TEAM_SIDE_X + TEAM_EMBLEM_X;
     draw.y = TEAM_EMBLEM_Y;
     cells = draw.header->cells;
@@ -907,7 +908,7 @@ static void select_DrawTeamFighters(
         u8 fighter = ((SelectCell *)g_select_team_grid)[i].value;
 
         if (g_select_team_fighter_flags[fighter] & SELECT_FIGHTER_OPEN) {
-            draw.header = sheets[fighter + TEAM_NAME_SHEET_FIRST];
+            draw.header = PTR(sheets[fighter + TEAM_NAME_SHEET_FIRST]);
             cells = draw.header[TEAM_LOOKS - 1].cells;
             draw.table = cells;
             if (g_select_team_grid[clan]
@@ -937,7 +938,7 @@ static void select_DrawTeamFighters(
     /* The team so far. */
     for (i = 0; i < g_select_team->cursor[side] + 1; i++) {
         if (fighters[i] >= 0) {
-            draw.header = sheets[fighters[i] + TEAM_NAME_SHEET_FIRST];
+            draw.header = PTR(sheets[fighters[i] + TEAM_NAME_SHEET_FIRST]);
             cells = draw.header[TEAM_LOOKS - 1].cells;
             if (i != g_select_team->cursor[side]) {
                 draw.has_color = 0;
@@ -956,9 +957,9 @@ static void select_DrawTeamFighters(
     /* The places' numbers. */
     draw.has_color = 0;
     for (i = 0; i < g_select_team->match_count_index + TEAM_MIN_MATCHES; i++) {
-        sheets = ctx->file.team_select
-                     ->slot_sheets[g_select_team->match_count_index];
-        draw.header = sheets[i];
+        sheets = PTR(ctx->file.team_select
+                         ->slot_sheets[g_select_team->match_count_index]);
+        draw.header = PTR(sheets[i]);
         cells = draw.header[TEAM_LOOKS - 1].cells;
         if (i == g_select_team->cursor[side]) {
             draw.header += 1 + side;
@@ -976,8 +977,8 @@ static void select_DrawTeamFighters(
     }
 
     /* The texture page for the names, and for the strikes over them. */
-    sheets = ctx->file.team_select->name_sheets;
-    draw.header = sheets[TEAM_NAME_SHEET_FIRST];
+    sheets = PTR(ctx->file.team_select->name_sheets);
+    draw.header = PTR(sheets[TEAM_NAME_SHEET_FIRST]);
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, no_abr), 0);
     AddPrim(g_disp_ot + draw.ot_index, ctx->prims.mode);
     ctx->prims.mode++;
@@ -1133,7 +1134,7 @@ static void select_DrawTeamWeapons(
     MenuDrawCtx *ctx, s32 clan, s16 *fighters, s32 side) {
     SpriteDraw draw;
     s32 ot_index;
-    SpriteSheet **sheets;
+    SpriteSheetSlot *sheets;
     /* Where a sheet has three headers these are the third header's cells. */
     SpriteCell *cells;
     s16 i;
@@ -1146,9 +1147,9 @@ static void select_DrawTeamWeapons(
     if (side != 0) {
         ot_index = TEAM_LAYER_SIDE_2 + TEAM_PANEL_LAYER_TEXT;
     }
-    sheets = ctx->file.team_select->weapon_sheets;
+    sheets = PTR(ctx->file.team_select->weapon_sheets);
     if (g_select_team->step.half[side] < TEAM_STEP_READY) {
-        draw.header = sheets[TEAM_WEAPON_SHEET_CURSOR];
+        draw.header = PTR(sheets[TEAM_WEAPON_SHEET_CURSOR]);
         draw.has_color = 0;
         draw.x = side * TEAM_SIDE_X;
         cells = draw.header->cells;
@@ -1165,10 +1166,10 @@ static void select_DrawTeamWeapons(
 
     draw.has_color = 0;
     draw.col_r = draw.col_g = draw.col_b = TEAM_GLOW(TEAM_TINT_PLACE);
-    sheets = ctx->file.team_select->name_sheets;
+    sheets = PTR(ctx->file.team_select->name_sheets);
     for (i = 0; i < g_select_team->match_count_index + TEAM_MIN_MATCHES; i++) {
         draw.has_color = 0;
-        draw.header = sheets[fighters[i] + TEAM_NAME_SHEET_FIRST];
+        draw.header = PTR(sheets[fighters[i] + TEAM_NAME_SHEET_FIRST]);
         cells = draw.header[TEAM_LOOKS - 1].cells;
         if (g_select_team->cursor[side] == i ||
             g_select_team->step.half[side] >= TEAM_STEP_READY) {
@@ -1183,7 +1184,7 @@ static void select_DrawTeamWeapons(
         ctx->prims.sprt = sprite_Draw(&draw);
     }
 
-    sheets = ctx->file.team_select->weapon_sheets;
+    sheets = PTR(ctx->file.team_select->weapon_sheets);
     for (i = 0; i < g_select_team->cursor[side] + 1; i++) {
         if (g_select_team->cursor[side] != i ||
             g_select_team->step.half[side] >= TEAM_STEP_READY) {
@@ -1195,7 +1196,7 @@ static void select_DrawTeamWeapons(
                     ->weapons_left[side][g_select_team->weapon_cursor[side]];
             draw.has_color = 1;
         }
-        draw.header = sheets[(s16)weapon * 2];
+        draw.header = PTR(sheets[(s16)weapon * 2]);
         cells = draw.header[TEAM_LOOKS - 1].cells;
         if (g_select_team->cursor[side] == i ||
             g_select_team->step.half[side] >= TEAM_STEP_READY) {
@@ -1207,7 +1208,7 @@ static void select_DrawTeamWeapons(
         draw.ot_index = ot_index;
         draw.sprt_out = ctx->prims.sprt;
         ctx->prims.sprt = sprite_Draw(&draw);
-        draw.header = sheets[(s16)weapon * 2 + 1];
+        draw.header = PTR(sheets[(s16)weapon * 2 + 1]);
         draw.has_color = 0;
         cells = draw.header->cells;
         draw.table = cells;
@@ -1215,11 +1216,11 @@ static void select_DrawTeamWeapons(
         ctx->prims.sprt = sprite_Draw(&draw);
     }
 
-    sheets =
-        ctx->file.team_select->slot_sheets[g_select_team->match_count_index];
+    sheets = PTR(
+        ctx->file.team_select->slot_sheets[g_select_team->match_count_index]);
     for (i = 0; i < g_select_team->match_count_index + TEAM_MIN_MATCHES; i++) {
         draw.has_color = 0;
-        draw.header = sheets[i];
+        draw.header = PTR(sheets[i]);
         cells = draw.header[TEAM_LOOKS - 1].cells;
         if (g_select_team->cursor[side] == i ||
             g_select_team->step.half[side] >= TEAM_STEP_READY) {
@@ -1233,8 +1234,8 @@ static void select_DrawTeamWeapons(
         ctx->prims.sprt = sprite_Draw(&draw);
     }
 
-    sheets = ctx->file.team_select->name_sheets;
-    draw.header = sheets[TEAM_NAME_SHEET_FIRST];
+    sheets = PTR(ctx->file.team_select->name_sheets);
+    draw.header = PTR(sheets[TEAM_NAME_SHEET_FIRST]);
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, no_abr), 0);
     AddPrim(g_disp_ot + ot_index, ctx->prims.mode);
     ctx->prims.mode++;
@@ -1363,7 +1364,7 @@ static s32 select_FadeTeamOut(MenuDrawCtx *ctx) {
     *fade = level;
     if (level >= TEAM_FADE_FULL) {
         *fade = TEAM_FADE_FULL;
-        settings = g_select_team->settings;
+        settings = PTR(g_select_team->settings);
         settings->match_count_index = g_select_team->match_count_index;
         done = 1;
         if (g_select_team->time_sheet < 3) {
@@ -1413,16 +1414,16 @@ static s32 select_FadeTeamOut(MenuDrawCtx *ctx) {
 /* Turns the offsets in the file's ten lists into addresses. Returns where
  * the file's image began, which is free once it is in video memory. */
 s32 select_RelocateTeamFile(TeamSelectFile *file) {
-    sprite_RelocateList(file, file->name_sheets);
-    sprite_RelocateList(file, file->panel_sheets);
-    sprite_RelocateList(file, file->heading_sheets);
-    sprite_RelocateList(file, file->slot_sheets[0]);
-    sprite_RelocateList(file, file->slot_sheets[1]);
-    sprite_RelocateList(file, file->slot_sheets[2]);
-    sprite_RelocateList(file, file->clan_sheets);
-    sprite_RelocateList(file, file->weapon_sheets);
-    sprite_RelocateList(file, file->rule_sheets);
-    sprite_RelocateList(file, file->frame_sheets);
+    sprite_RelocateList(file, PTR(file->name_sheets));
+    sprite_RelocateList(file, PTR(file->panel_sheets));
+    sprite_RelocateList(file, PTR(file->heading_sheets));
+    sprite_RelocateList(file, PTR(file->slot_sheets[0]));
+    sprite_RelocateList(file, PTR(file->slot_sheets[1]));
+    sprite_RelocateList(file, PTR(file->slot_sheets[2]));
+    sprite_RelocateList(file, PTR(file->clan_sheets));
+    sprite_RelocateList(file, PTR(file->weapon_sheets));
+    sprite_RelocateList(file, PTR(file->rule_sheets));
+    sprite_RelocateList(file, PTR(file->frame_sheets));
     return file->head.free_ram_start;
 }
 
@@ -1450,16 +1451,16 @@ s32 select_LoadTeam(s32 memory, GameSettings *settings, s32 unlocks) {
     s16 i;
 
     ClearOTagR(g_disp_ot, DISP_OT_SIZE);
-    work = (void *)(memory + 2 * sizeof(PrimPool));
-    g_select_team_pools = (PrimPool *)memory;
+    work = (void *)ADDR(memory + 2 * sizeof(PrimPool));
+    g_select_team_pools = (PrimPool *)ADDR(memory);
     resource_FreeAll();
     sprite_LoadFile(TEAM_FILE, work);
     free_ram = select_RelocateTeamFile(work);
     {
         TeamSelectFile *file = work;
-        work = (void *)sprite_InitPools(free_ram, g_select_team_pools);
+        work = (void *)ADDR(sprite_InitPools(free_ram, g_select_team_pools));
         g_select_team = work;
-        g_select_team->file = file;
+        SET_PTR(g_select_team->file, file);
         /* FAKE: a store nothing reads */
         work = file;
         g_select_team->pool_frame = 0;
@@ -1518,7 +1519,7 @@ s32 select_LoadTeam(s32 memory, GameSettings *settings, s32 unlocks) {
     /* The rules start at three matches of two points, the longer time. */
     {
         TeamSelect *team = g_select_team;
-        team->settings = settings;
+        SET_PTR(team->settings, settings);
         team->match_count_index = 0;
     }
     g_select_team->win_target_index = 1;
@@ -1610,22 +1611,22 @@ s32 select_UpdateTeam(s32 held, s32 pressed) {
     MenuDrawCtx ctx;
     PrimPool *pool;
     s32 pool_frame;
-    g_select_team->db = &g_disp_db[g_disp_frame_count & 1];
+    SET_PTR(g_select_team->db, &g_disp_db[g_disp_frame_count & 1]);
     pool_frame = g_select_team->pool_frame + 1;
     g_select_team->pulse_frames = g_select_team->pulse_frames + 1;
     g_select_team->pool_frame = pool_frame;
     pool = select_GetTeamPrimPool(pool_frame & 1);
-    g_select_team->pool = pool;
-    ctx.file.team_select = g_select_team->file;
+    SET_PTR(g_select_team->pool, pool);
+    ctx.file.team_select = PTR(g_select_team->file);
     ctx.prims.ft4 = pool->ft4;
-    ctx.prims.f4 = pool->f4;
-    ctx.prims.g4 = pool->g4;
+    ctx.prims.f4 = PTR(pool->f4);
+    ctx.prims.g4 = PTR(pool->g4);
     ctx.prims.sprt = pool->sprt;
-    ctx.prims.tile = pool->tile;
-    ctx.prims.mode = pool->mode;
-    ctx.prims.area = pool->area;
-    ctx.prims.offset = pool->offset;
-    ctx.tail = pool->tail_region;
+    ctx.prims.tile = PTR(pool->tile);
+    ctx.prims.mode = PTR(pool->mode);
+    ctx.prims.area = PTR(pool->area);
+    ctx.prims.offset = PTR(pool->offset);
+    ctx.tail = PTR(pool->tail_region);
     return select_RunTeamSteps(pressed, &ctx);
 }
 

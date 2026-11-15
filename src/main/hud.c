@@ -41,6 +41,9 @@ static RECT g_hud_card_picture_image_rect;
 static RECT g_hud_card_picture_clut_rect;
 static SpriteCell g_hud_card_mark_cell;
 static BestTimesSheets g_hud_best_times_sheets;
+#if RB_PORT
+static void hud_FillBestTimesSheets(void);
+#endif
 static SpriteCell g_hud_best_times_digit_cell;
 static s16 g_hud_best_times_bar;
 static s16 g_hud_best_times_row_bar;
@@ -272,7 +275,7 @@ enum HudCardMarkSheet {
  * `cursor_and_options`: the cursor's row in the low half, the options'
  * settings from bit 16 up. */
 s32 hud_DrawPanel(s32 panel, s32 cursor_and_options, s32 prims, s32 ot_index) {
-    HudPanelPrims *block = (HudPanelPrims *)prims;
+    HudPanelPrims *block = (HudPanelPrims *)ADDR(prims);
     SpriteDraw draw;
     TILE *tile;
     s32 next_sprt;
@@ -625,7 +628,7 @@ s32 hud_DrawLoadingNoise(s32 prims, s32 screen) {
         do {
             draw.has_color = 0;
             /* FAKE: the long streak's sheet of this set */
-            draw.header = (SpriteSheet *)(row_off + (s32)noise_sheets);
+            draw.header = (SpriteSheet *)ADDR(row_off + (s32)noise_sheets);
             draw.table = &g_hud_noise_cells[0];
             g_hud_noise_seed ^= rand();
             draw.scale_y = life_size;
@@ -677,7 +680,7 @@ s32 hud_DrawLoadingNoise(s32 prims, s32 screen) {
  * narrower than the other digits and is moved over to sit in the middle of
  * its place. */
 s32 hud_DrawTimeAndCount(ClockTime *time, s32 count, s32 prims, s32 ot_index) {
-    HudCounterPrims *block = (HudCounterPrims *)prims;
+    HudCounterPrims *block = (HudCounterPrims *)ADDR(prims);
     SpriteDraw draw;
     s16 digits[3];
     TILE *tile;
@@ -842,7 +845,7 @@ s32 hud_DrawTimeAndCount(ClockTime *time, s32 count, s32 prims, s32 ot_index) {
  * label of the opponent count, and without a leading zero. */
 s32 hud_DrawWinCounts(
     s32 left_count, s32 right_count, s32 prims, s32 ot_index) {
-    HudCounterPrims *block = (HudCounterPrims *)prims;
+    HudCounterPrims *block = (HudCounterPrims *)ADDR(prims);
     SpriteDraw draw;
     s16 digits[2];
     TILE *tile;
@@ -968,7 +971,7 @@ s32 hud_DrawOpponentCount(s32 count, s32 prims, s32 ot_index) {
  * dimmed, struck through if the match was not fought. Under the rows, each
  * side's points as marks and the number of matches it won. */
 s32 hud_DrawTeamScores(u32 packed_scores, s32 prims, s32 ot_index) {
-    HudTeamScorePrims *block = (HudTeamScorePrims *)prims;
+    HudTeamScorePrims *block = (HudTeamScorePrims *)ADDR(prims);
     /* each side's points in a match, then each side's total */
     s16 side_scores[2];
     s16 higher_score_match_counts[2];
@@ -1255,7 +1258,7 @@ s32 hud_DrawTeamScores(u32 packed_scores, s32 prims, s32 ot_index) {
  * limit is the long one. */
 s32 hud_DrawPointsAndTime(
     ClockTime *time, s32 packed_marks, s32 prims, s32 ot_index) {
-    HudCounterPrims *block = (HudCounterPrims *)prims;
+    HudCounterPrims *block = (HudCounterPrims *)ADDR(prims);
     SpriteDraw draw;
     s16 digits[3];
     TILE *tile;
@@ -1506,7 +1509,7 @@ void hud_LoadEndingPicture(s32 index, u8 *file_buffer) {
  * a frame, each clipped to its side of the gap and with a red edge that
  * fades as it goes, and the scene shows between them. */
 s32 hud_DrawEndingPicture(s32 prims, s32 ot_index) {
-    HudEndingPrims *block = (HudEndingPrims *)prims;
+    HudEndingPrims *block = (HudEndingPrims *)ADDR(prims);
     SpriteDraw draw;
     RECT clip; /* the part of the screen a half may draw in */
     RECT *draw_clip;
@@ -1602,7 +1605,7 @@ s32 hud_DrawEndingPicture(s32 prims, s32 ot_index) {
 s32 hud_DrawKillCount(s32 count, s32 prims, s32 ot_index) {
     SpriteDraw draw;
     s16 digits[2];
-    HudKillCountPrims *block = (HudKillCountPrims *)prims;
+    HudKillCountPrims *block = (HudKillCountPrims *)ADDR(prims);
     DR_MODE *dr_mode = &block->draw_mode;
     /* where the block ends: the function returns its size */
     s32 end_addr = prims + sizeof(HudKillCountPrims);
@@ -1662,7 +1665,7 @@ void hud_LoadStageCard(s32 index, s32 *file_buffer) {
     file_buffer[1] = file_buffer[1] + (s32)file_buffer;
     name_image_rect = g_hud_card_name_image_rect;
     name_clut_rect = g_hud_card_name_clut_rect;
-    src_first_image = (u8 *)file_buffer[0];
+    src_first_image = (u8 *)ADDR(file_buffer[0]);
     /* the name: sixteen colours */
     LoadImage(&name_image_rect, (u32 *)(src_first_image + TIM_PIXELS(16)));
     DrawSync(0);
@@ -1670,7 +1673,7 @@ void hud_LoadStageCard(s32 index, s32 *file_buffer) {
     DrawSync(0);
     picture_image_rect = g_hud_card_picture_image_rect;
     picture_clut_rect = g_hud_card_picture_clut_rect;
-    src_second_image = (u8 *)file_buffer[1];
+    src_second_image = (u8 *)ADDR(file_buffer[1]);
     /* the view: thirty-two colours */
     LoadImage(&picture_image_rect, (u32 *)(src_second_image + TIM_PIXELS(32)));
     DrawSync(0);
@@ -1684,7 +1687,7 @@ void hud_LoadStageCard(s32 index, s32 *file_buffer) {
  * who are the Narukagami's, and one for the Shainto's. */
 s32 hud_DrawStageCardMark(s32 place, s32 prims, s32 ot_index) {
     SpriteDraw draw;
-    HudCardMarkPrims *block = (HudCardMarkPrims *)prims;
+    HudCardMarkPrims *block = (HudCardMarkPrims *)ADDR(prims);
     DR_MODE *dr_mode;
     /* where the block ends: the function returns its size */
     s32 end_addr;
@@ -1718,7 +1721,7 @@ s32 hud_DrawStageCardMark(s32 place, s32 prims, s32 ot_index) {
 /* Story mode's stage card: its title, the picture and name of the stage,
  * the map at twice its width, and the two ends of a red rule. */
 s32 hud_DrawStageCard(s32 prims, s32 ot_index) {
-    HudStageCardPrims *block = (HudStageCardPrims *)prims;
+    HudStageCardPrims *block = (HudStageCardPrims *)ADDR(prims);
     SpriteDraw draw;
     /* where the block ends: the function returns its size */
     s32 end_addr;
@@ -1811,13 +1814,13 @@ void hud_ResetBestTimes(void) {
 #define BEST_TOTAL_BOX_HEIGHT 26
 
 /* FAKE: ((TILE *)(tile))->r0 and so on */
-#define TILE_R(tile) (*(u8 *)((tile) + 4))
-#define TILE_G(tile) (*(u8 *)((tile) + 5))
-#define TILE_B(tile) (*(u8 *)((tile) + 6))
-#define TILE_X(tile) (*(s16 *)((tile) + 8))
-#define TILE_Y(tile) (*(s16 *)((tile) + 10))
-#define TILE_W(tile) (*(s16 *)((tile) + 12))
-#define TILE_H(tile) (*(s16 *)((tile) + 14))
+#define TILE_R(tile) (*(u8 *)ADDR((tile) + 4))
+#define TILE_G(tile) (*(u8 *)ADDR((tile) + 5))
+#define TILE_B(tile) (*(u8 *)ADDR((tile) + 6))
+#define TILE_X(tile) (*(s16 *)ADDR((tile) + 8))
+#define TILE_Y(tile) (*(s16 *)ADDR((tile) + 10))
+#define TILE_W(tile) (*(s16 *)ADDR((tile) + 12))
+#define TILE_H(tile) (*(s16 *)ADDR((tile) + 14))
 
 /* The best times after a chanbara run: the table itself (drawn by the
  * menu's function, from this file's sheets), a red bar growing under the
@@ -1839,11 +1842,14 @@ s32 hud_DrawBestTimes(s32 prims, s32 ot_index, s32 rank) {
     end_addr = prims + BEST_TIMES_SIZE;
     sprt_out_addr = prims;
     dr_mode_out_addr = prims + BEST_TIMES_DRAW_MODES;
+#if RB_PORT
+    hud_FillBestTimesSheets();
+#endif
     menu_DrawBestTimes(&sprt_out_addr, &dr_mode_out_addr,
                        &g_hud_best_times_sheets, ot_index, rank);
     if (rank < (u32)BEST_TIMES_ROWS) {
         /* the row's bar, red */
-        SetTile((TILE *)tile_out_addr);
+        SetTile((TILE *)ADDR(tile_out_addr));
         TILE_R(prims + BEST_TIMES_TILES) = 0xFF;
         TILE_X(prims + BEST_TIMES_TILES) = BEST_ROW_BAR_X;
         TILE_G(prims + BEST_TIMES_TILES) = 0;
@@ -1860,12 +1866,12 @@ s32 hud_DrawBestTimes(s32 prims, s32 ot_index, s32 rank) {
         if (g_hud_best_times_row_bar >= BEST_BAR_FRAMES + 1) {
             g_hud_best_times_row_bar = BEST_BAR_FRAMES;
         }
-        SetSemiTrans((TILE *)tile_out_addr, 0);
-        AddPrim(g_disp_ot + ot_index, (void *)tile_out_addr);
+        SetSemiTrans((TILE *)ADDR(tile_out_addr), 0);
+        AddPrim(g_disp_ot + ot_index, (void *)ADDR(tile_out_addr));
         tile_out_addr = prims + BEST_TIMES_TILES + sizeof(TILE);
     }
     /* the total's bar, red */
-    SetTile((TILE *)tile_out_addr);
+    SetTile((TILE *)ADDR(tile_out_addr));
     TILE_R(tile_out_addr) = 0xFF;
     TILE_X(tile_out_addr) = BEST_TOTAL_BAR_X;
     TILE_G(tile_out_addr) = 0;
@@ -1881,12 +1887,12 @@ s32 hud_DrawBestTimes(s32 prims, s32 ot_index, s32 rank) {
     if (g_hud_best_times_bar >= BEST_BAR_FRAMES + 1) {
         g_hud_best_times_bar = BEST_BAR_FRAMES;
     }
-    SetSemiTrans((TILE *)tile_out_addr, 0);
-    AddPrim(g_disp_ot + ot_index, (void *)tile_out_addr);
+    SetSemiTrans((TILE *)ADDR(tile_out_addr), 0);
+    AddPrim(g_disp_ot + ot_index, (void *)ADDR(tile_out_addr));
     tile_out_addr += sizeof(TILE);
 
     /* the box behind the table */
-    SetTile((TILE *)tile_out_addr);
+    SetTile((TILE *)ADDR(tile_out_addr));
     TILE_X(tile_out_addr) = BEST_TABLE_BOX_X;
     TILE_Y(tile_out_addr) = BEST_TABLE_BOX_Y;
     TILE_W(tile_out_addr) = BEST_TABLE_BOX_WIDTH;
@@ -1894,12 +1900,12 @@ s32 hud_DrawBestTimes(s32 prims, s32 ot_index, s32 rank) {
     TILE_G(tile_out_addr) = 0;
     TILE_B(tile_out_addr) = 0;
     TILE_H(tile_out_addr) = BEST_TABLE_BOX_HEIGHT;
-    SetSemiTrans((TILE *)tile_out_addr, 1);
-    AddPrim(g_disp_ot + ot_index, (void *)tile_out_addr);
+    SetSemiTrans((TILE *)ADDR(tile_out_addr), 1);
+    AddPrim(g_disp_ot + ot_index, (void *)ADDR(tile_out_addr));
     tile_out_addr += sizeof(TILE);
 
     /* and the one behind the total */
-    SetTile((TILE *)tile_out_addr);
+    SetTile((TILE *)ADDR(tile_out_addr));
     TILE_X(tile_out_addr) = BEST_TOTAL_BOX_X;
     TILE_Y(tile_out_addr) = BEST_TOTAL_BOX_Y;
     TILE_W(tile_out_addr) = BEST_TOTAL_BOX_WIDTH;
@@ -1907,10 +1913,10 @@ s32 hud_DrawBestTimes(s32 prims, s32 ot_index, s32 rank) {
     TILE_G(tile_out_addr) = 0;
     TILE_B(tile_out_addr) = 0;
     TILE_H(tile_out_addr) = BEST_TOTAL_BOX_HEIGHT;
-    SetSemiTrans((TILE *)tile_out_addr, 1);
-    AddPrim(g_disp_ot + ot_index, (void *)tile_out_addr);
+    SetSemiTrans((TILE *)ADDR(tile_out_addr), 1);
+    AddPrim(g_disp_ot + ot_index, (void *)ADDR(tile_out_addr));
 
-    SetDrawMode((void *)dr_mode_out_addr, 1, 0, 0, 0);
+    SetDrawMode((void *)ADDR(dr_mode_out_addr), 1, 0, 0, 0);
     /* FAKE: AddPrim(...), not called as if it were undeclared */
     ((s32(*)())AddPrim)(g_disp_ot + ot_index, dr_mode_out_addr);
     dr_mode_out_addr += sizeof(DR_MODE);
@@ -2058,6 +2064,29 @@ static SpriteSheet g_hud_best_times_mark_sheet = {
 /* clang-format on */
 static SpriteSheet g_hud_best_times_digit_sheet = {
     0x1E, 0x00, 1, 0xFF, 896, 511, 0, 26};
+#if RB_PORT
+/* In the port the table is filled before it is used
+ * (hud_FillBestTimesSheets): its members are addresses in four bytes, as
+ * the main menu's file has the same table, and a 64-bit program's compiler
+ * cannot put an address into such a word of a table it fills
+ * (docs/PORT.md, "64 bits"). */
+static BestTimesSheets g_hud_best_times_sheets;
+
+/* The table of the fight's own best times, as the PlayStation's compiler
+ * fills it: the program's sheets, where the main menu's file has its own. */
+static void hud_FillBestTimesSheets(void) {
+    BestTimesSheets *sheets = &g_hud_best_times_sheets;
+
+    SET_PTR(sheets->own_cell_sheets[0], &g_hud_best_times_title_sheet);
+    SET_PTR(sheets->own_cell_sheets[1], &g_hud_best_times_rank_sheet);
+    SET_PTR(sheets->own_cell_sheets[2], &g_hud_best_times_mark_sheet);
+    SET_PTR(sheets->character_sheet, &g_hud_name_sheet);
+    SET_PTR(sheets->character_cells, g_hud_name_8_tail_cells);
+    SET_PTR(sheets->digit_sheet, &g_hud_best_times_digit_sheet);
+    SET_PTR(sheets->digit_cell, &g_hud_best_times_digit_cell);
+    SET_PTR(sheets->character_x_offsets, g_hud_best_times_name_xs);
+}
+#else
 static BestTimesSheets g_hud_best_times_sheets = {
     {&g_hud_best_times_title_sheet, &g_hud_best_times_rank_sheet,
      &g_hud_best_times_mark_sheet},
@@ -2067,6 +2096,7 @@ static BestTimesSheets g_hud_best_times_sheets = {
     &g_hud_best_times_digit_cell,
     g_hud_best_times_name_xs,
 };
+#endif
 static SpriteSheet g_hud_panel_sheets[9] = {
     {0x1F, 0x00, 2, 0x00, 976, 509, 160, 28},
     {0x1F, 0x00, 2, 0x00, 976, 509, 160, 34},

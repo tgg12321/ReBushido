@@ -82,7 +82,7 @@ static s32 object_EaseAngle(s32 angle, s32 target, s32 kept);
  * bone's frame. */
 static void object_StickInBone(LooseObject *obj, s16 bone) {
     MATRIX bone_inverse;
-    MATRIX **bone_matrices;
+    MatrixSlot *bone_matrices;
     MATRIX *bone_matrix;
     MATRIX *stuck_matrix;
 
@@ -90,7 +90,7 @@ static void object_StickInBone(LooseObject *obj, s16 bone) {
     obj->stuck_bone = bone;
     bone_matrices = model_GetBoneMatrices(obj->owner < 1);
     stuck_matrix = &obj->stuck_matrix;
-    bone_matrix = bone_matrices[obj->stuck_bone];
+    bone_matrix = PTR(bone_matrices[obj->stuck_bone]);
 
     obj->stuck_matrix.m[0][0] = ONE;
     obj->stuck_matrix.m[0][1] = 0;
@@ -128,12 +128,12 @@ static void object_QueueStuck(LooseObject *obj) {
     s32 pos[3];
     s16 rot[4];
     MATRIX world;
-    MATRIX **bone_matrices;
+    MatrixSlot *bone_matrices;
     MATRIX *bone_matrix;
     s32 weapon_model;
 
     bone_matrices = model_GetBoneMatrices(obj->owner < 1);
-    bone_matrix = bone_matrices[obj->stuck_bone];
+    bone_matrix = PTR(bone_matrices[obj->stuck_bone]);
 
     gte_SetRotMatrix(bone_matrix);
     gte_ldlv0(&obj->pos);
@@ -901,8 +901,8 @@ void object_HitFighters(void) {
 
         step[0] = obj->prev_pos;
         step[1] = obj->pos;
-        scr->shape_points[0] = &step[0];
-        scr->shape_points[1] = &step[1];
+        SET_PTR(scr->shape_points[0], &step[0]);
+        SET_PTR(scr->shape_points[1], &step[1]);
         hit_FrameSegment(scr);
 
         /* the first body point the step passes through; an arm that is lost

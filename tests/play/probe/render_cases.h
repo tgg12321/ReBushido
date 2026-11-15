@@ -609,7 +609,7 @@ static u8 *probe_PutVertex(u32 *state, u8 *mesh, s32 bits) {
 
 /* The bones: thirteen matrices, and the list of pointers to them. */
 #define PROBE_BONES 13
-#define PROBE_BONE_LIST ((MATRIX **)(PROBE_WORK + 0x200))
+#define PROBE_BONE_LIST ((MatrixSlot *)(PROBE_WORK + 0x200))
 #define PROBE_BONE_MATRICES ((MATRIX *)(PROBE_WORK + 0x240))
 #define PROBE_CAMERA ((SceneNode *)(PROBE_WORK + 0x100))
 #define PROBE_LIGHTS ((LightSetup *)(PROBE_WORK + 0x400))
@@ -620,7 +620,7 @@ static void probe_MakeBones(u32 *state) {
 
     for (i = 0; i < PROBE_BONES; i++) {
         probe_MakeBone(state, &PROBE_BONE_MATRICES[i]);
-        PROBE_BONE_LIST[i] = &PROBE_BONE_MATRICES[i];
+        SET_PTR(PROBE_BONE_LIST[i], &PROBE_BONE_MATRICES[i]);
     }
 }
 
@@ -925,7 +925,7 @@ static void probe_DoDrawCloth(u32 *state, s32 wild, u32 *out) {
     probe_MakeNode(state);
     probe_MakeMeshNode(state, node);
     node->draw_flags = (u8)((pick >> 8) & 1);
-    *(u8 **)(PROBE_WORK + 0x60) = PROBE_CLOTH_POINTS;
+    SET_PTR(*(PTR32(u8 *) *)(PROBE_WORK + 0x60), PROBE_CLOTH_POINTS);
     probe_FillWords((u32 *)PROBE_CAMERA, sizeof(SceneNode) / 4, pick);
     for (i = 0; i < 3; i++) {
         PROBE_CAMERA->world.t[i] = (s32)probe_Signed(state, 14);
@@ -1300,7 +1300,7 @@ static void probe_DoDrawQueue(u32 *state, s32 wild, u32 *out) {
         node->mesh_block = (s16)((roll >> 8) % RELOC_BLOCK_COUNT);
         node->mesh = (s16)entry;
         node->light_setup_index = (s16)((roll >> 16) % LIGHT_SETUP_COUNT);
-        node->parent = PROBE_PARENT;
+        SET_PTR(node->parent, PROBE_PARENT);
         probe_MakeBone(state, &node->world);
         for (j = 0; j < 3; j++) {
             node->world.t[j] =
@@ -1338,12 +1338,14 @@ static void probe_DoDrawQueue(u32 *state, s32 wild, u32 *out) {
         g_render_queue[queued++] = node;
         PROBE_MESH_TABLE[entry] = (s32)mesh;
         if (kind == NODE_KIND_SKINNED) {
-            *(MATRIX ***)((u8 *)node + PROBE_NODE_EXTRA) = PROBE_BONE_LIST;
+            SET_PTR(*(PTR32(MatrixSlot *) *)((u8 *)node + PROBE_NODE_EXTRA),
+                    PROBE_BONE_LIST);
             mesh = probe_MakeSkinnedMesh(state, mesh, wild,
                                          outline ? PROBE_SKIN_OUTLINE_TYPE_COUNT
                                                  : PROBE_SKIN_TYPE_COUNT);
         } else if (kind == NODE_KIND_CLOTH) {
-            *(u8 **)((u8 *)node + PROBE_NODE_MORE) = PROBE_CLOTH_POINTS;
+            SET_PTR(*(PTR32(u8 *) *)((u8 *)node + PROBE_NODE_MORE),
+                    PROBE_CLOTH_POINTS);
             mesh = probe_MakeClothMesh(state, mesh, wild);
         } else {
             mesh = probe_MakePartsMesh(

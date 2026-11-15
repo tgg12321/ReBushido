@@ -23,7 +23,7 @@ void node_InitViewRoots(void) {
     g_node_camera_root.node.local.t[0] = 0;
     g_node_camera_root.node.local.t[1] = 0;
     g_node_camera_root.node.local.t[2] = 0;
-    g_node_camera_root.node.parent = NULL;
+    SET_PTR(g_node_camera_root.node.parent, NULL);
     g_node_camera_root.node.rotation_order = ROTATION_ORDER_XYZ;
     node_SetInverseRotation(camera_root);
     identity_root->kind = NODE_KIND_IDENTITY_ROOT;
@@ -34,7 +34,7 @@ void node_InitViewRoots(void) {
     g_node_identity_root.node.local.t[0] = 0;
     g_node_identity_root.node.local.t[1] = 0;
     g_node_identity_root.node.local.t[2] = 0;
-    g_node_identity_root.node.parent = NULL;
+    SET_PTR(g_node_identity_root.node.parent, NULL);
     g_node_identity_root.node.rotation_order = ROTATION_ORDER_ZXY;
     node_SetInverseRotation(identity_root);
     g_node_camera_root_ptr = camera_root;

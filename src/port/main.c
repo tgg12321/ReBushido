@@ -20,6 +20,8 @@
 #include "bb2.h"
 
 #define PATH_BYTES_MAX 1024
+/* The bits of an address the game can keep. */
+#define ADDRESS_BITS 32
 /* A picture a second, where --shots does not say how often. */
 #define SHOTS_EVERY 60
 
@@ -166,6 +168,15 @@ s32 port_Main(s32 argc, char **argv) {
     s32 i;
 
     port_CatchCrashes();
+    /* everything the game can point at is below 4 GB (docs/PORT.md, "64
+     * bits"): the program is linked there, and says so if it was not */
+    if (((u64)(PortAddress)g_port_data_end >> ADDRESS_BITS) != 0 ||
+        ((u64)(PortAddress)port_Main >> ADDRESS_BITS) != 0) {
+        port_Log("rebushido: the program is not below 4 GB, where the game's "
+                 "32-bit addresses reach: it has to be linked at a fixed "
+                 "address, with no position independence\n");
+        return PORT_EXIT_FAILED;
+    }
     port_MapMemory();
     if (argc > 0) {
         port_LoadOwnNames(argv[0]);
@@ -236,7 +247,7 @@ s32 port_Main(s32 argc, char **argv) {
     port_AddLinkRegion(PORT_RAM_ADDR, PORT_RAM_SIZE);
     port_AddLinkRegion(SCRATCHPAD, PORT_SCRATCHPAD_SIZE);
     port_AddLinkRegion(PORT_STACK_ADDR, PORT_STACK_SIZE);
-    port_AddLinkRegion(
-        (u32)g_port_data_start, (u32)(g_port_data_end - g_port_data_start));
+    port_AddLinkRegion((u32)ADDR(g_port_data_start),
+                       (u32)(g_port_data_end - g_port_data_start));
     port_HostCallOnStack(port_RunGame, PORT_STACK_ADDR + PORT_STACK_SIZE);
 }

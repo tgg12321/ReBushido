@@ -398,9 +398,11 @@ s32 fighter_TryDropSecondSword(Fighter *fighter) {
     if (fighter->stance == fighter->two_sword_stance) {
         if (fighter->two_sword_ready) {
             if (fighter_SecondSwordIsOut(fighter)) {
-                MATRIX **bone_matrices = model_GetBoneMatrices(fighter->index);
+                MatrixSlot *bone_matrices =
+                    model_GetBoneMatrices(fighter->index);
                 object_DropSubWeapon(
-                    fighter, (Vec3 *)bone_matrices[FIGHTER_BONE_OFF_HAND]->t);
+                    fighter,
+                    (Vec3 *)PTR(bone_matrices[FIGHTER_BONE_OFF_HAND])->t);
                 fighter->two_sword_ready = 0;
                 fighter->stance = fighter->default_stance;
             }
@@ -1133,7 +1135,8 @@ typedef struct {
 #define SWEEP_CORNERS 4
 
 void fight_ResetObstacles(void) {
-    StageObstacle *obstacle = (StageObstacle *)resource_GetStageObstacles();
+    StageObstacle *obstacle =
+        (StageObstacle *)ADDR(resource_GetStageObstacles());
     while (obstacle->type != 0) {
         obstacle->used = 0;
         obstacle++;
@@ -1185,7 +1188,7 @@ static s32 fight_BladeMeetsObstacle(s32 sweep, s32 pole_arm, Vec3 *sweeps) {
         }
     }
 
-    obstacle = (StageObstacle *)resource_GetStageObstacles();
+    obstacle = (StageObstacle *)ADDR(resource_GetStageObstacles());
     for (row_or_obstacle = 0; obstacle->type != 0; row_or_obstacle++,
         obstacle++) {
         if (obstacle->used) {
@@ -1417,105 +1420,114 @@ static s32 fight_TestBlades(void) {
     for (j = 0; j < triangles[0]; j++) {
         switch (j) {
         case 0:
-            scr->shape_points[0] = &sweeps[2];
-            scr->shape_points[1] = &sweeps[3];
-            scr->shape_points[2] = &sweeps[1];
+            SET_PTR(scr->shape_points[0], &sweeps[2]);
+            SET_PTR(scr->shape_points[1], &sweeps[3]);
+            SET_PTR(scr->shape_points[2], &sweeps[1]);
             break;
         case 1:
-            scr->shape_points[0] = &sweeps[0];
-            scr->shape_points[1] = &sweeps[1];
-            scr->shape_points[2] = &sweeps[2];
+            SET_PTR(scr->shape_points[0], &sweeps[0]);
+            SET_PTR(scr->shape_points[1], &sweeps[1]);
+            SET_PTR(scr->shape_points[2], &sweeps[2]);
             break;
         case 2:
-            scr->shape_points[0] = &sweeps[SWEEP_OFF_HAND + 2];
-            scr->shape_points[1] = &sweeps[SWEEP_OFF_HAND + 3];
-            scr->shape_points[2] = &sweeps[SWEEP_OFF_HAND + 1];
+            SET_PTR(scr->shape_points[0], &sweeps[SWEEP_OFF_HAND + 2]);
+            SET_PTR(scr->shape_points[1], &sweeps[SWEEP_OFF_HAND + 3]);
+            SET_PTR(scr->shape_points[2], &sweeps[SWEEP_OFF_HAND + 1]);
             break;
         case 3:
-            scr->shape_points[0] = &sweeps[SWEEP_OFF_HAND + 0];
-            scr->shape_points[1] = &sweeps[SWEEP_OFF_HAND + 1];
-            scr->shape_points[2] = &sweeps[SWEEP_OFF_HAND + 2];
+            SET_PTR(scr->shape_points[0], &sweeps[SWEEP_OFF_HAND + 0]);
+            SET_PTR(scr->shape_points[1], &sweeps[SWEEP_OFF_HAND + 1]);
+            SET_PTR(scr->shape_points[2], &sweeps[SWEEP_OFF_HAND + 2]);
             break;
         }
         if (!hit_FrameTriangleByNormal(scr)) {
             thin |= 1 << j;
             continue;
         }
-        scr->bbox_max = *scr->shape_points[0];
+        scr->bbox_max = *PTR(scr->shape_points[0]);
         scr->bbox_min = scr->bbox_max;
         for (k = 1; k < 3; k++) {
-            if (scr->shape_points[k]->x < scr->bbox_min.x) {
-                scr->bbox_min.x = scr->shape_points[k]->x;
-            } else if (scr->bbox_max.x < scr->shape_points[k]->x) {
-                scr->bbox_max.x = scr->shape_points[k]->x;
+            if (PTR(scr->shape_points[k])->x < scr->bbox_min.x) {
+                scr->bbox_min.x = PTR(scr->shape_points[k])->x;
+            } else if (scr->bbox_max.x < PTR(scr->shape_points[k])->x) {
+                scr->bbox_max.x = PTR(scr->shape_points[k])->x;
             }
-            if (scr->shape_points[k]->y < scr->bbox_min.y) {
-                scr->bbox_min.y = scr->shape_points[k]->y;
-            } else if (scr->bbox_max.y < scr->shape_points[k]->y) {
-                scr->bbox_max.y = scr->shape_points[k]->y;
+            if (PTR(scr->shape_points[k])->y < scr->bbox_min.y) {
+                scr->bbox_min.y = PTR(scr->shape_points[k])->y;
+            } else if (scr->bbox_max.y < PTR(scr->shape_points[k])->y) {
+                scr->bbox_max.y = PTR(scr->shape_points[k])->y;
             }
-            if (scr->shape_points[k]->z < scr->bbox_min.z) {
-                scr->bbox_min.z = scr->shape_points[k]->z;
-            } else if (scr->bbox_max.z < scr->shape_points[k]->z) {
-                scr->bbox_max.z = scr->shape_points[k]->z;
+            if (PTR(scr->shape_points[k])->z < scr->bbox_min.z) {
+                scr->bbox_min.z = PTR(scr->shape_points[k])->z;
+            } else if (scr->bbox_max.z < PTR(scr->shape_points[k])->z) {
+                scr->bbox_max.z = PTR(scr->shape_points[k])->z;
             }
         }
         for (other_triangle = 0; other_triangle < triangles[1];
              other_triangle++) {
             switch (other_triangle) {
             case 0:
-                scr->other_shape_points[0] = &sweeps[SWEEP_SECOND_FIGHTER + 2];
-                scr->other_shape_points[1] = &sweeps[SWEEP_SECOND_FIGHTER + 3];
-                scr->other_shape_points[2] = &sweeps[SWEEP_SECOND_FIGHTER + 1];
+                SET_PTR(scr->other_shape_points[0],
+                        &sweeps[SWEEP_SECOND_FIGHTER + 2]);
+                SET_PTR(scr->other_shape_points[1],
+                        &sweeps[SWEEP_SECOND_FIGHTER + 3]);
+                SET_PTR(scr->other_shape_points[2],
+                        &sweeps[SWEEP_SECOND_FIGHTER + 1]);
                 break;
             case 1:
-                scr->other_shape_points[0] = &sweeps[SWEEP_SECOND_FIGHTER + 0];
-                scr->other_shape_points[1] = &sweeps[SWEEP_SECOND_FIGHTER + 1];
-                scr->other_shape_points[2] = &sweeps[SWEEP_SECOND_FIGHTER + 2];
+                SET_PTR(scr->other_shape_points[0],
+                        &sweeps[SWEEP_SECOND_FIGHTER + 0]);
+                SET_PTR(scr->other_shape_points[1],
+                        &sweeps[SWEEP_SECOND_FIGHTER + 1]);
+                SET_PTR(scr->other_shape_points[2],
+                        &sweeps[SWEEP_SECOND_FIGHTER + 2]);
                 break;
             case 2:
-                scr->other_shape_points[0] =
-                    &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 2];
-                scr->other_shape_points[1] =
-                    &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 3];
-                scr->other_shape_points[2] =
-                    &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 1];
+                SET_PTR(scr->other_shape_points[0],
+                        &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 2]);
+                SET_PTR(scr->other_shape_points[1],
+                        &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 3]);
+                SET_PTR(scr->other_shape_points[2],
+                        &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 1]);
                 break;
             case 3:
-                scr->other_shape_points[0] =
-                    &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 0];
-                scr->other_shape_points[1] =
-                    &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 1];
-                scr->other_shape_points[2] =
-                    &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 2];
+                SET_PTR(scr->other_shape_points[0],
+                        &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 0]);
+                SET_PTR(scr->other_shape_points[1],
+                        &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 1]);
+                SET_PTR(scr->other_shape_points[2],
+                        &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 2]);
                 break;
             }
-            scr->other_bbox_max = *scr->other_shape_points[0];
+            scr->other_bbox_max = *PTR(scr->other_shape_points[0]);
             scr->other_bbox_min = scr->other_bbox_max;
             for (k = 1; k < 3; k++) {
-                if (scr->other_shape_points[k]->x < scr->other_bbox_min.x) {
-                    scr->other_bbox_min.x = scr->other_shape_points[k]->x;
-                } else if (
-                    scr->other_bbox_max.x < scr->other_shape_points[k]->x) {
-                    scr->other_bbox_max.x = scr->other_shape_points[k]->x;
+                if (PTR(scr->other_shape_points[k])->x <
+                    scr->other_bbox_min.x) {
+                    scr->other_bbox_min.x = PTR(scr->other_shape_points[k])->x;
+                } else if (scr->other_bbox_max.x <
+                           PTR(scr->other_shape_points[k])->x) {
+                    scr->other_bbox_max.x = PTR(scr->other_shape_points[k])->x;
                 }
-                if (scr->other_shape_points[k]->y < scr->other_bbox_min.y) {
-                    scr->other_bbox_min.y = scr->other_shape_points[k]->y;
-                } else if (
-                    scr->other_bbox_max.y < scr->other_shape_points[k]->y) {
-                    scr->other_bbox_max.y = scr->other_shape_points[k]->y;
+                if (PTR(scr->other_shape_points[k])->y <
+                    scr->other_bbox_min.y) {
+                    scr->other_bbox_min.y = PTR(scr->other_shape_points[k])->y;
+                } else if (scr->other_bbox_max.y <
+                           PTR(scr->other_shape_points[k])->y) {
+                    scr->other_bbox_max.y = PTR(scr->other_shape_points[k])->y;
                 }
-                if (scr->other_shape_points[k]->z < scr->other_bbox_min.z) {
-                    scr->other_bbox_min.z = scr->other_shape_points[k]->z;
-                } else if (
-                    scr->other_bbox_max.z < scr->other_shape_points[k]->z) {
-                    scr->other_bbox_max.z = scr->other_shape_points[k]->z;
+                if (PTR(scr->other_shape_points[k])->z <
+                    scr->other_bbox_min.z) {
+                    scr->other_bbox_min.z = PTR(scr->other_shape_points[k])->z;
+                } else if (scr->other_bbox_max.z <
+                           PTR(scr->other_shape_points[k])->z) {
+                    scr->other_bbox_max.z = PTR(scr->other_shape_points[k])->z;
                 }
             }
             if (fight_BoxesOverlap(scr) &&
-                hit_TrianglesMeet(
-                    scr, scr->other_shape_points[0], scr->other_shape_points[1],
-                    scr->other_shape_points[2])) {
+                hit_TrianglesMeet(scr, PTR(scr->other_shape_points[0]),
+                                  PTR(scr->other_shape_points[1]),
+                                  PTR(scr->other_shape_points[2]))) {
                 for (k = 0; k < SWEEP_POINTS; k++) {
                     SPAD->body_points[0][k] = saved[k];
                 }
@@ -1533,52 +1545,52 @@ static s32 fight_TestBlades(void) {
     for (j = 0; j < triangles[1]; j++) {
         switch (j) {
         case 0:
-            scr->shape_points[0] = &sweeps[SWEEP_SECOND_FIGHTER + 2];
-            scr->shape_points[1] = &sweeps[SWEEP_SECOND_FIGHTER + 3];
-            scr->shape_points[2] = &sweeps[SWEEP_SECOND_FIGHTER + 1];
+            SET_PTR(scr->shape_points[0], &sweeps[SWEEP_SECOND_FIGHTER + 2]);
+            SET_PTR(scr->shape_points[1], &sweeps[SWEEP_SECOND_FIGHTER + 3]);
+            SET_PTR(scr->shape_points[2], &sweeps[SWEEP_SECOND_FIGHTER + 1]);
             break;
         case 1:
-            scr->shape_points[0] = &sweeps[SWEEP_SECOND_FIGHTER + 0];
-            scr->shape_points[1] = &sweeps[SWEEP_SECOND_FIGHTER + 1];
-            scr->shape_points[2] = &sweeps[SWEEP_SECOND_FIGHTER + 2];
+            SET_PTR(scr->shape_points[0], &sweeps[SWEEP_SECOND_FIGHTER + 0]);
+            SET_PTR(scr->shape_points[1], &sweeps[SWEEP_SECOND_FIGHTER + 1]);
+            SET_PTR(scr->shape_points[2], &sweeps[SWEEP_SECOND_FIGHTER + 2]);
             break;
         case 2:
-            scr->shape_points[0] =
-                &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 2];
-            scr->shape_points[1] =
-                &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 3];
-            scr->shape_points[2] =
-                &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 1];
+            SET_PTR(scr->shape_points[0],
+                    &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 2]);
+            SET_PTR(scr->shape_points[1],
+                    &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 3]);
+            SET_PTR(scr->shape_points[2],
+                    &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 1]);
             break;
         case 3:
-            scr->shape_points[0] =
-                &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 0];
-            scr->shape_points[1] =
-                &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 1];
-            scr->shape_points[2] =
-                &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 2];
+            SET_PTR(scr->shape_points[0],
+                    &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 0]);
+            SET_PTR(scr->shape_points[1],
+                    &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 1]);
+            SET_PTR(scr->shape_points[2],
+                    &sweeps[SWEEP_SECOND_FIGHTER + SWEEP_OFF_HAND + 2]);
             break;
         }
         if (!hit_FrameTriangleByNormal(scr)) {
             continue;
         }
-        scr->bbox_max = *scr->shape_points[0];
+        scr->bbox_max = *PTR(scr->shape_points[0]);
         scr->bbox_min = scr->bbox_max;
         for (k = 1; k < 3; k++) {
-            if (scr->shape_points[k]->x < scr->bbox_min.x) {
-                scr->bbox_min.x = scr->shape_points[k]->x;
-            } else if (scr->bbox_max.x < scr->shape_points[k]->x) {
-                scr->bbox_max.x = scr->shape_points[k]->x;
+            if (PTR(scr->shape_points[k])->x < scr->bbox_min.x) {
+                scr->bbox_min.x = PTR(scr->shape_points[k])->x;
+            } else if (scr->bbox_max.x < PTR(scr->shape_points[k])->x) {
+                scr->bbox_max.x = PTR(scr->shape_points[k])->x;
             }
-            if (scr->shape_points[k]->y < scr->bbox_min.y) {
-                scr->bbox_min.y = scr->shape_points[k]->y;
-            } else if (scr->bbox_max.y < scr->shape_points[k]->y) {
-                scr->bbox_max.y = scr->shape_points[k]->y;
+            if (PTR(scr->shape_points[k])->y < scr->bbox_min.y) {
+                scr->bbox_min.y = PTR(scr->shape_points[k])->y;
+            } else if (scr->bbox_max.y < PTR(scr->shape_points[k])->y) {
+                scr->bbox_max.y = PTR(scr->shape_points[k])->y;
             }
-            if (scr->shape_points[k]->z < scr->bbox_min.z) {
-                scr->bbox_min.z = scr->shape_points[k]->z;
-            } else if (scr->bbox_max.z < scr->shape_points[k]->z) {
-                scr->bbox_max.z = scr->shape_points[k]->z;
+            if (PTR(scr->shape_points[k])->z < scr->bbox_min.z) {
+                scr->bbox_min.z = PTR(scr->shape_points[k])->z;
+            } else if (scr->bbox_max.z < PTR(scr->shape_points[k])->z) {
+                scr->bbox_max.z = PTR(scr->shape_points[k])->z;
             }
         }
         for (other_triangle = 0; other_triangle < triangles[0];
@@ -1588,52 +1600,61 @@ static s32 fight_TestBlades(void) {
             }
             switch (other_triangle) {
             case 0:
-                scr->other_shape_points[0] = &sweeps[2];
-                scr->other_shape_points[1] = &sweeps[3];
-                scr->other_shape_points[2] = &sweeps[1];
+                SET_PTR(scr->other_shape_points[0], &sweeps[2]);
+                SET_PTR(scr->other_shape_points[1], &sweeps[3]);
+                SET_PTR(scr->other_shape_points[2], &sweeps[1]);
                 break;
             case 1:
-                scr->other_shape_points[0] = &sweeps[0];
-                scr->other_shape_points[1] = &sweeps[1];
-                scr->other_shape_points[2] = &sweeps[2];
+                SET_PTR(scr->other_shape_points[0], &sweeps[0]);
+                SET_PTR(scr->other_shape_points[1], &sweeps[1]);
+                SET_PTR(scr->other_shape_points[2], &sweeps[2]);
                 break;
             case 2:
-                scr->other_shape_points[0] = &sweeps[SWEEP_OFF_HAND + 2];
-                scr->other_shape_points[1] = &sweeps[SWEEP_OFF_HAND + 3];
-                scr->other_shape_points[2] = &sweeps[SWEEP_OFF_HAND + 1];
+                SET_PTR(
+                    scr->other_shape_points[0], &sweeps[SWEEP_OFF_HAND + 2]);
+                SET_PTR(
+                    scr->other_shape_points[1], &sweeps[SWEEP_OFF_HAND + 3]);
+                SET_PTR(
+                    scr->other_shape_points[2], &sweeps[SWEEP_OFF_HAND + 1]);
                 break;
             case 3:
-                scr->other_shape_points[0] = &sweeps[SWEEP_OFF_HAND + 0];
-                scr->other_shape_points[1] = &sweeps[SWEEP_OFF_HAND + 1];
-                scr->other_shape_points[2] = &sweeps[SWEEP_OFF_HAND + 2];
+                SET_PTR(
+                    scr->other_shape_points[0], &sweeps[SWEEP_OFF_HAND + 0]);
+                SET_PTR(
+                    scr->other_shape_points[1], &sweeps[SWEEP_OFF_HAND + 1]);
+                SET_PTR(
+                    scr->other_shape_points[2], &sweeps[SWEEP_OFF_HAND + 2]);
                 break;
             }
-            scr->other_bbox_max = *scr->other_shape_points[0];
+            scr->other_bbox_max = *PTR(scr->other_shape_points[0]);
             scr->other_bbox_min = scr->other_bbox_max;
             for (k = 1; k < 3; k++) {
-                if (scr->other_shape_points[k]->x < scr->other_bbox_min.x) {
-                    scr->other_bbox_min.x = scr->other_shape_points[k]->x;
-                } else if (
-                    scr->other_bbox_max.x < scr->other_shape_points[k]->x) {
-                    scr->other_bbox_max.x = scr->other_shape_points[k]->x;
+                if (PTR(scr->other_shape_points[k])->x <
+                    scr->other_bbox_min.x) {
+                    scr->other_bbox_min.x = PTR(scr->other_shape_points[k])->x;
+                } else if (scr->other_bbox_max.x <
+                           PTR(scr->other_shape_points[k])->x) {
+                    scr->other_bbox_max.x = PTR(scr->other_shape_points[k])->x;
                 }
-                if (scr->other_shape_points[k]->y < scr->other_bbox_min.y) {
-                    scr->other_bbox_min.y = scr->other_shape_points[k]->y;
-                } else if (
-                    scr->other_bbox_max.y < scr->other_shape_points[k]->y) {
-                    scr->other_bbox_max.y = scr->other_shape_points[k]->y;
+                if (PTR(scr->other_shape_points[k])->y <
+                    scr->other_bbox_min.y) {
+                    scr->other_bbox_min.y = PTR(scr->other_shape_points[k])->y;
+                } else if (scr->other_bbox_max.y <
+                           PTR(scr->other_shape_points[k])->y) {
+                    scr->other_bbox_max.y = PTR(scr->other_shape_points[k])->y;
                 }
-                if (scr->other_shape_points[k]->z < scr->other_bbox_min.z) {
-                    scr->other_bbox_min.z = scr->other_shape_points[k]->z;
-                } else if (
-                    scr->other_bbox_max.z < scr->other_shape_points[k]->z) {
-                    scr->other_bbox_max.z = scr->other_shape_points[k]->z;
+                if (PTR(scr->other_shape_points[k])->z <
+                    scr->other_bbox_min.z) {
+                    scr->other_bbox_min.z = PTR(scr->other_shape_points[k])->z;
+                } else if (scr->other_bbox_max.z <
+                           PTR(scr->other_shape_points[k])->z) {
+                    scr->other_bbox_max.z = PTR(scr->other_shape_points[k])->z;
                 }
             }
             if (fight_BoxesOverlap(scr) &&
-                hit_TrianglesMeet(
-                    scr, scr->other_shape_points[0], scr->other_shape_points[1],
-                    scr->other_shape_points[2])) {
+                hit_TrianglesMeet(scr, PTR(scr->other_shape_points[0]),
+                                  PTR(scr->other_shape_points[1]),
+                                  PTR(scr->other_shape_points[2]))) {
                 for (k = 0; k < SWEEP_POINTS; k++) {
                     SPAD->body_points[0][k] = saved[k];
                 }
@@ -1683,12 +1704,12 @@ static void fighter_TestShot(
     BodyPoint *point;
     s32 i;
 
-    scr->shape_points[0] = &scr->point_slots.work_points[0];
-    scr->shape_points[1] = &scr->point_slots.work_points[1];
+    SET_PTR(scr->shape_points[0], &scr->point_slots.work_points[0]);
+    SET_PTR(scr->shape_points[1], &scr->point_slots.work_points[1]);
     scr->normal.vector = scr->point_slots.work_points[1];
-    dx = scr->shape_points[1]->x - scr->shape_points[0]->x;
-    dy = scr->shape_points[1]->y - scr->shape_points[0]->y;
-    dz = scr->shape_points[1]->z - scr->shape_points[0]->z;
+    dx = PTR(scr->shape_points[1])->x - PTR(scr->shape_points[0])->x;
+    dy = PTR(scr->shape_points[1])->y - PTR(scr->shape_points[0])->y;
+    dz = PTR(scr->shape_points[1])->z - PTR(scr->shape_points[0])->z;
     off_aim = (other->opponent_bearing - ratan2(dx, dz)) & ANGLE_MASK;
     if (off_aim >= ANGLE_TURN / 2) {
         off_aim = ANGLE_TURN - off_aim;
@@ -1742,10 +1763,10 @@ static void fighter_TestShot(
     dir_y = (dy << 12) / length;
     dir_z = (dz << 12) / length;
     /* from the muzzle, four times ONE on */
-    *scr->shape_points[0] = *scr->shape_points[1];
-    scr->shape_points[1]->x += dir_x * 4;
-    scr->shape_points[1]->y += dir_y * 4;
-    scr->shape_points[1]->z += dir_z * 4;
+    *PTR(scr->shape_points[0]) = *PTR(scr->shape_points[1]);
+    PTR(scr->shape_points[1])->x += dir_x * 4;
+    PTR(scr->shape_points[1])->y += dir_y * 4;
+    PTR(scr->shape_points[1])->z += dir_z * 4;
     if (off_aim < ANGLE_TURN / 4) {
         hit_FrameSegment(scr);
 
@@ -1771,15 +1792,15 @@ static void fighter_TestShot(
         }
     }
     /* the cast starts a little behind the muzzle */
-    scr->edge_a.x = scr->shape_points[0]->x - dir_x / 4;
-    scr->edge_a.y = scr->shape_points[0]->y - dir_y / 4;
-    scr->edge_a.z = scr->shape_points[0]->z - dir_z / 4;
+    scr->edge_a.x = PTR(scr->shape_points[0])->x - dir_x / 4;
+    scr->edge_a.y = PTR(scr->shape_points[0])->y - dir_y / 4;
+    scr->edge_a.z = PTR(scr->shape_points[0])->z - dir_z / 4;
     if (collision_CastWith(
-            &scr->edge_a.x, &scr->shape_points[1]->x, &scr->hit_points[0].x,
-            &scr->angles.vx, (SegmentCast *)cast_work) &&
+            &scr->edge_a.x, &PTR(scr->shape_points[1])->x,
+            &scr->hit_points[0].x, &scr->angles.vx, (SegmentCast *)cast_work) &&
         collision_GetSurface() != SURFACE_BARRIER) {
         if (*hits != 0) {
-            line_start = scr->shape_points[0];
+            line_start = PTR(scr->shape_points[0]);
             dx = scr->hit_points[0].x - line_start->x;
             dy = scr->hit_points[0].y - line_start->y;
             dz = scr->hit_points[0].z - line_start->z;
@@ -2019,61 +2040,76 @@ static void fight_TestBladesOnBodies(s32 paired) {
             for (index = 0; index < triangle_count; index++) {
                 if (triangle_count == 2) {
                     if (index == 0) {
-                        scr->shape_points[0] = &scr->point_slots.work_points[2];
-                        scr->shape_points[1] = &scr->point_slots.work_points[3];
-                        scr->shape_points[2] = &scr->point_slots.work_points[1];
+                        SET_PTR(scr->shape_points[0],
+                                &scr->point_slots.work_points[2]);
+                        SET_PTR(scr->shape_points[1],
+                                &scr->point_slots.work_points[3]);
+                        SET_PTR(scr->shape_points[2],
+                                &scr->point_slots.work_points[1]);
                     } else {
-                        scr->shape_points[0] = &scr->point_slots.work_points[0];
-                        scr->shape_points[1] = &scr->point_slots.work_points[1];
-                        scr->shape_points[2] = &scr->point_slots.work_points[2];
+                        SET_PTR(scr->shape_points[0],
+                                &scr->point_slots.work_points[0]);
+                        SET_PTR(scr->shape_points[1],
+                                &scr->point_slots.work_points[1]);
+                        SET_PTR(scr->shape_points[2],
+                                &scr->point_slots.work_points[2]);
                     }
                 } else {
                     switch (index) {
                     case 0:
-                        scr->shape_points[0] = &scr->point_slots.work_points[3];
-                        scr->shape_points[1] = &scr->point_slots.work_points[2];
-                        scr->shape_points[2] =
-                            &scr->point_slots.work_points[SWEEP_HALFWAY + 1];
+                        SET_PTR(scr->shape_points[0],
+                                &scr->point_slots.work_points[3]);
+                        SET_PTR(scr->shape_points[1],
+                                &scr->point_slots.work_points[2]);
+                        SET_PTR(
+                            scr->shape_points[2],
+                            &scr->point_slots.work_points[SWEEP_HALFWAY + 1]);
                         break;
                     case 1:
-                        scr->shape_points[0] =
-                            &scr->point_slots.work_points[SWEEP_HALFWAY + 1];
-                        scr->shape_points[1] =
-                            &scr->point_slots.work_points[SWEEP_HALFWAY];
-                        scr->shape_points[2] = &scr->point_slots.work_points[2];
+                        SET_PTR(
+                            scr->shape_points[0],
+                            &scr->point_slots.work_points[SWEEP_HALFWAY + 1]);
+                        SET_PTR(scr->shape_points[1],
+                                &scr->point_slots.work_points[SWEEP_HALFWAY]);
+                        SET_PTR(scr->shape_points[2],
+                                &scr->point_slots.work_points[2]);
                         break;
                     case 2:
-                        scr->shape_points[0] =
-                            &scr->point_slots.work_points[SWEEP_HALFWAY + 1];
-                        scr->shape_points[1] =
-                            &scr->point_slots.work_points[SWEEP_HALFWAY];
-                        scr->shape_points[2] = &scr->point_slots.work_points[1];
+                        SET_PTR(
+                            scr->shape_points[0],
+                            &scr->point_slots.work_points[SWEEP_HALFWAY + 1]);
+                        SET_PTR(scr->shape_points[1],
+                                &scr->point_slots.work_points[SWEEP_HALFWAY]);
+                        SET_PTR(scr->shape_points[2],
+                                &scr->point_slots.work_points[1]);
                         break;
                     case 3:
-                        scr->shape_points[0] = &scr->point_slots.work_points[1];
-                        scr->shape_points[1] = &scr->point_slots.work_points[0];
-                        scr->shape_points[2] =
-                            &scr->point_slots.work_points[SWEEP_HALFWAY];
+                        SET_PTR(scr->shape_points[0],
+                                &scr->point_slots.work_points[1]);
+                        SET_PTR(scr->shape_points[1],
+                                &scr->point_slots.work_points[0]);
+                        SET_PTR(scr->shape_points[2],
+                                &scr->point_slots.work_points[SWEEP_HALFWAY]);
                         break;
                     }
                 }
-                scr->bbox_max = *scr->shape_points[0];
+                scr->bbox_max = *PTR(scr->shape_points[0]);
                 scr->bbox_min = scr->bbox_max;
                 for (j = 1; j < 3; j++) {
-                    if (scr->shape_points[j]->x < scr->bbox_min.x) {
-                        scr->bbox_min.x = scr->shape_points[j]->x;
-                    } else if (scr->bbox_max.x < scr->shape_points[j]->x) {
-                        scr->bbox_max.x = scr->shape_points[j]->x;
+                    if (PTR(scr->shape_points[j])->x < scr->bbox_min.x) {
+                        scr->bbox_min.x = PTR(scr->shape_points[j])->x;
+                    } else if (scr->bbox_max.x < PTR(scr->shape_points[j])->x) {
+                        scr->bbox_max.x = PTR(scr->shape_points[j])->x;
                     }
-                    if (scr->shape_points[j]->y < scr->bbox_min.y) {
-                        scr->bbox_min.y = scr->shape_points[j]->y;
-                    } else if (scr->bbox_max.y < scr->shape_points[j]->y) {
-                        scr->bbox_max.y = scr->shape_points[j]->y;
+                    if (PTR(scr->shape_points[j])->y < scr->bbox_min.y) {
+                        scr->bbox_min.y = PTR(scr->shape_points[j])->y;
+                    } else if (scr->bbox_max.y < PTR(scr->shape_points[j])->y) {
+                        scr->bbox_max.y = PTR(scr->shape_points[j])->y;
                     }
-                    if (scr->shape_points[j]->z < scr->bbox_min.z) {
-                        scr->bbox_min.z = scr->shape_points[j]->z;
-                    } else if (scr->bbox_max.z < scr->shape_points[j]->z) {
-                        scr->bbox_max.z = scr->shape_points[j]->z;
+                    if (PTR(scr->shape_points[j])->z < scr->bbox_min.z) {
+                        scr->bbox_min.z = PTR(scr->shape_points[j])->z;
+                    } else if (scr->bbox_max.z < PTR(scr->shape_points[j])->z) {
+                        scr->bbox_max.z = PTR(scr->shape_points[j])->z;
                     }
                 }
                 fighter_TestBodyInSweep(
@@ -2291,13 +2327,14 @@ static void fight_TestBladesOnBodies(s32 paired) {
              * written at address 0 */
             s32 clashed;
 
-            fighter_TakeHit(0, fighter, index, facing, kills,
-                            (LooseObjectKind *)blade, by_sidearm, &clashed);
+            fighter_TakeHit(
+                0, fighter, index, facing, kills,
+                (LooseObjectKind *)ADDR(blade), by_sidearm, &clashed);
         } else
 #endif
         {
             fighter_TakeHit(0, fighter, index, facing, kills,
-                            (LooseObjectKind *)blade, by_sidearm, NULL);
+                            (LooseObjectKind *)ADDR(blade), by_sidearm, NULL);
         }
         other->attack_armed = 0;
     }

@@ -48,7 +48,7 @@ void tex_LoadGroup(u32 *cursor, s32 group_index) {
     file = (s32)cursor;
     cursor += (s16)group_index;
     group_offset = *cursor;
-    cursor = (u32 *)(file + ((group_offset >> 2) << 2));
+    cursor = (u32 *)ADDR(file + ((group_offset >> 2) << 2));
     count = *(cursor++);
     if (count == 0) {
         return;
@@ -80,7 +80,7 @@ void tex_LoadGroupAt(u32 *cursor, s32 group_index, s16 x_offset, s16 y_offset) {
     s32 tim_addr;
     file = (s32)cursor;
     cursor += (s16)group_index;
-    cursor = (u32 *)(file + (((*cursor) >> 2) << 2));
+    cursor = (u32 *)ADDR(file + (((*cursor) >> 2) << 2));
     count = *(cursor++);
     if (count == 0) {
         return;
@@ -113,7 +113,7 @@ void tex_LoadGroupAtSplit(
     s32 tim_addr;
     file = (s32)cursor;
     cursor += (s16)group_index;
-    cursor = (u32 *)(file + (((*cursor) >> 2) << 2));
+    cursor = (u32 *)ADDR(file + (((*cursor) >> 2) << 2));
     count = *(cursor++);
     if (count == 0) {
         return;
@@ -146,7 +146,7 @@ void tex_LoadStageGroup(u32 *cursor, s16 group_index) {
     s32 tim_addr;
     file = cursor;
     cursor += group_index;
-    cursor = (u32 *)((s32)file + (((*cursor) >> 2) << 2));
+    cursor = (u32 *)ADDR((s32)file + (((*cursor) >> 2) << 2));
     count = *(cursor++);
     if (count == 0) {
         return;
@@ -236,9 +236,9 @@ static void tex_LoadGroupCluts(
     s32 count;
     s32 group_offset;
     file = cursor;
-    group_offset = ((s32 *)cursor)[group_index];
+    group_offset = ((s32 *)ADDR(cursor))[group_index];
     cursor += group_offset;
-    count = *(s32 *)cursor;
+    count = *(s32 *)ADDR(cursor);
     cursor += 4;
     if (count == 0) {
         return;
@@ -249,11 +249,11 @@ static void tex_LoadGroupCluts(
         u32 raw_y;
         s32 clut_x;
         s32 clut_y;
-        tim = file + *(s32 *)cursor;
+        tim = file + *(s32 *)ADDR(cursor);
         cursor += 8; /* past the offset and the picture's place */
-        raw_x = *(u16 *)cursor;
+        raw_x = *(u16 *)ADDR(cursor);
         cursor += 2;
-        raw_y = *(u16 *)cursor;
+        raw_y = *(u16 *)ADDR(cursor);
         cursor += 2;
         clut_x = ((s32)(raw_x << 16)) >> 16;
         clut_y = ((s32)(raw_y << 16)) >> 16;
@@ -301,24 +301,24 @@ s16 clut_y;
 static s32 tex_ReadGroupEntry(
     s32 cursor, s32 group_index, u32 entry_index, s32 info) {
     s32 file, count, tim, image_x, image_y, clut_x, clut_y, group_offset;
-    group_offset = ((s32 *)cursor)[group_index];
+    group_offset = ((s32 *)ADDR(cursor))[group_index];
     file = cursor;
     cursor = group_offset + file;
-    count = *(s32 *)cursor;
+    count = *(s32 *)ADDR(cursor);
     cursor += 4;
     if (entry_index >= count) {
         return -1;
     }
     cursor += entry_index * TEX_ENTRY_SIZE;
-    tim = *(s32 *)cursor;
+    tim = *(s32 *)ADDR(cursor);
     cursor += 4;
-    image_x = *(u16 *)cursor;
+    image_x = *(u16 *)ADDR(cursor);
     cursor += 2;
-    image_y = *(u16 *)cursor;
+    image_y = *(u16 *)ADDR(cursor);
     cursor += 2;
-    clut_x = *(u16 *)cursor;
+    clut_x = *(u16 *)ADDR(cursor);
     cursor += 2;
-    clut_y = *(u16 *)cursor;
+    clut_y = *(u16 *)ADDR(cursor);
     tim += file;
     tex_ReadTim(
         tim, info, (s16)image_x, (s16)image_y, (s16)clut_x, (s16)clut_y);

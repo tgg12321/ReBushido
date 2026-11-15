@@ -95,7 +95,7 @@ def main():
         pieces = [test.snapshot_of(disc) for disc in pair]
     except (playtest.TestError, playtest.Skip) as e:
         sys.exit("port_compare.py: %s" % e)
-    names = [snapshot.Names(disc.symbols) for disc in pair]
+    names = [snapshot.Names(disc.symbols, disc.layouts) for disc in pair]
 
     differed = False
     before = set()  # what differed at the checkpoint before
@@ -124,11 +124,18 @@ def main():
                 continue
             bases = [pieces[0][piece][0], pieces[1][piece][0]]
             if test.snapshot[piece] == "variables":
+                # (the bytes shown for a variable a 64-bit port lays out
+                # otherwise are the port's own, at the PlayStation's offset)
                 found = snapshot.variable_differences(memory[0], memory[1], bases[0], bases[1],
-                                                      names[0], names[1], test.variables)
+                                                      names[0], names[1], test.variables,
+                                                      (pair[0].as_console, pair[1].as_console),
+                                                      (pair[0].sizes, pair[1].sizes))
                 found = [(variable, offset, length, names[0].symbols[variable] - bases[0] + offset,
                           names[1].symbols[variable] - bases[1] + offset) for variable, offset, length in found]
             else:
+                variable = test.snapshot_variable(piece)
+                if variable:
+                    memory = [pair[0].as_console(variable, memory[0]), pair[1].as_console(variable, memory[1])]
                 if not args.holes:
                     memory[1] = snapshot.without(memory[0], memory[1], test.snapshot_holes(piece))
                 found = snapshot.differences(memory[0], memory[1], bases[0], bases[1], names[0], names[1])

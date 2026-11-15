@@ -83,8 +83,8 @@ const u32 g_math_sqrt_table[128] = {
  * by a computed address into runs of copies. */
 #if RB_PORT
 void mem_MoveWords(s32 src, s32 dest, s32 size) {
-    u32 *from = (u32 *)src;
-    u32 *to = (u32 *)dest;
+    u32 *from = (u32 *)ADDR(src);
+    u32 *to = (u32 *)ADDR(dest);
     u32 words = ((u32)size >> 2) + ((size & 3) != 0);
     u32 i;
 
@@ -486,8 +486,8 @@ INCLUDE_ASM("asm/funcs", render_DepthToOtShifted);
  * two axes, which become the first two rows of the GTE's rotation. Its
  * third row is left as it was, and so is what the GTE makes of it. */
 void collision_ProjectOnFace(s32 frame, s32 x, s32 y, s32 z) {
-    const s16 *origin = (const s16 *)frame;
-    const u16 *axes = (const u16 *)frame + 3;
+    const s16 *origin = (const s16 *)ADDR(frame);
+    const u16 *axes = (const u16 *)ADDR(frame) + 3;
     s32 i;
 
     for (i = 0; i < 3; i++) {

@@ -663,7 +663,7 @@ void port_SetTrace(s32 on) { g_port_trace = on; }
 /* ---- a run ---- */
 
 static s32 port_ReadValue(const PortValue *value) {
-    const u8 *at = (const u8 *)value->address;
+    const u8 *at = (const u8 *)ADDR(value->address);
     u32 raw = 0;
     s32 i;
 
@@ -805,7 +805,8 @@ static void port_WriteSnaps(const char *checkpoint, u32 which) {
         }
         file = port_CreateRunFile(checkpoint, ".", snap->name, ".snap");
         if (file < 0 ||
-            !port_HostAppend(file, (const void *)snap->address, snap->size)) {
+            !port_HostAppend(
+                file, (const void *)ADDR(snap->address), snap->size)) {
             port_Fail("rebushido: the memory `%s` at checkpoint `%s` cannot "
                       "be written\n",
                       snap->name, checkpoint);
@@ -1003,7 +1004,7 @@ void __cyg_profile_func_enter(void *function, void *call_site) {
     if (g_port_calls_file >= 0) {
         char line[CALL_INDENT_MAX + PATH_BYTES_MAX];
         u32 offset = 0;
-        const char *name = port_FindFunction((u32)function, &offset);
+        const char *name = port_FindFunction((u32)ADDR(function), &offset);
         u32 length = 0;
         s32 i;
 
@@ -1018,7 +1019,7 @@ void __cyg_profile_func_enter(void *function, void *call_site) {
         port_HostAppend(g_port_calls_file, line, length);
     }
     g_port_call_depth++;
-    if ((u32)function == g_port_awaited_function) {
+    if ((u32)ADDR(function) == g_port_awaited_function) {
         g_port_awaited_calls++;
         port_TakeCheckpoints(port_GetBlankCount(), EVENT_CALL);
     }
@@ -1057,7 +1058,8 @@ void port_WriteDumps(void) {
         s32 file = port_CreateRunFile(dump->name, ".bin", "", "");
 
         if (file < 0 ||
-            !port_HostAppend(file, (const void *)dump->address, dump->size)) {
+            !port_HostAppend(
+                file, (const void *)ADDR(dump->address), dump->size)) {
             port_Log(
                 "rebushido: the dump `%s` cannot be written\n", dump->name);
         }

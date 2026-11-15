@@ -166,7 +166,7 @@ s32 snd_LoadCommonVab(s32 load_addr) {
     g_snd_spu_base_addr = SPU_RAM_START;
     g_snd_spu_next_addr = SPU_RAM_START;
     kept_size = snd_LoadVab(
-        (SoundVab *)load_addr, SND_VAB_COMMON, load_addr + file_size);
+        (SoundVab *)ADDR(load_addr), SND_VAB_COMMON, load_addr + file_size);
     g_snd_spu_base_addr = g_snd_spu_next_addr;
     return kept_size;
 }
@@ -194,15 +194,15 @@ s32 snd_LoadChanbaraVabs(s32 load_addr) {
     cdrom_StartRead(first_file_index, load_addr);
     size = cdrom_GetFileSize(first_file_index);
     cdrom_WaitIdle();
-    first_kept_size =
-        snd_LoadVab((SoundVab *)load_addr, SND_VAB_CHANBARA, load_addr + size);
+    first_kept_size = snd_LoadVab(
+        (SoundVab *)ADDR(load_addr), SND_VAB_CHANBARA, load_addr + size);
     second_file_index =
         cdrom_GetFileIndex(CDROM_GROUP_DATA, CDROM_DATA_NINJA_C_SE);
     cdrom_WaitIdle();
     cdrom_StartRead(second_file_index, load_addr + first_kept_size);
     size = cdrom_GetFileSize(second_file_index) + first_kept_size;
     cdrom_WaitIdle();
-    return snd_LoadVab((SoundVab *)(load_addr + first_kept_size),
+    return snd_LoadVab((SoundVab *)ADDR(load_addr + first_kept_size),
                        SND_VAB_MODEL_2, load_addr + size) +
            first_kept_size;
 }
@@ -229,7 +229,8 @@ s32 snd_LoadJudgeVab(s32 load_addr) {
     cdrom_StartRead(file_index, load_addr);
     size = cdrom_GetFileSize(file_index);
     cdrom_WaitIdle();
-    return snd_LoadVab((SoundVab *)load_addr, SND_VAB_JUDGE, load_addr + size);
+    return snd_LoadVab(
+        (SoundVab *)ADDR(load_addr), SND_VAB_JUDGE, load_addr + size);
 }
 
 void snd_RebaseJudgeVab(s32 rebase_delta) {
@@ -265,7 +266,7 @@ s32 snd_LoadStageVabs(
     s32 i;
     u32 byte;
 
-    file = (u8 *)load_addr;
+    file = (u8 *)ADDR(load_addr);
     SsUtAllKeyOff(0);
     for (i = 0; i < STAGE_VABS; i++) {
         CLOSE_VAB(g_snd_stage_vab_ids[i]);
@@ -277,7 +278,7 @@ s32 snd_LoadStageVabs(
     size = cdrom_GetFileSize(file_index);
     cdrom_WaitIdle();
     ((s32 *)file)[STAGE_FILE_FLAMES] += (s32)file;
-    eff_SetFlames((Flame *)((s32 *)file)[STAGE_FILE_FLAMES]);
+    eff_SetFlames((Flame *)ADDR(((s32 *)file)[STAGE_FILE_FLAMES]));
     vab_count = STAGE_VABS;
     base = (s32)file;
     if (first_class == second_class) {
@@ -294,12 +295,12 @@ s32 snd_LoadStageVabs(
     for (i = 0; i < vab_count; i++) {
         load.ent[i].off += (s32)file;
         load.kept_size[i] =
-            snd_LoadVab((SoundVab *)load.ent[i].off, g_snd_stage_vab_ids[i],
-                        (s32)file + size);
+            snd_LoadVab((SoundVab *)ADDR(load.ent[i].off),
+                        g_snd_stage_vab_ids[i], (s32)file + size);
     }
     for (i = 0; i < vab_count; i++) {
         for (byte = 0; byte < load.kept_size[i]; byte++) {
-            file[byte] = ((u8 *)load.ent[i].off)[byte];
+            file[byte] = ((u8 *)ADDR(load.ent[i].off))[byte];
         }
         snd_RebaseVab((s32)file - load.ent[i].off, g_snd_stage_vab_ids[i]);
         load.ent[i].off = (s32)file;
@@ -387,7 +388,7 @@ static s32 snd_MoveVabSamples(s32 scratch, s32 id, s32 dest, s32 src) {
     SpuSetTransferStartAddr(dest);
     SpuWrite(scratch, g_snd_vabs[id]->vab_body_size);
     SpuIsTransferCompleted(SPU_TRANSFER_WAIT);
-    SsVabFakeHead((u8 *)g_snd_vabs[id]->vab_header, id, dest);
+    SsVabFakeHead((u8 *)ADDR(g_snd_vabs[id]->vab_header), id, dest);
     SsVabFakeBody(id);
     g_snd_vab_spu_addrs[id] = dest;
     return dest + g_snd_vabs[id]->vab_body_size;
@@ -511,8 +512,8 @@ s16 id;
         g_snd_vabs[id]->key_on_table += rebase_delta;
         g_snd_vabs[id]->vab_header += rebase_delta;
         SsVabClose(id);
-        opened_id = SsVabFakeHead(
-            (u8 *)g_snd_vabs[id]->vab_header, id, g_snd_vab_spu_addrs[id]);
+        opened_id = SsVabFakeHead((u8 *)ADDR(g_snd_vabs[id]->vab_header), id,
+                                  g_snd_vab_spu_addrs[id]);
         if (opened_id != id) {
             return opened_id;
         }
@@ -528,9 +529,9 @@ SoundVab *vab;
 s16 id;
 {
     SsVabClose(id);
-    SsVabOpenHeadSticky((u8 *)vab->vab_header, id, g_snd_spu_next_addr);
-    ((VabHdr *)vab->vab_header)->id = id;
-    return SsVabTransBody((u8 *)vab->vab_body, id);
+    SsVabOpenHeadSticky((u8 *)ADDR(vab->vab_header), id, g_snd_spu_next_addr);
+    ((VabHdr *)ADDR(vab->vab_header))->id = id;
+    return SsVabTransBody((u8 *)ADDR(vab->vab_body), id);
 }
 
 void snd_SetDefaultOutput(void) {
@@ -579,7 +580,7 @@ static s16 snd_StartQueuedSound(s16 i, s16 next_voice) {
                 g_snd_vabs[SND_VAB_CLASS_2] == g_snd_vabs[SND_VAB_CLASS_1]) {
                 vab = SND_VAB_CLASS_1;
             }
-            key_on = &((u32 *)g_snd_vabs[vab]->key_on_table)[def->key];
+            key_on = &((u32 *)ADDR(g_snd_vabs[vab]->key_on_table))[def->key];
             SsUtKeyOnV(
                 voice, vab, KEY_ON_PROGRAM(*key_on), KEY_ON_TONE(*key_on),
                 KEY_ON_NOTE(*key_on), KEY_ON_FINE(*key_on), g_snd_queue[i].left,
@@ -627,7 +628,8 @@ void snd_FlushQueue(void) {
                             g_snd_vabs[SND_VAB_CLASS_1]) {
                         vab = SND_VAB_CLASS_1;
                     }
-                    key_on = &((u32 *)g_snd_vabs[vab]->key_on_table)[def->key];
+                    key_on =
+                        &((u32 *)ADDR(g_snd_vabs[vab]->key_on_table))[def->key];
                     SsUtKeyOnV(voice, vab, KEY_ON_PROGRAM(*key_on),
                                KEY_ON_TONE(*key_on), KEY_ON_NOTE(*key_on),
                                KEY_ON_FINE(*key_on), g_snd_queue[i].left,

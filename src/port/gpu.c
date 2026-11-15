@@ -125,7 +125,7 @@ u32 *ClearOTagR(u32 *ot, s32 count) {
     s32 i;
 
     for (i = count - 1; i > 0; i--) {
-        ot[i] = (u32)&ot[i - 1] & LINK_MASK;
+        ot[i] = (u32)ADDR(&ot[i - 1]) & LINK_MASK;
     }
     if (count > 0) {
         ot[0] = LINK_END;
@@ -273,7 +273,7 @@ static const u32 *port_FollowLink(u32 link) {
                           "places of memory\n",
                           link);
             }
-            found = (const u32 *)(region->address + offset);
+            found = (const u32 *)ADDR(region->address + offset);
         }
     }
     if (found == NULL) {

@@ -592,7 +592,8 @@ void fighter_StartBleeding(Fighter *fighter, s32 body_point, s16 *blow_dir) {
 
     fighter->bleed_timer = 1;
     fighter->bleed_bone = g_fighter_body_point_table[body_point].bone;
-    bone_matrix = model_GetBoneMatrices(fighter->index)[fighter->bleed_bone];
+    bone_matrix =
+        PTR(model_GetBoneMatrices(fighter->index)[fighter->bleed_bone]);
     math_InvertMatrix(bone_matrix, &inverse);
     gte_SetRotMatrix(&inverse);
     dir[0] = blow_dir[0];
@@ -617,7 +618,7 @@ void fighter_UpdateBleeding(Fighter *fighter) {
     s16 spurt_dir[3];
     s32 fighter_index;
     s32 strength; /* of ONE: what is left of the bleeding */
-    MATRIX **bone_matrices;
+    MatrixSlot *bone_matrices;
 
     fighter_index = fighter->index;
     if (fighter->bleed_timer != 0) {
@@ -625,7 +626,7 @@ void fighter_UpdateBleeding(Fighter *fighter) {
         /* every eighth frame, from the second */
         if ((fighter->bleed_timer & 7) == 2) {
             bone_matrices = model_GetBoneMatrices(fighter_index);
-            gte_SetRotMatrix(bone_matrices[fighter->bleed_bone]);
+            gte_SetRotMatrix(PTR(bone_matrices[fighter->bleed_bone]));
             gte_ldlv0(&fighter->bleed_dir);
             gte_rtv0();
             strength =
@@ -703,7 +704,7 @@ void fighter_PlacePoints(Fighter *fighter, Vec3 *body_points,
                          Vec3 *weapon_points, Vec3 *second_points) {
     /* a cast's arguments, on the scratchpad, as words (enum CastWord) */
     s32 *cast = (s32 *)FIGHT_CAST_WORK;
-    MATRIX **bone_matrices;
+    MatrixSlot *bone_matrices;
     MATRIX *bone_matrix;
     s32 *foot;
     SVECTOR *local_point;
@@ -715,14 +716,14 @@ void fighter_PlacePoints(Fighter *fighter, Vec3 *body_points,
     body_point = g_fighter_body_points[fighter->index];
     point = body_points;
     for (i = 0; i < BODY_POINT_COUNT; i++, body_point++, point++) {
-        bone_matrix = bone_matrices[body_point->bone];
+        bone_matrix = PTR(bone_matrices[body_point->bone]);
         gte_ApplyMatrix(bone_matrix, &body_point->ofs, point);
         point->x += bone_matrix->t[0];
         point->y += bone_matrix->t[1];
         point->z += bone_matrix->t[2];
     }
 
-    bone_matrix = bone_matrices[FIGHTER_BONE_WEAPON_HAND];
+    bone_matrix = PTR(bone_matrices[FIGHTER_BONE_WEAPON_HAND]);
     gte_SetRotMatrix(bone_matrix);
     if (fighter->weapon_model == WEAPON_MODEL_STORY) {
         local_point = g_fighter_story_weapon_points;
@@ -739,7 +740,7 @@ void fighter_PlacePoints(Fighter *fighter, Vec3 *body_points,
     }
 
     if (fighter->sub_weapon_live_state != WEAPON_LIVE_OFF) {
-        bone_matrix = bone_matrices[FIGHTER_BONE_OFF_HAND];
+        bone_matrix = PTR(bone_matrices[FIGHTER_BONE_OFF_HAND]);
         gte_SetRotMatrix(bone_matrix);
         local_point = g_fighter_sub_weapon_points[fighter->sub_weapon_kind];
         point = second_points;
@@ -751,19 +752,19 @@ void fighter_PlacePoints(Fighter *fighter, Vec3 *body_points,
         }
     }
 
-    bone_matrix = bone_matrices[FIGHTER_BONE_TORSO];
+    bone_matrix = PTR(bone_matrices[FIGHTER_BONE_TORSO]);
     gte_SetRotMatrix(bone_matrix);
     gte_ldv0(&g_unit_y_vector);
     gte_rtv0();
     fighter->head_pos = body_points[BODY_HEAD];
     gte_stlvnl(&fighter->torso_axis);
 
-    foot = bone_matrices[FIGHTER_BONE_FOOT_0]->t;
+    foot = PTR(bone_matrices[FIGHTER_BONE_FOOT_0])->t;
     fighter->foot_points[0].x = foot[0];
     fighter->foot_points[0].y =
         foot[1] + ((fighter->size_scale * FOOT_SOLE_DEPTH_X2) >> 11);
     fighter->foot_points[0].z = foot[2];
-    foot = bone_matrices[FIGHTER_BONE_FOOT_1]->t;
+    foot = PTR(bone_matrices[FIGHTER_BONE_FOOT_1])->t;
     fighter->foot_points[1].x = foot[0];
     fighter->foot_points[1].y =
         foot[1] + ((fighter->size_scale * FOOT_SOLE_DEPTH_X2) >> 11);
@@ -785,11 +786,11 @@ void fighter_PlacePoints(Fighter *fighter, Vec3 *body_points,
             fighter->foot_ground_ys[i] = cast[CAST_TO + 1];
         }
     }
-    bone_matrix = bone_matrices[FIGHTER_BONE_FOOT_0];
+    bone_matrix = PTR(bone_matrices[FIGHTER_BONE_FOOT_0]);
     /* the way the bone's z axis points, turned about */
     fighter->foot_angles[0].vy =
         ratan2(bone_matrix->m[0][2], bone_matrix->m[2][2]) + ANGLE_TURN / 2;
-    bone_matrix = bone_matrices[FIGHTER_BONE_FOOT_1];
+    bone_matrix = PTR(bone_matrices[FIGHTER_BONE_FOOT_1]);
     fighter->foot_angles[1].vy =
         ratan2(bone_matrix->m[0][2], bone_matrix->m[2][2]) + ANGLE_TURN / 2;
 }

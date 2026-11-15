@@ -67,7 +67,7 @@ typedef struct SelectCell {
  * right from pixels loaded when wanted (SelectFile.mirrored_portraits):
  * a portrait is mirrored on the right, and theirs must not be. */
 typedef struct {
-    SpriteCell *side_cells[2];
+    PTR32(SpriteCell *) side_cells[2];
     s32 offset_list_terminator;
     SpriteSheet sheets[0];
 } SelectPortraits;
@@ -88,20 +88,20 @@ typedef struct {
 typedef struct {
     SpriteFileHead head;
     s32 weapon_pixels[8][2];
-    SelectPortraits *portraits;
-    SpriteSheet **weapon_sheets;
-    SpriteSheet **door_sheets;
-    SpriteSheet **fighter_sheets;
-    SpriteSheet **weapon_row_sheets;
-    SpriteSheet **stage_page1_sheets;
-    SpriteSheet **stage_page2_sheets;
-    SpriteSheet **stage_page3_sheets;
-    SpriteSheet **cursor_sheets;
+    PTR32(SelectPortraits *) portraits;
+    SpriteListSlot weapon_sheets;
+    SpriteListSlot door_sheets;
+    SpriteListSlot fighter_sheets;
+    SpriteListSlot weapon_row_sheets;
+    SpriteListSlot stage_page1_sheets;
+    SpriteListSlot stage_page2_sheets;
+    SpriteListSlot stage_page3_sheets;
+    SpriteListSlot cursor_sheets;
     /* door_sheets' offset a second time, in all three files; it is not
      * made an address, and no code reads it */
     s32 door_sheets_offset;
-    RECT *weapon_rects;
-    u8 *stage_codes;
+    PTR32(RECT *) weapon_rects;
+    PTR32(u8 *) stage_codes;
     s32 mirrored_portraits[5];
 } SelectFile;
 
@@ -122,15 +122,15 @@ typedef struct {
  * bar_rects are the coloured bars behind one place of a team. */
 typedef struct TeamSelectFile {
     SpriteFileHead head;
-    SpriteSheet **name_sheets;
-    SpriteSheet **panel_sheets;
-    SpriteSheet **heading_sheets;
-    SpriteSheet **slot_sheets[3];
-    SpriteSheet **clan_sheets;
-    SpriteSheet **weapon_sheets;
-    SpriteSheet **rule_sheets;
-    SpriteSheet **frame_sheets;
-    ColorRect *bar_rects;
+    SpriteListSlot name_sheets;
+    SpriteListSlot panel_sheets;
+    SpriteListSlot heading_sheets;
+    SpriteListSlot slot_sheets[3];
+    SpriteListSlot clan_sheets;
+    SpriteListSlot weapon_sheets;
+    SpriteListSlot rule_sheets;
+    SpriteListSlot frame_sheets;
+    PTR32(ColorRect *) bar_rects;
 } TeamSelectFile;
 
 /* What the draw functions of a 2D screen are handed each frame: the screen's
@@ -270,8 +270,8 @@ typedef union {
  * - the rules as they are being set; time_sheet is the sheet of the time
  *   limit showing (g_select_team_time_sheets), clan each side's clan. */
 typedef struct {
-    GameSettings *settings;
-    TeamSelectFile *file;
+    PTR32(GameSettings *) settings;
+    PTR32(TeamSelectFile *) file;
     s16 panel_scroll[2];
     s16 panel_cover[2];
     TeamPair panel_move;
@@ -279,9 +279,9 @@ typedef struct {
     s16 next_step[2];
     TeamPair fighter_column;
     TeamPair fighter_row;
-    GpuDb *db;
+    PTR32(GpuDb *) db;
     u8 pad28[4];
-    PrimPool *pool;
+    PTR32(PrimPool *) pool;
     s32 pool_frame;
     u16 pulse_frames;
     u16 fade;

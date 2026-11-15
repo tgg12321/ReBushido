@@ -127,7 +127,7 @@ extern void render_EmitClothGT4();
  * While it draws, the renderer keeps its state in the first words of the
  * scratchpad, where the assembly reads it. */
 /* the place in the mesh being walked (tex_ShiftMeshAtCursor) */
-#define RENDER_MESH_CURSOR (*(u16 **)SCRATCHPAD)
+#define RENDER_MESH_CURSOR (*(PTR32(u16 *) *)SCRATCHPAD)
 /* how far a depth is shifted down before it becomes a table index */
 #define RENDER_DEPTH_SHIFT (*(s32 *)(SCRATCHPAD + 0x08))
 /* the ordering table being drawn into */
@@ -207,7 +207,7 @@ extern u32 *g_render_tiny_ot;
  * list of normals). */
 extern MATRIX g_render_view_matrix;
 extern CVECTOR g_render_skin_colors[500];
-extern u8 *render_LightSkin(u8 *normals, MATRIX **matrices);
+extern u8 *render_LightSkin(u8 *normals, MatrixSlot *matrices);
 
 /* What the walk over the queue reaches in render.c: the two tables it
  * chooses for some parts, and the C that draws a fighter's body. */

@@ -67,7 +67,7 @@ EMULATOR = os.environ.get("REBUSHIDO_EMULATOR") or os.path.join(REPO, "tmp", "pc
 RETAIL_CUE = os.environ.get("REBUSHIDO_RETAIL") or os.path.join(REPO, "Bushido Blade 2 (USA).cue")
 RETAIL_SYMBOLS = os.path.join(REPO, "config", "symbol_addrs.txt")
 # The native port: its program, and the names tools/port_build.py wrote.
-PORT_PROGRAM = os.path.join(REPO, "build", "port", "rebushido")
+PORT_PROGRAM = os.environ.get("REBUSHIDO_PORT") or os.path.join(REPO, "build", "port", "rebushido")
 PORT_SYMBOLS = PORT_PROGRAM + ".sym"
 # What the port exits with when the game crashed (include/port_host.h).
 PORT_EXIT_CRASH = 70
@@ -203,16 +203,31 @@ def header_names():
 # ---- discs and their names ----
 
 def read_port_symbols(path):
-    """The names of the native port's program, and its variables' sizes:
-    its `sym ADDRESS KIND SIZE NAME` lines."""
-    symbols, sizes = {}, {}
+    """The names of the native port's program, its variables' sizes (its
+    `sym ADDRESS KIND SIZE NAME` lines), and the layouts of the variables
+    a 64-bit program does not lay out as the PlayStation does: {name:
+    (bytes on the PlayStation, [(offset there, offset here, bytes)])}, its
+    `layout NAME BYTES` lines with the `run THERE HERE BYTES` lines after
+    each (tools/port_layout.py, console_runs)."""
+    symbols, sizes, layouts = {}, {}, {}
     with open(path, encoding="utf-8") as f:
-        for m in re.finditer(r"^sym ([0-9a-f]+) (\w) (\d+) (\w+)$", f.read(), re.M):
-            if m.group(4) not in symbols:
-                symbols[m.group(4)] = int(m.group(1), 16)
-                if m.group(2) == "o":
-                    sizes[m.group(4)] = int(m.group(3))
-    return symbols, sizes
+        text = f.read()
+    for m in re.finditer(r"^sym ([0-9a-f]+) (\w) (\d+) (\w+)$", text, re.M):
+        if m.group(4) not in symbols:
+            symbols[m.group(4)] = int(m.group(1), 16)
+            if m.group(2) == "o":
+                sizes[m.group(4)] = int(m.group(3))
+    runs = None
+    for line in text.split("\n"):
+        word = line.split()
+        if len(word) == 3 and word[0] == "layout":
+            runs = []
+            layouts[word[1]] = (int(word[2]), runs)
+        elif len(word) == 4 and word[0] == "run" and runs is not None:
+            runs.append((int(word[1]), int(word[2]), int(word[3])))
+        elif word and word[0] != "run":
+            runs = None
+    return symbols, sizes, layouts
 
 
 def read_symbols(path):
@@ -253,13 +268,14 @@ class Disc:
         self.settings = {}
         self.exe = None
         self.sizes = {}  # the variables' sizes, where the names' table has them
+        self.layouts = {}  # the variables laid out otherwise than on the PlayStation
         self.port = name == "port"
         if self.port:
             for path in (PORT_PROGRAM, PORT_SYMBOLS):
                 if not os.path.exists(path):
                     raise Skip("no %s (not built: make port)" % os.path.relpath(path, REPO).replace("\\", "/"))
             self.cue = PORT_PROGRAM
-            self.symbols, self.sizes = read_port_symbols(PORT_SYMBOLS)
+            self.symbols, self.sizes, self.layouts = read_port_symbols(PORT_SYMBOLS)
             return
         if name == "retail":
             self.cue, symbols, how = RETAIL_CUE, RETAIL_SYMBOLS, "your own image of the disc; REBUSHIDO_RETAIL names it"
@@ -284,6 +300,35 @@ class Disc:
             with open(settings, encoding="utf-8") as f:
                 for m in re.finditer(r"^(\w+)=(\S+)$", f.read(), re.M):
                     self.settings[m.group(1)] = m.group(2)
+
+    def as_console(self, name, memory):
+        """The bytes of this disc's variable `name` as the PlayStation lays
+        the variable out: themselves, but in a 64-bit port, where a
+        structure with pointers has grown. Each member's bytes go where the
+        PlayStation has the member; of a pointer, the low four of its eight,
+        which are all of an address."""
+        if name not in self.layouts:
+            return memory
+        size, runs = self.layouts[name]
+        out = bytearray(size)
+        for there, here, count in runs:
+            out[there:there + count] = memory[here:here + count]
+        return bytes(out)
+
+    def value_address(self, text, size):
+        """The address of a value of `size` bytes written as `address`
+        takes it, its offsets counted as the PlayStation lays the variable
+        out: in a 64-bit port, where the variable has grown, the value is
+        where the layout says."""
+        inside = [word for word in re.findall(r"[A-Za-z_]\w*", text) if word in self.layouts]
+        if len(inside) != 1:
+            return self.address(text)
+        start = self.address(inside[0])
+        offset = self.address(text) - start
+        for there, here, count in self.layouts[inside[0]][1]:
+            if there <= offset and offset + size <= there + count:
+                return start + here + offset - there
+        raise TestError("`%s` is not one value of `%s` as the 64-bit port lays it out" % (text, inside[0]))
 
     def address(self, text):
         """`symbol`, `symbol+12`, `symbol+0x44C+4` or a bare address."""
@@ -433,7 +478,13 @@ class Test:
                             "one of the discs has to be `port`")
         # on a PlayStation program, from the first word of its data
         starts = [None if disc.port else disc.address("g_sys_data_start") for disc in discs]
-        self.variables = snapshot.common_variables([disc.symbols for disc in discs], sizes[0], starts)
+        # a variable's size is the PlayStation's: the port's own, but
+        # where a 64-bit port lays the variable out otherwise
+        console = dict(sizes[0])
+        for disc in discs:
+            for name in disc.layouts:
+                console[name] = disc.layouts[name][0]
+        self.variables = snapshot.common_variables([disc.symbols for disc in discs], console, starts)
         if not self.variables:
             raise TestError("[snapshot] `variables`: the discs have no variable in common")
 
@@ -448,7 +499,9 @@ class Test:
                 if self.variables is None:
                     raise TestError("[snapshot] `variables`: the test's discs are not known")
                 import snapshot
-                found[name] = snapshot.variables_range(disc.symbols, self.variables)
+                here = {variable: disc.sizes.get(variable, size) if variable in disc.layouts else size
+                        for variable, size in self.variables.items()}
+                found[name] = snapshot.variables_range(disc.symbols, here)
                 continue
             m = re.fullmatch(r"\s*(.+?)\s*:\s*(0[xX][0-9A-Fa-f]+|\d+)\s*", spec.partition(" except ")[0])
             if not m:
@@ -456,7 +509,23 @@ class Test:
                                 "` except OFFSET:BYTES ...` after it for what is not compared, or \"variables\""
                                 % (name, spec))
             found[name] = (disc.address(m.group(1)), int(m.group(2), 0))
+            variable = m.group(1).strip()
+            if variable in disc.layouts:
+                # the whole variable, as this disc lays it out
+                if int(m.group(2), 0) != disc.layouts[variable][0]:
+                    raise TestError("snapshot `%s`: `%s` is laid out otherwise in the 64-bit port than on the "
+                                    "PlayStation, and is compared whole or not at all: %d bytes"
+                                    % (name, variable, disc.layouts[variable][0]))
+                found[name] = (disc.address(variable), disc.sizes[variable])
+            elif any(re.match(r"%s\b" % re.escape(other), variable) for other in disc.layouts):
+                raise TestError("snapshot `%s`: a piece of a variable that is laid out otherwise in the 64-bit "
+                                "port than on the PlayStation; name the whole variable" % name)
         return found
+
+    def snapshot_variable(self, name):
+        """The variable a [snapshot] piece is all of, if it names one."""
+        spec = self.snapshot[name].partition(" except ")[0].partition(":")[0].strip()
+        return spec if re.fullmatch(r"\w+", spec) else None
 
     def pieces_at(self, cp):
         """The names of [snapshot] that are written at a checkpoint."""
@@ -493,7 +562,7 @@ class Test:
             symbol = re.match(r"\s*([A-Za-z_]\w*)", m.group(1))
             if symbol and symbol.group(1) not in disc.symbols:
                 continue
-            found[name] = (disc.address(m.group(1)),) + TYPES[m.group(2)]
+            found[name] = (disc.value_address(m.group(1), TYPES[m.group(2)][0]),) + TYPES[m.group(2)]
         return found
 
     def plan(self, disc, names, number=1):
@@ -840,7 +909,8 @@ def compare_snapshots(test, discs, first, run, first_label, label):
     `python tools/port_compare.py TEST` shows them all."""
     import snapshot
     disc_a, disc_b = discs[0], discs[runs_index(discs, label)]
-    names_a, names_b = snapshot.Names(disc_a.symbols), snapshot.Names(disc_b.symbols)
+    names_a = snapshot.Names(disc_a.symbols, disc_a.layouts)
+    names_b = snapshot.Names(disc_b.symbols, disc_b.layouts)
     pieces_a, pieces_b = test.snapshot_of(disc_a), test.snapshot_of(disc_b)
     problems = []
     for cp in test.checkpoints:
@@ -859,10 +929,15 @@ def compare_snapshots(test, discs, first, run, first_label, label):
                 continue
             if test.snapshot[name] == "variables":
                 found = snapshot.variable_differences(memory[0], memory[1], pieces_a[name][0], pieces_b[name][0],
-                                                      names_a, names_b, test.variables)
+                                                      names_a, names_b, test.variables,
+                                                      (disc_a.as_console, disc_b.as_console),
+                                                      (disc_a.sizes, disc_b.sizes))
                 where = ["%s+0x%X" % (variable, offset) for variable, offset, _ in found]
                 count = sum(length for _, _, length in found)
             else:
+                variable = test.snapshot_variable(name)
+                if variable:
+                    memory = [disc_a.as_console(variable, memory[0]), disc_b.as_console(variable, memory[1])]
                 memory[1] = snapshot.without(memory[0], memory[1], test.snapshot_holes(name))
                 found = snapshot.differences(memory[0], memory[1], pieces_a[name][0], pieces_b[name][0],
                                              names_a, names_b)

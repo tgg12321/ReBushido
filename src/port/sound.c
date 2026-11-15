@@ -278,7 +278,7 @@ s32 _spu_t(s32 mode, ...) {
         _spu_RXX->rxx.spucnt = control;
         break;
     case STEP_START: {
-        u8 *memory = (u8 *)PORT_ARG(args, u32);
+        u8 *memory = (u8 *)ADDR(PORT_ARG(args, u32));
         u32 size = PORT_ARG(args, u32);
 
         port_TransferSpu(memory, size, g_port_spu_reading);
@@ -297,7 +297,7 @@ s32 _spu_Fw(s32 addr, s32 size) {
         _spu_t(STEP_WRITE_MODE);
         _spu_t(STEP_START, addr, size);
     } else {
-        _spu_FwriteByIO((u8 *)addr, (u32)size);
+        _spu_FwriteByIO((u8 *)ADDR(addr), (u32)size);
     }
     return size;
 }

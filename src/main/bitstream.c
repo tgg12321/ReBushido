@@ -20,7 +20,7 @@ static BitTrack g_bitstream_tracks[2];
 void bitstream_OpenTrack(s32 stream_address, s32 track_index) {
     BitTrack *track = &g_bitstream_tracks[track_index];
 
-    track->bits.next = (u32 *)stream_address;
+    track->bits.next = (u32 *)ADDR(stream_address);
     track->bits.word = 0;
     track->bits.avail = 0;
     track->values[TRACK_VALUES - 1] = 0;

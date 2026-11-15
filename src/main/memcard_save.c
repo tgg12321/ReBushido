@@ -149,7 +149,7 @@ static void memcard_PackSaveData(u8 *dst) {
         data->copies[i] = g_saved_record;
         data->checksums[i] = checksum;
         for (j = 0; j < SAVE_PATCH_COUNT; j++) {
-            data->patch_addrs[j] = NULL;
+            SET_PTR(data->patch_addrs[j], NULL);
             data->patch_values[j] = 0;
         }
     }
@@ -193,7 +193,7 @@ static s32 memcard_UnpackSaveData(SaveData *data) {
         }
 
         for (j = 0; j < SAVE_PATCH_COUNT; j++) {
-            u16 *addr = data->patch_addrs[j];
+            u16 *addr = PTR(data->patch_addrs[j]);
             if ((u32)addr >= RAM_START && (u32)addr < RAM_END) {
                 *addr = data->patch_values[j];
             }

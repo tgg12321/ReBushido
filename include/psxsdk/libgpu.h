@@ -214,7 +214,7 @@ extern void (*GPU_printf)(); /* printf() object. Sony: int (*)() */
 #define getcode(p) (u8)(((P_TAG *)(p))->code)
 #define getaddr(p) (u32)(((P_TAG *)(p))->addr)
 
-#define nextPrim(p) (void *)((((P_TAG *)(p))->addr) | 0x80000000)
+#define nextPrim(p) (void *)ADDR((((P_TAG *)(p))->addr) | 0x80000000)
 #define isendprim(p) ((((P_TAG *)(p))->addr) == 0xffffff)
 
 #define addPrim(ot, p) setaddr(p, getaddr(ot)), setaddr(ot, p)

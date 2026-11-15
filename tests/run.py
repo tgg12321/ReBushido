@@ -10,7 +10,13 @@
                                        tests/rebushido/NAME.c, named rebushido/NAME;
                                        and with the port's switch on (RB_PORT: the
                                        C beside the assembly, the GTE in C), and the
-                                       port's own, tests/port/NAME.c, named port/NAME
+                                       port's own, tests/port/NAME.c, named port/NAME.
+                                       Every test that is a program is then built and
+                                       run a second time as a 64-bit program, which is
+                                       what the port is (docs/PORT.md, "64 bits"): the
+                                       same checks have to pass
+    --bits N                           with --rebushido: only as 32-bit programs, or
+                                       only as 64-bit ones
 
 `make test` and `tools/build.sh test` run them all; `make rebushido-test`
 runs them with --rebushido, into build/rebushido/tests/. Run it in WSL or on
@@ -74,6 +80,9 @@ LINK_FLAGS = ['-nostdlib', '-static', '-no-pie', '-Wl,--gc-sections', '-Wl,--bui
 RUNTIME = 'tests/runtime/runtime.c'
 
 TIMEOUT_SECONDS = 300
+# The size of the programs' pointers: a test is a 32-bit program, and with
+# --rebushido a 64-bit one as well.
+BITS = 32
 
 
 # Sony's libsn.h has the one instruction the game's C spells out itself: the
@@ -140,9 +149,10 @@ def python_side(name):
 def build(name, defs, sources):
     """Compile and link one test. Returns the program's path, or the
     compiler's complaint."""
-    program = '%s/%s' % (OUT_DIR, name)
+    program = '%s/%s%s' % (OUT_DIR, '' if BITS == 32 else '%d/' % BITS, name)
     os.makedirs(os.path.dirname(program), exist_ok=True)
-    cmd = (['gcc'] + COMPILE_FLAGS + include_flags(bool(defs)) + modern.DEFS + defs + LINK_FLAGS
+    flags = ['-m%d' % BITS if flag == '-m32' else flag for flag in COMPILE_FLAGS]
+    cmd = (['gcc'] + flags + include_flags(bool(defs)) + modern.DEFS + defs + LINK_FLAGS
            + ['tests/%s.c' % name] + sources + [RUNTIME, '-o', program])
     # the compiler's temporary files beside the program: /tmp is emptied
     # under a WSL that has just started
@@ -188,7 +198,7 @@ def run_one(name, verbose, defs):
     except subprocess.TimeoutExpired:
         return 'FAIL', 0, ['still running after %d seconds' % TIMEOUT_SECONDS]
     except OSError as error:
-        return 'FAIL', 0, ['the program does not run here (a 32-bit x86 Linux program): %s' % error]
+        return 'FAIL', 0, ['the program does not run here (a %d-bit x86 Linux program): %s' % (BITS, error)]
     lines = proc.stdout.decode('utf-8', 'replace').split('\n')
     if lines and lines[-1] == '':
         lines.pop()
@@ -226,9 +236,18 @@ def run_one(name, verbose, defs):
 
 
 def main():
-    global OUT_DIR
+    global OUT_DIR, BITS
     os.chdir(ROOT)
     args = sys.argv[1:]
+    sizes = [32]
+    if '--rebushido' in args:
+        sizes = [32, 64]
+    if '--bits' in args:
+        at = args.index('--bits')
+        if at + 1 >= len(args) or args[at + 1] not in ('32', '64') or '--rebushido' not in args:
+            sys.exit('run.py: --bits 32 or --bits 64, with --rebushido')
+        sizes = [int(args[at + 1])]
+        del args[at:at + 2]
     verbose = '-v' in args
     rebushido = '--rebushido' in args
     defs = []
@@ -248,19 +267,26 @@ def main():
     write_headers(rebushido)
 
     tally = {'ok': 0, 'skip': 0, 'FAIL': 0}
-    for name in names or known:
-        state, count, lines = run_one(name, verbose, defs)
-        tally[state] += 1
-        if state == 'ok':
-            print('ok    %-16s %7d checks  %s' % (name, count, title(name)))
-            for line in lines:
-                print('        (' + line + ')')
-        elif state == 'skip':
-            print('skip  %-16s %s' % (name, '; '.join(lines)))
-        else:
-            print('FAIL  %-16s %s' % (name, title(name)))
-            for line in lines:
-                print('        ' + line)
+    for BITS in sizes:
+        if BITS != 32:
+            print('as %d-bit programs:' % BITS)
+        for name in names or known:
+            if BITS != 32 and python_alone(name):
+                continue    # no program: it has run
+            if BITS not in getattr(python_side(name), 'BITS', (32, 64)):
+                continue    # its Python side says which sizes it is for
+            state, count, lines = run_one(name, verbose, defs)
+            tally[state] += 1
+            if state == 'ok':
+                print('ok    %-16s %7d checks  %s' % (name, count, title(name)))
+                for line in lines:
+                    print('        (' + line + ')')
+            elif state == 'skip':
+                print('skip  %-16s %s' % (name, '; '.join(lines)))
+            else:
+                print('FAIL  %-16s %s' % (name, title(name)))
+                for line in lines:
+                    print('        ' + line)
     summary = '%d passed, %d skipped, %d failed' % (tally['ok'], tally['skip'], tally['FAIL'])
     if tally['FAIL']:
         print('FAILED: ' + summary)
