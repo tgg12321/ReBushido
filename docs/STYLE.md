@@ -205,6 +205,24 @@ change".
     expect. Code that only the port has is in `src/port/`, its header
     `include/port_<file>.h`, its names `port_VerbNoun`, `g_port_noun`,
     `PortType`, `PORT_CONSTANT`: no PlayStation build compiles it.
+29. An address has two forms that are written into the original's own
+    lines, because the port's pointers are 64 bits wide and the
+    PlayStation's 32 ([`PORT.md`](PORT.md), "64 bits"); on the
+    PlayStation each is the plain expression, so no byte changes
+    (`include/common.h`):
+    - a number cast to a pointer has its operand in `ADDR()`:
+      `(Fighter *)ADDR(value)`. A pointer cast to a number has nothing;
+    - a pointer kept in memory whose layout is fixed (a file's, the
+      scratchpad's, the arena's) is declared `PTR32(type) name;`, read
+      as `PTR(slot)` and written with `SET_PTR(slot, value)`
+      (`NEXT_PTR(slot)` for `slot++`, `ADD_PTR(slot, count)` for
+      `slot += count`). Where two declarations name the same slot it has
+      a typedef, `ThingSlot`.
+
+    A structure that keeps ordinary pointers grows in the port, and is
+    listed in `config/port_layout.txt` with why it may. `make port`
+    fails on a cast without `ADDR()`, a slot without `PTR()`, and a
+    structure that grew and is not listed.
 
 ## Working method
 

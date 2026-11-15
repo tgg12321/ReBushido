@@ -18,9 +18,11 @@ script's. What the game draws goes into the port's own video memory, by
 a GPU in C, and from there to files; its sound is made by a sound chip
 in C and can be written to a file. All that way it is held to the
 emulator: the game's values in three fights, and the picture pixel for
-pixel in two, and the sound chip's memory and registers in one. Stages 1 to 3 of the
-seven below are done, stage 4 but for its window, of stage 5 the fight
-itself, and of stage 6 everything but the card.
+pixel in two, and the sound chip's memory and registers in one. It is a
+64-bit program, and a 32-bit one beside it that does the same to the
+byte ("64 bits"). Stages 1 to 3 of the seven below are done, stage 4 but
+for its window, of stage 5 the fight itself, and of stage 6 everything
+but the card.
 
 ## Where it stands
 
@@ -36,6 +38,7 @@ itself, and of stage 6 everything but the card.
 | Sound | done into a file, not yet a sound card: Sony's libsnd and libspu on a sound chip in C, the disc's music ("Sound"). The chip's memory, its registers and the library's are the emulator's through a fight; what is heard is compared only in part |
 | A fight | done, by a script's pads: three whole fights are the emulator's, frame for frame ("How it is proved") |
 | The picture | done, into the port's own video memory and out to files: `src/port/raster.c`, the PlayStation's GPU in C. The flat screens are the emulator's to the pixel, a fight's frames but for three pixels in a thousand ("The picture") |
+| 64 bits | done on Linux: the program has 64-bit pointers, the game's addresses stay 32-bit numbers below 4 GB, and it is held to the 32-bit program and to the emulator ("64 bits"). Windows' side is compiled and not linked |
 | A window, a sound card, real pads, the card, movies | not begun |
 
 ## The switch
@@ -78,13 +81,16 @@ build/port/rebushido --image "Bushido Blade 2 (USA).cue" --frames 600 --trace
 `src/rebushido/` (quick boot's aside) with the port's switch on, as the
 host tests compile them, the part of Sony's library code the next
 section names, and `src/port/`, and links them into
-`build/port/rebushido`. It is a 32-bit x86 Linux program linked with no
-C library, exactly as the host tests are, because a 32-bit C library is
-not installed on the machines that build this (nor on GitHub's): it
-needs the host's `gcc` with `-m32` and `python3`, and where that `gcc`
-cannot make such a program the build says so and fails. The game's files
-are compiled with their warnings off, which `make rebushido-modern`
-reads; the port's own with that check's warnings as errors, less
+`build/port/rebushido`. It is an x86 Linux program of 64-bit pointers,
+linked with no C library, exactly as the host tests are (a C library for
+32-bit programs is not installed on the machines that build this, nor on
+GitHub's, and the port began as one): it needs the host's `gcc` and
+`python3`, and where that `gcc` cannot make such a program the build
+says so and fails. The same build makes the 32-bit program beside it,
+`build/port32/rebushido` ("64 bits"). The game's files are compiled with
+their warnings off, which `make rebushido-modern` reads, but the three
+that hold the source to `ADDR()` and `PTR()`, which are errors; the
+port's own with that check's warnings as errors, less
 `-Wstrict-prototypes`, which Sony's headers themselves fail.
 The game's files are also compiled so that every function says when it
 begins and ends (`-finstrument-functions`): a run's script can then
@@ -95,9 +101,10 @@ Everything the program asks of the operating system goes through
 `include/port_host.h`: a dozen functions (write, open, read at an
 offset, memory at an address, catch a fault, exit). `src/port/
 host_linux.c` defines them on the kernel's own calls.
-`src/port/host_windows.c` defines them on kernel32 and has **not been
-built or run**. When the port takes SDL for its window it will need a C
-library, and that file is where it changes.
+`src/port/host_windows.c` defines them on kernel32; MinGW's compilers
+make an object of it for either size, and it has **not been linked or
+run**. When the port takes SDL for its window it will need a C library,
+and that file is where it changes.
 
 The program's options: `--image` (the `.cue` or the `.bin`), `--frames
 N` (end after N vertical blanks; 3,600 if nothing says), `--trace` (the
@@ -147,7 +154,8 @@ The game's own variables are the PC program's, placed by its linker.
 What the game reaches by a number written into its source is given
 memory at that number (`src/port/memory.c`): the 2 MB of RAM at
 `0x80000000` and the kilobyte of scratchpad at `0x1F800000`, by `mmap`
-at a fixed address on Linux (`VirtualAlloc` on Windows, not tried). The
+at a fixed address on Linux (`VirtualAlloc` on Windows, not tried), in
+the 64-bit program as in the 32-bit one. The
 game's stack is a third piece, a megabyte at `0x7FC00000`, which is the
 port's choice and not the console's ("The picture", "Where the links
 point"). If the system will not give one of them, the program says so
@@ -169,13 +177,21 @@ it here:
   linker put them in the reverse order. So the port's link is by a
   script the build writes, with each variable in a section of its own
   and the sections in the PlayStation's order
-  (`config/symbol_addrs.txt`), kind by kind, and no array padded out
-  (`-malign-data=abi`). The build counts the result: 774 of the game's
-  993 pairs of neighbours are exactly as far apart as on the
-  PlayStation, and the 219 others are in `build/port/layout.txt`: 67
-  are strings, which the console starts on a word; the rest are small
-  variables the console's small-data sections pad to a word, and places
-  where another file's unnamed data lies between two on the console.
+  (`config/symbol_addrs.txt`), kind by kind, and each started on the
+  boundary the PlayStation's compiler gives it: a word's for an array
+  or a structure, its own size's for anything else. A PC's compiler has
+  other rules (an array on its elements' boundary; in a 64-bit program
+  every array of 16 bytes or more on a 16-byte one), so the build sets
+  the boundary in each object after it is compiled
+  (`tools/port_build.py`, `cap_alignment`). The build counts the
+  result: in the 32-bit program 868 of the game's 991 pairs of
+  neighbours are exactly as far apart as on the PlayStation, and the
+  123 others are in `build/port32/layout.txt`: nearly all are closer
+  together than on the console, where another file's unnamed data lies
+  between the two or a small variable is padded to a word. In the
+  64-bit program 743 are; of its 248 others, 137 follow a variable
+  that has pointers in it, which are twice as wide there, and the rest
+  are the 32-bit program's (`build/port/layout.txt`).
 - **Address 0.** The console has its kernel's memory there, so the
   original reads and writes through pointers it never set, and nothing
   happens. A PC stops the program. Linux will not map address 0 for a
@@ -247,17 +263,6 @@ of all eleven. Four more functions end without the value they are
 declared to return (`snd_Play`, `fighter_TryDropSecondSword`,
 `eff_SetUpParticles`, and `font_Printf` called with the text alone in
 `select.c`); no caller uses what they return.
-
-**For 64-bit**, the mapping itself can stay: a 64-bit process can still
-have memory at these two addresses, and a program linked without
-position independence has its own variables below 4 GB as well, so an
-address still fits the game's 32-bit words. What cannot stay is the
-size of a pointer inside a structure: the 41 structures with pointers,
-the nine kinds of file relocated in place into 4-byte slots, the
-handler tables and the queue the renderer walks, and the two functions
-that walk their arguments on the stack. That is the 64-bit stage's
-work, and "What makes it a 32-bit program" above is the renderer's part
-of the list.
 
 ### The disc
 
@@ -649,6 +654,291 @@ dither. The options page differs in 790, the dither of its title.
   horizontal range. The 24-bit mode, which only the movie uses, is read
   for a PNG and nowhere else.
 
+## 64 bits
+
+The port is built with 64-bit pointers and with 32-bit ones, from the
+same source: `make port` builds both, the default's program at
+`build/port/rebushido` and the other's beside it (`build/port32/` or
+`build/port64/`); `make port PORT_BITS=64` (or `32`) builds one. Linux
+distributions are dropping their 32-bit libraries and macOS has none, so
+64 bits is where the port is going. The 32-bit program stays for now
+because comparing the two is the cheapest proof there is: every
+difference between their runs is a mistake about pointers.
+
+### The design
+
+**Everything the game can point at is below 4 GB.** It already was: the
+console's memory at the console's addresses ("Memory"), the game's stack
+at `0x7FC00000`, and the program itself, which is linked at a fixed
+address with no position independence, so its functions and variables
+are below 4 GB too. An address is then a 32-bit number in a 64-bit
+program exactly as in a 32-bit one, and the game's habit of keeping
+addresses in `s32` loses nothing. The mapping, the twelve fixed
+addresses, the 24-bit links of an ordering table (`port_AddLinkRegion`)
+and the save file's patches mean what they meant. What is not below
+4 GB is the port's own and the system's: the stack the system starts
+the program on, the program's arguments, memory the port asks for
+itself. The game is never given a pointer to any of it.
+
+Three things are then left, and each has one form in the source.
+
+1. **A number made a pointer** has to be the number's low 32 bits with
+   nothing above them. C would carry the sign of an `s32` into the upper
+   half, and every address of the console's RAM has its top bit set. The
+   cast's operand goes through `ADDR()` (`include/common.h`):
+
+   ```c
+   prop = (StageProp *)ADDR(g_stage_props.props);
+   ```
+
+   On the PlayStation `ADDR(x)` is `(x)`, so the line compiles to the
+   bytes it always did. In the port it is the low 32 bits, unsigned.
+   The other direction needs nothing: a cast from a pointer to `s32` or
+   `u32` keeps the low 32 bits, which is all of the address.
+
+2. **A pointer kept in memory whose layout is not the port's to
+   choose** stays four bytes wide: a member of a structure that is laid
+   over a file from the disc and relocated in place, over the
+   scratchpad, over the console's RAM or the arena, or that the renderer
+   reads at the console's offsets; an entry of a list of pointers inside
+   such a file; a word of the scratchpad that holds an address. Its type
+   is `PTR32(type)`, it is read with `PTR()` and written with
+   `SET_PTR()`:
+
+   ```c
+   SpriteSheetSlot *sheets = PTR(ctx->file->top_sheets);
+   draw.header = PTR(sheets[TOP_SHEET_TITLE]);
+   SET_PTR(node->parent, &bones[parent].node);
+   ```
+
+   (`SpriteSheetSlot` is `PTR32(SpriteSheet *)` with a name, for where
+   one declaration's slot is another's: `sprite.h`, and its like in
+   `node.h` and `eff.h`. `NEXT_PTR(slot)` and `ADD_PTR(slot, count)`
+   are `slot++` and `slot += count`.) On the PlayStation `PTR32(type)`
+   is the type, `PTR(slot)` the slot and `SET_PTR(slot, value)` an
+   assignment. In the port a slot is a 32-bit word that carries the type
+   it points at, so the compiler refuses a use that forgot `PTR()`:
+   nothing has to be found by eye.
+
+3. **A structure that is only ever the program's own** (declared as a
+   variable or a local, never laid over anything, with no size or offset
+   written as a number) keeps ordinary pointers and simply grows.
+   `Fighter` is the largest. Each such structure is listed, with why it
+   may grow, in `config/port_layout.txt`: 25 of the game's and Sony's.
+
+Where the logic itself has to differ there is an `#if RB_PORT`, as
+everywhere else in the port: nine blocks. The game's two functions that
+walk their arguments on the stack use the compiler's own list (`sys.h`:
+a 64-bit program's first six arguments are in registers). Two tables
+that the PlayStation's compiler fills with an address in a 32-bit word
+are filled as the program runs, because a 64-bit compiler cannot
+(`_snd_seq_tick_env` in Sony's `ssstart.c`, and the fight's table of
+best-times sheets in `hud.c`, whose members are slots because the main
+menu's file has the same table); a third, the build's date in `main.c`,
+which nothing reads, has no address in the port.
+
+**Why these forms and not others.** The rule on this branch is that the
+original's lines stay as they are, with the port's code beside them
+under `#if RB_PORT`. Here that would have meant an `#if` block round
+each of 250 casts and each of 800 uses of a member, which would bury the
+source. The forms above change the original's lines in place and change
+no byte of any PlayStation build: they are macros that expand to the
+original expression there, the edit is mechanical, and `decomp` is not
+touched. What was weighed against it:
+
+- *Leaving the source alone and letting the build fix the casts*, from
+  the compiler's own list of them. It keeps every line, and it hides
+  from the reader that a cast is a place where an address is made; the
+  program would not be what the source says, and it does nothing for a
+  member's layout.
+- *A 64-bit processor's 32-bit pointers* (`gcc -mx32`). No source
+  change at all, but only Linux has that kind of program, its kernels
+  are mostly built without it, and it cannot be linked with a 64-bit
+  library, which is the reason for going to 64 bits. GCC has no 32-bit
+  pointer type for a 64-bit program otherwise (it refuses the mode).
+- *Moving the console's memory below 2 GB*, so that a sign carried up
+  changes nothing. The addresses in the game's files and in what the
+  play tests compare would no longer be the console's.
+- *Copying each file into a structure of the port's own as it is
+  loaded.* It leaves the code that uses the files alone and adds memory
+  with a lifetime of its own for every kind of file; the slots need
+  none.
+- *Every structure's pointers as slots.* Then nothing would grow and no
+  list would be needed; but `Fighter`'s `other` alone is read 241 times
+  in the fight's code, and a structure that is only the program's own
+  gains nothing by it.
+
+**The program's own variables** lie as in the 32-bit program but where
+a pointer is wider: the build sets each variable's boundary to the
+PlayStation's ("Memory", "Neighbours"), and the 64-bit program is
+compiled without the processor's vector instructions (`-mno-sse`), which
+would want the 16-byte boundaries a 64-bit compiler gives and the build
+takes away. Nothing in the program is a floating-point number.
+
+**How every place is found.** By the compiler and by tools, not by
+reading:
+
+- the game's files are compiled for the port with three warnings as
+  errors (`tools/port_build.py`, `GAME_ERRORS`): a number cast to a
+  pointer of another size, a number where a pointer is wanted, a
+  pointer of another type. A cast without `ADDR()` stops the build, and
+  so does a slot used without `PTR()`, which is not a pointer at all;
+- `tools/port_casts.py` finds what the compiler lets through: a cast
+  whose operand is already 64 bits wide, which C makes without being
+  asked (`memory + 2 * sizeof(PrimPool)`: `sizeof` is 64 bits wide
+  there, so the `s32` is widened with its sign before the sum), and a
+  negative number written into the source (`(SpriteSheet *)-1`, the
+  mark some lists end with: `0xFFFFFFFF` in a file). It reads the form
+  the compiler makes of every file in which each value has its type;
+- `tools/port_layout.py` reads the size of every structure and the
+  place of every member out of the debug information of the 32-bit and
+  the 64-bit program and, by a probe compiled with the PlayStation's own
+  compiler, of the PlayStation program. A structure whose layout
+  differs anywhere and is not in `config/port_layout.txt` fails the
+  build, and so does a line there for a structure that no longer
+  differs;
+- every host test is built and run as a 64-bit program as well
+  (`tests/run.py --rebushido`), and the two programs' runs are compared
+  with each other, value for value ("What is proved").
+
+`make port` runs all of it on every push.
+
+### What changed
+
+| | |
+|---|---|
+| `ADDR()` round a cast's operand | 250, in 35 files (`hud.c` 32, `resource.c` 23, `menu_pages.c` 19, `select.c` 19, `model.c` 17, `tex.c` 16) |
+| Members and words made `PTR32` slots | 91 members of 25 structures, and four words of the scratchpad (the mesh cursor, the tiles' three) |
+| `PTR()` | 564, in 22 files (`menu_pages.c` 94, `fighter_hit.c` 88, `select.c` 75, `select_team.c` 71, `eff.c` 64, `hit_test.c` 48) |
+| `SET_PTR()`, `NEXT_PTR()`, `ADD_PTR()` | 231, 11 and 16 |
+| `#if RB_PORT` blocks | 9 more: 123 |
+| Lines of the game's files and headers that are not as they were | 1,290 of 63 files, every one the substitution or the formatter's rewrapping of it |
+
+**The structures whose layout is fixed**, and so the same in all three
+builds, by what fixes it:
+
+| What it is laid over | Structures | |
+|---|---|---|
+| A 2D screen's resource file, relocated in place | `SpriteFileHead`, `MenuFile`, `MenuChanbaraSheets`, `BestTimesSheets`, `SelectFile`, `SelectPortraits`, `TeamSelectFile`, `NarrationFile`, `StaffFile` | a list of sheets is `SpriteSheetSlot`s, and a file's pointer to a list a `SpriteListSlot` |
+| The console's RAM after such a file | `PrimPool`, `MenuWork`, `TeamSelect` | their size is where the next thing goes |
+| The arena, whose room is fixed | `Model`, `ModelNode`, `ModelCloth`, `ClothPiece`, `ClothUpdate`, `ClothBoneColliders` | the lists of a body's matrices are `MatrixSlot`s: the renderer walks them |
+| A node the renderer reads at the console's offsets | `SceneNode` (its parent), and with it `PlainNode`, `StageNode`, `StageProp` | |
+| The scratchpad | `EffRequest`, `DustWork`, `ParticleWork` (`EffScratch`), `WeaponHitScratch`, `SegmentCast` (`FightScratch`), `SideViewScratch`, and the renderer's words | the fighters keep what other code leaves there |
+| The save file | `SaveData` (its 22 patch addresses) | a card written by one size is read by the other |
+| The replay's buffer | `ReplayFighterFrame` | |
+
+### What it found
+
+Mistakes about pointers that were in the port already, or would have
+been in the 64-bit one, each found by a tool or by a comparison:
+
+- *A sign carried up*: the 250 casts, of which the first to stop the
+  64-bit program was the common sound bank's address at start-up.
+- *A sum made 64 bits wide before its cast*: five places, all a 2D
+  screen's file found after its pools (`memory + 2 *
+  sizeof(PrimPool)`), in `select.c`, `select_team.c`, `narration.c`
+  (two) and `staff.c`. Found by `port_casts.py`; character select
+  stopped on the first.
+- *The end of a list*: `(SpriteSheet *)-1` compared with an entry of a
+  file's list, in `menu_pages.c` and `staff.c`.
+- *A slot read as a pointer*: the renderer's C read a cloth node's
+  points (`render_DrawCloth`) and a body's matrices as 8-byte pointers
+  out of 4-byte slots. In the fights the bytes after the slot happened
+  to be zero; the host test of the renderer, which makes its memory up
+  at random, stopped on it as a 64-bit program.
+- *A word of the scratchpad that holds an address*: the mesh cursor and
+  the tiles' three, written as 8 bytes over the word after each.
+- *The tests' own*: the play tests read the fighters at the
+  PlayStation's offsets, which are not the 64-bit port's ("What is
+  proved"); a host test hands the game the address of a local, which in
+  a 64-bit program is above 4 GB unless the test runs on a low stack.
+
+Seen on the way, in both sizes, and not put right here: the port's
+compiler leaves out the cells written after three sheets of `hud.c` (the
+best times' title, ranks and marks: "excess elements in array
+initializer", since a `SpriteSheet` ends in an array of none), and says
+of five calls that they are "through a non-compatible type" (`hud.c`,
+`select.c`, three in Sony's `midiread.c`), which it may make a stop of.
+No run of the tests reaches them.
+
+### What is proved
+
+- **The two sizes against each other**, port side only, on the three
+  fights' plans (`port_game`, `port_other_fight`, `port_bugfixes`): the
+  trace of every watched value at every blank where one changed is the
+  same line for line (2,647, 2,715 and 2,650 lines); the frames written
+  every thirty blanks are the same files (129, 137 and 130 PNGs); the
+  run's sound is the same file (11,440,400, 12,148,048 and 11,528,856
+  bytes of WAV); video memory at the end is the same, and at every
+  checkpoint that writes it; sound memory and the chip's registers are
+  the same; and both fighters are the same at every checkpoint (21, 25
+  and 21), member for member, but for the words off the stack that the
+  tests leave out against the emulator too. The 32-bit program's runs
+  are the ones it gave before any of this, byte for byte.
+- **Wider runs, the two sizes against each other** (by hand, not kept
+  as tests): seven runs of 10,000 blanks, each down another row of the
+  top menu (the story and the six rows after it), with other fighters
+  and weapons taken on the select screens and then some 600 made-up
+  presses on both pads. They go through one-player fights against the
+  CPU, other stages and other select screens than the tests'. In all
+  seven the two programs' traces are the same line for line (831 to
+  9,588 lines, 45,662 in all) and so is every frame written (60 to 333
+  PNGs, 2,002 in all); the sound, video memory and the sound chip's are
+  the same files in the five that ran to their end; and both fighters
+  are the same member for member at all 260 checkpoints, but for the
+  first eight bytes of a CPU fighter's pad (`cpu_pad`), which are words
+  off the stack like the player's pad's. Two of the seven stop, the
+  same way in both sizes: the story's first fight reads through a
+  pointer that is not set yet ("What is left").
+- **The 64-bit program against the emulator**: the five play tests
+  (`port_game`, `port_other_fight`, `port_bugfixes`, `port_picture`,
+  `port_sound`), with no tolerance changed and no comparison taken out.
+  The fighters, which the 64-bit program lays out otherwise, are read
+  member by member as the PlayStation has them
+  ([`tests/play/README.md`](../tests/play/README.md), "Memory at a
+  checkpoint"): a pointer is still compared by the name it points at,
+  and one fighter's pointer to the other by the member.
+- **The layouts**: `tools/port_layout.py` on every push. Of the 246
+  structures the programs use (178 of them declared in the headers, and
+  so in the PlayStation's probe), 38 are not laid out the same in the
+  64-bit program: the 25 listed, and 13 of the port's own. None differs
+  between the 32-bit program and the PlayStation.
+- **The host tests as 64-bit programs**: all 32 that are programs pass
+  the same checks, the renderer's 9,800 made-up cases, the GTE's and
+  the assembly's with the digests written down when the emulator last
+  agreed, the rasteriser's 404 pixels and the sound chip's among them.
+
+### What is left of it
+
+- `src/port/host_windows.c` is written for both sizes and compiled to
+  an object by MinGW's two compilers with no warning; it has not been
+  linked or run. Windows gives memory at an address in blocks of 64 KB,
+  which it now allows for (the sound chip's page is in the scratchpad's
+  block); it does not yet tell the system of the game's stack, which
+  the system wants to know of before it will call a fault's handler.
+- macOS: an Intel Mac's 64-bit program can be linked low and have the
+  memory. On Apple's own processors a program's first 4 GB are kept
+  empty by the system, and whether that can be turned off is not known
+  here; if not, "everything below 4 GB" does not hold there and the
+  port needs another way (the console's memory at an offset, the slots
+  as offsets into it).
+- A C library, when the port takes one for its window: its own
+  allocations may be above 4 GB, which is right as long as the game is
+  never given one. The program must still be linked without position
+  independence, at its fixed address.
+- 123 pairs of neighbouring variables are not as far apart in the
+  32-bit program as on the PlayStation; in the 64-bit one 248 are not,
+  137 of them because the first has pointers, which are twice as wide.
+  (Before this stage 219 were not: a PC's compiler started an array of
+  halfwords or bytes on its elements' boundary, where the PlayStation's
+  starts every array on a word's; the build now sets each variable's
+  boundary. A 64-bit compiler's own rule, 16 bytes for an array of 16
+  or more, would have made it 485.) None is known to matter and the two
+  programs' runs do not differ, but as before they have not been ruled
+  out one by one.
+- The 32-bit program is still built and tested. It can go when the
+  window's build is 64 bits too.
+
 ## The assembly
 
 Everything in the build that is not C, by kind. "Listings" are the files
@@ -758,15 +1048,17 @@ points a face writes before its depth is known, the colour some routines
 load once for a whole group, the normals `render_EmitTwoSidedGT4` turns
 only in part, the scale two kinds of node work out and then do not use.
 
-**What makes it a 32-bit program.** An ordering-table link is 24 bits
-of a primitive's address (`render_LinkEntry`, the tiles' chain), and
-some primitives are in the mesh itself. Addresses are kept in 32-bit
+**Where it keeps an address in 32 bits.** An ordering-table link is 24
+bits of a primitive's address (`render_LinkEntry`, the tiles' chain),
+and some primitives are in the mesh itself. Addresses are kept in 32-bit
 words of the scratchpad (the ordering table, the handler table, a tile's
 vertices and its ordering-table entry) and in 4-byte slots of the data:
 the tables of mesh pointers, the list of a body's bone matrices, the
 pointer after a body's or a cloth's node, a shadow's parent. The mesh
-cursor is brought to a whole word by its address. With 64-bit pointers
-each of these has to change; none is hidden.
+cursor is brought to a whole word by its address. In the 64-bit program
+every one of these is still 32 bits wide, read through `ADDR()` or as a
+`PTR32` slot ("64 bits"): a word that is an address stays the size the
+listings have it.
 
 ## Everything else
 
@@ -777,7 +1069,10 @@ everywhere: about 130 places turn an integer into a pointer and about 120
 a pointer into an integer (counted from the casts; perhaps 300 to 400 in
 all), and whole interfaces carry them (`cdrom_StartRead(file, dest)`,
 `arena_OpenBlock`, the HUD's primitive cursors). Compiled with 64-bit
-pointers none of that means the same. Besides:
+pointers none of that means the same unless every address stays below
+4 GB and each cast says so, which is what the port does ("64 bits": 250
+casts made a pointer of a number, some 230 a number of a pointer).
+Besides:
 
 - 41 structures hold pointers, 136 members. Nine of them are files read
   from the disc whose offsets are turned into pointers in place, in
@@ -1007,7 +1302,11 @@ points below. Stages two and three, the program, by the last three.
 - **The sound by made-up waveforms and sectors**, on every push:
   `tests/port/spu.c` and `xa.c` ("Sound").
 - **`make port` on every push**: the program links with no name
-  missing and the port's files have no warning.
+  missing and the port's files have no warning, with 64-bit pointers
+  and with 32-bit ones; and the three checks of "64 bits" (the layouts,
+  the casts, the order of evaluation in each size).
+- **The 64-bit program against the 32-bit one**, and every host test
+  as a 64-bit program ("64 bits", "What is proved").
 
 Not proved that way: `InitGeom` (it patches the console's kernel; its
 register values are checked by hand), `sys_Trap`, and anything the
@@ -1114,8 +1413,12 @@ link's three. Sound has no stub left ("Sound").
   one table of handlers that is called for a result; a `void` function
   reached through some other pointer for a result would not have been
   seen.
-- Address 0: two places are given somewhere else to read and write; the
-  others, if there are others, are not found.
+- Address 0: two places are given somewhere else to read and write. A
+  third is found and not put right: as a story fight begins, the
+  henchman's shout is placed by the camera before a camera is chosen
+  (`story_HenchmanShout`, `snd_PlayAt` reading `g_camera_current`), and
+  the port stops there, in either size. The story cannot be played on
+  the port until it is. The others, if there are others, are not found.
 - What is heard is compared with the emulator's only in part and by
   hand, and where the hardware's filters are not reproduced it is not
   the console's to the sample; the music is a tenth louder than the
@@ -1123,10 +1426,13 @@ link's three. Sound has no stub left ("Sound").
 - An address of the game's own variables has no top bit on a PC. One
   place tested it and is put right (`snd_FlushQueue`); linking the
   variables above `0x80000000` would end the kind.
-- 219 pairs of neighbouring variables are not as far apart as on the
-  PlayStation. None is known to matter; none has been ruled out one by
+- 123 pairs of neighbouring variables are not as far apart as on the
+  PlayStation in the 32-bit program, and 248 in the 64-bit one
+  ("Memory"). None is known to matter; none has been ruled out one by
   one.
-- `src/port/host_windows.c` has never been compiled.
+- `src/port/host_windows.c` has been compiled and never linked or run;
+  macOS on Apple's processors may not allow the memory the port needs
+  ("64 bits", "What is left of it").
 - The build compiles more than it must: the headers it writes are
   written again each time, so most files are compiled again (twenty
   seconds).
@@ -1135,8 +1441,8 @@ link's three. Sound has no stub left ("Sound").
 
 | Decision | Recommended | Why |
 |---|---|---|
-| A 32-bit program first, or 64-bit from the start | 32-bit first | The source keeps addresses in 32-bit integers at some 300 places, relocates nine kinds of file in place into 4-byte slots and saves 22 addresses to the card: as a 32-bit program all of it works as written, and the tests already run that way. 64-bit is then a stage of its own with the port already playing (and is needed in the end: macOS runs no 32-bit programs) |
-| Memory at the PlayStation's addresses, or everything moved | At the PlayStation's addresses, while the program is 32-bit | A 32-bit program can ask for memory at `0x80010000` and `0x1F800000` (the tests do, for the scratchpad). The twelve fixed addresses, the 24-bit links and the save file's patches then need no change at all |
+| A 32-bit program first, or 64-bit from the start | 32-bit first; done, and 64-bit after it, done ("64 bits") | The source keeps addresses in 32-bit integers at some 300 places, relocates nine kinds of file in place into 4-byte slots and saves 22 addresses to the card: as a 32-bit program all of it works as written. The 64-bit program was then a stage of its own with the port already playing, and the 32-bit one is what it is held to |
+| Memory at the PlayStation's addresses, or everything moved | At the PlayStation's addresses, in both sizes | A program linked low can ask for memory at `0x80010000` and `0x1F800000`, whatever the size of its pointers. The twelve fixed addresses, the 24-bit links and the save file's patches then need no change at all. Where a system will not give a program memory below 4 GB (Apple's processors, perhaps), this is the decision to take again |
 | A library for the window, the pads and sound | SDL 2 | One library does all three on Windows, Linux and macOS, and its licence sits with this project's. It has to be downloaded; nothing has been |
 | The game's data: the disc image, or files taken out of it | The player's disc image | The game asks for sectors, never for names, so an image answers it directly; the music is tracks and streams that only the image has in one piece; and no tool has to unpack game data. Loose files can come later for modding |
 | The first renderer: software as the console draws, or the PC's graphics card | Software first | It can be held to the emulator's picture pixel for pixel by the tests there already are, and needs nothing installed. The hardware renderer is then the roadmap's next item, behind the same list of primitives |
