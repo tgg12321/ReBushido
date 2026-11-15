@@ -49,9 +49,14 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   beside each `INCLUDE_ASM` in the `#if`, the original line in the
   `#else`; port-only code in `src/port/` (`port_` names), which no
   PlayStation build compiles.
-- After changing `src/port/gte.c`, the C beside the assembly, or
-  `tests/play/probe/`: `wsl bash tools/build.sh playtest gte_model`, then
-  copy the new `AGREED` numbers into `tests/port/*_vectors.py`.
+- Port stage one is done: every function that is assembly has C beside
+  it under `RB_PORT`. After a change to that C, to `src/port/gte.c` or to
+  `tests/play/probe/*.h`: `wsl bash tools/build.sh playtest gte_model`,
+  then copy the new numbers into `AGREED` of
+  `tests/port/{gte,asm,render}_vectors.py`.
+- The owner's choices for the port: a 32-bit build first, SDL 2, the
+  player's disc image for the data, a software renderer that matches the
+  PlayStation first, movies decoded in the port.
 - Merge `decomp` into `main`, never the reverse.
 
 ## Working on `decomp`

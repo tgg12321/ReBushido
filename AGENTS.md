@@ -152,6 +152,10 @@ hand-escaped quotes.
   `python3 tools/listings.py` (checks `asm/funcs/` against the ELF) and
   `python3 tools/symbol_addrs.py` (writes the table again), and rename the listing's file if it
   was a function of `asm/funcs/` (`tools/rename.py` does).
+- The renderer's port C keeps what the listings pass in registers in `g_render_walk`
+  (`include/render.h`); a routine of the handler tables is `void render_Emit...(s32 count)` and
+  reads and leaves the mesh cursor there. `render_DrawStageTiles` and `render_DrawCloth` change
+  `$s0` in the listings: never call them from new C on the PlayStation.
 - Addresses are KSEG0 (`0x80000000`+); `0x1F800000`–`0x1F8003FF` is scratchpad RAM.
 - **C layout:** `.clang-format`, applied by `python tools/format.py <files>`.
 - Scratch goes in `tmp/` (gitignored); don't add files at the repo root.
