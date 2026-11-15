@@ -77,8 +77,11 @@ version number is `RB_VERSION_NUMBER` in `include/rebushido.h`. The ReBushido EX
 trailing zeroed small variables (`make_psexe.py --zeroed-from`), so it fits the retail program's
 place on the disc plus the three empty sectors after it; when it outgrows that, `build_disc.py`
 puts it at the end of the image.
-The native port: no program yet. `RB_PORT` is on only in `make rebushido-test` and
-`make rebushido-modern`, which build and test `src/port/` and the C beside the assembly;
+The native port: `make port` builds `build/port/rebushido`, a 32-bit Linux program with no C
+library, from the game's C with `RB_PORT` on, Sony's library code that is plain arithmetic, and
+`src/port/` (`docs/PORT.md`). All OS calls go through `include/port_host.h`. A new Sony or BIOS
+function the game calls must be defined in `src/port/` or the port's link fails. `RB_PORT` is
+also on in `make rebushido-test` and `make rebushido-modern`, which test the C beside the assembly;
 `tools/port_gte_macros.py` writes Sony's GTE macros as C into `build/port/include/`;
 `make gte-probe` builds the play tests' probe (`build/play/GteProbe.exe`).
 Never edit `bb2.ld` for ReBushido. `src/rebushido/` holds ReBushido's own files (names

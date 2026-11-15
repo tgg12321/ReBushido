@@ -28,9 +28,9 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
 - Every change is behind a switch of `include/rebushido.h`, and the
   original's lines stay as they are (`docs/STYLE.md`, "ReBushido").
 - With the switches off the build must still match the original:
-  `wsl bash tools/build.sh checks` runs ten checks here (the seven of
+  `wsl bash tools/build.sh checks` runs eleven checks here (the seven of
   `decomp`, then the ReBushido build, its tests and its modern-compiler
-  run).
+  run, and the native port's link).
 - `wsl bash tools/build.sh rebushido` builds it into `build/rebushido/`.
   Never edit `bb2.ld` for ReBushido.
 - A fix of an original bug is `RB_FIX_<NAME>` plus
@@ -38,7 +38,7 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   "The fixes".
 - `wsl bash tools/build.sh playtest` runs the play tests in an emulator
   with no window (`tests/play/README.md`); run it before pushing a change
-  to the game. It is not one of the ten checks.
+  to the game. It is not one of the eleven checks.
 - To try a change quickly: `wsl bash tools/build.sh quickboot-disc QB_...`
   (`docs/REBUSHIDO.md`, "Booting straight into a fight").
 - `wsl bash tools/build.sh rebushido-patch` makes a trial patch in
@@ -54,6 +54,9 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   `tests/play/probe/*.h`: `wsl bash tools/build.sh playtest gte_model`,
   then copy the new numbers into `AGREED` of
   `tests/port/{gte,asm,render}_vectors.py`.
+- `wsl bash tools/build.sh port` builds the native port into
+  `build/port/`; it runs as `build/port/rebushido --image <.cue>` and is
+  held to the emulator by the play test `port_game`.
 - The owner's choices for the port: a 32-bit build first, SDL 2, the
   player's disc image for the data, a software renderer that matches the
   PlayStation first, movies decoded in the port.
