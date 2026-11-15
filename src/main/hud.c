@@ -1339,8 +1339,7 @@ s32 hud_DrawPointsAndTime(
         for (side_index = 0; side_index < 2; side_index++) {
             /* the first side's marks run right from the left edge and
              * the second's left from the right */
-            HUD_ANCHOR(side_index == 0 ? PORT_ANCHOR_LEFT
-                                       : PORT_ANCHOR_RIGHT);
+            HUD_ANCHOR(side_index == 0 ? PORT_ANCHOR_LEFT : PORT_ANCHOR_RIGHT);
             for (k = 0; k < mark_slot_count; k++) {
                 if (side_index != 0) {
                     draw.x = mark_group_index * MARK_SHRINK + MARK_RIGHT_X -
