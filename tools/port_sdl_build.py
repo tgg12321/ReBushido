@@ -59,13 +59,17 @@ OUT_DIR = 'build/port-sdl'
 WINDOW_DIR = 'src/port/window/'
 # The window's arithmetic: compiled as the port's own files, and tested on
 # every push (tests/port/window.c).
-WINDOW_PLAIN = ['scale.c', 'ring.c', 'pace.c', 'keymap.c']
+WINDOW_PLAIN = ['scale.c', 'ring.c', 'pace.c', 'keymap.c', 'logname.c', 'fps.c']
+# What reads the game's variables out for the session's log: the port's own
+# as well, and not in that test, which has no game.
+WINDOW_GAME = ['gamestate.c']
 # What talks to SDL and to the C library: compiled as any program is.
-WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c']
+WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c']
 # The hosts of the build without a window: not this one's on Linux, where
 # the C library's is host_posix.c; on Windows the one file is both builds'.
 OTHER_HOSTS = ('src/port/host_linux.c', 'src/port/host_windows.c')
-HOSTED_FLAGS = ['-O2', '-g', '-std=gnu99', '-Wall', '-Wextra', '-Werror', '-D_FILE_OFFSET_BITS=64',
+# (a path cut short by snprintf is what snprintf is used for)
+HOSTED_FLAGS = ['-O2', '-g', '-std=gnu99', '-Wall', '-Wextra', '-Werror', '-Wno-format-truncation', '-D_FILE_OFFSET_BITS=64',
                 '-Iinclude', '-I' + WINDOW_DIR.rstrip('/')]
 # Where the program is linked: 4 MB up, as `make port` has it, so that the
 # low 24 bits of its variables' addresses are no other memory's
@@ -436,7 +440,7 @@ def main():
 
     jobs = [(target, path, 'port' if own else 'game', flags, stamp)
             for path, own in port_build.sources() if path not in OTHER_HOSTS]
-    jobs += [(target, WINDOW_DIR + f, 'port', flags, stamp) for f in WINDOW_PLAIN]
+    jobs += [(target, WINDOW_DIR + f, 'port', flags, stamp) for f in WINDOW_PLAIN + WINDOW_GAME]
     jobs += [(target, path, 'hosted', flags, stamp) for path in target.hosted]
     game, hosted, failed, built = [], [], 0, 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:

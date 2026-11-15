@@ -22,6 +22,10 @@ extern void port_HostExit(s32 code) __attribute__((noreturn));
 #define PORT_HOST_OUTPUT 1
 #define PORT_HOST_ERRORS 2
 extern void port_HostWrite(s32 stream, const char *bytes, u32 count);
+/* If not NULL, given everything port_HostWrite is, as well: the session's
+ * log of the build with a window (src/port/window/). The hosts of that
+ * build define it; the host with no C library has no use for it. */
+extern void (*g_port_host_tee)(s32 stream, const char *bytes, u32 count);
 
 /* A file, for reading, or made new for writing: a number that is not
  * negative, or -1. */

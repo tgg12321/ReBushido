@@ -212,8 +212,19 @@ extern void (*g_port_blank_hook)(u32 blank);
  * the window presses a key or a controller's button for it, so that a
  * plan can go through the PC's own input. */
 extern s32 (*g_port_press_hook)(s32 pad, u32 button, s32 down);
-/* As port_Quit ends the program, after what it writes. */
-extern void (*g_port_quit_hook)(void);
+/* As port_Quit ends the program, after what it writes, with the code
+ * it ends with. */
+extern void (*g_port_quit_hook)(s32 code);
+/* After a fault's report (crash.c): what the session's log adds to it. */
+extern void (*g_port_crash_hook)(void);
+/* The disc's drive begins to read data at a sector (`kind` 1), begins
+ * to play a stream of sound there (2), or stops reading at one (0). */
+extern void (*g_port_disc_hook)(s32 kind, u32 sector);
+/* The last functions of the game that began, for a fault's report: a
+ * ring, the newest at (g_port_recent_call_count - 1) modulo its size. */
+#define PORT_RECENT_CALLS 32
+extern u32 g_port_recent_calls[PORT_RECENT_CALLS];
+extern u32 g_port_recent_call_count;
 
 /* ---- a crash (src/port/crash.c) ---- */
 

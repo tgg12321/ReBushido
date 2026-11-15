@@ -626,8 +626,10 @@ made, and as the program ends. The window's files are
 
 | File | |
 |---|---|
-| `scale.c`, `ring.c`, `pace.c`, `keymap.c`, `window.h` | the arithmetic: where the picture goes in the window, the queue of samples, when a blank is due, which key is which button, the settings file. No SDL and no C library in them, so the host tests run them on every push (`tests/port/window.c`) |
-| `sdl_window.c` | the window, the sound card and the controllers, on SDL |
+| `scale.c`, `ring.c`, `pace.c`, `keymap.c`, `logname.c`, `fps.c`, `window.h` | the arithmetic: where the picture goes in the window, the queue of samples, when a blank is due, which key is which button, the settings file, a log's name and lines, the counter's rate, digits and place. No SDL and no C library in them, so the host tests run them on every push (`tests/port/window.c`) |
+| `gamestate.c` | reads the game's variables out for the log, and has the names the log gives screens, modes, fighters, weapons and stages. It only reads |
+| `sdl_window.c` | the window, the sound card and the controllers, on SDL; the counter; the log's notes of the game |
+| `sdl_log.c` | the session's log file |
 | `sdl_main.c` | where the program starts: its own options, the settings file, the disc image when none is named |
 | `host_posix.c` | `port_host.h` on a C library, for Linux (Windows has `src/port/host_windows.c`) |
 
@@ -762,6 +764,51 @@ built in; more lines add more. The names are SDL's: a key's as SDL names it (`Up
 cannot use is said, with why, and the rest is used. There is no page
 for any of this in the game.
 
+**The session's log.** Every session writes one, always:
+`logs/rebushido-YYYYMMDD-HHMMSS.log` beside the program, the newest
+twenty kept (if the program's folder cannot be written to, in the
+folder SDL names for a program's own files; the console says where;
+`--log FILE` names it, `--no-log` leaves it out). Everything the port
+prints, to either output, goes into it too, a line at a time, each
+written out as it ends and with the seconds since the start before it:
+so what was said before a crash is in the file. It begins with the
+version, the system and its bits, SDL's version, the command line, the
+image (each file's size and a CRC-32 of its first megabyte), the
+settings file and any line of it not used, the pads' layout; then, as
+the window opens, the video driver, renderer, display and vsync, the
+sound driver, device and form, and each controller as it is found.
+While the game runs it notes each change of the game's screen, a
+fight's beginning (mode, stage, both fighters and weapons, by name) and
+its end, every read of the disc (first sector and how many; the game
+knows files by position, so there is no name), a controller plugged in
+or pulled out, vsync given up, time let go, the sound running out
+(counted by the minute), and a line every ten seconds with the blank,
+the game's frame, both rates and the queue's length. At a fault the
+port's report goes in (what, the address, the function, its callers,
+the blank, the screen and frame), then the last 32 functions of the
+game that began (a ring the build's instrumentation fills, one that
+repeats kept once), the fight's mode, stage and fighters, and the file
+is shut before anything else is tried; on Windows a box then tells the
+player the game stopped and where the log is. The port's own stops, a
+start that failed and an ordinary end are each said, with how long the
+session was. The log is the window build's alone: the build without a
+window has two more empty pointers and the ring of the last calls
+(`include/port_platform.h`), and prints what it printed.
+
+**The counter.** In a corner of the picture, top left unless the
+settings say otherwise (`fps = on|off`, `fps_corner = top-left|
+top-right|bottom-left|bottom-right`, `--no-fps`; F3 shows and hides
+it): `59.8/30.0 100%` is the pictures shown a second, the game's own
+frames a second, and the pictures as parts in a hundred of the
+console's 59.83. The game works a frame out every second blank in a
+fight and every blank in the main menu, so 30 in a fight is full speed.
+It is drawn by the window, in digits of its own of five pixels by
+seven, as a small texture over the picture after the picture has been
+handed to SDL: nothing of it is in the game's video memory, and a run's
+pictures are compared without it. Each of its pixels is a whole number
+of the window's, as many as the picture's 240 lines are, so it grows
+with the window and stays sharp. On by default for now.
+
 **The game's data.** `--image FILE` as before. Without it the first
 `.cue`, or else the first `.bin`, beside the program is taken; if there
 is none, on Windows the system's dialog for choosing a file opens, and
@@ -815,14 +862,24 @@ the three plans of `port_game`, `port_other_fight` and `port_bugfixes`
 
 At the console's rate, with no sound card, 3,880 blanks took 64.839
 seconds: 16.715 ms each. On every push `tests/port/window.c` holds the
-arithmetic to 462 cases worked out by hand: the picture's place in
+arithmetic to 791 cases worked out by hand: the picture's place in
 windows of every shape, pixels at video memory's edges, the queue
 running out and filling up with no step larger than a fade's, the clock
 going round at 32 bits, time let go, a sound card two parts in a
 thousand fast and one as slow for 20,000 blanks with nothing running
 out, every button's name, keys and sticks, a settings file's lines and
-the ones it cannot use. 33 mistakes made on purpose in the four files,
-one at a time, each failed it.
+the ones it cannot use; a log's name, which of 25 logs go, lines out
+of pieces, a rate each half second, every digit's shape, the counter's
+place. 33 mistakes made on purpose in the first four files, one at a
+time, each failed it.
+
+With the log and the counter on, every run of the table above was made
+again on both systems: the traces, the 595 pictures and the 8,779,293
+samples are the build without a window's still. The log of `port_game`
+has its header, the screens in their order, the fight's beginning by
+name and its end; a fault made on purpose on the game's stack
+(`--fault-at`) and one on the sound card's thread (`--fault-in-sound`)
+are both in the log with the function's name, on Linux and on Windows.
 
 **Not proved, and what may be wrong:**
 
@@ -832,7 +889,9 @@ one at a time, each failed it.
   documents and not seen. The same for the sound card, for full screen,
   for a real keyboard and a real controller: the events were SDL's own,
   made by the test.
-- The file dialog on Windows was written and read, and never opened.
+- The file dialog on Windows and the box that says the game stopped
+  were written and read, and never opened. The counter was never seen:
+  its pixels are tested, its look is not.
 - SDL's dummy sound card is not a clock: it took samples unevenly and
   up to one part in a hundred fast on Linux, and more than one part in
   a hundred slow on Windows. The steering followed it as far as it goes
@@ -846,8 +905,8 @@ one at a time, each failed it.
   program 2 GB, and the port cannot run there; nothing else is known to
   be at the three addresses, and nothing promises it.
 - The Linux program is 32-bit and needs 32-bit SDL 2 where it runs.
-- A program started by a double click whose disc image cannot be read
-  says so in a console window that then closes.
+- A fault's report has the address, the function and its callers, not
+  every register: the host's interface keeps three of them.
 - The game's stack is a megabyte, and SDL and the display's driver now
   run on it too.
 

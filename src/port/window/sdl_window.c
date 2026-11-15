@@ -23,6 +23,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "port_gpu.h"
 #include "port_spu.h"
@@ -48,6 +49,17 @@
 #define PATH_BYTES_MAX 1024
 #define BYTES_PER_PIXEL 4
 #define TAP_MAGIC 0x52464252U /* "RBFR", the low byte first */
+/* The counter in the corner: its own few pixels, a dark box under white
+ * digits, drawn over the picture SDL has been handed already. */
+#define COUNTER_W 112
+#define COUNTER_H (PORT_GLYPH_H + 2 * COUNTER_PAD)
+#define COUNTER_PAD 2
+#define COUNTER_BOX 0xB0000000U
+#define COUNTER_INK 0xFFFFFFFFU
+/* The log's line every ten seconds, and its count of the sound running
+ * out every minute, in vertical blanks. */
+#define BEAT_BLANKS 600
+#define MINUTE_BLANKS 3600
 
 PortSettings g_port_settings;
 PortWindowOptions g_port_window_options;
@@ -71,6 +83,17 @@ static FILE *g_port_audio_tap;
 static PortPace g_port_pace;
 static Uint64 g_port_clock_start;
 static u32 g_port_blanks_shown;
+static s32 g_port_show_fps;
+static SDL_Texture *g_port_counter;
+static u32 g_port_counter_pixels[COUNTER_W * COUNTER_H];
+static PortFpsMeter g_port_shown_meter;
+static PortFpsMeter g_port_game_meter;
+/* The game as the log last saw it, and what the log has counted. */
+static PortGameState g_port_seen;
+static s32 g_port_has_seen;
+static u32 g_port_lost_noted;
+static u32 g_port_underruns_noted;
+static u32 g_port_read_start;
 
 /* The controller of each pad, and SDL's number for it while it is
  * plugged in. */
@@ -84,18 +107,6 @@ static u32 g_port_injected;
 static u32 g_port_key_events;
 static u32 g_port_controller_events;
 static u32 g_port_pad_changes;
-
-/* ---- saying things ---- */
-
-static void port_Say(const char *format, ...) {
-    va_list args;
-
-    va_start(args, format);
-    fputs("rebushido: ", stderr);
-    vfprintf(stderr, format, args);
-    fputc('\n', stderr);
-    va_end(args);
-}
 
 /* ---- names ---- */
 
@@ -198,10 +209,22 @@ static void port_WaitFor(u32 samples) {
 
 /* ---- sound ---- */
 
+/* For the tests of the fault's report (--fault-at, --fault-in-sound):
+ * memory that is not there is written. */
+static void port_FaultOnPurpose(void) {
+    static volatile s32 * volatile nowhere = (volatile s32 *)0x44;
+
+    *nowhere = 1;
+}
+
 /* SDL's thread asks for samples: it holds the device's lock, and the
  * game's side takes the same lock to write. */
 static void SDLCALL port_FillAudio(void *unused, Uint8 *stream, int bytes) {
     (void)unused;
+    if (g_port_window_options.fault_in_sound > 0 &&
+        port_GetBlankCount() >= (u32)g_port_window_options.fault_in_sound) {
+        port_FaultOnPurpose();
+    }
     port_ReadRing(
         &g_port_ring, (s16 *)(void *)stream, (u32)bytes / (2 * sizeof(s16)));
 }
@@ -241,6 +264,12 @@ static void port_OpenAudio(void) {
         port_Say("no sound: %s", SDL_GetError());
         return;
     }
+    port_Note("sound: driver %s, device %s; %d a second, %d channels, %d "
+              "samples at a time; the queue is kept %d long",
+              SDL_GetCurrentAudioDriver(),
+              SDL_GetNumAudioDevices(0) > 0 ? SDL_GetAudioDeviceName(0, 0)
+                                            : "the system's own choice",
+              have.freq, have.channels, have.samples, AUDIO_QUEUE_FRAMES);
     SDL_PauseAudioDevice(g_port_audio, 0);
 }
 
@@ -349,6 +378,30 @@ static void port_SetFullscreen(s32 on) {
     SDL_ShowCursor(on ? SDL_DISABLE : SDL_ENABLE);
 }
 
+/* What the picture runs on, for the log. */
+static void port_NoteVideo(void) {
+    SDL_RendererInfo info;
+    SDL_DisplayMode mode;
+    int w = 0;
+    int h = 0;
+
+    port_Note("video: driver %s", SDL_GetCurrentVideoDriver());
+    if (SDL_GetRendererInfo(g_port_renderer, &info) == 0) {
+        port_Note("video: renderer %s%s", info.name,
+                  (info.flags & SDL_RENDERER_ACCELERATED) ? "" : " (software)");
+    }
+    if (SDL_GetCurrentDisplayMode(
+            SDL_GetWindowDisplayIndex(g_port_window), &mode) == 0) {
+        port_Note("video: display %d by %d, %d pictures a second", mode.w,
+                  mode.h, mode.refresh_rate);
+    }
+    SDL_GetRendererOutputSize(g_port_renderer, &w, &h);
+    port_Note("video: window %d by %d%s; vsync %s; scale %d, filter %s", w, h,
+              g_port_is_fullscreen ? ", the whole screen" : "",
+              g_port_vsync ? "on" : "off", g_port_settings.scale,
+              g_port_settings.is_linear ? "linear" : "nearest");
+}
+
 /* The window, the sound card and the controllers, at the first blank:
  * the port has its memory and its disc by then. */
 static void port_OpenWindow(void) {
@@ -359,6 +412,7 @@ static void port_OpenWindow(void) {
         return;
     }
     g_port_is_open = 1;
+    g_port_show_fps = g_port_settings.fps;
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0) {
         port_Say("SDL does not start: %s", SDL_GetError());
         port_Quit(PORT_EXIT_FAILED);
@@ -399,8 +453,11 @@ static void port_OpenWindow(void) {
         port_Say("the window cannot be drawn into: %s", SDL_GetError());
         port_Quit(PORT_EXIT_FAILED);
     }
+    port_NoteVideo();
     if (!g_port_window_options.no_sound) {
         port_OpenAudio();
+    } else {
+        port_Note("sound: none asked for (--no-sound)");
     }
     if (g_port_window_options.inject == PORT_INJECT_PADS) {
         port_AttachTestControllers();
@@ -494,6 +551,233 @@ static void port_DrawPicture(u32 blank) {
     SDL_RenderCopy(g_port_renderer, g_port_texture, NULL, &where);
 }
 
+/* The counter in the corner: pictures shown a second, the game's own
+ * frames a second, and the speed against the console's. Its own
+ * texture, each of its pixels a whole number of the window's, over the
+ * picture: nothing of it is in the game's video memory or in what a
+ * test takes of the picture. */
+static void port_DrawCounter(void) {
+    char text[PORT_FPS_TEXT_BYTES];
+    PortRect picture;
+    PortRect place;
+    SDL_Rect from;
+    SDL_Rect where;
+    s32 text_w;
+    s32 i;
+    int window_w = 0;
+    int window_h = 0;
+
+    if (!g_port_show_fps) {
+        return;
+    }
+    if (g_port_counter == NULL) {
+        g_port_counter = SDL_CreateTexture(
+            g_port_renderer, SDL_PIXELFORMAT_ARGB8888,
+            SDL_TEXTUREACCESS_STREAMING, COUNTER_W, COUNTER_H);
+        if (g_port_counter == NULL) {
+            port_Say("no counter: %s", SDL_GetError());
+            g_port_show_fps = 0;
+            return;
+        }
+        SDL_SetTextureBlendMode(g_port_counter, SDL_BLENDMODE_BLEND);
+        SDL_SetTextureScaleMode(g_port_counter, SDL_ScaleModeNearest);
+    }
+    port_FormatFps(text, g_port_shown_meter.tenths, g_port_game_meter.tenths);
+    text_w = port_MeasureText(text) + 2 * COUNTER_PAD;
+    if (text_w > COUNTER_W) {
+        text_w = COUNTER_W;
+    }
+    for (i = 0; i < COUNTER_W * COUNTER_H; i++) {
+        g_port_counter_pixels[i] = i % COUNTER_W < text_w ? COUNTER_BOX : 0;
+    }
+    port_DrawText(g_port_counter_pixels, COUNTER_W, COUNTER_H, COUNTER_PAD,
+                  COUNTER_PAD, text, COUNTER_INK);
+    SDL_UpdateTexture(g_port_counter, NULL, g_port_counter_pixels,
+                      COUNTER_W * BYTES_PER_PIXEL);
+    SDL_GetRendererOutputSize(g_port_renderer, &window_w, &window_h);
+    port_FitPicture(window_w, window_h, g_port_settings.scale, &picture);
+    port_PlaceCounter(
+        &picture, text_w, COUNTER_H, g_port_settings.fps_corner, &place);
+    from.x = 0;
+    from.y = 0;
+    from.w = text_w;
+    from.h = COUNTER_H;
+    where.x = place.x;
+    where.y = place.y;
+    where.w = place.w;
+    where.h = place.h;
+    SDL_RenderCopy(g_port_renderer, g_port_counter, &from, &where);
+}
+
+/* ---- the log's notes of the game ---- */
+
+/* Where the game is, when that changes; a fight's beginning and end;
+ * a line every ten seconds; the sound running out, by the minute. It
+ * reads the game and writes the log, and nothing else. */
+static void port_WatchGame(u32 blank) {
+    PortGameState now;
+    u32 clock = port_ReadClock();
+    s32 frames;
+
+    port_ReadGameState(&now);
+    frames = g_port_has_seen ? now.frames - g_port_seen.frames : 0;
+    port_CountFps(&g_port_shown_meter, clock, 1);
+    port_CountFps(&g_port_game_meter, clock, frames > 0 ? (u32)frames : 0);
+    if (!g_port_has_seen || now.screen != g_port_seen.screen) {
+        port_Note("game: screen %d, %s%s; blank %u, frame %d", now.screen,
+                  port_NameScreen(now.screen),
+                  g_port_has_seen ? ""
+                                  : " (as the program starts: the "
+                                    "options page comes first)",
+                  blank, now.frames);
+    }
+    if (now.in_fight && (!g_port_has_seen || !g_port_seen.in_fight)) {
+        port_Note(
+            "game: a fight begins: mode %s, on %s (stage %d); %s%s with "
+            "the %s against %s%s with the %s",
+            port_NameMode(now.mode), port_NameStage(now.stage), now.stage,
+            port_NameRoster(now.roster[0]), now.is_cpu[0] ? " (CPU)" : "",
+            port_NameWeapon(now.weapon[0]), port_NameRoster(now.roster[1]),
+            now.is_cpu[1] ? " (CPU)" : "", port_NameWeapon(now.weapon[1]));
+    }
+    if (now.in_fight && g_port_has_seen && now.defeat_frames != 0 &&
+        g_port_seen.defeat_frames == 0) {
+        port_Note("game: the fight is over: %s; blank %u, frame %d",
+                  now.winner == 0   ? "player one is left standing"
+                  : now.winner == 1 ? "player two is left standing"
+                                    : "nobody is left standing",
+                  blank, now.frames);
+    }
+    if (g_port_pace.lost != g_port_lost_noted) {
+        port_Note("pace: the program was held up for more than a tenth of a "
+                  "second, and the time was let go (%u times so far); blank "
+                  "%u",
+                  g_port_pace.lost, blank);
+        g_port_lost_noted = g_port_pace.lost;
+    }
+    if (blank % BEAT_BLANKS == 0) {
+        port_Note(
+            "beat: blank %u, frame %d, screen %s; %u.%u shown and %u.%u "
+            "of the game's frames a second; %u samples queued",
+            blank, now.frames, port_NameScreen(now.screen),
+            g_port_shown_meter.tenths / 10, g_port_shown_meter.tenths % 10,
+            g_port_game_meter.tenths / 10, g_port_game_meter.tenths % 10,
+            g_port_audio != 0 ? g_port_ring.count : 0);
+    }
+    if (blank % MINUTE_BLANKS == 0 &&
+        g_port_ring.underruns != g_port_underruns_noted) {
+        port_Note("sound: ran out %u times in the last minute (%u in all)",
+                  g_port_ring.underruns - g_port_underruns_noted,
+                  g_port_ring.underruns);
+        g_port_underruns_noted = g_port_ring.underruns;
+    }
+    g_port_seen = now;
+    g_port_has_seen = 1;
+}
+
+/* What the disc's drive reads (port_platform.h). */
+static void port_NoteDisc(s32 kind, u32 sector) {
+    if (kind == 1) {
+        g_port_read_start = sector;
+    } else if (kind == 2) {
+        port_Note("disc: a stream of sound from sector %u; blank %u", sector,
+                  port_GetBlankCount());
+    } else if (sector != g_port_read_start) {
+        port_Note("disc: %u sectors read from sector %u; blank %u",
+                  sector - g_port_read_start, g_port_read_start,
+                  port_GetBlankCount());
+    }
+}
+
+/* Whether a box may be put before the player: never where SDL was told
+ * to show nothing (the tests), and only on Windows, where a program
+ * started by a double click has a console that closes with it. */
+static s32 port_MayShowBox(void) {
+#if defined(_WIN32)
+    const char *driver = getenv("SDL_VIDEODRIVER");
+
+    return driver == NULL ||
+           (strcmp(driver, "dummy") != 0 && strcmp(driver, "offscreen") != 0);
+#else
+    return 0;
+#endif
+}
+
+/* The player is told the game stopped, and where the log is. NOT TRIED:
+ * no box has been opened. */
+static void port_ShowStopBox(const char *what) {
+    char text[2 * PATH_BYTES_MAX];
+    const char *log = port_GetLogPath();
+
+    if (!port_MayShowBox()) {
+        return;
+    }
+    snprintf(text, sizeof(text), "%s\n\n%s%s", what,
+             log != NULL ? "What happened is written in:\n"
+                         : "This session kept no log.",
+             log != NULL ? log : "");
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, WINDOW_TITLE, text, NULL);
+}
+
+/* After a fault's report (port_platform.h): the last functions the game
+ * began, where the game was, and the log shut, so that all of it is in
+ * the file whatever happens next. */
+static void port_AfterCrash(void) {
+    char log[PATH_BYTES_MAX];
+    const char *path = port_GetLogPath();
+    PortGameState now;
+    u32 i;
+
+    port_Say("the last functions the game began, the newest first:");
+    for (i = 0; i < PORT_RECENT_CALLS && i < g_port_recent_call_count; i++) {
+        u32 offset = 0;
+        u32 address = g_port_recent_calls[(g_port_recent_call_count - 1 - i) %
+                                          PORT_RECENT_CALLS];
+        const char *name = port_FindFunction(address, &offset);
+
+        port_Say("  %s (0x%08X)", name != NULL ? name : "?", address);
+    }
+    port_ReadGameState(&now);
+    port_Say("the game: screen %s, mode %s, stage %s; %s with the %s, %s "
+             "with the %s",
+             port_NameScreen(now.screen), port_NameMode(now.mode),
+             port_NameStage(now.stage), port_NameRoster(now.roster[0]),
+             port_NameWeapon(now.weapon[0]), port_NameRoster(now.roster[1]),
+             port_NameWeapon(now.weapon[1]));
+    snprintf(log, sizeof(log), "%s", path != NULL ? path : "");
+    port_Note("session: ended by a fault after %u.%03u seconds",
+              (unsigned)(SDL_GetTicks() / MILLISECONDS),
+              (unsigned)(SDL_GetTicks() % MILLISECONDS));
+    port_CloseLog();
+    if (log[0] != 0) {
+        fprintf(stderr, "rebushido: this session's log: %s\n", log);
+    }
+    if (port_MayShowBox()) {
+        char text[2 * PATH_BYTES_MAX];
+
+        snprintf(text, sizeof(text),
+                 "ReBushido stopped: the game's code failed.\n\n%s%s",
+                 log[0] != 0 ? "What happened is written in:\n"
+                             : "This session kept no log.",
+                 log);
+        SDL_ShowSimpleMessageBox(
+            SDL_MESSAGEBOX_ERROR, WINDOW_TITLE, text, NULL);
+    }
+}
+
+/* The session's end (sdl_window.h). */
+void port_EndSession(s32 code) {
+    port_Note(
+        "session: ended %s (exit code %d) after %u.%03u seconds",
+        code == PORT_EXIT_OK ? "as asked" : "because something stopped it",
+        code, (unsigned)(SDL_GetTicks() / MILLISECONDS),
+        (unsigned)(SDL_GetTicks() % MILLISECONDS));
+    if (code != PORT_EXIT_OK) {
+        port_ShowStopBox("ReBushido stopped.");
+    }
+    port_CloseLog();
+}
+
 /* ---- the pads ---- */
 
 /* Tells the port's pads what has changed since they were last told. */
@@ -530,6 +814,12 @@ static void port_TakeKey(const SDL_KeyboardEvent *key) {
                   (key->keysym.mod & KMOD_ALT) != 0))) {
         /* the window's own, and no button of a pad */
         port_SetFullscreen(!g_port_is_fullscreen);
+        return;
+    }
+    if (key->keysym.scancode == SDL_SCANCODE_F3) {
+        if (down) {
+            g_port_show_fps = !g_port_show_fps;
+        }
         return;
     }
     g_port_key_events++;
@@ -646,6 +936,12 @@ static void port_ReadInput(u32 blank) {
 static void port_ShowBlank(u32 blank) {
     port_OpenWindow();
     port_DrawPicture(blank);
+    port_WatchGame(blank);
+    port_DrawCounter();
+    if (g_port_window_options.fault_at > 0 &&
+        blank == (u32)g_port_window_options.fault_at) {
+        port_FaultOnPurpose();
+    }
     if (!g_port_window_options.is_fast) {
         s32 queue_error = 0;
 
@@ -661,20 +957,22 @@ static void port_ShowBlank(u32 blank) {
     g_port_blanks_shown++;
     if (g_port_vsync && port_PaceIsHeldBack(&g_port_pace)) {
         port_Say("the display holds the game back: it is no longer waited "
-                 "for (vsync off)");
+                 "for (vsync off); blank %u",
+                 blank);
         g_port_vsync = 0;
         SDL_RenderSetVSync(g_port_renderer, 0);
     }
 }
 
-/* The program ends (port_platform.h): what the window did, and SDL's
- * leave. */
-static void port_CloseWindow(void) {
+/* The program ends (port_platform.h): what the window did, SDL's leave,
+ * and the log's last lines. */
+static void port_CloseWindow(s32 code) {
     if (g_port_audio_tap != NULL) {
         fclose(g_port_audio_tap);
         g_port_audio_tap = NULL;
     }
     if (!g_port_is_open) {
+        port_EndSession(code);
         return;
     }
     if (g_port_blanks_shown != 0) {
@@ -696,6 +994,7 @@ static void port_CloseWindow(void) {
         port_Say("sound: ran out %u times, %u samples thrown away",
                  g_port_ring.underruns, g_port_ring.dropped);
     }
+    port_EndSession(code);
     SDL_Quit();
     g_port_is_open = 0;
 }
@@ -713,6 +1012,8 @@ void port_StartWindow(void) {
     g_port_blank_hook = port_ShowBlank;
     g_port_sound_hook = port_QueueSound;
     g_port_quit_hook = port_CloseWindow;
+    g_port_crash_hook = port_AfterCrash;
+    g_port_disc_hook = port_NoteDisc;
     if (g_port_window_options.inject != PORT_INJECT_NONE) {
         g_port_press_hook = port_InjectPress;
     }

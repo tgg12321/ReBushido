@@ -23,6 +23,12 @@ extern void port_SetPadButton(s32 pad, u32 button, s32 down);
 extern void (*g_port_input_hook)(u32 blank);
 extern void (*g_port_blank_hook)(u32 blank);
 extern s32 (*g_port_press_hook)(s32 pad, u32 button, s32 down);
-extern void (*g_port_quit_hook)(void);
+extern void (*g_port_quit_hook)(s32 code);
+extern void (*g_port_crash_hook)(void);
+extern void (*g_port_disc_hook)(s32 kind, u32 sector);
+#define PORT_RECENT_CALLS 32
+extern u32 g_port_recent_calls[PORT_RECENT_CALLS];
+extern u32 g_port_recent_call_count;
+extern const char *port_FindFunction(u32 address, u32 *offset);
 
 #endif /* PORT_WINDOW_SHARED_H */

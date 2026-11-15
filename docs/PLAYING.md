@@ -68,7 +68,10 @@ one's and the second player two's; they can be plugged in and pulled
 out while the game runs.
 
 **Escape**, or closing the window, ends the program. **F11** or
-**Alt+Enter** fills the screen and comes back.
+**Alt+Enter** fills the screen and comes back. **F3** shows and hides
+the counter in the corner: `59.8/30.0 100%` is the pictures shown a
+second, the game's own frames a second (30 in a fight and 60 in the
+main menu are full speed), and the speed against the console's.
 
 ## Changing the keys and the picture
 
@@ -79,6 +82,7 @@ Make a text file `rebushido.cfg` beside the program. A line is
 scale = integer          # fit (as large as fits), integer, or stretch
 filter = linear          # nearest (each pixel a block) or linear
 fullscreen = on
+fps = off                # no counter in the corner (F3 brings it back)
 p1.cross = key Space     # Space is player one's Cross, and Z no longer
 p1.circle = key Left Ctrl
 p2.start = pad a         # on player two's controller, A is Start
@@ -103,8 +107,14 @@ starts.
 
 ## If something is wrong
 
-Start it from a terminal, so that what it says stays on the screen. A
-line that begins `rebushido: stopped:` is the game's own code failing,
-with where; that line and the ones after it are what to report. A
+**Every session writes a log**: the folder `logs` beside the program,
+one file a session, named for its date and time
+(`rebushido-20261115-203000.log`); the newest twenty are kept. It has
+everything the program said, what it ran on, where the game was (each
+screen, each fight with its fighters and stage) and a line every ten
+seconds. If the game stops by itself, a box says so and names the log,
+and the log's last lines say where it stopped: that file is what to
+send. A line in it that begins `rebushido: stopped:` is the game's own
+code failing, with where. A
 picture or a sound that is wrong is worth reporting with what was on the
 screen: this is the first time anyone looks.

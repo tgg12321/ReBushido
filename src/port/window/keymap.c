@@ -50,6 +50,9 @@ const char g_port_default_settings[] =
     "fullscreen = off       # on or off: how it starts\n"
     "vsync = on             # on or off: wait for the display\n"
     "deadzone = 40          # how far a stick counts, in parts of 100\n"
+    "fps = on               # on or off: the counter in the corner (F3)\n"
+    "fps_corner = top-left  # top-left, top-right, bottom-left,\n"
+    "                       # bottom-right\n"
     "\n"
     "# Player one, on the keyboard\n"
     "p1.up = key Up\n"
@@ -370,6 +373,25 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "vsync is on or off";
     }
+    if (port_WordsMatch(name, "fps")) {
+        return port_ReadChoice(value, "off", "on", &settings->fps)
+                   ? NULL
+                   : "fps is on or off";
+    }
+    if (port_WordsMatch(name, "fps_corner")) {
+        static const char * const corners[] = {
+            "top-left", "top-right", "bottom-left", "bottom-right"};
+        s32 corner;
+
+        for (corner = 0; corner <= PORT_CORNER_BOTTOM_RIGHT; corner++) {
+            if (port_WordsMatch(value, corners[corner])) {
+                settings->fps_corner = corner;
+                return NULL;
+            }
+        }
+        return "fps_corner is top-left, top-right, bottom-left or "
+               "bottom-right";
+    }
     if (port_WordsMatch(name, "deadzone")) {
         if (!port_ReadDigits(value, &number) || number < 1 ||
             number >= PERCENT) {
@@ -441,6 +463,8 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->is_linear = 0;
     settings->vsync = 1;
     settings->deadzone = PORT_DEADZONE_DEFAULT;
+    settings->fps = 1;
+    settings->fps_corner = PORT_CORNER_TOP_LEFT;
     /* a name the window's library does not know leaves that one out */
     port_ReadLines(settings, text, lookup, NULL, 1);
 }

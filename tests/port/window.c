@@ -1,5 +1,5 @@
 /* The port's window, without SDL: the picture's place, the sound's queue, the
- * clock, the keys. */
+ * clock, the keys, the log's names and lines, the counter. */
 /* The arithmetic of the native port's window (src/port/window/; docs/
  * PORT.md, "The window"), held to cases worked out by hand. Nothing here
  * opens a window or a sound card: the four files ask nothing of SDL or
@@ -9,6 +9,8 @@
 #include "src/port/window/ring.c"
 #include "src/port/window/pace.c"
 #include "src/port/window/keymap.c"
+#include "src/port/window/logname.c"
+#include "src/port/window/fps.c"
 #include "runtime/runtime.h"
 
 /* ---- where the picture goes ---- */
@@ -723,10 +725,304 @@ static void test_Keys(void) {
     CHECK(binding != NULL && binding->code == 44);
 }
 
+/* ---- the session's log ---- */
+
+#define TEST_LOGS 25
+
+static s32 g_test_line_count;
+static u32 g_test_line_lengths[8];
+static char g_test_lines[8][16];
+
+static void test_TakeLine(const char *line, u32 length) {
+    u32 i;
+
+    if (g_test_line_count < 8) {
+        g_test_line_lengths[g_test_line_count] = length;
+        for (i = 0; i < length && i < 15; i++) {
+            g_test_lines[g_test_line_count][i] = line[i];
+        }
+        g_test_lines[g_test_line_count][i] = 0;
+    }
+    g_test_line_count++;
+}
+
+static void test_Log(void) {
+    static char names[TEST_LOGS + 3][PORT_LOG_NAME_BYTES];
+    static const char *listed[TEST_LOGS + 3];
+    static u8 is_old[TEST_LOGS + 3];
+    static char many[1100];
+    PortTee tee;
+    char name[PORT_LOG_NAME_BYTES + 4];
+    s32 i;
+    s32 old;
+
+    /* a name for a moment, of one length, in order of time as text */
+    port_FormatLogName(2026, 11, 15, 3, 7, 9, name);
+    CHECK(test_StringsEqual(name, "rebushido-20261115-030709.log"));
+    CHECK_EQ(name[PORT_LOG_NAME_BYTES - 1], 0);
+    CHECK(port_IsLogName(name));
+    CHECK(port_IsLogName("rebushido-19991231-235959.log"));
+    CHECK(!port_IsLogName("rebushido-2026115-030709.log"));
+    CHECK(!port_IsLogName("rebushido-20261115_030709.log"));
+    CHECK(!port_IsLogName("rebushido-20261115-030709.txt"));
+    CHECK(!port_IsLogName("rebushido-20261115-030709.log.bak"));
+    CHECK(!port_IsLogName("xrebushido-20261115-030709.log"));
+    CHECK(!port_IsLogName("rebushido-2026111a-030709.log"));
+    CHECK(!port_IsLogName("rebushido.cfg"));
+    CHECK(!port_IsLogName(""));
+
+    /* 25 logs, in no order, among files that are not logs: the five
+     * oldest go, the twenty newest stay, and nothing else is touched */
+    for (i = 0; i < TEST_LOGS; i++) {
+        /* seconds 0 to 24, shuffled by a step of seven */
+        port_FormatLogName(2026, 11, 15, 12, 0, (i * 7) % TEST_LOGS, names[i]);
+        listed[i] = names[i];
+    }
+    listed[TEST_LOGS] = "rebushido.cfg";
+    listed[TEST_LOGS + 1] = "notes.txt";
+    listed[TEST_LOGS + 2] = "rebushido-20200101-000000.log.old";
+    old = port_FindOldLogs(listed, TEST_LOGS + 3, PORT_LOGS_KEPT, is_old);
+    CHECK_EQ(old, 5);
+    for (i = 0; i < TEST_LOGS; i++) {
+        CHECK_EQ(is_old[i], (i * 7) % TEST_LOGS < 5);
+    }
+    CHECK_EQ(is_old[TEST_LOGS], 0);
+    CHECK_EQ(is_old[TEST_LOGS + 1], 0);
+    CHECK_EQ(is_old[TEST_LOGS + 2], 0);
+    /* twenty or fewer: none goes */
+    CHECK_EQ(port_FindOldLogs(listed, 20, PORT_LOGS_KEPT, is_old), 0);
+    CHECK_EQ(port_FindOldLogs(listed, 0, PORT_LOGS_KEPT, is_old), 0);
+    /* a year's last second is older than the next year's first */
+    listed[0] = "rebushido-20260101-000000.log";
+    listed[1] = "rebushido-20251231-235959.log";
+    CHECK_EQ(port_FindOldLogs(listed, 2, 1, is_old), 1);
+    CHECK_EQ(is_old[0], 0);
+    CHECK_EQ(is_old[1], 1);
+
+    /* what is printed in pieces comes out as whole lines, each when its
+     * end comes; an empty line is a line; what has not ended waits */
+    tee.used = 0;
+    g_test_line_count = 0;
+    port_TeeBytes(&tee, "ab", 2, test_TakeLine);
+    CHECK_EQ(g_test_line_count, 0);
+    port_TeeBytes(&tee, "c\nde\r\n\nf", 8, test_TakeLine);
+    CHECK_EQ(g_test_line_count, 3);
+    CHECK(test_StringsEqual(g_test_lines[0], "abc"));
+    CHECK(test_StringsEqual(g_test_lines[1], "de"));
+    CHECK_EQ(g_test_line_lengths[2], 0);
+    port_FlushTee(&tee, test_TakeLine);
+    CHECK_EQ(g_test_line_count, 4);
+    CHECK(test_StringsEqual(g_test_lines[3], "f"));
+    port_FlushTee(&tee, test_TakeLine);
+    CHECK_EQ(g_test_line_count, 4);
+    /* a line longer than the buffer comes in pieces, nothing lost */
+    for (i = 0; i < 1100; i++) {
+        many[i] = 'x';
+    }
+    g_test_line_count = 0;
+    port_TeeBytes(&tee, many, 1100, test_TakeLine);
+    port_TeeBytes(&tee, "\n", 1, test_TakeLine);
+    CHECK_EQ(g_test_line_count, 3);
+    CHECK_EQ(g_test_line_lengths[0], PORT_TEE_LINE_MAX);
+    CHECK_EQ(g_test_line_lengths[1], PORT_TEE_LINE_MAX);
+    CHECK_EQ(g_test_line_lengths[2], 1100 - 2 * PORT_TEE_LINE_MAX);
+
+    /* the sum everyone's CRC-32 gives "123456789", whole or in pieces */
+    CHECK_EQ(port_Crc32(0, (const u8 *)"123456789", 9), 0xCBF43926);
+    CHECK_EQ(port_Crc32(
+                 port_Crc32(0, (const u8 *)"1234", 4), (const u8 *)"56789", 5),
+             0xCBF43926);
+    CHECK_EQ(port_Crc32(0, (const u8 *)"", 0), 0);
+    CHECK_EQ(port_Crc32(0, (const u8 *)"a", 1), 0xE8B7BE43);
+}
+
+/* ---- the counter in the corner ---- */
+
+/* How many pixels of a buffer are `ink`. */
+static s32 test_CountInk(const u32 *pixels, s32 count, u32 ink) {
+    s32 found = 0;
+    s32 i;
+
+    for (i = 0; i < count; i++) {
+        found += pixels[i] == ink;
+    }
+    return found;
+}
+
+static void test_Counter(void) {
+    static const char shapes[] = "0123456789/%.-";
+    static u32 pixels[3 * 20 * 9];
+    PortFpsMeter meter;
+    PortRect picture;
+    PortRect place;
+    char text[PORT_FPS_TEXT_BYTES];
+    u32 now;
+    s32 i;
+    s32 j;
+
+    /* sixty a second: one every 735 samples of the clock. The rate is
+     * worked out each half second, to a tenth */
+    meter.is_started = 0;
+    now = 1000;
+    port_CountFps(&meter, now, 1);
+    CHECK_EQ(meter.tenths, 0);
+    for (i = 0; i < 29; i++) {
+        now += 735;
+        port_CountFps(&meter, now, 1);
+    }
+    CHECK_EQ(meter.tenths, 0); /* not half a second yet */
+    now += 735;
+    port_CountFps(&meter, now, 1);
+    CHECK_EQ(meter.tenths, 600);
+    /* the console's own blanks, 737 samples apart: 59.8 */
+    for (i = 0; i < 30; i++) {
+        now += 737;
+        port_CountFps(&meter, now, 1);
+    }
+    CHECK_EQ(meter.tenths, 598);
+    /* a frame of the game every second blank, counted at every blank:
+     * thirty a second */
+    for (i = 0; i < 30; i++) {
+        now += 735;
+        port_CountFps(&meter, now, (u32)(i & 1));
+    }
+    CHECK_EQ(meter.tenths, 300);
+    /* several at once count as several */
+    now += 22050;
+    port_CountFps(&meter, now, 25);
+    CHECK_EQ(meter.tenths, 500);
+    /* nothing for half a second: none a second */
+    now += 22050;
+    port_CountFps(&meter, now, 0);
+    CHECK_EQ(meter.tenths, 0);
+    /* the clock going round at 32 bits */
+    meter.is_started = 0;
+    now = 0xFFFFF000U;
+    port_CountFps(&meter, now, 1);
+    for (i = 0; i < 30; i++) {
+        now += 735;
+        port_CountFps(&meter, now, 1);
+    }
+    CHECK(now < 0x10000);
+    CHECK_EQ(meter.tenths, 600);
+
+    /* the text: shown, the game's, and the speed against the console's
+     * 59.826 */
+    port_FormatFps(text, 598, 299);
+    CHECK(test_StringsEqual(text, "59.8/29.9 100%"));
+    port_FormatFps(text, 600, 300);
+    CHECK(test_StringsEqual(text, "60.0/30.0 100%"));
+    port_FormatFps(text, 0, 0);
+    CHECK(test_StringsEqual(text, "0.0/0.0 0%"));
+    port_FormatFps(text, 299, 150);
+    CHECK(test_StringsEqual(text, "29.9/15.0 50%"));
+    port_FormatFps(text, 1200, 600);
+    CHECK(test_StringsEqual(text, "120.0/60.0 201%"));
+    port_FormatFps(text, 9999, 9999);
+    CHECK(port_MeasureText(text) + 4 <= 112); /* the widest fits its box */
+
+    /* every letter of the text has a shape of five by seven, no two
+     * alike; a digit reaches the top row and the bottom */
+    for (i = 0; shapes[i] != 0; i++) {
+        const u8 *rows = port_FindGlyph(shapes[i]);
+
+        CHECK(rows != NULL);
+        for (j = 0; rows != NULL && j < PORT_GLYPH_H; j++) {
+            CHECK(rows[j] < (1 << PORT_GLYPH_W));
+        }
+        if (rows != NULL && shapes[i] >= '0' && shapes[i] <= '9') {
+            CHECK(rows[0] != 0 && rows[PORT_GLYPH_H - 1] != 0);
+        }
+        for (j = 0; rows != NULL && j < i; j++) {
+            CHECK(!test_BytesEqual(
+                rows, port_FindGlyph(shapes[j]), PORT_GLYPH_H));
+        }
+    }
+    CHECK(port_FindGlyph(' ') == NULL);
+    CHECK(port_FindGlyph('A') == NULL);
+    CHECK_EQ(port_MeasureText(""), 0);
+    CHECK_EQ(port_MeasureText("0"), 5);
+    CHECK_EQ(port_MeasureText("60/30"), 29);
+
+    /* a 1 at (1, 1) of the middle one of three boxes of 20 by 9: its
+     * ten pixels, where they belong, and nothing in the boxes beside */
+    port_DrawText(pixels + 20 * 9, 20, 9, 1, 1, "1", 0xFFFFFFFF);
+    CHECK_EQ(test_CountInk(pixels, 3 * 20 * 9, 0xFFFFFFFF), 10);
+    CHECK_EQ(pixels[20 * 9 + 1 * 20 + 3], 0xFFFFFFFF); /* its top */
+    CHECK_EQ(pixels[20 * 9 + 2 * 20 + 2], 0xFFFFFFFF); /* its flag */
+    CHECK_EQ(pixels[20 * 9 + 7 * 20 + 2], 0xFFFFFFFF); /* its foot */
+    CHECK_EQ(pixels[20 * 9 + 7 * 20 + 4], 0xFFFFFFFF);
+    CHECK_EQ(pixels[20 * 9 + 7 * 20 + 5], 0);
+    /* a space is a letter's room; what runs off the box is left out */
+    for (i = 0; i < 3 * 20 * 9; i++) {
+        pixels[i] = 0;
+    }
+    port_DrawText(pixels + 20 * 9, 20, 9, 1, 1, "1 1", 0xFF00FF00);
+    CHECK_EQ(test_CountInk(pixels, 3 * 20 * 9, 0xFF00FF00), 20);
+    CHECK_EQ(pixels[20 * 9 + 1 * 20 + 15], 0xFF00FF00);
+    for (i = 0; i < 3 * 20 * 9; i++) {
+        pixels[i] = 0;
+    }
+    port_DrawText(pixels + 20 * 9, 20, 9, -3, -2, "8", 0xFF00FF00);
+    port_DrawText(pixels + 20 * 9, 20, 9, 17, 5, "8", 0xFF00FF00);
+    port_DrawText(pixels + 20 * 9, 20, 9, 40, 40, "8", 0xFF00FF00);
+    CHECK_EQ(test_CountInk(pixels, 20 * 9, 0xFF00FF00), 0);
+    CHECK_EQ(test_CountInk(pixels + 2 * 20 * 9, 20 * 9, 0xFF00FF00), 0);
+    CHECK(test_CountInk(pixels + 20 * 9, 20 * 9, 0xFF00FF00) > 0);
+
+    /* its place: in the picture's corner, each of its pixels as many of
+     * the window's as the picture's 240 lines are, whole */
+    picture.x = 240;
+    picture.y = 0;
+    picture.w = 1440;
+    picture.h = 1080;
+    port_PlaceCounter(&picture, 64, 11, PORT_CORNER_TOP_LEFT, &place);
+    CHECK_EQ(place.w, 256);
+    CHECK_EQ(place.h, 44);
+    CHECK_EQ(place.x, 248);
+    CHECK_EQ(place.y, 8);
+    port_PlaceCounter(&picture, 64, 11, PORT_CORNER_TOP_RIGHT, &place);
+    CHECK_EQ(place.x, 240 + 1440 - 256 - 8);
+    CHECK_EQ(place.y, 8);
+    port_PlaceCounter(&picture, 64, 11, PORT_CORNER_BOTTOM_LEFT, &place);
+    CHECK_EQ(place.x, 248);
+    CHECK_EQ(place.y, 1080 - 44 - 8);
+    port_PlaceCounter(&picture, 64, 11, PORT_CORNER_BOTTOM_RIGHT, &place);
+    CHECK_EQ(place.x, 240 + 1440 - 256 - 8);
+    CHECK_EQ(place.y, 1080 - 44 - 8);
+    /* a picture smaller than the console's: once, never less */
+    picture.x = 10;
+    picture.y = 20;
+    picture.w = 266;
+    picture.h = 200;
+    port_PlaceCounter(&picture, 64, 11, PORT_CORNER_TOP_LEFT, &place);
+    CHECK_EQ(place.w, 64);
+    CHECK_EQ(place.h, 11);
+    CHECK_EQ(place.x, 12);
+    CHECK_EQ(place.y, 22);
+
+    /* its settings */
+    port_SetDefaultSettings(&g_test_settings, test_LookUp);
+    CHECK_EQ(g_test_settings.fps, 1);
+    CHECK_EQ(g_test_settings.fps_corner, PORT_CORNER_TOP_LEFT);
+    CHECK_EQ(g_test_settings.count, 2 * (14 + 18));
+    test_ReadText("fps = off\nfps_corner = bottom-right\n");
+    CHECK_EQ(g_test_complaints, 0);
+    CHECK_EQ(g_test_settings.fps, 0);
+    CHECK_EQ(g_test_settings.fps_corner, PORT_CORNER_BOTTOM_RIGHT);
+    test_ReadText("fps = on\nfps_corner = Top-Right\nfps_corner = middle\n"
+                  "fps = maybe\n");
+    CHECK_EQ(g_test_complaints, 2);
+    CHECK_EQ(g_test_settings.fps, 1);
+    CHECK_EQ(g_test_settings.fps_corner, PORT_CORNER_TOP_RIGHT);
+}
+
 void test_Main(void) {
     test_Place();
     test_Pixels();
     test_Ring();
     test_Pace();
     test_Keys();
+    test_Log();
+    test_Counter();
 }

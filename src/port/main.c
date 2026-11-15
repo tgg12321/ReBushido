@@ -28,7 +28,7 @@ static s32 g_port_quitting;
 
 /* The window's turn as the program ends (port_platform.h): nothing in
  * the build without one. */
-void (*g_port_quit_hook)(void);
+void (*g_port_quit_hook)(s32 code);
 
 static const char g_port_usage[] =
     "rebushido: the native port of ReBushido, as far as it goes: the game\n"
@@ -78,7 +78,7 @@ void port_Quit(s32 code) {
         }
         port_PrintStubs();
         if (g_port_quit_hook != NULL) {
-            g_port_quit_hook();
+            g_port_quit_hook(code);
         }
     }
     port_FlushOutput();

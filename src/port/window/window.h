@@ -167,6 +167,8 @@ typedef struct {
     s32 is_linear;     /* the picture smoothed as it is scaled */
     s32 vsync;         /* wait for the display */
     s32 deadzone;      /* parts of a hundred */
+    s32 fps;           /* the counter in the corner is shown */
+    s32 fps_corner;    /* PORT_CORNER_... */
 } PortSettings;
 
 /* The number of the key, button or axis of this name, as the window's
@@ -206,5 +208,116 @@ extern u32 port_GetHeldButtons(const PortSettings *settings, s32 pad);
  * (0) that presses this button of a pad; NULL if nothing does. */
 extern const PortBinding *port_FindBinding(
     const PortSettings *settings, s32 keys, s32 pad, u32 button);
+
+/* ---- the game, for the log (gamestate.c) ---- */
+
+/* What the log follows of the game: read from the game's own variables,
+ * never written. */
+typedef struct {
+    s32 screen;   /* enum Screen */
+    s32 in_fight; /* the screen is the fight itself */
+    s32 frames;   /* frames shown since power on */
+    s32 mode;     /* enum FightMode */
+    s32 stage;
+    s32 winner;        /* 0, 1, or -1 for nobody */
+    s32 defeat_frames; /* frames since a fighter was cut down */
+    s32 roster[2];
+    s32 weapon[2];
+    s32 is_cpu[2];
+} PortGameState;
+
+extern void port_ReadGameState(PortGameState *state);
+/* Names for the log; "?" for a number that has none. */
+extern const char *port_NameScreen(s32 screen);
+extern const char *port_NameMode(s32 mode);
+extern const char *port_NameRoster(s32 roster);
+extern const char *port_NameWeapon(s32 weapon);
+extern const char *port_NameStage(s32 stage);
+/* `ReBushido VERSION (COMMIT)`. */
+extern const char *port_GetVersionText(void);
+
+/* ---- the session's log (logname.c) ---- */
+
+/* `rebushido-YYYYMMDD-HHMMSS.log` and the 0 after it. */
+#define PORT_LOG_NAME_BYTES 30
+/* How many sessions' logs are kept. */
+#define PORT_LOGS_KEPT 20
+
+/* A log's name for a date and a time of day, into PORT_LOG_NAME_BYTES. */
+extern void port_FormatLogName(
+    s32 year, s32 month, s32 day, s32 hour, s32 minute, s32 second, char *out);
+/* Whether a file's name is a log's: exactly that form. */
+extern s32 port_IsLogName(const char *name);
+/* Of `count` names of a folder's files, which are logs that `keep` or
+ * more logs are newer than: 1 in `is_old` for each. Returns how many. A
+ * name that is not a log's is never one. */
+extern s32 port_FindOldLogs(
+    const char * const *names, s32 count, s32 keep, u8 *is_old);
+
+/* What the program prints comes in pieces of any size; the log wants
+ * whole lines, each written and flushed as it ends, so that a crash
+ * loses nothing that was said before it. */
+#define PORT_TEE_LINE_MAX 512
+
+typedef struct {
+    char line[PORT_TEE_LINE_MAX];
+    u32 used;
+} PortTee;
+
+/* A whole line, without its end; `length` bytes, no 0 after them. */
+typedef void (*PortLineSink)(const char *line, u32 length);
+extern void port_TeeBytes(
+    PortTee *tee, const char *bytes, u32 count, PortLineSink sink);
+extern void port_FlushTee(PortTee *tee, PortLineSink sink);
+
+/* zlib's sum of 32 bits; `crc` is 0 at the start, then the sum so far. */
+extern u32 port_Crc32(u32 crc, const u8 *bytes, u32 count);
+
+/* ---- the counter in the corner (fps.c) ---- */
+
+/* A rate is worked out over this much of the clock: half a second. */
+#define PORT_FPS_WINDOW 22050
+
+typedef struct {
+    s32 is_started;
+    u32 window_start; /* the clock, in samples */
+    u32 count;        /* things since then */
+    u32 tenths;       /* the last rate, in tenths a second */
+} PortFpsMeter;
+
+/* `events` more of what is counted happened, at `now` on the clock. */
+extern void port_CountFps(PortFpsMeter *meter, u32 now, u32 events);
+
+/* The counter's text, `59.8/30.0 100%`: the pictures shown a second,
+ * the game's own frames a second (it works a frame out every second
+ * vertical blank in a fight, every blank in the main menu), and the
+ * pictures shown as parts in a hundred of the console's 59.83. */
+#define PORT_FPS_TEXT_BYTES 32
+extern void port_FormatFps(char *out, u32 shown_tenths, u32 game_tenths);
+
+/* The digits' shapes: 5 by 7, a column between two. */
+#define PORT_GLYPH_W 5
+#define PORT_GLYPH_H 7
+/* A letter's seven rows, the top first, five bits each, the left
+ * highest; NULL for one that has no shape (the digits, `/`, `%`, `.`
+ * and `-` have). */
+extern const u8 *port_FindGlyph(char letter);
+/* How many pixels wide a text is. */
+extern s32 port_MeasureText(const char *text);
+extern void port_DrawText(
+    u32 *pixels, s32 w, s32 h, s32 x, s32 y, const char *text, u32 color);
+
+enum {
+    PORT_CORNER_TOP_LEFT = 0,
+    PORT_CORNER_TOP_RIGHT = 1,
+    PORT_CORNER_BOTTOM_LEFT = 2,
+    PORT_CORNER_BOTTOM_RIGHT = 3,
+};
+
+/* Where a box of the counter's own pixels goes in the window, given
+ * where the picture is: in the picture's corner, each of its pixels a
+ * whole number of the window's. */
+extern void port_PlaceCounter(
+    const PortRect *picture, s32 box_w, s32 box_h, s32 corner, PortRect *out);
 
 #endif /* PORT_WINDOW_H */

@@ -7,13 +7,15 @@
  *
  *   rebushido [--image FILE] [--config FILE] [--fullscreen]
  *             [--scale fit|integer|stretch] [--filter nearest|linear]
- *             [--no-vsync] [--no-sound]
+ *             [--no-vsync] [--no-sound] [--no-fps] [--no-log]
+ *             [--log FILE]
  *             [the options of the build without a window]
  *
  * and for the tests, which show and sound nothing:
  *
  *             [--fast] [--inject keys|pads] [--tap-frames FOLDER]
- *             [--tap-every N] [--tap-audio FILE] */
+ *             [--tap-every N] [--tap-audio FILE] [--fault-at N]
+ *             [--fault-in-sound N] */
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <dirent.h>
@@ -35,13 +37,16 @@
 #define ARGUMENTS_MAX 64
 #define SETTINGS_FILE "rebushido.cfg"
 #define SETTINGS_BYTES_MAX 0x10000
+#define IMAGE_SUM_BYTES 0x100000
+#define CUE_BYTES_MAX 2048
 
 static const char g_port_window_usage[] =
     "rebushido: ReBushido's native port, in a window (docs/PORT.md)\n"
     "\n"
     "  rebushido [--image FILE] [--config FILE] [--fullscreen]\n"
     "            [--scale fit|integer|stretch] [--filter nearest|linear]\n"
-    "            [--no-vsync] [--no-sound]\n"
+    "            [--no-vsync] [--no-sound] [--no-fps] [--no-log]\n"
+    "            [--log FILE]\n"
     "\n"
     "  --image FILE   your own image of the game's disc: the .cue, or the\n"
     "                 .bin of raw sectors it names. Without it the first\n"
@@ -56,9 +61,16 @@ static const char g_port_window_usage[] =
     "  --filter KIND  nearest: each pixel a block; linear: smoothed\n"
     "  --no-vsync     do not wait for the display\n"
     "  --no-sound     open no sound card\n"
+    "  --no-fps       no counter in the corner (F3 shows and hides it)\n"
+    "  --no-log       keep no log of the session\n"
+    "  --log FILE     the session's log; without it a new file in logs/\n"
+    "                 beside the program, of which the newest twenty are\n"
+    "                 kept\n"
     "\n"
     "In the window: Escape, or closing it, ends the program. F11 or\n"
-    "Alt+Enter fills the screen and comes back.\n"
+    "Alt+Enter fills the screen and comes back. F3 shows and hides the\n"
+    "counter in the corner: pictures shown a second, the game's own\n"
+    "frames a second, and the speed against the console's.\n"
     "\n"
     "There is no memory card yet: the game finds none, so settings and\n"
     "what a player has unlocked are not kept from one run to the next.\n"
@@ -82,7 +94,10 @@ static const char g_port_window_usage_end[] =
     "(never wait), --inject keys|pads (a plan's presses as key events,\n"
     "or as two controllers SDL makes up), --tap-frames FOLDER and\n"
     "--tap-every N (each Nth picture as SDL is given it), --tap-audio FILE\n"
-    "(the samples as they are queued).\n";
+    "(the samples as they are queued), --fault-at N and --fault-in-sound N\n"
+    "(touch memory that is not there at vertical blank N, on the game's\n"
+    "stack or on the sound card's thread: what a crash leaves in the\n"
+    "log).\n";
 
 static void port_Complain(const char *problem, const char *word) {
     fprintf(stderr, "rebushido: %s%s\nrebushido: --help says what it takes\n",
@@ -95,8 +110,8 @@ static void port_Complain(const char *problem, const char *word) {
 static const char *g_port_settings_path;
 
 static void port_ComplainOfLine(s32 line, const char *why, const char *text) {
-    fprintf(stderr, "rebushido: %s line %d is not used (%s): %s\n",
-            g_port_settings_path, line, why, text);
+    port_Say("%s line %d is not used (%s): %s", g_port_settings_path, line, why,
+             text);
 }
 
 /* A whole text file with a 0 after it, or NULL. */
@@ -221,23 +236,85 @@ static const char *port_FindImage(const char *beside) {
 
     if (port_FindFileEnding(beside, ".cue", path, sizeof(path)) ||
         port_FindFileEnding(beside, ".bin", path, sizeof(path))) {
-        fprintf(
-            stderr, "rebushido: the disc image beside the program: %s\n", path);
+        port_Say("the disc image beside the program: %s", path);
         return path;
     }
     if (port_AskForImage(path, sizeof(path))) {
         return path;
     }
-    fprintf(stderr,
-            "rebushido: no disc image. The game is read from your own "
-            "image of the\n"
-            "rebushido: Bushido Blade 2 disc (SLUS-00663), which is not part "
-            "of this program.\n"
-            "rebushido: Put its .cue and .bin beside the program (%s),\n"
-            "rebushido: or name it: rebushido --image \"Bushido Blade 2 "
-            "(USA).cue\"\n",
-            beside[0] != 0 ? beside : "this folder");
+    port_Say("no disc image. The game is read from your own image of the");
+    port_Say("Bushido Blade 2 disc (SLUS-00663), which is not part of this "
+             "program.");
+    port_Say("Put its .cue and .bin beside the program (%s),",
+             beside[0] != 0 ? beside : "this folder");
+    port_Say("or name it: rebushido --image \"Bushido Blade 2 (USA).cue\"");
+    port_EndSession(PORT_EXIT_USAGE);
     exit(PORT_EXIT_USAGE);
+}
+
+/* For the log: a file of the image by name, its size, and a sum of its
+ * first megabyte, which tells one image from another without reading
+ * 700 MB as the program starts. (The port itself checks every sector
+ * it reads for its mark and its own number: src/port/disc.c.) */
+static void port_NoteImageFile(const char *path) {
+    static u8 bytes[IMAGE_SUM_BYTES];
+    FILE *file = fopen(path, "rb");
+    long long size = 0;
+    size_t got;
+
+    if (file == NULL) {
+        port_Note("image: %s (cannot be opened)", path);
+        return;
+    }
+    got = fread(bytes, 1, sizeof(bytes), file);
+#if defined(_WIN32)
+    if (_fseeki64(file, 0, SEEK_END) == 0) {
+        size = _ftelli64(file);
+    }
+#else
+    if (fseeko(file, 0, SEEK_END) == 0) {
+        size = ftello(file);
+    }
+#endif
+    fclose(file);
+    port_Note("image: %s; %lld bytes; CRC-32 of its first %u bytes %08X", path,
+              size, (unsigned)got, (unsigned)port_Crc32(0, bytes, (u32)got));
+}
+
+/* The image named, and, where that is a cue sheet, the file of sectors
+ * its first FILE line names, beside it. */
+static void port_NoteImage(const char *path) {
+    char sectors[PATH_BYTES_MAX];
+    char text[CUE_BYTES_MAX + 1];
+    const char *name;
+    const char *end;
+    const char *cut = path;
+    const char *at;
+    FILE *file;
+    size_t got;
+
+    port_NoteImageFile(path);
+    if (!port_EndsWith(path, ".cue") || (file = fopen(path, "rb")) == NULL) {
+        return;
+    }
+    got = fread(text, 1, CUE_BYTES_MAX, file);
+    fclose(file);
+    text[got] = 0;
+    name = strstr(text, "FILE \"");
+    end = name != NULL ? strchr(name + 6, '"') : NULL;
+    if (end == NULL) {
+        return;
+    }
+    name += 6;
+    /* the cue sheet's folder, then the name */
+    for (at = path; *at != 0; at++) {
+        if (*at == '/' || *at == '\\') {
+            cut = at + 1;
+        }
+    }
+    snprintf(sectors, sizeof(sectors), "%.*s%.*s", (int)(cut - path), path,
+             (int)(end - name), name);
+    port_NoteImageFile(sectors);
 }
 
 /* ---- the program ---- */
@@ -286,6 +363,11 @@ int main(int argc, char **argv) {
     s32 no_vsync = 0;
     s32 scale = -1;
     s32 filter = -1;
+    s32 no_fps = 0;
+    s32 no_log = 0;
+    const char *log = NULL;
+    const char *image = NULL;
+    s32 code;
     s32 i;
 
     SDL_SetMainReady();
@@ -308,6 +390,16 @@ int main(int argc, char **argv) {
             no_vsync = 1;
         } else if (strcmp(word, "--no-sound") == 0) {
             options->no_sound = 1;
+        } else if (strcmp(word, "--no-fps") == 0) {
+            no_fps = 1;
+        } else if (strcmp(word, "--no-log") == 0) {
+            no_log = 1;
+        } else if (strcmp(word, "--log") == 0 && has_value) {
+            log = argv[++i];
+        } else if (strcmp(word, "--fault-at") == 0 && has_value) {
+            options->fault_at = atoi(argv[++i]);
+        } else if (strcmp(word, "--fault-in-sound") == 0 && has_value) {
+            options->fault_in_sound = atoi(argv[++i]);
         } else if (strcmp(word, "--fast") == 0) {
             options->is_fast = 1;
         } else if (strcmp(word, "--config") == 0 && has_value) {
@@ -336,6 +428,7 @@ int main(int argc, char **argv) {
             /* the port's own, which it reads itself */
             if (strcmp(word, "--image") == 0) {
                 has_image = 1;
+                image = has_value ? argv[i + 1] : NULL;
             }
             if (count == ARGUMENTS_MAX) {
                 port_Complain("too many words on the command line", "");
@@ -343,7 +436,13 @@ int main(int argc, char **argv) {
             passed[count++] = argv[i];
         }
     }
+    if (!no_log) {
+        port_OpenLog(log, beside);
+    }
     port_LoadSettings(config, beside);
+    if (no_fps) {
+        g_port_settings.fps = 0;
+    }
     if (fullscreen) {
         g_port_settings.is_fullscreen = 1;
     }
@@ -357,21 +456,36 @@ int main(int argc, char **argv) {
         g_port_settings.is_linear = filter;
     }
     if (!has_image) {
+        image = port_FindImage(beside);
         passed[count++] = image_option;
-        passed[count++] = (char *)port_FindImage(beside);
+        passed[count++] = (char *)image;
     }
     passed[count] = NULL;
+    {
+        char line[2 * PATH_BYTES_MAX];
+        size_t used = 0;
 
-    fprintf(stderr,
-            "rebushido: ReBushido in a window. Escape ends it; F11 or "
-            "Alt+Enter fills the screen.\n"
-            "rebushido: no memory card yet: settings and unlocks are not "
-            "kept.\n"
-            "rebushido: settings: %s\n",
-            g_port_settings_path != NULL ? g_port_settings_path
-                                         : "the ones built in (--help shows "
-                                           "them)");
+        line[0] = 0;
+        for (i = 1; i < argc && used < sizeof(line); i++) {
+            used += (size_t)snprintf(
+                line + used, sizeof(line) - used, " %s", argv[i]);
+        }
+        port_Note("command line:%s", line);
+    }
+    if (image != NULL) {
+        port_NoteImage(image);
+    }
+
+    port_Say("ReBushido in a window. Escape ends it; F11 or Alt+Enter fills "
+             "the screen; F3 is the counter in the corner.");
+    port_Say("no memory card yet: settings and unlocks are not kept.");
+    port_Say("settings: %s", g_port_settings_path != NULL
+                                 ? g_port_settings_path
+                                 : "the ones built in (--help shows them)");
     port_DescribeControls();
     port_StartWindow();
-    return port_Main(count, passed);
+    /* the game never comes back; what does is a start that failed */
+    code = port_Main(count, passed);
+    port_EndSession(code);
+    return code;
 }

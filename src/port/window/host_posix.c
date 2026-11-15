@@ -39,11 +39,16 @@ void port_HostExit(s32 code) {
     }
 }
 
+void (*g_port_host_tee)(s32 stream, const char *bytes, u32 count);
+
 void port_HostWrite(s32 stream, const char *bytes, u32 count) {
     FILE *out = stream == PORT_HOST_OUTPUT ? stdout : stderr;
 
     fwrite(bytes, 1, count, out);
     fflush(out);
+    if (g_port_host_tee != NULL) {
+        g_port_host_tee(stream, bytes, count);
+    }
 }
 
 /* A place in the table for a file the library opened: its number, or -1

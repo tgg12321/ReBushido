@@ -36,6 +36,9 @@ static DWORD g_port_windows_thread;
 static u32 g_port_windows_blocks[BLOCKS_MAX];
 static s32 g_port_windows_block_count;
 
+/* The session's log, in the program with a window (port_host.h). */
+void (*g_port_host_tee)(s32 stream, const char *bytes, u32 count);
+
 void port_HostExit(s32 code) {
     for (;;) {
         ExitProcess((UINT)code);
@@ -48,6 +51,9 @@ void port_HostWrite(s32 stream, const char *bytes, u32 count) {
     DWORD wrote;
 
     WriteFile(out, bytes, count, &wrote, NULL);
+    if (g_port_host_tee != NULL) {
+        g_port_host_tee(stream, bytes, count);
+    }
 }
 
 /* A place in the table for a file the system opened: its number, or -1

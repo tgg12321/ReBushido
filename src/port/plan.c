@@ -985,6 +985,10 @@ void port_OnFrame(void) {
     port_TakeCheckpoints(port_GetBlankCount(), EVENT_FRAME);
 }
 
+/* The last functions that began (port_platform.h). */
+u32 g_port_recent_calls[PORT_RECENT_CALLS];
+u32 g_port_recent_call_count;
+
 /* A function of the game begins: the compiler calls this at the top of
  * every function of the files tools/port_build.py compiles with
  * -finstrument-functions, which are the game's and Sony's and none of
@@ -992,6 +996,13 @@ void port_OnFrame(void) {
  * and the checkpoint that waits for this function. */
 void __cyg_profile_func_enter(void *function, void *call_site) {
     (void)call_site;
+    /* one that begins many times running is kept once */
+    if (g_port_recent_call_count == 0 ||
+        g_port_recent_calls[(g_port_recent_call_count - 1) %
+                            PORT_RECENT_CALLS] != (u32)function) {
+        g_port_recent_calls[g_port_recent_call_count++ % PORT_RECENT_CALLS] =
+            (u32)function;
+    }
     if (g_port_calls_file >= 0) {
         char line[CALL_INDENT_MAX + PATH_BYTES_MAX];
         u32 offset = 0;
