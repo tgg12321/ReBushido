@@ -415,6 +415,7 @@ extern PortAddress port_RemasterStageTiles(s32 *count);
 extern PortAddress port_RemasterTileMesh(s32 block, s32 mesh);
 /* The light setup the tiles are lit by (a LightSetup, light.h). */
 extern const void *port_RemasterTileLights(void);
+extern s32 port_RemasterStageNumber(void);
 
 /* ---- what a primitive is, once decoded ---- */
 

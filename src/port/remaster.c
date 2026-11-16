@@ -655,6 +655,8 @@ PortAddress port_RemasterTileMesh(s32 block, s32 mesh) {
     return (PortAddress)ADDR(g_reloc_tables[block][mesh]);
 }
 
+s32 port_RemasterStageNumber(void) { return (s32)g_fight_stage; }
+
 const void *port_RemasterTileLights(void) {
     /* TILE_LIGHT_SETUP, the setup render_DrawStageTiles lights a tile's
      * faces with (src/main/render_asm.c) */

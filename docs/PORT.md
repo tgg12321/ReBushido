@@ -2156,13 +2156,40 @@ written so that every component of `gl_Position` is linear in the point,
 which is what lets the card cut a face at the near plane where a straight
 line says.
 
-**What is left out, as the console leaves it out.** A face no corner of
-which is farther than `RENDER_OT_CUTOFF` is the ground between the camera
-and the fight, and the renderer drops it; the mesh carries each face as a
-ball -- its middle and how far its corners reach -- and leaves out the
-whole face by the same rule. (A test of each pixel's own depth was tried
-and cuts into a face the game drew whole: the ground at the camera's feet
-went with it.)
+**What is left out, as the console leaves it out.** Before it draws a
+tile's face the renderer makes two tests of the whole face
+(`render_EmitTile`), and the mesh makes both. Every vertex carries the
+four corners the face's record names, so the card can ask of each face
+what the renderer asked, once, of the record and not of the pieces a cut
+face breaks into:
+
+- **the face turned away from the camera.** The coprocessor's `NCLIP`
+  takes the cross product of the face's first three corners *on the
+  screen* and the renderer keeps the face only where it comes out one
+  way (`render_FaceFront`). Divided by their own depths, that sign is
+  the sign of the volume the three corners make with the eye, which the
+  shader works out in view space: it is the same answer wherever the
+  corners are, including a face that crosses the plane of the eye. It is
+  not the card's own leaving out of the back of a triangle, which was
+  tried and took half of a stage's walls with it: a quad is drawn as two
+  triangles that wind opposite ways, so by the card's rule one of every
+  two would always go. The renderer asks it once, of the first three
+  corners, and so does the mesh.
+- **the face nearer than the cutoff.** The depth a tile's face is sorted
+  at is its *farthest* corner's, and a face whose slot comes out below
+  `RENDER_OT_CUTOFF` is the ground between the camera and the fight,
+  which the renderer drops. The shader works the same depth out from the
+  same four corners. (A test of each pixel's own depth was tried and
+  cuts into a face the game drew whole: the ground at the camera's feet
+  went with it. A ball round the face was tried next and is too
+  generous: on the terraced fields it let a wall of the near terrace
+  through, blown up across the whole picture.)
+
+What the mesh does **not** do is the renderer's two screen tests -- a
+face every corner of which is off the top or the left of the console's
+320 by 240, or every corner below its bottom. Those throw away what
+cannot be seen on a console screen, and a wider or taller picture can
+see some of it.
 
 **The fog.** The stage's fog is not a shader on the console: it is 31
 rows of colour tables, each blended further towards the fog's colour,
@@ -2186,23 +2213,26 @@ been, which is the farthest of them, so the fighters, their shadows, the
 effects and the stage's pieces are all painted over it in the order the
 ordering table has them.
 
-**The ground is drawn from both sides.** The renderer leaves out a face
-the camera sees from behind (`render_FaceFront`), but it asks that of a
-quad's first three corners and then draws both of the quad's triangles,
-which wind opposite ways. Telling the card to leave out the back of a
-triangle took half of a stage's walls away with it, so it is not told to:
-the depth buffer settles which face a pixel belongs to, and what is drawn
-that the console did not is the underside of a face with nothing in front
-of it.
+**The texels a fragment covers are averaged**, by the same rule and the
+same arithmetic as the renderer's own polygons of the scene (`gl_draw.c`,
+`steps`): the ground runs away from the camera, so far off one fragment
+covers several texels, and reading one of them is the noise that crawls
+as the camera turns. The mesh is drawn only when the picture is not being
+held to the console's own pixels, so it always averages; the ground and
+everything standing on it are read the same way.
 
 **A tile the game opens up.** A tile that can hide a fighter from the
 camera is drawn half-transparent while it is in the way
-(`STAGE_TILE_OPEN`). The mesh holds those tiles' faces last and draws
-them in a second pass with no depth written, once for each of the chip's
-four mixes that any of them asks for; which tiles are open is this
-frame's, read from `draw_flags` where the mesh is drawn. With no tile
-open -- which is most frames of most stages -- there is one draw and
-nothing else.
+(`STAGE_TILE_OPEN`), and the renderer links it into the ordering table
+at its own depth, which is nearer than the fighter it is meant to veil.
+The mesh is drawn where the *farthest* tile of the frame was, so such a
+face drawn with the mesh would be painted over by that very fighter. So
+it is not: the mesh leaves out every face of an open tile (the shader is
+told which tiles are open where the mesh is drawn, from `draw_flags`),
+and those tiles' primitives are left on the game's own path, where they
+mix and sort exactly as they did. The same goes for a face whose own
+code says it mixes. With no tile open -- which is most frames of most
+stages -- the mesh is one draw with no blending at all.
 
 **The pictures between two frames.** A tile's primitive is no longer
 written down at all (`gl_tween.c`): there is nothing to pair, and they
@@ -2214,7 +2244,11 @@ moves in the ground, so the holes a real card showed in the floor of a
 picture between two frames cannot happen: there are no tiles to pair.
 
 **What falls back to the tiles**, so that nothing is drawn wrongly where
-anything is uncertain: the setting off; the original picture; the
+anything is uncertain: **a stage the mesh is not measured good on**
+(`g_stage_proved` in `gl_stage.c`, one line per stage, built from the
+prover's numbers -- the six stages of the practice and the modes are not
+among them, because a versus fight cannot be set on them and so nothing
+has measured them); the setting off; the original picture; the
 comparison with the software GPU (`--gl-exact`, which wants the game's
 own primitives); a stage with more tiles than the mesh holds; a stage
 whose tiles or meshes have moved and not been read again (the mesh is
@@ -2240,11 +2274,10 @@ one thing that moves a tile's mesh is the arena moving the stage's block
   measured, and a stage where it showed would want the mesh's depth
   buffer tested by the rest of the scene, which is a change to every
   primitive and not to this one.
-- **A face is drawn from both sides**, where the console drew it from
-  one (above).
-- **The ground near the camera is cut by a ball round each face** and
-  not by the face's own farthest corner, so a little more of it is drawn
-  than the console drew.
+- **A face of the ground the console never drew is drawn at the edges
+  of the picture**, on purpose: the console's two screen tests are not
+  made (above), so what was off the top or the left of its 320 by 240 is
+  in a wider picture.
 - **A picture between two frames reads the tiles as they stand**, not as
   the frame on show had them, so a tile the game opened up in the
   meantime is left out of the mesh a picture early. It is one tile of a
@@ -2253,63 +2286,85 @@ one thing that moves a tile's mesh is the arena moving the stage's block
   real graphics card: the pictures are files, drawn by Mesa's software
   renderer. That is why `stage_mesh` is off with nothing said.
 - The practice stages and the modes' own (32 to 37) are not among the
-  32 measured: a versus fight cannot be set on them.
+  32 measured: a versus fight cannot be set on them, so they keep the
+  tiles (`g_stage_proved`).
 
 **How it is proved** (`tools/port_stage_prove.py`, which needs a graphics
 card and so is no check of CI's): each of the game's 32 fight stages is
 run twice over the same tour -- the first fighter run across the stage,
 which swings the camera right round -- once with the mesh off and once
-with it on, and the two runs' traces and pictures are held to each other.
-At `draw_distance max`, the console's shape, twice its resolution, five
-pictures of each run (`build/stagemesh/measured.tsv`):
+with it on, and the two runs' traces and pictures are held to each
+other. At `draw_distance max`, the console's shape, twice its
+resolution, four pictures of each run, all of them **in the fight**: the
+menus before it are the same picture either way and say nothing about
+the ground.
+
+**How a difference is counted.** Counting the pixels that differ at all
+says nothing: 41% of them do, and a ground of noise read half a texel
+along differs in as many pixels as a wall drawn where no wall is. What
+is counted instead is **a cell of 16 by 16 pixels whose two means are
+more than 24 apart, in a connected area of four such cells or more**.
+The two sizes were measured, not guessed: three pairs of pictures at
+every cell from 4 to 16 and every step from 16 to 48, one pair known
+wrong (an early mesh drew a wall of the terraced fields across the whole
+picture) and two known right. At 16 and 24 the wrong one marks 45% of
+its cells and the two right ones mark none at all; below that size the
+speckle is marked too and runs together into areas of any size.
 
 | | |
 |---|---|
 | Stages | 32 |
 | **The trace of every watched value, the mesh on and off** | **the same on all 32** |
-| Pictures compared | 160, 196,608,000 pixels |
-| Pixels that differ at all | 35,094,050 (17.9%) |
-| ... by more than a twentieth of a channel | 9,953,693 (5.1%) |
-| **Black where the tiles drew the stage** | **104,540 (0.053%)**; none at all on four stages |
-| Drawn where the tiles drew nothing | 852,697 (0.43%) |
-| Vertices a frame, the mean over a run | 2,545 from the tiles, 3,094 with the mesh |
+| Pictures compared | 128, 157,286,400 pixels |
+| Pixels that differ at all | 41.4% |
+| **In areas of plainly other colour** | **990,208 (0.630%)** |
+| The worst stage | the abandoned shipyard, 3.20% |
+| Stages with none at all | the tatara shrine, the snake cliff, Kimigaura coast |
+| **Black where the tiles drew the stage** | **181,741 (0.116%)** |
+| Drawn where the tiles drew nothing | 189,405 (0.120%) |
+| Vertices a frame, the mean over a run | 2,471 from the tiles, 2,980 with the mesh |
 
-**What the differences are.** Not holes: the ground is in both pictures,
-and the pixels that differ are the texels of it. The mesh's corners are
-worked out in floating point from the full-precision view, where the
-console's are the coprocessor's sixteen-bit arithmetic with its
-truncations and its reciprocal, so the two part by a fraction of a pixel;
-on a ground whose texture is noise (grass, gravel, rubble) that fraction
-is enough to read the next texel along, and the count runs to a fifth of
-the picture. On a ground of smooth boards it is a twentieth: the castle
-rooftop differs in 4.4% of its pixels and shows no black at all, where
-the abandoned shipyard's rubble differs in 32%. The side-by-side
-pictures are what to look at
+**The bar, and what is on the other side of it.** A stage keeps the mesh
+where its trace is the same, its areas of plainly other colour are under
+5% of the pixels, the largest of them is under 60,000 pixels, and under
+1% of the pixels are black where the tiles drew. The whole measured
+range is 0.00% to 3.20%, and the one picture known to be wrong measures
+45%: the bar sits between them, not at the edge of what passes. All 32
+stages pass it, and `g_stage_proved` in `gl_stage.c` says so stage by
+stage; a stage that stopped passing would be a 0 there and would keep
+the game's own tiles with nothing else changed.
+
+**What the differences are**, looked at picture by picture and not only
+counted: the ground is in both, in the same place, with the same things
+standing on it. What is marked is the seams between a floor's boards and
+the texture's own speckle, where a fraction of a pixel reads the next
+texel along; a band across a long face where the fog's level steps,
+because the mesh fogs by the pixel and the console fogged a whole face
+at once; and the far edge of the ground, where the mesh carries on past
+where the tiles stopped. The side-by-side pictures are what to look at
 (`build/stagemesh/pictures/*-tiles-and-mesh.png`, six stages at 2,560 by
 1,369, the owner's own window size, drawn through SDL's `offscreen`
-driver on Mesa's software renderer).
-
-The 0.43% drawn where the tiles drew nothing is the gain: the cells and
-the faces the console's wedge, its near cutoff and its screen tests left
-out. The railway stage gains 521,365 pixels of ground over five
-pictures, the snake cliff 510,490.
+driver on Mesa's software renderer), and
+`--mark N` writes the mesh's own picture with the cells that count
+reddened on it, which tells a wrongly drawn face from speckle at a
+glance.
 
 **The pictures between two frames**, on the shrine with
 `--gl-tween 4` (four pictures a frame): the trace is the same with the
 mesh on and off, every picture lies between its two frames
 (`out_of_order 0`), and a picture drawn at phase 0 -- which must be the
-game's own frame again -- differs in 3,014,067 pixels of 769,228,800
-(0.39%), where with the tiles it differs in none. (That 0.39% is the
-same sub-pixel reading of the ground as above, and which tiles the game
-had opened up, which the replay reads as it stands rather than as the
-frame on show had it.) The primitives a frame has to pair fall from 889
-to 823: the ground is no longer among them.
+game's own frame again -- differs in 0.39% of its pixels, where with the
+tiles it differs in none. (That 0.39% is the same sub-pixel reading of
+the ground, and which tiles the game had opened up, which the replay
+reads as it stands rather than as the frame on show had it.) The
+primitives a frame has to pair fall from 889 to 823: the ground is no
+longer among them.
 
 **What it costs.** On this machine, which has no graphics card at all
 (Mesa's llvmpipe) and was busy with other work throughout, a run of
-4,200 blanks over the 32 stages took 30.9 s with the tiles and 32.3 s
-with the mesh, and the mesh adds about 550 vertices to a frame. It is
-drawn in one go: one draw of the whole stage, with no blending.
+4,200 blanks took 27.5 s with the tiles and 28.1 s with the mesh, and
+the mesh adds about 500 vertices to a frame. It is drawn in one go: one
+draw of the whole stage, with no blending.
 
 ### Edges
 

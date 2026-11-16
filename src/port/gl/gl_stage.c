@@ -452,6 +452,10 @@ static const char g_stage_fragment_text[] =
     "    }\n"
     "    return vram(v_page.x + u, y);\n"
     "}\n"
+    "vec3 channels(uint texel) {\n"
+    "    return vec3(float(texel & 31u), float((texel >> 5) & 31u),\n"
+    "                float((texel >> 10) & 31u));\n"
+    "}\n"
     "void main() {\n"
     /* A face that mixes with what is behind it is not the mesh's: a
      * tile the game is drawing opened up so that a fighter behind it
@@ -477,10 +481,46 @@ static const char g_stage_fragment_text[] =
     "    vec3 color = v_color;\n"
     "    uint texel = texel_at(clut, int(floor(v_texture.x)),\n"
     "                          int(floor(v_texture.y)));\n"
-    "    if (texel == 0u) { discard; }\n"
-    "    vec3 texel_color = vec3(float(texel & 31u),\n"
-    "                            float((texel >> 5) & 31u),\n"
-    "                            float((texel >> 10) & 31u));\n"
+    "    vec3 texel_color;\n"
+    /* The texels this fragment covers, averaged, as the renderer does
+     * it for a polygon of the scene (gl_draw.c, `steps`): the ground
+     * runs away from the camera, so far off a fragment covers several
+     * texels and reading one of them is the noise that crawls as the
+     * camera turns. The mesh is drawn only when the picture is not
+     * being held to the console's own pixels, so there is nothing to
+     * ask: it always averages. */
+    "    vec2 wide_across = dFdx(v_texture);\n"
+    "    vec2 wide_down = dFdy(v_texture);\n"
+    "    float span = max(max(abs(wide_across.x), abs(wide_across.y)),\n"
+    "                     max(abs(wide_down.x), abs(wide_down.y)));\n"
+    "    int steps = int(clamp(ceil(span), 1.0, 4.0));\n"
+    "    if (steps > 1) {\n"
+    "        vec3 sum = vec3(0.0);\n"
+    "        float weight = 0.0;\n"
+    "        uint any = 0u;\n"
+    "        float part = 1.0 / float(steps);\n"
+    "        for (int j = 0; j < steps; j++) {\n"
+    "            for (int i = 0; i < steps; i++) {\n"
+    "                vec2 off = (vec2(float(i), float(j)) + vec2(0.5))\n"
+    "                         * part - vec2(0.5);\n"
+    "                vec2 at = v_texture + off.x * wide_across\n"
+    "                        + off.y * wide_down;\n"
+    "                uint one = texel_at(clut, int(floor(at.x)),\n"
+    "                                    int(floor(at.y)));\n"
+    "                if (one != 0u) {\n"
+    "                    sum += channels(one);\n"
+    "                    weight += 1.0;\n"
+    "                    any = one;\n"
+    "                }\n"
+    "            }\n"
+    "        }\n"
+    "        if (weight < 0.5) { discard; }\n"
+    "        if (texel == 0u) { texel = any; }\n"
+    "        texel_color = sum / weight;\n"
+    "    } else {\n"
+    "        if (texel == 0u) { discard; }\n"
+    "        texel_color = channels(texel);\n"
+    "    }\n"
     "    if ((v_flags.w & 2u) != 0u) {\n"
     "        color = texel_color * 255.0 / 31.0;\n"
     "    } else {\n"
@@ -627,7 +667,28 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
 
 void port_GlStageSetOn(s32 on) { g_stage.is_on = on != 0; }
 
-s32 port_GlStageIsOn(void) { return g_stage.is_started && g_stage.is_on; }
+/* The stages the mesh is measured good on, stage by stage
+ * (tools/port_stage_prove.py, and docs/PORT.md, "How it is proved").
+ * Anywhere else -- a stage whose ground the mesh draws other than the
+ * game does, and the six stages of the practice and the modes, which a
+ * versus fight cannot be set on and so nothing has measured -- the
+ * game's own tiles are drawn and the setting does nothing. */
+static const u8 g_stage_proved[STAGE_COUNT] = {
+    1, 1, 1, 1, 1, 1, 1, 1, /* 0 to 7 */
+    1, 1, 1, 1, 1, 1, 1, 1, /* 8 to 15 */
+    1, 1, 1, 1, 1, 1, 1, 1, /* 16 to 23 */
+    1, 1, 1, 1, 1, 1, 1, 1, /* 24 to 31 */
+    0, 0, 0, 0, 0, 0,       /* the practice and the modes' own */
+};
+
+s32 port_GlStageIsOn(void) {
+    s32 stage = port_RemasterStageNumber();
+
+    if (!g_stage.is_started || !g_stage.is_on) {
+        return FALSE;
+    }
+    return stage >= 0 && stage < STAGE_COUNT && g_stage_proved[stage];
+}
 
 s32 port_GlStageFaces(void) { return g_stage.faces; }
 s32 port_GlStageVertices(void) { return g_stage.vertex_count; }

@@ -22,7 +22,10 @@ reports:
   - what the frame cost each way.
 
 With --pairs N it writes N pictures a stage of the two side by side
-(tiles | mesh) into the stage's folder.
+(tiles | mesh) into the stage's folder, and with --mark N it writes N
+pictures a stage of the mesh's own with the cells that count reddened,
+which is how to see at once whether what differs is a wrongly drawn face
+or the speckle of a ground read half a texel along.
 
 It needs the prover (tools/port_gl_build.py) and your own image of the
 disc. No check runs it: CI has no graphics card.
@@ -46,13 +49,19 @@ def read(path):
     return width, height, pixels
 
 
-# A cell of 8 by 8 pixels whose two means are more than 24 apart, in an
-# area of 9 such cells or more. Measured against a picture known to be
-# wrong (a face drawn across the whole of it) and two known to be right:
-# the wrong one marks 45% of its cells and the right ones 1.5% and 0.5%.
-CELL = 8
+# A cell of 16 by 16 pixels whose two means are more than 24 apart, in
+# an area of four such cells or more. The sizes are not a guess: three
+# pairs of pictures were measured at every size from 4 to 16 and every
+# step from 16 to 48 -- one pair known wrong (a wall of the terrace
+# drawn across the whole picture) and two known right -- and 16 and 24
+# is where the wrong one marks 45% of its cells and the right ones mark
+# none at all. Below that size the speckle of a ground of noise read
+# half a texel along is marked as well, and it runs together into areas
+# of any size, which is what makes the number useless for telling a
+# wrongly drawn face from a picture that is right.
+CELL = 16
 STEP = 24
-PATCH = 9
+PATCH = 4
 
 
 def cell_means(pixels, w, cell_x, cell_y):
@@ -105,7 +114,21 @@ def patches(cells, cw, ch):
     return big, worst
 
 
-def look(a_dir, b_dir, pairs, folder, first_blank):
+def mark(path, pixels, w, h, cells, cw):
+    """The cells that count, drawn on the mesh's own picture."""
+    shown = bytearray(pixels)
+    for n, on in enumerate(cells):
+        if not on:
+            continue
+        for dy in range(CELL):
+            at = (((n // cw) * CELL + dy) * w + (n % cw) * CELL) * 3
+            for _ in range(CELL):
+                shown[at] = min(255, shown[at] + 120)
+                at += 3
+    port_png.write_png(path, w, h, bytes(shown))
+
+
+def look(a_dir, b_dir, pairs, folder, first_blank, marks=0):
     """The two runs' pictures against each other."""
     got = {'shots': 0, 'pixels': 0, 'differ': 0, 'far': 0, 'worst': 0,
            'holes': 0, 'filled': 0, 'patch': 0, 'worst_patch': 0}
@@ -165,6 +188,8 @@ def look(a_dir, b_dir, pairs, folder, first_blank):
             if max(abs(one[j] - two[j]) for j in range(3)) > STEP:
                 cells[n] = 1
         big, worst = patches(cells, cw, ch)
+        if made < marks:
+            mark(os.path.join(folder, 'mark-' + name), bp, bw, bh, cells, cw)
         got['patch'] += big * CELL * CELL
         got['worst_patch'] = max(got['worst_patch'], worst * CELL * CELL)
         if made < pairs:
@@ -202,6 +227,7 @@ def main():
     ap.add_argument('--aspect', default='4:3')
     ap.add_argument('--pairs', type=int, default=0)
     ap.add_argument('--from-blank', type=int, default=2900)
+    ap.add_argument('--mark', type=int, default=0)
     ap.add_argument('--out', default='build/stagemesh')
     args = ap.parse_args()
     if not os.path.isfile(PROGRAM):
@@ -260,7 +286,7 @@ def main():
         same = same_trace(os.path.join(folder, 'off.log'),
                           os.path.join(folder, 'on.log'))
         seen = look(os.path.join(folder, 'off'), os.path.join(folder, 'on'),
-                    args.pairs, folder, args.from_blank)
+                    args.pairs, folder, args.from_blank, args.mark)
         row = {'stage': stage, 'name': STAGE_NAMES[stage], 'same_trace': same,
                'off': runs['off'], 'on': runs['on'], 'pixels': seen}
         rows.append(row)
