@@ -67,9 +67,8 @@ extern void port_GlStageSetView(const PortStageView *view);
 extern void port_GlStageGetView(PortStageView *view);
 /* One view between two others, `phase` of `one` (256ths of the way from
  * `one` to `two`). Pure arithmetic. */
-extern void port_GlStageMixView(
-    PortStageView *out, const PortStageView *one, const PortStageView *two,
-    s32 phase, s32 whole);
+extern void port_GlStageMixView(PortStageView *out, const PortStageView *one,
+                                const PortStageView *two, s32 phase, s32 whole);
 
 /* What the mesh is: the faces it holds and the vertices they came to, 0
  * where there is none. For a run's report. */

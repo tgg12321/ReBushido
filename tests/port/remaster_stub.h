@@ -54,6 +54,7 @@ void port_RemasterNoteFogLevel(s32 level, s32 slot) {
 }
 
 void port_RemasterStageChanged(void) {}
+
 s32 port_RemasterStageNumber(void) { return 0; }
 
 void port_RemasterNoteCells(s32 tiles, s32 nodes, s32 queue_size) {

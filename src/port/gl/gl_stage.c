@@ -131,8 +131,7 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glUniform1iv, (GLint, GLsizei, const GLint *))                    \
     GL(void, glUniform2iv, (GLint, GLsizei, const GLint *))                    \
     GL(void, glUniform1uiv, (GLint, GLsizei, const GLuint *))                  \
-    GL(void, glUniformMatrix3fv,                                               \
-       (GLint, GLsizei, GLboolean, const GLfloat *))                           \
+    GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))
 
 #define GL(result, name, args) static result(*name) args;
@@ -545,7 +544,8 @@ static void port_GlStageSay(const char *what, const char *more) {
     for (i = 0; what[i] != 0 && at + 1 < sizeof(g_stage.problem); i++) {
         g_stage.problem[at++] = what[i];
     }
-    for (i = 0; more != NULL && more[i] != 0 && at + 1 < sizeof(g_stage.problem);
+    for (i = 0;
+         more != NULL && more[i] != 0 && at + 1 < sizeof(g_stage.problem);
          i++) {
         g_stage.problem[at++] = more[i];
     }
@@ -691,10 +691,15 @@ s32 port_GlStageIsOn(void) {
 }
 
 s32 port_GlStageFaces(void) { return g_stage.faces; }
+
 s32 port_GlStageVertices(void) { return g_stage.vertex_count; }
+
 s32 port_GlStageTiles(void) { return g_stage.tile_count; }
+
 s32 port_GlStageMissed(void) { return g_stage.missed; }
+
 u32 port_GlStageDrawnVertices(void) { return g_stage.drawn_vertices; }
+
 u32 port_GlStageDraws(void) { return g_stage.draws; }
 
 s32 port_GlStageSaveFrame(void) { return g_stage.is_drawn; }
@@ -816,9 +821,8 @@ static void port_GlStagePutVertex(
 
 /* A triangle of the mesh, in the order the chip takes a polygon's
  * corners. */
-static void port_GlStageTriangle(
-    const StageFace *face, const StageCorner *a, const StageCorner *b,
-    const StageCorner *c) {
+static void port_GlStageTriangle(const StageFace *face, const StageCorner *a,
+                                 const StageCorner *b, const StageCorner *c) {
     StageVertex *to = port_GlStageRoom(3);
 
     if (to == NULL) {
@@ -900,9 +904,8 @@ static void port_GlStageSplitQuad(
 /* One record of a tile's mesh: a face, with its texture, the colour the
  * coprocessor lights it with, and its corners among the tile's
  * vertices. */
-static void port_GlStageFace(
-    s32 tile, const StageTile *at, const s16 *vertices, const u8 *record,
-    s32 quad) {
+static void port_GlStageFace(s32 tile, const StageTile *at, const s16 *vertices,
+                             const u8 *record, s32 quad) {
     StageFace face;
     StageCorner corner[4];
     u32 word = STAGE_WORD(record, RECORD_TPAGE);
@@ -1056,10 +1059,9 @@ static void port_GlStageBuild(const PortStageView *view) {
     g_stage.tiles = (PortAddress)tiles;
     g_stage.tile_count = count;
     glBindBuffer(GL_ARRAY_BUFFER, g_stage.buffer);
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        (GLsizeiptr)((size_t)g_stage.built * sizeof(StageVertex)),
-        g_stage.building, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER,
+                 (GLsizeiptr)((size_t)g_stage.built * sizeof(StageVertex)),
+                 g_stage.building, GL_STATIC_DRAW);
     /* the card has it now */
     free(g_stage.building);
     g_stage.building = NULL;
@@ -1102,8 +1104,8 @@ static void port_GlStageView(const PortStageView *view, GLfloat *matrix) {
     s32 column;
 
     for (row = 0; row < 3; row++) {
-        GLfloat scale = (GLfloat)(1.0 / 4096.0 /
-                                  (double)(1 << (view->far_shift & 31)));
+        GLfloat scale =
+            (GLfloat)(1.0 / 4096.0 / (double)(1 << (view->far_shift & 31)));
 
         if (row == 1) {
             scale *= 0.5f;
@@ -1138,9 +1140,8 @@ static void port_GlStageFogRows(const PortStageView *view, GLint *clut) {
 
 static void port_GlStageDrawMesh(
     const PortGlPicture *picture, const PortRemasterPrim *paint) {
-    const PortStageView *view = g_stage.has_own_view
-                                    ? &g_stage.own_view
-                                    : port_GetRemasterStageView();
+    const PortStageView *view =
+        g_stage.has_own_view ? &g_stage.own_view : port_GetRemasterStageView();
     const StageTile *tiles = (const StageTile *)g_stage.tiles;
     GLfloat matrix[9];
     GLint slot[32];
@@ -1185,15 +1186,13 @@ static void port_GlStageDrawMesh(
     /* where the middle of the screen is: the coprocessor's own offset,
      * the drawing offset of the frame's buffer, and a wider picture's
      * band at the left */
-    glUniform2f(
-        g_stage.at_screen,
-        (GLfloat)view->ofx / (GLfloat)PORT_REMASTER_ONE +
-            (GLfloat)(paint->offset_x + picture->margin),
-        (GLfloat)view->ofy / (GLfloat)PORT_REMASTER_ONE +
-            (GLfloat)paint->offset_y);
-    glUniform2f(
-        g_stage.at_target, (GLfloat)picture->target_w,
-        (GLfloat)picture->target_h);
+    glUniform2f(g_stage.at_screen,
+                (GLfloat)view->ofx / (GLfloat)PORT_REMASTER_ONE +
+                    (GLfloat)(paint->offset_x + picture->margin),
+                (GLfloat)view->ofy / (GLfloat)PORT_REMASTER_ONE +
+                    (GLfloat)paint->offset_y);
+    glUniform2f(g_stage.at_target, (GLfloat)picture->target_w,
+                (GLfloat)picture->target_h);
     glUniform2f(g_stage.at_scale, (GLfloat)scale_x, (GLfloat)scale_y);
     glUniform1f(g_stage.at_near, NEAR_PLANE * 2.0f);
     glUniform1f(g_stage.at_depth, DEPTH_RANGE);
@@ -1202,13 +1201,11 @@ static void port_GlStageDrawMesh(
     glUniform1i(g_stage.at_fog_levels, view->fog_levels);
     glUniform1iv(g_stage.at_fog_slot, 32, slot);
     glUniform2iv(g_stage.at_fog_clut, PORT_STAGE_FOG_LEVELS + 1, clut);
-    glUniform4i(
-        g_stage.at_fog_rect, view->fog_x, view->fog_y, view->fog_w,
-        view->fog_h);
-    glUniform4ui(
-        g_stage.at_window, (GLuint)paint->window_and_u,
-        (GLuint)paint->window_or_u, (GLuint)paint->window_and_v,
-        (GLuint)paint->window_or_v);
+    glUniform4i(g_stage.at_fog_rect, view->fog_x, view->fog_y, view->fog_w,
+                view->fog_h);
+    glUniform4ui(g_stage.at_window, (GLuint)paint->window_and_u,
+                 (GLuint)paint->window_or_u, (GLuint)paint->window_and_v,
+                 (GLuint)paint->window_or_v);
     glUniform1uiv(g_stage.at_open, TILE_WORDS, open);
 
     /* The scene of a wider picture is drawn across the whole of it, as
@@ -1305,9 +1302,8 @@ void port_GlStageGetView(PortStageView *view) {
     *view = *port_GetRemasterStageView();
 }
 
-void port_GlStageMixView(
-    PortStageView *out, const PortStageView *one, const PortStageView *two,
-    s32 phase, s32 whole) {
+void port_GlStageMixView(PortStageView *out, const PortStageView *one,
+                         const PortStageView *two, s32 phase, s32 whole) {
     s32 i;
 
     *out = *one;
@@ -1318,9 +1314,9 @@ void port_GlStageMixView(
         return;
     }
     for (i = 0; i < PORT_GTE_MATRIX_ELEMENTS_PORT; i++) {
-        out->matrix[i] = (s16)(one->matrix[i] +
-                               ((two->matrix[i] - one->matrix[i]) * phase) /
-                                   whole);
+        out->matrix[i] =
+            (s16)(one->matrix[i] +
+                  ((two->matrix[i] - one->matrix[i]) * phase) / whole);
     }
     for (i = 0; i < 3; i++) {
         out->camera[i] =
@@ -1328,10 +1324,8 @@ void port_GlStageMixView(
             (s32)(((s64)(two->camera[i] - one->camera[i]) * phase) / whole);
     }
     out->h = one->h + ((two->h - one->h) * phase) / whole;
-    out->ofx =
-        one->ofx + (s32)(((s64)(two->ofx - one->ofx) * phase) / whole);
-    out->ofy =
-        one->ofy + (s32)(((s64)(two->ofy - one->ofy) * phase) / whole);
+    out->ofx = one->ofx + (s32)(((s64)(two->ofx - one->ofx) * phase) / whole);
+    out->ofy = one->ofy + (s32)(((s64)(two->ofy - one->ofy) * phase) / whole);
 }
 
 s32 port_GlStageTakes(const PortRemasterPrim *prim) {

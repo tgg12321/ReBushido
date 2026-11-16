@@ -351,7 +351,7 @@ typedef struct {
      * (stage_ReadCells, resource_OnStageMoved). A mesh built for an older
      * version is thrown away. */
     s32 version;
-    s32 frames;    /* frames in which the stage's tiles were drawn */
+    s32 frames; /* frames in which the stage's tiles were drawn */
     s16 matrix[PORT_GTE_MATRIX_ELEMENTS_PORT]; /* the view's rotation, 1.12 */
     s32 camera[3]; /* where the camera is in the world */
     s32 far_shift; /* how far a tile's place and depth are scaled down */
