@@ -100,6 +100,12 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   own window size, headless: `--window 2560x1369 --shot-at N`.
   More pictures a second is `frame_rate` and `src/port/gl/gl_tween.c`,
   held by `python3 tools/port_fps_prove.py`.
+- The ground as one mesh is `stage_mesh` and `src/port/gl/gl_stage.c`;
+  `python3 tools/port_stage_prove.py` measures it on all 38 stages and
+  writes `build/stagemesh/verdict.txt`, where `g_stage_proved` comes
+  from. The fighters' shadows are `src/port/gl/gl_shadow.c`
+  (`shadows = original|soft`, `original` until the owner says).
+- What is left and what waits on the owner: [docs/HANDOFF.md](docs/HANDOFF.md).
 - The play tests fail at random checkpoints when the machine is busy
   (the owner playing the port, a build, another run): the emulator is
   starved. Run them on a quiet machine before reading a failure as a
