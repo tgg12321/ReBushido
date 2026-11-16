@@ -582,6 +582,65 @@ static void test_Identity(void) {
     CHECK_EQ(g_drawn_prims[0].id.piece, 0);
 }
 
+/* **Which primitives are a shadow's** (port_remaster.h): the renderer
+ * says it while it walks a node of kind NODE_KIND_SHADOW, and every
+ * primitive linked until it says otherwise is a face of that shadow.
+ * Nothing else is, whatever its colour: the ground has black faces of
+ * its own. */
+static void test_Shadow(void) {
+    static const s32 index[3] = {0, 1, 2};
+    PortAddress base = (PortAddress)g_points;
+    const PortRemasterCounts *counts = port_GetRemasterCounts();
+    u32 before;
+
+    test_Reset();
+    test_NotePoint(base + 0, 30 << 16, 40 << 16, 0x3000);
+    test_NotePoint(base + 4, 70 << 16, 40 << 16, 0x3100);
+    test_NotePoint(base + 8, 30 << 16, 80 << 16, 0x3200);
+    before = counts->shadows;
+    port_RemasterNoteObject(0x80201000);
+    port_RemasterNoteShadow(TRUE);
+    port_RemasterNoteFace(base, index, 3);
+    port_RemasterAttachFace(0x80101000);
+    port_RemasterSetPrim(0x80101000);
+    gp0(CODE(0x20) | RGB(0, 0, 0));
+    gp0(XY(30, 40));
+    gp0(XY(70, 40));
+    gp0(XY(30, 80));
+    CHECK_EQ(g_drawn_count, 1);
+    CHECK_EQ(g_drawn_prims[0].is_shadow, TRUE);
+    CHECK_EQ(counts->shadows, before + 1);
+
+    /* the next thing the renderer draws is not a shadow, black or not */
+    g_drawn_count = 0;
+    port_RemasterNoteObject(0x80202000);
+    port_RemasterNoteShadow(FALSE);
+    port_RemasterNoteFace(base, index, 3);
+    port_RemasterAttachFace(0x80101020);
+    port_RemasterSetPrim(0x80101020);
+    gp0(CODE(0x20) | RGB(0, 0, 0));
+    gp0(XY(30, 40));
+    gp0(XY(70, 40));
+    gp0(XY(30, 80));
+    CHECK_EQ(g_drawn_count, 1);
+    CHECK_EQ(g_drawn_prims[0].is_shadow, FALSE);
+    CHECK_EQ(counts->shadows, before + 1);
+
+    /* a new frame has no shadow being drawn */
+    g_drawn_count = 0;
+    port_RemasterNoteShadow(TRUE);
+    port_RemasterNewFrame();
+    port_RemasterNoteFace(base, index, 3);
+    port_RemasterAttachFace(0x80101040);
+    port_RemasterSetPrim(0x80101040);
+    gp0(CODE(0x20) | RGB(0, 0, 0));
+    gp0(XY(30, 40));
+    gp0(XY(70, 40));
+    gp0(XY(30, 80));
+    CHECK_EQ(g_drawn_count, 1);
+    CHECK_EQ(g_drawn_prims[0].is_shadow, FALSE);
+}
+
 /* What was written down for a frame is gone two frames later: the
  * primitive buffers and the ordering tables are used on alternate
  * frames, so nothing of a frame's own can have been written over. */
@@ -823,6 +882,7 @@ void test_Main(void) {
     test_Side();
     test_SideInPrimitive();
     test_Identity();
+    test_Shadow();
     test_Frames();
     test_Anchor();
     test_Commands();

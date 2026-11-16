@@ -94,6 +94,11 @@ static const char g_port_window_usage[] =
     "                 built when the stage loads, instead of from the\n"
     "                 game's own tile primitives; off, the default, is\n"
     "                 the tiles. It needs the remastered picture\n"
+    "  --shadows W    original, the default: the game's own black\n"
+    "                 shadows; soft: the ground under a shadow darkened\n"
+    "                 instead, and never the fighter standing in it; or\n"
+    "                 a number, how much of the ground it takes, in\n"
+    "                 hundredths. It needs the remastered picture\n"
     "  --frame-rate W  original: one picture a vertical blank, as the\n"
     "                 console; display: as many pictures a second as the\n"
     "                 screen shows; or a number of them. The game steps\n"
@@ -426,6 +431,7 @@ int main(int argc, char **argv) {
     s32 frame_rate = PORT_FRAME_RATE_ORIGINAL;
     s32 has_frame_rate = 0;
     s32 stage_mesh = -1;
+    s32 shadows = -1;
     PortRemasterView view;
     s32 code;
     s32 i;
@@ -538,6 +544,21 @@ int main(int argc, char **argv) {
             } else {
                 port_Complain("--stage-mesh takes on or off, not ", how);
             }
+        } else if (strcmp(word, "--shadows") == 0 && has_value) {
+            const char *how = argv[++i];
+
+            if (strcmp(how, "original") == 0) {
+                shadows = 0;
+            } else if (strcmp(how, "soft") == 0) {
+                shadows = PORT_SHADOWS_SOFT;
+            } else {
+                shadows = atoi(how);
+                if (shadows < 1 || shadows > 100) {
+                    port_Complain(
+                        "--shadows takes original, soft, or 1 to 100, not ",
+                        how);
+                }
+            }
         } else if (strcmp(word, "--frame-rate") == 0 && has_value) {
             const char *how = argv[++i];
 
@@ -621,6 +642,9 @@ int main(int argc, char **argv) {
     if (stage_mesh >= 0) {
         g_port_settings.stage_mesh = stage_mesh;
     }
+    if (shadows >= 0) {
+        g_port_settings.shadows = shadows;
+    }
     if (aspect_w > 0 && aspect_h > 0) {
         g_port_settings.aspect_w = aspect_w;
         g_port_settings.aspect_h = aspect_h;
@@ -685,6 +709,13 @@ int main(int argc, char **argv) {
              g_port_settings.stage_mesh
                  ? "from one static mesh of its own"
                  : "from the game's own tile primitives");
+    if (g_port_settings.shadows > 0) {
+        port_Say("shadows: soft, taking %d hundredths of the ground they "
+                 "fall on.",
+                 g_port_settings.shadows);
+    } else {
+        port_Say("shadows: the game's own black silhouettes.");
+    }
     port_Say("memory cards: card1.mcd and card2.mcd beside the program "
              "unless --card1, --card2 or --no-cards says otherwise.");
     port_Say("settings: %s", g_port_settings_path != NULL

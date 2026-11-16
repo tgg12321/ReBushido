@@ -24,6 +24,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_shadow.h"
 #include "gl_stage.h"
 #include "port_gpu.h"
 #include "port_remaster.h"
@@ -103,6 +104,7 @@ typedef ptrdiff_t GLintptr;
     GL(void, glDisable, (GLenum))                                              \
     GL(void, glClearColor, (GLfloat, GLfloat, GLfloat, GLfloat))               \
     GL(void, glClear, (GLbitfield))                                            \
+    GL(void, glColorMask, (GLboolean, GLboolean, GLboolean, GLboolean))        \
     GL(void, glFinish, (void))                                                 \
     GL(void, glBlendFunc, (GLenum, GLenum))                                    \
     GL(void, glBlendEquation, (GLenum))                                        \
@@ -194,6 +196,11 @@ PORT_GL_FUNCTIONS
  * where that is more than a texel (the shader's `steps`). */
 #define FLAG_DEPTH 32
 
+/* A corner's `w`: the depth the coprocessor worked out, in these units.
+ * Any number in proportion to it will do -- it is the perspective divide
+ * and nothing else -- and this keeps a fight's within a few hundred. */
+#define PORT_GL_DEPTH_UNIT 1024.0f
+
 /* Which fragments a draw keeps, where a half-transparent primitive's
  * texels do not all mix (the mix that subtracts needs two draws). */
 #define PASS_ALL 0
@@ -224,6 +231,12 @@ typedef struct {
     /* the scene of a wider picture is drawn across the whole of it, and
      * the console's drawing area does not reach that far */
     s32 is_wide;
+    /* A piece of the stage's ground, which the fighters' shadows fall
+     * on (gl_shadow.h). It is in the batch's state and not in a vertex
+     * so that a batch is all ground or none of it: what is not ground is
+     * kept aside as it is drawn, for the mask that keeps the darkening
+     * off everything standing in a shadow. */
+    s32 is_ground;
 } PortGlState;
 
 static struct {
@@ -293,6 +306,14 @@ static struct {
      * this is the backend's own. */
     PortGlVertex *vertices;
     s32 count;
+    /* The vertices of this frame that are not the stage's ground, kept
+     * as they are drawn: at the frame's end they are drawn again into
+     * the shadows' mask, which is how the darkening is kept off
+     * everything standing in a shadow (gl_shadow.h). Asked for only
+     * where `shadows soft` is on. */
+    PortGlVertex *occluders;
+    s32 occluder_count;
+    s32 occluders_lost;
     PortGlState state;
     s32 has_state;
     PortDirtyRect mirror;
@@ -810,8 +831,27 @@ static void port_GlFindMargin(void) {
         g_gl.display_w, g_gl.options.aspect_w, g_gl.options.aspect_h);
 }
 
+/* The scissor a batch of this state is drawn through, in the colour
+ * buffer's own pixels. */
+static void port_GlScissorOf(
+    const PortGlState *state, s32 *x, s32 *y, s32 *w, s32 *h) {
+    *y = state->clip_top * g_gl.draw_y;
+    *h = (state->clip_bottom - state->clip_top + 1) * g_gl.draw_y;
+    if (state->is_wide) {
+        /* the scene, across the whole of a wider picture */
+        *x = g_gl.display_x * g_gl.draw_x;
+        *w = (g_gl.display_w + 2 * g_gl.margin) * g_gl.draw_x;
+        return;
+    }
+    *x = (state->clip_left + g_gl.margin) * g_gl.draw_x;
+    *w = (state->clip_right - state->clip_left + 1) * g_gl.draw_x;
+}
+
 static void port_GlSetState(const PortGlState *state) {
-    s32 top;
+    s32 x;
+    s32 y;
+    s32 w;
+    s32 h;
 
     if (state->is_half) {
         glEnable(GL_BLEND);
@@ -832,30 +872,13 @@ static void port_GlSetState(const PortGlState *state) {
     } else {
         glDisable(GL_BLEND);
     }
-    top = state->clip_top * g_gl.draw_y;
-    if (state->is_wide) {
-        /* the scene, across the whole of a wider picture */
-        glScissor((g_gl.display_x) * g_gl.draw_x, top,
-                  (g_gl.display_w + 2 * g_gl.margin) * g_gl.draw_x,
-                  (state->clip_bottom - state->clip_top + 1) * g_gl.draw_y);
-        return;
-    }
-    glScissor((state->clip_left + g_gl.margin) * g_gl.draw_x, top,
-              (state->clip_right - state->clip_left + 1) * g_gl.draw_x,
-              (state->clip_bottom - state->clip_top + 1) * g_gl.draw_y);
+    port_GlScissorOf(state, &x, &y, &w, &h);
+    glScissor(x, y, w, h);
 }
 
-static void port_GlFlush(void) {
-    if (g_gl.count == 0) {
-        return;
-    }
-    port_GlUploadMirror();
-    glUseProgram(g_gl.program);
-    glBindVertexArray(g_gl.array);
-    glBindBuffer(GL_ARRAY_BUFFER, g_gl.buffer);
-    glBufferData(
-        GL_ARRAY_BUFFER, (GLsizeiptr)((u32)g_gl.count * sizeof(*g_gl.vertices)),
-        g_gl.vertices, GL_STREAM_DRAW);
+/* What a draw of the picture's own program needs, whichever buffer it
+ * draws into. */
+static void port_GlSetUniforms(void) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
     glUniform1i(g_gl.at_vram, 0);
@@ -868,6 +891,41 @@ static void port_GlFlush(void) {
     /* the texels of a fragment averaged where it covers more than one of
      * them, which the console's own picture does not do */
     glUniform1i(g_gl.at_minify, g_gl.options.is_exact ? 0 : 1);
+}
+
+/* The batch's vertices kept for the shadows' mask, where they are not
+ * the stage's ground and are not half-transparent: a half-transparent
+ * primitive lets what is behind it through, so the shadow under it
+ * shows through as well (gl_shadow.h). */
+static void port_GlKeepOccluders(void) {
+    s32 room;
+    s32 many;
+
+    if (!port_GlShadowCollects() || g_gl.occluders == NULL ||
+        g_gl.state.is_ground || g_gl.state.is_half) {
+        return;
+    }
+    room = VERTICES_MAX - g_gl.occluder_count;
+    many = g_gl.count < room ? g_gl.count : room;
+    memcpy(&g_gl.occluders[g_gl.occluder_count], g_gl.vertices,
+           (size_t)many * sizeof(*g_gl.occluders));
+    g_gl.occluder_count += many;
+    g_gl.occluders_lost += g_gl.count - many;
+}
+
+static void port_GlFlush(void) {
+    if (g_gl.count == 0) {
+        return;
+    }
+    port_GlKeepOccluders();
+    port_GlUploadMirror();
+    glUseProgram(g_gl.program);
+    glBindVertexArray(g_gl.array);
+    glBindBuffer(GL_ARRAY_BUFFER, g_gl.buffer);
+    glBufferData(
+        GL_ARRAY_BUFFER, (GLsizeiptr)((u32)g_gl.count * sizeof(*g_gl.vertices)),
+        g_gl.vertices, GL_STREAM_DRAW);
+    port_GlSetUniforms();
     port_GlSetState(&g_gl.state);
     if (g_gl.state.is_wide) {
         g_gl.wide++;
@@ -895,7 +953,7 @@ static s32 port_GlStateIsSame(const PortGlState *a, const PortGlState *b) {
     return a->is_half == b->is_half && a->blend == b->blend &&
            a->clip_left == b->clip_left && a->clip_top == b->clip_top &&
            a->clip_right == b->clip_right && a->clip_bottom == b->clip_bottom &&
-           a->is_wide == b->is_wide;
+           a->is_wide == b->is_wide && a->is_ground == b->is_ground;
 }
 
 static void port_GlWant(const PortGlState *state, s32 vertices) {
@@ -971,7 +1029,7 @@ static GLfloat port_GlW(const PortRemasterPrim *prim, s32 corner) {
     if (!prim->has_depth) {
         return 1.0f;
     }
-    return (GLfloat)prim->corner[corner].depth / 1024.0f;
+    return (GLfloat)prim->corner[corner].depth / PORT_GL_DEPTH_UNIT;
 }
 
 /* Whether this primitive is drawn where the projection really put it,
@@ -1102,6 +1160,32 @@ static void port_GlRectangle(const PortRemasterPrim *prim, s32 flags) {
     port_GlTriangle(&quad, 1, 2, 3, flags);
 }
 
+/* What a batch of this primitive must share: its mix, the drawing area
+ * and whether it is drawn across the whole of a wider picture. */
+static void port_GlStateOf(const PortRemasterPrim *prim, PortGlState *state) {
+    state->is_half = prim->is_half;
+    state->blend = prim->blend;
+    state->clip_left = prim->clip_left;
+    state->clip_top = prim->clip_top;
+    state->clip_right = prim->clip_right;
+    state->clip_bottom = prim->clip_bottom;
+    /* The whole width of a wider picture, where the game was not
+     * restricting the drawing area to part of the screen (the pause
+     * menu, the replay's panels): the scene, which is a primitive the
+     * projection gave a depth to, and a group of the fight's HUD the game
+     * anchored to an edge, which is drawn out in a band and would be cut
+     * off at the console's own edge (port_remaster.h). Every other flat
+     * primitive keeps the console's drawing area and stays four by three
+     * in the middle. */
+    state->is_wide = g_gl.margin > 0 &&
+                     (prim->has_depth || prim->anchor != PORT_ANCHOR_MIDDLE) &&
+                     prim->clip_left <= g_gl.display_x &&
+                     prim->clip_right >= g_gl.display_x + g_gl.display_w - 1;
+    /* the ground the shadows fall on, which the mask they are kept in
+     * does not take as something standing in them (gl_shadow.h) */
+    state->is_ground = port_GlShadowIsGround(prim);
+}
+
 static void port_GlDraw(const PortRemasterPrim *prim) {
     PortGlState state;
     s32 flags = 0;
@@ -1112,6 +1196,12 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     /* the stage's ground is drawn from a mesh of its own, and the
      * primitives the game made of its tiles are left out (gl_stage.h) */
     if (port_GlStageTakes(prim)) {
+        return;
+    }
+    /* a face of a fighter's shadow is not painted black: it goes into
+     * the mask that darkens the ground at the frame's end
+     * (gl_shadow.h) */
+    if (port_GlShadowTakes(prim)) {
         return;
     }
     if (prim->is_textured) {
@@ -1137,24 +1227,7 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     if (!prim->has_place || prim->kind == PORT_REMASTER_RECT) {
         flags |= FLAG_FLAT;
     }
-    state.is_half = prim->is_half;
-    state.blend = prim->blend;
-    state.clip_left = prim->clip_left;
-    state.clip_top = prim->clip_top;
-    state.clip_right = prim->clip_right;
-    state.clip_bottom = prim->clip_bottom;
-    /* The whole width of a wider picture, where the game was not
-     * restricting the drawing area to part of the screen (the pause
-     * menu, the replay's panels): the scene, which is a primitive the
-     * projection gave a depth to, and a group of the fight's HUD the game
-     * anchored to an edge, which is drawn out in a band and would be cut
-     * off at the console's own edge (port_remaster.h). Every other flat
-     * primitive keeps the console's drawing area and stays four by three
-     * in the middle. */
-    state.is_wide = g_gl.margin > 0 &&
-                    (prim->has_depth || prim->anchor != PORT_ANCHOR_MIDDLE) &&
-                    prim->clip_left <= g_gl.display_x &&
-                    prim->clip_right >= g_gl.display_x + g_gl.display_w - 1;
+    port_GlStateOf(prim, &state);
     if (state.clip_right < state.clip_left ||
         state.clip_bottom < state.clip_top) {
         return;
@@ -1274,6 +1347,10 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
         return;
     }
     port_GlFlush();
+    /* pixels of the picture the game has put there itself: where they
+     * fall over a shadow already painted, that shadow is covered
+     * (gl_shadow.h) */
+    port_GlShadowWroteVram(x, y, w, h);
     port_ClearDirtyRect(&rect);
     port_AddDirtyRect(&rect, x, y, w, h);
     port_AddDirtyRect(&g_gl.mirror, x, y, w, h);
@@ -1326,7 +1403,16 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
 }
 
 static void port_GlBegin(void) {
+    /* The frame that has just been built, before anything of this one is
+     * drawn: its shadows darken the ground of the picture it made, and
+     * it has to be here, because the game clears the next frame's
+     * ordering table before the picture of this one has been read
+     * (gl_shadow.h). What it uses is the vertices kept below, so it goes
+     * first. */
+    port_GlShadowNewFrame();
     g_gl.has_state = FALSE;
+    g_gl.occluder_count = 0;
+    g_gl.occluders_lost = 0;
     port_GlStageNewFrame();
 }
 
@@ -1350,6 +1436,87 @@ void port_GlGetPicture(PortGlPicture *picture) {
 void port_GlFlushBatch(void) {
     port_GlFlush();
     port_GlUploadMirror();
+}
+
+/* ---- what the fighters' shadows ask of the picture (gl.h) ---- */
+
+s32 port_GlPlacePoints(const PortRemasterPrim *prim, PortGlPoint *out) {
+    static const s32 corner[2][3] = {{0, 1, 2}, {1, 2, 3}};
+    s32 triangles = prim->kind == PORT_REMASTER_QUAD ? 2 : 1;
+    s32 many = 0;
+    s32 i;
+    s32 j;
+
+    if (prim->kind != PORT_REMASTER_TRIANGLE &&
+        prim->kind != PORT_REMASTER_QUAD) {
+        return 0;
+    }
+    for (i = 0; i < triangles; i++) {
+        if (!port_GlIsDrawn(
+                prim, corner[i][0], corner[i][1], corner[i][2])) {
+            continue;
+        }
+        for (j = 0; j < 3; j++) {
+            const PortRemasterCorner *from = &prim->corner[corner[i][j]];
+            GLfloat at =
+                (GLfloat)(g_gl.margin + prim->anchor * g_gl.margin);
+
+            if (prim->has_place && !g_gl.options.is_exact) {
+                out[many].x = port_GlPlace(from->x) + at;
+                out[many].y = port_GlPlace(from->y);
+            } else {
+                out[many].x = (GLfloat)from->ix + at;
+                out[many].y = (GLfloat)from->iy;
+            }
+            out[many].w = port_GlW(prim, corner[i][j]);
+            many++;
+        }
+    }
+    return many;
+}
+
+void port_GlScissorFor(
+    const PortRemasterPrim *prim, s32 *x, s32 *y, s32 *w, s32 *h) {
+    PortGlState state;
+
+    port_GlStateOf(prim, &state);
+    port_GlScissorOf(&state, x, y, w, h);
+}
+
+/* How many vertices of this frame are kept for the shadows' mask, and
+ * how many the frame had no room for. */
+s32 port_GlOccluderCount(void) { return g_gl.occluder_count; }
+
+s32 port_GlOccluderLost(void) { return g_gl.occluders_lost; }
+
+void port_GlDrawOccluders(u32 framebuffer) {
+    if (!g_gl.is_started || g_gl.occluders == NULL ||
+        g_gl.occluder_count == 0) {
+        return;
+    }
+    port_GlUploadMirror();
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    glUseProgram(g_gl.program);
+    glBindVertexArray(g_gl.array);
+    glBindBuffer(GL_ARRAY_BUFFER, g_gl.buffer);
+    glBufferData(GL_ARRAY_BUFFER,
+                 (GLsizeiptr)((u32)g_gl.occluder_count *
+                              sizeof(*g_gl.occluders)),
+                 g_gl.occluders, GL_STREAM_DRAW);
+    port_GlSetUniforms();
+    glUniform1i(g_gl.at_pass, PASS_ALL);
+    /* the alpha alone: what the fragment's colour is does not matter,
+     * only that the picture kept it. Every one of these primitives is
+     * opaque, so the shader's own alpha is 1 (gl_shadow.h). */
+    glDisable(GL_BLEND);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+    glDrawArrays(GL_TRIANGLES, 0, g_gl.occluder_count);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    g_gl.vertex_count += (u32)g_gl.occluder_count;
+    g_gl.draw_count++;
+    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
+    /* the batch's own vertices are no longer in the buffer */
+    g_gl.has_state = FALSE;
 }
 
 void port_GlForgetState(void) { g_gl.has_state = FALSE; }
@@ -1456,8 +1623,10 @@ void port_GlSetOptions(const PortGlOptions *options) {
     port_GlScalesOf(options, &across, &down);
     g_gl.options = *options;
     /* the comparison with the software GPU's own picture wants the
-     * tiles as the game emitted them */
+     * tiles as the game emitted them, and the shadows the game's own
+     * black polygons */
     port_GlStageSetOn(options->is_stage_mesh && !options->is_exact);
+    port_GlShadowSetStrength(options->is_exact ? 0 : options->shadows);
     if (g_gl.is_started && (across != g_gl.scale_x || down != g_gl.scale_y ||
                             sample != g_gl.sample)) {
         g_gl.scale_x = across;
@@ -1497,6 +1666,12 @@ const char *port_GlStart(
             port_GlSay("there is no memory for the vertices of a frame", NULL);
             return g_gl.problem;
         }
+    }
+    if (g_gl.occluders == NULL) {
+        /* what keeps the shadows off the fighters: as many vertices
+         * again, which a frame of a fight uses a tenth of (gl_shadow.h).
+         * The shadows go on without it. */
+        g_gl.occluders = malloc(VERTICES_MAX * sizeof(*g_gl.occluders));
     }
     g_gl.options = *options;
     port_GlScalesOf(options, &g_gl.scale_x, &g_gl.scale_y);
@@ -1588,9 +1763,21 @@ const char *port_GlStart(
                        why);
         }
     }
+    /* The fighters' shadows as a soft darkening of the ground, which
+     * draws into the colour buffer through a mask of its own
+     * (gl_shadow.h). A card that cannot have it draws the game's own
+     * black silhouettes, as `shadows original` does. */
+    {
+        const char *why = port_GlShadowStart(getproc);
+
+        if (why != NULL) {
+            port_GlSay("the shadows are the game's own black polygons: ", why);
+        }
+    }
     /* the comparison with the software GPU's own picture wants the
-     * tiles as the game emitted them */
+     * tiles as the game emitted them, and the shadows as it drew them */
     port_GlStageSetOn(options->is_stage_mesh && !options->is_exact);
+    port_GlShadowSetStrength(options->is_exact ? 0 : options->shadows);
 
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -1662,6 +1849,10 @@ void port_GlFinishFrame(void) {
         return;
     }
     port_GlFlush();
+    /* the fighters' shadows: the mask, and the ground under them
+     * darkened. It is before the picture is averaged down, so the soft
+     * edge is smoothed with everything else (gl_shadow.h). */
+    port_GlShadowFinish();
     if (g_gl.sample > 1) {
         port_GlResolve();
     }

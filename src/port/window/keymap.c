@@ -66,6 +66,8 @@ const char g_port_default_settings[] =
     "                       # or 4:3 as the console\n"
     "stage_mesh = off      # on: the stage's ground drawn from one\n"
     "                       # static mesh instead of the game's tiles\n"
+    "shadows = original     # original: the game's own black shadows;\n"
+    "                       # soft: the ground under them darkened\n"
     "frame_rate = original  # original: one picture a blank, as the\n"
     "                       # console; display: as many as the screen\n"
     "                       # shows; or a number a second. The game\n"
@@ -504,6 +506,22 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "stage_mesh is on or off";
     }
+    if (port_WordsMatch(name, "shadows")) {
+        if (port_WordsMatch(value, "original")) {
+            settings->shadows = 0;
+            return NULL;
+        }
+        if (port_WordsMatch(value, "soft")) {
+            settings->shadows = PORT_SHADOWS_SOFT;
+            return NULL;
+        }
+        if (!port_ReadDigits(value, &number) || number < 1 || number > 100) {
+            return "shadows is original, soft, or how much of the ground "
+                   "a shadow takes away, in hundredths";
+        }
+        settings->shadows = number;
+        return NULL;
+    }
     if (port_WordsMatch(name, "frame_rate")) {
         if (port_WordsMatch(value, "original")) {
             settings->frame_rate = PORT_FRAME_RATE_ORIGINAL;
@@ -602,6 +620,9 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     /* the ground drawn as one mesh is off until someone has looked at it
      * on a screen (src/port/gl/gl_stage.h) */
     settings->stage_mesh = 0;
+    /* ... and so are the soft shadows: the game's own black ones until
+     * the owner has looked at pictures of both (gl_shadow.h) */
+    settings->shadows = 0;
     /* a name the window's library does not know leaves that one out */
     port_ReadLines(settings, text, lookup, NULL, 1);
 }
