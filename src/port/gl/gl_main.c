@@ -997,15 +997,14 @@ static void port_GlQuit(s32 code) {
             view.aspect_w, view.aspect_h);
     /* every store of a fixed size the drawing path fills, and the least
      * room any frame left in it (docs/PORT.md, "Remastered") */
-    fprintf(
-        stderr,
-        "gl run limits frames %u prim_bytes %d prim_free %d queue_size %d "
-        "queue_free %d ot_farthest %u tiles %u tiles_least %u nodes %u "
-        "nodes_least %u side_full %u\n",
-        limits->frames, limits->prim_bytes, limits->prim_free,
-        limits->queue_size, limits->queue_free, limits->ot_farthest,
-        limits->tiles, limits->tiles_least, limits->nodes,
-        limits->nodes_least, limits->side_full);
+    fprintf(stderr,
+            "gl run limits frames %u prim_bytes %d prim_free %d queue_size %d "
+            "queue_free %d ot_farthest %u tiles %u tiles_least %u nodes %u "
+            "nodes_least %u side_full %u\n",
+            limits->frames, limits->prim_bytes, limits->prim_free,
+            limits->queue_size, limits->queue_free, limits->ot_farthest,
+            limits->tiles, limits->tiles_least, limits->nodes,
+            limits->nodes_least, limits->side_full);
 
     fprintf(stderr, "gl run blanks %u hardware_time_us %llu\n", g_run.blanks,
             (unsigned long long)g_run.hardware_time);

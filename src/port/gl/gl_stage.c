@@ -1283,8 +1283,8 @@ static void port_GlStageDrawMesh(
     /* the mesh's depths are the renderer's own scale for the tiles, so
      * what they are divided by is scaled with them: the buffer holds a
      * depth in the world's units either way */
-    glUniform1f(g_stage.at_depth,
-                DEPTH_RANGE / (GLfloat)(1 << (view->far_shift & 31)));
+    glUniform1f(
+        g_stage.at_depth, DEPTH_RANGE / (GLfloat)(1 << (view->far_shift & 31)));
     glUniform1i(g_stage.at_depth_shift, view->depth_shift & 31);
     glUniform1i(g_stage.at_cutoff, view->ot_cutoff);
     glUniform1i(g_stage.at_fog_levels, view->fog_levels);
