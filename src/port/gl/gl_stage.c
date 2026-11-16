@@ -246,17 +246,17 @@ typedef struct {
     u8 info[4];  /* the texel's bits, the mix, nothing, nothing */
     u16 tile;    /* which tile of the stage it belongs to */
     u16 pad;
-    /* The face this vertex is of, as a ball: where its middle is in the
-     * world and how far its corners reach from there. The renderer
-     * leaves out a whole face no corner of which is farther than the
-     * cutoff (render_EmitTile, RENDER_OT_CUTOFF), which is how the
-     * ground between the camera and the fight is kept out of the way; a
-     * test of each pixel's own depth would cut into a face the game
-     * drew whole, so the card tests the farthest this ball reaches,
-     * which is the same for every vertex of the face and never nearer
-     * than its farthest corner. */
-    GLfloat bound[4];
-} StageVertex; /* 60 bytes */
+    /* The corners of the face this vertex is of, in the world, the
+     * fourth the third's again for a triangle. Every vertex of a face
+     * carries all of them because the two tests the renderer makes
+     * before it draws a tile's face are of the face and not of the
+     * corner (render_EmitTile): it leaves out a face turned away from
+     * the camera (render_FaceFront, the cross product of its first
+     * three corners on the screen) and a face whose farthest corner is
+     * nearer than the cutoff (RENDER_OT_CUTOFF), which is how the
+     * ground between the camera and the fight is kept out of the way. */
+    GLfloat corner[4][3];
+} StageVertex; /* 92 bytes */
 
 static struct {
     s32 is_started;
@@ -286,7 +286,6 @@ static struct {
     GLint at_fog_rect;
     GLint at_depth_shift;
     GLint at_cutoff;
-    GLint at_reach;
     /* the mesh as it stands */
     s32 version; /* which stage's data it was built from */
     PortAddress tiles;
@@ -316,7 +315,11 @@ static const char g_stage_vertex_text[] =
     "layout(location = 3) in ivec4 a_page;\n"
     "layout(location = 4) in uvec4 a_info;\n"
     "layout(location = 5) in uint a_tile;\n"
-    "layout(location = 6) in vec4 a_bound;\n" /* the face as a ball */
+    /* the corners of the face this vertex is of */
+    "layout(location = 6) in vec3 a_corner0;\n"
+    "layout(location = 7) in vec3 a_corner1;\n"
+    "layout(location = 8) in vec3 a_corner2;\n"
+    "layout(location = 9) in vec3 a_corner3;\n"
     /* the view the renderer drew the stage's tiles with: its rotation
      * already scaled as the tiles' own projection scales it, where the
      * camera is, the distance to the projection plane, and where the
@@ -329,8 +332,6 @@ static const char g_stage_vertex_text[] =
     "uniform vec2 u_target;\n"
     "uniform vec2 u_scale;\n"
     "uniform float u_near;\n"
-    /* how much of a depth a world unit is, for the ball above */
-    "uniform float u_reach;\n"
     "uniform int u_depth_shift;\n"
     "uniform int u_cutoff;\n"
     "out vec2 v_texture;\n"
@@ -352,11 +353,24 @@ static const char g_stage_vertex_text[] =
     "}\n"
     "void main() {\n"
     "    vec3 v = u_view * (a_place - u_camera);\n"
-    /* the farthest this face reaches, which is what says whether the
-     * renderer would have drawn it at all */
-    "    float far = (u_view * (a_bound.xyz - u_camera)).z\n"
-    "              + a_bound.w * u_reach;\n"
-    "    v_cull = slot_of(int(clamp(far, 0.0, 65535.0))) < u_cutoff ? 1 : 0;\n"
+    /* The two tests the renderer makes of a whole face before it draws
+     * it (render_EmitTile). A face is turned away from the camera when
+     * the cross product of its first three corners on the screen comes
+     * out positive (render_FaceFront: MAC0 < 0 is front); the corners
+     * divided by their own depths, that sign is the sign of the volume
+     * the three make with the eye, which is worked out here and holds
+     * whether or not the face crosses the plane of the eye. And the
+     * depth the face is sorted at is its farthest corner's, which is
+     * what says whether it is nearer than the cutoff. */
+    "    vec3 c0 = u_view * (a_corner0 - u_camera);\n"
+    "    vec3 c1 = u_view * (a_corner1 - u_camera);\n"
+    "    vec3 c2 = u_view * (a_corner2 - u_camera);\n"
+    "    vec3 c3 = u_view * (a_corner3 - u_camera);\n"
+    "    float far = max(max(c0.z, c1.z), max(c2.z, c3.z));\n"
+    "    bool front = dot(c0, cross(c1, c2)) < 0.0;\n"
+    "    v_cull = (!front ||\n"
+    "              slot_of(int(clamp(far, 0.0, 65535.0))) < u_cutoff)\n"
+    "             ? 1 : 0;\n"
     /* The projection the coprocessor makes, written so that every
      * component is linear in the point: the card's own divide by w puts
      * the corner where the GTE put it, and a face that crosses the near
@@ -532,14 +546,23 @@ static void port_GlStageFormat(void) {
     glVertexAttribIPointer(
         5, 1, GL_UNSIGNED_SHORT, (GLsizei)sizeof(*one), &one->tile);
     glVertexAttribPointer(
-        6, 4, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->bound);
-    glEnableVertexAttribArray(6);
+        6, 3, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->corner[0]);
+    glVertexAttribPointer(
+        7, 3, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->corner[1]);
+    glVertexAttribPointer(
+        8, 3, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->corner[2]);
+    glVertexAttribPointer(
+        9, 3, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->corner[3]);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
     glEnableVertexAttribArray(3);
     glEnableVertexAttribArray(4);
     glEnableVertexAttribArray(5);
+    glEnableVertexAttribArray(6);
+    glEnableVertexAttribArray(7);
+    glEnableVertexAttribArray(8);
+    glEnableVertexAttribArray(9);
 }
 
 const char *port_GlStageStart(void *(*getproc)(const char *name)) {
@@ -592,7 +615,6 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
     AT(at_fog_rect, "u_fog_rect");
     AT(at_depth_shift, "u_depth_shift");
     AT(at_cutoff, "u_cutoff");
-    AT(at_reach, "u_reach");
 #undef AT
     glGenBuffers(1, &g_stage.buffer);
     glGenVertexArrays(1, &g_stage.array);
@@ -685,56 +707,22 @@ typedef struct {
     u8 color[4]; /* red, green, blue, the flags */
     s16 page[4];
     u8 info[4];
-    /* the face as a ball in the world: its middle and how far its
-     * corners reach from there */
-    GLfloat bound[4];
+    /* the face's corners in the world, in the order the record has
+     * them, the fourth the third's again for a triangle */
+    GLfloat corner[4][3];
 } StageFace;
 
-/* The ball round a face's corners, in the world. */
-static void port_GlStageBound(
+/* The face's corners in the world, which every vertex of it carries. */
+static void port_GlStageCorners(
     StageFace *face, const StageCorner *corner, s32 count) {
-    double middle[3] = {0.0, 0.0, 0.0};
-    double worst = 0.0;
     s32 i;
-    s32 j;
 
-    for (i = 0; i < count; i++) {
-        middle[0] += (double)(face->tile_x + corner[i].x);
-        middle[1] += (double)corner[i].y;
-        middle[2] += (double)(face->tile_z + corner[i].z);
-    }
-    for (j = 0; j < 3; j++) {
-        middle[j] /= (double)count;
-    }
-    for (i = 0; i < count; i++) {
-        double away[3];
-        double square;
+    for (i = 0; i < 4; i++) {
+        const StageCorner *one = &corner[i < count ? i : count - 1];
 
-        away[0] = (double)(face->tile_x + corner[i].x) - middle[0];
-        away[1] = (double)corner[i].y - middle[1];
-        away[2] = (double)(face->tile_z + corner[i].z) - middle[2];
-        square = away[0] * away[0] + away[1] * away[1] + away[2] * away[2];
-        if (square > worst) {
-            worst = square;
-        }
-    }
-    for (j = 0; j < 3; j++) {
-        face->bound[j] = (GLfloat)middle[j];
-    }
-    /* the square root, worked out here rather than linked to: this file
-     * has no maths library, and it runs once for each face of a stage
-     * and never again */
-    {
-        double radius = worst;
-
-        if (radius > 0.0) {
-            for (i = 0; i < 40; i++) {
-                radius = 0.5 * (radius + worst / radius);
-            }
-        }
-        /* a unit over, so that nothing of the face lies outside the ball
-         * once the numbers have been rounded */
-        face->bound[3] = (GLfloat)(radius + 1.0);
+        face->corner[i][0] = (GLfloat)(face->tile_x + one->x);
+        face->corner[i][1] = (GLfloat)one->y;
+        face->corner[i][2] = (GLfloat)(face->tile_z + one->z);
     }
 }
 
@@ -757,7 +745,11 @@ static void port_GlStagePutVertex(
     to->tile = (u16)face->tile;
     to->pad = 0;
     for (i = 0; i < 4; i++) {
-        to->bound[i] = face->bound[i];
+        s32 j;
+
+        for (j = 0; j < 3; j++) {
+            to->corner[i][j] = face->corner[i][j];
+        }
     }
 }
 
@@ -796,7 +788,6 @@ static s32 port_GlStageIsFlat(const StageCorner *corner) {
 static void port_GlStageQuad(StageFace *face, const StageCorner *corner) {
     /* the chip's two triangles: the first three corners and the last
      * three */
-    port_GlStageBound(face, corner, 4);
     port_GlStageTriangle(face, &corner[0], &corner[1], &corner[2]);
     port_GlStageTriangle(face, &corner[1], &corner[2], &corner[3]);
 }
@@ -906,9 +897,13 @@ static void port_GlStageFace(
         corner[i].uv = STAGE_HALF(record, RECORD_UV0 + 2 * i);
     }
     g_stage.faces++;
+    /* The renderer makes its two tests of the face once, of the corners
+     * the record names, and cuts afterwards: every piece a cut face
+     * breaks into is drawn or left out with the whole (render_EmitTile).
+     * So every vertex of every piece carries the record's own corners. */
+    port_GlStageCorners(&face, corner, quad ? 4 : 3);
     if (!quad) {
         /* a triangle takes the same shape however often it is cut */
-        port_GlStageBound(&face, corner, 3);
         port_GlStageTriangle(&face, &corner[0], &corner[1], &corner[2]);
         return;
     }
@@ -1140,8 +1135,6 @@ static void port_GlStageDrawMesh(
         (GLfloat)picture->target_h);
     glUniform2f(g_stage.at_scale, (GLfloat)scale_x, (GLfloat)scale_y);
     glUniform1f(g_stage.at_near, NEAR_PLANE * 2.0f);
-    glUniform1f(
-        g_stage.at_reach, 1.0f / (GLfloat)(1 << (view->far_shift & 31)));
     glUniform1f(g_stage.at_depth, DEPTH_RANGE);
     glUniform1i(g_stage.at_depth_shift, view->depth_shift & 31);
     glUniform1i(g_stage.at_cutoff, view->ot_cutoff);

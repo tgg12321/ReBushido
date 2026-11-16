@@ -46,15 +46,80 @@ def read(path):
     return width, height, pixels
 
 
-def look(a_dir, b_dir, pairs, folder):
+# A cell of 8 by 8 pixels whose two means are more than 24 apart, in an
+# area of 9 such cells or more. Measured against a picture known to be
+# wrong (a face drawn across the whole of it) and two known to be right:
+# the wrong one marks 45% of its cells and the right ones 1.5% and 0.5%.
+CELL = 8
+STEP = 24
+PATCH = 9
+
+
+def cell_means(pixels, w, cell_x, cell_y):
+    """The mean of a cell's pixels, one number per channel."""
+    total = [0, 0, 0]
+    count = 0
+    for y in range(cell_y * CELL, cell_y * CELL + CELL):
+        at = (y * w + cell_x * CELL) * 3
+        for _ in range(CELL):
+            total[0] += pixels[at]
+            total[1] += pixels[at + 1]
+            total[2] += pixels[at + 2]
+            at += 3
+            count += 1
+    return [t // count for t in total]
+
+
+def patches(cells, cw, ch):
+    """The connected areas of the cells that differ, in cells: how many
+    cells are in an area of PATCH cells or more, and the largest area.
+
+    A face drawn that should not be, or left out that should not be,
+    shows as one area of the picture whose colour is plainly other; a
+    ground of noise read half a texel along differs in as many pixels
+    but keeps its colour, and a cell's mean is what tells the two
+    apart."""
+    seen = bytearray(cw * ch)
+    big = 0
+    worst = 0
+    for start in range(cw * ch):
+        if not cells[start] or seen[start]:
+            continue
+        stack = [start]
+        seen[start] = 1
+        found = 0
+        while stack:
+            at = stack.pop()
+            found += 1
+            x = at % cw
+            y = at // cw
+            for to, ok in ((at - 1, x > 0), (at + 1, x + 1 < cw),
+                           (at - cw, y > 0), (at + cw, y + 1 < ch)):
+                if ok and cells[to] and not seen[to]:
+                    seen[to] = 1
+                    stack.append(to)
+        if found >= PATCH:
+            big += found
+        if found > worst:
+            worst = found
+    return big, worst
+
+
+def look(a_dir, b_dir, pairs, folder, first_blank):
     """The two runs' pictures against each other."""
     got = {'shots': 0, 'pixels': 0, 'differ': 0, 'far': 0, 'worst': 0,
-           'holes': 0, 'filled': 0}
+           'holes': 0, 'filled': 0, 'patch': 0, 'worst_patch': 0}
     if not os.path.isdir(a_dir) or not os.path.isdir(b_dir):
         return got
     names = sorted(n for n in os.listdir(a_dir) if n.endswith('.png'))
     made = 0
     for name in names:
+        # gl-004200.png: the blank it was taken at. The menus before the
+        # fight are the same picture both ways and say nothing about the
+        # ground, so only the fight is measured.
+        digits = ''.join(c for c in name if c.isdigit())
+        if digits and int(digits) < first_blank:
+            continue
         b_path = os.path.join(b_dir, name)
         if not os.path.exists(b_path):
             continue
@@ -64,6 +129,9 @@ def look(a_dir, b_dir, pairs, folder):
             continue
         got['shots'] += 1
         got['pixels'] += aw * ah
+        cw = (aw + CELL - 1) // CELL
+        ch = (ah + CELL - 1) // CELL
+        counted = bytearray(cw * ch)
         for i in range(0, len(ap), 3):
             a = ap[i:i + 3]
             b = bp[i:i + 3]
@@ -73,6 +141,8 @@ def look(a_dir, b_dir, pairs, folder):
             d = max(abs(a[j] - b[j]) for j in range(3))
             if d > 32:
                 got['far'] += 1
+            at = i // 3
+            counted[(at // aw // CELL) * cw + (at % aw) // CELL] = 1
             if d > got['worst']:
                 got['worst'] = d
             # black is what the game clears its picture to: a pixel the
@@ -81,6 +151,22 @@ def look(a_dir, b_dir, pairs, folder):
                 got['holes'] += 1
             elif a == b'\0\0\0':
                 got['filled'] += 1
+        # a cell the two pictures hold a plainly other colour in
+        cells = bytearray(cw * ch)
+        for n, touched in enumerate(counted):
+            if not touched:
+                continue
+            x = n % cw
+            y = n // cw
+            if (x + 1) * CELL > aw or (y + 1) * CELL > ah:
+                continue
+            one = cell_means(ap, aw, x, y)
+            two = cell_means(bp, bw, x, y)
+            if max(abs(one[j] - two[j]) for j in range(3)) > STEP:
+                cells[n] = 1
+        big, worst = patches(cells, cw, ch)
+        got['patch'] += big * CELL * CELL
+        got['worst_patch'] = max(got['worst_patch'], worst * CELL * CELL)
         if made < pairs:
             made += 1
             out = os.path.join(folder, 'pair-' + name)
@@ -115,6 +201,7 @@ def main():
     ap.add_argument('--distance', default='max')
     ap.add_argument('--aspect', default='4:3')
     ap.add_argument('--pairs', type=int, default=0)
+    ap.add_argument('--from-blank', type=int, default=2900)
     ap.add_argument('--out', default='build/stagemesh')
     args = ap.parse_args()
     if not os.path.isfile(PROGRAM):
@@ -173,17 +260,18 @@ def main():
         same = same_trace(os.path.join(folder, 'off.log'),
                           os.path.join(folder, 'on.log'))
         seen = look(os.path.join(folder, 'off'), os.path.join(folder, 'on'),
-                    args.pairs, folder)
+                    args.pairs, folder, args.from_blank)
         row = {'stage': stage, 'name': STAGE_NAMES[stage], 'same_trace': same,
                'off': runs['off'], 'on': runs['on'], 'pixels': seen}
         rows.append(row)
-        print('%-24s trace %-5s  pictures %2d  differ %8d of %9d (%5.2f%%)  '
-              'far %7d  holes %6d  filled %7d  worst %3d  '
+        print('%-24s trace %-5s  pictures %2d  differ %5.2f%%  '
+              'patches %7d (%5.3f%%) worst %6d  holes %6d  filled %7d  '
               'vertices %6d -> %6d  %5.1f s -> %5.1f s'
               % (row['name'], 'same' if same else 'DIFFER', seen['shots'],
-                 seen['differ'], seen['pixels'],
-                 100.0 * seen['differ'] / max(seen['pixels'], 1), seen['far'],
-                 seen['holes'], seen['filled'], seen['worst'],
+                 100.0 * seen['differ'] / max(seen['pixels'], 1),
+                 seen['patch'],
+                 100.0 * seen['patch'] / max(seen['pixels'], 1),
+                 seen['worst_patch'], seen['holes'], seen['filled'],
                  runs['off']['vertices_mean'], runs['on']['vertices_mean'],
                  runs['off']['seconds'], runs['on']['seconds']))
         sys.stdout.flush()
