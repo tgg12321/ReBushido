@@ -23,6 +23,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_shadow.h"
 #include "gl_tween.h"
 #include "port_gpu.h"
 #include "port_host.h"
@@ -52,7 +53,8 @@ static struct {
     const char *shots;
     u32 every;
     s32 compares;
-    s32 blocks;  /* the picture held to the console's, block for block */
+    s32 blocks;      /* the picture held to the console's, block for block */
+    s32 shadow_mask; /* the shadows' mask in the place of the picture */
     s32 guesses; /* the pictures between frames paired by likeness alone */
     s32 writes_original;
     u32 blanks;
@@ -126,6 +128,9 @@ static const char g_usage[] =
     "                 hardware path as well (the default follows the\n"
     "                 game's own options page)\n"
     "  --filter KIND  nearest: a texel is a block; linear: smoothed\n"
+    "  --shadows W    original: the game's own black silhouettes; soft:\n"
+    "                 the ground under them darkened instead; or how\n"
+    "                 much it darkens, in hundredths (gl_shadow.h)\n"
     "  --stage-mesh W on, off: the stage's ground drawn from one static\n"
     "                 mesh instead of the game's tile primitives\n"
     "                 (gl_stage.h)\n"
@@ -133,6 +138,8 @@ static const char g_usage[] =
     "                 them, the texture flat, five bits a channel with\n"
     "                 the chip's dither. For the comparison at scale 1\n"
     "  --gl-compare   count the pixels the two pictures differ in\n"
+    "  --gl-shadow-mask  the shadows' mask in the place of the picture:\n"
+    "                 red the silhouettes, green what is not the ground\n"
     "  --gl-blocks    hold the picture to the console's own scaled up by\n"
     "                 whole blocks: what the game draws flat must come\n"
     "                 out as the console's picture at every scale\n"
@@ -1011,6 +1018,12 @@ static void port_GlQuit(s32 code) {
     fprintf(stderr, "gl run mixed half %u add %u subtract %u quarter %u\n",
             counts->mixed[0], counts->mixed[1], counts->mixed[2],
             counts->mixed[3]);
+    fprintf(stderr,
+            "gl run shadows strength %d faces %u last_faces %d lost %d "
+            "widest_area %u occluders %d\n",
+            port_GlShadowStrength(), counts->shadows, port_GlShadowFaces(),
+            port_GlShadowLost(), port_GlShadowArea(),
+            port_GlShadowOccluders());
     if (g_run.compared != 0) {
         fprintf(stderr,
                 "gl run compared %u pictures %u pixels different %u close %u "
@@ -1096,6 +1109,8 @@ int main(int argc, char **argv) {
             options.is_exact = TRUE;
         } else if (!strcmp(word, "--gl-compare")) {
             g_run.compares = TRUE;
+        } else if (!strcmp(word, "--gl-shadow-mask")) {
+            g_run.shadow_mask = TRUE;
         } else if (!strcmp(word, "--gl-blocks")) {
             g_run.blocks = TRUE;
         } else if (!strcmp(word, "--gl-guess")) {
@@ -1132,6 +1147,21 @@ int main(int argc, char **argv) {
             options.is_bilinear = !strcmp(argv[++i], "linear");
         } else if (!strcmp(word, "--stage-mesh")) {
             options.is_stage_mesh = !strcmp(argv[++i], "on");
+        } else if (!strcmp(word, "--shadows")) {
+            const char *how = argv[++i];
+
+            if (!strcmp(how, "original")) {
+                options.shadows = 0;
+            } else if (!strcmp(how, "soft")) {
+                options.shadows = PORT_SHADOWS_SOFT;
+            } else {
+                options.shadows = atoi(how);
+                if (options.shadows < 1 || options.shadows > 100) {
+                    fprintf(stderr, "rebushido-gl: --shadows takes original, "
+                                    "soft, or 1 to 100\n");
+                    return PORT_EXIT_USAGE;
+                }
+            }
         } else if (!strcmp(word, "--draw-distance")) {
             view.distance = port_ReadRemasterDistance(argv[++i]);
             if (view.distance < 0) {
@@ -1196,6 +1226,11 @@ int main(int argc, char **argv) {
         return PORT_EXIT_FAILED;
     }
     problem = port_GlStart(port_GlGetProc, &options);
+    port_GlShadowShowMask(g_run.shadow_mask);
+    if (problem == NULL && options.shadows > 0 && !port_GlShadowIsSoft()) {
+        fprintf(stderr, "rebushido-gl: the shadows are the game's own: %s\n",
+                port_GlShadowProblem());
+    }
     if (problem != NULL) {
         fprintf(stderr, "rebushido-gl: %s\n", problem);
         return PORT_EXIT_FAILED;

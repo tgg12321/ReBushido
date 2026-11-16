@@ -46,6 +46,10 @@ typedef struct {
      * drawing path alone: the game emits its tiles exactly as it did and
      * the card leaves them out. */
     s32 is_stage_mesh;
+    /* How much the fighters' shadows darken the ground they fall on, in
+     * hundredths: 0 for the game's own black silhouettes, which is what
+     * `shadows original` means (gl_shadow.h, docs/PORT.md). */
+    s32 shadows;
     /* The three things that make the hardware's picture the console's,
      * for the proof at scale 1 (docs/PORT.md, "Remastered"): the
      * corners where the PlayStation held them, the texture flat across
@@ -147,6 +151,49 @@ typedef struct {
 } PortGlPicture;
 
 extern void port_GlGetPicture(PortGlPicture *picture);
+
+/* ---- what the fighters' shadows need of the picture (gl_shadow.h) ---- */
+
+/* A corner of a primitive as the picture draws it, for a caller that
+ * draws the same geometry into a buffer of its own: where it is in video
+ * memory's own pixels with a wider picture's margin added, and the `w`
+ * the picture's own shader is given. */
+typedef struct {
+    float x;
+    float y;
+    float w;
+} PortGlPoint;
+
+/* The triangles of a primitive as the picture would draw them, three
+ * points each: how many points it wrote (0, 3 or 6). A triangle the chip
+ * itself would not have drawn is left out, exactly as the picture leaves
+ * it out (port_GlIsDrawn). */
+extern s32 port_GlPlacePoints(const PortRemasterPrim *prim, PortGlPoint *out);
+
+/* The scissor the picture draws this primitive through, in the colour
+ * buffer's own pixels: the game's drawing area, the margin of a wider
+ * picture, and the whole width where the scene is drawn across it. */
+extern void port_GlScissorFor(
+    const PortRemasterPrim *prim, s32 *x, s32 *y, s32 *w, s32 *h);
+
+/* The primitives of the frame that are not the stage's ground, as the
+ * picture drew them, into `framebuffer`'s **alpha alone**: every
+ * fragment the picture kept marks its pixel as something the shadows
+ * must not darken. It is the picture's own shader, so a texel the
+ * picture threw away is thrown away here too and the ground under it
+ * keeps its shadow. The caller sets the scissor; the colour buffer is
+ * bound again afterwards. */
+extern void port_GlDrawOccluders(u32 framebuffer);
+
+/* The vertices kept for that pass in the picture being built, and those
+ * it had no room for. */
+extern s32 port_GlOccluderCount(void);
+extern s32 port_GlOccluderLost(void);
+/* They belong to the picture whose shadows have just been laid down and
+ * are kept no longer: a picture drawn between two of the game's frames
+ * is a picture of its own, and the frame after it must not be given its
+ * vertices as well (gl_shadow.h). */
+extern void port_GlForgetOccluders(void);
 /* The batch so far drawn, so that something else may draw in its turn
  * among the primitives, and the batching's state forgotten after it. */
 extern void port_GlFlushBatch(void);

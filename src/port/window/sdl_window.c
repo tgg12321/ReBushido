@@ -520,6 +520,9 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     options->is_bilinear = FALSE;
     options->is_exact = FALSE;
     options->is_stage_mesh = g_port_settings.stage_mesh;
+    /* the fighters' shadows as a darkening of the ground, or the game's
+     * own black polygons (src/port/gl/gl_shadow.h) */
+    options->shadows = g_port_settings.shadows;
 }
 
 /* The window's context and the remastered renderer on it: NULL, or why

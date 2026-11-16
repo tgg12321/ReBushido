@@ -214,6 +214,10 @@ typedef struct {
     /* The stage's ground drawn as one static mesh instead of from the
      * game's tile primitives (src/port/gl/gl_stage.h). */
     s32 stage_mesh;
+    /* How much a fighter's shadow darkens the ground it falls on, in
+     * hundredths: 0 is the game's own black silhouettes
+     * (src/port/gl/gl_shadow.h; PORT_SHADOWS_SOFT). */
+    s32 shadows;
 } PortSettings;
 
 /* The number of the key, button or axis of this name, as the window's

@@ -39,6 +39,9 @@ typedef struct {
     PortAddress prim;
     u32 epoch;
     s32 count;
+    /* this primitive is a face of a shadow: the renderer was walking a
+     * node of kind NODE_KIND_SHADOW (port_RemasterNoteShadow) */
+    s32 is_shadow;
     /* which face of which thing this primitive is a drawing of; its
      * `object` is 0 where the renderer said nothing */
     PortRemasterIdentity id;
@@ -70,6 +73,10 @@ static PortRemasterIdentity g_id;
 /* Which edge of a wider picture the primitives now being built belong to
  * (port_remaster.h). */
 static s32 g_anchor;
+
+/* Whether the renderer is walking a shadow node, so that every primitive
+ * it links now is a face of a shadow (port_RemasterNoteShadow). */
+static s32 g_is_shadow;
 
 /* The face the renderer last looked up, waiting for the primitive it
  * becomes. */
@@ -545,6 +552,7 @@ void port_RemasterAttachFace(PortAddress prim) {
         found->prim = prim;
         found->epoch = g_epoch;
         found->count = g_face_count;
+        found->is_shadow = g_is_shadow;
         found->id = g_id;
         g_id.piece++;
         for (corner = 0; corner < g_face_count; corner++) {
@@ -566,6 +574,14 @@ void port_RemasterNoteObject(PortAddress object) {
     /* no face has been looked up for what is about to be drawn: a
      * primitive linked before one is has corners of its own */
     g_face_count = 0;
+}
+
+void port_RemasterNoteShadow(s32 is_shadow) {
+    if (g_backend == NULL) {
+        g_is_shadow = FALSE;
+        return;
+    }
+    g_is_shadow = is_shadow != 0;
 }
 
 void port_RemasterNoteGroup(PortAddress group) {
@@ -742,6 +758,7 @@ s32 port_RemasterLeftMargin(void) { return g_left_margin; }
 void port_RemasterNewFrame(void) {
     port_RemasterFindLeftMargin();
     g_anchor = PORT_ANCHOR_MIDDLE;
+    g_is_shadow = FALSE;
     if (g_backend == NULL) {
         return;
     }
@@ -1117,6 +1134,13 @@ static void port_DecodePolygon(
         prim.id.face = 0;
         prim.id.piece = 0;
     }
+    /* a face of a fighter's or a weapon's shadow, flattened onto the
+     * ground and painted black (port_remaster.h) */
+    prim.is_shadow = slot != NULL && slot->is_shadow;
+    if (prim.is_shadow) {
+        g_counts.shadows++;
+        g_frame_counts.shadows++;
+    }
     /* the scene, which a wider picture is wider of itself */
     prim.anchor = PORT_ANCHOR_MIDDLE;
     if (face != NULL && face->count != corner_count) {
@@ -1216,6 +1240,7 @@ static void port_DecodeRectangle(
     prim.corner_count = 1;
     prim.has_depth = FALSE;
     prim.has_place = FALSE;
+    prim.is_shadow = FALSE;
     prim.id.object = 0;
     prim.id.group = 0;
     prim.id.face = 0;

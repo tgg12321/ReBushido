@@ -105,6 +105,7 @@ draw_distance = far      # original, far, or max: how much of the stage
 antialiasing = 2         # off, 2 or 4: the scene's edges smoothed
 aspect = 4:3             # the console's shape; 16:9 is the default
 stage_mesh = on          # the ground as one mesh; off is the default
+shadows = soft           # original (the game's black ones) or soft
 frame_rate = display     # original (the default), display, or a number
 p1.cross = key Space     # Space is player one's Cross, and Z no longer
 p1.circle = key Left Ctrl
@@ -153,6 +154,7 @@ nothing at all while Graphics is Original.
 | `draw_distance` | `original`, `far`, `max` | How much of the stage is drawn, and how far out its fog is placed. The console draws a disc of about 26,000 units about the camera and its fog ends there, so the ground fades into the distance; `far` draws about twice as much, and `max` draws the stage to its own far edge with the fog pushed out four times as far. The fog's colours are not touched, so a night stage stays as dark as it was. **`max` with nothing said**: it is the only one of the three that draws the same cells whichever way the camera looks, so nothing of the stage comes and goes as the camera turns. |
 | `antialiasing` | `off`, `2`, `4` | The scene drawn that many times over each way and averaged down, which smooths its edges. The HUD, the fonts and the menus are left exactly as crisp as they were. It costs fill rate and nothing else: four times over is sixteen times the pixels. `2` with nothing said. |
 | `aspect` | `4:3`, `16:9`, any `W:H` | The shape of the picture. A wider one is a **wider view of the same scene**, not a stretched picture: the camera keeps its height and gains width. Use it with `draw_distance max`, which fills the sides. `16:9` with nothing said; the fight's counters, clocks and points are drawn at the new edges, while the menus, the select screens and the loading pictures keep the console's shape in the middle ([`PORT.md`](PORT.md), "A wider picture"). |
+| `shadows` | `original`, `soft`, a number | What a fighter's shadow is. `original`, the default, is the game's own: the fighter's shape flattened onto the ground and painted **black**, which hides the ground under it. `soft` **darkens** the ground under that same shape instead, by 55 hundredths, so the ground keeps its texture through the shadow; the edge is softened by about three pixels of the picture, two shadows that cross are no darker than one, and **a fighter standing in a shadow is never darkened** -- its own feet and legs are exactly as lit as they are with the setting off. A number says how much of the ground a shadow takes, in hundredths, for trying another. **`original` with nothing said**: nobody has looked at the soft ones on a screen yet ([`PORT.md`](PORT.md), "The shadows"). |
 | `stage_mesh` | `on`, `off` | The stage's ground drawn from **one mesh of the whole stage**, built when the stage loads, instead of from the tiles the console builds again every frame. Nothing of the ground comes and goes as the camera turns, its detail never steps, and a picture drawn between two of the game's frames has only to move the camera. It is drawn this way on the 32 fight stages, each of which was measured against the console's own tiles; the practice stages, which no versus fight can be set on and so nothing has measured, keep the tiles whatever the setting says. **`off` with nothing said**: nobody has looked at it on a screen yet ([`PORT.md`](PORT.md), "The ground as one mesh"). |
 
 ## More pictures a second
@@ -185,8 +187,9 @@ What may show: a weapon or a spark that appears or vanishes between two
 frames waits for the next frame rather than fading in, and a camera cut
 shows the console's own picture until the cut is over.
 
-What Remastered does **not** do yet: new lighting or shadows. That is
-the step after it ([`ROADMAP.md`](ROADMAP.md), item 7).
+What Remastered does **not** do yet: new lighting. That is the step
+after it ([`ROADMAP.md`](ROADMAP.md), item 7). The fighters' shadows it
+does do, where `shadows` asks for them (above).
 
 ## Where the saves are
 
