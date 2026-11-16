@@ -1451,14 +1451,12 @@ s32 port_GlPlacePoints(const PortRemasterPrim *prim, PortGlPoint *out) {
         return 0;
     }
     for (i = 0; i < triangles; i++) {
-        if (!port_GlIsDrawn(
-                prim, corner[i][0], corner[i][1], corner[i][2])) {
+        if (!port_GlIsDrawn(prim, corner[i][0], corner[i][1], corner[i][2])) {
             continue;
         }
         for (j = 0; j < 3; j++) {
             const PortRemasterCorner *from = &prim->corner[corner[i][j]];
-            GLfloat at =
-                (GLfloat)(g_gl.margin + prim->anchor * g_gl.margin);
+            GLfloat at = (GLfloat)(g_gl.margin + prim->anchor * g_gl.margin);
 
             if (prim->has_place && !g_gl.options.is_exact) {
                 out[many].x = port_GlPlace(from->x) + at;
@@ -1503,10 +1501,10 @@ void port_GlDrawOccluders(u32 framebuffer) {
     glUseProgram(g_gl.program);
     glBindVertexArray(g_gl.array);
     glBindBuffer(GL_ARRAY_BUFFER, g_gl.buffer);
-    glBufferData(GL_ARRAY_BUFFER,
-                 (GLsizeiptr)((u32)g_gl.occluder_count *
-                              sizeof(*g_gl.occluders)),
-                 g_gl.occluders, GL_STREAM_DRAW);
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        (GLsizeiptr)((u32)g_gl.occluder_count * sizeof(*g_gl.occluders)),
+        g_gl.occluders, GL_STREAM_DRAW);
     port_GlSetUniforms();
     glUniform1i(g_gl.at_pass, PASS_ALL);
     /* the alpha alone: what the fragment's colour is does not matter,

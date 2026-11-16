@@ -55,7 +55,7 @@ static struct {
     s32 compares;
     s32 blocks;      /* the picture held to the console's, block for block */
     s32 shadow_mask; /* the shadows' mask in the place of the picture */
-    s32 guesses; /* the pictures between frames paired by likeness alone */
+    s32 guesses;     /* the pictures between frames paired by likeness alone */
     s32 writes_original;
     u32 blanks;
     /* how far the two pictures were apart, over the whole run */
@@ -1022,8 +1022,7 @@ static void port_GlQuit(s32 code) {
             "gl run shadows strength %d faces %u last_faces %d lost %d "
             "widest_area %u occluders %d\n",
             port_GlShadowStrength(), counts->shadows, port_GlShadowFaces(),
-            port_GlShadowLost(), port_GlShadowArea(),
-            port_GlShadowOccluders());
+            port_GlShadowLost(), port_GlShadowArea(), port_GlShadowOccluders());
     if (g_run.compared != 0) {
         fprintf(stderr,
                 "gl run compared %u pictures %u pixels different %u close %u "

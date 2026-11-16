@@ -181,8 +181,8 @@ static struct {
     s32 lost; /* triangles a frame had no room for */
     /* this frame */
     s32 has_any;
-    ShadowBox box;   /* the silhouettes, in the colour buffer's pixels */
-    ShadowBox clip;  /* ... and the drawing area they belong to */
+    ShadowBox box;  /* the silhouettes, in the colour buffer's pixels */
+    ShadowBox clip; /* ... and the drawing area they belong to */
     s32 cover_count;
     ShadowBox cover[COVERS_MAX];
     /* what the last frame did, and the run */
@@ -409,8 +409,8 @@ static s32 port_GlShadowMakeMask(const PortGlPicture *picture) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindFramebuffer(GL_FRAMEBUFFER, g_shadow.framebuffer);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                           g_shadow.mask, 0);
+    glFramebufferTexture2D(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_shadow.mask, 0);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         port_GlShadowSay("the shadows' mask cannot be drawn into", NULL);
         glBindFramebuffer(GL_FRAMEBUFFER, picture->framebuffer);
@@ -659,8 +659,8 @@ static void port_GlShadowDrawSilhouettes(const PortGlPicture *picture) {
                  g_shadow.point, GL_STREAM_DRAW);
     glUniform2f(g_shadow.at_target, (GLfloat)picture->target_w,
                 (GLfloat)picture->target_h);
-    glUniform2f(g_shadow.at_scale, (GLfloat)picture->draw_x,
-                (GLfloat)picture->draw_y);
+    glUniform2f(
+        g_shadow.at_scale, (GLfloat)picture->draw_x, (GLfloat)picture->draw_y);
     glDisable(GL_BLEND);
     glDrawArrays(GL_TRIANGLES, 0, g_shadow.count);
     port_GlCountDraw((u32)g_shadow.count, 1);
@@ -754,13 +754,12 @@ static void port_GlShadowPaint(void) {
     glUniform1i(g_shadow.dark_at_mask, 0);
     glUniform2f(g_shadow.dark_at_target, (GLfloat)picture.target_w,
                 (GLfloat)picture.target_h);
-    glUniform4f(g_shadow.dark_at_rect, (GLfloat)painted.left,
-                (GLfloat)painted.top,
-                (GLfloat)(painted.right - painted.left + 1),
-                (GLfloat)(painted.bottom - painted.top + 1));
+    glUniform4f(
+        g_shadow.dark_at_rect, (GLfloat)painted.left, (GLfloat)painted.top,
+        (GLfloat)(painted.right - painted.left + 1),
+        (GLfloat)(painted.bottom - painted.top + 1));
     glUniform1f(g_shadow.dark_at_radius, (GLfloat)radius);
-    glUniform1f(
-        g_shadow.dark_at_strength, (GLfloat)g_shadow.strength / 100.0f);
+    glUniform1f(g_shadow.dark_at_strength, (GLfloat)g_shadow.strength / 100.0f);
     glUniform1i(g_shadow.dark_at_show, g_shadow.is_shown);
     /* what is there times what this draws: the ground keeps its texture
      * and is never covered */
