@@ -228,6 +228,11 @@ typedef struct {
                       * whole stage is drawn, whichever way the camera
                       * looks, and nothing of it comes and goes */
     u32 nodes;       /* ... and pieces of the stage */
+    u32 nodes_least; /* ... and at least, which says the same of the
+                      * pieces that stand on the ground as `tiles_least`
+                      * says of the ground: they are collected from the
+                      * same cells, so where no cell comes and goes no
+                      * piece does either */
     u32 side_full;   /* times the side channel's tables were full */
 } PortRemasterLimits;
 
@@ -445,6 +450,12 @@ extern s32 port_RemasterStageNumber(void);
 
 #define PORT_REMASTER_CORNERS 4
 
+/* The most a primitive's depth is scaled down by (`depth_shift` below):
+ * the renderer's own scale is 0, 1 or 2, and the stage's tiles take one
+ * of their own, which is three at the most (g_scene_settings.far_shift,
+ * RENDER_SHIFT_MASK). */
+#define PORT_REMASTER_DEPTH_SHIFT_MAX 3
+
 typedef struct {
     s32 x; /* 16.16 pixels, the drawing offset added */
     s32 y;
@@ -517,6 +528,14 @@ typedef struct {
     /* every corner has a depth from the GTE: the texture is drawn in
      * perspective and the corners are where the GTE really put them */
     s32 has_depth;
+    /* How far down the scale a corner's depth is: the renderer scales
+     * what it draws by the distance so that the coprocessor's sixteen
+     * bits are enough (`scale_shift`, render_SetupNode), so a corner's
+     * depth times two to this is a depth in the world's own units. That
+     * is the scale the ground drawn as one mesh keeps its own depth
+     * buffer in, so this is what lets the two be held against each other
+     * (src/port/gl/gl_stage.c). 0 where there is no depth. */
+    s32 depth_shift;
     /* Every corner has the place the GTE worked out, whether or not it
      * has a depth to go with it: the corners are drawn where the
      * projection really put them, and the primitive is moved between

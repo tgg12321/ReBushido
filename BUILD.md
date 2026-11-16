@@ -148,6 +148,11 @@ python3 tools/port_gl_prove.py --image "Bushido Blade 2 (USA).cue"
 # the pictures it draws between the game's frames (docs/PORT.md,
 # "More pictures a second"), into build/fps/
 python3 tools/port_fps_prove.py --image "Bushido Blade 2 (USA).cue"
+# the stage's ground drawn as one mesh, against the game's own tiles,
+# stage by stage (docs/PORT.md, "The ground as one mesh"), into
+# build/stagemesh/: the verdict a stage keeps the mesh by is
+# build/stagemesh/verdict.txt
+python3 tools/port_stage_prove.py --image "Bushido Blade 2 (USA).cue"
 ```
 
 On Ubuntu it needs `lib32gcc-13-dev` and 32-bit EGL (`libegl-dev:i386`),

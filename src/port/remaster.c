@@ -39,6 +39,9 @@ typedef struct {
     PortAddress prim;
     u32 epoch;
     s32 count;
+    /* the scale the renderer drew this thing at (port_remaster.h,
+     * `depth_shift`) */
+    s32 depth_shift;
     /* this primitive is a face of a shadow: the renderer was walking a
      * node of kind NODE_KIND_SHADOW (port_RemasterNoteShadow) */
     s32 is_shadow;
@@ -347,6 +350,9 @@ void port_RemasterNoteCells(s32 tiles, s32 nodes, s32 queue_size) {
     if ((u32)nodes > g_limits.nodes) {
         g_limits.nodes = (u32)nodes;
     }
+    if (g_limits.queue_size == 0 || (u32)nodes < g_limits.nodes_least) {
+        g_limits.nodes_least = (u32)nodes;
+    }
     if (g_limits.queue_size == 0 || queue_free < g_limits.queue_free) {
         g_limits.queue_free = queue_free;
     }
@@ -552,6 +558,30 @@ void port_RemasterAttachFace(PortAddress prim) {
         found->prim = prim;
         found->epoch = g_epoch;
         found->count = g_face_count;
+        /* The scale the renderer is drawing this thing at: it scales a
+         * node's matrix and its place down by the distance so that the
+         * coprocessor's sixteen bits are enough (render_SetupNode), so
+         * the depth it works out for a corner is the depth in the world
+         * shifted down by this. The ground drawn as one mesh and the
+         * rest of the scene are held against each other by a depth in
+         * the world's own units, so the backend is given the shift to
+         * put one back with (gl_draw.c, port_remaster.h).
+         *
+         * Not RENDER_DEPTH_SHIFT, which is the shift a depth takes into
+         * the ordering table and is not one thing: `3 - scale_shift`
+         * for a node's parts and for the cloth, and the scale itself
+         * for a skinned mesh, which is the fighters (render_DrawPart,
+         * render_SetupNode's NODE_KIND_SKINNED). A primitive the
+         * renderer made from a stage tile has a scale of its own
+         * (g_scene_settings.far_shift) and not this one; nothing reads
+         * a tile's, the mesh having taken its place, and where the mesh
+         * is not drawn there is no test at all. */
+        found->depth_shift = g_render_walk.scale_shift;
+        if (found->depth_shift < 0) {
+            found->depth_shift = 0;
+        } else if (found->depth_shift > PORT_REMASTER_DEPTH_SHIFT_MAX) {
+            found->depth_shift = PORT_REMASTER_DEPTH_SHIFT_MAX;
+        }
         found->is_shadow = g_is_shadow;
         found->id = g_id;
         g_id.piece++;
@@ -671,7 +701,13 @@ PortAddress port_RemasterTileMesh(s32 block, s32 mesh) {
     return (PortAddress)ADDR(g_reloc_tables[block][mesh]);
 }
 
-s32 port_RemasterStageNumber(void) { return (s32)g_fight_stage; }
+s32 port_RemasterStageNumber(void) {
+    /* The stage whose data is in the arena, and so whose tiles the mesh
+     * is built from -- not the fight's own (g_fight_stage), which a
+     * cutscene drawing a stage of its own does not change
+     * (cutscene_Start, CUTSCENE_STAGE). -1 where none is loaded. */
+    return resource_GetStage();
+}
 
 const void *port_RemasterTileLights(void) {
     /* TILE_LIGHT_SETUP, the setup render_DrawStageTiles lights a tile's
@@ -1123,6 +1159,9 @@ static void port_DecodePolygon(
     prim.rect_h = 0;
     prim.has_depth = TRUE;
     prim.has_place = TRUE;
+    /* the scale the renderer drew it at, which the depth test against
+     * the ground's own mesh puts back (port_remaster.h) */
+    prim.depth_shift = (slot != NULL) ? slot->depth_shift : 0;
     /* which face of which thing this is a drawing of: the primitive's
      * own, whether or not the face's points are this primitive's
      * corners (a tile of the stage has an identity and no points) */
@@ -1240,6 +1279,7 @@ static void port_DecodeRectangle(
     prim.corner_count = 1;
     prim.has_depth = FALSE;
     prim.has_place = FALSE;
+    prim.depth_shift = 0;
     prim.is_shadow = FALSE;
     prim.id.object = 0;
     prim.id.group = 0;

@@ -24,6 +24,7 @@
 #include "common.h"
 #include "gl.h"
 #include "gl_shadow.h"
+#include "gl_stage.h"
 #include "gl_tween.h"
 #include "port_gpu.h"
 #include "port_host.h"
@@ -131,9 +132,13 @@ static const char g_usage[] =
     "  --shadows W    original: the game's own black silhouettes; soft:\n"
     "                 the ground under them darkened instead; or how\n"
     "                 much it darkens, in hundredths (gl_shadow.h)\n"
-    "  --stage-mesh W on, off: the stage's ground drawn from one static\n"
-    "                 mesh instead of the game's tile primitives\n"
-    "                 (gl_stage.h)\n"
+    "  --stage-mesh W on, off, every: the stage's ground drawn from one\n"
+    "                 static mesh instead of the game's tile primitives\n"
+    "                 (gl_stage.h). `on` is the stages the mesh is\n"
+    "                 measured good on; `every` is every stage\n"
+    "  --stage-depth W on, off: the scene held against the ground's\n"
+    "                 own depth, so that ground between the camera and\n"
+    "                 a fighter veils him (on with the mesh)\n"
     "  --gl-exact     draw as the console: the corners where it held\n"
     "                 them, the texture flat, five bits a channel with\n"
     "                 the chip's dither. For the comparison at scale 1\n"
@@ -855,6 +860,14 @@ static void port_GlBlank(u32 blank) {
     port_RemasterShow();
     port_GlFinishFrame();
     g_run.hardware_time += port_Microseconds() - started;
+    {
+        /* which path the stage's ground takes (gl_stage.h) */
+        const char *news = port_GlStageNews();
+
+        if (news != NULL) {
+            fprintf(stderr, "gl %s\n", news);
+        }
+    }
     if (wanted && port_RemasterIsOn()) {
         const PortRemasterCounts *counts = port_GetRemasterFrameCounts();
 
@@ -988,10 +1001,11 @@ static void port_GlQuit(s32 code) {
         stderr,
         "gl run limits frames %u prim_bytes %d prim_free %d queue_size %d "
         "queue_free %d ot_farthest %u tiles %u tiles_least %u nodes %u "
-        "side_full %u\n",
+        "nodes_least %u side_full %u\n",
         limits->frames, limits->prim_bytes, limits->prim_free,
         limits->queue_size, limits->queue_free, limits->ot_farthest,
-        limits->tiles, limits->tiles_least, limits->nodes, limits->side_full);
+        limits->tiles, limits->tiles_least, limits->nodes,
+        limits->nodes_least, limits->side_full);
 
     fprintf(stderr, "gl run blanks %u hardware_time_us %llu\n", g_run.blanks,
             (unsigned long long)g_run.hardware_time);
@@ -1088,6 +1102,10 @@ int main(int argc, char **argv) {
     options.tall = 0; /* twice the scale, for square pixels */
     options.is_bilinear = FALSE;
     options.is_exact = FALSE;
+    options.is_stage_mesh = 0;
+    /* the scene held against the ground's own depth, which is the mesh's
+     * and goes with it (gl.h) */
+    options.is_stage_depth = TRUE;
     g_run.every = 60;
     g_run.tween = 1;
     g_run.strip_at = -1;
@@ -1145,7 +1163,13 @@ int main(int argc, char **argv) {
         } else if (!strcmp(word, "--filter")) {
             options.is_bilinear = !strcmp(argv[++i], "linear");
         } else if (!strcmp(word, "--stage-mesh")) {
-            options.is_stage_mesh = !strcmp(argv[++i], "on");
+            const char *how_ground = argv[++i];
+
+            options.is_stage_mesh = !strcmp(how_ground, "every")
+                                        ? 2
+                                        : (!strcmp(how_ground, "on") ? 1 : 0);
+        } else if (!strcmp(word, "--stage-depth")) {
+            options.is_stage_depth = strcmp(argv[++i], "off") != 0;
         } else if (!strcmp(word, "--shadows")) {
             const char *how = argv[++i];
 

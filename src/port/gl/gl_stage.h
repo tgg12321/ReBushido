@@ -27,9 +27,17 @@
 extern const char *port_GlStageStart(void *(*getproc)(const char *name));
 
 /* Whether the ground is drawn as one mesh: the setting, and a backend
- * that can. */
+ * that can. 0 off; 1 on, which is the stages the mesh is measured good
+ * on; 2 on for every stage whatever the measurements say (gl.h,
+ * `is_stage_mesh`). */
 extern void port_GlStageSetOn(s32 on);
 extern s32 port_GlStageIsOn(void);
+
+/* Which path the stage's ground takes, once each time the stage or the
+ * setting changes, for the run's log; NULL when there is nothing new.
+ * The host asks after each frame the card drew (gl_main.c,
+ * sdl_window.c). */
+extern const char *port_GlStageNews(void);
 
 /* A frame's primitives are about to come (gl_draw.c, the backend's
  * `begin`). */
