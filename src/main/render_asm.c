@@ -1539,9 +1539,12 @@ void render_DrawQueue(void) {
         node = *g_render_walk.queue++;
         g_render_walk.node = node;
         /* the remastered renderer's side channel: the thing being drawn
-         * from here on, which its primitives are named by
-         * (port_remaster.h) */
+         * from here on, which its primitives are named by, and whether it
+         * is a shadow -- the caster flattened onto the ground by
+         * light_ProjectShadow and painted black, which the remastered
+         * picture may darken the ground under instead (port_remaster.h) */
         port_RemasterNoteObject((PortAddress)node);
+        port_RemasterNoteShadow(node->kind == NODE_KIND_SHADOW);
         if (render_SetupNode(node)) {
             /* The node's mesh: a row of parts, each a word (how many
              * vertices, and above that their format), the vertices and

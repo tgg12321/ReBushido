@@ -68,6 +68,8 @@ const char g_port_default_settings[] =
     "                       # mesh instead of the game's own tiles; off\n"
     "                       # for the tiles. A stage the mesh is not\n"
     "                       # measured good on keeps the tiles either way\n"
+    "shadows = original     # original: the game's own black shadows;\n"
+    "                       # soft: the ground under them darkened\n"
     "frame_rate = original  # original: one picture a blank, as the\n"
     "                       # console; display: as many as the screen\n"
     "                       # shows; or a number a second. The game\n"
@@ -506,6 +508,22 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "stage_mesh is on or off";
     }
+    if (port_WordsMatch(name, "shadows")) {
+        if (port_WordsMatch(value, "original")) {
+            settings->shadows = 0;
+            return NULL;
+        }
+        if (port_WordsMatch(value, "soft")) {
+            settings->shadows = PORT_SHADOWS_SOFT;
+            return NULL;
+        }
+        if (!port_ReadDigits(value, &number) || number < 1 || number > 100) {
+            return "shadows is original, soft, or how much of the ground "
+                   "a shadow takes away, in hundredths";
+        }
+        settings->shadows = number;
+        return NULL;
+    }
     if (port_WordsMatch(name, "frame_rate")) {
         if (port_WordsMatch(value, "original")) {
             settings->frame_rate = PORT_FRAME_RATE_ORIGINAL;
@@ -607,6 +625,9 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
      * the measurements do not hold keeps the game's own tiles of its own
      * accord, and the run's log says which path each stage took. */
     settings->stage_mesh = 1;
+    /* The soft shadows are the game's own black ones until the owner has
+     * looked at pictures of both (gl_shadow.h). */
+    settings->shadows = 0;
     /* a name the window's library does not know leaves that one out */
     port_ReadLines(settings, text, lookup, NULL, 1);
 }

@@ -315,6 +315,30 @@ extern void port_RemasterNoteObject(PortAddress object);
  * (render_LoadFace, render_DrawStageTiles). */
 extern void port_RemasterNoteGroup(PortAddress group);
 
+/* ---- the fighters' shadows (src/port/gl/gl_shadow.c) ---- */
+
+/* A shadow in this game is the caster's own shape, not a blob: the
+ * model's mesh is flattened onto the ground by a shear worked out from
+ * the stage's sun (light_SetShadowMatrix, light_ProjectShadow) and drawn
+ * as opaque black polygons. The remastered picture can darken the ground
+ * under that silhouette instead of painting it black, and for that it has
+ * to know exactly which primitives the silhouette is -- not by their
+ * colour, which the ground itself may have, but by where they came from.
+ *
+ * The renderer says it: a node of kind NODE_KIND_SHADOW is where
+ * light_ProjectShadow is called and nothing else is drawn under it
+ * (render_SetupNode, render_DrawQueue), so every primitive linked while
+ * such a node is being walked is a face of a shadow and no other
+ * primitive is. It is one call a node and nothing is kept with no
+ * backend attached. */
+extern void port_RemasterNoteShadow(s32 is_shadow);
+
+/* What the `shadows` setting is in: how much of what a shadow falls on
+ * it takes away, in hundredths. 0 is `shadows original`, the game's own
+ * black polygons and nothing of this; `soft` is this much, which is what
+ * is worth looking at (src/port/gl/gl_shadow.c). */
+#define PORT_SHADOWS_SOFT 55
+
 /* A new frame of primitives is about to be built: the ordering table was
  * cleared (src/port/gpu.c). What was written down before the frame
  * before it is forgotten. */
@@ -521,6 +545,11 @@ typedef struct {
      * ground -- would come out this way; in the stages measured so far
      * every point the GTE wrote down had a depth with it. */
     s32 has_place;
+    /* This is one face of a fighter's or a weapon's shadow: the caster's
+     * mesh flattened onto the ground and painted black by the game
+     * (port_RemasterNoteShadow). A backend that darkens the ground
+     * instead draws it itself and not here. */
+    s32 is_shadow;
     /* Which face of which thing this is a drawing of, for the pictures
      * between two frames; `object` 0 where there is none. */
     PortRemasterIdentity id;
@@ -630,6 +659,8 @@ typedef struct {
     u32 texture_from_drawn;
     /* half-transparent primitives drawn, by which of the four mixes */
     u32 mixed[4];
+    /* faces of a fighter's or a weapon's shadow (port_RemasterNoteShadow) */
+    u32 shadows;
 } PortRemasterCounts;
 
 extern const PortRemasterCounts *port_GetRemasterCounts(void);

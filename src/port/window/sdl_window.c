@@ -525,6 +525,9 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
      * drawing the ground as one mesh and has no setting of its own
      * (gl.h) */
     options->is_stage_depth = TRUE;
+    /* the fighters' shadows as a darkening of the ground, or the game's
+     * own black polygons (src/port/gl/gl_shadow.h) */
+    options->shadows = g_port_settings.shadows;
 }
 
 /* The window's context and the remastered renderer on it: NULL, or why

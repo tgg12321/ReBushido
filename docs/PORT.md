@@ -48,7 +48,7 @@ runs ("The window", "Remastered in the window").
 | The picture | done, into the port's own video memory and out to files: `src/port/raster.c`, the PlayStation's GPU in C. The flat screens are the emulator's to the pixel, a fight's frames but for three pixels in a thousand ("The picture") |
 | 64 bits | done: the program has 64-bit pointers, the game's addresses stay 32-bit numbers below 4 GB, and it is held to the 32-bit program and to the emulator ("64 bits") |
 | A window, a sound card, the PC's keys and controllers | built on SDL 2 for Linux and for Windows (`make port-sdl`, `make port-sdl-windows`) and held to the build without a window by numbers: the same traces, pictures and samples ("The window") |
-| "Graphics: Remastered" | done in the window: the scene drawn again by a graphics card at the window's resolution, from the geometry the PlayStation threw away — OpenGL 3.3 core, high resolution, sub-pixel corners, textures in perspective, true-colour mixing, the 2D layer crisp; supersampled edges, the whole stage drawn, and a wider picture at 16:9. Proved with nothing shown against the software GPU's own picture, and hung on the window, where F2 changes picture as the game runs ("Remastered", "Remastered in the window") |
+| "Graphics: Remastered" | done in the window: the scene drawn again by a graphics card at the window's resolution, from the geometry the PlayStation threw away — OpenGL 3.3 core, high resolution, sub-pixel corners, textures in perspective, true-colour mixing, the 2D layer crisp; supersampled edges, the whole stage drawn, a wider picture at 16:9, and the fighters' shadows as a soft darkening of the ground they fall on and never of the fighter standing in one ("The shadows"). Proved with nothing shown against the software GPU's own picture, and hung on the window, where F2 changes picture as the game runs ("Remastered", "Remastered in the window") |
 | The memory card | done: a standard card image of 128 KB a slot, under the BIOS calls the game makes ("The memory card"). The card the port writes for the options page is byte for byte the one the emulator's BIOS wrote |
 | The movie | done: the opening plays, 3,320 frames of 320 by 240 at 29.97 a second, by the overlay's own C over a picture decompressor in C ("The movie"). Its sound is the drive's own, as the console has it |
 
@@ -1458,9 +1458,11 @@ mixing, the flat things crisp (the first step); then the stage drawn to
 the far end of it with its fog pushed out to match ("How far the stage
 is drawn"), the scene's edges smoothed ("Edges"), and a wider view of
 the scene at a wider shape of picture ("A wider picture"), and more
-pictures a second than the game has frames ("More pictures a second").
-What it leaves for the step after it, by design and not by accident: new
-lighting and shadows ("What each later step needs").
+pictures a second than the game has frames ("More pictures a second"),
+and the fighters' shadows drawn as a darkening of the ground instead of
+the game's black silhouettes ("The shadows"). What it leaves for the
+step after it, by design and not by accident: new lighting ("What each
+later step needs").
 
 **Three settings of a run** say how much of each (`port_remaster.h`,
 `PortRemasterView`), each of them the drawing path alone:
@@ -1906,7 +1908,9 @@ second a question of the game's own rate and not of the drawing.
 - In the prover the scale is `--gl-scale`'s; in the window it is the
   window's own size by `port_RemasterScaleFor`, worked out again
   whenever the window is resized or the game changes its display mode.
-- New lighting is a later step.
+- New lighting is a later step; the shadows are done ("The shadows"),
+  but nobody has seen them on a screen either, so `shadows original` is
+  the default.
 - **Nobody has seen the pictures between the game's frames move**
   ("More pictures a second"), so `frame_rate original` is still the
   default. They were written to files and held to the two frames they
@@ -2479,6 +2483,161 @@ longer among them.
 the mesh adds about 500 vertices to a frame. It is drawn in one go: one
 draw of the whole stage, with no blending.
 
+### The shadows
+
+**What the game does.** A shadow in this game is not a blob: it is the
+caster's own shape. A fighter's model carries a second, simpler mesh for
+each bone that casts one, and a node of kind `NODE_KIND_SHADOW` draws it
+through a matrix that flattens it onto the ground along the stage's sun
+(`light_SetShadowMatrix`, `light_ProjectShadow`, `src/main/scene_frame.c`;
+`model_AddShadow`, `src/main/model.c`). The faces come out as **opaque
+black polygons** (`render_EmitBlackF3`, `render_EmitBlackF4`), linked
+into the ordering table at their own depth like everything else. So the
+shadow hides the ground under it, a face over a face is the same black,
+and a tile of the ground whose own depth is nearer than the shadow's is
+painted **over** it: a fifth of the game's own silhouette is hidden by
+the very ground it falls on, in the frames measured here.
+
+**What `shadows soft` does instead** (`src/port/gl/gl_shadow.c`): those
+polygons are not painted at all. Their silhouette goes into a mask of
+the colour buffer's own resolution and, at the frame's end, the mask
+**darkens what it falls on by a factor** -- 55 hundredths with nothing
+said -- so the ground keeps its texture under the shadow instead of
+being covered. The whole silhouette is darkened, the pieces the console
+loses to its own sorting included.
+
+- **At the picture's resolution, not the console's.** The silhouettes
+  are drawn into the mask by the same transform the picture's own
+  vertex shader uses, so their edges are where the projection really
+  put them, and they are sampled as often as the scene is
+  (`antialiasing`). The edge is then softened by a **penumbra of three
+  pixels of the picture** (`PORT_SHADOW_PENUMBRA`), nine points of a
+  tent spread over it, each of them the average of four of the mask's
+  own pixels: a soft edge that is the same width however large the
+  window is, and a middle that is flat.
+- **One darkness, however many shadows overlap.** The mask holds
+  coverage and nothing else: a face writes 1 over a face that has
+  written 1. Measured over a fight: the darkest any pixel came to is
+  0.450 of what it was, which is one shadow's 1 - 55/100 exactly, where
+  the two fighters' shadows and the faces within each cross each other
+  freely.
+- **It never darkens a fighter, a weapon or anything else standing in
+  it**, and not by comparing depths. The same mask carries, in its
+  alpha, whether something that is **not the stage's ground** painted
+  that pixel: every batch of the frame that is not a stage tile and is
+  not half-transparent is drawn again into the mask's alpha through the
+  picture's own shader (`port_GlDrawOccluders`, `gl_draw.c`), so a texel
+  the picture threw away leaves the ground showing and the shadow on it.
+  A pixel marked so is left exactly as the picture drew it. The test is
+  **what drew the pixel**, which the side channel knows, and not how far
+  away it is: a fighter's foot and the ground it stands on are at the
+  same depth, which is why depth cannot tell them apart and why the
+  first attempt at this painted the darkness over the caster's feet.
+- **Which primitives are the shadow's** is told by the renderer and not
+  guessed from their colour (the ground has black faces of its own):
+  `render_DrawQueue` says `port_RemasterNoteShadow` while it walks a
+  node of that kind, which is the one place `light_ProjectShadow` is
+  called, and the side channel marks every primitive linked until it
+  says otherwise (`port_remaster.h`; the host test `test_Shadow`).
+- **The depths the side channel carries are not comparable between
+  things**: the renderer scales a node's places and depths by a shift it
+  chooses from that node's distance (`render_SetupNode`), so a shadow's
+  depth and a fighter's are in different scales. Nothing here compares
+  them; that was tried first and discarded.
+- **When it is laid down.** At the moment the game clears the *next*
+  frame's ordering table, which is after everything of this frame has
+  been painted and before anything of the next has
+  (`port_GlShadowNewFrame`; the pictures between two frames say the same
+  of the camera they keep, `gl_tween.c`). A picture drawn between two
+  frames is begun and finished in one call and lays its own down at the
+  end of it, so the shadows move with their fighters at any frame rate
+  and a still scene gives every in-between picture the same shadow.
+- **What the game writes into the picture afterwards covers them**: a
+  fill, a copy or a load inside the frame's own drawing area that comes
+  after a shadow gives those pixels up. Only what lands in that area is
+  looked at -- a frame writes video memory a hundred times over and
+  nearly all of it is the fog's colour tables at the far end of it.
+- **The cost** is one mask the size of the colour buffer (four bytes a
+  pixel, asked for the first time a frame has a shadow in it), and three
+  passes over **the box the silhouettes are in and not the screen**: the
+  silhouettes, the frame's other primitives into the alpha, and the
+  darkening. On this machine with no graphics card a run of 4,200 blanks
+  took 65 s with the shadows soft and 64 s with the game's own.
+
+**What is not done, and what may be wrong:**
+
+- A wall or a step **between the camera and the shadow** is darkened
+  with the ground: the mask is flat and the ground is never one of the
+  things that keep the darkening off. The console does not have this,
+  because it paints such a tile over its black shadow; it is the price
+  of drawing the whole silhouette. With `stage_mesh on` the same is
+  true, and there the mesh's own depth buffer would mend it (`gl_stage.c`
+  draws the ground with a depth buffer of its own: a later step could
+  hold the mask to it).
+- The silhouette falls on **whatever is behind the ground** as well: at
+  a cliff's edge a shadow that hangs over nothing darkens the colour of
+  the distance. The console paints black there too.
+- A fighter **hidden behind the ground** still keeps the darkening off
+  the pixels it would have covered, because it is drawn into the mask
+  whether the picture kept it or not. With `stage_mesh off` that is a
+  shadow-shaped hole where a fighter stands behind a near wall; it was
+  not seen in any of the frames measured.
+- The penumbra is the same width everywhere. Widening it with the
+  caster's height above the ground was looked at: the height is there
+  (the shadow node's parent and `RENDER_NODE_EXTRA`), but a wide blur
+  loses a thin feature -- a sword's shadow a few pixels across -- long
+  before it softens a large one, so it needs a mask that carries the
+  height and a blur whose radius is read from it after a dilation. Not
+  done.
+- Nothing of this is lighting: the fighters and the ground are lit by
+  the coprocessor exactly as they always were ("What each later step
+  needs").
+
+**How it is proved, with nothing shown.** Three runs of the prover
+(`build/port-gl/rebushido-gl`, a stage chosen by a `poke` of the plan as
+`tools/port_remaster_prove.py` does) at the same blanks on each stage:
+the shadows soft, the same picture with the darkening at one hundredth
+-- the picture without shadows at all, since the silhouettes are taken
+out of it either way -- and the mask itself in the place of the picture
+(`--gl-shadow-mask`: red the coverage, green what is not the ground).
+Then, over the fifteen pictures of each run, the pixels the darkening
+changed and what the mask says they are:
+
+| Stage | Pixels the darkening changed | ... with any of something else in them | ... that are **wholly not** ground | Darkest |
+|---|---|---|---|---|
+| the orange tree fields (12) | 80,711 of 23,719,680 | 1,047 | **0** | 0.442 |
+| the castle rooftop (13) | 30,489 | 1,372 | **0** | 0.452 |
+| the terraced fields (15) | 34,902 | 1,373 | **0** | 0.446 |
+| ... with `stage_mesh on` (15) | 34,947 | 1,381 | **0** | 0.443 |
+| the practice floor (35) | 55,612 | 1,270 | **0** | 0.450 |
+| ... with `stage_mesh on` (35) | 55,612 | 1,270 | **0** | 0.450 |
+
+(The practice floor is drawn from the game's own tiles whichever way
+`stage_mesh` is set -- no versus fight can be held there, so nothing has
+measured its mesh -- which is why its two rows are the same number.)
+
+**In the pictures between two frames** (`--gl-tween 5`, the same tour of
+the practice floor): the first phase of every frame, which is the frame
+on show drawn again as it is, **is the game's own picture to the pixel**
+with the shadows soft -- 377 frames, 616,711,680 pixels, 0 different,
+which is what the picture gives with the game's own shadows -- and no
+picture between two frames is out of order. So a shadow is laid down once a
+picture, moves with its fighter at any frame rate, and a scene that does
+not move gives every picture the same shadow. (It was not so at first:
+the vertices a picture keeps for the mask were forgotten only when the
+next frame began, so the game's own frame was given the picture before
+it as well and a rim of 1,250 pixels a frame came out darker than it
+should. `port_GlForgetOccluders`.)
+
+**No pixel of a fighter, a weapon or anything else that is not the
+ground was darkened at all.** The few that have any green in them are
+the rim the picture is averaged down over (`antialiasing 2`), where one
+pixel of the picture holds samples of the ground and of the fighter: the
+ground's samples are darkened and the fighter's are not, which is what a
+smoothed edge is. The darkest the picture came anywhere is one shadow's
+own 0.45, never two shadows' 0.20 -- 0.442 where it is lower is the
+eight bits a channel rounding a dark colour down.
+
 ### Edges
 
 The scene is drawn **two or four times over each way and averaged
@@ -2844,7 +3003,8 @@ and whether a card keeps up are known for one machine and no other. The
 counter and the fade of a resize were read from the pixels, not seen.
 
 What the window still needs of the remastered picture is new lighting
-(below).
+("What each later step needs"). The fighters' shadows are drawn as a
+darkening of the ground where a run asks for it ("The shadows").
 
 ### More pictures a second
 
@@ -3221,15 +3381,15 @@ there is.
 
 ### What each later step needs
 
-- **Lighting and shadows.** Today every vertex of a model is lit by the
-  GTE, by three directional lights and an ambient colour from the
-  stage's `LightSetup` (`src/main/scene.c`), and the colour is in the
-  primitive. A shadow is the model flattened by a matrix
-  (`render_SetupNode`) and drawn in black (`render_EmitBlackF3`,
-  `render_EmitBlackF4`); there is no shadow of one thing on another and
-  no light that moves. Better lighting means the normals, which the
-  mesh has and the primitive does not: the side channel is where they
-  would go, beside the position and the depth.
+- **Lighting.** Today every vertex of a model is lit by the GTE, by
+  three directional lights and an ambient colour from the stage's
+  `LightSetup` (`src/main/scene.c`), and the colour is in the primitive.
+  Better lighting means the normals, which the mesh has and the
+  primitive does not: the side channel is where they would go, beside
+  the position and the depth. (The shadows are done: "The shadows". What
+  is still missing there is the shadow of one thing on another -- a
+  fighter's shadow across the other fighter, or up a wall -- which wants
+  the ground's own depth, or a shadow map from the stage's sun.)
 
 ## 64 bits
 
