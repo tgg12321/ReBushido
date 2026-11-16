@@ -144,6 +144,12 @@ def main():
                          'program already built is the one that is run')
     ap.add_argument('--quick', action='store_true',
                     help='the first plan only, and no strip')
+    # The stage's ground as one mesh, which is what Remastered draws it
+    # with (src/port/gl/gl_stage.h): the pictures between two frames
+    # draw it again with the camera between them and have no tile to
+    # pair, so this is the path to prove.
+    ap.add_argument('--stage-mesh', default='on',
+                    choices=('on', 'off', 'every'))
     args = ap.parse_args()
     if not os.path.isfile(args.image):
         print('port-fps: no %s: --image names your own image of the disc'
@@ -165,7 +171,8 @@ def main():
         gl.PROGRAM = PROGRAM
         plan = gl.write_plan(name, os.path.join(folder, 'plan.txt'))
         common = [os.path.join('.', PROGRAM), '--image', args.image,
-                  '--plan', plan, '--out', folder, '--graphics', 'remastered']
+                  '--plan', plan, '--out', folder, '--graphics', 'remastered',
+                  '--stage-mesh', args.stage_mesh]
         print('%s: every frame drawn as %d pictures, at scale %d'
               % (name, args.phases, args.scale))
         seconds = run(common + ['--gl-scale', str(args.scale),
@@ -190,7 +197,7 @@ def main():
         # the game could possibly see of it.
         both = [os.path.join('.', PROGRAM), '--image', args.image,
                 '--plan', plan, '--out', folder, '--graphics', 'remastered',
-                '--gl-scale', '1', '--trace']
+                '--stage-mesh', args.stage_mesh, '--gl-scale', '1', '--trace']
         print('%s: the game with the pictures between frames on and off '
               '(%d-bit)' % (name, bits))
         run(both + ['--gl-tween', '2'],

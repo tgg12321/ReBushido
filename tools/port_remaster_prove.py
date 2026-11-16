@@ -35,10 +35,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 
 PROGRAM = 'build/port-gl/rebushido-gl'
-# The stages a fight can be set on (include/stage.h): 0 to 31. The five
-# after them are a mode's own (the staff roll, chanbara, the shrine's
-# story rooms) and are not a versus fight's.
+# The stages a fight can be set on (include/stage.h): 0 to 31. The six
+# after them are a mode's own -- the two team battle courts, chanbara's
+# hall, the two practice floors, and stage 37, which nothing in the code
+# names -- and are not a versus fight's: the menus cannot choose them,
+# and `poke`ing one into a versus fight is what reaches them here
+# (tools/port_stage_prove.py).
 FIGHT_STAGES = 32
+# Every stage the game can load, a file each (NDATA_STAGES, S00 to S37).
+ALL_STAGES = 38
 STAGE_NAMES = [
     'main_tatara_shrine', 'meikyokan_dojo', 'shainto_hq', 'tatara_shrine',
     'bus_stop', 'lost_bridge', 'tatara_shrine_path', 'bamboo_thicket',
@@ -48,7 +53,9 @@ STAGE_NAMES = [
     'lighthouse', 'kabuki_stage', 'abandoned_ship', 'ferry_dock',
     'shainto_gate', 'purple_cavern', 'abandoned_station', 'railway',
     'abandoned_tunnel', 'abandoned_shipyard', 'building_rooftop',
-    'building_parking_lot', 'shainto_cemetery']
+    'building_parking_lot', 'shainto_cemetery',
+    # the modes' own, which no fight can be set on from the menus
+    'team_1', 'team_2', 'chanbara', 'practice_1', 'practice_2', 'stage_37']
 
 # The test this tour is made of: the presses of port_game as far as the
 # fight, and then the first fighter running instead of fighting, so that
@@ -166,7 +173,7 @@ def plan_for(toml_path, out, stage, limit):
 LIMITS = re.compile(
     r'gl run limits frames (\d+) prim_bytes (-?\d+) prim_free (-?\d+) '
     r'queue_size (-?\d+) queue_free (-?\d+) ot_farthest (\d+) tiles (\d+) '
-    r'tiles_least (\d+) nodes (\d+) side_full (\d+)')
+    r'tiles_least (\d+) nodes (\d+) nodes_least (\d+) side_full (\d+)')
 FRAME = re.compile(
     r'gl blank (\d+) picture (\d+)x(\d+) scale (\d+) vertices (\d+) '
     r'draws (\d+) uploaded (\d+)')
@@ -179,7 +186,7 @@ def numbers_of(log, err):
     """What a run measured."""
     out = {'frames': 0, 'prim_bytes': 0, 'prim_free': 0, 'queue_size': 0,
            'queue_free': 0, 'ot_farthest': 0, 'tiles': 0, 'tiles_least': 0,
-           'nodes': 0,
+           'nodes': 0, 'nodes_least': 0,
            'side_full': 0, 'per_frame_us': 0, 'vertices': [], 'prims': 0,
            'stages': set()}
     with open(err, encoding='utf-8', errors='replace') as f:
@@ -190,7 +197,7 @@ def numbers_of(log, err):
                                           'queue_size', 'queue_free',
                                           'ot_farthest', 'tiles',
                                           'tiles_least', 'nodes',
-                                          'side_full']):
+                                          'nodes_least', 'side_full']):
                     out[name] = int(m.group(i + 1))
             m = PER_FRAME.search(line)
             if m:

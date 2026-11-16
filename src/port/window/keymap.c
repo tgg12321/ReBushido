@@ -64,8 +64,10 @@ const char g_port_default_settings[] =
     "antialiasing = 2       # off, 2 or 4: the scene's edges smoothed\n"
     "aspect = 16:9          # 16:9 for a wider view of the same scene,\n"
     "                       # or 4:3 as the console\n"
-    "stage_mesh = off      # on: the stage's ground drawn from one\n"
-    "                       # static mesh instead of the game's tiles\n"
+    "stage_mesh = on        # the stage's ground drawn from one static\n"
+    "                       # mesh instead of the game's own tiles; off\n"
+    "                       # for the tiles. A stage the mesh is not\n"
+    "                       # measured good on keeps the tiles either way\n"
     "frame_rate = original  # original: one picture a blank, as the\n"
     "                       # console; display: as many as the screen\n"
     "                       # shows; or a number a second. The game\n"
@@ -599,9 +601,12 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->aspect_w = PORT_ASPECT_W_WIDE;
     settings->aspect_h = PORT_ASPECT_H_WIDE;
     settings->frame_rate = PORT_FRAME_RATE_ORIGINAL;
-    /* the ground drawn as one mesh is off until someone has looked at it
-     * on a screen (src/port/gl/gl_stage.h) */
-    settings->stage_mesh = 0;
+    /* The ground drawn as one mesh, which is what Remastered means by
+     * the stage now: it has been seen on a real card and is measured
+     * stage by stage (src/port/gl/gl_stage.h, g_stage_proved). A stage
+     * the measurements do not hold keeps the game's own tiles of its own
+     * accord, and the run's log says which path each stage took. */
+    settings->stage_mesh = 1;
     /* a name the window's library does not know leaves that one out */
     port_ReadLines(settings, text, lookup, NULL, 1);
 }

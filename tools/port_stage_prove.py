@@ -4,13 +4,18 @@ tiles, stage by stage, with nothing shown (docs/PORT.md, "Remastered",
 "The ground as one mesh").
 
     python3 tools/port_stage_prove.py --image "Bushido Blade 2 (USA).cue"
-            [--stages 0-31] [--scale 2] [--frames 4200] [--every 300]
+            [--stages 0-37] [--scale 2] [--frames 4200] [--every 300]
             [--out build/stagemesh] [--pairs 2] [--distance max]
+            [--mesh every|on] [--against tiles|nodepth]
+
+Every stage the game can load is measured, 0 to 37: the 32 a fight can
+be set on, and the six the modes have of their own, which the menus
+cannot choose and a `poke` of the plan puts into a versus fight
+(tools/port_remaster_prove.py, `plan_for`).
 
 For each stage it runs build/port-gl/rebushido-gl twice over the same
 tour -- the first fighter run across the stage, which swings the camera
-right round -- once with `--stage-mesh off` and once with `on`, and
-reports:
+right round -- once with the mesh and once without, and reports:
 
   - that the trace of every watched value is the same both ways, which is
     the whole claim that the game is untouched;
@@ -19,7 +24,18 @@ reports:
     the stage and the mesh drew nothing (a hole, which would be the one
     unforgivable fault) or the other way about (ground the tiles left
     out, which is what the mesh is for);
-  - what the frame cost each way.
+  - what the frame cost each way;
+  - the verdict: whether the stage keeps the mesh by the bar
+    (verdict_of), written as a table into `verdict.txt` beside the
+    measurements, with the line of `g_stage_proved` it comes to
+    (src/port/gl/gl_stage.c).
+
+--mesh says what the run with the mesh is told: `every` draws it on
+whatever stage the run reaches, which is what measuring a stage needs,
+and `on` is what the player gets, which is how to check the table
+itself. --against says what the other run draws: `tiles` is the game's
+own ground, and `nodepth` is the mesh with the scene not held against
+its depth, which is how to see what that test alone changed.
 
 With --pairs N it writes N pictures a stage of the two side by side
 (tiles | mesh) into the stage's folder, and with --mark N it writes N
@@ -62,6 +78,71 @@ def read(path):
 CELL = 16
 STEP = 24
 PATCH = 4
+
+# The bar a stage keeps the mesh by (docs/PORT.md, "The ground as one
+# mesh"): its trace the same both ways, the areas of plainly other
+# colour under a twentieth of the pixels, the largest of them under
+# 60,000 pixels, and under a hundredth of the pixels black where the
+# other run drew the stage. The measured range is nothing to a few per
+# cent and the one picture known to be wrong measured 45%: the bar sits
+# between them and not at the edge of what passes.
+BAR_PATCH_SHARE = 0.05
+BAR_WORST_PATCH = 60000
+BAR_HOLE_SHARE = 0.01
+
+
+def verdict_of(row):
+    """Why a stage does not keep the mesh, or None."""
+    seen = row['pixels']
+    pixels = max(seen['pixels'], 1)
+    if seen['shots'] == 0:
+        return 'no pictures were taken'
+    if not row['same_trace']:
+        return 'the traces differ'
+    if seen['patch'] > BAR_PATCH_SHARE * pixels:
+        return 'areas of plainly other colour: %.2f%% of the pixels' % (
+            100.0 * seen['patch'] / pixels)
+    if seen['worst_patch'] > BAR_WORST_PATCH:
+        return 'one area of %d pixels of plainly other colour' % (
+            seen['worst_patch'])
+    if seen['holes'] > BAR_HOLE_SHARE * pixels:
+        return 'black where the other run drew: %.2f%% of the pixels' % (
+            100.0 * seen['holes'] / pixels)
+    return None
+
+
+def write_verdict(path, rows):
+    """The table a reader looks at, and the line of g_stage_proved it
+    comes to (src/port/gl/gl_stage.c)."""
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('The stage\'s ground as one mesh, held against the other run\n')
+        f.write('(tools/port_stage_prove.py; docs/PORT.md, "The ground as one '
+                'mesh").\n\n')
+        f.write('%-3s %-22s %-6s %8s %8s %8s %8s %8s  %s\n'
+                % ('n', 'stage', 'trace', 'pictures', 'differ%', 'areas%',
+                   'worst', 'black%', 'verdict'))
+        for row in rows:
+            seen = row['pixels']
+            pixels = max(seen['pixels'], 1)
+            why = verdict_of(row)
+            f.write('%-3d %-22s %-6s %8d %8.2f %8.3f %8d %8.3f  %s\n'
+                    % (row['stage'], row['name'],
+                       'same' if row['same_trace'] else 'DIFFER',
+                       seen['shots'], 100.0 * seen['differ'] / pixels,
+                       100.0 * seen['patch'] / pixels, seen['worst_patch'],
+                       100.0 * seen['holes'] / pixels,
+                       'the mesh' if why is None else 'the tiles: ' + why))
+        kept = set(row['stage'] for row in rows if verdict_of(row) is None)
+        seen_stages = set(row['stage'] for row in rows)
+        f.write('\nstages measured %d, the mesh kept on %d\n'
+                % (len(rows), len(kept)))
+        f.write('\ng_stage_proved, a stage a number, for the stages measured '
+                'here\n(a stage this run did not reach is left as it was):\n')
+        line = []
+        for stage in sorted(seen_stages):
+            line.append('%d' % (1 if stage in kept else 0))
+        f.write('  %s\n' % ', '.join(line))
+    return path
 
 
 def cell_means(pixels, w, cell_x, cell_y):
@@ -228,6 +309,20 @@ def main():
     ap.add_argument('--pairs', type=int, default=0)
     ap.add_argument('--from-blank', type=int, default=2900)
     ap.add_argument('--mark', type=int, default=0)
+    # What the run with the mesh on is told. `every` draws the mesh on
+    # whatever stage the run reaches, which is what measuring a stage
+    # needs: `on` would leave out any stage g_stage_proved does not hold
+    # yet and measure nothing at all. `on` is what the player gets, and
+    # is how to check that the table itself says what it should.
+    ap.add_argument('--mesh', default='every', choices=('on', 'every'))
+    # What the other run draws with. `tiles` is the game's own
+    # ground, which is the proof that the mesh draws the stage;
+    # `nodepth` is the mesh with the scene not held against its
+    # depth, which is how to see what that test alone changed --
+    # the ground that veils a fighter, and nothing of his feet or
+    # his shadow eaten by the ground they stand on.
+    ap.add_argument('--against', default='tiles',
+                    choices=('tiles', 'nodepth'))
     ap.add_argument('--out', default='build/stagemesh')
     args = ap.parse_args()
     if not os.path.isfile(PROGRAM):
@@ -245,7 +340,7 @@ def main():
             stages += list(range(int(first), int(last) + 1))
         else:
             stages.append(int(piece))
-    stages = [s for s in stages if 0 <= s < remaster.FIGHT_STAGES]
+    stages = [s for s in stages if 0 <= s < remaster.ALL_STAGES]
     os.makedirs(args.out, exist_ok=True)
     toml_path = remaster.write_tour(
         os.path.join(args.out, 'tour.toml'), args.frames, 20)
@@ -268,9 +363,14 @@ def main():
                       '--draw-distance', args.distance,
                       '--aspect', args.aspect,
                       '--gl-scale', str(args.scale),
-                      '--stage-mesh', which,
                       '--gl-shots', shots, '--gl-every', str(args.every),
                       '--trace']
+            if which == 'on' or args.against == 'nodepth':
+                common += ['--stage-mesh', args.mesh]
+            else:
+                common += ['--stage-mesh', 'off']
+            if which == 'off' and args.against == 'nodepth':
+                common += ['--stage-depth', 'off']
             if args.tall:
                 common += ['--gl-tall', str(args.tall)]
             log = os.path.join(folder, which + '.log')
@@ -315,8 +415,15 @@ def main():
                        seen['worst'], row['off']['vertices_mean'],
                        row['on']['vertices_mean'], row['off']['seconds'],
                        row['on']['seconds']))
+    said = write_verdict(os.path.join(args.out, 'verdict.txt'), rows)
     print()
-    print('port_stage_prove: %d stages; %s' % (len(rows), table))
+    for row in rows:
+        why = verdict_of(row)
+        print('%-24s %s' % (row['name'],
+                            'the mesh' if why is None
+                            else 'THE TILES: ' + why))
+    print()
+    print('port_stage_prove: %d stages; %s; %s' % (len(rows), table, said))
     return 0
 
 

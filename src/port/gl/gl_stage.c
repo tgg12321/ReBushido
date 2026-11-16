@@ -17,11 +17,23 @@
  * cannot have one row for all of it, so it reads the row the fog would
  * have had for that pixel's own depth -- the levels are all still in
  * video memory, which the card reads texels from. That is the game's own
- * fog, to the colour, and per pixel instead of per face.
+ * fog, to the colour, and per pixel instead of per face. The two rows a
+ * depth lies between are read and mixed, so the fog runs on instead of
+ * stepping where a band ends, which on a long floor was a straight
+ * bright line across it.
+ *
+ * The mesh writes a depth of its own, in the world's own units, into the
+ * buffer the renderer keeps beside the colour buffer, and the rest of
+ * the scene is tested against it (gl_draw.c): a piece of ground between
+ * the camera and a fighter veils him again, which the painter's order
+ * alone could not do, the mesh being painted where the farthest of the
+ * frame's tiles was. Nothing but the mesh writes that depth, so the
+ * order the scene's own primitives are painted in is untouched.
  *
  * Nothing here is in the build without a window; nothing here changes a
  * value the game computes. */
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "common.h"
@@ -61,11 +73,6 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_TEXTURE_2D 0x0DE1
 #define GL_TEXTURE0 0x84C0
 #define GL_FRAMEBUFFER 0x8D40
-#define GL_COLOR_ATTACHMENT0 0x8CE0
-#define GL_DEPTH_ATTACHMENT 0x8D00
-#define GL_RENDERBUFFER 0x8D41
-#define GL_DEPTH_COMPONENT24 0x81A6
-#define GL_FRAMEBUFFER_COMPLETE 0x8CD5
 #define GL_DEPTH_BUFFER_BIT 0x00000100
 #define GL_DEPTH_TEST 0x0B71
 #define GL_LESS 0x0201
@@ -91,14 +98,7 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glDepthMask, (GLboolean))                                         \
     GL(void, glBindTexture, (GLenum, GLuint))                                  \
     GL(void, glActiveTexture, (GLenum))                                        \
-    GL(void, glGenFramebuffers, (GLsizei, GLuint *))                           \
     GL(void, glBindFramebuffer, (GLenum, GLuint))                              \
-    GL(void, glFramebufferTexture2D, (GLenum, GLenum, GLenum, GLuint, GLint))  \
-    GL(void, glFramebufferRenderbuffer, (GLenum, GLenum, GLenum, GLuint))      \
-    GL(GLenum, glCheckFramebufferStatus, (GLenum))                             \
-    GL(void, glGenRenderbuffers, (GLsizei, GLuint *))                          \
-    GL(void, glBindRenderbuffer, (GLenum, GLuint))                             \
-    GL(void, glRenderbufferStorage, (GLenum, GLenum, GLsizei, GLsizei))        \
     GL(void, glGenBuffers, (GLsizei, GLuint *))                                \
     GL(void, glBindBuffer, (GLenum, GLuint))                                   \
     GL(void, glBufferData, (GLenum, GLsizeiptr, const void *, GLenum))         \
@@ -206,10 +206,13 @@ PORT_GL_STAGE_FUNCTIONS
 #define STAGE_SHALF(at, offset) (*(const s16 *)((const u8 *)(at) + (offset)))
 #define STAGE_BYTE(at, offset) (*(const u8 *)((const u8 *)(at) + (offset)))
 
-/* How far the mesh is drawn into the depth buffer: a depth the
- * coprocessor keeps is sixteen bits, and the renderer's coarser scale
- * makes a far tile's depth a quarter of its distance. */
-#define DEPTH_RANGE 131072.0f
+/* How far the mesh is drawn into the depth buffer. The mesh's own depth
+ * is in the scale the renderer drew the tiles at (`far_shift`), so what
+ * it is divided by is the range of a depth in the world's own units,
+ * scaled down by the same shift: the buffer then holds a depth in the
+ * world's units, which is the one scale the rest of the scene can be
+ * held against it in (gl.h, PORT_GL_DEPTH_RANGE). */
+#define DEPTH_RANGE PORT_GL_DEPTH_RANGE
 /* Nothing nearer than this is drawn: the near plane, in the same units.
  * The clip is at half of it (the plane is `z - near`, which the card
  * tests against `-w`). */
@@ -260,14 +263,16 @@ typedef struct {
 static struct {
     s32 is_started;
     s32 is_on;
+    s32 is_every; /* on for every stage, whatever g_stage_proved says */
     char problem[256];
+    /* which stage the last line of news was about, and the line itself
+     * (port_GlStageNews): -1 before there has been one */
+    s32 said_stage;
+    s32 has_news;
+    char news[128];
     GLuint program;
     GLuint buffer;
     GLuint array;
-    GLuint framebuffer;
-    GLuint depth;
-    s32 depth_w;
-    s32 depth_h;
     GLint at_view;
     GLint at_camera;
     GLint at_h;
@@ -435,25 +440,41 @@ static const char g_stage_fragment_text[] =
     "    }\n"
     "    return min(level, u_fog_levels);\n"
     "}\n"
-    "uint texel_at(ivec2 clut, int u, int v) {\n"
+    "ivec2 g_clut;\n"      /* the colours this fragment reads */
+    "ivec2 g_clut_near;\n" /* ... and the level before it, for the fog */
+    "float g_fog_mix;\n"   /* how far between the two this fragment is */
+    "uint texel_index(int u, int v, out bool has_clut) {\n"
     "    u = (u & int(u_window.x)) | int(u_window.y);\n"
     "    v = (v & int(u_window.z)) | int(u_window.w);\n"
     "    int y = v_page.y + v;\n"
+    "    has_clut = true;\n"
     "    if (v_info.x == 0u) {\n"
     "        uint word = vram(v_page.x + (u >> 2), y);\n"
-    "        uint index = (word >> ((uint(u) & 3u) * 4u)) & 15u;\n"
-    "        return vram(clut.x + int(index), clut.y);\n"
+    "        return (word >> ((uint(u) & 3u) * 4u)) & 15u;\n"
     "    }\n"
     "    if (v_info.x == 1u) {\n"
     "        uint word = vram(v_page.x + (u >> 1), y);\n"
-    "        uint index = (word >> ((uint(u) & 1u) * 8u)) & 255u;\n"
-    "        return vram(clut.x + int(index), clut.y);\n"
+    "        return (word >> ((uint(u) & 1u) * 8u)) & 255u;\n"
     "    }\n"
+    "    has_clut = false;\n"
     "    return vram(v_page.x + u, y);\n"
     "}\n"
     "vec3 channels(uint texel) {\n"
     "    return vec3(float(texel & 31u), float((texel >> 5) & 31u),\n"
     "                float((texel >> 10) & 31u));\n"
+    "}\n"
+    "vec3 texel_color(int u, int v, out uint texel) {\n"
+    "    bool has_clut;\n"
+    "    uint index = texel_index(u, v, has_clut);\n"
+    "    if (!has_clut) {\n"
+    "        texel = index;\n"
+    "        return channels(texel);\n"
+    "    }\n"
+    "    texel = vram(g_clut.x + int(index), g_clut.y);\n"
+    "    if (g_fog_mix >= 1.0) { return channels(texel); }\n"
+    "    uint before = vram(g_clut_near.x + int(index),\n"
+    "                       g_clut_near.y);\n"
+    "    return mix(channels(before), channels(texel), g_fog_mix);\n"
     "}\n"
     "void main() {\n"
     /* A face that mixes with what is behind it is not the mesh's: a
@@ -469,18 +490,36 @@ static const char g_stage_fragment_text[] =
     "    if (v_cull != 0) { discard; }\n"
     "    int depth = int(clamp(v_depth, 0.0, 65535.0));\n"
     "    int slot = slot_of(depth);\n"
-    "    ivec2 clut = v_page.zw;\n"
-    /* the colours the fog would have left in the row this face reads */
-    "    if (u_fog_levels > 0 && clut.y == u_fog_rect.y\n"
-    "        && clut.x >= u_fog_rect.x\n"
-    "        && clut.x < u_fog_rect.x + u_fog_rect.z) {\n"
-    "        ivec2 at = u_fog_clut[fog_level(slot)];\n"
-    "        clut = ivec2(clut.x + at.x - u_fog_rect.x, at.y);\n"
+    "    g_clut = v_page.zw;\n"
+    "    g_clut_near = g_clut;\n"
+    "    g_fog_mix = 1.0;\n"
+    "    if (u_fog_levels > 0 && g_clut.y == u_fog_rect.y\n"
+    "        && g_clut.x >= u_fog_rect.x\n"
+    "        && g_clut.x < u_fog_rect.x + u_fog_rect.z) {\n"
+    "        int level = fog_level(slot);\n"
+    "        int column = g_clut.x - u_fog_rect.x;\n"
+    "        int low = (level > 0) ? u_fog_slot[level - 1] : 0;\n"
+    "        int high = (level < u_fog_levels)\n"
+    "                 ? u_fog_slot[level] : low;\n"
+    "        float part = (high > low)\n"
+    "                   ? clamp(float(slot - low)\n"
+    "                           / float(high - low), 0.0, 1.0)\n"
+    "                   : 1.0;\n"
+    "        float place = clamp(float(level) + part - 0.5,\n"
+    "                            0.0, float(u_fog_levels));\n"
+    "        int first = int(floor(place));\n"
+    "        int second = min(first + 1, u_fog_levels);\n"
+    "        ivec2 near = u_fog_clut[first];\n"
+    "        ivec2 far = u_fog_clut[second];\n"
+    "        g_clut_near = ivec2(column + near.x, near.y);\n"
+    "        g_clut = ivec2(column + far.x, far.y);\n"
+    "        g_fog_mix = place - float(first);\n"
     "    }\n"
     "    vec3 color = v_color;\n"
-    "    uint texel = texel_at(clut, int(floor(v_texture.x)),\n"
-    "                          int(floor(v_texture.y)));\n"
-    "    vec3 texel_color;\n"
+    "    uint texel;\n"
+    "    vec3 one_color = texel_color(int(floor(v_texture.x)),\n"
+    "                                 int(floor(v_texture.y)), texel);\n"
+    "    vec3 shown;\n"
     /* The texels this fragment covers, averaged, as the renderer does
      * it for a polygon of the scene (gl_draw.c, `steps`): the ground
      * runs away from the camera, so far off a fragment covers several
@@ -504,10 +543,11 @@ static const char g_stage_fragment_text[] =
     "                         * part - vec2(0.5);\n"
     "                vec2 at = v_texture + off.x * wide_across\n"
     "                        + off.y * wide_down;\n"
-    "                uint one = texel_at(clut, int(floor(at.x)),\n"
-    "                                    int(floor(at.y)));\n"
+    "                uint one;\n"
+    "                vec3 got = texel_color(int(floor(at.x)),\n"
+    "                                       int(floor(at.y)), one);\n"
     "                if (one != 0u) {\n"
-    "                    sum += channels(one);\n"
+    "                    sum += got;\n"
     "                    weight += 1.0;\n"
     "                    any = one;\n"
     "                }\n"
@@ -515,16 +555,16 @@ static const char g_stage_fragment_text[] =
     "        }\n"
     "        if (weight < 0.5) { discard; }\n"
     "        if (texel == 0u) { texel = any; }\n"
-    "        texel_color = sum / weight;\n"
+    "        shown = sum / weight;\n"
     "    } else {\n"
     "        if (texel == 0u) { discard; }\n"
-    "        texel_color = channels(texel);\n"
+    "        shown = one_color;\n"
     "    }\n"
     "    if ((v_flags.w & 2u) != 0u) {\n"
-    "        color = texel_color * 255.0 / 31.0;\n"
+    "        color = shown * 255.0 / 31.0;\n"
     "    } else {\n"
     /* a texel times the colour, 128 being one */
-    "        color = texel_color * color / 16.0;\n"
+    "        color = shown * color / 16.0;\n"
     "    }\n"
     "    color = clamp(color, vec3(0.0), vec3(255.0));\n"
     "    o_color = vec4(color / 255.0, 1.0);\n"
@@ -659,35 +699,91 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
     glGenBuffers(1, &g_stage.buffer);
     glGenVertexArrays(1, &g_stage.array);
     port_GlStageFormat();
-    glGenFramebuffers(1, &g_stage.framebuffer);
-    glGenRenderbuffers(1, &g_stage.depth);
+    g_stage.said_stage = -1;
     g_stage.is_started = TRUE;
     return NULL;
 }
 
-void port_GlStageSetOn(s32 on) { g_stage.is_on = on != 0; }
+void port_GlStageSetOn(s32 on) {
+    g_stage.is_on = on != 0;
+    g_stage.is_every = on > 1;
+    /* the next stage drawn says which path it takes, the setting having
+     * changed */
+    g_stage.said_stage = -1;
+}
 
-/* The stages the mesh is measured good on, stage by stage
- * (tools/port_stage_prove.py, and docs/PORT.md, "How it is proved").
- * Anywhere else -- a stage whose ground the mesh draws other than the
- * game does, and the six stages of the practice and the modes, which a
- * versus fight cannot be set on and so nothing has measured -- the
- * game's own tiles are drawn and the setting does nothing. */
+/* The stages the mesh is measured good on, stage by stage: the prover's
+ * own verdict, a number a stage (tools/port_stage_prove.py writes it
+ * into `verdict.txt`; docs/PORT.md, "How it is proved"). Every stage the
+ * game can load is measured, the 32 a fight can be set on and the six
+ * the modes have of their own. A 0 here -- a stage whose ground the mesh
+ * draws other than the game does -- draws the game's own tiles instead,
+ * whatever the setting says, and the run's log says so. */
 static const u8 g_stage_proved[STAGE_COUNT] = {
     1, 1, 1, 1, 1, 1, 1, 1, /* 0 to 7 */
     1, 1, 1, 1, 1, 1, 1, 1, /* 8 to 15 */
     1, 1, 1, 1, 1, 1, 1, 1, /* 16 to 23 */
     1, 1, 1, 1, 1, 1, 1, 1, /* 24 to 31 */
-    0, 0, 0, 0, 0, 0,       /* the practice and the modes' own */
+    1, 1, 1, 1, 1, 1,       /* the modes' and the practice's own */
 };
+
+/* Whether this stage's ground is the mesh's, with no word said about it:
+ * the setting, a stage the mesh is measured good on, or every stage where
+ * the setting says so. */
+static s32 port_GlStageIsOnQuietly(s32 stage) {
+    if (!g_stage.is_started || !g_stage.is_on) {
+        return FALSE;
+    }
+    if (stage < 0 || stage >= STAGE_COUNT) {
+        return FALSE;
+    }
+    return g_stage.is_every || g_stage_proved[stage];
+}
+
+/* Which path this stage's ground takes, for the run's log: said once a
+ * stage, whenever the stage or the setting changes. */
+static void port_GlStageTellPath(s32 stage) {
+    const char *how;
+
+    if (stage == g_stage.said_stage) {
+        return;
+    }
+    g_stage.said_stage = stage;
+    if (!g_stage.is_started || !g_stage.is_on) {
+        how = "the game's own tile primitives: stage_mesh is off";
+    } else if (stage < 0 || stage >= STAGE_COUNT) {
+        how = "the game's own tile primitives: no stage is loaded";
+    } else if (g_stage_proved[stage]) {
+        how = "one static mesh of its own";
+    } else if (g_stage.is_every) {
+        how = "one static mesh of its own, the setting saying every stage";
+    } else {
+        how = "the game's own tile primitives: the mesh is not measured "
+              "good on this stage";
+    }
+    if (stage < 0) {
+        snprintf(g_stage.news, sizeof(g_stage.news),
+                 "no stage: the ground is drawn from %s.", how);
+    } else {
+        snprintf(g_stage.news, sizeof(g_stage.news),
+                 "stage %d: the ground is drawn from %s.", stage, how);
+    }
+    g_stage.has_news = TRUE;
+}
+
+const char *port_GlStageNews(void) {
+    if (!g_stage.has_news) {
+        return NULL;
+    }
+    g_stage.has_news = FALSE;
+    return g_stage.news;
+}
 
 s32 port_GlStageIsOn(void) {
     s32 stage = port_RemasterStageNumber();
 
-    if (!g_stage.is_started || !g_stage.is_on) {
-        return FALSE;
-    }
-    return stage >= 0 && stage < STAGE_COUNT && g_stage_proved[stage];
+    port_GlStageTellPath(stage);
+    return port_GlStageIsOnQuietly(stage);
 }
 
 s32 port_GlStageFaces(void) { return g_stage.faces; }
@@ -1071,27 +1167,16 @@ static void port_GlStageBuild(const PortStageView *view) {
 
 /* ---- drawing it ---- */
 
-/* The colour buffer with a depth buffer of its own beside it: the mesh's
- * faces are sorted among themselves and nothing else of the picture has
- * a depth. The colour texture is the renderer's own, so what the mesh
- * draws lands in the picture in its turn. */
+/* The renderer's own framebuffer is what the mesh draws through: the
+ * colour buffer the primitives are painted into, with the depth buffer
+ * the renderer makes beside it (gl.h). The mesh is the only thing that
+ * writes that depth, and the scene is held against it afterwards
+ * (gl_draw.c), so the two have to be the one buffer. */
 static s32 port_GlStageTarget(const PortGlPicture *picture) {
-    glBindFramebuffer(GL_FRAMEBUFFER, g_stage.framebuffer);
-    if (picture->target_w != g_stage.depth_w ||
-        picture->target_h != g_stage.depth_h) {
-        glBindRenderbuffer(GL_RENDERBUFFER, g_stage.depth);
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
-                              picture->target_w, picture->target_h);
-        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                                  GL_RENDERBUFFER, g_stage.depth);
-        g_stage.depth_w = picture->target_w;
-        g_stage.depth_h = picture->target_h;
-    }
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                           picture->color_texture, 0);
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+    if (picture->framebuffer == 0 && picture->color_texture == 0) {
         return FALSE;
     }
+    glBindFramebuffer(GL_FRAMEBUFFER, picture->framebuffer);
     return TRUE;
 }
 
@@ -1195,7 +1280,11 @@ static void port_GlStageDrawMesh(
                 (GLfloat)picture->target_h);
     glUniform2f(g_stage.at_scale, (GLfloat)scale_x, (GLfloat)scale_y);
     glUniform1f(g_stage.at_near, NEAR_PLANE * 2.0f);
-    glUniform1f(g_stage.at_depth, DEPTH_RANGE);
+    /* the mesh's depths are the renderer's own scale for the tiles, so
+     * what they are divided by is scaled with them: the buffer holds a
+     * depth in the world's units either way */
+    glUniform1f(g_stage.at_depth,
+                DEPTH_RANGE / (GLfloat)(1 << (view->far_shift & 31)));
     glUniform1i(g_stage.at_depth_shift, view->depth_shift & 31);
     glUniform1i(g_stage.at_cutoff, view->ot_cutoff);
     glUniform1i(g_stage.at_fog_levels, view->fog_levels);
@@ -1208,6 +1297,15 @@ static void port_GlStageDrawMesh(
                  (GLuint)paint->window_or_v);
     glUniform1uiv(g_stage.at_open, TILE_WORDS, open);
 
+    /* The whole depth buffer is cleared, and not only the part the mesh
+     * draws in: the scene is held against it everywhere (gl_draw.c), so
+     * what the mesh does not reach must be the far end and not what the
+     * frame before left there. A clear obeys the scissor, hence the
+     * order here. */
+    glDisable(GL_SCISSOR_TEST);
+    glClearDepth(1.0);
+    glDepthMask(GL_TRUE);
+    glClear(GL_DEPTH_BUFFER_BIT);
     /* The scene of a wider picture is drawn across the whole of it, as
      * the renderer draws every primitive the projection gave a depth to
      * (port_GlDraw, is_wide). */
@@ -1232,21 +1330,20 @@ static void port_GlStageDrawMesh(
      * walls away with it. What is drawn that the console did not is the
      * underside of a face with nothing in front of it, which is more of
      * the stage to see and not less. */
-    glClearDepth(1.0);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
-    glClear(GL_DEPTH_BUFFER_BIT);
     /* Nothing of the mesh mixes with what is behind it, so there is no
      * blending and one draw. */
     glDisable(GL_BLEND);
     glDrawArrays(GL_TRIANGLES, 0, g_stage.vertex_count);
     g_stage.draws++;
     g_stage.drawn_vertices += (u32)g_stage.vertex_count;
+    /* The scene is tested against this depth and writes none of it
+     * (gl_draw.c), so the writing is turned off here and the test is
+     * the renderer's own to turn on. */
     glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_TRUE);
-    /* back to what the renderer draws through */
-    glBindFramebuffer(GL_FRAMEBUFFER, picture->framebuffer);
+    glDepthMask(GL_FALSE);
     glViewport(0, 0, picture->target_w, picture->target_h);
     port_GlCountDraw(g_stage.drawn_vertices, g_stage.draws);
 }
@@ -1338,9 +1435,14 @@ s32 port_GlStageTakes(const PortRemasterPrim *prim) {
         /* The mesh takes the tiles' place in the order the game paints
          * in: it is drawn where the first of them would have been, which
          * is the farthest, and everything of the scene that stands on
-         * the ground is painted over it afterwards. */
-        g_stage.is_drawn = TRUE;
+         * the ground is painted over it afterwards.
+         *
+         * What was painted before it is drawn first, and while the mesh
+         * is still not drawn: those primitives are farther than any of
+         * the ground and have nothing to be tested against -- the depth
+         * buffer still holds the frame before's (gl_draw.c). */
         port_GlFlushBatch();
+        g_stage.is_drawn = TRUE;
         port_GlGetPicture(&picture);
         port_GlStageDrawMesh(&picture, prim);
         port_GlForgetState();

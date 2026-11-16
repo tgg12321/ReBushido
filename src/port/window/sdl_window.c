@@ -36,6 +36,7 @@
 #include <time.h>
 
 #include "gl.h"
+#include "gl_stage.h"
 #include "gl_tween.h"
 #include "port_gpu.h"
 #include "port_host.h"
@@ -520,6 +521,10 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     options->is_bilinear = FALSE;
     options->is_exact = FALSE;
     options->is_stage_mesh = g_port_settings.stage_mesh;
+    /* the scene held against the ground's own depth, which is part of
+     * drawing the ground as one mesh and has no setting of its own
+     * (gl.h) */
+    options->is_stage_depth = TRUE;
 }
 
 /* The window's context and the remastered renderer on it: NULL, or why
@@ -1623,9 +1628,16 @@ static void port_ShowBlank(u32 blank) {
          * (port_remaster.h) */
         u32 started = SDL_GetTicks();
 
+        const char *news;
+
         port_RemasterShow();
         port_GlFinishFrame();
         port_GlNoteFrameTime((SDL_GetTicks() - started) * MILLISECONDS);
+        /* which path the stage's ground takes (gl_stage.h) */
+        news = port_GlStageNews();
+        if (news != NULL) {
+            port_Say("%s", news);
+        }
     }
     if (g_port_tween_on && port_TweenGeneration() != g_port_tween_frames) {
         /* the game has drawn a frame: from this moment the frame that

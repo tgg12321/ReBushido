@@ -25,6 +25,13 @@ s32 g_disp_frame_count;
 u32 g_disp_prim_buffers[2] = {0x80100000, 0x80200000};
 u32 g_disp_prim_buffer_size = 0x13400;
 
+/* Where the renderer's walk over the queue is (render.h): the side
+ * channel reads the scale it is drawing at from it, which is the scale a
+ * corner's depth is in (`depth_shift`, port_remaster.h). The renderer is
+ * not in this test, so the walk is this one, and the cases that care set
+ * its scale themselves. */
+RenderWalk g_render_walk;
+
 void port_Fail(const char *format, ...) {
     test_Count(0, __FILE__, __LINE__, "the port stopped itself: %s", format);
     for (;;) {
@@ -83,6 +90,7 @@ static void test_Reset(void) {
     g_begins = 0;
     g_ends = 0;
     g_writes = 0;
+    g_render_walk.scale_shift = 0;
     port_RemasterSetBackend(&g_test_backend);
     port_SetGraphics(PORT_GRAPHICS_REMASTERED);
     port_RemasterSetPrim(0);
@@ -350,7 +358,9 @@ static void test_Limits(void) {
     CHECK_EQ(limits->queue_size, 640);
     CHECK_EQ(limits->queue_free, 640 - 328 - 8);
     CHECK_EQ((s32)limits->tiles, 328);
+    CHECK_EQ((s32)limits->tiles_least, 100);
     CHECK_EQ((s32)limits->nodes, 8);
+    CHECK_EQ((s32)limits->nodes_least, 2);
     CHECK_EQ((s32)limits->ot_farthest, 3341);
 }
 
@@ -383,6 +393,11 @@ static void test_Side(void) {
     test_NotePoint(base + 8, (10 << 16), (60 << 16) + 0x4000, 0x1000);
     test_NotePoint(base + 12, (50 << 16), (60 << 16), 0x1100);
     port_RemasterNoteFace(base, index, 4);
+    /* the scale the renderer is drawing at, which is the scale the
+     * depths above are in: the primitive carries it so that the ground
+     * drawn as one mesh and the rest of the scene can be held against
+     * each other in the world's own units (src/port/gl/gl_stage.c) */
+    g_render_walk.scale_shift = 2;
     port_RemasterAttachFace(0x80100000);
     CHECK_EQ(port_GetRemasterCounts()->point_misses, 0);
 
@@ -417,6 +432,7 @@ static void test_Side(void) {
     CHECK_EQ(prim->corner[2].y, (60 << 16) + 0x4000);
     CHECK_EQ(prim->corner[0].depth, 0x2000);
     CHECK_EQ(prim->corner[3].depth, 0x1100);
+    CHECK_EQ(prim->depth_shift, 2);
     /* its texture, its colour and its page */
     CHECK_EQ(prim->corner[0].u, 4);
     CHECK_EQ(prim->corner[0].v, 8);

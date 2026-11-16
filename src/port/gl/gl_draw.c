@@ -66,6 +66,11 @@ typedef ptrdiff_t GLintptr;
 #define GL_CLAMP_TO_EDGE 0x812F
 #define GL_FRAMEBUFFER 0x8D40
 #define GL_COLOR_ATTACHMENT0 0x8CE0
+#define GL_DEPTH_ATTACHMENT 0x8D00
+#define GL_RENDERBUFFER 0x8D41
+#define GL_DEPTH_COMPONENT24 0x81A6
+#define GL_DEPTH_TEST 0x0B71
+#define GL_LESS 0x0201
 #define GL_FRAMEBUFFER_COMPLETE 0x8CD5
 #define GL_COLOR_BUFFER_BIT 0x00004000
 #define GL_ARRAY_BUFFER 0x8892
@@ -122,7 +127,13 @@ typedef ptrdiff_t GLintptr;
     GL(void, glGenFramebuffers, (GLsizei, GLuint *))                           \
     GL(void, glBindFramebuffer, (GLenum, GLuint))                              \
     GL(void, glFramebufferTexture2D, (GLenum, GLenum, GLenum, GLuint, GLint))  \
+    GL(void, glFramebufferRenderbuffer, (GLenum, GLenum, GLenum, GLuint))      \
+    GL(void, glGenRenderbuffers, (GLsizei, GLuint *))                          \
+    GL(void, glBindRenderbuffer, (GLenum, GLuint))                             \
+    GL(void, glRenderbufferStorage, (GLenum, GLenum, GLsizei, GLsizei))        \
     GL(GLenum, glCheckFramebufferStatus, (GLenum))                             \
+    GL(void, glDepthFunc, (GLenum))                                            \
+    GL(void, glDepthMask, (GLboolean))                                         \
     GL(void, glGenBuffers, (GLsizei, GLuint *))                                \
     GL(void, glBindBuffer, (GLenum, GLuint))                                   \
     GL(void, glBufferData, (GLenum, GLsizeiptr, const void *, GLenum))         \
@@ -194,6 +205,12 @@ PORT_GL_FUNCTIONS
  * where that is more than a texel (the shader's `steps`). */
 #define FLAG_DEPTH 32
 
+/* What a corner's depth is divided by to make its w (port_GlW): any
+ * number will do for the perspective, and the shader is told it so that
+ * it can take the depth back out again for the test against the
+ * ground's own mesh. */
+#define W_SCALE 1024.0f
+
 /* Which fragments a draw keeps, where a half-transparent primitive's
  * texels do not all mix (the mix that subtracts needs two draws). */
 #define PASS_ALL 0
@@ -234,6 +251,12 @@ static struct {
     GLuint vram_texture;
     GLuint color_texture;
     GLuint framebuffer;
+    /* The depth buffer beside the colour buffer: the ground's mesh
+     * writes it and the scene's primitives are tested against it
+     * (gl_stage.h). It is made and sized here, with the colour buffer,
+     * so that the framebuffer is always complete whether or not the mesh
+     * is drawn. */
+    GLuint depth_buffer;
     GLuint buffer;
     GLuint array;
     GLuint blit_buffer;
@@ -271,6 +294,9 @@ static struct {
     GLint at_bilinear;
     GLint at_minify;
     GLint at_pass;
+    GLint at_w_scale;
+    GLint at_depth_range;
+    GLint at_depth_bias;
     GLint blit_at_target;
     GLint blit_at_rect;
     GLint blit_at_scale;
@@ -374,6 +400,13 @@ static const char g_gl_fragment_text[] =
     "uniform int u_bilinear;\n"
     "uniform int u_minify;\n" /* the texels of a fragment averaged */
     "uniform int u_pass;\n"
+    /* the depth test against the ground's mesh: what a corner's own
+     * depth was divided by to make its w, what a depth in the world's
+     * units is divided by to make a value for the depth buffer, and how
+     * much nearer than it is a primitive of the scene is taken to be */
+    "uniform float u_w_scale;\n"
+    "uniform float u_depth_range;\n"
+    "uniform float u_depth_bias;\n"
     "in vec2 v_texture;\n"
     "noperspective in vec2 v_texture_flat;\n"
     "noperspective in vec3 v_color;\n"
@@ -556,6 +589,26 @@ static const char g_gl_fragment_text[] =
     "    if (u_pass == 1 && !mixes) { discard; }\n"
     "    if (u_pass == 2 && mixes) { discard; }\n"
     "    o_color = vec4(color / 255.0, shade);\n"
+    /* How deep this fragment is, for the test against the ground's own
+     * mesh (gl_stage.h). The coprocessor's depth for a corner is the
+     * primitive's own w, and the card interpolates one over w evenly
+     * across the screen, so taking it back from gl_FragCoord is the
+     * depth in perspective, which is what a straight line through the
+     * world has. The scale the renderer drew the thing at is taken off
+     * (`v_info.z`), leaving a depth in the world's own units, and the
+     * offset keeps what lies on the ground from being eaten by it.
+     *
+     * A primitive the side channel has no depth for -- the 2D layer, the
+     * fonts, the menus, a polygon of the scene whose corners were not
+     * written down -- is put at the very front: it was drawn where the
+     * console drew it and has nothing to be behind. */
+    "    if ((v_flags.w & 32u) != 0u) {\n"
+    "        float deep = (u_w_scale / gl_FragCoord.w) * exp2(float(v_info.z));\n"
+    "        gl_FragDepth = clamp((deep - u_depth_bias) / u_depth_range,\n"
+    "                             0.0, 1.0);\n"
+    "    } else {\n"
+    "        gl_FragDepth = 0.0;\n"
+    "    }\n"
     "}\n";
 
 /* The pass that stretches a rectangle of the mirror of video memory
@@ -767,9 +820,14 @@ static s32 port_GlMakeTarget(void) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindRenderbuffer(GL_RENDERBUFFER, g_gl.depth_buffer);
+    glRenderbufferStorage(
+        GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, g_gl.target_w, g_gl.target_h);
     glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                            g_gl.color_texture, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                              GL_RENDERBUFFER, g_gl.depth_buffer);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         port_GlSay("the colour buffer cannot be drawn into", NULL);
         return FALSE;
@@ -868,6 +926,24 @@ static void port_GlFlush(void) {
     /* the texels of a fragment averaged where it covers more than one of
      * them, which the console's own picture does not do */
     glUniform1i(g_gl.at_minify, g_gl.options.is_exact ? 0 : 1);
+    glUniform1f(g_gl.at_w_scale, W_SCALE);
+    glUniform1f(g_gl.at_depth_range, PORT_GL_DEPTH_RANGE);
+    glUniform1f(g_gl.at_depth_bias, PORT_GL_DEPTH_BIAS);
+    /* The scene against the ground (gl_stage.h). The ground's mesh has
+     * drawn its own depth into the buffer this frame, so a primitive of
+     * the scene that stands behind a piece of ground is left out: what
+     * the painter's order alone could not do, the mesh being painted
+     * where the farthest of the frame's tiles was. Nothing writes the
+     * buffer but the mesh, so the order the scene's own primitives are
+     * painted in is untouched, and the test is off entirely in a frame
+     * the mesh did not draw -- the buffer is then the frame before's. */
+    if (port_GlStageSaveFrame() && g_gl.options.is_stage_depth) {
+        glDepthFunc(GL_LESS);
+        glDepthMask(GL_FALSE);
+        glEnable(GL_DEPTH_TEST);
+    } else {
+        glDisable(GL_DEPTH_TEST);
+    }
     port_GlSetState(&g_gl.state);
     if (g_gl.state.is_wide) {
         g_gl.wide++;
@@ -887,6 +963,11 @@ static void port_GlFlush(void) {
         glDrawArrays(GL_TRIANGLES, 0, g_gl.count);
         g_gl.draw_count++;
     }
+    /* the test is this batch's alone: what the backend draws that is not
+     * a primitive -- a rectangle of video memory, the pass that averages
+     * the picture down, the window itself -- has no depth of its own and
+     * is never held against the ground's */
+    glDisable(GL_DEPTH_TEST);
     g_gl.vertex_count += (u32)g_gl.count;
     g_gl.count = 0;
 }
@@ -955,7 +1036,9 @@ static void port_GlPutVertex(
     to->page[3] = (s16)prim->clut_y;
     to->info[0] = (u8)prim->texel_bits;
     to->info[1] = (u8)prim->blend;
-    to->info[2] = 0;
+    /* the scale the renderer drew it at, which the depth test against
+     * the ground's own mesh puts back (port_remaster.h) */
+    to->info[2] = (u8)prim->depth_shift;
     to->info[3] = 0;
     to->window[0] = (u8)prim->window_and_u;
     to->window[1] = (u8)prim->window_or_u;
@@ -966,12 +1049,14 @@ static void port_GlPutVertex(
 /* The w of a corner: any positive number in proportion to how far the
  * point is, which is what a perspective-correct texture needs. Without
  * a depth every corner has 1, and the texture is flat across the
- * primitive as the console's is. */
+ * primitive as the console's is. The shader takes the depth back out of
+ * it for the test against the ground's own mesh, so what it is divided
+ * by is a number the shader is told (`u_w_scale`, W_SCALE). */
 static GLfloat port_GlW(const PortRemasterPrim *prim, s32 corner) {
     if (!prim->has_depth) {
         return 1.0f;
     }
-    return (GLfloat)prim->corner[corner].depth / 1024.0f;
+    return (GLfloat)prim->corner[corner].depth / W_SCALE;
 }
 
 /* Whether this primitive is drawn where the projection really put it,
@@ -1336,6 +1421,7 @@ void port_GlGetPicture(PortGlPicture *picture) {
     picture->framebuffer = g_gl.framebuffer;
     picture->color_texture = g_gl.color_texture;
     picture->vram_texture = g_gl.vram_texture;
+    picture->depth_buffer = g_gl.depth_buffer;
     picture->target_w = g_gl.target_w;
     picture->target_h = g_gl.target_h;
     picture->draw_x = g_gl.draw_x;
@@ -1457,7 +1543,7 @@ void port_GlSetOptions(const PortGlOptions *options) {
     g_gl.options = *options;
     /* the comparison with the software GPU's own picture wants the
      * tiles as the game emitted them */
-    port_GlStageSetOn(options->is_stage_mesh && !options->is_exact);
+    port_GlStageSetOn(options->is_exact ? 0 : options->is_stage_mesh);
     if (g_gl.is_started && (across != g_gl.scale_x || down != g_gl.scale_y ||
                             sample != g_gl.sample)) {
         g_gl.scale_x = across;
@@ -1517,6 +1603,9 @@ const char *port_GlStart(
     g_gl.at_exact = glGetUniformLocation(g_gl.program, "u_exact");
     g_gl.at_bilinear = glGetUniformLocation(g_gl.program, "u_bilinear");
     g_gl.at_minify = glGetUniformLocation(g_gl.program, "u_minify");
+    g_gl.at_w_scale = glGetUniformLocation(g_gl.program, "u_w_scale");
+    g_gl.at_depth_range = glGetUniformLocation(g_gl.program, "u_depth_range");
+    g_gl.at_depth_bias = glGetUniformLocation(g_gl.program, "u_depth_bias");
     g_gl.at_pass = glGetUniformLocation(g_gl.program, "u_pass");
     g_gl.blit_at_target = glGetUniformLocation(g_gl.blit_program, "u_target");
     g_gl.blit_at_rect = glGetUniformLocation(g_gl.blit_program, "u_rect");
@@ -1557,6 +1646,7 @@ const char *port_GlStart(
 
     glGenTextures(1, &g_gl.color_texture);
     glGenFramebuffers(1, &g_gl.framebuffer);
+    glGenRenderbuffers(1, &g_gl.depth_buffer);
     glGenTextures(1, &g_gl.picture_texture);
     glGenFramebuffers(1, &g_gl.picture_framebuffer);
     if (!port_GlMakeTarget()) {
@@ -1590,7 +1680,7 @@ const char *port_GlStart(
     }
     /* the comparison with the software GPU's own picture wants the
      * tiles as the game emitted them */
-    port_GlStageSetOn(options->is_stage_mesh && !options->is_exact);
+    port_GlStageSetOn(options->is_exact ? 0 : options->is_stage_mesh);
 
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);

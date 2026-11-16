@@ -348,7 +348,11 @@ static s32 port_TweenSameKind(
 
     if (before->kind != after->kind ||
         before->corner_count != after->corner_count || !before->has_place ||
-        !after->has_place || before->has_depth != after->has_depth) {
+        !after->has_place || before->has_depth != after->has_depth ||
+        /* the renderer drew the two at different scales, so their depths
+         * are in different units and there is nothing to mix
+         * (port_remaster.h, `depth_shift`) */
+        before->depth_shift != after->depth_shift) {
         return FALSE;
     }
     if (before->is_shaded != after->is_shaded ||

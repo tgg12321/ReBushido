@@ -44,8 +44,16 @@ typedef struct {
     /* The stage's ground drawn as one static mesh instead of from the
      * game's tile primitives (gl_stage.h, docs/PORT.md). It is the
      * drawing path alone: the game emits its tiles exactly as it did and
-     * the card leaves them out. */
+     * the card leaves them out. 0 off; 1 on, which is on for the stages
+     * the mesh is measured good on; 2 on for every stage whatever the
+     * table says, which is what the prover measures a stage with
+     * (tools/port_stage_prove.py). */
     s32 is_stage_mesh;
+    /* The scene held against the ground's own depth, so that a piece of
+     * ground between the camera and a fighter veils him again
+     * (PORT_GL_DEPTH_RANGE below). On with the mesh; off is for
+     * measuring what the test itself changed. */
+    s32 is_stage_depth;
     /* The three things that make the hardware's picture the console's,
      * for the proof at scale 1 (docs/PORT.md, "Remastered"): the
      * corners where the PlayStation held them, the texture flat across
@@ -129,12 +137,39 @@ extern void port_GlFinishFrame(void);
 
 /* ---- what the stage's own mesh needs of the picture ---- */
 
+/* What a depth is divided by to make a value for the depth buffer: a
+ * depth in the view, in the world's own units. The ground's mesh writes
+ * it per pixel and the scene's primitives are tested against it
+ * (gl_stage.h; docs/PORT.md, "The ground as one mesh"). The coprocessor
+ * keeps sixteen bits of a depth scaled down by the shift the renderer
+ * chose for the thing being drawn (`scale_shift`, at most 2), so a depth
+ * in the world's units reaches 65535 << 2. */
+#define PORT_GL_DEPTH_RANGE 262144.0f
+
+/* How much nearer than it is a primitive of the scene is taken to be
+ * when it is tested against the ground, in the world's own units. The
+ * things that lie *on* the ground -- a fighter's shadow, which is his
+ * model flattened onto it, his feet, blood, a weapon he dropped -- have
+ * the ground's own depth to within the coprocessor's rounding, and
+ * without an offset the ground would eat them. A piece of ground that
+ * stands between the camera and a fighter, which is what the test is
+ * for, is thousands of units nearer than he is, so the offset has a
+ * wide field to sit in: this is a fighter's own width, about. Nothing
+ * of the scene writes the depth buffer, so this is a decal's offset and
+ * the painter's order among the scene's primitives is untouched. */
+#define PORT_GL_DEPTH_BIAS 128.0f
+
 /* Where the picture is being drawn and at what scale, for a caller that
  * draws into the colour buffer itself (gl_stage.c). */
 typedef struct {
     u32 framebuffer;   /* what the renderer draws through */
     u32 color_texture; /* the colour buffer */
     u32 vram_texture;  /* the mirror of video memory */
+    /* The depth buffer attached to that framebuffer, which the ground's
+     * mesh writes and the scene is tested against. The renderer owns it
+     * so that it is always of the buffer's own size, whether or not the
+     * mesh is drawn at all. */
+    u32 depth_buffer;
     s32 target_w;
     s32 target_h;
     s32 draw_x; /* a pixel of video memory is this many of the buffer */
