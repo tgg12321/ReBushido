@@ -185,10 +185,15 @@ extern void port_GlScissorFor(
  * bound again afterwards. */
 extern void port_GlDrawOccluders(u32 framebuffer);
 
-/* The vertices kept for that pass in the frame being built, and those
- * the frame had no room for. */
+/* The vertices kept for that pass in the picture being built, and those
+ * it had no room for. */
 extern s32 port_GlOccluderCount(void);
 extern s32 port_GlOccluderLost(void);
+/* They belong to the picture whose shadows have just been laid down and
+ * are kept no longer: a picture drawn between two of the game's frames
+ * is a picture of its own, and the frame after it must not be given its
+ * vertices as well (gl_shadow.h). */
+extern void port_GlForgetOccluders(void);
 /* The batch so far drawn, so that something else may draw in its turn
  * among the primitives, and the batching's state forgotten after it. */
 extern void port_GlFlushBatch(void);

@@ -2480,16 +2480,50 @@ loses to its own sorting included.
   the coprocessor exactly as they always were ("What each later step
   needs").
 
-**How it is proved, with nothing shown.** Three runs of the prover at
-the same blanks on each stage (`tools/port_gl_build.py`, and the
-scratch scripts of the branch): the shadows soft, the same picture with
-the darkening at one hundredth -- the picture without shadows at all,
-since the silhouettes are taken out of it either way -- and the mask
-itself in the place of the picture (`--gl-shadow-mask`: red the
-coverage, green what is not the ground). Of the pixels the darkening
-changed, **none is wholly something that is not the ground**; the few
-that have any green in them at all are the rim the picture is averaged
-down over, where one pixel holds samples of both.
+**How it is proved, with nothing shown.** Three runs of the prover
+(`build/port-gl/rebushido-gl`, a stage chosen by a `poke` of the plan as
+`tools/port_remaster_prove.py` does) at the same blanks on each stage:
+the shadows soft, the same picture with the darkening at one hundredth
+-- the picture without shadows at all, since the silhouettes are taken
+out of it either way -- and the mask itself in the place of the picture
+(`--gl-shadow-mask`: red the coverage, green what is not the ground).
+Then, over the fifteen pictures of each run, the pixels the darkening
+changed and what the mask says they are:
+
+| Stage | Pixels the darkening changed | ... with any of something else in them | ... that are **wholly not** ground | Darkest |
+|---|---|---|---|---|
+| the orange tree fields (12) | 80,711 of 23,719,680 | 1,047 | **0** | 0.442 |
+| the castle rooftop (13) | 30,489 | 1,372 | **0** | 0.452 |
+| the terraced fields (15) | 34,902 | 1,373 | **0** | 0.446 |
+| ... with `stage_mesh on` (15) | 34,947 | 1,381 | **0** | 0.443 |
+| the practice floor (35) | 55,612 | 1,270 | **0** | 0.450 |
+| ... with `stage_mesh on` (35) | 55,612 | 1,270 | **0** | 0.450 |
+
+(The practice floor is drawn from the game's own tiles whichever way
+`stage_mesh` is set -- no versus fight can be held there, so nothing has
+measured its mesh -- which is why its two rows are the same number.)
+
+**In the pictures between two frames** (`--gl-tween 5`, the same tour of
+the practice floor): the first phase of every frame, which is the frame
+on show drawn again as it is, **is the game's own picture to the pixel**
+with the shadows soft -- 377 frames, 616,711,680 pixels, 0 different,
+which is what the picture gives with the game's own shadows -- and no
+picture between two frames is out of order. So a shadow is laid down once a
+picture, moves with its fighter at any frame rate, and a scene that does
+not move gives every picture the same shadow. (It was not so at first:
+the vertices a picture keeps for the mask were forgotten only when the
+next frame began, so the game's own frame was given the picture before
+it as well and a rim of 1,250 pixels a frame came out darker than it
+should. `port_GlForgetOccluders`.)
+
+**No pixel of a fighter, a weapon or anything else that is not the
+ground was darkened at all.** The few that have any green in them are
+the rim the picture is averaged down over (`antialiasing 2`), where one
+pixel of the picture holds samples of the ground and of the fighter: the
+ground's samples are darkened and the fighter's are not, which is what a
+smoothed edge is. The darkest the picture came anywhere is one shadow's
+own 0.45, never two shadows' 0.20 -- 0.442 where it is lower is the
+eight bits a channel rounding a dark colour down.
 
 ### Edges
 

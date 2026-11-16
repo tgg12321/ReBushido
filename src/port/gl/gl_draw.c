@@ -1411,8 +1411,7 @@ static void port_GlBegin(void) {
      * first. */
     port_GlShadowNewFrame();
     g_gl.has_state = FALSE;
-    g_gl.occluder_count = 0;
-    g_gl.occluders_lost = 0;
+    port_GlForgetOccluders();
     port_GlStageNewFrame();
 }
 
@@ -1486,6 +1485,11 @@ void port_GlScissorFor(
 /* How many vertices of this frame are kept for the shadows' mask, and
  * how many the frame had no room for. */
 s32 port_GlOccluderCount(void) { return g_gl.occluder_count; }
+
+void port_GlForgetOccluders(void) {
+    g_gl.occluder_count = 0;
+    g_gl.occluders_lost = 0;
+}
 
 s32 port_GlOccluderLost(void) { return g_gl.occluders_lost; }
 

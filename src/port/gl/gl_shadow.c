@@ -498,6 +498,9 @@ static void port_GlShadowLay(void);
 /* Nothing of a picture's shadows is kept: what comes now belongs to the
  * next one. */
 static void port_GlShadowForget(void) {
+    /* the vertices the picture kept for the mask are the picture's own
+     * (gl_draw.c) */
+    port_GlForgetOccluders();
     g_shadow.count = 0;
     g_shadow.lost = 0;
     g_shadow.has_any = FALSE;
