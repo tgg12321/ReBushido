@@ -94,9 +94,16 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   proved with `SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy
   LIBGL_ALWAYS_SOFTWARE=1` (the dummy driver has no OpenGL);
   `--tap-window FOLDER` writes the window's own pixels.
-- `same_as_original` failed once in a full play-test run (2026-11-15)
-  and passed three times alone on the same tree: rerun it alone before
-  reading a failure of it as a regression.
+- A change to `src/port/gl/` is held by `python tools/port_gl_prove.py`
+  (`LIBGL_ALWAYS_SOFTWARE=1`): it fails if a flat screen is not the
+  console's own picture block for block at large scales. A player's
+  own window size, headless: `--window 2560x1369 --shot-at N`.
+  More pictures a second is `frame_rate` and `src/port/gl/gl_tween.c`,
+  held by `python3 tools/port_fps_prove.py`.
+- The play tests fail at random checkpoints when the machine is busy
+  (the owner playing the port, a build, another run): the emulator is
+  starved. Run them on a quiet machine before reading a failure as a
+  regression.
 - Where the original reads or writes through a pointer it never set
   (address 0), the port's code is under `RB_PORT` with the console's
   value explained in a comment; the table is in `docs/PORT.md`,
