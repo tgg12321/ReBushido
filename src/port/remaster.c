@@ -125,6 +125,16 @@ static PortStageView g_stage_view;
 #define POSITION_BITS 11
 #define POSITION_SIGN (1 << (POSITION_BITS - 1))
 #define POSITION_MASK ((1 << POSITION_BITS) - 1)
+/* the two places the GTE holds a screen position at (src/port/gte.c) */
+#define POSITION_HIGH (POSITION_SIGN - 1)
+#define POSITION_LOW (-POSITION_SIGN)
+/* How far outside those a place may be and still be a point in front of
+ * the camera. A point behind it has a place tens of thousands of pixels
+ * out, because the GTE's divide saturates; four times the width of video
+ * memory is far more than any picture is wide, and a polygon with a
+ * corner further out than that is a projection that came apart
+ * (port_PlaceIsNear). */
+#define PLACE_FAR_MAX (4 * PORT_VRAM_WIDTH)
 #define VRAM_X_MASK (PORT_VRAM_WIDTH - 1)
 #define VRAM_Y_MASK (PORT_VRAM_HEIGHT - 1)
 #define FILL_X_MASK 0x3F0
@@ -1024,11 +1034,49 @@ static void port_RemasterDrawPrim(PortRemasterPrim *prim, s32 kind) {
  * not, and drawing at it would be a band across the picture. The chip's
  * own whole pixel is what says which primitives are drawn at all
  * (gl_draw.c, port_GlIsDrawn), so a place that is not near it is not
- * used. */
-static s32 port_PlaceIsNear(s32 precise, s32 offset, s32 whole) {
-    s32 apart = ((precise >> PORT_REMASTER_FRACTION) + offset) - whole;
+ * used.
+ *
+ * `stored` is the half word the GTE wrote, before the drawing offset:
+ * the GTE keeps a screen position in eleven bits with a sign and holds
+ * at that limit what the projection put further out (src/port/gte.c,
+ * SCREEN_MIN and SCREEN_MAX). A point held there has a place that goes
+ * on past the whole pixel with nothing wrong at all -- it is a point
+ * off the side of the console's screen, which is the very thing a wider
+ * picture shows -- so that place is kept, as long as the point is in
+ * front of the camera and not far enough out to be a projection that
+ * came apart. Without this every polygon with a corner more than 1023
+ * pixels out was drawn squashed against that limit or not at all, which
+ * is what emptied the bands of a wider picture (docs/PORT.md, "A wider
+ * picture"). */
+static s32 port_PlaceIsNear(
+    s32 precise, s32 offset, s32 whole, s32 stored, s32 depth) {
+    s32 at = precise >> PORT_REMASTER_FRACTION;
+    s32 apart = (at + offset) - whole;
 
-    return apart >= -1 && apart <= 1;
+    if (apart >= -1 && apart <= 1) {
+        return TRUE;
+    }
+    if (stored == POSITION_HIGH) {
+        return depth > 0 && at > POSITION_HIGH && at <= PLACE_FAR_MAX;
+    }
+    if (stored == POSITION_LOW) {
+        return depth > 0 && at < POSITION_LOW && at >= -PLACE_FAR_MAX;
+    }
+    return FALSE;
+}
+
+/* Whether a point the side channel wrote down is this corner's own: the
+ * place it worked out is the place the chip drew the corner at.
+ * `stored_x` and `stored_y` are the halves the GTE wrote, before the
+ * drawing offset (port_PlaceIsNear). */
+static s32 port_PointFits(
+    const PortPrecisePoint *point, const PortGpuState *state,
+    const PortRemasterCorner *corner, s32 stored_x, s32 stored_y) {
+    return point != NULL &&
+           port_PlaceIsNear(
+               point->x, state->offset_x, corner->ix, stored_x, point->depth) &&
+           port_PlaceIsNear(
+               point->y, state->offset_y, corner->iy, stored_y, point->depth);
 }
 
 /* A polygon: three corners or four, each a place and, by the code, a
@@ -1076,6 +1124,8 @@ static void port_DecodePolygon(
         PortRemasterCorner *corner = &prim.corner[i];
         const PortPrecisePoint *point = NULL;
         s32 place;
+        s32 stored_x;
+        s32 stored_y;
 
         if (i == 0 || (code & CODE_SHADED)) {
             port_RemasterCornerColor(corner, words[at++]);
@@ -1083,11 +1133,11 @@ static void port_DecodePolygon(
             port_RemasterCornerColor(corner, words[0]);
         }
         place = at++;
-        corner->ix = port_RemasterPosition(
-            port_RemasterPosition((s32)words[place]) + state->offset_x);
-        corner->iy = port_RemasterPosition(
-            port_RemasterPosition((s32)(words[place] >> HALF_SHIFT)) +
-            state->offset_y);
+        /* the two halves the GTE wrote, before the drawing offset */
+        stored_x = port_RemasterPosition((s32)words[place]);
+        stored_y = port_RemasterPosition((s32)(words[place] >> HALF_SHIFT));
+        corner->ix = port_RemasterPosition(stored_x + state->offset_x);
+        corner->iy = port_RemasterPosition(stored_y + state->offset_y);
         corner->u = 0;
         corner->v = 0;
         if (code & CODE_TEXTURED) {
@@ -1100,16 +1150,30 @@ static void port_DecodePolygon(
         }
         if (face != NULL) {
             point = &face->point[i];
-        } else if (g_prim != 0) {
-            /* the word of the primitive this corner's place came in:
-             * the words given to the GPU are the primitive's after its
-             * link */
-            point = port_FindPoint(
-                g_prim + (PortAddress)((u32)(place + 1) * sizeof(u32)));
         }
-        if (point != NULL &&
-            port_PlaceIsNear(point->x, state->offset_x, corner->ix) &&
-            port_PlaceIsNear(point->y, state->offset_y, corner->iy)) {
+        if (!port_PointFits(point, state, corner, stored_x, stored_y) &&
+            g_prim != 0) {
+            /* The word of the primitive this corner's place came in: the
+             * words given to the GPU are the primitive's after its link.
+             * This is where a primitive with no face of its own has its
+             * points, and where one whose face is not its own has them
+             * too: a stage tile cut into pieces is one face of the
+             * renderer's, and each piece has the GTE store its own
+             * corners into the primitive (render_SplitFT4). Taking the
+             * whole tile's corners for a piece of it left a third of the
+             * ground of a stage drawn at `max` with no place at all, so
+             * that it stood still between two frames while the ground
+             * about it moved, and the gaps that opened showed the colour
+             * of the distance through the floor (docs/PORT.md, "More
+             * pictures a second"). */
+            const PortPrecisePoint *own = port_FindPoint(
+                g_prim + (PortAddress)((u32)(place + 1) * sizeof(u32)));
+
+            if (port_PointFits(own, state, corner, stored_x, stored_y)) {
+                point = own;
+            }
+        }
+        if (port_PointFits(point, state, corner, stored_x, stored_y)) {
             corner->x = point->x + (state->offset_x << PORT_REMASTER_FRACTION);
             corner->y = point->y + (state->offset_y << PORT_REMASTER_FRACTION);
             /* A place without a depth is still a place: a polygon the

@@ -81,6 +81,21 @@ extern const PortRemasterBackend *port_GlBackend(void);
  * where one of them was. */
 extern s32 port_GlWouldDraw(const PortRemasterPrim *prim);
 
+/* How many pixels of video memory wide the picture is on each side of
+ * the display's own rectangle, as the renderer has it now: 0 at the
+ * console's shape (port_RemasterMargin). A caller that has to know which
+ * primitives the picture holds asks it (gl_tween.c). */
+extern s32 port_GlPictureMargin(void);
+
+/* The colour the game last cleared its picture to, as the picture holds
+ * it (0xFFRRGGBB), or 0 where it has not cleared one of one colour. It
+ * is the stage's colour of the distance in a fight (light.c,
+ * light_SetFarColor), and it is what shows through a hole in the scene:
+ * the prover counts the pixels of a picture between two frames that are
+ * this colour where both of the frames it lies between are not
+ * (gl_main.c, port_CountHoles). */
+extern u32 port_GlBackground(void);
+
 /* A rectangle of video memory into the mirror the card reads texels
  * from, and nothing else: no batch is flushed and nothing is drawn.
  * `port_GlWroteVram` is the game's own write, which is also drawn into

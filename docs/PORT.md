@@ -1638,6 +1638,17 @@ of the console's picture is two lines of the screen.
   whole range, and the game counts on the chip dropping it. Leaving
   this out was the one thing that showed as a wrong picture: a stage's
   surf drew a bright band across the water (`port_GlIsDrawn`).
+  **A primitive the projection placed itself is measured by those
+  places**, and allowed twice video memory's width across and twice its
+  height down (`SPAN_TRUE_X_MAX`): every corner of such a one is in
+  front of the camera and where the projection really put it, so it is
+  an honest perspective triangle however far off the side of the
+  console's screen its corners are, and the eleven bits the chip held
+  them in are no rule for it. Holding it to them is what cut the ground
+  off at the console's own edges in the bands of a wider picture ("A
+  wider picture"). What the wider span still leaves out is a projection
+  that came apart: a corner all but on the camera's own plane, whose
+  place runs to tens of thousands of pixels.
 - Primitives are **batched** in the order the game drew them, and the
   batch is flushed when the mix, the drawing area or the buffer's room
   changes, and whenever the game writes video memory: the ordering
@@ -1655,6 +1666,28 @@ belongs to another texture, so an edge bleeds. A bilinear filter is
 written (`--filter linear`, four decoded texels, those that are nothing
 left out so that an edge does not bleed into black), and it is for the
 owner to look at; nearest is what the game was drawn for.
+
+**But nearest is for a texture made larger, and the distance makes them
+smaller.** A fragment of the ground a long way off covers several
+texels, and reading one of them is noise that crawls as the camera
+turns, which is what the owner saw as a shimmering floor. So a polygon
+of the scene — one the projection gave a depth to, and nothing else —
+has **the texels its fragment covers averaged**: the texture point's own
+step across and down the screen is a derivative of the perspective-correct
+point, and where that step is more than a texel the shader reads up to
+four points each way spread over it, through the same texture window and
+colour table as one would be, so that nothing is read outside the page
+the chip would have read in (the flag `FLAG_DEPTH`, `u_minify`, `steps`).
+A fragment that covers a texel or less — which is every fragment of
+anything near, at any scale above the console's — reads one, as before,
+so the 2D layer and the fonts are untouched and the cost is only where
+the noise was. And **the picture is smoothed where it is made smaller**
+on its way into the window: the scene is drawn at as many times the
+console's resolution as the window asks for, rounded up, so the picture
+is almost always larger than the rectangle it is shown in, and taking
+one pixel of it for each pixel of the window threw the rest away
+(`port_GlShowPicture`; the `filter` setting still says how the
+console's own picture, whose pixels are blocks, is shown).
 
 **Anti-aliasing is not done**, and the hook is where it goes: the
 colour buffer is a texture of the port's own, so turning it into a
@@ -1877,12 +1910,13 @@ second a question of the game's own rate and not of the drawing.
   default. They were written to files and held to the two frames they
   lie between, by the pixels and by a watched point, and that is all.
   What may show: a face the frame after it has not — something spawned
-  or gone, or one the projection put outside the eleven bits the chip
-  holds — is drawn where it was and waits for the next frame instead of
-  moving; the 2D layer, the HUD and the clock stay at the game's rate by
-  design; a camera cut shows the game's own picture until the cut is
-  over; and a primitive the side channel has no depth for (18% of a
-  scene's) is one of those that do not move.
+  or gone — is drawn where it was and waits for the next frame instead
+  of moving; the 2D layer, the HUD and the clock stay at the game's rate
+  by design; a camera cut shows the game's own picture until the cut is
+  over; and a primitive the side channel has no depth for is one of
+  those that do not move (about forty of the eleven hundred a fight
+  frame has at `draw_distance max`: the fight's own flat layer, and a
+  few shaded triangles).
 - **A stage drawn whole shows where it stops.** The stages were built
   to be seen through a fog that ends 26,000 units out; at
   `draw_distance max` the ground reaches its own far edge, and on some
@@ -2393,7 +2427,15 @@ So the whole of it is in the drawing path:
   game draws its frame after the picture of the frame before it has been
   read (`DrawOTag` comes past the vertical blank in its loop), so a
   clear at the top of a frame wipes the bands of the picture about to be
-  read;
+  read. They are cleared **to the colour the game cleared its own
+  picture to**, where what it wrote was one colour -- its four corners
+  and its middle, five pixels of video memory, which tells a frame's own
+  clear and a fade from a picture copied in. A fight's frame begins with
+  a fill of the stage's colour of the distance (`light_SetFarColor`),
+  which is the sky of every stage but the few whose is black: clearing
+  the bands to black instead left two black bars down the sides of the
+  picture wherever no ground reached into them, which is what the owner
+  saw as "strange black bars on the sides";
 - what the game wrote into video memory — a fill, a copy, the loading
   screens, the portraits — is stretched into the console's 640 alone and
   not into the bands, which are the scene's; a plain rectangle as wide
@@ -2408,6 +2450,26 @@ a fight at scale 2: 15,308, 16,470 and 17,096 pixels of the middle
 differ, which is the HUD leaving it; **under the HUD's own rows, 24, 21
 and 18 do** — the same polygons as before. Outside a fight the middle is
 what it was: the menus and character select differ in 0 to 93 pixels.)
+
+**And the bands are full.** Measured on six stages at the settings the
+owner plays at — `draw_distance max`, `antialiasing 2`, `aspect 16:9` —
+in a window of 2,560 by 1,369 and again filling a screen of 2,560 by
+1,440, as the share of each band that is pure black (the picture's own
+rectangle in the window, so that the letterbox beside a 16 by 9 picture
+in a window of another shape is not counted):
+
+| The stage | Before, left/right | After |
+|---|---|---|
+| practice 1 (35) | 96.7% / 88.9% | 0.3% / 0.3% |
+| main Tatara shrine (0) | 64.9% / 40.7% | 18.6% / 0.3% |
+| bamboo thicket (7) | 52.9% / 56.8% | 0.3% / 0.3% |
+| castle rooftop (13) | 83.2% / 64.0% | 0.3% / 0.3% |
+| lighthouse (19) | 47.2% / 65.1% | 0.3% / 0.3% |
+| abandoned station (25) | 70.1% / 74.3% | 0.3% / 0.3% |
+
+What is left is the scene's own black: on the shrine the left band holds
+an unlit doorway and the fighter's shadow, which are black where the
+console's own picture is black too.
 
 **Draw the stage further with it.** The stage's cells are chosen by a
 wedge cut for the console's field of view, so a wider view at
@@ -2705,6 +2767,22 @@ face of which thing it is a drawing of** (`PortRemasterIdentity`,
   tile's primitives reach through `render_ChainTile`: they are chained
   into the ordering table by hand and never pass `render_LinkEntry`).
 
+**A piece of a tile has a place of its own, not the tile's.** The
+renderer attaches one face — the whole tile's corners — to every piece
+of a tile it cuts, and each piece has the GTE store its own corners
+straight into the primitive (`render_SplitFT3`, `render_SplitFT4`). The
+decoder took the face's corners for the piece's, found them nowhere near
+the pixels the chip drew the piece at, and so gave the piece no place at
+all: a third of the ground of a stage drawn at `max` stood still between
+two frames while the ground about it moved, and the gaps that opened at
+its edges showed the colour of the distance through the floor. Where the
+face's point is not this corner's, the point the GTE stored into the
+primitive itself is taken instead (`port_PointFits`), which is the same
+look-up a primitive with no face of its own already used. A fight frame
+on the practice stage goes from 692 of its 1,177 primitives moved to
+952, and what stands still from 351 to 91 — of which some fifty are the
+rectangles of the flat layer, which never move by design.
+
 The same face of the same thing has the same name in the next frame
 however far it moved, however the camera turned, and however the walk
 about it changed; and no two primitives of one frame can share one. So
@@ -2764,11 +2842,13 @@ partner is usually one that is going, and moving it uncovers what it
 was covering. It is drawn where it is.
 
 **What is not moved, and what then happens.** A primitive the frame
-after it has not (something spawned or gone), one whose corners the
-projection put off the eleven bits the chip holds, one the projection
-gave no place to at all, or one with no name that no search found, is
+after it has not (something spawned or gone), one the projection gave no
+place to at all, or one with no name that no search found, is
 drawn where the frame on show had it: so it waits for the next frame
-instead of moving. **A depth is not asked for**, only a place
+instead of moving. A corner the projection put outside the eleven bits
+the chip holds a screen position in is **not** one of them: that place
+is kept and moved like any other, as long as the point is in front of
+the camera (`port_PlaceIsNear`, `PLACE_FAR_MAX`). **A depth is not asked for**, only a place
 (`has_place`, `port_remaster.h`): a polygon the renderer flattens --
 a fighter's shadow is projected with a matrix that flattens it onto
 the ground -- would be moved between its two places all the same, with
@@ -2780,13 +2860,34 @@ already moved, and the shimmer the owner saw in them was the same
 mispairing as the floor's: a shadow is many small faces of one
 texture, which is exactly what a search by likeness confuses.
 
-And when the faces that **cannot be paired are more than a quarter as
-many as those that can** (`PORT_TWEEN_CUT_SHARE`) the two frames are
-not one scene a frame apart — a camera cut, a screen that changed, a
-model replaced — and no picture is drawn at all: the window shows the
-game's own, which is exactly right. In `port_game` that is every blank
-of the menus and the loading screens, where there is nothing with a
-place to move, and the game runs at 60 there anyway.
+And when **too few of the faces the picture holds can be paired at all,
+or too many of those that can are a jump from where they were**, the two
+frames are not one scene a frame apart — a camera cut, a screen that
+changed, a model replaced — and no picture is drawn at all: the window
+shows the game's own, which is exactly right.
+
+Both shares are of the faces that are **in the picture** and not of
+every face handed over (`port_TweenInPicture`), so that what a stage
+drawn whole hands over beyond the view cannot decide it. The lines are
+as many unpaired as paired (`PORT_TWEEN_CUT_SHARE`) and half as many
+jumped (`PORT_TWEEN_JUMP_SHARE`), a jump being 213 pixels, a third of
+the console's width in one frame of the game (`PORT_TWEEN_JUMP`).
+
+**Both lines used to be the one line of a quarter, and that is what the
+owner saw as flicker.** In a fight on the practice stage at
+`draw_distance max` an eighth of the faces the picture holds cannot be
+paired — a tile the camera came nearer to is cut another way and no
+piece of it has its own name — so with a quarter for a line an ordinary
+frame sat just under it and a frame with a little more coming and going
+sat just over, and the picture alternated between the display's rate and
+the game's. A real cut leaves almost nothing paired and near, so the
+lines need not be fine. **The jump is what catches a camera that cut**,
+which the names alone cannot: a face of the stage has the same name
+wherever the camera is, so after a cut every face is still paired and
+all of them are somewhere else. In `port_game` the pictures refused are
+every blank of the menus and the loading screens, where there is nothing
+with a place to move and the game runs at 60 anyway — which is most of
+what a session's own tally of refused pictures counts.
 
 **The window's own path** was run headless as well, through SDL's
 `offscreen` driver: at `--frame-rate 120`, with the scene at the
@@ -2860,6 +2961,25 @@ the last the frame after it, and three things are held:
   size and at the owner's 2,556 by 1,440 (25,571 pixels and 427,313,
   35 pictures either way), and `fewer_prims` and `more_dropped` are 0
   at all three;
+- **and no pixel of a picture between two frames is the colour the
+  game cleared that picture to where neither of the two frames is**
+  (`background_pixels`). This is the narrow part of the count above and
+  the owner's own defect said exactly: a black box, or a navy one,
+  where both frames have floor. The count above takes in any pixel that
+  changed where the two ends agree, honest motion passing over a steady
+  pixel included, and it grows as more of the scene is moved; this one
+  does not. The colour is the one the game's own clear wrote
+  (`port_GlBackground`), so a stage whose distance is black has no such
+  count at all. On the practice stage at `max`, over 681 pictures of
+  1,704 by 960, it is **15,939 pixels — twenty-three a picture**, and it
+  was 6,182 before a piece of a tile had a place of its own: moving the
+  ground instead of leaving a third of it standing opens a hairline
+  where a tile whose cut changed still stands beside tiles that move.
+  What it closed is larger and is in the frame itself: of the console's
+  own middle of a frame of that stage, below the horizon, 1,132 pixels
+  were the colour of the distance where the floor should be and 316 are
+  (the other five stages measured are each a hundred or so down), which
+  is the hole a polygon squashed against the chip's eleven bits left;
 - **a scene that did not move at all is drawn exactly as it is**
   (`still`, `still_moved`): where the farthest corner moved 0 pixels
   between the two frames, every picture in between must be the frame on
