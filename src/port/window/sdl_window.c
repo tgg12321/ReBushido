@@ -519,6 +519,7 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     options->aspect_h = view.aspect_h;
     options->is_bilinear = FALSE;
     options->is_exact = FALSE;
+    options->is_stage_mesh = g_port_settings.stage_mesh;
 }
 
 /* The window's context and the remastered renderer on it: NULL, or why

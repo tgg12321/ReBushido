@@ -1841,6 +1841,14 @@ static void **render_DrawStageTiles(void **queue, u8 *tile, MATRIX *view) {
     port_GteLoadControl(
         PORT_GTE_LIGHT_COLOR, &lights->cmat, PORT_GTE_MATRIX_WORDS);
     render_LoadBackColor(lights);
+#if RB_REMASTER_VIEW
+    /* the remastered renderer's side channel: what the stage's ground is
+     * being drawn with, so that it can be drawn again as one mesh with
+     * the camera's own transform (port_remaster.h) */
+    port_RemasterNoteStageView(
+        view->m, TILE_CAMERA, far_shift, TILE_DEPTH_SHIFT, RENDER_FOG_OT_INDEX,
+        RENDER_OT_CUTOFF);
+#endif
 
     for (;;) {
         /* the remastered renderer's side channel: this tile is what is

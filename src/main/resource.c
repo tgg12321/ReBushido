@@ -666,6 +666,11 @@ static void resource_OnStageMoved(s32 block_id, s32 delta) {
         wave_RebaseBuffer(delta);
         break;
     }
+#if RB_REMASTER_VIEW
+    /* the remastered renderer's side channel: the tiles' meshes have
+     * moved, so a mesh built of them is thrown away (port_remaster.h) */
+    port_RemasterStageChanged();
+#endif
 }
 
 /* A list in the stage file that nothing in the game uses. Nothing calls

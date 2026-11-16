@@ -111,6 +111,12 @@ void stage_InitFog(void) {
     rect.w = FOG_CLUT_W;
     rect.h = 1;
     stage_SetFogMoves(&rect, STAGE_FOG_LEVELS, g_stage_fog_moves);
+#if RB_REMASTER_VIEW
+    /* the remastered renderer's side channel: where the fogged copies of
+     * the stage's colours are, so that the ground drawn as one mesh can
+     * read the level each pixel's depth asks for (port_remaster.h) */
+    port_RemasterNoteFogRows(FOG_CLUT_X, FOG_CLUT_Y, FOG_CLUT_W, 1);
+#endif
     rect.w = STAGE_FOG_MODEL_WIDTH;
     rect.x = STAGE_FOG_MODEL_X;
     rect.y = STAGE_FOG_MODEL_Y;
@@ -268,6 +274,14 @@ static void stage_QueueFogMoves(
         if (index < OT_LENGTH) {
             addPrim(&g_render_ot[index], move);
             move += 2;
+#if RB_REMASTER_VIEW
+            /* the remastered renderer's side channel: the slot this
+             * level of the stage's own fog was linked at, which is what
+             * says how far a depth is fogged (port_remaster.h) */
+            if (move_pairs == g_stage_fog_moves) {
+                port_RemasterNoteFogLevel(i, index);
+            }
+#endif
             if (i == limit - 1) {
                 g_stage_fog_ot_index = index;
             }
@@ -1001,7 +1015,24 @@ void stage_ReadCells(u16 *stream, s32 block_id) {
     g_render_view_tilt.vx = 0;
     g_render_view_tilt.vy = 0;
     g_render_view_tilt.vz = 0;
+#if RB_REMASTER_VIEW
+    /* the remastered renderer's side channel: the stage's ground is not
+     * what it was, so a mesh built of it is thrown away
+     * (port_remaster.h) */
+    port_RemasterStageChanged();
+#endif
 }
+
+#if RB_REMASTER_VIEW
+/* The stage's tiles and how many there are, for the remastered picture's
+ * mesh of the ground (port_remaster.h). */
+StageTile *stage_GetTiles(s32 *count) {
+    if (count != NULL) {
+        *count = g_stage_tile_count;
+    }
+    return g_stage_tiles;
+}
+#endif
 
 /* Runs the hook that sets up what the loaded stage has of its own. */
 void stage_RunInitHook(void) {

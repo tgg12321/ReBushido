@@ -319,6 +319,103 @@ extern void port_RemasterNewFrame(void);
  * (DrawOTag). 0 for words that come from somewhere else. */
 extern void port_RemasterSetPrim(PortAddress prim);
 
+/* ---- the stage drawn as one mesh (src/port/gl/gl_stage.c) ---- */
+
+/* The game builds the stage's ground again every frame: 32 by 32 cells of
+ * 2,000 units, the cells chosen by the way the camera looks, each tile cut
+ * four or sixteen ways near the camera, every piece of it a new primitive
+ * (stage_Draw, render_DrawStageTiles). The remastered picture can instead
+ * hold the whole of that ground as one mesh in the card's own memory,
+ * built once when the stage loads, and draw it with the camera's own
+ * transform: nothing comes and goes as the camera turns, the detail never
+ * steps, and the pictures between two frames need not pair a tile with a
+ * tile. The game goes on emitting its tiles exactly as it did -- its
+ * logic, its buffers and its traces are untouched -- and the backend
+ * simply does not draw the primitives that came from them.
+ *
+ * What the game gives up for it is this: where the camera is and what it
+ * is looking through, at the moment the stage's tiles are drawn, and
+ * where in video memory each level of the stage's fog keeps its colours.
+ * Nothing is computed differently and nothing of the game's memory is
+ * written. */
+
+/* The stage's fog is 31 rows of colour tables (STAGE_FOG_LEVELS). */
+#define PORT_STAGE_FOG_LEVELS 31
+/* A MATRIX's nine halfwords. (port_gte.h has the same number under its
+ * own name; this header is included where that one is not.) */
+#define PORT_GTE_MATRIX_ELEMENTS_PORT 9
+
+typedef struct {
+    /* Bumped whenever the stage's tiles or the meshes they point at may
+     * have moved: a stage read in, and the arena moving the stage's block
+     * (stage_ReadCells, resource_OnStageMoved). A mesh built for an older
+     * version is thrown away. */
+    s32 version;
+    s32 frames;    /* frames in which the stage's tiles were drawn */
+    s16 matrix[PORT_GTE_MATRIX_ELEMENTS_PORT]; /* the view's rotation, 1.12 */
+    s32 camera[3]; /* where the camera is in the world */
+    s32 far_shift; /* how far a tile's place and depth are scaled down */
+    s32 h;         /* the distance to the projection plane */
+    s32 ofx;       /* where the middle of the screen is, 16.16 */
+    s32 ofy;
+    s32 depth_shift;  /* a tile's depth into the ordering table */
+    s32 fog_ot_index; /* the farthest slot the fog reaches */
+    /* Nothing nearer than this slot is drawn (RENDER_OT_CUTOFF): the
+     * ground that would stand between the camera and the fight is left
+     * out. The game drops a whole face whose deepest corner is nearer
+     * than it; the mesh cuts at the line itself, which is a near plane
+     * and shows more of the ground, not less. */
+    s32 ot_cutoff;
+    /* The stage's fog as this frame placed it: for each level, the
+     * ordering-table slot its copy was linked at, nearest first. A face
+     * drawn at a slot nearer than that of level i has had the colours of
+     * every level after i copied over it and then i's: so the level a
+     * depth is fogged by is the first whose slot is farther than its own.
+     * 0 levels means the stage has no fog this frame. */
+    s32 fog_levels;
+    s32 fog_slot[PORT_STAGE_FOG_LEVELS];
+    /* Where those colours are: the rectangle the textures look at, and
+     * the one each level is copied from (stage_InitFog walks them down
+     * from the first and on from the top of the next column). */
+    s32 fog_x;
+    s32 fog_y;
+    s32 fog_w;
+    s32 fog_h;
+} PortStageView;
+
+/* The renderer is drawing the stage's tiles with this view
+ * (render_DrawStageTiles): the view's rotation, where the camera is, and
+ * the scale what is far off is kept at. What the projection itself is set
+ * up with is read from the coprocessor here. */
+extern void port_RemasterNoteStageView(
+    const void *matrix, const s32 *camera, s32 far_shift, s32 depth_shift,
+    s32 fog_ot_index, s32 ot_cutoff);
+/* Where the stage's fogged colour tables are (stage_InitFog): the
+ * rectangle the textures look at, the levels following it downwards. */
+extern void port_RemasterNoteFogRows(s32 x, s32 y, s32 w, s32 h);
+/* Level `level` of the stage's fog was linked at ordering-table slot
+ * `slot` this frame (stage_QueueFogMoves). */
+extern void port_RemasterNoteFogLevel(s32 level, s32 slot);
+/* The stage's tiles, or the meshes they name, may have moved
+ * (stage_ReadCells, resource_OnStageMoved). */
+extern void port_RemasterStageChanged(void);
+
+extern const PortStageView *port_GetRemasterStageView(void);
+
+/* What the mesh reads of the game. The backend's own files talk to a C
+ * library and to SDL or EGL and are linked beside the game rather than
+ * into it, so they see only the port's own names (tools/port_sdl_build.py
+ * keeps `port_*` and `g_port_*` global and makes every other name the
+ * game's own): what they need of the game's variables comes through
+ * here. The structures themselves are the headers'. */
+/* The stage's tiles (a StageTile each, stage.h) and how many; `count` may
+ * be NULL. */
+extern PortAddress port_RemasterStageTiles(s32 *count);
+/* The mesh a tile names, as a pointer. */
+extern PortAddress port_RemasterTileMesh(s32 block, s32 mesh);
+/* The light setup the tiles are lit by (a LightSetup, light.h). */
+extern const void *port_RemasterTileLights(void);
+
 /* ---- what a primitive is, once decoded ---- */
 
 #define PORT_REMASTER_CORNERS 4

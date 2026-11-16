@@ -211,6 +211,9 @@ typedef struct {
     s32 aspect_w;    /* the picture's shape: 4 by 3, 16 by 9 */
     s32 aspect_h;
     s32 frame_rate; /* PORT_FRAME_RATE_..., or pictures a second */
+    /* The stage's ground drawn as one static mesh instead of from the
+     * game's tile primitives (src/port/gl/gl_stage.h). */
+    s32 stage_mesh;
 } PortSettings;
 
 /* The number of the key, button or axis of this name, as the window's

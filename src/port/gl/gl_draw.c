@@ -24,6 +24,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_stage.h"
 #include "port_gpu.h"
 #include "port_remaster.h"
 
@@ -1007,6 +1008,11 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     if (!g_gl.is_started) {
         return;
     }
+    /* the stage's ground is drawn from a mesh of its own, and the
+     * primitives the game made of its tiles are left out (gl_stage.h) */
+    if (port_GlStageTakes(prim)) {
+        return;
+    }
     if (prim->is_textured) {
         flags |= FLAG_TEXTURED;
     }
@@ -1146,7 +1152,39 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
     }
 }
 
-static void port_GlBegin(void) { g_gl.has_state = FALSE; }
+static void port_GlBegin(void) {
+    g_gl.has_state = FALSE;
+    port_GlStageNewFrame();
+}
+
+/* ---- what the stage's own mesh asks of the picture (gl.h) ---- */
+
+void port_GlGetPicture(PortGlPicture *picture) {
+    picture->framebuffer = g_gl.framebuffer;
+    picture->color_texture = g_gl.color_texture;
+    picture->vram_texture = g_gl.vram_texture;
+    picture->target_w = g_gl.target_w;
+    picture->target_h = g_gl.target_h;
+    picture->draw_x = g_gl.draw_x;
+    picture->draw_y = g_gl.draw_y;
+    picture->margin = g_gl.margin;
+    picture->display_x = g_gl.display_x;
+    picture->display_y = g_gl.display_y;
+    picture->display_w = g_gl.display_w;
+    picture->display_h = g_gl.display_h;
+}
+
+void port_GlFlushBatch(void) {
+    port_GlFlush();
+    port_GlUploadMirror();
+}
+
+void port_GlForgetState(void) { g_gl.has_state = FALSE; }
+
+void port_GlCountDraw(u32 vertices, u32 draws) {
+    g_gl.vertex_count += vertices;
+    g_gl.draw_count += draws;
+}
 
 static void port_GlEnd(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24) {
     port_GlFlush();
@@ -1240,6 +1278,9 @@ void port_GlSetOptions(const PortGlOptions *options) {
 
     port_GlScalesOf(options, &across, &down);
     g_gl.options = *options;
+    /* the comparison with the software GPU's own picture wants the
+     * tiles as the game emitted them */
+    port_GlStageSetOn(options->is_stage_mesh && !options->is_exact);
     if (g_gl.is_started && (across != g_gl.scale_x || down != g_gl.scale_y ||
                             sample != g_gl.sample)) {
         g_gl.scale_x = across;
@@ -1354,6 +1395,24 @@ const char *port_GlStart(
         GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(corners), corners, GL_STREAM_DRAW);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, NULL);
     glEnableVertexAttribArray(0);
+
+    /* The stage's ground as one mesh, which draws into the same colour
+     * buffer through a framebuffer of its own (gl_stage.h). A card that
+     * cannot have it keeps the remastered picture and draws the game's
+     * own tiles: this is not a reason to give the picture up. */
+    {
+        const char *why = port_GlStageStart(getproc);
+
+        if (why != NULL) {
+            /* kept for whoever asks; the picture goes on without it */
+            port_GlSay("the stage's ground is drawn from the game's own "
+                       "tiles: ",
+                       why);
+        }
+    }
+    /* the comparison with the software GPU's own picture wants the
+     * tiles as the game emitted them */
+    port_GlStageSetOn(options->is_stage_mesh && !options->is_exact);
 
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);

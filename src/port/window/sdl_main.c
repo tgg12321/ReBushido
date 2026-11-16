@@ -90,6 +90,10 @@ static const char g_port_window_usage[] =
     "                 averaged down: off, 2 or 4\n"
     "  --aspect W:H   the shape of the picture: 4:3 as the console, 16:9\n"
     "                 for a wider view of the same scene\n"
+    "  --stage-mesh W on: the stage's ground drawn from one static mesh\n"
+    "                 built when the stage loads, instead of from the\n"
+    "                 game's own tile primitives; off, the default, is\n"
+    "                 the tiles. It needs the remastered picture\n"
     "  --frame-rate W  original: one picture a vertical blank, as the\n"
     "                 console; display: as many pictures a second as the\n"
     "                 screen shows; or a number of them. The game steps\n"
@@ -421,6 +425,7 @@ int main(int argc, char **argv) {
     s32 aspect_h = -1;
     s32 frame_rate = PORT_FRAME_RATE_ORIGINAL;
     s32 has_frame_rate = 0;
+    s32 stage_mesh = -1;
     PortRemasterView view;
     s32 code;
     s32 i;
@@ -523,6 +528,16 @@ int main(int argc, char **argv) {
             }
             aspect_w = atoi(shape);
             aspect_h = atoi(colon + 1);
+        } else if (strcmp(word, "--stage-mesh") == 0 && has_value) {
+            const char *how = argv[++i];
+
+            if (strcmp(how, "on") == 0) {
+                stage_mesh = 1;
+            } else if (strcmp(how, "off") == 0) {
+                stage_mesh = 0;
+            } else {
+                port_Complain("--stage-mesh takes on or off, not ", how);
+            }
         } else if (strcmp(word, "--frame-rate") == 0 && has_value) {
             const char *how = argv[++i];
 
@@ -603,6 +618,9 @@ int main(int argc, char **argv) {
     if (has_frame_rate) {
         g_port_settings.frame_rate = frame_rate;
     }
+    if (stage_mesh >= 0) {
+        g_port_settings.stage_mesh = stage_mesh;
+    }
     if (aspect_w > 0 && aspect_h > 0) {
         g_port_settings.aspect_w = aspect_w;
         g_port_settings.aspect_h = aspect_h;
@@ -663,6 +681,10 @@ int main(int argc, char **argv) {
                  : "at the resolution asked for",
              port_NameRemasterDistance(view.distance), view.supersample,
              view.aspect_w, view.aspect_h);
+    port_Say("stage_mesh: the stage's ground is drawn %s.",
+             g_port_settings.stage_mesh
+                 ? "from one static mesh of its own"
+                 : "from the game's own tile primitives");
     port_Say("memory cards: card1.mcd and card2.mcd beside the program "
              "unless --card1, --card2 or --no-cards says otherwise.");
     port_Say("settings: %s", g_port_settings_path != NULL

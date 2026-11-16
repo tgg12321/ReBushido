@@ -90,6 +90,10 @@ static PortRemasterCounts g_shown_counts;
  * Counted, not corrected. */
 static PortDirtyRect g_drawn;
 
+/* The stage as one mesh (port_remaster.h): what the renderer was drawing
+ * the stage's tiles with, this frame. */
+static PortStageView g_stage_view;
+
 /* ---- the numbers of the chip (src/port/raster.c has the same) ---- */
 
 #define COMMAND_SHIFT 24
@@ -579,6 +583,74 @@ static const FaceSlot *port_FindFace(PortAddress prim) {
     return NULL;
 }
 
+/* ---- the stage as one mesh (port_remaster.h) ---- */
+
+void port_RemasterNoteStageView(
+    const void *matrix, const s32 *camera, s32 far_shift, s32 depth_shift,
+    s32 fog_ot_index, s32 ot_cutoff) {
+    const s16 *from = (const s16 *)matrix;
+    s32 i;
+
+    if (g_backend == NULL) {
+        return;
+    }
+    for (i = 0; i < PORT_GTE_MATRIX_ELEMENTS_PORT; i++) {
+        g_stage_view.matrix[i] = from[i];
+    }
+    for (i = 0; i < 3; i++) {
+        g_stage_view.camera[i] = camera[i];
+    }
+    g_stage_view.far_shift = far_shift;
+    g_stage_view.depth_shift = depth_shift;
+    g_stage_view.fog_ot_index = fog_ot_index;
+    g_stage_view.ot_cutoff = ot_cutoff;
+    /* what the projection itself is set up with: the coprocessor's own
+     * registers, which the tiny model and the menus change later in the
+     * frame, so they are taken here and not when the picture is drawn */
+    g_stage_view.h = (s32)(port_GteReadControl(PORT_GTE_PLANE) & HALF_MASK);
+    g_stage_view.ofx = (s32)port_GteReadControl(PORT_GTE_OFX);
+    g_stage_view.ofy = (s32)port_GteReadControl(PORT_GTE_OFY);
+    g_stage_view.frames++;
+}
+
+void port_RemasterNoteFogRows(s32 x, s32 y, s32 w, s32 h) {
+    g_stage_view.fog_x = x;
+    g_stage_view.fog_y = y;
+    g_stage_view.fog_w = w;
+    g_stage_view.fog_h = h;
+}
+
+void port_RemasterNoteFogLevel(s32 level, s32 slot) {
+    if (g_backend == NULL || level < 0 || level >= PORT_STAGE_FOG_LEVELS) {
+        return;
+    }
+    g_stage_view.fog_slot[level] = slot;
+    if (level + 1 > g_stage_view.fog_levels) {
+        g_stage_view.fog_levels = level + 1;
+    }
+}
+
+void port_RemasterStageChanged(void) { g_stage_view.version++; }
+
+const PortStageView *port_GetRemasterStageView(void) { return &g_stage_view; }
+
+/* What the mesh reads of the game, which the backend's own files cannot
+ * name themselves (port_remaster.h). */
+
+PortAddress port_RemasterStageTiles(s32 *count) {
+    return (PortAddress)stage_GetTiles(count);
+}
+
+PortAddress port_RemasterTileMesh(s32 block, s32 mesh) {
+    return (PortAddress)ADDR(g_reloc_tables[block][mesh]);
+}
+
+const void *port_RemasterTileLights(void) {
+    /* TILE_LIGHT_SETUP, the setup render_DrawStageTiles lights a tile's
+     * faces with (src/main/render_asm.c) */
+    return &g_light_setups[LIGHT_SCENERY];
+}
+
 /* ---- the fight's HUD at the picture's edges (port_remaster.h) ---- */
 
 void port_RemasterSetAnchor(s32 anchor) { g_anchor = anchor; }
@@ -663,6 +735,9 @@ void port_RemasterNewFrame(void) {
     }
     g_epoch++;
     g_face_count = 0;
+    /* the stage's fog is placed again every frame, and a stage without
+     * any places none (port_remaster.h) */
+    g_stage_view.fog_levels = 0;
     /* nothing of the scene is being drawn yet: what the game builds
      * before the renderer's walk is the 2D layer, which has no identity
      * and is never moved */

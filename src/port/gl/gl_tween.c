@@ -23,6 +23,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_stage.h"
 #include "gl_tween.h"
 #include "port_gpu.h"
 #include "port_remaster.h"
@@ -103,6 +104,16 @@ typedef struct {
     s32 *slot;   /* TWEEN_SLOTS of them: a key's primitive */
     s32 *bucket; /* TWEEN_BUCKETS: a signature's first primitive */
     s32 *next;   /* TWEEN_PRIMS_MAX: the next of the same bucket */
+    /* Where the stage's ground was drawn, where it is drawn as one mesh
+     * (gl_stage.h): the primitives the game made of its tiles are not
+     * written down at all -- there is nothing to pair, and they are
+     * thousands of a frame's -- and in their place the mesh is drawn
+     * again at the event the first of them came at, with the camera
+     * between the two frames. */
+    s32 has_mesh;
+    s32 mesh_at; /* which event */
+    PortRemasterPrim mesh_paint;
+    PortStageView view;
 } TweenFrame;
 
 static struct {
@@ -168,6 +179,8 @@ static void port_TweenClearFrame(TweenFrame *frame) {
     s32 i;
 
     frame->is_whole = TRUE;
+    frame->has_mesh = FALSE;
+    frame->mesh_at = 0;
     frame->prim_count = 0;
     frame->event_count = 0;
     frame->vram_count = 0;
@@ -588,6 +601,23 @@ static void port_TweenBegin(void) {
 static void port_TweenNotePrim(const PortRemasterPrim *prim) {
     TweenFrame *frame = port_TweenWriting();
 
+    /* a primitive of a stage tile is the mesh's business and is not
+     * written down: the mesh is drawn again where the first of them came
+     * (gl_stage.h) */
+    if (port_GlStageWouldTake(prim)) {
+        if (!frame->has_mesh) {
+            frame->has_mesh = TRUE;
+            frame->mesh_at = frame->event_count;
+            frame->mesh_paint = *prim;
+            /* What the ground is drawn with, taken here and not at the
+             * frame's end: the game builds its next frame's primitives
+             * before the picture of this one has been read, so by the
+             * end of a frame the side channel already holds the next
+             * frame's camera (gl_stage.h). */
+            port_GlStageGetView(&frame->view);
+        }
+        return;
+    }
     if (frame->prim_count >= TWEEN_PRIMS_MAX ||
         frame->event_count >= TWEEN_EVENTS_MAX) {
         frame->is_whole = FALSE;
@@ -934,6 +964,7 @@ s32 port_TweenDraw(s32 phase) {
     const TweenFrame *after;
     u32 aside[PORT_GL_COUNTS];
     u32 none[PORT_GL_COUNTS];
+    s32 stage_state;
     s32 i;
 
     if (!port_TweenCanDraw()) {
@@ -960,15 +991,35 @@ s32 port_TweenDraw(s32 phase) {
     g_tween.counts.off_the_line = 0;
     g_tween.has_track = FALSE;
     port_GlSaveCounts(aside);
+    /* the stage's mesh is drawn again here and must be left as it was:
+     * the game's own frame is painted after this picture is made, and it
+     * needs its ground (gl_stage.h) */
+    stage_state = port_GlStageSaveFrame();
     for (i = 0; i < PORT_GL_COUNTS; i++) {
         none[i] = 0;
     }
     port_GlLoadCounts(none);
     port_TweenHoldVram(shown);
     port_TweenBegin();
-    for (i = 0; i < shown->event_count; i++) {
-        const TweenEvent *event = &shown->event[i];
+    if (shown->has_mesh) {
+        /* the stage's ground, with the camera between the two frames:
+         * all that moves in it is the view (gl_stage.h) */
+        PortStageView between;
 
+        port_GlStageMixView(
+            &between, &shown->view, &after->view, phase, PORT_TWEEN_ONE);
+        port_GlStageSetView(&between);
+    }
+    for (i = 0; i <= shown->event_count; i++) {
+        const TweenEvent *event;
+
+        if (shown->has_mesh && i == shown->mesh_at) {
+            port_GlStageTakes(&shown->mesh_paint);
+        }
+        if (i == shown->event_count) {
+            break;
+        }
+        event = &shown->event[i];
         if (event->is_vram) {
             const TweenVram *one = &shown->vram[event->at];
 
@@ -1050,6 +1101,8 @@ s32 port_TweenDraw(s32 phase) {
             }
         }
     }
+    port_GlStageSetView(NULL);
+    port_GlStageLoadFrame(stage_state);
     /* the batch has to be drawn before video memory is put back: the
      * card reads its texels from the mirror of it */
     port_GlFinishFrame();

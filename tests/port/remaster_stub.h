@@ -30,6 +30,31 @@ void port_RemasterNoteAnchored(PortAddress prim) { (void)prim; }
 
 void port_RemasterNoteOtSlot(s32 index) { (void)index; }
 
+void port_RemasterNoteStageView(
+    const void *matrix, const s32 *camera, s32 far_shift, s32 depth_shift,
+    s32 fog_ot_index, s32 ot_cutoff) {
+    (void)matrix;
+    (void)camera;
+    (void)far_shift;
+    (void)depth_shift;
+    (void)fog_ot_index;
+    (void)ot_cutoff;
+}
+
+void port_RemasterNoteFogRows(s32 x, s32 y, s32 w, s32 h) {
+    (void)x;
+    (void)y;
+    (void)w;
+    (void)h;
+}
+
+void port_RemasterNoteFogLevel(s32 level, s32 slot) {
+    (void)level;
+    (void)slot;
+}
+
+void port_RemasterStageChanged(void) {}
+
 void port_RemasterNoteCells(s32 tiles, s32 nodes, s32 queue_size) {
     (void)tiles;
     (void)nodes;

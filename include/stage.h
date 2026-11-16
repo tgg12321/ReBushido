@@ -121,6 +121,10 @@ typedef struct {
 extern void stage_ReadCells(u16 *stream, s32 block_id);
 /* The pieces, in the order of the file. */
 extern StageNode *stage_GetNodes(void);
+/* The stage's tiles and how many there are, for the remastered picture's
+ * one mesh of the ground (port_remaster.h, src/port/gl/gl_stage.c);
+ * `count` may be NULL. Only the port has it. */
+extern StageTile *stage_GetTiles(s32 *count);
 
 /* Queues what stands on the cells the camera sees, runs the stage's own
  * hook and draws the stage's flames. */

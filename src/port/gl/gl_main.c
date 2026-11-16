@@ -122,6 +122,9 @@ static const char g_usage[] =
     "                 hardware path as well (the default follows the\n"
     "                 game's own options page)\n"
     "  --filter KIND  nearest: a texel is a block; linear: smoothed\n"
+    "  --stage-mesh W on, off: the stage's ground drawn from one static\n"
+    "                 mesh instead of the game's tile primitives\n"
+    "                 (gl_stage.h)\n"
     "  --gl-exact     draw as the console: the corners where it held\n"
     "                 them, the texture flat, five bits a channel with\n"
     "                 the chip's dither. For the comparison at scale 1\n"
@@ -1092,6 +1095,8 @@ int main(int argc, char **argv) {
             g_run.strip_blanks = comma != NULL ? atoi(comma + 1) : 1;
         } else if (!strcmp(word, "--filter")) {
             options.is_bilinear = !strcmp(argv[++i], "linear");
+        } else if (!strcmp(word, "--stage-mesh")) {
+            options.is_stage_mesh = !strcmp(argv[++i], "on");
         } else if (!strcmp(word, "--draw-distance")) {
             view.distance = port_ReadRemasterDistance(argv[++i]);
             if (view.distance < 0) {

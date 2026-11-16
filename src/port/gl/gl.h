@@ -41,6 +41,11 @@ typedef struct {
     s32 aspect_w;
     s32 aspect_h;
     s32 is_bilinear; /* texels smoothed, not blocks */
+    /* The stage's ground drawn as one static mesh instead of from the
+     * game's tile primitives (gl_stage.h, docs/PORT.md). It is the
+     * drawing path alone: the game emits its tiles exactly as it did and
+     * the card leaves them out. */
+    s32 is_stage_mesh;
     /* The three things that make the hardware's picture the console's,
      * for the proof at scale 1 (docs/PORT.md, "Remastered"): the
      * corners where the PlayStation held them, the texture flat across
@@ -106,6 +111,33 @@ extern s32 port_GlReadPicture(u32 *out, u32 room, s32 *out_w, s32 *out_h);
  * this and then draws the buffer into itself (and swaps); the prover
  * reads it back. */
 extern void port_GlFinishFrame(void);
+
+/* ---- what the stage's own mesh needs of the picture ---- */
+
+/* Where the picture is being drawn and at what scale, for a caller that
+ * draws into the colour buffer itself (gl_stage.c). */
+typedef struct {
+    u32 framebuffer;   /* what the renderer draws through */
+    u32 color_texture; /* the colour buffer */
+    u32 vram_texture;  /* the mirror of video memory */
+    s32 target_w;
+    s32 target_h;
+    s32 draw_x; /* a pixel of video memory is this many of the buffer */
+    s32 draw_y;
+    s32 margin; /* a wider picture's band, in video memory's pixels */
+    s32 display_x;
+    s32 display_y;
+    s32 display_w;
+    s32 display_h;
+} PortGlPicture;
+
+extern void port_GlGetPicture(PortGlPicture *picture);
+/* The batch so far drawn, so that something else may draw in its turn
+ * among the primitives, and the batching's state forgotten after it. */
+extern void port_GlFlushBatch(void);
+extern void port_GlForgetState(void);
+/* Vertices and draws added to the frame's counts. */
+extern void port_GlCountDraw(u32 vertices, u32 draws);
 
 /* ---- into a window (src/port/window/sdl_window.c) ---- */
 
