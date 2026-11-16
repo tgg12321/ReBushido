@@ -826,6 +826,23 @@ static void port_GlSetUpVertexFormat(void) {
 }
 
 /* The colour buffer: all of video memory at the scale. */
+/* The depth buffer beside the colour buffer, attached only where the
+ * ground's mesh will write it (gl_stage.h). It is not attached
+ * otherwise, and not because it costs anything: Mesa's software driver
+ * takes another path through its rasteriser when a framebuffer has a
+ * depth attachment at all, and a few hundred pixels of a fight picture
+ * then land on the other side of a half-texel. The picture at scale 1
+ * is held to the software GPU's pixel for pixel (`--gl-exact`,
+ * docs/PORT.md, "How it is proved, with nothing shown"), so a run that
+ * draws no mesh must have no depth buffer either. */
+static void port_GlAttachDepth(void) {
+    s32 wanted = g_gl.options.is_stage_mesh && !g_gl.options.is_exact;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                              GL_RENDERBUFFER, wanted ? g_gl.depth_buffer : 0);
+}
+
 static s32 port_GlMakeTarget(void) {
     g_gl.draw_x = g_gl.scale_x * g_gl.sample;
     g_gl.draw_y = g_gl.scale_y * g_gl.sample;
@@ -844,8 +861,7 @@ static s32 port_GlMakeTarget(void) {
     glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                            g_gl.color_texture, 0);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                              GL_RENDERBUFFER, g_gl.depth_buffer);
+    port_GlAttachDepth();
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         port_GlSay("the colour buffer cannot be drawn into", NULL);
         return FALSE;
@@ -1716,6 +1732,11 @@ void port_GlSetOptions(const PortGlOptions *options) {
      * black polygons */
     port_GlStageSetOn(options->is_exact ? 0 : options->is_stage_mesh);
     port_GlShadowSetStrength(options->is_exact ? 0 : options->shadows);
+    if (g_gl.is_started) {
+        /* the setting may have turned the mesh on or off, and the depth
+         * buffer is attached only for it */
+        port_GlAttachDepth();
+    }
     if (g_gl.is_started && (across != g_gl.scale_x || down != g_gl.scale_y ||
                             sample != g_gl.sample)) {
         g_gl.scale_x = across;

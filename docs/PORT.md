@@ -2281,14 +2281,28 @@ on the terraced fields showed a fence the console hides behind a terrace.
   there is nothing to hold anything against. What the game painted before
   the mesh -- the backdrop, the sky -- is farther than any of the ground
   and is drawn before the test is turned on.
+- **The depth buffer is attached to the colour buffer only where the
+  mesh will write it** (`port_GlAttachDepth`), and not to save memory:
+  Mesa's software driver takes another path through its rasteriser when
+  a framebuffer has a depth attachment at all, and a few hundred pixels
+  of a fight picture then land on the other side of a half-texel. The
+  picture at scale 1 is held to the software GPU's pixel for pixel
+  ("How it is proved, with nothing shown"), so a run that draws no mesh
+  must have no depth buffer either; with it attached always, `port_game`
+  differed in 623,690 pixels instead of 612,810, in 13 of its 183
+  pictures, all of them in a fight.
 
 **What it is worth, measured.** The mesh held against itself with the
 test on and off (`--against nodepth`), four pictures of each of five
 stages: the terraced fields 0.83% of pixels, the purple cavern 0.20%, the
 parking lot 0.02%, the castle rooftop and the practice floor nothing at
-all. Looked at, every one of those pixels is a piece of the stage the
-console's own tiles hide and the mesh without the test did not; nothing
-of a fighter, a shadow or a dropped weapon is eaten anywhere.
+all. Of the terraced fields' 0.83%, 0.016% is black where the mesh
+without the test drew something: the test takes almost nothing away
+altogether, it puts the ground in front of it. Looked at, every one of
+those pixels is a piece of the stage the console's own tiles hide and
+the mesh without the test did not -- a fence behind a terrace is the
+plain case -- and nothing of a fighter, a shadow or a dropped weapon is
+eaten anywhere.
 
 **The texels a fragment covers are averaged**, by the same rule and the
 same arithmetic as the renderer's own polygons of the scene (`gl_draw.c`,
@@ -2430,11 +2444,11 @@ speckle is marked too and runs together into areas of any size.
 | **The trace of every watched value, the mesh on and off** | **the same on all 38** |
 | Pictures compared | 152, 186,777,600 pixels |
 | Pixels that differ at all | 57.1% |
-| **In areas of plainly other colour** | **738,066 (0.395%)** |
-| The worst stage | the orange tree fields, 1.62% |
-| Stages with none at all | the snake cliff, stage 37 |
-| **Black where the tiles drew the stage** | **192,496 (0.103%)**, worst the terraced fields at 0.60% |
-| Drawn where the tiles drew nothing | 432,535 (0.232%) |
+| **In areas of plainly other colour** | **609,337 (0.326%)** |
+| The worst stage | the orange tree fields, 1.12% |
+| Stages with none at all | the main shrine, the snake cliff, Kimigaura coast, the kabuki stage, the Shainto gate, stage 37 |
+| **Black where the tiles drew the stage** | **216,742 (0.116%)**, worst the terraced fields at 0.60% |
+| Drawn where the tiles drew nothing | 208,309 (0.112%) |
 | Vertices a frame, the mean over a run | 2,459 from the tiles, 2,923 with the mesh |
 | The verdict stage by stage | `build/stagemesh/verdict.txt` |
 
@@ -2442,7 +2456,7 @@ speckle is marked too and runs together into areas of any size.
 where its trace is the same, its areas of plainly other colour are under
 5% of the pixels, the largest of them is under 60,000 pixels, and under
 1% of the pixels are black where the tiles drew (`verdict_of`). The whole
-measured range is 0.00% to 1.62%, and the one picture known to be wrong
+measured range is 0.00% to 1.12%, and the one picture known to be wrong
 measures 45%: the bar sits between them, not at the edge of what passes.
 **All 38 stages pass it**, and `g_stage_proved` in `gl_stage.c` says so
 stage by stage; a stage that stopped passing would be a 0 there and would
@@ -2466,22 +2480,31 @@ driver on Mesa's software renderer. `--mark N` writes the mesh's own
 picture with the cells that count reddened on it, which tells a wrongly
 drawn face from speckle at a glance.
 
-**The pictures between two frames**, on the shrine with
-`--gl-tween 4` (four pictures a frame): the trace is the same with the
-mesh on and off, every picture lies between its two frames
-(`out_of_order 0`), and a picture drawn at phase 0 -- which must be the
-game's own frame again -- differs in 0.39% of its pixels, where with the
-tiles it differs in none. (That 0.39% is the same sub-pixel reading of
-the ground, and which tiles the game had opened up, which the replay
-reads as it stands rather than as the frame on show had it.) The
-primitives a frame has to pair fall from 889 to 823: the ground is no
-longer among them.
+**The pictures between two frames** (`tools/port_fps_prove.py
+--stage-mesh on`, the three play tests, every frame drawn as five
+pictures): the trace with the pictures on and off is the same on all
+three, 2,333, 2,457 and 2,334 lines. **A picture drawn at phase 0 --
+which must be the game's own frame again -- is now the game's own frame
+to the pixel**: 0 of 856,473,600 pixels differ on `port_game` and on
+`port_bugfixes`, where before the mesh the ground's tiles had to be
+paired with the next frame's and 0.39% of the pixels differed. A frame
+has 923 primitives to pair instead of the ground's thousands, 679 of
+them moved and 127 unpaired.
+
+What the mesh does not mend is what was already there: the pictures of
+`port_other_fight` that do not lie between their two frames went from 11
+to 23 of 817 (2.8%), and the watched point that is not between its two
+ends from 14 to 14 -- on `port_game` that count falls from 16 to 6. Those
+are a face the next frame has not, which is drawn where it is rather than
+moved, and are not the ground's.
 
 **What it costs.** On this machine, which has no graphics card at all
 (Mesa's llvmpipe) and was busy with other work throughout, a run of
-4,200 blanks took 27.5 s with the tiles and 28.1 s with the mesh, and
-the mesh adds about 500 vertices to a frame. It is drawn in one go: one
-draw of the whole stage, with no blending.
+4,200 blanks over all 38 stages took 27.7 s with the tiles and 29.0 s
+with the mesh on the mean, and the mesh adds about 460 vertices to a
+frame (2,459 to 2,923). It is drawn in one go: one draw of the whole
+stage, with no blending, and one more read of a colour table a sample
+for the fog.
 
 ### The shadows
 
@@ -2533,6 +2556,16 @@ loses to its own sorting included.
   away it is: a fighter's foot and the ground it stands on are at the
   same depth, which is why depth cannot tell them apart and why the
   first attempt at this painted the darkness over the caster's feet.
+  **With the ground drawn as one mesh** ("The ground as one mesh") there
+  are no stage tiles among the batches at all: the mesh is drawn outside
+  them, so nothing of the ground is ever put into the mask's alpha and
+  the shadow falls on it exactly as it falls on the tiles. Nor does the
+  mesh's depth hide or double a shadow: the shadow's own faces are taken
+  out of the batching before the depth test is reached, and the
+  darkening is a pass of its own at the frame's end. Looked at on the
+  practice floor and the terraced fields, with `shadows soft` and the
+  ground both ways, the two pictures are the same shadow on the same
+  ground (`build/stagemesh2/shadow-*.png`).
 - **Which primitives are the shadow's** is told by the renderer and not
   guessed from their colour (the ground has black faces of its own):
   `render_DrawQueue` says `port_RemasterNoteShadow` while it walks a
