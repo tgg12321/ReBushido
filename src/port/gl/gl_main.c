@@ -91,9 +91,13 @@ static struct {
     u32 more_dropped;       /* ... that left a triangle out the ends did not */
     u32 holes;              /* ... with a hole of the clear in the scene */
     u32 hole_pixels;        /* ... and how many such pixels in all */
-    u32 still;              /* frames whose scene did not move at all */
-    u32 still_moved;        /* ... whose pictures in between are not it */
-    u32 off_the_line;       /* corners not between the two frames' own */
+    /* the narrow count: pixels that are the colour the game cleared the
+     * picture to where neither of the two frames is (the owner's black
+     * boxes, port_CountBackgroundHoles) */
+    u32 background_pixels;
+    u32 still;        /* frames whose scene did not move at all */
+    u32 still_moved;  /* ... whose pictures in between are not it */
+    u32 off_the_line; /* corners not between the two frames' own */
 } g_run;
 
 /* The most pictures a game frame may be drawn as, for the prover's
@@ -567,6 +571,32 @@ static u32 port_CountHoles(s32 pixels) {
     return count;
 }
 
+/* The owner's own defect, counted and nothing else: a pixel of a picture
+ * between two frames that **is the colour the game cleared the picture
+ * to** where neither of the two frames it lies between is -- a black
+ * box, or a navy one, where both frames have floor. It is the narrow
+ * part of the count above, which takes in any pixel that changed where
+ * the two ends agree, and so counts honest motion passing over a
+ * steady pixel as well (docs/PORT.md, "More pictures a second"). */
+static u32 port_CountBackgroundHoles(s32 pixels) {
+    u32 background = port_GlBackground();
+    u32 count = 0;
+    s32 i;
+
+    if (background == 0) {
+        return 0;
+    }
+    for (i = 0; i < pixels; i++) {
+        if (port_ColorsApart(g_first_phase[i], g_last_phase[i]) <=
+                HOLE_STEADY &&
+            port_ColorsApart(g_first_phase[i], background) >= HOLE_DIFFERENT &&
+            port_ColorsApart(g_picture[i], background) <= HOLE_STEADY) {
+            count++;
+        }
+    }
+    return count;
+}
+
 /* ---- the pictures between two frames (gl_tween.h) ---- */
 
 /* How far two pictures are apart: every channel of every pixel added
@@ -710,6 +740,7 @@ static void port_GlTweenPhases(u32 blank) {
         from_last[phase] = port_PicturesApart(g_picture, g_last_phase, w * h);
         /* both ends are known now, so the holes can be counted */
         holes[phase] = port_CountHoles(w * h);
+        g_run.background_pixels += port_CountBackgroundHoles(w * h);
     }
     for (phase = 1; phase < g_run.tween; phase++) {
         if (from_first[phase] < from_first[phase - 1] ||
@@ -784,14 +815,15 @@ static void port_GlTweenPhases(u32 blank) {
     {
         const PortTweenCounts *counts = port_TweenGetCounts();
 
-        fprintf(stderr,
-                "gl tween blank %u prims %u mixed %u unpaired %u flat %u "
-                "widest_step %u cuts %u overflowed %u named %u searched %u "
-                "clashes %u held %u off_the_line %u\n",
-                blank, counts->prims, counts->mixed, counts->unpaired,
-                counts->flat, counts->widest_step, counts->cuts,
-                counts->overflowed, counts->named, counts->searched,
-                counts->clashes, counts->held, counts->off_the_line);
+        fprintf(
+            stderr,
+            "gl tween blank %u prims %u mixed %u unpaired %u flat %u "
+            "widest_step %u cuts %u overflowed %u named %u searched %u "
+            "clashes %u held %u off_the_line %u weighed %u jumped %u\n",
+            blank, counts->prims, counts->mixed, counts->unpaired, counts->flat,
+            counts->widest_step, counts->cuts, counts->overflowed,
+            counts->named, counts->searched, counts->clashes, counts->held,
+            counts->off_the_line, counts->weighed, counts->jumped);
     }
 }
 
@@ -1010,14 +1042,17 @@ static void port_GlQuit(s32 code) {
             g_run.checked, g_run.out_of_order, g_run.point_out_of_line,
             g_run.identity, g_run.identity_pixels, g_run.identity_different);
         fprintf(stderr,
-                "gl run tween scene %u named %u searched %u clashes %u "
+                "gl run tween scene %u weighed %u jumped %u named %u "
+                "searched %u clashes %u "
                 "held %u "
                 "off_the_line %u still %u still_moved %u fewer_prims %u "
-                "more_dropped %u holes %u hole_pixels %u\n",
-                tween->scene, tween->named, tween->searched, tween->clashes,
-                tween->held, g_run.off_the_line, g_run.still, g_run.still_moved,
+                "more_dropped %u holes %u hole_pixels %u "
+                "background_pixels %u\n",
+                tween->scene, tween->weighed, tween->jumped, tween->named,
+                tween->searched, tween->clashes, tween->held,
+                g_run.off_the_line, g_run.still, g_run.still_moved,
                 g_run.fewer_prims, g_run.more_dropped, g_run.holes,
-                g_run.hole_pixels);
+                g_run.hole_pixels, g_run.background_pixels);
     }
     fflush(stderr);
 }

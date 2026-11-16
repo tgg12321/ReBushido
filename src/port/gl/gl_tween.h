@@ -42,6 +42,10 @@ typedef struct {
     u32 flat;     /* ... that have no depth: the 2D layer, the HUD */
     /* of the last pair of frames: how the partners were found */
     u32 scene;    /* primitives of the frame on show that can be moved */
+    u32 weighed;  /* ... of those, the ones in the picture, which are
+                   * what says whether the two frames are one scene */
+    u32 jumped;   /* ... that are paired and a screen's width away: a
+                   * camera that cut, where many of them are */
     u32 named;    /* by the face and the thing it is a drawing of */
     u32 searched; /* ... and by the nearest of the same signature */
     u32 clashes;  /* ... where the nearest was another's already */
@@ -129,9 +133,19 @@ extern s32 port_TweenStep(
     const PortRemasterPrim *before, const PortRemasterPrim *after);
 
 /* The farthest a corner may move and still be the same corner one frame
- * on, and the share of a frame's primitives that may be farther before
- * the whole picture counts as a cut (in 256ths). */
+ * on, where a primitive has no name and is looked for by its likeness
+ * (port_TweenFind). */
 #define PORT_TWEEN_STEP_MAX 128
-#define PORT_TWEEN_CUT_SHARE 64
+
+/* What says that two frames are not one scene a frame apart but a cut
+ * (port_TweenPairFrames). Of the primitives the picture holds: the share
+ * of them, in 256ths of those that are paired, that the frame after may
+ * fail to hold at all, and the share that it may hold a jump away; and
+ * how far a jump is, in whole pixels of the console's screen, a third of
+ * whose width in one frame of the game is a camera that cut and not one
+ * that moved. */
+#define PORT_TWEEN_CUT_SHARE 256
+#define PORT_TWEEN_JUMP_SHARE 128
+#define PORT_TWEEN_JUMP 213
 
 #endif /* PORT_GL_TWEEN_H */

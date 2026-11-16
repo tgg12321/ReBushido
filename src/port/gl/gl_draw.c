@@ -166,6 +166,18 @@ PORT_GL_FUNCTIONS
 /* The most a primitive may span, as the chip has it. */
 #define SPAN_X_MAX 1023
 #define SPAN_Y_MAX 511
+/* ... and the most one drawn where the projection really put it may
+ * (port_GlIsDrawn): video memory's own width and height, which is wider
+ * than any picture and far short of the tens of thousands of pixels a
+ * projection that came apart puts a corner at. */
+#define SPAN_TRUE_X_MAX (2 * PORT_VRAM_WIDTH)
+#define SPAN_TRUE_Y_MAX (2 * PORT_VRAM_HEIGHT)
+
+/* A pixel of video memory: five bits a channel, red lowest. */
+#define VRAM_CHANNEL_MASK 31
+#define VRAM_RED_SHIFT 0
+#define VRAM_GREEN_SHIFT 5
+#define VRAM_BLUE_SHIFT 10
 
 #define FLAG_TEXTURED 1
 #define FLAG_RAW 2
@@ -176,6 +188,10 @@ PORT_GL_FUNCTIONS
  * Such a one is sampled once for each pixel of video memory and not once
  * for each pixel of the picture (the shader's `snap`). */
 #define FLAG_FLAT 16
+/* Every corner has a depth: it is a polygon of the scene, drawn in
+ * perspective, and its texture is read over the whole area of a fragment
+ * where that is more than a texel (the shader's `steps`). */
+#define FLAG_DEPTH 32
 
 /* Which fragments a draw keeps, where a half-transparent primitive's
  * texels do not all mix (the mix that subtracts needs two draws). */
@@ -252,6 +268,7 @@ static struct {
     GLint at_affine;
     GLint at_exact;
     GLint at_bilinear;
+    GLint at_minify;
     GLint at_pass;
     GLint blit_at_target;
     GLint blit_at_rect;
@@ -296,6 +313,9 @@ static struct {
     u32 shown_vertices;
     u32 shown_draws;
     u32 shown_uploads;
+    /* the colour the game last cleared its picture to, as the picture
+     * holds it: 0 until it has cleared one (gl.h) */
+    u32 background;
     char problem[256];
 } g_gl;
 
@@ -351,6 +371,7 @@ static const char g_gl_fragment_text[] =
     "uniform int u_affine;\n" /* the texture flat, as the console */
     "uniform int u_exact;\n"  /* five bits a channel, with the dither */
     "uniform int u_bilinear;\n"
+    "uniform int u_minify;\n" /* the texels of a fragment averaged */
     "uniform int u_pass;\n"
     "in vec2 v_texture;\n"
     "noperspective in vec2 v_texture_flat;\n"
@@ -413,6 +434,24 @@ static const char g_gl_fragment_text[] =
     "    vec2 uv_down = dFdy(v_texture_flat);\n"
     "    vec3 color_across = dFdx(v_color);\n"
     "    vec3 color_down = dFdy(v_color);\n"
+    /* How far across the texture this fragment reaches, each way: the
+     * texture point in perspective, stepped as the screen steps. In the
+     * distance it is several texels, and reading one of them is the
+     * noise that crawls as the camera turns ("the floor's shimmer"). */
+    "    vec2 wide_across = dFdx(v_texture);\n"
+    "    vec2 wide_down = dFdy(v_texture);\n"
+    /* So this many points of it are read, spread over that reach: one
+     * where a fragment covers a texel or less, which is every fragment
+     * of anything near, and up to four each way where it covers more.
+     * Only a polygon of the scene, drawn in perspective, is read this
+     * way: the 2D layer is the console's own pixels, block for block,
+     * and the pass that averages the samples down leaves it so. */
+    "    int steps = 1;\n"
+    "    if (u_minify != 0 && (v_flags.w & 32u) != 0u) {\n"
+    "        float span = max(max(abs(wide_across.x), abs(wide_across.y)),\n"
+    "                         max(abs(wide_down.x), abs(wide_down.y)));\n"
+    "        steps = int(clamp(ceil(span), 1.0, 4.0));\n"
+    "    }\n"
     "    if ((v_flags.w & 16u) != 0u) {\n"
     "        vec2 back = mod(floor(gl_FragCoord.xy), u_scale);\n"
     "        uv = v_texture_flat - back.x * uv_across - back.y * uv_down;\n"
@@ -447,6 +486,38 @@ static const char g_gl_fragment_text[] =
     "            }\n"
     "            if (weight < 0.004) { discard; }\n"
     "            texel_color /= weight;\n"
+    "        } else if (steps > 1) {\n"
+    /* The texels this fragment covers, averaged: `steps` by `steps`
+     * points spread evenly over the area the texture point steps across
+     * and down, each read through this primitive's own texture window
+     * and colour table, so that nothing is read outside the page the
+     * chip would have read in. A texel that is nothing is left out of
+     * the average as it is of the four about a point, and the fragment
+     * is dropped only where every one of them is nothing. */
+    "            vec3 sum = vec3(0.0);\n"
+    "            uint any = 0u;\n"
+    "            float part = 1.0 / float(steps);\n"
+    "            int i;\n"
+    "            int j;\n"
+    "            texel = texel_at(int(floor(uv.x)), int(floor(uv.y)));\n"
+    "            for (j = 0; j < steps; j++) {\n"
+    "                for (i = 0; i < steps; i++) {\n"
+    "                    vec2 off = (vec2(float(i), float(j)) + vec2(0.5))\n"
+    "                             * part - vec2(0.5);\n"
+    "                    vec2 at = uv + off.x * wide_across\n"
+    "                            + off.y * wide_down;\n"
+    "                    uint one = texel_at(int(floor(at.x)),\n"
+    "                                        int(floor(at.y)));\n"
+    "                    if (one != 0u) {\n"
+    "                        sum += channels(one);\n"
+    "                        weight += 1.0;\n"
+    "                        any = one;\n"
+    "                    }\n"
+    "                }\n"
+    "            }\n"
+    "            if (weight < 0.5) { discard; }\n"
+    "            if (texel == 0u) { texel = any; }\n"
+    "            texel_color = sum / weight;\n"
     "        } else {\n"
     "            texel = texel_at(int(floor(uv.x)), int(floor(uv.y)));\n"
     "            if (texel == 0u) { discard; }\n"
@@ -793,6 +864,9 @@ static void port_GlFlush(void) {
     glUniform1i(g_gl.at_exact, g_gl.options.is_exact ? 1 : 0);
     glUniform1i(
         g_gl.at_bilinear, (g_gl.options.is_bilinear && !g_gl.options.is_exact));
+    /* the texels of a fragment averaged where it covers more than one of
+     * them, which the console's own picture does not do */
+    glUniform1i(g_gl.at_minify, g_gl.options.is_exact ? 0 : 1);
     port_GlSetState(&g_gl.state);
     if (g_gl.state.is_wide) {
         g_gl.wide++;
@@ -899,40 +973,67 @@ static GLfloat port_GlW(const PortRemasterPrim *prim, s32 corner) {
     return (GLfloat)prim->corner[corner].depth / 1024.0f;
 }
 
+/* Whether this primitive is drawn where the projection really put it,
+ * with every corner in front of the camera: then its corners are the
+ * geometry itself and not the eleven bits the chip held them in, and the
+ * chip's rule about how far a triangle may span is not the rule to apply
+ * to them (port_GlIsDrawn). */
+static s32 port_GlHasTruePlace(const PortRemasterPrim *prim) {
+    return prim->has_place && prim->has_depth && !g_gl.options.is_exact;
+}
+
 /* The chip draws no triangle that spans more than 1023 pixels across
  * or 511 down, and none of no area (src/port/raster.c): a corner the
  * projection put off the screen is held to eleven bits, so a polygon
  * that is partly behind the camera comes out spanning the whole range,
  * and the game counts on its not being drawn. The hardware path has to
- * leave out the same ones, by the same whole-pixel corners. */
+ * leave out the same ones, by the same whole-pixel corners.
+ *
+ * A primitive whose every corner is where the projection put it and in
+ * front of the camera is measured by those places instead, and allowed
+ * the wider span of SPAN_TRUE_X_MAX: such a polygon is an honest
+ * perspective triangle however far off the side its corners are, and
+ * holding it to the chip's eleven bits is what cut the ground off at the
+ * console's own edges in the bands of a wider picture (docs/PORT.md, "A
+ * wider picture"). What is still left out by the wider span is a
+ * projection that came apart -- a corner all but on the camera's own
+ * plane, whose place runs to thousands of pixels -- which is what the
+ * chip's rule was protecting the picture from. */
 static s32 port_GlIsDrawn(const PortRemasterPrim *prim, s32 a, s32 b, s32 c) {
-    s32 left = prim->corner[a].ix;
-    s32 right = left;
-    s32 top = prim->corner[a].iy;
-    s32 bottom = top;
+    s32 corner[3];
+    s32 x[3];
+    s32 y[3];
+    s32 is_true = port_GlHasTruePlace(prim);
+    s32 span_x = is_true ? SPAN_TRUE_X_MAX : SPAN_X_MAX;
+    s32 span_y = is_true ? SPAN_TRUE_Y_MAX : SPAN_Y_MAX;
+    s32 left;
+    s32 right;
+    s32 top;
+    s32 bottom;
     s32 area;
     s32 i;
-    s32 corner[3];
 
     corner[0] = a;
     corner[1] = b;
     corner[2] = c;
-    for (i = 1; i < 3; i++) {
-        s32 x = prim->corner[corner[i]].ix;
-        s32 y = prim->corner[corner[i]].iy;
+    for (i = 0; i < 3; i++) {
+        const PortRemasterCorner *one = &prim->corner[corner[i]];
 
-        left = x < left ? x : left;
-        right = x > right ? x : right;
-        top = y < top ? y : top;
-        bottom = y > bottom ? y : bottom;
+        x[i] = is_true ? (one->x >> PORT_REMASTER_FRACTION) : one->ix;
+        y[i] = is_true ? (one->y >> PORT_REMASTER_FRACTION) : one->iy;
     }
-    if (right - left > SPAN_X_MAX || bottom - top > SPAN_Y_MAX) {
+    left = right = x[0];
+    top = bottom = y[0];
+    for (i = 1; i < 3; i++) {
+        left = x[i] < left ? x[i] : left;
+        right = x[i] > right ? x[i] : right;
+        top = y[i] < top ? y[i] : top;
+        bottom = y[i] > bottom ? y[i] : bottom;
+    }
+    if (right - left > span_x || bottom - top > span_y) {
         return FALSE;
     }
-    area = (prim->corner[b].ix - prim->corner[a].ix) *
-               (prim->corner[c].iy - prim->corner[a].iy) -
-           (prim->corner[c].ix - prim->corner[a].ix) *
-               (prim->corner[b].iy - prim->corner[a].iy);
+    area = (x[1] - x[0]) * (y[2] - y[0]) - (x[2] - x[0]) * (y[1] - y[0]);
     return area != 0;
 }
 
@@ -1019,6 +1120,9 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     if (prim->is_dithered) {
         flags |= FLAG_DITHERED;
     }
+    if (prim->has_depth) {
+        flags |= FLAG_DEPTH;
+    }
     /* drawn where the chip put it, by whole pixels of video memory: so
      * its texel and its colour are read as the chip read them, once a
      * pixel of video memory (the shader). A primitive the projection
@@ -1069,8 +1173,47 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
 
 /* ---- what is not a primitive ---- */
 
-/* The bands beside the console's own 640 pixels, over the lines `top`
- * to `top + height` of video memory, cleared to black.
+/* A pixel of video memory as the colour buffer holds it: the five bits a
+ * channel widened exactly as the two shaders widen them. */
+static s32 port_GlFive(u16 pixel, s32 shift) {
+    return ((pixel >> shift) & VRAM_CHANNEL_MASK) * 255 / VRAM_CHANNEL_MASK;
+}
+
+static GLfloat port_GlChannel(u16 pixel, s32 shift) {
+    return (GLfloat)port_GlFive(pixel, shift) / 255.0f;
+}
+
+/* The one colour the rectangle `rect` of video memory is, or FALSE where
+ * it is not one colour: its four corners and its middle, which is a
+ * frame's own clear or a fade told from a picture copied in at the cost
+ * of five pixels. */
+static s32 port_GlOneColor(const PortDirtyRect *rect, u16 *out) {
+    s32 at_x[5];
+    s32 at_y[5];
+    u16 one = g_port_vram[rect->top * PORT_VRAM_WIDTH + rect->left];
+    s32 i;
+
+    at_x[0] = rect->left;
+    at_y[0] = rect->top;
+    at_x[1] = rect->right;
+    at_y[1] = rect->top;
+    at_x[2] = rect->left;
+    at_y[2] = rect->bottom;
+    at_x[3] = rect->right;
+    at_y[3] = rect->bottom;
+    at_x[4] = (rect->left + rect->right) / 2;
+    at_y[4] = (rect->top + rect->bottom) / 2;
+    for (i = 1; i < 5; i++) {
+        if (g_port_vram[at_y[i] * PORT_VRAM_WIDTH + at_x[i]] != one) {
+            return FALSE;
+        }
+    }
+    *out = one;
+    return TRUE;
+}
+
+/* The bands beside the console's own 640 pixels, over the lines of video
+ * memory the rectangle `rect` covers, cleared.
  *
  * The game clears its drawing area at the start of each frame and knows
  * nothing of the bands, so what the scene last drew into them would
@@ -1078,21 +1221,40 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
  * top of a frame: the game draws its frame after the picture of the
  * frame before it has been read (DrawOTag comes past the vertical blank
  * in its loop), so a clear at the top of a frame would wipe the bands of
- * the picture about to be read. Black is what the game clears to. */
-static void port_GlClearBands(s32 top, s32 height) {
+ * the picture about to be read.
+ *
+ * They are cleared to **the colour the game just cleared its own picture
+ * to**, where that was one colour: a fight's frame begins with a fill of
+ * the stage's colour of the distance (light.c, light_SetFarColor), which
+ * is the sky of every stage but the few whose is black, and a band
+ * cleared to black instead left two black bars down the sides of a wider
+ * picture wherever no ground covered them (docs/PORT.md, "A wider
+ * picture"). What the game wrote and is not one colour -- a loading
+ * picture, a portrait -- is the console's own 640 pixels and no business
+ * of the bands, which stay black as they were. */
+static void port_GlClearBands(
+    const PortDirtyRect *rect, s32 is_one_color, u16 color) {
     s32 left = g_gl.display_x * g_gl.draw_x;
     s32 band = g_gl.margin * g_gl.draw_x;
     s32 right = (g_gl.display_x + g_gl.margin + g_gl.display_w) * g_gl.draw_x;
+    s32 top = rect->top * g_gl.draw_y;
+    s32 height = (rect->bottom - rect->top + 1) * g_gl.draw_y;
 
     if (g_gl.margin <= 0 || g_gl.display_w <= 0) {
         return;
     }
+    if (is_one_color) {
+        glClearColor(port_GlChannel(color, VRAM_RED_SHIFT),
+                     port_GlChannel(color, VRAM_GREEN_SHIFT),
+                     port_GlChannel(color, VRAM_BLUE_SHIFT), 1.0f);
+    }
     glDisable(GL_BLEND);
     glEnable(GL_SCISSOR_TEST);
-    glScissor(left, top * g_gl.draw_y, band, height * g_gl.draw_y);
+    glScissor(left, top, band, height);
     glClear(GL_COLOR_BUFFER_BIT);
-    glScissor(right, top * g_gl.draw_y, band, height * g_gl.draw_y);
+    glScissor(right, top, band, height);
     glClear(GL_COLOR_BUFFER_BIT);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     g_gl.has_state = FALSE;
 }
 
@@ -1140,9 +1302,20 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
     g_gl.draw_count++;
     g_gl.has_state = FALSE;
     /* a fill or a copy as wide as the console's picture is the frame's
-     * own clear: the bands go with it */
+     * own clear: the bands go with it, and where it is one colour that
+     * colour is the picture's background, which is what shows through a
+     * hole in the scene (gl.h, port_GlBackground) */
     if (rect.right - rect.left + 1 >= g_gl.display_w) {
-        port_GlClearBands(rect.top, rect.bottom - rect.top + 1);
+        u16 color = 0;
+        s32 is_one_color = port_GlOneColor(&rect, &color);
+
+        if (is_one_color) {
+            g_gl.background =
+                0xFF000000U | ((u32)port_GlFive(color, VRAM_RED_SHIFT) << 16) |
+                ((u32)port_GlFive(color, VRAM_GREEN_SHIFT) << 8) |
+                (u32)port_GlFive(color, VRAM_BLUE_SHIFT);
+        }
+        port_GlClearBands(&rect, is_one_color, color);
     }
 }
 
@@ -1204,6 +1377,10 @@ void port_GlLoadCounts(const u32 *four) {
 }
 
 u32 port_GlDroppedNow(void) { return g_gl.dropped; }
+
+s32 port_GlPictureMargin(void) { return g_gl.margin; }
+
+u32 port_GlBackground(void) { return g_gl.background; }
 
 /* ---- what the host asks for ---- */
 
@@ -1298,6 +1475,7 @@ const char *port_GlStart(
     g_gl.at_affine = glGetUniformLocation(g_gl.program, "u_affine");
     g_gl.at_exact = glGetUniformLocation(g_gl.program, "u_exact");
     g_gl.at_bilinear = glGetUniformLocation(g_gl.program, "u_bilinear");
+    g_gl.at_minify = glGetUniformLocation(g_gl.program, "u_minify");
     g_gl.at_pass = glGetUniformLocation(g_gl.program, "u_pass");
     g_gl.blit_at_target = glGetUniformLocation(g_gl.blit_program, "u_target");
     g_gl.blit_at_rect = glGetUniformLocation(g_gl.blit_program, "u_rect");
@@ -1569,6 +1747,17 @@ s32 port_GlShowPicture(
     if (!g_gl.is_started || !g_gl.display_is_on || picture_w <= 0 ||
         picture_h <= 0 || w <= 0 || h <= 0) {
         return FALSE;
+    }
+    /* The scene is drawn at as many times the console's resolution as the
+     * window asks for, rounded up, so the picture is almost always larger
+     * than the rectangle it is shown in. Taking one pixel of it for each
+     * pixel of the window there would throw the others away and leave the
+     * distance crawling as the camera turns, whatever the `filter`
+     * setting says about a pixel being a block: that setting is about the
+     * console's own picture, whose pixels are blocks. A picture made
+     * smaller is smoothed (docs/PORT.md, "Remastered"). */
+    if (w < picture_w || h < picture_h) {
+        is_linear = TRUE;
     }
     port_GlTakeWindow(window_w, window_h);
     if (g_gl.sample > 1) {

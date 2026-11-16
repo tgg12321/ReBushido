@@ -35,10 +35,15 @@
  * stage at `max` is what fills these. */
 #define TWEEN_PRIMS_MAX 16384
 #define TWEEN_EVENTS_MAX (TWEEN_PRIMS_MAX + 512)
-#define TWEEN_VRAMS_MAX 256
-/* Pixels of video memory a frame may write and have written down: a
- * frame's own clear is 640 by 240 of them. */
-#define TWEEN_WORDS_MAX (PORT_VRAM_PIXELS / 2)
+#define TWEEN_VRAMS_MAX 512
+/* Pixels of video memory a frame may write and have written down. A
+ * frame's own clear is 640 by 240 of them; the frame that changes screen
+ * clears both halves at once, 640 by 480, and with half of video memory
+ * to write them in that frame could not be written down at all and the
+ * pictures between it and the frame after it were lost. All of video
+ * memory holds any frame measured, with the fog's thirty-one colour
+ * tables and every load of a texture beside the clear. */
+#define TWEEN_WORDS_MAX (PORT_VRAM_PIXELS)
 
 #define TWEEN_EMPTY (-1)
 /* The odd number a key is multiplied by to mix its bits (as
@@ -69,10 +74,14 @@
 #define TWEEN_CHAIN_MAX 32
 
 /* The farthest from the middle of video memory a corner may be and still
- * be moved: the chip holds a screen position to eleven bits with a sign,
- * so a corner outside that is a polygon the projection put behind the
- * camera, which the chip drops and which must go on being dropped. */
-#define PORT_TWEEN_SCREEN_MAX 1023
+ * be moved. The decoder keeps the projection's own place for a point the
+ * chip held to eleven bits, as long as the point is in front of the
+ * camera and no further out than this (src/port/remaster.c,
+ * port_PlaceIsNear): such a corner is off the side of the console's
+ * screen and is the very thing a wider picture shows, so it is moved
+ * like any other. Beyond it is a projection that came apart, which the
+ * decoder has already thrown the place of away. */
+#define PORT_TWEEN_SCREEN_MAX (4 * PORT_VRAM_WIDTH)
 
 #define PERCENT_256 256
 
@@ -280,6 +289,40 @@ static s32 port_TweenIsOnScreen(const PortRemasterPrim *prim) {
         }
     }
     return TRUE;
+}
+
+/* Whether any part of a primitive is in the picture: its own drawing
+ * area, widened by the bands of a wider picture, against the rectangle
+ * its corners cover.
+ *
+ * Only these are weighed when the two frames are held against each
+ * other (port_TweenPairFrames): whether the frame after holds a
+ * primitive that is nowhere near the picture says nothing about whether
+ * the two are one scene. On the stages measured at `draw_distance max`
+ * this moves the shares little -- what the camera has turned away from
+ * is projected behind it and has no place to be weighed by in the first
+ * place -- and what it does is make them shares of what a player can
+ * see, whatever a stage hands over. */
+static s32 port_TweenInPicture(const PortRemasterPrim *prim) {
+    s32 margin = port_GlPictureMargin();
+    s32 left = prim->corner[0].x >> PORT_REMASTER_FRACTION;
+    s32 right = left;
+    s32 top = prim->corner[0].y >> PORT_REMASTER_FRACTION;
+    s32 bottom = top;
+    s32 i;
+
+    for (i = 1; i < prim->corner_count; i++) {
+        s32 x = prim->corner[i].x >> PORT_REMASTER_FRACTION;
+        s32 y = prim->corner[i].y >> PORT_REMASTER_FRACTION;
+
+        left = x < left ? x : left;
+        right = x > right ? x : right;
+        top = y < top ? y : top;
+        bottom = y > bottom ? y : bottom;
+    }
+    return right >= prim->clip_left - margin &&
+           left <= prim->clip_right + margin && bottom >= prim->clip_top &&
+           top <= prim->clip_bottom;
 }
 
 /* Whether two primitives are painted the same way out of the same part
@@ -847,7 +890,8 @@ static void port_TweenPairFrames(void) {
     const TweenFrame *after = port_TweenAfter();
     s32 paired = 0;
     s32 unpaired = 0;
-    s32 scene = 0; /* primitives of the frame on show that have a depth */
+    s32 jumped = 0; /* ... paired, and a screen's width from where it was */
+    s32 scene = 0;  /* primitives of the frame on show that have a depth */
     s32 i;
 
     if (g_tween.pair_frames == g_tween.generation) {
@@ -896,37 +940,66 @@ static void port_TweenPairFrames(void) {
      * no other primitive has taken. */
     for (i = 0; i < shown->prim_count; i++) {
         const PortRemasterPrim *one = &shown->prim[i];
+        s32 counts;
         s32 at;
 
         if (!one->has_place) {
             continue;
         }
+        /* only what is in the picture is weighed (port_TweenInPicture) */
+        counts = port_TweenInPicture(one);
         if (g_tween.pair[i] != TWEEN_EMPTY) {
-            paired++;
+            paired += counts;
+            /* ... and the one thing a frame apart is not a screen's width
+             * from where it was: a camera that cut leaves every face of
+             * the scene paired, by name, and all of them somewhere
+             * else */
+            if (port_TweenStep(one, &after->prim[g_tween.pair[i]]) >
+                PORT_TWEEN_JUMP) {
+                jumped += counts;
+            }
             continue;
         }
         if (one->id.object != 0 && !g_tween.guesses) {
             /* it has a name and the next frame has not drawn it: it
              * waits where it is, and nothing else may be taken for it */
-            unpaired++;
+            unpaired += counts;
             continue;
         }
         at = port_TweenFind(
             after, one, shown->sig[i], g_tween.taken, &g_tween.counts.clashes);
         g_tween.pair[i] = at;
         if (at == TWEEN_EMPTY) {
-            unpaired++;
+            unpaired += counts;
         } else {
             g_tween.taken[at] = i;
             g_tween.counts.searched++;
-            paired++;
+            paired += counts;
         }
     }
     g_tween.counts.scene = (u32)scene;
-    /* nothing paired: a screen of 2D alone, or a scene whose faces are
-     * nowhere near where they were */
+    g_tween.counts.jumped = (u32)jumped;
+    g_tween.counts.weighed = (u32)(paired + unpaired);
+    /* **What is a cut.** The two frames are one scene a frame apart
+     * unless most of what the picture holds says otherwise: either the
+     * frame after it does not draw it at all -- a screen that changed, a
+     * fighter that was replaced -- or it draws it a screen's width from
+     * where it was, which is a camera that cut and not a camera that
+     * moved.
+     *
+     * Both lines are half, where the one line used to be a quarter. In
+     * a fight on the practice stage at `draw_distance max` an eighth of
+     * the faces the picture holds cannot be paired -- a tile the camera
+     * came nearer to is cut another way and no piece of it has its own
+     * name -- so with a quarter for a line an ordinary frame sat just
+     * under it and a frame with a little more coming and going sat just
+     * over, and the picture alternated between the display's rate and
+     * the game's. A real cut leaves almost nothing paired and near, so
+     * the lines need not be fine. */
     g_tween.is_one_scene =
-        paired != 0 && unpaired * PERCENT_256 <= paired * PORT_TWEEN_CUT_SHARE;
+        paired != 0 &&
+        unpaired * PERCENT_256 <= paired * PORT_TWEEN_CUT_SHARE &&
+        jumped * PERCENT_256 <= paired * PORT_TWEEN_JUMP_SHARE;
 }
 
 s32 port_TweenDraw(s32 phase) {

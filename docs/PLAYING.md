@@ -116,6 +116,13 @@ to copy lines from, and says how keys and controller buttons are named.
 A line the program cannot use is named in the console window as it
 starts.
 
+`filter` is about **the console's own picture**, whose pixels are
+blocks. The remastered picture is drawn at as many times the console's
+resolution as the window asks for, rounded up, so it is almost always
+larger than the window and is always smoothed where it is made smaller,
+whatever `filter` says: taking one pixel of it for each pixel of the
+window would throw the others away and leave the distance crawling.
+
 ## The picture: Original and Remastered
 
 The options page at boot has a second line, **Graphics**, with
