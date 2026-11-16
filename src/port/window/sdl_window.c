@@ -112,6 +112,13 @@ static u32 *g_port_window_pixels;
 static u32 g_port_window_room;
 static s32 g_port_wants_shot;
 static u32 g_port_shots_taken;
+/* Which picture of the blank to keep (0 is the game's own frame, and
+ * -1 the last one shown), and the pixels kept. */
+static s32 g_port_shot_picture = -1;
+static s32 g_port_has_shot;
+static s32 g_port_shot_w;
+static s32 g_port_shot_h;
+static s32 g_port_shot_between;
 
 static SDL_AudioDeviceID g_port_audio;
 static PortRing g_port_ring;
@@ -888,29 +895,63 @@ static void port_TapWindow(u32 blank) {
     fclose(file);
 }
 
+/* Whether a picture after this one is still wanted for a shot: a test
+ * that asks for the Nth picture of a blank gets it even on a machine
+ * with no time in the blank to draw it, which is every machine without
+ * a graphics card. */
+static s32 port_WantsLaterShot(s32 which) {
+    return g_port_wants_shot && g_port_shot_picture > which;
+}
+
+/* A picture is drawn and about to be shown: where it is the one asked
+ * for, the window's own pixels are kept for port_WriteShot. `which` is
+ * which picture of this blank it is, counting the game's own frame as
+ * 0; the pictures between frames follow it (gl_tween.h). With nothing
+ * asked for in particular it is the last picture of the blank that is
+ * kept, which is the one that stays on the screen -- and which, at more
+ * pictures a second than the game has frames, is one drawn between two
+ * of them. That is what a player pressing F12 is looking at, and what
+ * the first key could never catch. */
+static void port_KeepShot(s32 which) {
+    s32 window_w = 0;
+    s32 window_h = 0;
+
+    if (!g_port_wants_shot) {
+        return;
+    }
+    if (g_port_shot_picture >= 0 && which != g_port_shot_picture) {
+        return;
+    }
+    port_WindowSize(&window_w, &window_h);
+    g_port_has_shot = port_ReadWindowPixels(window_w, window_h);
+    g_port_shot_w = window_w;
+    g_port_shot_h = window_h;
+    g_port_shot_between = which;
+}
+
 /* The window as the player sees it, into
  * `screenshots/shot-YYYYMMDD-HHMMSS-NNN.png` beside the program, and a
- * line of the log saying where it went (docs/PLAYING.md). The picture is
- * taken after everything of the blank has been drawn and before it is
- * shown, so it is exactly what the screen is about to hold. */
-static void port_TakeShot(void) {
+ * line of the log saying where it went (docs/PLAYING.md). */
+static void port_WriteShot(void) {
     char path[PATH_BYTES_MAX];
     char folder[PATH_BYTES_MAX];
     char *base = SDL_GetBasePath();
     const char *beside = base != NULL ? base : "";
     time_t now = time(NULL);
     const struct tm *when = localtime(&now);
-    s32 window_w = 0;
-    s32 window_h = 0;
+    s32 window_w = g_port_shot_w;
+    s32 window_h = g_port_shot_h;
     s32 file;
     s32 written;
 
-    port_WindowSize(&window_w, &window_h);
-    if (!port_ReadWindowPixels(window_w, window_h) || when == NULL) {
+    g_port_wants_shot = FALSE;
+    g_port_shot_picture = -1;
+    if (!g_port_has_shot || when == NULL) {
         port_Say("F12: the window's pixels cannot be read");
         SDL_free(base);
         return;
     }
+    g_port_has_shot = FALSE;
     snprintf(folder, sizeof(folder), "%s%s", beside, SHOTS_FOLDER);
     port_MakeFolder(folder);
     snprintf(path, sizeof(path), "%s/shot-%04d%02d%02d-%02d%02d%02d-%03u.png",
@@ -930,7 +971,10 @@ static void port_TakeShot(void) {
         return;
     }
     port_Say(
-        "F12: a picture of the window, %d by %d: %s", window_w, window_h, path);
+        "F12: a picture of the window, %d by %d, %s: %s", window_w, window_h,
+        g_port_shot_between == 0 ? "the game's own frame"
+                                 : "a picture between two frames",
+        path);
 }
 
 /* The displayed rectangle of video memory into the window: black where
@@ -1538,18 +1582,24 @@ static void port_ShowPictures(u32 due) {
                 port_WaitFor((u32)left);
             }
         }
+        /* the picture about to be shown, where the player or a test
+         * asked for a picture of the window */
+        port_KeepShot(pictures);
         port_SwapPicture();
         g_port_next_picture = port_ReadClock() + (u32)slot;
         pictures++;
         left = (s32)(due - port_ReadClock());
         if (slot == 0 || pictures >= PORT_PICTURES_A_BLANK_MAX ||
-            left <= slot / 2) {
+            (left <= slot / 2 && !port_WantsLaterShot(pictures - 1))) {
             break;
         }
         if (!port_DrawTween()) {
             break;
         }
         port_DrawCounter();
+    }
+    if (g_port_wants_shot) {
+        port_WriteShot();
     }
     /* The blank is not over until its own moment, however many pictures
      * were shown and whether or not any lay between two frames: the game
@@ -1598,12 +1648,10 @@ static void port_ShowBlank(u32 blank) {
     if (g_port_window_options.shot_at > 0 &&
         blank == (u32)g_port_window_options.shot_at) {
         /* for a test, which cannot press a key that is no pad's button:
-         * what F12 does, at one blank */
+         * what F12 does, at one blank, and at the picture of that blank
+         * the test asked for */
         g_port_wants_shot = TRUE;
-    }
-    if (g_port_wants_shot) {
-        g_port_wants_shot = FALSE;
-        port_TakeShot();
+        g_port_shot_picture = g_port_window_options.shot_picture;
     }
     if (g_port_window_options.toggle_at > 0 &&
         blank % (u32)g_port_window_options.toggle_at == 0) {

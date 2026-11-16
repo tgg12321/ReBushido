@@ -52,7 +52,8 @@ static struct {
     const char *shots;
     u32 every;
     s32 compares;
-    s32 blocks; /* the picture held to the console's, block for block */
+    s32 blocks;  /* the picture held to the console's, block for block */
+    s32 guesses; /* the pictures between frames paired by likeness alone */
     s32 writes_original;
     u32 blanks;
     /* how far the two pictures were apart, over the whole run */
@@ -86,6 +87,10 @@ static struct {
     u32 identity;           /* frames drawn again at phase 0 */
     u32 identity_pixels;    /* ... pixels held to the game's own picture */
     u32 identity_different; /* ... that are not the same */
+    u32 fewer_prims;        /* phases that drew other than every one */
+    u32 more_dropped;       /* ... that left a triangle out the ends did not */
+    u32 holes;              /* ... with a hole of the clear in the scene */
+    u32 hole_pixels;        /* ... and how many such pixels in all */
     u32 still;              /* frames whose scene did not move at all */
     u32 still_moved;        /* ... whose pictures in between are not it */
     u32 off_the_line;       /* corners not between the two frames' own */
@@ -95,6 +100,11 @@ static struct {
  * check: it keeps the sum of the differences of each from the two
  * ends. */
 #define PHASES_MAX 16
+/* The share of a picture that may be holes before the picture is
+ * counted as one with a hole in it: half a thousandth, which is 817
+ * pixels of a picture of 1,704 by 960. Below that are the honest few
+ * at the edges of what moved. */
+#define HOLE_SHARE 2000
 
 static const char g_usage[] =
     "rebushido-gl: the port's remastered renderer, drawn with no window\n"
@@ -119,6 +129,9 @@ static const char g_usage[] =
     "  --gl-blocks    hold the picture to the console's own scaled up by\n"
     "                 whole blocks: what the game draws flat must come\n"
     "                 out as the console's picture at every scale\n"
+    "  --gl-guess     pair two frames' primitives by likeness alone, as\n"
+    "                 before they were named: for the measurement of\n"
+    "                 what naming them buys\n"
     "  --gl-shots F   a PNG of the hardware's picture into this folder\n"
     "  --gl-every N   ... every N vertical blanks (60 if nothing says)\n"
     "  --gl-original  the software GPU's picture beside each of them\n"
@@ -501,6 +514,59 @@ static void port_CompareBlocks(s32 w, s32 h, s32 software_w, s32 software_h,
     }
 }
 
+/* **A hole**: a pixel the frame on show and the frame after it agree
+ * about and the picture between them does not. A face that is not
+ * drawn where it should be in a picture between two frames leaves what
+ * is behind it showing through -- on the practice stage, the dark navy
+ * of the backdrop in the middle of a wooden floor -- and that is what
+ * the owner saw on a real card: strips and rectangles of it beside the
+ * painted lines, in another place every frame.
+ *
+ * Asking the two ends to agree first is what keeps honest motion out
+ * of the count. Where anything moved at all, the two ends differ:
+ * the edge of a fighter sweeping over the floor, a shadow, a texture
+ * sliding. Only a pixel that is the same in both -- the floor a long
+ * way from anything that moved -- is asked to be the same in the
+ * middle, and a face missing there is the one thing that can change
+ * it. (A pixel the ends agree about by chance, with something that
+ * passed over it between, is counted as well; there are few, and the
+ * same few are counted before and after a change.) */
+#define HOLE_STEADY 8     /* the ends agree within this, per channel */
+#define HOLE_DIFFERENT 32 /* ... and the middle differs by this */
+
+/* The widest a colour's three channels differ. */
+static s32 port_ColorsApart(u32 one, u32 two) {
+    s32 widest = 0;
+    s32 shift;
+
+    for (shift = 0; shift <= 16; shift += 8) {
+        s32 apart = (s32)((one >> shift) & 0xFF) - (s32)((two >> shift) & 0xFF);
+
+        if (apart < 0) {
+            apart = -apart;
+        }
+        if (apart > widest) {
+            widest = apart;
+        }
+    }
+    return widest;
+}
+
+static u32 port_CountHoles(s32 pixels) {
+    u32 count = 0;
+    s32 i;
+
+    for (i = 0; i < pixels; i++) {
+        if (port_ColorsApart(g_first_phase[i], g_last_phase[i]) <=
+                HOLE_STEADY &&
+            port_ColorsApart(g_picture[i], g_first_phase[i]) >=
+                HOLE_DIFFERENT) {
+            count++;
+        }
+    }
+    return count;
+}
+
 /* ---- the pictures between two frames (gl_tween.h) ---- */
 
 /* How far two pictures are apart: every channel of every pixel added
@@ -540,6 +606,9 @@ static void port_GlTweenPhases(u32 blank) {
     u64 from_last[PHASES_MAX];
     s32 point_x[PHASES_MAX];
     s32 point_y[PHASES_MAX];
+    u32 prims[PHASES_MAX];
+    u32 dropped[PHASES_MAX];
+    u32 holes[PHASES_MAX];
     s32 w = 0;
     s32 h = 0;
     s32 live_w = 0;
@@ -569,6 +638,7 @@ static void port_GlTweenPhases(u32 blank) {
         s32 at = (s32)(((s64)phase * PORT_TWEEN_ONE) / (g_run.tween - 1));
         u32 started = port_Microseconds();
         s32 point = 0;
+        u32 dropped_before = port_GlDroppedNow();
 
         if (!port_TweenDraw(at)) {
             g_run.tween_missed++;
@@ -580,6 +650,13 @@ static void port_GlTweenPhases(u32 blank) {
             w != live_w || h != live_h) {
             return;
         }
+        /* **Every picture of the frame holds the same primitives.** The
+         * count of them is the frame on show's own, and the triangles
+         * the chip's rule leaves out are the same ones: a picture that
+         * leaves out one more has a hole where that face was. */
+        prims[phase] = port_TweenGetCounts()->prims;
+        dropped[phase] = port_GlDroppedNow() - dropped_before;
+
         point = port_TweenTrack(&key, &point_x[phase], &point_y[phase]);
         if (!point) {
             point_x[phase] = 0;
@@ -631,6 +708,8 @@ static void port_GlTweenPhases(u32 blank) {
         }
         g_run.tween_drawn++;
         from_last[phase] = port_PicturesApart(g_picture, g_last_phase, w * h);
+        /* both ends are known now, so the holes can be counted */
+        holes[phase] = port_CountHoles(w * h);
     }
     for (phase = 1; phase < g_run.tween; phase++) {
         if (from_first[phase] < from_first[phase - 1] ||
@@ -654,6 +733,20 @@ static void port_GlTweenPhases(u32 blank) {
     g_run.checked++;
     if (out_of_order != 0) {
         g_run.out_of_order++;
+    }
+    /* the three hard ones: the same primitives, the same triangles left
+     * out, and no more of the clear showing through than at the ends */
+    for (phase = 1; phase < g_run.tween - 1; phase++) {
+        if (prims[phase] != prims[0]) {
+            g_run.fewer_prims++;
+        }
+        if (dropped[phase] != dropped[0]) {
+            g_run.more_dropped++;
+        }
+        g_run.hole_pixels += holes[phase];
+        if (holes[phase] > (u32)(w * h) / HOLE_SHARE) {
+            g_run.holes++;
+        }
     }
     {
         const PortTweenCounts *counts = port_TweenGetCounts();
@@ -693,12 +786,12 @@ static void port_GlTweenPhases(u32 blank) {
 
         fprintf(stderr,
                 "gl tween blank %u prims %u mixed %u unpaired %u flat %u "
-                "widest_step %u cuts %u overflowed %u keyed %u searched %u "
-                "clashes %u off_the_line %u\n",
+                "widest_step %u cuts %u overflowed %u named %u searched %u "
+                "clashes %u held %u off_the_line %u\n",
                 blank, counts->prims, counts->mixed, counts->unpaired,
                 counts->flat, counts->widest_step, counts->cuts,
-                counts->overflowed, counts->keyed, counts->searched,
-                counts->clashes, counts->off_the_line);
+                counts->overflowed, counts->named, counts->searched,
+                counts->clashes, counts->held, counts->off_the_line);
     }
 }
 
@@ -872,12 +965,14 @@ static void port_GlQuit(s32 code) {
                 port_NameRemasterKind(kind), counts->seen[kind],
                 counts->drawn[kind]);
     }
-    fprintf(stderr,
-            "gl run with_depth %u without_depth %u points %u faces %u "
-            "attached %u misses %u full %u masked %u texture_from_drawn %u\n",
-            counts->with_depth, counts->without_depth, counts->points,
-            counts->faces, counts->attached, counts->point_misses, counts->full,
-            counts->masked, counts->texture_from_drawn);
+    fprintf(
+        stderr,
+        "gl run with_depth %u without_depth %u with_place %u points %u "
+        "faces %u "
+        "attached %u misses %u full %u masked %u texture_from_drawn %u\n",
+        counts->with_depth, counts->without_depth, counts->with_place,
+        counts->points, counts->faces, counts->attached, counts->point_misses,
+        counts->full, counts->masked, counts->texture_from_drawn);
     fprintf(stderr, "gl run mixed half %u add %u subtract %u quarter %u\n",
             counts->mixed[0], counts->mixed[1], counts->mixed[2],
             counts->mixed[3]);
@@ -915,10 +1010,14 @@ static void port_GlQuit(s32 code) {
             g_run.checked, g_run.out_of_order, g_run.point_out_of_line,
             g_run.identity, g_run.identity_pixels, g_run.identity_different);
         fprintf(stderr,
-                "gl run tween keyed %u far_keyed %u searched %u clashes %u "
-                "off_the_line %u still %u still_moved %u\n",
-                tween->keyed, tween->far_keyed, tween->searched, tween->clashes,
-                g_run.off_the_line, g_run.still, g_run.still_moved);
+                "gl run tween scene %u named %u searched %u clashes %u "
+                "held %u "
+                "off_the_line %u still %u still_moved %u fewer_prims %u "
+                "more_dropped %u holes %u hole_pixels %u\n",
+                tween->scene, tween->named, tween->searched, tween->clashes,
+                tween->held, g_run.off_the_line, g_run.still, g_run.still_moved,
+                g_run.fewer_prims, g_run.more_dropped, g_run.holes,
+                g_run.hole_pixels);
     }
     fflush(stderr);
 }
@@ -961,6 +1060,8 @@ int main(int argc, char **argv) {
             g_run.compares = TRUE;
         } else if (!strcmp(word, "--gl-blocks")) {
             g_run.blocks = TRUE;
+        } else if (!strcmp(word, "--gl-guess")) {
+            g_run.guesses = TRUE;
         } else if (!strcmp(word, "--gl-original")) {
             g_run.writes_original = TRUE;
         } else if (!has_value) {
@@ -1065,6 +1166,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "rebushido-gl: %s\n", problem);
             return PORT_EXIT_FAILED;
         }
+        port_TweenGuessOnly(g_run.guesses);
     }
     g_port_blank_hook = port_GlBlank;
     g_port_quit_hook = port_GlQuit;

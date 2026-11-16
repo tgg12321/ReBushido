@@ -132,8 +132,9 @@ static const char g_port_window_usage_end[] =
     "--tap-every N (each Nth picture as SDL is given it), --tap-window\n"
     "FOLDER (each Nth window as a player would see it, where there is a\n"
     "graphics card), --toggle-at N (what F2 does, at every Nth blank),\n"
-    "--shot-at N (what F12 does, at blank N), --window WxH (the window\n"
-    "that size as it opens), --tap-audio FILE\n"
+    "--shot-at N[,P] (what F12 does, at blank N, keeping the Pth\n"
+    "picture of it: 0 is the game's own frame and -1 the last shown),\n"
+    "--window WxH (the window that size as it opens), --tap-audio FILE\n"
     "(the samples as they are queued), --fault-at N and --fault-in-sound N\n"
     "(touch memory that is not there at vertical blank N, on the game's\n"
     "stack or on the sound card's thread: what a crash leaves in the\n"
@@ -453,7 +454,11 @@ int main(int argc, char **argv) {
         } else if (strcmp(word, "--toggle-at") == 0 && has_value) {
             options->toggle_at = atoi(argv[++i]);
         } else if (strcmp(word, "--shot-at") == 0 && has_value) {
-            options->shot_at = atoi(argv[++i]);
+            const char *at = argv[++i];
+            const char *comma = strchr(at, ',');
+
+            options->shot_at = atoi(at);
+            options->shot_picture = comma != NULL ? atoi(comma + 1) : -1;
         } else if (strcmp(word, "--window") == 0 && has_value) {
             const char *size = argv[++i];
             const char *by = strchr(size, 'x');

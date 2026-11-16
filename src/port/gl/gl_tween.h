@@ -41,11 +41,12 @@ typedef struct {
     u32 unpaired; /* ... that the frame after it has not, or not near */
     u32 flat;     /* ... that have no depth: the 2D layer, the HUD */
     /* of the last pair of frames: how the partners were found */
-    u32 keyed;     /* by the place in the primitive buffer, which is sure */
-    u32 far_keyed; /* ... of those, ones that moved farther than a search
-                    * is allowed, taken because the walk was the same */
-    u32 searched;  /* ... and by the nearest of the same signature */
-    u32 clashes;   /* ... where the nearest was another's already */
+    u32 scene;    /* primitives of the frame on show that can be moved */
+    u32 named;    /* by the face and the thing it is a drawing of */
+    u32 searched; /* ... and by the nearest of the same signature */
+    u32 clashes;  /* ... where the nearest was another's already */
+    u32 held;     /* primitives not moved between their two places,
+                   * because so moved they would not be drawn at all */
     /* how far the farthest corner moved between the two frames, in
      * whole pixels, over the last picture */
     u32 widest_step;
@@ -61,6 +62,13 @@ extern const char *port_TweenStart(void);
 /* Gives the renderer back and frees what was written down. */
 extern void port_TweenStop(void);
 extern s32 port_TweenIsOn(void);
+/* Pairs two frames' primitives as this file did before they were named
+ * -- by what they are painted out of and where they were, the nearest
+ * of the same signature -- and lets a moved primitive fall outside the
+ * chip's rule and go undrawn. Nothing but the prover asks for it, and
+ * only to measure what naming buys (`--gl-guess`). */
+extern void port_TweenGuessOnly(s32 on);
+
 /* Everything written down is forgotten: nothing is drawn between frames
  * again until the game has drawn two more. The window calls it where the
  * picture changes (F2), since the frames written down before that are no
@@ -114,13 +122,6 @@ extern s32 port_TweenTrack(s32 *key, s32 *x, s32 *y);
 extern void port_TweenMixCorner(
     PortRemasterCorner *out, const PortRemasterCorner *before,
     const PortRemasterCorner *after, s32 phase);
-
-/* Whether two primitives are the same thing of the scene one frame on:
- * everything but the geometry has to be equal, and the corners near
- * enough that a camera that cut or a model that was replaced is not
- * taken for a movement. */
-extern s32 port_TweenPairs(
-    const PortRemasterPrim *before, const PortRemasterPrim *after);
 
 /* How far the farthest corner is from its own place one frame on, in
  * whole pixels. */

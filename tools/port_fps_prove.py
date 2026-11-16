@@ -66,8 +66,10 @@ def numbers_of(log):
            'out_of_order': 0, 'point_out_of_line': 0, 'identity': 0,
            'identity_pixels': 0, 'identity_different': 0, 'blanks': 0,
            'prims': 0, 'mixed': 0, 'unpaired': 0, 'flat': 0, 'widest': 0,
-           'pictures': 0, 'keyed': 0, 'far_keyed': 0, 'searched': 0,
-           'clashes': 0, 'off_the_line': 0, 'still': 0, 'still_moved': 0}
+           'pictures': 0, 'scene': 0, 'named': 0, 'searched': 0,
+           'clashes': 0, 'held': 0, 'off_the_line': 0, 'still': 0,
+           'still_moved': 0, 'fewer_prims': 0, 'more_dropped': 0, 'holes': 0,
+           'hole_pixels': 0}
     mixed, prims, unpaired, flat, widest, pictures = 0, 0, 0, 0, 0, 0
     with open(log, encoding='utf-8', errors='replace') as f:
         for line in f:
@@ -89,14 +91,20 @@ def numbers_of(log):
                            identity=int(m.group(4)),
                            identity_pixels=int(m.group(5)),
                            identity_different=int(m.group(6)))
-            m = re.search(r'gl run tween keyed (\d+) far_keyed (\d+) '
-                          r'searched (\d+) clashes (\d+) off_the_line (\d+) '
-                          r'still (\d+) still_moved (\d+)', line)
+            m = re.search(r'gl run tween scene (\d+) named (\d+) '
+                          r'searched (\d+) clashes (\d+) held (\d+) '
+                          r'off_the_line (\d+) still (\d+) still_moved (\d+) '
+                          r'fewer_prims (\d+) more_dropped (\d+) holes (\d+) '
+                          r'hole_pixels (\d+)', line)
             if m:
-                out.update(keyed=int(m.group(1)), far_keyed=int(m.group(2)),
+                out.update(scene=int(m.group(1)), named=int(m.group(2)),
                            searched=int(m.group(3)), clashes=int(m.group(4)),
-                           off_the_line=int(m.group(5)), still=int(m.group(6)),
-                           still_moved=int(m.group(7)))
+                           held=int(m.group(5)), off_the_line=int(m.group(6)),
+                           still=int(m.group(7)), still_moved=int(m.group(8)),
+                           fewer_prims=int(m.group(9)),
+                           more_dropped=int(m.group(10)),
+                           holes=int(m.group(11)),
+                           hole_pixels=int(m.group(12)))
             m = re.search(r'gl run blanks (\d+)', line)
             if m:
                 out['blanks'] = int(m.group(1))
@@ -213,14 +221,27 @@ def main():
         print('    %d frames could not be drawn again (unlike frames: a cut, '
               'a menu), %d too large to write down'
               % (got['cuts'], got['overflowed']))
-        print('    partners: %d by their place in the buffer (%d of them '
-              'farther than a search looks), %d by the search, %d times the '
-              'nearest was taken already; %d corners not between their own '
-              'two ends; %d frames moved nothing and %d of those were drawn '
-              'differently'
-              % (got['keyed'], got['far_keyed'], got['searched'],
-                 got['clashes'], got['off_the_line'], got['still'],
+        print('    partners of the %d of a frame that can be moved: %d by '
+              'name, '
+              '%d by the search, %d times the nearest was taken already; '
+              '%d held where they are so as not to be left out; %d corners '
+              'not between their own two ends; %d frames moved nothing and '
+              '%d of those were drawn differently'
+              % (got['scene'], got['named'], got['searched'], got['clashes'],
+                 got['held'], got['off_the_line'], got['still'],
                  got['still_moved']))
+        print('    every picture of a frame: %s, %s, %s'
+              % ('all its primitives' if got['fewer_prims'] == 0
+                 else '%d drew other than all' % got['fewer_prims'],
+                 'the same left out by the chip\'s rule'
+                 if got['more_dropped'] == 0
+                 else '%d left another out' % got['more_dropped'],
+                 'no holes' if got['holes'] == 0
+                 else '%d of them changed more than half a thousandth of '
+                      'themselves where the two ends agreed' % got['holes'])
+              + ' (%d such pixels in all: a number to watch, not a gate -- '
+                'a face the next frame has not is left where it is, and its '
+                'neighbours move)' % got['hole_pixels'])
         print('    the run took %.0f s against %.0f s with the pictures off: '
               '%.1f ms a picture over the whole run, %.1f ms inside the '
               'renderer'
@@ -241,6 +262,7 @@ def main():
                   % (len(apart), lines, apart[0] if apart else -1))
     ok = (all(got['out_of_order'] == 0 and got['point_out_of_line'] == 0
               and got['off_the_line'] == 0 and got['still_moved'] == 0
+              and got['fewer_prims'] == 0 and got['more_dropped'] == 0
               and got['checked'] > 0 for _, got in rows)
           and all(same or name == 'port_bugfixes'
                   for name, _, same, _, _ in traces))

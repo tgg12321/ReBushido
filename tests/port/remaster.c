@@ -523,6 +523,65 @@ static void test_SideInPrimitive(void) {
     CHECK_EQ(g_drawn_prims[0].corner[2].depth, 0x3200);
 }
 
+/* **Which face of which thing a primitive is a drawing of** -- the name
+ * the pictures between two frames pair by (port_remaster.h). The face
+ * is named by the corners it is made of and not by its order, and the
+ * pieces of one face are numbered from 0. */
+static void test_Identity(void) {
+    static const s32 index[3] = {2, 5, 7};
+    static const s32 other[3] = {2, 5, 6};
+    PortAddress base = (PortAddress)g_points;
+
+    test_Reset();
+    test_NotePoint(base + 2 * 4, 30 << 16, 40 << 16, 0x3000);
+    test_NotePoint(base + 5 * 4, 70 << 16, 40 << 16, 0x3100);
+    test_NotePoint(base + 7 * 4, 30 << 16, 80 << 16, 0x3200);
+    test_NotePoint(base + 6 * 4, 30 << 16, 80 << 16, 0x3200);
+    port_RemasterNoteObject(0x80201000);
+    port_RemasterNoteGroup(0x80301000);
+    port_RemasterNoteFace(base, index, 3);
+    /* two pieces of the one face, as a face cut by the screen's edge */
+    port_RemasterAttachFace(0x80101000);
+    port_RemasterAttachFace(0x80101020);
+    port_RemasterSetPrim(0x80101020);
+    gp0(CODE(0x20) | RGB(1, 2, 3));
+    gp0(XY(30, 40));
+    gp0(XY(70, 40));
+    gp0(XY(30, 80));
+    CHECK_EQ(g_drawn_count, 1);
+    CHECK_EQ(g_drawn_prims[0].id.object, 0x80201000);
+    CHECK_EQ(g_drawn_prims[0].id.group, 0x80301000);
+    CHECK_EQ(g_drawn_prims[0].id.face, 2 | (5 << 8) | (7 << 16));
+    CHECK_EQ(g_drawn_prims[0].id.piece, 1);
+    CHECK_EQ(g_drawn_prims[0].has_place, TRUE);
+
+    /* another face of the same mesh has another name, and its pieces
+     * start again */
+    g_drawn_count = 0;
+    port_RemasterNoteFace(base, other, 3);
+    port_RemasterAttachFace(0x80101040);
+    port_RemasterSetPrim(0x80101040);
+    gp0(CODE(0x20) | RGB(1, 2, 3));
+    gp0(XY(30, 40));
+    gp0(XY(70, 40));
+    gp0(XY(30, 80));
+    CHECK_EQ(g_drawn_count, 1);
+    CHECK_EQ(g_drawn_prims[0].id.face, 2 | (5 << 8) | (6 << 16));
+    CHECK_EQ(g_drawn_prims[0].id.piece, 0);
+
+    /* a primitive of no thing at all -- the 2D layer -- has no name */
+    g_drawn_count = 0;
+    port_RemasterNoteObject(0);
+    port_RemasterSetPrim(0x80101060);
+    gp0(CODE(0x20) | RGB(1, 2, 3));
+    gp0(XY(30, 40));
+    gp0(XY(70, 40));
+    gp0(XY(30, 80));
+    CHECK_EQ(g_drawn_count, 1);
+    CHECK_EQ(g_drawn_prims[0].id.object, 0);
+    CHECK_EQ(g_drawn_prims[0].id.piece, 0);
+}
+
 /* What was written down for a frame is gone two frames later: the
  * primitive buffers and the ordering tables are used on alternate
  * frames, so nothing of a frame's own can have been written over. */
@@ -763,6 +822,7 @@ void test_Main(void) {
     test_Limits();
     test_Side();
     test_SideInPrimitive();
+    test_Identity();
     test_Frames();
     test_Anchor();
     test_Commands();

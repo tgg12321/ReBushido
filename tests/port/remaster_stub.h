@@ -20,6 +20,10 @@ void port_RemasterNoteFace(PortAddress points, const s32 *index, s32 count) {
 
 void port_RemasterAttachFace(PortAddress prim) { (void)prim; }
 
+void port_RemasterNoteObject(PortAddress object) { (void)object; }
+
+void port_RemasterNoteGroup(PortAddress group) { (void)group; }
+
 void port_RemasterSetAnchor(s32 anchor) { (void)anchor; }
 
 void port_RemasterNoteAnchored(PortAddress prim) { (void)prim; }

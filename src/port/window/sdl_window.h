@@ -27,6 +27,10 @@ typedef struct {
     const char *tap_audio; /* a file for the samples as they are queued */
     s32 toggle_at;         /* change picture at every this many blanks */
     s32 shot_at;           /* what F12 does, at this blank */
+    /* ... of which picture of it: 0 is the game's own frame, and -1 the
+     * last one shown, which is a picture between two frames where more
+     * a second than the game's are drawn */
+    s32 shot_picture;
     /* the window's size as it opens, where a run asks for one: for a
      * test of a size a player's screen has and this machine has not */
     s32 window_w;

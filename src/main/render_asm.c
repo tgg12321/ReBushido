@@ -501,7 +501,10 @@ static void render_LoadFace(RenderFace *face, u32 corners, s32 corner_count) {
     }
     /* the remastered renderer's side channel: which points these
      * corners are, so that the primitive this face becomes can be drawn
-     * where the projection really put it (port_remaster.h) */
+     * where the projection really put it, and where in the mesh this
+     * face is, which is how the primitive is found again in the next
+     * frame (port_remaster.h) */
+    port_RemasterNoteGroup((PortAddress)g_render_walk.mesh);
     port_RemasterNoteFace(
         (PortAddress)RENDER_POINTS, face->index, corner_count);
     port_GteLoadData(PORT_GTE_SXY0, face->xy, 3);
@@ -655,6 +658,12 @@ static u32 render_ShrinkUv(u32 uv, s32 shrink) {
 static void render_ChainTile(TileSplit *split, u32 length) {
     u32 *prim = split->prim;
 
+    /* the remastered renderer's side channel: the next piece of the
+     * tile's record this is, by which the picture between two frames
+     * finds it again (port_remaster.h). A tile's primitive is chained
+     * here and not through render_LinkEntry, so this is where it is
+     * named. */
+    port_RemasterAttachFace((PortAddress)prim);
     prim[0] = split->chain;
     prim[1] = TILE_COLOR;
     split->chain = ((u32)prim & RENDER_LINK_MASK) | RENDER_LINK_LENGTH(length);
@@ -1529,6 +1538,10 @@ void render_DrawQueue(void) {
     do {
         node = *g_render_walk.queue++;
         g_render_walk.node = node;
+        /* the remastered renderer's side channel: the thing being drawn
+         * from here on, which its primitives are named by
+         * (port_remaster.h) */
+        port_RemasterNoteObject((PortAddress)node);
         if (render_SetupNode(node)) {
             /* The node's mesh: a row of parts, each a word (how many
              * vertices, and above that their format), the vertices and
@@ -1830,6 +1843,9 @@ static void **render_DrawStageTiles(void **queue, u8 *tile, MATRIX *view) {
     render_LoadBackColor(lights);
 
     for (;;) {
+        /* the remastered renderer's side channel: this tile is what is
+         * being drawn now (port_remaster.h) */
+        port_RemasterNoteObject((PortAddress)tile);
         /* Where the tile is from the camera, turned into the view: the
          * translation its vertices are projected with. A tile is on the
          * ground. */
@@ -1882,6 +1898,8 @@ static void **render_DrawStageTiles(void **queue, u8 *tile, MATRIX *view) {
             do {
                 count = RENDER_HALF(mesh, 0);
                 type = RENDER_HALF(mesh, sizeof(u16));
+                /* ... and these are the pieces of this record of it */
+                port_RemasterNoteGroup((PortAddress)mesh);
                 mesh += 2 * sizeof(u16);
                 mesh = (u8 *)handlers[type >> TILE_TYPE_SHIFT](
                     count, PTR(TILE_VERTICES), (s16 *)mesh, flags);

@@ -77,9 +77,17 @@ main menu are full speed), and the speed against the console's.
 at that moment, as a PNG in a `screenshots/` folder beside the program
 (`shot-20261115-162200-000.png`: the date, the time of day, and a
 number for pictures taken in the same second). The session's log says
-where each one went. Nothing is scaled or cut: a window of 2,560 by
-1,369 gives a picture of 2,560 by 1,369, with the black bands at its
-sides or top if the picture does not fill it.
+where each one went, and whether it was the game's own frame or one of
+the pictures drawn between two of them. Nothing is scaled or cut: a
+window of 2,560 by 1,369 gives a picture of 2,560 by 1,369, with the
+black bands at its sides or top if the picture does not fill it.
+
+With the **Frame rate** setting at `display`, the window shows more
+pictures a second than the game has frames (docs/PORT.md, "More
+pictures a second"), and F12 keeps the last picture of the blank it is
+pressed in -- which is usually one of those, and is what is on the
+screen when you press it. That is the picture to send when something
+looks wrong only while the game is moving.
 
 ## Changing the keys and the picture
 

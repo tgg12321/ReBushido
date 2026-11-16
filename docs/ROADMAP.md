@@ -108,9 +108,13 @@ No dates.
       after it — which the game has already worked out, since the
       console puts a frame up a blank after it is drawn — mixed in, each
       corner moved as the projection would move it ("More pictures a
-      second"). It costs no input lag. Left of it: `original` is still
-      the default; a face the next frame has not waits for that frame
-      instead of moving, and a camera cut shows the game's own picture.
+      second"). Every primitive of the scene says which face of which
+      thing it is a drawing of, so the two frames' primitives are
+      paired by name and not by likeness, and every picture between
+      them holds every primitive the frame on show held. It costs no
+      input lag. Left of it: `original` is still the default; a face
+      the next frame has not is drawn where it is rather than moved,
+      and a camera cut shows the game's own picture.
    6. **Lighting and shadows**: the normals the mesh has and the
       primitive does not.
 

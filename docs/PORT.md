@@ -1530,8 +1530,15 @@ the program puts in a register itself clears the one it lands on.
   linked into an ordering table. Two lines, one in each, say "this face
   is these points" and "that face became this primitive". The side
   channel is then a table from a primitive's address to its corners.
+- *What a primitive is a drawing of.* Four more lines say which thing
+  the renderer is about to draw (`render_DrawQueue`,
+  `render_DrawStageTiles`), which mesh of it is being walked
+  (`render_LoadFace`, the tile loop) and that a tile's chained
+  primitive is the next piece of its face (`render_ChainTile`). That
+  is the name the pictures between two frames pair by ("Which
+  primitive of one frame is which of the next").
 
-Those two lines, and the one in `port_GteStoreData`, are the whole of
+Those lines, and the one in `port_GteStoreData`, are the whole of
 what the renderer gives up. Nothing is computed differently and nothing
 of the game's memory is written: the traces of the three play tests are
 the same with the remastered renderer on and off ("How it is proved").
@@ -2275,13 +2282,23 @@ prover does with EGL and no display, the window does with SDL:
   where there is no card) and written as a PNG into a `screenshots/`
   folder beside the program, named for the date, the time of day and a
   number, with a line of the log saying where it went
-  (`port_TakeShot`, `port_WritePixelsPng`; `PLAYING.md`). It is taken
-  after everything of the blank has been drawn and before it is shown,
-  so it is exactly what the screen is about to hold, bands and all.
-  `--shot-at N` does the same at one blank, for a test, since no plan
-  can press a key that is no pad's button; `--window WxH` opens the
-  window at a size this machine's screen may not have, which is how a
-  player's 2,560 by 1,369 is reproduced here.
+  (`port_KeepShot`, `port_WriteShot`, `port_WritePixelsPng`;
+  `PLAYING.md`). It is **the picture that is shown**, bands and all:
+  the last of the blank it was pressed in, which where more pictures a
+  second are drawn than the game has frames is one of those between two
+  frames. (It was the game's own frame until now, which is why the
+  owner could not catch the holes in the floor with it: they were never
+  in a frame of the game's own.) `--shot-at N[,P]` does the same at one
+  blank, for a test, since no plan can press a key that is no pad's
+  button, and `P` names which picture of that blank to keep -- 0 the
+  game's own frame, and -1 the last shown. Asked for a picture that
+  comes after the blank has time for, it is drawn all the same: this
+  machine's software OpenGL has no time in a blank for a second
+  picture, and this is how the key was proved to keep one (a window of
+  854 by 480, `--frame-rate 120`, `--shot-at 3250,2`: "a picture
+  between two frames"); `--window WxH` opens the window at a size this
+  machine's screen may not have, which is how a player's 2,560 by 1,369
+  is reproduced here.
 
 **Where there is no OpenGL 3.3** — an old card, or SDL told to show
 nothing — the window is made again without a context and SDL's renderer
@@ -2353,6 +2370,15 @@ own resolution ("What the card draws into"). It is mended, and
 reproduced here with `--window 2560x1369` through SDL's `offscreen`
 driver, which is what that option is for: the window opens at a size
 this machine's screen has not, and `--shot-at N` keeps its pixels.
+
+The same card's second run found what the menus had hidden: **in a
+fight, pieces of the floor went missing for a picture at a time**,
+leaving strips and rectangles of the backdrop's colour beside the
+painted lines, in another place each time, and the fighters' shadows
+juddered against a scene that was otherwise smooth. Neither could be
+caught with F12, which is what said where to look: the pictures
+between two frames (below, "Which primitive of one frame is which of
+the next"). A recording of 150 frames had the holes on 30 of them.
 
 **Not proved**: everything but that one session is still Mesa's
 software renderer with no window on screen, so how full screen behaves
@@ -2429,67 +2455,113 @@ applied to, is moved by the same step rather than taken from the moved
 place, so that at the first phase the picture is the game's own to the
 pixel.
 
-**Which primitive of one frame is which of the next** is the hard part.
-The renderer builds a frame's primitives in the order it walks the
-scene, so the offset in the primitive buffer (`prim->key`,
-`src/port/remaster.c`) names the same face — until the stage queues one
-cell more or fewer about the camera, which moves everything after it. In
-a fight that is nearly every frame: the offset alone paired 50 of 1,236
-faces. So the offset is tried first and a signature is what finds the
-rest: the kind of primitive, its texture page, its colour table, how it
-is painted and **the texture point of every corner**, all of which
-belong to the face of the model and not to where the model is. Faces of
-one texture — the stage's tiles — share a signature, and are told apart
-by which is nearest on the screen: the table is a signature in a square
-of 128 pixels, and the nine squares about the one a face was in are
-looked in, so a corner may move 128 pixels and still be found. That
-pairs 1,128 of 1,206. It is worked out once for a pair of frames and
-read again by every picture drawn between them.
+**Which primitive of one frame is which of the next** was the hard
+part, and is now a look-up. **Every primitive of the scene says which
+face of which thing it is a drawing of** (`PortRemasterIdentity`,
+`port_remaster.h`), in four parts:
 
-**The pairing is one-to-one.** Every primitive of the frame after the
-one on show is marked as it is taken, and the search passes over those
-already taken. Without that, two faces of the same texture a little
-apart — which is what a stage's ground is made of, every tile the same
-signature — take the same partner, and one of them is then drawn
-stretched from its own place to the other's: a tile that flies across
-the picture while the camera turns. In a fight with the camera swinging
-right round at `draw_distance max`, the nearest partner was one already
-taken **twice in a frame** (`clashes`, which the prover prints: it is
-how many such pairs there would otherwise have been), and 73 times a
-frame in a tree that cut every tile sixteen ways, where the ground has
-sixteen times as many faces of the one texture. Those are the dark
-tiles that appeared and went in a frame or two on a real card.
+- *the thing*: the address of the node of the scene or the tile of the
+  stage the renderer is drawing (`port_RemasterNoteObject`, called in
+  `render_DrawQueue` and in `render_DrawStageTiles`). Both are elements
+  of arrays that do not move while a fight runs;
+- *the mesh*: which part of that thing is being walked
+  (`port_RemasterNoteGroup`, from `render_LoadFace` and the stage's
+  tile loop), which tells two parts of one model apart;
+- *the face*: the corners of the mesh that face is made of, packed as
+  the mesh itself has them (`port_RemasterNoteFace`, which every
+  emitter already called to find its points). It is the face's own name
+  and not a count of the faces before it, so a face the camera turned
+  away from in one frame and not in the other moves nothing else's
+  name;
+- *the piece*: which piece of that face this primitive is, where a face
+  becomes several — a tile cut four or sixteen ways, a face cut by the
+  screen's edge. The pieces are made in an order of the renderer's own
+  and numbered as they are linked (`port_RemasterAttachFace`, which a
+  tile's primitives reach through `render_ChainTile`: they are chained
+  into the ordering table by hand and never pass `render_LinkEntry`).
 
-It costs something in one measure. Over a fight whose camera swings
-right round, 30 of 718 frames now have a picture that is not farther
-from the first than the picture before it, where 3 of 718 did: the old
-pairing always took the *nearest* face of the same texture, which is
-what makes that sum smallest, and what makes it wrong. The measure of
-the geometry itself — every corner between its own two ends — is 0
-either way.
+The same face of the same thing has the same name in the next frame
+however far it moved, however the camera turned, and however the walk
+about it changed; and no two primitives of one frame can share one. So
+the pairing is a table look-up, **exact and one-to-one by
+construction**, and a camera swinging right round is no harder than a
+camera standing still. On the practice stage (stage 35, the one the
+owner played) with the camera swung right round it names 669 of the
+752 primitives of a frame that can be moved at all, and never two of
+them the same. (Naming a face by its
+place in the order the faces are drawn, rather than by the corners it
+is made of, named 157 of the same 752: one face the camera turns away
+from moves every name after it. That is the whole reason the name is
+the corners.)
 
-The offsets are taken first and the search runs after them, so a face
-whose place in the buffer is proof of itself cannot be given away to a
-neighbour by the search. And **where most of the scene was found by its
-place** — more than half of it — the renderer walked the scene the same
-way in both frames, and the places of the rest are taken as well
-however far the corner moved (`far_keyed`): a face of the ground can
-cross half the screen while the camera swings, which is further than
-any search is allowed to look. It is asked for only after the count, so
-a frame whose walk had moved on is not trusted that way at all.
+What has no name at all — drawing the renderer's walk knows nothing of
+— is still looked for by what it is painted out of and where it was:
+the nearest of the same signature (the kind of primitive, its texture
+page, its colour table, how it is painted and the texture point of
+every corner) in the nine squares of 128 pixels about the one it was
+in, and never one another primitive has taken already. A primitive that
+*has* a name and whose name the next frame has not is left where it is:
+nothing else may be taken for it.
+
+**Why likeness was not enough.** Faces of one texture — which is what a
+stage's ground is made of, every tile alike, and a fighter's sword and
+a shadow too — are told apart only by where they are, and under a
+turning camera "where they are" moves further than a search can look.
+It paired 699 of the 752 and **11 of them with the wrong primitive in
+every frame** (`clashes`): one face drawn stretched from its own place
+to another's, and its own place left showing whatever was behind it.
+That is what the owner saw on a real card — strips and rectangles of
+the backdrop beside the painted lines of the dojo floor, in another
+place each frame, on 30 of the 150 frames of a recording, and the
+fighters' weapons and shadows shaking where nothing had moved — and
+never in a picture of the game's own frame, which is why F12 could not
+catch it. On the practice stage with the camera swung round, the
+middle picture of a frame had 1,011 pixels changed that both ends of
+it agreed about; named, 448 ("How it is proved").
+
+**A picture between two frames holds every primitive the frame on show
+held.** The chip draws no triangle spanning more than 1023 pixels
+across or 511 down and none of no area, and the backend leaves out the
+same ones by the same whole-pixel rule (`port_GlWouldDraw`): a corner
+moved part of the way can fall outside that where the frame on show's
+did not. So a primitive that would not be drawn moved is **drawn where
+it is** (`held`: 15 of a frame's 752 on the practice stage, where the
+two places of a face at the edge of the view are more than a screen
+apart). The prover holds two of these exactly, every picture: the same
+count of primitives, and the same triangles left out by the chip's
+rule. The third, what changed that both ends of the frame agree about,
+it counts and prints ("How it is proved").
+
+Carrying such a face, and one the next frame does not hold at all, the
+way the thing it belongs to went -- the average of the faces of it
+that were paired -- was tried and **measured worse**: a face with no
+partner is usually one that is going, and moving it uncovers what it
+was covering. It is drawn where it is.
 
 **What is not moved, and what then happens.** A primitive the frame
 after it has not (something spawned or gone), one whose corners the
-projection put off the eleven bits the chip holds, one with no depth, or
-one that moved more than 128 pixels, is drawn where the frame on show
-had it: so it waits for the next frame instead of moving. And when the
-faces that **cannot be paired are more than a quarter as many as those
-that can** (`PORT_TWEEN_CUT_SHARE`) the two frames are not one scene a
-frame apart — a camera cut, a screen that
-changed, a model replaced — and no picture is drawn at all: the window
-shows the game's own, which is exactly right. In `port_game` that is
-every blank of the menus and the loading screens, where there is nothing
-with depth to move, and the game runs at 60 there anyway.
+projection put off the eleven bits the chip holds, one the projection
+gave no place to at all, or one with no name that no search found, is
+drawn where the frame on show had it: so it waits for the next frame
+instead of moving. **A depth is not asked for**, only a place
+(`has_place`, `port_remaster.h`): a polygon the renderer flattens --
+a fighter's shadow is projected with a matrix that flattens it onto
+the ground -- would be moved between its two places all the same, with
+its texture run evenly across it as the console's is. In the practice
+stage measured here no primitive came out that way: every point the
+GTE wrote down had a depth with it, shadows and all
+(`with_place` is `with_depth` to the primitive). So the shadows were
+already moved, and the shimmer the owner saw in them was the same
+mispairing as the floor's: a shadow is many small faces of one
+texture, which is exactly what a search by likeness confuses.
+
+And when the faces that **cannot be paired are more than a quarter as
+many as those that can** (`PORT_TWEEN_CUT_SHARE`) the two frames are
+not one scene a frame apart — a camera cut, a screen that changed, a
+model replaced — and no picture is drawn at all: the window shows the
+game's own, which is exactly right. In `port_game` that is every blank
+of the menus and the loading screens, where there is nothing with a
+place to move, and the game runs at 60 there anyway.
 
 **The window's own path** was run headless as well, through SDL's
 `offscreen` driver: at `--frame-rate 120`, with the scene at the
@@ -2512,11 +2584,10 @@ or not any lay between two frames — so the game keeps the console's
 59.83 blanks a second as before, and the pace takes up what a swap ran
 over (`pace.c`). (Leaving that last wait out was the one thing that
 showed as the game running too fast: in a menu, where there is nothing
-with depth to move and no picture between frames is drawn, the blank
+with a place to move and no picture between frames is drawn, the blank
 ended as soon as its one picture was shown and the game ran at the
-display's rate.) `display` takes the rate `SDL_GetCurrentDisplayMode`
-says, and
-60 where it says none. Eight pictures a blank is the most, whatever is
+display's rate.) `display` takes the rate `SDL_GetCurrentDisplayMode` says, and 60
+where it says none. Eight pictures a blank is the most, whatever is
 asked for. The counter in the corner shows both rates and the game's own
 speed: `143.8/30.0 100%` is 143.8 pictures a second of a game stepping
 30 times a second and keeping the console's time.
@@ -2543,6 +2614,27 @@ the last the frame after it, and three things are held:
   partner wrongly found shows in, since such a corner is pulled towards
   a place that is not its own. It was 0 in 5,744 pictures of a fight
   whose camera swung right round;
+- **every picture of the frame draws every primitive the frame on show
+  drew** (`fewer_prims`), and leaves out exactly the triangles the
+  chip's own rule left out of it (`more_dropped`): one more left out is
+  a hole where that face was;
+- **what both ends of the frame agree about, the picture between them
+  draws the same** (`holes`, `hole_pixels`). This is the symptom
+  itself, measured: a pixel of the floor a long way from anything that
+  moved is the same in the frame on show and in the frame after it, and
+  the one thing that can change it in between is a face that was not
+  drawn where it belongs. Asking the ends to agree first is what keeps
+  honest motion -- a fighter's edge sweeping over the floor -- out of
+  the count. This one is a number watched and not a gate: a face the
+  next frame has not is left where it is while its neighbours move, and
+  the edge between them is a few pixels of it. On the practice stage
+  with the camera swung right round, 426,687 such pixels over 531
+  pictures became 191,819 over 522 when the primitives were named, and
+  the pictures with more than half a thousandth of themselves changed
+  that way, 207, became 35. The share is the same at the console's own
+  size and at the owner's 2,556 by 1,440 (25,571 pixels and 427,313,
+  35 pictures either way), and `fewer_prims` and `more_dropped` are 0
+  at all three;
 - **a scene that did not move at all is drawn exactly as it is**
   (`still`, `still_moved`): where the farthest corner moved 0 pixels
   between the two frames, every picture in between must be the frame on

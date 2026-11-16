@@ -849,7 +849,7 @@ static void port_GlPutVertex(
      * an edge is drawn the margin further out again (port_remaster.h) */
     GLfloat at = (GLfloat)(g_gl.margin + prim->anchor * g_gl.margin);
 
-    if (prim->has_depth && !g_gl.options.is_exact) {
+    if (prim->has_place && !g_gl.options.is_exact) {
         to->x = port_GlPlace(from->x) + at;
         to->y = port_GlPlace(from->y);
     } else {
@@ -936,6 +936,20 @@ static s32 port_GlIsDrawn(const PortRemasterPrim *prim, s32 a, s32 b, s32 c) {
     return area != 0;
 }
 
+/* Whether every triangle of a primitive is one the chip would draw: a
+ * caller that moves a primitive's corners asks before it does, so that a
+ * picture between two frames never loses one (gl.h). */
+s32 port_GlWouldDraw(const PortRemasterPrim *prim) {
+    switch (prim->kind) {
+    case PORT_REMASTER_TRIANGLE:
+        return port_GlIsDrawn(prim, 0, 1, 2);
+    case PORT_REMASTER_QUAD:
+        return port_GlIsDrawn(prim, 0, 1, 2) && port_GlIsDrawn(prim, 1, 2, 3);
+    default:
+        return TRUE;
+    }
+}
+
 static void port_GlTriangle(
     const PortRemasterPrim *prim, s32 a, s32 b, s32 c, s32 flags) {
     if (!port_GlIsDrawn(prim, a, b, c)) {
@@ -1007,8 +1021,10 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     }
     /* drawn where the chip put it, by whole pixels of video memory: so
      * its texel and its colour are read as the chip read them, once a
-     * pixel of video memory (the shader) */
-    if (!prim->has_depth || prim->kind == PORT_REMASTER_RECT) {
+     * pixel of video memory (the shader). A primitive the projection
+     * gave a place to is not on those whole pixels and has no block to
+     * read at. */
+    if (!prim->has_place || prim->kind == PORT_REMASTER_RECT) {
         flags |= FLAG_FLAT;
     }
     state.is_half = prim->is_half;
@@ -1173,17 +1189,21 @@ void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h) {
     port_GlUploadMirror();
 }
 
-void port_GlSaveCounts(u32 *three) {
-    three[0] = g_gl.vertex_count;
-    three[1] = g_gl.draw_count;
-    three[2] = g_gl.upload_count;
+void port_GlSaveCounts(u32 *four) {
+    four[0] = g_gl.vertex_count;
+    four[1] = g_gl.draw_count;
+    four[2] = g_gl.upload_count;
+    four[3] = g_gl.dropped;
 }
 
-void port_GlLoadCounts(const u32 *three) {
-    g_gl.vertex_count = three[0];
-    g_gl.draw_count = three[1];
-    g_gl.upload_count = three[2];
+void port_GlLoadCounts(const u32 *four) {
+    g_gl.vertex_count = four[0];
+    g_gl.draw_count = four[1];
+    g_gl.upload_count = four[2];
+    g_gl.dropped = four[3];
 }
+
+u32 port_GlDroppedNow(void) { return g_gl.dropped; }
 
 /* ---- what the host asks for ---- */
 

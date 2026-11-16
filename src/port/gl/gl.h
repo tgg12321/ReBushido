@@ -68,6 +68,14 @@ extern s32 port_GlIsStarted(void);
  * itself in front of these and calls them itself (gl_tween.c). */
 extern const PortRemasterBackend *port_GlBackend(void);
 
+/* Whether every triangle of a primitive is one the chip would draw at
+ * all: inside 1023 pixels across and 511 down, and of some area. A
+ * caller that moves a primitive's corners (gl_tween.c) asks before it
+ * draws the moved one, so that a picture between two frames holds
+ * exactly the primitives the frame on show held and never leaves a hole
+ * where one of them was. */
+extern s32 port_GlWouldDraw(const PortRemasterPrim *prim);
+
 /* A rectangle of video memory into the mirror the card reads texels
  * from, and nothing else: no batch is flushed and nothing is drawn.
  * `port_GlWroteVram` is the game's own write, which is also drawn into
@@ -76,12 +84,17 @@ extern const PortRemasterBackend *port_GlBackend(void);
 extern void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h);
 
 /* The counts of the frame being drawn (vertices, draws, pixels of the
- * mirror sent), three words, kept aside and put back: a picture drawn
- * between two of the game's frames is not one of them and is not
+ * mirror sent, triangles left out), kept aside and put back: a picture
+ * drawn between two of the game's frames is not one of them and is not
  * counted with them (gl_tween.c). */
-#define PORT_GL_COUNTS 3
-extern void port_GlSaveCounts(u32 *three);
-extern void port_GlLoadCounts(const u32 *three);
+#define PORT_GL_COUNTS 4
+extern void port_GlSaveCounts(u32 *four);
+extern void port_GlLoadCounts(const u32 *four);
+
+/* Triangles left out so far in the frame being drawn, by the chip's own
+ * rule (port_GlWouldDraw). A picture between two frames must leave out
+ * exactly as many as the frame on show did, or it has a hole in it. */
+extern u32 port_GlDroppedNow(void);
 
 /* The display's rectangle of the colour buffer, as 0xFFRRGGBB a pixel,
  * a row after a row from the top, into `out`: at most `room` pixels.

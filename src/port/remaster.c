@@ -39,6 +39,9 @@ typedef struct {
     PortAddress prim;
     u32 epoch;
     s32 count;
+    /* which face of which thing this primitive is a drawing of; its
+     * `object` is 0 where the renderer said nothing */
+    PortRemasterIdentity id;
     PortPrecisePoint point[PORT_REMASTER_CORNERS];
 } FaceSlot;
 
@@ -60,6 +63,9 @@ static PointSlot g_point_slots[POINT_SLOTS];
 static FaceSlot g_face_slots[FACE_SLOTS];
 static AnchorSlot g_anchor_slots[ANCHOR_SLOTS];
 static u32 g_epoch = EPOCHS_KEPT;
+/* What the renderer is drawing now, and which piece of it comes next:
+ * the identity every primitive linked from here on is given. */
+static PortRemasterIdentity g_id;
 
 /* Which edge of a wider picture the primitives now being built belong to
  * (port_remaster.h). */
@@ -109,6 +115,7 @@ static PortDirtyRect g_drawn;
 #define HALF_SHIFT 16
 #define HALF_MASK 0xFFFF
 #define BYTE_MASK 0xFF
+#define BITS_PER_BYTE 8
 #define GREEN_SHIFT 8
 #define BLUE_SHIFT 16
 #define POSITION_BITS 11
@@ -469,6 +476,13 @@ void port_RemasterNoteFace(PortAddress points, const s32 *index, s32 count) {
         count = PORT_REMASTER_CORNERS;
     }
     g_face_count = count;
+    /* this face of the mesh, by the corners it is made of, and its
+     * pieces start again (port_remaster.h) */
+    g_id.face = 0;
+    g_id.piece = 0;
+    for (i = 0; i < count; i++) {
+        g_id.face |= (s32)((u32)(index[i] & BYTE_MASK) << (i * BITS_PER_BYTE));
+    }
     for (i = 0; i < count; i++) {
         const PortPrecisePoint *found =
             port_FindPoint(points + (PortAddress)((u32)index[i] * sizeof(u32)));
@@ -494,9 +508,13 @@ void port_RemasterAttachFace(PortAddress prim) {
     u32 i;
     s32 corner;
 
-    if (g_backend == NULL || g_face_count == 0) {
+    if (g_backend == NULL) {
         return;
     }
+    /* A primitive with no face of its own is written down all the same,
+     * for its identity: a tile of the stage has no face looked up --
+     * the GTE stored its corners into the primitive itself -- and it is
+     * a tile that most needs to be found again in the next frame. */
     slot = port_RemasterSlot(prim, FACE_SLOTS);
     for (i = 0; i <= PROBES; i++) {
         FaceSlot *found = &g_face_slots[(slot + i) & (FACE_SLOTS - 1)];
@@ -513,13 +531,34 @@ void port_RemasterAttachFace(PortAddress prim) {
         found->prim = prim;
         found->epoch = g_epoch;
         found->count = g_face_count;
+        found->id = g_id;
+        g_id.piece++;
         for (corner = 0; corner < g_face_count; corner++) {
             found->point[corner] = g_face[corner];
         }
-        g_counts.attached++;
-        g_frame_counts.attached++;
+        if (g_face_count != 0) {
+            g_counts.attached++;
+            g_frame_counts.attached++;
+        }
         return;
     }
+}
+
+void port_RemasterNoteObject(PortAddress object) {
+    g_id.object = object;
+    g_id.group = 0;
+    g_id.face = 0;
+    g_id.piece = 0;
+    /* no face has been looked up for what is about to be drawn: a
+     * primitive linked before one is has corners of its own */
+    g_face_count = 0;
+}
+
+void port_RemasterNoteGroup(PortAddress group) {
+    g_id.group = group;
+    g_id.face = 0;
+    g_id.piece = 0;
+    g_face_count = 0;
 }
 
 /* The face attached to a primitive, or NULL. */
@@ -624,6 +663,10 @@ void port_RemasterNewFrame(void) {
     }
     g_epoch++;
     g_face_count = 0;
+    /* nothing of the scene is being drawn yet: what the game builds
+     * before the renderer's walk is the 2D layer, which has no identity
+     * and is never moved */
+    port_RemasterNoteObject(0);
     port_ClearDirtyRect(&g_drawn);
     if (port_RemasterIsOn() && g_backend->begin != NULL) {
         g_backend->begin();
@@ -876,6 +919,10 @@ static void port_RemasterDrawPrim(PortRemasterPrim *prim, s32 kind) {
         g_counts.without_depth++;
         g_frame_counts.without_depth++;
     }
+    if (prim->has_place) {
+        g_counts.with_place++;
+        g_frame_counts.with_place++;
+    }
     if (prim->is_half) {
         g_counts.mixed[prim->blend & 3]++;
         g_frame_counts.mixed[prim->blend & 3]++;
@@ -896,16 +943,32 @@ static void port_RemasterDrawPrim(PortRemasterPrim *prim, s32 kind) {
     port_NoteDrawn(prim);
 }
 
+/* Whether the place the projection worked out is the place the chip
+ * drew at, within a pixel: a point the projection put behind the camera
+ * has a screen position the chip held to eleven bits and this one did
+ * not, and drawing at it would be a band across the picture. The chip's
+ * own whole pixel is what says which primitives are drawn at all
+ * (gl_draw.c, port_GlIsDrawn), so a place that is not near it is not
+ * used. */
+static s32 port_PlaceIsNear(s32 precise, s32 offset, s32 whole) {
+    s32 apart = ((precise >> PORT_REMASTER_FRACTION) + offset) - whole;
+
+    return apart >= -1 && apart <= 1;
+}
+
 /* A polygon: three corners or four, each a place and, by the code, a
  * colour and a texture point. The side channel gives each corner where
  * the GTE really put it and how deep it is: by the face the renderer
  * attached to this primitive, or, for a primitive whose corners the GTE
  * stored into it itself (a stage tile that was cut), by the address of
- * the word the corner is in. */
+ * the word the corner is in. It gives the primitive its name as well --
+ * which face of which thing it is a drawing of -- which the pictures
+ * between two frames pair by (gl_tween.c). */
 static void port_DecodePolygon(
     const u32 *words, u32 code, const PortGpuState *state) {
     PortRemasterPrim prim;
-    const FaceSlot *face = port_FindFace(g_prim);
+    const FaceSlot *slot = port_FindFace(g_prim);
+    const FaceSlot *face = slot;
     s32 corner_count = (code & CODE_QUAD) ? 4 : 3;
     u32 clut = 0;
     s32 at = 0;
@@ -917,6 +980,18 @@ static void port_DecodePolygon(
     prim.rect_w = 0;
     prim.rect_h = 0;
     prim.has_depth = TRUE;
+    prim.has_place = TRUE;
+    /* which face of which thing this is a drawing of: the primitive's
+     * own, whether or not the face's points are this primitive's
+     * corners (a tile of the stage has an identity and no points) */
+    if (slot != NULL) {
+        prim.id = slot->id;
+    } else {
+        prim.id.object = 0;
+        prim.id.group = 0;
+        prim.id.face = 0;
+        prim.id.piece = 0;
+    }
     /* the scene, which a wider picture is wider of itself */
     prim.anchor = PORT_ANCHOR_MIDDLE;
     if (face != NULL && face->count != corner_count) {
@@ -957,15 +1032,26 @@ static void port_DecodePolygon(
             point = port_FindPoint(
                 g_prim + (PortAddress)((u32)(place + 1) * sizeof(u32)));
         }
-        if (point != NULL && point->depth > 0) {
+        if (point != NULL &&
+            port_PlaceIsNear(point->x, state->offset_x, corner->ix) &&
+            port_PlaceIsNear(point->y, state->offset_y, corner->iy)) {
             corner->x = point->x + (state->offset_x << PORT_REMASTER_FRACTION);
             corner->y = point->y + (state->offset_y << PORT_REMASTER_FRACTION);
-            corner->depth = point->depth;
+            /* A place without a depth is still a place: a polygon the
+             * renderer flattened -- a shadow is projected with a matrix
+             * that flattens it onto the ground -- is drawn where the
+             * projection put it and moved with everything else, with
+             * its texture run evenly across it as the console's is. */
+            corner->depth = point->depth > 0 ? point->depth : 0;
+            if (corner->depth == 0) {
+                prim.has_depth = FALSE;
+            }
         } else {
             corner->x = corner->ix << PORT_REMASTER_FRACTION;
             corner->y = corner->iy << PORT_REMASTER_FRACTION;
             corner->depth = 0;
             prim.has_depth = FALSE;
+            prim.has_place = FALSE;
         }
     }
     port_RemasterPaint(&prim, code, clut, state);
@@ -988,6 +1074,11 @@ static void port_DecodeRectangle(
     prim.kind = PORT_REMASTER_RECT;
     prim.corner_count = 1;
     prim.has_depth = FALSE;
+    prim.has_place = FALSE;
+    prim.id.object = 0;
+    prim.id.group = 0;
+    prim.id.face = 0;
+    prim.id.piece = 0;
     /* a sprite or a tile of the fight's HUD is drawn at the picture's own
      * edge, where the game said which edge it belongs to */
     prim.anchor = port_FindAnchor(g_prim);

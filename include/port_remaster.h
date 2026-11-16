@@ -11,7 +11,8 @@
  *   - the GTE (src/port/gte.c) writes down the exact result of every
  *     projection, where it was stored;
  *   - the renderer (src/main/render_asm.c) says which of those points a
- *     face is made of, and which primitive it became;
+ *     face is made of, which primitive it became, and which face of
+ *     which thing of the scene that primitive is a drawing of;
  *   - the GPU in C (src/port/raster.c) hands every command it is given
  *     here as well as drawing it, and the decoder turns it into a
  *     PortRemasterPrim with sub-pixel corners and a depth for each,
@@ -275,6 +276,40 @@ extern void port_RemasterNoteFace(
 /* That face became the primitive at `prim` (render_LinkEntry). */
 extern void port_RemasterAttachFace(PortAddress prim);
 
+/* ---- what a primitive is a drawing of ---- */
+
+/* Which face of which thing a primitive came from, which is what pairs
+ * two frames' primitives for the pictures drawn between them
+ * (src/port/gl/gl_tween.c). It is an identity and not a likeness: the
+ * address of the thing being drawn, the address of the mesh being
+ * walked, which face of that mesh it is, and which piece of that face
+ * this primitive is, where a face becomes several (a tile cut sixteen
+ * ways, a face cut by the screen's edge). Two primitives of one frame cannot
+ * share it, and the same face of the same thing has it again in the next frame
+ * however far it moved or however the walk about it changed.
+ *
+ * `object` 0 means there is none: the 2D layer, and anything drawn
+ * outside the renderer's walk. */
+typedef struct {
+    PortAddress object;
+    PortAddress group;
+    /* which face of that mesh: the corners it is made of, packed as the
+     * mesh itself has them. It is the face's own and not a count of the
+     * faces before it, so a face the camera turned away from in one
+     * frame and not the other moves nothing else's name. */
+    s32 face;
+    s32 piece;
+} PortRemasterIdentity;
+
+/* The renderer is about to draw this thing: a node of the scene or a
+ * tile of the stage (render_DrawQueue, render_DrawStageTiles). The
+ * group and the piece start again. */
+extern void port_RemasterNoteObject(PortAddress object);
+/* ... and this face of its mesh, or this record of a tile's: the
+ * primitives linked from now on are its pieces, numbered from 0
+ * (render_LoadFace, render_DrawStageTiles). */
+extern void port_RemasterNoteGroup(PortAddress group);
+
 /* A new frame of primitives is about to be built: the ordering table was
  * cleared (src/port/gpu.c). What was written down before the frame
  * before it is forgotten. */
@@ -360,6 +395,18 @@ typedef struct {
     /* every corner has a depth from the GTE: the texture is drawn in
      * perspective and the corners are where the GTE really put them */
     s32 has_depth;
+    /* Every corner has the place the GTE worked out, whether or not it
+     * has a depth to go with it: the corners are drawn where the
+     * projection really put them, and the primitive is moved between
+     * its two frames; without a depth its texture runs evenly across it
+     * as the console's does. A polygon the renderer flattens -- a
+     * shadow is projected with a matrix that flattens it onto the
+     * ground -- would come out this way; in the stages measured so far
+     * every point the GTE wrote down had a depth with it. */
+    s32 has_place;
+    /* Which face of which thing this is a drawing of, for the pictures
+     * between two frames; `object` 0 where there is none. */
+    PortRemasterIdentity id;
     /* PORT_ANCHOR_...: which edge of a wider picture this is drawn at.
      * PORT_ANCHOR_MIDDLE for everything but the fight HUD's own
      * primitives, which are rectangles (a sprite or a tile). */
@@ -449,12 +496,16 @@ typedef struct {
     u32 drawn[PORT_REMASTER_COUNT_KINDS]; /* ... that the backend drew */
     u32 with_depth;    /* primitives whose every corner had a depth */
     u32 without_depth; /* ... and that had not: drawn flat */
-    u32 points;        /* points the GTE wrote down */
-    u32 faces;         /* faces the renderer said */
-    u32 attached;      /* primitives a face was attached to */
-    u32 point_misses;  /* corners whose point was not written down */
-    u32 full;          /* times a table was full and something was lost */
-    u32 masked;        /* primitives drawn while the mask bit was in use */
+    /* primitives whose every corner had the place the projection
+     * worked out, with or without a depth to go with it: these are
+     * drawn where it put them, and moved between two frames */
+    u32 with_place;
+    u32 points;       /* points the GTE wrote down */
+    u32 faces;        /* faces the renderer said */
+    u32 attached;     /* primitives a face was attached to */
+    u32 point_misses; /* corners whose point was not written down */
+    u32 full;         /* times a table was full and something was lost */
+    u32 masked;       /* primitives drawn while the mask bit was in use */
     /* textured primitives whose page this frame had drawn into: their
      * texture is pixels the software GPU made, which the backend's
      * mirror of video memory has at the console's resolution and not
