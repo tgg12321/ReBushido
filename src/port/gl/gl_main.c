@@ -1028,6 +1028,10 @@ static void port_GlQuit(s32 code) {
         counts->with_depth, counts->without_depth, counts->with_place,
         counts->points, counts->faces, counts->attached, counts->point_misses,
         counts->full, counts->masked, counts->texture_from_drawn);
+    fprintf(stderr,
+            "gl run fighter_faces %u fighter_unplaced %u walked_unplaced %u\n",
+            counts->fighter_faces, counts->fighter_unplaced,
+            counts->walked_unplaced);
     fprintf(stderr, "gl run mixed half %u add %u subtract %u quarter %u\n",
             counts->mixed[0], counts->mixed[1], counts->mixed[2],
             counts->mixed[3]);

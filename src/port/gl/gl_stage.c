@@ -347,6 +347,7 @@ static const char g_stage_vertex_text[] =
     "flat out ivec4 v_page;\n"
     "flat out uvec4 v_info;\n"
     "flat out uint v_tile;\n"
+    "flat out float v_slot;\n"
     /* the ordering-table slot a depth is sorted at
      * (render_OtIndexShifted) */
     "int slot_of(int depth) {\n"
@@ -375,6 +376,9 @@ static const char g_stage_vertex_text[] =
     "    v_cull = (!front ||\n"
     "              slot_of(int(clamp(far, 0.0, 65535.0))) < u_cutoff)\n"
     "             ? 1 : 0;\n"
+    /* the slot is also what a fighter is held against (gl_draw.c,
+     * port_GlGroundSlotsBegin) */
+    "    v_slot = float(slot_of(int(clamp(far, 0.0, 65535.0))));\n"
     /* The projection the coprocessor makes, written so that every
      * component is linear in the point: the card's own divide by w puts
      * the corner where the GTE put it, and a face that crosses the near
@@ -415,7 +419,9 @@ static const char g_stage_fragment_text[] =
     "flat in ivec4 v_page;\n"
     "flat in uvec4 v_info;\n"
     "flat in uint v_tile;\n"
-    "out vec4 o_color;\n"
+    "flat in float v_slot;\n"
+    "layout(location = 0) out vec4 o_color;\n"
+    "layout(location = 1) out uint o_slot;\n"
     "uint vram(int x, int y) {\n"
     "    return texelFetch(u_vram, ivec2(x & 1023, y & 511), 0).r;\n"
     "}\n"
@@ -573,6 +579,7 @@ static const char g_stage_fragment_text[] =
      * the stage, and a depth that falls off as one over the distance has
      * nothing left out there to tell two faces apart by. */
     "    gl_FragDepth = clamp(v_depth / u_depth, 0.0, 1.0);\n"
+    "    o_slot = uint(v_slot);\n"
     "}\n";
 
 /* ---- starting ---- */
@@ -1306,6 +1313,7 @@ static void port_GlStageDrawMesh(
     glClearDepth(1.0);
     glDepthMask(GL_TRUE);
     glClear(GL_DEPTH_BUFFER_BIT);
+    port_GlGroundSlotsBegin();
     /* The scene of a wider picture is drawn across the whole of it, as
      * the renderer draws every primitive the projection gave a depth to
      * (port_GlDraw, is_wide). */
@@ -1337,6 +1345,7 @@ static void port_GlStageDrawMesh(
      * blending and one draw. */
     glDisable(GL_BLEND);
     glDrawArrays(GL_TRIANGLES, 0, g_stage.vertex_count);
+    port_GlGroundSlotsEnd();
     g_stage.draws++;
     g_stage.drawn_vertices += (u32)g_stage.vertex_count;
     /* The scene is tested against this depth and writes none of it

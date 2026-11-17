@@ -1545,6 +1545,15 @@ void render_DrawQueue(void) {
          * picture may darken the ground under instead (port_remaster.h) */
         port_RemasterNoteObject((PortAddress)node);
         port_RemasterNoteShadow(node->kind == NODE_KIND_SHADOW);
+        /* ... and whether it is a fighter's own -- his model, its
+         * shadows, a weapon, the tiny mode's model -- and not the stage's,
+         * by where its mesh is from. A tile is not a node and has no
+         * mesh block where a node has it; the surf's node leaves its
+         * block 0. */
+        port_RemasterNoteFighter(
+            node->kind != STAGE_TILE_KIND && node->kind != NODE_KIND_WAVE &&
+            (node->mesh_block < RELOC_STAGE ||
+             node->mesh_block == RELOC_TINY_MODEL));
         if (render_SetupNode(node)) {
             /* The node's mesh: a row of parts, each a word (how many
              * vertices, and above that their format), the vertices and
@@ -2351,6 +2360,12 @@ void render_DrawSkinnedMesh(s32 matrices, s32 mesh, s32 view, s32 depth_shift) {
             cursor += SKIN_CARRY_SIZE;
             do {
                 RENDER_POINTS[to] = RENDER_POINTS[from];
+                /* the remastered renderer's side channel: the GTE wrote the
+                 * point down where it stored it, and this copy is not the
+                 * GTE's, so the joint's faces would have no place
+                 * (port_remaster.h) */
+                port_RemasterCopyPoint((PortAddress)&RENDER_POINTS[from],
+                                       (PortAddress)&RENDER_POINTS[to]);
                 RENDER_SKIN_DEPTHS[to] = RENDER_SKIN_DEPTHS[from];
                 from--;
                 to++;

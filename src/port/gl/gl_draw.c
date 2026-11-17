@@ -54,6 +54,7 @@ typedef ptrdiff_t GLintptr;
 #define GL_RGBA 0x1908
 #define GL_RGBA8 0x8058
 #define GL_R16UI 0x8234
+#define GL_COLOR 0x1800
 #define GL_RED_INTEGER 0x8D94
 #define GL_TEXTURE_2D 0x0DE1
 #define GL_TEXTURE0 0x84C0
@@ -67,6 +68,7 @@ typedef ptrdiff_t GLintptr;
 #define GL_CLAMP_TO_EDGE 0x812F
 #define GL_FRAMEBUFFER 0x8D40
 #define GL_COLOR_ATTACHMENT0 0x8CE0
+#define GL_COLOR_ATTACHMENT1 0x8CE1
 #define GL_DEPTH_ATTACHMENT 0x8D00
 #define GL_RENDERBUFFER 0x8D41
 #define GL_DEPTH_COMPONENT24 0x81A6
@@ -163,7 +165,9 @@ typedef ptrdiff_t GLintptr;
     GL(void, glUniform1f, (GLint, GLfloat))                                    \
     GL(void, glUniform2f, (GLint, GLfloat, GLfloat))                           \
     GL(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat))         \
-    GL(void, glDrawArrays, (GLenum, GLint, GLsizei))
+    GL(void, glDrawArrays, (GLenum, GLint, GLsizei))                           \
+    GL(void, glDrawBuffers, (GLsizei, const GLenum *))                         \
+    GL(void, glClearBufferuiv, (GLenum, GLint, const GLuint *))
 
 #define GL(result, name, args) static result(*name) args;
 PORT_GL_FUNCTIONS
@@ -206,6 +210,9 @@ PORT_GL_FUNCTIONS
  * perspective, and its texture is read over the whole area of a fragment
  * where that is more than a texel (the shader's `steps`). */
 #define FLAG_DEPTH 32
+/* The ground drawn as one mesh hides it by the ordering table's slots and
+ * not by depth (port_GlIsOverGround). */
+#define FLAG_OVER_GROUND 64
 
 /* A corner's `w`: the depth the coprocessor worked out, in these units.
  * Any number in proportion to it will do -- it is the perspective divide
@@ -231,6 +238,9 @@ typedef struct {
     s16 page[4]; /* the page's corner, the colour table's first pixel */
     u8 info[4];  /* the texel's bits, the mix, nothing, nothing */
     u8 window[4];
+    /* the ordering-table slot the renderer linked it at, or -1
+     * (port_remaster.h, `ot_slot`) */
+    GLfloat slot;
 } PortGlVertex;
 
 /* What a run of vertices must share: everything the fixed blending and
@@ -251,6 +261,13 @@ typedef struct {
      * kept aside as it is drawn, for the mask that keeps the darkening
      * off everything standing in a shadow. */
     s32 is_ground;
+    /* The ground's mesh was drawn this frame before these primitives
+     * came, so they are held against it (port_GlFlush). It is the
+     * batch's own and not asked when the batch is drawn: the last batch
+     * of a frame is drawn at the vertical blank, after the game has
+     * begun the next frame, and asked then it was held against nothing
+     * at all. */
+    s32 is_held;
 } PortGlState;
 
 static struct {
@@ -267,6 +284,10 @@ static struct {
      * so that the framebuffer is always complete whether or not the mesh
      * is drawn. */
     GLuint depth_buffer;
+    /* ... and the ordering-table slot of the face of the ground each
+     * pixel shows, which the mesh writes beside its colour and a
+     * fighter is held against (port_GlGroundSlotsBegin) */
+    GLuint slot_texture;
     GLuint buffer;
     GLuint array;
     GLuint blit_buffer;
@@ -307,6 +328,8 @@ static struct {
     GLint at_w_scale;
     GLint at_depth_range;
     GLint at_depth_bias;
+    GLint at_ground_slots;
+    GLint at_ground_order;
     GLint blit_at_target;
     GLint blit_at_rect;
     GLint blit_at_scale;
@@ -375,8 +398,10 @@ static const char g_gl_vertex_text[] =
     "layout(location = 3) in ivec4 a_page;\n"
     "layout(location = 4) in uvec4 a_info;\n"
     "layout(location = 5) in uvec4 a_window;\n"
+    "layout(location = 6) in float a_slot;\n"
     "uniform vec2 u_target;\n"
     "uniform vec2 u_scale;\n"
+    "flat out float v_slot;\n"
     /* the texture in perspective, and as the console had it */
     "out vec2 v_texture;\n"
     "noperspective out vec2 v_texture_flat;\n"
@@ -406,6 +431,7 @@ static const char g_gl_vertex_text[] =
     "    v_page = a_page;\n"
     "    v_info = a_info;\n"
     "    v_window = a_window;\n"
+    "    v_slot = a_slot;\n"
     "}\n";
 
 static const char g_gl_fragment_text[] =
@@ -425,6 +451,11 @@ static const char g_gl_fragment_text[] =
     "uniform float u_w_scale;\n"
     "uniform float u_depth_range;\n"
     "uniform float u_depth_bias;\n"
+    /* the slot of the face of the ground each pixel shows, and whether
+     * the mesh wrote it this frame (port_GlIsOverGround) */
+    "uniform usampler2D u_ground_slots;\n"
+    "uniform int u_ground_order;\n"
+    "flat in float v_slot;\n"
     "in vec2 v_texture;\n"
     "noperspective in vec2 v_texture_flat;\n"
     "noperspective in vec3 v_color;\n"
@@ -463,6 +494,16 @@ static const char g_gl_fragment_text[] =
     "                float((texel >> 10) & 31u));\n"
     "}\n"
     "void main() {\n"
+    /* A fighter's own is hidden by the ground as the console hid him:
+     * where the face of the ground this pixel shows was linked at a
+     * nearer slot of the ordering table than he was, and so painted over
+     * him (port_GlIsOverGround). */
+    "    if (u_ground_order != 0 && (v_flags.w & 64u) != 0u\n"
+    "        && v_slot >= 0.0\n"
+    "        && texelFetch(u_ground_slots, ivec2(gl_FragCoord.xy), 0).r\n"
+    "           < uint(v_slot)) {\n"
+    "        discard;\n"
+    "    }\n"
     "    vec2 uv = (u_affine != 0) ? v_texture_flat : v_texture;\n"
     "    vec3 color = v_color;\n"
     "    bool mixes = (v_flags.w & 4u) != 0u;\n"
@@ -620,7 +661,7 @@ static const char g_gl_fragment_text[] =
      * fonts, the menus, a polygon of the scene whose corners were not
      * written down -- is put at the very front: it was drawn where the
      * console drew it and has nothing to be behind. */
-    "    if ((v_flags.w & 32u) != 0u) {\n"
+    "    if ((v_flags.w & 96u) == 32u) {\n"
     "        float deep = (u_w_scale / gl_FragCoord.w) * exp2(float(v_info.z));\n"
     "        gl_FragDepth = clamp((deep - u_depth_bias) / u_depth_range,\n"
     "                             0.0, 1.0);\n"
@@ -817,12 +858,15 @@ static void port_GlSetUpVertexFormat(void) {
         4, 4, GL_UNSIGNED_BYTE, (GLsizei)sizeof(*one), one->info);
     glVertexAttribIPointer(
         5, 4, GL_UNSIGNED_BYTE, (GLsizei)sizeof(*one), one->window);
+    glVertexAttribPointer(
+        6, 1, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), &one->slot);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
     glEnableVertexAttribArray(3);
     glEnableVertexAttribArray(4);
     glEnableVertexAttribArray(5);
+    glEnableVertexAttribArray(6);
 }
 
 /* The colour buffer: all of video memory at the scale. */
@@ -843,6 +887,29 @@ static void port_GlAttachDepth(void) {
                               GL_RENDERBUFFER, wanted ? g_gl.depth_buffer : 0);
 }
 
+/* The ground's mesh writes, beside its colour, the ordering-table slot of
+ * the face each pixel shows (gl_stage.c): the buffer it goes in is
+ * attached as a second colour buffer for that draw alone, so that the
+ * scene's primitives can read it after and nothing else ever writes it.
+ * Where the mesh draws nothing it is farther than any slot. */
+void port_GlGroundSlotsBegin(void) {
+    static const GLenum both[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+    static const GLuint far[4] = {0xFFFF, 0, 0, 0};
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D,
+                           g_gl.slot_texture, 0);
+    glDrawBuffers(2, both);
+    glClearBufferuiv(GL_COLOR, 1, far);
+}
+
+void port_GlGroundSlotsEnd(void) {
+    static const GLenum one[1] = {GL_COLOR_ATTACHMENT0};
+
+    glDrawBuffers(1, one);
+    glFramebufferTexture2D(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, 0, 0);
+}
+
 static s32 port_GlMakeTarget(void) {
     g_gl.draw_x = g_gl.scale_x * g_gl.sample;
     g_gl.draw_y = g_gl.scale_y * g_gl.sample;
@@ -858,6 +925,11 @@ static s32 port_GlMakeTarget(void) {
     glBindRenderbuffer(GL_RENDERBUFFER, g_gl.depth_buffer);
     glRenderbufferStorage(
         GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, g_gl.target_w, g_gl.target_h);
+    glBindTexture(GL_TEXTURE_2D, g_gl.slot_texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R16UI, g_gl.target_w, g_gl.target_h, 0,
+                 GL_RED_INTEGER, GL_UNSIGNED_SHORT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                            g_gl.color_texture, 0);
@@ -969,6 +1041,10 @@ static void port_GlSetUniforms(void) {
     glUniform1f(g_gl.at_w_scale, PORT_GL_DEPTH_UNIT);
     glUniform1f(g_gl.at_depth_range, PORT_GL_DEPTH_RANGE);
     glUniform1f(g_gl.at_depth_bias, PORT_GL_DEPTH_BIAS);
+    /* held against the slots of the ground only where port_GlFlush says
+     * the mesh wrote them into the buffer being drawn into */
+    glUniform1i(g_gl.at_ground_order, 0);
+    glUniform1i(g_gl.at_ground_slots, 1);
 }
 
 /* The batch's vertices kept for the shadows' mask, where they are not
@@ -1012,10 +1088,16 @@ static void port_GlFlush(void) {
      * buffer but the mesh, so the order the scene's own primitives are
      * painted in is untouched, and the test is off entirely in a frame
      * the mesh did not draw -- the buffer is then the frame before's. */
-    if (port_GlStageSaveFrame() && g_gl.options.is_stage_depth) {
+    if (g_gl.state.is_held) {
         glDepthFunc(GL_LESS);
         glDepthMask(GL_FALSE);
         glEnable(GL_DEPTH_TEST);
+        /* a fighter is held by the slots and not by the depth
+         * (port_GlIsOverGround) */
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, g_gl.slot_texture);
+        glActiveTexture(GL_TEXTURE0);
+        glUniform1i(g_gl.at_ground_order, 1);
     } else {
         glDisable(GL_DEPTH_TEST);
     }
@@ -1051,7 +1133,8 @@ static s32 port_GlStateIsSame(const PortGlState *a, const PortGlState *b) {
     return a->is_half == b->is_half && a->blend == b->blend &&
            a->clip_left == b->clip_left && a->clip_top == b->clip_top &&
            a->clip_right == b->clip_right && a->clip_bottom == b->clip_bottom &&
-           a->is_wide == b->is_wide && a->is_ground == b->is_ground;
+           a->is_wide == b->is_wide && a->is_ground == b->is_ground &&
+           a->is_held == b->is_held;
 }
 
 static void port_GlWant(const PortGlState *state, s32 vertices) {
@@ -1119,6 +1202,7 @@ static void port_GlPutVertex(
     to->window[1] = (u8)prim->window_or_u;
     to->window[2] = (u8)prim->window_and_v;
     to->window[3] = (u8)prim->window_or_v;
+    to->slot = (GLfloat)prim->ot_slot;
 }
 
 /* The w of a corner: any positive number in proportion to how far the
@@ -1286,6 +1370,30 @@ static void port_GlStateOf(const PortRemasterPrim *prim, PortGlState *state) {
     /* the ground the shadows fall on, which the mask they are kept in
      * does not take as something standing in them (gl_shadow.h) */
     state->is_ground = port_GlShadowIsGround(prim);
+    state->is_held =
+        port_GlStageSaveFrame() && g_gl.options.is_stage_depth ? TRUE : FALSE;
+}
+
+/* Whether this primitive is held against the ground by the console's own
+ * rule and not by the depth of each pixel (docs/PORT.md, "Depth: the
+ * scene is held against the ground"). The console hid nothing by depth:
+ * it painted every tile at the ordering-table slot of its farthest
+ * corner, so a terrace's face in front of a fighter that runs back past
+ * him was painted before him and he was drawn over it, and a face whose
+ * farthest corner is nearer than he is was painted over him. Held to the
+ * depth of each pixel he was hidden by the first as well. So a fighter's
+ * own -- his body, his cloth, a weapon -- is hidden where the face of
+ * the ground the pixel shows has a nearer slot than his own (the
+ * shader, `u_ground_slots`); an effect, which comes with no node and no
+ * slot, is never hidden. The stage's own pieces keep the depth of each
+ * pixel, which is what hides a fence behind a terrace, and so does a
+ * shadow, which lies on the ground and has its depth to within the
+ * offset. */
+static s32 port_GlIsOverGround(const PortRemasterPrim *prim) {
+    if (prim->is_shadow) {
+        return FALSE;
+    }
+    return prim->is_fighter || prim->id.object == 0;
 }
 
 static void port_GlDraw(const PortRemasterPrim *prim) {
@@ -1320,6 +1428,9 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     }
     if (prim->has_depth) {
         flags |= FLAG_DEPTH;
+    }
+    if (port_GlIsOverGround(prim)) {
+        flags |= FLAG_OVER_GROUND;
     }
     /* drawn where the chip put it, by whole pixels of video memory: so
      * its texel and its colour are read as the chip read them, once a
@@ -1805,6 +1916,8 @@ const char *port_GlStart(
     g_gl.at_w_scale = glGetUniformLocation(g_gl.program, "u_w_scale");
     g_gl.at_depth_range = glGetUniformLocation(g_gl.program, "u_depth_range");
     g_gl.at_depth_bias = glGetUniformLocation(g_gl.program, "u_depth_bias");
+    g_gl.at_ground_slots = glGetUniformLocation(g_gl.program, "u_ground_slots");
+    g_gl.at_ground_order = glGetUniformLocation(g_gl.program, "u_ground_order");
     g_gl.at_pass = glGetUniformLocation(g_gl.program, "u_pass");
     g_gl.blit_at_target = glGetUniformLocation(g_gl.blit_program, "u_target");
     g_gl.blit_at_rect = glGetUniformLocation(g_gl.blit_program, "u_rect");
@@ -1846,6 +1959,7 @@ const char *port_GlStart(
     glGenTextures(1, &g_gl.color_texture);
     glGenFramebuffers(1, &g_gl.framebuffer);
     glGenRenderbuffers(1, &g_gl.depth_buffer);
+    glGenTextures(1, &g_gl.slot_texture);
     glGenTextures(1, &g_gl.picture_texture);
     glGenFramebuffers(1, &g_gl.picture_framebuffer);
     if (!port_GlMakeTarget()) {

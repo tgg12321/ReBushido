@@ -49,10 +49,11 @@ typedef struct {
      * table says, which is what the prover measures a stage with
      * (tools/port_stage_prove.py). */
     s32 is_stage_mesh;
-    /* The scene held against the ground's own depth, so that a piece of
+    /* The scene held against the ground's own depth, and a fighter
+     * against the slots its faces were sorted at, so that a piece of
      * ground between the camera and a fighter veils him again
-     * (PORT_GL_DEPTH_RANGE below). On with the mesh; off is for
-     * measuring what the test itself changed. */
+     * (PORT_GL_DEPTH_RANGE below, gl_draw.c). On with the mesh; off is
+     * for measuring what the test itself changed. */
     s32 is_stage_depth;
     /* How much the fighters' shadows darken the ground they fall on, in
      * hundredths: 0 for the game's own black silhouettes, which is what
@@ -235,6 +236,13 @@ extern void port_GlFlushBatch(void);
 extern void port_GlForgetState(void);
 /* Vertices and draws added to the frame's counts. */
 extern void port_GlCountDraw(u32 vertices, u32 draws);
+/* Around the draw of the ground's mesh (gl_stage.c): its second output,
+ * the ordering-table slot of the face each pixel shows, goes into a
+ * buffer of its own, against which a fighter is held as the console held
+ * him (gl_draw.c, docs/PORT.md, "Depth: the scene is held against the
+ * ground"). Begin clears it; End leaves it to be read. */
+extern void port_GlGroundSlotsBegin(void);
+extern void port_GlGroundSlotsEnd(void);
 
 /* ---- into a window (src/port/window/sdl_window.c) ---- */
 
