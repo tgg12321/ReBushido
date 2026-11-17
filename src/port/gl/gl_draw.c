@@ -323,6 +323,7 @@ static struct {
     GLint at_vram;
     GLint at_affine;
     GLint at_exact;
+    GLint at_like_emulator;
     GLint at_bilinear;
     GLint at_minify;
     GLint at_pass;
@@ -467,6 +468,8 @@ static const char g_gl_geometry_text[] =
     "layout(triangle_strip, max_vertices = 4) out;\n"
     "uniform vec2 u_target;\n"
     "uniform vec2 u_scale;\n"
+    /* the software GPU draws as the emulator does (port_gpu.h) */
+    "uniform int u_like_emulator;\n"
     "flat in float g_slot[];\n"
     "in vec2 g_texture[];\n"
     "noperspective in vec2 g_texture_flat[];\n"
@@ -571,7 +574,15 @@ static const char g_gl_geometry_text[] =
     "        across[k] = divide(int(uint(cross_x) << 12u), whole);\n"
     "        down[k] = divide(int(uint(cross_y) << 12u), whole);\n"
     "        start[k] = int((uint(from) << 12u) + 2048u);\n"
+    /* as the emulator: from the first corner, a half added and the
+     * whole number taken (port_InterpolateWhole) */
+    "        if (u_like_emulator != 0) {\n"
+    "            across[k] = cross_x;\n"
+    "            down[k] = cross_y;\n"
+    "            start[k] = first[k];\n"
+    "        }\n"
     "    }\n"
+    "    if (u_like_emulator != 0) { origin = 0; }\n"
     /* a pixel either way beyond the corners: every block the chip's rule
      * may keep is inside it */
     "    vec2 low = floor(min(min(p0, p1), p2)) - vec2(1.0);\n"
@@ -592,11 +603,11 @@ static const char g_gl_geometry_text[] =
     "                       + b2 * g_texture_flat[2];\n"
     "        v_color = b0 * g_color[0] + b1 * g_color[1] + b2 * g_color[2];\n"
     "        v_corners = ivec4(c0, c1);\n"
-    "        v_corner = ivec4(c2, 1, origin);\n"
+    "        v_corner = ivec4(c2, u_like_emulator != 0 ? 2 : 1, origin);\n"
     "        v_across = ivec4(across[0], across[1], across[2], across[3]);\n"
     "        v_down = ivec4(down[0], down[1], down[2], down[3]);\n"
     "        v_start = ivec4(start[0], start[1], start[2], start[3]);\n"
-    "        v_last = ivec4(across[4], down[4], start[4], 0);\n"
+    "        v_last = ivec4(across[4], down[4], start[4], whole);\n"
     /* as the vertex shader places a corner; a flat polygon's w is 1 */
     "        vec2 at = q * u_scale + vec2(0.5);\n"
     "        gl_Position = vec4(at / u_target * 2.0 - vec2(1.0), 0.0, 1.0);\n"
@@ -678,6 +689,25 @@ static const char g_gl_fragment_text[] =
     "void chip_values(ivec2 p, out int value[5]) {\n"
     "    ivec2 origin = v_corner.w == 0 ? v_corners.xy\n"
     "                 : v_corner.w == 1 ? v_corners.zw : v_corner.xy;\n"
+    /* as the emulator: each value from the first corner by its changes
+     * times the triangle's area, a half added and rounded down
+     * (port_InterpolateWhole) */
+    "    if (v_corner.z == 2) {\n"
+    "        ivec2 d = p - v_corners.xy;\n"
+    "        int area = v_last.w;\n"
+    "        for (int k = 0; k < 5; k++) {\n"
+    "            int start = k < 4 ? v_start[k] : v_last.z;\n"
+    "            int change = (k < 4 ? v_across[k] : v_last.x) * d.x\n"
+    "                       + (k < 4 ? v_down[k] : v_last.y) * d.y;\n"
+    "            int top = 2 * (start * area + change) + area;\n"
+    "            int bottom = 2 * area;\n"
+    "            if (bottom < 0) { top = -top; bottom = -bottom; }\n"
+    "            int q = top >= 0 ? top / bottom\n"
+    "                             : -((bottom - 1 - top) / bottom);\n"
+    "            value[k] = q & 255;\n"
+    "        }\n"
+    "        return;\n"
+    "    }\n"
     "    uvec2 walk = uvec2(p - origin);\n"
     "    for (int k = 0; k < 4; k++) {\n"
     "        uint sum = uint(v_start[k]) + uint(v_across[k]) * walk.x\n"
@@ -1278,6 +1308,7 @@ static void port_GlSetUniforms(void) {
     glUniform2f(g_gl.at_scale, (GLfloat)g_gl.draw_x, (GLfloat)g_gl.draw_y);
     glUniform1i(g_gl.at_affine, g_gl.options.is_exact ? 1 : 0);
     glUniform1i(g_gl.at_exact, g_gl.options.is_exact ? 1 : 0);
+    glUniform1i(g_gl.at_like_emulator, port_GpuIsLikeEmulator() ? 1 : 0);
     glUniform1i(
         g_gl.at_bilinear, (g_gl.options.is_bilinear && !g_gl.options.is_exact));
     /* the texels of a fragment averaged where it covers more than one of
@@ -2165,6 +2196,8 @@ const char *port_GlStart(
     g_gl.at_vram = glGetUniformLocation(g_gl.program, "u_vram");
     g_gl.at_affine = glGetUniformLocation(g_gl.program, "u_affine");
     g_gl.at_exact = glGetUniformLocation(g_gl.program, "u_exact");
+    g_gl.at_like_emulator =
+        glGetUniformLocation(g_gl.program, "u_like_emulator");
     g_gl.at_bilinear = glGetUniformLocation(g_gl.program, "u_bilinear");
     g_gl.at_minify = glGetUniformLocation(g_gl.program, "u_minify");
     g_gl.at_w_scale = glGetUniformLocation(g_gl.program, "u_w_scale");
