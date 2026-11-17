@@ -796,6 +796,29 @@ static FighterModel *port_GlFighterWeaponModel(s32 weapon) {
     return port_GlFighterLoad(&g_fighter.weapon_model[weapon], name);
 }
 
+void port_GlFighterPreload(void) {
+    s32 i;
+
+    if (!g_fighter.is_on || !g_fighter.is_started) {
+        return;
+    }
+    for (i = 0; i < PORT_FIGHTER_SLOTS; i++) {
+        s32 model_id = port_FighterLoadedModel(i);
+
+        if (model_id >= 0) {
+            port_GlFighterModel(model_id);
+        }
+    }
+    for (i = 0; i < WEAPON_FILES; i++) {
+        s32 weapon = port_FighterLoadedWeapon(i);
+
+        if (weapon < 0) {
+            break;
+        }
+        port_GlFighterWeaponModel(weapon);
+    }
+}
+
 /* ---- a frame ---- */
 
 void port_GlFighterNewFrame(void) { g_fighter.is_drawn = FALSE; }

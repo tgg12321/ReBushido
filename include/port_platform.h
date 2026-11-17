@@ -321,6 +321,11 @@ extern void (*g_port_crash_hook)(void);
 /* The disc's drive begins to read data at a sector (`kind` 1), begins
  * to play a stream of sound there (2), or stops reading at one (0). */
 extern void (*g_port_disc_hook)(s32 kind, u32 sector);
+/* Above 0 while the game waits for the disc with its loading screen up
+ * (cdrom_WaitIdle): the blanks the window may hurry through, whose
+ * game is the same however soon they are shown (docs/PORT.md, "Quick
+ * loading"). It is 0 at every frame's boundary. */
+extern s32 g_port_load_wait;
 /* The last functions of the game that began, for a fault's report: a
  * ring, the newest at (g_port_recent_call_count - 1) modulo its size. */
 #define PORT_RECENT_CALLS 32

@@ -116,7 +116,8 @@ and a key or a button still held as the menu closes is not given to the
 game until it is let go. The sound runs out and comes back.
 
 What changes at once: the full screen, the picture's size and its
-pixels, waiting for the display, the counter and its corner, Graphics
+pixels, waiting for the display, the counter and its corner, quick
+loading, Graphics
 (as F2), the resolution, the ground as one mesh, the shadows, the dead
 zone, and the buttons. What waits for the program to start again is said
 on its line, `(after a restart)`: antialiasing, the draw distance, the
@@ -166,6 +167,7 @@ mods = off               # none of the mods in mods/ (on is the default)
 english = off            # the top menu in Japanese (on is the default)
 ui = off                 # the menus' own lettering (on is the default)
 music_mods = off         # the game's own music (on is the default)
+quick_loading = off      # every blank of a load at the console's pace
 p1.cross = key Space     # Space is player one's Cross, and Z no longer
 p1.circle = key Left Ctrl
 p2.start = pad a         # on player two's controller, A is Start
@@ -284,6 +286,17 @@ shows the console's own picture until the cut is over.
 What Remastered does **not** do yet: new lighting. That is the step
 after it ([`ROADMAP.md`](ROADMAP.md), item 7). The fighters' shadows it
 does do, where `shadows` asks for them (above).
+
+## Loading
+
+The port reads your disc image as fast as the PC reads a file, so a
+load is not the drive's time but the game's own way of waiting for it:
+a fixed number of the console's blanks for each file, about 0.6 seconds
+a file at the console's pace, eleven files before a fight.
+
+| | | |
+|---|---|---|
+| `quick_loading` | `on`, `off` | `on`, which is the default: the blanks in which the game waits for the disc behind its loading picture (the map and the title, or a black screen) are **hurried through**, not shown one by one at the console's 60 a second; a fight's load is then a blink rather than six seconds. A loading screen you read -- story mode's card of the next stage, the team battle's scores -- stays up two seconds before its load is hurried. The fighters' own models (Remastered) are read during the load too, not at the fight's first frame. `off` shows every blank, as the console's pace. **Nothing the game computes changes** either way: it is the same game, its fades and its timings are its own, and online both players still meet at every load. `--quick-loading on|off` says it on the command line. |
 
 ## Mods
 

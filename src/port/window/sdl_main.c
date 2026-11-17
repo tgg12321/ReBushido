@@ -61,7 +61,7 @@ static const char g_port_window_usage[] =
     "            [--log FILE] [--graphics original|remastered]\n"
     "            [--resolution N] [--draw-distance original|far|max]\n"
     "            [--antialiasing off|2|4] [--aspect W:H]\n"
-    "            [--frame-rate original|display|N]\n"
+    "            [--frame-rate original|display|N] [--quick-loading on|off]\n"
     "\n"
     "  --image FILE   your own image of the game's disc: the .cue, or the\n"
     "                 .bin of raw sectors it names. Without it the first\n"
@@ -117,6 +117,11 @@ static const char g_port_window_usage[] =
     "                 picture between two of its frames is drawn from\n"
     "                 frames it has worked out already. It needs the\n"
     "                 remastered picture\n"
+    "  --quick-loading W  on, the default: the waits for the disc behind\n"
+    "                 a loading picture are hurried through; off: each\n"
+    "                 blank of them at the console's pace, as a run with\n"
+    "                 --plan or --frames has it unless this says on. The\n"
+    "                 game computes the same either way\n"
     "\n"
     "In the window: F1 opens the settings menu (Select does on the\n"
     "options page, the top menu and the pause, and a controller's guide\n"
@@ -657,6 +662,11 @@ int main(int argc, char **argv) {
             options->fault_in_sound = atoi(argv[++i]);
         } else if (strcmp(word, "--fast") == 0) {
             options->is_fast = 1;
+        } else if (strcmp(word, "--quick-loading") == 0 && has_value) {
+            options->quick_loading =
+                PORT_QUICK_OFF +
+                port_ChooseWord("--quick-loading takes off or on, not ",
+                                argv[++i], "off", "on", NULL);
         } else if (strcmp(word, "--config") == 0 && has_value) {
             config = argv[++i];
         } else if (strcmp(word, "--scale") == 0 && has_value) {
@@ -854,6 +864,10 @@ int main(int argc, char **argv) {
          * this many blanks is a year. */
         passed[count++] = frames_option;
         passed[count++] = frames_endless;
+    } else if (options->quick_loading == PORT_QUICK_SETTINGS) {
+        /* a test's run keeps the console's pace through the loads, as
+         * every test's picture and sound were taken with it */
+        options->quick_loading = PORT_QUICK_OFF;
     }
     if (!has_mods && !g_port_settings.mods) {
         /* the settings file turned them off (docs/MODS.md) */
