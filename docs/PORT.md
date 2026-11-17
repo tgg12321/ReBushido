@@ -2622,6 +2622,179 @@ frame (2,459 to 2,923). It is drawn in one go: one draw of the whole
 stage, with no blending, and one more read of a colour table a sample
 for the fog.
 
+### The sky
+
+**What the console has.** No sky. A fight's frame begins with a fill of
+the stage's colour of the distance (`light_SetFarColor`, `light.c`), and
+that colour is what shows wherever the stage's geometry does not cover
+the picture. On every one of the 38 stages it is black or nearly
+(`0x000000` to `0x101020`): the game is set at night, and above an open
+stage there is a flat dark. Only the castle rooftop has more: a backdrop
+of a sky with a full moon, a prop kept a fixed way off from the camera
+(`stage_DrawBackdrop`, `stage_hooks.c`).
+
+**`sky = night`** (`src/port/gl/gl_sky.c`) paints a night sky of the
+port's own **in the place of that fill and nowhere else**, on the stages
+open to it. It is one triangle over the frame, drawn where the fill was
+(`port_GlSkyCleared`, from `port_GlWroteVram` when the game's write is
+the frame's own one-colour clear), so every primitive of the scene is
+painted over it exactly as over the fill: nothing of the stage's own
+geometry, its order or its depth changes. Each pixel works out the
+direction it looks in from the view the ground's mesh is drawn with --
+the coprocessor's rotation, its projection distance and its screen
+offsets, carried out of the renderer (`PortStageView`) -- and the sky is
+a function of that direction alone, so it turns with the camera and,
+being infinitely far, never moves as the camera moves. A picture between
+two frames draws it with the camera between them, as it draws the
+ground (`port_GlStageViewNow`). It is made of:
+
+- **a gradient** that is exactly the colour of the distance at the
+  horizon and a little below it, which is the colour the stage's own fog
+  fades to, so the fogged ground runs into the sky with no seam; just
+  above the horizon a glow of the stage's own ambient light
+  (`LIGHT_SCENERY`'s colour of the dark), darkening upwards to a deep
+  night -- a navy sky over the lost bridge, a purple one over the
+  cemetery, each from the stage's own lighting;
+- **stars**, two layers on the faces of a cube about the eye, a pixel
+  wide, fewer towards the horizon;
+- **a moon** where the stage's light comes from (the scenery's sun,
+  seen from above whichever way its vector is meant), placed low enough
+  to be in a fight's view -- the camera looks along the ground and sees
+  little more than a fifth of the way up -- with a halo and seas;
+- **a few thin clouds**, low and lit from the moon's side, which hide
+  the stars behind them.
+
+**Which stages.** Looked at stage by stage over the prover's tour of
+each (`tools/port_stage_prove.py`, the pictures every 300 blanks of all
+38): the halls, the dojos, the parking garage, the purple cavern and
+the two practice floors keep the game's colour -- a star in the
+gap above a hall's walls would be a hole, not a sky -- and so does the
+castle rooftop, which has a sky and a moon of its own, and stage 37, a
+small model of a castle town seen from afar. The other 28 have it
+(`g_sky_open`). The run's log says which, once a stage (`gl sky: stage
+N is open`).
+
+**A mod's sky.** A PNG in a mod's `skies/` folder, `stage_NN.png` for
+one stage or `default.png` for every open stage without one, is used in
+the place of the procedural sky: an equirectangular picture, wrapped
+round the eye from left to right and from the zenith at its top to the
+nadir at its bottom ([`MODS.md`](MODS.md), "Skies").
+
+**The far edge of the ground.** At `draw_distance max` the ground is
+drawn to the stage's own last cell ("How far the stage is drawn"), and
+where that edge is in view it is a line against what is beyond it. The
+sky does not move the edge, and keeps the colour beyond it the stage's
+own colour of the distance -- the band just under the horizon is that
+colour -- so the stage's fog, which is pushed out with the distance and
+fades the ground towards that same colour, is what hides it; a stage
+whose ground ends nearer than its fog does still shows the line, as it
+did. What a stage that stands high shows under the horizon (a bridge, a
+rooftop) is that same dark.
+
+**What it is not held to.** The provers hold the picture to the
+console's own: with nothing said `rebushido-gl` draws the game's fill
+(`--sky original`), so `port_gl_prove.py`, `port_fps_prove.py` and
+`port_stage_prove.py` measure what they measured before. `--sky night`
+draws it. The window starts with `night` -- the owner's call: nobody
+has looked at it on a real screen.
+
+| Measured | |
+|---|---|
+| Stages with a sky | 28 of 38 |
+| A frame of a fight | one more draw of three vertices, before the scene |
+| The game's trace | untouched: nothing of the game is read but the stage's lighting and the view the ground already takes |
+| `port_game` (the building's rooftop) drawn as five pictures a frame, with the sky and the walls seen through | 697 frames checked; phase 0 the game's own frame in every one (0 pixels apart); none out of order, and the watched point off its line in 4 -- the same numbers as without them |
+| The sky between two frames | it moves a step a phase: of the picture's top fifth at blank 3000, 664, 1,442, 2,240 and 3,065 pixels apart from phase 0 at phases 1 to 4 |
+
+### Seeing the fighters through the stage
+
+**What the console does.** A tile of the stage that can hide a fighter
+from the camera is drawn half-transparent while it is in the way
+(`STAGE_TILE_OPEN`, `stage_Draw`): the cells on the line from the camera
+to each fighter are marked (`stage_OpenCellsTo`), and a tile of those
+cells whose data says it may open (`STAGE_TILE_CAN_OPEN`) is drawn mixed
+with what is behind it.
+That is the game's own intent -- the player is to see his fighter -- but
+it is only for the tiles the stage's data marks, by whole cells and at
+half strength, and a face of the stage that the data did not mark hides
+a fighter completely. The cavern's near wall in `port_other_fight` is
+the plain case: at blank 3260 it stands between the camera and the
+second fighter and hides him from the knees down.
+
+**`see_through = on`** (`src/port/gl/gl_see.c`, and the ground mesh's
+shader in `gl_stage.c`) thins **every face of the ground's mesh** that
+stands between the camera and a fighter, the way modern fighting and
+action games do:
+
+- **Where the fighters are.** Each fighter is an upright cylinder about
+  the bones the game drew him with (`port_GetFighterView`): its axis at
+  the mean of his bones, from the highest of them, with a head's height
+  more, down to the lowest, and as wide as his widest bone from that
+  axis with a body's width more (at least 420 world units, at most
+  1,100).
+- **What is in the way.** A pixel of the mesh is in the way of a fighter
+  where the line from the camera through it passes, seen from above,
+  within his cylinder's reach, between his head and his feet, and
+  farther on than the pixel by more than a step (80 to 320 units, softly).
+  A face the line meets below his feet is the ground under him and not
+  a wall in front of him.
+- **Never the floor.** A face that lies flat (its normal within 45
+  degrees of upright) and is seen from above is ground someone may stand
+  on, and is never thinned; the underside of a roof, seen from below, may
+  be.
+- **How it is thinned.** A pixel in the way is left out by an ordered
+  dither of four by four pixels of the picture, at most four in five of
+  them, fewer towards the cylinder's edge: a soft-edged hole through the
+  wall the size of the fighter. With `antialiasing` the dither is
+  averaged into a fade. The mesh stays one draw with no blending: the
+  ground is painted first in the game's order, before the fighter, so a
+  wall mixed over him by alpha could not be -- a pixel left out leaves
+  the fighter, painted after, to show through.
+
+**It overrides the console's slot rule, on purpose.** A fighter is held
+against the ground by the ordering-table slot of the face each pixel
+shows ("Depth: the scene is held against the ground"): a face whose
+every corner is nearer than he is veils him, as the console painted it
+over him. A pixel the see-through leaves out writes neither a depth nor
+a slot, so where a wall is thinned the fighter behind it shows through
+it, though the console would have painted the wall over him. That is
+the point of the setting: the game's own `STAGE_TILE_OPEN` says the
+designers meant a fighter behind a wall to be seen, and the slot rule is
+kept everywhere else -- a floor is never thinned, so a fighter below the
+edge of a terrace that the console hid by the terrace's top is hidden
+still. With the setting off the picture is the slot rule's alone.
+
+**What it does not thin.** The stage's pieces that are not ground -- a
+fence, a tree, a pillar of the stage's props -- are the game's own
+primitives, drawn by the renderer's shader and not the mesh's
+(`gl_draw.c`); they are thin, and are left as they are. A tile the game
+opens itself is the game's own half-transparent primitive, as before.
+
+**Measured** (`rebushido-gl --see-through on` against `off`, every tenth
+blank of the three play tests and every 30th of the prover's tour of
+four stages, at scale 1 and 16:9; pictures differing by more than 24 in
+a channel):
+
+| Run | Pictures | Changed | Pixels |
+|---|---|---|---|
+| `port_game` (the building's rooftop) | 367 | 0 | 0 |
+| `port_other_fight` (the purple cavern) | 391 | 19 | 738, of which 535 at blank 3260: the cavern's near wall over the second fighter's legs |
+| `port_bugfixes` (the building's rooftop) | 370 | 0 | 0 |
+| tour of the orange tree fields | 41 | 15 | 9,202: a tree's crown in front of a fighter's sword arm |
+| tours of the castle rooftop, the terraced fields, the purple cavern | 41 each | 0 | 0 |
+
+It changes nothing at all where nothing is in the way, which is almost
+every picture of a fight: a fight's camera is placed to see both
+fighters. The first shape tried, a capsule round the bones, reached
+below a fighter's feet and thinned the face of the castle's ridge under
+him in all 41 pictures of that tour; the cylinder cut at his feet thins
+nothing there. At blank 3260 at twice the scale, drawn again between two
+frames, 6,511 pixels of the wall are thinned and the fighter's hakama
+shows through it.
+
+The window starts with `on` -- the owner's call, not yet seen on a real
+screen. The provers draw it only when asked (`--see-through on`).
+
 ### The shadows
 
 **What the game does.** A shadow in this game is not a blob: it is the

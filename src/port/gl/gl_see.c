@@ -19,6 +19,10 @@
  * joint: the head and the hair */
 #define SEE_HEAD 260.0f
 
+/* Steps of the square root's iteration, at the most: it halves its error
+ * each step from far off, then doubles its digits. */
+#define ROOT_STEPS 64
+
 static s32 g_see_on;
 
 /* A square root, to a part in a million: Newton's, from above. (The
@@ -30,7 +34,7 @@ static double port_GlSeeRoot(double value) {
     if (value <= 0.0) {
         return 0.0;
     }
-    for (i = 0; i < 64; i++) {
+    for (i = 0; i < ROOT_STEPS; i++) {
         double next = 0.5 * (root + value / root);
 
         if (next >= root) {
@@ -45,6 +49,9 @@ void port_GlSeeSetOn(s32 on) { g_see_on = on; }
 
 s32 port_GlSeeIsOn(void) { return g_see_on; }
 
+/* Each fighter of the frame as a cylinder about his bones: the mean of
+ * them for its axis, the highest and the lowest for its ends, the widest
+ * for its reach (gl_see.h). */
 s32 port_GlSeeFighters(PortSeeFighter *out) {
     u32 serial = port_FighterSerial();
     s32 count = 0;
@@ -69,23 +76,23 @@ s32 port_GlSeeFighters(PortSeeFighter *out) {
             continue;
         }
         for (bone = 0; bone < PORT_FIGHTER_BONES; bone++) {
-            const s32 *t = view->bone[bone].t;
+            const s32 *place = view->bone[bone].t;
 
-            x += t[0];
-            z += t[2];
-            if (bone == 0 || t[1] < top) {
-                top = t[1];
+            x += place[0];
+            z += place[2];
+            if (bone == 0 || place[1] < top) {
+                top = place[1];
             }
-            if (bone == 0 || t[1] > bottom) {
-                bottom = t[1];
+            if (bone == 0 || place[1] > bottom) {
+                bottom = place[1];
             }
         }
         x /= PORT_FIGHTER_BONES;
         z /= PORT_FIGHTER_BONES;
         for (bone = 0; bone < PORT_FIGHTER_BONES; bone++) {
-            const s32 *t = view->bone[bone].t;
-            double dx = t[0] - x;
-            double dz = t[2] - z;
+            const s32 *place = view->bone[bone].t;
+            double dx = place[0] - x;
+            double dz = place[2] - z;
             double apart = port_GlSeeRoot(dx * dx + dz * dz);
 
             if (apart > widest) {

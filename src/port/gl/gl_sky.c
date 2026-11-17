@@ -108,6 +108,16 @@ PORT_GL_SKY_FUNCTIONS
 
 /* The game's 38 stages (STAGE_COUNT). */
 #define SKY_STAGES 38
+/* A colour's channel at its brightest, and one of the coprocessor's
+ * fractions (1.12) */
+#define CHANNEL_MAX 255.0f
+#define GTE_ONE 4096.0f
+/* A rotation's nine numbers */
+#define MATRIX_ELEMENTS 9
+/* How long a shader's complaint and a mod's file's key may be */
+#define LOG_SIZE 512
+#define KEY_SIZE 16
+#define PROBLEM_SIZE 96
 
 /* Which stages are open to the sky: looked at, stage by stage, over the
  * prover's tour of each (tools/port_stage_prove.py; docs/PORT.md, "The
@@ -354,7 +364,7 @@ static GLuint port_GlSkyShader(GLenum kind, const char *text) {
     glCompileShader(shader);
     glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
     if (!ok) {
-        char log[512];
+        char log[LOG_SIZE];
 
         log[0] = 0;
         glGetShaderInfoLog(shader, sizeof(log), NULL, log);
@@ -365,6 +375,7 @@ static GLuint port_GlSkyShader(GLenum kind, const char *text) {
     return shader;
 }
 
+/* The functions, the shader and its uniforms (gl_sky.h). */
 const char *port_GlSkyStart(void *(*getproc)(const char *name)) {
     GLuint vertex;
     GLuint fragment;
@@ -428,10 +439,10 @@ const char *port_GlSkyNews(void) {
  * `skies/default.png` for every stage it has none for), on the card, or
  * 0. Looked for once a stage. */
 static GLuint port_GlSkyPicture(s32 stage) {
-    char key[16];
+    char key[KEY_SIZE];
     const char *path;
     PortPngInfo info;
-    char problem[96];
+    char problem[PROBLEM_SIZE];
     u32 size;
     u8 *file = NULL;
     u8 *work = NULL;
@@ -499,7 +510,7 @@ static void port_GlSkyLight(
     s32 i;
 
     for (i = 0; i < 3; i++) {
-        ambient[i] = (GLfloat)lights->back[i] / 255.0f;
+        ambient[i] = (GLfloat)lights->back[i] / CHANNEL_MAX;
         /* the sun's colour, 1.12, made pale: a moon's */
         moon_color[i] =
             (GLfloat)(0.55 + 0.35 * (double)lights->cmat.m[i][0] / 4096.0);
@@ -507,12 +518,14 @@ static void port_GlSkyLight(
     }
 }
 
+/* The frame's own clear has just been drawn: the sky over it, where the
+ * frame is a fight's on a stage open to the sky (gl_sky.h). */
 void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color) {
     const PortStageView *view;
     PortGlPicture picture;
     s32 is_between = FALSE;
     s32 stage;
-    GLfloat turn[9];
+    GLfloat turn[MATRIX_ELEMENTS];
     GLfloat ambient[3];
     GLfloat moon[3];
     GLfloat moon_color[3];
@@ -558,8 +571,8 @@ void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color) {
     /* a direction in the view into the world's: the rotation's
      * transpose, which in the card's order of a column after a column is
      * the matrix's own order */
-    for (i = 0; i < 9; i++) {
-        turn[i] = (GLfloat)view->matrix[i] / 4096.0f;
+    for (i = 0; i < MATRIX_ELEMENTS; i++) {
+        turn[i] = (GLfloat)view->matrix[i] / GTE_ONE;
     }
     port_GlSkyLight(ambient, moon, moon_color);
     glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
@@ -575,9 +588,9 @@ void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color) {
     glUniform1f(g_sky.at_h, (GLfloat)view->h);
     glUniform2f(
         g_sky.at_scale, (GLfloat)picture.draw_x, (GLfloat)picture.draw_y);
-    glUniform3f(g_sky.at_far, (GLfloat)((color >> 16) & 0xFF) / 255.0f,
-                (GLfloat)((color >> 8) & 0xFF) / 255.0f,
-                (GLfloat)(color & 0xFF) / 255.0f);
+    glUniform3f(g_sky.at_far, (GLfloat)((color >> 16) & 0xFF) / CHANNEL_MAX,
+                (GLfloat)((color >> 8) & 0xFF) / CHANNEL_MAX,
+                (GLfloat)(color & 0xFF) / CHANNEL_MAX);
     glUniform3f(g_sky.at_ambient, ambient[0], ambient[1], ambient[2]);
     glUniform3f(g_sky.at_moon, moon[0], moon[1], moon[2]);
     glUniform3f(
