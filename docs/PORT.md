@@ -1719,7 +1719,7 @@ they are:
 | The stage's fog | `stage_QueueFog` | copies inside video memory, 31 rows of colour tables a frame |
 | The character select's portraits | `select.c`'s sprite pools | loads from the program into pages, then textured rectangles |
 | The replay and the menus over the scene | 2D primitives | drawn as they are, crisp |
-| The movie | the overlay, 24-bit mode | **not done**: the display in the mode of three bytes a pixel is left to the software GPU's picture |
+| The movie | the overlay, 24-bit mode | **not done**: the display in the mode of three bytes a pixel, and the title picture after it, are left to the software GPU's picture, which the window shows while the player runs ("Remastered in the window") |
 
 **Nothing reads back what the card drew.** The game reads video memory
 with `StoreImage`, and that is the software GPU's, which is still
@@ -2919,6 +2919,16 @@ prover does with EGL and no display, the window does with SDL:
 - with Graphics Original the same path shows the software GPU's own
   pixels as a texture (`port_GlShowPixels`), so that one context draws
   both pictures and F2 costs nothing but a different source;
+- **the movie is the software GPU's picture** whichever is chosen, and
+  so is the title picture the player holds after it: the player's
+  display is in the 24-bit mode the card does not draw, and the title
+  picture is loaded into video memory at x 480, outside the game's
+  display, where a wider picture's stretch of video memory does not
+  reach. `port_MovieIsPlaying` (`src/port/movie.c`) is true while the
+  player runs; the window then fits the frame as with Graphics
+  Original, smoothed because it is video, and the counter sits on it.
+  (With F2 on the window showed black through the whole movie and the
+  title until this was done; the frames were decoded all along);
 - the counter in the corner (F3) is its own few pixels over either
   picture, by the same call with the box's alpha kept; the session's log
   is the window's as it was;
