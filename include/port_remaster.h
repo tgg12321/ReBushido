@@ -772,6 +772,10 @@ extern void port_RemasterPause(s32 what, s32 from_x, s32 from_y);
 /* Whether a pause is holding the fight's picture now: a picture between
  * two frames (gl_tween.h) is not drawn then. */
 extern s32 port_RemasterIsHolding(void);
+/* Whether the primitives coming are the fight's last table drawn again
+ * (from PORT_PAUSE_FROZEN to PORT_PAUSE_PANEL): what the scene was, with
+ * none of what the side channel said of it. */
+extern s32 port_RemasterIsRedrawing(void);
 /* What keeps the picture and puts it back: called with PORT_PAUSE_FROZEN,
  * the corner the fight's last frame is at and the corner of the drawing
  * area the table would be drawn into now, and with PORT_PAUSE_OFF as the

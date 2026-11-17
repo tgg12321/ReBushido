@@ -24,6 +24,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_replace.h"
 #include "gl_shadow.h"
 #include "gl_stage.h"
 #include "port_gpu.h"
@@ -268,6 +269,13 @@ typedef struct {
      * begun the next frame, and asked then it was held against nothing
      * at all. */
     s32 is_held;
+    /* A mod's replacement of the batch's texture (gl_replace.h), 0 for
+     * none, and the texture points of the page it stands for. */
+    u32 replace_texture;
+    s32 replace_u;
+    s32 replace_v;
+    s32 replace_w;
+    s32 replace_h;
 } PortGlState;
 
 static struct {
@@ -335,6 +343,11 @@ static struct {
     GLint blit_at_scale;
     GLint blit_at_vram;
     GLint blit_at_shift;
+    GLint at_replace;
+    GLint at_replaced;
+    GLint at_replace_rect;
+    GLint blit_at_replace;
+    GLint blit_at_replaced;
     GLint resolve_at_color;
     GLint resolve_at_sample;
     GLint resolve_at_at;
@@ -368,6 +381,7 @@ static struct {
     s32 display_w;
     s32 display_h;
     s32 display_is_on;
+    s32 display_is_rgb24; /* the movie's mode */
     u32 frame_time;
     u32 vertex_count;
     u32 draw_count;
@@ -444,6 +458,11 @@ static const char g_gl_fragment_text[] =
     "uniform int u_bilinear;\n"
     "uniform int u_minify;\n" /* the texels of a fragment averaged */
     "uniform int u_pass;\n"
+    /* a mod's picture in the place of the texture (gl_replace.h), and the
+     * texture points of the page it stands for: corner, then size */
+    "uniform sampler2D u_replace;\n"
+    "uniform int u_replaced;\n"
+    "uniform vec4 u_replace_rect;\n"
     /* the depth test against the ground's mesh: what a corner's own
      * depth was divided by to make its w, what a depth in the world's
      * units is divided by to make a value for the depth buffer, and how
@@ -505,6 +524,10 @@ static const char g_gl_fragment_text[] =
     "        discard;\n"
     "    }\n"
     "    vec2 uv = (u_affine != 0) ? v_texture_flat : v_texture;\n"
+    /* the texture point as it runs across the primitive, before it is
+     * stepped back to the corner of a block: what a mod's picture, which
+     * has texels of its own between the console's, is read at */
+    "    vec2 smooth_uv = uv;\n"
     "    vec3 color = v_color;\n"
     "    bool mixes = (v_flags.w & 4u) != 0u;\n"
     "    ivec2 pixel = ivec2(floor(gl_FragCoord.xy / u_scale));\n"
@@ -558,7 +581,27 @@ static const char g_gl_fragment_text[] =
     "        uint texel = 0u;\n"
     "        vec3 texel_color = vec3(0.0);\n"
     "        float weight = 0.0;\n"
-    "        if (u_bilinear != 0) {\n"
+    "        if (u_replaced != 0) {\n"
+    /* The mod's picture, smoothed. A texture point names the texel it
+     * is in, half a texel in from the corner the chip begins at, and a
+     * pixel of the picture is a block of `scale` of video memory's: so
+     * the point less that half, and half a pixel of the block on, is
+     * where in the region this pixel's middle is. Its alpha says what is
+     * clear, its colours were kept multiplied by it, and its texel of
+     * thirty-one to a channel is the console's own. Whether it mixes is
+     * still the console's texel's to say. */
+    "            vec2 step_across = (u_affine != 0) ? uv_across : wide_across;\n"
+    "            vec2 step_down = (u_affine != 0) ? uv_down : wide_down;\n"
+    "            vec2 at = (smooth_uv - vec2(0.5) + vec2(0.5) / u_scale\n"
+    "                       - u_replace_rect.xy) / u_replace_rect.zw;\n"
+    "            vec4 got = textureGrad(u_replace, at,\n"
+    "                                   step_across / u_replace_rect.zw,\n"
+    "                                   step_down / u_replace_rect.zw);\n"
+    "            if (got.a < 0.5) { discard; }\n"
+    "            texel_color = got.rgb / got.a * 31.0;\n"
+    "            texel = texel_at(int(floor(uv.x)), int(floor(uv.y)));\n"
+    "            weight = 1.0;\n"
+    "        } else if (u_bilinear != 0) {\n"
     /* four texels about the point, each one that is nothing left out,
      * so that a page's edge does not bleed */
     "            vec2 at = uv - vec2(0.5);\n"
@@ -693,9 +736,18 @@ static const char g_gl_blit_vertex_text[] =
 static const char g_gl_blit_fragment_text[] =
     "#version 330 core\n"
     "uniform usampler2D u_vram;\n"
+    /* a mod's picture in the place of the rectangle (gl_replace.h) */
+    "uniform sampler2D u_replace;\n"
+    "uniform int u_replaced;\n"
+    "uniform vec4 u_rect;\n"
     "in vec2 v_at;\n"
     "out vec4 o_color;\n"
     "void main() {\n"
+    "    if (u_replaced != 0) {\n"
+    "        vec4 got = texture(u_replace, (v_at - u_rect.xy) / u_rect.zw);\n"
+    "        o_color = vec4(got.rgb / max(got.a, 1.0 / 255.0), 1.0);\n"
+    "        return;\n"
+    "    }\n"
     "    ivec2 at = ivec2(floor(v_at));\n"
     "    uint pixel = texelFetch(u_vram, ivec2(at.x & 1023, at.y & 511), 0).r;\n"
     "    ivec3 five = ivec3(int(pixel & 31u), int((pixel >> 5) & 31u),\n"
@@ -1045,6 +1097,22 @@ static void port_GlSetUniforms(void) {
      * the mesh wrote them into the buffer being drawn into */
     glUniform1i(g_gl.at_ground_order, 0);
     glUniform1i(g_gl.at_ground_slots, 1);
+    glUniform1i(g_gl.at_replaced, 0);
+    glUniform1i(g_gl.at_replace, PORT_GL_REPLACE_UNIT);
+}
+
+/* The batch's replacement texture, where it has one (gl_replace.h). */
+static void port_GlSetReplacement(const PortGlState *state) {
+    if (state->replace_texture == 0) {
+        return;
+    }
+    glActiveTexture(GL_TEXTURE0 + PORT_GL_REPLACE_UNIT);
+    glBindTexture(GL_TEXTURE_2D, state->replace_texture);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(g_gl.at_replaced, 1);
+    glUniform4f(g_gl.at_replace_rect, (GLfloat)state->replace_u,
+                (GLfloat)state->replace_v, (GLfloat)state->replace_w,
+                (GLfloat)state->replace_h);
 }
 
 /* The batch's vertices kept for the shadows' mask, where they are not
@@ -1080,6 +1148,7 @@ static void port_GlFlush(void) {
         GL_ARRAY_BUFFER, (GLsizeiptr)((u32)g_gl.count * sizeof(*g_gl.vertices)),
         g_gl.vertices, GL_STREAM_DRAW);
     port_GlSetUniforms();
+    port_GlSetReplacement(&g_gl.state);
     /* The scene against the ground (gl_stage.h). The ground's mesh has
      * drawn its own depth into the buffer this frame, so a primitive of
      * the scene that stands behind a piece of ground is left out: what
@@ -1134,7 +1203,10 @@ static s32 port_GlStateIsSame(const PortGlState *a, const PortGlState *b) {
            a->clip_left == b->clip_left && a->clip_top == b->clip_top &&
            a->clip_right == b->clip_right && a->clip_bottom == b->clip_bottom &&
            a->is_wide == b->is_wide && a->is_ground == b->is_ground &&
-           a->is_held == b->is_held;
+           a->is_held == b->is_held &&
+           a->replace_texture == b->replace_texture &&
+           a->replace_u == b->replace_u && a->replace_v == b->replace_v &&
+           a->replace_w == b->replace_w && a->replace_h == b->replace_h;
 }
 
 static void port_GlWant(const PortGlState *state, s32 vertices) {
@@ -1372,6 +1444,27 @@ static void port_GlStateOf(const PortRemasterPrim *prim, PortGlState *state) {
     state->is_ground = port_GlShadowIsGround(prim);
     state->is_held =
         port_GlStageSaveFrame() && g_gl.options.is_stage_depth ? TRUE : FALSE;
+    state->replace_texture = 0;
+    state->replace_u = 0;
+    state->replace_v = 0;
+    state->replace_w = 0;
+    state->replace_h = 0;
+}
+
+/* A mod's picture of the primitive's texture, where there is one
+ * (gl_replace.h): never in the console's own picture. */
+static void port_GlReplacementOf(
+    const PortRemasterPrim *prim, PortGlState *state) {
+    PortGlReplacement found;
+
+    if (g_gl.options.is_exact || !port_GlReplaceFind(prim, &found)) {
+        return;
+    }
+    state->replace_texture = found.texture;
+    state->replace_u = found.u;
+    state->replace_v = found.v;
+    state->replace_w = found.w;
+    state->replace_h = found.h;
 }
 
 /* Whether this primitive is held against the ground by the console's own
@@ -1441,6 +1534,7 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
         flags |= FLAG_FLAT;
     }
     port_GlStateOf(prim, &state);
+    port_GlReplacementOf(prim, &state);
     if (state.clip_right < state.clip_left ||
         state.clip_bottom < state.clip_top) {
         return;
@@ -1555,6 +1649,7 @@ static void port_GlClearBands(
  * primitives. */
 static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
     PortDirtyRect rect;
+    u32 replacement;
 
     if (!g_gl.is_started || w <= 0 || h <= 0) {
         return;
@@ -1568,8 +1663,21 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
     port_AddDirtyRect(&rect, x, y, w, h);
     port_AddDirtyRect(&g_gl.mirror, x, y, w, h);
     port_GlUploadMirror();
+    /* a picture a mod has a picture of (gl_replace.h) */
+    replacement = g_gl.options.is_exact
+                      ? 0
+                      : port_GlReplaceFindPicture(
+                            rect.left, rect.top, rect.right - rect.left + 1,
+                            rect.bottom - rect.top + 1, g_gl.display_x,
+                            g_gl.display_is_rgb24 ? 0 : g_gl.display_w);
     glUseProgram(g_gl.blit_program);
     glBindVertexArray(g_gl.blit_array);
+    if (replacement != 0) {
+        glActiveTexture(GL_TEXTURE0 + PORT_GL_REPLACE_UNIT);
+        glBindTexture(GL_TEXTURE_2D, replacement);
+    }
+    glUniform1i(g_gl.blit_at_replace, PORT_GL_REPLACE_UNIT);
+    glUniform1i(g_gl.blit_at_replaced, replacement != 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
     glUniform1i(g_gl.blit_at_vram, 0);
@@ -1752,6 +1860,7 @@ static void port_GlEnd(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24) {
     /* Not done: the 24-bit mode, which only the movie uses, is read
      * from the software GPU's own video memory. */
     g_gl.display_is_on = is_on && !is_rgb24;
+    g_gl.display_is_rgb24 = is_rgb24;
     /* what the frame on show cost: a blank at which the game drew
      * nothing leaves the frame before it standing (port_remaster.h) */
     if (g_gl.vertex_count != 0 || g_gl.upload_count != 0) {
@@ -1924,6 +2033,12 @@ const char *port_GlStart(
     g_gl.blit_at_scale = glGetUniformLocation(g_gl.blit_program, "u_scale");
     g_gl.blit_at_vram = glGetUniformLocation(g_gl.blit_program, "u_vram");
     g_gl.blit_at_shift = glGetUniformLocation(g_gl.blit_program, "u_shift");
+    g_gl.at_replace = glGetUniformLocation(g_gl.program, "u_replace");
+    g_gl.at_replaced = glGetUniformLocation(g_gl.program, "u_replaced");
+    g_gl.at_replace_rect = glGetUniformLocation(g_gl.program, "u_replace_rect");
+    g_gl.blit_at_replace = glGetUniformLocation(g_gl.blit_program, "u_replace");
+    g_gl.blit_at_replaced =
+        glGetUniformLocation(g_gl.blit_program, "u_replaced");
     g_gl.resolve_program = port_GlMakeProgram(
         g_gl_resolve_vertex_text, g_gl_resolve_fragment_text);
     if (g_gl.resolve_program == 0) {
@@ -2000,6 +2115,15 @@ const char *port_GlStart(
 
         if (why != NULL) {
             port_GlSay("the shadows are the game's own black polygons: ", why);
+        }
+    }
+    /* A mod's textures (gl_replace.h). A card that cannot have them
+     * draws the game's own. */
+    {
+        const char *why = port_GlReplaceStart(getproc);
+
+        if (why != NULL) {
+            port_GlSay("the mods' textures are not drawn: ", why);
         }
     }
     /* the comparison with the software GPU's own picture wants the

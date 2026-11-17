@@ -108,6 +108,8 @@ static PortPauseHolder g_pause_holder;
 static s32 g_pause_begun;
 static s32 g_pause_holds;
 static s32 g_pause_skips;
+/* the fight's last table is being drawn again, under the panel */
+static s32 g_pause_redraws;
 static PortRemasterCounts g_counts;
 static PortRemasterCounts g_frame_counts;
 /* ... and the frame last shown, which is what a run reports. */
@@ -1494,12 +1496,15 @@ void port_RemasterSetPauseHolder(PortPauseHolder holder) {
 
 s32 port_RemasterIsHolding(void) { return g_pause_holds; }
 
+s32 port_RemasterIsRedrawing(void) { return g_pause_redraws; }
+
 /* The pause's own steps, around the one table it draws again
  * (port_remaster.h). */
 void port_RemasterPause(s32 what, s32 from_x, s32 from_y) {
     PortGpuState state;
 
     g_pause_skips = FALSE;
+    g_pause_redraws = what == PORT_PAUSE_FROZEN;
     if (what == PORT_PAUSE_OFF) {
         if (g_pause_holds && g_pause_holder != NULL) {
             g_pause_holder(PORT_PAUSE_OFF, 0, 0, 0, 0);
