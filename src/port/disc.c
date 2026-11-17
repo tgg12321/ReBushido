@@ -180,6 +180,10 @@ void port_CloseDisc(PortDisc *disc) {
 
 /* ---- reading ---- */
 
+s32 (*g_port_disc_override)(u32 sector, u8 *raw);
+
+/* A raw sector, checked for its sync and its position, and given to
+ * the mods' stage files to put theirs in (port_disc.h). */
 s32 port_ReadDiscSector(const PortDisc *disc, u32 sector, u8 *raw) {
     u8 position[PORT_DISC_HEADER_BYTES];
     u32 i;
@@ -206,6 +210,9 @@ s32 port_ReadDiscSector(const PortDisc *disc, u32 sector, u8 *raw) {
         if (raw[PORT_DISC_SYNC_BYTES + i] != position[i]) {
             return PORT_DISC_NOT_A_SECTOR;
         }
+    }
+    if (g_port_disc_override != NULL) {
+        g_port_disc_override(sector, raw);
     }
     return PORT_DISC_OK;
 }

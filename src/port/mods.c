@@ -31,6 +31,8 @@
 #define LINE_VALUE_SIZE 128
 #define MODS_FOLDER "mods"
 #define TEXT_END 0
+/* the longest ending a kind names */
+#define ENDING_SIZE 16
 
 /* FNV-1a: of 32 bits for the table, of 64 for a texture's key */
 #define HASH_START 0x811C9DC5U
@@ -56,9 +58,10 @@
 
 static const char * const g_port_mod_kind_folders[PORT_MOD_KINDS] = {
     "textures", "models", "music", "stages", "skies"};
-/* the ending a kind's file must have to be read; NULL for any */
+/* the ending a kind's file must have to be read, or one of several
+ * separated by `|`; NULL for any */
 static const char * const g_port_mod_kind_endings[PORT_MOD_KINDS] = {
-    ".png", ".glb", NULL, NULL, ".png"};
+    ".png", ".glb", ".ogg|.wav", NULL, ".png"};
 
 typedef struct {
     PortModManifest manifest;
@@ -389,6 +392,31 @@ typedef struct {
     char subfolders[SUBFOLDERS_MAX][FOLDER_NAME_SIZE];
 } PortModsListing;
 
+/* Whether `name` ends with one of `endings`, which are separated by `|`
+ * (letters of either case). */
+static s32 port_ModsHasEnding(const char *name, const char *endings) {
+    char ending[ENDING_SIZE];
+
+    while (*endings != TEXT_END) {
+        u32 length = 0;
+
+        while (endings[length] != TEXT_END && endings[length] != '|' &&
+               length + 1 < sizeof(ending)) {
+            ending[length] = endings[length];
+            length++;
+        }
+        ending[length] = TEXT_END;
+        if (port_TextEndsWith(name, ending)) {
+            return TRUE;
+        }
+        endings += length;
+        if (*endings == '|') {
+            endings++;
+        }
+    }
+    return FALSE;
+}
+
 /* A name in a kind's folder: a folder kept for later, a file of the
  * kind's ending added to the table under its whole path. */
 static void port_ModsEachFile(void *context, const char *name, s32 is_folder) {
@@ -404,7 +432,7 @@ static void port_ModsEachFile(void *context, const char *name, s32 is_folder) {
         }
         return;
     }
-    if (ending != NULL && !port_TextEndsWith(name, ending)) {
+    if (ending != NULL && !port_ModsHasEnding(name, ending)) {
         return;
     }
     if (listing->path_length + 1 + length + 1 > PATH_SIZE) {

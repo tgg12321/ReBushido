@@ -192,8 +192,13 @@ the stage").
     its first user ([`MODS.md`](MODS.md)): `mods/` beside the program,
     a manifest and a load order per mod, one lookup by kind and key,
     textures keyed by what they look like, dumped and replaced at any
-    size in the remastered picture. Left: the scene's textures by whole
-    page, then models, music and stages through the same lookup.
+    size in the remastered picture. Since: the fighters' and weapons'
+    models, music (a mod's `.ogg` or `.wav` in place of a piece of the
+    disc's, following the game's starts, fades and stops, outside the
+    rollback) and a stage's files (a mod's file read in place of the
+    disc's sectors of it). Left: the scene's textures by whole page,
+    music by stage, and the stage editor's next steps (`MODS.md`,
+    "Stages").
 11. **Menus and UI**: the menus redrawn (the Japanese options of the
     title screen in English), and the settings menu holding all of
     ReBushido's own settings.

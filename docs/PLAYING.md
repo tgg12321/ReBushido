@@ -165,6 +165,7 @@ frame_rate = display     # original (the default), display, or a number
 mods = off               # none of the mods in mods/ (on is the default)
 english = off            # the top menu in Japanese (on is the default)
 ui = off                 # the menus' own lettering (on is the default)
+music_mods = off         # the game's own music (on is the default)
 p1.cross = key Space     # Space is player one's Cross, and Z no longer
 p1.circle = key Left Ctrl
 p2.start = pad a         # on player two's controller, A is Start
@@ -309,6 +310,16 @@ the fight's counters and the boot logo redrawn at any size.
 them from; `--mods FOLDER` reads them from somewhere else, and `--mods
 off` or `mods = off` runs without. How to make one, and how a texture
 is named: [`MODS.md`](MODS.md).
+
+A mod's **music** (`music/`, `.ogg` or `.wav`) is heard in place of a
+piece of the game's, faded and stopped as the game fades and stops its
+own; `--dump-music FOLDER` writes each piece as it plays, named as a
+replacement must be, and `music_mods = off` (the settings menu's
+"Mods' music", at once) plays the game's own. A mod's **stage files**
+(`stages/`) are read in place of the disc's: `--dump-stages FOLDER`
+writes them all from your disc to begin from. A stage mod can change
+how fights play on it, so both players of a netplay session need the
+same ones. [`MODS.md`](MODS.md), "Music" and "Stages".
 
 ## Playing online
 

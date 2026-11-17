@@ -370,12 +370,12 @@ def compile_one(job):
         else:
             flags = flags + [port_build.INSTRUMENT]
         cmd = [target.cc] + flags + target.game_flags + ['-MD', '-MF', obj[:-2] + '.d', '-x', 'c']
-        if target.windows:
+        if target.windows and path not in port_build.NATURAL_ALIGNMENT:
             proc = compile_for_windows(target, cmd, modern.modern_source(path), obj)
         else:
             proc = subprocess.run(cmd + ['-c', '-', '-o', obj], input=modern.modern_source(path), capture_output=True,
                                   text=True, env=port_build.environment(), encoding='utf-8', errors='replace')
-            if proc.returncode == 0:
+            if proc.returncode == 0 and not target.windows and path not in port_build.NATURAL_ALIGNMENT:
                 # the boundary the PlayStation's compiler gives each
                 # variable, so that the game's neighbours stay neighbours
                 port_build.cap_alignment(obj)

@@ -136,8 +136,11 @@ program), with `--link-side 0|1` (the game's link cable over it) or
 ADDRESS:PORT` and `--join ADDRESS:PORT` (a session of netplay, set up
 between the two programs before the game starts), and
 `--net-latency MS` and `--net-loss PERCENT` for tests (`NETPLAY.md`,
-sections 11 to 13). It ends by printing a line for each stub the
-game called, with how often.
+sections 11 to 13), and the mods' (`MODS.md`): `--mods FOLDER|off`,
+`--dump-textures FOLDER`, `--music-mods on|off`, `--dump-music FOLDER`
+(each piece of music as it plays) and `--dump-stages FOLDER` (each
+stage's files from the disc). It ends by printing a line for each stub
+the game called, with how often.
 
 The game's main never returns: it runs on a stack of its own as a fiber,
 and the program's loop runs it a step at a time, a step ending where the
@@ -323,7 +326,11 @@ simplest behaviour that the game's code accepts was chosen:
 
 A sector that cannot be read (past the end of the image, or not a
 sector) reaches the game as the drive's error, and the port says which
-sector on its error output. Sound off the disc is the drive's too: an
+sector on its error output. The disc's ISO 9660 directory is read once
+as the program starts (`src/port/discfiles.c`): the game never names a
+file, but the mods do, a piece of music by the file it is a stream of
+and a stage file by the file it replaces, whose sectors then carry the
+mod's data ([`MODS.md`](MODS.md), "Stages"). Sound off the disc is the drive's too: an
 XA stream is played ("Sound"), and the drive's position moves at the
 disc's speed by the sound's clock while it plays, because the game
 finds the end of a piece of music by asking where the drive is. A CD
@@ -438,6 +445,12 @@ given the drive's four volumes (`CdMix`: 0x80 is all of a side, and the
 game sets 0xFF). The game finds a piece's end by asking where the drive
 is, as before; the drive's place went by blanks at sixty a second
 then, and goes by samples now, which is the console's 59.83.
+
+**A mod's music** ([`MODS.md`](MODS.md), "Music") is heard in place
+of a stream of the disc's: the drive, the decoder and the chip go on as
+here, and the samples heard are a copy of the chip's output with the
+mod's piece where the disc's sound was (`port_RunSpu`'s `heard_out`),
+outside the game's state. With no music mod the sound is unchanged.
 
 **What a PC's addresses hid.** `snd_FlushQueue` takes a bank for open
 if its address has the top bit set, which every address of the

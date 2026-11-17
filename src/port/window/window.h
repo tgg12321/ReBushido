@@ -257,6 +257,9 @@ typedef struct {
      * mods/english/ (docs/MODS.md, "The English menu"); 0 leaves it
      * out. */
     s32 english;
+    /* A mod's music is heard in place of the game's (docs/MODS.md,
+     * "Music"); 0 plays the game's own, from the next sample on. */
+    s32 music_mods;
     /* The menus' lettering drawn again, the mod the program ships as
      * mods/ui/ (docs/MODS.md, "The sharp menus"); 0 leaves it out. */
     s32 ui;

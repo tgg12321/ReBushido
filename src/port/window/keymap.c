@@ -88,6 +88,8 @@ const char g_port_default_settings[] =
     "                       # ships (mods/english/); off for Japanese\n"
     "ui = on                # the menus' lettering drawn again, sharp at\n"
     "                       # any size: a mod the program ships (mods/ui/)\n"
+    "music_mods = on        # a mod's music in place of the game's; off\n"
+    "                       # for the game's own (docs/MODS.md)\n"
     "\n"
     "# Playing online (docs/PLAYING.md): what the settings menu's Play\n"
     "# online page starts with, and keeps.\n"
@@ -670,6 +672,11 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "ui is on or off";
     }
+    if (port_WordsMatch(name, "music_mods")) {
+        return port_ReadChoice(value, "off", "on", &settings->music_mods)
+                   ? NULL
+                   : "music_mods is on or off";
+    }
     if (port_WordsMatch(name, "stage_mesh")) {
         return port_ReadChoice(value, "off", "on", &settings->stage_mesh)
                    ? NULL
@@ -869,6 +876,8 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->net_listen = 1;
     settings->net_delay = PORT_NET_DELAY_DEFAULT;
     settings->net_address[0] = 0;
+    /* a mod's music, where a mod has some (docs/MODS.md) */
+    settings->music_mods = 1;
     /* a name the window's library does not know leaves that one out */
     port_ReadLines(settings, text, lookup, NULL, 1);
 }
