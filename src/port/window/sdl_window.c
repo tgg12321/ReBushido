@@ -534,6 +534,9 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     /* the fighters' shadows as a darkening of the ground, or the game's
      * own black polygons (src/port/gl/gl_shadow.h) */
     options->shadows = g_port_settings.shadows;
+    /* the sky and the walls seen through (gl_sky.h, gl_see.h) */
+    options->sky = g_port_settings.sky;
+    options->see_through = g_port_settings.see_through;
 }
 
 /* The window's context and the remastered renderer on it: NULL, or why

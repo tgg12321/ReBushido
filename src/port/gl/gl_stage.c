@@ -38,6 +38,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_see.h"
 #include "gl_stage.h"
 #include "port_gpu.h"
 #include "port_remaster.h"
@@ -130,6 +131,8 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glUniform4ui, (GLint, GLuint, GLuint, GLuint, GLuint))            \
     GL(void, glUniform1iv, (GLint, GLsizei, const GLint *))                    \
     GL(void, glUniform2iv, (GLint, GLsizei, const GLint *))                    \
+    GL(void, glUniform1fv, (GLint, GLsizei, const GLfloat *))                  \
+    GL(void, glUniform4fv, (GLint, GLsizei, const GLfloat *))                  \
     GL(void, glUniform1uiv, (GLint, GLsizei, const GLuint *))                  \
     GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))
@@ -295,6 +298,10 @@ static struct {
     GLint at_depth_shift;
     GLint at_cutoff;
     GLint at_unit;
+    GLint at_eye;
+    GLint at_see_count;
+    GLint at_see_axis;
+    GLint at_see_radius;
     /* the mesh as it stands */
     s32 version; /* which stage's data it was built from */
     PortAddress tiles;
@@ -355,6 +362,10 @@ static const char g_stage_vertex_text[] =
     "flat out uvec4 v_info;\n"
     "flat out uint v_tile;\n"
     "flat out float v_slot;\n"
+    /* where the pixel is in the world, and which way its face looks, for
+     * the walls seen through (gl_see.h) */
+    "out vec3 v_place;\n"
+    "flat out vec3 v_normal;\n"
     /* the ordering-table slot a depth is sorted at
      * (render_OtIndexShifted) */
     "int slot_of(int depth) {\n"
@@ -416,6 +427,8 @@ static const char g_stage_vertex_text[] =
     "    v_page = a_page;\n"
     "    v_info = a_info;\n"
     "    v_tile = a_tile;\n"
+    "    v_place = a_place;\n"
+    "    v_normal = cross(a_corner1 - a_corner0, a_corner2 - a_corner0);\n"
     "}\n";
 
 static const char g_stage_fragment_text[] =
@@ -439,6 +452,15 @@ static const char g_stage_fragment_text[] =
     "flat in uvec4 v_info;\n"
     "flat in uint v_tile;\n"
     "flat in float v_slot;\n"
+    "in vec3 v_place;\n"
+    "flat in vec3 v_normal;\n"
+    /* the walls seen through (gl_see.h): where the camera is in the
+     * world, and each fighter's cylinder -- its axis's x, z, top and
+     * bottom (the world's y runs down) and how far about it */
+    "uniform vec3 u_eye;\n"
+    "uniform int u_see_count;\n"
+    "uniform vec4 u_see_axis[3];\n"
+    "uniform float u_see_radius[3];\n"
     "layout(location = 0) out vec4 o_color;\n"
     "layout(location = 1) out uint o_slot;\n"
     "uint vram(int x, int y) {\n"
@@ -464,6 +486,54 @@ static const char g_stage_fragment_text[] =
     "        if (u_fog_slot[level + step - 1] <= slot) { level += step; }\n"
     "    }\n"
     "    return min(level, u_fog_levels);\n"
+    "}\n"
+    /* How much of this pixel's face is taken away so that a fighter
+     * behind it can be seen: the most of any fighter's. Each fighter is
+     * an upright cylinder from his head down to his feet. The sight line
+     * from the camera through the pixel counts where, seen from above,
+     * it passes his axis within the cylinder's reach (softly towards its
+     * edge), where at that point it is between his head and his feet --
+     * a face the line meets below his feet is the ground under him, not
+     * a wall in front of him -- and where that point is farther than the
+     * pixel by more than a step. A face that lies flat and is seen from
+     * above is the ground someone may stand on, and is never thinned. */
+    "float see_through() {\n"
+    "    if (u_see_count == 0) { return 0.0; }\n"
+    "    vec3 normal = normalize(v_normal);\n"
+    "    if (abs(normal.y) > 0.7 && u_eye.y < v_place.y) { return 0.0; }\n"
+    "    vec3 sight = v_place - u_eye;\n"
+    "    float reach = length(sight);\n"
+    "    if (reach < 1.0) { return 0.0; }\n"
+    "    sight /= reach;\n"
+    "    float level = dot(sight.xz, sight.xz);\n"
+    "    if (level < 1e-4) { return 0.0; }\n"
+    "    float most = 0.0;\n"
+    "    for (int i = 0; i < 3; i++) {\n"
+    "        if (i >= u_see_count) { break; }\n"
+    "        vec2 axis = u_see_axis[i].xy;\n"
+    "        float t = dot(axis - u_eye.xz, sight.xz) / level;\n"
+    "        float apart = length(u_eye.xz + t * sight.xz - axis);\n"
+    "        float height = u_eye.y + t * sight.y;\n"
+    "        float r = u_see_radius[i];\n"
+    "        float inside = 1.0 - smoothstep(0.45 * r, r, apart);\n"
+    /* the world's y runs down: the head is the smaller */
+    "        float upright = smoothstep(u_see_axis[i].z - 240.0,\n"
+    "                                   u_see_axis[i].z, height)\n"
+    "                      * (1.0 - smoothstep(u_see_axis[i].w - 80.0,\n"
+    "                                          u_see_axis[i].w + 20.0,\n"
+    "                                          height));\n"
+    "        float behind = smoothstep(80.0, 320.0, t - reach);\n"
+    "        most = max(most, inside * upright * behind);\n"
+    "    }\n"
+    "    return most;\n"
+    "}\n"
+    /* an ordered dither, four by four pixels of the buffer: a face
+     * thinned by `part` keeps that share of its pixels out */
+    "float dither() {\n"
+    "    ivec2 at = ivec2(gl_FragCoord.xy) & 3;\n"
+    "    int order[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6,\n"
+    "                            3, 11, 1, 9, 15, 7, 13, 5);\n"
+    "    return (float(order[at.y * 4 + at.x]) + 0.5) / 16.0;\n"
     "}\n"
     "ivec2 g_clut;\n"      /* the colours this fragment reads */
     "ivec2 g_clut_near;\n" /* ... and the level before it, for the fog */
@@ -513,6 +583,9 @@ static const char g_stage_fragment_text[] =
     /* the whole face is nearer than the cutoff: the ground between the
      * camera and the fight, which the renderer leaves out too */
     "    if (v_cull != 0) { discard; }\n"
+    /* a wall between the camera and a fighter, thinned to at most
+     * four parts in five */
+    "    if (dither() < 0.8 * see_through()) { discard; }\n"
     "    int depth = int(clamp(v_depth, 0.0, 65535.0));\n"
     "    int slot = slot_of(depth);\n"
     "    g_clut = v_page.zw;\n"
@@ -722,6 +795,10 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
     AT(at_depth_shift, "u_depth_shift");
     AT(at_cutoff, "u_cutoff");
     AT(at_unit, "u_unit");
+    AT(at_eye, "u_eye");
+    AT(at_see_count, "u_see_count");
+    AT(at_see_axis, "u_see_axis");
+    AT(at_see_radius, "u_see_radius");
 #undef AT
     glGenBuffers(1, &g_stage.buffer);
     glGenVertexArrays(1, &g_stage.array);
@@ -1316,6 +1393,29 @@ static void port_GlStageFogRows(const PortStageView *view, GLint *clut) {
     }
 }
 
+/* The fighters the walls are thinned for (gl_see.h), as the shader has
+ * them. */
+static void port_GlStageSeeThrough(const PortStageView *view) {
+    PortSeeFighter fighters[PORT_SEE_FIGHTERS];
+    GLfloat axis[4 * PORT_SEE_FIGHTERS];
+    GLfloat radius[PORT_SEE_FIGHTERS];
+    s32 count = port_GlSeeFighters(fighters);
+    s32 i;
+
+    for (i = 0; i < PORT_SEE_FIGHTERS; i++) {
+        axis[4 * i] = i < count ? fighters[i].x : 0.0f;
+        axis[4 * i + 1] = i < count ? fighters[i].z : 0.0f;
+        axis[4 * i + 2] = i < count ? fighters[i].top : 0.0f;
+        axis[4 * i + 3] = i < count ? fighters[i].bottom : 0.0f;
+        radius[i] = i < count ? fighters[i].radius : 0.0f;
+    }
+    glUniform3f(g_stage.at_eye, (GLfloat)view->camera[0],
+                (GLfloat)view->camera[1], (GLfloat)view->camera[2]);
+    glUniform1i(g_stage.at_see_count, count);
+    glUniform4fv(g_stage.at_see_axis, PORT_SEE_FIGHTERS, axis);
+    glUniform1fv(g_stage.at_see_radius, PORT_SEE_FIGHTERS, radius);
+}
+
 static void port_GlStageDrawMesh(
     const PortGlPicture *picture, const PortRemasterPrim *paint) {
     const PortStageView *view =
@@ -1390,6 +1490,7 @@ static void port_GlStageDrawMesh(
                  (GLuint)paint->window_or_u, (GLuint)paint->window_and_v,
                  (GLuint)paint->window_or_v);
     glUniform1uiv(g_stage.at_open, TILE_WORDS, open);
+    port_GlStageSeeThrough(view);
 
     /* The whole depth buffer is cleared, and not only the part the mesh
      * draws in: the scene is held against it everywhere (gl_draw.c), so
@@ -1493,6 +1594,12 @@ void port_GlStageSetView(const PortStageView *view) {
 
 void port_GlStageGetView(PortStageView *view) {
     *view = *port_GetRemasterStageView();
+}
+
+const PortStageView *port_GlStageViewNow(s32 *is_between) {
+    *is_between = g_stage.has_own_view;
+    return g_stage.has_own_view ? &g_stage.own_view
+                                : port_GetRemasterStageView();
 }
 
 void port_GlStageMixView(PortStageView *out, const PortStageView *one,

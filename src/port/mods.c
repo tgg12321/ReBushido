@@ -53,10 +53,10 @@
 #define VRAM_Y_MASK (PORT_VRAM_HEIGHT - 1)
 
 static const char * const g_port_mod_kind_folders[PORT_MOD_KINDS] = {
-    "textures", "models", "music", "stages"};
+    "textures", "models", "music", "stages", "skies"};
 /* the ending a kind's file must have to be read; NULL for any */
 static const char * const g_port_mod_kind_endings[PORT_MOD_KINDS] = {
-    ".png", ".glb", NULL, NULL};
+    ".png", ".glb", NULL, NULL, ".png"};
 
 typedef struct {
     PortModManifest manifest;
