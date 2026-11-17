@@ -1562,6 +1562,24 @@ static s32 port_GlIsDrawn(const PortRemasterPrim *prim, s32 a, s32 b, s32 c) {
     if (right - left > span_x || bottom - top > span_y) {
         return FALSE;
     }
+    if (is_true) {
+        /* **No area is no area of its own places**, not of the whole
+         * pixels the chip held its corners at. A sliver of a polygon --
+         * a sword's blade turned nearly edge on, the side of a sandal --
+         * whose corners round to one line of whole pixels has an area all
+         * the same where the projection put it, and the card draws it
+         * there. Dropped by its whole pixels it came and went from one
+         * picture to the next as its corners crossed a pixel, and a
+         * picture between two frames held it at the frame on show's
+         * place while the faces about it moved (gl_tween.c, `held`): a
+         * fighter's sword stood still for a frame and jumped. */
+        double ax = (double)prim->corner[b].x - (double)prim->corner[a].x;
+        double ay = (double)prim->corner[b].y - (double)prim->corner[a].y;
+        double bx = (double)prim->corner[c].x - (double)prim->corner[a].x;
+        double by = (double)prim->corner[c].y - (double)prim->corner[a].y;
+
+        return ax * by - bx * ay != 0.0;
+    }
     area = (x[1] - x[0]) * (y[2] - y[0]) - (x[2] - x[0]) * (y[1] - y[0]);
     return area != 0;
 }
