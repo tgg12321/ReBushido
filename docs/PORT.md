@@ -4172,8 +4172,23 @@ for (`port_NextRefresh`) is the refresh it went up at.
 `--run-ahead` 0, 1 and 2 on the headless program, as before the change;
 the window's (dummy drivers, `--fast`) is the headless program's with
 run-ahead 0, 1 and 2, and with keys and pads injected under 2 (the late
-read included); `--rollback-test 8 --run-ahead 2` passes. The first
-picture handed to SDL that differs because of the press: RESULTS.
+read included); `--rollback-test 8 --run-ahead 2` passes. The 64-bit
+Windows program without a window (`rebushido-headless.exe`, run
+natively) prints the same trace with 0 and 2, and the 32-bit Linux one
+with 0, 1 and 2. The first picture handed to SDL that differs because
+of the press, the press taken at blank 3023:
+
+| | Original (`--tap-frames`) | Remastered, `frame_rate original` (`--tap-window`, offscreen, software GL) |
+| --- | --- | --- |
+| `run_ahead 0` | 3028 | 3028 |
+| `run_ahead 1` | 3026 | 3026 |
+| `run_ahead 2` | 3024 | 3024 |
+
+And every picture with run-ahead is the picture without it from 2 or 4
+blanks later: Original, 172 of 172 (blanks 2950 to 3035, both runs);
+Remastered with 2, 82 of 82; with 1, 78 of 82, the other four one frame
+(blanks 3000 and 3001) where 20 pixels of 307,200 differ by up to 40 of
+255 in a channel.
 
 **What it costs** COSTS
 
