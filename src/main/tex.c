@@ -148,6 +148,12 @@ void tex_LoadStageGroup(u32 *cursor, s16 group_index) {
     cursor += group_index;
     cursor = (u32 *)ADDR((s32)file + (((*cursor) >> 2) << 2));
     count = *(cursor++);
+#if RB_REMASTER_VIEW
+    /* the remastered picture's side channel: which of video memory's
+     * texels are the stage's own, so that a mod's picture of a whole
+     * texture page of it can be found (port_remaster.h) */
+    port_RemasterBeginStageTextures();
+#endif
     if (count == 0) {
         return;
     }
@@ -168,6 +174,13 @@ void tex_LoadStageGroup(u32 *cursor, s16 group_index) {
             clut_y += 1;
         }
         tex_LoadTim(tim_addr, image_x, image_y, clut_x, clut_y);
+#if RB_REMASTER_VIEW
+        /* the faces name the colour table where the file put it, a row
+         * above where it went */
+        port_RemasterNoteStageTexture(
+            (const void *)ADDR(tim_addr), image_x, image_y, clut_x, clut_y,
+            clut_x < DISP_WIDTH ? clut_y - 1 : clut_y);
+#endif
     }
 }
 

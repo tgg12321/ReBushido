@@ -120,7 +120,8 @@ pixels, waiting for the display, the counter and its corner, Graphics
 (as F2), the resolution, the ground as one mesh, the shadows, smooth
 lighting, the effects, the dead zone, and the buttons. What waits for the program to start again is said
 on its line, `(after a restart)`: antialiasing, the draw distance, the
-shape, the frame rate, the English top menu and the mods.
+shape, the frame rate, the English top menu, the sharp menus and the
+mods.
 
 **Player 1's buttons** and **Player 2's buttons** list each of the
 PlayStation's buttons with the keys and the controller's buttons that
@@ -165,6 +166,8 @@ effects = smooth         # original (the default), exact or smooth
 frame_rate = display     # original (the default), display, or a number
 mods = off               # none of the mods in mods/ (on is the default)
 english = off            # the top menu in Japanese (on is the default)
+ui = off                 # the menus' own lettering (on is the default)
+music_mods = off         # the game's own music (on is the default)
 p1.cross = key Space     # Space is player one's Cross, and Z no longer
 p1.circle = key Left Ctrl
 p2.start = pad a         # on player two's controller, A is Start
@@ -290,17 +293,38 @@ where `smooth_light` asks for it, and the fighters' shadows where
 ## Mods
 
 A folder `mods/` beside the program holds mods: each a folder of its
-own, whose files stand in for the game's. The program comes with one,
-`mods/english/`: **the top menu in English** (Story Mode, Vs. CPU Mode
-and the rest in place of 決戦の間 and the others), drawn by Graphics
-Remastered; `english = off` leaves it out ([`MODS.md`](MODS.md), "The
-English menu"). The first kind is
+own, whose files stand in for the game's. The program comes with two,
+drawn by Graphics Remastered. `mods/english/`: **the top menu in
+English** (Story Mode, Vs. CPU Mode and the rest in place of 決戦の間 and
+the others); `english = off` leaves it out ([`MODS.md`](MODS.md), "The
+English menu"). `mods/ui/`: **the sharp menus**, the pause menu, the
+menu after a fight, the top menu's captions, the select screens' titles
+and the group battle's page lettered again in a font, sharp at any size;
+`ui = off` leaves it out ("The sharp menus").
+
+**Every other screen at a higher resolution** is a mod you make from
+your own disc, since it is the game's own pictures made larger and is
+not the project's to give: `python tools/port_art.py` (the art mod:
+the menus, the select screens' portraits, the loading screens, the
+captions and the fight's counters, every 2D texture six times larger;
+[`MODS.md`](MODS.md), "The art mod"), then copy `tmp/mods/art/` into
+`mods/` beside the program. The first kind is
 **replacement textures** for Graphics Remastered: the menus, the pause,
 the fight's counters and the boot logo redrawn at any size.
 `--dump-textures FOLDER` writes the game's textures out as PNGs to make
 them from; `--mods FOLDER` reads them from somewhere else, and `--mods
 off` or `mods = off` runs without. How to make one, and how a texture
 is named: [`MODS.md`](MODS.md).
+
+A mod's **music** (`music/`, `.ogg` or `.wav`) is heard in place of a
+piece of the game's, faded and stopped as the game fades and stops its
+own; `--dump-music FOLDER` writes each piece as it plays, named as a
+replacement must be, and `music_mods = off` (the settings menu's
+"Mods' music", at once) plays the game's own. A mod's **stage files**
+(`stages/`) are read in place of the disc's: `--dump-stages FOLDER`
+writes them all from your disc to begin from. A stage mod can change
+how fights play on it, so both players of a netplay session need the
+same ones. [`MODS.md`](MODS.md), "Music" and "Stages".
 
 ## Playing online
 

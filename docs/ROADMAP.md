@@ -197,8 +197,13 @@ the stage").
     its first user ([`MODS.md`](MODS.md)): `mods/` beside the program,
     a manifest and a load order per mod, one lookup by kind and key,
     textures keyed by what they look like, dumped and replaced at any
-    size in the remastered picture. Left: the scene's textures by whole
-    page, then models, music and stages through the same lookup.
+    size in the remastered picture. Since: the fighters' and weapons'
+    models, music (a mod's `.ogg` or `.wav` in place of a piece of the
+    disc's, following the game's starts, fades and stops, outside the
+    rollback) and a stage's files (a mod's file read in place of the
+    disc's sectors of it). Left: the scene's textures by whole page,
+    music by stage, and the stage editor's next steps (`MODS.md`,
+    "Stages").
 11. **Menus and UI**: the menus redrawn (the Japanese options of the
     title screen in English), and the settings menu holding all of
     ReBushido's own settings.
@@ -210,6 +215,16 @@ the stage").
     `rebushido.cfg` and both players' buttons, stops the game at a
     frame's boundary while it is open, applies what it can at once, and
     writes the file keeping everything else in it
-    ([`PLAYING.md`](PLAYING.md), "The settings menu"). Left: the rest of
-    the game's menu text, English already, drawn sharper the same way.
+    ([`PLAYING.md`](PLAYING.md), "The settings menu"). The rest of the
+    menus' 2D screens: the pause menu's, the menu after a fight's, the
+    top menu's captions', the select screens' titles' and the group
+    battle's lettering drawn again in a font by a second mod the program
+    ships (`ui`), and every 2D texture of the screens made six times
+    larger from the player's own disc by `tools/port_art.py` (the art
+    mod, never committed); a texture or picture faded through its colour
+    table or rewritten is drawn from its replacement, tinted
+    ([`MODS.md`](MODS.md), "Fades"). Left: the rest of the lettering in
+    a font (the dialogue boxes, the names on the select screens, the
+    options' pages), and the title picture after the opening movie, which
+    is the movie's own 24-bit frame.
 12. **Optimisation**, for a smooth and seamless game.

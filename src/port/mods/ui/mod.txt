@@ -1,0 +1,7 @@
+# ReBushido's sharp menus: built in, made by tools/port_ui.py
+# (docs/MODS.md, "The sharp menus"). `ui = off` in rebushido.cfg, or the
+# settings menu, leaves it out.
+name = Sharp menus
+version = 1.0
+order = -100      # over the art mod (-200), under every mod of yours
+author = ReBushido

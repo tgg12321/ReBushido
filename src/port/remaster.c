@@ -1206,6 +1206,71 @@ s32 port_RemasterStageNumber(void) {
     return resource_GetStage();
 }
 
+/* ---- the stage's own textures (port_remaster.h) ---- */
+
+/* A TIM, as tex_LoadTim reads it: its id, its flags (the depth in the low
+ * bits, a colour table's block present), then the colour table's block
+ * and the picture's, each its length in bytes, its place and its size. */
+#define TIM_FLAGS 4
+#define TIM_FIRST_BLOCK 8
+#define TIM_BLOCK_SIZE_AT 8
+#define TIM_DEPTH_MASK 3
+#define TIM_HAS_CLUT 8
+
+static PortStageTexture g_stage_textures[PORT_STAGE_TEXTURES_MAX];
+static s32 g_stage_texture_count;
+static u32 g_stage_texture_version;
+
+void port_RemasterBeginStageTextures(void) {
+    if (g_backend == NULL) {
+        return;
+    }
+    g_stage_texture_count = 0;
+    g_stage_texture_version++;
+}
+
+/* A TIM's picture and colour table where tex_LoadTim put them, their
+ * sizes read from the TIM's own blocks. */
+void port_RemasterNoteStageTexture(
+    const void *tim, s32 x, s32 y, s32 clut_x, s32 clut_y, s32 named_y) {
+    const u8 *block = (const u8 *)tim + TIM_FIRST_BLOCK;
+    PortStageTexture *one;
+    u32 flags;
+    u32 size;
+
+    if (g_backend == NULL || tim == NULL ||
+        g_stage_texture_count >= PORT_STAGE_TEXTURES_MAX) {
+        return;
+    }
+    flags = *(const u32 *)((const u8 *)tim + TIM_FLAGS);
+    one = &g_stage_textures[g_stage_texture_count++];
+    one->bits = (s16)(flags & TIM_DEPTH_MASK);
+    one->clut_x = -1;
+    one->clut_y = -1;
+    one->clut_w = 0;
+    one->clut_h = 0;
+    one->named_y = (s16)named_y;
+    if (flags & TIM_HAS_CLUT) {
+        size = *(const u32 *)(block + TIM_BLOCK_SIZE_AT);
+        one->clut_x = (s16)clut_x;
+        one->clut_y = (s16)clut_y;
+        one->clut_w = (s16)(size & HALF_MASK);
+        one->clut_h = (s16)(size >> HALF_SHIFT);
+        block += *(const u32 *)block;
+    }
+    size = *(const u32 *)(block + TIM_BLOCK_SIZE_AT);
+    one->x = (s16)x;
+    one->y = (s16)y;
+    one->w = (s16)(size & HALF_MASK);
+    one->h = (s16)(size >> HALF_SHIFT);
+}
+
+const PortStageTexture *port_RemasterStageTextures(s32 *count, u32 *version) {
+    *count = g_stage_texture_count;
+    *version = g_stage_texture_version;
+    return g_stage_textures;
+}
+
 const void *port_RemasterTileLights(void) {
     /* TILE_LIGHT_SETUP, the setup render_DrawStageTiles lights a tile's
      * faces with (src/main/render_asm.c) */

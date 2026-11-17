@@ -6,7 +6,7 @@ tiles, stage by stage, with nothing shown (docs/PORT.md, "Remastered",
     python3 tools/port_stage_prove.py --image "Bushido Blade 2 (USA).cue"
             [--stages 0-37] [--scale 2] [--frames 4200] [--every 300]
             [--out build/stagemesh] [--pairs 2] [--distance max]
-            [--mesh every|on] [--against tiles|nodepth]
+            [--mesh every|on] [--against tiles|nodepth] [--mods FOLDER]
 
 Every stage the game can load is measured, 0 to 37: the 32 a fight can
 be set on, and the six the modes have of their own, which the menus
@@ -324,6 +324,9 @@ def main():
     ap.add_argument('--against', default='tiles',
                     choices=('tiles', 'nodepth'))
     ap.add_argument('--out', default='build/stagemesh')
+    # the mods both runs draw with (docs/MODS.md): a mod of the stage's
+    # pages is to hold the verdicts as the game's own textures do
+    ap.add_argument('--mods', default=None)
     args = ap.parse_args()
     if not os.path.isfile(PROGRAM):
         print('port_stage_prove: no %s (python3 tools/port_gl_build.py)'
@@ -373,6 +376,8 @@ def main():
                 common += ['--stage-depth', 'off']
             if args.tall:
                 common += ['--gl-tall', str(args.tall)]
+            if args.mods:
+                common += ['--mods', args.mods]
             log = os.path.join(folder, which + '.log')
             err = os.path.join(folder, which + '.err')
             for _ in range(3):

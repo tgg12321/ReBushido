@@ -39,6 +39,7 @@
 
 #include "port_host.h"
 #include "port_mods.h"
+#include "port_music.h"
 #include "port_remaster.h"
 #include "shared.h"
 #include "sdl_window.h"
@@ -854,6 +855,13 @@ int main(int argc, char **argv) {
          * mods/english/, which the settings leave out (docs/MODS.md) */
         port_ModsLeaveOut("english");
     }
+    if (!g_port_settings.ui) {
+        /* and the menus' lettering drawn again, mods/ui/ */
+        port_ModsLeaveOut("ui");
+    }
+    /* a mod's music, or the game's own (docs/MODS.md, "Music"); the
+     * command line's --music-mods comes after and has the last word */
+    port_MusicSetOn(g_port_settings.music_mods);
     passed[count] = NULL;
     {
         char line[2 * PATH_BYTES_MAX];

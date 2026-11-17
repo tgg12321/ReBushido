@@ -23,10 +23,12 @@
 #include "common.h"
 #include "port_card.h"
 #include "port_disc.h"
+#include "port_discfiles.h"
 #include "port_gpu.h"
 #include "port_host.h"
 #include "port_mods.h"
 #include "port_movie.h"
+#include "port_music.h"
 #include "port_net.h"
 #include "port_spu.h"
 #include "bb2.h"
@@ -66,6 +68,8 @@ static const char g_port_usage[] =
     "            [--rollback-test N] [--rollback-every M] "
     "[--rollback-quiet]\n"
     "            [--mods FOLDER|off] [--dump-textures FOLDER]\n"
+    "            [--music-mods on|off] [--dump-music FOLDER]\n"
+    "            [--dump-stages FOLDER]\n"
     "            [--net-bind ADDRESS:PORT --net-peer ADDRESS:PORT]\n"
     "            [--link-side 0|1] [--net-latency MS] [--net-loss PERCENT]\n"
     "            [--netplay 1|2] [--net-delay N]\n"
@@ -129,6 +133,13 @@ static const char g_port_usage[] =
     "  --dump-textures FOLDER   write each texture the game draws there as\n"
     "                 a PNG, once, named by its key: what a replacement is\n"
     "                 made from (the remastered picture only)\n"
+    "  --music-mods on|off   off plays the game's own music where a mod\n"
+    "                 has some (on)\n"
+    "  --dump-music FOLDER   write each piece of music the game plays\n"
+    "                 there as it plays, KEY.wav: what a mod's music\n"
+    "                 replaces, and its key\n"
+    "  --dump-stages FOLDER  write every stage's files there from the disc,\n"
+    "                 by their keys: what a mod's stage begins from\n"
     "\n"
     "At the end it prints a line for each thing the game asked for that\n"
     "the port does not do yet, with how often: stub NAME COUNT.\n";
@@ -317,6 +328,18 @@ s32 port_Main(s32 argc, char **argv) {
             port_ModsSetFolder(argv[++i]);
         } else if (port_TextsEqual(word, "--dump-textures")) {
             port_ModsSetDumpFolder(argv[++i]);
+        } else if (port_TextsEqual(word, "--dump-music")) {
+            port_MusicSetDumpFolder(argv[++i]);
+        } else if (port_TextsEqual(word, "--dump-stages")) {
+            port_SetStageDumpFolder(argv[++i]);
+        } else if (port_TextsEqual(word, "--music-mods")) {
+            i++;
+            if (port_TextsEqual(argv[i], "on") ||
+                port_TextsEqual(argv[i], "off")) {
+                port_MusicSetOn(port_TextsEqual(argv[i], "on"));
+            } else {
+                port_UsageError("--music-mods is on or off, not ", argv[i]);
+            }
         } else if (port_TextsEqual(word, "--rollback-test")) {
             if (!port_ParseNumber(argv[++i], &rollback_frames) ||
                 rollback_frames <= 0) {
@@ -401,8 +424,12 @@ s32 port_Main(s32 argc, char **argv) {
         return PORT_EXIT_FAILED;
     }
     port_InsertDisc(&g_port_disc);
+    /* the disc's files by name: the music's keys, the stages' files */
+    port_ReadDiscFiles(&g_port_disc);
     /* the mods, before the game reads anything a mod could stand in for */
     port_ModsStart(argc > 0 ? argv[0] : NULL);
+    port_MusicStart();
+    port_StartStageMods(&g_port_disc);
     if (plan != NULL) {
         port_LoadPlan(plan);
     }

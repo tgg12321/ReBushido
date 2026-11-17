@@ -262,6 +262,12 @@ typedef struct {
      * mods/english/ (docs/MODS.md, "The English menu"); 0 leaves it
      * out. */
     s32 english;
+    /* A mod's music is heard in place of the game's (docs/MODS.md,
+     * "Music"); 0 plays the game's own, from the next sample on. */
+    s32 music_mods;
+    /* The menus' lettering drawn again, the mod the program ships as
+     * mods/ui/ (docs/MODS.md, "The sharp menus"); 0 leaves it out. */
+    s32 ui;
     /* Playing online (the settings menu's Play online page; docs/
      * PLAYING.md): host (0) or join (1), the port a host waits at,
      * whether it is found at every address of the PC (1) or at 127.0.0.1

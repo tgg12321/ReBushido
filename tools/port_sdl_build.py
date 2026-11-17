@@ -91,8 +91,8 @@ SHIPPED_MODS = 'src/port/mods'
 # the window"). It calls GL only through pointers the window looks up with
 # SDL_GL_GetProcAddress, so nothing of GL is linked to.
 GL_DIR = 'src/port/gl/'
-GL_HOSTED = ['gl_draw.c', 'gl_fighter.c', 'gl_fighter_file.c', 'gl_light.c', 'gl_pause.c', 'gl_replace.c', 'gl_see.c',
-             'gl_shadow.c', 'gl_sky.c', 'gl_stage.c', 'gl_tween.c']
+GL_HOSTED = ['gl_draw.c', 'gl_fighter.c', 'gl_fighter_file.c', 'gl_light.c', 'gl_pause.c', 'gl_replace.c', 'gl_scene.c',
+             'gl_see.c', 'gl_shadow.c', 'gl_sky.c', 'gl_stage.c', 'gl_tween.c']
 # The hosts of the build without a window: not this one's on Linux, where
 # the C library's is host_posix.c; on Windows the one file is both builds'.
 OTHER_HOSTS = ('src/port/host_linux.c', 'src/port/host_windows.c')
@@ -371,12 +371,12 @@ def compile_one(job):
         else:
             flags = flags + [port_build.INSTRUMENT]
         cmd = [target.cc] + flags + target.game_flags + ['-MD', '-MF', obj[:-2] + '.d', '-x', 'c']
-        if target.windows:
+        if target.windows and path not in port_build.NATURAL_ALIGNMENT:
             proc = compile_for_windows(target, cmd, modern.modern_source(path), obj)
         else:
             proc = subprocess.run(cmd + ['-c', '-', '-o', obj], input=modern.modern_source(path), capture_output=True,
                                   text=True, env=port_build.environment(), encoding='utf-8', errors='replace')
-            if proc.returncode == 0:
+            if proc.returncode == 0 and not target.windows and path not in port_build.NATURAL_ALIGNMENT:
                 # the boundary the PlayStation's compiler gives each
                 # variable, so that the game's neighbours stay neighbours
                 port_build.cap_alignment(obj)

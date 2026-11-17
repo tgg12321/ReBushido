@@ -93,6 +93,10 @@ const char g_port_default_settings[] =
     "                       # (docs/MODS.md); off for the game's own\n"
     "english = on           # the top menu in English, a mod the program\n"
     "                       # ships (mods/english/); off for Japanese\n"
+    "ui = on                # the menus' lettering drawn again, sharp at\n"
+    "                       # any size: a mod the program ships (mods/ui/)\n"
+    "music_mods = on        # a mod's music in place of the game's; off\n"
+    "                       # for the game's own (docs/MODS.md)\n"
     "\n"
     "# Playing online (docs/PLAYING.md): what the settings menu's Play\n"
     "# online page starts with, and keeps.\n"
@@ -670,6 +674,16 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "english is on or off";
     }
+    if (port_WordsMatch(name, "ui")) {
+        return port_ReadChoice(value, "off", "on", &settings->ui)
+                   ? NULL
+                   : "ui is on or off";
+    }
+    if (port_WordsMatch(name, "music_mods")) {
+        return port_ReadChoice(value, "off", "on", &settings->music_mods)
+                   ? NULL
+                   : "music_mods is on or off";
+    }
     if (port_WordsMatch(name, "stage_mesh")) {
         return port_ReadChoice(value, "off", "on", &settings->stage_mesh)
                    ? NULL
@@ -879,12 +893,16 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->mods = 1;
     /* the English top menu the program ships (docs/MODS.md) */
     settings->english = 1;
+    /* and the menus' lettering drawn again (docs/MODS.md) */
+    settings->ui = 1;
     /* the Play online page's (the text below says the same) */
     settings->net_role = 0;
     settings->net_port = PORT_NET_PORT_DEFAULT;
     settings->net_listen = 1;
     settings->net_delay = PORT_NET_DELAY_DEFAULT;
     settings->net_address[0] = 0;
+    /* a mod's music, where a mod has some (docs/MODS.md) */
+    settings->music_mods = 1;
     /* a name the window's library does not know leaves that one out */
     port_ReadLines(settings, text, lookup, NULL, 1);
 }
