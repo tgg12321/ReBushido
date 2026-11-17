@@ -1727,10 +1727,9 @@ void port_RemasterCommand(const u32 *words, s32 count) {
         return;
     }
     /* A step whose frames were run ahead (port_platform.h): the backend
-     * drew its primitives then, and is told only of what it writes into
-     * video memory, from the pixels the step itself leaves there. */
-    if (g_port_unseen && ((code & COMMAND_KIND_MASK) == COMMAND_POLYGONS ||
-                          (code & COMMAND_KIND_MASK) == COMMAND_RECTANGLES)) {
+     * was given all of it then, and what it writes into video memory
+     * would be drawn over the frame those steps drew. */
+    if (g_port_unseen) {
         return;
     }
     port_GetGpuState(&state);
@@ -1770,7 +1769,8 @@ void port_RemasterCommand(const u32 *words, s32 count) {
 }
 
 void port_RemasterLoadedVram(s32 x, s32 y, s32 w, s32 h) {
-    if (g_backend == NULL || !port_RemasterIsOn()) {
+    /* told by the steps run ahead already (port_RemasterCommand) */
+    if (g_backend == NULL || !port_RemasterIsOn() || g_port_unseen) {
         return;
     }
     if (g_backend->wrote_vram != NULL) {

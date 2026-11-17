@@ -2059,6 +2059,16 @@ static void port_ReadInputLate(void) {
     port_ReadEvents();
     port_SendPads();
     port_ReadDevicesNow();
+    if (g_port_has_gl && g_port_tween_on && port_GetRunAhead() > 0) {
+        /* The pictures between frames put back into the card's mirror of
+         * video memory what video memory holds at their blank, which,
+         * with frames run ahead, is a frame or two behind the frames the
+         * card draws; the step after them tells the card nothing. So the
+         * mirror is sent video memory as it is now, before the frames are
+         * run ahead and their writes go over it. */
+        port_ProfileSwitch(PORT_PROFILE_CARD);
+        port_GlUploadVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
+    }
     port_ProfileSwitch(was);
 }
 
