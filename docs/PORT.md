@@ -4140,6 +4140,21 @@ faces), and the models are not darkened by them: what a model covers is
 marked in the shadows' mask as the game's faces are
 (`port_GlFighterDrawOccluders`).
 
+**The flicker over the feet** (the owner, on his card at 85 Hz with
+`frame_rate = display`): the mark was made only while the models were
+"drawn this picture", and a picture between two frames
+(`gl_tween.c`) puts that back before it finishes, so in every such
+picture the mask had no model in it and the shadow darkened whatever of
+the fighters it fell on -- his feet above all, which stand in it. With
+`frame_rate = display` that is every picture, the edge of the darkening
+moving with each. The mark now goes by whether the layer was laid over
+this picture (`is_laid`), and it is made without the ground's slots,
+which near the soles give one answer one picture and the other the next.
+Measured on `port_game`'s fight at scale 2, 48 consecutive pictures of
+four a frame, both fighters from the `hd` mod and `shadows cast`: before,
+16,790 of the fighters' pixels a picture were darkened and 231 of them
+toggled between two pictures; after, none of either.
+
 **What is not done.** The tiny mode's model; the cloth, which the game
 moves and draws itself, is still the game's own faces beside a smooth
 model; the order of a model against the game's own faces is per pixel,

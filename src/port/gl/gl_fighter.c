@@ -268,10 +268,17 @@ static struct {
     /* the fighters of this frame are drawn: the rest of their
      * primitives are only left out */
     s32 is_drawn;
-    /* where the layer was laid over the picture, and whether it was held
-     * against the ground's slots */
+    /* the layer was laid over this picture, at `laid`: what the shadows'
+     * mask marks the fighters by at the picture's end
+     * (port_GlFighterDrawOccluders). Not `is_drawn`, which a picture
+     * between two frames puts back before the picture is finished
+     * (port_GlFighterTween): the mask of every such picture then had no
+     * fighter in it, and the shadow darkened his feet in the pictures
+     * between two frames and not in the frames' own, which on a screen is
+     * a flicker over the feet. */
+    s32 is_laid;
+    /* where the layer was laid over the picture */
     s32 laid[4];
-    s32 laid_order;
     /* a picture between two frames is being drawn, `phase` of the way */
     s32 tween_phase;
     /* the views of the last two frames the fighters were drawn in: the
@@ -821,7 +828,10 @@ static FighterModel *port_GlFighterWeaponModel(s32 weapon) {
 
 /* ---- a frame ---- */
 
-void port_GlFighterNewFrame(void) { g_fighter.is_drawn = FALSE; }
+void port_GlFighterNewFrame(void) {
+    g_fighter.is_drawn = FALSE;
+    g_fighter.is_laid = FALSE;
+}
 
 /* The slot whose model the primitive is a drawing of, by where its node
  * is, or -1. */
@@ -1409,8 +1419,7 @@ static void port_GlFighterDrawAll(
     g_fighter.laid[1] = y;
     g_fighter.laid[2] = w;
     g_fighter.laid[3] = h;
-    g_fighter.laid_order =
-        port_GlStageSaveFrame() && options.is_stage_depth ? 1 : 0;
+    g_fighter.is_laid = TRUE;
     /* the depth is written whatever is there: the test is only how GL
      * lets a fragment write it */
     glEnable(GL_DEPTH_TEST);
@@ -1580,7 +1589,7 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
 void port_GlFighterDrawOccluders(u32 framebuffer) {
     PortGlPicture picture;
 
-    if (!g_fighter.is_drawn || g_fighter.laid[2] <= 0) {
+    if (!g_fighter.is_laid || g_fighter.laid[2] <= 0) {
         return;
     }
     port_GlGetPicture(&picture);
@@ -1597,7 +1606,13 @@ void port_GlFighterDrawOccluders(u32 framebuffer) {
     glUniform1i(g_fighter.c_at_layer, 2);
     glUniform1i(g_fighter.c_at_layer_depth, 3);
     glUniform1i(g_fighter.c_at_ground_slots, 1);
-    glUniform1i(g_fighter.c_at_ground_order, g_fighter.laid_order);
+    /* Every pixel of the fighter, the ground's slots not asked: where his
+     * soles stand on the ground the slot of the face of the ground and his
+     * own are a step apart, and which wins changes from one picture to the
+     * next as he breathes. Darkened there, that is a flicker over his
+     * feet; kept out of the darkening, it is a sliver of ground the size
+     * of a sole's edge left as lit as the sole. */
+    glUniform1i(g_fighter.c_at_ground_order, 0);
     glUniform2f(g_fighter.c_at_origin, (GLfloat)g_fighter.laid[0],
                 (GLfloat)g_fighter.laid[1]);
     glUniform4f(g_fighter.c_at_rect, (GLfloat)g_fighter.laid[0],
@@ -1740,6 +1755,11 @@ s32 port_GlFighterCastTriangles(
 void port_GlFighterTween(s32 phase) {
     g_fighter.tween_phase = phase;
     g_fighter.is_drawn = FALSE;
+    /* a picture between two frames begins with no layer of its own; one
+     * that ends keeps the one it laid until its shadows are drawn */
+    if (phase >= 0) {
+        g_fighter.is_laid = FALSE;
+    }
 }
 
 /* ---- the poses, for the exporter ---- */
