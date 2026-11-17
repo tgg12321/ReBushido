@@ -71,7 +71,17 @@ to play is [`PLAYING.md`](PLAYING.md).
    plans are not kept as a test; `src/port/window/` is outside
    `tools/lint.py` and `tools/count.py`; `port_gl_prove.py`'s `blocks`
    verdict says NO on `main` (it did before the last two merges too).
-7. **The original's bugs left alone** ([`REBUSHIDO.md`](REBUSHIDO.md),
+7. **The English top menu and the settings menu** (roadmap 11;
+   [`MODS.md`](MODS.md), "The English menu"; [`PLAYING.md`](PLAYING.md),
+   "The settings menu"). Both proved headless only. To look at: the
+   English rows' lettering at the player's own window size, and "Group
+   Battle Mode", the longest, drawn smaller to fit its 64 texels; "Setup
+   Mode" for 支度の間, since every row shares its second piece, "Mode";
+   the menu's look and its keys on a real controller. The English is
+   drawn by Graphics: Remastered alone, and the window starts as the
+   options page says, Original unless it is changed, so a player sees it
+   once Remastered is on (F2, or the menu).
+8. **The original's bugs left alone** ([`REBUSHIDO.md`](REBUSHIDO.md),
    "Left as the original has it"). My recommendation: the three that
    only change the picture under Bugfixes, and the CPU's and the
    fight's under a separate setting, since they change how the game
@@ -80,7 +90,9 @@ to play is [`PLAYING.md`](PLAYING.md).
 ## The owner's decisions
 
 - Publishing release 0.1 (tagging and publishing are the owner's).
-- Which of the original's bugs to fix (7).
+- Which of the original's bugs to fix (8).
+- The English rows' names and look, and whether the window should start
+  in Remastered so that they are seen (7).
 - Which shadows by default (`original`, `soft` or `cast`), and how
   dark (2).
 - The high frame rate by default (5).

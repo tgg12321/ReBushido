@@ -37,6 +37,13 @@ typedef struct {
     s32 window_h;
     s32 fault_at;       /* touch memory that is not there at this blank */
     s32 fault_in_sound; /* ... on the sound card's thread, from it on */
+    /* the settings menu (menu.h), for a test: opened as F1 opens it, at
+     * these blanks ("1500,4000"); told these words, one a picture, as presses
+     * (port_MenuWord; `shot` keeps the window's picture as a PNG in
+     * `menu_shots`); closed when they run out */
+    const char *menu_at;
+    const char *menu_keys;
+    const char *menu_shots;
 } PortWindowOptions;
 
 extern PortSettings g_port_settings;
@@ -50,6 +57,41 @@ extern void port_DescribeControls(void);
 /* Hangs the window on the port (port_platform.h, "the window"): it
  * opens at the first vertical blank. */
 extern void port_StartWindow(void);
+/* The settings file the settings menu writes (sdl_main.c): the one read,
+ * or rebushido.cfg beside the program where none was. */
+extern const char *port_GetSettingsPath(void);
+
+/* ---- the settings menu in the window (sdl_menu.c) ---- */
+
+union SDL_Event;
+
+/* The menu is asked for (`why`, for the log): it opens at the end of the
+ * first blank where the game has shown a frame since. */
+extern void port_AskForMenu(const char *why);
+/* At a blank's end: the menu, where it was asked for, from the moment it
+ * opens to the moment it closes, with the game stopped. */
+extern void port_MaybeRunMenu(u32 blank);
+/* A pad's buttons `held` now, of which `sent` were held before: where
+ * Select opens the menu (the screens that do nothing with it), the
+ * buttons to hold back from the game until let go, and in `out` what the
+ * game is given. */
+extern u32 port_MenuTakesPad(u32 held, u32 sent, u32 *out);
+
+/* ---- what sdl_window.c does for the menu ---- */
+
+extern void port_GetWindowSize(s32 *w, s32 *h);
+/* The game's picture as it stopped, darkened, the menu's `pixels` over it
+ * at `place`, and shown; for a test, the window as a PNG at `shot` first,
+ * where that is not NULL. */
+extern void port_ShowMenu(
+    u32 blank, const u32 *pixels, const PortRect *place, const char *shot);
+/* Whatever the pads hold now is not given to the game until let go. */
+extern void port_HoldBackPads(void);
+/* A controller plugged in or pulled out while the menu is open. */
+extern void port_TakeControllerEvent(const union SDL_Event *event);
+/* The pad of a controller by SDL's number for it; -1 for none. */
+extern s32 port_PadOfController(s32 id);
+extern void port_ToggleFullscreen(void);
 
 /* ---- the session's log (sdl_log.c) ---- */
 

@@ -176,4 +176,14 @@ camera), particle effects, skyboxes on the stages that were left dark.
 11. **Menus and UI**: the menus redrawn (the Japanese options of the
     title screen in English), and the settings menu holding all of
     ReBushido's own settings.
+    Both are in, on the port. The top menu is in English by a mod the
+    program ships, drawn by the remastered picture with the US disc's
+    own names of the modes ([`MODS.md`](MODS.md), "The English menu").
+    The settings menu (F1, a controller's guide button, or Select on the
+    options page, the top menu and the pause) holds every setting of
+    `rebushido.cfg` and both players' buttons, stops the game at a
+    frame's boundary while it is open, applies what it can at once, and
+    writes the file keeping everything else in it
+    ([`PLAYING.md`](PLAYING.md), "The settings menu"). Left: the rest of
+    the game's menu text, English already, drawn sharper the same way.
 12. **Optimisation**, for a smooth and seamless game.
