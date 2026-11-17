@@ -4126,7 +4126,19 @@ table's slots, as a fighter's own primitives are ("Depth: the scene is
 held against the ground"; a fighter's depth goes into the table shifted
 by three whatever his scale, `render_DrawSkinned`), and it writes its
 depth where the ground's is, so what the scene paints after it is held
-against him. In a picture between two frames (`gl_tween.c`) the bones
+against him. His cloth is still the game's own faces, painted by the
+table after the layer and, as a fighter's own, not held to that depth:
+so it was painted over the model wherever it lay, and the back of
+Kannuki's hakama showed through his legs from the front. A cloth of a
+fighter drawn from a model is now held against the layer's own depth,
+pixel by pixel (`port_GlFighterHolds`, `u_fighter_depth` in
+`gl_draw.c`), taken 8 units nearer than it is, which keeps it where it
+is fastened at the belt: hidden where the model is in front of it, over
+the model where it is in front. The layer is laid at the first of the
+fighters' primitives or of their cloths, so that no cloth is painted
+before it (a long robe's farthest faces can come before every face of
+the body: 646 of 16,384 cloth faces in `port_game`'s fight of
+`ROSTER_VICTIM` against `ROSTER_LAST_2`). In a picture between two frames (`gl_tween.c`) the bones
 and the camera are the two frames' mixed, the rotations made rotations
 again.
 

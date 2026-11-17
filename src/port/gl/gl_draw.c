@@ -230,6 +230,20 @@ PORT_GL_FUNCTIONS
 /* A mod's picture of its whole texture page stands in for its texture
  * (gl_scene.h). */
 #define FLAG_PAGE 128
+/* Not in the byte: a cloth held against the depth of the fighters drawn
+ * from models (port_GlFighterHolds), carried in the second bit of the
+ * vertex's `info[3]` (INFO_HELD). */
+#define FLAG_HELD 256
+/* The bits of a vertex's `info[3]`: the chip's rule for which pixels a
+ * flat polygon covers, and a cloth held against the models. */
+#define INFO_FLAT_RULE 1
+#define INFO_HELD 2
+/* The unit the fighters' layer's depth is read from. */
+#define FIGHTER_DEPTH_UNIT 9
+/* How much nearer than it is a cloth is taken to be, against the models,
+ * in the world's units: where it is fastened, at the belt, the cloth and
+ * the model are the same surface to within the model's fit. */
+#define FIGHTER_CLOTH_BIAS 8.0f
 
 /* A corner's `w`: the depth the coprocessor worked out, in these units.
  * Any number in proportion to it will do -- it is the perspective divide
@@ -364,6 +378,9 @@ static struct {
     GLint at_depth_range;
     GLint at_depth_bias;
     GLint at_ground_slots;
+    GLint at_fighter_depth;
+    GLint at_fighter_rect;
+    GLint at_fighter_bias;
     GLint at_ground_order;
     GLint blit_at_target;
     GLint blit_at_rect;
@@ -583,7 +600,7 @@ static const char g_gl_geometry_text[] =
     "    return ((a < 0) != (b < 0)) ? -q : q;\n"
     "}\n"
     "void main() {\n"
-    "    if (g_info[0].w == 0u) {\n"
+    "    if ((g_info[0].w & 1u) == 0u) {\n"
     "        vec2 least = min(min(g_texture[0], g_texture[1]), g_texture[2]);\n"
     "        vec2 most = max(max(g_texture[0], g_texture[1]), g_texture[2]);\n"
     "        for (int i = 0; i < 3; i++) {\n"
@@ -713,6 +730,11 @@ static const char g_gl_fragment_text[] =
      * the mesh wrote it this frame (port_GlIsOverGround) */
     "uniform usampler2D u_ground_slots;\n"
     "uniform int u_ground_order;\n"
+    /* the depth of the fighters drawn from models, and where their layer
+     * lies (port_GlFighterLayerDepth) */
+    "uniform sampler2D u_fighter_depth;\n"
+    "uniform vec4 u_fighter_rect;\n"
+    "uniform float u_fighter_bias;\n"
     "flat in float v_slot;\n"
     "in vec2 v_texture;\n"
     "noperspective in vec2 v_texture_flat;\n"
@@ -840,6 +862,19 @@ static const char g_gl_fragment_text[] =
     "        && texelFetch(u_ground_slots, ivec2(gl_FragCoord.xy), 0).r\n"
     "           < uint(v_slot)) {\n"
     "        discard;\n"
+    "    }\n"
+    /* A cloth of a fighter drawn from a model is hidden where the models
+     * are nearer than it (port_GlFighterHolds): the layer they were drawn
+     * into kept their depth, in the world's own units, as this does. */
+    "    if ((v_info.w & 2u) != 0u) {\n"
+    "        ivec2 at = ivec2(gl_FragCoord.xy - u_fighter_rect.xy);\n"
+    "        if (all(greaterThanEqual(at, ivec2(0)))\n"
+    "            && all(lessThan(at, ivec2(u_fighter_rect.zw)))) {\n"
+    "            float body = texelFetch(u_fighter_depth, at, 0).r;\n"
+    "            float deep = (u_w_scale / gl_FragCoord.w)\n"
+    "                       * exp2(float(v_info.z));\n"
+    "            if (deep - u_fighter_bias > body) { discard; }\n"
+    "        }\n"
     "    }\n"
     "    vec2 uv = (u_affine != 0) ? v_texture_flat : v_texture;\n"
     /* the texture point as it runs across the primitive, before it is
@@ -1453,6 +1488,24 @@ static void port_GlSetState(const PortGlState *state) {
 
 /* What a draw of the picture's own program needs, whichever buffer it
  * draws into. */
+/* What a cloth of a fighter drawn from a model is held against: the
+ * depth of the layer the models were drawn into in this picture
+ * (port_GlFighterHolds). With no layer laid the rectangle is empty and
+ * nothing is held. */
+static void port_GlSetFighterDepth(void) {
+    s32 rect[4] = {0, 0, 0, 0};
+    u32 texture = (u32)port_GlFighterLayerDepth(rect);
+
+    glActiveTexture(GL_TEXTURE0 + FIGHTER_DEPTH_UNIT);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(g_gl.at_fighter_depth, FIGHTER_DEPTH_UNIT);
+    glUniform4f(g_gl.at_fighter_rect, (GLfloat)rect[0], (GLfloat)rect[1],
+                (GLfloat)(texture != 0 ? rect[2] : 0),
+                (GLfloat)(texture != 0 ? rect[3] : 0));
+    glUniform1f(g_gl.at_fighter_bias, FIGHTER_CLOTH_BIAS);
+}
+
 static void port_GlSetUniforms(void) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
@@ -1478,6 +1531,7 @@ static void port_GlSetUniforms(void) {
      * the mesh wrote them into the buffer being drawn into */
     glUniform1i(g_gl.at_ground_order, 0);
     glUniform1i(g_gl.at_ground_slots, 1);
+    port_GlSetFighterDepth();
     glUniform1i(g_gl.at_replaced, 0);
     glUniform1i(g_gl.at_replace, PORT_GL_REPLACE_UNIT);
     /* a mod's pictures of the stage's pages (gl_scene.h) */
@@ -1682,10 +1736,14 @@ static void port_GlPutVertex(
      * the ground's own mesh puts back (port_remaster.h) */
     to->info[2] = (u8)prim->depth_shift;
     /* a flat polygon covers the pixels the chip's own rule gives it (the
-     * geometry shader) */
-    to->info[3] = (u8)((flags & FLAG_FLAT) != 0 &&
-                       (prim->kind == PORT_REMASTER_TRIANGLE ||
-                        prim->kind == PORT_REMASTER_QUAD));
+     * geometry shader), and a cloth is held against the models */
+    to->info[3] =
+        (u8)(((flags & FLAG_FLAT) != 0 &&
+                      (prim->kind == PORT_REMASTER_TRIANGLE ||
+                       prim->kind == PORT_REMASTER_QUAD)
+                  ? INFO_FLAT_RULE
+                  : 0) |
+             ((flags & FLAG_HELD) != 0 ? INFO_HELD : 0));
     to->window[0] = (u8)prim->window_and_u;
     to->window[1] = (u8)prim->window_or_u;
     to->window[2] = (u8)prim->window_and_v;
@@ -1949,6 +2007,10 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
      * out, and the model is drawn at the first of them (gl_fighter.h) */
     if (port_GlFighterTakes(prim)) {
         return;
+    }
+    /* ... and his cloth is held against the model's depth */
+    if (port_GlFighterHolds() && prim->has_depth) {
+        flags |= FLAG_HELD;
     }
     if (prim->is_textured) {
         flags |= FLAG_TEXTURED;
@@ -2568,6 +2630,10 @@ const char *port_GlStart(
     g_gl.at_depth_range = glGetUniformLocation(g_gl.program, "u_depth_range");
     g_gl.at_depth_bias = glGetUniformLocation(g_gl.program, "u_depth_bias");
     g_gl.at_ground_slots = glGetUniformLocation(g_gl.program, "u_ground_slots");
+    g_gl.at_fighter_depth =
+        glGetUniformLocation(g_gl.program, "u_fighter_depth");
+    g_gl.at_fighter_rect = glGetUniformLocation(g_gl.program, "u_fighter_rect");
+    g_gl.at_fighter_bias = glGetUniformLocation(g_gl.program, "u_fighter_bias");
     g_gl.at_ground_order = glGetUniformLocation(g_gl.program, "u_ground_order");
     g_gl.at_pass = glGetUniformLocation(g_gl.program, "u_pass");
     g_gl.blit_at_target = glGetUniformLocation(g_gl.blit_program, "u_target");
