@@ -1,0 +1,1037 @@
+/* The stage's textures replaced by whole pages, for the remastered
+ * picture (gl_scene.h; docs/MODS.md, "The scene's textures by page").
+ *
+ * When the game loads a stage, tex_LoadStageGroup says which TIMs it
+ * loaded and where (port_remaster.h). That says which of video memory's
+ * pixels are the stage's own, and which pages and colour tables its faces
+ * can name: each TIM's page, with the table it brought. Each of those is
+ * looked up as soon as the stage is drawn -- its key, then a mod's
+ * picture of that key -- so that the pictures are read while the stage
+ * loads and not in the middle of a fight. A page and a table the faces
+ * name that no TIM brought is looked up the first time a face is drawn
+ * with it, the same way.
+ *
+ * The pictures are the layers of one array on the card, all of one size,
+ * with their mipmaps made here. Which layer a page and a table have is
+ * one texel of the lookup table, at the page's number times 64 and the
+ * table's column across and the table's row down, which is where both
+ * shaders find it; and the colours the picture was made with, the table
+ * as the stage loaded it, are a row of the table of bases, by layer.
+ *
+ * Nothing here is in the build without a window, and nothing here changes
+ * a value the game computes. */
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "common.h"
+#include "gl_scene.h"
+#include "port_gpu.h"
+#include "port_host.h"
+#include "port_mods.h"
+#include "port_png.h"
+#include "port_remaster.h"
+
+/* ---- GL, as much of it as this file uses ---- */
+
+typedef unsigned int GLenum;
+typedef int GLint;
+typedef unsigned int GLuint;
+typedef int GLsizei;
+typedef float GLfloat;
+
+#define GL_NO_ERROR 0
+#define GL_TEXTURE_2D 0x0DE1
+#define GL_TEXTURE_2D_ARRAY 0x8C1A
+#define GL_TEXTURE0 0x84C0
+#define GL_TEXTURE_MIN_FILTER 0x2801
+#define GL_TEXTURE_MAG_FILTER 0x2800
+#define GL_TEXTURE_WRAP_S 0x2802
+#define GL_TEXTURE_WRAP_T 0x2803
+#define GL_TEXTURE_BASE_LEVEL 0x813C
+#define GL_TEXTURE_MAX_LEVEL 0x813D
+#define GL_TEXTURE_MAX_ANISOTROPY 0x84FE
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY 0x84FF
+#define GL_NEAREST 0x2600
+#define GL_LINEAR 0x2601
+#define GL_LINEAR_MIPMAP_LINEAR 0x2703
+#define GL_CLAMP_TO_EDGE 0x812F
+#define GL_RGBA 0x1908
+#define GL_RGBA8 0x8058
+#define GL_R16UI 0x8234
+#define GL_RED_INTEGER 0x8D94
+#define GL_UNSIGNED_BYTE 0x1401
+#define GL_UNSIGNED_SHORT 0x1403
+#define GL_UNPACK_ALIGNMENT 0x0CF5
+#define GL_UNPACK_ROW_LENGTH 0x0CF2
+
+#define PORT_GL_SCENE_FUNCTIONS                                                \
+    GL(void, glGenTextures, (GLsizei, GLuint *))                               \
+    GL(void, glDeleteTextures, (GLsizei, const GLuint *))                      \
+    GL(void, glBindTexture, (GLenum, GLuint))                                  \
+    GL(void, glActiveTexture, (GLenum))                                        \
+    GL(void, glTexParameteri, (GLenum, GLenum, GLint))                         \
+    GL(void, glTexParameterf, (GLenum, GLenum, GLfloat))                       \
+    GL(void, glTexImage2D,                                                     \
+       (GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum,         \
+        const void *))                                                         \
+    GL(void, glTexSubImage2D,                                                  \
+       (GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum,         \
+        const void *))                                                         \
+    GL(void, glTexImage3D,                                                     \
+       (GLenum, GLint, GLint, GLsizei, GLsizei, GLsizei, GLint, GLenum,        \
+        GLenum, const void *))                                                 \
+    GL(void, glTexSubImage3D,                                                  \
+       (GLenum, GLint, GLint, GLint, GLint, GLsizei, GLsizei, GLsizei, GLenum, \
+        GLenum, const void *))                                                 \
+    GL(void, glPixelStorei, (GLenum, GLint))                                   \
+    GL(void, glGetFloatv, (GLenum, GLfloat *))                                 \
+    GL(GLenum, glGetError, (void))
+
+#define GL(result, name, args) static result(*name) args;
+PORT_GL_SCENE_FUNCTIONS
+#undef GL
+
+/* ---- what is kept ---- */
+
+/* The lookup table: a column for each of the 32 pages' 64 columns of
+ * colour tables, and a row for each row of video memory. An entry is the
+ * layer and one, in its low twelve bits; the depth of the texels it was
+ * found for, in the next two; and the top bit once it has been looked up,
+ * with a layer or without. */
+#define PAGES 32
+#define PAGES_ACROSS 16
+#define PAGE_X_STEP 64
+#define PAGE_Y_STEP 256
+#define TABLE_COLUMNS 64
+#define TABLE_STEP 16
+#define LOOKUP_W (PAGES * TABLE_COLUMNS)
+#define LOOKUP_H PORT_VRAM_HEIGHT
+#define ENTRY_LAYER_MASK 0x0FFF
+#define ENTRY_BITS_SHIFT 12
+#define ENTRY_SEEN 0x8000
+
+/* The most pictures a stage may have. A stage's pages and tables come to
+ * some twenty or thirty. */
+#define LAYERS_MAX 64
+/* ... and how many more the array has room for than the stage's TIMs
+ * asked for, for a page found later */
+#define LAYERS_SPARE 4
+/* What has been looked up, so that a write over its page or its table can
+ * have it looked up again. */
+#define LOOKED_MAX 1024
+/* the colours of a table, at the most */
+#define COLORS_MAX 256
+#define COLORS_4 16
+#define RGBA 4
+#define BYTE_MAX 255
+#define FIVE_MAX 31
+#define RED_SHIFT 0
+#define GREEN_SHIFT 5
+#define BLUE_SHIFT 10
+#define TEXT_SIZE 1024
+/* the pictures' mipmaps go down to a quarter of the game's own texel:
+ * smaller, a level would smooth a texture into its neighbours in the
+ * page, which the rectangle a face is held to cannot keep out */
+#define LEVELS_BELOW_TEXEL 2
+#define ANISOTROPY_MAX 16.0f
+/* a PNG's signature and its header's chunk, and where the width is in it */
+#define PNG_HEAD 24
+#define PNG_WIDTH_AT 16
+/* the largest picture of a page: eight times it, 64 MB with its levels */
+#define PAGE_PICTURE_MAX 2048
+/* the folder of the dump the pages are written into */
+#define DUMP_PAGES "pages"
+
+typedef struct {
+    s16 page_x;
+    s16 page_y;
+    s16 clut_x; /* the table the faces name */
+    s16 clut_y;
+    s16 base_x; /* ... and where its colours are as the stage loaded it */
+    s16 base_y;
+    s16 bits;
+    s16 is_stale; /* written over since: looked up again next frame */
+    u64 key;
+    const char *path; /* a mod's picture of it, or NULL */
+} Looked;
+
+static struct {
+    s32 is_started;
+    s32 is_on;
+    s32 has_tables;
+    GLuint lookup;
+    GLuint pages;
+    GLuint bases;
+    u16 *lookup_table; /* what the card's lookup table holds */
+    u8 *own;           /* which pixels of video memory are the stage's */
+    u32 owned_pages;   /* a bit for each page that has any */
+    u32 version;       /* the stage's textures the tables were made for */
+    s32 side;          /* the pictures' size, each way */
+    s32 levels;        /* ... and how many levels each has */
+    s32 capacity;      /* layers the array has room for */
+    s32 layer_count;
+    u64 layer_keys[LAYERS_MAX];
+    u16 *base_rows; /* the bases, LAYERS_MAX rows of COLORS_MAX */
+    Looked *looked;
+    s32 looked_count;
+    s32 has_stale;
+    GLfloat anisotropy;
+    u32 loaded;
+    u32 dumped;
+} g_scene;
+
+/* ---- the log ---- */
+
+static void port_GlSceneSay(const char *format, ...) {
+    char line[TEXT_SIZE];
+    va_list args;
+    s32 length;
+
+    va_start(args, format);
+    length = vsnprintf(line, sizeof(line) - 1, format, args);
+    va_end(args);
+    if (length < 0) {
+        return;
+    }
+    if (length > (s32)sizeof(line) - 2) {
+        length = (s32)sizeof(line) - 2;
+    }
+    line[length++] = '\n';
+    port_HostWrite(PORT_HOST_ERRORS, line, (u32)length);
+}
+
+/* ---- starting ---- */
+
+const char *port_GlSceneStart(void *(*getproc)(const char *name)) {
+#define GL(result, name, args)                                                 \
+    name = (result(*) args)getproc(#name);                                     \
+    if (name == NULL) {                                                        \
+        return "no " #name;                                                    \
+    }
+    PORT_GL_SCENE_FUNCTIONS
+#undef GL
+    /* a context of its own: what was on the card before is not this
+     * one's, so the tables are made again when they are first wanted */
+    g_scene.has_tables = FALSE;
+    g_scene.lookup = 0;
+    g_scene.pages = 0;
+    g_scene.bases = 0;
+    g_scene.capacity = 0;
+    g_scene.layer_count = 0;
+    g_scene.version = 0;
+    g_scene.is_started = TRUE;
+    return NULL;
+}
+
+void port_GlSceneSetOn(s32 on) { g_scene.is_on = on != 0; }
+
+/* Whether anything is to be looked up: a mod has textures, or the game's
+ * are to be written out. */
+static s32 port_GlSceneIsWanted(void) {
+    return g_scene.is_started && g_scene.is_on &&
+           (port_ModsCount(PORT_MOD_TEXTURES) > 0 ||
+            port_ModsGetDumpFolder() != NULL);
+}
+
+/* The lookup table and the bases, made the first time they are wanted. */
+static s32 port_GlSceneMakeTables(void) {
+    if (g_scene.has_tables) {
+        return g_scene.lookup != 0;
+    }
+    g_scene.has_tables = TRUE;
+    if (g_scene.lookup_table == NULL) {
+        g_scene.lookup_table =
+            calloc((size_t)LOOKUP_W * LOOKUP_H, sizeof(*g_scene.lookup_table));
+        g_scene.own = calloc((size_t)PORT_VRAM_PIXELS, 1);
+        g_scene.base_rows =
+            calloc((size_t)LAYERS_MAX * COLORS_MAX, sizeof(*g_scene.base_rows));
+        g_scene.looked = calloc(LOOKED_MAX, sizeof(*g_scene.looked));
+    }
+    if (g_scene.lookup_table == NULL || g_scene.own == NULL ||
+        g_scene.base_rows == NULL || g_scene.looked == NULL) {
+        port_GlSceneSay("mods: no memory for the stage's pages");
+        return FALSE;
+    }
+    memset(g_scene.lookup_table, 0,
+           (size_t)LOOKUP_W * LOOKUP_H * sizeof(*g_scene.lookup_table));
+    glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_LOOKUP_UNIT);
+    glGenTextures(1, &g_scene.lookup);
+    glBindTexture(GL_TEXTURE_2D, g_scene.lookup);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R16UI, LOOKUP_W, LOOKUP_H, 0,
+                 GL_RED_INTEGER, GL_UNSIGNED_SHORT, g_scene.lookup_table);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glGenTextures(1, &g_scene.bases);
+    glBindTexture(GL_TEXTURE_2D, g_scene.bases);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R16UI, COLORS_MAX, LAYERS_MAX, 0,
+                 GL_RED_INTEGER, GL_UNSIGNED_SHORT, g_scene.base_rows);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, RGBA);
+    glActiveTexture(GL_TEXTURE0);
+    /* how far the card filters a texture seen at a slant, where it can */
+    g_scene.anisotropy = 0.0f;
+    while (glGetError() != GL_NO_ERROR) {
+    }
+    glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &g_scene.anisotropy);
+    if (glGetError() != GL_NO_ERROR) {
+        g_scene.anisotropy = 0.0f;
+    }
+    if (g_scene.anisotropy > ANISOTROPY_MAX) {
+        g_scene.anisotropy = ANISOTROPY_MAX;
+    }
+    return TRUE;
+}
+
+/* ---- the lookup table ---- */
+
+static s32 port_GlSceneColumn(s32 page_x, s32 page_y, s32 clut_x) {
+    s32 page = ((page_x / PAGE_X_STEP) % PAGES_ACROSS) +
+               ((page_y / PAGE_Y_STEP) & 1) * PAGES_ACROSS;
+
+    return page * TABLE_COLUMNS + ((clut_x / TABLE_STEP) % TABLE_COLUMNS);
+}
+
+static void port_GlSceneSetEntry(s32 column, s32 row, u16 entry) {
+    u16 *at = &g_scene.lookup_table[row * LOOKUP_W + column];
+
+    if (*at == entry) {
+        return;
+    }
+    *at = entry;
+    glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_LOOKUP_UNIT);
+    glBindTexture(GL_TEXTURE_2D, g_scene.lookup);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, column, row, 1, 1, GL_RED_INTEGER,
+                    GL_UNSIGNED_SHORT, at);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, RGBA);
+    glActiveTexture(GL_TEXTURE0);
+}
+
+/* ---- the pictures ---- */
+
+/* The array of pictures, with room for `layers` of `side` texels each
+ * way: made again, empty, where it has not the room. */
+static s32 port_GlSceneMakeArray(s32 side, s32 layers) {
+    s32 level;
+    s32 size;
+
+    if (g_scene.pages != 0 && side == g_scene.side &&
+        layers <= g_scene.capacity) {
+        return TRUE;
+    }
+    if (g_scene.pages != 0) {
+        glDeleteTextures(1, &g_scene.pages);
+        g_scene.pages = 0;
+    }
+    g_scene.side = side;
+    g_scene.capacity = layers;
+    /* down to a quarter of the game's texel: a picture of four times the
+     * page is 1024, 512, 256, 128 and 64 */
+    g_scene.levels = 1;
+    for (size = side;
+         size > PORT_MOD_PAGE_SIDE >> LEVELS_BELOW_TEXEL && size > 1;
+         size >>= 1) {
+        g_scene.levels++;
+    }
+    glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_PAGES_UNIT);
+    glGenTextures(1, &g_scene.pages);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, g_scene.pages);
+    for (level = 0, size = side; level < g_scene.levels; level++, size >>= 1) {
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, level, GL_RGBA8, size, size, layers,
+                     0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    }
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BASE_LEVEL, 0);
+    glTexParameteri(
+        GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_LEVEL, g_scene.levels - 1);
+    glTexParameteri(
+        GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    if (g_scene.anisotropy > 1.0f) {
+        glTexParameterf(
+            GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_ANISOTROPY, g_scene.anisotropy);
+    }
+    glActiveTexture(GL_TEXTURE0);
+    return glGetError() == GL_NO_ERROR;
+}
+
+/* A picture of `w` by `h` made `side` each way, by the mean of what each
+ * new pixel covers, read between the old ones. */
+static void port_GlSceneResize(const u8 *from, s32 w, s32 h, u8 *to, s32 side) {
+    s32 x;
+    s32 y;
+    s32 c;
+
+    for (y = 0; y < side; y++) {
+        float fy = ((float)y + 0.5f) * (float)h / (float)side - 0.5f;
+        s32 y0 = fy < 0.0f ? 0 : (s32)fy;
+        s32 y1 = y0 + 1 < h ? y0 + 1 : h - 1;
+        float ty = fy < 0.0f ? 0.0f : fy - (float)y0;
+
+        for (x = 0; x < side; x++) {
+            float fx = ((float)x + 0.5f) * (float)w / (float)side - 0.5f;
+            s32 x0 = fx < 0.0f ? 0 : (s32)fx;
+            s32 x1 = x0 + 1 < w ? x0 + 1 : w - 1;
+            float tx = fx < 0.0f ? 0.0f : fx - (float)x0;
+
+            for (c = 0; c < RGBA; c++) {
+                float top =
+                    (float)from[(y0 * w + x0) * RGBA + c] * (1.0f - tx) +
+                    (float)from[(y0 * w + x1) * RGBA + c] * tx;
+                float bottom =
+                    (float)from[(y1 * w + x0) * RGBA + c] * (1.0f - tx) +
+                    (float)from[(y1 * w + x1) * RGBA + c] * tx;
+
+                to[(y * side + x) * RGBA + c] =
+                    (u8)(top * (1.0f - ty) + bottom * ty + 0.5f);
+            }
+        }
+    }
+}
+
+/* The level below: each pixel the mean of the four it stands for. The
+ * colours are already multiplied by their alpha, so a clear pixel takes
+ * nothing of its colour into its neighbours. */
+static void port_GlSceneHalve(const u8 *from, s32 side, u8 *to) {
+    s32 half = side / 2;
+    s32 x;
+    s32 y;
+    s32 c;
+
+    for (y = 0; y < half; y++) {
+        for (x = 0; x < half; x++) {
+            for (c = 0; c < RGBA; c++) {
+                const u8 *at = from + ((2 * y) * side + 2 * x) * RGBA + c;
+                u32 sum = (u32)at[0] + at[RGBA] + at[side * RGBA] +
+                          at[side * RGBA + RGBA];
+
+                to[(y * half + x) * RGBA + c] = (u8)((sum + 2) / 4);
+            }
+        }
+    }
+}
+
+/* The mod's picture at `path` into layer `layer`, every level of it. */
+static s32 port_GlSceneLoad(const char *path, const char *name, s32 layer) {
+    char problem[TEXT_SIZE / 4];
+    PortPngInfo info;
+    u32 size = port_ModFileSize(path);
+    u8 *file = size > 0 ? malloc(size) : NULL;
+    u8 *work = NULL;
+    u8 *rgba = NULL;
+    u8 *level_pixels = NULL;
+    s32 is_loaded = FALSE;
+    s32 level;
+    s32 side;
+    u32 i;
+
+    problem[0] = 0;
+    if (file == NULL || port_ModReadFile(path, file, size) != size) {
+        snprintf(problem, sizeof(problem), "it cannot be read");
+    } else if (port_PngMeasure(file, size, &info, problem, sizeof(problem))) {
+        work = malloc(info.work_bytes);
+        rgba = malloc((size_t)info.w * (size_t)info.h * RGBA);
+        level_pixels =
+            malloc((size_t)g_scene.side * (size_t)g_scene.side * RGBA * 2);
+        if (work == NULL || rgba == NULL || level_pixels == NULL) {
+            snprintf(problem, sizeof(problem), "no memory for it");
+        } else if (
+            port_PngDecode(file, size, work, rgba, problem, sizeof(problem))) {
+            u8 *now = level_pixels;
+            u8 *next =
+                level_pixels + (size_t)g_scene.side * g_scene.side * RGBA;
+
+            /* kept multiplied by their alpha, so that smoothing a clear
+             * texel into the next does not darken it; the shader divides
+             * them out again */
+            for (i = 0; i < (u32)info.w * (u32)info.h * RGBA; i += RGBA) {
+                rgba[i] = (u8)(rgba[i] * rgba[i + 3] / BYTE_MAX);
+                rgba[i + 1] = (u8)(rgba[i + 1] * rgba[i + 3] / BYTE_MAX);
+                rgba[i + 2] = (u8)(rgba[i + 2] * rgba[i + 3] / BYTE_MAX);
+            }
+            if (info.w == g_scene.side && info.h == g_scene.side) {
+                memcpy(now, rgba, (size_t)g_scene.side * g_scene.side * RGBA);
+            } else {
+                port_GlSceneResize(rgba, info.w, info.h, now, g_scene.side);
+            }
+            glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_PAGES_UNIT);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, g_scene.pages);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            for (level = 0, side = g_scene.side; level < g_scene.levels;
+                 level++, side >>= 1) {
+                u8 *swap;
+
+                glTexSubImage3D(GL_TEXTURE_2D_ARRAY, level, 0, 0, layer, side,
+                                side, 1, GL_RGBA, GL_UNSIGNED_BYTE, now);
+                if (level + 1 < g_scene.levels) {
+                    port_GlSceneHalve(now, side, next);
+                    swap = now;
+                    now = next;
+                    next = swap;
+                }
+            }
+            glPixelStorei(GL_UNPACK_ALIGNMENT, RGBA);
+            glActiveTexture(GL_TEXTURE0);
+            is_loaded = TRUE;
+            g_scene.loaded++;
+            port_GlSceneSay(
+                "mods: texture %s is %s (%dx%d)", name, path, info.w, info.h);
+        }
+    }
+    if (!is_loaded) {
+        port_GlSceneSay(
+            "mods: texture %s: %s is not used: %s", name, path, problem);
+    }
+    free(file);
+    free(work);
+    free(rgba);
+    free(level_pixels);
+    return is_loaded;
+}
+
+/* How large the array's pictures are: the first picture's own width, made
+ * a power of two from the page's 256 so that every level halves, which
+ * every other picture is made to. 0 where it is no PNG. */
+static s32 port_GlSceneSideOf(const char *path) {
+    u8 head[PNG_HEAD];
+    u32 got = port_ModReadFile(path, head, sizeof(head));
+    u32 w;
+    s32 side;
+
+    if (got < PNG_HEAD) {
+        return 0;
+    }
+    /* the header's first chunk is its size: the width four bytes, the
+     * high first */
+    w = ((u32)head[PNG_WIDTH_AT] << 24) | ((u32)head[PNG_WIDTH_AT + 1] << 16) |
+        ((u32)head[PNG_WIDTH_AT + 2] << 8) | (u32)head[PNG_WIDTH_AT + 3];
+    for (side = PORT_MOD_PAGE_SIDE; (u32)side < w && side < PAGE_PICTURE_MAX;
+         side <<= 1) {
+    }
+    return side;
+}
+
+/* ---- writing a page out ---- */
+
+static u8 port_GlSceneByte(u16 pixel, s32 shift) {
+    return (u8)(((pixel >> shift) & FIVE_MAX) * BYTE_MAX / FIVE_MAX);
+}
+
+/* The page as the stage's colours draw it, as a PNG named by its key in
+ * the dump's folder of pages, and beside it which of its rectangles are
+ * the stage's own textures (tools/port_stage_hd.py reads both). A texel
+ * that is not the stage's own, and one of nothing, is clear. */
+static void port_GlSceneDump(const PortTexturePage *page, const char *name) {
+    const char *folder = port_ModsGetDumpFolder();
+    const PortStageTexture *textures;
+    char path[TEXT_SIZE];
+    u32 version;
+    s32 count;
+    u8 *rgba;
+    u8 *png;
+    u32 size;
+    FILE *file;
+    s32 u;
+    s32 v;
+    s32 i;
+
+    if (folder == NULL) {
+        return;
+    }
+    snprintf(path, sizeof(path), "%s/%s", folder, DUMP_PAGES);
+    port_HostMakeFolder(path);
+    snprintf(path, sizeof(path), "%s/%s/%s.png", folder, DUMP_PAGES, name);
+    file = fopen(path, "rb");
+    if (file != NULL) {
+        fclose(file);
+        return;
+    }
+    rgba = malloc((size_t)PORT_MOD_PAGE_SIDE * PORT_MOD_PAGE_SIDE * RGBA);
+    png = malloc(port_PngEncodedSize(PORT_MOD_PAGE_SIDE, PORT_MOD_PAGE_SIDE));
+    if (rgba == NULL || png == NULL) {
+        free(rgba);
+        free(png);
+        return;
+    }
+    for (v = 0; v < PORT_MOD_PAGE_SIDE; v++) {
+        for (u = 0; u < PORT_MOD_PAGE_SIDE; u++) {
+            PortTextureRegion region;
+            u8 *out =
+                rgba + ((size_t)v * PORT_MOD_PAGE_SIDE + (size_t)u) * RGBA;
+            s32 x = page->page_x + port_TexturePagePixel(page, u);
+            u16 texel = 0;
+
+            if (g_scene.own[(page->page_y + v) * PORT_VRAM_WIDTH + x] != 0) {
+                region.bits = page->bits;
+                region.page_x = page->page_x;
+                region.page_y = page->page_y;
+                region.clut_x = page->clut_x;
+                region.clut_y = page->clut_y;
+                region.u = 0;
+                region.v = 0;
+                region.w = PORT_MOD_PAGE_SIDE;
+                region.h = PORT_MOD_PAGE_SIDE;
+                region.and_u = PORT_MOD_PAGE_SIDE - 1;
+                region.or_u = 0;
+                region.and_v = PORT_MOD_PAGE_SIDE - 1;
+                region.or_v = 0;
+                texel = port_TextureTexel(g_port_vram, &region, u, v);
+            }
+            out[0] = port_GlSceneByte(texel, RED_SHIFT);
+            out[1] = port_GlSceneByte(texel, GREEN_SHIFT);
+            out[2] = port_GlSceneByte(texel, BLUE_SHIFT);
+            out[3] = texel != 0 ? BYTE_MAX : 0;
+        }
+    }
+    size = port_PngEncode(rgba, PORT_MOD_PAGE_SIDE, PORT_MOD_PAGE_SIDE, png);
+    file = fopen(path, "wb");
+    if (file != NULL) {
+        if (fwrite(png, 1, size, file) == size) {
+            g_scene.dumped++;
+            port_GlSceneSay(
+                "mods: wrote %s (page %d %d, table %d %d)", path, page->page_x,
+                page->page_y, page->clut_x, page->clut_y);
+        }
+        fclose(file);
+    }
+    free(rgba);
+    free(png);
+    /* the stage's own textures in it, in texels from its corner */
+    snprintf(path, sizeof(path), "%s/%s/%s.txt", folder, DUMP_PAGES, name);
+    file = fopen(path, "w");
+    if (file == NULL) {
+        return;
+    }
+    fprintf(file, "page %d %d bits %d table %d %d\n", page->page_x,
+            page->page_y, page->bits, page->clut_x, page->clut_y);
+    textures = port_RemasterStageTextures(&count, &version);
+    for (i = 0; i < count; i++) {
+        const PortStageTexture *one = &textures[i];
+        s32 per = port_TexturePagePixel(page, PORT_MOD_PAGE_SIDE);
+        s32 left = one->x - page->page_x;
+        s32 top = one->y - page->page_y;
+
+        if (left >= per || top >= PORT_MOD_PAGE_SIDE || left + one->w <= 0 ||
+            top + one->h <= 0) {
+            continue;
+        }
+        /* in texels: a pixel of 16 bits is four of 4 bits, two of 8 */
+        fprintf(file, "texture %d %d %d %d table %d %d\n",
+                left * PORT_MOD_PAGE_SIDE / per, top,
+                one->w * PORT_MOD_PAGE_SIDE / per, one->h, one->clut_x,
+                one->clut_y);
+    }
+    fclose(file);
+}
+
+/* ---- looking a page up ---- */
+
+/* Where the colours of the table the faces name at (x, y) are as the
+ * stage loaded them: the stage's tables left of the display's width are
+ * loaded a row below where the faces name them, the row the fog writes
+ * over (port_remaster.h). FALSE for a table that is not the stage's. */
+static s32 port_GlSceneBaseOf(s32 x, s32 y, s32 *base_x, s32 *base_y) {
+    const PortStageTexture *textures;
+    u32 version;
+    s32 count;
+    s32 i;
+
+    textures = port_RemasterStageTextures(&count, &version);
+    for (i = 0; i < count; i++) {
+        const PortStageTexture *one = &textures[i];
+
+        if (one->clut_x < 0 || x < one->clut_x ||
+            x >= one->clut_x + one->clut_w || y < one->named_y ||
+            y >= one->named_y + one->clut_h) {
+            continue;
+        }
+        *base_x = x;
+        *base_y = y + (one->clut_y - one->named_y);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+/* The key of a page and its table, its name, and a mod's picture of it,
+ * or the page written out where there is none and that was asked for. */
+static void port_GlSceneKeyOf(Looked *one, char *name) {
+    PortTexturePage page;
+
+    page.bits = one->bits;
+    page.page_x = one->page_x;
+    page.page_y = one->page_y;
+    page.clut_x = one->base_x;
+    page.clut_y = one->base_y;
+    page.own = g_scene.own;
+    one->key = port_TexturePageKey(g_port_vram, &page);
+    port_TexturePageKeyName(one->key, &page, name, PORT_MOD_KEY_SIZE);
+    one->path = port_ModFind(PORT_MOD_TEXTURES, name);
+    if (one->path == NULL) {
+        port_GlSceneDump(&page, name);
+    }
+}
+
+/* The layer of the picture of this key: one already loaded, or a new
+ * one; -1 where it cannot be read or there is no room. */
+static s32 port_GlSceneLayerOf(u64 key, const char *path, const char *name) {
+    s32 i;
+
+    for (i = 0; i < g_scene.layer_count; i++) {
+        if (g_scene.layer_keys[i] == key) {
+            return i;
+        }
+    }
+    if (g_scene.layer_count >= g_scene.capacity) {
+        port_GlSceneSay("mods: texture %s: no room for more than %d pages of "
+                        "one stage",
+                        name, g_scene.capacity);
+        return -1;
+    }
+    if (!port_GlSceneLoad(path, name, g_scene.layer_count)) {
+        return -1;
+    }
+    g_scene.layer_keys[g_scene.layer_count] = key;
+    return g_scene.layer_count++;
+}
+
+/* The entry of the lookup table for a page and a table whose key has been
+ * worked out: its picture's layer, the picture loaded the first time, and
+ * the colours it was made with as its row of the bases. */
+static void port_GlSceneEnter(Looked *one) {
+    PortTexturePage page;
+    char name[PORT_MOD_KEY_SIZE];
+    s32 column = port_GlSceneColumn(one->page_x, one->page_y, one->clut_x);
+    s32 colors = one->bits == PORT_MOD_TEXELS_4 ? COLORS_4 : COLORS_MAX;
+    s32 layer = -1;
+    s32 i;
+
+    page.bits = one->bits;
+    port_TexturePageKeyName(one->key, &page, name, sizeof(name));
+    if (one->path != NULL && g_scene.pages != 0) {
+        layer = port_GlSceneLayerOf(one->key, one->path, name);
+    }
+    if (layer >= 0) {
+        u16 *row = &g_scene.base_rows[layer * COLORS_MAX];
+
+        for (i = 0; i < colors; i++) {
+            row[i] = g_port_vram[one->base_y * PORT_VRAM_WIDTH +
+                                 ((one->base_x + i) & (PORT_VRAM_WIDTH - 1))];
+        }
+        glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_BASES_UNIT);
+        glBindTexture(GL_TEXTURE_2D, g_scene.bases);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, layer, COLORS_MAX, 1,
+                        GL_RED_INTEGER, GL_UNSIGNED_SHORT, row);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, RGBA);
+        glActiveTexture(GL_TEXTURE0);
+    }
+    port_GlSceneSetEntry(
+        column, one->clut_y,
+        (u16)(ENTRY_SEEN |
+              (layer >= 0
+                   ? (u32)(layer + 1) | ((u32)one->bits << ENTRY_BITS_SHIFT)
+                   : 0U)));
+}
+
+/* The array made, where there is none, for the first picture found: room
+ * for `layers` of its size. */
+static void port_GlSceneWantArray(const char *path, s32 layers) {
+    s32 side = g_scene.pages != 0 ? g_scene.side : port_GlSceneSideOf(path);
+
+    if (side == 0) {
+        return;
+    }
+    if (layers > LAYERS_MAX) {
+        layers = LAYERS_MAX;
+    }
+    if (!port_GlSceneMakeArray(side, layers)) {
+        port_GlSceneSay("mods: the card has no room for %d pictures of %d by "
+                        "%d",
+                        layers, side, side);
+    }
+}
+
+/* A page and a table looked up again, alone: one the faces named that no
+ * TIM of the stage brought, or one written over. */
+static void port_GlSceneLookUp(Looked *one) {
+    char name[PORT_MOD_KEY_SIZE];
+
+    one->is_stale = FALSE;
+    port_GlSceneKeyOf(one, name);
+    if (one->path != NULL && g_scene.pages == 0) {
+        port_GlSceneWantArray(one->path, LAYERS_SPARE);
+    }
+    port_GlSceneEnter(one);
+}
+
+/* A page and a table the faces name, kept and, where `is_now` says,
+ * looked up at once: FALSE where it is no page of the stage's. */
+static s32 port_GlSceneAdd(
+    s32 page_x, s32 page_y, s32 clut_x, s32 clut_y, s32 bits, s32 is_now) {
+    PortTexturePage page;
+    Looked *one;
+    s32 base_x;
+    s32 base_y;
+    s32 column;
+
+    page.bits = bits;
+    page.page_x = page_x;
+    page.page_y = page_y;
+    page.clut_x = 0;
+    page.clut_y = 0;
+    page.own = NULL;
+    column = port_GlSceneColumn(page_x, page_y, clut_x);
+    if (clut_y < 0 || clut_y >= LOOKUP_H ||
+        (g_scene.lookup_table[clut_y * LOOKUP_W + column] & ENTRY_SEEN) != 0) {
+        return FALSE;
+    }
+    /* seen, whatever comes of it: a table that is not the stage's is not
+     * asked about again */
+    g_scene.lookup_table[clut_y * LOOKUP_W + column] = ENTRY_SEEN;
+    if (bits == PORT_MOD_TEXELS_16 || !port_TexturePageFits(&page) ||
+        (g_scene.owned_pages & (1U << (column / TABLE_COLUMNS))) == 0 ||
+        !port_GlSceneBaseOf(clut_x, clut_y, &base_x, &base_y) ||
+        g_scene.looked_count >= LOOKED_MAX) {
+        return FALSE;
+    }
+    one = &g_scene.looked[g_scene.looked_count++];
+    one->page_x = (s16)page_x;
+    one->page_y = (s16)page_y;
+    one->clut_x = (s16)clut_x;
+    one->clut_y = (s16)clut_y;
+    one->base_x = (s16)base_x;
+    one->base_y = (s16)base_y;
+    one->bits = (s16)bits;
+    one->is_stale = FALSE;
+    one->key = 0;
+    one->path = NULL;
+    if (is_now) {
+        port_GlSceneLookUp(one);
+    }
+    return TRUE;
+}
+
+/* Which pixels of video memory are the stage's own, and which pages have
+ * any. */
+static void port_GlSceneOwn(const PortStageTexture *textures, s32 count) {
+    s32 i;
+
+    memset(g_scene.own, 0, (size_t)PORT_VRAM_PIXELS);
+    g_scene.owned_pages = 0;
+    for (i = 0; i < count; i++) {
+        const PortStageTexture *one = &textures[i];
+        s32 x;
+        s32 y;
+
+        for (y = one->y; y < one->y + one->h && y < PORT_VRAM_HEIGHT; y++) {
+            for (x = one->x; x < one->x + one->w && x < PORT_VRAM_WIDTH; x++) {
+                if (x < 0 || y < 0) {
+                    continue;
+                }
+                g_scene.own[y * PORT_VRAM_WIDTH + x] = 1;
+                g_scene.owned_pages |=
+                    1U << (((x / PAGE_X_STEP) % PAGES_ACROSS) +
+                           ((y / PAGE_Y_STEP) & 1) * PAGES_ACROSS);
+            }
+        }
+    }
+}
+
+/* Every page and table one TIM of the stage brings: its picture's page,
+ * with each table of its colour table's block (a block of 4-bit tables
+ * may hold several side by side, and rows of them). */
+static void port_GlSceneAddTim(const PortStageTexture *one) {
+    s32 colors = one->bits == PORT_MOD_TEXELS_4 ? COLORS_4 : COLORS_MAX;
+    s32 across = one->clut_w / colors;
+    s32 row;
+    s32 i;
+
+    if (one->clut_x < 0 || one->bits == PORT_MOD_TEXELS_16) {
+        return;
+    }
+    if (across < 1) {
+        across = 1;
+    }
+    for (row = 0; row < one->clut_h; row++) {
+        for (i = 0; i < across; i++) {
+            port_GlSceneAdd(
+                one->x - one->x % PAGE_X_STEP, one->y - one->y % PAGE_Y_STEP,
+                one->clut_x + i * colors, one->named_y + row, one->bits, FALSE);
+        }
+    }
+}
+
+/* The stage's textures as the game has just loaded them: which pixels are
+ * its own, and every page and table its TIMs bring looked up, the
+ * pictures of all of them read now. */
+static void port_GlSceneReadStage(void) {
+    char name[PORT_MOD_KEY_SIZE];
+    const PortStageTexture *textures;
+    const char *first = NULL;
+    s32 count;
+    s32 pictures = 0;
+    s32 i;
+    s32 j;
+
+    textures = port_RemasterStageTextures(&count, &g_scene.version);
+    memset(g_scene.lookup_table, 0,
+           (size_t)LOOKUP_W * LOOKUP_H * sizeof(*g_scene.lookup_table));
+    glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_LOOKUP_UNIT);
+    glBindTexture(GL_TEXTURE_2D, g_scene.lookup);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, LOOKUP_W, LOOKUP_H, GL_RED_INTEGER,
+                    GL_UNSIGNED_SHORT, g_scene.lookup_table);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, RGBA);
+    glActiveTexture(GL_TEXTURE0);
+    g_scene.looked_count = 0;
+    g_scene.layer_count = 0;
+    g_scene.has_stale = FALSE;
+    port_GlSceneOwn(textures, count);
+    for (i = 0; i < count; i++) {
+        port_GlSceneAddTim(&textures[i]);
+    }
+    /* the keys first, to know how many pictures there are; then the array
+     * as large as that and a few more, and the pictures into it */
+    for (i = 0; i < g_scene.looked_count; i++) {
+        Looked *one = &g_scene.looked[i];
+
+        port_GlSceneKeyOf(one, name);
+        if (one->path == NULL) {
+            continue;
+        }
+        for (j = 0; j < i; j++) {
+            if (g_scene.looked[j].path != NULL &&
+                g_scene.looked[j].key == one->key) {
+                break;
+            }
+        }
+        if (j == i) {
+            pictures++;
+            first = first != NULL ? first : one->path;
+        }
+    }
+    if (first != NULL &&
+        (g_scene.pages == 0 || g_scene.capacity < pictures + LAYERS_SPARE)) {
+        if (g_scene.pages != 0) {
+            /* made again, larger, at the size it has */
+            port_GlSceneMakeArray(g_scene.side, pictures + LAYERS_SPARE);
+        } else {
+            port_GlSceneWantArray(first, pictures + LAYERS_SPARE);
+        }
+    }
+    for (i = 0; i < g_scene.looked_count; i++) {
+        port_GlSceneEnter(&g_scene.looked[i]);
+    }
+    if (g_scene.looked_count > 0) {
+        port_GlSceneSay("mods: the stage's pages: %d looked up, %d with a "
+                        "picture",
+                        g_scene.looked_count, g_scene.layer_count);
+    }
+}
+
+void port_GlSceneNewFrame(void) {
+    const PortStageTexture *textures;
+    u32 version;
+    s32 count;
+    s32 i;
+
+    if (!port_GlSceneIsWanted() || !port_GlSceneMakeTables()) {
+        return;
+    }
+    textures = port_RemasterStageTextures(&count, &version);
+    (void)textures;
+    if (version != g_scene.version) {
+        port_GlSceneReadStage();
+        return;
+    }
+    if (!g_scene.has_stale) {
+        return;
+    }
+    g_scene.has_stale = FALSE;
+    for (i = 0; i < g_scene.looked_count; i++) {
+        if (g_scene.looked[i].is_stale) {
+            port_GlSceneLookUp(&g_scene.looked[i]);
+        }
+    }
+}
+
+s32 port_GlSceneFind(const PortRemasterPrim *prim) {
+    s32 column;
+    u16 entry;
+
+    if (!prim->is_textured || !prim->has_depth || prim->is_fighter ||
+        prim->texel_bits == PORT_MOD_TEXELS_16 || g_scene.lookup == 0 ||
+        !port_GlSceneIsWanted() ||
+        prim->window_and_u != PORT_MOD_PAGE_SIDE - 1 ||
+        prim->window_and_v != PORT_MOD_PAGE_SIDE - 1 ||
+        prim->window_or_u != 0 || prim->window_or_v != 0 || prim->clut_y < 0 ||
+        prim->clut_y >= LOOKUP_H) {
+        return FALSE;
+    }
+    column = port_GlSceneColumn(prim->page_x, prim->page_y, prim->clut_x);
+    entry = g_scene.lookup_table[prim->clut_y * LOOKUP_W + column];
+    if ((entry & ENTRY_SEEN) == 0) {
+        port_GlSceneAdd(prim->page_x, prim->page_y, prim->clut_x, prim->clut_y,
+                        prim->texel_bits, TRUE);
+        entry = g_scene.lookup_table[prim->clut_y * LOOKUP_W + column];
+    }
+    return (entry & ENTRY_LAYER_MASK) != 0 &&
+           (s32)((entry >> ENTRY_BITS_SHIFT) & 3) == prim->texel_bits;
+}
+
+/* Whether two rectangles of video memory meet. */
+static s32 port_GlSceneMeets(
+    s32 x, s32 y, s32 w, s32 h, s32 x2, s32 y2, s32 w2, s32 h2) {
+    return x < x2 + w2 && x2 < x + w && y < y2 + h2 && y2 < y + h;
+}
+
+void port_GlSceneWroteVram(s32 x, s32 y, s32 w, s32 h) {
+    s32 i;
+
+    if (g_scene.looked == NULL) {
+        return;
+    }
+    for (i = 0; i < g_scene.looked_count; i++) {
+        Looked *one = &g_scene.looked[i];
+        PortTexturePage page;
+
+        page.bits = one->bits;
+        if (one->is_stale) {
+            continue;
+        }
+        if (port_GlSceneMeets(x, y, w, h, one->page_x, one->page_y,
+                              port_TexturePagePixel(&page, PORT_MOD_PAGE_SIDE),
+                              PORT_MOD_PAGE_SIDE) ||
+            port_GlSceneMeets(
+                x, y, w, h, one->base_x, one->base_y,
+                one->bits == PORT_MOD_TEXELS_4 ? COLORS_4 : COLORS_MAX, 1)) {
+            one->is_stale = TRUE;
+            g_scene.has_stale = TRUE;
+        }
+    }
+}
+
+s32 port_GlSceneBind(void) {
+    if (g_scene.lookup == 0 || g_scene.pages == 0 || g_scene.layer_count == 0 ||
+        !port_GlSceneIsWanted()) {
+        return FALSE;
+    }
+    glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_LOOKUP_UNIT);
+    glBindTexture(GL_TEXTURE_2D, g_scene.lookup);
+    glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_PAGES_UNIT);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, g_scene.pages);
+    glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_BASES_UNIT);
+    glBindTexture(GL_TEXTURE_2D, g_scene.bases);
+    glActiveTexture(GL_TEXTURE0);
+    return TRUE;
+}
+
+float port_GlSceneLevels(void) {
+    return g_scene.levels > 0 ? (float)(g_scene.levels - 1) : 0.0f;
+}

@@ -150,4 +150,40 @@ extern s32 port_TextureFadeOf(
 extern u16 port_TextureTexel(
     const u16 *vram, const PortTextureRegion *region, s32 u, s32 v);
 
+/* ---- the key of a page of the scene ---- */
+
+/* A whole texture page of the stage seen through one colour table
+ * (docs/MODS.md, "The scene's textures by page"): its corner, its depth,
+ * the table, and which of video memory's pixels are the stage's own --
+ * one byte a pixel, PORT_VRAM_WIDTH by PORT_VRAM_HEIGHT, not 0 for one --
+ * or NULL for every pixel. */
+typedef struct {
+    s32 bits; /* PORT_MOD_TEXELS_... */
+    s32 page_x;
+    s32 page_y;
+    s32 clut_x;
+    s32 clut_y;
+    const u8 *own;
+} PortTexturePage;
+
+/* A page is 256 texels each way. */
+#define PORT_MOD_PAGE_SIDE 256
+
+/* Whether the page lies inside video memory, not wrapping round its
+ * right or bottom edge: only such a page has a key. */
+extern s32 port_TexturePageFits(const PortTexturePage *page);
+/* Its key: FNV-1a over the depth's code, the page's width and height
+ * (256 each, two bytes, the low first), every texel row by row -- its
+ * index of one byte, or its pixel of two bytes, the low first; 0 where the
+ * texel's pixel of video memory is not the stage's own -- and then the
+ * colour table, 16 colours or 256 of two bytes (none for 16 bits). */
+extern u64 port_TexturePageKey(const u16 *vram, const PortTexturePage *page);
+/* ... as a file's name has it, without an ending:
+ * `page-256x256-D-HHHHHHHHHHHHHHHH`. Needs PORT_MOD_KEY_SIZE bytes. */
+extern void port_TexturePageKeyName(
+    u64 key, const PortTexturePage *page, char *out, u32 room);
+/* The pixel of video memory texel `u` of a row of the page is in, counted
+ * from the page's corner: a texel of 4 bits is a quarter of one. */
+extern s32 port_TexturePagePixel(const PortTexturePage *page, s32 u);
+
 #endif /* PORT_MODS_H */
