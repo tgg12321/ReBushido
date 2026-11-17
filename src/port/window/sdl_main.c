@@ -558,17 +558,11 @@ int main(int argc, char **argv) {
         } else if (strcmp(word, "--shadows") == 0 && has_value) {
             const char *how = argv[++i];
 
-            if (strcmp(how, "original") == 0) {
-                shadows = 0;
-            } else if (strcmp(how, "soft") == 0) {
-                shadows = PORT_SHADOWS_SOFT;
-            } else {
-                shadows = atoi(how);
-                if (shadows < 1 || shadows > 100) {
-                    port_Complain(
-                        "--shadows takes original, soft, or 1 to 100, not ",
-                        how);
-                }
+            shadows = port_ReadRemasterShadows(how);
+            if (shadows < 0) {
+                port_Complain("--shadows takes original, soft, cast, cast:N "
+                              "or 1 to 100, not ",
+                              how);
             }
         } else if (strcmp(word, "--frame-rate") == 0 && has_value) {
             const char *how = argv[++i];
@@ -720,7 +714,11 @@ int main(int argc, char **argv) {
              g_port_settings.stage_mesh
                  ? "from one static mesh of its own"
                  : "from the game's own tile primitives");
-    if (g_port_settings.shadows > 0) {
+    if (g_port_settings.shadows & PORT_SHADOWS_CAST) {
+        port_Say("shadows: cast from the fighters' own bodies, taking %d "
+                 "hundredths of the ground they fall on.",
+                 g_port_settings.shadows & PORT_SHADOWS_STRENGTH_MASK);
+    } else if (g_port_settings.shadows > 0) {
         port_Say("shadows: soft, taking %d hundredths of the ground they "
                  "fall on.",
                  g_port_settings.shadows);

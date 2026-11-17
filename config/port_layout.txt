@@ -46,12 +46,13 @@ RbOption            ReBushido's table of options, filled by the compiler
 SoundRequest        g_snd_queue, the program's own array
 StageHooks          g_stage_hooks, a table of functions the compiler fills
 
-# The remastered renderer's side channel (src/port/remaster.c): three
-# tables of the port's own, never laid over anything, whose key is an
-# address and so is wider in the 64-bit program.
+# The remastered renderer's side channel (src/port/remaster.c): tables of
+# the port's own, never laid over anything, whose key is an address and so
+# is wider in the 64-bit program.
 AnchorSlot the port's own: a HUD primitive's edge, keyed by an address
 FaceSlot   the port's own: a face of the side channel, keyed by an address
 PointSlot  the port's own: a point of the side channel, keyed by an address
+ShadowCaster the port's own: a shadow node's caster, keyed by an address
 
 # The renderer's C (render_asm.c under RB_PORT): what the listings keep in
 # registers.

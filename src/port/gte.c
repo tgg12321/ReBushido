@@ -188,6 +188,9 @@ static void port_GtePushScreenXy(u32 xy) {
     g_port_precise[2].y = 0;
     g_port_precise[2].depth = 0;
     g_port_precise[2].divided = 0;
+    g_port_precise[2].view[0] = 0;
+    g_port_precise[2].view[1] = 0;
+    g_port_precise[2].view[2] = 0;
 }
 
 static void port_GtePushScreenZ(s32 depth) {
@@ -395,6 +398,16 @@ static void port_GteProject(const s32 *vector, s32 shift, s32 lm, s32 last) {
     g_port_precise[2].y = precise_y;
     g_port_precise[2].depth = depth;
     g_port_precise[2].divided = (s32)quotient;
+    /* ... and where it was before the projection, with a fraction the
+     * divide never sees: what a shadow is cast from (port_remaster.h) */
+    for (i = 0; i < 3; i++) {
+        s64 view = sums[i] >> (FRACTION_BITS - PORT_REMASTER_VIEW_FRACTION);
+
+        g_port_precise[2].view[i] =
+            (s32)(view > 0x7FFFFFFF
+                      ? 0x7FFFFFFF
+                      : (view < -0x7FFFFFFF ? -0x7FFFFFFF : view));
+    }
 
     /* The depth cue: how far the point is towards the far colour. The
      * first two points of RTPT get none, and so set none of its bits of

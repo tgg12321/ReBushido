@@ -23,6 +23,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_shadow.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
 #include "port_gpu.h"
@@ -1078,6 +1079,9 @@ s32 port_TweenDraw(s32 phase) {
     port_GlLoadCounts(none);
     port_TweenHoldVram(shown);
     port_TweenBegin();
+    /* the shadows cast from the fighters' faces are moved with them
+     * (gl_shadow.h) */
+    port_GlShadowSetPhase(phase);
     if (shown->has_mesh) {
         /* the stage's ground, with the camera between the two frames:
          * all that moves in it is the view (gl_stage.h) */
@@ -1183,6 +1187,7 @@ s32 port_TweenDraw(s32 phase) {
     /* the batch has to be drawn before video memory is put back: the
      * card reads its texels from the mirror of it */
     port_GlFinishFrame();
+    port_GlShadowSetPhase(-1);
     port_TweenGiveVramBack(shown);
     port_GlLoadCounts(aside);
     g_tween.counts.pictures++;

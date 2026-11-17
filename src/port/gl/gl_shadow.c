@@ -19,6 +19,8 @@
 #include "common.h"
 #include "gl.h"
 #include "gl_shadow.h"
+#include "gl_stage.h"
+#include "gl_tween.h"
 #include "port_gpu.h"
 #include "port_remaster.h"
 
@@ -127,10 +129,11 @@ PORT_GL_SHADOW_FUNCTIONS
 
 /* ---- what a frame may hold ---- */
 
-/* The silhouette's triangles. Two fighters, their weapons and the props
- * that cast one come to a few dozen faces; a whole fight's worst was
- * measured at 105 primitives (docs/PORT.md). */
-#define TRIANGLES_MAX 4096
+/* The silhouette's triangles. The game's shadow meshes of two fighters,
+ * their weapons and the props that cast one come to a few dozen faces (a
+ * whole fight's worst was measured at 105 primitives, docs/PORT.md); the
+ * fighters' own faces, cast, to a few thousand. */
+#define TRIANGLES_MAX 16384
 #define POINTS_MAX (3 * TRIANGLES_MAX)
 /* Writes of video memory into the picture after the shadows, which cover
  * them: a frame has none in a fight. More than this are taken together
@@ -151,9 +154,34 @@ typedef struct {
     s32 bottom;
 } ShadowBox;
 
+/* `shadows cast`: a triangle of a fighter's face flattened onto the
+ * ground, its corners in the world's own units, and which face of which
+ * mesh it is, by which a frame's triangle is found again in the next. */
+typedef struct {
+    float p[3][3];
+    PortAddress group;
+    s32 face;
+    s32 part; /* the first or the second half of a quad */
+} CastTriangle;
+
+/* One frame's: the triangles, and the view its picture was drawn with. */
+typedef struct {
+    s32 is_valid;
+    s32 count;
+    PortStageView view;
+    CastTriangle *triangle;
+} CastFrame;
+
+/* How near the camera a corner of a cast shadow may come, in the world's
+ * units, before its triangle is left out: a shadow lies on the ground in
+ * front of the camera, and this keeps the divide away from 0. */
+#define CAST_NEAR 32.0
+
 static struct {
     s32 is_started;
     s32 strength; /* hundredths; 0 is the game's own black shadows */
+    s32 is_cast;  /* cast from the fighters' own faces */
+    s32 phase;    /* of a picture between two frames, or -1 */
     char problem[256];
     /* the mask: red the shadows' coverage, alpha what is not the ground */
     GLuint mask;
@@ -185,6 +213,18 @@ static struct {
     ShadowBox clip; /* ... and the drawing area they belong to */
     s32 cover_count;
     ShadowBox cover[COVERS_MAX];
+    s32 offset_x; /* the drawing offset of the picture's primitives */
+    s32 offset_y;
+    /* the last two frames cast, the newer of them, and the older; -1 for
+     * none */
+    CastFrame cast[2];
+    s32 newest;
+    s32 older;
+    s32 cast_faces;
+    s32 cast_orphans;
+    s32 cast_triangles;
+    u32 cast_fallbacks;
+    u32 cast_unpaired;
     /* what the last frame did, and the run */
     s32 shown_occluders;
     s32 shown_faces;
@@ -330,6 +370,7 @@ static GLuint port_GlShadowProgram(const char *vertex, const char *fragment) {
 const char *port_GlShadowStart(void *(*getproc)(const char *name)) {
     static const GLfloat corners[] = {
         0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
+    s32 i;
 
     if (g_shadow.is_started) {
         return NULL;
@@ -350,6 +391,21 @@ const char *port_GlShadowStart(void *(*getproc)(const char *name)) {
             return g_shadow.problem;
         }
     }
+    for (i = 0; i < 2; i++) {
+        if (g_shadow.cast[i].triangle == NULL) {
+            g_shadow.cast[i].triangle =
+                malloc(TRIANGLES_MAX * sizeof(CastTriangle));
+            if (g_shadow.cast[i].triangle == NULL) {
+                port_GlShadowSay("there is no memory for the shadows", NULL);
+                return g_shadow.problem;
+            }
+        }
+        g_shadow.cast[i].is_valid = FALSE;
+        g_shadow.cast[i].count = 0;
+    }
+    g_shadow.newest = -1;
+    g_shadow.older = -1;
+    g_shadow.phase = -1;
     g_shadow.silhouette =
         port_GlShadowProgram(g_shadow_vertex_text, g_shadow_fragment_text);
     if (g_shadow.silhouette == 0) {
@@ -425,11 +481,32 @@ static s32 port_GlShadowMakeMask(const PortGlPicture *picture) {
 
 /* ---- the setting ---- */
 
-void port_GlShadowSetStrength(s32 strength) {
-    g_shadow.strength = strength < 0 ? 0 : (strength > 100 ? 100 : strength);
+void port_GlShadowSetStrength(s32 setting) {
+    s32 strength = setting < 0 ? 0 : (setting & PORT_SHADOWS_STRENGTH_MASK);
+
+    g_shadow.strength = strength > 100 ? 100 : strength;
+    g_shadow.is_cast = setting > 0 && (setting & PORT_SHADOWS_CAST) != 0;
 }
 
 s32 port_GlShadowStrength(void) { return g_shadow.strength; }
+
+s32 port_GlShadowIsCast(void) {
+    return port_GlShadowIsSoft() && g_shadow.is_cast;
+}
+
+void port_GlShadowSetPhase(s32 phase) {
+    g_shadow.phase = phase < 0 ? -1 : phase;
+}
+
+s32 port_GlShadowCastFaces(void) { return g_shadow.cast_faces; }
+
+s32 port_GlShadowCastOrphans(void) { return g_shadow.cast_orphans; }
+
+s32 port_GlShadowCastTriangles(void) { return g_shadow.cast_triangles; }
+
+u32 port_GlShadowCastFallbacks(void) { return g_shadow.cast_fallbacks; }
+
+u32 port_GlShadowCastUnpaired(void) { return g_shadow.cast_unpaired; }
 
 s32 port_GlShadowIsSoft(void) {
     return g_shadow.is_started && g_shadow.strength > 0;
@@ -549,13 +626,44 @@ s32 port_GlShadowIsGround(const PortRemasterPrim *prim) {
                tiles + (PortAddress)((u32)count * sizeof(StageTile));
 }
 
+/* The first primitive of a picture that has a shadow in it: the drawing
+ * area it belongs to and its drawing offset. */
+static void port_GlShadowBeginPicture(const PortRemasterPrim *prim) {
+    s32 x;
+    s32 y;
+    s32 w;
+    s32 h;
+
+    /* the drawing area the game gave this frame: the darkening must not
+     * reach outside it, where the picture of the frame before it is
+     * waiting to be shown */
+    port_GlScissorFor(prim, &x, &y, &w, &h);
+    g_shadow.clip.left = x;
+    g_shadow.clip.top = y;
+    g_shadow.clip.right = x + w - 1;
+    g_shadow.clip.bottom = y + h - 1;
+    g_shadow.has_any = TRUE;
+    g_shadow.offset_x = prim->offset_x;
+    g_shadow.offset_y = prim->offset_y;
+}
+
 s32 port_GlShadowTakes(const PortRemasterPrim *prim) {
     PortGlPoint point[6];
     PortGlPicture picture;
     s32 many;
     s32 i;
 
-    if (!port_GlShadowIsSoft() || !prim->is_shadow) {
+    if (!port_GlShadowIsSoft()) {
+        return FALSE;
+    }
+    if (!prim->is_shadow) {
+        /* a fighter's own face says that the picture has someone in it
+         * to cast a shadow from, where the game's shadow mesh may be off
+         * the screen entirely */
+        if (g_shadow.is_cast && !g_shadow.has_any && prim->is_fighter &&
+            prim->has_place) {
+            port_GlShadowBeginPicture(prim);
+        }
         return FALSE;
     }
     /* From here on the primitive is not drawn, whether or not there is
@@ -565,22 +673,7 @@ s32 port_GlShadowTakes(const PortRemasterPrim *prim) {
     many = port_GlPlacePoints(prim, point);
     port_GlGetPicture(&picture);
     if (!g_shadow.has_any) {
-        ShadowBox clip;
-        s32 x;
-        s32 y;
-        s32 w;
-        s32 h;
-
-        /* the drawing area the game gave this frame: the darkening must
-         * not reach outside it, where the picture of the frame before it
-         * is waiting to be shown */
-        port_GlScissorFor(prim, &x, &y, &w, &h);
-        clip.left = x;
-        clip.top = y;
-        clip.right = x + w - 1;
-        clip.bottom = y + h - 1;
-        g_shadow.clip = clip;
-        g_shadow.has_any = TRUE;
+        port_GlShadowBeginPicture(prim);
     }
     if (g_shadow.count + many > POINTS_MAX) {
         g_shadow.lost += many / 3;
@@ -786,6 +879,264 @@ static void port_GlShadowPaint(void) {
     port_GlForgetState();
 }
 
+/* ---- `shadows cast` ---- */
+
+/* A view's rotation as numbers, 1.12 made 1, the second row whole: the
+ * view is loaded with it halved, which the caller undoes and does. */
+static void port_GlShadowRotation(const PortStageView *view, double *r) {
+    s32 i;
+
+    for (i = 0; i < 9; i++) {
+        r[i] = (double)view->matrix[i] / 4096.0;
+    }
+}
+
+/* The inverse of a rotation of three by three, row after row: FALSE if it
+ * has none. The view's rotation is a rotation, but one of 1.12 numbers,
+ * so the transpose is not quite its inverse, and the true one takes a
+ * point back exactly where the projection took it from. */
+static s32 port_GlShadowInvert(const double *m, double *out) {
+    double det =
+        m[0] * (m[4] * m[8] - m[5] * m[7]) -
+        m[1] * (m[3] * m[8] - m[5] * m[6]) + m[2] * (m[3] * m[7] - m[4] * m[6]);
+    double one;
+
+    if (det > -1e-9 && det < 1e-9) {
+        return FALSE;
+    }
+    one = 1.0 / det;
+    out[0] = (m[4] * m[8] - m[5] * m[7]) * one;
+    out[1] = (m[2] * m[7] - m[1] * m[8]) * one;
+    out[2] = (m[1] * m[5] - m[2] * m[4]) * one;
+    out[3] = (m[5] * m[6] - m[3] * m[8]) * one;
+    out[4] = (m[0] * m[8] - m[2] * m[6]) * one;
+    out[5] = (m[2] * m[3] - m[0] * m[5]) * one;
+    out[6] = (m[3] * m[7] - m[4] * m[6]) * one;
+    out[7] = (m[1] * m[6] - m[0] * m[7]) * one;
+    out[8] = (m[0] * m[4] - m[1] * m[3]) * one;
+    return TRUE;
+}
+
+/* The faces of the frame whose picture is being laid down, back into the
+ * world and slid onto the ground (port_remaster.h,
+ * port_RemasterCasterFaces). A corner's place before the projection is
+ * the view's rotation times its offset from the camera, in the scale the
+ * renderer drew the thing at and with the second row halved; so the
+ * world's point is the camera plus the inverse rotation times that,
+ * scaled back. Then it is light_ProjectShadow's arithmetic, in floating
+ * point and on every corner: x and z move by the height above the
+ * caster's ground times the sun's slope, and y becomes the ground's. */
+static void port_GlShadowGather(CastFrame *frame) {
+    const PortShadowCaster *face;
+    s32 faces = 0;
+    double r[9];
+    double back[9];
+    double x_shear;
+    double z_shear;
+    s32 shear_x;
+    s32 shear_z;
+    s32 i;
+
+    frame->count = 0;
+    frame->view = *port_GetRemasterStageView();
+    frame->is_valid = FALSE;
+    g_shadow.cast_faces = 0;
+    g_shadow.cast_orphans = 0;
+    face = port_RemasterCasterFaces(&faces);
+    /* no stage drawn this frame, and so no view to take the faces back
+     * with */
+    if (faces <= 0 || frame->view.frames <= 0 || frame->view.h <= 0) {
+        return;
+    }
+    port_GlShadowRotation(&frame->view, r);
+    if (!port_GlShadowInvert(r, back)) {
+        return;
+    }
+    port_RemasterShadowShear(&shear_x, &shear_z);
+    x_shear = (double)shear_x / 4096.0;
+    z_shear = (double)shear_z / 4096.0;
+    g_shadow.cast_faces = faces;
+    for (i = 0; i < faces; i++, face++) {
+        static const s32 corner[2][3] = {{0, 1, 2}, {1, 3, 2}};
+        float flat[PORT_REMASTER_CORNERS][3];
+        s32 ground_y;
+        s32 halves;
+        s32 j;
+
+        if (!port_RemasterCasterGround(face->object, &ground_y)) {
+            g_shadow.cast_orphans++;
+            continue;
+        }
+        for (j = 0; j < face->count; j++) {
+            double scale = (double)(1 << (face->depth_shift & 31)) /
+                           (double)(1 << PORT_REMASTER_VIEW_FRACTION);
+            double v[3];
+            double world[3];
+            double above;
+            s32 k;
+
+            v[0] = (double)face->view[j][0] * scale;
+            v[1] = (double)face->view[j][1] * scale * 2.0;
+            v[2] = (double)face->view[j][2] * scale;
+            for (k = 0; k < 3; k++) {
+                world[k] = (double)frame->view.camera[k] + back[k * 3] * v[0] +
+                           back[k * 3 + 1] * v[1] + back[k * 3 + 2] * v[2];
+            }
+            above = world[1] - (double)ground_y;
+            flat[j][0] = (float)(world[0] + above * x_shear);
+            flat[j][1] = (float)ground_y;
+            flat[j][2] = (float)(world[2] + above * z_shear);
+        }
+        halves = face->count == 4 ? 2 : 1;
+        for (j = 0; j < halves; j++) {
+            CastTriangle *to;
+            s32 k;
+
+            if (frame->count >= TRIANGLES_MAX) {
+                g_shadow.lost++;
+                break;
+            }
+            to = &frame->triangle[frame->count++];
+            for (k = 0; k < 3; k++) {
+                to->p[k][0] = flat[corner[j][k]][0];
+                to->p[k][1] = flat[corner[j][k]][1];
+                to->p[k][2] = flat[corner[j][k]][2];
+            }
+            to->group = face->group;
+            to->face = face->face;
+            to->part = j;
+        }
+    }
+    frame->is_valid = frame->count > 0;
+}
+
+/* A point of the world on the picture: the view's rotation and the
+ * projection, as the coprocessor has them, and the picture's drawing
+ * offset and margin. FALSE for a point too near the camera or behind
+ * it. */
+static s32 port_GlShadowProject(const PortStageView *view, const double *r,
+                                const float *p, s32 margin, ShadowPoint *out) {
+    double d[3];
+    double v[3];
+    s32 k;
+
+    for (k = 0; k < 3; k++) {
+        d[k] = (double)p[k] - (double)view->camera[k];
+    }
+    for (k = 0; k < 3; k++) {
+        v[k] = r[k * 3] * d[0] + r[k * 3 + 1] * d[1] + r[k * 3 + 2] * d[2];
+    }
+    if (v[2] < CAST_NEAR) {
+        return FALSE;
+    }
+    out->x = (GLfloat)((double)view->ofx / PORT_REMASTER_ONE +
+                       (double)view->h * v[0] / v[2] +
+                       (double)(g_shadow.offset_x + margin));
+    out->y = (GLfloat)((double)view->ofy / PORT_REMASTER_ONE +
+                       (double)view->h * 0.5 * v[1] / v[2] +
+                       (double)g_shadow.offset_y);
+    out->w = 1.0f;
+    return TRUE;
+}
+
+/* Whether two frames' triangles are the same triangle of the same face. */
+static s32 port_GlShadowSameTriangle(
+    const CastTriangle *one, const CastTriangle *two) {
+    return one->group == two->group && one->face == two->face &&
+           one->part == two->part;
+}
+
+/* The silhouette of the picture being laid down, cast from the fighters'
+ * faces, in the place of the game's shadow mesh. A picture of the game's
+ * own frame gathers that frame's faces; a picture between two frames
+ * moves each triangle of the frame on show the way it went by the frame
+ * after, and the camera with it (gl_tween.c). Where there is nothing to
+ * cast from, the game's own silhouette, already gathered, stays. */
+static void port_GlShadowCast(void) {
+    const CastFrame *one;
+    const CastFrame *two = NULL;
+    PortStageView view;
+    PortGlPicture picture;
+    double r[9];
+    s32 i;
+
+    if (g_shadow.phase < 0) {
+        s32 next = g_shadow.newest == 0 ? 1 : 0;
+
+        port_GlShadowGather(&g_shadow.cast[next]);
+        g_shadow.older = g_shadow.newest;
+        g_shadow.newest = next;
+        one = &g_shadow.cast[next];
+    } else {
+        if (g_shadow.older < 0 || g_shadow.newest < 0) {
+            g_shadow.cast_fallbacks++;
+            return;
+        }
+        one = &g_shadow.cast[g_shadow.older];
+        two = &g_shadow.cast[g_shadow.newest];
+        if (!two->is_valid) {
+            two = NULL;
+        }
+    }
+    if (!one->is_valid) {
+        g_shadow.cast_fallbacks++;
+        return;
+    }
+    view = one->view;
+    if (two != NULL) {
+        port_GlStageMixView(
+            &view, &one->view, &two->view, g_shadow.phase, PORT_TWEEN_ONE);
+    }
+    port_GlShadowRotation(&view, r);
+    port_GlGetPicture(&picture);
+    g_shadow.count = 0;
+    port_GlShadowEmptyBox(&g_shadow.box);
+    for (i = 0; i < one->count; i++) {
+        const CastTriangle *a = &one->triangle[i];
+        ShadowPoint *to = &g_shadow.point[g_shadow.count];
+        float mixed[3][3];
+        s32 k;
+        s32 n;
+
+        if (two != NULL) {
+            float t = (float)g_shadow.phase / (float)PORT_TWEEN_ONE;
+            const CastTriangle *b = i < two->count ? &two->triangle[i] : NULL;
+
+            if (b == NULL || !port_GlShadowSameTriangle(a, b)) {
+                g_shadow.cast_unpaired++;
+                b = a;
+            }
+            for (k = 0; k < 3; k++) {
+                for (n = 0; n < 3; n++) {
+                    mixed[k][n] = a->p[k][n] + (b->p[k][n] - a->p[k][n]) * t;
+                }
+            }
+        } else {
+            for (k = 0; k < 3; k++) {
+                for (n = 0; n < 3; n++) {
+                    mixed[k][n] = a->p[k][n];
+                }
+            }
+        }
+        for (k = 0; k < 3; k++) {
+            if (!port_GlShadowProject(
+                    &view, r, mixed[k], picture.margin, &to[k])) {
+                break;
+            }
+        }
+        if (k < 3) {
+            continue;
+        }
+        for (k = 0; k < 3; k++) {
+            port_GlShadowAddToBox(
+                &g_shadow.box, (s32)(to[k].x * (GLfloat)picture.draw_x),
+                (s32)(to[k].y * (GLfloat)picture.draw_y));
+        }
+        g_shadow.count += 3;
+    }
+    g_shadow.cast_triangles = g_shadow.count / 3;
+}
+
 /* The shadows gathered so far laid over the picture they belong to, and
  * forgotten: the next primitive to come is the next picture's. */
 static void port_GlShadowLay(void) {
@@ -795,6 +1146,9 @@ static void port_GlShadowLay(void) {
     /* everything of the picture is painted before the shadows darken it,
      * and the batch of it that is still waiting is part of that */
     port_GlFlushBatch();
+    if (g_shadow.is_cast) {
+        port_GlShadowCast();
+    }
     g_shadow.shown_faces = g_shadow.count / 3;
     g_shadow.run_lost += g_shadow.lost;
     port_GlShadowPaint();
