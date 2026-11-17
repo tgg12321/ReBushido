@@ -146,6 +146,8 @@ camera), particle effects, skyboxes on the stages that were left dark.
    - the game step separated from drawing and sound, so a step run again
      draws and plays nothing;
    - the inputs read in one place per step.
+
+   How ready the port is, measured, and the design: [`NETPLAY.md`](NETPLAY.md).
 9. **Input remapping and a modern control overhaul.**
 10. **Mod support**: one framework for custom stages, textures, models,
     music and so on, loaded from folders beside the program. The
