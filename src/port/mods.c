@@ -810,6 +810,8 @@ static s32 port_FadePart(u16 color, s32 part) {
     return (color >> (part * PORT_MOD_PART_BITS)) & PORT_MOD_PART_MAX;
 }
 
+/* Each part's number from what the base's colours and the new ones add up
+ * to, then every colour held to its base's times it (port_mods.h). */
 s32 port_TextureFadeOf(const u16 *base, const u16 *now, u32 count, u32 *tint) {
     u32 sum_base[PORT_MOD_PARTS] = {0, 0, 0};
     u32 sum_now[PORT_MOD_PARTS] = {0, 0, 0};
