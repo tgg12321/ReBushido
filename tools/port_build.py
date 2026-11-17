@@ -307,6 +307,11 @@ def set_bits(bits):
 # whole, so the 64-bit program lets it have the vector registers that the
 # x86-64 calling convention passes such numbers in.
 PORT_OWN_FLAGS = {'src/port/vorbis.c': ['-Isrc/port/vendor/libc', '-msse', '-msse2']}
+# Files whose variables keep the boundaries the compiler gave them
+# (cap_alignment is not run on them): none of the game's variables is
+# among them, and the vector instructions of src/port/vorbis.c read its
+# constants on the 16-byte boundaries it was compiled for.
+NATURAL_ALIGNMENT = {'src/port/vorbis.c'}
 
 
 def sources():
@@ -403,7 +408,8 @@ def compile_one(job):
         if os.path.exists(obj):
             os.remove(obj)
         return path, None, True, proc.stderr
-    cap_alignment(obj)
+    if path not in NATURAL_ALIGNMENT:
+        cap_alignment(obj)
     return path, obj, True, proc.stderr
 
 
