@@ -191,6 +191,27 @@ extern void (*g_port_take_hook)(PortInput *input);
 extern PortInput g_port_input;
 extern u32 g_port_input_count;
 
+/* ---- the step (src/port/step.c; docs/NETPLAY.md, "The step") ---- */
+
+/* The game runs on its own stack as a fiber (port_host.h), and the host
+ * runs it a step at a time. A step ends at the game's next frame
+ * boundary, which is where it reads the pads: port_TakeInput ends the
+ * step before it takes the input, so the host has the turn between a
+ * frame's input being read by the pads' driver and taken by the game.
+ * Main's loop, the pause menu, the link cable's connecting and the
+ * options page each read the pads once a frame, so a step is one of
+ * their frames; a frame that does not read them (a load, the movie, the
+ * boot picture) is part of the step it falls in. Nothing of the game
+ * runs between steps, and its stack holds its locals, so the state can
+ * be saved, put back and hashed there (port_state.h). */
+extern void port_StartGame(void (*function)(void));
+/* Runs the game to its next frame boundary. */
+extern void port_StepGame(void);
+/* The game is at a frame's boundary: back to the host (pad.c). */
+extern void port_EndStep(void);
+/* Steps the host has run since the game started. */
+extern u32 g_port_steps;
+
 /* ---- events (src/port/event.c) ---- */
 
 /* The BIOS's DeliverEvent: every open, enabled event of this class and

@@ -9,9 +9,13 @@
  *
  *   - the console's 2 MB of RAM and its kilobyte of scratchpad;
  *   - the page of I/O registers the sound chip's are on;
+ *   - the top 64 KB of the game's own stack, with what lies below its
+ *     stack pointer cleared, and that stack pointer (port_host.h): the
+ *     game is between two steps, a few calls deep, wherever it reads
+ *     the pads (port_platform.h, "the step");
  *   - the port's own buffers of primitives, where a run has them
- *     (port_remaster.h): at the frame's boundary they hold the frame the
- *     GPU is about to be given;
+ *     (port_remaster.h): the pause menu draws the fight's last frame
+ *     from them again every frame;
  *   - the program's variables but those of the files the build names in
  *     OUTSIDE_STATE (tools/port_build.py), which are linked after the
  *     rest of their kind: the game's and Sony's variables, and the
@@ -66,11 +70,12 @@ extern u64 port_StateHash(void);
  * difference of the state or of what the run printed; at the end, a
  * report of the rollbacks and of how long saving and loading took. */
 extern void port_StartRollbackTest(u32 frames, u32 every);
-/* Main's frame is at its boundary (main.c, after ResetRCnt), `parity`
- * the buffer of the two it is drawing with (its `index`). A load is only
- * made where the parity is the save's, so that what main's loop keeps
- * of the frame in its own variables is the snapshot's. */
-extern void port_OnRollbackFrame(u32 parity);
+/* The game is at a frame's boundary, between two steps (src/port/
+ * main.c; port_platform.h, "the step"): the round's next turn. The
+ * game's stack and its stack pointer are in the state, so a load can be
+ * made at any boundary, in main's loop or in one of its own (the pause
+ * menu's). */
+extern void port_OnRollbackFrame(void);
 /* The self-test's report, as the program ends (port_Quit). */
 extern void port_PrintRollbackReport(void);
 

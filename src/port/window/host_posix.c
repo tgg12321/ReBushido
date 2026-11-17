@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include "port_host.h"
+#include "port_fiber.h"
 
 #define FILES_MAX 16
 /* A file this large or larger has no size the port can count. */
@@ -238,33 +239,33 @@ void port_HostCatchCrashes(void (*report)(const PortCrash *crash)) {
     }
 }
 
-/* The stack pointer to the top of the memory given, no frame above the
- * function's, and the call. The instructions are the processor's. */
-void port_HostCallOnStack(void (*function)(void), u32 stack_top) {
-    PortAddress top = stack_top;
+/* ---- the game's stack, as a fiber (port_host.h, port_fiber.h) ---- */
 
-#if defined(__i386__)
-    __asm__ volatile(
-        "movl %0, %%esp\n"
-        "xorl %%ebp, %%ebp\n"
-        "call *%1\n"
-        :
-        : "r"(top), "r"(function)
-        : "memory");
-#elif defined(__x86_64__)
-    __asm__ volatile(
-        "movq %0, %%rsp\n"
-        "xorl %%ebp, %%ebp\n"
-        "call *%1\n"
-        :
-        : "r"(top), "r"(function)
-        : "memory");
-#else
-#error "host_posix.c: this processor's stack switch is not written here"
-#endif
+PortAddress g_port_game_context;
+static PortAddress g_port_host_context;
+static void (*g_port_game_function)(void);
+
+/* Where the game's stack first returns to: the frame pointer is 0 there,
+ * which ends the chain of callers a crash report walks. */
+static void port_PosixGameEntry(void) {
+    g_port_game_function();
     for (;;) {
         port_HostExit(1);
     }
+}
+
+void port_HostStartGame(void (*function)(void), u32 stack_top) {
+    g_port_game_function = function;
+    g_port_game_context =
+        port_FiberPrepare(stack_top, port_PosixGameEntry, NULL);
+}
+
+void port_HostEnterGame(void) {
+    port_FiberSwitch(&g_port_host_context, g_port_game_context);
+}
+
+void port_HostLeaveGame(void) {
+    port_FiberSwitch(&g_port_game_context, g_port_host_context);
 }
 
 #endif /* !_WIN32 */

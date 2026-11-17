@@ -4,7 +4,8 @@ What the native port ([`PORT.md`](PORT.md)) has and lacks for online play
 with rollback netcode ([`ROADMAP.md`](ROADMAP.md), item 8), measured on the
 port as it is, and the design that follows. Of the design, the save, load
 and hash of the state are built, with a self-test that runs on demand
-(section 7); the rest is not.
+(section 7), and the game is a step the host calls (section 8); the rest
+is not.
 
 **In short:** the game step is already deterministic and repeatable from its
 inputs alone, and a whole snapshot of the machine is small and quick to
@@ -324,8 +325,8 @@ little delay is needed). Up to 7 or 8 frames can be rolled back.
   through NAT (a STUN-style exchange, or a relay) comes after, because the
   rest does not depend on it. Steam's networking only matters if the port
   is ever on Steam.
-- **The architecture.** The game runs on a stack of its own already
-  (`port_HostCallOnStack`, `src/port/main.c:288`). Make it a coroutine: a
+- **The architecture** (built: section 8). The game runs on a stack of
+  its own already. Make it a coroutine: a
   `port_StepFrame()` that switches to the game's stack, runs to the next
   frame boundary and switches back, a few lines of assembly a CPU or a
   Windows fiber. The window's loop, or the netplay library, then owns
@@ -338,8 +339,8 @@ little delay is needed). Up to 7 or 8 frames can be rolled back.
 
 **Preparatory changes, in order.** Each helps one of the later goals too.
 
-1. **The step as a call** (the coroutine and the boundary at the top of
-   main's loop), about a week. It also gives the window, the frame rate
+1. **The step as a call** (done: section 8; the coroutine, and the
+   boundary where each of the game's loops reads the pads). It also gives the window, the frame rate
    and optimisation one place where a frame begins and ends, and it is
    where remapping reads its input.
 2. **One input point** (done: section 4, "The one input point"). The
@@ -405,11 +406,12 @@ starts its sound).
 | The console's RAM | 2,097,152 | the game's own memory: the primitive buffers, the effects' area, everything loaded |
 | The scratchpad | 1,024 | used every frame |
 | The I/O page of the sound chip's registers, `0x1F801000` | 4,096 | libspu writes the chip's registers and its DMA's there; leaving it out was the probe's first failure, and is the self-test's (below) |
-| The port's own primitive buffers, `PORT_PRIMS_ADDR`, where a run has them | 2,097,152, or nothing | at the frame's boundary the self-test uses they hold the frame not yet given to the GPU (below) |
+| The top of the game's stack, and its stack pointer (section 8) | 65,536 and 8 (4) | between two steps the game is a few calls deep where it reads the pads; what lies below the stack pointer is cleared first, being nobody's |
+| The port's own primitive buffers, `PORT_PRIMS_ADDR`, where a run has them | 2,097,152, or nothing | the pause menu draws the fight's last frame from them again every frame |
 | The program's variables, but those of `OUTSIDE_STATE` | 2,636,352 (2,619,712) | the game's and Sony's, then the port's emulation of the console |
 
-That is **4.74 MB** in both sizes of the headless program (4,738,624 and
-4,721,984 bytes), and 6.84 MB in the program with a window, which has the
+That is **4.80 MB** in both sizes of the headless program (4,804,204 and
+4,787,552 bytes), and 6.9 MB in the program with a window, which has the
 port's primitive buffers. Among the variables, after the game's and
 Sony's: the clock (`clock.c`), the drive and the XA reader with its
 128 KB buffer (`cd.c`, `xa.c`), the sound chip with its 512 KB of sound
@@ -497,13 +499,13 @@ noted, the second time only compared, so a run with rollbacks prints
 exactly what the same run without prints. At the end it reports the
 rounds and the times on the error output.
 
-It is hooked in as the probe was: one call after main's `ResetRCnt`
-(`main.c`, `port_OnRollbackFrame`, under `RB_PORT`), which does nothing
-unless the option is given. Main's loop keeps `index` and `frame_db`
-there, so a load is made only where the frame's buffer is the save's
-(the hook is given `index`); a first run that does not come back to it
-within 16 frames is given up. Change 1 moves the boundary to the top of
-the loop, where that rule and the primitive buffers' piece go away.
+It runs between two steps of the game (section 8): the host's loop
+(`src/port/main.c`) calls `port_OnRollbackFrame` after each, which does
+nothing unless the option is given. The game's stack is in the state,
+so a load can be made at any boundary. (Before change 1 the hook was a
+call after main's `ResetRCnt`, where main's loop keeps `index` and
+`frame_db`, and a load could only be made where the frame's buffer was
+the save's.)
 
 `make port-rollback` (`tools/port_rollback.py`, `tests/README.md`) runs
 it in both sizes with `port_game`'s plan, from power on through the
@@ -556,7 +558,8 @@ the stack's garbage differs between the two runs of a frame.
 
 **What the later changes need from this.**
 
-- *Change 1* moves the hook to the top of main's loop.
+- *Change 1* (done) moved the hook between two steps, and put the
+  game's stack in the state.
 - *Change 2, the input record.* The game step reads the pads from the
   port's pad driver (`pad.c`: the held buttons and the packets), which is
   in the state, as is the plan. A word a pad a game frame that the step
@@ -578,3 +581,51 @@ the stack's garbage differs between the two runs of a frame.
   change 1's boundary that frame is drawn before the save, and this goes
   away); and the tween must take
   its frames only from steps that are shown (section 3).
+
+## 8. The step
+
+Preparatory change 1 is built. The game's main never returns; it runs on
+its own stack (`PORT_STACK_ADDR`) as a fiber, and the host runs it a step
+at a time (`src/port/step.c`, declared in `include/port_platform.h`):
+`port_StartGame` makes the fiber ready, `port_StepGame` runs the game to
+its next frame boundary, and the host's loop in `src/port/main.c` has the
+turn between two steps. The switch is a few lines of assembly a
+processor and system (`include/port_fiber.h`): it keeps the registers a
+called function must keep, and on Windows the thread's record of its
+stack's two ends (and, in 32 bits, its chain of fault handlers), since
+Windows hands a fault to nobody while the stack pointer is outside the
+stack it knows. The three hosts (`host_linux.c`, `host_windows.c`,
+`window/host_posix.c`) give it as `port_HostStartGame`,
+`port_HostEnterGame` and `port_HostLeaveGame` in place of the old
+`port_HostCallOnStack`.
+
+**The boundary is where the game reads the pads.** `port_TakeInput`
+(`src/port/pad.c`), the one input point, ends the step before it takes
+the input. Main's loop (in `pad_Update`, after its fresh ordering table),
+the pause menu's loop, `link_Connect`'s and the options page's each read
+the pads once a frame, so each of their frames is a step, and nothing in
+`src/main/` had to change for it: the old hook after main's `ResetRCnt`
+is gone. A frame that reads no pad (a load, the movie, the boot picture)
+is part of the step it falls in, which suits netplay: one step, one
+input. Between two steps the host may save the state, put back an
+earlier one, or set the coming frame's input before the game takes it.
+
+The boundary is not at the top of main's loop with nothing live, as
+section 6 first proposed: the pause menu and `link_Connect` are loops of
+their own, a few calls down. So the top 64 KB of the game's stack and its
+stack pointer are in the state (section 7), and a load can be made at any
+boundary, in any of those loops. At a boundary the game is a few calls
+deep. What lies below the stack pointer is cleared before a save or a
+comparison: it is whatever the deepest calls last left there, and that
+differs between a frame's first run and its second (the self-test's tap
+prints one time and compares the other), as it will in netplay, where a
+frame run again does not draw.
+
+**Measured.** With `port_game`'s plan, the plain run's trace (2,338
+lines) is the same to the byte as before the change in both sizes, and
+as the 64-bit Windows program's (`rebushido-headless.exe`, run natively).
+`make port-rollback` passes in both sizes (96 rounds of 8 frames: the
+rule of the save's parity no longer loses any), and so does the window's
+program on Linux (`--fast`, dummy drivers) and the Windows program. One
+frame every frame: 2,324 rounds of the 2,325 steps in each size, every
+one the same.

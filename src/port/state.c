@@ -16,14 +16,16 @@
 #include "bb2.h"
 
 /* The pieces of memory of a snapshot and of the hash, at most. */
-#define STATE_RUNS_MAX 8
+#define STATE_RUNS_MAX 10
 /* What the self-test compares the state by. */
 #define STATE_PAGE_BYTES 0x1000U
 #define STATE_IO_PAGE_ADDR (PORT_SPU_REGS_ADDR & ~(STATE_PAGE_BYTES - 1))
 #define STATE_SPU_REGS_BYTES (PORT_SPU_REG_COUNT * 2)
-/* Frames past N a first run may take to come to the save's parity before
- * the round is given up. */
-#define ROLLBACK_SLACK 16
+/* The top of the game's stack that a snapshot holds: at a frame's
+ * boundary the game is a few calls deep (main, pad_Update,
+ * port_TakeInput, the switch), a kilobyte or two. */
+#define STATE_STACK_BYTES 0x10000U
+#define STATE_STACK_TOP (PORT_STACK_ADDR + PORT_STACK_SIZE)
 /* Pages of a difference that are named. */
 #define ROLLBACK_NAMED_MAX 24
 
@@ -88,9 +90,8 @@ static u32 g_port_rollback_frames;
 static u32 g_port_rollback_every;
 /* WAIT: frames to the next save. FIRST and AGAIN: frames since it. */
 static u32 g_port_rollback_count;
-/* The frames the first run took, and the save's parity and blank. */
+/* The frames the first run took, and the save's blank. */
 static u32 g_port_rollback_length;
-static u32 g_port_rollback_parity;
 static u32 g_port_rollback_blank;
 static u8 *g_port_rollback_snapshot;
 /* The state after the first frame of the first run, kept whole so that a
@@ -107,7 +108,6 @@ static u32 g_port_rollback_text_bytes;
 static u64 *g_port_rollback_here;
 /* What the report says. */
 static u32 g_port_rollback_rounds;
-static u32 g_port_rollback_given_up;
 static u32 g_port_rollback_compared;
 static s32 g_port_rollback_failed;
 static PortTiming g_port_rollback_saves;
@@ -137,6 +137,7 @@ static void port_StateFindPieces(void) {
     u8 *io_page = (u8 *)ADDR(STATE_IO_PAGE_ADDR);
     u8 *spu_regs = (u8 *)ADDR(PORT_SPU_REGS_ADDR);
     u8 *spu_ram = port_GetSpuRam();
+    u8 *stack = (u8 *)ADDR(STATE_STACK_TOP - STATE_STACK_BYTES);
     s32 i;
 
     if (g_port_state_saved_count != 0) {
@@ -148,6 +149,11 @@ static void port_StateFindPieces(void) {
                      (PortAddress)scratchpad + PORT_SCRATCHPAD_SIZE);
     port_StateAddRun(saved, &g_port_state_saved_count, "io", io_page,
                      (PortAddress)io_page + STATE_PAGE_BYTES);
+    port_StateAddRun(saved, &g_port_state_saved_count, "stack", stack,
+                     (PortAddress)stack + STATE_STACK_BYTES);
+    port_StateAddRun(
+        saved, &g_port_state_saved_count, "context", &g_port_game_context,
+        (PortAddress)(&g_port_game_context + 1));
     if (port_RemasterPrimBufferBytes() != 0) {
         u8 *prims = (u8 *)ADDR(PORT_PRIMS_ADDR);
 
@@ -183,6 +189,33 @@ static void port_StateFindPieces(void) {
 
 /* ---- save and load ---- */
 
+/* What lies below the game's stack pointer at a boundary is no frame's:
+ * whatever the last calls deepest down left there, which is not the
+ * game's alone (the self-test's tap prints the first time and only
+ * compares the second). It is cleared before the stack is saved or
+ * compared, so that a snapshot holds the stack's frames and nothing
+ * else, and a function that reads a local it never set reads the same
+ * the second time as the first, or the self-test says so. */
+static void port_StateClearDeadStack(void) {
+    PortAddress bottom = (PortAddress)ADDR(STATE_STACK_TOP - STATE_STACK_BYTES);
+    PortAddress sp = g_port_game_context;
+    u8 *byte;
+
+    if (sp == 0) {
+        return;
+    }
+    if (sp < bottom || sp > (PortAddress)ADDR(STATE_STACK_TOP)) {
+        port_Fail(
+            "rebushido: the game's stack is %u bytes deep at a "
+            "frame's boundary, more than the state holds (%u)\n",
+            (u32)((PortAddress)ADDR(STATE_STACK_TOP) - sp), STATE_STACK_BYTES);
+    }
+    for (byte = (u8 *)bottom; byte < (u8 *)sp; byte++) {
+        *byte = 0;
+    }
+}
+
+/* `bytes` from `src` to `dest`. */
 static void port_StateCopy(void *dest, const void *src, u32 bytes) {
 #if defined(__i386__) || defined(__x86_64__)
     PortAddress count = bytes;
@@ -208,11 +241,13 @@ u32 port_StateSize(void) {
     return g_port_state_bytes;
 }
 
+/* The pieces, one after another (port_state.h). */
 void port_StateSave(void *buf) {
     u8 *out = buf;
     s32 i;
 
     port_StateFindPieces();
+    port_StateClearDeadStack();
     for (i = 0; i < g_port_state_saved_count; i++) {
         port_StateCopy(
             out, g_port_state_saved[i].start, g_port_state_saved[i].bytes);
@@ -308,6 +343,7 @@ u64 port_StateHash(void) {
 static void port_HashPages(u64 *out) {
     s32 i;
 
+    port_StateClearDeadStack();
     for (i = 0; i < g_port_state_saved_count; i++) {
         const PortStateRun *run = &g_port_state_saved[i];
         u32 offset;
@@ -370,7 +406,7 @@ void port_StartRollbackTest(u32 frames, u32 every) {
 /* The snapshot and the notes of a round, the first time they are
  * needed: the state is only whole once the game runs. */
 static void port_RollbackAllocate(void) {
-    u32 frames = g_port_rollback_frames + ROLLBACK_SLACK;
+    u32 frames = g_port_rollback_frames;
     u32 pages = 0;
     s32 i;
 
@@ -400,7 +436,7 @@ static void port_RollbackAllocate(void) {
 }
 
 /* A round begins: the snapshot, and the first run of its frames. */
-static void port_RollbackSave(u32 parity) {
+static void port_RollbackSave(void) {
     u32 start;
 
     port_RollbackAllocate();
@@ -409,7 +445,6 @@ static void port_RollbackSave(u32 parity) {
     port_TimingAdd(&g_port_rollback_saves, port_HostTicks() - start);
     g_port_rollback_phase = ROLLBACK_FIRST;
     g_port_rollback_count = 0;
-    g_port_rollback_parity = parity;
     g_port_rollback_blank = port_GetBlankCount();
     port_RollbackTakeText();
 }
@@ -516,17 +551,17 @@ static void port_RollbackLoad(void) {
 }
 
 /* The next save after a round that took `length` frames. */
-static void port_RollbackWait(u32 length, u32 parity) {
+static void port_RollbackWait(u32 length) {
     g_port_rollback_phase = ROLLBACK_WAIT;
     g_port_rollback_count =
         g_port_rollback_every > length ? g_port_rollback_every - length : 0;
     if (g_port_rollback_count == 0) {
-        port_RollbackSave(parity);
+        port_RollbackSave();
     }
 }
 
 /* A frame's boundary (port_state.h): the round's next step. */
-void port_OnRollbackFrame(u32 parity) {
+void port_OnRollbackFrame(void) {
     u64 *first;
     u64 text;
     u64 hash;
@@ -540,7 +575,7 @@ void port_OnRollbackFrame(u32 parity) {
             g_port_rollback_count--;
         }
         if (g_port_rollback_count == 0) {
-            port_RollbackSave(parity);
+            port_RollbackSave();
         }
         return;
     }
@@ -558,14 +593,8 @@ void port_OnRollbackFrame(u32 parity) {
         port_HashPages(first);
         g_port_rollback_texts[g_port_rollback_count - 1] = text;
         g_port_rollback_hashes[g_port_rollback_count - 1] = hash;
-        if (g_port_rollback_count >= g_port_rollback_frames &&
-            parity == g_port_rollback_parity) {
+        if (g_port_rollback_count >= g_port_rollback_frames) {
             port_RollbackLoad();
-        } else if (
-            g_port_rollback_count >= g_port_rollback_frames + ROLLBACK_SLACK) {
-            /* the frames never came back to the save's parity */
-            g_port_rollback_given_up++;
-            port_RollbackWait(g_port_rollback_count, parity);
         }
         return;
     }
@@ -586,7 +615,7 @@ void port_OnRollbackFrame(u32 parity) {
     }
     if (g_port_rollback_count == g_port_rollback_length) {
         g_port_rollback_rounds++;
-        port_RollbackWait(g_port_rollback_length, parity);
+        port_RollbackWait(g_port_rollback_length);
     }
 }
 
@@ -615,8 +644,7 @@ void port_PrintRollbackReport(void) {
     port_PrintTiming("load", &g_port_rollback_loads);
     port_PrintTiming("port_StateHash", &g_port_rollback_hashing);
     port_Log("rollback: %s: %u rounds of %u frames run twice, %u frames "
-             "compared, %u rounds given up\n",
+             "compared\n",
              g_port_rollback_failed ? "FAILED" : "ok", g_port_rollback_rounds,
-             g_port_rollback_frames, g_port_rollback_compared,
-             g_port_rollback_given_up);
+             g_port_rollback_frames, g_port_rollback_compared);
 }

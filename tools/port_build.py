@@ -219,7 +219,7 @@ SECTIONS
 # host, and the snapshot's own. Each kind of variable of theirs is linked
 # after the rest of its kind, so that what src/port/state.c saves of the
 # program's variables is two runs of memory (include/port_state.h).
-OUTSIDE_STATE = ['src/port/state.c', 'src/port/remaster.c', 'src/port/text.c', 'src/port/wav.c',
+OUTSIDE_STATE = ['src/port/state.c', 'src/port/step.c', 'src/port/remaster.c', 'src/port/text.c', 'src/port/wav.c',
                  'src/port/picture.c', 'src/port/crash.c', 'src/port/main.c',
                  'src/port/host_linux.c', 'src/port/host_windows.c']
 

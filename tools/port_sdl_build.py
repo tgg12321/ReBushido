@@ -455,10 +455,11 @@ def link_blob(target, objects):
     if proc.returncode != 0:
         print('\n'.join('    ' + line for line in proc.stderr.split('\n')[:30]))
         return None
-    # what it still asks for: the host's functions, the two ends of its own
+    # what it still asks for: the host's functions and the game's stack
+    # pointer it keeps (port_host.h), the two ends of its own
     # variables (given at the link, below), and on Windows what the compiler
     # and the linker themselves call
-    allowed = re.compile(r'^_{0,3}(port_Host\w+|g_port_data_(start|end)|chkstk_ms|main|alloca'
+    allowed = re.compile(r'^_{0,3}(port_Host\w+|g_port_game_context|g_port_data_(start|end)|chkstk_ms|main|alloca'
                          r'|pei386_runtime_relocator)$')
     strangers = [name for name in undefined_of(target, blob) if not allowed.match(name)]
     if strangers:

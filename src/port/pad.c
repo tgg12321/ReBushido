@@ -81,10 +81,12 @@ void port_FillPads(void) {
 
 /* The game reads the pads (port_platform.h): the packets, as the driver
  * leaves them, from the input. One that nothing answered says so, and
- * the rest of it is left as it was. */
+ * the rest of it is left as it was. This is the frame's boundary: the
+ * step ends here, and the input is taken when the host runs the next. */
 void port_TakeInput(void) {
     s32 pad;
 
+    port_EndStep();
     g_port_input = g_port_pad_read;
     if (g_port_take_hook != NULL) {
         g_port_take_hook(&g_port_input);

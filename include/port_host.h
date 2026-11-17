@@ -79,10 +79,20 @@ extern s32 port_HostMapAt(u32 address, u32 size);
  * back. */
 extern void *port_HostAllocate(u32 size);
 
-/* Calls `function` with the stack pointer at `stack_top`, the end of
- * memory the port has for it. The function does not return. */
-extern void port_HostCallOnStack(void (*function)(void), u32 stack_top)
-    __attribute__((noreturn));
+/* The game runs on a stack of its own, the memory below `stack_top`, as
+ * a fiber the host enters and the game leaves (docs/NETPLAY.md, "The
+ * step"; the switch is include/port_fiber.h). port_HostStartGame makes
+ * it ready to call `function`, which must not return, and runs nothing.
+ * port_HostEnterGame runs the game from where it last left off until it
+ * calls port_HostLeaveGame, and then returns. Only the game calls
+ * port_HostLeaveGame, which returns when the host enters it again. */
+extern void port_HostStartGame(void (*function)(void), u32 stack_top);
+extern void port_HostEnterGame(void);
+extern void port_HostLeaveGame(void);
+/* The game's stack pointer while it is not running, which is part of the
+ * game's state (src/port/state.c saves it with the stack); 0 before it
+ * has started. */
+extern PortAddress g_port_game_context;
 
 /* What the processor was doing when the program was stopped for touching
  * memory it does not have, dividing by zero or running what is not an
