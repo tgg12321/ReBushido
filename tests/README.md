@@ -122,10 +122,11 @@ more source files to compile apart and link (`sources()`); those three and
 **The rollback self-test** is not one of these, because it needs the
 disc: `make port-rollback` (`wsl bash tools/build.sh port-rollback`,
 `tools/port_rollback.py`) runs both programs of `make port` with
-`port_game`'s plan, once as they are and once with `--rollback-test 8`:
+`port_game`'s plan, once as they are, once with `--rollback-test 8`:
 every 24 frames the game's state is saved, eight frames run, the state
 put back and the eight run again ([`docs/NETPLAY.md`](../docs/NETPLAY.md),
-"Save, load and hash"). It fails on any page of the state or line of the
+"Save, load and hash"), and once more with the eight run again quietly,
+as netplay runs them (`--rollback-quiet`, NETPLAY.md section 10). It fails on any page of the state or line of the
 output that the second run of a frame does not give as the first did,
 and on any difference between the two runs' output and files; a page
 that differs is named by the variables in it. About half a minute, with
@@ -133,6 +134,15 @@ your own disc image (`REBUSHIDO_RETAIL`) and no emulator; run it after a
 change to the port's own variables, to what the link puts outside the
 state (`config/port_state.txt`) or to what a frame of
 the game reads.
+
+**Two programs over the network**, `make port-net` (`tools/port_net.py`),
+needs the disc too: two headless programs of each size on 127.0.0.1 play
+the game's own link-cable mode in lockstep, which passes if both consoles
+print the same trace to the end of a fight, and then rollback netplay of
+`port_game`'s session with 100 ms of latency and 5% of datagrams lost,
+which passes if both end well, find no desync and print the same state
+hashes (NETPLAY.md, sections 11 and 12). About three minutes; run it after
+a change to the step, the state, the input point or the network.
 
 ## Play tests
 

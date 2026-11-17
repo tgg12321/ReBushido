@@ -41,6 +41,19 @@ extern void port_NetHeader(u8 *out, s32 kind, s32 detail, u32 number);
 /* A datagram's kind, its detail and its number; 0 if it is not the port's. */
 extern s32 port_NetReadHeader(
     const u8 *in, s32 bytes, s32 *detail, u32 *number);
+/* ---- rollback netplay (src/port/netplay.c; docs/NETPLAY.md, section
+ * 12) ---- */
+
+/* This program plays pad `pad` (0 or 1: --netplay 1 or 2) and its
+ * presses count `delay` frames on (--net-delay); the other program plays
+ * the other pad. */
+extern void port_SetNetplay(s32 pad, u32 delay);
+extern s32 port_IsNetplayOn(void);
+/* The session: the game a frame at a time, for ever (src/port/main.c). */
+extern void port_RunNetplay(void) __attribute__((noreturn));
+/* The run ends: the other is told, and the report (port_Quit). */
+extern void port_EndNetplay(void);
+
 /* What the network did, to the error output, as the run ends. */
 extern void port_PrintNetReport(void);
 

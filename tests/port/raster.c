@@ -15,6 +15,10 @@
 #include "port/remaster_stub.h"
 #include "runtime/runtime.h"
 
+/* Whether a step is run again (src/port/step.c): every step here is the
+ * first. */
+s32 g_port_rerun;
+
 /* ---- what those files want of the rest of the port ---- */
 
 void port_Fail(const char *format, ...) {

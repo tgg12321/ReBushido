@@ -8,6 +8,7 @@
  *             [--rollback-test N] [--rollback-every M] [--rollback-quiet]
  *             [--net-bind ADDRESS:PORT --net-peer ADDRESS:PORT]
  *             [--link-side 0|1] [--net-latency MS] [--net-loss PERCENT]
+ *             [--netplay 1|2] [--net-delay N]
  *
  * It gives the game the PlayStation's memory and the player's disc
  * image, and then calls the game's own main, which never returns: the
@@ -38,6 +39,10 @@
 #define ROLLBACK_EVERY 24
 /* --net-loss is so many in a hundred. */
 #define PERCENT 100
+/* Frames a netplay press counts on, where --net-delay does not say, and
+ * at most. */
+#define NET_DELAY 2
+#define NET_DELAY_MAX 8
 
 static PortDisc g_port_disc;
 static s32 g_port_quitting;
@@ -60,6 +65,7 @@ static const char g_port_usage[] =
     "[--rollback-quiet]\n"
     "            [--net-bind ADDRESS:PORT --net-peer ADDRESS:PORT]\n"
     "            [--link-side 0|1] [--net-latency MS] [--net-loss PERCENT]\n"
+    "            [--netplay 1|2] [--net-delay N]\n"
     "\n"
     "  --image FILE   your own image of the game's disc: the .cue, or the\n"
     "                 .bin of raw sectors it names\n"
@@ -98,6 +104,10 @@ static const char g_port_usage[] =
     "  --net-peer ADDRESS:PORT   ... and the other program's socket\n"
     "  --link-side 0|1   the game's own link cable over that socket: this\n"
     "                 console is side 0 (the first player) or side 1\n"
+    "  --netplay 1|2  rollback netplay over that socket: the whole session\n"
+    "                 as one machine, this program the first pad or the\n"
+    "                 second, the other program the other\n"
+    "  --net-delay N  ... a press counts N frames on (2)\n"
     "  --net-latency MS   for tests: every datagram waits this long first\n"
     "  --net-loss PERCENT ... and so many in a hundred are dropped\n"
     "\n"
@@ -119,6 +129,7 @@ void port_Quit(s32 code) {
         }
         port_PrintStubs();
         port_PrintRollbackReport();
+        port_EndNetplay();
         port_PrintNetReport();
         if (g_port_quit_hook != NULL) {
             g_port_quit_hook(code);
@@ -222,6 +233,8 @@ s32 port_Main(s32 argc, char **argv) {
     s32 net_latency = 0;
     s32 net_loss = 0;
     s32 link_side = -1;
+    s32 netplay_pad = 0;
+    s32 net_delay = NET_DELAY;
     s32 i;
 
     port_CatchCrashes();
@@ -306,6 +319,17 @@ s32 port_Main(s32 argc, char **argv) {
                 link_side > 1) {
                 port_UsageError("--link-side takes 0 or 1, not ", argv[i]);
             }
+        } else if (port_TextsEqual(word, "--netplay")) {
+            if (!port_ParseNumber(argv[++i], &netplay_pad) || netplay_pad < 1 ||
+                netplay_pad > PORT_PADS) {
+                port_UsageError("--netplay takes 1 or 2, not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--net-delay")) {
+            if (!port_ParseNumber(argv[++i], &net_delay) || net_delay < 0 ||
+                net_delay > NET_DELAY_MAX) {
+                port_UsageError(
+                    "--net-delay takes a number to 8, not ", argv[i]);
+            }
         } else if (port_TextsEqual(word, "--net-latency")) {
             if (!port_ParseNumber(argv[++i], &net_latency) || net_latency < 0) {
                 port_UsageError("--net-latency takes a number, not ", argv[i]);
@@ -351,8 +375,19 @@ s32 port_Main(s32 argc, char **argv) {
     if (net_addresses != 0 && net_addresses != 3) {
         port_UsageError("the network needs both --net-bind and --net-peer", "");
     }
-    if (link_side >= 0 && net_addresses == 0) {
-        port_UsageError("--link-side needs --net-bind and --net-peer", "");
+    if ((link_side >= 0 || netplay_pad != 0) && net_addresses == 0) {
+        port_UsageError("--link-side and --netplay need --net-bind and "
+                        "--net-peer",
+                        "");
+    }
+    if (link_side >= 0 && netplay_pad != 0) {
+        port_UsageError("the link cable or netplay, not both", "");
+    }
+    if (netplay_pad != 0 && rollback_frames > 0) {
+        port_UsageError("netplay or the rollback self-test, not both", "");
+    }
+    if (netplay_pad != 0) {
+        port_SetNetplay(netplay_pad - 1, (u32)net_delay);
     }
     if (net_addresses != 0) {
         port_SetNetAddresses(&net_bind, &net_peer);
@@ -383,6 +418,9 @@ s32 port_Main(s32 argc, char **argv) {
     /* the game, a step at a time (step.c): the rollback self-test has
      * its turn between two */
     port_StartGame(port_RunGame);
+    if (port_IsNetplayOn()) {
+        port_RunNetplay();
+    }
     for (;;) {
         port_StepGame();
         port_OnRollbackFrame();

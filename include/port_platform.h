@@ -178,6 +178,9 @@ extern void port_SampleInput(PortInput *input);
 /* At each vertical blank: the console's driver reads the pads, and what
  * it read is what the game finds until the next blank. */
 extern void port_FillPads(void);
+/* What the driver read at the last blank: the input the game would take
+ * now, but for g_port_take_hook (netplay's local pad, netplay.c). */
+extern void port_DriverInput(PortInput *input);
 /* The one place the game's input comes from: called as the game reads
  * the pads (pad_Update, and the options page's own read), it takes the
  * input the driver read at the last blank, lets g_port_take_hook replace

@@ -16,6 +16,11 @@
 #include "port/remaster_stub.h"
 #include "runtime/runtime.h"
 
+/* The host's turn at a frame's boundary, and whether a step is run again
+ * (src/port/step.c): no host here, and every step is the first. */
+void port_EndStep(void) {}
+s32 g_port_rerun;
+
 /* ---- what those files want of the rest of the port ---- */
 
 static u32 g_seen_blanks;

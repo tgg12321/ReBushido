@@ -72,6 +72,9 @@ void port_SampleInput(PortInput *input) {
     }
 }
 
+/* What the driver read at the last vertical blank (port_platform.h). */
+void port_DriverInput(PortInput *input) { *input = g_port_pad_read; }
+
 /* The driver's read at a vertical blank (port_platform.h). */
 void port_FillPads(void) {
     if (g_port_pads_started) {

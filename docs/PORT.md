@@ -128,9 +128,18 @@ with a line for each voice started and each sound the game asked for)
 `--spu FILE` (sound memory and the chip's registers at the end:
 "Sound"), and `--card1 FILE`, `--card2 FILE` and `--no-cards` (the memory
 cards: "The memory card"), and `--rollback-test N` with `--rollback-every
-M` (the self-test of the game's state saved, put back and run again:
-`NETPLAY.md`, "Save, load and hash"). It ends by printing a line for each stub the
-game called, with how often. Pads are pressed only by a plan: a line `in 0 300 1 START 6`
+M` and `--rollback-quiet` (the self-test of the game's state saved, put
+back and run again: `NETPLAY.md`, "Save, load and hash"), and the
+network's: `--net-bind` and `--net-peer` (a UDP socket to one other
+program), with `--link-side 0|1` (the game's link cable over it) or
+`--netplay 1|2` and `--net-delay N` (rollback netplay), and
+`--net-latency MS` and `--net-loss PERCENT` for tests (`NETPLAY.md`,
+sections 11 and 12). It ends by printing a line for each stub the
+game called, with how often.
+
+The game's main never returns: it runs on a stack of its own as a fiber,
+and the program's loop runs it a step at a time, a step ending where the
+game reads the pads (`src/port/step.c`; `NETPLAY.md`, "The step"). Pads are pressed only by a plan: a line `in 0 300 1 START 6`
 is Start on the first pad at blank 300 for six blanks
 (`tests/play/README.md`, "The port as a disc").
 

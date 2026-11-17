@@ -2,8 +2,9 @@
 """Two programs of the native port playing each other over UDP on this PC
 (docs/NETPLAY.md, sections 11 and 12), headless:
 
-    python3 tools/port_net.py link    [--bits 32|64] [--out FOLDER]
-                                      [--latency MS] [--loss PERCENT]
+    python3 tools/port_net.py link|rollback [--bits 32|64] [--out FOLDER]
+                                            [--latency MS] [--loss PERCENT]
+                                            [--delay N]
 
 `link`: the game's own link-cable versus mode, in lockstep with a frame of
 delay. Each program is one console (--link-side 0 and 1) with its own plan:
@@ -13,6 +14,16 @@ weapon and stage and fights as port_game's first pad, and the second
 console's pad picks and fights as port_game's second. It passes if both
 reach the end of the fight and the two traces are the same, line for
 line.
+
+`rollback`: rollback netplay (--netplay), the whole session from power on
+as one machine with two pads, each program one pad. Both follow
+port_game's plan, each pressing only its own pad's part of it, through
+the menus, a versus fight to the kill, the replay and back to the menu,
+over a network made worse on purpose: 100 ms of latency each way and 5
+datagrams in a hundred lost if nothing says otherwise. It passes if both
+end well, both see the kill, neither finds a desync, and every state hash
+both print (one each 30 frames, once both pads' inputs before it are
+known) is the same on both, to the last frame they share near the end.
 
 Both sockets are bound to 127.0.0.1, on two ports from 47000 up: nothing
 listens on any other address. The programs are the ones `make port` built
@@ -184,6 +195,60 @@ def run_pair(program, plans, folder, more, ports):
     return results
 
 
+def hashes_of(text):
+    """{frame: hash} of the `netplay: frame F hash H` lines."""
+    found = {}
+    for line in text.split('\n'):
+        words = line.split()
+        if len(words) == 5 and words[0] == 'netplay:' and words[1] == 'frame' and words[3] == 'hash':
+            found[int(words[2])] = words[4]
+    return found
+
+
+def check_rollback(label, program, args, ports):
+    folder = os.path.join(args.out, 'rollback', label)
+    os.makedirs(folder, exist_ok=True)
+    plan = os.path.join(folder, 'plan.txt')
+    playtest.PORT_PROGRAM = program
+    playtest.PORT_SYMBOLS = program + '.sym'
+    test = playtest.Test(os.path.join(REPO, 'tests', 'play', 'port_game.toml'))
+    disc = playtest.Disc('port')
+    test.set_discs([disc])
+    _, lines = test.plan(disc, playtest.header_names(), test.discs.index('port') + 1)
+    with open(plan, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(lines) + '\n')
+    trouble = ['--net-delay', str(args.delay), '--net-latency', str(args.latency), '--net-loss', str(args.loss)]
+    results = run_pair(program, [plan, plan], folder, [['--netplay', '1'] + trouble, ['--netplay', '2'] + trouble],
+                       ports)
+    problems = []
+    hashes = []
+    for side, (code, seconds) in enumerate(results):
+        print('port_net: rollback: %s: pad %d: exit %s, %.0f s' % (label, side + 1, code, seconds), flush=True)
+        err = read(os.path.join(folder, 'side%d.err' % side))
+        for line in err.split('\n'):
+            if line.startswith(('net:', 'netplay:')) and ' hash ' not in line:
+                print('    ' + line)
+        if 'DESYNC' in err:
+            problems.append('rollback: %s: pad %d found a desync' % (label, side + 1))
+        if code != 0:
+            problems.append('rollback: %s: pad %d ended with %s (%s/side%d.err)' % (label, side + 1, code, folder,
+                                                                                  side))
+        if 'cp kill ' not in read(os.path.join(folder, 'side%d.out' % side)):
+            problems.append('rollback: %s: pad %d never saw the kill' % (label, side + 1))
+        hashes.append(hashes_of(err))
+    common = sorted(set(hashes[0]) & set(hashes[1]))
+    differ = [frame for frame in common if hashes[0][frame] != hashes[1][frame]]
+    if differ:
+        problems.append('rollback: %s: the state hashes differ from frame %d' % (label, differ[0]))
+    ends = [max(found) if found else 0 for found in hashes]
+    if not common or common[-1] + 60 < min(ends):
+        problems.append('rollback: %s: too few state hashes in common (%d)' % (label, len(common)))
+    if not problems:
+        print('port_net: rollback: %s: %d state hashes, the same on both, the last at frame %d: %s'
+              % (label, len(common), common[-1], hashes[0][common[-1]]), flush=True)
+    return problems
+
+
 def check_link(label, program, args, ports):
     folder = os.path.join(args.out, 'link', label)
     os.makedirs(folder, exist_ok=True)
@@ -216,12 +281,20 @@ def check_link(label, program, args, ports):
 
 def main():
     ap = argparse.ArgumentParser(description='Two programs of the port playing each other over UDP on this PC.')
-    ap.add_argument('what', choices=('link',), help='what they play')
+    ap.add_argument('what', choices=('link', 'rollback'), help='what they play')
     ap.add_argument('--bits', type=int, choices=(32, 64), help='one size only')
     ap.add_argument('--out', default=os.path.join(REPO, 'build', 'net'), help='where the runs go')
-    ap.add_argument('--latency', type=int, default=0, help='milliseconds each datagram waits (--net-latency)')
-    ap.add_argument('--loss', type=int, default=0, help='datagrams in a hundred dropped (--net-loss)')
+    ap.add_argument('--latency', type=int, help='milliseconds each datagram waits (--net-latency): 0 for the '
+                    'link, 100 for rollback')
+    ap.add_argument('--loss', type=int, help='datagrams in a hundred dropped (--net-loss): 0 for the link, 5 '
+                    'for rollback')
+    ap.add_argument('--delay', type=int, default=2, help="frames a press counts on, rollback's (--net-delay)")
     args = ap.parse_args()
+    rollback = args.what == 'rollback'
+    if args.latency is None:
+        args.latency = 100 if rollback else 0
+    if args.loss is None:
+        args.loss = 5 if rollback else 0
     if not os.path.isfile(playtest.RETAIL_CUE):
         print('port_net: skipped: no %s (your own image of the retail disc; REBUSHIDO_RETAIL names it)'
               % playtest.RETAIL_CUE)
@@ -233,7 +306,8 @@ def main():
             problems.append('%d-bit: no %s (make port)' % (bits, PROGRAMS[bits]))
             continue
         ports = (BASE_PORT + 2 * n, BASE_PORT + 2 * n + 1)
-        problems += check_link('%d-bit' % bits, program, args, ports)
+        check = check_rollback if rollback else check_link
+        problems += check('%d-bit' % bits, program, args, ports)
     for problem in problems:
         print('FAILED: port_net: ' + problem)
     if not problems:

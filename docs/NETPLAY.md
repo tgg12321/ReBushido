@@ -2,10 +2,14 @@
 
 What the native port ([`PORT.md`](PORT.md)) has and lacks for online play
 with rollback netcode ([`ROADMAP.md`](ROADMAP.md), item 8), measured on the
-port as it is, and the design that follows. Of the design, the save, load
-and hash of the state are built, with a self-test that runs on demand
-(section 7), and the game is a step the host calls (section 8); the rest
-is not.
+port as it is, and the design that follows. Built so far: the save,
+load and hash of the state with a self-test (section 7), the game as a
+step the host calls (section 8), the state's files apart from the
+picture's (section 9), a step run again quietly (section 10), the game's
+own link cable over UDP (section 11), and rollback netplay of a whole
+session between two programs, proved on one PC (section 12). What is
+left is the session's set-up, pacing in the window, and play between two
+real PCs (section 12, "What is left").
 
 **In short:** the game step is already deterministic and repeatable from its
 inputs alone, and a whole snapshot of the machine is small and quick to
@@ -375,9 +379,9 @@ little delay is needed). Up to 7 or 8 frames can be rolled back.
    the settings. The host sends its card data and settings, both seed
    `rand()` and `rng_Next`, and both start from the versus select screen
    with the pause menu turned off and both pads present. One to two weeks.
-7. **The netplay itself:** the library or the C core, UDP, delay and
-   rollback settings, a line on the screen for ping and rollbacks, the
-   desync report, and spectators later. Two to three weeks.
+7. **The netplay itself** (the core is built: section 12): the library
+   or the C core, UDP, delay and rollback settings, a line on the screen
+   for ping and rollbacks, the desync report, and spectators later.
 
 So about two months of work for one person to a first online match that
 rolls back, after which tests between two real PCs settle the delay, the
@@ -808,3 +812,85 @@ the random numbers, which the two compute alike. What this mode costs is
 the round trip: each frame waits for the other's packet, so it plays
 only where that is well under a frame. Rollback (section 12) is for the
 rest.
+
+## 12. Rollback netplay
+
+The netplay of section 6 is built in its core, GGPO's design written in
+C (`src/port/netplay.c`): `--netplay 1|2` with `--net-bind` and
+`--net-peer`, and `--net-delay N` (2 if nothing says). Neither GGPO (MIT)
+nor GekkoNet was vendored: both are C++, and the headless program, which
+the tests run, has no C or C++ library to link them against. The
+algorithm is a few hundred lines.
+
+**The session is the whole run**, as section 5 recommends: both programs
+start from power on with the same build, disc and options (`--no-cards`
+for now), and each frame's input is both pads, the one this program
+plays and the other's, sent over the network. It goes in by the input's
+hook (`g_port_take_hook`), with both pads present.
+
+- **Frames.** A frame is a step (section 8). The host's loop
+  (`port_RunNetplay`) saves the state at each frame's boundary into a
+  ring of ten, then runs the step with the frame's input.
+- **The local pad** is what the pads' driver read at the last blank
+  (`port_DriverInput`: a plan's presses or the window's keys), kept for
+  the frame `--net-delay` on; the first frames of the delay have none.
+  Every input the other has not acknowledged is sent in each datagram,
+  with this program's count of the other's inputs and its last final
+  hash, so a lost datagram is made up by the next.
+- **The other pad**, until its input comes, is taken to be what it last
+  was. One that comes and is not what was taken puts back the state of
+  its frame and runs every frame from there to now again, quietly
+  (section 10), with the inputs now known. Neither program runs more
+  than 8 frames past the other's last input it has: it waits, sending
+  its inputs again every 16 ms.
+- **Desyncs.** Every 30 frames, once both pads' inputs before it are
+  known, the state's hash at that frame (`port_StateHash`, section 7) is
+  final. Each program prints it (`netplay: frame F hash H`, on the error
+  output), sends it with its inputs, and stops with `netplay: DESYNC`
+  when the other's hash of a frame is not its own.
+- **The end.** A program that ends (its plan's end, or a failure) tells
+  the other, and answers for a moment longer; the other runs to the last
+  input it was given and ends there.
+
+**Proved** by `tools/port_net.py rollback` (`make port-net`), two headless
+programs of one build on 127.0.0.1, both following `port_game`'s plan,
+each pressing only its own pad's part of it: power on, the menus, versus
+select, a fight to the kill, the replay and back to the menu, 2,332
+frames. Each frame's presses count two frames later than in the plan's
+own run, so this is not `port_game`'s fight to the frame, but it is a
+fight to a kill. 64-bit, on the machine of section 1:
+
+| Network | Rollbacks (pad 1, pad 2) | Frames run again | Longest | Result |
+| --- | --- | --- | --- | --- |
+| none (0 ms, no loss) | 1, 12 | 2, 23 | 6 | 77 hashes the same on both, the last `30925357EE23889C` at frame 2,310 |
+| 100 ms each way, 5% lost | 44, 66 | 267, 427 | 8 | the same 77 hashes, the same last one |
+| the same, 32-bit | 44, 65 | 261, 419 | 8 | 77 hashes the same on both, the last `531D54044C49431A` |
+
+The two runs of the 64-bit program end in the same state whatever the
+network did, as they must: the network only decides when an input is
+known, never what it is. A 64-bit program against a 32-bit one, whose
+hashes differ (section 7), stops on both sides with a desync at frame 30,
+the first hash. With 100 ms each way the headless pair, which nothing
+paces, runs about 70 frames a second, waiting about ten thousand times on
+the other for its inputs. A frame run again averaged 7 to 11 ms there,
+far more than a fight frame's 2 to 3 ms (section 10), because the session
+is rolled back in the menus and loads too, where one step can read
+megabytes from the disc.
+
+**What is left.**
+
+- *Pacing.* The window's program has the options, but its own loop
+  paces each blank against the sound card inside the step; with netplay
+  it must also slow the program that is ahead (GGPO's time sync), and a
+  load should be a point both wait at rather than a frame run again
+  (section 5). Neither is done; netplay has only been run headless.
+- *The session's set-up* (change 6): the handshake that checks the
+  build, the disc and the settings, the host's card and settings sent to
+  the guest, the pause menu turned off, starting at versus select. Now
+  both programs must be started alike by hand, and the movie player,
+  which reads the pads its own way (section 4), reads only the local
+  ones, so a movie skipped by one player and not the other parts the two.
+- *Sound out of the rollback*, a line on the screen for the ping and the
+  rollbacks, the desync report's snapshots, NAT, spectators (sections 3,
+  5, 6).
+- *Two real PCs*, which settle the delay and the window of rollback.
