@@ -172,18 +172,30 @@ WORD = 4
 # The kinds of variable, by the section the compiler puts each in.
 DATA_KINDS = ('.rodata', '.data', '.bss')
 
-# The program is linked 4 MB up from where Linux usually has one, and says
-# where its variables begin and end: an ordering table's link is the low 24
-# bits of an address, and those of the program's variables must not be
-# those of the PlayStation's RAM, which is the 2 MB from 0x80000000
-# (src/port/gpu.c, port_AddLinkRegion).
+# Where the program is linked, and where its variables may lie
+# (docs/PORT.md, "Where the program's variables are"). An ordering table's
+# link is the low 24 bits of an address, so every place a primitive may be
+# has to have low 24 bits that no other such place has (src/port/gpu.c,
+# port_AddLinkRegion). Four places are fixed (include/port_platform.h);
+# the others are the game's state's two runs of variables, its data and
+# its bss (include/port_state.h), and they have to fall between them:
+# check_link_space. The program begins 2 MB up so that they start past the
+# RAM's 2 MB, and the window's build begins at the same place.
+PROGRAM_BASE = 0x08200000
+LINK_MASK = 0xFFFFFF
+LINK_PLACES = [
+    ("the PlayStation's RAM", 0x80000000, 0x200000),
+    ('the scratchpad', 0x1F800000, 0x400),
+    ("the game's stack", 0x7FC00000, 0x100000),
+    ("the port's own primitive buffers", 0x7ED00000, 0x200000),
+]
 LD_SCRIPT_TEXT = '''/* Written by tools/port_build.py: the native port's link. The game's
  * variables are in the order of the PlayStation program, kind by kind;
  * then the rest of the game's state, then what is not (config/port_state.txt). */
 ENTRY(_start)
 SECTIONS
 {
-    . = 0x08400000 + SIZEOF_HEADERS;
+    . = 0x%(base)X + SIZEOF_HEADERS;
     .text : { *(.text .text.*) }
     . = ALIGN(0x1000);
     g_port_data_start = .;
@@ -455,12 +467,50 @@ def write_ld_script(objects):
             for kind in DATA_KINDS:
                 if sec['name'].startswith(kind + '.') and sec['name'][len(kind) + 1:] in playstation:
                     found[kind].add(sec['name'][len(kind) + 1:])
-    lines = {'outside': outside_state_patterns()}
+    lines = {'outside': outside_state_patterns(), 'base': PROGRAM_BASE}
     for kind in DATA_KINDS:
         ordered = sorted(found[kind], key=lambda name: playstation[name])
         lines[kind[1:]] = '\n'.join('        *(%s.%s)' % (kind, name) for name in ordered)
     with open(LD_SCRIPT, 'w', encoding='utf-8', newline='\n') as f:
         f.write(LD_SCRIPT_TEXT % lines)
+
+
+def check_link_space(symbols):
+    """Whether the state's two runs of variables (`symbols`: the program's
+    names and addresses, with or without the `_` 32-bit Windows puts
+    before a name) have low 24 bits that none of LINK_PLACES has, as
+    port_AddLinkRegion needs: (problems, a line of how much room is
+    left)."""
+    places = [(name, address & LINK_MASK, (address & LINK_MASK) + size) for name, address, size in LINK_PLACES]
+    problems, room, nearest = [], None, None
+    for run, first, last in (('data', 'g_port_game_data', 'g_port_state_data_end'),
+                             ('bss', 'g_port_game_bss', 'g_port_state_bss_end')):
+        start = symbols.get(first, symbols.get('_' + first))
+        end = symbols.get(last, symbols.get('_' + last))
+        if start is None or end is None:
+            problems.append('the marks %s and %s are not in the program' % (first, last))
+            continue
+        low, high = start & LINK_MASK, (start & LINK_MASK) + (end - start)
+        if high > LINK_MASK + 1:
+            problems.append("the state's %s, 0x%X to 0x%X, goes round the 16 MB of an ordering table's link"
+                            % (run, start, end))
+            continue
+        for name, place_low, place_high in places:
+            if low < place_high and place_low < high:
+                problems.append(
+                    "the state's %s (0x%X to 0x%X, %d KB) has the low 24 bits of %s (0x%06X to 0x%06X), "
+                    'by %d KB: an ordering table\'s link would name both. Make the state smaller (a large '
+                    'buffer that holds no primitive can be in a file of config/port_state.txt\'s outside '
+                    'group, or in memory the system gives), or link the program elsewhere '
+                    '(docs/PORT.md, "Where the program\'s variables are")'
+                    % (run, start, end, (end - start) // 1024, name, place_low, place_high,
+                       (min(high, place_high) - max(low, place_low) + 1023) // 1024))
+            elif place_low >= high and (room is None or place_low - high < room) and end > start:
+                room, nearest = place_low - high, name
+    if problems:
+        return problems, None
+    return [], "the state's variables have %d KB to grow before they reach the link space of %s" % (
+        (room or 0) // 1024, nearest)
 
 
 def check_layout(grown=()):
@@ -562,7 +612,7 @@ def write_names():
                 f.write('run %d %d %d\n' % run)
         for value, kind, size, name in sorted(set(rows)):
             f.write('sym %08x %s %d %s\n' % (value, kind, size, name))
-    return len(rows), set(layouts)
+    return len(rows), set(layouts), symbols
 
 
 def main():
@@ -636,7 +686,13 @@ def main():
         print('\n'.join('    ' + line for line in other[:30]))
         print('FAILED: port: it does not link')
         return 1
-    count, grown = write_names()
+    count, grown, symbols = write_names()
+    problems, room = check_link_space(symbols)
+    if problems:
+        print('\n'.join('port: %s: %s' % (PROGRAM, problem) for problem in problems))
+        print('FAILED: port: %s: its variables do not fit the ordering tables\' link space' % PROGRAM)
+        return 1
+    print('port: %s: %s' % (PROGRAM, room))
     same, pairs, wider = check_layout(grown)
     print("port: %d of the game's %d pairs of neighbouring variables are as far apart as on the PlayStation "
           '(the others: %s%s)' % (same, pairs, LAYOUT,

@@ -228,8 +228,12 @@ static const char * const g_distance_names[PORT_DISTANCE_KINDS] = {
 static PortRemasterView g_view;
 static PortRemasterLimits g_limits;
 /* How far left of the console's screen this frame's picture reaches
- * (port_RemasterLeftMargin), worked out once a frame. */
+ * (port_RemasterLeftMargin), worked out once a frame; and netplay's shape
+ * for it, whatever the picture (port_RemasterFixMargin). */
 static s32 g_left_margin;
+static s32 g_margin_is_fixed;
+static s32 g_margin_aspect_w;
+static s32 g_margin_aspect_h;
 /* Whether the port's own primitive buffers are the game's this run
  * (port_platform.h, PORT_PRIMS_ADDR). */
 static s32 g_prim_buffers_are_the_games;
@@ -901,6 +905,35 @@ static const FaceSlot *port_FindFace(PortAddress prim) {
 
 /* ---- the stage as one mesh (port_remaster.h) ---- */
 
+/* A word of PortStageView.open: how many tiles, and how a tile's number
+ * is cut into its word and its bit. */
+#define OPEN_WORD_TILES 32
+#define OPEN_WORD_SHIFT 5
+#define OPEN_BIT_MASK (OPEN_WORD_TILES - 1)
+
+/* Which of the stage's tiles stage_Draw opened up for this frame
+ * (PortStageView.open). */
+static void port_RemasterNoteOpenTiles(void) {
+    s32 count;
+    const StageTile *tiles = stage_GetTiles(&count);
+    s32 i;
+
+    for (i = 0; i < PORT_STAGE_TILE_WORDS; i++) {
+        g_stage_view.open[i] = 0;
+    }
+    if (count > PORT_STAGE_TILE_WORDS * OPEN_WORD_TILES) {
+        count = PORT_STAGE_TILE_WORDS * OPEN_WORD_TILES;
+    }
+    for (i = 0; i < count; i++) {
+        if (tiles[i].draw_flags & STAGE_TILE_OPEN) {
+            g_stage_view.open[i >> OPEN_WORD_SHIFT] |=
+                1U << (i & OPEN_BIT_MASK);
+        }
+    }
+}
+
+/* The view the renderer draws the stage's tiles with this frame, and which
+ * of them it opened up (port_remaster.h). */
 void port_RemasterNoteStageView(
     const void *matrix, const s32 *camera, s32 far_shift, s32 depth_shift,
     s32 fog_ot_index, s32 ot_cutoff) {
@@ -926,6 +959,7 @@ void port_RemasterNoteStageView(
     g_stage_view.h = (s32)(port_GteReadControl(PORT_GTE_PLANE) & HALF_MASK);
     g_stage_view.ofx = (s32)port_GteReadControl(PORT_GTE_OFX);
     g_stage_view.ofy = (s32)port_GteReadControl(PORT_GTE_OFY);
+    port_RemasterNoteOpenTiles();
     g_stage_view.frames++;
 }
 
@@ -1102,6 +1136,12 @@ static s32 port_FindAnchor(PortAddress prim) {
 static void port_RemasterFindLeftMargin(void) {
     PortDisplay display;
 
+    if (g_margin_is_fixed) {
+        port_GetDisplay(&display);
+        g_left_margin = port_RemasterMargin(
+            display.w, g_margin_aspect_w, g_margin_aspect_h);
+        return;
+    }
     if (!port_RemasterIsOn()) {
         g_left_margin = 0;
         return;
@@ -1112,6 +1152,12 @@ static void port_RemasterFindLeftMargin(void) {
 }
 
 s32 port_RemasterLeftMargin(void) { return g_left_margin; }
+
+void port_RemasterFixMargin(s32 aspect_w, s32 aspect_h) {
+    g_margin_is_fixed = TRUE;
+    g_margin_aspect_w = aspect_w;
+    g_margin_aspect_h = aspect_h;
+}
 
 /* The frame the side channel is writing down begins (port_remaster.h):
  * the game has cleared this frame's ordering table and is about to build

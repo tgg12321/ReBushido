@@ -247,6 +247,8 @@ nothing at all while Graphics is Original.
 | `aspect` | `4:3`, `16:9`, any `W:H` | The shape of the picture. A wider one is a **wider view of the same scene**, not a stretched picture: the camera keeps its height and gains width. Use it with `draw_distance max`, which fills the sides. `16:9` with nothing said; the fight's counters, clocks and points are drawn at the new edges, while the menus, the select screens and the loading pictures keep the console's shape in the middle ([`PORT.md`](PORT.md), "A wider picture"). |
 | `shadows` | `original`, `soft`, a number, `cast`, `cast:N` | What a fighter's shadow is. `original`, the default, is the game's own: the fighter's shape flattened onto the ground and painted **black**, which hides the ground under it. `soft` **darkens** the ground under that same shape instead, by 55 hundredths, so the ground keeps its texture through the shadow; the edge is softened by about three pixels of the picture, two shadows that cross are no darker than one, and **a fighter standing in a shadow is never darkened** -- its own feet and legs are exactly as lit as they are with the setting off. A number says how much of the ground a shadow takes, in hundredths, for trying another. `cast` does the same with a shadow cast from the fighter's **own body** -- every polygon of him, his sword and his scabbard, flattened onto the ground along the stage's sun -- in place of the game's coarse shadow shape, so it has his hands and his blade and does not twitch while he stands still; it takes 68 hundredths, and `cast:N` takes N. **`original` with nothing said**: nobody has looked at the soft ones on a screen yet ([`PORT.md`](PORT.md), "The shadows"). |
 | `stage_mesh` | `on`, `off` | The stage's ground drawn from **one mesh of the whole stage**, built when the stage loads, instead of from the tiles the console builds again every frame. Nothing of the ground comes and goes as the camera turns, its detail never steps, the fog runs on instead of stepping in bands across a long floor, a piece of ground between the camera and a fighter veils him again, and a picture drawn between two of the game's frames has only to move the camera. **`on` with nothing said.** Every one of the game's 38 stages was measured against the console's own tiles, and a stage the measurements did not hold would keep the tiles whatever the setting says; the log says which path each stage took ([`PORT.md`](PORT.md), "The ground as one mesh"). |
+| `sky` | `night`, `original` | What is above a stage that is open to the sky. The console has no sky: a fight's picture begins as one flat colour, the stage's colour of the distance, black or a dark blue on every stage, and that is what shows wherever the stage does not cover it. `night` paints a **night sky of the port's own** there: a gradient that is the stage's own colour of the distance at the horizon, so that the ground's fog runs into it with no seam, lifting a little towards the stage's own ambient colour; stars; a few thin clouds; and a moon where the stage's light comes from. It turns with the camera and never moves as the camera moves. The halls, the dojos, the parking garage and the cavern keep the flat colour, and the castle rooftop its own painted sky and moon. A mod can give a stage a picture of its own sky ([`MODS.md`](MODS.md), "Skies"). It needs Graphics Remastered, and changes nothing the game computes. **`night` with nothing said** -- the owner's call, not yet seen on a real screen ([`PORT.md`](PORT.md), "The sky"). |
+| `see_through` | `on`, `off` | The stage's walls, terraces and the rock of the cavern **thinned where they stand between the camera and a fighter**, so that he can always be seen, as modern fighting and action games do: a soft hole through the wall the size of the fighter, a dither that `antialiasing` smooths into a fade. The floor someone may stand on is never thinned, and nothing far behind a fighter or beside him is. The game does this itself for a few tiles a stage marks (half-transparent while a fighter is behind them); this does it for every face of the ground's mesh. It needs Graphics Remastered and `stage_mesh`, and changes nothing the game computes. **`on` with nothing said** -- the owner's call ([`PORT.md`](PORT.md), "Seeing the fighters through the stage"). |
 
 ## More pictures a second
 
@@ -308,6 +310,69 @@ them from; `--mods FOLDER` reads them from somewhere else, and `--mods
 off` or `mods = off` runs without. How to make one, and how a texture
 is named: [`MODS.md`](MODS.md).
 
+## Playing online
+
+Two players on two PCs play versus over the internet or a home network,
+with **rollback netcode**: your own presses count at once (after a
+delay of a frame or two you choose), the other player's are guessed
+until they arrive, and where a guess was wrong the game puts itself
+right in a moment ([`NETPLAY.md`](NETPLAY.md), sections 12 and 13). Both
+players need the **same build of ReBushido** (the same version, for the
+same system, 64-bit with 64-bit) and an image of **the same disc**; the
+two programs check both before anything starts, and say what differs.
+
+**One of you hosts, the other joins.** From the settings menu (F1, or
+Select on the top menu): *Play online*.
+
+- The host chooses *Host a game*, the port to wait at (7845 if you
+  change nothing) and *Host now*. The program starts again and waits.
+- The other chooses *Join a game*, types the host's address and port
+  (Enter on the row, then digits, dots and a colon, as
+  `203.0.113.7:7845`; Enter again keeps it) and *Join now*.
+
+Or from the command line:
+
+```
+rebushido --host 0.0.0.0:7845                 the host
+rebushido --join 203.0.113.7:7845             the other player
+```
+
+`--net-delay N` on the host's line sets the delay, 0 to 8 frames (2 if
+nothing says); it is both players'. *Through: This PC alone* on the
+page, or `--host 127.0.0.1:7845`, is for trying it with two windows on
+one PC.
+
+**Then:** the host's memory cards are sent to the other player, and
+both play on them: the fighters the host has unlocked, the host's
+button layouts in the game's own options, the host's ReBushido settings
+(Bugfixes among them). Nothing of the session is saved to either
+player's cards. The game starts from the beginning on both PCs and goes
+by itself to **versus character select**, where you both choose at
+once, as on one console; the host picks the stage. After a fight the
+game's menu offers a **rematch**. In a fight Start does nothing: there
+is no pause online. The opening movie is skipped.
+
+You play with your own keys or controller, whichever player's they are
+in your settings: the host is player 1 and the other player 2 in the
+game. A line at the top of the window says who you are, the **ping**
+(the round trip to the other PC), the longest **rollback** of the last
+seconds (frames the game went back and ran again) and the **delay**; or
+that it is waiting for the other player. Escape or closing the window
+leaves; the other player is told and plays on alone. The settings menu
+cannot be opened during a session (the other player's game would have
+to stop too).
+
+**Across the internet** the host's router has to let the port through:
+forward UDP port 7845 (or the one you chose) to the host's PC in the
+router's settings. The player who joins needs nothing. The draw distance
+is the console's online, whatever `draw_distance` says, and the two
+games keep the faces the wider of your two pictures shows: the two have
+to compute the same frame, whichever picture each of you looks at. F2
+still changes your own picture.
+
+Online play has been tried with two windows on one PC, not yet between
+two PCs, and not yet on Windows.
+
 ## Where the saves are
 
 ReBushido saves what the game saves, in the same way: **memory card
@@ -352,6 +417,8 @@ for ten seconds and fades.
 - Nobody has yet looked at the remastered picture on a real graphics
   card: it has been drawn only by software drivers, with no window on
   screen ([`PORT.md`](PORT.md), "Remastered in the window").
+- Online play has not been played between two PCs, nor on Windows
+  ("Playing online").
 - Nobody has watched the pictures between the game's frames move either,
   which is why `frame_rate` is `original` until someone does. On a
   machine with no card at all there is no room to draw a frame twice:

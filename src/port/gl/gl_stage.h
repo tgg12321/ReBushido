@@ -73,6 +73,10 @@ extern void port_GlStageSetView(const PortStageView *view);
 /* The view as the side channel last had it, for a caller that keeps one
  * frame's beside another's (gl_tween.c). */
 extern void port_GlStageGetView(PortStageView *view);
+/* The view the ground is being drawn with now: a picture's own between
+ * two frames (`*is_between` TRUE), or the renderer's. For what is drawn
+ * with the ground's camera (gl_sky.c, gl_see.c). */
+extern const PortStageView *port_GlStageViewNow(s32 *is_between);
 /* One view between two others, `phase` of `one` (256ths of the way from
  * `one` to `two`). Pure arithmetic. */
 extern void port_GlStageMixView(PortStageView *out, const PortStageView *one,

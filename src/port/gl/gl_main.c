@@ -25,6 +25,7 @@
 #include "gl.h"
 #include "gl_fighter.h"
 #include "gl_shadow.h"
+#include "gl_sky.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
 #include "port_gpu.h"
@@ -147,6 +148,11 @@ static const char g_usage[] =
     "                 static mesh instead of the game's tile primitives\n"
     "                 (gl_stage.h). `on` is the stages the mesh is\n"
     "                 measured good on; `every` is every stage\n"
+    "  --sky W        original (the default here): the game's own\n"
+    "                 colour of the distance; night: a night sky over\n"
+    "                 the stages open to it (gl_sky.h)\n"
+    "  --see-through W  off (the default here) or on: the stage's walls\n"
+    "                 thinned where they hide a fighter (gl_see.h)\n"
     "  --stage-depth W on, off: the scene held against the ground's\n"
     "                 own depth, so that ground between the camera and\n"
     "                 a fighter veils him (on with the mesh)\n"
@@ -889,6 +895,11 @@ static void port_GlBlank(u32 blank) {
         if (news != NULL) {
             fprintf(stderr, "gl %s\n", news);
         }
+        /* and whether its stage has a sky (gl_sky.h) */
+        news = port_GlSkyNews();
+        if (news != NULL) {
+            fprintf(stderr, "gl %s\n", news);
+        }
     }
     if (wanted && port_RemasterIsOn()) {
         const PortRemasterCounts *counts = port_GetRemasterFrameCounts();
@@ -1241,6 +1252,13 @@ int main(int argc, char **argv) {
             snprintf(g_run.pose_folder, sizeof(g_run.pose_folder), "%.*s",
                      comma != NULL ? (int)(comma - where) : (int)strlen(where),
                      where);
+        } else if (!strcmp(word, "--sky")) {
+            /* the game's own colour of the distance with nothing said:
+             * the provers hold the picture to the console's */
+            options.sky = !strcmp(argv[++i], "night") ? PORT_SKY_NIGHT
+                                                      : PORT_SKY_ORIGINAL;
+        } else if (!strcmp(word, "--see-through")) {
+            options.see_through = !strcmp(argv[++i], "on");
         } else if (!strcmp(word, "--stage-depth")) {
             options.is_stage_depth = strcmp(argv[++i], "off") != 0;
         } else if (!strcmp(word, "--shadows")) {

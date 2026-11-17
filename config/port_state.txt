@@ -50,6 +50,7 @@ outside  src/port/netplay.c     the session: inputs, guesses, the states kept, t
 outside  src/port/mods.c        the mods' table, made once as the program starts
 outside  src/port/net.c         the network: the socket, the link cable's numbers, the trouble it is given
 outside  src/port/picture.c     the pictures a run writes
+outside  src/port/session.c     netplay's session: who the other is, the host's cards as sent, the seed
 outside  src/port/png.c         PNG pictures read and written for the mods
 outside  src/port/remaster.c    the remastered picture's side channel: its epoch only goes forward
 outside  src/port/state.c       the snapshot's own bookkeeping, which must survive a load
