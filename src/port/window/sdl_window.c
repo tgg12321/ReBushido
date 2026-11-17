@@ -45,6 +45,7 @@
 #include "port_host.h"
 #include "port_movie.h"
 #include "port_music.h"
+#include "port_profile.h"
 #include "port_remaster.h"
 #include "port_spu.h"
 #include "shared.h"
@@ -77,6 +78,7 @@
  * this many samples' time (3 ms) is watched out on the clock. */
 #define WAIT_AWAKE 132
 #define MILLISECONDS 1000
+#define MICROSECONDS 1000000
 #define PATH_BYTES_MAX 1024
 #define BYTES_PER_PIXEL 4
 #define TAP_MAGIC 0x52464252U /* "RBFR", the low byte first */
@@ -164,6 +166,11 @@ static s32 g_port_lay_h;
 
 static PortPace g_port_pace;
 static Uint64 g_port_clock_start;
+/* --profile: where each blank's time went and when each picture was
+ * shown (port_profile.h), and the phase of the picture being drawn: -1
+ * for the game's own */
+static FILE *g_port_profile_file;
+static s32 g_port_profile_phase = -1;
 static u32 g_port_blanks_shown;
 static s32 g_port_show_fps;
 static SDL_Texture *g_port_counter;
@@ -183,6 +190,21 @@ static u32 g_port_tween_frames;
 static u32 g_port_frame_at;
 static u32 g_port_frame_period;
 static u32 g_port_next_picture;
+/* When the pictures are shown (pace.c, "when a picture is shown"): the
+ * display's refreshes as the swaps say; the moment the last blank was
+ * due and the moment its pictures were done; how long after its frame's
+ * moment a frame's first picture is on the screen (`lag`); and, kept at
+ * their recent peaks, what a picture between two frames takes to draw
+ * and how long after a blank's pictures the next blank's first is ready
+ * to be shown (the game's step and that picture). */
+static PortRefresh g_port_refresh;
+static u32 g_port_last_due;
+static u32 g_port_left_at;
+static u32 g_port_lag;
+static s32 g_port_has_lag;
+static s32 g_port_wants_lag;
+static u32 g_port_draw_cost;
+static u32 g_port_ready_after;
 static u32 g_port_pictures;
 static u32 g_port_pictures_between;
 /* The game as the log last saw it, and what the log has counted. */
@@ -303,16 +325,40 @@ static u32 port_ReadClock(void) {
 /* Waits `samples` of the clock: most of it asleep, the end awake. */
 static void port_WaitFor(u32 samples) {
     u32 until = port_ReadClock() + samples;
+    s32 was = port_ProfileSwitch(PORT_PROFILE_WAIT);
 
     for (;;) {
         s32 left = (s32)(until - port_ReadClock());
 
         if (left <= 0) {
+            port_ProfileSwitch(was);
             return;
         }
         if (left > WAIT_AWAKE) {
             SDL_Delay(
                 (Uint32)(left - WAIT_AWAKE) * MILLISECONDS / PORT_SPU_RATE);
+        }
+    }
+}
+
+/* --display-rate: the next blank of the display made up for a test,
+ * which a swap with vsync on waits for. */
+static void port_WaitForMadeUpBlank(void) {
+    Uint64 frequency = SDL_GetPerformanceFrequency();
+    Uint64 period = frequency / (Uint64)g_port_window_options.display_rate;
+    Uint64 since = SDL_GetPerformanceCounter() - g_port_clock_start;
+    Uint64 next = (since / period + 1) * period;
+
+    for (;;) {
+        Uint64 now = SDL_GetPerformanceCounter() - g_port_clock_start;
+        Uint64 left_ms;
+
+        if (now >= next) {
+            return;
+        }
+        left_ms = (next - now) * MILLISECONDS / frequency;
+        if (left_ms > 2) {
+            SDL_Delay((Uint32)(left_ms - 2));
         }
     }
 }
@@ -859,6 +905,9 @@ static void port_OpenWindow(void) {
             SDL_GetWindowDisplayIndex(g_port_window), &mode) == 0) {
         g_port_display_rate = mode.refresh_rate;
     }
+    if (g_port_window_options.display_rate > 0) {
+        g_port_display_rate = g_port_window_options.display_rate;
+    }
     if (g_port_vsync && g_port_display_rate != 0 &&
         g_port_display_rate < REFRESH_MIN) {
         port_Say("the display shows %d pictures a second, fewer than the "
@@ -908,6 +957,25 @@ static void port_OpenWindow(void) {
         port_AttachTestControllers();
     }
     g_port_clock_start = SDL_GetPerformanceCounter();
+    if (g_port_window_options.profile != NULL) {
+        u32 ticks[PORT_PROFILE_PARTS];
+        s32 i;
+
+        g_port_profile_file = fopen(g_port_window_options.profile, "w");
+        if (g_port_profile_file == NULL) {
+            port_Say(
+                "--profile: %s cannot be made", g_port_window_options.profile);
+            port_Quit(PORT_EXIT_FAILED);
+        }
+        fprintf(g_port_profile_file, "parts");
+        for (i = 0; i < PORT_PROFILE_PARTS; i++) {
+            fprintf(g_port_profile_file, " %s", port_ProfileName(i));
+        }
+        fputc('\n', g_port_profile_file);
+        g_port_profile_on = 1;
+        /* what was counted before is no blank's */
+        port_ProfileTake(ticks);
+    }
 }
 
 /* The texture the picture is given to SDL in, made again when the
@@ -1170,6 +1238,7 @@ static void port_DrawPicture(u32 blank, s32 may_tap) {
     s32 h;
     s32 window_w = 0;
     s32 window_h = 0;
+    s32 is_tapped;
 
     port_GetDisplay(&display);
     w = display.w < PORT_PICTURE_WIDTH_MAX ? display.w : PORT_PICTURE_WIDTH_MAX;
@@ -1186,22 +1255,28 @@ static void port_DrawPicture(u32 blank, s32 may_tap) {
     if (w <= 0 || h <= 0) {
         return;
     }
-    /* the software GPU's picture is made whichever is shown: it is what a
-     * test takes of the picture, and what the window draws where the
-     * remastered picture is off */
-    port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
-                        display.is_rgb24, g_port_frame);
-    if (may_tap && g_port_window_options.tap_frames != NULL &&
-        blank % (u32)g_port_window_options.tap_every == 0) {
+    /* the software GPU's picture, where a test takes it; and where it is
+     * shown, below -- not where the remastered picture is, which has no
+     * use for it */
+    is_tapped = may_tap && g_port_window_options.tap_frames != NULL &&
+                blank % (u32)g_port_window_options.tap_every == 0;
+    if (is_tapped) {
+        port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
+                            display.is_rgb24, g_port_frame);
         port_TapFrame(blank, w, h, display.is_on);
     }
     if (!display.is_on) {
         return;
     }
+    if (g_port_has_gl && port_ShowsRemastered() &&
+        port_ShowRemastered(window_w, window_h)) {
+        return;
+    }
+    if (!is_tapped) {
+        port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
+                            display.is_rgb24, g_port_frame);
+    }
     if (g_port_has_gl) {
-        if (port_ShowsRemastered() && port_ShowRemastered(window_w, window_h)) {
-            return;
-        }
         /* a movie is video and is smoothed when it is scaled, as the
          * remastered picture is, whatever the filter says of the game's
          * blocks */
@@ -1864,6 +1939,7 @@ static s32 port_InjectPress(s32 pad, u32 button, s32 down) {
 static void port_ReadInput(u32 blank) {
     SDL_Event event;
     s32 pad;
+    s32 was = port_ProfileSwitch(PORT_PROFILE_WINDOW);
 
     (void)blank;
     port_OpenWindow();
@@ -1909,16 +1985,36 @@ static void port_ReadInput(u32 blank) {
         }
     }
     port_SendPads();
+    port_ProfileSwitch(was);
 }
 
 /* ---- the pictures of one blank ---- */
 
 /* The picture that is ready, shown. */
 static void port_SwapPicture(void) {
+    s32 was = port_ProfileSwitch(PORT_PROFILE_SWAP);
+
+    if (g_port_window_options.display_rate > 0 && g_port_vsync) {
+        port_WaitForMadeUpBlank();
+    }
     if (g_port_has_gl) {
         SDL_GL_SwapWindow(g_port_window);
     } else {
         SDL_RenderPresent(g_port_renderer);
+    }
+    port_ProfileSwitch(was);
+    if (g_port_vsync) {
+        port_NoteSwap(&g_port_refresh, port_ReadClock());
+    }
+    if (g_port_profile_file != NULL) {
+        /* when the swap came back, in microseconds, and the picture's
+         * phase */
+        fprintf(
+            g_port_profile_file, "p %llu %d\n",
+            (unsigned long long)((SDL_GetPerformanceCounter() -
+                                  g_port_clock_start) *
+                                 MICROSECONDS / SDL_GetPerformanceFrequency()),
+            g_port_profile_phase);
     }
     g_port_pictures++;
     port_CountFps(&g_port_shown_meter, port_ReadClock(), 1);
@@ -1929,56 +2025,121 @@ static void port_SwapPicture(void) {
  * none: the frames are unlike, or nothing has been written down yet, and
  * what the window holds is then the game's own picture.
  *
- * The phase is where the clock is between the moment the frame on show
- * went up and the moment the frame after it will: 0 is the picture the
- * console itself would show, and the last phase is the frame the game
- * has already worked out and is about to put up. So nothing is guessed
- * ahead and nothing is held back — the picture is never later than the
- * console's own (docs/PORT.md). */
-static s32 port_DrawTween(void) {
+ * The phase is where the moment the picture will be on the screen lies
+ * between the moment the frame on show went up and the moment the frame
+ * after it will (port_PacePhase): 0 is the frame on show, and the last
+ * phase is the frame the game has already worked out and is about to put
+ * up. So nothing is guessed ahead. The moments are the blanks' own, as
+ * the pace keeps them, and not when the game happened to finish a step;
+ * and the moment of a picture is the refresh it will be shown at, not
+ * the moment it was begun (pace.c). */
+static s32 port_DrawTween(s32 slot) {
     s32 window_w = 0;
     s32 window_h = 0;
     s32 phase;
+    s32 was;
+    u32 now;
+    u32 shown_at;
 
     if (!g_port_tween_on || !port_ShowsRemastered() ||
         port_RemasterIsHolding() || g_port_frame_period == 0 ||
         !port_TweenCanDraw()) {
         return FALSE;
     }
-    phase = (s32)(((u64)(port_ReadClock() - g_port_frame_at) * PORT_TWEEN_ONE) /
-                  g_port_frame_period);
-    if (phase < 0) {
-        phase = 0;
+    now = port_ReadClock();
+    if (g_port_vsync) {
+        shown_at = port_NextRefresh(&g_port_refresh, now, g_port_draw_cost);
+    } else if (slot > 0 && (s32)(g_port_next_picture - now) > 0) {
+        /* the clock holds the rate: it is shown when its slot comes */
+        shown_at = g_port_next_picture;
+    } else {
+        shown_at = now + g_port_draw_cost;
     }
-    if (phase > PORT_TWEEN_ONE) {
-        phase = PORT_TWEEN_ONE;
-    }
+    phase = port_PacePhase(shown_at, g_port_frame_at, g_port_lag,
+                           g_port_frame_period, PORT_TWEEN_ONE);
+    was = port_ProfileSwitch(PORT_PROFILE_TWEEN);
     if (!port_TweenDraw(phase)) {
+        port_ProfileSwitch(was);
         return FALSE;
     }
     port_WindowSize(&window_w, &window_h);
     port_GlClearWindow(window_w, window_h);
     port_ShowRemastered(window_w, window_h);
+    port_ProfileSwitch(was);
+    /* what a picture takes to draw, at its recent peak */
+    now = port_ReadClock() - now;
+    g_port_draw_cost =
+        now > g_port_draw_cost ? now : port_PaceAverage(g_port_draw_cost, now);
+    g_port_profile_phase = phase;
     g_port_pictures_between++;
     return TRUE;
 }
 
-/* The pictures of this blank, the first of them the game's own, shown
- * when each is due; `due` is the clock's reading at which the blank
- * itself is.
+/* Whether another picture is drawn in this blank, after `pictures` of
+ * them, the last shown just now. With the display waited for and its
+ * refreshes known: where its next refresh comes before the next blank's
+ * first picture can be ready -- the blank's own moment and then the
+ * game's step and that picture's drawing -- the display would show the
+ * last picture twice, so one is drawn for it here. Otherwise while more
+ * than half a slot of the blank is left. */
+static s32 port_WantsAnotherPicture(u32 due, s32 slot, s32 pictures) {
+    u32 now = port_ReadClock();
+
+    if (slot == 0 || pictures >= PORT_PICTURES_A_BLANK_MAX) {
+        return FALSE;
+    }
+    if (port_WantsLaterShot(pictures - 1)) {
+        return TRUE;
+    }
+    if (g_port_vsync && g_port_refresh.period != 0) {
+        u32 next = port_NextRefresh(&g_port_refresh, now, g_port_draw_cost);
+        /* never more than a refresh past the blank's own moment, and
+         * none once that moment has passed: a PC that cannot keep up
+         * catches up rather than drawing more */
+        u32 reach = g_port_ready_after < g_port_refresh.period
+                        ? g_port_ready_after
+                        : g_port_refresh.period;
+
+        return (s32)(due - now) > 0 && (s32)(next - due) < (s32)reach;
+    }
+    return (s32)(due - now) > slot / 2;
+}
+
+/* The pictures of this blank, shown when each is due; `due` is the
+ * clock's reading at which the blank itself is.
  *
- * With `frame_rate original` there is one picture and it is shown at the
- * blank's own moment, which is what the window always did. Otherwise a
- * picture is shown every slot of the rate asked for, and the blank ends
- * when less than half a slot of it is left: with the display waited for,
- * the swap is the wait, and the pace takes up what a swap ran over
- * (pace.c). */
+ * With `frame_rate original` there is one picture, the game's own, and
+ * it is shown at the blank's own moment, which is what the window always
+ * did. Otherwise a picture is shown every slot of the rate asked for, or
+ * at each of the display's refreshes where it is waited for, and each is
+ * a picture of the moment it is shown at -- the first as well, which is
+ * drawn again between two frames where it can be (port_DrawTween). With
+ * the display waited for, the swap is the wait, and the pace takes up
+ * what a swap ran over (pace.c). */
 static void port_ShowPictures(u32 due) {
     s32 rate = port_PictureRate();
     s32 slot = rate > 0 ? PORT_SPU_RATE / rate : 0;
     s32 pictures = 0;
     s32 left;
+    u32 ready;
 
+    g_port_refresh.period = g_port_vsync && g_port_display_rate > 0
+                                ? (u32)(PORT_SPU_RATE / g_port_display_rate)
+                                : 0;
+    /* The first picture: the game's own frame as the blank began, and,
+     * where pictures between frames are drawn, the picture of the moment
+     * it will be shown at instead -- unless a test asked for the game's
+     * own (--shot-at N,0). */
+    if (slot != 0 && !(g_port_wants_shot && g_port_shot_picture == 0) &&
+        port_DrawTween(slot)) {
+        port_DrawCounter();
+    }
+    /* how long after the last blank's pictures this one's first is ready:
+     * the game's step and that picture, at its recent peak */
+    ready = port_ReadClock() - g_port_left_at;
+    g_port_ready_after = ready > g_port_ready_after
+                             ? ready
+                             : port_PaceAverage(g_port_ready_after, ready);
     for (;;) {
         if (slot == 0) {
             left = (s32)(due - port_ReadClock());
@@ -1997,13 +2158,22 @@ static void port_ShowPictures(u32 due) {
         port_KeepShot(pictures);
         port_SwapPicture();
         g_port_next_picture = port_ReadClock() + (u32)slot;
+        if (pictures == 0 && g_port_wants_lag) {
+            /* how long after its frame's moment a frame's first picture
+             * is on the screen: what every picture's phase is counted
+             * back by (port_PacePhase) */
+            u32 lag = port_ReadClock() - g_port_frame_at;
+
+            g_port_lag =
+                g_port_has_lag ? port_PaceAverage(g_port_lag, lag) : lag;
+            g_port_has_lag = TRUE;
+            g_port_wants_lag = FALSE;
+        }
         pictures++;
-        left = (s32)(due - port_ReadClock());
-        if (slot == 0 || pictures >= PORT_PICTURES_A_BLANK_MAX ||
-            (left <= slot / 2 && !port_WantsLaterShot(pictures - 1))) {
+        if (!port_WantsAnotherPicture(due, slot, pictures)) {
             break;
         }
-        if (!port_DrawTween()) {
+        if (!port_DrawTween(slot)) {
             break;
         }
         port_DrawCounter();
@@ -2019,13 +2189,36 @@ static void port_ShowPictures(u32 due) {
     if (left > 0) {
         port_WaitFor((u32)left);
     }
+    g_port_last_due = due;
+    g_port_left_at = port_ReadClock();
+}
+
+/* --profile: the blank's line, each part's time in microseconds; the
+ * part of the game's that the blank began with is the step of the frame
+ * before, and `is_new_frame` says the game drew a frame (gl_tween.h). */
+static void port_NoteProfile(u32 blank, s32 is_new_frame) {
+    u32 ticks[PORT_PROFILE_PARTS];
+    s32 i;
+
+    if (g_port_profile_file == NULL) {
+        return;
+    }
+    port_ProfileTake(ticks);
+    fprintf(g_port_profile_file, "b %u %d", blank, is_new_frame);
+    for (i = 0; i < PORT_PROFILE_PARTS; i++) {
+        fprintf(g_port_profile_file, " %u",
+                ticks[i] / PORT_HOST_TICKS_PER_MICROSECOND);
+    }
+    fputc('\n', g_port_profile_file);
 }
 
 /* A vertical blank's end (port_platform.h): its pictures, when they are
  * due. */
 static void port_ShowBlank(u32 blank) {
     u32 due;
+    u32 frames = g_port_tween_frames;
 
+    port_ProfileSwitch(PORT_PROFILE_WINDOW);
     port_OpenWindow();
     if (g_port_has_gl) {
         /* the frame the card drew is finished before anything is shown,
@@ -2035,8 +2228,10 @@ static void port_ShowBlank(u32 blank) {
 
         const char *news;
 
+        port_ProfileSwitch(PORT_PROFILE_FINISH);
         port_RemasterShow();
         port_GlFinishFrame();
+        port_ProfileSwitch(PORT_PROFILE_WINDOW);
         port_GlNoteFrameTime((SDL_GetTicks() - started) * MILLISECONDS);
         /* which path the stage's ground takes (gl_stage.h) */
         news = port_GlStageNews();
@@ -2050,18 +2245,22 @@ static void port_ShowBlank(u32 blank) {
         }
     }
     if (g_port_tween_on && port_TweenGeneration() != g_port_tween_frames) {
-        /* the game has drawn a frame: from this moment the frame that
-         * was on show is the one before it, and a picture's phase is
-         * counted from here */
-        u32 now = port_ReadClock();
-
+        /* the game has drawn a frame: the frame that was on show is the
+         * one before it, and a picture's phase is counted from the
+         * moment of the blank its step began at -- the blank the pace
+         * held to, so that a step that took longer or shorter moves no
+         * picture (pace.c) */
         if (g_port_tween_frames != 0) {
-            g_port_frame_period = now - g_port_frame_at;
+            g_port_frame_period = g_port_last_due - g_port_frame_at;
         }
-        g_port_frame_at = now;
+        g_port_frame_at = g_port_last_due;
         g_port_tween_frames = port_TweenGeneration();
+        g_port_wants_lag = TRUE;
     }
+    port_ProfileSwitch(PORT_PROFILE_PICTURE);
     port_DrawPicture(blank, TRUE);
+    port_ProfileSwitch(PORT_PROFILE_WINDOW);
+    g_port_profile_phase = -1;
     port_WatchGame(blank);
     port_DrawCounter();
     port_DrawNetLine();
@@ -2114,6 +2313,8 @@ static void port_ShowBlank(u32 blank) {
             SDL_RenderSetVSync(g_port_renderer, 0);
         }
     }
+    port_NoteProfile(blank, frames != g_port_tween_frames);
+    port_ProfileSwitch(PORT_PROFILE_GAME);
 }
 
 /* The program ends (port_platform.h): what the window did, SDL's leave,
@@ -2122,6 +2323,11 @@ static void port_CloseWindow(s32 code) {
     if (g_port_audio_tap != NULL) {
         fclose(g_port_audio_tap);
         g_port_audio_tap = NULL;
+    }
+    if (g_port_profile_file != NULL) {
+        fclose(g_port_profile_file);
+        g_port_profile_file = NULL;
+        g_port_profile_on = 0;
     }
     if (!g_port_is_open) {
         port_EndSession(code);

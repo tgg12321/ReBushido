@@ -37,6 +37,7 @@
  * nothing else does. */
 #include "common.h"
 #include "port_gpu.h"
+#include "port_profile.h"
 #include "bb2.h"
 
 /* ---- the numbers of the chip ---- */
@@ -1183,8 +1184,11 @@ void port_WriteGp0(u32 word) {
     if (gpu->load.is_active) {
         port_LoadWord(word);
         if (!gpu->load.is_active) {
+            s32 was = port_ProfileSwitch(PORT_PROFILE_REMASTER);
+
             port_RemasterLoadedVram(
                 gpu->load.x, gpu->load.y, gpu->load.w, gpu->load.h);
+            port_ProfileSwitch(was);
         }
         return;
     }
@@ -1199,11 +1203,15 @@ void port_WriteGp0(u32 word) {
     if (gpu->count == gpu->needed) {
         s32 words = gpu->needed;
 
+        s32 was = port_ProfileSwitch(PORT_PROFILE_RASTER);
+
         gpu->count = 0;
         port_RunCommand(gpu->words);
         if (!g_port_rerun) {
+            port_ProfileSwitch(PORT_PROFILE_REMASTER);
             port_RemasterCommand(gpu->words, words);
         }
+        port_ProfileSwitch(was);
     }
 }
 

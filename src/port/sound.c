@@ -32,6 +32,7 @@
 #include "common.h"
 #include "port_host.h"
 #include "port_music.h"
+#include "port_profile.h"
 #include "port_spu.h"
 #include "src/main/psxsdk/libspu/libspu_internal.h"
 /* Sony's two headers declare one function twice between them. */
@@ -459,6 +460,7 @@ static void port_MixSound(u32 frames) {
 
     s16 *heard = NULL;
     const s16 *music;
+    s32 was = port_ProfileSwitch(PORT_PROFILE_SOUND);
 
     port_PlayDisc(frames);
     port_ReadCdAudio(cd, frames);
@@ -467,6 +469,7 @@ static void port_MixSound(u32 frames) {
      * chip made */
     music = port_PlayMusic(frames, &heard);
     port_RunSpu(cd, music, out, heard, frames);
+    port_ProfileSwitch(was);
     g_port_sample_count += frames;
     /* a step run again is mixed and not heard (port_platform.h), but for
      * what the window takes of it in place of what it queued and has

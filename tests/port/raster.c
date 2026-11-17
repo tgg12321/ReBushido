@@ -27,6 +27,9 @@ void port_Fail(const char *format, ...) {
     }
 }
 
+/* No time is counted here (port_profile.h). */
+s32 port_ProfileSwitch(s32 part) { return part; }
+
 /* What picture.c writes goes here. */
 #define WRITTEN_MAX 0x110000
 static u8 g_written[WRITTEN_MAX];

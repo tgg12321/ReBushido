@@ -488,6 +488,49 @@ static void test_Pace(void) {
     CHECK(nudged > 26000 && nudged < 33000);
 }
 
+/* When a picture is shown, and of what moment (pace.c). */
+static void test_Refresh(void) {
+    PortRefresh refresh = {0, 0, 0};
+    u32 average;
+    s32 i;
+
+    /* refreshes not known: ready is when it is shown */
+    CHECK_EQ(port_NextRefresh(&refresh, 1000, 50), 1050);
+    /* a display of 85 a second: 518 samples a refresh, the last swap
+     * came back at 10000 */
+    refresh.period = 518;
+    port_NoteSwap(&refresh, 10000);
+    CHECK_EQ(port_NextRefresh(&refresh, 10000, 50), 10518);
+    CHECK_EQ(port_NextRefresh(&refresh, 10400, 100), 10518);
+    CHECK_EQ(port_NextRefresh(&refresh, 10400, 200), 11036);
+    /* ready before the refresh the last swap waited for: the next */
+    CHECK_EQ(port_NextRefresh(&refresh, 9900, 50), 10518);
+    /* round the clock's 32 bits */
+    port_NoteSwap(&refresh, 0xFFFFFF00U);
+    CHECK_EQ(port_NextRefresh(&refresh, 0xFFFFFF00U, 300), 0x00000106U);
+
+    /* the phase: a fight's two blanks, 1474 samples, from 5000 */
+    CHECK_EQ(port_PacePhase(5000, 5000, 0, 1474, 4096), 0);
+    CHECK_EQ(port_PacePhase(5737, 5000, 0, 1474, 4096), 2048);
+    CHECK_EQ(port_PacePhase(6474, 5000, 0, 1474, 4096), 4096);
+    /* shown before its frame's moment, or after the next: the ends */
+    CHECK_EQ(port_PacePhase(4000, 5000, 0, 1474, 4096), 0);
+    CHECK_EQ(port_PacePhase(9000, 5000, 0, 1474, 4096), 4096);
+    /* every picture shown 300 after its moment */
+    CHECK_EQ(port_PacePhase(6037, 5000, 300, 1474, 4096), 2048);
+    /* no period known */
+    CHECK_EQ(port_PacePhase(6000, 5000, 0, 0, 4096), 0);
+
+    /* an average goes an eighth of the way, up or down */
+    CHECK_EQ(port_PaceAverage(800, 1600), 900);
+    CHECK_EQ(port_PaceAverage(800, 0), 700);
+    average = 0;
+    for (i = 0; i < 200; i++) {
+        average = port_PaceAverage(average, 1000);
+    }
+    CHECK(average > 990 && average <= 1000);
+}
+
 /* ---- keys and controllers ---- */
 
 typedef struct {
@@ -817,9 +860,9 @@ static void test_Keys(void) {
  * (window.py). */
 static void test_Graphics(void) {
     port_SetDefaultSettings(&g_test_settings, test_LookUp);
-    /* what the layout built in says: the options page chooses the
-     * picture, the window's size the resolution */
-    CHECK_EQ(g_test_settings.graphics, PORT_GRAPHICS_FOLLOW);
+    /* what the layout built in says: the remastered picture, the
+     * window's size the resolution */
+    CHECK_EQ(g_test_settings.graphics, PORT_GRAPHICS_REMASTERED);
     CHECK_EQ(g_test_settings.resolution, PORT_RESOLUTION_WINDOW);
     /* the whole stage, so that nothing of it comes and goes as the
      * camera turns */
@@ -1184,6 +1227,7 @@ void test_Main(void) {
     test_Pixels();
     test_Ring();
     test_Pace();
+    test_Refresh();
     test_Keys();
     test_Log();
     test_Counter();

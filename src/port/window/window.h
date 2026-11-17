@@ -158,6 +158,34 @@ extern s32 port_PaceIsHeldBack(const PortPace *pace);
  * program is ahead of the other (src/port/netplay.c). */
 extern void port_PaceHold(PortPace *pace, u32 samples);
 
+/* ---- when a picture is shown, and of what moment (pace.c) ---- */
+
+/* The display's refreshes, as the swaps that waited for them say: a
+ * swap with vsync on comes back at a refresh, so the refreshes after it
+ * are that moment and whole periods on. */
+typedef struct {
+    u32 period;  /* samples' time between two refreshes; 0: not known */
+    u32 last;    /* when the last swap came back */
+    s32 is_seen; /* whether a swap has come back yet */
+} PortRefresh;
+
+/* A swap came back at `now`. */
+extern void port_NoteSwap(PortRefresh *refresh, u32 now);
+/* When a picture begun `now` and drawn in `cost` would be shown: the
+ * first refresh that comes after it is drawn; `now + cost` where the
+ * refreshes are not known. */
+extern u32 port_NextRefresh(const PortRefresh *refresh, u32 now, u32 cost);
+/* How far a picture shown at `shown_at` is between two frames, from 0 to
+ * `one`: the frame on show went up at `frame_at`, the next goes up
+ * `period` later, and every picture is shown `lag` after the moment it
+ * is a picture of. Out of that range it is the nearer end. */
+extern s32 port_PacePhase(
+    u32 shown_at, u32 frame_at, u32 lag, u32 period, s32 one);
+/* `average` moved an eighth of the way to `sample`, both samples' time:
+ * how the window keeps what a picture takes to draw and how late it is
+ * shown, steady from one blank to the next. */
+extern u32 port_PaceAverage(u32 average, u32 sample);
+
 /* ---- keys and controllers to the pads (keymap.c) ---- */
 
 /* What a pad's button is pressed by. */

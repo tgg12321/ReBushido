@@ -101,3 +101,54 @@ void port_PaceHold(PortPace *pace, u32 samples) {
 s32 port_PaceIsHeldBack(const PortPace *pace) {
     return pace->is_started && pace->lost_recent >= PORT_PACE_LOST_TIMES;
 }
+
+/* ---- when a picture is shown, and of what moment (window.h) ----
+ *
+ * A picture between two frames is of the moment it will be on the
+ * screen, not of the moment it was begun: begun at one moment and shown
+ * at the next refresh, it would be late by however far that refresh
+ * was, which differs from picture to picture by up to a whole refresh,
+ * and the scene would move by uneven steps however evenly the pictures
+ * came. */
+
+/* An average moves this part of the way at each sample (a power of
+ * two). */
+#define AVERAGE_SHIFT 3
+
+void port_NoteSwap(PortRefresh *refresh, u32 now) {
+    refresh->last = now;
+    refresh->is_seen = 1;
+}
+
+u32 port_NextRefresh(const PortRefresh *refresh, u32 now, u32 cost) {
+    u32 ready = now + cost;
+    u32 since;
+
+    if (refresh->period == 0 || !refresh->is_seen) {
+        return ready;
+    }
+    since = ready - refresh->last;
+    if ((s32)since <= 0) {
+        /* ready before the refresh the last swap waited for: the next */
+        return refresh->last + refresh->period;
+    }
+    return refresh->last +
+           (since + refresh->period - 1) / refresh->period * refresh->period;
+}
+
+s32 port_PacePhase(u32 shown_at, u32 frame_at, u32 lag, u32 period, s32 one) {
+    s32 since = (s32)(shown_at - frame_at - lag);
+
+    if (period == 0 || since <= 0) {
+        return 0;
+    }
+    if ((u32)since >= period) {
+        return one;
+    }
+    return (s32)((u64)(u32)since * (u32)one / period);
+}
+
+u32 port_PaceAverage(u32 average, u32 sample) {
+    return (u32)((s32)average +
+                 ((s32)sample - (s32)average) / (1 << AVERAGE_SHIFT));
+}

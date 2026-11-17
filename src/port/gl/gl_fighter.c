@@ -268,15 +268,17 @@ static struct {
     /* the fighters of this frame are drawn: the rest of their
      * primitives are only left out */
     s32 is_drawn;
-    /* the layer was laid over this picture, at `laid`: what the shadows'
-     * mask marks the fighters by at the picture's end
+    /* the layer of this picture is laid, and its depth is what a cloth is
+     * held against (port_GlFighterHolds); and what the shadows' mask
+     * marks the fighters by at the picture's end
      * (port_GlFighterDrawOccluders). Not `is_drawn`, which a picture
-     * between two frames puts back before the picture is finished
-     * (port_GlFighterTween): the mask of every such picture then had no
-     * fighter in it, and the shadow darkened his feet in the pictures
-     * between two frames and not in the frames' own, which on a screen is
-     * a flicker over the feet. */
+     * between two frames puts back before it is finished: the mask of
+     * every such picture had no fighter in it, and the shadow darkened
+     * his feet, a flicker over them on a screen. */
     s32 is_laid;
+    /* the primitive port_GlFighterTakes was last given is a cloth of a
+     * fighter drawn from a model of his own */
+    s32 holds;
     /* where the layer was laid over the picture */
     s32 laid[4];
     /* a picture between two frames is being drawn, `phase` of the way */
@@ -1419,7 +1421,6 @@ static void port_GlFighterDrawAll(
     g_fighter.laid[1] = y;
     g_fighter.laid[2] = w;
     g_fighter.laid[3] = h;
-    g_fighter.is_laid = TRUE;
     /* the depth is written whatever is there: the test is only how GL
      * lets a fragment write it */
     glEnable(GL_DEPTH_TEST);
@@ -1432,6 +1433,7 @@ static void port_GlFighterDrawAll(
     glDepthFunc(GL_LESS);
     glDisable(GL_DEPTH_TEST);
     port_GlForgetState();
+    g_fighter.is_laid = TRUE;
     if (drawn > 0) {
         g_fighter.counts.frames++;
     }
@@ -1503,6 +1505,7 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
     s32 slot;
     s32 s;
 
+    g_fighter.holds = FALSE;
     if (!g_fighter.is_on || !g_fighter.is_started || prim->id.object == 0 ||
         prim->is_shadow) {
         return FALSE;
@@ -1542,31 +1545,42 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
     }
     slot = port_GlFighterSlotOf(prim, views);
     if (slot >= 0 && port_FighterIsCloth(prim->id.object)) {
-        /* the cloth is the game's own (port_fighter.h) */
-        return FALSE;
-    }
-    if (slot >= 0 && g_fighter.dump != NULL) {
-        port_GlFighterDumpPrim(prim, &views[slot], slot);
-    }
-    if (slot >= 0) {
-        model = port_GlFighterModel(views[slot].model_id);
-        place = slot;
-        s = views[slot].model_id;
-    } else {
-        s32 i = port_GlFighterWeaponIndexOf(prim, weapons, weapon_count);
-
-        if (i >= 0) {
-            model = port_GlFighterWeaponModel(weapons[i].weapon);
-            place = PORT_FIGHTER_SLOTS + weapons[i].weapon;
-            s = weapons[i].weapon;
+        /* The cloth is the game's own (port_fighter.h), held against the
+         * layer's depth where its fighter is drawn from a model. So the
+         * layer is drawn before the first cloth as well: a cloth the
+         * table painted before the models would otherwise be painted
+         * over by them wherever they lie, in front of it or not (the
+         * long robes: 646 of 16,384 cloth faces in port_game's fight of
+         * ROSTER_VICTIM against ROSTER_LAST_2). */
+        if (port_GlFighterModel(views[slot].model_id) == NULL) {
+            return FALSE;
         }
+        g_fighter.holds = TRUE;
     }
-    if (model == NULL) {
-        return FALSE;
-    }
-    if (prim->is_textured && prim->texel_bits != PORT_REMASTER_DEPTH_15) {
-        port_GlFighterSawClut(place, s, prim->clut_x, prim->clut_y);
-        port_GlFighterFindPlace(place, model);
+    if (!g_fighter.holds) {
+        if (slot >= 0 && g_fighter.dump != NULL) {
+            port_GlFighterDumpPrim(prim, &views[slot], slot);
+        }
+        if (slot >= 0) {
+            model = port_GlFighterModel(views[slot].model_id);
+            place = slot;
+            s = views[slot].model_id;
+        } else {
+            s32 i = port_GlFighterWeaponIndexOf(prim, weapons, weapon_count);
+
+            if (i >= 0) {
+                model = port_GlFighterWeaponModel(weapons[i].weapon);
+                place = PORT_FIGHTER_SLOTS + weapons[i].weapon;
+                s = weapons[i].weapon;
+            }
+        }
+        if (model == NULL) {
+            return FALSE;
+        }
+        if (prim->is_textured && prim->texel_bits != PORT_REMASTER_DEPTH_15) {
+            port_GlFighterSawClut(place, s, prim->clut_x, prim->clut_y);
+            port_GlFighterFindPlace(place, model);
+        }
     }
     if (!g_fighter.is_drawn) {
         /* drawn where the first of their primitives would have been:
@@ -1580,8 +1594,25 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
                 : 0.0,
             weapons, weapon_count, after_weapons, after_weapon_count);
     }
+    if (g_fighter.holds) {
+        /* the cloth itself is painted by the game's own path */
+        return FALSE;
+    }
     g_fighter.counts.left_out++;
     return TRUE;
+}
+
+s32 port_GlFighterHolds(void) { return g_fighter.holds && g_fighter.is_laid; }
+
+s32 port_GlFighterLayerDepth(s32 rect[4]) {
+    if (!g_fighter.is_laid || g_fighter.laid[2] <= 0) {
+        return 0;
+    }
+    rect[0] = g_fighter.laid[0];
+    rect[1] = g_fighter.laid[1];
+    rect[2] = g_fighter.laid[2];
+    rect[3] = g_fighter.laid[3];
+    return (s32)g_fighter.layer_depth_value;
 }
 
 /* ---- the shadows cast from the models (gl_fighter.h) ---- */
@@ -1755,8 +1786,8 @@ s32 port_GlFighterCastTriangles(
 void port_GlFighterTween(s32 phase) {
     g_fighter.tween_phase = phase;
     g_fighter.is_drawn = FALSE;
-    /* a picture between two frames begins with no layer of its own; one
-     * that ends keeps the one it laid until its shadows are drawn */
+    /* a new picture has no layer yet; the end of one keeps its layer
+     * until the batch is drawn (port_GlFinishFrame) */
     if (phase >= 0) {
         g_fighter.is_laid = FALSE;
     }

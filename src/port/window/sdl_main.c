@@ -20,7 +20,7 @@
  *             [--tap-window FOLDER] [--tap-every N] [--tap-audio FILE]
  *             [--toggle-at N] [--shot-at N] [--fault-at N]
  *             [--fault-in-sound N] [--menu-at N[,N...]] [--menu-keys WORDS]
- *             [--menu-shots FOLDER] */
+ *             [--menu-shots FOLDER] [--profile FILE] [--display-rate N] */
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <dirent.h>
@@ -169,7 +169,10 @@ static const char g_port_window_usage_end[] =
     "log), --menu-at N[,N...] (what F1 does, at those blanks),\n"
     "--menu-keys WORDS (presses in the settings menu, one a picture: up,\n"
     "down, left, right, accept, back, close, clear, key:NAME, pad:NAME,\n"
-    "shot) and --menu-shots FOLDER (where shot keeps the window).\n";
+    "shot), --menu-shots FOLDER (where shot keeps the window),\n"
+    "--profile FILE (where each blank's time went, and when each picture\n"
+    "was shown: tools/port_profile.py reads it) and --display-rate N (a\n"
+    "display made up of N blanks a second, which a swap waits for).\n";
 
 static void port_Complain(const char *problem, const char *word) {
     fprintf(stderr, "rebushido: %s%s\nrebushido: --help says what it takes\n",
@@ -754,6 +757,13 @@ int main(int argc, char **argv) {
             }
         } else if (strcmp(word, "--tap-audio") == 0 && has_value) {
             options->tap_audio = argv[++i];
+        } else if (strcmp(word, "--profile") == 0 && has_value) {
+            options->profile = argv[++i];
+        } else if (strcmp(word, "--display-rate") == 0 && has_value) {
+            options->display_rate = atoi(argv[++i]);
+            if (options->display_rate <= 0) {
+                port_Complain("--display-rate takes a number, not ", argv[i]);
+            }
         } else if (strcmp(word, "--menu-at") == 0 && has_value) {
             options->menu_at = argv[++i];
         } else if (strcmp(word, "--menu-keys") == 0 && has_value) {
