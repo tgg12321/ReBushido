@@ -312,6 +312,15 @@ static s32 port_CardMakeImage(PortCardSlot *slot) {
 /* Opens the slot's image, making it if it is not there, and reads its
  * header block. */
 static void port_CardOpenImage(PortCardSlot *slot) {
+    if (slot->in_memory) {
+        /* netplay's: the image is in memory already (port_SetCardImage) */
+        port_CardCopyBytes(slot->header,
+                           g_port_card_images[slot - g_port_card_slots],
+                           PORT_CARD_BLOCK_SIZE);
+        slot->present = 1;
+        slot->formatted = port_CardHeaderIsGood(slot->header);
+        return;
+    }
     slot->file = port_HostOpenReadWrite(slot->path);
     if (slot->file < 0) {
         if (!port_CardMakeImage(slot)) {
@@ -342,18 +351,8 @@ static void port_CardOpenImage(PortCardSlot *slot) {
 /* The slot's card, opened the first time the game looks at it: 1 if there
  * is one to talk to. */
 static s32 port_CardReady(PortCardSlot *slot) {
-    if (slot != NULL && slot->in_memory) {
-        if (!slot->tried) {
-            slot->tried = 1;
-            port_CardCopyBytes(slot->header,
-                               g_port_card_images[slot - g_port_card_slots],
-                               PORT_CARD_BLOCK_SIZE);
-            slot->present = 1;
-            slot->formatted = port_CardHeaderIsGood(slot->header);
-        }
-        return slot->present;
-    }
-    if (slot == NULL || g_port_cards_off || slot->path == NULL) {
+    if (slot == NULL ||
+        (!slot->in_memory && (g_port_cards_off || slot->path == NULL))) {
         return 0;
     }
     if (!slot->tried) {
