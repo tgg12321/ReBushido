@@ -992,6 +992,8 @@ void port_RemasterBeginStageTextures(void) {
     g_stage_texture_version++;
 }
 
+/* A TIM's picture and colour table where tex_LoadTim put them, their
+ * sizes read from the TIM's own blocks. */
 void port_RemasterNoteStageTexture(
     const void *tim, s32 x, s32 y, s32 clut_x, s32 clut_y, s32 named_y) {
     const u8 *block = (const u8 *)tim + TIM_FIRST_BLOCK;

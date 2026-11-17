@@ -890,6 +890,9 @@ s32 port_TexturePageFits(const PortTexturePage *page) {
            page->page_y + PORT_MOD_PAGE_SIDE <= PORT_VRAM_HEIGHT;
 }
 
+/* FNV-1a over the page as port_mods.h describes it: the region of the
+ * whole page read through port_TextureValue, a texel that is not the
+ * stage's own counted as 0. */
 u64 port_TexturePageKey(const u16 *vram, const PortTexturePage *page) {
     PortTextureRegion region;
     u64 key = KEY_START;

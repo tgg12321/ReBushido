@@ -137,9 +137,14 @@ def dump(args):
         with open(os.path.join(out, 'log.txt'), errors='replace') as f:
             said = [line for line in f if "the stage's pages" in line]
         print('port_stage_hd: stage %2d %s: %s' % (stage, remaster.STAGE_NAMES[stage],
-                                                    said[-1].strip() if said else 'NO PAGES'))
-        if not said:
+                                                    said[-1].strip() if said else 'NO PAGES'), flush=True)
+        if not said and stage not in failed:
+            # a run that stopped short (the machine busy): once more
             failed.append(stage)
+            waiting.append(stage)
+            shutil.rmtree(out)
+        elif said and stage in failed:
+            failed.remove(stage)
     shutil.rmtree(work)
     pages = os.path.join(args.dump, 'pages')
     count = len([n for n in os.listdir(pages) if n.endswith('.png')]) if os.path.isdir(pages) else 0
