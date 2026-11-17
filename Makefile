@@ -136,7 +136,7 @@ ALL_O_FILES  := $(S_O_FILES) $(C_O_FILES) $(ASM_FUNC_O_FILES)
 .PHONY: all clean check clean-check shift movovl modern test checks \
 	rebushido rebushido-disc rebushido-patch rebushido-test rebushido-modern rb-build \
 	quickboot quickboot-compile quickboot-disc playtest playtest-discs gte-probe port \
-	patcher port-sdl port-sdl-windows
+	patcher port-sdl port-sdl-windows port-rollback
 
 ifeq ($(REBUSHIDO),1)
 all: rb-build
@@ -338,6 +338,17 @@ else
 	python3 tools/port_build.py --bits $(PORT_BITS)
 	python3 tools/port_order.py --check --bits $(PORT_BITS)
 endif
+
+# The native port's rollback self-test (docs/NETPLAY.md, "Save, load and
+# hash"; tests/README.md): both programs `make port` built run port_game's
+# plan headless, once as they are and once saving the game's state, running
+# eight frames, putting it back and running them again every 24 frames; it
+# fails on any difference of the state, of what the two runs print or of
+# what they write. About half a minute. It needs the retail disc's image
+# (REBUSHIDO_RETAIL, or the .cue at the checkout's root) and no emulator,
+# so it is not one of the checks, which run without the disc.
+port-rollback:
+	python3 tools/port_rollback.py
 
 # The native port with a window (docs/PORT.md, "The window"): the same
 # program with SDL 2 and a C library, for a person to play, into

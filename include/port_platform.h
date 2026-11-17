@@ -56,6 +56,10 @@ extern u32 port_FormatText(
 extern void port_Print(const char *format, ...)
     __attribute__((format(printf, 1, 2)));
 extern void port_FlushOutput(void);
+/* Where it is set, what port_Print is given goes to this first, and is
+ * printed only if it answers 1: the rollback self-test's look at what a
+ * run prints (port_state.h). */
+extern s32 (*g_port_print_tap)(const char *text, u32 length);
 /* To the error output, at once: what went wrong, and the game's own
  * printf. */
 extern void port_Log(const char *format, ...)

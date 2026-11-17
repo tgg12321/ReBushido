@@ -51,6 +51,9 @@ typedef __INTPTR_TYPE__ LinuxWord;
 #define LINUX_SA_ONSTACK 0x08000000U
 #define LINUX_SA_RESETHAND 0x80000000U
 #define LINUX_SIGNAL_SET_BYTES 8
+#define LINUX_CLOCK_MONOTONIC 1
+#define LINUX_TICKS_PER_SECOND 10000000U
+#define LINUX_NANOSECONDS_PER_TICK 100U
 
 #if defined(__x86_64__)
 
@@ -69,6 +72,7 @@ enum {
     LINUX_EXIT = 60,
     LINUX_FSYNC = 74,
     LINUX_SIGALTSTACK = 131,
+    LINUX_CLOCK_GETTIME = 228,
 };
 
 /* The call's number in %rax, its arguments in %rdi, %rsi, %rdx, %r10,
@@ -121,6 +125,7 @@ enum {
     LINUX_RT_SIGACTION = 174,
     LINUX_SIGALTSTACK = 186,
     LINUX_MMAP2 = 192, /* the offset in pages, the six arguments in registers */
+    LINUX_CLOCK_GETTIME = 265,
 };
 
 static LinuxWord port_LinuxCall(
@@ -275,6 +280,17 @@ s32 port_HostWriteAt(s32 file, u32 offset, const void *bytes, u32 count) {
 }
 
 void port_HostFlush(s32 file) { port_LinuxCall(LINUX_FSYNC, file, 0, 0); }
+
+/* The clock that only goes forward, in seconds and nanoseconds; the
+ * arithmetic wraps, which is all the port's count does (port_host.h). */
+u32 port_HostTicks(void) {
+    LinuxWord time[2] = {0, 0};
+
+    port_LinuxCall(
+        LINUX_CLOCK_GETTIME, LINUX_CLOCK_MONOTONIC, (LinuxWord)time, 0);
+    return (u32)time[0] * LINUX_TICKS_PER_SECOND +
+           (u32)time[1] / LINUX_NANOSECONDS_PER_TICK;
+}
 
 /* Whole pages at exactly `address`, or nothing (port_host.h). */
 s32 port_HostMapAt(u32 address, u32 size) {

@@ -1,0 +1,622 @@
+/* The native port's game state, saved, put back and hashed, and the
+ * self-test that holds it to its word (port_state.h; docs/NETPLAY.md,
+ * "Save, load and hash").
+ *
+ * The self-test is the probe of docs/NETPLAY.md made permanent: with
+ * --rollback-test N a run saves the state at a frame's boundary, runs N
+ * frames while it notes a hash of every page of the state and of what
+ * the run printed, puts the state back and runs the same frames again.
+ * Any page or any line that comes out otherwise stops the program and
+ * says where. What the frames printed the first time is printed once;
+ * the second time it is only compared, so a run with rollbacks prints
+ * what the same run without prints. */
+#include "common.h"
+#include "port_host.h"
+#include "port_spu.h"
+#include "bb2.h"
+
+/* The pieces of memory of a snapshot and of the hash, at most. */
+#define STATE_RUNS_MAX 8
+/* What the self-test compares the state by. */
+#define STATE_PAGE_BYTES 0x1000U
+#define STATE_IO_PAGE_ADDR (PORT_SPU_REGS_ADDR & ~(STATE_PAGE_BYTES - 1))
+#define STATE_SPU_REGS_BYTES (PORT_SPU_REG_COUNT * 2)
+/* Frames past N a first run may take to come to the save's parity before
+ * the round is given up. */
+#define ROLLBACK_SLACK 16
+/* Pages of a difference that are named. */
+#define ROLLBACK_NAMED_MAX 24
+
+/* MurmurHash3's mixing (public domain), in two lanes of 32 bits: as
+ * quick in the 32-bit program as in the 64-bit one, and the same on
+ * either for the same bytes. */
+#define HASH_SEED_A 0x9E3779B9U
+#define HASH_SEED_B 0x85EBCA77U
+#define HASH_WORD_MUL_A 0xCC9E2D51U
+#define HASH_WORD_MUL_B 0x1B873593U
+#define HASH_WORD_ROTATE 15
+#define HASH_LANE_ROTATE 13
+#define HASH_LANE_MUL 5
+#define HASH_LANE_ADD 0xE6546B64U
+#define HASH_FINAL_MUL_A 0x85EBCA6BU
+#define HASH_FINAL_MUL_B 0xC2B2AE35U
+#define HASH_FINAL_SHIFT_A 16
+#define HASH_FINAL_SHIFT_B 13
+#define HASH_WORD_BYTES 4
+#define HASH_PAIR_BYTES 8
+#define BITS_PER_BYTE 8
+#define WORD_BITS 32
+
+enum {
+    ROLLBACK_OFF,
+    ROLLBACK_WAIT,  /* frames to run before the next save */
+    ROLLBACK_FIRST, /* the frames after a save, noted */
+    ROLLBACK_AGAIN  /* the same frames after the load, compared */
+};
+
+/* A word read wherever it lies: the pieces need not start on a word. */
+typedef u32 __attribute__((may_alias, aligned(1))) PortLooseWord;
+
+typedef struct {
+    u8 *start;
+    u32 bytes;
+    const char *name;
+} PortStateRun;
+
+typedef struct {
+    u32 a;
+    u32 b;
+} PortHashLanes;
+
+/* The shortest, the longest and all of a kind of time, in the host's
+ * ticks. */
+typedef struct {
+    u32 count;
+    u32 least;
+    u32 most;
+    u32 total;
+} PortTiming;
+
+static PortStateRun g_port_state_saved[STATE_RUNS_MAX];
+static s32 g_port_state_saved_count;
+static PortStateRun g_port_state_hashed[STATE_RUNS_MAX];
+static s32 g_port_state_hashed_count;
+static u32 g_port_state_bytes;
+
+static s32 g_port_rollback_phase;
+static u32 g_port_rollback_frames;
+static u32 g_port_rollback_every;
+/* WAIT: frames to the next save. FIRST and AGAIN: frames since it. */
+static u32 g_port_rollback_count;
+/* The frames the first run took, and the save's parity and blank. */
+static u32 g_port_rollback_length;
+static u32 g_port_rollback_parity;
+static u32 g_port_rollback_blank;
+static u8 *g_port_rollback_snapshot;
+/* The state after the first frame of the first run, kept whole so that a
+ * difference there is named to the word. */
+static u8 *g_port_rollback_first_frame;
+/* For each frame of the first run: a hash of each page of the state, a
+ * hash of the state as port_StateHash makes it, and of what it printed. */
+static u64 *g_port_rollback_pages;
+static u32 g_port_rollback_page_count;
+static u64 *g_port_rollback_hashes;
+static u64 *g_port_rollback_texts;
+static PortHashLanes g_port_rollback_text;
+static u32 g_port_rollback_text_bytes;
+static u64 *g_port_rollback_here;
+/* What the report says. */
+static u32 g_port_rollback_rounds;
+static u32 g_port_rollback_given_up;
+static u32 g_port_rollback_compared;
+static s32 g_port_rollback_failed;
+static PortTiming g_port_rollback_saves;
+static PortTiming g_port_rollback_loads;
+static PortTiming g_port_rollback_hashing;
+
+/* ---- the pieces ---- */
+
+static void port_StateAddRun(PortStateRun *runs, s32 *count, const char *name,
+                             void *start, PortAddress end) {
+    if (*count >= STATE_RUNS_MAX) {
+        port_Fail(
+            "rebushido: the state has more than %d pieces\n", STATE_RUNS_MAX);
+    }
+    runs[*count].start = start;
+    runs[*count].bytes = (u32)(end - (PortAddress)start);
+    runs[*count].name = name;
+    (*count)++;
+}
+
+/* What is saved and what is hashed (port_state.h), found once. */
+static void port_StateFindPieces(void) {
+    PortStateRun *saved = g_port_state_saved;
+    PortStateRun *hashed = g_port_state_hashed;
+    u8 *ram = (u8 *)ADDR(PORT_RAM_ADDR);
+    u8 *scratchpad = (u8 *)ADDR(SCRATCHPAD);
+    u8 *io_page = (u8 *)ADDR(STATE_IO_PAGE_ADDR);
+    u8 *spu_regs = (u8 *)ADDR(PORT_SPU_REGS_ADDR);
+    u8 *spu_ram = port_GetSpuRam();
+    s32 i;
+
+    if (g_port_state_saved_count != 0) {
+        return;
+    }
+    port_StateAddRun(saved, &g_port_state_saved_count, "ram", ram,
+                     (PortAddress)ram + PORT_RAM_SIZE);
+    port_StateAddRun(saved, &g_port_state_saved_count, "scratchpad", scratchpad,
+                     (PortAddress)scratchpad + PORT_SCRATCHPAD_SIZE);
+    port_StateAddRun(saved, &g_port_state_saved_count, "io", io_page,
+                     (PortAddress)io_page + STATE_PAGE_BYTES);
+    if (port_RemasterPrimBufferBytes() != 0) {
+        u8 *prims = (u8 *)ADDR(PORT_PRIMS_ADDR);
+
+        port_StateAddRun(saved, &g_port_state_saved_count, "prims", prims,
+                         (PortAddress)prims + PORT_PRIMS_SIZE);
+    }
+    port_StateAddRun(saved, &g_port_state_saved_count, "data", g_port_game_data,
+                     (PortAddress)g_port_state_data_end);
+    port_StateAddRun(saved, &g_port_state_saved_count, "bss", g_port_game_bss,
+                     (PortAddress)g_port_state_bss_end);
+
+    port_StateAddRun(hashed, &g_port_state_hashed_count, "ram", ram,
+                     (PortAddress)ram + PORT_RAM_SIZE);
+    port_StateAddRun(
+        hashed, &g_port_state_hashed_count, "scratchpad", scratchpad,
+        (PortAddress)scratchpad + PORT_SCRATCHPAD_SIZE);
+    port_StateAddRun(hashed, &g_port_state_hashed_count, "spu", spu_regs,
+                     (PortAddress)spu_regs + STATE_SPU_REGS_BYTES);
+    port_StateAddRun(hashed, &g_port_state_hashed_count, "spu ram", spu_ram,
+                     (PortAddress)spu_ram + PORT_SPU_RAM_BYTES);
+    port_StateAddRun(hashed, &g_port_state_hashed_count, "gte", &g_port_gte,
+                     (PortAddress)(&g_port_gte + 1));
+    port_StateAddRun(hashed, &g_port_state_hashed_count, "game data",
+                     g_port_game_data, (PortAddress)g_port_game_data_end);
+    port_StateAddRun(hashed, &g_port_state_hashed_count, "game bss",
+                     g_port_game_bss, (PortAddress)g_port_game_bss_end);
+
+    g_port_state_bytes = 0;
+    for (i = 0; i < g_port_state_saved_count; i++) {
+        g_port_state_bytes += saved[i].bytes;
+    }
+}
+
+/* ---- save and load ---- */
+
+static void port_StateCopy(void *dest, const void *src, u32 bytes) {
+#if defined(__i386__) || defined(__x86_64__)
+    PortAddress count = bytes;
+
+    /* the processor's own copy, which is the quickest it has */
+    __asm__ volatile("rep movsb"
+                     : "+D"(dest), "+S"(src), "+c"(count)
+                     :
+                     : "memory");
+#else
+    u8 *to = dest;
+    const u8 *from = src;
+    u32 i;
+
+    for (i = 0; i < bytes; i++) {
+        to[i] = from[i];
+    }
+#endif
+}
+
+u32 port_StateSize(void) {
+    port_StateFindPieces();
+    return g_port_state_bytes;
+}
+
+void port_StateSave(void *buf) {
+    u8 *out = buf;
+    s32 i;
+
+    port_StateFindPieces();
+    for (i = 0; i < g_port_state_saved_count; i++) {
+        port_StateCopy(
+            out, g_port_state_saved[i].start, g_port_state_saved[i].bytes);
+        out += g_port_state_saved[i].bytes;
+    }
+}
+
+void port_StateLoad(const void *buf) {
+    const u8 *in = buf;
+    s32 i;
+
+    port_StateFindPieces();
+    for (i = 0; i < g_port_state_saved_count; i++) {
+        port_StateCopy(
+            g_port_state_saved[i].start, in, g_port_state_saved[i].bytes);
+        in += g_port_state_saved[i].bytes;
+    }
+}
+
+/* ---- the hash ---- */
+
+static u32 port_HashRotate(u32 value, s32 bits) {
+    return (value << bits) | (value >> (WORD_BITS - bits));
+}
+
+static u32 port_HashMix(u32 lane, u32 word) {
+    word *= HASH_WORD_MUL_A;
+    word = port_HashRotate(word, HASH_WORD_ROTATE);
+    word *= HASH_WORD_MUL_B;
+    lane ^= word;
+    lane = port_HashRotate(lane, HASH_LANE_ROTATE);
+    return lane * HASH_LANE_MUL + HASH_LANE_ADD;
+}
+
+static u32 port_HashFinal(u32 lane, u32 bytes) {
+    lane ^= bytes;
+    lane ^= lane >> HASH_FINAL_SHIFT_A;
+    lane *= HASH_FINAL_MUL_A;
+    lane ^= lane >> HASH_FINAL_SHIFT_B;
+    lane *= HASH_FINAL_MUL_B;
+    lane ^= lane >> HASH_FINAL_SHIFT_A;
+    return lane;
+}
+
+static void port_HashStart(PortHashLanes *lanes) {
+    lanes->a = HASH_SEED_A;
+    lanes->b = HASH_SEED_B;
+}
+
+/* `bytes` more bytes: a word to each lane in turn, and what is left of a
+ * pair to the first, a byte at a time. */
+static void port_HashBytes(PortHashLanes *lanes, const u8 *start, u32 bytes) {
+    const PortLooseWord *words = (const PortLooseWord *)start;
+    u32 pairs = bytes / HASH_PAIR_BYTES;
+    u32 first = lanes->a;
+    u32 second = lanes->b;
+    u32 i;
+
+    for (i = 0; i < pairs; i++) {
+        first = port_HashMix(first, words[2 * i]);
+        second = port_HashMix(second, words[2 * i + 1]);
+    }
+    for (i = pairs * HASH_PAIR_BYTES; i < bytes; i++) {
+        first = port_HashMix(first, start[i]);
+    }
+    lanes->a = first;
+    lanes->b = second;
+}
+
+static u64 port_HashEnd(const PortHashLanes *lanes, u32 bytes) {
+    return ((u64)port_HashFinal(lanes->a, bytes) << WORD_BITS) |
+           port_HashFinal(lanes->b, bytes);
+}
+
+/* What the console would hold, as one hash (port_state.h). */
+u64 port_StateHash(void) {
+    PortHashLanes lanes;
+    u32 bytes = 0;
+    s32 i;
+
+    port_StateFindPieces();
+    port_HashStart(&lanes);
+    for (i = 0; i < g_port_state_hashed_count; i++) {
+        port_HashBytes(
+            &lanes, g_port_state_hashed[i].start, g_port_state_hashed[i].bytes);
+        bytes += g_port_state_hashed[i].bytes;
+    }
+    return port_HashEnd(&lanes, bytes);
+}
+
+/* A hash of each page of what a snapshot holds, into `out`, in the
+ * snapshot's order: g_port_rollback_page_count of them. */
+static void port_HashPages(u64 *out) {
+    s32 i;
+
+    for (i = 0; i < g_port_state_saved_count; i++) {
+        const PortStateRun *run = &g_port_state_saved[i];
+        u32 offset;
+
+        for (offset = 0; offset < run->bytes; offset += STATE_PAGE_BYTES) {
+            u32 bytes = run->bytes - offset;
+            PortHashLanes lanes;
+
+            if (bytes > STATE_PAGE_BYTES) {
+                bytes = STATE_PAGE_BYTES;
+            }
+            port_HashStart(&lanes);
+            port_HashBytes(&lanes, run->start + offset, bytes);
+            *out++ = port_HashEnd(&lanes, bytes);
+        }
+    }
+}
+
+/* ---- the self-test ---- */
+
+static void port_TimingAdd(PortTiming *timing, u32 ticks) {
+    if (timing->count == 0 || ticks < timing->least) {
+        timing->least = ticks;
+    }
+    if (ticks > timing->most) {
+        timing->most = ticks;
+    }
+    timing->total += ticks;
+    timing->count++;
+}
+
+/* What the run prints: noted while the frames after a save run, and
+ * only compared, not printed, while they run again. */
+static s32 port_RollbackTap(const char *text, u32 length) {
+    if (g_port_rollback_phase == ROLLBACK_FIRST ||
+        g_port_rollback_phase == ROLLBACK_AGAIN) {
+        port_HashBytes(&g_port_rollback_text, (const u8 *)text, length);
+        g_port_rollback_text_bytes += length;
+    }
+    return g_port_rollback_phase != ROLLBACK_AGAIN;
+}
+
+/* What was printed since the last frame's boundary, as one hash. */
+static u64 port_RollbackTakeText(void) {
+    u64 hash = port_HashEnd(&g_port_rollback_text, g_port_rollback_text_bytes);
+
+    port_HashStart(&g_port_rollback_text);
+    g_port_rollback_text_bytes = 0;
+    return hash;
+}
+
+void port_StartRollbackTest(u32 frames, u32 every) {
+    g_port_rollback_frames = frames;
+    g_port_rollback_every = every < frames ? frames : every;
+    g_port_rollback_phase = ROLLBACK_WAIT;
+    g_port_rollback_count = g_port_rollback_every;
+    g_port_print_tap = port_RollbackTap;
+}
+
+/* The snapshot and the notes of a round, the first time they are
+ * needed: the state is only whole once the game runs. */
+static void port_RollbackAllocate(void) {
+    u32 frames = g_port_rollback_frames + ROLLBACK_SLACK;
+    u32 pages = 0;
+    s32 i;
+
+    if (g_port_rollback_snapshot != NULL) {
+        return;
+    }
+    port_StateFindPieces();
+    for (i = 0; i < g_port_state_saved_count; i++) {
+        pages += (g_port_state_saved[i].bytes + STATE_PAGE_BYTES - 1) /
+                 STATE_PAGE_BYTES;
+    }
+    g_port_rollback_page_count = pages;
+    g_port_rollback_snapshot = port_HostAllocate(g_port_state_bytes);
+    g_port_rollback_first_frame = port_HostAllocate(g_port_state_bytes);
+    g_port_rollback_pages = port_HostAllocate(frames * pages * sizeof(u64));
+    g_port_rollback_here = port_HostAllocate(pages * sizeof(u64));
+    g_port_rollback_hashes = port_HostAllocate(frames * sizeof(u64));
+    g_port_rollback_texts = port_HostAllocate(frames * sizeof(u64));
+    if (g_port_rollback_snapshot == NULL ||
+        g_port_rollback_first_frame == NULL || g_port_rollback_pages == NULL ||
+        g_port_rollback_here == NULL || g_port_rollback_hashes == NULL ||
+        g_port_rollback_texts == NULL) {
+        port_Fail("rebushido: no memory for the rollback self-test's "
+                  "snapshot (%u bytes)\n",
+                  g_port_state_bytes);
+    }
+}
+
+/* A round begins: the snapshot, and the first run of its frames. */
+static void port_RollbackSave(u32 parity) {
+    u32 start;
+
+    port_RollbackAllocate();
+    start = port_HostTicks();
+    port_StateSave(g_port_rollback_snapshot);
+    port_TimingAdd(&g_port_rollback_saves, port_HostTicks() - start);
+    g_port_rollback_phase = ROLLBACK_FIRST;
+    g_port_rollback_count = 0;
+    g_port_rollback_parity = parity;
+    g_port_rollback_blank = port_GetBlankCount();
+    port_RollbackTakeText();
+}
+
+/* Where a page of the snapshot is: its piece and its offset there. */
+static const PortStateRun *port_RollbackFindPage(u32 page, u32 *offset) {
+    s32 i;
+
+    for (i = 0; i < g_port_state_saved_count; i++) {
+        u32 pages = (g_port_state_saved[i].bytes + STATE_PAGE_BYTES - 1) /
+                    STATE_PAGE_BYTES;
+
+        if (page < pages) {
+            *offset = page * STATE_PAGE_BYTES;
+            return &g_port_state_saved[i];
+        }
+        page -= pages;
+    }
+    *offset = 0;
+    return NULL;
+}
+
+/* The first frame after the save, run again, against the state it left
+ * the first time, which is kept whole: the words that differ. */
+static void port_RollbackNameWords(void) {
+    const u8 *first = g_port_rollback_first_frame;
+    u32 named = 0;
+    s32 i;
+
+    for (i = 0; i < g_port_state_saved_count; i++) {
+        const PortStateRun *run = &g_port_state_saved[i];
+        const PortLooseWord *was = (const PortLooseWord *)first;
+        const PortLooseWord *now = (const PortLooseWord *)run->start;
+        u32 word;
+
+        for (word = 0; word < run->bytes / HASH_WORD_BYTES; word++) {
+            if (was[word] == now[word]) {
+                continue;
+            }
+            if (named++ == ROLLBACK_NAMED_MAX) {
+                port_Log("rollback: differs: and more words\n");
+                return;
+            }
+            port_Log("rollback: differs: the word at 0x%08X: 0x%08X, the "
+                     "first time 0x%08X\n",
+                     (u32)(PortAddress)(run->start + word * HASH_WORD_BYTES),
+                     now[word], was[word]);
+        }
+        first += run->bytes;
+    }
+}
+
+/* The frame run again is not the frame run first: what differs, and
+ * the end of the program. */
+static void port_RollbackFail(const u64 *first, u64 text, u64 hash) {
+    u32 named = 0;
+    u32 page;
+
+    g_port_rollback_failed = 1;
+    port_Log("rollback: FAILED: frame %u of %u, run again after the save at "
+             "blank %u, is not what it was\n",
+             g_port_rollback_count, g_port_rollback_length,
+             g_port_rollback_blank);
+    for (page = 0; page < g_port_rollback_page_count; page++) {
+        const PortStateRun *run;
+        u32 offset;
+
+        if (first[page] == g_port_rollback_here[page]) {
+            continue;
+        }
+        if (named++ == ROLLBACK_NAMED_MAX) {
+            port_Log("rollback: differs: and more\n");
+            break;
+        }
+        run = port_RollbackFindPage(page, &offset);
+        if (run == NULL) {
+            break;
+        }
+        port_Log("rollback: differs: %s +0x%X at 0x%08X\n", run->name, offset,
+                 (u32)(PortAddress)(run->start + offset));
+    }
+    if (g_port_rollback_count == 1) {
+        port_RollbackNameWords();
+    }
+    if (text != g_port_rollback_texts[g_port_rollback_count - 1]) {
+        port_Log("rollback: differs: what the frame printed\n");
+    }
+    if (hash != g_port_rollback_hashes[g_port_rollback_count - 1]) {
+        port_Log("rollback: differs: port_StateHash\n");
+    }
+    port_Quit(PORT_EXIT_FAILED);
+}
+
+/* The first run of a round has come to its last frame: back to the
+ * save. */
+static void port_RollbackLoad(void) {
+    u32 start = port_HostTicks();
+
+    port_StateLoad(g_port_rollback_snapshot);
+    port_TimingAdd(&g_port_rollback_loads, port_HostTicks() - start);
+    g_port_rollback_length = g_port_rollback_count;
+    g_port_rollback_phase = ROLLBACK_AGAIN;
+    g_port_rollback_count = 0;
+}
+
+/* The next save after a round that took `length` frames. */
+static void port_RollbackWait(u32 length, u32 parity) {
+    g_port_rollback_phase = ROLLBACK_WAIT;
+    g_port_rollback_count =
+        g_port_rollback_every > length ? g_port_rollback_every - length : 0;
+    if (g_port_rollback_count == 0) {
+        port_RollbackSave(parity);
+    }
+}
+
+/* A frame's boundary (port_state.h): the round's next step. */
+void port_OnRollbackFrame(u32 parity) {
+    u64 *first;
+    u64 text;
+    u64 hash;
+    u32 start;
+
+    if (g_port_rollback_phase == ROLLBACK_OFF) {
+        return;
+    }
+    if (g_port_rollback_phase == ROLLBACK_WAIT) {
+        if (g_port_rollback_count > 0) {
+            g_port_rollback_count--;
+        }
+        if (g_port_rollback_count == 0) {
+            port_RollbackSave(parity);
+        }
+        return;
+    }
+    g_port_rollback_count++;
+    first = g_port_rollback_pages +
+            (g_port_rollback_count - 1) * g_port_rollback_page_count;
+    text = port_RollbackTakeText();
+    start = port_HostTicks();
+    hash = port_StateHash();
+    port_TimingAdd(&g_port_rollback_hashing, port_HostTicks() - start);
+    if (g_port_rollback_phase == ROLLBACK_FIRST) {
+        if (g_port_rollback_count == 1) {
+            port_StateSave(g_port_rollback_first_frame);
+        }
+        port_HashPages(first);
+        g_port_rollback_texts[g_port_rollback_count - 1] = text;
+        g_port_rollback_hashes[g_port_rollback_count - 1] = hash;
+        if (g_port_rollback_count >= g_port_rollback_frames &&
+            parity == g_port_rollback_parity) {
+            port_RollbackLoad();
+        } else if (
+            g_port_rollback_count >= g_port_rollback_frames + ROLLBACK_SLACK) {
+            /* the frames never came back to the save's parity */
+            g_port_rollback_given_up++;
+            port_RollbackWait(g_port_rollback_count, parity);
+        }
+        return;
+    }
+    port_HashPages(g_port_rollback_here);
+    g_port_rollback_compared++;
+    {
+        u32 page;
+
+        for (page = 0; page < g_port_rollback_page_count; page++) {
+            if (first[page] != g_port_rollback_here[page]) {
+                port_RollbackFail(first, text, hash);
+            }
+        }
+    }
+    if (text != g_port_rollback_texts[g_port_rollback_count - 1] ||
+        hash != g_port_rollback_hashes[g_port_rollback_count - 1]) {
+        port_RollbackFail(first, text, hash);
+    }
+    if (g_port_rollback_count == g_port_rollback_length) {
+        g_port_rollback_rounds++;
+        port_RollbackWait(g_port_rollback_length, parity);
+    }
+}
+
+/* A kind of time, in microseconds: the mean and the longest. */
+static void port_PrintTiming(const char *what, const PortTiming *timing) {
+    u32 mean = timing->count == 0 ? 0 : timing->total / timing->count;
+
+    port_Log("rollback: %s %u us on average, %u at most, %u at least (%u "
+             "times)\n",
+             what, mean / PORT_HOST_TICKS_PER_MICROSECOND,
+             timing->most / PORT_HOST_TICKS_PER_MICROSECOND,
+             timing->least / PORT_HOST_TICKS_PER_MICROSECOND, timing->count);
+}
+
+/* How big the state is, how long it took to save, load and hash, and
+ * how many rounds the run made (port_state.h). */
+void port_PrintRollbackReport(void) {
+    if (g_port_rollback_phase == ROLLBACK_OFF) {
+        return;
+    }
+    port_Log("rollback: the state is %u bytes in %d pieces; the hash reads "
+             "%d pieces\n",
+             g_port_state_bytes, g_port_state_saved_count,
+             g_port_state_hashed_count);
+    port_PrintTiming("save", &g_port_rollback_saves);
+    port_PrintTiming("load", &g_port_rollback_loads);
+    port_PrintTiming("port_StateHash", &g_port_rollback_hashing);
+    port_Log("rollback: %s: %u rounds of %u frames run twice, %u frames "
+             "compared, %u rounds given up\n",
+             g_port_rollback_failed ? "FAILED" : "ok", g_port_rollback_rounds,
+             g_port_rollback_frames, g_port_rollback_compared,
+             g_port_rollback_given_up);
+}

@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <time.h>
 #include <ucontext.h>
 #include <unistd.h>
 
@@ -141,6 +142,14 @@ void port_HostFlush(s32 file) {
 }
 
 /* Whole pages at exactly `address`, or nothing (port_host.h). */
+/* The clock that only goes forward (port_host.h). */
+u32 port_HostTicks(void) {
+    struct timespec now;
+
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (u32)now.tv_sec * 10000000U + (u32)now.tv_nsec / 100U;
+}
+
 s32 port_HostMapAt(u32 address, u32 size) {
     void *wanted = (void *)(uintptr_t)address;
     void *got = mmap(wanted, size, PROT_READ | PROT_WRITE,

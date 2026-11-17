@@ -65,6 +65,12 @@ extern s32 port_HostWriteAt(s32 file, u32 offset, const void *bytes, u32 count);
  * the game has been told is saved survives a crash. */
 extern void port_HostFlush(s32 file);
 
+/* The PC's clock, in tenths of a microsecond from some moment: only for
+ * how long something took (the rollback self-test's report, state.c).
+ * It wraps after seven minutes; nothing of the game reads it. */
+#define PORT_HOST_TICKS_PER_MICROSECOND 10
+extern u32 port_HostTicks(void);
+
 /* `size` bytes of zeroed memory that can be read and written, at exactly
  * `address`: 1, or 0 if the system will not give memory there (something
  * else has the place, or it cannot be had at all). */

@@ -5,6 +5,7 @@
  *             [--shots FOLDER] [--every N] [--vram FILE]
  *             [--wav FILE] [--spu FILE]
  *             [--card1 FILE] [--card2 FILE] [--no-cards]
+ *             [--rollback-test N] [--rollback-every M]
  *
  * It gives the game the PlayStation's memory and the player's disc
  * image, and then calls the game's own main, which never returns: the
@@ -29,6 +30,9 @@
 #define ADDRESS_BITS 32
 /* A picture a second, where --shots does not say how often. */
 #define SHOTS_EVERY 60
+/* Frames from one save of the rollback self-test to the next, where
+ * --rollback-every does not say. */
+#define ROLLBACK_EVERY 24
 
 static PortDisc g_port_disc;
 static s32 g_port_quitting;
@@ -47,6 +51,7 @@ static const char g_port_usage[] =
     "            [--shots FOLDER] [--every N] [--vram FILE]\n"
     "            [--wav FILE] [--spu FILE]\n"
     "            [--card1 FILE] [--card2 FILE] [--no-cards]\n"
+    "            [--rollback-test N] [--rollback-every M]\n"
     "\n"
     "  --image FILE   your own image of the game's disc: the .cue, or the\n"
     "                 .bin of raw sectors it names\n"
@@ -73,6 +78,10 @@ static const char g_port_usage[] =
     "                 a file that is not there is made, formatted and empty\n"
     "  --card2 FILE   the memory card in slot 2 (card2.mcd beside it)\n"
     "  --no-cards     no memory card in either slot\n"
+    "  --rollback-test N   every so often save the game's state, run N\n"
+    "                 frames, put it back and run them again; stop at the\n"
+    "                 first difference, and report (docs/NETPLAY.md)\n"
+    "  --rollback-every M  ... M frames from one save to the next (24)\n"
     "\n"
     "At the end it prints a line for each thing the game asked for that\n"
     "the port does not do yet, with how often: stub NAME COUNT.\n";
@@ -91,6 +100,7 @@ void port_Quit(s32 code) {
             port_WriteWav();
         }
         port_PrintStubs();
+        port_PrintRollbackReport();
         if (g_port_quit_hook != NULL) {
             g_port_quit_hook(code);
         }
@@ -184,6 +194,8 @@ s32 port_Main(s32 argc, char **argv) {
     const char *problem;
     s32 frames = 0;
     s32 every = SHOTS_EVERY;
+    s32 rollback_frames = 0;
+    s32 rollback_every = ROLLBACK_EVERY;
     s32 i;
 
     port_CatchCrashes();
@@ -239,6 +251,18 @@ s32 port_Main(s32 argc, char **argv) {
             port_SetVramPath(argv[++i]);
         } else if (port_TextsEqual(word, "--dump")) {
             port_ParseDump(argv[++i]);
+        } else if (port_TextsEqual(word, "--rollback-test")) {
+            if (!port_ParseNumber(argv[++i], &rollback_frames) ||
+                rollback_frames <= 0) {
+                port_UsageError(
+                    "--rollback-test takes a number, not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--rollback-every")) {
+            if (!port_ParseNumber(argv[++i], &rollback_every) ||
+                rollback_every <= 0) {
+                port_UsageError(
+                    "--rollback-every takes a number, not ", argv[i]);
+            }
         } else if (port_TextsEqual(word, "--frames")) {
             if (!port_ParseNumber(argv[++i], &frames) || frames <= 0) {
                 port_UsageError("--frames takes a number, not ", argv[i]);
@@ -270,6 +294,9 @@ s32 port_Main(s32 argc, char **argv) {
     }
     if (shots != NULL) {
         port_SetShots(shots, (u32)every);
+    }
+    if (rollback_frames > 0) {
+        port_StartRollbackTest((u32)rollback_frames, (u32)rollback_every);
     }
     /* where primitives may be: the console's memory, the program's own
      * variables, the game's stack */

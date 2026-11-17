@@ -114,6 +114,12 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   (address 0), the port's code is under `RB_PORT` with the console's
   value explained in a comment; the table is in `docs/PORT.md`,
   "Memory".
+- The game's state is saved, put back and hashed by `src/port/state.c`
+  (`docs/NETPLAY.md`, "Save, load and hash"). A new port variable that
+  is not the game's (picture, output, host, window) goes in a file of
+  `OUTSIDE_STATE` (`tools/port_build.py`). After a change to the port's
+  variables or to what a frame reads: `wsl bash tools/build.sh
+  port-rollback` (needs the disc, no emulator; not one of the checks).
 - To drive a mode of the game on the port with no emulator: run both
   sizes with the same `--plan` and `--no-cards` and compare the traces.
   On Windows capture a program's output with `pwsh`, not Windows

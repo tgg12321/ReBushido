@@ -302,6 +302,8 @@ u32 port_FormatText(char *out, u32 room, const char *format, PortArgs args) {
 static char g_port_output[0x4000];
 static u32 g_port_output_used;
 
+s32 (*g_port_print_tap)(const char *text, u32 length);
+
 void port_FlushOutput(void) {
     port_HostWrite(PORT_HOST_OUTPUT, g_port_output, g_port_output_used);
     g_port_output_used = 0;
@@ -318,6 +320,9 @@ void port_Print(const char *format, ...) {
     PORT_ARGS_START(args, format);
     length = port_FormatText(line, sizeof(line), format, args);
     PORT_ARGS_END(args);
+    if (g_port_print_tap != NULL && !g_port_print_tap(line, length)) {
+        return;
+    }
     if (g_port_output_used + length > sizeof(g_port_output)) {
         port_FlushOutput();
     }

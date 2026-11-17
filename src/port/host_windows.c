@@ -142,6 +142,15 @@ s32 port_HostWriteAt(s32 file, u32 offset, const void *bytes, u32 count) {
 
 void port_HostFlush(s32 file) { FlushFileBuffers(g_port_windows_files[file]); }
 
+/* The system's time is counted in tenths of a microsecond already: its
+ * low half is the port's count (port_host.h). */
+u32 port_HostTicks(void) {
+    FILETIME now;
+
+    GetSystemTimePreciseAsFileTime(&now);
+    return (u32)now.dwLowDateTime;
+}
+
 /* Memory at an address. Windows gives addresses in blocks of 64 KB: a
  * piece that begins inside a block cannot be asked for by itself, and
  * the page of the sound chip's registers is 4 KB past the scratchpad.
