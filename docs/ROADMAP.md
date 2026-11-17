@@ -194,3 +194,11 @@ camera), particle effects, skyboxes on the stages that were left dark.
     ([`PLAYING.md`](PLAYING.md), "The settings menu"). Left: the rest of
     the game's menu text, English already, drawn sharper the same way.
 12. **Optimisation**, for a smooth and seamless game.
+    Begun on the port's window ([`PORT.md`](PORT.md), "Where the time
+    goes"): `--profile` says where each blank's time goes; the video
+    memory a frame writes is sent to the card in one go; the card is no
+    longer waited for at each picture; each picture between two frames
+    is of the moment it is shown. Left: the players' build at `-O2`
+    (the owner's call; its traces are the same), the HD fighters'
+    models read before the fight's first frame, and whether 85 Hz is
+    smooth on the owner's screen.

@@ -3766,6 +3766,116 @@ to draw a frame twice**. 4,669 pictures were shown in the run, 188 of
 them between frames. Nothing was seen; the log and the numbers are all
 there is.
 
+### Where the time goes
+
+`--profile FILE` makes the window write, at every blank, how long each
+part of it took (`include/port_profile.h`, `src/port/profile.c`): the
+game's own code, the software GPU, the side channel, the card's
+batches, the sound, the frame's finish, the window's picture, the
+pictures between frames, the swap and the wait; and, at every swap, when
+it came back and the phase of the picture. `python3
+tools/port_profile.py FILE --from N --to M --rate 85` reads it: each
+part's mean, median, 95th centile and most, for the blanks in which the
+game drew a frame and the others, and how evenly the pictures came.
+`--display-rate N` makes up a display of N refreshes a second that a
+swap with vsync on waits for, so that a run with no screen can be
+paced as a player's is. Off, a part's switch is one test of a flag.
+
+**Measured** (the plan of `port_game`, its fight from blank 3000 to
+4050, the window at 640 by 480 through SDL's `offscreen` driver on
+Mesa's `llvmpipe`, `--fast`, on a machine with other builds running, so
+a millisecond either way is noise). A blank in which the game drew a
+fight frame, median milliseconds:
+
+| part | before | after |
+| --- | --- | --- |
+| the game's code | 1.09 | 1.12 (0.90 at `-O2`) |
+| the software GPU | 2.50 | 2.55 (2.37 at `-O2`) |
+| the side channel | 1.48 | 1.43 (1.35 at `-O2`) |
+| the sound | 0.52 | 0.61 (0.56 at `-O2`) |
+| the card's batches | 38.2 | 22.9 |
+
+So **what the PC's processor does for a frame is about 5.5 ms**, and
+everything else on this machine is Mesa drawing in software, which says
+nothing of a real card. What does carry over is what the program asks of
+the card: a fight frame is about 80 draws and 8,400 vertices, and it
+wrote video memory 55 times (the frame's clear, the textures' pages,
+and the fog's 31 colour tables a line at a time), each one a send of
+the mirror and a draw of its own. Those are now gathered: the rectangles
+written one after another with no primitive between them are copied as
+they are written into the backend's own copy of video memory, and sent
+and drawn together when the card next draws anything else
+(`port_GlDrawBlits`, `port_GlMarkMirror`); one that a later one covers
+is left out. The picture is the same to the byte (147 pictures of
+`port_game` at scale 2 and 16:9, with and without pictures between
+frames, against the program before). The frame's finish hands the card
+its work (`glFlush`) and no longer waits for all of it (`glFinish`): on
+a real card the program and the card now work at once, and the swap or
+a picture read back waits where it must.
+
+**What is not done, and why.** The software GPU runs whichever picture
+is shown: the card's mirror of video memory takes its texels from it,
+and what the game draws into video memory to use as a texture is only
+there because the software GPU drew it; it costs 2.5 ms of a frame.
+Its picture is no longer converted for the window where the remastered
+one is shown (0.4 ms a blank). The geometry shader of a flat polygon
+runs for every batch, the scene's too, where it passes the triangle
+through; a program without it for the scene would halve Mesa's cost
+and is nothing on a real card, and was left. A mod's textures are
+decoded when they are first drawn: the top menu's thirteen English
+textures took about 10 ms each here (4 of them reading the file through
+WSL, 1.3 decoding, the rest Mesa's mipmaps), and the HD fighters about
+half a second at the fight's first frame. On the owner's machine both
+are a fraction of that, and both are a single hitch where the picture
+changes anyway.
+
+**The pictures, evenly.** At `frame_rate = display` a picture between
+two frames was of the moment it was begun, counted from the moment the
+game's step ended; it is shown at the display's next refresh, which is
+anything up to a refresh later, so the scene moved by steps as uneven as
+the refreshes are far from the blanks. And the first picture of a blank
+was the game's own frame, which at the second blank of a fight frame is
+whatever was last drawn: the same picture twice, then a jump. Now
+(`pace.c`, "when a picture is shown"):
+
+- a picture is of the moment it will be on the screen: the refresh after
+  it is drawn, from when the last swap came back
+  (`port_NextRefresh`); where there is no display to wait for, the slot
+  the clock shows it at;
+- the moments are the blanks' own, as the pace keeps them
+  (`port_PacePhase`): the frame on show went up at the moment of the
+  blank its step began at, and every picture is counted back by how late
+  a frame's first picture is shown, on average, so that the first
+  picture of a frame is its phase 0 and the last before the next is its
+  end;
+- the first picture of every blank is drawn between frames as well
+  (not where a test asks for the game's own, `--shot-at N,0`);
+- after a picture, another is drawn where the display's next refresh
+  comes before the next blank's first picture can be ready (the blank's
+  moment, then the game's step and that picture, at their recent peak),
+  never more than a refresh past the blank's moment and none once it
+  has passed: a PC that cannot keep up catches up.
+
+A model of the two rules (a display waited for, a swap that comes back
+at the refresh, the game's step 2 to 9 ms on a frame's blank, a picture
+1.5 ms) puts the spread of what each refresh shows against when it
+shows it from 7 to 9 ms down to 2 to 3 ms at 85 refreshes a second, and
+the change from one refresh to the next from 11 to 13 ms down to 3 to 4
+(at 60: 17 down to 1.5). It is a model: this machine's software OpenGL
+cannot draw the remastered picture at 85 a second, so **whether the
+fight is smooth at 85 Hz is for the owner's screen**, with the counter
+(F3) and `--profile` beside it.
+
+**`-O2`.** The window's build at `-O2` (`PORT_OPT=2 make port-sdl`,
+into `build/port-sdl/linux-O2/`; `make port-sdl-windows` likewise)
+takes about a tenth off what the processor does for a fight frame here
+(the game's code a fifth). With the plans of `port_game` and
+`port_other_fight`, SDL's dummy drivers and `--graphics original`, its
+trace is the `-O1` program's line for line (2,338 and 2,462 lines) and
+every twentieth picture is the same to the byte (224 and 236); the
+headless programs at `-O2` pass the rollback self-test in both sizes.
+The players' build stays at `-O1` until the owner says.
+
 ### The fighters' own models
 
 The owner: the fighters may be **replaced whole, as long as the hitboxes
