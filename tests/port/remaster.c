@@ -42,6 +42,9 @@ void port_FighterNoteNode(PortAddress node) { (void)node; }
 
 void port_FighterNewFrame(void) {}
 
+/* No time is counted here (port_profile.h). */
+s32 port_ProfileSwitch(s32 part) { return part; }
+
 void port_Fail(const char *format, ...) {
     test_Count(0, __FILE__, __LINE__, "the port stopped itself: %s", format);
     for (;;) {
