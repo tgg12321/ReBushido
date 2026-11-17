@@ -498,13 +498,20 @@ s32 port_Main(s32 argc, char **argv) {
         port_StartRollbackTest(
             (u32)rollback_frames, (u32)rollback_every, rollback_quiet);
     }
-    /* where primitives may be: the console's memory, the program's own
-     * variables, the game's stack */
+    /* where primitives may be: the console's memory, the game's stack,
+     * and the game's own variables with the rest of its state, the two
+     * runs a snapshot saves (port_state.h). What is outside the state
+     * (the remastered side channel, the window's) and what cannot be
+     * written hold none, and need no place among the low 24 bits of an
+     * address that an ordering table's link has (docs/PORT.md, "Where
+     * the program's variables are") */
     port_AddLinkRegion(PORT_RAM_ADDR, PORT_RAM_SIZE);
     port_AddLinkRegion(SCRATCHPAD, PORT_SCRATCHPAD_SIZE);
     port_AddLinkRegion(PORT_STACK_ADDR, PORT_STACK_SIZE);
-    port_AddLinkRegion((u32)ADDR(g_port_data_start),
-                       (u32)(g_port_data_end - g_port_data_start));
+    port_AddLinkRegion((u32)ADDR(g_port_game_data),
+                       (u32)(g_port_state_data_end - g_port_game_data));
+    port_AddLinkRegion((u32)ADDR(g_port_game_bss),
+                       (u32)(g_port_state_bss_end - g_port_game_bss));
 #if RB_REMASTER_VIEW
     /* ... and the port's own buffers of primitives, where this run draws
      * more of the stage than the console does (port_remaster.h) */

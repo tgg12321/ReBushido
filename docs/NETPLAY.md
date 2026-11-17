@@ -884,7 +884,9 @@ on, and both must skip the opening alike: the movie player reads the
 pads its own way (section 4). Netplay now skips every movie where it
 begins (section 13), so this run's presses count otherwise than when the
 table above was measured; it still ends on the same hashes on both, the
-last now `57D2C9F5774827C0` (64-bit, 100 ms each way, 5% lost).
+last now `A73BDA6AD7613D4C` (64-bit, 100 ms each way, 5% lost; a
+hash follows where the program's variables lie, which changed with
+PORT.md's "Where the program's variables are").
 
 What was left here, pacing, the session's set-up and the line on the
 screen, is section 13.

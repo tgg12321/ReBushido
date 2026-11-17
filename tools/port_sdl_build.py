@@ -98,17 +98,13 @@ OTHER_HOSTS = ('src/port/host_linux.c', 'src/port/host_windows.c')
 # (a path cut short by snprintf is what snprintf is used for)
 HOSTED_FLAGS = ['-O2', '-g', '-std=gnu99', '-Wall', '-Wextra', '-Werror', '-Wno-format-truncation', '-D_FILE_OFFSET_BITS=64',
                 '-Iinclude', '-I' + WINDOW_DIR.rstrip('/'), '-I' + GL_DIR.rstrip('/')]
-# Where the program is linked, so that the low 24 bits of its variables'
-# addresses are no other memory's (src/port/gpu.c, port_AddLinkRegion).
-# They have to end below PROGRAM_END. The build without a window is
-# linked 4 MB up (tools/port_build.py) and has room to spare there; this
-# one carries the window, SDL and the remastered renderer's two tables as
-# well, so it begins 2 MB lower and has six megabytes. The low 24 bits
-# then run from 0x200000, where the console's 2 MB of RAM end, to
-# 0x800000, where the scratchpad is: no other region of the port's is in
-# between (include/port_platform.h).
-PROGRAM_BASE = 0x08200000
-PROGRAM_END = 0x08800000
+# Where the program is linked: where the build without a window is
+# (tools/port_build.py, PROGRAM_BASE), so that the game's state's two runs
+# of variables have low 24 bits that no other place a primitive may be has
+# (port_build.check_link_space; docs/PORT.md, "Where the program's
+# variables are"). What is not the state (the window's, SDL's, the
+# remastered side channel) may lie anywhere below 4 GB.
+PROGRAM_BASE = port_build.PROGRAM_BASE
 SDL_MINGW_PLACES = ['tools/sdl2-mingw/SDL2-*', 'build/sdl2-mingw/SDL2-*']
 # A variable's own section in MinGW's assembly, and the boundary the
 # compiler asks for just after one: `.section .data$name,"w"` and
@@ -567,10 +563,16 @@ def link_program(target, program, objects, more):
         return False
     symbols, count, grown = write_names(target, program, program + '.sym')
     first, last = symbols.get('g_port_data_start'), symbols.get('g_port_data_end')
-    if first is None or last is None or not PROGRAM_BASE <= first < last <= PROGRAM_END:
-        print("FAILED: port-sdl: %s: the game's variables are at 0x%X to 0x%X, and have to be inside 0x%X to 0x%X "
-              '(their low 24 bits must be no other memory\'s)' % (program, first or 0, last or 0, PROGRAM_BASE, PROGRAM_END))
+    if first is None or last is None or not PROGRAM_BASE <= first < last < 1 << 32:
+        print("FAILED: port-sdl: %s: the game's variables are at 0x%X to 0x%X, and have to be past 0x%X and below "
+              '4 GB, where the game\'s 32-bit addresses reach' % (program, first or 0, last or 0, PROGRAM_BASE))
         return False
+    problems, room = port_build.check_link_space(symbols)
+    if problems:
+        print('\n'.join('port-sdl: %s: %s' % (program, problem) for problem in problems))
+        print("FAILED: port-sdl: %s: its variables do not fit the ordering tables' link space" % program)
+        return False
+    print('port-sdl: %s: %s' % (program, room))
     same, pairs, wider = check_layout(target, program, grown)
     print("port-sdl: %s: %d names; its variables at 0x%X to 0x%X; %d of the game's %d pairs of neighbouring "
           'variables as far apart as on the PlayStation (the others: %s/layout.txt%s)'
