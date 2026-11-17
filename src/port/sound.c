@@ -444,9 +444,10 @@ static void port_LogAsked(void) {
     }
 }
 
-/* The window's sound card (port_spu.h): nothing in the build without
- * one. */
+/* The window's sound card, and what it is given of a step run again
+ * (port_spu.h): nothing in the build without one. */
 void (*g_port_sound_hook)(const s16 *samples, u32 frames);
+void (*g_port_rerun_sound_hook)(const s16 *samples, u32 frames);
 
 /* The next `frames` samples: the drive goes on, the disc's sound and
  * the chip's are made, and kept if the run keeps its sound or a sound
@@ -459,6 +460,15 @@ static void port_MixSound(u32 frames) {
     port_ReadCdAudio(cd, frames);
     port_RunSpu(cd, out, frames);
     g_port_sample_count += frames;
+    /* a step run again is mixed and not heard (port_platform.h), but for
+     * what the window takes of it in place of what it queued and has
+     * not played yet */
+    if (g_port_rerun) {
+        if (g_port_rerun_sound_hook != NULL) {
+            g_port_rerun_sound_hook(out, frames);
+        }
+        return;
+    }
     if (port_IsWavOn()) {
         port_AppendWav(out, frames);
     }

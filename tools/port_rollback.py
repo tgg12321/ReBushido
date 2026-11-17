@@ -16,10 +16,13 @@ headless:
   - with `--rollback-test N` (`--rollback-every M`): every so often it
     saves the state, runs N frames, puts the state back, runs the same N
     again and stops on any difference of the state or of what the run
-    printed (src/port/state.c).
+    printed (src/port/state.c);
+  - the same with `--rollback-quiet`: the frames are run again as
+    netplay runs them, with nothing drawn, heard or printed, and video
+    memory, which they do not paint, is not compared.
 
-It fails if either run fails, if the second finds a difference, or if
-the two printed anything different: going back and running again must
+It fails if any run fails, if a run with rollbacks finds a difference,
+or if one printed or wrote anything otherwise than the plain run: going back and running again must
 change nothing a run shows. What each run printed is in FOLDER/64-bit/
 and 32-bit/ (build/rollback/ if nothing says); the second's report of its rollbacks
 and of how long a save and a load took is the last lines of
@@ -47,6 +50,10 @@ PROGRAMS = {64: 'build/port/rebushido', 32: 'build/port32/rebushido'}
 DEFAULT_FRAMES = 8
 DEFAULT_EVERY = 24
 SECONDS = 900
+# The runs with rollbacks: (name, more arguments, what the report calls
+# it). The second runs each frame again as netplay does, drawing,
+# sounding and printing nothing (--rollback-quiet).
+RUNS = [('rollback', [], ''), ('quiet', ['--rollback-quiet'], ', run again quietly')]
 
 
 def write_plan(program, test_name, folder):
@@ -138,10 +145,20 @@ def check_program(label, program, args):
                         % (label, code, folder, complaint(folder, 'plain')))
     if args.plain_only or problems:
         return problems
-    code, seconds = run(program, plan, folder, 'rollback',
-                        args.more + ['--rollback-test', str(args.frames), '--rollback-every', str(args.every)])
-    print('port_rollback: %s: the run with rollbacks: exit %s, %.0f s' % (label, code, seconds), flush=True)
-    report = [line for line in read(folder, 'rollback.err').split('\n') if line.startswith('rollback')]
+    for name, more, what in RUNS:
+        problems += check_run(label, program, plan, folder, args, name, more, what)
+    return problems
+
+
+def check_run(label, program, plan, folder, args, name, more, what):
+    """One run with rollbacks against the plain run: a list of what went
+    wrong."""
+    problems = []
+    code, seconds = run(program, plan, folder, name,
+                        args.more + ['--rollback-test', str(args.frames), '--rollback-every', str(args.every)]
+                        + more)
+    print('port_rollback: %s: the run with rollbacks%s: exit %s, %.0f s' % (label, what, code, seconds), flush=True)
+    report = [line for line in read(folder, name + '.err').split('\n') if line.startswith('rollback')]
     variables = variables_of(program)
     for line in report:
         # a page or a word among the program's variables: which ones
@@ -152,26 +169,27 @@ def check_program(label, program, args):
         else:
             print('    ' + line)
     if code != 0:
-        problems.append('%s: the run with rollbacks ended with %s (%s/rollback.err)%s'
-                        % (label, code, folder, complaint(folder, 'rollback')))
+        problems.append('%s: the run with rollbacks%s ended with %s (%s/%s.err)%s'
+                        % (label, what, code, folder, name, complaint(folder, name)))
     if not any(line.startswith('rollback: ok') for line in report):
-        problems.append('%s: the run with rollbacks did not report that it passed' % label)
+        problems.append('%s: the run with rollbacks%s did not report that it passed' % (label, what))
     if not any(line.startswith('rollback: ') for line in report):
         # it never ran: what it printed and wrote is no comparison
         return problems
-    plain, rolled = read(folder, 'plain.out'), read(folder, 'rollback.out')
+    plain, rolled = read(folder, 'plain.out'), read(folder, name + '.out')
     if plain != rolled:
-        problems.append('%s: the run with rollbacks printed otherwise than the plain run, at %s'
-                        % (label, first_difference(plain, rolled)))
+        problems.append('%s: the run with rollbacks%s printed otherwise than the plain run, at %s'
+                        % (label, what, first_difference(plain, rolled)))
     # what the plan's checkpoints wrote (snapshots of memory, pictures)
-    written = sorted(set(os.listdir(os.path.join(folder, 'plain'))) | set(os.listdir(os.path.join(folder, 'rollback'))))
-    for name in written:
-        paths = [os.path.join(folder, run_name, name) for run_name in ('plain', 'rollback')]
+    written = sorted(set(os.listdir(os.path.join(folder, 'plain'))) | set(os.listdir(os.path.join(folder, name))))
+    for file_name in written:
+        paths = [os.path.join(folder, run_name, file_name) for run_name in ('plain', name)]
         contents = [open(path, 'rb').read() if os.path.isfile(path) else None for path in paths]
         if contents[0] != contents[1]:
-            problems.append('%s: the run with rollbacks wrote %s otherwise than the plain run' % (label, name))
+            problems.append('%s: the run with rollbacks%s wrote %s otherwise than the plain run'
+                            % (label, what, file_name))
     if not problems:
-        print('port_rollback: %s: %d lines printed and %d files written, the same in both runs'
+        print('port_rollback: %s: %d lines printed and %d files written, the same as the plain run'
               % (label, plain.count('\n'), len(written)), flush=True)
     return problems
 

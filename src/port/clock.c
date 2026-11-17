@@ -64,7 +64,8 @@ static void port_AdvanceClock(u32 line) {
         g_port_clock_lines = next_blank;
         /* the script's presses first: the pads are read at this blank */
         port_OnBlank(next_blank / PORT_LINES_PER_BLANK);
-        if (g_port_input_hook != NULL) {
+        /* the window has no turn in a step run again (port_platform.h) */
+        if (g_port_input_hook != NULL && !g_port_rerun) {
             g_port_input_hook(next_blank / PORT_LINES_PER_BLANK);
         }
         port_FillPads();
@@ -73,7 +74,7 @@ static void port_AdvanceClock(u32 line) {
         port_RunCardBlank(next_blank / PORT_LINES_PER_BLANK);
         /* the sound library's tick, and a blank's worth of sound */
         port_RunSoundBlank(next_blank / PORT_LINES_PER_BLANK);
-        if (g_port_blank_hook != NULL) {
+        if (g_port_blank_hook != NULL && !g_port_rerun) {
             g_port_blank_hook(next_blank / PORT_LINES_PER_BLANK);
         }
     }

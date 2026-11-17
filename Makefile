@@ -136,7 +136,7 @@ ALL_O_FILES  := $(S_O_FILES) $(C_O_FILES) $(ASM_FUNC_O_FILES)
 .PHONY: all clean check clean-check shift movovl modern test checks \
 	rebushido rebushido-disc rebushido-patch rebushido-test rebushido-modern rb-build \
 	quickboot quickboot-compile quickboot-disc playtest playtest-discs gte-probe port \
-	patcher port-sdl port-sdl-windows port-rollback
+	patcher port-sdl port-sdl-windows port-rollback port-net
 
 ifeq ($(REBUSHIDO),1)
 all: rb-build
@@ -350,6 +350,24 @@ endif
 # so it is not one of the checks, which run without the disc.
 port-rollback:
 	python3 tools/port_rollback.py
+
+# Two programs of the port playing each other over UDP on 127.0.0.1
+# (docs/NETPLAY.md, sections 11 to 13; tools/port_net.py): the game's own
+# link-cable mode in lockstep, both consoles printing the same trace to
+# the end of a fight; rollback netplay of port_game's whole session with
+# 100 ms of latency and 5% of datagrams lost, both ending on the same
+# state hashes; a session set up by --host and --join through versus
+# select, a fight, a rematch and the guest's leaving; and the same
+# between two of the window's programs, headless and in real time, and
+# from the settings menu's Play online page. Both sizes, about eight
+# minutes; it needs the disc's image, as port-rollback does, and runs
+# what make port and make port-sdl built (the window's part is skipped
+# where there is none).
+port-net:
+	python3 tools/port_net.py link
+	python3 tools/port_net.py rollback
+	python3 tools/port_net.py session
+	python3 tools/port_net.py window
 
 # The native port with a window (docs/PORT.md, "The window"): the same
 # program with SDL 2 and a C library, for a person to play, into

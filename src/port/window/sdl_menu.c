@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "menu.h"
+#include "port_net.h"
 #include "port_remaster.h"
 #include "shared.h"
 #include "sdl_window.h"
@@ -51,6 +52,13 @@ void port_AskForMenu(const char *why) {
     PortGameState now;
 
     if (g_port_menu.is_wanted || port_MenuIsOpen()) {
+        return;
+    }
+    /* netplay's other program cannot wait while this one is stopped, and
+     * a setting changed would be this one's alone (docs/NETPLAY.md,
+     * section 12) */
+    if (port_IsNetplayOn()) {
+        port_Note("settings menu: asked for by %s; not during netplay", why);
         return;
     }
     port_ReadGameState(&now);
@@ -93,6 +101,28 @@ static void port_MenuStick(s32 axis, s32 value) {
     g_port_menu.stick[which] = now;
 }
 
+/* A key while a row of the Play online page is typed into: a digit, a
+ * dot, a colon (the key of ; and :) or Backspace. TRUE if it was one;
+ * Enter and Escape are the menu's own (port_MenuPress). */
+static s32 port_MenuTypedKey(SDL_Scancode code) {
+    if (code >= SDL_SCANCODE_1 && code <= SDL_SCANCODE_9) {
+        port_MenuType((char)('1' + (code - SDL_SCANCODE_1)));
+    } else if (code == SDL_SCANCODE_0 || code == SDL_SCANCODE_KP_0) {
+        port_MenuType('0');
+    } else if (code >= SDL_SCANCODE_KP_1 && code <= SDL_SCANCODE_KP_9) {
+        port_MenuType((char)('1' + (code - SDL_SCANCODE_KP_1)));
+    } else if (code == SDL_SCANCODE_PERIOD || code == SDL_SCANCODE_KP_PERIOD) {
+        port_MenuType('.');
+    } else if (code == SDL_SCANCODE_SEMICOLON) {
+        port_MenuType(':');
+    } else if (code == SDL_SCANCODE_BACKSPACE) {
+        port_MenuType('\b');
+    } else {
+        return FALSE;
+    }
+    return TRUE;
+}
+
 /* A key: the menu's own keys, whatever the pads' are, or the key to
  * bind. */
 static void port_MenuKey(const SDL_KeyboardEvent *key) {
@@ -101,6 +131,9 @@ static void port_MenuKey(const SDL_KeyboardEvent *key) {
     char value[WORD_BYTES];
 
     if (key->type != SDL_KEYDOWN) {
+        return;
+    }
+    if (port_MenuIsTyping() && port_MenuTypedKey(code)) {
         return;
     }
     if (port_MenuIsCapturing()) {

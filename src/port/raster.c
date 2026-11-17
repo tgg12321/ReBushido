@@ -608,6 +608,11 @@ static void port_DrawTriangle(const PortCorner *first, const PortCorner *second,
     s32 y;
     s32 i;
 
+    /* a step run again paints nothing (port_platform.h) */
+    if (g_port_rerun) {
+        return;
+    }
+
     if (area == 0) {
         return;
     }
@@ -771,6 +776,11 @@ static void port_DrawLine(
     s32 step;
     s32 i;
 
+    /* a step run again paints nothing (port_platform.h) */
+    if (g_port_rerun) {
+        return;
+    }
+
     if (size_x > SPAN_X_MAX || size_y > SPAN_Y_MAX) {
         return;
     }
@@ -831,6 +841,11 @@ static void port_DrawRectangle(const u32 *words) {
     s32 x;
     s32 y;
 
+    /* a step run again paints nothing (port_platform.h) */
+    if (g_port_rerun) {
+        return;
+    }
+
     port_SetCornerColor(&corner, words[0]);
     port_SetCornerPlace(&corner, words[at++]);
     port_SetCornerTexture(&corner, 0);
@@ -881,6 +896,11 @@ static void port_FillVram(const u32 *words) {
     s32 h = (s32)((words[2] >> HALF_SHIFT) & VRAM_Y_MASK);
     s32 x;
     s32 y;
+
+    /* a step run again paints nothing (port_platform.h) */
+    if (g_port_rerun) {
+        return;
+    }
 
     for (y = 0; y < h; y++) {
         for (x = 0; x < w; x++) {
@@ -1181,7 +1201,9 @@ void port_WriteGp0(u32 word) {
 
         gpu->count = 0;
         port_RunCommand(gpu->words);
-        port_RemasterCommand(gpu->words, words);
+        if (!g_port_rerun) {
+            port_RemasterCommand(gpu->words, words);
+        }
     }
 }
 

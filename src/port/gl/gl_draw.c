@@ -27,7 +27,9 @@
 #include "gl_fighter.h"
 #include "gl_light.h"
 #include "gl_replace.h"
+#include "gl_see.h"
 #include "gl_shadow.h"
+#include "gl_sky.h"
 #include "gl_stage.h"
 #include "port_gpu.h"
 #include "port_remaster.h"
@@ -2080,6 +2082,12 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
                 (u32)port_GlFive(color, VRAM_BLUE_SHIFT);
         }
         port_GlClearBands(&rect, is_one_color, color);
+        /* the frame's own clear: where it is a fight's on a stage open
+         * to the sky, the sky goes over it (gl_sky.h) */
+        if (is_one_color && !g_gl.options.is_exact) {
+            port_GlSkyCleared(rect.left, rect.top, rect.right - rect.left + 1,
+                              rect.bottom - rect.top + 1, g_gl.background);
+        }
     }
 }
 
@@ -2318,6 +2326,8 @@ void port_GlSetOptions(const PortGlOptions *options) {
     port_RemasterSetEffects(
         options->is_exact ? PORT_EFFECTS_ORIGINAL : options->effects);
     port_GlLightSetSmooth(options->is_exact ? 0 : options->is_smooth_light);
+    port_GlSkySetKind(options->is_exact ? 0 : options->sky);
+    port_GlSeeSetOn(options->is_exact ? 0 : options->see_through);
     if (g_gl.is_started) {
         /* the setting may have turned the mesh on or off, and the depth
          * buffer is attached only for it */
@@ -2514,6 +2524,18 @@ const char *port_GlStart(
     port_RemasterSetEffects(
         options->is_exact ? PORT_EFFECTS_ORIGINAL : options->effects);
     port_GlLightSetSmooth(options->is_exact ? 0 : options->is_smooth_light);
+    /* the sky (gl_sky.h): a card that cannot have it shows the game's
+     * own colour of the distance */
+    {
+        const char *why = port_GlSkyStart(getproc);
+
+        if (why != NULL) {
+            port_GlSay("the sky is the game's colour of the distance: ", why);
+        }
+    }
+    port_GlSkySetKind(options->is_exact ? 0 : options->sky);
+    /* the walls seen through (gl_see.h), which the ground's mesh draws */
+    port_GlSeeSetOn(options->is_exact ? 0 : options->see_through);
 
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);

@@ -178,6 +178,9 @@ extern void port_SampleInput(PortInput *input);
 /* At each vertical blank: the console's driver reads the pads, and what
  * it read is what the game finds until the next blank. */
 extern void port_FillPads(void);
+/* What the driver read at the last blank: the input the game would take
+ * now, but for g_port_take_hook (netplay's local pad, netplay.c). */
+extern void port_DriverInput(PortInput *input);
 /* The one place the game's input comes from: called as the game reads
  * the pads (pad_Update, and the options page's own read), it takes the
  * input the driver read at the last blank, lets g_port_take_hook replace
@@ -190,6 +193,56 @@ extern void (*g_port_take_hook)(PortInput *input);
 /* The input the game read last, and how many it has read. */
 extern PortInput g_port_input;
 extern u32 g_port_input_count;
+/* The movie player reads the pads its own way (PAD_dr), at moments no
+ * other machine shares. Netplay sets this before the game starts: every
+ * movie is then skipped where it begins, on both machines alike (docs/
+ * NETPLAY.md, section 13). */
+extern s32 g_port_movies_skipped;
+
+/* ---- the step (src/port/step.c; docs/NETPLAY.md, "The step") ---- */
+
+/* The game runs on its own stack as a fiber (port_host.h), and the host
+ * runs it a step at a time. A step ends at the game's next frame
+ * boundary, which is where it reads the pads: port_TakeInput ends the
+ * step before it takes the input, so the host has the turn between a
+ * frame's input being read by the pads' driver and taken by the game.
+ * Main's loop, the pause menu, the link cable's connecting and the
+ * options page each read the pads once a frame, so a step is one of
+ * their frames; a frame that does not read them (a load, the movie, the
+ * boot picture) is part of the step it falls in. Nothing of the game
+ * runs between steps, and its stack holds its locals, so the state can
+ * be saved, put back and hashed there (port_state.h). */
+extern void port_StartGame(void (*function)(void));
+/* Runs the game to its next frame boundary. */
+extern void port_StepGame(void);
+/* The game is at a frame's boundary: back to the host (pad.c). */
+extern void port_EndStep(void);
+/* Steps the host has run since the game started. */
+extern u32 g_port_steps;
+/* Set by the host while it runs a step again after putting an earlier
+ * state back (rollback): the step computes all the game's state as it
+ * would, and nothing of what is seen or heard of it. The GPU keeps its
+ * registers and takes loads into video memory but paints no pixel
+ * (raster.c), the remastered renderer is given no command, the sound is
+ * mixed but neither the card nor the file is given it (sound.c), the
+ * window has no turn at a blank (clock.c), a run writes no picture and
+ * prints nothing (plan.c, text.c). docs/NETPLAY.md, section 10. */
+extern s32 g_port_rerun;
+
+/* ---- the link cable (src/port/net.c; docs/NETPLAY.md, section 11) ---- */
+
+/* The game's link mode (src/main/link.c) over a socket to another
+ * program of the port: whether the run was given a side (--link-side)
+ * and a network, and which side it is. */
+extern s32 port_LinkIsUp(void);
+extern s32 port_LinkSide(void);
+/* The two programs meet as they connect: 1 once each has heard the
+ * other, waited for in the PC's time; 0 if the other never came. */
+extern s32 port_LinkMeet(void);
+/* The game's packet, its two words, to the other program: 1. */
+extern s32 port_LinkSend(s32 first, s32 second);
+/* The other program's next packet into `words`: 1, or 0 if it has gone. */
+extern s32 port_LinkReceive(s32 *words);
 
 /* ---- events (src/port/event.c) ---- */
 

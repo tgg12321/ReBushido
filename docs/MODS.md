@@ -39,7 +39,8 @@ mods/
   `.glb` models, by the file's name on the disc, `M100.glb`, and the
   weapons', by the weapon model's number, `W00.glb` to `W57.glb`: PORT.md,
   "The fighters' own models"; `tools/fighter_hd.py` makes a whole mod of
-  them, the hd mod, from your disc), `music/`,
+  them, the hd mod, from your disc), `skies/` (a stage's sky, below),
+  `music/`,
   `stages/` (read, not used yet). Under a kind's folder the files may be
   in folders of any names, four deep.
 - A file's **key** is its name without its ending, in small letters,
@@ -222,20 +223,51 @@ and each piece of the title, and the mod replaces every one of them
 from the menu's first frame to its last. A texture that is faded through
 its colour table is still a new key at each step (below).
 
+## Skies
+
+A stage open to the sky has a night sky of the port's own in the
+remastered picture (`sky = night`, [`PLAYING.md`](PLAYING.md); PORT.md,
+"The sky"). A mod can give it a picture instead:
+
+```
+mods/
+  my-skies/
+    skies/
+      stage_04.png       the bus stop's sky
+      default.png        every other open stage's
+```
+
+- The key is `stage_NN`, the stage's number in two digits (the order of
+  `STAGE_NAMES` in `tools/port_remaster_prove.py`: `stage_15` is the
+  terraced fields), or `default` for every open stage the mods give no
+  picture of its own.
+- The picture is **equirectangular**: its width goes once round the eye
+  from left to right, its top row is straight up and its bottom row
+  straight down, the horizon across its middle. Any size; it is
+  smoothed and mipmapped.
+- It stands in for the whole sky, the gradient, stars and moon included,
+  and is drawn as it is: the stage's fog still fades the ground to the
+  stage's own colour of the distance, so a horizon of about that colour
+  meets the ground with no seam.
+- Only the stages that have a sky use one: a hall or the cavern keeps
+  the game's colour whatever the mods say. The log says which picture
+  each stage took (`sky: stage N is the mod's picture ...`).
+
 ## For the code
 
 | | |
 |---|---|
 | `include/port_mods.h`, `src/port/mods.c` | the folder read, the manifests, the table (`port_ModFind(kind, key)`), the texture's key |
 | `include/port_png.h`, `src/port/png.c` | a PNG reader of every kind but the interlaced, with its own inflate, and the plainest PNG writer; no C library |
+| `src/port/gl/gl_sky.c` | a stage's sky (`PORT_MOD_SKIES`), looked for once a stage |
 | `src/port/gl/gl_replace.c` | the keys looked up per primitive and per picture, the mods' PNGs given to the card, the textures written out |
 | `src/port/gl/gl_draw.c` | the hooks: a batch's replacement texture (`PortGlState`), the shader's `u_replaced`, the picture's in the stretch of video memory |
 | `src/port/host_*.c` | `port_HostListFolder`, `port_HostMakeFolder` |
 | `tests/port/mods.c`, `mods.py` | the manifest, a folder of mods and its order, the keys from this page, PNGs of every kind written by zlib |
 | `tools/port_english.py`, `src/port/mods/english/`, `src/port/fonts/` | the English menu the program ships, and what draws it |
 
-The mods' files are none of the game's state (`OUTSIDE_STATE` in
-`tools/port_build.py`, `docs/NETPLAY.md`): the table is made once, as
+The mods' files are none of the game's state (`config/port_state.txt`,
+`docs/NETPLAY.md`): the table is made once, as
 the program starts, and only read after; a rollback has nothing of it to
 put back.
 

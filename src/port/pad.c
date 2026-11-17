@@ -72,6 +72,9 @@ void port_SampleInput(PortInput *input) {
     }
 }
 
+/* What the driver read at the last vertical blank (port_platform.h). */
+void port_DriverInput(PortInput *input) { *input = g_port_pad_read; }
+
 /* The driver's read at a vertical blank (port_platform.h). */
 void port_FillPads(void) {
     if (g_port_pads_started) {
@@ -81,10 +84,12 @@ void port_FillPads(void) {
 
 /* The game reads the pads (port_platform.h): the packets, as the driver
  * leaves them, from the input. One that nothing answered says so, and
- * the rest of it is left as it was. */
+ * the rest of it is left as it was. This is the frame's boundary: the
+ * step ends here, and the input is taken when the host runs the next. */
 void port_TakeInput(void) {
     s32 pad;
 
+    port_EndStep();
     g_port_input = g_port_pad_read;
     if (g_port_take_hook != NULL) {
         g_port_take_hook(&g_port_input);
@@ -154,11 +159,19 @@ void PAD_init(s32 type, s32 *buf) {
     }
 }
 
+/* Set by netplay (port_platform.h): every movie is skipped where it
+ * begins, on both machines alike. */
+s32 g_port_movies_skipped;
+
 /* The movie player is a program of its own, which reads the pads when it
  * likes and not through the game's buffers: it is given them as they are
- * now. */
+ * now. In netplay that would be this PC's own pads, which the other
+ * machine never sees, so there it is given the cross button held from its
+ * first read, which skips the movie at once on both. */
 void PAD_dr(void) {
-    if (g_port_pad_word != NULL) {
+    if (g_port_pad_word != NULL && g_port_movies_skipped) {
+        *g_port_pad_word = (s32) ~(u32)PADRdown;
+    } else if (g_port_pad_word != NULL) {
         PortInput now;
 
         port_SampleInput(&now);

@@ -144,6 +144,11 @@ exists. As the one ground mesh replaced the tiles, each part of the
 picture is looked at again in that light: the camera, lighting and
 shadows, the 3D terrain (structures that see through when they block the
 camera), particle effects, skyboxes on the stages that were left dark.
+Two of them are in: a night sky over the 28 stages open to it (`sky`), and
+the stage's walls thinned where they stand between the camera and a
+fighter (`see_through`), both on in the window and both the owner's to
+confirm ([`PORT.md`](PORT.md), "The sky", "Seeing the fighters through
+the stage").
 
 8. **Online play with rollback netcode**, soon after the picture. What it
    asks of the port, and what work before it should keep in mind:
@@ -156,9 +161,25 @@ camera), particle effects, skyboxes on the stages that were left dark.
    - the inputs read in one place per step.
 
    How ready the port is, measured, and the design: [`NETPLAY.md`](NETPLAY.md).
-   The save, load and hash of the state are built, with a self-test that
-   rolls a whole game back and runs it again (`make port-rollback`;
-   NETPLAY.md, "Save, load and hash").
+   Built: the save, load and hash of the state, with a self-test that
+   rolls a whole game back and runs it again (`make port-rollback`); the
+   game as a step the host calls; the state's files apart from the
+   picture's, with a check; a step run again with nothing drawn or
+   heard; the game's own link-cable mode between two ports over UDP; and
+   rollback netplay of a whole session, GGPO's design in C, with desync
+   detection by the state's hash; and netplay in the window: GGPO's time
+   sync, loads as points both wait at, the sound kept out of the
+   rollback by the sound card's queue, a line on the screen with the
+   ping, the rollback and the delay, and sessions set up by `--host` and
+   `--join` or the settings menu's Play online page (the build and the
+   disc checked, the host's cards and a seed sent, both taken to versus
+   select, no pause, rematch, the one who stays playing on alone), proved
+   between two window programs on one PC with latency and lost datagrams
+   (`make port-net`; NETPLAY.md, sections 7 to 13; PLAYING.md, "Playing
+   online"). Left: play between two real PCs and on Windows, and the
+   owner's calls of NETPLAY.md, section 13: the address a host listens
+   at, NAT (port forwarding, hole punching or a relay), the draw distance
+   online.
 9. **Input remapping and a modern control overhaul.** Remapping is in:
    every button of each player from `rebushido.cfg`, several buttons on
    one key, and layouts to start from (`controls = original`, the only

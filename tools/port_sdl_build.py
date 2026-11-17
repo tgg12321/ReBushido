@@ -78,7 +78,7 @@ WINDOW_PLAIN = ['scale.c', 'ring.c', 'pace.c', 'keymap.c', 'logname.c', 'fps.c',
 # as well, and not in that test, which has no game.
 WINDOW_GAME = ['gamestate.c']
 # What talks to SDL and to the C library: compiled as any program is.
-WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'menu.c', 'font.c']
+WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'sdl_net.c', 'menu.c', 'font.c']
 # The settings menu's font, put into the program as a C array of its bytes
 # (src/port/window/font.c), and the mods the program ships, copied into
 # mods/ beside it.
@@ -91,24 +91,21 @@ SHIPPED_MODS = 'src/port/mods'
 # the window"). It calls GL only through pointers the window looks up with
 # SDL_GL_GetProcAddress, so nothing of GL is linked to.
 GL_DIR = 'src/port/gl/'
-GL_HOSTED = ['gl_draw.c', 'gl_fighter.c', 'gl_fighter_file.c', 'gl_light.c', 'gl_pause.c', 'gl_replace.c', 'gl_shadow.c', 'gl_stage.c', 'gl_tween.c']
+GL_HOSTED = ['gl_draw.c', 'gl_fighter.c', 'gl_fighter_file.c', 'gl_light.c', 'gl_pause.c', 'gl_replace.c', 'gl_see.c',
+             'gl_shadow.c', 'gl_sky.c', 'gl_stage.c', 'gl_tween.c']
 # The hosts of the build without a window: not this one's on Linux, where
 # the C library's is host_posix.c; on Windows the one file is both builds'.
 OTHER_HOSTS = ('src/port/host_linux.c', 'src/port/host_windows.c')
 # (a path cut short by snprintf is what snprintf is used for)
 HOSTED_FLAGS = ['-O2', '-g', '-std=gnu99', '-Wall', '-Wextra', '-Werror', '-Wno-format-truncation', '-D_FILE_OFFSET_BITS=64',
                 '-Iinclude', '-I' + WINDOW_DIR.rstrip('/'), '-I' + GL_DIR.rstrip('/')]
-# Where the program is linked, so that the low 24 bits of its variables'
-# addresses are no other memory's (src/port/gpu.c, port_AddLinkRegion).
-# They have to end below PROGRAM_END. The build without a window is
-# linked 4 MB up (tools/port_build.py) and has room to spare there; this
-# one carries the window, SDL and the remastered renderer's two tables as
-# well, so it begins 2 MB lower and has six megabytes. The low 24 bits
-# then run from 0x200000, where the console's 2 MB of RAM end, to
-# 0x800000, where the scratchpad is: no other region of the port's is in
-# between (include/port_platform.h).
-PROGRAM_BASE = 0x08200000
-PROGRAM_END = 0x08800000
+# Where the program is linked: where the build without a window is
+# (tools/port_build.py, PROGRAM_BASE), so that the game's state's two runs
+# of variables have low 24 bits that no other place a primitive may be has
+# (port_build.check_link_space; docs/PORT.md, "Where the program's
+# variables are"). What is not the state (the window's, SDL's, the
+# remastered side channel) may lie anywhere below 4 GB.
+PROGRAM_BASE = port_build.PROGRAM_BASE
 SDL_MINGW_PLACES = ['tools/sdl2-mingw/SDL2-*', 'build/sdl2-mingw/SDL2-*']
 # A variable's own section in MinGW's assembly, and the boundary the
 # compiler asks for just after one: `.section .data$name,"w"` and
@@ -172,8 +169,11 @@ class Target:
         self.windows = windows
         self.bits = bits
         self.size_flag = '-m%d' % bits
+        # PORT_OPT=2: optimised otherwise, in a folder of its own
+        # (tools/port_build.py, set_bits)
         self.name = (('windows' if windows else 'linux')
-                     + ('' if bits == port_build.DEFAULT_BITS else str(bits)))
+                     + ('' if bits == port_build.DEFAULT_BITS else str(bits))
+                     + ('-O' + os.environ['PORT_OPT'] if os.environ.get('PORT_OPT') else ''))
         self.dir = '%s/%s' % (OUT_DIR, self.name)
         self.obj_dir = self.dir + '/obj'
         if windows:
@@ -243,7 +243,7 @@ class Target:
 
     def link_flags(self):
         if self.windows:
-            return (['-L%s/lib' % self.sdl, '-lSDL2', '-lcomdlg32', '-static-libgcc']
+            return (['-L%s/lib' % self.sdl, '-lSDL2', '-lcomdlg32', '-lws2_32', '-static-libgcc']
                     + self.windows_link_flags())
         # (-lm: the menu's font is drawn with the C library's arithmetic)
         return [self.size_flag, '-no-pie', '-lSDL2', '-lm', '-Wl,-Ttext-segment=0x%X' % PROGRAM_BASE]
@@ -408,8 +408,8 @@ def write_blob_script(target, objects, path):
                     if name.startswith(here + target.dot) and variable in playstation:
                         found[kind].add(variable)
     # the window's own files are not the game's state either
-    # (port_build.OUTSIDE_STATE)
-    outside = port_build.outside_state_patterns(WINDOW_DIR + f for f in WINDOW_PLAIN + WINDOW_GAME)
+    # (config/port_state.txt)
+    outside = port_build.outside_state_patterns()
     words = {'under': target.under, 'dot': target.dot, 'rodata_name': target.kinds['.rodata'], 'outside': outside,
              # an object, not a program: MinGW's linker takes a script of its
              # own for the second unless it is told
@@ -467,10 +467,11 @@ def link_blob(target, objects):
     if proc.returncode != 0:
         print('\n'.join('    ' + line for line in proc.stderr.split('\n')[:30]))
         return None
-    # what it still asks for: the host's functions, the two ends of its own
+    # what it still asks for: the host's functions and the game's stack
+    # pointer it keeps (port_host.h), the two ends of its own
     # variables (given at the link, below), and on Windows what the compiler
     # and the linker themselves call
-    allowed = re.compile(r'^_{0,3}(port_Host\w+|g_port_data_(start|end)|chkstk_ms|main|alloca'
+    allowed = re.compile(r'^_{0,3}(port_Host\w+|g_port_game_context|g_port_data_(start|end)|chkstk_ms|main|alloca'
                          r'|pei386_runtime_relocator)$')
     strangers = [name for name in undefined_of(target, blob) if not allowed.match(name)]
     if strangers:
@@ -563,10 +564,16 @@ def link_program(target, program, objects, more):
         return False
     symbols, count, grown = write_names(target, program, program + '.sym')
     first, last = symbols.get('g_port_data_start'), symbols.get('g_port_data_end')
-    if first is None or last is None or not PROGRAM_BASE <= first < last <= PROGRAM_END:
-        print("FAILED: port-sdl: %s: the game's variables are at 0x%X to 0x%X, and have to be inside 0x%X to 0x%X "
-              '(their low 24 bits must be no other memory\'s)' % (program, first or 0, last or 0, PROGRAM_BASE, PROGRAM_END))
+    if first is None or last is None or not PROGRAM_BASE <= first < last < 1 << 32:
+        print("FAILED: port-sdl: %s: the game's variables are at 0x%X to 0x%X, and have to be past 0x%X and below "
+              '4 GB, where the game\'s 32-bit addresses reach' % (program, first or 0, last or 0, PROGRAM_BASE))
         return False
+    problems, room = port_build.check_link_space(symbols)
+    if problems:
+        print('\n'.join('port-sdl: %s: %s' % (program, problem) for problem in problems))
+        print("FAILED: port-sdl: %s: its variables do not fit the ordering tables' link space" % program)
+        return False
+    print('port-sdl: %s: %s' % (program, room))
     same, pairs, wider = check_layout(target, program, grown)
     print("port-sdl: %s: %d names; its variables at 0x%X to 0x%X; %d of the game's %d pairs of neighbouring "
           'variables as far apart as on the PlayStation (the others: %s/layout.txt%s)'
@@ -625,6 +632,14 @@ def main():
     if '--host' in args:
         print('port-sdl: this host can build it (%s%s)' % (target.cc, ', SDL 2 in ' + target.sdl if target.sdl else ''))
         return 0
+    problems = port_build.check_state_groups(
+        [path for path, own, mine in port_build.sources() if own and path not in OTHER_HOSTS], 'src/port')
+    problems += port_build.check_state_groups([WINDOW_DIR + f for f in WINDOW_PLAIN + WINDOW_GAME], WINDOW_DIR)
+    # the hosts not this build's are named in the groups for the other builds
+    problems = [problem for problem in problems if not any(host in problem for host in OTHER_HOSTS)]
+    if problems:
+        print('\n'.join('port-sdl: ' + problem for problem in problems))
+        return 1
     os.makedirs(target.obj_dir, exist_ok=True)
     # the headers the build writes go into this build's own folder; the
     # compiler's temporary files where tools/port_build.py has them
@@ -688,7 +703,7 @@ def main():
             return 1
         headless = target.dir + '/rebushido-headless.exe'
         if not link_program(target, headless, [blob, plain],
-                            ['-nostdlib', '-Wl,-e,' + target.under + 'port_WindowsStart', '-lkernel32', '-lgcc']
+                            ['-nostdlib', '-Wl,-e,' + target.under + 'port_WindowsStart', '-lkernel32', '-lws2_32', '-lgcc']
                             + target.windows_link_flags()):
             return 1
         made.append(headless)

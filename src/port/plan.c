@@ -984,16 +984,18 @@ static void port_TakeCheckpoints(u32 blank, s32 event) {
         if (port_CheckpointReached(checkpoint, blank, event)) {
             port_Print("cp %s %u", checkpoint->name, blank);
             port_PrintValues();
-            if (checkpoint->picture) {
+            /* a step run again writes nothing (port_platform.h): the
+             * first run of the frame wrote these */
+            if (checkpoint->picture && !g_port_rerun) {
                 port_WriteCheckpointPicture(checkpoint->name);
             }
-            if (checkpoint->snap) {
+            if (checkpoint->snap && !g_port_rerun) {
                 port_WriteSnaps(checkpoint->name, checkpoint->snaps);
             }
-            if (checkpoint->vram) {
+            if (checkpoint->vram && !g_port_rerun) {
                 port_WriteCheckpointVram(checkpoint->name);
             }
-            if (checkpoint->spu) {
+            if (checkpoint->spu && !g_port_rerun) {
                 port_WriteCheckpointSpu(checkpoint->name);
             }
             /* the list of calls ends here, and this one's begins */
@@ -1083,7 +1085,8 @@ static void port_WriteBlankPicture(u32 blank) {
 void port_OnBlank(u32 blank) {
     port_PressButtons(0, blank);
     port_ApplyPokes(blank);
-    if (g_port_shots_folder != NULL && blank % g_port_shots_every == 0) {
+    if (g_port_shots_folder != NULL && blank % g_port_shots_every == 0 &&
+        !g_port_rerun) {
         port_WriteBlankPicture(blank);
     }
     if (g_port_trace) {

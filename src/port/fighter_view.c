@@ -1,7 +1,7 @@
 /* What the remastered picture needs to draw a fighter's own model in place
  * of the game's primitives: his bones, the camera and the lights, as the
  * renderer comes to his body (port_fighter.h). Nothing here is the game's
- * state (tools/port_build.py, OUTSIDE_STATE) and nothing the game computes
+ * state (config/port_state.txt) and nothing the game computes
  * is changed: it is read and written down. */
 #include "common.h"
 #include "port_gpu.h"

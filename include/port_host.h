@@ -81,6 +81,28 @@ extern s32 port_HostMakeFolder(const char *path);
 #define PORT_HOST_TICKS_PER_MICROSECOND 10
 extern u32 port_HostTicks(void);
 
+/* ---- the network: datagrams of UDP over IPv4 (docs/NETPLAY.md, section
+ * 11; src/port/net.c) ---- */
+
+/* An address and a port, in the host's own order of bytes: 127.0.0.1 is
+ * 0x7F000001. */
+typedef struct {
+    u32 address;
+    u16 port;
+} PortNetAddress;
+
+/* A socket bound to `at`: a number that is not negative, or -1. Nothing
+ * here chooses the address: the program binds where it is told. */
+extern s32 port_HostUdpOpen(const PortNetAddress *at);
+/* One datagram to `to`. Returns 1 if it went. */
+extern s32 port_HostUdpSend(
+    s32 socket, const PortNetAddress *to, const void *bytes, u32 count);
+/* One datagram, waiting up to `wait_ms` milliseconds for it (0: not at
+ * all): its length, with at most `room` of its bytes, and who sent it;
+ * -1 if none came. */
+extern s32 port_HostUdpReceive(
+    s32 socket, void *bytes, u32 room, PortNetAddress *from, u32 wait_ms);
+
 /* `size` bytes of zeroed memory that can be read and written, at exactly
  * `address`: 1, or 0 if the system will not give memory there (something
  * else has the place, or it cannot be had at all). */
@@ -89,10 +111,20 @@ extern s32 port_HostMapAt(u32 address, u32 size);
  * back. */
 extern void *port_HostAllocate(u32 size);
 
-/* Calls `function` with the stack pointer at `stack_top`, the end of
- * memory the port has for it. The function does not return. */
-extern void port_HostCallOnStack(void (*function)(void), u32 stack_top)
-    __attribute__((noreturn));
+/* The game runs on a stack of its own, the memory below `stack_top`, as
+ * a fiber the host enters and the game leaves (docs/NETPLAY.md, "The
+ * step"; the switch is include/port_fiber.h). port_HostStartGame makes
+ * it ready to call `function`, which must not return, and runs nothing.
+ * port_HostEnterGame runs the game from where it last left off until it
+ * calls port_HostLeaveGame, and then returns. Only the game calls
+ * port_HostLeaveGame, which returns when the host enters it again. */
+extern void port_HostStartGame(void (*function)(void), u32 stack_top);
+extern void port_HostEnterGame(void);
+extern void port_HostLeaveGame(void);
+/* The game's stack pointer while it is not running, which is part of the
+ * game's state (src/port/state.c saves it with the stack); 0 before it
+ * has started. */
+extern PortAddress g_port_game_context;
 
 /* What the processor was doing when the program was stopped for touching
  * memory it does not have, dividing by zero or running what is not an

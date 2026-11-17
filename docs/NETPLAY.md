@@ -2,9 +2,16 @@
 
 What the native port ([`PORT.md`](PORT.md)) has and lacks for online play
 with rollback netcode ([`ROADMAP.md`](ROADMAP.md), item 8), measured on the
-port as it is, and the design that follows. Of the design, the save, load
-and hash of the state are built, with a self-test that runs on demand
-(section 7); the rest is not.
+port as it is, and the design that follows. Built so far: the save,
+load and hash of the state with a self-test (section 7), the game as a
+step the host calls (section 8), the state's files apart from the
+picture's (section 9), a step run again quietly (section 10), the game's
+own link cable over UDP (section 11), rollback netplay of a whole
+session between two programs (section 12), and netplay as a player has
+it: in the window, paced, with a line on the screen, set up by `--host`
+and `--join` or the settings menu's Play online page, proved between two
+window programs on one PC (section 13). What is left is play between two
+real PCs, and what section 13 leaves to the owner.
 
 **In short:** the game step is already deterministic and repeatable from its
 inputs alone, and a whole snapshot of the machine is small and quick to
@@ -265,7 +272,8 @@ agrees a seed for `rng_Next` (`link.c:552`, `link.c:566`, then
 (`pad_SetRemoteButtonConfig`) and unlocks (`g_link_peer_unlock_mask`).
 Loads are bracketed so the other console waits (`link_BeginWait`), and the
 select screen has a mode for two consoles (`select.c:2035`). In the port
-the serial driver under it is a stub (`src/port/api.c:34`). The mode makes
+the serial driver under it is a stub (`src/port/api.c:34`), and the
+link's packets go over UDP instead (section 11). The mode makes
 each console follow its own fighter in first person (`fight_start.c:57`):
 the two consoles' cameras differ, and their memory differs with them.
 
@@ -285,9 +293,8 @@ the two consoles' cameras differ, and their memory differs with them.
   compute the same camera, so their whole state can be compared. The link
   mode's first-person view can come back as a choice once the viewer is
   made presentation only.
-- *A first milestone that needs no rollback:* `AddCOMB` and
-  `_comb_control` over UDP, so the game's own link protocol runs between
-  two ports. That is delay-based, it works only where the round trip is
+- *A first milestone that needs no rollback* (built: section 11): the
+  game's own link protocol over UDP between two ports. That is delay-based, it works only where the round trip is
   under a frame or two, and it plays the link mode, but it is a few days'
   work and proves the transport and the handshake.
 
@@ -324,8 +331,8 @@ little delay is needed). Up to 7 or 8 frames can be rolled back.
   through NAT (a STUN-style exchange, or a relay) comes after, because the
   rest does not depend on it. Steam's networking only matters if the port
   is ever on Steam.
-- **The architecture.** The game runs on a stack of its own already
-  (`port_HostCallOnStack`, `src/port/main.c:288`). Make it a coroutine: a
+- **The architecture** (built: section 8). The game runs on a stack of
+  its own already. Make it a coroutine: a
   `port_StepFrame()` that switches to the game's stack, runs to the next
   frame boundary and switches back, a few lines of assembly a CPU or a
   Windows fiber. The window's loop, or the netplay library, then owns
@@ -338,8 +345,8 @@ little delay is needed). Up to 7 or 8 frames can be rolled back.
 
 **Preparatory changes, in order.** Each helps one of the later goals too.
 
-1. **The step as a call** (the coroutine and the boundary at the top of
-   main's loop), about a week. It also gives the window, the frame rate
+1. **The step as a call** (done: section 8; the coroutine, and the
+   boundary where each of the game's loops reads the pads). It also gives the window, the frame rate
    and optimisation one place where a frame begins and ends, and it is
    where remapping reads its input.
 2. **One input point** (done: section 4, "The one input point"). The
@@ -349,7 +356,8 @@ little delay is needed). Up to 7 or 8 frames can be rolled back.
    (item 9) is the layout the window reads the PC's devices through
    (`rebushido.cfg`, `docs/PLAYING.md`). A recorded run of such words
    is a replay and a test; the recording itself is not written yet.
-3. **State apart from presentation.** The program's variables go in two
+3. **State apart from presentation** (done by file: section 9). The
+   program's variables go in two
    groups at the link (`tools/port_build.py`, `tools/port_sdl_build.py`):
    the game's, Sony's and the emulation's (clock, drive, XA, chip, pads,
    card, GPU registers) in one, and the picture, side channel, plan, trace
@@ -364,8 +372,8 @@ little delay is needed). Up to 7 or 8 frames can be rolled back.
    change honest about determinism. **Built: section 7.** The check needs
    the disc, so it is `make port-rollback`, not one of the checks of every
    push.
-5. **A step that can run with nothing drawn**, and the sound out of the
-   rollback (section 3). After that, **a build for players at `-O2`
+5. **A step that can run with nothing drawn** (done: section 10), and
+   the sound out of the rollback (section 3). After that, **a build for players at `-O2`
    without `-finstrument-functions`**, and the sound chip made faster,
    which is item 12's anyway. A frame run again costs about 4 ms today,
    so 8 frames is too slow and 3 is not. One to two weeks.
@@ -373,9 +381,9 @@ little delay is needed). Up to 7 or 8 frames can be rolled back.
    the settings. The host sends its card data and settings, both seed
    `rand()` and `rng_Next`, and both start from the versus select screen
    with the pause menu turned off and both pads present. One to two weeks.
-7. **The netplay itself:** the library or the C core, UDP, delay and
-   rollback settings, a line on the screen for ping and rollbacks, the
-   desync report, and spectators later. Two to three weeks.
+7. **The netplay itself** (the core is built: section 12): the library
+   or the C core, UDP, delay and rollback settings, a line on the screen
+   for ping and rollbacks, the desync report, and spectators later.
 
 So about two months of work for one person to a first online match that
 rolls back, after which tests between two real PCs settle the delay, the
@@ -405,11 +413,12 @@ starts its sound).
 | The console's RAM | 2,097,152 | the game's own memory: the primitive buffers, the effects' area, everything loaded |
 | The scratchpad | 1,024 | used every frame |
 | The I/O page of the sound chip's registers, `0x1F801000` | 4,096 | libspu writes the chip's registers and its DMA's there; leaving it out was the probe's first failure, and is the self-test's (below) |
-| The port's own primitive buffers, `PORT_PRIMS_ADDR`, where a run has them | 2,097,152, or nothing | at the frame's boundary the self-test uses they hold the frame not yet given to the GPU (below) |
-| The program's variables, but those of `OUTSIDE_STATE` | 2,636,352 (2,619,712) | the game's and Sony's, then the port's emulation of the console |
+| The top of the game's stack, and its stack pointer (section 8) | 65,536 and 8 (4) | between two steps the game is a few calls deep where it reads the pads; what lies below the stack pointer is cleared first, being nobody's |
+| The port's own primitive buffers, `PORT_PRIMS_ADDR`, where a run has them | 2,097,152, or nothing | the pause menu draws the fight's last frame from them again every frame |
+| The program's variables, but those of the files outside the state (`config/port_state.txt`) | 2,636,352 (2,619,712) | the game's and Sony's, then the port's emulation of the console |
 
-That is **4.74 MB** in both sizes of the headless program (4,738,624 and
-4,721,984 bytes), and 6.84 MB in the program with a window, which has the
+That is **4.80 MB** in both sizes of the headless program (4,804,204 and
+4,787,552 bytes), and 6.9 MB in the program with a window, which has the
 port's primitive buffers. Among the variables, after the game's and
 Sony's: the clock (`clock.c`), the drive and the XA reader with its
 128 KB buffer (`cd.c`, `xa.c`), the sound chip with its 512 KB of sound
@@ -428,14 +437,15 @@ test's plan (`plan.c`).
   input comes from outside instead (below).
 
 **What is out, and why.** The link puts the variables of the files
-`OUTSIDE_STATE` names (`tools/port_build.py`) after everything else of
+`config/port_state.txt` puts outside the state after everything else of
 their kind, so that what the state saves of the program's variables is
 two runs of memory, one of initialised data and one of zeroed, whose ends
 are marks of the link (`g_port_state_data_end`, `g_port_state_bss_end`).
 The window's build does the same inside the game's object
 (`tools/port_sdl_build.py`). This is change 3's division in a first form,
 by file and not by variable, and with no check that a new variable is in
-the right group.
+the right group. (Change 3 made the division a file of its own with a
+check: section 9.)
 
 - the remastered picture's side channel (`remaster.c`, 1.2 MB): it is
   the picture's, and a load must not rewind its epoch (section 3);
@@ -497,13 +507,13 @@ noted, the second time only compared, so a run with rollbacks prints
 exactly what the same run without prints. At the end it reports the
 rounds and the times on the error output.
 
-It is hooked in as the probe was: one call after main's `ResetRCnt`
-(`main.c`, `port_OnRollbackFrame`, under `RB_PORT`), which does nothing
-unless the option is given. Main's loop keeps `index` and `frame_db`
-there, so a load is made only where the frame's buffer is the save's
-(the hook is given `index`); a first run that does not come back to it
-within 16 frames is given up. Change 1 moves the boundary to the top of
-the loop, where that rule and the primitive buffers' piece go away.
+It runs between two steps of the game (section 8): the host's loop
+(`src/port/main.c`) calls `port_OnRollbackFrame` after each, which does
+nothing unless the option is given. The game's stack is in the state,
+so a load can be made at any boundary. (Before change 1 the hook was a
+call after main's `ResetRCnt`, where main's loop keeps `index` and
+`frame_db`, and a load could only be made where the frame's buffer was
+the save's.)
 
 `make port-rollback` (`tools/port_rollback.py`, `tests/README.md`) runs
 it in both sizes with `port_game`'s plan, from power on through the
@@ -556,7 +566,8 @@ the stack's garbage differs between the two runs of a frame.
 
 **What the later changes need from this.**
 
-- *Change 1* moves the hook to the top of main's loop.
+- *Change 1* (done) moved the hook between two steps, and put the
+  game's stack in the state.
 - *Change 2, the input record.* The game step reads the pads from the
   port's pad driver (`pad.c`: the held buttons and the packets), which is
   in the state, as is the plan. A word a pad a game frame that the step
@@ -564,11 +575,11 @@ the stack's garbage differs between the two runs of a frame.
   including a step run again; what the window keeps of the keys and the
   remapping (`src/port/window/`) is outside it and must stay so. Netplay
   then sets the record before each step and does not use the plan.
-- *Change 3* turns `OUTSIDE_STATE` into the link's two groups by
-  variable, with a check that every variable is in one.
-- *Change 5.* A frame run again still draws, mixes and hands its samples
-  to the window's sound card; the self-test is for the headless program
-  (with `--wav`, or in the window, a round's frames are heard twice).
+- *Change 3* (done, by file: section 9) gives every file of the port
+  one of the link's two groups, with a check.
+- *Change 5* (done: section 10). A frame run again quietly
+  (`g_port_rerun`) still mixes, but hands nothing to the sound card or
+  the file, and paints nothing.
 - *The picture work.* The side channel is outside the state now, so a
   load no longer rewinds its epoch. What is left for that work: slots
   written by a frame that was taken back stay, under an epoch the
@@ -578,3 +589,549 @@ the stack's garbage differs between the two runs of a frame.
   change 1's boundary that frame is drawn before the save, and this goes
   away); and the tween must take
   its frames only from steps that are shown (section 3).
+
+## 8. The step
+
+Preparatory change 1 is built. The game's main never returns; it runs on
+its own stack (`PORT_STACK_ADDR`) as a fiber, and the host runs it a step
+at a time (`src/port/step.c`, declared in `include/port_platform.h`):
+`port_StartGame` makes the fiber ready, `port_StepGame` runs the game to
+its next frame boundary, and the host's loop in `src/port/main.c` has the
+turn between two steps. The switch is a few lines of assembly a
+processor and system (`include/port_fiber.h`): it keeps the registers a
+called function must keep, and on Windows the thread's record of its
+stack's two ends (and, in 32 bits, its chain of fault handlers), since
+Windows hands a fault to nobody while the stack pointer is outside the
+stack it knows. The three hosts (`host_linux.c`, `host_windows.c`,
+`window/host_posix.c`) give it as `port_HostStartGame`,
+`port_HostEnterGame` and `port_HostLeaveGame` in place of the old
+`port_HostCallOnStack`.
+
+**The boundary is where the game reads the pads.** `port_TakeInput`
+(`src/port/pad.c`), the one input point, ends the step before it takes
+the input. Main's loop (in `pad_Update`, after its fresh ordering table),
+the pause menu's loop, `link_Connect`'s and the options page's each read
+the pads once a frame, so each of their frames is a step, and nothing in
+`src/main/` had to change for it: the old hook after main's `ResetRCnt`
+is gone. A frame that reads no pad (a load, the movie, the boot picture)
+is part of the step it falls in, which suits netplay: one step, one
+input. Between two steps the host may save the state, put back an
+earlier one, or set the coming frame's input before the game takes it.
+
+The boundary is not at the top of main's loop with nothing live, as
+section 6 first proposed: the pause menu and `link_Connect` are loops of
+their own, a few calls down. So the top 64 KB of the game's stack and its
+stack pointer are in the state (section 7), and a load can be made at any
+boundary, in any of those loops. At a boundary the game is a few calls
+deep. What lies below the stack pointer is cleared before a save or a
+comparison: it is whatever the deepest calls last left there, and that
+differs between a frame's first run and its second (the self-test's tap
+prints one time and compares the other), as it will in netplay, where a
+frame run again does not draw.
+
+**Measured.** With `port_game`'s plan, the plain run's trace (2,338
+lines) is the same to the byte as before the change in both sizes, and
+as the 64-bit Windows program's (`rebushido-headless.exe`, run natively).
+`make port-rollback` passes in both sizes (96 rounds of 8 frames: the
+rule of the save's parity no longer loses any), and so does the window's
+program on Linux (`--fast`, dummy drivers) and the Windows program. One
+frame every frame: 2,324 rounds of the 2,325 steps in each size, every
+one the same.
+
+## 9. State apart from presentation
+
+Preparatory change 3 is built by file. `config/port_state.txt` puts every
+file of `src/port/`, and every file of `src/port/window/` that is linked
+into the game's object, in one of the link's two groups, with a line
+saying why: **state** (the console's machine as the game sees it: the
+clock, drive, disc reader, XA, sound chip and mixer, pads, card, events,
+GPU and video memory, GTE, the movie's decoder, the stubs' counts, a play
+test's plan) or **outside** (the remastered side channel, the run's
+output, pictures and sound file, the crash report, the program's
+arguments, the host, the step's own count, the snapshot's bookkeeping,
+and the window's pacing, sound queue, keys, counter and log). The game's
+own files are state, always. `tools/port_build.py` and
+`tools/port_sdl_build.py` read it for the link (the outside group goes
+after the rest of each kind) and stop the build on a file of the port in
+neither group, or on a line naming a file that is not built. The rest of
+the window and `src/port/gl/` are outside by being outside the game's
+object, so the picture's work there needs no line.
+
+It is by file, not by variable: a variable of a state file that must not
+be put back by a load goes in a file that is outside. None had to move.
+What was looked at for rollback's sake:
+
+- **The side channel's epoch only goes forward.** `g_epoch`
+  (`remaster.c`) is moved on by `port_RemasterNewFrame`, which the game
+  calls as each frame begins, a frame run again included, and
+  `remaster.c` is outside the state, so no load takes it back. After a
+  rollback the frame that is shown finds its own notes under a new epoch
+  and those of the frame before under the one before: the last frame run
+  again, which is that frame on the corrected course, as in a run with no
+  rollback. The slots of frames taken back keep epochs that are never
+  used again.
+- **Hooks set once** (`g_port_blank_hook`, `g_port_sound_hook`,
+  `g_port_take_hook` and the rest) are in state files but are set before
+  the game starts and never change, so a load leaves them as they are.
+- **The memory card's file** (`card.c`) is the one thing in a state file
+  that writes outside the program: a frame run again that saves writes
+  the same bytes again, but a frame taken back that saved would have
+  written its own. Netplay runs with `--no-cards` until the session sends
+  the host's card (change 6).
+- **The window's pacing, the sound card's queue, the tween** are outside;
+  a frame run again must not reach them (change 5, section 10).
+
+## 10. A step run again, quietly
+
+Preparatory change 5 is built, in its first form. The host sets
+`g_port_rerun` (`include/port_platform.h`, `src/port/step.c`, outside
+the state) while it runs a step again after a load. The step then
+computes all of the game's state as it would and nothing of what is seen
+or heard of it:
+
+- **the picture:** the software GPU (`raster.c`) runs every command, so
+  its registers, the drawing mode a textured polygon brings, the clip and
+  the offset are what they would be, and it takes loads into video memory
+  and copies within it; but it paints no pixel of a polygon, line,
+  rectangle or fill, and the remastered renderer is given no command
+  (its note of a load into video memory still goes, so its textures stay
+  true). The side channel's own notes are taken as ever: its epoch goes
+  forward (section 9);
+- **the sound:** mixed, as section 3 recommends first (the chip is in the
+  state and a load takes it back with the rest), but neither the window's
+  sound card nor `--wav` is given the samples. A sound that a corrected
+  frame adds is heard from the next frame that is shown, a few frames in;
+  one that the frame taken back started stops short;
+- **the window** has no turn at a blank (its input and blank hooks:
+  pacing, presenting, the keys), a run writes no picture (`--shots`, a
+  checkpoint's picture, snapshot, video memory or sound chip) and prints
+  nothing; a play test's plan still runs, being in the state.
+
+Video memory is then not what a run without rollbacks would hold: what a
+frame run again would have painted is missing until a shown frame paints
+over it. In a fight every frame paints the whole screen, and no fight
+frame reads video memory back (section 2). A load or a menu that did
+(`StoreImage`, `MoveImage` of what a frame painted) after a quiet run
+again would read the frame taken back's pixels; none does in the
+measured runs, and the hash (section 5) would name it as a desync.
+
+**The self-test** has it: `--rollback-quiet` runs each round's frames
+again quietly and compares every page of the state but video memory and
+the game's stack. The stack is left out because the registers a function
+keeps for its caller can hold what a painting function last left in them
+and nobody reads (the 32-bit program showed one such word); the run that
+is not quiet still holds the stack to the byte. `make port-rollback` now
+makes three runs of each size: plain, with rollbacks, and with rollbacks
+run again quietly, and all three print and write the same. It reports
+how long a step took between rounds, run first and run again, over the
+run and in the fight's frames alone.
+
+**What a frame run again costs.** The headless 64-bit program, `port_game`'s
+plan, 8 frames every 24, on the machine of section 1 with other builds
+running (so the means wander by a millisecond between runs; the least is
+steadier):
+
+| A step of the fight | `-O1` mean (least) | `-O2` mean (least) |
+| --- | --- | --- |
+| run first, drawn and sounded | 5.2 ms (2.7) | 4.1 ms (2.3) |
+| run again quietly | 2.9 to 3.2 ms (0.90) | 2.0 to 2.1 ms (0.71) |
+
+So a quiet frame is about half a drawn one, and most of what is left is
+the sound chip mixing two blanks (section 3); eight of them at `-O2` are
+16 ms, half a frame of 30 a second, and three are 6 ms. Keeping the sound
+out of the rollback (section 3, "later") would take most of the rest.
+
+**`-O2`.** `PORT_OPT=2 make port` builds the headless programs at `-O2`
+into `build/port-O2/` and `build/port32-O2/`, and `PORT_OPT=2 make
+port-sdl` the window's into `build/port-sdl/linux-O2/`. With
+`port_game`'s plan all three print the same 2,338-line trace as at `-O1`
+to the byte, and pass the rollback self-test, quiet or not. It buys about
+a fifth of a fight frame drawn and a third of one run again. The checks
+and the play tests keep `-O1`, and so does the window's build for now:
+the play tests hold only the headless program to the emulator, so the
+switch of the players' build is the owner's.
+
+## 11. The link cable over UDP
+
+The first online milestone is built: the game's own link-cable versus
+mode (`FIGHT_MODE_NETWORK`, `src/main/link.c`) between two programs of
+the port, in lockstep with one frame of delay, as on two consoles.
+
+**The network** (`src/port/net.c`, `include/port_net.h`) is one UDP
+socket to one other program: `--net-bind ADDRESS:PORT --net-peer
+ADDRESS:PORT`, IPv4 numbers only. The hosts give it as three calls of
+`include/port_host.h` (`port_HostUdpOpen`, `Send`, `Receive` with a
+wait): the kernel's own calls in `host_linux.c` (`socketcall` in 32
+bits), the C library's in `window/host_posix.c`, Winsock in
+`host_windows.c` (the Windows programs link `ws2_32`). No library is
+vendored: SDL_net is not linked, and ENet would only add what the next
+section's few datagrams do not need. A run binds where it is told and
+answers only its peer; the tests bind to 127.0.0.1. For tests a run can
+make the network worse: `--net-latency MS` holds every datagram back
+that long and `--net-loss PERCENT` drops so many, by a sequence of
+random numbers of the run's own.
+
+**The link** (`--link-side 0|1`). The serial driver's lines and
+interrupts are not imitated: their timing is the console's, and a busy
+wait on them moves the port's clock (each `GetRCnt` is a scan line), so
+two programs would part by however long the network took. Instead,
+under `RB_PORT`, link.c asks the port at the three places it touches
+the cable, and its own protocol, checksums and all, is left as it is:
+
+- `link_PickSide`: the side is the one the program was given;
+- the handshake's two waits: `port_LinkMeet`, where each program says it
+  is here until each has heard the other, waited for in the PC's time
+  and none of the game's, so that both take the same frames to connect;
+- `link_SendPacket` and `link_ReceivePacket`: the packet's two words are
+  a datagram, numbered; a wait sends its own last one again every 50 ms,
+  and a program that is sent one it already had sends its own last
+  again, so a lost datagram costs a resend and nothing else. After 15
+  seconds of silence the other console has gone and the game aborts the
+  link, as it does on the console.
+
+A program that ends still answers for a moment, so that the packets the
+other is waiting for are not lost with it.
+
+**Proved** by `tools/port_net.py link`, which runs two headless programs
+of one build at once, bound to 127.0.0.1, each with a plan of its own:
+both go from power on to the top menu's link row as `port_game`'s plan
+goes to versus, connect, and in the select screen and the fight each
+console's pad plays its player's part of `port_game`'s presses. Over the
+link the first stage cell is another stage, where the two start far
+apart (`SELECT_STAGE_LINK_TO`), so the first console takes the cell
+beside it; and the view is each fighter's own, so both walk forward
+before they strike. The first player is cut down at frame 687.
+
+| Run | Packets each way | Sent again | Result |
+| --- | --- | --- | --- |
+| 64-bit, 5 s | 2,132 | 0 | the same 2,369 lines on both consoles, to the end of the fight |
+| 32-bit, 10 s | 2,132 | 0 | the same |
+| 64-bit, `--latency 5 --loss 10`, 45 s | 2,132 | 254 | the same 2,369 lines |
+
+The two consoles' traces are the same line for line although their
+cameras differ: the traced values are the fighters', the screen's and
+the random numbers, which the two compute alike. What this mode costs is
+the round trip: each frame waits for the other's packet, so it plays
+only where that is well under a frame. Rollback (section 12) is for the
+rest.
+
+## 12. Rollback netplay
+
+The netplay of section 6 is built in its core, GGPO's design written in
+C (`src/port/netplay.c`): `--netplay 1|2` with `--net-bind` and
+`--net-peer`, and `--net-delay N` (2 if nothing says). Neither GGPO (MIT)
+nor GekkoNet was vendored: both are C++, and the headless program, which
+the tests run, has no C or C++ library to link them against. The
+algorithm is a few hundred lines.
+
+**The session is the whole run**, as section 5 recommends: both programs
+start from power on with the same build, disc and options (`--no-cards`
+for now), and each frame's input is both pads, the one this program
+plays and the other's, sent over the network. It goes in by the input's
+hook (`g_port_take_hook`), with both pads present.
+
+- **Frames.** A frame is a step (section 8). The host's loop
+  (`port_RunNetplay`) saves the state at each frame's boundary into a
+  ring of ten, then runs the step with the frame's input.
+- **The local pad** is what the pads' driver read at the last blank
+  (`port_DriverInput`: a plan's presses or the window's keys), kept for
+  the frame `--net-delay` on; the first frames of the delay have none.
+  Every input the other has not acknowledged is sent in each datagram,
+  with this program's count of the other's inputs and its last final
+  hash, so a lost datagram is made up by the next.
+- **The other pad**, until its input comes, is taken to be what it last
+  was. One that comes and is not what was taken puts back the state of
+  its frame and runs every frame from there to now again, quietly
+  (section 10), with the inputs now known. Neither program runs more
+  than 8 frames past the other's last input it has: it waits, sending
+  its inputs again every 16 ms.
+- **Desyncs.** Every 30 frames, once both pads' inputs before it are
+  known, the state's hash at that frame (`port_StateHash`, section 7) is
+  final. Each program prints it (`netplay: frame F hash H`, on the error
+  output), sends it with its inputs, and stops with `netplay: DESYNC`
+  when the other's hash of a frame is not its own.
+- **The end.** A program that ends (its plan's end, or a failure) tells
+  the other, and answers for a moment longer; the other runs to the last
+  input it was given and ends there.
+
+**Proved** by `tools/port_net.py rollback` (`make port-net`), two headless
+programs of one build on 127.0.0.1, both following `port_game`'s plan,
+each pressing only its own pad's part of it: power on, the menus, versus
+select, a fight to the kill, the replay and back to the menu, 2,332
+frames. Each frame's presses count two frames later than in the plan's
+own run, so this is not `port_game`'s fight to the frame, but it is a
+fight to a kill. 64-bit, on the machine of section 1:
+
+| Network | Rollbacks (pad 1, pad 2) | Frames run again | Longest | Result |
+| --- | --- | --- | --- | --- |
+| none (0 ms, no loss) | 1, 12 | 2, 23 | 6 | 77 hashes the same on both, the last `30925357EE23889C` at frame 2,310 |
+| 100 ms each way, 5% lost | 44, 66 | 267, 427 | 8 | the same 77 hashes, the same last one |
+| the same, 32-bit | 44, 65 | 261, 419 | 8 | 77 hashes the same on both, the last `531D54044C49431A` |
+
+The two runs of the 64-bit program end in the same state whatever the
+network did, as they must: the network only decides when an input is
+known, never what it is. A 64-bit program against a 32-bit one, whose
+hashes differ (section 7), stops on both sides with a desync at frame 30,
+the first hash. With 100 ms each way the headless pair, which nothing
+paces, runs about 70 frames a second, waiting about ten thousand times on
+the other for its inputs. A frame run again averaged 7 to 11 ms there,
+far more than a fight frame's 2 to 3 ms (section 10), because the session
+is rolled back in the menus and loads too, where one step can read
+megabytes from the disc.
+
+With `--netplay` both programs must be started alike by hand, from power
+on, and both must skip the opening alike: the movie player reads the
+pads its own way (section 4). Netplay now skips every movie where it
+begins (section 13), so this run's presses count otherwise than when the
+table above was measured; it still ends on the same hashes on both, the
+last now `A73BDA6AD7613D4C` (64-bit, 100 ms each way, 5% lost; a
+hash follows where the program's variables lie, which changed with
+PORT.md's "Where the program's variables are").
+
+What was left here, pacing, the session's set-up and the line on the
+screen, is section 13.
+
+## 13. A session in the window
+
+Netplay as a player has it: the window's program, paced against the
+other, with a line on the screen, set up from the command line or the
+settings menu. How to play it is in [`PLAYING.md`](PLAYING.md),
+"Playing online".
+
+**The session** (`src/port/session.c`, preparatory change 6). The host
+waits at `--host ADDRESS:PORT`; the guest goes there with `--join
+ADDRESS:PORT` (its own socket at `--net-bind`, or any address of the PC
+and a port the system chooses). Nothing of the game runs until the two
+have met:
+
+- the guest says hello every 100 ms; the host takes the first program
+  that does as its peer (`port_SetNetListen`, `port_FixNetPeer`,
+  `net.c`), and answers nobody else from then on;
+- each holds the other to the same **protocol**, the same **build** (a
+  sum of the version with its commit, the size of a pointer, the
+  system, where the program's variables lie and the state's size: two
+  programs that agree on these lay the game's memory out alike, which is
+  what makes their hashes comparable, section 7) and the same **disc** (a
+  sum of its size, its volume's description and every 997th sector). A
+  guest that differs is turned away with the reason, which both logs
+  say;
+- the host sends its **two memory cards**, whole, 1 KB a datagram, the
+  guest saying which parts it has every 20 ms, and a **seed** taken from
+  its clock. Both then play on copies of the host's cards kept in memory
+  (`port_SetCardImage`, `card.c`): the unlocks, the button layouts, the
+  records and ReBushido's settings, **Bugfixes among them**, are the
+  host's on both, and neither writes a save of the session to a file.
+  The copies are part of the state (256 KB), so a save that a rollback
+  takes back is taken back too. With `--no-cards` the host sends none;
+- when the guest has the cards it says it is ready; the host says go and
+  starts, and the guest starts on that or on the host's first inputs.
+  The host is the first pad, the guest the second, and the host's
+  `--net-delay` is both players'.
+
+With two programs started on one PC the meeting and the cards take well
+under a second; with 100 ms each way and 5% lost, about two.
+
+**From power on to versus select the session presses for both**
+(`port_SessionInput`): the same buttons at the same frames on both
+machines, worked out from the game's state, so that no guess about them
+is ever wrong. Start on the options page (the host's settings, from its
+card), Start and Cross on the title and the memory card's messages
+(Cross loads the host's save), and on the top menu Down until the row's
+mode is versus (`menu_GetTopRowMode`, `src/main/menu_pages.c`, under
+`RB_PORT`), then Cross: about ten seconds. The **versus select screen is
+the match's set-up**, both players choosing at once as on a couch, and
+the host takes the stage. After a fight the game's own menu offers
+Rematch, the select screen, or the main menu; a way back to the top menu
+comes straight back to versus. **In a fight Start is nobody's**: the
+pause menu would stop the other player's game too. Where the frame's
+input does not depend on the other's buttons (the session's presses, or
+Start in a fight), a guess of them that turns out otherwise rolls
+nothing back (`g_np_used`).
+
+**Movies are skipped where they begin, on both machines** (`PAD_dr`,
+`pad.c`, `g_port_movies_skipped`). The movie player reads the pads its
+own way, at moments no other machine shares (section 4); rather than
+make its reads frames of the session, every movie in netplay is given
+Cross held from its first read, and ends there. Versus has no movie
+but the opening.
+
+**What the game computes must not follow either player's picture.** Two
+things of the remastered picture reach into the game's own computation,
+and both followed the picture, so that one player in Remastered and the
+other in Original, or F2 in the middle of a fight, parted the two
+machines (a desync at frame 1,500 of a session, the first time it was
+tried):
+
+- *the draw distance* (`src/port/main.c`): how much of the stage the
+  game walks, and which primitive buffers it is given. In netplay it is
+  the console's, whatever each player's picture; the remastered picture
+  is still drawn, at that distance. The alternative, both computing the
+  host's distance whatever their picture, would keep `max` online but
+  change the Original picture with it: the owner's call;
+- *the left margin* (`port_RemasterFixMargin`, `remaster.c`): a wider
+  picture keeps faces the console would cut off at its screen's left
+  edge (`render_FaceOffScreen`), which changes the primitives the game
+  builds. In a session each program sends the shape of its picture and
+  both cut faces off at the wider of the two, whether Remastered is on
+  or not; with `--netplay`, at the program's own shape. Neither player
+  loses a face of a wider picture, and the Original picture draws a few
+  faces left of its screen that nobody sees.
+
+With both fixed, the window's session of `make port-net` (below), with
+40 ms each way and 3% lost, the host in Remastered on a software OpenGL
+driver (`SDL_VIDEODRIVER=offscreen`, `LIBGL_ALWAYS_SOFTWARE=1`),
+`draw_distance = max` in both settings, F2 every 300 blanks on the host
+(17 changes of picture), and the guest in Original, ends on the same 82
+hashes on both. The host, drawing in software, could not keep the
+console's rate, and time sync held the guest back 62 times, 4.6 seconds
+in all, to stay with it.
+
+**Pacing** (`netplay.c`, `src/port/window/sdl_net.c`, `pace.c`). The
+window's program paces each blank against the sound card as before; on
+top of that:
+
+- *time sync*, as GGPO has it: every datagram says the frame its sender
+  is at and how far ahead it reckons itself (the other's last frame and
+  half the round trip, against its own). Over 32 frames each side
+  averages both; where this one is further ahead than the other is
+  behind, it holds its window back half the difference, at least a
+  frame and at most four, no oftener than every 30 frames
+  (`g_port_net_hold_hook`). The window takes a hold a quarter of a
+  blank's time a blank (`port_PaceHold`), so the sound's queue is drawn
+  down a little and never runs dry. The headless programs, with no
+  time to keep, run as fast as they go;
+- *a load is a point both wait at*: a step that read more than 64
+  sectors loaded something, and the next frame waits until the other's
+  inputs up to it are in, so that no later guess can roll the load
+  back. The step that loads is run once, as the other's; a guess before
+  it that the other's inputs then correct still runs it again;
+- *the waits*: while netplay waits on the other (for its inputs past
+  the eight frames it may guess, or at a load), the window reads its
+  events, so Escape still ends the program, and shows its picture again
+  with the line saying what it waits for (`g_port_net_wait_hook`).
+
+**What a rollback does to the picture and the sound.** A frame run
+again is drawn by nobody and heard by nobody (section 10). The picture
+jumps to the corrected course at the next frame shown, as every rollback
+game's does; `gl_tween` draws its pictures between frames that were
+shown, never ones run again, so its next frame may be one a correction
+has replaced, and its picture jumps with the game's. The window's
+session of `make port-net` with the host drawing Remastered at
+`--frame-rate 120` (software OpenGL) ran through it: 6,443 pictures, 1,136
+of them between the game's frames, 946 not drawn because two frames were
+unlike, the same 82 hashes on both. **The sound is
+kept out of the rollback by the sound card's queue**, a cheaper form of
+section 3's "later" that leaves the chip in the state: the window
+remembers how many samples it queued at each blank, and when a rollback
+begins it takes back what the queue still holds of the blanks to be run
+again, all but 23 ms of it (`port_TakeBackRing`); the frames run again
+are mixed as before, and when they are done their newest samples, as
+many as were taken back, go into the queue in their place
+(`g_port_rerun_sound_hook`, `port_SoundRerunEnds`). Nothing is heard
+twice and the queue keeps its length; what the card had already played
+of the frames taken back stays played, so a sound the correction adds
+is heard from where the queue's 58 ms reach back, not from its start.
+Section 3's whole design (key-ons replayed when frames become final)
+would take the chip out of the state, and the game reads which voices
+are free: the two machines' sound libraries would then choose voices
+differently, and their states would differ.
+
+**The line** (`port_DrawNetLine`, `sdl_net.c`): at the top of the
+window, in the settings menu's font at the window's own resolution, as
+crisp in 4K as at 960 by 720: `Online: player 1 | ping 48 ms | rollback 3
+| delay 2`, the rollback being the longest of the last three seconds;
+or `Waiting for the other player 1.2 s`, `Loading: waiting for the other
+player`; or for eight seconds `The other player has left: you play on
+alone`. Before the game starts a panel says how the session's set-up is
+going. None of it is in the game's video memory or in a test's picture.
+
+**Leaving.** Escape or the window's close ends the program; the other
+is told (five datagrams), answered for a moment so that it has every
+input, and **plays on alone** from the last frame it had both pads for:
+its pads are both its own again and the settings menu opens again. A
+program that hears nothing for 15 seconds does the same. The headless
+program ends instead, as before. A desync still ends both.
+
+**The settings menu's Play online page** (`src/port/window/menu.c`):
+host or join; the port to wait at, or the host's address and port
+(typed: digits, dots, a colon); whether the program is found through
+every network of the PC or on this PC alone; the delay. They are kept in
+`rebushido.cfg` (`net_role`, `net_port`, `net_address`, `net_listen`,
+`net_delay`). *Host now* or *Join now* starts the program again as the
+session's (`port_StartOnline`, `sdl_main.c`): the same command line
+without the network's options, with `--host` or `--join`. On Linux the
+program becomes the new one (`execv`); on Windows the new one is started
+and this one ends (`_spawnv`). The menu is refused during netplay, as
+before.
+
+**The bind address and NAT are the owner's call.** The Play online
+page's `net_listen` is `all` with nothing said: a host is found through
+every network of the PC (`0.0.0.0`), which is what play between two PCs
+needs, and opens a port to the network while it waits. `local` keeps it
+on 127.0.0.1. On the command line `--host` always names its address, and
+`--join` binds `0.0.0.0` and a port of the system's unless `--net-bind`
+says otherwise. Across the internet the host's router must let the port
+through; the ways, none of them built:
+
+- *port forwarding*: the host forwards the UDP port (7845 with nothing
+  said) to its PC, by hand or by UPnP or NAT-PMP from the program. The
+  guest needs nothing: the host answers where it was spoken to from;
+- *hole punching*: a small public server (STUN-like) tells each program
+  the other's public address and both send at once; works through most
+  home routers, not through symmetric NATs;
+- *a relay*: both programs send to a public server that passes the
+  datagrams on. Works everywhere and costs the relay's round trip and
+  its upkeep; the datagrams are small (under 200 bytes, about 60 a
+  second each way), so one modest server carries many sessions;
+- *a platform's networking* (Steam's, which relays and punches), if the
+  port is ever on one.
+
+**Proved** by `make port-net` (`tools/port_net.py`), on one PC, every
+socket on 127.0.0.1:
+
+- `session`: two headless programs of each size, `--host` and `--join`
+  with 100 ms each way and 5% lost: the meeting, the host's two new
+  cards sent, the session's presses to versus select, both players'
+  picks, `port_game`'s fight to the kill, the menu after it, Rematch,
+  the fight again to the kill, and then the guest's plan ends: the host
+  is told and ends there. It passes if both end well, neither finds a
+  desync, at least 40 state hashes are the same on both and no card file
+  was written. 64-bit: about 2,490 frames, 82 hashes the same on both;
+  67 and 79 rollbacks, the longest 8 frames; 32-bit: 69 and 77, the same
+  82 hashes on both (each size's own, section 7);
+- `window`: the same between two of the window's programs, headless
+  (dummy drivers), in real time with their sound card and pacing, 60 ms
+  each way and 5% lost; the host must play on alone after the guest
+  goes. 90 seconds; 82 hashes the same on both; the two were 0.8 and
+  0.9 frames apart on average (the headless pairs, which nothing paces,
+  4.2 to 4.8) and held back 2 and 4 times (85 and 286 ms in all); 25
+  and 59 rollbacks; the sound's queue had 11,633 and 45,360 samples
+  taken back and as many corrected ones queued, while 27,436 and 87,326
+  had been played already;
+- `window`, the menu: two window programs started as a player starts
+  them open the settings menu (`--menu-at`), go to Play online and
+  start, the host on 127.0.0.1 and the guest typing the host's address
+  (`--menu-keys ... type:127.0.0.1:47022`); each starts again as the
+  session's, and the two play on with the same 35 hashes.
+
+The whole of `make port-net` takes about eight minutes.
+
+`link` and `rollback` are as before (sections 11 and 12).
+
+**What is left.**
+
+- *Two real PCs*, which settle the delay, the window of rollback and
+  the pacing's numbers, and the first play by people: the line, the
+  feel of a rollback, the sound. On one PC the pacing has nothing to
+  keep apart: both programs read one clock.
+- *A Windows session*: the Windows programs build with all of it, and
+  starting again from the menu is `_spawnv` there; no session has been
+  run between Windows programs yet, nor between a Windows and a Linux
+  one (which the build's sum keeps apart until it is proved they agree).
+- *NAT* (above), the desync report's snapshots, spectators.
+- *The view*: computing the host's draw distance on both rather than
+  the console's (above).
+- *The play tests owed*: none changes; the port's play tests run with
+  netplay off, and nothing they run reads what changed (the pads'
+  driver gives the movie player its pads as before, the cards are files
+  as before).

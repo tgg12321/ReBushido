@@ -18,9 +18,11 @@
  * the PlayStation's RAM begins at exactly 2 GB). */
 #if defined(_WIN32)
 
+#include <winsock2.h>
 #include <windows.h>
 
 #include "port_host.h"
+#include "port_fiber.h"
 
 #define FILES_MAX 16
 /* A file this large or larger has no size the port can count. */
@@ -141,6 +143,92 @@ s32 port_HostWriteAt(s32 file, u32 offset, const void *bytes, u32 count) {
 }
 
 void port_HostFlush(s32 file) { FlushFileBuffers(g_port_windows_files[file]); }
+
+/* ---- the network (port_host.h): Windows' sockets, started once ---- */
+
+#define MS_PER_SECOND 1000
+#define US_PER_MS 1000
+
+static s32 g_port_windows_sockets_started;
+
+/* The port's address as Windows takes it. */
+static void port_WindowsToSocket(
+    struct sockaddr_in *out, const PortNetAddress *in) {
+    u32 i;
+
+    for (i = 0; i < sizeof(*out); i++) {
+        ((u8 *)out)[i] = 0;
+    }
+    out->sin_family = AF_INET;
+    out->sin_port = htons(in->port);
+    out->sin_addr.s_addr = htonl(in->address);
+}
+
+/* A socket of datagrams, bound where it is told; Windows' sockets are
+ * started the first time. */
+s32 port_HostUdpOpen(const PortNetAddress *at) {
+    struct sockaddr_in address;
+    SOCKET file;
+
+    if (!g_port_windows_sockets_started) {
+        WSADATA data;
+
+        if (WSAStartup(MAKEWORD(2, 2), &data) != 0) {
+            return -1;
+        }
+        g_port_windows_sockets_started = 1;
+    }
+    file = socket(AF_INET, SOCK_DGRAM, 0);
+    if (file == INVALID_SOCKET) {
+        return -1;
+    }
+    port_WindowsToSocket(&address, at);
+    if (bind(file, (struct sockaddr *)&address, sizeof(address)) != 0) {
+        closesocket(file);
+        return -1;
+    }
+    /* a socket's handle is a small number in practice; the port keeps
+     * it as one */
+    return (s32)file;
+}
+
+/* One datagram to the peer. */
+s32 port_HostUdpSend(
+    s32 socket, const PortNetAddress *to, const void *bytes, u32 count) {
+    struct sockaddr_in address;
+
+    port_WindowsToSocket(&address, to);
+    return sendto((SOCKET)socket, (const char *)bytes, (s32)count, 0,
+                  (struct sockaddr *)&address, sizeof(address)) == (s32)count;
+}
+
+/* select, then recvfrom: a datagram, if one comes in time. */
+s32 port_HostUdpReceive(
+    s32 socket, void *bytes, u32 room, PortNetAddress *from, u32 wait_ms) {
+    struct sockaddr_in address;
+    s32 address_bytes = sizeof(address);
+    fd_set readable;
+    struct timeval wait;
+    s32 got;
+
+    FD_ZERO(&readable);
+    FD_SET((SOCKET)socket, &readable);
+    wait.tv_sec = wait_ms / MS_PER_SECOND;
+    wait.tv_usec = (wait_ms % MS_PER_SECOND) * US_PER_MS;
+    if (select(0, &readable, NULL, NULL, &wait) <= 0) {
+        return -1;
+    }
+    got = recvfrom((SOCKET)socket, (char *)bytes, (s32)room, 0,
+                   (struct sockaddr *)&address, &address_bytes);
+    if (got < 0) {
+        return -1;
+    }
+    if (from != NULL) {
+        from->address = ntohl(address.sin_addr.s_addr);
+        from->port = ntohs(address.sin_port);
+    }
+    return (s32)got;
+}
 
 /* The folder's names by FindFirstFile and FindNextFile (port_host.h). */
 s32 port_HostListFolder(
@@ -277,7 +365,7 @@ static LONG WINAPI port_WindowsOnFault(EXCEPTION_POINTERS *fault) {
 
 #if defined(__i386__)
 /* ... and this one on the game's stack: the last handler of that
- * stack's chain, which port_HostCallOnStack puts at its top. It is asked
+ * stack's chain, which port_HostStartGame puts at its top. It is asked
  * only when nothing above it took the fault, a system library's own
  * handlers among them. */
 static EXCEPTION_DISPOSITION __cdecl port_WindowsOnGameFault(
@@ -319,20 +407,32 @@ void port_HostCatchCrashes(void (*report)(const PortCrash *crash)) {
 #endif
 }
 
-/* The stack pointer to the top of the memory given, no frame above the
- * function's, and the call, as on Linux. Windows also keeps where the
- * thread's stack is, and hands a fault to nobody while the stack
- * pointer is outside it: so the thread's own record is told the new
- * stack's two ends. That record begins with the chain of the stack's
- * fault handlers, the stack's top and the stack's bottom; the old
- * stack's handlers are left behind with it, and the new chain is one
- * handler, the port's, in two words at the new stack's top. In a 64-bit
- * program there is no such chain (the system keeps tables of handlers
- * instead), and the 32 bytes left below the top are the room the
- * calling convention gives a called function above its return address.
- * The thread's record is at fs:0, fs:4, fs:8 in a 32-bit program and at
- * gs:8, gs:16 in a 64-bit one. */
-void port_HostCallOnStack(void (*function)(void), u32 stack_top) {
+/* ---- the game's stack, as a fiber (port_host.h, port_fiber.h) ---- */
+
+PortAddress g_port_game_context;
+static PortAddress g_port_host_context;
+static void (*g_port_game_function)(void);
+
+/* Where the game's stack first returns to: the frame pointer is 0 there,
+ * which ends the chain of callers a crash report walks. */
+static void port_WindowsGameEntry(void) {
+    g_port_game_function();
+    for (;;) {
+        port_HostExit(1);
+    }
+}
+
+/* Windows keeps where the thread's stack is, and hands a fault to nobody
+ * while the stack pointer is outside it: so the switch keeps each
+ * stack's own copy of the thread's record (port_fiber.h), and the game's
+ * starts as the two ends of its stack. In a 32-bit program the record
+ * begins with the chain of the stack's fault handlers: the game's is one
+ * handler, the port's, in two words at its stack's top. In a 64-bit one
+ * there is no such chain (the system keeps tables of handlers instead).
+ * The record is at fs:0, fs:4, fs:8 in a 32-bit program and at gs:8,
+ * gs:16 in a 64-bit one; the words are given in the order the switch
+ * takes them back. */
+void port_HostStartGame(void (*function)(void), u32 stack_top) {
     PortAddress top = stack_top;
     PortAddress bottom = top;
     MEMORY_BASIC_INFORMATION memory;
@@ -340,37 +440,38 @@ void port_HostCallOnStack(void (*function)(void), u32 stack_top) {
     if (VirtualQuery((void *)(top - 1), &memory, sizeof(memory)) != 0) {
         bottom = (PortAddress)memory.AllocationBase;
     }
+    g_port_game_function = function;
 #if defined(__i386__)
-    __asm__ volatile(
-        "movl %0, %%fs:4\n"
-        "movl %2, %%fs:8\n"
-        "movl %0, %%esp\n"
-        "pushl %3\n"
-        "pushl $-1\n"
-        "movl %%esp, %%fs:0\n"
-        "subl $8, %%esp\n"
-        "xorl %%ebp, %%ebp\n"
-        "call *%1\n"
-        :
-        : "r"(top), "r"(function), "r"(bottom), "r"(port_WindowsOnGameFault)
-        : "memory");
-#elif defined(__x86_64__)
-    __asm__ volatile(
-        "movq %0, %%gs:8\n"
-        "movq %2, %%gs:16\n"
-        "movq %0, %%rsp\n"
-        "subq $32, %%rsp\n"
-        "xorl %%ebp, %%ebp\n"
-        "call *%1\n"
-        :
-        : "r"(top), "r"(function), "r"(bottom)
-        : "memory");
-#else
-#error "host_windows.c: this processor's stack switch is not written here"
-#endif
-    for (;;) {
-        port_HostExit(1);
+    {
+        PortAddress *chain = (PortAddress *)top - 2;
+        PortAddress record[PORT_FIBER_TIB_WORDS];
+
+        chain[0] = (PortAddress)-1;
+        chain[1] = (PortAddress)port_WindowsOnGameFault;
+        record[0] = bottom;
+        record[1] = top;
+        record[2] = (PortAddress)chain;
+        g_port_game_context = port_FiberPrepare(
+            (PortAddress)chain, port_WindowsGameEntry, record);
     }
+#else
+    {
+        PortAddress record[PORT_FIBER_TIB_WORDS];
+
+        record[0] = bottom;
+        record[1] = top;
+        g_port_game_context =
+            port_FiberPrepare(top, port_WindowsGameEntry, record);
+    }
+#endif
+}
+
+void port_HostEnterGame(void) {
+    port_FiberSwitch(&g_port_host_context, g_port_game_context);
+}
+
+void port_HostLeaveGame(void) {
+    port_FiberSwitch(&g_port_game_context, g_port_host_context);
 }
 
 /* Where the program without a C runtime starts. Its arguments out of
