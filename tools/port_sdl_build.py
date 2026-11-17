@@ -129,13 +129,21 @@ BLOB_LD_TEXT = '''/* Written by tools/port_sdl_build.py: the game and the port a
     }
     .data : {
         %(under)sg_port_blob_data = .;
+        %(under)sg_port_game_data = .;
 %(data)s
+        %(under)sg_port_game_data_end = .;
+        EXCLUDE_FILE(%(outside)s) *(.data .data%(dot)s*)
+        %(under)sg_port_state_data_end = .;
         *(.data .data%(dot)s*)
         %(under)sg_port_blob_data_end = .;
     }
     .bss : {
         %(under)sg_port_blob_bss = .;
+        %(under)sg_port_game_bss = .;
 %(bss)s
+        %(under)sg_port_game_bss_end = .;
+        EXCLUDE_FILE(%(outside)s) *(.bss .bss%(dot)s*) *(COMMON)
+        %(under)sg_port_state_bss_end = .;
         *(.bss .bss%(dot)s*) *(COMMON)
         %(under)sg_port_blob_bss_end = .;
     }
@@ -387,7 +395,10 @@ def write_blob_script(target, objects, path):
                     variable = name[len(here) + 1:]
                     if name.startswith(here + target.dot) and variable in playstation:
                         found[kind].add(variable)
-    words = {'under': target.under, 'dot': target.dot, 'rodata_name': target.kinds['.rodata'],
+    # the window's own files are not the game's state either
+    # (port_build.OUTSIDE_STATE)
+    outside = port_build.outside_state_patterns(WINDOW_DIR + f for f in WINDOW_PLAIN + WINDOW_GAME)
+    words = {'under': target.under, 'dot': target.dot, 'rodata_name': target.kinds['.rodata'], 'outside': outside,
              # an object, not a program: MinGW's linker takes a script of its
              # own for the second unless it is told
              'format': ('OUTPUT_FORMAT(%s)\n' % ('pe-x86-64' if target.bits == 64 else 'pe-i386')

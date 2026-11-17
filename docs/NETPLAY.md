@@ -2,7 +2,9 @@
 
 What the native port ([`PORT.md`](PORT.md)) has and lacks for online play
 with rollback netcode ([`ROADMAP.md`](ROADMAP.md), item 8), measured on the
-port as it is, and the design that follows. Nothing here is built yet.
+port as it is, and the design that follows. Of the design, the save, load
+and hash of the state are built, with a self-test that runs on demand
+(section 7); the rest is not.
 
 **In short:** the game step is already deterministic and repeatable from its
 inputs alone, and a whole snapshot of the machine is small and quick to
@@ -297,7 +299,7 @@ statics. The probe hashed all 6 MB a frame without trouble. On a
 mismatch, both peers write their snapshots and the frame's inputs. The
 probe's tools already name a differing page by the variables in it, which
 turns a desync report into a diff. The same hash, with the same inputs
-fed twice in one process, is the test that runs on every push (below).
+fed twice in one process, is the self-test of section 7.
 
 ## 6. Recommendation
 
@@ -355,11 +357,13 @@ little delay is needed). Up to 7 or 8 frames can be rolled back.
    a variable in neither. The side channel's epoch must only go forward.
    This is also the boundary a mod framework (item 10) must keep out of
    the game's state. About a week.
-4. **Save, load and hash** (`port_SaveState`, `port_LoadState`,
-   `port_HashState`), with the probe's test as a check that runs on every
-   push. It runs a plan headless, saves, rolls back and runs again many
-   times, and fails on any page that differs, both sizes. This is what
-   keeps every later change honest about determinism. Three or four days.
+4. **Save, load and hash** (`port_StateSave`, `port_StateLoad`,
+   `port_StateHash`), with the probe's test as a check. It runs a plan
+   headless, saves, rolls back and runs again many times, and fails on
+   any page that differs, both sizes. This is what keeps every later
+   change honest about determinism. **Built: section 7.** The check needs
+   the disc, so it is `make port-rollback`, not one of the checks of every
+   push.
 5. **A step that can run with nothing drawn**, and the sound out of the
    rollback (section 3). After that, **a build for players at `-O2`
    without `-finstrument-functions`**, and the sound chip made faster,
@@ -384,3 +388,193 @@ that only go forward. Let the tween's next frame be replaced. Do not let
 anything in `src/port/gl/` write a variable the game reads. Any new port
 variable belongs in one of the two groups of change 3, said when it is
 written.
+
+## 7. Save, load and hash
+
+Preparatory change 4 is built: `src/port/state.c`, declared in
+`include/port_state.h`. `port_StateSize()`, `port_StateSave(buf)` and
+`port_StateLoad(buf)` copy the state out and back; `port_StateHash()`
+hashes the part of it a console would hold. The state is whole from the
+game's first frame on (the sound chip's page is mapped as the game
+starts its sound).
+
+**What is in.** The pieces, in the snapshot's order:
+
+| Piece | Bytes, 64-bit (32-bit) | Why |
+| --- | --- | --- |
+| The console's RAM | 2,097,152 | the game's own memory: the primitive buffers, the effects' area, everything loaded |
+| The scratchpad | 1,024 | used every frame |
+| The I/O page of the sound chip's registers, `0x1F801000` | 4,096 | libspu writes the chip's registers and its DMA's there; leaving it out was the probe's first failure, and is the self-test's (below) |
+| The port's own primitive buffers, `PORT_PRIMS_ADDR`, where a run has them | 2,097,152, or nothing | at the frame's boundary the self-test uses they hold the frame not yet given to the GPU (below) |
+| The program's variables, but those of `OUTSIDE_STATE` | 2,636,352 (2,619,712) | the game's and Sony's, then the port's emulation of the console |
+
+That is **4.74 MB** in both sizes of the headless program (4,738,624 and
+4,721,984 bytes), and 6.84 MB in the program with a window, which has the
+port's primitive buffers. Among the variables, after the game's and
+Sony's: the clock (`clock.c`), the drive and the XA reader with its
+128 KB buffer (`cd.c`, `xa.c`), the sound chip with its 512 KB of sound
+memory and the mixer (`spu.c`, `sound.c`), the pads (`pad.c`), the
+memory cards' images (`card.c`), the events, the GPU's registers and its
+megabyte of video memory (`raster.c`, `gpu.c`), the GTE, the movie's
+decoder (`mdec.c`, `stream.c`), the counts of the stubs, and a play
+test's plan (`plan.c`).
+
+- *Video memory* is in although no fight frame reads it: the menus call
+  `StoreImage` and `MoveImage`, the session is rolled back as a whole
+  (section 5), and the copy of a megabyte is a tenth of a millisecond.
+- *The plan* is in because it is the run's input: it schedules presses
+  from checkpoints and counts the game's frames. Rolled back with the
+  game, it presses the same buttons the second time. In netplay the
+  input comes from outside instead (below).
+
+**What is out, and why.** The link puts the variables of the files
+`OUTSIDE_STATE` names (`tools/port_build.py`) after everything else of
+their kind, so that what the state saves of the program's variables is
+two runs of memory, one of initialised data and one of zeroed, whose ends
+are marks of the link (`g_port_state_data_end`, `g_port_state_bss_end`).
+The window's build does the same inside the game's object
+(`tools/port_sdl_build.py`). This is change 3's division in a first form,
+by file and not by variable, and with no check that a new variable is in
+the right group.
+
+- the remastered picture's side channel (`remaster.c`, 1.2 MB): it is
+  the picture's, and a load must not rewind its epoch (section 3);
+- what the run prints and writes: the output buffer (`text.c`), the
+  sound file (`wav.c`), the pictures' buffer (`picture.c`). What was
+  printed is not taken back, and the self-test compares what is printed
+  again instead (below);
+- the program's own: its arguments and the disc's file (`main.c`), the
+  host's file handles and signal stack (`host_linux.c`,
+  `host_windows.c`), the crash report (`crash.c`), and the snapshot's own
+  bookkeeping (`state.c`), which must survive a load;
+- in the program with a window, the window's files (`src/port/window/`:
+  the pacing, the sound card's queue, the keys, the counter, the log) and
+  everything outside the game's object: `gl_tween` and the rest of
+  `src/port/gl/`, SDL and the C library;
+- the game's stack: at main's loop no frame of it holds anything. A
+  function that reads a local it never set reads the stack, though, and
+  one place did (below);
+- what the port allocates (the plan's text, the table of names): set as
+  the program starts and never changed.
+
+**Host pointers.** In the 64-bit program a pointer in the state is one of
+three kinds, and each survives a load. It points into the program's own
+variables or code, which are at fixed addresses (the program has no
+position independence) and are themselves in the state or never move;
+or it was set as the program started, before any save, and is the same
+in every snapshot (a hook, a path, the plan's text); or it lies in a file
+outside the state. So a snapshot is for the same program in the same
+run: it is never written to a file or given to another build.
+
+**The hash** reads the console's RAM, the scratchpad, the sound chip's
+registers and its sound memory, the GTE's registers, and the game's and
+Sony's own variables, which the link puts first in each kind (on the
+console they are in its RAM): 3.1 MB. It leaves out the port's
+bookkeeping, where a pointer can be the host's own (`sound.c` keeps one
+to the program's arguments, the plan several to memory the system gave
+it), so two runs of one program give the same hash for the same state:
+two runs of each size gave the same hashes at all 95 saves. It is
+MurmurHash3's mixing in two lanes of 32 bits, as quick in the 32-bit
+program as in the 64-bit one: 0.38 ms. **The two sizes' hashes differ**,
+and nothing cheap makes them agree. Measured piece by piece at the same
+95 saves of the two programs: the sound chip's registers and memory were
+the same at every one, the GTE at 74, the scratchpad at 63, the RAM and
+the variables at none. The variables are laid out otherwise in the
+64-bit program, and the console's RAM holds their addresses (an ordering
+table's links into `g_disp_db`, the `PTR32` slots). Two peers must run
+the same program (section 1), and compare hashes only between the same
+build.
+
+**The self-test.** `--rollback-test N` (and `--rollback-every M`, 24 if
+nothing says) makes the headless program save the state every M frames,
+run N frames while it notes a hash of every 4 KB page of the state, the
+state's hash and a hash of what each frame printed, load the state and
+run the same frames again, and stop at the first page, hash or line that
+comes out otherwise, naming the pages and, in the first frame after the
+save, which is kept whole, the words. What a run prints goes through a
+tap (`g_port_print_tap`, `text.c`): the first time it is printed and
+noted, the second time only compared, so a run with rollbacks prints
+exactly what the same run without prints. At the end it reports the
+rounds and the times on the error output.
+
+It is hooked in as the probe was: one call after main's `ResetRCnt`
+(`main.c`, `port_OnRollbackFrame`, under `RB_PORT`), which does nothing
+unless the option is given. Main's loop keeps `index` and `frame_db`
+there, so a load is made only where the frame's buffer is the save's
+(the hook is given `index`); a first run that does not come back to it
+within 16 frames is given up. Change 1 moves the boundary to the top of
+the loop, where that rule and the primitive buffers' piece go away.
+
+`make port-rollback` (`tools/port_rollback.py`, `tests/README.md`) runs
+it in both sizes with `port_game`'s plan, from power on through the
+menus, a versus fight to the kill, the replay and back to the main menu:
+once plainly and once with `--rollback-test 8 --rollback-every 24`, and
+it fails as well if the two runs printed or wrote anything differently.
+`--program` runs it on another build, such as the window's. It needs the
+disc, so it is not one of the checks of every push; about half a minute.
+On the machine of section 1 (other builds running):
+
+| Run | Rounds | Frames run again and compared | Result |
+| --- | --- | --- | --- |
+| 8 frames every 24, 64-bit and 32-bit | 95 each | 760 each | the same, and the same output and files as the plain run |
+| 8 frames every 8 (every frame twice), both | 285 each | 2,280 each | the same |
+| 7 frames every 7, 64-bit | 285 | 2,280 | the same |
+| 1 frame every frame, both | 1,145 each | 2,290 each | the same, after the fix below |
+| 8 every 24, the window's program (`--fast`, dummy drivers) | 95 | 760 | the same |
+
+| Time (8 every 24) | 64-bit | 32-bit |
+| --- | --- | --- |
+| save, mean (least to most) | 0.53 ms (0.10 to 2.0) | 0.55 ms (0.31 to 2.1) |
+| load | 0.41 ms (0.21 to 2.3) | 0.35 ms (0.20 to 2.4) |
+| `port_StateHash` | 0.38 ms (0.36 to 0.79) | 0.38 ms (0.36 to 1.1) |
+
+The copy is the processor's own (`rep movsb`), so a frame's snapshot
+costs about a twentieth of a frame. Eight snapshots are 38 MB.
+
+The test was shown to fail where it should: with the I/O page left out
+of the snapshot it stopped at the first round (the state's hash
+differed), and with the port's own variables left out it stopped at the
+first frame, naming the pages (the XA reader's buffer, the sound
+library's variables).
+
+**What it found.** One frame every frame failed in the replay after the
+fight: the first frame after a save differed in ten words of
+`g_motion_decoders`. The motion decoder keeps each frame it decodes in a
+cache with the rates of change of its values, and some rates it never
+works out (the root's three, a value coded as fixed, all of them for the
+first frame of a group of eight); those are kept as the caller's work
+area held them. In a fight the work area is the scratchpad, which is in
+the state; in the replay it is a local array on the stack
+(`replay.c`), so the cache kept whatever an earlier call had left
+there, and the hook's own calls had left something else the second
+time. Nothing reads those rates, so the game played the same, but the
+state did not, and netplay's hash would have called it a desync. The
+port now starts them at zero (`motion_decode.c`, under `RB_PORT`). The
+plain run's trace is unchanged. Any other read of what was never written
+that reaches the state will show the same way: the test finds it where
+the stack's garbage differs between the two runs of a frame.
+
+**What the later changes need from this.**
+
+- *Change 1* moves the hook to the top of main's loop.
+- *Change 2, the input record.* The game step reads the pads from the
+  port's pad driver (`pad.c`: the held buttons and the packets), which is
+  in the state, as is the plan. A word a pad a game frame that the step
+  reads must be in the state too, or be set again before every step,
+  including a step run again; what the window keeps of the keys and the
+  remapping (`src/port/window/`) is outside it and must stay so. Netplay
+  then sets the record before each step and does not use the plan.
+- *Change 3* turns `OUTSIDE_STATE` into the link's two groups by
+  variable, with a check that every variable is in one.
+- *Change 5.* A frame run again still draws, mixes and hands its samples
+  to the window's sound card; the self-test is for the headless program
+  (with `--wav`, or in the window, a round's frames are heard twice).
+- *The picture work.* The side channel is outside the state now, so a
+  load no longer rewinds its epoch. What is left for that work: slots
+  written by a frame that was taken back stay, under an epoch the
+  corrected frame does not use again; after a load the frame that the
+  GPU is given next was built by the game before the save, and meets
+  the side channel's notes of the last frame run before the load (at
+  change 1's boundary that frame is drawn before the save, and this goes
+  away); and the tween must take
+  its frames only from steps that are shown (section 3).

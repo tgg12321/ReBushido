@@ -127,7 +127,9 @@ PNGs, and video memory: "The picture"), `--wav FILE` (the run's sound,
 with a line for each voice started and each sound the game asked for)
 `--spu FILE` (sound memory and the chip's registers at the end:
 "Sound"), and `--card1 FILE`, `--card2 FILE` and `--no-cards` (the memory
-cards: "The memory card"). It ends by printing a line for each stub the
+cards: "The memory card"), and `--rollback-test N` with `--rollback-every
+M` (the self-test of the game's state saved, put back and run again:
+`NETPLAY.md`, "Save, load and hash"). It ends by printing a line for each stub the
 game called, with how often. Pads are pressed only by a plan: a line `in 0 300 1 START 6`
 is Start on the first pad at blank 300 for six blanks
 (`tests/play/README.md`, "The port as a disc").

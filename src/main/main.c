@@ -674,6 +674,12 @@ void main(void) {
         DrawSync(0);
         VSync(0);
         ResetRCnt(RCntCNT1);
+#if RB_PORT
+        /* the frame's boundary, where the rollback self-test may put the
+         * state back to an earlier one drawn with the same buffer
+         * (port_state.h): nothing unless a run asks for it */
+        port_OnRollbackFrame((u32)index);
+#endif
 
         skipped = g_sys_skip_frames;
         if (skipped == 0) {

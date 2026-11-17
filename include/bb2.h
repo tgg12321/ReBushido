@@ -80,6 +80,7 @@
 #include "port_gte.h"
 #include "port_platform.h"
 #include "port_remaster.h"
+#include "port_state.h"
 #endif
 
 #endif /* BB2_H */

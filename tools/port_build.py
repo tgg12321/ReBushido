@@ -178,7 +178,8 @@ DATA_KINDS = ('.rodata', '.data', '.bss')
 # those of the PlayStation's RAM, which is the 2 MB from 0x80000000
 # (src/port/gpu.c, port_AddLinkRegion).
 LD_SCRIPT_TEXT = '''/* Written by tools/port_build.py: the native port's link. The game's
- * variables are in the order of the PlayStation program, kind by kind. */
+ * variables are in the order of the PlayStation program, kind by kind;
+ * then the rest of the game's state, then what is not (OUTSIDE_STATE). */
 ENTRY(_start)
 SECTIONS
 {
@@ -192,11 +193,19 @@ SECTIONS
     }
     . = ALIGN(0x1000);
     .data : {
+        g_port_game_data = .;
 %(data)s
+        g_port_game_data_end = .;
+        EXCLUDE_FILE(%(outside)s) *(.data .data.*)
+        g_port_state_data_end = .;
         *(.data .data.*)
     }
     .bss : {
+        g_port_game_bss = .;
 %(bss)s
+        g_port_game_bss_end = .;
+        EXCLUDE_FILE(%(outside)s) *(.bss .bss.*) *(COMMON)
+        g_port_state_bss_end = .;
         *(.bss .bss.*) *(COMMON)
     }
     g_port_data_end = .;
@@ -204,7 +213,25 @@ SECTIONS
 }
 '''
 
-HOST_PROBE = 'void _start(void) { for (;;) { } }\n'
+# The files whose variables are not the game's state (docs/NETPLAY.md,
+# "Save, load and hash"): the remastered picture's side channel, the run's
+# output, its pictures and its sound file, the program's arguments and its
+# host, and the snapshot's own. Each kind of variable of theirs is linked
+# after the rest of its kind, so that what src/port/state.c saves of the
+# program's variables is two runs of memory (include/port_state.h).
+OUTSIDE_STATE = ['src/port/state.c', 'src/port/remaster.c', 'src/port/text.c', 'src/port/wav.c',
+                 'src/port/picture.c', 'src/port/crash.c', 'src/port/main.c',
+                 'src/port/host_linux.c', 'src/port/host_windows.c']
+
+
+def outside_state_patterns(more=()):
+    """The objects of OUTSIDE_STATE and of the paths `more`, as a link
+    script's EXCLUDE_FILE names them: by the object's name (object_of), in
+    whatever folder."""
+    return ' '.join('*%s.o' % path[:-2].replace('/', '_') for path in OUTSIDE_STATE + list(more))
+
+
+HOST_PROBE ='void _start(void) { for (;;) { } }\n'
 
 
 def bits_of(args):
@@ -393,7 +420,7 @@ def write_ld_script(objects):
             for kind in DATA_KINDS:
                 if sec['name'].startswith(kind + '.') and sec['name'][len(kind) + 1:] in playstation:
                     found[kind].add(sec['name'][len(kind) + 1:])
-    lines = {}
+    lines = {'outside': outside_state_patterns()}
     for kind in DATA_KINDS:
         ordered = sorted(found[kind], key=lambda name: playstation[name])
         lines[kind[1:]] = '\n'.join('        *(%s.%s)' % (kind, name) for name in ordered)

@@ -150,6 +150,9 @@ camera), particle effects, skyboxes on the stages that were left dark.
    - the inputs read in one place per step.
 
    How ready the port is, measured, and the design: [`NETPLAY.md`](NETPLAY.md).
+   The save, load and hash of the state are built, with a self-test that
+   rolls a whole game back and runs it again (`make port-rollback`;
+   NETPLAY.md, "Save, load and hash").
 9. **Input remapping and a modern control overhaul.** Remapping is in:
    every button of each player from `rebushido.cfg`, several buttons on
    one key, and layouts to start from (`controls = original`, the only

@@ -225,6 +225,18 @@ void motion_DecodeFrame(
         decoder->turn -= 1;
         return;
     }
+#if RB_PORT
+    /* The rates the frame does not work out are kept with it in the cache
+     * as the work area had them: the root's, a fixed value's, and all of
+     * them for a group's first frame. Nothing reads those, but the work
+     * area is the replay's on the stack, so the original keeps whatever an
+     * earlier call left there, and two runs of the same frames would keep
+     * different bytes in the game's state (docs/NETPLAY.md, "Save, load
+     * and hash"). The port starts them at zero. */
+    for (i = 0; i < MOTION_FRAME_VALUES; i++) {
+        work[WORK_RATES + i] = 0;
+    }
+#endif
     if (cache->frame != frame_index - 1) {
         if (prev->frame == frame_index - 1) {
             cache = prev;

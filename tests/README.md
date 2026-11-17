@@ -119,6 +119,21 @@ it gave when the emulator last agreed. A test's Python side may name
 more source files to compile apart and link (`sources()`); those three and
 `port/asm` do, for Sony's modules, each of which is a file of its own.
 
+**The rollback self-test** is not one of these, because it needs the
+disc: `make port-rollback` (`wsl bash tools/build.sh port-rollback`,
+`tools/port_rollback.py`) runs both programs of `make port` with
+`port_game`'s plan, once as they are and once with `--rollback-test 8`:
+every 24 frames the game's state is saved, eight frames run, the state
+put back and the eight run again ([`docs/NETPLAY.md`](../docs/NETPLAY.md),
+"Save, load and hash"). It fails on any page of the state or line of the
+output that the second run of a frame does not give as the first did,
+and on any difference between the two runs' output and files; a page
+that differs is named by the variables in it. About half a minute, with
+your own disc image (`REBUSHIDO_RETAIL`) and no emulator; run it after a
+change to the port's own variables, to what the link puts outside the
+state (`OUTSIDE_STATE` in `tools/port_build.py`) or to what a frame of
+the game reads.
+
 ## Play tests
 
 These tests run the game's functions, never the game. The tests that run
