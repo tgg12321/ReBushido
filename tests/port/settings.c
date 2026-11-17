@@ -236,12 +236,15 @@ static void test_Choices(void) {
             const char *name;
             s32 value;
         } built_in[] = {
-            {"fullscreen", 1},    {"scale", 0},      {"filter", 0},
-            {"vsync", 1},         {"fps", 1},        {"fps_corner", 0},
-            {"graphics", -1},     {"resolution", 0}, {"antialiasing", 1},
-            {"draw_distance", 2}, {"aspect", 2},     {"stage_mesh", 1},
-            {"shadows", 0},       {"frame_rate", 0}, {"english", 1},
-            {"mods", 1},          {"deadzone", 2},
+            {"fullscreen", 1},   {"scale", 0},
+            {"filter", 0},       {"vsync", 1},
+            {"fps", 1},          {"fps_corner", 0},
+            {"graphics", -1},    {"resolution", 0},
+            {"antialiasing", 1}, {"draw_distance", 2},
+            {"aspect", 2},       {"stage_mesh", 1},
+            {"shadows", 0},      {"frame_rate", 0},
+            {"english", 1},      {"ui", 1},
+            {"mods", 1},         {"deadzone", 2},
         };
 
         u32 i;
