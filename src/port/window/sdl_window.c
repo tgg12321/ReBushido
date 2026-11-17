@@ -36,6 +36,7 @@
 #include <time.h>
 
 #include "gl.h"
+#include "gl_pause.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
 #include "port_gpu.h"
@@ -555,12 +556,19 @@ static const char *port_StartGl(void) {
         return problem;
     }
     g_port_has_gl = TRUE;
+    problem = port_GlPauseStart(SDL_GL_GetProcAddress);
+    if (problem != NULL) {
+        port_Say("graphics: %s, so the pause draws the fight as the console "
+                 "does",
+                 problem);
+    }
     return NULL;
 }
 
 /* The context and the window let go, so that the window can be made
  * again without a context (port_OpenWindow). */
 static void port_DropGl(void) {
+    port_GlPauseStop();
     if (g_port_gl_context != NULL) {
         SDL_GL_DeleteContext(g_port_gl_context);
         g_port_gl_context = NULL;
@@ -1561,7 +1569,8 @@ static s32 port_DrawTween(void) {
     s32 phase;
 
     if (!g_port_tween_on || !port_ShowsRemastered() ||
-        g_port_frame_period == 0 || !port_TweenCanDraw()) {
+        port_RemasterIsHolding() || g_port_frame_period == 0 ||
+        !port_TweenCanDraw()) {
         return FALSE;
     }
     phase = (s32)(((u64)(port_ReadClock() - g_port_frame_at) * PORT_TWEEN_ONE) /

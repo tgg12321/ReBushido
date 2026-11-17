@@ -90,6 +90,13 @@ static PortAddress g_prim;
 
 static const PortRemasterBackend *g_backend;
 static s32 g_graphics = PORT_GRAPHICS_FOLLOW;
+/* The pause (port_RemasterPause): what keeps the fight's picture,
+ * whether this pause holds one, and whether the table being drawn now
+ * is the fight's last, which the backend is not told of. */
+static PortPauseHolder g_pause_holder;
+static s32 g_pause_begun;
+static s32 g_pause_holds;
+static s32 g_pause_skips;
 static PortRemasterCounts g_counts;
 static PortRemasterCounts g_frame_counts;
 /* ... and the frame last shown, which is what a run reports. */
@@ -1330,7 +1337,7 @@ void port_RemasterCommand(const u32 *words, s32 count) {
     kind = port_KindOfCommand(code);
     g_counts.seen[kind]++;
     g_frame_counts.seen[kind]++;
-    if (!port_RemasterIsOn()) {
+    if (!port_RemasterIsOn() || g_pause_skips) {
         return;
     }
     port_GetGpuState(&state);
@@ -1407,4 +1414,50 @@ void port_RemasterShow(void) {
     for (i = 0; i < sizeof(g_frame_counts) / sizeof(u32); i++) {
         at[i] = 0;
     }
+}
+
+/* ---- the pause (port_remaster.h) ---- */
+
+void port_RemasterSetPauseHolder(PortPauseHolder holder) {
+    g_pause_holder = holder;
+    g_pause_begun = FALSE;
+    g_pause_holds = FALSE;
+    g_pause_skips = FALSE;
+}
+
+s32 port_RemasterIsHolding(void) { return g_pause_holds; }
+
+/* The pause's own steps, around the one table it draws again
+ * (port_remaster.h). */
+void port_RemasterPause(s32 what, s32 from_x, s32 from_y) {
+    PortGpuState state;
+
+    g_pause_skips = FALSE;
+    if (what == PORT_PAUSE_OFF) {
+        if (g_pause_holds && g_pause_holder != NULL) {
+            g_pause_holder(PORT_PAUSE_OFF, 0, 0, 0, 0);
+        }
+        g_pause_holds = FALSE;
+        g_pause_begun = FALSE;
+        return;
+    }
+    if (what != PORT_PAUSE_FROZEN || g_pause_holder == NULL ||
+        g_backend == NULL) {
+        return;
+    }
+    /* A pause holds a picture only where the remastered one was on as
+     * it began: there is no remastered picture of the fight otherwise.
+     * Once it holds one, the original picture may come and go (F2) and
+     * the picture is still there when the remastered one comes back. */
+    if (!g_pause_begun) {
+        g_pause_begun = TRUE;
+        g_pause_holds = port_RemasterIsOn();
+    }
+    if (!g_pause_holds || !port_RemasterIsOn()) {
+        return;
+    }
+    g_pause_skips = TRUE;
+    port_GetGpuState(&state);
+    g_pause_holder(
+        PORT_PAUSE_FROZEN, from_x, from_y, state.clip_left, state.clip_top);
 }

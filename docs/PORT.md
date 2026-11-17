@@ -2929,6 +2929,23 @@ prover does with EGL and no display, the window does with SDL:
   Original, smoothed because it is video, and the counter sits on it.
   (With F2 on the window showed black through the whole movie and the
   title until this was done; the frames were decoded all along);
+- **the pause keeps the fight's picture.** The pause menu draws the
+  fight's last frame again under its panel on every loop by giving the
+  GPU that frame's ordering table once more (`fight_RunPauseMenu`), and
+  by then the side channel has forgotten the frame's points and faces:
+  the frozen fight was drawn as the console draws it, whole-pixel
+  corners, the game's tiles instead of the stage's mesh, four by three.
+  So `port_RemasterPause` (`port_remaster.h`), called around that one
+  `DrawOTag` under `RB_REMASTER_VIEW`, tells the backend nothing of the
+  table, and `src/port/gl/gl_pause.c` puts there the fight's last frame
+  as the card drew it, kept at the pause's first loop from the half of
+  the colour buffer it was drawn into, bands and all; the panel is drawn
+  over it as ever. The software GPU still draws the table, so the trace
+  is the same with the pictures on and off. A pause begun with Graphics
+  Original draws the table as before; F2 during a pause shows the kept
+  picture again when it comes back; a window resized during a pause
+  stretches the kept picture to the new colour buffer, smoothed; no
+  picture between two frames is drawn during a pause;
 - the counter in the corner (F3) is its own few pixels over either
   picture, by the same call with the box's alpha kept; the session's log
   is the window's as it was;

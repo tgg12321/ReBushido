@@ -705,4 +705,41 @@ extern void port_AddDirtyRect(PortDirtyRect *rect, s32 x, s32 y, s32 w, s32 h);
 /* The pixels a dirty rectangle covers: 0 if it is empty. */
 extern s32 port_DirtyRectPixels(const PortDirtyRect *rect);
 
+/* ---- the pause (fight_RunPauseMenu, src/main/main.c) ---- */
+
+/* The pause menu draws the fight's last frame again under its panel on
+ * every loop, by giving the GPU that frame's ordering table once more.
+ * It is the only place the game draws a table it has drawn already. The
+ * side channel has long forgotten that frame's points and faces by then,
+ * so the backend would draw it as the console did: whole-pixel corners,
+ * the game's tiles instead of the stage's mesh, four by three. So while
+ * the table goes to the GPU again the backend is told nothing of it, and
+ * the fight's last frame as the backend drew it, which it kept, is put
+ * where the table would have been drawn; the panel is drawn over it as
+ * ever. The software GPU still draws the table, so what the game
+ * computes and the original picture are what they were. A pause begun
+ * with the remastered picture off draws the table as before. */
+enum {
+    PORT_PAUSE_OFF,    /* the pause is over: the picture is let go */
+    PORT_PAUSE_FROZEN, /* the fight's last table is about to be drawn */
+    PORT_PAUSE_PANEL   /* ... and has been: the pause's own primitives */
+};
+
+/* `from_x`, `from_y`: with PORT_PAUSE_FROZEN, the corner of the drawing
+ * area the fight's last frame was drawn into, in video memory's pixels.
+ * The game draws into one half of video memory while the other is
+ * shown, so that frame is still whole there as the pause's first loop
+ * draws into the other half; it is kept from there. */
+extern void port_RemasterPause(s32 what, s32 from_x, s32 from_y);
+/* Whether a pause is holding the fight's picture now: a picture between
+ * two frames (gl_tween.h) is not drawn then. */
+extern s32 port_RemasterIsHolding(void);
+/* What keeps the picture and puts it back: called with PORT_PAUSE_FROZEN,
+ * the corner the fight's last frame is at and the corner of the drawing
+ * area the table would be drawn into now, and with PORT_PAUSE_OFF as the
+ * pause ends. The first call of a pause keeps the picture. NULL: none,
+ * and a pause draws the table as before. */
+typedef void (*PortPauseHolder)(s32 what, s32 from_x, s32 from_y, s32 x, s32 y);
+extern void port_RemasterSetPauseHolder(PortPauseHolder holder);
+
 #endif /* PORT_REMASTER_H */

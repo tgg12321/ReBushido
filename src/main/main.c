@@ -518,7 +518,17 @@ static void fight_RunPauseMenu(GpuDb *paused_frame_db, s32 paused_db_index) {
             PutDispEnv(&current_db->disp);
             PutDrawEnv(&current_db->draw);
         } while (0);
+#if RB_REMASTER_VIEW
+        /* the remastered picture puts the fight's last frame, which it
+         * kept, here instead of drawing this table again
+         * (port_remaster.h) */
+        port_RemasterPause(
+            PORT_PAUSE_FROZEN, paused_db->draw.clip.x, paused_db->draw.clip.y);
         DrawOTag(&paused_db->ot[DISP_OT_SIZE - 1]);
+        port_RemasterPause(PORT_PAUSE_PANEL, 0, 0);
+#else
+        DrawOTag(&paused_db->ot[DISP_OT_SIZE - 1]);
+#endif
         DrawOTag(g_disp_ot);
         g_disp_frame_count++;
 
@@ -553,6 +563,9 @@ static void fight_RunPauseMenu(GpuDb *paused_frame_db, s32 paused_db_index) {
             }
         }
     }
+#if RB_REMASTER_VIEW
+    port_RemasterPause(PORT_PAUSE_OFF, 0, 0);
+#endif
 
     if (selected_row != PAUSE_MENU_RESUME) {
         if (selected_row == PAUSE_MENU_SUB_MENU) {
