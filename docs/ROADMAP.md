@@ -231,3 +231,15 @@ the stage").
     (the owner's call; its traces are the same), the HD fighters'
     models read before the fight's first frame, and whether 85 Hz is
     smooth on the owner's screen.
+13. **Loading as short as possible, or none** (the owner, 2026-11-17):
+    every loading screen of the window build cut to what the PC needs,
+    if not taken out. The port reads the player's disc image from a PC's
+    drive, so the console's waits on its CD drive need not be kept; what
+    holds them is that the scripted play tests and the provers compare
+    the port's frames with the emulator's, and that netplay's two
+    players must load in the same frames. So quick loading is the
+    window's (a setting, on), with the play tests' runs as they are.
+14. **Input lag cut** (the owner, 2026-11-17): the press to the picture
+    measured part by part, then cut where it is safe: the devices read
+    as late as the game's step allows, run-ahead on the rollback's save
+    and load, and the fewest pictures queued to the display.
