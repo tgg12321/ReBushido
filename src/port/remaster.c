@@ -314,20 +314,28 @@ static const char *port_AfterWord(const char *word, const char *prefix) {
     return word;
 }
 
-/* Digits from 1 to 100 and nothing else, or -1. */
+#define HUNDREDTHS 100
+#define DECIMAL 10
+
+/* A strength in hundredths: digits from 1 to HUNDREDTHS and nothing
+ * else, or -1. */
 static s32 port_ReadHundredths(const char *text) {
     s32 total = 0;
     s32 digits = 0;
 
     for (; *text >= '0' && *text <= '9'; text++) {
-        total = total * 10 + (*text - '0');
+        total = total * DECIMAL + (*text - '0');
         if (++digits > 3) {
             return -1;
         }
     }
-    return (digits == 0 || *text != 0 || total < 1 || total > 100) ? -1 : total;
+    return (digits == 0 || *text != 0 || total < 1 || total > HUNDREDTHS)
+               ? -1
+               : total;
 }
 
+/* The `shadows` setting's word (port_remaster.h): `original`, `soft`, a
+ * strength, `cast` or `cast:N`, as the number the backend is given. */
 s32 port_ReadRemasterShadows(const char *word) {
     const char *rest;
 
@@ -802,6 +810,8 @@ const PortShadowCaster *port_RemasterCasterFaces(s32 *count) {
 
 u32 port_RemasterCasterLost(void) { return g_caster_lost; }
 
+/* The ground the thing at `object` casts onto: the game's shadow node
+ * of it, or of a bone of the same body (port_remaster.h). */
 s32 port_RemasterCasterGround(PortAddress object, s32 *ground_y) {
     s32 i;
 
