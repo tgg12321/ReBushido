@@ -70,12 +70,12 @@ s32 memcmp(const void *first, const void *second, u32 count) {
     return 0;
 }
 
+#define GAME_LINE_MAX 512
+
 /* The game's printf goes to the development host on the console, where
  * nobody is listening on a retail machine. Here it goes to the error
  * output, marked as the game's. Sony's own walks a PlayStation's
  * argument list; this is the port's (text.c). */
-#define GAME_LINE_MAX 512
-
 void printf(const char *fmt, ...) {
     char line[GAME_LINE_MAX];
     PortArgs args;

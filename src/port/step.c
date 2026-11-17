@@ -17,12 +17,12 @@
 #include "port_host.h"
 #include "port_net.h"
 #include "port_profile.h"
-#include "port_state.h"
 #include "bb2.h"
 
 /* An ahead step that has passed this many blanks is given up: it is a
  * load or the movie, not a frame (a frame of a fight is two). */
 #define AHEAD_BLANKS_A_FRAME 4
+#define MICROSECONDS_A_MILLISECOND 1000U
 
 u32 g_port_steps;
 s32 g_port_rerun;
@@ -87,6 +87,9 @@ static s32 port_MayRunAhead(void) {
            !port_LinkIsUp() && !port_IsNetplayOn();
 }
 
+/* The host's turn before a step (port_platform.h): the window's read of
+ * the PC's input, then the frames ahead, run from a saved state that is
+ * put back after them. */
 void port_BeforeStep(void) {
     u32 start;
     s32 was;
@@ -132,6 +135,8 @@ void port_BeforeStep(void) {
     g_port_ahead_counts.ticks += port_HostTicks() - start;
 }
 
+/* How many boundaries ran frames ahead, how many gave them up, and what
+ * a boundary cost (port_platform.h). */
 void port_PrintAheadReport(void) {
     const PortAheadCounts *counts = &g_port_ahead_counts;
     u32 each;
@@ -140,9 +145,10 @@ void port_PrintAheadReport(void) {
         return;
     }
     each = counts->ticks / counts->runs;
-    port_Log("rebushido: run-ahead: %d frames at %u boundaries, %u given up "
-             "(a load, the movie, a card); %u.%03u ms a boundary\n",
-             g_port_ahead_frames, counts->runs, counts->given_up,
-             each / PORT_HOST_TICKS_PER_MICROSECOND / 1000U,
-             each / PORT_HOST_TICKS_PER_MICROSECOND % 1000U);
+    port_Log(
+        "rebushido: run-ahead: %d frames at %u boundaries, %u given up "
+        "(a load, the movie, a card); %u.%03u ms a boundary\n",
+        g_port_ahead_frames, counts->runs, counts->given_up,
+        each / PORT_HOST_TICKS_PER_MICROSECOND / MICROSECONDS_A_MILLISECOND,
+        each / PORT_HOST_TICKS_PER_MICROSECOND % MICROSECONDS_A_MILLISECOND);
 }
