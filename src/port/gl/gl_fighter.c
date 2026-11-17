@@ -60,6 +60,7 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_TEXTURE_WRAP_T 0x2803
 #define GL_NEAREST 0x2600
 #define GL_LINEAR 0x2601
+#define GL_LINEAR_MIPMAP_LINEAR 0x2703
 #define GL_CLAMP_TO_EDGE 0x812F
 #define GL_FRAMEBUFFER 0x8D40
 #define GL_COLOR_ATTACHMENT0 0x8CE0
@@ -100,6 +101,7 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glDepthFunc, (GLenum))                                            \
     GL(void, glDepthMask, (GLboolean))                                         \
     GL(void, glDrawBuffers, (GLsizei, const GLenum *))                         \
+    GL(void, glGenerateMipmap, (GLenum))                                       \
     GL(void, glGenTextures, (GLsizei, GLuint *))                               \
     GL(void, glBindTexture, (GLenum, GLuint))                                  \
     GL(void, glActiveTexture, (GLenum))                                        \
@@ -298,11 +300,9 @@ static const char g_fighter_vertex_text[] =
     "layout(location = 4) in uvec4 a_joint;\n"
     /* the vertex as the game builds it: each bone's world matrix times a
      * vector and a share of its place (gl_fighter_file.h) */
-    "layout(location = 5) in vec4 a_term0;\n"
-    "layout(location = 6) in vec4 a_term1;\n"
-    "layout(location = 7) in vec4 a_term2;\n"
-    "layout(location = 8) in vec4 a_term3;\n"
-    "layout(location = 9) in uvec4 a_term_joint;\n"
+    "layout(location = 5) in vec4 a_term[8];\n"
+    "layout(location = 13) in uvec4 a_term_joint;\n"
+    "layout(location = 14) in uvec4 a_term_joint1;\n"
     /* each bone's world matrix less the camera's place, times its
      * inverse bind matrix: for the normals */
     "uniform mat4 u_joint[21];\n"
@@ -327,10 +327,14 @@ static const char g_fighter_vertex_text[] =
     "              + a_weight.y * u_joint[a_joint.y]\n"
     "              + a_weight.z * u_joint[a_joint.z]\n"
     "              + a_weight.w * u_joint[a_joint.w];\n"
-    "    vec3 world = (u_world[a_term_joint.x] * a_term0\n"
-    "               + u_world[a_term_joint.y] * a_term1\n"
-    "               + u_world[a_term_joint.z] * a_term2\n"
-    "               + u_world[a_term_joint.w] * a_term3).xyz;\n"
+    "    vec3 world = (u_world[a_term_joint.x] * a_term[0]\n"
+    "               + u_world[a_term_joint.y] * a_term[1]\n"
+    "               + u_world[a_term_joint.z] * a_term[2]\n"
+    "               + u_world[a_term_joint.w] * a_term[3]\n"
+    "               + u_world[a_term_joint1.x] * a_term[4]\n"
+    "               + u_world[a_term_joint1.y] * a_term[5]\n"
+    "               + u_world[a_term_joint1.z] * a_term[6]\n"
+    "               + u_world[a_term_joint1.w] * a_term[7]).xyz;\n"
     "    vec3 v = u_view * world;\n"
     /* the projection the coprocessor makes, as the stage's mesh has it
      * (gl_stage.c), every component linear in the point */
@@ -614,17 +618,26 @@ static const char *port_GlFighterFileName(s32 model_id) {
     return g_model_files[file];
 }
 
-static GLuint port_GlFighterTexture(const PortFighterTexture *t) {
+/* A picture for the card. `is_smooth`: a picture drawn finer than the
+ * console's (larger than the colour tables' picture of the same layout,
+ * tools/fighter_hd.py), read between its texels and from smaller copies
+ * of itself where it is drawn small; otherwise the console's own texels,
+ * which are blocks. */
+static GLuint port_GlFighterTexture(
+    const PortFighterTexture *t, s32 is_smooth) {
     GLuint texture = 0;
 
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, t->w, t->h, 0, GL_RGBA,
                  GL_UNSIGNED_BYTE, t->rgba);
-    /* the console's own texels are blocks; a picture drawn finer than
-     * the console's is smoothed by a filter of its own making */
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    if (is_smooth) {
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                    is_smooth ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                    is_smooth ? GL_LINEAR : GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     return texture;
@@ -692,13 +705,15 @@ static FighterModel *port_GlFighterLoad(FighterModel *model, const char *name) {
         3, 4, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->weight);
     glVertexAttribIPointer(
         4, 4, GL_UNSIGNED_BYTE, (GLsizei)sizeof(*one), one->joint);
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < PORT_FIGHTER_TERMS; i++) {
         glVertexAttribPointer((GLuint)(5 + i), 4, GL_FLOAT, GL_FALSE,
                               (GLsizei)sizeof(*one), one->term[i]);
     }
     glVertexAttribIPointer(
-        9, 4, GL_UNSIGNED_BYTE, (GLsizei)sizeof(*one), one->term_joint);
-    for (i = 0; i < 10; i++) {
+        13, 4, GL_UNSIGNED_BYTE, (GLsizei)sizeof(*one), one->term_joint);
+    glVertexAttribIPointer(
+        14, 4, GL_UNSIGNED_BYTE, (GLsizei)sizeof(*one), one->term_joint + 4);
+    for (i = 0; i < 15; i++) {
         glEnableVertexAttribArray((GLuint)i);
     }
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model->elements);
@@ -711,7 +726,9 @@ static FighterModel *port_GlFighterLoad(FighterModel *model, const char *name) {
         model->part[i] = file.part[i];
     }
     for (i = 0; i < file.texture_count; i++) {
-        model->texture[i] = port_GlFighterTexture(&file.texture[i]);
+        model->texture[i] = port_GlFighterTexture(
+            &file.texture[i],
+            file.index.w > 0 && file.texture[i].w > file.index.w);
     }
     for (i = 0; i < PORT_FIGHTER_FILE_JOINTS; i++) {
         if (file.has_joint[i]) {
@@ -735,7 +752,7 @@ static FighterModel *port_GlFighterLoad(FighterModel *model, const char *name) {
                    (size_t)file.clut_count * sizeof(*model->clut));
             model->clut_count = file.clut_count;
             /* an entry is a whole number: never smoothed */
-            model->index_texture = port_GlFighterTexture(&file.index);
+            model->index_texture = port_GlFighterTexture(&file.index, FALSE);
         }
     }
     port_FighterFileFree(&file);

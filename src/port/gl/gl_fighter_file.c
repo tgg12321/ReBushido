@@ -972,11 +972,15 @@ void port_FighterFileFree(PortFighterFile *file) {
 }
 
 /* The terms of a primitive's vertices (gl_fighter_file.h): the file's own
- * _RB_TERM0 to _RB_TERM3, or the linear blend's made into terms. */
+ * _RB_TERM0 to _RB_TERM7, or the linear blend's made into terms. */
 static const char *port_GltfTerms(
     const Gltf *g, s32 attributes, const s32 *joint_bone, s32 joint_count,
     PortFighterFile *out, s32 first, s32 count) {
+    static const char * const names[PORT_FIGHTER_TERMS] = {
+        "_RB_TERM0", "_RB_TERM1", "_RB_TERM2", "_RB_TERM3",
+        "_RB_TERM4", "_RB_TERM5", "_RB_TERM6", "_RB_TERM7"};
     const Json *json = g->json;
+    s32 half;
     s32 joints =
         port_JsonInt(json, port_JsonGet(json, attributes, "_RB_TJOINTS"), -1);
     float *scratch;
@@ -1008,34 +1012,40 @@ static const char *port_GltfTerms(
     if (scratch == NULL) {
         return "no memory";
     }
-    if (port_GltfRead(g, joints, scratch, count, 4) != count) {
-        free(scratch);
-        return "_RB_TJOINTS does not read";
-    }
-    for (k = 0; k < count; k++) {
-        for (j = 0; j < 4; j++) {
-            s32 joint = (s32)scratch[k * 4 + j];
-            s32 bone =
-                joint >= 0 && joint < joint_count ? joint_bone[joint] : -1;
-
-            out->vertices[first + k].term_joint[j] =
-                (u8)(bone >= 0 && bone < PORT_FIGHTER_FILE_JOINTS ? bone : 0);
-        }
-    }
-    for (j = 0; j < 4; j++) {
-        static const char * const names[4] = {
-            "_RB_TERM0", "_RB_TERM1", "_RB_TERM2", "_RB_TERM3"};
-        s32 term =
-            port_JsonInt(json, port_JsonGet(json, attributes, names[j]), -1);
-
-        if (term < 0 || port_GltfRead(g, term, scratch, count, 4) != count) {
+    /* four bones to each of _RB_TJOINTS and _RB_TJOINTS1, a file having
+     * the first four alone if no vertex needs more */
+    for (half = 0; half < 2 && joints >= 0; half++) {
+        if (port_GltfRead(g, joints, scratch, count, 4) != count) {
             free(scratch);
-            return "_RB_TJOINTS without its four _RB_TERMs";
+            return "_RB_TJOINTS does not read";
         }
         for (k = 0; k < count; k++) {
-            memcpy(out->vertices[first + k].term[j], scratch + k * 4,
-                   4 * sizeof(float));
+            for (j = 0; j < 4; j++) {
+                s32 joint = (s32)scratch[k * 4 + j];
+                s32 bone =
+                    joint >= 0 && joint < joint_count ? joint_bone[joint] : -1;
+
+                out->vertices[first + k].term_joint[half * 4 + j] =
+                    (u8)(bone >= 0 && bone < PORT_FIGHTER_FILE_JOINTS ? bone
+                                                                      : 0);
+            }
         }
+        for (j = half * 4; j < half * 4 + 4; j++) {
+            s32 term = port_JsonInt(
+                json, port_JsonGet(json, attributes, names[j]), -1);
+
+            if (term < 0 ||
+                port_GltfRead(g, term, scratch, count, 4) != count) {
+                free(scratch);
+                return "_RB_TJOINTS without its four _RB_TERMs";
+            }
+            for (k = 0; k < count; k++) {
+                memcpy(out->vertices[first + k].term[j], scratch + k * 4,
+                       4 * sizeof(float));
+            }
+        }
+        joints = port_JsonInt(
+            json, port_JsonGet(json, attributes, "_RB_TJOINTS1"), -1);
     }
     free(scratch);
     return NULL;

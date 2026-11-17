@@ -806,11 +806,13 @@ def write_glb(path, name, bones, bind_rot, bind_pos, vertices, triangles, image_
 
     `index_png` is the picture of which colour table's entry each texel
     is (Atlas.index), written as the second image and named by
-    extras.rb_palette. `terms` is, for each vertex, up to four (bone,
+    extras.rb_palette. `terms` is, for each vertex, up to eight (bone,
     (x, y, z, h)): the vertex exactly as the game builds it, the sum of
     each bone's world matrix times its vector, h being how much of the
     bone's place is in it (the attributes _RB_TERM0 to _RB_TERM3, and
-    _RB_TJOINTS the bones, which are the skin's joints' own numbers)."""
+    _RB_TJOINTS the bones, which are the skin's joints' own numbers; up to
+    eight, _RB_TERM4 to _RB_TERM7 and _RB_TJOINTS1, where a vertex has
+    more than four)."""
     g = Glb()
     positions = [v[0] for v in vertices]
     normals = []
@@ -838,9 +840,14 @@ def write_glb(path, name, bones, bind_rot, bind_pos, vertices, triangles, image_
     attributes = {'POSITION': a_pos, 'NORMAL': a_nrm, 'TEXCOORD_0': a_uv,
                   'JOINTS_0': a_jnt, 'WEIGHTS_0': a_wgt}
     if terms is not None:
-        padded = [(list(t) + [(0, (0.0, 0.0, 0.0, 0.0))] * 4)[:4] for t in terms]
-        attributes['_RB_TJOINTS'] = g.accessor('B', [[b for b, _ in t] for t in padded], 5121, 'VEC4', 34962)
-        for k in range(4):
+        # four bones a vertex, or eight where one needs more
+        width = 8 if any(len(t) > 4 for t in terms) else 4
+        padded = [(list(t) + [(0, (0.0, 0.0, 0.0, 0.0))] * width)[:width] for t in terms]
+        for half in range(width // 4):
+            name = '_RB_TJOINTS' if half == 0 else '_RB_TJOINTS%d' % half
+            attributes[name] = g.accessor('B', [[b for b, _ in t[4 * half:4 * half + 4]] for t in padded],
+                                          5121, 'VEC4', 34962)
+        for k in range(width):
             attributes['_RB_TERM%d' % k] = g.accessor('f', [list(t[k][1]) for t in padded], 5126, 'VEC4', 34962)
     ibm = []
     for i in range(BONES):

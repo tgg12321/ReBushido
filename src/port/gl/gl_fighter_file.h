@@ -19,12 +19,12 @@
  * A vertex whose normal is nought is not lit (the game's unlit faces).
  *
  * What a file may have besides, which other tools ignore:
- *   - the attributes _RB_TERM0 to _RB_TERM3 (four floats) and _RB_TJOINTS
- *     (four joints): the vertex exactly as the game builds it, the sum of
- *     each joint's bone's world matrix times (x, y, z, h), h being how
- *     much of the bone's place is in it. Where they are missing, the
- *     terms are worked out of the linear blend (each joint's weight times
- *     its inverse bind matrix times the place), which is the same thing;
+ *   - the attributes _RB_TERM0 to _RB_TERM7 (four floats each), and
+ *     _RB_TJOINTS and _RB_TJOINTS1 (four joints each): the vertex exactly as
+ * the game builds it, the sum of each joint's bone's world matrix times (x, y,
+ * z, h), h being how much of the bone's place is in it. Where they are missing,
+ * the terms are worked out of the linear blend (each joint's weight times its
+ * inverse bind matrix times the place), which is the same thing;
  *   - `extras.rb_palette`: `cluts`, the colour tables the texture was
  *     decoded through ([x, y, entries] in video memory as the model's
  *     file loads them), `colors`, their colours then (16-bit words), and
@@ -40,15 +40,18 @@
 #define PORT_FIGHTER_FILE_JOINTS 21
 /* The most primitives (pieces with a texture of their own) a model has. */
 #define PORT_FIGHTER_FILE_PARTS 16
+/* The most bones a vertex's terms are of (_RB_TERM0 to _RB_TERM7). */
+#define PORT_FIGHTER_TERMS 8
 
 typedef struct {
     float place[3];
     float normal[3];
     float uv[2];
     float weight[4];
-    float term[4][4]; /* each joint's vector and its share of the place */
-    u8 joint[4];      /* the game's bone numbers */
-    u8 term_joint[4]; /* ... of the terms */
+    float term[PORT_FIGHTER_TERMS][4]; /* each joint's vector and its share
+                                        * of the place */
+    u8 joint[4];                       /* the game's bone numbers */
+    u8 term_joint[PORT_FIGHTER_TERMS]; /* ... of the terms */
 } PortFighterVertex;
 
 /* The most colour tables a model's texture was decoded through. */
