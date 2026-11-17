@@ -14,6 +14,7 @@
 #include "common.h"
 #include "port_gpu.h"
 #include "bb2.h"
+#include "port_fighter.h"
 
 /* ---- the tables ---- */
 
@@ -670,6 +671,11 @@ void port_RemasterNoteShadow(s32 is_shadow) {
 
 void port_RemasterNoteFighter(s32 is_fighter) {
     g_is_fighter = g_backend != NULL && is_fighter != 0;
+    /* a fighter's body and his weapons are written down for the models
+     * that may be drawn in their place (port_fighter.h) */
+    if (g_is_fighter) {
+        port_FighterNoteNode(g_id.object);
+    }
 }
 
 void port_RemasterNoteGroup(PortAddress group) {
@@ -857,6 +863,7 @@ void port_RemasterNewFrame(void) {
     if (g_backend == NULL) {
         return;
     }
+    port_FighterNewFrame();
     g_epoch++;
     g_face_count = 0;
     /* the stage's fog is placed again every frame, and a stage without

@@ -23,6 +23,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_fighter.h"
 #include "gl_shadow.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
@@ -101,6 +102,10 @@ static struct {
     u32 still;        /* frames whose scene did not move at all */
     u32 still_moved;  /* ... whose pictures in between are not it */
     u32 off_the_line; /* corners not between the two frames' own */
+    /* where and at which blank each fighter's bones are written
+     * (--gl-fighter-pose) */
+    char pose_folder[512];
+    u32 pose_at;
 } g_run;
 
 /* The most pictures a game frame may be drawn as, for the prover's
@@ -139,6 +144,10 @@ static const char g_usage[] =
     "  --stage-depth W on, off: the scene held against the ground's\n"
     "                 own depth, so that ground between the camera and\n"
     "                 a fighter veils him (on with the mesh)\n"
+    "  --fighter-models F  the fighters drawn from models of their own,\n"
+    "                 the .glb files in folder F (gl_fighter.h); off\n"
+    "  --gl-fighter-pose F,N  each fighter's bones at blank N, into\n"
+    "                 F/<model>.pose.json (tools/fighter_export.py --pose)\n"
     "  --gl-exact     draw as the console: the corners where it held\n"
     "                 them, the texture flat, five bits a channel with\n"
     "                 the chip's dither. For the comparison at scale 1\n"
@@ -977,6 +986,12 @@ static void port_GlBlank(u32 blank) {
      * just drawn. It comes last because it leaves one of them in the
      * colour buffer, which the game draws over next frame: so
      * `--gl-tween` and `--gl-compare` are not asked for together. */
+    /* each fighter's bones of this frame, for the exporter's bind pose
+     * (tools/fighter_export.py --pose) */
+    if (g_run.pose_folder[0] != 0 && blank == g_run.pose_at) {
+        fprintf(stderr, "gl blank %u fighter poses %d\n", blank,
+                port_GlFighterWritePoses(g_run.pose_folder));
+    }
     if (g_run.tween > 1 && port_TweenGeneration() != g_run.generation) {
         g_run.generation = port_TweenGeneration();
         port_GlTweenPhases(blank);
@@ -1006,6 +1021,18 @@ static void port_GlQuit(s32 code) {
             limits->tiles, limits->tiles_least, limits->nodes,
             limits->nodes_least, limits->side_full);
 
+    {
+        /* the fighters drawn from models of their own (gl_fighter.h) */
+        const PortGlFighterCounts *fighters = port_GlFighterCounts();
+
+        fprintf(stderr,
+                "gl run fighters loaded %u failed %u frames %u left_out %u "
+                "triangles %u%s%s\n",
+                fighters->loaded, fighters->failed, fighters->frames,
+                fighters->left_out, fighters->triangles,
+                port_GlFighterProblem() != NULL ? " problem " : "",
+                port_GlFighterProblem() != NULL ? port_GlFighterProblem() : "");
+    }
     fprintf(stderr, "gl run blanks %u hardware_time_us %llu\n", g_run.blanks,
             (unsigned long long)g_run.hardware_time);
     if (g_run.blanks != 0) {
@@ -1171,6 +1198,23 @@ int main(int argc, char **argv) {
             options.is_stage_mesh = !strcmp(how_ground, "every")
                                         ? 2
                                         : (!strcmp(how_ground, "on") ? 1 : 0);
+        } else if (!strcmp(word, "--fighter-models")) {
+            const char *where = argv[++i];
+
+            /* the fighters' own models (gl_fighter.h): a folder of
+             * them, or off */
+            options.is_fighter_models = strcmp(where, "off") != 0;
+            if (options.is_fighter_models) {
+                port_GlFighterSetFolder(where);
+            }
+        } else if (!strcmp(word, "--gl-fighter-pose")) {
+            const char *where = argv[++i];
+            const char *comma = strchr(where, ',');
+
+            g_run.pose_at = comma != NULL ? (u32)atoi(comma + 1) : 600;
+            snprintf(g_run.pose_folder, sizeof(g_run.pose_folder), "%.*s",
+                     comma != NULL ? (int)(comma - where) : (int)strlen(where),
+                     where);
         } else if (!strcmp(word, "--stage-depth")) {
             options.is_stage_depth = strcmp(argv[++i], "off") != 0;
         } else if (!strcmp(word, "--shadows")) {
