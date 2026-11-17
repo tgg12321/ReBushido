@@ -36,10 +36,12 @@
 #include <time.h>
 
 #include "gl.h"
+#include "gl_pause.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
 #include "port_gpu.h"
 #include "port_host.h"
+#include "port_movie.h"
 #include "port_remaster.h"
 #include "port_spu.h"
 #include "shared.h"
@@ -554,12 +556,19 @@ static const char *port_StartGl(void) {
         return problem;
     }
     g_port_has_gl = TRUE;
+    problem = port_GlPauseStart(SDL_GL_GetProcAddress);
+    if (problem != NULL) {
+        port_Say("graphics: %s, so the pause draws the fight as the console "
+                 "does",
+                 problem);
+    }
     return NULL;
 }
 
 /* The context and the window let go, so that the window can be made
  * again without a context (port_OpenWindow). */
 static void port_DropGl(void) {
+    port_GlPauseStop();
     if (g_port_gl_context != NULL) {
         SDL_GL_DeleteContext(g_port_gl_context);
         g_port_gl_context = NULL;
@@ -815,8 +824,8 @@ static void port_RemasterShape(s32 *across, s32 *down) {
 /* The remastered picture, which the card drew, into the window: as large
  * as its own shape allows, in the middle. It is as wide as the view asks
  * for, so that shape and not always the console's four by three is what
- * it is fitted by. */
-static void port_ShowRemastered(s32 window_w, s32 window_h) {
+ * it is fitted by. FALSE if the card has no picture to show. */
+static s32 port_ShowRemastered(s32 window_w, s32 window_h) {
     PortGlOptions options;
     PortRect place;
     s32 across = 0;
@@ -838,8 +847,23 @@ static void port_ShowRemastered(s32 window_w, s32 window_h) {
     port_RemasterShape(&across, &down);
     port_FitShape(
         window_w, window_h, g_port_settings.scale, across, down, &place);
-    port_GlShowPicture(window_w, window_h, place.x, place.y, place.w, place.h,
-                       g_port_settings.is_linear);
+    return port_GlShowPicture(window_w, window_h, place.x, place.y, place.w,
+                              place.h, g_port_settings.is_linear);
+}
+
+/* Whether the window shows the remastered picture of this frame: not
+ * while the movie player runs, whose frames are in the 24-bit mode the
+ * card does not draw and whose title picture is put in video memory
+ * outside the game's display, so that the software GPU's picture is the
+ * one there is of them. */
+static s32 port_ShowsRemastered(void) {
+    PortDisplay display;
+
+    if (!g_port_has_gl || !port_RemasterIsOn() || port_MovieIsPlaying()) {
+        return FALSE;
+    }
+    port_GetDisplay(&display);
+    return !display.is_rgb24;
 }
 
 /* ---- a picture of the window, for the player (F12) ---- */
@@ -1025,14 +1049,18 @@ static void port_DrawPicture(u32 blank) {
         return;
     }
     if (g_port_has_gl) {
-        if (port_RemasterIsOn()) {
-            port_ShowRemastered(window_w, window_h);
-        } else {
-            port_FitPicture(window_w, window_h, g_port_settings.scale, &place);
-            port_GlShowPixels(
-                g_port_frame, w, h, window_w, window_h, place.x, place.y,
-                place.w, place.h, g_port_settings.is_linear, FALSE);
+        if (port_ShowsRemastered() && port_ShowRemastered(window_w, window_h)) {
+            return;
         }
+        /* a movie is video and is smoothed when it is scaled, as the
+         * remastered picture is, whatever the filter says of the game's
+         * blocks */
+        port_FitPicture(window_w, window_h, g_port_settings.scale, &place);
+        port_GlShowPixels(g_port_frame, w, h, window_w, window_h, place.x,
+                          place.y, place.w, place.h,
+                          g_port_settings.is_linear ||
+                              (port_RemasterIsOn() && port_MovieIsPlaying()),
+                          FALSE);
         return;
     }
     port_SizeTexture(w, h);
@@ -1056,7 +1084,7 @@ static void port_PicturePlace(s32 window_w, s32 window_h, PortRect *out) {
     s32 across = 0;
     s32 down = 0;
 
-    if (!g_port_has_gl || !port_RemasterIsOn()) {
+    if (!port_ShowsRemastered()) {
         port_FitPicture(window_w, window_h, g_port_settings.scale, out);
         return;
     }
@@ -1540,7 +1568,8 @@ static s32 port_DrawTween(void) {
     s32 window_h = 0;
     s32 phase;
 
-    if (!g_port_tween_on || !port_RemasterIsOn() || g_port_frame_period == 0 ||
+    if (!g_port_tween_on || !port_ShowsRemastered() ||
+        port_RemasterIsHolding() || g_port_frame_period == 0 ||
         !port_TweenCanDraw()) {
         return FALSE;
     }

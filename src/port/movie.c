@@ -24,10 +24,20 @@
 #include "port_movie.h"
 #include "bb2.h"
 
+/* TRUE while the player runs. The window shows the software GPU's own
+ * picture then: the remastered picture has no 24-bit mode, and the title
+ * picture is shown from video memory outside the game's display
+ * (docs/PORT.md, "Remastered"). */
+static s32 g_port_movie_is_playing;
+
+s32 port_MovieIsPlaying(void) { return g_port_movie_is_playing; }
+
 /* The game runs one program, the movie player. Its main takes the six
  * words as a structure of its own (movovl/src/main.c). */
 s32 Exec(struct EXEC *exec, s32 argc, char **argv) {
     (void)exec;
+    g_port_movie_is_playing = TRUE;
     port_MovieOverlayMain(argc, argv);
+    g_port_movie_is_playing = FALSE;
     return 1;
 }

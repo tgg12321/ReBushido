@@ -47,7 +47,7 @@ const char g_port_default_settings[] =
     "\n"
     "scale = fit            # fit, integer or stretch\n"
     "filter = nearest       # nearest or linear\n"
-    "fullscreen = off       # on or off: how it starts\n"
+    "fullscreen = on        # on or off: how it starts\n"
     "vsync = on             # on or off: wait for the display\n"
     "deadzone = 40          # how far a stick counts, in parts of 100\n"
     "fps = on               # on or off: the counter in the corner (F3)\n"
@@ -600,7 +600,7 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     }
     settings->count = 0;
     settings->scale = PORT_SCALE_FIT;
-    settings->is_fullscreen = 0;
+    settings->is_fullscreen = 1;
     settings->is_linear = 0;
     settings->vsync = 1;
     settings->deadzone = PORT_DEADZONE_DEFAULT;

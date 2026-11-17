@@ -102,4 +102,8 @@ extern void PAD_dr(void);
  * MOVOVL.EXE. */
 extern void port_MovieOverlayMain(s32 argc, void *argv);
 
+/* TRUE while the player runs, the title picture after the movie
+ * included: the window shows the software GPU's picture then. */
+extern s32 port_MovieIsPlaying(void);
+
 #endif /* PORT_MOVIE_H */

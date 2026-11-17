@@ -48,8 +48,8 @@ rebushido.exe --image "C:\Games\Bushido Blade 2 (USA).cue"
 build/port-sdl/linux/rebushido --image "Bushido Blade 2 (USA).cue"
 ```
 
-`--fullscreen` starts it filling the screen; `rebushido --help` lists
-the rest.
+It starts filling the screen; F11 or Alt+Enter, or `--windowed`, puts
+it in a window. `rebushido --help` lists the rest.
 
 ## The keys
 
@@ -97,7 +97,7 @@ Make a text file `rebushido.cfg` beside the program. A line is
 ```
 scale = integer          # fit (as large as fits), integer, or stretch
 filter = linear          # nearest (each pixel a block) or linear
-fullscreen = on
+fullscreen = off         # start in a window (on, filling the screen, is built in)
 fps = off                # no counter in the corner (F3 brings it back)
 graphics = remastered    # original (the console's picture) or remastered
 resolution = 3           # how many times the console's; 0 = the window's
