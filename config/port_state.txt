@@ -48,6 +48,8 @@ outside  src/port/host_windows.c  the host on Windows
 outside  src/port/main.c        the program's arguments and the disc's file
 outside  src/port/netplay.c     the session: inputs, guesses, the states kept, the hashes
 outside  src/port/mods.c        the mods' table, made once as the program starts
+outside  src/port/music.c       a mod's music: what it follows of the drive, its decoder, the dump
+outside  src/port/discfiles.c   the disc's files by name, and the mods' stage files over them
 outside  src/port/net.c         the network: the socket, the link cable's numbers, the trouble it is given
 outside  src/port/picture.c     the pictures a run writes
 outside  src/port/png.c         PNG pictures read and written for the mods
@@ -55,6 +57,7 @@ outside  src/port/remaster.c    the remastered picture's side channel: its epoch
 outside  src/port/state.c       the snapshot's own bookkeeping, which must survive a load
 outside  src/port/step.c        the host's count of steps and whether a step is run again
 outside  src/port/text.c        the output buffer
+outside  src/port/vorbis.c      the Ogg decoder (stb_vorbis), whose memory music.c gives it
 outside  src/port/wav.c         the sound file
 
 # the window's files that are linked into the game's object

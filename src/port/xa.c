@@ -287,6 +287,33 @@ static void port_AdvanceXaWindow(void) {
     g_port_xa.queue_count--;
 }
 
+/* Where the disc's sound is copied before the drive's volumes, if not
+ * NULL (port_spu.h): set once, as the program starts, for --dump-music. */
+s16 *g_port_xa_unmixed;
+
+/* The drive's volumes and its mute on `frames` samples, a left and a
+ * right each (port_spu.h). */
+void port_MixCdAudio(s16 *samples, u32 frames) {
+    u32 frame;
+
+    for (frame = 0; frame < frames; frame++) {
+        s32 left = samples[frame * 2];
+        s32 right = samples[frame * 2 + 1];
+
+        if (g_port_xa.muted) {
+            samples[frame * 2] = 0;
+            samples[frame * 2 + 1] = 0;
+        } else {
+            samples[frame * 2] = (s16)port_ClampXaSample(
+                (left * g_port_xa.mix[0] + right * g_port_xa.mix[3]) >>
+                MIX_SHIFT);
+            samples[frame * 2 + 1] = (s16)port_ClampXaSample(
+                (right * g_port_xa.mix[2] + left * g_port_xa.mix[1]) >>
+                MIX_SHIFT);
+        }
+    }
+}
+
 /* The next samples at the sound chip's rate (port_spu.h). */
 void port_ReadCdAudio(s16 *out, u32 frames) {
     u32 frame;
@@ -303,7 +330,6 @@ void port_ReadCdAudio(s16 *out, u32 frames) {
         s32 square = phase * phase;
         s32 cube = square * phase;
         s32 weights[4];
-        s32 sample[2];
 
         weights[0] = -cube + 2 * one * square - one * one * phase;
         weights[2] = -3 * cube + 4 * one * square + one * one * phase;
@@ -311,23 +337,12 @@ void port_ReadCdAudio(s16 *out, u32 frames) {
         /* the four add up to one */
         weights[1] = CUBIC_ONE - weights[0] - weights[2] - weights[3];
         for (side = 0; side < 2; side++) {
-            sample[side] = port_ClampXaSample(
+            out[frame * 2 + side] = (s16)port_ClampXaSample(
                 (g_port_xa.window[0][side] * weights[0] +
                  g_port_xa.window[1][side] * weights[1] +
                  g_port_xa.window[2][side] * weights[2] +
                  g_port_xa.window[3][side] * weights[3]) /
                 CUBIC_ONE);
-        }
-        if (g_port_xa.muted) {
-            out[frame * 2] = 0;
-            out[frame * 2 + 1] = 0;
-        } else {
-            out[frame * 2] = (s16)port_ClampXaSample(
-                (sample[0] * g_port_xa.mix[0] + sample[1] * g_port_xa.mix[3]) >>
-                MIX_SHIFT);
-            out[frame * 2 + 1] = (s16)port_ClampXaSample(
-                (sample[1] * g_port_xa.mix[2] + sample[0] * g_port_xa.mix[1]) >>
-                MIX_SHIFT);
         }
         g_port_xa.phase += RESAMPLE_IN;
         while (g_port_xa.phase >= RESAMPLE_OUT) {
@@ -335,4 +350,10 @@ void port_ReadCdAudio(s16 *out, u32 frames) {
             port_AdvanceXaWindow();
         }
     }
+    if (g_port_xa_unmixed != NULL) {
+        for (frame = 0; frame < frames * 2; frame++) {
+            g_port_xa_unmixed[frame] = out[frame];
+        }
+    }
+    port_MixCdAudio(out, frames);
 }

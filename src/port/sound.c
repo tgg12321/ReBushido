@@ -31,6 +31,7 @@
  * samples or 738 and a run's sound is the same every time. */
 #include "common.h"
 #include "port_host.h"
+#include "port_music.h"
 #include "port_spu.h"
 #include "src/main/psxsdk/libspu/libspu_internal.h"
 /* Sony's two headers declare one function twice between them. */
@@ -457,7 +458,8 @@ static void port_MixSound(u32 frames) {
 
     port_PlayDisc(frames);
     port_ReadCdAudio(cd, frames);
-    port_RunSpu(cd, out, frames);
+    /* a mod's music is heard in place of the disc's (port_music.h) */
+    port_RunSpu(cd, port_PlayMusic(frames), out, frames);
     g_port_sample_count += frames;
     /* a step run again is mixed and not heard (port_platform.h) */
     if (g_port_rerun) {

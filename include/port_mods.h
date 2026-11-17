@@ -20,8 +20,8 @@
 enum {
     PORT_MOD_TEXTURES, /* PNG pictures that replace the game's textures */
     PORT_MOD_MODELS,   /* the fighters' models, .glb (gl_fighter.h) */
-    PORT_MOD_MUSIC,    /* not read yet */
-    PORT_MOD_STAGES,   /* not read yet */
+    PORT_MOD_MUSIC,    /* .ogg or .wav pieces of music (port_music.h) */
+    PORT_MOD_STAGES,   /* a stage's files (port_discfiles.h) */
     PORT_MOD_KINDS
 };
 
