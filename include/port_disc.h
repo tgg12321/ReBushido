@@ -51,12 +51,21 @@ extern void port_CloseDisc(PortDisc *disc);
  * `raw`, PORT_DISC_SECTOR_BYTES of it, checked for its sync and its own
  * position. */
 extern s32 port_ReadDiscSector(const PortDisc *disc, u32 sector, u8 *raw);
+/* If not NULL, each sector read is given to this as well, which may put
+ * other data in it: a mod's stage file over the disc's
+ * (port_discfiles.h). Set once, as the program starts. */
+extern s32 (*g_port_disc_override)(u32 sector, u8 *raw);
 /* The data of `count` sectors from `sector` on, 2048 bytes each, one after
  * another into `dest`. Stops at the first that cannot be read or is not
  * mode 2 form 1, with that sector's result; `*done`, if not NULL, is how
  * many were read. */
 extern s32 port_ReadDiscData(
     const PortDisc *disc, u32 sector, u32 count, u8 *dest, u32 *done);
+
+/* How many sectors have been read: a step that read many loaded something,
+ * and netplay makes the frame after it a point both programs wait at
+ * (netplay.c). It is part of the state, and goes back with a load. */
+extern u32 g_port_disc_sectors_read;
 
 /* A position as the drive is given it and as a sector says its own: the
  * minute, second and frame, two decimal digits in a byte each. */

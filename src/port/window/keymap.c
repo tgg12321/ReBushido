@@ -76,10 +76,31 @@ const char g_port_default_settings[] =
     "                       # console; display: as many as the screen\n"
     "                       # shows; or a number a second. The game\n"
     "                       # steps at the console's rate either way\n"
+    "sky = night            # night: a night sky over the stages open\n"
+    "                       # to it; original: the game's flat colour\n"
+    "                       # of the distance\n"
+    "see_through = on       # the stage's walls thinned where they hide\n"
+    "                       # a fighter from the camera; off as the\n"
+    "                       # console\n"
     "mods = on              # the mods in mods/ beside the program\n"
     "                       # (docs/MODS.md); off for the game's own\n"
     "english = on           # the top menu in English, a mod the program\n"
     "                       # ships (mods/english/); off for Japanese\n"
+    "ui = on                # the menus' lettering drawn again, sharp at\n"
+    "                       # any size: a mod the program ships (mods/ui/)\n"
+    "music_mods = on        # a mod's music in place of the game's; off\n"
+    "                       # for the game's own (docs/MODS.md)\n"
+    "\n"
+    "# Playing online (docs/PLAYING.md): what the settings menu's Play\n"
+    "# online page starts with, and keeps.\n"
+    "net_role = host        # host: wait for the other player; join: go to\n"
+    "                       # the host at net_address\n"
+    "net_address = 127.0.0.1:7845  # the host's address and port\n"
+    "net_port = 7845        # the port a host waits at\n"
+    "net_listen = all       # all: a host is found at every address of this\n"
+    "                       # PC; local: on this PC alone (127.0.0.1)\n"
+    "net_delay = 2          # frames a press counts later, 0 to 8: the\n"
+    "                       # host's is both players'\n"
     "\n"
     "# The keys and the controllers' buttons: a layout to start from, and\n"
     "# lines of pN.BUTTON for what to change in it (below)\n"
@@ -487,6 +508,36 @@ static const char *port_ReadLayout(
     return NULL;
 }
 
+/* `A.B.C.D:PORT` into `out` (PORT_NET_ADDRESS_BYTES), as it was written:
+ * 1, or 0 if it is not one. Only its form is looked at here; the port
+ * reads it again as it starts (port_ParseNetAddress). */
+static s32 port_ReadNetAddress(const char *value, char *out) {
+    s32 dots = 0;
+    s32 colons = 0;
+    s32 i;
+
+    for (i = 0; value[i] != 0; i++) {
+        if (i == PORT_NET_ADDRESS_BYTES - 1) {
+            return 0;
+        }
+        if (value[i] == '.') {
+            dots++;
+        } else if (value[i] == ':') {
+            colons++;
+        } else if (value[i] < '0' || value[i] > '9') {
+            return 0;
+        }
+    }
+    if (dots != 3 || colons != 1) {
+        return 0;
+    }
+    for (i = 0; value[i] != 0; i++) {
+        out[i] = value[i];
+    }
+    out[i] = 0;
+    return 1;
+}
+
 /* One line, `NAME = VALUE`: NULL, or why it cannot be used. */
 static const char *port_ReadSetting(
     PortSettings *settings, char *line, PortNameLookup lookup, s32 is_default) {
@@ -616,10 +667,30 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "english is on or off";
     }
+    if (port_WordsMatch(name, "ui")) {
+        return port_ReadChoice(value, "off", "on", &settings->ui)
+                   ? NULL
+                   : "ui is on or off";
+    }
+    if (port_WordsMatch(name, "music_mods")) {
+        return port_ReadChoice(value, "off", "on", &settings->music_mods)
+                   ? NULL
+                   : "music_mods is on or off";
+    }
     if (port_WordsMatch(name, "stage_mesh")) {
         return port_ReadChoice(value, "off", "on", &settings->stage_mesh)
                    ? NULL
                    : "stage_mesh is on or off";
+    }
+    if (port_WordsMatch(name, "sky")) {
+        return port_ReadChoice(value, "original", "night", &settings->sky)
+                   ? NULL
+                   : "sky is original or night";
+    }
+    if (port_WordsMatch(name, "see_through")) {
+        return port_ReadChoice(value, "off", "on", &settings->see_through)
+                   ? NULL
+                   : "see_through is on or off";
     }
     if (port_WordsMatch(name, "fighter_models")) {
         return port_ReadChoice(value, "off", "on", &settings->fighter_models)
@@ -646,6 +717,38 @@ static const char *port_ReadSetting(
     }
     if (port_WordsMatch(name, "controls")) {
         return port_ReadLayout(settings, value, lookup);
+    }
+    if (port_WordsMatch(name, "net_role")) {
+        return port_ReadChoice(value, "host", "join", &settings->net_role)
+                   ? NULL
+                   : "net_role is host or join";
+    }
+    if (port_WordsMatch(name, "net_listen")) {
+        return port_ReadChoice(value, "local", "all", &settings->net_listen)
+                   ? NULL
+                   : "net_listen is all or local";
+    }
+    if (port_WordsMatch(name, "net_port")) {
+        if (!port_ReadDigits(value, &number) || number < 1 ||
+            number > PORT_NET_PORT_MAX) {
+            return "net_port is a number from 1 to 65535";
+        }
+        settings->net_port = number;
+        return NULL;
+    }
+    if (port_WordsMatch(name, "net_delay")) {
+        if (!port_ReadDigits(value, &number) || number < 0 ||
+            number > PORT_NET_DELAY_MAX) {
+            return "net_delay is a number from 0 to 8";
+        }
+        settings->net_delay = number;
+        return NULL;
+    }
+    if (port_WordsMatch(name, "net_address")) {
+        return port_ReadNetAddress(value, settings->net_address)
+                   ? NULL
+                   : "net_address is four numbers and a port, as "
+                     "192.168.1.20:7845";
     }
     if (port_WordsMatch(name, "frame_rate")) {
         if (port_WordsMatch(value, "original")) {
@@ -756,10 +859,25 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     /* The soft shadows are the game's own black ones until the owner has
      * looked at pictures of both (gl_shadow.h). */
     settings->shadows = 0;
+    /* A sky over the stages open to it, and the walls thinned where they
+     * hide a fighter: neither changes what the game computes, and both
+     * are the owner's to confirm on a real card (gl_sky.h, gl_see.h). */
+    settings->sky = 1;
+    settings->see_through = 1;
     /* the mods beside the program, where there are any (docs/MODS.md) */
     settings->mods = 1;
     /* the English top menu the program ships (docs/MODS.md) */
     settings->english = 1;
+    /* and the menus' lettering drawn again (docs/MODS.md) */
+    settings->ui = 1;
+    /* the Play online page's (the text below says the same) */
+    settings->net_role = 0;
+    settings->net_port = PORT_NET_PORT_DEFAULT;
+    settings->net_listen = 1;
+    settings->net_delay = PORT_NET_DELAY_DEFAULT;
+    settings->net_address[0] = 0;
+    /* a mod's music, where a mod has some (docs/MODS.md) */
+    settings->music_mods = 1;
     /* a name the window's library does not know leaves that one out */
     port_ReadLines(settings, text, lookup, NULL, 1);
 }

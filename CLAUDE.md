@@ -141,6 +141,16 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   Never run the `.exe` without an image argument from an agent: it opens
   a dialog.
 - Merge `decomp` into `main`, never the reverse.
+- **The owner's copy is kept current.** `rebushido.exe` at the
+  repository's root is what the owner drops in and plays. After every
+  merge into `main` that builds and passes its checks (and always before
+  pushing): `wsl bash tools/build.sh port-sdl-windows`, then
+  `python tools/owner_copy.py`, which puts the exe, `SDL2.dll` and the
+  mods (shipped ones, and those made from the disc in `tmp/mods/`) beside
+  the root. Keep the disc-made mods (`hd`, `art`, `stages-hd`) in
+  `tmp/mods/` and rebuild one there when its tool changes. None of it is
+  committed (`.git/info/exclude`); `rebushido.cfg`, `logs/`,
+  `screenshots/` and the cards are the owner's and are never touched.
 
 ## Working on `decomp`
 

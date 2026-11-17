@@ -84,8 +84,12 @@ extern u8 *port_GetSpuRam(void);
  * the key registers twice with no sound between calls it between. */
 extern void port_TakeSpuKeys(void);
 /* The next `frames` samples into `out`, a left and a right each. `cd`
- * is the disc's sound for the same samples, or NULL for none. */
-extern void port_RunSpu(const s16 *cd, s16 *out, u32 frames);
+ * is the disc's sound for the same samples, or NULL for none. `heard`, if
+ * not NULL, is what is heard in its place (a mod's music, port_music.h):
+ * the chip and `out` go on as they would with `cd`, and `heard_out` has
+ * the same samples with `heard` where `out` had `cd`. */
+extern void port_RunSpu(
+    const s16 *cd, const s16 *heard, s16 *out, s16 *heard_out, u32 frames);
 extern const PortSpuCounts *port_GetSpuCounts(void);
 /* Called as a voice is keyed on, if not NULL: for a run's log. */
 extern void (*g_port_spu_key_on_hook)(s32 voice, u32 addr, u32 pitch);
@@ -108,6 +112,12 @@ extern void port_MuteCdAudio(s32 muted);
  * left and a right each, with the drive's volumes applied; silence
  * where nothing is waiting. */
 extern void port_ReadCdAudio(s16 *out, u32 frames);
+/* The drive's volumes and its mute, as port_ReadCdAudio gives them, on
+ * other samples: a mod's music in place of the disc's (port_music.h). */
+extern void port_MixCdAudio(s16 *samples, u32 frames);
+/* If not NULL, port_ReadCdAudio copies its samples here before the
+ * drive's volumes: --dump-music (port_music.h). */
+extern s16 *g_port_xa_unmixed;
 /* Sectors of sound taken since the program started. */
 extern u32 port_GetXaSectorCount(void);
 
@@ -116,6 +126,10 @@ extern u32 port_GetXaSectorCount(void);
 /* The drive goes on for `frames` samples from now: the sectors of a
  * stream of sound that pass under it in that time are played. */
 extern void port_PlayDisc(u32 frames);
+/* The stream of sound the drive is playing, if it is: the sector it
+ * began at, the channel it was chosen by (-1 if none was) and the sample
+ * of the sound's clock it began at. 0 if the drive plays none. */
+extern s32 port_GetCdStream(u32 *sector, s32 *channel, u32 *since);
 
 /* ---- the port's sound as a whole (src/port/sound.c) ---- */
 
@@ -131,6 +145,10 @@ extern void port_RunSoundBlank(u32 blank);
  * once in a blank: the blank's samples are made in two pieces, before
  * the sound library's tick and after it. */
 extern void (*g_port_sound_hook)(const s16 *samples, u32 frames);
+/* The same of a step netplay runs again (g_port_rerun), which the card is
+ * never given as it is: the window puts it in place of what it queued of
+ * those blanks and has not played yet (src/port/window/sdl_net.c). */
+extern void (*g_port_rerun_sound_hook)(const s16 *samples, u32 frames);
 /* What Sony's libcd does to the chip as the drive's library starts
  * (CD_initvol): the disc's sound at half of full scale and the chip's CD
  * input on. The port's libcd is its own, so its CdInit calls this

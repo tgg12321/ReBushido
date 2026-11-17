@@ -31,6 +31,7 @@
  * samples or 738 and a run's sound is the same every time. */
 #include "common.h"
 #include "port_host.h"
+#include "port_music.h"
 #include "port_profile.h"
 #include "port_spu.h"
 #include "src/main/psxsdk/libspu/libspu_internal.h"
@@ -445,9 +446,10 @@ static void port_LogAsked(void) {
     }
 }
 
-/* The window's sound card (port_spu.h): nothing in the build without
- * one. */
+/* The window's sound card, and what it is given of a step run again
+ * (port_spu.h): nothing in the build without one. */
 void (*g_port_sound_hook)(const s16 *samples, u32 frames);
+void (*g_port_rerun_sound_hook)(const s16 *samples, u32 frames);
 
 /* The next `frames` samples: the drive goes on, the disc's sound and
  * the chip's are made, and kept if the run keeps its sound or a sound
@@ -456,22 +458,36 @@ static void port_MixSound(u32 frames) {
     static s16 cd[(BLANK_FRAMES + 1) * 2];
     static s16 out[(BLANK_FRAMES + 1) * 2];
 
+    s16 *heard = NULL;
+    const s16 *music;
     s32 was = port_ProfileSwitch(PORT_PROFILE_SOUND);
 
     port_PlayDisc(frames);
     port_ReadCdAudio(cd, frames);
-    port_RunSpu(cd, out, frames);
+    /* a mod's music is heard in place of the disc's (port_music.h), in
+     * samples of its own: `out` is the game's state, and stays what the
+     * chip made */
+    music = port_PlayMusic(frames, &heard);
+    port_RunSpu(cd, music, out, heard, frames);
     port_ProfileSwitch(was);
     g_port_sample_count += frames;
-    /* a step run again is mixed and not heard (port_platform.h) */
+    /* a step run again is mixed and not heard (port_platform.h), but for
+     * what the window takes of it in place of what it queued and has
+     * not played yet */
     if (g_port_rerun) {
+        if (g_port_rerun_sound_hook != NULL) {
+            g_port_rerun_sound_hook(out, frames);
+        }
         return;
     }
+    if (music == NULL) {
+        heard = out;
+    }
     if (port_IsWavOn()) {
-        port_AppendWav(out, frames);
+        port_AppendWav(heard, frames);
     }
     if (g_port_sound_hook != NULL) {
-        g_port_sound_hook(out, frames);
+        g_port_sound_hook(heard, frames);
     }
 }
 

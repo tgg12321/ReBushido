@@ -26,9 +26,13 @@
 #include "gl.h"
 #include "gl_fighter.h"
 #include "gl_replace.h"
+#include "gl_scene.h"
+#include "gl_see.h"
 #include "gl_shadow.h"
+#include "gl_sky.h"
 #include "gl_stage.h"
 #include "port_gpu.h"
+#include "port_mods.h"
 #include "port_profile.h"
 #include "port_remaster.h"
 
@@ -167,6 +171,7 @@ typedef ptrdiff_t GLintptr;
     GL(GLint, glGetUniformLocation, (GLuint, const GLchar *))                  \
     GL(void, glUniform1i, (GLint, GLint))                                      \
     GL(void, glUniform1f, (GLint, GLfloat))                                    \
+    GL(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat))                  \
     GL(void, glUniform2f, (GLint, GLfloat, GLfloat))                           \
     GL(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat))         \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))                           \
@@ -184,6 +189,8 @@ PORT_GL_FUNCTIONS
 /* Rectangles of video memory written since the card last drew, kept to
  * be stretched into the colour buffer together (port_GlDrawBlits). */
 #define BLITS_MAX 32
+/* a part of a fade's tint (port_mods.h) */
+#define TINT_PART_MASK 0xFF
 /* The longest run of pixels sent to the card in one go. */
 #define UPLOAD_PIXELS_MAX (PORT_VRAM_PIXELS)
 
@@ -220,6 +227,9 @@ PORT_GL_FUNCTIONS
 /* The ground drawn as one mesh hides it by the ordering table's slots and
  * not by depth (port_GlIsOverGround). */
 #define FLAG_OVER_GROUND 64
+/* A mod's picture of its whole texture page stands in for its texture
+ * (gl_scene.h). */
+#define FLAG_PAGE 128
 
 /* A corner's `w`: the depth the coprocessor worked out, in these units.
  * Any number in proportion to it will do -- it is the perspective divide
@@ -282,14 +292,16 @@ typedef struct {
     s32 replace_v;
     s32 replace_w;
     s32 replace_h;
-    s32 replace_mix; /* PORT_GL_MIX_... (gl_replace.h) */
+    s32 replace_mix;  /* PORT_GL_MIX_... (gl_replace.h) */
+    u32 replace_tint; /* a fade's (gl_replace.h) */
 } PortGlState;
 
 /* A rectangle of video memory written, to be stretched into the colour
- * buffer, and a mod's picture of it (0 for none). */
+ * buffer, and a mod's picture of it (0 for none) with a fade's tint. */
 typedef struct {
     PortDirtyRect rect;
     u32 replacement;
+    u32 tint;
 } PortGlBlit;
 
 static struct {
@@ -362,6 +374,13 @@ static struct {
     GLint at_replaced;
     GLint at_replace_rect;
     GLint at_replace_mix;
+    GLint at_replace_tint;
+    GLint at_scene_lookup;
+    GLint at_scene_pages;
+    GLint at_scene_bases;
+    GLint at_scene_on;
+    GLint at_scene_levels;
+    GLint blit_at_tint;
     GLint blit_at_replace;
     GLint blit_at_replaced;
     GLint resolve_at_color;
@@ -530,6 +549,10 @@ static const char g_gl_geometry_text[] =
      * whether the chip's rule is applied at all (the fragment shader) */
     "flat out ivec4 v_corners;\n"
     "flat out ivec4 v_corner;\n"
+    /* the rectangle of texels a triangle of the scene reads, its texture
+     * points' least and most, half a texel out to the edges of those
+     * texels: a mod's picture of its page is read inside it (gl_scene.h) */
+    "flat out vec4 v_box;\n"
     /* ... and the chip's own arithmetic for the five values a pixel of it
      * has -- red, green, blue, u, v -- as src/port/raster.c works it out
      * once for the triangle: each value's change for a pixel across and
@@ -561,8 +584,11 @@ static const char g_gl_geometry_text[] =
     "}\n"
     "void main() {\n"
     "    if (g_info[0].w == 0u) {\n"
+    "        vec2 least = min(min(g_texture[0], g_texture[1]), g_texture[2]);\n"
+    "        vec2 most = max(max(g_texture[0], g_texture[1]), g_texture[2]);\n"
     "        for (int i = 0; i < 3; i++) {\n"
     "            same(i);\n"
+    "            v_box = vec4(least - vec2(0.5), most + vec2(0.5));\n"
     "            v_texture = g_texture[i];\n"
     "            v_texture_flat = g_texture_flat[i];\n"
     "            v_color = g_color[i];\n"
@@ -635,6 +661,7 @@ static const char g_gl_geometry_text[] =
     "                  - (q.x - p0.x) * (p1.y - p0.y)) / area;\n"
     "        float b0 = 1.0 - b1 - b2;\n"
     "        same(0);\n"
+    "        v_box = vec4(0.0);\n"
     "        v_texture = b0 * g_texture[0] + b1 * g_texture[1]\n"
     "                  + b2 * g_texture[2];\n"
     "        v_texture_flat = b0 * g_texture_flat[0]\n"
@@ -673,6 +700,8 @@ static const char g_gl_fragment_text[] =
     /* which of its pixels mix: the game's texel under each (0), all (1)
      * or none (2) */
     "uniform int u_replace_mix;\n"
+    /* its colours times this: the tint of a fade (gl_replace.h) */
+    "uniform vec3 u_replace_tint;\n"
     /* the depth test against the ground's mesh: what a corner's own
      * depth was divided by to make its w, what a depth in the world's
      * units is divided by to make a value for the depth buffer, and how
@@ -698,6 +727,7 @@ static const char g_gl_fragment_text[] =
     "flat in ivec4 v_down;\n"
     "flat in ivec4 v_start;\n"
     "flat in ivec4 v_last;\n"
+    "flat in vec4 v_box;\n"
     "out vec4 o_color;\n"
     /* Whether the chip draws pixel `p` of a flat triangle (the geometry
      * shader): as src/port/raster.c draws one, line by line from the
@@ -794,6 +824,12 @@ static const char g_gl_fragment_text[] =
     "    return vec3(float(texel & 31u), float((texel >> 5) & 31u),\n"
     "                float((texel >> 10) & 31u));\n"
     "}\n"
+    /* a mod's picture of a whole page (gl_scene.h), whose colours follow
+     * the table the primitive names as it is now: the fog's row its
+     * depth was drawn at, a tint */
+    PORT_GL_SCENE_SHADER "vec3 scene_now(uint index) {\n"
+    "    return channels(vram(v_page.z + int(index), v_page.w));\n"
+    "}\n"
     "void main() {\n"
     /* A fighter's own is hidden by the ground as the console hid him:
      * where the face of the ground this pixel shows was linked at a
@@ -876,7 +912,19 @@ static const char g_gl_fragment_text[] =
     "        uint texel = 0u;\n"
     "        vec3 texel_color = vec3(0.0);\n"
     "        float weight = 0.0;\n"
-    "        if (u_replaced != 0) {\n"
+    "        int layer = (v_flags.w & 128u) != 0u\n"
+    "                  ? scene_layer(v_page, v_info.x) : -1;\n"
+    "        if (layer >= 0) {\n"
+    /* The mod's picture of the page, smoothed and mipmapped, read inside
+     * the triangle's own texels; whether it mixes is still the game's
+     * texel's to say */
+    "            vec4 got = scene_color(layer, v_page, v_info.x, uv,\n"
+    "                                   wide_across, wide_down, v_box);\n"
+    "            if (got.a < 0.5) { discard; }\n"
+    "            texel_color = got.rgb;\n"
+    "            texel = texel_at(int(floor(uv.x)), int(floor(uv.y)));\n"
+    "            weight = 1.0;\n"
+    "        } else if (u_replaced != 0) {\n"
     /* The mod's picture, smoothed. A texture point names the texel it
      * is in, half a texel in from the corner the chip begins at, and a
      * pixel of the picture is a block of `scale` of video memory's: so
@@ -893,7 +941,7 @@ static const char g_gl_fragment_text[] =
     "                                   step_across / u_replace_rect.zw,\n"
     "                                   step_down / u_replace_rect.zw);\n"
     "            if (got.a < 0.5) { discard; }\n"
-    "            texel_color = got.rgb / got.a * 31.0;\n"
+    "            texel_color = got.rgb / got.a * 31.0 * u_replace_tint;\n"
     "            texel = texel_at(int(floor(uv.x)), int(floor(uv.y)));\n"
     "            if (u_replace_mix == 1) { texel = 32768u; }\n"
     "            if (u_replace_mix == 2) { texel = 1u; }\n"
@@ -1036,13 +1084,14 @@ static const char g_gl_blit_fragment_text[] =
     /* a mod's picture in the place of the rectangle (gl_replace.h) */
     "uniform sampler2D u_replace;\n"
     "uniform int u_replaced;\n"
+    "uniform vec3 u_tint;\n" /* the tint of its fade */
     "uniform vec4 u_rect;\n"
     "in vec2 v_at;\n"
     "out vec4 o_color;\n"
     "void main() {\n"
     "    if (u_replaced != 0) {\n"
     "        vec4 got = texture(u_replace, (v_at - u_rect.xy) / u_rect.zw);\n"
-    "        o_color = vec4(got.rgb / max(got.a, 1.0 / 255.0), 1.0);\n"
+    "        o_color = vec4(got.rgb / max(got.a, 1.0 / 255.0) * u_tint, 1.0);\n"
     "        return;\n"
     "    }\n"
     "    ivec2 at = ivec2(floor(v_at));\n"
@@ -1431,6 +1480,24 @@ static void port_GlSetUniforms(void) {
     glUniform1i(g_gl.at_ground_slots, 1);
     glUniform1i(g_gl.at_replaced, 0);
     glUniform1i(g_gl.at_replace, PORT_GL_REPLACE_UNIT);
+    /* a mod's pictures of the stage's pages (gl_scene.h) */
+    glUniform1i(g_gl.at_scene_lookup, PORT_GL_SCENE_LOOKUP_UNIT);
+    glUniform1i(g_gl.at_scene_pages, PORT_GL_SCENE_PAGES_UNIT);
+    glUniform1i(g_gl.at_scene_bases, PORT_GL_SCENE_BASES_UNIT);
+    glUniform1i(
+        g_gl.at_scene_on, !g_gl.options.is_exact && port_GlSceneBind() ? 1 : 0);
+    glUniform1f(g_gl.at_scene_levels, port_GlSceneLevels());
+}
+
+/* A fade's tint (port_mods.h, PORT_MOD_TINT_ONE a part for as it was)
+ * into a uniform of three. */
+static void port_GlSetTint(GLint at, u32 tint) {
+    glUniform3f(
+        at, (GLfloat)(tint & TINT_PART_MASK) / (GLfloat)PORT_MOD_TINT_ONE,
+        (GLfloat)((tint >> PORT_MOD_TINT_SHIFT) & TINT_PART_MASK) /
+            (GLfloat)PORT_MOD_TINT_ONE,
+        (GLfloat)((tint >> (2 * PORT_MOD_TINT_SHIFT)) & TINT_PART_MASK) /
+            (GLfloat)PORT_MOD_TINT_ONE);
 }
 
 /* The batch's replacement texture, where it has one (gl_replace.h). */
@@ -1443,6 +1510,7 @@ static void port_GlSetReplacement(const PortGlState *state) {
     glActiveTexture(GL_TEXTURE0);
     glUniform1i(g_gl.at_replaced, 1);
     glUniform1i(g_gl.at_replace_mix, state->replace_mix);
+    port_GlSetTint(g_gl.at_replace_tint, state->replace_tint);
     glUniform4f(g_gl.at_replace_rect, (GLfloat)state->replace_u,
                 (GLfloat)state->replace_v, (GLfloat)state->replace_w,
                 (GLfloat)state->replace_h);
@@ -1549,7 +1617,8 @@ static s32 port_GlStateIsSame(const PortGlState *a, const PortGlState *b) {
            a->replace_texture == b->replace_texture &&
            a->replace_u == b->replace_u && a->replace_v == b->replace_v &&
            a->replace_w == b->replace_w && a->replace_h == b->replace_h &&
-           a->replace_mix == b->replace_mix;
+           a->replace_mix == b->replace_mix &&
+           a->replace_tint == b->replace_tint;
 }
 
 static void port_GlWant(const PortGlState *state, s32 vertices) {
@@ -1815,6 +1884,7 @@ static void port_GlStateOf(const PortRemasterPrim *prim, PortGlState *state) {
     state->replace_w = 0;
     state->replace_h = 0;
     state->replace_mix = 0;
+    state->replace_tint = PORT_MOD_TINT_SAME;
 }
 
 /* A mod's picture of the primitive's texture, where there is one
@@ -1832,6 +1902,7 @@ static void port_GlReplacementOf(
     state->replace_w = found.w;
     state->replace_h = found.h;
     state->replace_mix = found.mix;
+    state->replace_tint = found.tint;
 }
 
 /* Whether this primitive is held against the ground by the console's own
@@ -1907,6 +1978,12 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     }
     port_GlStateOf(prim, &state);
     port_GlReplacementOf(prim, &state);
+    /* a face of the stage whose page a mod has a picture of: no state of
+     * the batch's, so that the stage's faces stay one batch (gl_scene.h) */
+    if (!g_gl.options.is_exact && state.replace_texture == 0 &&
+        port_GlSceneFind(prim)) {
+        flags |= FLAG_PAGE;
+    }
     if (state.clip_right < state.clip_left ||
         state.clip_bottom < state.clip_top) {
         return;
@@ -2027,6 +2104,7 @@ static void port_GlBlit(const PortGlBlit *blit) {
         glActiveTexture(GL_TEXTURE0);
     }
     glUniform1i(g_gl.blit_at_replaced, blit->replacement != 0);
+    port_GlSetTint(g_gl.blit_at_tint, blit->tint);
     glUniform4f(g_gl.blit_at_rect, (GLfloat)rect->left, (GLfloat)rect->top,
                 (GLfloat)(rect->right - rect->left + 1),
                 (GLfloat)(rect->bottom - rect->top + 1));
@@ -2111,17 +2189,20 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
      * fall over a shadow already painted, that shadow is covered
      * (gl_shadow.h) */
     port_GlShadowWroteVram(x, y, w, h);
+    /* a page of the stage written over is looked up again (gl_scene.h) */
+    port_GlSceneWroteVram(x, y, w, h);
     port_ClearDirtyRect(rect);
     port_AddDirtyRect(rect, x, y, w, h);
     port_GlMarkMirror(x, y, w, h);
     /* a picture a mod has a picture of (gl_replace.h) */
+    blit.tint = PORT_MOD_TINT_SAME;
     blit.replacement =
         g_gl.options.is_exact
             ? 0
             : port_GlReplaceFindPicture(
                   rect->left, rect->top, rect->right - rect->left + 1,
                   rect->bottom - rect->top + 1, g_gl.display_x,
-                  g_gl.display_is_rgb24 ? 0 : g_gl.display_w);
+                  g_gl.display_is_rgb24 ? 0 : g_gl.display_w, &blit.tint);
     /* one written before that this one covers is left out: this one is
      * drawn over the whole of it */
     kept = 0;
@@ -2153,6 +2234,15 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
                 (u32)port_GlFive(color, VRAM_BLUE_SHIFT);
         }
         port_GlClearBands(rect, is_one_color, color);
+        /* the frame's own clear: where it is a fight's on a stage open
+         * to the sky, the sky goes over it (gl_sky.h), and so over the
+         * clear itself, which is drawn first */
+        if (is_one_color && !g_gl.options.is_exact) {
+            port_GlDrawBlits();
+            port_GlSkyCleared(
+                rect->left, rect->top, rect->right - rect->left + 1,
+                rect->bottom - rect->top + 1, g_gl.background);
+        }
     }
     port_ProfileSwitch(was);
 }
@@ -2169,6 +2259,7 @@ static void port_GlBegin(void) {
     port_GlForgetOccluders();
     port_GlStageNewFrame();
     port_GlFighterNewFrame();
+    port_GlSceneNewFrame();
 }
 
 /* ---- what the stage's own mesh asks of the picture (gl.h) ---- */
@@ -2328,6 +2419,7 @@ void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h) {
     port_GlDrawBlits();
     port_GlMarkMirror(x, y, w, h);
     port_GlUploadMirror();
+    port_GlSceneWroteVram(x, y, w, h);
 }
 
 void port_GlSaveCounts(u32 *four) {
@@ -2391,6 +2483,9 @@ void port_GlSetOptions(const PortGlOptions *options) {
     port_GlStageSetOn(options->is_exact ? 0 : options->is_stage_mesh);
     port_GlShadowSetStrength(options->is_exact ? 0 : options->shadows);
     port_GlFighterSetOn(options->is_exact ? 0 : options->is_fighter_models);
+    port_GlSceneSetOn(!options->is_exact);
+    port_GlSkySetKind(options->is_exact ? 0 : options->sky);
+    port_GlSeeSetOn(options->is_exact ? 0 : options->see_through);
     if (g_gl.is_started) {
         /* the setting may have turned the mesh on or off, and the depth
          * buffer is attached only for it */
@@ -2484,6 +2579,13 @@ const char *port_GlStart(
     g_gl.at_replaced = glGetUniformLocation(g_gl.program, "u_replaced");
     g_gl.at_replace_rect = glGetUniformLocation(g_gl.program, "u_replace_rect");
     g_gl.at_replace_mix = glGetUniformLocation(g_gl.program, "u_replace_mix");
+    g_gl.at_replace_tint = glGetUniformLocation(g_gl.program, "u_replace_tint");
+    g_gl.at_scene_lookup = glGetUniformLocation(g_gl.program, "u_scene_lookup");
+    g_gl.at_scene_pages = glGetUniformLocation(g_gl.program, "u_scene_pages");
+    g_gl.at_scene_bases = glGetUniformLocation(g_gl.program, "u_scene_bases");
+    g_gl.at_scene_on = glGetUniformLocation(g_gl.program, "u_scene_on");
+    g_gl.at_scene_levels = glGetUniformLocation(g_gl.program, "u_scene_levels");
+    g_gl.blit_at_tint = glGetUniformLocation(g_gl.blit_program, "u_tint");
     g_gl.blit_at_replace = glGetUniformLocation(g_gl.blit_program, "u_replace");
     g_gl.blit_at_replaced =
         glGetUniformLocation(g_gl.blit_program, "u_replaced");
@@ -2574,6 +2676,15 @@ const char *port_GlStart(
             port_GlSay("the mods' textures are not drawn: ", why);
         }
     }
+    /* ... and their pictures of the stage's pages (gl_scene.h) */
+    {
+        const char *why = port_GlSceneStart(getproc);
+
+        if (why != NULL) {
+            port_GlSay("the mods' pages of the stage are not drawn: ", why);
+        }
+    }
+    port_GlSceneSetOn(!options->is_exact);
     /* the comparison with the software GPU's own picture wants the
      * tiles as the game emitted them, and the shadows as it drew them */
     port_GlStageSetOn(options->is_exact ? 0 : options->is_stage_mesh);
@@ -2588,6 +2699,18 @@ const char *port_GlStart(
         }
     }
     port_GlFighterSetOn(options->is_exact ? 0 : options->is_fighter_models);
+    /* the sky (gl_sky.h): a card that cannot have it shows the game's
+     * own colour of the distance */
+    {
+        const char *why = port_GlSkyStart(getproc);
+
+        if (why != NULL) {
+            port_GlSay("the sky is the game's colour of the distance: ", why);
+        }
+    }
+    port_GlSkySetKind(options->is_exact ? 0 : options->sky);
+    /* the walls seen through (gl_see.h), which the ground's mesh draws */
+    port_GlSeeSetOn(options->is_exact ? 0 : options->see_through);
 
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);

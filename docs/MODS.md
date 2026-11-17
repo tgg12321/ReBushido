@@ -5,14 +5,16 @@ stand in for the game's own. This is the roadmap's item 10
 ([`ROADMAP.md`](ROADMAP.md)): one framework for everything a mod can
 replace, with **replacement textures** as its first user, and the
 English top menu the program ships as its first mod ("The English
-menu", below). Models, music
-and stages are to find their files the same way; their folders are read
-already and nothing uses them yet.
+menu", below). The fighters' models, **music** ("Music") and a
+**stage's files** ("Stages") find their files the same way.
 
-Nothing here touches the game: what the game computes is the same with
-mods and without, and the PlayStation builds have none of it. With no
-mod's textures and nothing to write out, the picture is exactly what it
-was.
+Textures, models and music touch nothing of the game: what the game
+computes is the same with those mods and without, and the PlayStation
+builds have none of it. With no mod's textures and nothing to write out,
+the picture is exactly what it was; with no mod's music, the sound. A
+stage's files are the one kind that is the game's own data: a stage mod
+changes what the game loads, and so can change how it plays
+("Stages").
 
 ## Where the mods are
 
@@ -39,11 +41,13 @@ mods/
   `.glb` models, by the file's name on the disc, `M100.glb`, and the
   weapons', by the weapon model's number, `W00.glb` to `W57.glb`: PORT.md,
   "The fighters' own models"; `tools/fighter_hd.py` makes a whole mod of
-  them, the hd mod, from your disc), `music/`,
-  `stages/` (read, not used yet). Under a kind's folder the files may be
-  in folders of any names, four deep.
+  them, the hd mod, from your disc), `skies/` (a stage's sky, below),
+  `music/` (`.ogg` and `.wav`: "Music") and `stages/` (any ending:
+  "Stages"). Under a kind's folder the files may be in folders of any
+  names, four deep.
 - A file's **key** is its name without its ending, in small letters,
-  wherever it is under its kind's folder. A texture has to end `.png`.
+  wherever it is under its kind's folder. A texture has to end `.png`,
+  a piece of music `.ogg` or `.wav`.
 - What the program found is said in the session's log (`logs/`): each
   mod, in its order, with how many files of each kind it gives, and each
   texture as it is first used.
@@ -84,7 +88,9 @@ changes.
 1. Run with `--dump-textures FOLDER`. Every texture the game draws is
    written there as a PNG the first time it is drawn, named by its key,
    once: play through what you want to change. A texel the game draws
-   as nothing is clear in the PNG.
+   as nothing is clear in the PNG. The log says where each was
+   (`mods: wrote ... (page X Y, at U V, table X Y)`): the pieces of one
+   line of a menu's lettering lie side by side in one page.
 2. Draw a better one, **at any size** -- two, four or eight times the
    texture, or any other size; it is stretched over the texture and
    smoothed. Keep the clear parts clear: a pixel whose alpha is less than
@@ -151,21 +157,134 @@ of its own.
 
 ### What is not replaced, and why
 
-- **The scene's faces**: the stage, the fighters, their weapons. Each
-  face reads a small piece of its page that is not a texture of its own,
-  so its key would be a piece of a fighter, and a fighter's texture
-  would be hundreds of files. The scene wants keys by whole page and
-  colour table, which is the next step (below).
+- **The scene's faces by the piece**: each face reads a small piece of
+  its page that is not a texture of its own, so its key would be a piece
+  of a fighter, and a fighter's texture would be hundreds of files. The
+  stage's faces are replaced by whole page instead ("The scene's textures
+  by page", below); the fighters and their weapons are not (their own
+  models are: PORT.md, "The fighters' own models").
 - **The fight drawn again under the pause** is the scene as well.
-- **A texture whose colour table the game is fading** is a new key at
-  each step of the fade, and is drawn from video memory during it. The
-  boot logo fades by writing its pixels again each frame, so it is five
-  keys, one for each step: a mod gives each of them, or only the first.
 - **The movie**, which the console shows in its 24-bit mode and the
   remastered picture leaves to the software GPU. The title picture held
   after it has not been looked at yet: the play tests' presses skip it.
 - With `--gl-exact` (the prover's picture held to the console's) nothing
   is replaced.
+
+## The scene's textures by page
+
+The stage -- its ground, its walls, its props, whatever of it the
+renderer draws -- is replaced by **whole texture pages**: a mod's picture
+of one page of 256 by 256 texels, as one of the stage's colour tables
+shows it, stands in for every face of the stage that reads that page
+through that table. A stage is some twenty such files.
+
+**The key** is `page-256x256-D-HASH`: FNV-1a of 64 bits, as the 2D
+layer's, over the depth's code, the width and the height (256 each, two
+bytes, the low first), every texel of the page row by row (an index of
+one byte, or a pixel of two) and then the colour table (16 colours or 256,
+two bytes each). Two things make it the same in every run:
+
+- **Only the stage's own texels count.** A page holds the stage's TIMs
+  and, between them, whatever the menus or the stage before left in video
+  memory, which differs from one run to the next. `tex_LoadStageGroup`
+  says which TIMs it loads and where (`port_RemasterNoteStageTexture`,
+  port_remaster.h); a texel whose pixel of video memory no TIM of the
+  stage wrote is hashed as 0.
+- **The table is the one the stage's file loaded.** The faces name the
+  stage's tables in the row the fog writes over all through the frame
+  (PORT.md, "The ground as one mesh"); the key takes the colours from the
+  row below, where the stage loaded them and nothing changes them.
+
+`src/port/mods.c`, `port_TexturePageKey`, makes it; `tests/port/mods.py`
+works it out a second time from this description.
+
+**When it is looked up**: as soon as a stage is loaded, every page and
+table the stage's TIMs bring is keyed and its picture read, so nothing is
+read in the middle of a fight; a page and table a face names that no TIM
+brought is looked up the first time it is drawn. A page the game writes
+over is looked up again. With `--dump-textures FOLDER` every page that has
+no picture is written into `FOLDER/pages/`, with a list beside it of the
+stage's own textures in it (`.txt`), which is what `tools/port_stage_hd.py`
+makes its pictures from.
+
+**How it is drawn** (`src/port/gl/gl_scene.c`, `PORT_GL_SCENE_SHADER`):
+
+- The pictures are the layers of one array on the card, all of the first
+  one's size (a picture of another size is made that size as it is read),
+  with mipmaps down to a quarter of the game's texel and the card's
+  anisotropic filtering where it has it. Which layer a page and a table
+  have is a texel of a lookup table the shaders read, so the stage's faces
+  are still one batch and the ground's mesh still one draw.
+- **Nothing of a texture packed beside it is smoothed in.** A page packs
+  textures edge to edge with no border, so each face is read only inside
+  its own rectangle of texels (its texture points' least and most, out to
+  their texels' edges), less half a texel of the level being read: the
+  ground's mesh carries each face's rectangle in its vertices, and the
+  renderer's geometry shader works out each triangle's.
+- **Its colours follow the game's.** Where the game changes the colours a
+  face is drawn in after the picture was made -- the fog's rows, which
+  the mesh mixes by the depth of each pixel, a tint, a fade -- each part
+  of the picture is multiplied by what the colours about that point are
+  now over what they were when it was made (the table as loaded, kept as
+  the layer's row of a table of bases), each with one added so that a
+  black stays a black. Where nothing has changed, that is the picture
+  itself. So the fog and the fades come out as the game's.
+- A pixel of the picture whose alpha is under a half is not drawn;
+  whether a pixel mixes, on a half-transparent face, is still the game's
+  texel's to say.
+- With no mod's textures nothing is looked up and no shader takes the
+  path; with `--gl-exact` neither.
+
+What it leaves to video memory: a face of a fighter or a weapon, a page
+of 16-bit texels, a face read through a texture window, and a face the
+side channel has no depth for (the game's own tiles where the ground is
+not drawn as one mesh are partly that).
+
+## The stages' pages made larger
+
+The **stages-hd** mod is every stage's pages made four times larger, from
+the player's own disc, by `tools/port_stage_hd.py`:
+
+```
+python3 tools/port_stage_hd.py dump --image "Bushido Blade 2 (USA).cue"   # Linux or WSL
+python tools/port_stage_hd.py build                                          # numpy and Pillow
+```
+
+`dump` loads each of the 38 stages on the GL prover (the tour of
+`tools/port_stage_prove.py` as far as its fight) with no mod in the way and
+`--dump-textures tmp/stage-hd/dump`. `build` writes `tmp/mods/stages-hd/`,
+order -200, a picture for each page and table. Each of the stage's own
+textures in a page -- a TIM of its file -- is made larger by itself, so
+that nothing of its neighbours is smoothed into it, in four steps:
+
+1. **The dither taken out.** The textures are 16 colours each, and their
+   artists dithered between two near colours to make a third, which at
+   four times is a checkerboard. A texel that stands out from all four
+   neighbours the same way round by no more than about a step of the
+   texture's own colours is dither, and is smoothed with its neighbours of
+   near colour (a bilateral filter); every other texel is kept, so lines,
+   edges and the grain of the wood stay.
+2. **Made larger along its edges**: twice, then twice again, by
+   directional cubic convolution (Zhou, Shen and Zeng, 2012): each new
+   texel by a cubic along whichever of two directions changes less about
+   it, or both weighed, so an edge is made longer and not wider or
+   stepped.
+3. **Held to the game's picture**: made smaller again it is the texture it
+   came from; what is left over is made larger and added back, three times
+   (back-projection), each texel held inside the least and the most of the
+   source texels about it, which keeps a bright rim off a dark bar.
+4. **Sharpened without halos**: an unsharp mask, held the same way.
+
+A texel of nothing is clear, and the clear and the drawn are made larger as
+a shape, with an edge a texel or two wide. The game's own smaller copies of
+a texture (half the size, at half its place in the page, which the renderer
+reads far off) are made from the larger one's picture made smaller. The
+textures of another table in a page are copied a block a texel, so that a
+face that drew them through this table would still be drawn.
+
+No learned model and no program of anyone else's is used. It is the game's
+own pictures made larger, so it is never committed: copy
+`tmp/mods/stages-hd/` into `mods/` beside the program.
 
 ## The English menu
 
@@ -220,7 +339,371 @@ times the texture across and twelve down, square on the screen.
 dump of a run from the boot to a mode chosen has one key for each row
 and each piece of the title, and the mod replaces every one of them
 from the menu's first frame to its last. A texture that is faded through
-its colour table is still a new key at each step (below).
+its colour table is a new key at each step, and is drawn from the
+replacement it fades from ("Fades", below).
+
+## Fades
+
+A texture the game fades through its colour table (`tex_TintClut`, the
+fades of `disp_`) is a new key at each step of the fade, and so is a
+picture it fades by writing it again each frame (the boot logo, five
+keys). A replacement still holds through them: **each replacement found
+is kept with what it was found with** -- the colour table of a texture,
+the pixels of a picture -- and a key with no replacement of its own is
+held to the kept ones. Where its texels are a kept texture's (the key of
+the texels alone, `port_TextureTexelKey`) and every colour of its table
+is that one's with each part times one number (`port_TextureFadeOf`:
+colour 0 stays 0, a texel's top bit stays, each part within two of its
+31 steps), or where it is a picture of a kept one's size whose every
+pixel is so, it is drawn from the kept one's picture, its colours
+**times those three numbers** (`u_replace_tint`, and `u_tint` for a
+picture). The log says so once for each: `mods: texture KEY is a fade
+(62, 62, 62 of 128)`. A key that had no replacement is looked at again
+whenever another replacement is kept. The tint is a mod's as much as
+the game's: a texture whose table the game tints gold for the cursor is
+drawn gold from the same picture.
+
+What this cannot do is a fade that begins before its texture has been
+seen whole, a fade in from black on a screen's first showing: the kept
+one is not there yet. `tools/port_art.py` finds those among its dump
+(textures of one size and outline whose colours are the brightest one's
+times a number) and writes each step as the brightest one's picture,
+tinted.
+
+`tests/port/mods.c` holds the fit to the game's own arithmetic: every
+step of `tex_TintClut`'s fade to black is found, with its tint; a table
+in another order, a colour of nothing drawn, a top bit changed or one
+colour out of step is not.
+
+## The sharp menus
+
+The program ships a second mod: **`mods/ui/`**, the lettering of the
+menus drawn again in a font, sharp at any size. It is on unless `ui =
+off` in `rebushido.cfg` or the settings menu ("Sharp menus") says
+otherwise; its order is -100, as the English menu's.
+
+| What | Its lines |
+|---|---|
+| The pause menu | Pause Menu, Continue, Return to Sub Menu, Return to Top Menu |
+| The menu after a fight | Rematch, Return to Sub Menu, Return to Top Menu |
+| The top menu's captions | Story Mode, Vs. CPU Mode, Training Mode, Vs. Mode, Group Battle Mode, Link Mode, Option Menu |
+| The select screens' titles | Select Character, Select Weapon |
+| The group battle's page | Group Battle Mode, Number of Entries, Match, Time Limit, Start, Return to Top Menu |
+
+**How it is made.** `python tools/port_ui.py` draws the pictures into
+`src/port/mods/ui/` (`--check` as `port_english.py`'s). The game draws a
+line of a menu as sprites up to 64 texels wide cut from one line of
+lettering in a texture page, and a word of one line is sometimes another
+line's: the pause menu's "Return to Sub Menu" is the "Return to " of
+"Return to Top Menu", then "Sub" and "Menu" from places of their own. So
+the script's table is of lines -- the text, the line's size, the
+rectangle the game's own lettering fills, its look, and its pieces, each
+its key and where it begins along the line (from the dump's log, above)
+-- and each line is drawn once, in Arimo (SIL Open Font Licence,
+`src/port/fonts/`), fitted to that rectangle at eight pixels a texel,
+and cut into its pieces. Every line of one height has letters of one
+size. The looks are the game's: the pause menu's letters with a shadow
+down and to the right, the select screens' with a dark edge all round,
+the captions' darkening downward, each in the colours its own lettering
+has (`--measure DIR...` prints them from a dump). Like the English
+menu's, the pictures are the project's own, kept in the repository.
+
+## The art mod
+
+Everything else of the screens is **the game's own pictures made
+larger**, which is not the project's to give, so it is a mod each player
+makes from their own disc, as the hd fighters are (`tools/fighter_hd.py`):
+
+```
+python3 tools/port_art.py dump --image "Bushido Blade 2 (USA).cue"   # Linux or WSL
+python tools/port_art.py build                                          # numpy and Pillow
+```
+
+`dump` plays the game with no window on the GL prover
+(`python3 tools/port_gl_build.py`), seven runs at once: from the boot
+through each mode of the top menu, its select screens, a fight with its
+pause menu, the fight's end and the menus after it, every texture
+written into `tmp/art/dump/` with no mod in the way (about 1,200 of
+them). A player who would rather play the screens through runs the game
+with `--dump-textures FOLDER` and gives `build --dump FOLDER` (as many
+as they like). `build` writes `tmp/mods/art/`, order -200 -- under the
+built-in mods and under any of the player's own -- with each texture six
+times larger (`--scale`), by its kind:
+
+- **a few colours** (six or fewer: an emblem, a frame, a button): each
+  colour's area smoothed as a shape of its own (bicubic, at twice the
+  scale) and every pixel given the colour whose area is strongest, then
+  averaged down, so an edge between two colours is a smooth line and no
+  colour is mixed into a new one inside an area;
+- **lettering and the like** (up to 48 colours): the colours smoothed
+  over their alpha, and the outline made sharp again from the smoothed
+  alpha, a pixel or two wide;
+- **a picture** (more, or 16 bits: a portrait, a loading screen's map,
+  the boot logo): Lanczos and an unsharp mask.
+
+A texture with a side under four texels is left as it is. Each is
+written here in numpy and Pillow; no model and no other project's
+program is used, so nothing is added to what the licence covers (a
+learned upscaler with weights of a clear licence would do better on the
+portraits; none is used). Copy `tmp/mods/art/` into `mods/` beside the
+program; it is never committed. From one disc: 1,224 textures dumped,
+1,070 made larger (653 lettering, 360 of a few colours, 57 pictures), 154
+too small, in 8 seconds.
+
+## Skies
+
+A stage open to the sky has a night sky of the port's own in the
+remastered picture (`sky = night`, [`PLAYING.md`](PLAYING.md); PORT.md,
+"The sky"). A mod can give it a picture instead:
+
+```
+mods/
+  my-skies/
+    skies/
+      stage_04.png       the bus stop's sky
+      default.png        every other open stage's
+```
+
+- The key is `stage_NN`, the stage's number in two digits (the order of
+  `STAGE_NAMES` in `tools/port_remaster_prove.py`: `stage_15` is the
+  terraced fields), or `default` for every open stage the mods give no
+  picture of its own.
+- The picture is **equirectangular**: its width goes once round the eye
+  from left to right, its top row is straight up and its bottom row
+  straight down, the horizon across its middle. Any size; it is
+  smoothed and mipmapped.
+- It stands in for the whole sky, the gradient, stars and moon included,
+  and is drawn as it is: the stage's fog still fades the ground to the
+  stage's own colour of the distance, so a horizon of about that colour
+  meets the ground with no seam.
+- Only the stages that have a sky use one: a hall or the cavern keeps
+  the game's colour whatever the mods say. The log says which picture
+  each stage took (`sky: stage N is the mod's picture ...`).
+
+## Music
+
+Every piece of music the game plays is **XA sound off the disc**: a
+stream (a channel) of one of the disc's sound files, which the drive
+plays by itself while the game only watches where it is
+([`PORT.md`](PORT.md), "Sound"; [`formats/XA.md`](formats/XA.md)). A
+mod's piece takes the place of one stream.
+
+### The key
+
+A piece's key is **the disc's file and the stream's channel**: the file's
+name in small letters without its ending, a dash, and the channel. The
+movie's sound, which is chosen by no channel, is the file's name alone.
+
+| Key | What it is |
+|---|---|
+| `bb2_m1-0` | the narration, and the stages whose fight it is (most of them: below) |
+| `bb2_m1-1` | the menu's pages: character select and the rest |
+| `bb2_m1-2`, `-3`, `-4` | stages' fights |
+| `bb2_m1-5`, `-6` | on the disc; nothing asks for them |
+| `bb2_m1-7` | the top menu |
+| `bb2_m2-0`, `bb2_m2-1` | chanbara, the one clan and the other |
+| `bb2_m2-2`, `bb2_m2-3` | a practice round; practice |
+| `bb2_m2-4` | the staff roll |
+| `bb2_m3-0` to `-5` | the voices of six endings |
+| `mar_xa00-N` to `mar_xa28-N`, `end_xa1-N` to `end_xa3-N` | the story's cutscenes' voices, stream N |
+| `opening` | the opening movie's sound |
+
+A versus fight's piece is its stage's (`g_snd_stage_music_tracks`,
+`src/main/fight_data.c`): one of `bb2_m1-0` to `-4`, so one piece is
+heard on several stages, and a mod replaces it on all of them.
+
+`--dump-music FOLDER` writes each piece **as the game plays it**,
+`KEY.wav`: the drive's own sound before the game's volumes, 16 bits,
+stereo, 44,100 a second, from the moment the drive starts the stream.
+Play through what you want; a piece heard twice is kept from the longer
+play. That is what a replacement stands in for, and its key is its name.
+
+### Making one
+
+Put `KEY.ogg` (Ogg Vorbis) or `KEY.wav` (whole numbers of 8, 16, 24 or
+32 bits, one channel or two) in a mod's `music/`. Any rate from 8,000 to
+96,000 a second; it is brought to the chip's 44,100 by a line between
+samples.
+
+- **How loud.** The piece is heard where the disc's sound was, through
+  the same volumes, and the game sets the drive to **twice** what is on
+  the disc (`CdMix` at 0xFF). The disc's pieces peak at about half of
+  full scale (12,700 to 15,500 in the dumps): make a piece as loud as its
+  dump, not louder, or it is clipped. A piece replaced by its own dump
+  is heard exactly as the original.
+- **Its loop.** An Ogg file's tags `LOOPSTART` (the sample the loop goes
+  back to) and `LOOPLENGTH` or `LOOPEND` (the sample it goes back from),
+  in samples of the file; a WAV's first loop in its `smpl` chunk. With
+  neither, the piece plays once and is then silent until the game starts
+  the stream again.
+- **Its length.** The game ends and restarts a looping piece after the
+  original's own length, as it does on the disc (the top menu's after
+  3:44: `g_cdrom_music_tracks`, `src/main/cdrom.c`), and the mod's piece
+  starts again from its beginning with it. A piece longer than the
+  original is cut there; a shorter one wants a loop.
+
+### How it is heard
+
+The piece follows the drive, not the game's calls: it starts on the
+sample the drive starts the stream on, and stops when the drive does.
+Everything the game does to its music it does to the drive's volumes
+and the drive itself, so the mod's piece is faded, set loud, muted and
+stopped as the original is, on the same samples (a fade, blank by blank:
+the proof below). The disc's sound is still read and decoded and goes
+into the sound chip as before: the chip, its memory, its reverb and the
+samples it hands the mixer are what they were, and what is heard (the
+`--wav` file, the sound card) is a second copy of those samples with the
+mod's piece where the disc's was, made beside them in memory that is no
+part of the state (`port_RunSpu`'s `heard_out`, `music.c`'s). With no
+music mod the sound is the same, sample for sample.
+
+**A rollback** (netplay, `NETPLAY.md`) neither restarts nor stutters a
+piece: where it is comes from the sound's clock (samples since the
+stream began), which is the game's, and a step run again quietly is not
+heard and moves nothing of the music's. Two peers may have different
+music mods, or none: the music is no part of the state.
+
+The setting **`music_mods = off`** (the settings menu's "Mods' music",
+or `--music-mods off`) plays the game's own music, at once and at the
+same place in it; on again, the mod's piece is back where the stream is.
+`mods = off` leaves out every mod, music included.
+
+The Ogg decoder is **stb_vorbis** 1.24 by Sean Barrett, in the public
+domain (or MIT, as its user chooses; the licence is at the end of
+`src/port/vendor/stb_vorbis.c`), kept as it ships. The port has no C
+library: `src/port/vorbis.c` writes the little stb_vorbis takes from
+one ahead of it, and gives it one buffer as all its memory; the
+headers it names are the empty ones in `src/port/vendor/libc/`. It is
+the port's one file with numbers that are not whole, and the 64-bit
+program compiles it with the vector registers that numbers of that kind
+are passed in (`tools/port_build.py`, `PORT_OWN_FLAGS`). The two sizes
+decode an Ogg file a part in 16,000 apart at most (one or two in the
+last bit); a WAV is the same in both.
+
+**How it is proved** (headless, `port_game`'s run, both sizes):
+
+- with no music mod, the run's `--wav` and its trace are byte for byte
+  what they were before there was any of this; so with `--music-mods
+  off` and a mod present;
+- every piece the run plays replaced by its own dump: the sound is the
+  original's, sample for sample, through the whole run but the last
+  0.78 s, the top menu's second play, whose drive started it a sample
+  apart from the play that was dumped (the drive's sectors reach its
+  decoder as the blanks fall);
+- `bb2_m1-1` replaced by an Ogg file at 48,000 a second, a tone that
+  rises a step each second, looped from its second second to the end of
+  its third: in the run it is heard from the same sample to the same
+  sample as the original (blanks 1,388 to 2,559), at 300, 500, 700, 500,
+  700 Hz... second by second, and twice as loud as the file, as the
+  disc's sound is;
+- `bb2_m1-7`, the top menu's, replaced by the same tone: as the menu is
+  left, the game's fade takes it down blank by blank in the proportion
+  it takes the original down (18,707 to 725 in RMS, against 4,753 to
+  164), and cuts it on the same sample;
+- the trace of every one of those runs is the plain run's, in both
+  sizes, and the rollback self-test (`tools/port_rollback.py --with=--mods
+  --with=FOLDER`) passes with a music mod and a stage mod in, loud and
+  quiet. It is what put the heard samples outside the state: with them
+  in the mixer's own buffer, a step run again quietly, which hears no
+  music, left that buffer otherwise than the first run had;
+- on every push, `tests/port/music.c` (`music.py`): the keys, the tags,
+  where a sample falls at other rates to an hour and more, WAVs of every
+  kind it reads and those it does not, an Ogg file made by the reference
+  encoder (where the system has libvorbisenc) decoded by stb_vorbis to
+  its length, pitch and tags with a seek to the sample, and the player
+  through a stream's start, a step run again, another stream, the
+  setting, a loop and an end.
+
+## Stages
+
+A stage is **files on the disc and tables in the program**. A mod can
+replace the files; the tables are the next step (below).
+
+### What the game reads for a stage
+
+| | Where | What |
+|---|---|---|
+| **The ground**, key `s07` | NDATA.DAT's `S07` ([`formats/NDATA.md`](formats/NDATA.md); `resource_LoadStage`, `src/main/resource.c`) | a header of section offsets, then: the **meshes** (everything drawn, by cell); the **collision grid** (32 by 32 cells of 2,000 units, each listing the faces that cross it, with each face's surface: firm, sand, wet, barrier...: `include/collision.h`); a list nothing reads; the fight's **obstacles**; the **cells** of the stage grid (what stands on each of the 32 by 32, `stage_ReadCells`); and the **textures**, TIMs with where each goes in video memory (`tex_LoadStageGroup`). Stages with more have more sections: areas (the shrine, the castle rooftop, chanbara's hall), props that fall when cut (the bus stop, the bamboo thicket, the lumberyard), the rooftop's backdrop, the coast's surf |
+| **The sounds**, key `stage07` | `LOADSE/STAGE07.BIN` or `LOADSE1/` ([`formats/STAGE_BIN.md`](formats/STAGE_BIN.md)) | six sound banks (footsteps and landings on each surface class, the stage's own) and the billboards' list |
+| **The card**, key `stg07` | `U_PIC/STG07.BIN`, `TIM2D/` for 30 and 31 | the stage's name and view that story mode shows; stages 0 to 31 |
+| The light | the program: `g_light_stage_presets` (`src/main/light.c`) | each stage's sun and ambient colours for the fighters and the scenery, the sun's direction, the colour of the distance |
+| The fog | the program: `g_stage_fog_spans`, `g_stage_fog_settings` (`include/stage.h`) | how far the scene reaches and how the fog steps |
+| The sky | the stage's own meshes and textures (a dome or a backdrop is a mesh like any other), and the clear colour | |
+| Where the fighters start | the program: `g_fight_start_positions` (`include/fight.h`) | each stage's pairs of start positions |
+| Its music | the program: `g_snd_stage_music_tracks` | one of five pieces (Music, above) |
+| What it does of its own | the program: `g_stage_hooks` (`src/main/stage_hooks.c`) | the surf, a turning texture, the props |
+
+**Gameplay.** The collision grid is what the fighters stand on and
+walk into, what a blade meets, what sand is thrown from and where a
+fight is out of bounds: a stage's ground file changes **how fights
+play**, not only how they look. A changed ground is a changed game: two
+netplay peers must have the same stage mods (the stage is loaded into
+the game's state, and the hash would part at the first frame of the
+fight), and a stage file whose collision does not match what is drawn
+lets a fighter walk through a wall or fall through the floor. The
+remastered picture's ground as one mesh (`stage_mesh`,
+`src/port/gl/gl_stage.c`) is proved stage by stage on the disc's
+grounds (`g_stage_proved`): a stage whose ground is replaced should be
+looked at with `stage_mesh = off` until it is measured again.
+
+### Replacing a stage's files
+
+`--dump-stages FOLDER` writes every stage's files from your disc under
+their keys: `s00.dat` to `s37.dat`, `stage00.bin` to `stage37.bin`,
+`stg00.bin` to `stg31.bin`. Change one, and put it in a mod's `stages/`,
+in a folder of any name:
+
+```
+mods/
+  blue-rooftop/
+    stages/
+      29 building rooftop/
+        s29.dat
+```
+
+As the program starts, it reads the disc's directory (ISO 9660,
+`src/port/discfiles.c`), finds where each stage file is (NDATA's through
+NDATA.INF), and keeps each mod's file whose key it knows. Then every
+sector the drive reads of that file has the mod's data in place of the
+disc's (`port_OverrideDiscSector`, called by the disc's reader): the game
+loads it as it loads its own, by the same commands, and none of its code
+knows. A mod's file may be **shorter** than the disc's (the rest of the
+disc's sectors read as zeros) and **not longer**: the game reads as many
+sectors as its own tables say (NDATA.INF for a ground). One that is
+longer is left out, and the log says so.
+
+**How it is proved.** Stage 29's ground (the building rooftop, the stage
+of `port_game`'s fight) dumped from the disc, its 54 colour tables given
+red for blue (491 colours) by a script at test time, and put in a mod:
+the log says `s29` is read over the disc's sectors 9,520 to 9,597; the
+trace of the run and its sound are the plain run's in both sizes, and
+the pictures are the same until the fight and differ from its first
+picture on (the floor blue, the fighters as they were). The rollback
+self-test passes with it in. `tests/port/discfiles.c`: a made-up disc's
+directory, a folder of two sectors, the files by path and by sector,
+NDATA's stage found through its INF, the dump, and a mod's files over
+the disc's sectors: one that fits, one shorter, one too long, and every
+other sector untouched. Nothing of the player's disc is in the
+repository.
+
+### What a stage editor needs next
+
+- **The ground file written, not only changed**: a reader and writer of
+  its sections (`tools/inspect_stage.py` reads the BIN files; the ground
+  wants the same), and an exporter from a modelling program: meshes into
+  the game's mesh format by cell, the collision grid made from the
+  meshes (each face's cells and surface), the cells' table, textures
+  packed into the stage's place in video memory with their colour
+  tables.
+- **Larger files**: a ground longer than the disc's needs NDATA.INF
+  given its new length (the INF is read off the disc like the rest, and
+  can be replaced the same way) and room in the arena block the stage is
+  loaded into (`ARENA_STAGE`).
+- **The program's tables as data**: the light, the fog, the start
+  positions and the music by stage from a stage mod's own file, read
+  where the game reads its tables (a switch of the port's).
+- **New stages**, not only replaced ones: a stage number past 37, and
+  the menus to choose it.
 
 ## For the code
 
@@ -228,11 +711,21 @@ its colour table is still a new key at each step (below).
 |---|---|
 | `include/port_mods.h`, `src/port/mods.c` | the folder read, the manifests, the table (`port_ModFind(kind, key)`), the texture's key |
 | `include/port_png.h`, `src/port/png.c` | a PNG reader of every kind but the interlaced, with its own inflate, and the plainest PNG writer; no C library |
+| `src/port/gl/gl_sky.c` | a stage's sky (`PORT_MOD_SKIES`), looked for once a stage |
 | `src/port/gl/gl_replace.c` | the keys looked up per primitive and per picture, the mods' PNGs given to the card, the textures written out |
 | `src/port/gl/gl_draw.c` | the hooks: a batch's replacement texture (`PortGlState`), the shader's `u_replaced`, the picture's in the stretch of video memory |
 | `src/port/host_*.c` | `port_HostListFolder`, `port_HostMakeFolder` |
+| `include/port_music.h`, `src/port/music.c` | the music: a stream's key, following the drive, the piece decoded and put in place of the disc's sound, `--dump-music` |
+| `src/port/vorbis.c`, `src/port/vendor/` | stb_vorbis as it ships, and the empty C library headers it is compiled over |
+| `src/port/xa.c`, `src/port/spu.c`, `src/port/sound.c`, `src/port/cd.c` | the hooks: the drive's volumes on other samples (`port_MixCdAudio`), the chip's `heard`, the call in the mix, the stream playing (`port_GetCdStream`) |
+| `include/port_discfiles.h`, `src/port/discfiles.c` | the disc's directory, a stage's files by key, `--dump-stages`, the mods' files over the disc's sectors; `src/port/disc.c` calls it for every sector it reads |
+| `tests/port/music.c`, `music.py`, `tests/port/discfiles.c` | the music's keys, loops, files and player; the directory and the stage files |
 | `tests/port/mods.c`, `mods.py` | the manifest, a folder of mods and its order, the keys from this page, PNGs of every kind written by zlib |
 | `tools/port_english.py`, `src/port/mods/english/`, `src/port/fonts/` | the English menu the program ships, and what draws it |
+| `tools/port_ui.py`, `src/port/mods/ui/` | the sharp menus the program ships, and what draws them |
+| `tools/port_art.py` | the art mod, made from the player's disc |
+| `src/port/gl/gl_scene.c`, `gl_scene.h` | the stage's pages: the keys looked up as a stage loads, the pictures as one array, the shaders' part |
+| `tools/port_stage_hd.py` | the stages-hd mod, made from the player's disc |
 
 The mods' files are none of the game's state (`config/port_state.txt`,
 `docs/NETPLAY.md`): the table is made once, as
@@ -246,14 +739,17 @@ ending a kind's files must have.
 
 ## What is next
 
-- **The scene's textures by page**: a key of a whole texture page and
-  its colour table, and a replacement of the whole page, so that a
-  stage's or a fighter's textures are a few files each.
-- **A fading colour table** found by the table it fades from, so that a
-  replacement fades with it.
-- **The other menus redrawn**: the top menu is in English (above); the
-  rest of the game's menu text is English already, at the console's
-  resolution, and each piece of it is a sprite with a key, so a sharper
-  menu is a set of PNGs drawn as `tools/port_english.py` draws its own.
-- Music and stages, through the same table (the models are read now:
-  PORT.md, "The fighters' own models").
+- **The fighters' textures by page**, as the stage's are: their own
+  models are the larger step, and are taken already.
+- **More of the lettering in a font**: the dialogue boxes, the names on
+  the select screens and the options' pages are the art mod's for now,
+  made larger; each is a line of `tools/port_ui.py`'s table away.
+- **The title picture** after the opening movie is the movie's own
+  frame in its 24-bit mode, which the remastered picture leaves to the
+  software GPU (PORT.md, "Remastered in the window").
+- **Music by stage**: a key for a fight's piece with its stage
+  (`bb2_m1-0` on stage 7 alone), so that a mod can give each stage a
+  piece of its own though the game shares five among them.
+- **FLAC**: a third kind of music file, with a decoder of whole numbers
+  (dr_flac, public domain, is one).
+- Stages: "What a stage editor needs next", above.

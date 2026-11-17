@@ -139,6 +139,11 @@ exists. As the one ground mesh replaced the tiles, each part of the
 picture is looked at again in that light: the camera, lighting and
 shadows, the 3D terrain (structures that see through when they block the
 camera), particle effects, skyboxes on the stages that were left dark.
+Two of them are in: a night sky over the 28 stages open to it (`sky`), and
+the stage's walls thinned where they stand between the camera and a
+fighter (`see_through`), both on in the window and both the owner's to
+confirm ([`PORT.md`](PORT.md), "The sky", "Seeing the fighters through
+the stage").
 
 8. **Online play with rollback netcode**, soon after the picture. What it
    asks of the port, and what work before it should keep in mind:
@@ -157,10 +162,19 @@ camera), particle effects, skyboxes on the stages that were left dark.
    picture's, with a check; a step run again with nothing drawn or
    heard; the game's own link-cable mode between two ports over UDP; and
    rollback netplay of a whole session, GGPO's design in C, with desync
-   detection by the state's hash, proved between two headless programs on
-   one PC with 100 ms of latency and lost datagrams (`make port-net`;
-   NETPLAY.md, sections 7 to 12). Left: pacing in the window, the
-   session's set-up, and play between two real PCs.
+   detection by the state's hash; and netplay in the window: GGPO's time
+   sync, loads as points both wait at, the sound kept out of the
+   rollback by the sound card's queue, a line on the screen with the
+   ping, the rollback and the delay, and sessions set up by `--host` and
+   `--join` or the settings menu's Play online page (the build and the
+   disc checked, the host's cards and a seed sent, both taken to versus
+   select, no pause, rematch, the one who stays playing on alone), proved
+   between two window programs on one PC with latency and lost datagrams
+   (`make port-net`; NETPLAY.md, sections 7 to 13; PLAYING.md, "Playing
+   online"). Left: play between two real PCs and on Windows, and the
+   owner's calls of NETPLAY.md, section 13: the address a host listens
+   at, NAT (port forwarding, hole punching or a relay), the draw distance
+   online.
 9. **Input remapping and a modern control overhaul.** Remapping is in:
    every button of each player from `rebushido.cfg`, several buttons on
    one key, and layouts to start from (`controls = original`, the only
@@ -178,8 +192,13 @@ camera), particle effects, skyboxes on the stages that were left dark.
     its first user ([`MODS.md`](MODS.md)): `mods/` beside the program,
     a manifest and a load order per mod, one lookup by kind and key,
     textures keyed by what they look like, dumped and replaced at any
-    size in the remastered picture. Left: the scene's textures by whole
-    page, then models, music and stages through the same lookup.
+    size in the remastered picture. Since: the fighters' and weapons'
+    models, music (a mod's `.ogg` or `.wav` in place of a piece of the
+    disc's, following the game's starts, fades and stops, outside the
+    rollback) and a stage's files (a mod's file read in place of the
+    disc's sectors of it). Left: the scene's textures by whole page,
+    music by stage, and the stage editor's next steps (`MODS.md`,
+    "Stages").
 11. **Menus and UI**: the menus redrawn (the Japanese options of the
     title screen in English), and the settings menu holding all of
     ReBushido's own settings.
@@ -191,8 +210,18 @@ camera), particle effects, skyboxes on the stages that were left dark.
     `rebushido.cfg` and both players' buttons, stops the game at a
     frame's boundary while it is open, applies what it can at once, and
     writes the file keeping everything else in it
-    ([`PLAYING.md`](PLAYING.md), "The settings menu"). Left: the rest of
-    the game's menu text, English already, drawn sharper the same way.
+    ([`PLAYING.md`](PLAYING.md), "The settings menu"). The rest of the
+    menus' 2D screens: the pause menu's, the menu after a fight's, the
+    top menu's captions', the select screens' titles' and the group
+    battle's lettering drawn again in a font by a second mod the program
+    ships (`ui`), and every 2D texture of the screens made six times
+    larger from the player's own disc by `tools/port_art.py` (the art
+    mod, never committed); a texture or picture faded through its colour
+    table or rewritten is drawn from its replacement, tinted
+    ([`MODS.md`](MODS.md), "Fades"). Left: the rest of the lettering in
+    a font (the dialogue boxes, the names on the select screens, the
+    options' pages), and the title picture after the opening movie, which
+    is the movie's own 24-bit frame.
 12. **Optimisation**, for a smooth and seamless game.
     Begun on the port's window ([`PORT.md`](PORT.md), "Where the time
     goes"): `--profile` says where each blank's time goes; the video

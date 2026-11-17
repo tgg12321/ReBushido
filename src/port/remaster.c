@@ -228,8 +228,12 @@ static const char * const g_distance_names[PORT_DISTANCE_KINDS] = {
 static PortRemasterView g_view;
 static PortRemasterLimits g_limits;
 /* How far left of the console's screen this frame's picture reaches
- * (port_RemasterLeftMargin), worked out once a frame. */
+ * (port_RemasterLeftMargin), worked out once a frame; and netplay's shape
+ * for it, whatever the picture (port_RemasterFixMargin). */
 static s32 g_left_margin;
+static s32 g_margin_is_fixed;
+static s32 g_margin_aspect_w;
+static s32 g_margin_aspect_h;
 /* Whether the port's own primitive buffers are the game's this run
  * (port_platform.h, PORT_PRIMS_ADDR). */
 static s32 g_prim_buffers_are_the_games;
@@ -901,6 +905,35 @@ static const FaceSlot *port_FindFace(PortAddress prim) {
 
 /* ---- the stage as one mesh (port_remaster.h) ---- */
 
+/* A word of PortStageView.open: how many tiles, and how a tile's number
+ * is cut into its word and its bit. */
+#define OPEN_WORD_TILES 32
+#define OPEN_WORD_SHIFT 5
+#define OPEN_BIT_MASK (OPEN_WORD_TILES - 1)
+
+/* Which of the stage's tiles stage_Draw opened up for this frame
+ * (PortStageView.open). */
+static void port_RemasterNoteOpenTiles(void) {
+    s32 count;
+    const StageTile *tiles = stage_GetTiles(&count);
+    s32 i;
+
+    for (i = 0; i < PORT_STAGE_TILE_WORDS; i++) {
+        g_stage_view.open[i] = 0;
+    }
+    if (count > PORT_STAGE_TILE_WORDS * OPEN_WORD_TILES) {
+        count = PORT_STAGE_TILE_WORDS * OPEN_WORD_TILES;
+    }
+    for (i = 0; i < count; i++) {
+        if (tiles[i].draw_flags & STAGE_TILE_OPEN) {
+            g_stage_view.open[i >> OPEN_WORD_SHIFT] |=
+                1U << (i & OPEN_BIT_MASK);
+        }
+    }
+}
+
+/* The view the renderer draws the stage's tiles with this frame, and which
+ * of them it opened up (port_remaster.h). */
 void port_RemasterNoteStageView(
     const void *matrix, const s32 *camera, s32 far_shift, s32 depth_shift,
     s32 fog_ot_index, s32 ot_cutoff) {
@@ -926,6 +959,7 @@ void port_RemasterNoteStageView(
     g_stage_view.h = (s32)(port_GteReadControl(PORT_GTE_PLANE) & HALF_MASK);
     g_stage_view.ofx = (s32)port_GteReadControl(PORT_GTE_OFX);
     g_stage_view.ofy = (s32)port_GteReadControl(PORT_GTE_OFY);
+    port_RemasterNoteOpenTiles();
     g_stage_view.frames++;
 }
 
@@ -967,6 +1001,71 @@ s32 port_RemasterStageNumber(void) {
      * cutscene drawing a stage of its own does not change
      * (cutscene_Start, CUTSCENE_STAGE). -1 where none is loaded. */
     return resource_GetStage();
+}
+
+/* ---- the stage's own textures (port_remaster.h) ---- */
+
+/* A TIM, as tex_LoadTim reads it: its id, its flags (the depth in the low
+ * bits, a colour table's block present), then the colour table's block
+ * and the picture's, each its length in bytes, its place and its size. */
+#define TIM_FLAGS 4
+#define TIM_FIRST_BLOCK 8
+#define TIM_BLOCK_SIZE_AT 8
+#define TIM_DEPTH_MASK 3
+#define TIM_HAS_CLUT 8
+
+static PortStageTexture g_stage_textures[PORT_STAGE_TEXTURES_MAX];
+static s32 g_stage_texture_count;
+static u32 g_stage_texture_version;
+
+void port_RemasterBeginStageTextures(void) {
+    if (g_backend == NULL) {
+        return;
+    }
+    g_stage_texture_count = 0;
+    g_stage_texture_version++;
+}
+
+/* A TIM's picture and colour table where tex_LoadTim put them, their
+ * sizes read from the TIM's own blocks. */
+void port_RemasterNoteStageTexture(
+    const void *tim, s32 x, s32 y, s32 clut_x, s32 clut_y, s32 named_y) {
+    const u8 *block = (const u8 *)tim + TIM_FIRST_BLOCK;
+    PortStageTexture *one;
+    u32 flags;
+    u32 size;
+
+    if (g_backend == NULL || tim == NULL ||
+        g_stage_texture_count >= PORT_STAGE_TEXTURES_MAX) {
+        return;
+    }
+    flags = *(const u32 *)((const u8 *)tim + TIM_FLAGS);
+    one = &g_stage_textures[g_stage_texture_count++];
+    one->bits = (s16)(flags & TIM_DEPTH_MASK);
+    one->clut_x = -1;
+    one->clut_y = -1;
+    one->clut_w = 0;
+    one->clut_h = 0;
+    one->named_y = (s16)named_y;
+    if (flags & TIM_HAS_CLUT) {
+        size = *(const u32 *)(block + TIM_BLOCK_SIZE_AT);
+        one->clut_x = (s16)clut_x;
+        one->clut_y = (s16)clut_y;
+        one->clut_w = (s16)(size & HALF_MASK);
+        one->clut_h = (s16)(size >> HALF_SHIFT);
+        block += *(const u32 *)block;
+    }
+    size = *(const u32 *)(block + TIM_BLOCK_SIZE_AT);
+    one->x = (s16)x;
+    one->y = (s16)y;
+    one->w = (s16)(size & HALF_MASK);
+    one->h = (s16)(size >> HALF_SHIFT);
+}
+
+const PortStageTexture *port_RemasterStageTextures(s32 *count, u32 *version) {
+    *count = g_stage_texture_count;
+    *version = g_stage_texture_version;
+    return g_stage_textures;
 }
 
 const void *port_RemasterTileLights(void) {
@@ -1037,6 +1136,12 @@ static s32 port_FindAnchor(PortAddress prim) {
 static void port_RemasterFindLeftMargin(void) {
     PortDisplay display;
 
+    if (g_margin_is_fixed) {
+        port_GetDisplay(&display);
+        g_left_margin = port_RemasterMargin(
+            display.w, g_margin_aspect_w, g_margin_aspect_h);
+        return;
+    }
     if (!port_RemasterIsOn()) {
         g_left_margin = 0;
         return;
@@ -1047,6 +1152,12 @@ static void port_RemasterFindLeftMargin(void) {
 }
 
 s32 port_RemasterLeftMargin(void) { return g_left_margin; }
+
+void port_RemasterFixMargin(s32 aspect_w, s32 aspect_h) {
+    g_margin_is_fixed = TRUE;
+    g_margin_aspect_w = aspect_w;
+    g_margin_aspect_h = aspect_h;
+}
 
 /* The frame the side channel is writing down begins (port_remaster.h):
  * the game has cleared this frame's ordering table and is about to build

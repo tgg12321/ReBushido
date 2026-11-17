@@ -159,11 +159,19 @@ void PAD_init(s32 type, s32 *buf) {
     }
 }
 
+/* Set by netplay (port_platform.h): every movie is skipped where it
+ * begins, on both machines alike. */
+s32 g_port_movies_skipped;
+
 /* The movie player is a program of its own, which reads the pads when it
  * likes and not through the game's buffers: it is given them as they are
- * now. */
+ * now. In netplay that would be this PC's own pads, which the other
+ * machine never sees, so there it is given the cross button held from its
+ * first read, which skips the movie at once on both. */
 void PAD_dr(void) {
-    if (g_port_pad_word != NULL) {
+    if (g_port_pad_word != NULL && g_port_movies_skipped) {
+        *g_port_pad_word = (s32) ~(u32)PADRdown;
+    } else if (g_port_pad_word != NULL) {
         PortInput now;
 
         port_SampleInput(&now);

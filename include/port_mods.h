@@ -20,8 +20,9 @@
 enum {
     PORT_MOD_TEXTURES, /* PNG pictures that replace the game's textures */
     PORT_MOD_MODELS,   /* the fighters' models, .glb (gl_fighter.h) */
-    PORT_MOD_MUSIC,    /* not read yet */
-    PORT_MOD_STAGES,   /* not read yet */
+    PORT_MOD_MUSIC,    /* .ogg or .wav pieces of music (port_music.h) */
+    PORT_MOD_STAGES,   /* a stage's files (port_discfiles.h) */
+    PORT_MOD_SKIES,    /* PNG pictures of a stage's sky (gl_sky.h) */
     PORT_MOD_KINDS
 };
 
@@ -58,8 +59,8 @@ extern s32 port_ModParseManifest(
  * `off` for none. With nothing said, `mods/` beside the program. */
 extern void port_ModsSetFolder(const char *folder);
 /* The mod in this folder of the mods' folder is read and left out, as if
- * its manifest said `enabled = no`: the window's `english = off` for the
- * English menu it ships (docs/MODS.md). NULL for none. */
+ * its manifest said `enabled = no`: the window's `english = off` and
+ * `ui = off` for the mods it ships (docs/MODS.md). Each call adds one. */
 extern void port_ModsLeaveOut(const char *folder);
 /* Where a texture of the game's is written as it is first drawn, for a
  * replacement to be made from (`--dump-textures DIR`); NULL for none. */
@@ -116,10 +117,74 @@ extern u64 port_TextureKey(const u16 *vram, const PortTextureRegion *region);
  * small hexadecimal digits. Needs PORT_MOD_KEY_SIZE bytes. */
 extern void port_TextureKeyName(
     u64 key, const PortTextureRegion *region, char *out, u32 room);
+/* The key of the texels alone, the colour table left out: the same for
+ * a texture whatever its table is doing. Not a file's name; it finds a
+ * texture faded through its table (port_TextureFadeOf). */
+extern u64 port_TextureTexelKey(
+    const u16 *vram, const PortTextureRegion *region);
+
+/* A fade (docs/MODS.md, "Fades"): `count` colours of 15 bits now, each
+ * its colour of `base` with each part multiplied by one number of its
+ * own, as the game's fades write them (tex_TintClut, the boot logo's
+ * pictures). Then TRUE, and in `tint` the three numbers, red in the low
+ * byte, PORT_MOD_TINT_ONE each for as it was; else FALSE. A colour of
+ * nothing (0) stays nothing, and a texel's top bit stays as it was. */
+extern s32 port_TextureFadeOf(
+    const u16 *base, const u16 *now, u32 count, u32 *tint);
+#define PORT_MOD_TINT_ONE 128
+#define PORT_MOD_TINT_MAX 255
+#define PORT_MOD_TINT_SHIFT 8
+#define PORT_MOD_TINT_SAME                                                     \
+    (PORT_MOD_TINT_ONE | (PORT_MOD_TINT_ONE << PORT_MOD_TINT_SHIFT) |          \
+     (PORT_MOD_TINT_ONE << (2 * PORT_MOD_TINT_SHIFT)))
+#define PORT_MOD_PARTS 3
+#define PORT_MOD_PART_BITS 5
+#define PORT_MOD_PART_MAX 31
+#define PORT_MOD_MIX_BIT 0x8000
+/* how many of a part's 31 steps a faded colour may be from its base's
+ * times the scale: the game rounds each step down */
+#define PORT_MOD_FADE_SLACK 2
+
 /* The colour the GPU would draw texel (u, v) of the region in, counted
  * from the region's own corner, the window applied: a 16-bit pixel of
  * video memory, 0 for nothing drawn. */
 extern u16 port_TextureTexel(
     const u16 *vram, const PortTextureRegion *region, s32 u, s32 v);
+
+/* ---- the key of a page of the scene ---- */
+
+/* A whole texture page of the stage seen through one colour table
+ * (docs/MODS.md, "The scene's textures by page"): its corner, its depth,
+ * the table, and which of video memory's pixels are the stage's own --
+ * one byte a pixel, PORT_VRAM_WIDTH by PORT_VRAM_HEIGHT, not 0 for one --
+ * or NULL for every pixel. */
+typedef struct {
+    s32 bits; /* PORT_MOD_TEXELS_... */
+    s32 page_x;
+    s32 page_y;
+    s32 clut_x;
+    s32 clut_y;
+    const u8 *own;
+} PortTexturePage;
+
+/* A page is 256 texels each way. */
+#define PORT_MOD_PAGE_SIDE 256
+
+/* Whether the page lies inside video memory, not wrapping round its
+ * right or bottom edge: only such a page has a key. */
+extern s32 port_TexturePageFits(const PortTexturePage *page);
+/* Its key: FNV-1a over the depth's code, the page's width and height
+ * (256 each, two bytes, the low first), every texel row by row -- its
+ * index of one byte, or its pixel of two bytes, the low first; 0 where the
+ * texel's pixel of video memory is not the stage's own -- and then the
+ * colour table, 16 colours or 256 of two bytes (none for 16 bits). */
+extern u64 port_TexturePageKey(const u16 *vram, const PortTexturePage *page);
+/* ... as a file's name has it, without an ending:
+ * `page-256x256-D-HHHHHHHHHHHHHHHH`. Needs PORT_MOD_KEY_SIZE bytes. */
+extern void port_TexturePageKeyName(
+    u64 key, const PortTexturePage *page, char *out, u32 room);
+/* The pixel of video memory texel `u` of a row of the page is in, counted
+ * from the page's corner: a texel of 4 bits is a quarter of one. */
+extern s32 port_TexturePagePixel(const PortTexturePage *page, s32 u);
 
 #endif /* PORT_MODS_H */

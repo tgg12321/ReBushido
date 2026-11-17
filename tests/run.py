@@ -150,12 +150,12 @@ def python_side(name):
     return module
 
 
-def build(name, defs, sources):
-    """Compile and link one test. Returns the program's path, or the
-    compiler's complaint."""
+def build(name, defs, sources, more=()):
+    """Compile and link one test, with flags of its own (`more`). Returns
+    the program's path, or the compiler's complaint."""
     program = '%s/%s%s' % (OUT_DIR, '' if BITS == 32 else '%d/' % BITS, name)
     os.makedirs(os.path.dirname(program), exist_ok=True)
-    flags = ['-m%d' % BITS if flag == '-m32' else flag for flag in COMPILE_FLAGS]
+    flags = ['-m%d' % BITS if flag == '-m32' else flag for flag in COMPILE_FLAGS] + list(more)
     cmd = (['gcc'] + flags + include_flags(bool(defs)) + modern.DEFS + defs + LINK_FLAGS
            + ['tests/%s.c' % name] + sources + [RUNTIME, '-o', program])
     # the compiler's temporary files beside the program: /tmp is emptied
@@ -194,7 +194,10 @@ def run_one(name, verbose, defs):
     if side and hasattr(side, 'sources'):
         # files compiled apart from the test's own and linked with it
         sources = sources + [s for s in side.sources() if s not in sources]
-    program, errors = build(name, defs, sources)
+    # flags of its own: a test of src/port/vorbis.c compiles it as
+    # tools/port_build.py does
+    more = side.flags() if side and hasattr(side, 'flags') else []
+    program, errors = build(name, defs, sources, more)
     if not program:
         return 'FAIL', 0, ['it does not build:'] + errors[:30]
     try:

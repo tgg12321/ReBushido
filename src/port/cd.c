@@ -200,6 +200,17 @@ void port_PlayDisc(u32 frames) {
     }
 }
 
+/* The stream of sound playing (port_spu.h). */
+s32 port_GetCdStream(u32 *sector, s32 *channel, u32 *since) {
+    if (!g_port_cd.streaming || !g_port_cd.stream_is_xa) {
+        return 0;
+    }
+    *sector = (u32)g_port_cd.stream_sector;
+    *channel = (g_port_cd.mode & CdlModeSF) ? g_port_cd.filter.chan : -1;
+    *since = g_port_cd.stream_sample;
+    return 1;
+}
+
 /* Does a command; the drive's answer is left in g_port_cd.result. Returns
  * 1 if the drive took it. */
 static s32 port_CdCommand(u8 com, const u8 *argument) {

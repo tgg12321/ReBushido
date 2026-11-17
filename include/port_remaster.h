@@ -149,6 +149,12 @@ extern s32 port_RemasterMargin(s32 picture_w, s32 aspect_w, s32 aspect_h);
  * (port_RemasterNewFrame), and only read after that: a face is looked at
  * thousands of times a frame. */
 extern s32 port_RemasterLeftMargin(void);
+/* From now on the margin is worked out for a picture of this shape,
+ * whether the remastered picture is on or not: netplay's, where which
+ * faces the game keeps is part of the state both machines compare and
+ * must not follow either player's picture (docs/NETPLAY.md, section
+ * 13). Before the game starts. */
+extern void port_RemasterFixMargin(s32 aspect_w, s32 aspect_h);
 
 /* ---- the fight's HUD at a wider picture's edges ---- */
 
@@ -449,6 +455,9 @@ extern void port_RemasterSetPrim(PortAddress prim);
 /* A MATRIX's nine halfwords. (port_gte.h has the same number under its
  * own name; this header is included where that one is not.) */
 #define PORT_GTE_MATRIX_ELEMENTS_PORT 9
+/* One bit for each of the stage's tiles (STAGE_MAX_TILES is 500), in
+ * whole words. */
+#define PORT_STAGE_TILE_WORDS 16
 
 typedef struct {
     /* Bumped whenever the stage's tiles or the meshes they point at may
@@ -486,6 +495,12 @@ typedef struct {
     s32 fog_y;
     s32 fog_w;
     s32 fog_h;
+    /* Which tiles this frame drew opened up (STAGE_TILE_OPEN), one bit a
+     * tile, taken with the view. The flags are the game's and are set
+     * again for the next frame before a picture of this one is made, so
+     * a picture drawn again between two frames that read them where they
+     * stand left out of the mesh a face this frame drew whole. */
+    u32 open[PORT_STAGE_TILE_WORDS];
 } PortStageView;
 
 /* The renderer is drawing the stage's tiles with this view
@@ -521,6 +536,47 @@ extern PortAddress port_RemasterTileMesh(s32 block, s32 mesh);
 /* The light setup the tiles are lit by (a LightSetup, light.h). */
 extern const void *port_RemasterTileLights(void);
 extern s32 port_RemasterStageNumber(void);
+
+/* ---- the stage's own textures (src/port/gl/gl_scene.c) ---- */
+
+/* A mod may give a picture of a whole texture page of the stage
+ * (docs/MODS.md, "The scene's textures by page"). What a page holds that
+ * is the stage's own is what the stage's file loaded into it: the rest is
+ * whatever the menus or the stage before left there, which differs from
+ * one run to the next, so the page's key is made of the stage's own
+ * texels alone. tex_LoadStageGroup says which they are, one TIM at a
+ * time; nothing is kept with no backend attached. */
+#define PORT_STAGE_TEXTURES_MAX 512
+
+typedef struct {
+    s16 x; /* where its picture is in video memory, in pixels of 16 bits */
+    s16 y;
+    s16 w;
+    s16 h;
+    s16 bits;   /* PORT_REMASTER_DEPTH_..., as its TIM says */
+    s16 clut_x; /* where its colour table was loaded, -1 for none */
+    s16 clut_y;
+    s16 clut_w; /* ... and its size, in colours by rows */
+    s16 clut_h;
+    /* the row the faces name it by: the file's own, which is the row
+     * above where a table left of the display's width is loaded, the row
+     * the stage's fog writes over while the frame is drawn
+     * (tex_LoadStageGroup) */
+    s16 named_y;
+} PortStageTexture;
+
+/* The stage's textures are about to be loaded: those of the stage before
+ * are forgotten. */
+extern void port_RemasterBeginStageTextures(void);
+/* One of them: the TIM at `tim`, its picture loaded at (x, y) and its
+ * colour table at (clut_x, clut_y), as tex_LoadTim was told, the faces
+ * naming that table at (clut_x, named_y). */
+extern void port_RemasterNoteStageTexture(
+    const void *tim, s32 x, s32 y, s32 clut_x, s32 clut_y, s32 named_y);
+/* What has been noted, how many, and a number that changes each time the
+ * stage's textures are loaded again. */
+extern const PortStageTexture *port_RemasterStageTextures(
+    s32 *count, u32 *version);
 
 /* ---- what a primitive is, once decoded ---- */
 

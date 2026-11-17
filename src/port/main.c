@@ -9,6 +9,7 @@
  *             [--net-bind ADDRESS:PORT --net-peer ADDRESS:PORT]
  *             [--link-side 0|1] [--net-latency MS] [--net-loss PERCENT]
  *             [--netplay 1|2] [--net-delay N]
+ *             [--host ADDRESS:PORT | --join ADDRESS:PORT]
  *
  * It gives the game the PlayStation's memory and the player's disc
  * image, and then calls the game's own main, which never returns: the
@@ -22,10 +23,12 @@
 #include "common.h"
 #include "port_card.h"
 #include "port_disc.h"
+#include "port_discfiles.h"
 #include "port_gpu.h"
 #include "port_host.h"
 #include "port_mods.h"
 #include "port_movie.h"
+#include "port_music.h"
 #include "port_net.h"
 #include "port_spu.h"
 #include "bb2.h"
@@ -65,9 +68,12 @@ static const char g_port_usage[] =
     "            [--rollback-test N] [--rollback-every M] "
     "[--rollback-quiet]\n"
     "            [--mods FOLDER|off] [--dump-textures FOLDER]\n"
+    "            [--music-mods on|off] [--dump-music FOLDER]\n"
+    "            [--dump-stages FOLDER]\n"
     "            [--net-bind ADDRESS:PORT --net-peer ADDRESS:PORT]\n"
     "            [--link-side 0|1] [--net-latency MS] [--net-loss PERCENT]\n"
     "            [--netplay 1|2] [--net-delay N]\n"
+    "            [--host ADDRESS:PORT | --join ADDRESS:PORT]\n"
     "\n"
     "  --image FILE   your own image of the game's disc: the .cue, or the\n"
     "                 .bin of raw sectors it names\n"
@@ -109,7 +115,17 @@ static const char g_port_usage[] =
     "  --netplay 1|2  rollback netplay over that socket: the whole session\n"
     "                 as one machine, this program the first pad or the\n"
     "                 second, the other program the other\n"
-    "  --net-delay N  ... a press counts N frames on (2)\n"
+    "  --net-delay N  ... a press counts N frames on (2); the host's is\n"
+    "                 both players' in a session\n"
+    "  --host ADDRESS:PORT   a session of netplay (docs/NETPLAY.md): wait\n"
+    "                 for the other player at this address of this PC\n"
+    "                 (0.0.0.0 for every one, 127.0.0.1 for this PC\n"
+    "                 alone); the two programs check each other, the\n"
+    "                 guest plays on the host's memory cards, and both go\n"
+    "                 to the versus select screen\n"
+    "  --join ADDRESS:PORT   ... join the host there (--net-bind says\n"
+    "                 where this program's own socket is: 0.0.0.0, any\n"
+    "                 port, if it does not)\n"
     "  --net-latency MS   for tests: every datagram waits this long first\n"
     "  --net-loss PERCENT ... and so many in a hundred are dropped\n"
     "  --mods FOLDER  the mods are in this folder (mods beside the program\n"
@@ -117,6 +133,13 @@ static const char g_port_usage[] =
     "  --dump-textures FOLDER   write each texture the game draws there as\n"
     "                 a PNG, once, named by its key: what a replacement is\n"
     "                 made from (the remastered picture only)\n"
+    "  --music-mods on|off   off plays the game's own music where a mod\n"
+    "                 has some (on)\n"
+    "  --dump-music FOLDER   write each piece of music the game plays\n"
+    "                 there as it plays, KEY.wav: what a mod's music\n"
+    "                 replaces, and its key\n"
+    "  --dump-stages FOLDER  write every stage's files there from the disc,\n"
+    "                 by their keys: what a mod's stage begins from\n"
     "\n"
     "At the end it prints a line for each thing the game asked for that\n"
     "the port does not do yet, with how often: stub NAME COUNT.\n";
@@ -242,6 +265,8 @@ s32 port_Main(s32 argc, char **argv) {
     s32 link_side = -1;
     s32 netplay_pad = 0;
     s32 net_delay = NET_DELAY;
+    s32 session_role = PORT_SESSION_NONE;
+    PortNetAddress session_at;
     s32 i;
 
     port_CatchCrashes();
@@ -303,6 +328,18 @@ s32 port_Main(s32 argc, char **argv) {
             port_ModsSetFolder(argv[++i]);
         } else if (port_TextsEqual(word, "--dump-textures")) {
             port_ModsSetDumpFolder(argv[++i]);
+        } else if (port_TextsEqual(word, "--dump-music")) {
+            port_MusicSetDumpFolder(argv[++i]);
+        } else if (port_TextsEqual(word, "--dump-stages")) {
+            port_SetStageDumpFolder(argv[++i]);
+        } else if (port_TextsEqual(word, "--music-mods")) {
+            i++;
+            if (port_TextsEqual(argv[i], "on") ||
+                port_TextsEqual(argv[i], "off")) {
+                port_MusicSetOn(port_TextsEqual(argv[i], "on"));
+            } else {
+                port_UsageError("--music-mods is on or off, not ", argv[i]);
+            }
         } else if (port_TextsEqual(word, "--rollback-test")) {
             if (!port_ParseNumber(argv[++i], &rollback_frames) ||
                 rollback_frames <= 0) {
@@ -321,7 +358,8 @@ s32 port_Main(s32 argc, char **argv) {
             }
             net_addresses |= 1;
         } else if (port_TextsEqual(word, "--net-peer")) {
-            if (!port_ParseNetAddress(argv[++i], &net_peer)) {
+            if (!port_ParseNetAddress(argv[++i], &net_peer) ||
+                net_peer.port == 0) {
                 port_UsageError("--net-peer takes ADDRESS:PORT, not ", argv[i]);
             }
             net_addresses |= 2;
@@ -334,6 +372,18 @@ s32 port_Main(s32 argc, char **argv) {
             if (!port_ParseNumber(argv[++i], &netplay_pad) || netplay_pad < 1 ||
                 netplay_pad > PORT_PADS) {
                 port_UsageError("--netplay takes 1 or 2, not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--host") ||
+                   port_TextsEqual(word, "--join")) {
+            if (session_role != PORT_SESSION_NONE) {
+                port_UsageError("--host or --join, once: ", word);
+            }
+            session_role = port_TextsEqual(word, "--host") ? PORT_SESSION_HOST
+                                                           : PORT_SESSION_JOIN;
+            if (!port_ParseNetAddress(argv[++i], &session_at) ||
+                session_at.port == 0) {
+                port_UsageError(
+                    "--host and --join take ADDRESS:PORT, not ", argv[i]);
             }
         } else if (port_TextsEqual(word, "--net-delay")) {
             if (!port_ParseNumber(argv[++i], &net_delay) || net_delay < 0 ||
@@ -374,8 +424,12 @@ s32 port_Main(s32 argc, char **argv) {
         return PORT_EXIT_FAILED;
     }
     port_InsertDisc(&g_port_disc);
+    /* the disc's files by name: the music's keys, the stages' files */
+    port_ReadDiscFiles(&g_port_disc);
     /* the mods, before the game reads anything a mod could stand in for */
     port_ModsStart(argc > 0 ? argv[0] : NULL);
+    port_MusicStart();
+    port_StartStageMods(&g_port_disc);
     if (plan != NULL) {
         port_LoadPlan(plan);
     }
@@ -385,7 +439,26 @@ s32 port_Main(s32 argc, char **argv) {
     if (shots != NULL) {
         port_SetShots(shots, (u32)every);
     }
-    if (net_addresses != 0 && net_addresses != 3) {
+    if (session_role != PORT_SESSION_NONE) {
+        if (link_side >= 0 || netplay_pad != 0 || rollback_frames > 0) {
+            port_UsageError("a session (--host, --join) is neither the link "
+                            "cable, --netplay nor the rollback self-test",
+                            "");
+        }
+        if ((net_addresses & 2) != 0 ||
+            (session_role == PORT_SESSION_HOST && net_addresses != 0)) {
+            port_UsageError("--host is where this program listens, and "
+                            "--join says whom it talks to: no --net-peer, "
+                            "and no --net-bind with --host",
+                            "");
+        }
+        if (session_role == PORT_SESSION_JOIN && net_addresses == 0) {
+            /* any address of this PC, any port: the host answers where
+             * it was spoken to from */
+            net_bind.address = 0;
+            net_bind.port = 0;
+        }
+    } else if (net_addresses != 0 && net_addresses != 3) {
         port_UsageError("the network needs both --net-bind and --net-peer", "");
     }
     if ((link_side >= 0 || netplay_pad != 0) && net_addresses == 0) {
@@ -402,25 +475,70 @@ s32 port_Main(s32 argc, char **argv) {
     if (netplay_pad != 0) {
         port_SetNetplay(netplay_pad - 1, (u32)net_delay);
     }
-    if (net_addresses != 0) {
+    if (session_role == PORT_SESSION_HOST) {
+        port_SetNetListen(&session_at);
+    } else if (session_role == PORT_SESSION_JOIN) {
+        port_SetNetAddresses(&net_bind, &session_at);
+    } else if (net_addresses != 0) {
         port_SetNetAddresses(&net_bind, &net_peer);
-        port_SetNetTrouble((u32)net_latency, (u32)net_loss);
         port_SetLinkSide(link_side);
+    }
+    if (session_role != PORT_SESSION_NONE || net_addresses != 0) {
+        port_SetNetTrouble((u32)net_latency, (u32)net_loss);
         if (!port_StartNet()) {
             return PORT_EXIT_FAILED;
         }
     }
+    if (session_role != PORT_SESSION_NONE) {
+        /* the other program found and held to this one, the host's cards
+         * in hand: netplay is on from here (port_net.h) */
+        port_SetSession(session_role, &session_at);
+        if (!port_StartSession(&g_port_disc, (u32)net_delay)) {
+            port_Log("rebushido: no session\n");
+            return PORT_EXIT_FAILED;
+        }
+    }
+#if RB_REMASTER_VIEW
+    if (port_IsNetplayOn()) {
+        /* What the game computes of a frame must not hang on either
+         * player's picture: the stage is computed as far as the console
+         * draws it, on both machines, whatever each draws (docs/
+         * NETPLAY.md, section 13). */
+        PortRemasterView view;
+
+        port_RemasterGetView(&view);
+        if (view.distance != PORT_DISTANCE_ORIGINAL) {
+            port_Log("netplay: the draw distance is the console's for this "
+                     "session (the game's state may not depend on it)\n");
+        }
+        view.distance = PORT_DISTANCE_ORIGINAL;
+        port_RemasterSetView(&view);
+        /* and which faces it keeps at the left edge must not follow the
+         * picture either: a session fixes the wider of the two players'
+         * shapes (session.c), --netplay this program's own */
+        if (port_GetSessionRole() == PORT_SESSION_NONE) {
+            port_RemasterFixMargin(view.aspect_w, view.aspect_h);
+        }
+    }
+#endif
     if (rollback_frames > 0) {
         port_StartRollbackTest(
             (u32)rollback_frames, (u32)rollback_every, rollback_quiet);
     }
-    /* where primitives may be: the console's memory, the program's own
-     * variables, the game's stack */
+    /* where primitives may be: the console's memory, the game's stack,
+     * and the game's own variables with the rest of its state, the two
+     * runs a snapshot saves (port_state.h). What is outside the state
+     * (the remastered side channel, the window's) and what cannot be
+     * written hold none, and need no place among the low 24 bits of an
+     * address that an ordering table's link has (docs/PORT.md, "Where
+     * the program's variables are") */
     port_AddLinkRegion(PORT_RAM_ADDR, PORT_RAM_SIZE);
     port_AddLinkRegion(SCRATCHPAD, PORT_SCRATCHPAD_SIZE);
     port_AddLinkRegion(PORT_STACK_ADDR, PORT_STACK_SIZE);
-    port_AddLinkRegion((u32)ADDR(g_port_data_start),
-                       (u32)(g_port_data_end - g_port_data_start));
+    port_AddLinkRegion((u32)ADDR(g_port_game_data),
+                       (u32)(g_port_state_data_end - g_port_game_data));
+    port_AddLinkRegion((u32)ADDR(g_port_game_bss),
+                       (u32)(g_port_state_bss_end - g_port_game_bss));
 #if RB_REMASTER_VIEW
     /* ... and the port's own buffers of primitives, where this run draws
      * more of the stage than the console does (port_remaster.h) */

@@ -26,6 +26,9 @@
 #define CUE_BYTES_MAX 0x4000
 #define PATH_MAX_BYTES 1024
 
+/* Sectors read since the program started (port_disc.h). */
+u32 g_port_disc_sectors_read;
+
 /* ---- positions ---- */
 
 static u8 port_ToBcd(u32 number) {
@@ -177,6 +180,10 @@ void port_CloseDisc(PortDisc *disc) {
 
 /* ---- reading ---- */
 
+s32 (*g_port_disc_override)(u32 sector, u8 *raw);
+
+/* A raw sector, checked for its sync and its position, and given to
+ * the mods' stage files to put theirs in (port_disc.h). */
 s32 port_ReadDiscSector(const PortDisc *disc, u32 sector, u8 *raw) {
     u8 position[PORT_DISC_HEADER_BYTES];
     u32 i;
@@ -184,6 +191,7 @@ s32 port_ReadDiscSector(const PortDisc *disc, u32 sector, u8 *raw) {
     if (disc->file < 0 || sector >= disc->sector_count) {
         return PORT_DISC_OUT_OF_RANGE;
     }
+    g_port_disc_sectors_read++;
     if (port_HostReadAt(disc->file, sector * PORT_DISC_SECTOR_BYTES, raw,
                         PORT_DISC_SECTOR_BYTES) != PORT_DISC_SECTOR_BYTES) {
         return PORT_DISC_READ_FAILED;
@@ -202,6 +210,9 @@ s32 port_ReadDiscSector(const PortDisc *disc, u32 sector, u8 *raw) {
         if (raw[PORT_DISC_SYNC_BYTES + i] != position[i]) {
             return PORT_DISC_NOT_A_SECTOR;
         }
+    }
+    if (g_port_disc_override != NULL) {
+        g_port_disc_override(sector, raw);
     }
     return PORT_DISC_OK;
 }
