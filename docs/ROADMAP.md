@@ -234,10 +234,11 @@ the stage").
     goes"): `--profile` says where each blank's time goes; the video
     memory a frame writes is sent to the card in one go; the card is no
     longer waited for at each picture; each picture between two frames
-    is of the moment it is shown. Left: the players' build at `-O2`
-    (the owner's call; its traces are the same), the HD fighters'
-    models read before the fight's first frame, and whether 85 Hz is
-    smooth on the owner's screen.
+    is of the moment it is shown; the loads hurried through and the HD
+    fighters' models read during them (`quick_loading`, "Quick
+    loading"). Left: the players' build at `-O2` (the owner's call; its
+    traces are the same), and whether 85 Hz is smooth on the owner's
+    screen.
 13. **Loading as short as possible, or none** (the owner, 2026-11-17):
     every loading screen of the window build cut to what the PC needs,
     if not taken out. The port reads the player's disc image from a PC's
@@ -246,6 +247,7 @@ the stage").
     the port's frames with the emulator's, and that netplay's two
     players must load in the same frames. So quick loading is the
     window's (a setting, on), with the play tests' runs as they are.
+    Done: `quick_loading` (item 12; PORT.md, "Quick loading").
 14. **Shadow maps and lights of a stage's own** (the owner, 2026-11-17):
     the cast shadow is the game's one sun flattening the fighters onto
     the ground; lights that cast shadows of their own kinds (torches,

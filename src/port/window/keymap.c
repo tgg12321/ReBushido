@@ -90,6 +90,9 @@ const char g_port_default_settings[] =
     "                       # any size: a mod the program ships (mods/ui/)\n"
     "music_mods = on        # a mod's music in place of the game's; off\n"
     "                       # for the game's own (docs/MODS.md)\n"
+    "quick_loading = on     # the waits for the disc behind a loading\n"
+    "                       # picture hurried through; off at the\n"
+    "                       # console's pace\n"
     "\n"
     "# Playing online (docs/PLAYING.md): what the settings menu's Play\n"
     "# online page starts with, and keeps.\n"
@@ -687,6 +690,11 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "sky is original or night";
     }
+    if (port_WordsMatch(name, "quick_loading")) {
+        return port_ReadChoice(value, "off", "on", &settings->quick_loading)
+                   ? NULL
+                   : "quick_loading is on or off";
+    }
     if (port_WordsMatch(name, "see_through")) {
         return port_ReadChoice(value, "off", "on", &settings->see_through)
                    ? NULL
@@ -878,6 +886,9 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->net_address[0] = 0;
     /* a mod's music, where a mod has some (docs/MODS.md) */
     settings->music_mods = 1;
+    /* the loads' waits for the disc hurried through (docs/PORT.md,
+     * "Quick loading") */
+    settings->quick_loading = 1;
     /* a name the window's library does not know leaves that one out */
     port_ReadLines(settings, text, lookup, NULL, 1);
 }

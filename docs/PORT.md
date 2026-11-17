@@ -4033,9 +4033,10 @@ and is nothing on a real card, and was left. A mod's textures are
 decoded when they are first drawn: the top menu's thirteen English
 textures took about 10 ms each here (4 of them reading the file through
 WSL, 1.3 decoding, the rest Mesa's mipmaps), and the HD fighters about
-half a second at the fight's first frame. On the owner's machine both
-are a fraction of that, and both are a single hitch where the picture
-changes anyway.
+half a second, which was at the fight's first frame and is now during
+the load before it ("Quick loading"). On the owner's machine both are a
+fraction of that, and both are a single hitch where the picture changes
+anyway.
 
 **The pictures, evenly.** At `frame_rate = display` a picture between
 two frames was of the moment it was begun, counted from the moment the
@@ -4088,6 +4089,97 @@ trace is the `-O1` program's line for line (2,338 and 2,462 lines) and
 every twentieth picture is the same to the byte (224 and 236); the
 headless programs at `-O2` pass the rollback self-test in both sizes.
 The players' build stays at `-O1` until the owner says.
+
+### Quick loading
+
+The owner (2026-11-17): the loading screens as short as possible, if
+not gone. **Where a load's time went.** The port's drive has no seek and
+no speed ("The disc"): a read's sectors all arrive the next time the
+game asks. What is left is the game's own way of waiting for the drive,
+`cdrom_WaitIdle`: the link cable's brackets on either side of it
+(`link_BeginWait`, `link_EndWait`, two and three `VSync(2)`s, which the
+game does whether or not a cable is in), then the drive's state machine
+stepped once a second blank (set the mode, its answer, three blanks to
+settle, the place, its answer, the read, done). That is 16 blanks for a
+file and 10 for a wait on a drive already idle, which the game asks for
+before every file: about 36 blanks, 0.6 seconds, a file, and a fight
+reads eleven. All of it falls inside one frame of the game, behind the
+loading picture (the map of red splashes and the title, with its streaks
+of noise), a black screen, or story mode's card of the next stage. The
+game keeps no minimum time of its own on the loading picture (story
+mode's card has one, below); its fades are frames of the game, and are
+left as they are.
+
+**What quick loading does** (`quick_loading`, on in the window, off with
+nothing else said for a run with `--plan` or `--frames`;
+`--quick-loading on|off`): the blanks of `cdrom_WaitIdle` are hurried
+through. The game marks them (`g_port_load_wait`, `cdrom.c` under
+`RB_PORT`), and the window, at such a blank, gives the card the frame and
+the log its line as ever, but does not wait for the PC's clock, and shows
+a picture only every thirtieth of a second, so the noise still moves and
+the window still answers; when the load is over the blanks are due from
+then on (`port_PaceRebase`), so none of the game's time it took is
+waited for afterwards or counted as time lost. A hurried blank's sound
+goes to the sound card only while the card's queue is short: the load's
+sound is silence, or the end of a sound that was playing, and the queue
+is neither flooded nor run dry. **Nothing the game computes changes**:
+every blank is still a blank of the game, with its pads, its sound and
+its scan lines, so the traces are the same with it on and off, and
+netplay's loads stay points both sides wait at however soon either gets
+there (`tools/port_net.py window` runs with it on).
+
+Two loading screens are read: story mode's card of the next stage (its
+title, the map with the route, the stage's name and picture) and the
+team battle's scores between two matches. Each is shown for two seconds
+at the console's pace before its load is hurried (`READ_BLANKS`). The
+card has a time of its own as well, the one minimum the game keeps on a
+loading screen: a mark of the route is drawn every 240 of the card's
+drawings divided by the chapter's number, and the card stays up after
+its loads until the last mark has had its 240
+(`story_FinishStageCard`, about three seconds after the first fight's
+loads on the port). That wait is marked as a load's too, and hurried
+after the same two seconds; the rest of the route is then drawn at once.
+
+**The port's own work** in a load is read during it: the stage's mesh
+and its HD pages were already built as the stage's file arrives; the
+fighters' and weapons' own models (`gl_fighter.c`) were read at the
+first frame that drew them, a hitch of about half a second there, and
+are now read at the blanks of the load, as soon as the game has them in
+memory (`port_GlFighterPreload`, `port_FighterLoadedModel`), behind the
+loading picture.
+
+The log says of every load how many blanks it took, how many were
+hurried and how long it took (`load:`), and at the end the run's loads
+in all.
+
+**Measured** (the window at the console's pace with SDL's dummy drivers,
+each plan run with `--quick-loading off` and `on`, on a machine with
+other builds running; the blanks are the game's and the same both
+ways, the milliseconds the PC's):
+
+| load | blanks | off | on |
+| --- | --- | --- | --- |
+| power on: the options page's file, the boot picture's | 36 + 52 | 1.45 s | 0.03 s |
+| the opening movie to the title | 36 | 0.59 s | 0.01 s |
+| the top menu, versus select (three) | 154 | 2.65 s | 0.14 s |
+| versus select to the fight (eleven files) | 346 | 6.08 s | 0.52 s |
+| the fight to the menu after it, and back to the top menu | 34 + 36 | 1.16 s | 0.07 s |
+| story mode: select to the stage card | 132 | 2.42 s | 0.29 s |
+| story mode: the stage card, its loads and its own hold (read: two seconds) | 170 + 52 + 186 | 7.14 s | 2.40 s |
+
+`port_game`'s whole run, 4,481 blanks, took 76.2 seconds and 65.0 with
+it on; its loads, 11.9 seconds and 0.76. The traces of `port_game`,
+`port_other_fight` and a run of story mode are the same on and off, line
+for line, and `tools/port_rollback.py --program
+build/port-sdl/linux/rebushido --with=--quick-loading --with=on` passes.
+With the HD mods and Remastered (offscreen, Mesa's `llvmpipe`, `--fast`),
+the fight's first frame took 0.73 seconds before and 0.17 with the
+models read during the load, where they took 0.22 and 0.28 seconds at
+two of its blanks; the load itself, with the stage's mesh and HD pages
+built in it, 2.8 seconds there. What is left of a player's wait is that
+work of the port's own, and the boot picture (150 blanks, the
+publisher's, which is not a load), the fades and the game's own screens
+between, all frames of the game, which quick loading leaves alone.
 
 ### The fighters' own models
 

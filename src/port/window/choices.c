@@ -52,6 +52,13 @@ const PortChoice g_port_choices[] = {
      4,
      {"top-left", "top-right", "bottom-left", "bottom-right"},
      {"Top left", "Top right", "Bottom left", "Bottom right"}},
+    {"quick_loading",
+     "Quick loading",
+     "The waits for the disc behind a loading picture hurried through",
+     PORT_TAKES_NOW,
+     2,
+     {"off", "on"},
+     {"Off", "On"}},
     /* the remastered picture */
     {"graphics",
      "Graphics",
@@ -173,10 +180,10 @@ const s32 g_port_choice_count =
     (s32)(sizeof(g_port_choices) / sizeof(g_port_choices[0]));
 
 const PortChoiceGroup g_port_choice_groups[PORT_CHOICE_GROUPS] = {
-    {"The window", 0, 6},
-    {"The remastered picture", 6, 11},
-    {"Mods", 17, 4},
-    {"Controls", 21, 1},
+    {"The window", 0, 7},
+    {"The remastered picture", 7, 11},
+    {"Mods", 18, 4},
+    {"Controls", 22, 1},
 };
 
 /* `name = word` into `line`: FALSE if it does not fit. */

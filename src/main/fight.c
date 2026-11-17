@@ -753,6 +753,11 @@ void story_FinishStageCard(void) {
     if (g_disp_loading_screen != LOADING_SCREEN_STAGE_CARD) {
         return;
     }
+#if RB_PORT
+    /* the card's own time on the screen, which the window may hurry once
+     * it has been up a while (docs/PORT.md, "Quick loading") */
+    g_port_load_wait++;
+#endif
     link_BeginWait();
     if (g_story_route_drawn <= g_story_chapter) {
         do {
@@ -767,6 +772,9 @@ void story_FinishStageCard(void) {
         }
     }
     link_EndWait();
+#if RB_PORT
+    g_port_load_wait--;
+#endif
     disp_Blank();
     disp_Show();
 }

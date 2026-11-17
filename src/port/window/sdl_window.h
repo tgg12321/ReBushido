@@ -51,7 +51,18 @@ typedef struct {
      * second, counted from the window's opening, and a swap with vsync
      * on waits for the next of them as a display's own would */
     s32 display_rate;
+    /* quick_loading as the command line says: PORT_QUICK_... A run with a
+     * plan or a count of blanks keeps the console's pace through its
+     * loads unless --quick-loading says otherwise (docs/PORT.md, "Quick
+     * loading") */
+    s32 quick_loading;
 } PortWindowOptions;
+
+enum {
+    PORT_QUICK_SETTINGS = 0, /* as the settings say */
+    PORT_QUICK_OFF = 1,
+    PORT_QUICK_ON = 2,
+};
 
 extern PortSettings g_port_settings;
 extern PortWindowOptions g_port_window_options;

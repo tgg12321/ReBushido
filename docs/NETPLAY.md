@@ -1015,7 +1015,10 @@ top of that:
   sectors loaded something, and the next frame waits until the other's
   inputs up to it are in, so that no later guess can roll the load
   back. The step that loads is run once, as the other's; a guess before
-  it that the other's inputs then correct still runs it again;
+  it that the other's inputs then correct still runs it again. Each
+  window hurries the blanks of its loads through (`quick_loading`,
+  PORT.md, "Quick loading"), which changes no frame and no input: the
+  one there first waits, as it would for a slower PC;
 - *the waits*: while netplay waits on the other (for its inputs past
   the eight frames it may guess, or at a load), the window reads its
   events, so Escape still ends the program, and shows its picture again
