@@ -71,8 +71,8 @@ u32 port_PaceBlank(
     pace->nudged += nudge;
     /* a hold asked for (port_PaceHold), a part at a time */
     if (pace->held != 0) {
-        u32 part = pace->held < PORT_PACE_HOLD_STEP ? pace->held
-                                                    : PORT_PACE_HOLD_STEP;
+        u32 part =
+            pace->held < PORT_PACE_HOLD_STEP ? pace->held : PORT_PACE_HOLD_STEP;
 
         pace->base += part;
         pace->held -= part;

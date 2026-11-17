@@ -359,8 +359,8 @@ s32 port_Main(s32 argc, char **argv) {
                                                            : PORT_SESSION_JOIN;
             if (!port_ParseNetAddress(argv[++i], &session_at) ||
                 session_at.port == 0) {
-                port_UsageError("--host and --join take ADDRESS:PORT, not ",
-                                argv[i]);
+                port_UsageError(
+                    "--host and --join take ADDRESS:PORT, not ", argv[i]);
             }
         } else if (port_TextsEqual(word, "--net-delay")) {
             if (!port_ParseNumber(argv[++i], &net_delay) || net_delay < 0 ||

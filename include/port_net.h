@@ -149,8 +149,7 @@ extern s32 port_StartSession(const struct PortDisc *disc, u32 delay);
  * no player's), and in a fight no Start (the pause menu is off). `used`
  * is given the other pad's buttons that the frame's input still depends
  * on: a guess of the others is never wrong. */
-extern void port_SessionInput(
-    u32 frame, struct PortInput *input, u16 *used);
+extern void port_SessionInput(u32 frame, struct PortInput *input, u16 *used);
 /* The agreed random seed, into the game, at the session's first frame. */
 extern void port_SessionSeed(void);
 

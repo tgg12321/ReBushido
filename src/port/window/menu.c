@@ -418,15 +418,15 @@ static const char *port_MenuHelp(void) {
     case ROW_NET_ROLE:
         return "The host waits for the other player and plays player 1";
     case ROW_NET_ADDRESS:
-        return g_menu.is_typing ? "Type it: digits, dots and a colon.  Enter: "
-                                  "keep it.  Escape: leave it"
-                                : "As 192.168.1.20:7845: the host's PC, and "
-                                  "the port it waits at";
-    case ROW_NET_PORT:
         return g_menu.is_typing
-                   ? "Type it.  Enter: keep it.  Escape: leave it"
-                   : "The other player joins this port of your PC "
-                     "(Enter: type it)";
+                   ? "Type it: digits, dots and a colon.  Enter: "
+                     "keep it.  Escape: leave it"
+                   : "As 192.168.1.20:7845: the host's PC, and "
+                     "the port it waits at";
+    case ROW_NET_PORT:
+        return g_menu.is_typing ? "Type it.  Enter: keep it.  Escape: leave it"
+                                : "The other player joins this port of your PC "
+                                  "(Enter: type it)";
     case ROW_NET_LISTEN:
         return "Every network: found from the internet, where the router "
                "lets it through; this PC alone: two windows here";
@@ -492,7 +492,8 @@ static void port_MenuStepOnline(const MenuRow *row, s32 step) {
     switch (row->kind) {
     case ROW_NET_ROLE:
         g_port_settings.net_role = !g_port_settings.net_role;
-        port_MenuSetLine("net_role", g_port_settings.net_role ? "join" : "host");
+        port_MenuSetLine(
+            "net_role", g_port_settings.net_role ? "join" : "host");
         port_MenuBuild(PAGE_ONLINE, 0);
         break;
     case ROW_NET_PORT:
@@ -507,8 +508,8 @@ static void port_MenuStepOnline(const MenuRow *row, s32 step) {
         break;
     case ROW_NET_LISTEN:
         g_port_settings.net_listen = !g_port_settings.net_listen;
-        port_MenuSetLine("net_listen",
-                         g_port_settings.net_listen ? "all" : "local");
+        port_MenuSetLine(
+            "net_listen", g_port_settings.net_listen ? "all" : "local");
         break;
     case ROW_NET_DELAY:
         g_port_settings.net_delay =
@@ -528,10 +529,10 @@ static void port_MenuStartOnline(void) {
     char address[VALUE_BYTES];
 
     if (g_port_settings.net_role == 0) {
-        snprintf(address, sizeof(address), "%s:%d",
-                 g_port_settings.net_listen ? NET_ADDRESS_ALL
-                                            : NET_ADDRESS_LOCAL,
-                 g_port_settings.net_port);
+        snprintf(
+            address, sizeof(address), "%s:%d",
+            g_port_settings.net_listen ? NET_ADDRESS_ALL : NET_ADDRESS_LOCAL,
+            g_port_settings.net_port);
     } else if (g_port_settings.net_address[0] == 0) {
         snprintf(g_menu.note, sizeof(g_menu.note),
                  "Type the host's address and port first");
@@ -559,8 +560,8 @@ void port_MenuType(char c) {
     } else if (c == '\n') {
         g_menu.is_typing = FALSE;
         if (!port_MenuKeepTyped()) {
-            snprintf(g_menu.note, sizeof(g_menu.note), "Not kept: %s",
-                     g_menu.typed);
+            snprintf(
+                g_menu.note, sizeof(g_menu.note), "Not kept: %s", g_menu.typed);
         }
     } else if (length + 1 < sizeof(g_menu.typed) &&
                ((c >= '0' && c <= '9') || c == '.' || c == ':')) {
@@ -880,7 +881,7 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
     port_FontDraw(pixels, panel_w, panel_h, x, y + line / 4,
                   g_menu.page == PAGE_MAIN     ? "ReBushido: settings"
                   : g_menu.page == PAGE_ONLINE ? "ReBushido: play online"
-                  : g_menu.pad == 0 ? "ReBushido: player 1's buttons"
+                  : g_menu.pad == 0            ? "ReBushido: player 1's buttons"
                                     : "ReBushido: player 2's buttons",
                   COLOR_TITLE);
     snprintf(value, sizeof(value), "%s", port_GetVersionText());

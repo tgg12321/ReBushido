@@ -229,8 +229,8 @@ static void port_NetplaySendInputs(void) {
                   : 0));
     port_NetPutWord(out + INPUT_STAMP, now);
     port_NetPutWord(out + INPUT_ECHO, g_np_peer_stamp);
-    port_NetPutWord(out + INPUT_HELD,
-                    g_np_has_peer_stamp ? now - g_np_peer_stamp_at : 0);
+    port_NetPutWord(
+        out + INPUT_HELD, g_np_has_peer_stamp ? now - g_np_peer_stamp_at : 0);
     out[INPUT_COUNT] = (u8)count;
     out[INPUT_COUNT + 1] = (u8)(count >> BITS_PER_BYTE);
     for (i = 0; i < count; i++) {
@@ -277,9 +277,10 @@ static void port_NetplayTakeTime(const u8 *in) {
     if (echo != 0 && now - echo >= held) {
         u32 trip = now - echo - held;
 
-        g_np_ping_ms = g_np_has_ping ? (g_np_ping_ms * (PING_SMOOTH - 1) + trip) /
-                                           PING_SMOOTH
-                                     : trip;
+        g_np_ping_ms =
+            g_np_has_ping
+                ? (g_np_ping_ms * (PING_SMOOTH - 1) + trip) / PING_SMOOTH
+                : trip;
         g_np_has_ping = 1;
     }
     if (their_now >= g_np_peer_now) {
@@ -359,16 +360,15 @@ static void port_NetplayReceive(u32 wait_ms) {
  * time since the other's last word is not counted, for a program that
  * waits says the same frame again and has not gone on. */
 static s32 port_NetplayAhead(void) {
-    u32 frame_us =
-        g_np_blanks_per_frame * BLANK_MICROSECONDS / SIXTEENTHS;
+    u32 frame_us = g_np_blanks_per_frame * BLANK_MICROSECONDS / SIXTEENTHS;
     s32 theirs;
 
     if (frame_us == 0) {
         return 0;
     }
-    theirs = (s32)(g_np_peer_now * SIXTEENTHS +
-                   g_np_ping_ms / 2 * MICROSECONDS_PER_MS * SIXTEENTHS /
-                       frame_us);
+    theirs =
+        (s32)(g_np_peer_now * SIXTEENTHS +
+              g_np_ping_ms / 2 * MICROSECONDS_PER_MS * SIXTEENTHS / frame_us);
     return (s32)(g_np_frame * SIXTEENTHS) - theirs;
 }
 
@@ -398,10 +398,9 @@ static void port_NetplayKeepTime(void) {
     g_np_ahead[slot] = port_NetplayAhead();
     g_np_peer_ahead[slot] = g_np_peer_ahead_now;
     g_np_ahead_count++;
-    g_np_ahead_sum += g_np_ahead[slot] < 0 ? -g_np_ahead[slot]
-                                           : g_np_ahead[slot];
-    if (g_port_net_hold_hook == NULL ||
-        g_np_ahead_count < NETPLAY_ADVANTAGES ||
+    g_np_ahead_sum +=
+        g_np_ahead[slot] < 0 ? -g_np_ahead[slot] : g_np_ahead[slot];
+    if (g_port_net_hold_hook == NULL || g_np_ahead_count < NETPLAY_ADVANTAGES ||
         g_np_frame - g_np_held_at < NETPLAY_HOLD_EVERY) {
         return;
     }
@@ -418,9 +417,9 @@ static void port_NetplayKeepTime(void) {
     g_np_holds++;
     g_np_held_ms += (u32)hold * g_np_blanks_per_frame * BLANK_MICROSECONDS /
                     (SIXTEENTHS * SIXTEENTHS * MICROSECONDS_PER_MS);
-    g_port_net_hold_hook(((u32)hold * g_np_blanks_per_frame +
-                          SIXTEENTHS * SIXTEENTHS / 2) /
-                         (SIXTEENTHS * SIXTEENTHS));
+    g_port_net_hold_hook(
+        ((u32)hold * g_np_blanks_per_frame + SIXTEENTHS * SIXTEENTHS / 2) /
+        (SIXTEENTHS * SIXTEENTHS));
 }
 
 /* ---- a frame ---- */
@@ -484,10 +483,9 @@ static void port_NetplayRunFrame(void) {
         return;
     }
     /* the blanks a frame takes, for time sync, and a load to wait at */
-    g_np_blanks_per_frame =
-        (g_np_blanks_per_frame * (PING_SMOOTH - 1) +
-         (port_GetBlankCount() - blank) * SIXTEENTHS) /
-        PING_SMOOTH;
+    g_np_blanks_per_frame = (g_np_blanks_per_frame * (PING_SMOOTH - 1) +
+                             (port_GetBlankCount() - blank) * SIXTEENTHS) /
+                            PING_SMOOTH;
     if (g_port_disc_sectors_read - sectors > NETPLAY_LOAD_SECTORS) {
         g_np_sync_until = g_np_frame;
     }
@@ -582,10 +580,10 @@ static void port_NetplayKeepLocal(void) {
 /* The other has gone and every input of its is run. The headless program
  * ends there too; the window's plays on alone, its pads both its own. */
 static void port_NetplayEndWithPeer(const char *why) {
-    port_Log("netplay: the other program %s after frame %u; %s\n", why,
-             g_np_remote_count,
-             g_np_goes_on_alone ? "this one plays on alone"
-                                : "this one ends there");
+    port_Log(
+        "netplay: the other program %s after frame %u; %s\n", why,
+        g_np_remote_count,
+        g_np_goes_on_alone ? "this one plays on alone" : "this one ends there");
     if (!g_np_goes_on_alone) {
         port_Quit(PORT_EXIT_OK);
     }
@@ -701,12 +699,12 @@ void port_GetNetplayStats(PortNetplayStats *stats) {
                        ? g_np_ahead[(g_np_ahead_count - 1) % NETPLAY_ADVANTAGES]
                        : 0;
     stats->frame = g_np_frame;
-    stats->waited_ms = g_np_state == PORT_NETPLAY_WAITING ||
-                               g_np_state == PORT_NETPLAY_LOADING
-                           ? now - g_np_wait_from
-                           : 0;
-    stats->alone_ms = g_np_state == PORT_NETPLAY_ALONE ? now - g_np_alone_at
-                                                       : 0;
+    stats->waited_ms =
+        g_np_state == PORT_NETPLAY_WAITING || g_np_state == PORT_NETPLAY_LOADING
+            ? now - g_np_wait_from
+            : 0;
+    stats->alone_ms =
+        g_np_state == PORT_NETPLAY_ALONE ? now - g_np_alone_at : 0;
     stats->held_ms = g_np_held_ms;
     stats->is_session = port_GetSessionRole() != PORT_SESSION_NONE;
 }
@@ -755,20 +753,19 @@ void port_EndNetplay(void) {
              "of them at a load; %u hashes compared, the last final one at "
              "frame %u\n",
              g_np_frame, g_np_rollbacks, g_np_frames_again, g_np_longest,
-             g_np_rerun_ticks / (PORT_HOST_TICKS_PER_MICROSECOND *
-                                 MICROSECONDS_PER_MS),
+             g_np_rerun_ticks /
+                 (PORT_HOST_TICKS_PER_MICROSECOND * MICROSECONDS_PER_MS),
              g_np_waits, g_np_load_waits, g_np_hashes_compared,
              g_np_last_final.frame);
-    port_Log("netplay: time: a round trip of %u ms; %u.%02u frames from the "
-             "other on average; held back %u times, %u ms in all, to keep in "
-             "step with it\n",
-             g_np_ping_ms,
-             g_np_ahead_count != 0 ? g_np_ahead_sum / g_np_ahead_count /
-                                         SIXTEENTHS
-                                   : 0,
-             g_np_ahead_count != 0 ? g_np_ahead_sum * HUNDREDTHS /
-                                         g_np_ahead_count / SIXTEENTHS %
-                                         HUNDREDTHS
-                                   : 0,
-             g_np_holds, g_np_held_ms);
+    port_Log(
+        "netplay: time: a round trip of %u ms; %u.%02u frames from the "
+        "other on average; held back %u times, %u ms in all, to keep in "
+        "step with it\n",
+        g_np_ping_ms,
+        g_np_ahead_count != 0 ? g_np_ahead_sum / g_np_ahead_count / SIXTEENTHS
+                              : 0,
+        g_np_ahead_count != 0 ? g_np_ahead_sum * HUNDREDTHS / g_np_ahead_count /
+                                    SIXTEENTHS % HUNDREDTHS
+                              : 0,
+        g_np_holds, g_np_held_ms);
 }

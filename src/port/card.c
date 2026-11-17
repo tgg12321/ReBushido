@@ -314,9 +314,9 @@ static s32 port_CardMakeImage(PortCardSlot *slot) {
 static void port_CardOpenImage(PortCardSlot *slot) {
     if (slot->in_memory) {
         /* netplay's: the image is in memory already (port_SetCardImage) */
-        port_CardCopyBytes(slot->header,
-                           g_port_card_images[slot - g_port_card_slots],
-                           PORT_CARD_BLOCK_SIZE);
+        port_CardCopyBytes(
+            slot->header, g_port_card_images[slot - g_port_card_slots],
+            PORT_CARD_BLOCK_SIZE);
         slot->present = 1;
         slot->formatted = port_CardHeaderIsGood(slot->header);
         return;

@@ -117,15 +117,16 @@ static struct {
     u64 disc;
     u32 delay;
     u32 seed;
-    u32 cards;    /* a bit a slot that has a card */
-    u32 shape;    /* this program's picture's shape, as MEET_SHAPE has it */
-    u32 wider;    /* the wider of the two players' */
-    u32 have;     /* chunks the guest has */
-    u32 needed;   /* chunks there are to have */
+    u32 cards;  /* a bit a slot that has a card */
+    u32 shape;  /* this program's picture's shape, as MEET_SHAPE has it */
+    u32 wider;  /* the wider of the two players' */
+    u32 have;   /* chunks the guest has */
+    u32 needed; /* chunks there are to have */
     u8 map[CHUNK_MAP_BYTES];
     u32 next_chunk; /* the host's turn round them */
     u32 status_at;
 } g_session;
+
 /* The host's two cards, and what the guest is given of them: memory the
  * system gives as the session begins (none of the state's), copied into
  * the cards' own as the game starts. */
@@ -190,8 +191,7 @@ static u64 port_SessionDisc(const PortDisc *disc) {
     if (port_ReadDiscSector(disc, DISC_VOLUME_SECTOR, raw) == PORT_DISC_OK) {
         sum = port_SumBytes(sum, raw, sizeof(raw));
     }
-    for (sector = 0; sector < disc->sector_count;
-         sector += DISC_SAMPLE_EVERY) {
+    for (sector = 0; sector < disc->sector_count; sector += DISC_SAMPLE_EVERY) {
         if (port_ReadDiscSector(disc, sector, raw) == PORT_DISC_OK) {
             sum = port_SumBytes(sum, raw, sizeof(raw));
         }
@@ -224,8 +224,8 @@ static void port_PutVersion(u8 *out) {
     u32 i;
 
     for (i = 0; i < VERSION_BYTES; i++) {
-        out[i] = (u8)(i < length && i < VERSION_BYTES - 1 ? g_rb_version[i]
-                                                           : 0);
+        out[i] =
+            (u8)(i < length && i < VERSION_BYTES - 1 ? g_rb_version[i] : 0);
     }
 }
 
@@ -349,10 +349,10 @@ static void port_SessionAt(char *out, u32 room, const char *what) {
 
 /* `what`, and how far the cards have come. */
 static void port_SessionProgress(char *out, u32 room, const char *what) {
-    port_SessionText(out, room, "%s: %u%%", what,
-                     g_session.needed == 0
-                         ? PERCENT
-                         : g_session.have * PERCENT / g_session.needed);
+    port_SessionText(
+        out, room, "%s: %u%%", what,
+        g_session.needed == 0 ? PERCENT
+                              : g_session.have * PERCENT / g_session.needed);
 }
 
 static s32 port_HasChunk(u32 chunk) {
@@ -520,13 +520,13 @@ static s32 port_JoinSession(void) {
                 for (number = 0; number < CHUNKS; number++) {
                     g_session.needed += (u32)port_ChunkIsNeeded(number);
                 }
-                port_Log("session: the host has let this program in; its "
-                         "delay is %u frames, its cards %s%s\n",
-                         g_session.delay,
-                         (g_session.cards & 1) ? "slot 1 " : "",
-                         (g_session.cards & 2) ? "slot 2"
-                         : g_session.cards == 0 ? "none"
-                                                : "");
+                port_Log(
+                    "session: the host has let this program in; its "
+                    "delay is %u frames, its cards %s%s\n",
+                    g_session.delay, (g_session.cards & 1) ? "slot 1 " : "",
+                    (g_session.cards & 2)  ? "slot 2"
+                    : g_session.cards == 0 ? "none"
+                                           : "");
             } else if (kind == KIND_CARD && welcomed && number < CHUNKS &&
                        bytes >= PORT_NET_HEADER_BYTES + CHUNK_BYTES &&
                        port_ChunkIsNeeded(number) && !port_HasChunk(number)) {
@@ -540,8 +540,7 @@ static s32 port_JoinSession(void) {
                 g_session.map[number / BITS_PER_BYTE] |=
                     (u8)(1 << (number % BITS_PER_BYTE));
                 g_session.have++;
-            } else if ((kind == KIND_GO ||
-                        kind == PORT_NET_KIND_NETPLAY) &&
+            } else if ((kind == KIND_GO || kind == PORT_NET_KIND_NETPLAY) &&
                        welcomed && g_session.have == g_session.needed) {
                 /* the host has started: its inputs are coming */
                 return 1;
@@ -568,8 +567,7 @@ static s32 port_JoinSession(void) {
                      g_session.address.address >> 24,
                      (g_session.address.address >> 16) & 0xFF,
                      (g_session.address.address >> 8) & 0xFF,
-                     g_session.address.address & 0xFF,
-                     g_session.address.port);
+                     g_session.address.address & 0xFF, g_session.address.port);
             return 0;
         }
         port_SessionStatus(status);
@@ -617,19 +615,19 @@ s32 port_StartSession(const PortDisc *disc, u32 delay) {
         return 0;
     }
     for (slot = 0; slot < PORT_CARD_SLOTS; slot++) {
-        port_SetCardImage(slot, ((g_session.cards >> slot) & 1)
-                                    ? g_session_cards[slot]
-                                    : NULL);
+        port_SetCardImage(
+            slot,
+            ((g_session.cards >> slot) & 1) ? g_session_cards[slot] : NULL);
     }
-    port_SetNetplay(g_session.role == PORT_SESSION_HOST ? 0 : 1,
-                    g_session.delay);
+    port_SetNetplay(
+        g_session.role == PORT_SESSION_HOST ? 0 : 1, g_session.delay);
     port_RemasterFixMargin((s32)(g_session.wider >> SHAPE_SHIFT),
                            (s32)(g_session.wider & SHAPE_MASK));
     port_Log("session: begun: this program is player %d, with a delay of %u "
              "frames and the seed %u; the host's memory cards (%s%s)\n",
              g_session.role == PORT_SESSION_HOST ? 1 : 2, g_session.delay,
              g_session.seed, (g_session.cards & 1) ? "slot 1 " : "",
-             (g_session.cards & 2) ? "slot 2"
+             (g_session.cards & 2)  ? "slot 2"
              : g_session.cards == 0 ? "none"
                                     : "");
     return 1;

@@ -432,7 +432,8 @@ static void test_Pace(void) {
     CHECK_EQ(port_PaceBlank(&pace, 1, 737, 737, 0), 0);
     CHECK_EQ(pace.held, 0);
     port_PaceHold(&pace, 400);
-    CHECK_EQ(port_PaceBlank(&pace, 2, 737 * 2, 737 * 2, 0), PORT_PACE_HOLD_STEP);
+    CHECK_EQ(
+        port_PaceBlank(&pace, 2, 737 * 2, 737 * 2, 0), PORT_PACE_HOLD_STEP);
     CHECK_EQ(port_PaceBlank(&pace, 3, 737 * 3 + 184, 737 * 3, 0), 184);
     CHECK_EQ(port_PaceBlank(&pace, 4, 737 * 4 + 368, 737 * 4, 0), 32);
     CHECK_EQ(port_PaceBlank(&pace, 5, 737 * 5 + 400, 737 * 5, 0), 0);

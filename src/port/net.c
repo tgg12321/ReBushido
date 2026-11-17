@@ -294,8 +294,8 @@ static void port_NetFlush(void) {
 
         if ((s32)(now - delayed->due) >= 0) {
             if (port_NetTo() != NULL) {
-                port_HostUdpSend(g_port_net_socket, port_NetTo(),
-                                 delayed->data, delayed->bytes);
+                port_HostUdpSend(g_port_net_socket, port_NetTo(), delayed->data,
+                                 delayed->bytes);
             }
         } else {
             if (kept != i) {

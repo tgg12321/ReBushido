@@ -435,9 +435,9 @@ void port_SoundRerunEnds(void) {
     g_port_rerun_heard += count;
     SDL_LockAudioDevice(g_port_audio);
     for (i = 0; i < count; i++) {
-        port_WriteRing(&g_port_ring,
-                       &g_port_rerun_samples[((first + i) % RERUN_FRAMES) * 2],
-                       1);
+        port_WriteRing(
+            &g_port_ring,
+            &g_port_rerun_samples[((first + i) % RERUN_FRAMES) * 2], 1);
     }
     SDL_UnlockAudioDevice(g_port_audio);
 }

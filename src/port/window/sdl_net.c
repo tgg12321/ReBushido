@@ -93,8 +93,9 @@ static u32 port_NetWords(char *out, u32 room) {
     }
     if (stats.state == PORT_NETPLAY_ALONE) {
         if (stats.alone_ms < ALONE_SHOWN_MS) {
-            snprintf(out, room, "The other player has left: you play on "
-                                "alone");
+            snprintf(out, room,
+                     "The other player has left: you play on "
+                     "alone");
         }
         return COLOR_WAIT;
     }
@@ -108,8 +109,9 @@ static u32 port_NetWords(char *out, u32 room) {
                  stats.waited_ms % MS_PER_SECOND / (MS_PER_SECOND / 10));
         return COLOR_WAIT;
     }
-    snprintf(out, room, "Online: player %d   |   ping %u ms   |   rollback %u   "
-                        "|   delay %u",
+    snprintf(out, room,
+             "Online: player %d   |   ping %u ms   |   rollback %u   "
+             "|   delay %u",
              stats.pad + 1, stats.ping_ms, stats.rollback, stats.delay);
     return COLOR_TEXT;
 }
@@ -179,18 +181,17 @@ static void port_NetPanel(const char *status) {
         g_net.pixels[i] = COLOR_PANEL;
     }
     port_FillRect(g_net.pixels, place.w, place.h, 0, 0, place.w, 2, COLOR_EDGE);
-    port_FillRect(g_net.pixels, place.w, place.h, 0, place.h - 2, place.w, 2,
-                  COLOR_EDGE);
+    port_FillRect(
+        g_net.pixels, place.w, place.h, 0, place.h - 2, place.w, 2, COLOR_EDGE);
     port_FontSetSize(line * LETTER_PERCENT / PERCENT);
-    port_FontDraw(g_net.pixels, place.w, place.h, pad,
-                  pad + port_FontAscent(), "ReBushido: playing online",
-                  COLOR_TITLE);
+    port_FontDraw(g_net.pixels, place.w, place.h, pad, pad + port_FontAscent(),
+                  "ReBushido: playing online", COLOR_TITLE);
     port_FontSetSize(line * LETTER_PERCENT / PERCENT * 3 / 4);
     port_FontDraw(g_net.pixels, place.w, place.h, pad,
                   pad + line + port_FontAscent(), status, COLOR_TEXT);
-    port_FontDraw(g_net.pixels, place.w, place.h, pad,
-                  pad + line * 2 + port_FontAscent(),
-                  "Escape: give up and close the program", COLOR_DIM);
+    port_FontDraw(
+        g_net.pixels, place.w, place.h, pad, pad + line * 2 + port_FontAscent(),
+        "Escape: give up and close the program", COLOR_DIM);
     port_ShowMenu(port_GetBlankCount(), g_net.pixels, &place, NULL);
 }
 

@@ -1073,8 +1073,8 @@ static void port_RemasterFindLeftMargin(void) {
 
     if (g_margin_is_fixed) {
         port_GetDisplay(&display);
-        g_left_margin =
-            port_RemasterMargin(display.w, g_margin_aspect_w, g_margin_aspect_h);
+        g_left_margin = port_RemasterMargin(
+            display.w, g_margin_aspect_w, g_margin_aspect_h);
         return;
     }
     if (!port_RemasterIsOn()) {

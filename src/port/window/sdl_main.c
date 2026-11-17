@@ -409,10 +409,10 @@ static const struct {
     const char *option;
     s32 values;
 } g_port_online_drops[] = {
-    {"--host", 1},       {"--join", 1},           {"--net-bind", 1},
-    {"--net-peer", 1},   {"--netplay", 1},        {"--net-delay", 1},
-    {"--link-side", 1},  {"--rollback-test", 1},  {"--rollback-every", 1},
-    {"--rollback-quiet", 0}, {"--menu-at", 1},    {"--menu-keys", 1},
+    {"--host", 1},           {"--join", 1},          {"--net-bind", 1},
+    {"--net-peer", 1},       {"--netplay", 1},       {"--net-delay", 1},
+    {"--link-side", 1},      {"--rollback-test", 1}, {"--rollback-every", 1},
+    {"--rollback-quiet", 0}, {"--menu-at", 1},       {"--menu-keys", 1},
     {"--menu-shots", 1},
 };
 
@@ -465,8 +465,8 @@ void port_StartOnline(
         size_t drop;
         s32 skip = -1;
 
-        for (drop = 0;
-             drop < sizeof(g_port_online_drops) / sizeof(g_port_online_drops[0]);
+        for (drop = 0; drop < sizeof(g_port_online_drops) /
+                                  sizeof(g_port_online_drops[0]);
              drop++) {
             if (strcmp(g_port_main_argv[i], g_port_online_drops[drop].option) ==
                 0) {
