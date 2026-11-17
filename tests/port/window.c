@@ -860,9 +860,9 @@ static void test_Keys(void) {
  * (window.py). */
 static void test_Graphics(void) {
     port_SetDefaultSettings(&g_test_settings, test_LookUp);
-    /* what the layout built in says: the options page chooses the
-     * picture, the window's size the resolution */
-    CHECK_EQ(g_test_settings.graphics, PORT_GRAPHICS_FOLLOW);
+    /* what the layout built in says: the remastered picture, the
+     * window's size the resolution */
+    CHECK_EQ(g_test_settings.graphics, PORT_GRAPHICS_REMASTERED);
     CHECK_EQ(g_test_settings.resolution, PORT_RESOLUTION_WINDOW);
     /* the whole stage, so that nothing of it comes and goes as the
      * camera turns */
