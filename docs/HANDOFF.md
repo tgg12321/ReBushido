@@ -96,6 +96,11 @@ to play is [`PLAYING.md`](PLAYING.md).
 - Which shadows by default (`original`, `soft` or `cast`), and how
   dark (2).
 - The high frame rate by default (5).
+- Online play (NETPLAY.md, section 13): the address a host listens at
+  from the Play online page (every network of the PC with nothing said,
+  or this PC alone), how players get through NAT (port forwarding, hole
+  punching or a relay), and whether online keeps the console's draw
+  distance or both compute the host's. It wants trying between two PCs.
 - `tmp\sdl-dl` can be deleted by hand; `tmp\pcsx-redux` and
   `tmp\redux-portable` are the emulator the play tests use and stay.
 

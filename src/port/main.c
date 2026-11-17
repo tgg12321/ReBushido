@@ -486,6 +486,12 @@ s32 port_Main(s32 argc, char **argv) {
         }
         view.distance = PORT_DISTANCE_ORIGINAL;
         port_RemasterSetView(&view);
+        /* and which faces it keeps at the left edge must not follow the
+         * picture either: a session fixes the wider of the two players'
+         * shapes (session.c), --netplay this program's own */
+        if (port_GetSessionRole() == PORT_SESSION_NONE) {
+            port_RemasterFixMargin(view.aspect_w, view.aspect_h);
+        }
     }
 #endif
     if (rollback_frames > 0) {

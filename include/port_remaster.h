@@ -149,6 +149,12 @@ extern s32 port_RemasterMargin(s32 picture_w, s32 aspect_w, s32 aspect_h);
  * (port_RemasterNewFrame), and only read after that: a face is looked at
  * thousands of times a frame. */
 extern s32 port_RemasterLeftMargin(void);
+/* From now on the margin is worked out for a picture of this shape,
+ * whether the remastered picture is on or not: netplay's, where which
+ * faces the game keeps is part of the state both machines compare and
+ * must not follow either player's picture (docs/NETPLAY.md, section
+ * 13). Before the game starts. */
+extern void port_RemasterFixMargin(s32 aspect_w, s32 aspect_h);
 
 /* ---- the fight's HUD at a wider picture's edges ---- */
 

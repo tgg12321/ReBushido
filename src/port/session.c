@@ -63,6 +63,8 @@
 #define STATUS_BYTES 160
 #define SEED_MASK 0xFFFF
 #define PERCENT 100
+#define SHAPE_SHIFT 16
+#define SHAPE_MASK 0xFFFF
 
 /* The session's presses (port_SessionInput): one every this many frames;
  * on the top menu, whose cursor glides from row to row over several
@@ -94,14 +96,17 @@ enum {
 
 /* A hello and a welcome after the header (whose number is the
  * protocol): the build's identity, the disc's, then the welcome's delay,
- * seed and cards, and last the version's text. */
+ * seed and cards, the shape of the sender's remastered picture (its width
+ * in the high half and its height in the low), and last the version's
+ * text. */
 enum {
     MEET_BUILD = PORT_NET_HEADER_BYTES,
     MEET_DISC = MEET_BUILD + 2 * WORD_BYTES,
     MEET_DELAY = MEET_DISC + 2 * WORD_BYTES,
     MEET_SEED = MEET_DELAY + WORD_BYTES,
     MEET_CARDS = MEET_SEED + WORD_BYTES,
-    MEET_VERSION = MEET_CARDS + WORD_BYTES,
+    MEET_SHAPE = MEET_CARDS + WORD_BYTES,
+    MEET_VERSION = MEET_SHAPE + WORD_BYTES,
     MEET_BYTES = MEET_VERSION + VERSION_BYTES
 };
 
@@ -113,6 +118,8 @@ static struct {
     u32 delay;
     u32 seed;
     u32 cards;    /* a bit a slot that has a card */
+    u32 shape;    /* this program's picture's shape, as MEET_SHAPE has it */
+    u32 wider;    /* the wider of the two players' */
     u32 have;     /* chunks the guest has */
     u32 needed;   /* chunks there are to have */
     u8 map[CHUNK_MAP_BYTES];
@@ -242,6 +249,7 @@ static void port_SendMeet(s32 kind) {
     port_NetPutWord(out + MEET_DELAY, g_session.delay);
     port_NetPutWord(out + MEET_SEED, g_session.seed);
     port_NetPutWord(out + MEET_CARDS, g_session.cards);
+    port_NetPutWord(out + MEET_SHAPE, g_session.shape);
     port_PutVersion(out + MEET_VERSION);
     port_NetSend(out, sizeof(out));
 }
@@ -255,6 +263,20 @@ static void port_SendShort(s32 kind, s32 detail, u32 number) {
     for (i = 0; i < (kind == KIND_READY || kind == KIND_CARD_ACK ? 1 : GOES);
          i++) {
         port_NetSend(out, sizeof(out));
+    }
+}
+
+/* The shape of the other player's picture: the wider of the two is what
+ * both games cut faces off at (port_RemasterFixMargin), so that neither
+ * misses a face its picture shows and the two compute the same. */
+static void port_TakeShape(u32 theirs) {
+    u32 their_w = theirs >> SHAPE_SHIFT;
+    u32 their_h = theirs & SHAPE_MASK;
+    u32 wider_w = g_session.wider >> SHAPE_SHIFT;
+    u32 wider_h = g_session.wider & SHAPE_MASK;
+
+    if (their_w != 0 && their_h != 0 && their_w * wider_h > wider_w * their_h) {
+        g_session.wider = theirs;
     }
 }
 
@@ -279,6 +301,7 @@ static s32 port_CheckMeet(const u8 *in, s32 bytes, u32 protocol) {
     if (port_GetLong(in + MEET_DISC) != g_session.disc) {
         return REFUSE_DISC;
     }
+    port_TakeShape(port_NetGetWord(in + MEET_SHAPE));
     return 0;
 }
 
@@ -556,6 +579,7 @@ static s32 port_JoinSession(void) {
 /* ---- the start ---- */
 
 s32 port_StartSession(const PortDisc *disc, u32 delay) {
+    PortRemasterView view;
     u32 chunk;
     s32 slot;
     s32 ok;
@@ -563,6 +587,10 @@ s32 port_StartSession(const PortDisc *disc, u32 delay) {
     g_session.build = port_SessionBuild();
     g_session.disc = port_SessionDisc(disc);
     g_session.delay = delay;
+    port_RemasterGetView(&view);
+    g_session.shape =
+        ((u32)view.aspect_w << SHAPE_SHIFT) | ((u32)view.aspect_h & SHAPE_MASK);
+    g_session.wider = g_session.shape;
     g_session_cards = port_HostAllocate(PORT_CARD_SLOTS * PORT_CARD_IMAGE_SIZE);
     if (g_session_cards == NULL) {
         port_Log("session: no memory for the memory cards\n");
@@ -595,6 +623,8 @@ s32 port_StartSession(const PortDisc *disc, u32 delay) {
     }
     port_SetNetplay(g_session.role == PORT_SESSION_HOST ? 0 : 1,
                     g_session.delay);
+    port_RemasterFixMargin((s32)(g_session.wider >> SHAPE_SHIFT),
+                           (s32)(g_session.wider & SHAPE_MASK));
     port_Log("session: begun: this program is player %d, with a delay of %u "
              "frames and the seed %u; the host's memory cards (%s%s)\n",
              g_session.role == PORT_SESSION_HOST ? 1 : 2, g_session.delay,

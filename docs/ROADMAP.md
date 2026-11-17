@@ -157,10 +157,19 @@ camera), particle effects, skyboxes on the stages that were left dark.
    picture's, with a check; a step run again with nothing drawn or
    heard; the game's own link-cable mode between two ports over UDP; and
    rollback netplay of a whole session, GGPO's design in C, with desync
-   detection by the state's hash, proved between two headless programs on
-   one PC with 100 ms of latency and lost datagrams (`make port-net`;
-   NETPLAY.md, sections 7 to 12). Left: pacing in the window, the
-   session's set-up, and play between two real PCs.
+   detection by the state's hash; and netplay in the window: GGPO's time
+   sync, loads as points both wait at, the sound kept out of the
+   rollback by the sound card's queue, a line on the screen with the
+   ping, the rollback and the delay, and sessions set up by `--host` and
+   `--join` or the settings menu's Play online page (the build and the
+   disc checked, the host's cards and a seed sent, both taken to versus
+   select, no pause, rematch, the one who stays playing on alone), proved
+   between two window programs on one PC with latency and lost datagrams
+   (`make port-net`; NETPLAY.md, sections 7 to 13; PLAYING.md, "Playing
+   online"). Left: play between two real PCs and on Windows, and the
+   owner's calls of NETPLAY.md, section 13: the address a host listens
+   at, NAT (port forwarding, hole punching or a relay), the draw distance
+   online.
 9. **Input remapping and a modern control overhaul.** Remapping is in:
    every button of each player from `rebushido.cfg`, several buttons on
    one key, and layouts to start from (`controls = original`, the only
