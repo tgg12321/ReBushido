@@ -125,3 +125,35 @@ No dates.
 
    On the PlayStation build only what is cheap: about 17 KB is left
    there before a fixed buffer has to move.
+
+## After the picture: the owner's longer view (2026-11-16)
+
+The port is the game in C on a PC, so larger changes to how the game
+works are open where they serve these goals. Two limits hold throughout:
+it must still play and feel like the original (the hitboxes, motions and
+timing are the balance), and nothing is reinvented where a known way
+exists. As the one ground mesh replaced the tiles, each part of the
+picture is looked at again in that light: the camera, lighting and
+shadows, the 3D terrain (structures that see through when they block the
+camera), particle effects, skyboxes on the stages that were left dark.
+
+8. **Online play with rollback netcode**, soon after the picture. What it
+   asks of the port, and what work before it should keep in mind:
+   - a game step that is deterministic and repeatable from its inputs
+     alone (the port already runs the emulator's game value for value);
+   - the whole game state saved and restored in well under a frame (the
+     game's state lives in fixed memory, which makes a snapshot cheap);
+   - the game step separated from drawing and sound, so a step run again
+     draws and plays nothing;
+   - the inputs read in one place per step.
+9. **Input remapping and a modern control overhaul.**
+10. **Mod support**: one framework for custom stages, textures, models,
+    music and so on, loaded from folders beside the program. The
+    replacement textures and fighter models planned for the picture are
+    built as its first users, not as one-off features. Later perhaps new
+    weapon types and motions, which need the hitbox and weapon tables
+    read as data.
+11. **Menus and UI**: the menus redrawn (the Japanese options of the
+    title screen in English), and the settings menu holding all of
+    ReBushido's own settings.
+12. **Optimisation**, for a smooth and seamless game.
