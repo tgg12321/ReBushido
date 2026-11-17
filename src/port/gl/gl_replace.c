@@ -130,6 +130,14 @@ const char *port_GlReplaceStart(void *(*getproc)(const char *name)) {
     }
     PORT_GL_REPLACE_FUNCTIONS
 #undef GL
+    /* a context of its own: the textures given to the one before are not
+     * this one's, so every key is looked up again (a dump already written
+     * is not written twice: its file is there) */
+    if (g_replace.slots != NULL) {
+        memset(g_replace.slots, 0, SLOTS * sizeof(*g_replace.slots));
+        g_replace.used = 0;
+        g_replace.is_full = FALSE;
+    }
     g_replace.is_started = TRUE;
     return NULL;
 }
