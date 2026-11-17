@@ -171,9 +171,11 @@ static void test_Pads(void) {
     CHECK_EQ(packets[0][0], 0xFF);
     CHECK_EQ(packets[1][0], 0xFF);
     VSync(0);
+    port_TakeInput();
     CHECK_EQ(packets[0][0], 0xFF); /* the driver is not started */
     StartPAD();
     VSync(0);
+    port_TakeInput();
     /* two digital pads, nothing held */
     CHECK_EQ(packets[0][0], 0x00);
     CHECK_EQ(packets[0][1], 0x41);
@@ -181,11 +183,13 @@ static void test_Pads(void) {
     CHECK_EQ(packets[0][3], 0xFF);
     CHECK_EQ(packets[1][0], 0x00);
     CHECK_EQ(packets[1][1], 0x41);
-    /* a press is seen from the next blank, as the game reads it (pad.c) */
+    /* a press is seen from the next blank, as the game reads it (pad.c):
+     * the packets are written as the game reads them (port_TakeInput) */
     port_SetPadButton(0, PADstart, 1);
     port_SetPadButton(1, PADRdown | PADLleft, 1);
     CHECK_EQ(packets[0][2], 0xFF);
     VSync(0);
+    port_TakeInput();
     CHECK_EQ((u16) ~((packets[0][2] << 8) | packets[0][3]), PADstart);
     CHECK_EQ(
         (u16) ~((packets[1][2] << 8) | packets[1][3]), PADRdown | PADLleft);
@@ -193,12 +197,14 @@ static void test_Pads(void) {
     port_SetPadButton(1, PADLleft, 0);
     port_SetPadButton(2, PADstart, 1); /* no such pad */
     VSync(0);
+    port_TakeInput();
     CHECK_EQ((u16) ~((packets[0][2] << 8) | packets[0][3]), 0);
     CHECK_EQ((u16) ~((packets[1][2] << 8) | packets[1][3]), PADRdown);
     CHECK_EQ(packets[0][4], 0); /* four bytes, no more */
     StopPAD();
     port_SetPadButton(1, PADRdown, 0);
     VSync(0);
+    port_TakeInput();
     CHECK_EQ((u16) ~((packets[1][2] << 8) | packets[1][3]), PADRdown);
 }
 

@@ -71,6 +71,11 @@ void pad_Update(s32 no_unplug_pause) {
     s32 previous_held;
 
     held_bits = 0;
+#if RB_PORT
+    /* the port writes the frame's input into the packets as they are
+     * read, from its one input point (src/port/pad.c) */
+    port_TakeInput();
+#endif
     pad_packets[0] = g_pad_packets[0][0];
     pad_packets[1] = g_pad_packets[0][1];
     pad_packets[2] = g_pad_packets[1][0];

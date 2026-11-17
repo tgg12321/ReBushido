@@ -269,6 +269,10 @@ static s32 rb_ReadPads(void) {
     s32 answered = FALSE;
     s32 i;
 
+#if RB_PORT
+    /* as in pad_Update: the port's one input point (src/port/pad.c) */
+    port_TakeInput();
+#endif
     for (i = 0; i < 2; i++) {
         const u8 *packet = (const u8 *)g_pad_packets[i];
         s32 type = packet[1] >> 4;

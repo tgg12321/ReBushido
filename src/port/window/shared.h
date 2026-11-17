@@ -18,9 +18,9 @@
 
 extern void port_Quit(s32 code) __attribute__((noreturn));
 extern u32 port_GetBlankCount(void);
-extern void port_SetPadButton(s32 pad, u32 button, s32 down);
 
 extern void (*g_port_input_hook)(u32 blank);
+extern u32 (*g_port_device_hook)(s32 pad);
 extern void (*g_port_blank_hook)(u32 blank);
 extern s32 (*g_port_press_hook)(s32 pad, u32 button, s32 down);
 extern void (*g_port_quit_hook)(s32 code);

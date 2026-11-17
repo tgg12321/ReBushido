@@ -1286,6 +1286,25 @@ built in; more lines add more. The names are SDL's: a key's as SDL names it (`Up
 cannot use is said, with why, and the rest is used. There is no page
 for any of this in the game.
 
+Buttons joined by `+` (`p2.l1+r1 = key Right Ctrl`) are one key or
+button pressing all of them; such a line takes away no single button's
+keys. The bindings built in are a layout, `controls = original`
+(`g_port_layouts`, `src/port/window/keymap.c`): a layout is the text of
+a settings file with nothing but `pN` lines, and another layout, such as
+a modern control scheme, is another text and a line of that table. A
+file's `controls` line replaces the built-in bindings with that layout's
+and comes before its own `pN` lines, which are read over it.
+
+**Where the game's input comes from.** The window reads SDL's events at
+each vertical blank and works out, through the layout, what the keys and
+controllers hold on each pad; the port's pad driver reads that
+(`g_port_device_hook`) together with a plan's presses at the same blank,
+as the console's driver reads the pads, and the game is given it when it
+reads the pads, as one value of the frame (`port_TakeInput`,
+`src/port/pad.c`; [`NETPLAY.md`](NETPLAY.md), "The one input point").
+`tests/port/input.c` holds the value, its timing and the mapping to what
+`pad_Update` finds.
+
 **The session's log.** Every session writes one, always:
 `logs/rebushido-YYYYMMDD-HHMMSS.log` beside the program, the newest
 twenty kept (if the program's folder cannot be written to, in the

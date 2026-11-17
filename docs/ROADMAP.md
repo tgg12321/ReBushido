@@ -150,7 +150,13 @@ camera), particle effects, skyboxes on the stages that were left dark.
    - the inputs read in one place per step.
 
    How ready the port is, measured, and the design: [`NETPLAY.md`](NETPLAY.md).
-9. **Input remapping and a modern control overhaul.**
+9. **Input remapping and a modern control overhaul.** Remapping is in:
+   every button of each player from `rebushido.cfg`, several buttons on
+   one key, and layouts to start from (`controls = original`, the only
+   one so far; [`PLAYING.md`](PLAYING.md), "Remapping the keys and
+   buttons"), on the port's one input point (`NETPLAY.md`, section 4).
+   A modern layout is one more table in `src/port/window/keymap.c`, and
+   waits on the owner.
 10. **Mod support**: one framework for custom stages, textures, models,
     music and so on, loaded from folders beside the program. The
     replacement textures and fighter models planned for the picture are

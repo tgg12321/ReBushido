@@ -194,6 +194,8 @@ typedef struct {
 typedef struct {
     PortBinding bindings[PORT_BINDINGS_MAX];
     s32 count;
+    s32 layout;        /* which of g_port_layouts the built-in ones are */
+    s32 own_controls;  /* the pN lines read from a file */
     s32 scale;         /* PORT_SCALE_... */
     s32 is_fullscreen; /* at the start */
     s32 is_linear;     /* the picture smoothed as it is scaled */
@@ -226,8 +228,20 @@ typedef s32 (*PortNameLookup)(s32 source, const char *name);
 /* A line of a settings file that says nothing the port knows. */
 typedef void (*PortComplaint)(s32 line, const char *why, const char *text);
 
-/* The layout built in, as the text of a settings file. */
+/* The settings built in, as the text of a settings file; its line
+ * `controls = original` brings the bindings of that layout. */
 extern const char g_port_default_settings[];
+
+/* The layouts of the keys and the controllers' buttons that a settings
+ * file starts from (`controls = NAME`), each as a settings file with
+ * nothing but pN lines in it. The first is the one built in. */
+typedef struct {
+    const char *name;
+    const char *text;
+} PortLayout;
+
+#define PORT_LAYOUTS 1
+extern const PortLayout g_port_layouts[PORT_LAYOUTS];
 /* The settings before any file: the layout built in. */
 extern void port_SetDefaultSettings(
     PortSettings *settings, PortNameLookup lookup);
@@ -242,6 +256,9 @@ extern s32 port_ReadSettings(PortSettings *settings, char *text,
 /* Sony's mask for a button's name in a settings file (`cross`, `l1`,
  * `up`, `start`...), letters of either case; 0 if it is none. */
 extern u32 port_FindPadButton(const char *name);
+/* The masks of several buttons' names joined by `+` (`l1+r1`), or of
+ * one; 0 if any of them is none. */
+extern u32 port_FindPadButtons(const char *names);
 /* The name of the button with this mask; NULL if there is none. */
 extern const char *port_NamePadButton(u32 button);
 /* A key went down or came up (`value` 1 or 0), or the button `code` of

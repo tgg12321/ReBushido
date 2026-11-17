@@ -162,7 +162,8 @@ static u32 g_port_read_start;
  * plugged in. */
 static SDL_GameController *g_port_controllers[PORT_PADS];
 static SDL_JoystickID g_port_controller_ids[PORT_PADS];
-/* The buttons the port's pads have been told are down. */
+/* The buttons the keys and controllers held on each pad when they were
+ * last read, which is what the port's pads are given (g_port_device_hook). */
 static u32 g_port_sent[PORT_PADS];
 /* For the end's account: a plan's presses made as the PC's input, the
  * key and controller events read, and the changes told to the pads. */
@@ -213,7 +214,9 @@ void port_DescribeControls(void) {
                 const char *kind = "key ";
                 const char *sign = "";
 
-                if (binding->pad != pad || binding->button != button) {
+                /* one that presses several buttons at once is said under
+                 * each of them */
+                if (binding->pad != pad || (binding->button & button) == 0) {
                     continue;
                 }
                 if (binding->source == PORT_SOURCE_KEY) {
@@ -1372,7 +1375,8 @@ static void port_ChangePicture(const char *why) {
 
 /* ---- the pads ---- */
 
-/* Tells the port's pads what has changed since they were last told. */
+/* What the keys and controllers hold on each pad, through the layout,
+ * now that their events have been read; the changes counted. */
 static void port_SendPads(void) {
     s32 pad;
     u32 bit;
@@ -1383,13 +1387,18 @@ static void port_SendPads(void) {
 
         for (bit = 1; changed != 0; bit <<= 1) {
             if (changed & bit) {
-                port_SetPadButton(pad, bit, (held & bit) != 0);
                 g_port_pad_changes++;
                 changed &= ~bit;
             }
         }
         g_port_sent[pad] = held;
     }
+}
+
+/* The port's pads ask what the PC holds on one of them (port_platform.h):
+ * what it held when the events were last read, at a vertical blank. */
+static u32 port_DeviceButtons(s32 pad) {
+    return pad >= 0 && pad < PORT_PADS ? g_port_sent[pad] : 0;
 }
 
 static void port_TakeKey(const SDL_KeyboardEvent *key) {
@@ -1804,6 +1813,7 @@ void port_StartWindow(void) {
         }
     }
     g_port_input_hook = port_ReadInput;
+    g_port_device_hook = port_DeviceButtons;
     g_port_blank_hook = port_ShowBlank;
     g_port_sound_hook = port_QueueSound;
     g_port_quit_hook = port_CloseWindow;
