@@ -526,6 +526,7 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     options->is_bilinear = FALSE;
     options->is_exact = FALSE;
     options->is_stage_mesh = g_port_settings.stage_mesh;
+    options->is_fighter_models = g_port_settings.fighter_models;
     /* the scene held against the ground's own depth, which is part of
      * drawing the ground as one mesh and has no setting of its own
      * (gl.h) */

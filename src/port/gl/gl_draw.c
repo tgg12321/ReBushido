@@ -24,6 +24,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_fighter.h"
 #include "gl_replace.h"
 #include "gl_shadow.h"
 #include "gl_stage.h"
@@ -1507,6 +1508,11 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     if (port_GlShadowTakes(prim)) {
         return;
     }
+    /* a fighter drawn from a model of his own: his primitives are left
+     * out, and the model is drawn at the first of them (gl_fighter.h) */
+    if (port_GlFighterTakes(prim)) {
+        return;
+    }
     if (prim->is_textured) {
         flags |= FLAG_TEXTURED;
     }
@@ -1735,6 +1741,7 @@ static void port_GlBegin(void) {
     g_gl.has_state = FALSE;
     port_GlForgetOccluders();
     port_GlStageNewFrame();
+    port_GlFighterNewFrame();
 }
 
 /* ---- what the stage's own mesh asks of the picture (gl.h) ---- */
@@ -1744,6 +1751,7 @@ void port_GlGetPicture(PortGlPicture *picture) {
     picture->color_texture = g_gl.color_texture;
     picture->vram_texture = g_gl.vram_texture;
     picture->depth_buffer = g_gl.depth_buffer;
+    picture->slot_texture = g_gl.slot_texture;
     picture->target_w = g_gl.target_w;
     picture->target_h = g_gl.target_h;
     picture->draw_x = g_gl.draw_x;
@@ -1953,6 +1961,7 @@ void port_GlSetOptions(const PortGlOptions *options) {
      * black polygons */
     port_GlStageSetOn(options->is_exact ? 0 : options->is_stage_mesh);
     port_GlShadowSetStrength(options->is_exact ? 0 : options->shadows);
+    port_GlFighterSetOn(options->is_exact ? 0 : options->is_fighter_models);
     if (g_gl.is_started) {
         /* the setting may have turned the mesh on or off, and the depth
          * buffer is attached only for it */
@@ -2131,6 +2140,16 @@ const char *port_GlStart(
      * tiles as the game emitted them, and the shadows as it drew them */
     port_GlStageSetOn(options->is_exact ? 0 : options->is_stage_mesh);
     port_GlShadowSetStrength(options->is_exact ? 0 : options->shadows);
+    /* the fighters' own models (gl_fighter.h): a card that cannot have
+     * them draws the game's own fighters */
+    {
+        const char *why = port_GlFighterStart(getproc);
+
+        if (why != NULL) {
+            port_GlSay("the fighters are the game's own primitives: ", why);
+        }
+    }
+    port_GlFighterSetOn(options->is_exact ? 0 : options->is_fighter_models);
 
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);

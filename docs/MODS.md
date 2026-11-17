@@ -33,7 +33,9 @@ mods/
   none ([`PLAYING.md`](PLAYING.md), "Changing the keys and the
   picture").
 - Each folder of `mods/` is one mod. Its kinds of file are folders of
-  their own: `textures/` (read and used), `models/`, `music/`,
+  their own: `textures/` (read and used), `models/` (the fighters'
+  `.glb` models, by the file's name on the disc, `M100.glb`: PORT.md,
+  "The fighters' own models"), `music/`,
   `stages/` (read, not used yet). Under a kind's folder the files may be
   in folders of any names, four deep.
 - A file's **key** is its name without its ending, in small letters,
@@ -188,4 +190,5 @@ ending a kind's files must have.
   (決戦の間 and the rest) and every other piece of menu text are sprites
   with keys, so an English mod is a set of PNGs; it waits on someone
   drawing them.
-- Models, music and stages, through the same table.
+- Music and stages, through the same table (the models are read now:
+  PORT.md, "The fighters' own models").

@@ -222,7 +222,7 @@ SECTIONS
 OUTSIDE_STATE = ['src/port/state.c', 'src/port/remaster.c', 'src/port/text.c', 'src/port/wav.c',
                  'src/port/picture.c', 'src/port/crash.c', 'src/port/main.c',
                  'src/port/host_linux.c', 'src/port/host_windows.c', 'src/port/mods.c',
-                 'src/port/png.c']
+                 'src/port/png.c', 'src/port/fighter_view.c']
 
 
 def outside_state_patterns(more=()):

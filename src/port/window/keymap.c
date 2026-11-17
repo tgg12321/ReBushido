@@ -65,6 +65,9 @@ const char g_port_default_settings[] =
     "                       # mesh instead of the game's own tiles; off\n"
     "                       # for the tiles. A stage the mesh is not\n"
     "                       # measured good on keeps the tiles either way\n"
+    "fighter_models = on    # the fighters drawn from models of their own\n"
+    "                       # where a mod's models/ has one (M100.glb);\n"
+    "                       # off for the game's own\n"
     "shadows = original     # original: the game's own black shadows;\n"
     "                       # soft: the ground under them darkened;\n"
     "                       # cast: cast from the fighters' own\n"
@@ -611,6 +614,11 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "stage_mesh is on or off";
     }
+    if (port_WordsMatch(name, "fighter_models")) {
+        return port_ReadChoice(value, "off", "on", &settings->fighter_models)
+                   ? NULL
+                   : "fighter_models is on or off";
+    }
     if (port_WordsMatch(name, "shadows")) {
         if (port_WordsMatch(value, "original")) {
             settings->shadows = 0;
@@ -735,6 +743,9 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
      * the measurements do not hold keeps the game's own tiles of its own
      * accord, and the run's log says which path each stage took. */
     settings->stage_mesh = 1;
+    /* a fighter with a model of his own in mods/fighters/ is drawn from
+     * it; with none there, nothing changes (gl_fighter.h) */
+    settings->fighter_models = 1;
     /* The soft shadows are the game's own black ones until the owner has
      * looked at pictures of both (gl_shadow.h). */
     settings->shadows = 0;

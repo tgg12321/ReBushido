@@ -1,0 +1,110 @@
+#ifndef PORT_FIGHTER_H
+#define PORT_FIGHTER_H
+
+/* The fighters' own models, drawn by the remastered picture instead of the
+ * game's primitives (docs/PORT.md, "The fighters' own models").
+ *
+ * The game goes on drawing its fighters exactly as it did: its body is one
+ * mesh skinned across thirteen bones (render_DrawSkinnedMesh), its parts
+ * are meshes of the bones that carry them, and every face becomes a
+ * primitive that the software GPU draws. Nothing of that changes, so the
+ * original picture, the traces and the fight are what they were. What the
+ * remastered picture can do instead is leave those primitives out and draw
+ * a mesh of its own on the same bones, from a glTF file
+ * (src/port/gl/gl_fighter.c). For that it needs, once a frame, each
+ * fighter's bones as the game worked them out, and the camera and the
+ * lights the game drew him with: this is where they are kept.
+ *
+ * Nothing here is the game's state: it is what the game drew, written down
+ * as the renderer comes to it, and read only by the backend. The hitboxes
+ * are not the model's: they are the body points and the weapon's points of
+ * fight_data.c, placed on the same bones, which nothing here touches. */
+
+#include "common.h"
+
+#ifndef PORT_ADDRESS_DEFINED
+#define PORT_ADDRESS_DEFINED
+typedef __UINTPTR_TYPE__ PortAddress;
+#endif
+
+/* The game's three model slots (MODEL_SLOT_COUNT) and the skeleton every
+ * model shares (MODEL_BONE_COUNT, g_model_bones). */
+#define PORT_FIGHTER_SLOTS 3
+#define PORT_FIGHTER_BONES 21
+/* What a fighter may hold or wear in a frame, at most. */
+#define PORT_FIGHTER_WEAPONS 8
+
+typedef struct {
+    s16 m[9]; /* a MATRIX's rotation, 1.12 */
+    s32 t[3];
+} PortFighterMatrix;
+
+typedef struct {
+    /* The model being drawn (Model.model_id), or -1 where the slot's body
+     * was not drawn in the frame being built. */
+    s32 model_id;
+    /* How many frames the renderer had built when this was written: the
+     * one a primitive of this frame is drawn in has the same. */
+    u32 serial;
+    /* Where the model's nodes are: a primitive whose `id.object` lies here,
+     * and that is not a shadow, is a drawing of this model's own body or of
+     * one of its parts (port_remaster.h); the cloth's nodes are here too, and
+     * are told apart by port_FighterIsCloth. */
+    PortAddress nodes_from;
+    PortAddress nodes_to;
+    /* where the body's mesh is (the model's mesh 0), which a primitive's
+     * id.group is a record of */
+    PortAddress body_mesh;
+    /* Each bone's world matrix, as the game drew it */
+    PortFighterMatrix bone[PORT_FIGHTER_BONES];
+    /* The view the body was drawn with: the camera's rotation and where it
+     * is, and the projection (the coprocessor's H, OFX and OFY) */
+    s16 view[9];
+    s32 camera[3];
+    s32 h;
+    s32 ofx;
+    s32 ofy;
+    /* the lights: their matrix and colours, 1.12, and the colour of the
+     * dark, a byte each (LightSetup) */
+    s16 light[9];
+    s16 color[9];
+    s32 back[3];
+    /* the scale the renderer drew the body at (render_SetupNode), which
+     * its depths and its ordering-table slots are worked out in */
+    s32 scale_shift;
+} PortFighterView;
+
+/* A weapon or a thing worn, as drawn this frame: the node, which weapon
+ * model it is (g_resource_weapon_slots), and its world matrix. */
+typedef struct {
+    PortAddress node;
+    s32 weapon;
+    u32 serial;
+    PortFighterMatrix world;
+    s16 light[9];
+    s16 color[9];
+    s32 back[3];
+} PortFighterWeapon;
+
+/* The renderer is about to draw a node that is a fighter's own
+ * (port_RemasterNoteFighter): where it is the body of a model, the model
+ * is written down; where it is a weapon, the weapon. Called only with a
+ * backend attached. */
+extern void port_FighterNoteNode(PortAddress node);
+
+/* The slot's model as the last frame built drew it. */
+extern const PortFighterView *port_GetFighterView(s32 slot);
+/* The weapons of the last frame built, and how many. */
+extern const PortFighterWeapon *port_GetFighterWeapons(s32 *count);
+/* How many frames the renderer has built (PortFighterView.serial). */
+extern u32 port_FighterSerial(void);
+
+/* Whether a node is a piece of cloth, which the game moves and draws
+ * itself and a model's file does not replace. */
+extern s32 port_FighterIsCloth(PortAddress node);
+
+/* A new frame of primitives is about to be built (port_RemasterNewFrame):
+ * what the frame before drew is forgotten. */
+extern void port_FighterNewFrame(void);
+
+#endif /* PORT_FIGHTER_H */

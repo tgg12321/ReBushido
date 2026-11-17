@@ -23,6 +23,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_fighter.h"
 #include "gl_shadow.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
@@ -1091,6 +1092,9 @@ s32 port_TweenDraw(s32 phase) {
             &between, &shown->view, &after->view, phase, PORT_TWEEN_ONE);
         port_GlStageSetView(&between);
     }
+    /* the fighters drawn from models of their own, their bones between
+     * the two frames' (gl_fighter.h) */
+    port_GlFighterTween(phase);
     for (i = 0; i <= shown->event_count; i++) {
         const TweenEvent *event;
 
@@ -1183,6 +1187,7 @@ s32 port_TweenDraw(s32 phase) {
         }
     }
     port_GlStageSetView(NULL);
+    port_GlFighterTween(-1);
     port_GlStageLoadFrame(stage_state);
     /* the batch has to be drawn before video memory is put back: the
      * card reads its texels from the mirror of it */
