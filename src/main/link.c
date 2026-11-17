@@ -131,6 +131,14 @@ static s32 link_IsUnplugged(void) {
 /* Decides which console is which: the one that finds the other already
  * signalling is side 1. Then signals in turn. */
 static void link_PickSide(void) {
+#if RB_PORT
+    /* the port's cable is a socket (src/port/net.c): each program is
+     * told which side it is */
+    if (port_LinkIsUp()) {
+        g_link_side = port_LinkSide();
+        return;
+    }
+#endif
     if (CombCTS()) {
         g_link_side = 1;
     } else {
@@ -184,6 +192,13 @@ static s32 link_SendPacket(void *packet) {
     s32 start;
     s32 polls;
 
+#if RB_PORT
+    /* the port's cable: a datagram of the packet's two words */
+    if (port_LinkIsUp()) {
+        return port_LinkSend(g_link_send_pad_word, g_link_send_check_word);
+    }
+#endif
+
     start = GetRCnt(RCntCNT1);
     if (start > COUNTER_RESTART) {
         ResetRCnt(RCntCNT1);
@@ -236,6 +251,27 @@ static s32 link_ReceivePacket(void) {
     s32 check_word;
     s32 checksum;
 
+#if RB_PORT
+    /* the port's cable: the other console's next datagram, which is
+     * waited for in the PC's time, or it has gone */
+    if (port_LinkIsUp()) {
+        if (!port_LinkReceive(g_link_recv_packet)) {
+            return 0;
+        }
+        pad_word = g_link_recv_packet[0];
+        check_word = g_link_recv_packet[1];
+        checksum = pad_word ^ (pad_word >> 16);
+        checksum = checksum ^ (check_word >> 16);
+        checksum = checksum & 0xFFFF;
+        if ((check_word & 0xFFFF) != checksum) {
+            g_link_checksum_errors += 1;
+            return 0;
+        }
+        g_link_recv_pad_word = pad_word;
+        g_link_recv_check_word = check_word;
+        return 1;
+    }
+#endif
     retries = 0;
     start = GetRCnt(RCntCNT1);
     if (start > COUNTER_RESTART) {
@@ -468,6 +504,16 @@ static s32 link_HandshakeStep(void) {
             link_Shutdown();
             return -1;
         }
+#if RB_PORT
+        /* the port's: the other program has come, waited for in the
+         * PC's time so that both take the same frames */
+        if (port_LinkIsUp()) {
+            if (port_LinkMeet()) {
+                g_link_handshake_step = LINK_HANDSHAKE_LINKED;
+            }
+            break;
+        }
+#endif
         if (CombCTS()) {
             CombSetRTS(0);
             g_link_handshake_step = LINK_HANDSHAKE_LINKED;
@@ -475,6 +521,12 @@ static s32 link_HandshakeStep(void) {
         break;
     case LINK_HANDSHAKE_SIDE1_WAIT_CTS_CLEAR:
         /* The other console should answer within a few frames. */
+#if RB_PORT
+        if (port_LinkIsUp() && port_LinkMeet()) {
+            g_link_handshake_step = LINK_HANDSHAKE_LINKED;
+            break;
+        }
+#endif
         if (!CombCTS()) {
             CombSetRTS(0);
             g_link_handshake_step = LINK_HANDSHAKE_LINKED;

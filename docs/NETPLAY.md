@@ -266,7 +266,8 @@ agrees a seed for `rng_Next` (`link.c:552`, `link.c:566`, then
 (`pad_SetRemoteButtonConfig`) and unlocks (`g_link_peer_unlock_mask`).
 Loads are bracketed so the other console waits (`link_BeginWait`), and the
 select screen has a mode for two consoles (`select.c:2035`). In the port
-the serial driver under it is a stub (`src/port/api.c:34`). The mode makes
+the serial driver under it is a stub (`src/port/api.c:34`), and the
+link's packets go over UDP instead (section 11). The mode makes
 each console follow its own fighter in first person (`fight_start.c:57`):
 the two consoles' cameras differ, and their memory differs with them.
 
@@ -286,9 +287,8 @@ the two consoles' cameras differ, and their memory differs with them.
   compute the same camera, so their whole state can be compared. The link
   mode's first-person view can come back as a choice once the viewer is
   made presentation only.
-- *A first milestone that needs no rollback:* `AddCOMB` and
-  `_comb_control` over UDP, so the game's own link protocol runs between
-  two ports. That is delay-based, it works only where the round trip is
+- *A first milestone that needs no rollback* (built: section 11): the
+  game's own link protocol over UDP between two ports. That is delay-based, it works only where the round trip is
   under a frame or two, and it plays the link mode, but it is a few days'
   work and proves the transport and the handshake.
 
@@ -744,3 +744,67 @@ a fifth of a fight frame drawn and a third of one run again. The checks
 and the play tests keep `-O1`, and so does the window's build for now:
 the play tests hold only the headless program to the emulator, so the
 switch of the players' build is the owner's.
+
+## 11. The link cable over UDP
+
+The first online milestone is built: the game's own link-cable versus
+mode (`FIGHT_MODE_NETWORK`, `src/main/link.c`) between two programs of
+the port, in lockstep with one frame of delay, as on two consoles.
+
+**The network** (`src/port/net.c`, `include/port_net.h`) is one UDP
+socket to one other program: `--net-bind ADDRESS:PORT --net-peer
+ADDRESS:PORT`, IPv4 numbers only. The hosts give it as three calls of
+`include/port_host.h` (`port_HostUdpOpen`, `Send`, `Receive` with a
+wait): the kernel's own calls in `host_linux.c` (`socketcall` in 32
+bits), the C library's in `window/host_posix.c`, Winsock in
+`host_windows.c` (the Windows programs link `ws2_32`). No library is
+vendored: SDL_net is not linked, and ENet would only add what the next
+section's few datagrams do not need. A run binds where it is told and
+answers only its peer; the tests bind to 127.0.0.1. For tests a run can
+make the network worse: `--net-latency MS` holds every datagram back
+that long and `--net-loss PERCENT` drops so many, by a sequence of
+random numbers of the run's own.
+
+**The link** (`--link-side 0|1`). The serial driver's lines and
+interrupts are not imitated: their timing is the console's, and a busy
+wait on them moves the port's clock (each `GetRCnt` is a scan line), so
+two programs would part by however long the network took. Instead,
+under `RB_PORT`, link.c asks the port at the three places it touches
+the cable, and its own protocol, checksums and all, is left as it is:
+
+- `link_PickSide`: the side is the one the program was given;
+- the handshake's two waits: `port_LinkMeet`, where each program says it
+  is here until each has heard the other, waited for in the PC's time
+  and none of the game's, so that both take the same frames to connect;
+- `link_SendPacket` and `link_ReceivePacket`: the packet's two words are
+  a datagram, numbered; a wait sends its own last one again every 50 ms,
+  and a program that is sent one it already had sends its own last
+  again, so a lost datagram costs a resend and nothing else. After 15
+  seconds of silence the other console has gone and the game aborts the
+  link, as it does on the console.
+
+A program that ends still answers for a moment, so that the packets the
+other is waiting for are not lost with it.
+
+**Proved** by `tools/port_net.py link`, which runs two headless programs
+of one build at once, bound to 127.0.0.1, each with a plan of its own:
+both go from power on to the top menu's link row as `port_game`'s plan
+goes to versus, connect, and in the select screen and the fight each
+console's pad plays its player's part of `port_game`'s presses. Over the
+link the first stage cell is another stage, where the two start far
+apart (`SELECT_STAGE_LINK_TO`), so the first console takes the cell
+beside it; and the view is each fighter's own, so both walk forward
+before they strike. The first player is cut down at frame 687.
+
+| Run | Packets each way | Sent again | Result |
+| --- | --- | --- | --- |
+| 64-bit, 5 s | 2,132 | 0 | the same 2,369 lines on both consoles, to the end of the fight |
+| 32-bit, 10 s | 2,132 | 0 | the same |
+| 64-bit, `--latency 5 --loss 10`, 45 s | 2,132 | 254 | the same 2,369 lines |
+
+The two consoles' traces are the same line for line although their
+cameras differ: the traced values are the fighters', the screen's and
+the random numbers, which the two compute alike. What this mode costs is
+the round trip: each frame waits for the other's packet, so it plays
+only where that is well under a frame. Rollback (section 12) is for the
+rest.
