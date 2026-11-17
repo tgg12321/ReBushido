@@ -2431,7 +2431,17 @@ face drawn with the mesh would be painted over by that very fighter. So
 it is not: the mesh leaves out every face of an open tile (the shader is
 told which tiles are open where the mesh is drawn, from `draw_flags`),
 and those tiles' primitives are left on the game's own path, where they
-mix and sort exactly as they did. The same goes for a face whose own
+mix and sort exactly as they did. Which tiles are open is taken with the
+camera, where the renderer draws the tiles (`PortStageView.open`), and
+not read from the tiles when the mesh is drawn: the game sets the flags
+again for the next frame before a picture of this one is drawn between
+two frames, and read there a tile the next frame opens was left out of
+the mesh while the frame on show drew it whole -- and no primitive of it
+was drawn either, so a wall went missing for a picture. That was the
+near wall of the cavern in `port_other_fight` (blanks 3260 and 3374,
+83,490 and 23,078 pixels of the picture at phase 0 apart from the game's
+own frame); taken with the camera, every picture at phase 0 of all three
+play tests is the game's own frame to the pixel. The same goes for a face whose own
 code says it mixes. With no tile open -- which is most frames of most
 stages -- the mesh is one draw with no blending at all.
 
@@ -2492,10 +2502,6 @@ setting is and why the window does not start with it.
   of the picture**, on purpose: the console's two screen tests are not
   made (above), so what was off the top or the left of its 320 by 240 is
   in a wider picture.
-- **A picture between two frames reads the tiles as they stand**, not as
-  the frame on show had them, so a tile the game opened up in the
-  meantime is left out of the mesh a picture early. It is one tile of a
-  stage for one picture.
 - **The depth test is of the ground alone.** The scene is held against
   the ground and the ground against itself; two things of the scene are
   sorted against each other by the ordering table, as the console sorts

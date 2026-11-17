@@ -899,6 +899,26 @@ static const FaceSlot *port_FindFace(PortAddress prim) {
 
 /* ---- the stage as one mesh (port_remaster.h) ---- */
 
+/* Which of the stage's tiles stage_Draw opened up for this frame
+ * (PortStageView.open). */
+static void port_RemasterNoteOpenTiles(void) {
+    s32 count;
+    const StageTile *tiles = stage_GetTiles(&count);
+    s32 i;
+
+    for (i = 0; i < PORT_STAGE_TILE_WORDS; i++) {
+        g_stage_view.open[i] = 0;
+    }
+    if (count > PORT_STAGE_TILE_WORDS * 32) {
+        count = PORT_STAGE_TILE_WORDS * 32;
+    }
+    for (i = 0; i < count; i++) {
+        if (tiles[i].draw_flags & STAGE_TILE_OPEN) {
+            g_stage_view.open[i >> 5] |= 1U << (i & 31);
+        }
+    }
+}
+
 void port_RemasterNoteStageView(
     const void *matrix, const s32 *camera, s32 far_shift, s32 depth_shift,
     s32 fog_ot_index, s32 ot_cutoff) {
@@ -924,6 +944,7 @@ void port_RemasterNoteStageView(
     g_stage_view.h = (s32)(port_GteReadControl(PORT_GTE_PLANE) & HALF_MASK);
     g_stage_view.ofx = (s32)port_GteReadControl(PORT_GTE_OFX);
     g_stage_view.ofy = (s32)port_GteReadControl(PORT_GTE_OFY);
+    port_RemasterNoteOpenTiles();
     g_stage_view.frames++;
 }
 

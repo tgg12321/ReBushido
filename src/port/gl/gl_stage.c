@@ -1320,7 +1320,6 @@ static void port_GlStageDrawMesh(
     const PortGlPicture *picture, const PortRemasterPrim *paint) {
     const PortStageView *view =
         g_stage.has_own_view ? &g_stage.own_view : port_GetRemasterStageView();
-    const StageTile *tiles = (const StageTile *)g_stage.tiles;
     GLfloat matrix[9];
     GLint slot[32];
     GLint clut[2 * (PORT_STAGE_FOG_LEVELS + 1)];
@@ -1332,17 +1331,16 @@ static void port_GlStageDrawMesh(
     if (g_stage.vertex_count == 0 || !port_GlStageTarget(picture)) {
         return;
     }
-    /* Which tiles the game is drawing opened up this frame, so that a
-     * fighter behind one can be seen: their faces mix with what is
-     * behind them and are the game's own primitives, not the
-     * mesh's (render_EmitTile, TILE_BLEND). */
+    /* Which tiles the game drew opened up in the frame this view is of,
+     * so that a fighter behind one can be seen: their faces mix with
+     * what is behind them and are the game's own primitives, not the
+     * mesh's (render_EmitTile, TILE_BLEND). They are the view's and not
+     * the tiles' own flags, which by the time a picture between two
+     * frames is drawn are already the next frame's: read there, a tile
+     * the next frame opens was left out of the mesh while the frame on
+     * show drew it whole, and no primitive of it was drawn either. */
     for (i = 0; i < TILE_WORDS; i++) {
-        open[i] = 0;
-    }
-    for (i = 0; i < g_stage.tile_count; i++) {
-        if (tiles[i].draw_flags & STAGE_TILE_OPEN) {
-            open[i >> 5] |= 1U << (i & 31);
-        }
+        open[i] = (i < PORT_STAGE_TILE_WORDS) ? view->open[i] : 0;
     }
     for (i = 0; i < 32; i++) {
         /* past the last level: never nearer than any depth, so that the
