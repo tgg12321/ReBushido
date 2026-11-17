@@ -265,11 +265,13 @@ extern void port_GiveUpAhead(void);
 extern void (*g_port_boundary_hook)(void);
 extern void (*g_port_ahead_blank_hook)(u32 blank);
 extern void (*g_port_ahead_done_hook)(void);
+
 typedef struct PortAheadCounts {
     u32 runs;     /* boundaries the frames were run ahead at */
     u32 given_up; /* ... and given up at: a load, the movie, a card */
     u32 ticks;    /* the time all of it took, in the host's ticks */
 } PortAheadCounts;
+
 extern PortAheadCounts g_port_ahead_counts;
 /* What the frames ahead came to, on the error output, as the run ends. */
 extern void port_PrintAheadReport(void);

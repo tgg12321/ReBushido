@@ -234,11 +234,13 @@ static u32 g_port_held_back[PORT_PADS];
  * the events at a blank (port_ReadInput), as they always were, and never
  * at the read just before the game takes its input */
 #define INJECT_WAITING_MAX 64
+
 typedef struct {
     s32 pad;
     u32 button;
     s32 down;
 } PortInjectWaiting;
+
 static PortInjectWaiting g_port_inject_waiting[INJECT_WAITING_MAX];
 static s32 g_port_inject_waiting_count;
 /* Run-ahead (step.c; docs/PORT.md, "Input lag"): the display the frames
@@ -1962,8 +1964,8 @@ static s32 port_InjectPress(s32 pad, u32 button, s32 down) {
     PortInjectWaiting *waiting;
 
     if (g_port_inject_waiting_count >= INJECT_WAITING_MAX) {
-        port_Say("--inject: more than %d presses at one blank",
-                 INJECT_WAITING_MAX);
+        port_Say(
+            "--inject: more than %d presses at one blank", INJECT_WAITING_MAX);
         port_Quit(PORT_EXIT_FAILED);
     }
     waiting = &g_port_inject_waiting[g_port_inject_waiting_count++];
@@ -2093,10 +2095,12 @@ static void port_AheadDone(void) {
         port_GlFinishFrame();
         port_ProfileSwitch(was);
     }
-    w = display->w < PORT_PICTURE_WIDTH_MAX ? display->w
-                                            : PORT_PICTURE_WIDTH_MAX;
-    h = display->h < PORT_PICTURE_HEIGHT_MAX ? display->h
-                                             : PORT_PICTURE_HEIGHT_MAX;
+    w = display->w < PORT_PICTURE_WIDTH_MAX
+            ? display->w
+            : PORT_PICTURE_WIDTH_MAX;
+    h = display->h < PORT_PICTURE_HEIGHT_MAX
+            ? display->h
+            : PORT_PICTURE_HEIGHT_MAX;
     if (display->is_on && w > 0 && h > 0) {
         s32 was = port_ProfileSwitch(PORT_PROFILE_PICTURE);
 

@@ -266,6 +266,11 @@ read the pads 2,325, 2,445 and 2,355 times, never twice at one blank; the
 pause menu's loop and `link_Connect` take an input for each of their own
 frames. The movie player alone reads the pads its own way (`PAD_dr`), and
 is given them as they are at that moment (`port_SampleInput`).
+In the window the keys and controllers are also read again at the
+boundary, just before the game takes the input (`port_ReadDevicesNow`;
+[`PORT.md`](PORT.md), "Input lag"); a plan's presses keep their blank.
+Run-ahead, which saves, runs ahead and loads at the same boundary, is
+off in netplay (its own loop) and over the link cable.
 
 ## 5. Scope and setting up a match
 

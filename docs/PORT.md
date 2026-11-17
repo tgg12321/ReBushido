@@ -3557,7 +3557,9 @@ nothing: at the start of frame F-1's time on the display the picture is
 frame F-1 exactly, which is what the console shows then, and by the end
 of it the picture is frame F, which is what the console puts up at that
 instant. **There is no added latency** — a picture is never later than
-the console's own, and nothing is extrapolated.
+the port's frame on show, and nothing is extrapolated. (The frame on
+show was itself a blank later than the console's until run-ahead: "Input
+lag", below.)
 
 **How a frame is drawn again** (`src/port/gl/gl_tween.c`). The renderer
 that draws between frames puts itself in front of the one that draws
@@ -4088,6 +4090,99 @@ trace is the `-O1` program's line for line (2,338 and 2,462 lines) and
 every twentieth picture is the same to the byte (224 and 236); the
 headless programs at `-O2` pass the rollback self-test in both sizes.
 The players' build stays at `-O1` until the owner says.
+
+### Input lag
+
+**Where a press went** (measured headless: `port_game`'s plan with one
+press of Circle added at fight frame 40, every picture handed to SDL
+kept and compared with the run without it; Original picture, SDL's dummy
+drivers). R is the blank at which the game takes the input (`pad_Update`,
+`port_TakeInput`); a fight's frame is two blanks, a menu's one.
+
+| | before | now |
+| --- | --- | --- |
+| (a) the PC's keys read to the game taking them | at the blank before R: right after the window's wait for blank R-1, so the read was a whole blank (16.7 ms) old when taken in a fight, and a blank less the step's time in a menu; a press waits for the next read, on average 8.4 ms, and in a fight only every second read counts | read again just before the game takes it (`port_ReadInputLate`, `port_ReadDevicesNow`): 0 ms old |
+| (b) the game: taking it to putting a frame that shows it on the display | the frame that takes it draws it (no frame of the game's own lag), and the game puts it on the display at the end of the next frame: R+4 in a fight, R+2 in a menu, as the console | the same: nothing of the game changes |
+| (c) the window: the display to a picture handed to SDL | a blank later, because the window shows a blank's display before the game's step after that blank changes it: the picture first differs at **R+5** | `run_ahead 1`: **R+3**; `run_ahead 2`: **R+1** |
+| then | the swap: the next refresh, and whatever the driver and the compositor hold it | the same, but `low_latency` lets no picture queue behind another |
+
+So in a fight, from a press to the picture handed to the display was on
+average 33 ms (a) + 83.6 ms (c) = about 117 ms, against the console's
+16.7 + 66.9 = 84 ms (its driver reads at the blank the game takes it
+at). Now it is 16.7 + 16.7 = about 33 ms with `run_ahead 2` (the
+default), 67 ms with 1, 100 ms with 0: the console's own lag less two
+frames. In a menu: 8.4 + about 11 + 50 = about 70 ms before, 8.4 +
+16.7 = 25 ms now. Then the display's own share, which only a screen has:
+up to a refresh to the next one (11.8 ms at 85 Hz), the driver's queue,
+Windows' compositor in a window, and the screen's own processing.
+
+**With pictures between frames** (`frame_rate display`) the frame that
+shows a press is first part of a picture where it is the frame after the
+one on show: the blank before the full frame's, R+3 before, R+1 with
+`run_ahead 1`, a refresh or so into it, the press's movement a third of
+the way. With `run_ahead 2` the frame on show at R+1 is the one with the
+press, whole; the pictures between it and the next lean towards a frame
+that is run with the input held as it was, which is the one guess
+run-ahead makes, and only where the input then changes is the next frame
+other than what they leaned to.
+
+**The read just before the game takes it.** The host's turn at a
+frame's boundary calls `g_port_boundary_hook` (`port_BeforeStep`,
+`src/port/step.c`): the window reads SDL's events again and puts what
+the keys and controllers hold into the input the pads' driver read at
+the blank, with the plan's buttons as the blank found them
+(`port_ReadDevicesNow`, `src/port/pad.c`). A plan's press made as the
+PC's input (`--inject`) waits for the next blank's read of the events, as
+it always came, so a plan's timing is the same.
+
+**Run-ahead** (`run_ahead = 0|1|2`, `port_SetRunAhead`). At each
+boundary, after that read: the state is saved (`port_StateSave`), the
+next one or two steps run with the input about to be taken
+(`g_port_ahead`), and the state is put back; then the step runs as ever.
+A step ahead paints video memory and gives the remastered renderer every
+command, so the card draws those frames and the pictures between frames
+are written down from them; it mixes its sound and gives it to nobody,
+the window has no turn at its blanks but the card's frame ended
+(`g_port_ahead_blank_hook`), it prints nothing, writes no test's
+picture, presses no key for a plan, and it stops (`port_GiveUpAhead`)
+where the program would end, where a memory card would be written (the
+card's file is outside the state), or past four blanks a frame (a load,
+the movie). When the steps are done the window keeps the display they
+left and its pixels and ends the card's frame with it
+(`g_port_ahead_done_hook`), and the step that then runs
+(`g_port_unseen`) gives the renderer no primitive, no new frame and no
+word of the pause, which it had from the steps ahead, but what it writes
+into video memory. Since the game draws a frame at once in the port and
+puts it up two frames after it takes the input, the display after two
+steps ahead is the frame of the input just read: no frame shown is
+guessed.
+
+Netplay has a loop of its own (`port_RunNetplay`) and the link cable's
+steps reach another machine, so run-ahead is off in both; the rollback
+self-test composes with it. With `--fast`, `--tap-frames`,
+`--tap-window` or `--shot-at`, which hold the window's pictures to the
+blank they were drawn at, it is 0 unless `--run-ahead` says.
+
+**`low_latency`** (on): after each swap with vsync on, the window waits
+for the card (`glFinish`, `port_GlWaitForCard`), so the swap has been
+made before the next picture is begun and the time a picture is drawn
+for (`port_NextRefresh`) is the refresh it went up at.
+
+**What is proved.** `port_game`'s trace is the same to the byte with
+`--run-ahead` 0, 1 and 2 on the headless program, as before the change;
+the window's (dummy drivers, `--fast`) is the headless program's with
+run-ahead 0, 1 and 2, and with keys and pads injected under 2 (the late
+read included); `--rollback-test 8 --run-ahead 2` passes. The first
+picture handed to SDL that differs because of the press: RESULTS.
+
+**What it costs** COSTS
+
+**What only a screen shows**: whether the driver queues pictures with
+`low_latency` off, what Windows' compositor adds to a window (a
+maximized window of 2,560 by 1,369 is one; full screen, F11, lets the
+driver flip the picture itself, and SDL 2's OpenGL has no say in DXGI's
+flip model), and the screen's own processing. `--profile` with
+`--display-rate` measured the program's side only.
 
 ### The fighters' own models
 

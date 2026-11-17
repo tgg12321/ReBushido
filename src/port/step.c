@@ -52,9 +52,9 @@ void port_EndStep(void) { port_HostLeaveGame(); }
 /* ---- run-ahead ---- */
 
 void port_SetRunAhead(s32 frames) {
-    g_port_ahead_frames = frames < 0                  ? 0
+    g_port_ahead_frames = frames < 0                ? 0
                           : frames > PORT_AHEAD_MAX ? PORT_AHEAD_MAX
-                                                      : frames;
+                                                    : frames;
 }
 
 s32 port_GetRunAhead(void) { return g_port_ahead_frames; }

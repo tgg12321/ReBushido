@@ -1829,6 +1829,11 @@ s32 port_RemasterIsRedrawing(void) { return g_pause_redraws; }
 void port_RemasterPause(s32 what, s32 from_x, s32 from_y) {
     PortGpuState state;
 
+    /* a step whose frames were run ahead: they told the pause already,
+     * and may have gone past its end (port_platform.h) */
+    if (g_port_unseen) {
+        return;
+    }
     g_pause_skips = FALSE;
     g_pause_redraws = what == PORT_PAUSE_FROZEN;
     g_pause_on = what != PORT_PAUSE_OFF;
