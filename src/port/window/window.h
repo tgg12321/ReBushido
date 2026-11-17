@@ -230,6 +230,9 @@ typedef struct {
      * mods/english/ (docs/MODS.md, "The English menu"); 0 leaves it
      * out. */
     s32 english;
+    /* The menus' lettering drawn again, the mod the program ships as
+     * mods/ui/ (docs/MODS.md, "The sharp menus"); 0 leaves it out. */
+    s32 ui;
 } PortSettings;
 
 /* The number of the key, button or axis of this name, as the window's

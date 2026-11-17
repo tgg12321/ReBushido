@@ -13,6 +13,8 @@
 #include "bb2.h"
 
 #define MODS_MAX 64
+/* how many mods the settings can leave out (port_ModsLeaveOut) */
+#define LEFT_OUT_MAX 8
 #define FILES_MAX 16384
 /* the table's slots: a power of two, twice the files */
 #define SLOTS 32768
@@ -77,7 +79,9 @@ static struct {
     s32 is_off;
     const char *folder;
     const char *dump_folder;
-    const char *left_out; /* a mod's folder the settings turned off */
+    /* the mods' folders the settings turned off */
+    const char *left_out[LEFT_OUT_MAX];
+    s32 left_out_count;
     char root[PATH_SIZE];
     s32 mod_count;
     PortMod mods[MODS_MAX];
@@ -452,6 +456,7 @@ static void port_ModsEachMod(void *context, const char *name, s32 is_folder) {
     char text[MANIFEST_BYTES_MAX];
     char problem[PATH_SIZE / 4];
     u32 size;
+    s32 i;
 
     (void)context;
     if (!is_folder || port_TextLength(name) >= FOLDER_NAME_SIZE) {
@@ -468,8 +473,12 @@ static void port_ModsEachMod(void *context, const char *name, s32 is_folder) {
     port_ModsCopy(mod->manifest.name, sizeof(mod->manifest.name), name,
                   port_TextLength(name));
     mod->manifest.is_enabled = TRUE;
-    mod->is_left_out = g_port_mods.left_out != NULL &&
-                       port_ModsTextsEqual(name, g_port_mods.left_out);
+    mod->is_left_out = FALSE;
+    for (i = 0; i < g_port_mods.left_out_count; i++) {
+        if (port_ModsTextsEqual(name, g_port_mods.left_out[i])) {
+            mod->is_left_out = TRUE;
+        }
+    }
     port_ModsSay(path, sizeof(path), "%s/%s/%s", g_port_mods.root, name,
                  PORT_MOD_MANIFEST);
     size = port_ModReadFile(path, text, sizeof(text));
@@ -577,7 +586,11 @@ void port_ModsSetFolder(const char *folder) {
     g_port_mods.folder = folder;
 }
 
-void port_ModsLeaveOut(const char *folder) { g_port_mods.left_out = folder; }
+void port_ModsLeaveOut(const char *folder) {
+    if (g_port_mods.left_out_count < LEFT_OUT_MAX) {
+        g_port_mods.left_out[g_port_mods.left_out_count++] = folder;
+    }
+}
 
 void port_ModsSetDumpFolder(const char *folder) {
     g_port_mods.dump_folder = folder;

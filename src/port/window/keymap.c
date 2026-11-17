@@ -80,6 +80,8 @@ const char g_port_default_settings[] =
     "                       # (docs/MODS.md); off for the game's own\n"
     "english = on           # the top menu in English, a mod the program\n"
     "                       # ships (mods/english/); off for Japanese\n"
+    "ui = on                # the menus' lettering drawn again, sharp at\n"
+    "                       # any size: a mod the program ships (mods/ui/)\n"
     "\n"
     "# The keys and the controllers' buttons: a layout to start from, and\n"
     "# lines of pN.BUTTON for what to change in it (below)\n"
@@ -616,6 +618,11 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "english is on or off";
     }
+    if (port_WordsMatch(name, "ui")) {
+        return port_ReadChoice(value, "off", "on", &settings->ui)
+                   ? NULL
+                   : "ui is on or off";
+    }
     if (port_WordsMatch(name, "stage_mesh")) {
         return port_ReadChoice(value, "off", "on", &settings->stage_mesh)
                    ? NULL
@@ -760,6 +767,8 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->mods = 1;
     /* the English top menu the program ships (docs/MODS.md) */
     settings->english = 1;
+    /* and the menus' lettering drawn again (docs/MODS.md) */
+    settings->ui = 1;
     /* a name the window's library does not know leaves that one out */
     port_ReadLines(settings, text, lookup, NULL, 1);
 }

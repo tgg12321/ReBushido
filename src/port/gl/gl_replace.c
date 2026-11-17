@@ -282,7 +282,12 @@ static void port_ReplaceDump(
     if (file != NULL) {
         if (fwrite(png, 1, size, file) == size) {
             g_replace.dumped++;
-            port_ReplaceSay("mods: wrote %s", path);
+            /* where it was: the pieces of one line of text sit side by
+             * side in one page, which is how a mod finds them */
+            port_ReplaceSay("mods: wrote %s (page %d %d, at %d %d, table %d "
+                            "%d)",
+                            path, region->page_x, region->page_y, region->u,
+                            region->v, region->clut_x, region->clut_y);
         }
         fclose(file);
     }
