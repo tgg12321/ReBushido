@@ -191,6 +191,16 @@ camera), particle effects, skyboxes on the stages that were left dark.
     `rebushido.cfg` and both players' buttons, stops the game at a
     frame's boundary while it is open, applies what it can at once, and
     writes the file keeping everything else in it
-    ([`PLAYING.md`](PLAYING.md), "The settings menu"). Left: the rest of
-    the game's menu text, English already, drawn sharper the same way.
+    ([`PLAYING.md`](PLAYING.md), "The settings menu"). The rest of the
+    menus' 2D screens: the pause menu's, the menu after a fight's, the
+    top menu's captions', the select screens' titles' and the group
+    battle's lettering drawn again in a font by a second mod the program
+    ships (`ui`), and every 2D texture of the screens made six times
+    larger from the player's own disc by `tools/port_art.py` (the art
+    mod, never committed); a texture or picture faded through its colour
+    table or rewritten is drawn from its replacement, tinted
+    ([`MODS.md`](MODS.md), "Fades"). Left: the rest of the lettering in
+    a font (the dialogue boxes, the names on the select screens, the
+    options' pages), and the title picture after the opening movie, which
+    is the movie's own 24-bit frame.
 12. **Optimisation**, for a smooth and seamless game.

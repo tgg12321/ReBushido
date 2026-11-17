@@ -120,7 +120,8 @@ pixels, waiting for the display, the counter and its corner, Graphics
 (as F2), the resolution, the ground as one mesh, the shadows, the dead
 zone, and the buttons. What waits for the program to start again is said
 on its line, `(after a restart)`: antialiasing, the draw distance, the
-shape, the frame rate, the English top menu and the mods.
+shape, the frame rate, the English top menu, the sharp menus and the
+mods.
 
 **Player 1's buttons** and **Player 2's buttons** list each of the
 PlayStation's buttons with the keys and the controller's buttons that
@@ -163,6 +164,7 @@ shadows = cast           # original (the game's black ones), soft or cast
 frame_rate = display     # original (the default), display, or a number
 mods = off               # none of the mods in mods/ (on is the default)
 english = off            # the top menu in Japanese (on is the default)
+ui = off                 # the menus' own lettering (on is the default)
 p1.cross = key Space     # Space is player one's Cross, and Z no longer
 p1.circle = key Left Ctrl
 p2.start = pad a         # on player two's controller, A is Start
@@ -283,11 +285,22 @@ does do, where `shadows` asks for them (above).
 ## Mods
 
 A folder `mods/` beside the program holds mods: each a folder of its
-own, whose files stand in for the game's. The program comes with one,
-`mods/english/`: **the top menu in English** (Story Mode, Vs. CPU Mode
-and the rest in place of 決戦の間 and the others), drawn by Graphics
-Remastered; `english = off` leaves it out ([`MODS.md`](MODS.md), "The
-English menu"). The first kind is
+own, whose files stand in for the game's. The program comes with two,
+drawn by Graphics Remastered. `mods/english/`: **the top menu in
+English** (Story Mode, Vs. CPU Mode and the rest in place of 決戦の間 and
+the others); `english = off` leaves it out ([`MODS.md`](MODS.md), "The
+English menu"). `mods/ui/`: **the sharp menus**, the pause menu, the
+menu after a fight, the top menu's captions, the select screens' titles
+and the group battle's page lettered again in a font, sharp at any size;
+`ui = off` leaves it out ("The sharp menus").
+
+**Every other screen at a higher resolution** is a mod you make from
+your own disc, since it is the game's own pictures made larger and is
+not the project's to give: `python tools/port_art.py` (the art mod:
+the menus, the select screens' portraits, the loading screens, the
+captions and the fight's counters, every 2D texture six times larger;
+[`MODS.md`](MODS.md), "The art mod"), then copy `tmp/mods/art/` into
+`mods/` beside the program. The first kind is
 **replacement textures** for Graphics Remastered: the menus, the pause,
 the fight's counters and the boot logo redrawn at any size.
 `--dump-textures FOLDER` writes the game's textures out as PNGs to make
