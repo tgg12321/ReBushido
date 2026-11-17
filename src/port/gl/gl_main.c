@@ -101,6 +101,11 @@ static struct {
     u32 still;        /* frames whose scene did not move at all */
     u32 still_moved;  /* ... whose pictures in between are not it */
     u32 off_the_line; /* corners not between the two frames' own */
+    /* faces one frame has and the other not, moved by their points
+     * (gl_tween.c, port_TweenPlaceUnpaired), over the pairs checked */
+    u32 going;
+    u32 coming;
+    u32 moved;
 } g_run;
 
 /* The most pictures a game frame may be drawn as, for the prover's
@@ -678,6 +683,11 @@ static void port_GlTweenPhases(u32 blank) {
             g_first_phase, PICTURE_PIXELS_MAX, &live_w, &live_h)) {
         return;
     }
+    if (writes) {
+        /* beside the phases, so that the first can be held to it */
+        snprintf(path, sizeof(path), "%s/gl-%06u-own.png", g_run.shots, blank);
+        port_WritePng(path, g_first_phase, live_w, live_h, FALSE);
+    }
     for (phase = 0; phase < g_run.tween; phase++) {
         s32 at = (s32)(((s64)phase * PORT_TWEEN_ONE) / (g_run.tween - 1));
         u32 started = port_Microseconds();
@@ -797,6 +807,9 @@ static void port_GlTweenPhases(u32 blank) {
         const PortTweenCounts *counts = port_TweenGetCounts();
 
         g_run.off_the_line += counts->off_the_line;
+        g_run.going += counts->going;
+        g_run.coming += counts->coming;
+        g_run.moved += counts->moved;
         /* A scene that did not move at all between the two frames: every
          * picture in between must be that scene, pixel for pixel. A
          * picture that is not says a partner was wrongly found, or that
@@ -1085,6 +1098,8 @@ static void port_GlQuit(s32 code) {
                 g_run.off_the_line, g_run.still, g_run.still_moved,
                 g_run.fewer_prims, g_run.more_dropped, g_run.holes,
                 g_run.hole_pixels, g_run.background_pixels);
+        fprintf(stderr, "gl run tween going %u coming %u moved %u\n",
+                g_run.going, g_run.coming, g_run.moved);
     }
     fflush(stderr);
 }

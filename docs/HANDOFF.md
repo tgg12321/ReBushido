@@ -43,9 +43,16 @@ to play is [`PLAYING.md`](PLAYING.md).
    ground, the soft edge does not widen with height.
 3. **Pictures between frames on what is not ground.** The ground no
    longer needs pairing, but fighters, shadows and stage pieces still
-   go through `gl_tween.c`; the owner's last report of "always
-   flickering and in motion even when they should be still" was before
-   the mesh and has not been looked at again. On the tile path
+   go through `gl_tween.c`. The owner's "always flickering and in
+   motion even when they should be still" was measured and three causes
+   mended (`PORT.md`, "What made a fighter standing still move": slivers
+   held, weapons' and shadows' nodes renamed every frame, faces one
+   frame has not); it wants looking at on the owner's 85 Hz screen. Left:
+   `port_other_fight` has 20 frames whose pictures in between are out
+   of order, on the cave stage where rails against the camera change
+   colour from frame to frame in the game's own pictures, and two
+   frames (blanks 3,260 and 3,374) whose phase 0 lacks a near face of
+   the cave wall the game's own picture has. On the tile path
    (`stage_mesh off`) hairline gaps between tiles remain.
 4. **The other lighting candidates.** Branch
    `worktree-agent-adce6b210aa0a05f8` (10bd277dd, not merged) has
