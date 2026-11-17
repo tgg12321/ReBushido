@@ -2661,6 +2661,14 @@ frame (2,459 to 2,923). It is drawn in one go: one draw of the whole
 stage, with no blending, and one more read of a colour table a sample
 for the fog.
 
+**A mod's pictures of the stage's pages.** A mod may give a picture of a
+whole texture page of the stage through one of its colour tables
+([`MODS.md`](MODS.md), "The scene's textures by page"); the mesh reads it
+where there is one (`src/port/gl/gl_scene.c`), each face inside its own
+rectangle of texels, which every vertex carries, and with its colours
+made to follow the fog's two levels as the game's texels do. With no mod
+the mesh draws exactly what it did.
+
 ### The shadows
 
 **What the game does.** A shadow in this game is not a blob: it is the
