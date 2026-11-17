@@ -45,6 +45,11 @@ typedef struct {
     /* this primitive is a face of a shadow: the renderer was walking a
      * node of kind NODE_KIND_SHADOW (port_RemasterNoteShadow) */
     s32 is_shadow;
+    /* ... and it is a fighter's own (port_RemasterNoteFighter) */
+    s32 is_fighter;
+    /* the ordering-table slot it was linked at, or -1 (port_remaster.h,
+     * `ot_slot`) */
+    s32 ot_slot;
     /* which face of which thing this primitive is a drawing of; its
      * `object` is 0 where the renderer said nothing */
     PortRemasterIdentity id;
@@ -80,6 +85,12 @@ static s32 g_anchor;
 /* Whether the renderer is walking a shadow node, so that every primitive
  * it links now is a face of a shadow (port_RemasterNoteShadow). */
 static s32 g_is_shadow;
+/* ... and whether what it is walking is a fighter's own
+ * (port_RemasterNoteFighter) */
+static s32 g_is_fighter;
+/* the slot the primitive about to be attached is being linked at, or -1
+ * where it was not said (port_RemasterNoteOtSlot) */
+static s32 g_ot_slot = -1;
 
 /* The face the renderer last looked up, waiting for the primitive it
  * becomes. */
@@ -370,6 +381,7 @@ void port_RemasterNoteOtSlot(s32 index) {
     if ((u32)index > g_limits.ot_farthest) {
         g_limits.ot_farthest = (u32)index;
     }
+    g_ot_slot = index;
 }
 
 const PortRemasterLimits *port_GetRemasterLimits(void) {
@@ -496,6 +508,36 @@ static const PortPrecisePoint *port_FindPoint(PortAddress at) {
     return NULL;
 }
 
+/* The program copied a projected point from one address to another
+ * (port_remaster.h): what was written down for the first goes with it.
+ * A point there is nothing for leaves nothing at the second either, so
+ * that what is there from before is not taken for the copy. */
+void port_RemasterCopyPoint(PortAddress from, PortAddress to) {
+    const PortPrecisePoint *found;
+    PortPrecisePoint point;
+    u32 slot;
+    u32 i;
+
+    if (g_backend == NULL || from == to) {
+        return;
+    }
+    found = port_FindPoint(from);
+    if (found != NULL) {
+        /* a copy, as writing it down may take the very slot it is in */
+        point = *found;
+        port_RemasterNotePoint(to, &point);
+        return;
+    }
+    slot = port_RemasterSlot(to, POINT_SLOTS);
+    for (i = 0; i < PROBES; i++) {
+        PointSlot *old = &g_point_slots[(slot + i) & (POINT_SLOTS - 1)];
+
+        if (old->at == to) {
+            old->epoch = 0;
+        }
+    }
+}
+
 /* The renderer looked a face's corners up (port_remaster.h): what the
  * projection worked out for each is kept until the primitive it
  * becomes is linked. A corner the table does not have leaves a point
@@ -590,6 +632,9 @@ void port_RemasterAttachFace(PortAddress prim) {
             found->depth_shift = PORT_REMASTER_DEPTH_SHIFT_MAX;
         }
         found->is_shadow = g_is_shadow;
+        found->is_fighter = g_is_fighter;
+        found->ot_slot = g_ot_slot;
+        g_ot_slot = -1;
         found->id = g_id;
         g_id.piece++;
         for (corner = 0; corner < g_face_count; corner++) {
@@ -611,6 +656,8 @@ void port_RemasterNoteObject(PortAddress object) {
     /* no face has been looked up for what is about to be drawn: a
      * primitive linked before one is has corners of its own */
     g_face_count = 0;
+    /* nor is it a fighter's until the renderer says so */
+    g_is_fighter = FALSE;
 }
 
 void port_RemasterNoteShadow(s32 is_shadow) {
@@ -619,6 +666,10 @@ void port_RemasterNoteShadow(s32 is_shadow) {
         return;
     }
     g_is_shadow = is_shadow != 0;
+}
+
+void port_RemasterNoteFighter(s32 is_fighter) {
+    g_is_fighter = g_backend != NULL && is_fighter != 0;
 }
 
 void port_RemasterNoteGroup(PortAddress group) {
@@ -802,6 +853,7 @@ void port_RemasterNewFrame(void) {
     port_RemasterFindLeftMargin();
     g_anchor = PORT_ANCHOR_MIDDLE;
     g_is_shadow = FALSE;
+    g_is_fighter = FALSE;
     if (g_backend == NULL) {
         return;
     }
@@ -1183,6 +1235,8 @@ static void port_DecodePolygon(
     /* a face of a fighter's or a weapon's shadow, flattened onto the
      * ground and painted black (port_remaster.h) */
     prim.is_shadow = slot != NULL && slot->is_shadow;
+    prim.is_fighter = slot != NULL && slot->is_fighter;
+    prim.ot_slot = (slot != NULL) ? slot->ot_slot : -1;
     if (prim.is_shadow) {
         g_counts.shadows++;
         g_frame_counts.shadows++;
@@ -1265,6 +1319,17 @@ static void port_DecodePolygon(
             prim.has_place = FALSE;
         }
     }
+    if (prim.is_fighter && !prim.is_shadow) {
+        g_counts.fighter_faces++;
+        g_frame_counts.fighter_faces++;
+        if (!prim.has_place) {
+            g_counts.fighter_unplaced++;
+            g_frame_counts.fighter_unplaced++;
+        }
+    } else if (prim.id.object != 0 && !prim.has_place) {
+        g_counts.walked_unplaced++;
+        g_frame_counts.walked_unplaced++;
+    }
     port_RemasterPaint(&prim, code, clut, state);
     prim.is_dithered = (state->mode & MODE_DITHER) != 0 &&
                        (prim.is_shaded || (prim.is_textured && !prim.is_raw));
@@ -1288,6 +1353,8 @@ static void port_DecodeRectangle(
     prim.has_place = FALSE;
     prim.depth_shift = 0;
     prim.is_shadow = FALSE;
+    prim.is_fighter = FALSE;
+    prim.ot_slot = -1;
     prim.id.object = 0;
     prim.id.group = 0;
     prim.id.face = 0;

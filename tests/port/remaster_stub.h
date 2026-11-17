@@ -12,6 +12,11 @@ void port_RemasterNotePoint(PortAddress at, const PortPrecisePoint *point) {
     (void)point;
 }
 
+void port_RemasterCopyPoint(PortAddress from, PortAddress to) {
+    (void)from;
+    (void)to;
+}
+
 void port_RemasterNoteFace(PortAddress points, const s32 *index, s32 count) {
     (void)points;
     (void)index;
@@ -25,6 +30,8 @@ void port_RemasterNoteObject(PortAddress object) { (void)object; }
 void port_RemasterNoteGroup(PortAddress group) { (void)group; }
 
 void port_RemasterNoteShadow(s32 is_shadow) { (void)is_shadow; }
+
+void port_RemasterNoteFighter(s32 is_fighter) { (void)is_fighter; }
 
 void port_RemasterSetAnchor(s32 anchor) { (void)anchor; }
 

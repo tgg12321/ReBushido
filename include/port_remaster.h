@@ -245,7 +245,8 @@ extern void port_RemasterNoteRoom(s32 prim_free, s32 prim_bytes);
 extern void port_RemasterNoteCells(s32 tiles, s32 nodes, s32 queue_size);
 /* The ordering-table slot a primitive was linked at (render_LinkPrim):
  * the farthest any frame used says whether the table's last slots, where
- * every greater depth is clamped, are being reached. */
+ * every greater depth is clamped, are being reached; and the primitive
+ * attached next has it as its own (PortRemasterPrim, `ot_slot`). */
 extern void port_RemasterNoteOtSlot(s32 index);
 extern const PortRemasterLimits *port_GetRemasterLimits(void);
 
@@ -270,6 +271,14 @@ typedef struct {
  * (src/port/gte.c). Nothing is kept unless a backend is attached. */
 extern void port_RemasterNotePoint(
     PortAddress at, const PortPrecisePoint *point);
+
+/* The program copied a point the GTE stored, a word of two halves, from
+ * `from` to `to` itself, with no GTE in between (render_DrawSkinnedMesh
+ * carries a joint's points from one bone's section into the next's): the
+ * point written down for `from` is written down for `to` as well. A
+ * copy the side channel is not told of leaves every face that uses the
+ * new address with no place at all. */
+extern void port_RemasterCopyPoint(PortAddress from, PortAddress to);
 
 /* The renderer looked a face's corners up among the points it projected
  * (render_LoadFace): `points` is the array they are in and `index` which
@@ -332,6 +341,15 @@ extern void port_RemasterNoteGroup(PortAddress group);
  * primitive is. It is one call a node and nothing is kept with no
  * backend attached. */
 extern void port_RemasterNoteShadow(s32 is_shadow);
+
+/* What is about to be drawn is a fighter's own, and not the stage's: his
+ * body, a part of his model, his cloth, a weapon, a shadow of one of
+ * those, a model of the tiny mode (render_DrawQueue, by the node's mesh
+ * block). The ground drawn as one mesh does not hide such a thing
+ * (src/port/gl/gl_draw.c, docs/PORT.md, "Depth: the scene is held against
+ * the ground"). A node noted (port_RemasterNoteObject) is not a fighter's
+ * until this says it is. */
+extern void port_RemasterNoteFighter(s32 is_fighter);
 
 /* What the `shadows` setting is in: how much of what a shadow falls on
  * it takes away, in hundredths. 0 is `shadows original`, the game's own
@@ -550,6 +568,16 @@ typedef struct {
      * (port_RemasterNoteShadow). A backend that darkens the ground
      * instead draws it itself and not here. */
     s32 is_shadow;
+    /* This is a drawing of a fighter's own and not of the stage
+     * (port_RemasterNoteFighter). */
+    s32 is_fighter;
+    /* The ordering-table slot the renderer linked it at
+     * (port_RemasterNoteOtSlot), which is all the console sorted it by:
+     * a larger slot is farther and painted sooner. -1 where it was not
+     * said: a tile, which is linked by hand, and whatever is not the
+     * renderer's. A fighter's own is held against the ground's mesh by
+     * it (src/port/gl/gl_draw.c). */
+    s32 ot_slot;
     /* Which face of which thing this is a drawing of, for the pictures
      * between two frames; `object` 0 where there is none. */
     PortRemasterIdentity id;
@@ -661,6 +689,16 @@ typedef struct {
     u32 mixed[4];
     /* faces of a fighter's or a weapon's shadow (port_RemasterNoteShadow) */
     u32 shadows;
+    /* polygons of a fighter's own, his shadow left out
+     * (port_RemasterNoteFighter), and how many of them had no place:
+     * such a one is drawn at whole pixels and stands still between two
+     * frames while the faces about it move, so that a joint tears open
+     * (port_RemasterCopyPoint). The prover holds it to none at all
+     * (tools/port_gl_prove.py). */
+    u32 fighter_faces;
+    u32 fighter_unplaced;
+    /* the other polygons of the renderer's walk that had no place */
+    u32 walked_unplaced;
 } PortRemasterCounts;
 
 extern const PortRemasterCounts *port_GetRemasterCounts(void);

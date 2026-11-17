@@ -97,12 +97,17 @@ def numbers_of(log):
                 out['kinds'].append((kind, seen, drawn))
                 if drawn != seen and kind not in ('fill', 'copy', 'load', 'store', 'setting'):
                     out['missing'].append('%s %d of %d' % (kind, drawn, seen))
-            m = re.search(r'gl run with_depth (\d+) without_depth (\d+) points (\d+) faces (\d+) '
-                         r'attached (\d+) misses (\d+) full (\d+) masked (\d+) texture_from_drawn (\d+)', line)
+            m = re.search(r'gl run with_depth (\d+) without_depth (\d+) with_place (\d+) points (\d+) '
+                          r'faces (\d+) attached (\d+) misses (\d+) full (\d+) masked (\d+) '
+                          r'texture_from_drawn (\d+)', line)
             if m:
-                for i, name in enumerate(['with_depth', 'without_depth', 'points', 'faces', 'attached',
-                                          'misses', 'full', 'masked', 'texture_from_drawn']):
+                for i, name in enumerate(['with_depth', 'without_depth', 'with_place', 'points', 'faces',
+                                          'attached', 'misses', 'full', 'masked', 'texture_from_drawn']):
                     out[name] = int(m.group(i + 1))
+            m = re.search(r'gl run fighter_faces (\d+) fighter_unplaced (\d+) walked_unplaced (\d+)', line)
+            if m:
+                out.update(fighter_faces=int(m.group(1)), fighter_unplaced=int(m.group(2)),
+                           walked_unplaced=int(m.group(3)))
     return out
 
 
@@ -117,6 +122,14 @@ def blocks_hold(got):
     block of one of its pixels is broken up, and none is further from
     the console's colour than mixing can account for."""
     return got['block_uneven'] == 0 and got['block_worst'] <= BLOCK_WORST_MAX
+
+
+def fighters_hold(got):
+    """Whether every polygon of a fighter's own had the place the
+    projection worked out for it. One that has none is drawn at whole
+    pixels and stands still between two frames while the faces about it
+    move, which is a joint torn open (port_RemasterCopyPoint)."""
+    return got.get('fighter_faces', 0) > 0 and got.get('fighter_unplaced', 0) == 0
 
 
 def trace_of(log):
@@ -203,9 +216,14 @@ def main():
               % (exact.get('with_depth', 0), exact.get('without_depth', 0), exact.get('points', 0),
                  exact.get('faces', 0), exact.get('attached', 0), exact.get('misses', 0), exact.get('full', 0),
                  exact.get('masked', 0), exact.get('texture_from_drawn', 0)))
+        print('    fighters: %d polygons, %d with no place: %s; other polygons of the walk with no place %d'
+              % (exact.get('fighter_faces', 0), exact.get('fighter_unplaced', 0),
+                 'ok' if fighters_hold(exact) else 'NO (a fighter is drawn torn at his joints)',
+                 exact.get('walked_unplaced', 0)))
     traces_agree = all(row[2] for row in rows)
     blocks_agree = all(blocks_hold(row[1]) for row in rows)
-    return 0 if traces_agree and blocks_agree else 1
+    fighters_agree = all(fighters_hold(row[1]) for row in rows)
+    return 0 if traces_agree and blocks_agree and fighters_agree else 1
 
 
 if __name__ == '__main__':

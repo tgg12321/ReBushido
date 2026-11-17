@@ -93,7 +93,9 @@ No dates.
       of the whole stage** built when the stage loads (`stage_mesh`, on
       with nothing said), so its detail never steps, its fog runs on
       instead of stepping in bands, a piece of ground between the camera
-      and a fighter veils him again, and a picture between two frames has
+      and a fighter veils him again (by the console's own order, so that
+      a terrace's face that runs back past him does not), and a picture between
+      two frames has
       only to move the camera: all 38 stages are measured against the
       console's own tiles ("The ground as one mesh"). Left of it: a
       stage's geometry was never meant to be seen whole, so its far edge

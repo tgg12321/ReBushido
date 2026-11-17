@@ -2264,7 +2264,8 @@ on the terraced fields showed a fence the console hides behind a terrace.
 - **Nothing of the scene writes the depth buffer.** The test is `LESS`
   with the writing off, so the order the scene's own primitives are
   painted in -- the ordering table's, which is the whole of how the game
-  sorts -- is exactly what it was. Only the ground can hide anything.
+  sorts -- is exactly what it was. Only the ground can hide anything,
+  and a fighter it hides by its slots (below).
 - **A decal's offset keeps what lies on the ground.** A fighter's shadow
   is his model flattened onto the ground and has the ground's own depth
   to within the coprocessor's rounding; so have his feet, his blood and a
@@ -2272,6 +2273,37 @@ on the terraced fields showed a fence the console hides behind a terrace.
   units, about a fighter's width) nearer than it is, which is nothing
   beside the thousands of units a piece of ground that veils him stands
   in front of him by.
+- **A fighter is held by the console's own rule, not by depth.** The
+  console hid nothing by depth: it painted each piece of ground at the
+  ordering-table slot of its *farthest* corner, and a fighter's face at
+  its own. So a terrace's face that stands in front of a fighter but
+  runs back past him was painted *before* him, and he was drawn over
+  it; held to the depth of each pixel, the port hid him behind it. A
+  fighter's own -- his body, his cloth, a weapon, his model in the tiny
+  mode; the renderer says which (`port_RemasterNoteFighter`, by the
+  node's mesh block) -- is therefore not held to the depth at all. The
+  mesh writes, beside its colour, the slot of the face each pixel shows
+  (the same `slot_of` its cutoff uses), into a buffer of its own
+  (`port_GlGroundSlotsBegin`), and the side channel carries the slot
+  each primitive was linked at (`PortRemasterPrim.ot_slot`). A pixel of
+  a fighter is left out where the ground's face there has a nearer slot
+  than his face: the face the console painted after him. That keeps
+  what the mesh is for -- a piece of ground whose every corner is
+  nearer than the fighter still veils him -- and drops what the depth
+  added. It is the console's rule at the size of a whole face: the
+  console cut a near tile into four or sixteen pieces, each linked at
+  its own farthest corner, so a piece by his feet could be painted
+  over them where the whole face is not; that is the console cutting
+  off the soles of a fighter's feet, and is not copied. An effect has
+  no node and no slot and is never hidden; a shadow lies on the ground
+  and keeps the depth test with its offset, as the stage's own pieces
+  do, which is what still hides a fence behind a terrace.
+- **A batch is held as it was when its primitives came.** The last batch
+  of a frame -- the fighters, as often as not, and the 2D layer -- is
+  drawn at the vertical blank, after the game has begun the next frame,
+  and asked then whether the mesh had been drawn it was told no: the
+  last batch of every frame was held against nothing at all. The answer
+  is now the batch's own (`PortGlState.is_held`).
 - **A primitive the side channel has no depth for** -- the 2D layer, the
   fonts, the menus, a polygon of the scene whose corners were not written
   down -- is put at the very front and is never hidden: it was drawn
@@ -2345,6 +2377,21 @@ those pixels is a piece of the stage the console's own tiles hide and
 the mesh without the test did not -- a fence behind a terrace is the
 plain case -- and nothing of a fighter, a shadow or a dropped weapon is
 eaten anywhere.
+
+That measurement was taken while the last batch of every frame escaped
+the test (above), which is most of the fighters; the owner, playing,
+saw them hidden by the terraces. Measured again with every batch held,
+on the terraced fields' tour at scale 1 and every sixth blank (571
+pictures): held by the depth of each pixel, 99 pixels of a fighter in
+nine pictures were hidden by a terrace that the console's own tiles drew
+him over; held by the slots, none, and the pictures are the tiles'
+there. Against never hiding a fighter at all, the slots hide 45 pixels
+in one picture -- a sword's tip behind a face of the ground wholly
+nearer than it -- which is the veiling the mesh is for. What the slots
+do not copy is measured too: the console's tiles paint over a fighter
+in 348 of the tour's 4,200 blanks, a few hundred pixels each, and the
+pictures looked at show it to be the feet and the hems of the
+fighters, under the pieces a near tile is cut into.
 
 **The texels a fragment covers are averaged**, by the same rule and the
 same arithmetic as the renderer's own polygons of the scene (`gl_draw.c`,
@@ -3215,6 +3262,26 @@ look-up a primitive with no face of its own already used. A fight frame
 on the practice stage goes from 692 of its 1,177 primitives moved to
 952, and what stands still from 351 to 91 — of which some fifty are the
 rectangles of the flat layer, which never move by design.
+
+**A fighter's joint has the place of the bone before it.** A fighter's
+body is one mesh skinned over thirteen bones (`render_DrawSkinnedMesh`):
+each section's points are worked out under its own bone, and the points
+a joint shares with the next section are then *copied* to where the next
+section looks for them, by the program and with no GTE in between. The
+side channel keeps a point by the address the GTE stored it at, so the
+copy had nothing at its new address, and every face of the next section
+that touched a joint had no place at all: drawn at whole pixels, its
+texture flat, and left standing still between two frames while the faces
+about it moved, so that at `frame_rate = display` the joints tore open.
+The copy now tells the side channel (`port_RemasterCopyPoint`). In
+`port_game`, of the 546,574 polygons of the fighters' own (their shadows
+left out), 58,373 had no place (10.7%), and now none has; the prover
+holds that to none (`tools/port_gl_prove.py`, `fighters`). That copy is
+the renderer's only one: every other point it draws from is the GTE's own
+store. An effect (`eff.c`) and the surf (`wave.c`) take their points
+through Sony's `RotTransPers`, which reads the GTE into the program and
+never through the store the side channel watches, so they still have no
+place; they are not a fighter's and do not tear.
 
 The same face of the same thing has the same name in the next frame
 however far it moved, however the camera turned, and however the walk
