@@ -124,6 +124,25 @@ static PortDirtyRect g_drawn;
  * the stage's tiles with, this frame. */
 static PortStageView g_stage_view;
 
+/* The fighters' faces a frame looked up, which their shadows are cast
+ * from (port_RemasterCasterFaces): two fighters' bodies, weapons and
+ * scabbards come to some two thousand. */
+#define CASTER_FACES_MAX 8192
+/* The game's shadow nodes of a frame, each a caster and its ground: a
+ * fighter has one a bone that casts one and one a weapon. */
+#define CASTERS_MAX 64
+
+typedef struct {
+    PortAddress parent;
+    s32 ground_y;
+} ShadowCaster;
+
+static PortShadowCaster g_caster_faces[CASTER_FACES_MAX];
+static s32 g_caster_face_count;
+static u32 g_caster_lost;
+static ShadowCaster g_casters[CASTERS_MAX];
+static s32 g_caster_count;
+
 /* ---- the numbers of the chip (src/port/raster.c has the same) ---- */
 
 #define COMMAND_SHIFT 24
@@ -284,6 +303,69 @@ s32 port_ReadRemasterDistance(const char *word) {
         }
     }
     return -1;
+}
+
+/* A word that is `prefix` and then something: what comes after it, or
+ * NULL. */
+static const char *port_AfterWord(const char *word, const char *prefix) {
+    for (; *prefix != 0; prefix++, word++) {
+        if (*word != *prefix) {
+            return NULL;
+        }
+    }
+    return word;
+}
+
+#define HUNDREDTHS 100
+#define DECIMAL 10
+
+/* A strength in hundredths: digits from 1 to HUNDREDTHS and nothing
+ * else, or -1. */
+static s32 port_ReadHundredths(const char *text) {
+    s32 total = 0;
+    s32 digits = 0;
+
+    for (; *text >= '0' && *text <= '9'; text++) {
+        total = total * DECIMAL + (*text - '0');
+        if (++digits > 3) {
+            return -1;
+        }
+    }
+    return (digits == 0 || *text != 0 || total < 1 || total > HUNDREDTHS)
+               ? -1
+               : total;
+}
+
+/* The `shadows` setting's word (port_remaster.h): `original`, `soft`, a
+ * strength, `cast` or `cast:N`, as the number the backend is given. */
+s32 port_ReadRemasterShadows(const char *word) {
+    const char *rest;
+
+    if (word == NULL) {
+        return -1;
+    }
+    rest = port_AfterWord(word, "original");
+    if (rest != NULL && *rest == 0) {
+        return 0;
+    }
+    rest = port_AfterWord(word, "soft");
+    if (rest != NULL && *rest == 0) {
+        return PORT_SHADOWS_SOFT;
+    }
+    rest = port_AfterWord(word, "cast");
+    if (rest != NULL) {
+        s32 strength;
+
+        if (*rest == 0) {
+            return PORT_SHADOWS_CAST | PORT_SHADOWS_CAST_STRENGTH;
+        }
+        if (*rest != ':') {
+            return -1;
+        }
+        strength = port_ReadHundredths(rest + 1);
+        return strength < 0 ? -1 : PORT_SHADOWS_CAST | strength;
+    }
+    return port_ReadHundredths(word);
 }
 
 const char *port_NameRemasterDistance(s32 distance) {
@@ -540,6 +622,44 @@ void port_RemasterCopyPoint(PortAddress from, PortAddress to) {
     }
 }
 
+/* A fighter's face, front or back, on the screen or off it: what his
+ * shadow is cast from (port_RemasterCasterFaces). A corner the table did
+ * not have leaves the face out. */
+static void port_RemasterKeepCaster(s32 count) {
+    PortShadowCaster *to;
+    s32 shift = g_render_walk.scale_shift;
+    s32 i;
+    s32 j;
+
+    if (count < 3) {
+        return;
+    }
+    for (i = 0; i < count; i++) {
+        if (g_face[i].depth == 0) {
+            return;
+        }
+    }
+    if (g_caster_face_count >= CASTER_FACES_MAX) {
+        g_caster_lost++;
+        return;
+    }
+    to = &g_caster_faces[g_caster_face_count++];
+    to->object = g_id.object;
+    to->group = g_id.group;
+    to->face = g_id.face;
+    to->count = count;
+    to->depth_shift =
+        shift < 0 ? 0
+                  : (shift > PORT_REMASTER_DEPTH_SHIFT_MAX
+                         ? PORT_REMASTER_DEPTH_SHIFT_MAX
+                         : shift);
+    for (i = 0; i < count; i++) {
+        for (j = 0; j < 3; j++) {
+            to->view[i][j] = g_face[i].view[j];
+        }
+    }
+}
+
 /* The renderer looked a face's corners up (port_remaster.h): what the
  * projection worked out for each is kept until the primitive it
  * becomes is linked. A corner the table does not have leaves a point
@@ -578,6 +698,9 @@ void port_RemasterNoteFace(PortAddress points, const s32 *index, s32 count) {
     }
     g_counts.faces++;
     g_frame_counts.faces++;
+    if (g_is_fighter && !g_is_shadow) {
+        port_RemasterKeepCaster(count);
+    }
 }
 
 /* That face became the primitive at `prim` (port_remaster.h). */
@@ -668,6 +791,75 @@ void port_RemasterNoteShadow(s32 is_shadow) {
         return;
     }
     g_is_shadow = is_shadow != 0;
+}
+
+void port_RemasterNoteShadowCaster(PortAddress parent, s32 ground_y) {
+    if (g_backend == NULL || parent == 0) {
+        return;
+    }
+    if (g_caster_count >= CASTERS_MAX) {
+        return;
+    }
+    g_casters[g_caster_count].parent = parent;
+    g_casters[g_caster_count].ground_y = ground_y;
+    g_caster_count++;
+}
+
+const PortShadowCaster *port_RemasterCasterFaces(s32 *count) {
+    *count = g_caster_face_count;
+    return g_caster_faces;
+}
+
+u32 port_RemasterCasterLost(void) { return g_caster_lost; }
+
+/* The ground the thing at `object` casts onto: the game's shadow node
+ * of it, or of a bone of the same body (port_remaster.h). */
+s32 port_RemasterCasterGround(PortAddress object, s32 *ground_y) {
+    s32 i;
+
+    if (object == 0) {
+        return FALSE;
+    }
+    /* a weapon, a scabbard, a bone with a mesh of its own: its shadow
+     * node is its own */
+    for (i = 0; i < g_caster_count; i++) {
+        if (g_casters[i].parent == object) {
+            *ground_y = g_casters[i].ground_y;
+            return TRUE;
+        }
+    }
+    /* A fighter's body is one skinned mesh drawn by the body's root bone
+     * (model->bones[1]), and the game's shadow nodes hang from the bones
+     * after it (model_BuildShadows): one of those is the same body's. */
+    if (((const SceneNode *)object)->kind != NODE_KIND_SKINNED) {
+        return FALSE;
+    }
+    for (i = 0; i < g_caster_count; i++) {
+        PortAddress apart = g_casters[i].parent - object;
+
+        if (g_casters[i].parent > object &&
+            apart % (PortAddress)sizeof(ModelNode) == 0 &&
+            apart / (PortAddress)sizeof(ModelNode) < MODEL_BODY_BONES) {
+            *ground_y = g_casters[i].ground_y;
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/* light_SetShadowMatrix's own arithmetic on the same sun: its matrix is
+ * the scene's own and not given out. */
+void port_RemasterShadowShear(s32 *x_shear, s32 *z_shear) {
+    const MATRIX *sun = &g_light_setups[LIGHT_FIGHTER_1].lmat;
+    s32 sun_y = sun->m[LIGHT_SUN][1];
+
+    if (sun_y == 0) {
+        *x_shear = 0;
+        *z_shear = 0;
+        return;
+    }
+    *x_shear = -(s16)((sun->m[LIGHT_SUN][0] << 12) / sun_y);
+    *z_shear = -(s16)((sun->m[LIGHT_SUN][2] << 12) / sun_y);
 }
 
 void port_RemasterNoteFighter(s32 is_fighter) {
@@ -872,6 +1064,10 @@ void port_RemasterNewFrame(void) {
     if (port_RemasterIsOn() && g_backend->begin != NULL) {
         g_backend->begin();
     }
+    /* the backend has laid the frame before's shadows down in `begin`,
+     * and the faces they were cast from go now */
+    g_caster_face_count = 0;
+    g_caster_count = 0;
 }
 
 void port_RemasterSetPrim(PortAddress prim) { g_prim = prim; }

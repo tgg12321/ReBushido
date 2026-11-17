@@ -2781,6 +2781,114 @@ smoothed edge is. The darkest the picture came anywhere is one shadow's
 own 0.45, never two shadows' 0.20 -- 0.442 where it is lower is the
 eight bits a channel rounding a dark colour down.
 
+### The shadows cast from the fighters' own faces (`shadows cast`)
+
+`shadows soft` darkens the ground under the game's own silhouette, and
+that silhouette is coarse: a separate shadow mesh of a box or two a bone
+(`model_BuildShadows`), about an eighth of the body's polygons, drawn by
+a node that is always at the renderer's coarsest scale (`shift = 2` in
+`render_SetupNode`), so every corner of it is rounded to four world
+units before it is flattened. A soft edge cannot hide boxes that large,
+and a corner that steps by four units while the fighter breathes is
+magnified by a long low sun into a shadow that twitches when he stands
+still. **`shadows cast`** (or `cast:N`, N hundredths) keeps the mask,
+the soft edge and everything that keeps the darkening off the fighters,
+and changes only what is drawn into the mask:
+
+- **The silhouette is the fighter's own faces**, every face of his body,
+  his weapon and his scabbard that the renderer looked up
+  (`render_LoadFace`), whether it became a primitive or not: the faces
+  turned away from the camera cast a shadow as much as those that face
+  it (a shadow of only the camera's half of a limb comes out up to half
+  as wide), and so do the faces off the screen. The side channel keeps
+  them as it looks them up (`port_RemasterCasterFaces`), some 1,600
+  faces a frame for two fighters.
+- **From the coprocessor's own sums, not from the screen.** Each corner
+  carries where it was before the projection, the rotation and the
+  translation with eight bits of fraction that the GTE rounds away
+  before it divides (`PortPrecisePoint.view`, `src/port/gte.c`). The
+  backend takes it back into the world with the inverse of the view the
+  stage was drawn with (`PortStageView`), slides it onto the ground as
+  `light_ProjectShadow` does -- x and z by the height above the ground
+  times the sun's slope, y the ground's -- in floating point, and
+  projects it with the same view: nothing is rounded on the way.
+- **What casts, and onto what, is still the game's.** The renderer
+  says, for each of the game's shadow nodes, which node casts it and the
+  height of the ground under it (`port_RemasterNoteShadowCaster`,
+  `render_DrawQueue`). A face casts if its node has a shadow node of its
+  own (a weapon, a scabbard) or is the skinned body whose bones the
+  shadow nodes hang from; anything the game gives no shadow -- a dropped
+  weapon, the fighter's cloth -- casts none (33 faces a frame). The
+  game's own shadow faces are still taken out of the picture and kept:
+  a frame with nothing to cast from (no stage drawn) falls back to them.
+- **Between two frames** each triangle is moved between the two frames'
+  own places, paired by the face and the mesh it is of, and the camera
+  between the two frames' views (`port_GlShadowSetPhase`, `gl_tween.c`).
+  The frame on show is drawn from its own triangles and its own view,
+  so the first phase is the game's frame exactly.
+- **How dark: 68 hundredths with nothing said**
+  (`PORT_SHADOWS_CAST_STRENGTH`). Measured under the shadow's middle on
+  three stages (the tour, `tmp` runs at one hundredth beside the mask),
+  the ground's own lightness is CIE L* 26 on the orange tree fields, 37
+  on the castle rooftop and 52 on the practice floor; the game's black
+  shadow takes all of it. `soft`'s 55 takes 16, 21 and 28, a little more
+  than half of what the game's black takes, which is why it read faint
+  beside the game's own shadow, and most of all on the rooftop, where the
+  camera is low and the game's silhouette is a sliver. A darkening is
+  the same share of the ground on any stage, so one number serves them
+  all: 68 takes 20, 27 and 36, three quarters of what the black takes,
+  and leaves the ground a third of its value, enough for its texture to
+  show. A cast silhouette is also thinner than the boxes it replaces --
+  a wrist, a blade -- and a thin shadow needs the darker middle to
+  read.
+
+**Measured.** The three runs of "How it is proved" above, with
+`shadows cast` (the tour, scale 3, `antialiasing 2`, fifteen pictures
+each):
+
+| Stage | Pixels the darkening changed | ... with any of something else in them | ... that are **wholly not** ground | Darkest |
+|---|---|---|---|---|
+| the orange tree fields (12) | 186,402 of 37,324,800 | 2,197 | **0** | 0.312 |
+| the castle rooftop (13) | 117,819 | 2,727 | **0** | 0.320 |
+| the terraced fields (15) | 142,353 | 2,224 | **0** | 0.314 |
+| ... with `stage_mesh on` (15) | 142,404 | 2,228 | **0** | 0.313 |
+| the practice floor (35) | 209,473 | 1,990 | **0** | 0.319 |
+
+Two to three times the pixels of the game's mesh: the arms, the hands
+and the blades now have their shadows. The darkest is one shadow's
+0.32, never two shadows'. Each frame casts 1,619 faces as 2,266
+triangles, none lost; no frame fell back to the game's mesh.
+
+**Standing still.** A fight in which nobody presses anything, from
+the fighters' first idle frame on (159 pairs of frames a game frame
+apart, the mask at the console's resolution and `antialiasing 4`, so
+that a pixel's coverage is a share of sixteen samples): how far the
+outline moved, the coverage that changed over the outline's length, and
+how many pixels changed by half their coverage or more -- a corner that
+stepped, which smooth breathing does not do:
+
+| Stage | | Outline moved, median / 90th percentile | Pixels that stepped, a frame |
+|---|---|---|---|
+| the orange tree fields (12) | `soft` (the game's mesh) | 0.025 / 0.058 px | 3.5 |
+| | `cast` | 0.026 / 0.040 px | **0.2** |
+| the castle rooftop (13) | `soft` | 0.043 / 0.085 px | 3.7 |
+| | `cast` | 0.043 / 0.075 px | **2.4** |
+
+The median is the fighter's own breathing, which both follow; what
+`cast` takes away is the steps of a corner rounded to four units. What
+is left on the rooftop is the breathing magnified by its low sun.
+
+**Between two frames** (`--gl-tween 5`, the tour of the practice floor
+with `shadows cast`): the first phase of 627 frames is the game's own
+picture to the pixel (770,457,600 pixels, 0 different), no picture is
+out of order, and no triangle lacked its partner in the frame after.
+
+**What is not done.** The shadow lies on the plane of the caster's
+ground, as the game's does: on a step or a slope it does not follow the
+ground (the ground's own mesh, `gl_stage.c`, has the heights, and a
+later step could flatten each corner onto the ground under it along the
+sun). Everything in "What is not done" above still holds for the mask.
+
 ### Edges
 
 The scene is drawn **two or four times over each way and averaged

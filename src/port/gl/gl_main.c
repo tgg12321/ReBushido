@@ -131,7 +131,8 @@ static const char g_usage[] =
     "  --filter KIND  nearest: a texel is a block; linear: smoothed\n"
     "  --shadows W    original: the game's own black silhouettes; soft:\n"
     "                 the ground under them darkened instead; or how\n"
-    "                 much it darkens, in hundredths (gl_shadow.h)\n"
+    "                 much it darkens, in hundredths; cast (cast:N):\n"
+    "                 cast from the fighters' own faces (gl_shadow.h)\n"
     "  --stage-mesh W on, off, every: the stage's ground drawn from one\n"
     "                 static mesh instead of the game's tile primitives\n"
     "                 (gl_stage.h). `on` is the stages the mesh is\n"
@@ -1040,6 +1041,14 @@ static void port_GlQuit(s32 code) {
             "widest_area %u occluders %d\n",
             port_GlShadowStrength(), counts->shadows, port_GlShadowFaces(),
             port_GlShadowLost(), port_GlShadowArea(), port_GlShadowOccluders());
+    if (port_GlShadowIsCast()) {
+        fprintf(stderr,
+                "gl run shadows cast faces %d orphans %d triangles %d "
+                "fallbacks %u unpaired %u lost %u\n",
+                port_GlShadowCastFaces(), port_GlShadowCastOrphans(),
+                port_GlShadowCastTriangles(), port_GlShadowCastFallbacks(),
+                port_GlShadowCastUnpaired(), port_RemasterCasterLost());
+    }
     if (g_run.compared != 0) {
         fprintf(stderr,
                 "gl run compared %u pictures %u pixels different %u close %u "
@@ -1174,19 +1183,11 @@ int main(int argc, char **argv) {
         } else if (!strcmp(word, "--stage-depth")) {
             options.is_stage_depth = strcmp(argv[++i], "off") != 0;
         } else if (!strcmp(word, "--shadows")) {
-            const char *how = argv[++i];
-
-            if (!strcmp(how, "original")) {
-                options.shadows = 0;
-            } else if (!strcmp(how, "soft")) {
-                options.shadows = PORT_SHADOWS_SOFT;
-            } else {
-                options.shadows = atoi(how);
-                if (options.shadows < 1 || options.shadows > 100) {
-                    fprintf(stderr, "rebushido-gl: --shadows takes original, "
-                                    "soft, or 1 to 100\n");
-                    return PORT_EXIT_USAGE;
-                }
+            options.shadows = port_ReadRemasterShadows(argv[++i]);
+            if (options.shadows < 0) {
+                fprintf(stderr, "rebushido-gl: --shadows takes original, "
+                                "soft, cast, cast:N, or 1 to 100\n");
+                return PORT_EXIT_USAGE;
             }
         } else if (!strcmp(word, "--draw-distance")) {
             view.distance = port_ReadRemasterDistance(argv[++i]);

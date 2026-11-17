@@ -22,7 +22,8 @@ to play is [`PLAYING.md`](PLAYING.md).
   antialiasing, the whole stage drawn (`draw_distance max`), 16:9 with
   the HUD anchored, more pictures a second (`frame_rate`), the ground of
   all 38 stages as one mesh (`stage_mesh`, on by default), and soft
-  shadows (`shadows`, off by default). F3 the counter, F11 full screen,
+  shadows (`shadows`, off by default: `soft` darkens under the game's
+  own shadow mesh, `cast` under the fighters' own bodies). F3 the counter, F11 full screen,
   F12 a screenshot.
 
 ## What is left, in the order I would take it
@@ -33,14 +34,17 @@ to play is [`PLAYING.md`](PLAYING.md).
    the mesh (it was on tiles and flickered when the camera turned);
    fighters hidden by terraces again; the fog on long floors; flicker of
    fighters and shadows at `frame_rate = display`.
-2. **Soft shadows: a number, then a default.** `shadows = soft` darkens
-   the ground by 55 hundredths. It is too faint on dark stages (the
-   castle rooftop) and reads weaker than the game's black patch in the
-   dojo; `shadows = 75` and the like try another strength. Pictures:
-   `Desktop\ReBushido Screenshots\Shadows (soft vs original)`. Known
-   limits are in `PORT.md`, "The shadows": the silhouette is the game's
-   own blocky one, a wall in front of a shadow is darkened with the
-   ground, the soft edge does not widen with height.
+2. **Shadows: look at `cast`, then a default.** `shadows = cast` is the
+   answer to "blocky and polygonal, and jitter when still": the shadow
+   is cast from every face of the fighters' bodies, weapons and
+   scabbards in floating point instead of the game's coarse shadow
+   mesh rounded to four units, and darkens by 68 hundredths
+   (`cast:N` for another strength; why 68 is in `PORT.md`, "The shadows
+   cast from the fighters' own faces"). `shadows = soft` (55, the game's
+   mesh) is still there. Not yet seen on a real card. Known limits: the
+   shadow lies on the plane of the fighter's ground and not on steps or
+   slopes, a wall in front of a shadow is darkened with the ground, the
+   soft edge does not widen with height.
 3. **Pictures between frames on what is not ground.** The ground no
    longer needs pairing, but fighters, shadows and stage pieces still
    go through `gl_tween.c`; the owner's last report of "always
@@ -70,7 +74,8 @@ to play is [`PLAYING.md`](PLAYING.md).
 
 - Publishing release 0.1 (tagging and publishing are the owner's).
 - Which of the original's bugs to fix (7).
-- Soft shadows on or off by default, and how dark (2).
+- Which shadows by default (`original`, `soft` or `cast`), and how
+  dark (2).
 - The high frame rate by default (5).
 - `tmp\sdl-dl` can be deleted by hand; `tmp\pcsx-redux` and
   `tmp\redux-portable` are the emulator the play tests use and stay.

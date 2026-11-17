@@ -249,6 +249,22 @@ static void test_View(void) {
         port_NameRemasterDistance(PORT_DISTANCE_MAX), "max"));
     CHECK(test_TextsAreEqual(port_NameRemasterDistance(-1), "?"));
 
+    /* the `shadows` setting's words */
+    CHECK_EQ(port_ReadRemasterShadows("original"), 0);
+    CHECK_EQ(port_ReadRemasterShadows("soft"), PORT_SHADOWS_SOFT);
+    CHECK_EQ(port_ReadRemasterShadows("75"), 75);
+    CHECK_EQ(port_ReadRemasterShadows("100"), 100);
+    CHECK_EQ(port_ReadRemasterShadows("cast"),
+             PORT_SHADOWS_CAST | PORT_SHADOWS_CAST_STRENGTH);
+    CHECK_EQ(port_ReadRemasterShadows("cast:40"), PORT_SHADOWS_CAST | 40);
+    CHECK_EQ(port_ReadRemasterShadows("0"), -1);
+    CHECK_EQ(port_ReadRemasterShadows("101"), -1);
+    CHECK_EQ(port_ReadRemasterShadows("cast:"), -1);
+    CHECK_EQ(port_ReadRemasterShadows("cast:0"), -1);
+    CHECK_EQ(port_ReadRemasterShadows("casts"), -1);
+    CHECK_EQ(port_ReadRemasterShadows("softer"), -1);
+    CHECK_EQ(port_ReadRemasterShadows(""), -1);
+
     /* the fog's reach for each, in 256ths of the console's */
     CHECK_EQ(
         port_RemasterFogFactor(PORT_DISTANCE_ORIGINAL), PORT_FOG_FACTOR_ONE);

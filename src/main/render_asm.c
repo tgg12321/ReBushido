@@ -1545,6 +1545,14 @@ void render_DrawQueue(void) {
          * picture may darken the ground under instead (port_remaster.h) */
         port_RemasterNoteObject((PortAddress)node);
         port_RemasterNoteShadow(node->kind == NODE_KIND_SHADOW);
+        /* ... what casts it and onto what ground, which says which of
+         * the fighters' own faces a shadow cast from them is made of
+         * (port_remaster.h, `shadows cast`) */
+        if (node->kind == NODE_KIND_SHADOW) {
+            port_RemasterNoteShadowCaster(
+                (PortAddress)PTR(node->parent),
+                (s32)RENDER_WORD(node, RENDER_NODE_EXTRA));
+        }
         /* ... and whether it is a fighter's own -- his model, its
          * shadows, a weapon, the tiny mode's model -- and not the stage's,
          * by where its mesh is from. A tile is not a node and has no

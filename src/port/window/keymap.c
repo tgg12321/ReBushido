@@ -66,7 +66,9 @@ const char g_port_default_settings[] =
     "                       # for the tiles. A stage the mesh is not\n"
     "                       # measured good on keeps the tiles either way\n"
     "shadows = original     # original: the game's own black shadows;\n"
-    "                       # soft: the ground under them darkened\n"
+    "                       # soft: the ground under them darkened;\n"
+    "                       # cast: cast from the fighters' own\n"
+    "                       # bodies, darkened (cast:N, N hundredths)\n"
     "frame_rate = original  # original: one picture a blank, as the\n"
     "                       # console; display: as many as the screen\n"
     "                       # shows; or a number a second. The game\n"
@@ -618,9 +620,11 @@ static const char *port_ReadSetting(
             settings->shadows = PORT_SHADOWS_SOFT;
             return NULL;
         }
-        if (!port_ReadDigits(value, &number) || number < 1 || number > 100) {
-            return "shadows is original, soft, or how much of the ground "
-                   "a shadow takes away, in hundredths";
+        /* cast, cast:N, or a number (port_remaster.h) */
+        number = port_ReadRemasterShadows(value);
+        if (number < 0) {
+            return "shadows is original, soft, cast, cast:N, or how much of "
+                   "the ground a shadow takes away, in hundredths";
         }
         settings->shadows = number;
         return NULL;
