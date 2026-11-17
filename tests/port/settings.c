@@ -241,7 +241,7 @@ static void test_Choices(void) {
             {"graphics", -1},     {"resolution", 0}, {"antialiasing", 1},
             {"draw_distance", 2}, {"aspect", 2},     {"stage_mesh", 1},
             {"shadows", 0},       {"frame_rate", 0}, {"english", 1},
-            {"mods", 1},          {"deadzone", 2},
+            {"mods", 1},          {"music_mods", 1}, {"deadzone", 2},
         };
 
         u32 i;

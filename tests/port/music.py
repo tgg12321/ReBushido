@@ -26,7 +26,8 @@ OGG_LOOP_START, OGG_LOOP_LENGTH = 12000, 24000
 
 def flags():
     """src/port/vorbis.c compiled as tools/port_build.py compiles it."""
-    return ['-Isrc/port/vendor/libc', '-msse', '-msse2']
+    import port_build  # tools/port_build.py, on the path tests/run.py gives
+    return port_build.PORT_OWN_FLAGS['src/port/vorbis.c']
 
 
 def wav_sample(i, side):

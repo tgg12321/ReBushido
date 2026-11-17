@@ -306,7 +306,7 @@ def set_bits(bits):
 # the port's empty ones, and it is the one file whose numbers are not all
 # whole, so the 64-bit program lets it have the vector registers that the
 # x86-64 calling convention passes such numbers in.
-PORT_OWN_FLAGS = {'src/port/vorbis.c': ['-Isrc/port/vendor/libc', '-msse', '-msse2']}
+PORT_OWN_FLAGS = {'src/port/vorbis.c': ['-Isrc/port/vendor/libc', '-msse', '-msse2', '-Os']}
 # Files whose variables keep the boundaries the compiler gave them
 # (cap_alignment is not run on them): none of the game's variables is
 # among them, and the vector instructions of src/port/vorbis.c read its

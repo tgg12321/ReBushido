@@ -230,6 +230,9 @@ typedef struct {
      * mods/english/ (docs/MODS.md, "The English menu"); 0 leaves it
      * out. */
     s32 english;
+    /* A mod's music is heard in place of the game's (docs/MODS.md,
+     * "Music"); 0 plays the game's own, from the next sample on. */
+    s32 music_mods;
 } PortSettings;
 
 /* The number of the key, button or axis of this name, as the window's

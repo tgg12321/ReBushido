@@ -66,7 +66,7 @@ static struct {
     PortDiscFile *files;
     u32 count;
     const char *dump_folder;
-    PortDiscOverride overrides[OVERRIDES_MAX];
+    PortDiscOverride *overrides; /* OVERRIDES_MAX of them */
     u32 override_count;
     u32 lowest;  /* the first sector any covers */
     u32 highest; /* and the one after the last */
@@ -170,15 +170,15 @@ u32 port_ReadDiscFolder(const u8 *data, u32 count, const char *folder,
 /* The disc's directory, folder by folder from the root
  * (port_discfiles.h). */
 s32 port_ReadDiscFiles(const PortDisc *disc) {
-    static u8 data[FOLDER_SECTORS_MAX * PORT_DISC_DATA_BYTES];
+    u8 *data = port_HostAllocate(FOLDER_SECTORS_MAX * PORT_DISC_DATA_BYTES);
     u32 next;
 
     if (g_port_disc_files.files == NULL) {
         g_port_disc_files.files =
             port_HostAllocate(FILES_MAX * sizeof(PortDiscFile));
-        if (g_port_disc_files.files == NULL) {
-            return 0;
-        }
+    }
+    if (g_port_disc_files.files == NULL || data == NULL) {
+        return 0;
     }
     g_port_disc_files.count = 0;
     if (port_ReadDiscData(disc, VOLUME_SECTOR, 1, data, NULL) != PORT_DISC_OK ||
@@ -352,7 +352,12 @@ static void port_AddStageOverride(
                  key, path, size, sectors * PORT_DISC_DATA_BYTES);
         return;
     }
-    if (g_port_disc_files.override_count >= OVERRIDES_MAX) {
+    if (g_port_disc_files.overrides == NULL) {
+        g_port_disc_files.overrides =
+            port_HostAllocate(OVERRIDES_MAX * sizeof(PortDiscOverride));
+    }
+    if (g_port_disc_files.overrides == NULL ||
+        g_port_disc_files.override_count >= OVERRIDES_MAX) {
         return;
     }
     override = &g_port_disc_files.overrides[g_port_disc_files.override_count];
@@ -383,14 +388,14 @@ void port_SetStageDumpFolder(const char *folder) {
 /* Each stage's files found on the disc: written out for --dump-stages,
  * and the mods' own read to stand in for them (port_discfiles.h). */
 void port_StartStageMods(const PortDisc *disc) {
-    static u8 ndata_inf[NDATA_INF_SECTORS * PORT_DISC_DATA_BYTES];
+    u8 *ndata_inf = port_HostAllocate(NDATA_INF_SECTORS * PORT_DISC_DATA_BYTES);
     const u8 *inf = NULL;
     const PortDiscFile *inf_file = port_FindDiscFile("NDATA/NDATA.INF");
     u8 *room = NULL;
     s32 stage;
     s32 kind;
 
-    if (inf_file != NULL &&
+    if (inf_file != NULL && ndata_inf != NULL &&
         port_ReadDiscData(disc, inf_file->sector, NDATA_INF_SECTORS, ndata_inf,
                           NULL) == PORT_DISC_OK) {
         inf = ndata_inf;

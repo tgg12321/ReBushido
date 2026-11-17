@@ -124,6 +124,13 @@ const PortChoice g_port_choices[] = {
      2,
      {"off", "on"},
      {"Off", "On"}},
+    {"music_mods",
+     "Mods' music",
+     "A mod's music in place of the game's, where a mod has some",
+     PORT_TAKES_NOW,
+     2,
+     {"off", "on"},
+     {"Off", "On"}},
     /* the controls */
     {"deadzone",
      "Stick dead zone",
@@ -140,8 +147,8 @@ const s32 g_port_choice_count =
 const PortChoiceGroup g_port_choice_groups[PORT_CHOICE_GROUPS] = {
     {"The window", 0, 6},
     {"The remastered picture", 6, 8},
-    {"Mods", 14, 2},
-    {"Controls", 16, 1},
+    {"Mods", 14, 3},
+    {"Controls", 17, 1},
 };
 
 /* `name = word` into `line`: FALSE if it does not fit. */

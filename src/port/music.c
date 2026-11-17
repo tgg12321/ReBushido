@@ -114,13 +114,23 @@ typedef struct {
     /* the next sample the decoder gives */
     u32 decoded_to;
     /* samples kept, a left and a right each: from `first`, `count` */
-    s16 chunk[CHUNK_FRAMES * 2];
+    s16 *chunk; /* CHUNK_FRAMES of them */
     u32 first;
     u32 count;
     /* the loop's first samples, so that going back needs no seek */
-    s16 head[HEAD_FRAMES * 2];
+    s16 *head; /* HEAD_FRAMES */
     u32 head_count;
 } PortMusicSource;
+
+/* What the dump keeps: the play of the stream so far, in pieces of
+ * DUMP_PIECE_FRAMES samples; the pieces of music written, each with how
+ * long its file is. Asked of the host only for --dump-music. */
+typedef struct {
+    s16 *pieces[DUMP_PIECES];
+    char keys[DUMPS_MAX][PORT_MOD_KEY_SIZE];
+    u32 frames[DUMPS_MAX];
+    s32 count;
+} PortMusicDumps;
 
 static struct {
     s32 is_off;
@@ -143,22 +153,18 @@ static struct {
     u32 next_out;
     u32 next_frame;
     u32 next_fraction;
-    s16 out[FRAMES_MAX * 2];
+    s16 *out; /* FRAMES_MAX */
     /* memory: the decoder's, and the file */
     u8 *work;
     u8 *file;
     u32 file_room;
-    /* the dump: the play of the stream so far, in pieces of
-     * DUMP_PIECE_FRAMES samples; the pieces of music written, each with
-     * how long its file is, and whether the file is this play's */
-    s16 unmixed[FRAMES_MAX * 2];
-    s16 *dump_pieces[DUMP_PIECES];
+    /* the dump, the piece it is writing, and whether its file is this
+     * play's */
+    s16 *unmixed; /* FRAMES_MAX */
+    PortMusicDumps *dumps;
     s32 dump_file;
     s32 dump_slot;
     s32 dump_is_this_play;
-    char dumped[DUMPS_MAX][PORT_MOD_KEY_SIZE];
-    u32 dumped_frames[DUMPS_MAX];
-    s32 dump_count;
 } g_port_music = {.dump_file = -1, .dump_slot = -1};
 
 static void port_MusicSay(char *out, u32 room, const char *format, ...) {
@@ -491,6 +497,16 @@ static s32 port_MusicOpen(const char *key, const char *path) {
     u32 i;
 
     port_MusicClose();
+    /* the memory a piece is played from, the first time there is one */
+    if (g_port_music.out == NULL) {
+        g_port_music.out = port_HostAllocate(FRAMES_MAX * 2 * sizeof(s16));
+        source->chunk = port_HostAllocate(CHUNK_FRAMES * 2 * sizeof(s16));
+        source->head = port_HostAllocate(HEAD_FRAMES * 2 * sizeof(s16));
+    }
+    if (g_port_music.out == NULL || source->chunk == NULL ||
+        source->head == NULL) {
+        return 0;
+    }
     if (size == 0 || size > FILE_BYTES_MAX ||
         (bytes = port_MusicRoom(size)) == NULL ||
         port_ModReadFile(path, bytes, size) != size) {
@@ -601,6 +617,7 @@ static void port_MusicDumpHeader(s32 file, u32 frames) {
  * are not the same to the sample: where the disc's sectors reach the
  * decoder moves with the blanks, so each begins a little apart.) */
 static void port_MusicDumpStart(void) {
+    PortMusicDumps *dumps = g_port_music.dumps;
     s32 slot;
 
     if (g_port_music.dump_file >= 0) {
@@ -612,19 +629,19 @@ static void port_MusicDumpStart(void) {
     if (g_port_music.key[0] == TEXT_END) {
         return;
     }
-    for (slot = 0; slot < g_port_music.dump_count; slot++) {
-        if (port_TextsEqual(g_port_music.dumped[slot], g_port_music.key)) {
+    for (slot = 0; slot < dumps->count; slot++) {
+        if (port_TextsEqual(dumps->keys[slot], g_port_music.key)) {
             break;
         }
     }
     if (slot == DUMPS_MAX) {
         return;
     }
-    if (slot == g_port_music.dump_count) {
-        port_MusicSay(g_port_music.dumped[slot], PORT_MOD_KEY_SIZE, "%s",
-                      g_port_music.key);
-        g_port_music.dumped_frames[slot] = 0;
-        g_port_music.dump_count++;
+    if (slot == dumps->count) {
+        port_MusicSay(
+            dumps->keys[slot], PORT_MOD_KEY_SIZE, "%s", g_port_music.key);
+        dumps->frames[slot] = 0;
+        dumps->count++;
         port_Log("music: %s written to %s/%s.wav as it plays\n",
                  g_port_music.key, g_port_music.dump_folder, g_port_music.key);
     }
@@ -644,7 +661,8 @@ static void port_MusicDumpWrite(u32 first, u32 last) {
         }
         port_HostWriteAt(
             g_port_music.dump_file, WAV_HEADER_BYTES + first * DUMP_FRAME_BYTES,
-            g_port_music.dump_pieces[piece] + at * 2, count * DUMP_FRAME_BYTES);
+            g_port_music.dumps->pieces[piece] + at * 2,
+            count * DUMP_FRAME_BYTES);
         first += count;
     }
 }
@@ -654,11 +672,12 @@ static void port_MusicDumpWrite(u32 first, u32 last) {
  * longest yet. */
 static void port_MusicDump(u32 frames) {
     char path[PATH_SIZE];
+    PortMusicDumps *dumps = g_port_music.dumps;
     s32 slot = g_port_music.dump_slot;
     u32 at;
     u32 i;
 
-    if (slot < 0 || !g_port_music.drive_on) {
+    if (slot < 0 || !g_port_music.drive_on || g_port_music.unmixed == NULL) {
         return;
     }
     at = port_GetSampleCount() - g_port_music.since;
@@ -669,18 +688,18 @@ static void port_MusicDump(u32 frames) {
         if (piece >= DUMP_PIECES) {
             return;
         }
-        if (g_port_music.dump_pieces[piece] == NULL) {
-            g_port_music.dump_pieces[piece] =
+        if (dumps->pieces[piece] == NULL) {
+            dumps->pieces[piece] =
                 port_HostAllocate(DUMP_PIECE_FRAMES * DUMP_FRAME_BYTES);
-            if (g_port_music.dump_pieces[piece] == NULL) {
+            if (dumps->pieces[piece] == NULL) {
                 return;
             }
         }
-        to = g_port_music.dump_pieces[piece] + (at + i) % DUMP_PIECE_FRAMES * 2;
+        to = dumps->pieces[piece] + (at + i) % DUMP_PIECE_FRAMES * 2;
         to[0] = g_port_music.unmixed[i * 2];
         to[1] = g_port_music.unmixed[i * 2 + 1];
     }
-    if (at + frames <= g_port_music.dumped_frames[slot]) {
+    if (at + frames <= dumps->frames[slot]) {
         return;
     }
     if (!g_port_music.dump_is_this_play) {
@@ -697,7 +716,7 @@ static void port_MusicDump(u32 frames) {
     } else {
         port_MusicDumpWrite(at, at + frames);
     }
-    g_port_music.dumped_frames[slot] = at + frames;
+    dumps->frames[slot] = at + frames;
     port_MusicDumpHeader(g_port_music.dump_file, at + frames);
 }
 
@@ -811,6 +830,12 @@ void port_MusicStart(void) {
     }
     if (g_port_music.dump_folder != NULL) {
         port_HostMakeFolder(g_port_music.dump_folder);
+        g_port_music.unmixed = port_HostAllocate(FRAMES_MAX * 2 * sizeof(s16));
+        g_port_music.dumps = port_HostAllocate(sizeof(PortMusicDumps));
+        if (g_port_music.unmixed == NULL || g_port_music.dumps == NULL) {
+            g_port_music.dump_folder = NULL;
+            return;
+        }
         g_port_xa_unmixed = g_port_music.unmixed;
     }
 }

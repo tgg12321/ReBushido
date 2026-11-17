@@ -43,6 +43,7 @@
 #include "port_gpu.h"
 #include "port_host.h"
 #include "port_movie.h"
+#include "port_music.h"
 #include "port_remaster.h"
 #include "port_spu.h"
 #include "shared.h"
@@ -1517,6 +1518,8 @@ void port_WindowApplyChoice(s32 choice) {
 
         port_GlOptionsFor(g_port_gl_scale, &options);
         port_GlSetOptions(&options);
+    } else if (strcmp(name, "music_mods") == 0) {
+        port_MusicSetOn(g_port_settings.music_mods);
     }
     /* the picture's size and filter on the card, the resolution, the
      * counter's corner and the dead zone are read each time they are
