@@ -64,3 +64,8 @@ TileSplit   the port's own: a local of the tiles' cutting
 SeqStruct  Sony's libsnd, in the library's own memory
 _SsFCALL   Sony's libsnd: a table of functions
 DIRENTRY   the BIOS's directory entry: the port has no card yet
+
+# The mods' PNG reader and writer (src/port/png.c): locals that hold a
+# pointer to the file's bytes and to where the pixels go.
+PngInflate  the port's own: a local of the inflate
+PngWriter   the port's own: a local of the writer

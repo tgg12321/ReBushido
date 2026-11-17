@@ -404,7 +404,9 @@ static s32 port_ChooseWord(
 }
 
 int main(int argc, char **argv) {
-    static char *passed[ARGUMENTS_MAX + 6];
+    static char *passed[ARGUMENTS_MAX + 8];
+    static char mods_option[] = "--mods";
+    static char mods_off[] = "off";
     static char image_option[] = "--image";
     static char frames_option[] = "--frames";
     static char frames_endless[] = "2000000000";
@@ -415,6 +417,7 @@ int main(int argc, char **argv) {
     s32 count = 0;
     s32 has_image = 0;
     s32 has_end = 0;
+    s32 has_mods = 0;    /* the command line says where they are */
     s32 fullscreen = -1; /* -1: as the settings say */
     s32 no_vsync = 0;
     s32 scale = -1;
@@ -603,6 +606,9 @@ int main(int argc, char **argv) {
                 has_image = 1;
                 image = has_value ? argv[i + 1] : NULL;
             }
+            if (strcmp(word, "--mods") == 0) {
+                has_mods = 1;
+            }
             if (strcmp(word, "--frames") == 0 || strcmp(word, "--plan") == 0) {
                 has_end = 1;
             }
@@ -684,6 +690,11 @@ int main(int argc, char **argv) {
          * this many blanks is a year. */
         passed[count++] = frames_option;
         passed[count++] = frames_endless;
+    }
+    if (!has_mods && !g_port_settings.mods) {
+        /* the settings file turned them off (docs/MODS.md) */
+        passed[count++] = mods_option;
+        passed[count++] = mods_off;
     }
     passed[count] = NULL;
     {

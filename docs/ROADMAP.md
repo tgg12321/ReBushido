@@ -166,6 +166,12 @@ camera), particle effects, skyboxes on the stages that were left dark.
     built as its first users, not as one-off features. Later perhaps new
     weapon types and motions, which need the hitbox and weapon tables
     read as data.
+    The framework is in, with replacement textures of the 2D layer as
+    its first user ([`MODS.md`](MODS.md)): `mods/` beside the program,
+    a manifest and a load order per mod, one lookup by kind and key,
+    textures keyed by what they look like, dumped and replaced at any
+    size in the remastered picture. Left: the scene's textures by whole
+    page, then models, music and stages through the same lookup.
 11. **Menus and UI**: the menus redrawn (the Japanese options of the
     title screen in English), and the settings menu holding all of
     ReBushido's own settings.
