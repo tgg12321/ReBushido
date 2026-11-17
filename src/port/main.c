@@ -106,6 +106,9 @@ static const char g_port_usage[] =
     "  --rollback-every M  ... M frames from one save to the next (24)\n"
     "  --rollback-quiet    ... and run them again as netplay does: nothing\n"
     "                 drawn, heard or printed; video memory not compared\n"
+    "  --run-ahead N  before each frame run the next N (0 to 2) and put\n"
+    "                 the state back: what the window does to show a\n"
+    "                 press sooner (docs/PORT.md, \"Input lag\")\n"
     "  --net-bind ADDRESS:PORT   a UDP socket here, for another program of\n"
     "                 the port (docs/NETPLAY.md): 127.0.0.1:PORT to play on\n"
     "                 this PC alone\n"
@@ -147,6 +150,11 @@ static const char g_port_usage[] =
 /* The end of a run (port_platform.h): what it was asked to write, the
  * stubs it called, and out. */
 void port_Quit(s32 code) {
+    /* a frame run ahead does not end the run: the step itself does, if
+     * it comes to that (port_platform.h) */
+    if (g_port_ahead) {
+        port_GiveUpAhead();
+    }
     /* once: what is written at the end may itself fail */
     if (!g_port_quitting) {
         g_port_quitting = 1;
@@ -159,6 +167,7 @@ void port_Quit(s32 code) {
         }
         port_PrintStubs();
         port_PrintRollbackReport();
+        port_PrintAheadReport();
         port_EndNetplay();
         port_PrintNetReport();
         if (g_port_quit_hook != NULL) {
@@ -405,6 +414,14 @@ s32 port_Main(s32 argc, char **argv) {
             if (!port_ParseNumber(argv[++i], &frames) || frames <= 0) {
                 port_UsageError("--frames takes a number, not ", argv[i]);
             }
+        } else if (port_TextsEqual(word, "--run-ahead")) {
+            s32 ahead = 0;
+
+            if (!port_ParseNumber(argv[++i], &ahead) || ahead < 0 ||
+                ahead > PORT_AHEAD_MAX) {
+                port_UsageError("--run-ahead takes 0, 1 or 2, not ", argv[i]);
+            }
+            port_SetRunAhead(ahead);
         } else {
             port_UsageError("not known: ", word);
         }
@@ -553,6 +570,7 @@ s32 port_Main(s32 argc, char **argv) {
         port_RunNetplay();
     }
     for (;;) {
+        port_BeforeStep();
         port_StepGame();
         port_OnRollbackFrame();
     }

@@ -1181,7 +1181,8 @@ void port_RemasterNewFrame(void) {
      * and is never moved */
     port_RemasterNoteObject(0);
     port_ClearDirtyRect(&g_drawn);
-    if (port_RemasterIsOn() && g_backend->begin != NULL) {
+    /* a step whose frames were run ahead began this frame then */
+    if (port_RemasterIsOn() && !g_port_unseen && g_backend->begin != NULL) {
         g_backend->begin();
     }
     /* the backend has laid the frame before's shadows down in `begin`,
@@ -1723,6 +1724,13 @@ void port_RemasterCommand(const u32 *words, s32 count) {
     g_counts.seen[kind]++;
     g_frame_counts.seen[kind]++;
     if (!port_RemasterIsOn() || g_pause_skips) {
+        return;
+    }
+    /* A step whose frames were run ahead (port_platform.h): the backend
+     * drew its primitives then, and is told only of what it writes into
+     * video memory, from the pixels the step itself leaves there. */
+    if (g_port_unseen && ((code & COMMAND_KIND_MASK) == COMMAND_POLYGONS ||
+                          (code & COMMAND_KIND_MASK) == COMMAND_RECTANGLES)) {
         return;
     }
     port_GetGpuState(&state);

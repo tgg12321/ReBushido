@@ -80,6 +80,10 @@ void printf(const char *fmt, ...) {
     char line[GAME_LINE_MAX];
     PortArgs args;
 
+    /* the step itself says it, when it runs (port_platform.h) */
+    if (g_port_ahead) {
+        return;
+    }
     PORT_ARGS_START(args, fmt);
     port_FormatText(line, sizeof(line), fmt, args);
     PORT_ARGS_END(args);

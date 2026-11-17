@@ -3,13 +3,39 @@
  * as a fiber, and gives the host the turn at each frame's boundary,
  * which is where it reads the pads. The host's loop (main.c) then owns
  * the time: it runs a step, and between two steps it may save the
- * state, put an earlier one back, or set the next frame's input. */
+ * state, put an earlier one back, or set the next frame's input.
+ *
+ * Run-ahead is one use of that turn (docs/PORT.md, "Input lag"): before
+ * a step, the state is saved, the next frames are run with the input the
+ * step is about to take, drawn but not heard and with the window having
+ * no turn, and the state is put back. What the window shows while the
+ * step itself runs is the picture those frames left on the display:
+ * the game's own frames, as many frames sooner. The step then runs as
+ * it would have, heard and paced, and computes exactly what it would
+ * have computed. */
 #include "common.h"
 #include "port_host.h"
+#include "port_net.h"
+#include "port_state.h"
 #include "bb2.h"
+
+/* An ahead step that has passed this many blanks is given up: it is a
+ * load or the movie, not a frame (a frame of a fight is two). */
+#define AHEAD_BLANKS_A_FRAME 4
 
 u32 g_port_steps;
 s32 g_port_rerun;
+s32 g_port_ahead;
+s32 g_port_unseen;
+void (*g_port_boundary_hook)(void);
+void (*g_port_ahead_blank_hook)(u32 blank);
+void (*g_port_ahead_done_hook)(void);
+PortAheadCounts g_port_ahead_counts;
+
+static s32 g_port_ahead_frames;
+static u8 *g_port_ahead_state;
+static s32 g_port_ahead_given_up;
+static u32 g_port_ahead_blanks;
 
 void port_StartGame(void (*function)(void)) {
     port_HostStartGame(function, PORT_STACK_ADDR + PORT_STACK_SIZE);
@@ -21,3 +47,98 @@ void port_StepGame(void) {
 }
 
 void port_EndStep(void) { port_HostLeaveGame(); }
+
+/* ---- run-ahead ---- */
+
+void port_SetRunAhead(s32 frames) {
+    g_port_ahead_frames = frames < 0                  ? 0
+                          : frames > PORT_AHEAD_MAX ? PORT_AHEAD_MAX
+                                                      : frames;
+}
+
+s32 port_GetRunAhead(void) { return g_port_ahead_frames; }
+
+/* An ahead step stops where it is: the host puts the state back, so
+ * nothing of where it stopped is kept (port_platform.h). */
+void port_GiveUpAhead(void) {
+    g_port_ahead_given_up = TRUE;
+    port_EndStep();
+}
+
+/* A vertical blank in an ahead step (clock.c). */
+void port_AheadBlank(u32 blank) {
+    if (++g_port_ahead_blanks >
+        (u32)g_port_ahead_frames * AHEAD_BLANKS_A_FRAME) {
+        port_GiveUpAhead();
+        return;
+    }
+    if (g_port_ahead_blank_hook != NULL) {
+        g_port_ahead_blank_hook(blank);
+    }
+}
+
+/* Whether frames may be run ahead at this boundary: not before the game
+ * has first read the pads, not in a step run again, and never where a
+ * step reaches another machine (the link cable; netplay has a loop of
+ * its own and never comes here). */
+static s32 port_MayRunAhead(void) {
+    return g_port_ahead_frames > 0 && !g_port_rerun && g_port_input_count > 0 &&
+           !port_LinkIsUp() && !port_IsNetplayOn();
+}
+
+void port_BeforeStep(void) {
+    u32 start;
+    s32 i;
+
+    g_port_unseen = FALSE;
+    if (g_port_boundary_hook != NULL) {
+        g_port_boundary_hook();
+    }
+    if (!port_MayRunAhead()) {
+        return;
+    }
+    if (g_port_ahead_state == NULL) {
+        g_port_ahead_state = port_HostAllocate(port_StateSize());
+        if (g_port_ahead_state == NULL) {
+            port_Log("rebushido: run-ahead: no memory for the state; off\n");
+            g_port_ahead_frames = 0;
+            return;
+        }
+    }
+    start = port_HostTicks();
+    port_StateSave(g_port_ahead_state);
+    g_port_ahead = TRUE;
+    g_port_ahead_given_up = FALSE;
+    g_port_ahead_blanks = 0;
+    for (i = 0; i < g_port_ahead_frames && !g_port_ahead_given_up; i++) {
+        port_StepGame();
+    }
+    if (!g_port_ahead_given_up && g_port_ahead_done_hook != NULL) {
+        g_port_ahead_done_hook();
+    }
+    g_port_ahead = FALSE;
+    port_StateLoad(g_port_ahead_state);
+    /* the step that follows has been drawn already, unless the frames
+     * ahead were given up: then it is drawn as ever */
+    g_port_unseen = !g_port_ahead_given_up;
+    g_port_ahead_counts.runs++;
+    if (g_port_ahead_given_up) {
+        g_port_ahead_counts.given_up++;
+    }
+    g_port_ahead_counts.ticks += port_HostTicks() - start;
+}
+
+void port_PrintAheadReport(void) {
+    const PortAheadCounts *counts = &g_port_ahead_counts;
+    u32 each;
+
+    if (counts->runs == 0) {
+        return;
+    }
+    each = counts->ticks / counts->runs;
+    port_Log("rebushido: run-ahead: %d frames at %u boundaries, %u given up "
+             "(a load, the movie, a card); %u.%03u ms a boundary\n",
+             g_port_ahead_frames, counts->runs, counts->given_up,
+             each / PORT_HOST_TICKS_PER_MICROSECOND / 1000U,
+             each / PORT_HOST_TICKS_PER_MICROSECOND % 1000U);
+}
