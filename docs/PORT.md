@@ -3716,9 +3716,53 @@ by three whatever his scale, `render_DrawSkinned`), and it writes its
 depth where the ground's is, so what the scene paints after it is held
 against him. In a picture between two frames (`gl_tween.c`) the bones
 and the camera are the two frames' mixed, the rotations made rotations
-again. The seam for the shadows: a shadow cast from the model would be
-drawn from the same layer's skinned mesh (`port_GlFighterDrawOne`), which
-`gl_shadow.c` does not use yet.
+again.
+
+**A joint as the game builds it.** The game makes a vertex of a joint as
+the sum of two bones' turns of two vectors, and its place by a third: a
+linear blend of bones cannot say that, and missed by up to 4 pixels in
+`port_game`'s fight. A file may carry each vertex's own sum, its *terms*
+(`_RB_TERM0` to `_RB_TERM7`: for each bone a vector and how much of the
+bone's place is in it), and the card adds them up on the bones the game
+posed. Held to the game's own projected corners (`--gl-fighter-pose`) at
+blank 3300 of `port_game`, every corner of both fighters has a vertex of
+the file within **0.31 pixels**; by the blend of the same file, 4.1. A
+file without terms is drawn by its blend, made into terms as it loads.
+
+**The weapons.** Each weapon in a hand, each worn at the waist (the
+scabbards: `weapon_QueueWorn`) and each lying loose is drawn from
+`models/Wnn.glb` where a mod has one, `nn` being the weapon model
+(`enum WeaponModel`, 00 to 57), into the same layer: the file's vertices
+are on bone 0 and every bone is given the weapon's world matrix, lit by
+the weapon's own lights. A weapon's node is made afresh in each frame's
+buffer, so its primitives are told by its address within the frame, and
+the model that weapon is by its place among the loaded ones
+(`g_resource_loaded_weapons`). Between two frames it is mixed as a
+fighter's bones are.
+
+**The game's own colours.** The game fades the fighters in and out and
+tints chanbara's opponents, the story's henchmen and the practice ninja
+by rewriting their colour tables in video memory (`model_TintOpponent`,
+the fades of `disp_`), which a PNG cannot follow. A file may carry the
+tables its texture was decoded through and a picture, in the texture's
+layout, of which entry each texel is (`extras.rb_palette`). Each frame
+the drawing adds to the texture the difference between each entry now in
+video memory and in the file; nothing is done while they are the same.
+Where the tables are now is found from the game's primitives the model
+stands in for: the one shift that takes every table they read to one of
+the file's (the second slot's are two pages to the right, the fogged
+model's in the fog's block, the weapons' where their group went), kept
+while the same model is drawn there. `port_game` had such a change in
+732 drawings of its first 3,300 blanks (the fight's fade in).
+
+**The shadows from the model.** With `shadows cast` (`gl_shadow.c`), a
+fighter or a weapon drawn from a model of its own casts the model: each
+triangle of it, posed by its terms on the frame's bones, is slid onto the
+ground along the game's sun as the game's faces are, in the place of the
+game's faces of that thing (`port_GlFighterCaster`,
+`port_GlFighterCastTriangles`). Its cloth is still the game's and casts
+its own faces. A shadow between two frames moves each triangle the way
+it went, as before, found again by its number.
 
 **The file** (`src/port/gl/gl_fighter_file.h`): glTF 2.0 binary, one skin
 whose joints are named `bone00` to `bone20`, vertices in the game's own
@@ -3735,25 +3779,48 @@ player's image and write into folders git ignores.
   a file: the body, read by emulating `render_DrawSkinnedMesh`'s five
   lists of a section and its carries, and the rigid parts of the bones,
   one mesh; the textures decoded through their colour tables from the
-  file's TIMs into one atlas. A joint's vertex is in the game the sum of
-  two bones' turns of two vectors, which a glTF skin cannot say; it gets
-  the two bones and the weight that come nearest over a spread of poses
-  about the bind pose (24 by default; the worst miss is printed, tens of
-  units for a pose far from the bind pose). `--pose` takes a bind pose the
+  file's TIMs into one atlas, with the tables and the picture of entries
+  (`rb_palette`). Every vertex has its terms; for anything else that
+  opens the file, a joint's vertex also gets the two bones and the weight
+  of a linear blend that come nearest over a spread of poses about the
+  bind pose (24 by default; the worst miss is printed, tens of units for
+  a pose far from the bind pose). `--weapons N|all` writes the weapons
+  (`W00` to `W57`) from the weapons' files. `--pose` takes a bind pose the
   port wrote: `rebushido-gl --gl-fighter-pose FOLDER,BLANK` writes each
   fighter's bones of the next frame, and the game's own projected corners
   of each of his primitives, `prims.txt`. Held to those corners the
   exporter's reading of the body is within **0.4 pixels at every corner**,
   the joints' included, for both fighters of `port_game`.
+- `tools/fighter_hd.py` makes the **hd mod**: every fighter and every
+  weapon at a higher definition, from the player's image into a folder
+  git ignores (`tmp/mods/hd/` by default), in one command and under three
+  minutes; the recipe, the numbers of each model, is
+  `tools/fighter_hd.json`. A model is welded (points within half a unit
+  made one, their terms averaged), creased where faces meet at more than
+  75 degrees (35 for a weapon) and along open edges, subdivided twice
+  (Catmull-Clark) with every vertex's terms and weights carried by the
+  same sums as its place -- the subdivision is linear in them, so the new
+  surface is at every pose the subdivision of the game's own posed mesh,
+  and needs at most eight bones a vertex -- then fitted, twelve rounds,
+  so that it passes through the game's own vertices (within 2.3 units,
+  most within a fifth) and its silhouette is the game's and not shrunk
+  inside it; its normals are smooth across the surface and hard across a
+  crease and where the game does not light a face. The texture is made
+  four times larger by Scale2x twice, which keeps an edge between two
+  colours sharp along a diagonal, then smoothed within each colour's
+  area; the colour tables' picture is kept as it is, so the tints reach
+  it. The port draws a texture so made smoothed and from mipmaps. A
+  fighter comes to 11,000 to 15,000 vertices and 16,000 to 22,000
+  triangles, against the game's 1,000; a weapon to about 1,500 triangles.
 - `tools/blender/fighter_view.py` renders a file in Blender, front and
-  side, with nothing shown; `tools/blender/fighter_rebuild.py` rebuilds a
-  fighter at a higher definition (welded into one surface, creased where
-  faces meet at more than 50 degrees and at open edges, subdivided twice,
-  the rig and its weights carried over); `tools/fighter_texture.py`
-  makes the atlas four times larger, its edges kept;
-  `tools/fighter_conform.py` makes what Blender wrote a file the port
-  reads (each vertex where glTF draws it at the bind pose, back into the
-  game's space, with the original's bind pose).
+  side, with nothing shown; `tools/blender/fighter_rebuild.py` was the
+  first rebuild, in Blender (it cannot carry the terms or the colour
+  tables' picture); `tools/fighter_conform.py` makes what Blender wrote,
+  for a model changed by hand, a file the port reads (each vertex where
+  glTF draws it at the bind pose, back into the game's space, with the
+  original's bind pose and colour tables' picture);
+  `tools/fighter_texture.py` makes an atlas larger for such a model
+  (`tools/blender/README.md`).
 
 **Measured.** The game's own models through this path against the
 remastered picture with the game's primitives, `port_game`'s fight at
@@ -3761,13 +3828,34 @@ scale 2, 27 pictures from blank 3000 to 4300: **2.05% of the pixels differ by mo
 between Gouraud shading of every face and the game's flat faces, the
 joints' linear blend, and edges. `port_gl_prove --quick` is what it was
 on `main` (its blocks check fails there too, with the same numbers).
+With the terms, the weapons and the colour tables, the game's own models
+and weapons through this path at blanks 3000 and 3300: 2.28% and 1.00%;
+the weapons and scabbards lie where the game's do to the pixel. Through
+the fight's fade in the picture's mean brightness is the game's to 0.4
+of 255 at every fourth blank.
 
-**What is not done.** The weapons (their nodes are written down,
-`PortFighterWeapon`, and the files would be `WEPaabb`'s meshes); the
-shadows from the model; a joint drawn exactly (two custom attributes and
-the game's sum would do it); the fades and tints the game makes by
-rewriting a model's colour tables (the Ninja's band, chanbara's
-opponents) do not reach a model's own PNG; and the tiny mode's model.
+**The hd mod, seen.** Every roster entry (`ROSTER_KANNUKI_STORY` to
+`ROSTER_LAST_2`, 33 of them, every model but chanbara's four) was put in
+`port_game`'s fight two by two (a `poke` of `config_roster_p1` and
+`_p2`), with every weapon and scabbard of those fights from the mod, and
+looked at at blanks 3300 and 3600: none torn, none with a vertex astray.
+With `shadows cast` the shadows are the models' (44,064 triangles a
+picture for two fighters and four weapons, against the game's 2,266
+faces), and the models are not darkened by them: what a model covers is
+marked in the shadows' mask as the game's faces are
+(`port_GlFighterDrawOccluders`).
+
+**What is not done.** The tiny mode's model; the cloth, which the game
+moves and draws itself, is still the game's own faces beside a smooth
+model; the order of a model against the game's own faces is per pixel,
+so a hakama's hem now hides the sandal it was painted under, and a
+sandal's sole that lies in the ground is cut by the ground's slots (both
+as before the hd mod); a texture a mod's model draws in a layout other
+than the atlas's does not take the game's tints; chanbara's opponents
+(`M302` to `M305`) were rebuilt and seen only in Blender, not in a
+fight, because no roster entry draws them. The rebuild
+cannot add what the game's mesh does not have: a face is still a few
+painted quads, and a fold of cloth is the texture's.
 
 ### What each later step needs
 

@@ -8,15 +8,40 @@ against the release's list). Every script here runs it with nothing shown:
 
 - `fighter_view.py IN.glb OUT.png`: the model from the front and the side.
 - `fighter_rebuild.py IN.glb OUT.glb [--levels 2] [--crease 50] [--texture BIG.png]`:
-  a fighter at a higher definition from the game's own (docs/PORT.md,
-  "The fighters' own models").
+  a fighter at a higher definition from the game's own, the first way it
+  was done (docs/PORT.md, "The fighters' own models").
 
-The whole of one fighter, from the player's image to a mod's file:
+## The hd mod: no Blender
 
-    python tools/fighter_export.py --models 3 --pose M100.pose.json --out OUT
-    python tools/fighter_texture.py OUT/M100.png OUT/M100_x4.png
-    blender ... fighter_rebuild.py -- OUT/M100.glb OUT/M100_blender.glb --texture OUT/M100_x4.png
-    python tools/fighter_conform.py OUT/M100_blender.glb mods/hd/models/M100.glb --original OUT/M100.glb
+The whole hd mod, every fighter and every weapon, is one command, and
+needs no Blender:
+
+    python tools/fighter_hd.py --image "Bushido Blade 2 (USA).cue" [--out tmp/mods/hd]
+
+Its recipe, the numbers for each model, is `tools/fighter_hd.json`. It
+does in Python what `fighter_rebuild.py` does in Blender (weld, crease,
+subdivide, texture four times larger), and more that Blender's glTF
+cannot carry: each vertex keeps the game's own sum of bones (its terms),
+so the rebuilt fighter bends at a joint exactly as the game's mesh does,
+subdivided; the surface is fitted to pass through the game's vertices;
+and the colour tables' picture is kept, so the game's tints and fades
+reach the model.
+
+## By hand in Blender
+
+For a model made or changed by hand, Blender is the tool, and the file
+goes back through `fighter_conform.py`:
+
+    python tools/fighter_export.py --models 3 --out OUT        (or a file of the hd mod)
+    blender ... (edit OUT/M100.glb, keep the armature and its bone names, export glTF)
+    python tools/fighter_conform.py EDITED.glb mods/mine/models/M100.glb --original OUT/M100.glb
+
+A conformed file is drawn by the linear blend of its weights (Blender has
+no way to keep the terms), keeps the original's colour tables' picture,
+and so takes the game's tints as long as the texture keeps the atlas's
+layout. `fighter_texture.py` makes an atlas larger for such a model.
+Weapons are `fighter_export.py --weapons N` (`W00` to `W57`), every vertex
+on bone 0.
 
 Nothing these write goes into the repository: it is made from the
 player's disc.

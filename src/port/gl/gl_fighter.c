@@ -101,6 +101,7 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glDepthFunc, (GLenum))                                            \
     GL(void, glDepthMask, (GLboolean))                                         \
     GL(void, glDrawBuffers, (GLsizei, const GLenum *))                         \
+    GL(void, glColorMask, (GLboolean, GLboolean, GLboolean, GLboolean))        \
     GL(void, glGenerateMipmap, (GLenum))                                       \
     GL(void, glGenTextures, (GLsizei, GLuint *))                               \
     GL(void, glBindTexture, (GLenum, GLuint))                                  \
@@ -192,6 +193,10 @@ typedef struct {
     GLuint texture[PORT_FIGHTER_FILE_PARTS];
     float inverse_bind[PORT_FIGHTER_FILE_JOINTS][16];
     s32 triangles;
+    /* the vertices and the indices kept, for the shadows cast from them */
+    s32 vertex_count;
+    PortFighterVertex *vertices;
+    u32 *indices;
     /* rb_palette: the picture of entries, and the tables as the file
      * has them (clut_count 0: none) */
     GLuint index_texture;
@@ -261,6 +266,10 @@ static struct {
     /* the fighters of this frame are drawn: the rest of their
      * primitives are only left out */
     s32 is_drawn;
+    /* where the layer was laid over the picture, and whether it was held
+     * against the ground's slots */
+    s32 laid[4];
+    s32 laid_order;
     /* a picture between two frames is being drawn, `phase` of the way */
     s32 tween_phase;
     /* the views of the last two frames the fighters were drawn in: the
@@ -744,6 +753,12 @@ static FighterModel *port_GlFighterLoad(FighterModel *model, const char *name) {
         }
     }
     model->triangles = file.index_count / 3;
+    /* kept: the shadows are cast from them (port_GlFighterCastTriangles) */
+    model->vertex_count = file.vertex_count;
+    model->vertices = file.vertices;
+    model->indices = file.indices;
+    file.vertices = NULL;
+    file.indices = NULL;
     model->clut_count = 0;
     if (file.clut_count > 0 && file.index.w > 0) {
         model->clut = malloc((size_t)file.clut_count * sizeof(*model->clut));
@@ -1365,6 +1380,13 @@ static void port_GlFighterDrawAll(
     glUniform2f(g_fighter.c_at_target, (GLfloat)picture.target_w,
                 (GLfloat)picture.target_h);
     glUniform1f(g_fighter.c_at_depth_range, PORT_GL_DEPTH_RANGE);
+    /* kept for the shadows' mask (port_GlFighterDrawOccluders) */
+    g_fighter.laid[0] = x;
+    g_fighter.laid[1] = y;
+    g_fighter.laid[2] = w;
+    g_fighter.laid[3] = h;
+    g_fighter.laid_order =
+        port_GlStageSaveFrame() && options.is_stage_depth ? 1 : 0;
     /* the depth is written whatever is there: the test is only how GL
      * lets a fragment write it */
     glEnable(GL_DEPTH_TEST);
@@ -1527,6 +1549,168 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
     }
     g_fighter.counts.left_out++;
     return TRUE;
+}
+
+/* ---- the shadows cast from the models (gl_fighter.h) ---- */
+
+void port_GlFighterDrawOccluders(u32 framebuffer) {
+    PortGlPicture picture;
+
+    if (!g_fighter.is_drawn || g_fighter.laid[2] <= 0) {
+        return;
+    }
+    port_GlGetPicture(&picture);
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    glViewport(0, 0, picture.target_w, picture.target_h);
+    glUseProgram(g_fighter.composite_program);
+    glActiveTexture(GL_TEXTURE0 + 2);
+    glBindTexture(GL_TEXTURE_2D, g_fighter.layer_color);
+    glActiveTexture(GL_TEXTURE0 + 3);
+    glBindTexture(GL_TEXTURE_2D, g_fighter.layer_depth_value);
+    glActiveTexture(GL_TEXTURE0 + 1);
+    glBindTexture(GL_TEXTURE_2D, picture.slot_texture);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(g_fighter.c_at_layer, 2);
+    glUniform1i(g_fighter.c_at_layer_depth, 3);
+    glUniform1i(g_fighter.c_at_ground_slots, 1);
+    glUniform1i(g_fighter.c_at_ground_order, g_fighter.laid_order);
+    glUniform2f(g_fighter.c_at_origin, (GLfloat)g_fighter.laid[0],
+                (GLfloat)g_fighter.laid[1]);
+    glUniform4f(g_fighter.c_at_rect, (GLfloat)g_fighter.laid[0],
+                (GLfloat)g_fighter.laid[1], (GLfloat)g_fighter.laid[2],
+                (GLfloat)g_fighter.laid[3]);
+    glUniform2f(g_fighter.c_at_target, (GLfloat)picture.target_w,
+                (GLfloat)picture.target_h);
+    glUniform1f(g_fighter.c_at_depth_range, PORT_GL_DEPTH_RANGE);
+    /* the alpha alone, as the game's own faces mark it (gl_draw.c,
+     * port_GlDrawOccluders) */
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_BLEND);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+    glBindVertexArray(g_fighter.quad_array);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
+    port_GlForgetState();
+}
+
+s32 port_GlFighterCaster(PortAddress object) {
+    s32 slot;
+    s32 i;
+
+    if (!port_GlFighterIsOn() || object == 0) {
+        return -1;
+    }
+    for (slot = 0; slot < PORT_FIGHTER_SLOTS; slot++) {
+        const PortFighterView *view = &g_fighter.latest[slot];
+
+        if (view->model_id >= 0 && object >= view->nodes_from &&
+            object < view->nodes_to) {
+            /* the cloth is the game's own, and casts its own */
+            return !port_FighterIsCloth(object) &&
+                           port_GlFighterModel(view->model_id) != NULL
+                       ? slot
+                       : -1;
+        }
+    }
+    for (i = 0; i < g_fighter.latest_weapons; i++) {
+        if (g_fighter.latest_weapon[i].node == object) {
+            return port_GlFighterWeaponModel(
+                       g_fighter.latest_weapon[i].weapon) != NULL
+                       ? PORT_FIGHTER_SLOTS + i
+                       : -1;
+        }
+    }
+    return -1;
+}
+
+s32 port_GlFighterCastTriangles(
+    s32 caster, PortGlFighterEmit emit, void *context) {
+    static float *places;
+    static s32 room;
+    const FighterModel *model;
+    FighterPose pose;
+    s32 i;
+
+    if (caster < PORT_FIGHTER_SLOTS) {
+        const PortFighterView *view = &g_fighter.latest[caster];
+
+        model = port_GlFighterModel(view->model_id);
+        if (model == NULL) {
+            return 0;
+        }
+        port_GlFighterPoseOf(&pose, view, NULL, 0.0);
+    } else {
+        const PortFighterWeapon *weapon =
+            &g_fighter.latest_weapon[caster - PORT_FIGHTER_SLOTS];
+        double rotation[9];
+
+        model = port_GlFighterWeaponModel(weapon->weapon);
+        if (model == NULL) {
+            return 0;
+        }
+        port_GlFighterMixRotation(
+            rotation, weapon->world.m, weapon->world.m, 0.0);
+        for (i = 0; i < PORT_FIGHTER_BONES; i++) {
+            s32 k;
+
+            memcpy(pose.bone_rotation[i], rotation, sizeof(rotation));
+            for (k = 0; k < 3; k++) {
+                pose.bone_place[i][k] = (double)weapon->world.t[k];
+            }
+        }
+    }
+    if (model->vertices == NULL) {
+        return 0;
+    }
+    if (room < model->vertex_count) {
+        float *more =
+            realloc(places, (size_t)model->vertex_count * 3 * sizeof(float));
+
+        if (more == NULL) {
+            return 0;
+        }
+        places = more;
+        room = model->vertex_count;
+    }
+    /* each vertex as the card places it: the sum of its terms */
+    for (i = 0; i < model->vertex_count; i++) {
+        const PortFighterVertex *v = &model->vertices[i];
+        double p[3] = {0.0, 0.0, 0.0};
+        s32 j;
+        s32 k;
+
+        for (j = 0; j < PORT_FIGHTER_TERMS; j++) {
+            const double *r = pose.bone_rotation[v->term_joint[j]];
+            const double *t = pose.bone_place[v->term_joint[j]];
+            const float *term = v->term[j];
+
+            if (term[0] == 0.0f && term[1] == 0.0f && term[2] == 0.0f &&
+                term[3] == 0.0f) {
+                continue;
+            }
+            for (k = 0; k < 3; k++) {
+                p[k] += r[k * 3] * term[0] + r[k * 3 + 1] * term[1] +
+                        r[k * 3 + 2] * term[2] + t[k] * term[3];
+            }
+        }
+        for (k = 0; k < 3; k++) {
+            places[i * 3 + k] = (float)p[k];
+        }
+    }
+    for (i = 0; i < model->triangles; i++) {
+        float p[3][3];
+        s32 c;
+
+        for (c = 0; c < 3; c++) {
+            memcpy(p[c], places + model->indices[i * 3 + c] * 3,
+                   3 * sizeof(float));
+        }
+        emit(context, p, i);
+    }
+    return model->triangles;
 }
 
 void port_GlFighterTween(s32 phase) {

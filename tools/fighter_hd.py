@@ -19,7 +19,9 @@ What is done to a model, each step faithful to the game's own:
     vector, which the port draws as they are;
   - welded: pieces that meet at one place are made one vertex (`weld`, in
     the game's units), their terms averaged, so that a seam the game draws
-    as two pieces is one surface that bends as both;
+    as two pieces is one surface that bends as both; and the points of the
+    pieces' open edges within `seam` of each other the same, which closes
+    the seams where two pieces nearly meet;
   - creased where faces meet at more than `crease` degrees, and along open
     edges, so that a sleeve's hem, a sash's edge or a blade's edge stays
     sharp;
@@ -64,7 +66,7 @@ TERMS = slice(3, 3 + 4 * BONES)
 WEIGHTS = slice(3 + 4 * BONES, 3 + 5 * BONES)
 WIDTH = 3 + 5 * BONES
 
-DEFAULTS = {'weld': 0.5, 'crease': 50.0, 'levels': 2, 'fit': 4, 'scale': 4, 'upscale': 'scale2x'}
+DEFAULTS = {'weld': 0.5, 'seam': 1.5, 'crease': 50.0, 'levels': 2, 'fit': 12, 'scale': 4, 'upscale': 'scale2x'}
 
 
 # ---- the mesh ----
@@ -100,10 +102,21 @@ def edge(a, b):
     return (a, b) if a < b else (b, a)
 
 
-def weld(mesh, dist):
-    """Points within `dist` of each other made one, their numbers averaged;
-    faces left with fewer than three points, and a face that is another's
-    again (the game's two-sided faces are drawn so), dropped."""
+def open_points(mesh):
+    """The points on an open edge: where two of the game's pieces meet
+    without sharing their points, or a piece ends."""
+    out = set()
+    for e, fs in edge_faces(mesh).items():
+        if len(fs) == 1:
+            out.update(e)
+    return out
+
+
+def weld(mesh, dist, only=None):
+    """Points within `dist` of each other made one, their numbers averaged
+    (with `only`, of those points alone); faces left with fewer than three
+    points, and a face that is another's again (the game's two-sided faces
+    are drawn so), dropped."""
     n = len(mesh.X)
     parent = list(range(n))
 
@@ -117,6 +130,8 @@ def weld(mesh, dist):
     size = max(dist, 1e-6)
     P = mesh.X[:, PLACE]
     for i in range(n):
+        if only is not None and i not in only:
+            continue
         key = tuple(np.floor(P[i] / size).astype(int))
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
@@ -512,6 +527,10 @@ def build(md, params, bones, out_dir):
     started = time.time()
     mesh = mesh_of(md)
     mesh, welded = weld(mesh, params['weld'])
+    # the seams: open edges of pieces that come within `seam` units of
+    # each other are closed into one surface
+    mesh, sewn = weld(mesh, params['seam'], open_points(mesh))
+    welded += sewn
     creased = crease(mesh, params['crease'])
     rebuilt, miss = rebuild(mesh, params['levels'], params['fit'])
     hd = model_of(md, rebuilt)

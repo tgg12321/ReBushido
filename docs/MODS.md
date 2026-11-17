@@ -34,8 +34,10 @@ mods/
   picture").
 - Each folder of `mods/` is one mod. Its kinds of file are folders of
   their own: `textures/` (read and used), `models/` (the fighters'
-  `.glb` models, by the file's name on the disc, `M100.glb`: PORT.md,
-  "The fighters' own models"), `music/`,
+  `.glb` models, by the file's name on the disc, `M100.glb`, and the
+  weapons', by the weapon model's number, `W00.glb` to `W57.glb`: PORT.md,
+  "The fighters' own models"; `tools/fighter_hd.py` makes a whole mod of
+  them, the hd mod, from your disc), `music/`,
   `stages/` (read, not used yet). Under a kind's folder the files may be
   in folders of any names, four deep.
 - A file's **key** is its name without its ending, in small letters,

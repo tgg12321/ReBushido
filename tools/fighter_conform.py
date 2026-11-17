@@ -186,7 +186,17 @@ def main():
         raise SystemExit('fighter_conform: no picture in %s' % args.src)
     extras = dict(extras)
     extras['conformed_from'] = os.path.basename(args.src)
-    fe.write_glb(args.out, extras['model_file'], bones, bind_rot, bind_pos, vertices, triangles, image, extras)
+    # the colour tables' picture of the original (rb_palette), whose layout
+    # the texture keeps, so that the game's tints still reach the model
+    index_png = None
+    palette = extras.get('rb_palette', {})
+    if 'image' in palette:
+        _, original_blob = read_glb(args.original)
+        view = original['bufferViews'][original['images'][palette['image']]['bufferView']]
+        start = view.get('byteOffset', 0)
+        index_png = original_blob[start:start + view['byteLength']]
+    fe.write_glb(args.out, extras['model_file'], bones, bind_rot, bind_pos, vertices, triangles, image, extras,
+                 index_png=index_png)
     print('fighter_conform: %d vertices, %d triangles -> %s' % (len(vertices), len(triangles), args.out))
 
 

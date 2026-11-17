@@ -18,9 +18,11 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_fighter.h"
 #include "gl_shadow.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
+#include "port_fighter.h"
 #include "port_gpu.h"
 #include "port_remaster.h"
 
@@ -134,7 +136,10 @@ PORT_GL_SHADOW_FUNCTIONS
  * whole fight's worst was measured at 105 primitives, docs/PORT.md); the
  * fighters' own faces, cast, to a few thousand. */
 #define TRIANGLES_MAX 16384
-#define POINTS_MAX (3 * TRIANGLES_MAX)
+/* ... and with the fighters drawn from models of their own, which are
+ * cast whole (gl_fighter.h), a few tens of thousands */
+#define MODEL_TRIANGLES_MAX 131072
+#define POINTS_MAX (3 * MODEL_TRIANGLES_MAX)
 /* Writes of video memory into the picture after the shadows, which cover
  * them: a frame has none in a fight. More than this are taken together
  * as the one rectangle holding them all. */
@@ -222,6 +227,7 @@ static struct {
     s32 older;
     s32 cast_faces;
     s32 cast_orphans;
+    u32 cast_model_triangles; /* cast from the models, the run's */
     s32 cast_triangles;
     u32 cast_fallbacks;
     u32 cast_unpaired;
@@ -394,7 +400,7 @@ const char *port_GlShadowStart(void *(*getproc)(const char *name)) {
     for (i = 0; i < 2; i++) {
         if (g_shadow.cast[i].triangle == NULL) {
             g_shadow.cast[i].triangle =
-                malloc(TRIANGLES_MAX * sizeof(CastTriangle));
+                malloc(MODEL_TRIANGLES_MAX * sizeof(CastTriangle));
             if (g_shadow.cast[i].triangle == NULL) {
                 port_GlShadowSay("there is no memory for the shadows", NULL);
                 return g_shadow.problem;
@@ -507,6 +513,8 @@ s32 port_GlShadowCastTriangles(void) { return g_shadow.cast_triangles; }
 u32 port_GlShadowCastFallbacks(void) { return g_shadow.cast_fallbacks; }
 
 u32 port_GlShadowCastUnpaired(void) { return g_shadow.cast_unpaired; }
+
+u32 port_GlShadowCastFromModels(void) { return g_shadow.cast_model_triangles; }
 
 s32 port_GlShadowIsSoft(void) {
     return g_shadow.is_started && g_shadow.strength > 0;
@@ -834,6 +842,10 @@ static void port_GlShadowPaint(void) {
     port_GlShadowScissorBox(&cleared);
     g_shadow.shown_occluders = port_GlOccluderCount();
     port_GlDrawOccluders(g_shadow.framebuffer);
+    /* ... and the fighters drawn from models of their own, whose faces
+     * the picture did not draw */
+    port_GlShadowScissorBox(&cleared);
+    port_GlFighterDrawOccluders(g_shadow.framebuffer);
 
     /* the darkening, into the picture */
     glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
@@ -926,8 +938,47 @@ static s32 port_GlShadowInvert(const double *m, double *out) {
  * scaled back. Then it is light_ProjectShadow's arithmetic, in floating
  * point and on every corner: x and z move by the height above the
  * caster's ground times the sun's slope, and y becomes the ground's. */
+/* A triangle of a model's, as the frame posed it, slid onto the ground
+ * as port_GlShadowGather slides a face (port_GlFighterCastTriangles). */
+typedef struct {
+    CastFrame *frame;
+    s32 caster;
+    double ground_y;
+    double x_shear;
+    double z_shear;
+} ModelCast;
+
+static void port_GlShadowCastModel(
+    void *context, const float p[3][3], s32 index) {
+    ModelCast *cast = context;
+    CastTriangle *to;
+    s32 k;
+
+    if (cast->frame->count >= MODEL_TRIANGLES_MAX) {
+        g_shadow.lost++;
+        return;
+    }
+    to = &cast->frame->triangle[cast->frame->count++];
+    for (k = 0; k < 3; k++) {
+        double above = (double)p[k][1] - cast->ground_y;
+
+        to->p[k][0] = (float)((double)p[k][0] + above * cast->x_shear);
+        to->p[k][1] = (float)cast->ground_y;
+        to->p[k][2] = (float)((double)p[k][2] + above * cast->z_shear);
+    }
+    /* not an address: the model's triangle, found again in the next
+     * frame by its number */
+    to->group = (PortAddress)(cast->caster + 1);
+    to->face = index;
+    to->part = 0;
+}
+
 static void port_GlShadowGather(CastFrame *frame) {
     const PortShadowCaster *face;
+    /* the things drawn from models of their own: the ground each casts
+     * onto, by the first of its faces, or no ground yet */
+    s32 model_ground[PORT_FIGHTER_SLOTS + PORT_FIGHTER_WEAPONS];
+    s32 has_ground[PORT_FIGHTER_SLOTS + PORT_FIGHTER_WEAPONS];
     s32 faces = 0;
     double r[9];
     double back[9];
@@ -956,15 +1007,25 @@ static void port_GlShadowGather(CastFrame *frame) {
     x_shear = (double)shear_x / 4096.0;
     z_shear = (double)shear_z / 4096.0;
     g_shadow.cast_faces = faces;
+    memset(has_ground, 0, sizeof(has_ground));
     for (i = 0; i < faces; i++, face++) {
         static const s32 corner[2][3] = {{0, 1, 2}, {1, 3, 2}};
         float flat[PORT_REMASTER_CORNERS][3];
+        s32 caster = port_GlFighterCaster(face->object);
         s32 ground_y;
         s32 halves;
         s32 j;
 
         if (!port_RemasterCasterGround(face->object, &ground_y)) {
             g_shadow.cast_orphans++;
+            continue;
+        }
+        if (caster >= 0) {
+            /* cast from the model instead, after the faces */
+            if (!has_ground[caster]) {
+                has_ground[caster] = TRUE;
+                model_ground[caster] = ground_y;
+            }
             continue;
         }
         for (j = 0; j < face->count; j++) {
@@ -1006,6 +1067,20 @@ static void port_GlShadowGather(CastFrame *frame) {
             to->face = face->face;
             to->part = j;
         }
+    }
+    for (i = 0; i < PORT_FIGHTER_SLOTS + PORT_FIGHTER_WEAPONS; i++) {
+        ModelCast cast;
+
+        if (!has_ground[i]) {
+            continue;
+        }
+        cast.frame = frame;
+        cast.caster = i;
+        cast.ground_y = (double)model_ground[i];
+        cast.x_shear = x_shear;
+        cast.z_shear = z_shear;
+        g_shadow.cast_model_triangles +=
+            port_GlFighterCastTriangles(i, port_GlShadowCastModel, &cast);
     }
     frame->is_valid = frame->count > 0;
 }
