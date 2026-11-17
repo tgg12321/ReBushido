@@ -4190,7 +4190,26 @@ Remastered with 2, 82 of 82; with 1, 78 of 82, the other four one frame
 (blanks 3000 and 3001) where 20 pixels of 307,200 differ by up to 40 of
 255 in a channel.
 
-**What it costs** COSTS
+**What it costs.** The headless 64-bit program with `port_game`'s plan
+(2,324 boundaries), on this machine with others' builds running (a load
+of 15 to 55, so a millisecond either way is noise), the run's processor
+time and the time the frames ahead took a boundary, saving and putting
+back the state's 5 MB included:
+
+| | processor, whole run | added a boundary | the frames ahead, a boundary |
+| --- | --- | --- | --- |
+| `-O1`, `run_ahead 0` | 5.2 to 5.8 s | | |
+| `-O1`, `run_ahead 1` | 12.1 to 12.3 s | 2.9 ms | 4.1 to 4.5 ms |
+| `-O1`, `run_ahead 2` | 16.8 to 17.4 s | 4.9 ms | 7.1 to 8.2 ms |
+| `-O2`, `run_ahead 0` | 4.4 to 4.5 s | | |
+| `-O2`, `run_ahead 1` | 10.4 to 11.6 s | 2.8 ms | 4.1 ms |
+| `-O2`, `run_ahead 2` | 14.2 to 17.1 s | 4.6 ms | 6.1 to 8.6 ms |
+
+The 64-bit Windows program without a window, run natively: 5.1 ms a
+boundary with 2. A fight's boundary comes every 33 ms and a menu's every
+17, so on this machine 2 fits in both with room; the card's share (the
+frames ahead drawn by it, with 2 one of them twice) is for a real card to
+say.
 
 **What only a screen shows**: whether the driver queues pictures with
 `low_latency` off, what Windows' compositor adds to a window (a
