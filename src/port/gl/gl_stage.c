@@ -217,6 +217,10 @@ PORT_GL_STAGE_FUNCTIONS
  * The clip is at half of it (the plane is `z - near`, which the card
  * tests against `-w`). */
 #define NEAR_PLANE 16.0f
+/* How far back a tile's seam number pushes its faces, in world units a
+ * number (port_GlStageSeams): sixteen steps of the depth buffer's, which
+ * holds a 64th of a unit. */
+#define SEAM_STEP 0.25f
 
 /* The most tiles a stage has (STAGE_MAX_TILES), rounded up so that which
  * of them are drawn opened up fits in whole words. */
@@ -290,6 +294,7 @@ static struct {
     GLint at_fog_rect;
     GLint at_depth_shift;
     GLint at_cutoff;
+    GLint at_unit;
     /* the mesh as it stands */
     s32 version; /* which stage's data it was built from */
     PortAddress tiles;
@@ -338,7 +343,9 @@ static const char g_stage_vertex_text[] =
     "uniform float u_near;\n"
     "uniform int u_depth_shift;\n"
     "uniform int u_cutoff;\n"
+    "uniform float u_unit;\n" /* a seam's step, in the tiles' scale */
     "out vec2 v_texture;\n"
+    "flat out float v_push;\n"
     "out float v_depth;\n"
     "flat out int v_cull;\n"
     /* a tile's face has one colour: there is nothing to interpolate */
@@ -389,6 +396,17 @@ static const char g_stage_vertex_text[] =
     "    gl_Position = vec4(at / u_target - v.z, v.z - u_near, v.z);\n"
     "    v_texture = a_texture;\n"
     "    v_depth = v.z;\n"
+    /* Where two tiles lie over each other (port_GlStageSeams) their
+     * faces are the one plane, and the depth's rounding alone would say
+     * which a pixel shows, flipping pixel by pixel as the camera moves.
+     * The console painted the face sorted nearer -- the one whose
+     * farthest corner is nearer -- over the other, so each face is
+     * pushed back by a 256th of that corner's depth: the nearer face
+     * wins the strip, as on the console, by a margin that grows with
+     * the depth as the rounding does. Where the two farthest corners are
+     * as far, the tile's seam number settles it, a quarter of a world
+     * unit a number. */
+    "    v_push = max(far, 0.0) / 256.0 + float(a_info.z) * u_unit;\n"
     "    v_color = vec3(a_color.xyz);\n"
     "    v_flags = a_color;\n"
     "    v_page = a_page;\n"
@@ -409,6 +427,7 @@ static const char g_stage_fragment_text[] =
     "uniform float u_depth;\n" /* what a depth is divided by */
     "in vec2 v_texture;\n"
     "in float v_depth;\n"
+    "flat in float v_push;\n"
     "flat in int v_cull;\n"
     "flat in vec3 v_color;\n"
     "flat in uvec4 v_flags;\n"
@@ -572,7 +591,7 @@ static const char g_stage_fragment_text[] =
      * leaves it: a ground seen almost edge on reaches to the far end of
      * the stage, and a depth that falls off as one over the distance has
      * nothing left out there to tell two faces apart by. */
-    "    gl_FragDepth = clamp(v_depth / u_depth, 0.0, 1.0);\n"
+    "    gl_FragDepth = clamp((v_depth + v_push) / u_depth, 0.0, 1.0);\n"
     "}\n";
 
 /* ---- starting ---- */
@@ -695,6 +714,7 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
     AT(at_fog_rect, "u_fog_rect");
     AT(at_depth_shift, "u_depth_shift");
     AT(at_cutoff, "u_cutoff");
+    AT(at_unit, "u_unit");
 #undef AT
     glGenBuffers(1, &g_stage.buffer);
     glGenVertexArrays(1, &g_stage.array);
@@ -1132,6 +1152,71 @@ static void port_GlStageTile(s32 tile, const StageTile *at) {
     }
 }
 
+/* Which seam number each tile's faces are pushed back by (info[2]).
+ * Every tile is a cell of 2,000 units, but its mesh is 2,040 across, so
+ * it lies over its neighbours' by a strip 40 units wide on every side.
+ * On the console the painter's order hid that; in one buffer with a
+ * depth test the two tiles' faces in the strip are the same plane, and
+ * which of them a pixel shows is left to the rounding of each one's
+ * depth, which flips pixel by pixel as the camera moves. The shader
+ * pushes each face back by a share of its farthest corner's depth, so
+ * that the face the console sorted nearer wins the strip as it did
+ * there; this number is for when the two are as far, a camera looking
+ * straight along the seam. Every tile gets a small one, no two tiles
+ * whose ground overlaps the same one (a greedy colouring of the tiles'
+ * footprints), and the lower number wins. */
+static void port_GlStageSeams(s32 count) {
+    static s32 low_x[TILES_MAX];
+    static s32 high_x[TILES_MAX];
+    static s32 low_z[TILES_MAX];
+    static s32 high_z[TILES_MAX];
+    static u8 seam[TILES_MAX];
+    s32 i;
+    s32 j;
+
+    for (i = 0; i < count; i++) {
+        low_x[i] = low_z[i] = 0x7FFFFFFF;
+        high_x[i] = high_z[i] = -0x7FFFFFFF;
+    }
+    for (i = 0; i < g_stage.built; i++) {
+        const StageVertex *one = &g_stage.building[i];
+        s32 x = (s32)one->x;
+        s32 z = (s32)one->z;
+        s32 tile = one->tile;
+
+        if (x < low_x[tile]) {
+            low_x[tile] = x;
+        }
+        if (x > high_x[tile]) {
+            high_x[tile] = x;
+        }
+        if (z < low_z[tile]) {
+            low_z[tile] = z;
+        }
+        if (z > high_z[tile]) {
+            high_z[tile] = z;
+        }
+    }
+    for (i = 0; i < count; i++) {
+        u32 taken = 0;
+        s32 number = 0;
+
+        for (j = 0; j < i; j++) {
+            if (low_x[i] < high_x[j] && low_x[j] < high_x[i] &&
+                low_z[i] < high_z[j] && low_z[j] < high_z[i] && seam[j] < 32) {
+                taken |= 1u << seam[j];
+            }
+        }
+        while (number < 31 && (taken & (1u << number)) != 0) {
+            number++;
+        }
+        seam[i] = (u8)number;
+    }
+    for (i = 0; i < g_stage.built; i++) {
+        g_stage.building[i].info[2] = seam[g_stage.building[i].tile];
+    }
+}
+
 /* The whole of the stage's ground into one vertex buffer. */
 static void port_GlStageBuild(const PortStageView *view) {
     s32 count = 0;
@@ -1151,6 +1236,7 @@ static void port_GlStageBuild(const PortStageView *view) {
     for (i = 0; i < count; i++) {
         port_GlStageTile(i, &tiles[i]);
     }
+    port_GlStageSeams(count);
     g_stage.vertex_count = g_stage.built;
     g_stage.tiles = (PortAddress)tiles;
     g_stage.tile_count = count;
@@ -1287,6 +1373,9 @@ static void port_GlStageDrawMesh(
         g_stage.at_depth, DEPTH_RANGE / (GLfloat)(1 << (view->far_shift & 31)));
     glUniform1i(g_stage.at_depth_shift, view->depth_shift & 31);
     glUniform1i(g_stage.at_cutoff, view->ot_cutoff);
+    /* a tile's seam number is a quarter of a world unit (SEAM_STEP) */
+    glUniform1f(
+        g_stage.at_unit, SEAM_STEP / (GLfloat)(1 << (view->far_shift & 31)));
     glUniform1i(g_stage.at_fog_levels, view->fog_levels);
     glUniform1iv(g_stage.at_fog_slot, 32, slot);
     glUniform2iv(g_stage.at_fog_clut, PORT_STAGE_FOG_LEVELS + 1, clut);
