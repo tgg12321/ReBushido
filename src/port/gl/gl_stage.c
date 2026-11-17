@@ -1050,7 +1050,7 @@ typedef struct {
     s16 page[4];
     u8 info[4];
     s16 normal[3]; /* the record's, which the face is lit from */
-    u8 box[4]; /* its texture points' least and most */
+    u8 box[4];     /* its texture points' least and most */
     /* the face's corners in the world, in the order the record has
      * them, the fourth the third's again for a triangle */
     GLfloat corner[4][3];
