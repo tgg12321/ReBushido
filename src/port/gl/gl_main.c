@@ -1104,11 +1104,13 @@ static void port_GlQuit(s32 code) {
     if (port_GlShadowIsCast()) {
         fprintf(stderr,
                 "gl run shadows cast faces %d orphans %d triangles %d "
-                "fallbacks %u unpaired %u lost %u from_models %u\n",
+                "fallbacks %u unpaired %u lost %u from_models %u at_feet %u "
+                "floor_faces %u\n",
                 port_GlShadowCastFaces(), port_GlShadowCastOrphans(),
                 port_GlShadowCastTriangles(), port_GlShadowCastFallbacks(),
                 port_GlShadowCastUnpaired(), port_RemasterCasterLost(),
-                port_GlShadowCastFromModels());
+                port_GlShadowCastFromModels(), port_GlShadowCastFeet(),
+                port_GlShadowFloorFaces());
     }
     if (g_run.compared != 0) {
         fprintf(stderr,

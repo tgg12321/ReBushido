@@ -4295,7 +4295,37 @@ which near the soles give one answer one picture and the other the next.
 Measured on `port_game`'s fight at scale 2, 48 consecutive pictures of
 four a frame, both fighters from the `hd` mod and `shadows cast`: before,
 16,790 of the fighters' pixels a picture were darkened and 231 of them
-toggled between two pictures; after, none of either.
+toggled between two pictures; after, none of either. The same unmarked
+mask is what darkened a fighter lying on the floor with his own shadow
+and a fighter with the other's (the owner's two reports after it): over
+`port_game`'s kill, 52 pictures of two a frame, 3,466 pixels a picture
+of a fighter, his weapon or the HUD lie under a silhouette and are kept
+out of the darkening, the body on the floor among them, and the shadow
+lies on the floor about him.
+
+**Floors that are not tiles.** The darkening falls on the stage's tiles
+(the ground's mesh) and on nothing else of the stage: everything else of
+the scene is marked in the mask as something standing in the shadow.
+Some stages build floor a fighter stands on as pieces of the scene and
+not as tiles -- the kabuki stage's boards, the dojo's, the lost bridge's
+-- and there a fighter's shadow vanished wherever it fell on them. A
+face of the stage's pieces that lies level, within 30 degrees, is now
+ground to the shadows (`port_GlShadowIsFloor`, `gl_shadow.c`: its
+corners taken back into the world by the stage's view). Faces taken
+for floor over a stage's tour: the Meikyokan dojo 3,656, the lost bridge
+2,642, the kabuki stage 1,658; the Tatara shrine, the castle rooftop
+and the terraced fields none, their floors being tiles. On the kabuki
+stage's tour, 177,045 pixels were darkened and none of them is wholly
+something not ground; the darkest is 0.297 of what was there.
+
+**A body the game casts no shadow of.** The game's shadow nodes say what
+casts a shadow and onto what ground, and on some floors the nodes of a
+fighter's body are not drawn at all, leaving his weapon's shadow and
+nothing else -- which is what the owner's picture shows, though the
+prover's tours of the stages measured here never came to such a frame.
+A fighter drawn from a model whose faces came this frame with no ground
+now has his shadow laid on the floor his soles are on, the model's
+lowest point (`at_feet` in the prover's line).
 
 **What is not done.** The tiny mode's model; the cloth, which the game
 moves and draws itself, is still the game's own faces beside a smooth
