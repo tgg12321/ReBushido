@@ -320,6 +320,73 @@ static void test_Keys(void) {
     test_PrintKey("eight", &first);
 }
 
+/* ---- the key of a page of the scene ---- */
+
+static void test_PrintPageKey(const char *what, const PortTexturePage *page) {
+    char name[PORT_MOD_KEY_SIZE];
+
+    port_TexturePageKeyName(
+        port_TexturePageKey(g_vram, page), page, name, sizeof(name));
+    test_Print("key %s %s\n", what, name);
+}
+
+/* The stage's own pixels: x 640 to 663, y 0 to 20, as a TIM of 24 pixels
+ * by 21 would make them (gl_scene.c). */
+static void test_PageKeys(void) {
+    u8 *own = test_Alloc(VRAM_WORDS);
+    PortTexturePage page;
+    u64 key;
+    s32 x;
+    s32 y;
+
+    for (y = 0; y <= 20; y++) {
+        for (x = 640; x <= 663; x++) {
+            own[y * PORT_VRAM_WIDTH + x] = 1;
+        }
+    }
+    page.bits = PORT_MOD_TEXELS_4;
+    page.page_x = 640;
+    page.page_y = 0;
+    page.clut_x = 0;
+    page.clut_y = 480;
+    page.own = own;
+    CHECK(port_TexturePageFits(&page));
+    CHECK_EQ(port_TexturePagePixel(&page, 255), 63);
+    key = port_TexturePageKey(g_vram, &page);
+    test_PrintPageKey("page_own", &page);
+    /* a pixel of the page that is not the stage's own is no part of it:
+     * whatever the menus left there */
+    g_vram[100 * PORT_VRAM_WIDTH + 650] ^= 0x1234;
+    g_vram[5 * PORT_VRAM_WIDTH + 700] ^= 0x1234;
+    CHECK(port_TexturePageKey(g_vram, &page) == key);
+    g_vram[100 * PORT_VRAM_WIDTH + 650] ^= 0x1234;
+    g_vram[5 * PORT_VRAM_WIDTH + 700] ^= 0x1234;
+    /* one of its own texels, or a colour of its table, is */
+    g_vram[20 * PORT_VRAM_WIDTH + 663] ^= 0x0100;
+    CHECK(port_TexturePageKey(g_vram, &page) != key);
+    g_vram[20 * PORT_VRAM_WIDTH + 663] ^= 0x0100;
+    g_vram[480 * PORT_VRAM_WIDTH + 15] ^= 1;
+    CHECK(port_TexturePageKey(g_vram, &page) != key);
+    g_vram[480 * PORT_VRAM_WIDTH + 15] ^= 1;
+    CHECK(port_TexturePageKey(g_vram, &page) == key);
+    /* every pixel its own; eight bits, its 256 colours */
+    page.own = NULL;
+    test_PrintPageKey("page_all", &page);
+    page.bits = PORT_MOD_TEXELS_8;
+    page.page_x = 768;
+    page.page_y = 256;
+    page.clut_x = 256;
+    page.clut_y = 481;
+    test_PrintPageKey("page_eight", &page);
+    /* a page that would wrap round video memory's edge has none */
+    page.page_x = 960;
+    CHECK(!port_TexturePageFits(&page));
+    page.bits = PORT_MOD_TEXELS_4;
+    CHECK(port_TexturePageFits(&page));
+    page.page_y = 300;
+    CHECK(!port_TexturePageFits(&page));
+}
+
 /* ---- fades ---- */
 
 /* A colour of 15 bits from its three parts and its top bit. */
@@ -541,6 +608,7 @@ void test_Main(void) {
     test_Manifest();
     test_Folder();
     test_Keys();
+    test_PageKeys();
     test_Fades();
     test_WritePng();
     test_ReadPngs();

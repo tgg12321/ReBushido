@@ -76,7 +76,33 @@ def expected_keys():
     out['window'] = key_name(vram, 4, 640, 0, 0, 0, 4, 2, 0, 480, (0xF0, 5, 0xF8, 9))
     out['sixteen'] = key_name(vram, 16, 100, 200, 0, 0, 20, 3, 0, 0, (WIDTH - 1, 0, HEIGHT - 1, 0))
     out['eight'] = key_name(vram, 8, 320, 64, 3, 1, 9, 4, 16, 500)
+    # the scene's pages (docs/MODS.md, "The scene's textures by page"): the
+    # stage's own pixels are x 640 to 663, y 0 to 20
+    own = set((x, y) for x in range(640, 664) for y in range(21))
+    out['page_own'] = page_key_name(vram, 4, 640, 0, 0, 480, own)
+    out['page_all'] = page_key_name(vram, 4, 640, 0, 0, 480, None)
+    out['page_eight'] = page_key_name(vram, 8, 768, 256, 256, 481, None)
     return out
+
+
+def page_key_name(vram, depth, page_x, page_y, clut_x, clut_y, own):
+    """A whole page of 256 by 256 texels through a table: a texel whose
+    pixel of video memory is not the stage's own counts as 0."""
+    per = {4: 4, 8: 2, 16: 1}[depth]
+    data = bytearray([DEPTH_CODE[depth]]) + struct.pack('<HH', 256, 256)
+    for v in range(256):
+        for u in range(256):
+            pixel = (page_x + u // per, page_y + v)
+            texel = 0
+            if own is None or pixel in own:
+                texel = value(vram, depth, page_x, page_y, u, v, (0xFF, 0, 0xFF, 0))
+            data += bytes([texel]) if depth != 16 else struct.pack('<H', texel)
+    for i in range({4: 16, 8: 256, 16: 0}[depth]):
+        data += struct.pack('<H', vram[clut_y * WIDTH + clut_x + i])
+    key = KEY_START
+    for byte in data:
+        key = ((key ^ byte) * KEY_PRIME) & 0xFFFFFFFFFFFFFFFF
+    return 'page-256x256-%d-%016x' % (depth, key)
 
 # ---- the PNGs ----
 

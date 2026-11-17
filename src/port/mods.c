@@ -872,6 +872,86 @@ s32 port_TextureFadeOf(const u16 *base, const u16 *now, u32 count, u32 *tint) {
     return TRUE;
 }
 
+/* ---- the key of a page of the scene ---- */
+
+s32 port_TexturePagePixel(const PortTexturePage *page, s32 u) {
+    if (page->bits == PORT_MOD_TEXELS_4) {
+        return u >> NIBBLE_SHIFT;
+    }
+    if (page->bits == PORT_MOD_TEXELS_8) {
+        return u >> BYTE_SHIFT;
+    }
+    return u;
+}
+
+s32 port_TexturePageFits(const PortTexturePage *page) {
+    return page->page_x >= 0 && page->page_y >= 0 &&
+           page->page_x + port_TexturePagePixel(page, PORT_MOD_PAGE_SIDE) <=
+               PORT_VRAM_WIDTH &&
+           page->page_y + PORT_MOD_PAGE_SIDE <= PORT_VRAM_HEIGHT;
+}
+
+/* FNV-1a over the page as port_mods.h describes it: the region of the
+ * whole page read through port_TextureValue, a texel that is not the
+ * stage's own counted as 0. */
+u64 port_TexturePageKey(const u16 *vram, const PortTexturePage *page) {
+    PortTextureRegion region;
+    u64 key = KEY_START;
+    s32 colors = page->bits == PORT_MOD_TEXELS_4   ? COLORS_4
+                 : page->bits == PORT_MOD_TEXELS_8 ? COLORS_8
+                                                   : 0;
+    s32 u;
+    s32 v;
+    s32 i;
+
+    region.bits = page->bits;
+    region.page_x = page->page_x;
+    region.page_y = page->page_y;
+    region.clut_x = page->clut_x;
+    region.clut_y = page->clut_y;
+    region.u = 0;
+    region.v = 0;
+    region.w = PORT_MOD_PAGE_SIDE;
+    region.h = PORT_MOD_PAGE_SIDE;
+    region.and_u = PORT_MOD_PAGE_SIDE - 1;
+    region.or_u = 0;
+    region.and_v = PORT_MOD_PAGE_SIDE - 1;
+    region.or_v = 0;
+    key = port_KeyByte(key, (u32)page->bits);
+    key = port_KeyHalf(key, (u32)PORT_MOD_PAGE_SIDE);
+    key = port_KeyHalf(key, (u32)PORT_MOD_PAGE_SIDE);
+    for (v = 0; v < PORT_MOD_PAGE_SIDE; v++) {
+        const u8 *own = page->own == NULL
+                            ? NULL
+                            : page->own + (page->page_y + v) * PORT_VRAM_WIDTH +
+                                  page->page_x;
+
+        for (u = 0; u < PORT_MOD_PAGE_SIDE; u++) {
+            u32 value = 0;
+
+            if (own == NULL || own[port_TexturePagePixel(page, u)] != 0) {
+                value = port_TextureValue(vram, &region, u, v);
+            }
+            key = colors != 0 ? port_KeyByte(key, value)
+                              : port_KeyHalf(key, value);
+        }
+    }
+    for (i = 0; i < colors; i++) {
+        key = port_KeyHalf(key, port_TextureClut(vram, &region, (u32)i));
+    }
+    return key;
+}
+
+void port_TexturePageKeyName(
+    u64 key, const PortTexturePage *page, char *out, u32 room) {
+    s32 depth = page->bits == PORT_MOD_TEXELS_4   ? NIBBLE_BITS
+                : page->bits == PORT_MOD_TEXELS_8 ? BITS_PER_BYTE
+                                                  : 2 * BITS_PER_BYTE;
+
+    port_ModsSay(out, room, "page-%dx%d-%d-%08x%08x", PORT_MOD_PAGE_SIDE,
+                 PORT_MOD_PAGE_SIDE, depth, (u32)(key >> HALF_SHIFT), (u32)key);
+}
+
 void port_TextureKeyName(
     u64 key, const PortTextureRegion *region, char *out, u32 room) {
     s32 depth = region->bits == PORT_MOD_TEXELS_4   ? NIBBLE_BITS

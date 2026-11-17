@@ -38,6 +38,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_scene.h"
 #include "gl_see.h"
 #include "gl_stage.h"
 #include "port_gpu.h"
@@ -255,6 +256,10 @@ typedef struct {
     u8 info[4];  /* the texel's bits, the mix, nothing, nothing */
     u16 tile;    /* which tile of the stage it belongs to */
     u16 pad;
+    /* the rectangle of texels the face reads, its texture points' least
+     * and most: a mod's picture of the page is read inside it, so that
+     * nothing of a texture packed beside it is smoothed in (gl_scene.h) */
+    u8 box[4];
     /* The corners of the face this vertex is of, in the world, the
      * fourth the third's again for a triangle. Every vertex of a face
      * carries all of them because the two tests the renderer makes
@@ -265,7 +270,7 @@ typedef struct {
      * nearer than the cutoff (RENDER_OT_CUTOFF), which is how the
      * ground between the camera and the fight is kept out of the way. */
     GLfloat corner[4][3];
-} StageVertex; /* 92 bytes */
+} StageVertex; /* 96 bytes */
 
 static struct {
     s32 is_started;
@@ -298,6 +303,11 @@ static struct {
     GLint at_depth_shift;
     GLint at_cutoff;
     GLint at_unit;
+    GLint at_scene_lookup;
+    GLint at_scene_pages;
+    GLint at_scene_bases;
+    GLint at_scene_on;
+    GLint at_scene_levels;
     GLint at_eye;
     GLint at_see_count;
     GLint at_see_axis;
@@ -336,6 +346,7 @@ static const char g_stage_vertex_text[] =
     "layout(location = 7) in vec3 a_corner1;\n"
     "layout(location = 8) in vec3 a_corner2;\n"
     "layout(location = 9) in vec3 a_corner3;\n"
+    "layout(location = 10) in uvec4 a_box;\n"
     /* the view the renderer drew the stage's tiles with: its rotation
      * already scaled as the tiles' own projection scales it, where the
      * camera is, the distance to the projection plane, and where the
@@ -362,6 +373,7 @@ static const char g_stage_vertex_text[] =
     "flat out uvec4 v_info;\n"
     "flat out uint v_tile;\n"
     "flat out float v_slot;\n"
+    "flat out vec4 v_box;\n"
     /* where the pixel is in the world, and which way its face looks, for
      * the walls seen through (gl_see.h) */
     "out vec3 v_place;\n"
@@ -427,6 +439,8 @@ static const char g_stage_vertex_text[] =
     "    v_page = a_page;\n"
     "    v_info = a_info;\n"
     "    v_tile = a_tile;\n"
+    /* to the far edges of the last texels */
+    "    v_box = vec4(vec2(a_box.xy), vec2(a_box.zw) + vec2(1.0));\n"
     "    v_place = a_place;\n"
     "    v_normal = cross(a_corner1 - a_corner0, a_corner2 - a_corner0);\n"
     "}\n";
@@ -452,6 +466,7 @@ static const char g_stage_fragment_text[] =
     "flat in uvec4 v_info;\n"
     "flat in uint v_tile;\n"
     "flat in float v_slot;\n"
+    "flat in vec4 v_box;\n"
     "in vec3 v_place;\n"
     "flat in vec3 v_normal;\n"
     /* the walls seen through (gl_see.h): where the camera is in the
@@ -466,6 +481,8 @@ static const char g_stage_fragment_text[] =
     "uint vram(int x, int y) {\n"
     "    return texelFetch(u_vram, ivec2(x & 1023, y & 511), 0).r;\n"
     "}\n"
+    /* a mod's picture of a whole page (gl_scene.h) */
+    PORT_GL_SCENE_SHADER
     /* the ordering-table slot a depth is sorted at
      * (render_OtIndexShifted) */
     "int slot_of(int depth) {\n"
@@ -571,6 +588,15 @@ static const char g_stage_fragment_text[] =
     "                       g_clut_near.y);\n"
     "    return mix(channels(before), channels(texel), g_fog_mix);\n"
     "}\n"
+    /* the colour of index `index` of the face's table as this fragment
+     * draws it, the fog's two levels mixed as above: what a mod's picture
+     * of the page is made to follow (gl_scene.h) */
+    "vec3 scene_now(uint index) {\n"
+    "    vec3 now = channels(vram(g_clut.x + int(index), g_clut.y));\n"
+    "    if (g_fog_mix >= 1.0) { return now; }\n"
+    "    return mix(channels(vram(g_clut_near.x + int(index),\n"
+    "                             g_clut_near.y)), now, g_fog_mix);\n"
+    "}\n"
     "void main() {\n"
     /* A face that mixes with what is behind it is not the mesh's: a
      * tile the game is drawing opened up so that a fighter behind it
@@ -630,7 +656,15 @@ static const char g_stage_fragment_text[] =
     "    float span = max(max(abs(wide_across.x), abs(wide_across.y)),\n"
     "                     max(abs(wide_down.x), abs(wide_down.y)));\n"
     "    int steps = int(clamp(ceil(span), 1.0, 4.0));\n"
-    "    if (steps > 1) {\n"
+    /* a mod's picture of the page, mipmapped, read inside the face's
+     * own texels, its colours following the fog's */
+    "    int layer = scene_layer(v_page, v_info.x);\n"
+    "    if (layer >= 0) {\n"
+    "        vec4 got = scene_color(layer, v_page, v_info.x, v_texture,\n"
+    "                               wide_across, wide_down, v_box);\n"
+    "        if (got.a < 0.5) { discard; }\n"
+    "        shown = got.rgb;\n"
+    "    } else if (steps > 1) {\n"
     "        vec3 sum = vec3(0.0);\n"
     "        float weight = 0.0;\n"
     "        uint any = 0u;\n"
@@ -732,6 +766,8 @@ static void port_GlStageFormat(void) {
         8, 3, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->corner[2]);
     glVertexAttribPointer(
         9, 3, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->corner[3]);
+    glVertexAttribIPointer(
+        10, 4, GL_UNSIGNED_BYTE, (GLsizei)sizeof(*one), one->box);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
@@ -742,6 +778,7 @@ static void port_GlStageFormat(void) {
     glEnableVertexAttribArray(7);
     glEnableVertexAttribArray(8);
     glEnableVertexAttribArray(9);
+    glEnableVertexAttribArray(10);
 }
 
 const char *port_GlStageStart(void *(*getproc)(const char *name)) {
@@ -795,6 +832,11 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
     AT(at_depth_shift, "u_depth_shift");
     AT(at_cutoff, "u_cutoff");
     AT(at_unit, "u_unit");
+    AT(at_scene_lookup, "u_scene_lookup");
+    AT(at_scene_pages, "u_scene_pages");
+    AT(at_scene_bases, "u_scene_bases");
+    AT(at_scene_on, "u_scene_on");
+    AT(at_scene_levels, "u_scene_levels");
     AT(at_eye, "u_eye");
     AT(at_see_count, "u_see_count");
     AT(at_see_axis, "u_see_axis");
@@ -973,6 +1015,7 @@ typedef struct {
     u8 color[4]; /* red, green, blue, the flags */
     s16 page[4];
     u8 info[4];
+    u8 box[4]; /* its texture points' least and most */
     /* the face's corners in the world, in the order the record has
      * them, the fourth the third's again for a triangle */
     GLfloat corner[4][3];
@@ -1010,6 +1053,9 @@ static void port_GlStagePutVertex(
     }
     to->tile = (u16)face->tile;
     to->pad = 0;
+    for (i = 0; i < 4; i++) {
+        to->box[i] = face->box[i];
+    }
     for (i = 0; i < 4; i++) {
         s32 j;
 
@@ -1159,6 +1205,19 @@ static void port_GlStageFace(s32 tile, const StageTile *at, const s16 *vertices,
          * points the console itself uses on the ground nearest the
          * camera. */
         corner[i].uv = STAGE_HALF(record, RECORD_UV0 + 2 * i);
+    }
+    /* the texels the whole face reads, which every piece of it is held
+     * to (gl_scene.h) */
+    face.box[0] = face.box[1] = 0xFF;
+    face.box[2] = face.box[3] = 0;
+    for (i = 0; i < count; i++) {
+        u8 u = (u8)(corner[i].uv & 0xFF);
+        u8 v = (u8)((corner[i].uv >> 8) & 0xFF);
+
+        face.box[0] = u < face.box[0] ? u : face.box[0];
+        face.box[1] = v < face.box[1] ? v : face.box[1];
+        face.box[2] = u > face.box[2] ? u : face.box[2];
+        face.box[3] = v > face.box[3] ? v : face.box[3];
     }
     g_stage.faces++;
     /* The renderer makes its two tests of the face once, of the corners
@@ -1490,6 +1549,12 @@ static void port_GlStageDrawMesh(
                  (GLuint)paint->window_or_u, (GLuint)paint->window_and_v,
                  (GLuint)paint->window_or_v);
     glUniform1uiv(g_stage.at_open, TILE_WORDS, open);
+    /* a mod's pictures of the stage's pages (gl_scene.h) */
+    glUniform1i(g_stage.at_scene_lookup, PORT_GL_SCENE_LOOKUP_UNIT);
+    glUniform1i(g_stage.at_scene_pages, PORT_GL_SCENE_PAGES_UNIT);
+    glUniform1i(g_stage.at_scene_bases, PORT_GL_SCENE_BASES_UNIT);
+    glUniform1i(g_stage.at_scene_on, port_GlSceneBind() ? 1 : 0);
+    glUniform1f(g_stage.at_scene_levels, port_GlSceneLevels());
     port_GlStageSeeThrough(view);
 
     /* The whole depth buffer is cleared, and not only the part the mesh

@@ -537,6 +537,47 @@ extern PortAddress port_RemasterTileMesh(s32 block, s32 mesh);
 extern const void *port_RemasterTileLights(void);
 extern s32 port_RemasterStageNumber(void);
 
+/* ---- the stage's own textures (src/port/gl/gl_scene.c) ---- */
+
+/* A mod may give a picture of a whole texture page of the stage
+ * (docs/MODS.md, "The scene's textures by page"). What a page holds that
+ * is the stage's own is what the stage's file loaded into it: the rest is
+ * whatever the menus or the stage before left there, which differs from
+ * one run to the next, so the page's key is made of the stage's own
+ * texels alone. tex_LoadStageGroup says which they are, one TIM at a
+ * time; nothing is kept with no backend attached. */
+#define PORT_STAGE_TEXTURES_MAX 512
+
+typedef struct {
+    s16 x; /* where its picture is in video memory, in pixels of 16 bits */
+    s16 y;
+    s16 w;
+    s16 h;
+    s16 bits;   /* PORT_REMASTER_DEPTH_..., as its TIM says */
+    s16 clut_x; /* where its colour table was loaded, -1 for none */
+    s16 clut_y;
+    s16 clut_w; /* ... and its size, in colours by rows */
+    s16 clut_h;
+    /* the row the faces name it by: the file's own, which is the row
+     * above where a table left of the display's width is loaded, the row
+     * the stage's fog writes over while the frame is drawn
+     * (tex_LoadStageGroup) */
+    s16 named_y;
+} PortStageTexture;
+
+/* The stage's textures are about to be loaded: those of the stage before
+ * are forgotten. */
+extern void port_RemasterBeginStageTextures(void);
+/* One of them: the TIM at `tim`, its picture loaded at (x, y) and its
+ * colour table at (clut_x, clut_y), as tex_LoadTim was told, the faces
+ * naming that table at (clut_x, named_y). */
+extern void port_RemasterNoteStageTexture(
+    const void *tim, s32 x, s32 y, s32 clut_x, s32 clut_y, s32 named_y);
+/* What has been noted, how many, and a number that changes each time the
+ * stage's textures are loaded again. */
+extern const PortStageTexture *port_RemasterStageTextures(
+    s32 *count, u32 *version);
+
 /* ---- what a primitive is, once decoded ---- */
 
 #define PORT_REMASTER_CORNERS 4

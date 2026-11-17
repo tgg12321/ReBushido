@@ -154,17 +154,134 @@ of its own.
 
 ### What is not replaced, and why
 
-- **The scene's faces**: the stage, the fighters, their weapons. Each
-  face reads a small piece of its page that is not a texture of its own,
-  so its key would be a piece of a fighter, and a fighter's texture
-  would be hundreds of files. The scene wants keys by whole page and
-  colour table, which is the next step (below).
+- **The scene's faces by the piece**: each face reads a small piece of
+  its page that is not a texture of its own, so its key would be a piece
+  of a fighter, and a fighter's texture would be hundreds of files. The
+  stage's faces are replaced by whole page instead ("The scene's textures
+  by page", below); the fighters and their weapons are not (their own
+  models are: PORT.md, "The fighters' own models").
 - **The fight drawn again under the pause** is the scene as well.
 - **The movie**, which the console shows in its 24-bit mode and the
   remastered picture leaves to the software GPU. The title picture held
   after it has not been looked at yet: the play tests' presses skip it.
 - With `--gl-exact` (the prover's picture held to the console's) nothing
   is replaced.
+
+## The scene's textures by page
+
+The stage -- its ground, its walls, its props, whatever of it the
+renderer draws -- is replaced by **whole texture pages**: a mod's picture
+of one page of 256 by 256 texels, as one of the stage's colour tables
+shows it, stands in for every face of the stage that reads that page
+through that table. A stage is some twenty such files.
+
+**The key** is `page-256x256-D-HASH`: FNV-1a of 64 bits, as the 2D
+layer's, over the depth's code, the width and the height (256 each, two
+bytes, the low first), every texel of the page row by row (an index of
+one byte, or a pixel of two) and then the colour table (16 colours or 256,
+two bytes each). Two things make it the same in every run:
+
+- **Only the stage's own texels count.** A page holds the stage's TIMs
+  and, between them, whatever the menus or the stage before left in video
+  memory, which differs from one run to the next. `tex_LoadStageGroup`
+  says which TIMs it loads and where (`port_RemasterNoteStageTexture`,
+  port_remaster.h); a texel whose pixel of video memory no TIM of the
+  stage wrote is hashed as 0.
+- **The table is the one the stage's file loaded.** The faces name the
+  stage's tables in the row the fog writes over all through the frame
+  (PORT.md, "The ground as one mesh"); the key takes the colours from the
+  row below, where the stage loaded them and nothing changes them.
+
+`src/port/mods.c`, `port_TexturePageKey`, makes it; `tests/port/mods.py`
+works it out a second time from this description.
+
+**When it is looked up**: as soon as a stage is loaded, every page and
+table the stage's TIMs bring is keyed and its picture read, so nothing is
+read in the middle of a fight; a page and table a face names that no TIM
+brought is looked up the first time it is drawn. A page the game writes
+over is looked up again. With `--dump-textures FOLDER` every page that has
+no picture is written into `FOLDER/pages/`, with a list beside it of the
+stage's own textures in it (`.txt`), which is what `tools/port_stage_hd.py`
+makes its pictures from.
+
+**How it is drawn** (`src/port/gl/gl_scene.c`, `PORT_GL_SCENE_SHADER`):
+
+- The pictures are the layers of one array on the card, all of the first
+  one's size (a picture of another size is made that size as it is read),
+  with mipmaps down to a quarter of the game's texel and the card's
+  anisotropic filtering where it has it. Which layer a page and a table
+  have is a texel of a lookup table the shaders read, so the stage's faces
+  are still one batch and the ground's mesh still one draw.
+- **Nothing of a texture packed beside it is smoothed in.** A page packs
+  textures edge to edge with no border, so each face is read only inside
+  its own rectangle of texels (its texture points' least and most, out to
+  their texels' edges), less half a texel of the level being read: the
+  ground's mesh carries each face's rectangle in its vertices, and the
+  renderer's geometry shader works out each triangle's.
+- **Its colours follow the game's.** Where the game changes the colours a
+  face is drawn in after the picture was made -- the fog's rows, which
+  the mesh mixes by the depth of each pixel, a tint, a fade -- each part
+  of the picture is multiplied by what the colours about that point are
+  now over what they were when it was made (the table as loaded, kept as
+  the layer's row of a table of bases), each with one added so that a
+  black stays a black. Where nothing has changed, that is the picture
+  itself. So the fog and the fades come out as the game's.
+- A pixel of the picture whose alpha is under a half is not drawn;
+  whether a pixel mixes, on a half-transparent face, is still the game's
+  texel's to say.
+- With no mod's textures nothing is looked up and no shader takes the
+  path; with `--gl-exact` neither.
+
+What it leaves to video memory: a face of a fighter or a weapon, a page
+of 16-bit texels, a face read through a texture window, and a face the
+side channel has no depth for (the game's own tiles where the ground is
+not drawn as one mesh are partly that).
+
+## The stages' pages made larger
+
+The **stages-hd** mod is every stage's pages made four times larger, from
+the player's own disc, by `tools/port_stage_hd.py`:
+
+```
+python3 tools/port_stage_hd.py dump --image "Bushido Blade 2 (USA).cue"   # Linux or WSL
+python tools/port_stage_hd.py build                                          # numpy and Pillow
+```
+
+`dump` loads each of the 38 stages on the GL prover (the tour of
+`tools/port_stage_prove.py` as far as its fight) with no mod in the way and
+`--dump-textures tmp/stage-hd/dump`. `build` writes `tmp/mods/stages-hd/`,
+order -200, a picture for each page and table. Each of the stage's own
+textures in a page -- a TIM of its file -- is made larger by itself, so
+that nothing of its neighbours is smoothed into it, in four steps:
+
+1. **The dither taken out.** The textures are 16 colours each, and their
+   artists dithered between two near colours to make a third, which at
+   four times is a checkerboard. A texel that stands out from all four
+   neighbours the same way round by no more than about a step of the
+   texture's own colours is dither, and is smoothed with its neighbours of
+   near colour (a bilateral filter); every other texel is kept, so lines,
+   edges and the grain of the wood stay.
+2. **Made larger along its edges**: twice, then twice again, by
+   directional cubic convolution (Zhou, Shen and Zeng, 2012): each new
+   texel by a cubic along whichever of two directions changes less about
+   it, or both weighed, so an edge is made longer and not wider or
+   stepped.
+3. **Held to the game's picture**: made smaller again it is the texture it
+   came from; what is left over is made larger and added back, three times
+   (back-projection), each texel held inside the least and the most of the
+   source texels about it, which keeps a bright rim off a dark bar.
+4. **Sharpened without halos**: an unsharp mask, held the same way.
+
+A texel of nothing is clear, and the clear and the drawn are made larger as
+a shape, with an edge a texel or two wide. The game's own smaller copies of
+a texture (half the size, at half its place in the page, which the renderer
+reads far off) are made from the larger one's picture made smaller. The
+textures of another table in a page are copied a block a texel, so that a
+face that drew them through this table would still be drawn.
+
+No learned model and no program of anyone else's is used. It is the game's
+own pictures made larger, so it is never committed: copy
+`tmp/mods/stages-hd/` into `mods/` beside the program.
 
 ## The English menu
 
@@ -374,6 +491,8 @@ mods/
 | `tools/port_english.py`, `src/port/mods/english/`, `src/port/fonts/` | the English menu the program ships, and what draws it |
 | `tools/port_ui.py`, `src/port/mods/ui/` | the sharp menus the program ships, and what draws them |
 | `tools/port_art.py` | the art mod, made from the player's disc |
+| `src/port/gl/gl_scene.c`, `gl_scene.h` | the stage's pages: the keys looked up as a stage loads, the pictures as one array, the shaders' part |
+| `tools/port_stage_hd.py` | the stages-hd mod, made from the player's disc |
 
 The mods' files are none of the game's state (`config/port_state.txt`,
 `docs/NETPLAY.md`): the table is made once, as
@@ -387,9 +506,8 @@ ending a kind's files must have.
 
 ## What is next
 
-- **The scene's textures by page**: a key of a whole texture page and
-  its colour table, and a replacement of the whole page, so that a
-  stage's or a fighter's textures are a few files each.
+- **The fighters' textures by page**, as the stage's are: their own
+  models are the larger step, and are taken already.
 - **More of the lettering in a font**: the dialogue boxes, the names on
   the select screens and the options' pages are the art mod's for now,
   made larger; each is a line of `tools/port_ui.py`'s table away.
