@@ -142,6 +142,8 @@ PORT_GL_SCENE_FUNCTIONS
 #define PNG_WIDTH_AT 16
 /* the largest picture of a page: eight times it, 64 MB with its levels */
 #define PAGE_PICTURE_MAX 2048
+/* the stage's textures not yet read into the tables */
+#define VERSION_NONE 0xFFFFFFFFU
 /* the folder of the dump the pages are written into */
 #define DUMP_PAGES "pages"
 
@@ -221,7 +223,8 @@ const char *port_GlSceneStart(void *(*getproc)(const char *name)) {
     g_scene.bases = 0;
     g_scene.capacity = 0;
     g_scene.layer_count = 0;
-    g_scene.version = 0;
+    /* the stage's textures read again into the new tables */
+    g_scene.version = VERSION_NONE;
     g_scene.is_started = TRUE;
     return NULL;
 }
