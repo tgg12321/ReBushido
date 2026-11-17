@@ -48,7 +48,8 @@ typedef struct {
     u32 serial;
     /* Where the model's nodes are: a primitive whose `id.object` lies here,
      * and that is not a shadow, is a drawing of this model's own body or of
-     * one of its parts (port_remaster.h). The cloth's nodes are not here. */
+     * one of its parts (port_remaster.h); the cloth's nodes are here too, and
+     * are told apart by port_FighterIsCloth. */
     PortAddress nodes_from;
     PortAddress nodes_to;
     /* where the body's mesh is (the model's mesh 0), which a primitive's
@@ -97,6 +98,10 @@ extern const PortFighterView *port_GetFighterView(s32 slot);
 extern const PortFighterWeapon *port_GetFighterWeapons(s32 *count);
 /* How many frames the renderer has built (PortFighterView.serial). */
 extern u32 port_FighterSerial(void);
+
+/* Whether a node is a piece of cloth, which the game moves and draws
+ * itself and a model's file does not replace. */
+extern s32 port_FighterIsCloth(PortAddress node);
 
 /* A new frame of primitives is about to be built (port_RemasterNewFrame):
  * what the frame before drew is forgotten. */

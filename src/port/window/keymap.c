@@ -66,7 +66,7 @@ const char g_port_default_settings[] =
     "                       # for the tiles. A stage the mesh is not\n"
     "                       # measured good on keeps the tiles either way\n"
     "fighter_models = on    # the fighters drawn from models of their own\n"
-    "                       # where mods/fighters/ has one (M100.glb...);\n"
+    "                       # where a mod's models/ has one (M100.glb);\n"
     "                       # off for the game's own\n"
     "shadows = original     # original: the game's own black shadows;\n"
     "                       # soft: the ground under them darkened\n"
@@ -613,8 +613,7 @@ static const char *port_ReadSetting(
                    : "stage_mesh is on or off";
     }
     if (port_WordsMatch(name, "fighter_models")) {
-        return port_ReadChoice(
-                   value, "off", "on", &settings->fighter_models)
+        return port_ReadChoice(value, "off", "on", &settings->fighter_models)
                    ? NULL
                    : "fighter_models is on or off";
     }

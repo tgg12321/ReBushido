@@ -56,7 +56,7 @@ static const char * const g_port_mod_kind_folders[PORT_MOD_KINDS] = {
     "textures", "models", "music", "stages"};
 /* the ending a kind's file must have to be read; NULL for any */
 static const char * const g_port_mod_kind_endings[PORT_MOD_KINDS] = {
-    ".png", NULL, NULL, NULL};
+    ".png", ".glb", NULL, NULL};
 
 typedef struct {
     PortModManifest manifest;

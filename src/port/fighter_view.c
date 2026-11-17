@@ -142,3 +142,10 @@ const PortFighterWeapon *port_GetFighterWeapons(s32 *count) {
 }
 
 u32 port_FighterSerial(void) { return g_serial; }
+
+/* The cloth is moved by the game itself (render_DrawCloth) and is no part
+ * of a model's file: it stays the game's own primitives. Its nodes are
+ * among the model's own (cloth_model.c), so they are told apart here. */
+s32 port_FighterIsCloth(PortAddress node) {
+    return node != 0 && ((const SceneNode *)node)->kind == NODE_KIND_CLOTH;
+}

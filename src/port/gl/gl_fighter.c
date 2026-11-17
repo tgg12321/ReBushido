@@ -25,6 +25,7 @@
 #include "gl_fighter_file.h"
 #include "gl_stage.h"
 #include "port_fighter.h"
+#include "port_mods.h"
 #include "port_remaster.h"
 
 /* ---- GL, as much of it as this file uses ---- */
@@ -489,7 +490,8 @@ void port_GlFighterSetFolder(const char *folder) {
     s32 i;
 
     if (folder == NULL) {
-        folder = "mods/fighters";
+        /* the mods' own (port_ModFind) */
+        folder = "";
     }
     snprintf(g_fighter.folder, sizeof(g_fighter.folder), "%s", folder);
     /* the folder changed: every model is looked for again */
@@ -557,7 +559,25 @@ static FighterModel *port_GlFighterModel(s32 model_id) {
         return NULL;
     }
     model->state = MODEL_MISSING;
-    snprintf(path, sizeof(path), "%s/%s.glb", g_fighter.folder, name);
+    if (g_fighter.folder[0] != 0) {
+        snprintf(path, sizeof(path), "%s/%s.glb", g_fighter.folder, name);
+    } else {
+        /* a mod's models/ folder: the key is the file's name in small
+         * letters (docs/MODS.md) */
+        char key[8];
+        const char *found;
+
+        for (i = 0; name[i] != 0 && i < (s32)sizeof(key) - 1; i++) {
+            key[i] = (char)(name[i] >= 'A' && name[i] <= 'Z' ? name[i] + 32
+                                                             : name[i]);
+        }
+        key[i] = 0;
+        found = port_ModFind(PORT_MOD_MODELS, key);
+        if (found == NULL) {
+            return NULL;
+        }
+        snprintf(path, sizeof(path), "%s", found);
+    }
     why = port_FighterFileRead(path, &file);
     if (why != NULL) {
         if (strcmp(why, "no such file") != 0) {
@@ -1061,6 +1081,10 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
         }
     }
     slot = port_GlFighterSlotOf(prim, views);
+    if (slot >= 0 && port_FighterIsCloth(prim->id.object)) {
+        /* the cloth is the game's own (port_fighter.h) */
+        return FALSE;
+    }
     if (slot >= 0 && g_fighter.dump != NULL) {
         port_GlFighterDumpPrim(prim, &views[slot], slot);
     }

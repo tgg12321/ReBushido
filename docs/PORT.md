@@ -3569,6 +3569,98 @@ to draw a frame twice**. 4,669 pictures were shown in the run, 188 of
 them between frames. Nothing was seen; the log and the numbers are all
 there is.
 
+### The fighters' own models
+
+The owner: the fighters may be **replaced whole, as long as the hitboxes
+stay exactly the same**. They do: no hitbox comes from a model. The 22
+body spheres (`g_fighter_body_point_table`, scaled by
+`fighter_ScaleBodyPoints`), the weapon's points on bone 18 and the feet
+are placed on the 21 bones of the skeleton every model shares
+(`g_model_bones`, `g_model_scales`), which the motions pose. A model only
+draws on those bones, so **"Graphics: Remastered" can draw a model of its
+own in the place of the game's** and nothing the game computes changes:
+the traces of `port_game` with a model drawn and with "Graphics:
+Original" are the same, 2,333 lines.
+
+**What the game gives up for it** (`include/port_fighter.h`,
+`src/port/fighter_view.c`, one line in `port_RemasterNoteFighter`): as
+the renderer comes to a fighter's body, each of his 21 bones' world
+matrices, the view and the camera, the projection (H, OFX, OFY) and his
+lights (the light and colour matrices, the colour of the dark), and where
+his model's nodes are, which names his primitives. None of it is the
+game's state (`OUTSIDE_STATE`).
+
+**How it is drawn** (`src/port/gl/gl_fighter.c`). A primitive of a
+fighter that has a model of his own -- his body or a part of it, not his
+cloth, which the game moves itself, nor his shadow -- is left out, as the
+stage's tiles are for the ground's mesh. At the first of them in the
+frame the fighters are drawn together into a layer of their own with a
+depth buffer of its own, skinned on the card (a joint's matrix is the
+game's world matrix of the bone times the file's inverse bind matrix),
+projected exactly as the coprocessor projects (the stage's mesh's
+arithmetic), lit as `NCS` lights a normal, and the texture read as the
+chip reads a texel, five bits a channel times the colour, 128 being one;
+faces are left out from behind as `render_FaceFront` leaves them. The
+layer is laid over the picture held against the ground by the ordering
+table's slots, as a fighter's own primitives are ("Depth: the scene is
+held against the ground"; a fighter's depth goes into the table shifted
+by three whatever his scale, `render_DrawSkinned`), and it writes its
+depth where the ground's is, so what the scene paints after it is held
+against him. In a picture between two frames (`gl_tween.c`) the bones
+and the camera are the two frames' mixed, the rotations made rotations
+again. The seam for the shadows: a shadow cast from the model would be
+drawn from the same layer's skinned mesh (`port_GlFighterDrawOne`), which
+`gl_shadow.c` does not use yet.
+
+**The file** (`src/port/gl/gl_fighter_file.h`): glTF 2.0 binary, one skin
+whose joints are named `bone00` to `bone20`, vertices in the game's own
+units and axes (y down) at the bind pose, PNG textures; the JSON, inflate
+and PNG it needs are in `gl_fighter_file.c`. It is a mod's file: `models/M100.glb`
+in a mod's folder (docs/MODS.md), by the model's file name on the disc.
+`fighter_models = off` in the settings draws the game's own; the prover
+takes `--fighter-models FOLDER|on|off`.
+
+**The tools.** Nothing of the game is in the repository; they read the
+player's image and write into folders git ignores.
+
+- `tools/fighter_export.py` writes every model (`M000` to `M306`) as such
+  a file: the body, read by emulating `render_DrawSkinnedMesh`'s five
+  lists of a section and its carries, and the rigid parts of the bones,
+  one mesh; the textures decoded through their colour tables from the
+  file's TIMs into one atlas. A joint's vertex is in the game the sum of
+  two bones' turns of two vectors, which a glTF skin cannot say; it gets
+  the two bones and the weight that come nearest over a spread of poses
+  about the bind pose (24 by default; the worst miss is printed, tens of
+  units for a pose far from the bind pose). `--pose` takes a bind pose the
+  port wrote: `rebushido-gl --gl-fighter-pose FOLDER,BLANK` writes each
+  fighter's bones of the next frame, and the game's own projected corners
+  of each of his primitives, `prims.txt`. Held to those corners the
+  exporter's reading of the body is within **0.4 pixels at every corner**,
+  the joints' included, for both fighters of `port_game`.
+- `tools/blender/fighter_view.py` renders a file in Blender, front and
+  side, with nothing shown; `tools/blender/fighter_rebuild.py` rebuilds a
+  fighter at a higher definition (welded into one surface, creased where
+  faces meet at more than 50 degrees and at open edges, subdivided twice,
+  the rig and its weights carried over); `tools/fighter_texture.py`
+  makes the atlas four times larger, its edges kept;
+  `tools/fighter_conform.py` makes what Blender wrote a file the port
+  reads (each vertex where glTF draws it at the bind pose, back into the
+  game's space, with the original's bind pose).
+
+**Measured.** The game's own models through this path against the
+remastered picture with the game's primitives, `port_game`'s fight at
+scale 2, 27 pictures from blank 3000 to 4300: **2.05% of the pixels differ by more than 16 of 255 and 0.71% by more than 48**; all of it on the fighters. The rest is the difference
+between Gouraud shading of every face and the game's flat faces, the
+joints' linear blend, and edges. `port_gl_prove --quick` is what it was
+on `main` (its blocks check fails there too, with the same numbers).
+
+**What is not done.** The weapons (their nodes are written down,
+`PortFighterWeapon`, and the files would be `WEPaabb`'s meshes); the
+shadows from the model; a joint drawn exactly (two custom attributes and
+the game's sum would do it); the fades and tints the game makes by
+rewriting a model's colour tables (the Ninja's band, chanbara's
+opponents) do not reach a model's own PNG; and the tiny mode's model.
+
 ### What each later step needs
 
 - **Lighting.** Today every vertex of a model is lit by the GTE, by

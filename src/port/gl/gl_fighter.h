@@ -35,8 +35,9 @@ extern void port_GlFighterSetOn(s32 on);
 extern s32 port_GlFighterIsOn(void);
 
 /* Where the models are looked for: `<folder>/<file>.glb`, the file being
- * the model's own name on the disc (M000 to M306). NULL looks in the
- * folder the mods are in (port_GlFighterFind). */
+ * the model's own name on the disc (M000 to M306). NULL, which is how it
+ * starts, looks in the mods' `models/` folders (port_ModFind, key
+ * `m100`; docs/MODS.md). */
 extern void port_GlFighterSetFolder(const char *folder);
 
 /* A new frame of primitives is about to come (gl_draw.c, port_GlBegin). */

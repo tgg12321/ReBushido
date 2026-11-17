@@ -1204,7 +1204,8 @@ int main(int argc, char **argv) {
             /* the fighters' own models (gl_fighter.h): a folder of
              * them, or off */
             options.is_fighter_models = strcmp(where, "off") != 0;
-            if (options.is_fighter_models) {
+            /* on: the mods' own models/ folders (port_ModFind) */
+            if (options.is_fighter_models && strcmp(where, "on") != 0) {
                 port_GlFighterSetFolder(where);
             }
         } else if (!strcmp(word, "--gl-fighter-pose")) {

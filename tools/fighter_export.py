@@ -764,7 +764,7 @@ def inverse_of(rot, pos):
     return rt, [-p[0], -p[1], -p[2]]
 
 
-def write_glb(path, name, model_id, scale, bones, bind_rot, bind_pos, vertices, triangles, atlas, extras):
+def write_glb(path, name, bones, bind_rot, bind_pos, vertices, triangles, image_png, extras):
     """vertices: (position, normal, uv, [(bone, weight)]) in game units."""
     g = Glb()
     positions = [v[0] for v in vertices]
@@ -795,7 +795,7 @@ def write_glb(path, name, model_id, scale, bones, bind_rot, bind_pos, vertices, 
         r, p = inverse_of(bind_rot[i], bind_pos[i])
         ibm.append(mat4_cols(r, p))
     a_ibm = g.accessor('f', ibm, 5126, 'MAT4')
-    image_view = g.view(png(atlas.w, atlas.h, atlas.pixels))
+    image_view = g.view(image_png)
     nodes = []
     # node 0: glTF's y up and metres, the game's y down and its units
     nodes.append({'name': 'rb_game_space', 'children': [1, 1 + BONES],
@@ -844,7 +844,10 @@ def export_model(nd, model_id, out, bones, scales, pose_path, samples_count, qui
     n = u32(b, 0)
     offs = struct.unpack_from('<%dI' % (n + 1), b, 4)
     problems = []
-    scale = scales[model_id] if model_id < len(scales) else 4096
+    # the model's id in the game: the third set's files are read from 27
+    # NDATA ids below their own (ndata_ReadModel)
+    asset = model_id if model_id < 31 else model_id + 27
+    scale = scales[asset] if asset < len(scales) and scales[asset] != 0xFFFF else 4096
     mesh_table = offs[0]
     mesh_count = u32(b, mesh_table)
     mesh_at = [mesh_table + o for o in struct.unpack_from('<%dI' % mesh_count, b, mesh_table + 4)]
@@ -951,7 +954,7 @@ def export_model(nd, model_id, out, bones, scales, pose_path, samples_count, qui
     clut_rows = sorted({(f.clut & 0x3F) * 16 + 1024 * ((f.clut >> 6) & 0x1FF) for f in skin_faces})
     extras = {
         'rb_fighter': 1,
-        'model_id': model_id,
+        'model_id': asset,
         'model_file': name,
         'scale': scale,
         'units': 'game',
@@ -963,7 +966,8 @@ def export_model(nd, model_id, out, bones, scales, pose_path, samples_count, qui
         'parts': [[m, bone] for m, bone, _, _ in part_meshes],
     }
     path = os.path.join(out, name + '.glb')
-    write_glb(path, name, model_id, scale, bones, bind_rot, bind_pos, vertices, triangles, atlas, extras)
+    write_glb(path, name, bones, bind_rot, bind_pos, vertices, triangles,
+              png(atlas.w, atlas.h, atlas.pixels), extras)
     with open(os.path.join(out, name + '.png'), 'wb') as f:
         f.write(png(atlas.w, atlas.h, atlas.pixels))
     if not quiet:
