@@ -10,7 +10,6 @@
 #include "common.h"
 #include "port_host.h"
 #include "port_mods.h"
-#include "port_weapons.h"
 #include "bb2.h"
 
 #define TEXT_END 0
@@ -29,8 +28,12 @@
 #define CPU_RANGE_MAX (127 * CPU_RANGE_UNIT)
 /* the stances a fight can begin in: the first, second or third */
 #define STANCE_LAST 2
-/* a factor's fraction: so many digits after the point at most */
-#define FRACTION_DIGITS_MAX 4
+/* a factor's fraction: four digits after the point at most, its scale
+ * stopping short of this */
+#define FRACTION_SCALE_MAX 10000
+/* a point is three numbers, and a weapon has two at least */
+#define POINT_COORDS 3
+#define POINTS_MIN 2
 #define DECIMAL 10
 #define FNV_OFFSET 0xCBF29CE484222325ULL
 #define FNV_PRIME 0x100000001B3ULL
@@ -137,8 +140,8 @@ static s32 port_WeaponNumbers(
             break;
         }
         start = at;
-        while (at < length && !port_WeaponIsSpace(value[at]) &&
-               value[at] != ',') {
+        while (
+            at < length && !port_WeaponIsSpace(value[at]) && value[at] != ',') {
             at++;
         }
         if (count >= room || at - start >= sizeof(word)) {
@@ -177,7 +180,7 @@ static s32 port_WeaponFactor(const char *value, u32 length, s32 *factor) {
     if (at < length && value[at] == '.') {
         at++;
         while (at < length && value[at] >= '0' && value[at] <= '9') {
-            if (scale >= 10000) {
+            if (scale >= FRACTION_SCALE_MAX) {
                 return FALSE;
             }
             fraction = fraction * DECIMAL + (u32)(value[at] - '0');
@@ -240,10 +243,10 @@ static s32 port_WeaponModelFits(s32 base, s32 practice, s32 model) {
 }
 
 /* One line's name and value into the weapon: NULL, or why it cannot be. */
-static const char *port_WeaponTakeLine(PortWeapon *weapon, u32 *said,
-                                       const char *name, u32 name_length,
-                                       const char *value, u32 value_length) {
-    s32 numbers[PORT_WEAPON_POINTS_MAX * 3 + 1];
+static const char *port_WeaponTakeLine(
+    PortWeapon *weapon, u32 *said, const char *name, u32 name_length,
+    const char *value, u32 value_length) {
+    s32 numbers[PORT_WEAPON_POINTS_MAX * POINT_COORDS + 1];
     u32 bit;
     s32 count;
     s32 i;
@@ -282,8 +285,8 @@ static const char *port_WeaponTakeLine(PortWeapon *weapon, u32 *said,
         return "said twice";
     }
     *said |= bit;
-    count = port_WeaponNumbers(value, value_length, numbers,
-                               sizeof(numbers) / sizeof(numbers[0]));
+    count = port_WeaponNumbers(
+        value, value_length, numbers, sizeof(numbers) / sizeof(numbers[0]));
     switch (bit) {
     case SAID_FORMAT:
         if (count != 1 || numbers[0] < 1) {
@@ -296,8 +299,8 @@ static const char *port_WeaponTakeLine(PortWeapon *weapon, u32 *said,
         weapon->format = numbers[0];
         break;
     case SAID_NAME:
-        port_WeaponCopy(weapon->name, sizeof(weapon->name), value,
-                        value_length);
+        port_WeaponCopy(
+            weapon->name, sizeof(weapon->name), value, value_length);
         break;
     case SAID_BASE:
         weapon->base = port_WeaponIdOf(value, value_length);
@@ -316,7 +319,7 @@ static const char *port_WeaponTakeLine(PortWeapon *weapon, u32 *said,
         }
         break;
     case SAID_POINTS:
-        if (count < 6 || count % 3 != 0) {
+        if (count < POINTS_MIN * POINT_COORDS || count % POINT_COORDS != 0) {
             return "points takes x y z of each point, from the tip to the "
                    "hand";
         }
@@ -325,11 +328,11 @@ static const char *port_WeaponTakeLine(PortWeapon *weapon, u32 *said,
                 return "a point's x, y and z are from -8192 to 8192";
             }
         }
-        weapon->point_count = count / 3;
+        weapon->point_count = count / POINT_COORDS;
         for (i = 0; i < weapon->point_count; i++) {
-            weapon->points[i].vx = (s16)numbers[i * 3];
-            weapon->points[i].vy = (s16)numbers[i * 3 + 1];
-            weapon->points[i].vz = (s16)numbers[i * 3 + 2];
+            weapon->points[i].vx = (s16)numbers[i * POINT_COORDS];
+            weapon->points[i].vy = (s16)numbers[i * POINT_COORDS + 1];
+            weapon->points[i].vz = (s16)numbers[i * POINT_COORDS + 2];
             weapon->points[i].pad = 0;
         }
         break;
@@ -415,8 +418,10 @@ static const char *port_WeaponCheck(const PortWeapon *weapon, u32 said) {
     return NULL;
 }
 
-s32 port_WeaponParse(const char *text, u32 length, PortWeapon *weapon,
-                     char *problem, u32 room) {
+/* A weapon's file a line at a time (port_weapons.h): the first line
+ * that is wrong ends it. */
+s32 port_WeaponParse(
+    const char *text, u32 length, PortWeapon *weapon, char *problem, u32 room) {
     u32 said = 0;
     s32 line = 0;
     u32 at = 0;
@@ -516,9 +521,9 @@ s32 port_WeaponsChoose(const char *side_and_key) {
     if (length >= PORT_WEAPON_KEY_SIZE) {
         return FALSE;
     }
-    port_WeaponCopy(g_port_weapons.chosen_key[side],
-                    sizeof(g_port_weapons.chosen_key[side]), side_and_key + 2,
-                    length);
+    port_WeaponCopy(
+        g_port_weapons.chosen_key[side],
+        sizeof(g_port_weapons.chosen_key[side]), side_and_key + 2, length);
     for (length = 0; g_port_weapons.chosen_key[side][length] != TEXT_END;
          length++) {
         g_port_weapons.chosen_key[side][length] =
@@ -527,6 +532,8 @@ s32 port_WeaponsChoose(const char *side_and_key) {
     return TRUE;
 }
 
+/* One mod's weapon's file, read and checked: kept, or left out with
+ * the reason in the log. */
 static void port_WeaponsRead(const char *key, const char *path) {
     static char text[FILE_BYTES_MAX];
     char problem[PROBLEM_SIZE];
@@ -560,6 +567,9 @@ static void port_WeaponsRead(const char *key, const char *path) {
     g_port_weapons.count++;
 }
 
+/* Every mod's weapons (port_weapons.h), in the mods' order: which
+ * stands in for which of the game's (the last in the order where two
+ * do), and the weapon each --weapon names. */
 void port_WeaponsStart(void) {
     const char *key;
     const char *path;
@@ -622,6 +632,8 @@ const PortWeapon *port_WeaponAt(s32 index) {
                : NULL;
 }
 
+/* The mods' gameplay files and each --weapon that found its weapon,
+ * its place and key, summed (port_weapons.h). */
 u64 port_WeaponsSessionHash(void) {
     u64 hash = port_ModsGameplayHash();
     s32 side;
@@ -689,6 +701,8 @@ s32 port_WeaponPower(s32 index, s32 weapon_id, s32 own) {
     return weapon != NULL ? port_WeaponScale(own, weapon->power) : own;
 }
 
+/* The model of a mod's weapon in place of the one the game chose
+ * (port_weapons.h). */
 s32 port_WeaponModel(s32 index, s32 weapon_id, s32 own) {
     const PortWeapon *weapon = port_WeaponOf(index, weapon_id);
     s32 clan;

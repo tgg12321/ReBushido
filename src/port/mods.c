@@ -722,13 +722,14 @@ const char *port_ModFind(s32 kind, const char *key) {
                       : NULL;
 }
 
-s32 port_ModFileOf(s32 kind, s32 n, const char **key, const char **path) {
+/* The files of a kind, one by one (port_mods.h). */
+s32 port_ModFileOf(s32 kind, s32 place, const char **key, const char **path) {
     s32 i;
 
     for (i = 0; i < g_port_mods.file_count; i++) {
         const PortModFile *file = &g_port_mods.files[i];
 
-        if (file->kind == kind && n-- == 0) {
+        if (file->kind == kind && place-- == 0) {
             *key = g_port_mods.text + file->key_at;
             *path = g_port_mods.text + file->path_at;
             return TRUE;
@@ -770,6 +771,7 @@ static u64 port_ModsFileHash(s32 kind, const char *key, const char *path) {
     return hash;
 }
 
+/* Every gameplay file's hash, summed (port_mods.h). */
 u64 port_ModsGameplayHash(void) {
     static const s32 kinds[] = {
         PORT_MOD_STAGES, PORT_MOD_WEAPONS, PORT_MOD_MOTIONS};
@@ -779,11 +781,11 @@ u64 port_ModsGameplayHash(void) {
     for (k = 0; k < sizeof(kinds) / sizeof(kinds[0]); k++) {
         const char *key;
         const char *path;
-        s32 n;
+        s32 place;
 
         /* a sum, so that the order the folders were listed in does not
          * count */
-        for (n = 0; port_ModFileOf(kinds[k], n, &key, &path); n++) {
+        for (place = 0; port_ModFileOf(kinds[k], place, &key, &path); place++) {
             hash += port_ModsFileHash(kinds[k], key, path);
         }
     }

@@ -76,8 +76,8 @@ typedef struct {
  * the caller has set): TRUE if it is a weapon this program can use, else
  * FALSE and why, with the line, in `problem` (`room` bytes). Every name
  * and value is checked: a file with one wrong line is not used at all. */
-extern s32 port_WeaponParse(const char *text, u32 length, PortWeapon *weapon,
-                            char *problem, u32 room);
+extern s32 port_WeaponParse(
+    const char *text, u32 length, PortWeapon *weapon, char *problem, u32 room);
 /* The weapon's number of a name (`katana`, `long_sword` or `long-sword`,
  * ...), or -1. */
 extern s32 port_WeaponIdOf(const char *name, u32 length);

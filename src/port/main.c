@@ -31,7 +31,6 @@
 #include "port_music.h"
 #include "port_net.h"
 #include "port_spu.h"
-#include "port_weapons.h"
 #include "bb2.h"
 
 #define PATH_BYTES_MAX 1024

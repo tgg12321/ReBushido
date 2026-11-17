@@ -77,10 +77,10 @@ extern s32 port_ModsCount(s32 kind);
  * order that has one, or NULL. The key is as above: small letters, no
  * ending. */
 extern const char *port_ModFind(s32 kind, const char *key);
-/* The `n`th file of a kind, from 0, in the order the mods were read:
+/* The file of a kind at `place`, from 0, in the order the mods were read:
  * TRUE and its key and path, or FALSE past the last. */
 extern s32 port_ModFileOf(
-    s32 kind, s32 n, const char **key, const char **path);
+    s32 kind, s32 place, const char **key, const char **path);
 /* The files of the kinds that change how the game plays (stages, weapons,
  * motions), each its kind, its key and every byte of it, as one number
  * that does not depend on the order they were found in: two netplay

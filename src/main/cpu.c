@@ -32,6 +32,8 @@ s32 *node_GetCameraPosition(void) { return g_node_camera_root.node.world.t; }
  * margin. */
 #define CPU_GUN_REACH 30000
 #define CPU_REACH_MARGIN 100
+/* g_cpu_weapon_ranges is in eighths */
+#define CPU_RANGE_UNIT 8
 /* What is allowed for the attack the opponent is making, past its reach. */
 #define CPU_THREAT_MARGIN 300
 
@@ -990,13 +992,14 @@ static s32 cpu_AttackReach(Fighter *fighter) {
     /* a mod's weapon's reach and range (port_weapons.h): the game's own
      * with none */
     if (other->hit_end_frames[0] != 0xFF) {
-        s32 reach = fighter->move_is_common == 0
-                        ? port_WeaponCpuReach(
-                              other->index, other->weapon_id,
-                              g_cpu_weapon_reaches[other->weapon_id] * 2)
-                        : port_WeaponCpuRange(
-                              other->index, other->weapon_id,
-                              g_cpu_weapon_ranges[other->weapon_id] * 8);
+        s32 reach =
+            fighter->move_is_common == 0
+                ? port_WeaponCpuReach(
+                      other->index, other->weapon_id,
+                      g_cpu_weapon_reaches[other->weapon_id] * 2)
+                : port_WeaponCpuRange(
+                      other->index, other->weapon_id,
+                      g_cpu_weapon_ranges[other->weapon_id] * CPU_RANGE_UNIT);
 
         base += reach;
     } else {
@@ -1006,7 +1009,7 @@ static s32 cpu_AttackReach(Fighter *fighter) {
     base += other->hit_end_frames[0] != 0xFF
                 ? (fighter->move_is_common == 0
                        ? g_cpu_weapon_reaches[other->weapon_id] * 2
-                       : g_cpu_weapon_ranges[other->weapon_id] * 8)
+                       : g_cpu_weapon_ranges[other->weapon_id] * CPU_RANGE_UNIT)
                 : g_cpu_sub_weapon_reaches[other->sub_weapon_kind] * 2;
 #endif
     return base + fighter->other->reach_bonus + CPU_THREAT_MARGIN;

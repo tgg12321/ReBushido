@@ -732,8 +732,8 @@ void fighter_PlacePoints(Fighter *fighter, Vec3 *body_points,
 #if RB_PORT
         /* a mod's weapon's points (port_weapons.h), as many as the
          * game's: the game's own with none */
-        local_point = port_WeaponPoints(
-            fighter->index, fighter->weapon_id, local_point);
+        local_point =
+            port_WeaponPoints(fighter->index, fighter->weapon_id, local_point);
 #endif
     }
     point = weapon_points;

@@ -5,7 +5,8 @@
  * by their keys (NDATA's through its own directory, NDATA.INF), written
  * out for --dump-stages, and a mod's files are put over the disc's
  * sectors: one that fits, one shorter (the rest reads as zeros), one too
- * long (left out), and the sectors none covers are left as they were.
+ * long (left out), and a motion file of MOTION/ by its key; the sectors
+ * none covers are left as they were.
  * Nothing here is the game's. */
 #include "common.h"
 #include "port_disc.h"
@@ -24,6 +25,10 @@
 #define MADE_NDATA 23
 #define MADE_LOADSE1 24
 #define MADE_U_PIC 25
+#define MADE_MOTION 26
+#define MADE_U123 192
+#define MADE_U123_BYTES 3000
+#define MADE_COMMON 195
 #define MADE_INF 40
 #define MADE_DAT 100
 #define MADE_STAGE07 50
@@ -107,7 +112,7 @@ static void made_Disc(void) {
         }
     }
     /* the volume: its kind, its standard, and the root's record */
-    for (sector = 16; sector <= MADE_U_PIC; sector++) {
+    for (sector = 16; sector <= MADE_MOTION; sector++) {
         for (i = 0; i < SECTOR; i++) {
             g_made_disc[sector * SECTOR + i] = 0;
         }
@@ -122,6 +127,7 @@ static void made_Disc(void) {
     at += made_Dots(at, MADE_ROOT, MADE_ROOT);
     at += made_Record(at, "LOADSE", MADE_LOADSE, 2 * SECTOR, TRUE);
     at += made_Record(at, "LOADSE1", MADE_LOADSE1, SECTOR, TRUE);
+    at += made_Record(at, "MOTION", MADE_MOTION, SECTOR, TRUE);
     at += made_Record(at, "NDATA", MADE_NDATA, SECTOR, TRUE);
     at += made_Record(at, "SYSTEM.CNF;1", 30, 68, FALSE);
     made_Record(at, "U_PIC", MADE_U_PIC, SECTOR, TRUE);
@@ -140,6 +146,11 @@ static void made_Disc(void) {
     at += made_Dots(at, MADE_NDATA, MADE_ROOT);
     at += made_Record(at, "NDATA.DAT;1", MADE_DAT, 90 * SECTOR, FALSE);
     made_Record(at, "NDATA.INF;1", MADE_INF, 3604, FALSE);
+    /* two motion files: one a mod stands in for, one it does not */
+    at = g_made_disc + MADE_MOTION * SECTOR;
+    at += made_Dots(at, MADE_MOTION, MADE_ROOT);
+    at += made_Record(at, "COMMON.BBM;1", MADE_COMMON, SECTOR, FALSE);
+    made_Record(at, "U123.BBM;1", MADE_U123, MADE_U123_BYTES, FALSE);
     at = g_made_disc + MADE_U_PIC * SECTOR;
     at += made_Dots(at, MADE_U_PIC, MADE_ROOT);
     made_Record(at, "STG07.BIN;1", MADE_STG07, MADE_STG07_BYTES, FALSE);
@@ -156,7 +167,7 @@ static void made_Disc(void) {
 
 /* ---- the mods and the host, made up ---- */
 
-#define MADE_FILES 8
+#define MADE_FILES 12
 
 typedef struct {
     char path[96];
@@ -193,6 +204,9 @@ static void made_ModFile(const char *path, u32 size) {
 }
 
 const char *port_ModFind(s32 kind, const char *key) {
+    if (kind == PORT_MOD_MOTIONS) {
+        return port_TextsEqual(key, "u123") ? "mod/u123.bbm" : NULL;
+    }
     if (kind != PORT_MOD_STAGES) {
         return NULL;
     }
@@ -272,8 +286,9 @@ static void test_Directory(void) {
     PortDisc disc = {-1, MADE_SECTORS};
     const PortDiscFile *file;
 
-    /* the root, five folders and seven files */
-    CHECK_EQ(port_ReadDiscFiles(&disc), 13);
+    /* the root, six folders and nine files */
+    CHECK_EQ(port_ReadDiscFiles(&disc), 16);
+    CHECK(port_FindDiscFile("MOTION/U123.BBM") != NULL);
     file = port_FindDiscFile("loadse/stage07.bin");
     CHECK(file != NULL);
     if (file != NULL) {
@@ -344,6 +359,7 @@ static void test_StageMods(void) {
     made_ModFile("mod/s07.dat", 5000);
     made_ModFile("mod/stage07.bin", 7000);
     made_ModFile("mod/stg07.bin", 100);
+    made_ModFile("mod/u123.bbm", 2500);
     port_SetStageDumpFolder("dump");
     port_StartStageMods(&disc);
     CHECK(g_port_disc_override == port_OverrideDiscSector);
@@ -382,14 +398,23 @@ static void test_StageMods(void) {
     CHECK(made_IsMod(raw, 0, 100));
     CHECK(port_OverrideDiscSector(MADE_STG07 + 9, raw));
     CHECK(made_IsMod(raw, 9 * SECTOR, 100));
+    /* the motion file U123.BBM: the mod's 2,500 bytes over its two
+     * sectors, the rest zeros; COMMON.BBM, which no mod has, the disc's */
+    for (sector = 0; sector < 2; sector++) {
+        test_Copy(raw + PORT_DISC_DATA_OFFSET,
+                  g_made_disc + (MADE_U123 + sector) * SECTOR, SECTOR);
+        CHECK(port_OverrideDiscSector(MADE_U123 + sector, raw));
+        CHECK(made_IsMod(raw, sector * SECTOR, 2500));
+    }
     /* the sectors around them, and stage07 whose mod's file is too long,
      * are the disc's */
     for (sector = 0; sector < MADE_SECTORS; sector++) {
         s32 is_s07 = sector >= MADE_DAT + MADE_S07_START &&
                      sector < MADE_DAT + MADE_S07_START + MADE_S07_SECTORS;
         s32 is_stg07 = sector >= MADE_STG07 && sector < MADE_STG07 + 10;
+        s32 is_u123 = sector >= MADE_U123 && sector < MADE_U123 + 2;
 
-        if (is_s07 || is_stg07) {
+        if (is_s07 || is_stg07 || is_u123) {
             continue;
         }
         test_Copy(

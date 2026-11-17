@@ -28,7 +28,6 @@
 #include "port_disc.h"
 #include "port_host.h"
 #include "port_net.h"
-#include "port_weapons.h"
 #include "bb2.h"
 
 /* The protocol's own number: two programs that differ in it do not meet. */
