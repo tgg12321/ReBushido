@@ -1372,7 +1372,9 @@ elsewhere the program says what it needs and ends. **The memory card is
 still a stub:** the game finds no card, so its settings and what a
 player has unlocked are not kept from one run to the next.
 
-**Windows.** The program is 32-bit, linked at `0x08400000` with address
+**Windows.** The program is 32-bit, linked at `0x08200000` (it was
+`0x08400000` when this was written: "Where the program's variables
+are") with address
 randomisation off and marked as able to use addresses from 2 GB up
 (`--large-address-aware`), which the PlayStation's RAM at `0x80000000`
 needs. On a 64-bit Windows such a program has all 4 GB, and the three
@@ -4164,6 +4166,50 @@ and the save file's patches mean what they meant. What is not below
 4 GB is the port's own and the system's: the stack the system starts
 the program on, the program's arguments, memory the port asks for
 itself. The game is never given a pointer to any of it.
+
+### Where the program's variables are
+
+**An ordering table's link is the low 24 bits of an address** (a
+primitive's first word, as on the console), so every place a primitive
+may be has to have low 24 bits no other such place has: the port follows
+a link by finding the one place it falls in (`port_AddLinkRegion`,
+`src/port/gpu.c`), and stops the program, saying so, where it falls in
+two or none. Four places are fixed (`include/port_platform.h`): the
+console's RAM (`0x80000000`, 2 MB: low bits `0x000000` to `0x1FFFFF`),
+the scratchpad (`0x1F800000`, 1 KB: `0x800000`), the game's stack
+(`0x7FC00000`, 1 MB: `0xC00000`) and the port's own primitive buffers
+(`0x7ED00000`, 2 MB: `0xD00000`). The others are **the game's state's two
+runs of variables**, its data and its bss (from `g_port_game_data` to
+`g_port_state_data_end`, from `g_port_game_bss` to
+`g_port_state_bss_end`: `include/port_state.h`), which are also what a
+snapshot saves (`NETPLAY.md`, section 7). Nothing else of the program
+holds a primitive: what cannot be written cannot be linked, and what is
+outside the state (`config/port_state.txt`: the remastered side channel,
+the window's, SDL's) is the picture's and the host's.
+
+So only the state's variables are held to the 24-bit space, and between
+the RAM and the scratchpad they have 6 MB of it. Every program is linked
+at `0x08200000` (`PROGRAM_BASE`, `tools/port_build.py`; the window's
+builds take it from there), and its state begins past the RAM's 2 MB.
+Each build works out where the two runs fall against the four places
+(`port_build.check_link_space`) and **fails, naming the run, the place
+and by how much**, where they would meet; where they do not it says how
+much room is left. In November 2026 that was 2.8 MB for the headless
+programs, 2.4 MB for the window's on Linux and about the same on
+Windows, where the MinGW object puts the zeroed variables among the
+data. A state that outgrows it: put a large buffer that holds no
+primitive outside the state, or in memory the system gives, or move
+`PROGRAM_BASE` (the band from the scratchpad to the stack has 4 MB
+more, but a run may not cross the scratchpad's kilobyte).
+
+Until then the whole of the program's variables was one place, with the
+remastered side channel's 2.4 MB in it, and the window's builds were held
+to `0x08200000` to `0x08800000` with 70 KB to spare; the headless
+programs, at `0x08400000`, had already reached past the scratchpad's
+place with variables that hold no primitive, and nothing said so.
+Nothing else depends on where the variables are: below 4 GB is all the
+64-bit program needs ("The design"), the 32-bit one the same, and the
+snapshot saves the two runs wherever they lie.
 
 Three things are then left, and each has one form in the source.
 
