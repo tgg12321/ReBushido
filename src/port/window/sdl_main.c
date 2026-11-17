@@ -5,7 +5,7 @@
  * the port (sdl_window.c) and then is the port's program as it is
  * without a window (src/port/main.c):
  *
- *   rebushido [--image FILE] [--config FILE] [--fullscreen]
+ *   rebushido [--image FILE] [--config FILE] [--fullscreen | --windowed]
  *             [--scale fit|integer|stretch] [--filter nearest|linear]
  *             [--no-vsync] [--no-sound] [--no-fps] [--no-log]
  *             [--log FILE]
@@ -48,7 +48,8 @@
 static const char g_port_window_usage[] =
     "rebushido: ReBushido's native port, in a window (docs/PORT.md)\n"
     "\n"
-    "  rebushido [--image FILE] [--config FILE] [--fullscreen]\n"
+    "  rebushido [--image FILE] [--config FILE]\n"
+    "            [--fullscreen | --windowed]\n"
     "            [--scale fit|integer|stretch] [--filter nearest|linear]\n"
     "            [--no-vsync] [--no-sound] [--no-fps] [--no-log]\n"
     "            [--log FILE] [--graphics original|remastered]\n"
@@ -62,7 +63,9 @@ static const char g_port_window_usage[] =
     "  --config FILE  the settings file; rebushido.cfg beside the program\n"
     "                 if nothing says, and the settings built in if there\n"
     "                 is none\n"
-    "  --fullscreen   start filling the screen\n"
+    "  --fullscreen   start filling the screen, which is how it starts\n"
+    "                 with nothing said\n"
+    "  --windowed     start in a window instead\n"
     "  --scale MODE   fit: four by three, as large as the window holds;\n"
     "                 integer: 320 by 240 a whole number of times;\n"
     "                 stretch: all of the window\n"
@@ -143,7 +146,7 @@ static const char g_port_window_usage_end[] =
     "graphics card), --toggle-at N (what F2 does, at every Nth blank),\n"
     "--shot-at N[,P] (what F12 does, at blank N, keeping the Pth\n"
     "picture of it: 0 is the game's own frame and -1 the last shown),\n"
-    "--window WxH (the window that size as it opens), --tap-audio FILE\n"
+    "--window WxH (a window, not the full screen, that size as it opens), --tap-audio FILE\n"
     "(the samples as they are queued), --fault-at N and --fault-in-sound N\n"
     "(touch memory that is not there at vertical blank N, on the game's\n"
     "stack or on the sound card's thread: what a crash leaves in the\n"
@@ -412,7 +415,7 @@ int main(int argc, char **argv) {
     s32 count = 0;
     s32 has_image = 0;
     s32 has_end = 0;
-    s32 fullscreen = 0;
+    s32 fullscreen = -1; /* -1: as the settings say */
     s32 no_vsync = 0;
     s32 scale = -1;
     s32 filter = -1;
@@ -452,6 +455,8 @@ int main(int argc, char **argv) {
             return PORT_EXIT_OK;
         } else if (strcmp(word, "--fullscreen") == 0) {
             fullscreen = 1;
+        } else if (strcmp(word, "--windowed") == 0) {
+            fullscreen = 0;
         } else if (strcmp(word, "--no-vsync") == 0) {
             no_vsync = 1;
         } else if (strcmp(word, "--no-sound") == 0) {
@@ -480,6 +485,9 @@ int main(int argc, char **argv) {
                 port_Complain(
                     "--window takes a size like 1280x720, not ", size);
             }
+            /* a window of a size asked for is a window: a test's
+             * picture is that size whatever the settings say */
+            fullscreen = 0;
         } else if (strcmp(word, "--fault-at") == 0 && has_value) {
             options->fault_at = atoi(argv[++i]);
         } else if (strcmp(word, "--fault-in-sound") == 0 && has_value) {
@@ -608,8 +616,8 @@ int main(int argc, char **argv) {
     if (no_fps) {
         g_port_settings.fps = 0;
     }
-    if (fullscreen) {
-        g_port_settings.is_fullscreen = 1;
+    if (fullscreen >= 0) {
+        g_port_settings.is_fullscreen = fullscreen;
     }
     if (no_vsync) {
         g_port_settings.vsync = 0;

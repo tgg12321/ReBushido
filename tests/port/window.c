@@ -604,7 +604,7 @@ static void test_Keys(void) {
     CHECK_EQ(test_CountBindings(1, 1, PADLup), 1);
     CHECK_EQ(test_CountBindings(0, 1, PADLup), 2);
     CHECK_EQ(settings->scale, PORT_SCALE_FIT);
-    CHECK_EQ(settings->is_fullscreen, 0);
+    CHECK_EQ(settings->is_fullscreen, 1);
     CHECK_EQ(settings->is_linear, 0);
     CHECK_EQ(settings->vsync, 1);
     CHECK_EQ(settings->deadzone, PORT_DEADZONE_DEFAULT);

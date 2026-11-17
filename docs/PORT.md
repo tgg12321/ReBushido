@@ -1265,7 +1265,7 @@ from. A line is `name = value`, and `#` begins a comment:
 ```
 scale = integer            # fit, integer or stretch
 filter = nearest           # nearest or linear
-fullscreen = off           # on or off
+fullscreen = on            # on or off
 vsync = on                 # on or off
 deadzone = 40              # how far a stick counts, in parts of 100
 p1.cross = key Space       # takes Z away from player one's Cross
