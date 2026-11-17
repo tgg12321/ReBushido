@@ -153,7 +153,8 @@ static struct {
     u32 next_out;
     u32 next_frame;
     u32 next_fraction;
-    s16 *out; /* FRAMES_MAX */
+    s16 *out;   /* FRAMES_MAX */
+    s16 *heard; /* FRAMES_MAX: the chip's output with it */
     /* memory: the decoder's, and the file */
     u8 *work;
     u8 *file;
@@ -500,11 +501,12 @@ static s32 port_MusicOpen(const char *key, const char *path) {
     /* the memory a piece is played from, the first time there is one */
     if (g_port_music.out == NULL) {
         g_port_music.out = port_HostAllocate(FRAMES_MAX * 2 * sizeof(s16));
+        g_port_music.heard = port_HostAllocate(FRAMES_MAX * 2 * sizeof(s16));
         source->chunk = port_HostAllocate(CHUNK_FRAMES * 2 * sizeof(s16));
         source->head = port_HostAllocate(HEAD_FRAMES * 2 * sizeof(s16));
     }
-    if (g_port_music.out == NULL || source->chunk == NULL ||
-        source->head == NULL) {
+    if (g_port_music.out == NULL || g_port_music.heard == NULL ||
+        source->chunk == NULL || source->head == NULL) {
         return 0;
     }
     if (size == 0 || size > FILE_BYTES_MAX ||
@@ -842,7 +844,7 @@ void port_MusicStart(void) {
 
 /* The mod's music in place of the disc's sound, or NULL
  * (port_music.h). */
-const s16 *port_PlayMusic(u32 frames) {
+const s16 *port_PlayMusic(u32 frames, s16 **heard) {
     /* a step run again is not heard, and moves nothing here */
     if (g_port_rerun || frames > FRAMES_MAX) {
         return NULL;
@@ -856,5 +858,6 @@ const s16 *port_PlayMusic(u32 frames) {
     }
     port_MusicRender(frames);
     port_MixCdAudio(g_port_music.out, frames);
+    *heard = g_port_music.heard;
     return g_port_music.out;
 }

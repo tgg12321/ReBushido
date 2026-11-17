@@ -456,20 +456,29 @@ static void port_MixSound(u32 frames) {
     static s16 cd[(BLANK_FRAMES + 1) * 2];
     static s16 out[(BLANK_FRAMES + 1) * 2];
 
+    s16 *heard = NULL;
+    const s16 *music;
+
     port_PlayDisc(frames);
     port_ReadCdAudio(cd, frames);
-    /* a mod's music is heard in place of the disc's (port_music.h) */
-    port_RunSpu(cd, port_PlayMusic(frames), out, frames);
+    /* a mod's music is heard in place of the disc's (port_music.h), in
+     * samples of its own: `out` is the game's state, and stays what the
+     * chip made */
+    music = port_PlayMusic(frames, &heard);
+    port_RunSpu(cd, music, out, heard, frames);
     g_port_sample_count += frames;
     /* a step run again is mixed and not heard (port_platform.h) */
     if (g_port_rerun) {
         return;
     }
+    if (music == NULL) {
+        heard = out;
+    }
     if (port_IsWavOn()) {
-        port_AppendWav(out, frames);
+        port_AppendWav(heard, frames);
     }
     if (g_port_sound_hook != NULL) {
-        g_port_sound_hook(out, frames);
+        g_port_sound_hook(heard, frames);
     }
 }
 

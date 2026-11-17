@@ -460,17 +460,18 @@ static void made_Stream(s32 channel, u32 since) {
 }
 
 static void test_Player(void) {
+    s16 *heard = NULL;
     const s16 *got;
     u32 i;
 
     /* nothing playing: the disc's sound is heard */
     g_made_now = 100;
-    CHECK(port_PlayMusic(BLANK) == NULL);
+    CHECK(port_PlayMusic(BLANK, &heard) == NULL);
     /* the stream of bb2_m1-3 begins: the piece from its start, blank by
      * blank */
     made_Stream(3, MADE_SINCE);
     for (i = 0; i < 4; i++) {
-        got = port_PlayMusic(BLANK);
+        got = port_PlayMusic(BLANK, &heard);
         CHECK(got != NULL && made_IsPiece(got, i * BLANK, BLANK, TRUE));
         g_made_now += BLANK;
     }
@@ -479,45 +480,45 @@ static void test_Player(void) {
      * where it was, and so is the piece. */
     g_port_rerun = 1;
     g_made_now = MADE_SINCE + BLANK;
-    CHECK(port_PlayMusic(BLANK) == NULL);
+    CHECK(port_PlayMusic(BLANK, &heard) == NULL);
     g_made_now += BLANK;
-    CHECK(port_PlayMusic(BLANK) == NULL);
+    CHECK(port_PlayMusic(BLANK, &heard) == NULL);
     g_port_rerun = 0;
     g_made_now = MADE_SINCE + 4 * BLANK;
-    got = port_PlayMusic(BLANK);
+    got = port_PlayMusic(BLANK, &heard);
     CHECK(got != NULL && made_IsPiece(got, 4 * BLANK, BLANK, TRUE));
     /* well into it: the loop has gone round */
     g_made_now = MADE_SINCE + 7000;
-    got = port_PlayMusic(BLANK);
+    got = port_PlayMusic(BLANK, &heard);
     CHECK(got != NULL && made_IsPiece(got, 7000, BLANK, TRUE));
     /* the setting off: the disc's sound; on again, the piece where the
      * stream is */
     port_MusicSetOn(0);
-    CHECK(port_PlayMusic(BLANK) == NULL);
+    CHECK(port_PlayMusic(BLANK, &heard) == NULL);
     port_MusicSetOn(1);
     g_made_now = MADE_SINCE + 9000;
-    got = port_PlayMusic(BLANK);
+    got = port_PlayMusic(BLANK, &heard);
     CHECK(got != NULL && made_IsPiece(got, 9000, BLANK, TRUE));
     /* the drive stops: silence, not what the disc still had waiting */
     g_made_streaming = 0;
-    got = port_PlayMusic(BLANK);
+    got = port_PlayMusic(BLANK, &heard);
     CHECK(got != NULL && made_IsSilent(got, BLANK));
     /* a stream no mod has: the disc's sound */
     made_Stream(4, 30000);
-    CHECK(port_PlayMusic(BLANK) == NULL);
+    CHECK(port_PlayMusic(BLANK, &heard) == NULL);
     /* the first piece again: from its start */
     made_Stream(3, 40000);
-    got = port_PlayMusic(BLANK);
+    got = port_PlayMusic(BLANK, &heard);
     CHECK(got != NULL && made_IsPiece(got, 0, BLANK, TRUE));
     /* a piece with no loop: to its end, then silence */
     made_Stream(5, 60000);
     g_made_now = 60000 + MADE_FRAMES - 100;
-    got = port_PlayMusic(BLANK);
+    got = port_PlayMusic(BLANK, &heard);
     CHECK(got != NULL && made_IsPiece(got, MADE_FRAMES - 100, BLANK, FALSE));
     /* a stream on no file of the disc's: nothing to name it by */
     made_Stream(3, 70000);
     g_made_sector = 5000;
-    CHECK(port_PlayMusic(BLANK) == NULL);
+    CHECK(port_PlayMusic(BLANK, &heard) == NULL);
 }
 
 void test_Main(void) {

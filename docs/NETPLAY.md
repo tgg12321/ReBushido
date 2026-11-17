@@ -195,6 +195,13 @@ does not feed back into the fight. Two ways, in order:
   run again stops paying for the mixer. Music needs nothing: it does not
   depend on input, so a rollback ends where the first run did.
 
+A mod's music ([`MODS.md`](MODS.md), "Music") is outside the state: it
+follows the drive by the sound's clock, a step run again quietly hears
+none of it and moves nothing of it, and the samples heard with it are
+made beside the mixer's own, which stay the state's. So two peers may
+have different music mods. A mod's stage files are the game's own data,
+loaded into its state: the peers must have the same.
+
 **`gl_tween` and the side channel.** The tween draws between the frame on
 show (F-1) and the next frame (F), which is worked out before F-1 leaves
 the screen (PORT.md, "More pictures a second"). Rollback keeps that rule,

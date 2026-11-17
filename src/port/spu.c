@@ -837,7 +837,8 @@ const PortSpuCounts *port_GetSpuCounts(void) { return &g_port_spu.counts; }
 
 /* The next samples (port_spu.h): each voice's, added up; the disc's;
  * the reverb's; all of it at the main volume, within 16 bits. */
-void port_RunSpu(const s16 *cd, const s16 *heard_cd, s16 *out, u32 frames) {
+void port_RunSpu(
+    const s16 *cd, const s16 *heard_cd, s16 *out, s16 *heard_out, u32 frames) {
     u16 *regs = g_port_spu.regs;
     u32 frame;
     u32 index;
@@ -858,6 +859,10 @@ void port_RunSpu(const s16 *cd, const s16 *heard_cd, s16 *out, u32 frames) {
         if (!(control & PORT_SPU_CONTROL_ON)) {
             out[frame * 2] = 0;
             out[frame * 2 + 1] = 0;
+            if (heard_cd != NULL) {
+                heard_out[frame * 2] = 0;
+                heard_out[frame * 2 + 1] = 0;
+            }
             continue;
         }
         port_RunSpuNoise(control);
@@ -911,8 +916,15 @@ void port_RunSpu(const s16 *cd, const s16 *heard_cd, s16 *out, u32 frames) {
                 g_port_spu.counts.clipped++;
             }
             if (heard_cd != NULL) {
-                sample =
+                s32 with_music =
                     port_ClampSample(sum[side] + instead[side]) + wet[side];
+
+                with_music =
+                    (port_ClampSample(with_music) * volume) >> VOLUME_SHIFT;
+                heard_out[frame * 2 + side] =
+                    (s16)((control & PORT_SPU_CONTROL_UNMUTED)
+                              ? port_ClampSample(with_music)
+                              : 0);
             }
             sample = (port_ClampSample(sample) * volume) >> VOLUME_SHIFT;
             if (!(control & PORT_SPU_CONTROL_UNMUTED)) {

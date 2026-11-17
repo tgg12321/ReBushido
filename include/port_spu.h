@@ -86,9 +86,10 @@ extern void port_TakeSpuKeys(void);
 /* The next `frames` samples into `out`, a left and a right each. `cd`
  * is the disc's sound for the same samples, or NULL for none. `heard`, if
  * not NULL, is what is heard in its place (a mod's music, port_music.h):
- * the chip goes on as it would with `cd`, its reverb, its counts and its
- * memory the same, and only `out` has `heard` where it had `cd`. */
-extern void port_RunSpu(const s16 *cd, const s16 *heard, s16 *out, u32 frames);
+ * the chip and `out` go on as they would with `cd`, and `heard_out` has
+ * the same samples with `heard` where `out` had `cd`. */
+extern void port_RunSpu(
+    const s16 *cd, const s16 *heard, s16 *out, s16 *heard_out, u32 frames);
 extern const PortSpuCounts *port_GetSpuCounts(void);
 /* Called as a voice is keyed on, if not NULL: for a run's log. */
 extern void (*g_port_spu_key_on_hook)(s32 voice, u32 addr, u32 pitch);

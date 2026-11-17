@@ -43,8 +43,10 @@ extern void port_MusicStart(void);
  * sound, at the drive's volumes as the disc's sound gets them, a left
  * and a right each: NULL where the disc's sound is heard as it is (no
  * mod's piece is playing, the setting is off, or the step is run again).
+ * Where it is not NULL, `*heard` is room for the samples heard with it
+ * (port_RunSpu's `heard_out`), which is none of the game's state.
  * Called before the samples are mixed (src/port/sound.c). */
-extern const s16 *port_PlayMusic(u32 frames);
+extern const s16 *port_PlayMusic(u32 frames, s16 **heard);
 
 /* ---- what is worked out (tests/port/music.c) ---- */
 

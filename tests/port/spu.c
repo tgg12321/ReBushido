@@ -63,7 +63,7 @@ static void made_Run(u32 frames) {
     while (frames > 0) {
         u32 now = frames > 4096 ? 4096 : frames;
 
-        port_RunSpu(NULL, NULL, g_made_out, now);
+        port_RunSpu(NULL, NULL, g_made_out, NULL, now);
         frames -= now;
     }
 }
@@ -502,10 +502,10 @@ static void test_Mixer(void) {
         }
         g_made_regs[PORT_SPU_CD_VOLUME] = 0x4000;
         g_made_regs[PORT_SPU_CD_VOLUME + 1] = 0x7FFF;
-        port_RunSpu(cd, NULL, g_made_out, 16);
+        port_RunSpu(cd, NULL, g_made_out, NULL, 16);
         CHECK_EQ(g_made_out[2 * 15], 0);
         g_made_regs[PORT_SPU_CONTROL] |= PORT_SPU_CONTROL_CD;
-        port_RunSpu(cd, NULL, g_made_out, 16);
+        port_RunSpu(cd, NULL, g_made_out, NULL, 16);
         /* 20000 at half is 10000; at the main volume, 9999 */
         CHECK_EQ(g_made_out[2 * 15], 9999);
         /* -20000 at 32767/32768 is -20000 (rounded down); at the main
@@ -573,7 +573,7 @@ static void test_ReverbMode(u32 mode) {
                 cd[2 * i] = (frame + i < 4) ? 0x6000 : 0;
                 cd[2 * i + 1] = 0;
             }
-            port_RunSpu(cd, NULL, g_made_out, now);
+            port_RunSpu(cd, NULL, g_made_out, NULL, now);
             for (i = 0; i < now; i++) {
                 s32 l = g_made_out[2 * i];
                 s32 r = g_made_out[2 * i + 1];
@@ -626,9 +626,9 @@ static void test_Reverb(void) {
         static s16 cd[2 * 4096];
 
         cd[0] = 0x6000;
-        port_RunSpu(cd, NULL, g_made_out, 4096);
+        port_RunSpu(cd, NULL, g_made_out, NULL, 4096);
         cd[0] = 0;
-        port_RunSpu(cd, NULL, g_made_out, 4096);
+        port_RunSpu(cd, NULL, g_made_out, NULL, 4096);
     }
     for (i = (u32)_spu_rev_startaddr[2] * 8; i < PORT_SPU_RAM_BYTES; i++) {
         any |= port_GetSpuRam()[i];
