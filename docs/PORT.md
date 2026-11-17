@@ -2292,6 +2292,48 @@ on the terraced fields showed a fence the console hides behind a terrace.
   differed in 623,690 pixels instead of 612,810, in 13 of its 183
   pictures, all of them in a fight.
 
+**Where two tiles lie over each other.** The tiles are cells of 2,000
+units, but a tile's mesh is 2,040 across, so it lies over each
+neighbour's by a strip 40 units wide, floors and walls alike (the
+terraced fields have 1,406 pairs of faces in one plane in such strips,
+the Meikyokan dojo 1,922, the parking lot 2,066). On the console the
+painter's order hid it: of two faces the one sorted nearer -- whose
+*farthest* corner is nearer, the depth a tile's face is linked at -- is
+painted over the other. In one buffer with a depth test the two are the
+same plane, and which of them a pixel shows was left to the rounding of
+each one's depth, a step of the buffer's (a 64th of a world unit) being
+about the size of that rounding: on a real card the winner flipped pixel
+by pixel as the camera moved, a texture crawling along every seam. So
+**every face is pushed back by a 256th of its farthest corner's depth**
+(`v_push`, the depth that is written and not the one the fog reads): the
+face the console sorted nearer wins the strip, as it did there, by a
+margin that grows with the depth as the rounding does. Where the two
+farthest corners are as far -- a camera looking straight along a seam --
+**a seam number** settles it: every tile is given a small one when the
+mesh is built, no two tiles whose footprints overlap the same
+(`port_GlStageSeams`, a greedy colouring), and is pushed back a quarter
+of a unit a number. The push is 0.4% of a depth: a fighter 5,000 units
+off is still hidden by ground more than 20 units in front of him, and a
+shadow or a decal is only the less likely to be eaten.
+
+Measured with `port_stage_prove.py` on all 38 stages, held to the
+console's tiles: every stage keeps the mesh, the areas of plainly other
+colour summed over the stages fall from 12.40% to 11.21% (the railway
+1.04% to 0.71%, the abandoned ship 0.53% to 0.34%, the Meikyokan dojo
+0.08% to nothing, practice 1 0.08% to 0.04%; the worst rise, the water
+tower dam, 0.06% to 0.09%), and the mesh's own dots -- a pixel apart
+from all four of its neighbours where the tiles' picture has none --
+from 69,097 to 54,152 (`build/stagemesh/verdict.txt`). What was tried
+first, on the six stages with the most such faces: the seam number
+alone, one world unit a number, mends the crawl but gives a strip to one
+tile from every camera and so matches the tiles less well (the orange
+fields 1.37% of the pixels against 1.12% before, practice 1 and the dojo
+no better); pushing by the farthest corner matches them as well or
+better, and a 256th left fewer dots than a 1,024th. Trimming each
+tile's faces to its own cell instead was not done: it cuts faces and
+texture points the game never cut, and which tile the console showed in
+a strip depends on the camera, which no cut made once can follow.
+
 **What it is worth, measured.** The mesh held against itself with the
 test on and off (`--against nodepth`), four pictures of each of five
 stages: the terraced fields 0.83% of pixels, the purple cavern 0.20%, the
