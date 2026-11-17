@@ -116,6 +116,34 @@ extern u64 port_TextureKey(const u16 *vram, const PortTextureRegion *region);
  * small hexadecimal digits. Needs PORT_MOD_KEY_SIZE bytes. */
 extern void port_TextureKeyName(
     u64 key, const PortTextureRegion *region, char *out, u32 room);
+/* The key of the texels alone, the colour table left out: the same for
+ * a texture whatever its table is doing. Not a file's name; it finds a
+ * texture faded through its table (port_TextureFadeOf). */
+extern u64 port_TextureTexelKey(
+    const u16 *vram, const PortTextureRegion *region);
+
+/* A fade (docs/MODS.md, "Fades"): `count` colours of 15 bits now, each
+ * its colour of `base` with each part multiplied by one number of its
+ * own, as the game's fades write them (tex_TintClut, the boot logo's
+ * pictures). Then TRUE, and in `tint` the three numbers, red in the low
+ * byte, PORT_MOD_TINT_ONE each for as it was; else FALSE. A colour of
+ * nothing (0) stays nothing, and a texel's top bit stays as it was. */
+extern s32 port_TextureFadeOf(
+    const u16 *base, const u16 *now, u32 count, u32 *tint);
+#define PORT_MOD_TINT_ONE 128
+#define PORT_MOD_TINT_MAX 255
+#define PORT_MOD_TINT_SHIFT 8
+#define PORT_MOD_TINT_SAME                                                     \
+    (PORT_MOD_TINT_ONE | (PORT_MOD_TINT_ONE << PORT_MOD_TINT_SHIFT) |          \
+     (PORT_MOD_TINT_ONE << (2 * PORT_MOD_TINT_SHIFT)))
+#define PORT_MOD_PARTS 3
+#define PORT_MOD_PART_BITS 5
+#define PORT_MOD_PART_MAX 31
+#define PORT_MOD_MIX_BIT 0x8000
+/* how many of a part's 31 steps a faded colour may be from its base's
+ * times the scale: the game rounds each step down */
+#define PORT_MOD_FADE_SLACK 2
+
 /* The colour the GPU would draw texel (u, v) of the region in, counted
  * from the region's own corner, the window applied: a 16-bit pixel of
  * video memory, 0 for nothing drawn. */

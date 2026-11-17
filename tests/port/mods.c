@@ -320,6 +320,114 @@ static void test_Keys(void) {
     test_PrintKey("eight", &first);
 }
 
+/* ---- fades ---- */
+
+/* A colour of 15 bits from its three parts and its top bit. */
+static u16 made_Color(s32 r, s32 g, s32 b, s32 top) {
+    return (u16)(r | (g << 5) | (b << 10) | (top ? 0x8000 : 0));
+}
+
+/* The game's fade of a colour table (tex_TintClut's TEX_TINT_SCALE): each
+ * part as eight bits, times a multiplier of 12 bits of fraction, shifted
+ * down by 15; colour 0 left alone. */
+static u16 made_Faded(u16 color, s32 mr, s32 mg, s32 mb) {
+    s32 r = ((color & 31) << 3) * mr >> 15;
+    s32 g = (((color >> 5) & 31) << 3) * mg >> 15;
+    s32 b = (((color >> 10) & 31) << 3) * mb >> 15;
+
+    if (color == 0) {
+        return 0;
+    }
+    return (
+        u16)((color & 0x8000) | (r & 31) | ((g & 31) << 5) | ((b & 31) << 10));
+}
+
+static void test_Fades(void) {
+    u16 base[16];
+    u16 now[16];
+    PortTextureRegion first;
+    PortTextureRegion second;
+    u32 tint = 0;
+    s32 step;
+    s32 i;
+
+    for (i = 0; i < 16; i++) {
+        base[i] =
+            i == 0 ? 0 : made_Color(i * 2 - 1, 31 - i, (i * 7) % 32, i & 1);
+    }
+    /* the same table is no fade at all, and tints by one */
+    CHECK(port_TextureFadeOf(base, base, 16, &tint));
+    CHECK_EQ(tint, PORT_MOD_TINT_SAME);
+    /* every step of a fade to black, as the game writes it, is found, and
+     * its tint is the multiplier's, a little under where the game
+     * rounds each part down */
+    for (step = 0; step <= 4096; step += 256) {
+        for (i = 0; i < 16; i++) {
+            now[i] = made_Faded(base[i], step, step, step);
+        }
+        CHECK(port_TextureFadeOf(base, now, 16, &tint));
+        for (i = 0; i < 3; i++) {
+            s32 part = (s32)((tint >> (8 * i)) & 0xFF);
+            s32 want = step * PORT_MOD_TINT_ONE / 4096;
+
+            CHECK(part - want <= 2 && want - part <= 10);
+        }
+    }
+    /* each part by a number of its own: a tint toward gold */
+    for (i = 0; i < 16; i++) {
+        now[i] = made_Faded(base[i], 4096, 3200, 1000);
+    }
+    CHECK(port_TextureFadeOf(base, now, 16, &tint));
+    CHECK((tint & 0xFF) >= 124 && ((tint >> 16) & 0xFF) <= 34);
+    /* not a fade: another table, a colour of nothing that is now drawn, a
+     * top bit changed, one colour out of step */
+    for (i = 0; i < 16; i++) {
+        now[i] = base[15 - i];
+    }
+    CHECK(!port_TextureFadeOf(base, now, 16, &tint));
+    for (i = 0; i < 16; i++) {
+        now[i] = made_Faded(base[i], 2048, 2048, 2048);
+    }
+    now[0] = made_Color(1, 1, 1, 0);
+    CHECK(!port_TextureFadeOf(base, now, 16, &tint));
+    now[0] = 0;
+    CHECK(port_TextureFadeOf(base, now, 16, &tint));
+    now[4] ^= 0x8000;
+    CHECK(!port_TextureFadeOf(base, now, 16, &tint));
+    now[4] ^= 0x8000;
+    now[7] = made_Color(31, 31, 31, base[7] & 0x8000);
+    CHECK(!port_TextureFadeOf(base, now, 16, &tint));
+    /* a colour faded all the way to nothing is a fade's last step */
+    for (i = 0; i < 16; i++) {
+        now[i] = made_Faded(base[i], 0, 0, 0) & 0x7FFF;
+    }
+    now[0] = 0;
+    for (i = 1; i < 16; i++) {
+        now[i] = (u16)(now[i] | (base[i] & 0x8000));
+    }
+    CHECK(port_TextureFadeOf(base, now, 16, &tint));
+    CHECK_EQ(tint, 0);
+
+    /* the texels' key is the same whatever the table holds, and the
+     * whole key is not */
+    made_Texture4(640, 0, 5, 9, 0, 480);
+    made_Region(&first, PORT_MOD_TEXELS_4, 640, 0, 5, 9, 13, 6, 0, 480);
+    made_Texture4(768, 256, 2, 100, 512, 300);
+    made_Region(&second, PORT_MOD_TEXELS_4, 768, 256, 2, 100, 13, 6, 512, 300);
+    for (i = 1; i < 16; i++) {
+        g_vram[300 * PORT_VRAM_WIDTH + 512 + i] = made_Faded(
+            g_vram[300 * PORT_VRAM_WIDTH + 512 + i], 1500, 1500, 1500);
+    }
+    CHECK(port_TextureKey(g_vram, &first) != port_TextureKey(g_vram, &second));
+    CHECK(port_TextureTexelKey(g_vram, &first) ==
+          port_TextureTexelKey(g_vram, &second));
+    CHECK(port_TextureFadeOf(&g_vram[480 * PORT_VRAM_WIDTH],
+                             &g_vram[300 * PORT_VRAM_WIDTH + 512], 16, &tint));
+    g_vram[(256 + 101) * PORT_VRAM_WIDTH + 768 + 1] ^= 0x10;
+    CHECK(port_TextureTexelKey(g_vram, &first) !=
+          port_TextureTexelKey(g_vram, &second));
+}
+
 /* ---- PNG ---- */
 
 /* FNV-1a of 32 bits over a picture's bytes, which tests/port/mods.py works
@@ -433,6 +541,7 @@ void test_Main(void) {
     test_Manifest();
     test_Folder();
     test_Keys();
+    test_Fades();
     test_WritePng();
     test_ReadPngs();
 }

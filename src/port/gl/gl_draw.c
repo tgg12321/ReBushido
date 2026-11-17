@@ -29,6 +29,7 @@
 #include "gl_shadow.h"
 #include "gl_stage.h"
 #include "port_gpu.h"
+#include "port_mods.h"
 #include "port_remaster.h"
 
 /* ---- GL, as much of it as this file uses ---- */
@@ -166,6 +167,7 @@ typedef ptrdiff_t GLintptr;
     GL(GLint, glGetUniformLocation, (GLuint, const GLchar *))                  \
     GL(void, glUniform1i, (GLint, GLint))                                      \
     GL(void, glUniform1f, (GLint, GLfloat))                                    \
+    GL(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat))                  \
     GL(void, glUniform2f, (GLint, GLfloat, GLfloat))                           \
     GL(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat))         \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))                           \
@@ -180,6 +182,8 @@ PORT_GL_FUNCTIONS
 
 /* A batch's vertices: a frame of the fight has about ten thousand. */
 #define VERTICES_MAX 65536
+/* a part of a fade's tint (port_mods.h) */
+#define TINT_PART_MASK 0xFF
 /* The longest run of pixels sent to the card in one go. */
 #define UPLOAD_PIXELS_MAX (PORT_VRAM_PIXELS)
 
@@ -278,7 +282,8 @@ typedef struct {
     s32 replace_v;
     s32 replace_w;
     s32 replace_h;
-    s32 replace_mix; /* PORT_GL_MIX_... (gl_replace.h) */
+    s32 replace_mix;  /* PORT_GL_MIX_... (gl_replace.h) */
+    u32 replace_tint; /* a fade's (gl_replace.h) */
 } PortGlState;
 
 static struct {
@@ -351,6 +356,8 @@ static struct {
     GLint at_replaced;
     GLint at_replace_rect;
     GLint at_replace_mix;
+    GLint at_replace_tint;
+    GLint blit_at_tint;
     GLint blit_at_replace;
     GLint blit_at_replaced;
     GLint resolve_at_color;
@@ -651,6 +658,8 @@ static const char g_gl_fragment_text[] =
     /* which of its pixels mix: the game's texel under each (0), all (1)
      * or none (2) */
     "uniform int u_replace_mix;\n"
+    /* its colours times this: the tint of a fade (gl_replace.h) */
+    "uniform vec3 u_replace_tint;\n"
     /* the depth test against the ground's mesh: what a corner's own
      * depth was divided by to make its w, what a depth in the world's
      * units is divided by to make a value for the depth buffer, and how
@@ -871,7 +880,7 @@ static const char g_gl_fragment_text[] =
     "                                   step_across / u_replace_rect.zw,\n"
     "                                   step_down / u_replace_rect.zw);\n"
     "            if (got.a < 0.5) { discard; }\n"
-    "            texel_color = got.rgb / got.a * 31.0;\n"
+    "            texel_color = got.rgb / got.a * 31.0 * u_replace_tint;\n"
     "            texel = texel_at(int(floor(uv.x)), int(floor(uv.y)));\n"
     "            if (u_replace_mix == 1) { texel = 32768u; }\n"
     "            if (u_replace_mix == 2) { texel = 1u; }\n"
@@ -1014,13 +1023,14 @@ static const char g_gl_blit_fragment_text[] =
     /* a mod's picture in the place of the rectangle (gl_replace.h) */
     "uniform sampler2D u_replace;\n"
     "uniform int u_replaced;\n"
+    "uniform vec3 u_tint;\n" /* the tint of its fade */
     "uniform vec4 u_rect;\n"
     "in vec2 v_at;\n"
     "out vec4 o_color;\n"
     "void main() {\n"
     "    if (u_replaced != 0) {\n"
     "        vec4 got = texture(u_replace, (v_at - u_rect.xy) / u_rect.zw);\n"
-    "        o_color = vec4(got.rgb / max(got.a, 1.0 / 255.0), 1.0);\n"
+    "        o_color = vec4(got.rgb / max(got.a, 1.0 / 255.0) * u_tint, 1.0);\n"
     "        return;\n"
     "    }\n"
     "    ivec2 at = ivec2(floor(v_at));\n"
@@ -1389,6 +1399,17 @@ static void port_GlSetUniforms(void) {
     glUniform1i(g_gl.at_replace, PORT_GL_REPLACE_UNIT);
 }
 
+/* A fade's tint (port_mods.h, PORT_MOD_TINT_ONE a part for as it was)
+ * into a uniform of three. */
+static void port_GlSetTint(GLint at, u32 tint) {
+    glUniform3f(
+        at, (GLfloat)(tint & TINT_PART_MASK) / (GLfloat)PORT_MOD_TINT_ONE,
+        (GLfloat)((tint >> PORT_MOD_TINT_SHIFT) & TINT_PART_MASK) /
+            (GLfloat)PORT_MOD_TINT_ONE,
+        (GLfloat)((tint >> (2 * PORT_MOD_TINT_SHIFT)) & TINT_PART_MASK) /
+            (GLfloat)PORT_MOD_TINT_ONE);
+}
+
 /* The batch's replacement texture, where it has one (gl_replace.h). */
 static void port_GlSetReplacement(const PortGlState *state) {
     if (state->replace_texture == 0) {
@@ -1399,6 +1420,7 @@ static void port_GlSetReplacement(const PortGlState *state) {
     glActiveTexture(GL_TEXTURE0);
     glUniform1i(g_gl.at_replaced, 1);
     glUniform1i(g_gl.at_replace_mix, state->replace_mix);
+    port_GlSetTint(g_gl.at_replace_tint, state->replace_tint);
     glUniform4f(g_gl.at_replace_rect, (GLfloat)state->replace_u,
                 (GLfloat)state->replace_v, (GLfloat)state->replace_w,
                 (GLfloat)state->replace_h);
@@ -1496,7 +1518,8 @@ static s32 port_GlStateIsSame(const PortGlState *a, const PortGlState *b) {
            a->replace_texture == b->replace_texture &&
            a->replace_u == b->replace_u && a->replace_v == b->replace_v &&
            a->replace_w == b->replace_w && a->replace_h == b->replace_h &&
-           a->replace_mix == b->replace_mix;
+           a->replace_mix == b->replace_mix &&
+           a->replace_tint == b->replace_tint;
 }
 
 static void port_GlWant(const PortGlState *state, s32 vertices) {
@@ -1762,6 +1785,7 @@ static void port_GlStateOf(const PortRemasterPrim *prim, PortGlState *state) {
     state->replace_w = 0;
     state->replace_h = 0;
     state->replace_mix = 0;
+    state->replace_tint = PORT_MOD_TINT_SAME;
 }
 
 /* A mod's picture of the primitive's texture, where there is one
@@ -1779,6 +1803,7 @@ static void port_GlReplacementOf(
     state->replace_w = found.w;
     state->replace_h = found.h;
     state->replace_mix = found.mix;
+    state->replace_tint = found.tint;
 }
 
 /* Whether this primitive is held against the ground by the console's own
@@ -1969,6 +1994,7 @@ static void port_GlClearBands(
 static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
     PortDirtyRect rect;
     u32 replacement;
+    u32 tint = PORT_MOD_TINT_SAME;
 
     if (!g_gl.is_started || w <= 0 || h <= 0) {
         return;
@@ -1989,7 +2015,7 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
             : port_GlReplaceFindPicture(
                   rect.left, rect.top, rect.right - rect.left + 1,
                   rect.bottom - rect.top + 1, g_gl.display_x,
-                  g_gl.display_is_rgb24 ? 0 : g_gl.display_w);
+                  g_gl.display_is_rgb24 ? 0 : g_gl.display_w, &tint);
     glUseProgram(g_gl.blit_program);
     glBindVertexArray(g_gl.blit_array);
     if (replacement != 0) {
@@ -1998,6 +2024,7 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
     }
     glUniform1i(g_gl.blit_at_replace, PORT_GL_REPLACE_UNIT);
     glUniform1i(g_gl.blit_at_replaced, replacement != 0);
+    port_GlSetTint(g_gl.blit_at_tint, tint);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
     glUniform1i(g_gl.blit_at_vram, 0);
@@ -2363,6 +2390,8 @@ const char *port_GlStart(
     g_gl.at_replaced = glGetUniformLocation(g_gl.program, "u_replaced");
     g_gl.at_replace_rect = glGetUniformLocation(g_gl.program, "u_replace_rect");
     g_gl.at_replace_mix = glGetUniformLocation(g_gl.program, "u_replace_mix");
+    g_gl.at_replace_tint = glGetUniformLocation(g_gl.program, "u_replace_tint");
+    g_gl.blit_at_tint = glGetUniformLocation(g_gl.blit_program, "u_tint");
     g_gl.blit_at_replace = glGetUniformLocation(g_gl.blit_program, "u_replace");
     g_gl.blit_at_replaced =
         glGetUniformLocation(g_gl.blit_program, "u_replaced");

@@ -72,6 +72,8 @@ PORT_GL_REPLACE_FUNCTIONS
 #define GREEN_SHIFT 5
 #define BLUE_SHIFT 10
 #define TEXT_SIZE 1024
+/* how many fades the log names */
+#define FADES_SAID_MAX 64
 #define HALF_SHIFT 32
 /* the texture window that leaves every texture point of a picture as it
  * is: all of video memory's */
@@ -89,8 +91,44 @@ typedef struct {
     u64 key;
     u32 texture;
     s32 state;
-    s32 mix; /* PORT_GL_MIX_... */
+    s32 mix;  /* PORT_GL_MIX_... */
+    u32 tint; /* a fade's (port_TextureFadeOf); PORT_MOD_TINT_SAME */
+    /* the fades' generation when a key with no replacement was last
+     * looked for among them */
+    u32 generation;
 } ReplaceSlot;
+
+/* The fades (docs/MODS.md, "Fades"). A texture the game fades through
+ * its colour table is a new key at each step, and a picture it fades by
+ * writing it again is too. So each texture that has a replacement is
+ * kept here with what it was drawn from when it was found -- the colour
+ * table of a texture, the pixels of a picture -- and a key with no
+ * replacement of its own whose texels are a kept one's, with its colours
+ * that one's times a number for each part, is drawn from that one's
+ * picture times those numbers. */
+#define FADES_MAX 1024
+#define PICTURE_FADES_MAX 8
+#define TABLE_COLORS_MAX 256
+#define TABLE_COLORS_4 16
+
+typedef struct {
+    u64 texel_key;
+    s32 bits;
+    u32 texture;
+    s32 mix;
+    s32 colors;
+    u16 table[TABLE_COLORS_MAX];
+} FadeTexture;
+
+/* a picture is held to one kept of its size, wherever either was
+ * written: the game writes a fade's steps into whichever of its two
+ * pictures is being drawn */
+typedef struct {
+    s32 w;
+    s32 h;
+    u32 texture;
+    u16 *pixels;
+} FadePicture;
 
 static struct {
     s32 is_started;
@@ -100,6 +138,14 @@ static struct {
     s32 is_full;
     u32 loaded;
     u32 dumped;
+    FadeTexture *fades;
+    s32 fade_count;
+    FadePicture pictures[PICTURE_FADES_MAX];
+    s32 picture_next;
+    /* one more each time a texture or a picture is kept for the fades:
+     * a key that had no replacement is then looked for again */
+    u32 generation;
+    u32 faded;
 } g_replace;
 
 /* ---- the log ---- */
@@ -123,6 +169,21 @@ static void port_ReplaceSay(const char *format, ...) {
     port_HostWrite(PORT_HOST_ERRORS, line, (u32)length);
 }
 
+/* ---- the fades ---- */
+
+static void port_ReplaceForgetFades(void) {
+    s32 i;
+
+    g_replace.fade_count = 0;
+    for (i = 0; i < PICTURE_FADES_MAX; i++) {
+        free(g_replace.pictures[i].pixels);
+        g_replace.pictures[i].pixels = NULL;
+        g_replace.pictures[i].texture = 0;
+    }
+    g_replace.picture_next = 0;
+    g_replace.generation++;
+}
+
 /* ---- starting ---- */
 
 const char *port_GlReplaceStart(void *(*getproc)(const char *name)) {
@@ -141,6 +202,7 @@ const char *port_GlReplaceStart(void *(*getproc)(const char *name)) {
         g_replace.used = 0;
         g_replace.is_full = FALSE;
     }
+    port_ReplaceForgetFades();
     g_replace.is_started = TRUE;
     return NULL;
 }
@@ -287,6 +349,178 @@ static u32 port_ReplaceLoad(const char *path, const char *name) {
     return texture;
 }
 
+/* ---- fading ---- */
+
+/* How many colours the region's table has: 0 for 16-bit texels. */
+static s32 port_ReplaceColors(const PortTextureRegion *region) {
+    return region->bits == PORT_MOD_TEXELS_4   ? TABLE_COLORS_4
+           : region->bits == PORT_MOD_TEXELS_8 ? TABLE_COLORS_MAX
+                                               : 0;
+}
+
+/* The region's colour table as video memory has it now. */
+static void port_ReplaceTable(const PortTextureRegion *region, u16 *table) {
+    s32 colors = port_ReplaceColors(region);
+    s32 i;
+
+    for (i = 0; i < colors; i++) {
+        table[i] =
+            g_port_vram[(region->clut_y & WINDOW_ALL_Y) * PORT_VRAM_WIDTH +
+                        ((region->clut_x + i) & WINDOW_ALL_X)];
+    }
+}
+
+/* The picture's pixels as video memory has them now, into `out`, their
+ * top bits left out: a picture is shown as it is, and the boot logo's
+ * fade sets them in some steps and not in others. */
+static void port_ReplacePixels(const PortTextureRegion *region, u16 *out) {
+    s32 i;
+    s32 j;
+
+    for (j = 0; j < region->h; j++) {
+        const u16 *row = g_port_vram + (region->page_y + j) * PORT_VRAM_WIDTH +
+                         region->page_x;
+
+        for (i = 0; i < region->w; i++) {
+            out[j * region->w + i] = row[i] & ~MIX_BIT;
+        }
+    }
+}
+
+/* A replacement found for the region's key, kept for the fades with what
+ * it was drawn from. */
+static void port_ReplaceKeepForFades(
+    const PortTextureRegion *region, s32 is_picture, const ReplaceSlot *slot) {
+    if (is_picture) {
+        FadePicture *kept = &g_replace.pictures[g_replace.picture_next];
+        u16 *pixels =
+            malloc((size_t)region->w * (size_t)region->h * sizeof(*pixels));
+
+        if (pixels == NULL) {
+            return;
+        }
+        port_ReplacePixels(region, pixels);
+        free(kept->pixels);
+        kept->w = region->w;
+        kept->h = region->h;
+        kept->texture = slot->texture;
+        kept->pixels = pixels;
+        g_replace.picture_next =
+            (g_replace.picture_next + 1) % PICTURE_FADES_MAX;
+    } else {
+        FadeTexture *kept;
+
+        if (port_ReplaceColors(region) == 0) {
+            return;
+        }
+        if (g_replace.fades == NULL) {
+            g_replace.fades = malloc(FADES_MAX * sizeof(*g_replace.fades));
+        }
+        if (g_replace.fades == NULL || g_replace.fade_count >= FADES_MAX) {
+            return;
+        }
+        kept = &g_replace.fades[g_replace.fade_count++];
+        kept->texel_key = port_TextureTexelKey(g_port_vram, region);
+        kept->bits = region->bits;
+        kept->texture = slot->texture;
+        kept->mix = slot->mix;
+        kept->colors = port_ReplaceColors(region);
+        port_ReplaceTable(region, kept->table);
+    }
+    g_replace.generation++;
+}
+
+/* A picture kept for the fades that the region, a picture with no
+ * replacement of its own, is a fade of: its texture, or 0. */
+static u32 port_ReplacePictureFade(const PortTextureRegion *region, u32 *tint) {
+    u16 *now = NULL;
+    u32 texture = 0;
+    s32 i;
+
+    for (i = 0; i < PICTURE_FADES_MAX && texture == 0; i++) {
+        FadePicture *kept = &g_replace.pictures[i];
+
+        if (kept->pixels == NULL || kept->w != region->w ||
+            kept->h != region->h) {
+            continue;
+        }
+        if (now == NULL) {
+            now = malloc((size_t)region->w * (size_t)region->h * sizeof(*now));
+            if (now == NULL) {
+                return 0;
+            }
+            port_ReplacePixels(region, now);
+        }
+        if (port_TextureFadeOf(
+                kept->pixels, now, (u32)(region->w * region->h), tint)) {
+            texture = kept->texture;
+        }
+    }
+    free(now);
+    return texture;
+}
+
+/* The same for a texture seen through a colour table: the kept one of
+ * the same texels whose table this one's is a fade of, or NULL. */
+static const FadeTexture *port_ReplaceTextureFade(
+    const PortTextureRegion *region, u32 *tint) {
+    u16 table[TABLE_COLORS_MAX];
+    u64 texel_key;
+    s32 i;
+
+    if (port_ReplaceColors(region) == 0 || g_replace.fade_count == 0) {
+        return NULL;
+    }
+    texel_key = port_TextureTexelKey(g_port_vram, region);
+    port_ReplaceTable(region, table);
+    for (i = 0; i < g_replace.fade_count; i++) {
+        const FadeTexture *kept = &g_replace.fades[i];
+
+        if (kept->texel_key == texel_key && kept->bits == region->bits &&
+            port_TextureFadeOf(kept->table, table, (u32)kept->colors, tint)) {
+            return kept;
+        }
+    }
+    return NULL;
+}
+
+/* Whether the region, which has no replacement of its own, is a fade of
+ * one kept: then the slot is that one's picture with the fade's tint. */
+static s32 port_ReplaceFadeOf(const PortTextureRegion *region, s32 is_picture,
+                              ReplaceSlot *slot, const char *name) {
+    u32 tint = PORT_MOD_TINT_SAME;
+
+    slot->generation = g_replace.generation;
+    if (is_picture) {
+        u32 texture = port_ReplacePictureFade(region, &tint);
+
+        if (texture == 0) {
+            return FALSE;
+        }
+        slot->texture = texture;
+        slot->mix = PORT_GL_MIX_TEXEL;
+    } else {
+        const FadeTexture *kept = port_ReplaceTextureFade(region, &tint);
+
+        if (kept == NULL) {
+            return FALSE;
+        }
+        slot->texture = kept->texture;
+        slot->mix = kept->mix;
+    }
+    slot->state = SLOT_LOADED;
+    slot->tint = tint;
+    g_replace.faded++;
+    if (g_replace.faded <= FADES_SAID_MAX) {
+        port_ReplaceSay("mods: texture %s is a fade (%d, %d, %d of %d)", name,
+                        (s32)(tint & BYTE_MAX),
+                        (s32)((tint >> PORT_MOD_TINT_SHIFT) & BYTE_MAX),
+                        (s32)((tint >> (2 * PORT_MOD_TINT_SHIFT)) & BYTE_MAX),
+                        PORT_MOD_TINT_ONE);
+    }
+    return TRUE;
+}
+
 /* ---- the keys ---- */
 
 /* The slot of a key: its own, or the empty one it goes in; NULL when the
@@ -346,8 +580,8 @@ static s32 port_ReplaceMixOf(const PortTextureRegion *region) {
 /* What became of the region's key, worked out the first time it is
  * seen: its texture, or 0, and in `mix` whether it mixes. A key with no
  * replacement is written out then, where `may_dump` says. */
-static u32 port_ReplaceOf(
-    const PortTextureRegion *region, s32 is_picture, s32 may_dump, s32 *mix) {
+static u32 port_ReplaceOf(const PortTextureRegion *region, s32 is_picture,
+                          s32 may_dump, s32 *mix, u32 *tint) {
     u64 key = port_TextureKey(g_port_vram, region);
     ReplaceSlot *slot = port_ReplaceSlotOf(key);
     char name[PORT_MOD_KEY_SIZE];
@@ -356,8 +590,14 @@ static u32 port_ReplaceOf(
     if (slot == NULL) {
         return 0;
     }
+    if (slot->state == SLOT_NONE && slot->generation != g_replace.generation) {
+        /* a replacement has been kept since: a fade of it, perhaps */
+        port_TextureKeyName(key, region, name, sizeof(name));
+        port_ReplaceFadeOf(region, is_picture, slot, name);
+    }
     if (slot->state != SLOT_EMPTY) {
         *mix = slot->mix;
+        *tint = slot->tint;
         return slot->state == SLOT_LOADED ? slot->texture : 0;
     }
     /* seen for the first time; a table nearly full keeps what it has */
@@ -374,8 +614,14 @@ static u32 port_ReplaceOf(
     slot->key = key;
     port_TextureKeyName(key, region, name, sizeof(name));
     path = port_ModFind(PORT_MOD_TEXTURES, name);
+    slot->tint = PORT_MOD_TINT_SAME;
     if (path == NULL) {
         slot->state = SLOT_NONE;
+        if (port_ReplaceFadeOf(region, is_picture, slot, name)) {
+            *mix = slot->mix;
+            *tint = slot->tint;
+            return slot->texture;
+        }
         if (may_dump) {
             port_ReplaceDump(region, name, is_picture);
         }
@@ -384,7 +630,11 @@ static u32 port_ReplaceOf(
     slot->texture = port_ReplaceLoad(path, name);
     slot->state = slot->texture != 0 ? SLOT_LOADED : SLOT_FAILED;
     slot->mix = is_picture ? PORT_GL_MIX_TEXEL : port_ReplaceMixOf(region);
+    if (slot->texture != 0) {
+        port_ReplaceKeepForFades(region, is_picture, slot);
+    }
     *mix = slot->mix;
+    *tint = slot->tint;
     return slot->texture;
 }
 
@@ -442,7 +692,7 @@ s32 port_GlReplaceFind(const PortRemasterPrim *prim, PortGlReplacement *out) {
         !port_ReplaceIsOn() || !port_ReplaceRegionOf(prim, &region)) {
         return FALSE;
     }
-    out->texture = port_ReplaceOf(&region, FALSE, TRUE, &out->mix);
+    out->texture = port_ReplaceOf(&region, FALSE, TRUE, &out->mix, &out->tint);
     if (out->texture == 0) {
         return FALSE;
     }
@@ -475,10 +725,12 @@ static s32 port_ReplaceIsPlain(s32 x, s32 y, s32 w, s32 h) {
 }
 
 u32 port_GlReplaceFindPicture(
-    s32 x, s32 y, s32 w, s32 h, s32 display_x, s32 display_w) {
+    s32 x, s32 y, s32 w, s32 h, s32 display_x, s32 display_w, u32 *tint) {
     PortTextureRegion region;
     s32 is_shown;
     s32 mix = PORT_GL_MIX_TEXEL;
+
+    *tint = PORT_MOD_TINT_SAME;
 
     if (w < PICTURE_SIDE_MIN || h < PICTURE_SIDE_MIN ||
         x + w > PORT_VRAM_WIDTH || y + h > PORT_VRAM_HEIGHT ||
@@ -508,5 +760,5 @@ u32 port_GlReplaceFindPicture(
     if (!is_shown && port_ModsCount(PORT_MOD_TEXTURES) == 0) {
         return 0;
     }
-    return port_ReplaceOf(&region, TRUE, is_shown, &mix);
+    return port_ReplaceOf(&region, TRUE, is_shown, &mix, tint);
 }

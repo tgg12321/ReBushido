@@ -42,7 +42,9 @@ typedef struct {
     s32 v;
     s32 w;
     s32 h;
-    s32 mix; /* PORT_GL_MIX_... */
+    s32 mix;  /* PORT_GL_MIX_... */
+    u32 tint; /* its colours times this, a fade's (port_TextureFadeOf,
+               * port_mods.h): PORT_MOD_TINT_SAME for none */
 } PortGlReplacement;
 
 /* Looks up the GL functions it uses: NULL, or why it cannot. */
@@ -53,10 +55,11 @@ extern const char *port_GlReplaceStart(void *(*getproc)(const char *name));
 extern s32 port_GlReplaceFind(
     const PortRemasterPrim *prim, PortGlReplacement *out);
 /* The replacement of the rectangle of video memory the game has just
- * written (a fill, a copy, a load): its texture, or 0. `display_x` and
- * `display_w` are the columns the display shows: what is written there
- * and is not of one colour is a picture, and is written out as one. */
+ * written (a fill, a copy, a load): its texture, or 0, and in `tint` the
+ * tint of its fade. `display_x` and `display_w` are the columns the
+ * display shows: what is written there and is not of one colour is a
+ * picture, and is written out as one. */
 extern u32 port_GlReplaceFindPicture(
-    s32 x, s32 y, s32 w, s32 h, s32 display_x, s32 display_w);
+    s32 x, s32 y, s32 w, s32 h, s32 display_x, s32 display_w, u32 *tint);
 
 #endif /* GL_REPLACE_H */
