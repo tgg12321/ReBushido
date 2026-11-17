@@ -98,6 +98,8 @@ void port_MapFixedMemory(void) {
 
 void port_MapMemory(void) { port_MapFixedMemory(); }
 
+/* Memory at a fixed address a part of the port asks for later
+ * (port_platform.h): inside a piece given already, or the system's. */
 s32 port_MapFixed(u32 address, u32 size) {
     s32 i;
 
