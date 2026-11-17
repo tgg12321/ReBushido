@@ -22,7 +22,7 @@
 #define NET_MARK_0 'R'
 #define NET_MARK_1 'B'
 #define NET_HEADER_BYTES PORT_NET_HEADER_BYTES
-#define NET_DATAGRAM_MAX 512
+#define NET_DATAGRAM_MAX PORT_NET_DATAGRAM_MAX
 /* Datagrams held back by --net-latency, at most. */
 #define NET_DELAYED_MAX 512
 #define NET_LOSS_RANGE 100
@@ -78,10 +78,23 @@ static s32 g_port_net_socket = -1;
 static PortNetAddress g_port_net_bind;
 static PortNetAddress g_port_net_peer;
 static s32 g_port_net_wanted;
+/* --host: the peer is whoever is heard first, until it is fixed; until
+ * then what is sent goes to the last program heard. */
+static s32 g_port_net_has_peer;
+static s32 g_port_net_is_fixed;
+static PortNetAddress g_port_net_heard;
+static s32 g_port_net_has_heard;
+/* The clock in milliseconds, and the ticks it was last read at. */
+static u32 g_port_net_clock_ms;
+static u32 g_port_net_clock_ticks;
+static u32 g_port_net_clock_rest;
+static s32 g_port_net_clock_started;
 static u32 g_port_net_latency_ms;
 static u32 g_port_net_loss;
 static u32 g_port_net_random = 0x2545F491U;
-static PortNetDelayed g_port_net_delayed[NET_DELAYED_MAX];
+/* (memory the system gives, for a run with --net-latency alone: it is
+ * large, and the program's variables have a place of fixed size) */
+static PortNetDelayed *g_port_net_delayed;
 static u32 g_port_net_delayed_count;
 /* What went and what was dropped, for the report. */
 static u32 g_port_net_sent;
@@ -132,8 +145,7 @@ s32 port_ParseNetAddress(const char *text, PortNetAddress *out) {
             return 0;
         }
     }
-    if (count != ADDRESS_PARTS + 1 || parts[ADDRESS_PARTS] == 0 ||
-        parts[ADDRESS_PARTS] > PORT_NUMBER_MAX) {
+    if (count != ADDRESS_PARTS + 1 || parts[ADDRESS_PARTS] > PORT_NUMBER_MAX) {
         return 0;
     }
     out->address = 0;
@@ -153,6 +165,70 @@ void port_SetNetAddresses(
     g_port_net_bind = *bind;
     g_port_net_peer = *peer;
     g_port_net_wanted = 1;
+    g_port_net_has_peer = 1;
+    g_port_net_is_fixed = 1;
+}
+
+void port_SetNetListen(const PortNetAddress *bind) {
+    g_port_net_bind = *bind;
+    g_port_net_wanted = 1;
+    g_port_net_has_peer = 0;
+    g_port_net_is_fixed = 0;
+}
+
+s32 port_GetNetPeer(PortNetAddress *peer) {
+    if (g_port_net_has_peer) {
+        *peer = g_port_net_peer;
+        return 1;
+    }
+    if (g_port_net_has_heard) {
+        *peer = g_port_net_heard;
+        return 1;
+    }
+    return 0;
+}
+
+void port_FixNetPeer(void) {
+    if (!g_port_net_has_peer && g_port_net_has_heard) {
+        g_port_net_peer = g_port_net_heard;
+        g_port_net_has_peer = 1;
+    }
+    g_port_net_is_fixed = g_port_net_has_peer;
+}
+
+/* The PC's clock in milliseconds (port_net.h): the host's ticks wrap
+ * after minutes, so they are added up as they pass. */
+u32 port_NetClock(void) {
+    u32 now = port_HostTicks();
+    u32 ticks;
+
+    if (!g_port_net_clock_started) {
+        g_port_net_clock_started = 1;
+        g_port_net_clock_ticks = now;
+    }
+    ticks = now - g_port_net_clock_ticks + g_port_net_clock_rest;
+    g_port_net_clock_ticks = now;
+    g_port_net_clock_ms += ticks / NET_TICKS_PER_MS;
+    g_port_net_clock_rest = ticks % NET_TICKS_PER_MS;
+    return g_port_net_clock_ms;
+}
+
+void port_NetPutWord(u8 *out, u32 value) {
+    s32 i;
+
+    for (i = 0; i < WORD_BYTES; i++) {
+        out[i] = (u8)(value >> (i * BITS_PER_BYTE));
+    }
+}
+
+u32 port_NetGetWord(const u8 *in) {
+    u32 value = 0;
+    s32 i;
+
+    for (i = 0; i < WORD_BYTES; i++) {
+        value |= (u32)in[i] << (i * BITS_PER_BYTE);
+    }
+    return value;
 }
 
 void port_SetNetTrouble(u32 latency_ms, u32 loss) {
@@ -164,6 +240,14 @@ void port_SetNetTrouble(u32 latency_ms, u32 loss) {
 s32 port_StartNet(void) {
     if (!g_port_net_wanted) {
         return 1;
+    }
+    if (g_port_net_latency_ms != 0) {
+        g_port_net_delayed =
+            port_HostAllocate(NET_DELAYED_MAX * (u32)sizeof(PortNetDelayed));
+        if (g_port_net_delayed == NULL) {
+            port_Log("rebushido: the network: no memory for --net-latency\n");
+            return 0;
+        }
     }
     g_port_net_socket = port_HostUdpOpen(&g_port_net_bind);
     if (g_port_net_socket < 0) {
@@ -190,6 +274,15 @@ static u32 port_NetRandom(void) {
     return x;
 }
 
+/* Where a datagram goes: the peer, or before there is one (--host) the
+ * program heard last; NULL if there is nobody. */
+static const PortNetAddress *port_NetTo(void) {
+    if (g_port_net_has_peer) {
+        return &g_port_net_peer;
+    }
+    return g_port_net_has_heard ? &g_port_net_heard : NULL;
+}
+
 /* Sends what --net-latency has held back long enough. */
 static void port_NetFlush(void) {
     u32 now = port_HostTicks();
@@ -200,8 +293,10 @@ static void port_NetFlush(void) {
         PortNetDelayed *delayed = &g_port_net_delayed[i];
 
         if ((s32)(now - delayed->due) >= 0) {
-            port_HostUdpSend(g_port_net_socket, &g_port_net_peer, delayed->data,
-                             delayed->bytes);
+            if (port_NetTo() != NULL) {
+                port_HostUdpSend(g_port_net_socket, port_NetTo(), delayed->data,
+                                 delayed->bytes);
+            }
         } else {
             if (kept != i) {
                 g_port_net_delayed[kept] = *delayed;
@@ -215,7 +310,8 @@ static void port_NetFlush(void) {
 /* A datagram to the other program (port_net.h): dropped, held back or
  * sent now. */
 void port_NetSend(const void *bytes, u32 count) {
-    if (g_port_net_socket < 0 || count > NET_DATAGRAM_MAX) {
+    if (g_port_net_socket < 0 || count > NET_DATAGRAM_MAX ||
+        port_NetTo() == NULL) {
         return;
     }
     g_port_net_sent++;
@@ -225,7 +321,7 @@ void port_NetSend(const void *bytes, u32 count) {
         return;
     }
     if (g_port_net_latency_ms == 0) {
-        port_HostUdpSend(g_port_net_socket, &g_port_net_peer, bytes, count);
+        port_HostUdpSend(g_port_net_socket, port_NetTo(), bytes, count);
         return;
     }
     port_NetFlush();
@@ -245,7 +341,8 @@ void port_NetSend(const void *bytes, u32 count) {
 }
 
 /* The other program's next datagram (port_net.h); one from anybody else
- * is not looked at. */
+ * is not looked at. Before a host has fixed its peer anybody's is, and
+ * the sender is the one answered. */
 s32 port_NetReceive(void *bytes, u32 room, u32 wait_ms) {
     PortNetAddress from;
     s32 got;
@@ -263,10 +360,15 @@ s32 port_NetReceive(void *bytes, u32 room, u32 wait_ms) {
         }
         got = port_HostUdpReceive(g_port_net_socket, bytes, room, &from, wait);
         if (got >= 0) {
-            /* only the peer's own */
-            if (from.address != g_port_net_peer.address ||
-                from.port != g_port_net_peer.port) {
+            /* only the peer's own, once it is fixed */
+            if (g_port_net_is_fixed &&
+                (from.address != g_port_net_peer.address ||
+                 from.port != g_port_net_peer.port)) {
                 continue;
+            }
+            if (!g_port_net_is_fixed) {
+                g_port_net_heard = from;
+                g_port_net_has_heard = 1;
             }
             g_port_net_received++;
             return got;

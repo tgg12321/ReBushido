@@ -32,6 +32,9 @@
 #include <windows.h>
 
 #include <commdlg.h>
+#include <process.h>
+#else
+#include <unistd.h>
 #endif
 
 #include "port_host.h"
@@ -125,6 +128,11 @@ static const char g_port_window_usage[] =
     "frames a second, and the speed against the console's. F12 keeps a\n"
     "picture of the window as a PNG in screenshots/ beside the program,\n"
     "and the session's log says where it went.\n"
+    "\n"
+    "Online: the settings menu's Play online page, or --host ADDRESS:PORT\n"
+    "(0.0.0.0:7845 to be found from other PCs) and --join ADDRESS:PORT\n"
+    "on the other PC, with --net-delay N on the host's (docs/PLAYING.md,\n"
+    "\"Playing online\").\n"
     "\n"
     "The memory cards are card1.mcd and card2.mcd beside the program,\n"
     "card images of 128 KB that an emulator or a card tool opens; one\n"
@@ -387,6 +395,132 @@ static void port_NoteImage(const char *path) {
     port_NoteImageFile(sectors);
 }
 
+/* ---- starting again, online ---- */
+
+/* The command line as the program was started, for starting it again. */
+static s32 g_port_main_argc;
+static char **g_port_main_argv;
+static char *g_port_main_path;
+
+/* What a start as a session leaves out of the command line it was
+ * started with: the network's options, which it gives anew, and the
+ * settings menu's for a test, which brought it here. Each with how many
+ * words follow it. */
+static const struct {
+    const char *option;
+    s32 values;
+} g_port_online_drops[] = {
+    {"--host", 1},           {"--join", 1},          {"--net-bind", 1},
+    {"--net-peer", 1},       {"--netplay", 1},       {"--net-delay", 1},
+    {"--link-side", 1},      {"--rollback-test", 1}, {"--rollback-every", 1},
+    {"--rollback-quiet", 0}, {"--menu-at", 1},       {"--menu-keys", 1},
+    {"--menu-shots", 1},
+};
+
+#if defined(_WIN32)
+/* A word of a command line as Windows' C library reads it back: in
+ * double quotes, with a quote inside taken as it is. Into `out`. */
+static void port_QuoteWord(const char *word, char *out, size_t room) {
+    size_t used = 0;
+
+    if (room < 3) {
+        out[0] = 0;
+        return;
+    }
+    out[used++] = '"';
+    for (; *word != 0 && used + 3 < room; word++) {
+        if (*word == '"') {
+            out[used++] = '\\';
+        }
+        out[used++] = *word;
+    }
+    out[used++] = '"';
+    out[used] = 0;
+}
+#endif
+
+/* The program again, as the host of a session at `address` or its guest
+ * going there (sdl_window.h): the same command line, but the network's
+ * options, with these. The window and the sound card are let go first.
+ * On Linux the program becomes the new one; on Windows the new one is
+ * started and this one ends. Returns only if it could not be done. */
+void port_StartOnline(
+    s32 is_host, const char *address, s32 delay, s32 is_local) {
+    static char *words[ARGUMENTS_MAX + 16];
+    static char delay_text[16];
+    static char host_option[] = "--host";
+    static char join_option[] = "--join";
+    static char delay_option[] = "--net-delay";
+    static char bind_option[] = "--net-bind";
+    static char bind_local[] = "127.0.0.1:0";
+    static char bind_any[] = "0.0.0.0:0";
+    static char where[PATH_BYTES_MAX];
+    s32 count = 0;
+    s32 i;
+
+    if (g_port_main_path == NULL) {
+        return;
+    }
+    words[count++] = g_port_main_path;
+    for (i = 1; i < g_port_main_argc && count < ARGUMENTS_MAX; i++) {
+        size_t drop;
+        s32 skip = -1;
+
+        for (drop = 0; drop < sizeof(g_port_online_drops) /
+                                  sizeof(g_port_online_drops[0]);
+             drop++) {
+            if (strcmp(g_port_main_argv[i], g_port_online_drops[drop].option) ==
+                0) {
+                skip = g_port_online_drops[drop].values;
+            }
+        }
+        if (skip >= 0) {
+            i += skip;
+            continue;
+        }
+        words[count++] = g_port_main_argv[i];
+    }
+    snprintf(where, sizeof(where), "%s", address);
+    snprintf(delay_text, sizeof(delay_text), "%d", delay);
+    words[count++] = is_host ? host_option : join_option;
+    words[count++] = where;
+    if (is_host) {
+        words[count++] = delay_option;
+        words[count++] = delay_text;
+    } else {
+        words[count++] = bind_option;
+        words[count++] = is_local ? bind_local : bind_any;
+    }
+    words[count] = NULL;
+    port_Say("online: the program starts again as the %s of a session at %s",
+             is_host ? "host" : "guest", address);
+#if defined(_WIN32)
+    {
+        static char quoted[ARGUMENTS_MAX + 16][PATH_BYTES_MAX];
+        static char *quoted_words[ARGUMENTS_MAX + 16];
+
+        for (i = 0; i < count; i++) {
+            port_QuoteWord(words[i], quoted[i], sizeof(quoted[i]));
+            quoted_words[i] = quoted[i];
+        }
+        quoted_words[count] = NULL;
+        if (_spawnv(_P_NOWAIT, g_port_main_path,
+                    (const char * const *)quoted_words) == -1) {
+            port_Say("online: the program cannot be started again");
+            return;
+        }
+        port_Quit(PORT_EXIT_OK);
+    }
+#else
+    port_EndSession(PORT_EXIT_OK);
+    SDL_Quit();
+    execv(g_port_main_path, words);
+    fprintf(stderr, "rebushido: online: %s cannot be started again\n",
+            g_port_main_path);
+    exit(PORT_EXIT_FAILED);
+#endif
+}
+
 /* ---- the program ---- */
 
 /* The program's own path, which the port reads its names beside
@@ -461,8 +595,11 @@ int main(int argc, char **argv) {
 
     SDL_SetMainReady();
     options->tap_every = 1;
+    g_port_main_argc = argc;
+    g_port_main_argv = argv;
     if (argc > 0) {
         passed[count++] = port_OwnPath(argv[0]);
+        g_port_main_path = passed[0];
     }
     for (i = 1; i < argc; i++) {
         const char *word = argv[i];
@@ -717,6 +854,10 @@ int main(int argc, char **argv) {
         /* the English top menu the program ships is a mod of its own,
          * mods/english/, which the settings leave out (docs/MODS.md) */
         port_ModsLeaveOut("english");
+    }
+    if (!g_port_settings.ui) {
+        /* and the menus' lettering drawn again, mods/ui/ */
+        port_ModsLeaveOut("ui");
     }
     /* a mod's music, or the game's own (docs/MODS.md, "Music"); the
      * command line's --music-mods comes after and has the last word */

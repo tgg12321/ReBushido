@@ -13,6 +13,8 @@
 #include "bb2.h"
 
 #define MODS_MAX 64
+/* how many mods the settings can leave out (port_ModsLeaveOut) */
+#define LEFT_OUT_MAX 8
 #define FILES_MAX 16384
 /* the table's slots: a power of two, twice the files */
 #define SLOTS 32768
@@ -55,11 +57,11 @@
 #define VRAM_Y_MASK (PORT_VRAM_HEIGHT - 1)
 
 static const char * const g_port_mod_kind_folders[PORT_MOD_KINDS] = {
-    "textures", "models", "music", "stages"};
+    "textures", "models", "music", "stages", "skies"};
 /* the ending a kind's file must have to be read, or one of several
  * separated by `|`; NULL for any */
 static const char * const g_port_mod_kind_endings[PORT_MOD_KINDS] = {
-    ".png", ".glb", ".ogg|.wav", NULL};
+    ".png", ".glb", ".ogg|.wav", NULL, ".png"};
 
 typedef struct {
     PortModManifest manifest;
@@ -80,7 +82,9 @@ static struct {
     s32 is_off;
     const char *folder;
     const char *dump_folder;
-    const char *left_out; /* a mod's folder the settings turned off */
+    /* the mods' folders the settings turned off */
+    const char *left_out[LEFT_OUT_MAX];
+    s32 left_out_count;
     char root[PATH_SIZE];
     s32 mod_count;
     PortMod mods[MODS_MAX];
@@ -480,6 +484,7 @@ static void port_ModsEachMod(void *context, const char *name, s32 is_folder) {
     char text[MANIFEST_BYTES_MAX];
     char problem[PATH_SIZE / 4];
     u32 size;
+    s32 i;
 
     (void)context;
     if (!is_folder || port_TextLength(name) >= FOLDER_NAME_SIZE) {
@@ -496,8 +501,12 @@ static void port_ModsEachMod(void *context, const char *name, s32 is_folder) {
     port_ModsCopy(mod->manifest.name, sizeof(mod->manifest.name), name,
                   port_TextLength(name));
     mod->manifest.is_enabled = TRUE;
-    mod->is_left_out = g_port_mods.left_out != NULL &&
-                       port_ModsTextsEqual(name, g_port_mods.left_out);
+    mod->is_left_out = FALSE;
+    for (i = 0; i < g_port_mods.left_out_count; i++) {
+        if (port_ModsTextsEqual(name, g_port_mods.left_out[i])) {
+            mod->is_left_out = TRUE;
+        }
+    }
     port_ModsSay(path, sizeof(path), "%s/%s/%s", g_port_mods.root, name,
                  PORT_MOD_MANIFEST);
     size = port_ModReadFile(path, text, sizeof(text));
@@ -605,7 +614,11 @@ void port_ModsSetFolder(const char *folder) {
     g_port_mods.folder = folder;
 }
 
-void port_ModsLeaveOut(const char *folder) { g_port_mods.left_out = folder; }
+void port_ModsLeaveOut(const char *folder) {
+    if (g_port_mods.left_out_count < LEFT_OUT_MAX) {
+        g_port_mods.left_out[g_port_mods.left_out_count++] = folder;
+    }
+}
 
 void port_ModsSetDumpFolder(const char *folder) {
     g_port_mods.dump_folder = folder;
@@ -674,11 +687,12 @@ void port_ModsStart(const char *program) {
             continue;
         }
         port_Log("mods:   %s%s%s (%s, order %d): %d textures, %d models, "
-                 "%d music, %d stages\n",
+                 "%d music, %d stages, %d skies\n",
                  mod->manifest.name, mod->manifest.version[0] != 0 ? " " : "",
                  mod->manifest.version, mod->folder, mod->manifest.order,
                  mod->counts[PORT_MOD_TEXTURES], mod->counts[PORT_MOD_MODELS],
-                 mod->counts[PORT_MOD_MUSIC], mod->counts[PORT_MOD_STAGES]);
+                 mod->counts[PORT_MOD_MUSIC], mod->counts[PORT_MOD_STAGES],
+                 mod->counts[PORT_MOD_SKIES]);
     }
     if (g_port_mods.overridden > 0) {
         port_Log("mods: %d files of one mod overridden by a later one's\n",
@@ -780,9 +794,11 @@ static u64 port_KeyHalf(u64 key, u32 half) {
     return port_KeyByte(port_KeyByte(key, half), half >> BITS_PER_BYTE);
 }
 
-/* FNV-1a over the depth, the size, the texels row by row and the colour
- * table, each number of two bytes low byte first (port_mods.h). */
-u64 port_TextureKey(const u16 *vram, const PortTextureRegion *region) {
+/* FNV-1a over the depth, the size, the texels row by row and, where
+ * `with_table` says, the colour table, each number of two bytes low byte
+ * first (port_mods.h). */
+static u64 port_TextureKeyOf(
+    const u16 *vram, const PortTextureRegion *region, s32 with_table) {
     u64 key = KEY_START;
     s32 colors = region->bits == PORT_MOD_TEXELS_4   ? COLORS_4
                  : region->bits == PORT_MOD_TEXELS_8 ? COLORS_8
@@ -802,10 +818,86 @@ u64 port_TextureKey(const u16 *vram, const PortTextureRegion *region) {
                               : port_KeyHalf(key, value);
         }
     }
-    for (i = 0; i < colors; i++) {
+    for (i = 0; with_table && i < colors; i++) {
         key = port_KeyHalf(key, port_TextureClut(vram, region, (u32)i));
     }
     return key;
+}
+
+u64 port_TextureKey(const u16 *vram, const PortTextureRegion *region) {
+    return port_TextureKeyOf(vram, region, TRUE);
+}
+
+u64 port_TextureTexelKey(const u16 *vram, const PortTextureRegion *region) {
+    return port_TextureKeyOf(vram, region, FALSE);
+}
+
+/* ---- a fade ---- */
+
+/* One of a colour's three parts of five bits. */
+static s32 port_FadePart(u16 color, s32 part) {
+    return (color >> (part * PORT_MOD_PART_BITS)) & PORT_MOD_PART_MAX;
+}
+
+/* Each part's number from what the base's colours and the new ones add up
+ * to, then every colour held to its base's times it (port_mods.h). */
+s32 port_TextureFadeOf(const u16 *base, const u16 *now, u32 count, u32 *tint) {
+    u32 sum_base[PORT_MOD_PARTS] = {0, 0, 0};
+    u32 sum_now[PORT_MOD_PARTS] = {0, 0, 0};
+    u32 scale[PORT_MOD_PARTS];
+    u32 i;
+    s32 part;
+
+    /* each part's scale: what the colours of the base add up to against
+     * what they add up to now */
+    for (i = 0; i < count; i++) {
+        if (base[i] == 0) {
+            /* the colour of nothing is left alone by a fade */
+            if (now[i] != 0) {
+                return FALSE;
+            }
+            continue;
+        }
+        if (now[i] != 0 && ((base[i] ^ now[i]) & PORT_MOD_MIX_BIT) != 0) {
+            return FALSE;
+        }
+        for (part = 0; part < PORT_MOD_PARTS; part++) {
+            sum_base[part] += (u32)port_FadePart(base[i], part);
+            sum_now[part] += (u32)port_FadePart(now[i], part);
+        }
+    }
+    for (part = 0; part < PORT_MOD_PARTS; part++) {
+        if (sum_base[part] == 0) {
+            if (sum_now[part] != 0) {
+                return FALSE;
+            }
+            scale[part] = PORT_MOD_TINT_ONE;
+            continue;
+        }
+        scale[part] = (sum_now[part] * PORT_MOD_TINT_ONE + sum_base[part] / 2) /
+                      sum_base[part];
+        if (scale[part] > PORT_MOD_TINT_MAX) {
+            return FALSE;
+        }
+    }
+    /* and every colour that scale of its base, to within the rounding of
+     * a fade's steps */
+    for (i = 0; i < count; i++) {
+        for (part = 0; part < PORT_MOD_PARTS; part++) {
+            s32 want = (s32)(((u32)port_FadePart(base[i], part) * scale[part] +
+                              PORT_MOD_TINT_ONE / 2) /
+                             PORT_MOD_TINT_ONE);
+            s32 got = port_FadePart(now[i], part);
+
+            if (got - want > PORT_MOD_FADE_SLACK ||
+                want - got > PORT_MOD_FADE_SLACK) {
+                return FALSE;
+            }
+        }
+    }
+    *tint = scale[0] | (scale[1] << PORT_MOD_TINT_SHIFT) |
+            (scale[2] << (2 * PORT_MOD_TINT_SHIFT));
+    return TRUE;
 }
 
 void port_TextureKeyName(

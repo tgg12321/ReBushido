@@ -145,6 +145,10 @@ extern void port_RunSoundBlank(u32 blank);
  * once in a blank: the blank's samples are made in two pieces, before
  * the sound library's tick and after it. */
 extern void (*g_port_sound_hook)(const s16 *samples, u32 frames);
+/* The same of a step netplay runs again (g_port_rerun), which the card is
+ * never given as it is: the window puts it in place of what it queued of
+ * those blanks and has not played yet (src/port/window/sdl_net.c). */
+extern void (*g_port_rerun_sound_hook)(const s16 *samples, u32 frames);
 /* What Sony's libcd does to the chip as the drive's library starts
  * (CD_initvol): the disc's sound at half of full scale and the chip's CD
  * input on. The port's libcd is its own, so its CdInit calls this

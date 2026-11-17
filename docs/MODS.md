@@ -41,9 +41,10 @@ mods/
   `.glb` models, by the file's name on the disc, `M100.glb`, and the
   weapons', by the weapon model's number, `W00.glb` to `W57.glb`: PORT.md,
   "The fighters' own models"; `tools/fighter_hd.py` makes a whole mod of
-  them, the hd mod, from your disc), `music/` (`.ogg` and `.wav`:
-  "Music") and `stages/` (any ending: "Stages"). Under a kind's folder
-  the files may be in folders of any names, four deep.
+  them, the hd mod, from your disc), `skies/` (a stage's sky, below),
+  `music/` (`.ogg` and `.wav`: "Music") and `stages/` (any ending:
+  "Stages"). Under a kind's folder the files may be in folders of any
+  names, four deep.
 - A file's **key** is its name without its ending, in small letters,
   wherever it is under its kind's folder. A texture has to end `.png`,
   a piece of music `.ogg` or `.wav`.
@@ -87,7 +88,9 @@ changes.
 1. Run with `--dump-textures FOLDER`. Every texture the game draws is
    written there as a PNG the first time it is drawn, named by its key,
    once: play through what you want to change. A texel the game draws
-   as nothing is clear in the PNG.
+   as nothing is clear in the PNG. The log says where each was
+   (`mods: wrote ... (page X Y, at U V, table X Y)`): the pieces of one
+   line of a menu's lettering lie side by side in one page.
 2. Draw a better one, **at any size** -- two, four or eight times the
    texture, or any other size; it is stretched over the texture and
    smoothed. Keep the clear parts clear: a pixel whose alpha is less than
@@ -160,10 +163,6 @@ of its own.
   would be hundreds of files. The scene wants keys by whole page and
   colour table, which is the next step (below).
 - **The fight drawn again under the pause** is the scene as well.
-- **A texture whose colour table the game is fading** is a new key at
-  each step of the fade, and is drawn from video memory during it. The
-  boot logo fades by writing its pixels again each frame, so it is five
-  keys, one for each step: a mod gives each of them, or only the first.
 - **The movie**, which the console shows in its 24-bit mode and the
   remastered picture leaves to the software GPU. The title picture held
   after it has not been looked at yet: the play tests' presses skip it.
@@ -223,7 +222,146 @@ times the texture across and twelve down, square on the screen.
 dump of a run from the boot to a mode chosen has one key for each row
 and each piece of the title, and the mod replaces every one of them
 from the menu's first frame to its last. A texture that is faded through
-its colour table is still a new key at each step (below).
+its colour table is a new key at each step, and is drawn from the
+replacement it fades from ("Fades", below).
+
+## Fades
+
+A texture the game fades through its colour table (`tex_TintClut`, the
+fades of `disp_`) is a new key at each step of the fade, and so is a
+picture it fades by writing it again each frame (the boot logo, five
+keys). A replacement still holds through them: **each replacement found
+is kept with what it was found with** -- the colour table of a texture,
+the pixels of a picture -- and a key with no replacement of its own is
+held to the kept ones. Where its texels are a kept texture's (the key of
+the texels alone, `port_TextureTexelKey`) and every colour of its table
+is that one's with each part times one number (`port_TextureFadeOf`:
+colour 0 stays 0, a texel's top bit stays, each part within two of its
+31 steps), or where it is a picture of a kept one's size whose every
+pixel is so, it is drawn from the kept one's picture, its colours
+**times those three numbers** (`u_replace_tint`, and `u_tint` for a
+picture). The log says so once for each: `mods: texture KEY is a fade
+(62, 62, 62 of 128)`. A key that had no replacement is looked at again
+whenever another replacement is kept. The tint is a mod's as much as
+the game's: a texture whose table the game tints gold for the cursor is
+drawn gold from the same picture.
+
+What this cannot do is a fade that begins before its texture has been
+seen whole, a fade in from black on a screen's first showing: the kept
+one is not there yet. `tools/port_art.py` finds those among its dump
+(textures of one size and outline whose colours are the brightest one's
+times a number) and writes each step as the brightest one's picture,
+tinted.
+
+`tests/port/mods.c` holds the fit to the game's own arithmetic: every
+step of `tex_TintClut`'s fade to black is found, with its tint; a table
+in another order, a colour of nothing drawn, a top bit changed or one
+colour out of step is not.
+
+## The sharp menus
+
+The program ships a second mod: **`mods/ui/`**, the lettering of the
+menus drawn again in a font, sharp at any size. It is on unless `ui =
+off` in `rebushido.cfg` or the settings menu ("Sharp menus") says
+otherwise; its order is -100, as the English menu's.
+
+| What | Its lines |
+|---|---|
+| The pause menu | Pause Menu, Continue, Return to Sub Menu, Return to Top Menu |
+| The menu after a fight | Rematch, Return to Sub Menu, Return to Top Menu |
+| The top menu's captions | Story Mode, Vs. CPU Mode, Training Mode, Vs. Mode, Group Battle Mode, Link Mode, Option Menu |
+| The select screens' titles | Select Character, Select Weapon |
+| The group battle's page | Group Battle Mode, Number of Entries, Match, Time Limit, Start, Return to Top Menu |
+
+**How it is made.** `python tools/port_ui.py` draws the pictures into
+`src/port/mods/ui/` (`--check` as `port_english.py`'s). The game draws a
+line of a menu as sprites up to 64 texels wide cut from one line of
+lettering in a texture page, and a word of one line is sometimes another
+line's: the pause menu's "Return to Sub Menu" is the "Return to " of
+"Return to Top Menu", then "Sub" and "Menu" from places of their own. So
+the script's table is of lines -- the text, the line's size, the
+rectangle the game's own lettering fills, its look, and its pieces, each
+its key and where it begins along the line (from the dump's log, above)
+-- and each line is drawn once, in Arimo (SIL Open Font Licence,
+`src/port/fonts/`), fitted to that rectangle at eight pixels a texel,
+and cut into its pieces. Every line of one height has letters of one
+size. The looks are the game's: the pause menu's letters with a shadow
+down and to the right, the select screens' with a dark edge all round,
+the captions' darkening downward, each in the colours its own lettering
+has (`--measure DIR...` prints them from a dump). Like the English
+menu's, the pictures are the project's own, kept in the repository.
+
+## The art mod
+
+Everything else of the screens is **the game's own pictures made
+larger**, which is not the project's to give, so it is a mod each player
+makes from their own disc, as the hd fighters are (`tools/fighter_hd.py`):
+
+```
+python3 tools/port_art.py dump --image "Bushido Blade 2 (USA).cue"   # Linux or WSL
+python tools/port_art.py build                                          # numpy and Pillow
+```
+
+`dump` plays the game with no window on the GL prover
+(`python3 tools/port_gl_build.py`), seven runs at once: from the boot
+through each mode of the top menu, its select screens, a fight with its
+pause menu, the fight's end and the menus after it, every texture
+written into `tmp/art/dump/` with no mod in the way (about 1,200 of
+them). A player who would rather play the screens through runs the game
+with `--dump-textures FOLDER` and gives `build --dump FOLDER` (as many
+as they like). `build` writes `tmp/mods/art/`, order -200 -- under the
+built-in mods and under any of the player's own -- with each texture six
+times larger (`--scale`), by its kind:
+
+- **a few colours** (six or fewer: an emblem, a frame, a button): each
+  colour's area smoothed as a shape of its own (bicubic, at twice the
+  scale) and every pixel given the colour whose area is strongest, then
+  averaged down, so an edge between two colours is a smooth line and no
+  colour is mixed into a new one inside an area;
+- **lettering and the like** (up to 48 colours): the colours smoothed
+  over their alpha, and the outline made sharp again from the smoothed
+  alpha, a pixel or two wide;
+- **a picture** (more, or 16 bits: a portrait, a loading screen's map,
+  the boot logo): Lanczos and an unsharp mask.
+
+A texture with a side under four texels is left as it is. Each is
+written here in numpy and Pillow; no model and no other project's
+program is used, so nothing is added to what the licence covers (a
+learned upscaler with weights of a clear licence would do better on the
+portraits; none is used). Copy `tmp/mods/art/` into `mods/` beside the
+program; it is never committed. From one disc: 1,224 textures dumped,
+1,070 made larger (653 lettering, 360 of a few colours, 57 pictures), 154
+too small, in 8 seconds.
+
+## Skies
+
+A stage open to the sky has a night sky of the port's own in the
+remastered picture (`sky = night`, [`PLAYING.md`](PLAYING.md); PORT.md,
+"The sky"). A mod can give it a picture instead:
+
+```
+mods/
+  my-skies/
+    skies/
+      stage_04.png       the bus stop's sky
+      default.png        every other open stage's
+```
+
+- The key is `stage_NN`, the stage's number in two digits (the order of
+  `STAGE_NAMES` in `tools/port_remaster_prove.py`: `stage_15` is the
+  terraced fields), or `default` for every open stage the mods give no
+  picture of its own.
+- The picture is **equirectangular**: its width goes once round the eye
+  from left to right, its top row is straight up and its bottom row
+  straight down, the horizon across its middle. Any size; it is
+  smoothed and mipmapped.
+- It stands in for the whole sky, the gradient, stars and moon included,
+  and is drawn as it is: the stage's fog still fades the ground to the
+  stage's own colour of the distance, so a horizon of about that colour
+  meets the ground with no seam.
+- Only the stages that have a sky use one: a hall or the cavern keeps
+  the game's colour whatever the mods say. The log says which picture
+  each stage took (`sky: stage N is the mod's picture ...`).
 
 ## Music
 
@@ -456,6 +594,7 @@ repository.
 |---|---|
 | `include/port_mods.h`, `src/port/mods.c` | the folder read, the manifests, the table (`port_ModFind(kind, key)`), the texture's key |
 | `include/port_png.h`, `src/port/png.c` | a PNG reader of every kind but the interlaced, with its own inflate, and the plainest PNG writer; no C library |
+| `src/port/gl/gl_sky.c` | a stage's sky (`PORT_MOD_SKIES`), looked for once a stage |
 | `src/port/gl/gl_replace.c` | the keys looked up per primitive and per picture, the mods' PNGs given to the card, the textures written out |
 | `src/port/gl/gl_draw.c` | the hooks: a batch's replacement texture (`PortGlState`), the shader's `u_replaced`, the picture's in the stretch of video memory |
 | `src/port/host_*.c` | `port_HostListFolder`, `port_HostMakeFolder` |
@@ -466,6 +605,8 @@ repository.
 | `tests/port/music.c`, `music.py`, `tests/port/discfiles.c` | the music's keys, loops, files and player; the directory and the stage files |
 | `tests/port/mods.c`, `mods.py` | the manifest, a folder of mods and its order, the keys from this page, PNGs of every kind written by zlib |
 | `tools/port_english.py`, `src/port/mods/english/`, `src/port/fonts/` | the English menu the program ships, and what draws it |
+| `tools/port_ui.py`, `src/port/mods/ui/` | the sharp menus the program ships, and what draws them |
+| `tools/port_art.py` | the art mod, made from the player's disc |
 
 The mods' files are none of the game's state (`config/port_state.txt`,
 `docs/NETPLAY.md`): the table is made once, as
@@ -482,12 +623,12 @@ ending a kind's files must have.
 - **The scene's textures by page**: a key of a whole texture page and
   its colour table, and a replacement of the whole page, so that a
   stage's or a fighter's textures are a few files each.
-- **A fading colour table** found by the table it fades from, so that a
-  replacement fades with it.
-- **The other menus redrawn**: the top menu is in English (above); the
-  rest of the game's menu text is English already, at the console's
-  resolution, and each piece of it is a sprite with a key, so a sharper
-  menu is a set of PNGs drawn as `tools/port_english.py` draws its own.
+- **More of the lettering in a font**: the dialogue boxes, the names on
+  the select screens and the options' pages are the art mod's for now,
+  made larger; each is a line of `tools/port_ui.py`'s table away.
+- **The title picture** after the opening movie is the movie's own
+  frame in its 24-bit mode, which the remastered picture leaves to the
+  software GPU (PORT.md, "Remastered in the window").
 - **Music by stage**: a key for a fight's piece with its stage
   (`bb2_m1-0` on stage 7 alone), so that a mod can give each stage a
   piece of its own though the game shares five among them.

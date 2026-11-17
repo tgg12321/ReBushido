@@ -63,6 +63,13 @@ typedef struct {
      * for the model (gl_fighter.h, docs/PORT.md, "The fighters' own
      * models"): 0 the game's own primitives. */
     s32 is_fighter_models;
+    /* A sky of the port's own behind the stages open to it, in the place
+     * of the game's fill of the colour of the distance (gl_sky.h):
+     * PORT_SKY_ORIGINAL (0) or PORT_SKY_NIGHT. */
+    s32 sky;
+    /* The stage's walls and pieces that stand between the camera and a
+     * fighter faded so that he can be seen (gl_see.h): 0 off. */
+    s32 see_through;
     /* The three things that make the hardware's picture the console's,
      * for the proof at scale 1 (docs/PORT.md, "Remastered"): the
      * corners where the PlayStation held them, the texture flat across

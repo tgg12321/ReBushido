@@ -141,8 +141,15 @@ the game's own link-cable mode in lockstep, which passes if both consoles
 print the same trace to the end of a fight, and then rollback netplay of
 `port_game`'s session with 100 ms of latency and 5% of datagrams lost,
 which passes if both end well, find no desync and print the same state
-hashes (NETPLAY.md, sections 11 and 12). About three minutes; run it after
-a change to the step, the state, the input point or the network.
+hashes (NETPLAY.md, sections 11 and 12). Then a session set up by
+`--host` and `--join` (`session`): the host's cards sent, both taken to
+versus select, a fight, a rematch, and the guest leaving, the same
+hashes on both and no card file written; the same between two of the
+window's programs, headless, in real time (`window`), where the host
+must play on alone; and two window programs started from the settings
+menu's Play online page (NETPLAY.md, section 13). About eight minutes;
+run it after a change to the step, the state, the input point, the
+network, the session or the window's pacing.
 
 ## Play tests
 
