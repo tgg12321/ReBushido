@@ -48,6 +48,21 @@ extern void port_GlFighterNewFrame(void);
  * primitive of a frame is where the fighters are drawn. */
 extern s32 port_GlFighterTakes(const PortRemasterPrim *prim);
 
+/* Whether the primitive port_GlFighterTakes was last given, and did not
+ * take, is a cloth of a fighter drawn from a model of his own; the layer
+ * is laid at the first of the fighters' primitives or cloths, so it is
+ * there before any cloth. The cloth is still the game's, painted by the
+ * ordering table, but a pixel of it behind the
+ * models is hidden by them (gl_draw.c, `u_fighter_depth`), as one in
+ * front of them hides them: the back of a hakama does not show through
+ * the legs in front of it. */
+extern s32 port_GlFighterHolds(void);
+
+/* The texture of the layer's depth, in the world's units (the far plane
+ * where no model is), and where it lies in the picture's buffer (left,
+ * bottom, width, height); 0 when no layer is laid in this picture. */
+extern s32 port_GlFighterLayerDepth(s32 rect[4]);
+
 /* A picture between two frames (gl_tween.c): the fighters with their
  * bones `phase` of the way (PORT_TWEEN_ONE ths) from the frame on show to
  * the frame after it; -1 when the picture is done. */
