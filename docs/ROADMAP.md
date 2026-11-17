@@ -239,7 +239,14 @@ the stage").
     the port's frames with the emulator's, and that netplay's two
     players must load in the same frames. So quick loading is the
     window's (a setting, on), with the play tests' runs as they are.
-14. **Input lag cut** (the owner, 2026-11-17): the press to the picture
+14. **Shadow maps and lights of a stage's own** (the owner, 2026-11-17):
+    the cast shadow is the game's one sun flattening the fighters onto
+    the ground; lights that cast shadows of their own kinds (torches,
+    lanterns, a flash where blades meet), on walls, steps and the
+    fighters themselves, need each light's depth of the scene: a
+    shadow map for the sun first, then point lights from a list per
+    stage that a mod can add to. After the cast shadow's fixes are in.
+15. **Input lag cut** (the owner, 2026-11-17): the press to the picture
     measured part by part, then cut where it is safe: the devices read
     as late as the game's step allows, run-ahead on the rollback's save
     and load, and the fewest pictures queued to the display.
