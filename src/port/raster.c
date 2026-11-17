@@ -310,6 +310,8 @@ static PortGpu g_port_gpu = {
 
 void port_SetGpuLikeEmulator(s32 is_on) { g_port_gpu.is_like_emulator = is_on; }
 
+s32 port_GpuIsLikeEmulator(void) { return g_port_gpu.is_like_emulator; }
+
 /* ---- small things ---- */
 
 static u16 *port_PixelAt(s32 x, s32 y) {

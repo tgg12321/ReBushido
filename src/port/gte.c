@@ -16,6 +16,9 @@ PortGte g_port_gte;
 #define MAC_SUM_SPARE_BITS 20
 #define MAC0_MAX 0x7FFFFFFFLL
 #define MAC0_MIN (-0x80000000LL)
+/* the most a point's place before the projection may be in the side
+ * channel, a word's own (port_remaster.h, PortPrecisePoint.view) */
+#define VIEW_MAX 0x7FFFFFFFLL
 
 /* What the limited registers hold at most and at least. */
 #define IR_MAX 0x7FFF
@@ -178,6 +181,9 @@ static PortPrecisePoint *port_PreciseOf(s32 index) {
     }
 }
 
+/* A screen position onto the GTE's queue of three, and the side
+ * channel's own queue beside it: the newest has no precise point until
+ * the projection gives it one. */
 static void port_GtePushScreenXy(u32 xy) {
     g_port_gte.data[PORT_GTE_SXY0] = g_port_gte.data[PORT_GTE_SXY1];
     g_port_gte.data[PORT_GTE_SXY1] = g_port_gte.data[PORT_GTE_SXY2];
@@ -188,6 +194,9 @@ static void port_GtePushScreenXy(u32 xy) {
     g_port_precise[2].y = 0;
     g_port_precise[2].depth = 0;
     g_port_precise[2].divided = 0;
+    g_port_precise[2].view[0] = 0;
+    g_port_precise[2].view[1] = 0;
+    g_port_precise[2].view[2] = 0;
 }
 
 static void port_GtePushScreenZ(s32 depth) {
@@ -395,6 +404,15 @@ static void port_GteProject(const s32 *vector, s32 shift, s32 lm, s32 last) {
     g_port_precise[2].y = precise_y;
     g_port_precise[2].depth = depth;
     g_port_precise[2].divided = (s32)quotient;
+    /* ... and where it was before the projection, with a fraction the
+     * divide never sees: what a shadow is cast from (port_remaster.h) */
+    for (i = 0; i < 3; i++) {
+        s64 view = sums[i] >> (FRACTION_BITS - PORT_REMASTER_VIEW_FRACTION);
+
+        g_port_precise[2].view[i] =
+            (s32)(view > VIEW_MAX ? VIEW_MAX
+                                  : (view < -VIEW_MAX ? -VIEW_MAX : view));
+    }
 
     /* The depth cue: how far the point is towards the far colour. The
      * first two points of RTPT get none, and so set none of its bits of

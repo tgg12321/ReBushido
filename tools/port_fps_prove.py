@@ -69,7 +69,7 @@ def numbers_of(log):
            'pictures': 0, 'scene': 0, 'named': 0, 'searched': 0,
            'clashes': 0, 'held': 0, 'off_the_line': 0, 'still': 0,
            'still_moved': 0, 'fewer_prims': 0, 'more_dropped': 0, 'holes': 0,
-           'hole_pixels': 0}
+           'hole_pixels': 0, 'going': 0, 'coming': 0, 'moved': 0}
     mixed, prims, unpaired, flat, widest, pictures = 0, 0, 0, 0, 0, 0
     with open(log, encoding='utf-8', errors='replace') as f:
         for line in f:
@@ -91,7 +91,11 @@ def numbers_of(log):
                            identity=int(m.group(4)),
                            identity_pixels=int(m.group(5)),
                            identity_different=int(m.group(6)))
-            m = re.search(r'gl run tween scene (\d+) named (\d+) '
+            # the line says how many were weighed and jumped between
+            # `scene` and `named` (gl_main.c): without them this read
+            # nothing, and every count below was taken as 0
+            m = re.search(r'gl run tween scene (\d+) '
+                          r'(?:weighed \d+ jumped \d+ )?named (\d+) '
                           r'searched (\d+) clashes (\d+) held (\d+) '
                           r'off_the_line (\d+) still (\d+) still_moved (\d+) '
                           r'fewer_prims (\d+) more_dropped (\d+) holes (\d+) '
@@ -105,6 +109,11 @@ def numbers_of(log):
                            more_dropped=int(m.group(10)),
                            holes=int(m.group(11)),
                            hole_pixels=int(m.group(12)))
+            m = re.search(r'gl run tween going (\d+) coming (\d+) '
+                          r'moved (\d+)', line)
+            if m:
+                out.update(going=int(m.group(1)), coming=int(m.group(2)),
+                           moved=int(m.group(3)))
             m = re.search(r'gl run blanks (\d+)', line)
             if m:
                 out['blanks'] = int(m.group(1))
@@ -237,6 +246,10 @@ def main():
               % (got['scene'], got['named'], got['searched'], got['clashes'],
                  got['held'], got['off_the_line'], got['still'],
                  got['still_moved']))
+        print('    faces one frame has and the other has not, moved by their '
+              'points: %d going, %d coming; faces of a thing whose node '
+              'moved, paired all the same: %d; over the pairs of frames '
+              'checked' % (got['going'], got['coming'], got['moved']))
         print('    every picture of a frame: %s, %s, %s'
               % ('all its primitives' if got['fewer_prims'] == 0
                  else '%d drew other than all' % got['fewer_prims'],

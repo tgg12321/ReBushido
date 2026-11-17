@@ -65,12 +65,21 @@ const char g_port_default_settings[] =
     "                       # mesh instead of the game's own tiles; off\n"
     "                       # for the tiles. A stage the mesh is not\n"
     "                       # measured good on keeps the tiles either way\n"
+    "fighter_models = on    # the fighters drawn from models of their own\n"
+    "                       # where a mod's models/ has one (M100.glb);\n"
+    "                       # off for the game's own\n"
     "shadows = original     # original: the game's own black shadows;\n"
-    "                       # soft: the ground under them darkened\n"
+    "                       # soft: the ground under them darkened;\n"
+    "                       # cast: cast from the fighters' own\n"
+    "                       # bodies, darkened (cast:N, N hundredths)\n"
     "frame_rate = original  # original: one picture a blank, as the\n"
     "                       # console; display: as many as the screen\n"
     "                       # shows; or a number a second. The game\n"
     "                       # steps at the console's rate either way\n"
+    "mods = on              # the mods in mods/ beside the program\n"
+    "                       # (docs/MODS.md); off for the game's own\n"
+    "english = on           # the top menu in English, a mod the program\n"
+    "                       # ships (mods/english/); off for Japanese\n"
     "\n"
     "# The keys and the controllers' buttons: a layout to start from, and\n"
     "# lines of pN.BUTTON for what to change in it (below)\n"
@@ -597,10 +606,25 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "aspect is W:H, as 4:3 or 16:9";
     }
+    if (port_WordsMatch(name, "mods")) {
+        return port_ReadChoice(value, "off", "on", &settings->mods)
+                   ? NULL
+                   : "mods is on or off";
+    }
+    if (port_WordsMatch(name, "english")) {
+        return port_ReadChoice(value, "off", "on", &settings->english)
+                   ? NULL
+                   : "english is on or off";
+    }
     if (port_WordsMatch(name, "stage_mesh")) {
         return port_ReadChoice(value, "off", "on", &settings->stage_mesh)
                    ? NULL
                    : "stage_mesh is on or off";
+    }
+    if (port_WordsMatch(name, "fighter_models")) {
+        return port_ReadChoice(value, "off", "on", &settings->fighter_models)
+                   ? NULL
+                   : "fighter_models is on or off";
     }
     if (port_WordsMatch(name, "shadows")) {
         if (port_WordsMatch(value, "original")) {
@@ -611,9 +635,11 @@ static const char *port_ReadSetting(
             settings->shadows = PORT_SHADOWS_SOFT;
             return NULL;
         }
-        if (!port_ReadDigits(value, &number) || number < 1 || number > 100) {
-            return "shadows is original, soft, or how much of the ground "
-                   "a shadow takes away, in hundredths";
+        /* cast, cast:N, or a number (port_remaster.h) */
+        number = port_ReadRemasterShadows(value);
+        if (number < 0) {
+            return "shadows is original, soft, cast, cast:N, or how much of "
+                   "the ground a shadow takes away, in hundredths";
         }
         settings->shadows = number;
         return NULL;
@@ -724,9 +750,16 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
      * the measurements do not hold keeps the game's own tiles of its own
      * accord, and the run's log says which path each stage took. */
     settings->stage_mesh = 1;
+    /* a fighter with a model of his own in mods/fighters/ is drawn from
+     * it; with none there, nothing changes (gl_fighter.h) */
+    settings->fighter_models = 1;
     /* The soft shadows are the game's own black ones until the owner has
      * looked at pictures of both (gl_shadow.h). */
     settings->shadows = 0;
+    /* the mods beside the program, where there are any (docs/MODS.md) */
+    settings->mods = 1;
+    /* the English top menu the program ships (docs/MODS.md) */
+    settings->english = 1;
     /* a name the window's library does not know leaves that one out */
     port_ReadLines(settings, text, lookup, NULL, 1);
 }

@@ -24,6 +24,8 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_fighter.h"
+#include "gl_replace.h"
 #include "gl_shadow.h"
 #include "gl_stage.h"
 #include "port_gpu.h"
@@ -80,6 +82,7 @@ typedef ptrdiff_t GLintptr;
 #define GL_STREAM_DRAW 0x88E0
 #define GL_VERTEX_SHADER 0x8B31
 #define GL_FRAGMENT_SHADER 0x8B30
+#define GL_GEOMETRY_SHADER 0x8DD9
 #define GL_COMPILE_STATUS 0x8B81
 #define GL_LINK_STATUS 0x8B82
 #define GL_BLEND 0x0BE2
@@ -268,6 +271,14 @@ typedef struct {
      * begun the next frame, and asked then it was held against nothing
      * at all. */
     s32 is_held;
+    /* A mod's replacement of the batch's texture (gl_replace.h), 0 for
+     * none, and the texture points of the page it stands for. */
+    u32 replace_texture;
+    s32 replace_u;
+    s32 replace_v;
+    s32 replace_w;
+    s32 replace_h;
+    s32 replace_mix; /* PORT_GL_MIX_... (gl_replace.h) */
 } PortGlState;
 
 static struct {
@@ -322,6 +333,7 @@ static struct {
     GLint at_vram;
     GLint at_affine;
     GLint at_exact;
+    GLint at_like_emulator;
     GLint at_bilinear;
     GLint at_minify;
     GLint at_pass;
@@ -335,6 +347,12 @@ static struct {
     GLint blit_at_scale;
     GLint blit_at_vram;
     GLint blit_at_shift;
+    GLint at_replace;
+    GLint at_replaced;
+    GLint at_replace_rect;
+    GLint at_replace_mix;
+    GLint blit_at_replace;
+    GLint blit_at_replaced;
     GLint resolve_at_color;
     GLint resolve_at_sample;
     GLint resolve_at_at;
@@ -368,6 +386,7 @@ static struct {
     s32 display_w;
     s32 display_h;
     s32 display_is_on;
+    s32 display_is_rgb24; /* the movie's mode */
     u32 frame_time;
     u32 vertex_count;
     u32 draw_count;
@@ -401,16 +420,19 @@ static const char g_gl_vertex_text[] =
     "layout(location = 6) in float a_slot;\n"
     "uniform vec2 u_target;\n"
     "uniform vec2 u_scale;\n"
-    "flat out float v_slot;\n"
+    "flat out float g_slot;\n"
     /* the texture in perspective, and as the console had it */
-    "out vec2 v_texture;\n"
-    "noperspective out vec2 v_texture_flat;\n"
+    "out vec2 g_texture;\n"
+    "noperspective out vec2 g_texture_flat;\n"
     /* a colour changes evenly across the screen, as the chip's does */
-    "noperspective out vec3 v_color;\n"
-    "flat out uvec4 v_flags;\n"
-    "flat out ivec4 v_page;\n"
-    "flat out uvec4 v_info;\n"
-    "flat out uvec4 v_window;\n"
+    "noperspective out vec3 g_color;\n"
+    "flat out uvec4 g_flags;\n"
+    "flat out ivec4 g_page;\n"
+    "flat out uvec4 g_info;\n"
+    "flat out uvec4 g_window;\n"
+    /* the corner in video memory's pixels, for the chip's own rule
+     * about which pixels a flat polygon covers (the geometry shader) */
+    "noperspective out vec2 g_place;\n"
     "void main() {\n"
     /* a pixel of video memory is `scale` pixels of the buffer, and the
      * chip's sample point is the pixel's own whole coordinate: so the
@@ -424,14 +446,191 @@ static const char g_gl_vertex_text[] =
      * pixels an edge belongs to upside down, and move every primitive
      * a line. The picture is read back from the top line on. */
     "    gl_Position = vec4(ndc.x * w, ndc.y * w, 0.0, w);\n"
-    "    v_texture = a_texture;\n"
-    "    v_texture_flat = a_texture;\n"
-    "    v_color = vec3(a_color.xyz);\n"
-    "    v_flags = a_color;\n"
-    "    v_page = a_page;\n"
-    "    v_info = a_info;\n"
-    "    v_window = a_window;\n"
-    "    v_slot = a_slot;\n"
+    "    g_texture = a_texture;\n"
+    "    g_texture_flat = a_texture;\n"
+    "    g_color = vec3(a_color.xyz);\n"
+    "    g_flags = a_color;\n"
+    "    g_page = a_page;\n"
+    "    g_info = a_info;\n"
+    "    g_window = a_window;\n"
+    "    g_slot = a_slot;\n"
+    "    g_place = a_place.xy;\n"
+    "}\n";
+
+/* A flat polygon -- the 2D layer's, drawn by whole pixels of video
+ * memory -- is the chip's own picture at a larger scale, and that means
+ * its edges too: the chip decides which of its pixels a triangle covers
+ * by its own rule (src/port/raster.c, port_DrawTriangle), once for each
+ * pixel of video memory, and a block of the picture is then all of that
+ * triangle or none of it. The card's own rule, applied at the picture's
+ * resolution, cuts a block that a slanting edge crosses in two, and two
+ * triangles of a quad whose texture does not run evenly across the
+ * diagonal leave a seam of broken blocks between them (`--gl-blocks`).
+ *
+ * So such a triangle is drawn as the rectangle about it, and the fragment
+ * shader keeps a block only where the chip's rule puts the block's own
+ * pixel inside the triangle, and gives it the colour and the texture
+ * point the chip's own arithmetic gives that pixel (worked out here once
+ * for the triangle, in whole numbers, as raster.c works them out). A
+ * texture stepped back from the picture's pixel by derivatives, which is
+ * what a rectangle still has, came out a texel off along the diagonal of
+ * a quad, where the two triangles' steps are not the same.
+ * Everything else passes through as it came.
+ *
+ * (The inputs are read with constant indices only: Mesa's software
+ * driver read `g_color[i]` with `i` a variable wrongly.) */
+static const char g_gl_geometry_text[] =
+    "#version 330 core\n"
+    "layout(triangles) in;\n"
+    "layout(triangle_strip, max_vertices = 4) out;\n"
+    "uniform vec2 u_target;\n"
+    "uniform vec2 u_scale;\n"
+    /* the software GPU draws as the emulator does (port_gpu.h) */
+    "uniform int u_like_emulator;\n"
+    "flat in float g_slot[];\n"
+    "in vec2 g_texture[];\n"
+    "noperspective in vec2 g_texture_flat[];\n"
+    "noperspective in vec3 g_color[];\n"
+    "flat in uvec4 g_flags[];\n"
+    "flat in ivec4 g_page[];\n"
+    "flat in uvec4 g_info[];\n"
+    "flat in uvec4 g_window[];\n"
+    "noperspective in vec2 g_place[];\n"
+    "flat out float v_slot;\n"
+    "out vec2 v_texture;\n"
+    "noperspective out vec2 v_texture_flat;\n"
+    "noperspective out vec3 v_color;\n"
+    "flat out uvec4 v_flags;\n"
+    "flat out ivec4 v_page;\n"
+    "flat out uvec4 v_info;\n"
+    "flat out uvec4 v_window;\n"
+    /* the triangle's three corners in whole pixels of video memory, and
+     * whether the chip's rule is applied at all (the fragment shader) */
+    "flat out ivec4 v_corners;\n"
+    "flat out ivec4 v_corner;\n"
+    /* ... and the chip's own arithmetic for the five values a pixel of it
+     * has -- red, green, blue, u, v -- as src/port/raster.c works it out
+     * once for the triangle: each value's change for a pixel across and
+     * for a pixel down, in twelve bits of fraction, and where it starts,
+     * at the corner furthest left (which `v_corner.w` says) with half a
+     * step added. The fifth value's three are in `v_last`. */
+    "flat out ivec4 v_across;\n"
+    "flat out ivec4 v_down;\n"
+    "flat out ivec4 v_start;\n"
+    "flat out ivec4 v_last;\n"
+    "void same(int i) {\n"
+    "    v_slot = g_slot[i];\n"
+    "    v_flags = g_flags[i];\n"
+    "    v_page = g_page[i];\n"
+    "    v_info = g_info[i];\n"
+    "    v_window = g_window[i];\n"
+    "}\n"
+    /* a corner's five values: the vertex's texture point has half a texel
+     * added (port_GlPutVertex) */
+    "void values_of(vec3 color, vec2 point, out int value[5]) {\n"
+    "    ivec3 c = ivec3(round(color));\n"
+    "    ivec2 t = ivec2(round(point - vec2(0.5))) & 255;\n"
+    "    value = int[5](c.r, c.g, c.b, t.x, t.y);\n"
+    "}\n"
+    /* a whole number divided as C divides one, toward nothing */
+    "int divide(int a, int b) {\n"
+    "    int q = abs(a) / abs(b);\n"
+    "    return ((a < 0) != (b < 0)) ? -q : q;\n"
+    "}\n"
+    "void main() {\n"
+    "    if (g_info[0].w == 0u) {\n"
+    "        for (int i = 0; i < 3; i++) {\n"
+    "            same(i);\n"
+    "            v_texture = g_texture[i];\n"
+    "            v_texture_flat = g_texture_flat[i];\n"
+    "            v_color = g_color[i];\n"
+    "            v_corners = ivec4(0);\n"
+    "            v_corner = ivec4(0);\n"
+    "            v_across = ivec4(0);\n"
+    "            v_down = ivec4(0);\n"
+    "            v_start = ivec4(0);\n"
+    "            v_last = ivec4(0);\n"
+    "            gl_Position = gl_in[i].gl_Position;\n"
+    "            EmitVertex();\n"
+    "        }\n"
+    "        EndPrimitive();\n"
+    "        return;\n"
+    "    }\n"
+    "    vec2 p0 = g_place[0];\n"
+    "    vec2 p1 = g_place[1];\n"
+    "    vec2 p2 = g_place[2];\n"
+    "    float area = (p1.x - p0.x) * (p2.y - p0.y)\n"
+    "               - (p2.x - p0.x) * (p1.y - p0.y);\n"
+    "    ivec2 c0 = ivec2(round(p0));\n"
+    "    ivec2 c1 = ivec2(round(p1));\n"
+    "    ivec2 c2 = ivec2(round(p2));\n"
+    "    int whole = (c1.x - c0.x) * (c2.y - c0.y) - (c2.x - c0.x) * (c1.y - c0.y);\n"
+    /* of two as far left, the later */
+    "    int origin = 0;\n"
+    "    if (c1.x <= c0.x) {\n"
+    "        origin = c2.x <= c1.x ? 2 : 1;\n"
+    "    } else if (c2.x < c0.x) {\n"
+    "        origin = 2;\n"
+    "    }\n"
+    "    int first[5];\n"
+    "    int second[5];\n"
+    "    int third[5];\n"
+    "    values_of(g_color[0], g_texture_flat[0], first);\n"
+    "    values_of(g_color[1], g_texture_flat[1], second);\n"
+    "    values_of(g_color[2], g_texture_flat[2], third);\n"
+    "    int across[5];\n"
+    "    int down[5];\n"
+    "    int start[5];\n"
+    "    for (int k = 0; k < 5; k++) {\n"
+    "        int to_second = second[k] - first[k];\n"
+    "        int to_third = third[k] - first[k];\n"
+    "        int from = origin == 0 ? first[k]\n"
+    "                 : origin == 1 ? second[k] : third[k];\n"
+    "        int cross_x = to_second * (c2.y - c0.y) - to_third * (c1.y - c0.y);\n"
+    "        int cross_y = (c1.x - c0.x) * to_third - (c2.x - c0.x) * to_second;\n"
+    "        across[k] = divide(int(uint(cross_x) << 12u), whole);\n"
+    "        down[k] = divide(int(uint(cross_y) << 12u), whole);\n"
+    "        start[k] = int((uint(from) << 12u) + 2048u);\n"
+    /* as the emulator: from the first corner, a half added and the
+     * whole number taken (port_InterpolateWhole) */
+    "        if (u_like_emulator != 0) {\n"
+    "            across[k] = cross_x;\n"
+    "            down[k] = cross_y;\n"
+    "            start[k] = first[k];\n"
+    "        }\n"
+    "    }\n"
+    "    if (u_like_emulator != 0) { origin = 0; }\n"
+    /* a pixel either way beyond the corners: every block the chip's rule
+     * may keep is inside it */
+    "    vec2 low = floor(min(min(p0, p1), p2)) - vec2(1.0);\n"
+    "    vec2 high = ceil(max(max(p0, p1), p2)) + vec2(1.0);\n"
+    "    for (int i = 0; i < 4; i++) {\n"
+    "        vec2 q = vec2((i & 1) != 0 ? high.x : low.x,\n"
+    "                      (i & 2) != 0 ? high.y : low.y);\n"
+    "        float b1 = ((q.x - p0.x) * (p2.y - p0.y)\n"
+    "                  - (p2.x - p0.x) * (q.y - p0.y)) / area;\n"
+    "        float b2 = ((p1.x - p0.x) * (q.y - p0.y)\n"
+    "                  - (q.x - p0.x) * (p1.y - p0.y)) / area;\n"
+    "        float b0 = 1.0 - b1 - b2;\n"
+    "        same(0);\n"
+    "        v_texture = b0 * g_texture[0] + b1 * g_texture[1]\n"
+    "                  + b2 * g_texture[2];\n"
+    "        v_texture_flat = b0 * g_texture_flat[0]\n"
+    "                       + b1 * g_texture_flat[1]\n"
+    "                       + b2 * g_texture_flat[2];\n"
+    "        v_color = b0 * g_color[0] + b1 * g_color[1] + b2 * g_color[2];\n"
+    "        v_corners = ivec4(c0, c1);\n"
+    "        v_corner = ivec4(c2, u_like_emulator != 0 ? 2 : 1, origin);\n"
+    "        v_across = ivec4(across[0], across[1], across[2], across[3]);\n"
+    "        v_down = ivec4(down[0], down[1], down[2], down[3]);\n"
+    "        v_start = ivec4(start[0], start[1], start[2], start[3]);\n"
+    "        v_last = ivec4(across[4], down[4], start[4], whole);\n"
+    /* as the vertex shader places a corner; a flat polygon's w is 1 */
+    "        vec2 at = q * u_scale + vec2(0.5);\n"
+    "        gl_Position = vec4(at / u_target * 2.0 - vec2(1.0), 0.0, 1.0);\n"
+    "        EmitVertex();\n"
+    "    }\n"
+    "    EndPrimitive();\n"
     "}\n";
 
 static const char g_gl_fragment_text[] =
@@ -444,6 +643,14 @@ static const char g_gl_fragment_text[] =
     "uniform int u_bilinear;\n"
     "uniform int u_minify;\n" /* the texels of a fragment averaged */
     "uniform int u_pass;\n"
+    /* a mod's picture in the place of the texture (gl_replace.h), and the
+     * texture points of the page it stands for: corner, then size */
+    "uniform sampler2D u_replace;\n"
+    "uniform int u_replaced;\n"
+    "uniform vec4 u_replace_rect;\n"
+    /* which of its pixels mix: the game's texel under each (0), all (1)
+     * or none (2) */
+    "uniform int u_replace_mix;\n"
     /* the depth test against the ground's mesh: what a corner's own
      * depth was divided by to make its w, what a depth in the world's
      * units is divided by to make a value for the depth buffer, and how
@@ -463,7 +670,79 @@ static const char g_gl_fragment_text[] =
     "flat in ivec4 v_page;\n"
     "flat in uvec4 v_info;\n"
     "flat in uvec4 v_window;\n"
+    "flat in ivec4 v_corners;\n"
+    "flat in ivec4 v_corner;\n"
+    "flat in ivec4 v_across;\n"
+    "flat in ivec4 v_down;\n"
+    "flat in ivec4 v_start;\n"
+    "flat in ivec4 v_last;\n"
     "out vec4 o_color;\n"
+    /* Whether the chip draws pixel `p` of a flat triangle (the geometry
+     * shader): as src/port/raster.c draws one, line by line from the
+     * highest corner to the line above the lowest, and on each line from
+     * the edge on the left to the pixel before the edge on the right.
+     * A pixel is past an edge where it is at or after the place the edge
+     * crosses its line, and it is drawn where it is past one of the two
+     * edges beside its line and not the other. Whole numbers, as the
+     * chip's are. */
+    "bool chip_covers(ivec2 p) {\n"
+    "    ivec2 top = v_corners.xy;\n"
+    "    ivec2 middle = v_corners.zw;\n"
+    "    ivec2 bottom = v_corner.xy;\n"
+    "    ivec2 swap;\n"
+    "    if (middle.y < top.y) { swap = top; top = middle; middle = swap; }\n"
+    "    if (bottom.y < middle.y) {\n"
+    "        swap = middle; middle = bottom; bottom = swap;\n"
+    "        if (middle.y < top.y) { swap = top; top = middle; middle = swap; }\n"
+    "    }\n"
+    "    if (p.y < top.y || p.y >= bottom.y) { return false; }\n"
+    "    ivec2 from = p.y < middle.y ? top : middle;\n"
+    "    ivec2 to = p.y < middle.y ? middle : bottom;\n"
+    "    int long_down = bottom.y - top.y;\n"
+    "    int short_down = to.y - from.y;\n"
+    "    bool past_long = p.x * long_down\n"
+    "        >= top.x * long_down + (p.y - top.y) * (bottom.x - top.x);\n"
+    "    bool past_short = p.x * short_down\n"
+    "        >= from.x * short_down + (p.y - from.y) * (to.x - from.x);\n"
+    "    return past_long != past_short;\n"
+    "}\n"
+    /* The colour and the texture point the chip gives pixel `p` of a flat
+     * triangle -- red, green, blue, u, v -- from its steps across and
+     * down, which the geometry shader worked out as the chip does: the
+     * whole number of where the value starts and the steps to the pixel,
+     * in twelve bits of fraction, wrapping as the chip's does. */
+    "void chip_values(ivec2 p, out int value[5]) {\n"
+    "    ivec2 origin = v_corner.w == 0 ? v_corners.xy\n"
+    "                 : v_corner.w == 1 ? v_corners.zw : v_corner.xy;\n"
+    /* as the emulator: each value from the first corner by its changes
+     * times the triangle's area, a half added and rounded down
+     * (port_InterpolateWhole) */
+    "    if (v_corner.z == 2) {\n"
+    "        ivec2 d = p - v_corners.xy;\n"
+    "        int area = v_last.w;\n"
+    "        for (int k = 0; k < 5; k++) {\n"
+    "            int start = k < 4 ? v_start[k] : v_last.z;\n"
+    "            int change = (k < 4 ? v_across[k] : v_last.x) * d.x\n"
+    "                       + (k < 4 ? v_down[k] : v_last.y) * d.y;\n"
+    "            int top = 2 * (start * area + change) + area;\n"
+    "            int bottom = 2 * area;\n"
+    "            if (bottom < 0) { top = -top; bottom = -bottom; }\n"
+    "            int q = top >= 0 ? top / bottom\n"
+    "                             : -((bottom - 1 - top) / bottom);\n"
+    "            value[k] = q & 255;\n"
+    "        }\n"
+    "        return;\n"
+    "    }\n"
+    "    uvec2 walk = uvec2(p - origin);\n"
+    "    for (int k = 0; k < 4; k++) {\n"
+    "        uint sum = uint(v_start[k]) + uint(v_across[k]) * walk.x\n"
+    "                 + uint(v_down[k]) * walk.y;\n"
+    "        value[k] = int(sum >> 12u) & 255;\n"
+    "    }\n"
+    "    uint sum = uint(v_last.z) + uint(v_last.x) * walk.x\n"
+    "             + uint(v_last.y) * walk.y;\n"
+    "    value[4] = int(sum >> 12u) & 255;\n"
+    "}\n"
     /* the chip's pattern, by the pixel's place in a four by four square
      * of video memory */
     "const int dither[16] = int[16](-4, 0, -3, 1, 2, -2, 3, -1,\n"
@@ -505,6 +784,10 @@ static const char g_gl_fragment_text[] =
     "        discard;\n"
     "    }\n"
     "    vec2 uv = (u_affine != 0) ? v_texture_flat : v_texture;\n"
+    /* the texture point as it runs across the primitive, before it is
+     * stepped back to the corner of a block: what a mod's picture, which
+     * has texels of its own between the console's, is read at */
+    "    vec2 smooth_uv = uv;\n"
     "    vec3 color = v_color;\n"
     "    bool mixes = (v_flags.w & 4u) != 0u;\n"
     "    ivec2 pixel = ivec2(floor(gl_FragCoord.xy / u_scale));\n"
@@ -533,6 +816,11 @@ static const char g_gl_fragment_text[] =
      * noise that crawls as the camera turns ("the floor's shimmer"). */
     "    vec2 wide_across = dFdx(v_texture);\n"
     "    vec2 wide_down = dFdy(v_texture);\n"
+    /* a flat triangle's block the chip would not draw (the geometry
+     * shader), now that every derivative is taken */
+    "    if (v_corner.z != 0 && !chip_covers(pixel)) {\n"
+    "        discard;\n"
+    "    }\n"
     /* So this many points of it are read, spread over that reach: one
      * where a fragment covers a texel or less, which is every fragment
      * of anything near, and up to four each way where it covers more.
@@ -550,6 +838,14 @@ static const char g_gl_fragment_text[] =
     "        uv = v_texture_flat - back.x * uv_across - back.y * uv_down;\n"
     "        color -= back.x * color_across + back.y * color_down;\n"
     "    }\n"
+    /* ... and a flat triangle's colour and texture point are the chip's
+     * own for its pixel, worked out as the chip works them out */
+    "    if (v_corner.z != 0) {\n"
+    "        int value[5];\n"
+    "        chip_values(pixel, value);\n"
+    "        color = vec3(float(value[0]), float(value[1]), float(value[2]));\n"
+    "        uv = vec2(float(value[3]), float(value[4])) + vec2(0.5);\n"
+    "    }\n"
     /* the chip works in whole numbers: a colour that comes out of the
      * interpolation as 203.99999 is the 204 it means */
     "    if (u_exact != 0) { color = floor(color + vec3(0.5)); }\n"
@@ -558,7 +854,29 @@ static const char g_gl_fragment_text[] =
     "        uint texel = 0u;\n"
     "        vec3 texel_color = vec3(0.0);\n"
     "        float weight = 0.0;\n"
-    "        if (u_bilinear != 0) {\n"
+    "        if (u_replaced != 0) {\n"
+    /* The mod's picture, smoothed. A texture point names the texel it
+     * is in, half a texel in from the corner the chip begins at, and a
+     * pixel of the picture is a block of `scale` of video memory's: so
+     * the point less that half, and half a pixel of the block on, is
+     * where in the region this pixel's middle is. Its alpha says what is
+     * clear, its colours were kept multiplied by it, and its texel of
+     * thirty-one to a channel is the console's own. Whether it mixes is
+     * still the console's texel's to say. */
+    "            vec2 step_across = (u_affine != 0) ? uv_across : wide_across;\n"
+    "            vec2 step_down = (u_affine != 0) ? uv_down : wide_down;\n"
+    "            vec2 at = (smooth_uv - vec2(0.5) + vec2(0.5) / u_scale\n"
+    "                       - u_replace_rect.xy) / u_replace_rect.zw;\n"
+    "            vec4 got = textureGrad(u_replace, at,\n"
+    "                                   step_across / u_replace_rect.zw,\n"
+    "                                   step_down / u_replace_rect.zw);\n"
+    "            if (got.a < 0.5) { discard; }\n"
+    "            texel_color = got.rgb / got.a * 31.0;\n"
+    "            texel = texel_at(int(floor(uv.x)), int(floor(uv.y)));\n"
+    "            if (u_replace_mix == 1) { texel = 32768u; }\n"
+    "            if (u_replace_mix == 2) { texel = 1u; }\n"
+    "            weight = 1.0;\n"
+    "        } else if (u_bilinear != 0) {\n"
     /* four texels about the point, each one that is nothing left out,
      * so that a page's edge does not bleed */
     "            vec2 at = uv - vec2(0.5);\n"
@@ -693,9 +1011,18 @@ static const char g_gl_blit_vertex_text[] =
 static const char g_gl_blit_fragment_text[] =
     "#version 330 core\n"
     "uniform usampler2D u_vram;\n"
+    /* a mod's picture in the place of the rectangle (gl_replace.h) */
+    "uniform sampler2D u_replace;\n"
+    "uniform int u_replaced;\n"
+    "uniform vec4 u_rect;\n"
     "in vec2 v_at;\n"
     "out vec4 o_color;\n"
     "void main() {\n"
+    "    if (u_replaced != 0) {\n"
+    "        vec4 got = texture(u_replace, (v_at - u_rect.xy) / u_rect.zw);\n"
+    "        o_color = vec4(got.rgb / max(got.a, 1.0 / 255.0), 1.0);\n"
+    "        return;\n"
+    "    }\n"
     "    ivec2 at = ivec2(floor(v_at));\n"
     "    uint pixel = texelFetch(u_vram, ivec2(at.x & 1023, at.y & 511), 0).r;\n"
     "    ivec3 five = ivec3(int(pixel & 31u), int((pixel >> 5) & 31u),\n"
@@ -818,18 +1145,26 @@ static GLuint port_GlMakeShader(GLenum kind, const char *text) {
     return shader;
 }
 
-static GLuint port_GlMakeProgram(const char *vertex, const char *fragment) {
+/* A program of a vertex shader, a geometry shader where `geometry` is not
+ * NULL, and a fragment shader. */
+static GLuint port_GlMakeProgramWith(
+    const char *vertex, const char *geometry, const char *fragment) {
     GLuint program;
     GLuint one = port_GlMakeShader(GL_VERTEX_SHADER, vertex);
     GLuint two = port_GlMakeShader(GL_FRAGMENT_SHADER, fragment);
+    GLuint three =
+        geometry != NULL ? port_GlMakeShader(GL_GEOMETRY_SHADER, geometry) : 0;
     GLint ok = GL_FALSE;
 
-    if (one == 0 || two == 0) {
+    if (one == 0 || two == 0 || (geometry != NULL && three == 0)) {
         return 0;
     }
     program = glCreateProgram();
     glAttachShader(program, one);
     glAttachShader(program, two);
+    if (three != 0) {
+        glAttachShader(program, three);
+    }
     glLinkProgram(program);
     glGetProgramiv(program, GL_LINK_STATUS, &ok);
     if (!ok) {
@@ -840,6 +1175,10 @@ static GLuint port_GlMakeProgram(const char *vertex, const char *fragment) {
         return 0;
     }
     return program;
+}
+
+static GLuint port_GlMakeProgram(const char *vertex, const char *fragment) {
+    return port_GlMakeProgramWith(vertex, NULL, fragment);
 }
 
 static void port_GlSetUpVertexFormat(void) {
@@ -1029,6 +1368,7 @@ static void port_GlSetUniforms(void) {
     glUniform2f(g_gl.at_scale, (GLfloat)g_gl.draw_x, (GLfloat)g_gl.draw_y);
     glUniform1i(g_gl.at_affine, g_gl.options.is_exact ? 1 : 0);
     glUniform1i(g_gl.at_exact, g_gl.options.is_exact ? 1 : 0);
+    glUniform1i(g_gl.at_like_emulator, port_GpuIsLikeEmulator() ? 1 : 0);
     glUniform1i(
         g_gl.at_bilinear, (g_gl.options.is_bilinear && !g_gl.options.is_exact));
     /* the texels of a fragment averaged where it covers more than one of
@@ -1045,6 +1385,23 @@ static void port_GlSetUniforms(void) {
      * the mesh wrote them into the buffer being drawn into */
     glUniform1i(g_gl.at_ground_order, 0);
     glUniform1i(g_gl.at_ground_slots, 1);
+    glUniform1i(g_gl.at_replaced, 0);
+    glUniform1i(g_gl.at_replace, PORT_GL_REPLACE_UNIT);
+}
+
+/* The batch's replacement texture, where it has one (gl_replace.h). */
+static void port_GlSetReplacement(const PortGlState *state) {
+    if (state->replace_texture == 0) {
+        return;
+    }
+    glActiveTexture(GL_TEXTURE0 + PORT_GL_REPLACE_UNIT);
+    glBindTexture(GL_TEXTURE_2D, state->replace_texture);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(g_gl.at_replaced, 1);
+    glUniform1i(g_gl.at_replace_mix, state->replace_mix);
+    glUniform4f(g_gl.at_replace_rect, (GLfloat)state->replace_u,
+                (GLfloat)state->replace_v, (GLfloat)state->replace_w,
+                (GLfloat)state->replace_h);
 }
 
 /* The batch's vertices kept for the shadows' mask, where they are not
@@ -1080,6 +1437,7 @@ static void port_GlFlush(void) {
         GL_ARRAY_BUFFER, (GLsizeiptr)((u32)g_gl.count * sizeof(*g_gl.vertices)),
         g_gl.vertices, GL_STREAM_DRAW);
     port_GlSetUniforms();
+    port_GlSetReplacement(&g_gl.state);
     /* The scene against the ground (gl_stage.h). The ground's mesh has
      * drawn its own depth into the buffer this frame, so a primitive of
      * the scene that stands behind a piece of ground is left out: what
@@ -1134,7 +1492,11 @@ static s32 port_GlStateIsSame(const PortGlState *a, const PortGlState *b) {
            a->clip_left == b->clip_left && a->clip_top == b->clip_top &&
            a->clip_right == b->clip_right && a->clip_bottom == b->clip_bottom &&
            a->is_wide == b->is_wide && a->is_ground == b->is_ground &&
-           a->is_held == b->is_held;
+           a->is_held == b->is_held &&
+           a->replace_texture == b->replace_texture &&
+           a->replace_u == b->replace_u && a->replace_v == b->replace_v &&
+           a->replace_w == b->replace_w && a->replace_h == b->replace_h &&
+           a->replace_mix == b->replace_mix;
 }
 
 static void port_GlWant(const PortGlState *state, s32 vertices) {
@@ -1197,7 +1559,11 @@ static void port_GlPutVertex(
     /* the scale the renderer drew it at, which the depth test against
      * the ground's own mesh puts back (port_remaster.h) */
     to->info[2] = (u8)prim->depth_shift;
-    to->info[3] = 0;
+    /* a flat polygon covers the pixels the chip's own rule gives it (the
+     * geometry shader) */
+    to->info[3] = (u8)((flags & FLAG_FLAT) != 0 &&
+                       (prim->kind == PORT_REMASTER_TRIANGLE ||
+                        prim->kind == PORT_REMASTER_QUAD));
     to->window[0] = (u8)prim->window_and_u;
     to->window[1] = (u8)prim->window_or_u;
     to->window[2] = (u8)prim->window_and_v;
@@ -1277,6 +1643,24 @@ static s32 port_GlIsDrawn(const PortRemasterPrim *prim, s32 a, s32 b, s32 c) {
     }
     if (right - left > span_x || bottom - top > span_y) {
         return FALSE;
+    }
+    if (is_true) {
+        /* **No area is no area of its own places**, not of the whole
+         * pixels the chip held its corners at. A sliver of a polygon --
+         * a sword's blade turned nearly edge on, the side of a sandal --
+         * whose corners round to one line of whole pixels has an area all
+         * the same where the projection put it, and the card draws it
+         * there. Dropped by its whole pixels it came and went from one
+         * picture to the next as its corners crossed a pixel, and a
+         * picture between two frames held it at the frame on show's
+         * place while the faces about it moved (gl_tween.c, `held`): a
+         * fighter's sword stood still for a frame and jumped. */
+        double ax = (double)prim->corner[b].x - (double)prim->corner[a].x;
+        double ay = (double)prim->corner[b].y - (double)prim->corner[a].y;
+        double bx = (double)prim->corner[c].x - (double)prim->corner[a].x;
+        double by = (double)prim->corner[c].y - (double)prim->corner[a].y;
+
+        return ax * by - bx * ay != 0.0;
     }
     area = (x[1] - x[0]) * (y[2] - y[0]) - (x[2] - x[0]) * (y[1] - y[0]);
     return area != 0;
@@ -1372,6 +1756,29 @@ static void port_GlStateOf(const PortRemasterPrim *prim, PortGlState *state) {
     state->is_ground = port_GlShadowIsGround(prim);
     state->is_held =
         port_GlStageSaveFrame() && g_gl.options.is_stage_depth ? TRUE : FALSE;
+    state->replace_texture = 0;
+    state->replace_u = 0;
+    state->replace_v = 0;
+    state->replace_w = 0;
+    state->replace_h = 0;
+    state->replace_mix = 0;
+}
+
+/* A mod's picture of the primitive's texture, where there is one
+ * (gl_replace.h): never in the console's own picture. */
+static void port_GlReplacementOf(
+    const PortRemasterPrim *prim, PortGlState *state) {
+    PortGlReplacement found;
+
+    if (g_gl.options.is_exact || !port_GlReplaceFind(prim, &found)) {
+        return;
+    }
+    state->replace_texture = found.texture;
+    state->replace_u = found.u;
+    state->replace_v = found.v;
+    state->replace_w = found.w;
+    state->replace_h = found.h;
+    state->replace_mix = found.mix;
 }
 
 /* Whether this primitive is held against the ground by the console's own
@@ -1414,6 +1821,11 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     if (port_GlShadowTakes(prim)) {
         return;
     }
+    /* a fighter drawn from a model of his own: his primitives are left
+     * out, and the model is drawn at the first of them (gl_fighter.h) */
+    if (port_GlFighterTakes(prim)) {
+        return;
+    }
     if (prim->is_textured) {
         flags |= FLAG_TEXTURED;
     }
@@ -1441,6 +1853,7 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
         flags |= FLAG_FLAT;
     }
     port_GlStateOf(prim, &state);
+    port_GlReplacementOf(prim, &state);
     if (state.clip_right < state.clip_left ||
         state.clip_bottom < state.clip_top) {
         return;
@@ -1555,6 +1968,7 @@ static void port_GlClearBands(
  * primitives. */
 static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
     PortDirtyRect rect;
+    u32 replacement;
 
     if (!g_gl.is_started || w <= 0 || h <= 0) {
         return;
@@ -1568,8 +1982,22 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
     port_AddDirtyRect(&rect, x, y, w, h);
     port_AddDirtyRect(&g_gl.mirror, x, y, w, h);
     port_GlUploadMirror();
+    /* a picture a mod has a picture of (gl_replace.h) */
+    replacement =
+        g_gl.options.is_exact
+            ? 0
+            : port_GlReplaceFindPicture(
+                  rect.left, rect.top, rect.right - rect.left + 1,
+                  rect.bottom - rect.top + 1, g_gl.display_x,
+                  g_gl.display_is_rgb24 ? 0 : g_gl.display_w);
     glUseProgram(g_gl.blit_program);
     glBindVertexArray(g_gl.blit_array);
+    if (replacement != 0) {
+        glActiveTexture(GL_TEXTURE0 + PORT_GL_REPLACE_UNIT);
+        glBindTexture(GL_TEXTURE_2D, replacement);
+    }
+    glUniform1i(g_gl.blit_at_replace, PORT_GL_REPLACE_UNIT);
+    glUniform1i(g_gl.blit_at_replaced, replacement != 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
     glUniform1i(g_gl.blit_at_vram, 0);
@@ -1626,6 +2054,7 @@ static void port_GlBegin(void) {
     g_gl.has_state = FALSE;
     port_GlForgetOccluders();
     port_GlStageNewFrame();
+    port_GlFighterNewFrame();
 }
 
 /* ---- what the stage's own mesh asks of the picture (gl.h) ---- */
@@ -1635,6 +2064,7 @@ void port_GlGetPicture(PortGlPicture *picture) {
     picture->color_texture = g_gl.color_texture;
     picture->vram_texture = g_gl.vram_texture;
     picture->depth_buffer = g_gl.depth_buffer;
+    picture->slot_texture = g_gl.slot_texture;
     picture->target_w = g_gl.target_w;
     picture->target_h = g_gl.target_h;
     picture->draw_x = g_gl.draw_x;
@@ -1752,6 +2182,7 @@ static void port_GlEnd(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24) {
     /* Not done: the 24-bit mode, which only the movie uses, is read
      * from the software GPU's own video memory. */
     g_gl.display_is_on = is_on && !is_rgb24;
+    g_gl.display_is_rgb24 = is_rgb24;
     /* what the frame on show cost: a blank at which the game drew
      * nothing leaves the frame before it standing (port_remaster.h) */
     if (g_gl.vertex_count != 0 || g_gl.upload_count != 0) {
@@ -1843,6 +2274,7 @@ void port_GlSetOptions(const PortGlOptions *options) {
      * black polygons */
     port_GlStageSetOn(options->is_exact ? 0 : options->is_stage_mesh);
     port_GlShadowSetStrength(options->is_exact ? 0 : options->shadows);
+    port_GlFighterSetOn(options->is_exact ? 0 : options->is_fighter_models);
     if (g_gl.is_started) {
         /* the setting may have turned the mesh on or off, and the depth
          * buffer is attached only for it */
@@ -1897,7 +2329,8 @@ const char *port_GlStart(
     g_gl.options = *options;
     port_GlScalesOf(options, &g_gl.scale_x, &g_gl.scale_y);
     g_gl.sample = port_GlSampleOf(options);
-    g_gl.program = port_GlMakeProgram(g_gl_vertex_text, g_gl_fragment_text);
+    g_gl.program = port_GlMakeProgramWith(
+        g_gl_vertex_text, g_gl_geometry_text, g_gl_fragment_text);
     if (g_gl.program == 0) {
         return g_gl.problem;
     }
@@ -1911,6 +2344,8 @@ const char *port_GlStart(
     g_gl.at_vram = glGetUniformLocation(g_gl.program, "u_vram");
     g_gl.at_affine = glGetUniformLocation(g_gl.program, "u_affine");
     g_gl.at_exact = glGetUniformLocation(g_gl.program, "u_exact");
+    g_gl.at_like_emulator =
+        glGetUniformLocation(g_gl.program, "u_like_emulator");
     g_gl.at_bilinear = glGetUniformLocation(g_gl.program, "u_bilinear");
     g_gl.at_minify = glGetUniformLocation(g_gl.program, "u_minify");
     g_gl.at_w_scale = glGetUniformLocation(g_gl.program, "u_w_scale");
@@ -1924,6 +2359,13 @@ const char *port_GlStart(
     g_gl.blit_at_scale = glGetUniformLocation(g_gl.blit_program, "u_scale");
     g_gl.blit_at_vram = glGetUniformLocation(g_gl.blit_program, "u_vram");
     g_gl.blit_at_shift = glGetUniformLocation(g_gl.blit_program, "u_shift");
+    g_gl.at_replace = glGetUniformLocation(g_gl.program, "u_replace");
+    g_gl.at_replaced = glGetUniformLocation(g_gl.program, "u_replaced");
+    g_gl.at_replace_rect = glGetUniformLocation(g_gl.program, "u_replace_rect");
+    g_gl.at_replace_mix = glGetUniformLocation(g_gl.program, "u_replace_mix");
+    g_gl.blit_at_replace = glGetUniformLocation(g_gl.blit_program, "u_replace");
+    g_gl.blit_at_replaced =
+        glGetUniformLocation(g_gl.blit_program, "u_replaced");
     g_gl.resolve_program = port_GlMakeProgram(
         g_gl_resolve_vertex_text, g_gl_resolve_fragment_text);
     if (g_gl.resolve_program == 0) {
@@ -2002,10 +2444,29 @@ const char *port_GlStart(
             port_GlSay("the shadows are the game's own black polygons: ", why);
         }
     }
+    /* A mod's textures (gl_replace.h). A card that cannot have them
+     * draws the game's own. */
+    {
+        const char *why = port_GlReplaceStart(getproc);
+
+        if (why != NULL) {
+            port_GlSay("the mods' textures are not drawn: ", why);
+        }
+    }
     /* the comparison with the software GPU's own picture wants the
      * tiles as the game emitted them, and the shadows as it drew them */
     port_GlStageSetOn(options->is_exact ? 0 : options->is_stage_mesh);
     port_GlShadowSetStrength(options->is_exact ? 0 : options->shadows);
+    /* the fighters' own models (gl_fighter.h): a card that cannot have
+     * them draws the game's own fighters */
+    {
+        const char *why = port_GlFighterStart(getproc);
+
+        if (why != NULL) {
+            port_GlSay("the fighters are the game's own primitives: ", why);
+        }
+    }
+    port_GlFighterSetOn(options->is_exact ? 0 : options->is_fighter_models);
 
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);

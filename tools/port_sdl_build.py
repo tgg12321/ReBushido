@@ -21,7 +21,11 @@ port_build.py), from the same files compiled the same way, and then:
   - the files that talk to SDL 2 and to a C library (src/port/window/
     sdl_main.c, sdl_window.c, and host_posix.c or src/port/host_windows.c),
     compiled as any program is;
-  - SDL 2 and a C library, which `make port` has neither of.
+  - SDL 2 and a C library, which `make port` has neither of;
+  - the settings menu's font (src/port/fonts/Marcellus-Regular.ttf), as a
+    C array written into the build's folder, and the English top menu
+    (src/port/mods/english/), copied into mods/ beside the program
+    (docs/MODS.md, "The English menu").
 
 It is local: no check runs it, and CI needs nothing it needs.
 
@@ -69,18 +73,25 @@ OUT_DIR = 'build/port-sdl'
 WINDOW_DIR = 'src/port/window/'
 # The window's arithmetic: compiled as the port's own files, and tested on
 # every push (tests/port/window.c).
-WINDOW_PLAIN = ['scale.c', 'ring.c', 'pace.c', 'keymap.c', 'logname.c', 'fps.c']
+WINDOW_PLAIN = ['scale.c', 'ring.c', 'pace.c', 'keymap.c', 'logname.c', 'fps.c', 'settext.c', 'choices.c']
 # What reads the game's variables out for the session's log: the port's own
 # as well, and not in that test, which has no game.
 WINDOW_GAME = ['gamestate.c']
 # What talks to SDL and to the C library: compiled as any program is.
-WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c']
+WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'menu.c', 'font.c']
+# The settings menu's font, put into the program as a C array of its bytes
+# (src/port/window/font.c), and the mods the program ships, copied into
+# mods/ beside it.
+MENU_FONT = 'src/port/fonts/Marcellus-Regular.ttf'
+MENU_FONT_NAME = 'g_port_menu_font'
+SHIPPED_MODS = 'src/port/mods'
+
 # The remastered renderer's backend, which talks to OpenGL and to a C
 # library and so is compiled the same way (docs/PORT.md, "Remastered in
 # the window"). It calls GL only through pointers the window looks up with
 # SDL_GL_GetProcAddress, so nothing of GL is linked to.
 GL_DIR = 'src/port/gl/'
-GL_HOSTED = ['gl_draw.c', 'gl_pause.c', 'gl_shadow.c', 'gl_stage.c', 'gl_tween.c']
+GL_HOSTED = ['gl_draw.c', 'gl_fighter.c', 'gl_fighter_file.c', 'gl_pause.c', 'gl_replace.c', 'gl_shadow.c', 'gl_stage.c', 'gl_tween.c']
 # The hosts of the build without a window: not this one's on Linux, where
 # the C library's is host_posix.c; on Windows the one file is both builds'.
 OTHER_HOSTS = ('src/port/host_linux.c', 'src/port/host_windows.c')
@@ -237,7 +248,8 @@ class Target:
         if self.windows:
             return (['-L%s/lib' % self.sdl, '-lSDL2', '-lcomdlg32', '-lws2_32', '-static-libgcc']
                     + self.windows_link_flags())
-        return [self.size_flag, '-no-pie', '-lSDL2', '-Wl,-Ttext-segment=0x%X' % PROGRAM_BASE]
+        # (-lm: the menu's font is drawn with the C library's arithmetic)
+        return [self.size_flag, '-no-pie', '-lSDL2', '-lm', '-Wl,-Ttext-segment=0x%X' % PROGRAM_BASE]
 
 
 def run(cmd, **more):
@@ -567,6 +579,41 @@ def link_program(target, program, objects, more):
     return True
 
 
+def write_font(target):
+    """The menu's font as a C file of the build's own, written again only
+    when the font is newer: its path."""
+    path = target.dir + '/menu_font.c'
+    if os.path.exists(path) and os.path.getmtime(path) >= os.path.getmtime(MENU_FONT):
+        return path
+    data = open(MENU_FONT, 'rb').read()
+    lines = ['/* Written by tools/port_sdl_build.py from %s (SIL Open Font Licence,' % MENU_FONT,
+             ' * src/port/fonts/OFL-Marcellus.txt): the settings menu\'s font. */',
+             'extern const unsigned char %s[];' % MENU_FONT_NAME,
+             'const unsigned char %s[%d] = {' % (MENU_FONT_NAME, len(data))]
+    for at in range(0, len(data), 16):
+        lines.append('    ' + ' '.join('%d,' % byte for byte in data[at:at + 16]))
+    lines.append('};')
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(lines) + '\n')
+    return path
+
+
+def copy_mods(target):
+    """The mods the program ships into mods/ beside it, each folder as it
+    is in the repository and nothing else: the names of the folders."""
+    names = []
+    for name in sorted(os.listdir(SHIPPED_MODS)):
+        source = os.path.join(SHIPPED_MODS, name)
+        if not os.path.isdir(source):
+            continue
+        dest = os.path.join(target.dir, 'mods', name)
+        if os.path.isdir(dest):
+            shutil.rmtree(dest)
+        shutil.copytree(source, dest)
+        names.append(name)
+    return names
+
+
 def main():
     os.chdir(ROOT)
     args = sys.argv[1:]
@@ -614,7 +661,7 @@ def main():
     jobs = [(target, path, 'port' if own else 'game', flags + mine, stamp)
             for path, own, mine in port_build.sources() if path not in OTHER_HOSTS]
     jobs += [(target, WINDOW_DIR + f, 'port', flags, stamp) for f in WINDOW_PLAIN + WINDOW_GAME]
-    jobs += [(target, path, 'hosted', flags, stamp) for path in target.hosted]
+    jobs += [(target, path, 'hosted', flags, stamp) for path in target.hosted + [write_font(target)]]
     game, hosted, failed, built = [], [], 0, 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
         for job, (path, obj, compiled, messages) in zip(jobs, pool.map(compile_one, jobs)):
@@ -638,6 +685,7 @@ def main():
     if not link_program(target, target.program, [blob] + hosted, target.link_flags()):
         return 1
     made = [target.program]
+    made += ['%s/mods/%s/' % (target.dir, name) for name in copy_mods(target)]
     if target.windows:
         shutil.copyfile(target.sdl + '/bin/SDL2.dll', target.dir + '/SDL2.dll')
         made.append(target.dir + '/SDL2.dll')

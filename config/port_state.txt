@@ -42,12 +42,15 @@ state    src/port/xa.c          the XA reader and its buffer
 
 # the picture, the output, the program and the host
 outside  src/port/crash.c       the crash report
+outside  src/port/fighter_view.c  the remastered fighter's bones, camera and lights, read and written down
 outside  src/port/host_linux.c  the host: file handles, the signal stack, the fiber's host side
 outside  src/port/host_windows.c  the host on Windows
 outside  src/port/main.c        the program's arguments and the disc's file
 outside  src/port/netplay.c     the session: inputs, guesses, the states kept, the hashes
+outside  src/port/mods.c        the mods' table, made once as the program starts
 outside  src/port/net.c         the network: the socket, the link cable's numbers, the trouble it is given
 outside  src/port/picture.c     the pictures a run writes
+outside  src/port/png.c         PNG pictures read and written for the mods
 outside  src/port/remaster.c    the remastered picture's side channel: its epoch only goes forward
 outside  src/port/state.c       the snapshot's own bookkeeping, which must survive a load
 outside  src/port/step.c        the host's count of steps and whether a step is run again
@@ -62,3 +65,5 @@ outside  src/port/window/logname.c   the log's name
 outside  src/port/window/pace.c      the pacing against the sound card
 outside  src/port/window/ring.c      the sound card's queue
 outside  src/port/window/scale.c     the window's scaling
+outside  src/port/window/choices.c   the settings menu's choices
+outside  src/port/window/settext.c   rebushido.cfg changed a line at a time

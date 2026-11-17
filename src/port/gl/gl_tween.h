@@ -49,6 +49,8 @@ typedef struct {
     u32 named;    /* by the face and the thing it is a drawing of */
     u32 searched; /* ... and by the nearest of the same signature */
     u32 clashes;  /* ... where the nearest was another's already */
+    u32 moved;    /* ... by name, of a thing whose node is another one
+                   * frame on (gl_tween.c, port_TweenPairMoved) */
     u32 held;     /* primitives not moved between their two places,
                    * because so moved they would not be drawn at all */
     /* how far the farthest corner moved between the two frames, in
@@ -58,6 +60,14 @@ typedef struct {
      * frames' own places for them: none may, and the number is kept so
      * that a run can say so (docs/PORT.md) */
     u32 off_the_line;
+    /* of the last pair of frames: faces one of the two frames has and
+     * the other has not, moved all the same by their corners, which the
+     * other frame has (docs/PORT.md, "More pictures a second"): a face
+     * of the frame on show the frame after it turned away from, and a
+     * face of the frame after it that the frame on show had turned away
+     * from */
+    u32 going;
+    u32 coming;
 } PortTweenCounts;
 
 /* Takes the renderer that draws (port_GlBackend) and puts itself in

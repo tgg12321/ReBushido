@@ -59,6 +59,10 @@ typedef struct {
      * hundredths: 0 for the game's own black silhouettes, which is what
      * `shadows original` means (gl_shadow.h, docs/PORT.md). */
     s32 shadows;
+    /* The fighters drawn from models of their own where there is a file
+     * for the model (gl_fighter.h, docs/PORT.md, "The fighters' own
+     * models"): 0 the game's own primitives. */
+    s32 is_fighter_models;
     /* The three things that make the hardware's picture the console's,
      * for the proof at scale 1 (docs/PORT.md, "Remastered"): the
      * corners where the PlayStation held them, the texture flat across
@@ -175,6 +179,9 @@ typedef struct {
      * so that it is always of the buffer's own size, whether or not the
      * mesh is drawn at all. */
     u32 depth_buffer;
+    /* the slots of the ground's faces, which a fighter is held against
+     * (port_GlGroundSlotsBegin) */
+    u32 slot_texture;
     s32 target_w;
     s32 target_h;
     s32 draw_x; /* a pixel of video memory is this many of the buffer */

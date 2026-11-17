@@ -39,6 +39,7 @@
 #include "gl_pause.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
+#include "menu.h"
 #include "port_gpu.h"
 #include "port_host.h"
 #include "port_movie.h"
@@ -85,6 +86,9 @@
  * out every minute, in vertical blanks. */
 #define BEAT_BLANKS 600
 #define MINUTE_BLANKS 3600
+/* The window under the settings menu, darkened by this much black. */
+#define MENU_DIM 0xA0000000U
+#define ALPHA_SHIFT 24
 
 PortSettings g_port_settings;
 PortWindowOptions g_port_window_options;
@@ -171,6 +175,15 @@ static u32 g_port_injected;
 static u32 g_port_key_events;
 static u32 g_port_controller_events;
 static u32 g_port_pad_changes;
+/* What the pads are not given until it is let go: what was held as the
+ * settings menu closed, and the Select that opened it (sdl_menu.c). */
+static u32 g_port_held_back[PORT_PADS];
+/* The settings menu's own texture, where SDL's renderer draws. */
+static SDL_Texture *g_port_menu_texture;
+static s32 g_port_menu_texture_w;
+static s32 g_port_menu_texture_h;
+
+static void port_SwapPicture(void);
 
 /* ---- names ---- */
 
@@ -526,6 +539,7 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     options->is_bilinear = FALSE;
     options->is_exact = FALSE;
     options->is_stage_mesh = g_port_settings.stage_mesh;
+    options->is_fighter_models = g_port_settings.fighter_models;
     /* the scene held against the ground's own depth, which is part of
      * drawing the ground as one mesh and has no setting of its own
      * (gl.h) */
@@ -1015,7 +1029,7 @@ static void port_WriteShot(void) {
 
 /* The displayed rectangle of video memory into the window: black where
  * the display is off or has no size. */
-static void port_DrawPicture(u32 blank) {
+static void port_DrawPicture(u32 blank, s32 may_tap) {
     PortDisplay display;
     PortRect place;
     SDL_Rect where;
@@ -1044,7 +1058,7 @@ static void port_DrawPicture(u32 blank) {
      * remastered picture is off */
     port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
                         display.is_rgb24, g_port_frame);
-    if (g_port_window_options.tap_frames != NULL &&
+    if (may_tap && g_port_window_options.tap_frames != NULL &&
         blank % (u32)g_port_window_options.tap_every == 0) {
         port_TapFrame(blank, w, h, display.is_on);
     }
@@ -1373,6 +1387,142 @@ static void port_ChangePicture(const char *why) {
     port_NoteGraphics();
 }
 
+/* ---- for the settings menu (sdl_menu.c, menu.h) ---- */
+
+void port_GetWindowSize(s32 *w, s32 *h) { port_WindowSize(w, h); }
+
+/* The window's pixels as a PNG at `path`, for a test, as F12 reads them:
+ * before they are shown. */
+static s32 port_WriteWindowPng(const char *path) {
+    s32 window_w = 0;
+    s32 window_h = 0;
+    s32 file;
+    s32 written;
+
+    port_WindowSize(&window_w, &window_h);
+    if (!port_ReadWindowPixels(window_w, window_h)) {
+        return FALSE;
+    }
+    file = port_HostCreate(path);
+    if (file < 0) {
+        return FALSE;
+    }
+    written =
+        port_WritePixelsPng(file, g_port_window_pixels, window_w, window_h);
+    port_HostClose(file);
+    return written;
+}
+
+void port_ShowMenu(
+    u32 blank, const u32 *pixels, const PortRect *place, const char *shot) {
+    static const u32 g_dim = MENU_DIM;
+    s32 window_w = 0;
+    s32 window_h = 0;
+    SDL_Rect where;
+
+    port_WindowSize(&window_w, &window_h);
+    port_DrawPicture(blank, FALSE);
+    if (g_port_has_gl) {
+        port_GlShowPixels(&g_dim, 1, 1, window_w, window_h, 0, 0, window_w,
+                          window_h, FALSE, TRUE);
+        port_GlShowPixels(pixels, place->w, place->h, window_w, window_h,
+                          place->x, place->y, place->w, place->h, FALSE, TRUE);
+    } else {
+        SDL_SetRenderDrawBlendMode(g_port_renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(
+            g_port_renderer, 0, 0, 0, MENU_DIM >> ALPHA_SHIFT);
+        SDL_RenderFillRect(g_port_renderer, NULL);
+        if (g_port_menu_texture == NULL || g_port_menu_texture_w != place->w ||
+            g_port_menu_texture_h != place->h) {
+            if (g_port_menu_texture != NULL) {
+                SDL_DestroyTexture(g_port_menu_texture);
+            }
+            g_port_menu_texture = SDL_CreateTexture(
+                g_port_renderer, SDL_PIXELFORMAT_ARGB8888,
+                SDL_TEXTUREACCESS_STREAMING, place->w, place->h);
+            g_port_menu_texture_w = place->w;
+            g_port_menu_texture_h = place->h;
+            if (g_port_menu_texture == NULL) {
+                return;
+            }
+            SDL_SetTextureBlendMode(g_port_menu_texture, SDL_BLENDMODE_BLEND);
+        }
+        SDL_UpdateTexture(
+            g_port_menu_texture, NULL, pixels, place->w * BYTES_PER_PIXEL);
+        where.x = place->x;
+        where.y = place->y;
+        where.w = place->w;
+        where.h = place->h;
+        SDL_RenderCopy(g_port_renderer, g_port_menu_texture, NULL, &where);
+    }
+    if (shot != NULL && !port_WriteWindowPng(shot)) {
+        port_Say("--menu-shots: %s cannot be written", shot);
+    }
+    port_SwapPicture();
+}
+
+void port_HoldBackPads(void) {
+    s32 pad;
+
+    for (pad = 0; pad < PORT_PADS; pad++) {
+        g_port_held_back[pad] = port_GetHeldButtons(&g_port_settings, pad);
+    }
+}
+
+void port_TakeControllerEvent(const SDL_Event *event) {
+    if (event->type == SDL_CONTROLLERDEVICEADDED) {
+        port_AddController(event->cdevice.which);
+    } else if (event->type == SDL_CONTROLLERDEVICEREMOVED) {
+        port_RemoveController(event->cdevice.which);
+    }
+}
+
+s32 port_PadOfController(s32 id) {
+    return port_FindController((SDL_JoystickID)id);
+}
+
+void port_ToggleFullscreen(void) { port_SetFullscreen(!g_port_is_fullscreen); }
+
+s32 port_WindowIsRemastered(void) { return port_RemasterIsOn(); }
+
+void port_WindowSetRemastered(s32 on) {
+    if ((port_RemasterIsOn() != 0) != (on != 0)) {
+        port_ChangePicture("the settings menu");
+    }
+}
+
+void port_WindowApplyChoice(s32 choice) {
+    const char *name = g_port_choices[choice].name;
+
+    if (strcmp(name, "fullscreen") == 0) {
+        port_SetFullscreen(g_port_settings.is_fullscreen);
+    } else if (strcmp(name, "fps") == 0) {
+        g_port_show_fps = g_port_settings.fps;
+    } else if (strcmp(name, "vsync") == 0) {
+        g_port_vsync = g_port_settings.vsync && !g_port_window_options.is_fast;
+        if (g_port_has_gl) {
+            SDL_GL_SetSwapInterval(g_port_vsync ? 1 : 0);
+        } else {
+            SDL_RenderSetVSync(g_port_renderer, g_port_vsync);
+        }
+    } else if (strcmp(name, "filter") == 0 && !g_port_has_gl) {
+        /* SDL's renderer takes the filter as a texture is made */
+        SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,
+                    g_port_settings.is_linear ? "1" : "0");
+        g_port_texture_w = 0;
+    } else if (
+        (strcmp(name, "stage_mesh") == 0 || strcmp(name, "shadows") == 0) &&
+        g_port_has_gl) {
+        PortGlOptions options;
+
+        port_GlOptionsFor(g_port_gl_scale, &options);
+        port_GlSetOptions(&options);
+    }
+    /* the picture's size and filter on the card, the resolution, the
+     * counter's corner and the dead zone are read each time they are
+     * used */
+}
+
 /* ---- the pads ---- */
 
 /* What the keys and controllers hold on each pad, through the layout,
@@ -1383,7 +1533,15 @@ static void port_SendPads(void) {
 
     for (pad = 0; pad < PORT_PADS; pad++) {
         u32 held = port_GetHeldButtons(&g_port_settings, pad);
-        u32 changed = held ^ g_port_sent[pad];
+        u32 changed;
+
+        /* the settings menu's (sdl_menu.c): what is held back until it
+         * is let go, and Select where it opens the menu */
+        g_port_held_back[pad] &= held;
+        held &= ~g_port_held_back[pad];
+        g_port_held_back[pad] |=
+            port_MenuTakesPad(held, g_port_sent[pad], &held);
+        changed = held ^ g_port_sent[pad];
 
         for (bit = 1; changed != 0; bit <<= 1) {
             if (changed & bit) {
@@ -1427,6 +1585,13 @@ static void port_TakeKey(const SDL_KeyboardEvent *key) {
     if (key->keysym.scancode == SDL_SCANCODE_F3) {
         if (down) {
             g_port_show_fps = !g_port_show_fps;
+        }
+        return;
+    }
+    if (key->keysym.scancode == SDL_SCANCODE_F1) {
+        /* the window's own: the settings menu */
+        if (down) {
+            port_AskForMenu("F1");
         }
         return;
     }
@@ -1526,6 +1691,11 @@ static void port_ReadInput(u32 blank) {
         case SDL_CONTROLLERBUTTONDOWN:
         case SDL_CONTROLLERBUTTONUP:
             pad = port_FindController(event.cbutton.which);
+            if (event.cbutton.button == SDL_CONTROLLER_BUTTON_GUIDE &&
+                event.cbutton.state == SDL_PRESSED) {
+                /* bound to no button of a pad: the settings menu */
+                port_AskForMenu("the guide button");
+            }
             if (pad >= 0) {
                 g_port_controller_events++;
                 port_ApplyInput(
@@ -1692,7 +1862,7 @@ static void port_ShowBlank(u32 blank) {
         g_port_frame_at = now;
         g_port_tween_frames = port_TweenGeneration();
     }
-    port_DrawPicture(blank);
+    port_DrawPicture(blank, TRUE);
     port_WatchGame(blank);
     port_DrawCounter();
     if (g_port_window_options.tap_window != NULL &&
@@ -1731,6 +1901,8 @@ static void port_ShowBlank(u32 blank) {
     }
     port_ShowPictures(due);
     g_port_blanks_shown++;
+    /* the settings menu, where it was asked for (sdl_menu.c) */
+    port_MaybeRunMenu(blank);
     if (g_port_vsync && port_PaceIsHeldBack(&g_port_pace)) {
         port_Say("the display holds the game back: it is no longer waited "
                  "for (vsync off); blank %u",

@@ -24,6 +24,7 @@
 #include "port_disc.h"
 #include "port_gpu.h"
 #include "port_host.h"
+#include "port_mods.h"
 #include "port_movie.h"
 #include "port_net.h"
 #include "port_spu.h"
@@ -63,6 +64,7 @@ static const char g_port_usage[] =
     "            [--card1 FILE] [--card2 FILE] [--no-cards]\n"
     "            [--rollback-test N] [--rollback-every M] "
     "[--rollback-quiet]\n"
+    "            [--mods FOLDER|off] [--dump-textures FOLDER]\n"
     "            [--net-bind ADDRESS:PORT --net-peer ADDRESS:PORT]\n"
     "            [--link-side 0|1] [--net-latency MS] [--net-loss PERCENT]\n"
     "            [--netplay 1|2] [--net-delay N]\n"
@@ -110,6 +112,11 @@ static const char g_port_usage[] =
     "  --net-delay N  ... a press counts N frames on (2)\n"
     "  --net-latency MS   for tests: every datagram waits this long first\n"
     "  --net-loss PERCENT ... and so many in a hundred are dropped\n"
+    "  --mods FOLDER  the mods are in this folder (mods beside the program\n"
+    "                 if this does not say); off for none (docs/MODS.md)\n"
+    "  --dump-textures FOLDER   write each texture the game draws there as\n"
+    "                 a PNG, once, named by its key: what a replacement is\n"
+    "                 made from (the remastered picture only)\n"
     "\n"
     "At the end it prints a line for each thing the game asked for that\n"
     "the port does not do yet, with how often: stub NAME COUNT.\n";
@@ -292,6 +299,10 @@ s32 port_Main(s32 argc, char **argv) {
             port_SetVramPath(argv[++i]);
         } else if (port_TextsEqual(word, "--dump")) {
             port_ParseDump(argv[++i]);
+        } else if (port_TextsEqual(word, "--mods")) {
+            port_ModsSetFolder(argv[++i]);
+        } else if (port_TextsEqual(word, "--dump-textures")) {
+            port_ModsSetDumpFolder(argv[++i]);
         } else if (port_TextsEqual(word, "--rollback-test")) {
             if (!port_ParseNumber(argv[++i], &rollback_frames) ||
                 rollback_frames <= 0) {
@@ -363,6 +374,8 @@ s32 port_Main(s32 argc, char **argv) {
         return PORT_EXIT_FAILED;
     }
     port_InsertDisc(&g_port_disc);
+    /* the mods, before the game reads anything a mod could stand in for */
+    port_ModsStart(argc > 0 ? argv[0] : NULL);
     if (plan != NULL) {
         port_LoadPlan(plan);
     }

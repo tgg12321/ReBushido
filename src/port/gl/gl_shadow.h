@@ -27,6 +27,17 @@
  * the same depth, which is why depth cannot tell them apart and why the
  * first try at this painted the darkness over the caster's feet.
  *
+ * With `shadows cast` the silhouette is not the game's shadow mesh at
+ * all, which is a coarse box or two a bone, rounded to four world units
+ * a corner: it is the fighter's own faces -- every face of his body,
+ * his weapon and his scabbard the renderer looked up, the ones turned
+ * away from the camera and the ones off the screen included -- taken
+ * back into the world from the coprocessor's own sums, slid onto the
+ * ground along the game's sun in floating point (light_ProjectShadow's
+ * arithmetic), and drawn into the same mask. The game's shadow nodes
+ * still say what casts a shadow and onto what ground; their faces are
+ * only the fallback for a frame that has nothing to cast from.
+ *
  * Nothing here runs unless `shadows` asks for it: with `shadows
  * original` the game's own black polygons are drawn, and the picture is
  * what it was to the pixel. */
@@ -48,11 +59,15 @@
  * (gl_draw.c). Returns why it could not, or NULL. */
 extern const char *port_GlShadowStart(void *(*getproc)(const char *name));
 
-/* How much the shadows darken what they fall on, in hundredths: 0 for
- * the game's own black silhouettes, which is what `shadows original`
- * means. */
-extern void port_GlShadowSetStrength(s32 strength);
+/* The `shadows` setting (port_remaster.h, port_ReadRemasterShadows): how
+ * much the shadows darken what they fall on, in hundredths, 0 for the
+ * game's own black silhouettes, which is what `shadows original` means;
+ * with PORT_SHADOWS_CAST, cast from the fighters' own faces. */
+extern void port_GlShadowSetStrength(s32 setting);
+/* the strength alone, in hundredths */
 extern s32 port_GlShadowStrength(void);
+/* whether the shadows are cast from the fighters' own faces */
+extern s32 port_GlShadowIsCast(void);
 /* Whether the soft shadows are what this frame draws: the strength, and
  * a backend that could make the mask. */
 extern s32 port_GlShadowIsSoft(void);
@@ -72,6 +87,13 @@ extern s32 port_GlShadowTakes(const PortRemasterPrim *prim);
  * the frame's end. */
 extern s32 port_GlShadowCollects(void);
 extern s32 port_GlShadowIsGround(const PortRemasterPrim *prim);
+
+/* The picture now being drawn is one between two of the game's frames,
+ * `phase` of the way from the frame on show to the frame after it
+ * (gl_tween.h, PORT_TWEEN_ONE); -1 for the game's own frame. The shadows
+ * cast from the fighters' faces are moved between the two frames' own
+ * as the fighters are, and the camera with them. */
+extern void port_GlShadowSetPhase(s32 phase);
 
 /* Video memory was written into the picture (a fill, a copy, a load).
  * One that comes after the shadows covers them, so the mask gives those
@@ -105,5 +127,18 @@ extern s32 port_GlShadowOccluders(void);
 extern u32 port_GlShadowPoints(void);
 extern s32 port_GlShadowLost(void);
 extern u32 port_GlShadowArea(void);
+/* With `shadows cast`: the faces the last frame cast from, its faces
+ * the game casts no shadow of, and the triangles of the last picture's
+ * silhouette; the frames that had nothing to cast from and fell back to
+ * the game's own shadow mesh, and the triangles of the pictures between
+ * two frames that the frame after did not hold, over the run. */
+extern s32 port_GlShadowCastFaces(void);
+extern s32 port_GlShadowCastOrphans(void);
+extern s32 port_GlShadowCastTriangles(void);
+extern u32 port_GlShadowCastFallbacks(void);
+extern u32 port_GlShadowCastUnpaired(void);
+/* The triangles cast from the fighters' and weapons' own models
+ * (gl_fighter.h) over the run. */
+extern u32 port_GlShadowCastFromModels(void);
 
 #endif /* PORT_GL_SHADOW_H */

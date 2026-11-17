@@ -265,7 +265,17 @@ typedef struct {
     s32 y;
     s32 depth;   /* the sum the GTE shifted into SZ, not held to 16 bits */
     s32 divided; /* h / depth, 16 bits of fraction, as SXY was made with */
+    /* Where the point is before the projection: the three sums of the
+     * rotation and the translation with PORT_REMASTER_VIEW_FRACTION bits
+     * of fraction, which the GTE rounds to whole numbers before it
+     * divides. In the renderer's own scale for the thing drawn (a corner's
+     * `depth_shift`) and with the second row halved, as the view is
+     * loaded. The fighters' shadows are cast from these
+     * (port_RemasterCasterFaces). */
+    s32 view[3];
 } PortPrecisePoint;
+
+#define PORT_REMASTER_VIEW_FRACTION 8
 
 /* The GTE stored a projected point as a word of two halves at `at`
  * (src/port/gte.c). Nothing is kept unless a backend is attached. */
@@ -356,6 +366,54 @@ extern void port_RemasterNoteFighter(s32 is_fighter);
  * black polygons and nothing of this; `soft` is this much, which is what
  * is worth looking at (src/port/gl/gl_shadow.c). */
 #define PORT_SHADOWS_SOFT 55
+
+/* `shadows cast`: the silhouette is not the game's coarse shadow mesh
+ * but the fighter's own faces, every one of them, flattened onto the
+ * ground along the same sun by the backend in floating point
+ * (gl_shadow.c). The setting's number is this bit and the strength in
+ * hundredths; `cast` alone is PORT_SHADOWS_CAST_STRENGTH, darker than
+ * `soft` (docs/PORT.md, "The shadows", says why). */
+#define PORT_SHADOWS_CAST 0x100
+#define PORT_SHADOWS_CAST_STRENGTH 68
+#define PORT_SHADOWS_STRENGTH_MASK 0xFF
+
+/* The `shadows` setting as a word says it: `original`, `soft`, a number
+ * from 1 to 100 (soft, that strong), `cast`, or `cast:N` (cast, N
+ * hundredths); -1 for anything else. Pure arithmetic: the host tests
+ * hold it (tests/port/remaster.c). */
+extern s32 port_ReadRemasterShadows(const char *word);
+
+/* The renderer is walking a shadow node whose caster is the node at
+ * `parent`, onto ground at height `ground_y` (render_DrawQueue): which
+ * of the fighters' faces cast a shadow, and onto what, is told by the
+ * game's own shadow nodes and not guessed. */
+extern void port_RemasterNoteShadowCaster(PortAddress parent, s32 ground_y);
+
+/* A face of a fighter as the renderer looked it up (render_LoadFace),
+ * whether or not it became a primitive: a shadow is cast by the faces
+ * that turn away from the camera as much as by those that face it, and
+ * by the ones off the screen. */
+typedef struct {
+    PortAddress object; /* the node being drawn */
+    PortAddress group;  /* the mesh's record, and the face's corners */
+    s32 face;
+    s32 count;       /* 3 or 4 */
+    s32 depth_shift; /* the scale it was drawn at */
+    s32 view[4][3];  /* PortPrecisePoint's `view`, a corner each */
+} PortShadowCaster;
+
+/* The faces of the frame whose primitives are being given now, and how
+ * many; kept until the backend has begun the next frame. */
+extern const PortShadowCaster *port_RemasterCasterFaces(s32 *count);
+/* Faces the run had no room for. */
+extern u32 port_RemasterCasterLost(void);
+/* The ground the thing at `object` casts its shadow onto, by the game's
+ * own shadow node of it: the node itself, or a bone of the same body
+ * for a fighter's skinned body. FALSE where the game casts none. */
+extern s32 port_RemasterCasterGround(PortAddress object, s32 *ground_y);
+/* The slope the game slides a shadow along, 1.12 (light_SetShadowMatrix):
+ * x and z move by the height above the ground times these. */
+extern void port_RemasterShadowShear(s32 *x_shear, s32 *z_shear);
 
 /* A new frame of primitives is about to be built: the ordering table was
  * cleared (src/port/gpu.c). What was written down before the frame
@@ -772,6 +830,13 @@ extern void port_RemasterPause(s32 what, s32 from_x, s32 from_y);
 /* Whether a pause is holding the fight's picture now: a picture between
  * two frames (gl_tween.h) is not drawn then. */
 extern s32 port_RemasterIsHolding(void);
+/* Whether the fight's pause menu is up, with either picture: the window's
+ * settings menu opens there on Select (src/port/window/sdl_menu.c). */
+extern s32 port_RemasterIsPaused(void);
+/* Whether the primitives coming are the fight's last table drawn again
+ * (from PORT_PAUSE_FROZEN to PORT_PAUSE_PANEL): what the scene was, with
+ * none of what the side channel said of it. */
+extern s32 port_RemasterIsRedrawing(void);
 /* What keeps the picture and puts it back: called with PORT_PAUSE_FROZEN,
  * the corner the fight's last frame is at and the corner of the drawing
  * area the table would be drawn into now, and with PORT_PAUSE_OFF as the

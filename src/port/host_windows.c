@@ -230,6 +230,46 @@ s32 port_HostUdpReceive(
     return (s32)got;
 }
 
+/* The folder's names by FindFirstFile and FindNextFile (port_host.h). */
+s32 port_HostListFolder(
+    const char *path,
+    void (*each)(void *context, const char *name, s32 is_folder),
+    void *context) {
+    char pattern[MAX_PATH];
+    WIN32_FIND_DATAA found;
+    HANDLE listing;
+    u32 length = 0;
+
+    while (path[length] != 0 && length + 3 < MAX_PATH) {
+        pattern[length] = path[length];
+        length++;
+    }
+    pattern[length++] = '\\';
+    pattern[length++] = '*';
+    pattern[length] = 0;
+    listing = FindFirstFileA(pattern, &found);
+    if (listing == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+    do {
+        const char *name = found.cFileName;
+
+        if (name[0] == '.' &&
+            (name[1] == 0 || (name[1] == '.' && name[2] == 0))) {
+            continue;
+        }
+        each(context, name,
+             (found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0);
+    } while (FindNextFileA(listing, &found));
+    FindClose(listing);
+    return 1;
+}
+
+s32 port_HostMakeFolder(const char *path) {
+    return CreateDirectoryA(path, NULL) ||
+           GetLastError() == ERROR_ALREADY_EXISTS;
+}
+
 /* The system's time is counted in tenths of a microsecond already: its
  * low half is the port's count (port_host.h). */
 u32 port_HostTicks(void) {

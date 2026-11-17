@@ -65,6 +65,16 @@ extern s32 port_HostWriteAt(s32 file, u32 offset, const void *bytes, u32 count);
  * the game has been told is saved survives a crash. */
 extern void port_HostFlush(s32 file);
 
+/* The names in a folder, each given to `each` with whether it is a
+ * folder itself (`.` and `..` left out), in no particular order: 1, or 0
+ * if `path` is not a folder that can be read (the mods, docs/MODS.md). */
+extern s32 port_HostListFolder(
+    const char *path,
+    void (*each)(void *context, const char *name, s32 is_folder),
+    void *context);
+/* Makes a folder, if it is not there: 1 if it is there afterwards. */
+extern s32 port_HostMakeFolder(const char *path);
+
 /* The PC's clock, in tenths of a microsecond from some moment: only for
  * how long something took (the rollback self-test's report, state.c).
  * It wraps after seven minutes; nothing of the game reads it. */

@@ -19,7 +19,8 @@
  *             [--fast] [--inject keys|pads] [--tap-frames FOLDER]
  *             [--tap-window FOLDER] [--tap-every N] [--tap-audio FILE]
  *             [--toggle-at N] [--shot-at N] [--fault-at N]
- *             [--fault-in-sound N] */
+ *             [--fault-in-sound N] [--menu-at N[,N...]] [--menu-keys WORDS]
+ *             [--menu-shots FOLDER] */
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <dirent.h>
@@ -34,6 +35,7 @@
 #endif
 
 #include "port_host.h"
+#include "port_mods.h"
 #include "port_remaster.h"
 #include "shared.h"
 #include "sdl_window.h"
@@ -101,7 +103,9 @@ static const char g_port_window_usage[] =
     "                 shadows; soft: the ground under a shadow darkened\n"
     "                 instead, and never the fighter standing in it; or\n"
     "                 a number, how much of the ground it takes, in\n"
-    "                 hundredths. It needs the remastered picture\n"
+    "                 hundredths; cast (cast:N): the same, cast from\n"
+    "                 the fighters' own bodies. It needs the\n"
+    "                 remastered picture\n"
     "  --frame-rate W  original: one picture a vertical blank, as the\n"
     "                 console; display: as many pictures a second as the\n"
     "                 screen shows; or a number of them. The game steps\n"
@@ -110,7 +114,10 @@ static const char g_port_window_usage[] =
     "                 frames it has worked out already. It needs the\n"
     "                 remastered picture\n"
     "\n"
-    "In the window: Escape, or closing it, ends the program. F11 or\n"
+    "In the window: F1 opens the settings menu (Select does on the\n"
+    "options page, the top menu and the pause, and a controller's guide\n"
+    "button anywhere), which changes and writes the settings file.\n"
+    "Escape, or closing the window, ends the program. F11 or\n"
     "Alt+Enter fills the screen and comes back. F2 changes between the\n"
     "original picture and the remastered one. F3 shows and hides the\n"
     "counter in the corner: pictures shown a second, the game's own\n"
@@ -150,7 +157,10 @@ static const char g_port_window_usage_end[] =
     "(the samples as they are queued), --fault-at N and --fault-in-sound N\n"
     "(touch memory that is not there at vertical blank N, on the game's\n"
     "stack or on the sound card's thread: what a crash leaves in the\n"
-    "log).\n";
+    "log), --menu-at N[,N...] (what F1 does, at those blanks),\n"
+    "--menu-keys WORDS (presses in the settings menu, one a picture: up,\n"
+    "down, left, right, accept, back, close, clear, key:NAME, pad:NAME,\n"
+    "shot) and --menu-shots FOLDER (where shot keeps the window).\n";
 
 static void port_Complain(const char *problem, const char *word) {
     fprintf(stderr, "rebushido: %s%s\nrebushido: --help says what it takes\n",
@@ -161,6 +171,11 @@ static void port_Complain(const char *problem, const char *word) {
 /* ---- the settings file ---- */
 
 static const char *g_port_settings_path;
+/* where the settings menu writes them: the file read, or the one beside
+ * the program that was not there */
+static const char *g_port_settings_written;
+
+const char *port_GetSettingsPath(void) { return g_port_settings_written; }
 
 static void port_ComplainOfLine(s32 line, const char *why, const char *text) {
     port_Say("%s line %d is not used (%s): %s", g_port_settings_path, line, why,
@@ -200,6 +215,7 @@ static void port_LoadSettings(const char *named, const char *beside) {
         snprintf(path, sizeof(path), "%s%s", beside, SETTINGS_FILE);
         g_port_settings_path = path;
     }
+    g_port_settings_written = g_port_settings_path;
     text = port_ReadSettingsFile(g_port_settings_path);
     if (text == NULL) {
         if (named != NULL) {
@@ -404,7 +420,9 @@ static s32 port_ChooseWord(
 }
 
 int main(int argc, char **argv) {
-    static char *passed[ARGUMENTS_MAX + 6];
+    static char *passed[ARGUMENTS_MAX + 8];
+    static char mods_option[] = "--mods";
+    static char mods_off[] = "off";
     static char image_option[] = "--image";
     static char frames_option[] = "--frames";
     static char frames_endless[] = "2000000000";
@@ -415,6 +433,7 @@ int main(int argc, char **argv) {
     s32 count = 0;
     s32 has_image = 0;
     s32 has_end = 0;
+    s32 has_mods = 0;    /* the command line says where they are */
     s32 fullscreen = -1; /* -1: as the settings say */
     s32 no_vsync = 0;
     s32 scale = -1;
@@ -558,17 +577,11 @@ int main(int argc, char **argv) {
         } else if (strcmp(word, "--shadows") == 0 && has_value) {
             const char *how = argv[++i];
 
-            if (strcmp(how, "original") == 0) {
-                shadows = 0;
-            } else if (strcmp(how, "soft") == 0) {
-                shadows = PORT_SHADOWS_SOFT;
-            } else {
-                shadows = atoi(how);
-                if (shadows < 1 || shadows > 100) {
-                    port_Complain(
-                        "--shadows takes original, soft, or 1 to 100, not ",
-                        how);
-                }
+            shadows = port_ReadRemasterShadows(how);
+            if (shadows < 0) {
+                port_Complain("--shadows takes original, soft, cast, cast:N "
+                              "or 1 to 100, not ",
+                              how);
             }
         } else if (strcmp(word, "--frame-rate") == 0 && has_value) {
             const char *how = argv[++i];
@@ -597,11 +610,20 @@ int main(int argc, char **argv) {
             }
         } else if (strcmp(word, "--tap-audio") == 0 && has_value) {
             options->tap_audio = argv[++i];
+        } else if (strcmp(word, "--menu-at") == 0 && has_value) {
+            options->menu_at = argv[++i];
+        } else if (strcmp(word, "--menu-keys") == 0 && has_value) {
+            options->menu_keys = argv[++i];
+        } else if (strcmp(word, "--menu-shots") == 0 && has_value) {
+            options->menu_shots = argv[++i];
         } else {
             /* the port's own, which it reads itself */
             if (strcmp(word, "--image") == 0) {
                 has_image = 1;
                 image = has_value ? argv[i + 1] : NULL;
+            }
+            if (strcmp(word, "--mods") == 0) {
+                has_mods = 1;
             }
             if (strcmp(word, "--frames") == 0 || strcmp(word, "--plan") == 0) {
                 has_end = 1;
@@ -685,6 +707,16 @@ int main(int argc, char **argv) {
         passed[count++] = frames_option;
         passed[count++] = frames_endless;
     }
+    if (!has_mods && !g_port_settings.mods) {
+        /* the settings file turned them off (docs/MODS.md) */
+        passed[count++] = mods_option;
+        passed[count++] = mods_off;
+    }
+    if (!g_port_settings.english) {
+        /* the English top menu the program ships is a mod of its own,
+         * mods/english/, which the settings leave out (docs/MODS.md) */
+        port_ModsLeaveOut("english");
+    }
     passed[count] = NULL;
     {
         char line[2 * PATH_BYTES_MAX];
@@ -720,7 +752,11 @@ int main(int argc, char **argv) {
              g_port_settings.stage_mesh
                  ? "from one static mesh of its own"
                  : "from the game's own tile primitives");
-    if (g_port_settings.shadows > 0) {
+    if (g_port_settings.shadows & PORT_SHADOWS_CAST) {
+        port_Say("shadows: cast from the fighters' own bodies, taking %d "
+                 "hundredths of the ground they fall on.",
+                 g_port_settings.shadows & PORT_SHADOWS_STRENGTH_MASK);
+    } else if (g_port_settings.shadows > 0) {
         port_Say("shadows: soft, taking %d hundredths of the ground they "
                  "fall on.",
                  g_port_settings.shadows);

@@ -1,0 +1,8 @@
+{
+  "about": "tools/fighter_hd.py's recipe: how each model of the hd mod is rebuilt. `default` is every model's, `fighters` and `weapons` each kind's, `models` one model's own. weld: units within which points are made one; seam: the same for the points of open edges, where two pieces meet without sharing their points; crease: degrees past which an edge stays sharp; levels: rounds of subdivision; fit: rounds of making the surface pass through the game's vertices; scale and upscale: the texture.",
+  "mod": "name = HD fighters\nversion = 1.0\norder = 20\nauthor = ReBushido (tools/fighter_hd.py)\n",
+  "default": {"weld": 0.5, "seam": 1.5, "crease": 50, "levels": 2, "fit": 12, "scale": 4, "upscale": "scale2x"},
+  "fighters": {"crease": 75},
+  "weapons": {"crease": 35},
+  "models": {}
+}

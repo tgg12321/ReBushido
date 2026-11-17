@@ -1148,9 +1148,11 @@ made, and as the program ends. The window's files are
 | File | |
 |---|---|
 | `scale.c`, `ring.c`, `pace.c`, `keymap.c`, `logname.c`, `fps.c`, `window.h` | the arithmetic: where the picture goes in the window, the queue of samples, when a blank is due, which key is which button, the settings file, a log's name and lines, the counter's rate, digits and place. No SDL and no C library in them, so the host tests run them on every push (`tests/port/window.c`) |
-| `gamestate.c` | reads the game's variables out for the log, and has the names the log gives screens, modes, fighters, weapons and stages. It only reads |
+| `settext.c`, `choices.c` | the settings menu's arithmetic: `rebushido.cfg` changed a line at a time, keeping the rest of it, and the settings as the menu shows them, set by reading the line the file would have. No SDL and no C library (`tests/port/settings.c`) |
+| `gamestate.c` | reads the game's variables out for the log, and has the names the log gives screens, modes, fighters, weapons and stages; it writes one, the Bug fixes setting, for the settings menu |
 | `sdl_window.c` | the window, the sound card and the controllers, on SDL; the counter; the log's notes of the game |
 | `sdl_log.c` | the session's log file |
+| `menu.c`, `sdl_menu.c`, `font.c`, `menu.h` | the settings menu ([`PLAYING.md`](PLAYING.md), "The settings menu"): its pages and what a press does, when it opens and the loop it runs in with the game stopped at a frame's boundary, and its text drawn at the window's resolution in Marcellus (`src/port/fonts/`, SIL Open Font Licence) by stb_truetype (`stb_truetype.h`, public domain). None of it is the game's state: these files are linked outside the game's object, as every file of the window is |
 | `sdl_main.c` | where the program starts: its own options, the settings file, the disc image when none is named |
 | `host_posix.c` | `port_host.h` on a C library, for Linux (Windows has `src/port/host_windows.c`) |
 
@@ -1650,6 +1652,24 @@ of the console's picture is two lines of the screen.
   where the next texel along is nothing, the fragment is thrown away
   and the background shows through. `--gl-blocks` measures it ("How it
   is proved, with nothing shown").
+- **A flat polygon is the chip's to its edges.** A triangle of the 2D
+  layer (a loading screen's swords, the slanting panels of the stage
+  select, a portrait cut into strips) is drawn by a geometry shader as
+  the rectangle about it, and the fragment shader keeps a block only
+  where the chip's own rule (`port_DrawTriangle`, `raster.c`: from the
+  edge on the left to the pixel before the edge on the right, the
+  highest line to the line above the lowest) puts the block's own pixel
+  inside it, with the colour and the texture point the chip's own
+  arithmetic gives that pixel: steps across and down in twelve bits of
+  fraction, counted from the corner furthest left, worked out once for
+  the triangle in whole numbers. Before, the card's rule at the
+  picture's resolution cut a block a slanting edge crossed in two, and
+  the two triangles of a quad, whose steps differ where its texture does
+  not run evenly across it, left a seam of blocks a texel out along the
+  diagonal: 18,917 broken blocks and a worst channel of 182 in
+  `port_game`'s flat screens, which are now none and 11. It costs
+  Mesa's software renderer about twice the time a frame (489 to some
+  1,000 µs in the prover); on a card it is nothing.
 - The **four mixes** are the card's blending at eight bits a channel
   instead of the chip's five: half and half by `SRC_ALPHA`, added and a
   quarter added by `ONE, ONE_MINUS_SRC_ALPHA` with the shader setting
@@ -1779,9 +1799,9 @@ console's own picture the prover asks two things of its block: that it
 is of one colour at all, and that the colour is the console's. The
 bands beside the console's 640 pixels in a wider picture are the
 scene's alone and are left out. What a flat screen may still differ in
-is a pixel that mixes, which the card mixes at eight bits a channel and
-the chip at five, and the edge of a flat polygon that is not up and
-down, which the card draws at the picture's own resolution.
+is a colour, which the card keeps at eight bits a channel with no dither
+and the chip at five; a flat polygon's slanting edge is the chip's
+("A flat polygon is the chip's to its edges").
 
 Measured over the boot, the options page, the top menu and the
 character select, with `aspect 16:9`, every twentieth blank:
@@ -1802,6 +1822,15 @@ eight bits a channel and the chip at five: that is the whole of the
 as any of it goes. `tools/port_gl_prove.py` runs this on each of the
 three plans and fails the run if any block is broken up or any pixel is
 more than two steps out.
+
+That table was the boot and the first menus. The whole of `port_game`
+at 4 across and 3 down is 109 flat pictures -- the loading screen's
+swords and the stage select's slanting panels among them -- and there
+the card's rule for a slanting edge broke 18,917 blocks, with a worst
+channel of 182 where a portrait cut into strips came out a texel along
+at the strips' diagonals. With the chip's own rule and arithmetic for a
+flat polygon (above) it is **0** blocks broken, 8,037 more than a step
+out and a worst channel of 11.
 
 (At 8 across the 640-wide screens come to more pixels than the prover
 keeps a picture in, so only the 320-wide ones — the boot and the
@@ -2614,8 +2643,15 @@ What the mesh does not mend is what was already there: the pictures of
 `port_other_fight` that do not lie between their two frames went from 11
 to 23 of 817 (2.8%), and the watched point that is not between its two
 ends from 14 to 14 -- on `port_game` that count falls from 16 to 6. Those
-are a face the next frame has not, which is drawn where it is rather than
-moved, and are not the ground's.
+were taken for a face the next frame has not, drawn where it is rather
+than moved, and are not the ground's. Measured again later ("More
+pictures a second", "What made a fighter standing still move"): the
+watched point was off its line because it was a different primitive at
+different phases, or one held where it is at the last; it is now one
+primitive chosen for the pair of frames, and `port_game` and
+`port_bugfixes` hold every check. `port_other_fight`'s 20 out of order
+are on the cave stage, where rails against the camera are black in one
+of the game's own frames and red in the next.
 
 **What it costs.** On this machine, which has no graphics card at all
 (Mesa's llvmpipe) and was busy with other work throughout, a run of
@@ -2789,6 +2825,114 @@ ground's samples are darkened and the fighter's are not, which is what a
 smoothed edge is. The darkest the picture came anywhere is one shadow's
 own 0.45, never two shadows' 0.20 -- 0.442 where it is lower is the
 eight bits a channel rounding a dark colour down.
+
+### The shadows cast from the fighters' own faces (`shadows cast`)
+
+`shadows soft` darkens the ground under the game's own silhouette, and
+that silhouette is coarse: a separate shadow mesh of a box or two a bone
+(`model_BuildShadows`), about an eighth of the body's polygons, drawn by
+a node that is always at the renderer's coarsest scale (`shift = 2` in
+`render_SetupNode`), so every corner of it is rounded to four world
+units before it is flattened. A soft edge cannot hide boxes that large,
+and a corner that steps by four units while the fighter breathes is
+magnified by a long low sun into a shadow that twitches when he stands
+still. **`shadows cast`** (or `cast:N`, N hundredths) keeps the mask,
+the soft edge and everything that keeps the darkening off the fighters,
+and changes only what is drawn into the mask:
+
+- **The silhouette is the fighter's own faces**, every face of his body,
+  his weapon and his scabbard that the renderer looked up
+  (`render_LoadFace`), whether it became a primitive or not: the faces
+  turned away from the camera cast a shadow as much as those that face
+  it (a shadow of only the camera's half of a limb comes out up to half
+  as wide), and so do the faces off the screen. The side channel keeps
+  them as it looks them up (`port_RemasterCasterFaces`), some 1,600
+  faces a frame for two fighters.
+- **From the coprocessor's own sums, not from the screen.** Each corner
+  carries where it was before the projection, the rotation and the
+  translation with eight bits of fraction that the GTE rounds away
+  before it divides (`PortPrecisePoint.view`, `src/port/gte.c`). The
+  backend takes it back into the world with the inverse of the view the
+  stage was drawn with (`PortStageView`), slides it onto the ground as
+  `light_ProjectShadow` does -- x and z by the height above the ground
+  times the sun's slope, y the ground's -- in floating point, and
+  projects it with the same view: nothing is rounded on the way.
+- **What casts, and onto what, is still the game's.** The renderer
+  says, for each of the game's shadow nodes, which node casts it and the
+  height of the ground under it (`port_RemasterNoteShadowCaster`,
+  `render_DrawQueue`). A face casts if its node has a shadow node of its
+  own (a weapon, a scabbard) or is the skinned body whose bones the
+  shadow nodes hang from; anything the game gives no shadow -- a dropped
+  weapon, the fighter's cloth -- casts none (33 faces a frame). The
+  game's own shadow faces are still taken out of the picture and kept:
+  a frame with nothing to cast from (no stage drawn) falls back to them.
+- **Between two frames** each triangle is moved between the two frames'
+  own places, paired by the face and the mesh it is of, and the camera
+  between the two frames' views (`port_GlShadowSetPhase`, `gl_tween.c`).
+  The frame on show is drawn from its own triangles and its own view,
+  so the first phase is the game's frame exactly.
+- **How dark: 68 hundredths with nothing said**
+  (`PORT_SHADOWS_CAST_STRENGTH`). Measured under the shadow's middle on
+  three stages (the tour, `tmp` runs at one hundredth beside the mask),
+  the ground's own lightness is CIE L* 26 on the orange tree fields, 37
+  on the castle rooftop and 52 on the practice floor; the game's black
+  shadow takes all of it. `soft`'s 55 takes 16, 21 and 28, a little more
+  than half of what the game's black takes, which is why it read faint
+  beside the game's own shadow, and most of all on the rooftop, where the
+  camera is low and the game's silhouette is a sliver. A darkening is
+  the same share of the ground on any stage, so one number serves them
+  all: 68 takes 20, 27 and 36, three quarters of what the black takes,
+  and leaves the ground a third of its value, enough for its texture to
+  show. A cast silhouette is also thinner than the boxes it replaces --
+  a wrist, a blade -- and a thin shadow needs the darker middle to
+  read.
+
+**Measured.** The three runs of "How it is proved" above, with
+`shadows cast` (the tour, scale 3, `antialiasing 2`, fifteen pictures
+each):
+
+| Stage | Pixels the darkening changed | ... with any of something else in them | ... that are **wholly not** ground | Darkest |
+|---|---|---|---|---|
+| the orange tree fields (12) | 186,402 of 37,324,800 | 2,197 | **0** | 0.312 |
+| the castle rooftop (13) | 117,819 | 2,727 | **0** | 0.320 |
+| the terraced fields (15) | 142,353 | 2,224 | **0** | 0.314 |
+| ... with `stage_mesh on` (15) | 142,404 | 2,228 | **0** | 0.313 |
+| the practice floor (35) | 209,473 | 1,990 | **0** | 0.319 |
+
+Two to three times the pixels of the game's mesh: the arms, the hands
+and the blades now have their shadows. The darkest is one shadow's
+0.32, never two shadows'. Each frame casts 1,619 faces as 2,266
+triangles, none lost; no frame fell back to the game's mesh.
+
+**Standing still.** A fight in which nobody presses anything, from
+the fighters' first idle frame on (159 pairs of frames a game frame
+apart, the mask at the console's resolution and `antialiasing 4`, so
+that a pixel's coverage is a share of sixteen samples): how far the
+outline moved, the coverage that changed over the outline's length, and
+how many pixels changed by half their coverage or more -- a corner that
+stepped, which smooth breathing does not do:
+
+| Stage | | Outline moved, median / 90th percentile | Pixels that stepped, a frame |
+|---|---|---|---|
+| the orange tree fields (12) | `soft` (the game's mesh) | 0.025 / 0.058 px | 3.5 |
+| | `cast` | 0.026 / 0.040 px | **0.2** |
+| the castle rooftop (13) | `soft` | 0.043 / 0.085 px | 3.7 |
+| | `cast` | 0.043 / 0.075 px | **2.4** |
+
+The median is the fighter's own breathing, which both follow; what
+`cast` takes away is the steps of a corner rounded to four units. What
+is left on the rooftop is the breathing magnified by its low sun.
+
+**Between two frames** (`--gl-tween 5`, the tour of the practice floor
+with `shadows cast`): the first phase of 627 frames is the game's own
+picture to the pixel (770,457,600 pixels, 0 different), no picture is
+out of order, and no triangle lacked its partner in the frame after.
+
+**What is not done.** The shadow lies on the plane of the caster's
+ground, as the game's does: on a step or a slope it does not follow the
+ground (the ground's own mesh, `gl_stage.c`, has the heights, and a
+later step could flatten each corner onto the ground under it along the
+sun). Everything in "What is not done" above still holds for the mask.
 
 ### Edges
 
@@ -3371,6 +3515,50 @@ that were paired -- was tried and **measured worse**: a face with no
 partner is usually one that is going, and moving it uncovers what it
 was covering. It is drawn where it is.
 
+**What made a fighter standing still move** (the owner's "always
+flickering and in motion even when they should be still", at
+`frame_rate = display` on an 85 Hz screen). Measured on the strip of
+`port_game` at blank 3,000 -- the fighters squared up, barely moving --
+three things held faces of a fighter still between two frames while the
+rest of him moved, so that at every one of the game's frames they
+jumped to catch up: the last picture of a frame differed from the
+game's own next frame in 3,226 pixels by more than 24 of a channel,
+nearly all of them on the fighters' swords, scabbards and sandals.
+
+- *A sliver was held* (`held`, 110 to 186 a frame there, not the 15
+  above). A face nearly edge on -- a blade, the side of a sandal --
+  whose corners round to one line of whole pixels was taken for one of
+  no area and so as one the chip would not draw; a picture between two
+  frames then drew it where it was. A face drawn where the projection
+  put it is now measured by those places (`port_GlIsDrawn`), where it
+  has an area, and is drawn and moved: `held` is 0 in both fights.
+- *A weapon's node is not where it was.* The nodes of the fighters'
+  weapons and of the shadows are built every frame in one of two places
+  in turn (some 0x13400 bytes apart), so every face of them had another
+  name one frame on and none was paired. A thing whose faces are left
+  unpaired is now matched to the thing of the frame after it under whose
+  name the most of them are found -- the same mesh, face and piece, the
+  same kind, near -- and paired under that name (`port_TweenPairMoved`,
+  `moved`). Unpaired faces of that frame went from 107 to 43.
+- *A face one frame has not.* A face that turns away from the camera is
+  not in the next frame and one that turns towards it was not in the
+  last, so at a fighter's edge some faces are in one frame only, every
+  frame. A face's name says which points of its mesh its corners are,
+  and its neighbours, which both frames draw, are made of the same
+  points: each frame's points are written down by thing, mesh and point,
+  and a face one frame has not is given the other frame's places for its
+  points and moved like any other (`port_TweenPlaceUnpaired`, `going`
+  and `coming`). It is drawn only while it faces the way it faces in the
+  frame that has it, which is what the renderer would have drawn of the
+  thing at that moment; a face that is coming is never drawn at phase 0,
+  so the first picture is still the game's own. A point two faces of a
+  frame put more than a pixel apart is not trusted, and a face with one
+  is drawn where it is as before.
+
+With the three, the last picture of that frame differs from the next
+frame in 872 pixels by more than 24 (from 3,226), and in 1,125 by more
+than 3 (from 4,522); the sword no longer stands still between frames.
+
 **What is not moved, and what then happens.** A primitive the frame
 after it has not (something spawned or gone), one the projection gave no
 place to at all, or one with no name that no search found, is
@@ -3577,6 +3765,186 @@ about 15 frames a second: **a software renderer with no card has no room
 to draw a frame twice**. 4,669 pictures were shown in the run, 188 of
 them between frames. Nothing was seen; the log and the numbers are all
 there is.
+
+### The fighters' own models
+
+The owner: the fighters may be **replaced whole, as long as the hitboxes
+stay exactly the same**. They do: no hitbox comes from a model. The 22
+body spheres (`g_fighter_body_point_table`, scaled by
+`fighter_ScaleBodyPoints`), the weapon's points on bone 18 and the feet
+are placed on the 21 bones of the skeleton every model shares
+(`g_model_bones`, `g_model_scales`), which the motions pose. A model only
+draws on those bones, so **"Graphics: Remastered" can draw a model of its
+own in the place of the game's** and nothing the game computes changes:
+the traces of `port_game` with a model drawn and with "Graphics:
+Original" are the same, 2,333 lines.
+
+**What the game gives up for it** (`include/port_fighter.h`,
+`src/port/fighter_view.c`, one line in `port_RemasterNoteFighter`): as
+the renderer comes to a fighter's body, each of his 21 bones' world
+matrices, the view and the camera, the projection (H, OFX, OFY) and his
+lights (the light and colour matrices, the colour of the dark), and where
+his model's nodes are, which names his primitives. None of it is the
+game's state (`config/port_state.txt`).
+
+**How it is drawn** (`src/port/gl/gl_fighter.c`). A primitive of a
+fighter that has a model of his own -- his body or a part of it, not his
+cloth, which the game moves itself, nor his shadow -- is left out, as the
+stage's tiles are for the ground's mesh. At the first of them in the
+frame the fighters are drawn together into a layer of their own with a
+depth buffer of its own, skinned on the card (a joint's matrix is the
+game's world matrix of the bone times the file's inverse bind matrix),
+projected exactly as the coprocessor projects (the stage's mesh's
+arithmetic), lit as `NCS` lights a normal, and the texture read as the
+chip reads a texel, five bits a channel times the colour, 128 being one;
+faces are left out from behind as `render_FaceFront` leaves them. The
+layer is laid over the picture held against the ground by the ordering
+table's slots, as a fighter's own primitives are ("Depth: the scene is
+held against the ground"; a fighter's depth goes into the table shifted
+by three whatever his scale, `render_DrawSkinned`), and it writes its
+depth where the ground's is, so what the scene paints after it is held
+against him. In a picture between two frames (`gl_tween.c`) the bones
+and the camera are the two frames' mixed, the rotations made rotations
+again.
+
+**A joint as the game builds it.** The game makes a vertex of a joint as
+the sum of two bones' turns of two vectors, and its place by a third: a
+linear blend of bones cannot say that, and missed by up to 4 pixels in
+`port_game`'s fight. A file may carry each vertex's own sum, its *terms*
+(`_RB_TERM0` to `_RB_TERM7`: for each bone a vector and how much of the
+bone's place is in it), and the card adds them up on the bones the game
+posed. Held to the game's own projected corners (`--gl-fighter-pose`) at
+blank 3300 of `port_game`, every corner of both fighters has a vertex of
+the file within **0.31 pixels**; by the blend of the same file, 4.1. A
+file without terms is drawn by its blend, made into terms as it loads.
+
+**The weapons.** Each weapon in a hand, each worn at the waist (the
+scabbards: `weapon_QueueWorn`) and each lying loose is drawn from
+`models/Wnn.glb` where a mod has one, `nn` being the weapon model
+(`enum WeaponModel`, 00 to 57), into the same layer: the file's vertices
+are on bone 0 and every bone is given the weapon's world matrix, lit by
+the weapon's own lights. A weapon's node is made afresh in each frame's
+buffer, so its primitives are told by its address within the frame, and
+the model that weapon is by its place among the loaded ones
+(`g_resource_loaded_weapons`). Between two frames it is mixed as a
+fighter's bones are.
+
+**The game's own colours.** The game fades the fighters in and out and
+tints chanbara's opponents, the story's henchmen and the practice ninja
+by rewriting their colour tables in video memory (`model_TintOpponent`,
+the fades of `disp_`), which a PNG cannot follow. A file may carry the
+tables its texture was decoded through and a picture, in the texture's
+layout, of which entry each texel is (`extras.rb_palette`). Each frame
+the drawing adds to the texture the difference between each entry now in
+video memory and in the file; nothing is done while they are the same.
+Where the tables are now is found from the game's primitives the model
+stands in for: the one shift that takes every table they read to one of
+the file's (the second slot's are two pages to the right, the fogged
+model's in the fog's block, the weapons' where their group went), kept
+while the same model is drawn there. `port_game` had such a change in
+732 drawings of its first 3,300 blanks (the fight's fade in).
+
+**The shadows from the model.** With `shadows cast` (`gl_shadow.c`), a
+fighter or a weapon drawn from a model of its own casts the model: each
+triangle of it, posed by its terms on the frame's bones, is slid onto the
+ground along the game's sun as the game's faces are, in the place of the
+game's faces of that thing (`port_GlFighterCaster`,
+`port_GlFighterCastTriangles`). Its cloth is still the game's and casts
+its own faces. A shadow between two frames moves each triangle the way
+it went, as before, found again by its number.
+
+**The file** (`src/port/gl/gl_fighter_file.h`): glTF 2.0 binary, one skin
+whose joints are named `bone00` to `bone20`, vertices in the game's own
+units and axes (y down) at the bind pose, PNG textures; the JSON, inflate
+and PNG it needs are in `gl_fighter_file.c`. It is a mod's file: `models/M100.glb`
+in a mod's folder (docs/MODS.md), by the model's file name on the disc.
+`fighter_models = off` in the settings draws the game's own; the prover
+takes `--fighter-models FOLDER|on|off`.
+
+**The tools.** Nothing of the game is in the repository; they read the
+player's image and write into folders git ignores.
+
+- `tools/fighter_export.py` writes every model (`M000` to `M306`) as such
+  a file: the body, read by emulating `render_DrawSkinnedMesh`'s five
+  lists of a section and its carries, and the rigid parts of the bones,
+  one mesh; the textures decoded through their colour tables from the
+  file's TIMs into one atlas, with the tables and the picture of entries
+  (`rb_palette`). Every vertex has its terms; for anything else that
+  opens the file, a joint's vertex also gets the two bones and the weight
+  of a linear blend that come nearest over a spread of poses about the
+  bind pose (24 by default; the worst miss is printed, tens of units for
+  a pose far from the bind pose). `--weapons N|all` writes the weapons
+  (`W00` to `W57`) from the weapons' files. `--pose` takes a bind pose the
+  port wrote: `rebushido-gl --gl-fighter-pose FOLDER,BLANK` writes each
+  fighter's bones of the next frame, and the game's own projected corners
+  of each of his primitives, `prims.txt`. Held to those corners the
+  exporter's reading of the body is within **0.4 pixels at every corner**,
+  the joints' included, for both fighters of `port_game`.
+- `tools/fighter_hd.py` makes the **hd mod**: every fighter and every
+  weapon at a higher definition, from the player's image into a folder
+  git ignores (`tmp/mods/hd/` by default), in one command and under three
+  minutes; the recipe, the numbers of each model, is
+  `tools/fighter_hd.json`. A model is welded (points within half a unit
+  made one, their terms averaged), creased where faces meet at more than
+  75 degrees (35 for a weapon) and along open edges, subdivided twice
+  (Catmull-Clark) with every vertex's terms and weights carried by the
+  same sums as its place -- the subdivision is linear in them, so the new
+  surface is at every pose the subdivision of the game's own posed mesh,
+  and needs at most eight bones a vertex -- then fitted, twelve rounds,
+  so that it passes through the game's own vertices (within 2.3 units,
+  most within a fifth) and its silhouette is the game's and not shrunk
+  inside it; its normals are smooth across the surface and hard across a
+  crease and where the game does not light a face. The texture is made
+  four times larger by Scale2x twice, which keeps an edge between two
+  colours sharp along a diagonal, then smoothed within each colour's
+  area; the colour tables' picture is kept as it is, so the tints reach
+  it. The port draws a texture so made smoothed and from mipmaps. A
+  fighter comes to 11,000 to 15,000 vertices and 16,000 to 22,000
+  triangles, against the game's 1,000; a weapon to about 1,500 triangles.
+- `tools/blender/fighter_view.py` renders a file in Blender, front and
+  side, with nothing shown; `tools/blender/fighter_rebuild.py` was the
+  first rebuild, in Blender (it cannot carry the terms or the colour
+  tables' picture); `tools/fighter_conform.py` makes what Blender wrote,
+  for a model changed by hand, a file the port reads (each vertex where
+  glTF draws it at the bind pose, back into the game's space, with the
+  original's bind pose and colour tables' picture);
+  `tools/fighter_texture.py` makes an atlas larger for such a model
+  (`tools/blender/README.md`).
+
+**Measured.** The game's own models through this path against the
+remastered picture with the game's primitives, `port_game`'s fight at
+scale 2, 27 pictures from blank 3000 to 4300: **2.05% of the pixels differ by more than 16 of 255 and 0.71% by more than 48**; all of it on the fighters. The rest is the difference
+between Gouraud shading of every face and the game's flat faces, the
+joints' linear blend, and edges. `port_gl_prove --quick` is what it was
+on `main` (its blocks check fails there too, with the same numbers).
+With the terms, the weapons and the colour tables, the game's own models
+and weapons through this path at blanks 3000 and 3300: 2.28% and 1.00%;
+the weapons and scabbards lie where the game's do to the pixel. Through
+the fight's fade in the picture's mean brightness is the game's to 0.4
+of 255 at every fourth blank.
+
+**The hd mod, seen.** Every roster entry (`ROSTER_KANNUKI_STORY` to
+`ROSTER_LAST_2`, 33 of them, every model but chanbara's four) was put in
+`port_game`'s fight two by two (a `poke` of `config_roster_p1` and
+`_p2`), with every weapon and scabbard of those fights from the mod, and
+looked at at blanks 3300 and 3600: none torn, none with a vertex astray.
+With `shadows cast` the shadows are the models' (44,064 triangles a
+picture for two fighters and four weapons, against the game's 2,266
+faces), and the models are not darkened by them: what a model covers is
+marked in the shadows' mask as the game's faces are
+(`port_GlFighterDrawOccluders`).
+
+**What is not done.** The tiny mode's model; the cloth, which the game
+moves and draws itself, is still the game's own faces beside a smooth
+model; the order of a model against the game's own faces is per pixel,
+so a hakama's hem now hides the sandal it was painted under, and a
+sandal's sole that lies in the ground is cut by the ground's slots (both
+as before the hd mod); a texture a mod's model draws in a layout other
+than the atlas's does not take the game's tints; chanbara's opponents
+(`M302` to `M305`) were rebuilt and seen only in Blender, not in a
+fight, because no roster entry draws them. The rebuild
+cannot add what the game's mesh does not have: a face is still a few
+painted quads, and a fold of cloth is the texture's.
 
 ### What each later step needs
 

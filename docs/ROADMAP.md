@@ -119,9 +119,10 @@ No dates.
       thing it is a drawing of, so the two frames' primitives are
       paired by name and not by likeness, and every picture between
       them holds every primitive the frame on show held. It costs no
-      input lag. Left of it: `original` is still the default; a face
-      the next frame has not is drawn where it is rather than moved,
-      and a camera cut shows the game's own picture.
+      input lag. A face one frame has and the other not is moved by
+      its points, which its neighbours share. Left of it: `original`
+      is still the default, and a camera cut shows the game's own
+      picture.
    6. **Lighting and shadows**: the normals the mesh has and the
       primitive does not.
 
@@ -173,7 +174,23 @@ camera), particle effects, skyboxes on the stages that were left dark.
     built as its first users, not as one-off features. Later perhaps new
     weapon types and motions, which need the hitbox and weapon tables
     read as data.
+    The framework is in, with replacement textures of the 2D layer as
+    its first user ([`MODS.md`](MODS.md)): `mods/` beside the program,
+    a manifest and a load order per mod, one lookup by kind and key,
+    textures keyed by what they look like, dumped and replaced at any
+    size in the remastered picture. Left: the scene's textures by whole
+    page, then models, music and stages through the same lookup.
 11. **Menus and UI**: the menus redrawn (the Japanese options of the
     title screen in English), and the settings menu holding all of
     ReBushido's own settings.
+    Both are in, on the port. The top menu is in English by a mod the
+    program ships, drawn by the remastered picture with the US disc's
+    own names of the modes ([`MODS.md`](MODS.md), "The English menu").
+    The settings menu (F1, a controller's guide button, or Select on the
+    options page, the top menu and the pause) holds every setting of
+    `rebushido.cfg` and both players' buttons, stops the game at a
+    frame's boundary while it is open, applies what it can at once, and
+    writes the file keeping everything else in it
+    ([`PLAYING.md`](PLAYING.md), "The settings menu"). Left: the rest of
+    the game's menu text, English already, drawn sharper the same way.
 12. **Optimisation**, for a smooth and seamless game.
