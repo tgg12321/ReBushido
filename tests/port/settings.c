@@ -247,6 +247,7 @@ static void test_Choices(void) {
             {"mods", 1},         {"music_mods", 1},
             {"deadzone", 2},     {"sky", 1},
             {"see_through", 1},  {"fighter_models", 1},
+            {"run_ahead", 2},    {"low_latency", 1},
         };
 
         u32 i;

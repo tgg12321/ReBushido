@@ -121,6 +121,7 @@ typedef ptrdiff_t GLintptr;
     GL(void, glClear, (GLbitfield))                                            \
     GL(void, glColorMask, (GLboolean, GLboolean, GLboolean, GLboolean))        \
     GL(void, glFlush, (void))                                                  \
+    GL(void, glFinish, (void))                                                 \
     GL(void, glBlendFunc, (GLenum, GLenum))                                    \
     GL(void, glBlendEquation, (GLenum))                                        \
     GL(void, glPixelStorei, (GLenum, GLint))                                   \
@@ -2795,6 +2796,12 @@ void port_GlFinishFrame(void) {
      * Waiting here (glFinish) held the program up for the whole of the
      * card's drawing at every picture. */
     glFlush();
+}
+
+void port_GlWaitForCard(void) {
+    if (g_gl.is_started) {
+        glFinish();
+    }
 }
 
 s32 port_GlReadPicture(u32 *out, u32 room, s32 *out_w, s32 *out_h) {

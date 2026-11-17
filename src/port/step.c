@@ -16,6 +16,7 @@
 #include "common.h"
 #include "port_host.h"
 #include "port_net.h"
+#include "port_profile.h"
 #include "port_state.h"
 #include "bb2.h"
 
@@ -88,6 +89,7 @@ static s32 port_MayRunAhead(void) {
 
 void port_BeforeStep(void) {
     u32 start;
+    s32 was;
     s32 i;
 
     g_port_unseen = FALSE;
@@ -106,6 +108,7 @@ void port_BeforeStep(void) {
         }
     }
     start = port_HostTicks();
+    was = port_ProfileSwitch(PORT_PROFILE_AHEAD);
     port_StateSave(g_port_ahead_state);
     g_port_ahead = TRUE;
     g_port_ahead_given_up = FALSE;
@@ -118,6 +121,7 @@ void port_BeforeStep(void) {
     }
     g_port_ahead = FALSE;
     port_StateLoad(g_port_ahead_state);
+    port_ProfileSwitch(was);
     /* the step that follows has been drawn already, unless the frames
      * ahead were given up: then it is drawn as ever */
     g_port_unseen = !g_port_ahead_given_up;

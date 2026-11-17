@@ -150,6 +150,10 @@ extern s32 port_GlReadPicture(u32 *out, u32 room, s32 *out_w, s32 *out_h);
  * this and then draws the buffer into itself (and swaps); the prover
  * reads it back. */
 extern void port_GlFinishFrame(void);
+/* Until the card has done everything it was given, a swap among it: the
+ * window's `low_latency`, after each swap, so that no picture waits in
+ * the driver's queue behind another (docs/PORT.md, "Input lag"). */
+extern void port_GlWaitForCard(void);
 
 /* ---- what the stage's own mesh needs of the picture ---- */
 

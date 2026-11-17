@@ -30,5 +30,11 @@ extern void (*g_port_disc_hook)(s32 kind, u32 sector);
 extern u32 g_port_recent_calls[PORT_RECENT_CALLS];
 extern u32 g_port_recent_call_count;
 extern const char *port_FindFunction(u32 address, u32 *offset);
+extern void port_SetRunAhead(s32 frames);
+extern s32 g_port_unseen;
+extern void port_ReadDevicesNow(void);
+extern void (*g_port_boundary_hook)(void);
+extern void (*g_port_ahead_blank_hook)(u32 blank);
+extern void (*g_port_ahead_done_hook)(void);
 
 #endif /* PORT_WINDOW_SHARED_H */

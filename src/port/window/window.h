@@ -230,6 +230,11 @@ typedef struct {
 #define PORT_PICTURES_A_BLANK_MAX 8
 /* A rate a setting may ask for. */
 #define PORT_FRAME_RATE_MAX 1000
+/* Frames run ahead at most (step.c's PORT_AHEAD_MAX), and with nothing
+ * said: the game puts a frame on the display two of its frames after it
+ * reads the pads, and two frames ahead show no frame that was guessed. */
+#define PORT_RUN_AHEAD_MAX 2
+#define PORT_RUN_AHEAD_DEFAULT 2
 
 /* Playing online: `A.B.C.D:PORT` with room to spare, the port a host
  * waits at with nothing said, and the frames of delay. */
@@ -251,6 +256,10 @@ typedef struct {
     s32 deadzone;      /* parts of a hundred */
     s32 fps;           /* the counter in the corner is shown */
     s32 fps_corner;    /* PORT_CORNER_... */
+    /* input lag (docs/PORT.md, "Input lag"): frames run ahead, 0 to
+     * PORT_RUN_AHEAD_MAX, and whether a swap waits for the card */
+    s32 run_ahead;
+    s32 low_latency;
     /* the remastered picture (port_remaster.h; docs/PORT.md,
      * "Remastered in the window"): which picture a run starts with, how
      * large the scene is drawn, and the three settings of the view */
