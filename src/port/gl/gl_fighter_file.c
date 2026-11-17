@@ -967,7 +967,129 @@ void port_FighterFileFree(PortFighterFile *file) {
     for (i = 0; i < file->texture_count; i++) {
         free(file->texture[i].rgba);
     }
+    free(file->index.rgba);
     memset(file, 0, sizeof(*file));
+}
+
+/* The terms of a primitive's vertices (gl_fighter_file.h): the file's own
+ * _RB_TERM0 to _RB_TERM3, or the linear blend's made into terms. */
+static const char *port_GltfTerms(
+    const Gltf *g, s32 attributes, const s32 *joint_bone, s32 joint_count,
+    PortFighterFile *out, s32 first, s32 count) {
+    const Json *json = g->json;
+    s32 joints =
+        port_JsonInt(json, port_JsonGet(json, attributes, "_RB_TJOINTS"), -1);
+    float *scratch;
+    s32 k;
+    s32 j;
+
+    if (joints < 0) {
+        for (k = 0; k < count; k++) {
+            PortFighterVertex *v = &out->vertices[first + k];
+
+            for (j = 0; j < 4; j++) {
+                const float *ibm = out->inverse_bind[v->joint[j]];
+                s32 r;
+
+                /* the inverse bind matrix is a column after a column */
+                for (r = 0; r < 3; r++) {
+                    v->term[j][r] =
+                        v->weight[j] *
+                        (ibm[r] * v->place[0] + ibm[4 + r] * v->place[1] +
+                         ibm[8 + r] * v->place[2] + ibm[12 + r]);
+                }
+                v->term[j][3] = v->weight[j];
+                v->term_joint[j] = v->joint[j];
+            }
+        }
+        return NULL;
+    }
+    scratch = malloc((size_t)count * 4 * sizeof(float));
+    if (scratch == NULL) {
+        return "no memory";
+    }
+    if (port_GltfRead(g, joints, scratch, count, 4) != count) {
+        free(scratch);
+        return "_RB_TJOINTS does not read";
+    }
+    for (k = 0; k < count; k++) {
+        for (j = 0; j < 4; j++) {
+            s32 joint = (s32)scratch[k * 4 + j];
+            s32 bone =
+                joint >= 0 && joint < joint_count ? joint_bone[joint] : -1;
+
+            out->vertices[first + k].term_joint[j] =
+                (u8)(bone >= 0 && bone < PORT_FIGHTER_FILE_JOINTS ? bone : 0);
+        }
+    }
+    for (j = 0; j < 4; j++) {
+        static const char * const names[4] = {
+            "_RB_TERM0", "_RB_TERM1", "_RB_TERM2", "_RB_TERM3"};
+        s32 term =
+            port_JsonInt(json, port_JsonGet(json, attributes, names[j]), -1);
+
+        if (term < 0 || port_GltfRead(g, term, scratch, count, 4) != count) {
+            free(scratch);
+            return "_RB_TJOINTS without its four _RB_TERMs";
+        }
+        for (k = 0; k < count; k++) {
+            memcpy(out->vertices[first + k].term[j], scratch + k * 4,
+                   4 * sizeof(float));
+        }
+    }
+    free(scratch);
+    return NULL;
+}
+
+/* extras.rb_palette and extras.rb_weapon (gl_fighter_file.h). */
+static const char *port_GltfPalette(
+    const Gltf *g, s32 extras, PortFighterFile *out) {
+    const Json *json = g->json;
+    s32 palette = port_JsonGet(json, extras, "rb_palette");
+    s32 cluts = port_JsonGet(json, palette, "cluts");
+    s32 colors = port_JsonGet(json, palette, "colors");
+    s32 image = port_JsonItem(
+        json, port_JsonGet(json, 0, "images"),
+        port_JsonInt(json, port_JsonGet(json, palette, "image"), -1));
+    s32 view;
+    u32 offset;
+    u32 length;
+    s32 i;
+    s32 k;
+
+    out->weapon =
+        port_JsonInt(json, port_JsonGet(json, extras, "rb_weapon"), -1);
+    if (cluts < 0 || colors < 0 || image < 0) {
+        return NULL;
+    }
+    for (i = 0; i < json->token[cluts].size && i < PORT_FIGHTER_FILE_CLUTS;
+         i++) {
+        s32 clut = port_JsonItem(json, cluts, i);
+        s32 color = port_JsonItem(json, colors, i);
+        PortFighterClut *c = &out->clut[i];
+
+        c->x = port_JsonInt(json, port_JsonItem(json, clut, 0), 0);
+        c->y = port_JsonInt(json, port_JsonItem(json, clut, 1), 0);
+        c->entries = port_JsonInt(json, port_JsonItem(json, clut, 2), 0);
+        if (c->entries != 16 && c->entries != 256) {
+            return "rb_palette: a table of neither 16 nor 256 entries";
+        }
+        for (k = 0; k < c->entries; k++) {
+            c->color[k] =
+                (u16)port_JsonInt(json, port_JsonItem(json, color, k), 0);
+        }
+    }
+    out->clut_count = i;
+    view = port_JsonItem(
+        json, port_JsonGet(json, 0, "bufferViews"),
+        port_JsonInt(json, port_JsonGet(json, image, "bufferView"), -1));
+    offset = (u32)port_JsonInt(json, port_JsonGet(json, view, "byteOffset"), 0);
+    length = (u32)port_JsonInt(json, port_JsonGet(json, view, "byteLength"), 0);
+    if (view < 0 || (u64)offset + length > g->bin_size) {
+        return "rb_palette: its picture is outside the file";
+    }
+    return port_FighterPngDecode(g->bin + offset, length, &out->index.w,
+                                 &out->index.h, &out->index.rgba);
 }
 
 static const char *port_FighterFileOf(const Gltf *g, PortFighterFile *out) {
@@ -1158,6 +1280,10 @@ static const char *port_FighterFileOf(const Gltf *g, PortFighterFile *out) {
                 }
             }
         }
+        if (problem == NULL) {
+            problem = port_GltfTerms(g, attributes, joint_bone, joint_count,
+                                     out, first_vertex, count);
+        }
 #undef ATTRIBUTE
         free(scratch);
         free(whole);
@@ -1191,7 +1317,7 @@ static const char *port_FighterFileOf(const Gltf *g, PortFighterFile *out) {
         out->part_count++;
         out->index_count += n;
     }
-    return NULL;
+    return port_GltfPalette(g, extras, out);
 }
 
 const char *port_FighterFileParse(

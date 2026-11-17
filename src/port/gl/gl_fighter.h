@@ -62,6 +62,7 @@ typedef struct {
     u32 frames;
     u32 left_out;
     u32 triangles;
+    u32 tinted; /* drawings whose colour tables the game had changed */
 } PortGlFighterCounts;
 
 extern const PortGlFighterCounts *port_GlFighterCounts(void);

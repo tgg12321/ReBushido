@@ -75,7 +75,7 @@ typedef struct {
 } PortFighterView;
 
 /* A weapon or a thing worn, as drawn this frame: the node, which weapon
- * model it is (g_resource_weapon_slots), and its world matrix. */
+ * model it is (enum WeaponModel, or -1), and its world matrix. */
 typedef struct {
     PortAddress node;
     s32 weapon;
