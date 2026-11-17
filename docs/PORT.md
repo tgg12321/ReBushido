@@ -190,7 +190,17 @@ game's stack is a third piece, a megabyte at `0x7FC00000`, which is the
 port's choice and not the console's ("The picture", "Where the links
 point"). If the system will not give one of them, the program says so
 and stops. (The sound chip's registers are a fourth piece, at
-`0x1F801000`, which only Sony's sound libraries reach: "Sound".) The
+`0x1F801000`, which only Sony's sound libraries reach: "Sound".)
+**All of them are given first thing** (`port_MapFixedMemory`,
+`port_host.h`): the window and the remastered renderer's prover call it
+before SDL, EGL or the card's driver starts, because a library's memory
+lands where the system likes, and the scratchpad's address is low
+enough for the C library's heap to reach. Asked for after EGL had
+started, it was now and then already taken, and the prover's run
+stopped before its first frame with an empty log. The
+port's own buffers of primitives (`PORT_PRIMS_ADDR`) are given then too,
+whether or not the run uses them; nothing is written there unless it
+does. The
 twelve addresses are the scratchpad and the eleven of `include/sys.h`
 and `motion.h`; `tests/port/memory.py` reads the game's source on every
 push and fails if it has an address that is not in the mapped memory,

@@ -52,11 +52,19 @@ STRIP_BLANKS = 12
 
 
 def run(args, log, quiet=False):
-    """The run's output into `log`; its own output is the game's trace."""
+    """The run's output into `log`. Its own output is the game's trace. A quiet run's error
+    output goes beside it (`log` + `.err`) rather than nowhere, and a run
+    that ends badly says so with the last of it: a run that stopped before
+    its first frame otherwise leaves only an empty log."""
     started = time.time()
-    with open(log, 'w', encoding='utf-8', errors='replace', newline='\n') as f:
-        subprocess.run(args, stdout=f,
-                       stderr=subprocess.DEVNULL if quiet else f, cwd=ROOT)
+    with open(log, 'w', encoding='utf-8', errors='replace', newline='\n') as f, \
+            open(log + '.err' if quiet else os.devnull, 'w', encoding='utf-8',
+                 errors='replace', newline='\n') as err:
+        done = subprocess.run(args, stdout=f, stderr=err if quiet else f, cwd=ROOT)
+    if done.returncode != 0:
+        with open(log + '.err' if quiet else log, encoding='utf-8', errors='replace') as f:
+            last = f.read().splitlines()[-3:]
+        print('%s: the run ended with %d: %s' % (log, done.returncode, ' / '.join(last)))
     return time.time() - started
 
 

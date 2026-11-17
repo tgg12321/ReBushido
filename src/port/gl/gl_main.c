@@ -1171,6 +1171,11 @@ int main(int argc, char **argv) {
     s32 count = 0;
     s32 i;
 
+    /* the console's memory at its own addresses, before EGL, Mesa or
+     * anything of the C library's can take one of them (port_host.h): a
+     * run of the prover now and then found its heap on the scratchpad's
+     * address and stopped before its first frame */
+    port_MapFixedMemory();
     port_RemasterDefaultView(&view);
     memset(&options, 0, sizeof(options));
     options.scale = 4;

@@ -49,38 +49,67 @@
 
 const u32 g_port_low_memory[PORT_LOW_MEMORY_WORDS] = {0};
 
-/* Both pieces of the console's memory and the game's stack, or the
- * program stops (port_platform.h). */
-void port_MapMemory(void) {
-    if (!port_HostMapAt(PORT_RAM_ADDR, PORT_RAM_SIZE)) {
-        port_Fail("rebushido: the system gave no memory at 0x%08X (%u bytes): "
-                  "the PlayStation's RAM, which the game reaches by address\n"
-                  "rebushido: nothing else may be loaded there, and the "
-                  "system has to allow a program memory at that address\n",
-                  PORT_RAM_ADDR, PORT_RAM_SIZE);
+/* Every piece of memory at a fixed address (port_platform.h), and what
+ * it is for, as the program says when the system will not give it. */
+typedef struct {
+    u32 address;
+    u32 size;
+    const char *what;
+} FixedMemory;
+
+static const FixedMemory g_port_fixed_memory[] = {
+    {PORT_RAM_ADDR, PORT_RAM_SIZE,
+     "the PlayStation's RAM, which the game reaches by address"},
+    {SCRATCHPAD, PORT_SCRATCHPAD_SIZE,
+     "the PlayStation's scratchpad, which the game reaches by address"},
+    {PORT_IO_PAGE_ADDR, PORT_IO_PAGE_SIZE,
+     "the sound chip's registers, which Sony's library reaches by address"},
+    {PORT_STACK_ADDR, PORT_STACK_SIZE, "the stack the game runs on"},
+    {PORT_PRIMS_ADDR, PORT_PRIMS_SIZE,
+     "the primitives of a frame drawn further than the console's"},
+};
+
+#define FIXED_MEMORY_COUNT                                                     \
+    ((s32)(sizeof(g_port_fixed_memory) / sizeof(g_port_fixed_memory[0])))
+
+static s32 g_port_fixed_mapped;
+
+/* All of it at once, before anything else of the program can take an
+ * address of it (port_platform.h). */
+void port_MapFixedMemory(void) {
+    s32 i;
+
+    if (g_port_fixed_mapped) {
+        return;
     }
-    if (!port_HostMapAt(SCRATCHPAD, PORT_SCRATCHPAD_SIZE)) {
-        port_Fail("rebushido: the system gave no memory at 0x%08X (%u bytes): "
-                  "the PlayStation's scratchpad, which the game reaches by "
-                  "address\n",
-                  (u32)SCRATCHPAD, PORT_SCRATCHPAD_SIZE);
+    for (i = 0; i < FIXED_MEMORY_COUNT; i++) {
+        const FixedMemory *one = &g_port_fixed_memory[i];
+
+        if (!port_HostMapAt(one->address, one->size)) {
+            port_Fail("rebushido: the system gave no memory at 0x%08X (%u "
+                      "bytes): %s\n"
+                      "rebushido: nothing else may be loaded there, and the "
+                      "system has to allow a program memory at that address\n",
+                      one->address, one->size, one->what);
+        }
     }
-    if (!port_HostMapAt(PORT_STACK_ADDR, PORT_STACK_SIZE)) {
-        port_Fail("rebushido: the system gave no memory at 0x%08X (%u bytes): "
-                  "the stack the game runs on\n",
-                  PORT_STACK_ADDR, PORT_STACK_SIZE);
+    g_port_fixed_mapped = 1;
+}
+
+void port_MapMemory(void) { port_MapFixedMemory(); }
+
+s32 port_MapFixed(u32 address, u32 size) {
+    s32 i;
+
+    for (i = 0; i < FIXED_MEMORY_COUNT && g_port_fixed_mapped; i++) {
+        const FixedMemory *one = &g_port_fixed_memory[i];
+
+        if (address >= one->address && size <= one->size &&
+            address - one->address <= one->size - size) {
+            return 1;
+        }
     }
-#if RB_REMASTER_VIEW
-    /* ... and the port's own buffers of primitives, where this run
-     * draws more of the stage than the console does (port_remaster.h) */
-    if (port_RemasterPrimBufferBytes() != 0 &&
-        !port_HostMapAt(PORT_PRIMS_ADDR, PORT_PRIMS_SIZE)) {
-        port_Fail("rebushido: the system gave no memory at 0x%08X (%u bytes): "
-                  "the primitives of a frame drawn further than the "
-                  "console's\n",
-                  PORT_PRIMS_ADDR, PORT_PRIMS_SIZE);
-    }
-#endif
+    return port_HostMapAt(address, size);
 }
 
 s32 port_IsMapped(u32 address, u32 count) {

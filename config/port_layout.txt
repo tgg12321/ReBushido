@@ -72,6 +72,10 @@ DIRENTRY   the BIOS's directory entry: the port has no card yet
 PngInflate  the port's own: a local of the inflate
 PngWriter   the port's own: a local of the writer
 
+# The fixed memory's table (src/port/memory.c): each piece's text, a
+# pointer; a constant table nothing of the game's is laid over.
+FixedMemory the port's own: a piece of memory at a fixed address and its name
+
 # stb_vorbis (src/port/vorbis.c, src/port/vendor/stb_vorbis.c): the Ogg
 # decoder of a mod's music, as it ships. Its structures live in the memory
 # music.c gives it and are reached by their members' names; nothing of the

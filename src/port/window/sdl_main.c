@@ -563,8 +563,8 @@ int main(int argc, char **argv) {
     static char frames_endless[] = "2000000000";
     PortWindowOptions *options = &g_port_window_options;
     const char *config = NULL;
-    char *base = SDL_GetBasePath();
-    const char *beside = base != NULL ? base : "";
+    char *base;
+    const char *beside;
     s32 count = 0;
     s32 has_image = 0;
     s32 has_end = 0;
@@ -593,6 +593,12 @@ int main(int argc, char **argv) {
     s32 code;
     s32 i;
 
+    /* the console's memory at its own addresses, before SDL, the card's
+     * driver or anything of the C library's can take one of them
+     * (port_host.h) */
+    port_MapFixedMemory();
+    base = SDL_GetBasePath();
+    beside = base != NULL ? base : "";
     SDL_SetMainReady();
     options->tap_every = 1;
     g_port_main_argc = argc;
