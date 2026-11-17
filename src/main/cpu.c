@@ -986,11 +986,29 @@ static s32 cpu_AttackReach(Fighter *fighter) {
     /* (0xFF: the main weapon does not hit in this move; the off hand's does)
      * Which table goes by the CPU's own move, where the opponent's would be
      * expected: the original's behaviour. */
+#if RB_PORT
+    /* a mod's weapon's reach and range (port_weapons.h): the game's own
+     * with none */
+    if (other->hit_end_frames[0] != 0xFF) {
+        s32 reach = fighter->move_is_common == 0
+                        ? port_WeaponCpuReach(
+                              other->index, other->weapon_id,
+                              g_cpu_weapon_reaches[other->weapon_id] * 2)
+                        : port_WeaponCpuRange(
+                              other->index, other->weapon_id,
+                              g_cpu_weapon_ranges[other->weapon_id] * 8);
+
+        base += reach;
+    } else {
+        base += g_cpu_sub_weapon_reaches[other->sub_weapon_kind] * 2;
+    }
+#else
     base += other->hit_end_frames[0] != 0xFF
                 ? (fighter->move_is_common == 0
                        ? g_cpu_weapon_reaches[other->weapon_id] * 2
                        : g_cpu_weapon_ranges[other->weapon_id] * 8)
                 : g_cpu_sub_weapon_reaches[other->sub_weapon_kind] * 2;
+#endif
     return base + fighter->other->reach_bonus + CPU_THREAT_MARGIN;
 }
 
@@ -1937,6 +1955,10 @@ static s32 cpu_Decide(Fighter *fighter) {
                 } else {
                     /* (the table is in eighths) */
                     work1 = g_cpu_weapon_ranges[fighter->weapon_id] * 8;
+#if RB_PORT
+                    work1 = port_WeaponCpuRange(
+                        fighter->index, fighter->weapon_id, work1);
+#endif
                 }
                 /* each rule in turn: work4 counts them */
                 for (work4 = 0; work4 < sizeof(g_cpu_follow_ups) /

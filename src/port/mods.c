@@ -33,6 +33,8 @@
 #define TEXT_END 0
 /* the longest ending a kind names */
 #define ENDING_SIZE 16
+/* a gameplay file is hashed so many bytes at a time */
+#define HASH_CHUNK_BYTES 4096
 
 /* FNV-1a: of 32 bits for the table, of 64 for a texture's key */
 #define HASH_START 0x811C9DC5U
@@ -57,11 +59,11 @@
 #define VRAM_Y_MASK (PORT_VRAM_HEIGHT - 1)
 
 static const char * const g_port_mod_kind_folders[PORT_MOD_KINDS] = {
-    "textures", "models", "music", "stages", "skies"};
+    "textures", "models", "music", "stages", "skies", "weapons", "motions"};
 /* the ending a kind's file must have to be read, or one of several
  * separated by `|`; NULL for any */
 static const char * const g_port_mod_kind_endings[PORT_MOD_KINDS] = {
-    ".png", ".glb", ".ogg|.wav", NULL, ".png"};
+    ".png", ".glb", ".ogg|.wav", NULL, ".png", ".txt", ".bbm"};
 
 typedef struct {
     PortModManifest manifest;
@@ -687,12 +689,13 @@ void port_ModsStart(const char *program) {
             continue;
         }
         port_Log("mods:   %s%s%s (%s, order %d): %d textures, %d models, "
-                 "%d music, %d stages, %d skies\n",
+                 "%d music, %d stages, %d skies, %d weapons, %d motions\n",
                  mod->manifest.name, mod->manifest.version[0] != 0 ? " " : "",
                  mod->manifest.version, mod->folder, mod->manifest.order,
                  mod->counts[PORT_MOD_TEXTURES], mod->counts[PORT_MOD_MODELS],
                  mod->counts[PORT_MOD_MUSIC], mod->counts[PORT_MOD_STAGES],
-                 mod->counts[PORT_MOD_SKIES]);
+                 mod->counts[PORT_MOD_SKIES], mod->counts[PORT_MOD_WEAPONS],
+                 mod->counts[PORT_MOD_MOTIONS]);
     }
     if (g_port_mods.overridden > 0) {
         port_Log("mods: %d files of one mod overridden by a later one's\n",
@@ -717,6 +720,74 @@ const char *port_ModFind(s32 kind, const char *key) {
     slot = port_ModsSlotOf(kind, key, port_ModsHash(kind, key));
     return *slot >= 0 ? g_port_mods.text + g_port_mods.files[*slot].path_at
                       : NULL;
+}
+
+s32 port_ModFileOf(s32 kind, s32 n, const char **key, const char **path) {
+    s32 i;
+
+    for (i = 0; i < g_port_mods.file_count; i++) {
+        const PortModFile *file = &g_port_mods.files[i];
+
+        if (file->kind == kind && n-- == 0) {
+            *key = g_port_mods.text + file->key_at;
+            *path = g_port_mods.text + file->path_at;
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/* One file's part of the gameplay hash: FNV-1a over its kind, its key and
+ * its bytes. */
+static u64 port_ModsFileHash(s32 kind, const char *key, const char *path) {
+    u8 chunk[HASH_CHUNK_BYTES];
+    u64 hash = (KEY_START ^ (u64)kind) * KEY_PRIME;
+    s32 file;
+    u32 size;
+    u32 at;
+
+    while (*key != TEXT_END) {
+        hash = (hash ^ (u8)*key++) * KEY_PRIME;
+    }
+    file = port_HostOpen(path);
+    if (file < 0) {
+        return hash;
+    }
+    size = port_HostFileSize(file);
+    for (at = 0; at < size; at += sizeof(chunk)) {
+        u32 want = size - at < sizeof(chunk) ? size - at : sizeof(chunk);
+        u32 got = port_HostReadAt(file, at, chunk, want);
+        u32 i;
+
+        for (i = 0; i < got; i++) {
+            hash = (hash ^ chunk[i]) * KEY_PRIME;
+        }
+        if (got != want) {
+            break;
+        }
+    }
+    port_HostClose(file);
+    return hash;
+}
+
+u64 port_ModsGameplayHash(void) {
+    static const s32 kinds[] = {
+        PORT_MOD_STAGES, PORT_MOD_WEAPONS, PORT_MOD_MOTIONS};
+    u64 hash = 0;
+    u32 k;
+
+    for (k = 0; k < sizeof(kinds) / sizeof(kinds[0]); k++) {
+        const char *key;
+        const char *path;
+        s32 n;
+
+        /* a sum, so that the order the folders were listed in does not
+         * count */
+        for (n = 0; port_ModFileOf(kinds[k], n, &key, &path); n++) {
+            hash += port_ModsFileHash(kinds[k], key, path);
+        }
+    }
+    return hash;
 }
 
 u32 port_ModFileSize(const char *path) {

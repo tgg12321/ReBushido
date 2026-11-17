@@ -918,8 +918,12 @@ have met:
   sum of the version with its commit, the size of a pointer, the
   system, where the program's variables lie and the state's size: two
   programs that agree on these lay the game's memory out alike, which is
-  what makes their hashes comparable, section 7) and the same **disc** (a
-  sum of its size, its volume's description and every 997th sector). A
+  what makes their hashes comparable, section 7), the same **disc** (a
+  sum of its size, its volume's description and every 997th sector) and
+  the same **gameplay mods** (`port_WeaponsSessionHash`: every byte of
+  the mods' `stages/`, `weapons/` and `motions/` files with their keys,
+  and the `--weapon`s each was given; MODS.md, "Weapons and motions";
+  textures, models, skies and music are not in it, and may differ). A
   guest that differs is turned away with the reason, which both logs
   say;
 - the host sends its **two memory cards**, whole, 1 KB a datagram, the

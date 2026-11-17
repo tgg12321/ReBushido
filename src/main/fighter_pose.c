@@ -729,6 +729,12 @@ void fighter_PlacePoints(Fighter *fighter, Vec3 *body_points,
         local_point = g_fighter_story_weapon_points;
     } else {
         local_point = g_fighter_weapon_point_sets[fighter->weapon_id];
+#if RB_PORT
+        /* a mod's weapon's points (port_weapons.h), as many as the
+         * game's: the game's own with none */
+        local_point = port_WeaponPoints(
+            fighter->index, fighter->weapon_id, local_point);
+#endif
     }
     point = weapon_points;
     for (i = 0; i < g_fighter_weapon_point_counts[fighter->weapon_id]; i++,
