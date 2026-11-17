@@ -189,6 +189,13 @@ PORT_GL_FUNCTIONS
 /* Rectangles of video memory written since the card last drew, kept to
  * be stretched into the colour buffer together (port_GlDrawBlits). */
 #define BLITS_MAX 32
+/* Rectangles written from a mod's picture that are remembered: the movie
+ * player's title picture, and the two buffers it copies it into to fade
+ * it out. */
+#define REPLACED_MAX 4
+/* a picture of a whole screen (gl_replace.h) */
+#define SCREEN_PICTURE_W 320
+#define SCREEN_PICTURE_H 240
 /* a part of a fade's tint (port_mods.h) */
 #define TINT_PART_MASK 0xFF
 /* The longest run of pixels sent to the card in one go. */
@@ -445,6 +452,11 @@ static struct {
     s32 display_h;
     s32 display_is_on;
     s32 display_is_rgb24; /* the movie's mode */
+    /* the last rectangles written from a mod's picture and not written
+     * over since (port_GlShowsReplacedPicture) */
+    PortGlBlit replaced[REPLACED_MAX];
+    s32 replaced_margin[REPLACED_MAX]; /* the margin it was drawn with */
+    s32 replaced_next;
     u32 frame_time;
     u32 vertex_count;
     u32 draw_count;
@@ -2185,6 +2197,7 @@ static void port_GlBlit(const PortGlBlit *blit) {
  * on itself. */
 static void port_GlDrawBlits(void) {
     s32 was;
+    s32 is_clipped;
     s32 i;
 
     if (g_gl.blit_count == 0) {
@@ -2203,7 +2216,8 @@ static void port_GlDrawBlits(void) {
     glUniform2f(g_gl.blit_at_scale, (GLfloat)g_gl.draw_x, (GLfloat)g_gl.draw_y);
     glUniform1f(g_gl.blit_at_shift, (GLfloat)g_gl.margin);
     glDisable(GL_BLEND);
-    if (g_gl.margin > 0 && g_gl.display_w > 0) {
+    is_clipped = g_gl.margin > 0 && g_gl.display_w > 0;
+    if (is_clipped) {
         /* What the game wrote into video memory belongs to the
          * console's own 640 pixels, wherever in video memory it is: the
          * bands beside them are the scene's alone, and a rectangle of
@@ -2216,6 +2230,19 @@ static void port_GlDrawBlits(void) {
         glDisable(GL_SCISSOR_TEST);
     }
     for (i = 0; i < g_gl.blit_count; i++) {
+        const PortDirtyRect *at = &g_gl.blit[i].rect;
+
+        /* a mod's picture of a whole screen is a picture to be shown
+         * where it is (the movie player's title picture, loaded beside
+         * the display it later moves to): it is drawn whole */
+        if (is_clipped && g_gl.blit[i].replacement != 0 &&
+            at->right - at->left + 1 >= SCREEN_PICTURE_W &&
+            at->bottom - at->top + 1 >= SCREEN_PICTURE_H) {
+            glDisable(GL_SCISSOR_TEST);
+            port_GlBlit(&g_gl.blit[i]);
+            glEnable(GL_SCISSOR_TEST);
+            continue;
+        }
         port_GlBlit(&g_gl.blit[i]);
     }
     glEnable(GL_SCISSOR_TEST);
@@ -2228,6 +2255,76 @@ static void port_GlDrawBlits(void) {
 static s32 port_GlRectHolds(const PortDirtyRect *a, const PortDirtyRect *b) {
     return a->left <= b->left && a->top <= b->top && a->right >= b->right &&
            a->bottom >= b->bottom;
+}
+
+/* Whether rectangles `a` and `b` share a pixel. */
+static s32 port_GlRectsMeet(const PortDirtyRect *a, const PortDirtyRect *b) {
+    return a->left <= b->right && b->left <= a->right && a->top <= b->bottom &&
+           b->top <= a->bottom;
+}
+
+/* Remembers a rectangle written from a mod's picture, and forgets the
+ * ones a write of the game's own pixels has gone over. */
+static void port_GlKeepReplaced(const PortGlBlit *blit) {
+    s32 i;
+
+    for (i = 0; i < REPLACED_MAX; i++) {
+        if (!g_gl.replaced[i].rect.is_empty &&
+            port_GlRectsMeet(&g_gl.replaced[i].rect, &blit->rect)) {
+            g_gl.replaced[i].rect.is_empty = TRUE;
+        }
+    }
+    if (blit->replacement != 0) {
+        g_gl.replaced[g_gl.replaced_next] = *blit;
+        g_gl.replaced_margin[g_gl.replaced_next] = g_gl.margin;
+        g_gl.replaced_next = (g_gl.replaced_next + 1) % REPLACED_MAX;
+    }
+}
+
+/* The remembered rectangle that holds the whole of the display, or -1. */
+static s32 port_GlReplacedShown(void) {
+    PortDirtyRect shown;
+    s32 i;
+
+    if (!g_gl.is_started || !g_gl.display_is_on || g_gl.display_w <= 0 ||
+        g_gl.display_h <= 0) {
+        return -1;
+    }
+    shown.left = g_gl.display_x;
+    shown.top = g_gl.display_y;
+    shown.right = g_gl.display_x + g_gl.display_w - 1;
+    shown.bottom = g_gl.display_y + g_gl.display_h - 1;
+    for (i = 0; i < REPLACED_MAX; i++) {
+        if (!g_gl.replaced[i].rect.is_empty &&
+            port_GlRectHolds(&g_gl.replaced[i].rect, &shown)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+s32 port_GlShowsReplacedPicture(void) { return port_GlReplacedShown() >= 0; }
+
+/* The display wholly a mod's picture (the movie player's title): drawn
+ * again where it was drawn while the picture had other bands -- the title
+ * is loaded while the display is another's, and the colour buffer is
+ * video memory moved across by the margin -- and its bands black, since
+ * what is beside it in video memory is the movie's frames. */
+static void port_GlShowReplaced(void) {
+    s32 i = port_GlReplacedShown();
+    PortDirtyRect rows;
+
+    if (i < 0) {
+        return;
+    }
+    if (g_gl.replaced_margin[i] != g_gl.margin) {
+        g_gl.blit[g_gl.blit_count++] = g_gl.replaced[i];
+        port_GlDrawBlits();
+        g_gl.replaced_margin[i] = g_gl.margin;
+    }
+    rows.top = g_gl.display_y;
+    rows.bottom = g_gl.display_y + g_gl.display_h - 1;
+    port_GlClearBands(&rows, FALSE, 0);
 }
 
 /* A rectangle of video memory the software GPU wrote: it is sent to the
@@ -2264,7 +2361,9 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
             : port_GlReplaceFindPicture(
                   rect->left, rect->top, rect->right - rect->left + 1,
                   rect->bottom - rect->top + 1, g_gl.display_x,
-                  g_gl.display_is_rgb24 ? 0 : g_gl.display_w, &blit.tint);
+                  g_gl.display_is_rgb24 ? -1 : g_gl.display_w,
+                  !g_gl.display_is_on, &blit.tint);
+    port_GlKeepReplaced(&blit);
     /* one written before that this one covers is left out: this one is
      * drawn over the whole of it */
     kept = 0;
@@ -2450,6 +2549,7 @@ static void port_GlEnd(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24) {
      * from the software GPU's own video memory. */
     g_gl.display_is_on = is_on && !is_rgb24;
     g_gl.display_is_rgb24 = is_rgb24;
+    port_GlShowReplaced();
     /* what the frame on show cost: a blank at which the game drew
      * nothing leaves the frame before it standing (port_remaster.h) */
     if (g_gl.vertex_count != 0 || g_gl.upload_count != 0) {
@@ -2579,6 +2679,7 @@ const char *port_GlStart(
     void *(*getproc)(const char *name), const PortGlOptions *options) {
     static const GLfloat corners[] = {
         0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
+    s32 i;
 
     g_gl.problem[0] = 0;
     if (!port_GlFindFunctions(getproc)) {
@@ -2787,6 +2888,9 @@ const char *port_GlStart(
     /* video memory as it is now, all of it */
     port_ClearDirtyRect(&g_gl.mirror);
     g_gl.blit_count = 0;
+    for (i = 0; i < REPLACED_MAX; i++) {
+        port_ClearDirtyRect(&g_gl.replaced[i].rect);
+    }
     port_GlWroteVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
     port_RemasterSetBackend(&g_gl_backend);
     return NULL;

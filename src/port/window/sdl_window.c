@@ -1069,16 +1069,20 @@ static s32 port_ShowRemastered(s32 window_w, s32 window_h) {
 
 /* Whether the window shows the remastered picture of this frame: not
  * while the movie player runs, whose frames are in the 24-bit mode the
- * card does not draw and whose title picture is put in video memory
- * outside the game's display, so that the software GPU's picture is the
- * one there is of them. */
+ * card does not draw, so that the software GPU's picture is the one there
+ * is of them. The title picture it holds after the movie, in the 16-bit
+ * mode, is the card's where a mod has a picture of it (the art mod's,
+ * made larger from the disc): it is drawn from that, and so is its fade. */
 static s32 port_ShowsRemastered(void) {
     PortDisplay display;
 
-    if (!g_port_has_gl || !port_RemasterIsOn() || port_MovieIsPlaying()) {
+    if (!g_port_has_gl || !port_RemasterIsOn()) {
         return FALSE;
     }
     port_GetDisplay(&display);
+    if (port_MovieIsPlaying()) {
+        return !display.is_rgb24 && port_GlShowsReplacedPicture();
+    }
     return !display.is_rgb24;
 }
 
