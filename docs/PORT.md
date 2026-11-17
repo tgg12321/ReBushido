@@ -1641,6 +1641,24 @@ of the console's picture is two lines of the screen.
   where the next texel along is nothing, the fragment is thrown away
   and the background shows through. `--gl-blocks` measures it ("How it
   is proved, with nothing shown").
+- **A flat polygon is the chip's to its edges.** A triangle of the 2D
+  layer (a loading screen's swords, the slanting panels of the stage
+  select, a portrait cut into strips) is drawn by a geometry shader as
+  the rectangle about it, and the fragment shader keeps a block only
+  where the chip's own rule (`port_DrawTriangle`, `raster.c`: from the
+  edge on the left to the pixel before the edge on the right, the
+  highest line to the line above the lowest) puts the block's own pixel
+  inside it, with the colour and the texture point the chip's own
+  arithmetic gives that pixel: steps across and down in twelve bits of
+  fraction, counted from the corner furthest left, worked out once for
+  the triangle in whole numbers. Before, the card's rule at the
+  picture's resolution cut a block a slanting edge crossed in two, and
+  the two triangles of a quad, whose steps differ where its texture does
+  not run evenly across it, left a seam of blocks a texel out along the
+  diagonal: 18,917 broken blocks and a worst channel of 182 in
+  `port_game`'s flat screens, which are now none and 11. It costs
+  Mesa's software renderer about twice the time a frame (489 to some
+  1,000 µs in the prover); on a card it is nothing.
 - The **four mixes** are the card's blending at eight bits a channel
   instead of the chip's five: half and half by `SRC_ALPHA`, added and a
   quarter added by `ONE, ONE_MINUS_SRC_ALPHA` with the shader setting
@@ -1770,9 +1788,9 @@ console's own picture the prover asks two things of its block: that it
 is of one colour at all, and that the colour is the console's. The
 bands beside the console's 640 pixels in a wider picture are the
 scene's alone and are left out. What a flat screen may still differ in
-is a pixel that mixes, which the card mixes at eight bits a channel and
-the chip at five, and the edge of a flat polygon that is not up and
-down, which the card draws at the picture's own resolution.
+is a colour, which the card keeps at eight bits a channel with no dither
+and the chip at five; a flat polygon's slanting edge is the chip's
+("A flat polygon is the chip's to its edges").
 
 Measured over the boot, the options page, the top menu and the
 character select, with `aspect 16:9`, every twentieth blank:
@@ -1793,6 +1811,15 @@ eight bits a channel and the chip at five: that is the whole of the
 as any of it goes. `tools/port_gl_prove.py` runs this on each of the
 three plans and fails the run if any block is broken up or any pixel is
 more than two steps out.
+
+That table was the boot and the first menus. The whole of `port_game`
+at 4 across and 3 down is 109 flat pictures -- the loading screen's
+swords and the stage select's slanting panels among them -- and there
+the card's rule for a slanting edge broke 18,917 blocks, with a worst
+channel of 182 where a portrait cut into strips came out a texel along
+at the strips' diagonals. With the chip's own rule and arithmetic for a
+flat polygon (above) it is **0** blocks broken, 8,037 more than a step
+out and a worst channel of 11.
 
 (At 8 across the 640-wide screens come to more pixels than the prover
 keeps a picture in, so only the 320-wide ones — the boot and the

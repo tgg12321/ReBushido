@@ -473,12 +473,11 @@ static u32 port_ChannelsApart(u32 one, u32 two) {
  * far that colour is from the console's. The bands beside the console's
  * 640 pixels in a wider picture are the scene's alone and are left out.
  *
- * What a flat screen may still differ in: a pixel that mixes, which the
- * card mixes at eight bits a channel and the chip at five (within one
- * step), and the edge of a flat polygon that is not up and down, which
- * the card draws at the picture's own resolution and not the console's
- * (sharper, and the pixels of the block are then not all of one
- * colour). */
+ * What a flat screen may still differ in: a colour, which the card keeps
+ * at eight bits a channel with no dither and the chip at five (within
+ * two steps). A flat polygon's slanting edge is the chip's, block for
+ * block: the card is told which pixels the chip's rule covers
+ * (gl_draw.c, the geometry shader). */
 static void port_CompareBlocks(s32 w, s32 h, s32 software_w, s32 software_h,
                                s32 scale_x, s32 scale_y, s32 margin) {
     s32 x;
@@ -893,13 +892,14 @@ static void port_GlBlank(u32 blank) {
                     port_GlGetOutsideCount(), port_GlGetWideCount(),
                     port_GlGetDroppedCount());
             fprintf(stderr,
-                    "gl blank %u with_depth %u without_depth %u points %u "
+                    "gl blank %u with_depth %u without_depth %u with_place "
+                    "%u points %u "
                     "faces %u attached %u misses %u full %u masked %u "
                     "texture_from_drawn %u\n",
                     blank, counts->with_depth, counts->without_depth,
-                    counts->points, counts->faces, counts->attached,
-                    counts->point_misses, counts->full, counts->masked,
-                    counts->texture_from_drawn);
+                    counts->with_place, counts->points, counts->faces,
+                    counts->attached, counts->point_misses, counts->full,
+                    counts->masked, counts->texture_from_drawn);
             fprintf(stderr,
                     "gl blank %u mixed half %u add %u subtract %u quarter "
                     "%u\n",
