@@ -29,6 +29,7 @@
 #include "gl_shadow.h"
 #include "gl_stage.h"
 #include "port_gpu.h"
+#include "port_profile.h"
 #include "port_remaster.h"
 
 /* ---- GL, as much of it as this file uses ---- */
@@ -115,7 +116,7 @@ typedef ptrdiff_t GLintptr;
     GL(void, glClearColor, (GLfloat, GLfloat, GLfloat, GLfloat))               \
     GL(void, glClear, (GLbitfield))                                            \
     GL(void, glColorMask, (GLboolean, GLboolean, GLboolean, GLboolean))        \
-    GL(void, glFinish, (void))                                                 \
+    GL(void, glFlush, (void))                                                  \
     GL(void, glBlendFunc, (GLenum, GLenum))                                    \
     GL(void, glBlendEquation, (GLenum))                                        \
     GL(void, glPixelStorei, (GLenum, GLint))                                   \
@@ -180,6 +181,9 @@ PORT_GL_FUNCTIONS
 
 /* A batch's vertices: a frame of the fight has about ten thousand. */
 #define VERTICES_MAX 65536
+/* Rectangles of video memory written since the card last drew, kept to
+ * be stretched into the colour buffer together (port_GlDrawBlits). */
+#define BLITS_MAX 32
 /* The longest run of pixels sent to the card in one go. */
 #define UPLOAD_PIXELS_MAX (PORT_VRAM_PIXELS)
 
@@ -281,6 +285,13 @@ typedef struct {
     s32 replace_mix; /* PORT_GL_MIX_... (gl_replace.h) */
 } PortGlState;
 
+/* A rectangle of video memory written, to be stretched into the colour
+ * buffer, and a mod's picture of it (0 for none). */
+typedef struct {
+    PortDirtyRect rect;
+    u32 replacement;
+} PortGlBlit;
+
 static struct {
     s32 is_started;
     PortGlOptions options;
@@ -380,7 +391,18 @@ static struct {
     s32 occluders_lost;
     PortGlState state;
     s32 has_state;
+    /* The mirror of video memory the card reads texels from, and its
+     * copy here: each rectangle is copied in as video memory held it
+     * when it was written, and what is sent to the card is read from
+     * the copy, so that a rectangle sent later is still the one that was
+     * written and not what the software GPU has drawn over it since
+     * (port_GlMarkMirror). `mirror` is what the card has not been sent. */
+    u16 *staged;
     PortDirtyRect mirror;
+    /* what is to be stretched into the colour buffer before the card
+     * next draws anything else (port_GlDrawBlits) */
+    PortGlBlit blit[BLITS_MAX];
+    s32 blit_count;
     s32 display_x;
     s32 display_y;
     s32 display_w;
@@ -1298,10 +1320,32 @@ static void port_GlUploadMirror(void) {
     glTexSubImage2D(
         GL_TEXTURE_2D, 0, g_gl.mirror.left, g_gl.mirror.top, w, h,
         GL_RED_INTEGER, GL_UNSIGNED_SHORT,
-        &g_port_vram[g_gl.mirror.top * PORT_VRAM_WIDTH + g_gl.mirror.left]);
+        &g_gl.staged[g_gl.mirror.top * PORT_VRAM_WIDTH + g_gl.mirror.left]);
     glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
     g_gl.upload_count += (u32)(w * h);
     port_ClearDirtyRect(&g_gl.mirror);
+}
+
+/* A rectangle of video memory, as it is now, to be sent to the card: it
+ * is copied into the backend's own copy at once, and sent with the rest
+ * the next time the card reads it (port_GlUploadMirror). A rectangle
+ * that goes round an edge is taken as the whole of that way, as
+ * port_AddDirtyRect takes it. */
+static void port_GlMarkMirror(s32 x, s32 y, s32 w, s32 h) {
+    PortDirtyRect rect;
+    s32 row;
+
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    port_ClearDirtyRect(&rect);
+    port_AddDirtyRect(&rect, x, y, w, h);
+    for (row = rect.top; row <= rect.bottom; row++) {
+        memcpy(&g_gl.staged[row * PORT_VRAM_WIDTH + rect.left],
+               &g_port_vram[row * PORT_VRAM_WIDTH + rect.left],
+               (size_t)(rect.right - rect.left + 1) * sizeof(u16));
+    }
+    port_AddDirtyRect(&g_gl.mirror, x, y, w, h);
 }
 
 /* ---- the batches ---- */
@@ -1424,10 +1468,18 @@ static void port_GlKeepOccluders(void) {
     g_gl.occluders_lost += g_gl.count - many;
 }
 
+static void port_GlDrawBlits(void);
+
+/* The rectangles of video memory written, then the batch of primitives
+ * that came after them. */
 static void port_GlFlush(void) {
+    s32 was;
+
+    port_GlDrawBlits();
     if (g_gl.count == 0) {
         return;
     }
+    was = port_ProfileSwitch(PORT_PROFILE_CARD);
     port_GlKeepOccluders();
     port_GlUploadMirror();
     glUseProgram(g_gl.program);
@@ -1485,6 +1537,7 @@ static void port_GlFlush(void) {
     glDisable(GL_DEPTH_TEST);
     g_gl.vertex_count += (u32)g_gl.count;
     g_gl.count = 0;
+    port_ProfileSwitch(was);
 }
 
 static s32 port_GlStateIsSame(const PortGlState *a, const PortGlState *b) {
@@ -1963,50 +2016,51 @@ static void port_GlClearBands(
     g_gl.has_state = FALSE;
 }
 
-/* A rectangle of video memory the software GPU wrote: it is sent to the
- * card and stretched into the colour buffer, in its turn among the
- * primitives. */
-static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
-    PortDirtyRect rect;
-    u32 replacement;
+/* One rectangle of video memory stretched into the colour buffer, from
+ * the mirror or from a mod's picture of it. */
+static void port_GlBlit(const PortGlBlit *blit) {
+    const PortDirtyRect *rect = &blit->rect;
 
-    if (!g_gl.is_started || w <= 0 || h <= 0) {
+    if (blit->replacement != 0) {
+        glActiveTexture(GL_TEXTURE0 + PORT_GL_REPLACE_UNIT);
+        glBindTexture(GL_TEXTURE_2D, blit->replacement);
+        glActiveTexture(GL_TEXTURE0);
+    }
+    glUniform1i(g_gl.blit_at_replaced, blit->replacement != 0);
+    glUniform4f(g_gl.blit_at_rect, (GLfloat)rect->left, (GLfloat)rect->top,
+                (GLfloat)(rect->right - rect->left + 1),
+                (GLfloat)(rect->bottom - rect->top + 1));
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    g_gl.draw_count++;
+}
+
+/* The rectangles of video memory written since the card last drew,
+ * stretched into the colour buffer in the order they were written, with
+ * the mirror sent once for all of them. Nothing was drawn between them,
+ * so this is the picture each in its turn would have made: where a later
+ * one covers an earlier, the later is what is left, and the mirror holds
+ * each as it was written (port_GlMarkMirror). A frame writes video memory
+ * fifty times and more, mostly the fog's colour tables a line at a time
+ * (stage_QueueFog), and a send and a draw for each kept the card waiting
+ * on itself. */
+static void port_GlDrawBlits(void) {
+    s32 was;
+    s32 i;
+
+    if (g_gl.blit_count == 0) {
         return;
     }
-    port_GlFlush();
-    /* pixels of the picture the game has put there itself: where they
-     * fall over a shadow already painted, that shadow is covered
-     * (gl_shadow.h) */
-    port_GlShadowWroteVram(x, y, w, h);
-    port_ClearDirtyRect(&rect);
-    port_AddDirtyRect(&rect, x, y, w, h);
-    port_AddDirtyRect(&g_gl.mirror, x, y, w, h);
+    was = port_ProfileSwitch(PORT_PROFILE_CARD);
     port_GlUploadMirror();
-    /* a picture a mod has a picture of (gl_replace.h) */
-    replacement =
-        g_gl.options.is_exact
-            ? 0
-            : port_GlReplaceFindPicture(
-                  rect.left, rect.top, rect.right - rect.left + 1,
-                  rect.bottom - rect.top + 1, g_gl.display_x,
-                  g_gl.display_is_rgb24 ? 0 : g_gl.display_w);
     glUseProgram(g_gl.blit_program);
     glBindVertexArray(g_gl.blit_array);
-    if (replacement != 0) {
-        glActiveTexture(GL_TEXTURE0 + PORT_GL_REPLACE_UNIT);
-        glBindTexture(GL_TEXTURE_2D, replacement);
-    }
     glUniform1i(g_gl.blit_at_replace, PORT_GL_REPLACE_UNIT);
-    glUniform1i(g_gl.blit_at_replaced, replacement != 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
     glUniform1i(g_gl.blit_at_vram, 0);
     glUniform2f(
         g_gl.blit_at_target, (GLfloat)g_gl.target_w, (GLfloat)g_gl.target_h);
     glUniform2f(g_gl.blit_at_scale, (GLfloat)g_gl.draw_x, (GLfloat)g_gl.draw_y);
-    glUniform4f(g_gl.blit_at_rect, (GLfloat)rect.left, (GLfloat)rect.top,
-                (GLfloat)(rect.right - rect.left + 1),
-                (GLfloat)(rect.bottom - rect.top + 1));
     glUniform1f(g_gl.blit_at_shift, (GLfloat)g_gl.margin);
     glDisable(GL_BLEND);
     if (g_gl.margin > 0 && g_gl.display_w > 0) {
@@ -2021,17 +2075,76 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
     } else {
         glDisable(GL_SCISSOR_TEST);
     }
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    for (i = 0; i < g_gl.blit_count; i++) {
+        port_GlBlit(&g_gl.blit[i]);
+    }
     glEnable(GL_SCISSOR_TEST);
-    g_gl.draw_count++;
+    g_gl.blit_count = 0;
+    g_gl.has_state = FALSE;
+    port_ProfileSwitch(was);
+}
+
+/* Whether rectangle `a` holds the whole of `b`. */
+static s32 port_GlRectHolds(const PortDirtyRect *a, const PortDirtyRect *b) {
+    return a->left <= b->left && a->top <= b->top && a->right >= b->right &&
+           a->bottom >= b->bottom;
+}
+
+/* A rectangle of video memory the software GPU wrote: it is sent to the
+ * card and stretched into the colour buffer, in its turn among the
+ * primitives (port_GlDrawBlits). */
+static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
+    PortGlBlit blit;
+    PortDirtyRect *rect = &blit.rect;
+    s32 was;
+    s32 kept;
+    s32 i;
+
+    if (!g_gl.is_started || w <= 0 || h <= 0) {
+        return;
+    }
+    if (g_gl.count != 0) {
+        port_GlFlush();
+    }
+    was = port_ProfileSwitch(PORT_PROFILE_CARD);
+    /* pixels of the picture the game has put there itself: where they
+     * fall over a shadow already painted, that shadow is covered
+     * (gl_shadow.h) */
+    port_GlShadowWroteVram(x, y, w, h);
+    port_ClearDirtyRect(rect);
+    port_AddDirtyRect(rect, x, y, w, h);
+    port_GlMarkMirror(x, y, w, h);
+    /* a picture a mod has a picture of (gl_replace.h) */
+    blit.replacement =
+        g_gl.options.is_exact
+            ? 0
+            : port_GlReplaceFindPicture(
+                  rect->left, rect->top, rect->right - rect->left + 1,
+                  rect->bottom - rect->top + 1, g_gl.display_x,
+                  g_gl.display_is_rgb24 ? 0 : g_gl.display_w);
+    /* one written before that this one covers is left out: this one is
+     * drawn over the whole of it */
+    kept = 0;
+    for (i = 0; i < g_gl.blit_count; i++) {
+        if (!port_GlRectHolds(rect, &g_gl.blit[i].rect)) {
+            g_gl.blit[kept++] = g_gl.blit[i];
+        }
+    }
+    g_gl.blit_count = kept;
+    if (g_gl.blit_count == BLITS_MAX) {
+        port_GlDrawBlits();
+    }
+    g_gl.blit[g_gl.blit_count++] = blit;
     g_gl.has_state = FALSE;
     /* a fill or a copy as wide as the console's picture is the frame's
      * own clear: the bands go with it, and where it is one colour that
      * colour is the picture's background, which is what shows through a
-     * hole in the scene (gl.h, port_GlBackground) */
-    if (rect.right - rect.left + 1 >= g_gl.display_w) {
+     * hole in the scene (gl.h, port_GlBackground). The bands are outside
+     * the console's own 640 pixels, where no rectangle of video memory
+     * is stretched, so they are cleared now. */
+    if (rect->right - rect->left + 1 >= g_gl.display_w) {
         u16 color = 0;
-        s32 is_one_color = port_GlOneColor(&rect, &color);
+        s32 is_one_color = port_GlOneColor(rect, &color);
 
         if (is_one_color) {
             g_gl.background =
@@ -2039,8 +2152,9 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
                 ((u32)port_GlFive(color, VRAM_GREEN_SHIFT) << 8) |
                 (u32)port_GlFive(color, VRAM_BLUE_SHIFT);
         }
-        port_GlClearBands(&rect, is_one_color, color);
+        port_GlClearBands(rect, is_one_color, color);
     }
+    port_ProfileSwitch(was);
 }
 
 static void port_GlBegin(void) {
@@ -2210,7 +2324,9 @@ void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h) {
     if (!g_gl.is_started || w <= 0 || h <= 0) {
         return;
     }
-    port_AddDirtyRect(&g_gl.mirror, x, y, w, h);
+    /* what was written before is drawn from what it was */
+    port_GlDrawBlits();
+    port_GlMarkMirror(x, y, w, h);
     port_GlUploadMirror();
 }
 
@@ -2285,10 +2401,8 @@ void port_GlSetOptions(const PortGlOptions *options) {
         g_gl.scale_x = across;
         g_gl.scale_y = down;
         g_gl.sample = sample;
+        g_gl.blit_count = 0;
         port_GlMakeTarget();
-        port_ClearDirtyRect(&g_gl.mirror);
-        port_AddDirtyRect(
-            &g_gl.mirror, 0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
         port_GlWroteVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
         return;
     }
@@ -2317,6 +2431,13 @@ const char *port_GlStart(
         g_gl.vertices = malloc(VERTICES_MAX * sizeof(*g_gl.vertices));
         if (g_gl.vertices == NULL) {
             port_GlSay("there is no memory for the vertices of a frame", NULL);
+            return g_gl.problem;
+        }
+    }
+    if (g_gl.staged == NULL) {
+        g_gl.staged = calloc(PORT_VRAM_PIXELS, sizeof(*g_gl.staged));
+        if (g_gl.staged == NULL) {
+            port_GlSay("there is no memory for the copy of video memory", NULL);
             return g_gl.problem;
         }
     }
@@ -2476,7 +2597,7 @@ const char *port_GlStart(
     g_gl.is_started = TRUE;
     /* video memory as it is now, all of it */
     port_ClearDirtyRect(&g_gl.mirror);
-    port_AddDirtyRect(&g_gl.mirror, 0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
+    g_gl.blit_count = 0;
     port_GlWroteVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
     port_RemasterSetBackend(&g_gl_backend);
     return NULL;
@@ -2545,7 +2666,12 @@ void port_GlFinishFrame(void) {
     if (g_gl.sample > 1) {
         port_GlResolve();
     }
-    glFinish();
+    /* Handed to the card, and not waited for: the card draws while the
+     * program goes on, and what reads the picture back (the prover, a
+     * picture of the window) or shows it (the swap) waits for it then.
+     * Waiting here (glFinish) held the program up for the whole of the
+     * card's drawing at every picture. */
+    glFlush();
 }
 
 s32 port_GlReadPicture(u32 *out, u32 room, s32 *out_w, s32 *out_h) {
@@ -2590,8 +2716,6 @@ void port_GlRefresh(void) {
     if (!g_gl.is_started) {
         return;
     }
-    port_ClearDirtyRect(&g_gl.mirror);
-    port_AddDirtyRect(&g_gl.mirror, 0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
     port_GlWroteVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
 }
 
