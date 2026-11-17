@@ -76,6 +76,12 @@ const char g_port_default_settings[] =
     "                       # console; display: as many as the screen\n"
     "                       # shows; or a number a second. The game\n"
     "                       # steps at the console's rate either way\n"
+    "sky = night            # night: a night sky over the stages open\n"
+    "                       # to it; original: the game's flat colour\n"
+    "                       # of the distance\n"
+    "see_through = on       # the stage's walls thinned where they hide\n"
+    "                       # a fighter from the camera; off as the\n"
+    "                       # console\n"
     "mods = on              # the mods in mods/ beside the program\n"
     "                       # (docs/MODS.md); off for the game's own\n"
     "english = on           # the top menu in English, a mod the program\n"
@@ -621,6 +627,16 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "stage_mesh is on or off";
     }
+    if (port_WordsMatch(name, "sky")) {
+        return port_ReadChoice(value, "original", "night", &settings->sky)
+                   ? NULL
+                   : "sky is original or night";
+    }
+    if (port_WordsMatch(name, "see_through")) {
+        return port_ReadChoice(value, "off", "on", &settings->see_through)
+                   ? NULL
+                   : "see_through is on or off";
+    }
     if (port_WordsMatch(name, "fighter_models")) {
         return port_ReadChoice(value, "off", "on", &settings->fighter_models)
                    ? NULL
@@ -756,6 +772,11 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     /* The soft shadows are the game's own black ones until the owner has
      * looked at pictures of both (gl_shadow.h). */
     settings->shadows = 0;
+    /* A sky over the stages open to it, and the walls thinned where they
+     * hide a fighter: neither changes what the game computes, and both
+     * are the owner's to confirm on a real card (gl_sky.h, gl_see.h). */
+    settings->sky = 1;
+    settings->see_through = 1;
     /* the mods beside the program, where there are any (docs/MODS.md) */
     settings->mods = 1;
     /* the English top menu the program ships (docs/MODS.md) */

@@ -223,6 +223,13 @@ typedef struct {
      * hundredths: 0 is the game's own black silhouettes
      * (src/port/gl/gl_shadow.h; PORT_SHADOWS_SOFT). */
     s32 shadows;
+    /* A night sky of the port's own over the stages open to it, in the
+     * place of the game's colour of the distance (src/port/gl/gl_sky.h):
+     * 0 original, 1 night. */
+    s32 sky;
+    /* The stage's walls thinned where they hide a fighter
+     * (src/port/gl/gl_see.h). */
+    s32 see_through;
     /* The mods beside the program are read (docs/MODS.md); 0 runs the
      * game with none of them, as `--mods off` does. */
     s32 mods;

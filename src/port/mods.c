@@ -53,10 +53,10 @@
 #define VRAM_Y_MASK (PORT_VRAM_HEIGHT - 1)
 
 static const char * const g_port_mod_kind_folders[PORT_MOD_KINDS] = {
-    "textures", "models", "music", "stages"};
+    "textures", "models", "music", "stages", "skies"};
 /* the ending a kind's file must have to be read; NULL for any */
 static const char * const g_port_mod_kind_endings[PORT_MOD_KINDS] = {
-    ".png", ".glb", NULL, NULL};
+    ".png", ".glb", NULL, NULL, ".png"};
 
 typedef struct {
     PortModManifest manifest;
@@ -646,11 +646,12 @@ void port_ModsStart(const char *program) {
             continue;
         }
         port_Log("mods:   %s%s%s (%s, order %d): %d textures, %d models, "
-                 "%d music, %d stages\n",
+                 "%d music, %d stages, %d skies\n",
                  mod->manifest.name, mod->manifest.version[0] != 0 ? " " : "",
                  mod->manifest.version, mod->folder, mod->manifest.order,
                  mod->counts[PORT_MOD_TEXTURES], mod->counts[PORT_MOD_MODELS],
-                 mod->counts[PORT_MOD_MUSIC], mod->counts[PORT_MOD_STAGES]);
+                 mod->counts[PORT_MOD_MUSIC], mod->counts[PORT_MOD_STAGES],
+                 mod->counts[PORT_MOD_SKIES]);
     }
     if (g_port_mods.overridden > 0) {
         port_Log("mods: %d files of one mod overridden by a later one's\n",

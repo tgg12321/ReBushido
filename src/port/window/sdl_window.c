@@ -37,6 +37,7 @@
 
 #include "gl.h"
 #include "gl_pause.h"
+#include "gl_sky.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
 #include "menu.h"
@@ -547,6 +548,9 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     /* the fighters' shadows as a darkening of the ground, or the game's
      * own black polygons (src/port/gl/gl_shadow.h) */
     options->shadows = g_port_settings.shadows;
+    /* the sky and the walls seen through (gl_sky.h, gl_see.h) */
+    options->sky = g_port_settings.sky;
+    options->see_through = g_port_settings.see_through;
 }
 
 /* The window's context and the remastered renderer on it: NULL, or why
@@ -1846,6 +1850,11 @@ static void port_ShowBlank(u32 blank) {
         port_GlNoteFrameTime((SDL_GetTicks() - started) * MILLISECONDS);
         /* which path the stage's ground takes (gl_stage.h) */
         news = port_GlStageNews();
+        if (news != NULL) {
+            port_Say("%s", news);
+        }
+        /* and whether the stage has a sky (gl_sky.h) */
+        news = port_GlSkyNews();
         if (news != NULL) {
             port_Say("%s", news);
         }

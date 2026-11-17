@@ -96,6 +96,11 @@ to play is [`PLAYING.md`](PLAYING.md).
 - Which shadows by default (`original`, `soft` or `cast`), and how
   dark (2).
 - The high frame rate by default (5).
+- The sky over the open stages (`sky = night`) and the walls thinned in
+  front of a fighter (`see_through = on`), both on in the window and not
+  yet seen on a real screen (PORT.md, "The sky", "Seeing the fighters
+  through the stage"); which stages count as open is `g_sky_open` in
+  `src/port/gl/gl_sky.c`.
 - `tmp\sdl-dl` can be deleted by hand; `tmp\pcsx-redux` and
   `tmp\redux-portable` are the emulator the play tests use and stay.
 

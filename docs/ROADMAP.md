@@ -139,6 +139,11 @@ exists. As the one ground mesh replaced the tiles, each part of the
 picture is looked at again in that light: the camera, lighting and
 shadows, the 3D terrain (structures that see through when they block the
 camera), particle effects, skyboxes on the stages that were left dark.
+Two of them are in: a night sky over the 28 stages open to it (`sky`), and
+the stage's walls thinned where they stand between the camera and a
+fighter (`see_through`), both on in the window and both the owner's to
+confirm ([`PORT.md`](PORT.md), "The sky", "Seeing the fighters through
+the stage").
 
 8. **Online play with rollback netcode**, soon after the picture. What it
    asks of the port, and what work before it should keep in mind:

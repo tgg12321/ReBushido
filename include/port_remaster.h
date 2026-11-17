@@ -449,6 +449,9 @@ extern void port_RemasterSetPrim(PortAddress prim);
 /* A MATRIX's nine halfwords. (port_gte.h has the same number under its
  * own name; this header is included where that one is not.) */
 #define PORT_GTE_MATRIX_ELEMENTS_PORT 9
+/* One bit for each of the stage's tiles (STAGE_MAX_TILES is 500), in
+ * whole words. */
+#define PORT_STAGE_TILE_WORDS 16
 
 typedef struct {
     /* Bumped whenever the stage's tiles or the meshes they point at may
@@ -486,6 +489,12 @@ typedef struct {
     s32 fog_y;
     s32 fog_w;
     s32 fog_h;
+    /* Which tiles this frame drew opened up (STAGE_TILE_OPEN), one bit a
+     * tile, taken with the view. The flags are the game's and are set
+     * again for the next frame before a picture of this one is made, so
+     * a picture drawn again between two frames that read them where they
+     * stand left out of the mesh a face this frame drew whole. */
+    u32 open[PORT_STAGE_TILE_WORDS];
 } PortStageView;
 
 /* The renderer is drawing the stage's tiles with this view
