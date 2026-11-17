@@ -350,7 +350,8 @@ little delay is needed). Up to 7 or 8 frames can be rolled back.
    (item 9) is the layout the window reads the PC's devices through
    (`rebushido.cfg`, `docs/PLAYING.md`). A recorded run of such words
    is a replay and a test; the recording itself is not written yet.
-3. **State apart from presentation.** The program's variables go in two
+3. **State apart from presentation** (done by file: section 9). The
+   program's variables go in two
    groups at the link (`tools/port_build.py`, `tools/port_sdl_build.py`):
    the game's, Sony's and the emulation's (clock, drive, XA, chip, pads,
    card, GPU registers) in one, and the picture, side channel, plan, trace
@@ -408,7 +409,7 @@ starts its sound).
 | The I/O page of the sound chip's registers, `0x1F801000` | 4,096 | libspu writes the chip's registers and its DMA's there; leaving it out was the probe's first failure, and is the self-test's (below) |
 | The top of the game's stack, and its stack pointer (section 8) | 65,536 and 8 (4) | between two steps the game is a few calls deep where it reads the pads; what lies below the stack pointer is cleared first, being nobody's |
 | The port's own primitive buffers, `PORT_PRIMS_ADDR`, where a run has them | 2,097,152, or nothing | the pause menu draws the fight's last frame from them again every frame |
-| The program's variables, but those of `OUTSIDE_STATE` | 2,636,352 (2,619,712) | the game's and Sony's, then the port's emulation of the console |
+| The program's variables, but those of the files outside the state (`config/port_state.txt`) | 2,636,352 (2,619,712) | the game's and Sony's, then the port's emulation of the console |
 
 That is **4.80 MB** in both sizes of the headless program (4,804,204 and
 4,787,552 bytes), and 6.9 MB in the program with a window, which has the
@@ -430,14 +431,15 @@ test's plan (`plan.c`).
   input comes from outside instead (below).
 
 **What is out, and why.** The link puts the variables of the files
-`OUTSIDE_STATE` names (`tools/port_build.py`) after everything else of
+`config/port_state.txt` puts outside the state after everything else of
 their kind, so that what the state saves of the program's variables is
 two runs of memory, one of initialised data and one of zeroed, whose ends
 are marks of the link (`g_port_state_data_end`, `g_port_state_bss_end`).
 The window's build does the same inside the game's object
 (`tools/port_sdl_build.py`). This is change 3's division in a first form,
 by file and not by variable, and with no check that a new variable is in
-the right group.
+the right group. (Change 3 made the division a file of its own with a
+check: section 9.)
 
 - the remastered picture's side channel (`remaster.c`, 1.2 MB): it is
   the picture's, and a load must not rewind its epoch (section 3);
@@ -567,8 +569,8 @@ the stack's garbage differs between the two runs of a frame.
   including a step run again; what the window keeps of the keys and the
   remapping (`src/port/window/`) is outside it and must stay so. Netplay
   then sets the record before each step and does not use the plan.
-- *Change 3* turns `OUTSIDE_STATE` into the link's two groups by
-  variable, with a check that every variable is in one.
+- *Change 3* (done, by file: section 9) gives every file of the port
+  one of the link's two groups, with a check.
 - *Change 5.* A frame run again still draws, mixes and hands its samples
   to the window's sound card; the self-test is for the headless program
   (with `--wav`, or in the window, a round's frames are heard twice).
@@ -629,3 +631,46 @@ rule of the save's parity no longer loses any), and so does the window's
 program on Linux (`--fast`, dummy drivers) and the Windows program. One
 frame every frame: 2,324 rounds of the 2,325 steps in each size, every
 one the same.
+
+## 9. State apart from presentation
+
+Preparatory change 3 is built by file. `config/port_state.txt` puts every
+file of `src/port/`, and every file of `src/port/window/` that is linked
+into the game's object, in one of the link's two groups, with a line
+saying why: **state** (the console's machine as the game sees it: the
+clock, drive, disc reader, XA, sound chip and mixer, pads, card, events,
+GPU and video memory, GTE, the movie's decoder, the stubs' counts, a play
+test's plan) or **outside** (the remastered side channel, the run's
+output, pictures and sound file, the crash report, the program's
+arguments, the host, the step's own count, the snapshot's bookkeeping,
+and the window's pacing, sound queue, keys, counter and log). The game's
+own files are state, always. `tools/port_build.py` and
+`tools/port_sdl_build.py` read it for the link (the outside group goes
+after the rest of each kind) and stop the build on a file of the port in
+neither group, or on a line naming a file that is not built. The rest of
+the window and `src/port/gl/` are outside by being outside the game's
+object, so the picture's work there needs no line.
+
+It is by file, not by variable: a variable of a state file that must not
+be put back by a load goes in a file that is outside. None had to move.
+What was looked at for rollback's sake:
+
+- **The side channel's epoch only goes forward.** `g_epoch`
+  (`remaster.c`) is moved on by `port_RemasterNewFrame`, which the game
+  calls as each frame begins, a frame run again included, and
+  `remaster.c` is outside the state, so no load takes it back. After a
+  rollback the frame that is shown finds its own notes under a new epoch
+  and those of the frame before under the one before: the last frame run
+  again, which is that frame on the corrected course, as in a run with no
+  rollback. The slots of frames taken back keep epochs that are never
+  used again.
+- **Hooks set once** (`g_port_blank_hook`, `g_port_sound_hook`,
+  `g_port_take_hook` and the rest) are in state files but are set before
+  the game starts and never change, so a load leaves them as they are.
+- **The memory card's file** (`card.c`) is the one thing in a state file
+  that writes outside the program: a frame run again that saves writes
+  the same bytes again, but a frame taken back that saved would have
+  written its own. Netplay runs with `--no-cards` until the session sends
+  the host's card (change 6).
+- **The window's pacing, the sound card's queue, the tween** are outside;
+  a frame run again must not reach them (change 5, section 10).

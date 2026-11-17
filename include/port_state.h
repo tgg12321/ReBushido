@@ -16,9 +16,9 @@
  *   - the port's own buffers of primitives, where a run has them
  *     (port_remaster.h): the pause menu draws the fight's last frame
  *     from them again every frame;
- *   - the program's variables but those of the files the build names in
- *     OUTSIDE_STATE (tools/port_build.py), which are linked after the
- *     rest of their kind: the game's and Sony's variables, and the
+ *   - the program's variables but those of the files that
+ *     config/port_state.txt puts outside the state, which are linked
+ *     after the rest of their kind: the game's and Sony's variables, and the
  *     port's clock, drive, XA reader, sound chip and mixer, pads, card,
  *     events, GPU and video memory, GTE, movie decoder and a play test's
  *     plan.

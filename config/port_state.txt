@@ -1,0 +1,62 @@
+# The native port's files in the link's two groups (docs/NETPLAY.md,
+# "State apart from presentation"), read by tools/port_build.py and
+# tools/port_sdl_build.py:
+#
+#   state     its variables are the game's state: saved, put back, hashed
+#             in part and run again (include/port_state.h);
+#   outside   its variables are the picture's, the run's output, the
+#             host's or the snapshot's own: never put back by a load, so
+#             a counter of theirs only goes forward.
+#
+# The game's own files (src/main/, src/rebushido/, Sony's, the movie's) are
+# state, always, and are linked first in each kind. Every file of
+# src/port/ and every file of src/port/window/ that is linked into the
+# game's object is one line here, or the build stops: a new file is put
+# in one group or the other when it is written. The rest of the window
+# (sdl_*.c) and src/port/gl/ are outside by being outside the game's
+# object; SDL and the C library likewise.
+#
+# A file's variables are all in its group. A variable of a state file
+# that must not be put back by a load goes in a file that is outside.
+
+# the console's machine, as the game sees it
+state    src/port/api.c         the BIOS's calls, the link cable, the C library's few
+state    src/port/card.c        the memory cards' images and the BIOS's card calls
+state    src/port/cd.c          the drive and its state machine
+state    src/port/clock.c       the clock of scan lines and blanks
+state    src/port/disc.c        the disc image's reader (where it reads)
+state    src/port/event.c       the BIOS's events
+state    src/port/gpu.c         libgpu's calls, the display, the ordering tables' walk
+state    src/port/gte.c         the GTE's registers
+state    src/port/mdec.c        the movie's decoder
+state    src/port/memory.c      the console's memory, mapped
+state    src/port/movie.c       where the game runs the movie's player
+state    src/port/pad.c         the pads' driver and the one input point
+state    src/port/plan.c        a play test's plan: the run's input, rolled back with the game
+state    src/port/raster.c      the GPU and its video memory
+state    src/port/sound.c       libsnd's tick and the mixer
+state    src/port/spu.c         the sound chip and its memory
+state    src/port/stream.c      the movie's ring of sectors
+state    src/port/stub.c        the counts of what the port does not do yet
+state    src/port/xa.c          the XA reader and its buffer
+
+# the picture, the output, the program and the host
+outside  src/port/crash.c       the crash report
+outside  src/port/host_linux.c  the host: file handles, the signal stack, the fiber's host side
+outside  src/port/host_windows.c  the host on Windows
+outside  src/port/main.c        the program's arguments and the disc's file
+outside  src/port/picture.c     the pictures a run writes
+outside  src/port/remaster.c    the remastered picture's side channel: its epoch only goes forward
+outside  src/port/state.c       the snapshot's own bookkeeping, which must survive a load
+outside  src/port/step.c        the host's count of steps and whether a step is run again
+outside  src/port/text.c        the output buffer
+outside  src/port/wav.c         the sound file
+
+# the window's files that are linked into the game's object
+outside  src/port/window/fps.c       the counter of pictures a second
+outside  src/port/window/gamestate.c what the session's log reads of the game
+outside  src/port/window/keymap.c    the keys and controllers' layout
+outside  src/port/window/logname.c   the log's name
+outside  src/port/window/pace.c      the pacing against the sound card
+outside  src/port/window/ring.c      the sound card's queue
+outside  src/port/window/scale.c     the window's scaling

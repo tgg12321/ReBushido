@@ -396,8 +396,8 @@ def write_blob_script(target, objects, path):
                     if name.startswith(here + target.dot) and variable in playstation:
                         found[kind].add(variable)
     # the window's own files are not the game's state either
-    # (port_build.OUTSIDE_STATE)
-    outside = port_build.outside_state_patterns(WINDOW_DIR + f for f in WINDOW_PLAIN + WINDOW_GAME)
+    # (config/port_state.txt)
+    outside = port_build.outside_state_patterns()
     words = {'under': target.under, 'dot': target.dot, 'rodata_name': target.kinds['.rodata'], 'outside': outside,
              # an object, not a program: MinGW's linker takes a script of its
              # own for the second unless it is told
@@ -579,6 +579,14 @@ def main():
     if '--host' in args:
         print('port-sdl: this host can build it (%s%s)' % (target.cc, ', SDL 2 in ' + target.sdl if target.sdl else ''))
         return 0
+    problems = port_build.check_state_groups(
+        [path for path, own, mine in port_build.sources() if own and path not in OTHER_HOSTS], 'src/port')
+    problems += port_build.check_state_groups([WINDOW_DIR + f for f in WINDOW_PLAIN + WINDOW_GAME], WINDOW_DIR)
+    # the hosts not this build's are named in the groups for the other builds
+    problems = [problem for problem in problems if not any(host in problem for host in OTHER_HOSTS)]
+    if problems:
+        print('\n'.join('port-sdl: ' + problem for problem in problems))
+        return 1
     os.makedirs(target.obj_dir, exist_ok=True)
     # the headers the build writes go into this build's own folder; the
     # compiler's temporary files where tools/port_build.py has them

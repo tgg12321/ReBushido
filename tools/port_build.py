@@ -179,7 +179,7 @@ DATA_KINDS = ('.rodata', '.data', '.bss')
 # (src/port/gpu.c, port_AddLinkRegion).
 LD_SCRIPT_TEXT = '''/* Written by tools/port_build.py: the native port's link. The game's
  * variables are in the order of the PlayStation program, kind by kind;
- * then the rest of the game's state, then what is not (OUTSIDE_STATE). */
+ * then the rest of the game's state, then what is not (config/port_state.txt). */
 ENTRY(_start)
 SECTIONS
 {
@@ -213,22 +213,50 @@ SECTIONS
 }
 '''
 
-# The files whose variables are not the game's state (docs/NETPLAY.md,
-# "Save, load and hash"): the remastered picture's side channel, the run's
-# output, its pictures and its sound file, the program's arguments and its
-# host, and the snapshot's own. Each kind of variable of theirs is linked
-# after the rest of its kind, so that what src/port/state.c saves of the
-# program's variables is two runs of memory (include/port_state.h).
-OUTSIDE_STATE = ['src/port/state.c', 'src/port/step.c', 'src/port/remaster.c', 'src/port/text.c', 'src/port/wav.c',
-                 'src/port/picture.c', 'src/port/crash.c', 'src/port/main.c',
-                 'src/port/host_linux.c', 'src/port/host_windows.c']
+# Each of the port's files is in one of the link's two groups
+# (docs/NETPLAY.md, "State apart from presentation"): the game's state, or
+# outside it (the picture, the run's output, the program, its host, the
+# snapshot's own bookkeeping). The variables of the files outside are
+# linked after the rest of their kind, so that what src/port/state.c saves
+# of the program's variables is two runs of memory (include/port_state.h).
+STATE_GROUPS = 'config/port_state.txt'
+GROUPS = ('state', 'outside')
 
 
-def outside_state_patterns(more=()):
-    """The objects of OUTSIDE_STATE and of the paths `more`, as a link
-    script's EXCLUDE_FILE names them: by the object's name (object_of), in
-    whatever folder."""
-    return ' '.join('*%s.o' % path[:-2].replace('/', '_') for path in OUTSIDE_STATE + list(more))
+def state_groups():
+    """{path: 'state' or 'outside'} of config/port_state.txt."""
+    groups = {}
+    with open(STATE_GROUPS, encoding='utf-8') as f:
+        for number, line in enumerate(f, 1):
+            words = line.split()
+            if not words or words[0].startswith('#'):
+                continue
+            if words[0] not in GROUPS or len(words) < 2 or words[1] in groups:
+                raise SystemExit('port: %s:%d: not "state PATH" nor "outside PATH", or a path said twice: %s'
+                                 % (STATE_GROUPS, number, line.strip()))
+            groups[words[1]] = words[0]
+    return groups
+
+
+def check_state_groups(paths, folder):
+    """Each of the port's files of `folder` that the build links (`paths`)
+    is in one group, and each file of that folder the groups name is there:
+    a line for each that is not, or none."""
+    groups = state_groups()
+    named = [path for path in groups if os.path.dirname(path) == folder.rstrip('/')]
+    problems = ['%s is in neither group of %s: put it in "state" or "outside" (docs/NETPLAY.md, '
+                '"State apart from presentation")' % (path, STATE_GROUPS)
+                for path in paths if path not in groups]
+    problems += ['%s names %s, which is not built' % (STATE_GROUPS, path) for path in named if path not in paths]
+    return problems
+
+
+def outside_state_patterns():
+    """The objects of the files outside the state, as a link script's
+    EXCLUDE_FILE names them: by the object's name (object_of), in whatever
+    folder."""
+    return ' '.join('*%s.o' % path[:-2].replace('/', '_')
+                    for path, group in sorted(state_groups().items()) if group == 'outside')
 
 
 HOST_PROBE ='void _start(void) { for (;;) { } }\n'
@@ -550,6 +578,10 @@ def main():
     if '--host' in args:
         print('port: this host can build it')
         return 0
+    problems = check_state_groups([path for path, own, mine in sources() if own], 'src/port')
+    if problems:
+        print('\n'.join('port: ' + problem for problem in problems))
+        return 1
     os.makedirs(OBJ_DIR, exist_ok=True)
     host_tests.OUT_DIR = OUT_DIR
     host_tests.write_headers(True)

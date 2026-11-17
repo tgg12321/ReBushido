@@ -131,7 +131,7 @@ and on any difference between the two runs' output and files; a page
 that differs is named by the variables in it. About half a minute, with
 your own disc image (`REBUSHIDO_RETAIL`) and no emulator; run it after a
 change to the port's own variables, to what the link puts outside the
-state (`OUTSIDE_STATE` in `tools/port_build.py`) or to what a frame of
+state (`config/port_state.txt`) or to what a frame of
 the game reads.
 
 ## Play tests
