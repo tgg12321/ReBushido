@@ -28,6 +28,19 @@ typedef __INTPTR_TYPE__ LinuxWord;
 #define LINUX_O_TRUNC 0x200
 #define LINUX_O_LARGEFILE 0x8000
 #define LINUX_FILE_MODE 0644
+#define LINUX_FOLDER_MODE 0755
+#define LINUX_O_DIRECTORY 0x10000
+#define LINUX_EEXIST 17
+/* getdents64's record: the inode's number and the next record's place
+ * (eight bytes each), the record's length, the kind, then the name */
+#define LINUX_DIRENT_LENGTH_AT 16
+#define LINUX_DIRENT_KIND_AT 18
+#define LINUX_DIRENT_NAME_AT 19
+#define LINUX_DT_UNKNOWN 0
+#define LINUX_DT_DIR 4
+#define LINUX_DT_LNK 10
+#define LINUX_FOLDER_BUFFER_BYTES 0x2000
+#define LINUX_PATH_BYTES 1024
 #define LINUX_PROT_READ_WRITE 3
 #define LINUX_MAP_PRIVATE 0x02
 #define LINUX_MAP_ANONYMOUS 0x20
@@ -73,6 +86,8 @@ enum {
     LINUX_FSYNC = 74,
     LINUX_SIGALTSTACK = 131,
     LINUX_CLOCK_GETTIME = 228,
+    LINUX_MKDIR = 83,
+    LINUX_GETDENTS64 = 217,
 };
 
 /* The call's number in %rax, its arguments in %rdi, %rsi, %rdx, %r10,
@@ -126,6 +141,8 @@ enum {
     LINUX_SIGALTSTACK = 186,
     LINUX_MMAP2 = 192, /* the offset in pages, the six arguments in registers */
     LINUX_CLOCK_GETTIME = 265,
+    LINUX_MKDIR = 39,
+    LINUX_GETDENTS64 = 220,
 };
 
 static LinuxWord port_LinuxCall(
@@ -280,6 +297,86 @@ s32 port_HostWriteAt(s32 file, u32 offset, const void *bytes, u32 count) {
 }
 
 void port_HostFlush(s32 file) { port_LinuxCall(LINUX_FSYNC, file, 0, 0); }
+
+/* Whether a path is a folder, for a name whose kind the listing did not
+ * say: it opens as one. */
+static s32 port_LinuxIsFolder(const char *path) {
+    LinuxWord file = port_LinuxCall(
+        LINUX_OPEN, (LinuxWord)path, LINUX_O_RDONLY | LINUX_O_DIRECTORY, 0);
+
+    if (LINUX_IS_ERROR(file)) {
+        return 0;
+    }
+    port_LinuxCall(LINUX_CLOSE, file, 0, 0);
+    return 1;
+}
+
+/* The folder's records by getdents64, a buffer at a time (port_host.h). */
+s32 port_HostListFolder(
+    const char *path,
+    void (*each)(void *context, const char *name, s32 is_folder),
+    void *context) {
+    static u8 records[LINUX_FOLDER_BUFFER_BYTES];
+    char whole[LINUX_PATH_BYTES];
+    u32 path_length = 0;
+    LinuxWord folder = port_LinuxCall(
+        LINUX_OPEN, (LinuxWord)path, LINUX_O_RDONLY | LINUX_O_DIRECTORY, 0);
+
+    if (LINUX_IS_ERROR(folder)) {
+        return 0;
+    }
+    while (path[path_length] != 0 && path_length + 2 < LINUX_PATH_BYTES) {
+        whole[path_length] = path[path_length];
+        path_length++;
+    }
+    whole[path_length++] = '/';
+    for (;;) {
+        LinuxWord got = port_LinuxCall(
+            LINUX_GETDENTS64, folder, (LinuxWord)records, sizeof(records));
+        LinuxWord at = 0;
+
+        if (LINUX_IS_ERROR(got) || got == 0) {
+            break;
+        }
+        while (at < got) {
+            const u8 *record = records + at;
+            const char *name = (const char *)record + LINUX_DIRENT_NAME_AT;
+            u32 length = record[LINUX_DIRENT_LENGTH_AT] |
+                         ((u32)record[LINUX_DIRENT_LENGTH_AT + 1] << 8);
+            s32 kind = record[LINUX_DIRENT_KIND_AT];
+            s32 is_folder = kind == LINUX_DT_DIR;
+
+            at += length;
+            if (name[0] == '.' &&
+                (name[1] == 0 || (name[1] == '.' && name[2] == 0))) {
+                continue;
+            }
+            if (kind == LINUX_DT_UNKNOWN || kind == LINUX_DT_LNK) {
+                /* the file system did not say, or it is a link: what it
+                 * opens as */
+                u32 i;
+
+                for (i = 0;
+                     name[i] != 0 && path_length + i + 1 < LINUX_PATH_BYTES;
+                     i++) {
+                    whole[path_length + i] = name[i];
+                }
+                whole[path_length + i] = 0;
+                is_folder = port_LinuxIsFolder(whole);
+            }
+            each(context, name, is_folder);
+        }
+    }
+    port_LinuxCall(LINUX_CLOSE, folder, 0, 0);
+    return 1;
+}
+
+s32 port_HostMakeFolder(const char *path) {
+    LinuxWord made =
+        port_LinuxCall(LINUX_MKDIR, (LinuxWord)path, LINUX_FOLDER_MODE, 0);
+
+    return !LINUX_IS_ERROR(made) || (s32)(-made) == LINUX_EEXIST;
+}
 
 /* The clock that only goes forward, in seconds and nanoseconds; the
  * arithmetic wraps, which is all the port's count does (port_host.h). */

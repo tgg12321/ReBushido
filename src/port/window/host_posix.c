@@ -8,11 +8,13 @@
 #if !defined(_WIN32)
 
 #define _GNU_SOURCE
+#include <dirent.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <ucontext.h>
 #include <unistd.h>
@@ -20,6 +22,8 @@
 #include "port_host.h"
 
 #define FILES_MAX 16
+#define PATH_BYTES_MAX 1024
+#define FOLDER_MODE 0755
 /* A file this large or larger has no size the port can count. */
 #define TWO_GIGABYTES 0x7FFFFFFFL
 #define SIGNAL_STACK_BYTES 0x10000
@@ -139,6 +143,48 @@ void port_HostFlush(s32 file) {
     if (stream != NULL && fflush(stream) == 0) {
         fsync(fileno(stream));
     }
+}
+
+s32 port_HostListFolder(
+    const char *path,
+    void (*each)(void *context, const char *name, s32 is_folder),
+    void *context) {
+    DIR *listing = opendir(path);
+    struct dirent *entry;
+
+    if (listing == NULL) {
+        return 0;
+    }
+    while ((entry = readdir(listing)) != NULL) {
+        const char *name = entry->d_name;
+        s32 is_folder = entry->d_type == DT_DIR;
+
+        if (name[0] == '.' &&
+            (name[1] == 0 || (name[1] == '.' && name[2] == 0))) {
+            continue;
+        }
+        if (entry->d_type == DT_UNKNOWN || entry->d_type == DT_LNK) {
+            /* the file system did not say, or it is a link: what it
+             * leads to */
+            char whole[PATH_BYTES_MAX];
+            struct stat about;
+
+            snprintf(whole, sizeof(whole), "%s/%s", path, name);
+            is_folder = stat(whole, &about) == 0 && S_ISDIR(about.st_mode);
+        }
+        each(context, name, is_folder);
+    }
+    closedir(listing);
+    return 1;
+}
+
+s32 port_HostMakeFolder(const char *path) {
+    struct stat about;
+
+    if (mkdir(path, FOLDER_MODE) == 0) {
+        return 1;
+    }
+    return stat(path, &about) == 0 && S_ISDIR(about.st_mode);
 }
 
 /* Whole pages at exactly `address`, or nothing (port_host.h). */

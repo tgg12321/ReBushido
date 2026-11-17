@@ -21,6 +21,7 @@
 #include "port_disc.h"
 #include "port_gpu.h"
 #include "port_host.h"
+#include "port_mods.h"
 #include "port_movie.h"
 #include "port_spu.h"
 #include "bb2.h"
@@ -52,6 +53,7 @@ static const char g_port_usage[] =
     "            [--wav FILE] [--spu FILE]\n"
     "            [--card1 FILE] [--card2 FILE] [--no-cards]\n"
     "            [--rollback-test N] [--rollback-every M]\n"
+    "            [--mods FOLDER|off] [--dump-textures FOLDER]\n"
     "\n"
     "  --image FILE   your own image of the game's disc: the .cue, or the\n"
     "                 .bin of raw sectors it names\n"
@@ -82,6 +84,11 @@ static const char g_port_usage[] =
     "                 frames, put it back and run them again; stop at the\n"
     "                 first difference, and report (docs/NETPLAY.md)\n"
     "  --rollback-every M  ... M frames from one save to the next (24)\n"
+    "  --mods FOLDER  the mods are in this folder (mods beside the program\n"
+    "                 if this does not say); off for none (docs/MODS.md)\n"
+    "  --dump-textures FOLDER   write each texture the game draws there as\n"
+    "                 a PNG, once, named by its key: what a replacement is\n"
+    "                 made from (the remastered picture only)\n"
     "\n"
     "At the end it prints a line for each thing the game asked for that\n"
     "the port does not do yet, with how often: stub NAME COUNT.\n";
@@ -251,6 +258,10 @@ s32 port_Main(s32 argc, char **argv) {
             port_SetVramPath(argv[++i]);
         } else if (port_TextsEqual(word, "--dump")) {
             port_ParseDump(argv[++i]);
+        } else if (port_TextsEqual(word, "--mods")) {
+            port_ModsSetFolder(argv[++i]);
+        } else if (port_TextsEqual(word, "--dump-textures")) {
+            port_ModsSetDumpFolder(argv[++i]);
         } else if (port_TextsEqual(word, "--rollback-test")) {
             if (!port_ParseNumber(argv[++i], &rollback_frames) ||
                 rollback_frames <= 0) {
@@ -286,6 +297,8 @@ s32 port_Main(s32 argc, char **argv) {
         return PORT_EXIT_FAILED;
     }
     port_InsertDisc(&g_port_disc);
+    /* the mods, before the game reads anything a mod could stand in for */
+    port_ModsStart(argc > 0 ? argv[0] : NULL);
     if (plan != NULL) {
         port_LoadPlan(plan);
     }
