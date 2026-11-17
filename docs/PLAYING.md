@@ -118,6 +118,39 @@ to copy lines from, and says how keys and controller buttons are named.
 A line the program cannot use is named in the console window as it
 starts.
 
+### Remapping the keys and buttons
+
+Each of the PlayStation's buttons of each player is a line `pN.BUTTON
+= ...`: `p1` or `p2`, then `up`, `down`, `left`, `right`, `cross`,
+`circle`, `square`, `triangle`, `l1`, `r1`, `l2`, `r2`, `start` or
+`select`. What follows the `=` is one of:
+
+| | |
+|---|---|
+| `key NAME` | a key of the keyboard, as SDL names it: `Z`, `Space`, `Return`, `Left Shift`, `Keypad 4` |
+| `pad NAME` | a button of that player's controller: `a`, `b`, `x`, `y`, `back`, `start`, `leftshoulder`, `rightshoulder`, `dpup`, `dpdown`, `dpleft`, `dpright` |
+| `pad +AXIS`, `pad -AXIS` | a stick or a trigger of that player's controller pushed one way: `leftx`, `lefty`, `rightx`, `righty`, `lefttrigger`, `righttrigger` (how far is `deadzone`) |
+| `none` | nothing presses it |
+
+A key line takes that button's built-in keys away and a `pad` line its
+built-in controller buttons; either takes its own key or button away from
+whatever that pressed as built in. A second line for the same button adds
+a second key. Several buttons joined by `+` are pressed together by one
+key or button:
+
+```
+p1.cross = key Space         # Space is Cross; Z is nothing now
+p1.cross = key Keypad 0      # ... and so is Keypad 0
+p2.l1+r1 = key Right Ctrl    # one key for L1 and R1 at once
+p1.r2 = pad +righttrigger    # player one's right trigger is R2
+p2.select = none
+```
+
+The file starts from a layout, `controls = original`, which is the one
+in the table above and the only one so far; a `controls` line goes before
+the file's own `pN` lines. Each player's keys are their own, and so is
+each controller: the first plugged in is player one's.
+
 `filter` is about **the console's own picture**, whose pixels are
 blocks. The remastered picture is drawn at as many times the console's
 resolution as the window asks for, rounded up, so it is almost always

@@ -151,13 +151,41 @@ extern void port_WaitOneLine(void);
 
 /* ---- the pads (src/port/pad.c) ---- */
 
-/* A button of pad 0 or 1 goes down or comes up; the game sees it from
- * the next vertical blank. `button` is one of Sony's PAD... masks
- * (libetc.h). */
+#define PORT_PADS 2
+
+/* What the game reads of both pads at one of its reads: the input of a
+ * frame, a value that can be kept, sent and played again (docs/
+ * NETPLAY.md, "Input"). The game reads a digital pad's sixteen buttons
+ * and never a stick, so that is all there is. */
+typedef struct PortInput {
+    u16 buttons[PORT_PADS]; /* Sony's PAD... masks, a bit set for each held */
+    u8 present[PORT_PADS];  /* 0: the pad's packet says that none answered */
+} PortInput;
+
+/* A button of pad 0 or 1 goes down or comes up for a run's script; the
+ * game sees it from the next vertical blank. `button` is one of Sony's
+ * PAD... masks (libetc.h). */
 extern void port_SetPadButton(s32 pad, u32 button, s32 down);
-/* Fills the two buffers the game gave InitPAD, as the console's driver
- * does at each vertical blank. */
+/* The window's keys and controllers (src/port/window/): the buttons
+ * they hold on a pad now. NULL in the build without a window. */
+extern u32 (*g_port_device_hook)(s32 pad);
+/* The pads as they are now: the script's buttons and the window's. */
+extern void port_SampleInput(PortInput *input);
+/* At each vertical blank: the console's driver reads the pads, and what
+ * it read is what the game finds until the next blank. */
 extern void port_FillPads(void);
+/* The one place the game's input comes from: called as the game reads
+ * the pads (pad_Update, and the options page's own read), it takes the
+ * input the driver read at the last blank, lets g_port_take_hook replace
+ * it, keeps it in g_port_input and writes it into the two buffers the
+ * game gave InitPAD, from which the game reads it. */
+extern void port_TakeInput(void);
+/* Given each input before the game reads it, and may change it: a replay
+ * or the other player's, over a network. NULL: the pads' own. */
+extern void (*g_port_take_hook)(PortInput *input);
+/* The input the game read last, and how many it has read. */
+extern PortInput g_port_input;
+extern u32 g_port_input_count;
 
 /* ---- events (src/port/event.c) ---- */
 
@@ -217,8 +245,9 @@ extern void __cyg_profile_func_exit(void *function, void *call_site);
 /* What the build with a window hangs on the port. Each is NULL in the
  * build without one, and then nothing is called: that build does what
  * it did. None of them changes what the game computes. */
-/* At a vertical blank, after the plan's presses and before the pads'
- * packets are filled: the PC's keys and controllers are read. */
+/* At a vertical blank, after the plan's presses and before the driver
+ * reads the pads: the PC's keys and controllers are read, and
+ * g_port_device_hook ("the pads") says what they hold. */
 extern void (*g_port_input_hook)(u32 blank);
 /* At a vertical blank's end, when its sound is made: the picture is
  * shown, and the blank waited for by the PC's clock. */

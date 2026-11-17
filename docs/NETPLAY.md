@@ -213,8 +213,8 @@ the picture keeps.
 
 The pads are read once a frame, in one place: `pad_Update` (`pad.c:66`),
 called at the top of main's loop. It reads the two packets that the port's
-driver fills at every blank (`port_FillPads`, from `port_SetPadButton`) and
-keeps the result in `g_pad_state`. It works out the edges there and only
+driver fills (from the input it read at the last blank: "The one input
+point", below) and keeps the result in `g_pad_state`. It works out the edges there and only
 there: `pressed` is held and not held the frame before, and `released` and
 `unheld` likewise (`pad.c:142`). Each fighter then takes its half of those
 words once a frame (`fighter_ReadPad`, `fight.c:1095`), mapped through the
@@ -229,6 +229,27 @@ with its own `pad_Update` (`main.c:494`), and `link_Connect` does as well
 (`link.c:522`). A pad that is not plugged in counts as Start in a fight
 (`pad.c:116`). Netplay must always report both pads present, and turn off
 the pause menu, as online fighting games do.
+
+**The one input point (done).** Everything the game reads of the pads
+now comes from one value, a `PortInput` (`include/port_platform.h`): the
+sixteen buttons of each pad and whether it answered, six bytes. The
+console's driver reads the pads at a blank, and so does the port's
+(`port_FillPads`, `src/port/pad.c`): the run's script
+(`port_SetPadButton`) and the window's keys and controllers, through the
+layout (`g_port_device_hook`, `src/port/window/`), are read there into
+the driver's input. When the game reads the pads, `pad_Update` and the
+options page's own read call `port_TakeInput`, which takes that input,
+gives it to `g_port_take_hook` (a replay, or the network, puts its own
+there), keeps it in `g_port_input` and only then writes the two packets
+the game reads. The packets are no longer written at a blank. Reading
+the devices at the blank and not at the read keeps the timing exact: a
+plan's press made as a frame begins (at `ResetRCnt`) reaches the game a
+frame later, as on the console and in the emulator. The three plans of
+`port_game`, `port_other_fight` and `port_bugfixes`, measured: the game
+read the pads 2,325, 2,445 and 2,355 times, never twice at one blank; the
+pause menu's loop and `link_Connect` take an input for each of their own
+frames. The movie player alone reads the pads its own way (`PAD_dr`), and
+is given them as they are at that moment (`port_SampleInput`).
 
 ## 5. Scope and setting up a match
 
@@ -319,11 +340,13 @@ little delay is needed). Up to 7 or 8 frames can be rolled back.
    main's loop), about a week. It also gives the window, the frame rate
    and optimisation one place where a frame begins and ends, and it is
    where remapping reads its input.
-2. **One input point.** The window's keys and controllers become a
-   16-bit word a pad a game frame, given to the step, not
-   `port_SetPadButton` at every blank. Remapping (item 9) is that
-   function. A recorded run of such words is a replay and a test. A few
-   days.
+2. **One input point** (done: section 4, "The one input point"). The
+   window's keys and controllers become a 16-bit word a pad, read into
+   one `PortInput` that the game reads from (`port_TakeInput`), with a
+   hook where a replay or the other peer's input goes in. Remapping
+   (item 9) is the layout the window reads the PC's devices through
+   (`rebushido.cfg`, `docs/PLAYING.md`). A recorded run of such words
+   is a replay and a test; the recording itself is not written yet.
 3. **State apart from presentation.** The program's variables go in two
    groups at the link (`tools/port_build.py`, `tools/port_sdl_build.py`):
    the game's, Sony's and the emulation's (clock, drive, XA, chip, pads,

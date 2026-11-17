@@ -37,10 +37,7 @@ static const PortButtonName g_port_pad_buttons[] = {
 #define PERCENT 100
 #define LINE_BYTES_MAX 128
 
-/* The layout built in. The keys of the two pads are apart on one
- * keyboard; a controller's buttons are the PlayStation's by where they
- * are (the lowest of the four is Cross), and its left stick is the
- * direction buttons too. */
+/* The settings built in, the layout of the keys and buttons apart. */
 const char g_port_default_settings[] =
     "# ReBushido's window: the settings built in. Copy what you want to\n"
     "# change into rebushido.cfg, beside the program.\n"
@@ -75,6 +72,18 @@ const char g_port_default_settings[] =
     "                       # shows; or a number a second. The game\n"
     "                       # steps at the console's rate either way\n"
     "\n"
+    "# The keys and the controllers' buttons: a layout to start from, and\n"
+    "# lines of pN.BUTTON for what to change in it (below)\n"
+    "controls = original    # original is the only one so far\n";
+
+/* The layouts a settings file can start from (`controls = NAME`): each
+ * the text of a settings file with nothing but pN.BUTTON lines in it.
+ * Another layout is another text and a line of g_port_layouts.
+ *
+ * original: the keys of the two pads apart on one keyboard; a
+ * controller's buttons the PlayStation's by where they are (the lowest
+ * of the four is Cross), and its left stick the direction buttons too. */
+static const char g_port_layout_original[] =
     "# Player one, on the keyboard\n"
     "p1.up = key Up\n"
     "p1.down = key Down\n"
@@ -146,6 +155,13 @@ const char g_port_default_settings[] =
     "p2.r2 = pad +righttrigger\n"
     "p2.start = pad start\n"
     "p2.select = pad back\n";
+
+const PortLayout g_port_layouts[PORT_LAYOUTS] = {
+    {"original", g_port_layout_original},
+};
+
+/* The most a layout's text may be: it is read from a copy. */
+#define LAYOUT_BYTES_MAX 4096
 
 /* ---- text ---- */
 
@@ -245,6 +261,36 @@ u32 port_FindPadButton(const char *name) {
     return 0;
 }
 
+u32 port_FindPadButtons(const char *names) {
+    char name[LINE_BYTES_MAX];
+    u32 buttons = 0;
+
+    while (*names != 0) {
+        u32 length = 0;
+        u32 button;
+
+        while (*names != 0 && *names != '+') {
+            if (length == sizeof(name) - 1) {
+                return 0;
+            }
+            name[length++] = *names++;
+        }
+        name[length] = 0;
+        button = port_FindPadButton(name);
+        if (button == 0) {
+            return 0;
+        }
+        buttons |= button;
+        if (*names == '+') {
+            names++;
+            if (*names == 0) {
+                return 0;
+            }
+        }
+    }
+    return buttons;
+}
+
 const char *port_NamePadButton(u32 button) {
     u32 i;
 
@@ -332,9 +378,12 @@ static const char *port_ReadBinding(
         return "a pad is p1 or p2, then a dot and its button";
     }
     binding.pad = (u8)(name[1] - '1');
-    binding.button = port_FindPadButton(name + 3);
+    binding.button = port_FindPadButtons(name + 3);
     if (binding.button == 0) {
-        return "no such button of a pad";
+        return "no such button of a pad (several are joined by +)";
+    }
+    if (!is_default) {
+        settings->own_controls++;
     }
     binding.is_default = (u8)is_default;
     binding.is_down = 0;
@@ -381,6 +430,51 @@ static const char *port_ReadBinding(
         return "too many keys and buttons";
     }
     settings->bindings[settings->count++] = binding;
+    return NULL;
+}
+
+static s32 port_ReadLines(
+    PortSettings *settings, char *text, PortNameLookup lookup,
+    PortComplaint complain, s32 is_default);
+
+/* `controls = NAME`: the built-in bindings are those of that layout. A
+ * file's own pN lines are read over it, so they come after it. NULL, or
+ * why not. */
+static const char *port_ReadLayout(
+    PortSettings *settings, const char *value, PortNameLookup lookup) {
+    static char text[LAYOUT_BYTES_MAX];
+    const char *from;
+    s32 kept = 0;
+    s32 which;
+    u32 i;
+
+    for (which = 0; which < PORT_LAYOUTS; which++) {
+        if (port_WordsMatch(value, g_port_layouts[which].name)) {
+            break;
+        }
+    }
+    if (which == PORT_LAYOUTS) {
+        return "no layout of that name (original)";
+    }
+    if (settings->own_controls != 0) {
+        return "controls comes before the file's own pN lines";
+    }
+    from = g_port_layouts[which].text;
+    for (i = 0; from[i] != 0; i++) {
+        if (i == sizeof(text) - 1) {
+            return "the layout is too long to read";
+        }
+        text[i] = from[i];
+    }
+    text[i] = 0;
+    for (i = 0; i < (u32)settings->count; i++) {
+        if (!settings->bindings[i].is_default) {
+            settings->bindings[kept++] = settings->bindings[i];
+        }
+    }
+    settings->count = kept;
+    settings->layout = which;
+    port_ReadLines(settings, text, lookup, NULL, 1);
     return NULL;
 }
 
@@ -524,6 +618,9 @@ static const char *port_ReadSetting(
         settings->shadows = number;
         return NULL;
     }
+    if (port_WordsMatch(name, "controls")) {
+        return port_ReadLayout(settings, value, lookup);
+    }
     if (port_WordsMatch(name, "frame_rate")) {
         if (port_WordsMatch(value, "original")) {
             settings->frame_rate = PORT_FRAME_RATE_ORIGINAL;
@@ -599,6 +696,8 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
         text[i] = g_port_default_settings[i];
     }
     settings->count = 0;
+    settings->own_controls = 0;
+    settings->layout = 0;
     settings->scale = PORT_SCALE_FIT;
     settings->is_fullscreen = 1;
     settings->is_linear = 0;

@@ -451,6 +451,9 @@ int main(int argc, char **argv) {
         if (strcmp(word, "--help") == 0 || strcmp(word, "-h") == 0) {
             fputs(g_port_window_usage, stdout);
             fputs(g_port_default_settings, stdout);
+            /* the lines the layout built in brings */
+            fputs("\n", stdout);
+            fputs(g_port_layouts[0].text, stdout);
             fputs(g_port_window_usage_end, stdout);
             return PORT_EXIT_OK;
         } else if (strcmp(word, "--fullscreen") == 0) {
