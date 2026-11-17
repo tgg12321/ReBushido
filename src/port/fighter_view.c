@@ -91,6 +91,20 @@ static void port_FighterNoteBody(s32 slot, Model *model) {
     view->scale_shift = port_FighterScaleShift(&model->bones[1].node);
 }
 
+/* The weapon model (enum WeaponModel) at a place of the weapons' block:
+ * the loaded models are numbered in order (resource_LoadWeapons), so it
+ * is the place-th of them. -1 if there is none. */
+static s32 port_FighterWeaponModel(s32 place) {
+    s32 i;
+
+    for (i = 0; i < WEAPON_MODEL_COUNT; i++) {
+        if (g_resource_loaded_weapons[i] >= 0 && place-- == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 /* A fighter's own node (port_fighter.h): his body's root, which draws the
  * whole body, or a weapon. */
 void port_FighterNoteNode(PortAddress at) {
@@ -116,7 +130,7 @@ void port_FighterNoteNode(PortAddress at) {
         PortFighterWeapon *weapon = &g_weapons[g_weapon_count++];
 
         weapon->node = at;
-        weapon->weapon = node->mesh;
+        weapon->weapon = port_FighterWeaponModel(node->mesh / 2);
         weapon->serial = g_serial;
         port_FighterCopyMatrix(&weapon->world, &node->world);
         port_FighterCopyLights(weapon->light, weapon->color, weapon->back,

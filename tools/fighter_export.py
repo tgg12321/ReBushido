@@ -548,6 +548,22 @@ def texel(vram, tpage, clut, u, v):
     return vram[y * VRAM_W + (page_x + u) % VRAM_W]
 
 
+def texel_index(vram, tpage, clut, u, v):
+    """The colour table's entry a texture point reads, or -1 where the
+    page is of colours, not of entries."""
+    page_x = (tpage & 0xF) * 64
+    page_y = ((tpage >> 4) & 1) * 256
+    depth = (tpage >> 7) & 3
+    y = (page_y + v) % VRAM_H
+    if depth == 0:
+        word = vram[y * VRAM_W + (page_x + (u >> 2)) % VRAM_W]
+        return (word >> ((u & 3) * 4)) & 15
+    if depth == 1:
+        word = vram[y * VRAM_W + (page_x + (u >> 1)) % VRAM_W]
+        return (word >> ((u & 1) * 8)) & 255
+    return -1
+
+
 def rgba_of(word):
     """A 15-bit colour as the GPU shows it; 0 is a texel of nothing."""
     if word == 0:
@@ -597,9 +613,18 @@ class Atlas:
         while self.h < y + row_h:
             self.h *= 2
         pixels = bytearray(self.w * self.h * 4)
+        # which entry of which colour table each texel is (rb_palette): red
+        # the entry, green the table's number in self.cluts, alpha 255
+        # where the texel is of a table at all
+        index = bytearray(self.w * self.h * 4)
+        tables = sorted({(key[1], (key[0] >> 7) & 3) for key in self.place if (key[0] >> 7) & 3 < 2})
+        self.cluts = [((clut & 0x3F) * 16, (clut >> 6) & 0x1FF, 16 if depth == 0 else 256)
+                      for clut, depth in tables]
+        row_of = {t: k for k, t in enumerate(tables)}
         for key, (dx, dy) in self.place.items():
             u0, v0, u1, v1 = self.areas[key]
             tpage, clut = key
+            row = row_of.get((clut, (tpage >> 7) & 3))
             # the area and a border of its own edge texels, so that a
             # filter that reads past an edge reads the edge
             for v in range(v0 - self.PAD, v1 + self.PAD + 1):
@@ -609,8 +634,19 @@ class Atlas:
                     c = rgba_of(texel(self.vram, tpage, clut, su & 255, sv & 255))
                     at = ((dy + v) * self.w + dx + u) * 4
                     pixels[at:at + 4] = bytes(c)
+                    if row is not None:
+                        entry = texel_index(self.vram, tpage, clut, su & 255, sv & 255)
+                        index[at:at + 4] = bytes((entry, row, 0, 255))
         self.pixels = pixels
+        self.index = index
         return self
+
+    def palette(self):
+        """The colour tables the texels are entries of, as the file has
+        them: rb_palette's tables and colours."""
+        return {'cluts': [list(c) for c in self.cluts],
+                'colors': [[self.vram[y * VRAM_W + (x + k) % VRAM_W] for k in range(n)]
+                           for x, y, n in self.cluts]}
 
     def uv(self, face, k):
         """The atlas point for corner `k`: the middle of the texel, as the
@@ -764,8 +800,19 @@ def inverse_of(rot, pos):
     return rt, [-p[0], -p[1], -p[2]]
 
 
-def write_glb(path, name, bones, bind_rot, bind_pos, vertices, triangles, image_png, extras):
-    """vertices: (position, normal, uv, [(bone, weight)]) in game units."""
+def write_glb(path, name, bones, bind_rot, bind_pos, vertices, triangles, image_png, extras,
+              index_png=None, terms=None):
+    """vertices: (position, normal, uv, [(bone, weight)]) in game units.
+
+    `index_png` is the picture of which colour table's entry each texel
+    is (Atlas.index), written as the second image and named by
+    extras.rb_palette. `terms` is, for each vertex, up to eight (bone,
+    (x, y, z, h)): the vertex exactly as the game builds it, the sum of
+    each bone's world matrix times its vector, h being how much of the
+    bone's place is in it (the attributes _RB_TERM0 to _RB_TERM3, and
+    _RB_TJOINTS the bones, which are the skin's joints' own numbers; up to
+    eight, _RB_TERM4 to _RB_TERM7 and _RB_TJOINTS1, where a vertex has
+    more than four)."""
     g = Glb()
     positions = [v[0] for v in vertices]
     normals = []
@@ -790,12 +837,29 @@ def write_glb(path, name, bones, bind_rot, bind_pos, vertices, triangles, image_
     a_jnt = g.accessor('B', joints, 5121, 'VEC4', 34962)
     a_wgt = g.accessor('f', weights, 5126, 'VEC4', 34962)
     a_idx = g.accessor('I', flat_idx, 5125, 'SCALAR', 34963)
+    attributes = {'POSITION': a_pos, 'NORMAL': a_nrm, 'TEXCOORD_0': a_uv,
+                  'JOINTS_0': a_jnt, 'WEIGHTS_0': a_wgt}
+    if terms is not None:
+        # four bones a vertex, or eight where one needs more
+        width = 8 if any(len(t) > 4 for t in terms) else 4
+        padded = [(list(t) + [(0, (0.0, 0.0, 0.0, 0.0))] * width)[:width] for t in terms]
+        for half in range(width // 4):
+            name = '_RB_TJOINTS' if half == 0 else '_RB_TJOINTS%d' % half
+            attributes[name] = g.accessor('B', [[b for b, _ in t[4 * half:4 * half + 4]] for t in padded],
+                                          5121, 'VEC4', 34962)
+        for k in range(width):
+            attributes['_RB_TERM%d' % k] = g.accessor('f', [list(t[k][1]) for t in padded], 5126, 'VEC4', 34962)
     ibm = []
     for i in range(BONES):
         r, p = inverse_of(bind_rot[i], bind_pos[i])
         ibm.append(mat4_cols(r, p))
     a_ibm = g.accessor('f', ibm, 5126, 'MAT4')
     image_view = g.view(image_png)
+    images = [{'bufferView': image_view, 'mimeType': 'image/png'}]
+    if index_png is not None:
+        images.append({'bufferView': g.view(index_png), 'mimeType': 'image/png', 'name': 'rb_palette_index'})
+        extras = dict(extras)
+        extras['rb_palette'] = dict(extras.get('rb_palette', {}), image=1)
     nodes = []
     # node 0: glTF's y up and metres, the game's y down and its units
     nodes.append({'name': 'rb_game_space', 'children': [1, 1 + BONES],
@@ -822,15 +886,14 @@ def write_glb(path, name, bones, bind_rot, bind_pos, vertices, triangles, image_
         'nodes': nodes,
         'skins': [{'joints': [1 + i for i in range(BONES)], 'skeleton': 1, 'inverseBindMatrices': a_ibm}],
         'meshes': [{'name': name, 'primitives': [{
-            'attributes': {'POSITION': a_pos, 'NORMAL': a_nrm, 'TEXCOORD_0': a_uv,
-                           'JOINTS_0': a_jnt, 'WEIGHTS_0': a_wgt},
+            'attributes': attributes,
             'indices': a_idx, 'material': 0}]}],
         'materials': [{'name': name, 'pbrMetallicRoughness': {
             'baseColorTexture': {'index': 0}, 'metallicFactor': 0.0, 'roughnessFactor': 1.0},
             'alphaMode': 'MASK', 'alphaCutoff': 0.5}],
         'textures': [{'source': 0, 'sampler': 0}],
         'samplers': [{'magFilter': 9728, 'minFilter': 9728, 'wrapS': 33071, 'wrapT': 33071}],
-        'images': [{'bufferView': image_view, 'mimeType': 'image/png'}],
+        'images': images,
         'extras': extras,
     }
     g.write(path, gltf)
@@ -838,12 +901,60 @@ def write_glb(path, name, bones, bind_rot, bind_pos, vertices, triangles, image_
 
 # ---- a model ----
 
-def export_model(nd, model_id, out, bones, scales, pose_path, samples_count, quiet=False):
+class ModelData:
+    """A model as the game builds it, before it is written as a file:
+
+    - points: each a place at the bind pose, `terms` (bone -> [x, y, z, h],
+      the vertex at any pose being the sum over them of the bone's world
+      rotation times (x, y, z) plus h times its place) and `weights` (the
+      linear blend nearest to that, [(bone, weight)]);
+    - faces: each the points of its corners in order round the face, and
+      for each corner its point in the atlas and its normal at the bind
+      pose ((0, 0, 0) where the face is not lit);
+    - the atlas and its colour tables, and what the file's extras say."""
+
+    def __init__(self, name):
+        self.name = name
+        self.points = []
+        self.faces = []
+        self.problems = []
+        self.worst_fit = 0.0
+        self.constants = 0
+
+    def point(self, place, terms, weights):
+        self.points.append((tuple(place), terms, weights))
+        return len(self.points) - 1
+
+
+def add_term(terms, bone, vector, h):
+    t = terms.setdefault(bone, [0.0, 0.0, 0.0, 0.0])
+    for k in range(3):
+        t[k] += vector[k]
+    t[3] += h
+
+
+def place_of_terms(terms, rot, pos):
+    p = [0.0, 0.0, 0.0]
+    for bone, t in terms.items():
+        r = mat_vec(rot[bone], t[:3])
+        for k in range(3):
+            p[k] += r[k] + t[3] * pos[bone][k]
+    return p
+
+
+def corner_order(n):
+    """The corners of a face in order round it: the chip draws a quad's
+    corners as two triangles, 0 1 2 and 1 3 2."""
+    return [0, 1, 3, 2] if n == 4 else [0, 1, 2]
+
+
+def read_model(nd, model_id, bones, scales, pose_path, samples_count):
     name = MODEL_NAMES[model_id]
     b = nd.read(model_id)
     n = u32(b, 0)
     offs = struct.unpack_from('<%dI' % (n + 1), b, 4)
-    problems = []
+    md = ModelData(name)
+    problems = md.problems
     # the model's id in the game: the third set's files are read from 27
     # NDATA ids below their own (ndata_ReadModel)
     asset = model_id if model_id < 31 else model_id + 27
@@ -868,56 +979,32 @@ def export_model(nd, model_id, out, bones, scales, pose_path, samples_count, qui
     else:
         bind_rot, bind_pos = stand_pose(bones, scale)
         bind_turns = {i: rot_zyx(*a) for i, a in STAND.items()}
+    md.bind_rot, md.bind_pos, md.asset, md.scale = bind_rot, bind_pos, asset, scale
 
     vram = load_vram(b, offs[n - 1])
     atlas = Atlas(vram)
-
     skin_rot = [bind_rot[SKIN_BONES[i]] for i in range(len(SKIN_BONES))]
-    skin_pos = [bind_pos[SKIN_BONES[i]] for i in range(len(SKIN_BONES))]
 
     if u16(b, mesh_at[0]) & 0x8000 == 0:
         raise SystemExit('fighter_export: %s: mesh 0 is not a skinned body' % name)
     normals, skin_verts, skin_faces = read_skinned(b, mesh_at[0], problems)
     rng = random.Random(model_id)
     samples = sample_poses(bones, scale, bind_turns, samples_count, rng)
-    # the samples are about the bind pose by construction only where the
-    # pose is ours; a pose from a file is the base the samples turn from
-    if pose_path:
-        samples = [(s_rot, s_pos) for s_rot, s_pos in samples]
-    worst_fit = 0.0
-    weights = []
-    consts = 0
     for sv in skin_verts:
+        terms = {}
+        for bone, v in sv.terms:
+            add_term(terms, SKIN_BONES[bone], v, 0.0)
+        if sv.place is not None:
+            add_term(terms, SKIN_BONES[sv.place], (0.0, 0.0, 0.0), 1.0)
         if any(sv.const):
-            consts += 1
-        w, miss = fit_weights(sv, bones, scale,
-                              [bind_rot[i] for i in range(BONES)],
-                              [bind_pos[i] for i in range(BONES)],
-                              [(s[0], s[1]) for s in samples], rng)
-        weights.append(w)
-        worst_fit = max(worst_fit, miss)
-
-    vertices = []
-    triangles = []
-    lookup = {}
-
-    def vertex(key, position, normal, uv, joint_weights):
-        k = (key, uv, normal)
-        if k not in lookup:
-            lookup[k] = len(vertices)
-            vertices.append((position, normal, uv, joint_weights))
-        return lookup[k]
-
-    def add_face(f, positions_of, weights_of, normal_of, part):
-        atlas_uv = [atlas.uv(f, c) for c in range(len(f.verts))]
-        idx = [vertex((part, f.verts[c]), positions_of(f.verts[c]), normal_of(f, c), atlas_uv[c],
-                      weights_of(f.verts[c])) for c in range(len(f.verts))]
-        # as the chip: the first three corners, and the last three
-        triangles.append((idx[0], idx[1], idx[2]))
-        if len(idx) == 4:
-            triangles.append((idx[1], idx[3], idx[2]))
-
-    body_pos = [skin_position(sv, bind_rot, bind_pos) for sv in skin_verts]
+            # a number added as it is, the same at every pose: kept on the
+            # bone the vertex is placed by, which is exact at the bind pose
+            md.constants += 1
+            bone = SKIN_BONES[sv.place] if sv.place is not None else 0
+            add_term(terms, bone, mat_vec(transpose(bind_rot[bone]), sv.const), 0.0)
+        w, miss = fit_weights(sv, bones, scale, bind_rot, bind_pos, samples, rng)
+        md.worst_fit = max(md.worst_fit, miss)
+        md.point(skin_position(sv, bind_rot, bind_pos), terms, w)
     for f in skin_faces:
         atlas.note(f)
     part_meshes = []
@@ -931,28 +1018,23 @@ def export_model(nd, model_id, out, bones, scales, pose_path, samples_count, qui
     atlas.pack()
 
     def skin_normal(f, c):
-        bone, n = normals[f.normals[c]]
-        return tuple(round(x, 5) for x in mat_vec(skin_rot[bone], n))
+        bone, nv = normals[f.normals[c]]
+        return mat_vec(skin_rot[bone], nv)
 
     for f in skin_faces:
-        add_face(f, lambda i: tuple(body_pos[i]), lambda i: weights[i], skin_normal, 'body')
-    faces_out = len(skin_faces)
+        md.faces.append(face_of(atlas, f, f.verts, skin_normal))
     for mesh, bone, verts, faces in part_meshes:
         r, t = bind_rot[bone], bind_pos[bone]
-
-        def place(i, r=r, t=t, verts=verts):
-            q = mat_vec(r, verts[i])
-            return tuple(q[k] + t[k] for k in range(3))
-
-        def normal(f, c, r=r):
-            return tuple(round(x, 5) for x in mat_vec(r, f.normals[c]))
-
+        first = len(md.points)
+        for v in verts:
+            q = mat_vec(r, v)
+            md.point([q[k] + t[k] for k in range(3)], {bone: [float(c) for c in v] + [1.0]},
+                     [(bone, 1.0)])
         for f in faces:
-            add_face(f, place, lambda i, bone=bone: [(bone, 1.0)], normal, 'mesh%d' % mesh)
-        faces_out += len(faces)
-
-    clut_rows = sorted({(f.clut & 0x3F) * 16 + 1024 * ((f.clut >> 6) & 0x1FF) for f in skin_faces})
-    extras = {
+            md.faces.append(face_of(atlas, f, [first + i for i in f.verts],
+                                    lambda f, c, r=r: mat_vec(r, f.normals[c])))
+    md.atlas = atlas
+    md.extras = {
         'rb_fighter': 1,
         'model_id': asset,
         'model_file': name,
@@ -961,22 +1043,163 @@ def export_model(nd, model_id, out, bones, scales, pose_path, samples_count, qui
         'joints': ['bone%02d' % i for i in range(BONES)],
         'bind_rotation': [[round(x, 7) for row in bind_rot[i] for x in row] for i in range(BONES)],
         'bind_translation': [[round(x, 4) for x in bind_pos[i]] for i in range(BONES)],
-        'cluts': [[(c % 1024), (c // 1024)] for c in clut_rows],
-        'clut_colors': [[vram[(c // 1024) * VRAM_W + (c % 1024) + k] for k in range(16)] for c in clut_rows],
+        'rb_palette': atlas.palette(),
         'parts': [[m, bone] for m, bone, _, _ in part_meshes],
     }
-    path = os.path.join(out, name + '.glb')
-    write_glb(path, name, bones, bind_rot, bind_pos, vertices, triangles,
-              png(atlas.w, atlas.h, atlas.pixels), extras)
-    with open(os.path.join(out, name + '.png'), 'wb') as f:
-        f.write(png(atlas.w, atlas.h, atlas.pixels))
+    # the terms are the game's own sum: held to it at the samples
+    worst = 0.0
+    for rot, pos in samples[:4]:
+        for sv, (_, terms, _) in zip(skin_verts, md.points):
+            if any(sv.const):
+                continue
+            a = skin_position(sv, rot, pos)
+            q = place_of_terms(terms, rot, pos)
+            worst = max(worst, max(abs(a[k] - q[k]) for k in range(3)))
+    if worst > 0.01:
+        problems.append('the terms miss the game\'s sum by %.3f' % worst)
+    md.summary = ('body %d vertices %d faces; %d parts; atlas %dx%d, %d colour tables; '
+                  'linear blend within %.2f units; %d with a constant'
+                  % (len(skin_verts), len(skin_faces), len(part_meshes), atlas.w, atlas.h,
+                     len(atlas.cluts), md.worst_fit, md.constants))
+    return md
+
+
+def face_of(atlas, f, points, normal_of):
+    """A face of the game as ModelData keeps it: corners round the face."""
+    order = corner_order(len(f.verts))
+    lit = f.lit
+    return {'points': [points[c] for c in order],
+            'uvs': [atlas.uv(f, c) for c in order],
+            'normals': [tuple(normal_of(f, c)) if lit else (0.0, 0.0, 0.0) for c in order]}
+
+
+# The weapons: the files of each set hold every model of it, two meshes a
+# model (the thing and its shadow), and the textures in groups
+# (resource_LoadWeaponFile). The file read is the set's last, which has no
+# sounds.
+WEAPON_FILES = {0: 0x83 + 136, 1: 0x10C + 36}
+WEAPON_SET_1_FIRST = 51
+WEAPON_MODELS = 58
+
+
+def weapon_tex_groups():
+    """g_resource_weapon_tex_groups, from src/main/resource.c."""
+    with open(os.path.join(ROOT, 'src', 'main', 'resource.c'), encoding='utf-8') as f:
+        text = f.read()
+    m = re.search(r'g_resource_weapon_tex_groups\[[^\]]*\] = \{(.*?)\};', text, re.S)
+    body = re.sub(r'/\*.*?\*/', '', m.group(1), flags=re.S)
+    return [int(v) for v in re.findall(r'-?\d+', body)]
+
+
+def load_group(b, tex_section, group):
+    """Video memory with one texture group of a file loaded where the file
+    says (tex_LoadGroup)."""
+    vram = [0] * (VRAM_W * VRAM_H)
+    at = tex_section + (u32(b, tex_section + 4 * group) & ~3)
+    count = u32(b, at)
+    for k in range(count):
+        tim_off, ix, iy, cx, cy = struct.unpack_from('<I4h', b, at + 4 + 12 * k)
+        tim = tex_section + (tim_off & ~3)
+        if b[tim] != 0x10:
+            continue
+        flags = u32(b, tim + 4)
+        p = tim + 8
+        if flags & 8:
+            size = u32(b, p)
+            w, h = u16(b, p + 8), u16(b, p + 10)
+            put(vram, cx, cy, w, h, b, p + 12)
+            p += size & ~3
+        w, h = u16(b, p + 8), u16(b, p + 10)
+        put(vram, ix, iy, w, h, b, p + 12)
+    return vram
+
+
+def read_weapon(nd, weapon):
+    """A weapon model (enum WeaponModel) as ModelData: its mesh is drawn on
+    the weapon's own world matrix (weapon_Queue), which the port gives as
+    bone 0's; every other bone is left at the bind pose."""
+    weapon_set = 1 if weapon >= WEAPON_SET_1_FIRST else 0
+    k = weapon - (WEAPON_SET_1_FIRST if weapon_set else 0)
+    b = nd.read(WEAPON_FILES[weapon_set])
+    n = u32(b, 0)
+    offs = struct.unpack_from('<%dI' % (n + 1), b, 4)
+    md = ModelData('W%02d' % weapon)
+    mesh_table = offs[0]
+    at = mesh_table + u32(b, mesh_table + 4 + 4 * (2 * k))
+    # the group is looked up by the model's place in its set, as the game
+    # does (resource_LoadWeaponFile)
+    vram = load_group(b, offs[n - 1], weapon_tex_groups()[k])
+    atlas = Atlas(vram)
+    verts, faces, _ = read_compact(b, at, md.problems)
+    for f in faces:
+        atlas.note(f)
+    atlas.pack(width=256)
+    for v in verts:
+        md.point([float(c) for c in v], {0: [float(c) for c in v] + [1.0]}, [(0, 1.0)])
+    for f in faces:
+        md.faces.append(face_of(atlas, f, f.verts, lambda f, c: f.normals[c]))
+    md.bind_rot = [IDENTITY] * BONES
+    md.bind_pos = [[0.0, 0.0, 0.0]] * BONES
+    md.atlas = atlas
+    md.asset = weapon
+    md.extras = {
+        'rb_fighter': 1,
+        'rb_weapon': weapon,
+        'model_file': md.name,
+        'units': 'game',
+        'joints': ['bone%02d' % i for i in range(BONES)],
+        'bind_rotation': [[round(x, 7) for row in md.bind_rot[i] for x in row] for i in range(BONES)],
+        'bind_translation': [[0.0, 0.0, 0.0] for _ in range(BONES)],
+        'rb_palette': atlas.palette(),
+    }
+    md.summary = '%d vertices %d faces; atlas %dx%d, %d colour tables' % (
+        len(verts), len(faces), atlas.w, atlas.h, len(atlas.cluts))
+    return md
+
+
+def triangles_of(md):
+    """The model's faces as the file's vertices and triangles: a vertex
+    for each point, texture point and normal; a face of n corners as
+    n - 2 triangles."""
+    vertices, triangles, terms, lookup = [], [], [], {}
+    for face in md.faces:
+        idx = []
+        for p, uv, nrm in zip(face['points'], face['uvs'], face['normals']):
+            key = (p, tuple(round(c, 7) for c in uv), tuple(round(c, 5) for c in nrm))
+            if key not in lookup:
+                lookup[key] = len(vertices)
+                place, t, w = md.points[p]
+                vertices.append((place, nrm, uv, w))
+                terms.append(sorted(((bone, tuple(v)) for bone, v in t.items()),
+                                    key=lambda bv: -(abs(bv[1][3]) * 1e6 + sum(abs(c) for c in bv[1][:3]))))
+            idx.append(lookup[key])
+        for c in range(1, len(idx) - 1):
+            triangles.append((idx[0], idx[c], idx[c + 1]))
+    return vertices, triangles, terms
+
+
+def write_model(md, path, bones, image_png=None):
+    vertices, triangles, terms = triangles_of(md)
+    write_glb(path, md.name, bones, md.bind_rot, md.bind_pos, vertices, triangles,
+              image_png or png(md.atlas.w, md.atlas.h, md.atlas.pixels), md.extras,
+              index_png=png(md.atlas.w, md.atlas.h, md.atlas.index), terms=terms)
+    return len(vertices), len(triangles)
+
+
+def export_model(nd, model_id, out, bones, scales, pose_path, samples_count, quiet=False):
+    md = read_model(nd, model_id, bones, scales, pose_path, samples_count)
+    return export_data(md, out, bones, quiet)
+
+
+def export_data(md, out, bones, quiet=False):
+    nv, nt = write_model(md, os.path.join(out, md.name + '.glb'), bones)
+    with open(os.path.join(out, md.name + '.png'), 'wb') as f:
+        f.write(png(md.atlas.w, md.atlas.h, md.atlas.pixels))
     if not quiet:
-        print('%s (model %d): body %d vertices %d faces %d normals; %d parts; %d faces, %d vertices '
-              'written; atlas %dx%d; joints fitted to within %.2f units; %d with a constant; %s'
-              % (name, model_id, len(skin_verts), len(skin_faces), len(normals), len(part_meshes),
-                 faces_out, len(vertices), atlas.w, atlas.h, worst_fit, consts,
-                 'ok' if not problems else '%d problems: %s' % (len(problems), '; '.join(problems[:5]))))
-    return not problems
+        print('%s: %s; %d vertices, %d triangles written; %s'
+              % (md.name, md.summary, nv, nt,
+                 'ok' if not md.problems else '%d problems: %s' % (len(md.problems), '; '.join(md.problems[:5]))))
+    return not md.problems
 
 
 def cloth_meshes(b, at):
@@ -1004,16 +1227,22 @@ def cloth_meshes(b, at):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--image', default=os.path.join(ROOT, 'Bushido Blade 2 (USA).cue'))
-    ap.add_argument('--models', default='3', help='model ids (0..36), or "all"')
+    ap.add_argument('--models', help='model ids (0..36), or "all"; 3 if neither this nor --weapons')
     ap.add_argument('--out', default=os.path.join(ROOT, 'tmp', 'fighter_models'))
     ap.add_argument('--pose', help='a bind pose the port wrote (--fighter-pose)')
     ap.add_argument('--samples', type=int, default=24)
+    ap.add_argument('--weapons', help='weapon models (0..57), or "all"')
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     nd = Ndata(args.image)
     bones, scales = source_tables()
-    ids = range(len(MODEL_NAMES)) if args.models == 'all' else [int(x) for x in args.models.split(',')]
+    models = args.models or ('' if args.weapons else '3')
+    ids = range(len(MODEL_NAMES)) if models == 'all' else [int(x) for x in models.split(',') if x]
     good = True
+    if args.weapons:
+        weapons = range(WEAPON_MODELS) if args.weapons == 'all' else [int(x) for x in args.weapons.split(',')]
+        for weapon in weapons:
+            good &= export_data(read_weapon(nd, weapon), args.out, bones)
     for model_id in ids:
         good &= export_model(nd, model_id, args.out, bones, scales, args.pose, args.samples)
     return 0 if good else 1

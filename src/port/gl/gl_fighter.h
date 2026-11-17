@@ -53,6 +53,21 @@ extern s32 port_GlFighterTakes(const PortRemasterPrim *prim);
  * the frame after it; -1 when the picture is done. */
 extern void port_GlFighterTween(s32 phase);
 
+/* The shadows cast from the models (gl_shadow.c, `shadows cast`): which
+ * drawn thing of the frame on show the caster node `object` is, if it is
+ * drawn from a model of its own (its cloth is not), or -1; and each
+ * triangle of that thing's model as the frame posed it, in the world's
+ * own units, given to `emit` with its number. */
+extern s32 port_GlFighterCaster(PortAddress object);
+/* The fighters' layer of the picture into the alpha of `framebuffer`, the
+ * shadows' mask: what a model covers is not the ground, as the game's own
+ * faces of a fighter are not (gl_shadow.c). */
+extern void port_GlFighterDrawOccluders(u32 framebuffer);
+typedef void (*PortGlFighterEmit)(
+    void *context, const float p[3][3], s32 index);
+extern s32 port_GlFighterCastTriangles(
+    s32 caster, PortGlFighterEmit emit, void *context);
+
 /* What a run did, for the prover's log: models loaded, frames the
  * fighters were drawn in, primitives left out, and why the last file
  * could not be read, or NULL. */
@@ -62,6 +77,7 @@ typedef struct {
     u32 frames;
     u32 left_out;
     u32 triangles;
+    u32 tinted; /* drawings whose colour tables the game had changed */
 } PortGlFighterCounts;
 
 extern const PortGlFighterCounts *port_GlFighterCounts(void);

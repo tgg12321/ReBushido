@@ -137,5 +137,8 @@ extern s32 port_GlShadowCastOrphans(void);
 extern s32 port_GlShadowCastTriangles(void);
 extern u32 port_GlShadowCastFallbacks(void);
 extern u32 port_GlShadowCastUnpaired(void);
+/* The triangles cast from the fighters' and weapons' own models
+ * (gl_fighter.h) over the run. */
+extern u32 port_GlShadowCastFromModels(void);
 
 #endif /* PORT_GL_SHADOW_H */
