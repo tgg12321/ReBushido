@@ -63,6 +63,14 @@
 #define AUDIO_DEVICE_FRAMES 1024
 #define AUDIO_QUEUE_FRAMES 2560
 #define AUDIO_RING_FRAMES 8192
+/* Netplay's rollback takes back what the queue holds of the blanks it
+ * runs again, but this much (23 ms) is left to play while it runs; the
+ * pieces of sound of the last blanks are remembered. */
+#define RERUN_KEEP_FRAMES 1024
+#define QUEUED_HISTORY 128
+#define RERUN_FRAMES 8192
+/* A blank's samples, 44,100 a second at the console's 59.83 blanks. */
+#define BLANK_SAMPLES 737
 /* The last of a wait is not slept, for the system wakes a sleeper late:
  * this many samples' time (3 ms) is watched out on the clock. */
 #define WAIT_AWAKE 132
@@ -131,6 +139,26 @@ static SDL_AudioDeviceID g_port_audio;
 static PortRing g_port_ring;
 static s16 g_port_ring_samples[AUDIO_RING_FRAMES * 2];
 static FILE *g_port_audio_tap;
+/* What was queued at each of the last blanks, for netplay's rollback
+ * (port_SoundRerunBegins): a ring of the blank and the pairs. */
+static u32 g_port_queued_blank[QUEUED_HISTORY];
+static u32 g_port_queued_frames[QUEUED_HISTORY];
+static u32 g_port_queued_count;
+/* A rollback's sound: what it makes, the newest RERUN_FRAMES pairs of it
+ * kept round a ring; how many it took back from the queue, which is how
+ * many of the newest it puts there; and the account. */
+static s16 g_port_rerun_samples[RERUN_FRAMES * 2];
+static u32 g_port_rerun_made;
+static u32 g_port_rerun_room;
+static s32 g_port_is_rerunning;
+static u32 g_port_rerun_taken;
+static u32 g_port_rerun_heard;
+static u32 g_port_rerun_lost;
+/* The pixels laid over a picture where SDL's renderer draws
+ * (port_LayPixels). */
+static SDL_Texture *g_port_lay_texture;
+static s32 g_port_lay_w;
+static s32 g_port_lay_h;
 
 static PortPace g_port_pace;
 static Uint64 g_port_clock_start;
@@ -184,6 +212,7 @@ static s32 g_port_menu_texture_w;
 static s32 g_port_menu_texture_h;
 
 static void port_SwapPicture(void);
+static void port_ReadInput(u32 blank);
 
 /* ---- names ---- */
 
@@ -310,14 +339,111 @@ static void SDLCALL port_FillAudio(void *unused, Uint8 *stream, int bytes) {
 
 /* A blank's samples, as they are made (port_spu.h). */
 static void port_QueueSound(const s16 *samples, u32 frames) {
+    u32 slot = g_port_queued_count % QUEUED_HISTORY;
+
     if (g_port_audio_tap != NULL) {
         fwrite(samples, 2 * sizeof(s16), frames, g_port_audio_tap);
     }
+    g_port_queued_blank[slot] = port_GetBlankCount();
+    g_port_queued_frames[slot] = frames;
+    g_port_queued_count++;
     if (g_port_audio != 0) {
         SDL_LockAudioDevice(g_port_audio);
         port_WriteRing(&g_port_ring, samples, frames);
         SDL_UnlockAudioDevice(g_port_audio);
     }
+}
+
+/* ---- the sound of netplay's rollback (sdl_window.h) ---- */
+
+/* The last `blanks` blanks are about to be made again on a corrected
+ * course: what the queue still holds of them, all but RERUN_KEEP_FRAMES
+ * of the queue, is taken back, and as many of the newest corrected pairs
+ * go in its place when the rollback ends (port_SoundRerunEnds). What the
+ * card has played of them already stays played: nothing is heard twice,
+ * and the queue is as long as it was. (The corrected course may take
+ * other blanks to come to the same frame, a load more or less; its
+ * newest pairs are still the ones for now.) */
+void port_SoundRerunBegins(u32 blanks) {
+    u32 now = port_GetBlankCount();
+    u32 made = 0;
+    u32 taken = 0;
+    u32 i;
+
+    for (i = 0; i < QUEUED_HISTORY && i < g_port_queued_count; i++) {
+        u32 slot = (g_port_queued_count - 1 - i) % QUEUED_HISTORY;
+
+        if (now - g_port_queued_blank[slot] >= blanks) {
+            break;
+        }
+        made += g_port_queued_frames[slot];
+    }
+    if (g_port_audio != 0) {
+        SDL_LockAudioDevice(g_port_audio);
+        if (g_port_ring.count > RERUN_KEEP_FRAMES) {
+            u32 room = g_port_ring.count - RERUN_KEEP_FRAMES;
+
+            taken = port_TakeBackRing(&g_port_ring, made < room ? made : room);
+        }
+        SDL_UnlockAudioDevice(g_port_audio);
+    }
+    g_port_rerun_room = taken;
+    g_port_rerun_made = 0;
+    g_port_rerun_taken += taken;
+    g_port_rerun_lost += made - taken;
+    g_port_is_rerunning = TRUE;
+}
+
+/* A rollback's pairs (port_spu.h), kept until it ends. */
+void port_SoundRerun(const s16 *samples, u32 frames) {
+    u32 i;
+
+    if (!g_port_is_rerunning) {
+        return;
+    }
+    for (i = 0; i < frames; i++) {
+        u32 at = (g_port_rerun_made + i) % RERUN_FRAMES;
+
+        g_port_rerun_samples[at * 2] = samples[i * 2];
+        g_port_rerun_samples[at * 2 + 1] = samples[i * 2 + 1];
+    }
+    g_port_rerun_made += frames;
+}
+
+/* The rollback has ended: its newest pairs, as many as were taken back,
+ * into the queue. */
+void port_SoundRerunEnds(void) {
+    u32 count = g_port_rerun_room;
+    u32 first;
+    u32 i;
+
+    if (!g_port_is_rerunning) {
+        return;
+    }
+    g_port_is_rerunning = FALSE;
+    if (count > g_port_rerun_made) {
+        count = g_port_rerun_made;
+    }
+    if (count > RERUN_FRAMES) {
+        count = RERUN_FRAMES;
+    }
+    if (count == 0 || g_port_audio == 0) {
+        return;
+    }
+    first = g_port_rerun_made - count;
+    g_port_rerun_heard += count;
+    SDL_LockAudioDevice(g_port_audio);
+    for (i = 0; i < count; i++) {
+        port_WriteRing(&g_port_ring,
+                       &g_port_rerun_samples[((first + i) % RERUN_FRAMES) * 2],
+                       1);
+    }
+    SDL_UnlockAudioDevice(g_port_audio);
+}
+
+/* The blanks from here on are later by `blanks` (sdl_window.h). */
+void port_HoldPace(u32 blanks) {
+    port_PaceHold(&g_port_pace, blanks * BLANK_SAMPLES);
 }
 
 static void port_OpenAudio(void) {
@@ -1461,6 +1587,61 @@ void port_ShowMenu(
     port_SwapPicture();
 }
 
+/* Pixels laid over what has been drawn of the picture so far, at the
+ * window's own resolution (sdl_window.h). */
+void port_LayPixels(const u32 *pixels, s32 w, s32 h, s32 x, s32 y) {
+    s32 window_w = 0;
+    s32 window_h = 0;
+    SDL_Rect where;
+
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    port_WindowSize(&window_w, &window_h);
+    if (g_port_has_gl) {
+        port_GlShowPixels(
+            pixels, w, h, window_w, window_h, x, y, w, h, FALSE, TRUE);
+        return;
+    }
+    if (g_port_renderer == NULL) {
+        return;
+    }
+    if (g_port_lay_texture == NULL || g_port_lay_w != w || g_port_lay_h != h) {
+        if (g_port_lay_texture != NULL) {
+            SDL_DestroyTexture(g_port_lay_texture);
+        }
+        g_port_lay_texture =
+            SDL_CreateTexture(g_port_renderer, SDL_PIXELFORMAT_ARGB8888,
+                              SDL_TEXTUREACCESS_STREAMING, w, h);
+        g_port_lay_w = w;
+        g_port_lay_h = h;
+        if (g_port_lay_texture == NULL) {
+            return;
+        }
+        SDL_SetTextureBlendMode(g_port_lay_texture, SDL_BLENDMODE_BLEND);
+    }
+    SDL_UpdateTexture(g_port_lay_texture, NULL, pixels, w * BYTES_PER_PIXEL);
+    where.x = x;
+    where.y = y;
+    where.w = w;
+    where.h = h;
+    SDL_RenderCopy(g_port_renderer, g_port_lay_texture, NULL, &where);
+}
+
+/* The window's events read between two blanks, while the program waits
+ * on the network (sdl_window.h). */
+void port_PollWindow(void) { port_ReadInput(port_GetBlankCount()); }
+
+/* The game's last picture shown again, with the counter and netplay's
+ * line over it: the window while it waits on the network. */
+void port_ShowStill(void) {
+    port_OpenWindow();
+    port_DrawPicture(port_GetBlankCount(), FALSE);
+    port_DrawCounter();
+    port_DrawNetLine();
+    port_SwapPicture();
+}
+
 void port_HoldBackPads(void) {
     s32 pad;
 
@@ -1814,6 +1995,7 @@ static void port_ShowPictures(u32 due) {
             break;
         }
         port_DrawCounter();
+        port_DrawNetLine();
     }
     if (g_port_wants_shot) {
         port_WriteShot();
@@ -1865,6 +2047,7 @@ static void port_ShowBlank(u32 blank) {
     port_DrawPicture(blank, TRUE);
     port_WatchGame(blank);
     port_DrawCounter();
+    port_DrawNetLine();
     if (g_port_window_options.tap_window != NULL &&
         blank % (u32)g_port_window_options.tap_every == 0) {
         port_TapWindow(blank);
@@ -1950,6 +2133,12 @@ static void port_CloseWindow(s32 code) {
         port_Say("sound: ran out %u times, %u samples thrown away",
                  g_port_ring.underruns, g_port_ring.dropped);
     }
+    if (g_port_rerun_taken + g_port_rerun_lost != 0) {
+        port_Say("sound: netplay's rollbacks took back %u samples not yet "
+                 "played and queued %u corrected ones in their place; %u had "
+                 "been played already and stood",
+                 g_port_rerun_taken, g_port_rerun_heard, g_port_rerun_lost);
+    }
     if (g_port_has_gl) {
         port_Say(
             "graphics: the %s picture at the end, %u changes of picture "
@@ -1994,4 +2183,5 @@ void port_StartWindow(void) {
     if (g_port_window_options.inject != PORT_INJECT_NONE) {
         g_port_press_hook = port_InjectPress;
     }
+    port_StartNetWindow();
 }

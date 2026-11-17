@@ -93,6 +93,41 @@ extern void port_TakeControllerEvent(const union SDL_Event *event);
 extern s32 port_PadOfController(s32 id);
 extern void port_ToggleFullscreen(void);
 
+/* ---- netplay in the window (sdl_net.c; docs/NETPLAY.md, section 13)
+ * ---- */
+
+/* Hangs the window's part of netplay on the port: its line, its waits,
+ * its pacing and its sound in a rollback (port_net.h). */
+extern void port_StartNetWindow(void);
+/* Netplay's line over the picture: the ping, the rollback, the delay,
+ * and what is being waited for. Nothing where netplay is off. */
+extern void port_DrawNetLine(void);
+/* The settings menu's Play online page: the program starts again as a
+ * session's host at `address` or its guest going there (sdl_main.c);
+ * `address` is `A.B.C.D:PORT`. A guest's own socket is on this PC alone
+ * (127.0.0.1) where `is_local`. */
+extern void port_StartOnline(
+    s32 is_host, const char *address, s32 delay, s32 is_local);
+
+/* ---- what sdl_window.c does for it ---- */
+
+/* `pixels`, `w` by `h`, over what has been drawn of the picture so far,
+ * at (`x`, `y`) of the window, blended by their alpha. */
+extern void port_LayPixels(const u32 *pixels, s32 w, s32 h, s32 x, s32 y);
+/* The window's events read now, between two blanks (Escape ends the
+ * program). */
+extern void port_PollWindow(void);
+/* The game's last picture shown again, with the counter and the line. */
+extern void port_ShowStill(void);
+/* The blanks from here on are later by `blanks` in all: time sync. */
+extern void port_HoldPace(u32 blanks);
+/* A rollback of `blanks` blanks begins: what the sound's queue holds of
+ * them and has not played is taken back; the corrected sound of them
+ * (port_SoundRerun) goes in its place; and it ends. */
+extern void port_SoundRerunBegins(u32 blanks);
+extern void port_SoundRerun(const s16 *samples, u32 frames);
+extern void port_SoundRerunEnds(void);
+
 /* ---- the session's log (sdl_log.c) ---- */
 
 /* A line `rebushido: ...` to the error output, and so to the log. */

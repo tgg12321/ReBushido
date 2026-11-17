@@ -65,6 +65,11 @@ extern void port_MenuPress(s32 what);
  * NULL to give up. */
 extern s32 port_MenuIsCapturing(void);
 extern void port_MenuCaptured(s32 keys, const char *value);
+/* Whether a row of the Play online page is being typed into (the host's
+ * address, the port), and a letter for it: a digit, `.` or `:`; `\b`
+ * takes the last one away and `\n` keeps what is typed. */
+extern s32 port_MenuIsTyping(void);
+extern void port_MenuType(char c);
 /* The menu over a picture `w` by `h`, the window's size: its rectangle
  * in `out`, and its pixels (0xAARRGGBB) into `pixels`, which has room for
  * `w` by `h`. The rest of the window is darkened by the window itself. */
