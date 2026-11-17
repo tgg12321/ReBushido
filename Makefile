@@ -340,7 +340,8 @@ else
 endif
 
 # The native port's rollback self-test (docs/NETPLAY.md, "Save, load and
-# hash"; tests/README.md): both programs `make port` built run port_game's
+# hash"; tests/README.md): both programs `make port` built (build them
+# again first: it runs what is there) run port_game's
 # plan headless, once as they are and once saving the game's state, running
 # eight frames, putting it back and running them again every 24 frames; it
 # fails on any difference of the state, of what the two runs print or of

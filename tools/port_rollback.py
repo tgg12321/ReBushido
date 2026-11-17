@@ -32,6 +32,7 @@ play tests do."""
 import argparse
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -67,7 +68,10 @@ def run(program, plan, folder, name, more):
     FOLDER/NAME.out and .err."""
     cmd = [program, '--image', playtest.RETAIL_CUE, '--plan', plan,
            '--no-cards', '--trace', '--out', os.path.join(folder, name)] + more
-    os.makedirs(os.path.join(folder, name), exist_ok=True)
+    # nothing of an earlier run is left to be compared
+    if os.path.isdir(os.path.join(folder, name)):
+        shutil.rmtree(os.path.join(folder, name))
+    os.makedirs(os.path.join(folder, name))
     start = time.time()
     with open(os.path.join(folder, name + '.out'), 'wb') as out, \
             open(os.path.join(folder, name + '.err'), 'wb') as err:
@@ -103,6 +107,15 @@ def name_page(variables, address, page_bytes=0x1000):
     return ', '.join(names[:6]) + (' and %d more' % (len(names) - 6) if len(names) > 6 else '')
 
 
+def complaint(folder, name):
+    """What the program said of itself before it ended (a `rebushido:`
+    line of its error output), or ''."""
+    said = [line for line in read(folder, name + '.err').splitlines() if line.startswith('rebushido:')]
+    if any('not known: --rollback-test' in line for line in said):
+        return '; the program has no --rollback-test: it was built before the self-test (make port)'
+    return '; it said: %s' % said[0] if said else ''
+
+
 def first_difference(first, second):
     """The first line where two outputs differ, as a line of text."""
     a, b = first.split('\n'), second.split('\n')
@@ -121,8 +134,9 @@ def check_program(label, program, args):
     code, seconds = run(program, plan, folder, 'plain', args.more)
     print('port_rollback: %s: the plain run: exit %s, %.0f s' % (label, code, seconds), flush=True)
     if code != 0:
-        problems.append('%s: the plain run ended with %s (%s/plain.err)' % (label, code, folder))
-    if args.plain_only:
+        problems.append('%s: the plain run ended with %s (%s/plain.err)%s'
+                        % (label, code, folder, complaint(folder, 'plain')))
+    if args.plain_only or problems:
         return problems
     code, seconds = run(program, plan, folder, 'rollback',
                         args.more + ['--rollback-test', str(args.frames), '--rollback-every', str(args.every)])
@@ -138,9 +152,13 @@ def check_program(label, program, args):
         else:
             print('    ' + line)
     if code != 0:
-        problems.append('%s: the run with rollbacks ended with %s (%s/rollback.err)' % (label, code, folder))
+        problems.append('%s: the run with rollbacks ended with %s (%s/rollback.err)%s'
+                        % (label, code, folder, complaint(folder, 'rollback')))
     if not any(line.startswith('rollback: ok') for line in report):
         problems.append('%s: the run with rollbacks did not report that it passed' % label)
+    if not any(line.startswith('rollback: ') for line in report):
+        # it never ran: what it printed and wrote is no comparison
+        return problems
     plain, rolled = read(folder, 'plain.out'), read(folder, 'rollback.out')
     if plain != rolled:
         problems.append('%s: the run with rollbacks printed otherwise than the plain run, at %s'
