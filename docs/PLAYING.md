@@ -67,7 +67,8 @@ are: Cross is the lowest. The first controller plugged in is player
 one's and the second player two's; they can be plugged in and pulled
 out while the game runs.
 
-**Escape**, or closing the window, ends the program. **F11** or
+**F1** opens the settings menu (below), and so does a controller's
+guide button. **Escape**, or closing the window, ends the program. **F11** or
 **Alt+Enter** fills the screen and comes back. **F3** shows and hides
 the counter in the corner: `59.8/30.0 100%` is the pictures shown a
 second, the game's own frames a second (30 in a fight and 60 in the
@@ -89,9 +90,62 @@ pressed in -- which is usually one of those, and is what is on the
 screen when you press it. That is the picture to send when something
 looks wrong only while the game is moving.
 
+## The settings menu
+
+Every setting of `rebushido.cfg` below and the buttons of both players
+are in a menu of the program's own, drawn over the game at the window's
+own resolution. **F1** or a controller's **guide button** opens it
+anywhere; **Select** opens it on the three screens where the game has
+no use for Select: the options page at boot, the top menu and the
+fight's pause menu (Start, then Select).
+
+| | The keyboard | A controller |
+|---|---|---|
+| choose a line, change its value | the arrow keys | the direction pad or the left stick |
+| open (a player's buttons), bind | Enter | Cross (the lowest of the four) |
+| back, or close | Escape, Backspace | Circle, Triangle |
+| a button back to the layout's own | Delete | Square |
+| close | F1 | Start, Back, guide |
+
+The menu's own keys are always these, whatever the players' are.
+
+**The game is stopped while it is open**, at the end of the vertical
+blank where it has just shown a frame, and goes on from there when it
+closes as if no time had passed: nothing of the game runs in between,
+and a key or a button still held as the menu closes is not given to the
+game until it is let go. The sound runs out and comes back.
+
+What changes at once: the full screen, the picture's size and its
+pixels, waiting for the display, the counter and its corner, Graphics
+(as F2), the resolution, the ground as one mesh, the shadows, the dead
+zone, and the buttons. What waits for the program to start again is said
+on its line, `(after a restart)`: antialiasing, the draw distance, the
+shape, the frame rate, the English top menu and the mods.
+
+**Player 1's buttons** and **Player 2's buttons** list each of the
+PlayStation's buttons with the keys and the controller's buttons that
+press it. Enter or Cross on one waits for a key, a controller's button,
+or a stick or a trigger pushed far, and binds it, as a `pN.BUTTON` line
+of the file would (below); Escape leaves it as it was, Delete gives it
+back the layout's own.
+
+**Bug fixes**, the game's own setting, is the one the options page at
+boot has: the menu changes it for the session, and the options page
+keeps it on the memory card.
+
+**The menu writes `rebushido.cfg`** as it closes, if anything was
+changed: the file beside the program, or the one `--config` named, made
+if it is not there. Only the lines of what was changed are touched -- a
+value is changed where its line is, with the comment after it kept in
+its column, a line it does not have is added at the end, a button bound
+again has its lines of that kind replaced -- and everything else of the
+file, comments and lines it does not know included, is left as you
+wrote it.
+
 ## Changing the keys and the picture
 
-Make a text file `rebushido.cfg` beside the program. A line is
+Make a text file `rebushido.cfg` beside the program, or let the
+settings menu make it. A line is
 `name = value`; what follows a `#` is a comment. For example:
 
 ```
@@ -108,6 +162,7 @@ stage_mesh = off         # the game's own tiles; on is the default
 shadows = cast           # original (the game's black ones), soft or cast
 frame_rate = display     # original (the default), display, or a number
 mods = off               # none of the mods in mods/ (on is the default)
+english = off            # the top menu in Japanese (on is the default)
 p1.cross = key Space     # Space is player one's Cross, and Z no longer
 p1.circle = key Left Ctrl
 p2.start = pad a         # on player two's controller, A is Start
@@ -228,7 +283,11 @@ does do, where `shadows` asks for them (above).
 ## Mods
 
 A folder `mods/` beside the program holds mods: each a folder of its
-own, whose files stand in for the game's. The first kind is
+own, whose files stand in for the game's. The program comes with one,
+`mods/english/`: **the top menu in English** (Story Mode, Vs. CPU Mode
+and the rest in place of 決戦の間 and the others), drawn by Graphics
+Remastered; `english = off` leaves it out ([`MODS.md`](MODS.md), "The
+English menu"). The first kind is
 **replacement textures** for Graphics Remastered: the menus, the pause,
 the fight's counters and the boot logo redrawn at any size.
 `--dump-textures FOLDER` writes the game's textures out as PNGs to make

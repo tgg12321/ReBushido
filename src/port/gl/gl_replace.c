@@ -66,6 +66,8 @@ PORT_GL_REPLACE_FUNCTIONS
 #define RGBA 4
 #define BYTE_MAX 255
 #define FIVE_MAX 31
+/* a texel's top bit: it mixes where the primitive is half-transparent */
+#define MIX_BIT 0x8000
 #define RED_SHIFT 0
 #define GREEN_SHIFT 5
 #define BLUE_SHIFT 10
@@ -87,6 +89,7 @@ typedef struct {
     u64 key;
     u32 texture;
     s32 state;
+    s32 mix; /* PORT_GL_MIX_... */
 } ReplaceSlot;
 
 static struct {
@@ -303,11 +306,48 @@ static ReplaceSlot *port_ReplaceSlotOf(u64 key) {
     return NULL;
 }
 
+/* Whether the game's texels of the region mix with what is under them
+ * where the primitive is half-transparent: all of the texels that are
+ * drawn, none of them, or some and not others. The console decides it
+ * texel by texel, by each one's top bit; a mod's picture draws where the
+ * game's texture drew nothing as well (an English word over the space
+ * between two Japanese characters), and there the console's texel has no
+ * say. Where every texel the game drew says the same, the whole picture
+ * says it (gl_replace.h). */
+static s32 port_ReplaceMixOf(const PortTextureRegion *region) {
+    s32 mixing = 0;
+    s32 solid = 0;
+    s32 u;
+    s32 v;
+
+    for (v = 0; v < region->h; v++) {
+        for (u = 0; u < region->w; u++) {
+            u16 texel = port_TextureTexel(g_port_vram, region, u, v);
+
+            if (texel == 0) {
+                continue;
+            }
+            if (texel & MIX_BIT) {
+                mixing++;
+            } else {
+                solid++;
+            }
+        }
+    }
+    if (mixing > 0 && solid == 0) {
+        return PORT_GL_MIX_ALL;
+    }
+    if (solid > 0 && mixing == 0) {
+        return PORT_GL_MIX_NONE;
+    }
+    return PORT_GL_MIX_TEXEL;
+}
+
 /* What became of the region's key, worked out the first time it is
- * seen: its texture, or 0. A key with no replacement is written out
- * then, where `may_dump` says. */
+ * seen: its texture, or 0, and in `mix` whether it mixes. A key with no
+ * replacement is written out then, where `may_dump` says. */
 static u32 port_ReplaceOf(
-    const PortTextureRegion *region, s32 is_picture, s32 may_dump) {
+    const PortTextureRegion *region, s32 is_picture, s32 may_dump, s32 *mix) {
     u64 key = port_TextureKey(g_port_vram, region);
     ReplaceSlot *slot = port_ReplaceSlotOf(key);
     char name[PORT_MOD_KEY_SIZE];
@@ -317,6 +357,7 @@ static u32 port_ReplaceOf(
         return 0;
     }
     if (slot->state != SLOT_EMPTY) {
+        *mix = slot->mix;
         return slot->state == SLOT_LOADED ? slot->texture : 0;
     }
     /* seen for the first time; a table nearly full keeps what it has */
@@ -342,6 +383,8 @@ static u32 port_ReplaceOf(
     }
     slot->texture = port_ReplaceLoad(path, name);
     slot->state = slot->texture != 0 ? SLOT_LOADED : SLOT_FAILED;
+    slot->mix = is_picture ? PORT_GL_MIX_TEXEL : port_ReplaceMixOf(region);
+    *mix = slot->mix;
     return slot->texture;
 }
 
@@ -399,7 +442,7 @@ s32 port_GlReplaceFind(const PortRemasterPrim *prim, PortGlReplacement *out) {
         !port_ReplaceIsOn() || !port_ReplaceRegionOf(prim, &region)) {
         return FALSE;
     }
-    out->texture = port_ReplaceOf(&region, FALSE, TRUE);
+    out->texture = port_ReplaceOf(&region, FALSE, TRUE, &out->mix);
     if (out->texture == 0) {
         return FALSE;
     }
@@ -435,6 +478,7 @@ u32 port_GlReplaceFindPicture(
     s32 x, s32 y, s32 w, s32 h, s32 display_x, s32 display_w) {
     PortTextureRegion region;
     s32 is_shown;
+    s32 mix = PORT_GL_MIX_TEXEL;
 
     if (w < PICTURE_SIDE_MIN || h < PICTURE_SIDE_MIN ||
         x + w > PORT_VRAM_WIDTH || y + h > PORT_VRAM_HEIGHT ||
@@ -464,5 +508,5 @@ u32 port_GlReplaceFindPicture(
     if (!is_shown && port_ModsCount(PORT_MOD_TEXTURES) == 0) {
         return 0;
     }
-    return port_ReplaceOf(&region, TRUE, is_shown);
+    return port_ReplaceOf(&region, TRUE, is_shown, &mix);
 }

@@ -1139,9 +1139,11 @@ made, and as the program ends. The window's files are
 | File | |
 |---|---|
 | `scale.c`, `ring.c`, `pace.c`, `keymap.c`, `logname.c`, `fps.c`, `window.h` | the arithmetic: where the picture goes in the window, the queue of samples, when a blank is due, which key is which button, the settings file, a log's name and lines, the counter's rate, digits and place. No SDL and no C library in them, so the host tests run them on every push (`tests/port/window.c`) |
-| `gamestate.c` | reads the game's variables out for the log, and has the names the log gives screens, modes, fighters, weapons and stages. It only reads |
+| `settext.c`, `choices.c` | the settings menu's arithmetic: `rebushido.cfg` changed a line at a time, keeping the rest of it, and the settings as the menu shows them, set by reading the line the file would have. No SDL and no C library (`tests/port/settings.c`) |
+| `gamestate.c` | reads the game's variables out for the log, and has the names the log gives screens, modes, fighters, weapons and stages; it writes one, the Bug fixes setting, for the settings menu |
 | `sdl_window.c` | the window, the sound card and the controllers, on SDL; the counter; the log's notes of the game |
 | `sdl_log.c` | the session's log file |
+| `menu.c`, `sdl_menu.c`, `font.c`, `menu.h` | the settings menu ([`PLAYING.md`](PLAYING.md), "The settings menu"): its pages and what a press does, when it opens and the loop it runs in with the game stopped at a frame's boundary, and its text drawn at the window's resolution in Marcellus (`src/port/fonts/`, SIL Open Font Licence) by stb_truetype (`stb_truetype.h`, public domain). None of it is the game's state: these files are linked outside the game's object, as every file of the window is |
 | `sdl_main.c` | where the program starts: its own options, the settings file, the disc image when none is named |
 | `host_posix.c` | `port_host.h` on a C library, for Linux (Windows has `src/port/host_windows.c`) |
 

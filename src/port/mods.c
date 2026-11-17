@@ -62,6 +62,7 @@ typedef struct {
     PortModManifest manifest;
     char folder[FOLDER_NAME_SIZE];
     s32 counts[PORT_MOD_KINDS];
+    s32 is_left_out; /* by the settings (port_ModsLeaveOut) */
 } PortMod;
 
 typedef struct {
@@ -76,6 +77,7 @@ static struct {
     s32 is_off;
     const char *folder;
     const char *dump_folder;
+    const char *left_out; /* a mod's folder the settings turned off */
     char root[PATH_SIZE];
     s32 mod_count;
     PortMod mods[MODS_MAX];
@@ -466,6 +468,8 @@ static void port_ModsEachMod(void *context, const char *name, s32 is_folder) {
     port_ModsCopy(mod->manifest.name, sizeof(mod->manifest.name), name,
                   port_TextLength(name));
     mod->manifest.is_enabled = TRUE;
+    mod->is_left_out = g_port_mods.left_out != NULL &&
+                       port_ModsTextsEqual(name, g_port_mods.left_out);
     port_ModsSay(path, sizeof(path), "%s/%s/%s", g_port_mods.root, name,
                  PORT_MOD_MANIFEST);
     size = port_ModReadFile(path, text, sizeof(text));
@@ -478,6 +482,9 @@ static void port_ModsEachMod(void *context, const char *name, s32 is_folder) {
                      problems, problems == 1 ? "" : "s", PORT_MOD_MANIFEST,
                      problem);
         }
+    }
+    if (mod->is_left_out) {
+        mod->manifest.is_enabled = FALSE;
     }
     g_port_mods.mod_count++;
 }
@@ -570,6 +577,8 @@ void port_ModsSetFolder(const char *folder) {
     g_port_mods.folder = folder;
 }
 
+void port_ModsLeaveOut(const char *folder) { g_port_mods.left_out = folder; }
+
 void port_ModsSetDumpFolder(const char *folder) {
     g_port_mods.dump_folder = folder;
 }
@@ -631,8 +640,9 @@ void port_ModsStart(const char *program) {
         const PortMod *mod = &g_port_mods.mods[g_port_mods.order[i]];
 
         if (!mod->manifest.is_enabled) {
-            port_Log("mods:   %s (%s): turned off by its manifest\n",
-                     mod->manifest.name, mod->folder);
+            port_Log("mods:   %s (%s): turned off by %s\n", mod->manifest.name,
+                     mod->folder,
+                     mod->is_left_out ? "the settings" : "its manifest");
             continue;
         }
         port_Log("mods:   %s%s%s (%s, order %d): %d textures, %d models, "

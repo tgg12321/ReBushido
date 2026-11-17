@@ -19,7 +19,8 @@
  *             [--fast] [--inject keys|pads] [--tap-frames FOLDER]
  *             [--tap-window FOLDER] [--tap-every N] [--tap-audio FILE]
  *             [--toggle-at N] [--shot-at N] [--fault-at N]
- *             [--fault-in-sound N] */
+ *             [--fault-in-sound N] [--menu-at N[,N...]] [--menu-keys WORDS]
+ *             [--menu-shots FOLDER] */
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <dirent.h>
@@ -34,6 +35,7 @@
 #endif
 
 #include "port_host.h"
+#include "port_mods.h"
 #include "port_remaster.h"
 #include "shared.h"
 #include "sdl_window.h"
@@ -112,7 +114,10 @@ static const char g_port_window_usage[] =
     "                 frames it has worked out already. It needs the\n"
     "                 remastered picture\n"
     "\n"
-    "In the window: Escape, or closing it, ends the program. F11 or\n"
+    "In the window: F1 opens the settings menu (Select does on the\n"
+    "options page, the top menu and the pause, and a controller's guide\n"
+    "button anywhere), which changes and writes the settings file.\n"
+    "Escape, or closing the window, ends the program. F11 or\n"
     "Alt+Enter fills the screen and comes back. F2 changes between the\n"
     "original picture and the remastered one. F3 shows and hides the\n"
     "counter in the corner: pictures shown a second, the game's own\n"
@@ -152,7 +157,10 @@ static const char g_port_window_usage_end[] =
     "(the samples as they are queued), --fault-at N and --fault-in-sound N\n"
     "(touch memory that is not there at vertical blank N, on the game's\n"
     "stack or on the sound card's thread: what a crash leaves in the\n"
-    "log).\n";
+    "log), --menu-at N[,N...] (what F1 does, at those blanks),\n"
+    "--menu-keys WORDS (presses in the settings menu, one a picture: up,\n"
+    "down, left, right, accept, back, close, clear, key:NAME, pad:NAME,\n"
+    "shot) and --menu-shots FOLDER (where shot keeps the window).\n";
 
 static void port_Complain(const char *problem, const char *word) {
     fprintf(stderr, "rebushido: %s%s\nrebushido: --help says what it takes\n",
@@ -163,6 +171,11 @@ static void port_Complain(const char *problem, const char *word) {
 /* ---- the settings file ---- */
 
 static const char *g_port_settings_path;
+/* where the settings menu writes them: the file read, or the one beside
+ * the program that was not there */
+static const char *g_port_settings_written;
+
+const char *port_GetSettingsPath(void) { return g_port_settings_written; }
 
 static void port_ComplainOfLine(s32 line, const char *why, const char *text) {
     port_Say("%s line %d is not used (%s): %s", g_port_settings_path, line, why,
@@ -202,6 +215,7 @@ static void port_LoadSettings(const char *named, const char *beside) {
         snprintf(path, sizeof(path), "%s%s", beside, SETTINGS_FILE);
         g_port_settings_path = path;
     }
+    g_port_settings_written = g_port_settings_path;
     text = port_ReadSettingsFile(g_port_settings_path);
     if (text == NULL) {
         if (named != NULL) {
@@ -596,6 +610,12 @@ int main(int argc, char **argv) {
             }
         } else if (strcmp(word, "--tap-audio") == 0 && has_value) {
             options->tap_audio = argv[++i];
+        } else if (strcmp(word, "--menu-at") == 0 && has_value) {
+            options->menu_at = argv[++i];
+        } else if (strcmp(word, "--menu-keys") == 0 && has_value) {
+            options->menu_keys = argv[++i];
+        } else if (strcmp(word, "--menu-shots") == 0 && has_value) {
+            options->menu_shots = argv[++i];
         } else {
             /* the port's own, which it reads itself */
             if (strcmp(word, "--image") == 0) {
@@ -691,6 +711,11 @@ int main(int argc, char **argv) {
         /* the settings file turned them off (docs/MODS.md) */
         passed[count++] = mods_option;
         passed[count++] = mods_off;
+    }
+    if (!g_port_settings.english) {
+        /* the English top menu the program ships is a mod of its own,
+         * mods/english/, which the settings leave out (docs/MODS.md) */
+        port_ModsLeaveOut("english");
     }
     passed[count] = NULL;
     {

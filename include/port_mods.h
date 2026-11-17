@@ -57,6 +57,10 @@ extern s32 port_ModParseManifest(
 /* The folder the mods are in, from the command line (`--mods DIR`), or
  * `off` for none. With nothing said, `mods/` beside the program. */
 extern void port_ModsSetFolder(const char *folder);
+/* The mod in this folder of the mods' folder is read and left out, as if
+ * its manifest said `enabled = no`: the window's `english = off` for the
+ * English menu it ships (docs/MODS.md). NULL for none. */
+extern void port_ModsLeaveOut(const char *folder);
 /* Where a texture of the game's is written as it is first drawn, for a
  * replacement to be made from (`--dump-textures DIR`); NULL for none. */
 extern void port_ModsSetDumpFolder(const char *folder);

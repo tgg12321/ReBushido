@@ -223,6 +223,10 @@ typedef struct {
     /* The mods beside the program are read (docs/MODS.md); 0 runs the
      * game with none of them, as `--mods off` does. */
     s32 mods;
+    /* The English top menu the program ships as a mod of its own,
+     * mods/english/ (docs/MODS.md, "The English menu"); 0 leaves it
+     * out. */
+    s32 english;
 } PortSettings;
 
 /* The number of the key, button or axis of this name, as the window's
@@ -278,6 +282,75 @@ extern u32 port_GetHeldButtons(const PortSettings *settings, s32 pad);
 extern const PortBinding *port_FindBinding(
     const PortSettings *settings, s32 keys, s32 pad, u32 button);
 
+/* ---- the settings file written (settext.c) ---- */
+
+/* The settings menu (menu.c) changes rebushido.cfg a line at a time, and
+ * keeps everything else of it as the player wrote it: other lines, the
+ * comments, blank lines, the order. `text` is the file's text with a 0
+ * after it, in `room` bytes; each returns FALSE, the text as it was, if
+ * the change does not fit.
+ *
+ * The setting `name` takes `value`: the last line that sets it (the one
+ * that counts, since a later line overrides an earlier) has its value
+ * changed in place, with the comment after it kept where it was; with
+ * no such line, `name = value` is added at the end. */
+extern s32 port_SetSettingText(
+    char *text, u32 room, const char *name, const char *value);
+/* A pad's button bound anew: every line of exactly this name
+ * (`p1.cross`) that binds a key (`keys` 1) or a controller's button or
+ * axis (0), and any `none` of it, is taken out, and `name = value` added
+ * at the end (`key Space`, `pad a`, `none`). A NULL value only takes
+ * them out, which gives that button back the layout's own. */
+extern s32 port_SetBindingText(
+    char *text, u32 room, const char *name, s32 keys, const char *value);
+/* Every pN line of a pad (0 or 1), or of both (-1), taken out: its
+ * buttons are the layout's own again. */
+extern void port_ClearBindingsText(char *text, s32 pad);
+
+/* ---- the settings menu's choices (choices.c) ---- */
+
+/* How a change of a setting takes effect. */
+enum {
+    PORT_TAKES_NOW = 0,     /* at once, while the game is paused */
+    PORT_TAKES_RESTART = 1, /* the next time the program starts */
+};
+
+/* A setting of rebushido.cfg as the settings menu shows it: its name in
+ * the file, what the menu calls it, and the values it can step through,
+ * each as the file writes it and as the menu shows it. */
+#define PORT_CHOICES_MAX 8
+
+typedef struct {
+    const char *name;  /* in the file */
+    const char *label; /* in the menu */
+    const char *help;  /* a line about it */
+    s32 takes;         /* PORT_TAKES_... */
+    s32 count;
+    const char *words[PORT_CHOICES_MAX]; /* in the file */
+    const char *shown[PORT_CHOICES_MAX]; /* in the menu */
+} PortChoice;
+
+/* The groups the menu shows them in, each from its first choice. */
+typedef struct {
+    const char *title;
+    s32 first;
+    s32 count;
+} PortChoiceGroup;
+
+#define PORT_CHOICE_GROUPS 4
+extern const PortChoice g_port_choices[];
+extern const s32 g_port_choice_count;
+extern const PortChoiceGroup g_port_choice_groups[PORT_CHOICE_GROUPS];
+/* Which of a choice's values the settings hold now: its number, or -1
+ * for a value that is none of them (a file's own `shadows = 30`). */
+extern s32 port_GetChoice(const PortSettings *settings, s32 choice);
+/* The settings with that value, read as a file's line would be: TRUE, or
+ * FALSE if the line is refused. */
+extern s32 port_SetChoice(PortSettings *settings, s32 choice, s32 value);
+/* The next value of a choice from `value` (`step` 1 or -1, going round);
+ * a value that is none of them steps to the first or the last. */
+extern s32 port_StepChoice(s32 choice, s32 value, s32 step);
+
 /* ---- the game, for the log (gamestate.c) ---- */
 
 /* What the log follows of the game: read from the game's own variables,
@@ -293,9 +366,17 @@ typedef struct {
     s32 roster[2];
     s32 weapon[2];
     s32 is_cpu[2];
+    /* where the settings menu may be opened with Select (menu.c): */
+    s32 is_top_menu;     /* the main menu's top page */
+    s32 is_options_page; /* ReBushido's options page at boot */
+    s32 is_paused;       /* the fight's pause menu */
 } PortGameState;
 
 extern void port_ReadGameState(PortGameState *state);
+/* The game's own Bug fixes setting (g_rb_settings.bugfixes), read, and
+ * set by the settings menu while the game is stopped. */
+extern s32 port_GetBugfixes(void);
+extern void port_SetBugfixes(s32 on);
 /* Names for the log; "?" for a number that has none. */
 extern const char *port_NameScreen(s32 screen);
 extern const char *port_NameMode(s32 mode);

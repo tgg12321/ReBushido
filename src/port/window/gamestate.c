@@ -3,12 +3,18 @@
  * see the game's variables (they are compiled with a C library's
  * headers, and the game's names are the game's object's own), so this
  * file, which is compiled as the port's own are, reads them out for
- * those files and has the names the log gives things. It only reads. */
+ * those files and has the names the log gives things. It only reads, but
+ * for the settings menu's Bug fixes (port_SetBugfixes). */
 #include "common.h"
 #include "window.h"
 #include "bb2.h"
 
 #define NAME_COUNT(names) ((s32)(sizeof(names) / sizeof((names)[0])))
+
+/* The main menu's page (src/main/menu_screen.c, enum MenuPage), which no
+ * header has: the settings menu opens on Select at the top page. */
+extern u8 g_menu_page;
+#define MENU_PAGE_TOP 1
 
 /* enum Screen (sys.h). */
 static const char * const g_port_screen_names[] = {
@@ -161,4 +167,20 @@ void port_ReadGameState(PortGameState *state) {
         state->weapon[i] = g_fighters[i].weapon_id;
         state->is_cpu[i] = g_fighters[i].is_cpu;
     }
+    state->is_top_menu =
+        g_sys_screen == SCREEN_MENU_UPDATE && g_menu_page == MENU_PAGE_TOP;
+#if RB_OPTIONS_PAGE && !RB_QUICK_BOOT
+    state->is_options_page = g_rb_page_state == RB_PAGE_UP;
+#else
+    state->is_options_page = FALSE;
+#endif
+    state->is_paused = port_RemasterIsPaused();
 }
+
+/* The game's own Bug fixes setting, for the settings menu (menu.h). The
+ * one thing here that writes the game: the menu sets it while the game is
+ * stopped at a frame's boundary, as the options page at boot sets it
+ * before the first. */
+s32 port_GetBugfixes(void) { return g_rb_settings.bugfixes; }
+
+void port_SetBugfixes(s32 on) { g_rb_settings.bugfixes = (u8)(on != 0); }

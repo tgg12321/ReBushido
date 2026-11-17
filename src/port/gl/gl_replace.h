@@ -22,14 +22,27 @@
  * mirror of video memory is the first, the ground's slots the second. */
 #define PORT_GL_REPLACE_UNIT 2
 
-/* A replacement, for one primitive: its texture, and the rectangle of
- * texture points of the primitive's page it stands for. */
+/* Which of a replacement's pixels mix with what is under them where the
+ * primitive is half-transparent. The console asks each texel's top bit;
+ * a mod's picture also draws where the game's texture had no texel, so
+ * where every texel the game drew agrees, the picture is taken to agree
+ * all over (docs/MODS.md, "How it is drawn"). */
+enum {
+    PORT_GL_MIX_TEXEL = 0, /* the game's texel under each pixel says */
+    PORT_GL_MIX_ALL = 1,   /* every pixel mixes */
+    PORT_GL_MIX_NONE = 2   /* none does */
+};
+
+/* A replacement, for one primitive: its texture, the rectangle of
+ * texture points of the primitive's page it stands for, and how it
+ * mixes. */
 typedef struct {
     u32 texture;
     s32 u;
     s32 v;
     s32 w;
     s32 h;
+    s32 mix; /* PORT_GL_MIX_... */
 } PortGlReplacement;
 
 /* Looks up the GL functions it uses: NULL, or why it cannot. */

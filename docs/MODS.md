@@ -3,7 +3,9 @@
 The native port reads **mods**: folders beside the program whose files
 stand in for the game's own. This is the roadmap's item 10
 ([`ROADMAP.md`](ROADMAP.md)): one framework for everything a mod can
-replace, with **replacement textures** as its first user. Models, music
+replace, with **replacement textures** as its first user, and the
+English top menu the program ships as its first mod ("The English
+menu", below). Models, music
 and stages are to find their files the same way; their folders are read
 already and nothing uses them yet.
 
@@ -131,8 +133,13 @@ alpha says what is clear; its colour stands for the texel's and is
 multiplied by the primitive's colour as the console's would be (a white
 of 255 is the console's 31), and **whether it mixes** with what is under
 it, where the primitive is half-transparent, is still the console's
-texel's to say. So a fade, a highlight and a half-transparent panel come
-out as they did. The PNG is read once, the first time its key is drawn,
+texels' to say. The console asks each texel's top bit; a mod's picture
+draws where the game's texture drew nothing as well (an English word
+across the gap between two Japanese characters), so where every texel
+the game drew says the same, the whole picture is taken to say it, and
+only a texture whose texels disagree is asked texel by texel
+(`gl_replace.c`, `port_ReplaceMixOf`). So a fade, a highlight and a
+half-transparent panel come out as they did. The PNG is read once, the first time its key is drawn,
 and kept on the card.
 
 A replacement is batched by its texture: each sprite with one is a draw
@@ -156,6 +163,61 @@ of its own.
 - With `--gl-exact` (the prover's picture held to the console's) nothing
   is replaced.
 
+## The English menu
+
+The program ships one mod of its own: **`mods/english/`**, the top
+menu's Japanese drawn again in English. It is on unless `english = off`
+in `rebushido.cfg` or the settings menu says otherwise
+([`PLAYING.md`](PLAYING.md)), which leaves it out as `enabled = no` would
+(`port_ModsLeaveOut`); `mods = off` leaves it out with the rest. Its
+order is -100, so a mod of yours with the same keys wins. Like every
+replacement texture it is drawn by Graphics: Remastered; the console's
+own picture stays Japanese.
+
+| The game's | Literally | The mod's |
+|---|---|---|
+| 試練項目選択 over "TOP MENU" | the choice of trials | Select a Trial, over TOP MENU |
+| 決戦の間 | the hall of the decisive battle | Story Mode |
+| 勝抜の間 | the hall of winning through | Vs. CPU Mode |
+| 精進の間 | the hall of devotion | Training Mode |
+| 対刃の間 | the hall of crossed blades | Vs. Mode |
+| 対抗の間 | the hall of rivals | Group Battle Mode |
+| 連結の間 | the hall of linking | Link Mode |
+| 百斬の間 | the hall of a hundred cuts | Slash Mode |
+| 支度の間 | the hall of preparations | Setup Mode |
+
+The names are the US disc's own: its caption under the rows already
+calls each mode so (MOD.BIN's `mode_caption_sheets`,
+[`formats/STAGE_BIN.md`](formats/STAGE_BIN.md)). The game draws a row as
+two sprites of 64 by 16 texels, the mode's two characters and then の間,
+which is **one texture that every row shares**: so the English is in two
+pieces as well, the mode's name and the "Mode" every row shares. The
+options' row, whose US name is "Option Menu", is "Setup Mode" for that
+reason: 支度, "preparations", with the word the other rows have.
+
+**How it is made.** `python tools/port_english.py` draws the pictures
+into `src/port/mods/english/` (`--check` says whether what is there is
+what it would draw). They are the project's own art: text in two fonts
+of the SIL Open Font Licence, Kaushan Script for the brush lettering and
+Marcellus for "TOP MENU" (`src/port/fonts/`, each with its licence),
+with the game's look -- white letters fading to pale blue, a dark edge,
+a blue shadow down and to the right; the game tints a row itself (gold,
+the cursor's yellow). No pixel of the game's is in them or is read to
+draw them, so they are kept in the repository, and the script makes the
+same bytes again. What was taken from the game is in the script's table:
+each texture's key, its size, and where its lettering sits, measured
+with `--measure DIR` from a dump of the top menu (`--dump-textures`).
+The top menu is in the console's mode of 640 by 240, whose texel is
+twice as tall as it is wide on the screen, so the pictures are drawn six
+times the texture across and twelve down, square on the screen.
+`tools/port_sdl_build.py` copies the mod beside the program.
+
+**Fades.** The top menu fades nothing through its colour tables: the
+dump of a run from the boot to a mode chosen has one key for each row
+and each piece of the title, and the mod replaces every one of them
+from the menu's first frame to its last. A texture that is faded through
+its colour table is still a new key at each step (below).
+
 ## For the code
 
 | | |
@@ -166,6 +228,7 @@ of its own.
 | `src/port/gl/gl_draw.c` | the hooks: a batch's replacement texture (`PortGlState`), the shader's `u_replaced`, the picture's in the stretch of video memory |
 | `src/port/host_*.c` | `port_HostListFolder`, `port_HostMakeFolder` |
 | `tests/port/mods.c`, `mods.py` | the manifest, a folder of mods and its order, the keys from this page, PNGs of every kind written by zlib |
+| `tools/port_english.py`, `src/port/mods/english/`, `src/port/fonts/` | the English menu the program ships, and what draws it |
 
 The mods' files are none of the game's state (`OUTSIDE_STATE` in
 `tools/port_build.py`, `docs/NETPLAY.md`): the table is made once, as
@@ -184,8 +247,8 @@ ending a kind's files must have.
   stage's or a fighter's textures are a few files each.
 - **A fading colour table** found by the table it fades from, so that a
   replacement fades with it.
-- **The menus in English and redrawn**: the top menu's Japanese lines
-  (決戦の間 and the rest) and every other piece of menu text are sprites
-  with keys, so an English mod is a set of PNGs; it waits on someone
-  drawing them.
+- **The other menus redrawn**: the top menu is in English (above); the
+  rest of the game's menu text is English already, at the console's
+  resolution, and each piece of it is a sprite with a key, so a sharper
+  menu is a set of PNGs drawn as `tools/port_english.py` draws its own.
 - Models, music and stages, through the same table.
