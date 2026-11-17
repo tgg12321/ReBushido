@@ -132,9 +132,11 @@ M` and `--rollback-quiet` (the self-test of the game's state saved, put
 back and run again: `NETPLAY.md`, "Save, load and hash"), and the
 network's: `--net-bind` and `--net-peer` (a UDP socket to one other
 program), with `--link-side 0|1` (the game's link cable over it) or
-`--netplay 1|2` and `--net-delay N` (rollback netplay), and
+`--netplay 1|2` and `--net-delay N` (rollback netplay), `--host
+ADDRESS:PORT` and `--join ADDRESS:PORT` (a session of netplay, set up
+between the two programs before the game starts), and
 `--net-latency MS` and `--net-loss PERCENT` for tests (`NETPLAY.md`,
-sections 11 and 12). It ends by printing a line for each stub the
+sections 11 to 13). It ends by printing a line for each stub the
 game called, with how often.
 
 The game's main never returns: it runs on a stack of its own as a fiber,

@@ -295,6 +295,23 @@ static void test_Ring(void) {
     CHECK_EQ(g_test_heard[15 * 2], 1009);
     CHECK_EQ(g_test_heard[15 * 2 + 1], 2009);
     CHECK_EQ(ring.count, 0);
+
+    /* netplay's rollback takes back the newest pairs waiting, never more
+     * than wait, and what is written next follows what is left */
+    for (i = 0; i < 12; i++) {
+        g_test_sound[i * 2] = (s16)(3000 + i);
+        g_test_sound[i * 2 + 1] = (s16)(4000 + i);
+    }
+    port_WriteRing(&ring, g_test_sound, 12);
+    CHECK_EQ(port_TakeBackRing(&ring, 5), 5);
+    CHECK_EQ(ring.count, 7);
+    g_test_sound[0] = 5000;
+    port_WriteRing(&ring, g_test_sound, 1);
+    port_ReadRing(&ring, g_test_heard, 8);
+    CHECK_EQ(g_test_heard[6 * 2], 3006);
+    CHECK_EQ(g_test_heard[7 * 2], 5000);
+    CHECK_EQ(port_TakeBackRing(&ring, 3), 0);
+    CHECK_EQ(ring.dropped, 14);
 }
 
 /* ---- the clock ---- */
@@ -405,6 +422,21 @@ static void test_Pace(void) {
     CHECK_EQ(port_PaceBlank(&pace, 1, 0xFFFFFF00U, 0xFFFFFE00U, 0), 0);
     CHECK_EQ(port_PaceBlank(&pace, 2, 0xFFFFFF10U, 0x000000E1U, 0), 737 - 16);
     CHECK_EQ(port_PaceBlank(&pace, 3, 0x00000200U, 0x000003C2U, 0), 0x2C2);
+    CHECK_EQ(pace.lost, 0);
+
+    /* netplay's hold: nothing before the start; then each blank is later
+     * by a quarter of a blank's time at most, until all of it is taken,
+     * and no time is let go */
+    pace.is_started = 0;
+    port_PaceHold(&pace, 1000);
+    CHECK_EQ(port_PaceBlank(&pace, 1, 737, 737, 0), 0);
+    CHECK_EQ(pace.held, 0);
+    port_PaceHold(&pace, 400);
+    CHECK_EQ(port_PaceBlank(&pace, 2, 737 * 2, 737 * 2, 0), PORT_PACE_HOLD_STEP);
+    CHECK_EQ(port_PaceBlank(&pace, 3, 737 * 3 + 184, 737 * 3, 0), 184);
+    CHECK_EQ(port_PaceBlank(&pace, 4, 737 * 4 + 368, 737 * 4, 0), 32);
+    CHECK_EQ(port_PaceBlank(&pace, 5, 737 * 5 + 400, 737 * 5, 0), 0);
+    CHECK_EQ(pace.held, 0);
     CHECK_EQ(pace.lost, 0);
 
     /* a queue at its length, or within PORT_PACE_SLACK of it, moves

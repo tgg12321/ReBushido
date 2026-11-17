@@ -228,8 +228,12 @@ static const char * const g_distance_names[PORT_DISTANCE_KINDS] = {
 static PortRemasterView g_view;
 static PortRemasterLimits g_limits;
 /* How far left of the console's screen this frame's picture reaches
- * (port_RemasterLeftMargin), worked out once a frame. */
+ * (port_RemasterLeftMargin), worked out once a frame; and netplay's shape
+ * for it, whatever the picture (port_RemasterFixMargin). */
 static s32 g_left_margin;
+static s32 g_margin_is_fixed;
+static s32 g_margin_aspect_w;
+static s32 g_margin_aspect_h;
 /* Whether the port's own primitive buffers are the game's this run
  * (port_platform.h, PORT_PRIMS_ADDR). */
 static s32 g_prim_buffers_are_the_games;
@@ -1067,6 +1071,12 @@ static s32 port_FindAnchor(PortAddress prim) {
 static void port_RemasterFindLeftMargin(void) {
     PortDisplay display;
 
+    if (g_margin_is_fixed) {
+        port_GetDisplay(&display);
+        g_left_margin =
+            port_RemasterMargin(display.w, g_margin_aspect_w, g_margin_aspect_h);
+        return;
+    }
     if (!port_RemasterIsOn()) {
         g_left_margin = 0;
         return;
@@ -1077,6 +1087,12 @@ static void port_RemasterFindLeftMargin(void) {
 }
 
 s32 port_RemasterLeftMargin(void) { return g_left_margin; }
+
+void port_RemasterFixMargin(s32 aspect_w, s32 aspect_h) {
+    g_margin_is_fixed = TRUE;
+    g_margin_aspect_w = aspect_w;
+    g_margin_aspect_h = aspect_h;
+}
 
 /* The frame the side channel is writing down begins (port_remaster.h):
  * the game has cleared this frame's ordering table and is about to build

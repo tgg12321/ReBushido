@@ -51,6 +51,7 @@ u32 port_PaceBlank(
         pace->window_start = blank;
         pace->nudged = 0;
         pace->queue_average = 0;
+        pace->held = 0;
     }
     pace->queue_average +=
         (queue_error * (1 << SMOOTH_FRACTION_BITS) - pace->queue_average) /
@@ -68,6 +69,14 @@ u32 port_PaceBlank(
     }
     pace->base += (u32)nudge;
     pace->nudged += nudge;
+    /* a hold asked for (port_PaceHold), a part at a time */
+    if (pace->held != 0) {
+        u32 part = pace->held < PORT_PACE_HOLD_STEP ? pace->held
+                                                    : PORT_PACE_HOLD_STEP;
+
+        pace->base += part;
+        pace->held -= part;
+    }
 
     lead = (s32)(pace->base + due - now);
     if (lead < -PORT_PACE_LOST || lead > PORT_PACE_LOST) {
@@ -77,6 +86,16 @@ u32 port_PaceBlank(
         return 0;
     }
     return lead > 0 ? (u32)lead : 0;
+}
+
+/* Every blank from here on is due `samples` later (window.h): netplay's
+ * time sync, where this program is ahead of the other. It is spread over
+ * the blanks to come, at most a quarter of a blank's time in each, so
+ * that the sound's queue is drawn down a little and never runs dry. */
+void port_PaceHold(PortPace *pace, u32 samples) {
+    if (pace->is_started) {
+        pace->held += samples;
+    }
 }
 
 s32 port_PaceIsHeldBack(const PortPace *pace) {

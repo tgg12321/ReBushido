@@ -118,6 +118,9 @@ typedef struct {
     u32 report_at;    /* the blank the software event is due at */
     s32 report_spec;  /* which event it is */
     s32 reporting;    /* one is due */
+    /* the card is g_port_card_images[slot], and no file: netplay's,
+     * where both machines play on the host's cards (port_SetCardImage) */
+    s32 in_memory;
     u8 header[PORT_CARD_BLOCK_SIZE];
 } PortCardSlot;
 
@@ -137,6 +140,9 @@ static PortCardFile g_port_card_files[PORT_CARD_FILES_MAX];
 static s32 g_port_cards_off;
 /* A block of zeroes, for making an image. */
 static const u8 g_port_card_zeroes[PORT_CARD_FRAME_SIZE];
+/* The cards of a slot that is in memory: part of the state, so a frame
+ * that netplay takes back takes back what it saved too. */
+static u8 g_port_card_images[PORT_CARD_SLOTS][PORT_CARD_IMAGE_SIZE];
 
 /* Where firstfile and nextfile have got to: the slot, the pattern and the
  * block to look at next. The BIOS keeps the walk itself, and the game
@@ -306,6 +312,15 @@ static s32 port_CardMakeImage(PortCardSlot *slot) {
 /* Opens the slot's image, making it if it is not there, and reads its
  * header block. */
 static void port_CardOpenImage(PortCardSlot *slot) {
+    if (slot->in_memory) {
+        /* netplay's: the image is in memory already (port_SetCardImage) */
+        port_CardCopyBytes(slot->header,
+                           g_port_card_images[slot - g_port_card_slots],
+                           PORT_CARD_BLOCK_SIZE);
+        slot->present = 1;
+        slot->formatted = port_CardHeaderIsGood(slot->header);
+        return;
+    }
     slot->file = port_HostOpenReadWrite(slot->path);
     if (slot->file < 0) {
         if (!port_CardMakeImage(slot)) {
@@ -336,7 +351,8 @@ static void port_CardOpenImage(PortCardSlot *slot) {
 /* The slot's card, opened the first time the game looks at it: 1 if there
  * is one to talk to. */
 static s32 port_CardReady(PortCardSlot *slot) {
-    if (slot == NULL || g_port_cards_off || slot->path == NULL) {
+    if (slot == NULL ||
+        (!slot->in_memory && (g_port_cards_off || slot->path == NULL))) {
         return 0;
     }
     if (!slot->tried) {
@@ -350,14 +366,30 @@ static s32 port_CardReady(PortCardSlot *slot) {
  * there. */
 static s32 port_CardReadImage(
     PortCardSlot *slot, u32 at, void *bytes, u32 count) {
+    if (slot->in_memory) {
+        if (at > PORT_CARD_IMAGE_SIZE || count > PORT_CARD_IMAGE_SIZE - at) {
+            return 0;
+        }
+        port_CardCopyBytes(
+            bytes, g_port_card_images[slot - g_port_card_slots] + at, count);
+        return 1;
+    }
     return port_HostReadAt(slot->file, at, bytes, count) == count;
 }
 
 /* `count` bytes to `at` of the image, pushed out to the disc at once: a
  * save the game has been told is written is on the disc, whatever happens
- * next. */
+ * next. A card in memory keeps them there and writes no file. */
 static s32 port_CardWriteImage(
     PortCardSlot *slot, u32 at, const void *bytes, u32 count) {
+    if (slot->in_memory) {
+        if (at > PORT_CARD_IMAGE_SIZE || count > PORT_CARD_IMAGE_SIZE - at) {
+            return 0;
+        }
+        port_CardCopyBytes(
+            g_port_card_images[slot - g_port_card_slots] + at, bytes, count);
+        return 1;
+    }
     if (!port_HostWriteAt(slot->file, at, bytes, count)) {
         return 0;
     }
@@ -584,6 +616,61 @@ void port_SetCardPath(s32 slot, const char *path) {
 }
 
 void port_SetCardsOff(void) { g_port_cards_off = 1; }
+
+/* The image of a slot's card as this program would play on it
+ * (port_card.h): its file, or a formatted and empty card where there is
+ * none yet. */
+s32 port_ReadCardFile(s32 slot, u8 *out) {
+    PortCardSlot *of;
+    s32 file;
+    u32 i;
+
+    if (slot < 0 || slot >= PORT_CARD_SLOTS || g_port_cards_off) {
+        return 0;
+    }
+    of = &g_port_card_slots[slot];
+    if (of->in_memory) {
+        port_CardCopyBytes(out, g_port_card_images[slot], PORT_CARD_IMAGE_SIZE);
+        return 1;
+    }
+    if (of->path == NULL) {
+        return 0;
+    }
+    file = port_HostOpen(of->path);
+    if (file >= 0 && port_HostFileSize(file) == PORT_CARD_IMAGE_SIZE &&
+        port_HostReadAt(file, 0, out, PORT_CARD_IMAGE_SIZE) ==
+            PORT_CARD_IMAGE_SIZE) {
+        port_HostClose(file);
+        return 1;
+    }
+    if (file >= 0) {
+        port_HostClose(file);
+    }
+    port_CardFormatBlock(out);
+    for (i = PORT_CARD_BLOCK_SIZE; i < PORT_CARD_IMAGE_SIZE; i++) {
+        out[i] = 0;
+    }
+    return 1;
+}
+
+/* The slot's card is `image` in memory, or the slot is empty (NULL): no
+ * file is read or written for it (port_card.h). */
+void port_SetCardImage(s32 slot, const u8 *image) {
+    PortCardSlot *of;
+
+    if (slot < 0 || slot >= PORT_CARD_SLOTS) {
+        return;
+    }
+    of = &g_port_card_slots[slot];
+    of->in_memory = image != NULL;
+    of->tried = 0;
+    of->present = 0;
+    if (image == NULL) {
+        of->path = NULL;
+        return;
+    }
+    port_CardCopyBytes(g_port_card_images[slot], image, PORT_CARD_IMAGE_SIZE);
+}
 
 /* A card image beside the program for each slot no option named
  * (port_card.h): the program's own folder, which is the one place the

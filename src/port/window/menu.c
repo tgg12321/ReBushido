@@ -36,7 +36,14 @@
 enum {
     PAGE_MAIN,
     PAGE_BUTTONS, /* one pad's */
+    PAGE_ONLINE,  /* Play online: host or join a session of netplay */
 };
+
+/* What can be typed into a row of the Play online page. */
+#define TYPED_BYTES PORT_NET_ADDRESS_BYTES
+#define NET_ADDRESS_ALL "0.0.0.0"
+#define NET_ADDRESS_LOCAL "127.0.0.1"
+#define DECIMAL 10
 
 /* What a row of a page is. */
 enum {
@@ -48,6 +55,14 @@ enum {
     ROW_BUTTON, /* a button of the pad: `index` into g_port_menu_buttons */
     ROW_RESET,  /* the pad's buttons back to the layout's */
     ROW_BACK,
+    ROW_ONLINE, /* the Play online page */
+    /* the Play online page's */
+    ROW_NET_ROLE,
+    ROW_NET_ADDRESS, /* the host to join: typed */
+    ROW_NET_PORT,    /* the port a host waits at */
+    ROW_NET_LISTEN,
+    ROW_NET_DELAY,
+    ROW_NET_START,
 };
 
 typedef struct {
@@ -77,6 +92,9 @@ static struct {
     s32 main_cursor; /* where the cursor was on the first page */
     s32 first;       /* the first row in view */
     s32 is_capturing;
+    /* a row of the Play online page being typed into, and what is typed */
+    s32 is_typing;
+    char typed[TYPED_BYTES];
     s32 changed; /* the file's text was changed since it was read */
     char note[LABEL_BYTES];
     char path[1024];
@@ -87,6 +105,9 @@ static struct {
     s32 start[CHOICES_KEPT];
     s32 font_ok;
 } g_menu;
+
+/* Defined further down. */
+static void port_MenuClose(void);
 
 /* ---- the pages ---- */
 
@@ -123,7 +144,20 @@ static void port_MenuBuild(s32 page, s32 cursor) {
         }
         port_MenuAddRow(ROW_HEADER, -1);
         port_MenuAddRow(ROW_BUGFIXES, 0);
+        port_MenuAddRow(ROW_ONLINE, 0);
         port_MenuAddRow(ROW_CLOSE, 0);
+    } else if (page == PAGE_ONLINE) {
+        port_MenuAddRow(ROW_NET_ROLE, 0);
+        if (g_port_settings.net_role == 0) {
+            port_MenuAddRow(ROW_NET_PORT, 0);
+            port_MenuAddRow(ROW_NET_LISTEN, 0);
+            port_MenuAddRow(ROW_NET_DELAY, 0);
+        } else {
+            port_MenuAddRow(ROW_NET_ADDRESS, 0);
+            port_MenuAddRow(ROW_NET_LISTEN, 0);
+        }
+        port_MenuAddRow(ROW_NET_START, 0);
+        port_MenuAddRow(ROW_BACK, 0);
     } else {
         for (i = 0; i < BUTTONS; i++) {
             port_MenuAddRow(ROW_BUTTON, i);
@@ -302,6 +336,56 @@ static void port_MenuDescribe(
     case ROW_RESET:
         snprintf(label, LABEL_BYTES, "All back to the layout's own");
         break;
+    case ROW_ONLINE:
+        snprintf(label, LABEL_BYTES, "Play online");
+        snprintf(value, VALUE_BYTES, "...");
+        break;
+    case ROW_NET_ROLE:
+        snprintf(label, LABEL_BYTES, "You");
+        snprintf(value, VALUE_BYTES, "%s",
+                 g_port_settings.net_role == 0 ? "Host a game" : "Join a game");
+        *is_arrows = TRUE;
+        break;
+    case ROW_NET_ADDRESS:
+        snprintf(label, LABEL_BYTES, "The host's address and port");
+        if (g_menu.is_typing) {
+            snprintf(value, VALUE_BYTES, "%s_", g_menu.typed);
+        } else {
+            snprintf(value, VALUE_BYTES, "%s",
+                     g_port_settings.net_address[0] != 0
+                         ? g_port_settings.net_address
+                         : "(Enter, then type it)");
+        }
+        break;
+    case ROW_NET_PORT:
+        snprintf(label, LABEL_BYTES, "The port to wait at");
+        if (g_menu.is_typing) {
+            snprintf(value, VALUE_BYTES, "%s_", g_menu.typed);
+        } else {
+            snprintf(value, VALUE_BYTES, "%d", g_port_settings.net_port);
+            *is_arrows = TRUE;
+        }
+        break;
+    case ROW_NET_LISTEN:
+        snprintf(label, LABEL_BYTES, "Through");
+        snprintf(value, VALUE_BYTES, "%s",
+                 g_port_settings.net_listen
+                     ? "Every network of this PC"
+                     : "This PC alone (" NET_ADDRESS_LOCAL ")");
+        *is_arrows = TRUE;
+        break;
+    case ROW_NET_DELAY:
+        snprintf(label, LABEL_BYTES, "Input delay");
+        snprintf(value, VALUE_BYTES, "%d frame%s", g_port_settings.net_delay,
+                 g_port_settings.net_delay == 1 ? "" : "s");
+        *is_arrows = TRUE;
+        break;
+    case ROW_NET_START:
+        snprintf(label, LABEL_BYTES, "%s",
+                 g_port_settings.net_role == 0
+                     ? "Host now (the game starts again)"
+                     : "Join now (the game starts again)");
+        break;
     default:
         snprintf(label, LABEL_BYTES, "Back");
         break;
@@ -329,8 +413,159 @@ static const char *port_MenuHelp(void) {
                "back to the layout's";
     case ROW_RESET:
         return "Every button of this player back to the layout's own";
+    case ROW_ONLINE:
+        return "Rollback netplay with another PC: host a game, or join one";
+    case ROW_NET_ROLE:
+        return "The host waits for the other player and plays player 1";
+    case ROW_NET_ADDRESS:
+        return g_menu.is_typing ? "Type it: digits, dots and a colon.  Enter: "
+                                  "keep it.  Escape: leave it"
+                                : "As 192.168.1.20:7845: the host's PC, and "
+                                  "the port it waits at";
+    case ROW_NET_PORT:
+        return g_menu.is_typing
+                   ? "Type it.  Enter: keep it.  Escape: leave it"
+                   : "The other player joins this port of your PC "
+                     "(Enter: type it)";
+    case ROW_NET_LISTEN:
+        return "Every network: found from the internet, where the router "
+               "lets it through; this PC alone: two windows here";
+    case ROW_NET_DELAY:
+        return "Frames a press counts later: fewer rollbacks with more; "
+               "the host's is both players'";
+    case ROW_NET_START:
+        return "The program starts again as a session: both go to versus "
+               "select";
     default:
         return "";
+    }
+}
+
+/* ---- the Play online page ---- */
+
+/* What was typed into the row under the cursor, kept: FALSE if it is
+ * not what that row takes. */
+static s32 port_MenuKeepTyped(void) {
+    const MenuRow *row = &g_menu.rows[g_menu.cursor];
+    char value[VALUE_BYTES];
+    s32 dots = 0;
+    s32 colons = 0;
+    s32 number = 0;
+    s32 i;
+
+    for (i = 0; g_menu.typed[i] != 0; i++) {
+        char c = g_menu.typed[i];
+
+        if (c == '.') {
+            dots++;
+        } else if (c == ':') {
+            colons++;
+        } else if (c < '0' || c > '9') {
+            return FALSE;
+        } else {
+            number = number * DECIMAL + (c - '0');
+        }
+    }
+    if (row->kind == ROW_NET_ADDRESS) {
+        if (dots != 3 || colons != 1) {
+            return FALSE;
+        }
+        snprintf(g_port_settings.net_address,
+                 sizeof(g_port_settings.net_address), "%s", g_menu.typed);
+        port_MenuSetLine("net_address", g_menu.typed);
+        return TRUE;
+    }
+    if (dots != 0 || colons != 0 || i == 0 || number < 1 ||
+        number > PORT_NET_PORT_MAX) {
+        return FALSE;
+    }
+    g_port_settings.net_port = number;
+    snprintf(value, sizeof(value), "%d", number);
+    port_MenuSetLine("net_port", value);
+    return TRUE;
+}
+
+/* The page's setting under the cursor stepped left or right. */
+static void port_MenuStepOnline(const MenuRow *row, s32 step) {
+    char value[VALUE_BYTES];
+
+    switch (row->kind) {
+    case ROW_NET_ROLE:
+        g_port_settings.net_role = !g_port_settings.net_role;
+        port_MenuSetLine("net_role", g_port_settings.net_role ? "join" : "host");
+        port_MenuBuild(PAGE_ONLINE, 0);
+        break;
+    case ROW_NET_PORT:
+        g_port_settings.net_port += step;
+        if (g_port_settings.net_port < 1) {
+            g_port_settings.net_port = PORT_NET_PORT_MAX;
+        } else if (g_port_settings.net_port > PORT_NET_PORT_MAX) {
+            g_port_settings.net_port = 1;
+        }
+        snprintf(value, sizeof(value), "%d", g_port_settings.net_port);
+        port_MenuSetLine("net_port", value);
+        break;
+    case ROW_NET_LISTEN:
+        g_port_settings.net_listen = !g_port_settings.net_listen;
+        port_MenuSetLine("net_listen",
+                         g_port_settings.net_listen ? "all" : "local");
+        break;
+    case ROW_NET_DELAY:
+        g_port_settings.net_delay =
+            (g_port_settings.net_delay + step + PORT_NET_DELAY_MAX + 1) %
+            (PORT_NET_DELAY_MAX + 1);
+        snprintf(value, sizeof(value), "%d", g_port_settings.net_delay);
+        port_MenuSetLine("net_delay", value);
+        break;
+    default:
+        break;
+    }
+}
+
+/* Start: the settings kept, the menu closed, and the program started
+ * again as the session's host or guest (sdl_main.c). */
+static void port_MenuStartOnline(void) {
+    char address[VALUE_BYTES];
+
+    if (g_port_settings.net_role == 0) {
+        snprintf(address, sizeof(address), "%s:%d",
+                 g_port_settings.net_listen ? NET_ADDRESS_ALL
+                                            : NET_ADDRESS_LOCAL,
+                 g_port_settings.net_port);
+    } else if (g_port_settings.net_address[0] == 0) {
+        snprintf(g_menu.note, sizeof(g_menu.note),
+                 "Type the host's address and port first");
+        return;
+    } else {
+        snprintf(address, sizeof(address), "%s", g_port_settings.net_address);
+    }
+    port_MenuClose();
+    port_StartOnline(g_port_settings.net_role == 0, address,
+                     g_port_settings.net_delay, !g_port_settings.net_listen);
+}
+
+s32 port_MenuIsTyping(void) { return g_menu.is_open && g_menu.is_typing; }
+
+void port_MenuType(char c) {
+    u32 length = (u32)strlen(g_menu.typed);
+
+    if (!port_MenuIsTyping()) {
+        return;
+    }
+    if (c == '\b') {
+        if (length != 0) {
+            g_menu.typed[length - 1] = 0;
+        }
+    } else if (c == '\n') {
+        g_menu.is_typing = FALSE;
+        if (!port_MenuKeepTyped()) {
+            snprintf(g_menu.note, sizeof(g_menu.note), "Not kept: %s",
+                     g_menu.typed);
+        }
+    } else if (length + 1 < sizeof(g_menu.typed) &&
+               ((c >= '0' && c <= '9') || c == '.' || c == ':')) {
+        g_menu.typed[length] = c;
+        g_menu.typed[length + 1] = 0;
     }
 }
 
@@ -406,6 +641,29 @@ static void port_MenuAccept(void) {
             port_MenuReadBindings();
         }
         break;
+    case ROW_ONLINE:
+        g_menu.main_cursor = g_menu.cursor;
+        port_MenuBuild(PAGE_ONLINE, 0);
+        break;
+    case ROW_NET_ROLE:
+    case ROW_NET_LISTEN:
+    case ROW_NET_DELAY:
+        port_MenuStepOnline(row, 1);
+        break;
+    case ROW_NET_ADDRESS:
+    case ROW_NET_PORT:
+        g_menu.is_typing = TRUE;
+        if (row->kind == ROW_NET_ADDRESS) {
+            snprintf(g_menu.typed, sizeof(g_menu.typed), "%s",
+                     g_port_settings.net_address);
+        } else {
+            snprintf(g_menu.typed, sizeof(g_menu.typed), "%d",
+                     g_port_settings.net_port);
+        }
+        break;
+    case ROW_NET_START:
+        port_MenuStartOnline();
+        break;
     default:
         port_MenuBuild(PAGE_MAIN, g_menu.main_cursor);
         break;
@@ -426,6 +684,16 @@ void port_MenuPress(s32 what) {
         }
         return;
     }
+    if (g_menu.is_typing) {
+        /* the window gives the letters (port_MenuType); Enter keeps them,
+         * Escape leaves the row as it was */
+        if (what == PORT_MENU_ACCEPT) {
+            port_MenuType('\n');
+        } else if (what == PORT_MENU_BACK || what == PORT_MENU_CLOSE) {
+            g_menu.is_typing = FALSE;
+        }
+        return;
+    }
     row = &g_menu.rows[g_menu.cursor];
     g_menu.note[0] = 0;
     switch (what) {
@@ -441,13 +709,15 @@ void port_MenuPress(s32 what) {
             port_MenuStepChoice(row->index, what == PORT_MENU_LEFT ? -1 : 1);
         } else if (row->kind == ROW_BUGFIXES) {
             port_SetBugfixes(!port_GetBugfixes());
+        } else if (g_menu.page == PAGE_ONLINE) {
+            port_MenuStepOnline(row, what == PORT_MENU_LEFT ? -1 : 1);
         }
         break;
     case PORT_MENU_ACCEPT:
         port_MenuAccept();
         break;
     case PORT_MENU_BACK:
-        if (g_menu.page == PAGE_BUTTONS) {
+        if (g_menu.page != PAGE_MAIN) {
             port_MenuBuild(PAGE_MAIN, g_menu.main_cursor);
         } else {
             port_MenuClose();
@@ -527,6 +797,18 @@ s32 port_MenuWord(const char *word) {
         "up", "down", "left", "right", "accept", "back", "close", "clear"};
     u32 i;
 
+    if (strncmp(word, "type:", 5) == 0) {
+        /* what is typed into the row being typed into, and Enter */
+        if (!port_MenuIsTyping()) {
+            return FALSE;
+        }
+        g_menu.typed[0] = 0;
+        for (word += 5; *word != 0; word++) {
+            port_MenuType(*word);
+        }
+        port_MenuType('\n');
+        return TRUE;
+    }
     if (strncmp(word, "key:", 4) == 0 || strncmp(word, "pad:", 4) == 0) {
         /* a binding captured, as the window would give it: `key:Space` */
         char value[VALUE_BYTES];
@@ -596,9 +878,10 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
     x = pad * 2;
     y = pad + port_FontAscent();
     port_FontDraw(pixels, panel_w, panel_h, x, y + line / 4,
-                  g_menu.page == PAGE_MAIN ? "ReBushido: settings"
-                  : g_menu.pad == 0        ? "ReBushido: player 1's buttons"
-                                           : "ReBushido: player 2's buttons",
+                  g_menu.page == PAGE_MAIN     ? "ReBushido: settings"
+                  : g_menu.page == PAGE_ONLINE ? "ReBushido: play online"
+                  : g_menu.pad == 0 ? "ReBushido: player 1's buttons"
+                                    : "ReBushido: player 2's buttons",
                   COLOR_TITLE);
     snprintf(value, sizeof(value), "%s", port_GetVersionText());
     port_FontDraw(

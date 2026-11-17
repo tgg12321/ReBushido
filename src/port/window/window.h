@@ -100,6 +100,10 @@ extern void port_WriteRing(PortRing *ring, const s16 *samples, u32 frames);
  * the sound has run out, the last pair fading to silence and then
  * silence, until `target` pairs are waiting again, which then fade in. */
 extern void port_ReadRing(PortRing *ring, s16 *out, u32 frames);
+/* The newest `frames` pairs written and not yet played taken back, as if
+ * they had never been written, to be written again otherwise (netplay's
+ * rollback: sdl_net.c). Returns how many were: never more than wait. */
+extern u32 port_TakeBackRing(PortRing *ring, u32 frames);
 
 /* ---- the PC's clock and the game's (pace.c) ---- */
 
@@ -124,6 +128,9 @@ extern void port_ReadRing(PortRing *ring, s16 *out, u32 frames);
  * within this many blanks, and waiting for the display is given up. */
 #define PORT_PACE_LOST_TIMES 3
 #define PORT_PACE_LOST_WINDOW 1800
+/* A hold (port_PaceHold) moves each blank on at most this much: a
+ * quarter of a blank's time. */
+#define PORT_PACE_HOLD_STEP 184
 
 typedef struct {
     s32 is_started;
@@ -133,6 +140,7 @@ typedef struct {
     u32 window_start;  /* a blank's number */
     s32 nudged;        /* samples the blanks have been moved by, in all */
     s32 queue_average; /* the queue's error, smoothed, in 256ths */
+    u32 held;          /* samples of a hold still to be taken */
 } PortPace;
 
 /* A blank is about to be shown. `now` is the PC's clock, `due` the
@@ -145,6 +153,10 @@ extern u32 port_PaceBlank(
 /* Whether the display has held the game back so often lately that
  * waiting for it should stop (PORT_PACE_LOST_TIMES). */
 extern s32 port_PaceIsHeldBack(const PortPace *pace);
+/* The blanks from here on are due `samples` later in all, taken
+ * PORT_PACE_HOLD_STEP a blank at most: netplay's time sync, where this
+ * program is ahead of the other (src/port/netplay.c). */
+extern void port_PaceHold(PortPace *pace, u32 samples);
 
 /* ---- keys and controllers to the pads (keymap.c) ---- */
 
@@ -190,6 +202,14 @@ typedef struct {
 #define PORT_PICTURES_A_BLANK_MAX 8
 /* A rate a setting may ask for. */
 #define PORT_FRAME_RATE_MAX 1000
+
+/* Playing online: `A.B.C.D:PORT` with room to spare, the port a host
+ * waits at with nothing said, and the frames of delay. */
+#define PORT_NET_ADDRESS_BYTES 24
+#define PORT_NET_PORT_DEFAULT 7845
+#define PORT_NET_PORT_MAX 65535
+#define PORT_NET_DELAY_DEFAULT 2
+#define PORT_NET_DELAY_MAX 8
 
 typedef struct {
     PortBinding bindings[PORT_BINDINGS_MAX];
@@ -237,6 +257,15 @@ typedef struct {
      * mods/english/ (docs/MODS.md, "The English menu"); 0 leaves it
      * out. */
     s32 english;
+    /* Playing online (the settings menu's Play online page; docs/
+     * PLAYING.md): host (0) or join (1), the port a host waits at,
+     * whether it is found at every address of the PC (1) or at 127.0.0.1
+     * alone (0), the frames of delay, and the host to join. */
+    s32 net_role;
+    s32 net_port;
+    s32 net_listen;
+    s32 net_delay;
+    char net_address[PORT_NET_ADDRESS_BYTES];
 } PortSettings;
 
 /* The number of the key, button or axis of this name, as the window's

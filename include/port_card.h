@@ -88,6 +88,15 @@
 extern void port_SetCardPath(s32 slot, const char *path);
 /* Both slots empty, whatever else was said: --no-cards. */
 extern void port_SetCardsOff(void);
+/* The whole image of a slot's card as this program would play on it, into
+ * `out` (PORT_CARD_IMAGE_SIZE): its file, or a card formatted and empty
+ * where there is no file yet. 0 where the slot is empty (--no-cards). */
+extern s32 port_ReadCardFile(s32 slot, u8 *out);
+/* The slot's card is a copy of `image`, kept in memory, which is part of
+ * the game's state: nothing is read from or written to a file for it.
+ * NULL empties the slot. Before the game starts: netplay's guest plays on
+ * the host's cards, and neither machine writes the session's saves. */
+extern void port_SetCardImage(s32 slot, const u8 *image);
 /* `card1.mcd` and `card2.mcd` beside the program, for the slots that
  * --card1 and --card2 did not name: `program` is the program's own path
  * (argv[0]). */

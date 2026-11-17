@@ -297,6 +297,69 @@ them from; `--mods FOLDER` reads them from somewhere else, and `--mods
 off` or `mods = off` runs without. How to make one, and how a texture
 is named: [`MODS.md`](MODS.md).
 
+## Playing online
+
+Two players on two PCs play versus over the internet or a home network,
+with **rollback netcode**: your own presses count at once (after a
+delay of a frame or two you choose), the other player's are guessed
+until they arrive, and where a guess was wrong the game puts itself
+right in a moment ([`NETPLAY.md`](NETPLAY.md), sections 12 and 13). Both
+players need the **same build of ReBushido** (the same version, for the
+same system, 64-bit with 64-bit) and an image of **the same disc**; the
+two programs check both before anything starts, and say what differs.
+
+**One of you hosts, the other joins.** From the settings menu (F1, or
+Select on the top menu): *Play online*.
+
+- The host chooses *Host a game*, the port to wait at (7845 if you
+  change nothing) and *Host now*. The program starts again and waits.
+- The other chooses *Join a game*, types the host's address and port
+  (Enter on the row, then digits, dots and a colon, as
+  `203.0.113.7:7845`; Enter again keeps it) and *Join now*.
+
+Or from the command line:
+
+```
+rebushido --host 0.0.0.0:7845                 the host
+rebushido --join 203.0.113.7:7845             the other player
+```
+
+`--net-delay N` on the host's line sets the delay, 0 to 8 frames (2 if
+nothing says); it is both players'. *Through: This PC alone* on the
+page, or `--host 127.0.0.1:7845`, is for trying it with two windows on
+one PC.
+
+**Then:** the host's memory cards are sent to the other player, and
+both play on them: the fighters the host has unlocked, the host's
+button layouts in the game's own options, the host's ReBushido settings
+(Bugfixes among them). Nothing of the session is saved to either
+player's cards. The game starts from the beginning on both PCs and goes
+by itself to **versus character select**, where you both choose at
+once, as on one console; the host picks the stage. After a fight the
+game's menu offers a **rematch**. In a fight Start does nothing: there
+is no pause online. The opening movie is skipped.
+
+You play with your own keys or controller, whichever player's they are
+in your settings: the host is player 1 and the other player 2 in the
+game. A line at the top of the window says who you are, the **ping**
+(the round trip to the other PC), the longest **rollback** of the last
+seconds (frames the game went back and ran again) and the **delay**; or
+that it is waiting for the other player. Escape or closing the window
+leaves; the other player is told and plays on alone. The settings menu
+cannot be opened during a session (the other player's game would have
+to stop too).
+
+**Across the internet** the host's router has to let the port through:
+forward UDP port 7845 (or the one you chose) to the host's PC in the
+router's settings. The player who joins needs nothing. The draw distance
+is the console's online, whatever `draw_distance` says, and the two
+games keep the faces the wider of your two pictures shows: the two have
+to compute the same frame, whichever picture each of you looks at. F2
+still changes your own picture.
+
+Online play has been tried with two windows on one PC, not yet between
+two PCs, and not yet on Windows.
+
 ## Where the saves are
 
 ReBushido saves what the game saves, in the same way: **memory card
@@ -341,6 +404,8 @@ for ten seconds and fades.
 - Nobody has yet looked at the remastered picture on a real graphics
   card: it has been drawn only by software drivers, with no window on
   screen ([`PORT.md`](PORT.md), "Remastered in the window").
+- Online play has not been played between two PCs, nor on Windows
+  ("Playing online").
 - Nobody has watched the pictures between the game's frames move either,
   which is why `frame_rate` is `original` until someone does. On a
   machine with no card at all there is no room to draw a frame twice:

@@ -101,6 +101,11 @@ to play is [`PLAYING.md`](PLAYING.md).
   yet seen on a real screen (PORT.md, "The sky", "Seeing the fighters
   through the stage"); which stages count as open is `g_sky_open` in
   `src/port/gl/gl_sky.c`.
+- Online play (NETPLAY.md, section 13): the address a host listens at
+  from the Play online page (every network of the PC with nothing said,
+  or this PC alone), how players get through NAT (port forwarding, hole
+  punching or a relay), and whether online keeps the console's draw
+  distance or both compute the host's. It wants trying between two PCs.
 - `tmp\sdl-dl` can be deleted by hand; `tmp\pcsx-redux` and
   `tmp\redux-portable` are the emulator the play tests use and stay.
 
