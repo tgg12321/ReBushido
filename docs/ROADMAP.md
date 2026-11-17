@@ -227,7 +227,8 @@ the stage").
     goes"): `--profile` says where each blank's time goes; the video
     memory a frame writes is sent to the card in one go; the card is no
     longer waited for at each picture; each picture between two frames
-    is of the moment it is shown. Left: the players' build at `-O2`
-    (the owner's call; its traces are the same), the HD fighters'
-    models read before the fight's first frame, and whether 85 Hz is
-    smooth on the owner's screen.
+    is of the moment it is shown; the loads hurried through and the HD
+    fighters' models read during them (`quick_loading`, "Quick
+    loading"). Left: the players' build at `-O2` (the owner's call; its
+    traces are the same), and whether 85 Hz is smooth on the owner's
+    screen.

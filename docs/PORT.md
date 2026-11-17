@@ -4033,9 +4033,10 @@ and is nothing on a real card, and was left. A mod's textures are
 decoded when they are first drawn: the top menu's thirteen English
 textures took about 10 ms each here (4 of them reading the file through
 WSL, 1.3 decoding, the rest Mesa's mipmaps), and the HD fighters about
-half a second at the fight's first frame. On the owner's machine both
-are a fraction of that, and both are a single hitch where the picture
-changes anyway.
+half a second, which was at the fight's first frame and is now during
+the load before it ("Quick loading"). On the owner's machine both are a
+fraction of that, and both are a single hitch where the picture changes
+anyway.
 
 **The pictures, evenly.** At `frame_rate = display` a picture between
 two frames was of the moment it was begun, counted from the moment the
