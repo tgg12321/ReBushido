@@ -72,6 +72,13 @@ const char g_port_default_settings[] =
     "                       # soft: the ground under them darkened;\n"
     "                       # cast: cast from the fighters' own\n"
     "                       # bodies, darkened (cast:N, N hundredths)\n"
+    "smooth_light = off     # on: the game's own lights worked out at\n"
+    "                       # each pixel of the ground and the fighters'\n"
+    "                       # models, not once a face or a vertex\n"
+    "effects = original     # original: blood, sparks and dust where the\n"
+    "                       # console put them; exact: where the\n"
+    "                       # projection put them, moved between frames;\n"
+    "                       # smooth: their textures smoothed as well\n"
     "frame_rate = original  # original: one picture a blank, as the\n"
     "                       # console; display: as many as the screen\n"
     "                       # shows; or a number a second. The game\n"
@@ -644,6 +651,19 @@ static const char *port_ReadSetting(
         settings->shadows = number;
         return NULL;
     }
+    if (port_WordsMatch(name, "smooth_light")) {
+        return port_ReadChoice(value, "off", "on", &settings->smooth_light)
+                   ? NULL
+                   : "smooth_light is on or off";
+    }
+    if (port_WordsMatch(name, "effects")) {
+        number = port_ReadRemasterEffects(value);
+        if (number < 0) {
+            return "effects is original, exact or smooth";
+        }
+        settings->effects = number;
+        return NULL;
+    }
     if (port_WordsMatch(name, "controls")) {
         return port_ReadLayout(settings, value, lookup);
     }
@@ -756,6 +776,11 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     /* The soft shadows are the game's own black ones until the owner has
      * looked at pictures of both (gl_shadow.h). */
     settings->shadows = 0;
+    /* The lighting as the game lit each vertex and face, and the effects
+     * where the console put them, until the owner has looked at the
+     * pictures of each (docs/PORT.md, "Lighting", "The effects"). */
+    settings->smooth_light = 0;
+    settings->effects = PORT_EFFECTS_ORIGINAL;
     /* the mods beside the program, where there are any (docs/MODS.md) */
     settings->mods = 1;
     /* the English top menu the program ships (docs/MODS.md) */

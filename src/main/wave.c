@@ -323,6 +323,19 @@ void wave_Draw(void) {
                           &sxy2, &depth_cue, &gte_flags);
             vertex += 3;
             ReadSZfifo3(&sz0, &sz1, &sz2);
+#if RB_REMASTER_VIEW
+            /* the remastered renderer's side channel: what the projection
+             * worked out for the three goes where the renderer will look
+             * for them (port_remaster.h, "the effects") */
+            if (port_RemasterEffects() != PORT_EFFECTS_ORIGINAL) {
+                port_RemasterCopyPoint(
+                    (PortAddress)&sxy0, (PortAddress)&screen_out[0]);
+                port_RemasterCopyPoint(
+                    (PortAddress)&sxy1, (PortAddress)&screen_out[1]);
+                port_RemasterCopyPoint(
+                    (PortAddress)&sxy2, (PortAddress)&screen_out[2]);
+            }
+#endif
             *screen_out++ = sxy0;
             *screen_out++ = sxy1;
             *screen_out++ = sxy2;

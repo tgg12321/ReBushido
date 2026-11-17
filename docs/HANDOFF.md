@@ -58,11 +58,18 @@ to play is [`PLAYING.md`](PLAYING.md).
    frames (blanks 3,260 and 3,374) whose phase 0 lacks a near face of
    the cave wall the game's own picture has. On the tile path
    (`stage_mesh off`) hairline gaps between tiles remain.
-4. **The other lighting candidates.** Branch
-   `worktree-agent-adce6b210aa0a05f8` (10bd277dd, not merged) has
-   `smooth_fog`, `ambient_occlusion` and `smooth_light`. Its shadows
-   were rejected and are replaced; the mesh now does the fog's job on
-   the ground. Take `smooth_light` from it if wanted, then delete it.
+4. **Lighting and effects: look, then the defaults.** `smooth_light`
+   (the game's own lights worked out at each pixel of the ground's mesh
+   and the fighters' models, the ground's normals smoothed below a 45
+   degree crease) and `effects` (`exact`: blood, sparks, dust, flames,
+   splashes, footprints and the surf placed and sized where the
+   projection put them and moved between frames by name; `smooth`: their
+   textures smoothed too) are both off by default until the owner has
+   looked (`PORT.md`, "Lighting", "The effects"). My recommendation:
+   `effects = smooth` and `smooth_light = on`. The old lighting branch
+   `worktree-agent-adce6b210aa0a05f8` has nothing left to take
+   (`PORT.md`, "What the old branch's lighting came to"): it can be
+   deleted.
 5. **Make the high frame rate the default**, once 3 is settled
    (`frame_rate = original` with nothing said today).
 6. **The port's older open items**: the music about a tenth louder than

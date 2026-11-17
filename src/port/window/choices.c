@@ -102,6 +102,20 @@ const PortChoice g_port_choices[] = {
      3,
      {"original", "soft", "cast"},
      {"Original", "Soft", "Cast"}},
+    {"smooth_light",
+     "Smooth lighting",
+     "The game's own lights worked out at each pixel of ground and body",
+     PORT_TAKES_NOW,
+     2,
+     {"off", "on"},
+     {"Off", "On"}},
+    {"effects",
+     "Effects",
+     "Blood, sparks and dust: as placed, exactly placed, or smoothed too",
+     PORT_TAKES_NOW,
+     3,
+     {"original", "exact", "smooth"},
+     {"Original", "Exact", "Smooth"}},
     {"frame_rate",
      "Frame rate",
      "Pictures a second; the game itself steps as the console does",
@@ -139,9 +153,9 @@ const s32 g_port_choice_count =
 
 const PortChoiceGroup g_port_choice_groups[PORT_CHOICE_GROUPS] = {
     {"The window", 0, 6},
-    {"The remastered picture", 6, 8},
-    {"Mods", 14, 2},
-    {"Controls", 16, 1},
+    {"The remastered picture", 6, 10},
+    {"Mods", 16, 2},
+    {"Controls", 18, 1},
 };
 
 /* `name = word` into `line`: FALSE if it does not fit. */

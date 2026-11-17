@@ -152,6 +152,12 @@ static const char g_usage[] =
     "                 a fighter veils him (on with the mesh)\n"
     "  --fighter-models F  the fighters drawn from models of their own,\n"
     "                 the .glb files in folder F (gl_fighter.h); off\n"
+    "  --smooth-light W  on, off: the game's own lighting worked out\n"
+    "                 at each pixel on the ground's mesh and the\n"
+    "                 fighters' models (docs/PORT.md, \"Lighting\")\n"
+    "  --effects W    original, exact, smooth: the effects where the\n"
+    "                 console put them; where the projection put them,\n"
+    "                 moved between frames; and their textures smoothed\n"
     "  --gl-fighter-pose F,N  each fighter's bones at blank N, into\n"
     "                 F/<model>.pose.json (tools/fighter_export.py --pose)\n"
     "  --gl-exact     draw as the console: the corners where it held\n"
@@ -1073,6 +1079,9 @@ static void port_GlQuit(s32 code) {
             "gl run fighter_faces %u fighter_unplaced %u walked_unplaced %u\n",
             counts->fighter_faces, counts->fighter_unplaced,
             counts->walked_unplaced);
+    fprintf(stderr, "gl run effects %s faces %u unplaced %u\n",
+            port_NameRemasterEffects(port_RemasterEffects()),
+            counts->effect_faces, counts->effect_unplaced);
     fprintf(stderr, "gl run mixed half %u add %u subtract %u quarter %u\n",
             counts->mixed[0], counts->mixed[1], counts->mixed[2],
             counts->mixed[3]);
@@ -1241,6 +1250,15 @@ int main(int argc, char **argv) {
             snprintf(g_run.pose_folder, sizeof(g_run.pose_folder), "%.*s",
                      comma != NULL ? (int)(comma - where) : (int)strlen(where),
                      where);
+        } else if (!strcmp(word, "--smooth-light")) {
+            options.is_smooth_light = strcmp(argv[++i], "off") != 0;
+        } else if (!strcmp(word, "--effects")) {
+            options.effects = port_ReadRemasterEffects(argv[++i]);
+            if (options.effects < 0) {
+                fprintf(stderr, "rebushido-gl: --effects takes original, "
+                                "exact or smooth\n");
+                return PORT_EXIT_USAGE;
+            }
         } else if (!strcmp(word, "--stage-depth")) {
             options.is_stage_depth = strcmp(argv[++i], "off") != 0;
         } else if (!strcmp(word, "--shadows")) {

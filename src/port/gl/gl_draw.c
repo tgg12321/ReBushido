@@ -25,6 +25,7 @@
 #include "common.h"
 #include "gl.h"
 #include "gl_fighter.h"
+#include "gl_light.h"
 #include "gl_replace.h"
 #include "gl_shadow.h"
 #include "gl_stage.h"
@@ -216,6 +217,9 @@ PORT_GL_FUNCTIONS
 /* The ground drawn as one mesh hides it by the ordering table's slots and
  * not by depth (port_GlIsOverGround). */
 #define FLAG_OVER_GROUND 64
+/* An effect's, with `effects smooth`: its texture read smoothed and its
+ * edge faded out (port_remaster.h, "the effects"). */
+#define FLAG_SMOOTH_EFFECT 128
 
 /* A corner's `w`: the depth the coprocessor worked out, in these units.
  * Any number in proportion to it will do -- it is the perspective divide
@@ -790,6 +794,10 @@ static const char g_gl_fragment_text[] =
     "    vec2 smooth_uv = uv;\n"
     "    vec3 color = v_color;\n"
     "    bool mixes = (v_flags.w & 4u) != 0u;\n"
+    /* an effect's texture smoothed (FLAG_SMOOTH_EFFECT), and how much of
+     * it the texels about the point cover */
+    "    bool smooth_effect = (v_flags.w & 128u) != 0u;\n"
+    "    float coverage = 1.0;\n"
     "    ivec2 pixel = ivec2(floor(gl_FragCoord.xy / u_scale));\n"
     /* A flat primitive is the chip's own picture at a larger scale, and
      * the chip settled its texel and its colour once for each pixel of
@@ -876,9 +884,11 @@ static const char g_gl_fragment_text[] =
     "            if (u_replace_mix == 1) { texel = 32768u; }\n"
     "            if (u_replace_mix == 2) { texel = 1u; }\n"
     "            weight = 1.0;\n"
-    "        } else if (u_bilinear != 0) {\n"
+    "        } else if (u_bilinear != 0 || smooth_effect) {\n"
     /* four texels about the point, each one that is nothing left out,
-     * so that a page's edge does not bleed */
+     * so that a page's edge does not bleed. An effect's texels that are
+     * nothing are kept as how much of the four is drawn: its edge fades
+     * out instead of stopping at a texel's edge (`coverage`) */
     "            vec2 at = uv - vec2(0.5);\n"
     "            vec2 part = fract(at);\n"
     "            ivec2 first = ivec2(floor(at));\n"
@@ -897,6 +907,13 @@ static const char g_gl_fragment_text[] =
     "            }\n"
     "            if (weight < 0.004) { discard; }\n"
     "            texel_color /= weight;\n"
+    "            if (smooth_effect) {\n"
+    "                coverage = smoothstep(0.0, 1.0, weight);\n"
+    "                if (texel == 0u) { texel = texel_at(first.x, first.y)\n"
+    "                    | texel_at(first.x + 1, first.y)\n"
+    "                    | texel_at(first.x, first.y + 1)\n"
+    "                    | texel_at(first.x + 1, first.y + 1); }\n"
+    "            }\n"
     "        } else if (steps > 1) {\n"
     /* The texels this fragment covers, averaged: `steps` by `steps`
      * points spread evenly over the area the texture point steps across
@@ -962,6 +979,22 @@ static const char g_gl_fragment_text[] =
     "        if (v_info.y == 0u) { shade = 0.5; }\n"
     "        else if (v_info.y == 3u) { color *= 0.25; shade = 0.0; }\n"
     "        else { shade = 0.0; }\n"
+    "    }\n"
+    /* An effect's edge, smoothed: only as much of it is put down as
+     * the four texels about the point have, in whichever way the draw
+     * mixes. A half-and-half mix takes less of the effect; an added one
+     * adds less; a texel that does not mix is laid over what is there
+     * by that share, where the draw blends at all. */
+    "    if (smooth_effect && coverage < 1.0) {\n"
+    "        if (mixes) {\n"
+    "            if (v_info.y == 0u) { shade *= coverage; }\n"
+    "            else { color *= coverage; }\n"
+    "        } else if ((v_flags.w & 4u) != 0u && v_info.y != 2u) {\n"
+    "            if (v_info.y == 0u) { shade = coverage; }\n"
+    "            else { color *= coverage; shade = coverage; }\n"
+    "        } else if (coverage < 0.5) {\n"
+    "            discard;\n"
+    "        }\n"
     "    }\n"
     "    if (u_pass == 1 && !mixes) { discard; }\n"
     "    if (u_pass == 2 && mixes) { discard; }\n"
@@ -1800,7 +1833,9 @@ static s32 port_GlIsOverGround(const PortRemasterPrim *prim) {
     if (prim->is_shadow) {
         return FALSE;
     }
-    return prim->is_fighter || prim->id.object == 0;
+    /* an effect is named (port_RemasterNoteEffect) and still never
+     * hidden, as the console hid none */
+    return prim->is_fighter || prim->is_effect || prim->id.object == 0;
 }
 
 static void port_GlDraw(const PortRemasterPrim *prim) {
@@ -1843,6 +1878,11 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     }
     if (port_GlIsOverGround(prim)) {
         flags |= FLAG_OVER_GROUND;
+    }
+    if (prim->is_effect && prim->is_textured &&
+        port_RemasterEffects() == PORT_EFFECTS_SMOOTH &&
+        !g_gl.options.is_exact) {
+        flags |= FLAG_SMOOTH_EFFECT;
     }
     /* drawn where the chip put it, by whole pixels of video memory: so
      * its texel and its colour are read as the chip read them, once a
@@ -2275,6 +2315,9 @@ void port_GlSetOptions(const PortGlOptions *options) {
     port_GlStageSetOn(options->is_exact ? 0 : options->is_stage_mesh);
     port_GlShadowSetStrength(options->is_exact ? 0 : options->shadows);
     port_GlFighterSetOn(options->is_exact ? 0 : options->is_fighter_models);
+    port_RemasterSetEffects(
+        options->is_exact ? PORT_EFFECTS_ORIGINAL : options->effects);
+    port_GlLightSetSmooth(options->is_exact ? 0 : options->is_smooth_light);
     if (g_gl.is_started) {
         /* the setting may have turned the mesh on or off, and the depth
          * buffer is attached only for it */
@@ -2467,6 +2510,10 @@ const char *port_GlStart(
         }
     }
     port_GlFighterSetOn(options->is_exact ? 0 : options->is_fighter_models);
+    /* the effects as the console placed them in that comparison too */
+    port_RemasterSetEffects(
+        options->is_exact ? PORT_EFFECTS_ORIGINAL : options->effects);
+    port_GlLightSetSmooth(options->is_exact ? 0 : options->is_smooth_light);
 
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);

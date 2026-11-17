@@ -23,6 +23,7 @@
 #include "gl.h"
 #include "gl_fighter.h"
 #include "gl_fighter_file.h"
+#include "gl_light.h"
 #include "gl_stage.h"
 #include "port_fighter.h"
 #include "port_gpu.h"
@@ -254,6 +255,7 @@ static struct {
     GLint at_light;
     GLint at_color;
     GLint at_back;
+    GLint at_smooth_light;
     GLint at_texture;
     GLint c_at_layer;
     GLint c_at_layer_depth;
@@ -330,6 +332,9 @@ static const char g_fighter_vertex_text[] =
     "uniform vec3 u_back;\n"  /* the colour of the dark, 0 to 255 */
     "out vec2 v_uv;\n"
     "out vec3 v_color;\n"
+    /* the normal the colour was lit from, for `smooth_light`; nought
+     * where there is none */
+    "out vec3 v_normal;\n"
     "out float v_depth;\n"
     "void main() {\n"
     "    mat4 skin = a_weight.x * u_joint[a_joint.x]\n"
@@ -365,9 +370,11 @@ static const char g_fighter_vertex_text[] =
     "    float length_of = length(normal);\n"
     "    if (length_of < 0.5) {\n"
     "        v_color = vec3(128.0);\n"
+    "        v_normal = vec3(0.0);\n"
     "    } else {\n"
     "        vec3 ir = max(u_light * (normal / length_of), vec3(0.0)) * 4096.0;\n"
     "        v_color = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
+    "        v_normal = normal / length_of;\n"
     "    }\n"
     "    v_uv = a_uv;\n"
     "    v_depth = v.z;\n"
@@ -381,8 +388,16 @@ static const char g_fighter_fragment_text[] =
     "uniform sampler2D u_index;\n"
     "uniform sampler2D u_palette;\n"
     "uniform int u_paletted;\n"
+    /* `smooth_light`: the same lights worked out at the pixel, from the
+     * normal the corners' colours were lit from (docs/PORT.md,
+     * "Lighting") */
+    "uniform int u_smooth_light;\n"
+    "uniform mat3 u_light;\n"
+    "uniform mat3 u_color;\n"
+    "uniform vec3 u_back;\n"
     "in vec2 v_uv;\n"
     "in vec3 v_color;\n"
+    "in vec3 v_normal;\n"
     "in float v_depth;\n"
     "layout(location = 0) out vec4 o_color;\n"
     "layout(location = 1) out float o_depth;\n"
@@ -401,7 +416,14 @@ static const char g_fighter_fragment_text[] =
     /* a texel of nothing is not drawn, as the chip leaves it */
     "    if (texel.a < 0.5) { discard; }\n"
     /* the chip's five bits a channel times the colour, 128 being one */
-    "    vec3 c = texel.rgb * 31.0 * v_color / 16.0;\n"
+    "    vec3 lit = v_color;\n"
+    "    float length_of = length(v_normal);\n"
+    "    if (u_smooth_light != 0 && length_of > 0.25) {\n"
+    "        vec3 ir = max(u_light * (v_normal / length_of), vec3(0.0))\n"
+    "                * 4096.0;\n"
+    "        lit = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
+    "    }\n"
+    "    vec3 c = texel.rgb * 31.0 * lit / 16.0;\n"
     "    o_color = vec4(clamp(c, 0.0, 255.0) / 255.0, 1.0);\n"
     "    o_depth = v_depth;\n"
     "}\n";
@@ -539,6 +561,7 @@ const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
     AT(at_light, "u_light");
     AT(at_color, "u_color");
     AT(at_back, "u_back");
+    AT(at_smooth_light, "u_smooth_light");
     AT(at_texture, "u_texture");
 #undef AT
 #define AT(member, name)                                                       \
@@ -993,6 +1016,7 @@ static void port_GlFighterUploadLights(const FighterPose *pose) {
     glUniformMatrix3fv(g_fighter.at_color, 1, GL_TRUE, color);
     glUniform3f(g_fighter.at_back, (GLfloat)pose->back[0],
                 (GLfloat)pose->back[1], (GLfloat)pose->back[2]);
+    glUniform1i(g_fighter.at_smooth_light, port_GlLightIsSmooth() ? 1 : 0);
 }
 
 /* A primitive of a drawn thing read a colour table at (x, y): kept, as

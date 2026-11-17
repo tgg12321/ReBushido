@@ -223,6 +223,11 @@ typedef struct {
      * hundredths: 0 is the game's own black silhouettes
      * (src/port/gl/gl_shadow.h; PORT_SHADOWS_SOFT). */
     s32 shadows;
+    /* The game's own lighting worked out at each pixel on the ground's
+     * mesh and the fighters' models (src/port/gl/gl_light.h). */
+    s32 smooth_light;
+    /* How the effects are drawn: PORT_EFFECTS_... (port_remaster.h). */
+    s32 effects;
     /* The mods beside the program are read (docs/MODS.md); 0 runs the
      * game with none of them, as `--mods off` does. */
     s32 mods;

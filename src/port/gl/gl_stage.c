@@ -38,6 +38,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_light.h"
 #include "gl_stage.h"
 #include "port_gpu.h"
 #include "port_remaster.h"
@@ -252,6 +253,10 @@ typedef struct {
     u8 info[4];  /* the texel's bits, the mix, nothing, nothing */
     u16 tile;    /* which tile of the stage it belongs to */
     u16 pad;
+    /* The normal it is lit from with `smooth_light` (gl_light.h): the
+     * mean of the faces' about this corner that do not turn by more than
+     * a crease from its own, 4096 long; and nought. */
+    s16 normal[4];
     /* The corners of the face this vertex is of, in the world, the
      * fourth the third's again for a triangle. Every vertex of a face
      * carries all of them because the two tests the renderer makes
@@ -262,7 +267,7 @@ typedef struct {
      * nearer than the cutoff (RENDER_OT_CUTOFF), which is how the
      * ground between the camera and the fight is kept out of the way. */
     GLfloat corner[4][3];
-} StageVertex; /* 92 bytes */
+} StageVertex; /* 100 bytes */
 
 static struct {
     s32 is_started;
@@ -295,6 +300,10 @@ static struct {
     GLint at_depth_shift;
     GLint at_cutoff;
     GLint at_unit;
+    GLint at_smooth_light;
+    GLint at_light;
+    GLint at_color;
+    GLint at_back;
     /* the mesh as it stands */
     s32 version; /* which stage's data it was built from */
     PortAddress tiles;
@@ -329,6 +338,7 @@ static const char g_stage_vertex_text[] =
     "layout(location = 7) in vec3 a_corner1;\n"
     "layout(location = 8) in vec3 a_corner2;\n"
     "layout(location = 9) in vec3 a_corner3;\n"
+    "layout(location = 10) in vec3 a_normal;\n"
     /* the view the renderer drew the stage's tiles with: its rotation
      * already scaled as the tiles' own projection scales it, where the
      * camera is, the distance to the projection plane, and where the
@@ -355,6 +365,7 @@ static const char g_stage_vertex_text[] =
     "flat out uvec4 v_info;\n"
     "flat out uint v_tile;\n"
     "flat out float v_slot;\n"
+    "out vec3 v_normal;\n"
     /* the ordering-table slot a depth is sorted at
      * (render_OtIndexShifted) */
     "int slot_of(int depth) {\n"
@@ -416,6 +427,7 @@ static const char g_stage_vertex_text[] =
     "    v_page = a_page;\n"
     "    v_info = a_info;\n"
     "    v_tile = a_tile;\n"
+    "    v_normal = a_normal;\n"
     "}\n";
 
 static const char g_stage_fragment_text[] =
@@ -429,6 +441,13 @@ static const char g_stage_fragment_text[] =
     "uniform ivec4 u_fog_rect;\n" /* the row the textures read */
     "uniform int u_depth_shift;\n"
     "uniform float u_depth;\n" /* what a depth is divided by */
+    /* `smooth_light` (gl_light.h): the tiles' lights, as the fighters'
+     * are given theirs (gl_fighter.c) */
+    "uniform int u_smooth_light;\n"
+    "uniform mat3 u_light;\n"
+    "uniform mat3 u_color;\n"
+    "uniform vec3 u_back;\n"
+    "in vec3 v_normal;\n"
     "in vec2 v_texture;\n"
     "in float v_depth;\n"
     "flat in float v_push;\n"
@@ -541,6 +560,15 @@ static const char g_stage_fragment_text[] =
     "        g_fog_mix = place - float(first);\n"
     "    }\n"
     "    vec3 color = v_color;\n"
+    /* the face's NCS again at this pixel, from the normal that runs
+     * across it (render_EmitTile lights a face once, with the record's
+     * own normal) */
+    "    float length_of = length(v_normal);\n"
+    "    if (u_smooth_light != 0 && length_of > 0.25) {\n"
+    "        vec3 ir = max(u_light * (v_normal / length_of), vec3(0.0))\n"
+    "                * 4096.0;\n"
+    "        color = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
+    "    }\n"
     "    uint texel;\n"
     "    vec3 one_color = texel_color(int(floor(v_texture.x)),\n"
     "                                 int(floor(v_texture.y)), texel);\n"
@@ -659,6 +687,8 @@ static void port_GlStageFormat(void) {
         8, 3, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->corner[2]);
     glVertexAttribPointer(
         9, 3, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->corner[3]);
+    glVertexAttribPointer(
+        10, 3, GL_SHORT, GL_FALSE, (GLsizei)sizeof(*one), one->normal);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
@@ -669,6 +699,7 @@ static void port_GlStageFormat(void) {
     glEnableVertexAttribArray(7);
     glEnableVertexAttribArray(8);
     glEnableVertexAttribArray(9);
+    glEnableVertexAttribArray(10);
 }
 
 const char *port_GlStageStart(void *(*getproc)(const char *name)) {
@@ -722,6 +753,10 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
     AT(at_depth_shift, "u_depth_shift");
     AT(at_cutoff, "u_cutoff");
     AT(at_unit, "u_unit");
+    AT(at_smooth_light, "u_smooth_light");
+    AT(at_light, "u_light");
+    AT(at_color, "u_color");
+    AT(at_back, "u_back");
 #undef AT
     glGenBuffers(1, &g_stage.buffer);
     glGenVertexArrays(1, &g_stage.array);
@@ -896,6 +931,7 @@ typedef struct {
     u8 color[4]; /* red, green, blue, the flags */
     s16 page[4];
     u8 info[4];
+    s16 normal[3]; /* the record's, which the face is lit from */
     /* the face's corners in the world, in the order the record has
      * them, the fourth the third's again for a triangle */
     GLfloat corner[4][3];
@@ -933,6 +969,11 @@ static void port_GlStagePutVertex(
     }
     to->tile = (u16)face->tile;
     to->pad = 0;
+    /* the face's own until the mesh is whole (port_GlStageBuild) */
+    to->normal[0] = face->normal[0];
+    to->normal[1] = face->normal[1];
+    to->normal[2] = face->normal[2];
+    to->normal[3] = 0;
     for (i = 0; i < 4; i++) {
         s32 j;
 
@@ -1055,6 +1096,9 @@ static void port_GlStageFace(s32 tile, const StageTile *at, const s16 *vertices,
     face.tile_x = at->x;
     face.tile_z = at->z;
     port_GlStageLight(normal, face.color);
+    face.normal[0] = normal[0];
+    face.normal[1] = normal[1];
+    face.normal[2] = normal[2];
     face.color[3] = (u8)(FLAG_TEXTURED | ((code & CODE_RAW) ? FLAG_RAW : 0) |
                          ((code & CODE_HALF) ? FLAG_HALF : 0));
     face.page[0] = (s16)((tpage & MODE_PAGE_X_MASK) * MODE_PAGE_X_STEP);
@@ -1244,6 +1288,16 @@ static void port_GlStageBuild(const PortStageView *view) {
         port_GlStageTile(i, &tiles[i]);
     }
     port_GlStageSeams(count);
+    /* each corner's normal the mean of the faces' about it, for
+     * `smooth_light` (gl_light.h); a stage the memory cannot be had for
+     * keeps the faces' own, which light it as the game does */
+    if (g_stage.built > 0) {
+        port_GlLightSmoothNormals(
+            &g_stage.building[0].x,
+            (s32)(sizeof(StageVertex) / sizeof(GLfloat)),
+            g_stage.building[0].normal,
+            (s32)(sizeof(StageVertex) / sizeof(s16)), g_stage.built);
+    }
     g_stage.vertex_count = g_stage.built;
     g_stage.tiles = (PortAddress)tiles;
     g_stage.tile_count = count;
@@ -1259,6 +1313,31 @@ static void port_GlStageBuild(const PortStageView *view) {
 }
 
 /* ---- drawing it ---- */
+
+/* The tiles' lights for `smooth_light`, as the coprocessor has them
+ * (port_GlStageLight): the light matrix and the colour matrix made 1,
+ * and the colour of the dark in bytes. */
+static void port_GlStageLights(void) {
+    const LightSetup *lights = (const LightSetup *)port_RemasterTileLights();
+    GLfloat light[9];
+    GLfloat color[9];
+    s32 i;
+
+    glUniform1i(g_stage.at_smooth_light,
+                port_GlLightIsSmooth() && lights != NULL ? 1 : 0);
+    if (lights == NULL) {
+        return;
+    }
+    for (i = 0; i < 9; i++) {
+        light[i] = (GLfloat)lights->lmat.m[i / 3][i % 3] / 4096.0f;
+        color[i] = (GLfloat)lights->cmat.m[i / 3][i % 3] / 4096.0f;
+    }
+    /* the numbers are a row after a row */
+    glUniformMatrix3fv(g_stage.at_light, 1, GL_TRUE, light);
+    glUniformMatrix3fv(g_stage.at_color, 1, GL_TRUE, color);
+    glUniform3f(g_stage.at_back, (GLfloat)lights->back[0],
+                (GLfloat)lights->back[1], (GLfloat)lights->back[2]);
+}
 
 /* The renderer's own framebuffer is what the mesh draws through: the
  * colour buffer the primitives are painted into, with the depth buffer
@@ -1379,6 +1458,7 @@ static void port_GlStageDrawMesh(
     glUniform1f(
         g_stage.at_depth, DEPTH_RANGE / (GLfloat)(1 << (view->far_shift & 31)));
     glUniform1i(g_stage.at_depth_shift, view->depth_shift & 31);
+    port_GlStageLights();
     glUniform1i(g_stage.at_cutoff, view->ot_cutoff);
     /* a tile's seam number is a quarter of a world unit (SEAM_STEP) */
     glUniform1f(

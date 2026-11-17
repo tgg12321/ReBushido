@@ -1483,9 +1483,11 @@ is drawn"), the scene's edges smoothed ("Edges"), and a wider view of
 the scene at a wider shape of picture ("A wider picture"), and more
 pictures a second than the game has frames ("More pictures a second"),
 and the fighters' shadows drawn as a darkening of the ground instead of
-the game's black silhouettes ("The shadows"). What it leaves for the
-step after it, by design and not by accident: new lighting ("What each
-later step needs").
+the game's black silhouettes ("The shadows"), the effects placed and
+moved where the projection put them ("The effects"), and the game's own
+lights worked out at each pixel of the ground and the fighters' models
+("Lighting"). What it leaves for the step after it, by design and not by
+accident: lights of its own ("What each later step needs").
 
 **Three settings of a run** say how much of each (`port_remaster.h`,
 `PortRemasterView`), each of them the drawing path alone:
@@ -3444,9 +3446,10 @@ left out), 58,373 had no place (10.7%), and now none has; the prover
 holds that to none (`tools/port_gl_prove.py`, `fighters`). That copy is
 the renderer's only one: every other point it draws from is the GTE's own
 store. An effect (`eff.c`) and the surf (`wave.c`) take their points
-through Sony's `RotTransPers`, which reads the GTE into the program and
-never through the store the side channel watches, so they still have no
-place; they are not a fighter's and do not tear.
+through Sony's `RotTransPers` and the GTE's macros and build their quads
+themselves, so with `effects original` they have no place; with `exact`
+or `smooth` each says which point or points it was built from and which
+effect it is, and is placed and moved by that name ("The effects").
 
 The same face of the same thing has the same name in the next frame
 however far it moved, however the camera turned, and however the walk
@@ -3937,17 +3940,175 @@ fight, because no roster entry draws them. The rebuild
 cannot add what the game's mesh does not have: a face is still a few
 painted quads, and a fold of cloth is the texture's.
 
+### The effects
+
+**How the game draws them** (`src/main/eff.c`, `include/eff.h`). Blood,
+sparks, the flashes of a clash, a lock and a hit, dust, splashes,
+footprints, the muzzle flash and the stage's flames are all flat
+textured quads (`POLY_FT4`) the game builds itself, outside the
+renderer's walk, into a buffer of its own and links into the ordering
+table at their depth; the surf (`src/main/wave.c`) is a sheet of 8 by 16
+quads drawn through the tile emitter. Their textures are on two pages at
+x 896 and 960 of video memory, and nearly all of them mix with what is
+behind them: added (the sparks, the flashes, the flames, the blood) or
+half and half (the dust). They come in two shapes:
+
+- **a sprite**: one point projected (Sony's `RotTransPers`, or the
+  macros `gte_RotTransPers` and `gte_stsxy3`), and the quad's corners
+  that point plus so many whole pixels each way, the size worked out
+  from the depth by a quotient rounded down (`g_eff_scale`) -- the
+  flames, the flashes and streaks, the dust, the splashes, and every
+  particle of blood, dirt and water, each drawn two or three times along
+  the way it moved this frame;
+- **four points projected**, one a corner: the muzzle flash
+  (`RotTransPers4`) and the footprints, which lie on the ground.
+
+On the console a sprite is therefore placed on whole pixels and sized in
+whole pixels: at four times the resolution a spark steps four pixels at
+a time as it moves and as it grows, and a drop of blood is a block of
+sixteen pixels a texel.
+
+**What the side channel is told** (`port_remaster.h`, "the effects";
+`EFF_NOTE_...` in `eff.c`, under `RB_REMASTER_VIEW`). As each quad is
+linked, `port_RemasterNoteSprite` says which point it was built about,
+the numbers its size was divided from, and which effect it is (the
+effect's own record: `&g_eff_flames[i]`, a particle, a splash's slot,
+and which of its quads); `port_RemasterNoteEffect` says which four points
+a quad's corners are. The decoder then gives a sprite's corners the
+point's place as the projection worked it out, moved as far as the game
+moved it itself (the water's drops are shaken by up to 20 pixels after
+they are projected), plus each corner's own offset made as large as it
+was before the quotient was rounded down, all at the point's depth. The
+macros' stores are a plain read of the register in the port
+(`tools/port_gte_macros.py`), so `port_GteNoteStored` writes down what
+they stored; `RotTransPers`, `RotTransPers3` and `RotTransPers4` store
+through `port_GteStoreData`, as their `swc2` does. The surf's points go
+where the tile emitter looks for them (`port_RemasterCopyPoint`,
+`wave.c`). Nothing of the game's is read or written.
+
+**`effects`** (`rebushido.cfg`, the settings menu, `--effects` of the
+prover; `port_remaster.h`):
+
+| | |
+|---|---|
+| `original` | where the console put them, as before: nothing is kept |
+| `exact` | each where the projection put it, its size without the rounding, and named, so that a picture between two frames moves it by its name (`gl_tween.c`) |
+| `smooth` | `exact`, and its texture read smoothed (`FLAG_SMOOTH_EFFECT`, `gl_draw.c`): the four texels about the point, a clear one counting as how much of the effect is not there, so the edge fades out instead of stopping at a texel's edge |
+
+Whatever the setting, **an effect is never hidden by the ground's
+depth**, as the console hid none (`port_GlIsOverGround`): a dust cloud
+whose lower half is "under" the ground in the world is drawn whole, as
+the console draws it. That is also why there is no soft-particle fade
+against the depth buffer: it would take away what the console shows,
+and an effect has no hard edge against the ground to soften in the
+first place. The colours, the mixes (`added` stays `ONE, ONE`; half and
+half stays half), the textures and the timing are the game's; `smooth`
+fades the edge in whichever way the draw already mixes.
+
+**Measured** (`port_game`'s plan, scale 2): 4,336 polygons of effects,
+every one of them placed (`gl run effects smooth faces 4336 unplaced
+0`), and the traces of `--effects original` and `--effects smooth` the
+same, 2,338 lines. Pictures of a fight side by side: the clash's streak
+and glow and the blood are round and soft at the edge instead of
+blocks, in the same colours and the same places to a pixel of the
+console's; on a picture of blood across the screen 0.29% of its pixels
+differ by more than 16 of 255 and no cell of an eight by eight grid
+changes its mean colour by more than 2.1 of 255.
+
+### Lighting
+
+**How the game lights** (`src/main/light.c`, `src/main/scene.c`). A
+light setup (`LightSetup`) is three directional lights -- a light
+matrix of their directions and a colour matrix of their colours -- and
+the colour of the dark; `light_SetStage` gives each stage its own from
+a table of 38 rows, so a night stage is lit dim and blue and a dusk
+stage warm. The coprocessor lights a normal with NCS (each light's turn
+on the normal, none below nought, through the colour matrix onto the
+colour of the dark) and the colour goes into the primitive. A tile of
+the ground has one normal a face, so the ground is lit face by face; a
+fighter has one a vertex, and the colour runs evenly between them.
+
+**`smooth_light`** (`src/port/gl/gl_light.h`) works out that same NCS,
+with the same lights, at every pixel, from a normal that runs smoothly
+across the surface:
+
+- **the ground's mesh** (`gl_stage.c`): as the mesh is built, each of
+  its vertices is given the mean of the normals of the faces about it
+  that turn by less than 45 degrees from its own face, each weighed by
+  its area (`port_GlLightSmoothNormals`), so a slope is shaded as a
+  slope and a wall still meets the floor at an edge; the shader lights
+  that normal with the tiles' light setup (`port_RemasterTileLights`),
+  given it every frame;
+- **the fighters' own models** (`gl_fighter.c`): the normal the vertex
+  was lit from goes to the pixel, and the fighter's own lights light it
+  there.
+
+A face whose corners all have the same normal -- every flat floor --
+comes out the colour the coprocessor gave it, to its rounding: so a
+stage keeps its palette and its mood, and only what was faceted
+changes. What the game draws from primitives (the scenery's models, the
+fighters drawn by the game itself) is lit as the game lit it: those
+colours are in the primitives.
+
+**Measured** (the stage tour of `tools/port_stage_prove.py`, the mesh on
+every stage, the `hd` fighters, scale 2, 4,800 blanks, a picture every
+300; `smooth_light` off against on): the traces the same on all three
+stages; the mean colour of the whole picture moves by at most 0.14 of
+255 (the Meikyokan dojo, stage 1: 65.81, 59.09, 51.47 against 65.95,
+59.21, 51.58), and no cell of an eight by eight grid by more than 2.5
+(the Meikyokan dojo), 2.4 (the purple cavern, a dark stage, 24) and 1.3
+(the terraced fields, 15). Under a hundredth of a percent of the pixels
+differ by more than 16 of 255. What changes is where it should: the
+cavern's walls and the haystacks' facets run smoothly into each other
+instead of stepping face by face, the folds of a fighter's model are
+shaded across the fold, and every flat floor is the colour it was. It is
+**subtle by design**: the lights are the game's, and the game's ground is
+mostly flat. Nothing measurable in the time a frame takes on Mesa's
+software renderer (2,228 against 2,226 microseconds).
+
+### What the old branch's lighting came to
+
+Branch `worktree-agent-adce6b210aa0a05f8` (10bd277dd) had four lighting
+settings for the picture as it was before the ground's mesh. On this
+tree:
+
+- **its shadows** were rejected and replaced ("The shadows");
+- **`smooth_fog`** worked the fog out per pixel for the game's own tile
+  primitives; the ground's mesh already reads the fog's level for each
+  pixel's own depth and mixes two levels ("The ground as one mesh"), so
+  nothing of it is wanted;
+- **`smooth_light`** carried the normal the GTE lit each corner with
+  through the side channel, for every primitive, and lit it again in the
+  picture's shader. Its own measurement was "correct and all but
+  invisible": the game's faces are small and shaded corner by corner
+  already. The two places where it is not invisible are the ones that
+  are now drawn from meshes of their own -- the ground's flat faces and
+  the fighters' models -- and there the normals are the mesh's, so
+  `smooth_light` here lights those from them and needs nothing of the
+  side channel or of `gte.c`;
+- **`ambient_occlusion`** darkened creases from the scene's depth at the
+  console's resolution. It drew halos round a fighter against a far
+  wall and darkened the far edge of a stage, it needed a depth of the
+  whole scene that this tree's picture does not keep (only the ground's
+  mesh and the fighters write depth; the scenery is painted in the
+  console's order), and it darkens what the console never darkened. Not
+  taken.
+
+So nothing of that branch is merged; what was worth keeping is
+`smooth_light`'s idea, done again on the meshes.
+
 ### What each later step needs
 
-- **Lighting.** Today every vertex of a model is lit by the GTE, by
-  three directional lights and an ambient colour from the stage's
-  `LightSetup` (`src/main/scene.c`), and the colour is in the primitive.
-  Better lighting means the normals, which the mesh has and the
-  primitive does not: the side channel is where they would go, beside
-  the position and the depth. (The shadows are done: "The shadows". What
-  is still missing there is the shadow of one thing on another -- a
-  fighter's shadow across the other fighter, or up a wall -- which wants
-  the ground's own depth, or a shadow map from the stage's sun.)
+- **Lighting.** The ground's mesh and the fighters' models are lit at
+  the pixel with the game's own lights ("Lighting"). The rest of the
+  scene -- the scenery's models, drawn from the game's primitives --
+  still has its colours in the primitive; lighting it again would need
+  the normals carried through the side channel, as the old branch did,
+  for a change it measured as all but invisible. (The shadows are done:
+  "The shadows". What is still missing there is the shadow of one thing
+  on another -- a fighter's shadow across the other fighter, or up a
+  wall -- which wants the ground's own depth, or a shadow map from the
+  stage's sun.)
 
 ## 64 bits
 

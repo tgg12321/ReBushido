@@ -63,6 +63,13 @@ typedef struct {
      * for the model (gl_fighter.h, docs/PORT.md, "The fighters' own
      * models"): 0 the game's own primitives. */
     s32 is_fighter_models;
+    /* The game's own lighting worked out again at each pixel, from the
+     * normals the ground's mesh and the fighters' models have, with the
+     * stage's own lights (docs/PORT.md, "Lighting"): 0 as each vertex or
+     * face was lit. */
+    s32 is_smooth_light;
+    /* How the effects are drawn: PORT_EFFECTS_... (port_remaster.h). */
+    s32 effects;
     /* The three things that make the hardware's picture the console's,
      * for the proof at scale 1 (docs/PORT.md, "Remastered"): the
      * corners where the PlayStation held them, the texture flat across
