@@ -4011,7 +4011,12 @@ and drawn together when the card next draws anything else
 (`port_GlDrawBlits`, `port_GlMarkMirror`); one that a later one covers
 is left out. The picture is the same to the byte (147 pictures of
 `port_game` at scale 2 and 16:9, with and without pictures between
-frames, against the program before). The frame's finish hands the card
+frames, against the program before; and again with the HD stages' pages,
+the night sky and see-through walls on, against `main` as merged). Each
+rectangle keeps its fade's tint; the stage's pages are told of each
+write as it is made (`port_GlSceneWroteVram`); and the rectangles are
+drawn before the sky goes over the frame's clear, which is what the sky
+is drawn onto. The frame's finish hands the card
 its work (`glFlush`) and no longer waits for all of it (`glFinish`): on
 a real card the program and the card now work at once, and the swap or
 a picture read back waits where it must.
@@ -4058,6 +4063,11 @@ whatever was last drawn: the same picture twice, then a jump. Now
   moment, then the game's step and that picture, at their recent peak),
   never more than a refresh past the blank's moment and none once it
   has passed: a PC that cannot keep up catches up.
+
+Netplay's holding back a program that is ahead (`port_PaceHold`) makes
+the blanks' own moments later, and the pictures follow those moments,
+so a hold is a frame that lasts a little longer and not a jump; the
+window's netplay test (`tools/port_net.py window`) passes with it.
 
 A model of the two rules (a display waited for, a swap that comes back
 at the refresh, the game's step 2 to 9 ms on a frame's blank, a picture
