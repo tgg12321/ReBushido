@@ -169,7 +169,8 @@ void port_ReadGameState(PortGameState *state) {
     }
     state->is_top_menu =
         g_sys_screen == SCREEN_MENU_UPDATE && g_menu_page == MENU_PAGE_TOP;
-#if RB_OPTIONS_PAGE && !RB_QUICK_BOOT
+#if RB_OPTIONS_PAGE
+    /* (the port has no quick-boot build, whose options page is none) */
     state->is_options_page = g_rb_page_state == RB_PAGE_UP;
 #else
     state->is_options_page = FALSE;

@@ -224,8 +224,8 @@ s32 port_SetSettingText(
     if (last.comment_at == last.end) {
         /* nothing after the value to keep in its column; a space after
          * an = with nothing after it */
-        if (last.value_at > 0 && text[last.value_at - 1] == EQUALS &&
-            size + 1 <= VALUE_BYTES_MAX) {
+        if (old_size == 0 && last.value_at > 0 &&
+            text[last.value_at - 1] == EQUALS && size + 1 <= VALUE_BYTES_MAX) {
             with[0] = ' ';
             for (i = 0; i < size; i++) {
                 with[i + 1] = value[i];

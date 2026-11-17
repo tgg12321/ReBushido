@@ -18,6 +18,8 @@
 #define LABEL_BYTES 160
 #define VALUE_BYTES 160
 #define BUTTONS 14
+/* the most settings whose values as the program started are kept */
+#define CHOICES_KEPT 64
 
 /* The colours, 0xAARRGGBB. */
 #define COLOR_PANEL 0xF60E121EU
@@ -82,7 +84,7 @@ static struct {
     /* each choice's value as the program started, for what waits on a
      * restart */
     s32 has_start;
-    s32 start[PORT_CHOICES_MAX * 4];
+    s32 start[CHOICES_KEPT];
     s32 font_ok;
 } g_menu;
 
@@ -499,9 +501,7 @@ void port_MenuOpen(const char *path) {
     snprintf(g_menu.path, sizeof(g_menu.path), "%s", path);
     port_MenuReadFile();
     if (!g_menu.has_start) {
-        for (i = 0; i < g_port_choice_count &&
-                    i < (s32)(sizeof(g_menu.start) / sizeof(g_menu.start[0]));
-             i++) {
+        for (i = 0; i < g_port_choice_count && i < CHOICES_KEPT; i++) {
             g_menu.start[i] = port_MenuChoiceValue(i);
         }
         g_menu.has_start = TRUE;
@@ -653,6 +653,7 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
             pixels, panel_w, panel_h, x + pad, baseline, label, color);
         if (row->kind == ROW_CHOICE &&
             g_port_choices[row->index].takes == PORT_TAKES_RESTART &&
+            row->index < CHOICES_KEPT &&
             port_MenuChoiceValue(row->index) != g_menu.start[row->index]) {
             /* changed, and waiting on the program's next start */
             port_FontDraw(pixels, panel_w, panel_h,
