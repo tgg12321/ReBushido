@@ -53,7 +53,7 @@ const char g_port_default_settings[] =
     "\n"
     "# The remastered picture (F2 changes picture while the game runs).\n"
     "# These four are a run's: changing one means starting it again.\n"
-    "graphics = follow      # original, remastered, or follow (the\n"
+    "graphics = remastered  # original, remastered, or follow (the\n"
     "                       # options page at boot says which)\n"
     "resolution = 0         # how many times the console's; 0 is the\n"
     "                       # window's own size\n"
@@ -68,11 +68,11 @@ const char g_port_default_settings[] =
     "fighter_models = on    # the fighters drawn from models of their own\n"
     "                       # where a mod's models/ has one (M100.glb);\n"
     "                       # off for the game's own\n"
-    "shadows = original     # original: the game's own black shadows;\n"
+    "shadows = cast         # original: the game's own black shadows;\n"
     "                       # soft: the ground under them darkened;\n"
     "                       # cast: cast from the fighters' own\n"
     "                       # bodies, darkened (cast:N, N hundredths)\n"
-    "frame_rate = original  # original: one picture a blank, as the\n"
+    "frame_rate = display   # original: one picture a blank, as the\n"
     "                       # console; display: as many as the screen\n"
     "                       # shows; or a number a second. The game\n"
     "                       # steps at the console's rate either way\n"
@@ -834,7 +834,8 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->deadzone = PORT_DEADZONE_DEFAULT;
     settings->fps = 1;
     settings->fps_corner = PORT_CORNER_TOP_LEFT;
-    settings->graphics = PORT_GRAPHICS_FOLLOW;
+    /* every new feature on in the builds the owner plays (2026-11-17) */
+    settings->graphics = PORT_GRAPHICS_REMASTERED;
     settings->resolution = PORT_RESOLUTION_WINDOW;
     /* the whole stage, every frame: nothing of it comes and goes
      * as the camera turns (docs/PORT.md, "How far the stage is
@@ -846,7 +847,7 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
      * is the console's four by three whatever this says */
     settings->aspect_w = PORT_ASPECT_W_WIDE;
     settings->aspect_h = PORT_ASPECT_H_WIDE;
-    settings->frame_rate = PORT_FRAME_RATE_ORIGINAL;
+    settings->frame_rate = PORT_FRAME_RATE_DISPLAY;
     /* The ground drawn as one mesh, which is what Remastered means by
      * the stage now: it has been seen on a real card and is measured
      * stage by stage (src/port/gl/gl_stage.h, g_stage_proved). A stage
@@ -856,9 +857,8 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     /* a fighter with a model of his own in mods/fighters/ is drawn from
      * it; with none there, nothing changes (gl_fighter.h) */
     settings->fighter_models = 1;
-    /* The soft shadows are the game's own black ones until the owner has
-     * looked at pictures of both (gl_shadow.h). */
-    settings->shadows = 0;
+    /* the shadows cast from the fighters' own bodies (gl_shadow.h) */
+    settings->shadows = port_ReadRemasterShadows("cast");
     /* A sky over the stages open to it, and the walls thinned where they
      * hide a fighter: neither changes what the game computes, and both
      * are the owner's to confirm on a real card (gl_sky.h, gl_see.h). */
