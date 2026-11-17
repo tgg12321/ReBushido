@@ -4106,8 +4106,9 @@ before every file: about 36 blanks, 0.6 seconds, a file, and a fight
 reads eleven. All of it falls inside one frame of the game, behind the
 loading picture (the map of red splashes and the title, with its streaks
 of noise), a black screen, or story mode's card of the next stage. The
-game has no minimum time of its own on a loading picture; its fades are
-frames of the game, and are left as they are.
+game keeps no minimum time of its own on the loading picture (story
+mode's card has one, below); its fades are frames of the game, and are
+left as they are.
 
 **What quick loading does** (`quick_loading`, on in the window, off with
 nothing else said for a run with `--plan` or `--frames`;
@@ -4130,9 +4131,14 @@ there (`tools/port_net.py window` runs with it on).
 Two loading screens are read: story mode's card of the next stage (its
 title, the map with the route, the stage's name and picture) and the
 team battle's scores between two matches. Each is shown for two seconds
-at the console's pace before its load is hurried (`READ_BLANKS`); the
-rest of the card's route is then drawn at once, and the card's own hold
-after the load (`story_FinishStageCard`) is the game's, unhurried.
+at the console's pace before its load is hurried (`READ_BLANKS`). The
+card has a time of its own as well, the one minimum the game keeps on a
+loading screen: a mark of the route is drawn every 240 of the card's
+drawings divided by the chapter's number, and the card stays up after
+its loads until the last mark has had its 240
+(`story_FinishStageCard`, about three seconds after the first fight's
+loads on the port). That wait is marked as a load's too, and hurried
+after the same two seconds; the rest of the route is then drawn at once.
 
 **The port's own work** in a load is read during it: the stage's mesh
 and its HD pages were already built as the stage's file arrives; the
@@ -4145,6 +4151,35 @@ loading picture.
 The log says of every load how many blanks it took, how many were
 hurried and how long it took (`load:`), and at the end the run's loads
 in all.
+
+**Measured** (the window at the console's pace with SDL's dummy drivers,
+each plan run with `--quick-loading off` and `on`, on a machine with
+other builds running; the blanks are the game's and the same both
+ways, the milliseconds the PC's):
+
+| load | blanks | off | on |
+| --- | --- | --- | --- |
+| power on: the options page's file, the boot picture's | 36 + 52 | 1.45 s | 0.03 s |
+| the opening movie to the title | 36 | 0.59 s | 0.01 s |
+| the top menu, versus select (three) | 154 | 2.65 s | 0.14 s |
+| versus select to the fight (eleven files) | 346 | 6.08 s | 0.52 s |
+| the fight to the menu after it, and back to the top menu | 34 + 36 | 1.16 s | 0.07 s |
+| story mode: select to the stage card | 132 | 2.42 s | 0.29 s |
+| story mode: the stage card, its loads and its own hold (read: two seconds) | 170 + 52 + 186 | 7.14 s | 2.40 s |
+
+`port_game`'s whole run, 4,481 blanks, took 76.2 seconds and 65.0 with
+it on; its loads, 11.9 seconds and 0.76. The traces of `port_game`,
+`port_other_fight` and a run of story mode are the same on and off, line
+for line, and `tools/port_rollback.py --program
+build/port-sdl/linux/rebushido --with=--quick-loading --with=on` passes.
+With the HD mods and Remastered (offscreen, Mesa's `llvmpipe`, `--fast`),
+the fight's first frame took 0.73 seconds before and 0.17 with the
+models read during the load, where they took 0.22 and 0.28 seconds at
+two of its blanks; the load itself, with the stage's mesh and HD pages
+built in it, 2.8 seconds there. What is left of a player's wait is that
+work of the port's own, and the boot picture (150 blanks, the
+publisher's, which is not a load), the fades and the game's own screens
+between, all frames of the game, which quick loading leaves alone.
 
 ### The fighters' own models
 
