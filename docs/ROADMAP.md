@@ -196,9 +196,16 @@ the stage").
     models, music (a mod's `.ogg` or `.wav` in place of a piece of the
     disc's, following the game's starts, fades and stops, outside the
     rollback) and a stage's files (a mod's file read in place of the
-    disc's sectors of it). Left: the scene's textures by whole page,
-    music by stage, and the stage editor's next steps (`MODS.md`,
-    "Stages").
+    disc's sectors of it), and the ground for new weapons: a weapon's
+    numbers from a mod's `weapons/NAME.txt` (its points, speed, power,
+    models, first stance and the CPU's reach), standing in for one of
+    the eight or a new slot on one (`--weapon 1=NAME`), a mod's motion
+    file in place of the disc's, and the session's set-up holding both
+    players to the same gameplay mods (`MODS.md`, "Weapons and
+    motions"). Left: the scene's textures by whole page, music by stage,
+    the stage editor's next steps (`MODS.md`, "Stages"), and new weapons
+    on the select screens with motions of their own ("Weapons and
+    motions", "What is not done yet").
 11. **Menus and UI**: the menus redrawn (the Japanese options of the
     title screen in English), and the settings menu holding all of
     ReBushido's own settings.

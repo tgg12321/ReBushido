@@ -69,7 +69,7 @@ static const char g_port_usage[] =
     "[--rollback-quiet]\n"
     "            [--mods FOLDER|off] [--dump-textures FOLDER]\n"
     "            [--music-mods on|off] [--dump-music FOLDER]\n"
-    "            [--dump-stages FOLDER]\n"
+    "            [--dump-stages FOLDER] [--weapon 1|2=NAME]\n"
     "            [--net-bind ADDRESS:PORT --net-peer ADDRESS:PORT]\n"
     "            [--link-side 0|1] [--net-latency MS] [--net-loss PERCENT]\n"
     "            [--netplay 1|2] [--net-delay N]\n"
@@ -140,6 +140,9 @@ static const char g_port_usage[] =
     "                 replaces, and its key\n"
     "  --dump-stages FOLDER  write every stage's files there from the disc,\n"
     "                 by their keys: what a mod's stage begins from\n"
+    "  --weapon 1=NAME  the fighter in place 1 (or 2) fights with a mod's\n"
+    "                 weapon NAME (weapons/NAME.txt) whenever his weapon\n"
+    "                 is the one it is made on\n"
     "\n"
     "At the end it prints a line for each thing the game asked for that\n"
     "the port does not do yet, with how often: stub NAME COUNT.\n";
@@ -332,6 +335,11 @@ s32 port_Main(s32 argc, char **argv) {
             port_MusicSetDumpFolder(argv[++i]);
         } else if (port_TextsEqual(word, "--dump-stages")) {
             port_SetStageDumpFolder(argv[++i]);
+        } else if (port_TextsEqual(word, "--weapon")) {
+            if (!port_WeaponsChoose(argv[++i])) {
+                port_UsageError(
+                    "--weapon takes 1=NAME or 2=NAME, not ", argv[i]);
+            }
         } else if (port_TextsEqual(word, "--music-mods")) {
             i++;
             if (port_TextsEqual(argv[i], "on") ||
@@ -430,6 +438,7 @@ s32 port_Main(s32 argc, char **argv) {
     port_ModsStart(argc > 0 ? argv[0] : NULL);
     port_MusicStart();
     port_StartStageMods(&g_port_disc);
+    port_WeaponsStart();
     if (plan != NULL) {
         port_LoadPlan(plan);
     }

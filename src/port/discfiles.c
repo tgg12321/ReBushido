@@ -54,7 +54,9 @@
 
 /* a stage file is not larger than this */
 #define STAGE_FILE_MAX (1024 * 1024)
-#define OVERRIDES_MAX (PORT_STAGES * PORT_STAGE_FILE_KINDS)
+/* and the motion files (the .BBM files of MOTION/: 18 on the disc) */
+#define MOTION_FILES_MAX 32
+#define OVERRIDES_MAX (PORT_STAGES * PORT_STAGE_FILE_KINDS + MOTION_FILES_MAX)
 
 typedef struct {
     u32 sector; /* the disc's first sector the file covers */
@@ -338,18 +340,18 @@ static void port_DumpStageFile(const PortDisc *disc, const char *key, s32 kind,
     }
 }
 
-/* A mod's file for a stage's file: read, and kept to be read in place of
- * the disc's sectors. */
-static void port_AddStageOverride(
-    const char *key, const char *path, u32 sector, u32 bytes) {
+/* A mod's file for a stage's file (`what` is "stages") or a motion file
+ * ("motions"): read, and kept to be read in place of the disc's sectors. */
+static void port_AddStageOverride(const char *what, const char *key,
+                                  const char *path, u32 sector, u32 bytes) {
     u32 sectors = (bytes + PORT_DISC_DATA_BYTES - 1) / PORT_DISC_DATA_BYTES;
     u32 size = port_ModFileSize(path);
     PortDiscOverride *override;
 
     if (size == 0 || size > sectors * PORT_DISC_DATA_BYTES) {
-        port_Log("stages: %s (%s) is %u bytes, where the disc's file has "
+        port_Log("%s: %s (%s) is %u bytes, where the disc's file has "
                  "room for %u: left out\n",
-                 key, path, size, sectors * PORT_DISC_DATA_BYTES);
+                 what, key, path, size, sectors * PORT_DISC_DATA_BYTES);
         return;
     }
     if (g_port_disc_files.overrides == NULL) {
@@ -364,7 +366,7 @@ static void port_AddStageOverride(
     override->data = port_HostAllocate(sectors * PORT_DISC_DATA_BYTES);
     if (override->data == NULL ||
         port_ModReadFile(path, override->data, size) != size) {
-        port_Log("stages: %s (%s) cannot be read: left out\n", key, path);
+        port_Log("%s: %s (%s) cannot be read: left out\n", what, key, path);
         return;
     }
     override->sector = sector;
@@ -377,8 +379,47 @@ static void port_AddStageOverride(
         g_port_disc_files.highest = sector + sectors;
     }
     g_port_disc_files.override_count++;
-    port_Log("stages: %s from %s, %u bytes over the disc's sectors %u to %u\n",
-             key, path, size, sector, sector + sectors - 1);
+    port_Log("%s: %s from %s, %u bytes over the disc's sectors %u to %u\n",
+             what, key, path, size, sector, sector + sectors - 1);
+}
+
+/* The motion files of the disc's MOTION/ (docs/formats/BBM.md): a mod's
+ * `motions/u123.bbm` stands in for U123.BBM, its key the disc's name in
+ * small letters without its ending, `common` for COMMON.BBM. */
+static void port_StartMotionMods(void) {
+    static const char motion_folder[] = "MOTION/";
+    u32 i;
+
+    for (i = 0; i < g_port_disc_files.count; i++) {
+        const PortDiscFile *file = &g_port_disc_files.files[i];
+        const char *name = file->path + file->name_at;
+        char key[PORT_STAGE_KEY_SIZE];
+        const char *path;
+        u32 length = 0;
+
+        u32 at;
+
+        for (at = 0; at < file->name_at && motion_folder[at] != TEXT_END &&
+                     port_DiscUpper(file->path[at]) == motion_folder[at];
+             at++) {
+        }
+        if (at != file->name_at || motion_folder[at] != TEXT_END ||
+            !port_TextEndsWith(name, ".BBM")) {
+            continue;
+        }
+        while (name[length] != '.' && length + 1 < sizeof(key)) {
+            key[length] = (char)(name[length] >= 'A' && name[length] <= 'Z'
+                                     ? name[length] - 'A' + 'a'
+                                     : name[length]);
+            length++;
+        }
+        key[length] = TEXT_END;
+        path = port_ModFind(PORT_MOD_MOTIONS, key);
+        if (path != NULL) {
+            port_AddStageOverride(
+                "motions", key, path, file->sector, file->size);
+        }
+    }
 }
 
 void port_SetStageDumpFolder(const char *folder) {
@@ -420,7 +461,7 @@ void port_StartStageMods(const PortDisc *disc) {
             }
             path = port_ModFind(PORT_MOD_STAGES, key);
             if (path != NULL) {
-                port_AddStageOverride(key, path, sector, bytes);
+                port_AddStageOverride("stages", key, path, sector, bytes);
             }
         }
     }
@@ -428,6 +469,7 @@ void port_StartStageMods(const PortDisc *disc) {
         port_Log("stages: the stages' files written to %s\n",
                  g_port_disc_files.dump_folder);
     }
+    port_StartMotionMods();
     if (g_port_disc_files.override_count > 0) {
         g_port_disc_override = port_OverrideDiscSector;
     }
