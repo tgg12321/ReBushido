@@ -5,14 +5,16 @@
  * is changed: it is read and written down. */
 #include "common.h"
 #include "port_gpu.h"
-#include "bb2.h"
 #include "port_fighter.h"
+#include "bb2.h"
 
 /* The near and far reach of render_SetupNode's scale for a skinned body
  * (render_asm.c, RENDER_SKIN_NEAR and RENDER_SKIN_FAR). */
 #define SKIN_NEAR 0x5A00
 #define SKIN_FAR 0xB500
 #define HALF_MASK 0xFFFF
+/* a MATRIX's nine halfwords of rotation */
+#define MATRIX_ELEMENTS 9
 
 static PortFighterView g_views[PORT_FIGHTER_SLOTS];
 static PortFighterWeapon g_weapons[PORT_FIGHTER_WEAPONS];
@@ -22,7 +24,7 @@ static u32 g_serial;
 static void port_FighterCopyMatrix(PortFighterMatrix *out, const MATRIX *in) {
     s32 i;
 
-    for (i = 0; i < 9; i++) {
+    for (i = 0; i < MATRIX_ELEMENTS; i++) {
         out->m[i] = ((const s16 *)in->m)[i];
     }
     for (i = 0; i < 3; i++) {
@@ -30,12 +32,13 @@ static void port_FighterCopyMatrix(PortFighterMatrix *out, const MATRIX *in) {
     }
 }
 
+/* A light setup's light and colour matrices and its colour of the dark. */
 static void port_FighterCopyLights(
     s16 *light, s16 *color, s32 *back, s32 setup) {
     const LightSetup *lights = &g_light_setups[setup];
     s32 i;
 
-    for (i = 0; i < 9; i++) {
+    for (i = 0; i < MATRIX_ELEMENTS; i++) {
         light[i] = ((const s16 *)lights->lmat.m)[i];
         color[i] = ((const s16 *)lights->cmat.m)[i];
     }
@@ -51,13 +54,15 @@ static s32 port_FighterScaleShift(const SceneNode *node) {
     s32 i;
 
     for (i = 0; i < 3; i++) {
-        s32 d = node->world.t[i] - g_node_camera_root_ptr->world.t[i];
+        s32 away = node->world.t[i] - g_node_camera_root_ptr->world.t[i];
 
-        reach |= d < 0 ? -d : d;
+        reach |= away < 0 ? -away : away;
     }
     return 2 - (reach < SKIN_NEAR) - (reach < SKIN_FAR);
 }
 
+/* The slot's model is being drawn: its bones, the view, the projection and
+ * the lights as the renderer has them now. */
 static void port_FighterNoteBody(s32 slot, Model *model) {
     PortFighterView *view = &g_views[slot];
     s32 i;
@@ -70,7 +75,7 @@ static void port_FighterNoteBody(s32 slot, Model *model) {
     for (i = 0; i < PORT_FIGHTER_BONES; i++) {
         port_FighterCopyMatrix(&view->bone[i], &model->bones[i].node.world);
     }
-    for (i = 0; i < 9; i++) {
+    for (i = 0; i < MATRIX_ELEMENTS; i++) {
         view->view[i] = ((const s16 *)g_render_view_matrix.m)[i];
     }
     for (i = 0; i < 3; i++) {
@@ -86,6 +91,8 @@ static void port_FighterNoteBody(s32 slot, Model *model) {
     view->scale_shift = port_FighterScaleShift(&model->bones[1].node);
 }
 
+/* A fighter's own node (port_fighter.h): his body's root, which draws the
+ * whole body, or a weapon. */
 void port_FighterNoteNode(PortAddress at) {
     const SceneNode *node = (const SceneNode *)at;
     s32 slot;

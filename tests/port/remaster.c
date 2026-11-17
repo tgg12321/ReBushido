@@ -32,6 +32,12 @@ u32 g_disp_prim_buffer_size = 0x13400;
  * its scale themselves. */
 RenderWalk g_render_walk;
 
+/* The fighters' own models write down what a fighter's body is drawn with
+ * (src/port/fighter_view.c), which this test has no fighters for. */
+void port_FighterNoteNode(PortAddress node) { (void)node; }
+
+void port_FighterNewFrame(void) {}
+
 void port_Fail(const char *format, ...) {
     test_Count(0, __FILE__, __LINE__, "the port stopped itself: %s", format);
     for (;;) {

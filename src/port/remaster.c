@@ -13,8 +13,8 @@
  * read and never written. */
 #include "common.h"
 #include "port_gpu.h"
-#include "bb2.h"
 #include "port_fighter.h"
+#include "bb2.h"
 
 /* ---- the tables ---- */
 
