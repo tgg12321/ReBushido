@@ -4013,7 +4013,14 @@ and glow and the blood are round and soft at the edge instead of
 blocks, in the same colours and the same places to a pixel of the
 console's; on a picture of blood across the screen 0.29% of its pixels
 differ by more than 16 of 255 and no cell of an eight by eight grid
-changes its mean colour by more than 2.1 of 255.
+changes its mean colour by more than 2.1 of 255. At scale 4, 35
+pictures of the fight: the mean colour of the whole the same to a
+hundredth of a unit, the worst cell 2.0. The surf, on the Kimigaura
+coast's tour (stage 11): 33,320 more of the run's polygons placed with
+`exact` than with `original` (728,011 against 694,691), the traces the
+same, and the water's glints drawn in perspective where they were
+blocks laid flat; the mean colour the same to a hundredth, the worst
+cell 1.2.
 
 ### Lighting
 
