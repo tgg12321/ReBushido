@@ -366,8 +366,8 @@ little delay is needed). Up to 7 or 8 frames can be rolled back.
    change honest about determinism. **Built: section 7.** The check needs
    the disc, so it is `make port-rollback`, not one of the checks of every
    push.
-5. **A step that can run with nothing drawn**, and the sound out of the
-   rollback (section 3). After that, **a build for players at `-O2`
+5. **A step that can run with nothing drawn** (done: section 10), and
+   the sound out of the rollback (section 3). After that, **a build for players at `-O2`
    without `-finstrument-functions`**, and the sound chip made faster,
    which is item 12's anyway. A frame run again costs about 4 ms today,
    so 8 frames is too slow and 3 is not. One to two weeks.
@@ -571,9 +571,9 @@ the stack's garbage differs between the two runs of a frame.
   then sets the record before each step and does not use the plan.
 - *Change 3* (done, by file: section 9) gives every file of the port
   one of the link's two groups, with a check.
-- *Change 5.* A frame run again still draws, mixes and hands its samples
-  to the window's sound card; the self-test is for the headless program
-  (with `--wav`, or in the window, a round's frames are heard twice).
+- *Change 5* (done: section 10). A frame run again quietly
+  (`g_port_rerun`) still mixes, but hands nothing to the sound card or
+  the file, and paints nothing.
 - *The picture work.* The side channel is outside the state now, so a
   load no longer rewinds its epoch. What is left for that work: slots
   written by a frame that was taken back stay, under an epoch the
@@ -674,3 +674,73 @@ What was looked at for rollback's sake:
   the host's card (change 6).
 - **The window's pacing, the sound card's queue, the tween** are outside;
   a frame run again must not reach them (change 5, section 10).
+
+## 10. A step run again, quietly
+
+Preparatory change 5 is built, in its first form. The host sets
+`g_port_rerun` (`include/port_platform.h`, `src/port/step.c`, outside
+the state) while it runs a step again after a load. The step then
+computes all of the game's state as it would and nothing of what is seen
+or heard of it:
+
+- **the picture:** the software GPU (`raster.c`) runs every command, so
+  its registers, the drawing mode a textured polygon brings, the clip and
+  the offset are what they would be, and it takes loads into video memory
+  and copies within it; but it paints no pixel of a polygon, line,
+  rectangle or fill, and the remastered renderer is given no command
+  (its note of a load into video memory still goes, so its textures stay
+  true). The side channel's own notes are taken as ever: its epoch goes
+  forward (section 9);
+- **the sound:** mixed, as section 3 recommends first (the chip is in the
+  state and a load takes it back with the rest), but neither the window's
+  sound card nor `--wav` is given the samples. A sound that a corrected
+  frame adds is heard from the next frame that is shown, a few frames in;
+  one that the frame taken back started stops short;
+- **the window** has no turn at a blank (its input and blank hooks:
+  pacing, presenting, the keys), a run writes no picture (`--shots`, a
+  checkpoint's picture, snapshot, video memory or sound chip) and prints
+  nothing; a play test's plan still runs, being in the state.
+
+Video memory is then not what a run without rollbacks would hold: what a
+frame run again would have painted is missing until a shown frame paints
+over it. In a fight every frame paints the whole screen, and no fight
+frame reads video memory back (section 2). A load or a menu that did
+(`StoreImage`, `MoveImage` of what a frame painted) after a quiet run
+again would read the frame taken back's pixels; none does in the
+measured runs, and the hash (section 5) would name it as a desync.
+
+**The self-test** has it: `--rollback-quiet` runs each round's frames
+again quietly and compares every page of the state but video memory and
+the game's stack. The stack is left out because the registers a function
+keeps for its caller can hold what a painting function last left in them
+and nobody reads (the 32-bit program showed one such word); the run that
+is not quiet still holds the stack to the byte. `make port-rollback` now
+makes three runs of each size: plain, with rollbacks, and with rollbacks
+run again quietly, and all three print and write the same. It reports
+how long a step took between rounds, run first and run again, over the
+run and in the fight's frames alone.
+
+**What a frame run again costs.** The headless 64-bit program, `port_game`'s
+plan, 8 frames every 24, on the machine of section 1 with other builds
+running (so the means wander by a millisecond between runs; the least is
+steadier):
+
+| A step of the fight | `-O1` mean (least) | `-O2` mean (least) |
+| --- | --- | --- |
+| run first, drawn and sounded | 5.2 ms (2.7) | 4.1 ms (2.3) |
+| run again quietly | 2.9 to 3.2 ms (0.90) | 2.0 to 2.1 ms (0.71) |
+
+So a quiet frame is about half a drawn one, and most of what is left is
+the sound chip mixing two blanks (section 3); eight of them at `-O2` are
+16 ms, half a frame of 30 a second, and three are 6 ms. Keeping the sound
+out of the rollback (section 3, "later") would take most of the rest.
+
+**`-O2`.** `PORT_OPT=2 make port` builds the headless programs at `-O2`
+into `build/port-O2/` and `build/port32-O2/`, and `PORT_OPT=2 make
+port-sdl` the window's into `build/port-sdl/linux-O2/`. With
+`port_game`'s plan all three print the same 2,338-line trace as at `-O1`
+to the byte, and pass the rollback self-test, quiet or not. It buys about
+a fifth of a fight frame drawn and a third of one run again. The checks
+and the play tests keep `-O1`, and so does the window's build for now:
+the play tests hold only the headless program to the emulator, so the
+switch of the players' build is the owner's.

@@ -282,6 +282,13 @@ def set_bits(bits):
     global BITS, OUT_DIR, OBJ_DIR, PROGRAM, NAMES, LD_SCRIPT, LAYOUT, GAME_FLAGS, LINK_FLAGS
     BITS = bits
     OUT_DIR = 'build/port' if bits == DEFAULT_BITS else 'build/port%d' % bits
+    # PORT_OPT=2: the game and the port optimised at -O2, into a folder of
+    # its own (build/port-O2/), to be measured against the program the
+    # checks and the play tests use (docs/NETPLAY.md, section 10)
+    optimise = os.environ.get('PORT_OPT', '')
+    if optimise:
+        OUT_DIR += '-O' + optimise
+        GAME_FLAGS = ['-O' + optimise if f == '-O1' else f for f in GAME_FLAGS]
     OBJ_DIR = OUT_DIR + '/obj'
     PROGRAM = OUT_DIR + '/rebushido'
     NAMES = PROGRAM + '.sym'

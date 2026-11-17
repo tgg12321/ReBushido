@@ -71,6 +71,28 @@ extern void port_HostFlush(s32 file);
 #define PORT_HOST_TICKS_PER_MICROSECOND 10
 extern u32 port_HostTicks(void);
 
+/* ---- the network: datagrams of UDP over IPv4 (docs/NETPLAY.md, section
+ * 11; src/port/net.c) ---- */
+
+/* An address and a port, in the host's own order of bytes: 127.0.0.1 is
+ * 0x7F000001. */
+typedef struct {
+    u32 address;
+    u16 port;
+} PortNetAddress;
+
+/* A socket bound to `at`: a number that is not negative, or -1. Nothing
+ * here chooses the address: the program binds where it is told. */
+extern s32 port_HostUdpOpen(const PortNetAddress *at);
+/* One datagram to `to`. Returns 1 if it went. */
+extern s32 port_HostUdpSend(
+    s32 socket, const PortNetAddress *to, const void *bytes, u32 count);
+/* One datagram, waiting up to `wait_ms` milliseconds for it (0: not at
+ * all): its length, with at most `room` of its bytes, and who sent it;
+ * -1 if none came. */
+extern s32 port_HostUdpReceive(
+    s32 socket, void *bytes, u32 room, PortNetAddress *from, u32 wait_ms);
+
 /* `size` bytes of zeroed memory that can be read and written, at exactly
  * `address`: 1, or 0 if the system will not give memory there (something
  * else has the place, or it cannot be had at all). */

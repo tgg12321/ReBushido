@@ -12,6 +12,7 @@
  * what the same run without prints. */
 #include "common.h"
 #include "port_host.h"
+#include "port_gpu.h"
 #include "port_spu.h"
 #include "bb2.h"
 
@@ -113,6 +114,15 @@ static s32 g_port_rollback_failed;
 static PortTiming g_port_rollback_saves;
 static PortTiming g_port_rollback_loads;
 static PortTiming g_port_rollback_hashing;
+/* --rollback-quiet: the frames run again as netplay runs them, quietly
+ * (g_port_rerun), and compared but for video memory, which they do not
+ * paint. */
+static s32 g_port_rollback_quiet;
+/* How long a step took: between two saves, run first, run again. */
+static PortTiming g_port_rollback_steps[ROLLBACK_AGAIN + 1];
+/* ... of those, the steps of a fight (its screen's handler ran). */
+static PortTiming g_port_rollback_fight_steps[ROLLBACK_AGAIN + 1];
+static u32 g_port_rollback_step_start;
 
 /* ---- the pieces ---- */
 
@@ -395,7 +405,8 @@ static u64 port_RollbackTakeText(void) {
     return hash;
 }
 
-void port_StartRollbackTest(u32 frames, u32 every) {
+void port_StartRollbackTest(u32 frames, u32 every, s32 quiet) {
+    g_port_rollback_quiet = quiet;
     g_port_rollback_frames = frames;
     g_port_rollback_every = every < frames ? frames : every;
     g_port_rollback_phase = ROLLBACK_WAIT;
@@ -467,6 +478,37 @@ static const PortStateRun *port_RollbackFindPage(u32 page, u32 *offset) {
     return NULL;
 }
 
+/* Whether `bytes` from `at` are ones a quiet run again need not give as
+ * the first run did: video memory, which it does not paint, and the
+ * game's stack, where the registers its functions keep for their callers
+ * may hold what a painting function left in them and nobody reads again
+ * (the run that is not quiet holds the stack to the byte). */
+static s32 port_RollbackIsUnpainted(PortAddress at, u32 bytes) {
+    if (!g_port_rollback_quiet) {
+        return 0;
+    }
+    if (at + bytes > (PortAddress)ADDR(STATE_STACK_TOP - STATE_STACK_BYTES) &&
+        at < (PortAddress)ADDR(STATE_STACK_TOP)) {
+        return 1;
+    }
+    return at + bytes > (PortAddress)g_port_vram &&
+           at < (PortAddress)(g_port_vram + PORT_VRAM_PIXELS);
+}
+
+/* The same for a page of the snapshot. */
+static s32 port_RollbackIsUnpaintedPage(u32 page) {
+    const PortStateRun *run;
+    u32 offset;
+
+    if (!g_port_rollback_quiet) {
+        return 0;
+    }
+    run = port_RollbackFindPage(page, &offset);
+    return run != NULL &&
+           port_RollbackIsUnpainted(
+               (PortAddress)(run->start + offset), STATE_PAGE_BYTES);
+}
+
 /* The first frame after the save, run again, against the state it left
  * the first time, which is kept whole: the words that differ. */
 static void port_RollbackNameWords(void) {
@@ -481,7 +523,10 @@ static void port_RollbackNameWords(void) {
         u32 word;
 
         for (word = 0; word < run->bytes / HASH_WORD_BYTES; word++) {
-            if (was[word] == now[word]) {
+            if (was[word] == now[word] ||
+                port_RollbackIsUnpainted(
+                    (PortAddress)(run->start + word * HASH_WORD_BYTES),
+                    HASH_WORD_BYTES)) {
                 continue;
             }
             if (named++ == ROLLBACK_NAMED_MAX) {
@@ -512,7 +557,8 @@ static void port_RollbackFail(const u64 *first, u64 text, u64 hash) {
         const PortStateRun *run;
         u32 offset;
 
-        if (first[page] == g_port_rollback_here[page]) {
+        if (first[page] == g_port_rollback_here[page] ||
+            port_RollbackIsUnpaintedPage(page)) {
             continue;
         }
         if (named++ == ROLLBACK_NAMED_MAX) {
@@ -548,10 +594,12 @@ static void port_RollbackLoad(void) {
     g_port_rollback_length = g_port_rollback_count;
     g_port_rollback_phase = ROLLBACK_AGAIN;
     g_port_rollback_count = 0;
+    g_port_rerun = g_port_rollback_quiet;
 }
 
 /* The next save after a round that took `length` frames. */
 static void port_RollbackWait(u32 length) {
+    g_port_rerun = 0;
     g_port_rollback_phase = ROLLBACK_WAIT;
     g_port_rollback_count =
         g_port_rollback_every > length ? g_port_rollback_every - length : 0;
@@ -560,16 +608,35 @@ static void port_RollbackWait(u32 length) {
     }
 }
 
-/* A frame's boundary (port_state.h): the round's next step. */
+static void port_RollbackTurn(void);
+
+/* A frame's boundary (port_state.h): how long the step took, and the
+ * round's next turn. */
 void port_OnRollbackFrame(void) {
+    u32 now = port_HostTicks();
+
+    if (g_port_rollback_phase == ROLLBACK_OFF) {
+        return;
+    }
+    if (g_port_rollback_step_start != 0) {
+        port_TimingAdd(&g_port_rollback_steps[g_port_rollback_phase],
+                       now - g_port_rollback_step_start);
+        if (g_sys_screen == SCREEN_FIGHT_UPDATE) {
+            port_TimingAdd(&g_port_rollback_fight_steps[g_port_rollback_phase],
+                           now - g_port_rollback_step_start);
+        }
+    }
+    port_RollbackTurn();
+    g_port_rollback_step_start = port_HostTicks();
+}
+
+/* The round's next turn, after a step. */
+static void port_RollbackTurn(void) {
     u64 *first;
     u64 text;
     u64 hash;
     u32 start;
 
-    if (g_port_rollback_phase == ROLLBACK_OFF) {
-        return;
-    }
     if (g_port_rollback_phase == ROLLBACK_WAIT) {
         if (g_port_rollback_count > 0) {
             g_port_rollback_count--;
@@ -604,7 +671,8 @@ void port_OnRollbackFrame(void) {
         u32 page;
 
         for (page = 0; page < g_port_rollback_page_count; page++) {
-            if (first[page] != g_port_rollback_here[page]) {
+            if (first[page] != g_port_rollback_here[page] &&
+                !port_RollbackIsUnpaintedPage(page)) {
                 port_RollbackFail(first, text, hash);
             }
         }
@@ -643,6 +711,19 @@ void port_PrintRollbackReport(void) {
     port_PrintTiming("save", &g_port_rollback_saves);
     port_PrintTiming("load", &g_port_rollback_loads);
     port_PrintTiming("port_StateHash", &g_port_rollback_hashing);
+    port_PrintTiming(
+        "a step between rounds", &g_port_rollback_steps[ROLLBACK_WAIT]);
+    port_PrintTiming(
+        "a step run first", &g_port_rollback_steps[ROLLBACK_FIRST]);
+    port_PrintTiming(g_port_rollback_quiet ? "a step run again, quietly"
+                                           : "a step run again",
+                     &g_port_rollback_steps[ROLLBACK_AGAIN]);
+    port_PrintTiming("a step of a fight run first",
+                     &g_port_rollback_fight_steps[ROLLBACK_FIRST]);
+    port_PrintTiming(
+        g_port_rollback_quiet ? "a step of a fight run again, quietly"
+                              : "a step of a fight run again",
+        &g_port_rollback_fight_steps[ROLLBACK_AGAIN]);
     port_Log("rollback: %s: %u rounds of %u frames run twice, %u frames "
              "compared\n",
              g_port_rollback_failed ? "FAILED" : "ok", g_port_rollback_rounds,

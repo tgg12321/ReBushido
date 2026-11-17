@@ -459,6 +459,10 @@ static void port_MixSound(u32 frames) {
     port_ReadCdAudio(cd, frames);
     port_RunSpu(cd, out, frames);
     g_port_sample_count += frames;
+    /* a step run again is mixed and not heard (port_platform.h) */
+    if (g_port_rerun) {
+        return;
+    }
     if (port_IsWavOn()) {
         port_AppendWav(out, frames);
     }

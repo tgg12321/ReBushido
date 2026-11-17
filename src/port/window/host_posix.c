@@ -8,11 +8,16 @@
 #if !defined(_WIN32)
 
 #define _GNU_SOURCE
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <time.h>
 #include <ucontext.h>
 #include <unistd.h>
@@ -140,6 +145,69 @@ void port_HostFlush(s32 file) {
     if (stream != NULL && fflush(stream) == 0) {
         fsync(fileno(stream));
     }
+}
+
+/* ---- the network (port_host.h) ---- */
+
+/* The port's address as the library takes it. */
+static void port_PosixToSocket(
+    struct sockaddr_in *out, const PortNetAddress *in) {
+    memset(out, 0, sizeof(*out));
+    out->sin_family = AF_INET;
+    out->sin_port = htons(in->port);
+    out->sin_addr.s_addr = htonl(in->address);
+}
+
+/* A socket of datagrams, bound where it is told. */
+s32 port_HostUdpOpen(const PortNetAddress *at) {
+    struct sockaddr_in address;
+    int file = socket(AF_INET, SOCK_DGRAM, 0);
+
+    if (file < 0) {
+        return -1;
+    }
+    port_PosixToSocket(&address, at);
+    if (bind(file, (struct sockaddr *)&address, sizeof(address)) != 0) {
+        close(file);
+        return -1;
+    }
+    return file;
+}
+
+/* One datagram to the peer. */
+s32 port_HostUdpSend(
+    s32 socket, const PortNetAddress *to, const void *bytes, u32 count) {
+    struct sockaddr_in address;
+
+    port_PosixToSocket(&address, to);
+    return sendto(socket, bytes, count, 0, (struct sockaddr *)&address,
+                  sizeof(address)) == (ssize_t)count;
+}
+
+/* poll, then recvfrom: a datagram, if one comes in time. */
+s32 port_HostUdpReceive(
+    s32 socket, void *bytes, u32 room, PortNetAddress *from, u32 wait_ms) {
+    struct sockaddr_in address;
+    socklen_t address_bytes = sizeof(address);
+    struct pollfd poll_file;
+    ssize_t got;
+
+    poll_file.fd = socket;
+    poll_file.events = POLLIN;
+    poll_file.revents = 0;
+    if (poll(&poll_file, 1, (int)wait_ms) <= 0) {
+        return -1;
+    }
+    got = recvfrom(
+        socket, bytes, room, 0, (struct sockaddr *)&address, &address_bytes);
+    if (got < 0) {
+        return -1;
+    }
+    if (from != NULL) {
+        from->address = ntohl(address.sin_addr.s_addr);
+        from->port = ntohs(address.sin_port);
+    }
+    return (s32)got;
 }
 
 /* Whole pages at exactly `address`, or nothing (port_host.h). */

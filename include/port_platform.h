@@ -211,6 +211,30 @@ extern void port_StepGame(void);
 extern void port_EndStep(void);
 /* Steps the host has run since the game started. */
 extern u32 g_port_steps;
+/* Set by the host while it runs a step again after putting an earlier
+ * state back (rollback): the step computes all the game's state as it
+ * would, and nothing of what is seen or heard of it. The GPU keeps its
+ * registers and takes loads into video memory but paints no pixel
+ * (raster.c), the remastered renderer is given no command, the sound is
+ * mixed but neither the card nor the file is given it (sound.c), the
+ * window has no turn at a blank (clock.c), a run writes no picture and
+ * prints nothing (plan.c, text.c). docs/NETPLAY.md, section 10. */
+extern s32 g_port_rerun;
+
+/* ---- the link cable (src/port/net.c; docs/NETPLAY.md, section 11) ---- */
+
+/* The game's link mode (src/main/link.c) over a socket to another
+ * program of the port: whether the run was given a side (--link-side)
+ * and a network, and which side it is. */
+extern s32 port_LinkIsUp(void);
+extern s32 port_LinkSide(void);
+/* The two programs meet as they connect: 1 once each has heard the
+ * other, waited for in the PC's time; 0 if the other never came. */
+extern s32 port_LinkMeet(void);
+/* The game's packet, its two words, to the other program: 1. */
+extern s32 port_LinkSend(s32 first, s32 second);
+/* The other program's next packet into `words`: 1, or 0 if it has gone. */
+extern s32 port_LinkReceive(s32 *words);
 
 /* ---- events (src/port/event.c) ---- */
 

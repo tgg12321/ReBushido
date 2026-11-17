@@ -5,7 +5,7 @@
  *             [--shots FOLDER] [--every N] [--vram FILE]
  *             [--wav FILE] [--spu FILE]
  *             [--card1 FILE] [--card2 FILE] [--no-cards]
- *             [--rollback-test N] [--rollback-every M]
+ *             [--rollback-test N] [--rollback-every M] [--rollback-quiet]
  *
  * It gives the game the PlayStation's memory and the player's disc
  * image, and then calls the game's own main, which never returns: the
@@ -51,7 +51,8 @@ static const char g_port_usage[] =
     "            [--shots FOLDER] [--every N] [--vram FILE]\n"
     "            [--wav FILE] [--spu FILE]\n"
     "            [--card1 FILE] [--card2 FILE] [--no-cards]\n"
-    "            [--rollback-test N] [--rollback-every M]\n"
+    "            [--rollback-test N] [--rollback-every M] "
+    "[--rollback-quiet]\n"
     "\n"
     "  --image FILE   your own image of the game's disc: the .cue, or the\n"
     "                 .bin of raw sectors it names\n"
@@ -82,6 +83,8 @@ static const char g_port_usage[] =
     "                 frames, put it back and run them again; stop at the\n"
     "                 first difference, and report (docs/NETPLAY.md)\n"
     "  --rollback-every M  ... M frames from one save to the next (24)\n"
+    "  --rollback-quiet    ... and run them again as netplay does: nothing\n"
+    "                 drawn, heard or printed; video memory not compared\n"
     "\n"
     "At the end it prints a line for each thing the game asked for that\n"
     "the port does not do yet, with how often: stub NAME COUNT.\n";
@@ -196,6 +199,7 @@ s32 port_Main(s32 argc, char **argv) {
     s32 every = SHOTS_EVERY;
     s32 rollback_frames = 0;
     s32 rollback_every = ROLLBACK_EVERY;
+    s32 rollback_quiet = 0;
     s32 i;
 
     port_CatchCrashes();
@@ -220,6 +224,8 @@ s32 port_Main(s32 argc, char **argv) {
             port_SetTrace(1);
         } else if (port_TextsEqual(word, "--no-cards")) {
             port_SetCardsOff();
+        } else if (port_TextsEqual(word, "--rollback-quiet")) {
+            rollback_quiet = 1;
         } else if (
             port_TextsEqual(word, "--help") || port_TextsEqual(word, "-h")) {
             port_Print("%s", g_port_usage);
@@ -296,7 +302,8 @@ s32 port_Main(s32 argc, char **argv) {
         port_SetShots(shots, (u32)every);
     }
     if (rollback_frames > 0) {
-        port_StartRollbackTest((u32)rollback_frames, (u32)rollback_every);
+        port_StartRollbackTest(
+            (u32)rollback_frames, (u32)rollback_every, rollback_quiet);
     }
     /* where primitives may be: the console's memory, the program's own
      * variables, the game's stack */

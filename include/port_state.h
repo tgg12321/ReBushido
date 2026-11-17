@@ -68,8 +68,11 @@ extern u64 port_StateHash(void);
 /* Every `every` frames of the game, save the state, run `frames` frames,
  * put it back, run them again, and stop the program at the first
  * difference of the state or of what the run printed; at the end, a
- * report of the rollbacks and of how long saving and loading took. */
-extern void port_StartRollbackTest(u32 frames, u32 every);
+ * report of the rollbacks and of how long saving, loading and a step
+ * took. `quiet`: the frames are run again as netplay runs them
+ * (g_port_rerun, port_platform.h), and video memory, which they do not
+ * paint, is not compared. */
+extern void port_StartRollbackTest(u32 frames, u32 every, s32 quiet);
 /* The game is at a frame's boundary, between two steps (src/port/
  * main.c; port_platform.h, "the step"): the round's next turn. The
  * game's stack and its stack pointer are in the state, so a load can be

@@ -18,6 +18,7 @@
  * the PlayStation's RAM begins at exactly 2 GB). */
 #if defined(_WIN32)
 
+#include <winsock2.h>
 #include <windows.h>
 
 #include "port_host.h"
@@ -142,6 +143,92 @@ s32 port_HostWriteAt(s32 file, u32 offset, const void *bytes, u32 count) {
 }
 
 void port_HostFlush(s32 file) { FlushFileBuffers(g_port_windows_files[file]); }
+
+/* ---- the network (port_host.h): Windows' sockets, started once ---- */
+
+#define MS_PER_SECOND 1000
+#define US_PER_MS 1000
+
+static s32 g_port_windows_sockets_started;
+
+/* The port's address as Windows takes it. */
+static void port_WindowsToSocket(
+    struct sockaddr_in *out, const PortNetAddress *in) {
+    u32 i;
+
+    for (i = 0; i < sizeof(*out); i++) {
+        ((u8 *)out)[i] = 0;
+    }
+    out->sin_family = AF_INET;
+    out->sin_port = htons(in->port);
+    out->sin_addr.s_addr = htonl(in->address);
+}
+
+/* A socket of datagrams, bound where it is told; Windows' sockets are
+ * started the first time. */
+s32 port_HostUdpOpen(const PortNetAddress *at) {
+    struct sockaddr_in address;
+    SOCKET file;
+
+    if (!g_port_windows_sockets_started) {
+        WSADATA data;
+
+        if (WSAStartup(MAKEWORD(2, 2), &data) != 0) {
+            return -1;
+        }
+        g_port_windows_sockets_started = 1;
+    }
+    file = socket(AF_INET, SOCK_DGRAM, 0);
+    if (file == INVALID_SOCKET) {
+        return -1;
+    }
+    port_WindowsToSocket(&address, at);
+    if (bind(file, (struct sockaddr *)&address, sizeof(address)) != 0) {
+        closesocket(file);
+        return -1;
+    }
+    /* a socket's handle is a small number in practice; the port keeps
+     * it as one */
+    return (s32)file;
+}
+
+/* One datagram to the peer. */
+s32 port_HostUdpSend(
+    s32 socket, const PortNetAddress *to, const void *bytes, u32 count) {
+    struct sockaddr_in address;
+
+    port_WindowsToSocket(&address, to);
+    return sendto((SOCKET)socket, (const char *)bytes, (s32)count, 0,
+                  (struct sockaddr *)&address, sizeof(address)) == (s32)count;
+}
+
+/* select, then recvfrom: a datagram, if one comes in time. */
+s32 port_HostUdpReceive(
+    s32 socket, void *bytes, u32 room, PortNetAddress *from, u32 wait_ms) {
+    struct sockaddr_in address;
+    s32 address_bytes = sizeof(address);
+    fd_set readable;
+    struct timeval wait;
+    s32 got;
+
+    FD_ZERO(&readable);
+    FD_SET((SOCKET)socket, &readable);
+    wait.tv_sec = wait_ms / MS_PER_SECOND;
+    wait.tv_usec = (wait_ms % MS_PER_SECOND) * US_PER_MS;
+    if (select(0, &readable, NULL, NULL, &wait) <= 0) {
+        return -1;
+    }
+    got = recvfrom((SOCKET)socket, (char *)bytes, (s32)room, 0,
+                   (struct sockaddr *)&address, &address_bytes);
+    if (got < 0) {
+        return -1;
+    }
+    if (from != NULL) {
+        from->address = ntohl(address.sin_addr.s_addr);
+        from->port = ntohs(address.sin_port);
+    }
+    return (s32)got;
+}
 
 /* The system's time is counted in tenths of a microsecond already: its
  * low half is the port's count (port_host.h). */

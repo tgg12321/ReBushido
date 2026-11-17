@@ -9,6 +9,7 @@
 #include "bb2.h"
 
 u32 g_port_steps;
+s32 g_port_rerun;
 
 void port_StartGame(void (*function)(void)) {
     port_HostStartGame(function, PORT_STACK_ADDR + PORT_STACK_SIZE);

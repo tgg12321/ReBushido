@@ -161,8 +161,11 @@ class Target:
         self.windows = windows
         self.bits = bits
         self.size_flag = '-m%d' % bits
+        # PORT_OPT=2: optimised otherwise, in a folder of its own
+        # (tools/port_build.py, set_bits)
         self.name = (('windows' if windows else 'linux')
-                     + ('' if bits == port_build.DEFAULT_BITS else str(bits)))
+                     + ('' if bits == port_build.DEFAULT_BITS else str(bits))
+                     + ('-O' + os.environ['PORT_OPT'] if os.environ.get('PORT_OPT') else ''))
         self.dir = '%s/%s' % (OUT_DIR, self.name)
         self.obj_dir = self.dir + '/obj'
         if windows:
@@ -232,7 +235,7 @@ class Target:
 
     def link_flags(self):
         if self.windows:
-            return (['-L%s/lib' % self.sdl, '-lSDL2', '-lcomdlg32', '-static-libgcc']
+            return (['-L%s/lib' % self.sdl, '-lSDL2', '-lcomdlg32', '-lws2_32', '-static-libgcc']
                     + self.windows_link_flags())
         return [self.size_flag, '-no-pie', '-lSDL2', '-Wl,-Ttext-segment=0x%X' % PROGRAM_BASE]
 
@@ -649,7 +652,7 @@ def main():
             return 1
         headless = target.dir + '/rebushido-headless.exe'
         if not link_program(target, headless, [blob, plain],
-                            ['-nostdlib', '-Wl,-e,' + target.under + 'port_WindowsStart', '-lkernel32', '-lgcc']
+                            ['-nostdlib', '-Wl,-e,' + target.under + 'port_WindowsStart', '-lkernel32', '-lws2_32', '-lgcc']
                             + target.windows_link_flags()):
             return 1
         made.append(headless)

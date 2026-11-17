@@ -55,6 +55,12 @@ typedef __INTPTR_TYPE__ LinuxWord;
 #define LINUX_CLOCK_MONOTONIC 1
 #define LINUX_TICKS_PER_SECOND 10000000U
 #define LINUX_NANOSECONDS_PER_TICK 100U
+#define LINUX_AF_INET 2
+#define LINUX_SOCK_DGRAM 2
+#define LINUX_POLLIN 1
+/* The most arguments a call of the sockets takes. */
+#define LINUX_CALL_ARGS 6
+#define BITS_PER_BYTE 8
 
 #if defined(__x86_64__)
 
@@ -74,6 +80,11 @@ enum {
     LINUX_FSYNC = 74,
     LINUX_SIGALTSTACK = 131,
     LINUX_CLOCK_GETTIME = 228,
+    LINUX_POLL = 7,
+    LINUX_SOCKET = 41,
+    LINUX_SENDTO = 44,
+    LINUX_RECVFROM = 45,
+    LINUX_BIND = 49,
 };
 
 /* The call's number in %rax, its arguments in %rdi, %rsi, %rdx, %r10,
@@ -127,6 +138,13 @@ enum {
     LINUX_SIGALTSTACK = 186,
     LINUX_MMAP2 = 192, /* the offset in pages, the six arguments in registers */
     LINUX_CLOCK_GETTIME = 265,
+    LINUX_POLL = 168,
+    /* the sockets' calls, by one number and a list of arguments */
+    LINUX_SOCKETCALL = 102,
+    LINUX_SOCKETCALL_SOCKET = 1,
+    LINUX_SOCKETCALL_BIND = 2,
+    LINUX_SOCKETCALL_SENDTO = 11,
+    LINUX_SOCKETCALL_RECVFROM = 12,
 };
 
 static LinuxWord port_LinuxCall(
@@ -281,6 +299,130 @@ s32 port_HostWriteAt(s32 file, u32 offset, const void *bytes, u32 count) {
 }
 
 void port_HostFlush(s32 file) { port_LinuxCall(LINUX_FSYNC, file, 0, 0); }
+
+/* ---- the network (port_host.h) ---- */
+
+/* struct sockaddr_in: the port and the address in the network's order
+ * of bytes, the most significant first. */
+typedef struct {
+    u16 family;
+    u16 port;
+    u32 address;
+    u8 zero[8];
+} LinuxSocketAddress;
+
+/* struct pollfd. */
+typedef struct {
+    s32 file;
+    s16 events;
+    s16 answered;
+} LinuxPoll;
+
+/* A port's or an address's bytes, the other way round. */
+static u16 port_LinuxSwap16(u16 value) {
+    return (u16)((value >> BITS_PER_BYTE) | (value << BITS_PER_BYTE));
+}
+
+static u32 port_LinuxSwap32(u32 value) {
+    return ((u32)port_LinuxSwap16((u16)value) << (2 * BITS_PER_BYTE)) |
+           port_LinuxSwap16((u16)(value >> (2 * BITS_PER_BYTE)));
+}
+
+/* The port's address as the kernel takes it. */
+static void port_LinuxToSocket(
+    LinuxSocketAddress *out, const PortNetAddress *in) {
+    u32 i;
+
+    out->family = LINUX_AF_INET;
+    out->port = port_LinuxSwap16(in->port);
+    out->address = port_LinuxSwap32(in->address);
+    for (i = 0; i < sizeof(out->zero); i++) {
+        out->zero[i] = 0;
+    }
+}
+
+#if defined(__x86_64__)
+#define LINUX_SOCKET_CALL(name, args)                                          \
+    port_LinuxCall6(LINUX_##name, (args)[0], (args)[1], (args)[2], (args)[3],  \
+                    (args)[4], (args)[5])
+#else
+/* socketcall: the call's number and the list of its arguments. */
+#define LINUX_SOCKET_CALL(name, args)                                          \
+    port_LinuxCall(                                                            \
+        LINUX_SOCKETCALL, LINUX_SOCKETCALL_##name, (LinuxWord)(args), 0)
+#endif
+
+/* A socket of datagrams, bound where it is told. */
+s32 port_HostUdpOpen(const PortNetAddress *at) {
+    LinuxSocketAddress address;
+    LinuxWord args[LINUX_CALL_ARGS] = {
+        LINUX_AF_INET, LINUX_SOCK_DGRAM, 0, 0, 0, 0};
+    LinuxWord file = LINUX_SOCKET_CALL(SOCKET, args);
+
+    if (LINUX_IS_ERROR(file)) {
+        return -1;
+    }
+    port_LinuxToSocket(&address, at);
+    args[0] = file;
+    args[1] = (LinuxWord)&address;
+    args[2] = sizeof(address);
+    if (LINUX_IS_ERROR(LINUX_SOCKET_CALL(BIND, args))) {
+        port_LinuxCall(LINUX_CLOSE, file, 0, 0);
+        return -1;
+    }
+    return (s32)file;
+}
+
+/* One datagram to the peer. */
+s32 port_HostUdpSend(
+    s32 socket, const PortNetAddress *to, const void *bytes, u32 count) {
+    LinuxSocketAddress address;
+    LinuxWord args[LINUX_CALL_ARGS];
+    LinuxWord sent;
+
+    port_LinuxToSocket(&address, to);
+    args[0] = (LinuxWord)socket;
+    args[1] = (LinuxWord)bytes;
+    args[2] = count;
+    args[3] = 0;
+    args[4] = (LinuxWord)&address;
+    args[LINUX_CALL_ARGS - 1] = sizeof(address);
+    sent = LINUX_SOCKET_CALL(SENDTO, args);
+    return !LINUX_IS_ERROR(sent) && (u32)sent == count;
+}
+
+/* poll, then recvfrom: a datagram, if one comes in time. */
+s32 port_HostUdpReceive(
+    s32 socket, void *bytes, u32 room, PortNetAddress *from, u32 wait_ms) {
+    LinuxSocketAddress address;
+    u32 address_bytes = sizeof(address);
+    LinuxWord args[LINUX_CALL_ARGS];
+    LinuxPoll poll;
+    LinuxWord got;
+
+    poll.file = socket;
+    poll.events = LINUX_POLLIN;
+    poll.answered = 0;
+    got = port_LinuxCall(LINUX_POLL, (LinuxWord)&poll, 1, wait_ms);
+    if (LINUX_IS_ERROR(got) || got == 0) {
+        return -1;
+    }
+    args[0] = (LinuxWord)socket;
+    args[1] = (LinuxWord)bytes;
+    args[2] = room;
+    args[3] = 0;
+    args[4] = (LinuxWord)&address;
+    args[LINUX_CALL_ARGS - 1] = (LinuxWord)&address_bytes;
+    got = LINUX_SOCKET_CALL(RECVFROM, args);
+    if (LINUX_IS_ERROR(got)) {
+        return -1;
+    }
+    if (from != NULL) {
+        from->address = port_LinuxSwap32(address.address);
+        from->port = port_LinuxSwap16(address.port);
+    }
+    return (s32)got;
+}
 
 /* The clock that only goes forward, in seconds and nanoseconds; the
  * arithmetic wraps, which is all the port's count does (port_host.h). */

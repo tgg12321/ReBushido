@@ -323,6 +323,10 @@ void port_Print(const char *format, ...) {
     if (g_port_print_tap != NULL && !g_port_print_tap(line, length)) {
         return;
     }
+    /* a step run again prints nothing (port_platform.h) */
+    if (g_port_rerun) {
+        return;
+    }
     if (g_port_output_used + length > sizeof(g_port_output)) {
         port_FlushOutput();
     }
