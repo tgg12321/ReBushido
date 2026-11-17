@@ -884,7 +884,7 @@ on, and both must skip the opening alike: the movie player reads the
 pads its own way (section 4). Netplay now skips every movie where it
 begins (section 13), so this run's presses count otherwise than when the
 table above was measured; it still ends on the same hashes on both, the
-last now `54CB1DDA899DBD8A` (64-bit, 100 ms each way, 5% lost).
+last now `57D2C9F5774827C0` (64-bit, 100 ms each way, 5% lost).
 
 What was left here, pacing, the session's set-up and the line on the
 screen, is section 13.
@@ -1013,7 +1013,11 @@ again is drawn by nobody and heard by nobody (section 10). The picture
 jumps to the corrected course at the next frame shown, as every rollback
 game's does; `gl_tween` draws its pictures between frames that were
 shown, never ones run again, so its next frame may be one a correction
-has replaced, and its picture jumps with the game's. **The sound is
+has replaced, and its picture jumps with the game's. The window's
+session of `make port-net` with the host drawing Remastered at
+`--frame-rate 120` (software OpenGL) ran through it: 6,443 pictures, 1,136
+of them between the game's frames, 946 not drawn because two frames were
+unlike, the same 82 hashes on both. **The sound is
 kept out of the rollback by the sound card's queue**, a cheaper form of
 section 3's "later" that leaves the chip in the state: the window
 remembers how many samples it queued at each blank, and when a rollback
@@ -1090,21 +1094,25 @@ socket on 127.0.0.1:
   the fight again to the kill, and then the guest's plan ends: the host
   is told and ends there. It passes if both end well, neither finds a
   desync, at least 40 state hashes are the same on both and no card file
-  was written. 64-bit: 2,490 frames, 82 hashes the same on both; 68 and
-  79 rollbacks, the longest 8 frames;
+  was written. 64-bit: about 2,490 frames, 82 hashes the same on both;
+  67 and 79 rollbacks, the longest 8 frames; 32-bit: 69 and 77, the same
+  82 hashes on both (each size's own, section 7);
 - `window`: the same between two of the window's programs, headless
   (dummy drivers), in real time with their sound card and pacing, 60 ms
   each way and 5% lost; the host must play on alone after the guest
-  goes. 90 seconds; 82 hashes the same on both; the two were 0.9 frames
-  apart on average and held back 4 and 7 times (137 and 337 ms in
-  all); 24 and 64 rollbacks; the sound's queue had 12,374 and 31,218
-  samples taken back and as many corrected ones queued, while 25,219
-  and 108,103 had been played already;
+  goes. 90 seconds; 82 hashes the same on both; the two were 0.8 and
+  0.9 frames apart on average (the headless pairs, which nothing paces,
+  4.2 to 4.8) and held back 2 and 4 times (85 and 286 ms in all); 25
+  and 59 rollbacks; the sound's queue had 11,633 and 45,360 samples
+  taken back and as many corrected ones queued, while 27,436 and 87,326
+  had been played already;
 - `window`, the menu: two window programs started as a player starts
   them open the settings menu (`--menu-at`), go to Play online and
   start, the host on 127.0.0.1 and the guest typing the host's address
   (`--menu-keys ... type:127.0.0.1:47022`); each starts again as the
-  session's, and the two play on with the same hashes.
+  session's, and the two play on with the same 35 hashes.
+
+The whole of `make port-net` takes about eight minutes.
 
 `link` and `rollback` are as before (sections 11 and 12).
 
