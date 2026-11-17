@@ -107,6 +107,7 @@ aspect = 4:3             # the console's shape; 16:9 is the default
 stage_mesh = off         # the game's own tiles; on is the default
 shadows = soft           # original (the game's black ones) or soft
 frame_rate = display     # original (the default), display, or a number
+mods = off               # none of the mods in mods/ (on is the default)
 p1.cross = key Space     # Space is player one's Cross, and Z no longer
 p1.circle = key Left Ctrl
 p2.start = pad a         # on player two's controller, A is Start
@@ -223,6 +224,17 @@ shows the console's own picture until the cut is over.
 What Remastered does **not** do yet: new lighting. That is the step
 after it ([`ROADMAP.md`](ROADMAP.md), item 7). The fighters' shadows it
 does do, where `shadows` asks for them (above).
+
+## Mods
+
+A folder `mods/` beside the program holds mods: each a folder of its
+own, whose files stand in for the game's. The first kind is
+**replacement textures** for Graphics Remastered: the menus, the pause,
+the fight's counters and the boot logo redrawn at any size.
+`--dump-textures FOLDER` writes the game's textures out as PNGs to make
+them from; `--mods FOLDER` reads them from somewhere else, and `--mods
+off` or `mods = off` runs without. How to make one, and how a texture
+is named: [`MODS.md`](MODS.md).
 
 ## Where the saves are
 

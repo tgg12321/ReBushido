@@ -48,9 +48,9 @@ typedef struct {
  * understand, the first of them told in `problem` (`room` bytes, the 0
  * included). A name the manifest does not know (`author`, `about`) is
  * not counted. */
-extern s32 port_ModParseManifest(const char *text, u32 length,
-                                 PortModManifest *manifest, char *problem,
-                                 u32 room);
+extern s32 port_ModParseManifest(
+    const char *text, u32 length, PortModManifest *manifest, char *problem,
+    u32 room);
 
 /* ---- the run's mods ---- */
 
@@ -99,11 +99,7 @@ typedef struct {
 } PortTextureRegion;
 
 /* A texel's depth, as the drawing mode numbers it. */
-enum {
-    PORT_MOD_TEXELS_4 = 0,
-    PORT_MOD_TEXELS_8 = 1,
-    PORT_MOD_TEXELS_16 = 2
-};
+enum { PORT_MOD_TEXELS_4 = 0, PORT_MOD_TEXELS_8 = 1, PORT_MOD_TEXELS_16 = 2 };
 
 /* The key: a 64-bit hash of what the region looks like, the texels' own
  * values in order and then the colour table they are seen through (16

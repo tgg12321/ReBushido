@@ -35,8 +35,8 @@ extern s32 port_PngMeasure(
 /* Decodes it into `rgba`, four bytes a pixel (red, green, blue, alpha) a
  * row after a row from the top, using `work` (info.work_bytes of it):
  * 1, or 0 and a reason where the data are damaged. */
-extern s32 port_PngDecode(const u8 *file, u32 size, u8 *work, u8 *rgba,
-                          char *problem, u32 room);
+extern s32 port_PngDecode(
+    const u8 *file, u32 size, u8 *work, u8 *rgba, char *problem, u32 room);
 
 /* How many bytes the PNG port_PngEncode writes of a picture this size. */
 extern u32 port_PngEncodedSize(s32 w, s32 h);

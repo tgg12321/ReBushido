@@ -165,8 +165,8 @@ static u8 port_ReplaceByte(u16 pixel, s32 shift) {
 /* The region as the GPU would draw it, as a PNG named by its key. A
  * texel of nothing is clear; a picture the game wrote into video memory
  * has no such texel, and is opaque all over. */
-static void port_ReplaceDump(const PortTextureRegion *region,
-                             const char *name, s32 is_picture) {
+static void port_ReplaceDump(
+    const PortTextureRegion *region, const char *name, s32 is_picture) {
     const char *folder = port_ModsGetDumpFolder();
     char path[TEXT_SIZE];
     u8 *rgba;
@@ -240,8 +240,8 @@ static u32 port_ReplaceLoad(const char *path, const char *name) {
         rgba = malloc((size_t)info.w * (size_t)info.h * RGBA);
         if (work == NULL || rgba == NULL) {
             snprintf(problem, sizeof(problem), "no memory for it");
-        } else if (port_PngDecode(file, size, work, rgba, problem,
-                                  sizeof(problem))) {
+        } else if (
+            port_PngDecode(file, size, work, rgba, problem, sizeof(problem))) {
             for (i = 0; i < (u32)info.w * (u32)info.h * RGBA; i += RGBA) {
                 rgba[i] = (u8)(rgba[i] * rgba[i + 3] / BYTE_MAX);
                 rgba[i + 1] = (u8)(rgba[i + 1] * rgba[i + 3] / BYTE_MAX);
@@ -251,8 +251,8 @@ static u32 port_ReplaceLoad(const char *path, const char *name) {
             glGenTextures(1, &texture);
             glBindTexture(GL_TEXTURE_2D, texture);
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, info.w, info.h, 0,
-                         GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, info.w, info.h, 0, GL_RGBA,
+                         GL_UNSIGNED_BYTE, rgba);
             glPixelStorei(GL_UNPACK_ALIGNMENT, RGBA);
             glGenerateMipmap(GL_TEXTURE_2D);
             glTexParameteri(
@@ -262,13 +262,13 @@ static u32 port_ReplaceLoad(const char *path, const char *name) {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             glActiveTexture(GL_TEXTURE0);
             g_replace.loaded++;
-            port_ReplaceSay("mods: texture %s is %s (%dx%d)", name, path,
-                            info.w, info.h);
+            port_ReplaceSay(
+                "mods: texture %s is %s (%dx%d)", name, path, info.w, info.h);
         }
     }
     if (texture == 0) {
-        port_ReplaceSay("mods: texture %s: %s is not used: %s", name, path,
-                        problem);
+        port_ReplaceSay(
+            "mods: texture %s: %s is not used: %s", name, path, problem);
     }
     free(file);
     free(work);
@@ -388,8 +388,7 @@ s32 port_GlReplaceFind(const PortRemasterPrim *prim, PortGlReplacement *out) {
      * lost both (port_RemasterIsRedrawing). */
     if (!prim->is_textured || prim->has_depth || prim->has_place ||
         prim->id.object != 0 || port_RemasterIsRedrawing() ||
-        !port_ReplaceIsOn() ||
-        !port_ReplaceRegionOf(prim, &region)) {
+        !port_ReplaceIsOn() || !port_ReplaceRegionOf(prim, &region)) {
         return FALSE;
     }
     out->texture = port_ReplaceOf(&region, FALSE, TRUE);
@@ -437,7 +436,8 @@ u32 port_GlReplaceFindPicture(
     }
     /* a picture where the display is: one the game copied in to be
      * seen, and not a texture page it loaded to draw from */
-    is_shown = display_w > 0 && x >= display_x && x + w <= display_x + display_w;
+    is_shown =
+        display_w > 0 && x >= display_x && x + w <= display_x + display_w;
     region.bits = PORT_MOD_TEXELS_16;
     region.page_x = x;
     region.page_y = y;

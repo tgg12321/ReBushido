@@ -301,8 +301,8 @@ void port_HostFlush(s32 file) { port_LinuxCall(LINUX_FSYNC, file, 0, 0); }
 /* Whether a path is a folder, for a name whose kind the listing did not
  * say: it opens as one. */
 static s32 port_LinuxIsFolder(const char *path) {
-    LinuxWord file = port_LinuxCall(LINUX_OPEN, (LinuxWord)path,
-                                    LINUX_O_RDONLY | LINUX_O_DIRECTORY, 0);
+    LinuxWord file = port_LinuxCall(
+        LINUX_OPEN, (LinuxWord)path, LINUX_O_RDONLY | LINUX_O_DIRECTORY, 0);
 
     if (LINUX_IS_ERROR(file)) {
         return 0;
@@ -311,6 +311,7 @@ static s32 port_LinuxIsFolder(const char *path) {
     return 1;
 }
 
+/* The folder's records by getdents64, a buffer at a time (port_host.h). */
 s32 port_HostListFolder(
     const char *path,
     void (*each)(void *context, const char *name, s32 is_folder),
@@ -318,8 +319,8 @@ s32 port_HostListFolder(
     static u8 records[LINUX_FOLDER_BUFFER_BYTES];
     char whole[LINUX_PATH_BYTES];
     u32 path_length = 0;
-    LinuxWord folder = port_LinuxCall(LINUX_OPEN, (LinuxWord)path,
-                                      LINUX_O_RDONLY | LINUX_O_DIRECTORY, 0);
+    LinuxWord folder = port_LinuxCall(
+        LINUX_OPEN, (LinuxWord)path, LINUX_O_RDONLY | LINUX_O_DIRECTORY, 0);
 
     if (LINUX_IS_ERROR(folder)) {
         return 0;
@@ -330,8 +331,8 @@ s32 port_HostListFolder(
     }
     whole[path_length++] = '/';
     for (;;) {
-        LinuxWord got = port_LinuxCall(LINUX_GETDENTS64, folder,
-                                       (LinuxWord)records, sizeof(records));
+        LinuxWord got = port_LinuxCall(
+            LINUX_GETDENTS64, folder, (LinuxWord)records, sizeof(records));
         LinuxWord at = 0;
 
         if (LINUX_IS_ERROR(got) || got == 0) {
@@ -355,8 +356,8 @@ s32 port_HostListFolder(
                  * opens as */
                 u32 i;
 
-                for (i = 0; name[i] != 0 && path_length + i + 1 <
-                                                LINUX_PATH_BYTES;
+                for (i = 0;
+                     name[i] != 0 && path_length + i + 1 < LINUX_PATH_BYTES;
                      i++) {
                     whole[path_length + i] = name[i];
                 }

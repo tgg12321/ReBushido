@@ -52,10 +52,10 @@
 #define VRAM_X_MASK (PORT_VRAM_WIDTH - 1)
 #define VRAM_Y_MASK (PORT_VRAM_HEIGHT - 1)
 
-static const char *const g_port_mod_kind_folders[PORT_MOD_KINDS] = {
+static const char * const g_port_mod_kind_folders[PORT_MOD_KINDS] = {
     "textures", "models", "music", "stages"};
 /* the ending a kind's file must have to be read; NULL for any */
-static const char *const g_port_mod_kind_endings[PORT_MOD_KINDS] = {
+static const char * const g_port_mod_kind_endings[PORT_MOD_KINDS] = {
     ".png", NULL, NULL, NULL};
 
 typedef struct {
@@ -104,9 +104,8 @@ static void port_ModsSay(char *out, u32 room, const char *format, ...) {
 }
 
 static char port_ModsLower(char character) {
-    return character >= 'A' && character <= 'Z'
-               ? (char)(character - 'A' + 'a')
-               : character;
+    return character >= 'A' && character <= 'Z' ? (char)(character - 'A' + 'a')
+                                                : character;
 }
 
 static s32 port_ModsIsSpace(char character) {
@@ -158,18 +157,18 @@ static s32 port_ModsYesOrNo(const char *value, u32 length) {
 /* One line's name and value, trimmed: what it says is put in the
  * manifest, or NULL is returned for a line that is understood, and a
  * reason for one that is not. */
-static const char *port_ModsTakeLine(PortModManifest *manifest,
-                                     const char *name, u32 name_length,
-                                     const char *value, u32 value_length) {
+static const char *port_ModsTakeLine(
+    PortModManifest *manifest, const char *name, u32 name_length,
+    const char *value, u32 value_length) {
     char number[LINE_VALUE_SIZE];
     s32 parsed;
 
     if (port_ModsWordIs(name, name_length, "name")) {
-        port_ModsCopy(manifest->name, sizeof(manifest->name), value,
-                      value_length);
+        port_ModsCopy(
+            manifest->name, sizeof(manifest->name), value, value_length);
     } else if (port_ModsWordIs(name, name_length, "version")) {
-        port_ModsCopy(manifest->version, sizeof(manifest->version), value,
-                      value_length);
+        port_ModsCopy(
+            manifest->version, sizeof(manifest->version), value, value_length);
     } else if (port_ModsWordIs(name, name_length, "order")) {
         port_ModsCopy(number, sizeof(number), value, value_length);
         if (!port_ParseNumber(number, &parsed)) {
@@ -190,9 +189,9 @@ static const char *port_ModsTakeLine(PortModManifest *manifest,
     return NULL;
 }
 
+/* The manifest a line at a time (port_mods.h). */
 s32 port_ModParseManifest(const char *text, u32 length,
-                          PortModManifest *manifest, char *problem,
-                          u32 room) {
+                          PortModManifest *manifest, char *problem, u32 room) {
     s32 problems = 0;
     s32 line = 0;
     u32 at = 0;
@@ -243,9 +242,9 @@ s32 port_ModParseManifest(const char *text, u32 length,
         if (equals == end || name_end == start) {
             why = "not NAME = VALUE";
         } else {
-            why = port_ModsTakeLine(manifest, text + start, name_end - start,
-                                    text + value_start,
-                                    value_start < end ? end - value_start : 0);
+            why = port_ModsTakeLine(
+                manifest, text + start, name_end - start, text + value_start,
+                value_start < end ? end - value_start : 0);
         }
         if (why != NULL) {
             if (problems == 0) {
@@ -315,8 +314,8 @@ static s32 *port_ModsSlotOf(s32 kind, const char *key, u32 hash) {
 }
 
 /* A mod's file: `path` is the whole of it, `name` its last part. */
-static void port_ModsAdd(s32 kind, s32 mod, const char *path, u32 path_length,
-                         const char *name) {
+static void port_ModsAdd(
+    s32 kind, s32 mod, const char *path, u32 path_length, const char *name) {
     char key[PORT_MOD_KEY_SIZE];
     u32 length = 0;
     u32 hash;
@@ -384,6 +383,8 @@ typedef struct {
     char subfolders[SUBFOLDERS_MAX][FOLDER_NAME_SIZE];
 } PortModsListing;
 
+/* A name in a kind's folder: a folder kept for later, a file of the
+ * kind's ending added to the table under its whole path. */
 static void port_ModsEachFile(void *context, const char *name, s32 is_folder) {
     PortModsListing *listing = (PortModsListing *)context;
     const char *ending = g_port_mod_kind_endings[listing->kind];
@@ -434,9 +435,9 @@ static void port_ModsReadKind(s32 kind, s32 mod, char *path, s32 depth) {
             continue;
         }
         path[listing.path_length] = '/';
-        port_ModsCopy(path + listing.path_length + 1,
-                      PATH_SIZE - listing.path_length - 1,
-                      listing.subfolders[i], length);
+        port_ModsCopy(
+            path + listing.path_length + 1, PATH_SIZE - listing.path_length - 1,
+            listing.subfolders[i], length);
         port_ModsReadKind(kind, mod, path, depth + 1);
         path[listing.path_length] = TEXT_END;
     }
@@ -460,8 +461,8 @@ static void port_ModsEachMod(void *context, const char *name, s32 is_folder) {
     }
     mod = &g_port_mods.mods[g_port_mods.mod_count];
     memset(mod, 0, sizeof(*mod));
-    port_ModsCopy(mod->folder, sizeof(mod->folder), name,
-                  port_TextLength(name));
+    port_ModsCopy(
+        mod->folder, sizeof(mod->folder), name, port_TextLength(name));
     port_ModsCopy(mod->manifest.name, sizeof(mod->manifest.name), name,
                   port_TextLength(name));
     mod->manifest.is_enabled = TRUE;
@@ -469,8 +470,8 @@ static void port_ModsEachMod(void *context, const char *name, s32 is_folder) {
                  PORT_MOD_MANIFEST);
     size = port_ModReadFile(path, text, sizeof(text));
     if (size > 0) {
-        s32 problems = port_ModParseManifest(text, size, &mod->manifest,
-                                             problem, sizeof(problem));
+        s32 problems = port_ModParseManifest(
+            text, size, &mod->manifest, problem, sizeof(problem));
 
         if (problems > 0) {
             port_Log("mods: %s: %d line%s of %s not understood (%s)\n", name,
@@ -483,28 +484,30 @@ static void port_ModsEachMod(void *context, const char *name, s32 is_folder) {
 
 /* The mods in their order: by the manifests' `order`, then by folder. */
 static s32 port_ModsComesBefore(const PortMod *first, const PortMod *second) {
-    const char *a = first->folder;
-    const char *b = second->folder;
+    const char *mine = first->folder;
+    const char *other = second->folder;
 
     if (first->manifest.order != second->manifest.order) {
         return first->manifest.order < second->manifest.order;
     }
-    while (*a != TEXT_END && port_ModsLower(*a) == port_ModsLower(*b)) {
-        a++;
-        b++;
+    while (
+        *mine != TEXT_END && port_ModsLower(*mine) == port_ModsLower(*other)) {
+        mine++;
+        other++;
     }
-    return port_ModsLower(*a) < port_ModsLower(*b);
+    return port_ModsLower(*mine) < port_ModsLower(*other);
 }
 
+/* The mods' order, an insertion sort into `order`: there are few. */
 static void port_ModsSort(void) {
     s32 i;
 
     for (i = 0; i < g_port_mods.mod_count; i++) {
         s32 j = i;
 
-        while (j > 0 &&
-               port_ModsComesBefore(&g_port_mods.mods[i],
-                                    &g_port_mods.mods[g_port_mods.order[j - 1]])) {
+        while (j > 0 && port_ModsComesBefore(
+                            &g_port_mods.mods[i],
+                            &g_port_mods.mods[g_port_mods.order[j - 1]])) {
             g_port_mods.order[j] = g_port_mods.order[j - 1];
             j--;
         }
@@ -549,9 +552,8 @@ static void port_ModsFindRoot(const char *program) {
         length--;
     }
     if (length == 0) {
-        port_ModsCopy(
-            g_port_mods.root, sizeof(g_port_mods.root), MODS_FOLDER,
-            port_TextLength(MODS_FOLDER));
+        port_ModsCopy(g_port_mods.root, sizeof(g_port_mods.root), MODS_FOLDER,
+                      port_TextLength(MODS_FOLDER));
         return;
     }
     port_ModsCopy(g_port_mods.root, sizeof(g_port_mods.root), program, length);
@@ -574,6 +576,8 @@ void port_ModsSetDumpFolder(const char *folder) {
 
 const char *port_ModsGetDumpFolder(void) { return g_port_mods.dump_folder; }
 
+/* The dump folder made, the mods' folder listed, each mod's files read
+ * in its order, and all of it said in the log (port_mods.h). */
 void port_ModsStart(const char *program) {
     char path[PATH_SIZE];
     s32 i;
@@ -659,9 +663,8 @@ const char *port_ModFind(s32 kind, const char *key) {
         return NULL;
     }
     slot = port_ModsSlotOf(kind, key, port_ModsHash(kind, key));
-    return *slot >= 0
-               ? g_port_mods.text + g_port_mods.files[*slot].path_at
-               : NULL;
+    return *slot >= 0 ? g_port_mods.text + g_port_mods.files[*slot].path_at
+                      : NULL;
 }
 
 u32 port_ModFileSize(const char *path) {
@@ -676,6 +679,7 @@ u32 port_ModFileSize(const char *path) {
     return size;
 }
 
+/* As much of a file as there is room for (port_mods.h). */
 u32 port_ModReadFile(const char *path, void *dest, u32 room) {
     s32 file = port_HostOpen(path);
     u32 size;
@@ -738,6 +742,8 @@ static u64 port_KeyHalf(u64 key, u32 half) {
     return port_KeyByte(port_KeyByte(key, half), half >> BITS_PER_BYTE);
 }
 
+/* FNV-1a over the depth, the size, the texels row by row and the colour
+ * table, each number of two bytes low byte first (port_mods.h). */
 u64 port_TextureKey(const u16 *vram, const PortTextureRegion *region) {
     u64 key = KEY_START;
     s32 colors = region->bits == PORT_MOD_TEXELS_4   ? COLORS_4

@@ -10,6 +10,7 @@
  * area port_PngMeasure says, and the pixels' room. */
 #include "common.h"
 #include "port_png.h"
+#include "bb2.h"
 
 /* ---- the file ---- */
 
@@ -54,11 +55,11 @@ typedef struct {
     s32 depth;
     s32 color;
     s32 channels;
-    u32 row_bytes;   /* a row's bytes, its filter's byte left out */
-    u32 data_bytes;  /* the IDAT chunks' bytes, all of them */
-    u32 rows_bytes;  /* the rows inflated: h times (1 + row_bytes) */
-    s32 has_key;     /* a colour of grey or RGB that is transparent */
-    u32 key[3];      /* ... that colour, at the samples' own depth */
+    u32 row_bytes;  /* a row's bytes, its filter's byte left out */
+    u32 data_bytes; /* the IDAT chunks' bytes, all of them */
+    u32 rows_bytes; /* the rows inflated: h times (1 + row_bytes) */
+    s32 has_key;    /* a colour of grey or RGB that is transparent */
+    u32 key[3];     /* ... that colour, at the samples' own depth */
     s32 palette_count;
     u8 palette[PALETTE_ENTRIES][RGBA];
 } PngFile;
@@ -77,8 +78,8 @@ static void png_Say(char *problem, u32 room, const char *why) {
 
 static u32 png_Big32(const u8 *at) {
     return ((u32)at[0] << (3 * BITS_PER_BYTE)) |
-           ((u32)at[1] << (2 * BITS_PER_BYTE)) |
-           ((u32)at[2] << BITS_PER_BYTE) | (u32)at[3];
+           ((u32)at[1] << (2 * BITS_PER_BYTE)) | ((u32)at[2] << BITS_PER_BYTE) |
+           (u32)at[3];
 }
 
 static s32 png_IsChunk(const u8 *at, const char *name) {
@@ -104,16 +105,19 @@ static s32 png_ChannelsOf(s32 color) {
     }
 }
 
-/* Whether the format allows this depth for this colour type. */
+/* Whether the format allows this depth for this colour type: grey any
+ * of 1, 2, 4, 8 and 16 bits, a palette's index up to 8, and every other
+ * type 8 or 16. */
 static s32 png_DepthIsAllowed(s32 color, s32 depth) {
+    s32 is_narrow = depth == 1 || depth == 2 || depth == 4; /* bits */
+
     if (color == COLOR_GRAY) {
-        return depth == 1 || depth == 2 || depth == 4 || depth == 8 ||
-               depth == DEPTH_WIDE;
+        return is_narrow || depth == BITS_PER_BYTE || depth == DEPTH_WIDE;
     }
     if (color == COLOR_PALETTE) {
-        return depth == 1 || depth == 2 || depth == 4 || depth == 8;
+        return is_narrow || depth == BITS_PER_BYTE;
     }
-    return depth == 8 || depth == DEPTH_WIDE;
+    return depth == BITS_PER_BYTE || depth == DEPTH_WIDE;
 }
 
 /* The file's chunks walked once: the header, the palette, what is
@@ -166,15 +170,15 @@ static s32 png_Read(
             }
             png->w = (s32)png_Big32(data);
             png->h = (s32)png_Big32(data + 4);
-            png->depth = data[8];
-            png->color = data[9];
+            png->depth = data[8]; /* bits a sample */
+            png->color = data[9]; /* the colour type */
             /* the one compression and the one filter method; no
              * interlace */
             if (data[10] != 0 || data[11] != 0) {
                 png_Say(problem, room, "a method no PNG has");
                 return FALSE;
             }
-            if (data[12] != 0) {
+            if (data[12] != 0) { /* interlaced */
                 png_Say(problem, room,
                         "it is interlaced: save it without (Adam7 is not "
                         "read)");
@@ -199,11 +203,11 @@ static s32 png_Read(
             } else if (png->color == COLOR_GRAY && length >= 2) {
                 png->has_key = TRUE;
                 png->key[0] = ((u32)data[0] << BITS_PER_BYTE) | data[1];
-            } else if (png->color == COLOR_RGB && length >= 6) {
+            } else if (png->color == COLOR_RGB && length >= 6) { /* 3 of 16 */
                 png->has_key = TRUE;
                 for (i = 0; i < 3; i++) {
-                    png->key[i] = ((u32)data[i * 2] << BITS_PER_BYTE) |
-                                  data[i * 2 + 1];
+                    png->key[i] =
+                        ((u32)data[i * 2] << BITS_PER_BYTE) | data[i * 2 + 1];
                 }
             }
         } else if (png_IsChunk(file + at + 4, "IDAT")) {
@@ -289,9 +293,9 @@ static const u8 g_png_length_extra[LENGTH_CODES] = {
     0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2,
     2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0};
 static const u16 g_png_distance_base[DISTANCES_MAX] = {
-    1,    2,    3,    4,    5,    7,     9,     13,    17,    25,
-    33,   49,   65,   97,   129,  193,   257,   385,   513,   769,
-    1025, 1537, 2049, 3073, 4097, 6145,  8193,  12289, 16385, 24577};
+    1,    2,    3,    4,    5,    7,    9,    13,    17,    25,
+    33,   49,   65,   97,   129,  193,  257,  385,   513,   769,
+    1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577};
 static const u8 g_png_distance_extra[DISTANCES_MAX] = {
     0, 0, 0, 0, 1, 1, 2, 2,  3,  3,  4,  4,  5,  5,  6,
     6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13};
@@ -432,6 +436,8 @@ static s32 png_Symbols(
     }
 }
 
+/* A stored block: its length and that negated, then its bytes as they
+ * are. */
 static s32 png_Stored(PngInflate *z) {
     u32 length;
     u32 check;
@@ -443,8 +449,7 @@ static s32 png_Stored(PngInflate *z) {
         return FALSE;
     }
     length = z->in[z->in_at] | ((u32)z->in[z->in_at + 1] << BITS_PER_BYTE);
-    check = z->in[z->in_at + 2] |
-            ((u32)z->in[z->in_at + 3] << BITS_PER_BYTE);
+    check = z->in[z->in_at + 2] | ((u32)z->in[z->in_at + 3] << BITS_PER_BYTE);
     z->in_at += 4;
     if ((length ^ check) != 0xFFFF || length > z->in_size - z->in_at ||
         length > z->out_size - z->out_at) {
@@ -456,6 +461,7 @@ static s32 png_Stored(PngInflate *z) {
     return TRUE;
 }
 
+/* A block of the fixed codes RFC 1951 writes down. */
 static s32 png_Fixed(PngInflate *z) {
     u8 lengths[LITERALS_MAX];
     PngCode literals;
@@ -463,10 +469,11 @@ static s32 png_Fixed(PngInflate *z) {
     s32 i;
 
     for (i = 0; i < LITERALS_MAX; i++) {
-        lengths[i] = i < FIXED_NINE_FROM          ? 8
-                     : i < FIXED_SEVEN_FROM       ? 9
-                     : i < FIXED_EIGHT_AGAIN_FROM ? 7
-                                                  : 8;
+        /* RFC 1951, 3.2.6: bits of each literal's and length's code */
+        lengths[i] = i < FIXED_NINE_FROM          ? 8  /* bits */
+                     : i < FIXED_SEVEN_FROM       ? 9  /* bits */
+                     : i < FIXED_EIGHT_AGAIN_FROM ? 7  /* bits */
+                                                  : 8; /* bits */
     }
     png_MakeCode(&literals, lengths, LITERALS_MAX);
     for (i = 0; i < DISTANCES_MAX; i++) {
@@ -476,13 +483,17 @@ static s32 png_Fixed(PngInflate *z) {
     return png_Symbols(z, &literals, &distances);
 }
 
+/* A block that brings its codes: the lengths of a code for the codes'
+ * lengths, those lengths run-length coded, then the symbols. */
 static s32 png_Dynamic(PngInflate *z) {
     u8 lengths[LITERALS_MAX + DISTANCES_MAX];
     PngCode literals;
     PngCode distances;
-    s32 literal_count = (s32)png_Bits(z, 5) + FIRST_LENGTH;
-    s32 distance_count = (s32)png_Bits(z, 5) + 1;
-    s32 length_count = (s32)png_Bits(z, 4) + 4;
+    /* RFC 1951, 3.2.7: how many of each code's lengths follow, in 5, 5
+     * and 4 bits */
+    s32 literal_count = (s32)png_Bits(z, 5) + FIRST_LENGTH; /* HLIT */
+    s32 distance_count = (s32)png_Bits(z, 5) + 1;           /* HDIST */
+    s32 length_count = (s32)png_Bits(z, 4) + 4;             /* HCLEN */
     s32 at = 0;
     s32 i;
 
@@ -518,7 +529,7 @@ static s32 png_Dynamic(PngInflate *z) {
         } else if (symbol == REPEAT_ZERO) {
             repeat = 3 + (s32)png_Bits(z, 3);
         } else {
-            repeat = 11 + (s32)png_Bits(z, 7);
+            repeat = 11 + (s32)png_Bits(z, 7); /* 11 to 138 zeroes */
         }
         if (at + repeat > literal_count + distance_count) {
             return FALSE;
@@ -662,6 +673,8 @@ static u8 png_ByteOf(const PngFile *png, u32 sample) {
     return (u8)(sample * BYTE_MAX / ((1U << png->depth) - 1));
 }
 
+/* The unfiltered rows as four bytes a pixel: a palette's entries, grey
+ * spread to three channels, a colour that is transparent made clear. */
 static void png_Pixels(const PngFile *png, const u8 *rows, u8 *rgba) {
     u32 stride = 1 + png->row_bytes;
     s32 x;
@@ -690,30 +703,32 @@ static void png_Pixels(const PngFile *png, const u8 *rows, u8 *rgba) {
                 out[0] = png_ByteOf(png, sample[0]);
                 out[1] = out[0];
                 out[2] = out[0];
-                out[3] = png->color == COLOR_GRAY_ALPHA
-                             ? png_ByteOf(png, sample[1])
-                         : png->has_key && sample[0] == png->key[0] ? 0
-                                                                    : BYTE_MAX;
+                out[3] =
+                    png->color == COLOR_GRAY_ALPHA ? png_ByteOf(png, sample[1])
+                    : png->has_key && sample[0] == png->key[0]
+                        ? 0
+                        : BYTE_MAX;
                 break;
             default:
                 out[0] = png_ByteOf(png, sample[0]);
                 out[1] = png_ByteOf(png, sample[1]);
                 out[2] = png_ByteOf(png, sample[2]);
-                out[3] = png->color == COLOR_RGB_ALPHA
-                             ? png_ByteOf(png, sample[3])
-                         : png->has_key && sample[0] == png->key[0] &&
-                                 sample[1] == png->key[1] &&
-                                 sample[2] == png->key[2]
-                             ? 0
-                             : BYTE_MAX;
+                out[3] =
+                    png->color == COLOR_RGB_ALPHA ? png_ByteOf(png, sample[3])
+                    : png->has_key && sample[0] == png->key[0] &&
+                            sample[1] == png->key[1] && sample[2] == png->key[2]
+                        ? 0
+                        : BYTE_MAX;
                 break;
             }
         }
     }
 }
 
-s32 port_PngDecode(const u8 *file, u32 size, u8 *work, u8 *rgba,
-                   char *problem, u32 room) {
+/* The chunks' data gathered, inflated, unfiltered and made pixels
+ * (port_png.h). */
+s32 port_PngDecode(
+    const u8 *file, u32 size, u8 *work, u8 *rgba, char *problem, u32 room) {
     PngFile png;
     u8 *rows;
     u32 at = SIGNATURE_BYTES;
@@ -808,16 +823,13 @@ static void png_End(PngWriter *writer) {
 }
 
 /* The rows' bytes, each a filter's byte of none and the pixels. */
-static u32 png_RowsBytes(s32 w, s32 h) {
-    return (u32)h * (1 + (u32)w * RGBA);
-}
+static u32 png_RowsBytes(s32 w, s32 h) { return (u32)h * (1 + (u32)w * RGBA); }
 
 static u32 png_StreamBytes(s32 w, s32 h) {
     u32 data = png_RowsBytes(w, h);
     u32 blocks = (data + STORED_BLOCK_MAX - 1) / STORED_BLOCK_MAX;
 
-    return ZLIB_HEAD_BYTES + blocks * STORED_HEAD_BYTES + data +
-           ZLIB_SUM_BYTES;
+    return ZLIB_HEAD_BYTES + blocks * STORED_HEAD_BYTES + data + ZLIB_SUM_BYTES;
 }
 
 u32 port_PngEncodedSize(s32 w, s32 h) {
@@ -827,6 +839,8 @@ u32 port_PngEncodedSize(s32 w, s32 h) {
            (CHUNK_HEAD_BYTES + CHUNK_SUM_BYTES);
 }
 
+/* The signature, the header, the rows in stored blocks with their sum,
+ * and the end (port_png.h). */
 u32 port_PngEncode(const u8 *rgba, s32 w, s32 h, u8 *out) {
     PngWriter writer;
     u32 data = png_RowsBytes(w, h);
@@ -867,9 +881,8 @@ u32 port_PngEncode(const u8 *rgba, s32 w, s32 h, u8 *out) {
             png_Put(&writer, ~left & BYTE_MASK);
             png_Put(&writer, (~left >> BITS_PER_BYTE) & BYTE_MASK);
         }
-        byte = in_row == 0
-                   ? FILTER_NONE
-                   : rgba[(i / row) * (u32)w * RGBA + (in_row - 1)];
+        byte = in_row == 0 ? FILTER_NONE
+                           : rgba[(i / row) * (u32)w * RGBA + (in_row - 1)];
         png_Put(&writer, byte);
         low = (low + byte) % ADLER_MODULUS;
         high = (high + low) % ADLER_MODULUS;

@@ -220,6 +220,9 @@ typedef struct {
      * hundredths: 0 is the game's own black silhouettes
      * (src/port/gl/gl_shadow.h; PORT_SHADOWS_SOFT). */
     s32 shadows;
+    /* The mods beside the program are read (docs/MODS.md); 0 runs the
+     * game with none of them, as `--mods off` does. */
+    s32 mods;
 } PortSettings;
 
 /* The number of the key, button or axis of this name, as the window's

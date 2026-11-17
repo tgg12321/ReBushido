@@ -142,6 +142,7 @@ s32 port_HostWriteAt(s32 file, u32 offset, const void *bytes, u32 count) {
 
 void port_HostFlush(s32 file) { FlushFileBuffers(g_port_windows_files[file]); }
 
+/* The folder's names by FindFirstFile and FindNextFile (port_host.h). */
 s32 port_HostListFolder(
     const char *path,
     void (*each)(void *context, const char *name, s32 is_folder),

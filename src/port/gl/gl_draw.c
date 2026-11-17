@@ -1664,12 +1664,13 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
     port_AddDirtyRect(&g_gl.mirror, x, y, w, h);
     port_GlUploadMirror();
     /* a picture a mod has a picture of (gl_replace.h) */
-    replacement = g_gl.options.is_exact
-                      ? 0
-                      : port_GlReplaceFindPicture(
-                            rect.left, rect.top, rect.right - rect.left + 1,
-                            rect.bottom - rect.top + 1, g_gl.display_x,
-                            g_gl.display_is_rgb24 ? 0 : g_gl.display_w);
+    replacement =
+        g_gl.options.is_exact
+            ? 0
+            : port_GlReplaceFindPicture(
+                  rect.left, rect.top, rect.right - rect.left + 1,
+                  rect.bottom - rect.top + 1, g_gl.display_x,
+                  g_gl.display_is_rgb24 ? 0 : g_gl.display_w);
     glUseProgram(g_gl.blit_program);
     glBindVertexArray(g_gl.blit_array);
     if (replacement != 0) {
