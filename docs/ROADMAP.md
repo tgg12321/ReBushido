@@ -119,9 +119,10 @@ No dates.
       thing it is a drawing of, so the two frames' primitives are
       paired by name and not by likeness, and every picture between
       them holds every primitive the frame on show held. It costs no
-      input lag. Left of it: `original` is still the default; a face
-      the next frame has not is drawn where it is rather than moved,
-      and a camera cut shows the game's own picture.
+      input lag. A face one frame has and the other not is moved by
+      its points, which its neighbours share. Left of it: `original`
+      is still the default, and a camera cut shows the game's own
+      picture.
    6. **Lighting and shadows**: the normals the mesh has and the
       primitive does not.
 

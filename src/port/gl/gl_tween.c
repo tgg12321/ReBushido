@@ -88,6 +88,34 @@
 
 #define PERCENT_256 256
 
+/* The table of a frame's corners by which point of which mesh they are
+ * (port_TweenNotePoints): a power of two, more than twice the corners of
+ * the faces a fight frame names, looked in from a point's own slot
+ * onwards. */
+#define TWEEN_POINTS 32768
+#define TWEEN_POINT_PROBES 16
+/* Two of a frame's faces that share a point put it within this of the
+ * same place, in 16.16 pixels; further apart, the point is not trusted
+ * (port_TweenNotePoints). */
+#define TWEEN_POINT_NEAR (1 << PORT_REMASTER_FRACTION)
+
+enum { POINT_EMPTY, POINT_ONE, POINT_UNSURE };
+
+/* One point of a mesh as a frame's faces placed it: the drawing offset
+ * taken off, so that the two halves of video memory compare. */
+typedef struct {
+    PortAddress object;
+    PortAddress group;
+    s32 index; /* which point of the mesh: a byte of the face's name */
+    s32 state; /* POINT_... */
+    s32 x;     /* 16.16 */
+    s32 y;
+    s32 ix; /* whole pixels */
+    s32 iy;
+    s32 depth;
+    s32 depth_shift;
+} TweenPoint;
+
 typedef struct {
     s32 x;
     s32 y;
@@ -125,6 +153,9 @@ typedef struct {
     s32 mesh_at; /* which event */
     PortRemasterPrim mesh_paint;
     PortStageView view;
+    /* the first primitive of it that has a place: its drawing offset and
+     * its drawing area are the frame's own half of video memory's */
+    s32 placed_at;
 } TweenFrame;
 
 static struct {
@@ -148,11 +179,30 @@ static struct {
     s32 *taken;
     u32 pair_frames; /* the generation the pairing was worked out for */
     s32 is_one_scene;
+    /* Each frame's points, for a face the other frame has not: the
+     * frame on show's [0] and the frame after it's [1]. */
+    TweenPoint *points[2];
+    /* A face of the frame on show that the frame after it has not, with
+     * its corners where the frame after it put the same points
+     * (`has_going`), and a face of the frame after it that the frame on
+     * show has not, with its corners where the frame on show put them,
+     * drawn after the primitive of the frame on show that `coming_first`
+     * of it names and the ones `coming_next` chains on. */
+    PortRemasterPrim *going;
+    s32 *has_going;
+    PortRemasterPrim *coming;
+    s32 *coming_first;
+    s32 *coming_last;
+    s32 *coming_next;
     /* pair by likeness alone and let a moved primitive go undrawn, as
      * this file did before the primitives were named (gl_tween.h) */
     s32 guesses;
     /* the point watched from phase to phase (gl_tween.h) */
     s32 track_key;
+    /* ... which primitive of the frame on show it is a corner of: the
+     * paired one whose corner moves farthest, chosen once for the pair
+     * of frames (port_TweenPairFrames) */
+    s32 track_at;
     s32 track_x;
     s32 track_y;
     s32 has_track;
@@ -192,6 +242,7 @@ static void port_TweenClearFrame(TweenFrame *frame) {
     frame->is_whole = TRUE;
     frame->has_mesh = FALSE;
     frame->mesh_at = 0;
+    frame->placed_at = TWEEN_EMPTY;
     frame->prim_count = 0;
     frame->event_count = 0;
     frame->vram_count = 0;
@@ -674,6 +725,9 @@ static void port_TweenNotePrim(const PortRemasterPrim *prim) {
     }
     frame->prim[frame->prim_count] = *prim;
     frame->next[frame->prim_count] = TWEEN_EMPTY;
+    if (frame->placed_at == TWEEN_EMPTY && prim->has_place) {
+        frame->placed_at = frame->prim_count;
+    }
     port_TweenRemember(frame, frame->prim_count);
     frame->event[frame->event_count].is_vram = FALSE;
     frame->event[frame->event_count].at = frame->prim_count;
@@ -777,8 +831,24 @@ const char *port_TweenStart(void) {
     g_tween.saved = malloc(TWEEN_WORDS_MAX * sizeof(u16));
     g_tween.pair = malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.pair));
     g_tween.taken = malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.taken));
+    for (i = 0; i < 2; i++) {
+        g_tween.points[i] = malloc(TWEEN_POINTS * sizeof(TweenPoint));
+    }
+    g_tween.going = malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.going));
+    g_tween.has_going = malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.has_going));
+    g_tween.coming = malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.coming));
+    g_tween.coming_first =
+        malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.coming_first));
+    g_tween.coming_last =
+        malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.coming_last));
+    g_tween.coming_next =
+        malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.coming_next));
     if (g_tween.saved == NULL || g_tween.pair == NULL ||
-        g_tween.taken == NULL) {
+        g_tween.taken == NULL || g_tween.points[0] == NULL ||
+        g_tween.points[1] == NULL || g_tween.going == NULL ||
+        g_tween.has_going == NULL || g_tween.coming == NULL ||
+        g_tween.coming_first == NULL || g_tween.coming_last == NULL ||
+        g_tween.coming_next == NULL) {
         port_TweenStop();
         return "there is no memory to keep video memory in";
     }
@@ -803,6 +873,22 @@ void port_TweenStop(void) {
     free(g_tween.saved);
     free(g_tween.pair);
     free(g_tween.taken);
+    for (i = 0; i < 2; i++) {
+        free(g_tween.points[i]);
+        g_tween.points[i] = NULL;
+    }
+    free(g_tween.going);
+    free(g_tween.has_going);
+    free(g_tween.coming);
+    free(g_tween.coming_first);
+    free(g_tween.coming_last);
+    free(g_tween.coming_next);
+    g_tween.going = NULL;
+    g_tween.has_going = NULL;
+    g_tween.coming = NULL;
+    g_tween.coming_first = NULL;
+    g_tween.coming_last = NULL;
+    g_tween.coming_next = NULL;
     g_tween.saved = NULL;
     g_tween.pair = NULL;
     g_tween.taken = NULL;
@@ -914,6 +1000,373 @@ static void port_TweenPutVram(const TweenFrame *frame, const TweenVram *one) {
     }
 }
 
+/* ---- a face one frame has and the other has not ---- */
+
+/* **The points a face is made of outlast the face.** A face of a fighter
+ * that turns away from the camera between two frames is not drawn in the
+ * second (the renderer drops a face whose corners turn the wrong way),
+ * and one that turns towards it is not in the first: so at a fighter's
+ * edge, every frame, some faces are in one frame only. Drawn where it is,
+ * a face that is going stands still while the faces about it move, and a
+ * face that is coming is not drawn at all until the frame that has it is
+ * on show: the edge of a fighter flickers between two shapes at the
+ * display's rate, which is what the owner saw of a fighter standing
+ * still.
+ *
+ * But the points such a face is made of are in both frames all the same:
+ * its neighbours, which both frames draw, are made of them too. A face's
+ * name says which points of its mesh its corners are (port_remaster.h,
+ * `face`, a byte each), so each frame's points are written down by which
+ * point of which mesh of which thing they are, and a face one frame has
+ * not is given the places that frame put its points at. It is then moved
+ * like any other, and drawn only while it still faces the way it faced in
+ * the frame that has it: a face that is going is drawn until it has
+ * turned edge on, a face that is coming from the moment it has turned
+ * past it -- which is what the renderer itself would have drawn of the
+ * thing at that moment.
+ *
+ * A point two faces of one frame put at places more than a pixel apart
+ * is not trusted (`POINT_UNSURE`): that is a name that does not say which
+ * points the corners are -- a piece of a face cut in two, a mesh whose
+ * points are numbered over again -- and a face with one is drawn as it
+ * was before. */
+
+static u32 port_TweenPointSlot(
+    PortAddress object, PortAddress group, s32 index) {
+    u32 value =
+        port_TweenMix((u32)object) + port_TweenMix((u32)(object >> 16) * 3) +
+        port_TweenMix((u32)group * 5) + port_TweenMix((u32)(group >> 16) * 7) +
+        port_TweenMix((u32)index * 11 + 1);
+
+    return port_TweenMix(value) & (TWEEN_POINTS - 1);
+}
+
+/* The point of a mesh, or NULL. With `make`, the empty slot it would go
+ * in where there is none. */
+static TweenPoint *port_TweenFindPoint(TweenPoint *table, PortAddress object,
+                                       PortAddress group, s32 index, s32 make) {
+    u32 slot = port_TweenPointSlot(object, group, index);
+    u32 i;
+
+    for (i = 0; i < TWEEN_POINT_PROBES; i++) {
+        TweenPoint *one = &table[(slot + i) & (TWEEN_POINTS - 1)];
+
+        if (one->state == POINT_EMPTY) {
+            return make ? one : NULL;
+        }
+        if (one->object == object && one->group == group &&
+            one->index == index) {
+            return one;
+        }
+    }
+    return NULL;
+}
+
+/* Whether a primitive's corners are the points its name says, in order:
+ * a whole face of a mesh, drawn in perspective. */
+static s32 port_TweenIsWholeFace(const PortRemasterPrim *prim) {
+    return prim->id.object != 0 && prim->id.piece == 0 && prim->has_place &&
+           prim->has_depth &&
+           (prim->kind == PORT_REMASTER_TRIANGLE ||
+            prim->kind == PORT_REMASTER_QUAD) &&
+           port_TweenIsOnScreen(prim);
+}
+
+/* Every point of a frame's faces into `table`, with the drawing offset
+ * taken off. */
+static void port_TweenNotePoints(const TweenFrame *frame, TweenPoint *table) {
+    s32 i;
+
+    memset(table, 0, TWEEN_POINTS * sizeof(TweenPoint));
+    for (i = 0; i < frame->prim_count; i++) {
+        const PortRemasterPrim *prim = &frame->prim[i];
+        s32 corner;
+
+        if (!port_TweenIsWholeFace(prim)) {
+            continue;
+        }
+        for (corner = 0; corner < prim->corner_count; corner++) {
+            const PortRemasterCorner *at = &prim->corner[corner];
+            s32 index = (s32)(((u32)prim->id.face >> (corner * 8)) & 0xFF);
+            s32 x = at->x - (prim->offset_x << PORT_REMASTER_FRACTION);
+            s32 y = at->y - (prim->offset_y << PORT_REMASTER_FRACTION);
+            TweenPoint *one = port_TweenFindPoint(
+                table, prim->id.object, prim->id.group, index, TRUE);
+
+            if (one == NULL) {
+                continue;
+            }
+            if (one->state == POINT_EMPTY) {
+                one->object = prim->id.object;
+                one->group = prim->id.group;
+                one->index = index;
+                one->state = POINT_ONE;
+                one->x = x;
+                one->y = y;
+                one->ix = at->ix - prim->offset_x;
+                one->iy = at->iy - prim->offset_y;
+                one->depth = at->depth;
+                one->depth_shift = prim->depth_shift;
+            } else if (one->x - x > TWEEN_POINT_NEAR ||
+                       x - one->x > TWEEN_POINT_NEAR ||
+                       one->y - y > TWEEN_POINT_NEAR ||
+                       y - one->y > TWEEN_POINT_NEAR ||
+                       one->depth_shift != prim->depth_shift) {
+                one->state = POINT_UNSURE;
+            }
+        }
+    }
+}
+
+/* `face` with its corners where the other frame put its points, and that
+ * frame's drawing offset and drawing area (`frame_of`). FALSE where the
+ * other frame has not every one of them. */
+static s32 port_TweenPlaceFace(
+    PortRemasterPrim *out, const PortRemasterPrim *face, TweenPoint *table,
+    const PortRemasterPrim *frame_of) {
+    s32 corner;
+
+    if (!port_TweenIsWholeFace(face) || frame_of == NULL) {
+        return FALSE;
+    }
+    *out = *face;
+    out->offset_x = frame_of->offset_x;
+    out->offset_y = frame_of->offset_y;
+    out->clip_left = frame_of->clip_left;
+    out->clip_top = frame_of->clip_top;
+    out->clip_right = frame_of->clip_right;
+    out->clip_bottom = frame_of->clip_bottom;
+    for (corner = 0; corner < face->corner_count; corner++) {
+        s32 index = (s32)(((u32)face->id.face >> (corner * 8)) & 0xFF);
+        const TweenPoint *one = port_TweenFindPoint(
+            table, face->id.object, face->id.group, index, FALSE);
+
+        if (one == NULL || one->state != POINT_ONE ||
+            one->depth_shift != face->depth_shift || one->depth <= 0) {
+            return FALSE;
+        }
+        out->corner[corner].x =
+            one->x + (out->offset_x << PORT_REMASTER_FRACTION);
+        out->corner[corner].y =
+            one->y + (out->offset_y << PORT_REMASTER_FRACTION);
+        out->corner[corner].ix = one->ix + out->offset_x;
+        out->corner[corner].iy = one->iy + out->offset_y;
+        out->corner[corner].depth = one->depth;
+    }
+    return port_TweenIsOnScreen(out);
+}
+
+/* Which way a primitive's first three corners turn: twice the area, with
+ * its sign. It is what the renderer drops a face by (NCLIP). */
+static double port_TweenTurn(const PortRemasterPrim *prim) {
+    double x0 = (double)prim->corner[0].x;
+    double y0 = (double)prim->corner[0].y;
+
+    return ((double)prim->corner[1].x - x0) * ((double)prim->corner[2].y - y0) -
+           ((double)prim->corner[2].x - x0) * ((double)prim->corner[1].y - y0);
+}
+
+/* Whether two primitives' corners turn the same way, and neither is edge
+ * on. */
+static s32 port_TweenTurnsAlike(
+    const PortRemasterPrim *one, const PortRemasterPrim *two) {
+    double a = port_TweenTurn(one);
+    double b = port_TweenTurn(two);
+
+    return (a > 0.0 && b > 0.0) || (a < 0.0 && b < 0.0);
+}
+
+/* The faces one of the two frames has and the other has not, given the
+ * other's places for their points (`going`, `coming`). */
+static void port_TweenPlaceUnpaired(void) {
+    const TweenFrame *shown = port_TweenShown();
+    const TweenFrame *after = port_TweenAfter();
+    const PortRemasterPrim *shown_frame =
+        shown->placed_at != TWEEN_EMPTY ? &shown->prim[shown->placed_at] : NULL;
+    const PortRemasterPrim *after_frame =
+        after->placed_at != TWEEN_EMPTY ? &after->prim[after->placed_at] : NULL;
+    s32 anchor = TWEEN_EMPTY;
+    s32 i;
+
+    g_tween.counts.going = 0;
+    g_tween.counts.coming = 0;
+    for (i = 0; i < shown->prim_count; i++) {
+        g_tween.has_going[i] = FALSE;
+        g_tween.coming_first[i] = TWEEN_EMPTY;
+        g_tween.coming_last[i] = TWEEN_EMPTY;
+    }
+    if (g_tween.guesses) {
+        return;
+    }
+    port_TweenNotePoints(shown, g_tween.points[0]);
+    port_TweenNotePoints(after, g_tween.points[1]);
+    /* a face that is going: the frame after it's places for its points */
+    for (i = 0; i < shown->prim_count; i++) {
+        if (g_tween.pair[i] != TWEEN_EMPTY) {
+            continue;
+        }
+        if (port_TweenPlaceFace(&g_tween.going[i], &shown->prim[i],
+                                g_tween.points[1], after_frame)) {
+            g_tween.has_going[i] = TRUE;
+            g_tween.counts.going++;
+        }
+    }
+    /* A face that is coming: the frame on show's places for its points,
+     * and it is drawn after the primitive of the frame on show that is
+     * the partner of the last one before it in the frame after it, which
+     * is where the frame after it painted it. Only one the frame on show
+     * had turned away from is drawn at all: so a picture at phase 0 is
+     * the frame on show's own. */
+    for (i = 0; i < after->prim_count; i++) {
+        const PortRemasterPrim *two = &after->prim[i];
+
+        g_tween.coming_next[i] = TWEEN_EMPTY;
+        if (g_tween.taken[i] != TWEEN_EMPTY) {
+            anchor = g_tween.taken[i];
+            continue;
+        }
+        if (anchor == TWEEN_EMPTY ||
+            !port_TweenPlaceFace(
+                &g_tween.coming[i], two, g_tween.points[0], shown_frame) ||
+            port_TweenTurnsAlike(&g_tween.coming[i], two)) {
+            continue;
+        }
+        /* chained after the anchor's, in the order the frame after it
+         * painted them */
+        if (g_tween.coming_first[anchor] == TWEEN_EMPTY) {
+            g_tween.coming_first[anchor] = i;
+        } else {
+            g_tween.coming_next[g_tween.coming_last[anchor]] = i;
+        }
+        g_tween.coming_last[anchor] = i;
+        g_tween.counts.coming++;
+    }
+}
+
+/* **A thing whose node moved.** A thing is named by the address of the
+ * node the renderer draws it from (port_RemasterNoteObject), and most
+ * nodes stay where they are while a fight runs. Some do not: the nodes of
+ * a fighter's weapons and of the shadows are built again every frame in
+ * one of two places, the one and the other in turn, so every face of
+ * them has another name in the next frame and none was paired. Each was
+ * drawn where it was until the frame after it was on show: a fighter's
+ * sword stood still for the pictures between two frames and then jumped,
+ * and his shadow with it.
+ *
+ * So the things with faces left unpaired are held against the things of
+ * the frame after it with faces nothing has taken, and a thing of the one
+ * is taken to be a thing of the other where the most of its faces are
+ * found under the other's name: the same mesh, the same face, the same
+ * piece, of the same kind and near. Its faces are then paired under that
+ * name as any others are. */
+#define TWEEN_MOVED_MAX 64
+
+static void port_TweenPairMoved(
+    const TweenFrame *shown, const TweenFrame *after) {
+    PortAddress from[TWEEN_MOVED_MAX];
+    PortAddress to[TWEEN_MOVED_MAX];
+    s32 from_count = 0;
+    s32 to_count = 0;
+    s32 i;
+    s32 j;
+
+    if (g_tween.guesses) {
+        return;
+    }
+    for (i = 0; i < shown->prim_count; i++) {
+        PortAddress object = shown->prim[i].id.object;
+
+        if (g_tween.pair[i] != TWEEN_EMPTY || object == 0 ||
+            !shown->prim[i].has_place) {
+            continue;
+        }
+        for (j = 0; j < from_count && from[j] != object; j++) {
+        }
+        if (j == from_count && from_count < TWEEN_MOVED_MAX) {
+            from[from_count++] = object;
+        }
+    }
+    for (i = 0; i < after->prim_count; i++) {
+        PortAddress object = after->prim[i].id.object;
+
+        if (g_tween.taken[i] != TWEEN_EMPTY || object == 0 ||
+            !after->prim[i].has_place) {
+            continue;
+        }
+        for (j = 0; j < to_count && to[j] != object; j++) {
+        }
+        if (j == to_count && to_count < TWEEN_MOVED_MAX) {
+            to[to_count++] = object;
+        }
+    }
+    for (i = 0; i < from_count; i++) {
+        PortAddress best = 0;
+        s32 best_count = 0;
+        s32 k;
+
+        for (j = 0; j < to_count; j++) {
+            s32 count = 0;
+
+            if (to[j] == from[i]) {
+                continue;
+            }
+            for (k = 0; k < shown->prim_count; k++) {
+                const PortRemasterPrim *one = &shown->prim[k];
+                PortRemasterIdentity id;
+                s32 at;
+
+                if (one->id.object != from[i] ||
+                    g_tween.pair[k] != TWEEN_EMPTY) {
+                    continue;
+                }
+                id = one->id;
+                id.object = to[j];
+                at = port_TweenAtId(after, &id);
+                if (at != TWEEN_EMPTY && g_tween.taken[at] == TWEEN_EMPTY &&
+                    port_TweenSameKind(one, &after->prim[at]) &&
+                    port_TweenStep(one, &after->prim[at]) <=
+                        PORT_TWEEN_STEP_MAX) {
+                    count++;
+                }
+            }
+            if (count > best_count) {
+                best_count = count;
+                best = to[j];
+            }
+        }
+        if (best == 0) {
+            continue;
+        }
+        for (k = 0; k < shown->prim_count; k++) {
+            const PortRemasterPrim *one = &shown->prim[k];
+            PortRemasterIdentity id;
+            s32 at;
+
+            if (one->id.object != from[i] || g_tween.pair[k] != TWEEN_EMPTY) {
+                continue;
+            }
+            id = one->id;
+            id.object = best;
+            at = port_TweenAtId(after, &id);
+            if (at != TWEEN_EMPTY && g_tween.taken[at] == TWEEN_EMPTY &&
+                port_TweenSameKind(one, &after->prim[at]) &&
+                port_TweenIsOnScreen(one) &&
+                port_TweenIsOnScreen(&after->prim[at])) {
+                g_tween.pair[k] = at;
+                g_tween.taken[at] = k;
+                g_tween.counts.named++;
+                g_tween.counts.moved++;
+            }
+        }
+        /* a thing of the frame after it is another's at most once */
+        for (j = 0; j < to_count; j++) {
+            if (to[j] == best) {
+                to[j] = 0;
+            }
+        }
+    }
+}
+
 /* Which primitive of the frame after the one on show each of its own is,
  * and whether the two are one scene a frame apart: a camera that cut, a
  * screen that changed or a model that was replaced leaves nothing to
@@ -939,6 +1392,7 @@ static void port_TweenPairFrames(void) {
     g_tween.counts.searched = 0;
     g_tween.counts.clashes = 0;
     g_tween.counts.held = 0;
+    g_tween.counts.moved = 0;
     for (i = 0; i < after->prim_count; i++) {
         g_tween.taken[i] = TWEEN_EMPTY;
     }
@@ -970,6 +1424,7 @@ static void port_TweenPairFrames(void) {
             g_tween.counts.named++;
         }
     }
+    port_TweenPairMoved(shown, after);
     /* What has no name at all -- drawing the renderer's walk knows
      * nothing of -- is looked for by what it is painted out of and where
      * it was, as it always was: the nearest of the same signature that
@@ -1036,6 +1491,152 @@ static void port_TweenPairFrames(void) {
         paired != 0 &&
         unpaired * PERCENT_256 <= paired * PORT_TWEEN_CUT_SHARE &&
         jumped * PERCENT_256 <= paired * PORT_TWEEN_JUMP_SHARE;
+    if (g_tween.is_one_scene) {
+        port_TweenPlaceUnpaired();
+    }
+    /* The point watched from phase to phase: the first corner of the
+     * paired primitive that moves farthest, of those in the picture that
+     * the chip would draw at both ends. One it would not draw at the end
+     * -- a face a few screens off the side -- is drawn where it is at
+     * the last phase (`held`) and was taken for a point off its line. */
+    {
+        s32 widest = -1;
+
+        g_tween.track_at = TWEEN_EMPTY;
+        for (i = 0; i < shown->prim_count; i++) {
+            s32 step;
+
+            if (g_tween.pair[i] == TWEEN_EMPTY ||
+                !port_TweenInPicture(&shown->prim[i]) ||
+                !port_GlWouldDraw(&shown->prim[i]) ||
+                !port_GlWouldDraw(&after->prim[g_tween.pair[i]])) {
+                continue;
+            }
+            step =
+                port_TweenStep(&shown->prim[i], &after->prim[g_tween.pair[i]]);
+            if (step > widest) {
+                widest = step;
+                g_tween.track_at = i;
+            }
+        }
+    }
+}
+
+/* Where the watched point is in this picture, if primitive `at` of the
+ * frame on show is the one watched: whether it was drawn moved or held
+ * where it is, it is the same primitive at every phase (gl_tween.h,
+ * port_TweenTrack). */
+static void port_TweenWatch(s32 at, const PortRemasterPrim *drawn) {
+    if (at != g_tween.track_at) {
+        return;
+    }
+    g_tween.track_key = drawn->key;
+    g_tween.track_x =
+        drawn->corner[0].x - (drawn->offset_x << PORT_REMASTER_FRACTION);
+    g_tween.track_y =
+        drawn->corner[0].y - (drawn->offset_y << PORT_REMASTER_FRACTION);
+    g_tween.has_track = TRUE;
+}
+
+/* Primitive `at` of the frame on show, at `phase`. */
+static void port_TweenDrawOne(
+    const TweenFrame *shown, const TweenFrame *after, s32 at, s32 phase) {
+    const PortRemasterPrim *one = &shown->prim[at];
+    const PortRemasterPrim *two;
+    PortRemasterPrim mixed;
+    s32 step;
+
+    g_tween.counts.prims++;
+    if (!one->has_place) {
+        g_tween.counts.flat++;
+        if (g_tween.real->draw != NULL) {
+            g_tween.real->draw(one);
+        }
+        return;
+    }
+    if (g_tween.pair[at] == TWEEN_EMPTY) {
+        g_tween.counts.unpaired++;
+        if (g_tween.has_going[at]) {
+            /* A face the frame after it has turned away from: moved
+             * towards where that frame put its points, and drawn while
+             * it still faces the camera (port_TweenPlaceUnpaired). */
+            port_TweenMixPrim(&mixed, one, &g_tween.going[at], phase);
+            if (!port_TweenTurnsAlike(&mixed, one)) {
+                return;
+            }
+            if (port_GlWouldDraw(&mixed)) {
+                if (g_tween.real->draw != NULL) {
+                    g_tween.real->draw(&mixed);
+                }
+                return;
+            }
+        }
+        /* Otherwise the next frame does not hold this face at all, or
+         * not its points -- a piece of a tile that is cut another way
+         * now -- and it is drawn where it is. (Carrying it the way the
+         * thing it belongs to went was tried, and measured worse: a face
+         * with no partner is usually one that is going, and moving it
+         * uncovers what it was covering.) */
+        if (g_tween.real->draw != NULL) {
+            g_tween.real->draw(one);
+        }
+        return;
+    }
+    two = &after->prim[g_tween.pair[at]];
+    step = port_TweenStep(one, two);
+    port_TweenMixPrim(&mixed, one, two, phase);
+    /* **A picture between two frames holds every primitive the frame on
+     * show held.** The chip draws no triangle that spans more than 1023
+     * pixels across or 511 down and none of no area, and the backend
+     * leaves out the same ones by the same whole-pixel rule: a corner
+     * moved part of the way could fall outside it where the frame on
+     * show's did not, and the picture would have a hole in it where that
+     * face was. So a primitive that would not be drawn moved is drawn
+     * where it is. (Its two places are more than a screen apart, which is
+     * a face at the very edge of the view; carrying it the way the thing
+     * it belongs to went was measured to open more of the backdrop than
+     * it closed.) */
+    if (!g_tween.guesses && !port_GlWouldDraw(&mixed) &&
+        port_GlWouldDraw(one)) {
+        g_tween.counts.held++;
+        port_TweenWatch(at, one);
+        if (g_tween.real->draw != NULL) {
+            g_tween.real->draw(one);
+        }
+        return;
+    }
+    g_tween.counts.mixed++;
+    if ((u32)step > g_tween.counts.widest_step) {
+        g_tween.counts.widest_step = (u32)step;
+    }
+    port_TweenWatch(at, &mixed);
+    if (g_tween.real->draw != NULL) {
+        g_tween.real->draw(&mixed);
+    }
+}
+
+/* The faces of the frame after it that the frame on show had turned away
+ * from and that come after primitive `at` of the frame on show, at
+ * `phase`: each from where the frame on show put its points, drawn once
+ * it has turned to face the camera as it does in the frame after it
+ * (port_TweenPlaceUnpaired). Never at phase 0, which is the frame on
+ * show's own picture. */
+static void port_TweenDrawComing(const TweenFrame *after, s32 at, s32 phase) {
+    s32 i;
+
+    if (phase <= 0) {
+        return;
+    }
+    for (i = g_tween.coming_first[at]; i != TWEEN_EMPTY;
+         i = g_tween.coming_next[i]) {
+        PortRemasterPrim mixed;
+
+        port_TweenMixPrim(&mixed, &g_tween.coming[i], &after->prim[i], phase);
+        if (port_TweenTurnsAlike(&mixed, &after->prim[i]) &&
+            port_GlWouldDraw(&mixed) && g_tween.real->draw != NULL) {
+            g_tween.real->draw(&mixed);
+        }
+    }
 }
 
 s32 port_TweenDraw(s32 phase) {
@@ -1114,77 +1715,8 @@ s32 port_TweenDraw(s32 phase) {
             }
             continue;
         }
-        {
-            const PortRemasterPrim *one = &shown->prim[event->at];
-            const PortRemasterPrim *two;
-            PortRemasterPrim mixed;
-
-            g_tween.counts.prims++;
-            if (!one->has_place) {
-                g_tween.counts.flat++;
-                if (g_tween.real->draw != NULL) {
-                    g_tween.real->draw(one);
-                }
-                continue;
-            }
-            if (g_tween.pair[event->at] == TWEEN_EMPTY) {
-                /* The next frame does not hold this face: the camera
-                 * turned away from it, or it is a piece of a tile that
-                 * is cut another way now. It is drawn where it is.
-                 * (Carrying it the way the thing it belongs to went was
-                 * tried, and measured worse: a face with no partner is
-                 * usually one that is going, and moving it uncovers
-                 * what it was covering.) */
-                g_tween.counts.unpaired++;
-                if (g_tween.real->draw != NULL) {
-                    g_tween.real->draw(one);
-                }
-                continue;
-            }
-            two = &after->prim[g_tween.pair[event->at]];
-            {
-                s32 step = port_TweenStep(one, two);
-
-                port_TweenMixPrim(&mixed, one, two, phase);
-                /* **A picture between two frames holds every primitive
-                 * the frame on show held.** The chip draws no triangle
-                 * that spans more than 1023 pixels across or 511 down
-                 * and none of no area, and the backend leaves out the
-                 * same ones by the same whole-pixel rule: a corner moved
-                 * part of the way could fall outside it where the frame
-                 * on show's did not, and the picture would have a hole
-                 * in it where that face was. So a primitive that would
-                 * not be drawn moved is drawn where it is. (Its two
-                 * places are more than a screen apart, which is a face
-                 * at the very edge of the view; carrying it the way
-                 * the thing it belongs to went was measured to open
-                 * more of the backdrop than it closed.) */
-                if (!g_tween.guesses && !port_GlWouldDraw(&mixed) &&
-                    port_GlWouldDraw(one)) {
-                    g_tween.counts.held++;
-                    if (g_tween.real->draw != NULL) {
-                        g_tween.real->draw(one);
-                    }
-                    continue;
-                }
-                g_tween.counts.mixed++;
-                if ((u32)step > g_tween.counts.widest_step ||
-                    !g_tween.has_track) {
-                    g_tween.counts.widest_step = (u32)step;
-                    g_tween.track_key = one->key;
-                    g_tween.track_x =
-                        mixed.corner[0].x -
-                        (mixed.offset_x << PORT_REMASTER_FRACTION);
-                    g_tween.track_y =
-                        mixed.corner[0].y -
-                        (mixed.offset_y << PORT_REMASTER_FRACTION);
-                    g_tween.has_track = TRUE;
-                }
-                if (g_tween.real->draw != NULL) {
-                    g_tween.real->draw(&mixed);
-                }
-            }
-        }
+        port_TweenDrawOne(shown, after, event->at, phase);
+        port_TweenDrawComing(after, event->at, phase);
     }
     port_GlStageSetView(NULL);
     port_GlFighterTween(-1);

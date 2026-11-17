@@ -51,6 +51,9 @@ extern u32 port_GetGpuStatus(void);
  * pictures can be compared pixel for pixel (a plan's `gpu emulator`). It
  * is for that and nothing else, and it is off unless asked for. */
 extern void port_SetGpuLikeEmulator(s32 is_on);
+/* ... and whether it is: a renderer that draws the console's picture over
+ * again draws it as this GPU does (src/port/gl/gl_draw.c). */
+extern s32 port_GpuIsLikeEmulator(void);
 
 /* ---- what the drawing commands have set ---- */
 

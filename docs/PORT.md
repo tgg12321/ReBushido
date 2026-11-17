@@ -1641,6 +1641,24 @@ of the console's picture is two lines of the screen.
   where the next texel along is nothing, the fragment is thrown away
   and the background shows through. `--gl-blocks` measures it ("How it
   is proved, with nothing shown").
+- **A flat polygon is the chip's to its edges.** A triangle of the 2D
+  layer (a loading screen's swords, the slanting panels of the stage
+  select, a portrait cut into strips) is drawn by a geometry shader as
+  the rectangle about it, and the fragment shader keeps a block only
+  where the chip's own rule (`port_DrawTriangle`, `raster.c`: from the
+  edge on the left to the pixel before the edge on the right, the
+  highest line to the line above the lowest) puts the block's own pixel
+  inside it, with the colour and the texture point the chip's own
+  arithmetic gives that pixel: steps across and down in twelve bits of
+  fraction, counted from the corner furthest left, worked out once for
+  the triangle in whole numbers. Before, the card's rule at the
+  picture's resolution cut a block a slanting edge crossed in two, and
+  the two triangles of a quad, whose steps differ where its texture does
+  not run evenly across it, left a seam of blocks a texel out along the
+  diagonal: 18,917 broken blocks and a worst channel of 182 in
+  `port_game`'s flat screens, which are now none and 11. It costs
+  Mesa's software renderer about twice the time a frame (489 to some
+  1,000 µs in the prover); on a card it is nothing.
 - The **four mixes** are the card's blending at eight bits a channel
   instead of the chip's five: half and half by `SRC_ALPHA`, added and a
   quarter added by `ONE, ONE_MINUS_SRC_ALPHA` with the shader setting
@@ -1770,9 +1788,9 @@ console's own picture the prover asks two things of its block: that it
 is of one colour at all, and that the colour is the console's. The
 bands beside the console's 640 pixels in a wider picture are the
 scene's alone and are left out. What a flat screen may still differ in
-is a pixel that mixes, which the card mixes at eight bits a channel and
-the chip at five, and the edge of a flat polygon that is not up and
-down, which the card draws at the picture's own resolution.
+is a colour, which the card keeps at eight bits a channel with no dither
+and the chip at five; a flat polygon's slanting edge is the chip's
+("A flat polygon is the chip's to its edges").
 
 Measured over the boot, the options page, the top menu and the
 character select, with `aspect 16:9`, every twentieth blank:
@@ -1793,6 +1811,15 @@ eight bits a channel and the chip at five: that is the whole of the
 as any of it goes. `tools/port_gl_prove.py` runs this on each of the
 three plans and fails the run if any block is broken up or any pixel is
 more than two steps out.
+
+That table was the boot and the first menus. The whole of `port_game`
+at 4 across and 3 down is 109 flat pictures -- the loading screen's
+swords and the stage select's slanting panels among them -- and there
+the card's rule for a slanting edge broke 18,917 blocks, with a worst
+channel of 182 where a portrait cut into strips came out a texel along
+at the strips' diagonals. With the chip's own rule and arithmetic for a
+flat polygon (above) it is **0** blocks broken, 8,037 more than a step
+out and a worst channel of 11.
 
 (At 8 across the 640-wide screens come to more pixels than the prover
 keeps a picture in, so only the 320-wide ones — the boot and the
@@ -2605,8 +2632,15 @@ What the mesh does not mend is what was already there: the pictures of
 `port_other_fight` that do not lie between their two frames went from 11
 to 23 of 817 (2.8%), and the watched point that is not between its two
 ends from 14 to 14 -- on `port_game` that count falls from 16 to 6. Those
-are a face the next frame has not, which is drawn where it is rather than
-moved, and are not the ground's.
+were taken for a face the next frame has not, drawn where it is rather
+than moved, and are not the ground's. Measured again later ("More
+pictures a second", "What made a fighter standing still move"): the
+watched point was off its line because it was a different primitive at
+different phases, or one held where it is at the last; it is now one
+primitive chosen for the pair of frames, and `port_game` and
+`port_bugfixes` hold every check. `port_other_fight`'s 20 out of order
+are on the cave stage, where rails against the camera are black in one
+of the game's own frames and red in the next.
 
 **What it costs.** On this machine, which has no graphics card at all
 (Mesa's llvmpipe) and was busy with other work throughout, a run of
@@ -3469,6 +3503,50 @@ way the thing it belongs to went -- the average of the faces of it
 that were paired -- was tried and **measured worse**: a face with no
 partner is usually one that is going, and moving it uncovers what it
 was covering. It is drawn where it is.
+
+**What made a fighter standing still move** (the owner's "always
+flickering and in motion even when they should be still", at
+`frame_rate = display` on an 85 Hz screen). Measured on the strip of
+`port_game` at blank 3,000 -- the fighters squared up, barely moving --
+three things held faces of a fighter still between two frames while the
+rest of him moved, so that at every one of the game's frames they
+jumped to catch up: the last picture of a frame differed from the
+game's own next frame in 3,226 pixels by more than 24 of a channel,
+nearly all of them on the fighters' swords, scabbards and sandals.
+
+- *A sliver was held* (`held`, 110 to 186 a frame there, not the 15
+  above). A face nearly edge on -- a blade, the side of a sandal --
+  whose corners round to one line of whole pixels was taken for one of
+  no area and so as one the chip would not draw; a picture between two
+  frames then drew it where it was. A face drawn where the projection
+  put it is now measured by those places (`port_GlIsDrawn`), where it
+  has an area, and is drawn and moved: `held` is 0 in both fights.
+- *A weapon's node is not where it was.* The nodes of the fighters'
+  weapons and of the shadows are built every frame in one of two places
+  in turn (some 0x13400 bytes apart), so every face of them had another
+  name one frame on and none was paired. A thing whose faces are left
+  unpaired is now matched to the thing of the frame after it under whose
+  name the most of them are found -- the same mesh, face and piece, the
+  same kind, near -- and paired under that name (`port_TweenPairMoved`,
+  `moved`). Unpaired faces of that frame went from 107 to 43.
+- *A face one frame has not.* A face that turns away from the camera is
+  not in the next frame and one that turns towards it was not in the
+  last, so at a fighter's edge some faces are in one frame only, every
+  frame. A face's name says which points of its mesh its corners are,
+  and its neighbours, which both frames draw, are made of the same
+  points: each frame's points are written down by thing, mesh and point,
+  and a face one frame has not is given the other frame's places for its
+  points and moved like any other (`port_TweenPlaceUnpaired`, `going`
+  and `coming`). It is drawn only while it faces the way it faces in the
+  frame that has it, which is what the renderer would have drawn of the
+  thing at that moment; a face that is coming is never drawn at phase 0,
+  so the first picture is still the game's own. A point two faces of a
+  frame put more than a pixel apart is not trusted, and a face with one
+  is drawn where it is as before.
+
+With the three, the last picture of that frame differs from the next
+frame in 872 pixels by more than 24 (from 3,226), and in 1,125 by more
+than 3 (from 4,522); the sword no longer stands still between frames.
 
 **What is not moved, and what then happens.** A primitive the frame
 after it has not (something spawned or gone), one the projection gave no

@@ -106,6 +106,11 @@ static struct {
      * (--gl-fighter-pose) */
     char pose_folder[512];
     u32 pose_at;
+    /* faces one frame has and the other not, moved by their points
+     * (gl_tween.c, port_TweenPlaceUnpaired), over the pairs checked */
+    u32 going;
+    u32 coming;
+    u32 moved;
 } g_run;
 
 /* The most pictures a game frame may be drawn as, for the prover's
@@ -483,12 +488,11 @@ static u32 port_ChannelsApart(u32 one, u32 two) {
  * far that colour is from the console's. The bands beside the console's
  * 640 pixels in a wider picture are the scene's alone and are left out.
  *
- * What a flat screen may still differ in: a pixel that mixes, which the
- * card mixes at eight bits a channel and the chip at five (within one
- * step), and the edge of a flat polygon that is not up and down, which
- * the card draws at the picture's own resolution and not the console's
- * (sharper, and the pixels of the block are then not all of one
- * colour). */
+ * What a flat screen may still differ in: a colour, which the card keeps
+ * at eight bits a channel with no dither and the chip at five (within
+ * two steps). A flat polygon's slanting edge is the chip's, block for
+ * block: the card is told which pixels the chip's rule covers
+ * (gl_draw.c, the geometry shader). */
 static void port_CompareBlocks(s32 w, s32 h, s32 software_w, s32 software_h,
                                s32 scale_x, s32 scale_y, s32 margin) {
     s32 x;
@@ -689,6 +693,11 @@ static void port_GlTweenPhases(u32 blank) {
             g_first_phase, PICTURE_PIXELS_MAX, &live_w, &live_h)) {
         return;
     }
+    if (writes) {
+        /* beside the phases, so that the first can be held to it */
+        snprintf(path, sizeof(path), "%s/gl-%06u-own.png", g_run.shots, blank);
+        port_WritePng(path, g_first_phase, live_w, live_h, FALSE);
+    }
     for (phase = 0; phase < g_run.tween; phase++) {
         s32 at = (s32)(((s64)phase * PORT_TWEEN_ONE) / (g_run.tween - 1));
         u32 started = port_Microseconds();
@@ -808,6 +817,9 @@ static void port_GlTweenPhases(u32 blank) {
         const PortTweenCounts *counts = port_TweenGetCounts();
 
         g_run.off_the_line += counts->off_the_line;
+        g_run.going += counts->going;
+        g_run.coming += counts->coming;
+        g_run.moved += counts->moved;
         /* A scene that did not move at all between the two frames: every
          * picture in between must be that scene, pixel for pixel. A
          * picture that is not says a partner was wrongly found, or that
@@ -903,13 +915,14 @@ static void port_GlBlank(u32 blank) {
                     port_GlGetOutsideCount(), port_GlGetWideCount(),
                     port_GlGetDroppedCount());
             fprintf(stderr,
-                    "gl blank %u with_depth %u without_depth %u points %u "
+                    "gl blank %u with_depth %u without_depth %u with_place "
+                    "%u points %u "
                     "faces %u attached %u misses %u full %u masked %u "
                     "texture_from_drawn %u\n",
                     blank, counts->with_depth, counts->without_depth,
-                    counts->points, counts->faces, counts->attached,
-                    counts->point_misses, counts->full, counts->masked,
-                    counts->texture_from_drawn);
+                    counts->with_place, counts->points, counts->faces,
+                    counts->attached, counts->point_misses, counts->full,
+                    counts->masked, counts->texture_from_drawn);
             fprintf(stderr,
                     "gl blank %u mixed half %u add %u subtract %u quarter "
                     "%u\n",
@@ -1121,6 +1134,8 @@ static void port_GlQuit(s32 code) {
                 g_run.off_the_line, g_run.still, g_run.still_moved,
                 g_run.fewer_prims, g_run.more_dropped, g_run.holes,
                 g_run.hole_pixels, g_run.background_pixels);
+        fprintf(stderr, "gl run tween going %u coming %u moved %u\n",
+                g_run.going, g_run.coming, g_run.moved);
     }
     fflush(stderr);
 }
