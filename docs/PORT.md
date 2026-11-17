@@ -2704,7 +2704,7 @@ has looked at it on a real screen.
 | A frame of a fight | one more draw of three vertices, before the scene |
 | The game's trace | untouched: nothing of the game is read but the stage's lighting and the view the ground already takes |
 | `port_game` (the building's rooftop) drawn as five pictures a frame, with the sky and the walls seen through | 697 frames checked; phase 0 the game's own frame in every one (0 pixels apart); none out of order, and the watched point off its line in 4 -- the same numbers as without them |
-| The sky between two frames | it moves a step a phase: of the picture's top fifth at blank 3000, 664, 1,442, 2,240 and 3,065 pixels apart from phase 0 at phases 1 to 4 |
+| The sky between two frames | it moves a step a phase: of the picture's top fifth at blank 3000, 909, 1,999, 3,089 and 4,158 pixels apart from phase 0 at phases 1 to 4 |
 
 ### Seeing the fighters through the stage
 

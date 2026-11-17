@@ -37,6 +37,7 @@
 
 #include "gl.h"
 #include "gl_pause.h"
+#include "gl_sky.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
 #include "port_gpu.h"
@@ -1680,6 +1681,11 @@ static void port_ShowBlank(u32 blank) {
         port_GlNoteFrameTime((SDL_GetTicks() - started) * MILLISECONDS);
         /* which path the stage's ground takes (gl_stage.h) */
         news = port_GlStageNews();
+        if (news != NULL) {
+            port_Say("%s", news);
+        }
+        /* and whether the stage has a sky (gl_sky.h) */
+        news = port_GlSkyNews();
         if (news != NULL) {
             port_Say("%s", news);
         }
