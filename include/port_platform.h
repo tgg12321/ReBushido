@@ -193,6 +193,11 @@ extern void (*g_port_take_hook)(PortInput *input);
 /* The input the game read last, and how many it has read. */
 extern PortInput g_port_input;
 extern u32 g_port_input_count;
+/* The movie player reads the pads its own way (PAD_dr), at moments no
+ * other machine shares. Netplay sets this before the game starts: every
+ * movie is then skipped where it begins, on both machines alike (docs/
+ * NETPLAY.md, section 13). */
+extern s32 g_port_movies_skipped;
 
 /* ---- the step (src/port/step.c; docs/NETPLAY.md, "The step") ---- */
 

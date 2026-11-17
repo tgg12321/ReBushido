@@ -22,6 +22,7 @@ enum {
     PORT_MOD_MODELS,   /* the fighters' models, .glb (gl_fighter.h) */
     PORT_MOD_MUSIC,    /* not read yet */
     PORT_MOD_STAGES,   /* not read yet */
+    PORT_MOD_SKIES,    /* PNG pictures of a stage's sky (gl_sky.h) */
     PORT_MOD_KINDS
 };
 

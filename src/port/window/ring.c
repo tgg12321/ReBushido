@@ -54,6 +54,15 @@ void port_WriteRing(PortRing *ring, const s16 *samples, u32 frames) {
     ring->count += frames;
 }
 
+/* The newest pairs waiting taken back (window.h). */
+u32 port_TakeBackRing(PortRing *ring, u32 frames) {
+    if (frames > ring->count) {
+        frames = ring->count;
+    }
+    ring->count -= frames;
+    return frames;
+}
+
 /* Every pair asked for, whatever is waiting (window.h). */
 void port_ReadRing(PortRing *ring, s16 *out, u32 frames) {
     u32 i;

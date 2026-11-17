@@ -58,6 +58,11 @@ extern s32 port_ReadDiscSector(const PortDisc *disc, u32 sector, u8 *raw);
 extern s32 port_ReadDiscData(
     const PortDisc *disc, u32 sector, u32 count, u8 *dest, u32 *done);
 
+/* How many sectors have been read: a step that read many loaded something,
+ * and netplay makes the frame after it a point both programs wait at
+ * (netplay.c). It is part of the state, and goes back with a load. */
+extern u32 g_port_disc_sectors_read;
+
 /* A position as the drive is given it and as a sector says its own: the
  * minute, second and frame, two decimal digits in a byte each. */
 extern void port_DiscSectorToPosition(u32 sector, u8 *position);

@@ -168,6 +168,13 @@ enum MenuPageResult {
 #define MENU_TOP_CANCELED (-2)
 #define MENU_ROW_OPTIONS 7
 extern s32 menu_UpdateTop(s32 held, u32 pressed);
+#if RB_PORT
+/* The mode of the row the top menu's cursor is on (enum FightMode, or
+ * MENU_ROW_OPTIONS). */
+extern s32 menu_GetTopRowMode(void);
+/* The main menu's page (menu_screen.c, enum MenuPage). */
+extern u8 g_menu_page;
+#endif
 
 /* What menu_UpdateOptions returns. */
 enum OptionMenuResult {

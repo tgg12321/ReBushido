@@ -662,6 +662,13 @@ s32 menu_StepNudge(u32 *pressed, s32 player, s16 *nudge, s16 *steps) {
 
 /* ---- the top menu ---- */
 
+#if RB_PORT
+/* The mode of the row the top menu's cursor is on (enum FightMode, or
+ * MENU_ROW_OPTIONS): netplay's session takes both machines down to
+ * versus with it (src/port/session.c). */
+s32 menu_GetTopRowMode(void) { return g_menu_top.row[TOP_ROW].mode; }
+#endif
+
 /* The top menu: up and down move the cursor over the rows that can be
  * chosen, left and right pick the view where the mode has both, cross
  * chooses. Returns the mode chosen, MENU_TOP_CANCELED on triangle, or

@@ -42,6 +42,7 @@ sys.path.insert(0, os.path.join(REPO, 'tools'))
 import playtest  # noqa: E402  (tools/playtest.py)
 
 PROGRAMS = {64: 'build/port/rebushido', 32: 'build/port32/rebushido'}
+WINDOW_PROGRAM = 'build/port-sdl/linux/rebushido'
 SECONDS = 600
 BASE_PORT = 47000
 LOCALHOST = '127.0.0.1'
@@ -119,6 +120,106 @@ name = "end"
 frames = 60
 shot = false
 '''
+
+
+# A session (--host, --join): the session itself takes both programs from
+# power on to the versus select screen. There each player takes the
+# fighter and the weapon under the cursor, and the host the stage; then
+# port_game's fight, each pad's part from its own program. After it the
+# host takes the first row of the menu after the fight, Rematch, and the
+# same fight is fought again. Then the guest ends (its plan is done): the
+# host is told, and the window's plays on alone for ten seconds more,
+# the headless one ends with it.
+SESSION_SELECT = ["select+280 CROSS", "select+320 P2 CROSS", "select+580 CROSS", "select+620 P2 CROSS",
+                  "select+1180 CROSS"]
+
+
+def port_game_fight():
+    """port_game's presses in the fight, as written there."""
+    text = read(os.path.join(REPO, 'tests', 'play', 'port_game.toml'))
+    presses = []
+    for word in text.split('"'):
+        if word.startswith('fight+'):
+            presses.append(word)
+    return presses
+
+
+SESSION_CHECKPOINTS = '''
+[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 4000
+shot = false
+expect = ["mode == FIGHT_MODE_VS"]
+
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+at_frame = true
+within = 4000
+shot = false
+expect = ["mode == FIGHT_MODE_VS", "p1_cpu == 0", "p2_cpu == 0"]
+
+[[checkpoint]]
+name = "kill"
+when = "winner != FIGHT_NOBODY"
+at_frame = true
+within = 4000
+shot = false
+expect = ["p1_defeated + p2_defeated == 1"]
+
+[[checkpoint]]
+name = "after_fight"
+when = "screen == SCREEN_AFTER_FIGHT_UPDATE"
+within = 4000
+shot = false
+
+[[checkpoint]]
+name = "rematch"
+when = "screen == SCREEN_FIGHT_UPDATE && winner == FIGHT_NOBODY"
+at_frame = true
+within = 3000
+shot = false
+expect = ["mode == FIGHT_MODE_VS", "wins_p1 + wins_p2 == 1"]
+
+[[checkpoint]]
+name = "kill2"
+when = "winner != FIGHT_NOBODY"
+at_frame = true
+within = 4000
+shot = false
+expect = ["p1_defeated + p2_defeated == 1"]
+'''
+# The guest ends a second after the second kill; the host runs on.
+SESSION_END = {0: '\n[[checkpoint]]\nname = "alone"\nafter = 900\nshot = false\n',
+               1: '\n[[checkpoint]]\nname = "end"\nframes = 30\nshot = false\n'}
+
+
+def write_session_plan(program, side, folder):
+    """The plan of the host (side 0) or the guest (1) for `program`: its
+    path."""
+    fight = port_game_fight()
+    rematch = [p.replace('fight+', 'rematch+', 1) for p in fight]
+    presses = own_pad(SESSION_SELECT + fight + rematch, side)
+    if side == 0:
+        presses.append("after_fight+120 CROSS")
+    toml = os.path.join(folder, 'session_side%d.toml' % side)
+    with open(toml, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('about = "A session of netplay, side %d."\n' % side)
+        # (the cards are the host's own, as the command line names them)
+        f.write('discs = ["port"]\nlimit = 16000\nseconds = %d\n' % SECONDS)
+        f.write('input = [\n%s\n]\n' % ',\n'.join('    "%s"' % p for p in presses))
+        f.write(SESSION_CHECKPOINTS + SESSION_END[side])
+    playtest.PORT_PROGRAM = program
+    playtest.PORT_SYMBOLS = program + '.sym'
+    test = playtest.Test(toml)
+    disc = playtest.Disc('port')
+    test.set_discs([disc])
+    _, lines = test.plan(disc, playtest.header_names(), 1)
+    path = os.path.join(folder, 'plan_side%d.txt' % side)
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(lines) + '\n')
+    return path
 
 
 def own_pad(presses, side):
@@ -249,6 +350,164 @@ def check_rollback(label, program, args, ports):
     return problems
 
 
+def check_session(label, program, args, ports, window):
+    """A session between two programs, set up by --host and --join, through
+    the versus select screen, a fight, a rematch and the guest's leaving.
+    `window`: the programs are the window's, headless (dummy drivers), in
+    real time; or else the headless ones, as fast as they go."""
+    folder = os.path.join(args.out, 'session', label)
+    os.makedirs(folder, exist_ok=True)
+    plans = [write_session_plan(program, side, folder) for side in (0, 1)]
+    trouble = ['--net-latency', str(args.latency), '--net-loss', str(args.loss)]
+    env = dict(os.environ)
+    procs = []
+    start = time.time()
+    for side in (0, 1):
+        cmd = [program, '--image', playtest.RETAIL_CUE, '--plan', plans[side], '--trace',
+               '--out', os.path.join(folder, 'side%d' % side)] + trouble
+        if side == 0:
+            # the host's cards, which it sends the guest: new ones here,
+            # which no program writes (both play on copies in memory)
+            cmd += ['--host', '%s:%d' % (LOCALHOST, ports[0]), '--net-delay', str(args.delay),
+                    '--card1', os.path.join(folder, 'card1.mcd'), '--card2', os.path.join(folder, 'card2.mcd')]
+        else:
+            cmd += ['--join', '%s:%d' % (LOCALHOST, ports[0]), '--net-bind', '%s:%d' % (LOCALHOST, ports[1])]
+        if window:
+            config = os.path.join(folder, 'rebushido.cfg')
+            with open(config, 'w', encoding='utf-8', newline='\n') as f:
+                f.write('fullscreen = off\n')
+            cmd += ['--config', config, '--windowed', '--log', os.path.join(folder, 'side%d.log' % side)]
+            env['SDL_VIDEODRIVER'] = 'dummy'
+            env['SDL_AUDIODRIVER'] = 'dummy'
+        os.makedirs(os.path.join(folder, 'side%d' % side), exist_ok=True)
+        out = open(os.path.join(folder, 'side%d.out' % side), 'wb')
+        err = open(os.path.join(folder, 'side%d.err' % side), 'wb')
+        procs.append((subprocess.Popen(cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL, env=env),
+                      out, err))
+        if side == 0:
+            time.sleep(0.5)
+    results = []
+    for proc, out, err in procs:
+        try:
+            code = proc.wait(timeout=max(1, SECONDS - (time.time() - start)))
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            code = None
+        out.close()
+        err.close()
+        results.append((code, time.time() - start))
+    problems = []
+    hashes = []
+    for side, (code, seconds) in enumerate(results):
+        who = 'host' if side == 0 else 'guest'
+        print('port_net: session: %s: %s: exit %s, %.0f s' % (label, who, code, seconds), flush=True)
+        err = read(os.path.join(folder, 'side%d.err' % side))
+        for line in err.split('\n'):
+            if line.startswith(('net:', 'netplay:', 'session: begun', 'rebushido: sound: netplay')) and \
+                    ' hash ' not in line:
+                print('    ' + line)
+        if 'DESYNC' in err:
+            problems.append('session: %s: the %s found a desync' % (label, who))
+        if code != 0:
+            problems.append('session: %s: the %s ended with %s (%s/side%d.err)' % (label, who, code, folder, side))
+        # A checkpoint is printed where a frame run first reaches it; one
+        # that only a frame run again after a rollback reaches is not
+        # (docs/NETPLAY.md, section 10). The plan goes from one to the
+        # next, so a later one printed says the earlier were reached; and
+        # a plan that ends well (exit 0) reached its last.
+        out = read(os.path.join(folder, 'side%d.out' % side))
+        order = ['select', 'fight', 'kill', 'after_fight', 'rematch', 'kill2', 'end', 'alone']
+        printed = [n for n, name in enumerate(order) if 'cp %s ' % name in out]
+        if not printed or max(printed) < order.index('kill'):
+            problems.append('session: %s: the %s printed no checkpoint from the first kill on' % (label, who))
+        else:
+            print('    checkpoints printed: %s; the last reached: %s' % (
+                ' '.join(order[n] for n in printed), order[max(printed)]))
+        hashes.append(hashes_of(err))
+    host_err = read(os.path.join(folder, 'side0.err'))
+    if 'the other program ended after frame' not in host_err:
+        problems.append('session: %s: the host was not told that the guest had gone' % label)
+    if window and 'plays on alone' not in host_err:
+        problems.append('session: %s: the host did not play on alone' % label)
+    for card in ('card1.mcd', 'card2.mcd'):
+        if os.path.exists(os.path.join(folder, card)):
+            problems.append('session: %s: %s was written, and nothing of a session is' % (label, card))
+    common = sorted(set(hashes[0]) & set(hashes[1]))
+    differ = [frame for frame in common if hashes[0][frame] != hashes[1][frame]]
+    if differ:
+        problems.append('session: %s: the state hashes differ from frame %d' % (label, differ[0]))
+    if len(common) < 40:
+        problems.append('session: %s: too few state hashes in common (%d)' % (label, len(common)))
+    if not problems:
+        print('port_net: session: %s: %d state hashes, the same on both, the last at frame %d: %s'
+              % (label, len(common), common[-1], hashes[0][common[-1]]), flush=True)
+    return problems
+
+
+def check_menu(program, args, ports):
+    """The settings menu's Play online page, in two window programs: each
+    is started as a player starts it, opens the menu (F1, here
+    --menu-at), goes to Play online and starts there, the first as the
+    host and the second as a guest who types the host's address. Each
+    program starts again as the session's (sdl_main.c), and the two play
+    to the versus select screen and on a little. Both sockets are on
+    127.0.0.1: the settings say `net_listen = local`."""
+    folder = os.path.join(args.out, 'menu')
+    os.makedirs(folder, exist_ok=True)
+    env = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy')
+    # up from the first row comes round to the last, Back to the game;
+    # the row above it is Play online
+    keys = ['up up accept down down down down accept',
+            'up up accept down accept type:%s:%d down down accept' % (LOCALHOST, ports[0])]
+    settings = ['net_role = host\nnet_port = %d\nnet_listen = local\nnet_delay = 2\n' % ports[0],
+                'net_role = join\nnet_listen = local\n']
+    procs = []
+    start = time.time()
+    for side in (0, 1):
+        config = os.path.join(folder, 'side%d.cfg' % side)
+        with open(config, 'w', encoding='utf-8', newline='\n') as f:
+            f.write('fullscreen = off\n' + settings[side])
+        cmd = [program, '--image', playtest.RETAIL_CUE, '--config', config, '--windowed', '--frames', '1500',
+               '--log', os.path.join(folder, 'side%d.log' % side), '--menu-at', '120', '--menu-keys', keys[side],
+               '--card1', os.path.join(folder, 'card1.mcd'), '--card2', os.path.join(folder, 'card2.mcd')]
+        out = open(os.path.join(folder, 'side%d.out' % side), 'wb')
+        err = open(os.path.join(folder, 'side%d.err' % side), 'wb')
+        procs.append((subprocess.Popen(cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL, env=env),
+                      out, err))
+    codes = []
+    for proc, out, err in procs:
+        try:
+            codes.append(proc.wait(timeout=max(1, SECONDS - (time.time() - start))))
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            codes.append(None)
+        out.close()
+        err.close()
+    problems = []
+    hashes = []
+    for side in (0, 1):
+        who = 'host' if side == 0 else 'guest'
+        err = read(os.path.join(folder, 'side%d.err' % side))
+        print('port_net: menu: %s: exit %s, %.0f s' % (who, codes[side], time.time() - start), flush=True)
+        for line in err.split('\n'):
+            if 'online:' in line or line.startswith(('session: begun', 'netplay: time')):
+                print('    ' + line)
+        if codes[side] != 0:
+            problems.append('menu: the %s ended with %s (%s/side%d.err)' % (who, codes[side], folder, side))
+        if 'the program starts again as the %s' % who not in err or 'session: begun' not in err:
+            problems.append('menu: the %s did not start again as the session\'s %s' % (who, who))
+        hashes.append(hashes_of(err))
+    common = sorted(set(hashes[0]) & set(hashes[1]))
+    if not common or any(hashes[0][f] != hashes[1][f] for f in common):
+        problems.append('menu: the two programs\' state hashes are not the same (%d in common)' % len(common))
+    elif not problems:
+        print('port_net: menu: both started again from the settings menu and played on: %d state hashes, the '
+              'same on both' % len(common), flush=True)
+    return problems
+
+
 def check_link(label, program, args, ports):
     folder = os.path.join(args.out, 'link', label)
     os.makedirs(folder, exist_ok=True)
@@ -281,7 +540,8 @@ def check_link(label, program, args, ports):
 
 def main():
     ap = argparse.ArgumentParser(description='Two programs of the port playing each other over UDP on this PC.')
-    ap.add_argument('what', choices=('link', 'rollback'), help='what they play')
+    ap.add_argument('what', choices=('link', 'rollback', 'session', 'window'),
+                    help="what they play: session is a session's headless programs, window the window's")
     ap.add_argument('--bits', type=int, choices=(32, 64), help='one size only')
     ap.add_argument('--out', default=os.path.join(REPO, 'build', 'net'), help='where the runs go')
     ap.add_argument('--latency', type=int, help='milliseconds each datagram waits (--net-latency): 0 for the '
@@ -290,9 +550,9 @@ def main():
                     'for rollback')
     ap.add_argument('--delay', type=int, default=2, help="frames a press counts on, rollback's (--net-delay)")
     args = ap.parse_args()
-    rollback = args.what == 'rollback'
+    rollback = args.what != 'link'
     if args.latency is None:
-        args.latency = 100 if rollback else 0
+        args.latency = {'link': 0, 'rollback': 100, 'session': 100, 'window': 60}[args.what]
     if args.loss is None:
         args.loss = 5 if rollback else 0
     if not os.path.isfile(playtest.RETAIL_CUE):
@@ -300,12 +560,22 @@ def main():
               % playtest.RETAIL_CUE)
         return 0
     problems = []
-    for n, bits in enumerate([args.bits] if args.bits else [64, 32]):
+    if args.what == 'window':
+        program = os.path.join(REPO, WINDOW_PROGRAM)
+        if not os.path.isfile(program):
+            print('port_net: window: skipped: no %s (make port-sdl)' % WINDOW_PROGRAM)
+        else:
+            problems += check_session('window', program, args, (BASE_PORT + 20, BASE_PORT + 21), True)
+            problems += check_menu(program, args, (BASE_PORT + 22, BASE_PORT + 23))
+    for n, bits in enumerate([] if args.what == 'window' else [args.bits] if args.bits else [64, 32]):
         program = os.path.join(REPO, PROGRAMS[bits])
         if not os.path.isfile(program):
             problems.append('%d-bit: no %s (make port)' % (bits, PROGRAMS[bits]))
             continue
         ports = (BASE_PORT + 2 * n, BASE_PORT + 2 * n + 1)
+        if args.what == 'session':
+            problems += check_session('%d-bit' % bits, program, args, (ports[0] + 10, ports[1] + 10), False)
+            continue
         check = check_rollback if rollback else check_link
         problems += check('%d-bit' % bits, program, args, ports)
     for problem in problems:
