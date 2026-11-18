@@ -50,7 +50,7 @@ const char g_port_default_settings[] =
     "fps = on               # on or off: the counter in the corner (F3)\n"
     "fps_corner = top-left  # top-left, top-right, bottom-left,\n"
     "                       # bottom-right\n"
-    "run_ahead = 2          # 0, 1 or 2: frames run ahead and put back,\n"
+    "run_ahead = 1          # 0, 1 or 2: frames run ahead and put back,\n"
     "                       # so that a press is seen that many of the\n"
     "                       # game's frames sooner; what the game\n"
     "                       # computes is the same\n"

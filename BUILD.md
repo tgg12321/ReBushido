@@ -203,7 +203,10 @@ needs the game running, and the source's layout
 
 What a change to `main` passes before it is pushed: the eleven checks,
 the window's two builds, the play tests' discs, the layout, the port's
-rollback self-test, `make port-net` and the play tests. One command runs
+rollback self-test, `make port-net`, the window's budget
+(`tools/port_budget.py`: a fight's processor time with `run_ahead 2`
+against `run_ahead 0`, with the HD fighters; docs/PORT.md, "The
+budget") and the play tests. One command runs
 it all, from Windows or inside WSL, each step as soon as the steps whose
 outputs it reads have passed and side by side with the others:
 

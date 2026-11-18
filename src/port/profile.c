@@ -13,8 +13,8 @@ static u32 g_port_profile_since;
 static u32 g_port_profile_ticks[PORT_PROFILE_PARTS];
 
 static const char * const g_port_profile_names[PORT_PROFILE_PARTS] = {
-    "game",    "raster", "remaster", "card", "sound",  "finish",
-    "picture", "tween",  "swap",     "wait", "window", "ahead",
+    "game",  "raster", "remaster", "card",   "sound", "finish", "picture",
+    "tween", "swap",   "wait",     "window", "ahead", "cloth",  "shadow",
 };
 
 /* The time since the last switch is the running part's; `part` runs

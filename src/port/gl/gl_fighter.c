@@ -25,6 +25,7 @@
 #include "gl_fighter.h"
 #include "gl_fighter_file.h"
 #include "gl_light.h"
+#include "port_profile.h"
 #include "gl_stage.h"
 #include "port_fighter.h"
 #include "port_gpu.h"
@@ -347,6 +348,9 @@ static struct {
     /* ... and kept out of the body (RB_HD_CLOTH_HOLD=0: as the game moved
      * them, for measuring) */
     s32 is_cloth_held;
+    /* ... and whether a place kept out is looked at again, to count the
+     * ones still inside (the prover's log; port_GlFighterCountCloth) */
+    s32 is_counting_cloth;
     /* --gl-fighter-pose: the next frame's poses and primitives */
     char dump_folder[512];
     s32 dump_armed;
@@ -713,6 +717,8 @@ const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
 }
 
 void port_GlFighterSetOn(s32 on) { g_fighter.is_on = on != 0; }
+
+void port_GlFighterCountCloth(s32 on) { g_fighter.is_counting_cloth = on != 0; }
 
 s32 port_GlFighterIsOn(void) { return g_fighter.is_on && g_fighter.is_started; }
 
@@ -1585,6 +1591,11 @@ static void port_GlFighterHoldPlace(void *context, double *place) {
         place[1] = where[1];
         place[2] = where[2];
     }
+    /* whether it is still inside is looked at again only where a run
+     * counts it (the prover): it costs as much as the hold itself */
+    if (!g_fighter.is_counting_cloth) {
+        return;
+    }
     where[0] = place[0];
     where[1] = place[1];
     where[2] = place[2];
@@ -1648,13 +1659,171 @@ static const PortGlClothVertex *port_GlFighterPoseCloth(
     return room;
 }
 
+/* **A cloth is kept out of the body once a frame** (docs/PORT.md, "Where
+ * the time goes"). Posing the body on the processor and keeping every
+ * place of the surface out of it is the dearest thing the program does
+ * for a picture, and the same frame's cloth was kept out again for its
+ * shadow, for each of the pictures between it and the next, and for each
+ * frame run ahead (step.c) that came to the same pose. So a frame's cloth
+ * kept out, in the world's own units, is written down here under what it
+ * was made from (the model, its bones and the cloth's points), and a
+ * picture between two frames mixes the two frames' kept-out surfaces. */
+#define HELD_KEPT 8
+#define HASH_START 0xCBF29CE484222325ULL
+#define HASH_STEP 0x100000001B3ULL
+
+typedef struct {
+    u64 key; /* 0: nothing kept here */
+    s32 count;
+    PortGlClothVertex *vertices;
+} HeldCloth;
+
+static HeldCloth g_held[PORT_FIGHTER_SLOTS][HELD_KEPT];
+static s32 g_held_next[PORT_FIGHTER_SLOTS];
+
+static u64 port_GlFighterHash(u64 hash, const void *bytes, size_t size) {
+    const u8 *at = bytes;
+    size_t i;
+
+    for (i = 0; i < size; i++) {
+        hash = (hash ^ at[i]) * HASH_STEP;
+    }
+    return hash;
+}
+
+/* What a frame's cloth kept out is made from: the model, the body's bones
+ * and the cloth's own points. */
+static u64 port_GlFighterHeldKey(
+    const PortFighterView *view, const PortFighterCloth *drawn) {
+    u64 hash = HASH_START;
+
+    hash = port_GlFighterHash(hash, &view->model_id, sizeof(view->model_id));
+    hash = port_GlFighterHash(hash, view->bone, sizeof(view->bone));
+    hash = port_GlFighterHash(hash, &drawn->mesh, sizeof(drawn->mesh));
+    hash = port_GlFighterHash(hash, &drawn->count, sizeof(drawn->count));
+    hash = port_GlFighterHash(
+        hash, drawn->point, (size_t)drawn->count * sizeof(drawn->point[0]));
+    return hash != 0 ? hash : 1;
+}
+
+/* The view's cloth `drawn` kept out of the posed body, in the world's
+ * units: written down the first time it is asked for, and then read. */
+static const PortGlClothVertex *port_GlFighterHeldCloth(
+    const FighterModel *model, const FighterCloth *cloth,
+    const PortFighterView *view, const PortFighterCloth *drawn, s32 slot) {
+    u64 key = port_GlFighterHeldKey(view, drawn);
+    s32 count = port_GlClothVertices(cloth->surface);
+    const PortGlClothBody *body;
+    const PortGlClothVertex *made;
+    HeldCloth *held;
+    FighterPose pose;
+    s32 i;
+
+    for (i = 0; i < HELD_KEPT; i++) {
+        held = &g_held[slot][i];
+        if (held->key == key && held->count == count) {
+            return held->vertices;
+        }
+    }
+    held = &g_held[slot][g_held_next[slot]];
+    if (held->count < count) {
+        PortGlClothVertex *more =
+            realloc(held->vertices, (size_t)count * sizeof(*more));
+
+        if (more == NULL) {
+            return NULL;
+        }
+        held->vertices = more;
+    }
+    held->key = 0;
+    held->count = count;
+    /* in the world's own units: no camera taken off */
+    port_GlFighterPoseOf(&pose, view, NULL, 0.0);
+    pose.camera[0] = 0.0;
+    pose.camera[1] = 0.0;
+    pose.camera[2] = 0.0;
+    body = port_GlFighterBody(model, &pose, slot);
+    made = port_GlFighterPoseCloth(cloth, drawn, NULL, 0.0, pose.camera, body);
+    if (made == NULL) {
+        return NULL;
+    }
+    memcpy(held->vertices, made, (size_t)count * sizeof(*made));
+    held->key = key;
+    g_held_next[slot] = (g_held_next[slot] + 1) % HELD_KEPT;
+    return held->vertices;
+}
+
+/* The view's cloth `k` as a picture draws it: kept out of the body as its
+ * frame posed it, `t` of the way to the same cloth kept out in the frame
+ * after it (`after`) where that has it, less `camera`; in room kept
+ * here. */
+static const PortGlClothVertex *port_GlFighterClothPicture(
+    const FighterModel *model, const FighterCloth *cloth,
+    const PortFighterView *view, s32 k, const PortFighterView *after, double t,
+    const double *camera, s32 slot) {
+    static PortGlClothVertex *room;
+    static s32 room_count;
+    const PortFighterCloth *drawn = &view->cloth[k];
+    const PortGlClothVertex *one;
+    const PortGlClothVertex *two = NULL;
+    s32 count = port_GlClothVertices(cloth->surface);
+    s32 i;
+    s32 c;
+
+    if (room_count < count) {
+        PortGlClothVertex *more = realloc(room, (size_t)count * sizeof(*room));
+
+        if (more == NULL) {
+            return NULL;
+        }
+        room = more;
+        room_count = count;
+    }
+    one = port_GlFighterHeldCloth(model, cloth, view, drawn, slot);
+    if (one == NULL) {
+        return NULL;
+    }
+    for (i = 0; after != NULL && t > 0.0 && i < after->cloth_count; i++) {
+        if (after->cloth[i].mesh == drawn->mesh &&
+            after->cloth[i].count == drawn->count) {
+            two = port_GlFighterHeldCloth(
+                model, cloth, after, &after->cloth[i], slot);
+            break;
+        }
+    }
+    for (i = 0; i < count; i++) {
+        double normal[3];
+        double length = 0.0;
+
+        for (c = 0; c < 3; c++) {
+            double place = one[i].place[c];
+
+            normal[c] = one[i].normal[c];
+            if (two != NULL) {
+                place += t * (two[i].place[c] - place);
+                normal[c] += t * (two[i].normal[c] - normal[c]);
+            }
+            room[i].place[c] = (float)(place - camera[c]);
+            length += normal[c] * normal[c];
+        }
+        length = port_GlClothRoot(length);
+        for (c = 0; c < 3; c++) {
+            room[i].normal[c] =
+                length > 0.0 ? (float)(normal[c] / length) : 0.0f;
+        }
+        room[i].uv[0] = one[i].uv[0];
+        room[i].uv[1] = one[i].uv[1];
+    }
+    return room;
+}
+
 /* The slot's cloths that are drawn smooth, into the layer after his body,
  * with the body's view, lights and colour tables; from both sides. */
 static void port_GlFighterDrawCloths(
     const FighterModel *model, const PortFighterView *view,
     const PortFighterView *after, double t, const FighterPose *pose, s32 slot) {
-    const PortGlClothBody *body = NULL;
     s32 drawn = 0;
+    s32 was;
     s32 k;
 
     if (after != NULL && after->model_id != view->model_id) {
@@ -1668,11 +1837,10 @@ static void port_GlFighterDrawCloths(
         if (cloth == NULL) {
             continue;
         }
-        if (body == NULL) {
-            body = port_GlFighterBody(model, pose, slot);
-        }
-        vertices = port_GlFighterPoseCloth(
-            cloth, &view->cloth[k], after, t, pose->camera, body);
+        was = port_ProfileSwitch(PORT_PROFILE_CLOTH);
+        vertices = port_GlFighterClothPicture(
+            model, cloth, view, k, after, t, pose->camera, slot);
+        port_ProfileSwitch(was);
         if (vertices == NULL) {
             continue;
         }
@@ -2242,32 +2410,25 @@ s32 port_GlFighterCaster(PortAddress object) {
 static s32 port_GlFighterCastCloths(
     const FighterModel *model, const PortFighterView *view, s32 slot, s32 first,
     PortGlFighterEmit emit, void *context) {
-    const PortGlClothBody *body = NULL;
-    FighterPose pose;
     s32 count = 0;
     s32 k;
-
-    /* in the world's own units: no camera taken off */
-    port_GlFighterPoseOf(&pose, view, NULL, 0.0);
-    pose.camera[0] = 0.0;
-    pose.camera[1] = 0.0;
-    pose.camera[2] = 0.0;
 
     for (k = 0; k < view->cloth_count; k++) {
         const FighterCloth *cloth =
             port_GlFighterClothFor(model, &view->cloth[k]);
         const PortGlClothVertex *vertices;
         const u32 *index;
+        s32 was;
         s32 i;
 
         if (cloth == NULL) {
             continue;
         }
-        if (body == NULL) {
-            body = port_GlFighterBody(model, &pose, slot);
-        }
-        vertices = port_GlFighterPoseCloth(
-            cloth, &view->cloth[k], NULL, 0.0, pose.camera, body);
+        /* in the world's own units, as the frame's picture kept it out */
+        was = port_ProfileSwitch(PORT_PROFILE_CLOTH);
+        vertices =
+            port_GlFighterHeldCloth(model, cloth, view, &view->cloth[k], slot);
+        port_ProfileSwitch(was);
         if (vertices == NULL) {
             continue;
         }

@@ -62,6 +62,9 @@ extern void port_GlClothPose(
     const PortGlCloth *cloth, const double *points, PortGlClothHold hold,
     void *context, PortGlClothVertex *out);
 
+/* A square root: the program is linked with no maths library. */
+extern double port_GlClothRoot(double x);
+
 /* ---- the body a cloth is kept out of ---- */
 
 /* The game moved a cloth's points round its own low body; the model drawn

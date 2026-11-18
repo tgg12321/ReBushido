@@ -236,9 +236,12 @@ typedef struct {
 #define PORT_FRAME_RATE_MAX 1000
 /* Frames run ahead at most (step.c's PORT_AHEAD_MAX), and with nothing
  * said: the game puts a frame on the display two of its frames after it
- * reads the pads, and two frames ahead show no frame that was guessed. */
+ * reads the pads, and two frames ahead show no frame that was guessed;
+ * but two cost a menu's blank more than half its time on the owner's PC
+ * with every picture setting on, so one is the default (docs/PORT.md,
+ * "The HD cloth and run-ahead"). */
 #define PORT_RUN_AHEAD_MAX 2
-#define PORT_RUN_AHEAD_DEFAULT 2
+#define PORT_RUN_AHEAD_DEFAULT 1
 
 /* Playing online: `A.B.C.D:PORT` with room to spare, the port a host
  * waits at with nothing said, and the frames of delay. */

@@ -25,6 +25,10 @@ typedef enum {
     PORT_PROFILE_WINDOW,   /* the rest of the window's turn: input, log */
     PORT_PROFILE_AHEAD,    /* frames run ahead, and the state kept and put
                             * back (step.c) */
+    PORT_PROFILE_CLOTH,    /* the HD cloth: the body posed on the processor
+                            * and the cloth kept out of it (gl_fighter.c) */
+    PORT_PROFILE_SHADOW,   /* the shadows cast from the fighters' faces,
+                            * gathered and laid down (gl_shadow.c) */
     PORT_PROFILE_PARTS
 } PortProfilePart;
 

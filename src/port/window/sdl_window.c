@@ -2624,7 +2624,16 @@ static void port_ShowBlank(u32 blank) {
     g_port_blanks_shown++;
     /* the settings menu, where it was asked for (sdl_menu.c) */
     port_MaybeRunMenu(blank);
-    if (g_port_vsync && port_PaceIsHeldBack(&g_port_pace)) {
+    /* Only a display whose rate is not known can be what holds the game
+     * back here: one that says it is slower than the game is not waited
+     * for from the start (port_OpenWindow), and one as fast as the game
+     * or faster never holds a blank up by more than a refresh. Time let
+     * go there is the PC's (a load, a hitch, a picture too dear to draw),
+     * and giving up the wait for it only tore every picture after it in
+     * two: the owner's "large artifacting" (docs/PORT.md, "Where the time
+     * goes"). */
+    if (g_port_vsync && g_port_display_rate == 0 &&
+        port_PaceIsHeldBack(&g_port_pace)) {
         port_Say("the display holds the game back: it is no longer waited "
                  "for (vsync off); blank %u",
                  blank);

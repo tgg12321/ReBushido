@@ -93,6 +93,7 @@ static s32 port_MayRunAhead(void) {
  * put back after them. */
 void port_BeforeStep(void) {
     u32 start;
+    u32 loaded;
     s32 was;
     s32 i;
 
@@ -115,6 +116,7 @@ void port_BeforeStep(void) {
     start = port_HostTicks();
     was = port_ProfileSwitch(PORT_PROFILE_AHEAD);
     port_StateSave(g_port_ahead_state);
+    g_port_ahead_counts.state_ticks += port_HostTicks() - start;
     g_port_ahead = TRUE;
     g_port_ahead_given_up = FALSE;
     g_port_ahead_blanks = 0;
@@ -125,7 +127,9 @@ void port_BeforeStep(void) {
         g_port_ahead_done_hook();
     }
     g_port_ahead = FALSE;
+    loaded = port_HostTicks();
     port_StateLoad(g_port_ahead_state);
+    g_port_ahead_counts.state_ticks += port_HostTicks() - loaded;
     port_ProfileSwitch(was);
     /* the step that follows has been drawn already, unless the frames
      * ahead were given up: then it is drawn as ever */
@@ -142,15 +146,20 @@ void port_BeforeStep(void) {
 void port_PrintAheadReport(void) {
     const PortAheadCounts *counts = &g_port_ahead_counts;
     u32 each;
+    u32 state;
 
     if (counts->runs == 0) {
         return;
     }
     each = counts->ticks / counts->runs;
+    state = counts->state_ticks / counts->runs;
     port_Log(
         "rebushido: run-ahead: %d frames at %u boundaries, %u given up "
-        "(a load, the movie, a card); %u.%03u ms a boundary\n",
+        "(a load, the movie, a card); %u.%03u ms a boundary, %u.%03u of it "
+        "the state kept and put back\n",
         g_port_ahead_frames, counts->runs, counts->given_up,
         each / PORT_HOST_TICKS_PER_MICROSECOND / MICROSECONDS_A_MILLISECOND,
-        each / PORT_HOST_TICKS_PER_MICROSECOND % MICROSECONDS_A_MILLISECOND);
+        each / PORT_HOST_TICKS_PER_MICROSECOND % MICROSECONDS_A_MILLISECOND,
+        state / PORT_HOST_TICKS_PER_MICROSECOND / MICROSECONDS_A_MILLISECOND,
+        state / PORT_HOST_TICKS_PER_MICROSECOND % MICROSECONDS_A_MILLISECOND);
 }
