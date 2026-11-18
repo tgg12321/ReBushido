@@ -7,7 +7,7 @@ tiles, stage by stage, with nothing shown (docs/PORT.md, "Remastered",
             [--stages 0-37] [--scale 2] [--frames 4200] [--every 300]
             [--out build/stagemesh] [--pairs 2] [--distance max]
             [--mesh every|on] [--against tiles|nodepth] [--mods FOLDER]
-            [--props]
+            [--props] [--gpu llvmpipe|card]
 
 Every stage the game can load is measured, 0 to 37: the 32 a fight can
 be set on, and the six the modes have of their own, which the menus
@@ -64,6 +64,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 
+import port_gl_prove as gl
 import port_png
 import port_remaster_prove as remaster
 
@@ -320,7 +321,9 @@ def main():
     os.chdir(ROOT)
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--image', default='Bushido Blade 2 (USA).cue')
-    ap.add_argument('--stages', default='0-31')
+    # every stage the game can load (the module's words), not the 32 a
+    # fight's menus offer: g_stage_proved has a number for each
+    ap.add_argument('--stages', default='0-%d' % (remaster.ALL_STAGES - 1))
     ap.add_argument('--scale', type=int, default=2)
     ap.add_argument('--tall', type=int, default=0)
     ap.add_argument('--frames', type=int, default=4200)
@@ -350,12 +353,15 @@ def main():
     # the mods both runs draw with (docs/MODS.md): a mod of the stage's
     # pages is to hold the verdicts as the game's own textures do
     ap.add_argument('--mods', default=None)
+    gl.add_gpu_option(ap)
     args = ap.parse_args()
     if args.out is None:
         args.out = 'build/stageprops' if args.props else 'build/stagemesh'
-    if not os.path.isfile(PROGRAM):
-        print('port_stage_prove: no %s (python3 tools/port_gl_build.py)'
-              % PROGRAM)
+    global PROGRAM
+    PROGRAM = remaster.PROGRAM = gl.use_gpu(args.gpu)
+    problem = gl.missing_program(args.gpu)
+    if problem:
+        print('port_stage_prove: %s' % problem)
         return 1
     if not os.path.isfile(args.image):
         print('port_stage_prove: no %s: --image names your own image of the '
@@ -385,7 +391,7 @@ def main():
             for old in os.listdir(shots):
                 if old.endswith('.png'):
                     os.remove(os.path.join(shots, old))
-            common = [os.path.join('.', PROGRAM), '--image', args.image,
+            common = [gl.command(PROGRAM), '--image', args.image,
                       '--plan', plan, '--out', shots,
                       '--graphics', 'remastered',
                       '--draw-distance', args.distance,

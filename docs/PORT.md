@@ -1979,6 +1979,74 @@ times across and eight down would be some fifty times that. 3.2 ms a
 frame at 2,560 by 1,920 **with no card** is what makes 144 pictures a
 second a question of the game's own rate and not of the drawing.
 
+### The provers on a graphics card
+
+The same prover is built for Windows (`python3 tools/port_gl_build.py
+--windows`, `wsl bash tools/build.sh port-gl-windows`, into
+`build/port-gl/windows/rebushido-gl.exe` with `SDL2.dll` beside it):
+`src/port/gl/gl_main.c` with `PORT_GL_SDL`, where SDL makes the OpenGL
+4.5 core context on a window that is never shown, and no sound device is
+opened. Everything else -- the drawing, the read-back, the comparisons,
+`--gl-exact`, `--gl-compare`, `--gl-blocks`, `--gl-tween` -- is the one
+file, so the measures are the same code on Mesa in software and on the
+card the players have. `port_gl_prove.py`, `port_fps_prove.py` and
+`port_stage_prove.py` take `--gpu llvmpipe` (the Linux program, which
+they now run with `LIBGL_ALWAYS_SOFTWARE=1` themselves) or `--gpu card`
+(the Windows program; the default when Windows' Python runs them, and
+from WSL it runs through Windows' interop). The log's `gl run card` line
+names the card that drew. Mesa's D3D12 driver in WSL is not a way to the
+card: it draws wrong (half the pixels of scale 1 differ, and the flat
+screens fail where llvmpipe passes).
+
+**llvmpipe stays the reference** where a number must be exact and the
+same on every machine: the tables in this document were measured there,
+and a figure quoted against an earlier one is measured there again. The
+card is for iterating: the same verdicts, several times sooner.
+
+What may differ on the card, and why the provers hold it all the same:
+
+- **The game's traces do not.** The trace of every plan is the same,
+  line for line, on the card as on llvmpipe, with the renderer on and
+  off (2,333, 2,457 and 2,334 lines): the game never reads what the card
+  drew.
+- **The colours of pixels that mix and of shaded polygons** are each
+  card's own floating-point arithmetic. At scale 1 with `--gl-exact` the
+  card differs from the software GPU in 623,545, 6,805,770 and 648,625
+  pixels against llvmpipe's 608,536, 6,786,976 and 634,701 (2% more at
+  most), the same few in a hundred within a step. That count is a
+  measure, never a gate.
+- **The flat screens, block for block**, are held by the same bar on
+  both: no block broken up (0 on both) and no channel more than two of
+  a five-bit step out (`BLOCK_WORST_MAX`). The card's pixels a step out
+  are 8,609, 8,626 and 8,744 against llvmpipe's 8,037, 8,037 and 8,154,
+  and its worst channel 11, 11 and 13 against 11, 11 and 14: the card
+  rounds a mixed pixel otherwise, within the same two steps.
+- **The time a frame takes** is the card's (`us/f` 3, 5 and 2 against
+  287, 312 and 274): the numbers of time in the tables are llvmpipe's
+  unless they say otherwise.
+
+The provers' wall-clock time, run one at a time on the owner's machine
+(the RTX 3090, with other agents' work running beside them, so a few
+per cent either way is noise):
+
+| The prover | llvmpipe (WSL) | The card (Windows) |
+|---|---|---|
+| `port_gl_prove.py` (three plans) | 728 s (496 s with the machine quieter) | 93 s |
+| `port_fps_prove.py` (three plans) | 1,087 s (1,025 s) | 264 s |
+| `port_stage_prove.py` (38 stages) | 1,767 s | 527 s |
+
+`port_fps_prove.py` holds the same on both: the same frames checked,
+the first picture the game's own to the pixel, every corner between its
+own ends, the same one frame out of order by the pixels and explained.
+Of its time on the card most is the game and the read-back of five
+pictures a frame, not the drawing (0.3 ms a picture inside the renderer
+against 11 to 19 ms on llvmpipe). `port_stage_prove.py`'s verdicts come
+to the same `g_stage_proved` on both: all 38 stages keep the mesh, every trace the same both ways, and the stages' shares of pixels that differ, of areas plainly another colour and of black within a tenth of a per cent of each other (the most that differs on any stage: 76.9% and 77.0%; black 0.599% on both). Its measures of
+pixels are each GPU's own -- which of two texels a ground read half a
+texel along takes is the last bit of each one's arithmetic -- and the
+bar it holds them to (areas of 16 by 16 pixels plainly another colour)
+is set well above that speckle on purpose.
+
 ### What is not done, and what may be wrong
 
 - The owner has seen it on a real card (an RTX 3090 at 2,560 by 1,440,
@@ -2686,9 +2754,9 @@ pictures a second", "What made a fighter standing still move"): the
 watched point was off its line because it was a different primitive at
 different phases, or one held where it is at the last; it is now one
 primitive chosen for the pair of frames, and `port_game` and
-`port_bugfixes` hold every check. `port_other_fight`'s 20 out of order
-are on the cave stage, where rails against the camera are black in one
-of the game's own frames and red in the next.
+`port_bugfixes` hold every check. `port_other_fight`'s out of order
+were the cave's railings a pixel off between two frames, and are gone
+("More pictures a second", "The railings that jumped a pixel").
 
 **What it costs.** On this machine, which has no graphics card at all
 (Mesa's llvmpipe) and was busy with other work throughout, a run of
@@ -4193,6 +4261,33 @@ geometry: where a textured scene slides across the screen, a shift of a
 quarter of the way can line fewer texels up than a shift of none. The
 watched point is in order at every phase of it, and so is the distance
 from the *first* picture.
+
+**The railings that jumped a pixel** (2026-11-18). Later the same plan
+had 14 frames out of order, all on the cave, and `port_fps_prove.py`
+failed on them every run; they were not the measure. At blank 3,036 the
+railing a step before the camera is a pixel higher at phases 2 and 3
+than at both ends, which agree to the pixel (rows 762 to 800 of 960).
+The stage's mesh -- ground and railings -- is drawn between two frames
+with a view mixed between theirs (`port_GlStageMixView`), and that view
+kept the camera in whole units of the world and the rotation in 1.12
+numbers, as the game does. The camera went from (-5000, -461, 10316) to
+(-5000, -462, 10320): its depth moved a unit a phase, while its height,
+a single unit for the whole frame, stayed at -461 until the last phase
+and then stepped. Off the line between the two cameras, the near railing
+went up with the depth and came back down with the height. The mixed
+rotation and camera are now kept unrounded for the card
+(`g_stage_mixed`, `src/port/gl/gl_stage.c`; the frame on show is drawn as
+before): **14 frames out of order to 1**, the same on llvmpipe and on the
+card. At 144 pictures a second that was a shimmer of whatever stood
+close to the camera whenever it moved slowly.
+
+The one left, blank 2,952, is right and is the measure's: a railing a
+step before the camera comes down into the picture from above, 25 lines
+of it in the first picture and 90 in the second, so the second is
+further from the last than the first, by 7%; every corner is between its
+own two ends. `port_fps_prove.py` lists such a frame with why
+(`ORDER_EXPLAINED`) and fails on any frame out of order that is not
+there.
 
 **`port_bugfixes`' trace parts company at the options page**, as it does
 for anything that moves the program's memory about: the page reads

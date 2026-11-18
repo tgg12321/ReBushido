@@ -204,7 +204,8 @@ The port's remastered picture ([`docs/PORT.md`](docs/PORT.md),
 program that uses no window and no display at all: it takes an OpenGL
 4.5 core context from EGL's surfaceless platform and draws into a
 framebuffer object, so a machine with no card draws it with Mesa's
-software driver.
+software driver. Built for Windows it takes its context from SDL on a
+window never shown, and draws on the card (below).
 
 ```bash
 python3 tools/port_gl_build.py                  # build/port-gl/rebushido-gl
@@ -223,7 +224,28 @@ On Ubuntu it needs `lib32gcc-13-dev` and 32-bit EGL (`libegl-dev:i386`),
 which the window's own packages bring; `mesa-libgallium` is the software
 driver. No check uses it, and nothing of it is in `make port` or in the
 build with a window. `python3 tools/port_gl_build.py --host` says
-whether the machine can build it.
+whether the machine can build it. Run in Linux, the provers set
+`LIBGL_ALWAYS_SOFTWARE=1` for the program themselves.
+
+The same provers run on Windows on the machine's own graphics card, with
+a window that is never shown and no sound (`--gpu card`, the default
+when they are run by Windows' Python): the prover built for Windows with
+SDL's context in place of EGL's, from what the window's Windows build
+needs (MinGW, SDL 2's MinGW package).
+
+```bash
+wsl bash tools/build.sh port-gl-windows         # build/port-gl/windows/rebushido-gl.exe
+python tools/port_gl_prove.py                    # on the card (Windows' Python)
+python tools/port_fps_prove.py
+python tools/port_stage_prove.py
+python3 tools/port_gl_prove.py --gpu card        # the same from WSL
+```
+
+They are several times faster there; what may legitimately differ from
+llvmpipe, and why the provers hold it all the same, is in
+[`docs/PORT.md`](docs/PORT.md), "The provers on a graphics card".
+llvmpipe stays the reference wherever a number has to be exact and the
+same on every machine.
 
 ## What is checked
 

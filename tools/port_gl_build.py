@@ -6,6 +6,12 @@ no surface (docs/PORT.md, "Remastered").
     python3 tools/port_gl_build.py            -> build/port-gl/rebushido-gl
     python3 tools/port_gl_build.py --bits 32  -> of 32-bit pointers
     python3 tools/port_gl_build.py --host     -> whether this host can
+    python3 tools/port_gl_build.py --windows  -> build/port-gl/windows/
+                                                 rebushido-gl.exe, SDL2.dll
+                                                 beside it: the same prover
+                                                 on Windows' own graphics
+                                                 card (MinGW, as the window
+                                                 build; `make port-gl-windows`)
 
 It is the build with a window (tools/port_sdl_build.py) with EGL in
 place of SDL and src/port/gl/ in place of src/port/window/'s two files:
@@ -21,9 +27,16 @@ What it needs on Linux: gcc, a C library and EGL of the size asked for
 lib32gcc-13-dev libegl-dev:i386, which come with the window's own
 needs). Mesa's software driver (mesa-libgallium) is the GL. Nothing of
 this is needed by any check: no check has a graphics card.
+
+For Windows (`--windows`) it needs what the window's Windows build needs
+(tools/port_sdl_build.py: MinGW and SDL 2's MinGW package), and SDL makes
+the context, on a window that is never shown (`PORT_GL_SDL` in
+src/port/gl/gl_main.c): the provers run it on the player's own card
+(`--gpu card`; docs/PORT.md, "The provers on a graphics card").
 """
 import concurrent.futures
 import os
+import shutil
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -47,17 +60,25 @@ EGL_PROBE = ('#include <EGL/egl.h>\nint main(void) '
 
 
 class Target(sdl.Target):
-    """The one program: Linux, EGL, pointers of the size asked for."""
+    """The one program: Linux and EGL, or Windows and SDL; pointers of the
+    size asked for."""
 
-    def __init__(self, bits):
+    def __init__(self, bits, windows=False):
         sdl.OUT_DIR = OUT_DIR
-        super().__init__(False, bits)
+        super().__init__(windows, bits)
+        if windows:
+            # SDL's context on a hidden window, and the window build's host
+            self.program = self.dir + '/rebushido-gl.exe'
+            self.hosted = [GL_DIR + f for f in GL_HOSTED] + ['src/port/host_windows.c']
+            return
         self.program = OUT_DIR + '/rebushido-gl'
         self.sdl = None
         self.sdl_flags = []
         self.hosted = [GL_DIR + f for f in GL_HOSTED] + [WINDOW_HOST]
 
     def link_flags(self):
+        if self.windows:
+            return super().link_flags()
         return [self.size_flag, '-no-pie', '-lEGL', '-Wl,-Ttext-segment=0x%X' % sdl.PROGRAM_BASE]
 
 
@@ -85,10 +106,13 @@ def main():
     # the game's files are compiled for this size: -m64 and no vector
     # instructions, or -m32 (tools/port_build.py, set_bits)
     port_build.set_bits(bits)
-    target = Target(bits)
+    windows = '--windows' in args
+    target = Target(bits, windows)
     # the files that talk to EGL see src/port/gl/ and the window's header
     sdl.HOSTED_FLAGS = sdl.HOSTED_FLAGS + ['-I' + GL_DIR.rstrip('/'), '-Isrc/port/window']
-    problem = check_host(target)
+    if windows:
+        sdl.HOSTED_FLAGS.append('-DPORT_GL_SDL')
+    problem = sdl.check_host(target) if windows else check_host(target)
     if problem:
         print('port-gl: %s' % problem)
         return 1
@@ -130,6 +154,8 @@ def main():
         return 1
     if not sdl.link_program(target, target.program, [blob] + hosted, target.link_flags()):
         return 1
+    if windows:
+        shutil.copyfile(target.sdl + '/bin/SDL2.dll', target.dir + '/SDL2.dll')
     print('OK: port-gl: %s: %d-bit, %d files (%d compiled now)'
           % (target.program, bits, len(game) + len(hosted), built))
     return 0

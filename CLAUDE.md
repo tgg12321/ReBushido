@@ -102,14 +102,20 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   proved with `SDL_VIDEODRIVER=offscreen SDL_AUDIODRIVER=dummy
   LIBGL_ALWAYS_SOFTWARE=1` (the dummy driver has no OpenGL);
   `--tap-window FOLDER` writes the window's own pixels.
-- A change to `src/port/gl/` is held by `python tools/port_gl_prove.py`
-  (`LIBGL_ALWAYS_SOFTWARE=1`): it fails if a flat screen is not the
-  console's own picture block for block at large scales. A player's
-  own window size, headless: `--window 2560x1369 --shot-at N`.
+- A change to `src/port/gl/` is held by `tools/port_gl_prove.py`: it
+  fails if a flat screen is not the console's own picture block for
+  block at large scales. Two ways, the same holds: `python3` in WSL
+  draws on llvmpipe (`build/port-gl/`, the exact reference; the prover
+  sets `LIBGL_ALWAYS_SOFTWARE=1`), and `python` on Windows on the card
+  (`--gpu card`, `wsl bash tools/build.sh port-gl-windows` first; a
+  window never shown, several times faster). Likewise
+  `port_fps_prove.py` and `port_stage_prove.py`; what may differ
+  between the two: `docs/PORT.md`, "The provers on a graphics card".
+  A player's own window size, headless: `--window 2560x1369 --shot-at N`.
   More pictures a second is `frame_rate` and `src/port/gl/gl_tween.c`,
-  held by `python3 tools/port_fps_prove.py`.
+  held by `tools/port_fps_prove.py`.
 - The ground as one mesh is `stage_mesh` and `src/port/gl/gl_stage.c`;
-  `python3 tools/port_stage_prove.py` measures it on all 38 stages and
+  `tools/port_stage_prove.py` measures it on all 38 stages and
   writes `build/stagemesh/verdict.txt`, where `g_stage_proved` comes
   from. The fighters' shadows are `src/port/gl/gl_shadow.c`
   (`shadows = original|soft`, `original` until the owner says).

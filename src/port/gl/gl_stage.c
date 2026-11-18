@@ -35,6 +35,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "common.h"
 #include "gl.h"
@@ -379,6 +380,45 @@ static struct {
     s32 pieces_held;
     s32 pieces_missed;
 } g_stage;
+
+/* The view last mixed between two frames (port_GlStageMixView), kept
+ * unrounded for the card. A view keeps the camera in whole units of the
+ * world and its rotation in the console's 1.12 numbers, and a camera that
+ * moves less than a unit a frame along one axis steps that axis all at
+ * once at one phase while the others move smoothly: the mixed camera
+ * leaves the line between the two frames' and what stands close to it --
+ * the cave's railings -- jumps a pixel and back between two frames that
+ * agree where it is (tools/port_fps_prove.py, the order of the pictures;
+ * docs/PORT.md, "More pictures a second"). */
+static struct {
+    s16 matrix[PORT_GTE_MATRIX_ELEMENTS_PORT]; /* the rounded view it is of */
+    s32 camera[3];
+    GLfloat exact_matrix[PORT_GTE_MATRIX_ELEMENTS_PORT];
+    GLfloat exact_camera[3];
+    s32 is_set;
+} g_stage_mixed;
+
+/* Whether `view` is the view between two frames being drawn now, whose
+ * unrounded rotation and camera are kept. */
+static s32 port_GlStageIsMixed(const PortStageView *view) {
+    return g_stage.has_own_view && g_stage_mixed.is_set &&
+           memcmp(view->matrix, g_stage_mixed.matrix,
+                  sizeof(g_stage_mixed.matrix)) == 0 &&
+           memcmp(view->camera, g_stage_mixed.camera,
+                  sizeof(g_stage_mixed.camera)) == 0;
+}
+
+/* The camera of a view, as the card is given it. */
+static void port_GlStageEye(const PortStageView *view, GLint at) {
+    if (port_GlStageIsMixed(view)) {
+        glUniform3f(
+            at, g_stage_mixed.exact_camera[0], g_stage_mixed.exact_camera[1],
+            g_stage_mixed.exact_camera[2]);
+    } else {
+        glUniform3f(at, (GLfloat)view->camera[0], (GLfloat)view->camera[1],
+                    (GLfloat)view->camera[2]);
+    }
+}
 
 /* ---- the shaders ---- */
 
@@ -2292,6 +2332,7 @@ static s32 port_GlStageTarget(const PortGlPicture *picture) {
  * scales it, its second row halved (the console's frame is half as tall
  * as it is wide). */
 static void port_GlStageView(const PortStageView *view, GLfloat *matrix) {
+    s32 is_mixed = port_GlStageIsMixed(view);
     s32 row;
     s32 column;
 
@@ -2305,7 +2346,9 @@ static void port_GlStageView(const PortStageView *view, GLfloat *matrix) {
         for (column = 0; column < 3; column++) {
             /* a mat3's memory is a column after a column */
             matrix[column * 3 + row] =
-                (GLfloat)view->matrix[row * 3 + column] * scale;
+                (is_mixed ? g_stage_mixed.exact_matrix[row * 3 + column]
+                          : (GLfloat)view->matrix[row * 3 + column]) *
+                scale;
         }
     }
 }
@@ -2346,8 +2389,7 @@ static void port_GlStageSeeThrough(const PortStageView *view) {
         axis[4 * i + 3] = i < count ? fighters[i].bottom : 0.0f;
         radius[i] = i < count ? fighters[i].radius : 0.0f;
     }
-    glUniform3f(g_stage.at_eye, (GLfloat)view->camera[0],
-                (GLfloat)view->camera[1], (GLfloat)view->camera[2]);
+    port_GlStageEye(view, g_stage.at_eye);
     glUniform1i(g_stage.at_see_count, count);
     glUniform4fv(g_stage.at_see_axis, PORT_SEE_FIGHTERS, axis);
     glUniform1fv(g_stage.at_see_radius, PORT_SEE_FIGHTERS, radius);
@@ -2391,8 +2433,7 @@ static void port_GlStageUniforms(
     glBindTexture(PORT_GL_VRAM_TARGET, picture->vram_texture);
     glUniform1i(g_stage.at_vram, 0);
     glUniformMatrix3fv(g_stage.at_view, 1, GL_FALSE, matrix);
-    glUniform3f(g_stage.at_camera, (GLfloat)view->camera[0],
-                (GLfloat)view->camera[1], (GLfloat)view->camera[2]);
+    port_GlStageEye(view, g_stage.at_camera);
     glUniform1f(g_stage.at_h, (GLfloat)view->h);
     /* where the middle of the screen is: the coprocessor's own offset,
      * the drawing offset of the frame's buffer, and a wider picture's
@@ -2641,6 +2682,7 @@ void port_GlStageMixView(PortStageView *out, const PortStageView *one,
     s32 i;
 
     *out = *one;
+    g_stage_mixed.is_set = FALSE;
     if (whole <= 0 || one->far_shift != two->far_shift ||
         one->depth_shift != two->depth_shift) {
         /* the renderer changed the scale what is far off is kept at
@@ -2657,6 +2699,22 @@ void port_GlStageMixView(PortStageView *out, const PortStageView *one,
             one->camera[i] +
             (s32)(((s64)(two->camera[i] - one->camera[i]) * phase) / whole);
     }
+    /* and unrounded, for the card */
+    for (i = 0; i < PORT_GTE_MATRIX_ELEMENTS_PORT; i++) {
+        g_stage_mixed.matrix[i] = out->matrix[i];
+        g_stage_mixed.exact_matrix[i] =
+            (GLfloat)((double)one->matrix[i] +
+                      (double)(two->matrix[i] - one->matrix[i]) *
+                          (double)phase / (double)whole);
+    }
+    for (i = 0; i < 3; i++) {
+        g_stage_mixed.camera[i] = out->camera[i];
+        g_stage_mixed.exact_camera[i] =
+            (GLfloat)((double)one->camera[i] +
+                      (double)(two->camera[i] - one->camera[i]) *
+                          (double)phase / (double)whole);
+    }
+    g_stage_mixed.is_set = TRUE;
     out->h = one->h + ((two->h - one->h) * phase) / whole;
     out->ofx = one->ofx + (s32)(((s64)(two->ofx - one->ofx) * phase) / whole);
     out->ofy = one->ofy + (s32)(((s64)(two->ofy - one->ofy) * phase) / whole);

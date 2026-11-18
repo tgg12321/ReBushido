@@ -6,7 +6,7 @@ nothing shown (docs/PORT.md, "Remastered", "More pictures a second").
             [--plans port_game,port_other_fight,port_bugfixes]
             [--phases 5] [--scale 2] [--out build/fps] [--quick]
             [--bits 64,32] [--effects original|exact|smooth]
-            [--smooth-light off|on]
+            [--smooth-light off|on] [--gpu llvmpipe|card]
 
 For each play test's plan it runs build/port-gl/rebushido-gl with each
 game frame drawn as `--phases` pictures: the first the frame on show, the
@@ -16,7 +16,10 @@ things:
   - the first picture is the game's own, pixel for pixel (the renderer
     drawn again with nothing moved);
   - every picture in between is farther from the first and nearer the
-    last than the one before it;
+    last than the one before it, by the sum of its pixels' differences
+    (a frame where that is not so and is right all the same -- something
+    large coming in at the picture's edge -- is in ORDER_EXPLAINED, with
+    why; any other fails);
   - the point the renderer watched -- the corner that moved farthest --
     lies between its two ends at every phase;
   - every corner of every primitive lies between its own two ends, which
@@ -49,6 +52,33 @@ PLANS = ['port_game', 'port_other_fight', 'port_bugfixes']
 # well into the fight of every plan.
 STRIP_AT = 3000
 STRIP_BLANKS = 12
+# Frames whose pictures are out of order by the pixels and are right all
+# the same, each with why, by plan and blank. The order is measured as the
+# sum of every pixel's difference, which is a stand-in for where things
+# are: it runs evenly from one end to the other for what moves within the
+# picture, and not for something large coming in at its edge, whose share
+# of the picture grows faster than it moves. Every corner of every such
+# frame is between its own two ends (`off_the_line`, which is exact), and
+# a frame out of order that is not here fails the run: look at its strip
+# (--gl-strip) before adding it. (The other thirteen this check found on
+# the cave were the stage's railings a pixel off between two frames: the
+# mixed camera, rounded to whole units, left the line between the two
+# frames' cameras; src/port/gl/gl_stage.c, g_stage_mixed.)
+ORDER_EXPLAINED = {
+    ('port_other_fight', 2952):
+        'a railing a step before the camera comes down into the picture '
+        'from above it: at the second picture 90 lines of it are in the '
+        'picture against 25 at the first, so the second is further from '
+        'the last than the first is, by 7%',
+}
+
+
+def gl_environment():
+    """What the child runs with, for the GPU asked for (port_gl_prove.py,
+    use_gpu)."""
+    import port_gl_prove as gl
+
+    return gl.ENVIRONMENT
 
 
 def run(args, log, quiet=False):
@@ -60,12 +90,18 @@ def run(args, log, quiet=False):
     with open(log, 'w', encoding='utf-8', errors='replace', newline='\n') as f, \
             open(log + '.err' if quiet else os.devnull, 'w', encoding='utf-8',
                  errors='replace', newline='\n') as err:
-        done = subprocess.run(args, stdout=f, stderr=err if quiet else f, cwd=ROOT)
+        done = subprocess.run(args, stdout=f, stderr=err if quiet else f, cwd=ROOT, env=gl_environment())
     if done.returncode != 0:
         with open(log + '.err' if quiet else log, encoding='utf-8', errors='replace') as f:
             last = f.read().splitlines()[-3:]
         print('%s: the run ended with %d: %s' % (log, done.returncode, ' / '.join(last)))
     return time.time() - started
+
+
+def unexplained_order(name, got):
+    """The blanks of a plan whose pictures are out of order and are not
+    among ORDER_EXPLAINED."""
+    return [blank for blank in got['order_blanks'] if (name, blank) not in ORDER_EXPLAINED]
 
 
 def numbers_of(log):
@@ -78,7 +114,8 @@ def numbers_of(log):
            'pictures': 0, 'scene': 0, 'named': 0, 'searched': 0,
            'clashes': 0, 'held': 0, 'off_the_line': 0, 'still': 0,
            'still_moved': 0, 'fewer_prims': 0, 'more_dropped': 0, 'holes': 0,
-           'hole_pixels': 0, 'going': 0, 'coming': 0, 'moved': 0}
+           'hole_pixels': 0, 'going': 0, 'coming': 0, 'moved': 0,
+           'order_blanks': []}
     mixed, prims, unpaired, flat, widest, pictures = 0, 0, 0, 0, 0, 0
     with open(log, encoding='utf-8', errors='replace') as f:
         for line in f:
@@ -126,6 +163,9 @@ def numbers_of(log):
             m = re.search(r'gl run blanks (\d+)', line)
             if m:
                 out['blanks'] = int(m.group(1))
+            m = re.search(r'gl tween blank (\d+) phases \d+ out_of_order [1-9]', line)
+            if m:
+                out['order_blanks'].append(int(m.group(1)))
             m = re.search(r'gl tween blank \d+ prims (\d+) mixed (\d+) '
                           r'unpaired (\d+) flat (\d+) widest_step (\d+)',
                           line)
@@ -174,18 +214,21 @@ def main():
     ap.add_argument('--effects', default='original',
                     choices=('original', 'exact', 'smooth'))
     ap.add_argument('--smooth-light', default='off', choices=('off', 'on'))
+    import port_gl_prove as gl
+
+    gl.add_gpu_option(ap)
     args = ap.parse_args()
+    global PROGRAM
+    PROGRAM = gl.use_gpu(args.gpu)
     if not os.path.isfile(args.image):
         print('port-fps: no %s: --image names your own image of the disc'
               % args.image)
         return 1
-    import port_gl_prove as gl
-
     plans = args.plans.split(',')[:1] if args.quick else args.plans.split(',')
     bits = int(args.bits)
-    if not os.path.isfile(PROGRAM):
-        print('port-fps: no %s (python3 tools/port_gl_build.py --bits %d)'
-              % (PROGRAM, bits))
+    problem = gl.missing_program(args.gpu)
+    if problem:
+        print('port-fps: %s' % problem)
         return 1
     rows = []
     traces = []
@@ -194,7 +237,7 @@ def main():
         os.makedirs(folder, exist_ok=True)
         gl.PROGRAM = PROGRAM
         plan = gl.write_plan(name, os.path.join(folder, 'plan.txt'))
-        common = [os.path.join('.', PROGRAM), '--image', args.image,
+        common = [gl.command(PROGRAM), '--image', args.image,
                   '--plan', plan, '--out', folder, '--graphics', 'remastered',
                   '--stage-mesh', args.stage_mesh, '--effects', args.effects,
                   '--smooth-light', args.smooth_light]
@@ -220,7 +263,7 @@ def main():
         # the traces with the pictures on and off. Two phases is enough:
         # every frame is still written down and drawn again, which is all
         # the game could possibly see of it.
-        both = [os.path.join('.', PROGRAM), '--image', args.image,
+        both = [gl.command(PROGRAM), '--image', args.image,
                 '--plan', plan, '--out', folder, '--graphics', 'remastered',
                 '--stage-mesh', args.stage_mesh, '--effects', args.effects,
                 '--smooth-light', args.smooth_light, '--gl-scale', '1',
@@ -241,13 +284,17 @@ def main():
     for name, got in rows:
         print('%-18s %7d %7d %8d %7s %7s %6d %4d/%-4d %s'
               % (name, got['frames'], got['checked'], got['drawn'],
-                 'all' if got['out_of_order'] == 0
-                 else '%d bad' % got['out_of_order'],
+                 'all' if not unexplained_order(name, got)
+                 else '%d bad' % len(unexplained_order(name, got)),
                  'all' if got['point_out_of_line'] == 0
                  else '%d bad' % got['point_out_of_line'],
                  got['per_picture_us'], got['mixed'], got['prims'],
                  '%d of %d pixels differ' % (got['identity_different'],
                                              got['identity_pixels'])))
+        for blank in got['order_blanks']:
+            print('    out of order by the pixels at blank %d: %s'
+                  % (blank, ORDER_EXPLAINED.get((name, blank),
+                                                'NOT EXPLAINED (ORDER_EXPLAINED)')))
         print('    a picture: %d primitives, %d moved, %d not paired, %d flat '
               '(the 2D layer); the farthest a corner moved %d pixels'
               % (got['prims'], got['mixed'], got['unpaired'], got['flat'],
@@ -298,10 +345,10 @@ def main():
                   'runs of one program that differ only in --gl-scale part '
                   'at the same lines (docs/PORT.md, "What is left").'
                   % (len(apart), lines, apart[0] if apart else -1))
-    ok = (all(got['out_of_order'] == 0 and got['point_out_of_line'] == 0
+    ok = (all(not unexplained_order(name, got) and got['point_out_of_line'] == 0
               and got['off_the_line'] == 0 and got['still_moved'] == 0
               and got['fewer_prims'] == 0 and got['more_dropped'] == 0
-              and got['checked'] > 0 for _, got in rows)
+              and got['checked'] > 0 for name, got in rows)
           and all(same or name == 'port_bugfixes'
                   for name, _, same, _, _ in traces))
     return 0 if ok else 1
