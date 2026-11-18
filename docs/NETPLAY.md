@@ -634,8 +634,12 @@ the copy's old one came back, or replaced the new one as it was written.
 It was the 64-bit run because it runs first, while the window's builds
 and the discs are still ending; by the 32-bit run they have ended.
 Shown by running `port-rollback` in place beside `tools/mirror.sh out`
-with an old `build/rollback/` in the copy: it failed so; with the fix,
-never (`tmp`'s race script, 30 runs). The fix: the copy brings back no
+every 0.3 s, with an old `build/rollback/` in the copy: 4 runs of 4
+failed so, with the same words; with the fix, 30 of 30 passed. The 64-bit
+program itself, run from a copy of its own under the gate's load, passed
+80 of 80; two of the six copies on the owner's machine held snapshots of
+another branch's program, which differ in 21 of 23 files, and the
+others the same program's, which do no harm: hence now and then. The fix: the copy brings back no
 folder that a run in place writes (`rollback`, `net`, `budget`, `bench`,
 `gate`), `tools/build.sh` runs `port-rollback` and `port-net`, which
 build nothing, in place, and `port_rollback.py` fails a file older than
