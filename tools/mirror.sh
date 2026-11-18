@@ -98,6 +98,12 @@ sync_out() {
         rsync -a --update --prune-empty-dirs \
             --exclude='*.o' --exclude='*.d' --exclude='*.gimple' --exclude='*.ssa' --exclude=/play \
             "$MIRROR/build/" "$ROOT/build/"
+        status=$?
+        # 24: files that vanished while it copied, the temporary files of
+        # a build still running beside (the gate's steps); that build
+        # brings back its own when it ends
+        [ $status = 24 ] && status=0
+        exit $status
     ) 9> "$LOCK"
 }
 
