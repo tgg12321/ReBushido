@@ -38,6 +38,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_bench.h"
 #include "gl_light.h"
 #include "gl_scene.h"
 #include "gl_see.h"
@@ -79,6 +80,7 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_DEPTH_BUFFER_BIT 0x00000100
 #define GL_DEPTH_TEST 0x0B71
 #define GL_LESS 0x0201
+#define GL_LEQUAL 0x0203
 #define GL_ARRAY_BUFFER 0x8892
 #define GL_STATIC_DRAW 0x88E4
 #define GL_VERTEX_SHADER 0x8B31
@@ -2475,6 +2477,17 @@ static void port_GlStageDrawMesh(
      * blending and one draw. */
     glDisable(GL_BLEND);
     glDrawArrays(GL_TRIANGLES, 0, g_stage.vertex_count);
+    /* --bench-stress: the ground again, over itself, as a larger stage's
+     * vertices and pixels (gl_bench.h); the picture is the same */
+    if (port_GlBenchStageCopies() > 1) {
+        s32 copy;
+
+        glDepthFunc(GL_LEQUAL);
+        for (copy = 1; copy < port_GlBenchStageCopies(); copy++) {
+            glDrawArrays(GL_TRIANGLES, 0, g_stage.vertex_count);
+        }
+        glDepthFunc(GL_LESS);
+    }
     port_GlGroundSlotsEnd();
     g_stage.draws++;
     g_stage.drawn_vertices += (u32)g_stage.vertex_count;
@@ -2638,7 +2651,9 @@ s32 port_GlStageTakes(const PortRemasterPrim *prim) {
         port_GlFlushBatch();
         g_stage.is_drawn = TRUE;
         port_GlGetPicture(&picture);
+        PORT_GPU_BEGIN(PORT_GPU_STAGE);
         port_GlStageDrawMesh(&picture, prim);
+        PORT_GPU_END();
         port_GlForgetState();
     }
     return TRUE;

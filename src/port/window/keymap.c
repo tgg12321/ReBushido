@@ -603,9 +603,15 @@ static const char *port_ReadSetting(
                    : "vsync is on or off";
     }
     if (port_WordsMatch(name, "fps")) {
+        /* `times`: the counter, and the processor's and the card's time
+         * per part under it (docs/PORT.md, "Measuring on the card") */
+        if (port_WordsMatch(value, "times")) {
+            settings->fps = PORT_FPS_TIMES;
+            return NULL;
+        }
         return port_ReadChoice(value, "off", "on", &settings->fps)
                    ? NULL
-                   : "fps is on or off";
+                   : "fps is on, off or times";
     }
     if (port_WordsMatch(name, "run_ahead")) {
         if (!port_ReadDigits(value, &number) || number < 0 ||

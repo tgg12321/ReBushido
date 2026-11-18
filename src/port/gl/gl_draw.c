@@ -1,5 +1,5 @@
 /* The remastered renderer on a graphics card (gl.h; docs/PORT.md,
- * "Remastered"): OpenGL 3.3 core, no window and no display of its own.
+ * "Remastered"): OpenGL 4.5 core, no window and no display of its own.
  *
  * The colour buffer is all of video memory at `scale` times its
  * resolution. A primitive is drawn where the GTE really projected it,
@@ -24,6 +24,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_bench.h"
 #include "gl_fighter.h"
 #include "gl_light.h"
 #include "gl_replace.h"
@@ -1444,6 +1445,7 @@ static void port_GlUploadMirror(void) {
     if (g_gl.mirror.is_empty) {
         return;
     }
+    PORT_GPU_BEGIN(PORT_GPU_VRAM);
     w = g_gl.mirror.right - g_gl.mirror.left + 1;
     h = g_gl.mirror.bottom - g_gl.mirror.top + 1;
     glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
@@ -1456,6 +1458,7 @@ static void port_GlUploadMirror(void) {
     glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
     g_gl.upload_count += (u32)(w * h);
     port_ClearDirtyRect(&g_gl.mirror);
+    PORT_GPU_END();
 }
 
 /* A rectangle of video memory, as it is now, to be sent to the card: it
@@ -1650,6 +1653,7 @@ static void port_GlFlush(void) {
         return;
     }
     was = port_ProfileSwitch(PORT_PROFILE_CARD);
+    PORT_GPU_BEGIN(g_port_gpu_base);
     port_GlKeepOccluders();
     port_GlUploadMirror();
     glUseProgram(g_gl.program);
@@ -1707,6 +1711,7 @@ static void port_GlFlush(void) {
     glDisable(GL_DEPTH_TEST);
     g_gl.vertex_count += (u32)g_gl.count;
     g_gl.count = 0;
+    PORT_GPU_END();
     port_ProfileSwitch(was);
 }
 
@@ -2248,6 +2253,7 @@ static void port_GlDrawBlits(void) {
         return;
     }
     was = port_ProfileSwitch(PORT_PROFILE_CARD);
+    PORT_GPU_BEGIN(PORT_GPU_VRAM);
     port_GlUploadMirror();
     glUseProgram(g_gl.blit_program);
     glBindVertexArray(g_gl.blit_array);
@@ -2292,6 +2298,7 @@ static void port_GlDrawBlits(void) {
     glEnable(GL_SCISSOR_TEST);
     g_gl.blit_count = 0;
     g_gl.has_state = FALSE;
+    PORT_GPU_END();
     port_ProfileSwitch(was);
 }
 
@@ -2444,9 +2451,11 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
          * clear itself, which is drawn first */
         if (is_one_color && !g_gl.options.is_exact) {
             port_GlDrawBlits();
+            PORT_GPU_BEGIN(PORT_GPU_SKY);
             port_GlSkyCleared(
                 rect->left, rect->top, rect->right - rect->left + 1,
                 rect->bottom - rect->top + 1, g_gl.background);
+            PORT_GPU_END();
         }
     }
     port_ProfileSwitch(was);
@@ -2459,7 +2468,9 @@ static void port_GlBegin(void) {
      * ordering table before the picture of this one has been read
      * (gl_shadow.h). What it uses is the vertices kept below, so it goes
      * first. */
+    PORT_GPU_BEGIN(PORT_GPU_SHADOW);
     port_GlShadowNewFrame();
+    PORT_GPU_END();
     g_gl.has_state = FALSE;
     port_GlForgetOccluders();
     port_GlStageNewFrame();
@@ -2857,6 +2868,10 @@ const char *port_GlStart(
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, NULL);
     glEnableVertexAttribArray(0);
 
+    /* the card's time per pass, for --profile and the counter: a card
+     * without a timer draws the same picture (gl_bench.h) */
+    (void)port_GlBenchStart(getproc);
+
     /* The stage's ground as one mesh, which draws into the same colour
      * buffer through a framebuffer of its own (gl_stage.h). A card that
      * cannot have it keeps the remastered picture and draws the game's
@@ -3008,9 +3023,13 @@ void port_GlFinishFrame(void) {
     /* the fighters' shadows: the mask, and the ground under them
      * darkened. It is before the picture is averaged down, so the soft
      * edge is smoothed with everything else (gl_shadow.h). */
+    PORT_GPU_BEGIN(PORT_GPU_SHADOW);
     port_GlShadowFinish();
+    PORT_GPU_END();
     if (g_gl.sample > 1) {
+        PORT_GPU_BEGIN(PORT_GPU_RESOLVE);
         port_GlResolve();
+        PORT_GPU_END();
     }
     /* Handed to the card, and not waited for: the card draws while the
      * program goes on, and what reads the picture back (the prover, a
@@ -3094,6 +3113,7 @@ const char *port_GlDescribe(s32 which) {
 /* The window's framebuffer, ready to be drawn into: nothing of the game's
  * drawing state holds while it is bound. */
 static void port_GlTakeWindow(s32 window_w, s32 window_h) {
+    PORT_GPU_BEGIN(PORT_GPU_PRESENT);
     glBindFramebuffer(GL_FRAMEBUFFER, GL_WINDOW_FRAMEBUFFER);
     glViewport(0, 0, window_w, window_h);
     glDisable(GL_SCISSOR_TEST);
@@ -3106,6 +3126,7 @@ static void port_GlLeaveWindow(void) {
     glViewport(0, 0, g_gl.target_w, g_gl.target_h);
     glEnable(GL_SCISSOR_TEST);
     g_gl.has_state = FALSE;
+    PORT_GPU_END();
 }
 
 /* A rectangle of a texture into a rectangle of the window. */
