@@ -4990,6 +4990,23 @@ main's (the counter left out). The other 41 are within 8 of 255, but
 for a loading screen's fade a step apart and a few pixels that also
 differ between two runs of one build.
 
+All of it against main `a7f754af8`, which has the fighters' cloth on
+the card and the window built `-O3`. The two programs were run one after
+the other on the 3090 (`port_bench.py --program`), medians of a fight
+frame's blank, in ms:
+
+| case | processor, main | this | card, main | this |
+| --- | --- | --- | --- | --- |
+| `run_ahead 0` | 7.64 | 4.52 | 6.41 | 4.56 |
+| `run_ahead 1` | 6.22 | 5.45 | 4.94 | 4.67 |
+| `run_ahead 2` | 9.45 | 7.46 | 6.04 | 4.88 |
+| `run_ahead 1`, four fighters, the ground twice | 6.64 | 7.03 | 5.23 | 5.62 |
+
+The waits on the driver (`card`) went from 0.6–2.0 ms to 0.13–0.21. The
+stress case is slightly worse on both. Its ground read 2.44 ms against
+1.80, though nothing here changes how the ground is drawn: probably
+noise, not proved.
+
 **The colour buffer's targets are kept for each size**
 (`port_GlTakeTargets`): the fight's picture has another scale than the
 menus', and making the multisampled targets again at every way into a
