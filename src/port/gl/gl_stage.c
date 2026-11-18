@@ -371,6 +371,10 @@ static struct {
     PortStageView drawn_view;
     PortRemasterPrim drawn_paint;
     PortAddress pieces; /* the first piece, which the rest follow */
+    /* the last piece's node: an object past it is no piece, and is not
+     * looked for among them (port_GlStagePieceOf, asked of every
+     * primitive the backend is given, every picture) */
+    PortAddress pieces_last;
     const PortStagePiece *piece_list; /* as they were taken down */
     s32 piece_count;
     /* which pieces the mesh holds: one whose mesh it could not read all
@@ -2189,6 +2193,7 @@ static void port_GlStagePieces(void) {
     s32 i;
 
     g_stage.pieces = 0;
+    g_stage.pieces_last = 0;
     g_stage.piece_count = 0;
     g_stage.piece_faces = 0;
     g_stage.pieces_held = 0;
@@ -2208,6 +2213,12 @@ static void port_GlStagePieces(void) {
         }
     }
     g_stage.pieces = pieces[0].node;
+    g_stage.pieces_last = pieces[0].node;
+    for (i = 1; i < count; i++) {
+        if (pieces[i].node > g_stage.pieces_last) {
+            g_stage.pieces_last = pieces[i].node;
+        }
+    }
     g_stage.piece_list = pieces;
     g_stage.piece_count = count;
 }
@@ -2219,7 +2230,8 @@ static s32 port_GlStagePieceOf(PortAddress object) {
     /* by the addresses the pieces were taken down at, and not by the
      * size of a StageNode: this file's build lays the game's structures
      * out with pointers of its own size, the game's with PTR32 slots */
-    if (g_stage.piece_count == 0 || object < g_stage.pieces) {
+    if (g_stage.piece_count == 0 || object < g_stage.pieces ||
+        object > g_stage.pieces_last) {
         return -1;
     }
     for (i = 0; i < g_stage.piece_count; i++) {

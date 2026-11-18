@@ -761,16 +761,23 @@ s32 port_GlReplaceFind(const PortRemasterPrim *prim, PortGlReplacement *out) {
  * ends it, so a picture costs a few pixels and a fill no more than the
  * key it would otherwise have had worked out. */
 static s32 port_ReplaceIsPlain(s32 x, s32 y, s32 w, s32 h) {
-    const u16 *row = g_port_gl_vram + y * PORT_VRAM_WIDTH + x;
-    u16 first = row[0];
+    const u16 *top = g_port_gl_vram + y * PORT_VRAM_WIDTH + x;
+    const u16 *row = top + PORT_VRAM_WIDTH;
+    u16 first = top[0];
     s32 i;
     s32 j;
 
-    for (j = 0; j < h; j++, row += PORT_VRAM_WIDTH) {
-        for (i = 0; i < w; i++) {
-            if (row[i] != first) {
-                return FALSE;
-            }
+    /* the first line pixel by pixel, and every other line against it
+     * whole: a frame's clear is a fill of 640 by 240, looked at every
+     * frame and every picture between frames */
+    for (i = 0; i < w; i++) {
+        if (top[i] != first) {
+            return FALSE;
+        }
+    }
+    for (j = 1; j < h; j++, row += PORT_VRAM_WIDTH) {
+        if (memcmp(row, top, (size_t)w * sizeof(u16)) != 0) {
+            return FALSE;
         }
     }
     return TRUE;
