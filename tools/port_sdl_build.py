@@ -91,7 +91,7 @@ SHIPPED_MODS = 'src/port/mods'
 # the window"). It calls GL only through pointers the window looks up with
 # SDL_GL_GetProcAddress, so nothing of GL is linked to.
 GL_DIR = 'src/port/gl/'
-GL_HOSTED = ['gl_cloth.c', 'gl_draw.c', 'gl_fighter.c', 'gl_fighter_file.c', 'gl_light.c', 'gl_load.c', 'gl_pause.c', 'gl_replace.c', 'gl_scene.c',
+GL_HOSTED = ['gl_bench.c', 'gl_cloth.c', 'gl_draw.c', 'gl_fighter.c', 'gl_fighter_file.c', 'gl_light.c', 'gl_load.c', 'gl_pause.c', 'gl_replace.c', 'gl_scene.c',
              'gl_see.c', 'gl_shadow.c', 'gl_sky.c', 'gl_stage.c', 'gl_tween.c']
 # The hosts of the build without a window: not this one's on Linux, where
 # the C library's is host_posix.c; on Windows the one file is both builds'.

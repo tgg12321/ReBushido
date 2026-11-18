@@ -21,7 +21,7 @@
  * PC's threads fall.
  *
  * The picture is shown one of two ways (docs/PORT.md, "Remastered in the
- * window"). Where the PC gives an OpenGL 3.3 core context, the window is
+ * window"). Where the PC gives an OpenGL 4.5 core context, the window is
  * made with one and everything is drawn through it: the remastered
  * picture, which the card itself drew (src/port/gl/), or the software
  * GPU's own pixels as a texture, and the counter over either. Where it
@@ -36,6 +36,7 @@
 #include <time.h>
 
 #include "gl.h"
+#include "gl_bench.h"
 #include "gl_fighter.h"
 #include "gl_load.h"
 #include "gl_pause.h"
@@ -84,10 +85,23 @@
 #define PATH_BYTES_MAX 1024
 #define BYTES_PER_PIXEL 4
 #define TAP_MAGIC 0x52464252U /* "RBFR", the low byte first */
+/* The OpenGL the remastered picture asks for: 4.5 core (compute shaders,
+ * direct state access, persistent mapped buffers). */
+#define GL_WANTED_MAJOR 4
+#define GL_WANTED_MINOR 5
 /* The counter in the corner: its own few pixels, a dark box under white
- * digits, drawn over the picture SDL has been handed already. */
-#define COUNTER_W 112
+ * digits, drawn over the picture SDL has been handed already; with
+ * `fps = times`, three lines more under it (port_DrawCounter). */
+#define COUNTER_W 300
+#define COUNTER_LINE_H (PORT_GLYPH_H + COUNTER_PAD)
+#define COUNTER_LINES 4
 #define COUNTER_H (PORT_GLYPH_H + 2 * COUNTER_PAD)
+#define COUNTER_H_MAX (COUNTER_H + (COUNTER_LINES - 1) * COUNTER_LINE_H)
+#define COUNTER_TEXT_BYTES 56
+/* The times are the means of the blanks in which the game drew a frame,
+ * over this many blanks (half a second), and the parts each line names. */
+#define TIMES_BLANKS 30
+#define TIMES_NAMED 4
 #define COUNTER_PAD 2
 #define COUNTER_BOX 0xB0000000U
 #define COUNTER_INK 0xFFFFFFFFU
@@ -180,7 +194,26 @@ static s32 g_port_profile_phase = -1;
 static u32 g_port_blanks_shown;
 static s32 g_port_show_fps;
 static SDL_Texture *g_port_counter;
-static u32 g_port_counter_pixels[COUNTER_W * COUNTER_H];
+static u32 g_port_counter_pixels[COUNTER_W * COUNTER_H_MAX];
+
+/* The times under the counter (`fps = times`): each part's microseconds
+ * summed over the blanks in which the game drew a frame, the processor's
+ * and the card's, as they are being counted and as last shown; and, by
+ * the blank's low bits, which blanks drew a frame, for the card's times,
+ * which come a few blanks late. */
+typedef struct {
+    u32 cpu_blanks;
+    u32 cpu[PORT_PROFILE_PARTS];
+    u32 cpu_most;
+    u32 gpu_blanks;
+    u32 gpu[PORT_GPU_PASSES];
+    u32 gpu_most;
+} PortTimes;
+
+static PortTimes g_port_times;
+static PortTimes g_port_times_shown;
+static u32 g_port_times_count;
+static u8 g_port_frame_blanks[64];
 static PortFpsMeter g_port_shown_meter;
 static PortFpsMeter g_port_game_meter;
 static PortFpsMeter g_port_blank_meter;
@@ -288,6 +321,7 @@ static u32 port_ThreadTicks(void) {
 }
 #endif
 static void port_ShownDisplay(PortDisplay *display);
+static void port_CountTimes(void);
 
 /* ---- names ---- */
 
@@ -1009,8 +1043,10 @@ static void port_MakeWindow(s32 wants_gl) {
     }
     if (wants_gl) {
         flags |= SDL_WINDOW_OPENGL;
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        /* the remastered picture's least (docs/PORT.md, "Measuring on the
+         * card"): a PC without it shows the console's own picture */
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, GL_WANTED_MAJOR);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, GL_WANTED_MINOR);
         SDL_GL_SetAttribute(
             SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
@@ -1081,7 +1117,8 @@ static void port_OpenWindow(void) {
              * since a window made for OpenGL is no use to SDL's renderer */
             port_Say("the remastered picture is not there: %s", problem);
             port_Say("the console's own picture is what is shown (F2 does "
-                     "nothing). It needs OpenGL 3.3.");
+                     "nothing). It needs OpenGL %d.%d.",
+                     GL_WANTED_MAJOR, GL_WANTED_MINOR);
             port_DropGl();
             SDL_DestroyWindow(g_port_window);
             port_MakeWindow(FALSE);
@@ -1105,6 +1142,15 @@ static void port_OpenWindow(void) {
     }
     port_NoteVideo();
     port_NoteGraphics();
+    if (g_port_window_options.bench_stress != NULL) {
+        if (!port_GlBenchStress(g_port_window_options.bench_stress)) {
+            port_Say("--bench-stress: %s is not fighters=N,stage=M",
+                     g_port_window_options.bench_stress);
+            port_Quit(PORT_EXIT_FAILED);
+        }
+        port_Note("bench: each fighter drawn %d times, the ground %d times",
+                  port_GlBenchFighterCopies(), port_GlBenchStageCopies());
+    }
     port_StartTween();
     if (!g_port_window_options.no_sound) {
         port_OpenAudio();
@@ -1130,7 +1176,16 @@ static void port_OpenWindow(void) {
             fprintf(g_port_profile_file, " %s", port_ProfileName(i));
         }
         fputc('\n', g_port_profile_file);
+        /* the card's passes, a `g` line for each blank it has finished */
+        fprintf(g_port_profile_file, "gpu_parts");
+        for (i = 0; i < PORT_GPU_PASSES; i++) {
+            fprintf(g_port_profile_file, " %s", port_GlBenchName(i));
+        }
+        fputc('\n', g_port_profile_file);
         g_port_profile_on = 1;
+        if (g_port_has_gl) {
+            port_GlBenchTime(TRUE);
+        }
 #if !defined(_WIN32)
         if (getenv("RB_PROFILE_CPU") != NULL) {
             g_port_profile_clock = port_ThreadTicks;
@@ -1139,6 +1194,8 @@ static void port_OpenWindow(void) {
         /* what was counted before is no blank's */
         port_ProfileTake(ticks);
     }
+    /* `fps = times` counts the parts' time as --profile does */
+    port_CountTimes();
 }
 
 /* The texture the picture is given to SDL in, made again when the
@@ -1488,13 +1545,204 @@ static void port_PicturePlace(s32 window_w, s32 window_h, PortRect *out) {
     port_FitShape(window_w, window_h, g_port_settings.scale, across, down, out);
 }
 
+/* ---- the times under the counter (`fps = times`) ---- */
+
+/* Whether the parts' times are counted: for --profile, or for the
+ * counter's times. Turned on, the time counted before is no blank's. */
+static void port_CountTimes(void) {
+    s32 on = g_port_profile_file != NULL || g_port_show_fps == PORT_FPS_TIMES;
+    u32 ticks[PORT_PROFILE_PARTS];
+
+    if (on && !g_port_profile_on) {
+        g_port_profile_on = 1;
+        port_ProfileTake(ticks);
+        SDL_zero(g_port_times);
+        g_port_times_count = 0;
+    } else if (!on) {
+        g_port_profile_on = 0;
+    }
+    if (g_port_has_gl) {
+        port_GlBenchTime(on);
+    }
+}
+
+/* The counter: off, on, or with the times under it (F3 steps through
+ * them). */
+static void port_SetCounter(s32 how) {
+    g_port_show_fps = how;
+    if (g_port_is_open) {
+        port_CountTimes();
+    }
+}
+
+/* Whether part `part` of the processor's is its own work: not a wait for
+ * the clock or for the display. */
+static s32 port_IsWork(s32 part) {
+    return part != PORT_PROFILE_WAIT && part != PORT_PROFILE_SWAP;
+}
+
+/* A blank's times into the sums: the processor's in microseconds, at
+ * the blank; the card's in nanoseconds, a few blanks later. */
+static void port_AddCpuTimes(const u32 *microseconds) {
+    u32 sum = 0;
+    s32 i;
+
+    for (i = 0; i < PORT_PROFILE_PARTS; i++) {
+        g_port_times.cpu[i] += microseconds[i];
+        sum += port_IsWork(i) ? microseconds[i] : 0;
+    }
+    g_port_times.cpu_blanks++;
+    if (sum > g_port_times.cpu_most) {
+        g_port_times.cpu_most = sum;
+    }
+}
+
+static void port_AddGpuTimes(const u32 *nanoseconds) {
+    u32 sum = 0;
+    s32 i;
+
+    for (i = 0; i < PORT_GPU_PASSES; i++) {
+        g_port_times.gpu[i] += nanoseconds[i] / 1000U;
+        sum += nanoseconds[i] / 1000U;
+    }
+    g_port_times.gpu_blanks++;
+    if (sum > g_port_times.gpu_most) {
+        g_port_times.gpu_most = sum;
+    }
+}
+
+/* `NAME 1.2 NAME 0.8 ...`: the TIMES_NAMED largest of `count` sums of
+ * microseconds over `blanks`, as milliseconds a blank. */
+static void port_FormatLargest(
+    char *out, size_t room, const char *head, const u32 *sums, s32 count,
+    u32 blanks, const char *(*name)(s32), s32 cpu) {
+    s32 used[PORT_PROFILE_PARTS + PORT_GPU_PASSES];
+    size_t at;
+    s32 named;
+    s32 i;
+
+    SDL_zeroa(used);
+    at = (size_t)SDL_snprintf(out, room, "%s", head);
+    for (named = 0; named < TIMES_NAMED && blanks > 0; named++) {
+        s32 best = -1;
+        char word[16];
+        s32 k;
+
+        for (i = 0; i < count; i++) {
+            if (!used[i] && (!cpu || port_IsWork(i)) &&
+                (best < 0 || sums[i] > sums[best])) {
+                best = i;
+            }
+        }
+        if (best < 0 || sums[best] == 0 || at >= room) {
+            break;
+        }
+        used[best] = TRUE;
+        SDL_strlcpy(word, name(best), sizeof(word));
+        for (k = 0; word[k] != 0; k++) {
+            word[k] = (char)SDL_toupper((unsigned char)word[k]);
+        }
+        at += (size_t)SDL_snprintf(out + at, room - at, " %s %.1f", word,
+                                   (double)sums[best] / blanks / 1000.0);
+    }
+}
+
+/* The lines under the counter, from the last half second's sums. */
+static s32 port_FormatTimes(char lines[][COUNTER_TEXT_BYTES]) {
+    const PortTimes *t = &g_port_times_shown;
+    u32 cpu = 0;
+    u32 gpu = 0;
+    s32 i;
+
+    for (i = 0; i < PORT_PROFILE_PARTS; i++) {
+        cpu += port_IsWork(i) ? t->cpu[i] : 0;
+    }
+    for (i = 0; i < PORT_GPU_PASSES; i++) {
+        gpu += t->gpu[i];
+    }
+    if (t->gpu_blanks > 0) {
+        SDL_snprintf(lines[0], COUNTER_TEXT_BYTES,
+                     "CPU %.1f MOST %.1f GPU %.1f MOST %.1f",
+                     t->cpu_blanks ? (double)cpu / t->cpu_blanks / 1000.0 : 0.0,
+                     t->cpu_most / 1000.0, (double)gpu / t->gpu_blanks / 1000.0,
+                     t->gpu_most / 1000.0);
+    } else {
+        SDL_snprintf(lines[0], COUNTER_TEXT_BYTES, "CPU %.1f MOST %.1f",
+                     t->cpu_blanks ? (double)cpu / t->cpu_blanks / 1000.0 : 0.0,
+                     t->cpu_most / 1000.0);
+    }
+    port_FormatLargest(
+        lines[1], COUNTER_TEXT_BYTES, "C", t->cpu, PORT_PROFILE_PARTS,
+        t->cpu_blanks, port_ProfileName, TRUE);
+    if (t->gpu_blanks == 0) {
+        return 2;
+    }
+    port_FormatLargest(lines[2], COUNTER_TEXT_BYTES, "G", t->gpu,
+                       PORT_GPU_PASSES, t->gpu_blanks, port_GlBenchName, FALSE);
+    return 3;
+}
+
+/* --profile's lines of a blank, and the times' sums: the parts' time in
+ * microseconds (the `b` line; the part of the game's that the blank
+ * began with is the step of the frame before, and `is_new_frame` says
+ * the game drew a frame: gl_tween.h), and each blank the card has
+ * finished since, a few blanks late, its passes' (the `g` line). */
+static void port_NoteProfile(u32 blank, s32 is_new_frame) {
+    u32 ticks[PORT_PROFILE_PARTS];
+    u32 gpu[PORT_GPU_PASSES];
+    u32 timed;
+    s32 i;
+
+    if (!g_port_profile_on) {
+        return;
+    }
+    port_ProfileTake(ticks);
+    for (i = 0; i < PORT_PROFILE_PARTS; i++) {
+        ticks[i] /= PORT_HOST_TICKS_PER_MICROSECOND;
+    }
+    g_port_frame_blanks[blank % sizeof(g_port_frame_blanks)] = (u8)is_new_frame;
+    if (g_port_profile_file != NULL) {
+        fprintf(g_port_profile_file, "b %u %d", blank, is_new_frame);
+        for (i = 0; i < PORT_PROFILE_PARTS; i++) {
+            fprintf(g_port_profile_file, " %u", ticks[i]);
+        }
+        fputc('\n', g_port_profile_file);
+    }
+    if (is_new_frame) {
+        port_AddCpuTimes(ticks);
+    }
+    if (g_port_has_gl && g_port_gpu_on) {
+        port_GlBenchBlank(blank);
+        while (port_GlBenchTake(&timed, gpu)) {
+            if (g_port_profile_file != NULL) {
+                fprintf(g_port_profile_file, "g %u", timed);
+                for (i = 0; i < PORT_GPU_PASSES; i++) {
+                    fprintf(g_port_profile_file, " %u", gpu[i] / 1000U);
+                }
+                fputc('\n', g_port_profile_file);
+            }
+            if (g_port_frame_blanks[timed % sizeof(g_port_frame_blanks)]) {
+                port_AddGpuTimes(gpu);
+            }
+        }
+    }
+    if (++g_port_times_count >= TIMES_BLANKS) {
+        g_port_times_shown = g_port_times;
+        SDL_zero(g_port_times);
+        g_port_times_count = 0;
+    }
+}
+
 static void port_DrawCounter(void) {
-    char text[PORT_FPS_TEXT_BYTES];
+    char lines[COUNTER_LINES][COUNTER_TEXT_BYTES];
     PortRect picture;
     PortRect place;
     SDL_Rect from;
     SDL_Rect where;
-    s32 text_w;
+    s32 count = 1;
+    s32 text_w = 0;
+    s32 box_h;
+    s32 stride;
     s32 i;
     s32 window_w = 0;
     s32 window_h = 0;
@@ -1502,33 +1750,10 @@ static void port_DrawCounter(void) {
     if (!g_port_show_fps) {
         return;
     }
-    if (g_port_has_gl) {
-        port_FormatFps(text, g_port_shown_meter.tenths,
-                       g_port_game_meter.tenths, g_port_blank_meter.tenths);
-        text_w = port_MeasureText(text) + 2 * COUNTER_PAD;
-        if (text_w > COUNTER_W) {
-            text_w = COUNTER_W;
-        }
-        /* the box is the text's own width here, so that the pixels given
-         * to the card are the ones shown and no more */
-        for (i = 0; i < text_w * COUNTER_H; i++) {
-            g_port_counter_pixels[i] = COUNTER_BOX;
-        }
-        port_DrawText(g_port_counter_pixels, text_w, COUNTER_H, COUNTER_PAD,
-                      COUNTER_PAD, text, COUNTER_INK);
-        port_WindowSize(&window_w, &window_h);
-        port_PicturePlace(window_w, window_h, &picture);
-        port_PlaceCounter(
-            &picture, text_w, COUNTER_H, g_port_settings.fps_corner, &place);
-        port_GlShowPixels(
-            g_port_counter_pixels, text_w, COUNTER_H, window_w, window_h,
-            place.x, place.y, place.w, place.h, FALSE, TRUE);
-        return;
-    }
-    if (g_port_counter == NULL) {
+    if (!g_port_has_gl && g_port_counter == NULL) {
         g_port_counter = SDL_CreateTexture(
             g_port_renderer, SDL_PIXELFORMAT_ARGB8888,
-            SDL_TEXTUREACCESS_STREAMING, COUNTER_W, COUNTER_H);
+            SDL_TEXTUREACCESS_STREAMING, COUNTER_W, COUNTER_H_MAX);
         if (g_port_counter == NULL) {
             port_Say("no counter: %s", SDL_GetError());
             g_port_show_fps = 0;
@@ -1537,27 +1762,49 @@ static void port_DrawCounter(void) {
         SDL_SetTextureBlendMode(g_port_counter, SDL_BLENDMODE_BLEND);
         SDL_SetTextureScaleMode(g_port_counter, SDL_ScaleModeNearest);
     }
-    port_FormatFps(text, g_port_shown_meter.tenths, g_port_game_meter.tenths,
-                   g_port_blank_meter.tenths);
-    text_w = port_MeasureText(text) + 2 * COUNTER_PAD;
+    port_FormatFps(lines[0], g_port_shown_meter.tenths,
+                   g_port_game_meter.tenths, g_port_blank_meter.tenths);
+    if (g_port_show_fps == PORT_FPS_TIMES) {
+        count += port_FormatTimes(&lines[1]);
+    }
+    for (i = 0; i < count; i++) {
+        s32 w = port_MeasureText(lines[i]) + 2 * COUNTER_PAD;
+
+        text_w = w > text_w ? w : text_w;
+    }
     if (text_w > COUNTER_W) {
         text_w = COUNTER_W;
     }
-    for (i = 0; i < COUNTER_W * COUNTER_H; i++) {
-        g_port_counter_pixels[i] = i % COUNTER_W < text_w ? COUNTER_BOX : 0;
+    box_h = COUNTER_H + (count - 1) * COUNTER_LINE_H;
+    /* with the card, the box is the text's own width, so that the pixels
+     * given to it are the ones shown and no more */
+    stride = g_port_has_gl ? text_w : COUNTER_W;
+    for (i = 0; i < stride * box_h; i++) {
+        g_port_counter_pixels[i] = i % stride < text_w ? COUNTER_BOX : 0;
     }
-    port_DrawText(g_port_counter_pixels, COUNTER_W, COUNTER_H, COUNTER_PAD,
-                  COUNTER_PAD, text, COUNTER_INK);
+    for (i = 0; i < count; i++) {
+        port_DrawText(g_port_counter_pixels, stride, box_h, COUNTER_PAD,
+                      COUNTER_PAD + i * COUNTER_LINE_H, lines[i], COUNTER_INK);
+    }
+    port_WindowSize(&window_w, &window_h);
+    if (g_port_has_gl) {
+        port_PicturePlace(window_w, window_h, &picture);
+        port_PlaceCounter(
+            &picture, text_w, box_h, g_port_settings.fps_corner, &place);
+        port_GlShowPixels(
+            g_port_counter_pixels, text_w, box_h, window_w, window_h, place.x,
+            place.y, place.w, place.h, FALSE, TRUE);
+        return;
+    }
     SDL_UpdateTexture(g_port_counter, NULL, g_port_counter_pixels,
                       COUNTER_W * BYTES_PER_PIXEL);
-    port_WindowSize(&window_w, &window_h);
     port_FitPicture(window_w, window_h, g_port_settings.scale, &picture);
     port_PlaceCounter(
-        &picture, text_w, COUNTER_H, g_port_settings.fps_corner, &place);
+        &picture, text_w, box_h, g_port_settings.fps_corner, &place);
     from.x = 0;
     from.y = 0;
     from.w = text_w;
-    from.h = COUNTER_H;
+    from.h = box_h;
     where.x = place.x;
     where.y = place.y;
     where.w = place.w;
@@ -1934,7 +2181,7 @@ void port_WindowApplyChoice(s32 choice) {
     if (strcmp(name, "fullscreen") == 0) {
         port_SetFullscreen(g_port_settings.is_fullscreen);
     } else if (strcmp(name, "fps") == 0) {
-        g_port_show_fps = g_port_settings.fps;
+        port_SetCounter(g_port_settings.fps);
     } else if (strcmp(name, "vsync") == 0) {
         g_port_vsync = g_port_settings.vsync && !g_port_window_options.is_fast;
         if (g_port_has_gl) {
@@ -2030,7 +2277,8 @@ static void port_TakeKey(const SDL_KeyboardEvent *key) {
     }
     if (key->keysym.scancode == SDL_SCANCODE_F3) {
         if (down) {
-            g_port_show_fps = !g_port_show_fps;
+            /* off, on, and on with the times under it */
+            port_SetCounter((g_port_show_fps + 1) % (PORT_FPS_TIMES + 1));
         }
         return;
     }
@@ -2377,10 +2625,13 @@ static s32 port_DrawTween(s32 slot) {
     phase = port_PacePhase(shown_at, g_port_frame_at, g_port_lag,
                            g_port_frame_period, PORT_TWEEN_ONE);
     was = port_ProfileSwitch(PORT_PROFILE_TWEEN);
+    g_port_gpu_base = PORT_GPU_TWEEN;
     if (!port_TweenDraw(phase)) {
+        g_port_gpu_base = PORT_GPU_SCENE;
         port_ProfileSwitch(was);
         return FALSE;
     }
+    g_port_gpu_base = PORT_GPU_SCENE;
     port_WindowSize(&window_w, &window_h);
     port_GlClearWindow(window_w, window_h);
     port_ShowRemastered(window_w, window_h);
@@ -2510,25 +2761,6 @@ static void port_ShowPictures(u32 due) {
     }
     g_port_last_due = due;
     g_port_left_at = port_ReadClock();
-}
-
-/* --profile: the blank's line, each part's time in microseconds; the
- * part of the game's that the blank began with is the step of the frame
- * before, and `is_new_frame` says the game drew a frame (gl_tween.h). */
-static void port_NoteProfile(u32 blank, s32 is_new_frame) {
-    u32 ticks[PORT_PROFILE_PARTS];
-    s32 i;
-
-    if (g_port_profile_file == NULL) {
-        return;
-    }
-    port_ProfileTake(ticks);
-    fprintf(g_port_profile_file, "b %u %d", blank, is_new_frame);
-    for (i = 0; i < PORT_PROFILE_PARTS; i++) {
-        fprintf(g_port_profile_file, " %u",
-                ticks[i] / PORT_HOST_TICKS_PER_MICROSECOND);
-    }
-    fputc('\n', g_port_profile_file);
 }
 
 /* ---- quick loading (docs/PORT.md, "Quick loading") ---- */
@@ -2760,6 +2992,10 @@ static void port_CloseWindow(s32 code) {
         fclose(g_port_profile_file);
         g_port_profile_file = NULL;
         g_port_profile_on = 0;
+    }
+    if (g_port_has_gl && port_GlBenchTimed() + port_GlBenchLost() > 0) {
+        port_Say("profile: the card's time taken for %u blanks, %u not kept",
+                 port_GlBenchTimed(), port_GlBenchLost());
     }
     if (!g_port_is_open) {
         port_EndSession(code);

@@ -1,7 +1,7 @@
 #ifndef PORT_GL_H
 #define PORT_GL_H
 
-/* The remastered renderer's backend: OpenGL 3.3 core (docs/PORT.md,
+/* The remastered renderer's backend: OpenGL 4.5 core (docs/PORT.md,
  * "Remastered"). It draws the primitives port_remaster.h decodes into a
  * colour buffer that is all of video memory at `scale` times its
  * resolution, reading texels from a mirror of the software GPU's video

@@ -191,7 +191,11 @@ pass). The sound queue (58 ms) was left: with the hitches gone it runs
 out far less, and a longer one is a later sound.
 
 `tools/port_budget.py` (run alone at the gate's end) holds the
-processor's share; it cannot see the card's.
+processor's share; `tools/port_bench.py` (the gate's `port-bench`, on
+the real card, `--report-only` until the targets are met) holds both to
+144 a second at 2560 by 1440, with the card's time per pass, and F3's
+third state shows both on the owner's screen (docs/PORT.md, "Measuring
+on the card", with the first numbers).
 
 ## Faster iteration, for the start of the next session
 

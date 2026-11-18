@@ -6,7 +6,9 @@ goes"): where each blank's time went, and when each picture was shown.
 
 For each part of a blank's time (include/port_profile.h): its mean, the
 median, the 95th centile and the most, in milliseconds, over the blanks
-in which the game drew a frame and over the others. Then the pictures:
+in which the game drew a frame and over the others; and the same of the
+card's time per pass where the run had one (its `g` lines,
+src/port/gl/gl_bench.h; docs/PORT.md, "Measuring on the card"). Then the pictures:
 how far apart they were shown, how evenly, and how far the phase of the
 pictures between two frames moved against the time that passed -- which
 is what a picture landing unevenly on the screen looks like in numbers.
@@ -21,6 +23,21 @@ def centile(values, fraction):
         return 0.0
     ordered = sorted(values)
     return ordered[min(len(ordered) - 1, int(fraction * len(ordered)))]
+
+
+def read_gpu(path):
+    """The card's passes, and {blank: [microseconds per pass]} (the `g`
+    lines, which come a few blanks after their blank's own line)."""
+    gpu_parts = []
+    gpu = {}
+    with open(path, encoding='utf-8') as f:
+        for line in f:
+            words = line.split()
+            if words and words[0] == 'gpu_parts':
+                gpu_parts = words[1:]
+            elif len(words) > 2 and words[0] == 'g':
+                gpu[int(words[1])] = [int(w) for w in words[2:]]
+    return gpu_parts, gpu
 
 
 def read(path, first, last):
@@ -47,7 +64,7 @@ def read(path, first, last):
     return parts, blanks, pictures
 
 
-def report_parts(parts, blanks, title):
+def report_parts(parts, blanks, title, is_card=False):
     if not blanks:
         return
     print('%s: %d blanks' % (title, len(blanks)))
@@ -57,8 +74,9 @@ def report_parts(parts, blanks, title):
         print('  %-9s %8.3f %8.3f %8.3f %8.3f' % (name, statistics.mean(values), statistics.median(values),
                                                  centile(values, 0.95), max(values)))
     busy = [sum(row[i] for i, name in enumerate(parts) if name != 'wait') / 1000.0 for row in blanks]
-    print('  %-9s %8.3f %8.3f %8.3f %8.3f   (all but wait)' % ('busy', statistics.mean(busy), statistics.median(busy),
-                                                             centile(busy, 0.95), max(busy)))
+    print('  %-9s %8.3f %8.3f %8.3f %8.3f   (%s)' % ('busy', statistics.mean(busy), statistics.median(busy),
+                                                  centile(busy, 0.95), max(busy),
+                                                  'every pass' if is_card else 'all but wait'))
 
 
 def report_pictures(pictures, rate):
@@ -107,6 +125,11 @@ def main():
         return 1
     report_parts(parts, [row[2] for row in blanks if row[1]], 'blanks in which the game drew a frame')
     report_parts(parts, [row[2] for row in blanks if not row[1]], 'blanks in which it did not')
+    gpu_parts, gpu = read_gpu(args.file)
+    report_parts(gpu_parts, [gpu[row[0]] for row in blanks if row[1] and row[0] in gpu],
+                 "the card's time, blanks in which the game drew a frame", True)
+    report_parts(gpu_parts, [gpu[row[0]] for row in blanks if not row[1] and row[0] in gpu],
+                 "the card's time, blanks in which it did not", True)
     report_pictures(pictures, args.rate)
     return 0
 

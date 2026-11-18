@@ -21,6 +21,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_bench.h"
 #include "gl_cloth.h"
 #include "gl_fighter.h"
 #include "gl_fighter_file.h"
@@ -2007,6 +2008,28 @@ static void port_GlFighterWeaponPose(
 /* Every fighter and weapon of the frame that has a model of its own into
  * the layer, and the layer over the picture, in place of the primitive
  * `paint`. */
+/* --bench-stress: the fighter drawn again beside himself, for more
+ * fighters' worth of the card's work (gl_bench.h). His cloth is the
+ * same pose's, kept out of the body once. */
+static void port_GlFighterDrawCopies(
+    const FighterModel *model, const PortFighterView *view,
+    const PortFighterView *after, double t, const FighterPose *pose, s32 slot,
+    const PortRemasterPrim *paint, const PortGlPicture *picture) {
+    s32 copy;
+
+    for (copy = 1; copy < port_GlBenchFighterCopies(); copy++) {
+        s32 shift = (copy & 1 ? 1 : -1) * ((copy + 1) / 2) * 96;
+
+        glUseProgram(g_fighter.program);
+        glUniform2f(
+            g_fighter.at_screen,
+            (GLfloat)(pose->ofx + paint->offset_x + picture->margin + shift),
+            (GLfloat)(pose->ofy + paint->offset_y));
+        port_GlFighterDrawOne(model, pose, slot);
+        port_GlFighterDrawCloths(model, view, after, t, pose, slot);
+    }
+}
+
 static void port_GlFighterDrawAll(
     const PortRemasterPrim *paint, s32 which, const PortFighterView *views,
     const PortFighterView *after, double t, const PortFighterWeapon *weapons,
@@ -2094,6 +2117,11 @@ static void port_GlFighterDrawAll(
         port_GlFighterDrawOne(model, &pose, slot);
         port_GlFighterDrawCloths(
             model, view, after != NULL ? &after[slot] : NULL, t, &pose, slot);
+        if (!is_tiny) {
+            port_GlFighterDrawCopies(
+                model, view, after != NULL ? &after[slot] : NULL, t, &pose,
+                slot, paint, &picture);
+        }
         drawn++;
     }
     for (i = 0; i < weapon_count && has_frame; i++) {
@@ -2249,6 +2277,7 @@ static s32 port_GlFighterTakesTiny(const PortRemasterPrim *prim) {
     if (!g_fighter.is_tiny_drawn) {
         g_fighter.is_tiny_drawn = TRUE;
         port_GlFlushBatch();
+        PORT_GPU_BEGIN(PORT_GPU_FIGHTERS);
         port_GlFighterDrawAll(
             prim, LAYER_TINY, views,
             g_fighter.tween_phase >= 0 ? g_fighter.tiny_latest : NULL,
@@ -2256,6 +2285,7 @@ static s32 port_GlFighterTakesTiny(const PortRemasterPrim *prim) {
                 ? (double)g_fighter.tween_phase / (double)(1 << 16)
                 : 0.0,
             NULL, 0, NULL, 0);
+        PORT_GPU_END();
     }
     g_fighter.counts.left_out++;
     return TRUE;
@@ -2367,12 +2397,14 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
          * what was painted before is painted first */
         g_fighter.is_drawn = TRUE;
         port_GlFlushBatch();
+        PORT_GPU_BEGIN(PORT_GPU_FIGHTERS);
         port_GlFighterDrawAll(
             prim, LAYER_FIGHTERS, views, after,
             g_fighter.tween_phase >= 0
                 ? (double)g_fighter.tween_phase / (double)(1 << 16)
                 : 0.0,
             weapons, weapon_count, after_weapons, after_weapon_count);
+        PORT_GPU_END();
     }
     if (g_fighter.holds) {
         /* the cloth itself is painted by the game's own path */

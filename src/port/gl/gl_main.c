@@ -1,5 +1,5 @@
 /* The remastered renderer proved with nothing shown (docs/PORT.md,
- * "Remastered"): the port's program with an OpenGL 3.3 core context
+ * "Remastered"): the port's program with an OpenGL 4.5 core context
  * made through EGL with no display, no window and no surface. It draws
  * every frame twice — the software GPU into its video memory, as the
  * port always does, and the hardware into a colour buffer at `scale`
@@ -366,9 +366,9 @@ static const char *port_StartEgl(void) {
         EGL_NONE};
     static const EGLint context_want[] = {
         EGL_CONTEXT_MAJOR_VERSION,
-        3,
+        4,
         EGL_CONTEXT_MINOR_VERSION,
-        3,
+        5,
         EGL_CONTEXT_OPENGL_PROFILE_MASK,
         EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
         EGL_NONE};
@@ -402,7 +402,7 @@ static const char *port_StartEgl(void) {
     }
     context = eglCreateContext(g_display, config, EGL_NO_CONTEXT, context_want);
     if (context == EGL_NO_CONTEXT) {
-        return "EGL will not make an OpenGL 3.3 core context";
+        return "EGL will not make an OpenGL 4.5 core context";
     }
     if (!eglMakeCurrent(g_display, EGL_NO_SURFACE, EGL_NO_SURFACE, context)) {
         return "EGL will not make the context current without a surface";

@@ -48,6 +48,8 @@ typedef struct {
     /* where each blank's time went and when each picture was shown
      * (port_profile.h; tools/port_profile.py) */
     const char *profile;
+    /* the benchmark's stress, `fighters=N,stage=M` (gl_bench.h) */
+    const char *bench_stress;
     /* a display made up for a test, with no screen: this many blanks a
      * second, counted from the window's opening, and a swap with vsync
      * on waits for the next of them as a display's own would */

@@ -261,7 +261,8 @@ typedef struct {
     s32 is_linear;     /* the picture smoothed as it is scaled */
     s32 vsync;         /* wait for the display */
     s32 deadzone;      /* parts of a hundred */
-    s32 fps;           /* the counter in the corner is shown */
+    s32 fps;           /* the counter in the corner is shown: 1, or
+                        * PORT_FPS_TIMES with the times under it */
     s32 fps_corner;    /* PORT_CORNER_... */
     /* input lag (docs/PORT.md, "Input lag"): frames run ahead, 0 to
      * PORT_RUN_AHEAD_MAX, and whether a swap waits for the card */
@@ -560,6 +561,9 @@ extern void port_CountFps(PortFpsMeter *meter, u32 now, u32 events);
  * vertical blank in a fight, every blank in the main menu), and the
  * pictures shown as parts in a hundred of the console's 59.83. */
 #define PORT_FPS_TEXT_BYTES 32
+/* `fps = times`: the counter with the processor's and the card's time
+ * per part of a frame under it (sdl_window.c, port_DrawCounter) */
+#define PORT_FPS_TIMES 2
 extern void port_FormatFps(
     char *out, u32 shown_tenths, u32 game_tenths, u32 blank_tenths);
 
