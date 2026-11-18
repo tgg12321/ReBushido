@@ -16,6 +16,12 @@ extern void rb_StartFight(s32 mode, const s32 *roster, const s32 *weapon,
                           s32 stage, s32 is_cpu2, s32 bugfixes);
 #endif
 
+#if RB_PORT
+/* The fight the port's --fight asks for, started; nothing where none was
+ * asked for. main calls it after choosing the movie's screen. */
+extern void rb_PortQuickFight(void);
+#endif
+
 #if RB_QUICK_BOOT
 /* Sets up the fight the build chose and makes its screen the first. main
  * calls it in place of showing the boot image and choosing the movie's

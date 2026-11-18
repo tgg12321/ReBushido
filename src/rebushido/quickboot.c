@@ -32,6 +32,19 @@ void rb_StartFight(s32 mode, const s32 *roster, const s32 *weapon, s32 stage,
 
 #endif /* RB_QUICK_BOOT || RB_PORT */
 
+#if RB_PORT
+/* The port's --fight (port_platform.h): its fight started, where one was
+ * asked for. */
+void rb_PortQuickFight(void) {
+    const PortFight *fight = port_QuickFight();
+
+    if (fight != NULL) {
+        rb_StartFight(fight->mode, fight->roster, fight->weapon, fight->stage,
+                      fight->is_cpu[1], g_rb_settings.bugfixes);
+    }
+}
+#endif
+
 #if RB_QUICK_BOOT
 
 /* What to start, which the Makefile gives from its QB_ variables

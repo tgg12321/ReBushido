@@ -5150,16 +5150,17 @@ prefix allowed, or the number: `--fight tatara-shrine kannuki
 mikado:nodachi`. A fighter's weapon follows a colon (a katana if none),
 the second fighter is the CPU's (`--fight-2p`: the second pad's), the
 mode is versus. A name not known prints the names and ends with the
-usage code. The game's `main` asks `port_QuickFight` under `RB_PORT` and
-calls `rb_StartFight` (`src/rebushido/quickboot.c`, which the quick-boot
-build's `rb_QuickBoot` now calls too): what the main menu does when it
+usage code. `rb_StartFight` (`src/rebushido/quickboot.c`, which the
+quick-boot build's `rb_QuickBoot` now calls too) does what the main menu does when it
 first opens, the choice into `g_fight_config`, and `fight_StartMode`.
 No card is read on the way, so the settings are the game's own until a
 card is loaded from the menus. Without `--fight` nothing changes: the
 traces of `port_game` and `port_other_fight` are the same, line for line.
-In the window a fight on Tatara Shrine is under way 6.6 seconds after
-the program starts (blank 372, the stage's load at the console's pace
-behind a loading picture that quick loading hurries).
+The headless program is in the fight by blank 600; the options page
+(`rb_RunOptionsPage`) and the boot image (`disp_ShowBootImage`) return at
+once under `RB_PORT` where a fight was asked for, and `main` starts it
+after choosing the movie's screen (`rb_PortQuickFight`), so `main`'s own
+shape is the original's.
 
 ### The fighters' own models
 

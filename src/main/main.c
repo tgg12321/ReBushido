@@ -316,6 +316,12 @@ static void disp_ShowBootImage(u8 *file_buffer, void *unused1, s32 unused2) {
     RECT rect;
     s32 i;
 
+#if RB_PORT
+    /* the port's --fight goes straight to its fight */
+    if (port_QuickFight() != NULL) {
+        return;
+    }
+#endif
     rect = g_disp_boot_image_rect;
 
     SetDispMask(0);
@@ -610,32 +616,25 @@ void main(void) {
     sys_Init();
     sys_InitGame();
     SetDispMask(1);
-#if RB_PORT
-    if (port_QuickFight() != NULL) {
-        /* --fight: no options page, boot image or movie; the first screen
-         * is the fight's, as in the quick-boot build */
-        const PortFight *fight = port_QuickFight();
-
-        rb_StartFight(fight->mode, fight->roster, fight->weapon, fight->stage,
-                      fight->is_cpu[1], g_rb_settings.bugfixes);
-    } else {
-        rb_RunOptionsPage();
-        disp_ShowBootImage((u8 *)SYS_LOAD_ADDR, frame_db, index);
-        g_sys_screen = SCREEN_MOVIE;
-    }
-#elif RB_OPTIONS_PAGE && !RB_QUICK_BOOT
-    /* the settings are read from the card and the player may change them */
+#if RB_OPTIONS_PAGE && !RB_QUICK_BOOT
+    /* the settings are read from the card and the player may change them
+     * (none of it where the port's --fight asks for a fight) */
     rb_RunOptionsPage();
 #endif
 #if RB_QUICK_BOOT
     /* no boot image and no movie: the first screen is the fight's */
     rb_QuickBoot();
-#elif !RB_PORT
+#else
     /* only the first argument is used; the others are whatever was there
      * (the original's behaviour) */
     disp_ShowBootImage((u8 *)SYS_LOAD_ADDR, frame_db, index);
 
     g_sys_screen = SCREEN_MOVIE;
+#if RB_PORT
+    /* --fight: the first screen is the fight's instead, as in the
+     * quick-boot build (the boot image was not shown) */
+    rb_PortQuickFight();
+#endif
 #endif
     g_sys_skip_frames = 0;
     g_disp_frame_count = 0;

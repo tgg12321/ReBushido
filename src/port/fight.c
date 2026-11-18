@@ -11,7 +11,6 @@
  * made once as the program starts, and the game copies it into its own
  * variables when it starts the fight. */
 #include "common.h"
-#include "port_platform.h"
 #include "bb2.h"
 
 #define NAME_BYTES_MAX 48
@@ -101,10 +100,10 @@ static void port_FightKey(
     const char *at;
 
     for (at = prefix; *at != 0 && text != end; at++, text++) {
-        char c =
+        char letter =
             *text >= 'A' && *text <= 'Z' ? (char)(*text - 'A' + 'a') : *text;
 
-        if (c != *at) {
+        if (letter != *at) {
             break;
         }
     }
@@ -113,13 +112,14 @@ static void port_FightKey(
         text -= at - prefix;
     }
     for (; *text != 0 && text != end && length + 1 < NAME_BYTES_MAX; text++) {
-        char c = *text;
+        char letter = *text;
 
-        if (c >= 'A' && c <= 'Z') {
-            c = (char)(c - 'A' + 'a');
+        if (letter >= 'A' && letter <= 'Z') {
+            letter = (char)(letter - 'A' + 'a');
         }
-        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
-            out[length++] = c;
+        if ((letter >= 'a' && letter <= 'z') ||
+            (letter >= '0' && letter <= '9')) {
+            out[length++] = letter;
         }
     }
     out[length] = 0;
