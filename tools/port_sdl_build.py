@@ -105,6 +105,13 @@ HOSTED_FLAGS = ['-O2', '-g', '-std=gnu99', '-Wall', '-Wextra', '-Werror', '-Wno-
 # traces (docs/PORT.md, "Where the time goes", "-O2"). PORT_OPT=N says
 # otherwise, into a folder of its own.
 WINDOW_OPT = '2'
+# ... and the files with SDL and the C library of the 64-bit programs at
+# -O3 for an x86-64 of 2013 on (Haswell: AVX2), linked whole (LTO): the
+# pictures between frames, the shadows and the cloth were a fifth to a
+# third quicker on the card's bench (docs/PORT.md, "Where the time goes").
+# No multiply-add is fused, so their arithmetic is the same to the bit as
+# without (-ffp-contract=off). None of it is the game's state.
+HOSTED_FAST = ['-O3', '-march=x86-64-v3', '-ffp-contract=off', '-flto=auto']
 # Where the program is linked: where the build without a window is
 # (tools/port_build.py, PROGRAM_BASE), so that the game's state's two runs
 # of variables have low 24 bits that no other place a primitive may be has
@@ -636,7 +643,15 @@ def main():
     optimise = '-O' + (os.environ.get('PORT_OPT') or WINDOW_OPT)
     more = os.environ.get('RB_WINDOW_FLAGS', '').split()
     port_build.GAME_FLAGS = [optimise if re.match(r'-O\d$', f) else f for f in port_build.GAME_FLAGS] + more
-    HOSTED_FLAGS.extend(more)
+    # The files with SDL and the C library (the remastered renderer, the
+    # HD cloth, the window) of the 64-bit programs: HOSTED_FAST, given to
+    # the link too (-flto). RB_HOSTED_FLAGS says otherwise, for a
+    # measurement.
+    if 'RB_HOSTED_FLAGS' in os.environ:
+        hosted_more = os.environ['RB_HOSTED_FLAGS'].split()
+    else:
+        hosted_more = HOSTED_FAST if bits == 64 else []
+    HOSTED_FLAGS.extend(more + hosted_more)
     target = Target('--windows' in args, bits)
     problem = check_host(target)
     if problem:
@@ -698,7 +713,7 @@ def main():
     if blob is None:
         print("FAILED: port-sdl: the game's object does not link")
         return 1
-    if not link_program(target, target.program, [blob] + hosted, target.link_flags()):
+    if not link_program(target, target.program, [blob] + hosted, target.link_flags() + hosted_more):
         return 1
     made = [target.program]
     made += ['%s/mods/%s/' % (target.dir, name) for name in copy_mods(target)]

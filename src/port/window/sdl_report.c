@@ -1,5 +1,5 @@
 /* The native port's window: a report of a problem, made by one key (F9;
- * docs/PLAYING.md, "Reporting a problem"; docs/PORT.md, "A report").
+ * docs/PLAYING.md, "The keys"; docs/PORT.md, "A report (F9)").
  *
  * All the while the window keeps the last seconds of where the time went
  * (the processor's parts of every blank, the card's passes, when each

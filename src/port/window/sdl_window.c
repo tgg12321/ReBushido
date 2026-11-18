@@ -963,6 +963,13 @@ static void port_LendThreads(void) {
  * the driver's late swap tear (SDL's -1), where it has one; where it has
  * none, waited for as `on` does, and the log says so. */
 static void port_SetSwapInterval(void) {
+    if (g_port_window_options.display_rate > 0) {
+        /* --display-rate: the display made up is the one waited for
+         * (port_WaitForMadeUpBlank), not the PC's own, which a hidden
+         * window on a real card is held to as well */
+        SDL_GL_SetSwapInterval(0);
+        return;
+    }
     if (g_port_vsync == PORT_VSYNC_ADAPTIVE &&
         SDL_GL_SetSwapInterval(-1) == 0) {
         return;
