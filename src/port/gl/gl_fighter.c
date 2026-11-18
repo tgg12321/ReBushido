@@ -89,6 +89,7 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_LINK_STATUS 0x8B82
 #define GL_BLEND 0x0BE2
 #define GL_SCISSOR_TEST 0x0C11
+#define GL_POLYGON_OFFSET_FILL 0x8037
 
 #define PORT_GL_FIGHTER_FUNCTIONS                                              \
     GL(void, glViewport, (GLint, GLint, GLsizei, GLsizei))                     \
@@ -102,6 +103,7 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glClearBufferfv, (GLenum, GLint, const GLfloat *))                \
     GL(void, glDepthFunc, (GLenum))                                            \
     GL(void, glDepthMask, (GLboolean))                                         \
+    GL(void, glPolygonOffset, (GLfloat, GLfloat))                              \
     GL(void, glDrawBuffers, (GLsizei, const GLenum *))                         \
     GL(void, glColorMask, (GLboolean, GLboolean, GLboolean, GLboolean))        \
     GL(void, glGenerateMipmap, (GLenum))                                       \
@@ -178,7 +180,7 @@ PORT_GL_FIGHTER_FUNCTIONS
 /* How far outside the model's body its cloth is kept, in the world's
  * units (a fighter stands some 1,800 tall, the model's vertices some 26
  * apart). */
-#define CLOTH_GAP 5.0
+#define CLOTH_GAP 6.0
 /* The planes the layer's depth is kept between, in the world's units. */
 #define NEAR_PLANE 1.0f
 #define FAR_PLANE 262144.0f
@@ -248,6 +250,23 @@ typedef struct {
     s32 dy;
 } ClutPlace;
 
+/* What the models are drawn into before they are laid over the picture:
+ * the fighters' layer, and the tiny model's, which the game draws after
+ * the scene into a corner of the screen (model_tiny.c). */
+enum { LAYER_FIGHTERS, LAYER_TINY, LAYERS };
+
+typedef struct {
+    GLuint framebuffer;
+    GLuint color;
+    GLuint depth_value;
+    GLuint depth;
+    s32 w;
+    s32 h;
+} FighterLayer;
+
+/* The tiny models' files, `T00` to `T26` (g_model_tiny_ids). */
+#define TINY_FILES 27
+
 /* The things drawn into the layer whose tables are followed: the fighters'
  * slots, and the weapon models after them. */
 #define PLACES (PORT_FIGHTER_SLOTS + WEAPON_FILES)
@@ -260,12 +279,7 @@ static struct {
     GLuint composite_program;
     GLuint quad_array;
     GLuint quad_buffer;
-    GLuint layer_framebuffer;
-    GLuint layer_color;
-    GLuint layer_depth_value;
-    GLuint layer_depth;
-    s32 layer_w;
-    s32 layer_h;
+    FighterLayer layer[LAYERS];
     GLint at_joint;
     GLint at_world;
     GLint at_index;
@@ -334,6 +348,12 @@ static struct {
     FILE *dump;
     FighterModel model[MODELS_MAX];
     FighterModel weapon_model[WEAPON_FILES];
+    FighterModel tiny_model[TINY_FILES];
+    /* the tiny model of the frame on show and the frame after it, and
+     * whether it is drawn in this picture */
+    PortFighterView tiny_before[PORT_FIGHTER_SLOTS];
+    PortFighterView tiny_latest[PORT_FIGHTER_SLOTS];
+    s32 is_tiny_drawn;
     PortGlFighterCounts counts;
     char problem[512];
 } g_fighter;
@@ -632,16 +652,29 @@ const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(GLfloat), NULL);
     glEnableVertexAttribArray(0);
     glBindVertexArray(0);
-    glGenFramebuffers(1, &g_fighter.layer_framebuffer);
-    glGenTextures(1, &g_fighter.layer_color);
-    glGenTextures(1, &g_fighter.layer_depth_value);
-    glGenRenderbuffers(1, &g_fighter.layer_depth);
+    {
+        s32 i;
+
+        for (i = 0; i < LAYERS; i++) {
+            FighterLayer *layer = &g_fighter.layer[i];
+
+            glGenFramebuffers(1, &layer->framebuffer);
+            glGenTextures(1, &layer->color);
+            glGenTextures(1, &layer->depth_value);
+            glGenRenderbuffers(1, &layer->depth);
+        }
+    }
     glGenTextures(PLACES, g_fighter.palette_texture);
     {
         s32 i;
 
         for (i = 0; i < PLACES; i++) {
             g_fighter.place[i].model = -1;
+        }
+        /* the tiny model has the first of its views alone */
+        for (i = 0; i < PORT_FIGHTER_SLOTS; i++) {
+            g_fighter.tiny_before[i].model_id = -1;
+            g_fighter.tiny_latest[i].model_id = -1;
         }
     }
     /* which way round a face is its front, as the console's (the
@@ -675,6 +708,11 @@ void port_GlFighterSetFolder(const char *folder) {
     for (i = 0; i < WEAPON_FILES; i++) {
         if (g_fighter.weapon_model[i].state == MODEL_MISSING) {
             g_fighter.weapon_model[i].state = MODEL_UNTRIED;
+        }
+    }
+    for (i = 0; i < TINY_FILES; i++) {
+        if (g_fighter.tiny_model[i].state == MODEL_MISSING) {
+            g_fighter.tiny_model[i].state = MODEL_UNTRIED;
         }
     }
 }
@@ -923,11 +961,23 @@ static FighterModel *port_GlFighterWeaponModel(s32 weapon) {
     return port_GlFighterLoad(&g_fighter.weapon_model[weapon], name);
 }
 
+/* A tiny model's (g_model_tiny_ids): `T00` to `T26`. */
+static FighterModel *port_GlFighterTinyModel(s32 tiny) {
+    char name[8];
+
+    if (tiny < 0 || tiny >= TINY_FILES) {
+        return NULL;
+    }
+    snprintf(name, sizeof(name), "T%02d", tiny);
+    return port_GlFighterLoad(&g_fighter.tiny_model[tiny], name);
+}
+
 /* ---- a frame ---- */
 
 void port_GlFighterNewFrame(void) {
     g_fighter.is_drawn = FALSE;
     g_fighter.is_laid = FALSE;
+    g_fighter.is_tiny_drawn = FALSE;
 }
 
 /* The slot whose model the primitive is a drawing of, by where its node
@@ -1053,48 +1103,48 @@ static void port_GlFighterPoseOf(FighterPose *pose, const PortFighterView *a,
     pose->back = t < 0.5 ? a->back : b->back;
 }
 
-/* The layer the fighters are drawn into: at least `w` by `h`. */
-static s32 port_GlFighterLayer(s32 w, s32 h) {
+/* A layer the models are drawn into: at least `w` by `h`. */
+static s32 port_GlFighterLayer(FighterLayer *layer, s32 w, s32 h) {
     static const GLenum both[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
 
-    if (w <= g_fighter.layer_w && h <= g_fighter.layer_h) {
-        glBindFramebuffer(GL_FRAMEBUFFER, g_fighter.layer_framebuffer);
+    if (w <= layer->w && h <= layer->h) {
+        glBindFramebuffer(GL_FRAMEBUFFER, layer->framebuffer);
         glDrawBuffers(2, both);
         return TRUE;
     }
-    if (w < g_fighter.layer_w) {
-        w = g_fighter.layer_w;
+    if (w < layer->w) {
+        w = layer->w;
     }
-    if (h < g_fighter.layer_h) {
-        h = g_fighter.layer_h;
+    if (h < layer->h) {
+        h = layer->h;
     }
-    glBindTexture(GL_TEXTURE_2D, g_fighter.layer_color);
+    glBindTexture(GL_TEXTURE_2D, layer->color);
     glTexImage2D(
         GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glBindTexture(GL_TEXTURE_2D, g_fighter.layer_depth_value);
+    glBindTexture(GL_TEXTURE_2D, layer->depth_value);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, w, h, 0, GL_RED, GL_FLOAT, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glBindRenderbuffer(GL_RENDERBUFFER, g_fighter.layer_depth);
+    glBindRenderbuffer(GL_RENDERBUFFER, layer->depth);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
-    glBindFramebuffer(GL_FRAMEBUFFER, g_fighter.layer_framebuffer);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                           g_fighter.layer_color, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, layer->framebuffer);
+    glFramebufferTexture2D(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, layer->color, 0);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D,
-                           g_fighter.layer_depth_value, 0);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                              GL_RENDERBUFFER, g_fighter.layer_depth);
+                           layer->depth_value, 0);
+    glFramebufferRenderbuffer(
+        GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, layer->depth);
     glDrawBuffers(2, both);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         port_GlFighterSay("the fighters' layer cannot be drawn into", NULL);
-        g_fighter.layer_w = 0;
-        g_fighter.layer_h = 0;
+        layer->w = 0;
+        layer->h = 0;
         return FALSE;
     }
-    g_fighter.layer_w = w;
-    g_fighter.layer_h = h;
+    layer->w = w;
+    layer->h = h;
     return TRUE;
 }
 
@@ -1580,6 +1630,11 @@ static void port_GlFighterDrawCloths(
             glUniform1f(g_fighter.at_cloth_near,
                         (GLfloat)(CLOTH_NEAR << (view->scale_shift & 3)));
             glDisable(GL_CULL_FACE);
+            /* kept out of the body by CLOTH_GAP, and taken a little
+             * nearer in the depth buffer as well, so that where it lies
+             * close over the body the two never flicker in turn */
+            glEnable(GL_POLYGON_OFFSET_FILL);
+            glPolygonOffset(-1.0f, -4.0f);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, model->cloth_texture);
         }
@@ -1598,6 +1653,7 @@ static void port_GlFighterDrawCloths(
     if (drawn > 0) {
         glBindVertexArray(0);
         glUniform1i(g_fighter.at_cloth, 0);
+        glDisable(GL_POLYGON_OFFSET_FILL);
         if (g_fighter.cull != 0) {
             glEnable(GL_CULL_FACE);
         }
@@ -1657,10 +1713,12 @@ static void port_GlFighterWeaponPose(
  * the layer, and the layer over the picture, in place of the primitive
  * `paint`. */
 static void port_GlFighterDrawAll(
-    const PortRemasterPrim *paint, const PortFighterView *views,
+    const PortRemasterPrim *paint, s32 which, const PortFighterView *views,
     const PortFighterView *after, double t, const PortFighterWeapon *weapons,
     s32 weapon_count, const PortFighterWeapon *after_weapons,
     s32 after_weapon_count) {
+    FighterLayer *layer = &g_fighter.layer[which];
+    s32 is_tiny = which == LAYER_TINY;
     static const GLfloat clear_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     static const GLfloat clear_depth[4] = {FAR_PLANE, 0.0f, 0.0f, 0.0f};
     PortGlPicture picture;
@@ -1689,7 +1747,7 @@ static void port_GlFighterDrawAll(
         x = (paint->clip_left + picture.margin) * picture.draw_x;
         w = (paint->clip_right - paint->clip_left + 1) * picture.draw_x;
     }
-    if (w <= 0 || h <= 0 || !port_GlFighterLayer(w, h)) {
+    if (w <= 0 || h <= 0 || !port_GlFighterLayer(layer, w, h)) {
         return;
     }
     glDisable(GL_SCISSOR_TEST);
@@ -1729,7 +1787,8 @@ static void port_GlFighterDrawAll(
             frame = pose;
             has_frame = TRUE;
         }
-        model = port_GlFighterModel(view->model_id);
+        model = is_tiny ? port_GlFighterTinyModel(view->model_id)
+                        : port_GlFighterModel(view->model_id);
         if (model == NULL) {
             continue;
         }
@@ -1775,17 +1834,19 @@ static void port_GlFighterDrawAll(
     glScissor(x, y, w, h);
     glUseProgram(g_fighter.composite_program);
     glActiveTexture(GL_TEXTURE0 + 2);
-    glBindTexture(GL_TEXTURE_2D, g_fighter.layer_color);
+    glBindTexture(GL_TEXTURE_2D, layer->color);
     glActiveTexture(GL_TEXTURE0 + 3);
-    glBindTexture(GL_TEXTURE_2D, g_fighter.layer_depth_value);
+    glBindTexture(GL_TEXTURE_2D, layer->depth_value);
     glActiveTexture(GL_TEXTURE0 + 1);
     glBindTexture(GL_TEXTURE_2D, picture.slot_texture);
     glActiveTexture(GL_TEXTURE0);
     glUniform1i(g_fighter.c_at_layer, 2);
     glUniform1i(g_fighter.c_at_layer_depth, 3);
     glUniform1i(g_fighter.c_at_ground_slots, 1);
-    glUniform1i(g_fighter.c_at_ground_order,
-                port_GlStageSaveFrame() && options.is_stage_depth ? 1 : 0);
+    /* the tiny model is drawn after the scene, over everything */
+    glUniform1i(
+        g_fighter.c_at_ground_order,
+        !is_tiny && port_GlStageSaveFrame() && options.is_stage_depth ? 1 : 0);
     glUniform2f(g_fighter.c_at_origin, (GLfloat)x, (GLfloat)y);
     glUniform4f(
         g_fighter.c_at_rect, (GLfloat)x, (GLfloat)y, (GLfloat)w, (GLfloat)h);
@@ -1793,12 +1854,14 @@ static void port_GlFighterDrawAll(
                 (GLfloat)picture.target_h);
     glUniform1f(g_fighter.c_at_depth_range, PORT_GL_DEPTH_RANGE);
     /* kept for the shadows' mask (port_GlFighterDrawOccluders) */
-    g_fighter.laid[0] = x;
-    g_fighter.laid[1] = y;
-    g_fighter.laid[2] = w;
-    g_fighter.laid[3] = h;
-    g_fighter.laid_order =
-        port_GlStageSaveFrame() && options.is_stage_depth ? 1 : 0;
+    if (!is_tiny) {
+        g_fighter.laid[0] = x;
+        g_fighter.laid[1] = y;
+        g_fighter.laid[2] = w;
+        g_fighter.laid[3] = h;
+        g_fighter.laid_order =
+            port_GlStageSaveFrame() && options.is_stage_depth ? 1 : 0;
+    }
     /* the depth is written whatever is there: the test is only how GL
      * lets a fragment write it */
     glEnable(GL_DEPTH_TEST);
@@ -1811,6 +1874,9 @@ static void port_GlFighterDrawAll(
     glDepthFunc(GL_LESS);
     glDisable(GL_DEPTH_TEST);
     port_GlForgetState();
+    if (is_tiny) {
+        return;
+    }
     g_fighter.is_laid = TRUE;
     if (drawn > 0) {
         g_fighter.counts.frames++;
@@ -1871,6 +1937,37 @@ static s32 port_GlFighterWeaponIndexOf(
     return -1;
 }
 
+/* A primitive of the tiny model's body (port_GetFighterTinyView) where a
+ * file of it is drawn instead: left out, and the model drawn into a layer
+ * of its own at the first of them, held to nothing of the scene, as the
+ * game draws the figure after it. Its weapon is the game's. */
+static s32 port_GlFighterTakesTiny(const PortRemasterPrim *prim) {
+    const PortFighterView *views =
+        g_fighter.tween_phase >= 0 ? g_fighter.tiny_before
+                                   : g_fighter.tiny_latest;
+    const PortFighterView *view = &views[0];
+
+    if (view->model_id < 0 || prim->id.object < view->nodes_from ||
+        prim->id.object >= view->nodes_to ||
+        !port_FighterIsTinyBody(prim->id.object) ||
+        port_GlFighterTinyModel(view->model_id) == NULL) {
+        return FALSE;
+    }
+    if (!g_fighter.is_tiny_drawn) {
+        g_fighter.is_tiny_drawn = TRUE;
+        port_GlFlushBatch();
+        port_GlFighterDrawAll(
+            prim, LAYER_TINY, views,
+            g_fighter.tween_phase >= 0 ? g_fighter.tiny_latest : NULL,
+            g_fighter.tween_phase >= 0
+                ? (double)g_fighter.tween_phase / (double)(1 << 16)
+                : 0.0,
+            NULL, 0, NULL, 0);
+    }
+    g_fighter.counts.left_out++;
+    return TRUE;
+}
+
 s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
     const PortFighterView *views;
     const PortFighterView *after = NULL;
@@ -1917,10 +2014,16 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
             built = port_GetFighterWeapons(&g_fighter.latest_weapons);
             memcpy(g_fighter.latest_weapon, built,
                    (size_t)g_fighter.latest_weapons * sizeof(*built));
+            memcpy(g_fighter.tiny_before, g_fighter.tiny_latest,
+                   sizeof(g_fighter.tiny_before));
+            g_fighter.tiny_latest[0] = *port_GetFighterTinyView();
             g_fighter.latest_serial = port_FighterSerial();
             port_GlFighterDumpFrame();
         }
         weapon_count = g_fighter.latest_weapons;
+    }
+    if (port_GlFighterTakesTiny(prim)) {
+        return TRUE;
     }
     slot = port_GlFighterSlotOf(prim, views);
     is_cloth = slot >= 0 && port_FighterIsCloth(prim->id.object);
@@ -1972,7 +2075,7 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
         g_fighter.is_drawn = TRUE;
         port_GlFlushBatch();
         port_GlFighterDrawAll(
-            prim, views, after,
+            prim, LAYER_FIGHTERS, views, after,
             g_fighter.tween_phase >= 0
                 ? (double)g_fighter.tween_phase / (double)(1 << 16)
                 : 0.0,
@@ -1996,7 +2099,7 @@ s32 port_GlFighterLayerDepth(s32 rect[4]) {
     rect[1] = g_fighter.laid[1];
     rect[2] = g_fighter.laid[2];
     rect[3] = g_fighter.laid[3];
-    return (s32)g_fighter.layer_depth_value;
+    return (s32)g_fighter.layer[LAYER_FIGHTERS].depth_value;
 }
 
 /* ---- the shadows cast from the models (gl_fighter.h) ---- */
@@ -2012,9 +2115,9 @@ void port_GlFighterDrawOccluders(u32 framebuffer) {
     glViewport(0, 0, picture.target_w, picture.target_h);
     glUseProgram(g_fighter.composite_program);
     glActiveTexture(GL_TEXTURE0 + 2);
-    glBindTexture(GL_TEXTURE_2D, g_fighter.layer_color);
+    glBindTexture(GL_TEXTURE_2D, g_fighter.layer[LAYER_FIGHTERS].color);
     glActiveTexture(GL_TEXTURE0 + 3);
-    glBindTexture(GL_TEXTURE_2D, g_fighter.layer_depth_value);
+    glBindTexture(GL_TEXTURE_2D, g_fighter.layer[LAYER_FIGHTERS].depth_value);
     glActiveTexture(GL_TEXTURE0 + 1);
     glBindTexture(GL_TEXTURE_2D, picture.slot_texture);
     glActiveTexture(GL_TEXTURE0);
@@ -2223,6 +2326,7 @@ s32 port_GlFighterCastTriangles(
 void port_GlFighterTween(s32 phase) {
     g_fighter.tween_phase = phase;
     g_fighter.is_drawn = FALSE;
+    g_fighter.is_tiny_drawn = FALSE;
     /* a new picture has no layer yet; the end of one keeps its layer
      * until the batch is drawn (port_GlFinishFrame) */
     if (phase >= 0) {

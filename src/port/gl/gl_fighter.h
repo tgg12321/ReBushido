@@ -19,9 +19,13 @@
  * port_GlIsOverGround), and its depth written where the ground's is, so
  * that what the scene paints after it is held against the fighter too.
  *
- * Only what has a file is replaced: a model with none, the cloth, the
- * shadows and the weapons are the game's own primitives as before. The
- * hitboxes are not the model's and are untouched (port_fighter.h). */
+ * Only what has a file is replaced: a model with none, a cloth its file
+ * does not have, the shadows and a weapon with none are the game's own
+ * primitives as before. A cloth its file has is drawn in the layer as a
+ * smooth surface through the game's own points, kept out of the body
+ * (gl_cloth.h); the first-person view's tiny figure is drawn from its own
+ * file into a layer of its own. The hitboxes are not the model's and are
+ * untouched (port_fighter.h). */
 
 #include "common.h"
 #include "port_remaster.h"

@@ -123,6 +123,16 @@ extern u32 port_FighterSerial(void);
  * points (gl_fighter.c, extras.rb_cloth). */
 extern s32 port_FighterIsCloth(PortAddress node);
 
+/* The tiny model of the first-person view (model_tiny.c) as the last frame
+ * built drew it: `model_id` is its number (g_model_tiny_ids), or -1 where
+ * none was drawn; the bones are its fighter's, the view and the camera
+ * the figure's own (g_model_tiny_matrix), and the projection about the
+ * figure's corner of the screen. */
+extern const PortFighterView *port_GetFighterTinyView(void);
+/* Whether a node is a part of the tiny model's body, and not the weapon
+ * or the thing it holds. */
+extern s32 port_FighterIsTinyBody(PortAddress node);
+
 /* A new frame of primitives is about to be built (port_RemasterNewFrame):
  * what the frame before drew is forgotten. */
 extern void port_FighterNewFrame(void);

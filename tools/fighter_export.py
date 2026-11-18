@@ -1213,6 +1213,142 @@ def export_data(md, out, bones, quiet=False):
     return not md.problems
 
 
+# The tiny models (model_tiny.c): the small figure of the first-person
+# view, one file for each character (NDATA ids 77 on, `g_model_tiny_ids`),
+# its parts lit flat faces of a colour each, untextured, on the bones of
+# the character's own model.
+TINY_NDATA = 77
+TINY_MODELS = 27
+# A group's records (render_EmitTinyF3, render_EmitTinyF4): both copies of
+# the primitive, then the corners, the normal and the colour.
+TINY_GROUPS = {0: (56, False, 40, 44, 52), 8: (64, True, 48, 52, 60)}
+# A colour of a face, as a block of the picture the figure is drawn from.
+TINY_SWATCH = 4
+
+
+class TinyAtlas:
+    """The figure's colours as a picture of blocks, one colour each, so
+    that the model is drawn as any other is. The game lights a face of
+    the figure with its colour (NCCS: the colour times the light, 4096
+    being one) where a texture is the texel times the light over 128 (NCS
+    and the chip): so a block is the colour at half, and a little over, to
+    come out the same."""
+
+    def __init__(self):
+        self.colors = {}
+
+    def note(self, color):
+        return self.colors.setdefault(color, len(self.colors))
+
+    def pack(self):
+        per_row = 16
+        self.w = per_row * TINY_SWATCH
+        self.h = 1
+        rows = (len(self.colors) + per_row - 1) // per_row
+        while self.h < rows * TINY_SWATCH:
+            self.h *= 2
+        self.pixels = bytearray(self.w * self.h * 4)
+        self.index = bytearray(self.w * self.h * 4)
+        for color, k in self.colors.items():
+            x0, y0 = (k % per_row) * TINY_SWATCH, (k // per_row) * TINY_SWATCH
+            texel = bytes([min(255, round(c * 255 / 496)) for c in color] + [255])
+            for y in range(y0, y0 + TINY_SWATCH):
+                for x in range(x0, x0 + TINY_SWATCH):
+                    at = (y * self.w + x) * 4
+                    self.pixels[at:at + 4] = texel
+        self.cluts = []
+        return self
+
+    def uv(self, color):
+        k = self.colors[color]
+        per_row = self.w // TINY_SWATCH
+        return (((k % per_row) + 0.5) * TINY_SWATCH / self.w,
+                ((k // per_row) + 0.5) * TINY_SWATCH / self.h)
+
+
+def tiny_bones():
+    """The bone each of the figure's body parts follows, an index into the
+    model's bone matrices, which start at bone 1: g_model_tiny_bones, from
+    src/main/resource_data.c."""
+    with open(os.path.join(ROOT, 'src', 'main', 'resource_data.c'), encoding='utf-8') as f:
+        text = f.read()
+    m = re.search(r'g_model_tiny_bones\[[^\]]*\] = \{(.*?)\};', text, re.S)
+    body = re.sub(r'/\*.*?\*/', '', m.group(1), flags=re.S)
+    return [int(v) for v in re.findall(r'-?\d+', body) if int(v) >= 0]
+
+
+def read_tiny(nd, tiny, bones):
+    """A tiny model as ModelData: each body part rigid on its bone, every
+    vertex's one term the bone's, so it stands at any pose as the game
+    stands it; named `T00` to `T26` by its number (g_model_tiny_ids)."""
+    b = nd.read(TINY_NDATA + tiny)
+    md = ModelData('T%02d' % tiny)
+    mesh_table = u32(b, 4)
+    mesh_count = u32(b, mesh_table)
+    mesh_at = [mesh_table + o for o in struct.unpack_from('<%dI' % mesh_count, b, mesh_table + 4)]
+    bind_rot, bind_pos = stand_pose(bones, 4096)
+    atlas = TinyAtlas()
+    parts = []
+    for mesh, joint in enumerate(tiny_bones()):
+        bone = joint + 1
+        cursor = mesh_at[mesh]
+        word = u32(b, cursor)
+        count, layout = word & 0xFFFF, word >> 16
+        if layout != 2:
+            md.problems.append('mesh %d is of layout %d' % (mesh, layout))
+            continue
+        cursor += 4
+        # projected in threes (render_ProjectVertices): SVECTORs
+        verts = [struct.unpack_from('<3h', b, cursor + 8 * k) for k in range(3 * count)]
+        cursor += 24 * count
+        faces = []
+        while u16(b, cursor) != 0:
+            n, kind = u16(b, cursor), u16(b, cursor + 2)
+            cursor += 4
+            if kind not in TINY_GROUPS:
+                md.problems.append('mesh %d has a group of type %d' % (mesh, kind))
+                break
+            size, quad, corners_at, normal_at, color_at = TINY_GROUPS[kind]
+            for k in range(n):
+                o = cursor + k * size
+                corners = [b[o + corners_at + c] for c in range(4 if quad else 3)]
+                normal = (s16(b, o + normal_at), s16(b, o + normal_at + 2), s16(b, o + normal_at + 4))
+                color = tuple(b[o + color_at:o + color_at + 3])
+                atlas.note(color)
+                faces.append((corners, normal, color))
+            cursor += n * size
+        parts.append((bone, verts, faces))
+    atlas.pack()
+    for bone, verts, faces in parts:
+        r, t = bind_rot[bone], bind_pos[bone]
+        first = len(md.points)
+        for v in verts:
+            q = mat_vec(r, v)
+            md.point([q[k] + t[k] for k in range(3)], {bone: [float(c) for c in v] + [1.0]},
+                     [(bone, 1.0)])
+        for corners, normal, color in faces:
+            order = corner_order(len(corners))
+            n = tuple(mat_vec(r, normal))
+            md.faces.append({'points': [first + corners[c] for c in order],
+                             'uvs': [atlas.uv(color)] * len(order),
+                             'normals': [n] * len(order)})
+    md.bind_rot, md.bind_pos = bind_rot, bind_pos
+    md.atlas = atlas
+    md.asset = tiny
+    md.extras = {
+        'rb_fighter': 1,
+        'rb_tiny': tiny,
+        'model_file': md.name,
+        'units': 'game',
+        'joints': ['bone%02d' % i for i in range(BONES)],
+        'bind_rotation': [[round(x, 7) for row in bind_rot[i] for x in row] for i in range(BONES)],
+        'bind_translation': [[round(x, 4) for x in bind_pos[i]] for i in range(BONES)],
+    }
+    md.summary = '%d parts, %d vertices, %d faces, %d colours' % (
+        len(parts), len(md.points), len(md.faces), len(atlas.colors))
+    return md
+
+
 # A cloth's groups by handler (render_DrawCloth, g_render_cloth_handlers):
 # the records are those of the faces drawn from both sides.
 CLOTH_KINDS = [6, 14, 22, 30]
@@ -1288,17 +1424,22 @@ def main():
     ap.add_argument('--pose', help='a bind pose the port wrote (--fighter-pose)')
     ap.add_argument('--samples', type=int, default=24)
     ap.add_argument('--weapons', help='weapon models (0..57), or "all"')
+    ap.add_argument('--tiny', help='tiny models of the first-person view (0..26), or "all"')
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
     nd = Ndata(args.image)
     bones, scales = source_tables()
-    models = args.models or ('' if args.weapons else '3')
+    models = args.models or ('' if args.weapons or args.tiny else '3')
     ids = range(len(MODEL_NAMES)) if models == 'all' else [int(x) for x in models.split(',') if x]
     good = True
     if args.weapons:
         weapons = range(WEAPON_MODELS) if args.weapons == 'all' else [int(x) for x in args.weapons.split(',')]
         for weapon in weapons:
             good &= export_data(read_weapon(nd, weapon), args.out, bones)
+    if args.tiny:
+        tinies = range(TINY_MODELS) if args.tiny == 'all' else [int(x) for x in args.tiny.split(',')]
+        for tiny in tinies:
+            good &= export_data(read_tiny(nd, tiny, bones), args.out, bones)
     for model_id in ids:
         good &= export_model(nd, model_id, args.out, bones, scales, args.pose, args.samples)
     return 0 if good else 1

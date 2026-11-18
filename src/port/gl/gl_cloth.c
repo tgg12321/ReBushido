@@ -845,6 +845,8 @@ void port_GlClothPose(
  * the farthest that vertex may be for the point to be near the body. */
 #define BODY_LOOK 2
 #define BODY_FAR 100.0
+/* How many times a point is put out and looked at again, at most. */
+#define BODY_STEPS 4
 
 struct PortGlClothBody {
     s32 count;
@@ -1002,18 +1004,18 @@ static void port_GlClothBodyNear(
     }
 }
 
-s32 port_GlClothBodyHold(
-    const PortGlClothBody *body, double *point, double gap) {
+/* How far a point is outside the body's surface (below nought inside),
+ * and which way out is (`out`, of length one). FALSE where the body says
+ * nothing of it: no vertex near enough, or their normals cancel (a thin
+ * piece seen from both its sides). */
+static s32 port_GlClothBodyDistance(
+    const PortGlClothBody *body, const double *point, double *distance,
+    double *out) {
     BodySums sums;
     double reach;
     double length;
-    double distance;
-    s32 look;
     s32 k;
 
-    if (body == NULL || body->count == 0) {
-        return FALSE;
-    }
     /* the nearest vertex: none within the cubes looked in, or none
      * within BODY_FAR, is far outside, and nothing to do with the body
      * (no part of a fighter is so thick that a point inside it is that
@@ -1031,21 +1033,43 @@ s32 port_GlClothBodyHold(
     if (reach < BODY_REACH) {
         reach = BODY_REACH;
     }
-    look = (s32)(reach / BODY_CELL) + 1;
-    port_GlClothBodyNear(body, point, look, reach, &sums);
+    port_GlClothBodyNear(
+        body, point, (s32)(reach / BODY_CELL) + 1, reach, &sums);
     length = port_GlClothRoot(
         sums.normal[0] * sums.normal[0] + sums.normal[1] * sums.normal[1] +
         sums.normal[2] * sums.normal[2]);
-    /* where the normals about it cancel (a thin piece seen from both its
-     * sides) nothing says which way out is */
     if (sums.weight <= 0.0 || length < 0.25 * sums.weight) {
         return FALSE;
     }
-    distance = sums.along / sums.weight;
-    if (distance < gap) {
+    *distance = sums.along / sums.weight;
+    for (k = 0; k < 3; k++) {
+        out[k] = sums.normal[k] / length;
+    }
+    return TRUE;
+}
+
+s32 port_GlClothBodyHold(
+    const PortGlClothBody *body, double *point, double gap) {
+    double distance;
+    double out[3];
+    s32 was_inside;
+    s32 step;
+    s32 k;
+
+    if (body == NULL || body->count == 0 ||
+        !port_GlClothBodyDistance(body, point, &distance, out)) {
+        return FALSE;
+    }
+    was_inside = distance < 0.0;
+    /* put out along the way out, and looked at again from there: the
+     * surface about the new place may say it is not out yet */
+    for (step = 0; step < BODY_STEPS && distance < gap; step++) {
         for (k = 0; k < 3; k++) {
-            point[k] += (gap - distance) * sums.normal[k] / length;
+            point[k] += (gap - distance) * out[k];
+        }
+        if (!port_GlClothBodyDistance(body, point, &distance, out)) {
+            break;
         }
     }
-    return distance < 0.0;
+    return was_inside;
 }

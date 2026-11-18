@@ -4215,6 +4215,24 @@ the model that weapon is by its place among the loaded ones
 (`g_resource_loaded_weapons`). Between two frames it is mixed as a
 fighter's bones are.
 
+**The tiny model.** In the first-person view the fighter looked through
+is drawn again as a small figure in the top left corner (`model_tiny.c`):
+a model of its own for each character (`g_model_tiny_ids`, NDATA ids 77
+on), fifteen rigid parts of flat lit faces, a colour each and no texture,
+each on a bone of the fighter's own model, seen through a matrix of its
+own (`g_model_tiny_matrix`) and projected about another point of the
+screen (80, 60), after the scene. `models/T00.glb` to `T26.glb` draws it:
+`fighter_export.py --tiny` writes the figure as such a file, its colours
+as blocks of a small picture (a block being the colour at 255/496, so
+that the light the chip's `NCCS` gives a colour is the light a texel is
+given), and the hd mod has it subdivided as the fighters are. The port
+notes it as the renderer comes to the first of its body's nodes
+(`port_GetFighterTinyView`: the fighter's bones, the figure's eye, its
+projection), leaves out the primitives of its body and draws the file
+into a layer of its own, laid where the first of them would have been and
+held to nothing of the scene; its weapon and the thing it holds are the
+game's. Between two frames its bones and eye are mixed as a fighter's.
+
 **The game's own colours.** The game fades the fighters in and out and
 tints chanbara's opponents, the story's henchmen and the practice ninja
 by rewriting their colour tables in video memory (`model_TintOpponent`,
@@ -4323,7 +4341,8 @@ faces), and the models are not darkened by them: what a model covers is
 marked in the shadows' mask as the game's faces are
 (`port_GlFighterDrawOccluders`).
 
-**What is not done.** The tiny mode's model; the order of a model against the game's own faces is per pixel,
+**What is not done.** The tiny model's weapon is the game's flat one,
+and in grayscale mode the figure is the colour file's; the order of a model against the game's own faces is per pixel,
 so a hakama's hem now hides the sandal it was painted under, and a
 sandal's sole that lies in the ground is cut by the ground's slots (both
 as before the hd mod); a texture a mod's model draws in a layout other
