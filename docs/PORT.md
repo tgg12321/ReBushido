@@ -4191,7 +4191,14 @@ its hitboxes are its own. `RB_HD_CLOTH_HOLD=0` draws the cloth as the game
 moved it, for measuring; the prover's log counts the surface's places, how
 many the game's cloth had inside the model's body and how many are inside
 it as drawn (`gl run fighters ... cloth_places cloth_inside
-cloth_left_inside`).
+cloth_left_inside`). Over `port_game`'s fight with every cloth wearer
+put in it two by two (a `poke` of the roster, eight fights, 22.9 million
+places of the surface), **9.8%** of the cloth as the game moved it was
+inside the model's body (from 4.4% for Jo against Hongou to 18.6% for the
+armoured man against the victim) and **0.26%** is as drawn (0.03% to
+1.2%, the most for Nightstalker against Matsumushi: a place squeezed
+between two parts of the body cannot be outside both). The surface is drawn by its own points made
+again each picture, so it moves with the game's cloth and does not pop.
 
 **A joint as the game builds it.** The game makes a vertex of a joint as
 the sum of two bones' turns of two vectors, and its place by a third: a
@@ -4232,6 +4239,16 @@ projection), leaves out the primitives of its body and draws the file
 into a layer of its own, laid where the first of them would have been and
 held to nothing of the scene; its weapon and the thing it holds are the
 game's. Between two frames its bones and eye are mixed as a fighter's.
+In `port_game`'s fight with the first-person view poked on, the figure
+from the file and the game's own differ by more than 16 of 255 in 3.5% of
+the pixels about it, at its edges: its colours and its light are the
+game's. The fighter looked through is drawn as outlines
+(`model_SetOutline`), and a body drawn so is the game's own lines: no
+model stands in for it.
+
+**Chanbara's opponents** (`M302` to `M305`) were drawn in a fight by a
+`poke` of `g_fighter_roster_models` for the two fighters' roster entries
+(58 to 61), two by two: none torn.
 
 **The game's own colours.** The game fades the fighters in and out and
 tints chanbara's opponents, the story's henchmen and the practice ninja

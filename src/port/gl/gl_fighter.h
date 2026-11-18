@@ -74,9 +74,12 @@ extern void port_GlFighterTween(s32 phase);
 
 /* The shadows cast from the models (gl_shadow.c, `shadows cast`): which
  * drawn thing of the frame on show the caster node `object` is, if it is
- * drawn from a model of its own (its cloth is not), or -1; and each
- * triangle of that thing's model as the frame posed it, in the world's
- * own units, given to `emit` with its number. */
+ * drawn from a model of its own, or -1 (a cloth drawn smooth is its
+ * fighter's: his slot's triangles are his body's and then his smooth
+ * cloths', numbered on after the body's; a cloth that is the game's own is
+ * -1 and casts its own faces); and each triangle of that thing's model as
+ * the frame posed it, in the world's own units, given to `emit` with its
+ * number. */
 extern s32 port_GlFighterCaster(PortAddress object);
 /* The fighters' layer of the picture into the alpha of `framebuffer`, the
  * shadows' mask: what a model covers is not the ground, as the game's own
