@@ -10,6 +10,7 @@
 #include "common.h"
 #include <psxsdk/libgpu.h>
 #include "src/port/raster.c"
+#include "src/port/paint.c"
 #include "src/port/remaster.c"
 #include "runtime/runtime.h"
 

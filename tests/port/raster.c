@@ -10,6 +10,7 @@
 #include <psxsdk/libgpu.h>
 #include "src/main/psxsdk/libetc/vmode.c"
 #include "src/port/raster.c"
+#include "src/port/paint.c"
 #include "src/port/gpu.c"
 #include "src/port/picture.c"
 #include "port/remaster_stub.h"

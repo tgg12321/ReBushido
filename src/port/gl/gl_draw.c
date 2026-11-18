@@ -36,6 +36,7 @@
 #include "gl_stage.h"
 #include "port_gpu.h"
 #include "port_mods.h"
+#include "port_paint.h"
 #include "port_profile.h"
 #include "port_remaster.h"
 
@@ -3055,6 +3056,8 @@ void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h) {
     }
     /* what was written before is drawn from what it was */
     port_GlDrawBlits();
+    /* video memory as the primitives given leave it (port_paint.h) */
+    port_PaintSyncRead(x, y, w, h);
     port_GlMarkMirror(x, y, w, h);
     port_GlUploadMirror();
     port_GlSceneWroteVram(x, y, w, h);
@@ -3118,6 +3121,8 @@ void port_GlRestoreVram(s32 x, s32 y, s32 w, s32 h) {
         return;
     }
     port_GlDrawBlits();
+    /* video memory as the primitives given leave it (port_paint.h) */
+    port_PaintSyncRead(x, y, w, h);
     port_GlMarkMirror(x, y, w, h);
     port_GlUploadMirror();
 }

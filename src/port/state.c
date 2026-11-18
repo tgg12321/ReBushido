@@ -13,6 +13,7 @@
 #include "common.h"
 #include "port_host.h"
 #include "port_gpu.h"
+#include "port_paint.h"
 #include "port_spu.h"
 #include "bb2.h"
 
@@ -672,6 +673,8 @@ void port_StateSave(void *buf) {
     PortStateSlot *slot;
     s32 i;
 
+    /* video memory as every primitive given leaves it (port_paint.h) */
+    port_PaintSyncAll();
     port_StateFindPieces();
     port_StateClearDeadStack();
     if (!port_StateTrack()) {
@@ -712,8 +715,8 @@ void port_StateSave(void *buf) {
 }
 
 /* The pages written since `buf` was taken, back from it, and the rest
- * of the pieces whole (port_state.h). */
-void port_StateLoad(const void *buf) {
+ * of the pieces whole. */
+static void port_StateLoadPieces(const void *buf) {
     const u8 *in = buf;
     PortStateSlot *slot;
     u32 since;
@@ -789,6 +792,15 @@ void port_StateLoad(const void *buf) {
     port_StateNextEpoch();
 }
 
+/* The state put back (port_state.h), with nothing left to paint first,
+ * and the GPU's settings given to the painter, which keeps its own
+ * outside the state (port_paint.h). */
+void port_StateLoad(const void *buf) {
+    port_PaintSyncAll();
+    port_StateLoadPieces(buf);
+    port_PaintTakeSettings();
+}
+
 /* ---- the hash ---- */
 
 static u32 port_HashRotate(u32 value, s32 bits) {
@@ -850,6 +862,7 @@ u64 port_StateHash(void) {
     u32 bytes = 0;
     s32 i;
 
+    port_PaintSyncAll();
     port_StateFindPieces();
     port_HashStart(&lanes);
     for (i = 0; i < g_port_state_hashed_count; i++) {

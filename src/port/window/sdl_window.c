@@ -48,6 +48,7 @@
 #include "port_host.h"
 #include "port_movie.h"
 #include "port_music.h"
+#include "port_paint.h"
 #include "port_profile.h"
 #include "port_remaster.h"
 #include "port_spu.h"
@@ -1768,6 +1769,7 @@ static void port_DrawPicture(u32 blank, s32 may_tap) {
      * (port_AheadDone) */
     if (is_tapped) {
         if (!g_port_unseen) {
+            port_PaintSyncAll();
             port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
                                 display.is_rgb24, g_port_frame);
         }
@@ -1781,6 +1783,7 @@ static void port_DrawPicture(u32 blank, s32 may_tap) {
         return;
     }
     if (!is_tapped && !g_port_unseen) {
+        port_PaintSyncAll();
         port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
                             display.is_rgb24, g_port_frame);
     }
@@ -2864,6 +2867,7 @@ static void port_AheadDone(void) {
     if (display->is_on && w > 0 && h > 0 && !g_port_ahead_unpainted) {
         s32 was = port_ProfileSwitch(PORT_PROFILE_PICTURE);
 
+        port_PaintSyncAll();
         port_ConvertDisplay(g_port_vram, display->x, display->y, w, h,
                             display->is_rgb24, g_port_frame);
         port_ProfileSwitch(was);
@@ -3168,6 +3172,7 @@ static void port_HurryBlank(u32 blank) {
      * ended (port_AheadDone) */
     if (g_port_has_gl && !g_port_unseen) {
         port_ProfileSwitch(PORT_PROFILE_FINISH);
+        port_PaintSyncAll();
         port_RemasterShow();
         port_GlFinishFrame();
         port_ProfileSwitch(PORT_PROFILE_WINDOW);
@@ -3288,6 +3293,9 @@ static void port_ShowBlank(u32 blank) {
         /* where the frames were run ahead, the card's frame was ended as
          * they ended, with the display they left (port_AheadDone) */
         if (!g_port_unseen) {
+            /* the frame's primitives painted (port_paint.h): what the
+             * frame's end reads of video memory is all of it */
+            port_PaintSyncAll();
             port_RemasterShow();
             port_GlFinishFrame();
         }
@@ -3410,7 +3418,10 @@ static void port_ShowBlank(u32 blank) {
 
 /* The program ends (port_platform.h): what the window did, SDL's leave,
  * and the log's last lines. */
+static void port_StopPainter(void);
+
 static void port_CloseWindow(s32 code) {
+    port_StopPainter();
     if (g_port_audio_tap != NULL) {
         fclose(g_port_audio_tap);
         g_port_audio_tap = NULL;
@@ -3504,6 +3515,60 @@ static void port_CloseWindow(s32 code) {
     g_port_is_open = 0;
 }
 
+/* ---- the software GPU's painter (port_paint.h) ---- */
+
+static SDL_sem *g_port_paint_sem;
+static SDL_Thread *g_port_paint_thread;
+
+static void port_PainterSleep(void) { SDL_SemWait(g_port_paint_sem); }
+
+static void port_PainterWake(void) { SDL_SemPost(g_port_paint_sem); }
+
+static void port_PainterYield(void) { SDL_Delay(0); }
+
+static int SDLCALL port_PainterThread(void *unused) {
+    (void)unused;
+    port_PaintRun();
+    return 0;
+}
+
+/* The primitives painted on a thread of their own, unless
+ * RB_PAINTER=off says the game's thread paints them (to compare). */
+static void port_StartPainter(void) {
+    static const PortPaintHost host = {port_PainterSleep, port_PainterWake,
+                                       port_PainterYield};
+    const char *setting = SDL_getenv("RB_PAINTER");
+
+    if (setting != NULL && strcmp(setting, "off") == 0) {
+        port_Note("the software GPU paints on the game's thread "
+                  "(RB_PAINTER=off)");
+        return;
+    }
+    g_port_paint_sem = SDL_CreateSemaphore(0);
+    if (g_port_paint_sem == NULL) {
+        return;
+    }
+    if (!port_PaintStart(&host)) {
+        return;
+    }
+    g_port_paint_thread =
+        SDL_CreateThread(port_PainterThread, "painter", NULL);
+    if (g_port_paint_thread == NULL) {
+        port_PaintStop();
+        port_Note("the software GPU's painter has no thread: %s",
+                  SDL_GetError());
+    }
+}
+
+static void port_StopPainter(void) {
+    if (g_port_paint_thread == NULL) {
+        return;
+    }
+    port_PaintStop();
+    SDL_WaitThread(g_port_paint_thread, NULL);
+    g_port_paint_thread = NULL;
+}
+
 void port_StartWindow(void) {
     if (g_port_window_options.tap_audio != NULL) {
         g_port_audio_tap = fopen(g_port_window_options.tap_audio, "wb");
@@ -3528,4 +3593,5 @@ void port_StartWindow(void) {
     g_port_ahead_done_hook = port_AheadDone;
     port_SetRunAhead(g_port_settings.run_ahead);
     port_StartNetWindow();
+    port_StartPainter();
 }

@@ -28,6 +28,7 @@
 #include "gl_stage.h"
 #include "gl_tween.h"
 #include "port_gpu.h"
+#include "port_paint.h"
 #include "port_remaster.h"
 
 /* Frames kept: the one being written down, the frame after the one on
@@ -1701,6 +1702,10 @@ s32 port_TweenDraw(s32 phase) {
         none[i] = 0;
     }
     port_GlLoadCounts(none);
+    /* video memory is written here and put back: the software GPU's
+     * painter, which may still be painting the frame after (port_paint.h),
+     * holds still until it is */
+    port_PaintHold();
     port_TweenHoldVram(shown);
     is_held = port_GlMirrorHold();
     port_TweenBegin();
@@ -1749,6 +1754,7 @@ s32 port_TweenDraw(s32 phase) {
     port_GlFinishFrame();
     port_GlShadowSetPhase(-1);
     port_TweenGiveVramBack(shown, is_held);
+    port_PaintLetGo();
     port_GlLoadCounts(aside);
     g_tween.counts.pictures++;
     return TRUE;
