@@ -16,7 +16,10 @@ emulator. The steps are the eleven checks of tools/checks.sh, read from
 it, so that the list is the one CI runs; the window's two builds; the
 play tests' discs; `format.py --check --all`; port-rollback; port-net;
 port-budget (tools/port_budget.py: the window's processor time for a
-fight with run-ahead, held to a budget); and the play tests (tools/playtest.py -j). Each waits only for the
+fight with run-ahead, held to a budget); port-bench (tools/port_bench.py:
+the Windows build on the real graphics card, the processor's and the
+card's time held to the 144 Hz budget, reported only until the targets
+are met); and the play tests (tools/playtest.py -j). Each waits only for the
 steps whose outputs it reads, and never runs beside one that writes
 what it writes (WAITS).
 
@@ -68,10 +71,13 @@ WAITS = {
     # the window's build timed: after every other step, alone on the
     # machine, so that its milliseconds are its own (ALONE)
     'port-budget': ['port-sdl'],
+    # the Windows build on the card, alone as well
+    'port-bench': ['port-sdl-windows'],
     'playtest': ['port', 'discs'],
 }
-# Steps that wait for every other step and run with nothing beside them.
-ALONE = ['port-budget']
+# Steps that wait for every other step and run with nothing beside them,
+# one after another in this order.
+ALONE = ['port-budget', 'port-bench']
 BUILDS = ['game', 'rb-build', 'discs', 'port', 'port-sdl', 'port-sdl-windows']
 # The steps of the gate's own beside the checks: (name, command, where).
 OWN = [
@@ -84,6 +90,9 @@ OWN = [
     ('port-rollback', ['make', 'port-rollback'], 'wsl'),
     ('port-net', None, 'wsl'),  # with its ports (net_base)
     ('port-budget', ['python3', 'tools/port_budget.py'], 'wsl'),
+    # --report-only until the owner's targets are met (docs/PORT.md,
+    # "Measuring on the card"); skips itself where there is no card
+    ('port-bench', [None, 'tools/port_bench.py', '--budget', '--report-only'], 'host'),
     ('playtest', None, 'host'),  # with its runs at once
 ]
 
@@ -140,7 +149,8 @@ def steps_of(args):
     names = {s.name for s in steps}
     for step in steps:
         if step.name in ALONE:
-            step.waits = [s.name for s in steps if s.name != step.name]
+            before = ALONE[:ALONE.index(step.name)]
+            step.waits = [s.name for s in steps if s.name not in ALONE or s.name in before]
         step.waits = [w for w in step.waits if w in names]
         if step.name in args.skip:
             step.state = 'skipped'

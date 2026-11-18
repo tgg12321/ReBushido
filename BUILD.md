@@ -82,7 +82,7 @@ play ([`docs/PLAYING.md`](docs/PLAYING.md); [`docs/PORT.md`](docs/PORT.md),
 and no check uses. It needs **nothing of OpenGL at build time**, though
 it draws the remastered picture with it: the backend looks every GL
 function up through SDL as it starts ("Remastered in the window"), and
-where the machine has no OpenGL 3.3 the window shows the console's own
+where the machine has no OpenGL 4.5 the window shows the console's own
 picture and says so in its log. Both programs have 64-bit pointers; `PORT_BITS=32`
 builds the 32-bit one beside each, into `build/port-sdl/linux32/` or
 `windows32/`.
@@ -138,7 +138,7 @@ whether the machine can build it, and what is missing if not.
 The port's remastered picture ([`docs/PORT.md`](docs/PORT.md),
 "Remastered") is drawn by a graphics card, and it is proved by a
 program that uses no window and no display at all: it takes an OpenGL
-3.3 core context from EGL's surfaceless platform and draws into a
+4.5 core context from EGL's surfaceless platform and draws into a
 framebuffer object, so a machine with no card draws it with Mesa's
 software driver.
 
@@ -206,7 +206,12 @@ the window's two builds, the play tests' discs, the layout, the port's
 rollback self-test, `make port-net`, the window's budget
 (`tools/port_budget.py`: a fight's processor time with `run_ahead 2`
 against `run_ahead 0`, with the HD fighters; docs/PORT.md, "The
-budget") and the play tests. One command runs
+budget"), the bench on the graphics card (`tools/port_bench.py --budget
+--report-only`: the Windows build at 2560 by 1440 on the PC's own card,
+the processor's and the card's time of a fight held to 144 pictures a
+second; docs/PORT.md, "Measuring on the card"; it reports what is over
+and passes until the targets are met, and skips itself where there is
+no card, as in CI) and the play tests. One command runs
 it all, from Windows or inside WSL, each step as soon as the steps whose
 outputs it reads have passed and side by side with the others:
 
@@ -231,7 +236,23 @@ that builds side by side never read one half written. `port-net` takes
 run four at once (`-j`). Each step's output is `build/gate/<step>.log`
 and the summary `build/gate/summary.txt`; after the first failure no step
 is started, those running finish, and the summary says which were not
-run.
+run. `port-budget` and `port-bench` run last, one after the other, with
+nothing beside them (`ALONE`).
+
+The bench alone, from Windows' Python on the PC with the card, after
+`wsl bash tools/build.sh port-sdl-windows`:
+
+```bash
+python tools/port_bench.py                      # every case, a report
+python tools/port_bench.py --case ra1           # one case (ra0 ra1 ra2 ra1-plain ra1-stress)
+python tools/port_bench.py --budget             # the gate's cases against the limits
+python tools/port_bench.py --case ra1 --against main   # and against main's numbers
+```
+
+Its runs are in `build/bench/runs/<case>/` (each with `profile.txt`,
+which `tools/port_profile.py` reads), and every result is kept by commit
+in the main checkout's `build/bench/<commit>/results.json`, so that a
+worktree compares itself to `main` without running `main` again.
 
 ## How a file is built
 

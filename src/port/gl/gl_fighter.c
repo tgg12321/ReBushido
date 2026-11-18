@@ -1964,10 +1964,10 @@ static void port_GlFighterDrawCopies(
         s32 shift = (copy & 1 ? 1 : -1) * ((copy + 1) / 2) * 96;
 
         glUseProgram(g_fighter.program);
-        glUniform2f(g_fighter.at_screen,
-                    (GLfloat)(pose->ofx + paint->offset_x + picture->margin +
-                              shift),
-                    (GLfloat)(pose->ofy + paint->offset_y));
+        glUniform2f(
+            g_fighter.at_screen,
+            (GLfloat)(pose->ofx + paint->offset_x + picture->margin + shift),
+            (GLfloat)(pose->ofy + paint->offset_y));
         port_GlFighterDrawOne(model, pose, slot);
         port_GlFighterDrawCloths(model, view, after, t, pose, slot);
     }
@@ -2061,9 +2061,9 @@ static void port_GlFighterDrawAll(
         port_GlFighterDrawCloths(
             model, view, after != NULL ? &after[slot] : NULL, t, &pose, slot);
         if (!is_tiny) {
-            port_GlFighterDrawCopies(model, view,
-                                     after != NULL ? &after[slot] : NULL, t,
-                                     &pose, slot, paint, &picture);
+            port_GlFighterDrawCopies(
+                model, view, after != NULL ? &after[slot] : NULL, t, &pose,
+                slot, paint, &picture);
         }
         drawn++;
     }

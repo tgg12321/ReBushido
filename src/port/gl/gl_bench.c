@@ -31,7 +31,8 @@ typedef unsigned long long GLuint64;
     GL(void, glGenQueries, (GLsizei, GLuint *))                                \
     GL(void, glQueryCounter, (GLuint, GLenum))                                 \
     GL(void, glGetQueryObjectiv, (GLuint, GLenum, GLint *))                    \
-    GL(void, glGetQueryObjectui64v, (GLuint, GLenum, GLuint64 *))
+    GL(void, glGetQueryObjectui64v, (GLuint, GLenum, GLuint64 *))              \
+    GL(void, glFlush, (void))
 
 #define GL(result, name, args) static result(*name) args;
 PORT_GL_BENCH_FUNCTIONS
@@ -78,6 +79,7 @@ static struct {
     s32 done_count;
     u32 lost;
     u32 timed;
+    s32 flushes;
     s32 fighter_copies;
     s32 stage_copies;
 } g_bench;
@@ -86,8 +88,8 @@ s32 g_port_gpu_on;
 s32 g_port_gpu_base = PORT_GPU_SCENE;
 
 static const char * const g_bench_names[PORT_GPU_PASSES] = {
-    "scene", "vram",    "stage",  "fighters", "shadow",
-    "sky",   "resolve", "tween",  "present",
+    "scene", "vram",    "stage", "fighters", "shadow",
+    "sky",   "resolve", "tween", "present",
 };
 
 const char *port_GlBenchName(s32 pass) {
@@ -130,6 +132,7 @@ void port_GlBenchTime(s32 on) {
     }
     g_port_gpu_on = on;
     g_bench.depth = 0;
+    g_bench.flushes = getenv("RB_GPU_FLUSH") != NULL;
 }
 
 static void port_GlBenchMark(s32 pass) {
@@ -163,6 +166,9 @@ void port_GlBenchEnd(void) {
     port_GlBenchMark(g_bench.depth > 0 && g_bench.depth <= DEPTH_MAX
                          ? g_bench.stack[g_bench.depth - 1]
                          : IDLE);
+    if (g_bench.flushes) {
+        glFlush();
+    }
 }
 
 /* The slot's marks into time per pass, where the card has passed the
@@ -255,6 +261,7 @@ s32 port_GlBenchTake(u32 *blank, u32 *nanoseconds) {
 }
 
 u32 port_GlBenchLost(void) { return g_bench.lost; }
+
 u32 port_GlBenchTimed(void) { return g_bench.timed; }
 
 /* ---- the stress ---- */

@@ -194,6 +194,7 @@ static u32 g_port_blanks_shown;
 static s32 g_port_show_fps;
 static SDL_Texture *g_port_counter;
 static u32 g_port_counter_pixels[COUNTER_W * COUNTER_H_MAX];
+
 /* The times under the counter (`fps = times`): each part's microseconds
  * summed over the blanks in which the game drew a frame, the processor's
  * and the card's, as they are being counted and as last shown; and, by
@@ -207,6 +208,7 @@ typedef struct {
     u32 gpu[PORT_GPU_PASSES];
     u32 gpu_most;
 } PortTimes;
+
 static PortTimes g_port_times;
 static PortTimes g_port_times_shown;
 static u32 g_port_times_count;
@@ -1540,9 +1542,9 @@ static void port_AddGpuTimes(const u32 *nanoseconds) {
 
 /* `NAME 1.2 NAME 0.8 ...`: the TIMES_NAMED largest of `count` sums of
  * microseconds over `blanks`, as milliseconds a blank. */
-static void port_FormatLargest(char *out, size_t room, const char *head,
-                               const u32 *sums, s32 count, u32 blanks,
-                               const char *(*name)(s32), s32 cpu) {
+static void port_FormatLargest(
+    char *out, size_t room, const char *head, const u32 *sums, s32 count,
+    u32 blanks, const char *(*name)(s32), s32 cpu) {
     s32 used[PORT_PROFILE_PARTS + PORT_GPU_PASSES];
     size_t at;
     s32 named;
@@ -1591,17 +1593,16 @@ static s32 port_FormatTimes(char lines[][COUNTER_TEXT_BYTES]) {
         SDL_snprintf(lines[0], COUNTER_TEXT_BYTES,
                      "CPU %.1f MOST %.1f GPU %.1f MOST %.1f",
                      t->cpu_blanks ? (double)cpu / t->cpu_blanks / 1000.0 : 0.0,
-                     t->cpu_most / 1000.0,
-                     (double)gpu / t->gpu_blanks / 1000.0,
+                     t->cpu_most / 1000.0, (double)gpu / t->gpu_blanks / 1000.0,
                      t->gpu_most / 1000.0);
     } else {
         SDL_snprintf(lines[0], COUNTER_TEXT_BYTES, "CPU %.1f MOST %.1f",
                      t->cpu_blanks ? (double)cpu / t->cpu_blanks / 1000.0 : 0.0,
                      t->cpu_most / 1000.0);
     }
-    port_FormatLargest(lines[1], COUNTER_TEXT_BYTES, "C", t->cpu,
-                       PORT_PROFILE_PARTS, t->cpu_blanks, port_ProfileName,
-                       TRUE);
+    port_FormatLargest(
+        lines[1], COUNTER_TEXT_BYTES, "C", t->cpu, PORT_PROFILE_PARTS,
+        t->cpu_blanks, port_ProfileName, TRUE);
     if (t->gpu_blanks == 0) {
         return 2;
     }
@@ -1628,8 +1629,7 @@ static void port_NoteProfile(u32 blank, s32 is_new_frame) {
     for (i = 0; i < PORT_PROFILE_PARTS; i++) {
         ticks[i] /= PORT_HOST_TICKS_PER_MICROSECOND;
     }
-    g_port_frame_blanks[blank % sizeof(g_port_frame_blanks)] =
-        (u8)is_new_frame;
+    g_port_frame_blanks[blank % sizeof(g_port_frame_blanks)] = (u8)is_new_frame;
     if (g_port_profile_file != NULL) {
         fprintf(g_port_profile_file, "b %u %d", blank, is_new_frame);
         for (i = 0; i < PORT_PROFILE_PARTS; i++) {
@@ -1720,9 +1720,9 @@ static void port_DrawCounter(void) {
         port_PicturePlace(window_w, window_h, &picture);
         port_PlaceCounter(
             &picture, text_w, box_h, g_port_settings.fps_corner, &place);
-        port_GlShowPixels(g_port_counter_pixels, text_w, box_h, window_w,
-                          window_h, place.x, place.y, place.w, place.h, FALSE,
-                          TRUE);
+        port_GlShowPixels(
+            g_port_counter_pixels, text_w, box_h, window_w, window_h, place.x,
+            place.y, place.w, place.h, FALSE, TRUE);
         return;
     }
     SDL_UpdateTexture(g_port_counter, NULL, g_port_counter_pixels,

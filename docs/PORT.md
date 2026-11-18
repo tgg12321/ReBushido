@@ -29,7 +29,7 @@ of stage 7 the memory card and the movie. Beyond the seven, the
 roadmap's item 7: the scene drawn again by a graphics card at the
 window's resolution, from the geometry the PlayStation threw away,
 which is what "Graphics: Remastered" means ("Remastered"); the window
-takes an OpenGL 3.3 context for it and F2 changes picture as the game
+takes an OpenGL 4.5 context for it and F2 changes picture as the game
 runs ("The window", "Remastered in the window").
 
 ## Where it stands
@@ -48,7 +48,7 @@ runs ("The window", "Remastered in the window").
 | The picture | done, into the port's own video memory and out to files: `src/port/raster.c`, the PlayStation's GPU in C. The flat screens are the emulator's to the pixel, a fight's frames but for three pixels in a thousand ("The picture") |
 | 64 bits | done: the program has 64-bit pointers, the game's addresses stay 32-bit numbers below 4 GB, and it is held to the 32-bit program and to the emulator ("64 bits") |
 | A window, a sound card, the PC's keys and controllers | built on SDL 2 for Linux and for Windows (`make port-sdl`, `make port-sdl-windows`) and held to the build without a window by numbers: the same traces, pictures and samples ("The window") |
-| "Graphics: Remastered" | done in the window: the scene drawn again by a graphics card at the window's resolution, from the geometry the PlayStation threw away — OpenGL 3.3 core, high resolution, sub-pixel corners, textures in perspective, true-colour mixing, the 2D layer crisp; supersampled edges, the whole stage drawn, a wider picture at 16:9, and the fighters' shadows as a soft darkening of the ground they fall on and never of the fighter standing in one ("The shadows"). Proved with nothing shown against the software GPU's own picture, and hung on the window, where F2 changes picture as the game runs ("Remastered", "Remastered in the window") |
+| "Graphics: Remastered" | done in the window: the scene drawn again by a graphics card at the window's resolution, from the geometry the PlayStation threw away — OpenGL 4.5 core, high resolution, sub-pixel corners, textures in perspective, true-colour mixing, the 2D layer crisp; supersampled edges, the whole stage drawn, a wider picture at 16:9, and the fighters' shadows as a soft darkening of the ground they fall on and never of the fighter standing in one ("The shadows"). Proved with nothing shown against the software GPU's own picture, and hung on the window, where F2 changes picture as the game runs ("Remastered", "Remastered in the window") |
 | The memory card | done: a standard card image of 128 KB a slot, under the BIOS calls the game makes ("The memory card"). The card the port writes for the options page is byte for byte the one the emulator's BIOS wrote |
 | The movie | done: the opening plays, 3,320 frames of 320 by 240 at 29.97 a second, by the overlay's own C over a picture decompressor in C ("The movie"). Its sound is the drive's own, as the console has it |
 
@@ -1811,7 +1811,7 @@ this frame had drawn into.
 
 There is no window and no display. The prover
 (`src/port/gl/gl_main.c`, built by `tools/port_gl_build.py` into
-`build/port-gl/rebushido-gl`) takes an OpenGL 3.3 core context from
+`build/port-gl/rebushido-gl`) takes an OpenGL 4.5 core context from
 EGL's surfaceless platform and draws into a framebuffer object; Mesa's
 software driver is the card. Nothing was installed for it: Ubuntu
 24.04's `libegl-dev`, `libegl-mesa0` and `mesa-libgallium`, which the
@@ -3548,7 +3548,7 @@ The window the player runs shows either picture, and **F2 changes between
 them while the game runs** (`src/port/window/sdl_window.c`). What the
 prover does with EGL and no display, the window does with SDL:
 
-- the window is made with `SDL_WINDOW_OPENGL` and a 3.3 core context is
+- the window is made with `SDL_WINDOW_OPENGL` and a 4.5 core context is
   asked for (`SDL_GL_SetAttribute`, `SDL_GL_CreateContext`), and
   `port_GlStart(SDL_GL_GetProcAddress, &options)` hands the renderer the
   context. Nothing of OpenGL is linked to: `gl_draw.c` looks every
@@ -3619,7 +3619,7 @@ prover does with EGL and no display, the window does with SDL:
   machine's screen may not have, which is how a player's 2,560 by 1,369
   is reproduced here.
 
-**Where there is no OpenGL 3.3** — an old card, or SDL told to show
+**Where there is no OpenGL 4.5** — an old card, or SDL told to show
 nothing — the window is made again without a context and SDL's renderer
 shows the software GPU's picture, exactly as it did before there was a
 card path: the remastered renderer has no backend then, so
@@ -3667,7 +3667,7 @@ SDL is handed it is that build's PNG pixel for pixel — 685 pictures,
 is proved" again, on this tree, and it is the path a machine with no
 OpenGL takes as well, since SDL's dummy driver has none. With Graphics Remastered the window was run through
 SDL's `offscreen` driver on Mesa's software renderer (`llvmpipe`), which
-gives a real 3.3 core context with nothing on screen: the card path
+gives a real 4.5 core context with nothing on screen: the card path
 starts (OpenGL 4.5 core, Mesa 25.2, llvmpipe), the scale follows the
 window (3 at 960 by 720 where the game's display is 320 wide, 2 where it
 is 640), the picture changes at a blank, and the window's own pixels
@@ -4383,6 +4383,120 @@ and the state kept and put back by more than 4 ms; where `run_ahead 2`
 costs more than twice `run_ahead 0`, or the cloth more than a fifth of
 it; where the cloth is kept out more than once a frame written down
 (0.4 here); or where more than 64 colour tables are sent (4 here).
+
+### Measuring on the card
+
+The owner's target (2026-11-18): **144 pictures a second at 2,560 by
+1,440**, with run-ahead, and room for four players online, a larger
+stage and richer models, on his Ryzen 9 9950X3D and RTX 3090. That is
+**6.94 ms a refresh**. Mesa's software OpenGL says nothing of a real
+card, so the measure is now taken on the card itself.
+
+**OpenGL 4.5.** The window asks for a 4.5 core context (compute
+shaders, direct state access, persistent mapped buffers:
+`GL_WANTED_MAJOR`, `sdl_window.c`), and the provers' EGL for the same
+(`gl_main.c`); a PC without it shows the console's own picture and the
+log says "It needs OpenGL 4.5". The shaders are still `#version 330`,
+which a 4.5 context runs as they are; new ones may be `#version 450`.
+Mesa's llvmpipe in WSL gives 4.5 core, so the provers keep working.
+
+**The card's time per pass** (`src/port/gl/gl_bench.h`): each pass of
+the remastered picture is bracketed by two of the card's timestamps
+(`glQueryCounter(GL_TIMESTAMP)`), `PORT_GPU_BEGIN`/`PORT_GPU_END`: the
+game's primitives (`scene`, or `tween` while a picture between frames
+draws them again), video memory sent and stretched (`vram`), the ground
+as one mesh (`stage`), the HD fighters with their cloth and layer
+(`fighters`), the shadows (`shadow`), the sky, the samples averaged down
+(`resolve`) and the picture into the window (`present`). A pass inside a
+pass counts to the inner one. What lies between passes, while the
+processor works out what to draw next, is no pass's, so a blank's sum is
+the card's busy time and not its wall time. The answers are read a few
+blanks later from a ring of eight blanks, never waited for. A pass the
+processor feeds slowly from inside still counts the card's waiting;
+`RB_GPU_FLUSH=1` hands the card each pass as it ends (`glFlush`), which
+settles whether a pass's time is the card's own (the stage and the sky
+were the same with it, so theirs is). Off, a bracket is one test of a
+flag.
+
+`--profile FILE` now writes, after its `parts` line, a `gpu_parts` line,
+and for each blank the card has finished a `g BLANK` line of
+microseconds per pass (a few lines after the blank's own `b` line);
+`tools/port_profile.py` reports both. The counter has a third state:
+**F3** steps through off, on and **times** (`fps = times` in
+`rebushido.cfg`, "Counter: With times" in the menu), which adds three
+lines under it, the means of the last half second's frames: the
+processor's work and the card's time with their worst, then the four
+largest parts of each (`C CLOTH 8.2 AHEAD 6.6 ...`, `G STAGE 4.0 SKY
+3.1 ...`). So a picture of the owner's screen says where the time goes.
+All the game's work is on the window's thread; SDL's sound thread only
+copies from the ring.
+
+**The benchmark** (`tools/port_bench.py`, BUILD.md "The gate"): the
+Windows build with `--hidden` on the PC's own card, SDL's dummy sound,
+its own settings (`tools/port_budget.py`'s, every default on), no cards,
+at 2,560 by 1,440, unpaced (`--fast`, one picture a blank), the five
+mods, through port_game's plan with Kannuki against Mikado on Tatara
+Shrine (the plan's addresses are the Windows program's own, from its
+`.sym`: the Linux build's plan never leaves "fight (loading)"). The
+cases: `ra0`, `ra1`, `ra2`, `ra1-plain` (fighter models off) and
+`ra1-stress`, `--bench-stress fighters=4,stage=2`: each HD fighter drawn
+twice, the copy beside him, and the ground's mesh drawn twice over
+itself, for four players on a larger stage. The stress touches nothing
+of the game; the copies' cloth is the same pose's, kept out once, and
+they cast no shadow, so the processor's share of four players is
+understated by about a cloth and a shadow per fighter. Each case gives,
+over the fight's blanks, the processor's work (every part but the waits
+for the clock and the display) and the card's time: medians, 95th and
+99th centiles and the worst, the parts' medians, the hitches (blanks
+over 6.94 ms) and the stalls (blanks over three times a frame's median:
+a first use). Every result is kept in the main checkout's
+`build/bench/<commit>/results.json`; `--against REV` compares with
+another commit's without running it again.
+
+**Measured** (2026-11-18, `9f55dce56` with this instrument, RTX 3090,
+driver 616.92; another agent's runs were on the machine at the same
+time, so a millisecond either way is noise). A blank in which the game
+drew a fight frame, milliseconds:
+
+| case | processor median | 95% | worst | card median | 95% | hitches |
+| --- | --- | --- | --- | --- | --- | --- |
+| `run_ahead 0` | 29.1 | 38.4 | 92.4 | 10.7 | 14.0 | 62% |
+| `run_ahead 1` | 27.6 | 32.2 | 65.1 | 9.7 | 10.6 | 50% |
+| `run_ahead 2` | 26.3 | 31.2 | 70.8 | 12.8 | 15.8 | 50% |
+| `run_ahead 1`, fighter models off | 12.8 | 14.7 | 34.9 | 7.7 | 8.7 | 52% |
+| `run_ahead 1`, four fighters, the ground twice | 26.1 | 33.6 | 62.7 | 11.8 | 14.5 | 91% |
+
+Where it goes, `run_ahead 1`, medians of a frame's blank:
+
+- **the processor (27.6 ms)**: the HD cloth 8.2, the frame run ahead
+  6.6, the picture between frames 3.8, the software GPU 2.3, the
+  shadows 1.9, the side channel 1.2, the game 1.2, the card's batches
+  0.8, the sound 0.6. With the fighters' models off, 12.8: the HD
+  fighters cost the processor some 15 ms a frame.
+- **the card (9.7 ms)**: the ground's mesh 4.0, the sky 3.1, the
+  shadows 0.8, video memory 0.7, the fighters 0.6, the resolve 0.4, the
+  window 0.1, the game's own primitives under 0.1. The fighters are
+  cheap for the card; the ground and the sky are not, both drawn at the
+  supersampled size (`antialiasing = 2`), and the stress's second ground
+  takes the stage to 6.2.
+- **the stalls**: the fight's first frames (90 ms at its second blank,
+  most of it the side channel), then every frame whose cloth is new.
+
+So the processor is the limit, by four times the budget, and the card
+too, by half again: **neither fits 144 a second today**, and the card
+does not fit 85 (11.8 ms) with run-ahead 2. What fails is listed by the
+budget below.
+
+**The budget** (`port_bench.py --budget`, the gate's step `port-bench`,
+run alone after every other with `port-budget`): the cases `ra0`, `ra1`,
+`ra2` and `ra1-stress`, each held to 6.94 ms for the 95th centile of a
+frame's work on the processor and on the card; with `run_ahead 1` also
+any blank's work, at most 1% of blanks over 6.94 ms and no blank over
+twice it. Every one of them is over today; the gate runs the step with
+`--report-only`, so it says what is over and passes, **until the
+targets are met: then take `--report-only` out of `OWN` in
+`tools/gate.py`**. Where there is no card (CI, WSL), no Windows build,
+no disc or no hd mod, it says so and passes.
 
 ### Input lag
 
