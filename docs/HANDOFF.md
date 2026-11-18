@@ -35,7 +35,7 @@ play is [`PLAYING.md`](PLAYING.md); online play is
 |---|---|---|
 | Picture fixes | fighters' joint gaps (16.7% of body faces lost their exact place), floor z-fighting on tile seams, fighters hidden by terraces (the console's slot rule), movies and the title black under Remastered, the pause dropping to the old look, full screen at start | PORT.md |
 | Shadows | `cast`: from the fighters', weapons' and HD models' own faces; never on a fighter (also lying down, also between frames); on floors built of stage pieces; at the feet where the game casts none | PORT.md, "The shadows" |
-| Fighters | all 37 models and 58 weapons rebuilt in HD from the disc (`tools/fighter_hd.py`), skinned on the game's bones, colour tables and tints, exact joints; the cloth depth-tested; HD cloth pushed outside the body (see below); hitboxes untouched | PORT.md, "The fighters' own models" |
+| Fighters | all 37 models and 58 weapons rebuilt in HD from the disc (`tools/fighter_hd.py`), skinned on the game's bones, colour tables and tints, exact joints; HD cloth, a smooth surface through the game's own cloth points, pushed 6 units outside the HD body (cloth inside it: 9.2% to 0.23%); the first-person tiny figure; hitboxes untouched | PORT.md, "The fighters' own models" |
 | Scene | night sky on 28 open stages, walls thinned before a fighter, the stage's static pieces (railings, fences, walls, props: 412 on 34 stages) built as meshes, HD stage textures by page, smooth per-pixel light, effects placed exactly | PORT.md |
 | 2D | the `ui` mod (lettering in OFL fonts, Archivo and Marcellus), the English top menu, the `art` mod (every 2D texture 6x from the disc), the title picture, fades kept remastered | MODS.md |
 | Mods | `mods/` with manifests; textures, models, skies, music (`.ogg`/`.wav`), a stage's files, weapons and motions (`weapons/NAME.txt`, `motions/`) | MODS.md |
@@ -71,8 +71,10 @@ play is [`PLAYING.md`](PLAYING.md); online play is
 6. **2D still only upscaled**: setup mode's pages, slash mode, the
    endings, other modes' results, "Waiting for Challenger", portraits,
    the loading maps (each a table row in `tools/port_ui.py`).
-7. **Older open items**: `port_other_fight`'s 20 out-of-order pictures
-   (the cave rails); music per stage (the game shares five pieces);
+7. **Older open items**: `port_fps_prove.py` still fails on
+   `port_other_fight` alone (14 to 20 out-of-order pictures between
+   frames on the cave stage, where rails before the camera change colour
+   from frame to frame in the game's own pictures); music per stage (the game shares five pieces);
    `src/port/window/` outside lint and count; the music a tenth louder
    than the emulator's; the original's bugs left alone (REBUSHIDO.md).
 
@@ -97,4 +99,10 @@ play is [`PLAYING.md`](PLAYING.md); online play is
 - The picture provers use `build/port-gl/rebushido-gl`, built only by
   `python3 tools/port_gl_build.py`: rebuild it before
   `tools/port_gl_prove.py` / `port_fps_prove.py` / `port_stage_prove.py`.
-- Pictures for the owner go in `Desktop\ReBushido Screenshots`.
+- Pictures for the owner go in `Desktop\ReBushido Screenshots`; this
+  session's are in its `Session 2026-11-17` and `Investigation
+  2026-11-16` folders.
+- Six empty folders `.claude/worktrees/agent-*` were held open by this
+  session's agents when it closed; delete them (they are no worktrees and
+  hold nothing). `tmp\sdl-dl` can go too; `tmp\pcsx-redux`,
+  `tmp\redux-portable`, `tmp\tools` (Blender) and `tmp\mods` stay.
