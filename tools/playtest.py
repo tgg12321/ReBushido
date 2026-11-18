@@ -1267,7 +1267,12 @@ class Suite:
                 break
             self.say("%s on %s ..." % (test.name, label))
             cards_from = done[-1][1].folder if done and test.cards == "keep" else None
-            run = run_on_disc(test, discs[number - 1], self.names, self.launch, number, label, cards_from, self)
+            try:
+                run = run_on_disc(test, discs[number - 1], self.names, self.launch, number, label, cards_from,
+                                  self)
+            except OSError as e:
+                run = Run()
+                run.fatal = "%s on %s: the run could not be made: %s" % (test.name, label, e)
             done.append((number, run))
             if run.fatal:
                 with self.lock:

@@ -29,6 +29,8 @@ import time
 # Starting a process sets the error mode of this whole program for a
 # moment: one thread at a time.
 _START = threading.Lock()
+# The hidden desktop's handle, once it is made (_run_windows).
+_DESKTOP = []
 
 
 class Result:
@@ -231,7 +233,14 @@ def _run_windows(cmd, cwd, log_path, timeout, watch):
 
     result = Result()
     handles = []
-    desktop = check(user32.CreateDesktopW(DESKTOP, None, None, 0, GENERIC_ALL, None), "CreateDesktop")
+    # One hidden desktop for all of this program's runs, made by the first
+    # and held until the program ends: a desktop goes when its last handle
+    # is closed, and one run's closing it as another opens it by its name
+    # fails the second (access denied).
+    with _START:
+        if not _DESKTOP:
+            _DESKTOP.append(check(user32.CreateDesktopW(DESKTOP, None, None, 0, GENERIC_ALL, None),
+                                  "CreateDesktop"))
     try:
         job = check(kernel32.CreateJobObjectW(None, None), "CreateJobObject")
         handles.append(job)
@@ -322,5 +331,4 @@ def _run_windows(cmd, cwd, log_path, timeout, watch):
     finally:
         for handle in reversed(handles):
             kernel32.CloseHandle(handle)
-        user32.CloseDesktop(desktop)
     return result
