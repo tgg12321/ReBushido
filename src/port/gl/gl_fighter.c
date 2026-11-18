@@ -1779,6 +1779,8 @@ static void port_GlFighterDrawCloths(
         if (!is_made) {
             continue;
         }
+        /* the card may have made it just now, with programs of its own */
+        glUseProgram(g_fighter.program);
         if (drawn++ == 0) {
             glUniform1i(g_fighter.at_cloth, 1);
             glUniform1f(g_fighter.at_cloth_near,

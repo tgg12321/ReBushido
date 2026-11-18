@@ -1745,6 +1745,9 @@ static void port_GlShadowCast(void) {
         s32 next = g_shadow.newest == 0 ? 1 : 0;
 
         port_GlShadowGather(&g_shadow.cast[next]);
+        /* the card may have posed a body or made a cloth, with programs
+         * and buffers of its own (gl_fighter_card.h) */
+        port_GlForgetState();
         g_shadow.older = g_shadow.newest;
         g_shadow.newest = next;
         one = &g_shadow.cast[next];

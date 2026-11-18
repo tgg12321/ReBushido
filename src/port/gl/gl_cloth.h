@@ -14,7 +14,9 @@
  * once when the cloth is made: the subdivision and the fit are linear in
  * the points. The texture points are the faces' own, carried linearly
  * within each face of the game's, so the texture is laid as the game lays
- * it. Nothing here draws or talks to GL, and nothing is the game's. */
+ * it. The surface is made from those sums on the card
+ * (gl_fighter_card.h); nothing here draws or talks to GL, and nothing is
+ * the game's. */
 
 #include "common.h"
 
@@ -69,49 +71,12 @@ typedef struct {
 
 extern void port_GlClothSums(const PortGlCloth *cloth, PortGlClothSums *out);
 
-/* What a place of the surface is held by before its normal is made (the
- * body it must stay out of, below), or NULL. The places are shared out
- * among the helpers (port_GlParallel, gl_load.h): `worker` names which
- * one holds this place, for room of the hold's own that only it uses. */
-typedef void (*PortGlClothHold)(void *context, double *place, s32 worker);
-
-/* The surface through `points` (three numbers each, any units) into `out`,
- * port_GlClothVertices of them; each of its places given to `hold` first
- * where there is one, the places shared out among the helpers (each
- * place its own work, so the same to the bit). */
-extern void port_GlClothPose(
-    const PortGlCloth *cloth, const double *points, PortGlClothHold hold,
-    void *context, PortGlClothVertex *out);
-
 /* A square root: the program is linked with no maths library. */
 extern double port_GlClothRoot(double x);
 
-/* ---- the body a cloth is kept out of ---- */
-
-/* The game moved a cloth's points round its own low body; the model drawn
- * in its place is fuller and smoother, and would come through the cloth
- * the game moved. So the cloth is kept outside the model's own surface as
- * the picture poses it: the surface is its vertices and their normals,
- * and a point's distance from it is the vertices' about the point, each
- * one's distance along its own normal, weighed by how near it is (a
- * smooth sum, so that a point moves smoothly from picture to picture). A
- * point nearer than `gap` to the outside, or inside, is put out to `gap`
- * along their normal. Nothing of it goes back to the game. */
-typedef struct PortGlClothBody PortGlClothBody;
-
-extern PortGlClothBody *port_GlClothBodyMake(void);
-extern void port_GlClothBodyFree(PortGlClothBody *body);
-/* The body's vertices as posed now: `count` places and normals (a normal
- * of nought is no part of the surface). FALSE where there is no room. */
-extern s32 port_GlClothBodySet(PortGlClothBody *body, const float *places,
-                               const float *normals, s32 count);
-/* `point` (three numbers) put out of the body to `gap`. Whether it was
- * inside the body's surface. */
-extern s32 port_GlClothBodyHold(
-    const PortGlClothBody *body, double *point, double gap);
-/* ... by helper `worker` (port_GlParallel), which may run beside the
- * others. */
-extern s32 port_GlClothBodyHoldBy(
-    const PortGlClothBody *body, double *point, double gap, s32 worker);
+/* The cloth is kept out of the model's body, and its normals made, on
+ * the card (gl_fighter_card.h): the game moved a cloth's points round
+ * its own low body, and the model drawn in its place is fuller. Nothing
+ * of it goes back to the game. */
 
 #endif /* PORT_GL_CLOTH_H */

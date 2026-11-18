@@ -21,6 +21,9 @@
 /* Makes the compute shaders. NULL, or why the card cannot do it. */
 extern const char *port_GlFighterCardStart(void *(*getproc)(const char *));
 
+/* Each of these leaves no program in use: the caller binds its own again
+ * (asking GL which was in use would wait on the driver's thread). */
+
 /* A body posed: the model's vertex buffer (PortFighterVertex, as the
  * file has it) and how many, each bone's world matrix in the world's
  * units (a column after a column, as u_world has it) and each joint's
