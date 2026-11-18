@@ -104,6 +104,14 @@ What that asks:
 - **Run-ahead and rollback cheap** at four players: the state saved by
   pages written, the step itself lean (`-O2`), sound mixing out of
   re-run frames.
+- **The parallel play tests are not yet trustworthy under load.** On
+  2026-11-18 the gate's four-at-once run failed seven tests at once, all
+  PlayStation-side runs that never reached a checkpoint ("gave up at blank
+  4092") while the owner was playing; the same 17 passed one at a time
+  (`playtest -j 1`). Something in the emulator's runs still depends on
+  the host's speed (the emulated CD's timing, a wall-clock wait in the
+  runner): find it before trusting `-j 4` again; until then the gate's
+  play tests are run with `-j 1` when a run fails.
 - **Profiling built in** for the owner: `--profile` and F3 showing CPU
   and GPU time per part, so a report from his PC says where the time
   goes.
