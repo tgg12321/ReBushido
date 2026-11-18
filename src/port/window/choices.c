@@ -95,6 +95,13 @@ const PortChoice g_port_choices[] = {
      2,
      {"off", "on"},
      {"Off", "On"}},
+    {"stage_props_mesh",
+     "Railings and walls as meshes",
+     "What stands on the ground drawn still, from meshes of its own",
+     PORT_TAKES_NOW,
+     2,
+     {"off", "on"},
+     {"Off", "On"}},
     {"shadows",
      "Shadows",
      "The game's black ones, the ground darkened, or cast by the body",
@@ -174,9 +181,9 @@ const s32 g_port_choice_count =
 
 const PortChoiceGroup g_port_choice_groups[PORT_CHOICE_GROUPS] = {
     {"The window", 0, 6},
-    {"The remastered picture", 6, 11},
-    {"Mods", 17, 4},
-    {"Controls", 21, 1},
+    {"The remastered picture", 6, 12},
+    {"Mods", 18, 4},
+    {"Controls", 22, 1},
 };
 
 /* `name = word` into `line`: FALSE if it does not fit. */

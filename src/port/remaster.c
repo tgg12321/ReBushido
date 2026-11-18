@@ -932,6 +932,150 @@ static void port_RemasterNoteOpenTiles(void) {
     }
 }
 
+/* ---- the stage's pieces (port_remaster.h, PortStagePiece) ---- */
+
+static PortStagePiece g_stage_pieces[PORT_STAGE_PIECES_MAX];
+static s32 g_stage_piece_count;
+/* the view's version the pieces were taken down for, and whether they
+ * have been at all */
+static s32 g_stage_pieces_version;
+static s32 g_stage_pieces_taken;
+/* what of each piece the renderer draws it by, as it was taken down: a
+ * piece that is no longer so has been changed by the game (a prop cut
+ * down, what remains of it moved) and is not the mesh's */
+typedef struct {
+    u8 kind;
+    u8 draw_flags;
+    s16 mesh;
+    s16 mesh_block;
+    s16 light_setup_index;
+    MATRIX world;
+} PortPieceWas;
+static PortPieceWas g_stage_piece_was[PORT_STAGE_PIECES_MAX];
+
+static void port_RemasterPieceWas(PortPieceWas *was, const SceneNode *node) {
+    was->kind = node->kind;
+    was->draw_flags = node->draw_flags;
+    was->mesh = node->mesh;
+    was->mesh_block = node->mesh_block;
+    was->light_setup_index = node->light_setup_index;
+    was->world = node->world;
+}
+
+static s32 port_RemasterPieceIsAsWas(const PortPieceWas *was,
+                                     const SceneNode *node) {
+    s32 i;
+
+    if (was->kind != node->kind || was->draw_flags != node->draw_flags ||
+        was->mesh != node->mesh || was->mesh_block != node->mesh_block ||
+        was->light_setup_index != node->light_setup_index) {
+        return FALSE;
+    }
+    for (i = 0; i < 3; i++) {
+        if (was->world.m[i][0] != node->world.m[i][0] ||
+            was->world.m[i][1] != node->world.m[i][1] ||
+            was->world.m[i][2] != node->world.m[i][2] ||
+            was->world.t[i] != node->world.t[i]) {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+/* Every piece of the stage, as the renderer would set it up
+ * (render_SetupNode): its mesh, its matrix and the light matrix it is lit
+ * through. The turning of the lights is the game's own arithmetic
+ * (math_MulMatrix, on the coprocessor), and the whole of the coprocessor
+ * is put back afterwards: this runs while the game's frame is drawn. */
+static void port_RemasterTakeDownPieces(void) {
+    PortGte saved = g_port_gte;
+    s32 count = 0;
+    StageNode *pieces = stage_GetPieces(&count);
+    s32 i;
+    s32 j;
+
+    if (count > PORT_STAGE_PIECES_MAX) {
+        count = PORT_STAGE_PIECES_MAX;
+    }
+    if (pieces == NULL || count < 0) {
+        count = 0;
+    }
+    for (i = 0; i < count; i++) {
+        SceneNode *node = &pieces[i].node;
+        PortStagePiece *one = &g_stage_pieces[i];
+        LightSetup *lights = &g_light_setups[node->light_setup_index];
+        MATRIX turned;
+
+        one->node = (PortAddress)node;
+        one->mesh = 0;
+        if (node->mesh_block >= 0 && node->mesh_block < RELOC_BLOCK_COUNT &&
+            g_reloc_tables[node->mesh_block] != NULL) {
+            one->mesh =
+                (PortAddress)ADDR(g_reloc_tables[node->mesh_block][node->mesh]);
+        }
+        one->kind = node->kind;
+        for (j = 0; j < PORT_GTE_MATRIX_ELEMENTS_PORT; j++) {
+            one->rotation[j] = node->world.m[j / 3][j % 3];
+        }
+        one->pad = 0;
+        for (j = 0; j < 3; j++) {
+            one->place[j] = node->world.t[j];
+        }
+        if (node->kind == NODE_KIND_ROTATED) {
+            math_MulMatrix(&lights->lmat, &node->world, &turned);
+        } else {
+            turned = lights->lmat;
+        }
+        for (j = 0; j < PORT_GTE_MATRIX_ELEMENTS_PORT; j++) {
+            one->light_matrix[j] = turned.m[j / 3][j % 3];
+        }
+        one->light_matrix[PORT_GTE_MATRIX_ELEMENTS_PORT] = 0;
+        one->lights = lights;
+        port_RemasterPieceWas(&g_stage_piece_was[i], node);
+    }
+    g_stage_piece_count = count;
+    g_port_gte = saved;
+}
+
+/* Which of the stage's pieces this frame queued and stand as they were
+ * taken down (PortStageView.pieces): the renderer's queue is whole by the
+ * time it draws the tiles, the pieces being queued with them
+ * (stage_Draw). */
+static void port_RemasterNotePieces(void) {
+    StageNode *pieces;
+    void **queue;
+    s32 i;
+
+    if (!g_stage_pieces_taken ||
+        g_stage_pieces_version != g_stage_view.version) {
+        port_RemasterTakeDownPieces();
+        g_stage_pieces_version = g_stage_view.version;
+        g_stage_pieces_taken = TRUE;
+    }
+    for (i = 0; i < PORT_STAGE_PIECE_WORDS; i++) {
+        g_stage_view.pieces[i] = 0;
+    }
+    pieces = stage_GetPieces(NULL);
+    for (queue = g_render_queue; queue != g_render_queue_end; queue++) {
+        StageNode *one = (StageNode *)*queue;
+        s32 index;
+
+        if (one < pieces || one >= pieces + g_stage_piece_count) {
+            continue;
+        }
+        index = (s32)(one - pieces);
+        if (port_RemasterPieceIsAsWas(&g_stage_piece_was[index], &one->node)) {
+            g_stage_view.pieces[index >> OPEN_WORD_SHIFT] |=
+                1U << (index & OPEN_BIT_MASK);
+        }
+    }
+}
+
+const PortStagePiece *port_RemasterStagePieces(s32 *count) {
+    *count = g_stage_pieces_taken ? g_stage_piece_count : 0;
+    return g_stage_pieces;
+}
+
 /* The view the renderer draws the stage's tiles with this frame, and which
  * of them it opened up (port_remaster.h). */
 void port_RemasterNoteStageView(
@@ -960,6 +1104,7 @@ void port_RemasterNoteStageView(
     g_stage_view.ofx = (s32)port_GteReadControl(PORT_GTE_OFX);
     g_stage_view.ofy = (s32)port_GteReadControl(PORT_GTE_OFY);
     port_RemasterNoteOpenTiles();
+    port_RemasterNotePieces();
     g_stage_view.frames++;
 }
 

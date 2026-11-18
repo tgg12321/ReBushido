@@ -2543,6 +2543,7 @@ void port_GlSetOptions(const PortGlOptions *options) {
      * tiles as the game emitted them, and the shadows the game's own
      * black polygons */
     port_GlStageSetOn(options->is_exact ? 0 : options->is_stage_mesh);
+    port_GlStageSetPropsOn(options->is_exact ? 0 : options->is_stage_props);
     port_GlShadowSetStrength(options->is_exact ? 0 : options->shadows);
     port_GlFighterSetOn(options->is_exact ? 0 : options->is_fighter_models);
     port_GlSceneSetOn(!options->is_exact);
@@ -2754,6 +2755,7 @@ const char *port_GlStart(
     /* the comparison with the software GPU's own picture wants the
      * tiles as the game emitted them, and the shadows as it drew them */
     port_GlStageSetOn(options->is_exact ? 0 : options->is_stage_mesh);
+    port_GlStageSetPropsOn(options->is_exact ? 0 : options->is_stage_props);
     port_GlShadowSetStrength(options->is_exact ? 0 : options->shadows);
     /* the fighters' own models (gl_fighter.h): a card that cannot have
      * them draws the game's own fighters */

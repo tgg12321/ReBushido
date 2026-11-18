@@ -55,6 +55,11 @@ static u16 g_stage_run_entries[STAGE_MAX_RUN_ENTRIES];
 static u8 g_stage_cell_flags[STAGE_CELLS * STAGE_CELLS];
 
 static s32 g_stage_tile_count;
+#if RB_REMASTER_VIEW
+/* How many pieces the stage file had, for the remastered picture's
+ * meshes of them (stage_GetPieces). */
+static s32 g_stage_piece_count;
+#endif
 /* The way the camera looked when the stage was last drawn. */
 static s32 g_stage_view_yaw;
 
@@ -991,6 +996,9 @@ void stage_ReadCells(u16 *stream, s32 block_id) {
             &piece->node.rot, &piece->node.world);
         piece->is_collected = 0;
     }
+#if RB_REMASTER_VIEW
+    g_stage_piece_count = count;
+#endif
     for (i = 0; i < STAGE_CELLS; i++) {
         for (j = 0; j < STAGE_CELLS; j++) {
             g_stage_cell_runs[i][j] = -1;
@@ -1031,6 +1039,15 @@ StageTile *stage_GetTiles(s32 *count) {
         *count = g_stage_tile_count;
     }
     return g_stage_tiles;
+}
+
+/* The stage's pieces and how many there are, for the remastered
+ * picture's meshes of what stands on the ground (port_remaster.h). */
+StageNode *stage_GetPieces(s32 *count) {
+    if (count != NULL) {
+        *count = g_stage_piece_count;
+    }
+    return g_stage_nodes;
 }
 #endif
 

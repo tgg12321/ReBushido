@@ -31,6 +31,22 @@ extern const char *port_GlStageStart(void *(*getproc)(const char *name));
  * on; 2 on for every stage whatever the measurements say (gl.h,
  * `is_stage_mesh`). */
 extern void port_GlStageSetOn(s32 on);
+/* Whether what stands on the ground -- the stage's pieces: railings,
+ * fences, walls, roofs -- is drawn from the mesh as well
+ * (`stage_props_mesh`): 0 off, 1 on the stages it is measured good on, 2
+ * on every stage. Nothing comes of it where the ground is not the
+ * mesh's. */
+extern void port_GlStageSetPropsOn(s32 on);
+/* For the prover alone: the pieces taken from the game and drawn not at
+ * all, the picture of the stage without them, which says which pixels
+ * are theirs (tools/port_props_prove.py). */
+#define PORT_GL_PROPS_HIDE 3
+
+/* The pieces the mesh drew in the picture being finished, into the
+ * shadows' mask's alpha as the game's own faces are marked there
+ * (gl_shadow.c, port_GlDrawOccluders): where a piece is in front of
+ * the ground, the ground's shadow does not darken it. */
+extern void port_GlStageDrawOccluders(u32 framebuffer);
 extern s32 port_GlStageIsOn(void);
 
 /* Which path the stage's ground takes, once each time the stage or the

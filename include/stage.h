@@ -125,6 +125,10 @@ extern StageNode *stage_GetNodes(void);
  * one mesh of the ground (port_remaster.h, src/port/gl/gl_stage.c);
  * `count` may be NULL. Only the port has it. */
 extern StageTile *stage_GetTiles(s32 *count);
+/* The stage's pieces and how many the stage file had, for the remastered
+ * picture's meshes of them (src/port/gl/gl_stage.c); `count` may be NULL.
+ * Only the port has it. */
+extern StageNode *stage_GetPieces(s32 *count);
 
 /* Queues what stands on the cells the camera sees, runs the stage's own
  * hook and draws the stage's flames. */

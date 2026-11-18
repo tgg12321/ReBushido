@@ -264,6 +264,9 @@ typedef struct {
     /* The stage's ground drawn as one static mesh instead of from the
      * game's tile primitives (src/port/gl/gl_stage.h). */
     s32 stage_mesh;
+    /* What stands on the ground drawn from the same mesh
+     * (src/port/gl/gl_stage.h, port_GlStageSetPropsOn). */
+    s32 stage_props_mesh;
     /* The fighters drawn from models of their own where there is one
      * (src/port/gl/gl_fighter.h). */
     s32 fighter_models;

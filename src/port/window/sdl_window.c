@@ -713,6 +713,7 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     options->is_bilinear = FALSE;
     options->is_exact = FALSE;
     options->is_stage_mesh = g_port_settings.stage_mesh;
+    options->is_stage_props = g_port_settings.stage_props_mesh;
     options->is_fighter_models = g_port_settings.fighter_models;
     /* the scene held against the ground's own depth, which is part of
      * drawing the ground as one mesh and has no setting of its own
@@ -1772,7 +1773,8 @@ void port_WindowApplyChoice(s32 choice) {
                     g_port_settings.is_linear ? "1" : "0");
         g_port_texture_w = 0;
     } else if (
-        (strcmp(name, "stage_mesh") == 0 || strcmp(name, "shadows") == 0 ||
+        (strcmp(name, "stage_mesh") == 0 ||
+         strcmp(name, "stage_props_mesh") == 0 || strcmp(name, "shadows") == 0 ||
          strcmp(name, "sky") == 0 || strcmp(name, "see_through") == 0 ||
          strcmp(name, "fighter_models") == 0) &&
         g_port_has_gl) {

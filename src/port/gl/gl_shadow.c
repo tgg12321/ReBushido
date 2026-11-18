@@ -846,6 +846,9 @@ static void port_GlShadowPaint(void) {
      * the picture did not draw */
     port_GlShadowScissorBox(&cleared);
     port_GlFighterDrawOccluders(g_shadow.framebuffer);
+    /* ... and the stage's pieces the mesh drew (gl_stage.h) */
+    port_GlShadowScissorBox(&cleared);
+    port_GlStageDrawOccluders(g_shadow.framebuffer);
 
     /* the darkening, into the picture */
     glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);

@@ -148,7 +148,10 @@ static const char g_usage[] =
     "                 static mesh instead of the game's tile primitives\n"
     "                 (gl_stage.h). `on` is the stages the mesh is\n"
     "                 measured good on; `every` is every stage\n"
-    "  --sky W        original (the default here): the game's own\n"
+    "  --stage-props W on (the default), off, every: what stands on the\n"
+    "                 ground -- railings, fences, walls -- drawn from the\n"
+    "                 same mesh, where the ground is (gl_stage.h)\n"
+    "  --sky W       original (the default here): the game's own\n"
     "                 colour of the distance; night: a night sky over\n"
     "                 the stages open to it (gl_sky.h)\n"
     "  --see-through W  off (the default here) or on: the stage's walls\n"
@@ -1169,6 +1172,7 @@ int main(int argc, char **argv) {
     options.is_bilinear = FALSE;
     options.is_exact = FALSE;
     options.is_stage_mesh = 0;
+    options.is_stage_props = 1;
     /* the scene held against the ground's own depth, which is the mesh's
      * and goes with it (gl.h) */
     options.is_stage_depth = TRUE;
@@ -1234,6 +1238,15 @@ int main(int argc, char **argv) {
             options.is_stage_mesh = !strcmp(how_ground, "every")
                                         ? 2
                                         : (!strcmp(how_ground, "on") ? 1 : 0);
+        } else if (!strcmp(word, "--stage-props")) {
+            const char *how_props = argv[++i];
+
+            options.is_stage_props =
+                !strcmp(how_props, "hide")
+                    ? PORT_GL_PROPS_HIDE
+                    : (!strcmp(how_props, "every")
+                           ? 2
+                           : (!strcmp(how_props, "on") ? 1 : 0));
         } else if (!strcmp(word, "--fighter-models")) {
             const char *where = argv[++i];
 

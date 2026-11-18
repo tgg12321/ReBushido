@@ -458,6 +458,10 @@ extern void port_RemasterSetPrim(PortAddress prim);
 /* One bit for each of the stage's tiles (STAGE_MAX_TILES is 500), in
  * whole words. */
 #define PORT_STAGE_TILE_WORDS 16
+/* The most pieces a stage has (STAGE_MAX_NODES is 60), and one bit for
+ * each in whole words. */
+#define PORT_STAGE_PIECES_MAX 64
+#define PORT_STAGE_PIECE_WORDS 2
 
 typedef struct {
     /* Bumped whenever the stage's tiles or the meshes they point at may
@@ -501,7 +505,32 @@ typedef struct {
      * a picture drawn again between two frames that read them where they
      * stand left out of the mesh a face this frame drew whole. */
     u32 open[PORT_STAGE_TILE_WORDS];
+    /* Which of the stage's pieces this frame queued (stage_Draw's cells)
+     * and stand as they stood when the stage was taken down for its
+     * meshes (PortStagePiece), one bit a piece, taken with the view as
+     * `open` is: a piece the game has moved or changed since -- a prop
+     * cut down, what remains of it moving -- is not among them and is
+     * drawn from the game's own primitives. */
+    u32 pieces[PORT_STAGE_PIECE_WORDS];
 } PortStageView;
+
+/* One of the stage's pieces (StageNode, stage.h) as the stage's meshes
+ * are built from it (src/port/gl/gl_stage.c): taken down once when the
+ * stage is first drawn, with the version of the view, and not read from
+ * the game again while that version stands. */
+typedef struct {
+    PortAddress node; /* the piece, which its primitives are named by */
+    PortAddress mesh; /* its mesh, as a pointer */
+    s32 kind;         /* NODE_KIND_ROTATED or NODE_KIND_UNROTATED */
+    s16 rotation[PORT_GTE_MATRIX_ELEMENTS_PORT]; /* the world matrix, 1.12 */
+    s16 pad;
+    s32 place[3]; /* where it stands in the world */
+    /* the light matrix the renderer lights it with: the light setup's
+     * own, turned into the piece's space for a rotated one
+     * (render_LoadTurnedLights), a MATRIX's five words */
+    s16 light_matrix[PORT_GTE_MATRIX_ELEMENTS_PORT + 1];
+    const void *lights; /* the light setup (a LightSetup, light.h) */
+} PortStagePiece;
 
 /* The renderer is drawing the stage's tiles with this view
  * (render_DrawStageTiles): the view's rotation, where the camera is, and
@@ -535,6 +564,9 @@ extern PortAddress port_RemasterStageTiles(s32 *count);
 extern PortAddress port_RemasterTileMesh(s32 block, s32 mesh);
 /* The light setup the tiles are lit by (a LightSetup, light.h). */
 extern const void *port_RemasterTileLights(void);
+/* The stage's pieces as they were taken down for the view's `version`,
+ * and how many (PortStagePiece). */
+extern const PortStagePiece *port_RemasterStagePieces(s32 *count);
 extern s32 port_RemasterStageNumber(void);
 
 /* ---- the stage's own textures (src/port/gl/gl_scene.c) ---- */

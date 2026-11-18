@@ -65,6 +65,10 @@ const char g_port_default_settings[] =
     "                       # mesh instead of the game's own tiles; off\n"
     "                       # for the tiles. A stage the mesh is not\n"
     "                       # measured good on keeps the tiles either way\n"
+    "stage_props_mesh = on  # what stands on the ground -- railings,\n"
+    "                       # fences, walls, roofs -- drawn still from\n"
+    "                       # meshes of its own with the ground's mesh;\n"
+    "                       # off for the game's own faces of them\n"
     "fighter_models = on    # the fighters drawn from models of their own\n"
     "                       # where a mod's models/ has one (M100.glb);\n"
     "                       # off for the game's own\n"
@@ -682,6 +686,11 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "stage_mesh is on or off";
     }
+    if (port_WordsMatch(name, "stage_props_mesh")) {
+        return port_ReadChoice(value, "off", "on", &settings->stage_props_mesh)
+                   ? NULL
+                   : "stage_props_mesh is on or off";
+    }
     if (port_WordsMatch(name, "sky")) {
         return port_ReadChoice(value, "original", "night", &settings->sky)
                    ? NULL
@@ -854,6 +863,7 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
      * the measurements do not hold keeps the game's own tiles of its own
      * accord, and the run's log says which path each stage took. */
     settings->stage_mesh = 1;
+    settings->stage_props_mesh = 1;
     /* a fighter with a model of his own in mods/fighters/ is drawn from
      * it; with none there, nothing changes (gl_fighter.h) */
     settings->fighter_models = 1;

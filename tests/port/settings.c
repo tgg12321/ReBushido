@@ -242,6 +242,7 @@ static void test_Choices(void) {
             {"graphics", 1},     {"resolution", 0},
             {"antialiasing", 1}, {"draw_distance", 2},
             {"aspect", 2},       {"stage_mesh", 1},
+            {"stage_props_mesh", 1},
             {"shadows", 2},      {"frame_rate", 1},
             {"english", 1},      {"ui", 1},
             {"mods", 1},         {"music_mods", 1},
