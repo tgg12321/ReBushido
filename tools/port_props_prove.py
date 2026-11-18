@@ -31,7 +31,12 @@ pictures it counts, for each run:
     pictures in a row: what moves smoothly has little of it, a corner
     that wobbles or a face that is held and then jumps a lot;
   - `jumps`: pixels of a piece whose second difference is over 96, a
-    thousandth of them a picture.
+    thousandth of them a picture;
+  - `wobble`: how much the game's primitives' picture of the pieces moves
+    other than the mesh's from one picture to the next, the mean of
+    |(a_off - a_on) - (b_off - b_on)|. The mesh's picture is the pieces
+    projected exactly with the camera of that picture, so this is the
+    old path's own wobble and holding: what `on` takes away.
 
 The traces of the three runs are held to each other: the game computes
 the same either way. It prints a table and writes `jitter.tsv`.
@@ -98,6 +103,7 @@ def measure(folders, names):
     """churn, jolt and jumps of each run over the pieces' pixels."""
     got = {run: {'churn': 0, 'jolt': 0, 'jumps': 0, 'pixels': 0,
                  'jolt_pixels': 0} for run in ('off', 'on')}
+    got['wobble'] = 0
     frames = {}
 
     def load(run, name):
@@ -138,6 +144,16 @@ def measure(folders, names):
                               + abs(a[j + 2] - b[j + 2]))
             got[run]['churn'] += total
             got[run]['pixels'] += count
+        _, _, a_off = load('off', one)
+        _, _, b_off = load('off', two)
+        _, _, a_on = load('on', one)
+        _, _, b_on = load('on', two)
+        total = 0
+        for i, m in enumerate(both):
+            if m:
+                for j in range(3 * i, 3 * i + 3):
+                    total += abs((a_off[j] - a_on[j]) - (b_off[j] - b_on[j]))
+        got['wobble'] += total
     for k in range(1, len(names) - 1):
         one, two, three = names[k - 1], names[k], names[k + 1]
         both = bytes(x | y | z for x, y, z in
@@ -179,6 +195,8 @@ def main():
     ap.add_argument('--scale', type=int, default=2)
     ap.add_argument('--aspect', default='16:9')
     ap.add_argument('--still', action='store_true')
+    # measure the pictures a run before left, running nothing
+    ap.add_argument('--again', action='store_true')
     ap.add_argument('--out', default='build/stageprops-jitter')
     args = ap.parse_args()
     if not os.path.isfile(PROGRAM):
@@ -194,7 +212,9 @@ def main():
     # the run ends with the strip: every picture of the fight up to it
     # is drawn as `--phases` pictures too, which is most of the time
     frames = args.at + args.blanks + 4
-    toml_path = tour(os.path.join(args.out, 'tour.toml'), frames, args.still)
+    toml_path = tour(os.path.join(args.out, 'tour%s.toml'
+                                  % ('-still' if args.still else '')),
+                     frames, args.still)
     rows = []
     for stage in stages:
         folder = os.path.join(args.out, '%02d-%s%s' % (
@@ -207,6 +227,9 @@ def main():
         going = []
         for run in RUNS:
             shots = os.path.join(folder, run)
+            if args.again:
+                folders[run] = shots
+                continue
             os.makedirs(shots, exist_ok=True)
             for old in os.listdir(shots):
                 if old.endswith('.png'):
@@ -224,14 +247,24 @@ def main():
             # the three runs at once: each is one program of its own
             log = open(os.path.join(folder, run + '.log'), 'w')
             err = open(os.path.join(folder, run + '.err'), 'w')
-            going.append((run, subprocess.Popen(command, stdout=log,
-                                                stderr=err, cwd=ROOT),
-                          log, err))
+            going.append((run, command, subprocess.Popen(
+                command, stdout=log, stderr=err, cwd=ROOT), log, err))
             folders[run] = shots
-        for run, process, log, err in going:
+        if args.again:
+            for run in RUNS:
+                with open(os.path.join(folder, run + '.log'), 'rb') as f:
+                    traces[run] = f.read()
+        for run, command, process, log, err in going:
             process.wait()
             log.close()
             err.close()
+            # a run that could not start (the system may not give the
+            # scratchpad's address at once) is run again, alone
+            for _ in range(2):
+                if os.path.getsize(os.path.join(folder, run + '.log')) > 0:
+                    break
+                remaster.run(command, os.path.join(folder, run + '.log'),
+                             os.path.join(folder, run + '.err'))
             with open(os.path.join(folder, run + '.log'), 'rb') as f:
                 traces[run] = f.read()
         names = pictures(folders['off'], args.phases)
@@ -251,16 +284,18 @@ def main():
                            % ('-still' if args.still else '')),
               'w', encoding='utf-8', newline='\n') as f:
         f.write('stage\tname\tsame_trace\tpictures\trun\tchurn\tjolt\t'
-                'jumps_per_mille\n')
+                'jumps_per_mille\twobble\n')
         for stage, name, same, count, got in rows:
             for run in ('off', 'on'):
                 one = got[run]
-                f.write('%d\t%s\t%d\t%d\t%s\t%.3f\t%.3f\t%.3f\n'
+                f.write('%d\t%s\t%d\t%d\t%s\t%.3f\t%.3f\t%.3f\t%.3f\n'
                         % (stage, name, 1 if same else 0, count, run,
                            one['churn'] / max(one['pixels'], 1),
                            one['jolt'] / max(one['jolt_pixels'], 1),
                            1000.0 * one['jumps']
-                           / max(one['jolt_pixels'], 1)))
+                           / max(one['jolt_pixels'], 1),
+                           got['wobble'] / max(got['off']['pixels'], 1)
+                           if run == 'off' else 0.0))
     return 0
 
 
@@ -270,7 +305,7 @@ def print_row(row):
     on = got['on']
     print('%-24s trace %-6s pictures %3d  churn %6.2f -> %6.2f  '
           'jolt %6.2f -> %6.2f  jumps %6.2f -> %6.2f per mille  '
-          'paired a frame %d -> %d, unpaired %d -> %d'
+          'paired a frame %d -> %d, unpaired %d -> %d  wobble %.2f'
           % (name, 'same' if same else 'DIFFER', count,
              off['churn'] / max(off['pixels'], 1),
              on['churn'] / max(on['pixels'], 1),
@@ -278,7 +313,8 @@ def print_row(row):
              on['jolt'] / max(on['jolt_pixels'], 1),
              1000.0 * off['jumps'] / max(off['jolt_pixels'], 1),
              1000.0 * on['jumps'] / max(on['jolt_pixels'], 1),
-             off['prims'], on['prims'], off['unpaired'], on['unpaired']))
+             off['prims'], on['prims'], off['unpaired'], on['unpaired'],
+             got['wobble'] / max(off['pixels'], 1)))
 
 
 if __name__ == '__main__':
