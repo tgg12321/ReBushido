@@ -37,99 +37,6 @@ static const PortButtonName g_port_pad_buttons[] = {
 #define PERCENT 100
 #define LINE_BYTES_MAX 128
 
-/* The settings built in, the layout of the keys and buttons apart. */
-const char g_port_default_settings[] =
-    "# ReBushido's window: the settings built in. Copy what you want to\n"
-    "# change into rebushido.cfg, beside the program.\n"
-    "\n"
-    "scale = fit            # fit, integer or stretch\n"
-    "filter = nearest       # nearest or linear\n"
-    "fullscreen = on        # on or off: how it starts\n"
-    "vsync = on             # on, off or adaptive: wait for the display;\n"
-    "                       # adaptive does not wait for a picture that\n"
-    "                       # is late, which tears it rather than show\n"
-    "                       # the one before twice\n"
-    "deadzone = 40          # how far a stick counts, in parts of 100\n"
-    "fps = on               # on or off: the counter in the corner (F3)\n"
-    "fps_corner = top-left  # top-left, top-right, bottom-left,\n"
-    "                       # bottom-right\n"
-    "run_ahead = 1          # 0, 1 or 2: frames run ahead and put back,\n"
-    "                       # so that a press is seen that many of the\n"
-    "                       # game's frames sooner; what the game\n"
-    "                       # computes is the same\n"
-    "low_latency = on       # on: each picture waits for the card, so\n"
-    "                       # none queues behind another; off lets the\n"
-    "                       # driver queue them\n"
-    "\n"
-    "# The remastered picture (F2 changes picture while the game runs).\n"
-    "# These four are a run's: changing one means starting it again.\n"
-    "graphics = remastered  # original, remastered, or follow (the\n"
-    "                       # options page at boot says which)\n"
-    "resolution = 0         # how many times the console's; 0 is the\n"
-    "                       # window's own size\n"
-    "draw_distance = max    # original, far or max: how much of the stage\n"
-    "antialiasing = 2       # off, 2 or 4: the scene's edges smoothed\n"
-    "aspect = 16:9          # 16:9 for a wider view of the same scene,\n"
-    "                       # or 4:3 as the console\n"
-    "stage_mesh = on        # the stage's ground drawn from one static\n"
-    "                       # mesh instead of the game's own tiles; off\n"
-    "                       # for the tiles. A stage the mesh is not\n"
-    "                       # measured good on keeps the tiles either way\n"
-    "stage_props_mesh = on  # what stands on the ground -- railings,\n"
-    "                       # fences, walls, roofs -- drawn still from\n"
-    "                       # meshes of its own with the ground's mesh;\n"
-    "                       # off for the game's own faces of them\n"
-    "fighter_models = on    # the fighters drawn from models of their own\n"
-    "                       # where a mod's models/ has one (M100.glb);\n"
-    "                       # off for the game's own\n"
-    "shadows = cast         # original: the game's own black shadows;\n"
-    "                       # soft: the ground under them darkened;\n"
-    "                       # cast: cast from the fighters' own\n"
-    "                       # bodies, darkened (cast:N, N hundredths)\n"
-    "smooth_light = on      # on: the game's own lights worked out at\n"
-    "                       # each pixel of the ground and the fighters'\n"
-    "                       # models, not once a face or a vertex\n"
-    "effects = smooth       # original: blood, sparks and dust where the\n"
-    "                       # console put them; exact: where the\n"
-    "                       # projection put them, moved between frames;\n"
-    "                       # smooth: their textures smoothed as well\n"
-    "frame_rate = display   # original: one picture a blank, as the\n"
-    "                       # console; display: as many as the screen\n"
-    "                       # shows; or a number a second. The game\n"
-    "                       # steps at the console's rate either way\n"
-    "sky = night            # night: a night sky over the stages open\n"
-    "                       # to it; original: the game's flat colour\n"
-    "                       # of the distance\n"
-    "see_through = on       # the stage's walls thinned where they hide\n"
-    "                       # a fighter from the camera; off as the\n"
-    "                       # console\n"
-    "mods = on              # the mods in mods/ beside the program\n"
-    "                       # (docs/MODS.md); off for the game's own\n"
-    "english = on           # the top menu in English, a mod the program\n"
-    "                       # ships (mods/english/); off for Japanese\n"
-    "ui = on                # the menus' lettering drawn again, sharp at\n"
-    "                       # any size: a mod the program ships (mods/ui/)\n"
-    "music_mods = on        # a mod's music in place of the game's; off\n"
-    "                       # for the game's own (docs/MODS.md)\n"
-    "quick_loading = on     # the waits for the disc behind a loading\n"
-    "                       # picture hurried through; off at the\n"
-    "                       # console's pace\n"
-    "\n"
-    "# Playing online (docs/PLAYING.md): what the settings menu's Play\n"
-    "# online page starts with, and keeps.\n"
-    "net_role = host        # host: wait for the other player; join: go to\n"
-    "                       # the host at net_address\n"
-    "net_address = 127.0.0.1:7845  # the host's address and port\n"
-    "net_port = 7845        # the port a host waits at\n"
-    "net_listen = all       # all: a host is found at every address of this\n"
-    "                       # PC; local: on this PC alone (127.0.0.1)\n"
-    "net_delay = 2          # frames a press counts later, 0 to 8: the\n"
-    "                       # host's is both players'\n"
-    "\n"
-    "# The keys and the controllers' buttons: a layout to start from, and\n"
-    "# lines of pN.BUTTON for what to change in it (below)\n"
-    "controls = original    # original is the only one so far\n";
-
 /* The layouts a settings file can start from (`controls = NAME`): each
  * the text of a settings file with nothing but pN.BUTTON lines in it.
  * Another layout is another text and a line of g_port_layouts.
@@ -402,20 +309,6 @@ static void port_FreeControl(PortSettings *settings, const PortBinding *taken) {
     settings->count = kept;
 }
 
-/* `on` or `off`, and the like: 1 and which, or 0. */
-static s32 port_ReadChoice(
-    const char *value, const char *first, const char *second, s32 *which) {
-    if (port_WordsMatch(value, first)) {
-        *which = 0;
-        return 1;
-    }
-    if (port_WordsMatch(value, second)) {
-        *which = 1;
-        return 1;
-    }
-    return 0;
-}
-
 /* `pN.BUTTON = key NAME`, `= pad NAME`, `= pad +AXIS` or `= none`: NULL,
  * or why not. */
 static const char *port_ReadBinding(
@@ -562,12 +455,261 @@ static s32 port_ReadNetAddress(const char *value, char *out) {
     return 1;
 }
 
+/* ---- the settings' own readers (settings_list.h) ---- */
+
+/* `draw_distance`: the renderer's own names, so that they are said in one
+ * place, and letters of either case as every other value here. `lookup`
+ * and `why` are not used. */
+static s32 port_ReadDistance(PortSettings *settings, const char *value,
+                             PortNameLookup lookup, const char **why) {
+    s32 distance;
+
+    (void)lookup;
+    (void)why;
+    for (distance = 0; distance < PORT_DISTANCE_KINDS; distance++) {
+        if (port_WordsMatch(value, port_NameRemasterDistance(distance))) {
+            settings->distance = distance;
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/* `aspect`, W:H. `lookup` and `why` are not used. */
+static s32 port_ReadAspect(PortSettings *settings, const char *value,
+                           PortNameLookup lookup, const char **why) {
+    (void)lookup;
+    (void)why;
+    return port_ReadShape(value, settings);
+}
+
+/* `shadows`: original, soft, or cast, cast:N or a number
+ * (port_remaster.h). `lookup` and `why` are not used. */
+static s32 port_ReadShadows(PortSettings *settings, const char *value,
+                            PortNameLookup lookup, const char **why) {
+    s32 shadows;
+
+    (void)lookup;
+    (void)why;
+    if (port_WordsMatch(value, "original")) {
+        settings->shadows = 0;
+        return TRUE;
+    }
+    if (port_WordsMatch(value, "soft")) {
+        settings->shadows = PORT_SHADOWS_SOFT;
+        return TRUE;
+    }
+    shadows = port_ReadRemasterShadows(value);
+    if (shadows < 0) {
+        return FALSE;
+    }
+    settings->shadows = shadows;
+    return TRUE;
+}
+
+/* `effects`, by the renderer's names. `lookup` and `why` are not used. */
+static s32 port_ReadEffects(PortSettings *settings, const char *value,
+                            PortNameLookup lookup, const char **why) {
+    s32 effects = port_ReadRemasterEffects(value);
+
+    (void)lookup;
+    (void)why;
+    if (effects < 0) {
+        return FALSE;
+    }
+    settings->effects = effects;
+    return TRUE;
+}
+
+/* `net_address`. `lookup` and `why` are not used. */
+static s32 port_ReadNetSetting(PortSettings *settings, const char *value,
+                               PortNameLookup lookup, const char **why) {
+    (void)lookup;
+    (void)why;
+    return port_ReadNetAddress(value, settings->net_address);
+}
+
+/* `controls`: a layout's bindings, which say why not themselves. */
+static s32 port_ReadControls(PortSettings *settings, const char *value,
+                             PortNameLookup lookup, const char **why) {
+    *why = port_ReadLayout(settings, value, lookup);
+    return *why == NULL;
+}
+
+/* ---- the list of the settings ---- */
+
+#define PORT_SETTING_AT(member) ((s32) __builtin_offsetof(PortSettings, member))
+
+const PortSetting g_port_setting_list[] = {
+#define PORT_SETTING(member, ...) {.at = PORT_SETTING_AT(member), __VA_ARGS__},
+#define PORT_SETTING_CUSTOM(...) {.at = -1, __VA_ARGS__},
+#define PORT_SETTINGS_HEADING(text) {.at = -1, .note = text},
+#include "settings_list.h"
+#undef PORT_SETTING
+#undef PORT_SETTING_CUSTOM
+#undef PORT_SETTINGS_HEADING
+};
+
+const s32 g_port_setting_count =
+    (s32)(sizeof(g_port_setting_list) / sizeof(g_port_setting_list[0]));
+
+/* What a switch is read from, and what a line that is none says. */
+static const char * const g_port_switch_words[PORT_CHOICES_MAX] = {"off", "on"};
+
+#define SWITCH_IS "on or off"
+#define WHY_BYTES_MAX 160
+
+/* The built-in text's comments begin at this column, two spaces after a
+ * line longer than that. */
+#define NOTE_COLUMN 23
+#define NOTE_GAP_MIN 2
+
+/* The text the built-in settings begin with. */
+static const char g_port_settings_title[] =
+    "# ReBushido's window: the settings built in. Copy what you want to\n"
+    "# change into rebushido.cfg, beside the program.\n"
+    "\n";
+
+/* `NAME is ...`, what a line that cannot be read is told. */
+static const char *port_SayWhatItIs(const PortSetting *setting) {
+    static char why[WHY_BYTES_MAX];
+    const char *is = setting->is != NULL ? setting->is : SWITCH_IS;
+    const char *from;
+    u32 at = 0;
+
+    for (from = setting->name; *from != 0 && at < WHY_BYTES_MAX - 1; from++) {
+        why[at++] = *from;
+    }
+    for (from = " is "; *from != 0 && at < WHY_BYTES_MAX - 1; from++) {
+        why[at++] = *from;
+    }
+    for (from = is; *from != 0 && at < WHY_BYTES_MAX - 1; from++) {
+        why[at++] = *from;
+    }
+    why[at] = 0;
+    return why;
+}
+
+/* A setting's value into its member: NULL, or why not. */
+static const char *port_ReadEntry(
+    const PortSetting *setting, PortSettings *settings, const char *value,
+    PortNameLookup lookup) {
+    const char * const *words = setting->words;
+    const char *why = NULL;
+    s32 *member;
+    s32 number;
+    s32 i;
+
+    if (setting->read == PORT_READ_BY) {
+        if (setting->reader(settings, value, lookup, &why)) {
+            return NULL;
+        }
+        return why != NULL ? why : port_SayWhatItIs(setting);
+    }
+    if (setting->at < 0) {
+        return port_SayWhatItIs(setting);
+    }
+    member = (s32 *)((u8 *)settings + setting->at);
+    if (setting->read == PORT_READ_SWITCH) {
+        words = g_port_switch_words;
+    }
+    for (i = 0; i < PORT_CHOICES_MAX && words[i] != NULL; i++) {
+        if (port_WordsMatch(value, words[i])) {
+            *member =
+                setting->read == PORT_READ_NUMBER ? setting->values[i] : i;
+            return NULL;
+        }
+    }
+    if (setting->read == PORT_READ_NUMBER && port_ReadDigits(value, &number) &&
+        number >= setting->least && number <= setting->most) {
+        *member = number;
+        return NULL;
+    }
+    return port_SayWhatItIs(setting);
+}
+
+/* A letter at `at` of `out`, if it fits before its last byte. */
+static u32 port_AddLetter(char *out, u32 at, char letter) {
+    if (at < PORT_DEFAULT_SETTINGS_BYTES - 1) {
+        out[at++] = letter;
+    }
+    return at;
+}
+
+/* `text` at `at` of `out`, as much as fits. */
+static u32 port_AddText(char *out, u32 at, const char *text) {
+    for (; *text != 0; text++) {
+        at = port_AddLetter(out, at, *text);
+    }
+    return at;
+}
+
+/* A comment's lines, each `# line` after `indent` spaces, the first
+ * after what is on its line already. */
+static u32 port_AddNote(char *out, u32 at, const char *note, u32 indent) {
+    u32 i;
+
+    while (*note != 0) {
+        at = port_AddText(out, at, "# ");
+        for (; *note != 0 && *note != '\n'; note++) {
+            at = port_AddLetter(out, at, *note);
+        }
+        at = port_AddText(out, at, "\n");
+        if (*note == '\n') {
+            note++;
+            for (i = 0; i < indent; i++) {
+                at = port_AddLetter(out, at, ' ');
+            }
+        }
+    }
+    return at;
+}
+
+const char *port_GetDefaultSettings(void) {
+    static char text[PORT_DEFAULT_SETTINGS_BYTES];
+    s32 i;
+    u32 at;
+
+    if (text[0] != 0) {
+        return text;
+    }
+    at = port_AddText(text, 0, g_port_settings_title);
+    for (i = 0; i < g_port_setting_count; i++) {
+        const PortSetting *setting = &g_port_setting_list[i];
+        u32 line_at = at;
+        u32 spaces;
+
+        if (setting->name == NULL) {
+            /* a heading */
+            at = port_AddText(text, at, "\n");
+            at = port_AddNote(text, at, setting->note, 0);
+            continue;
+        }
+        at = port_AddText(text, at, setting->name);
+        at = port_AddText(text, at, " = ");
+        at = port_AddText(text, at, setting->value);
+        if (setting->note == NULL) {
+            at = port_AddText(text, at, "\n");
+            continue;
+        }
+        spaces = at - line_at + NOTE_GAP_MIN < NOTE_COLUMN
+                     ? NOTE_COLUMN - (at - line_at)
+                     : NOTE_GAP_MIN;
+        for (; spaces > 0; spaces--) {
+            at = port_AddLetter(text, at, ' ');
+        }
+        at = port_AddNote(text, at, setting->note, NOTE_COLUMN);
+    }
+    text[at] = 0;
+    return text;
+}
+
 /* One line, `NAME = VALUE`: NULL, or why it cannot be used. */
 static const char *port_ReadSetting(
     PortSettings *settings, char *line, PortNameLookup lookup, s32 is_default) {
     char *value = line;
     char *name;
-    s32 number;
+    s32 i;
 
     while (*value != 0 && *value != '=') {
         value++;
@@ -578,264 +720,12 @@ static const char *port_ReadSetting(
     *value++ = 0;
     name = port_TrimText(line);
     value = port_TrimText(value);
-    if (port_WordsMatch(name, "scale")) {
-        if (port_WordsMatch(value, "fit")) {
-            settings->scale = PORT_SCALE_FIT;
-        } else if (port_WordsMatch(value, "integer")) {
-            settings->scale = PORT_SCALE_INTEGER;
-        } else if (port_WordsMatch(value, "stretch")) {
-            settings->scale = PORT_SCALE_STRETCH;
-        } else {
-            return "scale is fit, integer or stretch";
-        }
-        return NULL;
-    }
-    if (port_WordsMatch(name, "filter")) {
-        return port_ReadChoice(value, "nearest", "linear", &settings->is_linear)
-                   ? NULL
-                   : "filter is nearest or linear";
-    }
-    if (port_WordsMatch(name, "fullscreen")) {
-        return port_ReadChoice(value, "off", "on", &settings->is_fullscreen)
-                   ? NULL
-                   : "fullscreen is on or off";
-    }
-    if (port_WordsMatch(name, "vsync")) {
-        if (port_WordsMatch(value, "adaptive")) {
-            settings->vsync = PORT_VSYNC_ADAPTIVE;
-            return NULL;
-        }
-        return port_ReadChoice(value, "off", "on", &settings->vsync)
-                   ? NULL
-                   : "vsync is on, off or adaptive";
-    }
-    if (port_WordsMatch(name, "fps")) {
-        /* `times`: the counter, and the processor's and the card's time
-         * per part under it (docs/PORT.md, "Measuring on the card") */
-        if (port_WordsMatch(value, "times")) {
-            settings->fps = PORT_FPS_TIMES;
-            return NULL;
-        }
-        return port_ReadChoice(value, "off", "on", &settings->fps)
-                   ? NULL
-                   : "fps is on, off or times";
-    }
-    if (port_WordsMatch(name, "run_ahead")) {
-        if (!port_ReadDigits(value, &number) || number < 0 ||
-            number > PORT_RUN_AHEAD_MAX) {
-            return "run_ahead is 0, 1 or 2";
-        }
-        settings->run_ahead = number;
-        return NULL;
-    }
-    if (port_WordsMatch(name, "low_latency")) {
-        return port_ReadChoice(value, "off", "on", &settings->low_latency)
-                   ? NULL
-                   : "low_latency is on or off";
-    }
-    if (port_WordsMatch(name, "fps_corner")) {
-        static const char * const corners[] = {
-            "top-left", "top-right", "bottom-left", "bottom-right"};
-        s32 corner;
+    for (i = 0; i < g_port_setting_count; i++) {
+        const PortSetting *setting = &g_port_setting_list[i];
 
-        for (corner = 0; corner <= PORT_CORNER_BOTTOM_RIGHT; corner++) {
-            if (port_WordsMatch(value, corners[corner])) {
-                settings->fps_corner = corner;
-                return NULL;
-            }
+        if (setting->name != NULL && port_WordsMatch(name, setting->name)) {
+            return port_ReadEntry(setting, settings, value, lookup);
         }
-        return "fps_corner is top-left, top-right, bottom-left or "
-               "bottom-right";
-    }
-    if (port_WordsMatch(name, "deadzone")) {
-        if (!port_ReadDigits(value, &number) || number < 1 ||
-            number >= PERCENT) {
-            return "deadzone is a number from 1 to 99";
-        }
-        settings->deadzone = number;
-        return NULL;
-    }
-    if (port_WordsMatch(name, "graphics")) {
-        if (port_WordsMatch(value, "original")) {
-            settings->graphics = PORT_GRAPHICS_ORIGINAL;
-        } else if (port_WordsMatch(value, "remastered")) {
-            settings->graphics = PORT_GRAPHICS_REMASTERED;
-        } else if (port_WordsMatch(value, "follow")) {
-            settings->graphics = PORT_GRAPHICS_FOLLOW;
-        } else {
-            return "graphics is original, remastered or follow";
-        }
-        return NULL;
-    }
-    if (port_WordsMatch(name, "resolution")) {
-        if (!port_ReadDigits(value, &number) || number < 0 ||
-            number > PORT_REMASTER_SCALE_MAX) {
-            return "resolution is 0 (the window's own size) or a number up "
-                   "to 8";
-        }
-        settings->resolution = number;
-        return NULL;
-    }
-    if (port_WordsMatch(name, "draw_distance")) {
-        /* the renderer's own names, so that they are said in one place,
-         * and letters of either case as every other value here */
-        for (number = 0; number < PORT_DISTANCE_KINDS; number++) {
-            if (port_WordsMatch(value, port_NameRemasterDistance(number))) {
-                settings->distance = number;
-                return NULL;
-            }
-        }
-        return "draw_distance is original, far or max";
-    }
-    if (port_WordsMatch(name, "antialiasing")) {
-        if (port_WordsMatch(value, "off")) {
-            settings->supersample = 1;
-            return NULL;
-        }
-        if (!port_ReadDigits(value, &number) || number < 1 ||
-            number > PORT_SUPERSAMPLE_MAX) {
-            return "antialiasing is off, 2 or 4";
-        }
-        settings->supersample = number;
-        return NULL;
-    }
-    if (port_WordsMatch(name, "aspect")) {
-        return port_ReadShape(value, settings)
-                   ? NULL
-                   : "aspect is W:H, as 4:3 or 16:9";
-    }
-    if (port_WordsMatch(name, "mods")) {
-        return port_ReadChoice(value, "off", "on", &settings->mods)
-                   ? NULL
-                   : "mods is on or off";
-    }
-    if (port_WordsMatch(name, "english")) {
-        return port_ReadChoice(value, "off", "on", &settings->english)
-                   ? NULL
-                   : "english is on or off";
-    }
-    if (port_WordsMatch(name, "ui")) {
-        return port_ReadChoice(value, "off", "on", &settings->ui)
-                   ? NULL
-                   : "ui is on or off";
-    }
-    if (port_WordsMatch(name, "music_mods")) {
-        return port_ReadChoice(value, "off", "on", &settings->music_mods)
-                   ? NULL
-                   : "music_mods is on or off";
-    }
-    if (port_WordsMatch(name, "stage_mesh")) {
-        return port_ReadChoice(value, "off", "on", &settings->stage_mesh)
-                   ? NULL
-                   : "stage_mesh is on or off";
-    }
-    if (port_WordsMatch(name, "stage_props_mesh")) {
-        return port_ReadChoice(value, "off", "on", &settings->stage_props_mesh)
-                   ? NULL
-                   : "stage_props_mesh is on or off";
-    }
-    if (port_WordsMatch(name, "sky")) {
-        return port_ReadChoice(value, "original", "night", &settings->sky)
-                   ? NULL
-                   : "sky is original or night";
-    }
-    if (port_WordsMatch(name, "quick_loading")) {
-        return port_ReadChoice(value, "off", "on", &settings->quick_loading)
-                   ? NULL
-                   : "quick_loading is on or off";
-    }
-    if (port_WordsMatch(name, "see_through")) {
-        return port_ReadChoice(value, "off", "on", &settings->see_through)
-                   ? NULL
-                   : "see_through is on or off";
-    }
-    if (port_WordsMatch(name, "fighter_models")) {
-        return port_ReadChoice(value, "off", "on", &settings->fighter_models)
-                   ? NULL
-                   : "fighter_models is on or off";
-    }
-    if (port_WordsMatch(name, "shadows")) {
-        if (port_WordsMatch(value, "original")) {
-            settings->shadows = 0;
-            return NULL;
-        }
-        if (port_WordsMatch(value, "soft")) {
-            settings->shadows = PORT_SHADOWS_SOFT;
-            return NULL;
-        }
-        /* cast, cast:N, or a number (port_remaster.h) */
-        number = port_ReadRemasterShadows(value);
-        if (number < 0) {
-            return "shadows is original, soft, cast, cast:N, or how much of "
-                   "the ground a shadow takes away, in hundredths";
-        }
-        settings->shadows = number;
-        return NULL;
-    }
-    if (port_WordsMatch(name, "smooth_light")) {
-        return port_ReadChoice(value, "off", "on", &settings->smooth_light)
-                   ? NULL
-                   : "smooth_light is on or off";
-    }
-    if (port_WordsMatch(name, "effects")) {
-        number = port_ReadRemasterEffects(value);
-        if (number < 0) {
-            return "effects is original, exact or smooth";
-        }
-        settings->effects = number;
-        return NULL;
-    }
-    if (port_WordsMatch(name, "controls")) {
-        return port_ReadLayout(settings, value, lookup);
-    }
-    if (port_WordsMatch(name, "net_role")) {
-        return port_ReadChoice(value, "host", "join", &settings->net_role)
-                   ? NULL
-                   : "net_role is host or join";
-    }
-    if (port_WordsMatch(name, "net_listen")) {
-        return port_ReadChoice(value, "local", "all", &settings->net_listen)
-                   ? NULL
-                   : "net_listen is all or local";
-    }
-    if (port_WordsMatch(name, "net_port")) {
-        if (!port_ReadDigits(value, &number) || number < 1 ||
-            number > PORT_NET_PORT_MAX) {
-            return "net_port is a number from 1 to 65535";
-        }
-        settings->net_port = number;
-        return NULL;
-    }
-    if (port_WordsMatch(name, "net_delay")) {
-        if (!port_ReadDigits(value, &number) || number < 0 ||
-            number > PORT_NET_DELAY_MAX) {
-            return "net_delay is a number from 0 to 8";
-        }
-        settings->net_delay = number;
-        return NULL;
-    }
-    if (port_WordsMatch(name, "net_address")) {
-        return port_ReadNetAddress(value, settings->net_address)
-                   ? NULL
-                   : "net_address is four numbers and a port, as "
-                     "192.168.1.20:7845";
-    }
-    if (port_WordsMatch(name, "frame_rate")) {
-        if (port_WordsMatch(value, "original")) {
-            settings->frame_rate = PORT_FRAME_RATE_ORIGINAL;
-            return NULL;
-        }
-        if (port_WordsMatch(value, "display")) {
-            settings->frame_rate = PORT_FRAME_RATE_DISPLAY;
-            return NULL;
-        }
-        if (!port_ReadDigits(value, &number) || number < 1 ||
-            number > PORT_FRAME_RATE_MAX) {
-            return "frame_rate is original, display, or a number of "
-                   "pictures a second";
-        }
-        settings->frame_rate = number;
-        return NULL;
     }
     return port_ReadBinding(settings, name, value, lookup, is_default);
 }
@@ -888,81 +778,28 @@ static s32 port_ReadLines(
 }
 
 void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
-    static char text[sizeof(g_port_default_settings)];
-    u32 i;
+    char value[LINE_BYTES_MAX];
+    s32 i;
 
-    for (i = 0; i < sizeof(text); i++) {
-        text[i] = g_port_default_settings[i];
-    }
     settings->count = 0;
     settings->own_controls = 0;
     settings->layout = 0;
-    settings->scale = PORT_SCALE_FIT;
-    settings->is_fullscreen = 1;
-    settings->is_linear = 0;
-    settings->vsync = 1;
-    settings->deadzone = PORT_DEADZONE_DEFAULT;
-    settings->fps = 1;
-    settings->fps_corner = PORT_CORNER_TOP_LEFT;
-    /* a press seen two frames sooner, and no picture queued behind
-     * another (docs/PORT.md, "Input lag") */
-    settings->run_ahead = PORT_RUN_AHEAD_DEFAULT;
-    settings->low_latency = 1;
-    /* every new feature on in the builds the owner plays (2026-11-17) */
-    settings->graphics = PORT_GRAPHICS_REMASTERED;
-    settings->resolution = PORT_RESOLUTION_WINDOW;
-    /* the whole stage, every frame: nothing of it comes and goes
-     * as the camera turns (docs/PORT.md, "How far the stage is
-     * drawn") */
-    settings->distance = PORT_DISTANCE_MAX;
-    settings->supersample = 2;
-    /* the remastered picture is a wider view of the same scene, with the
-     * fight's HUD at its edges (port_remaster.h); "Graphics: Original"
-     * is the console's four by three whatever this says */
-    settings->aspect_w = PORT_ASPECT_W_WIDE;
-    settings->aspect_h = PORT_ASPECT_H_WIDE;
-    settings->frame_rate = PORT_FRAME_RATE_DISPLAY;
-    /* The ground drawn as one mesh, which is what Remastered means by
-     * the stage now: it has been seen on a real card and is measured
-     * stage by stage (src/port/gl/gl_stage.h, g_stage_proved). A stage
-     * the measurements do not hold keeps the game's own tiles of its own
-     * accord, and the run's log says which path each stage took. */
-    settings->stage_mesh = 1;
-    settings->stage_props_mesh = 1;
-    /* a fighter with a model of his own in mods/fighters/ is drawn from
-     * it; with none there, nothing changes (gl_fighter.h) */
-    settings->fighter_models = 1;
-    /* the shadows cast from the fighters' own bodies (gl_shadow.h) */
-    settings->shadows = port_ReadRemasterShadows("cast");
-    /* The lighting as the game lit each vertex and face, and the effects
-     * where the console put them, until the owner has looked at the
-     * pictures of each (docs/PORT.md, "Lighting", "The effects"). */
-    settings->smooth_light = 1;
-    settings->effects = PORT_EFFECTS_SMOOTH;
-    /* A sky over the stages open to it, and the walls thinned where they
-     * hide a fighter: neither changes what the game computes, and both
-     * are the owner's to confirm on a real card (gl_sky.h, gl_see.h). */
-    settings->sky = 1;
-    settings->see_through = 1;
-    /* the mods beside the program, where there are any (docs/MODS.md) */
-    settings->mods = 1;
-    /* the English top menu the program ships (docs/MODS.md) */
-    settings->english = 1;
-    /* and the menus' lettering drawn again (docs/MODS.md) */
-    settings->ui = 1;
-    /* the Play online page's (the text below says the same) */
-    settings->net_role = 0;
-    settings->net_port = PORT_NET_PORT_DEFAULT;
-    settings->net_listen = 1;
-    settings->net_delay = PORT_NET_DELAY_DEFAULT;
     settings->net_address[0] = 0;
-    /* a mod's music, where a mod has some (docs/MODS.md) */
-    settings->music_mods = 1;
-    /* the loads' waits for the disc hurried through (docs/PORT.md,
-     * "Quick loading") */
-    settings->quick_loading = 1;
-    /* a name the window's library does not know leaves that one out */
-    port_ReadLines(settings, text, lookup, NULL, 1);
+    /* each setting's value as its line of the built-in text has it; a
+     * name the window's library does not know leaves that binding out */
+    for (i = 0; i < g_port_setting_count; i++) {
+        const PortSetting *setting = &g_port_setting_list[i];
+        u32 j;
+
+        if (setting->name == NULL) {
+            continue;
+        }
+        for (j = 0; j < sizeof(value) - 1 && setting->value[j] != 0; j++) {
+            value[j] = setting->value[j];
+        }
+        value[j] = 0;
+        port_ReadEntry(setting, settings, value, lookup);
+    }
 }
 
 s32 port_ReadSettings(PortSettings *settings, char *text, PortNameLookup lookup,

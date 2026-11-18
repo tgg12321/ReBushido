@@ -1173,7 +1173,8 @@ made, and as the program ends. The window's files are
 | File | |
 |---|---|
 | `scale.c`, `ring.c`, `pace.c`, `keymap.c`, `logname.c`, `fps.c`, `window.h` | the arithmetic: where the picture goes in the window, the queue of samples, when a blank is due, which key is which button, the settings file, a log's name and lines, the counter's rate, digits and place. No SDL and no C library in them, so the host tests run them on every push (`tests/port/window.c`) |
-| `settext.c`, `choices.c` | the settings menu's arithmetic: `rebushido.cfg` changed a line at a time, keeping the rest of it, and the settings as the menu shows them, set by reading the line the file would have. No SDL and no C library (`tests/port/settings.c`) |
+| `settext.c`, `choices.c` | the settings menu's arithmetic: `rebushido.cfg` changed a line at a time, keeping the rest of it, and the settings as the menu shows them (made from `settings_list.h`), set by reading the line the file would have. No SDL and no C library (`tests/port/settings.c`) |
+| `settings_list.h` | every setting of `rebushido.cfg` once: its member, value built in, comment, reader and menu row (below, "Every setting is one entry of one list") |
 | `gamestate.c` | reads the game's variables out for the log, and has the names the log gives screens, modes, fighters, weapons and stages; it writes one, the Bug fixes setting, for the settings menu |
 | `sdl_window.c` | the window, the sound card and the controllers, on SDL; the counter; the log's notes of the game |
 | `sdl_log.c` | the session's log file |
@@ -1332,6 +1333,29 @@ a settings file with nothing but `pN` lines, and another layout, such as
 a modern control scheme, is another text and a line of that table. A
 file's `controls` line replaces the built-in bindings with that layout's
 and comes before its own `pN` lines, which are read over it.
+
+**Every setting is one entry of one list**,
+`src/port/window/settings_list.h`. Each entry gives the setting's name
+in the file, its value built in, the comment `--help` prints beside it,
+how its value is read, what a line it cannot read is told (`NAME is
+...`), and its row of the settings menu (group, rank, label, help, the
+values it steps through). Everything else is made from the list:
+the member of `PortSettings` (window.h includes the list once to declare
+them), the reader of a file's lines and the settings built in
+(`keymap.c`: the default is the value the built-in text has), the
+built-in text itself (`port_GetDefaultSettings`, its comments at column
+23), and the menu (`choices.c`: the entries with a group, by group and
+rank, `port_FindChoice`). A value is read in one of four ways: a switch
+(off or on, the default kind), one of a list of words (its place in the
+list), a number from `least` to `most` with words for some numbers
+(`antialiasing = off`, `frame_rate = display`), or a reader of the
+setting's own (`aspect`, `shadows`, `net_address`, `controls`). A new
+setting is one entry there, and two settings added at once touch
+different lines; the menu's ranks go in tens so that a row can go
+between two. What a setting does when it changes in the menu is still
+`port_WindowApplyChoice` (`sdl_window.c`); a setting that is read where
+it is used needs nothing there. `tests/port/settings.c` holds every
+entry to its value built in, its menu row and the built-in text.
 
 **Where the game's input comes from.** The window reads SDL's events at
 each vertical blank and works out, through the layout, what the keys and
@@ -2198,7 +2222,7 @@ dropped, where the stage's grid is 90,510 units across its diagonal. The
 cost of that scale is that a tile's place is kept to four units instead
 of two, which is what the game's own far view already does.
 
-**`max` is what the window starts with** (`keymap.c`, and the settings
+**`max` is what the window starts with** (`settings_list.h`, and the settings
 file it writes). It is the only one of the three that draws the same
 cells whichever way the camera looks: `original` and `far` both take
 the wedge of the 64 masks for the way the camera is facing, so a cell
@@ -3658,7 +3682,7 @@ edge instead:
 Where the console's picture is shown — the original picture, or the
 console's shape — the margin is 0 and every anchor is a shift of nothing.
 **The default shape of the remastered picture in the window is `16:9`**
-(`PORT_ASPECT_W_WIDE`, `src/port/window/keymap.c`); the builds with no
+(`PORT_ASPECT_W_WIDE`, `src/port/window/settings_list.h`); the builds with no
 window keep the console's shape with nothing said, so that their picture
 can still be held to the software GPU's pixel for pixel
 (`tools/port_gl_prove.py`).
@@ -3766,7 +3790,7 @@ has no GL at all), which is why the window's own proof is untouched by
 all of this.
 
 **The settings** are the window's, read from `rebushido.cfg` and the
-command line as the others are (`keymap.c`, `PLAYING.md`): `graphics`
+command line as the others are (`settings_list.h`, `PLAYING.md`): `graphics`
 (`--graphics original|remastered`), `resolution` (`--resolution N`),
 `draw_distance`, `antialiasing`, `aspect`, `stage_mesh`
 (`--stage-mesh on|off`, "The ground as one mesh") and `frame_rate`

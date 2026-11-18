@@ -254,86 +254,58 @@ typedef struct {
 #define PORT_NET_DELAY_DEFAULT 2
 #define PORT_NET_DELAY_MAX 8
 
+/* The most a stick's dead zone may be, in parts of a hundred. */
+#define PORT_DEADZONE_MAX 99
+
+/* ---- the settings (keymap.c, settings_list.h) ---- */
+
+/* Every setting of rebushido.cfg is an entry of settings_list.h, which
+ * gives its member here, its line of the built-in text, how it is read
+ * and how the settings menu shows it; a new one is one entry there. */
+
+/* How a change of a setting takes effect. */
+enum {
+    PORT_TAKES_NOW = 0,     /* at once, while the game is paused */
+    PORT_TAKES_RESTART = 1, /* the next time the program starts */
+};
+
+/* The most values a setting is read from by name, or steps through in
+ * the menu. */
+#define PORT_CHOICES_MAX 8
+
+/* The settings menu's groups of settings, in its order. */
+enum {
+    PORT_MENU_NONE = 0, /* not in the menu */
+    PORT_MENU_WINDOW = 1,
+    PORT_MENU_REMASTER = 2,
+    PORT_MENU_MODS = 3,
+    PORT_MENU_CONTROLS = 4,
+};
+
+#define PORT_CHOICE_GROUPS 4
+
+/* A number as the text of it, for a setting built in as a constant. */
+#define PORT_QUOTE(number) PORT_QUOTE_TEXT(number)
+#define PORT_QUOTE_TEXT(number) #number
+
 typedef struct {
     PortBinding bindings[PORT_BINDINGS_MAX];
     s32 count;
-    s32 layout;        /* which of g_port_layouts the built-in ones are */
-    s32 own_controls;  /* the pN lines read from a file */
-    s32 scale;         /* PORT_SCALE_... */
-    s32 is_fullscreen; /* at the start */
-    s32 is_linear;     /* the picture smoothed as it is scaled */
-    s32 vsync;         /* wait for the display: 0, 1, or
-                        * PORT_VSYNC_ADAPTIVE */
-    s32 deadzone;      /* parts of a hundred */
-    s32 fps;           /* the counter in the corner is shown: 1, or
-                        * PORT_FPS_TIMES with the times under it */
-    s32 fps_corner;    /* PORT_CORNER_... */
-    /* input lag (docs/PORT.md, "Input lag"): frames run ahead, 0 to
-     * PORT_RUN_AHEAD_MAX, and whether a swap waits for the card */
-    s32 run_ahead;
-    s32 low_latency;
-    /* the remastered picture (port_remaster.h; docs/PORT.md,
-     * "Remastered in the window"): which picture a run starts with, how
-     * large the scene is drawn, and the three settings of the view */
-    s32 graphics;    /* PORT_GRAPHICS_... */
-    s32 resolution;  /* PORT_RESOLUTION_WINDOW, or 1 and up */
-    s32 distance;    /* PORT_DISTANCE_... */
-    s32 supersample; /* 1 (off), 2 or 4 */
-    s32 aspect_w;    /* the picture's shape: 4 by 3, 16 by 9 */
+    s32 layout;       /* which of g_port_layouts the built-in ones are */
+    s32 own_controls; /* the pN lines read from a file */
+    /* the picture's shape (`aspect`): 4 by 3, 16 by 9 */
+    s32 aspect_w;
     s32 aspect_h;
-    s32 frame_rate; /* PORT_FRAME_RATE_..., or pictures a second */
-    /* The stage's ground drawn as one static mesh instead of from the
-     * game's tile primitives (src/port/gl/gl_stage.h). */
-    s32 stage_mesh;
-    /* What stands on the ground drawn from the same mesh
-     * (src/port/gl/gl_stage.h, port_GlStageSetPropsOn). */
-    s32 stage_props_mesh;
-    /* The fighters drawn from models of their own where there is one
-     * (src/port/gl/gl_fighter.h). */
-    s32 fighter_models;
-    /* How much a fighter's shadow darkens the ground it falls on, in
-     * hundredths: 0 is the game's own black silhouettes
-     * (src/port/gl/gl_shadow.h; PORT_SHADOWS_SOFT). */
-    s32 shadows;
-    /* The game's own lighting worked out at each pixel on the ground's
-     * mesh and the fighters' models (src/port/gl/gl_light.h). */
-    s32 smooth_light;
-    /* How the effects are drawn: PORT_EFFECTS_... (port_remaster.h). */
-    s32 effects;
-    /* A night sky of the port's own over the stages open to it, in the
-     * place of the game's colour of the distance (src/port/gl/gl_sky.h):
-     * 0 original, 1 night. */
-    s32 sky;
-    /* The stage's walls thinned where they hide a fighter
-     * (src/port/gl/gl_see.h). */
-    s32 see_through;
-    /* The mods beside the program are read (docs/MODS.md); 0 runs the
-     * game with none of them, as `--mods off` does. */
-    s32 mods;
-    /* The English top menu the program ships as a mod of its own,
-     * mods/english/ (docs/MODS.md, "The English menu"); 0 leaves it
-     * out. */
-    s32 english;
-    /* A mod's music is heard in place of the game's (docs/MODS.md,
-     * "Music"); 0 plays the game's own, from the next sample on. */
-    s32 music_mods;
-    /* The menus' lettering drawn again, the mod the program ships as
-     * mods/ui/ (docs/MODS.md, "The sharp menus"); 0 leaves it out. */
-    s32 ui;
-    /* The blanks in which the game waits for the disc behind its loading
-     * picture are hurried through, not shown at the console's pace
-     * (docs/PORT.md, "Quick loading"); 0 shows each as the console
-     * would. Nothing the game computes changes either way. */
-    s32 quick_loading;
-    /* Playing online (the settings menu's Play online page; docs/
-     * PLAYING.md): host (0) or join (1), the port a host waits at,
-     * whether it is found at every address of the PC (1) or at 127.0.0.1
-     * alone (0), the frames of delay, and the host to join. */
-    s32 net_role;
-    s32 net_port;
-    s32 net_listen;
-    s32 net_delay;
+    /* the host to join (`net_address`), as it was written */
     char net_address[PORT_NET_ADDRESS_BYTES];
+    /* the rest, each the member of an entry of settings_list.h */
+#define PORT_SETTING(member, ...) s32 member;
+#define PORT_SETTING_CUSTOM(...)
+#define PORT_SETTINGS_HEADING(text)
+#include "settings_list.h"
+#undef PORT_SETTING
+#undef PORT_SETTING_CUSTOM
+#undef PORT_SETTINGS_HEADING
 } PortSettings;
 
 /* The number of the key, button or axis of this name, as the window's
@@ -342,9 +314,54 @@ typedef s32 (*PortNameLookup)(s32 source, const char *name);
 /* A line of a settings file that says nothing the port knows. */
 typedef void (*PortComplaint)(s32 line, const char *why, const char *text);
 
-/* The settings built in, as the text of a settings file; its line
+/* How a setting's value is read. */
+enum {
+    PORT_READ_SWITCH = 0, /* off or on: 0 or 1 */
+    PORT_READ_WORDS = 1,  /* one of `words`: its place in the list */
+    PORT_READ_NUMBER = 2, /* `least` to `most`, or one of `words`: the
+                           * number of `values` in its place */
+    PORT_READ_BY = 3,     /* by `reader` */
+};
+
+/* A setting's own reader: TRUE, or FALSE with `why` the reason, which
+ * left NULL is the setting's `is`. */
+typedef s32 (*PortSettingReader)(PortSettings *settings, const char *value,
+                                 PortNameLookup lookup, const char **why);
+
+/* An entry of settings_list.h, which says what each field is for. One
+ * with no name is a heading of the built-in text. */
+typedef struct {
+    s32 at; /* where its member is in PortSettings; -1 for none */
+    const char *name;
+    const char *value;
+    const char *note;
+    s32 read; /* PORT_READ_... */
+    const char *words[PORT_CHOICES_MAX];
+    s32 values[PORT_CHOICES_MAX];
+    s32 least;
+    s32 most;
+    PortSettingReader reader;
+    const char *is;
+    s32 menu; /* PORT_MENU_... */
+    s32 rank;
+    s32 takes; /* PORT_TAKES_... */
+    const char *label;
+    const char *help;
+    const char *choices[PORT_CHOICES_MAX];
+    const char *shown[PORT_CHOICES_MAX];
+} PortSetting;
+
+extern const PortSetting g_port_setting_list[];
+extern const s32 g_port_setting_count;
+
+/* The most bytes the built-in text may take, with its 0. */
+#define PORT_DEFAULT_SETTINGS_BYTES 8192
+
+/* The settings built in, as the text of a settings file (--help prints
+ * it), made from settings_list.h: each setting's line and its comment,
+ * the comment beginning at a column of its own. Its line
  * `controls = original` brings the bindings of that layout. */
-extern const char g_port_default_settings[];
+extern const char *port_GetDefaultSettings(void);
 
 /* The layouts of the keys and the controllers' buttons that a settings
  * file starts from (`controls = NAME`), each as a settings file with
@@ -416,17 +433,11 @@ extern void port_ClearBindingsText(char *text, s32 pad);
 
 /* ---- the settings menu's choices (choices.c) ---- */
 
-/* How a change of a setting takes effect. */
-enum {
-    PORT_TAKES_NOW = 0,     /* at once, while the game is paused */
-    PORT_TAKES_RESTART = 1, /* the next time the program starts */
-};
-
 /* A setting of rebushido.cfg as the settings menu shows it: its name in
  * the file, what the menu calls it, and the values it can step through,
- * each as the file writes it and as the menu shows it. */
-#define PORT_CHOICES_MAX 8
-
+ * each as the file writes it and as the menu shows it. Made from the
+ * entries of settings_list.h that have a group of the menu, in the
+ * order of their groups and ranks. */
 typedef struct {
     const char *name;  /* in the file */
     const char *label; /* in the menu */
@@ -444,10 +455,12 @@ typedef struct {
     s32 count;
 } PortChoiceGroup;
 
-#define PORT_CHOICE_GROUPS 4
-extern const PortChoice g_port_choices[];
-extern const s32 g_port_choice_count;
-extern const PortChoiceGroup g_port_choice_groups[PORT_CHOICE_GROUPS];
+/* The menu's settings, numbered from 0 in its order: one of them (NULL
+ * outside), how many there are, and one of the PORT_CHOICE_GROUPS groups
+ * (NULL outside), which take every setting once, in order. */
+extern const PortChoice *port_FindChoice(s32 choice);
+extern s32 port_CountChoices(void);
+extern const PortChoiceGroup *port_FindChoiceGroup(s32 group);
 /* Which of a choice's values the settings hold now: its number, or -1
  * for a value that is none of them (a file's own `shadows = 30`). */
 extern s32 port_GetChoice(const PortSettings *settings, s32 choice);

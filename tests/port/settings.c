@@ -208,79 +208,70 @@ static void test_Choices(void) {
 
     /* the groups take every setting once, in order */
     for (group = 0; group < PORT_CHOICE_GROUPS; group++) {
-        CHECK_EQ(g_port_choice_groups[group].first, next);
-        next += g_port_choice_groups[group].count;
+        CHECK_EQ(port_FindChoiceGroup(group)->first, next);
+        next += port_FindChoiceGroup(group)->count;
     }
-    CHECK_EQ(next, g_port_choice_count);
+    CHECK_EQ(next, port_CountChoices());
+    CHECK(port_FindChoiceGroup(PORT_CHOICE_GROUPS) == NULL);
+    CHECK(port_FindChoice(port_CountChoices()) == NULL);
     /* every value of every setting is a line the reader takes, and reads
      * back as that value */
-    for (choice = 0; choice < g_port_choice_count; choice++) {
-        CHECK(g_port_choices[choice].count >= 2);
-        CHECK(g_port_choices[choice].count <= PORT_CHOICES_MAX);
-        for (value = 0; value < g_port_choices[choice].count; value++) {
+    for (choice = 0; choice < port_CountChoices(); choice++) {
+        CHECK(port_FindChoice(choice)->count >= 2);
+        CHECK(port_FindChoice(choice)->count <= PORT_CHOICES_MAX);
+        for (value = 0; value < port_FindChoice(choice)->count; value++) {
             port_SetDefaultSettings(settings, test_LookUp);
             CHECK(port_SetChoice(settings, choice, value));
             if (port_GetChoice(settings, choice) != value) {
                 test_Print(
-                    "%s = %s reads back as %d\n", g_port_choices[choice].name,
-                    g_port_choices[choice].words[value],
+                    "%s = %s reads back as %d\n", port_FindChoice(choice)->name,
+                    port_FindChoice(choice)->words[value],
                     port_GetChoice(settings, choice));
             }
             CHECK_EQ(port_GetChoice(settings, choice), value);
         }
     }
-    /* the settings built in, as the menu shows them */
+    /* the settings built in, as the menu shows them: each the value of
+     * the menu's that its line of the built-in text has */
     port_SetDefaultSettings(settings, test_LookUp);
-    for (choice = 0; choice < g_port_choice_count; choice++) {
-        static const struct {
-            const char *name;
-            s32 value;
-        } built_in[] = {
-            {"fullscreen", 1},    {"scale", 0},
-            {"filter", 0},        {"vsync", 1},
-            {"fps", 1},           {"fps_corner", 0},
-            {"graphics", 1},      {"resolution", 0},
-            {"antialiasing", 1},  {"draw_distance", 2},
-            {"aspect", 2},        {"stage_mesh", 1},
-            {"shadows", 2},       {"frame_rate", 1},
-            {"english", 1},       {"ui", 1},
-            {"mods", 1},          {"music_mods", 1},
-            {"deadzone", 2},      {"sky", 1},
-            {"see_through", 1},   {"fighter_models", 1},
-            {"quick_loading", 1}, {"smooth_light", 1},
-            {"effects", 2},       {"run_ahead", 1},
-            {"low_latency", 1},   {"stage_props_mesh", 1},
-        };
+    for (choice = 0; choice < port_CountChoices(); choice++) {
+        const PortChoice *of = port_FindChoice(choice);
+        s32 i;
 
-        u32 i;
+        for (i = 0; i < g_port_setting_count; i++) {
+            const PortSetting *setting = &g_port_setting_list[i];
 
-        for (i = 0; i < sizeof(built_in) / sizeof(built_in[0]); i++) {
-            const char *a = built_in[i].name;
-            const char *b = g_port_choices[choice].name;
-
-            while (*a != 0 && *a == *b) {
-                a++;
-                b++;
-            }
-            if (*a == 0 && *b == 0) {
-                CHECK_EQ(port_GetChoice(settings, choice), built_in[i].value);
+            if (setting->name != NULL &&
+                test_StringsEqual(setting->name, of->name)) {
                 break;
             }
         }
-        CHECK(i < sizeof(built_in) / sizeof(built_in[0]));
+        CHECK(i < g_port_setting_count);
+        for (value = 0; value < of->count; value++) {
+            if (test_StringsEqual(
+                    of->words[value], g_port_setting_list[i].value)) {
+                break;
+            }
+        }
+        CHECK(value < of->count);
+        CHECK_EQ(port_GetChoice(settings, choice), value);
+        CHECK(of->label != NULL && of->help != NULL);
+        for (value = 0; value < of->count; value++) {
+            CHECK(of->shown[value] != NULL);
+        }
     }
     /* a value of the file's own that is none of the menu's */
     test_Set("shadows = cast:50\naspect = 2:1\n");
     port_ReadSettings(settings, g_test_text, test_LookUp, NULL);
-    for (choice = 0; choice < g_port_choice_count; choice++) {
-        const char *name = g_port_choices[choice].name;
+    for (choice = 0; choice < port_CountChoices(); choice++) {
+        const char *name = port_FindChoice(choice)->name;
 
         if (name[0] == 's' && name[1] == 'h') {
             CHECK_EQ(port_GetChoice(settings, choice), -1);
             /* stepped from it: the first, or the last */
             CHECK_EQ(port_StepChoice(choice, -1, 1), 0);
             CHECK_EQ(port_StepChoice(choice, -1, -1),
-                     g_port_choices[choice].count - 1);
+                     port_FindChoice(choice)->count - 1);
         }
         if (name[0] == 'a' && name[1] == 's') {
             CHECK_EQ(port_GetChoice(settings, choice), -1);
@@ -294,11 +285,56 @@ static void test_Choices(void) {
     CHECK_EQ(port_StepChoice(1, 0, -1), 2);
     CHECK_EQ(port_StepChoice(1, 1, 1), 2);
     CHECK_EQ(port_StepChoice(-1, 0, 1), -1);
-    CHECK_EQ(port_GetChoice(settings, g_port_choice_count), -1);
+    CHECK_EQ(port_GetChoice(settings, port_CountChoices()), -1);
     CHECK(!port_SetChoice(settings, 0, 9));
 }
 
+/* ---- the list of the settings ---- */
+
+static void test_List(void) {
+    static char copy[PORT_DEFAULT_SETTINGS_BYTES];
+    const char *text = port_GetDefaultSettings();
+    u32 length = 0;
+    s32 i;
+    s32 j;
+
+    for (i = 0; i < g_port_setting_count; i++) {
+        const PortSetting *setting = &g_port_setting_list[i];
+
+        if (setting->name == NULL) {
+            CHECK(setting->note != NULL);
+            continue;
+        }
+        /* a value built in, and a member or a reader of its own */
+        CHECK(setting->value != NULL);
+        CHECK(setting->at >= 0 || setting->read == PORT_READ_BY);
+        CHECK(setting->read != PORT_READ_BY || setting->reader != NULL);
+        /* one entry a name */
+        for (j = 0; j < i; j++) {
+            if (g_port_setting_list[j].name != NULL &&
+                test_StringsEqual(g_port_setting_list[j].name, setting->name)) {
+                test_Print("%s is in the list twice\n", setting->name);
+                CHECK(FALSE);
+            }
+        }
+        /* in the menu: a group of its own */
+        CHECK(setting->menu >= PORT_MENU_NONE &&
+              setting->menu <= PORT_CHOICE_GROUPS);
+    }
+    /* the built-in text fits, and reads with nothing left over */
+    while (text[length] != 0) {
+        length++;
+    }
+    CHECK(length > 0 && length < PORT_DEFAULT_SETTINGS_BYTES - 1);
+    for (i = 0; (u32)i <= length; i++) {
+        copy[i] = text[i];
+    }
+    port_SetDefaultSettings(&g_test_settings, test_LookUp);
+    CHECK_EQ(port_ReadSettings(&g_test_settings, copy, test_LookUp, NULL), 0);
+}
+
 void test_Main(void) {
+    test_List();
     test_SettingText();
     test_BindingText();
     test_ReadBack();

@@ -2497,7 +2497,7 @@ void port_WindowSetRemastered(s32 on) {
 }
 
 void port_WindowApplyChoice(s32 choice) {
-    const char *name = g_port_choices[choice].name;
+    const char *name = port_FindChoice(choice)->name;
 
     if (strcmp(name, "fullscreen") == 0) {
         port_SetFullscreen(g_port_settings.is_fullscreen);

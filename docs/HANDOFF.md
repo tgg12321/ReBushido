@@ -314,11 +314,13 @@ what they buy for what they cost:
    `port_stage_prove.py` 1,767 s against 527 s. llvmpipe stays
    the exact reference (PORT.md, "The provers on a graphics card").
    Mesa's D3D12 driver in WSL is no way to the card: it draws wrong.
-4. **No more merge conflicts in the same three places.** Nearly every
-   merge collided in the settings table (`src/port/window/choices.c` and
-   its groups), its built-in test list (`tests/port/settings.c`) and the
-   defaults in `keymap.c`. Each feature registering its own settings in
-   its own file ends most "merge main into your branch" round trips.
+4. **No more merge conflicts in the same three places: done.** Nearly
+   every merge collided in the settings table (`src/port/window/choices.c`
+   and its groups), its built-in test list (`tests/port/settings.c`) and
+   the defaults in `keymap.c`. Every setting is now one entry of
+   `src/port/window/settings_list.h`, from which the member, the reader,
+   the defaults, the `--help` text and the menu are made (PORT.md, "Every
+   setting is one entry of one list").
 5. **A "report a bug" key**: one press keeps the screenshot, the log's
    last seconds, `rebushido.cfg`, the frame-time profile and the build
    in one folder, so each report comes with what an agent needs.

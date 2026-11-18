@@ -48,7 +48,7 @@ enum {
 /* What a row of a page is. */
 enum {
     ROW_HEADER,   /* a group's title: never the cursor's */
-    ROW_CHOICE,   /* a setting of g_port_choices: `index` */
+    ROW_CHOICE,   /* a setting of port_FindChoice: `index` */
     ROW_BUGFIXES, /* the game's own setting */
     ROW_BUTTONS,  /* a pad's buttons: `index` the pad */
     ROW_CLOSE,
@@ -131,7 +131,7 @@ static void port_MenuBuild(s32 page, s32 cursor) {
     g_menu.row_count = 0;
     if (page == PAGE_MAIN) {
         for (group = 0; group < PORT_CHOICE_GROUPS; group++) {
-            const PortChoiceGroup *of = &g_port_choice_groups[group];
+            const PortChoiceGroup *of = port_FindChoiceGroup(group);
 
             port_MenuAddRow(ROW_HEADER, group);
             for (i = 0; i < of->count; i++) {
@@ -250,7 +250,7 @@ static void port_MenuReadBindings(void) {
 /* ---- what a row shows ---- */
 
 static s32 port_MenuChoiceValue(s32 choice) {
-    if (strcmp(g_port_choices[choice].name, "graphics") == 0) {
+    if (strcmp(port_FindChoice(choice)->name, "graphics") == 0) {
         return port_WindowIsRemastered() ? 1 : 0;
     }
     return port_GetChoice(&g_port_settings, choice);
@@ -297,11 +297,11 @@ static void port_MenuDescribe(
     switch (row->kind) {
     case ROW_HEADER:
         snprintf(label, LABEL_BYTES, "%s",
-                 row->index >= 0 ? g_port_choice_groups[row->index].title
+                 row->index >= 0 ? port_FindChoiceGroup(row->index)->title
                                  : "The game");
         break;
     case ROW_CHOICE: {
-        const PortChoice *choice = &g_port_choices[row->index];
+        const PortChoice *choice = port_FindChoice(row->index);
         s32 now = port_MenuChoiceValue(row->index);
 
         snprintf(label, LABEL_BYTES, "%s", choice->label);
@@ -402,7 +402,7 @@ static const char *port_MenuHelp(void) {
     }
     switch (row->kind) {
     case ROW_CHOICE:
-        return g_port_choices[row->index].help;
+        return port_FindChoice(row->index)->help;
     case ROW_BUGFIXES:
         return "The original's bugs fixed: for this session (the options "
                "page at boot keeps it on the card)";
@@ -573,7 +573,7 @@ void port_MenuType(char c) {
 /* ---- presses ---- */
 
 static void port_MenuStepChoice(s32 choice, s32 step) {
-    const PortChoice *of = &g_port_choices[choice];
+    const PortChoice *of = port_FindChoice(choice);
     s32 now = port_MenuChoiceValue(choice);
     s32 next = port_StepChoice(choice, now, step);
 
@@ -772,7 +772,7 @@ void port_MenuOpen(const char *path) {
     snprintf(g_menu.path, sizeof(g_menu.path), "%s", path);
     port_MenuReadFile();
     if (!g_menu.has_start) {
-        for (i = 0; i < g_port_choice_count && i < CHOICES_KEPT; i++) {
+        for (i = 0; i < port_CountChoices() && i < CHOICES_KEPT; i++) {
             g_menu.start[i] = port_MenuChoiceValue(i);
         }
         g_menu.has_start = TRUE;
@@ -936,7 +936,7 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
         port_FontDraw(
             pixels, panel_w, panel_h, x + pad, baseline, label, color);
         if (row->kind == ROW_CHOICE &&
-            g_port_choices[row->index].takes == PORT_TAKES_RESTART &&
+            port_FindChoice(row->index)->takes == PORT_TAKES_RESTART &&
             row->index < CHOICES_KEPT &&
             port_MenuChoiceValue(row->index) != g_menu.start[row->index]) {
             /* changed, and waiting on the program's next start */
