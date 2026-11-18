@@ -661,6 +661,17 @@ such a program does not have.)
   ends at its `limit`. The clock only catches a hang: a run is stopped
   when its emulator has written nothing for two minutes (it writes a line
   every 300 blanks), and at four times its `seconds`.
+- Nothing of the host reaches the pads but the plan's presses: the script
+  sets both pads' input to the keyboard (`set hostpads` in `run.log`),
+  which a run on its own desktop never has the focus for. Left at the
+  emulator's `Auto`, each pad also reads the host's game controllers,
+  which need no focus: on 2026-11-18 the owner played a game with his
+  controller beside a gate's `-j 4` suite, and every emulator run that
+  went through the menus at that time took his presses as its own
+  (options changed on the options page, another mode chosen at the top
+  menu, "gave up at blank 4092"). The port's runs, which read no
+  controller, all passed. A run whose emulator does not take the setting
+  fails ("the emulator did not take a setting").
 - The interpreter and the debugger are what the check of the exception
   vector needs. It runs about three times the console's speed.
 - The emulator's script is `tools/play/runner.lua`, the same file for
