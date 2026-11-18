@@ -107,6 +107,21 @@ commands are the same and the outputs land in `build/` as before:
   replaced the files `port-rollback` was comparing, and failed the gate
   now and then (docs/NETPLAY.md, "What failed in the gate").
 
+WSL's wall clock steps back by itself, by tenths of a second and more,
+many times a day (the Hyper-V time sync and `systemd-timesyncd` both set
+it; `journalctl | grep "Time jumped backwards"`). make decides by the
+files' times, so a file written just after such a step is older than one
+written just before it. Where the build is told something by a file it
+writes only when that changes (the commit for `version.o`, the list of
+objects for the link script, quick boot's fight for `quickboot.o`), a
+change removes the object and the program as well (`RB_LINKED` in the
+`Makefile`), which no step of the clock can leave in place. Before this a
+gate failed in the play tests on a QuickBoot-bugfixes disc made of the
+QuickBoot-bugs disc's program, built a few seconds before: make had
+compiled and linked nothing. `make quickboot-disc` now reads the fight
+back from the disc it made (`tools/quickboot.py verify`) and fails if it
+is not the one asked for.
+
 Measured on the owner's machine (2026-11-18, other builds running beside):
 
 | | on `/mnt/c` | in the copy, with the copying |
@@ -282,7 +297,9 @@ headers several builds write (`build/modern/include/`,
 that builds side by side never read one half written. `port-net` takes
 96 UDP ports of 127.0.0.1 from a base chosen by the checkout's path
 (`--net-base`), so that two checkouts' gates do not meet; the play tests
-run four at once (`-j`). The builds and checks run in the copy on WSL's
+run four at once (`-j`) and with `--strict`: a checkout with no emulator
+or disc, or a test skipped, fails the gate rather than passing it with no
+play test run (`REBUSHIDO_EMULATOR` names the emulator from a worktree). The builds and checks run in the copy on WSL's
 disk ("Where the build runs"), each bringing `build/` back as it ends, so
 the play tests and the steps that run the programs (`IN_PLACE`) find them
 here. Each step's output is `build/gate/<step>.log`

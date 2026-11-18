@@ -62,7 +62,8 @@ void test_Main(void) {
     CHECK_EQ(g_test_started_with.first_person, 0);
 
     /* the build's choice, where a play test can read it */
-    CHECK_EQ(sizeof(g_rb_quick_boot), 7);
+    CHECK_EQ(sizeof(g_rb_quick_boot), 8);
     CHECK_EQ(g_rb_quick_boot[0], FIGHT_MODE_VSCPU);
     CHECK_EQ(g_rb_quick_boot[5], STAGE_SNAKE_CLIFF);
+    CHECK_EQ(g_rb_quick_boot[7], 1);
 }

@@ -76,9 +76,9 @@ void rb_PortQuickFight(void) {
 #endif
 
 /* The fight the build chose (rb_quickboot.h). */
-const s8 g_rb_quick_boot[7] = {
+const s8 g_rb_quick_boot[8] = {
     RB_QB_MODE,    RB_QB_P1,    RB_QB_P2,   RB_QB_WEAPON1,
-    RB_QB_WEAPON2, RB_QB_STAGE, RB_QB_CPU2,
+    RB_QB_WEAPON2, RB_QB_STAGE, RB_QB_CPU2, RB_QB_BUGFIXES,
 };
 
 /* Starts the fight the build chose. */
