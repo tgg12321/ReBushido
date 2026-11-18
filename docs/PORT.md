@@ -5275,7 +5275,21 @@ ms:
 | `run_ahead 1`, four fighters, the ground twice | 7.50 | 7.44 | 10.30 | **9.06** |
 
 and on the clock (the budget's own measure), `run_ahead 1`: the frame's
-median 7.39 to 6.09, the 99th centile 9.93 to 8.05. With the frame ahead
+median 7.39 to 6.09, the 99th centile 9.93 to 8.05. The gate's bench
+(`1cea709e0`, two provers running beside it) against main's
+(`2319cca13`, measured the same day under other agents' load), every
+blank after the fight's first second, 99th centile and worst, ms:
+
+| case | main | now |
+| --- | --- | --- |
+| `run_ahead 0` | 10.30, 11.68 | 10.97, 12.29 |
+| `run_ahead 1` | 14.71, 16.45 | 11.48, 11.97 |
+| `run_ahead 2` | 19.25, 19.53 | 11.64, 12.10 |
+| `run_ahead 1`, four fighters, the ground twice | 19.12, 20.59 | 11.02, 12.38 |
+
+So a frame run ahead now costs about what a frame with none costs, and
+two little more; `run_ahead 0` is not changed by this (its 0.7 is the
+load's). With the frame ahead
 mixed (`RB_AHEAD_SOUND=mix`), `run_ahead 2`'s frame is 0.3 ms dearer.
 Where a frame's blank goes now, `run_ahead 1` (the profile's parts, and
 the window's thread sampled, `--sample`): the game 1.7 (its step, and the
