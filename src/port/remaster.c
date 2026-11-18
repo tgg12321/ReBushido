@@ -2319,6 +2319,14 @@ void port_RemasterPause(s32 what, s32 from_x, s32 from_y) {
         return;
     }
     g_pause_skips = TRUE;
+    /* a step the card drew as the frame ahead before
+     * (g_port_ahead_kept): the holder draws into the card's frame, which
+     * this step's blanks do not end, so it would draw the fight over the
+     * panel the frame ahead drew (docs/PORT.md, "The pause and the frames
+     * ahead") */
+    if (g_port_ahead_kept) {
+        return;
+    }
     port_GetGpuState(&state);
     g_pause_holder(
         PORT_PAUSE_FROZEN, from_x, from_y, state.clip_left, state.clip_top);
