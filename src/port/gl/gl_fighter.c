@@ -99,148 +99,75 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_ONE_MINUS_SRC_ALPHA 0x0303
 #define GL_FUNC_ADD 0x8006
 
-#define PORT_GL_FIGHTER_FUNCTIONS                                                                                                     \
-    GL(void, glTexImage2DMultisample,                                                                                                 \
-       (GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLboolean))                                                                        \
-    GL(void, glBlendFunc, (GLenum, GLenum))                                                                                           \
-    GL(void, glBlendEquation, (GLenum))                                                                                               \
-    GL(void, glRenderbufferStorageMultisample,                                                                                        \
-       (GLenum, GLsizei, GLenum, GLsizei,                                                                                             \
-        GLsizei)) GL(void, glViewport,                                                                                                \
-                     (GLint, GLint, GLsizei,                                                                                          \
-                      GLsizei)) GL(void, glScissor,                                                                                   \
-                                   (GLint, GLint, GLsizei,                                                                            \
-                                    GLsizei)) GL(void, glEnable, (GLenum))                                                            \
-        GL(void, glDisable, (GLenum)) GL(void, glCullFace, (GLenum)) GL(                                                              \
-            void, glFrontFace,                                                                                                        \
-            (GLenum)) GL(void, glClear,                                                                                               \
-                         (GLbitfield)) GL(void, glClearDepth, (GLclampd))                                                             \
-            GL(void, glClearBufferfv, (GLenum, GLint, const GLfloat *)) GL(                                                           \
-                void, glDepthFunc,                                                                                                    \
-                (GLenum)) GL(void, glDepthMask,                                                                                       \
-                             (GLboolean)) GL(void, glPolygonOffset,                                                                   \
-                                             (GLfloat, GLfloat))                                                                      \
-                GL(void, glDrawBuffers, (GLsizei, const GLenum *)) GL(                                                                \
-                    void, glColorMask,                                                                                                \
-                    (GLboolean, GLboolean, GLboolean,                                                                                 \
-                     GLboolean)) GL(void, glGenerateMipmap, (GLenum)) GL(void, glGenTextures, (GLsizei, GLuint *))                    \
-                    GL(void, glBindTexture, (GLenum, GLuint)) GL(void, glActiveTexture, (GLenum)) GL(                                 \
-                        void, glTexImage2D,                                                                                           \
-                        (GLenum, GLint, GLint, GLsizei, GLsizei, GLint,                                                               \
-                         GLenum,                                                                                                      \
-                         GLenum,                                                                                                      \
-                         const void                                                                                                   \
-                             *)) GL(void, glTexParameteri, (GLenum, GLenum, GLint))                                                   \
-                        GL(void, glGenFramebuffers, (GLsizei, GLuint *)) GL(                                                          \
-                            void, glBindFramebuffer,                                                                                  \
-                            (GLenum,                                                                                                  \
-                             GLuint)) GL(void, glFramebufferTexture2D,                                                                \
-                                         (GLenum, GLenum, GLenum, GLuint,                                                             \
-                                          GLint)) GL(void,                                                                            \
-                                                     glFramebufferRenderbuffer,                                                       \
-                                                     (GLenum, GLenum, GLenum, GLuint)) GL(GLenum, glCheckFramebufferStatus, (GLenum)) \
-                            GL(void, glGenRenderbuffers, (GLsizei, GLuint *)) GL(                                                     \
-                                void, glBindRenderbuffer,                                                                             \
-                                (GLenum,                                                                                              \
-                                 GLuint)) GL(void, glRenderbufferStorage,                                                             \
-                                             (GLenum, GLenum, GLsizei, GLsizei))                                                      \
-                                GL(void, glGenBuffers, (GLsizei, GLuint *)) GL(                                                       \
-                                    void, glBindBuffer,                                                                               \
-                                    (GLenum,                                                                                          \
-                                     GLuint)) GL(void, glBufferData,                                                                  \
-                                                 (GLenum, GLsizeiptr, const void *,                                                   \
-                                                  GLenum)) GL(void, glGenVertexArrays, (GLsizei, GLuint *))                           \
-                                    GL(void, glBindVertexArray, (GLuint)) GL(                                                         \
-                                        void, glVertexAttribPointer,                                                                  \
-                                        (GLuint, GLint, GLenum, GLboolean,                                                            \
-                                         GLsizei,                                                                                     \
-                                         const void                                                                                   \
-                                             *))                                                                                      \
-                                        GL(void, glVertexAttribIPointer,                                                              \
-                                           (                                                                                          \
-                                               GLuint,                                                                                \
-                                               GLint, GLenum, GLsizei,                                                                \
-                                               const void                                                                             \
-                                                   *)) GL(void, glEnableVertexAttribArray,                                            \
-                                                          (                                                                           \
-                                                              GLuint)) GL(GLuint,                                                     \
-                                                                          glCreateShader,                                             \
-                                                                          (GLenum))                                                   \
-                                            GL(void, glShaderSource,                                                                  \
-                                               (                                                                                      \
-                                                   GLuint,                                                                            \
-                                                   GLsizei,                                                                           \
-                                                   const GLchar                                                                       \
-                                                       * const                                                                        \
-                                                           *,                                                                         \
-                                                   const GLint                                                                        \
-                                                       *)) GL(void, glCompileShader,                                                  \
-                                                              (GLuint))                                                               \
-                                                GL(void, glGetShaderiv, (GLuint, GLenum, GLint *)) GL(                                \
-                                                    void, glGetShaderInfoLog,                                                         \
-                                                    (GLuint,                                                                          \
-                                                     GLsizei, GLsizei *,                                                              \
-                                                     GLchar                                                                           \
-                                                         *)) GL(GLuint, glCreateProgram, (void))                                      \
-                                                    GL(void, glAttachShader, (GLuint, GLuint)) GL(                                    \
-                                                        void, glLinkProgram,                                                          \
-                                                        (GLuint)) GL(void,                                                            \
-                                                                     glGetProgramiv,                                                  \
-                                                                     (GLuint, GLenum, GLint *))                                       \
-                                                        GL(void,                                                                      \
-                                                           glGetProgramInfoLog,                                                       \
-                                                           (GLuint, GLsizei,                                                          \
-                                                            GLsizei                                                                   \
-                                                                *,                                                                    \
-                                                            GLchar *)) GL(void, glUseProgram,                                         \
-                                                                          (GLuint))                                                   \
-                                                            GL(GLint,                                                                 \
-                                                               glGetUniformLocation,                                                  \
-                                                               (                                                                      \
-                                                                   GLuint,                                                            \
-                                                                   const GLchar                                                       \
-                                                                       *)) GL(void, glUniform1i,                                      \
-                                                                              (GLint, GLint))                                         \
-                                                                GL(void, glUniform1f, (GLint, GLfloat)) GL(                           \
-                                                                    void,                                                             \
-                                                                    glUniform2f,                                                      \
-                                                                    (GLint,                                                           \
-                                                                     GLfloat,                                                         \
-                                                                     GLfloat)) GL(void, glUniform3f,                                  \
-                                                                                  (GLint, GLfloat, GLfloat, GLfloat))                 \
-                                                                    GL(void,                                                          \
-                                                                       glUniform4f,                                                   \
-                                                                       (GLint,                                                        \
-                                                                        GLfloat,                                                      \
-                                                                        GLfloat,                                                      \
-                                                                        GLfloat,                                                      \
-                                                                        GLfloat))                                                     \
-                                                                        GL(void,                                                      \
-                                                                           glUniformMatrix3fv,                                        \
-                                                                           (GLint,                                                    \
-                                                                            GLsizei,                                                  \
-                                                                            GLboolean,                                                \
-                                                                            const GLfloat                                             \
-                                                                                *))                                                   \
-                                                                            GL(void,                                                  \
-                                                                               glUniformMatrix4fv,                                    \
-                                                                               (GLint,                                                \
-                                                                                GLsizei,                                              \
-                                                                                GLboolean,                                            \
-                                                                                const GLfloat                                         \
-                                                                                    *))                                               \
-                                                                                GL(void,                                              \
-                                                                                   glDrawArrays,                                      \
-                                                                                   (GLenum,                                           \
-                                                                                    GLint,                                            \
-                                                                                    GLsizei))                                         \
-                                                                                    GL(void,                                          \
-                                                                                       glDrawElements,                                \
-                                                                                       (GLenum,                                       \
-                                                                                        GLsizei,                                      \
-                                                                                        GLenum,                                       \
-                                                                                        const void                                    \
-                                                                                            *))
+#define PORT_GL_FIGHTER_FUNCTIONS                                              \
+    GL(void, glTexImage2DMultisample,                                          \
+       (GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLboolean))                 \
+    GL(void, glBlendFunc, (GLenum, GLenum))                                    \
+    GL(void, glBlendEquation, (GLenum))                                        \
+    GL(void, glRenderbufferStorageMultisample,                                 \
+       (GLenum, GLsizei, GLenum, GLsizei, GLsizei))                            \
+    GL(void, glViewport, (GLint, GLint, GLsizei, GLsizei))                     \
+    GL(void, glScissor, (GLint, GLint, GLsizei, GLsizei))                      \
+    GL(void, glEnable, (GLenum))                                               \
+    GL(void, glDisable, (GLenum))                                              \
+    GL(void, glCullFace, (GLenum))                                             \
+    GL(void, glFrontFace, (GLenum))                                            \
+    GL(void, glClear, (GLbitfield))                                            \
+    GL(void, glClearDepth, (GLclampd))                                         \
+    GL(void, glClearBufferfv, (GLenum, GLint, const GLfloat *))                \
+    GL(void, glDepthFunc, (GLenum))                                            \
+    GL(void, glDepthMask, (GLboolean))                                         \
+    GL(void, glPolygonOffset, (GLfloat, GLfloat))                              \
+    GL(void, glDrawBuffers, (GLsizei, const GLenum *))                         \
+    GL(void, glColorMask, (GLboolean, GLboolean, GLboolean, GLboolean))        \
+    GL(void, glGenerateMipmap, (GLenum))                                       \
+    GL(void, glGenTextures, (GLsizei, GLuint *))                               \
+    GL(void, glBindTexture, (GLenum, GLuint))                                  \
+    GL(void, glActiveTexture, (GLenum))                                        \
+    GL(void, glTexImage2D,                                                     \
+       (GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum,         \
+        const void *))                                                         \
+    GL(void, glTexParameteri, (GLenum, GLenum, GLint))                         \
+    GL(void, glGenFramebuffers, (GLsizei, GLuint *))                           \
+    GL(void, glBindFramebuffer, (GLenum, GLuint))                              \
+    GL(void, glFramebufferTexture2D, (GLenum, GLenum, GLenum, GLuint, GLint))  \
+    GL(void, glFramebufferRenderbuffer, (GLenum, GLenum, GLenum, GLuint))      \
+    GL(GLenum, glCheckFramebufferStatus, (GLenum))                             \
+    GL(void, glGenRenderbuffers, (GLsizei, GLuint *))                          \
+    GL(void, glBindRenderbuffer, (GLenum, GLuint))                             \
+    GL(void, glRenderbufferStorage, (GLenum, GLenum, GLsizei, GLsizei))        \
+    GL(void, glGenBuffers, (GLsizei, GLuint *))                                \
+    GL(void, glBindBuffer, (GLenum, GLuint))                                   \
+    GL(void, glBufferData, (GLenum, GLsizeiptr, const void *, GLenum))         \
+    GL(void, glGenVertexArrays, (GLsizei, GLuint *))                           \
+    GL(void, glBindVertexArray, (GLuint))                                      \
+    GL(void, glVertexAttribPointer,                                            \
+       (GLuint, GLint, GLenum, GLboolean, GLsizei, const void *))              \
+    GL(void, glVertexAttribIPointer,                                           \
+       (GLuint, GLint, GLenum, GLsizei, const void *))                         \
+    GL(void, glEnableVertexAttribArray, (GLuint))                              \
+    GL(GLuint, glCreateShader, (GLenum))                                       \
+    GL(void, glShaderSource,                                                   \
+       (GLuint, GLsizei, const GLchar * const *, const GLint *))               \
+    GL(void, glCompileShader, (GLuint))                                        \
+    GL(void, glGetShaderiv, (GLuint, GLenum, GLint *))                         \
+    GL(void, glGetShaderInfoLog, (GLuint, GLsizei, GLsizei *, GLchar *))       \
+    GL(GLuint, glCreateProgram, (void))                                        \
+    GL(void, glAttachShader, (GLuint, GLuint))                                 \
+    GL(void, glLinkProgram, (GLuint))                                          \
+    GL(void, glGetProgramiv, (GLuint, GLenum, GLint *))                        \
+    GL(void, glGetProgramInfoLog, (GLuint, GLsizei, GLsizei *, GLchar *))      \
+    GL(void, glUseProgram, (GLuint))                                           \
+    GL(GLint, glGetUniformLocation, (GLuint, const GLchar *))                  \
+    GL(void, glUniform1i, (GLint, GLint))                                      \
+    GL(void, glUniform1f, (GLint, GLfloat))                                    \
+    GL(void, glUniform2f, (GLint, GLfloat, GLfloat))                           \
+    GL(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat))                  \
+    GL(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat))         \
+    GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
+    GL(void, glUniformMatrix4fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
+    GL(void, glDrawArrays, (GLenum, GLint, GLsizei))                           \
+    GL(void, glDrawElements, (GLenum, GLsizei, GLenum, const void *))
 
 #define GL(result, name, args) static result(*name) args;
 PORT_GL_FIGHTER_FUNCTIONS
