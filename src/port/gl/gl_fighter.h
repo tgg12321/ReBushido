@@ -116,6 +116,12 @@ typedef struct {
     u32 cloth_places;
     u32 cloth_inside;
     u32 cloth_left_inside;
+    /* cloths kept out of the body, and kept-out cloths read again
+     * (port_GlFighterHeldCloth) */
+    u32 cloth_holds;
+    u32 cloth_reused;
+    /* colour tables sent to the card (the same ones are not sent again) */
+    u32 palettes_sent;
 } PortGlFighterCounts;
 
 extern const PortGlFighterCounts *port_GlFighterCounts(void);

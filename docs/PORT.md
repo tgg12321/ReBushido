@@ -4326,6 +4326,18 @@ which is now never waited for from the start (`REFRESH_MIN`); the window
 gives up at run time only where the display's rate is not known
 (`port_ShowBlank`).
 
+**The fighters' colour tables** (the owner, 2026-11-18: with
+`fighter_models` off the fight is a steady 60, with it on about 50
+and the time let go every 16 to 20 blanks). Where the game has changed
+a model's colour tables -- every drawing of a tinted fighter, the second
+player's, the CPU's -- the tables' texture was made again
+(`glTexImage2D` of a floating-point texture) for each drawing of each
+picture: 3,689 times in `port_game`'s fight with Mikado against Kaun,
+each a texture the card may still be drawing from, which a driver can
+only answer with new memory. It is now sent where the tables differ
+from what that place's texture holds: 4 times in the same fight
+(`palette_sent`; the session's log says how many at its end).
+
 **run_ahead's default** is now 1 (`PORT_RUN_AHEAD_DEFAULT`): two frames
 ahead cost a menu's blank (16.7 ms) 10.8 ms on the owner's PC before any
 of the above, and a press is still seen 50 ms sooner than on the console
@@ -4662,7 +4674,7 @@ distance and at least 48 units, found through a hashed grid of 64-unit
 cubes. The sum is smooth, so a point kept out moves smoothly from frame
 to frame. The frame's cloth kept out is written down in the world's units
 under what it was made from (the model, its 21 bones and the cloth's
-points: `port_GlFighterHeldCloth`, eight a slot), and the frame's picture,
+points: `port_GlFighterHeldCloth`, sixteen a slot: three frames of five cloths), and the frame's picture,
 its shadow, every picture between it and the next frame and a frame run
 ahead to the same pose all read it; a picture between two frames mixes
 the two frames' kept-out surfaces, place by place and normal by normal.

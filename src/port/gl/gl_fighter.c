@@ -340,6 +340,11 @@ static struct {
      * the game has done to them */
     ClutPlace place[PLACES];
     GLuint palette_texture[PLACES];
+    /* what each place's texture was last sent, so that the same tables
+     * are not sent again for every drawing of every picture: a texture
+     * made again while the card still draws from it is a new one for the
+     * driver each time (port_GlFighterPalette) */
+    u64 palette_sent[PLACES];
     float palette[256 * PORT_FIGHTER_FILE_CLUTS * 4];
     s32 cull;
     /* the cloths drawn smooth where a file has them (RB_HD_CLOTH=0: the
@@ -1308,6 +1313,20 @@ static void port_GlFighterFindPlace(s32 place, const FighterModel *model) {
     }
 }
 
+/* A hash of bytes (FNV-1a, 64 bits). */
+#define HASH_START 0xCBF29CE484222325ULL
+#define HASH_STEP 0x100000001B3ULL
+
+static u64 port_GlFighterHash(u64 hash, const void *bytes, size_t size) {
+    const u8 *at = bytes;
+    size_t i;
+
+    for (i = 0; i < size; i++) {
+        hash = (hash ^ at[i]) * HASH_STEP;
+    }
+    return hash;
+}
+
 /* What the game has done to the model's colour tables, into the place's
  * texture: each entry's colour now less its colour in the file, a
  * channel of five bits made 0 to 1, and alpha -1 where the game has made
@@ -1353,12 +1372,22 @@ static s32 port_GlFighterPalette(const FighterModel *model, s32 place) {
         }
     }
     if (changed) {
+        u64 sent = port_GlFighterHash(
+            HASH_START, out,
+            (size_t)model->clut_count * 256 * 4 * sizeof(*out));
+
+        sent = port_GlFighterHash(
+            sent, &model->clut_count, sizeof(model->clut_count));
         glActiveTexture(GL_TEXTURE0 + 5);
         glBindTexture(GL_TEXTURE_2D, g_fighter.palette_texture[place]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, 256, model->clut_count, 0,
-                     GL_RGBA, GL_FLOAT, out);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        if (sent != g_fighter.palette_sent[place]) {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, 256, model->clut_count,
+                         0, GL_RGBA, GL_FLOAT, out);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            g_fighter.palette_sent[place] = sent;
+            g_fighter.counts.palettes_sent++;
+        }
         glActiveTexture(GL_TEXTURE0 + 4);
         glBindTexture(GL_TEXTURE_2D, model->index_texture);
         glActiveTexture(GL_TEXTURE0);
@@ -1668,9 +1697,7 @@ static const PortGlClothVertex *port_GlFighterPoseCloth(
  * kept out, in the world's own units, is written down here under what it
  * was made from (the model, its bones and the cloth's points), and a
  * picture between two frames mixes the two frames' kept-out surfaces. */
-#define HELD_KEPT 8
-#define HASH_START 0xCBF29CE484222325ULL
-#define HASH_STEP 0x100000001B3ULL
+#define HELD_KEPT 16
 
 typedef struct {
     u64 key; /* 0: nothing kept here */
@@ -1680,16 +1707,6 @@ typedef struct {
 
 static HeldCloth g_held[PORT_FIGHTER_SLOTS][HELD_KEPT];
 static s32 g_held_next[PORT_FIGHTER_SLOTS];
-
-static u64 port_GlFighterHash(u64 hash, const void *bytes, size_t size) {
-    const u8 *at = bytes;
-    size_t i;
-
-    for (i = 0; i < size; i++) {
-        hash = (hash ^ at[i]) * HASH_STEP;
-    }
-    return hash;
-}
 
 /* What a frame's cloth kept out is made from: the model, the body's bones
  * and the cloth's own points. */
@@ -1722,6 +1739,7 @@ static const PortGlClothVertex *port_GlFighterHeldCloth(
     for (i = 0; i < HELD_KEPT; i++) {
         held = &g_held[slot][i];
         if (held->key == key && held->count == count) {
+            g_fighter.counts.cloth_reused++;
             return held->vertices;
         }
     }
@@ -1737,6 +1755,7 @@ static const PortGlClothVertex *port_GlFighterHeldCloth(
     }
     held->key = 0;
     held->count = count;
+    g_fighter.counts.cloth_holds++;
     /* in the world's own units: no camera taken off */
     port_GlFighterPoseOf(&pose, view, NULL, 0.0);
     pose.camera[0] = 0.0;

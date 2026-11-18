@@ -2708,6 +2708,15 @@ static void port_CloseWindow(s32 code) {
             "vertices and %u draws in the last frame",
             port_RemasterIsOn() ? "remastered" : "original", g_port_toggles,
             g_port_gl_scale, port_GlGetVertexCount(), port_GlGetDrawCount());
+        if (port_GlFighterCounts()->loaded != 0) {
+            const PortGlFighterCounts *fighters = port_GlFighterCounts();
+
+            port_Say("graphics: the fighters' models: %u drawings tinted, %u "
+                     "colour tables sent; the HD cloth kept out of the body "
+                     "%u times and read again %u times",
+                     fighters->tinted, fighters->palettes_sent,
+                     fighters->cloth_holds, fighters->cloth_reused);
+        }
         if (g_port_tween_on) {
             const PortTweenCounts *counts = port_TweenGetCounts();
 
