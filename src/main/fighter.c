@@ -946,6 +946,11 @@ void fighter_Init(s32 fighter_index, s32 is_cpu, s32 roster_id, s32 weapon,
             g_fighter_clan_weapon_models[fighter->weapon_id]
                                         [g_fighter_clans[fighter->character]];
     }
+#if RB_PORT
+    /* a mod's weapon (port_weapons.h): the game's own with none */
+    fighter->weapon_model = port_WeaponModel(
+        fighter_index, fighter->weapon_id, fighter->weapon_model);
+#endif
 
     if (fighter_index == 1 && g_fight_mode == FIGHT_MODE_CHANBARA) {
         fighter->size_scale = g_model_scales[g_chanbara_model];
@@ -957,6 +962,12 @@ void fighter_Init(s32 fighter_index, s32 is_cpu, s32 roster_id, s32 weapon,
         g_fighter_speeds[fighter->character][fighter->weapon_id];
     fighter->base_power =
         g_fighter_powers[fighter->character][fighter->weapon_id];
+#if RB_PORT
+    fighter->base_speed = port_WeaponSpeed(
+        fighter_index, fighter->weapon_id, fighter->base_speed);
+    fighter->base_power = port_WeaponPower(
+        fighter_index, fighter->weapon_id, fighter->base_power);
+#endif
     fighter->power = fighter->base_power;
     fighter->cpu_base_level = CPU_LEVEL_MAX;
 
@@ -985,6 +996,10 @@ void fighter_Init(s32 fighter_index, s32 is_cpu, s32 roster_id, s32 weapon,
     } else {
         fighter->default_stance =
             g_fighter_default_stances[fighter->character][fighter->weapon_id];
+#if RB_PORT
+        fighter->default_stance = port_WeaponDefaultStance(
+            fighter_index, fighter->weapon_id, fighter->default_stance);
+#endif
     }
 
     fighter->two_sword_stance = -1;

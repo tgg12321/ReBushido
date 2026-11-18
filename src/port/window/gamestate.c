@@ -178,6 +178,23 @@ void port_ReadGameState(PortGameState *state) {
     state->is_paused = port_RemasterIsPaused();
 }
 
+s32 port_ReadScreen(void) {
+    if (g_sys_screen == SCREEN_FIGHT_UPDATE) {
+        return 0;
+    }
+    return g_disp_loading_screen == LOADING_SCREEN_STAGE_CARD ||
+                   g_disp_loading_screen == LOADING_SCREEN_TEAM_SCORES
+               ? g_disp_loading_screen
+               : 0;
+}
+
+s32 port_LoadKind(void) {
+    if (g_port_load_wait <= 0) {
+        return PORT_LOAD_NONE;
+    }
+    return port_ReadScreen() != 0 ? PORT_LOAD_READ : PORT_LOAD_PICTURE;
+}
+
 /* The game's own Bug fixes setting, for the settings menu (menu.h). The
  * one thing here that writes the game: the menu sets it while the game is
  * stopped at a frame's boundary, as the options page at boot sets it

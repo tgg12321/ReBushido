@@ -125,17 +125,26 @@ extern const u32 g_port_low_memory[PORT_LOW_MEMORY_WORDS];
  * console's own two cannot grow where they are, with the stack above
  * them and the staging area below (include/sys.h). As with the stack,
  * the address is the same in every run and its low 24 bits are no
- * other memory's; it is given memory only for such a run, and with
- * the console's draw distance nothing of it exists. */
+ * other memory's; with the console's draw distance nothing of it is
+ * ever touched. */
 #define PORT_PRIMS_ADDR 0x7ED00000U
 #define PORT_PRIMS_SIZE 0x200000U
+/* The console's page of hardware registers, of which the sound chip's
+ * are a part (src/port/sound.c): 4 KB past the scratchpad. */
+#define PORT_IO_PAGE_ADDR 0x1F801000U
+#define PORT_IO_PAGE_SIZE 0x1000U
 /* Where the program's own variables begin and end: the link's script
  * says (tools/port_build.py). */
 extern char g_port_data_start[];
 extern char g_port_data_end[];
-/* Gives all three memory; stops the program, saying why, if the system
- * will not. */
+/* Every piece of memory at a fixed address, from the game's start
+ * (port_Main): done already where the program called
+ * port_MapFixedMemory itself (port_host.h). */
 extern void port_MapMemory(void);
+/* Memory at a fixed address for a part of the port that asks for it
+ * later (the sound chip's registers): TRUE where port_MapFixedMemory
+ * has given it already, or the system gives it now. */
+extern s32 port_MapFixed(u32 address, u32 size);
 /* Whether `count` bytes from `address` are in one of the two. */
 extern s32 port_IsMapped(u32 address, u32 count);
 
@@ -252,6 +261,9 @@ extern s32 port_GetRunAhead(void);
  * whose pictures they drew (g_port_unseen). */
 extern s32 g_port_ahead;
 extern s32 g_port_unseen;
+/* Set by g_port_boundary_hook: no frame is run ahead at this boundary
+ * (the window, while the game loads). */
+extern s32 g_port_ahead_held;
 /* The host's turn before a step (main.c): g_port_boundary_hook, then the
  * frames ahead. */
 extern void port_BeforeStep(void);
@@ -368,6 +380,12 @@ extern void (*g_port_crash_hook)(void);
 /* The disc's drive begins to read data at a sector (`kind` 1), begins
  * to play a stream of sound there (2), or stops reading at one (0). */
 extern void (*g_port_disc_hook)(s32 kind, u32 sector);
+/* Above 0 while the game waits for the disc with its loading screen up
+ * (cdrom_WaitIdle), or keeps story mode's card of the next stage up after
+ * its loads (story_FinishStageCard): the blanks the window may hurry
+ * through, whose game is the same however soon they are shown
+ * (docs/PORT.md, "Quick loading"). It is 0 at every frame's boundary. */
+extern s32 g_port_load_wait;
 /* The last functions of the game that began, for a fault's report: a
  * ring, the newest at (g_port_recent_call_count - 1) modulo its size. */
 #define PORT_RECENT_CALLS 32

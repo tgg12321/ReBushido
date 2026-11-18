@@ -19,9 +19,9 @@ s32 RotTransPers3(SVECTOR *v0, SVECTOR *v1, SVECTOR *v2, s32 *sxy0, s32 *sxy1,
     port_GteLoadData(PORT_GTE_VXY1, v1, 2);
     port_GteLoadData(PORT_GTE_VXY2, v2, 2);
     port_GteCommand(PORT_GTE_CMD_RTPT);
-    *sxy0 = (s32)port_GteReadData(PORT_GTE_SXY0);
-    *sxy1 = (s32)port_GteReadData(PORT_GTE_SXY1);
-    *sxy2 = (s32)port_GteReadData(PORT_GTE_SXY2);
+    port_GteStoreData(PORT_GTE_SXY0, sxy0, 1);
+    port_GteStoreData(PORT_GTE_SXY1, sxy1, 1);
+    port_GteStoreData(PORT_GTE_SXY2, sxy2, 1);
     *p = (s32)port_GteReadData(PORT_GTE_IR0);
     *flag = (s32)port_GteReadControl(PORT_GTE_FLAG);
     return (s32)port_GteReadData(PORT_GTE_SZ3) >> 2;

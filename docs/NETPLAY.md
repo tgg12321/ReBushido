@@ -923,8 +923,12 @@ have met:
   sum of the version with its commit, the size of a pointer, the
   system, where the program's variables lie and the state's size: two
   programs that agree on these lay the game's memory out alike, which is
-  what makes their hashes comparable, section 7) and the same **disc** (a
-  sum of its size, its volume's description and every 997th sector). A
+  what makes their hashes comparable, section 7), the same **disc** (a
+  sum of its size, its volume's description and every 997th sector) and
+  the same **gameplay mods** (`port_WeaponsSessionHash`: every byte of
+  the mods' `stages/`, `weapons/` and `motions/` files with their keys,
+  and the `--weapon`s each was given; MODS.md, "Weapons and motions";
+  textures, models, skies and music are not in it, and may differ). A
   guest that differs is turned away with the reason, which both logs
   say;
 - the host sends its **two memory cards**, whole, 1 KB a datagram, the
@@ -1016,7 +1020,10 @@ top of that:
   sectors loaded something, and the next frame waits until the other's
   inputs up to it are in, so that no later guess can roll the load
   back. The step that loads is run once, as the other's; a guess before
-  it that the other's inputs then correct still runs it again;
+  it that the other's inputs then correct still runs it again. Each
+  window hurries the blanks of its loads through (`quick_loading`,
+  PORT.md, "Quick loading"), which changes no frame and no input: the
+  one there first waits, as it would for a slower PC;
 - *the waits*: while netplay waits on the other (for its inputs past
   the eight frames it may guess, or at a load), the window reads its
   events, so Escape still ends the program, and shows its picture again

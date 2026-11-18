@@ -158,6 +158,12 @@ static const char g_usage[] =
     "                 a fighter veils him (on with the mesh)\n"
     "  --fighter-models F  the fighters drawn from models of their own,\n"
     "                 the .glb files in folder F (gl_fighter.h); off\n"
+    "  --smooth-light W  on, off: the game's own lighting worked out\n"
+    "                 at each pixel on the ground's mesh and the\n"
+    "                 fighters' models (docs/PORT.md, \"Lighting\")\n"
+    "  --effects W    original, exact, smooth: the effects where the\n"
+    "                 console put them; where the projection put them,\n"
+    "                 moved between frames; and their textures smoothed\n"
     "  --gl-fighter-pose F,N  each fighter's bones at blank N, into\n"
     "                 F/<model>.pose.json (tools/fighter_export.py --pose)\n"
     "  --gl-exact     draw as the console: the corners where it held\n"
@@ -1084,6 +1090,9 @@ static void port_GlQuit(s32 code) {
             "gl run fighter_faces %u fighter_unplaced %u walked_unplaced %u\n",
             counts->fighter_faces, counts->fighter_unplaced,
             counts->walked_unplaced);
+    fprintf(stderr, "gl run effects %s faces %u unplaced %u\n",
+            port_NameRemasterEffects(port_RemasterEffects()),
+            counts->effect_faces, counts->effect_unplaced);
     fprintf(stderr, "gl run mixed half %u add %u subtract %u quarter %u\n",
             counts->mixed[0], counts->mixed[1], counts->mixed[2],
             counts->mixed[3]);
@@ -1095,11 +1104,13 @@ static void port_GlQuit(s32 code) {
     if (port_GlShadowIsCast()) {
         fprintf(stderr,
                 "gl run shadows cast faces %d orphans %d triangles %d "
-                "fallbacks %u unpaired %u lost %u from_models %u\n",
+                "fallbacks %u unpaired %u lost %u from_models %u at_feet %u "
+                "floor_faces %u\n",
                 port_GlShadowCastFaces(), port_GlShadowCastOrphans(),
                 port_GlShadowCastTriangles(), port_GlShadowCastFallbacks(),
                 port_GlShadowCastUnpaired(), port_RemasterCasterLost(),
-                port_GlShadowCastFromModels());
+                port_GlShadowCastFromModels(), port_GlShadowCastFeet(),
+                port_GlShadowFloorFaces());
     }
     if (g_run.compared != 0) {
         fprintf(stderr,
@@ -1162,6 +1173,11 @@ int main(int argc, char **argv) {
     s32 count = 0;
     s32 i;
 
+    /* the console's memory at its own addresses, before EGL, Mesa or
+     * anything of the C library's can take one of them (port_host.h): a
+     * run of the prover now and then found its heap on the scratchpad's
+     * address and stopped before its first frame */
+    port_MapFixedMemory();
     port_RemasterDefaultView(&view);
     memset(&options, 0, sizeof(options));
     options.scale = 4;
@@ -1252,6 +1268,15 @@ int main(int argc, char **argv) {
             snprintf(g_run.pose_folder, sizeof(g_run.pose_folder), "%.*s",
                      comma != NULL ? (int)(comma - where) : (int)strlen(where),
                      where);
+        } else if (!strcmp(word, "--smooth-light")) {
+            options.is_smooth_light = strcmp(argv[++i], "off") != 0;
+        } else if (!strcmp(word, "--effects")) {
+            options.effects = port_ReadRemasterEffects(argv[++i]);
+            if (options.effects < 0) {
+                fprintf(stderr, "rebushido-gl: --effects takes original, "
+                                "exact or smooth\n");
+                return PORT_EXIT_USAGE;
+            }
         } else if (!strcmp(word, "--sky")) {
             /* the game's own colour of the distance with nothing said:
              * the provers hold the picture to the console's */

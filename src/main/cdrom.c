@@ -652,6 +652,11 @@ u32 cdrom_GetFileSize(s32 file_index) { return g_cdrom_files[file_index].size; }
  * must: the link cable is answered, queued sounds start and the loading
  * screen is drawn, every second blank. */
 void cdrom_WaitIdle(void) {
+#if RB_PORT
+    /* the window may hurry these blanks, the link cable's too: nothing
+     * here waits on the player (docs/PORT.md, "Quick loading") */
+    g_port_load_wait++;
+#endif
     link_BeginWait();
     while (!cdrom_IsIdle()) {
         link_ExchangeIdle();
@@ -664,6 +669,9 @@ void cdrom_WaitIdle(void) {
         VSync(2);
     }
     link_EndWait();
+#if RB_PORT
+    g_port_load_wait--;
+#endif
 }
 
 /* Asks for file `file_index` to be played: stream `xa_channel` of it, or the

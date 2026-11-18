@@ -430,6 +430,52 @@ extern void port_RemasterNewFrame(void);
  * (DrawOTag). 0 for words that come from somewhere else. */
 extern void port_RemasterSetPrim(PortAddress prim);
 
+/* ---- the effects (src/main/eff.c, src/main/wave.c) ---- */
+
+/* The effects -- blood, sparks, flashes, dust, splashes, footprints, the
+ * stage's flames -- are flat quads the game builds itself, outside the
+ * renderer's walk, from points it projects through Sony's RotTransPers
+ * and the GTE's own macros (docs/PORT.md, "The effects"). Most are a
+ * sprite: one point projected, and the quad's corners that point plus
+ * so many whole pixels each way, the size worked out from the depth by
+ * a quotient the game rounds down. A few are four projected points
+ * each (the muzzle flash, the footprints).
+ *
+ * What `effects` asks of them (port_ReadRemasterEffects):
+ * PORT_EFFECTS_ORIGINAL draws them as the console placed them;
+ * PORT_EFFECTS_EXACT draws each where the projection really put it,
+ * its size without the rounding, and moves it between two frames by its
+ * name; PORT_EFFECTS_SMOOTH also reads its texture smoothed, its clear
+ * texels fading the edge out. None of them is ever hidden by the
+ * ground's depth, as the console hid none of them. */
+enum {
+    PORT_EFFECTS_ORIGINAL = 0,
+    PORT_EFFECTS_EXACT = 1,
+    PORT_EFFECTS_SMOOTH = 2
+};
+
+/* `original`, `exact` or `smooth`: the number, or -1. */
+extern s32 port_ReadRemasterEffects(const char *word);
+extern const char *port_NameRemasterEffects(s32 effects);
+/* What the backend asks for (gl_draw.c, from the run's setting). */
+extern void port_RemasterSetEffects(s32 effects);
+extern s32 port_RemasterEffects(void);
+
+/* The primitive at `prim` is an effect's, and `name` (the effect's own
+ * record) and `piece` say which: what pairs it with itself in the next
+ * frame. Its `count` corners are the points the GTE stored at `points`,
+ * one word after another, in the order of the primitive's corners. */
+extern void port_RemasterNoteEffect(PortAddress prim, PortAddress points,
+                                    s32 count, PortAddress name, s32 piece);
+/* ... and it is a sprite about the point stored at `center`: its corners
+ * are that point's place in whole pixels plus their own offsets from
+ * it, and those offsets were worked out from `scale_number / depth`
+ * rounded down, which the decoder takes the rounding out of. A
+ * `scale_number` of 0 leaves the size as the game made it. */
+extern void port_RemasterNoteSprite(
+    PortAddress prim, PortAddress center, s32 scale_number, s32 depth,
+    PortAddress name, s32 piece);
+
 /* ---- the stage drawn as one mesh (src/port/gl/gl_stage.c) ---- */
 
 /* The game builds the stage's ground again every frame: 32 by 32 cells of
@@ -685,6 +731,9 @@ typedef struct {
     /* This is a drawing of a fighter's own and not of the stage
      * (port_RemasterNoteFighter). */
     s32 is_fighter;
+    /* This is an effect's (port_RemasterNoteEffect): never hidden by the
+     * ground's depth, and its texture smoothed with `effects smooth`. */
+    s32 is_effect;
     /* The ordering-table slot the renderer linked it at
      * (port_RemasterNoteOtSlot), which is all the console sorted it by:
      * a larger slot is farther and painted sooner. -1 where it was not
@@ -813,6 +862,10 @@ typedef struct {
     u32 fighter_unplaced;
     /* the other polygons of the renderer's walk that had no place */
     u32 walked_unplaced;
+    /* the effects' polygons (port_RemasterNoteEffect), and how many of
+     * them had no place */
+    u32 effect_faces;
+    u32 effect_unplaced;
 } PortRemasterCounts;
 
 extern const PortRemasterCounts *port_GetRemasterCounts(void);

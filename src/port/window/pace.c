@@ -98,6 +98,12 @@ void port_PaceHold(PortPace *pace, u32 samples) {
     }
 }
 
+void port_PaceRebase(PortPace *pace, u32 now, u32 due) {
+    if (pace->is_started) {
+        pace->base = now - due;
+    }
+}
+
 s32 port_PaceIsHeldBack(const PortPace *pace) {
     return pace->is_started && pace->lost_recent >= PORT_PACE_LOST_TIMES;
 }

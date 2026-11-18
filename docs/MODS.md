@@ -5,16 +5,17 @@ stand in for the game's own. This is the roadmap's item 10
 ([`ROADMAP.md`](ROADMAP.md)): one framework for everything a mod can
 replace, with **replacement textures** as its first user, and the
 English top menu the program ships as its first mod ("The English
-menu", below). The fighters' models, **music** ("Music") and a
-**stage's files** ("Stages") find their files the same way.
+menu", below). The fighters' models, **music** ("Music"), a
+**stage's files** ("Stages"), **weapons** and **motions** ("Weapons and
+motions") find their files the same way.
 
 Textures, models and music touch nothing of the game: what the game
 computes is the same with those mods and without, and the PlayStation
 builds have none of it. With no mod's textures and nothing to write out,
-the picture is exactly what it was; with no mod's music, the sound. A
-stage's files are the one kind that is the game's own data: a stage mod
-changes what the game loads, and so can change how it plays
-("Stages").
+the picture is exactly what it was; with no mod's music, the sound.
+Stages, weapons and motions are the game's own data: such a mod changes
+what the game loads or reads, and so how it plays; two netplay players
+must have the same ones, and the session's set-up holds them to it.
 
 ## Where the mods are
 
@@ -42,8 +43,9 @@ mods/
   weapons', by the weapon model's number, `W00.glb` to `W57.glb`: PORT.md,
   "The fighters' own models"; `tools/fighter_hd.py` makes a whole mod of
   them, the hd mod, from your disc), `skies/` (a stage's sky, below),
-  `music/` (`.ogg` and `.wav`: "Music") and `stages/` (any ending:
-  "Stages"). Under a kind's folder the files may be in folders of any
+  `music/` (`.ogg` and `.wav`: "Music"), `stages/` (any ending:
+  "Stages"), `weapons/` (`.txt`) and `motions/` (`.bbm`: "Weapons and
+  motions"). Under a kind's folder the files may be in folders of any
   names, four deep.
 - A file's **key** is its name without its ending, in small letters,
   wherever it is under its kind's folder. A texture has to end `.png`,
@@ -165,8 +167,8 @@ of its own.
   models are: PORT.md, "The fighters' own models").
 - **The fight drawn again under the pause** is the scene as well.
 - **The movie**, which the console shows in its 24-bit mode and the
-  remastered picture leaves to the software GPU. The title picture held
-  after it has not been looked at yet: the play tests' presses skip it.
+  remastered picture leaves to the software GPU (smoothed). The title
+  picture held after it is replaced ("The title picture", below).
 - With `--gl-exact` (the prover's picture held to the console's) nothing
   is replaced.
 
@@ -378,35 +380,61 @@ colour out of step is not.
 ## The sharp menus
 
 The program ships a second mod: **`mods/ui/`**, the lettering of the
-menus drawn again in a font, sharp at any size. It is on unless `ui =
-off` in `rebushido.cfg` or the settings menu ("Sharp menus") says
-otherwise; its order is -100, as the English menu's.
+game's 2D screens drawn again in a font, sharp at any size. It is on
+unless `ui = off` in `rebushido.cfg` or the settings menu ("Sharp menus")
+says otherwise; its order is -100, as the English menu's.
 
 | What | Its lines |
 |---|---|
 | The pause menu | Pause Menu, Continue, Return to Sub Menu, Return to Top Menu |
 | The menu after a fight | Rematch, Return to Sub Menu, Return to Top Menu |
-| The top menu's captions | Story Mode, Vs. CPU Mode, Training Mode, Vs. Mode, Group Battle Mode, Link Mode, Option Menu |
-| The select screens' titles | Select Character, Select Weapon |
-| The group battle's page | Group Battle Mode, Number of Entries, Match, Time Limit, Start, Return to Top Menu |
+| The top menu's captions | Story Mode, Vs. CPU Mode, Training Mode, Vs. Mode, Group Battle Mode, Link Mode, Option Menu, and the second ones under the picture (Battle of the Two Schools, Trust Your Skills, Master Your Weapon, Select Battle Stage, May the Best School Win, 2 Player Link Battle, Other Options); Side View and POV on their panel |
+| The select screens | Select Character, Select Weapon, Select School; the fighters' names; the schools; the weapon's name; the stages' names and ( Map ? ) |
+| The group battle | its page (Group Battle Mode, Number of Entries, Match, Time Limit, Start, Return to Top Menu, and the values: 1 point, 3 point, 3 4 5, 60 120 sec); the teams' names; 1ST 2ND 3RD in each colour; WINS, KILLS |
+| The training mode | Training Mode, Practice, Practice Round, Return to Top Menu and the six lines under them; the Select button's page (Attack, Dash) |
+| The story | the narration that opens it (Off the sea of Setonaikai ...); the stage card (Next Battle Stage, Battle Stage, Outside the Meikyokan) |
+| The memory card | Checking Memory Card, Please wait, Do not remove Memory Card |
+| Elsewhere | the fight's digits 0 to 4, on and off, Frontal and Reverse |
+| ReBushido's options page | every character of the built-in font (`font.c`), eight by eight and the seven by seven its larger text reads |
 
 **How it is made.** `python tools/port_ui.py` draws the pictures into
-`src/port/mods/ui/` (`--check` as `port_english.py`'s). The game draws a
-line of a menu as sprites up to 64 texels wide cut from one line of
-lettering in a texture page, and a word of one line is sometimes another
-line's: the pause menu's "Return to Sub Menu" is the "Return to " of
-"Return to Top Menu", then "Sub" and "Menu" from places of their own. So
-the script's table is of lines -- the text, the line's size, the
-rectangle the game's own lettering fills, its look, and its pieces, each
-its key and where it begins along the line (from the dump's log, above)
--- and each line is drawn once, in Arimo (SIL Open Font Licence,
-`src/port/fonts/`), fitted to that rectangle at eight pixels a texel,
-and cut into its pieces. Every line of one height has letters of one
-size. The looks are the game's: the pause menu's letters with a shadow
-down and to the right, the select screens' with a dark edge all round,
-the captions' darkening downward, each in the colours its own lettering
-has (`--measure DIR...` prints them from a dump). Like the English
-menu's, the pictures are the project's own, kept in the repository.
+`src/port/mods/ui/` (`--check` as `port_english.py`'s). The game draws its
+lettering as sprites up to 64 texels wide cut from lettering laid out in
+a texture page: a line, lines one under another, or a long text wrapped
+from one row of the page to the next -- the narration and the training
+page are -- now and then in the middle of a letter. A word of one line is
+sometimes another line's: the pause menu's "Return to Sub Menu" is the
+"Return to " of "Return to Top Menu", then "Sub" and "Menu" from places of
+their own. So the script's table is of **blocks**: a block is a rectangle
+of a page as the game laid it out, its texts, each with the rectangle or
+rectangles its letters fill, its font and its look, any rule drawn under
+a title, and the pieces the game cuts from it, each its key and where it
+lies (from the dump's log, above). Each text is drawn once, fitted to its
+rectangle at eight pixels a texel -- a wrapped text as one line across its
+rectangles laid end to end, cut at their widths, so a letter the game
+split between two rows is split at the same place -- and each piece is
+cut from the block. A piece that holds anything but lettering (an icon
+beside a word) is left to the art mod.
+
+The fonts are of the SIL Open Font Licence (`src/port/fonts/`, each with
+its licence): **Archivo** at its widest (its width axis at 125) for the
+game's grotesque, which is wide -- in three weights, the menus', the
+names' thinner one and the digits' heavier one -- and **Marcellus** for
+its roman (the select screens' titles, the schools, the places, 1ST 2ND
+3RD, the stage card). The looks are the game's: letters darkening
+downward, with a shadow down and to the right (the pause menu's, the
+training page's), a dark edge all round (the select screens'), a panel
+under them (Side View, POV) or nothing, each in the colours its own
+lettering has. The colours, the rectangles and the looks of the blocks
+were measured from dumps of the screens (`--dump-textures`); those of the
+first lines (the pause menu's, the captions', the titles') `--measure
+DIR...` prints again. Like the English menu's, the pictures are the
+project's own, kept in the repository: no pixel of the game's is in them.
+
+The built-in font's characters are a texture each, the key of each worked
+out from the font's picture in `font.c` (four characters share a place in
+it, each through its own colour table): a character in Archivo, white,
+its capitals seven texels high, the tails of g j p q y in the eighth row.
 
 ## The art mod
 
@@ -449,6 +477,38 @@ portraits; none is used). Copy `tmp/mods/art/` into `mods/` beside the
 program; it is never committed. From one disc: 1,224 textures dumped,
 1,070 made larger (653 lettering, 360 of a few colours, 57 pictures), 154
 too small, in 8 seconds.
+
+## The title picture
+
+The picture held after the opening movie (the logo of Bushido Blade 2 on
+white, STR/TITLE.TIM) is not the movie's: the movie player loads it into
+video memory beside its display, at x 480, before the movie starts,
+shows it in the 16-bit mode from the movie's last frames on while the
+movie's sound runs out, and fades it out by copying it into its display
+buffers and darkening it ([`formats/MOVOVL.md`](formats/MOVOVL.md)). It is
+a picture the game writes into video memory, so a mod replaces it as it
+does the boot logo, by the key of its pixels (`320x240-16-...`): while
+nothing is shown (the display off, as the player loads it, or the
+movie's), a picture of a whole screen's size (320 by 240 or more) counts
+as one to be seen wherever it is written, and `--dump-textures` writes it
+out (`gl_replace.c`, `port_GlReplaceFindPicture`); the art mod makes it
+larger from the player's disc (`tools/port_art.py`, "a picture"). A mod's
+picture of a whole screen is drawn whole into the card's video memory,
+not only the columns of the display of the moment (`port_GlDrawBlits`).
+The copies the fade makes have the same pixels, so they are the same
+key.
+Nothing else written while the display is the movie's is looked up: each
+of its frames is new, and with mods on they filled the table of keys seen
+(16,384) before the top menu was reached, so that after the movie no new
+texture was replaced -- the English menu among them.
+
+While the player runs, the window shows the software GPU's picture (the
+movie is in the 24-bit mode, which the card does not draw), but for a
+display in the 16-bit mode that is wholly a picture drawn from a mod's
+and not written over since (`port_GlShowsReplacedPicture`, `gl.h`): then
+it is the remastered picture, so the title and its fade are the mod's
+picture at the window's resolution. With no mod's picture of it the
+title is the software GPU's, smoothed, as before.
 
 ## Skies
 
@@ -705,6 +765,180 @@ repository.
 - **New stages**, not only replaced ones: a stage number past 37, and
   the menus to choose it.
 
+## Weapons and motions
+
+A weapon is **tables in the program and motion files on the disc**. The
+roadmap's later step, new weapon types and motions, needs both read as
+data; the port now reads the weapon's numbers from a mod's file and a
+mod's motion file in place of the disc's. Hitboxes, motions and timing
+are the game's balance ([`ROADMAP.md`](ROADMAP.md), "After the
+picture"): with no such mod the game reads its own tables and computes
+exactly what it did (below, "How it is proved").
+
+### What defines a weapon
+
+There is **no damage number**, by weapon or by move. A blade is the
+segment between its points, swept from last frame's place to this
+frame's (two triangles, four when the tip moved 2,500 or more,
+`fight_TestBladesOnBodies`, `src/main/fighter_hit.c:1858`), with no
+thickness, met against the body's spheres (`hit_SphereMeetsTriangle`,
+`src/main/hit_test.c`). A hit **kills** when it reaches the core of the
+head, the chest or the hips; elsewhere it wounds, takes the off arm, or
+counts a wound to the sword arm or the legs (`fighter_TakeHit`,
+`fighter_hit.c:448`). So a weapon's reach is its points, and its power
+decides only clashes and locks.
+
+| | Where | Indexed by | What it is |
+|---|---|---|---|
+| **The blade's points** | `g_fighter_weapon_point_sets`, `g_fighter_weapon_point_counts` (`src/main/fight_data.c:346`, 348) | weapon | two points from the hand (bone 18, `FIGHTER_BONE_WEAPON_HAND`), the tip first; three for the naginata and the yari, whose shaft (points 1 to 2) is swept apart and never kills (`fighter_hit.c:1327`, 1984). Read every frame by `fighter_PlacePoints` (`fighter_pose.c:703`) |
+| The story's weapon | `g_fighter_story_weapon_points` (`fight_data.c:301`) | | the points of `WEAPON_MODEL_STORY`, as long as a nodachi's |
+| Second weapons | `g_fighter_sub_weapon_points` (`fight_data.c:361`) | sub-weapon kind | the off hand's sword or gun while it is out |
+| **The body's spheres** | `g_fighter_body_point_table` (`fight_data.c:264`) | body point (22) | bone, place, radius and core of each; scaled to the model by `fighter_ScaleBodyPoints` (`fighter_pose.c:660`) |
+| **Speed and power** | `g_fighter_speeds`, `g_fighter_powers` (`fight_data.c:666`, 699) | [character][6] | how fast a character's moves run (0x1000 as the motion) and how hard he hits (the clash: `fight_ClassPowerGap`, `fighter_hit.c:78`, `g_fight_clash_events`, `fight_data.c:1404`). Six columns: the guns read into the next character's row (the original's behaviour). Read by `fighter_Init` (`fighter.c:913`) |
+| Wounds | `g_fighter_wound_powers`, `g_fighter_lost_arm_speeds`, `_arm_wound_speeds`, `_wound_speeds` (`fight_data.c:733`, 875 to 923) | character | power and speed left after wounds |
+| **Stances and motion set** | `g_fighter_stance_kinds` (`fight_data.c:559`) | [character][weapon] | the three stance kinds; with the weapon in the top digit it is the motion set, whose file `g_motion_set_files` (`fight_data.c:594`) names; `g_fighter_default_stances` (629) the one a fight begins in |
+| The moves | `MOTION/*.BBM` ([`formats/BBM.md`](formats/BBM.md)) | motion set | every move, the motion it plays, its frames, what may follow; each motion's head (kind, length, turn, **reach for the CPU**) and its marks: **when the weapon can hit** (`MOVE_MARK_HIT_START`, `_HIT_END`), the second blade's, the off hand's, the sounds of the swing. Loaded by `motion_LoadFighterFiles` (`fighter.c:89`), looked up by `motion_GetMove` (351) |
+| **Models** | `g_fighter_clan_weapon_models` (`fight_data.c:1352`), `g_fighter_practice_weapon_models` (1368) | [weapon][clan], weapon | which of the 58 weapon models (`enum WeaponModel`, `include/weapon.h`) is in the hand; loaded by `resource_RequestWeapon` (`resource_weapon.c:48`) with its scabbard (`g_resource_weapon_linked`, `resource_data.c:318`), drawn on the hand by `weapon_Queue` (206); a mod's `models/Wnn.glb` draws one (PORT.md) |
+| Dropped | `g_object_dropped_weapon_kinds` (`fight_data.c:401`), `g_object_kinds` (789) | [clan][weapon] | the loose object a defeated fighter's weapon becomes, and how it flies |
+| **Sounds** | `g_resource_weapon_sound_kinds`, `_alt` (`fight_data.c:1003`, 1037) | [character][weapon] | which bank of weapon sounds is loaded (the cut, the clang, the lock, the shot); the swings are the motions' frame events |
+| **The CPU** | `g_cpu_weapon_reaches`, `g_cpu_weapon_ranges` (`src/main/cpu_data.c:318`, 319) | weapon | how far the CPU takes an attack of the opponent's to reach, beyond the motion's own reach (`cpu_AttackReach`, `cpu.c:984`), and the distance its follow-ups are tried from; `g_cpu_side_step_stances` (`cpu_data.c:15`), `g_cpu_practice_rows` (435); the CPU's scripts are in the motion files; guns have branches of their own (`weapon_id >= WEAPON_ID_FIRST_GUN`, eleven in `cpu.c`) |
+| Guns | `fighter_TestShot` (`fighter_hit.c:1680`), `FIGHTER_GUN_SHOTS` (`fighter.c`) | | a shot is a segment four `ONE`s long from the muzzle, once a move, with ammunition |
+| **The select screens** | `g_select_weapon_ids`, `g_select_weapon_places` (`src/main/select_data.c:16`, 80), `SelectFile.weapon_pixels` (`include/select.h`) | place | the six blades in the crossed-weapons grid, their pictures and names from the select screen's file; each clan has five of them (no yari for the Narukagami, no naginata for the Shainto, `select.c:1677`); Tsubame and Katze have their guns, chanbara the katana, the team battle one weapon each (`select_team.c`), VS CPU its list (`g_vscpu_weapons`, `fight_data.c:1073`) |
+| Unlocks | | | none for weapons: the unlocks are the fighters' (`select.c:506`) |
+
+### A mod's weapon
+
+`weapons/NAME.txt`, lines of `name = value`, `#` beginning a comment,
+`-` and `_` the same in a name:
+
+```
+format = 1               # the version of this format: the one line every file has
+name = Long katana       # for the log; the file's name if it does not say
+base = katana            # whose model, motions, sounds and CPU it fights with:
+                         # katana long_sword nodachi broadsword naginata yari
+                         # long_gun short_gun
+replaces = no            # yes: it stands in for the base wherever that is
+                         # fought with; no (the default): a new slot
+points = 0 -60 1250, 0 0 100   # x y z of each point from the hand, the tip
+                         # first; as many as the base has (2, or 3 for the
+                         # naginata and the yari); -8192 to 8192
+speed = 0.875            # times the character's with the base (0.0625 to 4)
+power = 1.25             # the same, for clashes and locks
+models = 2 3             # the Narukagami's and the Shainto's model: a blade's
+                         # are 0 to 9, a gun's 46 and 47
+practice_model = 52      # team battles' and practice's: 51 to 56
+default_stance = 2       # the stance every character begins in: 0, 1 or 2
+cpu_reach = 300          # what the CPU takes it to reach beyond a move of the
+                         # fighter's own file (an even number to 510) ...
+cpu_range = 64           # ... and of the common file, and its follow-ups'
+                         # distance (eights, -1024 to 1016)
+```
+
+Only `format` and `base` must be there; whatever else is left out is the
+base's own. A file that is wrong in any line is **not used at all**,
+and the log (`logs/`, or the error output) says which line and why:
+
+```
+weapons: broken (mods/x/weapons/broken.txt): points: this base's weapon has three points, the tip, where the blade meets the shaft and the butt; left out
+weapons: katana-long ("Long katana"): a new slot on the katana, 2 points, speed 4096/4096, power 4096/4096
+```
+
+A format later than the program's is refused with "a later ReBushido is
+needed"; a later program reads every earlier format.
+
+**A new slot** is a weapon of its own made on its base: a fighter has it
+when the run says so, **`--weapon 1=katana-long`** (or `2=`), and then
+whenever his weapon is its base, in every mode. The select screens do
+not show it yet (below). **A weapon that replaces** its base is
+everybody's: with two that replace one weapon, the later in the mods'
+order is used and the log says so.
+
+Where the game reads its tables, the port asks `port_weapons.h`
+(`src/port/weapons.c`), under `RB_PORT`: the points in
+`fighter_PlacePoints`; the speed, the power, the model and the first
+stance in `fighter_Init`; the reach and the range in `cpu_AttackReach`
+and `cpu_Decide`. Each is given the game's own value and, with no mod's
+weapon in play, gives it back untouched. The fighter's `weapon_id` stays
+the base's, so every rule of the game that asks which weapon he has (the
+pole arms' shaft, the guns, the scabbards, the motion set, the sounds,
+the dropped weapon) is the base's.
+
+### A mod's motions
+
+`motions/NAME.bbm` stands in for the disc's `MOTION/NAME.BBM`: `u123`
+for U123.BBM, `common` for COMMON.BBM (the keys are the disc's names,
+[`formats/BBM.md`](formats/BBM.md), "File names and motion sets"). It
+is read as a stage's file is: put over the disc's sectors of the file
+(`port_OverrideDiscSector`, `src/port/discfiles.c`), loaded by the
+game's own commands into the game's own place for it, shorter than the
+disc's or as long and never longer. So a mod can change any move of a
+motion set: which motion a move plays and what may follow it (the
+moves), when its weapon can hit (the marks), the frames themselves, and
+the CPU's scripts. The log says it: `motions: u123 from ..., 252816
+bytes over the disc's sectors 3871 to 3994`.
+
+**What is not done yet**, and how it would be:
+
+- **A motion of a mod's own beside the game's**, not in place of one:
+  a weapon's file saying `motions = KEY`, and its fighters loading
+  that file into their motion slot in place of their set's
+  (`motion_LoadFighterFiles`). The slot's file is found by the set's
+  number (`g_motion_loaded_sets`), so the mod's set needs a number of
+  its own (a weapon class past 7 in the set's top digit) that the rest
+  of the game, which reads the weapon from the fighter and not from the
+  set, never sees; the slot's room is the largest disc file's.
+- **One move attached to another file's motion**: a move's motion is a
+  number in its own file's table, and its frames are in that file's
+  stream, so a move of another file's is the file's own after a merge:
+  a tool (beside `tools/inspect_bbm.py`) that adds a motion, its marks
+  and its frames to a file and points a move at it.
+- **New weapon types on the select screens**: a slot past the eight
+  with its place in the grid, its picture and its name
+  (`select_data.c`, the select screen's file), and its own
+  `weapon_id` everywhere the game indexes by weapon (the tables above,
+  the motion set's digit, the sounds' table, the CPU's): the port's
+  table would give those rows for it.
+- **A weapon's sounds and its dropped object** as numbers of the file.
+
+### Netplay
+
+The weapons' and the motions' files, like the stages', are hashed into
+the session's set-up with every `--weapon` given (`port_WeaponsSessionHash`,
+`src/port/session.c`): a guest whose gameplay mods differ is turned
+away, "the other player's mods that change how the game plays ... are
+not the same" ([`NETPLAY.md`](NETPLAY.md), section 13). Both players
+give the same `--weapon`s, which say both places'. What is read is
+none of the game's state (`config/port_state.txt`): the table is made
+once and only read; which weapon a fighter has is worked out each time
+from his place and his `weapon_id`, which are the game's, so a rollback
+has nothing of it to put back. A motion file is the game's state where
+the game loaded it, as the disc's is.
+
+### How it is proved
+
+- **Without a mod** (the port's own runs of `port_game`'s plan, both
+  sizes): every line the program prints is the build's before the change
+  (the plain `--plan` trace), and the rollback self-test passes.
+- **A longer katana**, made at test time and never committed:
+  `weapons/katana-long.txt` with the tip at 1,250 for 950 and
+  `--weapon 1=katana-long`. Both sizes print the same trace, which is the
+  plain run's until the fight's 147th frame (frame 1,673), where the
+  first fighter's blade reaches the second and throws him back; then
+  the fight goes otherwise, and the first fighter is the one cut down.
+  The rollback self-test passes with it (101 rounds, 808 frames).
+- **A motion file**: U123.BBM (the first fighter's) copied from the disc
+  into `motions/u123.bbm`: the trace is the plain run's, line for line,
+  and the log says the file was read over the disc's. The same file
+  with every hit's first frame three later (67 moves): the trace is the
+  plain run's until the fighter's first blow (frame 1,612), and the
+  fight is lost.
+- `tests/port/weapons.c`: a weapon's file read, every line that can be
+  wrong refused with its reason, the factors, a folder of mods with a
+  new slot, one that replaces and one left out, every answer to the
+  game with and without them, and the session's hash, worked out again.
+  `tests/port/discfiles.c`: a motion file of a made-up disc's MOTION/
+  over its sectors.
+
 ## For the code
 
 | | |
@@ -718,7 +952,9 @@ repository.
 | `include/port_music.h`, `src/port/music.c` | the music: a stream's key, following the drive, the piece decoded and put in place of the disc's sound, `--dump-music` |
 | `src/port/vorbis.c`, `src/port/vendor/` | stb_vorbis as it ships, and the empty C library headers it is compiled over |
 | `src/port/xa.c`, `src/port/spu.c`, `src/port/sound.c`, `src/port/cd.c` | the hooks: the drive's volumes on other samples (`port_MixCdAudio`), the chip's `heard`, the call in the mix, the stream playing (`port_GetCdStream`) |
-| `include/port_discfiles.h`, `src/port/discfiles.c` | the disc's directory, a stage's files by key, `--dump-stages`, the mods' files over the disc's sectors; `src/port/disc.c` calls it for every sector it reads |
+| `include/port_discfiles.h`, `src/port/discfiles.c` | the disc's directory, a stage's files by key, `--dump-stages`, the mods' files over the disc's sectors (stages and motions); `src/port/disc.c` calls it for every sector it reads |
+| `include/port_weapons.h`, `src/port/weapons.c` | the weapons' files read and checked, `--weapon`, the answers to the game (`fighter_pose.c`, `fighter.c`, `cpu.c` under `RB_PORT`), the session's hash of the gameplay mods (`port_ModsGameplayHash`, `mods.c`) |
+| `tests/port/weapons.c` | the weapons' files, the folder, the answers and the hash |
 | `tests/port/music.c`, `music.py`, `tests/port/discfiles.c` | the music's keys, loops, files and player; the directory and the stage files |
 | `tests/port/mods.c`, `mods.py` | the manifest, a folder of mods and its order, the keys from this page, PNGs of every kind written by zlib |
 | `tools/port_english.py`, `src/port/mods/english/`, `src/port/fonts/` | the English menu the program ships, and what draws it |
@@ -741,15 +977,14 @@ ending a kind's files must have.
 
 - **The fighters' textures by page**, as the stage's are: their own
   models are the larger step, and are taken already.
-- **More of the lettering in a font**: the dialogue boxes, the names on
-  the select screens and the options' pages are the art mod's for now,
-  made larger; each is a line of `tools/port_ui.py`'s table away.
-- **The title picture** after the opening movie is the movie's own
-  frame in its 24-bit mode, which the remastered picture leaves to the
-  software GPU (PORT.md, "Remastered in the window").
+- **More of the lettering in a font**: what no tour of the dumps
+  reached (the setup mode's own pages, the slash mode's, the results of
+  the other modes, the endings) is the art mod's, made larger; each is a
+  block of `tools/port_ui.py`'s table away, measured from a dump.
 - **Music by stage**: a key for a fight's piece with its stage
   (`bb2_m1-0` on stage 7 alone), so that a mod can give each stage a
   piece of its own though the game shares five among them.
 - **FLAC**: a third kind of music file, with a decoder of whole numbers
   (dr_flac, public domain, is one).
 - Stages: "What a stage editor needs next", above.
+- Weapons and motions: "What is not done yet", above.

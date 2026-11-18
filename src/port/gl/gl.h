@@ -63,6 +63,13 @@ typedef struct {
      * for the model (gl_fighter.h, docs/PORT.md, "The fighters' own
      * models"): 0 the game's own primitives. */
     s32 is_fighter_models;
+    /* The game's own lighting worked out again at each pixel, from the
+     * normals the ground's mesh and the fighters' models have, with the
+     * stage's own lights (docs/PORT.md, "Lighting"): 0 as each vertex or
+     * face was lit. */
+    s32 is_smooth_light;
+    /* How the effects are drawn: PORT_EFFECTS_... (port_remaster.h). */
+    s32 effects;
     /* A sky of the port's own behind the stages open to it, in the place
      * of the game's fill of the colour of the distance (gl_sky.h):
      * PORT_SKY_ORIGINAL (0) or PORT_SKY_NIGHT. */
@@ -291,6 +298,13 @@ extern void port_GlClearWindow(s32 window_w, s32 window_h);
  * multiple of the picture. FALSE if there is no picture to draw. */
 extern s32 port_GlShowPicture(
     s32 window_w, s32 window_h, s32 x, s32 y, s32 w, s32 h, s32 is_linear);
+
+/* Whether the whole of the display is a picture drawn from a mod's (a
+ * replacement of a picture the game wrote into video memory, not written
+ * over since): the movie player's title picture, which the window then
+ * shows from the card although the player is running (docs/MODS.md,
+ * "The title picture"). */
+extern s32 port_GlShowsReplacedPicture(void);
 
 /* Pixels of the host's own (0xAARRGGBB each, a row after a row from the
  * top) into the same kind of rectangle: the software GPU's picture where

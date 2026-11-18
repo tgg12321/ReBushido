@@ -25,6 +25,7 @@
 #include "common.h"
 #include "gl.h"
 #include "gl_fighter.h"
+#include "gl_light.h"
 #include "gl_replace.h"
 #include "gl_scene.h"
 #include "gl_see.h"
@@ -190,6 +191,13 @@ PORT_GL_FUNCTIONS
 /* Rectangles of video memory written since the card last drew, kept to
  * be stretched into the colour buffer together (port_GlDrawBlits). */
 #define BLITS_MAX 32
+/* Rectangles written from a mod's picture that are remembered: the movie
+ * player's title picture, and the two buffers it copies it into to fade
+ * it out. */
+#define REPLACED_MAX 4
+/* a picture of a whole screen (gl_replace.h) */
+#define SCREEN_PICTURE_W 320
+#define SCREEN_PICTURE_H 240
 /* a part of a fade's tint (port_mods.h) */
 #define TINT_PART_MASK 0xFF
 /* The longest run of pixels sent to the card in one go. */
@@ -231,6 +239,25 @@ PORT_GL_FUNCTIONS
 /* A mod's picture of its whole texture page stands in for its texture
  * (gl_scene.h). */
 #define FLAG_PAGE 128
+/* Not in the byte: a cloth held against the depth of the fighters drawn
+ * from models (port_GlFighterHolds), carried in the second bit of the
+ * vertex's `info[3]` (INFO_HELD). */
+#define FLAG_HELD 256
+/* The bits of a vertex's `info[3]`: the chip's rule for which pixels a
+ * flat polygon covers, and a cloth held against the models. */
+#define INFO_FLAT_RULE 1
+#define INFO_HELD 2
+/* The unit the fighters' layer's depth is read from. */
+#define FIGHTER_DEPTH_UNIT 9
+/* How much nearer than it is a cloth is taken to be, against the models,
+ * in the world's units: where it is fastened, at the belt, the cloth and
+ * the model are the same surface to within the model's fit. */
+#define FIGHTER_CLOTH_BIAS 8.0f
+/* Not in the byte either: an effect's texture read smoothed and its
+ * edge faded out with `effects smooth` (port_remaster.h, "the
+ * effects"), carried in the third bit of `info[3]` (INFO_SMOOTH). */
+#define FLAG_SMOOTH_EFFECT 512
+#define INFO_SMOOTH 4
 
 /* A corner's `w`: the depth the coprocessor worked out, in these units.
  * Any number in proportion to it will do -- it is the perspective divide
@@ -365,6 +392,9 @@ static struct {
     GLint at_depth_range;
     GLint at_depth_bias;
     GLint at_ground_slots;
+    GLint at_fighter_depth;
+    GLint at_fighter_rect;
+    GLint at_fighter_bias;
     GLint at_ground_order;
     GLint blit_at_target;
     GLint blit_at_rect;
@@ -429,6 +459,11 @@ static struct {
     s32 display_h;
     s32 display_is_on;
     s32 display_is_rgb24; /* the movie's mode */
+    /* the last rectangles written from a mod's picture and not written
+     * over since (port_GlShowsReplacedPicture) */
+    PortGlBlit replaced[REPLACED_MAX];
+    s32 replaced_margin[REPLACED_MAX]; /* the margin it was drawn with */
+    s32 replaced_next;
     u32 frame_time;
     u32 vertex_count;
     u32 draw_count;
@@ -584,7 +619,7 @@ static const char g_gl_geometry_text[] =
     "    return ((a < 0) != (b < 0)) ? -q : q;\n"
     "}\n"
     "void main() {\n"
-    "    if (g_info[0].w == 0u) {\n"
+    "    if ((g_info[0].w & 1u) == 0u) {\n"
     "        vec2 least = min(min(g_texture[0], g_texture[1]), g_texture[2]);\n"
     "        vec2 most = max(max(g_texture[0], g_texture[1]), g_texture[2]);\n"
     "        for (int i = 0; i < 3; i++) {\n"
@@ -714,6 +749,11 @@ static const char g_gl_fragment_text[] =
      * the mesh wrote it this frame (port_GlIsOverGround) */
     "uniform usampler2D u_ground_slots;\n"
     "uniform int u_ground_order;\n"
+    /* the depth of the fighters drawn from models, and where their layer
+     * lies (port_GlFighterLayerDepth) */
+    "uniform sampler2D u_fighter_depth;\n"
+    "uniform vec4 u_fighter_rect;\n"
+    "uniform float u_fighter_bias;\n"
     "flat in float v_slot;\n"
     "in vec2 v_texture;\n"
     "noperspective in vec2 v_texture_flat;\n"
@@ -842,6 +882,19 @@ static const char g_gl_fragment_text[] =
     "           < uint(v_slot)) {\n"
     "        discard;\n"
     "    }\n"
+    /* A cloth of a fighter drawn from a model is hidden where the models
+     * are nearer than it (port_GlFighterHolds): the layer they were drawn
+     * into kept their depth, in the world's own units, as this does. */
+    "    if ((v_info.w & 2u) != 0u) {\n"
+    "        ivec2 at = ivec2(gl_FragCoord.xy - u_fighter_rect.xy);\n"
+    "        if (all(greaterThanEqual(at, ivec2(0)))\n"
+    "            && all(lessThan(at, ivec2(u_fighter_rect.zw)))) {\n"
+    "            float body = texelFetch(u_fighter_depth, at, 0).r;\n"
+    "            float deep = (u_w_scale / gl_FragCoord.w)\n"
+    "                       * exp2(float(v_info.z));\n"
+    "            if (deep - u_fighter_bias > body) { discard; }\n"
+    "        }\n"
+    "    }\n"
     "    vec2 uv = (u_affine != 0) ? v_texture_flat : v_texture;\n"
     /* the texture point as it runs across the primitive, before it is
      * stepped back to the corner of a block: what a mod's picture, which
@@ -849,6 +902,10 @@ static const char g_gl_fragment_text[] =
     "    vec2 smooth_uv = uv;\n"
     "    vec3 color = v_color;\n"
     "    bool mixes = (v_flags.w & 4u) != 0u;\n"
+    /* an effect's texture smoothed (FLAG_SMOOTH_EFFECT), and how much of
+     * it the texels about the point cover */
+    "    bool smooth_effect = (v_info.w & 4u) != 0u;\n"
+    "    float coverage = 1.0;\n"
     "    ivec2 pixel = ivec2(floor(gl_FragCoord.xy / u_scale));\n"
     /* A flat primitive is the chip's own picture at a larger scale, and
      * the chip settled its texel and its colour once for each pixel of
@@ -947,9 +1004,11 @@ static const char g_gl_fragment_text[] =
     "            if (u_replace_mix == 1) { texel = 32768u; }\n"
     "            if (u_replace_mix == 2) { texel = 1u; }\n"
     "            weight = 1.0;\n"
-    "        } else if (u_bilinear != 0) {\n"
+    "        } else if (u_bilinear != 0 || smooth_effect) {\n"
     /* four texels about the point, each one that is nothing left out,
-     * so that a page's edge does not bleed */
+     * so that a page's edge does not bleed. An effect's texels that are
+     * nothing are kept as how much of the four is drawn: its edge fades
+     * out instead of stopping at a texel's edge (`coverage`) */
     "            vec2 at = uv - vec2(0.5);\n"
     "            vec2 part = fract(at);\n"
     "            ivec2 first = ivec2(floor(at));\n"
@@ -968,6 +1027,13 @@ static const char g_gl_fragment_text[] =
     "            }\n"
     "            if (weight < 0.004) { discard; }\n"
     "            texel_color /= weight;\n"
+    "            if (smooth_effect) {\n"
+    "                coverage = smoothstep(0.0, 1.0, weight);\n"
+    "                if (texel == 0u) { texel = texel_at(first.x, first.y)\n"
+    "                    | texel_at(first.x + 1, first.y)\n"
+    "                    | texel_at(first.x, first.y + 1)\n"
+    "                    | texel_at(first.x + 1, first.y + 1); }\n"
+    "            }\n"
     "        } else if (steps > 1) {\n"
     /* The texels this fragment covers, averaged: `steps` by `steps`
      * points spread evenly over the area the texture point steps across
@@ -1033,6 +1099,22 @@ static const char g_gl_fragment_text[] =
     "        if (v_info.y == 0u) { shade = 0.5; }\n"
     "        else if (v_info.y == 3u) { color *= 0.25; shade = 0.0; }\n"
     "        else { shade = 0.0; }\n"
+    "    }\n"
+    /* An effect's edge, smoothed: only as much of it is put down as
+     * the four texels about the point have, in whichever way the draw
+     * mixes. A half-and-half mix takes less of the effect; an added one
+     * adds less; a texel that does not mix is laid over what is there
+     * by that share, where the draw blends at all. */
+    "    if (smooth_effect && coverage < 1.0) {\n"
+    "        if (mixes) {\n"
+    "            if (v_info.y == 0u) { shade *= coverage; }\n"
+    "            else { color *= coverage; }\n"
+    "        } else if ((v_flags.w & 4u) != 0u && v_info.y != 2u) {\n"
+    "            if (v_info.y == 0u) { shade = coverage; }\n"
+    "            else { color *= coverage; shade = coverage; }\n"
+    "        } else if (coverage < 0.5) {\n"
+    "            discard;\n"
+    "        }\n"
     "    }\n"
     "    if (u_pass == 1 && !mixes) { discard; }\n"
     "    if (u_pass == 2 && mixes) { discard; }\n"
@@ -1454,6 +1536,24 @@ static void port_GlSetState(const PortGlState *state) {
 
 /* What a draw of the picture's own program needs, whichever buffer it
  * draws into. */
+/* What a cloth of a fighter drawn from a model is held against: the
+ * depth of the layer the models were drawn into in this picture
+ * (port_GlFighterHolds). With no layer laid the rectangle is empty and
+ * nothing is held. */
+static void port_GlSetFighterDepth(void) {
+    s32 rect[4] = {0, 0, 0, 0};
+    u32 texture = (u32)port_GlFighterLayerDepth(rect);
+
+    glActiveTexture(GL_TEXTURE0 + FIGHTER_DEPTH_UNIT);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(g_gl.at_fighter_depth, FIGHTER_DEPTH_UNIT);
+    glUniform4f(g_gl.at_fighter_rect, (GLfloat)rect[0], (GLfloat)rect[1],
+                (GLfloat)(texture != 0 ? rect[2] : 0),
+                (GLfloat)(texture != 0 ? rect[3] : 0));
+    glUniform1f(g_gl.at_fighter_bias, FIGHTER_CLOTH_BIAS);
+}
+
 static void port_GlSetUniforms(void) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
@@ -1479,6 +1579,7 @@ static void port_GlSetUniforms(void) {
      * the mesh wrote them into the buffer being drawn into */
     glUniform1i(g_gl.at_ground_order, 0);
     glUniform1i(g_gl.at_ground_slots, 1);
+    port_GlSetFighterDepth();
     glUniform1i(g_gl.at_replaced, 0);
     glUniform1i(g_gl.at_replace, PORT_GL_REPLACE_UNIT);
     /* a mod's pictures of the stage's pages (gl_scene.h) */
@@ -1683,10 +1784,15 @@ static void port_GlPutVertex(
      * the ground's own mesh puts back (port_remaster.h) */
     to->info[2] = (u8)prim->depth_shift;
     /* a flat polygon covers the pixels the chip's own rule gives it (the
-     * geometry shader) */
-    to->info[3] = (u8)((flags & FLAG_FLAT) != 0 &&
-                       (prim->kind == PORT_REMASTER_TRIANGLE ||
-                        prim->kind == PORT_REMASTER_QUAD));
+     * geometry shader), and a cloth is held against the models */
+    to->info[3] =
+        (u8)(((flags & FLAG_FLAT) != 0 &&
+                      (prim->kind == PORT_REMASTER_TRIANGLE ||
+                       prim->kind == PORT_REMASTER_QUAD)
+                  ? INFO_FLAT_RULE
+                  : 0) |
+             ((flags & FLAG_HELD) != 0 ? INFO_HELD : 0) |
+             ((flags & FLAG_SMOOTH_EFFECT) != 0 ? INFO_SMOOTH : 0));
     to->window[0] = (u8)prim->window_and_u;
     to->window[1] = (u8)prim->window_or_u;
     to->window[2] = (u8)prim->window_and_v;
@@ -1925,7 +2031,9 @@ static s32 port_GlIsOverGround(const PortRemasterPrim *prim) {
     if (prim->is_shadow) {
         return FALSE;
     }
-    return prim->is_fighter || prim->id.object == 0;
+    /* an effect is named (port_RemasterNoteEffect) and still never
+     * hidden, as the console hid none */
+    return prim->is_fighter || prim->is_effect || prim->id.object == 0;
 }
 
 static void port_GlDraw(const PortRemasterPrim *prim) {
@@ -1951,6 +2059,10 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     if (port_GlFighterTakes(prim)) {
         return;
     }
+    /* ... and his cloth is held against the model's depth */
+    if (port_GlFighterHolds() && prim->has_depth) {
+        flags |= FLAG_HELD;
+    }
     if (prim->is_textured) {
         flags |= FLAG_TEXTURED;
     }
@@ -1968,6 +2080,11 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     }
     if (port_GlIsOverGround(prim)) {
         flags |= FLAG_OVER_GROUND;
+    }
+    if (prim->is_effect && prim->is_textured &&
+        port_RemasterEffects() == PORT_EFFECTS_SMOOTH &&
+        !g_gl.options.is_exact) {
+        flags |= FLAG_SMOOTH_EFFECT;
     }
     /* drawn where the chip put it, by whole pixels of video memory: so
      * its texel and its colour are read as the chip read them, once a
@@ -2124,6 +2241,7 @@ static void port_GlBlit(const PortGlBlit *blit) {
  * on itself. */
 static void port_GlDrawBlits(void) {
     s32 was;
+    s32 is_clipped;
     s32 i;
 
     if (g_gl.blit_count == 0) {
@@ -2142,7 +2260,8 @@ static void port_GlDrawBlits(void) {
     glUniform2f(g_gl.blit_at_scale, (GLfloat)g_gl.draw_x, (GLfloat)g_gl.draw_y);
     glUniform1f(g_gl.blit_at_shift, (GLfloat)g_gl.margin);
     glDisable(GL_BLEND);
-    if (g_gl.margin > 0 && g_gl.display_w > 0) {
+    is_clipped = g_gl.margin > 0 && g_gl.display_w > 0;
+    if (is_clipped) {
         /* What the game wrote into video memory belongs to the
          * console's own 640 pixels, wherever in video memory it is: the
          * bands beside them are the scene's alone, and a rectangle of
@@ -2155,6 +2274,19 @@ static void port_GlDrawBlits(void) {
         glDisable(GL_SCISSOR_TEST);
     }
     for (i = 0; i < g_gl.blit_count; i++) {
+        const PortDirtyRect *at = &g_gl.blit[i].rect;
+
+        /* a mod's picture of a whole screen is a picture to be shown
+         * where it is (the movie player's title picture, loaded beside
+         * the display it later moves to): it is drawn whole */
+        if (is_clipped && g_gl.blit[i].replacement != 0 &&
+            at->right - at->left + 1 >= SCREEN_PICTURE_W &&
+            at->bottom - at->top + 1 >= SCREEN_PICTURE_H) {
+            glDisable(GL_SCISSOR_TEST);
+            port_GlBlit(&g_gl.blit[i]);
+            glEnable(GL_SCISSOR_TEST);
+            continue;
+        }
         port_GlBlit(&g_gl.blit[i]);
     }
     glEnable(GL_SCISSOR_TEST);
@@ -2167,6 +2299,76 @@ static void port_GlDrawBlits(void) {
 static s32 port_GlRectHolds(const PortDirtyRect *a, const PortDirtyRect *b) {
     return a->left <= b->left && a->top <= b->top && a->right >= b->right &&
            a->bottom >= b->bottom;
+}
+
+/* Whether rectangles `a` and `b` share a pixel. */
+static s32 port_GlRectsMeet(const PortDirtyRect *a, const PortDirtyRect *b) {
+    return a->left <= b->right && b->left <= a->right && a->top <= b->bottom &&
+           b->top <= a->bottom;
+}
+
+/* Remembers a rectangle written from a mod's picture, and forgets the
+ * ones a write of the game's own pixels has gone over. */
+static void port_GlKeepReplaced(const PortGlBlit *blit) {
+    s32 i;
+
+    for (i = 0; i < REPLACED_MAX; i++) {
+        if (!g_gl.replaced[i].rect.is_empty &&
+            port_GlRectsMeet(&g_gl.replaced[i].rect, &blit->rect)) {
+            g_gl.replaced[i].rect.is_empty = TRUE;
+        }
+    }
+    if (blit->replacement != 0) {
+        g_gl.replaced[g_gl.replaced_next] = *blit;
+        g_gl.replaced_margin[g_gl.replaced_next] = g_gl.margin;
+        g_gl.replaced_next = (g_gl.replaced_next + 1) % REPLACED_MAX;
+    }
+}
+
+/* The remembered rectangle that holds the whole of the display, or -1. */
+static s32 port_GlReplacedShown(void) {
+    PortDirtyRect shown;
+    s32 i;
+
+    if (!g_gl.is_started || !g_gl.display_is_on || g_gl.display_w <= 0 ||
+        g_gl.display_h <= 0) {
+        return -1;
+    }
+    shown.left = g_gl.display_x;
+    shown.top = g_gl.display_y;
+    shown.right = g_gl.display_x + g_gl.display_w - 1;
+    shown.bottom = g_gl.display_y + g_gl.display_h - 1;
+    for (i = 0; i < REPLACED_MAX; i++) {
+        if (!g_gl.replaced[i].rect.is_empty &&
+            port_GlRectHolds(&g_gl.replaced[i].rect, &shown)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+s32 port_GlShowsReplacedPicture(void) { return port_GlReplacedShown() >= 0; }
+
+/* The display wholly a mod's picture (the movie player's title): drawn
+ * again where it was drawn while the picture had other bands -- the title
+ * is loaded while the display is another's, and the colour buffer is
+ * video memory moved across by the margin -- and its bands black, since
+ * what is beside it in video memory is the movie's frames. */
+static void port_GlShowReplaced(void) {
+    s32 i = port_GlReplacedShown();
+    PortDirtyRect rows;
+
+    if (i < 0) {
+        return;
+    }
+    if (g_gl.replaced_margin[i] != g_gl.margin) {
+        g_gl.blit[g_gl.blit_count++] = g_gl.replaced[i];
+        port_GlDrawBlits();
+        g_gl.replaced_margin[i] = g_gl.margin;
+    }
+    rows.top = g_gl.display_y;
+    rows.bottom = g_gl.display_y + g_gl.display_h - 1;
+    port_GlClearBands(&rows, FALSE, 0);
 }
 
 /* A rectangle of video memory the software GPU wrote: it is sent to the
@@ -2203,7 +2405,9 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
             : port_GlReplaceFindPicture(
                   rect->left, rect->top, rect->right - rect->left + 1,
                   rect->bottom - rect->top + 1, g_gl.display_x,
-                  g_gl.display_is_rgb24 ? 0 : g_gl.display_w, &blit.tint);
+                  g_gl.display_is_rgb24 ? -1 : g_gl.display_w,
+                  !g_gl.display_is_on, &blit.tint);
+    port_GlKeepReplaced(&blit);
     /* one written before that this one covers is left out: this one is
      * drawn over the whole of it */
     kept = 0;
@@ -2389,6 +2593,7 @@ static void port_GlEnd(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24) {
      * from the software GPU's own video memory. */
     g_gl.display_is_on = is_on && !is_rgb24;
     g_gl.display_is_rgb24 = is_rgb24;
+    port_GlShowReplaced();
     /* what the frame on show cost: a blank at which the game drew
      * nothing leaves the frame before it standing (port_remaster.h) */
     if (g_gl.vertex_count != 0 || g_gl.upload_count != 0) {
@@ -2484,6 +2689,9 @@ void port_GlSetOptions(const PortGlOptions *options) {
     port_GlStageSetOn(options->is_exact ? 0 : options->is_stage_mesh);
     port_GlShadowSetStrength(options->is_exact ? 0 : options->shadows);
     port_GlFighterSetOn(options->is_exact ? 0 : options->is_fighter_models);
+    port_RemasterSetEffects(
+        options->is_exact ? PORT_EFFECTS_ORIGINAL : options->effects);
+    port_GlLightSetSmooth(options->is_exact ? 0 : options->is_smooth_light);
     port_GlSceneSetOn(!options->is_exact);
     port_GlSkySetKind(options->is_exact ? 0 : options->sky);
     port_GlSeeSetOn(options->is_exact ? 0 : options->see_through);
@@ -2518,6 +2726,7 @@ const char *port_GlStart(
     void *(*getproc)(const char *name), const PortGlOptions *options) {
     static const GLfloat corners[] = {
         0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
+    s32 i;
 
     g_gl.problem[0] = 0;
     if (!port_GlFindFunctions(getproc)) {
@@ -2569,6 +2778,10 @@ const char *port_GlStart(
     g_gl.at_depth_range = glGetUniformLocation(g_gl.program, "u_depth_range");
     g_gl.at_depth_bias = glGetUniformLocation(g_gl.program, "u_depth_bias");
     g_gl.at_ground_slots = glGetUniformLocation(g_gl.program, "u_ground_slots");
+    g_gl.at_fighter_depth =
+        glGetUniformLocation(g_gl.program, "u_fighter_depth");
+    g_gl.at_fighter_rect = glGetUniformLocation(g_gl.program, "u_fighter_rect");
+    g_gl.at_fighter_bias = glGetUniformLocation(g_gl.program, "u_fighter_bias");
     g_gl.at_ground_order = glGetUniformLocation(g_gl.program, "u_ground_order");
     g_gl.at_pass = glGetUniformLocation(g_gl.program, "u_pass");
     g_gl.blit_at_target = glGetUniformLocation(g_gl.blit_program, "u_target");
@@ -2700,6 +2913,10 @@ const char *port_GlStart(
         }
     }
     port_GlFighterSetOn(options->is_exact ? 0 : options->is_fighter_models);
+    /* the effects as the console placed them in that comparison too */
+    port_RemasterSetEffects(
+        options->is_exact ? PORT_EFFECTS_ORIGINAL : options->effects);
+    port_GlLightSetSmooth(options->is_exact ? 0 : options->is_smooth_light);
     /* the sky (gl_sky.h): a card that cannot have it shows the game's
      * own colour of the distance */
     {
@@ -2722,6 +2939,9 @@ const char *port_GlStart(
     /* video memory as it is now, all of it */
     port_ClearDirtyRect(&g_gl.mirror);
     g_gl.blit_count = 0;
+    for (i = 0; i < REPLACED_MAX; i++) {
+        port_ClearDirtyRect(&g_gl.replaced[i].rect);
+    }
     port_GlWroteVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
     port_RemasterSetBackend(&g_gl_backend);
     return NULL;

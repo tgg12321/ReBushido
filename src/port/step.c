@@ -28,6 +28,7 @@ u32 g_port_steps;
 s32 g_port_rerun;
 s32 g_port_ahead;
 s32 g_port_unseen;
+s32 g_port_ahead_held;
 void (*g_port_boundary_hook)(void);
 void (*g_port_ahead_blank_hook)(u32 blank);
 void (*g_port_ahead_done_hook)(void);
@@ -83,8 +84,8 @@ void port_AheadBlank(u32 blank) {
  * step reaches another machine (the link cable; netplay has a loop of
  * its own and never comes here). */
 static s32 port_MayRunAhead(void) {
-    return g_port_ahead_frames > 0 && !g_port_rerun && g_port_input_count > 0 &&
-           !port_LinkIsUp() && !port_IsNetplayOn();
+    return g_port_ahead_frames > 0 && !g_port_ahead_held && !g_port_rerun &&
+           g_port_input_count > 0 && !port_LinkIsUp() && !port_IsNetplayOn();
 }
 
 /* The host's turn before a step (port_platform.h): the window's read of
@@ -96,6 +97,7 @@ void port_BeforeStep(void) {
     s32 i;
 
     g_port_unseen = FALSE;
+    g_port_ahead_held = FALSE;
     if (g_port_boundary_hook != NULL) {
         g_port_boundary_hook();
     }

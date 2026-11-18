@@ -157,6 +157,10 @@ extern s32 port_PaceIsHeldBack(const PortPace *pace);
  * PORT_PACE_HOLD_STEP a blank at most: netplay's time sync, where this
  * program is ahead of the other (src/port/netplay.c). */
 extern void port_PaceHold(PortPace *pace, u32 samples);
+/* The game's time `due` is now: the blanks a quick load hurried through
+ * are not waited for afterwards, nor counted as time the PC lost; a
+ * hold still to be taken is kept. */
+extern void port_PaceRebase(PortPace *pace, u32 now, u32 due);
 
 /* ---- when a picture is shown, and of what moment (pace.c) ---- */
 
@@ -280,6 +284,11 @@ typedef struct {
      * hundredths: 0 is the game's own black silhouettes
      * (src/port/gl/gl_shadow.h; PORT_SHADOWS_SOFT). */
     s32 shadows;
+    /* The game's own lighting worked out at each pixel on the ground's
+     * mesh and the fighters' models (src/port/gl/gl_light.h). */
+    s32 smooth_light;
+    /* How the effects are drawn: PORT_EFFECTS_... (port_remaster.h). */
+    s32 effects;
     /* A night sky of the port's own over the stages open to it, in the
      * place of the game's colour of the distance (src/port/gl/gl_sky.h):
      * 0 original, 1 night. */
@@ -300,6 +309,11 @@ typedef struct {
     /* The menus' lettering drawn again, the mod the program ships as
      * mods/ui/ (docs/MODS.md, "The sharp menus"); 0 leaves it out. */
     s32 ui;
+    /* The blanks in which the game waits for the disc behind its loading
+     * picture are hurried through, not shown at the console's pace
+     * (docs/PORT.md, "Quick loading"); 0 shows each as the console
+     * would. Nothing the game computes changes either way. */
+    s32 quick_loading;
     /* Playing online (the settings menu's Play online page; docs/
      * PLAYING.md): host (0) or join (1), the port a host waits at,
      * whether it is found at every address of the PC (1) or at 127.0.0.1
@@ -455,6 +469,21 @@ typedef struct {
 } PortGameState;
 
 extern void port_ReadGameState(PortGameState *state);
+/* Whether the game is waiting for the disc now (g_port_load_wait), and
+ * what it shows meanwhile: PORT_LOAD_NONE, PORT_LOAD_PICTURE where its
+ * loading picture, a black screen or what was on it last is up, which
+ * the window may hurry through (quick_loading), or PORT_LOAD_READ where
+ * the loading screen is one the player reads (port_ReadScreen), which
+ * is hurried only once it has been up a while. */
+#define PORT_LOAD_NONE 0
+#define PORT_LOAD_PICTURE 1
+#define PORT_LOAD_READ 2
+extern s32 port_LoadKind(void);
+/* The loading screen, where it is one the player reads: story mode's
+ * card of the next stage and its route, or the team battle's scores
+ * between two matches (enum LoadingScreen); 0 for any other, and in a
+ * fight. */
+extern s32 port_ReadScreen(void);
 /* The game's own Bug fixes setting (g_rb_settings.bugfixes), read, and
  * set by the settings menu while the game is stopped. */
 extern s32 port_GetBugfixes(void);

@@ -33,6 +33,8 @@ extern const char *port_FindFunction(u32 address, u32 *offset);
 extern void port_SetRunAhead(s32 frames);
 extern s32 port_GetRunAhead(void);
 extern s32 g_port_unseen;
+extern s32 g_port_ahead_held;
+extern void port_GiveUpAhead(void);
 extern void port_ReadDevicesNow(void);
 extern void (*g_port_boundary_hook)(void);
 extern void (*g_port_ahead_blank_hook)(u32 blank);

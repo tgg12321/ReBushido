@@ -6,7 +6,8 @@
  * (--join). Before either starts the game they meet and hold each other
  * to the same thing: the same protocol, the same build of the port (the
  * game's state is only comparable between programs whose variables lie
- * alike: NETPLAY.md, section 7) and the same disc. The host then sends
+ * alike: NETPLAY.md, section 7), the same disc and the same mods that
+ * change how the game plays (port_WeaponsSessionHash). The host then sends
  * the guest its two memory cards, whole, and a random seed. Both play on
  * the host's cards, kept in memory (port_card.h): the unlocks, the button
  * layouts, the records and ReBushido's own settings, Bugfixes among them,
@@ -30,7 +31,7 @@
 #include "bb2.h"
 
 /* The protocol's own number: two programs that differ in it do not meet. */
-#define SESSION_PROTOCOL 1
+#define SESSION_PROTOCOL 2
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -92,17 +93,20 @@ enum {
     REFUSE_PROTOCOL = 1,
     REFUSE_BUILD = 2,
     REFUSE_DISC = 3,
+    REFUSE_MODS = 4,
 };
 
 /* A hello and a welcome after the header (whose number is the
- * protocol): the build's identity, the disc's, then the welcome's delay,
+ * protocol): the build's identity, the disc's, the gameplay mods', then
+ * the welcome's delay,
  * seed and cards, the shape of the sender's remastered picture (its width
  * in the high half and its height in the low), and last the version's
  * text. */
 enum {
     MEET_BUILD = PORT_NET_HEADER_BYTES,
     MEET_DISC = MEET_BUILD + 2 * WORD_BYTES,
-    MEET_DELAY = MEET_DISC + 2 * WORD_BYTES,
+    MEET_MODS = MEET_DISC + 2 * WORD_BYTES,
+    MEET_DELAY = MEET_MODS + 2 * WORD_BYTES,
     MEET_SEED = MEET_DELAY + WORD_BYTES,
     MEET_CARDS = MEET_SEED + WORD_BYTES,
     MEET_SHAPE = MEET_CARDS + WORD_BYTES,
@@ -115,6 +119,7 @@ static struct {
     PortNetAddress address;
     u64 build;
     u64 disc;
+    u64 mods; /* the mods that change how the game plays */
     u32 delay;
     u32 seed;
     u32 cards;  /* a bit a slot that has a card */
@@ -212,6 +217,10 @@ static const char *port_RefusalText(s32 reason) {
                "version, commit and system, 64 or 32 bits, are needed)";
     case REFUSE_DISC:
         return "the other player's disc image is not the same as this one's";
+    case REFUSE_MODS:
+        return "the other player's mods that change how the game plays "
+               "(weapons, motions, stages) or --weapon are not the same as "
+               "this one's";
     default:
         return "the other program turned this one away";
     }
@@ -246,6 +255,7 @@ static void port_SendMeet(s32 kind) {
     port_NetHeader(out, kind, 0, SESSION_PROTOCOL);
     port_PutLong(out + MEET_BUILD, g_session.build);
     port_PutLong(out + MEET_DISC, g_session.disc);
+    port_PutLong(out + MEET_MODS, g_session.mods);
     port_NetPutWord(out + MEET_DELAY, g_session.delay);
     port_NetPutWord(out + MEET_SEED, g_session.seed);
     port_NetPutWord(out + MEET_CARDS, g_session.cards);
@@ -300,6 +310,9 @@ static s32 port_CheckMeet(const u8 *in, s32 bytes, u32 protocol) {
     }
     if (port_GetLong(in + MEET_DISC) != g_session.disc) {
         return REFUSE_DISC;
+    }
+    if (port_GetLong(in + MEET_MODS) != g_session.mods) {
+        return REFUSE_MODS;
     }
     port_TakeShape(port_NetGetWord(in + MEET_SHAPE));
     return 0;
@@ -584,6 +597,7 @@ s32 port_StartSession(const PortDisc *disc, u32 delay) {
 
     g_session.build = port_SessionBuild();
     g_session.disc = port_SessionDisc(disc);
+    g_session.mods = port_WeaponsSessionHash();
     g_session.delay = delay;
     port_RemasterGetView(&view);
     g_session.shape =

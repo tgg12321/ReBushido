@@ -376,7 +376,11 @@ def check_session(label, program, args, ports, window):
             config = os.path.join(folder, 'rebushido.cfg')
             with open(config, 'w', encoding='utf-8', newline='\n') as f:
                 f.write('fullscreen = off\n')
-            cmd += ['--config', config, '--windowed', '--log', os.path.join(folder, 'side%d.log' % side)]
+            # the loads hurried through, as a player's window has them
+            # (docs/PORT.md, "Quick loading"): the two meet at each all
+            # the same
+            cmd += ['--config', config, '--windowed', '--log', os.path.join(folder, 'side%d.log' % side),
+                    '--quick-loading', 'on']
             env['SDL_VIDEODRIVER'] = 'dummy'
             env['SDL_AUDIODRIVER'] = 'dummy'
         os.makedirs(os.path.join(folder, 'side%d' % side), exist_ok=True)

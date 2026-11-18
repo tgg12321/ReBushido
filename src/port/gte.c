@@ -858,6 +858,23 @@ void port_GteStoreData(s32 first, void *words, s32 count) {
     }
 }
 
+/* A macro's own store of screen positions (port_gte.h): each word that is
+ * still what its register holds is written down with the point the
+ * projection worked out for it. */
+void port_GteNoteStored(s32 first, const void *words, s32 count) {
+    s32 i;
+
+    for (i = 0; i < count; i++) {
+        const PortPrecisePoint *precise = port_PreciseOf(first + i);
+
+        if (precise != NULL && precise->depth != 0 &&
+            ((const u32 *)words)[i] == port_GteReadData(first + i)) {
+            port_RemasterNotePoint(
+                (PortAddress) & ((const u32 *)words)[i], precise);
+        }
+    }
+}
+
 void port_GteLoadControl(s32 first, const void *words, s32 count) {
     s32 i;
 

@@ -190,7 +190,17 @@ game's stack is a third piece, a megabyte at `0x7FC00000`, which is the
 port's choice and not the console's ("The picture", "Where the links
 point"). If the system will not give one of them, the program says so
 and stops. (The sound chip's registers are a fourth piece, at
-`0x1F801000`, which only Sony's sound libraries reach: "Sound".) The
+`0x1F801000`, which only Sony's sound libraries reach: "Sound".)
+**All of them are given first thing** (`port_MapFixedMemory`,
+`port_host.h`): the window and the remastered renderer's prover call it
+before SDL, EGL or the card's driver starts, because a library's memory
+lands where the system likes, and the scratchpad's address is low
+enough for the C library's heap to reach. Asked for after EGL had
+started, it was now and then already taken, and the prover's run
+stopped before its first frame with an empty log. The
+port's own buffers of primitives (`PORT_PRIMS_ADDR`) are given then too,
+whether or not the run uses them; nothing is written there unless it
+does. The
 twelve addresses are the scratchpad and the eleven of `include/sys.h`
 and `motion.h`; `tests/port/memory.py` reads the game's source on every
 push and fails if it has an address that is not in the mapped memory,
@@ -1509,9 +1519,11 @@ is drawn"), the scene's edges smoothed ("Edges"), and a wider view of
 the scene at a wider shape of picture ("A wider picture"), and more
 pictures a second than the game has frames ("More pictures a second"),
 and the fighters' shadows drawn as a darkening of the ground instead of
-the game's black silhouettes ("The shadows"). What it leaves for the
-step after it, by design and not by accident: new lighting ("What each
-later step needs").
+the game's black silhouettes ("The shadows"), the effects placed and
+moved where the projection put them ("The effects"), and the game's own
+lights worked out at each pixel of the ground and the fighters' models
+("Lighting"). What it leaves for the step after it, by design and not by
+accident: lights of its own ("What each later step needs").
 
 **Three settings of a run** say how much of each (`port_remaster.h`,
 `PortRemasterView`), each of them the drawing path alone:
@@ -1786,7 +1798,7 @@ they are:
 | The stage's fog | `stage_QueueFog` | copies inside video memory, 31 rows of colour tables a frame |
 | The character select's portraits | `select.c`'s sprite pools | loads from the program into pages, then textured rectangles |
 | The replay and the menus over the scene | 2D primitives | drawn as they are, crisp |
-| The movie | the overlay, 24-bit mode | **not done**: the display in the mode of three bytes a pixel, and the title picture after it, are left to the software GPU's picture, which the window shows while the player runs ("Remastered in the window") |
+| The movie | the overlay, 24-bit mode | **not done**: the display in the mode of three bytes a pixel is left to the software GPU's picture, which the window shows while the player runs ("Remastered in the window"); the title picture after it, in the 16-bit mode, is the remastered picture where a mod has a picture of it (MODS.md, "The title picture") |
 
 **Nothing reads back what the card drew.** The game reads video memory
 with `StoreImage`, and that is the software GPU's, which is still
@@ -3385,16 +3397,18 @@ prover does with EGL and no display, the window does with SDL:
 - with Graphics Original the same path shows the software GPU's own
   pixels as a texture (`port_GlShowPixels`), so that one context draws
   both pictures and F2 costs nothing but a different source;
-- **the movie is the software GPU's picture** whichever is chosen, and
-  so is the title picture the player holds after it: the player's
-  display is in the 24-bit mode the card does not draw, and the title
-  picture is loaded into video memory at x 480, outside the game's
-  display, where a wider picture's stretch of video memory does not
-  reach. `port_MovieIsPlaying` (`src/port/movie.c`) is true while the
-  player runs; the window then fits the frame as with Graphics
-  Original, smoothed because it is video, and the counter sits on it.
-  (With F2 on the window showed black through the whole movie and the
-  title until this was done; the frames were decoded all along);
+- **the movie is the software GPU's picture** whichever is chosen: the
+  player's display is in the 24-bit mode the card does not draw.
+  `port_MovieIsPlaying` (`src/port/movie.c`) is true while the player
+  runs; the window then fits the frame as with Graphics Original,
+  smoothed because it is video, and the counter sits on it. (With F2 on
+  the window showed black through the whole movie and the title until
+  this was done; the frames were decoded all along.) The title picture
+  the player holds after it, in the 16-bit mode, is the remastered
+  picture where a mod has a picture of it -- the art mod has, made from
+  the disc -- and so is its fade (`port_GlShowsReplacedPicture`;
+  MODS.md, "The title picture"); with none it is the software GPU's,
+  smoothed;
 - **the pause keeps the fight's picture.** The pause menu draws the
   fight's last frame again under its panel on every loop by giving the
   GPU that frame's ordering table once more (`fight_RunPauseMenu`), and
@@ -3658,9 +3672,10 @@ left out), 58,373 had no place (10.7%), and now none has; the prover
 holds that to none (`tools/port_gl_prove.py`, `fighters`). That copy is
 the renderer's only one: every other point it draws from is the GTE's own
 store. An effect (`eff.c`) and the surf (`wave.c`) take their points
-through Sony's `RotTransPers`, which reads the GTE into the program and
-never through the store the side channel watches, so they still have no
-place; they are not a fighter's and do not tear.
+through Sony's `RotTransPers` and the GTE's macros and build their quads
+themselves, so with `effects original` they have no place; with `exact`
+or `smooth` each says which point or points it was built from and which
+effect it is, and is placed and moved by that name ("The effects").
 
 The same face of the same thing has the same name in the next frame
 however far it moved, however the camera turned, and however the walk
@@ -4035,9 +4050,10 @@ and is nothing on a real card, and was left. A mod's textures are
 decoded when they are first drawn: the top menu's thirteen English
 textures took about 10 ms each here (4 of them reading the file through
 WSL, 1.3 decoding, the rest Mesa's mipmaps), and the HD fighters about
-half a second at the fight's first frame. On the owner's machine both
-are a fraction of that, and both are a single hitch where the picture
-changes anyway.
+half a second, which was at the fight's first frame and is now during
+the load before it ("Quick loading"). On the owner's machine both are a
+fraction of that, and both are a single hitch where the picture changes
+anyway.
 
 **The pictures, evenly.** At `frame_rate = display` a picture between
 two frames was of the moment it was begun, counted from the moment the
@@ -4147,7 +4163,12 @@ the window has no turn at its blanks but the card's frame ended
 picture, presses no key for a plan, and it stops (`port_GiveUpAhead`)
 where the program would end, where a memory card would be written (the
 card's file is outside the state), or past four blanks a frame (a load,
-the movie). When the steps are done the window keeps the display they
+the movie). In the window no frame is run ahead into a load or across
+one: an ahead step stops at a blank where the game is loading
+(`port_LoadKind`), and none is run at a boundary in a load
+(`g_port_ahead_held`), so a load's blanks are always the step's own,
+paced or hurried through by `quick_loading` as they would be without
+run-ahead. When the steps are done the window keeps the display they
 left and its pixels and ends the card's frame with it
 (`g_port_ahead_done_hook`), and the step that then runs
 (`g_port_unseen`) gives the renderer no primitive, no new frame and no
@@ -4218,6 +4239,97 @@ driver flip the picture itself, and SDL 2's OpenGL has no say in DXGI's
 flip model), and the screen's own processing. `--profile` with
 `--display-rate` measured the program's side only.
 
+### Quick loading
+
+The owner (2026-11-17): the loading screens as short as possible, if
+not gone. **Where a load's time went.** The port's drive has no seek and
+no speed ("The disc"): a read's sectors all arrive the next time the
+game asks. What is left is the game's own way of waiting for the drive,
+`cdrom_WaitIdle`: the link cable's brackets on either side of it
+(`link_BeginWait`, `link_EndWait`, two and three `VSync(2)`s, which the
+game does whether or not a cable is in), then the drive's state machine
+stepped once a second blank (set the mode, its answer, three blanks to
+settle, the place, its answer, the read, done). That is 16 blanks for a
+file and 10 for a wait on a drive already idle, which the game asks for
+before every file: about 36 blanks, 0.6 seconds, a file, and a fight
+reads eleven. All of it falls inside one frame of the game, behind the
+loading picture (the map of red splashes and the title, with its streaks
+of noise), a black screen, or story mode's card of the next stage. The
+game keeps no minimum time of its own on the loading picture (story
+mode's card has one, below); its fades are frames of the game, and are
+left as they are.
+
+**What quick loading does** (`quick_loading`, on in the window, off with
+nothing else said for a run with `--plan` or `--frames`;
+`--quick-loading on|off`): the blanks of `cdrom_WaitIdle` are hurried
+through. The game marks them (`g_port_load_wait`, `cdrom.c` under
+`RB_PORT`), and the window, at such a blank, gives the card the frame and
+the log its line as ever, but does not wait for the PC's clock, and shows
+a picture only every thirtieth of a second, so the noise still moves and
+the window still answers; when the load is over the blanks are due from
+then on (`port_PaceRebase`), so none of the game's time it took is
+waited for afterwards or counted as time lost. A hurried blank's sound
+goes to the sound card only while the card's queue is short: the load's
+sound is silence, or the end of a sound that was playing, and the queue
+is neither flooded nor run dry. **Nothing the game computes changes**:
+every blank is still a blank of the game, with its pads, its sound and
+its scan lines, so the traces are the same with it on and off, and
+netplay's loads stay points both sides wait at however soon either gets
+there (`tools/port_net.py window` runs with it on).
+
+Two loading screens are read: story mode's card of the next stage (its
+title, the map with the route, the stage's name and picture) and the
+team battle's scores between two matches. Each is shown for two seconds
+at the console's pace before its load is hurried (`READ_BLANKS`). The
+card has a time of its own as well, the one minimum the game keeps on a
+loading screen: a mark of the route is drawn every 240 of the card's
+drawings divided by the chapter's number, and the card stays up after
+its loads until the last mark has had its 240
+(`story_FinishStageCard`, about three seconds after the first fight's
+loads on the port). That wait is marked as a load's too, and hurried
+after the same two seconds; the rest of the route is then drawn at once.
+
+**The port's own work** in a load is read during it: the stage's mesh
+and its HD pages were already built as the stage's file arrives; the
+fighters' and weapons' own models (`gl_fighter.c`) were read at the
+first frame that drew them, a hitch of about half a second there, and
+are now read at the blanks of the load, as soon as the game has them in
+memory (`port_GlFighterPreload`, `port_FighterLoadedModel`), behind the
+loading picture.
+
+The log says of every load how many blanks it took, how many were
+hurried and how long it took (`load:`), and at the end the run's loads
+in all.
+
+**Measured** (the window at the console's pace with SDL's dummy drivers,
+each plan run with `--quick-loading off` and `on`, on a machine with
+other builds running; the blanks are the game's and the same both
+ways, the milliseconds the PC's):
+
+| load | blanks | off | on |
+| --- | --- | --- | --- |
+| power on: the options page's file, the boot picture's | 36 + 52 | 1.45 s | 0.03 s |
+| the opening movie to the title | 36 | 0.59 s | 0.01 s |
+| the top menu, versus select (three) | 154 | 2.65 s | 0.14 s |
+| versus select to the fight (eleven files) | 346 | 6.08 s | 0.52 s |
+| the fight to the menu after it, and back to the top menu | 34 + 36 | 1.16 s | 0.07 s |
+| story mode: select to the stage card | 132 | 2.42 s | 0.29 s |
+| story mode: the stage card, its loads and its own hold (read: two seconds) | 170 + 52 + 186 | 7.14 s | 2.40 s |
+
+`port_game`'s whole run, 4,481 blanks, took 76.2 seconds and 65.0 with
+it on; its loads, 11.9 seconds and 0.76. The traces of `port_game`,
+`port_other_fight` and a run of story mode are the same on and off, line
+for line, and `tools/port_rollback.py --program
+build/port-sdl/linux/rebushido --with=--quick-loading --with=on` passes.
+With the HD mods and Remastered (offscreen, Mesa's `llvmpipe`, `--fast`),
+the fight's first frame took 0.73 seconds before and 0.17 with the
+models read during the load, where they took 0.22 and 0.28 seconds at
+two of its blanks; the load itself, with the stage's mesh and HD pages
+built in it, 2.8 seconds there. What is left of a player's wait is that
+work of the port's own, and the boot picture (150 blanks, the
+publisher's, which is not a load), the fades and the game's own screens
+between, all frames of the game, which quick loading leaves alone.
+
 ### The fighters' own models
 
 The owner: the fighters may be **replaced whole, as long as the hitboxes
@@ -4255,7 +4367,19 @@ table's slots, as a fighter's own primitives are ("Depth: the scene is
 held against the ground"; a fighter's depth goes into the table shifted
 by three whatever his scale, `render_DrawSkinned`), and it writes its
 depth where the ground's is, so what the scene paints after it is held
-against him. In a picture between two frames (`gl_tween.c`) the bones
+against him. His cloth is still the game's own faces, painted by the
+table after the layer and, as a fighter's own, not held to that depth:
+so it was painted over the model wherever it lay, and the back of
+Kannuki's hakama showed through his legs from the front. A cloth of a
+fighter drawn from a model is now held against the layer's own depth,
+pixel by pixel (`port_GlFighterHolds`, `u_fighter_depth` in
+`gl_draw.c`), taken 8 units nearer than it is, which keeps it where it
+is fastened at the belt: hidden where the model is in front of it, over
+the model where it is in front. The layer is laid at the first of the
+fighters' primitives or of their cloths, so that no cloth is painted
+before it (a long robe's farthest faces can come before every face of
+the body: 646 of 16,384 cloth faces in `port_game`'s fight of
+`ROSTER_VICTIM` against `ROSTER_LAST_2`). In a picture between two frames (`gl_tween.c`) the bones
 and the camera are the two frames' mixed, the rotations made rotations
 again.
 
@@ -4386,6 +4510,51 @@ faces), and the models are not darkened by them: what a model covers is
 marked in the shadows' mask as the game's faces are
 (`port_GlFighterDrawOccluders`).
 
+**The flicker over the feet** (the owner, on his card at 85 Hz with
+`frame_rate = display`): the mark was made only while the models were
+"drawn this picture", and a picture between two frames
+(`gl_tween.c`) puts that back before it finishes, so in every such
+picture the mask had no model in it and the shadow darkened whatever of
+the fighters it fell on -- his feet above all, which stand in it. With
+`frame_rate = display` that is every picture, the edge of the darkening
+moving with each. The mark now goes by whether the layer was laid over
+this picture (`is_laid`), and it is made without the ground's slots,
+which near the soles give one answer one picture and the other the next.
+Measured on `port_game`'s fight at scale 2, 48 consecutive pictures of
+four a frame, both fighters from the `hd` mod and `shadows cast`: before,
+16,790 of the fighters' pixels a picture were darkened and 231 of them
+toggled between two pictures; after, none of either. The same unmarked
+mask is what darkened a fighter lying on the floor with his own shadow
+and a fighter with the other's (the owner's two reports after it): over
+`port_game`'s kill, 52 pictures of two a frame, 3,466 pixels a picture
+of a fighter, his weapon or the HUD lie under a silhouette and are kept
+out of the darkening, the body on the floor among them, and the shadow
+lies on the floor about him.
+
+**Floors that are not tiles.** The darkening falls on the stage's tiles
+(the ground's mesh) and on nothing else of the stage: everything else of
+the scene is marked in the mask as something standing in the shadow.
+Some stages build floor a fighter stands on as pieces of the scene and
+not as tiles -- the kabuki stage's boards, the dojo's, the lost bridge's
+-- and there a fighter's shadow vanished wherever it fell on them. A
+face of the stage's pieces that lies level, within 30 degrees, is now
+ground to the shadows (`port_GlShadowIsFloor`, `gl_shadow.c`: its
+corners taken back into the world by the stage's view). Faces taken
+for floor over a stage's tour: the Meikyokan dojo 3,656, the lost bridge
+2,642, the kabuki stage 1,658; the Tatara shrine, the castle rooftop
+and the terraced fields none, their floors being tiles. On the kabuki
+stage's tour, 177,045 pixels were darkened and none of them is wholly
+something not ground; the darkest is 0.297 of what was there.
+
+**A body the game casts no shadow of.** The game's shadow nodes say what
+casts a shadow and onto what ground, and on some floors the nodes of a
+fighter's body are not drawn at all, leaving his weapon's shadow and
+nothing else -- which is what the owner's picture shows, though the
+prover's tours of the stages measured here never came to such a frame.
+A fighter drawn from a model whose faces came this frame with no ground
+now has his shadow laid on the floor his soles are on, the model's
+lowest point (`at_feet` in the prover's line).
+
 **What is not done.** The tiny mode's model; the cloth, which the game
 moves and draws itself, is still the game's own faces beside a smooth
 model; the order of a model against the game's own faces is per pixel,
@@ -4398,17 +4567,182 @@ fight, because no roster entry draws them. The rebuild
 cannot add what the game's mesh does not have: a face is still a few
 painted quads, and a fold of cloth is the texture's.
 
+### The effects
+
+**How the game draws them** (`src/main/eff.c`, `include/eff.h`). Blood,
+sparks, the flashes of a clash, a lock and a hit, dust, splashes,
+footprints, the muzzle flash and the stage's flames are all flat
+textured quads (`POLY_FT4`) the game builds itself, outside the
+renderer's walk, into a buffer of its own and links into the ordering
+table at their depth; the surf (`src/main/wave.c`) is a sheet of 8 by 16
+quads drawn through the tile emitter. Their textures are on two pages at
+x 896 and 960 of video memory, and nearly all of them mix with what is
+behind them: added (the sparks, the flashes, the flames, the blood) or
+half and half (the dust). They come in two shapes:
+
+- **a sprite**: one point projected (Sony's `RotTransPers`, or the
+  macros `gte_RotTransPers` and `gte_stsxy3`), and the quad's corners
+  that point plus so many whole pixels each way, the size worked out
+  from the depth by a quotient rounded down (`g_eff_scale`) -- the
+  flames, the flashes and streaks, the dust, the splashes, and every
+  particle of blood, dirt and water, each drawn two or three times along
+  the way it moved this frame;
+- **four points projected**, one a corner: the muzzle flash
+  (`RotTransPers4`) and the footprints, which lie on the ground.
+
+On the console a sprite is therefore placed on whole pixels and sized in
+whole pixels: at four times the resolution a spark steps four pixels at
+a time as it moves and as it grows, and a drop of blood is a block of
+sixteen pixels a texel.
+
+**What the side channel is told** (`port_remaster.h`, "the effects";
+`EFF_NOTE_...` in `eff.c`, under `RB_REMASTER_VIEW`). As each quad is
+linked, `port_RemasterNoteSprite` says which point it was built about,
+the numbers its size was divided from, and which effect it is (the
+effect's own record: `&g_eff_flames[i]`, a particle, a splash's slot,
+and which of its quads); `port_RemasterNoteEffect` says which four points
+a quad's corners are. The decoder then gives a sprite's corners the
+point's place as the projection worked it out, moved as far as the game
+moved it itself (the water's drops are shaken by up to 20 pixels after
+they are projected), plus each corner's own offset made as large as it
+was before the quotient was rounded down, all at the point's depth. The
+macros' stores are a plain read of the register in the port
+(`tools/port_gte_macros.py`), so `port_GteNoteStored` writes down what
+they stored; `RotTransPers`, `RotTransPers3` and `RotTransPers4` store
+through `port_GteStoreData`, as their `swc2` does. The surf's points go
+where the tile emitter looks for them (`port_RemasterCopyPoint`,
+`wave.c`). Nothing of the game's is read or written.
+
+**`effects`** (`rebushido.cfg`, the settings menu, `--effects` of the
+prover; `port_remaster.h`):
+
+| | |
+|---|---|
+| `original` | where the console put them, as before: nothing is kept |
+| `exact` | each where the projection put it, its size without the rounding, and named, so that a picture between two frames moves it by its name (`gl_tween.c`) |
+| `smooth` | `exact`, and its texture read smoothed (`FLAG_SMOOTH_EFFECT`, `gl_draw.c`): the four texels about the point, a clear one counting as how much of the effect is not there, so the edge fades out instead of stopping at a texel's edge |
+
+Whatever the setting, **an effect is never hidden by the ground's
+depth**, as the console hid none (`port_GlIsOverGround`): a dust cloud
+whose lower half is "under" the ground in the world is drawn whole, as
+the console draws it. That is also why there is no soft-particle fade
+against the depth buffer: it would take away what the console shows,
+and an effect has no hard edge against the ground to soften in the
+first place. The colours, the mixes (`added` stays `ONE, ONE`; half and
+half stays half), the textures and the timing are the game's; `smooth`
+fades the edge in whichever way the draw already mixes.
+
+**Measured** (`port_game`'s plan, scale 2): 4,336 polygons of effects,
+every one of them placed (`gl run effects smooth faces 4336 unplaced
+0`), and the traces of `--effects original` and `--effects smooth` the
+same, 2,338 lines. Pictures of a fight side by side: the clash's streak
+and glow and the blood are round and soft at the edge instead of
+blocks, in the same colours and the same places to a pixel of the
+console's; on a picture of blood across the screen 0.29% of its pixels
+differ by more than 16 of 255 and no cell of an eight by eight grid
+changes its mean colour by more than 2.1 of 255. At scale 4, 35
+pictures of the fight: the mean colour of the whole the same to a
+hundredth of a unit, the worst cell 2.0. The surf, on the Kimigaura
+coast's tour (stage 11): 33,320 more of the run's polygons placed with
+`exact` than with `original` (728,011 against 694,691), the traces the
+same, and the water's glints drawn in perspective where they were
+blocks laid flat; the mean colour the same to a hundredth, the worst
+cell 1.2.
+
+### Lighting
+
+**How the game lights** (`src/main/light.c`, `src/main/scene.c`). A
+light setup (`LightSetup`) is three directional lights -- a light
+matrix of their directions and a colour matrix of their colours -- and
+the colour of the dark; `light_SetStage` gives each stage its own from
+a table of 38 rows, so a night stage is lit dim and blue and a dusk
+stage warm. The coprocessor lights a normal with NCS (each light's turn
+on the normal, none below nought, through the colour matrix onto the
+colour of the dark) and the colour goes into the primitive. A tile of
+the ground has one normal a face, so the ground is lit face by face; a
+fighter has one a vertex, and the colour runs evenly between them.
+
+**`smooth_light`** (`src/port/gl/gl_light.h`) works out that same NCS,
+with the same lights, at every pixel, from a normal that runs smoothly
+across the surface:
+
+- **the ground's mesh** (`gl_stage.c`): as the mesh is built, each of
+  its vertices is given the mean of the normals of the faces about it
+  that turn by less than 45 degrees from its own face, each weighed by
+  its area (`port_GlLightSmoothNormals`), so a slope is shaded as a
+  slope and a wall still meets the floor at an edge; the shader lights
+  that normal with the tiles' light setup (`port_RemasterTileLights`),
+  given it every frame;
+- **the fighters' own models** (`gl_fighter.c`): the normal the vertex
+  was lit from goes to the pixel, and the fighter's own lights light it
+  there.
+
+A face whose corners all have the same normal -- every flat floor --
+comes out the colour the coprocessor gave it, to its rounding: so a
+stage keeps its palette and its mood, and only what was faceted
+changes. What the game draws from primitives (the scenery's models, the
+fighters drawn by the game itself) is lit as the game lit it: those
+colours are in the primitives.
+
+**Measured** (the stage tour of `tools/port_stage_prove.py`, the mesh on
+every stage, the `hd` fighters, scale 2, 4,800 blanks, a picture every
+300; `smooth_light` off against on): the traces the same on all three
+stages; the mean colour of the whole picture moves by at most 0.14 of
+255 (the Meikyokan dojo, stage 1: 65.81, 59.09, 51.47 against 65.95,
+59.21, 51.58), and no cell of an eight by eight grid by more than 2.5
+(the Meikyokan dojo), 2.4 (the purple cavern, a dark stage, 24) and 1.3
+(the terraced fields, 15). Under a hundredth of a percent of the pixels
+differ by more than 16 of 255. What changes is where it should: the
+cavern's walls and the haystacks' facets run smoothly into each other
+instead of stepping face by face, the folds of a fighter's model are
+shaded across the fold, and every flat floor is the colour it was. It is
+**subtle by design**: the lights are the game's, and the game's ground is
+mostly flat. Nothing measurable in the time a frame takes on Mesa's
+software renderer (2,228 against 2,226 microseconds).
+
+### What the old branch's lighting came to
+
+Branch `worktree-agent-adce6b210aa0a05f8` (10bd277dd) had four lighting
+settings for the picture as it was before the ground's mesh. On this
+tree:
+
+- **its shadows** were rejected and replaced ("The shadows");
+- **`smooth_fog`** worked the fog out per pixel for the game's own tile
+  primitives; the ground's mesh already reads the fog's level for each
+  pixel's own depth and mixes two levels ("The ground as one mesh"), so
+  nothing of it is wanted;
+- **`smooth_light`** carried the normal the GTE lit each corner with
+  through the side channel, for every primitive, and lit it again in the
+  picture's shader. Its own measurement was "correct and all but
+  invisible": the game's faces are small and shaded corner by corner
+  already. The two places where it is not invisible are the ones that
+  are now drawn from meshes of their own -- the ground's flat faces and
+  the fighters' models -- and there the normals are the mesh's, so
+  `smooth_light` here lights those from them and needs nothing of the
+  side channel or of `gte.c`;
+- **`ambient_occlusion`** darkened creases from the scene's depth at the
+  console's resolution. It drew halos round a fighter against a far
+  wall and darkened the far edge of a stage, it needed a depth of the
+  whole scene that this tree's picture does not keep (only the ground's
+  mesh and the fighters write depth; the scenery is painted in the
+  console's order), and it darkens what the console never darkened. Not
+  taken.
+
+So nothing of that branch is merged; what was worth keeping is
+`smooth_light`'s idea, done again on the meshes.
+
 ### What each later step needs
 
-- **Lighting.** Today every vertex of a model is lit by the GTE, by
-  three directional lights and an ambient colour from the stage's
-  `LightSetup` (`src/main/scene.c`), and the colour is in the primitive.
-  Better lighting means the normals, which the mesh has and the
-  primitive does not: the side channel is where they would go, beside
-  the position and the depth. (The shadows are done: "The shadows". What
-  is still missing there is the shadow of one thing on another -- a
-  fighter's shadow across the other fighter, or up a wall -- which wants
-  the ground's own depth, or a shadow map from the stage's sun.)
+- **Lighting.** The ground's mesh and the fighters' models are lit at
+  the pixel with the game's own lights ("Lighting"). The rest of the
+  scene -- the scenery's models, drawn from the game's primitives --
+  still has its colours in the primitive; lighting it again would need
+  the normals carried through the side channel, as the old branch did,
+  for a change it measured as all but invisible. (The shadows are done:
+  "The shadows". What is still missing there is the shadow of one thing
+  on another -- a fighter's shadow across the other fighter, or up a
+  wall -- which wants the ground's own depth, or a shadow map from the
+  stage's sun.)
 
 ## 64 bits
 

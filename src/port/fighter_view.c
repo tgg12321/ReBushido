@@ -105,6 +105,20 @@ static s32 port_FighterWeaponModel(s32 place) {
     return -1;
 }
 
+s32 port_FighterLoadedModel(s32 slot) {
+    Model *model;
+
+    if (slot < 0 || slot >= PORT_FIGHTER_SLOTS) {
+        return -1;
+    }
+    model = model_Get(slot);
+    return model != NULL ? model->model_id : -1;
+}
+
+s32 port_FighterLoadedWeapon(s32 place) {
+    return place >= 0 ? port_FighterWeaponModel(place) : -1;
+}
+
 /* A fighter's own node (port_fighter.h): his body's root, which draws the
  * whole body, or a weapon. */
 void port_FighterNoteNode(PortAddress at) {
