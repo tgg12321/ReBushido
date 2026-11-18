@@ -268,7 +268,12 @@ the stage").
     lanterns, a flash where blades meet), on walls, steps and the
     fighters themselves, need each light's depth of the scene: a
     shadow map for the sun first, then point lights from a list per
-    stage that a mod can add to. After the cast shadow's fixes are in.
+    stage that a mod can add to. The owner (2026-11-18): the cast
+    shadow's remaining jitter at rest is not fixed on its own but left
+    to this item, whose shadow maps replace the flattened shadow; check
+    the jitter is gone when it lands (the ground the shadow falls on,
+    the in-between pictures' camera, the darkening's bounding box were
+    the suspects).
 15. **Input lag cut** (the owner, 2026-11-17): the press to the picture
     measured part by part, then cut where it is safe: the devices read
     as late as the game's step allows, run-ahead on the rollback's save
