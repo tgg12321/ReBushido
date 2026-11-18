@@ -124,7 +124,9 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   `port_stage_prove.py` (either `--gpu`) and `port_bench.py` holds a run
   to main's stored measurements (nearest stored ancestor, it says
   which; stops with 2 if the prover's code changed since). BUILD.md,
-  "A stored baseline".
+  "A stored baseline". The bench and the budget hold the machine's card
+  alone, the provers beside one another (`tools/card_lock.py`; BUILD.md,
+  "The gate"); a bench that warns its machine was loaded is not believed.
 - What is left and what waits on the owner: [docs/HANDOFF.md](docs/HANDOFF.md).
 - The play tests count vertical blanks, never the clock, so a busy
   machine makes them slower, not wrong: the suite gives the same files,

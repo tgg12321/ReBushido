@@ -372,6 +372,25 @@ is started, those running finish, and the summary says which were not
 run. `port-budget` and `port-bench` run last, one after the other, with
 nothing beside them (`ALONE`).
 
+`ALONE` keeps one gate's steps apart; other checkouts' runs are kept
+off the machine by **the lock on the card** (`tools/card_lock.py`), which
+every checkout shares: the file `rebushido-card.lock` in the main
+checkout's git folder, opened by Windows (from WSL by a Windows
+PowerShell the run keeps alive), so that it is let go of however a run
+ends, a crash too. `port_bench.py` and `port_budget.py` hold it alone
+for the whole of their timing; the picture provers (`port_gl_prove.py`,
+`port_fps_prove.py`, `port_stage_prove.py`, either `--gpu`: llvmpipe
+keeps every processor busy) hold it beside one another. A run that has
+to wait prints `card-lock: ... waits for the graphics card` and starts
+when it is free; `python tools/card_lock.py` says who would wait now.
+What takes no lock (play tests, builds, an agent's own window) still
+loads the machine: the bench keeps, beside each case's numbers, the
+programs of ours it saw running in Windows and in WSL and the share of
+the processors busy while it ran (`load` in `results.json`), and warns
+that the numbers are not to be trusted when another was running or more
+than `LOAD_BUSY_MAX` per cent were busy. A bench that failed with that
+warning is run again on a quiet machine before it is believed.
+
 The bench alone, from Windows' Python on the PC with the card, after
 `wsl bash tools/build.sh port-sdl-windows`:
 

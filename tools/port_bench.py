@@ -136,6 +136,50 @@ REGRESSION_SHARE = 0.15
 REGRESSION_MS = 0.5
 
 
+# The machine's load over a case, kept beside its numbers: what else of
+# ours was running when it started (by these names, in Windows and in WSL)
+# and the share of all the processors busy while it ran. Over LOAD_BUSY_MAX
+# per cent, or with another of these running, the case's numbers are
+# reported as taken on a loaded machine.
+OTHERS = ('rebushido', 'pcsx', 'redux')
+LOAD_BUSY_MAX = 30.0
+
+
+def system_times():
+    """Windows' idle and all processors' time so far, or None."""
+    if os.name != 'nt':
+        return None
+    import ctypes
+
+    idle, kernel, user = (ctypes.c_ulonglong(), ctypes.c_ulonglong(), ctypes.c_ulonglong())
+    if not ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):
+        return None
+    # the kernel's time counts the idle time too
+    return idle.value, kernel.value + user.value
+
+
+def busy_since(before):
+    now = system_times()
+    if before is None or now is None or now[1] == before[1]:
+        return None
+    return round(100.0 * (1 - (now[0] - before[0]) / (now[1] - before[1])), 1)
+
+
+def others_running():
+    """The programs of ours running now, Windows' and WSL's."""
+    seen = []
+    for where, cmd in (('windows', ['tasklist', '/fo', 'csv', '/nh']), ('wsl', ['wsl.exe', '-e', 'ps', '-eo', 'comm='])):
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=20).stdout
+        except (OSError, subprocess.SubprocessError):
+            continue
+        for line in out.splitlines():
+            name = line.split(',')[0].strip().strip('"').lower()
+            if any(word in name for word in OTHERS):
+                seen.append('%s (%s)' % (name, where))
+    return seen
+
+
 def git(*args, cwd=REPO):
     try:
         return subprocess.run(['git'] + list(args), cwd=cwd, capture_output=True, text=True,
@@ -429,15 +473,36 @@ def main():
                       % (commit[:9], ', '.join(changed) if stored.get('code') else
                          'they were kept before the bench kept its code\'s hash'))
                 return 2
+    # it times: alone on the card, no prover or other bench of any checkout
+    # beside it (tools/card_lock.py)
+    if not args.reuse:
+        import card_lock
+
+        card_lock.hold(True, 'port-bench')
     results = {}
+    loaded = []
     for case in cases:
         if args.reuse:
             folder, seconds = os.path.join(OUT_DIR, 'runs', case), 0.0
+            load = None
         else:
+            seen = others_running()
+            before = system_times()
             folder, seconds = run(case, image, mods, plan, [tuple(s.split("=", 1)) for s in args.set])
+            load = {'others': seen, 'busy': busy_since(before)}
         results[case] = measure(folder)
         report('%s (%.0f s)' % (case, seconds), results[case])
+        if load is not None:
+            results[case]['load'] = load
+            busy = load['busy']
+            print('  load: %s of the processors busy; %s' % ('?' if busy is None else '%.0f%%' % busy,
+                                                           ', '.join(seen) if seen else 'nothing else of ours running'))
+            if seen or (busy is not None and busy > LOAD_BUSY_MAX):
+                loaded.append(case)
         sys.stdout.flush()
+    if loaded:
+        print('port-bench: WARNING: the machine was loaded during %s (another program of ours, or over %.0f%% of '
+              'the processors busy): their numbers are not to be trusted' % (', '.join(loaded), LOAD_BUSY_MAX))
     name = commit_name()
     if args.set:
         # a trial's numbers are kept apart from the commit's own
@@ -500,6 +565,8 @@ def main():
                 print('  %-11s a stall more than %s: %d -> %d  REGRESSION'
                       % (case, args.against, was, m['settled_stalls']))
                 stalled = True
+    if loaded:
+        print('port-bench: (measured on a loaded machine: %s; see "load" above)' % ', '.join(loaded))
     if stalled:
         print('port-bench: FAILED (a stall, or a measure that was met)')
         return 1

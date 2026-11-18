@@ -58,8 +58,9 @@ PROVERS = {'gl': 'port_gl_prove', 'fps': 'port_fps_prove', 'stage': 'port_stage_
 GPUS = ('llvmpipe', 'card')
 # Code that is not the prover's measuring: the play tests' runner changes
 # for reasons of its own many times a week, and what of it the provers use
-# (a plan written from a play test's .toml) is held by the .toml's hash.
-NOT_CODE = ('playtest.py',)
+# (a plan written from a play test's .toml) is held by the .toml's hash;
+# the lock on the card says only when a run may start.
+NOT_CODE = ('playtest.py', 'card_lock.py')
 # How far back --against looks for a stored ancestor.
 ANCESTORS = 400
 

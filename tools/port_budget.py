@@ -226,6 +226,11 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     plan = os.path.join(OUT_DIR, 'plan.txt')
     write_plan(plan)
+    # it times: alone on the machine's card and its processors as far as
+    # the other checkouts' benches and provers go (tools/card_lock.py)
+    import card_lock
+
+    card_lock.hold(True, 'port-budget')
     with concurrent.futures.ThreadPoolExecutor(len(RUN_AHEADS)) as pool:
         profiles = list(pool.map(lambda r: run(r, image, mods, plan), RUN_AHEADS))
     runs = {}

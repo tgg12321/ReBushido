@@ -77,6 +77,11 @@ def use_gpu(gpu):
     """Makes `gpu` the one this module's runs draw on: its program, and
     the environment its child is given. Returns the program's path."""
     global PROGRAM, ENVIRONMENT
+    # beside other provers, never while a bench times (tools/card_lock.py):
+    # on llvmpipe too, which keeps every processor busy
+    import card_lock
+
+    card_lock.hold(False, 'the prover on %s' % gpu)
     PROGRAM = GPU_PROGRAMS[gpu]
     ENVIRONMENT = dict(os.environ)
     if gpu == 'llvmpipe':
