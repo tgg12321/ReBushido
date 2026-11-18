@@ -19,7 +19,8 @@ port-budget (tools/port_budget.py: the window's processor time for a
 fight with run-ahead, held to a budget); port-bench (tools/port_bench.py:
 the Windows build on the real graphics card, the processor's and the
 card's time held to the 144 Hz budget, reported only until the targets
-are met); and the play tests (tools/playtest.py -j). Each waits only for the
+are met); port-pause (tools/port_pause_prove.py: the pause menu on the
+card at every run-ahead); and the play tests (tools/playtest.py -j). Each waits only for the
 steps whose outputs it reads, and never runs beside one that writes
 what it writes (WAITS).
 
@@ -73,14 +74,17 @@ WAITS = {
     'port-budget': ['port-sdl'],
     # the Windows build on the card, alone as well
     'port-bench': ['port-sdl-windows'],
+    # the pause menu on the card at every run-ahead: on the card the bench
+    # measures, so after it and alone too
+    'port-pause': ['port-sdl-windows'],
     'playtest': ['port', 'discs'],
 }
 # Steps that wait for every other step and run with nothing beside them,
 # one after another in this order.
-ALONE = ['port-budget', 'port-bench']
+ALONE = ['port-budget', 'port-bench', 'port-pause']
 # Steps that run what was built, in the checkout itself: the others build in
 # tools/mirror.sh's copy of it.
-IN_PLACE = ['port-rollback', 'port-net', 'port-budget', 'port-bench']
+IN_PLACE = ['port-rollback', 'port-net', 'port-budget', 'port-bench', 'port-pause']
 BUILDS = ['game', 'rb-build', 'discs', 'port', 'port-sdl', 'port-sdl-windows']
 # The steps of the gate's own beside the checks: (name, command, where).
 OWN = [
@@ -96,6 +100,8 @@ OWN = [
     # --report-only until the owner's targets are met (docs/PORT.md,
     # "Measuring on the card"); skips itself where there is no card
     ('port-bench', [None, 'tools/port_bench.py', '--budget', '--report-only'], 'host'),
+    # skips itself where there is no card
+    ('port-pause', [None, 'tools/port_pause_prove.py'], 'host'),
     ('playtest', None, 'host'),  # with its runs at once
 ]
 

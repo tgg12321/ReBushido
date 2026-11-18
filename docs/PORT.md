@@ -5415,6 +5415,40 @@ quiet one `run_ahead 1` was at 7.4 before this.
   step itself with `run_ahead 2`) needs only the first half.
 - *The side channel* beside the game, as the painters are.
 
+### The pause and the frames ahead
+
+**What was wrong** (2026-11-18, the owner on `598fddd73`): with
+`run_ahead 2` and the remastered picture the pause menu did not show;
+the menu worked, the fight's picture stood still under nothing. Since
+`9ae3bb306` ("run_ahead 2: the frame the card drew at the boundary
+before is not drawn again") a step the card drew already as the last
+frame ahead is run again with `g_port_ahead_kept`: its commands reach
+the card's mirror of video memory and nothing else, and its blanks end
+no card's frame. `port_RemasterPause` still gave the pause's holder
+(`gl_pause.c`) its turn in such a step, and the holder draws the
+fight's kept picture whole, straight into the colour buffer. The pause
+menu's loop draws its panel after its `VSync`, so the panel of the frame
+ahead is in the card's frame that the next step's blanks end; that next
+step is the kept one, which ended nothing and drew the fight over the
+panel. `run_ahead 0` and `1` have no kept step, the original picture no
+holder, and `RB_AHEAD=old` and `RB_PAINTERS=off` both still showed it.
+**Now** a kept step notes the pause as ever (the table it would draw
+again is passed by) but does not call the holder: the frame ahead draws
+the pause's picture, panel and all, once.
+
+**Held** by `tools/port_pause_prove.py` (the gate's `port-pause`, on
+the card, after the bench): the Windows build straight into a fight,
+Start pressed a second in, the window's own pixels every tenth blank;
+the remastered picture with `run_ahead` 0, 1 and 2 and the original
+with 0 and 2. Each case's last six pictures, all of the pause, are held
+to one another and to the case with nothing run ahead; that case's
+panel box must be darker than the fight's before it. The fault's
+pictures were 9 to 12 apart (of 765), the right ones 0.0. The other
+screens shown while the fight is held were looked at the same way,
+`run_ahead 2` against 0 through port_game's plan (the options page, the
+menus, the winner, the menu after the fight, the next fight): no other
+code of the card's draws in a kept step.
+
 ### The HD fighters on the card
 
 **What it was** (main at `8f09f98d1`, the card's measure above): the HD

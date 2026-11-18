@@ -297,7 +297,10 @@ budget"), the bench on the graphics card (`tools/port_bench.py --budget
 the processor's and the card's time of a fight held to 144 pictures a
 second; docs/PORT.md, "Measuring on the card"; it reports what is over
 and passes until the targets are met, and skips itself where there is
-no card, as in CI) and the play tests. One command runs
+no card, as in CI), the pause menu on the card at every run-ahead
+(`tools/port_pause_prove.py`; docs/PORT.md, "The pause and the frames
+ahead"; it skips itself where there is no card) and the play tests. One
+command runs
 it all, from Windows or inside WSL, each step as soon as the steps whose
 outputs it reads have passed and side by side with the others:
 
@@ -327,8 +330,8 @@ the play tests and the steps that run the programs (`IN_PLACE`) find them
 here. Each step's output is `build/gate/<step>.log`
 and the summary `build/gate/summary.txt`; after the first failure no step
 is started, those running finish, and the summary says which were not
-run. `port-budget` and `port-bench` run last, one after the other, with
-nothing beside them (`ALONE`).
+run. `port-budget`, `port-bench` and `port-pause` run last, one after
+the other, with nothing beside them (`ALONE`).
 
 The bench alone, from Windows' Python on the PC with the card, after
 `wsl bash tools/build.sh port-sdl-windows`:
