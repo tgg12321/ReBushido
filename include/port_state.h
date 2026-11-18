@@ -55,6 +55,12 @@ extern u32 port_StateSize(void);
 extern void port_StateSave(void *buf);
 /* The state of `buf` back, exactly as port_StateSave took it. */
 extern void port_StateLoad(const void *buf);
+/* Every byte saved and put back each time, not only the pages written
+ * since (--whole-state): what the state cost before, for measuring. */
+extern void port_SetWholeState(void);
+/* How many first writes to a page have faulted so far: what keeping the
+ * pages written costs besides the copies. */
+extern u32 port_StateFaults(void);
 /* A hash of what the console itself would hold: its RAM, scratchpad,
  * sound registers and sound memory, the GTE's registers, and the game's
  * and Sony's variables (the PlayStation's own, which the console keeps

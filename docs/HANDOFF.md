@@ -171,8 +171,9 @@ What is still done on the processor, in the order I would move it:
 3. **A frame run ahead mixes its sound** (`sound` 0.8 ms to 5 to 9 ms
    here, much of it the disc read through WSL): the SPU's voices must
    step, the mixing need not.
-4. **The state kept and put back** (2.4 ms a boundary on his PC): 10 MB
-   copied twice; only the pages written since could be.
+4. ~~The state kept and put back~~ (2.4 ms a boundary on his PC): now
+   only the pages written since (docs/PORT.md, "The state kept and put
+   back by the pages written"): 0.14 to 0.18 ms on his card.
 5. ~~The owner's "orange flashes"~~: found on his card and fixed
    (docs/PORT.md, "The orange flashes": an effect the chip leaves out,
    drawn by its true places).

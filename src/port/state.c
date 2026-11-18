@@ -27,6 +27,9 @@
  * port_TakeInput, the switch), a kilobyte or two. */
 #define STATE_STACK_BYTES 0x10000U
 #define STATE_STACK_TOP (PORT_STACK_ADDR + PORT_STACK_SIZE)
+/* Snapshots whose epochs are kept: netplay's ring, run-ahead's and the
+ * self-test's two. */
+#define STATE_SLOTS_MAX 32
 /* Pages of a difference that are named. */
 #define ROLLBACK_NAMED_MAX 24
 
@@ -64,6 +67,7 @@ typedef struct {
     u8 *start;
     u32 bytes;
     const char *name;
+    s32 is_paged; /* big enough to be kept by the pages written */
 } PortStateRun;
 
 typedef struct {
@@ -135,6 +139,7 @@ static void port_StateAddRun(PortStateRun *runs, s32 *count, const char *name,
     runs[*count].start = start;
     runs[*count].bytes = (u32)(end - (PortAddress)start);
     runs[*count].name = name;
+    runs[*count].is_paged = 0;
     (*count)++;
 }
 
@@ -174,6 +179,15 @@ static void port_StateFindPieces(void) {
                      (PortAddress)g_port_state_data_end);
     port_StateAddRun(saved, &g_port_state_saved_count, "bss", g_port_game_bss,
                      (PortAddress)g_port_state_bss_end);
+    /* the four big pieces are kept by the pages written; the stack never
+     * is, which a fault's handler may run on */
+    for (i = 0; i < g_port_state_saved_count; i++) {
+        u8 *start = saved[i].start;
+
+        saved[i].is_paged =
+            start == ram || start == (u8 *)ADDR(PORT_PRIMS_ADDR) ||
+            start == (u8 *)g_port_game_data || start == (u8 *)g_port_game_bss;
+    }
 
     port_StateAddRun(hashed, &g_port_state_hashed_count, "ram", ram,
                      (PortAddress)ram + PORT_RAM_SIZE);
@@ -251,30 +265,528 @@ u32 port_StateSize(void) {
     return g_port_state_bytes;
 }
 
+/* ---- the pages written ---- */
+
+/* Where a run starts tracking, the pieces that are big enough to be
+ * tracked are cut into pages (docs/NETPLAY.md, "Save, load and hash"):
+ * each page notes the epoch it was last written in. The epoch goes on
+ * by one at every save and load, and a snapshot notes the epoch it was
+ * taken in, so that a page written in a later epoch is one the snapshot
+ * may not hold as it is now, and a page not written since is one it
+ * does. A save copies only the first kind into its snapshot, a load
+ * only the first kind back.
+ *
+ * What writes a page is found two ways. Video memory is written by the
+ * software GPU alone, a line at a time, and it marks the lines it
+ * writes (g_port_vram_lines_written). Every other page is made
+ * read-only by the system after each save and load: the first write to
+ * it faults, and port_StateOnWrite notes it and makes it writable for
+ * the rest of the epoch. */
+
+/* The piece's pages: what lies between its first and last page bound;
+ * the bytes before and after are copied every time. */
+typedef struct {
+    u8 *start;
+    u32 pages;
+    u32 first;  /* the number of its first page among all of them */
+    u32 offset; /* where `start` is in a snapshot */
+    s32 run;    /* its piece */
+} PortStateSpan;
+
+typedef struct {
+    const void *buf;
+    u32 epoch;
+} PortStateSlot;
+
+enum {
+    PAGE_WATCHED,  /* read-only: a write to it is noted */
+    PAGE_WRITABLE, /* written in this epoch, writable until its end */
+    PAGE_PAINTED,  /* video memory's, which the GPU marks itself */
+    PAGE_HOT       /* written in the last two epochs: left writable, and
+                    * taken for written in every epoch, which is cheaper
+                    * than a fault every epoch */
+};
+
+/* Epochs a hot page is left writable for before it is watched again, to
+ * see whether it is still written. */
+#define HOT_EPOCHS 128
+
+enum {
+    TRACKING_NOT_YET,
+    TRACKING_ON,
+    TRACKING_OFF /* --whole-state, or the system would not */
+};
+
+u8 g_port_vram_lines_written[PORT_VRAM_HEIGHT];
+
+static PortStateSpan g_port_state_spans[STATE_RUNS_MAX];
+static s32 g_port_state_span_count;
+static u32 g_port_state_page_count;
+static u32 *g_port_state_page_epochs;
+static u8 *g_port_state_page_kinds;
+/* Whether the page was written in the epoch before (a fault or a load):
+ * a second such epoch makes it hot. */
+static u8 *g_port_state_page_recent;
+static u32 g_port_state_writable;
+static u32 g_port_state_epoch = 1;
+static PortStateSlot g_port_state_slots[STATE_SLOTS_MAX];
+static s32 g_port_state_slot_count;
+static s32 g_port_state_tracking;
+/* Writes noted by a fault, all through the run. */
+static u32 g_port_state_faults;
+
+u32 port_StateFaults(void) { return g_port_state_faults; }
+
+void port_SetWholeState(void) { g_port_state_tracking = TRACKING_OFF; }
+
+/* A write to a page made read-only (port_HostWatchWrites): one of the
+ * state's, noted and made writable, or not the state's (0). */
+static s32 port_StateOnWrite(PortAddress address) {
+    s32 i;
+
+    for (i = 0; i < g_port_state_span_count; i++) {
+        const PortStateSpan *span = &g_port_state_spans[i];
+        PortAddress start = (PortAddress)span->start;
+        u32 page;
+
+        if (address < start ||
+            address - start >= (PortAddress)span->pages * STATE_PAGE_BYTES) {
+            continue;
+        }
+        page = (u32)((address - start) / STATE_PAGE_BYTES);
+        if (g_port_state_page_kinds[span->first + page] != PAGE_WATCHED ||
+            !port_HostProtect(
+                span->start + page * STATE_PAGE_BYTES, STATE_PAGE_BYTES, 1)) {
+            return 0;
+        }
+        g_port_state_page_kinds[span->first + page] = PAGE_WRITABLE;
+        g_port_state_page_epochs[span->first + page] = g_port_state_epoch;
+        g_port_state_writable++;
+        g_port_state_faults++;
+        return 1;
+    }
+    return 0;
+}
+
+/* The pages of `span` from `from` to `to` made read-only (or writable):
+ * as one, or a page at a time where the system keeps them in pieces of
+ * its own. */
+static s32 port_StateProtect(
+    const PortStateSpan *span, u32 from, u32 to, s32 is_writable) {
+    u32 page;
+
+    if (port_HostProtect(span->start + from * STATE_PAGE_BYTES,
+                         (to - from) * STATE_PAGE_BYTES, is_writable)) {
+        return 1;
+    }
+    for (page = from; page < to; page++) {
+        if (!port_HostProtect(span->start + page * STATE_PAGE_BYTES,
+                              STATE_PAGE_BYTES, is_writable)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* Every page that is of kind `from` made kind `to`, read-only or
+ * writable to match. */
+static s32 port_StateProtectAll(u8 from, u8 to) {
+    s32 i;
+
+    for (i = 0; i < g_port_state_span_count; i++) {
+        const PortStateSpan *span = &g_port_state_spans[i];
+        u8 *kinds = g_port_state_page_kinds + span->first;
+        u32 page = 0;
+
+        while (page < span->pages) {
+            u32 end;
+
+            if (kinds[page] != from) {
+                page++;
+                continue;
+            }
+            for (end = page; end < span->pages && kinds[end] == from; end++) {
+                kinds[end] = to;
+            }
+            if (!port_StateProtect(span, page, end, to == PAGE_WRITABLE)) {
+                return 0;
+            }
+            page = end;
+        }
+    }
+    return 1;
+}
+
+/* The end of an epoch: what was written in it is watched again. */
+static void port_StateNextEpoch(void) {
+    s32 is_cooling;
+    s32 i;
+
+    g_port_state_epoch++;
+    is_cooling = g_port_state_epoch % HOT_EPOCHS == 0;
+    g_port_state_writable = 0;
+    for (i = 0; i < g_port_state_span_count; i++) {
+        const PortStateSpan *span = &g_port_state_spans[i];
+        u8 *kinds = g_port_state_page_kinds + span->first;
+        u8 *recent = g_port_state_page_recent + span->first;
+        u32 page = 0;
+
+        while (page < span->pages) {
+            u32 end;
+
+            switch (kinds[page]) {
+            case PAGE_WATCHED:
+                recent[page] = 0;
+                page++;
+                continue;
+            case PAGE_WRITABLE:
+                if (recent[page]) {
+                    kinds[page] = PAGE_HOT;
+                    page++;
+                    continue;
+                }
+                break;
+            case PAGE_HOT:
+                if (is_cooling) {
+                    break;
+                }
+                page++;
+                continue;
+            default:
+                page++;
+                continue;
+            }
+            /* this page and those after it of the same kind that are
+             * watched again: read-only, as one */
+            for (end = page; end < span->pages &&
+                             ((kinds[end] == PAGE_WRITABLE && !recent[end]) ||
+                              (kinds[end] == PAGE_HOT && is_cooling));
+                 end++) {
+                recent[end] = kinds[end] == PAGE_WRITABLE;
+                kinds[end] = PAGE_WATCHED;
+            }
+            if (!port_StateProtect(span, page, end, 0)) {
+                port_Fail("rebushido: the state's pages cannot be made "
+                          "read-only again\n");
+            }
+            page = end;
+        }
+    }
+}
+
+/* The hot pages, taken for written in this epoch. */
+static void port_StateTakeHot(void) {
+    u32 page;
+
+    for (page = 0; page < g_port_state_page_count; page++) {
+        if (g_port_state_page_kinds[page] == PAGE_HOT) {
+            g_port_state_page_epochs[page] = g_port_state_epoch;
+        }
+    }
+}
+
+/* The lines of video memory the GPU has written since the last look,
+ * noted as their pages written in this epoch. */
+static void port_StateTakePainted(void) {
+    s32 i;
+    u32 line;
+
+    for (line = 0; line < PORT_VRAM_HEIGHT; line++) {
+        PortAddress from;
+        PortAddress to;
+
+        if (!g_port_vram_lines_written[line]) {
+            continue;
+        }
+        g_port_vram_lines_written[line] = 0;
+        from = (PortAddress)&g_port_vram[line * PORT_VRAM_WIDTH];
+        to = from + PORT_VRAM_WIDTH * sizeof(u16);
+        for (i = 0; i < g_port_state_span_count; i++) {
+            const PortStateSpan *span = &g_port_state_spans[i];
+            PortAddress start = (PortAddress)span->start;
+            PortAddress end =
+                start + (PortAddress)span->pages * STATE_PAGE_BYTES;
+            PortAddress at;
+
+            if (to <= start || from >= end) {
+                continue;
+            }
+            for (at = from < start ? start : from; at < to && at < end;
+                 at = (at & ~(PortAddress)(STATE_PAGE_BYTES - 1)) +
+                      STATE_PAGE_BYTES) {
+                g_port_state_page_epochs
+                    [span->first + (u32)((at - start) / STATE_PAGE_BYTES)] =
+                        g_port_state_epoch;
+            }
+        }
+    }
+}
+
+/* The pages, found and watched the first time a snapshot is taken: 0
+ * if the run keeps none (--whole-state), or the system will not. */
+static s32 port_StateTrack(void) {
+    PortAddress vram_from = (PortAddress)g_port_vram;
+    PortAddress vram_to = vram_from + PORT_VRAM_BYTES;
+    u32 offset = 0;
+    u32 page;
+    s32 i;
+
+    if (g_port_state_tracking != TRACKING_NOT_YET) {
+        return g_port_state_tracking == TRACKING_ON;
+    }
+    g_port_state_tracking = TRACKING_OFF;
+    for (i = 0; i < g_port_state_saved_count; i++) {
+        const PortStateRun *run = &g_port_state_saved[i];
+        PortAddress start = ((PortAddress)run->start + STATE_PAGE_BYTES - 1) &
+                            ~(PortAddress)(STATE_PAGE_BYTES - 1);
+        PortAddress end = ((PortAddress)run->start + run->bytes) &
+                          ~(PortAddress)(STATE_PAGE_BYTES - 1);
+
+        if (run->is_paged && end > start) {
+            PortStateSpan *span =
+                &g_port_state_spans[g_port_state_span_count++];
+
+            span->start = (u8 *)start;
+            span->pages = (u32)((end - start) / STATE_PAGE_BYTES);
+            span->first = g_port_state_page_count;
+            span->offset = offset + (u32)(start - (PortAddress)run->start);
+            span->run = i;
+            g_port_state_page_count += span->pages;
+        }
+        offset += run->bytes;
+    }
+    g_port_state_page_epochs =
+        port_HostAllocate(g_port_state_page_count * sizeof(u32));
+    g_port_state_page_kinds = port_HostAllocate(g_port_state_page_count);
+    g_port_state_page_recent = port_HostAllocate(g_port_state_page_count);
+    if (g_port_state_page_epochs == NULL || g_port_state_page_kinds == NULL ||
+        g_port_state_page_recent == NULL) {
+        g_port_state_span_count = 0;
+        return 0;
+    }
+    for (i = 0; i < g_port_state_span_count; i++) {
+        const PortStateSpan *span = &g_port_state_spans[i];
+
+        for (page = 0; page < span->pages; page++) {
+            PortAddress at = (PortAddress)span->start + page * STATE_PAGE_BYTES;
+
+            g_port_state_page_epochs[span->first + page] = g_port_state_epoch;
+            /* a page that is video memory's alone is the GPU's to mark */
+            g_port_state_page_kinds[span->first + page] =
+                at >= vram_from && at + STATE_PAGE_BYTES <= vram_to
+                    ? PAGE_PAINTED
+                    : PAGE_WRITABLE;
+        }
+    }
+    for (page = 0; page < PORT_VRAM_HEIGHT; page++) {
+        g_port_vram_lines_written[page] = 0;
+    }
+    port_HostWatchWrites(port_StateOnWrite);
+    if (!port_StateProtectAll(PAGE_WRITABLE, PAGE_WATCHED)) {
+        port_StateProtectAll(PAGE_WATCHED, PAGE_WRITABLE);
+        g_port_state_span_count = 0;
+        port_Log("rebushido: the state's pages cannot be watched: it is "
+                 "saved and put back whole\n");
+        return 0;
+    }
+    g_port_state_tracking = TRACKING_ON;
+    return 1;
+}
+
+/* The snapshot `buf` was last taken in, or a new one (epoch 0: it holds
+ * nothing yet); NULL where one is not known and `is_new` is 0. */
+static PortStateSlot *port_StateFindSlot(const void *buf, s32 is_new) {
+    s32 i;
+
+    for (i = 0; i < g_port_state_slot_count; i++) {
+        if (g_port_state_slots[i].buf == buf) {
+            return &g_port_state_slots[i];
+        }
+    }
+    if (!is_new) {
+        return NULL;
+    }
+    if (g_port_state_slot_count == STATE_SLOTS_MAX) {
+        port_Fail("rebushido: more than %d snapshots of the state\n",
+                  STATE_SLOTS_MAX);
+    }
+    g_port_state_slots[g_port_state_slot_count].buf = buf;
+    g_port_state_slots[g_port_state_slot_count].epoch = 0;
+    return &g_port_state_slots[g_port_state_slot_count++];
+}
+
+/* Whether no other snapshot is newer than `slot`. */
+static s32 port_StateIsNewest(const PortStateSlot *slot) {
+    s32 i;
+
+    for (i = 0; i < g_port_state_slot_count; i++) {
+        if (g_port_state_slots[i].epoch > slot->epoch) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* The bytes of the pieces that are not a span's pages, between the live
+ * state and a snapshot: `to_snapshot` says which way. */
+static void port_StateCopyRest(u8 *snapshot, s32 to_snapshot) {
+    u32 offset = 0;
+    s32 span = 0;
+    s32 i;
+
+    for (i = 0; i < g_port_state_saved_count; i++) {
+        const PortStateRun *run = &g_port_state_saved[i];
+        /* the part that is pages, if any: from `from` to `to` */
+        u32 from = run->bytes;
+        u32 to = run->bytes;
+        u32 part;
+
+        if (span < g_port_state_span_count &&
+            g_port_state_spans[span].run == i) {
+            from = g_port_state_spans[span].offset - offset;
+            to = from + g_port_state_spans[span].pages * STATE_PAGE_BYTES;
+            span++;
+        }
+        for (part = 0; part < 2; part++) {
+            u32 start = part == 0 ? 0 : to;
+            u32 end = part == 0 ? from : run->bytes;
+
+            if (end <= start) {
+                continue;
+            }
+            if (to_snapshot) {
+                port_StateCopy(
+                    snapshot + offset + start, run->start + start, end - start);
+            } else {
+                port_StateCopy(
+                    run->start + start, snapshot + offset + start, end - start);
+            }
+        }
+        offset += run->bytes;
+    }
+}
+
 /* The pieces, one after another (port_state.h). */
 void port_StateSave(void *buf) {
     u8 *out = buf;
+    PortStateSlot *slot;
     s32 i;
 
     port_StateFindPieces();
     port_StateClearDeadStack();
-    for (i = 0; i < g_port_state_saved_count; i++) {
-        port_StateCopy(
-            out, g_port_state_saved[i].start, g_port_state_saved[i].bytes);
-        out += g_port_state_saved[i].bytes;
+    if (!port_StateTrack()) {
+        for (i = 0; i < g_port_state_saved_count; i++) {
+            port_StateCopy(
+                out, g_port_state_saved[i].start, g_port_state_saved[i].bytes);
+            out += g_port_state_saved[i].bytes;
+        }
+        return;
     }
+    slot = port_StateFindSlot(buf, 1);
+    port_StateTakePainted();
+    port_StateTakeHot();
+    port_StateCopyRest(out, 1);
+    for (i = 0; i < g_port_state_span_count; i++) {
+        const PortStateSpan *span = &g_port_state_spans[i];
+        const u32 *epochs = g_port_state_page_epochs + span->first;
+        u32 page = 0;
+
+        while (page < span->pages) {
+            u32 end;
+
+            if (epochs[page] <= slot->epoch) {
+                page++;
+                continue;
+            }
+            for (end = page; end < span->pages && epochs[end] > slot->epoch;
+                 end++) {
+            }
+            port_StateCopy(out + span->offset + page * STATE_PAGE_BYTES,
+                           span->start + page * STATE_PAGE_BYTES,
+                           (end - page) * STATE_PAGE_BYTES);
+            page = end;
+        }
+    }
+    slot->epoch = g_port_state_epoch;
+    port_StateNextEpoch();
 }
 
+/* The pages written since `buf` was taken, back from it, and the rest
+ * of the pieces whole (port_state.h). */
 void port_StateLoad(const void *buf) {
     const u8 *in = buf;
+    PortStateSlot *slot;
+    u32 since;
+    u32 mark;
     s32 i;
 
     port_StateFindPieces();
-    for (i = 0; i < g_port_state_saved_count; i++) {
-        port_StateCopy(
-            g_port_state_saved[i].start, in, g_port_state_saved[i].bytes);
-        in += g_port_state_saved[i].bytes;
+    if (!port_StateTrack()) {
+        for (i = 0; i < g_port_state_saved_count; i++) {
+            port_StateCopy(
+                g_port_state_saved[i].start, in, g_port_state_saved[i].bytes);
+            in += g_port_state_saved[i].bytes;
+        }
+        return;
     }
+    port_StateTakePainted();
+    port_StateTakeHot();
+    slot = port_StateFindSlot(buf, 0);
+    /* a snapshot not taken here: every page, as written now */
+    since = slot != NULL ? slot->epoch : 0;
+    /* a page put back holds what the snapshot does; where no snapshot is
+     * newer, it holds what every snapshot taken since it does not, and
+     * is noted as of its epoch: a save into it again leaves it */
+    mark = slot != NULL && port_StateIsNewest(slot)
+               ? slot->epoch
+               : g_port_state_epoch;
+    port_StateCopyRest((u8 *)in, 0);
+    for (i = 0; i < g_port_state_span_count; i++) {
+        const PortStateSpan *span = &g_port_state_spans[i];
+        u32 *epochs = g_port_state_page_epochs + span->first;
+        u8 *kinds = g_port_state_page_kinds + span->first;
+        u32 page = 0;
+
+        while (page < span->pages) {
+            u32 end;
+            u32 at;
+
+            if (epochs[page] <= since) {
+                page++;
+                continue;
+            }
+            for (end = page; end < span->pages && epochs[end] > since; end++) {
+            }
+            /* written before an epoch that has ended: read-only again */
+            at = page;
+            while (at < end) {
+                u32 last;
+
+                if (kinds[at] != PAGE_WATCHED) {
+                    at++;
+                    continue;
+                }
+                for (last = at; last < end && kinds[last] == PAGE_WATCHED;
+                     last++) {
+                    kinds[last] = PAGE_WRITABLE;
+                    g_port_state_writable++;
+                }
+                if (!port_StateProtect(span, at, last, 1)) {
+                    port_Fail("rebushido: the state's pages cannot be made "
+                              "writable\n");
+                }
+                at = last;
+            }
+            port_StateCopy(span->start + page * STATE_PAGE_BYTES,
+                           in + span->offset + page * STATE_PAGE_BYTES,
+                           (end - page) * STATE_PAGE_BYTES);
+            for (at = page; at < end; at++) {
+                epochs[at] = mark;
+            }
+            page = end;
+        }
+    }
+    port_StateNextEpoch();
 }
 
 /* ---- the hash ---- */

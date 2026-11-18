@@ -4464,6 +4464,32 @@ of the step. The software GPU's part of a fight frame at `run_ahead 1`
 went from 6.99 ms to 3.42 (`run_ahead 0`: 3.4), and the window's
 picture of the software GPU's from 2.71 to 0.11.
 
+**The state kept and put back by the pages written** (2026-11-18). A
+boundary saved the whole state (about 7 MB in the window) and put it
+back: 1.5 to 1.9 ms of it on the owner's PC, of which only a hundred or
+so pages a fight's frame had written. Now a save and a load copy only
+the pages written since the snapshot was taken, found by the software
+GPU's marks for video memory and by the system's page protection for
+the rest, with the pages written every frame left writable and copied
+each time (docs/NETPLAY.md, "Save, load and hash", "Only the pages
+written"). `port_game`'s plan, the state's part of a boundary (all of
+it on a machine other agents were using; `--whole-state` is the old
+way):
+
+| | `run_ahead 1` | `run_ahead 2` |
+| --- | --- | --- |
+| the window on the card (`port_bench.py`), before | 1.49 to 1.95 ms of 3.2 to 4.1 | 1.80 of 5.68 |
+| ... after | 0.18 of 2.08 | 0.14 of 2.72 |
+| Windows without a window (`rebushido-headless.exe`), whole / pages | 0.20 / 0.07 ms | 0.44 / 0.08 |
+| Linux, 64-bit, whole / pages | 0.26 / 0.11 ms | 0.41 / 0.09 |
+
+besides about 3 first writes a boundary that fault (2 microseconds each
+on Windows, 5.5 in WSL). The traces are the plain run's with
+`run_ahead` 0, 1 and 2 in both sizes and on Windows; `port-rollback`,
+`port_net.py all` and the play tests `port_game` and `port_sound` pass.
+What a frame ahead still costs besides its own step is its sound
+(`sound`), which the sound chip makes as ever.
+
 **The cast shadows projected by the card.** With the HD fighters the
 shadows are cast from some 44,000 triangles a picture, and each picture
 mixed every one of them between two frames and projected its corners on

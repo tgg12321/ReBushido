@@ -43,6 +43,7 @@ typedef __INTPTR_TYPE__ LinuxWord;
 #define LINUX_FOLDER_BUFFER_BYTES 0x2000
 #define LINUX_PATH_BYTES 1024
 #define LINUX_PROT_READ_WRITE 3
+#define LINUX_PROT_READ 1
 #define LINUX_MAP_PRIVATE 0x02
 #define LINUX_MAP_ANONYMOUS 0x20
 /* At the address asked or not at all: a kernel that does not know the
@@ -86,6 +87,7 @@ enum {
     LINUX_CLOSE = 3,
     LINUX_LSEEK = 8,
     LINUX_MMAP = 9,
+    LINUX_MPROTECT = 10,
     LINUX_MUNMAP = 11,
     LINUX_RT_SIGACTION = 13,
     LINUX_RT_SIGRETURN = 15,
@@ -149,6 +151,7 @@ enum {
     LINUX_LSEEK = 19,
     LINUX_MUNMAP = 91,
     LINUX_FSYNC = 118,
+    LINUX_MPROTECT = 125,
     LINUX_RT_SIGACTION = 174,
     LINUX_SIGALTSTACK = 186,
     LINUX_MMAP2 = 192, /* the offset in pages, the six arguments in registers */
@@ -259,6 +262,7 @@ u32 port_HostReadAt(s32 file, u32 offset, void *dest, u32 count) {
             LINUX_LSEEK, file, (LinuxWord)offset, LINUX_SEEK_SET))) {
         return 0;
     }
+    port_HostTouchPages(dest, count);
     while (done < count) {
         LinuxWord got =
             port_LinuxCall(LINUX_READ, file, (LinuxWord)((char *)dest + done),
@@ -424,6 +428,7 @@ s32 port_HostUdpReceive(
     if (LINUX_IS_ERROR(got) || got == 0) {
         return -1;
     }
+    port_HostTouchPages(bytes, room);
     args[0] = (LinuxWord)socket;
     args[1] = (LinuxWord)bytes;
     args[2] = room;
@@ -589,8 +594,9 @@ typedef struct {
 #define LINUX_CONTEXT_STACK(context) ((context)->rsp)
 
 /* Where a handler returns to, which a 64-bit kernel has to be given: it
- * asks the kernel to put back what the fault interrupted. The port's
- * handler never returns. */
+ * asks the kernel to put back what the fault interrupted. A crash's
+ * handler never returns; the watcher of writes does
+ * (port_HostWatchWrites). */
 static __attribute__((naked)) void port_LinuxRestore(void) {
     __asm__("movl $15, %eax\n"
             "syscall\n");
@@ -616,8 +622,14 @@ typedef struct {
 #define LINUX_CONTEXT_FRAME(context) ((context)->ebp)
 #define LINUX_CONTEXT_STACK(context) ((context)->esp)
 
-#define port_LinuxRestore NULL
-#define LINUX_ACTION_FLAGS 0U
+/* The same for a 32-bit program: the kernel would find one of its own,
+ * but a handler that returns is given the C library's, rt_sigreturn. */
+static __attribute__((naked)) void port_LinuxRestore(void) {
+    __asm__("movl $173, %eax\n"
+            "int $0x80\n");
+}
+
+#define LINUX_ACTION_FLAGS LINUX_SA_RESTORER
 
 #endif
 
@@ -669,6 +681,61 @@ static void port_LinuxOnSignal(
     port_HostExit(PORT_EXIT_CRASH);
 }
 
+/* What a write to a page made read-only is handed to first
+ * (port_HostWatchWrites). */
+static s32 (*g_port_linux_on_write)(PortAddress address);
+
+/* The kernel calls `handler` for signal `number`, on the handlers' own
+ * stack, with `flags` besides. */
+static void port_LinuxSetHandler(
+    s32 number, void (*handler)(s32, LinuxSignalInfo *, void *), u32 flags) {
+    LinuxSignalAction action;
+    u32 i;
+
+    action.handler = handler;
+    action.flags =
+        flags | LINUX_SA_SIGINFO | LINUX_SA_ONSTACK | LINUX_ACTION_FLAGS;
+    action.restorer = port_LinuxRestore;
+    for (i = 0; i < sizeof(action.mask); i++) {
+        action.mask[i] = 0;
+    }
+    port_LinuxSetAction(number, &action);
+}
+
+/* SIGSEGV while writes are watched: a write the watcher takes goes on
+ * where it was; any other is a crash, or the system's own end where
+ * crashes are not caught. */
+static void port_LinuxOnSegv(s32 number, LinuxSignalInfo *info, void *context) {
+    LinuxSignalAction action;
+    u32 i;
+
+    if (g_port_linux_on_write(info->address)) {
+        return;
+    }
+    if (g_port_linux_report != NULL) {
+        port_LinuxOnSignal(number, info, context);
+    }
+    /* the fault again, with nothing to take it */
+    action.handler = NULL;
+    action.flags = 0;
+    action.restorer = NULL;
+    for (i = 0; i < sizeof(action.mask); i++) {
+        action.mask[i] = 0;
+    }
+    port_LinuxSetAction(LINUX_SIGSEGV, &action);
+}
+
+/* The handlers run on a stack of their own: the fault may be the game's
+ * stack running out. */
+static void port_LinuxSignalStack(void) {
+    LinuxSignalStack stack;
+
+    stack.base = g_port_linux_signal_stack;
+    stack.flags = 0;
+    stack.size = sizeof(g_port_linux_signal_stack);
+    port_LinuxCall(LINUX_SIGALTSTACK, (LinuxWord)&stack, 0, 0);
+}
+
 /* Asks the kernel to call port_LinuxOnSignal for the four faults, on a
  * stack of its own (port_host.h). */
 void port_HostCatchCrashes(void (*report)(const PortCrash *crash)) {
@@ -678,28 +745,35 @@ void port_HostCatchCrashes(void (*report)(const PortCrash *crash)) {
         LINUX_SIGFPE,
         LINUX_SIGILL,
     };
-    LinuxSignalStack stack;
-    LinuxSignalAction action;
     u32 i;
 
     g_port_linux_report = report;
-    stack.base = g_port_linux_signal_stack;
-    stack.flags = 0;
-    stack.size = sizeof(g_port_linux_signal_stack);
-    port_LinuxCall(LINUX_SIGALTSTACK, (LinuxWord)&stack, 0, 0);
-
-    action.handler = port_LinuxOnSignal;
+    port_LinuxSignalStack();
     /* a second fault, in the report itself, ends the program as the
      * system would have */
-    action.flags = LINUX_SA_SIGINFO | LINUX_SA_ONSTACK | LINUX_SA_RESETHAND |
-                   LINUX_ACTION_FLAGS;
-    action.restorer = port_LinuxRestore;
-    for (i = 0; i < sizeof(action.mask); i++) {
-        action.mask[i] = 0;
-    }
     for (i = 0; i < sizeof(signals) / sizeof(signals[0]); i++) {
-        port_LinuxSetAction(signals[i], &action);
+        port_LinuxSetHandler(
+            signals[i], port_LinuxOnSignal, LINUX_SA_RESETHAND);
     }
+    if (g_port_linux_on_write != NULL) {
+        port_LinuxSetHandler(LINUX_SIGSEGV, port_LinuxOnSegv, 0);
+    }
+}
+
+void port_HostWatchWrites(s32 (*on_write)(PortAddress address)) {
+    if (g_port_linux_on_write == NULL && g_port_linux_report == NULL) {
+        port_LinuxSignalStack();
+    }
+    g_port_linux_on_write = on_write;
+    port_LinuxSetHandler(LINUX_SIGSEGV, port_LinuxOnSegv, 0);
+}
+
+s32 port_HostProtect(void *start, u32 bytes, s32 is_writable) {
+    LinuxWord got =
+        port_LinuxCall(LINUX_MPROTECT, (LinuxWord)start, (LinuxWord)bytes,
+                       is_writable ? LINUX_PROT_READ_WRITE : LINUX_PROT_READ);
+
+    return !LINUX_IS_ERROR(got);
 }
 
 /* ---- the game's stack, as a fiber (port_host.h, port_fiber.h) ---- */

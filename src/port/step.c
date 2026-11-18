@@ -157,10 +157,12 @@ void port_PrintAheadReport(void) {
     port_Log(
         "rebushido: run-ahead: %d frames at %u boundaries, %u given up "
         "(a load, the movie, a card); %u.%03u ms a boundary, %u.%03u of it "
-        "the state kept and put back\n",
+        "the state kept and put back, besides %u first writes to its "
+        "pages, which fault\n",
         g_port_ahead_frames, counts->runs, counts->given_up,
         each / PORT_HOST_TICKS_PER_MICROSECOND / MICROSECONDS_A_MILLISECOND,
         each / PORT_HOST_TICKS_PER_MICROSECOND % MICROSECONDS_A_MILLISECOND,
         state / PORT_HOST_TICKS_PER_MICROSECOND / MICROSECONDS_A_MILLISECOND,
-        state / PORT_HOST_TICKS_PER_MICROSECOND % MICROSECONDS_A_MILLISECOND);
+        state / PORT_HOST_TICKS_PER_MICROSECOND % MICROSECONDS_A_MILLISECOND,
+        port_StateFaults() / counts->runs);
 }
