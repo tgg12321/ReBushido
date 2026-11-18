@@ -48,6 +48,8 @@ typedef struct {
     /* where each blank's time went and when each picture was shown
      * (port_profile.h; tools/port_profile.py) */
     const char *profile;
+    /* the window's thread sampled into this file (sampler.c) */
+    const char *sample;
     /* the benchmark's stress, `fighters=N,stage=M` (gl_bench.h) */
     const char *bench_stress;
     /* a display made up for a test, with no screen: this many blanks a
@@ -164,6 +166,14 @@ extern void port_SoundRerunEnds(void);
  * finished (gl_bench.h, in nanoseconds), and a picture handed to the
  * display (when, in microseconds since the window opened, and its
  * phase between two frames, -1 for the game's own). */
+/* --sample (sampler.c): started as the window opens, written as it
+ * closes; the blank whose time is being counted, for the samples. */
+extern void port_SampleStart(const char *path);
+/* What the card's driver does once, done as the first picture is shown
+ * (warm.c). */
+extern void port_WarmDriver(void);
+extern void port_SampleEnd(void);
+extern volatile u32 g_port_sample_blank;
 extern void port_ReportNoteBlank(u32 blank, s32 is_new_frame, const u32 *cpu);
 extern void port_ReportNoteCard(u32 blank, const u32 *nanoseconds);
 extern void port_ReportNoteSwap(unsigned long long microseconds, s32 phase);

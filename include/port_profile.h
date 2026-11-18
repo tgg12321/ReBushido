@@ -47,6 +47,8 @@ extern u32 (*g_port_profile_clock)(void);
  * (port_host.h), into `ticks` (PORT_PROFILE_PARTS of them); and from
  * zero again. */
 extern void port_ProfileTake(u32 *ticks);
+/* The part the time is counted to now (the sampler's: sampler.c). */
+extern s32 port_ProfilePart(void);
 /* A part's short name, for a report. */
 extern const char *port_ProfileName(s32 part);
 

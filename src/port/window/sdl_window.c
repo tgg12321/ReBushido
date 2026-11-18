@@ -1256,6 +1256,9 @@ static void port_OpenWindow(void) {
         /* what was counted before is no blank's */
         port_ProfileTake(ticks);
     }
+    if (g_port_window_options.sample != NULL) {
+        port_SampleStart(g_port_window_options.sample);
+    }
     /* `fps = times` counts the parts' time as --profile does */
     port_CountTimes();
 }
@@ -1896,6 +1899,8 @@ static void port_NoteProfile(u32 blank, s32 is_new_frame) {
     u32 timed;
     s32 i;
 
+    /* a sample from now is the next blank's */
+    g_port_sample_blank = blank + 1;
     if (!g_port_profile_on) {
         return;
     }
@@ -2785,6 +2790,9 @@ static void port_SwapPicture(void) {
     }
     if (g_port_has_gl) {
         SDL_GL_SwapWindow(g_port_window);
+        /* the driver's first time of a thread ended, at the first
+         * picture (warm.c) */
+        port_WarmDriver();
         if (g_port_vsync && g_port_settings.low_latency) {
             /* `low_latency`: back only once the card has drawn it all and
              * the swap is made, so that the next picture is begun from
@@ -3305,6 +3313,7 @@ static void port_CloseWindow(s32 code) {
         fclose(g_port_audio_tap);
         g_port_audio_tap = NULL;
     }
+    port_SampleEnd();
     if (g_port_profile_file != NULL) {
         fclose(g_port_profile_file);
         g_port_profile_file = NULL;
