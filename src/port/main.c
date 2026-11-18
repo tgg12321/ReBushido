@@ -65,6 +65,7 @@ static const char g_port_usage[] =
     "            [--shots FOLDER] [--every N] [--vram FILE]\n"
     "            [--wav FILE] [--spu FILE]\n"
     "            [--card1 FILE] [--card2 FILE] [--no-cards]\n"
+    "            [--fight STAGE FIGHTER FIGHTER] [--fight-2p]\n"
     "            [--rollback-test N] [--rollback-every M] "
     "[--rollback-quiet]\n"
     "            [--mods FOLDER|off] [--dump-textures FOLDER]\n"
@@ -100,6 +101,13 @@ static const char g_port_usage[] =
     "                 a file that is not there is made, formatted and empty\n"
     "  --card2 FILE   the memory card in slot 2 (card2.mcd beside it)\n"
     "  --no-cards     no memory card in either slot\n"
+    "  --fight STAGE FIGHTER FIGHTER   straight into a fight between the\n"
+    "                 two, the second the CPU's, with no options page,\n"
+    "                 opening or menu: the game's names in any case,\n"
+    "                 `kannuki:nodachi` for a weapon (a katana if none); a\n"
+    "                 name not known lists them (docs/PORT.md, \"Straight\n"
+    "                 into a fight\")\n"
+    "  --fight-2p     ... the second fighter is the second pad's\n"
     "  --rollback-test N   every so often save the game's state, run N\n"
     "                 frames, put it back and run them again; stop at the\n"
     "                 first difference, and report (docs/NETPLAY.md)\n"
@@ -303,6 +311,17 @@ s32 port_Main(s32 argc, char **argv) {
             port_SetTrace(1);
         } else if (port_TextsEqual(word, "--no-cards")) {
             port_SetCardsOff();
+        } else if (port_TextsEqual(word, "--fight-2p")) {
+            port_FightTwoPlayers();
+        } else if (port_TextsEqual(word, "--fight")) {
+            if (i + 3 >= argc) {
+                port_UsageError("--fight takes STAGE FIGHTER FIGHTER", "");
+            }
+            if (!port_ChooseFight(argv[i + 1], argv[i + 2], argv[i + 3])) {
+                /* it has said what the names are */
+                port_Quit(PORT_EXIT_USAGE);
+            }
+            i += 3;
         } else if (port_TextsEqual(word, "--rollback-quiet")) {
             rollback_quiet = 1;
         } else if (

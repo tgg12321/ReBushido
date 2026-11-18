@@ -610,14 +610,27 @@ void main(void) {
     sys_Init();
     sys_InitGame();
     SetDispMask(1);
-#if RB_OPTIONS_PAGE && !RB_QUICK_BOOT
+#if RB_PORT
+    if (port_QuickFight() != NULL) {
+        /* --fight: no options page, boot image or movie; the first screen
+         * is the fight's, as in the quick-boot build */
+        const PortFight *fight = port_QuickFight();
+
+        rb_StartFight(fight->mode, fight->roster, fight->weapon, fight->stage,
+                      fight->is_cpu[1], g_rb_settings.bugfixes);
+    } else {
+        rb_RunOptionsPage();
+        disp_ShowBootImage((u8 *)SYS_LOAD_ADDR, frame_db, index);
+        g_sys_screen = SCREEN_MOVIE;
+    }
+#elif RB_OPTIONS_PAGE && !RB_QUICK_BOOT
     /* the settings are read from the card and the player may change them */
     rb_RunOptionsPage();
 #endif
 #if RB_QUICK_BOOT
     /* no boot image and no movie: the first screen is the fight's */
     rb_QuickBoot();
-#else
+#elif !RB_PORT
     /* only the first argument is used; the others are whatever was there
      * (the original's behaviour) */
     disp_ShowBootImage((u8 *)SYS_LOAD_ADDR, frame_db, index);

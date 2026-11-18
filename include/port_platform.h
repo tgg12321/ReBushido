@@ -35,6 +35,28 @@ extern void main(void);
 extern void *memset(void *dest, s32 value, u32 count);
 extern s32 memcmp(const void *first, const void *second, u32 count);
 
+/* ---- straight into a fight (src/port/fight.c) ---- */
+
+/* The fight `--fight STAGE FIGHTER FIGHTER` asks for: the game's mode,
+ * stage, roster entries and weapons, and whether the CPU plays each. */
+typedef struct {
+    s32 mode;
+    s32 stage;
+    s32 roster[2];
+    s32 weapon[2];
+    s32 is_cpu[2];
+} PortFight;
+
+/* The stage and the two fighters by the game's names (a fighter may name
+ * its weapon after a colon): 1, or 0 with what it knows printed. */
+extern s32 port_ChooseFight(
+    const char *stage, const char *first, const char *second);
+/* The second fighter is the second pad's, not the CPU's (--fight-2p). */
+extern void port_FightTwoPlayers(void);
+/* The fight asked for, which the game's main starts in place of the
+ * options page, the boot image and the opening; NULL where none was. */
+extern const PortFight *port_QuickFight(void);
+
 /* ---- text (src/port/text.c) ---- */
 
 /* A function's variable arguments. (The game's sys.h has its own va_list,
