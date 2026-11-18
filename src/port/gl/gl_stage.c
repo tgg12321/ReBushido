@@ -1100,8 +1100,8 @@ void port_GlStageNewFrame(void) {
  * The whole of the coprocessor is put back afterwards: this runs while
  * the game's frame is being drawn, and nothing the game computes may
  * change. */
-static void port_GlStageLightBy(const LightSetup *lights, const void *matrix,
-                               const s16 *normal, u8 *rgb) {
+static void port_GlStageLightBy(
+    const LightSetup *lights, const void *matrix, const s16 *normal, u8 *rgb) {
     PortGte saved = g_port_gte;
     u32 color;
 
@@ -1607,14 +1607,15 @@ static void port_GlStagePieceNormal(s16 *normal, u32 xy, u32 z, u32 flip) {
     normal[2] = (s16)((z ^ flip) & 0xFFFF);
 }
 
-static void port_GlStagePieceLight(const PieceRead *read, const s16 *normal,
-                                   u8 *rgb) {
+static void port_GlStagePieceLight(
+    const PieceRead *read, const s16 *normal, u8 *rgb) {
     port_GlStageLightBy((const LightSetup *)read->piece->lights,
                         read->piece->light_matrix, normal, rgb);
 }
 
 /* A piece's face into the mesh: the chip's one or two triangles. */
-static void port_GlStagePieceFace(const PieceRead *read, const PieceFace *face) {
+static void port_GlStagePieceFace(
+    const PieceRead *read, const PieceFace *face) {
     static const s32 order[6] = {0, 1, 2, 1, 2, 3};
     StageVertex *to;
     s32 corners = face->count == 4 ? 6 : 3;
@@ -1668,8 +1669,8 @@ static void port_GlStagePieceFace(const PieceRead *read, const PieceFace *face) 
         one->info[0] = (u8)((tpage >> MODE_DEPTH_SHIFT) & MODE_DEPTH_MASK);
         one->info[1] = (u8)((tpage >> MODE_BLEND_SHIFT) & MODE_BLEND_MASK);
         one->info[2] = 0;
-        one->info[3] = (u8)(PIECE_FACE | face->how |
-                            (face->count == 3 ? PIECE_THREE : 0));
+        one->info[3] =
+            (u8)(PIECE_FACE | face->how | (face->count == 3 ? PIECE_THREE : 0));
         one->tile = (u16)(PIECE_BASE + read->index);
         one->pad = 0;
         for (j = 0; j < 4; j++) {
@@ -1688,8 +1689,8 @@ static void port_GlStagePieceFace(const PieceRead *read, const PieceFace *face) 
 
 /* The corners of a record, by the byte of each among the part's points;
  * false where one names a point the part has not. */
-static s32 port_GlStagePieceCorners(const PieceRead *read, PieceFace *face,
-                                    const u8 *corners, s32 count) {
+static s32 port_GlStagePieceCorners(
+    const PieceRead *read, PieceFace *face, const u8 *corners, s32 count) {
     s32 i;
 
     face->count = count;
@@ -1708,8 +1709,8 @@ static s32 port_GlStagePieceCorners(const PieceRead *read, PieceFace *face,
 
 /* What every record begins with: the texture page, the colour table and
  * the texture points (EMIT_UV0_CLUT, EMIT_UV1_TPAGE). */
-static void port_GlStagePieceTexture(PieceFace *face, const u8 *record,
-                                     s32 count) {
+static void port_GlStagePieceTexture(
+    PieceFace *face, const u8 *record, s32 count) {
     s32 i;
 
     face->tpage = STAGE_HALF(record, RECORD_TPAGE);
@@ -1734,9 +1735,9 @@ static void port_GlStagePieceFlat(PieceFace *face, const u8 *rgb) {
  * `group_code` is the code of the group's first record, which some
  * routines take for all of them. False where the type is not one a piece
  * is read for. */
-static s32 port_GlStagePieceRecord(const PieceRead *read, s32 type,
-                                   s32 is_packed, const u8 *record,
-                                   u32 group_code) {
+static s32 port_GlStagePieceRecord(
+    const PieceRead *read, s32 type, s32 is_packed, const u8 *record,
+    u32 group_code) {
     PieceFace face;
     s16 normal[3];
     u8 rgb[3];
@@ -1752,24 +1753,22 @@ static s32 port_GlStagePieceRecord(const PieceRead *read, s32 type,
             u32 flip = side ? 0xFFFFFFFFU : 0;
 
             port_GlStagePieceTexture(&face, record, 3);
-            if (!port_GlStagePieceCorners(read, &face,
-                                          record + AT_CORNERS3, 3)) {
+            if (!port_GlStagePieceCorners(
+                    read, &face, record + AT_CORNERS3, 3)) {
                 return FALSE;
             }
-            port_GlStagePieceNormal(normal,
-                                    STAGE_WORD(record, AT_FT3_NORMAL),
-                                    STAGE_WORD(record, AT_FT3_NORMAL + 4),
-                                    flip);
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_FT3_NORMAL),
+                STAGE_WORD(record, AT_FT3_NORMAL + 4), flip);
             port_GlStagePieceLight(read, normal, rgb);
             port_GlStagePieceFlat(&face, rgb);
             /* the packed routine takes the group's first colour and code
              * (render_EmitPackedFT3) and leaves out what is nearer than
              * the cutoff */
-            face.code = (is_packed && type == TYPE_FT3) ? group_code
-                                                        : own_code;
-            face.how = (u8)((side ? PIECE_BACK : 0) |
-                            ((is_packed && type == TYPE_FT3) ? PIECE_CUTOFF
-                                                             : 0));
+            face.code = (is_packed && type == TYPE_FT3) ? group_code : own_code;
+            face.how =
+                (u8)((side ? PIECE_BACK : 0) |
+                     ((is_packed && type == TYPE_FT3) ? PIECE_CUTOFF : 0));
             port_GlStagePieceFace(read, &face);
         }
         return TRUE;
@@ -1781,20 +1780,19 @@ static s32 port_GlStagePieceRecord(const PieceRead *read, s32 type,
             u32 flip = side ? 0xFFFFFFFFU : 0;
 
             port_GlStagePieceTexture(&face, record, 4);
-            if (!port_GlStagePieceCorners(read, &face,
-                                          record + AT_CORNERS4, 4)) {
+            if (!port_GlStagePieceCorners(
+                    read, &face, record + AT_CORNERS4, 4)) {
                 return FALSE;
             }
-            port_GlStagePieceNormal(normal,
-                                    STAGE_WORD(record, AT_FT4_NORMAL_XY),
-                                    STAGE_HALF(record, AT_FT4_NORMAL_Z),
-                                    flip);
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_FT4_NORMAL_XY),
+                STAGE_HALF(record, AT_FT4_NORMAL_Z), flip);
             port_GlStagePieceLight(read, normal, rgb);
             port_GlStagePieceFlat(&face, rgb);
             face.code = own_code;
-            face.how = (u8)((side ? PIECE_BACK : 0) |
-                            ((is_packed && type == TYPE_FT4) ? PIECE_CUTOFF
-                                                             : 0));
+            face.how =
+                (u8)((side ? PIECE_BACK : 0) |
+                     ((is_packed && type == TYPE_FT4) ? PIECE_CUTOFF : 0));
             port_GlStagePieceFace(read, &face);
         }
         return TRUE;
@@ -1804,10 +1802,9 @@ static s32 port_GlStagePieceRecord(const PieceRead *read, s32 type,
         s32 count = type == TYPE_UNLIT_FT3 ? 3 : 4;
 
         port_GlStagePieceTexture(&face, record, count);
-        if (!port_GlStagePieceCorners(read, &face,
-                                      record + (count == 3 ? AT_CORNERS3
-                                                           : AT_CORNERS4),
-                                      count)) {
+        if (!port_GlStagePieceCorners(
+                read, &face, record + (count == 3 ? AT_CORNERS3 : AT_CORNERS4),
+                count)) {
             return FALSE;
         }
         rgb[0] = rgb[1] = rgb[2] = UNLIT_GRAY;
@@ -1826,22 +1823,19 @@ static s32 port_GlStagePieceRecord(const PieceRead *read, s32 type,
             u32 z01 = STAGE_WORD(record, AT_GT3_NORMAL_Z01);
 
             port_GlStagePieceTexture(&face, record, 3);
-            if (!port_GlStagePieceCorners(read, &face,
-                                          record + AT_CORNERS3, 3)) {
+            if (!port_GlStagePieceCorners(
+                    read, &face, record + AT_CORNERS3, 3)) {
                 return FALSE;
             }
-            port_GlStagePieceNormal(normal,
-                                    STAGE_WORD(record, AT_GT3_NORMAL_XY0),
-                                    z01, flip);
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_GT3_NORMAL_XY0), z01, flip);
             port_GlStagePieceLight(read, normal, face.rgb[0]);
-            port_GlStagePieceNormal(normal,
-                                    STAGE_WORD(record, AT_GT3_NORMAL_XY1),
-                                    z01 >> 16, flip);
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_GT3_NORMAL_XY1), z01 >> 16, flip);
             port_GlStagePieceLight(read, normal, face.rgb[1]);
-            port_GlStagePieceNormal(normal,
-                                    STAGE_WORD(record, AT_GT3_NORMAL_XY2),
-                                    STAGE_WORD(record, AT_GT3_NORMAL_Z2),
-                                    flip);
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_GT3_NORMAL_XY2),
+                STAGE_WORD(record, AT_GT3_NORMAL_Z2), flip);
             port_GlStagePieceLight(read, normal, face.rgb[2]);
             face.shaded = TRUE;
             /* the colour and code are the group's first record's
@@ -1861,25 +1855,24 @@ static s32 port_GlStagePieceRecord(const PieceRead *read, s32 type,
             u32 z12 = STAGE_WORD(record, AT_GT4_NORMAL_Z12);
 
             port_GlStagePieceTexture(&face, record, 4);
-            if (!port_GlStagePieceCorners(read, &face,
-                                          record + AT_GT4_CORNERS, 4)) {
+            if (!port_GlStagePieceCorners(
+                    read, &face, record + AT_GT4_CORNERS, 4)) {
                 return FALSE;
             }
             /* the first corner is lit by the face's own normal, the other
              * three by theirs; seen from behind, the renderer turns the
              * second and fourth corners' x and y not at all
              * (render_EmitBothSidesGT4), and neither does this */
-            port_GlStagePieceNormal(normal,
-                                    STAGE_WORD(record, AT_GT4_NORMAL_XY_FACE),
-                                    z_face_0, flip);
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_GT4_NORMAL_XY_FACE), z_face_0,
+                flip);
             port_GlStagePieceLight(read, normal, face.rgb[0]);
             port_GlStagePieceNormal(
                 normal, STAGE_WORD(record, AT_GT4_NORMAL_XY0),
                 (z_face_0 ^ flip) >> 16, 0);
             port_GlStagePieceLight(read, normal, face.rgb[1]);
-            port_GlStagePieceNormal(normal,
-                                    STAGE_WORD(record, AT_GT4_NORMAL_XY1),
-                                    z12, flip);
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_GT4_NORMAL_XY1), z12, flip);
             port_GlStagePieceLight(read, normal, face.rgb[2]);
             port_GlStagePieceNormal(
                 normal, STAGE_WORD(record, AT_GT4_NORMAL_XY2),
@@ -1941,8 +1934,8 @@ static void port_GlStagePiecePoint(PieceRead *read, s32 at, const s16 *vertex) {
                     4096.0f +
                 (GLfloat)piece->place[row];
         } else {
-            read->point[at][row] =
-                (row == 0 ? x : (row == 1 ? y : z)) + (GLfloat)piece->place[row];
+            read->point[at][row] = (row == 0 ? x : (row == 1 ? y : z)) +
+                                   (GLfloat)piece->place[row];
         }
     }
 }
@@ -2016,9 +2009,8 @@ static s32 port_GlStagePiece(s32 index, const PortStagePiece *piece) {
             }
             group_code = STAGE_WORD(walk, RECORD_TPAGE) >> RECORD_CODE_SHIFT;
             for (i = 0; i < records; i++) {
-                if (!port_GlStagePieceRecord(&read, type,
-                                             format == PART_PACKED, walk,
-                                             group_code)) {
+                if (!port_GlStagePieceRecord(
+                        &read, type, format == PART_PACKED, walk, group_code)) {
                     goto missed;
                 }
                 walk += size;
@@ -2110,8 +2102,8 @@ static void port_GlStageBuild(const PortStageView *view) {
         snprintf(g_stage.news, sizeof(g_stage.news),
                  "the stage's mesh holds %d of its %d pieces, %d faces of "
                  "them; %d are left to the game's own primitives.",
-                 g_stage.pieces_held, g_stage.piece_count,
-                 g_stage.piece_faces, g_stage.pieces_missed);
+                 g_stage.pieces_held, g_stage.piece_count, g_stage.piece_faces,
+                 g_stage.pieces_missed);
         g_stage.has_news = TRUE;
     }
     g_stage.vertex_count = g_stage.built;
@@ -2211,9 +2203,9 @@ static void port_GlStageSeeThrough(const PortStageView *view) {
 
 /* The program and everything it is told, for a picture drawn with this
  * view: the mesh itself, and the pieces' marks in the shadows' mask. */
-static void port_GlStageUniforms(const PortStageView *view,
-                                 const PortGlPicture *picture,
-                                 const PortRemasterPrim *paint) {
+static void port_GlStageUniforms(
+    const PortStageView *view, const PortGlPicture *picture,
+    const PortRemasterPrim *paint) {
     GLfloat matrix[9];
     GLint slot[32];
     GLint clut[2 * (PORT_STAGE_FOG_LEVELS + 1)];

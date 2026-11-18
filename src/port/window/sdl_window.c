@@ -1772,12 +1772,12 @@ void port_WindowApplyChoice(s32 choice) {
         SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY,
                     g_port_settings.is_linear ? "1" : "0");
         g_port_texture_w = 0;
-    } else if (
-        (strcmp(name, "stage_mesh") == 0 ||
-         strcmp(name, "stage_props_mesh") == 0 || strcmp(name, "shadows") == 0 ||
-         strcmp(name, "sky") == 0 || strcmp(name, "see_through") == 0 ||
-         strcmp(name, "fighter_models") == 0) &&
-        g_port_has_gl) {
+    } else if ((strcmp(name, "stage_mesh") == 0 ||
+                strcmp(name, "stage_props_mesh") == 0 ||
+                strcmp(name, "shadows") == 0 || strcmp(name, "sky") == 0 ||
+                strcmp(name, "see_through") == 0 ||
+                strcmp(name, "fighter_models") == 0) &&
+               g_port_has_gl) {
         PortGlOptions options;
 
         port_GlOptionsFor(g_port_gl_scale, &options);

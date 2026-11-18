@@ -940,6 +940,7 @@ static s32 g_stage_piece_count;
  * have been at all */
 static s32 g_stage_pieces_version;
 static s32 g_stage_pieces_taken;
+
 /* what of each piece the renderer draws it by, as it was taken down: a
  * piece that is no longer so has been changed by the game (a prop cut
  * down, what remains of it moved) and is not the mesh's */
@@ -951,6 +952,7 @@ typedef struct {
     s16 light_setup_index;
     MATRIX world;
 } PortPieceWas;
+
 static PortPieceWas g_stage_piece_was[PORT_STAGE_PIECES_MAX];
 
 static void port_RemasterPieceWas(PortPieceWas *was, const SceneNode *node) {
@@ -962,8 +964,8 @@ static void port_RemasterPieceWas(PortPieceWas *was, const SceneNode *node) {
     was->world = node->world;
 }
 
-static s32 port_RemasterPieceIsAsWas(const PortPieceWas *was,
-                                     const SceneNode *node) {
+static s32 port_RemasterPieceIsAsWas(
+    const PortPieceWas *was, const SceneNode *node) {
     s32 i;
 
     if (was->kind != node->kind || was->draw_flags != node->draw_flags ||
