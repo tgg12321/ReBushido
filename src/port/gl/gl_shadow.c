@@ -24,6 +24,7 @@
 #include "gl_tween.h"
 #include "port_fighter.h"
 #include "port_gpu.h"
+#include "port_profile.h"
 #include "port_remaster.h"
 
 /* the game's own header, for the size of a tile's record: which
@@ -611,8 +612,11 @@ static void port_GlShadowForget(void) {
  * shadows are laid over the picture it built: everything of that frame
  * has been drawn, and nothing of the next one has. */
 void port_GlShadowNewFrame(void) {
+    s32 was = port_ProfileSwitch(PORT_PROFILE_SHADOW);
+
     port_GlShadowLay();
     port_GlShadowForget();
+    port_ProfileSwitch(was);
 }
 
 /* Whether this primitive is a piece of the stage's ground that the

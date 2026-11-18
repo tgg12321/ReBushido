@@ -1373,6 +1373,8 @@ int main(int argc, char **argv) {
         return PORT_EXIT_FAILED;
     }
     problem = port_GlStart(port_GlGetProc, &options);
+    /* the log counts the cloth's places left inside the body */
+    port_GlFighterCountCloth(TRUE);
     port_GlShadowShowMask(g_run.shadow_mask);
     if (problem == NULL && options.shadows > 0 && !port_GlShadowIsSoft()) {
         fprintf(stderr, "rebushido-gl: the shadows are the game's own: %s\n",

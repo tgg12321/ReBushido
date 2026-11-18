@@ -37,6 +37,10 @@ extern const char *port_GlFighterStart(void *(*getproc)(const char *name));
 /* On or off (`fighter_models`): off draws the game's own primitives. */
 extern void port_GlFighterSetOn(s32 on);
 extern s32 port_GlFighterIsOn(void);
+/* Whether each place of a cloth kept out of the body is looked at again
+ * to count the ones still inside (PortGlFighterCounts.cloth_left_inside):
+ * the prover's log does; a player's picture has no use for it. */
+extern void port_GlFighterCountCloth(s32 on);
 
 /* Where the models are looked for: `<folder>/<file>.glb`, the file being
  * the model's own name on the disc (M000 to M306). NULL, which is how it

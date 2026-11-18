@@ -4274,6 +4274,73 @@ every twentieth picture is the same to the byte (224 and 236); the
 headless programs at `-O2` pass the rollback self-test in both sizes.
 The players' build stays at `-O1` until the owner says.
 
+### The HD cloth and run-ahead
+
+**What the owner saw** (2026-11-17, RTX 3090, 2,560 by 1,440 at 85 Hz,
+Remastered, every default on, the five mods): "like 2 FPS, very
+stuttery, large artifacting". His session's log at `1e6878df3`: a fight
+at 22 pictures and 11 of the game's frames a second, the pace letting
+time go every fourth blank, and run-ahead at **24.7 ms a boundary**,
+against 10.8 ms at `9cdd97dd6`, the build before the HD cloth was
+merged. F2 (the original picture) brought the fight back to 60 and 30;
+`run_ahead = 0` brought it back too.
+
+**Why.** The HD cloth was kept out of the posed HD body on the
+processor once a *picture*: for the frame's picture, again for its cast
+shadow, again for each picture between it and the next frame (three
+or so at 85 Hz), and all of that again for each frame run ahead. With
+`run_ahead 2` a fight's boundary did it seven times or more where once
+is enough, about 3.5 ms each on his processor: more than the 33 ms a
+fight's frame has. Measured here (the owner's PC, WSL, the window's
+build in the offscreen driver at 640 by 360, `port_game`'s plan with
+Kannuki against Mikado on Tatara Shrine, `--profile`; a blank in which
+the game drew a fight frame, median ms):
+
+| part | `run_ahead 2`, before | after |
+| --- | --- | --- |
+| the HD cloth (`cloth`) | 36.8 | 9.4 |
+| the frames ahead, besides what is counted elsewhere (`ahead`) | 49.4 | 22.9 |
+| the side channel (`remaster`) | 33.3 | 27.3 |
+
+and the samples of the main thread (a profiler of its own, by
+`SIGPROF`) had `port_GlClothBodyNear` at 40% of all of them before and
+2% after. Now (`port_GlFighterHeldCloth`) a frame's cloth is kept out
+once, written down under what it was made from, and read by its
+picture, its shadow, the pictures between frames (which mix two frames'
+kept-out surfaces) and a frame ahead that comes to the same pose; the
+walk of the body's cubes is made once where the sum looks in the same
+cubes as the search for the nearest vertex (`port_GlClothBodyGather`,
+the same sum to the bit); and only the prover looks again for the
+places left inside (`port_GlFighterCountCloth`). At 320 by 240 with all
+of it, a fight frame's cloth is 9.3 ms with `run_ahead 0` and 8.7 ms
+with 2: a frame ahead pays for it only where its pose is new.
+
+**The artifacting.** Every one of the owner's sessions of the day says
+"the display holds the game back: it is no longer waited for (vsync
+off)", 10 to 60 seconds in: three times the time was let go within 1,800
+blanks (a load, a texture decoded at its first use, and then the fight's
+slow frames), and the window gave up waiting for the display for good.
+Without vsync every picture after it was torn, at 85 Hz and more so at
+11 frames a second. That give-up was for a display slower than the game,
+which is now never waited for from the start (`REFRESH_MIN`); the window
+gives up at run time only where the display's rate is not known
+(`port_ShowBlank`).
+
+**run_ahead's default** is now 1 (`PORT_RUN_AHEAD_DEFAULT`): two frames
+ahead cost a menu's blank (16.7 ms) 10.8 ms on the owner's PC before any
+of the above, and a press is still seen 50 ms sooner than on the console
+with one. `run_ahead = 2` is a line of `rebushido.cfg` or the settings
+menu's "Run ahead".
+
+**The budget** (`tools/port_budget.py`, a step of `tools/gate.py`): the
+window's build, the player's settings and the hd mod, the fight above,
+`--profile` with `run_ahead 0` and with `run_ahead 2` side by side;
+the processor's own parts of a fight frame (the game, the software GPU,
+the side channel, the sound, the frames ahead, the cloth, the cast
+shadows; not what Mesa draws) are added up, and it fails where run-ahead
+2 costs more than twice run-ahead 0, or the cloth more than a fifth of
+it. Here: 1.5 and 11%.
+
 ### Input lag
 
 **Where a press went** (measured headless: `port_game`'s plan with one
@@ -4292,8 +4359,8 @@ drivers). R is the blank at which the game takes the input (`pad_Update`,
 So in a fight, from a press to the picture handed to the display was on
 average 33 ms (a) + 83.6 ms (c) = about 117 ms, against the console's
 16.7 + 66.9 = 84 ms (its driver reads at the blank the game takes it
-at). Now it is 16.7 + 16.7 = about 33 ms with `run_ahead 2` (the
-default), 67 ms with 1, 100 ms with 0: the console's own lag less two
+at). Now it is 16.7 + 16.7 = about 33 ms with `run_ahead 2`, 67 ms
+with 1 (the default since 2026-11-17: "The HD cloth and run-ahead"), 100 ms with 0: the console's own lag less two
 frames. In a menu: 8.4 + about 11 + 50 = about 70 ms before, 8.4 +
 16.7 = 25 ms now. Then the display's own share, which only a screen has:
 up to a refresh to the next one (11.8 ms at 85 Hz), the driver's queue,
@@ -4584,7 +4651,7 @@ the environment draws the game's faces for every cloth.
 **The cloth kept out of the body.** The game moved its cloth round its
 own low body; the model is fuller, and the cloth the game moved went into
 its hips and legs (the owner: "cloth can clip into the existing model").
-So each picture the model's body is posed on the CPU as the card poses it
+So once a frame the model's body is posed on the CPU as the card poses it
 (the terms, and the normals turned by the joints), and every point of the
 cloth, and then every place of the subdivided surface, is put out of it
 to 5 units outside along the surface's normal there
@@ -4592,21 +4659,32 @@ to 5 units outside along the surface's normal there
 the body's vertices about it, each one's distance along its own normal,
 weighed by (1 - d²/r²)², r one and a half times the nearest vertex's
 distance and at least 48 units, found through a hashed grid of 64-unit
-cubes. The sum is smooth, so a point kept out moves smoothly from picture
-to picture, and in the pictures between frames the body is the mixed
-one. Nothing of it goes back to the game: its points, its collisions and
+cubes. The sum is smooth, so a point kept out moves smoothly from frame
+to frame. The frame's cloth kept out is written down in the world's units
+under what it was made from (the model, its 21 bones and the cloth's
+points: `port_GlFighterHeldCloth`, eight a slot), and the frame's picture,
+its shadow, every picture between it and the next frame and a frame run
+ahead to the same pose all read it; a picture between two frames mixes
+the two frames' kept-out surfaces, place by place and normal by normal.
+It was made again for each of those, and with `run_ahead 2` and
+`frame_rate = display` that was the most of what the processor did for a
+fight ("Where the time goes", "The HD cloth and run-ahead"). Nothing of
+it goes back to the game: its points, its collisions and
 its hitboxes are its own. `RB_HD_CLOTH_HOLD=0` draws the cloth as the game
 moved it, for measuring; the prover's log counts the surface's places, how
 many the game's cloth had inside the model's body and how many are inside
 it as drawn (`gl run fighters ... cloth_places cloth_inside
-cloth_left_inside`). Over `port_game`'s fight with every cloth wearer
+cloth_left_inside`, now once a frame and not once a picture; only the
+prover looks again for the places left inside, which cost as much as the
+hold itself). Over `port_game`'s fight with every cloth wearer
 put in it two by two (a `poke` of the roster, eight fights, 22.9 million
 places of the surface), **9.8%** of the cloth as the game moved it was
 inside the model's body (from 4.4% for Jo against Hongou to 18.6% for the
 armoured man against the victim) and **0.26%** is as drawn (0.03% to
 1.2%, the most for Nightstalker against Matsumushi: a place squeezed
 between two parts of the body cannot be outside both). The surface is drawn by its own points made
-again each picture, so it moves with the game's cloth and does not pop.
+again each frame, and mixed between two frames for each picture, so it
+moves with the game's cloth and does not pop.
 
 **A joint as the game builds it.** The game makes a vertex of a joint as
 the sum of two bones' turns of two vectors, and its place by a third: a

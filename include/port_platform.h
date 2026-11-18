@@ -279,9 +279,10 @@ extern void (*g_port_ahead_blank_hook)(u32 blank);
 extern void (*g_port_ahead_done_hook)(void);
 
 typedef struct PortAheadCounts {
-    u32 runs;     /* boundaries the frames were run ahead at */
-    u32 given_up; /* ... and given up at: a load, the movie, a card */
-    u32 ticks;    /* the time all of it took, in the host's ticks */
+    u32 runs;        /* boundaries the frames were run ahead at */
+    u32 given_up;    /* ... and given up at: a load, the movie, a card */
+    u32 ticks;       /* the time all of it took, in the host's ticks */
+    u32 state_ticks; /* ... of which the state kept and put back */
 } PortAheadCounts;
 
 extern PortAheadCounts g_port_ahead_counts;

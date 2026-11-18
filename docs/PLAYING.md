@@ -155,7 +155,7 @@ scale = integer          # fit (as large as fits), integer, or stretch
 filter = linear          # nearest (each pixel a block) or linear
 fullscreen = off         # start in a window (on, filling the screen, is built in)
 fps = off                # no counter in the corner (F3 brings it back)
-run_ahead = 1            # 0, 1 or 2 frames run ahead (2 is the default)
+run_ahead = 2            # 0, 1 or 2 frames run ahead (1 is the default)
 low_latency = off        # let the driver queue pictures (on is the default)
 graphics = remastered    # original (the console's picture) or remastered
 resolution = 3           # how many times the console's; 0 = the window's
@@ -319,7 +319,7 @@ three are on with nothing said:
   its input**, not only at the vertical blank before it. Nothing to set:
   in a fight the press is taken a blank (17 ms) sooner, in the menus most
   of one.
-- **`run_ahead`**, `0`, `1` or `2` (`2` with nothing said; the settings
+- **`run_ahead`**, `0`, `1` or `2` (`1` with nothing said; the settings
   menu's window page, "Run ahead", at once): before each of the game's
   frames the port runs the next one or two, with what you hold, keeps the
   picture they leave, and puts the game back where it was; then the

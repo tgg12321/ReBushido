@@ -740,8 +740,8 @@ const u32 *port_GlClothIndices(const PortGlCloth *cloth) {
 }
 
 /* A square root, by Newton's steps from a power of two near it: the
- * program is linked with no maths library. */
-static double port_GlClothRoot(double x) {
+ * program is linked with no maths library (gl_cloth.h). */
+double port_GlClothRoot(double x) {
     double root = 1.0;
     s32 i;
 
@@ -1004,6 +1004,93 @@ static void port_GlClothBodyNear(
     }
 }
 
+/* The vertices of the cubes one about a point, as port_GlClothBodyNear
+ * walks them, kept for the sum that follows where it looks in the same
+ * cubes: one walk of them, not two, and the same sum to the bit (the
+ * same vertices added in the same order). */
+#define BODY_GATHERED_MAX 4096
+
+typedef struct {
+    double d2;
+    double along;
+    const float *normal;
+} BodyNearOne;
+
+static BodyNearOne g_body_gathered[BODY_GATHERED_MAX];
+
+/* The cubes one about `point` walked once: their vertices kept, and the
+ * nearest one's distance squared (-1: none). How many were kept, or -1
+ * where there were more than there is room for. */
+static s32 port_GlClothBodyGather(
+    const PortGlClothBody *body, const double *point, double *nearest) {
+    s32 cx = port_GlClothCell(point[0]);
+    s32 cy = port_GlClothCell(point[1]);
+    s32 cz = port_GlClothCell(point[2]);
+    s32 count = 0;
+    s32 x;
+    s32 y;
+    s32 z;
+
+    *nearest = -1.0;
+    for (x = cx - 1; x <= cx + 1; x++) {
+        for (y = cy - 1; y <= cy + 1; y++) {
+            for (z = cz - 1; z <= cz + 1; z++) {
+                u32 bucket = port_GlClothBucket(x, y, z);
+                s32 i;
+
+                for (i = body->first[bucket]; i < body->first[bucket + 1];
+                     i++) {
+                    s32 v = body->order[i];
+                    const float *place = body->place + v * 3;
+                    const float *m = body->normal + v * 3;
+                    double d[3] = {point[0] - place[0], point[1] - place[1],
+                                   point[2] - place[2]};
+                    double d2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+
+                    if (m[0] == 0.0f && m[1] == 0.0f && m[2] == 0.0f) {
+                        continue;
+                    }
+                    if (*nearest < 0.0 || d2 < *nearest) {
+                        *nearest = d2;
+                    }
+                    if (count == BODY_GATHERED_MAX) {
+                        return -1;
+                    }
+                    g_body_gathered[count].d2 = d2;
+                    g_body_gathered[count].along =
+                        d[0] * m[0] + d[1] * m[1] + d[2] * m[2];
+                    g_body_gathered[count].normal = m;
+                    count++;
+                }
+            }
+        }
+    }
+    return count;
+}
+
+/* The sums of port_GlClothBodyNear over the vertices gathered. */
+static void port_GlClothBodySumGathered(
+    s32 count, double reach, BodySums *sums) {
+    double reach2 = reach * reach;
+    s32 i;
+
+    for (i = 0; i < count; i++) {
+        const BodyNearOne *one = &g_body_gathered[i];
+        double w;
+
+        if (one->d2 >= reach2) {
+            continue;
+        }
+        w = 1.0 - one->d2 / reach2;
+        w *= w;
+        sums->along += w * one->along;
+        sums->normal[0] += w * one->normal[0];
+        sums->normal[1] += w * one->normal[1];
+        sums->normal[2] += w * one->normal[2];
+        sums->weight += w;
+    }
+}
+
 /* How far a point is outside the body's surface (below nought inside),
  * and which way out is (`out`, of length one). FALSE where the body says
  * nothing of it: no vertex near enough, or their normals cancel (a thin
@@ -1014,14 +1101,21 @@ static s32 port_GlClothBodyDistance(
     BodySums sums;
     double reach;
     double length;
+    s32 gathered;
+    s32 look;
     s32 k;
 
     /* the nearest vertex: none within the cubes looked in, or none
      * within BODY_FAR, is far outside, and nothing to do with the body
      * (no part of a fighter is so thick that a point inside it is that
      * far from all its vertices) */
-    port_GlClothBodyNear(body, point, 1, 0.0, &sums);
+    memset(&sums, 0, sizeof(sums));
+    gathered = port_GlClothBodyGather(body, point, &sums.nearest);
+    if (gathered < 0) {
+        port_GlClothBodyNear(body, point, 1, 0.0, &sums);
+    }
     if (sums.nearest < 0.0) {
+        gathered = -1;
         port_GlClothBodyNear(body, point, BODY_LOOK, 0.0, &sums);
     }
     if (sums.nearest < 0.0 || sums.nearest > BODY_FAR * BODY_FAR) {
@@ -1033,8 +1127,13 @@ static s32 port_GlClothBodyDistance(
     if (reach < BODY_REACH) {
         reach = BODY_REACH;
     }
-    port_GlClothBodyNear(
-        body, point, (s32)(reach / BODY_CELL) + 1, reach, &sums);
+    look = (s32)(reach / BODY_CELL) + 1;
+    if (look == 1 && gathered >= 0) {
+        /* the same cubes: the vertices the first walk kept */
+        port_GlClothBodySumGathered(gathered, reach, &sums);
+    } else {
+        port_GlClothBodyNear(body, point, look, reach, &sums);
+    }
     length = port_GlClothRoot(
         sums.normal[0] * sums.normal[0] + sums.normal[1] * sums.normal[1] +
         sums.normal[2] * sums.normal[2]);

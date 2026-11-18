@@ -25,7 +25,8 @@ play is [`PLAYING.md`](PLAYING.md); online play is
   2026-11-17): Remastered, cast shadows, `frame_rate = display`,
   `smooth_light`, `effects = smooth`, sky, see-through, the ground and the
   stage's pieces as meshes, the fighters' own models, quick loading,
-  `run_ahead = 2`, `low_latency`, the English and sharp menus. Settings
+  `run_ahead = 1` (2 until the HD cloth's cost was found: PORT.md, "The
+  HD cloth and run-ahead"), `low_latency`, the English and sharp menus. Settings
   that change how fights play (Bugfixes, gameplay mods) and build options
   (`-O2`) are still asked.
 

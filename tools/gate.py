@@ -15,7 +15,8 @@ from Windows), the play tests in Windows' Python, which runs the
 emulator. The steps are the eleven checks of tools/checks.sh, read from
 it, so that the list is the one CI runs; the window's two builds; the
 play tests' discs; `format.py --check --all`; port-rollback; port-net;
-and the play tests (tools/playtest.py -j). Each waits only for the
+port-budget (tools/port_budget.py: the window's processor time for a
+fight with run-ahead, held to a budget); and the play tests (tools/playtest.py -j). Each waits only for the
 steps whose outputs it reads, and never runs beside one that writes
 what it writes (WAITS).
 
@@ -64,6 +65,8 @@ WAITS = {
     'port-sdl-windows': [],
     'port-rollback': ['port'],
     'port-net': ['port', 'port-sdl'],
+    # two runs of the window's build in the offscreen driver
+    'port-budget': ['port-sdl'],
     'playtest': ['port', 'discs'],
 }
 BUILDS = ['game', 'rb-build', 'discs', 'port', 'port-sdl', 'port-sdl-windows']
@@ -77,6 +80,7 @@ OWN = [
     ('port-sdl-windows', ['make', 'port-sdl-windows'], 'wsl'),
     ('port-rollback', ['make', 'port-rollback'], 'wsl'),
     ('port-net', None, 'wsl'),  # with its ports (net_base)
+    ('port-budget', ['python3', 'tools/port_budget.py'], 'wsl'),
     ('playtest', None, 'host'),  # with its runs at once
 ]
 
