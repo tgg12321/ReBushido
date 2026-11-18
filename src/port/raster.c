@@ -609,8 +609,9 @@ static void port_DrawTriangle(const PortCorner *first, const PortCorner *second,
     s32 y;
     s32 i;
 
-    /* a step run again paints nothing (port_platform.h) */
-    if (g_port_rerun) {
+    /* a step run again, or a frame ahead whose picture is the remastered
+     * one, paints nothing (port_platform.h) */
+    if (PORT_PAINTS_NOTHING()) {
         return;
     }
 
@@ -777,8 +778,9 @@ static void port_DrawLine(
     s32 step;
     s32 i;
 
-    /* a step run again paints nothing (port_platform.h) */
-    if (g_port_rerun) {
+    /* a step run again, or a frame ahead whose picture is the remastered
+     * one, paints nothing (port_platform.h) */
+    if (PORT_PAINTS_NOTHING()) {
         return;
     }
 
@@ -842,8 +844,9 @@ static void port_DrawRectangle(const u32 *words) {
     s32 x;
     s32 y;
 
-    /* a step run again paints nothing (port_platform.h) */
-    if (g_port_rerun) {
+    /* a step run again, or a frame ahead whose picture is the remastered
+     * one, paints nothing (port_platform.h) */
+    if (PORT_PAINTS_NOTHING()) {
         return;
     }
 

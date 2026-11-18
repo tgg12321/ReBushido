@@ -29,6 +29,7 @@ s32 g_port_rerun;
 s32 g_port_ahead;
 s32 g_port_unseen;
 s32 g_port_ahead_held;
+s32 g_port_ahead_unpainted;
 void (*g_port_boundary_hook)(void);
 void (*g_port_ahead_blank_hook)(u32 blank);
 void (*g_port_ahead_done_hook)(void);
