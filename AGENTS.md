@@ -126,6 +126,11 @@ together.
 
 Not a gate in CI, but kept clean: `python tools/format.py --check --all`.
 
+On `main` the whole gate before a push (the eleven checks, the window's builds, the layout,
+port-rollback, port-net and the play tests) is one command, its steps side by side where they share
+no output: `python tools/gate.py` (BUILD.md, "The gate"). It reads the checks from
+`tools/checks.sh`; a new check there gets its place in gate.py's `WAITS`.
+
 ### PowerShell-first scripting
 
 Calling WSL from a Windows-side agent nests shells (Git Bash/PowerShell → wsl → bash); every `$`,

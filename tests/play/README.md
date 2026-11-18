@@ -28,7 +28,8 @@ python tools/playtest.py --list
 ```
 
 About ten minutes for the seventeen tests one run at a time, after up to
-two minutes of building discs; RUNTIME_PLACEHOLDER
+two minutes of building discs, and about three and a half with `-j 4`
+(four runs at once; "How the emulator is run").
 It prints a table and exits 1 if a test failed:
 
 ```
@@ -668,4 +669,12 @@ such a program does not have.)
   constants does, is an error the emulator reports for itself. Anything
   the emulator says about a Lua error fails the run and stops the suite.
 - A run is the same every time: the same presses give the same values at
-  the same blanks, to the pixel.
+  the same blanks, to the pixel, however busy the machine. Measured on
+  the suite: one run at a time (664 s), three at once (266 s, 278 s),
+  four (185 s, 209 s), and eight with 32 other programs keeping every
+  processor busy (533 s, each run about five times slower): every file
+  the runs wrote (logs, pictures, memory, video memory, the emulator's
+  states, the cards) the same, byte for byte, 998 of them each time.
+  So a test that fails on a busy machine has not failed for being slow.
+  A run whose disc, program or names are written while it runs (a build
+  of the discs beside it) fails as that, and asks to be run again.

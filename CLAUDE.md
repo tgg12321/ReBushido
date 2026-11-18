@@ -45,6 +45,11 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
 - `wsl bash tools/build.sh playtest` runs the play tests in an emulator
   with no window (`tests/play/README.md`); run it before pushing a change
   to the game. It is not one of the eleven checks.
+- The whole gate before a push (the checks, the window's builds, the
+  layout, port-rollback, port-net, the play tests), its steps side by
+  side: `python tools/gate.py [--owner] [--push]` (BUILD.md, "The
+  gate"); logs in `build/gate/`. A new check of `tools/checks.sh` gets
+  its place in gate.py's `WAITS`.
 - To try a change quickly: `wsl bash tools/build.sh quickboot-disc QB_...`
   (`docs/REBUSHIDO.md`, "Booting straight into a fight").
 - `wsl bash tools/build.sh rebushido-patch` makes a trial patch in
@@ -73,8 +78,11 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   `tests/play/README.md`, "Finding where two runs part"
   (`tools/port_compare.py`). In a fight, time presses and checkpoints in
   game frames (`72f`, `frames =`), not blanks. The play tests take about
-  nine minutes: run `playtest` in the background or with a timeout over
-  ten minutes, and only one run at a time on the machine.
+  eleven minutes one run at a time and three and a half with `-j 4`
+  (`playtest -j N`; without it, one run for every two free processors,
+  four at most): run `playtest` in the background or with a timeout over
+  ten minutes. `--changed REV` runs only what a change reaches
+  (`tests/play/README.md`, "Only what a change reaches").
 - The port's GPU is `src/port/raster.c`; change it with
   `tests/port/raster.c` and the play tests `port_picture` and
   `port_other_fight`, which hold video memory to the emulator's at a
@@ -106,10 +114,13 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   from. The fighters' shadows are `src/port/gl/gl_shadow.c`
   (`shadows = original|soft`, `original` until the owner says).
 - What is left and what waits on the owner: [docs/HANDOFF.md](docs/HANDOFF.md).
-- The play tests fail at random checkpoints when the machine is busy
-  (the owner playing the port, a build, another run): the emulator is
-  starved. Run them on a quiet machine before reading a failure as a
-  regression.
+- The play tests count vertical blanks, never the clock, so a busy
+  machine makes them slower, not wrong: the suite gives the same files,
+  byte for byte, at eight runs at once under a full load of other work
+  (`tests/play/README.md`, "How the emulator is run"). The clock only
+  catches a hang (two minutes with no line, four times a test's
+  `seconds`). A failure is a regression, or a disc rebuilt under the run,
+  which the run says.
 - Where the original reads or writes through a pointer it never set
   (address 0), the port's code is under `RB_PORT` with the console's
   value explained in a comment; the table is in `docs/PORT.md`,
@@ -126,8 +137,11 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   PowerShell 5.1, whose `>` rewrites the bytes as UTF-16.
 - `tools/lint.py` and `tools/count.py` read `src/port/*.c`, not
   `src/port/window/`.
-- New agents are Opus, in parallel, each in its own worktree; only one
-  agent at a time may run the emulator (the play tests have no lock).
+- New agents are Opus, in parallel, each in its own worktree. Play
+  tests of several checkouts may run at once, and a suite's runs run
+  side by side; a run's folder is locked while it runs, and a suite only
+  ever ends its own emulators. Keep the machine to about eight
+  emulators in all (two suites of `-j 4`).
 - The owner's choices for the port: 64 bits, SDL 2, the
   player's disc image for the data, a software renderer that matches the
   PlayStation first, movies decoded in the port.
@@ -172,7 +186,8 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
 - `bb2.ld` is hand-maintained and all data is defined in C: nothing
   regenerates the linker script or the listings.
 - The emulator runs only through `tools/playtest.py`, which runs it with
-  no window, one at a time, with a time limit, on the owner's machine; it
-  and the disc images are never committed.
+  no window, a few at once, each in its own locked folder and with a
+  hang guard, on the owner's machine; it and the disc images are never
+  committed.
 - Build files must be LF (see AGENTS.md).
 - Scratch goes in `tmp/<task>/` and is removed when the task is done.
