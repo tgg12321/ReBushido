@@ -1138,7 +1138,7 @@ top of that:
   one there first waits, as it would for a slower PC;
 - *the waits*: while netplay waits on the other (for its inputs past
   the eight frames it may guess, or at a load), the window reads its
-  events, so Escape still ends the program, and shows its picture again
+  events, so closing the window still ends the program, and shows its picture again
   with the line saying what it waits for (`g_port_net_wait_hook`).
 
 **What a rollback does to the picture and the sound.** A frame run
@@ -1176,7 +1176,8 @@ player`; or for eight seconds `The other player has left: you play on
 alone`. Before the game starts a panel says how the session's set-up is
 going. None of it is in the game's video memory or in a test's picture.
 
-**Leaving.** Escape or the window's close ends the program; the other
+**Leaving.** The window's close ends the program (Escape is the game's
+pause and back, and never ends it); the other
 is told (five datagrams), answered for a moment so that it has every
 input, and **plays on alone** from the last frame it had both pads for:
 its pads are both its own again and the settings menu opens again. A

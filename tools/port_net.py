@@ -527,10 +527,10 @@ def check_menu(program, args, ports):
     folder = os.path.join(args.out, 'menu')
     os.makedirs(folder, exist_ok=True)
     env = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy')
-    # up from the first row comes round to the last, Back to the game;
-    # the row above it is Play online
-    keys = ['up up accept down down down down accept',
-            'up up accept down accept type:%s:%d down down accept' % (LOCALHOST, ports[0])]
+    # up from the first row comes round to the last, Quit ReBushido; then
+    # Back to the game, and the row above it is Play online
+    keys = ['up up up accept down down down down accept',
+            'up up up accept down accept type:%s:%d down down accept' % (LOCALHOST, ports[0])]
     settings = ['net_role = host\nnet_port = %d\nnet_listen = local\nnet_delay = 2\n' % ports[0],
                 'net_role = join\nnet_listen = local\n']
     procs = []

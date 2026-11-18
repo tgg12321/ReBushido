@@ -1293,8 +1293,30 @@ layout built in:
 | L2, R2 | 1, 2 | 5, 6 | the triggers |
 | Start, Select | Enter, Right Shift | P, O | Start, Back |
 
-Escape, or closing the window, ends the program. The program says the
-layout in use on its error output as it starts.
+The program says the layout in use on its error output as it starts.
+
+**Escape** is the window's own, no key of a pad's, and never ends the
+program: it holds a button of player one's pad for as long as it is
+down, the button the game itself uses where it is, chosen as the key
+goes down (`port_EscapeButton`, `sdl_window.c`):
+
+| Where | Escape is | What the game does with it |
+|---|---|---|
+| a fight | Start | opens the pause menu (`main.c`) |
+| the pause menu | Triangle | closes it and goes on with the fight |
+| a story's cutscene | Cross | skips it (`story.c`) |
+| everywhere else | Triangle | backs out: every menu and screen of the game cancels with Triangle (`menu_pages.c`, `select.c`, `memcard_save.c`); the top menu goes back to the title |
+
+Where there is nothing to go back to (the title, the options page at
+boot, a load, a movie) Triangle does nothing, and nor does Escape. In
+the settings menu Escape is that menu's back (below). A settings file's
+`pN.BUTTON = key Escape` is complained of and not used, so no layout or
+binding can take Escape away. The program ends when the window is
+closed, or on **Quit ReBushido** at the foot of the settings menu; during
+netplay, where that menu does not open, by closing the window. A test
+presses Escape with `--escape-at N[,N...]` (at those blanks, let go four
+later), and the log says what it pressed (`Escape: start of player
+one`) and when the pause menu and the top menu come and go.
 
 **The settings file** is `rebushido.cfg` beside the program, or the one
 `--config FILE` names; with none, everything is as built in, and

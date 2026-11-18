@@ -176,6 +176,7 @@ void port_ReadGameState(PortGameState *state) {
     state->is_options_page = FALSE;
 #endif
     state->is_paused = port_RemasterIsPaused();
+    state->is_cutscene = g_sys_screen == SCREEN_CUTSCENE_UPDATE;
 }
 
 s32 port_ReadScreen(void) {

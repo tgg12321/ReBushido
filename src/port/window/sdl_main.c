@@ -20,7 +20,8 @@
  *             [--tap-window FOLDER] [--tap-every N] [--tap-audio FILE]
  *             [--toggle-at N] [--shot-at N] [--fault-at N]
  *             [--fault-in-sound N] [--menu-at N[,N...]] [--menu-keys WORDS]
- *             [--menu-shots FOLDER] [--profile FILE] [--sample FILE]
+ *             [--menu-shots FOLDER] [--escape-at N[,N...]] [--profile FILE]
+ * [--sample FILE]
  *             [--display-rate N]
  *             [--bench-stress fighters=N,stage=M] */
 #define SDL_MAIN_HANDLED
@@ -128,9 +129,12 @@ static const char g_port_window_usage[] =
     "In the window: F1 opens the settings menu (Select does on the\n"
     "options page, the top menu and the pause, and a controller's guide\n"
     "button anywhere), which changes and writes the settings file.\n"
-    "Escape, or closing the window, ends the program. F11 or\n"
-    "Alt+Enter fills the screen and comes back. F2 changes between the\n"
-    "original picture and the remastered one. F3 shows and hides the\n"
+    "Escape is the game's Start in a fight, which pauses it, and its\n"
+    "way back everywhere else (Triangle; Cross skips a cutscene). It\n"
+    "never ends the program: closing the window does, or Quit in the\n"
+    "settings menu. F11 or Alt+Enter fills the screen and comes back.\n"
+    "F2 changes between the original picture and the remastered one. F3\n"
+    "shows and hides the\n"
     "counter in the corner: pictures shown a second, the game's own\n"
     "frames a second, and the speed against the console's. F12 keeps a\n"
     "picture of the window as a PNG in screenshots/ beside the program,\n"
@@ -180,6 +184,7 @@ static const char g_port_window_usage_end[] =
     "--menu-keys WORDS (presses in the settings menu, one a picture: up,\n"
     "down, left, right, accept, back, close, clear, key:NAME, pad:NAME,\n"
     "shot), --menu-shots FOLDER (where shot keeps the window),\n"
+    "--escape-at N[,N...] (Escape pressed at those blanks),\n"
     "--run-ahead 0|1|2 (frames run ahead, whatever the settings say;\n"
     "with --fast or a picture taken for a test it is 0 unless this says),\n"
     "--profile FILE (where each blank's time went, and when each picture\n"
@@ -436,7 +441,7 @@ static const struct {
     {"--net-peer", 1},       {"--netplay", 1},       {"--net-delay", 1},
     {"--link-side", 1},      {"--rollback-test", 1}, {"--rollback-every", 1},
     {"--rollback-quiet", 0}, {"--menu-at", 1},       {"--menu-keys", 1},
-    {"--menu-shots", 1},
+    {"--menu-shots", 1},     {"--escape-at", 1},
 };
 
 #if defined(_WIN32)
@@ -829,6 +834,8 @@ int main(int argc, char **argv) {
             options->menu_keys = argv[++i];
         } else if (strcmp(word, "--menu-shots") == 0 && has_value) {
             options->menu_shots = argv[++i];
+        } else if (strcmp(word, "--escape-at") == 0 && has_value) {
+            options->escape_at = argv[++i];
         } else {
             /* the port's own, which it reads itself */
             if (strcmp(word, "--image") == 0) {
@@ -965,10 +972,10 @@ int main(int argc, char **argv) {
         port_NoteImage(image);
     }
 
-    port_Say("ReBushido in a window. Escape ends it; F11 or Alt+Enter fills "
-             "the screen; F2 changes picture; F3 is the counter in the "
-             "corner; F12 keeps a picture of the window in "
-             "screenshots/.");
+    port_Say("ReBushido in a window. Escape pauses and goes back; closing "
+             "the window ends it; F11 or Alt+Enter fills the screen; F2 "
+             "changes picture; F3 is the counter in the corner; F12 keeps a "
+             "picture of the window in screenshots/.");
     port_Say("graphics: %s to start with; the remastered picture is drawn "
              "%s, draw distance %s, antialiasing %d, aspect %d:%d.",
              g_port_settings.graphics == PORT_GRAPHICS_ORIGINAL ? "original"

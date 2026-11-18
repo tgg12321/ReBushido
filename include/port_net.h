@@ -116,7 +116,7 @@ extern void port_GetNetplayStats(PortNetplayStats *stats);
 extern void (*g_port_net_hold_hook)(u32 blanks);
 /* Called over and over while the program waits on the network, in the
  * session's set-up as in the game: `status` says for what, in words. The
- * window reads its events (Escape ends the program) and shows it. */
+ * window reads its events (its close ends the program) and shows it. */
 extern void (*g_port_net_wait_hook)(const char *status);
 /* A rollback is about to run `blanks` vertical blanks again (`begins` 1),
  * or has run them (0): the window takes the sound it queued of them and

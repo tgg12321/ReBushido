@@ -309,8 +309,11 @@ typedef struct {
 } PortSettings;
 
 /* The number of the key, button or axis of this name, as the window's
- * library names them; a negative number if it knows none. */
+ * library names them; a negative number if it knows none, and
+ * PORT_NAME_RESERVED for a key that is the window's own and no pad's
+ * (Escape: pause and back). */
 typedef s32 (*PortNameLookup)(s32 source, const char *name);
+#define PORT_NAME_RESERVED (-2)
 /* A line of a settings file that says nothing the port knows. */
 typedef void (*PortComplaint)(s32 line, const char *why, const char *text);
 
@@ -490,6 +493,7 @@ typedef struct {
     s32 is_top_menu;     /* the main menu's top page */
     s32 is_options_page; /* ReBushido's options page at boot */
     s32 is_paused;       /* the fight's pause menu */
+    s32 is_cutscene;     /* a story's cutscene, which Cross skips */
 } PortGameState;
 
 extern void port_ReadGameState(PortGameState *state);

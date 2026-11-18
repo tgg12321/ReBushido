@@ -45,6 +45,9 @@ typedef struct {
     const char *menu_at;
     const char *menu_keys;
     const char *menu_shots;
+    /* Escape pressed at these blanks ("1500,4000") and let go a few after,
+     * as SDL's events of the key (port_EscapeButton) */
+    const char *escape_at;
     /* where each blank's time went and when each picture was shown
      * (port_profile.h; tools/port_profile.py) */
     const char *profile;
@@ -118,6 +121,9 @@ extern void port_ShowMenu(
     u32 blank, const u32 *pixels, const PortRect *place, const char *shot);
 /* Whatever the pads hold now is not given to the game until let go. */
 extern void port_HoldBackPads(void);
+/* Escape down or up: the game's pause, or its way back, on player one's
+ * pad while it is held (sdl_window.c, port_EscapeButton). */
+extern void port_TakeEscape(s32 down);
 /* A controller plugged in or pulled out while the menu is open. */
 extern void port_TakeControllerEvent(const union SDL_Event *event);
 /* The pad of a controller by SDL's number for it; -1 for none. */
@@ -145,8 +151,8 @@ extern void port_StartOnline(
 /* `pixels`, `w` by `h`, over what has been drawn of the picture so far,
  * at (`x`, `y`) of the window, blended by their alpha. */
 extern void port_LayPixels(const u32 *pixels, s32 w, s32 h, s32 x, s32 y);
-/* The window's events read now, between two blanks (Escape ends the
- * program). */
+/* The window's events read now, between two blanks (closing the window
+ * ends the program). */
 extern void port_PollWindow(void);
 /* The game's last picture shown again, with the counter and the line. */
 extern void port_ShowStill(void);

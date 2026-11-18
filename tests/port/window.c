@@ -654,6 +654,8 @@ static const TestName g_test_names[] = {
     {PORT_SOURCE_KEY, "1", 30},
     {PORT_SOURCE_KEY, "2", 31},
     {PORT_SOURCE_KEY, "Return", 40},
+    /* the window's own, as sdl_window.c's port_LookUpName has it */
+    {PORT_SOURCE_KEY, "Escape", PORT_NAME_RESERVED},
     {PORT_SOURCE_KEY, "Right Shift", 229},
     {PORT_SOURCE_KEY, "I", 12},
     {PORT_SOURCE_KEY, "K", 14},
@@ -948,6 +950,15 @@ static void test_Keys(void) {
     CHECK(binding != NULL && binding->code == 29);
     binding = port_FindBinding(settings, 1, 1, PADRright);
     CHECK(binding != NULL && binding->code == 44);
+
+    /* Escape is no pad's (pause and back): a line that binds it is
+     * complained of, and the button keeps its built-in key */
+    port_SetDefaultSettings(settings, test_LookUp);
+    test_ReadText("p1.start = key Escape\n");
+    CHECK_EQ(g_test_complaints, 1);
+    CHECK_EQ(settings->count, 2 * (14 + 18));
+    binding = port_FindBinding(settings, 1, 0, PADstart);
+    CHECK(binding != NULL && binding->code == 40);
 }
 
 /* ---- the remastered picture's settings ---- */
