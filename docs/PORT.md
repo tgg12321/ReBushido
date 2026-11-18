@@ -5138,7 +5138,12 @@ the first picture between them (`RB_PAIRING=game`: as before).
 with `RB_PAINTERS=off RB_PAIRING=game` against itself, interleaved, on
 a machine other agents were also using): the median 7.5 to 6.0 ms, the
 99th centile after the first second 10.6 to 7.6, the software GPU's
-part 2.3 to 0.6 and the picture's 1.5 to 0.7. What is left of the
+part 2.3 to 0.6 and the picture's 1.5 to 0.7. The gate's bench at
+`f695523ea` against main `984661052`, `run_ahead 1`: after the first
+second, the 99th centile 14.7 to 7.4 ms and the worst 17.3 to 8.3 (the
+worst now within its limit of 13.9); the frame's median 10.8 to 5.9.
+The other cases moved as much in runs on a quiet machine and were lost
+in other agents' load in the gate's. What is left of the
 frame's blank is the wait at the next boundary: the game draws its
 frame's list (DrawOTag) at the very end of its step, right before the
 frames are run ahead and the state is saved, so the painters have
