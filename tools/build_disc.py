@@ -35,10 +35,19 @@ Every written sector gets its MSF address, subheader (data 0x08, last
 sector of a file 0x89) and EDC/ECC (the CD-ROM Mode 2 Form 1 code of
 ECMA-130 / CD-ROM XA, re-implemented). With no replacements the output
 equals the input byte for byte; `--verify` checks that. Writes OUT plus OUT's .cue.
+
+Beside OUT, OUT.made says what it was made of and which sectors were
+written. Made again of the same image and the same files, OUT is left as
+it is; of the same image and other files, only the sectors written last
+time are put back as the image has them, before the new ones are
+written, in place of a copy of the whole image. Where OUT.made is not
+there, or OUT is not the file it describes (its size, its time), the
+image is copied whole.
 """
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import struct
@@ -264,8 +273,57 @@ def patch_exe(exe, disc_exe, files, layout):
     return bytes(exe)
 
 
+def image_id(image):
+    st = os.stat(image)
+    return [os.path.abspath(image), st.st_size, st.st_mtime_ns]
+
+
+def inputs_key(image, repl):
+    """What OUT is made of: the image, the files put in it and this tool."""
+    h = hashlib.sha1(json.dumps(image_id(image)).encode())
+    with open(__file__, "rb") as f:
+        h.update(f.read())
+    for path in sorted(repl):
+        h.update(path.encode() + b"\0" + hashlib.sha1(repl[path]).digest())
+    return h.hexdigest()
+
+
+def read_made(made, out):
+    """What OUT.made says, if OUT is still the file it describes."""
+    try:
+        record = json.loads(made.read_text())
+        st = os.stat(out)
+    except (OSError, ValueError):
+        return None
+    if [st.st_size, st.st_mtime_ns] != record.get("out"):
+        return None
+    return record
+
+
+def restore(out, img, written):
+    """OUT as the image, where the sectors `written` are all it differs in."""
+    with open(out, "r+b") as o:
+        for lba in written:
+            if lba < img.nsec:
+                o.seek(lba * SECTOR)
+                o.write(img.raw(lba))
+        o.seek(0, 2)
+        have = o.tell() // SECTOR
+        if have > img.nsec:
+            o.truncate(img.nsec * SECTOR)
+        for lba in range(have, img.nsec):
+            o.seek(lba * SECTOR)
+            o.write(img.raw(lba))
+
+
 def build(image, out, repl):
     img = Image(image)
+    made = Path(str(out) + ".made")
+    key = inputs_key(image, repl)
+    record = read_made(made, out)
+    if record and record.get("key") == key and Path(out).with_suffix(".cue").exists():
+        print(f"{out}: up to date (made of the same image and files)")
+        return record["total"]
     others = []
     pvd, files = walk(img, others)
     for path in repl:
@@ -294,10 +352,17 @@ def build(image, out, repl):
                 layout[exe_path] = (files[exe_path]["lba"], len(patched))
 
     Path(out).parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(image, out)
+    if made.exists():
+        made.unlink()
+    if record and record.get("image") == image_id(image):
+        restore(out, img, record["written"])
+    else:
+        shutil.copyfile(image, out)
     total = end + tail
+    written = set()
     with open(out, "r+b") as o:
         def put(lba, sector):
+            written.add(lba)
             o.seek(lba * SECTOR)
             o.write(sector)
 
@@ -338,6 +403,9 @@ def build(image, out, repl):
     cue = Path(out).with_suffix(".cue")
     cue.write_text(f'FILE "{Path(out).name}" BINARY\n  TRACK 01 MODE2/2352\n'
                    "    INDEX 01 00:00:00\n", newline="\r\n")
+    st = os.stat(out)
+    made.write_text(json.dumps({"key": key, "image": image_id(image), "total": total,
+                                "written": sorted(written), "out": [st.st_size, st.st_mtime_ns]}))
     for path, (lba, size) in sorted(layout.items(), key=lambda x: x[1]):
         e = files[path]
         how = "in place" if lba == e["lba"] else f"moved {e['lba']} -> {lba}"

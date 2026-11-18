@@ -49,6 +49,12 @@ typedef struct {
      * table says, which is what the prover measures a stage with
      * (tools/port_stage_prove.py). */
     s32 is_stage_mesh;
+    /* What stands on the ground -- the stage's pieces: railings, fences,
+     * walls, roofs -- drawn from the same mesh, with the same camera
+     * (gl_stage.h, `stage_props_mesh`). 0 off; 1 on, for the stages the
+     * pieces are measured good on; 2 on every stage. Nothing comes of it
+     * where the ground is not the mesh's. */
+    s32 is_stage_props;
     /* The scene held against the ground's own depth, and a fighter
      * against the slots its faces were sorted at, so that a piece of
      * ground between the camera and a fighter veils him again
@@ -63,6 +69,13 @@ typedef struct {
      * for the model (gl_fighter.h, docs/PORT.md, "The fighters' own
      * models"): 0 the game's own primitives. */
     s32 is_fighter_models;
+    /* The game's own lighting worked out again at each pixel, from the
+     * normals the ground's mesh and the fighters' models have, with the
+     * stage's own lights (docs/PORT.md, "Lighting"): 0 as each vertex or
+     * face was lit. */
+    s32 is_smooth_light;
+    /* How the effects are drawn: PORT_EFFECTS_... (port_remaster.h). */
+    s32 effects;
     /* A sky of the port's own behind the stages open to it, in the place
      * of the game's fill of the colour of the distance (gl_sky.h):
      * PORT_SKY_ORIGINAL (0) or PORT_SKY_NIGHT. */
@@ -150,6 +163,10 @@ extern s32 port_GlReadPicture(u32 *out, u32 room, s32 *out_w, s32 *out_h);
  * this and then draws the buffer into itself (and swaps); the prover
  * reads it back. */
 extern void port_GlFinishFrame(void);
+/* Until the card has done everything it was given, a swap among it: the
+ * window's `low_latency`, after each swap, so that no picture waits in
+ * the driver's queue behind another (docs/PORT.md, "Input lag"). */
+extern void port_GlWaitForCard(void);
 
 /* ---- what the stage's own mesh needs of the picture ---- */
 
@@ -287,6 +304,13 @@ extern void port_GlClearWindow(s32 window_w, s32 window_h);
  * multiple of the picture. FALSE if there is no picture to draw. */
 extern s32 port_GlShowPicture(
     s32 window_w, s32 window_h, s32 x, s32 y, s32 w, s32 h, s32 is_linear);
+
+/* Whether the whole of the display is a picture drawn from a mod's (a
+ * replacement of a picture the game wrote into video memory, not written
+ * over since): the movie player's title picture, which the window then
+ * shows from the card although the player is running (docs/MODS.md,
+ * "The title picture"). */
+extern s32 port_GlShowsReplacedPicture(void);
 
 /* Pixels of the host's own (0xAARRGGBB each, a row after a row from the
  * top) into the same kind of rectangle: the software GPU's picture where

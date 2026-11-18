@@ -20,6 +20,11 @@
 #include "src/port/card.c"
 #include "runtime/runtime.h"
 
+/* Whether a frame is run ahead (src/port/step.c): none is here. */
+s32 g_port_ahead;
+
+void port_GiveUpAhead(void) {}
+
 /* ---- the host's files, in memory ---- */
 
 /* The paths the test's card images have; nothing else can be opened or

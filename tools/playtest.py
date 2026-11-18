@@ -20,10 +20,15 @@ if a test fails.
                          (default "Bushido Blade 2 (USA).cue" in the checkout)
 
 The emulator is a Windows program here, so under WSL this starts itself
-again with Windows' python (python.exe). It runs one emulator at a time,
-on a desktop of its own with no sound (tools/play/launch.py), ends it by a
-hard time limit, and checks after each run that no process of it is left.
-The whole suite is held to fourteen minutes.
+again with Windows' python (python.exe). It runs up to -j emulators at
+once (default: one for every two free processors, four at most), each in
+a folder of its own that a lock keeps one run's, on a desktop of its own
+with no sound (tools/play/launch.py), and checks after each run that no
+process of it is left. A run's result is counted in vertical blanks; the
+clock only stops a run that hangs (LOAD_SLACK).
+
+    python tools/playtest.py -j 4            four runs at once
+    python tools/playtest.py --changed main  the tests a change reaches
 What a run wrote is in build/playtest/<test>/<disc>/: a picture of every
 checkpoint, run.log, plan.txt, the emulator's own output and its two
 memory cards; and where a test asks, the game's memory and all of video
@@ -45,12 +50,14 @@ and its video memory among them, so a test with `discs = ["rebushido",
 """
 import argparse
 import ast
+import concurrent.futures
 import os
 import re
 import shutil
 import struct
 import subprocess
 import sys
+import threading
 import time
 import zlib
 
@@ -74,13 +81,23 @@ PORT_EXIT_CRASH = 70
 
 # Where the program is loaded.
 PROGRAM_START = 0x80010000
-# A run: its hard limit in seconds, and the longest a test may ask for.
+# A run's result is decided by the vertical blanks it counts, never by
+# the clock: a checkpoint is given up `within` blanks, and a run ends at
+# its `limit`. The clock only stops a run that hangs. A test's `seconds`
+# is about what its run takes on a quiet machine, at most RUN_SECONDS_MAX;
+# the run is stopped at LOAD_SLACK times that, so that a machine made
+# slower by other work (several runs at once among it) still passes.
 RUN_SECONDS = 180
 RUN_SECONDS_MAX = 285
-# The emulator has said nothing for this long: it hangs.
-SILENT_SECONDS = 60
-# All the runs together; a test that would start after this is not run.
-SUITE_SECONDS = 840
+LOAD_SLACK = 4
+# The emulator has said nothing for this long: it hangs. (A run says a
+# line every 300 blanks, about three seconds of a quiet machine.)
+SILENT_SECONDS = 120
+# All the runs together; a run that would start after this is not run.
+SUITE_SECONDS = 2400
+# Runs at once where -j does not say: one for every two free processors,
+# up to this.
+JOBS_DEFAULT_MAX = 4
 # The lines a test's failure gives to memory that differs ([snapshot]).
 SNAPSHOT_PROBLEMS_MAX = 8
 # What the fixed script and a plan may weigh. The script is small and the
@@ -780,7 +797,7 @@ def run_port(test, folder, log_path, port_log):
     with open(log_path, "wb") as out, open(port_log, "wb") as err:
         try:
             return subprocess.run(cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
-                                  timeout=test.seconds).returncode
+                                  timeout=test.seconds * LOAD_SLACK).returncode
         except subprocess.TimeoutExpired:
             return None
         except OSError as e:
@@ -798,7 +815,8 @@ def run_on_port(test, run, order, folder):
     with open(port_log, encoding="utf-8", errors="replace") as f:
         said = [line for line in f.read().splitlines() if line.startswith("rebushido:")]
     if code is None:
-        run.problems.append("stopped at the time limit of %d seconds (blank %d)" % (test.seconds, run.frames))
+        run.problems.append("stopped at the time limit of %d seconds (blank %d)"
+                            % (test.seconds * LOAD_SLACK, run.frames))
     elif code == PORT_EXIT_CRASH or (code != 0 and ended != "miss"):
         run.problems.append("the port stopped (exit code %d): %s" % (code, " / ".join(said[:4]) or "it said nothing"))
     elif ended is None:
@@ -807,11 +825,27 @@ def run_on_port(test, run, order, folder):
     return run
 
 
-def run_on_disc(test, disc, names, launch, number=1, label=None, cards_from=None):
+def run_on_disc(test, disc, names, launch, number=1, label=None, cards_from=None, suite=None):
     """Run `number` of the test (from 1), on `disc`, into the folder
-    `label`. `cards_from` is the folder of the run whose memory cards this
-    one starts with; without it the cards are new."""
+    `label`, which is this run's alone while it lasts (FolderLock).
+    `cards_from` is the folder of the run whose memory cards this one
+    starts with; without it the cards are new. `suite` is told of the
+    emulator's process."""
     folder = os.path.join(OUT_DIR, test.name, label or disc.name)
+    lock = FolderLock(folder)
+    if not lock.acquire():
+        run = Run()
+        run.folder = folder
+        run.problems.append("%s is another run's now (another play test of this checkout): not run"
+                            % os.path.relpath(folder, REPO).replace("\\", "/"))
+        return run
+    try:
+        return _run_on_disc(test, disc, names, launch, number, folder, cards_from, suite)
+    finally:
+        lock.release()
+
+
+def _run_on_disc(test, disc, names, launch, number, folder, cards_from, suite):
     if os.path.isdir(folder):
         shutil.rmtree(folder)
     os.makedirs(folder)
@@ -832,13 +866,38 @@ def run_on_disc(test, disc, names, launch, number=1, label=None, cards_from=None
         f.write("PLAYTEST_DIR = [==[%s]==]\ndofile([==[%s]==])\n"
                 % (folder.replace("\\", "/") + "/", RUNNER.replace("\\", "/")))
 
+    # What the run reads, as it was when it began: a disc that another
+    # build writes while the run reads it gives a run of nothing in
+    # particular, which is said so in place of whatever it missed.
+    before = files_stamp(disc)
     if disc.port:
-        return run_on_port(test, run, order, folder)
+        run = run_on_port(test, run, order, folder)
+    else:
+        run = run_emulator(test, disc, run, order, folder, launch, suite)
+    if files_stamp(disc) != before:
+        run.problems.insert(0, "%s was written while the run read it (a build of the discs or the port beside "
+                            "it): run it again" % os.path.relpath(disc.cue, REPO).replace("\\", "/"))
+    return run
 
-    running = launch.emulators_running()
-    if running:
-        run.fatal = "an emulator is already running (process %s): one at a time" % running[0]
-        return run
+
+def files_stamp(disc):
+    """The size and time of each file a run of `disc` reads: the program
+    or the image (a .cue and the .bin beside it) and its table of names."""
+    paths = [disc.cue, os.path.splitext(disc.cue)[0] + ".bin", os.path.splitext(disc.cue)[0] + ".sym",
+             PORT_SYMBOLS if disc.port else ""]
+    stamp = []
+    for path in paths:
+        try:
+            st = os.stat(path)
+            stamp.append((path, st.st_size, st.st_mtime_ns))
+        except OSError:
+            stamp.append((path, None, None))
+    return stamp
+
+
+def run_emulator(test, disc, run, order, folder, launch, suite):
+    """A run in the emulator: what its log says, and how it ended."""
+    start = os.path.join(folder, "start.lua")
     # -safe: none of the user's settings; -no-ui: no window, a silent sound
     # driver; the interpreter with the debugger, which the exception check
     # needs; the memory cards files of the run's folder, which the emulator
@@ -859,8 +918,11 @@ def run_on_disc(test, disc, names, launch, number=1, label=None, cards_from=None
             return "silent"
         return None
 
-    result = launch.run(cmd, folder, emulator_log, test.seconds, watch)
+    result = launch.run(cmd, folder, emulator_log, test.seconds * LOAD_SLACK, watch)
     run.seconds = result.seconds
+    if suite is not None and result.pid:
+        with suite.lock:
+            suite.pids.append(result.pid)
 
     ended = read_log(run, log_path, order, folder)
     with open(emulator_log, encoding="utf-8", errors="replace") as f:
@@ -871,10 +933,11 @@ def run_on_disc(test, disc, names, launch, number=1, label=None, cards_from=None
         run.fatal = "the emulator showed a window (%s)" % ", ".join(result.windows)
     if result.left:
         run.fatal = "%d emulator processes were still alive after the run was ended" % result.left
-    if launch.emulators_running():
-        run.fatal = "an emulator process is still running after the run"
+    if result.pid and launch.alive([result.pid]):
+        run.fatal = "the emulator's process %d is still running after the run" % result.pid
     if result.timed_out:
-        run.problems.append("stopped at the time limit of %d seconds (blank %d)" % (test.seconds, run.frames))
+        run.problems.append("stopped at the time limit of %d seconds (blank %d)"
+                            % (test.seconds * LOAD_SLACK, run.frames))
     elif result.stopped:
         run.problems.append("the emulator wrote nothing for %d seconds and was stopped" % SILENT_SECONDS)
     elif ended is None:
@@ -1132,17 +1195,149 @@ def under_wsl():
         return False
 
 
+def free_cores():
+    """How many of this machine's processors were idle over half a
+    second: on Windows by its own count of idle time, elsewhere by the load
+    average."""
+    count = os.cpu_count() or 1
+    if os.name == "nt":
+        import ctypes
+        import ctypes.wintypes as wt
+
+        def times():
+            idle, kernel, user = wt.FILETIME(), wt.FILETIME(), wt.FILETIME()
+            ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user))
+            return [(t.dwHighDateTime << 32) | t.dwLowDateTime for t in (idle, kernel, user)]
+
+        first = times()
+        time.sleep(0.5)
+        idle, kernel, user = (b - a for a, b in zip(first, times()))
+        # the kernel's time has the idle time in it
+        return count * idle / max(1, kernel + user)
+    try:
+        return max(0.0, count - os.getloadavg()[0])
+    except OSError:
+        return float(count)
+
+
+def default_jobs():
+    """Runs at once where -j does not say: one for every two processors
+    that are free (an emulator keeps one busy and its helpers part of
+    another), from 1 to JOBS_DEFAULT_MAX."""
+    return max(1, min(JOBS_DEFAULT_MAX, int(free_cores() // 2)))
+
+
+class FolderLock:
+    """A run's folder is one run's at a time: a lock beside it, the
+    operating system's own, so that it is let go of when the program that
+    held it ends, however it ends."""
+
+    def __init__(self, folder):
+        self.path = folder.rstrip("\\/") + ".lock"
+        self.file = None
+
+    def acquire(self):
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        f = open(self.path, "a+b")
+        try:
+            if os.name == "nt":
+                import msvcrt
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            f.close()
+            return False
+        self.file = f
+        return True
+
+    def release(self):
+        if self.file is None:
+            return
+        try:
+            if os.name == "nt":
+                import msvcrt
+                self.file.seek(0)
+                msvcrt.locking(self.file.fileno(), msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+        self.file.close()
+        self.file = None
+
+
+class Suite:
+    """The runs of the tests, up to `jobs` at once. A test's runs are
+    independent of each other, so each is a job of its own; but where the
+    test keeps the memory cards (`cards = "keep"`) each run starts with
+    the cards the one before it left, and its runs are one job, in order."""
+
+    def __init__(self, jobs, launch, names):
+        self.jobs = jobs
+        self.launch = launch
+        self.names = names
+        self.lock = threading.Lock()
+        self.fatal = None
+        self.start = time.time()
+        self.pids = []  # every emulator this suite started
+
+    def say(self, text):
+        with self.lock:
+            print(text, flush=True)
+
+    def run_chain(self, test, discs, numbers):
+        """Runs `numbers` of the test, one after another: [(number, Run)]."""
+        labels = run_labels(discs)
+        done = []
+        for number in numbers:
+            label = labels[number - 1]
+            if self.fatal or time.time() - self.start > SUITE_SECONDS:
+                break
+            self.say("%s on %s ..." % (test.name, label))
+            cards_from = done[-1][1].folder if done and test.cards == "keep" else None
+            try:
+                run = run_on_disc(test, discs[number - 1], self.names, self.launch, number, label, cards_from,
+                                  self)
+            except OSError as e:
+                run = Run()
+                run.fatal = "%s on %s: the run could not be made: %s" % (test.name, label, e)
+            done.append((number, run))
+            if run.fatal:
+                with self.lock:
+                    self.fatal = self.fatal or run.fatal
+                break
+        return done
+
+
 def main():
     ap = argparse.ArgumentParser(description="Scripted play tests in an emulator with no window.")
     ap.add_argument("tests", nargs="*", help="names of tests/play/, or .toml files; all if none")
     ap.add_argument("--list", action="store_true", help="list the tests and stop")
     ap.add_argument("--symbols", nargs=2, metavar=("ELF", "OUT"),
                     help="write the table of a built disc's names and stop")
+    ap.add_argument("-j", "--jobs", type=int,
+                    help="runs at once (default: one for every two free processors, %d at most)" % JOBS_DEFAULT_MAX)
+    ap.add_argument("--changed", metavar="REV",
+                    help="only the tests that what changed since the commit REV can reach (tools/play/"
+                         "affected.py); every one where that cannot be told")
     args = ap.parse_args()
     if args.symbols:
         return write_symbols(*args.symbols)
+    if args.jobs is not None and args.jobs < 1:
+        sys.exit("playtest.py: -j is 1 or more")
 
-    paths = find_tests(args.tests)
+    wanted = list(args.tests)
+    if args.changed:
+        import affected
+        picked, why = affected.tests_for(args.changed)
+        print("playtest: --changed %s: %s" % (args.changed, why), flush=True)
+        if picked is not None:
+            wanted = [t for t in wanted if t in picked] if wanted else picked
+            if not wanted:
+                print("OK: play tests: the change reaches none of them")
+                return 0
+    paths = find_tests(wanted)
     if args.list:
         for path in paths:
             try:
@@ -1158,7 +1353,9 @@ def main():
         if not windows_python:
             print("playtest: skipped: under WSL the emulator needs Windows' python, and python.exe was not found")
             return 0
-        return subprocess.call([windows_python, "tools/playtest.py"] + args.tests, cwd=REPO)
+        more = ["-j", str(args.jobs)] if args.jobs else []
+        tests = [os.path.relpath(path, REPO).replace("\\", "/") for path in paths]
+        return subprocess.call([windows_python, "tools/playtest.py"] + more + tests, cwd=REPO)
 
     for path, what in ((EMULATOR, "the emulator, PCSX-Redux; REBUSHIDO_EMULATOR names it"),
                        (RETAIL_CUE, "your own image of the retail disc; REBUSHIDO_RETAIL names it")):
@@ -1168,58 +1365,88 @@ def main():
 
     import launch
 
+    jobs = args.jobs or default_jobs()
+    others = launch.emulators_running()
+    print("playtest: %d runs at once%s" % (jobs, "; %d emulator processes of others are running" % len(others)
+                                            if others else ""), flush=True)
     names = header_names()
-    rows, failed, fatal = [], False, None
-    suite_start = time.time()
+    suite = Suite(jobs, launch, names)
+    # rows[name] = (result, seconds, problems)
+    tests, rows = [], {}
     for path in paths:
         name = os.path.splitext(os.path.basename(path))[0]
-        start = time.time()
-        if fatal:
-            rows.append((name, "not run", 0.0, []))
-            continue
-        if time.time() - suite_start > SUITE_SECONDS:
-            failed = True
-            rows.append((name, "not run", 0.0, ["the suite's %d seconds were up" % SUITE_SECONDS]))
-            continue
         try:
             test = Test(path)
             discs = [Disc(d) for d in test.discs]
             test.set_discs(discs)
-            runs = []
-            labels = run_labels(discs)
-            for number, disc in enumerate(discs, 1):
-                print("%s on %s ..." % (test.name, labels[number - 1]), flush=True)
-                cards_from = runs[-1].folder if runs and test.cards == "keep" else None
-                run = run_on_disc(test, disc, names, launch, number, labels[number - 1], cards_from)
-                runs.append(run)
-                if run.fatal:
-                    fatal = run.fatal
-                    break
-            problems = [fatal] if fatal else check_test(test, discs, runs, names)
-            result = "FAILED" if problems else "ok"
+            tests.append((name, test, discs))
         except Skip as e:
-            result, problems = "skipped", [str(e)]
+            rows[name] = ("skipped", 0.0, [str(e)])
         except TestError as e:
-            result, problems = "FAILED", ["%s: %s" % (os.path.relpath(path, REPO).replace("\\", "/"), e)]
-        failed |= result == "FAILED"
-        rows.append((name, result, time.time() - start, problems))
+            rows[name] = ("FAILED", 0.0, ["%s: %s" % (os.path.relpath(path, REPO).replace("\\", "/"), e)])
+
+    # The longest runs first, so that the last to end is a short one.
+    work = []
+    for name, test, discs in tests:
+        numbers = list(range(1, len(discs) + 1))
+        for chain in [numbers] if test.cards == "keep" else [[n] for n in numbers]:
+            work.append((-test.limit * len(chain), name, chain[0], test, discs, chain))
+    work.sort(key=lambda w: w[:3])
+    results = {name: {} for name, _, _ in tests}
+    seconds = {name: 0.0 for name, _, _ in tests}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = {pool.submit(suite.run_chain, test, discs, chain): name for _, name, _, test, discs, chain in work}
+        for future in concurrent.futures.as_completed(futures):
+            name = futures[future]
+            try:
+                for number, run in future.result():
+                    results[name][number] = run
+                    seconds[name] += run.seconds
+            except (Skip, TestError) as e:
+                results[name]["error"] = e
+
+    failed = False
+    for name, test, discs in tests:
+        got = results[name]
+        try:
+            if "error" in got:
+                raise got.pop("error")
+            fatal = next((run.fatal for run in got.values() if run.fatal), None)
+            if fatal:
+                rows[name] = ("FAILED", seconds[name], [fatal])
+            elif len(got) < len(discs):
+                rows[name] = ("not run", seconds[name],
+                              [] if suite.fatal else ["the suite's %d seconds were up" % SUITE_SECONDS])
+                failed |= not suite.fatal
+            else:
+                problems = check_test(test, discs, [got[n] for n in range(1, len(discs) + 1)], names)
+                rows[name] = ("FAILED" if problems else "ok", seconds[name], problems)
+        except Skip as e:
+            rows[name] = ("skipped", seconds[name], [str(e)])
+        except TestError as e:
+            rows[name] = ("FAILED", seconds[name],
+                          ["%s: %s" % (os.path.relpath(test.path, REPO).replace("\\", "/"), e)])
 
     print()
     print("  %-16s %-8s %s" % ("test", "result", "time"))
-    for name, result, seconds, problems in rows:
-        print("  %-16s %-8s %3.0fs" % (name, result, seconds))
+    for path in paths:
+        name = os.path.splitext(os.path.basename(path))[0]
+        result, took, problems = rows[name]
+        failed |= result == "FAILED"
+        print("  %-16s %-8s %3.0fs" % (name, result, took))
         for problem in problems:
             print("      " + problem)
-    left = launch.emulators_running()
-    print("  emulator processes left running: %d" % len(left))
-    print("  pictures and logs: build/playtest/<test>/<disc>/   (%.0fs in all)" % (time.time() - suite_start))
-    if fatal:
+    left = launch.alive(suite.pids)
+    print("  emulator processes of these runs left running: %d" % len(left))
+    print("  pictures and logs: build/playtest/<test>/<disc>/   (%.0fs in all, %d runs at once)"
+          % (time.time() - suite.start, jobs))
+    if suite.fatal:
         print("FAILED: stopped at the first run the emulator itself went wrong in")
         return 1
     if failed or left:
         print("FAILED: play tests")
         return 1
-    counts = [sum(1 for r in rows if r[1] == k) for k in ("ok", "skipped")]
+    counts = [sum(1 for r in rows.values() if r[0] == k) for k in ("ok", "skipped")]
     print("OK: play tests: %d passed, %d skipped" % tuple(counts))
     return 0
 

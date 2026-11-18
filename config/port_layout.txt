@@ -50,6 +50,7 @@ StageHooks          g_stage_hooks, a table of functions the compiler fills
 # the port's own, never laid over anything, whose key is an address and so
 # is wider in the 64-bit program.
 AnchorSlot the port's own: a HUD primitive's edge, keyed by an address
+EffectSlot the port's own: an effect's quad of the side channel, keyed by an address
 FaceSlot   the port's own: a face of the side channel, keyed by an address
 PointSlot  the port's own: a point of the side channel, keyed by an address
 ShadowCaster the port's own: a shadow node's caster, keyed by an address
@@ -70,6 +71,10 @@ DIRENTRY   the BIOS's directory entry: the port has no card yet
 # pointer to the file's bytes and to where the pixels go.
 PngInflate  the port's own: a local of the inflate
 PngWriter   the port's own: a local of the writer
+
+# The fixed memory's table (src/port/memory.c): each piece's text, a
+# pointer; a constant table nothing of the game's is laid over.
+FixedMemory the port's own: a piece of memory at a fixed address and its name
 
 # stb_vorbis (src/port/vorbis.c, src/port/vendor/stb_vorbis.c): the Ogg
 # decoder of a mod's music, as it ships. Its structures live in the memory

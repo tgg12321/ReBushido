@@ -44,6 +44,12 @@ extern s32 port_GlFighterIsOn(void);
  * `m100`; docs/MODS.md). */
 extern void port_GlFighterSetFolder(const char *folder);
 
+/* While the game loads: the files of the models it has loaded so far,
+ * the fighters' and the weapons', read and given to the card now, behind
+ * the loading picture, and not at the first frame that draws them
+ * (docs/PORT.md, "Quick loading"). Each is read once. */
+extern void port_GlFighterPreload(void);
+
 /* A new frame of primitives is about to come (gl_draw.c, port_GlBegin). */
 extern void port_GlFighterNewFrame(void);
 

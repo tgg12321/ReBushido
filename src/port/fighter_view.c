@@ -200,6 +200,29 @@ static void port_FighterNoteCloth(s32 slot, const SceneNode *node) {
     }
 }
 
+s32 port_FighterLoadedModel(s32 slot) {
+    Model *model;
+
+    if (slot < 0 || slot >= PORT_FIGHTER_SLOTS) {
+        return -1;
+    }
+    model = model_Get(slot);
+    return model != NULL ? model->model_id : -1;
+}
+
+s32 port_FighterLoadedTiny(s32 slot) {
+    s32 model_id = port_FighterLoadedModel(slot);
+
+    if (model_id < 0 || g_model_tiny_ids[model_id] == MODEL_TINY_NONE) {
+        return -1;
+    }
+    return g_model_tiny_ids[model_id];
+}
+
+s32 port_FighterLoadedWeapon(s32 place) {
+    return place >= 0 ? port_FighterWeaponModel(place) : -1;
+}
+
 /* A fighter's own node (port_fighter.h): his body's root, which draws the
  * whole body, a cloth, or a weapon. */
 void port_FighterNoteNode(PortAddress at) {

@@ -10,7 +10,9 @@
 #
 # A check that fails does not stop the ones after it. What each printed is in
 # build/checks/<name>.log; its last lines are shown when it fails. Exits 1 if
-# any failed. Keep the list the same as the workflow's.
+# any failed. Keep the list the same as the workflow's. tools/gate.py reads
+# the `check NAME COMMAND` lines below and runs them side by side: keep each
+# on one line, and give a new one its place in gate.py's WAITS.
 cd "$(dirname "$0")/.." || exit 1
 [ -f .venv/bin/activate ] && source .venv/bin/activate
 mkdir -p build/checks

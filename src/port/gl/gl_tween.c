@@ -1066,7 +1066,7 @@ static TweenPoint *port_TweenFindPoint(TweenPoint *table, PortAddress object,
  * a whole face of a mesh, drawn in perspective. */
 static s32 port_TweenIsWholeFace(const PortRemasterPrim *prim) {
     return prim->id.object != 0 && prim->id.piece == 0 && prim->has_place &&
-           prim->has_depth &&
+           prim->has_depth && !prim->is_effect &&
            (prim->kind == PORT_REMASTER_TRIANGLE ||
             prim->kind == PORT_REMASTER_QUAD) &&
            port_TweenIsOnScreen(prim);
@@ -1277,7 +1277,7 @@ static void port_TweenPairMoved(
         PortAddress object = shown->prim[i].id.object;
 
         if (g_tween.pair[i] != TWEEN_EMPTY || object == 0 ||
-            !shown->prim[i].has_place) {
+            !shown->prim[i].has_place || shown->prim[i].is_effect) {
             continue;
         }
         for (j = 0; j < from_count && from[j] != object; j++) {
@@ -1290,7 +1290,7 @@ static void port_TweenPairMoved(
         PortAddress object = after->prim[i].id.object;
 
         if (g_tween.taken[i] != TWEEN_EMPTY || object == 0 ||
-            !after->prim[i].has_place) {
+            !after->prim[i].has_place || after->prim[i].is_effect) {
             continue;
         }
         for (j = 0; j < to_count && to[j] != object; j++) {

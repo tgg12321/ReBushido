@@ -24,6 +24,16 @@ typedef __UINTPTR_TYPE__ PortAddress;
  * with the program's arguments (the first is the program's own path) and
  * ends the program with what it returns (src/port/main.c). */
 extern s32 port_Main(s32 argc, char **argv);
+/* Every piece of memory the port has at a fixed address -- the RAM, the
+ * scratchpad, the page of registers, the game's stack and the port's
+ * own buffers of primitives (port_platform.h, src/port/memory.c) --
+ * given at once, or the program stops, saying why. A program with
+ * libraries of its own (the window, the remastered renderer's prover)
+ * calls this first thing, before any of them starts: a library's memory
+ * may land anywhere, and the scratchpad at 0x1F800000 is low enough for
+ * the C library's heap to reach. port_Main calls it as well; a second
+ * call does nothing. */
+extern void port_MapFixedMemory(void);
 /* Where Windows starts the program (host_windows.c): the linker is given
  * this name for its entry. */
 extern void port_WindowsStart(void);

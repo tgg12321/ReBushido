@@ -187,14 +187,12 @@ def write_headers():
     for name in ('inline_c.h', 'inline_o.h'):
         with open('include/psxsdk/' + name, encoding='latin-1') as f:
             text = rewrite_gte_header(f.read(), name)
-        with open(inc + '/' + name, 'w', encoding='latin-1', newline='\n') as f:
-            f.write(text)
+        port_gte_macros.write_shared(inc + '/' + name, text, 'latin-1')
     with open('include/psxsdk/libc.h', encoding='utf-8') as f:
         text = f.read()
     if PRINTF_OLD not in text:
         sys.exit('check.py: include/psxsdk/libc.h no longer has `%s`' % PRINTF_OLD)
-    with open(inc + '/libc.h', 'w', encoding='utf-8', newline='\n') as f:
-        f.write(text.replace(PRINTF_OLD, PRINTF_NEW))
+    port_gte_macros.write_shared(inc + '/libc.h', text.replace(PRINTF_OLD, PRINTF_NEW))
 
 
 # ---- one file ----

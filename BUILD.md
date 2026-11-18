@@ -199,6 +199,37 @@ needs the game running, and the source's layout
 (`python tools/format.py --check --all`, which needs clang-format from
 `requirements.txt`).
 
+## The gate
+
+What a change to `main` passes before it is pushed: the eleven checks,
+the window's two builds, the play tests' discs, the layout, the port's
+rollback self-test, `make port-net` and the play tests. One command runs
+it all, from Windows or inside WSL, each step as soon as the steps whose
+outputs it reads have passed and side by side with the others:
+
+```bash
+python tools/gate.py                 # every step, and a summary
+python tools/gate.py --owner --push  # then the owner's copy (tools/owner_copy.py) and git push
+python tools/gate.py --changed main  # only the play tests the change reaches (tests/play/README.md)
+python tools/gate.py --list          # the steps and what each waits for
+```
+
+The checks are read from `tools/checks.sh`, so the list is CI's. What
+each step waits for is `WAITS` in `tools/gate.py`: a step waits for the
+steps it reads and for any that write where it writes (the relink and
+the GTE probe for the matching build; the quick-boot discs for
+`make rebushido`, which compiles into `build/quickboot/` too; the
+ReBushido host tests for the probe, which builds three of them). The
+headers several builds write (`build/modern/include/`,
+`build/port/include/`) are written whole and only when they change, so
+that builds side by side never read one half written. `port-net` takes
+96 UDP ports of 127.0.0.1 from a base chosen by the checkout's path
+(`--net-base`), so that two checkouts' gates do not meet; the play tests
+run four at once (`-j`). Each step's output is `build/gate/<step>.log`
+and the summary `build/gate/summary.txt`; after the first failure no step
+is started, those running finish, and the summary says which were not
+run.
+
 ## How a file is built
 
 ```

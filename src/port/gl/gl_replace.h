@@ -58,8 +58,12 @@ extern s32 port_GlReplaceFind(
  * written (a fill, a copy, a load): its texture, or 0, and in `tint` the
  * tint of its fade. `display_x` and `display_w` are the columns the
  * display shows: what is written there and is not of one colour is a
- * picture, and is written out as one. */
-extern u32 port_GlReplaceFindPicture(
-    s32 x, s32 y, s32 w, s32 h, s32 display_x, s32 display_w, u32 *tint);
+ * picture, and is written out as one. `display_w` is -1 while the display
+ * is the movie's, in the 24-bit mode: then only a picture of a whole
+ * screen is looked up (the title picture), not the movie's frames. While
+ * nothing is shown (`is_dark`: the display off, or the movie's) a picture
+ * of a whole screen written anywhere is one to be seen as well. */
+extern u32 port_GlReplaceFindPicture(s32 x, s32 y, s32 w, s32 h, s32 display_x,
+                                     s32 display_w, s32 is_dark, u32 *tint);
 
 #endif /* GL_REPLACE_H */

@@ -17,11 +17,20 @@ Elsewhere it is a plain child in a session of its own, ended as a group.
 
 run() returns a Result. It never leaves a process: when it returns, the
 job (or the group) has been ended and `left` says how many processes were
-still in it after that, which should be 0.
+still in it after that, which should be 0. Several runs may be going at
+once, each from a thread of its own (tools/playtest.py -j): each has its
+own job, and nothing of one is shared with another but the hidden desktop.
 """
 import os
 import subprocess
+import threading
 import time
+
+# Starting a process sets the error mode of this whole program for a
+# moment: one thread at a time.
+_START = threading.Lock()
+# The hidden desktop's handle, once it is made (_run_windows).
+_DESKTOP = []
 
 
 class Result:
@@ -32,6 +41,7 @@ class Result:
         self.stopped = None   # what `watch` returned, if it ended the run
         self.windows = []     # titles of visible windows on the user's desktop
         self.left = 0         # processes still alive after the end
+        self.pid = None       # the emulator's process id
 
 
 def emulators_running():
@@ -53,6 +63,12 @@ def emulators_running():
     return found
 
 
+def alive(pids):
+    """Those of `pids` that are still emulator processes."""
+    running = set(emulators_running())
+    return [pid for pid in pids if pid in running]
+
+
 def run(cmd, cwd, log_path, timeout, watch=None):
     """Runs cmd with its output in the file log_path. `watch`, called a few
     times a second, ends the run by returning something true."""
@@ -71,6 +87,7 @@ def _run_posix(cmd, cwd, log_path, timeout, watch):
     with open(log_path, "wb") as log:
         proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                                 env=env, start_new_session=True)
+        result.pid = proc.pid
         try:
             while proc.poll() is None:
                 time.sleep(0.2)
@@ -114,6 +131,9 @@ def _run_windows(cmd, cwd, log_path, timeout, watch):
     # no box for a critical error, a fault or a file not found
     ERROR_MODE = 0x0001 | 0x0002 | 0x8000
     WAIT_TIMEOUT = 0x102
+    HANDLE_FLAG_INHERIT = 0x1
+    EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+    PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
     INVALID_HANDLE = wt.HANDLE(-1).value
 
     class StartupInfo(ctypes.Structure):
@@ -123,6 +143,9 @@ def _run_windows(cmd, cwd, log_path, timeout, watch):
                     ("dwYCountChars", wt.DWORD), ("dwFillAttribute", wt.DWORD), ("dwFlags", wt.DWORD),
                     ("wShowWindow", wt.WORD), ("cbReserved2", wt.WORD), ("lpReserved2", ctypes.c_void_p),
                     ("hStdInput", wt.HANDLE), ("hStdOutput", wt.HANDLE), ("hStdError", wt.HANDLE)]
+
+    class StartupInfoEx(ctypes.Structure):
+        _fields_ = [("StartupInfo", StartupInfo), ("lpAttributeList", ctypes.c_void_p)]
 
     class ProcessInformation(ctypes.Structure):
         _fields_ = [("hProcess", wt.HANDLE), ("hThread", wt.HANDLE),
@@ -178,6 +201,13 @@ def _run_windows(cmd, cwd, log_path, timeout, watch):
         (kernel32.GetExitCodeProcess, wt.BOOL, [wt.HANDLE, ctypes.POINTER(wt.DWORD)]),
         (kernel32.CloseHandle, wt.BOOL, [wt.HANDLE]),
         (kernel32.SetErrorMode, wt.UINT, [wt.UINT]),
+        (kernel32.SetHandleInformation, wt.BOOL, [wt.HANDLE, wt.DWORD, wt.DWORD]),
+        (kernel32.InitializeProcThreadAttributeList, wt.BOOL,
+         [ctypes.c_void_p, wt.DWORD, wt.DWORD, ctypes.POINTER(ctypes.c_size_t)]),
+        (kernel32.UpdateProcThreadAttribute, wt.BOOL,
+         [ctypes.c_void_p, wt.DWORD, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p,
+          ctypes.c_void_p]),
+        (kernel32.DeleteProcThreadAttributeList, None, [ctypes.c_void_p]),
     ):
         function.restype, function.argtypes = restype, argtypes
 
@@ -203,7 +233,14 @@ def _run_windows(cmd, cwd, log_path, timeout, watch):
 
     result = Result()
     handles = []
-    desktop = check(user32.CreateDesktopW(DESKTOP, None, None, 0, GENERIC_ALL, None), "CreateDesktop")
+    # One hidden desktop for all of this program's runs, made by the first
+    # and held until the program ends: a desktop goes when its last handle
+    # is closed, and one run's closing it as another opens it by its name
+    # fails the second (access denied).
+    with _START:
+        if not _DESKTOP:
+            _DESKTOP.append(check(user32.CreateDesktopW(DESKTOP, None, None, 0, GENERIC_ALL, None),
+                                  "CreateDesktop"))
     try:
         job = check(kernel32.CreateJobObjectW(None, None), "CreateJobObject")
         handles.append(job)
@@ -211,6 +248,19 @@ def _run_windows(cmd, cwd, log_path, timeout, watch):
         limits.BasicLimitInformation.LimitFlags = JOB_KILL_ON_CLOSE
         check(kernel32.SetInformationJobObject(job, JOB_EXTENDED_LIMIT, ctypes.byref(limits),
                                                ctypes.sizeof(limits)), "SetInformationJobObject")
+        startup_ex = StartupInfoEx()
+        startup = startup_ex.StartupInfo
+        startup.cb = ctypes.sizeof(startup_ex)
+        startup.lpDesktop = "WinSta0\\" + DESKTOP
+        startup.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW
+        startup.wShowWindow = SW_HIDE
+        process = ProcessInformation()
+        line = ctypes.create_unicode_buffer(subprocess.list2cmdline(cmd))
+        # The run's output and its empty input are handed down to the
+        # emulator, and nothing else of this program's: other threads may
+        # be starting other runs, or a program whose output is a pipe this
+        # one reads, and an emulator that held such a handle would keep
+        # that pipe open until it ended.
         inherit = SecurityAttributes(ctypes.sizeof(SecurityAttributes), None, True)
         log = check(kernel32.CreateFileW(log_path, GENERIC_WRITE, SHARE_READ_WRITE, ctypes.byref(inherit),
                                          CREATE_ALWAYS, 0x80, None), "opening " + log_path)
@@ -218,24 +268,33 @@ def _run_windows(cmd, cwd, log_path, timeout, watch):
         nul = check(kernel32.CreateFileW("NUL", GENERIC_READ, SHARE_READ_WRITE, ctypes.byref(inherit),
                                          OPEN_EXISTING, 0, None), "opening NUL")
         handles.append(nul)
-
-        startup = StartupInfo()
-        startup.cb = ctypes.sizeof(startup)
-        startup.lpDesktop = "WinSta0\\" + DESKTOP
-        startup.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW
-        startup.wShowWindow = SW_HIDE
         startup.hStdInput, startup.hStdOutput, startup.hStdError = nul, log, log
-        process = ProcessInformation()
-        line = ctypes.create_unicode_buffer(subprocess.list2cmdline(cmd))
-        old_mode = kernel32.SetErrorMode(ERROR_MODE)
+        size = ctypes.c_size_t()
+        kernel32.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(size))
+        attributes = ctypes.create_string_buffer(size.value)
+        check(kernel32.InitializeProcThreadAttributeList(attributes, 1, 0, ctypes.byref(size)),
+              "InitializeProcThreadAttributeList")
+        inherited = (wt.HANDLE * 2)(log, nul)
         try:
-            # Suspended, so that it is in the job before it can start a child.
-            check(kernel32.CreateProcessW(None, line, None, None, True, CREATE_NO_WINDOW | CREATE_SUSPENDED,
-                                          None, cwd, ctypes.byref(startup), ctypes.byref(process)),
-                  "starting " + cmd[0])
+            check(kernel32.UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, inherited,
+                                                     ctypes.sizeof(inherited), None, None),
+                  "UpdateProcThreadAttribute")
+            startup_ex.lpAttributeList = ctypes.cast(attributes, ctypes.c_void_p)
+            # the error mode is the whole program's: one thread at a time
+            with _START:
+                old_mode = kernel32.SetErrorMode(ERROR_MODE)
+                try:
+                    # Suspended, so that it is in the job before it can start a child.
+                    check(kernel32.CreateProcessW(None, line, None, None, True,
+                                                  CREATE_NO_WINDOW | CREATE_SUSPENDED | EXTENDED_STARTUPINFO_PRESENT,
+                                                  None, cwd, ctypes.byref(startup_ex), ctypes.byref(process)),
+                          "starting " + cmd[0])
+                finally:
+                    kernel32.SetErrorMode(old_mode)
         finally:
-            kernel32.SetErrorMode(old_mode)
+            kernel32.DeleteProcThreadAttributeList(attributes)
         handles += [process.hThread, process.hProcess]
+        result.pid = process.dwProcessId
 
         start = time.time()
         try:
@@ -272,5 +331,4 @@ def _run_windows(cmd, cwd, log_path, timeout, watch):
     finally:
         for handle in reversed(handles):
             kernel32.CloseHandle(handle)
-        user32.CloseDesktop(desktop)
     return result

@@ -140,5 +140,12 @@ extern u32 port_GlShadowCastUnpaired(void);
 /* The triangles cast from the fighters' and weapons' own models
  * (gl_fighter.h) over the run. */
 extern u32 port_GlShadowCastFromModels(void);
+/* The frames a fighter's model was given a shadow at its own feet, the
+ * game casting none of its body there (the raised floor of the Tatara
+ * shrine), over the run. */
+extern u32 port_GlShadowCastFeet(void);
+/* The faces of the stage's pieces (not its tiles) taken for floor the
+ * shadows fall on, being level, over the run. */
+extern u32 port_GlShadowFloorFaces(void);
 
 #endif /* PORT_GL_SHADOW_H */
