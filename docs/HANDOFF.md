@@ -79,6 +79,35 @@ play is [`PLAYING.md`](PLAYING.md); online play is
    `src/port/window/` outside lint and count; the music a tenth louder
    than the emulator's; the original's bugs left alone (REBUSHIDO.md).
 
+## The next session: a platform that is fast, and stays fast
+
+The owner, 2026-11-18, closing this session: the next session is a full
+optimisation run, before any new feature. The HD fighters keep his RTX
+3090 under 60 even without run-ahead (he plays with Fighters' own models
+off until then), and run-ahead makes it worse. The goal is not to fix
+that one case but a platform with headroom that new work cannot throttle
+so severely: **up to four players online, on a larger modded stage, with
+much richer lighting, textures and 3D models**, at the display's rate.
+What that asks:
+
+- **A performance target and a budget held by the gate**, on a real GPU,
+  not the software renderer: e.g. a fight with four HD fighters, a large
+  stage and every feature on, rendering at 2560x1440 well inside one
+  85 Hz refresh, with run-ahead, measured in CPU time per thread and GPU
+  time (timer queries) per pass, failing on any regression.
+- **The GPU-first renderer** below, in full: nothing per vertex or per
+  triangle on the processor in a picture; the processor steps the game
+  and sends matrices and changed data only.
+- **Scaling with fighters and stage size**: costs that grow with the
+  number of fighters, lights and triangles go to the card; culling and
+  level of detail for big stages; batching by material.
+- **Run-ahead and rollback cheap** at four players: the state saved by
+  pages written, the step itself lean (`-O2`), sound mixing out of
+  re-run frames.
+- **Profiling built in** for the owner: `--profile` and F3 showing CPU
+  and GPU time per part, so a report from his PC says where the time
+  goes.
+
 ## A GPU-first renderer, the first big work of the next session
 
 The owner, 2026-11-18: offload all that can go to the graphics card, and
