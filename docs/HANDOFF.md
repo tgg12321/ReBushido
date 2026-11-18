@@ -163,6 +163,52 @@ processor's frame), 2, 5. The ground could be cheaper still with the
 depth from the rasteriser and not `gl_FragDepth` (early depth tests;
 the scene and the fighters hold against a linear depth today).
 
+**The renderer-perf branch (2026-11-18, after it)**, docs/PORT.md,
+"Measuring on the card":
+
+- **Done.** The card's mirror of video memory is a buffer, written
+  between draws without the window's thread waiting for the card. Only
+  the changed lines are sent, and a picture between frames puts back
+  what it changed, not all of video memory. The colour buffer's targets
+  are kept for each size, so the fight's first picture makes none.
+  `run_ahead 2` no longer draws each frame twice
+  (`g_port_ahead_kept`). The card at `run_ahead 1` went from 4.8 to
+  3.4 ms a frame and at `run_ahead 2` from 8.6 to 4.25. The processor's
+  waits on the driver went from about 1 ms a frame to 0.3, and the
+  tween from 3.7 to about 2.7.
+- **The tween as it is now**, a picture between frames on the processor
+  with the waits gone: pairing the frames 0.65 ms once a pair; the
+  primitives replayed 0.58 ms, the frame's writes 0.17, and the cast
+  shadows laid again 0.57 (`port_GlShadowLay`, fighters2's) every
+  picture. At 144 a second that is about 2.4 pictures a blank, so the
+  per-picture 1.3 ms is the multiplier. **Next:** the frame on show's
+  primitives into one vertex buffer once a pair, each vertex with both
+  frames' places, mixed by the vertex shader with the phase a uniform.
+  What is decided per picture today goes to a geometry shader: a
+  primitive held where it would not be drawn moved
+  (`port_GlWouldDraw`, the chip's span rule), and a face that is coming
+  or going drawn while it turns the right way (`port_TweenTurnsAlike`).
+  Record the backend's draws of the first picture of a pair (batch
+  state, vertex range, the blits and the sky between them, the ground's
+  mesh at its event) and replay the list on the others. Then a picture
+  is uniforms and some hundred draws.
+- **The software GPU only where the game needs it** (2.2 ms a frame).
+  Painting cannot simply be left out: the real step after the frames
+  ahead paints into video memory, which is the state run-ahead saves at
+  the next boundary and netplay hashes, and a peer may show Original.
+  The design that keeps determinism: the frame's GPU command words are
+  kept as they are submitted (about 80 KB a frame), and painted only
+  where something reads. That is a store, a copy or a texture from a
+  region drawn into and not yet painted, a write of a page the kept
+  commands read from, a hash, and the Original picture. The kept list is
+  then part of the saved state (`state.c`, fighters2's: a hook for a
+  blob of the renderer's). The hash is of video memory as painted, so
+  it paints, or better hashes the list and the unpainted memory
+  together on every peer alike.
+- **The side channel** (`remaster`, about 0.9 ms) and the scene as real
+  3D (item 2 above) are untouched, and so is the ground's early depth
+  test.
+
 ### What is left of the HD fighters' cost
 
 Found and fixed on 2026-11-18 (docs/PORT.md, "The HD cloth and
