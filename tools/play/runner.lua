@@ -422,6 +422,18 @@ guarded(function()
     set('mute', function() PCSX.settings.spu.Mute = true end)
     set('speed', function() PCSX.settings.spu.Speed = 0 end)
     set('pad2', function() PCSX.settings.pads[2].Connected = true end)
+    -- Nothing of the host's reaches the pads but the plan's presses: left
+    -- at `Auto`, each pad reads the host's game controllers, which a window
+    -- needs no focus for, so a person playing beside the suite pressed
+    -- buttons in every run at once (2026-11-18, tests/play/README.md). The
+    -- keyboard needs a focused window, which a run on its own desktop never
+    -- has.
+    set('hostpads', function()
+        for i = 1, 2 do
+            PCSX.settings.pads[i].PadType = 'Keyboard'
+            assert(PCSX.settings.pads[i].PadType == 'Keyboard', 'pad ' .. i .. ' is still ' .. tostring(PCSX.settings.pads[i].PadType))
+        end
+    end)
     if no_cards then
         set('nocards', function()
             PCSX.settings.emulator.Mcd1Inserted = false

@@ -78,6 +78,9 @@ WAITS = {
 # Steps that wait for every other step and run with nothing beside them,
 # one after another in this order.
 ALONE = ['port-budget', 'port-bench']
+# Steps that run what was built, in the checkout itself: the others build in
+# tools/mirror.sh's copy of it.
+IN_PLACE = ['port-rollback', 'port-net', 'port-budget', 'port-bench']
 BUILDS = ['game', 'rb-build', 'discs', 'port', 'port-sdl', 'port-sdl-windows']
 # The steps of the gate's own beside the checks: (name, command, where).
 OWN = [
@@ -116,9 +119,12 @@ def net_base():
     return 47000 + 100 * (zlib.crc32(REPO.replace('\\', '/').lower().encode()) % 100)
 
 
-def in_wsl(cmd):
-    """The command as this program starts it, in WSL with the venv."""
-    script = '[ -f .venv/bin/activate ] && source .venv/bin/activate; exec "$@"'
+def in_wsl(cmd, mirror=True):
+    """The command as this program starts it, in WSL with the venv; a build
+    where the build runs (tools/mirror.sh: a copy on WSL's own disk, build/
+    brought back when the step ends), what runs the built programs here."""
+    script = '[ -f .venv/bin/activate ] && source .venv/bin/activate; exec %s"$@"' % (
+        'bash tools/mirror.sh run ' if mirror else '')
     if os.name == 'nt':
         return ['wsl', '-e', 'bash', '-c', script, 'gate'] + cmd
     return ['bash', '-c', script, 'gate'] + cmd
@@ -158,7 +164,7 @@ def steps_of(args):
 
 
 def run_step(step):
-    cmd = in_wsl(step.cmd) if step.where == 'wsl' else step.cmd
+    cmd = in_wsl(step.cmd, step.name not in IN_PLACE) if step.where == 'wsl' else step.cmd
     start = time.time()
     with open(step.log, 'wb') as log:
         log.write(('$ %s\n' % ' '.join(step.cmd)).encode())

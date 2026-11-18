@@ -260,13 +260,27 @@ def conflicts(write, read, exposed_variables, exposed_members):
 
 
 def dump_one(job):
-    path, flags = job
+    path, flags, stamp = job
     out = OUT_DIR + '/' + path.replace('/', '_') + '.gimple'
-    cmd = ['gcc'] + flags + ['-fdump-tree-gimple-lineno=' + out, '-x', 'c', '-S', '-', '-o', '/dev/null']
-    proc = subprocess.run(cmd, input=port_build.modern.modern_source(path), capture_output=True, text=True,
-                          env=port_build.environment(), encoding='utf-8', errors='replace')
-    if proc.returncode != 0:
-        return path, None, proc.stderr
+    deps = out + '.d'
+    # the dump of the last run, where no input of it has changed since
+    if not port_build.made_since(out, deps, stamp):
+        for old in (out, deps):
+            if os.path.exists(old):
+                os.remove(old)
+        cmd = ['gcc'] + flags + ['-MD', '-MF', deps, '-fdump-tree-gimple-lineno=' + out, '-x', 'c', '-S', '-',
+                                 '-o', '/dev/null']
+        proc = subprocess.run(cmd, input=port_build.modern.modern_source(path), capture_output=True, text=True,
+                              env=port_build.environment(), encoding='utf-8', errors='replace')
+        if proc.returncode != 0:
+            for old in (out, deps):
+                if os.path.exists(old):
+                    os.remove(old)
+            return path, None, proc.stderr
+        if not os.path.exists(out):
+            # a file with no function: an empty dump, so that it is not
+            # compiled again
+            open(out, 'w').close()
     if not os.path.exists(out):
         return path, '', ''     # a file with no function
     with open(out, encoding='utf-8', errors='replace') as f:
@@ -281,7 +295,8 @@ def find(everything=False):
     flags = (port_build.GAME_FLAGS + port_build.host_tests.include_flags(True) + port_build.modern.DEFS
              + port_build.host_tests.REBUSHIDO_DEFS + port_build.MOVOVL_INCLUDES
              + ['-DRB_GIT_HASH="order"'])
-    jobs = [(path, flags + mine) for path, own, mine in port_build.sources()]
+    stamp = max(port_build.build_stamp(), os.path.getmtime(__file__))
+    jobs = [(path, flags + mine, stamp) for path, own, mine in port_build.sources()]
     functions, exposed = [], set()
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
         for path, text, problem in pool.map(dump_one, jobs):

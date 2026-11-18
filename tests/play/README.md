@@ -661,6 +661,17 @@ such a program does not have.)
   ends at its `limit`. The clock only catches a hang: a run is stopped
   when its emulator has written nothing for two minutes (it writes a line
   every 300 blanks), and at four times its `seconds`.
+- Nothing of the host reaches the pads but the plan's presses: the script
+  sets both pads' input to the keyboard (`set hostpads` in `run.log`),
+  which a run on its own desktop never has the focus for. Left at the
+  emulator's `Auto`, each pad also reads the host's game controllers,
+  which need no focus: on 2026-11-18 the owner played a game with his
+  controller beside a gate's `-j 4` suite, and every emulator run that
+  went through the menus at that time took his presses as its own
+  (options changed on the options page, another mode chosen at the top
+  menu, "gave up at blank 4092"). The port's runs, which read no
+  controller, all passed. A run whose emulator does not take the setting
+  fails ("the emulator did not take a setting").
 - The interpreter and the debugger are what the check of the exception
   vector needs. It runs about three times the console's speed.
 - The emulator's script is `tools/play/runner.lua`, the same file for
@@ -676,5 +687,12 @@ such a program does not have.)
   the runs wrote (logs, pictures, memory, video memory, the emulator's
   states, the cards) the same, byte for byte, 998 of them each time.
   So a test that fails on a busy machine has not failed for being slow.
+  Measured again on 2026-11-18 with the pads' fix: `-j 1` against `-j 4`
+  beside 16 programs keeping processors busy (twice) and `-j 8` beside
+  12, while other builds ran: the same 998 files, but for one sound-chip
+  file (`.spu`) of `port_sound`'s emulator run in two of the three, in
+  its first 4 KB alone, the chip's buffers of recent samples, which the
+  emulator fills at its sound thread's own pace and which no test
+  compares (`tools/play/spu.py`).
   A run whose disc, program or names are written while it runs (a build
   of the discs beside it) fails as that, and asks to be run again.
