@@ -1548,6 +1548,116 @@ static void port_DescribeForReport(char *out, u32 room) {
 #undef REPORT_LINE
 }
 
+/* ---- a picture written beside the game ----
+ *
+ * F12's and F9's picture of the window is encoded and written on a
+ * thread of its own: on the thread that draws, a PNG of 2560 by 1440
+ * held a blank up 60 to 70 ms (tools/port_stalls.py; docs/PORT.md,
+ * "Stalls"). The pixels are copied for it; one picture is encoded at a
+ * time (the PNG writer of picture.c keeps its state in one place); and
+ * the program waits for every one before it ends, so that a test finds
+ * its file. Where the window's pictures are written as they are shown
+ * (--tap-window, --tap-frames), which use the same writer on this
+ * thread, it is written here as before. */
+
+#define PNG_THREADS_MAX 8
+
+typedef struct {
+    char path[PATH_BYTES_MAX];
+    u32 *pixels;
+    s32 w;
+    s32 h;
+} PortPngJob;
+
+static SDL_Thread *g_port_png_threads[PNG_THREADS_MAX];
+static SDL_mutex *g_port_png_lock;
+static SDL_atomic_t g_port_png_failed;
+
+static s32 port_WritePngFile(
+    const char *path, const u32 *pixels, s32 w, s32 h) {
+    s32 file = port_HostCreate(path);
+    s32 written = file >= 0 && port_WritePixelsPng(file, pixels, w, h);
+
+    if (file >= 0) {
+        port_HostClose(file);
+    }
+    return written;
+}
+
+static int SDLCALL port_PngThread(void *data) {
+    PortPngJob *job = data;
+
+    SDL_LockMutex(g_port_png_lock);
+    if (!port_WritePngFile(job->path, job->pixels, job->w, job->h)) {
+        SDL_AtomicIncRef(&g_port_png_failed);
+    }
+    SDL_UnlockMutex(g_port_png_lock);
+    free(job->pixels);
+    free(job);
+    return 0;
+}
+
+/* Every picture still being written, waited for. */
+static void port_WaitForPngs(void) {
+    s32 i;
+
+    for (i = 0; i < PNG_THREADS_MAX; i++) {
+        if (g_port_png_threads[i] != NULL) {
+            SDL_WaitThread(g_port_png_threads[i], NULL);
+            g_port_png_threads[i] = NULL;
+        }
+    }
+    if (SDL_AtomicGet(&g_port_png_failed) > 0) {
+        port_Say("F12: %d pictures could not be written",
+                 SDL_AtomicGet(&g_port_png_failed));
+        SDL_AtomicSet(&g_port_png_failed, 0);
+    }
+}
+
+/* The window's pixels kept by port_KeepShot written to `path`: on a
+ * thread of their own where it can be, here where it cannot. FALSE if
+ * written here and it could not be. */
+static s32 port_WriteShotPng(const char *path, s32 w, s32 h) {
+    size_t bytes = (size_t)w * (size_t)h * sizeof(u32);
+    PortPngJob *job;
+    s32 slot;
+
+    if (g_port_window_options.tap_window != NULL ||
+        g_port_window_options.tap_frames != NULL) {
+        return port_WritePngFile(path, g_port_window_pixels, w, h);
+    }
+    if (g_port_png_lock == NULL) {
+        g_port_png_lock = SDL_CreateMutex();
+    }
+    for (slot = 0; slot < PNG_THREADS_MAX; slot++) {
+        if (g_port_png_threads[slot] == NULL) {
+            break;
+        }
+    }
+    if (slot == PNG_THREADS_MAX) {
+        port_WaitForPngs();
+        slot = 0;
+    }
+    job = malloc(sizeof(*job));
+    if (g_port_png_lock == NULL || job == NULL ||
+        (job->pixels = malloc(bytes)) == NULL) {
+        free(job);
+        return port_WritePngFile(path, g_port_window_pixels, w, h);
+    }
+    snprintf(job->path, sizeof(job->path), "%s", path);
+    memcpy(job->pixels, g_port_window_pixels, bytes);
+    job->w = w;
+    job->h = h;
+    g_port_png_threads[slot] =
+        SDL_CreateThread(port_PngThread, "rebushido-png", job);
+    if (g_port_png_threads[slot] == NULL) {
+        free(job->pixels);
+        free(job);
+        return port_WritePngFile(path, g_port_window_pixels, w, h);
+    }
+    return TRUE;
+}
+
 /* A report of a problem (F9): its folder beside the log, the picture the
  * window was showing, and everything else (sdl_report.c). */
 static void port_MakeReport(void) {
@@ -1561,17 +1671,9 @@ static void port_MakeReport(void) {
         return;
     }
     if (g_port_has_shot) {
-        s32 file;
-
         g_port_has_shot = FALSE;
         snprintf(path, sizeof(path), "%s/picture.png", g_port_report_folder);
-        file = port_HostCreate(path);
-        picture = file >= 0 &&
-                  port_WritePixelsPng(
-                      file, g_port_window_pixels, g_port_shot_w, g_port_shot_h);
-        if (file >= 0) {
-            port_HostClose(file);
-        }
+        picture = port_WriteShotPng(path, g_port_shot_w, g_port_shot_h);
     }
     /* the line first, so that the log the report keeps has it */
     port_Say("F9: a report of the last seconds%s: %s",
@@ -1593,7 +1695,6 @@ static void port_WriteShot(void) {
     const struct tm *when = localtime(&now);
     s32 window_w = g_port_shot_w;
     s32 window_h = g_port_shot_h;
-    s32 file;
     s32 written;
 
     g_port_wants_shot = FALSE;
@@ -1618,12 +1719,7 @@ static void port_WriteShot(void) {
              when->tm_mday, when->tm_hour, when->tm_min, when->tm_sec,
              g_port_shots_taken % SHOT_NUMBERS);
     SDL_free(base);
-    file = port_HostCreate(path);
-    written = file >= 0 && port_WritePixelsPng(
-                               file, g_port_window_pixels, window_w, window_h);
-    if (file >= 0) {
-        port_HostClose(file);
-    }
+    written = port_WriteShotPng(path, window_w, window_h);
     g_port_shots_taken++;
     if (!written) {
         port_Say("F12: the picture %s cannot be written", path);
@@ -2790,8 +2886,8 @@ static void port_SwapPicture(void) {
     }
     if (g_port_has_gl) {
         SDL_GL_SwapWindow(g_port_window);
-        /* the driver's first time of a thread ended, at the first
-         * picture (warm.c) */
+        /* the driver's first time of a thread ended, on the loading
+         * screen (warm.c) */
         port_WarmDriver();
         if (g_port_vsync && g_port_settings.low_latency) {
             /* `low_latency`: back only once the card has drawn it all and
@@ -3313,6 +3409,7 @@ static void port_CloseWindow(s32 code) {
         fclose(g_port_audio_tap);
         g_port_audio_tap = NULL;
     }
+    port_WaitForPngs();
     port_SampleEnd();
     if (g_port_profile_file != NULL) {
         fclose(g_port_profile_file);

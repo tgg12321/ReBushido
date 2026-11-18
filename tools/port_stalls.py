@@ -59,8 +59,10 @@ RUN_SECONDS = 420
 SESSIONS = collections.OrderedDict([
     # port_game's plan, Kannuki against Mikado on Tatara Shrine, through
     # the fight, the menu after and back to the main menu; the settings
-    # menu opened and closed, a report made (F9)
-    ('game', ('plan', 5600, 1, ['--report-at', '3400'])),
+    # menu (F1) opened in the second fight and closed, a report made (F9)
+    # and a picture kept (F12)
+    ('game', ('plan', 5600, 1, ['--report-at', '3400', '--shot-at', '4300', '--menu-at', '4100',
+                                '--menu-keys', 'down down down up up up close'])),
     ('fight-lost-bridge', ('fight lost-bridge tsubame red-shadow', 3600, 1, [])),
     ('fight-castle-rooftop', ('fight castle-rooftop utsusemi kannuki:nodachi', 3600, 2, [])),
     ('fight-bamboo-thicket', ('fight bamboo-thicket mikado sazanka', 3600, 0, [])),

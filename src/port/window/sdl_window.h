@@ -169,8 +169,8 @@ extern void port_SoundRerunEnds(void);
 /* --sample (sampler.c): started as the window opens, written as it
  * closes; the blank whose time is being counted, for the samples. */
 extern void port_SampleStart(const char *path);
-/* What the card's driver does once, done as the first picture is shown
- * (warm.c). */
+/* What the card's driver does once, done in the first pictures (warm.c):
+ * called at every swap. */
 extern void port_WarmDriver(void);
 extern void port_SampleEnd(void);
 extern volatile u32 g_port_sample_blank;
