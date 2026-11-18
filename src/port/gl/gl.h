@@ -63,6 +63,13 @@ typedef struct {
      * for the model (gl_fighter.h, docs/PORT.md, "The fighters' own
      * models"): 0 the game's own primitives. */
     s32 is_fighter_models;
+    /* The game's own lighting worked out again at each pixel, from the
+     * normals the ground's mesh and the fighters' models have, with the
+     * stage's own lights (docs/PORT.md, "Lighting"): 0 as each vertex or
+     * face was lit. */
+    s32 is_smooth_light;
+    /* How the effects are drawn: PORT_EFFECTS_... (port_remaster.h). */
+    s32 effects;
     /* A sky of the port's own behind the stages open to it, in the place
      * of the game's fill of the colour of the distance (gl_sky.h):
      * PORT_SKY_ORIGINAL (0) or PORT_SKY_NIGHT. */

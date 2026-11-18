@@ -275,6 +275,11 @@ typedef struct {
      * hundredths: 0 is the game's own black silhouettes
      * (src/port/gl/gl_shadow.h; PORT_SHADOWS_SOFT). */
     s32 shadows;
+    /* The game's own lighting worked out at each pixel on the ground's
+     * mesh and the fighters' models (src/port/gl/gl_light.h). */
+    s32 smooth_light;
+    /* How the effects are drawn: PORT_EFFECTS_... (port_remaster.h). */
+    s32 effects;
     /* A night sky of the port's own over the stages open to it, in the
      * place of the game's colour of the distance (src/port/gl/gl_sky.h):
      * 0 original, 1 night. */

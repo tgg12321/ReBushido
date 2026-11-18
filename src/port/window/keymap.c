@@ -72,6 +72,13 @@ const char g_port_default_settings[] =
     "                       # soft: the ground under them darkened;\n"
     "                       # cast: cast from the fighters' own\n"
     "                       # bodies, darkened (cast:N, N hundredths)\n"
+    "smooth_light = on      # on: the game's own lights worked out at\n"
+    "                       # each pixel of the ground and the fighters'\n"
+    "                       # models, not once a face or a vertex\n"
+    "effects = smooth       # original: blood, sparks and dust where the\n"
+    "                       # console put them; exact: where the\n"
+    "                       # projection put them, moved between frames;\n"
+    "                       # smooth: their textures smoothed as well\n"
     "frame_rate = display   # original: one picture a blank, as the\n"
     "                       # console; display: as many as the screen\n"
     "                       # shows; or a number a second. The game\n"
@@ -723,6 +730,19 @@ static const char *port_ReadSetting(
         settings->shadows = number;
         return NULL;
     }
+    if (port_WordsMatch(name, "smooth_light")) {
+        return port_ReadChoice(value, "off", "on", &settings->smooth_light)
+                   ? NULL
+                   : "smooth_light is on or off";
+    }
+    if (port_WordsMatch(name, "effects")) {
+        number = port_ReadRemasterEffects(value);
+        if (number < 0) {
+            return "effects is original, exact or smooth";
+        }
+        settings->effects = number;
+        return NULL;
+    }
     if (port_WordsMatch(name, "controls")) {
         return port_ReadLayout(settings, value, lookup);
     }
@@ -867,6 +887,11 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->fighter_models = 1;
     /* the shadows cast from the fighters' own bodies (gl_shadow.h) */
     settings->shadows = port_ReadRemasterShadows("cast");
+    /* The lighting as the game lit each vertex and face, and the effects
+     * where the console put them, until the owner has looked at the
+     * pictures of each (docs/PORT.md, "Lighting", "The effects"). */
+    settings->smooth_light = 1;
+    settings->effects = PORT_EFFECTS_SMOOTH;
     /* A sky over the stages open to it, and the walls thinned where they
      * hide a fighter: neither changes what the game computes, and both
      * are the owner's to confirm on a real card (gl_sky.h, gl_see.h). */

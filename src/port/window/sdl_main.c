@@ -571,8 +571,8 @@ int main(int argc, char **argv) {
     static char frames_endless[] = "2000000000";
     PortWindowOptions *options = &g_port_window_options;
     const char *config = NULL;
-    char *base = SDL_GetBasePath();
-    const char *beside = base != NULL ? base : "";
+    char *base;
+    const char *beside;
     s32 count = 0;
     s32 has_image = 0;
     s32 has_end = 0;
@@ -601,6 +601,12 @@ int main(int argc, char **argv) {
     s32 code;
     s32 i;
 
+    /* the console's memory at its own addresses, before SDL, the card's
+     * driver or anything of the C library's can take one of them
+     * (port_host.h) */
+    port_MapFixedMemory();
+    base = SDL_GetBasePath();
+    beside = base != NULL ? base : "";
     SDL_SetMainReady();
     options->tap_every = 1;
     g_port_main_argc = argc;
@@ -932,6 +938,11 @@ int main(int argc, char **argv) {
     } else {
         port_Say("shadows: the game's own black silhouettes.");
     }
+    port_Say("smooth_light: the game's own lights worked out %s.",
+             g_port_settings.smooth_light
+                 ? "at each pixel of the ground and the fighters' models"
+                 : "once a face and once a vertex, as the game does");
+    port_Say("effects: %s.", port_NameRemasterEffects(g_port_settings.effects));
     port_Say("memory cards: card1.mcd and card2.mcd beside the program "
              "unless --card1, --card2 or --no-cards says otherwise.");
     port_Say("settings: %s", g_port_settings_path != NULL

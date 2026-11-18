@@ -157,6 +157,13 @@ extern void port_GteCommand(u32 word);
 extern void port_GteLoadData(s32 first, const void *words, s32 count);
 extern void port_GteStoreData(s32 first, void *words, s32 count);
 extern void port_GteLoadControl(s32 first, const void *words, s32 count);
+/* The program has just stored the screen positions from `first` on to
+ * `words` itself, through one of Sony's macros (their swc2 is a plain
+ * read of the register, tools/port_gte_macros.py): the remastered
+ * renderer's side channel writes down what the projection worked out
+ * for them, as port_GteStoreData does. Nothing is stored and nothing of
+ * the coprocessor changes. */
+extern void port_GteNoteStored(s32 first, const void *words, s32 count);
 
 /* What the products of two matrices have in common. `matrix` is nine
  * halfwords, a row after a row (a MATRIX's `m`). Each of its columns is

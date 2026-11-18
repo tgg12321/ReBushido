@@ -124,7 +124,12 @@ No dates.
       is still the default, and a camera cut shows the game's own
       picture.
    6. **Lighting and shadows**: the normals the mesh has and the
-      primitive does not.
+      primitive does not. Done for what is drawn from meshes
+      (`smooth_light`, off until the owner has looked): the game's own
+      lights worked out at each pixel of the ground's mesh, its normals
+      smoothed below a crease, and of the fighters' models. The effects
+      are placed where the projection put them and moved between frames
+      (`effects`; [`PORT.md`](PORT.md), "Lighting", "The effects").
 
    On the PlayStation build only what is cheap: about 17 KB is left
    there before a fixed buffer has to move.

@@ -125,17 +125,26 @@ extern const u32 g_port_low_memory[PORT_LOW_MEMORY_WORDS];
  * console's own two cannot grow where they are, with the stack above
  * them and the staging area below (include/sys.h). As with the stack,
  * the address is the same in every run and its low 24 bits are no
- * other memory's; it is given memory only for such a run, and with
- * the console's draw distance nothing of it exists. */
+ * other memory's; with the console's draw distance nothing of it is
+ * ever touched. */
 #define PORT_PRIMS_ADDR 0x7ED00000U
 #define PORT_PRIMS_SIZE 0x200000U
+/* The console's page of hardware registers, of which the sound chip's
+ * are a part (src/port/sound.c): 4 KB past the scratchpad. */
+#define PORT_IO_PAGE_ADDR 0x1F801000U
+#define PORT_IO_PAGE_SIZE 0x1000U
 /* Where the program's own variables begin and end: the link's script
  * says (tools/port_build.py). */
 extern char g_port_data_start[];
 extern char g_port_data_end[];
-/* Gives all three memory; stops the program, saying why, if the system
- * will not. */
+/* Every piece of memory at a fixed address, from the game's start
+ * (port_Main): done already where the program called
+ * port_MapFixedMemory itself (port_host.h). */
 extern void port_MapMemory(void);
+/* Memory at a fixed address for a part of the port that asks for it
+ * later (the sound chip's registers): TRUE where port_MapFixedMemory
+ * has given it already, or the system gives it now. */
+extern s32 port_MapFixed(u32 address, u32 size);
 /* Whether `count` bytes from `address` are in one of the two. */
 extern s32 port_IsMapped(u32 address, u32 count);
 

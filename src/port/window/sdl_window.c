@@ -776,6 +776,8 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     /* the fighters' shadows as a darkening of the ground, or the game's
      * own black polygons (src/port/gl/gl_shadow.h) */
     options->shadows = g_port_settings.shadows;
+    options->is_smooth_light = g_port_settings.smooth_light;
+    options->effects = g_port_settings.effects;
     /* the sky and the walls seen through (gl_sky.h, gl_see.h) */
     options->sky = g_port_settings.sky;
     options->see_through = g_port_settings.see_through;
@@ -1828,6 +1830,7 @@ void port_WindowApplyChoice(s32 choice) {
         g_port_texture_w = 0;
     } else if (
         (strcmp(name, "stage_mesh") == 0 || strcmp(name, "shadows") == 0 ||
+         strcmp(name, "smooth_light") == 0 || strcmp(name, "effects") == 0 ||
          strcmp(name, "sky") == 0 || strcmp(name, "see_through") == 0 ||
          strcmp(name, "fighter_models") == 0) &&
         g_port_has_gl) {
