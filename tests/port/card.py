@@ -3,6 +3,7 @@ rules of the format, and tools/card.py on images made up in this file."""
 import os
 import subprocess
 import sys
+import threading
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), '..', 'tools'))
@@ -82,6 +83,9 @@ def check_tool(checks, work):
     """tools/card.py on an image of its own: formatted, a file put in,
     listed, checked, taken out again, deleted. Nothing of the game's is
     read; the bytes are made up here."""
+    # the 32-bit and the 64-bit runs check side by side: a folder each
+    work = os.path.join(work, 'tool-%d' % threading.get_ident())
+    os.makedirs(work, exist_ok=True)
     image = os.path.join(work, 'card.mcd')
     inside = os.path.join(work, 'inside.bin')
     out = os.path.join(work, 'out.bin')
