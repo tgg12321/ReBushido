@@ -280,7 +280,8 @@ python tools/port_bench.py --case ra1 --against main
 `--against REV` takes REV's record or that of its nearest ancestor that
 has one, and says which. Before anything runs it stops with 2 if the
 prover's own code (each module of `tools/` it imports but
-`tools/playtest.py`, and the plans' `tests/play/*.toml`) is not what
+`playtest.py`, `card_lock.py` and `baseline.py`, and the plans'
+`tests/play/*.toml` it runs) is not what
 measured the baseline, or if the run is asked for with other options
 (scale, phases, effects...): a stale baseline is never trusted, and the
 answer is to store it again or to run both commits. After the run it

@@ -19,7 +19,7 @@ A prover's run with `--store-baseline` writes what it measured -- its
 numbers, its verdicts, a hash of each trace and of each picture it wrote
 -- into the main checkout's build/baseline/<commit>/<prover>-<gpu>.json,
 with a hash of each file of the prover's own code (every module of
-tools/ it imported but tools/playtest.py, and the play tests' plans it
+tools/ it imported but NOT_CODE's, and the play tests' plans it
 read). With `--against REV` it finds the record of REV, or of the
 nearest ancestor of REV that has one (and says which), before it runs
 anything, and stops with 2 if the prover's code is not what measured it
@@ -59,8 +59,9 @@ GPUS = ('llvmpipe', 'card')
 # Code that is not the prover's measuring: the play tests' runner changes
 # for reasons of its own many times a week, and what of it the provers use
 # (a plan written from a play test's .toml) is held by the .toml's hash;
-# the lock on the card says only when a run may start.
-NOT_CODE = ('playtest.py', 'card_lock.py')
+# the lock on the card says only when a run may start, and this file only
+# keeps and compares.
+NOT_CODE = ('playtest.py', 'card_lock.py', 'baseline.py')
 # How far back --against looks for a stored ancestor.
 ANCESTORS = 400
 
@@ -182,8 +183,9 @@ def describe(rev, commit, n):
 
 def stale(stored, now):
     """The files of the prover's code that are not what measured the
-    baseline."""
-    return sorted(name for name in set(stored) | set(now) if stored.get(name) != now.get(name))
+    baseline. One the baseline has and this run has not is no matter: the
+    plan of a play test this run leaves out (--quick, --plans)."""
+    return sorted(name for name in now if stored.get(name) != now[name])
 
 
 def add_options(ap, against=True):
