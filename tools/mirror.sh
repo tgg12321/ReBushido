@@ -117,12 +117,13 @@ case "$1" in
         shift
         # a release asks git whether the tree is clean: the copy has no git
         case " $* " in *" RB_RELEASE=1 "*) RB_RELEASE=1 ;; esac
+        # RB_IN_MIRROR: where it runs is decided (tools/build.sh asks)
+        export RB_IN_MIRROR=1
         if in_place || [ "${RB_RELEASE:-0}" = 1 ]; then
             cd "$ROOT" && exec "$@"
         fi
         sync_in || { echo "mirror: could not copy the sources to $MIRROR" >&2; exit 1; }
         export RB_GIT_HASH="${RB_GIT_HASH:-$(git_hash)}"
-        export RB_IN_MIRROR=1
         (cd "$MIRROR" && "$@")
         status=$?
         sync_out || { echo "mirror: could not bring build/ back from $MIRROR" >&2; [ $status = 0 ] && status=1; }
