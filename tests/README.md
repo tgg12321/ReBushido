@@ -149,7 +149,13 @@ window's programs, headless, in real time (`window`), where the host
 must play on alone; and two window programs started from the settings
 menu's Play online page (NETPLAY.md, section 13). About eight minutes;
 run it after a change to the step, the state, the input point, the
-network, the session or the window's pacing.
+network, the session or the window's pacing. Under load, for what only
+timing shows: `python3 tools/port_net.py session --stress 20 --pause
+300 --port-base 48000` runs the session twenty times over, one program
+or the other stopped for 300 ms every second or so, and counts the runs
+that failed and found a desync (`--burn K` adds programs that burn a
+processor, `--cpus LIST` crowds everything onto a few; NETPLAY.md,
+section 12, "Under load").
 
 ## Play tests
 

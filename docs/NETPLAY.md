@@ -856,7 +856,9 @@ hook (`g_port_take_hook`), with both pads present.
   known, the state's hash at that frame (`port_StateHash`, section 7) is
   final. Each program prints it (`netplay: frame F hash H`, on the error
   output), sends it with its inputs, and stops with `netplay: DESYNC`
-  when the other's hash of a frame is not its own.
+  when the other's hash of a frame is not its own. The two are compared
+  only once both are final: the other's is kept until this program's
+  own is (below, "Under load").
 - **The end.** A program that ends (its plan's end, or a failure) tells
   the other, and answers for a moment longer; the other runs to the last
   input it was given and ends there.
@@ -894,6 +896,47 @@ table above was measured; it still ends on the same hashes on both, the
 last now `A73BDA6AD7613D4C` (64-bit, 100 ms each way, 5% lost; a
 hash follows where the program's variables lie, which changed with
 PORT.md's "Where the program's variables are").
+
+**Under load.** A busy PC made `make port-net` stop now and then on a
+desync near a session's end, and a rerun pass. It was not one: the
+program that stopped had compared the other's final hash of a frame with
+its own hash of that frame made on a guess, before the rollback the same
+burst of datagrams asked for. A program that has run past a hashed frame
+on a guess holds a hash of it that a rollback will make again; the
+other's final hash of that frame comes in the very datagram that brings
+the inputs which show the guess wrong, or a few behind it in the same
+burst, and each datagram's hash was compared as it was read. A program
+the system had held up a moment, waking to a queue of datagrams, met
+that often. In every failure the program that stopped had not yet made
+the frame's hash final (its last final hash was the one before), and
+the other's final hash of the frame was the one both had printed in the
+runs that passed. Now the other's hashes are kept, a ring of them, and
+each is compared once this program's hash of the same frame is final
+(`port_NetplayCompareHash`); `tests/port/netplay.c` holds it to that
+with the three orders the datagrams can come in, the hash with the
+inputs, after them in one burst, or before them.
+
+`tools/port_net.py --stress N` runs a check N times over and counts the
+runs that failed and found a desync; `--pause MS` stops one program or
+the other for MS milliseconds every second or so, `--burn K` starts K
+programs that burn a processor, and `--port-base` keeps the runs' ports
+apart from another's (tests/README.md). Before and after the change, on
+the machine of section 1:
+
+| Run | Runs that stopped on a desync |
+| --- | --- |
+| before: `rollback`, 64-bit, `--pause 300` | 2 of 5 (both at frame 2,160) |
+| before: `rollback`, both sizes, `--burn 40` (32 processors) | 2 of 10 (64-bit, both at frame 2,280) |
+| before: `session`, both sizes, `--pause 300` | 1 of 4 (32-bit, frame 1,680) |
+| before: `window`, `--pause 300` | 0 of 4 |
+| after: `rollback`, both sizes, `--pause 300` | 0 of 20 |
+| after: `rollback`, both sizes, `--burn 40` | 0 of 10 |
+| after: `session`, both sizes, `--pause 300 --burn 8` | 0 of 20 |
+| after: `window`, `--pause 300` | 0 of 5 |
+
+A 64-bit program against a 32-bit one still stops on both sides at
+frame 30, as it must, and `make port-rollback` under 32 programs that
+burn a processor passes.
 
 What was left here, pacing, the session's set-up and the line on the
 screen, is section 13.
