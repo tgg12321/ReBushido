@@ -1052,7 +1052,7 @@ static s32 test_CountInk(const u32 *pixels, s32 count, u32 ink) {
 }
 
 static void test_Counter(void) {
-    static const char shapes[] = "0123456789/%.-";
+    static const char shapes[] = "0123456789/%.-ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     static u32 pixels[3 * 20 * 9];
     PortFpsMeter meter;
     PortRect picture;
@@ -1147,7 +1147,9 @@ static void test_Counter(void) {
         }
     }
     CHECK(port_FindGlyph(' ') == NULL);
-    CHECK(port_FindGlyph('A') == NULL);
+    CHECK(port_FindGlyph('a') == NULL);
+    /* the capitals, for the times under the counter (PORT_FPS_TIMES) */
+    CHECK(port_FindGlyph('A') != NULL && port_FindGlyph('Z') != NULL);
     CHECK_EQ(port_MeasureText(""), 0);
     CHECK_EQ(port_MeasureText("0"), 5);
     CHECK_EQ(port_MeasureText("60/30"), 29);
