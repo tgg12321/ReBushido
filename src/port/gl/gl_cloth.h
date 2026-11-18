@@ -51,6 +51,24 @@ extern s32 port_GlClothVertices(const PortGlCloth *cloth);
 extern s32 port_GlClothTriangles(const PortGlCloth *cloth);
 extern const u32 *port_GlClothIndices(const PortGlCloth *cloth);
 
+/* What the surface is made of, for the card to make it
+ * (gl_fighter_card.h): each place a sum of the points (`weight`,
+ * place_count rows of point_count), the last level's quads by place,
+ * whose turns make the normals, and each vertex's place and texture
+ * point. Kept by the cloth. */
+typedef struct {
+    s32 point_count;
+    s32 place_count;
+    const float *weight;
+    s32 quad_count;
+    const s32 (*quad)[4];
+    s32 vertex_count;
+    const s32 *vertex_place;
+    const float (*vertex_uv)[2];
+} PortGlClothSums;
+
+extern void port_GlClothSums(const PortGlCloth *cloth, PortGlClothSums *out);
+
 /* What a place of the surface is held by before its normal is made (the
  * body it must stay out of, below), or NULL. The places are shared out
  * among the helpers (port_GlParallel, gl_load.h): `worker` names which

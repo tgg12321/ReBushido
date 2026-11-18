@@ -19,6 +19,7 @@
 #include "common.h"
 #include "gl.h"
 #include "gl_fighter.h"
+#include "gl_fighter_card.h"
 #include "gl_shadow.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
@@ -75,6 +76,8 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_ZERO 0
 #define GL_SRC_COLOR 0x0300
 #define GL_FUNC_ADD 0x8006
+#define GL_UNSIGNED_INT 0x1405
+#define GL_SHADER_STORAGE_BUFFER 0x90D2
 
 #define PORT_GL_SHADOW_FUNCTIONS                                               \
     GL(void, glViewport, (GLint, GLint, GLsizei, GLsizei))                     \
@@ -126,7 +129,11 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glReadPixels,                                                     \
        (GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void *))               \
-    GL(void, glDrawArrays, (GLenum, GLint, GLsizei))
+    GL(void, glDrawArrays, (GLenum, GLint, GLsizei))                           \
+    GL(void, glDrawElements, (GLenum, GLsizei, GLenum, const void *))         \
+    GL(void, glUniform1iv, (GLint, GLsizei, const GLint *))                    \
+    GL(void, glUniformMatrix4fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
+    GL(void, glBindBufferBase, (GLenum, GLuint, GLuint))
 
 #ifndef GL_GEOMETRY_SHADER
 #define GL_GEOMETRY_SHADER 0x8DD9
@@ -143,10 +150,11 @@ PORT_GL_SHADOW_FUNCTIONS
  * whole fight's worst was measured at 105 primitives, docs/PORT.md); the
  * fighters' own faces, cast, to a few thousand. */
 #define TRIANGLES_MAX 16384
-/* ... and with the fighters drawn from models of their own, which are
- * cast whole (gl_fighter.h), a few tens of thousands */
-#define MODEL_TRIANGLES_MAX 131072
-#define POINTS_MAX (3 * MODEL_TRIANGLES_MAX)
+#define POINTS_MAX (3 * TRIANGLES_MAX)
+/* The things drawn from models of their own that a frame casts: the
+ * fighters and the weapons (gl_fighter.h). Their triangles never come to
+ * the processor: the card poses and casts them (port_GlShadowDrawModels). */
+#define MODEL_CASTS (PORT_FIGHTER_SLOTS + PORT_FIGHTER_WEAPONS)
 /* Writes of video memory into the picture after the shadows, which cover
  * them: a frame has none in a fight. More than this are taken together
  * as the one rectangle holding them all. */
@@ -176,12 +184,28 @@ typedef struct {
     s32 part; /* the first or the second half of a quad */
 } CastTriangle;
 
-/* One frame's: the triangles, and the view its picture was drawn with. */
+/* A thing drawn from a model of its own as a frame cast it: what the
+ * card casts it from, the ground it falls on (or its own lowest point,
+ * which the card has), and the sun's slope. */
+typedef struct {
+    s32 caster;
+    PortGlFighterCast cast;
+    float ground_y;
+    s32 is_on_feet;
+    float x_shear;
+    float z_shear;
+} ModelCast;
+
+/* One frame's: the game's own faces as triangles, the things cast from
+ * models, and the view its picture was drawn with. */
 typedef struct {
     s32 is_valid;
     s32 count;
     PortStageView view;
     CastTriangle *triangle;
+    s32 model_count;
+    s32 model_triangles;
+    ModelCast model[MODEL_CASTS];
 } CastFrame;
 
 /* How near the camera a corner of a cast shadow may come, in the world's
@@ -249,6 +273,14 @@ static struct {
     GLint cast_at_project;
     GLint cast_at_target;
     GLint cast_at_scale;
+    GLint cast_at_kind;
+    GLint cast_at_world_one;
+    GLint cast_at_world_two;
+    GLint cast_at_flat_one;
+    GLint cast_at_flat_two;
+    /* the frames the models are cast from in this picture */
+    const CastFrame *card_one;
+    const CastFrame *card_two;
     u32 gathered[2];
     u32 sent_one;
     u32 sent_two;
@@ -305,9 +337,30 @@ static const char g_shadow_vertex_text[] =
  * be); the geometry shader leaves out a triangle with a corner nearer
  * than that, as port_GlShadowCast did. */
 static const char g_shadow_cast_vertex_text[] =
-    "#version 330 core\n"
+    "#version 430 core\n"
+    /* the game's own faces: each corner of the two frames, slid onto the
+     * ground already */
     "layout(location = 0) in vec3 a_one;\n"
     "layout(location = 1) in vec3 a_two;\n"
+    /* a model's vertex: its terms on the bones, as the fighters' shader
+     * places it (gl_fighter.c) */
+    "layout(location = 5) in vec4 a_term[8];\n"
+    "layout(location = 13) in uvec4 a_term_joint;\n"
+    "layout(location = 14) in uvec4 a_term_joint1;\n"
+    /* a smooth cloth's vertices as the card kept them out of the body
+     * (PortGlClothVertex), and the bodies' lowest points */
+    "layout(std430, binding = 0) readonly buffer ClothOne { float c_one[]; };\n"
+    "layout(std430, binding = 1) readonly buffer ClothTwo { float c_two[]; };\n"
+    "layout(std430, binding = 2) readonly buffer FeetOne { int f_one[]; };\n"
+    "layout(std430, binding = 3) readonly buffer FeetTwo { int f_two[]; };\n"
+    /* 0: the faces; 1: a model; 2: a smooth cloth */
+    "uniform int u_kind;\n"
+    "uniform mat4 u_world_one[21];\n"
+    "uniform mat4 u_world_two[21];\n"
+    /* the ground, the sun's two slopes, and whether the ground is the
+     * body's lowest point */
+    "uniform vec4 u_flat_one;\n"
+    "uniform vec4 u_flat_two;\n"
     "uniform float u_t;\n"
     "uniform mat3 u_rotation;\n"
     "uniform vec3 u_camera;\n"
@@ -315,8 +368,56 @@ static const char g_shadow_cast_vertex_text[] =
     "uniform vec2 u_target;\n"
     "uniform vec2 u_scale;\n"
     "out float v_ok;\n"
+    PORT_GL_CARD_FEET_GLSL
+    /* light_ProjectShadow's arithmetic: x and z move by the height above
+     * the ground times the sun's slope, and y becomes the ground's */
+    "float ground_one() {\n"
+    "    return u_flat_one.w > 0.5 ? card_feet(f_one[8193]) : u_flat_one.x;\n"
+    "}\n"
+    "float ground_two() {\n"
+    "    return u_flat_two.w > 0.5 ? card_feet(f_two[8193]) : u_flat_two.x;\n"
+    "}\n"
+    "vec3 flat_of(vec3 p, vec4 flat_by, float ground) {\n"
+    "    float above = p.y - ground;\n"
+    "    return vec3(p.x + above * flat_by.y, ground, p.z + above * flat_by.z);\n"
+    "}\n"
+    "vec3 skin_one() {\n"
+    "    return (u_world_one[a_term_joint.x] * a_term[0]\n"
+    "          + u_world_one[a_term_joint.y] * a_term[1]\n"
+    "          + u_world_one[a_term_joint.z] * a_term[2]\n"
+    "          + u_world_one[a_term_joint.w] * a_term[3]\n"
+    "          + u_world_one[a_term_joint1.x] * a_term[4]\n"
+    "          + u_world_one[a_term_joint1.y] * a_term[5]\n"
+    "          + u_world_one[a_term_joint1.z] * a_term[6]\n"
+    "          + u_world_one[a_term_joint1.w] * a_term[7]).xyz;\n"
+    "}\n"
+    "vec3 skin_two() {\n"
+    "    return (u_world_two[a_term_joint.x] * a_term[0]\n"
+    "          + u_world_two[a_term_joint.y] * a_term[1]\n"
+    "          + u_world_two[a_term_joint.z] * a_term[2]\n"
+    "          + u_world_two[a_term_joint.w] * a_term[3]\n"
+    "          + u_world_two[a_term_joint1.x] * a_term[4]\n"
+    "          + u_world_two[a_term_joint1.y] * a_term[5]\n"
+    "          + u_world_two[a_term_joint1.z] * a_term[6]\n"
+    "          + u_world_two[a_term_joint1.w] * a_term[7]).xyz;\n"
+    "}\n"
     "void main() {\n"
-    "    vec3 m = a_one + (a_two - a_one) * u_t;\n"
+    "    vec3 one = a_one;\n"
+    "    vec3 two = a_two;\n"
+    "    if (u_kind == 1) {\n"
+    "        one = flat_of(skin_one(), u_flat_one, ground_one());\n"
+    "        two = u_t > 0.0 ? flat_of(skin_two(), u_flat_two, ground_two())\n"
+    "                        : one;\n"
+    "    } else if (u_kind == 2) {\n"
+    "        int b = gl_VertexID * 8;\n"
+    "        one = flat_of(vec3(c_one[b], c_one[b + 1], c_one[b + 2]),\n"
+    "                      u_flat_one, ground_one());\n"
+    "        two = u_t > 0.0\n"
+    "            ? flat_of(vec3(c_two[b], c_two[b + 1], c_two[b + 2]),\n"
+    "                      u_flat_two, ground_two())\n"
+    "            : one;\n"
+    "    }\n"
+    "    vec3 m = one + (two - one) * u_t;\n"
     "    vec3 v = u_rotation * (m - u_camera);\n"
     "    v_ok = v.z >= u_project.w ? 1.0 : 0.0;\n"
     "    float z = max(v.z, 1.0);\n"
@@ -327,7 +428,7 @@ static const char g_shadow_cast_vertex_text[] =
     "}\n";
 
 static const char g_shadow_cast_geometry_text[] =
-    "#version 330 core\n"
+    "#version 430 core\n"
     "layout(triangles) in;\n"
     "layout(triangle_strip, max_vertices = 3) out;\n"
     "in float v_ok[];\n"
@@ -514,7 +615,7 @@ const char *port_GlShadowStart(void *(*getproc)(const char *name)) {
     for (i = 0; i < 2; i++) {
         if (g_shadow.cast[i].triangle == NULL) {
             g_shadow.cast[i].triangle =
-                malloc(MODEL_TRIANGLES_MAX * sizeof(CastTriangle));
+                malloc(TRIANGLES_MAX * sizeof(CastTriangle));
             if (g_shadow.cast[i].triangle == NULL) {
                 port_GlShadowSay("there is no memory for the shadows", NULL);
                 return g_shadow.problem;
@@ -553,7 +654,17 @@ const char *port_GlShadowStart(void *(*getproc)(const char *name)) {
         glGetUniformLocation(g_shadow.cast_program, "u_target");
     g_shadow.cast_at_scale =
         glGetUniformLocation(g_shadow.cast_program, "u_scale");
-    g_shadow.staged = malloc(MODEL_TRIANGLES_MAX * 18 * sizeof(float));
+    g_shadow.cast_at_kind =
+        glGetUniformLocation(g_shadow.cast_program, "u_kind");
+    g_shadow.cast_at_world_one =
+        glGetUniformLocation(g_shadow.cast_program, "u_world_one");
+    g_shadow.cast_at_world_two =
+        glGetUniformLocation(g_shadow.cast_program, "u_world_two");
+    g_shadow.cast_at_flat_one =
+        glGetUniformLocation(g_shadow.cast_program, "u_flat_one");
+    g_shadow.cast_at_flat_two =
+        glGetUniformLocation(g_shadow.cast_program, "u_flat_two");
+    g_shadow.staged = malloc(TRIANGLES_MAX * 18 * sizeof(float));
     if (g_shadow.staged == NULL) {
         port_GlShadowSay("there is no memory for the shadows", NULL);
         return g_shadow.problem;
@@ -996,6 +1107,85 @@ static void port_GlShadowScissorBox(const ShadowBox *box) {
               box->bottom - box->top + 1);
 }
 
+/* The same thing of the frame after it, or NULL: the same caster drawn
+ * from the same model. */
+static const ModelCast *port_GlShadowModelAfter(const ModelCast *one) {
+    const CastFrame *two = g_shadow.card_two;
+    s32 i;
+
+    for (i = 0; two != NULL && i < two->model_count; i++) {
+        if (two->model[i].caster == one->caster &&
+            two->model[i].cast.array == one->cast.array) {
+            return &two->model[i];
+        }
+    }
+    return NULL;
+}
+
+static void port_GlShadowFlat(GLint at, const ModelCast *model) {
+    glUniform4f(at, model->ground_y, model->x_shear, model->z_shear,
+                model->is_on_feet ? 1.0f : 0.0f);
+}
+
+/* The things drawn from models of their own, cast on the card from their
+ * own vertices: posed on each frame's bones by their terms (and the
+ * smooth cloths from the buffers the card kept them out of the body
+ * into), slid onto each frame's ground and mixed between the two as the
+ * game's faces are; the cast program already in use. */
+static void port_GlShadowDrawModels(void) {
+    const CastFrame *one = g_shadow.card_one;
+    s32 i;
+    s32 k;
+
+    if (one == NULL || one->model_count == 0) {
+        return;
+    }
+    for (i = 0; i < one->model_count; i++) {
+        const ModelCast *a = &one->model[i];
+        const ModelCast *b = a;
+
+        if (g_shadow.card_two != NULL) {
+            b = port_GlShadowModelAfter(a);
+            if (b == NULL) {
+                g_shadow.cast_unpaired++;
+                b = a;
+            }
+        }
+        glUniform1i(g_shadow.cast_at_kind, 1);
+        glUniformMatrix4fv(g_shadow.cast_at_world_one, PORT_FIGHTER_BONES,
+                           GL_FALSE, a->cast.world[0]);
+        glUniformMatrix4fv(g_shadow.cast_at_world_two, PORT_FIGHTER_BONES,
+                           GL_FALSE, b->cast.world[0]);
+        port_GlShadowFlat(g_shadow.cast_at_flat_one, a);
+        port_GlShadowFlat(g_shadow.cast_at_flat_two, b);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, a->cast.feet);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, b->cast.feet);
+        glBindVertexArray(a->cast.array);
+        glDrawElements(GL_TRIANGLES, a->cast.indices, GL_UNSIGNED_INT, NULL);
+        port_GlCountDraw((u32)a->cast.indices, 1);
+        glUniform1i(g_shadow.cast_at_kind, 2);
+        for (k = 0; k < a->cast.cloth_count; k++) {
+            u32 after = a->cast.cloth_held[k];
+            s32 n;
+
+            for (n = 0; b != a && n < b->cast.cloth_count; n++) {
+                if (b->cast.cloth_mesh[n] == a->cast.cloth_mesh[k] &&
+                    b->cast.cloth_indices[n] == a->cast.cloth_indices[k]) {
+                    after = b->cast.cloth_held[n];
+                    break;
+                }
+            }
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, a->cast.cloth_held[k]);
+            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, after);
+            glBindVertexArray(a->cast.cloth_array[k]);
+            glDrawElements(
+                GL_TRIANGLES, a->cast.cloth_indices[k], GL_UNSIGNED_INT, NULL);
+            port_GlCountDraw((u32)a->cast.cloth_indices[k], 1);
+        }
+    }
+    glBindVertexArray(0);
+}
+
 /* The silhouettes into the mask's red. */
 static void port_GlShadowDrawSilhouettes(const PortGlPicture *picture) {
     if (g_shadow.is_on_card) {
@@ -1014,8 +1204,12 @@ static void port_GlShadowDrawSilhouettes(const PortGlPicture *picture) {
         glUniform2f(g_shadow.cast_at_scale, (GLfloat)picture->draw_x,
                     (GLfloat)picture->draw_y);
         glDisable(GL_BLEND);
-        glDrawArrays(GL_TRIANGLES, 0, g_shadow.count);
-        port_GlCountDraw((u32)g_shadow.count, 1);
+        glUniform1i(g_shadow.cast_at_kind, 0);
+        if (g_shadow.sent_count > 0) {
+            glDrawArrays(GL_TRIANGLES, 0, 3 * g_shadow.sent_count);
+            port_GlCountDraw((u32)(3 * g_shadow.sent_count), 1);
+        }
+        port_GlShadowDrawModels();
         return;
     }
     glUseProgram(g_shadow.silhouette);
@@ -1207,61 +1401,6 @@ static s32 port_GlShadowInvert(const double *m, double *out) {
  * scaled back. Then it is light_ProjectShadow's arithmetic, in floating
  * point and on every corner: x and z move by the height above the
  * caster's ground times the sun's slope, and y becomes the ground's. */
-/* A triangle of a model's, as the frame posed it, slid onto the ground
- * as port_GlShadowGather slides a face (port_GlFighterCastTriangles). */
-typedef struct {
-    CastFrame *frame;
-    s32 caster;
-    double ground_y;
-    double x_shear;
-    double z_shear;
-} ModelCast;
-
-/* The lowest point of a model as the frame posed it: the greatest y, the
- * world's y running down. */
-typedef struct {
-    s32 has_any;
-    double y;
-} LowestPoint;
-
-static void port_GlShadowLowest(void *context, const float p[3][3], s32 index) {
-    LowestPoint *lowest = context;
-    s32 k;
-
-    (void)index;
-    for (k = 0; k < 3; k++) {
-        if (!lowest->has_any || (double)p[k][1] > lowest->y) {
-            lowest->y = (double)p[k][1];
-            lowest->has_any = TRUE;
-        }
-    }
-}
-
-static void port_GlShadowCastModel(
-    void *context, const float p[3][3], s32 index) {
-    ModelCast *cast = context;
-    CastTriangle *to;
-    s32 k;
-
-    if (cast->frame->count >= MODEL_TRIANGLES_MAX) {
-        g_shadow.lost++;
-        return;
-    }
-    to = &cast->frame->triangle[cast->frame->count++];
-    for (k = 0; k < 3; k++) {
-        double above = (double)p[k][1] - cast->ground_y;
-
-        to->p[k][0] = (float)((double)p[k][0] + above * cast->x_shear);
-        to->p[k][1] = (float)cast->ground_y;
-        to->p[k][2] = (float)((double)p[k][2] + above * cast->z_shear);
-    }
-    /* not an address: the model's triangle, found again in the next
-     * frame by its number */
-    to->group = (PortAddress)(cast->caster + 1);
-    to->face = index;
-    to->part = 0;
-}
-
 static void port_GlShadowGather(CastFrame *frame) {
     const PortShadowCaster *face;
     /* the things drawn from models of their own: the ground each casts
@@ -1281,6 +1420,8 @@ static void port_GlShadowGather(CastFrame *frame) {
     s32 i;
 
     frame->count = 0;
+    frame->model_count = 0;
+    frame->model_triangles = 0;
     frame->view = *port_GetRemasterStageView();
     frame->is_valid = FALSE;
     {
@@ -1373,41 +1514,41 @@ static void port_GlShadowGather(CastFrame *frame) {
             to->part = j;
         }
     }
-    for (i = 0; i < PORT_FIGHTER_SLOTS + PORT_FIGHTER_WEAPONS; i++) {
-        ModelCast cast;
+    for (i = 0; i < MODEL_CASTS; i++) {
+        /* A fighter drawn from a model whose body the game casts no
+         * shadow of this frame: on some floors the game's shadow nodes of
+         * a body are not drawn at all -- the raised floor of the Tatara
+         * shrine, where a fighter standing in line with the shrine had
+         * his sword's shadow and no other. His shadow falls on the floor
+         * his soles are on: the lowest point of the model as the frame
+         * posed it, which the card finds (gl_fighter_card.h). */
+        s32 is_on_feet =
+            i < PORT_FIGHTER_SLOTS && !has_ground[i] && has_faces[i];
+        ModelCast *model;
 
-        if (i < PORT_FIGHTER_SLOTS && !has_ground[i] && has_faces[i]) {
-            /* A fighter drawn from a model whose body the game casts no
-             * shadow of this frame: on some floors the game's shadow nodes
-             * of a body are not drawn at all -- the raised floor of the
-             * Tatara shrine, where a fighter standing in line with the
-             * shrine had his sword's shadow and no other. His shadow falls
-             * on the floor his soles are on: the lowest point of the
-             * model as the frame posed it. */
-            LowestPoint lowest;
-
-            lowest.has_any = FALSE;
-            lowest.y = 0.0;
-            if (port_GlFighterCastTriangles(i, port_GlShadowLowest, &lowest) >
-                    0 &&
-                lowest.has_any) {
-                has_ground[i] = TRUE;
-                model_ground[i] = (s32)lowest.y;
-                g_shadow.cast_feet_grounds++;
-            }
-        }
-        if (!has_ground[i]) {
+        if (!has_ground[i] && !is_on_feet) {
             continue;
         }
-        cast.frame = frame;
-        cast.caster = i;
-        cast.ground_y = (double)model_ground[i];
-        cast.x_shear = x_shear;
-        cast.z_shear = z_shear;
-        g_shadow.cast_model_triangles +=
-            port_GlFighterCastTriangles(i, port_GlShadowCastModel, &cast);
+        model = &frame->model[frame->model_count];
+        if (!port_GlFighterCastOf(i, is_on_feet, &model->cast)) {
+            continue;
+        }
+        if (is_on_feet && model->cast.feet == 0) {
+            continue;
+        }
+        if (is_on_feet) {
+            g_shadow.cast_feet_grounds++;
+        }
+        model->caster = i;
+        model->is_on_feet = is_on_feet;
+        model->ground_y = is_on_feet ? 0.0f : (float)model_ground[i];
+        model->x_shear = (float)x_shear;
+        model->z_shear = (float)z_shear;
+        frame->model_count++;
+        frame->model_triangles += model->cast.triangles;
+        g_shadow.cast_model_triangles += (u32)model->cast.triangles;
     }
-    frame->is_valid = frame->count > 0;
+    frame->is_valid = frame->count > 0 || frame->model_count > 0;
 }
 
 /* A point of the world on the picture: the view's rotation and the
@@ -1461,12 +1602,44 @@ static void port_GlShadowPairBox(
     s32 k;
     s32 n;
 
-    if (frame->count <= 0) {
+    if (frame->count <= 0 && frame->model_count <= 0) {
         return;
     }
     for (n = 0; n < 3; n++) {
-        lo[n] = frame->triangle[0].p[0][n];
-        hi[n] = lo[n];
+        lo[n] = 1e30f;
+        hi[n] = -1e30f;
+    }
+    for (i = 0; i < frame->model_count; i++) {
+        const ModelCast *model = &frame->model[i];
+        s32 corner;
+
+        if (!model->cast.is_boxed) {
+            *box = g_shadow.clip;
+            return;
+        }
+        /* each corner of the model's box slid onto its ground, which is
+         * anywhere in the box where it is the body's lowest point */
+        for (corner = 0; corner < 16; corner++) {
+            const float *at = model->cast.lo;
+            float p[3];
+            float ground = model->ground_y;
+            float above;
+
+            for (n = 0; n < 3; n++) {
+                p[n] = (corner >> n) & 1 ? model->cast.hi[n] : at[n];
+            }
+            if (model->is_on_feet) {
+                ground = corner & 8 ? model->cast.hi[1] : model->cast.lo[1];
+            }
+            above = p[1] - ground;
+            p[0] += above * model->x_shear;
+            p[1] = ground;
+            p[2] += above * model->z_shear;
+            for (n = 0; n < 3; n++) {
+                lo[n] = p[n] < lo[n] ? p[n] : lo[n];
+                hi[n] = p[n] > hi[n] ? p[n] : hi[n];
+            }
+        }
     }
     for (i = 0; i < frame->count; i++) {
         for (k = 0; k < 3; k++) {
@@ -1598,9 +1771,11 @@ static void port_GlShadowCast(void) {
     port_GlShadowRotation(&view, r);
     port_GlGetPicture(&picture);
     port_GlShadowSendPair(one, two, &picture);
-    g_shadow.count = 3 * g_shadow.sent_count;
+    g_shadow.count = 3 * (g_shadow.sent_count + one->model_triangles);
     g_shadow.box = g_shadow.sent_box;
     g_shadow.is_on_card = g_shadow.count > 0;
+    g_shadow.card_one = one;
+    g_shadow.card_two = two;
     g_shadow.card_t =
         two != NULL ? (GLfloat)g_shadow.phase / (GLfloat)PORT_TWEEN_ONE : 0.0f;
     for (i = 0; i < 9; i++) {

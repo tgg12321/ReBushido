@@ -742,6 +742,17 @@ const u32 *port_GlClothIndices(const PortGlCloth *cloth) {
 
 /* A square root, by Newton's steps from a power of two near it: the
  * program is linked with no maths library (gl_cloth.h). */
+void port_GlClothSums(const PortGlCloth *cloth, PortGlClothSums *out) {
+    out->point_count = cloth->point_count;
+    out->place_count = cloth->place_count;
+    out->weight = cloth->weight;
+    out->quad_count = cloth->quad_count;
+    out->quad = (const s32(*)[4])cloth->quad;
+    out->vertex_count = cloth->vertex_count;
+    out->vertex_place = cloth->vertex_place;
+    out->vertex_uv = (const float(*)[2])cloth->vertex_uv;
+}
+
 double port_GlClothRoot(double x) {
     double root = 1.0;
     s32 i;

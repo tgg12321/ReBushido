@@ -28,6 +28,7 @@
  * untouched (port_fighter.h). */
 
 #include "common.h"
+#include "port_fighter.h"
 #include "port_remaster.h"
 
 /* Makes the shaders. NULL, or why the fighters cannot be drawn this way;
@@ -85,20 +86,43 @@ extern void port_GlFighterTween(s32 phase);
 /* The shadows cast from the models (gl_shadow.c, `shadows cast`): which
  * drawn thing of the frame on show the caster node `object` is, if it is
  * drawn from a model of its own, or -1 (a cloth drawn smooth is its
- * fighter's: his slot's triangles are his body's and then his smooth
- * cloths', numbered on after the body's; a cloth that is the game's own is
- * -1 and casts its own faces); and each triangle of that thing's model as
- * the frame posed it, in the world's own units, given to `emit` with its
- * number. */
+ * fighter's, and casts with him; a cloth that is the game's own is -1 and
+ * casts its own faces). */
 extern s32 port_GlFighterCaster(PortAddress object);
 /* The fighters' layer of the picture into the alpha of `framebuffer`, the
  * shadows' mask: what a model covers is not the ground, as the game's own
  * faces of a fighter are not (gl_shadow.c). */
 extern void port_GlFighterDrawOccluders(u32 framebuffer);
-typedef void (*PortGlFighterEmit)(
-    void *context, const float p[3][3], s32 index);
-extern s32 port_GlFighterCastTriangles(
-    s32 caster, PortGlFighterEmit emit, void *context);
+/* What the card casts such a thing from, as the frame on show posed it
+ * (docs/PORT.md, "The HD fighters on the card"): the model's vertices
+ * and indices, whose terms the shadows' shader adds up on the bones as
+ * the fighters' does; each bone's world matrix in the world's own units
+ * (a column after a column); the smooth cloths, each the buffer the card
+ * kept it out of the body into (PortGlClothVertex, gl_cloth.h) and its
+ * indices; a box in the world that holds all of it; and, where asked for
+ * and the thing is a fighter, the buffer that holds his body's lowest
+ * point (gl_fighter_card.h). FALSE where it has no model. */
+#define PORT_GL_CAST_CLOTHS 5
+
+typedef struct {
+    u32 array;
+    s32 indices;
+    float world[PORT_FIGHTER_BONES][16];
+    u32 feet;
+    s32 cloth_count;
+    s32 cloth_mesh[PORT_GL_CAST_CLOTHS];
+    u32 cloth_array[PORT_GL_CAST_CLOTHS];
+    s32 cloth_indices[PORT_GL_CAST_CLOTHS];
+    u32 cloth_held[PORT_GL_CAST_CLOTHS];
+    /* the box; is_boxed FALSE where the model's terms do not say one */
+    s32 is_boxed;
+    float lo[3];
+    float hi[3];
+    s32 triangles;
+} PortGlFighterCast;
+
+extern s32 port_GlFighterCastOf(
+    s32 caster, s32 with_feet, PortGlFighterCast *cast);
 
 /* What a run did, for the prover's log: models loaded, frames the
  * fighters were drawn in, primitives left out, and why the last file
