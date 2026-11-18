@@ -112,6 +112,8 @@ void port_RemasterCommand(const u32 *words, s32 count) {
     (void)count;
 }
 
+s32 port_RemasterIsOn(void) { return 0; }
+
 void port_RemasterLoadedVram(s32 x, s32 y, s32 w, s32 h) {
     (void)x;
     (void)y;

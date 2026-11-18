@@ -104,6 +104,15 @@ endif
 ELF          := $(BUILD_DIR)/$(OUT).elf
 BIN          := $(BUILD_DIR)/$(OUT).bin
 EXE          := $(BUILD_DIR)/$(OUT).exe
+# What the link makes. Where a setting the build is given is kept in a
+# file (the commit, the list of objects, quick boot's fight), a change of
+# it removes the object it reaches and these, rather than leaving make to
+# find the file newer than them: WSL's wall clock steps back by itself
+# (systemd-journald's "Time jumped backwards"), and a file written after
+# such a step is older than one written before it. The quick-boot discs
+# of the play tests, three builds a few seconds apart, were once made of
+# the build before's program that way (BUILD.md, "Where the build runs").
+RB_LINKED    := $(ELF) $(BIN) $(EXE) $(BUILD_DIR)/$(OUT).map
 
 # -- Collect source files --
 # Top-level assembly: header.s (the PS-X EXE header, linked as .data)
@@ -240,6 +249,7 @@ endif
 quickboot-disc: quickboot
 	@[ -f "$(RETAIL_IMAGE)" ] || { echo "quickboot-disc: no retail image \"$(RETAIL_IMAGE)\" here (your own copy of the disc; RETAIL_IMAGE=... names another)"; exit 1; }
 	python3 tools/build_disc.py --image "$(RETAIL_IMAGE)" --out $(PLAY_DIR)/$(QB_NAME).bin --exe build/quickboot/quickboot.exe
+	python3 tools/quickboot.py verify --disc $(PLAY_DIR)/$(QB_NAME).bin --elf build/quickboot/quickboot.elf $(QB_SETTINGS)
 	python3 tools/playtest.py --symbols build/quickboot/quickboot.elf $(PLAY_DIR)/$(QB_NAME).sym
 	python3 tools/quickboot.py write $(PLAY_DIR)/$(QB_NAME).txt $(QB_SETTINGS)
 	@echo "OK: $(PLAY_DIR)/$(QB_NAME).cue"
@@ -412,9 +422,10 @@ $(CONFIG_DIR)/$(TARGET).sha1:
 ifeq ($(REBUSHIDO),1)
 LD_SCRIPT    := $(BUILD_DIR)/$(OUT).ld
 # The list of the objects, written again only when it changes: taking a
-# file out of src/rebushido/ has to make the script, and so the link, again.
+# file out of src/rebushido/ has to make the script, and so the link, again
+# (both removed then: RB_LINKED).
 RB_OBJECTS   := $(BUILD_DIR)/objects.txt
-$(shell mkdir -p $(BUILD_DIR); echo "$(ALL_O_FILES)" | cmp -s - $(RB_OBJECTS) || echo "$(ALL_O_FILES)" > $(RB_OBJECTS))
+$(shell mkdir -p $(BUILD_DIR); echo "$(ALL_O_FILES)" | cmp -s - $(RB_OBJECTS) || { rm -f $(LD_SCRIPT) $(RB_LINKED); echo "$(ALL_O_FILES)" > $(RB_OBJECTS); })
 $(LD_SCRIPT): $(ALL_O_FILES) $(RB_OBJECTS) $(TARGET).ld tools/rebushido.py tools/elf32.py
 	@python3 tools/rebushido.py ld --out $@ $(ALL_O_FILES)
 else
@@ -515,7 +526,7 @@ endif
 # `make rebushido-patch RB_RELEASE=1` is given (include/rebushido.h).
 RB_VERSION_AS := $(RB_GIT_HASH)$(if $(filter 1,$(RB_RELEASE)), release)
 RB_HASH_FILE := $(BUILD_DIR)/git_hash.txt
-$(shell mkdir -p $(BUILD_DIR); [ "$$(cat $(RB_HASH_FILE) 2>/dev/null)" = "$(RB_VERSION_AS)" ] || echo "$(RB_VERSION_AS)" > $(RB_HASH_FILE))
+$(shell mkdir -p $(BUILD_DIR); [ "$$(cat $(RB_HASH_FILE) 2>/dev/null)" = "$(RB_VERSION_AS)" ] || { rm -f $(BUILD_DIR)/$(RB_SRC_DIR)/version.o $(RB_LINKED); echo "$(RB_VERSION_AS)" > $(RB_HASH_FILE); })
 $(BUILD_DIR)/$(RB_SRC_DIR)/version.o: $(RB_HASH_FILE)
 $(BUILD_DIR)/$(RB_SRC_DIR)/version.o: CPP_DEFS += -DRB_GIT_HASH='"$(RB_GIT_HASH)"' $(if $(filter 1,$(RB_RELEASE)),-DRB_VERSION_SUFFIX='""')
 endif
@@ -523,10 +534,13 @@ endif
 # -- Quick boot's fight --
 # src/rebushido/quickboot.c is given the QB_ variables as RB_QB_ names. They
 # are kept in a file that is written again only when one changes, so that
-# quickboot.o is rebuilt then and not otherwise.
+# quickboot.o is rebuilt then and not otherwise; quickboot.o and the
+# program are removed then, which no step of the wall clock can leave in
+# place (RB_LINKED). `make quickboot-disc` reads the fight back from the
+# disc it made (tools/quickboot.py verify).
 ifeq ($(REBUSHIDO)$(QUICKBOOT),11)
 QB_FILE      := $(BUILD_DIR)/quickboot_settings.txt
-$(shell mkdir -p $(BUILD_DIR); [ "$$(cat $(QB_FILE) 2>/dev/null)" = "$(QB_SETTINGS)" ] || echo "$(QB_SETTINGS)" > $(QB_FILE))
+$(shell mkdir -p $(BUILD_DIR); [ "$$(cat $(QB_FILE) 2>/dev/null)" = "$(QB_SETTINGS)" ] || { rm -f $(BUILD_DIR)/$(RB_SRC_DIR)/quickboot.o $(RB_LINKED); echo "$(QB_SETTINGS)" > $(QB_FILE); })
 $(BUILD_DIR)/$(RB_SRC_DIR)/quickboot.o: $(QB_FILE)
 $(BUILD_DIR)/$(RB_SRC_DIR)/quickboot.o: CPP_DEFS += $(patsubst QB_%,-DRB_QB_%,$(QB_SETTINGS))
 endif

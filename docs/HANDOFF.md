@@ -205,6 +205,20 @@ the scene and the fighters hold against a linear depth today).
   blob of the renderer's). The hash is of video memory as painted, so
   it paints, or better hashes the list and the unpainted memory
   together on every peer alike.
+- **The worst blanks** (the p99 branch, 2026-11-18; docs/PORT.md, "The
+  software GPU beside the game"): every blank over the budget was a
+  game frame's blank, its own work in one blank. The software GPU's
+  primitives are now painted by four threads beside the game, in bands
+  of lines, video memory the same to the byte, and the pairing of two
+  frames is worked out on a thread as the frame after ends. What is
+  left of a frame's blank at `run_ahead 1` is mostly the boundary's wait
+  for the painters (about 1 ms): the game draws its list at the end of
+  its step, right before the state is saved for the frames ahead. Next:
+  a run-ahead save that needs no painted video memory. A version that
+  saved all but video memory and put back the frames ahead's writes
+  from a log removed that wait but left a race on the loading screens'
+  top lines, not found (PORT.md, "Tried, and left out"); then the frame
+  ahead's sound mix (0.3 ms) and its side channel.
 - **The side channel** (`remaster`, about 0.9 ms) and the scene as real
   3D (item 2 above) are untouched, and so is the ground's early depth
   test.

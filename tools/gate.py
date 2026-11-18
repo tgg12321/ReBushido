@@ -146,7 +146,8 @@ def steps_of(args):
         if name == 'port-net':
             cmd = ['make', 'port-net', 'PORT_NET_BASE=%d' % args.net_base]
         elif name == 'playtest':
-            cmd = [python, 'tools/playtest.py', '-j', str(args.jobs)]
+            # --strict: no emulator or disc here is a failure, not a pass
+            cmd = [python, 'tools/playtest.py', '--strict', '-j', str(args.jobs)]
             if args.changed:
                 cmd += ['--changed', args.changed]
         else:

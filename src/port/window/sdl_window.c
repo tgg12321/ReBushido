@@ -48,6 +48,7 @@
 #include "port_host.h"
 #include "port_movie.h"
 #include "port_music.h"
+#include "port_paint.h"
 #include "port_profile.h"
 #include "port_remaster.h"
 #include "port_spu.h"
@@ -1768,6 +1769,7 @@ static void port_DrawPicture(u32 blank, s32 may_tap) {
      * (port_AheadDone) */
     if (is_tapped) {
         if (!g_port_unseen) {
+            port_PaintSyncAll();
             port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
                                 display.is_rgb24, g_port_frame);
         }
@@ -1781,6 +1783,7 @@ static void port_DrawPicture(u32 blank, s32 may_tap) {
         return;
     }
     if (!is_tapped && !g_port_unseen) {
+        port_PaintSyncAll();
         port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
                             display.is_rgb24, g_port_frame);
     }
@@ -2864,6 +2867,7 @@ static void port_AheadDone(void) {
     if (display->is_on && w > 0 && h > 0 && !g_port_ahead_unpainted) {
         s32 was = port_ProfileSwitch(PORT_PROFILE_PICTURE);
 
+        port_PaintSyncAll();
         port_ConvertDisplay(g_port_vram, display->x, display->y, w, h,
                             display->is_rgb24, g_port_frame);
         port_ProfileSwitch(was);
@@ -3168,6 +3172,7 @@ static void port_HurryBlank(u32 blank) {
      * ended (port_AheadDone) */
     if (g_port_has_gl && !g_port_unseen) {
         port_ProfileSwitch(PORT_PROFILE_FINISH);
+        port_PaintSyncAll();
         port_RemasterShow();
         port_GlFinishFrame();
         port_ProfileSwitch(PORT_PROFILE_WINDOW);
@@ -3288,6 +3293,9 @@ static void port_ShowBlank(u32 blank) {
         /* where the frames were run ahead, the card's frame was ended as
          * they ended, with the display they left (port_AheadDone) */
         if (!g_port_unseen) {
+            /* the frame's primitives painted (port_paint.h): what the
+             * frame's end reads of video memory is all of it */
+            port_PaintSyncAll();
             port_RemasterShow();
             port_GlFinishFrame();
         }
@@ -3410,7 +3418,12 @@ static void port_ShowBlank(u32 blank) {
 
 /* The program ends (port_platform.h): what the window did, SDL's leave,
  * and the log's last lines. */
+static void port_StopPainters(void);
+static void port_StopPairing(void);
+
 static void port_CloseWindow(s32 code) {
+    port_StopPainters();
+    port_StopPairing();
     if (g_port_audio_tap != NULL) {
         fclose(g_port_audio_tap);
         g_port_audio_tap = NULL;
@@ -3504,6 +3517,145 @@ static void port_CloseWindow(s32 code) {
     g_port_is_open = 0;
 }
 
+/* ---- the software GPU's painters (port_paint.h) ---- */
+
+/* Painters unless RB_PAINTERS says otherwise: a fight frame's primitives
+ * in about a quarter of the time one takes. */
+#define PAINTERS 4
+
+static SDL_sem *g_port_paint_sem[PORT_PAINTERS_MAX];
+static SDL_Thread *g_port_paint_thread[PORT_PAINTERS_MAX];
+static s32 g_port_painters;
+
+static void port_PainterSleep(s32 painter) {
+    SDL_SemWait(g_port_paint_sem[painter]);
+}
+
+static void port_PainterWake(s32 painter) {
+    SDL_SemPost(g_port_paint_sem[painter]);
+}
+
+static void port_PainterYield(void) { SDL_Delay(0); }
+
+static int SDLCALL port_PainterThread(void *index) {
+    /* the painters are on the game's way: ahead of the rest of the PC */
+    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
+    port_PaintRun((s32)(intptr_t)index);
+    return 0;
+}
+
+/* The primitives painted on threads of their own: RB_PAINTERS of them
+ * (0 or `off`: the game's thread paints them, to compare). */
+static void port_StartPainters(void) {
+    static const PortPaintHost host = {
+        port_PainterSleep, port_PainterWake, port_PainterYield};
+    const char *setting = SDL_getenv("RB_PAINTERS");
+    s32 count = PAINTERS;
+    s32 i;
+
+    if (setting != NULL) {
+        count = strcmp(setting, "off") == 0 ? 0 : atoi(setting);
+    }
+    if (count <= 0) {
+        port_Note("the software GPU paints on the game's thread "
+                  "(RB_PAINTERS=%s)",
+                  setting);
+        return;
+    }
+    for (i = 0; i < count && i < PORT_PAINTERS_MAX; i++) {
+        g_port_paint_sem[i] = SDL_CreateSemaphore(0);
+        if (g_port_paint_sem[i] == NULL) {
+            return;
+        }
+    }
+    count = port_PaintStart(&host, count);
+    for (i = 0; i < count; i++) {
+        char name[16];
+
+        snprintf(name, sizeof(name), "painter %d", (int)i);
+        g_port_paint_thread[i] =
+            SDL_CreateThread(port_PainterThread, name, (void *)(intptr_t)i);
+        if (g_port_paint_thread[i] == NULL) {
+            /* the painters that are, and none from here on */
+            port_Note("a painter has no thread: %s", SDL_GetError());
+            g_port_painters = i;
+            port_StopPainters();
+            return;
+        }
+    }
+    g_port_painters = count;
+    port_Note("the software GPU paints on %d threads", (int)count);
+}
+
+static void port_StopPainters(void) {
+    s32 i;
+
+    if (!port_PaintIsThreaded()) {
+        return;
+    }
+    port_PaintStop();
+    for (i = 0; i < g_port_painters; i++) {
+        SDL_WaitThread(g_port_paint_thread[i], NULL);
+        g_port_paint_thread[i] = NULL;
+    }
+    g_port_painters = 0;
+}
+
+/* ---- the pairing of two frames, beside the game (gl_tween.h) ---- */
+
+static SDL_sem *g_port_pair_go;
+static SDL_sem *g_port_pair_done;
+static SDL_Thread *g_port_pair_thread;
+static SDL_atomic_t g_port_pair_stop;
+
+static void port_PairGive(void) { SDL_SemPost(g_port_pair_go); }
+
+static void port_PairWait(void) { SDL_SemWait(g_port_pair_done); }
+
+static int SDLCALL port_PairThread(void *unused) {
+    (void)unused;
+    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
+    for (;;) {
+        SDL_SemWait(g_port_pair_go);
+        if (SDL_AtomicGet(&g_port_pair_stop)) {
+            return 0;
+        }
+        port_TweenPairWork();
+        SDL_SemPost(g_port_pair_done);
+    }
+}
+
+/* Unless RB_PAIRING=game says the first picture works it out. */
+static void port_StartPairing(void) {
+    const char *setting = SDL_getenv("RB_PAIRING");
+
+    if (setting != NULL && strcmp(setting, "game") == 0) {
+        return;
+    }
+    g_port_pair_go = SDL_CreateSemaphore(0);
+    g_port_pair_done = SDL_CreateSemaphore(0);
+    if (g_port_pair_go == NULL || g_port_pair_done == NULL) {
+        return;
+    }
+    g_port_pair_thread = SDL_CreateThread(port_PairThread, "pairing", NULL);
+    if (g_port_pair_thread != NULL) {
+        port_TweenSetWorker(port_PairGive, port_PairWait);
+    }
+}
+
+static void port_StopPairing(void) {
+    if (g_port_pair_thread == NULL) {
+        return;
+    }
+    /* no pairing is under way once the pictures between frames stop */
+    port_TweenStop();
+    port_TweenSetWorker(NULL, NULL);
+    SDL_AtomicSet(&g_port_pair_stop, 1);
+    SDL_SemPost(g_port_pair_go);
+    SDL_WaitThread(g_port_pair_thread, NULL);
+    g_port_pair_thread = NULL;
+}
+
 void port_StartWindow(void) {
     if (g_port_window_options.tap_audio != NULL) {
         g_port_audio_tap = fopen(g_port_window_options.tap_audio, "wb");
@@ -3528,4 +3680,6 @@ void port_StartWindow(void) {
     g_port_ahead_done_hook = port_AheadDone;
     port_SetRunAhead(g_port_settings.run_ahead);
     port_StartNetWindow();
+    port_StartPainters();
+    port_StartPairing();
 }

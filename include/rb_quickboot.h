@@ -28,9 +28,11 @@ extern void rb_PortQuickFight(void);
  * screen. */
 extern void rb_QuickBoot(void);
 /* The fight the build chose, for a debugger or a play test to read: the
- * mode, the two roster entries, the two weapons, the stage, and whether
- * the CPU plays the second fighter. */
-extern const s8 g_rb_quick_boot[7];
+ * mode, the two roster entries, the two weapons, the stage, whether the
+ * CPU plays the second fighter, and whether the "Bugfixes" setting is on.
+ * `make quickboot-disc` reads it back from the disc it made
+ * (tools/quickboot.py verify). */
+extern const s8 g_rb_quick_boot[8];
 #endif
 
 #endif /* RB_QUICKBOOT_H */

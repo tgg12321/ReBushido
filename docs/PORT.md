@@ -5140,6 +5140,94 @@ pictures (`--tap-window`, 640 by 360, `frame_rate original`, the
 counter off, a fight on Lost Bridge) are the same to the byte as
 before, as two runs of one program are.
 
+### The software GPU beside the game
+
+**What the worst blanks were** (2026-11-18, main `984661052`, the
+bench's fight after its first second, the numbers in the main
+checkout's `build/bench/984661052/`): with the game at 30 frames a second and the
+bench unpaced, every other blank is a frame's (`F`) and the one between
+does a picture and little else. The between-blanks were 1.3 to 2 ms at
+their worst; **every blank over 6.94 ms was a frame's**, and none was a
+stall, a swap held up by the card or a periodic job: the frame's own
+work, in one blank. `run_ahead 1`, a frame's blank: the software GPU
+3.7 ms, the picture between frames 2.2 (0.65 of it pairing the two
+frames), the frame run ahead 1.3, the side channel 1.1, the game 1.1,
+the sound 0.9 (the frame ahead's mix). The swap was under 0.2 ms.
+
+**The painters** (`src/port/paint.c`, `include/port_paint.h`). The
+software GPU's primitives are painted on threads of their own in the
+window (`RB_PAINTERS=N`, 4 by default, `off` to paint on the game's
+thread as before; the tests, the provers and every Linux program paint
+as before). `raster.c` takes every word on the game's thread: the
+settings, the copies, loads, stores and the fill are done there; the
+polygons, rectangles and lines go into a ring that every painter reads,
+each painting only its band of each 256 lines (a primitive that is not
+in a painter's lines is passed by before anything of it is worked out),
+so each pixel is painted by one painter, by every primitive in order.
+Each square of video memory, 64 pixels by 8 lines, keeps the last
+primitive given that may write it (its corners' rectangle in the
+drawing area) and read it (its texture page and colour table). What
+reads video memory on the game's thread waits for the primitives that
+write what it reads; what writes it, for those that read or write it;
+the state's save, load and hash and the console's picture wait for all
+of them. A primitive that reads what it draws, or draws over what an
+earlier one still reads, and, in a step whose frames were run ahead, a
+copy or load of a colour table between the frame's draws, are done by
+the first painter alone behind a barrier of all of them, so that the
+game's thread does not wait there. The painters' settings are not the
+state's: they take the GPU's again after a load. Video memory is held
+to the byte: the budget fight's video memory at its end is the same
+with the painters as without, in every case and in repeated runs; the
+pictures (640 by 360, every eighth, `frame_rate original`, counter off)
+differ in 6 to 9 of 419, the same pictures and by as much as two runs
+of one program differ (loading screens' fades, the cloth).
+
+**The pairing beside the game** (`gl_tween.c`, `port_TweenSetWorker`):
+the pairing of two frames' primitives, 0.65 ms, is worked out on a
+thread of the window's as soon as the frame after is whole (with
+run-ahead, as the frame ahead ends, while the step itself runs), not in
+the first picture between them (`RB_PAIRING=game`: as before).
+
+**What it bought** (`run_ahead 1`, a frame's blank, the same program
+with `RB_PAINTERS=off RB_PAIRING=game` against itself, interleaved, on
+a machine other agents were also using): the median 7.5 to 6.0 ms, the
+99th centile after the first second 10.6 to 7.6, the software GPU's
+part 2.3 to 0.6 and the picture's 1.5 to 0.7. The gate's bench at
+`f695523ea` against main `984661052`, `run_ahead 1`: after the first
+second, the 99th centile 14.7 to 7.4 ms and the worst 17.3 to 8.3 (the
+worst now within its limit of 13.9); the frame's median 10.8 to 5.9.
+The other cases moved as much in runs on a quiet machine and were lost
+in other agents' load in the gate's. What is left of the
+frame's blank is the wait at the next boundary: the game draws its
+frame's list (DrawOTag) at the very end of its step, right before the
+frames are run ahead and the state is saved, so the painters have
+little else to overlap and the save waits for them (`ahead` 1.0 to 2.0
+ms). With the clock paced (`vsync off`) it is the same: the list is
+drawn after the step's last blank.
+
+**Tried, and left out:**
+
+- *The loads and copies of a step drawn ahead given to one painter*,
+  never waited for: the wait moved whole to the save at the boundary.
+- *Run-ahead saving and putting back all but video memory*, and
+  putting back what the frames ahead wrote of it from a log of their
+  writes (`port_StateSaveButVram`), so that the boundary does not wait
+  for the painters at all: it took the boundary's wait away (the
+  painters waited for 1.0 s in all of a run, then 0.02), but video
+  memory's top lines differed from the painters-off run's on the
+  loading screens in some runs, a race not found, and it was taken out.
+- *Lines a band of eight a painter* (each painter every fourth band of
+  eight lines): every painter worked out every primitive, so four were
+  little faster than one; bands one after another let most primitives
+  be one painter's.
+
+**What is left** for the worst blanks: the boundary's wait for the
+painters (about 1 ms; a save that needs no painted video memory is the
+way, the log above with its race found, or the HANDOFF's painting on
+demand); the frame run ahead's own work (its game, its side channel);
+the sound mixed for the frame ahead (0.3 ms a frame ahead; the voices
+must step, the mixing need not).
+
 ### The HD fighters on the card
 
 **What it was** (main at `8f09f98d1`, the card's measure above): the HD
@@ -5243,13 +5331,110 @@ walk where a tree took five, and the smaller copy of the cubes). It is
 paid once a game frame, not once a picture: at 144 pictures a second
 three pictures of four have none of it.
 
-What is left of the fighters on the card: the cloth's hold, about 1.1 ms
+What was left of the fighters on the card then (since cut: "The fighters
+cheap on the card"): the cloth's hold, about 1.1 ms
 of a frame with two fighters' cloths new (the places' walks; a coarser
 body for the first walk, or a distance field of the body made once a
 pose, would take most of it), and the shadows' mask and darkening
 (0.4 ms, mostly fill). Four fighters cost the processor
 nothing per fighter but his bones and his cloths' points; the card about
 half a millisecond a fighter whose pose and cloth are new.
+
+### The fighters cheap on the card
+
+**Measured pass by pass.** The card's passes (`gl_bench.h`) now split the
+fighters' time: `skin` (the bodies posed, by compute), `cloth` (the cloth
+kept out and made), `fighters` (the models drawn into the layer), `flayer`
+(the layer cleared and taken down from its samples), `flay` (the layer laid
+over the picture and into the shadows' mask), `smask` (the shadows' mask)
+and `sdark` (the ground darkened through it). What `shadow` kept besides
+was the scene's own batch flushed before the shadows, which now counts to
+the scene. With `run_ahead 1` before this work (`a7f754af8`, RTX 3090 at
+2,560 by 1,440): cloth 1.29 ms, ground 1.20, the layer's clear and
+take-down 0.40, darkening 0.24, composite 0.19, draw 0.16, mask 0.12,
+skin 0.08.
+
+**The cloth's hold** (`gl_fighter_card.c`, the comment over
+`CARD_BODY_TEXT`). A walk of the body about an item (a point or a place of
+the cloth) was a chain of waits on memory: the 27 cubes one after another,
+each list read through `order`, and a step's dispatch lasted as long as its
+longest walk. Now:
+
+- the body is copied once a pose in its lists' order (`sorted`), so a cube
+  is a run of the buffer;
+- a cube wholly beyond the reach adds nothing and is not walked; the first
+  walk finds the nearest vertex and the sums at the least reach (48) at
+  once, culled to 48, which is the whole answer for most of a cloth (the
+  nearest within 32); a nearest within 48 is exact without the whole walk;
+- the 32 threads find the cubes of a round together and share out their
+  vertices as one run, so a walk waits on memory once a round, not once a
+  cube; the sums are added by a butterfly through shared memory, the same
+  on every card (subgroup shuffles, and four warps a group, were no faster
+  on the 3090);
+- every fighter's poses and cloths of a picture are made together, each
+  pass of all of them before the barrier after it
+  (`port_GlFighterCardPoses`, `port_GlFighterCardHolds`,
+  `port_GlFighterHoldAll` before the fighters are drawn): the waits overlap.
+
+The cloth went 1.29 → 0.97 (lists' order, one walk for the near) → 0.48
+(culled) → 0.46 (a round as one run) → **0.22 ms** (side by side), skin 0.08
+→ 0.05. The stress's copies (`--bench-stress fighters=4`) now keep their
+own cloth and poses under keys of their own (`g_fighter.copy`), so four
+fighters cost the card four fighters' cloth: 0.30 ms, skin 0.07.
+
+**The fighters' layer only where the fighters are** (`port_GlFighterBound`):
+each bone's vertices (those of its largest share) lie in a ball about its
+place, as large as their terms' vectors and their shares of the other
+bones' places from it (worked out when the file loads,
+`port_GlFighterCastBox`); with the cloths' points' box and the weapons,
+projected as the shader projects, that is the box the layer is taken down
+and laid over in. The layer itself keeps the drawing area's numbers (a
+layer only as large as the box drew the models a few hundredths of a pixel
+elsewhere), the take-down writes nothing-at-the-far-plane outside the box
+without reading a sample, and the layer's depth of several samples is no
+longer cleared (only a covered sample's depth is read). The clear,
+take-down and composite: 0.40 + 0.19 → 0.24 + 0.13 ms.
+
+**The shadows' box** (`port_GlShadowPairBox`): each thing drawn from a model
+is bounded by its bones' balls and its cloths' box, slid onto its ground
+and projected alone (the box of them all in the world, slid and projected,
+was the whole screen through most of a fight), and a pixel with nothing to
+darken is discarded rather than blended: darkening 0.24 → 0.10 ms, the mask
+0.12 → 0.09.
+
+**The picture held** (on the card, 640 by 360, `frame_rate original`,
+`RB_TEXTURES_AT_ONCE=1`, every eighth blank of the budget fight, 419
+pictures): two runs of a build are the same to the byte; the bounds of the
+layer and the shadows are the same to the byte as before them; against
+`a7f754af8` 390 pictures are the same and 29 differ, in at most 25 pixels
+by more than 16 of 255 (the most 84), single pixels at a cloth's edge
+where a bucket of the hashed grid shared by a cube in reach and one beyond
+it is now summed once. The prover's cloth (port_game, the hd mod, `shadows
+cast`, scale 1, every 300th blank, llvmpipe): places left inside the body
+as drawn 1,372 → **1,356**; places of the game's cloth inside 53,898 →
+53,976.
+
+**Measured** (`port_bench.py`, RTX 3090, `a7f754af8` against now, card
+medians and 95th centiles of a fight frame's blank, ms):
+
+| case | the card, median | 95% | the fighters' passes (skin, cloth, draw, layer, laid, mask, darkening) |
+| --- | --- | --- | --- |
+| `run_ahead 0`, before | 5.40 | 11.64 | 2.55 (0.07, 1.42, 0.15, 0.38, 0.18, 0.11, 0.24) |
+| `run_ahead 0`, now | 3.03 | 4.25 | **0.92** (0.05, 0.20, 0.13, 0.24, 0.13, 0.08, 0.09) |
+| `run_ahead 1`, before | 4.66 | 6.04 | 2.38 (0.07, 1.25, 0.15, 0.38, 0.18, 0.11, 0.24) |
+| `run_ahead 1`, now | 4.16 | 6.27 | **0.95** (0.05, 0.21, 0.13, 0.25, 0.13, 0.08, 0.10) |
+| `run_ahead 2`, before | 6.61 | 7.76 | 2.97 (0.07, 1.30, 0.22, 0.57, 0.26, 0.18, 0.37) |
+| `run_ahead 2`, now | 5.43 | 7.03 | **1.48** (0.06, 0.24, 0.23, 0.42, 0.22, 0.15, 0.16) |
+| four fighters, the ground twice, before | 6.03 | 7.29 | 2.67 (0.08, 1.37, 0.24, 0.40, 0.20, 0.12, 0.26), two fighters' cloth |
+| four fighters, the ground twice, now | 4.68 | 6.08 | **1.27** (0.08, 0.32, 0.24, 0.28, 0.16, 0.09, 0.10), four fighters' cloth |
+
+Another agent's benchmark ran on the card beside these (the ground's pass
+went from 1.1 to 2.2 ms with it), so the totals are noisy; the fighters'
+passes held from run to run within a few hundredths. With `run_ahead 2`
+the layer is drawn for each frame run ahead the card draws: the renderer's
+frames kept from the boundary before (`g_port_ahead_kept`) skip it.
+
+**The budget a fighter.** Four fighters' whole share of the card is 1.27 ms, **0.32 ms a fighter** with every fixed cost of the layer and the shadows in it; a fighter more costs about 0.16 ms (his pose, his cloth, his draw), and the layer's clear, take-down and laying (some 0.4 ms) are paid once whatever the number. What is left: the layer's take-down and laying are fill over the box of all the fighters (two fighters apart make it most of the screen; a box each, laid apart, would take a third of it again), and the cloth's walks wait on memory more than they work (a body as a distance field made once a pose would make each walk a few reads).
 
 ### Input lag
 
