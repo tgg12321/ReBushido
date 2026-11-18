@@ -230,10 +230,16 @@ the stage").
     larger from the player's own disc by `tools/port_art.py` (the art
     mod, never committed); a texture or picture faded through its colour
     table or rewritten is drawn from its replacement, tinted
-    ([`MODS.md`](MODS.md), "Fades"). Left: the rest of the lettering in
-    a font (the dialogue boxes, the names on the select screens, the
-    options' pages), and the title picture after the opening movie, which
-    is the movie's own 24-bit frame.
+    ([`MODS.md`](MODS.md), "Fades"). The rest of the lettering is in a
+    font too (Archivo at its widest, and Marcellus): the narration, the
+    training page, the memory card's messages, the names on the select
+    screens and the group battle's, the stage card, the results, and
+    ReBushido's options page's characters; and the title picture after
+    the opening movie is the art mod's, at the window's resolution
+    ([`MODS.md`](MODS.md), "The sharp menus", "The title picture"). Left:
+    the lettering of screens no dump has reached (the setup mode's
+    pages, the slash mode's, the endings), each a block of
+    `tools/port_ui.py`'s table away.
 12. **Optimisation**, for a smooth and seamless game.
     Begun on the port's window ([`PORT.md`](PORT.md), "Where the time
     goes"): `--profile` says where each blank's time goes; the video

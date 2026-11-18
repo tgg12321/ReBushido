@@ -63,6 +63,10 @@ PORT_GL_REPLACE_FUNCTIONS
 /* the smallest picture the game writes into video memory that is looked
  * up: a smaller one is a colour table or a piece of a font */
 #define PICTURE_SIDE_MIN 16
+/* a picture of a whole screen, which is one to be seen wherever it is
+ * written: wider than a page of 16-bit texels and as tall as the screen */
+#define SCREEN_PICTURE_W 320
+#define SCREEN_PICTURE_H 240
 #define RGBA 4
 #define BYTE_MAX 255
 #define FIVE_MAX 31
@@ -729,10 +733,11 @@ static s32 port_ReplaceIsPlain(s32 x, s32 y, s32 w, s32 h) {
     return TRUE;
 }
 
-u32 port_GlReplaceFindPicture(
-    s32 x, s32 y, s32 w, s32 h, s32 display_x, s32 display_w, u32 *tint) {
+u32 port_GlReplaceFindPicture(s32 x, s32 y, s32 w, s32 h, s32 display_x,
+                              s32 display_w, s32 is_dark, u32 *tint) {
     PortTextureRegion region;
     s32 is_shown;
+    s32 is_whole;
     s32 mix = PORT_GL_MIX_TEXEL;
 
     *tint = PORT_MOD_TINT_SAME;
@@ -744,9 +749,19 @@ u32 port_GlReplaceFindPicture(
         return 0;
     }
     /* a picture where the display is: one the game copied in to be
-     * seen, and not a texture page it loaded to draw from */
+     * seen, and not a texture page it loaded to draw from. While nothing
+     * is shown, a picture of a whole screen is one too: the movie player
+     * loads its title picture beside the display with the display off.
+     * While the display is the movie's, in the 24-bit mode, nothing else
+     * is looked up: each of the movie's frames is new, and they would
+     * fill the table of keys seen before the top menu is reached. */
+    is_whole = w >= SCREEN_PICTURE_W && h >= SCREEN_PICTURE_H;
+    if (display_w < 0 && !is_whole) {
+        return 0;
+    }
     is_shown =
-        display_w > 0 && x >= display_x && x + w <= display_x + display_w;
+        (display_w > 0 && x >= display_x && x + w <= display_x + display_w) ||
+        (is_dark && is_whole);
     region.bits = PORT_MOD_TEXELS_16;
     region.page_x = x;
     region.page_y = y;

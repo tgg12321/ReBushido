@@ -295,6 +295,13 @@ extern void port_GlClearWindow(s32 window_w, s32 window_h);
 extern s32 port_GlShowPicture(
     s32 window_w, s32 window_h, s32 x, s32 y, s32 w, s32 h, s32 is_linear);
 
+/* Whether the whole of the display is a picture drawn from a mod's (a
+ * replacement of a picture the game wrote into video memory, not written
+ * over since): the movie player's title picture, which the window then
+ * shows from the card although the player is running (docs/MODS.md,
+ * "The title picture"). */
+extern s32 port_GlShowsReplacedPicture(void);
+
 /* Pixels of the host's own (0xAARRGGBB each, a row after a row from the
  * top) into the same kind of rectangle: the software GPU's picture where
  * that is what is shown, and the counter in the corner over it
