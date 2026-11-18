@@ -247,6 +247,52 @@ llvmpipe, and why the provers hold it all the same, is in
 llvmpipe stays the reference wherever a number has to be exact and the
 same on every machine.
 
+### A stored baseline
+
+Running the provers on `main` only to have something to compare with
+costs 15 minutes on the card and an hour on llvmpipe. After each
+verified merge into `main`, the coordinator stores main's measurements
+once, from Windows' Python in the main checkout:
+
+```bash
+python tools/baseline.py --store     # every prover on llvmpipe and on the card, and the bench
+python tools/baseline.py --list      # what is stored
+```
+
+It builds both provers and the window, runs the bench alone, then the
+llvmpipe provers (in WSL) beside the card's (about an hour, the
+llvmpipe stage prover being most of it), each lane's runs in a folder of
+its own (`build/baseline-runs/<gpu>/`: two provers side by side with the
+same `--out` would write over each other's pictures and logs, which
+holds for any two runs at once), and keeps what each measured --
+its numbers, its verdicts, a hash of each trace and of each picture it
+wrote -- in the main checkout's `build/baseline/<commit>/<prover>-<gpu>.json`
+with each run's log beside it; the bench keeps its numbers in
+`build/bench/<commit>/` as before. Any checkout then holds a run to it:
+
+```bash
+python tools/port_gl_prove.py --against main              # on the card
+python3 tools/port_fps_prove.py --gpu llvmpipe --against main --quick
+python tools/port_stage_prove.py --stages 3,9 --against main
+python tools/port_bench.py --case ra1 --against main
+```
+
+`--against REV` takes REV's record or that of its nearest ancestor that
+has one, and says which. Before anything runs it stops with 2 if the
+prover's own code (each module of `tools/` it imports but
+`playtest.py`, `card_lock.py` and `baseline.py`, and the plans'
+`tests/play/*.toml` it runs) is not what
+measured the baseline, or if the run is asked for with other options
+(scale, phases, effects...): a stale baseline is never trusted, and the
+answer is to store it again or to run both commits. After the run it
+prints each measure that differs, plan by plan or stage by stage, or
+`no difference`; the times are not compared. Fewer plans or stages, or
+`--quick`, compare what was run. What differs does not change the
+prover's own exit status. A change to the measuring code in
+`src/port/gl/` shows as a difference, not as a stale baseline.
+(The stage prover's `--against tiles|nodepth` is now `--other`; the old
+spelling is still taken.)
+
 ## What is checked
 
 GitHub Actions runs eleven checks on every push and pull request
@@ -332,6 +378,25 @@ and the summary `build/gate/summary.txt`; after the first failure no step
 is started, those running finish, and the summary says which were not
 run. `port-budget`, `port-bench` and `port-pause` run last, one after
 the other, with nothing beside them (`ALONE`).
+
+`ALONE` keeps one gate's steps apart; other checkouts' runs are kept
+off the machine by **the lock on the card** (`tools/card_lock.py`), which
+every checkout shares: the file `rebushido-card.lock` in the main
+checkout's git folder, opened by Windows (from WSL by a Windows
+PowerShell the run keeps alive), so that it is let go of however a run
+ends, a crash too. `port_bench.py` and `port_budget.py` hold it alone
+for the whole of their timing; the picture provers (`port_gl_prove.py`,
+`port_fps_prove.py`, `port_stage_prove.py`, either `--gpu`: llvmpipe
+keeps every processor busy) hold it beside one another. A run that has
+to wait prints `card-lock: ... waits for the graphics card` and starts
+when it is free; `python tools/card_lock.py` says who would wait now.
+What takes no lock (play tests, builds, an agent's own window) still
+loads the machine: the bench keeps, beside each case's numbers, the
+programs of ours it saw running in Windows and in WSL and the share of
+the processors busy while it ran (`load` in `results.json`), and warns
+that the numbers are not to be trusted when another was running or more
+than `LOAD_BUSY_MAX` per cent were busy. A bench that failed with that
+warning is run again on a quiet machine before it is believed.
 
 The bench alone, from Windows' Python on the PC with the card, after
 `wsl bash tools/build.sh port-sdl-windows`:
