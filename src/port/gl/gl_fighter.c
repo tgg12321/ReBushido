@@ -1623,6 +1623,13 @@ static void port_GlFighterPosePart(
                             r[k * 3 + 2] * term[2] + t[k] * term[3];
             }
         }
+        if (normals == NULL) {
+            /* the places alone, in the world's units (the shadows) */
+            for (k = 0; k < 3; k++) {
+                places[i * 3 + k] = (float)place[k];
+            }
+            continue;
+        }
         for (j = 0; j < 4; j++) {
             const double *r = turn[v->joint[j] % PORT_FIGHTER_FILE_JOINTS];
 
@@ -2522,6 +2529,7 @@ s32 port_GlFighterCastTriangles(
     static s32 room;
     const FighterModel *model;
     FighterPose pose;
+    BodyPosing posing;
     s32 i;
 
     if (caster < PORT_FIGHTER_SLOTS) {
@@ -2565,31 +2573,15 @@ s32 port_GlFighterCastTriangles(
         places = more;
         room = model->vertex_count;
     }
-    /* each vertex as the card places it: the sum of its terms */
-    for (i = 0; i < model->vertex_count; i++) {
-        const PortFighterVertex *v = &model->vertices[i];
-        double p[3] = {0.0, 0.0, 0.0};
-        s32 j;
-        s32 k;
-
-        for (j = 0; j < PORT_FIGHTER_TERMS; j++) {
-            const double *r = pose.bone_rotation[v->term_joint[j]];
-            const double *t = pose.bone_place[v->term_joint[j]];
-            const float *term = v->term[j];
-
-            if (term[0] == 0.0f && term[1] == 0.0f && term[2] == 0.0f &&
-                term[3] == 0.0f) {
-                continue;
-            }
-            for (k = 0; k < 3; k++) {
-                p[k] += r[k * 3] * term[0] + r[k * 3 + 1] * term[1] +
-                        r[k * 3 + 2] * term[2] + t[k] * term[3];
-            }
-        }
-        for (k = 0; k < 3; k++) {
-            places[i * 3 + k] = (float)p[k];
-        }
-    }
+    /* each vertex as the card places it: the sum of its terms, shared out
+     * among the helpers (port_GlParallel) */
+    posing.model = model;
+    posing.pose = &pose;
+    posing.turn = NULL;
+    posing.places = places;
+    posing.normals = NULL;
+    port_GlParallel(port_GlFighterPosePart, &posing, model->vertex_count,
+                    POSE_PIECE);
     for (i = 0; i < model->triangles; i++) {
         float p[3][3];
         s32 c;
