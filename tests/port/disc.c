@@ -34,6 +34,9 @@ void (*CdDataCallback(void (*func)()))() {
     return NULL;
 }
 
+/* Whether a frame is run ahead (src/port/step.c): none is here. */
+s32 g_port_ahead;
+
 #include "src/port/disc.c"
 #include "src/port/cd.c"
 #include "src/port/xa.c"

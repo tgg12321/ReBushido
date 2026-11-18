@@ -31,6 +31,7 @@
 /* ---- the port around the player, made up ---- */
 
 s32 g_port_rerun;
+s32 g_port_ahead;
 s16 *g_port_xa_unmixed;
 
 static u32 g_made_now;

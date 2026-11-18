@@ -22,6 +22,11 @@ void port_EndStep(void) {}
 
 s32 g_port_rerun;
 
+/* Run-ahead (src/port/step.c): no frame is run ahead here. */
+s32 g_port_ahead;
+
+void port_AheadBlank(u32 blank) { (void)blank; }
+
 /* ---- what those files want of the rest of the port ---- */
 
 static u32 g_seen_blanks;
