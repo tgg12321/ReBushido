@@ -16,9 +16,10 @@ enum {
 
 /* What only the command line says. The last five are for the tests. */
 typedef struct {
-    s32 no_sound;           /* open no sound card */
-    s32 is_fast;            /* never wait: as fast as the PC goes */
-    s32 inject;             /* PORT_INJECT_... */
+    s32 no_sound;  /* open no sound card */
+    s32 is_fast;   /* never wait: as fast as the PC goes */
+    s32 is_hidden; /* a window never shown: agents' runs on a real card */
+    s32 inject;    /* PORT_INJECT_... */
     const char *tap_frames; /* a folder for the pictures as they are shown */
     /* ... and for the window's own pixels, which only the build with a
      * graphics card has (docs/PORT.md, "Remastered in the window") */

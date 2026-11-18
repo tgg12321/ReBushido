@@ -931,7 +931,9 @@ static s32 port_PictureRate(void) {
 static void port_MakeWindow(s32 wants_gl) {
     Uint32 flags = SDL_WINDOW_RESIZABLE;
 
-    if (g_port_settings.is_fullscreen) {
+    if (g_port_window_options.is_hidden) {
+        flags |= SDL_WINDOW_HIDDEN;
+    } else if (g_port_settings.is_fullscreen) {
         flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     }
     if (wants_gl) {
@@ -980,7 +982,8 @@ static void port_OpenWindow(void) {
         port_Say("no window: %s", SDL_GetError());
         port_Quit(PORT_EXIT_FAILED);
     }
-    g_port_is_fullscreen = g_port_settings.is_fullscreen;
+    g_port_is_fullscreen =
+        g_port_settings.is_fullscreen && !g_port_window_options.is_hidden;
     if (g_port_is_fullscreen) {
         SDL_ShowCursor(SDL_DISABLE);
     }

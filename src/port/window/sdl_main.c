@@ -638,6 +638,8 @@ int main(int argc, char **argv) {
             no_vsync = 1;
         } else if (strcmp(word, "--no-sound") == 0) {
             options->no_sound = 1;
+        } else if (strcmp(word, "--hidden") == 0) {
+            options->is_hidden = 1;
         } else if (strcmp(word, "--no-fps") == 0) {
             no_fps = 1;
         } else if (strcmp(word, "--no-log") == 0) {
