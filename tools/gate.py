@@ -55,9 +55,10 @@ WAITS = {
     # the ReBushido build compiles quick boot's files into build/quickboot/,
     # where the quick-boot discs are built
     'rb-build': [],
-    'discs': ['game', 'rb-build'],
-    # the GTE probe's numbers are host tests of build/rebushido/tests/
-    'rb-test': ['discs'],
+    # the GTE probe's numbers are three of the host tests of
+    # build/rebushido/tests/, which it builds again: not beside rb-test
+    'rb-test': [],
+    'discs': ['game', 'rb-build', 'rb-test'],
     'port': [],
     'port-sdl': [],
     'port-sdl-windows': [],
@@ -68,7 +69,9 @@ WAITS = {
 BUILDS = ['game', 'rb-build', 'discs', 'port', 'port-sdl', 'port-sdl-windows']
 # The steps of the gate's own beside the checks: (name, command, where).
 OWN = [
-    ('format', ['python3', 'tools/format.py', '--check', '--all'], 'wsl'),
+    # from Windows by Windows' Python, which lists the files with the
+    # checkout's own git and runs clang-format in WSL
+    ('format', [None, 'tools/format.py', '--check', '--all'], 'host'),
     ('discs', ['make', '-j8', 'playtest-console'], 'wsl'),
     ('port-sdl', ['make', 'port-sdl'], 'wsl'),
     ('port-sdl-windows', ['make', 'port-sdl-windows'], 'wsl'),
@@ -116,13 +119,16 @@ class Step:
 
 def steps_of(args):
     steps = [Step(name, cmd, 'wsl') for name, cmd in checks_of()]
+    python = sys.executable if os.name == 'nt' else 'python3'
     for name, cmd, where in OWN:
         if name == 'port-net':
             cmd = ['make', 'port-net', 'PORT_NET_BASE=%d' % args.net_base]
         elif name == 'playtest':
-            cmd = [sys.executable if os.name == 'nt' else 'python3', 'tools/playtest.py', '-j', str(args.jobs)]
+            cmd = [python, 'tools/playtest.py', '-j', str(args.jobs)]
             if args.changed:
                 cmd += ['--changed', args.changed]
+        else:
+            cmd = [python if word is None else word for word in cmd]
         steps.append(Step(name, cmd, where))
     names = {s.name for s in steps}
     for step in steps:

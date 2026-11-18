@@ -35,6 +35,7 @@ A test of one of ReBushido's tools, which are Python, is Python alone:
 tests/rebushido/NAME.py with no NAME.c beside it and a function
 `run(checks)`.
 """
+import concurrent.futures
 import importlib.util
 import os
 import subprocess
@@ -149,12 +150,14 @@ def python_side(name):
     return module
 
 
-def build(name, defs, sources, more=()):
-    """Compile and link one test, with flags of its own (`more`). Returns
-    the program's path, or the compiler's complaint."""
-    program = '%s/%s%s' % (OUT_DIR, '' if BITS == 32 else '%d/' % BITS, name)
+def build(name, defs, sources, more=(), bits=None):
+    """Compile and link one test, with flags of its own (`more`), as a
+    program of `bits` (BITS if None). Returns the program's path, or the
+    compiler's complaint."""
+    bits = bits or BITS
+    program = '%s/%s%s' % (OUT_DIR, '' if bits == 32 else '%d/' % bits, name)
     os.makedirs(os.path.dirname(program), exist_ok=True)
-    flags = ['-m%d' % BITS if flag == '-m32' else flag for flag in COMPILE_FLAGS] + list(more)
+    flags = ['-m%d' % bits if flag == '-m32' else flag for flag in COMPILE_FLAGS] + list(more)
     cmd = (['gcc'] + flags + include_flags(bool(defs)) + modern.DEFS + defs + LINK_FLAGS
            + ['tests/%s.c' % name] + sources + [RUNTIME, '-o', program])
     # the compiler's temporary files beside the program: /tmp is emptied
@@ -166,9 +169,11 @@ def build(name, defs, sources, more=()):
     return program, []
 
 
-def run_one(name, verbose, defs):
+def run_one(name, defs, bits, printed=None):
     """(state, count, lines): state is ok, skip or FAIL; lines say why, or
-    for a test that passed what it could not do here."""
+    for a test that passed what it could not do here. What the program
+    printed goes in `printed`, for -v. Several run at once, each in a
+    thread of its own (main)."""
     side = python_side(name)
     if python_alone(name):
         checks = support.Checks()
@@ -196,7 +201,7 @@ def run_one(name, verbose, defs):
     # flags of its own: a test of src/port/vorbis.c compiles it as
     # tools/port_build.py does
     more = side.flags() if side and hasattr(side, 'flags') else []
-    program, errors = build(name, defs, sources, more)
+    program, errors = build(name, defs, sources, more, bits)
     if not program:
         return 'FAIL', 0, ['it does not build:'] + errors[:30]
     try:
@@ -204,13 +209,12 @@ def run_one(name, verbose, defs):
     except subprocess.TimeoutExpired:
         return 'FAIL', 0, ['still running after %d seconds' % TIMEOUT_SECONDS]
     except OSError as error:
-        return 'FAIL', 0, ['the program does not run here (a %d-bit x86 Linux program): %s' % (BITS, error)]
+        return 'FAIL', 0, ['the program does not run here (a %d-bit x86 Linux program): %s' % (bits, error)]
     lines = proc.stdout.decode('utf-8', 'replace').split('\n')
     if lines and lines[-1] == '':
         lines.pop()
-    if verbose:
-        for line in lines:
-            print('    | ' + line)
+    if printed is not None:
+        printed += lines
     last = lines[-1].split() if lines else []
     if len(last) != 4 or last[0] != 'checks' or last[2] != 'failed':
         # it never got to its last line
@@ -242,7 +246,7 @@ def run_one(name, verbose, defs):
 
 
 def main():
-    global OUT_DIR, BITS
+    global OUT_DIR
     os.chdir(ROOT)
     args = sys.argv[1:]
     sizes = [32]
@@ -272,31 +276,53 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     write_headers(rebushido)
 
-    tally = {'ok': 0, 'skip': 0, 'FAIL': 0}
-    for BITS in sizes:
-        if BITS != 32:
-            print('as %d-bit programs:' % BITS)
+    # Every test of every size, the compiled ones side by side (each is a
+    # program of its own, in a folder of its size), the ones that are
+    # Python alone here one after another; reported in order.
+    work = []
+    for bits in sizes:
         for name in names or known:
-            if BITS != 32 and python_alone(name):
+            if bits != 32 and python_alone(name):
                 continue    # no program: it has run
             sizes_for = getattr(python_side(name), 'BITS', (32, 64))
             if not isinstance(sizes_for, (tuple, list)) or set(sizes_for) - {32, 64}:
                 sys.exit("tests/run.py: %s: a test's Python side says which sizes of pointer it "
                          'is for in `BITS`, as (32,) or (32, 64); this one has %r' % (name, sizes_for))
-            if BITS not in sizes_for:
-                continue    # its Python side says which sizes it is for
-            state, count, lines = run_one(name, verbose, defs)
-            tally[state] += 1
-            if state == 'ok':
-                print('ok    %-16s %7d checks  %s' % (name, count, title(name)))
-                for line in lines:
-                    print('        (' + line + ')')
-            elif state == 'skip':
-                print('skip  %-16s %s' % (name, '; '.join(lines)))
+            if bits in sizes_for:  # its Python side says which sizes it is for
+                work.append((bits, name))
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+        futures = {}
+        for bits, name in work:
+            printed = []
+            if python_alone(name):
+                results[(bits, name)] = run_one(name, defs, bits) + (printed,)
             else:
-                print('FAIL  %-16s %s' % (name, title(name)))
-                for line in lines:
-                    print('        ' + line)
+                futures[(bits, name)] = (pool.submit(run_one, name, defs, bits, printed), printed)
+        for key, (future, printed) in futures.items():
+            results[key] = future.result() + (printed,)
+
+    tally = {'ok': 0, 'skip': 0, 'FAIL': 0}
+    shown = 32
+    for bits, name in work:
+        if bits != shown:
+            shown = bits
+            print('as %d-bit programs:' % bits)
+        state, count, lines, printed = results[(bits, name)]
+        if verbose:
+            for line in printed:
+                print('    | ' + line)
+        tally[state] += 1
+        if state == 'ok':
+            print('ok    %-16s %7d checks  %s' % (name, count, title(name)))
+            for line in lines:
+                print('        (' + line + ')')
+        elif state == 'skip':
+            print('skip  %-16s %s' % (name, '; '.join(lines)))
+        else:
+            print('FAIL  %-16s %s' % (name, title(name)))
+            for line in lines:
+                print('        ' + line)
     summary = '%d passed, %d skipped, %d failed' % (tally['ok'], tally['skip'], tally['FAIL'])
     if tally['FAIL']:
         print('FAILED: ' + summary)

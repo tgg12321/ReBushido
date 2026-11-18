@@ -31,6 +31,11 @@ def main():
             capture_output=True,
             text=True,
         )
+        if listed.returncode != 0:
+            # (a worktree's git, from WSL, where its link to the checkout
+            # is a Windows path): not a pass with nothing checked
+            print("format.py: git ls-files failed: %s" % listed.stderr.strip())
+            return 1
         files = listed.stdout.split()
     files = [f for f in files if os.path.basename(f) not in AS_SHIPPED and f.endswith((".c", ".h"))]
     if not files:
