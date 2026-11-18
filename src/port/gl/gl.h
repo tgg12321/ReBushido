@@ -161,6 +161,25 @@ extern void port_GlRestoreVram(s32 x, s32 y, s32 w, s32 h);
 extern s32 port_GlMirrorHold(void);
 extern s32 port_GlMirrorGiveBack(void);
 
+/* **Video memory as the card's pictures read it.** What the backend and
+ * the files about it look up in video memory while they draw (a mod's
+ * pictures by their keys, the stage's pages, the fighters' colour tables,
+ * a frame's clear colour) is read through this, which is `g_port_vram`
+ * but while a picture between two frames is drawn: then it is the
+ * backend's own copy of what the card's mirror holds, into which the
+ * picture has written again what the frame on show wrote
+ * (port_GlReplayVram). So that picture touches neither video memory nor
+ * the software GPU's painters, which may still be painting the frame
+ * after it (docs/PORT.md, "The tween off video memory"). Declared in
+ * port_gpu.h. */
+/* TRUE: read the backend's copy (above); FALSE: `g_port_vram` again. */
+extern void port_GlReadMirrorCopy(s32 on);
+/* A rectangle of video memory a frame wrote, given again by a picture
+ * between frames with the frame's own pixels (`pixels`, `w` a line):
+ * into the mirror and the colour buffer as port_GlWroteVram puts the
+ * game's, but from `pixels` and not from `g_port_vram`. */
+extern void port_GlReplayVram(s32 x, s32 y, s32 w, s32 h, const u16 *pixels);
+
 /* **The mirror is a buffer**, which the card reads as a texture of 16-bit
  * words, a line of video memory after another: `vram_texture` of
  * PortGlPicture is bound to PORT_GL_VRAM_TARGET, and every shader reads it

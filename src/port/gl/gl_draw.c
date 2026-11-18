@@ -1811,7 +1811,8 @@ static void port_GlKeepUndo(s32 row, s32 left, s32 right, const u16 *was) {
  * the next time the card reads it (port_GlUploadMirror). A rectangle
  * that goes round an edge is taken as the whole of that way, as
  * port_AddDirtyRect takes it. */
-static void port_GlMarkMirror(s32 x, s32 y, s32 w, s32 h) {
+static void port_GlMarkMirrorFrom(
+    s32 x, s32 y, s32 w, s32 h, const u16 *pixels) {
     PortDirtyRect rect;
     size_t bytes;
     s32 is_all;
@@ -1824,13 +1825,17 @@ static void port_GlMarkMirror(s32 x, s32 y, s32 w, s32 h) {
     }
     port_ClearDirtyRect(&rect);
     port_AddDirtyRect(&rect, x, y, w, h);
+    /* pixels of a caller's own are of a rectangle inside video memory
+     * (port_GlReplayVram): it is the rectangle asked for */
     bytes = (size_t)(rect.right - rect.left + 1) * sizeof(u16);
     /* All of video memory is sent as it is, whatever the copy holds: it is
      * what a new mirror on the card is first filled with. */
     is_all = port_DirtyRectPixels(&rect) == PORT_VRAM_PIXELS;
     for (row = rect.top; row <= rect.bottom; row++) {
         u16 *to = &g_gl.staged[row * PORT_VRAM_WIDTH + rect.left];
-        const u16 *from = &g_port_vram[row * PORT_VRAM_WIDTH + rect.left];
+        const u16 *from =
+            pixels != NULL ? &pixels[(row - rect.top) * w]
+                           : &g_port_vram[row * PORT_VRAM_WIDTH + rect.left];
 
         if (!is_all && memcmp(to, from, bytes) == 0) {
             continue;
@@ -1850,6 +1855,16 @@ static void port_GlMarkMirror(s32 x, s32 y, s32 w, s32 h) {
     port_AddDirtyRect(&g_gl.mirror, rect.left, rect.top,
                       rect.right - rect.left + 1, rect.bottom - rect.top + 1);
     port_GlKeepMirrorRect(&rect);
+}
+
+static void port_GlMarkMirror(s32 x, s32 y, s32 w, s32 h) {
+    port_GlMarkMirrorFrom(x, y, w, h, NULL);
+}
+
+const u16 *g_port_gl_vram = g_port_vram;
+
+void port_GlReadMirrorCopy(s32 on) {
+    g_port_gl_vram = on && g_gl.staged != NULL ? g_gl.staged : g_port_vram;
 }
 
 /* ---- the batches ---- */
@@ -2563,7 +2578,7 @@ static GLfloat port_GlChannel(u16 pixel, s32 shift) {
 static s32 port_GlOneColor(const PortDirtyRect *rect, u16 *out) {
     s32 at_x[5];
     s32 at_y[5];
-    u16 one = g_port_vram[rect->top * PORT_VRAM_WIDTH + rect->left];
+    u16 one = g_port_gl_vram[rect->top * PORT_VRAM_WIDTH + rect->left];
     s32 i;
 
     at_x[0] = rect->left;
@@ -2577,7 +2592,7 @@ static s32 port_GlOneColor(const PortDirtyRect *rect, u16 *out) {
     at_x[4] = (rect->left + rect->right) / 2;
     at_y[4] = (rect->top + rect->bottom) / 2;
     for (i = 1; i < 5; i++) {
-        if (g_port_vram[at_y[i] * PORT_VRAM_WIDTH + at_x[i]] != one) {
+        if (g_port_gl_vram[at_y[i] * PORT_VRAM_WIDTH + at_x[i]] != one) {
             return FALSE;
         }
     }
@@ -2799,7 +2814,8 @@ static void port_GlShowReplaced(void) {
 /* A rectangle of video memory the software GPU wrote: it is sent to the
  * card and stretched into the colour buffer, in its turn among the
  * primitives (port_GlDrawBlits). */
-static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
+static void port_GlWroteVramFrom(
+    s32 x, s32 y, s32 w, s32 h, const u16 *pixels) {
     PortGlBlit blit;
     PortDirtyRect *rect = &blit.rect;
     s32 was;
@@ -2813,6 +2829,9 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
         port_GlFlush();
     }
     was = port_ProfileSwitch(PORT_PROFILE_CARD);
+    /* into the copy here first: while a picture between frames is drawn,
+     * what is read below is read from it (gl.h, g_port_gl_vram) */
+    port_GlMarkMirrorFrom(x, y, w, h, pixels);
     /* pixels of the picture the game has put there itself: where they
      * fall over a shadow already painted, that shadow is covered
      * (gl_shadow.h) */
@@ -2821,7 +2840,6 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
     port_GlSceneWroteVram(x, y, w, h);
     port_ClearDirtyRect(rect);
     port_AddDirtyRect(rect, x, y, w, h);
-    port_GlMarkMirror(x, y, w, h);
     /* a picture a mod has a picture of (gl_replace.h) */
     blit.tint = PORT_MOD_TINT_SAME;
     blit.replacement =
@@ -2877,6 +2895,14 @@ static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
         }
     }
     port_ProfileSwitch(was);
+}
+
+static void port_GlWroteVram(s32 x, s32 y, s32 w, s32 h) {
+    port_GlWroteVramFrom(x, y, w, h, NULL);
+}
+
+void port_GlReplayVram(s32 x, s32 y, s32 w, s32 h, const u16 *pixels) {
+    port_GlWroteVramFrom(x, y, w, h, pixels);
 }
 
 static void port_GlBegin(void) {

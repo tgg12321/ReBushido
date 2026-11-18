@@ -45,6 +45,13 @@
 #define SQUARES_ACROSS (PORT_VRAM_WIDTH >> SQUARE_SHIFT)
 #define SQUARES_DOWN (PORT_VRAM_HEIGHT >> SQUARE_LINES_SHIFT)
 #define SQUARES (SQUARES_ACROSS * SQUARES_DOWN)
+/* A column of squares as tall as a texture page, 64 pixels by 256 lines:
+ * the latest count any square of it was given, which is the largest of
+ * theirs, since the counts only grow. A texture page read is a block or
+ * a few whole ones, and is asked of every textured primitive. */
+#define BLOCK_SQUARES_DOWN 32
+#define BLOCKS_DOWN (SQUARES_DOWN / BLOCK_SQUARES_DOWN)
+#define BLOCKS (SQUARES_ACROSS * BLOCKS_DOWN)
 /* A wait spins this many times before it gives up the processor, and a
  * painter, with nothing to paint, this many before it sleeps. */
 #define SPINS_BEFORE_YIELD 4000
@@ -100,6 +107,10 @@ typedef struct {
     /* ... and written by a primitive, which only its own painter's lines
      * are: a copy or a load done alone keeps its place among all of them */
     u32 square_drawn[SQUARES];
+    /* each of the three by blocks (BLOCK_SQUARES_DOWN) */
+    u32 block_write[BLOCKS];
+    u32 block_read[BLOCKS];
+    u32 block_drawn[BLOCKS];
     /* the waits that found something still to paint, by what waited, and
      * their time in the host's ticks */
     u32 waits[PAINT_WAIT_KINDS];
@@ -188,8 +199,36 @@ static s32 port_PaintSquares(s32 x, s32 y, s32 w, s32 h, PortSquares *out) {
     return 1;
 }
 
-/* `value` set in each square of the rectangle. */
+/* The blocks of one of the three kinds of square. */
+static u32 *port_PaintBlocksOf(const u32 *squares) {
+    if (squares == g_paint.square_write) {
+        return g_paint.block_write;
+    }
+    if (squares == g_paint.square_read) {
+        return g_paint.block_read;
+    }
+    return g_paint.block_drawn;
+}
+
+/* Every square and block of all three given `value`. */
+static void port_PaintMarkAll(u32 value) {
+    s32 i;
+
+    for (i = 0; i < SQUARES; i++) {
+        g_paint.square_write[i] = value;
+        g_paint.square_read[i] = value;
+        g_paint.square_drawn[i] = value;
+    }
+    for (i = 0; i < BLOCKS; i++) {
+        g_paint.block_write[i] = value;
+        g_paint.block_read[i] = value;
+        g_paint.block_drawn[i] = value;
+    }
+}
+
+/* `value` set in each square of the rectangle, and in its blocks. */
 static void port_PaintMark(u32 *squares, const PortPaintRect *rect, u32 value) {
+    u32 *blocks = port_PaintBlocksOf(squares);
     PortSquares at;
     s32 i;
     s32 j;
@@ -198,10 +237,13 @@ static void port_PaintMark(u32 *squares, const PortPaintRect *rect, u32 value) {
         return;
     }
     for (j = 0; j < at.down; j++) {
-        u32 *row = squares + ((at.y + j) % SQUARES_DOWN) * SQUARES_ACROSS;
+        s32 y = (at.y + j) % SQUARES_DOWN;
+        u32 *row = squares + y * SQUARES_ACROSS;
+        u32 *block = blocks + (y / BLOCK_SQUARES_DOWN) * SQUARES_ACROSS;
 
         for (i = 0; i < at.across; i++) {
             row[(at.x + i) % SQUARES_ACROSS] = value;
+            block[(at.x + i) % SQUARES_ACROSS] = value;
         }
     }
 }
@@ -213,19 +255,43 @@ static u32 port_PaintNeeds(
     s32 i;
     s32 j;
 
+    const u32 *blocks = port_PaintBlocksOf(squares);
+
     if (!port_PaintSquares(x, y, w, h, &at)) {
         return need;
     }
-    for (j = 0; j < at.down; j++) {
-        const u32 *row = squares + ((at.y + j) % SQUARES_DOWN) * SQUARES_ACROSS;
+    /* whole blocks by their block, the rest square by square: the
+     * largest of the counts, whichever way they are read */
+    for (j = 0; j < at.down;) {
+        s32 line = (at.y + j) % SQUARES_DOWN;
 
-        for (i = 0; i < at.across; i++) {
-            u32 one = row[(at.x + i) % SQUARES_ACROSS];
+        if (line % BLOCK_SQUARES_DOWN == 0 &&
+            at.down - j >= BLOCK_SQUARES_DOWN) {
+            const u32 *block =
+                blocks + (line / BLOCK_SQUARES_DOWN) * SQUARES_ACROSS;
 
-            if ((s32)(one - need) > 0) {
-                need = one;
+            for (i = 0; i < at.across; i++) {
+                u32 one = block[(at.x + i) % SQUARES_ACROSS];
+
+                if ((s32)(one - need) > 0) {
+                    need = one;
+                }
+            }
+            j += BLOCK_SQUARES_DOWN;
+            continue;
+        }
+        {
+            const u32 *row = squares + line * SQUARES_ACROSS;
+
+            for (i = 0; i < at.across; i++) {
+                u32 one = row[(at.x + i) % SQUARES_ACROSS];
+
+                if ((s32)(one - need) > 0) {
+                    need = one;
+                }
             }
         }
+        j++;
     }
     return need;
 }
@@ -392,11 +458,7 @@ void port_PaintSubmit(const u32 *words, s32 count, const PortPaintRect *write,
     if (g_paint.given - g_paint.fresh > SQUARES_FRESH) {
         /* every square's count made one that is painted */
         port_PaintSyncAll();
-        for (i = 0; i < SQUARES; i++) {
-            g_paint.square_write[i] = g_paint.given;
-            g_paint.square_read[i] = g_paint.given;
-            g_paint.square_drawn[i] = g_paint.given;
-        }
+        port_PaintMarkAll(g_paint.given);
         g_paint.fresh = g_paint.given;
     }
     /* a texture another painter may still be drawing into */
@@ -460,11 +522,7 @@ s32 port_PaintStart(const PortPaintHost *host, s32 count) {
     g_paint.fresh = g_paint.given;
     g_paint.stop = 0;
     g_paint.hold = 0;
-    for (i = 0; i < SQUARES; i++) {
-        g_paint.square_write[i] = g_paint.given;
-        g_paint.square_read[i] = g_paint.given;
-        g_paint.square_drawn[i] = g_paint.given;
-    }
+    port_PaintMarkAll(g_paint.given);
     for (i = 0; i < count; i++) {
         PortPainter *painter = &g_painters[i];
 

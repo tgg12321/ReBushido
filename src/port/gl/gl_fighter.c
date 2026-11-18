@@ -279,6 +279,11 @@ typedef struct {
     s32 is_known;
     s32 dx;
     s32 dy;
+    /* the sightings and the model the shift was last looked for with:
+     * the same again finds the same, so it is not looked for again
+     * (port_GlFighterFindPlace) */
+    s32 tried_count;
+    const void *tried_model;
 } ClutPlace;
 
 /* What the models are drawn into before they are laid over the picture:
@@ -1185,9 +1190,19 @@ static FighterModel *port_GlFighterLoad(FighterModel *model, const char *name) {
     return model;
 }
 
+/* These three are asked for every primitive of a fighter the game draws,
+ * every picture: a model that is loaded is given at once, without the
+ * file's name made again (a `snprintf` a primitive) or the loader's own
+ * frame, which is large enough to be probed page by page
+ * (`___chkstk_ms`). */
 static FighterModel *port_GlFighterModel(s32 model_id) {
-    const char *name = port_GlFighterFileName(model_id);
+    const char *name;
 
+    if (model_id >= 0 && model_id < MODELS_MAX &&
+        g_fighter.model[model_id].state == MODEL_LOADED) {
+        return &g_fighter.model[model_id];
+    }
+    name = port_GlFighterFileName(model_id);
     if (model_id < 0 || model_id >= MODELS_MAX || name == NULL) {
         return NULL;
     }
@@ -1201,6 +1216,12 @@ static FighterModel *port_GlFighterWeaponModel(s32 weapon) {
     if (weapon < 0 || weapon >= WEAPON_FILES) {
         return NULL;
     }
+    if (g_fighter.weapon_model[weapon].state == MODEL_LOADED) {
+        return &g_fighter.weapon_model[weapon];
+    }
+    if (g_fighter.weapon_model[weapon].state == MODEL_MISSING) {
+        return NULL;
+    }
     snprintf(name, sizeof(name), "W%02d", weapon);
     return port_GlFighterLoad(&g_fighter.weapon_model[weapon], name);
 }
@@ -1210,6 +1231,12 @@ static FighterModel *port_GlFighterTinyModel(s32 tiny) {
     char name[8];
 
     if (tiny < 0 || tiny >= TINY_FILES) {
+        return NULL;
+    }
+    if (g_fighter.tiny_model[tiny].state == MODEL_LOADED) {
+        return &g_fighter.tiny_model[tiny];
+    }
+    if (g_fighter.tiny_model[tiny].state == MODEL_MISSING) {
         return NULL;
     }
     snprintf(name, sizeof(name), "T%02d", tiny);
@@ -1242,16 +1269,35 @@ static s32 port_GlFighterSlotOf(
 }
 
 /* A square root, by Newton's steps: the program is linked with no maths
- * library. */
+ * library. Forty of them, as it always was, but the steps stop where they
+ * have come to rest: a step that gives what it was given gives it ever
+ * after, and one that gives what the step before it was given goes back
+ * and forth between the two, so the fortieth is known. The same number
+ * to the bit, in some six steps where forty were taken: a fighter's pose
+ * takes three of these a bone, and they were most of posing him
+ * (2026-11-18). */
+#define ROOT_STEPS 40
+
 static double port_GlFighterRoot(double x) {
+    double before = 0.0;
     double r = x > 1.0 ? x : 1.0;
     s32 i;
 
     if (x <= 0.0) {
         return 0.0;
     }
-    for (i = 0; i < 40; i++) {
-        r = 0.5 * (r + x / r);
+    for (i = 1; i <= ROOT_STEPS; i++) {
+        double next = 0.5 * (r + x / r);
+
+        if (next == r) {
+            return next;
+        }
+        if (i >= 2 && next == before) {
+            /* back and forth: step i gives `next`, step i + 1 `r` */
+            return (ROOT_STEPS - i) % 2 == 0 ? next : r;
+        }
+        before = r;
+        r = next;
     }
     return r;
 }
@@ -1568,6 +1614,16 @@ static void port_GlFighterFindPlace(s32 place, const FighterModel *model) {
         model->clut_count == 0) {
         return;
     }
+    /* Asked at every textured primitive of the thing, every picture: a
+     * place whose shift is not one (two of the file's tables a shift
+     * apart, both seen) was looked for again each time, the file's
+     * tables by the file's tables by the sightings, which was most of
+     * what a picture between frames cost the processor (2026-11-18). */
+    if (p->tried_count == p->count && p->tried_model == (const void *)model) {
+        return;
+    }
+    p->tried_count = p->count;
+    p->tried_model = model;
     for (k = 0; k < model->clut_count; k++) {
         s32 x = p->x[0] - model->clut[k].x;
         s32 y = p->y[0] - model->clut[k].y;
@@ -1618,8 +1674,8 @@ static s32 port_GlFighterPalette(const FighterModel *model, s32 place) {
     for (c = 0; c < model->clut_count; c++) {
         const PortFighterClut *clut = &model->clut[c];
         const u16 *row =
-            &g_port_vram[((clut->y + p->dy) & (PORT_VRAM_HEIGHT - 1)) *
-                         PORT_VRAM_WIDTH];
+            &g_port_gl_vram[((clut->y + p->dy) & (PORT_VRAM_HEIGHT - 1)) *
+                            PORT_VRAM_WIDTH];
 
         for (k = 0; k < 256; k++) {
             float *at = out + (c * 256 + k) * 4;
