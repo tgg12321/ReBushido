@@ -122,9 +122,15 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glUniform1f, (GLint, GLfloat))                                    \
     GL(void, glUniform2f, (GLint, GLfloat, GLfloat))                           \
     GL(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat))         \
+    GL(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat))                  \
+    GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glReadPixels,                                                     \
        (GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void *))               \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))
+
+#ifndef GL_GEOMETRY_SHADER
+#define GL_GEOMETRY_SHADER 0x8DD9
+#endif
 
 #define GL(result, name, args) static result(*name) args;
 PORT_GL_SHADOW_FUNCTIONS
@@ -182,6 +188,9 @@ typedef struct {
  * units, before its triangle is left out: a shadow lies on the ground in
  * front of the camera, and this keeps the divide away from 0. */
 #define CAST_NEAR 32.0
+/* How far the pictures between two frames may cast outside the box of
+ * the two frames' own silhouettes, in the console's pixels. */
+#define CAST_BOX_GROW 8
 
 static struct {
     s32 is_started;
@@ -226,6 +235,32 @@ static struct {
     CastFrame cast[2];
     s32 newest;
     s32 older;
+    /* The cast triangles as the card projects them (port_GlShadowSendPair):
+     * a vertex is the frame on show's corner and the frame after it's,
+     * in the world's units, sent once a pair of frames and not once a
+     * picture; what the frames were (each frame's number, `gathered`), and
+     * the box the pair's silhouettes lie in, at either end. */
+    GLuint cast_program;
+    GLuint cast_buffer;
+    GLuint cast_array;
+    GLint cast_at_t;
+    GLint cast_at_rotation;
+    GLint cast_at_camera;
+    GLint cast_at_project;
+    GLint cast_at_target;
+    GLint cast_at_scale;
+    u32 gathered[2];
+    u32 sent_one;
+    u32 sent_two;
+    s32 sent_count;
+    ShadowBox sent_box;
+    float *staged;
+    /* this picture's: whether the card projects it, and how */
+    s32 is_on_card;
+    GLfloat card_t;
+    GLfloat card_rotation[9];
+    GLfloat card_camera[3];
+    GLfloat card_project[4];
     s32 cast_faces;
     s32 cast_orphans;
     u32 cast_model_triangles; /* cast from the models, the run's */
@@ -261,6 +296,50 @@ static const char g_shadow_vertex_text[] =
     "    vec2 ndc = at / u_target * 2.0 - vec2(1.0);\n"
     "    float w = a_place.z;\n"
     "    gl_Position = vec4(ndc.x * w, ndc.y * w, 0.0, w);\n"
+    "}\n";
+
+/* The cast triangles as the card places them: each corner `u_t` of the
+ * way from the frame on show's place to the frame after it's, seen through
+ * the picture's rotation and projected as port_GlShadowProject projects
+ * a point (u_project: H, the two offsets, and the nearest a point may
+ * be); the geometry shader leaves out a triangle with a corner nearer
+ * than that, as port_GlShadowCast did. */
+static const char g_shadow_cast_vertex_text[] =
+    "#version 330 core\n"
+    "layout(location = 0) in vec3 a_one;\n"
+    "layout(location = 1) in vec3 a_two;\n"
+    "uniform float u_t;\n"
+    "uniform mat3 u_rotation;\n"
+    "uniform vec3 u_camera;\n"
+    "uniform vec4 u_project;\n"
+    "uniform vec2 u_target;\n"
+    "uniform vec2 u_scale;\n"
+    "out float v_ok;\n"
+    "void main() {\n"
+    "    vec3 m = a_one + (a_two - a_one) * u_t;\n"
+    "    vec3 v = u_rotation * (m - u_camera);\n"
+    "    v_ok = v.z >= u_project.w ? 1.0 : 0.0;\n"
+    "    float z = max(v.z, 1.0);\n"
+    "    vec2 p = vec2(u_project.y + u_project.x * v.x / z,\n"
+    "                  u_project.z + u_project.x * 0.5 * v.y / z);\n"
+    "    vec2 at = p * u_scale + vec2(0.5);\n"
+    "    gl_Position = vec4(at / u_target * 2.0 - vec2(1.0), 0.0, 1.0);\n"
+    "}\n";
+
+static const char g_shadow_cast_geometry_text[] =
+    "#version 330 core\n"
+    "layout(triangles) in;\n"
+    "layout(triangle_strip, max_vertices = 3) out;\n"
+    "in float v_ok[];\n"
+    "void main() {\n"
+    "    if (v_ok[0] < 0.5 || v_ok[1] < 0.5 || v_ok[2] < 0.5) {\n"
+    "        return;\n"
+    "    }\n"
+    "    for (int i = 0; i < 3; i++) {\n"
+    "        gl_Position = gl_in[i].gl_Position;\n"
+    "        EmitVertex();\n"
+    "    }\n"
+    "    EndPrimitive();\n"
     "}\n";
 
 /* Coverage, and nothing else: a face over a face writes the same 1, so
@@ -380,6 +459,34 @@ static GLuint port_GlShadowProgram(const char *vertex, const char *fragment) {
     return program;
 }
 
+/* The same, with a geometry shader between the two. */
+static GLuint port_GlShadowProgram3(
+    const char *vertex, const char *geometry, const char *fragment) {
+    GLuint program;
+    GLuint one = port_GlShadowShader(GL_VERTEX_SHADER, vertex);
+    GLuint two = port_GlShadowShader(GL_GEOMETRY_SHADER, geometry);
+    GLuint three = port_GlShadowShader(GL_FRAGMENT_SHADER, fragment);
+    GLint ok = GL_FALSE;
+
+    if (one == 0 || two == 0 || three == 0) {
+        return 0;
+    }
+    program = glCreateProgram();
+    glAttachShader(program, one);
+    glAttachShader(program, two);
+    glAttachShader(program, three);
+    glLinkProgram(program);
+    glGetProgramiv(program, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        static char log[2048];
+
+        glGetProgramInfoLog(program, (GLsizei)sizeof(log), NULL, log);
+        port_GlShadowSay("the cast shadows' shaders do not link: ", log);
+        return 0;
+    }
+    return program;
+}
+
 const char *port_GlShadowStart(void *(*getproc)(const char *name)) {
     static const GLfloat corners[] = {
         0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f};
@@ -429,6 +536,41 @@ const char *port_GlShadowStart(void *(*getproc)(const char *name)) {
     if (g_shadow.dark == 0) {
         return g_shadow.problem;
     }
+    g_shadow.cast_program = port_GlShadowProgram3(
+        g_shadow_cast_vertex_text, g_shadow_cast_geometry_text,
+        g_shadow_fragment_text);
+    if (g_shadow.cast_program == 0) {
+        return g_shadow.problem;
+    }
+    g_shadow.cast_at_t = glGetUniformLocation(g_shadow.cast_program, "u_t");
+    g_shadow.cast_at_rotation =
+        glGetUniformLocation(g_shadow.cast_program, "u_rotation");
+    g_shadow.cast_at_camera =
+        glGetUniformLocation(g_shadow.cast_program, "u_camera");
+    g_shadow.cast_at_project =
+        glGetUniformLocation(g_shadow.cast_program, "u_project");
+    g_shadow.cast_at_target =
+        glGetUniformLocation(g_shadow.cast_program, "u_target");
+    g_shadow.cast_at_scale =
+        glGetUniformLocation(g_shadow.cast_program, "u_scale");
+    g_shadow.staged = malloc(MODEL_TRIANGLES_MAX * 18 * sizeof(float));
+    if (g_shadow.staged == NULL) {
+        port_GlShadowSay("there is no memory for the shadows", NULL);
+        return g_shadow.problem;
+    }
+    glGenBuffers(1, &g_shadow.cast_buffer);
+    glGenVertexArrays(1, &g_shadow.cast_array);
+    glBindVertexArray(g_shadow.cast_array);
+    glBindBuffer(GL_ARRAY_BUFFER, g_shadow.cast_buffer);
+    glVertexAttribPointer(
+        0, 3, GL_FLOAT, GL_FALSE, (GLsizei)(6 * sizeof(float)), NULL);
+    glVertexAttribPointer(
+        1, 3, GL_FLOAT, GL_FALSE, (GLsizei)(6 * sizeof(float)),
+        (const void *)(3 * sizeof(float)));
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    g_shadow.sent_one = 0;
+    g_shadow.sent_two = 0;
     g_shadow.at_target = glGetUniformLocation(g_shadow.silhouette, "u_target");
     g_shadow.at_scale = glGetUniformLocation(g_shadow.silhouette, "u_scale");
     g_shadow.dark_at_target = glGetUniformLocation(g_shadow.dark, "u_target");
@@ -600,6 +742,7 @@ static void port_GlShadowForget(void) {
     g_shadow.count = 0;
     g_shadow.lost = 0;
     g_shadow.has_any = FALSE;
+    g_shadow.is_on_card = FALSE;
     g_shadow.cover_count = 0;
     port_GlShadowEmptyBox(&g_shadow.box);
     port_GlShadowEmptyBox(&g_shadow.clip);
@@ -855,6 +998,26 @@ static void port_GlShadowScissorBox(const ShadowBox *box) {
 
 /* The silhouettes into the mask's red. */
 static void port_GlShadowDrawSilhouettes(const PortGlPicture *picture) {
+    if (g_shadow.is_on_card) {
+        glUseProgram(g_shadow.cast_program);
+        glBindVertexArray(g_shadow.cast_array);
+        glUniform1f(g_shadow.cast_at_t, g_shadow.card_t);
+        glUniformMatrix3fv(
+            g_shadow.cast_at_rotation, 1, GL_TRUE, g_shadow.card_rotation);
+        glUniform3f(g_shadow.cast_at_camera, g_shadow.card_camera[0],
+                    g_shadow.card_camera[1], g_shadow.card_camera[2]);
+        glUniform4f(g_shadow.cast_at_project, g_shadow.card_project[0],
+                    g_shadow.card_project[1], g_shadow.card_project[2],
+                    g_shadow.card_project[3]);
+        glUniform2f(g_shadow.cast_at_target, (GLfloat)picture->target_w,
+                    (GLfloat)picture->target_h);
+        glUniform2f(g_shadow.cast_at_scale, (GLfloat)picture->draw_x,
+                    (GLfloat)picture->draw_y);
+        glDisable(GL_BLEND);
+        glDrawArrays(GL_TRIANGLES, 0, g_shadow.count);
+        port_GlCountDraw((u32)g_shadow.count, 1);
+        return;
+    }
     glUseProgram(g_shadow.silhouette);
     glBindVertexArray(g_shadow.array);
     glBindBuffer(GL_ARRAY_BUFFER, g_shadow.buffer);
@@ -1120,6 +1283,15 @@ static void port_GlShadowGather(CastFrame *frame) {
     frame->count = 0;
     frame->view = *port_GetRemasterStageView();
     frame->is_valid = FALSE;
+    {
+        static u32 gathered;
+
+        /* never 0, which is no frame sent */
+        if (++gathered == 0) {
+            gathered = 1;
+        }
+        g_shadow.gathered[frame == &g_shadow.cast[0] ? 0 : 1] = gathered;
+    }
     g_shadow.cast_faces = 0;
     g_shadow.cast_orphans = 0;
     face = port_RemasterCasterFaces(&faces);
@@ -1274,6 +1446,114 @@ static s32 port_GlShadowSameTriangle(
            one->part == two->part;
 }
 
+/* The box of the pair's silhouettes: the corners of the box in the world
+ * that holds a frame's triangles, as the frame's view places them, grown by
+ * a little for the pictures between two frames, where the view is mixed;
+ * the whole drawing area where a corner is too near the camera. It only
+ * bounds what the mask is cleared and darkened over, so it may be larger
+ * than the silhouettes, and it is worked out once a pair of frames. */
+static void port_GlShadowPairBox(
+    const CastFrame *frame, const PortGlPicture *picture, ShadowBox *box) {
+    float lo[3];
+    float hi[3];
+    double r[9];
+    s32 i;
+    s32 k;
+    s32 n;
+
+    if (frame->count <= 0) {
+        return;
+    }
+    for (n = 0; n < 3; n++) {
+        lo[n] = frame->triangle[0].p[0][n];
+        hi[n] = lo[n];
+    }
+    for (i = 0; i < frame->count; i++) {
+        for (k = 0; k < 3; k++) {
+            for (n = 0; n < 3; n++) {
+                float v = frame->triangle[i].p[k][n];
+
+                lo[n] = v < lo[n] ? v : lo[n];
+                hi[n] = v > hi[n] ? v : hi[n];
+            }
+        }
+    }
+    port_GlShadowRotation(&frame->view, r);
+    for (i = 0; i < 8; i++) {
+        float corner[3];
+        ShadowPoint at;
+
+        corner[0] = (i & 1) ? hi[0] : lo[0];
+        corner[1] = (i & 2) ? hi[1] : lo[1];
+        corner[2] = (i & 4) ? hi[2] : lo[2];
+        if (!port_GlShadowProject(
+                &frame->view, r, corner, picture->margin, &at)) {
+            *box = g_shadow.clip;
+            return;
+        }
+        port_GlShadowAddToBox(box, (s32)(at.x * (GLfloat)picture->draw_x),
+                              (s32)(at.y * (GLfloat)picture->draw_y));
+    }
+}
+
+/* The pair of frames the pictures are cast from, sent to the card once:
+ * each triangle of the frame on show with the same triangle of the frame
+ * after it, or itself where that has none (port_GlShadowSameTriangle). */
+static void port_GlShadowSendPair(
+    const CastFrame *one, const CastFrame *two, const PortGlPicture *picture) {
+    u32 one_number = g_shadow.gathered[one == &g_shadow.cast[0] ? 0 : 1];
+    u32 two_number =
+        two == NULL ? 0 : g_shadow.gathered[two == &g_shadow.cast[0] ? 0 : 1];
+    float *out = g_shadow.staged;
+    s32 i;
+    s32 k;
+    s32 n;
+
+    if (one_number == g_shadow.sent_one && two_number == g_shadow.sent_two) {
+        return;
+    }
+    for (i = 0; i < one->count; i++) {
+        const CastTriangle *a = &one->triangle[i];
+        const CastTriangle *b = a;
+
+        if (two != NULL) {
+            b = i < two->count ? &two->triangle[i] : NULL;
+            if (b == NULL || !port_GlShadowSameTriangle(a, b)) {
+                g_shadow.cast_unpaired++;
+                b = a;
+            }
+        }
+        for (k = 0; k < 3; k++) {
+            for (n = 0; n < 3; n++) {
+                *out++ = a->p[k][n];
+            }
+            for (n = 0; n < 3; n++) {
+                *out++ = b->p[k][n];
+            }
+        }
+    }
+    glBindBuffer(GL_ARRAY_BUFFER, g_shadow.cast_buffer);
+    glBufferData(
+        GL_ARRAY_BUFFER, (GLsizeiptr)((size_t)one->count * 18 * sizeof(float)),
+        g_shadow.staged, GL_STREAM_DRAW);
+    port_GlShadowEmptyBox(&g_shadow.sent_box);
+    port_GlShadowPairBox(one, picture, &g_shadow.sent_box);
+    if (two != NULL) {
+        port_GlShadowPairBox(two, picture, &g_shadow.sent_box);
+    }
+    if (!port_GlShadowBoxIsEmpty(&g_shadow.sent_box)) {
+        s32 grow = picture->draw_x * CAST_BOX_GROW;
+
+        g_shadow.sent_box.left -= grow;
+        g_shadow.sent_box.top -= grow;
+        g_shadow.sent_box.right += grow;
+        g_shadow.sent_box.bottom += grow;
+    }
+    g_shadow.sent_count = one->count;
+    g_shadow.sent_one = one_number;
+    g_shadow.sent_two = two_number;
+}
+
 /* The silhouette of the picture being laid down, cast from the fighters'
  * faces, in the place of the game's shadow mesh. A picture of the game's
  * own frame gathers that frame's faces; a picture between two frames
@@ -1317,51 +1597,25 @@ static void port_GlShadowCast(void) {
     }
     port_GlShadowRotation(&view, r);
     port_GlGetPicture(&picture);
-    g_shadow.count = 0;
-    port_GlShadowEmptyBox(&g_shadow.box);
-    for (i = 0; i < one->count; i++) {
-        const CastTriangle *a = &one->triangle[i];
-        ShadowPoint *to = &g_shadow.point[g_shadow.count];
-        float mixed[3][3];
-        s32 k;
-        s32 n;
-
-        if (two != NULL) {
-            float t = (float)g_shadow.phase / (float)PORT_TWEEN_ONE;
-            const CastTriangle *b = i < two->count ? &two->triangle[i] : NULL;
-
-            if (b == NULL || !port_GlShadowSameTriangle(a, b)) {
-                g_shadow.cast_unpaired++;
-                b = a;
-            }
-            for (k = 0; k < 3; k++) {
-                for (n = 0; n < 3; n++) {
-                    mixed[k][n] = a->p[k][n] + (b->p[k][n] - a->p[k][n]) * t;
-                }
-            }
-        } else {
-            for (k = 0; k < 3; k++) {
-                for (n = 0; n < 3; n++) {
-                    mixed[k][n] = a->p[k][n];
-                }
-            }
-        }
-        for (k = 0; k < 3; k++) {
-            if (!port_GlShadowProject(
-                    &view, r, mixed[k], picture.margin, &to[k])) {
-                break;
-            }
-        }
-        if (k < 3) {
-            continue;
-        }
-        for (k = 0; k < 3; k++) {
-            port_GlShadowAddToBox(
-                &g_shadow.box, (s32)(to[k].x * (GLfloat)picture.draw_x),
-                (s32)(to[k].y * (GLfloat)picture.draw_y));
-        }
-        g_shadow.count += 3;
+    port_GlShadowSendPair(one, two, &picture);
+    g_shadow.count = 3 * g_shadow.sent_count;
+    g_shadow.box = g_shadow.sent_box;
+    g_shadow.is_on_card = g_shadow.count > 0;
+    g_shadow.card_t =
+        two != NULL ? (GLfloat)g_shadow.phase / (GLfloat)PORT_TWEEN_ONE : 0.0f;
+    for (i = 0; i < 9; i++) {
+        g_shadow.card_rotation[i] = (GLfloat)r[i];
     }
+    for (i = 0; i < 3; i++) {
+        g_shadow.card_camera[i] = (GLfloat)view.camera[i];
+    }
+    g_shadow.card_project[0] = (GLfloat)view.h;
+    g_shadow.card_project[1] =
+        (GLfloat)((double)view.ofx / PORT_REMASTER_ONE +
+                  (double)(g_shadow.offset_x + picture.margin));
+    g_shadow.card_project[2] = (GLfloat)((double)view.ofy / PORT_REMASTER_ONE +
+                                         (double)g_shadow.offset_y);
+    g_shadow.card_project[3] = (GLfloat)CAST_NEAR;
     g_shadow.cast_triangles = g_shadow.count / 3;
 }
 

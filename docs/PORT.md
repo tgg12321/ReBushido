@@ -4355,12 +4355,27 @@ of the step. The software GPU's part of a fight frame at `run_ahead 1`
 went from 6.99 ms to 3.42 (`run_ahead 0`: 3.4), and the window's
 picture of the software GPU's from 2.71 to 0.11.
 
+**The cast shadows projected by the card.** With the HD fighters the
+shadows are cast from some 44,000 triangles a picture, and each picture
+mixed every one of them between two frames and projected its corners on
+the processor, then sent them to the card. Now a pair of frames is sent
+once (`port_GlShadowSendPair`: each vertex the frame on show's corner and
+the frame after it's, in the world's units), and a picture gives the
+card the mix, the rotation, the camera and the projection as uniforms;
+the vertex shader projects as `port_GlShadowProject` did and a geometry
+shader leaves out a triangle with a corner nearer than `CAST_NEAR`. The
+box the mask is cleared and darkened over is the projected corners of
+the box in the world holding a frame's triangles, grown by 8 of the
+console's pixels. The pictures of `port_game`'s fight with Mikado
+against Kaun (`frame_rate original`, 142 pictures at 640 by 360) are the
+same as before but for one, by at most 8 of 255 in a channel.
+
 **The budget** (`tools/port_budget.py`, a step of `tools/gate.py`): the
 window's build, the player's settings and the hd mod, the fight above,
 `--profile` with `run_ahead` 0, 1 and 2 side by side. It fails where,
 with nothing run ahead, the game, the software GPU, the sound and the
-cloth take more than 30 ms of a fight frame (about 13 here alone, 23
-within the gate); where
+cloth take more than 18 ms of a fight frame (about 13 here; the gate
+runs this step alone, after every other); where
 `run_ahead 1` costs more over `run_ahead 0` than a bare step of the game
 and the state kept and put back by more than 4 ms; where `run_ahead 2`
 costs more than twice `run_ahead 0`, or the cloth more than a fifth of

@@ -65,10 +65,13 @@ WAITS = {
     'port-sdl-windows': [],
     'port-rollback': ['port'],
     'port-net': ['port', 'port-sdl'],
-    # two runs of the window's build in the offscreen driver
+    # the window's build timed: after every other step, alone on the
+    # machine, so that its milliseconds are its own (ALONE)
     'port-budget': ['port-sdl'],
     'playtest': ['port', 'discs'],
 }
+# Steps that wait for every other step and run with nothing beside them.
+ALONE = ['port-budget']
 BUILDS = ['game', 'rb-build', 'discs', 'port', 'port-sdl', 'port-sdl-windows']
 # The steps of the gate's own beside the checks: (name, command, where).
 OWN = [
@@ -136,6 +139,8 @@ def steps_of(args):
         steps.append(Step(name, cmd, where))
     names = {s.name for s in steps}
     for step in steps:
+        if step.name in ALONE:
+            step.waits = [s.name for s in steps if s.name != step.name]
         step.waits = [w for w in step.waits if w in names]
         if step.name in args.skip:
             step.state = 'skipped'

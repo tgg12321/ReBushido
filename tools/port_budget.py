@@ -61,12 +61,12 @@ RATIO_MAX = 2.0
 CLOTH_SHARE_MAX = 0.20
 RUN_AHEADS = (0, 1, 2)
 # The processor's own parts of a fight frame with nothing run ahead, in
-# milliseconds (here, 2026-11-18: about 13 with the machine to itself and
-# 23 inside the gate, its builds and runs beside it; the cloth kept out for
-# every picture, as merged at 1e6878df3: over 40). The counts below are
-# the exact guards; this one has room for a busy machine.
+# milliseconds (here, 2026-11-18: about 13; the cloth kept out for every
+# picture, as merged at 1e6878df3: over 40). tools/gate.py runs this step
+# alone, after every other (ALONE): 23 was measured beside the gate's
+# builds.
 OWN_PARTS = ('game', 'raster', 'sound', 'cloth')
-OWN_MAX = 30.0
+OWN_MAX = 18.0
 # What run_ahead 1 may cost over 0 beyond a bare step of the game and the
 # state kept and put back (here: about 1).
 AHEAD_OVER_MAX = 4.0
