@@ -1967,8 +1967,9 @@ static void port_GlFighterWarm(const FighterModel *model, s32 slot) {
 
         port_GlGetPicture(&picture);
         if (picture.target_w > 0 && picture.target_h > 0 &&
-            port_GlFighterLayer(&g_fighter.layer[LAYER_FIGHTERS],
-                                picture.target_w, picture.target_h)) {
+            port_GlFighterLayer(
+                &g_fighter.layer[LAYER_FIGHTERS], picture.target_w,
+                picture.target_h, picture.samples)) {
             glViewport(0, 0, 1, 1);
             glUseProgram(g_fighter.program);
             glUniform1i(g_fighter.at_cloth, 0);
