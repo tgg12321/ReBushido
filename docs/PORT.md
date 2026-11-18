@@ -4294,9 +4294,11 @@ noise):
 | sound ran out | 166 | 90 |
 | run-ahead, a boundary | 11.1 | 6.8 |
 
-With the owner's own settings (`fighter_models off`) the run let the
-time go 5 times before and 0 after, and the sound ran out 6 times and
-then once. What is left of a fight frame's 28 ms is the card's work
+With the owner's own settings (`fighter_models off`), the two run one
+after the other while the eleven checks ran beside them: a fight
+frame's blank 28.7 ms before and 18.0 after, 46 pictures a second and
+66, the time let go 67 times and 6, the sound run out 103 times and
+11, and 14 blanks of the fight over 40 ms and none. What is left of a fight frame's 28 ms is the card's work
 waited for at the swap (3), the frames run ahead and the state kept and
 put back, the cast shadows posed and copied on the processor (3.6), the
 cloth (3.6), the software GPU (2.6) and the side channel (2.1): see
