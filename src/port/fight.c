@@ -20,32 +20,58 @@
 
 /* enum StageIndex (stage.h), as the game's own cards and the log name them. */
 static const char * const g_port_fight_stages[] = {
-    "main tatara shrine",   "meikyokan dojo",     "shainto hq",
-    "tatara shrine",        "bus stop",           "lost bridge",
-    "tatara shrine path",   "bamboo thicket",     "outside meikyokan",
-    "future dump site",     "snake cliff",        "kimigaura coast",
-    "orange tree fields",   "castle rooftop",     "under lost bridge",
-    "terraced fields",      "under railway",      "water tower dam",
-    "lumberyard",           "lighthouse",         "kabuki stage",
-    "abandoned ship",       "ferry dock",         "shainto gate",
-    "purple cavern",        "abandoned station",  "railway",
-    "abandoned tunnel",     "abandoned shipyard", "building rooftop",
-    "building parking lot", "shainto cemetery",   "team 1",
-    "team 2",               "chanbara",           "practice 1",
+    "main tatara shrine",
+    "meikyokan dojo",
+    "shainto hq",
+    "tatara shrine",
+    "bus stop",
+    "lost bridge",
+    "tatara shrine path",
+    "bamboo thicket",
+    "outside meikyokan",
+    "future dump site",
+    "snake cliff",
+    "kimigaura coast",
+    "orange tree fields",
+    "castle rooftop",
+    "under lost bridge",
+    "terraced fields",
+    "under railway",
+    "water tower dam",
+    "lumberyard",
+    "lighthouse",
+    "kabuki stage",
+    "abandoned ship",
+    "ferry dock",
+    "shainto gate",
+    "purple cavern",
+    "abandoned station",
+    "railway",
+    "abandoned tunnel",
+    "abandoned shipyard",
+    "building rooftop",
+    "building parking lot",
+    "shainto cemetery",
+    "team 1",
+    "team 2",
+    "chanbara",
+    "practice 1",
     "practice 2",
 };
 
 /* enum RosterId (fighter.h). */
 static const char * const g_port_fight_roster[] = {
-    "kannuki story", "tatsumi story", "mikado story", "kannuki",
-    "tatsumi",       "mikado",        "utsusemi",     "red shadow",
-    "tsubame",       "sazanka",       "suminagashi",  "nightstalker",
-    "matsumushi",    "vanisher",      "sidearm 1",    "gengoro story",
-    "kaun story",    "jo story",      "gengoro",      "kaun",
-    "jo",            "hongou",        "katze",        "highwayman",
-    "chihiro",       "utamaru",       "tony umeda",   "isohachi",
-    "armored",       "sidearm 2",     "last 1",       "victim",
-    "last 2",
+    "kannuki story", "tatsumi story", "mikado story",
+    "kannuki",       "tatsumi",       "mikado",
+    "utsusemi",      "red shadow",    "tsubame",
+    "sazanka",       "suminagashi",   "nightstalker",
+    "matsumushi",    "vanisher",      "sidearm 1",
+    "gengoro story", "kaun story",    "jo story",
+    "gengoro",       "kaun",          "jo",
+    "hongou",        "katze",         "highwayman",
+    "chihiro",       "utamaru",       "tony umeda",
+    "isohachi",      "armored",       "sidearm 2",
+    "last 1",        "victim",        "last 2",
 };
 
 /* enum WeaponId (weapon.h). */
@@ -75,8 +101,8 @@ static void port_FightKey(
     const char *at;
 
     for (at = prefix; *at != 0 && text != end; at++, text++) {
-        char c = *text >= 'A' && *text <= 'Z' ? (char)(*text - 'A' + 'a')
-                                                : *text;
+        char c =
+            *text >= 'A' && *text <= 'Z' ? (char)(*text - 'A' + 'a') : *text;
 
         if (c != *at) {
             break;
@@ -108,10 +134,8 @@ static s32 port_FightKeysEqual(const char *first, const char *second) {
 }
 
 /* The index of the name in `names`, or -1. A number is the index itself. */
-static s32 port_FightFind(const char *text, const char *end,
-                          const char *prefix,
-                          const char * const *names,
-                          s32 count) {
+static s32 port_FightFind(const char *text, const char *end, const char *prefix,
+                          const char * const *names, s32 count) {
     char key[NAME_BYTES_MAX];
     char name[NAME_BYTES_MAX];
     s32 number = 0;
@@ -159,29 +183,24 @@ static s32 port_FightFighter(const char *text, s32 side) {
 }
 
 /* The fight to start (port_platform.h). */
-s32 port_ChooseFight(const char *stage, const char *first,
-                     const char *second) {
+s32 port_ChooseFight(const char *stage, const char *first, const char *second) {
     g_port_fight.mode = FIGHT_MODE_VS;
     g_port_fight.is_cpu[0] = FALSE;
     g_port_fight.is_cpu[1] = TRUE;
-    g_port_fight.stage =
-        port_FightFind(stage, NULL, "stage_", g_port_fight_stages,
-                       COUNT(g_port_fight_stages));
+    g_port_fight.stage = port_FightFind(
+        stage, NULL, "stage_", g_port_fight_stages, COUNT(g_port_fight_stages));
     if (g_port_fight.stage < 0) {
         port_Log("--fight: no stage is called %s; the stages:\n", stage);
-        port_FightList(g_port_fight_stages,
-                       COUNT(g_port_fight_stages));
+        port_FightList(g_port_fight_stages, COUNT(g_port_fight_stages));
         return FALSE;
     }
     if (!port_FightFighter(first, 0) || !port_FightFighter(second, 1)) {
         port_Log("--fight: %s or %s is not a fighter (NAME or NAME:WEAPON); "
                  "the fighters:\n",
                  first, second);
-        port_FightList(
-            g_port_fight_roster, COUNT(g_port_fight_roster));
+        port_FightList(g_port_fight_roster, COUNT(g_port_fight_roster));
         port_Log("and the weapons:\n");
-        port_FightList(
-            g_port_fight_weapons, COUNT(g_port_fight_weapons));
+        port_FightList(g_port_fight_weapons, COUNT(g_port_fight_weapons));
         return FALSE;
     }
     g_port_fight_chosen = TRUE;

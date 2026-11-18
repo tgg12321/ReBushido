@@ -52,6 +52,7 @@ u32 port_PaceBlank(
         pace->nudged = 0;
         pace->queue_average = 0;
         pace->held = 0;
+        pace->lost_by = 0;
     }
     pace->queue_average +=
         (queue_error * (1 << SMOOTH_FRACTION_BITS) - pace->queue_average) /
@@ -79,8 +80,11 @@ u32 port_PaceBlank(
     }
 
     lead = (s32)(pace->base + due - now);
+    pace->late = lead < 0 ? (u32)-lead : 0;
     if (lead < -PORT_PACE_LOST || lead > PORT_PACE_LOST) {
         /* the PC held the program up, or its clock jumped: from here */
+        pace->lost_by = -lead;
+        pace->late = 0;
         pace->base = now - due;
         port_CountLostTime(pace, blank);
         return 0;

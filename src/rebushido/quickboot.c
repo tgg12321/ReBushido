@@ -73,8 +73,8 @@ void rb_QuickBoot(void) {
     static const s32 roster[2] = {RB_QB_P1, RB_QB_P2};
     static const s32 weapon[2] = {RB_QB_WEAPON1, RB_QB_WEAPON2};
 
-    rb_StartFight(RB_QB_MODE, roster, weapon, RB_QB_STAGE, RB_QB_CPU2,
-                  RB_QB_BUGFIXES);
+    rb_StartFight(
+        RB_QB_MODE, roster, weapon, RB_QB_STAGE, RB_QB_CPU2, RB_QB_BUGFIXES);
 }
 
 #endif /* RB_QUICK_BOOT */
