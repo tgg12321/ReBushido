@@ -20,10 +20,15 @@ if a test fails.
                          (default "Bushido Blade 2 (USA).cue" in the checkout)
 
 The emulator is a Windows program here, so under WSL this starts itself
-again with Windows' python (python.exe). It runs one emulator at a time,
-on a desktop of its own with no sound (tools/play/launch.py), ends it by a
-hard time limit, and checks after each run that no process of it is left.
-The whole suite is held to fourteen minutes.
+again with Windows' python (python.exe). It runs up to -j emulators at
+once (default: one for every two free processors, four at most), each in
+a folder of its own that a lock keeps one run's, on a desktop of its own
+with no sound (tools/play/launch.py), and checks after each run that no
+process of it is left. A run's result is counted in vertical blanks; the
+clock only stops a run that hangs (LOAD_SLACK).
+
+    python tools/playtest.py -j 4            four runs at once
+    python tools/playtest.py --changed main  the tests a change reaches
 What a run wrote is in build/playtest/<test>/<disc>/: a picture of every
 checkpoint, run.log, plan.txt, the emulator's own output and its two
 memory cards; and where a test asks, the game's memory and all of video

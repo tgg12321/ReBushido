@@ -22,12 +22,14 @@ wsl bash tools/build.sh playtest boot       # one test
 make playtest                               # inside WSL or on Linux
 make playtest PLAYTEST="boot quickboot"     # some of them
 python tools/playtest.py [name...]          # the tests alone, with the discs already built
+python tools/playtest.py -j 4               # four runs at once
+python tools/playtest.py --changed main     # only the tests what changed since main reaches
 python tools/playtest.py --list
 ```
 
-About ten minutes for the seventeen tests, after up to two minutes of
-building discs; the tool holds a run to five minutes and the
-suite to fourteen. It prints a table and exits 1 if a test failed:
+About ten minutes for the seventeen tests one run at a time, after up to
+two minutes of building discs; RUNTIME_PLACEHOLDER
+It prints a table and exits 1 if a test failed:
 
 ```
   test             result   time
@@ -590,10 +592,35 @@ runs nothing: `--first` stops at the first checkpoint that differs,
 test, `--holes` shows what `except` leaves out as well, `--vram`
 compares video memory too ("The picture").
 
+## Only what a change reaches
+
+`--changed REV` (also `tools/gate.py --changed REV`) runs only the tests
+that what changed since the commit REV can reach: `git diff REV` and the
+files git does not know yet, each matched against `RULES` in
+`tools/play/affected.py` (`python tools/play/affected.py REV` shows the
+choice). The first rule that matches a path decides:
+
+| What changed | The tests |
+|---|---|
+| `tests/play/NAME.toml` | that one |
+| `tests/play/state.toml`, `tools/playtest.py`, `tools/play/*` | all |
+| `tests/play/probe/*`, `tests/port/*` | `gte_model` |
+| `src/port/gl/`, `src/port/window/`, `src/port/fonts/`, the window's build and provers | none: the tests run the port without a window |
+| `src/port/spu.c`, `sound.c`, `xa.c`, `wav.c` | `port_sound`, `port_movie` |
+| the rest of `src/port/`, `include/port_*`, `tools/port_gte_macros.py` | the seven `port_*` tests and `gte_model` |
+| `tools/port_build.py` | the seven `port_*` tests |
+| documents, CI, the patcher, the host tests, port-net, rollback and the gate's own tools | none |
+| anything else (`src/main/`, `src/rebushido/`, `include/`, `asm/`, `bb2.ld`, the `Makefile`, `config/`, `movovl/`, the build's tools) | all |
+
+A path no rule names reaches every test, and so does a revision git does
+not know: in doubt, everything runs. The full suite stays what is run
+before a release, and whenever the map may be wrong.
+
 ## How the emulator is run
 
-`tools/playtest.py` starts one emulator at a time, never a second while
-one is alive, as:
+`tools/playtest.py` starts up to `-j` emulators at once (without `-j`,
+one for every two processors that are idle when it starts, four at
+most), each as:
 
 ```
 pcsx-redux.main -portable <run's folder> -safe -noupdate -no-ui -interpreter -debugger
@@ -615,8 +642,24 @@ such a program does not have.)
   (`tools/play/launch.py`): a window or a dialog, if one were ever
   opened, would be made where nobody sees it; the tool also looks for a
   visible window of the emulator's on your desktop and fails the suite if
-  it finds one. After each run it checks that no process of the emulator
-  is left, and prints the count under the table.
+  it finds one. After each run it checks that no process of that run's
+  emulator is left, and under the table it prints how many of the
+  suite's own are (0, or the suite fails). It never ends an emulator it
+  did not start, and others' running beside it do not stop it.
+- Runs side by side share nothing: each has its folder (which is also
+  the emulator's `-portable` folder, where it keeps its settings), its
+  memory cards, its job and its own output. A test's runs are
+  independent, so each is a job of its own, the longest first; a test
+  with `cards = "keep"` is one job, its runs in order. A run's folder is
+  locked while it runs (`build/playtest/<test>/<disc>.lock`, a lock of
+  the operating system's, let go of however the run ends): a second
+  suite of the same checkout that reaches a run already going says so
+  and fails that test. Two checkouts never share a folder.
+- A run's result is counted in vertical blanks, never by the clock: a
+  checkpoint is given up `within` blanks of the one before, and a run
+  ends at its `limit`. The clock only catches a hang: a run is stopped
+  when its emulator has written nothing for two minutes (it writes a line
+  every 300 blanks), and at four times its `seconds`.
 - The interpreter and the debugger are what the check of the exception
   vector needs. It runs about three times the console's speed.
 - The emulator's script is `tools/play/runner.lua`, the same file for

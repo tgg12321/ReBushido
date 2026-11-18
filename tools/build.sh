@@ -4,13 +4,16 @@
 #   with their own output and exit code
 #   wsl bash tools/build.sh checks                every check CI runs, and a
 #   summary (tools/checks.sh)
+#   wsl bash tools/build.sh gate [--owner] [--push]   the whole gate, its
+#   steps side by side (tools/gate.py; BUILD.md, "The gate")
 #   wsl bash tools/build.sh rebushido             the ReBushido build, into
 #   build/rebushido/ (docs/REBUSHIDO.md); rebushido-disc, rebushido-test and
 #   rebushido-modern are make's targets too
 #   wsl bash tools/build.sh quickboot QB_P1=ROSTER_TSUBAME ...   a build that
 #   starts one fight; quickboot-disc for its disc image
-#   wsl bash tools/build.sh playtest [NAME...]    the play tests in an emulator
-#   with no window (tests/play/README.md): builds their discs, then runs them;
+#   wsl bash tools/build.sh playtest [-j N] [NAME...]   the play tests in an
+#   emulator with no window (tests/play/README.md): builds their discs, then
+#   runs them, N at once;
 #   a VARIABLE=value among the names is given to make (RB_RELEASE=1)
 #   wsl bash tools/build.sh port                  the native port, into
 #   build/port/ (docs/PORT.md): a program for this host, which reads the
@@ -26,6 +29,10 @@ if [ "$1" = test ]; then
 fi
 if [ "$1" = checks ]; then
     exec bash tools/checks.sh
+fi
+if [ "$1" = gate ]; then
+    shift
+    exec python3 tools/gate.py "$@"
 fi
 source .venv/bin/activate
 if [ "$1" = playtest ]; then
