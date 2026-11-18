@@ -2612,8 +2612,8 @@ s32 port_GlFighterCastTriangles(
     posing.turn = NULL;
     posing.places = places;
     posing.normals = NULL;
-    port_GlParallel(port_GlFighterPosePart, &posing, model->vertex_count,
-                    POSE_PIECE);
+    port_GlParallel(
+        port_GlFighterPosePart, &posing, model->vertex_count, POSE_PIECE);
     for (i = 0; i < model->triangles; i++) {
         float p[3][3];
         s32 c;
