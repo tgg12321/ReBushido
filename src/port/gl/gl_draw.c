@@ -2869,8 +2869,6 @@ u32 port_GlBackground(void) { return g_gl.background; }
 
 /* ---- what the host asks for ---- */
 
-/* The two scales a PortGlOptions asks for, each held to what there
- * is. */
 /* `antialiasing N`: the picture's edges smoothed by N times N samples
  * a pixel, multisampled (port_GlSamplesOf) -- the card shades a pixel of
  * a face once and keeps which of its samples the face covers, so the
@@ -2911,6 +2909,8 @@ static s32 port_GlSamplesOf(const PortGlOptions *options) {
     return samples < 2 ? 1 : samples;
 }
 
+/* The two scales a PortGlOptions asks for, each held to what there
+ * is. */
 static void port_GlScalesOf(
     const PortGlOptions *options, s32 *across, s32 *down) {
     *across = options->scale;

@@ -4690,6 +4690,15 @@ of 255, at edges and inside textures, which multisampling shades once a
 pixel; the pair is in the owner's `ReBushido Screenshots\Performance
 2026-11-18`.
 
+Every case, with the fighters' agent's work of the same day merged
+(`f10dcbdda`; the card's medians and 95th centiles, ms): `run_ahead 0`
+4.4 and 7.2 (before, 9.5 and 11.0), `run_ahead 1` 4.0 and 8.5 (11.1 and
+20.3), `run_ahead 2` 9.3 and 13.9 (16.8 and 24.0), fighter models off
+3.0 and 4.1, four fighters on the ground twice 5.2 and 9.6 (22.0 and
+27.5). With `run_ahead 2` the video memory pass is 3.7 ms of it, against
+0.6 in the other cases: what the frames run ahead write is sent again;
+that is the next thing to look at on the card.
+
 **The budget** (`port_bench.py --budget`, the gate's step `port-bench`,
 run alone after every other with `port-budget`): the cases `ra0`, `ra1`,
 `ra2` and `ra1-stress`, each held to 6.94 ms for the 95th centile of a
