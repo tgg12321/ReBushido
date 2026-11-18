@@ -113,10 +113,13 @@ def git(*args, cwd=REPO):
         return None
 
 
+LABEL = ''
+
+
 def commit_name():
     head = git('rev-parse', '--short=9', 'HEAD') or 'unknown'
     dirty = git('status', '--porcelain', '--untracked-files=no')
-    return head + ('-dirty' if dirty else '')
+    return head + ('-dirty' if dirty else '') + LABEL
 
 
 def cache_dir(name):
@@ -323,7 +326,14 @@ def main():
     ap.add_argument('--report-only', action='store_true', help='say what is over the budget, and pass')
     ap.add_argument('--against', metavar='REV', help="another commit's numbers (build/bench/), regressions")
     ap.add_argument('--reuse', action='store_true', help='measure the runs already in build/bench/runs/')
+    ap.add_argument('--program', help='another build of the window to measure (a variant of the flags)')
+    ap.add_argument('--label', help="kept as the commit's name and +LABEL, beside the commit's own numbers")
     args = ap.parse_args()
+    global PROGRAM
+    if args.program:
+        PROGRAM = os.path.abspath(args.program)
+    global LABEL
+    LABEL = '+' + args.label if args.label else ''
     cases = args.case or (BUDGET_CASES if args.budget else DEFAULT_CASES)
     main_repo = port_budget.main_checkout()
     image = port_budget.find(os.environ.get('REBUSHIDO_RETAIL'),
