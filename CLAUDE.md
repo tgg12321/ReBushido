@@ -119,6 +119,12 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   writes `build/stagemesh/verdict.txt`, where `g_stage_proved` comes
   from. The fighters' shadows are `src/port/gl/gl_shadow.c`
   (`shadows = original|soft`, `original` until the owner says).
+- Don't run the provers or the bench on unchanged `main` for a
+  baseline: `--against main` on `port_gl_prove.py`, `port_fps_prove.py`,
+  `port_stage_prove.py` (either `--gpu`) and `port_bench.py` holds a run
+  to main's stored measurements (nearest stored ancestor, it says
+  which; stops with 2 if the prover's code changed since). BUILD.md,
+  "A stored baseline".
 - What is left and what waits on the owner: [docs/HANDOFF.md](docs/HANDOFF.md).
 - The play tests count vertical blanks, never the clock, so a busy
   machine makes them slower, not wrong: the suite gives the same files,
@@ -167,7 +173,9 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   pushing): `wsl bash tools/build.sh port-sdl-windows`, then
   `python tools/owner_copy.py`, which puts the exe, `SDL2.dll` and the
   mods (shipped ones, and those made from the disc in `tmp/mods/`) beside
-  the root. Keep the disc-made mods (`hd`, `art`, `stages-hd`) in
+  the root; then `python tools/baseline.py --store` (about an hour, in
+  the background) so the provers' `--against main` has main's numbers.
+  Keep the disc-made mods (`hd`, `art`, `stages-hd`) in
   `tmp/mods/` and rebuild one there when its tool changes. None of it is
   committed (`.git/info/exclude`); `rebushido.cfg`, `logs/`,
   `screenshots/` and the cards are the owner's and are never touched.
