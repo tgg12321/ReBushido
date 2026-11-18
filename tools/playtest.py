@@ -866,9 +866,38 @@ def _run_on_disc(test, disc, names, launch, number, folder, cards_from, suite):
         f.write("PLAYTEST_DIR = [==[%s]==]\ndofile([==[%s]==])\n"
                 % (folder.replace("\\", "/") + "/", RUNNER.replace("\\", "/")))
 
+    # What the run reads, as it was when it began: a disc that another
+    # build writes while the run reads it gives a run of nothing in
+    # particular, which is said so in place of whatever it missed.
+    before = files_stamp(disc)
     if disc.port:
-        return run_on_port(test, run, order, folder)
+        run = run_on_port(test, run, order, folder)
+    else:
+        run = run_emulator(test, disc, run, order, folder, launch, suite)
+    if files_stamp(disc) != before:
+        run.problems.insert(0, "%s was written while the run read it (a build of the discs or the port beside "
+                            "it): run it again" % os.path.relpath(disc.cue, REPO).replace("\\", "/"))
+    return run
 
+
+def files_stamp(disc):
+    """The size and time of each file a run of `disc` reads: the program
+    or the image (a .cue and the .bin beside it) and its table of names."""
+    paths = [disc.cue, os.path.splitext(disc.cue)[0] + ".bin", os.path.splitext(disc.cue)[0] + ".sym",
+             PORT_SYMBOLS if disc.port else ""]
+    stamp = []
+    for path in paths:
+        try:
+            st = os.stat(path)
+            stamp.append((path, st.st_size, st.st_mtime_ns))
+        except OSError:
+            stamp.append((path, None, None))
+    return stamp
+
+
+def run_emulator(test, disc, run, order, folder, launch, suite):
+    """A run in the emulator: what its log says, and how it ended."""
+    start = os.path.join(folder, "start.lua")
     # -safe: none of the user's settings; -no-ui: no window, a silent sound
     # driver; the interpreter with the debugger, which the exception check
     # needs; the memory cards files of the run's folder, which the emulator
