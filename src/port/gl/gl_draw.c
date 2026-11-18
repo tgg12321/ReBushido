@@ -124,6 +124,8 @@ typedef ptrdiff_t GLintptr;
 #define GL_R32F 0x822E
 #define GL_RED 0x1903
 #define GL_BGRA 0x80E1
+#define GL_TEXTURE_BUFFER 0x8C2A
+#define GL_DYNAMIC_DRAW 0x88E8
 
 /* Every GL function this file calls: the name, and the type of the
  * pointer it is kept in. */
@@ -188,6 +190,8 @@ typedef ptrdiff_t GLintptr;
     GL(void, glUseProgram, (GLuint))                                           \
     GL(GLint, glGetUniformLocation, (GLuint, const GLchar *))                  \
     GL(void, glUniform1i, (GLint, GLint))                                      \
+    GL(void, glBufferSubData, (GLenum, GLintptr, GLsizeiptr, const void *))    \
+    GL(void, glTexBuffer, (GLenum, GLenum, GLuint))                            \
     GL(void, glUniform1f, (GLint, GLfloat))                                    \
     GL(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat))                  \
     GL(void, glUniform2f, (GLint, GLfloat, GLfloat))                           \
@@ -382,6 +386,7 @@ static struct {
     GLuint program;
     GLuint blit_program;
     GLuint vram_texture;
+    GLuint vram_buffer;
     GLuint color_texture;
     GLuint framebuffer;
     /* The depth buffer beside the colour buffer: the ground's mesh
@@ -796,7 +801,7 @@ static const char g_gl_geometry_text[] =
 
 static const char g_gl_fragment_text[] =
     "#version 330 core\n"
-    "uniform usampler2D u_vram;\n"
+    PORT_GL_VRAM_SHADER
     "uniform vec2 u_target;\n"
     "uniform vec2 u_scale;\n"
     "uniform int u_affine;\n" /* the texture flat, as the console */
@@ -916,9 +921,6 @@ static const char g_gl_fragment_text[] =
      * of video memory */
     "const int dither[16] = int[16](-4, 0, -3, 1, 2, -2, 3, -1,\n"
     "                               -3, 1, -4, 0, 3, -1, 2, -2);\n"
-    "uint vram(int x, int y) {\n"
-    "    return texelFetch(u_vram, ivec2(x & 1023, y & 511), 0).r;\n"
-    "}\n"
     /* the texel at (u, v) of this primitive's page, through the texture
      * window and its colour table */
     "uint texel_at(int u, int v) {\n"
@@ -1239,7 +1241,7 @@ static const char g_gl_blit_vertex_text[] =
 
 static const char g_gl_blit_fragment_text[] =
     "#version 330 core\n"
-    "uniform usampler2D u_vram;\n"
+    PORT_GL_VRAM_SHADER
     /* a mod's picture in the place of the rectangle (gl_replace.h) */
     "uniform sampler2D u_replace;\n"
     "uniform int u_replaced;\n"
@@ -1254,7 +1256,7 @@ static const char g_gl_blit_fragment_text[] =
     "        return;\n"
     "    }\n"
     "    ivec2 at = ivec2(floor(v_at));\n"
-    "    uint pixel = texelFetch(u_vram, ivec2(at.x & 1023, at.y & 511), 0).r;\n"
+    "    uint pixel = vram(at.x, at.y);\n"
     "    ivec3 five = ivec3(int(pixel & 31u), int((pixel >> 5) & 31u),\n"
     "                       int((pixel >> 10) & 31u));\n"
     "    o_color = vec4(vec3(five * 255 / 31) / 255.0, 1.0);\n"
@@ -1618,21 +1620,20 @@ static void port_GlUploadMirror(void) {
         return;
     }
     PORT_GPU_BEGIN(PORT_GPU_VRAM);
-    glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
-    glPixelStorei(GL_UNPACK_ROW_LENGTH, PORT_VRAM_WIDTH);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+    glBindBuffer(GL_TEXTURE_BUFFER, g_gl.vram_buffer);
     for (i = 0; i < g_gl.mirror_rects; i++) {
         const PortDirtyRect *rect = &g_gl.mirror_rect[i];
-        s32 w = rect->right - rect->left + 1;
-        s32 h = rect->bottom - rect->top + 1;
+        /* from the rectangle's first pixel to its last, the lines between
+         * whole: the buffer is laid out as the copy here is */
+        u32 first = (u32)(rect->top * PORT_VRAM_WIDTH + rect->left);
+        u32 last = (u32)(rect->bottom * PORT_VRAM_WIDTH + rect->right);
 
-        glTexSubImage2D(
-            GL_TEXTURE_2D, 0, rect->left, rect->top, w, h, GL_RED_INTEGER,
-            GL_UNSIGNED_SHORT,
-            &g_gl.staged[rect->top * PORT_VRAM_WIDTH + rect->left]);
-        g_gl.upload_count += (u32)(w * h);
+        glBufferSubData(GL_TEXTURE_BUFFER, (GLintptr)(first * sizeof(u16)),
+                        (GLsizeiptr)((last - first + 1) * sizeof(u16)),
+                        &g_gl.staged[first]);
+        g_gl.upload_count += last - first + 1;
     }
-    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+    glBindBuffer(GL_TEXTURE_BUFFER, 0);
     g_gl.mirror_rects = 0;
     port_ClearDirtyRect(&g_gl.mirror);
     PORT_GPU_END();
@@ -1835,7 +1836,7 @@ static void port_GlSetFighterDepth(void) {
 
 static void port_GlSetUniforms(void) {
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
+    glBindTexture(GL_TEXTURE_BUFFER, g_gl.vram_texture);
     glUniform1i(g_gl.at_vram, 0);
     glUniform2f(g_gl.at_target, (GLfloat)g_gl.target_w, (GLfloat)g_gl.target_h);
     glUniform2f(g_gl.at_scale, (GLfloat)g_gl.draw_x, (GLfloat)g_gl.draw_y);
@@ -2569,7 +2570,7 @@ static void port_GlDrawBlits(void) {
     glBindVertexArray(g_gl.blit_array);
     glUniform1i(g_gl.blit_at_replace, PORT_GL_REPLACE_UNIT);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
+    glBindTexture(GL_TEXTURE_BUFFER, g_gl.vram_texture);
     glUniform1i(g_gl.blit_at_vram, 0);
     glUniform2f(
         g_gl.blit_at_target, (GLfloat)g_gl.target_w, (GLfloat)g_gl.target_h);
@@ -3279,14 +3280,17 @@ const char *port_GlStart(
     g_gl.show_at_over = glGetUniformLocation(g_gl.show_program, "u_over");
     glGenTextures(1, &g_gl.host_texture);
 
+    /* the mirror (gl.h, PORT_GL_VRAM_SHADER) */
+    glGenBuffers(1, &g_gl.vram_buffer);
+    glBindBuffer(GL_TEXTURE_BUFFER, g_gl.vram_buffer);
+    glBufferData(GL_TEXTURE_BUFFER,
+                 (GLsizeiptr)(PORT_VRAM_PIXELS * sizeof(u16)), NULL,
+                 GL_DYNAMIC_DRAW);
     glGenTextures(1, &g_gl.vram_texture);
-    glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R16UI, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT,
-                 0, GL_RED_INTEGER, GL_UNSIGNED_SHORT, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_BUFFER, g_gl.vram_texture);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R16UI, g_gl.vram_buffer);
+    glBindTexture(GL_TEXTURE_BUFFER, 0);
+    glBindBuffer(GL_TEXTURE_BUFFER, 0);
 
     glGenTextures(1, &g_gl.color_texture);
     glGenFramebuffers(1, &g_gl.framebuffer);

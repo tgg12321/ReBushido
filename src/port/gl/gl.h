@@ -159,6 +159,27 @@ extern void port_GlRestoreVram(s32 x, s32 y, s32 w, s32 h);
  * FALSE from GiveBack where what was changed was too much to keep: the
  * caller then puts the rectangles back as before (port_GlRestoreVram). */
 extern s32 port_GlMirrorHold(void);
+
+/* **The mirror is a buffer**, which the card reads as a texture of 16-bit
+ * words, a line of video memory after another: `vram_texture` of
+ * PortGlPicture is bound to PORT_GL_VRAM_TARGET, and every shader reads it
+ * through `vram(x, y)` (PORT_GL_VRAM_SHADER).
+ *
+ * Why not a texture of 1024 by 512, as it was: a frame writes video memory
+ * between its draws -- its fog's colour tables, three times a fight frame,
+ * and a picture between frames writes them again and puts them back --
+ * and a texture the card may still be reading can only be written by
+ * waiting for the card: in the driver, which held the window's thread for
+ * 1 to 2 ms a write on the owner's card (2026-11-18), or on the card,
+ * where a send through a pixel buffer cost its video memory pass 7 ms. A
+ * buffer's lines are sent by glBufferSubData, which the driver queues in
+ * its turn among the draws, and neither waits. */
+#define PORT_GL_VRAM_TARGET 0x8C2A /* GL_TEXTURE_BUFFER */
+#define PORT_GL_VRAM_SHADER                                                    \
+    "uniform usamplerBuffer u_vram;\n"                                         \
+    "uint vram(int x, int y) {\n"                                              \
+    "    return texelFetch(u_vram, ((y & 511) << 10) | (x & 1023)).r;\n"      \
+    "}\n"
 extern s32 port_GlMirrorGiveBack(void);
 
 /* The counts of the frame being drawn (vertices, draws, pixels of the
