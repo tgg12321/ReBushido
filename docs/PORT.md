@@ -5494,12 +5494,22 @@ agents' work was on the machine), medians of a fight frame's blank, ms:
 The software GPU's part is a little larger: the painters are no longer
 made to finish by the picture between frames, so the next step's waits
 for them (a colour table loaded again, `port_PaintSyncWrite`) find more
-still to paint. The card's time is unchanged.
+still to paint. The card's time is unchanged. The other cases, one run
+of each program on a machine loaded by other agents' work (main's run
+was the more loaded, so only the shares are worth reading), `tween` and
+`remaster` in ms: `run_ahead 0` 2.49 and 2.41 against 0.70 and 1.15,
+`run_ahead 2` 2.23 and 2.09 against 0.61 and 1.11, four fighters on the
+ground twice 2.65 and 2.27 against 0.52 and 0.82.
 
-**The pictures**: `port_gl_prove.py --gpu card` gives main's numbers to
-the pixel (623,545, 6,805,770 and 648,625 pixels against the software
-GPU at scale 1, the flat screens' 8,609, 8,626 and 8,744 a step out),
-**TODO** the others.
+**The pictures**, held to main's programs run beside them on the card:
+`port_gl_prove.py` gives main's numbers to the pixel (623,545, 6,805,770
+and 648,625 pixels against the software GPU at scale 1; the flat
+screens' 8,609, 8,626 and 8,744 a step out), and on llvmpipe its own
+(608,536, 6,786,976 and 634,701; 8,037, 8,037 and 8,154); every line of
+`port_fps_prove.py` is main's but its times (on llvmpipe too: every
+frame in order, the first picture the game's own, no corner off its
+line); `port_stage_prove.py`'s measures of all 38 stages are main's but
+the seconds. The traces are the same with the pictures on and off.
 
 **Not done, and next:** the picture between frames is still the frame
 on show's primitives given to the backend again every picture (some
