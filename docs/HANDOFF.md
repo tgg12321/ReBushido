@@ -79,6 +79,36 @@ play is [`PLAYING.md`](PLAYING.md); online play is
    `src/port/window/` outside lint and count; the music a tenth louder
    than the emulator's; the original's bugs left alone (REBUSHIDO.md).
 
+## A GPU-first renderer, the first big work of the next session
+
+The owner, 2026-11-18: offload all that can go to the graphics card, and
+assume hardware of the last ten years: **OpenGL 4.5 is the remastered
+picture's minimum** (compute shaders, direct state access, persistent
+mapped buffers); Graphics: Original stays the fallback; Vulkan is a
+later option. The remastered picture is still rebuilt each frame from
+the game's PlayStation output on the processor while the card waits
+(about 13 ms of a fight frame on the owner's PC). In order:
+
+1. **The software GPU only where the game needs it**: with Remastered on,
+   only the video memory the game copies, uploads or reads back, the
+   card drawing what the game reads (about 3.4 ms a frame today).
+2. **The scene as real 3D**: the ground, the stage's pieces and the HD
+   fighters are meshes already; draw them from their matrices on the
+   card, the PlayStation path kept for the 2D layer, the effects and
+   what is not converted; the side channel only where it is still used.
+3. **Pictures between frames by matrices**, blended on the card, not
+   faces paired on the processor.
+4. **Shadow maps** (roadmap 14) in place of the cast shadow's projection
+   on the processor (44,000 triangles a picture with the HD models), and
+   the HD cloth's hold in a shader.
+5. **Run-ahead's save and load by the pages that changed** (about 116 KB a
+   frame of 4.7 MB), not the whole state (2.4 ms today).
+
+Run-ahead with the HD models is the case to measure it by: today it
+throttles the owner's PC at `run_ahead = 1` (he plays with 0), after the
+fixes of 2026-11-18 (the tint's colour tables sent 3,689 times a fight,
+now 4; the run-ahead frame no longer painting the software picture).
+
 ## Faster iteration, for the start of the next session
 
 The owner's ask (2026-11-17): make development faster. In the order of
