@@ -28,6 +28,9 @@ u32 g_port_steps;
 s32 g_port_rerun;
 s32 g_port_ahead;
 s32 g_port_unseen;
+s32 g_port_ahead_kept;
+/* the frames ahead the boundary before ran in full, or 0 */
+static s32 g_port_ahead_last;
 s32 g_port_ahead_held;
 s32 g_port_ahead_unpainted;
 void (*g_port_boundary_hook)(void);
@@ -100,10 +103,12 @@ void port_BeforeStep(void) {
 
     g_port_unseen = FALSE;
     g_port_ahead_held = FALSE;
+    g_port_ahead_kept = FALSE;
     if (g_port_boundary_hook != NULL) {
         g_port_boundary_hook();
     }
     if (!port_MayRunAhead()) {
+        g_port_ahead_last = 0;
         return;
     }
     if (g_port_ahead_state == NULL) {
@@ -122,8 +127,16 @@ void port_BeforeStep(void) {
     g_port_ahead_given_up = FALSE;
     g_port_ahead_blanks = 0;
     for (i = 0; i < g_port_ahead_frames && !g_port_ahead_given_up; i++) {
+        /* With two frames ahead and more, all but the last were run by the
+         * boundary before too, and drawn by the card then: drawing them
+         * again cost the card half again (docs/PORT.md, "Measuring on the
+         * card"). They are run all the same, for the state, and what they
+         * write into video memory reaches the card's mirror. */
+        g_port_ahead_kept = i + 1 < g_port_ahead_frames &&
+                            g_port_ahead_last == g_port_ahead_frames;
         port_StepGame();
     }
+    g_port_ahead_kept = FALSE;
     if (!g_port_ahead_given_up && g_port_ahead_done_hook != NULL) {
         g_port_ahead_done_hook();
     }
@@ -135,6 +148,7 @@ void port_BeforeStep(void) {
     /* the step that follows has been drawn already, unless the frames
      * ahead were given up: then it is drawn as ever */
     g_port_unseen = !g_port_ahead_given_up;
+    g_port_ahead_last = g_port_ahead_given_up ? 0 : g_port_ahead_frames;
     g_port_ahead_counts.runs++;
     if (g_port_ahead_given_up) {
         g_port_ahead_counts.given_up++;

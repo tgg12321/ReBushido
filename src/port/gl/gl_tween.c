@@ -809,8 +809,17 @@ static void port_TweenEnd(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24) {
     }
 }
 
+/* A frame the card does not draw is no frame of the pictures between
+ * frames either: its writes go to the mirror alone. */
+static void port_TweenKeptVram(s32 x, s32 y, s32 w, s32 h) {
+    if (g_tween.real != NULL && g_tween.real->kept_vram != NULL) {
+        g_tween.real->kept_vram(x, y, w, h);
+    }
+}
+
 static const PortRemasterBackend g_tween_backend = {
-    port_TweenBegin, port_TweenDrawPrim, port_TweenWroteVram, port_TweenEnd};
+    port_TweenBegin, port_TweenDrawPrim, port_TweenWroteVram, port_TweenEnd,
+    port_TweenKeptVram};
 
 /* ---- starting and stopping ---- */
 

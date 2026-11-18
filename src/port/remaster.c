@@ -1533,7 +1533,8 @@ void port_RemasterNewFrame(void) {
     port_RemasterNoteObject(0);
     port_ClearDirtyRect(&g_drawn);
     /* a step whose frames were run ahead began this frame then */
-    if (port_RemasterIsOn() && !g_port_unseen && g_backend->begin != NULL) {
+    if (port_RemasterIsOn() && !g_port_unseen && !g_port_ahead_kept &&
+        g_backend->begin != NULL) {
         g_backend->begin();
     }
     /* the backend has laid the frame before's shadows down in `begin`,
@@ -2115,6 +2116,44 @@ static void port_DecodeRectangle(
     port_RemasterDrawPrim(&prim, PORT_REMASTER_COUNT_RECT);
 }
 
+/* The rectangle of video memory a copy (`is_copy`) or a fill writes. */
+static void port_RemasterWritten(
+    const u32 *words, s32 is_copy, s32 *x, s32 *y, s32 *w, s32 *h) {
+    if (is_copy) {
+        *x = (s32)(words[2] & VRAM_X_MASK);
+        *y = (s32)((words[2] >> HALF_SHIFT) & VRAM_Y_MASK);
+        *w = port_RemasterTransferSize(words[3] & HALF_MASK, VRAM_X_MASK);
+        *h = port_RemasterTransferSize(words[3] >> HALF_SHIFT, VRAM_Y_MASK);
+        return;
+    }
+    *x = (s32)(words[1] & FILL_X_MASK);
+    *y = (s32)((words[1] >> HALF_SHIFT) & VRAM_Y_MASK);
+    *w = (s32)(((words[2] & VRAM_X_MASK) + FILL_STEP - 1) &
+               ~(u32)(FILL_STEP - 1));
+    *h = (s32)((words[2] >> HALF_SHIFT) & VRAM_Y_MASK);
+}
+
+/* A command of a frame the card does not draw (g_port_ahead_kept): a copy
+ * or a fill reaches the mirror, and nothing else is decoded. */
+static void port_RemasterKeptCommand(const u32 *words, u32 code) {
+    s32 x;
+    s32 y;
+    s32 w;
+    s32 h;
+
+    if (g_backend->kept_vram == NULL) {
+        return;
+    }
+    if ((code & COMMAND_KIND_MASK) == COMMAND_COPY) {
+        port_RemasterWritten(words, TRUE, &x, &y, &w, &h);
+    } else if (code == COMMAND_FILL) {
+        port_RemasterWritten(words, FALSE, &x, &y, &w, &h);
+    } else {
+        return;
+    }
+    g_backend->kept_vram(x, y, w, h);
+}
+
 /* A command the GPU has just drawn (port_remaster.h): counted, and
  * decoded for the backend where the remastered picture is on. */
 void port_RemasterCommand(const u32 *words, s32 count) {
@@ -2136,6 +2175,10 @@ void port_RemasterCommand(const u32 *words, s32 count) {
      * was given all of it then, and what it writes into video memory
      * would be drawn over the frame those steps drew. */
     if (g_port_unseen) {
+        return;
+    }
+    if (g_port_ahead_kept) {
+        port_RemasterKeptCommand(words, code);
         return;
     }
     port_GetGpuState(&state);
@@ -2179,6 +2222,12 @@ void port_RemasterLoadedVram(s32 x, s32 y, s32 w, s32 h) {
     if (g_backend == NULL || !port_RemasterIsOn() || g_port_unseen) {
         return;
     }
+    if (g_port_ahead_kept) {
+        if (g_backend->kept_vram != NULL) {
+            g_backend->kept_vram(x, y, w, h);
+        }
+        return;
+    }
     if (g_backend->wrote_vram != NULL) {
         g_backend->wrote_vram(x, y, w, h);
     }
@@ -2191,7 +2240,7 @@ void port_RemasterShow(void) {
     u32 drawn = 0;
     u32 i;
 
-    if (g_backend == NULL || !port_RemasterIsOn()) {
+    if (g_backend == NULL || !port_RemasterIsOn() || g_port_ahead_kept) {
         return;
     }
     if (g_backend->end != NULL) {

@@ -3047,7 +3047,8 @@ static void port_GlEnd(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24) {
 }
 
 static const PortRemasterBackend g_gl_backend = {
-    port_GlBegin, port_GlDraw, port_GlWroteVram, port_GlEnd};
+    port_GlBegin, port_GlDraw, port_GlWroteVram, port_GlEnd,
+    port_GlUploadVram};
 
 const PortRemasterBackend *port_GlBackend(void) { return &g_gl_backend; }
 

@@ -283,6 +283,12 @@ extern s32 port_GetRunAhead(void);
  * whose pictures they drew (g_port_unseen). */
 extern s32 g_port_ahead;
 extern s32 g_port_unseen;
+/* A frame ahead that the next boundary runs again, the last of its frames
+ * ahead but one or more, and draws: the card is given only what it writes
+ * into video memory, for its mirror (docs/PORT.md, "Measuring on the
+ * card"). Only where the boundary before ran as many frames ahead, so that
+ * the card has drawn the frame already. */
+extern s32 g_port_ahead_kept;
 /* Set by g_port_boundary_hook: no frame is run ahead at this boundary
  * (the window, while the game loads). */
 extern s32 g_port_ahead_held;

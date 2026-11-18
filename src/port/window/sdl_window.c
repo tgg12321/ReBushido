@@ -2724,7 +2724,9 @@ static void port_AheadBlankTurn(u32 blank) {
         port_GiveUpAhead();
         return;
     }
-    if (g_port_has_gl) {
+    /* a frame the card does not draw has nothing to end
+     * (g_port_ahead_kept) */
+    if (g_port_has_gl && !g_port_ahead_kept) {
         s32 was = port_ProfileSwitch(PORT_PROFILE_FINISH);
 
         port_RemasterShow();
