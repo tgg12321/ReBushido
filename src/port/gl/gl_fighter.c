@@ -244,6 +244,13 @@ typedef struct {
     s32 is_cast_boxed;
     float cast_reach;
     float cast_shares;
+    /* where on the screen it falls (port_GlFighterBoundModel): a vertex
+     * is placed about the bone of its largest share, no farther from it
+     * than its terms' vectors and its shares of the other bones' places
+     * from that one; for each bone, the most its vertices' vectors come
+     * to, and the most of each other bone's place they take */
+    float bone_reach[PORT_FIGHTER_FILE_JOINTS];
+    float bone_share[PORT_FIGHTER_FILE_JOINTS][PORT_FIGHTER_FILE_JOINTS];
     /* rb_palette: the picture of entries, and the tables as the file
      * has them (clut_count 0: none) */
     GLuint index_texture;
@@ -316,6 +323,7 @@ static struct {
     GLint t_at_depth;
     GLint t_at_samples;
     GLint t_at_far;
+    GLint t_at_box;
     GLint c_at_soft;
     GLuint quad_array;
     GLuint quad_buffer;
@@ -362,8 +370,10 @@ static struct {
     /* the primitive port_GlFighterTakes was last given is a cloth of a
      * fighter drawn from a model of his own */
     s32 holds;
-    /* where the layer was laid over the picture */
+    /* where the layer was laid over the picture, and where in it the
+     * fighters are (port_GlFighterBound) */
     s32 laid[4];
+    s32 bound[4];
     /* a picture between two frames is being drawn, `phase` of the way */
     s32 tween_phase;
     /* the views of the last two frames the fighters were drawn in: the
@@ -656,10 +666,18 @@ static const char g_take_down_fragment_text[] =
     "uniform sampler2DMS u_depth;\n"
     "uniform int u_samples;\n"
     "uniform float u_far;\n"
+    /* where the models are; nothing is read outside it */
+    "uniform vec4 u_box;\n"
     "layout(location = 0) out vec4 o_color;\n"
     "layout(location = 1) out float o_depth;\n"
     "void main() {\n"
     "    ivec2 at = ivec2(gl_FragCoord.xy);\n"
+    "    if (any(lessThan(gl_FragCoord.xy, u_box.xy))\n"
+    "        || any(greaterThanEqual(gl_FragCoord.xy, u_box.xy + u_box.zw))) {\n"
+    "        o_color = vec4(0.0);\n"
+    "        o_depth = u_far;\n"
+    "        return;\n"
+    "    }\n"
     "    vec3 sum = vec3(0.0);\n"
     "    float covered = 0.0;\n"
     "    float nearest = u_far;\n"
@@ -792,6 +810,7 @@ const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
     AT(t_at_depth, "u_depth");
     AT(t_at_samples, "u_samples");
     AT(t_at_far, "u_far");
+    AT(t_at_box, "u_box");
 #undef AT
     glGenVertexArrays(1, &g_fighter.quad_array);
     glGenBuffers(1, &g_fighter.quad_buffer);
@@ -986,12 +1005,34 @@ static void port_GlFighterCastBox(
     model->is_cast_boxed = TRUE;
     model->cast_reach = 0.0f;
     model->cast_shares = 0.0f;
+    memset(model->bone_reach, 0, sizeof(model->bone_reach));
+    memset(model->bone_share, 0, sizeof(model->bone_share));
     for (i = 0; i < file->vertex_count; i++) {
         const PortFighterVertex *v = &file->vertices[i];
+        float share[PORT_FIGHTER_FILE_JOINTS];
         double reach = 0.0;
         double shares = 0.0;
         double sizes = 0.0;
+        s32 largest = 0;
+        s32 j;
 
+        memset(share, 0, sizeof(share));
+        for (k = 0; k < PORT_FIGHTER_TERMS; k++) {
+            const float *term = v->term[k];
+            s32 bone = v->term_joint[k] % PORT_FIGHTER_FILE_JOINTS;
+
+            share[bone] += term[3] < 0.0f ? -term[3] : term[3];
+            if (share[bone] > share[largest]) {
+                largest = bone;
+            }
+        }
+        for (j = 0; j < PORT_FIGHTER_FILE_JOINTS; j++) {
+            if (j != largest &&
+                share[j] + 0.001f > model->bone_share[largest][j] &&
+                share[j] > 0.0f) {
+                model->bone_share[largest][j] = share[j] + 0.001f;
+            }
+        }
         for (k = 0; k < PORT_FIGHTER_TERMS; k++) {
             const float *term = v->term[k];
 
@@ -1007,6 +1048,9 @@ static void port_GlFighterCastBox(
         /* a little over, for the card's rounding */
         if ((float)reach + 1.0f > model->cast_reach) {
             model->cast_reach = (float)reach + 1.0f;
+        }
+        if ((float)reach + 1.0f > model->bone_reach[largest]) {
+            model->bone_reach[largest] = (float)reach + 1.0f;
         }
         if ((float)sizes + 0.01f > model->cast_shares) {
             model->cast_shares = (float)sizes + 0.01f;
@@ -1400,9 +1444,13 @@ static s32 port_GlFighterLayer(FighterLayer *layer, s32 w, s32 h, s32 samples) {
 }
 
 /* The layer drawn with several samples a pixel taken down to one, into
- * the layer's own colour and depth (g_take_down_fragment_text). Leaves
- * the layer's framebuffer bound. */
-static void port_GlFighterTakeDown(FighterLayer *layer, s32 w, s32 h) {
+ * the layer's own colour and depth (g_take_down_fragment_text): the box
+ * at `bx`, `by` (`bw` by `bh`) where the models are taken down, and the
+ * rest of the `w` by `h` made nothing at the far plane without a sample
+ * read (a clear of it to the far plane cost more). Leaves the layer's
+ * framebuffer bound. */
+static void port_GlFighterTakeDown(
+    FighterLayer *layer, s32 w, s32 h, s32 bx, s32 by, s32 bw, s32 bh) {
     static const GLenum both[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
 
     glBindFramebuffer(GL_FRAMEBUFFER, layer->framebuffer);
@@ -1422,6 +1470,8 @@ static void port_GlFighterTakeDown(FighterLayer *layer, s32 w, s32 h) {
     glUniform1i(g_fighter.t_at_depth, 3);
     glUniform1i(g_fighter.t_at_samples, layer->samples);
     glUniform1f(g_fighter.t_at_far, FAR_PLANE);
+    glUniform4f(
+        g_fighter.t_at_box, (GLfloat)bx, (GLfloat)by, (GLfloat)bw, (GLfloat)bh);
     glBindVertexArray(g_fighter.quad_array);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
@@ -2295,12 +2345,291 @@ static void port_GlFighterWeaponPose(
     pose->back = t < 0.5 ? a->back : b->back;
 }
 
+/* ---- where on the screen the models fall ---- */
+
+/* How far the layer's box is kept beyond what it bounds, in the world's
+ * units about a cloth's points (the surface through them may swell past
+ * them, and is kept out of the body by CLOTH_GAP) and in pixels about
+ * the whole. */
+#define BOUND_CLOTH 96.0
+#define BOUND_PIXELS 2
+
+typedef struct {
+    double lo[2];
+    double hi[2];
+    s32 is_whole; /* something could not be bounded: the whole area */
+} ScreenBox;
+
+/* The most a matrix of numbers (a row after a row) lengthens a vector:
+ * no more than the root of its largest row's sum times its largest
+ * column's. */
+static double port_GlFighterStretch(const double *m) {
+    double rows = 0.0;
+    double columns = 0.0;
+    s32 i;
+
+    for (i = 0; i < 3; i++) {
+        double row = 0.0;
+        double column = 0.0;
+        s32 k;
+
+        for (k = 0; k < 3; k++) {
+            row += m[i * 3 + k] < 0.0 ? -m[i * 3 + k] : m[i * 3 + k];
+            column += m[k * 3 + i] < 0.0 ? -m[k * 3 + i] : m[k * 3 + i];
+        }
+
+        rows = row > rows ? row : rows;
+        columns = column > columns ? column : columns;
+    }
+    return port_GlFighterRoot(rows * columns);
+}
+
+/* The box of the world from lo to hi as `pose` projects it at `screen`
+ * (the shader's own projection, g_fighter_vertex_text), into `box`, in
+ * the picture's pixels; whole where a corner is not well in front. */
+static void port_GlFighterBoundBox(
+    ScreenBox *box, const FighterPose *pose, const double screen[2],
+    const PortGlPicture *picture, const double lo[3], const double hi[3]) {
+    s32 corner;
+
+    for (corner = 0; corner < 8 && !box->is_whole; corner++) {
+        double w[3];
+        double v[3];
+        s32 r;
+
+        w[0] = (corner & 1 ? hi[0] : lo[0]) - pose->camera[0];
+        w[1] = (corner & 2 ? hi[1] : lo[1]) - pose->camera[1];
+        w[2] = (corner & 4 ? hi[2] : lo[2]) - pose->camera[2];
+        for (r = 0; r < 3; r++) {
+            v[r] = (pose->view[r * 3] * w[0] + pose->view[r * 3 + 1] * w[1] +
+                    pose->view[r * 3 + 2] * w[2]) *
+                   (r == 1 ? 0.5 : 1.0);
+        }
+        if (v[2] < 2.0 * NEAR_PLANE) {
+            box->is_whole = TRUE;
+            break;
+        }
+        for (r = 0; r < 2; r++) {
+            double at = (pose->h * v[r] / v[2] + screen[r]) *
+                            (r == 0 ? picture->draw_x : picture->draw_y) +
+                        0.5;
+
+            box->lo[r] = at < box->lo[r] ? at : box->lo[r];
+            box->hi[r] = at > box->hi[r] ? at : box->hi[r];
+        }
+    }
+}
+
+/* Each bone's ball as `pose` poses the model: the vertices whose largest
+ * share is of the bone (port_GlFighterCastBox) lie within `reach[bone]`
+ * of its place, their terms' vectors stretched as far as any bone
+ * stretches one and their shares of the other bones' places as far as
+ * those are from it; 0 where the bone has none. FALSE where the model's
+ * shares do not add up to one and nothing is bounded. */
+static s32 port_GlFighterBoneReach(
+    const FighterModel *model, const FighterPose *pose, float *reach) {
+    double stretch = 0.0;
+    s32 i;
+    s32 j;
+    s32 k;
+
+    if (!model->is_cast_boxed) {
+        return FALSE;
+    }
+    for (i = 0; i < PORT_FIGHTER_BONES; i++) {
+        double n = port_GlFighterStretch(pose->bone_rotation[i]);
+
+        stretch = n > stretch ? n : stretch;
+    }
+    for (i = 0; i < PORT_FIGHTER_BONES; i++) {
+        double r = model->bone_reach[i] * stretch;
+
+        reach[i] = 0.0f;
+        if (model->bone_reach[i] <= 0.0f) {
+            continue;
+        }
+        for (j = 0; j < PORT_FIGHTER_BONES; j++) {
+            double d = 0.0;
+
+            if (model->bone_share[i][j] <= 0.0f) {
+                continue;
+            }
+            for (k = 0; k < 3; k++) {
+                double e = pose->bone_place[j][k] - pose->bone_place[i][k];
+
+                d += e * e;
+            }
+            r += model->bone_share[i][j] * port_GlFighterRoot(d);
+        }
+        /* a little over, for the card's rounding */
+        reach[i] = (float)r + 1.0f;
+    }
+    return TRUE;
+}
+
+/* A model posed by `pose` into `box`, a ball a bone. */
+static void port_GlFighterBoundModel(
+    ScreenBox *box, const FighterModel *model, const FighterPose *pose,
+    const double screen[2], const PortGlPicture *picture) {
+    float reach[PORT_FIGHTER_BONES];
+    s32 i;
+    s32 k;
+
+    if (!port_GlFighterBoneReach(model, pose, reach)) {
+        box->is_whole = TRUE;
+        return;
+    }
+    for (i = 0; i < PORT_FIGHTER_BONES && !box->is_whole; i++) {
+        double lo[3];
+        double hi[3];
+
+        if (reach[i] <= 0.0f) {
+            continue;
+        }
+        for (k = 0; k < 3; k++) {
+            lo[k] = pose->bone_place[i][k] - reach[i];
+            hi[k] = pose->bone_place[i][k] + reach[i];
+        }
+        port_GlFighterBoundBox(box, pose, screen, picture, lo, hi);
+    }
+}
+
+/* A view's smooth cloths into `box`: their points' box, grown by
+ * BOUND_CLOTH (a place kept out of the body lands by the body, which is
+ * bounded already). */
+static void port_GlFighterBoundCloths(
+    ScreenBox *box, const FighterModel *model, const PortFighterView *view,
+    const FighterPose *pose, const double screen[2],
+    const PortGlPicture *picture) {
+    double lo[3] = {0.0, 0.0, 0.0};
+    double hi[3] = {0.0, 0.0, 0.0};
+    s32 has = FALSE;
+    s32 i;
+    s32 k;
+    s32 c;
+
+    for (k = 0; k < view->cloth_count; k++) {
+        const PortFighterCloth *drawn = &view->cloth[k];
+
+        if (port_GlFighterClothFor(model, drawn) == NULL) {
+            continue;
+        }
+        for (i = 0; i < drawn->count; i++) {
+            for (c = 0; c < 3; c++) {
+                double v = (double)drawn->point[i][c] / 128.0;
+
+                lo[c] = !has || v < lo[c] ? v : lo[c];
+                hi[c] = !has || v > hi[c] ? v : hi[c];
+            }
+            has = TRUE;
+        }
+    }
+    if (!has) {
+        return;
+    }
+    for (c = 0; c < 3; c++) {
+        lo[c] -= BOUND_CLOTH;
+        hi[c] += BOUND_CLOTH;
+    }
+    port_GlFighterBoundBox(box, pose, screen, picture, lo, hi);
+}
+
+/* Where the picture's fighters, their cloths, their copies (the stress)
+ * and the weapons fall, as a box of whole pixels of the picture; FALSE
+ * where any of them could not be bounded (the whole drawing area, then).
+ * A picture of two fighters face to face in the wide shot covers a
+ * fifth of the screen or so: the layer is cleared, taken down and laid
+ * over the picture there and nowhere else, which was most of the
+ * fighters' time on the card at 2560 by 1440. */
+static s32 port_GlFighterBound(
+    const PortRemasterPrim *paint, const PortFighterView *views,
+    const PortFighterView *after, double t, const PortFighterWeapon *weapons,
+    s32 weapon_count, const PortFighterWeapon *after_weapons,
+    s32 after_weapon_count, const PortGlPicture *picture, s32 rect[4]) {
+    ScreenBox box;
+    FighterPose pose;
+    FighterPose frame;
+    s32 has_frame = FALSE;
+    s32 copies = port_GlBenchFighterCopies();
+    s32 slot;
+    s32 i;
+
+    box.lo[0] = box.lo[1] = 1e30;
+    box.hi[0] = box.hi[1] = -1e30;
+    box.is_whole = FALSE;
+    for (slot = 0; slot < PORT_FIGHTER_SLOTS && !box.is_whole; slot++) {
+        const PortFighterView *view = &views[slot];
+        const PortFighterView *next = after != NULL ? &after[slot] : NULL;
+        const FighterModel *model;
+        s32 copy;
+
+        if (view->model_id < 0) {
+            continue;
+        }
+        port_GlFighterPoseOf(&pose, view, next, t);
+        if (!has_frame) {
+            frame = pose;
+            has_frame = TRUE;
+        }
+        model = port_GlFighterModel(view->model_id);
+        if (model == NULL) {
+            continue;
+        }
+        for (copy = 0; copy < copies; copy++) {
+            double screen[2];
+
+            screen[0] = pose.ofx + paint->offset_x + picture->margin +
+                        (copy & 1 ? 1 : -1) * ((copy + 1) / 2) * 96;
+            screen[1] = pose.ofy + paint->offset_y;
+            port_GlFighterBoundModel(&box, model, &pose, screen, picture);
+            port_GlFighterBoundCloths(
+                &box, model, view, &pose, screen, picture);
+            if (next != NULL && t > 0.0 && next->model_id == view->model_id) {
+                port_GlFighterBoundCloths(
+                    &box, model, next, &pose, screen, picture);
+            }
+        }
+    }
+    for (i = 0; i < weapon_count && has_frame && !box.is_whole; i++) {
+        const FighterModel *model =
+            port_GlFighterWeaponModel(weapons[i].weapon);
+        double screen[2];
+
+        if (model == NULL) {
+            continue;
+        }
+        port_GlFighterWeaponPose(
+            &pose, &frame, &weapons[i],
+            port_GlFighterWeaponAfter(
+                &weapons[i], i, after_weapons, after_weapon_count),
+            t);
+        screen[0] = pose.ofx + paint->offset_x + picture->margin;
+        screen[1] = pose.ofy + paint->offset_y;
+        port_GlFighterBoundModel(&box, model, &pose, screen, picture);
+    }
+    if (box.is_whole) {
+        return FALSE;
+    }
+    if (box.lo[0] > box.hi[0]) {
+        /* nothing to draw */
+        rect[0] = rect[1] = 0;
+        rect[2] = rect[3] = 1;
+        return TRUE;
+    }
+    /* whole pixels, a pixel more each way than the truncation */
+    rect[0] = (s32)box.lo[0] - 1 - BOUND_PIXELS;
+    rect[1] = (s32)box.lo[1] - 1 - BOUND_PIXELS;
+    rect[2] = (s32)box.hi[0] + 1 + BOUND_PIXELS - rect[0];
+    rect[3] = (s32)box.hi[1] + 1 + BOUND_PIXELS - rect[1];
+    return TRUE;
+}
+
 /* Every fighter and weapon of the frame that has a model of its own into
  * the layer, and the layer over the picture, in place of the primitive
  * `paint`. */
 /* --bench-stress: the fighter drawn again beside himself, for more
- * fighters' worth of the card's work (gl_bench.h). His cloth is the
- * same pose's, kept out of the body once. */
+ * fighters' worth of the card's work (gl_bench.h), his cloth kept out
+ * of the body again as another fighter's would be. */
 static void port_GlFighterDrawCopies(
     const FighterModel *model, const PortFighterView *view,
     const PortFighterView *after, double t, const FighterPose *pose, s32 slot,
@@ -2343,6 +2672,7 @@ static void port_GlFighterDrawAll(
     s32 h;
     s32 slot;
     s32 drawn = 0;
+    s32 bound[4];
 
     port_GlGetPicture(&picture);
     port_GlGetOptions(&options);
@@ -2357,6 +2687,26 @@ static void port_GlFighterDrawAll(
         x = (paint->clip_left + picture.margin) * picture.draw_x;
         w = (paint->clip_right - paint->clip_left + 1) * picture.draw_x;
     }
+    /* ... and where in it the fighters are (port_GlFighterBound): the
+     * layer is taken down and laid over the picture there alone. The
+     * layer itself stays the area's, so that the models are drawn by the
+     * same numbers whatever the bound is (a layer as small as the bound,
+     * a few hundredths of a pixel elsewhere, moved an edge) */
+    bound[0] = x;
+    bound[1] = y;
+    bound[2] = w;
+    bound[3] = h;
+    if (!is_tiny && port_GlFighterBound(
+                        paint, views, after, t, weapons, weapon_count,
+                        after_weapons, after_weapon_count, &picture, bound)) {
+        s32 right = x + w < bound[0] + bound[2] ? x + w : bound[0] + bound[2];
+        s32 top = y + h < bound[1] + bound[3] ? y + h : bound[1] + bound[3];
+
+        bound[0] = x > bound[0] ? x : bound[0];
+        bound[1] = y > bound[1] ? y : bound[1];
+        bound[2] = right - bound[0] > 1 ? right - bound[0] : 1;
+        bound[3] = top - bound[1] > 1 ? top - bound[1] : 1;
+    }
     if (w <= 0 || h <= 0 ||
         !port_GlFighterLayer(layer, w, h, picture.samples)) {
         return;
@@ -2366,7 +2716,15 @@ static void port_GlFighterDrawAll(
     glViewport(0, 0, w, h);
     PORT_GPU_BEGIN(PORT_GPU_FLAYER);
     glClearBufferfv(GL_COLOR, 0, clear_color);
-    glClearBufferfv(GL_COLOR, 1, clear_depth);
+    /* Where there are several samples a pixel the depth of a sample is
+     * read only where the sample is covered (g_take_down_fragment_text),
+     * and the layer taken down is written whole: so only a layer of one
+     * sample a pixel needs its depth cleared. Cleared to the far plane,
+     * which a card cannot clear by its marks alone, it was the most of
+     * the layer's time on an RTX 3090 (0.2 ms at 2,560 by 1,440). */
+    if (layer->samples <= 1) {
+        glClearBufferfv(GL_COLOR, 1, clear_depth);
+    }
     glClearDepth(1.0);
     glDepthMask(GL_TRUE);
     glClear(GL_DEPTH_BUFFER_BIT);
@@ -2446,7 +2804,8 @@ static void port_GlFighterDrawAll(
 
     if (layer->samples > 1) {
         PORT_GPU_BEGIN(PORT_GPU_FLAYER);
-        port_GlFighterTakeDown(layer, w, h);
+        port_GlFighterTakeDown(
+            layer, w, h, bound[0] - x, bound[1] - y, bound[2], bound[3]);
         PORT_GPU_END();
     }
     PORT_GPU_BEGIN(PORT_GPU_FLAY);
@@ -2460,7 +2819,7 @@ static void port_GlFighterDrawAll(
     }
     glViewport(0, 0, picture.target_w, picture.target_h);
     glEnable(GL_SCISSOR_TEST);
-    glScissor(x, y, w, h);
+    glScissor(bound[0], bound[1], bound[2], bound[3]);
     glUseProgram(g_fighter.composite_program);
     glActiveTexture(GL_TEXTURE0 + 2);
     glBindTexture(GL_TEXTURE_2D, layer->color);
@@ -2494,6 +2853,7 @@ static void port_GlFighterDrawAll(
         g_fighter.laid[1] = y;
         g_fighter.laid[2] = w;
         g_fighter.laid[3] = h;
+        memcpy(g_fighter.bound, bound, sizeof(g_fighter.bound));
     }
     /* the depth is written whatever is there: the test is only how GL
      * lets a fragment write it */
@@ -2772,9 +3132,10 @@ void port_GlFighterDrawOccluders(u32 framebuffer) {
     glUniform1i(g_fighter.c_at_ground_order, 0);
     glUniform2f(g_fighter.c_at_origin, (GLfloat)g_fighter.laid[0],
                 (GLfloat)g_fighter.laid[1]);
-    glUniform4f(g_fighter.c_at_rect, (GLfloat)g_fighter.laid[0],
-                (GLfloat)g_fighter.laid[1], (GLfloat)g_fighter.laid[2],
-                (GLfloat)g_fighter.laid[3]);
+    /* over where the fighters are; the layer is nothing elsewhere */
+    glUniform4f(g_fighter.c_at_rect, (GLfloat)g_fighter.bound[0],
+                (GLfloat)g_fighter.bound[1], (GLfloat)g_fighter.bound[2],
+                (GLfloat)g_fighter.bound[3]);
     glUniform2f(g_fighter.c_at_target, (GLfloat)picture.target_w,
                 (GLfloat)picture.target_h);
     glUniform1f(g_fighter.c_at_depth_range, PORT_GL_DEPTH_RANGE);
@@ -2897,6 +3258,7 @@ s32 port_GlFighterCastOf(s32 caster, s32 with_feet, PortGlFighterCast *cast) {
      * sum, its shares adding up to one, is no farther from the middle of
      * the bones' places than `cast_shares` times half the box of them. */
     cast->is_boxed = model->is_cast_boxed;
+    port_GlFighterBoneReach(model, &pose, cast->bone_reach);
     for (k = 0; k < 3; k++) {
         float lo = (float)pose.bone_place[0][k];
         float hi = lo;
@@ -2925,6 +3287,10 @@ s32 port_GlFighterCastOf(s32 caster, s32 with_feet, PortGlFighterCast *cast) {
 
         cast->feet = port_GlFighterCardFeetBuffer(at);
     }
+    for (k = 0; k < 3; k++) {
+        cast->cloth_lo[k] = 1e30f;
+        cast->cloth_hi[k] = -1e30f;
+    }
     for (i = 0;
          i < view->cloth_count && cast->cloth_count < PORT_GL_CAST_CLOTHS;
          i++) {
@@ -2950,6 +3316,7 @@ s32 port_GlFighterCastOf(s32 caster, s32 with_feet, PortGlFighterCast *cast) {
         cast->cloth_indices[n] = port_GlClothTriangles(cloth->surface) * 3;
         cast->cloth_held[n] = held;
         cast->triangles += port_GlClothTriangles(cloth->surface);
+        cast->has_cloth_box = drawn->count > 0 || cast->has_cloth_box;
         for (k = 0; k < drawn->count; k++) {
             s32 c;
 
@@ -2962,6 +3329,12 @@ s32 port_GlFighterCastOf(s32 caster, s32 with_feet, PortGlFighterCast *cast) {
                 cast->hi[c] = v + CLOTH_BOX_GROW > cast->hi[c]
                                   ? v + CLOTH_BOX_GROW
                                   : cast->hi[c];
+                if (v - CLOTH_BOX_GROW < cast->cloth_lo[c]) {
+                    cast->cloth_lo[c] = v - CLOTH_BOX_GROW;
+                }
+                if (v + CLOTH_BOX_GROW > cast->cloth_hi[c]) {
+                    cast->cloth_hi[c] = v + CLOTH_BOX_GROW;
+                }
             }
         }
     }

@@ -498,6 +498,9 @@ static const char g_shadow_dark_text[] =
     "            weight += how;\n"
     "        }\n"
     "    }\n"
+    /* nothing to darken: the picture as it is, without a blend of every
+     * sample of it */
+    "    if (sum == 0.0) { discard; }\n"
     "    float cover = sum / weight;\n"
     "    o_color = vec4(vec3(1.0 - u_strength * cover), 1.0);\n"
     "}\n";
@@ -1369,6 +1372,7 @@ static void port_GlShadowPaint(void) {
     PORT_GPU_END();
 
     /* the darkening, into the picture */
+    PORT_GPU_BEGIN(PORT_GPU_SDARK);
     glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
     glViewport(0, 0, picture.target_w, picture.target_h);
     glEnable(GL_SCISSOR_TEST);
@@ -1398,6 +1402,7 @@ static void port_GlShadowPaint(void) {
         glBlendFunc(GL_ZERO, GL_SRC_COLOR);
     }
     glDrawArrays(GL_TRIANGLES, 0, 6);
+    PORT_GPU_END();
     glDisable(GL_BLEND);
     port_GlCountDraw(6, 1);
     {
@@ -1651,6 +1656,51 @@ static s32 port_GlShadowSameTriangle(
  * the whole drawing area where a corner is too near the camera. It only
  * bounds what the mask is cleared and darkened over, so it may be larger
  * than the silhouettes, and it is worked out once a pair of frames. */
+/* The box `lo` to `hi` slid onto the ground along the sun (at `ground`,
+ * or anywhere from `low` to `high` where the thing stands on its own
+ * lowest point) and projected, into `box`. FALSE where a point of it is
+ * not in front of the camera. */
+static s32 port_GlShadowSlidBox(
+    const CastFrame *frame, const double *r, const ModelCast *model,
+    const float *lo, const float *hi, float low, float high,
+    const PortGlPicture *picture, ShadowBox *box) {
+    s32 corner;
+    s32 n;
+
+    for (corner = 0; corner < 16; corner++) {
+        float p[3];
+        float ground = model->ground_y;
+        float above;
+        ShadowPoint at;
+
+        for (n = 0; n < 3; n++) {
+            p[n] = (corner >> n) & 1 ? hi[n] : lo[n];
+        }
+        if (model->is_on_feet) {
+            ground = corner & 8 ? high : low;
+        } else if (corner & 8) {
+            continue;
+        }
+        above = p[1] - ground;
+        p[0] += above * model->x_shear;
+        p[1] = ground;
+        p[2] += above * model->z_shear;
+        if (!port_GlShadowProject(&frame->view, r, p, picture->margin, &at)) {
+            return FALSE;
+        }
+        port_GlShadowAddToBox(box, (s32)(at.x * (GLfloat)picture->draw_x),
+                              (s32)(at.y * (GLfloat)picture->draw_y));
+    }
+    return TRUE;
+}
+
+/* Where a frame's shadows can fall on the screen, into `box`. Each thing
+ * drawn from a model of its own is bounded by a ball about each of its
+ * bones and the box of its cloths (PortGlFighterCast), slid onto its
+ * ground and projected alone: the box of all of them in the world, slid
+ * and projected, was the whole screen in most of a fight, and the
+ * darkening was laid over every pixel of it (0.24 ms of an RTX 3090 at
+ * 2,560 by 1,440). The game's own faces are boxed as before. */
 static void port_GlShadowPairBox(
     const CastFrame *frame, const PortGlPicture *picture, ShadowBox *box) {
     float lo[3];
@@ -1663,41 +1713,48 @@ static void port_GlShadowPairBox(
     if (frame->count <= 0 && frame->model_count <= 0) {
         return;
     }
-    for (n = 0; n < 3; n++) {
-        lo[n] = 1e30f;
-        hi[n] = -1e30f;
-    }
+    port_GlShadowRotation(&frame->view, r);
     for (i = 0; i < frame->model_count; i++) {
         const ModelCast *model = &frame->model[i];
-        s32 corner;
+        const PortGlFighterCast *cast = &model->cast;
 
-        if (!model->cast.is_boxed) {
+        if (!cast->is_boxed) {
             *box = g_shadow.clip;
             return;
         }
-        /* each corner of the model's box slid onto its ground, which is
-         * anywhere in the box where it is the body's lowest point */
-        for (corner = 0; corner < 16; corner++) {
-            const float *at = model->cast.lo;
-            float p[3];
-            float ground = model->ground_y;
-            float above;
+        /* its lowest point, the ground of a thing on its feet, is
+         * anywhere in its box (port_GlShadowFlat) */
+        for (k = 0; k < PORT_FIGHTER_BONES; k++) {
+            float at[3];
 
-            for (n = 0; n < 3; n++) {
-                p[n] = (corner >> n) & 1 ? model->cast.hi[n] : at[n];
+            if (cast->bone_reach[k] <= 0.0f) {
+                continue;
             }
-            if (model->is_on_feet) {
-                ground = corner & 8 ? model->cast.hi[1] : model->cast.lo[1];
-            }
-            above = p[1] - ground;
-            p[0] += above * model->x_shear;
-            p[1] = ground;
-            p[2] += above * model->z_shear;
             for (n = 0; n < 3; n++) {
-                lo[n] = p[n] < lo[n] ? p[n] : lo[n];
-                hi[n] = p[n] > hi[n] ? p[n] : hi[n];
+                at[n] = cast->world[k][12 + n];
+                lo[n] = at[n] - cast->bone_reach[k];
+                hi[n] = at[n] + cast->bone_reach[k];
+            }
+            if (!port_GlShadowSlidBox(frame, r, model, lo, hi, cast->lo[1],
+                                      cast->hi[1], picture, box)) {
+                *box = g_shadow.clip;
+                return;
             }
         }
+        if (cast->has_cloth_box &&
+            !port_GlShadowSlidBox(
+                frame, r, model, cast->cloth_lo, cast->cloth_hi, cast->lo[1],
+                cast->hi[1], picture, box)) {
+            *box = g_shadow.clip;
+            return;
+        }
+    }
+    if (frame->count <= 0) {
+        return;
+    }
+    for (n = 0; n < 3; n++) {
+        lo[n] = 1e30f;
+        hi[n] = -1e30f;
     }
     for (i = 0; i < frame->count; i++) {
         for (k = 0; k < 3; k++) {
@@ -1709,7 +1766,6 @@ static void port_GlShadowPairBox(
             }
         }
     }
-    port_GlShadowRotation(&frame->view, r);
     for (i = 0; i < 8; i++) {
         float corner[3];
         ShadowPoint at;
@@ -1863,7 +1919,10 @@ static void port_GlShadowLay(void) {
     }
     /* everything of the picture is painted before the shadows darken it,
      * and the batch of it that is still waiting is part of that */
+    /* (the game's primitives' time, not the shadows') */
+    PORT_GPU_BEGIN(g_port_gpu_base);
     port_GlFlushBatch();
+    PORT_GPU_END();
     if (g_shadow.is_cast) {
         port_GlShadowCast();
     }

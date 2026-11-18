@@ -118,6 +118,13 @@ typedef struct {
     s32 is_boxed;
     float lo[3];
     float hi[3];
+    /* ... and closer: a ball about each bone's place that holds the
+     * vertices of the bone's largest share (0: none), and the box of the
+     * smooth cloths (has_cloth_box FALSE: none) */
+    float bone_reach[PORT_FIGHTER_BONES];
+    s32 has_cloth_box;
+    float cloth_lo[3];
+    float cloth_hi[3];
     s32 triangles;
 } PortGlFighterCast;
 
