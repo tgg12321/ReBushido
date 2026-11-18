@@ -161,6 +161,8 @@ typedef ptrdiff_t GLintptr;
     GL(void, glFramebufferTexture2D, (GLenum, GLenum, GLenum, GLuint, GLint))  \
     GL(void, glFramebufferRenderbuffer, (GLenum, GLenum, GLenum, GLuint))      \
     GL(void, glGenRenderbuffers, (GLsizei, GLuint *))                          \
+    GL(void, glDeleteRenderbuffers, (GLsizei, const GLuint *))                 \
+    GL(void, glDeleteTextures, (GLsizei, const GLuint *))                      \
     GL(void, glBindRenderbuffer, (GLenum, GLuint))                             \
     GL(void, glRenderbufferStorage, (GLenum, GLenum, GLsizei, GLsizei))        \
     GL(GLenum, glCheckFramebufferStatus, (GLenum))                             \
@@ -229,6 +231,25 @@ PORT_GL_FUNCTIONS
 /* Two rectangles are sent as one where that adds no more than this many
  * pixels that were not written. */
 #define MIRROR_SLACK 4096
+/* Sets of the colour buffer's targets kept, one for each size of them
+ * (port_GlMakeTarget): the menus' and the fight's. */
+#define TARGET_SETS 2
+
+/* The targets of one size of the colour buffer (gl_draw.c's `g_gl`, where
+ * the set in use is copied). */
+typedef struct {
+    s32 is_made;
+    s32 draw_x;
+    s32 draw_y;
+    s32 samples;
+    u32 used; /* when it was last the one in use, counted */
+    GLuint color_texture;
+    GLuint depth_buffer;
+    GLuint slot_texture;
+    GLuint color_samples;
+    GLuint slot_samples;
+    GLuint slot_one;
+} PortGlTargets;
 /* What a picture between two frames changed of the copy of video memory
  * here, kept to be put back (port_GlMirrorHold): rows of rectangles, and
  * their pixels as they were. A picture writes again what its frame wrote,
@@ -521,6 +542,9 @@ static struct {
     PortDirtyRect mirror;
     PortDirtyRect mirror_rect[MIRROR_RECTS];
     s32 mirror_rects;
+    /* the colour buffer's targets of each size made so far */
+    PortGlTargets target_set[TARGET_SETS];
+    u32 target_uses;
     /* while a picture between two frames is drawn: the rows of the copy
      * it changed, as they were (port_GlMirrorHold) */
     s32 is_holding;
@@ -1538,6 +1562,75 @@ void port_GlGroundSlotsEnd(void) {
     g_gl.has_state = FALSE;
 }
 
+static void port_GlStoreTargets(s32 is_multi);
+static s32 port_GlFastenTargets(s32 is_multi);
+
+/* The set of targets of the size asked for, made where there is none: the
+ * one used longest ago gives its place up. TRUE where it was made now, and
+ * its storage is to be given. */
+static s32 port_GlTakeTargets(void) {
+    PortGlTargets *set = NULL;
+    s32 i;
+
+    for (i = 0; i < TARGET_SETS; i++) {
+        PortGlTargets *one = &g_gl.target_set[i];
+
+        if (one->is_made && one->draw_x == g_gl.draw_x &&
+            one->draw_y == g_gl.draw_y && one->samples == g_gl.samples) {
+            set = one;
+            break;
+        }
+    }
+    if (set == NULL) {
+        for (i = 0; i < TARGET_SETS; i++) {
+            PortGlTargets *one = &g_gl.target_set[i];
+
+            if (set == NULL || !one->is_made ||
+                (set->is_made && one->used < set->used)) {
+                set = one;
+            }
+        }
+        if (set->is_made) {
+            glDeleteTextures(1, &set->color_texture);
+            glDeleteTextures(1, &set->slot_texture);
+            glDeleteTextures(1, &set->slot_samples);
+            glDeleteTextures(1, &set->slot_one);
+            glDeleteRenderbuffers(1, &set->depth_buffer);
+            glDeleteRenderbuffers(1, &set->color_samples);
+        }
+        glGenTextures(1, &set->color_texture);
+        glGenTextures(1, &set->slot_texture);
+        glGenTextures(1, &set->slot_samples);
+        glGenTextures(1, &set->slot_one);
+        glGenRenderbuffers(1, &set->depth_buffer);
+        glGenRenderbuffers(1, &set->color_samples);
+        set->is_made = FALSE;
+        set->draw_x = g_gl.draw_x;
+        set->draw_y = g_gl.draw_y;
+        set->samples = g_gl.samples;
+    }
+    set->used = ++g_gl.target_uses;
+    g_gl.color_texture = set->color_texture;
+    g_gl.depth_buffer = set->depth_buffer;
+    g_gl.slot_texture = set->slot_texture;
+    g_gl.color_samples = set->color_samples;
+    g_gl.slot_samples = set->slot_samples;
+    g_gl.slot_one = set->slot_one;
+    if (set->is_made) {
+        return FALSE;
+    }
+    set->is_made = TRUE;
+    return TRUE;
+}
+
+/* The colour buffer and what goes with it, at the scale and samples asked
+ * for. **Each size's are kept** (port_GlTakeTargets): the fight's picture
+ * is four times the console's resolution and eight times its lines on the
+ * owner's screen where the menus' is half that, and making them again at
+ * every way into a fight and back to a menu held the window's thread for
+ * some 20 ms of the fight's first picture, waiting on the driver
+ * (2026-11-18). Changing between two sizes made once is only fastening
+ * them to the framebuffers again. */
 static s32 port_GlMakeTarget(void) {
     s32 is_multi = g_gl.samples > 1;
 
@@ -1545,6 +1638,14 @@ static s32 port_GlMakeTarget(void) {
     g_gl.draw_y = g_gl.scale_y * g_gl.sample;
     g_gl.target_w = PORT_VRAM_WIDTH * g_gl.draw_x;
     g_gl.target_h = PORT_VRAM_HEIGHT * g_gl.draw_y;
+    if (port_GlTakeTargets()) {
+        port_GlStoreTargets(is_multi);
+    }
+    return port_GlFastenTargets(is_multi);
+}
+
+/* The storage of the targets in use, at the size in use. */
+static void port_GlStoreTargets(s32 is_multi) {
     /* with samples, the colour buffer is the renderbuffer of them, and
      * the texture is not drawn into at all: a pixel of it is kept, so
      * that it is still a texture */
@@ -1585,6 +1686,10 @@ static s32 port_GlMakeTarget(void) {
                  is_multi ? 1 : g_gl.target_h, 0, GL_RED, GL_FLOAT, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+}
+
+/* The targets in use fastened to the framebuffers. */
+static s32 port_GlFastenTargets(s32 is_multi) {
     glBindFramebuffer(GL_FRAMEBUFFER, g_gl.slot_framebuffer);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                            g_gl.slot_texture, 0);
@@ -3292,13 +3397,11 @@ const char *port_GlStart(
     glBindTexture(GL_TEXTURE_BUFFER, 0);
     glBindBuffer(GL_TEXTURE_BUFFER, 0);
 
-    glGenTextures(1, &g_gl.color_texture);
     glGenFramebuffers(1, &g_gl.framebuffer);
-    glGenRenderbuffers(1, &g_gl.depth_buffer);
-    glGenTextures(1, &g_gl.slot_texture);
-    glGenRenderbuffers(1, &g_gl.color_samples);
-    glGenTextures(1, &g_gl.slot_samples);
-    glGenTextures(1, &g_gl.slot_one);
+    /* the targets, of each size as it is asked for (port_GlMakeTarget) */
+    for (i = 0; i < TARGET_SETS; i++) {
+        g_gl.target_set[i].is_made = FALSE;
+    }
     glGenFramebuffers(1, &g_gl.slot_framebuffer);
     glGenTextures(1, &g_gl.picture_texture);
     glGenFramebuffers(1, &g_gl.picture_framebuffer);
