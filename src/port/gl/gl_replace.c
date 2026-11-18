@@ -395,7 +395,7 @@ static void port_ReplaceTable(const PortTextureRegion *region, u16 *table) {
     for (i = 0; i < colors; i++) {
         table[i] =
             g_port_gl_vram[(region->clut_y & WINDOW_ALL_Y) * PORT_VRAM_WIDTH +
-                        ((region->clut_x + i) & WINDOW_ALL_X)];
+                           ((region->clut_x + i) & WINDOW_ALL_X)];
     }
 }
 
@@ -407,8 +407,9 @@ static void port_ReplacePixels(const PortTextureRegion *region, u16 *out) {
     s32 j;
 
     for (j = 0; j < region->h; j++) {
-        const u16 *row = g_port_gl_vram + (region->page_y + j) * PORT_VRAM_WIDTH +
-                         region->page_x;
+        const u16 *row =
+            g_port_gl_vram + (region->page_y + j) * PORT_VRAM_WIDTH +
+            region->page_x;
 
         for (i = 0; i < region->w; i++) {
             out[j * region->w + i] = row[i] & ~MIX_BIT;

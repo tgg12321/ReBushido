@@ -790,8 +790,9 @@ static void port_GlSceneEnter(Looked *one) {
         u16 *row = &g_scene.base_rows[layer * COLORS_MAX];
 
         for (i = 0; i < colors; i++) {
-            row[i] = g_port_gl_vram[one->base_y * PORT_VRAM_WIDTH +
-                                 ((one->base_x + i) & (PORT_VRAM_WIDTH - 1))];
+            row[i] =
+                g_port_gl_vram[one->base_y * PORT_VRAM_WIDTH +
+                               ((one->base_x + i) & (PORT_VRAM_WIDTH - 1))];
         }
         glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_BASES_UNIT);
         glBindTexture(GL_TEXTURE_2D, g_scene.bases);

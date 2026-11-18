@@ -1675,7 +1675,7 @@ static s32 port_GlFighterPalette(const FighterModel *model, s32 place) {
         const PortFighterClut *clut = &model->clut[c];
         const u16 *row =
             &g_port_gl_vram[((clut->y + p->dy) & (PORT_VRAM_HEIGHT - 1)) *
-                         PORT_VRAM_WIDTH];
+                            PORT_VRAM_WIDTH];
 
         for (k = 0; k < 256; k++) {
             float *at = out + (c * 256 + k) * 4;

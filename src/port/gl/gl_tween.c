@@ -1881,8 +1881,8 @@ s32 port_TweenDraw(s32 phase) {
             const TweenVram *one = &shown->vram[event->at];
 
             if (is_off_vram) {
-                port_GlReplayVram(one->x, one->y, one->w, one->h,
-                                  shown->words + one->at);
+                port_GlReplayVram(
+                    one->x, one->y, one->w, one->h, shown->words + one->at);
                 continue;
             }
             port_TweenPutVram(shown, one);

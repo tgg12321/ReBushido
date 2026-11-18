@@ -1834,9 +1834,8 @@ static void port_GlMarkMirrorFrom(
     for (row = rect.top; row <= rect.bottom; row++) {
         u16 *to = &g_gl.staged[row * PORT_VRAM_WIDTH + rect.left];
         const u16 *from =
-            pixels != NULL
-                ? &pixels[(row - rect.top) * w]
-                : &g_port_vram[row * PORT_VRAM_WIDTH + rect.left];
+            pixels != NULL ? &pixels[(row - rect.top) * w]
+                           : &g_port_vram[row * PORT_VRAM_WIDTH + rect.left];
 
         if (!is_all && memcmp(to, from, bytes) == 0) {
             continue;
