@@ -291,7 +291,9 @@ headers several builds write (`build/modern/include/`,
 that builds side by side never read one half written. `port-net` takes
 96 UDP ports of 127.0.0.1 from a base chosen by the checkout's path
 (`--net-base`), so that two checkouts' gates do not meet; the play tests
-run four at once (`-j`). The builds and checks run in the copy on WSL's
+run four at once (`-j`) and with `--strict`: a checkout with no emulator
+or disc, or a test skipped, fails the gate rather than passing it with no
+play test run (`REBUSHIDO_EMULATOR` names the emulator from a worktree). The builds and checks run in the copy on WSL's
 disk ("Where the build runs"), each bringing `build/` back as it ends, so
 the play tests and the steps that run the programs (`IN_PLACE`) find them
 here. Each step's output is `build/gate/<step>.log`

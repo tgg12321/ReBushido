@@ -12,7 +12,7 @@ tests want and then runs this. It is for the developer's machine only: it
 needs PCSX-Redux and your own image of the retail disc, neither of which is
 in the repository. Where either is missing it says "skipped: ..." and exits
 0; a test whose disc has not been built is skipped the same way. It exits 1
-if a test fails.
+if a test fails, and with --strict (tools/gate.py) if anything was skipped.
 
     REBUSHIDO_EMULATOR   the emulator's program
                          (default tmp/pcsx-redux/pcsx-redux.main)
@@ -1321,7 +1321,11 @@ def main():
     ap.add_argument("--changed", metavar="REV",
                     help="only the tests that what changed since the commit REV can reach (tools/play/"
                          "affected.py); every one where that cannot be told")
+    ap.add_argument("--strict", action="store_true",
+                    help="a test skipped, or the suite skipped for want of the emulator or the disc, "
+                         "fails (tools/gate.py: a gate that ran no play test has not passed them)")
     args = ap.parse_args()
+    skipped = 1 if args.strict else 0
     if args.symbols:
         return write_symbols(*args.symbols)
     if args.jobs is not None and args.jobs < 1:
@@ -1352,8 +1356,9 @@ def main():
         windows_python = shutil.which("python.exe")
         if not windows_python:
             print("playtest: skipped: under WSL the emulator needs Windows' python, and python.exe was not found")
-            return 0
+            return skipped
         more = ["-j", str(args.jobs)] if args.jobs else []
+        more += ["--strict"] if args.strict else []
         tests = [os.path.relpath(path, REPO).replace("\\", "/") for path in paths]
         return subprocess.call([windows_python, "tools/playtest.py"] + more + tests, cwd=REPO)
 
@@ -1361,7 +1366,7 @@ def main():
                        (RETAIL_CUE, "your own image of the retail disc; REBUSHIDO_RETAIL names it")):
         if not os.path.isfile(path):
             print("playtest: skipped: no %s (%s)" % (path, what))
-            return 0
+            return skipped
 
     import launch
 
@@ -1447,6 +1452,9 @@ def main():
         print("FAILED: play tests")
         return 1
     counts = [sum(1 for r in rows.values() if r[0] == k) for k in ("ok", "skipped")]
+    if args.strict and counts[1]:
+        print("FAILED: play tests: %d passed, %d skipped (--strict)" % tuple(counts))
+        return 1
     print("OK: play tests: %d passed, %d skipped" % tuple(counts))
     return 0
 
