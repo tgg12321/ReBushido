@@ -216,9 +216,14 @@ void port_FighterNoteNode(PortAddress at) {
     for (slot = 0; slot < PORT_FIGHTER_SLOTS; slot++) {
         Model *model = model_Get(slot);
 
+        /* a body drawn as outlines (model_SetOutline: the fighter looked
+         * through in the first-person view) is the game's own lines: no
+         * model stands in for it */
         if (model != NULL && node == &model->bones[1].node &&
             node->kind == NODE_KIND_SKINNED) {
-            port_FighterNoteBody(slot, model);
+            if (!(node->draw_flags & NODE_DRAW_OUTLINE)) {
+                port_FighterNoteBody(slot, model);
+            }
             return;
         }
         if (model != NULL && node->kind == NODE_KIND_CLOTH &&

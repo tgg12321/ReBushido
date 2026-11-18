@@ -923,11 +923,11 @@ s32 port_GlClothBodySet(PortGlClothBody *body, const float *places,
     body->count = count;
     memset(body->first, 0, sizeof(body->first));
     for (i = 0; i < count; i++) {
-        const float *p = places + i * 3;
+        const float *place = places + i * 3;
 
         bucket_of[i] = (s32)port_GlClothBucket(
-            port_GlClothCell(p[0]), port_GlClothCell(p[1]),
-            port_GlClothCell(p[2]));
+            port_GlClothCell(place[0]), port_GlClothCell(place[1]),
+            port_GlClothCell(place[2]));
         body->first[bucket_of[i] + 1]++;
     }
     for (i = 0; i < BODY_BUCKETS; i++) {
@@ -974,10 +974,10 @@ static void port_GlClothBodyNear(
                 for (i = body->first[bucket]; i < body->first[bucket + 1];
                      i++) {
                     s32 v = body->order[i];
-                    const float *p = body->place + v * 3;
+                    const float *place = body->place + v * 3;
                     const float *m = body->normal + v * 3;
-                    double d[3] = {point[0] - p[0], point[1] - p[1],
-                                   point[2] - p[2]};
+                    double d[3] = {point[0] - place[0], point[1] - place[1],
+                                   point[2] - place[2]};
                     double d2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
                     double w;
 
