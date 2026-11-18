@@ -90,7 +90,7 @@ const PortChoice g_port_choices[] = {
      {"The window's", "1x", "2x", "3x", "4x", "6x", "8x"}},
     {"antialiasing",
      "Antialiasing",
-     "The scene's edges smoothed: drawn 2 or 4 times over each way",
+     "The scene's edges smoothed: 4 or 8 samples a pixel",
      PORT_TAKES_RESTART,
      3,
      {"off", "2", "4"},

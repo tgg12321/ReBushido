@@ -146,6 +146,21 @@ throttles the owner's PC at `run_ahead = 1` (he plays with 0), after the
 fixes of 2026-11-18 (the tint's colour tables sent 3,689 times a fight,
 now 4; the run-ahead frame no longer painting the software picture).
 
+**The card's share, done first (2026-11-18, the renderer-core branch).**
+The card's own time was the ground and the sky, both fill at the
+supersampled size: the sky's clouds are now a cube worked out once, and
+`antialiasing` multisamples the scene's edges instead of drawing it four
+times over (the 2D layer keeps one sample's coverage and stays block for
+block). A fight frame's card time is 11.1 to 5.2 ms (ground 4.0 to 1.25,
+sky 3.1 to 0.27); docs/PORT.md, "Measuring on the card" and "Edges".
+Still open of this list, in this order: 1 (the software GPU only where
+the game reads it: video memory is part of the state that run-ahead and
+netplay save and hash, so what is left unpainted must be the same on
+every peer, or kept out of the hash), 3 (the tween is 4.6 ms of the
+processor's frame), 2, 5. The ground could be cheaper still with the
+depth from the rasteriser and not `gl_FragDepth` (early depth tests;
+the scene and the fighters hold against a linear depth today).
+
 ### What is left of the HD fighters' cost
 
 Found and fixed on 2026-11-18 (docs/PORT.md, "The HD cloth and

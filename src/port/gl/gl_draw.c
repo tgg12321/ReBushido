@@ -108,6 +108,15 @@ typedef ptrdiff_t GLintptr;
 #define GL_VENDOR 0x1F00
 /* The window's own framebuffer, and the order the host's pixels are in. */
 #define GL_WINDOW_FRAMEBUFFER 0
+#define GL_READ_FRAMEBUFFER 0x8CA8
+#define GL_DRAW_FRAMEBUFFER 0x8CA9
+#define GL_MAX_SAMPLES 0x8D57
+#define GL_MAX_INTEGER_SAMPLES 0x9110
+#define GL_SCISSOR_BOX 0x0C10
+#define GL_TEXTURE_2D_MULTISAMPLE 0x9100
+#define GL_MULTISAMPLE 0x809D
+#define GL_R32F 0x822E
+#define GL_RED 0x1903
 #define GL_BGRA 0x80E1
 
 /* Every GL function this file calls: the name, and the type of the
@@ -179,7 +188,17 @@ typedef ptrdiff_t GLintptr;
     GL(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat))         \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))                           \
     GL(void, glDrawBuffers, (GLsizei, const GLenum *))                         \
-    GL(void, glClearBufferuiv, (GLenum, GLint, const GLuint *))
+    GL(void, glClearBufferuiv, (GLenum, GLint, const GLuint *))                \
+    GL(void, glClearBufferfv, (GLenum, GLint, const GLfloat *))                \
+    GL(void, glGetIntegerv, (GLenum, GLint *))                                 \
+    GL(void, glReadBuffer, (GLenum))                                           \
+    GL(void, glBlitFramebuffer,                                                \
+       (GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield,    \
+        GLenum))                                                               \
+    GL(void, glRenderbufferStorageMultisample,                                 \
+       (GLenum, GLsizei, GLenum, GLsizei, GLsizei))                            \
+    GL(void, glTexImage2DMultisample,                                          \
+       (GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLboolean))
 
 #define GL(result, name, args) static result(*name) args;
 PORT_GL_FUNCTIONS
@@ -307,6 +326,10 @@ typedef struct {
      * kept aside as it is drawn, for the mask that keeps the darkening
      * off everything standing in a shadow. */
     s32 is_ground;
+    /* A primitive the projection gave a depth to, whose edges are
+     * smoothed where the picture is multisampled (port_GlSetState): a
+     * batch is all of the scene or none of it. */
+    s32 is_scene;
     /* The ground's mesh was drawn this frame before these primitives
      * came, so they are held against it (port_GlFlush). It is the
      * batch's own and not asked when the batch is drawn: the last batch
@@ -351,6 +374,27 @@ static struct {
      * pixel shows, which the mesh writes beside its colour and a
      * fighter is held against (port_GlGroundSlotsBegin) */
     GLuint slot_texture;
+    /* Multisampling (`antialiasing`, port_GlSamplesOf): the colour
+     * buffer, the depth buffer and the ground's slots with `samples`
+     * samples a pixel, which the card averages into the picture at the
+     * end (port_GlResolve); the slots are taken down to `slot_texture`,
+     * one a pixel, as the ground's mesh ends, so that what reads them
+     * reads them as before (port_GlGroundSlotsEnd). 1: none, and the
+     * colour buffer is `color_texture` itself. */
+    s32 samples;
+    s32 max_samples; /* what the card can, 0 before it is asked */
+    GLuint color_samples;
+    GLuint slot_samples;
+    GLuint slot_framebuffer;
+    /* The slots as the mesh writes them, in floating point (a whole
+     * number of several samples a pixel cost the card more than a
+     * millisecond a frame to write), one a pixel or `samples`, and what
+     * takes them down into `slot_texture` (port_GlGroundSlotsEnd). */
+    GLuint slot_one;
+    GLuint slot_program;
+    GLuint slot_one_program;
+    GLint slot_at_slots;
+    GLint slot_one_at_slots;
     GLuint buffer;
     GLuint array;
     GLuint blit_buffer;
@@ -1223,6 +1267,28 @@ static const char g_gl_resolve_fragment_text[] =
     "    o_color = vec4(vec3((sum + ivec3(many / 2)) / many) / 255.0, 1.0);\n"
     "}\n";
 
+/* The ground's slots taken down into the whole numbers the scene and the
+ * fighters read: of several samples a pixel, the first sample's. A slot
+ * is a whole number, which no averaging may touch; inside a face every
+ * sample has the face's, and on an edge the first is one face's or the
+ * other's. (A blit of whole numbers did this too, but on a real card it
+ * took 30 ms a frame at 2560 by 1440.) */
+static const char g_gl_slot_fragment_text[] =
+    "#version 330 core\n"
+    "uniform sampler2DMS u_slots;\n"
+    "layout(location = 0) out uint o_slot;\n"
+    "void main() {\n"
+    "    o_slot = uint(texelFetch(u_slots, ivec2(gl_FragCoord.xy), 0).r);\n"
+    "}\n";
+
+static const char g_gl_slot_one_fragment_text[] =
+    "#version 330 core\n"
+    "uniform sampler2D u_slots;\n"
+    "layout(location = 0) out uint o_slot;\n"
+    "void main() {\n"
+    "    o_slot = uint(texelFetch(u_slots, ivec2(gl_FragCoord.xy), 0).r);\n"
+    "}\n";
+
 /* The pass that puts a picture into the window: a rectangle of a texture
  * into a rectangle of the window's own framebuffer, which is the only
  * thing drawn there (src/port/window/sdl_window.c). Both rectangles are
@@ -1388,45 +1454,119 @@ static void port_GlAttachDepth(void) {
  * Where the mesh draws nothing it is farther than any slot. */
 void port_GlGroundSlotsBegin(void) {
     static const GLenum both[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
-    static const GLuint far[4] = {0xFFFF, 0, 0, 0};
+    static const GLfloat far[4] = {65535.0f, 0.0f, 0.0f, 0.0f};
 
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D,
-                           g_gl.slot_texture, 0);
+    if (g_gl.samples > 1) {
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1,
+                               GL_TEXTURE_2D_MULTISAMPLE, g_gl.slot_samples, 0);
+    } else {
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1,
+                               GL_TEXTURE_2D, g_gl.slot_one, 0);
+    }
     glDrawBuffers(2, both);
-    glClearBufferuiv(GL_COLOR, 1, far);
+    glClearBufferfv(GL_COLOR, 1, far);
 }
 
 void port_GlGroundSlotsEnd(void) {
     static const GLenum one[1] = {GL_COLOR_ATTACHMENT0};
 
+    static const GLuint far[4] = {0xFFFF, 0, 0, 0};
+    s32 is_multi = g_gl.samples > 1;
+
     glDrawBuffers(1, one);
     glFramebufferTexture2D(
-        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, 0, 0);
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1,
+        is_multi ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D, 0, 0);
+    /* The slots taken down to whole numbers, inside the scissor the mesh
+     * was drawn through, which still stands; outside it they are farther
+     * than any slot (g_gl_slot_fragment_text). */
+    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.slot_framebuffer);
+    glDisable(GL_SCISSOR_TEST);
+    glClearBufferuiv(GL_COLOR, 0, far);
+    glEnable(GL_SCISSOR_TEST);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glUseProgram(is_multi ? g_gl.slot_program : g_gl.slot_one_program);
+    glBindVertexArray(g_gl.blit_array);
+    glActiveTexture(GL_TEXTURE1);
+    if (is_multi) {
+        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, g_gl.slot_samples);
+        glUniform1i(g_gl.slot_at_slots, 1);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, g_gl.slot_one);
+        glUniform1i(g_gl.slot_one_at_slots, 1);
+    }
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    if (is_multi) {
+        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
+    }
+    glActiveTexture(GL_TEXTURE0);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
+    g_gl.has_state = FALSE;
 }
 
 static s32 port_GlMakeTarget(void) {
+    s32 is_multi = g_gl.samples > 1;
+
     g_gl.draw_x = g_gl.scale_x * g_gl.sample;
     g_gl.draw_y = g_gl.scale_y * g_gl.sample;
     g_gl.target_w = PORT_VRAM_WIDTH * g_gl.draw_x;
     g_gl.target_h = PORT_VRAM_HEIGHT * g_gl.draw_y;
+    /* with samples, the colour buffer is the renderbuffer of them, and
+     * the texture is not drawn into at all: a pixel of it is kept, so
+     * that it is still a texture */
     glBindTexture(GL_TEXTURE_2D, g_gl.color_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, g_gl.target_w, g_gl.target_h, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexImage2D(
+        GL_TEXTURE_2D, 0, GL_RGBA8, is_multi ? 1 : g_gl.target_w,
+        is_multi ? 1 : g_gl.target_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindRenderbuffer(GL_RENDERBUFFER, g_gl.depth_buffer);
-    glRenderbufferStorage(
-        GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, g_gl.target_w, g_gl.target_h);
+    if (is_multi) {
+        glRenderbufferStorageMultisample(
+            GL_RENDERBUFFER, g_gl.samples, GL_DEPTH_COMPONENT24, g_gl.target_w,
+            g_gl.target_h);
+        glBindRenderbuffer(GL_RENDERBUFFER, g_gl.color_samples);
+        glRenderbufferStorageMultisample(
+            GL_RENDERBUFFER, g_gl.samples, GL_RGBA8, g_gl.target_w,
+            g_gl.target_h);
+        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, g_gl.slot_samples);
+        glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, g_gl.samples,
+                                GL_R32F, g_gl.target_w, g_gl.target_h, GL_TRUE);
+        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
+    } else {
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
+                              g_gl.target_w, g_gl.target_h);
+    }
     glBindTexture(GL_TEXTURE_2D, g_gl.slot_texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R16UI, g_gl.target_w, g_gl.target_h, 0,
                  GL_RED_INTEGER, GL_UNSIGNED_SHORT, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
+    /* one a pixel, where there are not several (a pixel of it is kept
+     * where there are, so that it is still a texture) */
+    glBindTexture(GL_TEXTURE_2D, g_gl.slot_one);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, is_multi ? 1 : g_gl.target_w,
+                 is_multi ? 1 : g_gl.target_h, 0, GL_RED, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.slot_framebuffer);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                           g_gl.color_texture, 0);
+                           g_gl.slot_texture, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        port_GlSay("the ground's slots cannot be taken down", NULL);
+        return FALSE;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
+    if (is_multi) {
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                  GL_RENDERBUFFER, g_gl.color_samples);
+    } else {
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_TEXTURE_2D, g_gl.color_texture, 0);
+    }
     port_GlAttachDepth();
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         port_GlSay("the colour buffer cannot be drawn into", NULL);
@@ -1513,6 +1653,18 @@ static void port_GlSetState(const PortGlState *state) {
     s32 y;
     s32 w;
     s32 h;
+
+    /* Multisampled, only the scene is: a flat primitive is drawn by the
+     * chip's own rule from the middle of each pixel (its corners are
+     * half a pixel in, as the chip's are) and keeps every sample of a
+     * pixel or none, so that the 2D layer stays as crisp as it was. */
+    if (g_gl.samples > 1) {
+        if (state->is_scene) {
+            glEnable(GL_MULTISAMPLE);
+        } else {
+            glDisable(GL_MULTISAMPLE);
+        }
+    }
 
     if (state->is_half) {
         glEnable(GL_BLEND);
@@ -1709,6 +1861,7 @@ static void port_GlFlush(void) {
      * the picture down, the window itself -- has no depth of its own and
      * is never held against the ground's */
     glDisable(GL_DEPTH_TEST);
+    glEnable(GL_MULTISAMPLE);
     g_gl.vertex_count += (u32)g_gl.count;
     g_gl.count = 0;
     PORT_GPU_END();
@@ -1720,7 +1873,7 @@ static s32 port_GlStateIsSame(const PortGlState *a, const PortGlState *b) {
            a->clip_left == b->clip_left && a->clip_top == b->clip_top &&
            a->clip_right == b->clip_right && a->clip_bottom == b->clip_bottom &&
            a->is_wide == b->is_wide && a->is_ground == b->is_ground &&
-           a->is_held == b->is_held &&
+           a->is_scene == b->is_scene && a->is_held == b->is_held &&
            a->replace_texture == b->replace_texture &&
            a->replace_u == b->replace_u && a->replace_v == b->replace_v &&
            a->replace_w == b->replace_w && a->replace_h == b->replace_h &&
@@ -1988,6 +2141,7 @@ static void port_GlStateOf(const PortRemasterPrim *prim, PortGlState *state) {
     /* the ground the shadows fall on, which the mask they are kept in
      * does not take as something standing in them (gl_shadow.h) */
     state->is_ground = port_GlShadowIsGround(prim);
+    state->is_scene = prim->has_depth;
     state->is_held =
         port_GlStageSaveFrame() && g_gl.options.is_stage_depth ? TRUE : FALSE;
     state->replace_texture = 0;
@@ -2266,6 +2420,8 @@ static void port_GlDrawBlits(void) {
     glUniform2f(g_gl.blit_at_scale, (GLfloat)g_gl.draw_x, (GLfloat)g_gl.draw_y);
     glUniform1f(g_gl.blit_at_shift, (GLfloat)g_gl.margin);
     glDisable(GL_BLEND);
+    /* whole pixels, every sample of them (port_GlSetState) */
+    glDisable(GL_MULTISAMPLE);
     is_clipped = g_gl.margin > 0 && g_gl.display_w > 0;
     if (is_clipped) {
         /* What the game wrote into video memory belongs to the
@@ -2296,6 +2452,7 @@ static void port_GlDrawBlits(void) {
         port_GlBlit(&g_gl.blit[i]);
     }
     glEnable(GL_SCISSOR_TEST);
+    glEnable(GL_MULTISAMPLE);
     g_gl.blit_count = 0;
     g_gl.has_state = FALSE;
     PORT_GPU_END();
@@ -2486,6 +2643,7 @@ void port_GlGetPicture(PortGlPicture *picture) {
     picture->vram_texture = g_gl.vram_texture;
     picture->depth_buffer = g_gl.depth_buffer;
     picture->slot_texture = g_gl.slot_texture;
+    picture->samples = g_gl.samples;
     picture->target_w = g_gl.target_w;
     picture->target_h = g_gl.target_h;
     picture->draw_x = g_gl.draw_x;
@@ -2663,10 +2821,44 @@ u32 port_GlBackground(void) { return g_gl.background; }
 
 /* The two scales a PortGlOptions asks for, each held to what there
  * is. */
+/* `antialiasing N`: the picture's edges smoothed by N times N samples
+ * a pixel, multisampled (port_GlSamplesOf) -- the card shades a pixel of
+ * a face once and keeps which of its samples the face covers, so the
+ * ground, the sky and every other face costs what it costs at one sample
+ * a pixel, where drawing the whole scene N times over each way
+ * (supersampling, as before 2026-11-18) cost N times N. RB_SUPERSAMPLE
+ * set in the environment asks for the old way, to compare. */
+static s32 port_GlIsSupersampled(void) {
+    return getenv("RB_SUPERSAMPLE") != NULL;
+}
+
 static s32 port_GlSampleOf(const PortGlOptions *options) {
     s32 sample = options->sample < 1 ? 1 : options->sample;
 
+    if (!port_GlIsSupersampled()) {
+        return 1;
+    }
     return sample > PORT_SUPERSAMPLE_MAX ? PORT_SUPERSAMPLE_MAX : sample;
+}
+
+/* The samples a pixel: N times N for `antialiasing N`, as many as the
+ * card can keep of a colour, a depth and a whole number alike, and no
+ * more than PORT_MULTISAMPLE_MAX (the buffer is all of video memory at
+ * the scale, and eight samples of it is a gigabyte at 2560 by 1440). */
+static s32 port_GlSamplesOf(const PortGlOptions *options) {
+    s32 sample = options->sample < 1 ? 1 : options->sample;
+    s32 samples = sample * sample;
+
+    if (port_GlIsSupersampled() || sample <= 1 || options->is_exact) {
+        return 1;
+    }
+    if (samples > PORT_MULTISAMPLE_MAX) {
+        samples = PORT_MULTISAMPLE_MAX;
+    }
+    if (g_gl.max_samples > 0 && samples > g_gl.max_samples) {
+        samples = g_gl.max_samples;
+    }
+    return samples < 2 ? 1 : samples;
 }
 
 static void port_GlScalesOf(
@@ -2691,6 +2883,7 @@ void port_GlSetOptions(const PortGlOptions *options) {
     s32 across;
     s32 down;
     s32 sample = port_GlSampleOf(options);
+    s32 samples = port_GlSamplesOf(options);
 
     port_GlScalesOf(options, &across, &down);
     g_gl.options = *options;
@@ -2713,10 +2906,11 @@ void port_GlSetOptions(const PortGlOptions *options) {
         port_GlAttachDepth();
     }
     if (g_gl.is_started && (across != g_gl.scale_x || down != g_gl.scale_y ||
-                            sample != g_gl.sample)) {
+                            sample != g_gl.sample || samples != g_gl.samples)) {
         g_gl.scale_x = across;
         g_gl.scale_y = down;
         g_gl.sample = sample;
+        g_gl.samples = samples;
         g_gl.blit_count = 0;
         port_GlMakeTarget();
         port_GlWroteVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
@@ -2725,6 +2919,7 @@ void port_GlSetOptions(const PortGlOptions *options) {
     g_gl.scale_x = across;
     g_gl.scale_y = down;
     g_gl.sample = sample;
+    g_gl.samples = samples;
     g_gl.draw_x = g_gl.scale_x * sample;
     g_gl.draw_y = g_gl.scale_y * sample;
     port_GlFindMargin();
@@ -2767,6 +2962,18 @@ const char *port_GlStart(
     g_gl.options = *options;
     port_GlScalesOf(options, &g_gl.scale_x, &g_gl.scale_y);
     g_gl.sample = port_GlSampleOf(options);
+    {
+        GLint colors = 0;
+        GLint numbers = 0;
+
+        glGetIntegerv(GL_MAX_SAMPLES, &colors);
+        glGetIntegerv(GL_MAX_INTEGER_SAMPLES, &numbers);
+        g_gl.max_samples = colors < numbers ? colors : numbers;
+        if (g_gl.max_samples < 1) {
+            g_gl.max_samples = 1;
+        }
+    }
+    g_gl.samples = port_GlSamplesOf(options);
     g_gl.program = port_GlMakeProgramWith(
         g_gl_vertex_text, g_gl_geometry_text, g_gl_fragment_text);
     if (g_gl.program == 0) {
@@ -2825,6 +3032,19 @@ const char *port_GlStart(
     g_gl.resolve_at_sample =
         glGetUniformLocation(g_gl.resolve_program, "u_sample");
     g_gl.resolve_at_at = glGetUniformLocation(g_gl.resolve_program, "u_at");
+    g_gl.slot_program =
+        port_GlMakeProgram(g_gl_resolve_vertex_text, g_gl_slot_fragment_text);
+    if (g_gl.slot_program == 0) {
+        return g_gl.problem;
+    }
+    g_gl.slot_at_slots = glGetUniformLocation(g_gl.slot_program, "u_slots");
+    g_gl.slot_one_program = port_GlMakeProgram(
+        g_gl_resolve_vertex_text, g_gl_slot_one_fragment_text);
+    if (g_gl.slot_one_program == 0) {
+        return g_gl.problem;
+    }
+    g_gl.slot_one_at_slots =
+        glGetUniformLocation(g_gl.slot_one_program, "u_slots");
     g_gl.show_program =
         port_GlMakeProgram(g_gl_show_vertex_text, g_gl_show_fragment_text);
     if (g_gl.show_program == 0) {
@@ -2851,6 +3071,10 @@ const char *port_GlStart(
     glGenFramebuffers(1, &g_gl.framebuffer);
     glGenRenderbuffers(1, &g_gl.depth_buffer);
     glGenTextures(1, &g_gl.slot_texture);
+    glGenRenderbuffers(1, &g_gl.color_samples);
+    glGenTextures(1, &g_gl.slot_samples);
+    glGenTextures(1, &g_gl.slot_one);
+    glGenFramebuffers(1, &g_gl.slot_framebuffer);
     glGenTextures(1, &g_gl.picture_texture);
     glGenFramebuffers(1, &g_gl.picture_framebuffer);
     if (!port_GlMakeTarget()) {
@@ -2964,6 +3188,12 @@ const char *port_GlStart(
     return NULL;
 }
 
+/* Whether the picture is averaged down from more than one sample a pixel
+ * into a buffer of its own (port_GlResolve). */
+static s32 port_GlIsResolved(void) {
+    return g_gl.sample > 1 || g_gl.samples > 1;
+}
+
 /* The display's rectangle of the colour buffer averaged down into the
  * picture, where more than one sample a pixel is drawn. Leaves the
  * picture's framebuffer bound, which is what is read back. */
@@ -2992,6 +3222,23 @@ static s32 port_GlResolve(void) {
         }
         g_gl.picture_w = w;
         g_gl.picture_h = h;
+    }
+    if (g_gl.samples > 1) {
+        /* the card's own averaging of each pixel's samples: a pixel all
+         * of whose samples are one colour (the whole of the 2D layer, a
+         * block of video memory being whole pixels) comes out as that
+         * colour exactly */
+        s32 left = g_gl.display_x * g_gl.draw_x;
+        s32 bottom = g_gl.display_y * g_gl.draw_y;
+
+        glDisable(GL_SCISSOR_TEST);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, g_gl.framebuffer);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_gl.picture_framebuffer);
+        glBlitFramebuffer(left, bottom, left + w, bottom + h, 0, 0, w, h,
+                          GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        g_gl.draw_count++;
+        glBindFramebuffer(GL_FRAMEBUFFER, g_gl.picture_framebuffer);
+        return TRUE;
     }
     glBindFramebuffer(GL_FRAMEBUFFER, g_gl.picture_framebuffer);
     glViewport(0, 0, w, h);
@@ -3026,9 +3273,14 @@ void port_GlFinishFrame(void) {
     PORT_GPU_BEGIN(PORT_GPU_SHADOW);
     port_GlShadowFinish();
     PORT_GPU_END();
-    if (g_gl.sample > 1) {
+    if (port_GlIsResolved()) {
         PORT_GPU_BEGIN(PORT_GPU_RESOLVE);
         port_GlResolve();
+        /* what is drawn next is the scene again, into the colour buffer */
+        glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
+        glViewport(0, 0, g_gl.target_w, g_gl.target_h);
+        glEnable(GL_SCISSOR_TEST);
+        g_gl.has_state = FALSE;
         PORT_GPU_END();
     }
     /* Handed to the card, and not waited for: the card draws while the
@@ -3058,7 +3310,7 @@ s32 port_GlReadPicture(u32 *out, u32 room, s32 *out_w, s32 *out_h) {
     }
     /* the buffer's lines run as video memory's do, so the first line
      * read is the picture's first */
-    if (g_gl.sample > 1) {
+    if (port_GlIsResolved()) {
         /* the pass that averaged the samples down drew the picture
          * alone, so it is read from its own corner */
         glBindFramebuffer(GL_FRAMEBUFFER, g_gl.picture_framebuffer);
@@ -3165,6 +3417,22 @@ static void port_GlPresent(
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 }
 
+void port_GlDrawTexture(
+    u32 texture, s32 texture_w, s32 texture_h, s32 source_w, s32 source_h,
+    s32 x, s32 y, s32 w, s32 h, s32 is_linear) {
+    /* the window's pass, with the colour buffer as its window: its lines
+     * run down from the top and the buffer's up, so the rectangle is
+     * turned over (port_GlPresent) */
+    glBindFramebuffer(GL_FRAMEBUFFER, g_gl.framebuffer);
+    glViewport(0, 0, g_gl.target_w, g_gl.target_h);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    port_GlPresent(
+        texture, texture_w, texture_h, 0, 0, source_w, source_h, g_gl.target_w,
+        g_gl.target_h, x, g_gl.target_h - y, w, -h, is_linear, FALSE);
+    g_gl.has_state = FALSE;
+}
+
 void port_GlClearWindow(s32 window_w, s32 window_h) {
     if (!g_gl.is_started) {
         return;
@@ -3196,7 +3464,7 @@ s32 port_GlShowPicture(
         is_linear = TRUE;
     }
     port_GlTakeWindow(window_w, window_h);
-    if (g_gl.sample > 1) {
+    if (port_GlIsResolved()) {
         /* the pass that averaged the samples down drew the picture alone */
         port_GlPresent(g_gl.picture_texture, g_gl.picture_w, g_gl.picture_h, 0,
                        0, picture_w, picture_h, window_w, window_h, x, y, w, h,

@@ -187,13 +187,16 @@ def write_plan(out):
         f.write('\n'.join(lines) + '\n')
 
 
-def run(case, image, mods, plan):
+def run(case, image, mods, plan, overrides=()):
     run_ahead, fighters, stress = CASES[case]
     folder = os.path.join(OUT_DIR, 'runs', case)
     os.makedirs(folder, exist_ok=True)
     config = os.path.join(folder, 'rebushido.cfg')
     settings = port_budget.SETTINGS.format(run_ahead=run_ahead).replace(
         'fighter_models = on', 'fighter_models = ' + fighters)
+    for key, value in overrides:
+        lines = [line for line in settings.splitlines() if line.split('=')[0].strip() != key]
+        settings = '\n'.join(lines + ['%s = %s' % (key, value)]) + '\n'
     with open(config, 'w', encoding='utf-8', newline='\n') as f:
         f.write(settings)
     profile = os.path.join(folder, 'profile.txt')
@@ -322,6 +325,9 @@ def main():
     ap.add_argument('--budget', action='store_true', help="the gate's cases, held to LIMITS")
     ap.add_argument('--report-only', action='store_true', help='say what is over the budget, and pass')
     ap.add_argument('--against', metavar='REV', help="another commit's numbers (build/bench/), regressions")
+    ap.add_argument('--set', action='append', default=[], metavar='KEY=VALUE',
+                    help="a setting of rebushido.cfg changed for every case (a trial: its numbers are kept "
+                         "as the commit's name with +KEY-VALUE)")
     ap.add_argument('--reuse', action='store_true', help='measure the runs already in build/bench/runs/')
     args = ap.parse_args()
     cases = args.case or (BUDGET_CASES if args.budget else DEFAULT_CASES)
@@ -351,11 +357,14 @@ def main():
         if args.reuse:
             folder, seconds = os.path.join(OUT_DIR, 'runs', case), 0.0
         else:
-            folder, seconds = run(case, image, mods, plan)
+            folder, seconds = run(case, image, mods, plan, [tuple(s.split("=", 1)) for s in args.set])
         results[case] = measure(folder)
         report('%s (%.0f s)' % (case, seconds), results[case])
         sys.stdout.flush()
     name = commit_name()
+    if args.set:
+        # a trial's numbers are kept apart from the commit's own
+        name += '+' + ','.join(item.replace('=', '-').replace(' ', '') for item in args.set)
     keep = cache_dir(name)
     os.makedirs(keep, exist_ok=True)
     old = {}
