@@ -13,9 +13,19 @@
  *
  * It is a prover, not the game: the window's GL path is the same
  * src/port/gl/gl_draw.c with SDL_GL_GetProcAddress in place of EGL's.
- * Nothing here is in `make port` or in any check. */
+ * Nothing here is in `make port` or in any check.
+ *
+ * Built for Windows (`PORT_GL_SDL`, tools/port_gl_build.py --windows) the
+ * context is SDL's instead, on a window that is never shown: the same
+ * measures on the player's own graphics card, with no window, sound or
+ * dialog (docs/PORT.md, "The provers on a graphics card"). */
+#ifdef PORT_GL_SDL
+#define SDL_MAIN_HANDLED
+#include <SDL.h>
+#else
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -344,6 +354,76 @@ static s32 port_WritePng(
     return TRUE;
 }
 
+#ifdef PORT_GL_SDL
+/* ---- SDL, on a window never shown ---- */
+
+/* How OpenGL's own functions are called: as Windows' own are, on 32-bit
+ * Windows */
+#if defined(_WIN32) && !defined(_WIN64)
+#define GL_ENTRY __attribute__((stdcall))
+#else
+#define GL_ENTRY
+#endif
+
+static void *port_GlGetProc(const char *name) {
+    return SDL_GL_GetProcAddress(name);
+}
+
+/* A context of OpenGL 4.5 core on a window that is never shown: the
+ * scene is drawn into the renderer's own framebuffer objects, as it is
+ * through EGL, and the window is only what Windows makes a context on. */
+static const char *port_StartContext(void) {
+    static char said[256];
+    SDL_Window *window;
+
+    SDL_SetMainReady();
+    /* the video alone: no sound device is opened */
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        snprintf(said, sizeof(said), "SDL does not start: %s", SDL_GetError());
+        return said;
+    }
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 5);
+    SDL_GL_SetAttribute(
+        SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+    window = SDL_CreateWindow(
+        "rebushido-gl", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 64,
+        64, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+    if (window == NULL) {
+        snprintf(said, sizeof(said), "SDL makes no hidden window: %s",
+                 SDL_GetError());
+        return said;
+    }
+    if (SDL_GL_CreateContext(window) == NULL) {
+        snprintf(said, sizeof(said),
+                 "SDL will not make an OpenGL 4.5 core context: %s",
+                 SDL_GetError());
+        return said;
+    }
+    /* which card drew, for the log (GL_RENDERER) */
+    {
+        const unsigned char *(GL_ENTRY * get_string)(unsigned int) =
+            (const unsigned char *(
+                GL_ENTRY *)(unsigned int))SDL_GL_GetProcAddress("glGetString");
+
+        if (get_string != NULL && get_string(0x1F01) != NULL) {
+            fprintf(
+                stderr, "gl run card %s\n", (const char *)get_string(0x1F01));
+        }
+    }
+    return NULL;
+}
+
+static u32 port_Microseconds(void) {
+    u64 count = SDL_GetPerformanceCounter();
+    u64 second = SDL_GetPerformanceFrequency();
+
+    return (u32)(count / second * 1000000 + count % second * 1000000 / second);
+}
+#else
 /* ---- EGL ---- */
 
 static EGLDisplay g_display;
@@ -352,7 +432,7 @@ static void *port_GlGetProc(const char *name) {
     return (void *)eglGetProcAddress(name);
 }
 
-static const char *port_StartEgl(void) {
+static const char *port_StartContext(void) {
     static const EGLint want[] = {
         EGL_SURFACE_TYPE,
         EGL_PBUFFER_BIT,
@@ -411,14 +491,15 @@ static const char *port_StartEgl(void) {
     return NULL;
 }
 
-/* ---- a blank ---- */
-
 static u32 port_Microseconds(void) {
     struct timespec now;
 
     clock_gettime(CLOCK_MONOTONIC, &now);
     return (u32)(now.tv_sec * 1000000 + now.tv_nsec / 1000);
 }
+#endif
+
+/* ---- a blank ---- */
 
 /* The software GPU's picture, as the port's PNGs and the window have
  * it: 0xFFRRGGBB a pixel. */
@@ -1212,6 +1293,8 @@ int main(int argc, char **argv) {
         if (!strcmp(word, "--help") || !strcmp(word, "-h")) {
             printf("%s", g_usage);
             passed[count++] = word;
+        } else if (!strcmp(word, "--hidden")) {
+            /* the window's word, taken here too: nothing is ever shown */
         } else if (!strcmp(word, "--gl-exact")) {
             options.is_exact = TRUE;
         } else if (!strcmp(word, "--gl-compare")) {
@@ -1368,7 +1451,7 @@ int main(int argc, char **argv) {
     options.sample = view.supersample;
     options.aspect_w = view.aspect_w;
     options.aspect_h = view.aspect_h;
-    problem = port_StartEgl();
+    problem = port_StartContext();
     if (problem != NULL) {
         fprintf(stderr, "rebushido-gl: %s\n", problem);
         return PORT_EXIT_FAILED;

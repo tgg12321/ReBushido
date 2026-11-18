@@ -136,7 +136,7 @@ ALL_O_FILES  := $(S_O_FILES) $(C_O_FILES) $(ASM_FUNC_O_FILES)
 .PHONY: all clean check clean-check shift movovl modern test checks \
 	rebushido rebushido-disc rebushido-patch rebushido-test rebushido-modern rb-build \
 	quickboot quickboot-compile quickboot-disc playtest playtest-discs playtest-console gte-probe port \
-	patcher port-sdl port-sdl-windows port-rollback port-net
+	patcher port-sdl port-sdl-windows port-gl-windows port-rollback port-net
 
 ifeq ($(REBUSHIDO),1)
 all: rb-build
@@ -386,6 +386,12 @@ port-sdl:
 
 port-sdl-windows:
 	python3 tools/port_sdl_build.py --windows
+
+# The picture provers' program for Windows, on the machine's own graphics card
+# with a window never shown (tools/port_gl_build.py --windows; docs/PORT.md,
+# "The provers on a graphics card"): build/port-gl/windows/rebushido-gl.exe.
+port-gl-windows:
+	python3 tools/port_gl_build.py --windows
 
 # Every check GitHub Actions runs, in its order, with a summary
 # (tools/checks.sh): the counts, the lint, modern, test, the game's bytes,

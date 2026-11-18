@@ -224,7 +224,11 @@ def run(args, log, err):
     started = time.time()
     with open(log, 'w', encoding='utf-8', errors='replace', newline='\n') as f:
         with open(err, 'w', encoding='utf-8', errors='replace', newline='\n') as g:
-            subprocess.run(args, stdout=f, stderr=g, cwd=ROOT)
+            # the GPU's environment where a prover chose one
+            # (port_gl_prove.py, use_gpu)
+            import port_gl_prove as gl
+
+            subprocess.run(args, stdout=f, stderr=g, cwd=ROOT, env=gl.ENVIRONMENT)
     return time.time() - started
 
 

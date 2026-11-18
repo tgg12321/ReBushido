@@ -277,15 +277,15 @@ what they buy for what they cost:
    PlayStation's is `cpp | cc1 | maspsx | as`, no gcc driver; with the
    copy on WSL's disk and the dumps kept, a rebuild is now mostly the
    link and the checks' Python.
-3. **The owner's RTX 3090 for the picture provers: not yet.** Mesa's
-   D3D12 driver in WSL (`GALLIUM_DRIVER=d3d12`) runs the prover but
-   draws wrong (half the pixels differ at scale 1 and the flat screens
-   fail where llvmpipe passes), so its numbers prove nothing. The
-   Windows build's `--hidden` gets the card (port_game remastered at 4x:
-   60 s for 4481 blanks), but the provers' measures (`--gl-compare`,
-   `--gl-exact`, `--gl-blocks`) are only in the EGL program
-   (`src/port/gl/gl_main.c`): moving them into the window build is the
-   way, a change to `src/port/` for a quieter time.
+3. **The owner's RTX 3090 for the picture provers: done.** The prover
+   (`src/port/gl/gl_main.c`) is built for Windows too
+   (`wsl bash tools/build.sh port-gl-windows`), with SDL's context on a
+   window never shown in place of EGL's, and `port_gl_prove.py`,
+   `port_fps_prove.py` and `port_stage_prove.py` run it with
+   `--gpu card` (the default under Windows' Python): `port_gl_prove.py`
+   728 s on llvmpipe, 95 s on the card, the same verdicts. llvmpipe stays
+   the exact reference (PORT.md, "The provers on a graphics card").
+   Mesa's D3D12 driver in WSL is no way to the card: it draws wrong.
 4. **No more merge conflicts in the same three places.** Nearly every
    merge collided in the settings table (`src/port/window/choices.c` and
    its groups), its built-in test list (`tests/port/settings.c`) and the
@@ -324,8 +324,10 @@ what they buy for what they cost:
   checkout's `tmp/mods/`, never only in a worktree.
 - Merge an agent's branch, then `python tools/gate.py --owner --push`.
   A branch that conflicts goes back to its agent to merge `main`.
-- The picture provers use `build/port-gl/rebushido-gl`, built only by
-  `python3 tools/port_gl_build.py`: rebuild it before
+- The picture provers use `build/port-gl/rebushido-gl` (llvmpipe), built
+  only by `python3 tools/port_gl_build.py`, or on the card
+  `build/port-gl/windows/rebushido-gl.exe`, built only by
+  `wsl bash tools/build.sh port-gl-windows`: rebuild the one used before
   `tools/port_gl_prove.py` / `port_fps_prove.py` / `port_stage_prove.py`.
 - Pictures for the owner go in `Desktop\ReBushido Screenshots`; this
   session's are in its `Session 2026-11-17` and `Investigation

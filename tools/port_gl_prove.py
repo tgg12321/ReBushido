@@ -5,6 +5,7 @@
     python3 tools/port_gl_prove.py --image "Bushido Blade 2 (USA).cue"
             [--plans port_game,port_other_fight,port_bugfixes]
             [--scale 4] [--every 400] [--out build/remaster] [--quick]
+            [--gpu llvmpipe|card]
 
 For each play test's plan it runs build/port-gl/rebushido-gl twice:
 
@@ -26,7 +27,11 @@ with it off and holds the two traces to each other: the game must
 compute the same values either way.
 
 It prints a table of what it measured; no emulator is started and no
-window is opened. The plans are written from tests/play/*.toml for this
+window is opened. `--gpu llvmpipe` (in Linux) draws with Mesa in
+software, the exact reference; `--gpu card` (the default on Windows,
+`python tools/port_gl_prove.py`) runs the Windows prover on the
+machine's own card. What it holds is the same on both: the traces, the
+flat screens' blocks and the fighters' places. The plans are written from tests/play/*.toml for this
 program's own addresses (tools/playtest.py writes them).
 """
 import argparse
@@ -41,6 +46,57 @@ sys.path.insert(0, os.path.join(ROOT, 'tools'))
 
 PROGRAM = 'build/port-gl/rebushido-gl'
 PLANS = ['port_game', 'port_other_fight', 'port_bugfixes']
+
+# Where the provers draw (`--gpu`; docs/PORT.md, "The provers on a graphics
+# card"): `llvmpipe` is the Linux prover through EGL on Mesa's software
+# driver, the reference where a number has to be exact and the same on
+# every machine; `card` is the Windows prover through SDL on the machine's
+# own graphics card, on a window never shown (tools/port_gl_build.py
+# --windows). On Windows only the card can run; in Linux (WSL) either.
+GPU_PROGRAMS = {'llvmpipe': 'build/port-gl/rebushido-gl',
+                'card': 'build/port-gl/windows/rebushido-gl.exe'}
+GPU_BUILDS = {'llvmpipe': 'python3 tools/port_gl_build.py',
+              'card': 'wsl bash tools/build.sh port-gl-windows'}
+# What the child runs with: None is this process's own environment.
+ENVIRONMENT = None
+
+
+def add_gpu_option(ap):
+    ap.add_argument('--gpu', choices=sorted(GPU_PROGRAMS),
+                    default='card' if os.name == 'nt' else 'llvmpipe',
+                    help='llvmpipe: Mesa in software, the exact reference (Linux); '
+                         'card: the graphics card, through the Windows prover '
+                         '(the default on Windows)')
+
+
+def use_gpu(gpu):
+    """Makes `gpu` the one this module's runs draw on: its program, and
+    the environment its child is given. Returns the program's path."""
+    global PROGRAM, ENVIRONMENT
+    PROGRAM = GPU_PROGRAMS[gpu]
+    ENVIRONMENT = dict(os.environ)
+    if gpu == 'llvmpipe':
+        # Mesa's software driver, whatever else the host has
+        ENVIRONMENT['LIBGL_ALWAYS_SOFTWARE'] = '1'
+    else:
+        # nothing is ever shown or heard (the program opens no sound)
+        ENVIRONMENT['SDL_AUDIODRIVER'] = 'dummy'
+    return PROGRAM
+
+
+def missing_program(gpu):
+    """Why the prover of `gpu` cannot run here, or None."""
+    if not os.path.isfile(GPU_PROGRAMS[gpu]):
+        return 'no %s (%s)' % (GPU_PROGRAMS[gpu], GPU_BUILDS[gpu])
+    if gpu == 'llvmpipe' and os.name == 'nt':
+        return 'the llvmpipe prover is a Linux program: run this in WSL (python3)'
+    return None
+
+
+def command(program):
+    """How a program is named to subprocess: from the tree's root, which
+    every prover runs in."""
+    return os.path.abspath(program) if program.endswith('.exe') else os.path.join('.', program)
 
 
 def write_plan(name, out):
@@ -68,7 +124,7 @@ def run(args, log, quiet=False):
     with open(log, 'w', encoding='utf-8', errors='replace', newline='\n') as f, \
             open(log + '.err' if quiet else os.devnull, 'w', encoding='utf-8',
                  errors='replace', newline='\n') as err:
-        done = subprocess.run(args, stdout=f, stderr=err if quiet else f, cwd=ROOT)
+        done = subprocess.run(args, stdout=f, stderr=err if quiet else f, cwd=ROOT, env=ENVIRONMENT)
     if done.returncode != 0:
         with open(log + '.err' if quiet else log, encoding='utf-8', errors='replace') as f:
             last = f.read().splitlines()[-3:]
@@ -156,9 +212,12 @@ def main():
     ap.add_argument('--every', type=int, default=400)
     ap.add_argument('--out', default='build/remaster')
     ap.add_argument('--quick', action='store_true', help='the first plan only, and no pictures')
+    add_gpu_option(ap)
     args = ap.parse_args()
-    if not os.path.isfile(PROGRAM):
-        print('port-gl: no %s (python3 tools/port_gl_build.py)' % PROGRAM)
+    use_gpu(args.gpu)
+    problem = missing_program(args.gpu)
+    if problem:
+        print('port-gl: %s' % problem)
         return 1
     if not os.path.isfile(args.image):
         print('port-gl: no %s: --image names your own image of the disc' % args.image)
@@ -171,7 +230,7 @@ def main():
         plan = write_plan(name, os.path.join(folder, 'plan.txt'))
         # --out: the plan asks for pieces of memory at its checkpoints,
         # and they go into the run's own folder, not the tree's root
-        common = [os.path.join('.', PROGRAM), '--image', args.image, '--plan', plan,
+        common = [command(PROGRAM), '--image', args.image, '--plan', plan,
                   '--out', folder]
         print('%s: scale 1, as the console, comparing every picture' % name)
         seconds = run(common + ['--graphics', 'remastered', '--gl-scale', '1', '--gl-exact',

@@ -6,7 +6,7 @@ nothing shown (docs/PORT.md, "Remastered", "More pictures a second").
             [--plans port_game,port_other_fight,port_bugfixes]
             [--phases 5] [--scale 2] [--out build/fps] [--quick]
             [--bits 64,32] [--effects original|exact|smooth]
-            [--smooth-light off|on]
+            [--smooth-light off|on] [--gpu llvmpipe|card]
 
 For each play test's plan it runs build/port-gl/rebushido-gl with each
 game frame drawn as `--phases` pictures: the first the frame on show, the
@@ -51,6 +51,14 @@ STRIP_AT = 3000
 STRIP_BLANKS = 12
 
 
+def gl_environment():
+    """What the child runs with, for the GPU asked for (port_gl_prove.py,
+    use_gpu)."""
+    import port_gl_prove as gl
+
+    return gl.ENVIRONMENT
+
+
 def run(args, log, quiet=False):
     """The run's output into `log`. Its own output is the game's trace. A quiet run's error
     output goes beside it (`log` + `.err`) rather than nowhere, and a run
@@ -60,7 +68,7 @@ def run(args, log, quiet=False):
     with open(log, 'w', encoding='utf-8', errors='replace', newline='\n') as f, \
             open(log + '.err' if quiet else os.devnull, 'w', encoding='utf-8',
                  errors='replace', newline='\n') as err:
-        done = subprocess.run(args, stdout=f, stderr=err if quiet else f, cwd=ROOT)
+        done = subprocess.run(args, stdout=f, stderr=err if quiet else f, cwd=ROOT, env=gl_environment())
     if done.returncode != 0:
         with open(log + '.err' if quiet else log, encoding='utf-8', errors='replace') as f:
             last = f.read().splitlines()[-3:]
@@ -174,18 +182,21 @@ def main():
     ap.add_argument('--effects', default='original',
                     choices=('original', 'exact', 'smooth'))
     ap.add_argument('--smooth-light', default='off', choices=('off', 'on'))
+    import port_gl_prove as gl
+
+    gl.add_gpu_option(ap)
     args = ap.parse_args()
+    global PROGRAM
+    PROGRAM = gl.use_gpu(args.gpu)
     if not os.path.isfile(args.image):
         print('port-fps: no %s: --image names your own image of the disc'
               % args.image)
         return 1
-    import port_gl_prove as gl
-
     plans = args.plans.split(',')[:1] if args.quick else args.plans.split(',')
     bits = int(args.bits)
-    if not os.path.isfile(PROGRAM):
-        print('port-fps: no %s (python3 tools/port_gl_build.py --bits %d)'
-              % (PROGRAM, bits))
+    problem = gl.missing_program(args.gpu)
+    if problem:
+        print('port-fps: %s' % problem)
         return 1
     rows = []
     traces = []
@@ -194,7 +205,7 @@ def main():
         os.makedirs(folder, exist_ok=True)
         gl.PROGRAM = PROGRAM
         plan = gl.write_plan(name, os.path.join(folder, 'plan.txt'))
-        common = [os.path.join('.', PROGRAM), '--image', args.image,
+        common = [gl.command(PROGRAM), '--image', args.image,
                   '--plan', plan, '--out', folder, '--graphics', 'remastered',
                   '--stage-mesh', args.stage_mesh, '--effects', args.effects,
                   '--smooth-light', args.smooth_light]
@@ -220,7 +231,7 @@ def main():
         # the traces with the pictures on and off. Two phases is enough:
         # every frame is still written down and drawn again, which is all
         # the game could possibly see of it.
-        both = [os.path.join('.', PROGRAM), '--image', args.image,
+        both = [gl.command(PROGRAM), '--image', args.image,
                 '--plan', plan, '--out', folder, '--graphics', 'remastered',
                 '--stage-mesh', args.stage_mesh, '--effects', args.effects,
                 '--smooth-light', args.smooth_light, '--gl-scale', '1',

@@ -1979,6 +1979,60 @@ times across and eight down would be some fifty times that. 3.2 ms a
 frame at 2,560 by 1,920 **with no card** is what makes 144 pictures a
 second a question of the game's own rate and not of the drawing.
 
+### The provers on a graphics card
+
+The same prover is built for Windows (`python3 tools/port_gl_build.py
+--windows`, `wsl bash tools/build.sh port-gl-windows`, into
+`build/port-gl/windows/rebushido-gl.exe` with `SDL2.dll` beside it):
+`src/port/gl/gl_main.c` with `PORT_GL_SDL`, where SDL makes the OpenGL
+4.5 core context on a window that is never shown, and no sound device is
+opened. Everything else -- the drawing, the read-back, the comparisons,
+`--gl-exact`, `--gl-compare`, `--gl-blocks`, `--gl-tween` -- is the one
+file, so the measures are the same code on Mesa in software and on the
+card the players have. `port_gl_prove.py`, `port_fps_prove.py` and
+`port_stage_prove.py` take `--gpu llvmpipe` (the Linux program, which
+they now run with `LIBGL_ALWAYS_SOFTWARE=1` themselves) or `--gpu card`
+(the Windows program; the default when Windows' Python runs them, and
+from WSL it runs through Windows' interop). The log's `gl run card` line
+names the card that drew. Mesa's D3D12 driver in WSL is not a way to the
+card: it draws wrong (half the pixels of scale 1 differ, and the flat
+screens fail where llvmpipe passes).
+
+**llvmpipe stays the reference** where a number must be exact and the
+same on every machine: the tables in this document were measured there,
+and a figure quoted against an earlier one is measured there again. The
+card is for iterating: the same verdicts, several times sooner.
+
+What may differ on the card, and why the provers hold it all the same:
+
+- **The game's traces do not.** The trace of every plan is the same,
+  line for line, on the card as on llvmpipe, with the renderer on and
+  off (2,333, 2,457 and 2,334 lines): the game never reads what the card
+  drew.
+- **The colours of pixels that mix and of shaded polygons** are each
+  card's own floating-point arithmetic. At scale 1 with `--gl-exact` the
+  card differs from the software GPU in 623,545, 6,805,770 and 648,625
+  pixels against llvmpipe's 608,536, 6,786,976 and 634,701 (2% more at
+  most), the same few in a hundred within a step. That count is a
+  measure, never a gate.
+- **The flat screens, block for block**, are held by the same bar on
+  both: no block broken up (0 on both) and no channel more than two of
+  a five-bit step out (`BLOCK_WORST_MAX`). The card's pixels a step out
+  are 8,609, 8,626 and 8,744 against llvmpipe's 8,037, 8,037 and 8,154,
+  and its worst channel 11, 11 and 13 against 11, 11 and 14: the card
+  rounds a mixed pixel otherwise, within the same two steps.
+- **The time a frame takes** is the card's (`us/f` 3, 5 and 2 against
+  287, 312 and 274): the numbers of time in the tables are llvmpipe's
+  unless they say otherwise.
+
+The provers' wall-clock time, run one at a time on the owner's machine
+(the RTX 3090, with other agents' work running beside them, so a few
+per cent either way is noise):
+
+| The prover | llvmpipe (WSL) | The card (Windows) |
+|---|---|---|
+| `port_gl_prove.py` (three plans) | 728 s | 95 s |
+
 ### What is not done, and what may be wrong
 
 - The owner has seen it on a real card (an RTX 3090 at 2,560 by 1,440,
