@@ -8,7 +8,8 @@
  *   - at a vertical blank, before the pads' packets are filled, SDL's
  *     events are read: keys and controllers become the pads' buttons
  *     (keymap.c), a controller plugged in or pulled out is taken or let
- *     go, Escape or the window's close ends the program;
+ *     go, Escape is the game's pause or its way back on player one's
+ *     pad (port_EscapeButton), and the window's close ends the program;
  *   - as a blank's samples are made they go into a queue (ring.c), which
  *     the sound card empties from a thread of SDL's;
  *   - at a blank's end the displayed rectangle of the port's video
@@ -344,6 +345,9 @@ static u32 g_port_pad_changes;
 /* What the pads are not given until it is let go: what was held as the
  * settings menu closed, and the Select that opened it (sdl_menu.c). */
 static u32 g_port_held_back[PORT_PADS];
+/* The button of player one's pad that Escape holds while it is down,
+ * chosen as it went down (port_EscapeButton); 0 while it is up. */
+static u32 g_port_escape_held;
 /* --inject: a plan's presses, made as the PC's input at the next read of
  * the events at a blank (port_ReadInput), as they always were, and never
  * at the read just before the game takes its input */
@@ -395,6 +399,10 @@ s32 port_LookUpName(s32 source, const char *name) {
     case PORT_SOURCE_KEY: {
         SDL_Scancode code = SDL_GetScancodeFromName(name);
 
+        if (code == SDL_SCANCODE_ESCAPE) {
+            /* the window's own: pause and back (port_EscapeButton) */
+            return PORT_NAME_RESERVED;
+        }
         return code == SDL_SCANCODE_UNKNOWN ? -1 : (s32)code;
     }
     case PORT_SOURCE_BUTTON:
@@ -2237,6 +2245,14 @@ static void port_WatchGame(u32 blank) {
             port_NameWeapon(now.weapon[0]), port_NameRoster(now.roster[1]),
             now.is_cpu[1] ? " (CPU)" : "", port_NameWeapon(now.weapon[1]));
     }
+    if (g_port_has_seen && now.is_paused != g_port_seen.is_paused) {
+        port_Note("game: the pause menu %s; blank %u, frame %d",
+                  now.is_paused ? "is up" : "is closed", blank, now.frames);
+    }
+    if (g_port_has_seen && now.is_top_menu != g_port_seen.is_top_menu) {
+        port_Note("game: the top menu %s; blank %u, frame %d",
+                  now.is_top_menu ? "is up" : "is left", blank, now.frames);
+    }
     if (now.in_fight && g_port_has_seen && now.defeat_frames != 0 &&
         g_port_seen.defeat_frames == 0) {
         port_Note("game: the fight is over: %s; blank %u, frame %d",
@@ -2547,11 +2563,89 @@ void port_ShowStill(void) {
     port_SwapPicture();
 }
 
+/* What the keys and controllers hold on a pad, through the layout, and
+ * Escape's button on player one's. */
+static u32 port_PadHeld(s32 pad) {
+    return port_GetHeldButtons(&g_port_settings, pad) |
+           (pad == 0 ? g_port_escape_held : 0);
+}
+
 void port_HoldBackPads(void) {
     s32 pad;
 
     for (pad = 0; pad < PORT_PADS; pad++) {
-        g_port_held_back[pad] = port_GetHeldButtons(&g_port_settings, pad);
+        g_port_held_back[pad] = port_PadHeld(pad);
+    }
+}
+
+/* Escape is no key a player binds (port_LookUpName): it is the game's
+ * own way back from where it is, player one's button of it held while
+ * Escape is (docs/PORT.md, "The window", Escape). In the fight, Start,
+ * which opens the pause menu (main.c); in the pause menu, Triangle,
+ * which closes it and goes on with the fight; in a story's cutscene,
+ * Cross, which skips it (story.c); everywhere else Triangle, the button
+ * every menu and screen of the game backs out with (menu_pages.c,
+ * select.c, memcard_save.c), and which does nothing where there is
+ * nothing to go back to (the title, the options page at boot, a load).
+ * The button is the one for where the game is as Escape goes down, so
+ * that the pause it opens is not closed by the same press. */
+static u32 port_EscapeButton(void) {
+    PortGameState now;
+
+    port_ReadGameState(&now);
+    if (now.in_fight && !now.is_paused) {
+        return port_FindPadButton("start");
+    }
+    if (now.is_cutscene) {
+        return port_FindPadButton("cross");
+    }
+    return port_FindPadButton("triangle");
+}
+
+void port_TakeEscape(s32 down) {
+    g_port_escape_held = down ? port_EscapeButton() : 0;
+    if (down) {
+        port_Note("Escape: %s of player one; blank %u",
+                  port_NamePadButton(g_port_escape_held), port_GetBlankCount());
+    }
+}
+
+/* Whether `blank` is one of a test's list ("1500,4000"). */
+static s32 port_IsListedBlank(const char *at, u32 blank) {
+    while (at != NULL && *at != 0) {
+        if ((u32)atoi(at) == blank) {
+            return TRUE;
+        }
+        at = strchr(at, ',');
+        if (at != NULL) {
+            at++;
+        }
+    }
+    return FALSE;
+}
+
+/* --escape-at: Escape pressed at those blanks and let go
+ * ESCAPE_TEST_BLANKS later, as SDL's events of the key, which are read
+ * as a player's are. */
+#define ESCAPE_TEST_BLANKS 4
+
+static void port_PressEscapeForTest(u32 blank) {
+    const char *at = g_port_window_options.escape_at;
+    s32 down = port_IsListedBlank(at, blank);
+    SDL_Event event;
+
+    if (!down && (blank < ESCAPE_TEST_BLANKS ||
+                  !port_IsListedBlank(at, blank - ESCAPE_TEST_BLANKS))) {
+        return;
+    }
+    SDL_zero(event);
+    event.type = down ? SDL_KEYDOWN : SDL_KEYUP;
+    event.key.state = down ? SDL_PRESSED : SDL_RELEASED;
+    event.key.keysym.scancode = SDL_SCANCODE_ESCAPE;
+    event.key.keysym.sym = SDLK_ESCAPE;
+    if (SDL_PushEvent(&event) != 1) {
+        port_Say("--escape-at: SDL took no event: %s", SDL_GetError());
+        port_Quit(PORT_EXIT_FAILED);
     }
 }
 
@@ -2628,7 +2722,7 @@ static void port_SendPads(void) {
     u32 bit;
 
     for (pad = 0; pad < PORT_PADS; pad++) {
-        u32 held = port_GetHeldButtons(&g_port_settings, pad);
+        u32 held = port_PadHeld(pad);
         u32 changed;
 
         /* the settings menu's (sdl_menu.c): what is held back until it
@@ -2661,8 +2755,11 @@ static void port_TakeKey(const SDL_KeyboardEvent *key) {
     if (down && key->repeat != 0) {
         return;
     }
-    if (down && key->keysym.scancode == SDL_SCANCODE_ESCAPE) {
-        port_Quit(PORT_EXIT_OK);
+    if (key->keysym.scancode == SDL_SCANCODE_ESCAPE) {
+        /* the window's own: pause and back, never the end of the program */
+        g_port_key_events++;
+        port_TakeEscape(down);
+        return;
     }
     if (down && (key->keysym.scancode == SDL_SCANCODE_F11 ||
                  (key->keysym.scancode == SDL_SCANCODE_RETURN &&
@@ -2854,6 +2951,7 @@ static void port_ReadInput(u32 blank) {
         port_MakePress(waiting->pad, waiting->button, waiting->down);
     }
     g_port_inject_waiting_count = 0;
+    port_PressEscapeForTest(blank);
     port_ReadEvents();
     port_SendPads();
     port_ProfileSwitch(was);

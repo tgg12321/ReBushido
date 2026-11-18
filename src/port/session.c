@@ -48,7 +48,7 @@
 #define POLL_MS 2
 #define STATUS_EVERY_MS 16
 /* The guest gives up when nobody has answered for this long; the host
- * waits as long as it is left to (the window's Escape ends it), or, with
+ * waits as long as it is left to (closing the window ends it), or, with
  * no window, this long. */
 #define JOIN_GIVE_UP_MS 30000
 #define HOST_GIVE_UP_MS 600000

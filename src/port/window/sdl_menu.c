@@ -277,6 +277,11 @@ static void port_MenuEvent(const SDL_Event *event) {
     case SDL_KEYDOWN:
     case SDL_KEYUP:
         port_MenuKey(&event->key);
+        if (event->type == SDL_KEYUP &&
+            event->key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
+            /* Escape held into the menu is let go for the game too */
+            port_TakeEscape(FALSE);
+        }
         port_ApplyInput(
             &g_port_settings, PORT_SOURCE_KEY, 0,
             (s32)event->key.keysym.scancode, event->type == SDL_KEYDOWN);

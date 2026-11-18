@@ -363,6 +363,9 @@ static const char *port_ReadBinding(
         return "after the = comes `key`, `pad` or `none`";
     }
     binding.code = *what != 0 ? lookup(binding.source, what) : -1;
+    if (binding.code == PORT_NAME_RESERVED) {
+        return "that key is the window's own (Escape: pause and back)";
+    }
     if (binding.code < 0) {
         return binding.source == PORT_SOURCE_KEY
                    ? "no key of that name"

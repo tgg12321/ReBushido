@@ -10,7 +10,7 @@
  *     font at the window's own resolution, as crisp in 4K as at 960 by
  *     720, and none of it is in the game's video memory;
  *   - the waits: while netplay waits on the other program the window's
- *     events are read (Escape still ends the program) and its picture is
+ *     events are read (closing the window ends the program) and its picture is
  *     shown again with the line saying so; before the game starts, while
  *     the session is set up, a panel says how far it has got;
  *   - time sync: where this program is ahead of the other, the window's
@@ -191,7 +191,7 @@ static void port_NetPanel(const char *status) {
                   pad + line + port_FontAscent(), status, COLOR_TEXT);
     port_FontDraw(
         g_net.pixels, place.w, place.h, pad, pad + line * 2 + port_FontAscent(),
-        "Escape: give up and close the program", COLOR_DIM);
+        "Close the window to give up", COLOR_DIM);
     port_ShowMenu(port_GetBlankCount(), g_net.pixels, &place, NULL);
 }
 

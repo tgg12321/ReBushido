@@ -83,7 +83,11 @@ one's and the second player two's; they can be plugged in and pulled
 out while the game runs.
 
 **F1** opens the settings menu (below), and so does a controller's
-guide button. **Escape**, or closing the window, ends the program. **F11** or
+guide button. **Escape** pauses a fight (it is Start there), closes
+the pause menu, skips a story's cutscene, and goes back from any menu
+or screen of the game (it is Triangle there); it never ends the
+program. **Closing the window** does, and so does **Quit ReBushido** at
+the foot of the settings menu. **F11** or
 **Alt+Enter** fills the screen and comes back. **F3** shows and hides
 the counter in the corner: `59.8/30.0 100%` is the pictures shown a
 second, the game's own frames a second (30 in a fight and 60 in the
@@ -132,7 +136,8 @@ fight's pause menu (Start, then Select).
 | a button back to the layout's own | Delete | Square |
 | close | F1 | Start, Back, guide |
 
-The menu's own keys are always these, whatever the players' are.
+The menu's own keys are always these, whatever the players' are. Its
+last line, **Quit ReBushido**, keeps the settings and ends the program.
 
 **The game is stopped while it is open**, at the end of the vertical
 blank where it has just shown a frame, and goes on from there when it
@@ -475,7 +480,7 @@ in your settings: the host is player 1 and the other player 2 in the
 game. A line at the top of the window says who you are, the **ping**
 (the round trip to the other PC), the longest **rollback** of the last
 seconds (frames the game went back and ran again) and the **delay**; or
-that it is waiting for the other player. Escape or closing the window
+that it is waiting for the other player. Closing the window
 leaves; the other player is told and plays on alone. The settings menu
 cannot be opened during a session (the other player's game would have
 to stop too).

@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "menu.h"
+#include "shared.h"
 #include "sdl_window.h"
 
 /* The settings file's text, as large as the program reads one. */
@@ -63,6 +64,7 @@ enum {
     ROW_NET_LISTEN,
     ROW_NET_DELAY,
     ROW_NET_START,
+    ROW_QUIT, /* the program ended, the settings kept */
 };
 
 typedef struct {
@@ -146,6 +148,7 @@ static void port_MenuBuild(s32 page, s32 cursor) {
         port_MenuAddRow(ROW_BUGFIXES, 0);
         port_MenuAddRow(ROW_ONLINE, 0);
         port_MenuAddRow(ROW_CLOSE, 0);
+        port_MenuAddRow(ROW_QUIT, 0);
     } else if (page == PAGE_ONLINE) {
         port_MenuAddRow(ROW_NET_ROLE, 0);
         if (g_port_settings.net_role == 0) {
@@ -322,6 +325,9 @@ static void port_MenuDescribe(
     case ROW_CLOSE:
         snprintf(label, LABEL_BYTES, "Back to the game");
         break;
+    case ROW_QUIT:
+        snprintf(label, LABEL_BYTES, "Quit ReBushido");
+        break;
     case ROW_BUTTON: {
         u32 mask = port_FindPadButton(g_port_menu_buttons[row->index][0]);
         char keys[VALUE_BYTES];
@@ -436,6 +442,9 @@ static const char *port_MenuHelp(void) {
     case ROW_NET_START:
         return "The program starts again as a session: both go to versus "
                "select";
+    case ROW_QUIT:
+        return "The program ends (closing the window does too); the "
+               "settings are kept";
     default:
         return "";
     }
@@ -665,6 +674,10 @@ static void port_MenuAccept(void) {
     case ROW_NET_START:
         port_MenuStartOnline();
         break;
+    case ROW_QUIT:
+        port_MenuClose();
+        port_Say("settings menu: Quit");
+        port_Quit(PORT_EXIT_OK);
     default:
         port_MenuBuild(PAGE_MAIN, g_menu.main_cursor);
         break;
