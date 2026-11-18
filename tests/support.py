@@ -17,11 +17,23 @@ WORK = os.path.join(ROOT, 'build', 'tests', 'data')
 
 
 def work_file(name, contents):
-    """Writes a file for the test's program and returns its path."""
+    """Writes a file for the test's program and returns its path. `make
+    test` and `make rebushido-test` run side by side (tools/gate.py) and
+    write the same files: one is written whole beside its place and put
+    there in one step, and one already there as it should be is left, so
+    that a program never reads a file the other run has half written."""
     os.makedirs(WORK, exist_ok=True)
     path = os.path.join(WORK, name)
-    with open(path, 'wb') as f:
+    try:
+        with open(path, 'rb') as f:
+            if f.read() == contents:
+                return path
+    except OSError:
+        pass
+    part = '%s.%d.part' % (path, os.getpid())
+    with open(part, 'wb') as f:
         f.write(contents)
+    os.replace(part, path)
     return path
 
 

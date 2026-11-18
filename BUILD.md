@@ -101,6 +101,21 @@ commands are the same and the outputs land in `build/` as before:
   checkout that is not on `/mnt/`. The gate's steps that only run what was
   built (`port-rollback`, `port-net`, `port-budget`) run in place.
 
+WSL's wall clock steps back by itself, by tenths of a second and more,
+many times a day (the Hyper-V time sync and `systemd-timesyncd` both set
+it; `journalctl | grep "Time jumped backwards"`). make decides by the
+files' times, so a file written just after such a step is older than one
+written just before it. Where the build is told something by a file it
+writes only when that changes (the commit for `version.o`, the list of
+objects for the link script, quick boot's fight for `quickboot.o`), a
+change removes the object and the program as well (`RB_LINKED` in the
+`Makefile`), which no step of the clock can leave in place. Before this a
+gate failed in the play tests on a QuickBoot-bugfixes disc made of the
+QuickBoot-bugs disc's program, built a few seconds before: make had
+compiled and linked nothing. `make quickboot-disc` now reads the fight
+back from the disc it made (`tools/quickboot.py verify`) and fails if it
+is not the one asked for.
+
 Measured on the owner's machine (2026-11-18, other builds running beside):
 
 | | on `/mnt/c` | in the copy, with the copying |
