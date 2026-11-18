@@ -22,6 +22,12 @@
 #   patch, into build/release/ (docs/REBUSHIDO.md, "Making a release")
 # Exits with make's status: a build that fails is not hidden by the filter.
 cd "$(dirname "$0")/.." || exit 1
+# On the Windows drive, the build runs in a copy of the sources on WSL's own
+# disk and brings build/ back (tools/mirror.sh; BUILD.md, "Where the build
+# runs"); RB_BUILD_IN_PLACE=1 builds here.
+if [ -z "$RB_IN_MIRROR" ] && [ "$1" != gate ] && [ "$1" != playtest ]; then
+    exec bash tools/mirror.sh run bash tools/build.sh "$@"
+fi
 NOISE="^mipsel-linux-gnu-\\|Warning: missing .end\\|Assembler messages\\|macro invoked"
 if [ "$1" = test ]; then
     shift
@@ -45,7 +51,8 @@ if [ "$1" = playtest ]; then
             *) names+=("$word") ;;
         esac
     done
-    make -j8 playtest-discs "${settings[@]}" 2>&1 | grep -v "$NOISE" | tail -4
+    # the discs where the build runs; the play tests read them here
+    bash tools/mirror.sh run make -j8 playtest-discs "${settings[@]}" 2>&1 | grep -v "$NOISE" | tail -4
     [ "${PIPESTATUS[0]}" = 0 ] || exit 1
     exec python3 tools/playtest.py "${names[@]}"
 fi
