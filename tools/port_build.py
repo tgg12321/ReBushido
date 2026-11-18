@@ -364,6 +364,9 @@ def check_host():
 
 
 def git_hash():
+    # given by tools/mirror.sh, whose copy of the checkout has no .git
+    if os.environ.get('RB_GIT_HASH'):
+        return os.environ['RB_GIT_HASH']
     try:
         short = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], capture_output=True, text=True)
         if short.returncode != 0:
@@ -395,6 +398,37 @@ def newest_input(obj):
         except OSError:
             return None
     return newest
+
+
+def build_stamp():
+    """The time of the newest file of how a file is compiled: a change to
+    one of them compiles everything again."""
+    return max(os.path.getmtime(p) for p in (__file__, 'tests/run.py', 'tools/modern/check.py',
+                                             'tools/port_gte_macros.py', modern.SHIM))
+
+
+def made_since(made, deps, stamp):
+    """Whether `made` (a compiler's output, which `deps` lists the inputs
+    of: -MD -MF) is newer than each of its inputs and than `stamp`: then it
+    is what compiling again would give, and the checks that read what gcc
+    writes of every file (port_casts, port_order) read it as it is."""
+    try:
+        when = os.path.getmtime(made)
+        with open(deps, encoding='utf-8') as f:
+            words = f.read().replace('\\\n', ' ').split()
+    except OSError:
+        return False
+    if stamp >= when:
+        return False
+    for word in words[1:]:
+        if word == '-' or word.endswith(':'):
+            continue
+        try:
+            if os.path.getmtime(word) >= when:
+                return False
+        except OSError:
+            return False
+    return True
 
 
 def compile_one(job):
@@ -486,8 +520,34 @@ def write_ld_script(objects):
     for kind in DATA_KINDS:
         ordered = sorted(found[kind], key=lambda name: playstation[name])
         lines[kind[1:]] = '\n'.join('        *(%s.%s)' % (kind, name) for name in ordered)
-    with open(LD_SCRIPT, 'w', encoding='utf-8', newline='\n') as f:
-        f.write(LD_SCRIPT_TEXT % lines)
+    write_if_changed(LD_SCRIPT, LD_SCRIPT_TEXT % lines)
+    # the objects linked, so that one left out links again
+    write_if_changed(PROGRAM + '.objects', '\n'.join(objects) + '\n')
+
+
+def write_if_changed(path, text):
+    """`text` into `path`, which is left as it is, time and all, where it
+    already holds it: a build that changes nothing writes nothing, so that
+    a play test reading the program beside it is not told it was rebuilt."""
+    try:
+        with open(path, encoding='utf-8', newline='\n') as f:
+            if f.read() == text:
+                return False
+    except OSError:
+        pass
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(text)
+    return True
+
+
+def linked_since(objects, stamp):
+    """Whether the program is newer than all it is linked from."""
+    try:
+        made = os.path.getmtime(PROGRAM)
+        inputs = [LD_SCRIPT, PROGRAM + '.objects', PLAYSTATION_NAMES] + objects
+        return stamp < made and all(os.path.getmtime(path) < made for path in inputs)
+    except OSError:
+        return False
 
 
 def check_link_space(symbols):
@@ -617,16 +677,16 @@ def write_names():
         if s['bind'] in (1, 2) or s['name'] not in symbols:
             symbols[s['name']] = s['value']
         rows.append((s['value'], 'f' if s['type'] == 2 else 'o', s['size'], s['name']))
-    with open(NAMES, 'w', encoding='utf-8', newline='\n') as f:
-        f.write('# The names of %s, for the program itself: written by tools/port_build.py.\n' % PROGRAM)
-        for line in state_lines(symbols, layouts):
-            f.write(line + '\n')
-        for name in sorted(layouts):
-            f.write('layout %s %d\n' % (name, layouts[name][0]))
-            for run in layouts[name][1]:
-                f.write('run %d %d %d\n' % run)
-        for value, kind, size, name in sorted(set(rows)):
-            f.write('sym %08x %s %d %s\n' % (value, kind, size, name))
+    text = ['# The names of %s, for the program itself: written by tools/port_build.py.\n' % PROGRAM]
+    for line in state_lines(symbols, layouts):
+        text.append(line + '\n')
+    for name in sorted(layouts):
+        text.append('layout %s %d\n' % (name, layouts[name][0]))
+        for run in layouts[name][1]:
+            text.append('run %d %d %d\n' % run)
+    for value, kind, size, name in sorted(set(rows)):
+        text.append('sym %08x %s %d %s\n' % (value, kind, size, name))
+    write_if_changed(NAMES, ''.join(text))
     return len(rows), set(layouts), symbols
 
 
@@ -662,8 +722,7 @@ def main():
              + MOVOVL_INCLUDES)
     flags += ['-DRB_GIT_HASH="%s"' % git_hash()]
     # a change to how it is built builds everything again
-    stamp = max(os.path.getmtime(p) for p in (__file__, 'tests/run.py', 'tools/modern/check.py',
-                                              'tools/port_gte_macros.py', modern.SHIM))
+    stamp = build_stamp()
     hash_file = OUT_DIR + '/git_hash.txt'
     old = open(hash_file).read() if os.path.exists(hash_file) else ''
     if old != git_hash():
@@ -689,9 +748,12 @@ def main():
         return 1
 
     write_ld_script(objects)
-    proc = subprocess.run(['gcc'] + LINK_FLAGS + ['-Wl,-T,' + LD_SCRIPT, '-o', PROGRAM] + objects,
-                          capture_output=True, text=True, env=environment(), errors='replace')
-    if proc.returncode != 0:
+    if linked_since(objects, stamp):
+        proc = None     # nothing changed: the program is left as it is
+    else:
+        proc = subprocess.run(['gcc'] + LINK_FLAGS + ['-Wl,-T,' + LD_SCRIPT, '-o', PROGRAM] + objects,
+                              capture_output=True, text=True, env=environment(), errors='replace')
+    if proc is not None and proc.returncode != 0:
         missing = sorted(set(re.findall(r"undefined reference to `(\w+)'", proc.stderr)))
         other = [line for line in proc.stderr.split('\n') if line and 'undefined reference' not in line
                  and ': in function' not in line.lower()]
