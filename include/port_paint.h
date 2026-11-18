@@ -93,6 +93,11 @@ typedef struct {
     void (*yield)(void);
 } PortPaintHost;
 
+/* The painters' lines: groups 2 to this many tall, each painter's in turn
+ * (port_raster.h); -1, as by default, is a 256th of the lines shared out
+ * among them, one band each. Set before port_PaintStart. */
+extern s32 g_port_paint_band_shift;
+
 /* The most painters, each a thread. */
 #define PORT_PAINTERS_MAX 8
 

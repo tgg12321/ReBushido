@@ -25,6 +25,10 @@ extern u16 g_port_vram[PORT_VRAM_PIXELS];
  * software GPU marks each line it writes (src/port/state.c, which keeps
  * this outside the state). */
 extern u8 g_port_vram_lines_written[PORT_VRAM_HEIGHT];
+/* Set from a save for the frames run ahead to the load after them
+ * (port_StateSaveAhead, port_state.h): each write of video memory by the
+ * GPU's side of the game's thread is kept first (port_StateKeepVram). */
+extern s32 g_port_vram_undo_on;
 
 /* ---- the two ports ---- */
 

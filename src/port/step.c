@@ -12,10 +12,17 @@
  * step itself runs is the picture those frames left on the display:
  * the game's own frames, as many frames sooner. The step then runs as
  * it would have, heard and paced, and computes exactly what it would
- * have computed. */
+ * have computed.
+ *
+ * Where the host holds a step's blanks (the window, g_port_held_blank_hook)
+ * the step itself is the first of those frames, since it computes what the
+ * first frame ahead would: its blanks' turns of the window wait for its end,
+ * the frames ahead but one run after it, and then the blanks show what they
+ * left (docs/PORT.md, "The step itself as the first frame ahead"). */
 #include "common.h"
 #include "port_host.h"
 #include "port_net.h"
+#include "port_paint.h"
 #include "port_profile.h"
 #include "bb2.h"
 
@@ -92,48 +99,45 @@ static s32 port_MayRunAhead(void) {
            g_port_input_count > 0 && !port_LinkIsUp() && !port_IsNetplayOn();
 }
 
-/* The host's turn before a step (port_platform.h): the window's read of
- * the PC's input, then the frames ahead, run from a saved state that is
- * put back after them. */
-void port_BeforeStep(void) {
+/* `frames` frames run ahead from a saved state that is put back after
+ * them; `drawn_before` is how many of them, the last but one and before,
+ * the boundary before ran and the card drew. TRUE where they were run to
+ * the end, FALSE where they were given up. */
+static s32 port_RunAhead(s32 frames, s32 drawn_before, s32 is_after_step) {
     u32 start;
     u32 loaded;
     s32 was;
     s32 i;
 
-    g_port_unseen = FALSE;
-    g_port_ahead_held = FALSE;
-    g_port_ahead_kept = FALSE;
-    if (g_port_boundary_hook != NULL) {
-        g_port_boundary_hook();
-    }
-    if (!port_MayRunAhead()) {
-        g_port_ahead_last = 0;
-        return;
-    }
     if (g_port_ahead_state == NULL) {
         g_port_ahead_state = port_HostAllocate(port_StateSize());
         if (g_port_ahead_state == NULL) {
             port_Log("rebushido: run-ahead: no memory for the state; off\n");
             g_port_ahead_frames = 0;
-            return;
+            return FALSE;
         }
     }
     start = port_HostTicks();
     was = port_ProfileSwitch(PORT_PROFILE_AHEAD);
-    port_StateSave(g_port_ahead_state);
+    /* After the step itself, with the frames ahead painting nothing, the
+     * painters may go on painting the step while they run: video memory
+     * is put back by what the frames write of it (port_state.h). */
+    if (is_after_step && g_port_ahead_unpainted) {
+        port_StateSaveAhead(g_port_ahead_state);
+    } else {
+        port_StateSave(g_port_ahead_state);
+    }
     g_port_ahead_counts.state_ticks += port_HostTicks() - start;
     g_port_ahead = TRUE;
     g_port_ahead_given_up = FALSE;
     g_port_ahead_blanks = 0;
-    for (i = 0; i < g_port_ahead_frames && !g_port_ahead_given_up; i++) {
+    for (i = 0; i < frames && !g_port_ahead_given_up; i++) {
         /* With two frames ahead and more, all but the last were run by the
          * boundary before too, and drawn by the card then: drawing them
          * again cost the card half again (docs/PORT.md, "Measuring on the
          * card"). They are run all the same, for the state, and what they
          * write into video memory reaches the card's mirror. */
-        g_port_ahead_kept = i + 1 < g_port_ahead_frames &&
-                            g_port_ahead_last == g_port_ahead_frames;
+        g_port_ahead_kept = i + 1 < frames && drawn_before;
         port_StepGame();
     }
     g_port_ahead_kept = FALSE;
@@ -145,15 +149,134 @@ void port_BeforeStep(void) {
     port_StateLoad(g_port_ahead_state);
     g_port_ahead_counts.state_ticks += port_HostTicks() - loaded;
     port_ProfileSwitch(was);
-    /* the step that follows has been drawn already, unless the frames
-     * ahead were given up: then it is drawn as ever */
-    g_port_unseen = !g_port_ahead_given_up;
-    g_port_ahead_last = g_port_ahead_given_up ? 0 : g_port_ahead_frames;
     g_port_ahead_counts.runs++;
     if (g_port_ahead_given_up) {
         g_port_ahead_counts.given_up++;
     }
     g_port_ahead_counts.ticks += port_HostTicks() - start;
+    return !g_port_ahead_given_up;
+}
+
+/* ---- the step itself as the first frame ahead ---- */
+
+s32 (*g_port_held_blank_hook)(u32 blank);
+s32 g_port_holding;
+s32 g_port_ahead_sync = TRUE;
+s32 g_port_ahead_quiet = TRUE;
+/* The blanks of the step whose window's turns wait for its end. A step
+ * of a fight is two blanks; one that passes this many is a load or the
+ * movie, and is held no longer. */
+#define HELD_BLANKS_MAX AHEAD_BLANKS_A_FRAME
+static u32 g_port_held[HELD_BLANKS_MAX];
+static s32 g_port_held_count;
+
+/* The held blanks given their window's turns, one after another:
+ * showing what the frames ahead left where `is_ahead_shown`, and
+ * otherwise as any step's blank shows. */
+static void port_GiveHeldBlanks(s32 is_ahead_shown) {
+    s32 i;
+
+    g_port_holding = FALSE;
+    g_port_unseen = is_ahead_shown;
+    for (i = 0; i < g_port_held_count; i++) {
+        if (g_port_blank_hook != NULL) {
+            g_port_blank_hook(g_port_held[i]);
+        }
+    }
+    g_port_held_count = 0;
+    g_port_unseen = FALSE;
+}
+
+/* A blank of a step whose window's turns are held (clock.c): kept for
+ * after the step, unless it is one too many or the window ends the
+ * holding (a load begins). The step's turns are then given at once, the
+ * blank's own among them, and the rest of the step is as any step: no
+ * frame is run ahead after it. */
+void port_HeldBlank(u32 blank) {
+    if (g_port_held_count < HELD_BLANKS_MAX &&
+        (g_port_held_blank_hook == NULL || g_port_held_blank_hook(blank))) {
+        g_port_held[g_port_held_count++] = blank;
+        return;
+    }
+    /* the card draws the rest of the step as it comes, and nothing is
+     * run ahead after it */
+    g_port_ahead_kept = FALSE;
+    g_port_ahead_last = 0;
+    port_GiveHeldBlanks(FALSE);
+    if (g_port_blank_hook != NULL) {
+        g_port_blank_hook(blank);
+    }
+}
+
+/* The host's turn after a step (port_platform.h): where the step was the
+ * first frame ahead, the frames ahead but one, the step's display kept,
+ * and the blanks' turns given. */
+void port_AfterStep(void) {
+    s32 is_shown;
+
+    if (!g_port_holding) {
+        return;
+    }
+    g_port_holding = FALSE;
+    /* the step itself was drawn as a frame ahead's last one, or written
+     * into the card's mirror alone (g_port_ahead_kept) */
+    g_port_ahead_kept = FALSE;
+    if (g_port_ahead_frames > 1) {
+        is_shown = port_RunAhead(g_port_ahead_frames - 1, FALSE, TRUE);
+    } else {
+        if (g_port_ahead_done_hook != NULL) {
+            g_port_ahead_done_hook();
+        }
+        is_shown = TRUE;
+    }
+    g_port_ahead_last = is_shown ? g_port_ahead_frames : 0;
+    if (g_port_ahead_sync) {
+        /* the step's primitives, which the painters painted while the side
+         * channel decoded them, the card was given the frame and the
+         * frames ahead ran, all painted before a picture reads video
+         * memory, as at any step's blank */
+        s32 was = port_ProfileSwitch(PORT_PROFILE_RASTER);
+
+        port_PaintSyncAll();
+        port_ProfileSwitch(was);
+    }
+    port_GiveHeldBlanks(is_shown);
+}
+
+/* The host's turn before a step (port_platform.h): the window's read of
+ * the PC's input, then the frames ahead, run from a saved state that is
+ * put back after them; or, where the window holds a step's blanks, the
+ * step itself as the first of them (port_AfterStep). */
+void port_BeforeStep(void) {
+    s32 is_drawn;
+
+    g_port_unseen = FALSE;
+    g_port_ahead_held = FALSE;
+    g_port_ahead_kept = FALSE;
+    if (g_port_boundary_hook != NULL) {
+        g_port_boundary_hook();
+    }
+    if (!port_MayRunAhead()) {
+        g_port_ahead_last = 0;
+        return;
+    }
+    if (g_port_held_blank_hook != NULL) {
+        /* The step computes what the first frame ahead would have, with
+         * the same input: it is that frame. With more than one ahead and
+         * the boundary before having run them all, the card drew it then
+         * as its last, and is given only its writes into video memory. */
+        g_port_holding = TRUE;
+        g_port_held_count = 0;
+        g_port_ahead_kept =
+            g_port_ahead_frames > 1 && g_port_ahead_last == g_port_ahead_frames;
+        return;
+    }
+    is_drawn = port_RunAhead(
+        g_port_ahead_frames, g_port_ahead_last == g_port_ahead_frames, FALSE);
+    /* the step that follows has been drawn already, unless the frames
+     * ahead were given up: then it is drawn as ever */
+    g_port_unseen = is_drawn;
+    g_port_ahead_last = is_drawn ? g_port_ahead_frames : 0;
 }
 
 /* How many boundaries ran frames ahead, how many gave them up, and what

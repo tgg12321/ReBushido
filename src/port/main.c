@@ -606,6 +606,7 @@ s32 port_Main(s32 argc, char **argv) {
     for (;;) {
         port_BeforeStep();
         port_StepGame();
+        port_AfterStep();
         port_OnRollbackFrame();
     }
 }

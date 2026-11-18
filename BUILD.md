@@ -323,8 +323,12 @@ which `tools/port_profile.py` reads), and every result is kept by commit
 in the main checkout's `build/bench/<commit>/results.json`, so that a
 worktree compares itself to `main` without running `main` again. With
 `--budget`, a blank of a fight over 50 ms after its first second (a
-stall) fails even with `--report-only` (docs/PORT.md, "Measuring on
-the card").
+stall), and a measure that is met (`MET_LIMITS`: the card's 95th centile
+with `run_ahead` 0, 1 and 2), fail even with `--report-only`
+(docs/PORT.md, "Measuring on the card"). `RB_PROFILE_CPU=1` counts the
+window's thread's own processor time (on Windows its cycles, read at the
+time-stamp counter's rate: for comparing two runs, not the clock), which
+other programs taking the processor do not lengthen.
 
 The stall hunter, the same way: long sessions through the menus and
 fights on six stages, every blank over 25 ms named with the functions

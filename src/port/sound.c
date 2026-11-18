@@ -468,7 +468,9 @@ static void port_MixSound(u32 frames) {
      * samples of its own: `out` is the game's state, and stays what the
      * chip made */
     music = port_PlayMusic(frames, &heard);
+    g_port_spu_quiet = g_port_ahead && g_port_ahead_quiet;
     port_RunSpu(cd, music, out, heard, frames);
+    g_port_spu_quiet = FALSE;
     port_ProfileSwitch(was);
     g_port_sample_count += frames;
     /* a step run again is mixed and not heard (port_platform.h), but for

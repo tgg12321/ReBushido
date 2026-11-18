@@ -590,6 +590,44 @@ void port_TakeSpuKeys(void) {
 
 /* ---- a voice's sample ---- */
 
+/* One sample of a voice for a frame run ahead (port_spu.h): it steps as
+ * ever -- its pitch, its envelope, its place in its waveform, the blocks
+ * it reads and their flags -- but makes no sound, unless the voice after
+ * it is moved in pitch by it. */
+static void port_StepSpuVoice(u32 index, u32 modulated) {
+    PortSpuVoice *voice = &g_port_spu.voices[index];
+    u16 *regs = g_port_spu.regs + index * PORT_SPU_VOICE_REGS;
+    u32 bit = 1U << index;
+    u32 step = regs[PORT_SPU_VOICE_PITCH];
+
+    if (index > 0 && (modulated & bit)) {
+        s32 factor = g_port_spu.voices[index - 1].out + MODULATION_CENTER;
+
+        step = (u32)(((s32)(s16)step * factor) >> VOLUME_SHIFT) & 0xFFFF;
+    }
+    if (step > PITCH_MAX) {
+        step = PITCH_LIMIT;
+    }
+    if (modulated & (bit << 1)) {
+        s32 sample =
+            (port_ReadSpuVoiceBits(PORT_SPU_NOISE) & bit)
+                ? (s16)g_port_spu.noise_level
+                : port_InterpolateSpu(
+                      voice->recent, (voice->counter >> COUNTER_INDEX_SHIFT) &
+                                         COUNTER_INDEX_MASK);
+
+        voice->out = (sample * voice->level) >> VOLUME_SHIFT;
+    }
+    port_StepSpuEnvelope(
+        voice, regs[PORT_SPU_VOICE_ADSR_LOW], regs[PORT_SPU_VOICE_ADSR_HIGH]);
+    voice->counter += step;
+    while (voice->counter >= COUNTER_ONE) {
+        voice->counter -= COUNTER_ONE;
+        port_AdvanceSpuVoice(voice, index);
+    }
+    regs[PORT_SPU_VOICE_ENVELOPE] = (u16)voice->level;
+}
+
 /* One sample of voice `index`, left and right. */
 static void port_RunSpuVoice(u32 index, s32 *out) {
     PortSpuVoice *voice = &g_port_spu.voices[index];
@@ -835,6 +873,8 @@ u8 *port_GetSpuRam(void) { return g_port_spu.ram; }
 
 const PortSpuCounts *port_GetSpuCounts(void) { return &g_port_spu.counts; }
 
+s32 g_port_spu_quiet;
+
 /* The next samples (port_spu.h): each voice's, added up; the disc's;
  * the reverb's; all of it at the main volume, within 16 bits. */
 void port_RunSpu(
@@ -866,6 +906,20 @@ void port_RunSpu(
             continue;
         }
         port_RunSpuNoise(control);
+        if (g_port_spu_quiet) {
+            u32 modulated = port_ReadSpuVoiceBits(PORT_SPU_PITCH_MODULATION);
+
+            for (index = 0; index < PORT_SPU_VOICES; index++) {
+                port_StepSpuVoice(index, modulated);
+            }
+            out[frame * 2] = 0;
+            out[frame * 2 + 1] = 0;
+            if (heard_cd != NULL) {
+                heard_out[frame * 2] = 0;
+                heard_out[frame * 2 + 1] = 0;
+            }
+            continue;
+        }
         reverb_voices = port_ReadSpuVoiceBits(PORT_SPU_REVERB_VOICES);
         for (index = 0; index < PORT_SPU_VOICES; index++) {
             s32 voice[2];

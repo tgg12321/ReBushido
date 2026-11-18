@@ -41,5 +41,9 @@ extern void port_ReadDevicesNow(void);
 extern void (*g_port_boundary_hook)(void);
 extern void (*g_port_ahead_blank_hook)(u32 blank);
 extern void (*g_port_ahead_done_hook)(void);
+extern s32 g_port_ahead;
+extern s32 (*g_port_held_blank_hook)(u32 blank);
+extern s32 g_port_ahead_sync;
+extern s32 g_port_ahead_quiet;
 
 #endif /* PORT_WINDOW_SHARED_H */

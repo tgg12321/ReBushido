@@ -219,6 +219,21 @@ the scene and the fighters hold against a linear depth today).
   from a log removed that wait but left a race on the loading screens'
   top lines, not found (PORT.md, "Tried, and left out"); then the frame
   ahead's sound mix (0.3 ms) and its side channel.
+- **The step itself as the first frame ahead** (docs/PORT.md, of that
+  name): with `run_ahead 1` no frame is computed twice and no state is
+  saved or put back; the step's blanks are shown after it. With 2, the
+  one frame ahead runs while the painters finish the step (video memory
+  put back by what the frame ahead wrote over), and its sound is not
+  mixed. What is left of a frame's blank is the game's thread's own
+  work, measured there: the pairing of the two frames is waited for at
+  the first picture after a frame (about 0.7 ms: it can no longer
+  overlap the step that came after the frames ahead), the side channel
+  and the painters' waits inside the step (a colour table loaded again
+  waits for what still reads it), the tween's replay. Next: the tween
+  on the card (above), which takes the pairing and the replay off the
+  processor; a load of a frame the card is given only the writes of
+  (`g_port_ahead_kept`, the step itself with two ahead) handed to the
+  painters with its pixels kept for the mirror, so that it does not wait.
 - **The side channel** (`remaster`, about 0.9 ms) and the scene as real
   3D (item 2 above) are untouched, and so is the ground's early depth
   test.

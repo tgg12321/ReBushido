@@ -359,6 +359,10 @@ static u32 port_ThreadTicks(void) {
     clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now);
     return (u32)now.tv_sec * 10000000U + (u32)now.tv_nsec / 100U;
 }
+#else
+/* the same, from the host (host_windows.c) */
+extern u32 port_HostThreadTicks(void);
+#define port_ThreadTicks port_HostThreadTicks
 #endif
 static void port_ShownDisplay(PortDisplay *display);
 static void port_CountTimes(void);
@@ -1249,11 +1253,9 @@ static void port_OpenWindow(void) {
         if (g_port_has_gl) {
             port_GlBenchTime(TRUE);
         }
-#if !defined(_WIN32)
         if (getenv("RB_PROFILE_CPU") != NULL) {
             g_port_profile_clock = port_ThreadTicks;
         }
-#endif
         /* what was counted before is no blank's */
         port_ProfileTake(ticks);
     }
@@ -2808,6 +2810,8 @@ static void port_ReadInputLate(void) {
          * every boundary.) The stage's pages are not looked up again for
          * it (gl.h, port_GlRestoreVram): the frames run ahead tell the
          * card of each page they write. */
+        port_ProfileSwitch(PORT_PROFILE_RASTER);
+        port_PaintSyncAll();
         port_ProfileSwitch(PORT_PROFILE_CARD);
         port_GlRestoreVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
     }
@@ -2872,6 +2876,53 @@ static void port_AheadDone(void) {
                             display->is_rgb24, g_port_frame);
         port_ProfileSwitch(was);
     }
+}
+
+/* The sound's samples at each blank of a step whose window's turns are
+ * held (step.c), for the pace when its turn comes: the step has mixed the
+ * sound of all its blanks by then. */
+#define HELD_SAMPLES_MAX 8
+static u32 g_port_held_blank[HELD_SAMPLES_MAX];
+static u32 g_port_held_samples[HELD_SAMPLES_MAX];
+static s32 g_port_held_noted;
+
+/* A blank of the step that is the first frame ahead (step.c): the card's
+ * frame is ended there, as at a frame ahead's blank, and its turn is
+ * given after the step. Not where a load begins: its blanks are shown as
+ * they come. */
+static s32 port_HeldBlankTurn(u32 blank) {
+    if (port_LoadKind() != PORT_LOAD_NONE) {
+        return FALSE;
+    }
+    g_port_held_blank[g_port_held_noted % HELD_SAMPLES_MAX] = blank;
+    g_port_held_samples[g_port_held_noted % HELD_SAMPLES_MAX] =
+        port_GetSampleCount();
+    g_port_held_noted++;
+    if (g_port_has_gl && !g_port_ahead_kept) {
+        s32 was = port_ProfileSwitch(PORT_PROFILE_FINISH);
+
+        port_RemasterShow();
+        port_GlFinishFrame();
+        port_ProfileSwitch(was);
+    }
+    return TRUE;
+}
+
+/* The sound's samples at `blank`: as they were at it where its turn was
+ * held, and how many have been mixed since (0 where it was not). */
+static u32 port_BlankSamples(u32 blank, u32 *since) {
+    u32 now = port_GetSampleCount();
+    s32 i;
+
+    *since = 0;
+    for (i = 0; i < HELD_SAMPLES_MAX && i < g_port_held_noted; i++) {
+        if (g_port_held_blank[i] == blank) {
+            *since = now - g_port_held_samples[i];
+            g_port_held_blank[i] = 0;
+            return g_port_held_samples[i];
+        }
+    }
+    return now;
 }
 
 /* The display the window shows: the frames run ahead left it, where they
@@ -3383,10 +3434,16 @@ static void port_ShowBlank(u32 blank) {
     }
     due = port_ReadClock();
     if (!g_port_window_options.is_fast) {
+        /* a held blank's (step.c): the samples as they were at it, and
+         * the queue without what the step mixed after it */
+        u32 since;
+        u32 samples = port_BlankSamples(blank, &since);
         s32 queue_error = port_WatchSound(blank, is_hurried);
 
-        due += port_PaceBlank(
-            &g_port_pace, blank, due, port_GetSampleCount(), queue_error);
+        if (g_port_audio != 0) {
+            queue_error -= (s32)since;
+        }
+        due += port_PaceBlank(&g_port_pace, blank, due, samples, queue_error);
     }
     port_ShowPictures(due);
     g_port_blanks_shown++;
@@ -3556,6 +3613,17 @@ static void port_StartPainters(void) {
     if (setting != NULL) {
         count = strcmp(setting, "off") == 0 ? 0 : atoi(setting);
     }
+    /* RB_PAINT_LINES: the painters' groups of lines, a power of two
+     * (port_paint.h) */
+    if (SDL_getenv("RB_PAINT_LINES") != NULL) {
+        s32 lines = atoi(SDL_getenv("RB_PAINT_LINES"));
+        s32 shift = 0;
+
+        while (shift < 8 && (2 << shift) <= lines) {
+            shift++;
+        }
+        g_port_paint_band_shift = lines > 0 ? shift : -1;
+    }
     if (count <= 0) {
         port_Note("the software GPU paints on the game's thread "
                   "(RB_PAINTERS=%s)",
@@ -3678,6 +3746,15 @@ void port_StartWindow(void) {
     g_port_boundary_hook = port_ReadInputLate;
     g_port_ahead_blank_hook = port_AheadBlankTurn;
     g_port_ahead_done_hook = port_AheadDone;
+    /* the step itself as the first frame ahead (step.c); RB_AHEAD=old
+     * runs every frame ahead from a saved state, as before */
+    if (SDL_getenv("RB_AHEAD") == NULL ||
+        strcmp(SDL_getenv("RB_AHEAD"), "old") != 0) {
+        g_port_held_blank_hook = port_HeldBlankTurn;
+    }
+    g_port_ahead_sync = SDL_getenv("RB_DONE_SYNC") == NULL;
+    g_port_ahead_quiet = SDL_getenv("RB_AHEAD_SOUND") == NULL ||
+                         strcmp(SDL_getenv("RB_AHEAD_SOUND"), "mix") != 0;
     port_SetRunAhead(g_port_settings.run_ahead);
     port_StartNetWindow();
     port_StartPainters();

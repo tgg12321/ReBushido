@@ -297,6 +297,9 @@ typedef struct {
 typedef struct {
     const void *buf;
     u32 epoch;
+    /* its video memory not kept: saved for the frames ahead, which are
+     * put back by what they wrote (port_StateSaveAhead) */
+    s32 is_vram_left;
 } PortStateSlot;
 
 enum {
@@ -613,6 +616,7 @@ static PortStateSlot *port_StateFindSlot(const void *buf, s32 is_new) {
     }
     g_port_state_slots[g_port_state_slot_count].buf = buf;
     g_port_state_slots[g_port_state_slot_count].epoch = 0;
+    g_port_state_slots[g_port_state_slot_count].is_vram_left = FALSE;
     return &g_port_state_slots[g_port_state_slot_count++];
 }
 
@@ -667,16 +671,162 @@ static void port_StateCopyRest(u8 *snapshot, s32 to_snapshot) {
     }
 }
 
-/* The pieces, one after another (port_state.h). */
-void port_StateSave(void *buf) {
+/* ---- video memory put back by what the frames ahead wrote ---- */
+
+/* The pixels a write of the GPU's side of the game's thread is about to
+ * change, kept as they are now, a rectangle after another
+ * (port_StateSaveAhead): at most this many pixels and rectangles in a
+ * step ahead (a frame writes some hundred thousand). Outside the state,
+ * as all of this file is: putting the state back must not put these
+ * back. */
+#define UNDO_PIXELS (4 * PORT_VRAM_PIXELS)
+#define UNDO_RECTS 4096
+
+typedef struct {
+    s16 x;
+    s16 y;
+    s16 w;
+    s16 h;
+    u32 at;
+} PortUndoRect;
+
+s32 g_port_vram_undo_on;
+static u16 *g_port_undo_pixels;
+static PortUndoRect g_port_undo_rects[UNDO_RECTS];
+static u32 g_port_undo_used;
+static s32 g_port_undo_count;
+
+static void port_VramUndoBegin(void) {
+    g_port_undo_used = 0;
+    g_port_undo_count = 0;
+    g_port_vram_undo_on = TRUE;
+}
+
+static void port_CopyPixels(u16 *to, const u16 *from, s32 count) {
+    s32 i;
+
+    for (i = 0; i < count; i++) {
+        to[i] = from[i];
+    }
+}
+
+/* A row's run of the rectangle: from x, `count` pixels, round the line's
+ * end. */
+static void port_UndoRow(s32 y, s32 x, s32 count, u16 *out, s32 is_back) {
+    u16 *line = &g_port_vram[(y & (PORT_VRAM_HEIGHT - 1)) * PORT_VRAM_WIDTH];
+    s32 first = count;
+
+    x &= PORT_VRAM_WIDTH - 1;
+    if (x + count > PORT_VRAM_WIDTH) {
+        first = PORT_VRAM_WIDTH - x;
+    }
+    if (is_back) {
+        port_CopyPixels(line + x, out, first);
+        port_CopyPixels(line, out + first, count - first);
+        g_port_vram_lines_written[y & (PORT_VRAM_HEIGHT - 1)] = 1;
+    } else {
+        port_CopyPixels(out, line + x, first);
+        port_CopyPixels(out + first, line, count - first);
+    }
+}
+
+/* The rectangle kept before the GPU writes it (port_state.h). */
+s32 port_StateKeepVram(s32 x, s32 y, s32 w, s32 h) {
+    PortUndoRect *rect;
+    s32 row;
+
+    if (!g_port_vram_undo_on || w <= 0 || h <= 0) {
+        return TRUE;
+    }
+    if (w > PORT_VRAM_WIDTH) {
+        w = PORT_VRAM_WIDTH;
+    }
+    if (h > PORT_VRAM_HEIGHT) {
+        h = PORT_VRAM_HEIGHT;
+    }
+    if (g_port_undo_pixels == NULL) {
+        g_port_undo_pixels = port_HostAllocate(UNDO_PIXELS * sizeof(u16));
+    }
+    if (g_port_undo_pixels == NULL || g_port_undo_count == UNDO_RECTS ||
+        g_port_undo_used + (u32)(w * h) > UNDO_PIXELS) {
+        return FALSE;
+    }
+    rect = &g_port_undo_rects[g_port_undo_count++];
+    rect->x = (s16)x;
+    rect->y = (s16)y;
+    rect->w = (s16)w;
+    rect->h = (s16)h;
+    rect->at = g_port_undo_used;
+    for (row = 0; row < h; row++) {
+        port_UndoRow(
+            y + row, x, w, g_port_undo_pixels + g_port_undo_used, FALSE);
+        g_port_undo_used += (u32)w;
+    }
+    return TRUE;
+}
+
+/* Every rectangle kept put back, the last first. */
+static void port_VramUndo(void) {
+    s32 i;
+
+    for (i = g_port_undo_count - 1; i >= 0; i--) {
+        const PortUndoRect *rect = &g_port_undo_rects[i];
+        s32 row;
+
+        for (row = 0; row < rect->h; row++) {
+            port_UndoRow(
+                rect->y + row, rect->x, rect->w,
+                g_port_undo_pixels + rect->at + (u32)(row * rect->w), TRUE);
+        }
+    }
+    g_port_undo_count = 0;
+    g_port_undo_used = 0;
+    g_port_vram_undo_on = FALSE;
+}
+
+/* Whether a page of the span is video memory's alone (PAGE_PAINTED). */
+static s32 port_StateIsVramPage(const PortStateSpan *span, u32 page) {
+    return g_port_state_page_kinds[span->first + page] == PAGE_PAINTED;
+}
+
+/* The pieces, one after another (port_state.h); with `is_ahead`, all but
+ * video memory, which the frames ahead put back by what they wrote. */
+static void port_StateSaveBut(void *buf, s32 is_ahead) {
     u8 *out = buf;
     PortStateSlot *slot;
     s32 i;
 
-    /* video memory as every primitive given leaves it (port_paint.h) */
-    port_PaintSyncAll();
     port_StateFindPieces();
     port_StateClearDeadStack();
+    if (is_ahead && port_StateTrack()) {
+        slot = port_StateFindSlot(buf, 1);
+        /* nothing of video memory is taken: what the painters still paint
+         * is theirs, and the frames ahead paint nothing */
+        port_StateTakeHot();
+        port_StateCopyRest(out, 1);
+        for (i = 0; i < g_port_state_span_count; i++) {
+            const PortStateSpan *span = &g_port_state_spans[i];
+            const u32 *epochs = g_port_state_page_epochs + span->first;
+            u32 page;
+
+            for (page = 0; page < span->pages; page++) {
+                if (epochs[page] <= slot->epoch ||
+                    port_StateIsVramPage(span, page)) {
+                    continue;
+                }
+                port_StateCopy(
+                    out + span->offset + page * STATE_PAGE_BYTES,
+                    span->start + page * STATE_PAGE_BYTES, STATE_PAGE_BYTES);
+            }
+        }
+        slot->epoch = g_port_state_epoch;
+        slot->is_vram_left = TRUE;
+        port_StateNextEpoch();
+        port_VramUndoBegin();
+        return;
+    }
+    /* video memory as every primitive given leaves it (port_paint.h) */
+    port_PaintSyncAll();
     if (!port_StateTrack()) {
         for (i = 0; i < g_port_state_saved_count; i++) {
             port_StateCopy(
@@ -692,18 +842,24 @@ void port_StateSave(void *buf) {
     for (i = 0; i < g_port_state_span_count; i++) {
         const PortStateSpan *span = &g_port_state_spans[i];
         const u32 *epochs = g_port_state_page_epochs + span->first;
+        /* a snapshot whose video memory was left holds none of it */
+        u32 since = slot->epoch;
         u32 page = 0;
 
+#define PORT_STATE_SINCE(page)                                                 \
+    (slot->is_vram_left && port_StateIsVramPage(span, page) ? 0U : since)
         while (page < span->pages) {
             u32 end;
 
-            if (epochs[page] <= slot->epoch) {
+            if (epochs[page] <= PORT_STATE_SINCE(page)) {
                 page++;
                 continue;
             }
-            for (end = page; end < span->pages && epochs[end] > slot->epoch;
+            for (end = page;
+                 end < span->pages && epochs[end] > PORT_STATE_SINCE(end);
                  end++) {
             }
+#undef PORT_STATE_SINCE
             port_StateCopy(out + span->offset + page * STATE_PAGE_BYTES,
                            span->start + page * STATE_PAGE_BYTES,
                            (end - page) * STATE_PAGE_BYTES);
@@ -711,12 +867,17 @@ void port_StateSave(void *buf) {
         }
     }
     slot->epoch = g_port_state_epoch;
+    slot->is_vram_left = FALSE;
     port_StateNextEpoch();
 }
 
+void port_StateSave(void *buf) { port_StateSaveBut(buf, FALSE); }
+
+void port_StateSaveAhead(void *buf) { port_StateSaveBut(buf, TRUE); }
+
 /* The pages written since `buf` was taken, back from it, and the rest
  * of the pieces whole. */
-static void port_StateLoadPieces(const void *buf) {
+static void port_StateLoadPieces(const void *buf, s32 is_ahead) {
     const u8 *in = buf;
     PortStateSlot *slot;
     u32 since;
@@ -732,7 +893,9 @@ static void port_StateLoadPieces(const void *buf) {
         }
         return;
     }
-    port_StateTakePainted();
+    if (!is_ahead) {
+        port_StateTakePainted();
+    }
     port_StateTakeHot();
     slot = port_StateFindSlot(buf, 0);
     /* a snapshot not taken here: every page, as written now */
@@ -758,7 +921,14 @@ static void port_StateLoadPieces(const void *buf) {
                 page++;
                 continue;
             }
-            for (end = page; end < span->pages && epochs[end] > since; end++) {
+            for (end = page; end < span->pages && epochs[end] > since &&
+                             !(is_ahead && port_StateIsVramPage(span, end));
+                 end++) {
+            }
+            if (end == page) {
+                /* video memory, put back by what the frames ahead wrote */
+                page++;
+                continue;
             }
             /* written before an epoch that has ended: read-only again */
             at = page;
@@ -796,8 +966,24 @@ static void port_StateLoadPieces(const void *buf) {
  * and the GPU's settings given to the painter, which keeps its own
  * outside the state (port_paint.h). */
 void port_StateLoad(const void *buf) {
+    PortStateSlot *slot = port_StateFindSlot(buf, 0);
+
+    if (slot != NULL && slot->is_vram_left) {
+        /* Saved for the frames ahead (port_StateSaveAhead): video memory
+         * is put back by what they wrote over, and the painters go on
+         * with what they were given before them. They take the GPU's
+         * settings again before the next primitive given them
+         * (port_PaintWillPaint, after the frames ahead skipped theirs). */
+        if (!g_port_vram_undo_on) {
+            port_Fail("rebushido: a state saved for the frames ahead is "
+                      "put back after them alone\n");
+        }
+        port_StateLoadPieces(buf, TRUE);
+        port_VramUndo();
+        return;
+    }
     port_PaintSyncAll();
-    port_StateLoadPieces(buf);
+    port_StateLoadPieces(buf, FALSE);
     port_PaintResync();
 }
 

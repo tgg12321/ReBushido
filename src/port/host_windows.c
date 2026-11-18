@@ -20,6 +20,7 @@
 
 #include <winsock2.h>
 #include <windows.h>
+#include <x86intrin.h>
 
 #include "port_host.h"
 #include "port_fiber.h"
@@ -281,6 +282,39 @@ u32 port_HostTicks(void) {
 
     GetSystemTimePreciseAsFileTime(&now);
     return (u32)now.dwLowDateTime;
+}
+
+/* The counter's rate is measured over this part of a second. */
+#define CYCLES_MEASURED_PART 50
+
+/* The calling thread's own processor time, in the host's ticks (100 ns):
+ * its cycles of the processor's time-stamp counter (QueryThreadCycleTime),
+ * at the counter's rate, which is measured once against the clock. For
+ * --profile with RB_PROFILE_CPU (sdl_window.c): the time other programs
+ * take the processor for is not counted. */
+u32 port_HostThreadTicks(void) {
+    static double ticks_a_cycle;
+    ULONG64 cycles = 0;
+
+    if (ticks_a_cycle == 0.0) {
+        LARGE_INTEGER rate;
+        LARGE_INTEGER from;
+        LARGE_INTEGER to;
+        ULONG64 start = __rdtsc();
+        ULONG64 end;
+
+        QueryPerformanceFrequency(&rate);
+        QueryPerformanceCounter(&from);
+        do {
+            QueryPerformanceCounter(&to);
+        } while ((to.QuadPart - from.QuadPart) * CYCLES_MEASURED_PART <
+                 rate.QuadPart);
+        end = __rdtsc();
+        ticks_a_cycle = (double)(to.QuadPart - from.QuadPart) * 1.0e7 /
+                        (double)rate.QuadPart / (double)(end - start);
+    }
+    QueryThreadCycleTime(GetCurrentThread(), &cycles);
+    return (u32)(u64)((double)cycles * ticks_a_cycle);
 }
 
 /* Memory at an address. Windows gives addresses in blocks of 64 KB: a

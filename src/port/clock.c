@@ -79,7 +79,12 @@ static void port_AdvanceClock(u32 line) {
         port_RunCardBlank(next_blank / PORT_LINES_PER_BLANK);
         /* the sound library's tick, and a blank's worth of sound */
         port_RunSoundBlank(next_blank / PORT_LINES_PER_BLANK);
-        if (g_port_blank_hook != NULL && !g_port_rerun && !g_port_ahead) {
+        if (g_port_holding && !g_port_rerun && !g_port_ahead) {
+            /* the step that is the first frame ahead: its window's turn
+             * comes after it (step.c) */
+            port_HeldBlank(next_blank / PORT_LINES_PER_BLANK);
+        } else if (
+            g_port_blank_hook != NULL && !g_port_rerun && !g_port_ahead) {
             g_port_blank_hook(next_blank / PORT_LINES_PER_BLANK);
         }
     }

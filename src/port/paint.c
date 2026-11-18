@@ -107,6 +107,8 @@ typedef struct {
 } PortPaintThreads;
 
 static PortPaintThreads g_paint = {.count = 1};
+/* The painters' groups of lines, 2 to this many tall (port_paint.h). */
+s32 g_port_paint_band_shift = -1;
 static PortPainter g_painters[PORT_PAINTERS_MAX];
 /* the ring, from the system's memory: the program's own variables have no
  * room for it beside the game's link space */
@@ -474,6 +476,14 @@ s32 port_PaintStart(const PortPaintHost *host, s32 count) {
         while ((1 << painter->gpu.band_bits) < count) {
             painter->gpu.band_bits++;
         }
+        /* each painter a group of lines in turn: the groups as asked, or
+         * as tall as a 256th of the lines shared out */
+        painter->gpu.band_shift =
+            g_port_paint_band_shift >= 0 &&
+                    g_port_paint_band_shift + painter->gpu.band_bits <=
+                        PORT_BAND_LINES_BITS
+                ? g_port_paint_band_shift
+                : PORT_BAND_LINES_BITS - painter->gpu.band_bits;
         port_PaintTakeSettings(&painter->gpu);
     }
     port_PaintSetFlag(&g_paint.is_threaded, 1);

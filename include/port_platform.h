@@ -315,6 +315,27 @@ extern void port_GiveUpAhead(void);
 extern void (*g_port_boundary_hook)(void);
 extern void (*g_port_ahead_blank_hook)(u32 blank);
 extern void (*g_port_ahead_done_hook)(void);
+/* The step itself as the first frame ahead (step.c; docs/PORT.md, "The
+ * step itself as the first frame ahead"): where the host gives
+ * g_port_held_blank_hook, a boundary that runs frames ahead runs the step
+ * first, with the window's turns at its blanks held (g_port_holding): at
+ * each blank the hook is told it (it ends the card's frame there, as at a
+ * frame ahead's blank) and may answer FALSE to end the holding (a load
+ * begins). After the step (port_AfterStep) the frames ahead but one are
+ * run from the state the step left, as ever, and the held blanks are then
+ * given g_port_blank_hook one after another, showing what those frames
+ * left (g_port_unseen). The step computes what it always did; with one
+ * frame ahead, no state is kept or put back at all. */
+extern s32 (*g_port_held_blank_hook)(u32 blank);
+extern s32 g_port_holding;
+/* Whether the painters have painted all of the step before its held
+ * blanks are given (TRUE; the window's RB_DONE_SYNC=off, a trial). */
+extern s32 g_port_ahead_sync;
+/* Whether a frame run ahead steps the sound chip without mixing it
+ * (port_spu.h): TRUE; the window's RB_AHEAD_SOUND=mix, a trial. */
+extern s32 g_port_ahead_quiet;
+extern void port_HeldBlank(u32 blank);
+extern void port_AfterStep(void);
 
 typedef struct PortAheadCounts {
     u32 runs;        /* boundaries the frames were run ahead at */

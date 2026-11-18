@@ -478,10 +478,11 @@ static void port_SetCornerTexture(PortCorner *corner, u32 word) {
 /* Whether any line from `first` to `last` is the painter's
  * (port_raster.h): its bands are checked one after another. */
 static s32 port_PaintsAnyLine(const PortGpu *gpu, s32 first, s32 last) {
-    s32 step = PORT_BAND_LINES >> gpu->band_bits;
+    s32 step = 1 << gpu->band_shift;
     s32 y;
 
-    if (gpu->band_bits == 0 || last - first >= PORT_BAND_LINES) {
+    if (gpu->band_bits == 0 ||
+        last - first >= (1 << (gpu->band_shift + gpu->band_bits))) {
         return first <= last;
     }
     for (y = first; y <= last; y = (y | (step - 1)) + 1) {
@@ -823,6 +824,15 @@ static void port_DrawRectangle(const PortGpu *gpu, const u32 *words) {
     }
 }
 
+/* A write of this side's, kept first where the frames ahead are put back
+ * by what they wrote; or the step ahead given up where there is no room
+ * (port_GiveUpAhead does not come back). */
+static void port_KeepOrGiveUp(s32 x, s32 y, s32 w, s32 h) {
+    if (g_port_vram_undo_on && !port_StateKeepVram(x, y, w, h)) {
+        port_GiveUpAhead();
+    }
+}
+
 /* ---- video memory as a whole ---- */
 
 /* The fill: not held to the drawing area, and the mask is neither
@@ -1116,10 +1126,12 @@ void port_PaintGp0(PortGpu *gpu, u32 word) {
 void port_PaintTakeSettings(PortGpu *gpu) {
     s32 band = gpu->band;
     s32 band_bits = gpu->band_bits;
+    s32 band_shift = gpu->band_shift;
 
     *gpu = g_port_gpu;
     gpu->band = band;
     gpu->band_bits = band_bits;
+    gpu->band_shift = band_shift;
 }
 
 /* ---- the game's side ---- */
@@ -1389,6 +1401,11 @@ static void port_RunCommand(const u32 *words, s32 count) {
     none.w = 0;
     none.h = 0;
     if (is_painted) {
+        if (g_port_vram_undo_on) {
+            /* what is painted is never put back (port_gpu.h) */
+            port_Fail("rebushido: a frame ahead painted video memory that "
+                      "is put back by what it wrote\n");
+        }
         port_PaintWillPaint();
     } else {
         port_PaintSkipped();
@@ -1421,6 +1438,11 @@ static void port_RunCommand(const u32 *words, s32 count) {
             (s32)((words[2] >> HALF_SHIFT) & VRAM_Y_MASK),
             port_TransferSize(words[3] & HALF_MASK, VRAM_X_MASK),
             port_TransferSize(words[3] >> HALF_SHIFT, VRAM_Y_MASK));
+        port_KeepOrGiveUp(
+            (s32)(words[2] & VRAM_X_MASK),
+            (s32)((words[2] >> HALF_SHIFT) & VRAM_Y_MASK),
+            port_TransferSize(words[3] & HALF_MASK, VRAM_X_MASK),
+            port_TransferSize(words[3] >> HALF_SHIFT, VRAM_Y_MASK));
         port_CopyVram(gpu, words);
         break;
     case COMMAND_LOAD:
@@ -1446,6 +1468,7 @@ static void port_RunCommand(const u32 *words, s32 count) {
             break;
         }
         port_PaintSyncWrite(gpu->load.x, gpu->load.y, gpu->load.w, gpu->load.h);
+        port_KeepOrGiveUp(gpu->load.x, gpu->load.y, gpu->load.w, gpu->load.h);
         break;
     case COMMAND_STORE:
         port_BeginTransfer(&gpu->store, words);
@@ -1468,6 +1491,11 @@ static void port_RunCommand(const u32 *words, s32 count) {
                 (s32)(((words[2] & VRAM_X_MASK) + FILL_STEP - 1) &
                       ~(u32)(FILL_STEP - 1)),
                 (s32)((words[2] >> HALF_SHIFT) & VRAM_Y_MASK));
+            port_KeepOrGiveUp((s32)(words[1] & FILL_X_MASK),
+                              (s32)((words[1] >> HALF_SHIFT) & VRAM_Y_MASK),
+                              (s32)(((words[2] & VRAM_X_MASK) + FILL_STEP - 1) &
+                                    ~(u32)(FILL_STEP - 1)),
+                              (s32)((words[2] >> HALF_SHIFT) & VRAM_Y_MASK));
             port_FillVram(words);
         }
         break;
@@ -1567,8 +1595,9 @@ void port_WriteGp0(u32 word) {
         if (!g_port_rerun) {
             port_ProfileSwitch(PORT_PROFILE_REMASTER);
             /* only where the renderer reads it: not in a step drawn ahead
-             * already (port_remaster.h) */
-            if (port_RemasterIsOn() && !g_port_unseen) {
+             * already, nor in one the card is given the writes of alone
+             * (port_remaster.h) */
+            if (port_RemasterIsOn() && !g_port_unseen && !g_port_ahead_kept) {
                 port_SyncTexture(gpu, gpu->words);
             }
             port_RemasterCommand(gpu->words, words);

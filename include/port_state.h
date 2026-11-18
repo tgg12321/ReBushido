@@ -55,6 +55,18 @@ extern u32 port_StateSize(void);
 extern void port_StateSave(void *buf);
 /* The state of `buf` back, exactly as port_StateSave took it. */
 extern void port_StateLoad(const void *buf);
+/* The state saved for the frames run ahead after the step itself (step.c):
+ * as port_StateSave, but for video memory, which is neither waited for
+ * (the painters may still be painting the step) nor kept. What the frames
+ * ahead write of it is kept as they write it (port_VramUndoBegin), and
+ * port_StateLoad puts that back, with nothing waited for either. The
+ * painters must be given nothing between the two. */
+extern void port_StateSaveAhead(void *buf);
+/* What a write of the GPU's side of the game's thread (a copy, a load, a
+ * fill) is about to write over, kept for that load, once nothing still to
+ * be painted is in its way (raster.c): FALSE where there is no room left,
+ * and the step ahead is then given up before the write. */
+extern s32 port_StateKeepVram(s32 x, s32 y, s32 w, s32 h);
 /* Every byte saved and put back each time, not only the pages written
  * since (--whole-state): what the state cost before, for measuring. */
 extern void port_SetWholeState(void);

@@ -88,14 +88,11 @@ BUDGET_CASES = ('ra0', 'ra1', 'ra2', 'ra1-stress')
 # in milliseconds, but `hitches`, a percentage of all its blanks.
 LIMITS = [
     ('ra1', 'cpu_p95', BUDGET_MS, "the processor's work of a fight frame, 95%, run_ahead 1"),
-    ('ra1', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, run_ahead 1"),
     ('ra1', 'all_cpu_p95', BUDGET_MS, "the processor's work of any blank of the fight, 95%"),
     ('ra1', 'hitches', 1.0, 'blanks of the fight over 6.94 ms, percent'),
     ('ra1', 'worst', 2 * BUDGET_MS, 'the worst blank of the fight (a stall)'),
     ('ra0', 'cpu_p95', BUDGET_MS, 'the same, run_ahead 0'),
-    ('ra0', 'gpu_p95', BUDGET_MS, "the card's, run_ahead 0"),
     ('ra2', 'cpu_p95', BUDGET_MS, 'the same, run_ahead 2'),
-    ('ra2', 'gpu_p95', BUDGET_MS, "the card's, run_ahead 2"),
     ('ra1-stress', 'cpu_p95', BUDGET_MS, 'four fighters, the ground twice: the processor'),
     ('ra1-stress', 'gpu_p95', BUDGET_MS, 'four fighters, the ground twice: the card'),
     # the worst blanks, which decide whether a game is smooth: after the
@@ -106,6 +103,15 @@ LIMITS = [
     ('ra1', 'settled_worst', 2 * BUDGET_MS, "the worst blank after the fight's first second"),
     ('ra2', 'settled_p99', BUDGET_MS, 'the same, run_ahead 2'),
     ('ra1-stress', 'settled_p99', BUDGET_MS, 'the same, four fighters, the ground twice'),
+]
+# What the program meets with room to spare (2026-11-18: the card's 95th
+# centile of a fight frame 3.9 to 5.2 ms with run_ahead 0 to 2, the RTX
+# 3090 at 2560 by 1440, with other agents' work on the machine), held
+# whatever --report-only says: (case, measure, at most, what it is).
+MET_LIMITS = [
+    ('ra0', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, run_ahead 0"),
+    ('ra1', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, run_ahead 1"),
+    ('ra2', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, run_ahead 2"),
 ]
 # The fight's first second is the end of its load: the limits on the
 # worst blanks are of what follows it.
@@ -457,6 +463,15 @@ def main():
                                                                  'OVER' if over else 'ok', what))
     stalled = False
     if args.budget:
+        print('port-bench: what is met, which fails whatever --report-only says')
+        for case, key, most, what in MET_LIMITS:
+            if case not in results:
+                continue
+            value = results[case][key]
+            over = value > most
+            stalled = stalled or over
+            print('  %-11s %-12s %7.2f (at most %6.2f) %-5s %s' % (case, key, value, most,
+                                                                 'OVER' if over else 'ok', what))
         print('port-bench: stalls, which fail whatever --report-only says')
         for case, key, most, what in HARD_LIMITS:
             if case not in results:
@@ -474,7 +489,7 @@ def main():
                       % (case, args.against, was, m['settled_stalls']))
                 stalled = True
     if stalled:
-        print('port-bench: FAILED (a stall)')
+        print('port-bench: FAILED (a stall, or a measure that was met)')
         return 1
     if failed and args.report_only:
         print('port-bench: over the budget, reported only (--report-only)')

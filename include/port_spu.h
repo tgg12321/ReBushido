@@ -88,6 +88,12 @@ extern void port_TakeSpuKeys(void);
  * not NULL, is what is heard in its place (a mod's music, port_music.h):
  * the chip and `out` go on as they would with `cd`, and `heard_out` has
  * the same samples with `heard` where `out` had `cd`. */
+/* Set while a frame run ahead is mixed (sound.c): its sound is heard by
+ * nobody and its state is put back after it, so the voices step -- their
+ * pitch, envelopes, places and blocks, what the game can read of them --
+ * and nothing is mixed: no volume, reverb, capture or disc's sound, and
+ * the samples are silence. */
+extern s32 g_port_spu_quiet;
 extern void port_RunSpu(
     const s16 *cd, const s16 *heard, s16 *out, s16 *heard_out, u32 frames);
 extern const PortSpuCounts *port_GetSpuCounts(void);

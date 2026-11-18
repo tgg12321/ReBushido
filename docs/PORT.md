@@ -5018,10 +5018,13 @@ run alone after every other with `port-budget`): the cases `ra0`, `ra1`,
 `ra2` and `ra1-stress`, each held to 6.94 ms for the 95th centile of a
 frame's work on the processor and on the card; with `run_ahead 1` also
 any blank's work, at most 1% of blanks over 6.94 ms and no blank over
-twice it. Every one of them is over today; the gate runs the step with
-`--report-only`, so it says what is over and passes, **until the
-targets are met: then take `--report-only` out of `OWN` in
-`tools/gate.py`**. Where there is no card (CI, WSL), no Windows build,
+twice it. The gate runs the step with `--report-only`, so it says what
+is over and passes, **until the targets are met: then take
+`--report-only` out of `OWN` in `tools/gate.py`**. What is met with room
+to spare is held whatever `--report-only` says (`MET_LIMITS`): since
+2026-11-18 the card's 95th centile of a fight frame with `run_ahead` 0,
+1 and 2 (3.9 to 5.2 ms against 6.94); the stress's (5.6 to 5.9) and
+every processor's measure are still reported only. Where there is no card (CI, WSL), no Windows build,
 no disc or no hd mod, it says so and passes.
 
 **The worst blanks** (2026-11-18, later): a game is as smooth as its
@@ -5172,7 +5175,136 @@ painters (about 1 ms; a save that needs no painted video memory is the
 way, the log above with its race found, or the HANDOFF's painting on
 demand); the frame run ahead's own work (its game, its side channel);
 the sound mixed for the frame ahead (0.3 ms a frame ahead; the voices
-must step, the mixing need not).
+must step, the mixing need not). Since done: "The step itself as the
+first frame ahead", below.
+
+### The step itself as the first frame ahead
+
+**What was done twice.** With `run_ahead 1` a boundary saved the state,
+ran the step with the input just read and the card drew it, put the
+state back, and ran the same step again with the same input, painted and
+heard and not drawn (`g_port_unseen`). The two compute the same: a step
+ahead differs from the step itself only in what the host does with it
+(it is not heard, the window has no turn at its blanks). What the step
+ahead was for is the order: the game draws a frame's list at the end of
+its step, after the step's blanks, and the window shows a blank's
+picture at the blank, so the step's own frame would be shown only at the
+next step's blanks.
+
+**Now** (`step.c`, the window's build): where frames are run ahead, the
+step itself is the first of them. Its blanks' turns of the window are
+held (`g_port_holding`, `clock.c`): at each, the card's frame is ended as
+at a frame ahead's blank and the sound's place is noted
+(`port_HeldBlankTurn`); the step is drawn by the card and painted, as
+any step with nothing run ahead; when it has ended (`port_AfterStep`),
+the frames ahead but one are run from the state it left as before, the
+display is kept (`port_AheadDone`), the painters finish, and the held
+blanks are given their turns one after another, showing it
+(`g_port_unseen`). A blank's pace is reckoned from the sound's samples
+as they were at it and the queue less what the step mixed after it, so
+paced play waits as it did. A load beginning, or a step of more than
+four blanks (the movie), ends the holding there: its blanks are shown as
+they come, and nothing is run ahead after it. So **with one frame ahead
+no state is saved or put back at all**, and a frame's blank costs about
+what it costs with none; with two, one frame is run ahead from the
+step's state. The picture shown at each blank is the one the frames
+ahead showed before, and the input is read at the same moment, so the
+lag is what "Input lag" measured. `RB_AHEAD=old` runs every frame ahead
+from a saved state, as before (a trial); a host without the held hook
+(the headless programs, the tests) still does.
+
+**The save after the step** (`port_StateSaveAhead`, `state.c`), with two
+frames ahead: video memory is neither waited for nor kept. The painters
+go on painting the step while the frame ahead runs, which paints
+nothing; each write of the GPU's side of the game's thread in it (a
+copy, a load, a fill, `raster.c`) first waits for what is still to be
+painted in its way, as ever, and keeps the pixels it writes over
+(`port_StateKeepVram`, the exact rectangle, round video memory's edges
+as the GPU's addresses go); putting the state back puts those back, the
+last first, and waits for nothing. A step ahead with more to keep than
+room (four times video memory) is given up before the write. The
+snapshot notes that it holds no video memory (`is_vram_left`), so a
+whole save into it takes all of video memory again; a painted primitive
+while the pixels are kept fails the run. The race the log of before had
+("Tried, and left out", above) was not found; the likeliest cause is
+gone with the order: the step itself was `g_port_unseen` then, its
+loads and copies given to the painters to do in their turn
+(`port_PaintGiveAlone`), and it ran after the frames ahead, so a log
+kept at the next boundary began with such writes still to be done. The
+step itself is never `g_port_unseen` now, and the pixels kept are the
+exact rectangle a write waited for.
+
+**A frame ahead's sound** (`g_port_spu_quiet`, `spu.c`): the chip steps
+as ever -- pitch, envelope, place in the waveform, the blocks and their
+flags, what the game can read -- and mixes nothing (no volumes, reverb,
+capture or disc's sound; silence), but the output of a voice that moves
+the next one's pitch. `RB_AHEAD_SOUND=mix` mixes it as before.
+
+**Held to the same game.** The bench's fight on the card (640 by 360,
+`--trace`, `--vram` at the end), `run_ahead` 0, 1 and 2 and the old way
+with 1 and 2: the traces are the same to the byte (1,786 lines), and so
+are the plan's checkpoints and video memory at the end. The pictures
+(`--tap-window`, every eighth blank, `frame_rate original`, the counter
+off, `RB_TEXTURES_AT_ONCE=1`), against the old way: `run_ahead 1`, 414
+of 419 the same; `run_ahead 2`, 411 of 419. The others differ at the
+cloth's edges (at most 54 pixels by more than 16 of 255, one picture
+385, one at the fight's first second 732).
+
+**Tried, and no faster**: not waiting for the painters before the held
+blanks' pictures (`RB_DONE_SYNC=off`: they have finished by then, while
+the side channel decoded the step and the card was given it), and the
+painters' lines in groups of 32 or 16 a painter in turn
+(`RB_PAINT_LINES=N`, `g_port_paint_band_shift`) for an even share of
+the fight's middle lines (painter 3 of 4 paints a third of what painter
+1 does). Both are kept as switches; neither moved a measure by more
+than the noise.
+
+**Measured** (RTX 3090 at 2,560 by 1,440, the bench's fight, one
+program run with `RB_AHEAD=old` and without, interleaved, two runs each,
+medians; other agents' builds and runs were on the machine throughout,
+and moved a case's numbers by 2 ms from one run to the next). The window
+thread's own processor time (`RB_PROFILE_CPU=1`, its cycles: other
+programs taking the processor do not lengthen it, those sharing its core
+still do), a fight frame's blank and every blank after the first second,
+ms:
+
+| case | frame's median, old | new | 99% after the first second, old | new |
+| --- | --- | --- | --- | --- |
+| `run_ahead 1` | 7.92 | **6.83** | 10.11 | **8.37** |
+| `run_ahead 2` | 12.72 | **10.10** | 15.70 | **12.63** |
+| `run_ahead 1`, four fighters, the ground twice | 7.50 | 7.44 | 10.30 | **9.06** |
+
+and on the clock (the budget's own measure), `run_ahead 1`: the frame's
+median 7.39 to 6.09, the 99th centile 9.93 to 8.05. With the frame ahead
+mixed (`RB_AHEAD_SOUND=mix`), `run_ahead 2`'s frame is 0.3 ms dearer.
+Where a frame's blank goes now, `run_ahead 1` (the profile's parts, and
+the window's thread sampled, `--sample`): the game 1.7 (its step, and the
+card's frame begun, which lays the shadows), the software GPU's side 1.9
+(of it about 0.85 waiting for the painters inside the step: a colour
+table loaded again, a copy or a fill, waits for the primitives given
+before that read or write the place, where the step run after the
+frames ahead gave those to the painters and waited for nothing), the
+side channel 1.45, the first picture after the frame 0.7 of its own and
+**0.75 waiting for the pairing** of the two frames, which began as the
+frame ended and could overlap nothing (it overlapped the step itself,
+before), the sound 0.4, the card's batches 0.25. The budget's
+`settled_p99` is still over 6.94 ms in every case on this machine; on a
+quiet one `run_ahead 1` was at 7.4 before this.
+
+**What is left**, in the order it would pay:
+
+- *The tween on the card* (HANDOFF, "The tween as it is now"): the
+  pairing waited for and the replay of the primitives, some 1.4 ms of
+  the frame's blank and as much of the blank between.
+- *The painters' waits inside a drawn step*: a load in the painters' way
+  given to them (`port_PaintGiveAlone`), its pixels kept for the side
+  channel and the card's mirror, which read them at once, and the side
+  channel's reads of video memory (the textures' keys, a colour table)
+  from a view of it as the game's thread has written it, painted pixels
+  waited for only where a primitive still to be painted draws there.
+  A step the card is given only the writes of (`g_port_ahead_kept`, the
+  step itself with `run_ahead 2`) needs only the first half.
+- *The side channel* beside the game, as the painters are.
 
 ### The HD fighters on the card
 
@@ -5451,7 +5583,10 @@ word of the pause, which it had from the steps ahead, but what it writes
 into video memory. Since the game draws a frame at once in the port and
 puts it up two frames after it takes the input, the display after two
 steps ahead is the frame of the input just read: no frame shown is
-guessed.
+guessed. In the window the step itself is now the first of the steps
+ahead, its blanks shown after it, which shows the same pictures at the
+same blanks for a frame's less work ("The step itself as the first
+frame ahead"); the headless programs run ahead as here.
 
 Netplay has a loop of its own (`port_RunNetplay`) and the link cable's
 steps reach another machine, so run-ahead is off in both; the rollback

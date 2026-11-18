@@ -88,11 +88,13 @@ typedef struct PortGpu {
     u32 line_color;
     s32 is_line_painted; /* the game's side: the painters are given it */
     s32 is_load_painted; /* ... and this load's pixels */
-    /* a painter's lines (src/port/paint.c): of each 256 lines of video
-     * memory, a screen's height, the `band`th of 2 to the `band_bits`
-     * bands one after another; 0 and 0 for all of them */
+    /* a painter's lines (src/port/paint.c): of each group of 2 to the
+     * `band_shift` lines, counted from the top of each 256 lines of video
+     * memory, a screen's height, the `band`th of every 2 to the
+     * `band_bits`; 0 and 0 for all of them */
     s32 band;
     s32 band_bits;
+    s32 band_shift;
     PortTransfer load;
     PortTransfer store;
     u32 read_latch; /* what GPUREAD gives when nothing is being copied */
