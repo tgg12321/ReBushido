@@ -21,6 +21,9 @@
 #define PORT_VRAM_BYTES (PORT_VRAM_PIXELS * 2)
 #define PORT_PIXEL_MASK_BIT 0x8000
 extern u16 g_port_vram[PORT_VRAM_PIXELS];
+/* Video memory as the card's pictures read it (src/port/gl/gl.h): the
+ * window's renderer alone, never the state. */
+extern const u16 *g_port_gl_vram;
 /* The lines of video memory written since the state last looked: the
  * software GPU marks each line it writes (src/port/state.c, which keeps
  * this outside the state). */

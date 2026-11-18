@@ -183,6 +183,15 @@ static struct {
     /* Each frame's points, for a face the other frame has not: the
      * frame on show's [0] and the frame after it's [1]. */
     TweenPoint *points[2];
+    /* ... and which of their slots are filled, so that the next pair of
+     * frames empties those and not the whole table: two tables of 1.5 MB
+     * cleared at every pairing were a quarter of it */
+    s32 *points_used[2];
+    s32 points_used_count[2];
+    /* the frame each table holds the points of, by its generation: the
+     * frame after the one on show is the frame on show of the next pair,
+     * and its table is taken over and not filled again */
+    u32 points_generation[2];
     /* A face of the frame on show that the frame after it has not, with
      * its corners where the frame after it put the same points
      * (`has_going`), and a face of the frame after it that the frame on
@@ -887,7 +896,10 @@ const char *port_TweenStart(void) {
     g_tween.pair = malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.pair));
     g_tween.taken = malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.taken));
     for (i = 0; i < 2; i++) {
-        g_tween.points[i] = malloc(TWEEN_POINTS * sizeof(TweenPoint));
+        g_tween.points[i] = calloc(TWEEN_POINTS, sizeof(TweenPoint));
+        g_tween.points_used[i] = malloc(TWEEN_POINTS * sizeof(s32));
+        g_tween.points_used_count[i] = 0;
+        g_tween.points_generation[i] = ~0U;
     }
     g_tween.going = malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.going));
     g_tween.has_going = malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.has_going));
@@ -900,7 +912,8 @@ const char *port_TweenStart(void) {
         malloc(TWEEN_PRIMS_MAX * sizeof(*g_tween.coming_next));
     if (g_tween.saved == NULL || g_tween.pair == NULL ||
         g_tween.taken == NULL || g_tween.points[0] == NULL ||
-        g_tween.points[1] == NULL || g_tween.going == NULL ||
+        g_tween.points[1] == NULL || g_tween.points_used[0] == NULL ||
+        g_tween.points_used[1] == NULL || g_tween.going == NULL ||
         g_tween.has_going == NULL || g_tween.coming == NULL ||
         g_tween.coming_first == NULL || g_tween.coming_last == NULL ||
         g_tween.coming_next == NULL) {
@@ -932,6 +945,10 @@ void port_TweenStop(void) {
     for (i = 0; i < 2; i++) {
         free(g_tween.points[i]);
         g_tween.points[i] = NULL;
+        free(g_tween.points_used[i]);
+        g_tween.points_used[i] = NULL;
+        g_tween.points_used_count[i] = 0;
+        g_tween.points_generation[i] = ~0U;
     }
     free(g_tween.going);
     free(g_tween.has_going);
@@ -1029,7 +1046,8 @@ static void port_TweenHoldVram(const TweenFrame *frame) {
     }
 }
 
-static void port_TweenGiveVramBack(const TweenFrame *frame, s32 is_held) {
+static void port_TweenGiveVramBack(
+    const TweenFrame *frame, s32 is_held, s32 is_off_vram) {
     PortDirtyRect sent;
     s32 i;
 
@@ -1040,7 +1058,7 @@ static void port_TweenGiveVramBack(const TweenFrame *frame, s32 is_held) {
         const TweenVram *one = &frame->vram[i];
         s32 row;
 
-        for (row = 0; row < one->h; row++) {
+        for (row = 0; row < one->h && !is_off_vram; row++) {
             memcpy(g_port_vram + (one->y + row) * PORT_VRAM_WIDTH + one->x,
                    g_tween.saved + one->at + (u32)(row * one->w),
                    (size_t)one->w * sizeof(u16));
@@ -1141,10 +1159,15 @@ static s32 port_TweenIsWholeFace(const PortRemasterPrim *prim) {
 
 /* Every point of a frame's faces into `table`, with the drawing offset
  * taken off. */
-static void port_TweenNotePoints(const TweenFrame *frame, TweenPoint *table) {
+static void port_TweenNotePoints(const TweenFrame *frame, s32 which) {
+    TweenPoint *table = g_tween.points[which];
+    s32 *used = g_tween.points_used[which];
     s32 i;
 
-    memset(table, 0, TWEEN_POINTS * sizeof(TweenPoint));
+    for (i = 0; i < g_tween.points_used_count[which]; i++) {
+        table[used[i]].state = POINT_EMPTY;
+    }
+    g_tween.points_used_count[which] = 0;
     for (i = 0; i < frame->prim_count; i++) {
         const PortRemasterPrim *prim = &frame->prim[i];
         s32 corner;
@@ -1164,6 +1187,7 @@ static void port_TweenNotePoints(const TweenFrame *frame, TweenPoint *table) {
                 continue;
             }
             if (one->state == POINT_EMPTY) {
+                used[g_tween.points_used_count[which]++] = (s32)(one - table);
                 one->object = prim->id.object;
                 one->group = prim->id.group;
                 one->index = index;
@@ -1265,8 +1289,29 @@ static void port_TweenPlaceUnpaired(void) {
     if (g_tween.guesses) {
         return;
     }
-    port_TweenNotePoints(shown, g_tween.points[0]);
-    port_TweenNotePoints(after, g_tween.points[1]);
+    if (g_tween.points_generation[1] == g_tween.generation - 1 &&
+        g_tween.points_generation[0] != g_tween.generation - 1) {
+        TweenPoint *table = g_tween.points[0];
+        s32 *used = g_tween.points_used[0];
+        s32 count = g_tween.points_used_count[0];
+
+        g_tween.points[0] = g_tween.points[1];
+        g_tween.points_used[0] = g_tween.points_used[1];
+        g_tween.points_used_count[0] = g_tween.points_used_count[1];
+        g_tween.points_generation[0] = g_tween.points_generation[1];
+        g_tween.points[1] = table;
+        g_tween.points_used[1] = used;
+        g_tween.points_used_count[1] = count;
+        g_tween.points_generation[1] = ~0U;
+    }
+    if (g_tween.points_generation[0] != g_tween.generation - 1) {
+        port_TweenNotePoints(shown, 0);
+        g_tween.points_generation[0] = g_tween.generation - 1;
+    }
+    if (g_tween.points_generation[1] != g_tween.generation) {
+        port_TweenNotePoints(after, 1);
+        g_tween.points_generation[1] = g_tween.generation;
+    }
     /* a face that is going: the frame after it's places for its points */
     for (i = 0; i < shown->prim_count; i++) {
         if (g_tween.pair[i] != TWEEN_EMPTY) {
@@ -1328,6 +1373,14 @@ static void port_TweenPlaceUnpaired(void) {
  * name as any others are. */
 #define TWEEN_MOVED_MAX 64
 
+/* The primitives of the frame on show of each thing of `from`, in their
+ * order: the first of a thing's and the next of the same thing's. Each
+ * thing's faces are walked once a thing of the other frame and not the
+ * whole frame each time: some thirty things by thirty by two thousand
+ * primitives was 0.8 ms of every pairing (2026-11-18). */
+static s32 g_tween_moved_first[TWEEN_MOVED_MAX];
+static s32 g_tween_moved_next[TWEEN_PRIMS_MAX];
+
 static void port_TweenPairMoved(
     const TweenFrame *shown, const TweenFrame *after) {
     PortAddress from[TWEEN_MOVED_MAX];
@@ -1353,6 +1406,37 @@ static void port_TweenPairMoved(
             from[from_count++] = object;
         }
     }
+    /* the unpaired primitives of each of them, in order: which are still
+     * unpaired is asked again as they are walked */
+    {
+        s32 last[TWEEN_MOVED_MAX];
+
+        for (j = 0; j < from_count; j++) {
+            g_tween_moved_first[j] = TWEEN_EMPTY;
+            last[j] = TWEEN_EMPTY;
+        }
+        for (i = 0; i < shown->prim_count && from_count != 0; i++) {
+            PortAddress object = shown->prim[i].id.object;
+
+            /* a primitive paired already is never paired again here: only a
+             * thing's own pairing below changes its primitives' */
+            if (object == 0 || g_tween.pair[i] != TWEEN_EMPTY) {
+                continue;
+            }
+            for (j = 0; j < from_count && from[j] != object; j++) {
+            }
+            if (j == from_count) {
+                continue;
+            }
+            g_tween_moved_next[i] = TWEEN_EMPTY;
+            if (last[j] == TWEEN_EMPTY) {
+                g_tween_moved_first[j] = i;
+            } else {
+                g_tween_moved_next[last[j]] = i;
+            }
+            last[j] = i;
+        }
+    }
     for (i = 0; i < after->prim_count; i++) {
         PortAddress object = after->prim[i].id.object;
 
@@ -1374,16 +1458,16 @@ static void port_TweenPairMoved(
         for (j = 0; j < to_count; j++) {
             s32 count = 0;
 
-            if (to[j] == from[i]) {
+            if (to[j] == from[i] || to[j] == 0) {
                 continue;
             }
-            for (k = 0; k < shown->prim_count; k++) {
+            for (k = g_tween_moved_first[i]; k != TWEEN_EMPTY;
+                 k = g_tween_moved_next[k]) {
                 const PortRemasterPrim *one = &shown->prim[k];
                 PortRemasterIdentity id;
                 s32 at;
 
-                if (one->id.object != from[i] ||
-                    g_tween.pair[k] != TWEEN_EMPTY) {
+                if (g_tween.pair[k] != TWEEN_EMPTY) {
                     continue;
                 }
                 id = one->id;
@@ -1404,12 +1488,13 @@ static void port_TweenPairMoved(
         if (best == 0) {
             continue;
         }
-        for (k = 0; k < shown->prim_count; k++) {
+        for (k = g_tween_moved_first[i]; k != TWEEN_EMPTY;
+             k = g_tween_moved_next[k]) {
             const PortRemasterPrim *one = &shown->prim[k];
             PortRemasterIdentity id;
             s32 at;
 
-            if (one->id.object != from[i] || g_tween.pair[k] != TWEEN_EMPTY) {
+            if (g_tween.pair[k] != TWEEN_EMPTY) {
                 continue;
             }
             id = one->id;
@@ -1713,6 +1798,7 @@ s32 port_TweenDraw(s32 phase) {
     u32 none[PORT_GL_COUNTS];
     s32 stage_state;
     s32 is_held;
+    s32 is_off_vram;
     s32 i;
 
     port_TweenJoin();
@@ -1748,11 +1834,22 @@ s32 port_TweenDraw(s32 phase) {
         none[i] = 0;
     }
     port_GlLoadCounts(none);
-    /* video memory is written here and put back: the software GPU's
-     * painter, which may still be painting the frame after (port_paint.h),
-     * holds still until it is */
-    port_PaintHold();
-    port_TweenHoldVram(shown);
+    /* **Off video memory** (docs/PORT.md, "The tween off video memory"):
+     * where the renderer is the card's, what the frame on show wrote is
+     * given again from its own pixels into the backend's copy of the
+     * mirror, and what is looked up in video memory while the picture is
+     * drawn is looked up there (gl.h, g_port_gl_vram). Video memory is not
+     * touched, so the software GPU's painters, which may still be painting
+     * the frame after (port_paint.h), are not waited for. Otherwise video
+     * memory is written here and put back, the painters held still until
+     * it is. */
+    is_off_vram = g_tween.real == port_GlBackend();
+    if (is_off_vram) {
+        port_GlReadMirrorCopy(TRUE);
+    } else {
+        port_PaintHold();
+        port_TweenHoldVram(shown);
+    }
     is_held = port_GlMirrorHold();
     port_TweenBegin();
     /* the shadows cast from the fighters' faces are moved with them
@@ -1783,6 +1880,11 @@ s32 port_TweenDraw(s32 phase) {
         if (event->is_vram) {
             const TweenVram *one = &shown->vram[event->at];
 
+            if (is_off_vram) {
+                port_GlReplayVram(one->x, one->y, one->w, one->h,
+                                  shown->words + one->at);
+                continue;
+            }
             port_TweenPutVram(shown, one);
             if (g_tween.real->wrote_vram != NULL) {
                 g_tween.real->wrote_vram(one->x, one->y, one->w, one->h);
@@ -1799,8 +1901,12 @@ s32 port_TweenDraw(s32 phase) {
      * card reads its texels from the mirror of it */
     port_GlFinishFrame();
     port_GlShadowSetPhase(-1);
-    port_TweenGiveVramBack(shown, is_held);
-    port_PaintLetGo();
+    port_TweenGiveVramBack(shown, is_held, is_off_vram);
+    if (is_off_vram) {
+        port_GlReadMirrorCopy(FALSE);
+    } else {
+        port_PaintLetGo();
+    }
     port_GlLoadCounts(aside);
     g_tween.counts.pictures++;
     return TRUE;

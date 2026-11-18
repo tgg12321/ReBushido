@@ -276,7 +276,7 @@ static void port_ReplaceDump(
     }
     for (v = 0; v < region->h; v++) {
         for (u = 0; u < region->w; u++) {
-            u16 texel = port_TextureTexel(g_port_vram, region, u, v);
+            u16 texel = port_TextureTexel(g_port_gl_vram, region, u, v);
             u8 *out = rgba + ((size_t)v * (size_t)region->w + (size_t)u) * RGBA;
 
             out[0] = port_ReplaceByte(texel, RED_SHIFT);
@@ -394,7 +394,7 @@ static void port_ReplaceTable(const PortTextureRegion *region, u16 *table) {
 
     for (i = 0; i < colors; i++) {
         table[i] =
-            g_port_vram[(region->clut_y & WINDOW_ALL_Y) * PORT_VRAM_WIDTH +
+            g_port_gl_vram[(region->clut_y & WINDOW_ALL_Y) * PORT_VRAM_WIDTH +
                         ((region->clut_x + i) & WINDOW_ALL_X)];
     }
 }
@@ -407,7 +407,7 @@ static void port_ReplacePixels(const PortTextureRegion *region, u16 *out) {
     s32 j;
 
     for (j = 0; j < region->h; j++) {
-        const u16 *row = g_port_vram + (region->page_y + j) * PORT_VRAM_WIDTH +
+        const u16 *row = g_port_gl_vram + (region->page_y + j) * PORT_VRAM_WIDTH +
                          region->page_x;
 
         for (i = 0; i < region->w; i++) {
@@ -450,7 +450,7 @@ static void port_ReplaceKeepForFades(
             return;
         }
         kept = &g_replace.fades[g_replace.fade_count++];
-        kept->texel_key = port_TextureTexelKey(g_port_vram, region);
+        kept->texel_key = port_TextureTexelKey(g_port_gl_vram, region);
         kept->bits = region->bits;
         kept->key = slot->key;
         kept->texture = slot->texture;
@@ -523,7 +523,7 @@ static const FadeTexture *port_ReplaceTextureFade(
     if (port_ReplaceColors(region) == 0 || g_replace.fade_count == 0) {
         return NULL;
     }
-    texel_key = port_TextureTexelKey(g_port_vram, region);
+    texel_key = port_TextureTexelKey(g_port_gl_vram, region);
     port_ReplaceTable(region, table);
     for (i = 0; i < g_replace.fade_count; i++) {
         const FadeTexture *kept = &g_replace.fades[i];
@@ -609,7 +609,7 @@ static s32 port_ReplaceMixOf(const PortTextureRegion *region) {
 
     for (v = 0; v < region->h; v++) {
         for (u = 0; u < region->w; u++) {
-            u16 texel = port_TextureTexel(g_port_vram, region, u, v);
+            u16 texel = port_TextureTexel(g_port_gl_vram, region, u, v);
 
             if (texel == 0) {
                 continue;
@@ -635,7 +635,7 @@ static s32 port_ReplaceMixOf(const PortTextureRegion *region) {
  * replacement is written out then, where `may_dump` says. */
 static u32 port_ReplaceOf(const PortTextureRegion *region, s32 is_picture,
                           s32 may_dump, s32 *mix, u32 *tint) {
-    u64 key = port_TextureKey(g_port_vram, region);
+    u64 key = port_TextureKey(g_port_gl_vram, region);
     ReplaceSlot *slot = port_ReplaceSlotOf(key);
     char name[PORT_MOD_KEY_SIZE];
     const char *path;
@@ -761,7 +761,7 @@ s32 port_GlReplaceFind(const PortRemasterPrim *prim, PortGlReplacement *out) {
  * ends it, so a picture costs a few pixels and a fill no more than the
  * key it would otherwise have had worked out. */
 static s32 port_ReplaceIsPlain(s32 x, s32 y, s32 w, s32 h) {
-    const u16 *row = g_port_vram + y * PORT_VRAM_WIDTH + x;
+    const u16 *row = g_port_gl_vram + y * PORT_VRAM_WIDTH + x;
     u16 first = row[0];
     s32 i;
     s32 j;

@@ -634,7 +634,7 @@ static void port_GlSceneDump(const PortTexturePage *page, const char *name) {
                 region.or_u = 0;
                 region.and_v = PORT_MOD_PAGE_SIDE - 1;
                 region.or_v = 0;
-                texel = port_TextureTexel(g_port_vram, &region, u, v);
+                texel = port_TextureTexel(g_port_gl_vram, &region, u, v);
             }
             out[0] = port_GlSceneByte(texel, RED_SHIFT);
             out[1] = port_GlSceneByte(texel, GREEN_SHIFT);
@@ -722,7 +722,7 @@ static void port_GlSceneKeyOf(Looked *one, char *name) {
     page.clut_x = one->base_x;
     page.clut_y = one->base_y;
     page.own = g_scene.own;
-    one->key = port_TexturePageKey(g_port_vram, &page);
+    one->key = port_TexturePageKey(g_port_gl_vram, &page);
     port_TexturePageKeyName(one->key, &page, name, PORT_MOD_KEY_SIZE);
     one->path = port_ModFind(PORT_MOD_TEXTURES, name);
     if (one->path == NULL) {
@@ -790,7 +790,7 @@ static void port_GlSceneEnter(Looked *one) {
         u16 *row = &g_scene.base_rows[layer * COLORS_MAX];
 
         for (i = 0; i < colors; i++) {
-            row[i] = g_port_vram[one->base_y * PORT_VRAM_WIDTH +
+            row[i] = g_port_gl_vram[one->base_y * PORT_VRAM_WIDTH +
                                  ((one->base_x + i) & (PORT_VRAM_WIDTH - 1))];
         }
         glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_BASES_UNIT);
