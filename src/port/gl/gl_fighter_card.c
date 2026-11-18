@@ -255,25 +255,45 @@ static const char g_scatter_text[] =
     "}\n";
 
 /* Each list in the order of the vertices' numbers, as the processor's
- * grid had them: a list is a few dozen at most. */
+ * grid had them, a group a list: the list read into shared memory, and
+ * each vertex put where as many of the list's are below it (no two the
+ * same). A list of more than SORTED (none was seen) is sorted by one
+ * thread. A thread a list sorting in place took a millisecond and more
+ * where a list was long, the fingers' and the face's. */
 static const char g_sort_text[] =
     CARD_VERSION
     "layout(local_size_x = 64) in;\n"
     "layout(std430, binding = 2) readonly buffer Grid { int grid[]; };\n"
     "layout(std430, binding = 4) buffer Order { int order[]; };\n"
+    "const int SORTED = 2048;\n"
+    "shared int s_vertex[SORTED];\n"
     "void main() {\n"
-    "    int b = int(gl_GlobalInvocationID.x);\n"
-    "    if (b >= 4096) { return; }\n"
+    "    int b = int(gl_WorkGroupID.x);\n"
+    "    int t = int(gl_LocalInvocationIndex);\n"
     "    int from = grid[4096 + b];\n"
-    "    int to = grid[4096 + b + 1];\n"
-    "    for (int i = from + 1; i < to; i++) {\n"
-    "        int v = order[i];\n"
-    "        int k = i - 1;\n"
-    "        while (k >= from && order[k] > v) {\n"
-    "            order[k + 1] = order[k];\n"
-    "            k--;\n"
+    "    int count = grid[4096 + b + 1] - from;\n"
+    "    if (count <= 1) { return; }\n"
+    "    if (count > SORTED) {\n"
+    "        for (int i = from + 1; t == 0 && i < from + count; i++) {\n"
+    "            int v = order[i];\n"
+    "            int k = i - 1;\n"
+    "            while (k >= from && order[k] > v) {\n"
+    "                order[k + 1] = order[k];\n"
+    "                k--;\n"
+    "            }\n"
+    "            order[k + 1] = v;\n"
     "        }\n"
-    "        order[k + 1] = v;\n"
+    "        return;\n"
+    "    }\n"
+    "    for (int i = t; i < count; i += 64) { s_vertex[i] = order[from + i]; }\n"
+    "    barrier();\n"
+    "    for (int i = t; i < count; i += 64) {\n"
+    "        int v = s_vertex[i];\n"
+    "        int below = 0;\n"
+    "        for (int k = 0; k < count; k++) {\n"
+    "            below += s_vertex[k] < v ? 1 : 0;\n"
+    "        }\n"
+    "        order[from + below] = v;\n"
     "    }\n"
     "}\n";
 
@@ -730,7 +750,7 @@ s32 port_GlFighterCardPose(
     glDispatchCompute(port_GlFighterCardGroups(vertex_count, GROUP), 1, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     glUseProgram(g_card.sort);
-    glDispatchCompute(port_GlFighterCardGroups(BUCKETS, GROUP), 1, 1);
+    glDispatchCompute(BUCKETS, 1, 1);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     glUseProgram(0);
     PORT_GPU_END();
