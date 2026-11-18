@@ -4696,8 +4696,13 @@ Every case, with the fighters' agent's work of the same day merged
 20.3), `run_ahead 2` 9.3 and 13.9 (16.8 and 24.0), fighter models off
 3.0 and 4.1, four fighters on the ground twice 5.2 and 9.6 (22.0 and
 27.5). With `run_ahead 2` the video memory pass is 3.7 ms of it, against
-0.6 in the other cases: what the frames run ahead write is sent again;
-that is the next thing to look at on the card.
+0.6 in the other cases, and every other pass is half again: the card
+draws each frame twice, as the first frame ahead of one boundary is the
+last of the boundary before (`port_BeforeStep`, `step.c`). Leaving the
+first out (`g_port_unseen`, as the step after them is) would halve it,
+but what that frame writes into video memory would then not reach the
+card's mirror where its input differs from the boundary before's; the
+mirror needs to be told of a write without drawing it first.
 
 **The budget** (`port_bench.py --budget`, the gate's step `port-bench`,
 run alone after every other with `port-budget`): the cases `ra0`, `ra1`,
