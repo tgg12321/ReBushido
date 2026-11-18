@@ -69,7 +69,12 @@ extern s32 port_PaintMayGiveWrites(void);
  * write must keep its place among all of them. `write` and `read` are
  * the places it writes and reads. */
 extern void port_PaintGiveAlone(s32 count, const PortPaintRect *write,
-                                const PortPaintRect *read);
+                                const PortPaintRect *read,
+                                const PortPaintRect *table);
+/* How many painters there are (1 where the game's thread paints). */
+extern s32 port_PaintPainters(void);
+/* Whether a primitive still to be painted reads the rectangle. */
+extern s32 port_PaintIsReadPending(const PortPaintRect *rect);
 /* Whether a write of the rectangle would wait for the painters. */
 extern s32 port_PaintIsInWay(s32 x, s32 y, s32 w, s32 h);
 /* After the state is put back: everything painted, and the settings the

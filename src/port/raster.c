@@ -1207,6 +1207,15 @@ static void port_PrimitiveRect(const PortGpu *gpu, const u32 *words,
     rect->h = bottom >= top ? bottom - top + 1 : 0;
 }
 
+/* Whether two rectangles share a pixel (neither goes round an edge of
+ * video memory here, or both are taken as not sharing one: a page and a
+ * table go round only past the last column, which no area reaches). */
+static s32 port_RectsMeet(const PortPaintRect *one, const PortPaintRect *two) {
+    return one->w > 0 && one->h > 0 && two->w > 0 && two->h > 0 &&
+           one->x < two->x + two->w && two->x < one->x + one->w &&
+           one->y < two->y + two->h && two->y < one->y + one->h;
+}
+
 /* What a textured primitive may read: its page, by the mode as it is,
  * and its colour table `clut` where the page's texels are indices. */
 static void port_TextureRects(const PortGpu *gpu, u32 clut, PortPaintRect *page,
@@ -1284,6 +1293,22 @@ static void port_SubmitPrimitive(PortGpu *gpu, const u32 *words, s32 count,
         return;
     }
     port_PrimitiveRect(gpu, words, &write);
+    /* A primitive that reads what it draws (the screen drawn again into
+     * itself) reads lines another painter is drawing for it at the same
+     * time, and one that draws over what a primitive before it still reads
+     * may draw it first: either is drawn by the first painter alone, of all
+     * lines, in its turn (port_paint.h). */
+    if (port_PaintPainters() > 1 &&
+        (port_RectsMeet(&write, &page) || port_RectsMeet(&write, &table) ||
+         port_PaintIsReadPending(&write))) {
+        PortPaintRect none;
+
+        none.w = 0;
+        none.h = 0;
+        port_PaintGiveAlone(count, &write, &page, &table);
+        port_PaintSubmit(words, count, &none, &none, &none);
+        return;
+    }
     port_PaintSubmit(words, count, &write, &page, &table);
 }
 
@@ -1338,7 +1363,7 @@ static s32 port_GiveCopy(const u32 *words) {
     }
     none.w = 0;
     none.h = 0;
-    port_PaintGiveAlone(COPY_WORDS, &write, &read);
+    port_PaintGiveAlone(COPY_WORDS, &write, &read, &none);
     port_PaintSubmit(words, COPY_WORDS, &none, &none, &none);
     return TRUE;
 }
@@ -1405,8 +1430,8 @@ static void port_RunCommand(const u32 *words, s32 count) {
             write.w = gpu->load.w;
             write.h = gpu->load.h;
             gpu->is_load_painted = 1;
-            port_PaintGiveAlone(
-                count + (gpu->load.w * gpu->load.h + 1) / 2, &write, &none);
+            port_PaintGiveAlone(count + (gpu->load.w * gpu->load.h + 1) / 2,
+                                &write, &none, &none);
             port_PaintSubmit(words, count, &none, &none, &none);
             break;
         }

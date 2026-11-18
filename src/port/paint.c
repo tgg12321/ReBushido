@@ -274,8 +274,22 @@ void port_PaintSyncWrite(s32 x, s32 y, s32 w, s32 h) {
 
 s32 port_PaintMayGiveWrites(void) { return g_paint.is_threaded; }
 
+s32 port_PaintPainters(void) { return g_paint.count; }
+
+s32 port_PaintIsReadPending(const PortPaintRect *rect) {
+    u32 need;
+
+    if (!g_paint.is_threaded) {
+        return FALSE;
+    }
+    need = port_PaintNeeds(g_paint.square_read, rect->x, rect->y, rect->w,
+                           rect->h, g_paint.given - RING_WORDS);
+    return (s32)(need - port_PaintDone()) > 0;
+}
+
 void port_PaintGiveAlone(s32 count, const PortPaintRect *write,
-                         const PortPaintRect *read) {
+                         const PortPaintRect *read,
+                         const PortPaintRect *table) {
     u32 words[2];
     PortPaintRect none;
     u32 end;
@@ -289,6 +303,7 @@ void port_PaintGiveAlone(s32 count, const PortPaintRect *write,
     end = g_paint.given + (u32)count;
     port_PaintMark(g_paint.square_write, write, end);
     port_PaintMark(g_paint.square_read, read, end);
+    port_PaintMark(g_paint.square_read, table, end);
 }
 
 s32 port_PaintIsInWay(s32 x, s32 y, s32 w, s32 h) {
