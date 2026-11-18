@@ -336,6 +336,11 @@ extern s32 g_port_ahead_sync;
 extern s32 g_port_ahead_quiet;
 extern void port_HeldBlank(u32 blank);
 extern void port_AfterStep(void);
+/* The window's, as a step whose turns are held begins, the boundary's
+ * read of the input made: where the step and its first picture would
+ * miss the display's next refresh, the window shows a picture for it
+ * first (docs/PORT.md, "The step's refresh"). */
+extern void (*g_port_held_begin_hook)(void);
 
 typedef struct PortAheadCounts {
     u32 runs;        /* boundaries the frames were run ahead at */

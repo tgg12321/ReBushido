@@ -4815,7 +4815,11 @@ The game kept its pace at every rate (no time let go); what gave was the
 pictures. At 60 a fight's frame blank, 15 to 17 ms of work, misses its
 refresh most times, and the blank is not shown; at 120 and 144 the
 pictures are what the processor and the card leave room for, 66 and 84
-a second.
+a second. (These rows were measured while a hidden window was held to the
+system's coarse timer, which slept the short waits a refresh and more:
+"The step's refresh", below. With the fine timer, 144 misses 8 to 18% of
+its refreshes, nearly all at a frame's step, and 3 to 5% with the step's
+refresh.)
 
 The card's own time for a picture of the fight is about 9 ms at
 2560x1440 with `antialiasing = 2` (the ground's mesh 3.6, the sky 2.7):
@@ -5588,6 +5592,122 @@ screens shown while the fight is held were looked at the same way,
 `run_ahead 2` against 0 through port_game's plan (the options page, the
 menus, the winner, the menu after the fight, the next fight): no other
 code of the card's draws in a kept step.
+
+### The step's refresh
+
+**What was asked** (2026-11-18): the step on a thread of its own,
+pipelined with the window's pictures, so that a refresh costs the more
+of the two and not their sum. **What was found** on the RTX 3090
+(`run_ahead 1`, the bench's fight):
+
+- *The step calls OpenGL.* The side channel hands every command to the
+  card's backend as it comes (`port_RemasterCommand` in `raster.c`,
+  `gl_draw.c` and the rest drawing at once), and a held blank's turn
+  ends the card's frame (`port_GlFinishFrame`). The backend also reads
+  the game's live state as it draws (the fighters' views, the stage's
+  view, the colour tables and texture keys in video memory, the scene's
+  nodes). So no picture can be drawn while the step runs until the step
+  only records what the card is to draw, and the window draws it from
+  the record (the tween agent's plan: `port_GlStepRecords()`,
+  `port_GlDrawPending()`).
+- *The context cannot move to the step and back.* Tried
+  (`RB_PIPELINE=trial`, since taken out): pictures drawn on a thread of
+  their own, the window's context handed to it before each held step and
+  taken back after. Each step paid about 1.8 ms in the window's
+  `SDL_GL_MakeCurrent(NULL)` (the driver empties its queue) and 0.7 ms in
+  the other three hand-overs, and the game's and side channel's parts ran
+  about 1.5 ms slower afterwards. The frame's blank went from 6.5 to
+  12.7 ms. So the context stays on the window's thread for good, and the
+  step's thread waits for the record.
+- *What of a step is free of OpenGL today*: a fight's step (two blanks)
+  is about 1.3 ms of the game's logic before its first blank, the two
+  blanks' turns by 1.6, the frame's list from 1.8 to the end at 5.3 ms
+  (the software GPU's and the side channel's work, interleaved command
+  by command). Only the first 1.3 ms could run beside a picture. That
+  could be done by entering the game's fiber on a thread of its own and
+  moving it to the window's thread at its first need of the window (the
+  switch keeps each stack's record of the thread's stack, so a fiber may
+  be left on one thread and entered on another).
+- *Nothing beside the step makes its frame sooner.* The input is read at
+  the boundary and the frame drawn after the step, so the step's first
+  picture can come no sooner than the step and the picture together. In
+  a paced game the boundary comes just after a refresh (the window shows
+  its pictures until then). So what overlapping buys is not a sooner
+  frame but a picture for the refresh that falls inside the step, which
+  otherwise shows the picture before it again.
+
+That last refresh needs no thread. **Now** (`port_StepRefresh`, the
+window's `g_port_held_begin_hook`): when a held step begins, its input
+read, and the step and its first picture would miss the display's next
+refresh (what they take, on average, from the boundary, and a
+millisecond to spare, since a refresh is seen at the swap's return a
+little after it comes), a picture between the two frames written down
+already is drawn for that refresh. It is then handed over without
+waiting for the card (`port_HandPicture`, no `low_latency` wait). The
+step runs while the display shows it, and the step's own first picture
+is shown at the refresh after, the one it would have made anyway. The
+input is read at the same moment as before. Only with the display waited
+for and its refreshes known, never with `--fast`, and never for a picture
+a test or the player asked for. `RB_STEP_REFRESH=off` restores the old
+flow. A peak instead of the average made the miss rarer (0.9%), but half
+of the steps it drew for would have been in time, and those were a
+refresh later.
+
+**Measured paced at 144 a second** (`port_bench.py --paced`, below; the
+bench's fight at 2560 by 1440, `run_ahead 1`, the same program with
+`RB_STEP_REFRESH=off` and without, interleaved, three rounds, other
+agents' work on the machine throughout):
+
+| | refreshes no new picture reached | a frame's input to its first picture, refreshes: median, mean, 95% |
+| --- | --- | --- |
+| before | 12.7%, 18.3%, 7.7% | 2, 1.61, 2; 2, 1.89, 2; 1, 1.38, 2 |
+| now | 3.1%, 5.3%, 3.4% | 2, 1.59, 2; 2, 1.51, 2; 1, 1.44, 2 |
+
+Of the misses before, all but one in a hundred were within two refreshes
+after a frame's boundary: the step's. The lag is the same in every
+pair; nothing is later. `--fast` (the gate's bench) does not draw it,
+so the gate's numbers are those of before.
+
+**A hidden window keeps the fine timer.** Since Windows 11 a program
+none of whose windows can be seen is held to the system's coarse timer
+(15.6 ms), whatever resolution it asked for. A `--hidden` run's waits of
+a millisecond or two (`SDL_Delay` in `port_WaitFor` and the made-up
+display's wait) then slept a refresh and more. Paced at 144 a second, 41%
+of the refreshes got no new picture, near enough 1 − 85/144, which made it
+look as if the PC's own 85 Hz screen held a hidden window. The window now
+asks for the fine timer whatever it shows (`port_KeepFineTimer`:
+`SetProcessInformation`, `ProcessPowerThrottling`,
+`PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION`), and the same run
+misses 17% (8 to 18% from run to run, the step's misses above). The
+`--display-rate` rows of "Pacing on a real display" were measured with
+the coarse timer: 144's 83.9 pictures a second was more the timer than
+the card. A shown window had the fine timer all along.
+
+**The measures** (`tools/port_bench.py`):
+
+- `--paced`: the cases at the game's pace against a display of 144 a
+  second made up by the program (`--display-rate`), kept apart
+  (`+paced`): the refreshes after the fight's first second that no new
+  picture reached, and the lag from a frame's boundary (the profile's `k`
+  line, the input read) to its first picture handed to the display that
+  was waited for, in refreshes.
+- Unpaced, *picture to picture*: the time from one picture handed to the
+  display to the next, less what was waited for the clock in between
+  (the `p` line's fourth word), whichever blank it falls in; `--against`
+  compares its 95% and 99%. A picture not waited for is `1` in the
+  `p` line's third word, and its time is the refresh it was handed over
+  for.
+
+**What is left** for the step beside the pictures: the record (the
+tween agent's: the backend recording on the step's side, everything it
+reads of the game's state at a draw kept with it, and the staged copy of
+video memory and the fighters' views owned by the record). Then the
+fiber can run on a thread of its own and come to the window's thread only
+where the step still needs it. The window would draw pictures between
+frames at every refresh the step spans, and a step longer than a refresh
+would cost no refresh at all. Until then a step and its first picture
+together must fit in two refreshes, 13.9 ms at 144 a second, which they
+do.
 
 ### The HD fighters on the card
 
