@@ -304,9 +304,10 @@ static const char g_sort_text[] = CARD_VERSION
  * one thread a point, as the processor did it, each thread waited on
  * memory for every vertex in turn, and the few thousand places of a
  * frame's cloths took 34 ms of an RTX 3090. Here the group walks the
- * cubes together, each thread every 32nd vertex of a cube, and the sums
- * are added up by a fixed tree in shared memory: the same sums every
- * run, in another order than the processor's. Every decision is the
+ * cubes together, each thread every 32nd vertex of a cube, and each
+ * thread adds up the 32 threads' sums in their order from shared memory
+ * (one barrier, where a tree took five): the same sums every run, in
+ * another order than the processor's. Every decision is the
  * group's, from the summed values, so every thread takes the same path
  * and meets the same barriers.
  *
@@ -316,11 +317,12 @@ static const char g_sort_text[] = CARD_VERSION
  * cubes' vertices into shared memory once (CACHE of them at most, in the
  * walk's own order) and walks the copy until the point's cube changes.
  * A walk farther out, or of more vertices, reads the body itself. The
- * copy is three floats a vertex's place and three its normal, 512 of
- * them: 12 KB, so that many groups fit on a multiprocessor at once (at
+ * copy is three floats a vertex's place and three its normal, 256 of
+ * them: 6 KB, so that many groups fit on a multiprocessor at once (at
  * 30 KB three did, and each waited on memory with nothing to run beside
- * it). Some 0.5% of the places' 27 cubes hold more, and are walked in
- * the body itself (cache_cubes leaves s_cached -1); cache_start, at the
+ * it; 512, 12 KB, was a tenth slower on an RTX 3090, though only 0.5% of
+ * the places' 27 cubes hold more than 512). Those that hold more are
+ * walked in the body itself (cache_cubes leaves s_cached -1); cache_start, at the
  * start of a group's work, says nothing is kept yet. */
 #define CARD_GROUP_TEXT "layout(local_size_x = 32) in;\n"
 #define CARD_BODY_TEXT                                                              \
@@ -328,7 +330,7 @@ static const char g_sort_text[] = CARD_VERSION
     "layout(std430, binding = 2) readonly buffer Grid { int grid[]; };\n"           \
     "layout(std430, binding = 4) readonly buffer Order { int order[]; };\n"         \
     "layout(std430, binding = 8) buffer Counts { uint counts[]; };\n"               \
-    "const int CACHE = 512;\n"                                                      \
+    "const int CACHE = 256;\n"                                                      \
     "shared float s_place[CACHE * 3];\n"                                            \
     "shared float s_turn[CACHE * 3];\n"                                             \
     "shared int s_offset[28];\n"                                                    \
@@ -442,16 +444,13 @@ static const char g_sort_text[] = CARD_VERSION
     "    s_normal[t] = normal;\n"                                                   \
     "    s_weight[t] = weight;\n"                                                   \
     "    barrier();\n"                                                              \
-    "    for (int half_of = 16; half_of > 0; half_of /= 2) {\n"                     \
-    "        if (t < half_of) {\n"                                                  \
-    "            s_nearest[t] = least(s_nearest[t], s_nearest[t + half_of]);\n"     \
-    "            s_along[t] += s_along[t + half_of];\n"                             \
-    "            s_normal[t] += s_normal[t + half_of];\n"                           \
-    "            s_weight[t] += s_weight[t + half_of];\n"                           \
-    "        }\n"                                                                   \
-    "        barrier();\n"                                                          \
+    "    Sums s = Sums(-1.0, 0.0, vec3(0.0), 0.0);\n"                               \
+    "    for (int k = 0; k < 32; k++) {\n"                                          \
+    "        s.nearest = least(s.nearest, s_nearest[k]);\n"                         \
+    "        s.along += s_along[k];\n"                                              \
+    "        s.normal += s_normal[k];\n"                                            \
+    "        s.weight += s_weight[k];\n"                                            \
     "    }\n"                                                                       \
-    "    Sums s = Sums(s_nearest[0], s_along[0], s_normal[0], s_weight[0]);\n"      \
     "    barrier();\n"                                                              \
     "    return s;\n"                                                               \
     "}\n"                                                                           \
