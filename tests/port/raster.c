@@ -25,6 +25,20 @@ s32 g_port_unseen;
 /* the lines the GPU writes, which src/port/state.c keeps */
 u8 g_port_vram_lines_written[PORT_VRAM_HEIGHT];
 
+/* Nothing is put back after frames ahead here (src/port/state.c), and
+ * none is given up (src/port/step.c). */
+s32 g_port_vram_undo_on;
+
+s32 port_StateKeepVram(s32 x, s32 y, s32 w, s32 h) {
+    (void)x;
+    (void)y;
+    (void)w;
+    (void)h;
+    return 1;
+}
+
+void port_GiveUpAhead(void) {}
+
 /* ---- what those files want of the rest of the port ---- */
 
 /* No clock: the painters' waits are counted in nothing (paint.c). */

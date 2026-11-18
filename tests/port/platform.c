@@ -27,6 +27,11 @@ s32 g_port_ahead;
 
 void port_AheadBlank(u32 blank) { (void)blank; }
 
+/* ... nor is a step's blank held for after it. */
+s32 g_port_holding;
+
+void port_HeldBlank(u32 blank) { (void)blank; }
+
 /* ---- what those files want of the rest of the port ---- */
 
 static u32 g_seen_blanks;
