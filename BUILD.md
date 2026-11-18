@@ -74,6 +74,49 @@ WSL with the virtualenv active you can also call `make` directly:
 The overlay builds 43 of Sony's library modules from `src/main/psxsdk/`, so
 a change there has to pass both byte checks.
 
+### Where the build runs
+
+A checkout on the Windows drive (`/mnt/c/...`) builds three to five times
+slower than one on WSL's own disk: every compile reads its source and its
+headers through the drive's file server. So `tools/build.sh` and
+`tools/gate.py`'s builds run in a copy of the sources on WSL's disk,
+`~/.cache/rebushido-build/<checkout>-<hash>/`, one per checkout and
+worktree (`tools/mirror.sh`), and bring `build/` back when they end. The
+commands are the same and the outputs land in `build/` as before:
+
+- in: the sources, by what changed since the last build (rsync, about two
+  seconds with nothing changed; a file deleted here is deleted there);
+  the virtualenv, `tools/sdl2-mingw/` and your disc image are links, the
+  compiler (`tools/gcc-2.7.2/build/cc1`) a copy;
+- out: what the copy built that is newer than what is here; never the
+  compilers' objects, lists of inputs and dumps (`*.o`, `*.d`, `*.gimple`,
+  `*.ssa`), which only the build reads, and nothing is deleted here. The
+  play tests' discs (`build/play/`) are made here directly through a link,
+  as large as the disc as they are;
+- `make clean` through `build.sh` cleans both; a release
+  (`RB_RELEASE=1`) builds in place, as it asks git whether the tree is
+  clean and the copy has no `.git` (the commit's hash is given to the
+  copy's build as `RB_GIT_HASH`);
+- `RB_BUILD_IN_PLACE=1` builds in the checkout as before, and so does a
+  checkout that is not on `/mnt/`. The gate's steps that only run what was
+  built (`port-rollback`, `port-net`, `port-budget`) run in place.
+
+Measured on the owner's machine (2026-11-18, other builds running beside):
+
+| | on `/mnt/c` | in the copy, with the copying |
+|---|---|---|
+| `port` from nothing | 80 s | 14 s (and 2 s to copy in) |
+| `port`, nothing changed | 68 s before, 23 s now* | 16 s |
+| `port`, one file changed | 68 s before, 31 s now* | 14–16 s |
+| `port-sdl-windows` from nothing / one file | 46 s / 53–57 s | 11 s / 8–9 s |
+| `check` from nothing / one file | 14 s / 6 s | 3 s / 3 s |
+
+\* `make port`'s checks `port_casts` and `port_order` keep gcc's dump of
+each file and read it again where none of its inputs changed, and a port
+build that compiled nothing links nothing and writes nothing
+(`tools/port_build.py`): on the drive itself that took a no-op from 68 s
+to 23 s.
+
 ## The port with a window
 
 `make port` needs nothing more than the checks do. The port a person can
@@ -233,7 +276,10 @@ headers several builds write (`build/modern/include/`,
 that builds side by side never read one half written. `port-net` takes
 96 UDP ports of 127.0.0.1 from a base chosen by the checkout's path
 (`--net-base`), so that two checkouts' gates do not meet; the play tests
-run four at once (`-j`). Each step's output is `build/gate/<step>.log`
+run four at once (`-j`). The builds and checks run in the copy on WSL's
+disk ("Where the build runs"), each bringing `build/` back as it ends, so
+the play tests and the steps that run the programs (`IN_PLACE`) find them
+here. Each step's output is `build/gate/<step>.log`
 and the summary `build/gate/summary.txt`; after the first failure no step
 is started, those running finish, and the summary says which were not
 run. `port-budget` and `port-bench` run last, one after the other, with
