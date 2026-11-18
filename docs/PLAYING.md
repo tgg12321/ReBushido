@@ -117,7 +117,7 @@ game until it is let go. The sound runs out and comes back.
 
 What changes at once: the full screen, the picture's size and its
 pixels, waiting for the display, the counter and its corner, quick
-loading, Graphics
+loading, run-ahead and low latency, Graphics
 (as F2), the resolution, the ground as one mesh, the shadows, smooth
 lighting, the effects, the dead zone, and the buttons. What waits for the program to start again is said
 on its line, `(after a restart)`: antialiasing, the draw distance, the
@@ -155,6 +155,8 @@ scale = integer          # fit (as large as fits), integer, or stretch
 filter = linear          # nearest (each pixel a block) or linear
 fullscreen = off         # start in a window (on, filling the screen, is built in)
 fps = off                # no counter in the corner (F3 brings it back)
+run_ahead = 1            # 0, 1 or 2 frames run ahead (2 is the default)
+low_latency = off        # let the driver queue pictures (on is the default)
 graphics = remastered    # original (the console's picture) or remastered
 resolution = 3           # how many times the console's; 0 = the window's
 draw_distance = far      # original, far, or max: how much of the stage
@@ -271,7 +273,8 @@ draws the scene again at any point between the two, every corner moved
 part of the way as the camera's own projection would move it. The HUD,
 the clock and the menus stay at the game's own rate, where they belong.
 **Nothing is guessed ahead and nothing is held back: a picture is never
-later than the console's own**, so this costs no input lag.
+later than the port's frame on show**, so this adds no input lag of its
+own; what lag there is, and what cuts it, is the next section.
 
 | | | |
 |---|---|---|
@@ -304,6 +307,56 @@ a file at the console's pace, eleven files before a fight.
 | | | |
 |---|---|---|
 | `quick_loading` | `on`, `off` | `on`, which is the default: the blanks in which the game waits for the disc behind its loading picture (the map and the title, or a black screen) are **hurried through**, not shown one by one at the console's 60 a second; a fight's load is then a blink rather than six seconds. A loading screen you read -- story mode's card of the next stage, the team battle's scores -- stays up two seconds before its load is hurried. The fighters' own models (Remastered) are read during the load too, not at the fight's first frame. `off` shows every blank, as the console's pace. **Nothing the game computes changes** either way: it is the same game, its fades and its timings are its own, and online both players still meet at every load. `--quick-loading on|off` says it on the command line. |
+
+## Input lag
+
+From a press to the picture that shows it, the window now takes about
+two of the game's frames less than it did, and less than the console
+itself ([`PORT.md`](PORT.md), "Input lag"). Three things do it, and all
+three are on with nothing said:
+
+- **The keys and controllers are read again just before the game takes
+  its input**, not only at the vertical blank before it. Nothing to set:
+  in a fight the press is taken a blank (17 ms) sooner, in the menus most
+  of one.
+- **`run_ahead`**, `0`, `1` or `2` (`2` with nothing said; the settings
+  menu's window page, "Run ahead", at once): before each of the game's
+  frames the port runs the next one or two, with what you hold, keeps the
+  picture they leave, and puts the game back where it was; then the
+  frame runs as it always did, heard and paced, and that picture is what
+  is shown meanwhile. The game puts a frame on the screen two of its
+  frames after it reads the pads (a fight's frame is two blanks), and
+  the port draws a frame at once, where the console takes the frame's
+  time to draw it: so the picture shown is **never a guess**, it is the
+  frame the game will show, earlier. Each frame ahead is 33 ms sooner in
+  a fight and 17 ms in the menus. **What the game computes is exactly
+  the same** with it on or off: the sound is the game's own as it was,
+  a memory card is written only by the game's own frame, and online play
+  turns it off (it has its own way with time). What it costs is the
+  processor's time, the game's work done two or three times a frame;
+  with the pictures between frames on, at `2` the second frame ahead is
+  what they move towards, and that one is a guess: where you press,
+  the picture moves to the frame with the press in it when it comes.
+  If the counter (F3) shows the speed under 100% on your PC, `1` costs
+  half as much.
+- **`low_latency`**, `on` or `off` (`on` with nothing said; "Low
+  latency", at once): each picture waits for the graphics card to have
+  drawn it and the swap to be made before the next is begun, so no
+  picture waits in the driver's queue behind another. `off` lets the
+  driver queue them, which may be smoother on a PC that is only just
+  fast enough.
+
+What only your screen and PC decide, and what helps there:
+
+- **Full screen (F11), not a window.** A window, a maximized one
+  included (2,560 by 1,369 on a 2,560 by 1,440 screen is one), is
+  composed with the desktop by Windows, which can hold each picture for
+  a refresh of the screen. Full screen lets the driver put the picture
+  up itself.
+- **`vsync = on`** waits for the screen's refresh; `off` shows a picture
+  as soon as it is drawn, sooner by up to a refresh, and tears.
+- A screen's own processing (its "game mode") and the graphics driver's
+  own low-latency setting are outside the program.
 
 ## Mods
 

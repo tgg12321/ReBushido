@@ -317,6 +317,11 @@ void port_Print(const char *format, ...) {
     u32 length;
     u32 i;
 
+    /* a frame run ahead prints nothing, not even to the tap: what it
+     * prints, the step itself prints when it runs (port_platform.h) */
+    if (g_port_ahead) {
+        return;
+    }
     PORT_ARGS_START(args, format);
     length = port_FormatText(line, sizeof(line), format, args);
     PORT_ARGS_END(args);

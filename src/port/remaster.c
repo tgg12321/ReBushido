@@ -1532,7 +1532,8 @@ void port_RemasterNewFrame(void) {
      * and is never moved */
     port_RemasterNoteObject(0);
     port_ClearDirtyRect(&g_drawn);
-    if (port_RemasterIsOn() && g_backend->begin != NULL) {
+    /* a step whose frames were run ahead began this frame then */
+    if (port_RemasterIsOn() && !g_port_unseen && g_backend->begin != NULL) {
         g_backend->begin();
     }
     /* the backend has laid the frame before's shadows down in `begin`,
@@ -2131,6 +2132,12 @@ void port_RemasterCommand(const u32 *words, s32 count) {
     if (!port_RemasterIsOn() || g_pause_skips) {
         return;
     }
+    /* A step whose frames were run ahead (port_platform.h): the backend
+     * was given all of it then, and what it writes into video memory
+     * would be drawn over the frame those steps drew. */
+    if (g_port_unseen) {
+        return;
+    }
     port_GetGpuState(&state);
     switch (code & COMMAND_KIND_MASK) {
     case COMMAND_POLYGONS:
@@ -2168,7 +2175,8 @@ void port_RemasterCommand(const u32 *words, s32 count) {
 }
 
 void port_RemasterLoadedVram(s32 x, s32 y, s32 w, s32 h) {
-    if (g_backend == NULL || !port_RemasterIsOn()) {
+    /* told by the steps run ahead already (port_RemasterCommand) */
+    if (g_backend == NULL || !port_RemasterIsOn() || g_port_unseen) {
         return;
     }
     if (g_backend->wrote_vram != NULL) {
@@ -2227,6 +2235,11 @@ s32 port_RemasterIsRedrawing(void) { return g_pause_redraws; }
 void port_RemasterPause(s32 what, s32 from_x, s32 from_y) {
     PortGpuState state;
 
+    /* a step whose frames were run ahead: they told the pause already,
+     * and may have gone past its end (port_platform.h) */
+    if (g_port_unseen) {
+        return;
+    }
     g_pause_skips = FALSE;
     g_pause_redraws = what == PORT_PAUSE_FROZEN;
     g_pause_on = what != PORT_PAUSE_OFF;

@@ -190,6 +190,11 @@ extern void port_FillPads(void);
 /* What the driver read at the last blank: the input the game would take
  * now, but for g_port_take_hook (netplay's local pad, netplay.c). */
 extern void port_DriverInput(PortInput *input);
+/* The PC's keys and controllers read again into what the driver read at
+ * the last blank, the script's buttons as they were then: what the
+ * window does just before the game takes the input, so that a press is
+ * taken as late as it can be (docs/PORT.md, "Input lag"). */
+extern void port_ReadDevicesNow(void);
 /* The one place the game's input comes from: called as the game reads
  * the pads (pad_Update, and the options page's own read), it takes the
  * input the driver read at the last blank, lets g_port_take_hook replace
@@ -237,6 +242,51 @@ extern u32 g_port_steps;
  * window has no turn at a blank (clock.c), a run writes no picture and
  * prints nothing (plan.c, text.c). docs/NETPLAY.md, section 10. */
 extern s32 g_port_rerun;
+
+/* Run-ahead (step.c; docs/PORT.md, "Input lag"): before each step the
+ * host saves the state, runs the next `frames` steps with the input the
+ * step is about to take, and puts the state back. Those steps are drawn
+ * but not heard: the GPU paints and the remastered renderer is given
+ * every command, the sound is mixed but given to nobody, the window has
+ * no turn at a blank but g_port_ahead_blank_hook, a run writes no
+ * picture and prints nothing, a plan's press is not made as the PC's
+ * input, and a memory card's write or the program's end gives them up
+ * (port_GiveUpAhead). The step itself then runs as it would, but the
+ * remastered renderer is not given what it was given already
+ * (g_port_unseen). 0 to PORT_AHEAD_MAX frames; 0 is off. */
+#define PORT_AHEAD_MAX 2
+extern void port_SetRunAhead(s32 frames);
+extern s32 port_GetRunAhead(void);
+/* An ahead step runs (g_port_ahead), and the step after the frames ahead
+ * whose pictures they drew (g_port_unseen). */
+extern s32 g_port_ahead;
+extern s32 g_port_unseen;
+/* Set by g_port_boundary_hook: no frame is run ahead at this boundary
+ * (the window, while the game loads). */
+extern s32 g_port_ahead_held;
+/* The host's turn before a step (main.c): g_port_boundary_hook, then the
+ * frames ahead. */
+extern void port_BeforeStep(void);
+/* A blank in an ahead step (clock.c), and an ahead step stopped where it
+ * is: the state is put back. */
+extern void port_AheadBlank(u32 blank);
+extern void port_GiveUpAhead(void);
+/* The window's: before every step, where it reads the PC's input again;
+ * at a blank of an ahead step; and when the frames ahead are done, with
+ * the state they left still in place. */
+extern void (*g_port_boundary_hook)(void);
+extern void (*g_port_ahead_blank_hook)(u32 blank);
+extern void (*g_port_ahead_done_hook)(void);
+
+typedef struct PortAheadCounts {
+    u32 runs;     /* boundaries the frames were run ahead at */
+    u32 given_up; /* ... and given up at: a load, the movie, a card */
+    u32 ticks;    /* the time all of it took, in the host's ticks */
+} PortAheadCounts;
+
+extern PortAheadCounts g_port_ahead_counts;
+/* What the frames ahead came to, on the error output, as the run ends. */
+extern void port_PrintAheadReport(void);
 
 /* ---- the link cable (src/port/net.c; docs/NETPLAY.md, section 11) ---- */
 

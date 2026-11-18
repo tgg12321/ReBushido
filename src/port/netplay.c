@@ -142,12 +142,14 @@ static s32 g_np_peer_left;
 static u8 *g_np_saves[NETPLAY_SAVES];
 static u32 g_np_save_frames[NETPLAY_SAVES];
 static u32 g_np_save_blanks[NETPLAY_SAVES];
-/* Final hashes, this program's and the other's last. */
+/* The hashes of the frames that are hashed: this program's, final from
+ * g_np_last_final back, the other's as it sent them (each final), and
+ * whether the two of a frame have been compared. */
 static PortNetplayHash g_np_hashes[NETPLAY_HASHES];
-static PortNetplayHash g_np_peer_hash;
+static PortNetplayHash g_np_peer_hashes[NETPLAY_HASHES];
+static u32 g_np_compared[NETPLAY_HASHES];
 static PortNetplayHash g_np_last_final;
 static u32 g_np_hashes_compared;
-static u32 g_np_compared_frame;
 /* The input of the step about to run. */
 static PortInput g_np_input;
 /* A load: the frame after which the next waits for the other's inputs. */
@@ -243,16 +245,22 @@ static void port_NetplaySendInputs(void) {
     g_np_sent_at = now;
 }
 
-/* The other's hash of a frame against this program's own. */
-static void port_NetplayCompareHash(const PortNetplayHash *theirs) {
-    const PortNetplayHash *mine =
-        &g_np_hashes[(theirs->frame / NETPLAY_HASH_EVERY) % NETPLAY_HASHES];
+/* The other's hash of `frame` against this program's own, once both are
+ * final. This program's is not before every input ahead of the frame is
+ * known and the rollback a wrong guess among them asks for is done: a
+ * hash of the other's can come in the datagram, or the burst of them,
+ * that brings the input which shows this program's own to have been made
+ * on a wrong guess (docs/NETPLAY.md, section 12, "Under load"). */
+static void port_NetplayCompareHash(u32 frame) {
+    s32 slot = (s32)((frame / NETPLAY_HASH_EVERY) % NETPLAY_HASHES);
+    const PortNetplayHash *mine = &g_np_hashes[slot];
+    const PortNetplayHash *theirs = &g_np_peer_hashes[slot];
 
-    if (theirs->frame == 0 || mine->frame != theirs->frame ||
-        theirs->frame == g_np_compared_frame) {
+    if (frame == 0 || frame > g_np_last_final.frame || mine->frame != frame ||
+        theirs->frame != frame || g_np_compared[slot] == frame) {
         return;
     }
-    g_np_compared_frame = theirs->frame;
+    g_np_compared[slot] = frame;
     g_np_hashes_compared++;
     if (mine->hash != theirs->hash) {
         port_Log("netplay: DESYNC at frame %u: this program's state hash is "
@@ -295,6 +303,7 @@ static void port_NetplayTake(const u8 *in, s32 bytes) {
     s32 detail;
     u32 first;
     s32 kind = port_NetReadHeader(in, bytes, &detail, &first);
+    PortNetplayHash hash;
     u32 count;
     u32 i;
 
@@ -313,11 +322,15 @@ static void port_NetplayTake(const u8 *in, s32 bytes) {
         g_np_peer_has = port_NetGetWord(in + INPUT_ACK);
     }
     port_NetplayTakeTime(in);
-    g_np_peer_hash.frame = port_NetGetWord(in + INPUT_HASH_FRAME);
-    g_np_peer_hash.hash =
+    hash.frame = port_NetGetWord(in + INPUT_HASH_FRAME);
+    hash.hash =
         port_NetGetWord(in + INPUT_HASH) |
         ((u64)port_NetGetWord(in + INPUT_HASH + WORD_BYTES) << WORD_BITS);
-    port_NetplayCompareHash(&g_np_peer_hash);
+    if (hash.frame != 0 && hash.frame % NETPLAY_HASH_EVERY == 0) {
+        g_np_peer_hashes[(hash.frame / NETPLAY_HASH_EVERY) % NETPLAY_HASHES] =
+            hash;
+        port_NetplayCompareHash(hash.frame);
+    }
     for (i = 0; i < count; i++) {
         u32 frame = first + i;
         u16 input;
@@ -548,7 +561,7 @@ static void port_NetplayFinalHashes(void) {
         g_np_last_final = *hash;
         port_Log("netplay: frame %u hash %08X%08X\n", frame,
                  (u32)(hash->hash >> WORD_BITS), (u32)hash->hash);
-        port_NetplayCompareHash(&g_np_peer_hash);
+        port_NetplayCompareHash(frame);
         frame += NETPLAY_HASH_EVERY;
     }
 }

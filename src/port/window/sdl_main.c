@@ -175,6 +175,8 @@ static const char g_port_window_usage_end[] =
     "--menu-keys WORDS (presses in the settings menu, one a picture: up,\n"
     "down, left, right, accept, back, close, clear, key:NAME, pad:NAME,\n"
     "shot), --menu-shots FOLDER (where shot keeps the window),\n"
+    "--run-ahead 0|1|2 (frames run ahead, whatever the settings say;\n"
+    "with --fast or a picture taken for a test it is 0 unless this says),\n"
     "--profile FILE (where each blank's time went, and when each picture\n"
     "was shown: tools/port_profile.py reads it) and --display-rate N (a\n"
     "display made up of N blanks a second, which a swap waits for).\n";
@@ -595,6 +597,7 @@ int main(int argc, char **argv) {
     s32 aspect_h = -1;
     s32 frame_rate = PORT_FRAME_RATE_ORIGINAL;
     s32 has_frame_rate = 0;
+    s32 run_ahead = -1;
     s32 stage_mesh = -1;
     s32 shadows = -1;
     PortRemasterView view;
@@ -756,6 +759,14 @@ int main(int argc, char **argv) {
                 }
             }
             has_frame_rate = 1;
+        } else if (strcmp(word, "--run-ahead") == 0 && has_value) {
+            const char *how = argv[++i];
+
+            if (how[0] < '0' || how[0] > '0' + PORT_RUN_AHEAD_MAX ||
+                how[1] != 0) {
+                port_Complain("--run-ahead takes 0, 1 or 2, not ", how);
+            }
+            run_ahead = how[0] - '0';
         } else if (strcmp(word, "--tap-frames") == 0 && has_value) {
             options->tap_frames = argv[++i];
         } else if (strcmp(word, "--tap-window") == 0 && has_value) {
@@ -835,6 +846,14 @@ int main(int argc, char **argv) {
     }
     if (has_frame_rate) {
         g_port_settings.frame_rate = frame_rate;
+    }
+    if (run_ahead >= 0) {
+        g_port_settings.run_ahead = run_ahead;
+    } else if (options->is_fast || options->tap_frames != NULL ||
+               options->tap_window != NULL || options->shot_at > 0) {
+        /* a test that holds the window's pictures to the blanks they
+         * were drawn at, unless it asks for frames run ahead */
+        g_port_settings.run_ahead = 0;
     }
     if (stage_mesh >= 0) {
         g_port_settings.stage_mesh = stage_mesh;

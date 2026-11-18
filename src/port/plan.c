@@ -631,9 +631,11 @@ static void port_AddSnap(const char *name, u32 address, u32 size) {
 s32 (*g_port_press_hook)(s32 pad, u32 button, s32 down);
 
 /* A press of the plan's: the pad's button itself, unless the window
- * takes it to press a key or a controller's button for it. */
+ * takes it to press a key or a controller's button for it. A frame run
+ * ahead presses no key: the step itself does, when it runs. */
 static void port_PressPlanButton(s32 pad, u32 button, s32 down) {
-    if (g_port_press_hook == NULL || !g_port_press_hook(pad, button, down)) {
+    if (g_port_press_hook == NULL || g_port_ahead ||
+        !g_port_press_hook(pad, button, down)) {
         port_SetPadButton(pad, button, down);
     }
 }
@@ -986,16 +988,16 @@ static void port_TakeCheckpoints(u32 blank, s32 event) {
             port_PrintValues();
             /* a step run again writes nothing (port_platform.h): the
              * first run of the frame wrote these */
-            if (checkpoint->picture && !g_port_rerun) {
+            if (checkpoint->picture && !g_port_rerun && !g_port_ahead) {
                 port_WriteCheckpointPicture(checkpoint->name);
             }
-            if (checkpoint->snap && !g_port_rerun) {
+            if (checkpoint->snap && !g_port_rerun && !g_port_ahead) {
                 port_WriteSnaps(checkpoint->name, checkpoint->snaps);
             }
-            if (checkpoint->vram && !g_port_rerun) {
+            if (checkpoint->vram && !g_port_rerun && !g_port_ahead) {
                 port_WriteCheckpointVram(checkpoint->name);
             }
-            if (checkpoint->spu && !g_port_rerun) {
+            if (checkpoint->spu && !g_port_rerun && !g_port_ahead) {
                 port_WriteCheckpointSpu(checkpoint->name);
             }
             /* the list of calls ends here, and this one's begins */
@@ -1086,7 +1088,7 @@ void port_OnBlank(u32 blank) {
     port_PressButtons(0, blank);
     port_ApplyPokes(blank);
     if (g_port_shots_folder != NULL && blank % g_port_shots_every == 0 &&
-        !g_port_rerun) {
+        !g_port_rerun && !g_port_ahead) {
         port_WriteBlankPicture(blank);
     }
     if (g_port_trace) {

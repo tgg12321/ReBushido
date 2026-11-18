@@ -382,6 +382,11 @@ static s32 port_CardReadImage(
  * next. A card in memory keeps them there and writes no file. */
 static s32 port_CardWriteImage(
     PortCardSlot *slot, u32 at, const void *bytes, u32 count) {
+    /* the file is outside the state, so a frame run ahead writes none:
+     * it stops here, and the step itself writes it (port_platform.h) */
+    if (g_port_ahead) {
+        port_GiveUpAhead();
+    }
     if (slot->in_memory) {
         if (at > PORT_CARD_IMAGE_SIZE || count > PORT_CARD_IMAGE_SIZE - at) {
             return 0;

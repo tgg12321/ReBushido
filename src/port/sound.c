@@ -480,6 +480,11 @@ static void port_MixSound(u32 frames) {
         }
         return;
     }
+    /* a frame run ahead is mixed and heard by nobody: the step itself is
+     * heard when it runs */
+    if (g_port_ahead) {
+        return;
+    }
     if (music == NULL) {
         heard = out;
     }

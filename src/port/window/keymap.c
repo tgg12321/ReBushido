@@ -50,6 +50,13 @@ const char g_port_default_settings[] =
     "fps = on               # on or off: the counter in the corner (F3)\n"
     "fps_corner = top-left  # top-left, top-right, bottom-left,\n"
     "                       # bottom-right\n"
+    "run_ahead = 2          # 0, 1 or 2: frames run ahead and put back,\n"
+    "                       # so that a press is seen that many of the\n"
+    "                       # game's frames sooner; what the game\n"
+    "                       # computes is the same\n"
+    "low_latency = on       # on: each picture waits for the card, so\n"
+    "                       # none queues behind another; off lets the\n"
+    "                       # driver queue them\n"
     "\n"
     "# The remastered picture (F2 changes picture while the game runs).\n"
     "# These four are a run's: changing one means starting it again.\n"
@@ -600,6 +607,19 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "fps is on or off";
     }
+    if (port_WordsMatch(name, "run_ahead")) {
+        if (!port_ReadDigits(value, &number) || number < 0 ||
+            number > PORT_RUN_AHEAD_MAX) {
+            return "run_ahead is 0, 1 or 2";
+        }
+        settings->run_ahead = number;
+        return NULL;
+    }
+    if (port_WordsMatch(name, "low_latency")) {
+        return port_ReadChoice(value, "off", "on", &settings->low_latency)
+                   ? NULL
+                   : "low_latency is on or off";
+    }
     if (port_WordsMatch(name, "fps_corner")) {
         static const char * const corners[] = {
             "top-left", "top-right", "bottom-left", "bottom-right"};
@@ -871,6 +891,10 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->deadzone = PORT_DEADZONE_DEFAULT;
     settings->fps = 1;
     settings->fps_corner = PORT_CORNER_TOP_LEFT;
+    /* a press seen two frames sooner, and no picture queued behind
+     * another (docs/PORT.md, "Input lag") */
+    settings->run_ahead = PORT_RUN_AHEAD_DEFAULT;
+    settings->low_latency = 1;
     /* every new feature on in the builds the owner plays (2026-11-17) */
     settings->graphics = PORT_GRAPHICS_REMASTERED;
     settings->resolution = PORT_RESOLUTION_WINDOW;

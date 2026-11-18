@@ -147,7 +147,7 @@ void (*g_port_disc_hook)(s32 kind, u32 sector);
 s32 g_port_load_wait;
 
 static void port_CdStopMoving(void) {
-    if (g_port_cd.reading && g_port_disc_hook != NULL) {
+    if (g_port_cd.reading && g_port_disc_hook != NULL && !g_port_ahead) {
         g_port_disc_hook(0, (u32)g_port_cd.next_sector);
     }
     g_port_cd.position = port_CdNowAt();
@@ -278,7 +278,7 @@ static s32 port_CdCommand(u8 com, const u8 *argument) {
             g_port_cd.reading = 1;
             g_port_cd.next_sector = g_port_cd.position;
         }
-        if (g_port_disc_hook != NULL) {
+        if (g_port_disc_hook != NULL && !g_port_ahead) {
             g_port_disc_hook(
                 (g_port_cd.mode & CdlModeRT) ? 2 : 1, (u32)g_port_cd.position);
         }

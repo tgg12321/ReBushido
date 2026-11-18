@@ -252,6 +252,23 @@ static u32 g_port_pad_changes;
 /* What the pads are not given until it is let go: what was held as the
  * settings menu closed, and the Select that opened it (sdl_menu.c). */
 static u32 g_port_held_back[PORT_PADS];
+/* --inject: a plan's presses, made as the PC's input at the next read of
+ * the events at a blank (port_ReadInput), as they always were, and never
+ * at the read just before the game takes its input */
+#define INJECT_WAITING_MAX 64
+
+typedef struct {
+    s32 pad;
+    u32 button;
+    s32 down;
+} PortInjectWaiting;
+
+static PortInjectWaiting g_port_inject_waiting[INJECT_WAITING_MAX];
+static s32 g_port_inject_waiting_count;
+/* Run-ahead (step.c; docs/PORT.md, "Input lag"): the display the frames
+ * run ahead left, which is what is shown while the step itself runs; its
+ * pixels are in g_port_frame. */
+static PortDisplay g_port_ahead_display;
 /* The settings menu's own texture, where SDL's renderer draws. */
 static SDL_Texture *g_port_menu_texture;
 static s32 g_port_menu_texture_w;
@@ -259,6 +276,7 @@ static s32 g_port_menu_texture_h;
 
 static void port_SwapPicture(void);
 static void port_ReadInput(u32 blank);
+static void port_ShownDisplay(PortDisplay *display);
 
 /* ---- names ---- */
 
@@ -1088,7 +1106,7 @@ static void port_RemasterShape(s32 *across, s32 *down) {
     PortRemasterView view;
     s32 margin;
 
-    port_GetDisplay(&display);
+    port_ShownDisplay(&display);
     port_RemasterGetView(&view);
     margin = port_RemasterMargin(display.w, view.aspect_w, view.aspect_h);
     *across = PORT_PICTURE_ASPECT_W * (display.w + 2 * margin);
@@ -1137,7 +1155,7 @@ static s32 port_ShowsRemastered(void) {
     if (!g_port_has_gl || !port_RemasterIsOn()) {
         return FALSE;
     }
-    port_GetDisplay(&display);
+    port_ShownDisplay(&display);
     if (port_MovieIsPlaying()) {
         return !display.is_rgb24 && port_GlShowsReplacedPicture();
     }
@@ -1300,7 +1318,7 @@ static void port_DrawPicture(u32 blank, s32 may_tap) {
     s32 window_h = 0;
     s32 is_tapped;
 
-    port_GetDisplay(&display);
+    port_ShownDisplay(&display);
     w = display.w < PORT_PICTURE_WIDTH_MAX ? display.w : PORT_PICTURE_WIDTH_MAX;
     h = display.h < PORT_PICTURE_HEIGHT_MAX
             ? display.h
@@ -1320,9 +1338,13 @@ static void port_DrawPicture(u32 blank, s32 may_tap) {
      * use for it */
     is_tapped = may_tap && g_port_window_options.tap_frames != NULL &&
                 blank % (u32)g_port_window_options.tap_every == 0;
+    /* where the frames were run ahead, g_port_frame holds what they left
+     * (port_AheadDone) */
     if (is_tapped) {
-        port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
-                            display.is_rgb24, g_port_frame);
+        if (!g_port_unseen) {
+            port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
+                                display.is_rgb24, g_port_frame);
+        }
         port_TapFrame(blank, w, h, display.is_on);
     }
     if (!display.is_on) {
@@ -1332,7 +1354,7 @@ static void port_DrawPicture(u32 blank, s32 may_tap) {
         port_ShowRemastered(window_w, window_h)) {
         return;
     }
-    if (!is_tapped) {
+    if (!is_tapped && !g_port_unseen) {
         port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
                             display.is_rgb24, g_port_frame);
     }
@@ -1847,6 +1869,8 @@ void port_WindowApplyChoice(s32 choice) {
         port_GlSetOptions(&options);
     } else if (strcmp(name, "music_mods") == 0) {
         port_MusicSetOn(g_port_settings.music_mods);
+    } else if (strcmp(name, "run_ahead") == 0) {
+        port_SetRunAhead(g_port_settings.run_ahead);
     }
     /* the picture's size and filter on the card, the resolution, the
      * counter's corner and the dead zone are read each time they are
@@ -1942,7 +1966,7 @@ static void port_TakeKey(const SDL_KeyboardEvent *key) {
 /* A plan's press, made as the PC's own input (port_platform.h): a key
  * event, or a button or an axis of a controller of SDL's making. The
  * events are read at the same blank, before the pads are filled. */
-static s32 port_InjectPress(s32 pad, u32 button, s32 down) {
+static void port_MakePress(s32 pad, u32 button, s32 down) {
     s32 keys = g_port_window_options.inject == PORT_INJECT_KEYS;
     const PortBinding *binding =
         port_FindBinding(&g_port_settings, keys, pad, button);
@@ -1994,17 +2018,34 @@ static s32 port_InjectPress(s32 pad, u32 button, s32 down) {
         }
     }
     g_port_injected++;
+}
+
+/* ... kept until the events are next read at a blank: a press of a
+ * plan's frame is made as the frame begins, after the blank and before
+ * the game takes its input, where the window reads the events again
+ * (port_ReadInputLate) and would have it a frame sooner than the plan
+ * says. */
+static s32 port_InjectPress(s32 pad, u32 button, s32 down) {
+    PortInjectWaiting *waiting;
+
+    if (g_port_inject_waiting_count >= INJECT_WAITING_MAX) {
+        port_Say(
+            "--inject: more than %d presses at one blank", INJECT_WAITING_MAX);
+        port_Quit(PORT_EXIT_FAILED);
+    }
+    waiting = &g_port_inject_waiting[g_port_inject_waiting_count++];
+    waiting->pad = pad;
+    waiting->button = button;
+    waiting->down = down;
     return 1;
 }
 
-/* A vertical blank, before the pads are filled (port_platform.h). */
-static void port_ReadInput(u32 blank) {
+/* The events SDL has, read: the keys and controllers' state, and the
+ * window's own keys. */
+static void port_ReadEvents(void) {
     SDL_Event event;
     s32 pad;
-    s32 was = port_ProfileSwitch(PORT_PROFILE_WINDOW);
 
-    (void)blank;
-    port_OpenWindow();
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
         case SDL_QUIT:
@@ -2046,8 +2087,121 @@ static void port_ReadInput(u32 blank) {
             break;
         }
     }
+}
+
+/* A vertical blank, before the pads are filled (port_platform.h). */
+static void port_ReadInput(u32 blank) {
+    s32 was = port_ProfileSwitch(PORT_PROFILE_WINDOW);
+    s32 i;
+
+    (void)blank;
+    port_OpenWindow();
+    for (i = 0; i < g_port_inject_waiting_count; i++) {
+        const PortInjectWaiting *waiting = &g_port_inject_waiting[i];
+
+        port_MakePress(waiting->pad, waiting->button, waiting->down);
+    }
+    g_port_inject_waiting_count = 0;
+    port_ReadEvents();
     port_SendPads();
     port_ProfileSwitch(was);
+}
+
+/* Just before the game takes its input, at a frame's boundary
+ * (port_platform.h): the events read again, and what the keys and
+ * controllers hold now put into the input the pads' driver read at the
+ * blank, the plan's buttons as they were then. A press is taken up to a
+ * blank sooner: in a fight the driver's read was a whole blank before
+ * the game takes it, the window's wait for the blank's time between
+ * them (docs/PORT.md, "Input lag"). */
+static void port_ReadInputLate(void) {
+    s32 was;
+
+    if (!g_port_is_open) {
+        return;
+    }
+    was = port_ProfileSwitch(PORT_PROFILE_WINDOW);
+    port_ReadEvents();
+    port_SendPads();
+    port_ReadDevicesNow();
+    /* in a load, no frame is run ahead across it (step.c) */
+    g_port_ahead_held = port_LoadKind() != PORT_LOAD_NONE;
+    if (g_port_has_gl && g_port_tween_on && port_GetRunAhead() > 0) {
+        /* The pictures between frames put back into the card's mirror of
+         * video memory what video memory holds at their blank, which,
+         * with frames run ahead, is a frame or two behind the frames the
+         * card draws; the step after them tells the card nothing. So the
+         * mirror is sent video memory as it is now, before the frames are
+         * run ahead and their writes go over it. */
+        port_ProfileSwitch(PORT_PROFILE_CARD);
+        port_GlUploadVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
+    }
+    port_ProfileSwitch(was);
+}
+
+/* ---- the frames run ahead (step.c) ---- */
+
+/* A blank of a frame run ahead: the card's frame is ended there as at
+ * any blank, so that each frame the game draws ahead is one of the
+ * card's and of the pictures between frames, and nothing is shown. */
+static void port_AheadBlankTurn(u32 blank) {
+    (void)blank;
+    /* no frame is run ahead into a load: its blanks are the step's own,
+     * hurried through or paced (quick_loading), and stop the frames
+     * ahead where it begins */
+    if (port_LoadKind() != PORT_LOAD_NONE) {
+        port_GiveUpAhead();
+        return;
+    }
+    if (g_port_has_gl) {
+        s32 was = port_ProfileSwitch(PORT_PROFILE_FINISH);
+
+        port_RemasterShow();
+        port_GlFinishFrame();
+        port_ProfileSwitch(was);
+    }
+}
+
+/* The frames ahead are done, their state still in place: the display
+ * they left is kept, with its pixels, and the card's frame is ended with
+ * it, so that while the step itself runs the window shows what the
+ * display will hold that many frames on. */
+static void port_AheadDone(void) {
+    PortDisplay *display = &g_port_ahead_display;
+    s32 w;
+    s32 h;
+
+    port_GetDisplay(display);
+    if (g_port_has_gl) {
+        s32 was = port_ProfileSwitch(PORT_PROFILE_FINISH);
+
+        port_RemasterShow();
+        port_GlFinishFrame();
+        port_ProfileSwitch(was);
+    }
+    w = display->w < PORT_PICTURE_WIDTH_MAX
+            ? display->w
+            : PORT_PICTURE_WIDTH_MAX;
+    h = display->h < PORT_PICTURE_HEIGHT_MAX
+            ? display->h
+            : PORT_PICTURE_HEIGHT_MAX;
+    if (display->is_on && w > 0 && h > 0) {
+        s32 was = port_ProfileSwitch(PORT_PROFILE_PICTURE);
+
+        port_ConvertDisplay(g_port_vram, display->x, display->y, w, h,
+                            display->is_rgb24, g_port_frame);
+        port_ProfileSwitch(was);
+    }
+}
+
+/* The display the window shows: the frames run ahead left it, where they
+ * were run before this step, and otherwise it is the console's own. */
+static void port_ShownDisplay(PortDisplay *display) {
+    if (g_port_unseen) {
+        *display = g_port_ahead_display;
+    } else {
+        port_GetDisplay(display);
+    }
 }
 
 /* ---- the pictures of one blank ---- */
@@ -2061,6 +2215,13 @@ static void port_SwapPicture(void) {
     }
     if (g_port_has_gl) {
         SDL_GL_SwapWindow(g_port_window);
+        if (g_port_vsync && g_port_settings.low_latency) {
+            /* `low_latency`: back only once the card has drawn it all and
+             * the swap is made, so that the next picture is begun from
+             * when this one went up and none waits in the driver's queue
+             * behind another (docs/PORT.md, "Input lag") */
+            port_GlWaitForCard();
+        }
     } else {
         SDL_RenderPresent(g_port_renderer);
     }
@@ -2323,7 +2484,9 @@ static void port_FollowLoad(u32 blank, s32 kind, s32 is_hurried) {
  * ever (the card is given the frame, the log follows), but nothing waits
  * for the PC's clock, and a picture is shown only now and then. */
 static void port_HurryBlank(u32 blank) {
-    if (g_port_has_gl) {
+    /* where the frames were run ahead, the card's frame was ended as they
+     * ended (port_AheadDone) */
+    if (g_port_has_gl && !g_port_unseen) {
         port_ProfileSwitch(PORT_PROFILE_FINISH);
         port_RemasterShow();
         port_GlFinishFrame();
@@ -2384,8 +2547,12 @@ static void port_ShowBlank(u32 blank) {
         const char *news;
 
         port_ProfileSwitch(PORT_PROFILE_FINISH);
-        port_RemasterShow();
-        port_GlFinishFrame();
+        /* where the frames were run ahead, the card's frame was ended as
+         * they ended, with the display they left (port_AheadDone) */
+        if (!g_port_unseen) {
+            port_RemasterShow();
+            port_GlFinishFrame();
+        }
         port_ProfileSwitch(PORT_PROFILE_WINDOW);
         port_GlNoteFrameTime((SDL_GetTicks() - started) * MILLISECONDS);
         /* which path the stage's ground takes (gl_stage.h) */
@@ -2569,5 +2736,9 @@ void port_StartWindow(void) {
     if (g_port_window_options.inject != PORT_INJECT_NONE) {
         g_port_press_hook = port_InjectPress;
     }
+    g_port_boundary_hook = port_ReadInputLate;
+    g_port_ahead_blank_hook = port_AheadBlankTurn;
+    g_port_ahead_done_hook = port_AheadDone;
+    port_SetRunAhead(g_port_settings.run_ahead);
     port_StartNetWindow();
 }

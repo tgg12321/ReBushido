@@ -248,7 +248,8 @@ static void test_Choices(void) {
             {"deadzone", 2},      {"sky", 1},
             {"see_through", 1},   {"fighter_models", 1},
             {"quick_loading", 1}, {"smooth_light", 1},
-            {"effects", 2},       {"stage_props_mesh", 1},
+            {"effects", 2},       {"run_ahead", 2},
+            {"low_latency", 1},   {"stage_props_mesh", 1},
         };
 
         u32 i;
