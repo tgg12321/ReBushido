@@ -159,6 +159,7 @@ extern void port_GlRestoreVram(s32 x, s32 y, s32 w, s32 h);
  * FALSE from GiveBack where what was changed was too much to keep: the
  * caller then puts the rectangles back as before (port_GlRestoreVram). */
 extern s32 port_GlMirrorHold(void);
+extern s32 port_GlMirrorGiveBack(void);
 
 /* **The mirror is a buffer**, which the card reads as a texture of 16-bit
  * words, a line of video memory after another: `vram_texture` of
@@ -178,9 +179,8 @@ extern s32 port_GlMirrorHold(void);
 #define PORT_GL_VRAM_SHADER                                                    \
     "uniform usamplerBuffer u_vram;\n"                                         \
     "uint vram(int x, int y) {\n"                                              \
-    "    return texelFetch(u_vram, ((y & 511) << 10) | (x & 1023)).r;\n"      \
+    "    return texelFetch(u_vram, ((y & 511) << 10) | (x & 1023)).r;\n"       \
     "}\n"
-extern s32 port_GlMirrorGiveBack(void);
 
 /* The counts of the frame being drawn (vertices, draws, pixels of the
  * mirror sent, triangles left out), kept aside and put back: a picture

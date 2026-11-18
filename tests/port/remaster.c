@@ -19,6 +19,7 @@ s32 g_port_rerun;
 s32 g_port_ahead;
 s32 g_port_ahead_unpainted;
 s32 g_port_unseen;
+s32 g_port_ahead_kept;
 
 /* ---- what those files want of the rest of the port ---- */
 

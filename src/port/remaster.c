@@ -2217,6 +2217,9 @@ void port_RemasterCommand(const u32 *words, s32 count) {
     }
 }
 
+/* A load from the program into video memory (port_remaster.h): drawn in
+ * its turn, or, in a frame the card does not draw (g_port_ahead_kept),
+ * kept in the mirror alone. */
 void port_RemasterLoadedVram(s32 x, s32 y, s32 w, s32 h) {
     /* told by the steps run ahead already (port_RemasterCommand) */
     if (g_backend == NULL || !port_RemasterIsOn() || g_port_unseen) {

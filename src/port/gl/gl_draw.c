@@ -250,6 +250,7 @@ typedef struct {
     GLuint slot_samples;
     GLuint slot_one;
 } PortGlTargets;
+
 /* What a picture between two frames changed of the copy of video memory
  * here, kept to be put back (port_GlMirrorHold): rows of rectangles, and
  * their pixels as they were. A picture writes again what its frame wrote,
@@ -824,9 +825,7 @@ static const char g_gl_geometry_text[] =
     "}\n";
 
 static const char g_gl_fragment_text[] =
-    "#version 330 core\n"
-    PORT_GL_VRAM_SHADER
-    "uniform vec2 u_target;\n"
+    "#version 330 core\n" PORT_GL_VRAM_SHADER "uniform vec2 u_target;\n"
     "uniform vec2 u_scale;\n"
     "uniform int u_affine;\n" /* the texture flat, as the console */
     "uniform int u_exact;\n"  /* five bits a channel, with the dither */
@@ -1264,8 +1263,7 @@ static const char g_gl_blit_vertex_text[] =
     "}\n";
 
 static const char g_gl_blit_fragment_text[] =
-    "#version 330 core\n"
-    PORT_GL_VRAM_SHADER
+    "#version 330 core\n" PORT_GL_VRAM_SHADER
     /* a mod's picture in the place of the rectangle (gl_replace.h) */
     "uniform sampler2D u_replace;\n"
     "uniform int u_replaced;\n"
@@ -1778,9 +1776,9 @@ static void port_GlKeepMirrorRect(const PortDirtyRect *rect) {
         g_gl.mirror_rect[g_gl.mirror_rects++] = *rect;
         return;
     }
-    port_AddDirtyRect(&g_gl.mirror_rect[best], rect->left, rect->top,
-                      rect->right - rect->left + 1,
-                      rect->bottom - rect->top + 1);
+    port_AddDirtyRect(
+        &g_gl.mirror_rect[best], rect->left, rect->top,
+        rect->right - rect->left + 1, rect->bottom - rect->top + 1);
 }
 
 /* A row of the copy here, from `left` to `right`, as it is before a picture
@@ -3047,8 +3045,7 @@ static void port_GlEnd(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24) {
 }
 
 static const PortRemasterBackend g_gl_backend = {
-    port_GlBegin, port_GlDraw, port_GlWroteVram, port_GlEnd,
-    port_GlUploadVram};
+    port_GlBegin, port_GlDraw, port_GlWroteVram, port_GlEnd, port_GlUploadVram};
 
 const PortRemasterBackend *port_GlBackend(void) { return &g_gl_backend; }
 
@@ -3108,8 +3105,8 @@ s32 port_GlMirrorGiveBack(void) {
         memcpy(&g_gl.staged[one->top * PORT_VRAM_WIDTH + one->left],
                &g_gl.undo[g_gl.undo_at[i]],
                (size_t)(one->right - one->left + 1) * sizeof(u16));
-        port_AddDirtyRect(&g_gl.mirror, one->left, one->top,
-                          one->right - one->left + 1, 1);
+        port_AddDirtyRect(
+            &g_gl.mirror, one->left, one->top, one->right - one->left + 1, 1);
         port_GlKeepMirrorRect(one);
     }
     port_GlUploadMirror();
@@ -3389,9 +3386,9 @@ const char *port_GlStart(
     /* the mirror (gl.h, PORT_GL_VRAM_SHADER) */
     glGenBuffers(1, &g_gl.vram_buffer);
     glBindBuffer(GL_TEXTURE_BUFFER, g_gl.vram_buffer);
-    glBufferData(GL_TEXTURE_BUFFER,
-                 (GLsizeiptr)(PORT_VRAM_PIXELS * sizeof(u16)), NULL,
-                 GL_DYNAMIC_DRAW);
+    glBufferData(
+        GL_TEXTURE_BUFFER, (GLsizeiptr)(PORT_VRAM_PIXELS * sizeof(u16)), NULL,
+        GL_DYNAMIC_DRAW);
     glGenTextures(1, &g_gl.vram_texture);
     glBindTexture(GL_TEXTURE_BUFFER, g_gl.vram_texture);
     glTexBuffer(GL_TEXTURE_BUFFER, GL_R16UI, g_gl.vram_buffer);

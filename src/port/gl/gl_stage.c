@@ -569,8 +569,7 @@ static const char g_stage_vertex_text[] =
 static const char g_stage_fragment_text[] =
     "#version 400 core\n"
     /* the picture's samples a pixel (gl.h, PortGlPicture.samples) */
-    "uniform int u_samples;\n"
-    PORT_GL_VRAM_SHADER
+    "uniform int u_samples;\n" PORT_GL_VRAM_SHADER
     "uniform uvec4 u_window;\n" /* the texture window, and or or */
     "uniform int u_fog_levels;\n"
     "uniform int u_fog_slot[32];\n"
