@@ -5,6 +5,7 @@
 
 #include "common.h"
 #include "gl_load.h"
+#include "port_host.h"
 #include "port_png.h"
 
 #define RGBA 4
@@ -199,8 +200,17 @@ s32 port_GlLoadAsk(const PortGlLoad *asked) {
     return TRUE;
 }
 
+/* How long a frame's collecting may go on after its first picture, in
+ * the host's ticks: 2 ms. Bytes alone did not hold it: forty of the ui
+ * mod's small pictures came in one blank of the top menu, each its own
+ * texture and mipmaps made, and the blank took 44 to 58 ms on an RTX
+ * 3090, most of it waiting on the driver. A picture held back comes a
+ * frame later. Not where everything is asked for (port_GlLoadFinish). */
+#define LOAD_TICKS_A_FRAME (2000 * PORT_HOST_TICKS_PER_MICROSECOND)
+
 void port_GlLoadCollect(u32 bytes) {
     u32 sent = 0;
+    u32 started = port_HostTicks();
 
     if (!g_load.is_beside) {
         return;
@@ -225,6 +235,10 @@ void port_GlLoadCollect(u32 bytes) {
         sent += load->is_loaded ? (u32)load->w * (u32)load->h * RGBA : 1;
         free(load->pixels);
         free(load);
+        if (bytes != 0xFFFFFFFFU &&
+            port_HostTicks() - started > (u32)LOAD_TICKS_A_FRAME) {
+            return;
+        }
     }
 }
 
