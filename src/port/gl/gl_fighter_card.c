@@ -322,8 +322,8 @@ static const char g_sort_text[] = CARD_VERSION
  * 30 KB three did, and each waited on memory with nothing to run beside
  * it; 512, 12 KB, was a tenth slower on an RTX 3090, though only 0.5% of
  * the places' 27 cubes hold more than 512). Those that hold more are
- * walked in the body itself (cache_cubes leaves s_cached -1); cache_start, at the
- * start of a group's work, says nothing is kept yet. */
+ * walked in the body itself (cache_cubes leaves s_cached -1); cache_start, at
+ * the start of a group's work, says nothing is kept yet. */
 #define CARD_GROUP_TEXT "layout(local_size_x = 32) in;\n"
 #define CARD_BODY_TEXT                                                              \
     "layout(std430, binding = 1) readonly buffer Posed { vec4 posed[]; };\n"        \
