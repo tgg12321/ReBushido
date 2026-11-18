@@ -94,8 +94,18 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_BLEND 0x0BE2
 #define GL_SCISSOR_TEST 0x0C11
 #define GL_POLYGON_OFFSET_FILL 0x8037
+#define GL_TEXTURE_2D_MULTISAMPLE 0x9100
+#define GL_SRC_ALPHA 0x0302
+#define GL_ONE_MINUS_SRC_ALPHA 0x0303
+#define GL_FUNC_ADD 0x8006
 
 #define PORT_GL_FIGHTER_FUNCTIONS                                              \
+    GL(void, glTexImage2DMultisample,                                          \
+       (GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLboolean))                 \
+    GL(void, glBlendFunc, (GLenum, GLenum))                                    \
+    GL(void, glBlendEquation, (GLenum))                                        \
+    GL(void, glRenderbufferStorageMultisample,                                 \
+       (GLenum, GLsizei, GLenum, GLsizei, GLsizei))                            \
     GL(void, glViewport, (GLint, GLint, GLsizei, GLsizei))                     \
     GL(void, glScissor, (GLint, GLint, GLsizei, GLsizei))                      \
     GL(void, glEnable, (GLenum))                                               \
@@ -266,6 +276,16 @@ typedef struct {
     GLuint depth;
     s32 w;
     s32 h;
+    /* Where the picture is multisampled (PortGlPicture.samples), the
+     * models are drawn into these, as many samples a pixel, and taken
+     * down into the three above before they are laid over the picture
+     * (port_GlFighterTakeDown), so that what reads the layer reads one
+     * value a pixel as before and a fighter's edge is still smoothed. */
+    GLuint multi_framebuffer;
+    GLuint multi_color;
+    GLuint multi_depth_value;
+    GLuint multi_depth;
+    s32 samples;
 } FighterLayer;
 
 /* The tiny models' files, `T00` to `T26` (g_model_tiny_ids). */
@@ -281,6 +301,12 @@ static struct {
     char folder[512];
     GLuint program;
     GLuint composite_program;
+    GLuint take_down_program;
+    GLint t_at_color;
+    GLint t_at_depth;
+    GLint t_at_samples;
+    GLint t_at_far;
+    GLint c_at_soft;
     GLuint quad_array;
     GLuint quad_buffer;
     FighterLayer layer[LAYERS];
@@ -541,6 +567,10 @@ static const char g_composite_vertex_text[] =
 
 static const char g_composite_fragment_text[] =
     "#version 330 core\n"
+    /* 1: the layer was taken down from several samples a pixel, and its
+     * alpha is how much of a pixel the models cover (port_GlFighterTakeDown):
+     * an edge is mixed over the picture by it */
+    "uniform int u_soft;\n"
     "uniform sampler2D u_layer;\n"
     "uniform sampler2D u_layer_depth;\n"
     "uniform usampler2D u_ground_slots;\n"
@@ -562,7 +592,7 @@ static const char g_composite_fragment_text[] =
     "void main() {\n"
     "    ivec2 at = ivec2(gl_FragCoord.xy - u_origin);\n"
     "    vec4 c = texelFetch(u_layer, at, 0);\n"
-    "    if (c.a < 0.5) { discard; }\n"
+    "    if (c.a < (u_soft != 0 ? 0.01 : 0.5)) { discard; }\n"
     "    float deep = texelFetch(u_layer_depth, at, 0).r;\n"
     /* held against the ground's mesh by the slots, as the game's own
      * primitives of a fighter are (gl_draw.c, port_GlIsOverGround) */
@@ -571,9 +601,47 @@ static const char g_composite_fragment_text[] =
     "            < uint(slot_of(int(clamp(deep, 0.0, 1048575.0))))) {\n"
     "        discard;\n"
     "    }\n"
-    "    o_color = vec4(c.rgb, 1.0);\n"
+    "    o_color = vec4(c.rgb, u_soft != 0 ? c.a : 1.0);\n"
     /* what the scene paints after this is held against the fighter */
     "    gl_FragDepth = clamp(deep / u_depth_range, 0.0, 1.0);\n"
+    "}\n";
+
+/* The layer of several samples a pixel taken down to one: the colour the
+ * average of the samples the models cover, the alpha the share of them
+ * they cover, and the depth the nearest of theirs (the far plane where
+ * they cover none). */
+static const char g_take_down_vertex_text[] =
+    "#version 330 core\n"
+    "layout(location = 0) in vec2 a_corner;\n"
+    "void main() {\n"
+    "    gl_Position = vec4(a_corner * 2.0 - vec2(1.0), 0.0, 1.0);\n"
+    "}\n";
+
+static const char g_take_down_fragment_text[] =
+    "#version 330 core\n"
+    "uniform sampler2DMS u_color;\n"
+    "uniform sampler2DMS u_depth;\n"
+    "uniform int u_samples;\n"
+    "uniform float u_far;\n"
+    "layout(location = 0) out vec4 o_color;\n"
+    "layout(location = 1) out float o_depth;\n"
+    "void main() {\n"
+    "    ivec2 at = ivec2(gl_FragCoord.xy);\n"
+    "    vec3 sum = vec3(0.0);\n"
+    "    float covered = 0.0;\n"
+    "    float nearest = u_far;\n"
+    "    for (int i = 0; i < u_samples; i++) {\n"
+    "        vec4 c = texelFetch(u_color, at, i);\n"
+    "        if (c.a >= 0.5) {\n"
+    "            sum += c.rgb;\n"
+    "            covered += 1.0;\n"
+    "            nearest = min(nearest, texelFetch(u_depth, at, i).r);\n"
+    "        }\n"
+    "    }\n"
+    "    o_color = covered > 0.0\n"
+    "        ? vec4(sum / covered, covered / float(u_samples))\n"
+    "        : vec4(0.0);\n"
+    "    o_depth = nearest;\n"
     "}\n";
 
 /* ---- starting ---- */
@@ -644,7 +712,10 @@ const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
         port_GlFighterProgram(g_fighter_vertex_text, g_fighter_fragment_text);
     g_fighter.composite_program = port_GlFighterProgram(
         g_composite_vertex_text, g_composite_fragment_text);
-    if (g_fighter.program == 0 || g_fighter.composite_program == 0) {
+    g_fighter.take_down_program = port_GlFighterProgram(
+        g_take_down_vertex_text, g_take_down_fragment_text);
+    if (g_fighter.program == 0 || g_fighter.composite_program == 0 ||
+        g_fighter.take_down_program == 0) {
         return g_fighter.problem;
     }
 #define AT(member, name)                                                       \
@@ -678,6 +749,14 @@ const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
     AT(c_at_rect, "u_rect");
     AT(c_at_target, "u_target");
     AT(c_at_depth_range, "u_depth_range");
+    AT(c_at_soft, "u_soft");
+#undef AT
+#define AT(member, name)                                                       \
+    g_fighter.member = glGetUniformLocation(g_fighter.take_down_program, name)
+    AT(t_at_color, "u_color");
+    AT(t_at_depth, "u_depth");
+    AT(t_at_samples, "u_samples");
+    AT(t_at_far, "u_far");
 #undef AT
     glGenVertexArrays(1, &g_fighter.quad_array);
     glGenBuffers(1, &g_fighter.quad_buffer);
@@ -698,6 +777,10 @@ const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
             glGenTextures(1, &layer->color);
             glGenTextures(1, &layer->depth_value);
             glGenRenderbuffers(1, &layer->depth);
+            glGenFramebuffers(1, &layer->multi_framebuffer);
+            glGenTextures(1, &layer->multi_color);
+            glGenTextures(1, &layer->multi_depth_value);
+            glGenRenderbuffers(1, &layer->multi_depth);
         }
     }
     glGenTextures(PLACES, g_fighter.palette_texture);
@@ -1166,12 +1249,59 @@ static void port_GlFighterPoseOf(FighterPose *pose, const PortFighterView *a,
     pose->back = t < 0.5 ? a->back : b->back;
 }
 
-/* A layer the models are drawn into: at least `w` by `h`. */
-static s32 port_GlFighterLayer(FighterLayer *layer, s32 w, s32 h) {
+/* The layer's buffers of `samples` samples a pixel, `w` by `h`, and the
+ * framebuffer of them bound. */
+static s32 port_GlFighterMultiLayer(
+    FighterLayer *layer, s32 w, s32 h, s32 samples) {
     static const GLenum both[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
 
-    if (w <= layer->w && h <= layer->h) {
-        glBindFramebuffer(GL_FRAMEBUFFER, layer->framebuffer);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, layer->multi_color);
+    glTexImage2DMultisample(
+        GL_TEXTURE_2D_MULTISAMPLE, samples, GL_RGBA8, w, h, GL_TRUE);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, layer->multi_depth_value);
+    glTexImage2DMultisample(
+        GL_TEXTURE_2D_MULTISAMPLE, samples, GL_R32F, w, h, GL_TRUE);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
+    glBindRenderbuffer(GL_RENDERBUFFER, layer->multi_depth);
+    glRenderbufferStorageMultisample(
+        GL_RENDERBUFFER, samples, GL_DEPTH_COMPONENT24, w, h);
+    glBindFramebuffer(GL_FRAMEBUFFER, layer->multi_framebuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                           GL_TEXTURE_2D_MULTISAMPLE, layer->multi_color, 0);
+    glFramebufferTexture2D(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D_MULTISAMPLE,
+        layer->multi_depth_value, 0);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                              GL_RENDERBUFFER, layer->multi_depth);
+    glDrawBuffers(2, both);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        port_GlFighterSay(
+            "the fighters' layer of several samples cannot be drawn into",
+            NULL);
+        layer->samples = 0;
+        return FALSE;
+    }
+    layer->samples = samples;
+    return TRUE;
+}
+
+/* A layer the models are drawn into: at least `w` by `h`, with `samples`
+ * samples a pixel (more than one: port_GlFighterTakeDown before it is
+ * read). */
+static s32 port_GlFighterLayer(FighterLayer *layer, s32 w, s32 h, s32 samples) {
+    static const GLenum both[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+
+    if (samples < 2) {
+        samples = 1;
+    }
+    if (w <= layer->w && h <= layer->h &&
+        (samples == 1 || samples == layer->samples)) {
+        if (samples > 1) {
+            glBindFramebuffer(GL_FRAMEBUFFER, layer->multi_framebuffer);
+        } else {
+            layer->samples = 1;
+            glBindFramebuffer(GL_FRAMEBUFFER, layer->framebuffer);
+        }
         glDrawBuffers(2, both);
         return TRUE;
     }
@@ -1208,7 +1338,44 @@ static s32 port_GlFighterLayer(FighterLayer *layer, s32 w, s32 h) {
     }
     layer->w = w;
     layer->h = h;
+    if (samples > 1) {
+        return port_GlFighterMultiLayer(layer, w, h, samples);
+    }
+    layer->samples = 1;
     return TRUE;
+}
+
+/* The layer drawn with several samples a pixel taken down to one, into
+ * the layer's own colour and depth (g_take_down_fragment_text). Leaves
+ * the layer's framebuffer bound. */
+static void port_GlFighterTakeDown(FighterLayer *layer, s32 w, s32 h) {
+    static const GLenum both[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+
+    glBindFramebuffer(GL_FRAMEBUFFER, layer->framebuffer);
+    glDrawBuffers(2, both);
+    glViewport(0, 0, w, h);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glUseProgram(g_fighter.take_down_program);
+    glActiveTexture(GL_TEXTURE0 + 2);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, layer->multi_color);
+    glActiveTexture(GL_TEXTURE0 + 3);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, layer->multi_depth_value);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(g_fighter.t_at_color, 2);
+    glUniform1i(g_fighter.t_at_depth, 3);
+    glUniform1i(g_fighter.t_at_samples, layer->samples);
+    glUniform1f(g_fighter.t_at_far, FAR_PLANE);
+    glBindVertexArray(g_fighter.quad_array);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glActiveTexture(GL_TEXTURE0 + 2);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
+    glActiveTexture(GL_TEXTURE0 + 3);
+    glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, 0);
+    glActiveTexture(GL_TEXTURE0);
 }
 
 static void port_GlFighterUpload3(
@@ -2065,7 +2232,8 @@ static void port_GlFighterDrawAll(
         x = (paint->clip_left + picture.margin) * picture.draw_x;
         w = (paint->clip_right - paint->clip_left + 1) * picture.draw_x;
     }
-    if (w <= 0 || h <= 0 || !port_GlFighterLayer(layer, w, h)) {
+    if (w <= 0 || h <= 0 ||
+        !port_GlFighterLayer(layer, w, h, picture.samples)) {
         return;
     }
     glDisable(GL_SCISSOR_TEST);
@@ -2145,6 +2313,10 @@ static void port_GlFighterDrawAll(
     }
     glDisable(GL_CULL_FACE);
 
+    if (layer->samples > 1) {
+        port_GlFighterTakeDown(layer, w, h);
+    }
+
     /* the layer over the picture */
     glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
     {
@@ -2176,6 +2348,12 @@ static void port_GlFighterDrawAll(
     glUniform2f(g_fighter.c_at_target, (GLfloat)picture.target_w,
                 (GLfloat)picture.target_h);
     glUniform1f(g_fighter.c_at_depth_range, PORT_GL_DEPTH_RANGE);
+    glUniform1i(g_fighter.c_at_soft, layer->samples > 1);
+    if (layer->samples > 1) {
+        glEnable(GL_BLEND);
+        glBlendEquation(GL_FUNC_ADD);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
     /* kept for the shadows' mask (port_GlFighterDrawOccluders) */
     if (!is_tiny) {
         g_fighter.laid[0] = x;
@@ -2191,6 +2369,7 @@ static void port_GlFighterDrawAll(
     glBindVertexArray(g_fighter.quad_array);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
+    glDisable(GL_BLEND);
     glDepthMask(GL_FALSE);
     glDepthFunc(GL_LESS);
     glDisable(GL_DEPTH_TEST);
@@ -2464,6 +2643,7 @@ void port_GlFighterDrawOccluders(u32 framebuffer) {
     glUniform2f(g_fighter.c_at_target, (GLfloat)picture.target_w,
                 (GLfloat)picture.target_h);
     glUniform1f(g_fighter.c_at_depth_range, PORT_GL_DEPTH_RANGE);
+    glUniform1i(g_fighter.c_at_soft, 0);
     /* the alpha alone, as the game's own faces mark it (gl_draw.c,
      * port_GlDrawOccluders) */
     glDisable(GL_DEPTH_TEST);

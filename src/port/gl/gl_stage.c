@@ -361,6 +361,7 @@ static struct {
     GLint at_pieces;
     GLint at_far;
     GLint at_occluding;
+    GLint at_samples;
     GLint at_slots;
     s32 piece_first; /* the first of the mesh's vertices that are a piece's */
     /* the view and the paint the mesh was last drawn with, which the
@@ -414,6 +415,9 @@ static const char g_stage_vertex_text[] =
     /* which of the stage's pieces are drawn from the mesh this frame,
      * and what a depth in the tiles' scale is times to be the world's */
     "uniform uint u_pieces[2];\n"
+    /* the tiles the game is drawing opened up (the fragment shader's
+     * first test, before; now the face's own) */
+    "uniform uint u_open[16];\n"
     "uniform float u_far;\n"
     "out vec2 v_texture;\n"
     "flat out float v_push;\n"
@@ -542,13 +546,32 @@ static const char g_stage_vertex_text[] =
     "    v_box = vec4(vec2(a_box.xy), vec2(a_box.zw) + vec2(1.0));\n"
     "    v_place = a_place;\n"
     "    v_normal = cross(a_corner1 - a_corner0, a_corner2 - a_corner0);\n"
+    /* A face left out is left out here, before the card rasterises it,
+     * and not pixel by pixel: everything the test asks is the face's own
+     * (its corners, its tile, its flags, the same at each of its
+     * vertices), so all three vertices of each of its triangles are put
+     * at the same point outside the picture and the triangle is clipped
+     * whole. A face that mixes with what is behind it is not the mesh's:
+     * a tile the game is drawing opened up so that a fighter behind it
+     * can be seen, or one whose own code says it mixes; the mesh is
+     * drawn where the farthest tile of the frame was, which is not where
+     * such a face belongs in the painting, so it is left to the game's
+     * own primitive (port_GlStageIsTile). And a face whose whole is
+     * nearer than the cutoff is the ground between the camera and the
+     * fight, which the renderer leaves out too. */
+    "    bool open = a_tile < 512u\n"
+    "        && (u_open[a_tile >> 5u] & (1u << (a_tile & 31u))) != 0u;\n"
+    "    if (open || (a_color.w & 4u) != 0u || v_cull != 0) {\n"
+    "        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);\n"
+    "    }\n"
     "}\n";
 
 static const char g_stage_fragment_text[] =
-    "#version 330 core\n"
+    "#version 400 core\n"
+    /* the picture's samples a pixel (gl.h, PortGlPicture.samples) */
+    "uniform int u_samples;\n"
     "uniform usampler2D u_vram;\n"
     "uniform uvec4 u_window;\n" /* the texture window, and or or */
-    "uniform uint u_open[16];\n"
     "uniform int u_fog_levels;\n"
     "uniform int u_fog_slot[32];\n"
     "uniform ivec2 u_fog_clut[32];\n"
@@ -584,7 +607,9 @@ static const char g_stage_fragment_text[] =
     "uniform vec4 u_see_axis[3];\n"
     "uniform float u_see_radius[3];\n"
     "layout(location = 0) out vec4 o_color;\n"
-    "layout(location = 1) out uint o_slot;\n"
+    /* a slot, a whole number below 65536, kept in floating point
+     * (gl_draw.c, port_GlGroundSlotsEnd) */
+    "layout(location = 1) out float o_slot;\n"
     /* the pieces' marks in the shadows' mask: a piece's pixel where the
      * picture kept it, which is where the ground's slots hold its own */
     "uniform int u_occluding;\n"
@@ -709,21 +734,28 @@ static const char g_stage_fragment_text[] =
     "                             g_clut_near.y)), now, g_fog_mix);\n"
     "}\n"
     "void main() {\n"
-    /* A face that mixes with what is behind it is not the mesh's: a
-     * tile the game is drawing opened up so that a fighter behind it
-     * can be seen, or one whose own code says it mixes. The mesh is
-     * drawn where the farthest tile of the frame was, which is not
-     * where such a face belongs in the painting, so it is left to the
-     * game's own primitive (port_GlStageIsTile). */
-    "    bool open = v_tile < 512u\n"
-    "        && (u_open[v_tile >> 5u] & (1u << (v_tile & 31u))) != 0u;\n"
-    "    if (open || (v_flags.w & 4u) != 0u) { discard; }\n"
-    /* the whole face is nearer than the cutoff: the ground between the
-     * camera and the fight, which the renderer leaves out too */
-    "    if (v_cull != 0) { discard; }\n"
+    /* Every sample the face covers, unless it is thinned below: a shader
+     * that writes the mask anywhere must write it everywhere, or the
+     * mask is undefined (and on a real card none of the face is drawn). */
+    "    gl_SampleMask[0] = -1;\n"
+    /* a face left out was left out by the vertices (above) */
     /* a wall between the camera and a fighter, thinned to at most
      * four parts in five */
-    "    if (dither() < 0.8 * see_through()) { discard; }\n"
+    "    float thinned = 0.8 * see_through();\n"
+    /* Multisampled, the share is how many of the pixel's samples are
+     * kept, the dither choosing between one count and the next: a fade,
+     * as the supersampled picture's averaging made of it. The shadows'
+     * mask has one sample a pixel and keeps the dither. */
+    "    if (u_samples > 1 && u_occluding == 0) {\n"
+    "        if (thinned > 0.0) {\n"
+    "            int kept = int(floor((1.0 - thinned) * float(u_samples)\n"
+    "                                 + dither()));\n"
+    "            if (kept <= 0) { discard; }\n"
+    "            if (kept < u_samples) {\n"
+    "                gl_SampleMask[0] = (1 << kept) - 1;\n"
+    "            }\n"
+    "        }\n"
+    "    } else if (dither() < thinned) { discard; }\n"
     "    int depth = int(clamp(v_depth, 0.0, 65535.0));\n"
     "    int slot = slot_of(depth);\n"
     "    g_clut = v_page.zw;\n"
@@ -836,7 +868,7 @@ static const char g_stage_fragment_text[] =
      * the stage, and a depth that falls off as one over the distance has
      * nothing left out there to tell two faces apart by. */
     "    gl_FragDepth = clamp((v_depth + v_push) / u_depth, 0.0, 1.0);\n"
-    "    o_slot = uint(v_slot);\n"
+    "    o_slot = v_slot;\n"
     "}\n";
 
 /* ---- starting ---- */
@@ -981,6 +1013,7 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
     AT(at_pieces, "u_pieces");
     AT(at_far, "u_far");
     AT(at_occluding, "u_occluding");
+    AT(at_samples, "u_samples");
     AT(at_slots, "u_slots");
 #undef AT
     glGenBuffers(1, &g_stage.buffer);
@@ -2416,6 +2449,7 @@ static void port_GlStageUniforms(
     glUniform1f(g_stage.at_scene_levels, port_GlSceneLevels());
     port_GlStageSeeThrough(view);
     glUniform1i(g_stage.at_occluding, 0);
+    glUniform1i(g_stage.at_samples, picture->samples);
     glUniform1i(g_stage.at_slots, 1);
 }
 

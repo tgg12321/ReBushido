@@ -1531,7 +1531,7 @@ accident: lights of its own ("What each later step needs").
 | | | |
 |---|---|---|
 | `draw_distance` | `original`, `far`, `max` | how many of the stage's cells are queued, and how far out the stage's fog is placed |
-| `antialiasing` | `off`, `2`, `4` | how many times over each way the scene is drawn before it is averaged down |
+| `antialiasing` | `off`, `2`, `4` | the scene's edges multisampled, N times N samples a pixel, eight at most ("Edges") |
 | `aspect` | `4:3`, `16:9`, any `W:H` | the shape of the picture: a wider one is a wider view of the same scene |
 
 They are a run's and are settled before the game starts: the primitive
@@ -2912,6 +2912,20 @@ ground (`port_GlStageViewNow`). It is made of:
 - **a few thin clouds**, low and lit from the moon's side, which hide
   the stars behind them.
 
+**What it costs.** The clouds are five octaves of a noise of the
+direction, forty hashes a pixel, which made the sky the card's second
+dearest pass (3.1 ms a fight frame at 2560 by 1440 with the picture
+supersampled, on the owner's RTX 3090). Being a function of the
+direction alone, the noise is worked out once, the first time a sky is
+painted, into a cube about the eye of six faces of 1,024 texels a side
+(`port_GlSkyBakeClouds`, 12 MB), and each pixel reads it there, the
+card smoothing between texels; the gradient, the moon, the stars and
+the clouds' colours are still worked out at each pixel, so that the
+stage's own light colours them. A texel is about a tenth of a degree,
+two pixels of that picture; the clouds lie where the noise's finest
+octave is several texels across, so they are the same clouds, softened
+by the smoothing where they are finest.
+
 **Which stages.** Looked at stage by stage over the prover's tour of
 each (`tools/port_stage_prove.py`, the pictures every 300 blanks of all
 38): the halls, the dojos, the parking garage, the purple cavern and
@@ -3318,7 +3332,60 @@ sun). Everything in "What is not done" above still holds for the mask.
 
 ### Edges
 
-The scene is drawn **two or four times over each way and averaged
+**Since 2026-11-18 the edges are multisampled** (`antialiasing N`: N
+times N samples a pixel, at most eight, `port_GlSamplesOf`,
+`src/port/gl/gl_draw.c`). The colour buffer, the depth buffer and the
+ground's slots keep that many samples a pixel at the picture's own
+scale, and the card averages them into the picture at the end
+(`port_GlResolve`, a blit). The card shades a pixel of a face once and
+keeps which of its samples the face covers, so a face costs what it
+costs at one sample a pixel: on the owner's RTX 3090 at 2560 by 1440 the
+ground's mesh went from 3.9 ms to 1.25 and the sky from 1.1 to
+0.27 (see "Measuring on the card"). What makes it work with the game's
+picture:
+
+- **The 2D layer is not multisampled.** A primitive that has no depth
+  (the HUD, the fonts, the menus, a rectangle of video memory stretched
+  into the picture) is drawn with the card's multisampling off
+  (`GL_MULTISAMPLE`, `port_GlSetState`, `port_GlDrawBlits`): it is
+  rasterised from the middle of each pixel by the chip's own rule, as
+  before, and writes every sample of a pixel or none. Its corners are
+  half a pixel in, as the chip's are, so multisampled it covered half of
+  each pixel along its edges: a grey line round every letter
+  (`--gl-blocks` counted 203,742 uneven blocks in `port_game`'s flat
+  screens). Off, the flat screens are block for block as they were.
+  A batch is all of the scene or none of it (`PortGlState.is_scene`).
+- **The ordering in which the game paints is kept exactly.** Each
+  sample is mixed with what is under it, in the order of the ordering
+  table, and the averaging comes after everything: a half-transparent
+  primitive over an edge mixes once at each sample, as it did at each
+  pixel of the larger buffer. (The worry below about multisampling is of
+  coverage folded into alpha, which this is not.)
+- **What reads a buffer reads one value a pixel.** The ground's slots,
+  which the scene and the fighters are held against, are taken down to
+  one a pixel as the mesh ends (the first sample's, by a shader:
+  `port_GlGroundSlotsEnd`; a blit of them took 30 ms a frame on the
+  card). The HD fighters are drawn into a layer of as many samples and
+  taken down into its colour, the share of the pixel they cover, and
+  their nearest depth (`port_GlFighterTakeDown`, `gl_fighter.c`), and
+  the layer is mixed over the picture by that share, so a fighter's edge
+  is smoothed as before. The pause's picture is drawn back, not blitted
+  (no blit draws into a buffer of several samples).
+- **Thinned walls fade.** A wall thinned so that a fighter behind it
+  shows keeps a share of its samples (`gl_SampleMask`) and not of its
+  pixels; the shadows' mask, of one sample a pixel, keeps the dither.
+- **What it does not smooth that supersampling did**: what is inside a
+  face (a texture is shaded once a pixel; the mod's textures are
+  mipmapped and the game's are averaged over the texels a pixel covers,
+  so this is the edges' smoothing only), the edge of a texel of nothing
+  in a texture (a fence's gaps), and where two faces cross (the depth a
+  face writes is one a pixel).
+
+`RB_SUPERSAMPLE=1` in the environment draws it the old way, which the
+rest of this section describes, to compare. With `off`, and with
+`--gl-exact`, there is one sample a pixel and nothing of this runs.
+
+**Before:** the scene was drawn **two or four times over each way and averaged
 down** (`antialiasing`): the colour buffer is `scale * sample` pixels to
 a pixel of video memory, and a pass at the end of the frame makes the
 picture by averaging each block of `sample` by `sample`
@@ -4560,7 +4627,9 @@ for the clock and the display) and the card's time: medians, 95th and
 over 6.94 ms) and the stalls (blanks over three times a frame's median:
 a first use). Every result is kept in the main checkout's
 `build/bench/<commit>/results.json`; `--against REV` compares with
-another commit's without running it again.
+another commit's without running it again. `--set KEY=VALUE` changes a
+setting of every case for a trial (`--set antialiasing=off`), whose
+numbers are kept apart, as the commit's name with `+KEY-VALUE`.
 
 **Measured** (2026-11-18, `9f55dce56` with this instrument, RTX 3090,
 driver 616.92; another agent's runs were on the machine at the same
@@ -4595,6 +4664,45 @@ So the processor is the limit, by four times the budget, and the card
 too, by half again: **neither fits 144 a second today**, and the card
 does not fit 85 (11.8 ms) with run-ahead 2. What fails is listed by the
 budget below.
+
+**The card's share, cut (2026-11-18, later).** The ground and the sky
+were the card's whole problem, and both were fill: with `antialiasing
+off` they came to 1.1 and 0.8 ms, a quarter of what they cost
+supersampled. Three changes, `run_ahead 1`, card medians in ms (other
+agents' work was on the machine, so the processor's numbers here are
+not comparable with each other; the card's are):
+
+| | ground | sky | the card, a frame |
+| --- | --- | --- | --- |
+| before | 4.02 | 3.08 | 11.1 (9.7 measured quiet) |
+| the sky's clouds read from a cube worked out once ("The sky") | 3.85 | 1.08 | 8.3 |
+| ... and the edges multisampled, not supersampled ("Edges") | 1.25 | 0.27 | 5.2 |
+
+The ground's faces that are left out (turned away, nearer than the
+cutoff, opened up for a fighter behind them) are now left out by their
+vertices, before the card rasterises them (`gl_stage.c`), where each of
+their pixels was thrown away before; it bought little (4.02 to 3.85),
+being fill the depth test had mostly stopped already. The picture: the
+2D layer is block for block what it was (`--gl-blocks`, multisampled,
+`port_game`'s flat screens: no block uneven), and a fight on the card
+differs from the supersampled one in 1.1% of its pixels by more than 8
+of 255, at edges and inside textures, which multisampling shades once a
+pixel; the pair is in the owner's `ReBushido Screenshots\Performance
+2026-11-18`.
+
+Every case, with the fighters' agent's work of the same day merged
+(`f10dcbdda`; the card's medians and 95th centiles, ms): `run_ahead 0`
+4.4 and 7.2 (before, 9.5 and 11.0), `run_ahead 1` 4.0 and 8.5 (11.1 and
+20.3), `run_ahead 2` 9.3 and 13.9 (16.8 and 24.0), fighter models off
+3.0 and 4.1, four fighters on the ground twice 5.2 and 9.6 (22.0 and
+27.5). With `run_ahead 2` the video memory pass is 3.7 ms of it, against
+0.6 in the other cases, and every other pass is half again: the card
+draws each frame twice, as the first frame ahead of one boundary is the
+last of the boundary before (`port_BeforeStep`, `step.c`). Leaving the
+first out (`g_port_unseen`, as the step after them is) would halve it,
+but what that frame writes into video memory would then not reach the
+card's mirror where its input differs from the boundary before's; the
+mirror needs to be told of a write without drawing it first.
 
 **The budget** (`port_bench.py --budget`, the gate's step `port-bench`,
 run alone after every other with `port-budget`): the cases `ra0`, `ra1`,

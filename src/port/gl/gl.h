@@ -213,6 +213,9 @@ typedef struct {
     /* the slots of the ground's faces, which a fighter is held against
      * (port_GlGroundSlotsBegin) */
     u32 slot_texture;
+    /* the colour and depth buffers' samples a pixel: 1 for one, more where
+     * the picture is multisampled (gl_draw.c, port_GlSamplesOf) */
+    s32 samples;
     s32 target_w;
     s32 target_h;
     s32 draw_x; /* a pixel of video memory is this many of the buffer */
@@ -225,6 +228,12 @@ typedef struct {
 } PortGlPicture;
 
 extern void port_GlGetPicture(PortGlPicture *picture);
+/* A texture's corner of `source_w` by `source_h` texels drawn into the
+ * colour buffer at (x, y), w by h of its pixels (a blit cannot draw into
+ * a buffer of several samples a pixel). */
+extern void port_GlDrawTexture(
+    u32 texture, s32 texture_w, s32 texture_h, s32 source_w, s32 source_h,
+    s32 x, s32 y, s32 w, s32 h, s32 is_linear);
 
 /* ---- what the fighters' shadows need of the picture (gl_shadow.h) ---- */
 
