@@ -53,17 +53,19 @@ extern void port_PaintSkipped(void);
 /* ... and, before the first that is painted again, takes the settings
  * the GPU has then. */
 extern void port_PaintWillPaint(void);
-/* The painter's own: a word of GP0 painted (raster.c). */
-extern void port_PaintGp0(u32 word);
-/* The painter's settings made the game's again (raster.c), with nothing
- * waiting to be painted. */
-extern void port_PaintTakeSettings(void);
 
 /* ---- what waits for the painter ---- */
 
 extern void port_PaintSyncRead(s32 x, s32 y, s32 w, s32 h);
 extern void port_PaintSyncWrite(s32 x, s32 y, s32 w, s32 h);
 extern void port_PaintSyncAll(void);
+/* Whether a write of video memory may be given to the painters, to be
+ * done in its turn: only where there is one, since a painter reads what
+ * every other's lines hold (a colour table), and only it would keep the
+ * order of a write and the primitives that read the place before. */
+extern s32 port_PaintMayGiveWrites(void);
+/* Whether a write of the rectangle would wait for the painters. */
+extern s32 port_PaintIsInWay(s32 x, s32 y, s32 w, s32 h);
 /* After the state is put back: everything painted, and the settings the
  * painter keeps taken from the GPU's again. */
 extern void port_PaintResync(void);
@@ -76,17 +78,22 @@ extern void port_PaintLetGo(void);
 /* What the host gives: a way for the painter to sleep with nothing to
  * paint and to be woken, and to give up the processor while waiting. */
 typedef struct {
-    void (*sleep)(void); /* until woken; may return sooner */
-    void (*wake)(void);
+    void (*sleep)(s32 painter); /* until woken; may return sooner */
+    void (*wake)(s32 painter);
     void (*yield)(void);
 } PortPaintHost;
 
-/* The painter's thread is about to run port_PaintRun: from here on, the
- * primitives go to it. 0 where there is no memory for its ring. */
-extern s32 port_PaintStart(const PortPaintHost *host);
-/* The painter's thread: paints until port_PaintStop. */
-extern void port_PaintRun(void);
-/* Everything painted, the thread told to end (it returns from
+/* The most painters, each a thread. */
+#define PORT_PAINTERS_MAX 8
+
+/* `count` painters' threads are about to run port_PaintRun: from here on,
+ * the primitives go to them. Returns how many there are to be (a power
+ * of two, at most PORT_PAINTERS_MAX), 0 where there is no memory for
+ * their ring. */
+extern s32 port_PaintStart(const PortPaintHost *host, s32 count);
+/* Painter `index`'s thread: paints until port_PaintStop. */
+extern void port_PaintRun(s32 index);
+/* Everything painted, the threads told to end (they return from
  * port_PaintRun), and the game's thread paints again. */
 extern void port_PaintStop(void);
 /* Whether the primitives are painted on a thread of their own. */

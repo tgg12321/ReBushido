@@ -26,8 +26,11 @@ typedef struct {
     s32 values[ATTRIBUTE_COUNT];
 } PortCorner;
 
+struct PortGpu;
+
 /* How a primitive's pixels are made. */
 typedef struct {
+    const struct PortGpu *gpu; /* whose settings: a painter's */
     s32 is_shaded; /* the colour is interpolated */
     s32 is_textured;
     s32 is_raw;  /* the texel as it is */
@@ -52,7 +55,7 @@ typedef struct {
     s32 is_active;
 } PortTransfer;
 
-typedef struct {
+typedef struct PortGpu {
     /* drawing */
     u32 mode;         /* E1's bits */
     u32 window;       /* E2's */
@@ -83,7 +86,13 @@ typedef struct {
     u32 line_code;
     PortCorner line_from;
     u32 line_color;
-    s32 is_line_painted; /* the game's side: the painter is given it */
+    s32 is_line_painted; /* the game's side: the painters are given it */
+    s32 is_load_painted; /* ... and this load's pixels */
+    /* a painter's lines (src/port/paint.c): of each 256 lines of video
+     * memory, a screen's height, the `band`th of 2 to the `band_bits`
+     * bands one after another; 0 and 0 for all of them */
+    s32 band;
+    s32 band_bits;
     PortTransfer load;
     PortTransfer store;
     u32 read_latch; /* what GPUREAD gives when nothing is being copied */
@@ -98,8 +107,17 @@ typedef struct {
     s32 is_like_emulator;
 } PortGpu;
 
-/* The painter's settings and the command it is given (paint.c): the same
- * kind, outside the state. */
-extern PortGpu g_port_paint;
+/* A line a painter paints. */
+#define PORT_BAND_LINES 256
+#define PORT_BAND_LINES_BITS 8
+#define PORT_PAINTS_LINE(gpu, y)                                               \
+    ((s32)((u32)((y) & (PORT_BAND_LINES - 1)) >>                              \
+           (PORT_BAND_LINES_BITS - (gpu)->band_bits)) == (gpu)->band)
+
+/* A word given to a painter, whose settings `gpu` are (raster.c): the
+ * words of the primitives and the settings, whole commands of them. */
+extern void port_PaintGp0(PortGpu *gpu, u32 word);
+/* A painter's settings made the game's, its lines kept (raster.c). */
+extern void port_PaintTakeSettings(PortGpu *gpu);
 
 #endif /* PORT_RASTER_H */

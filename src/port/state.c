@@ -798,7 +798,7 @@ static void port_StateLoadPieces(const void *buf) {
 void port_StateLoad(const void *buf) {
     port_PaintSyncAll();
     port_StateLoadPieces(buf);
-    port_PaintTakeSettings();
+    port_PaintResync();
 }
 
 /* ---- the hash ---- */

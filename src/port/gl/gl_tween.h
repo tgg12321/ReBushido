@@ -117,6 +117,15 @@ extern s32 port_TweenDraw(s32 phase);
 
 extern const PortTweenCounts *port_TweenGetCounts(void);
 
+/* The pairing of two frames worked out on a thread of the host's
+ * (docs/PORT.md, "The software GPU beside the game"): as soon as the
+ * frame after is whole, while the game goes on, and not in the first
+ * picture between the two. `give` has the host's thread run
+ * port_TweenPairWork; `wait` returns once it has. Without them (NULL)
+ * the first picture works it out. */
+extern void port_TweenSetWorker(void (*give)(void), void (*wait)(void));
+extern void port_TweenPairWork(void);
+
 /* One point of the last picture, to be watched from phase to phase: the
  * first corner of the primitive whose corners moved farthest between the
  * two frames, where it was drawn, in 16.16 pixels with the drawing
