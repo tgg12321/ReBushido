@@ -19,7 +19,9 @@
  * display. So at the blank where frame F's drawing has just been handed
  * over, what the screen shows is frame F-1, and frame F is already
  * known: a picture between the two is behind nothing and ahead of
- * nothing. There is no added latency (docs/PORT.md). */
+ * nothing. There is no added latency (docs/PORT.md). With run-ahead
+ * the frames come from the steps run ahead (step.c), as many frames
+ * sooner, and this is the same. */
 
 #include "common.h"
 #include "port_remaster.h"

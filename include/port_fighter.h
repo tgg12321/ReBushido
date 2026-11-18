@@ -98,6 +98,13 @@ extern const PortFighterView *port_GetFighterView(s32 slot);
 extern const PortFighterWeapon *port_GetFighterWeapons(s32 *count);
 /* How many frames the renderer has built (PortFighterView.serial). */
 extern u32 port_FighterSerial(void);
+/* What the game has loaded, before it draws any of it: the model in a
+ * slot (-1 for none), and the place-th of the weapon models loaded
+ * (enum WeaponModel; -1 past the last). A load reads them so that a
+ * model's own file is read behind the loading picture, not at the
+ * fight's first frame (docs/PORT.md, "Quick loading"). */
+extern s32 port_FighterLoadedModel(s32 slot);
+extern s32 port_FighterLoadedWeapon(s32 place);
 
 /* Whether a node is a piece of cloth, which the game moves and draws
  * itself and a model's file does not replace. */

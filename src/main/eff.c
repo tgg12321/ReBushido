@@ -241,6 +241,28 @@ enum {
                           (*g_eff_ot_entry & PRIM_TAG_LEN);                    \
     }
 
+/* The remastered renderer's side channel (port_remaster.h, "the
+ * effects"): which point a quad was built about, or which points are its
+ * corners, and which effect's it is. Nothing of the game's is read or
+ * written; the PlayStation builds have none of it. */
+#if RB_REMASTER_VIEW
+#define EFF_NOTE_SPRITE(prim, center, number, depth, name, piece)              \
+    port_RemasterNoteSprite((PortAddress)(prim), (PortAddress)(center),        \
+                            (number), (depth), (PortAddress)(name), (piece))
+#define EFF_NOTE_CORNERS(prim, points, name, piece)                            \
+    port_RemasterNoteEffect((PortAddress)(prim), (PortAddress)(points), 4,     \
+                            (PortAddress)(name), (piece))
+/* A macro's store of screen positions (gte_stsxy, gte_stsxy3) is a plain
+ * read of the register in the port: what the projection worked out for
+ * them is written down here (port_gte.h). */
+#define EFF_NOTE_STORED(first, words, count)                                   \
+    port_GteNoteStored(PORT_GTE_SXY0 + (first), (words), (count))
+#else
+#define EFF_NOTE_SPRITE(prim, center, number, depth, name, piece)
+#define EFF_NOTE_CORNERS(prim, points, name, piece)
+#define EFF_NOTE_STORED(first, words, count)
+#endif
+
 /* The two quad buffers, one a frame. */
 static POLY_FT4 *g_eff_first_prim_buffer;
 static POLY_FT4 *g_eff_second_prim_buffer;
@@ -1139,6 +1161,8 @@ void eff_DrawFlames(s16 *view_angles, s32 *view_position) {
                 g_eff_ot_entry = g_disp_ot + *ot_index;
                 g_eff_prim_tag = &prim->tag;
                 EFF_ADD_PRIM();
+                EFF_NOTE_SPRITE(prim, g_eff_screen_xy, *g_eff_screen_dist,
+                                *g_eff_depth, &g_eff_flames[i], 0);
                 prim++;
             }
         }
@@ -1313,6 +1337,9 @@ s32 eff_DrawMuzzleFlashes(void) {
                 *(s32 *)&quad->x1 = sxy[1];
                 *(s32 *)&quad->x2 = sxy[2];
                 *(s32 *)&quad->x3 = sxy[3];
+                EFF_NOTE_CORNERS(
+                    quad, sxy, &g_eff_muzzle_flash_positions[slot_index],
+                    quad_index);
                 count++;
                 if (quad - g_eff_prims < EFF_PRIM_COUNT - 1) {
                     quad++;
@@ -1591,6 +1618,9 @@ s32 eff_DrawSplashes(void) {
                     g_eff_ot_entry = g_disp_ot + *ot_index;
                     g_eff_prim_tag = &prim->tag;
                     EFF_ADD_PRIM();
+                    EFF_NOTE_SPRITE(
+                        prim, g_eff_screen_xy, *g_eff_screen_dist, *g_eff_depth,
+                        &g_eff_splash_positions[slot_index], i);
                     if (prim - g_eff_prims < EFF_PRIM_COUNT - 1) {
                         prim++;
                     }
@@ -1751,6 +1781,7 @@ static s32 eff_DrawFootprints(s32 fighter) {
                  &g_eff_footprint_vertex_2);
         gte_rtpt();
         gte_stsxy3(sxy, sxy + 1, sxy + 2);
+        EFF_NOTE_STORED(0, sxy, 3);
         gte_stsz(g_eff_depth);
         if (*g_eff_depth <= 0) {
             continue;
@@ -1768,10 +1799,12 @@ static s32 eff_DrawFootprints(s32 fighter) {
         gte_ldv0(&g_eff_footprint_vertex_3);
         gte_rtps();
         gte_stsxy(sxy + 3);
+        EFF_NOTE_STORED(2, sxy + 3, 1);
         *(s32 *)&quad->x0 = sxy[0];
         *(s32 *)&quad->x1 = sxy[1];
         *(s32 *)&quad->x2 = sxy[2];
         *(s32 *)&quad->x3 = sxy[3];
+        EFF_NOTE_CORNERS(quad, sxy, &g_eff_footprint_positions[fighter][i], 0);
         if (quad - g_eff_prims < EFF_PRIM_COUNT - 1) {
             quad++;
         }
@@ -1946,6 +1979,8 @@ s32 eff_DrawDust(void) {
             prim->v3 = *g_eff_v1;
             SetShadeTex(prim, 0);
             SetSemiTrans(prim, 1);
+            EFF_NOTE_SPRITE(prim, g_eff_screen_xy, *g_eff_screen_dist,
+                            *g_eff_depth, &g_eff_dust_positions[slot_index], 0);
             if (prim - g_eff_prims < EFF_PRIM_COUNT - 1) {
                 prim++;
                 ot_index_out++;
@@ -2327,6 +2362,7 @@ static u8 eff_DrawFlash(s32 flash) {
     vertex->vx = 0;
     gte_RotTransPers(
         vertex, g_eff_screen_xy, depth_cue_out, g_eff_rtp_flag, g_eff_depth);
+    EFF_NOTE_STORED(2, g_eff_screen_xy, 1);
     *g_eff_depth = *g_eff_depth ? *g_eff_depth << 2 : 1;
 
 again:
@@ -2676,6 +2712,8 @@ again:
         if (flash < FLASH_CLASH_GLOW_1) {
             /* a clash streak: round again for its glow */
             AddPrim(g_disp_ot + 1, prim);
+            EFF_NOTE_SPRITE(prim, g_eff_screen_xy, *g_eff_screen_dist,
+                            *g_eff_depth, &g_eff_flash_positions[flash], 0);
             if (prim - g_eff_prims < EFF_PRIM_COUNT - 1) {
                 prim++;
             }
@@ -2685,6 +2723,8 @@ again:
         break;
     }
     AddPrim(g_disp_ot + 1, prim);
+    EFF_NOTE_SPRITE(prim, g_eff_screen_xy, *g_eff_screen_dist, *g_eff_depth,
+                    &g_eff_flash_positions[flash], 0);
     if (prim - g_eff_prims < EFF_PRIM_COUNT - 1) {
         prim++;
     }
@@ -3156,6 +3196,7 @@ static void eff_UpdateParticles(s32 kind, s32 set) {
         gte_rtpt();
         gte_stsxy3(
             &g_eff_screen_xy[0], &g_eff_screen_xy[1], &g_eff_screen_xy[2]);
+        EFF_NOTE_STORED(0, g_eff_screen_xy, 3);
         gte_stsz(g_eff_depth);
 
         if (*g_eff_depth < 0) {
@@ -3255,6 +3296,9 @@ static void eff_UpdateParticles(s32 kind, s32 set) {
             *(u16 *)&PTR(*quad)->u2 = *g_eff_uv2;
             *(u16 *)&PTR(*quad)->u3 = *g_eff_uv3;
             setlen(PTR(*quad), FT4_LEN);
+            EFF_NOTE_SPRITE(PTR(*quad), &g_eff_screen_xy[*copy],
+                            *g_eff_screen_dist * PARTICLE_SCALE, g_eff_depth[1],
+                            PTR(*particle), *copy);
             if (kind < PARTICLES_IMPACT) {
                 *(s32 *)&PTR(*quad)->r0 =
                     *red + (*green << 8) + ((FT4_CODE | FT4_SEMI_TRANS) << 24);

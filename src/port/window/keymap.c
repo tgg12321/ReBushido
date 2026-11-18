@@ -50,6 +50,13 @@ const char g_port_default_settings[] =
     "fps = on               # on or off: the counter in the corner (F3)\n"
     "fps_corner = top-left  # top-left, top-right, bottom-left,\n"
     "                       # bottom-right\n"
+    "run_ahead = 2          # 0, 1 or 2: frames run ahead and put back,\n"
+    "                       # so that a press is seen that many of the\n"
+    "                       # game's frames sooner; what the game\n"
+    "                       # computes is the same\n"
+    "low_latency = on       # on: each picture waits for the card, so\n"
+    "                       # none queues behind another; off lets the\n"
+    "                       # driver queue them\n"
     "\n"
     "# The remastered picture (F2 changes picture while the game runs).\n"
     "# These four are a run's: changing one means starting it again.\n"
@@ -65,6 +72,10 @@ const char g_port_default_settings[] =
     "                       # mesh instead of the game's own tiles; off\n"
     "                       # for the tiles. A stage the mesh is not\n"
     "                       # measured good on keeps the tiles either way\n"
+    "stage_props_mesh = on  # what stands on the ground -- railings,\n"
+    "                       # fences, walls, roofs -- drawn still from\n"
+    "                       # meshes of its own with the ground's mesh;\n"
+    "                       # off for the game's own faces of them\n"
     "fighter_models = on    # the fighters drawn from models of their own\n"
     "                       # where a mod's models/ has one (M100.glb);\n"
     "                       # off for the game's own\n"
@@ -72,6 +83,13 @@ const char g_port_default_settings[] =
     "                       # soft: the ground under them darkened;\n"
     "                       # cast: cast from the fighters' own\n"
     "                       # bodies, darkened (cast:N, N hundredths)\n"
+    "smooth_light = on      # on: the game's own lights worked out at\n"
+    "                       # each pixel of the ground and the fighters'\n"
+    "                       # models, not once a face or a vertex\n"
+    "effects = smooth       # original: blood, sparks and dust where the\n"
+    "                       # console put them; exact: where the\n"
+    "                       # projection put them, moved between frames;\n"
+    "                       # smooth: their textures smoothed as well\n"
     "frame_rate = display   # original: one picture a blank, as the\n"
     "                       # console; display: as many as the screen\n"
     "                       # shows; or a number a second. The game\n"
@@ -90,6 +108,9 @@ const char g_port_default_settings[] =
     "                       # any size: a mod the program ships (mods/ui/)\n"
     "music_mods = on        # a mod's music in place of the game's; off\n"
     "                       # for the game's own (docs/MODS.md)\n"
+    "quick_loading = on     # the waits for the disc behind a loading\n"
+    "                       # picture hurried through; off at the\n"
+    "                       # console's pace\n"
     "\n"
     "# Playing online (docs/PLAYING.md): what the settings menu's Play\n"
     "# online page starts with, and keeps.\n"
@@ -586,6 +607,19 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "fps is on or off";
     }
+    if (port_WordsMatch(name, "run_ahead")) {
+        if (!port_ReadDigits(value, &number) || number < 0 ||
+            number > PORT_RUN_AHEAD_MAX) {
+            return "run_ahead is 0, 1 or 2";
+        }
+        settings->run_ahead = number;
+        return NULL;
+    }
+    if (port_WordsMatch(name, "low_latency")) {
+        return port_ReadChoice(value, "off", "on", &settings->low_latency)
+                   ? NULL
+                   : "low_latency is on or off";
+    }
     if (port_WordsMatch(name, "fps_corner")) {
         static const char * const corners[] = {
             "top-left", "top-right", "bottom-left", "bottom-right"};
@@ -682,10 +716,20 @@ static const char *port_ReadSetting(
                    ? NULL
                    : "stage_mesh is on or off";
     }
+    if (port_WordsMatch(name, "stage_props_mesh")) {
+        return port_ReadChoice(value, "off", "on", &settings->stage_props_mesh)
+                   ? NULL
+                   : "stage_props_mesh is on or off";
+    }
     if (port_WordsMatch(name, "sky")) {
         return port_ReadChoice(value, "original", "night", &settings->sky)
                    ? NULL
                    : "sky is original or night";
+    }
+    if (port_WordsMatch(name, "quick_loading")) {
+        return port_ReadChoice(value, "off", "on", &settings->quick_loading)
+                   ? NULL
+                   : "quick_loading is on or off";
     }
     if (port_WordsMatch(name, "see_through")) {
         return port_ReadChoice(value, "off", "on", &settings->see_through)
@@ -713,6 +757,19 @@ static const char *port_ReadSetting(
                    "the ground a shadow takes away, in hundredths";
         }
         settings->shadows = number;
+        return NULL;
+    }
+    if (port_WordsMatch(name, "smooth_light")) {
+        return port_ReadChoice(value, "off", "on", &settings->smooth_light)
+                   ? NULL
+                   : "smooth_light is on or off";
+    }
+    if (port_WordsMatch(name, "effects")) {
+        number = port_ReadRemasterEffects(value);
+        if (number < 0) {
+            return "effects is original, exact or smooth";
+        }
+        settings->effects = number;
         return NULL;
     }
     if (port_WordsMatch(name, "controls")) {
@@ -834,6 +891,10 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->deadzone = PORT_DEADZONE_DEFAULT;
     settings->fps = 1;
     settings->fps_corner = PORT_CORNER_TOP_LEFT;
+    /* a press seen two frames sooner, and no picture queued behind
+     * another (docs/PORT.md, "Input lag") */
+    settings->run_ahead = PORT_RUN_AHEAD_DEFAULT;
+    settings->low_latency = 1;
     /* every new feature on in the builds the owner plays (2026-11-17) */
     settings->graphics = PORT_GRAPHICS_REMASTERED;
     settings->resolution = PORT_RESOLUTION_WINDOW;
@@ -854,11 +915,17 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
      * the measurements do not hold keeps the game's own tiles of its own
      * accord, and the run's log says which path each stage took. */
     settings->stage_mesh = 1;
+    settings->stage_props_mesh = 1;
     /* a fighter with a model of his own in mods/fighters/ is drawn from
      * it; with none there, nothing changes (gl_fighter.h) */
     settings->fighter_models = 1;
     /* the shadows cast from the fighters' own bodies (gl_shadow.h) */
     settings->shadows = port_ReadRemasterShadows("cast");
+    /* The lighting as the game lit each vertex and face, and the effects
+     * where the console put them, until the owner has looked at the
+     * pictures of each (docs/PORT.md, "Lighting", "The effects"). */
+    settings->smooth_light = 1;
+    settings->effects = PORT_EFFECTS_SMOOTH;
     /* A sky over the stages open to it, and the walls thinned where they
      * hide a fighter: neither changes what the game computes, and both
      * are the owner's to confirm on a real card (gl_sky.h, gl_see.h). */
@@ -878,6 +945,9 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->net_address[0] = 0;
     /* a mod's music, where a mod has some (docs/MODS.md) */
     settings->music_mods = 1;
+    /* the loads' waits for the disc hurried through (docs/PORT.md,
+     * "Quick loading") */
+    settings->quick_loading = 1;
     /* a name the window's library does not know leaves that one out */
     port_ReadLines(settings, text, lookup, NULL, 1);
 }

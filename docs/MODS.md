@@ -167,8 +167,8 @@ of its own.
   models are: PORT.md, "The fighters' own models").
 - **The fight drawn again under the pause** is the scene as well.
 - **The movie**, which the console shows in its 24-bit mode and the
-  remastered picture leaves to the software GPU. The title picture held
-  after it has not been looked at yet: the play tests' presses skip it.
+  remastered picture leaves to the software GPU (smoothed). The title
+  picture held after it is replaced ("The title picture", below).
 - With `--gl-exact` (the prover's picture held to the console's) nothing
   is replaced.
 
@@ -234,6 +234,10 @@ makes its pictures from.
 - A pixel of the picture whose alpha is under a half is not drawn;
   whether a pixel mixes, on a half-transparent face, is still the game's
   texel's to say.
+- The stage's pieces -- its railings, fences, walls and roofs -- drawn
+  from the ground's mesh (`stage_props_mesh`, PORT.md, "The stage's
+  pieces as meshes") read the pictures the same way, each face inside its
+  own rectangle.
 - With no mod's textures nothing is looked up and no shader takes the
   path; with `--gl-exact` neither.
 
@@ -380,35 +384,61 @@ colour out of step is not.
 ## The sharp menus
 
 The program ships a second mod: **`mods/ui/`**, the lettering of the
-menus drawn again in a font, sharp at any size. It is on unless `ui =
-off` in `rebushido.cfg` or the settings menu ("Sharp menus") says
-otherwise; its order is -100, as the English menu's.
+game's 2D screens drawn again in a font, sharp at any size. It is on
+unless `ui = off` in `rebushido.cfg` or the settings menu ("Sharp menus")
+says otherwise; its order is -100, as the English menu's.
 
 | What | Its lines |
 |---|---|
 | The pause menu | Pause Menu, Continue, Return to Sub Menu, Return to Top Menu |
 | The menu after a fight | Rematch, Return to Sub Menu, Return to Top Menu |
-| The top menu's captions | Story Mode, Vs. CPU Mode, Training Mode, Vs. Mode, Group Battle Mode, Link Mode, Option Menu |
-| The select screens' titles | Select Character, Select Weapon |
-| The group battle's page | Group Battle Mode, Number of Entries, Match, Time Limit, Start, Return to Top Menu |
+| The top menu's captions | Story Mode, Vs. CPU Mode, Training Mode, Vs. Mode, Group Battle Mode, Link Mode, Option Menu, and the second ones under the picture (Battle of the Two Schools, Trust Your Skills, Master Your Weapon, Select Battle Stage, May the Best School Win, 2 Player Link Battle, Other Options); Side View and POV on their panel |
+| The select screens | Select Character, Select Weapon, Select School; the fighters' names; the schools; the weapon's name; the stages' names and ( Map ? ) |
+| The group battle | its page (Group Battle Mode, Number of Entries, Match, Time Limit, Start, Return to Top Menu, and the values: 1 point, 3 point, 3 4 5, 60 120 sec); the teams' names; 1ST 2ND 3RD in each colour; WINS, KILLS |
+| The training mode | Training Mode, Practice, Practice Round, Return to Top Menu and the six lines under them; the Select button's page (Attack, Dash) |
+| The story | the narration that opens it (Off the sea of Setonaikai ...); the stage card (Next Battle Stage, Battle Stage, Outside the Meikyokan) |
+| The memory card | Checking Memory Card, Please wait, Do not remove Memory Card |
+| Elsewhere | the fight's digits 0 to 4, on and off, Frontal and Reverse |
+| ReBushido's options page | every character of the built-in font (`font.c`), eight by eight and the seven by seven its larger text reads |
 
 **How it is made.** `python tools/port_ui.py` draws the pictures into
-`src/port/mods/ui/` (`--check` as `port_english.py`'s). The game draws a
-line of a menu as sprites up to 64 texels wide cut from one line of
-lettering in a texture page, and a word of one line is sometimes another
-line's: the pause menu's "Return to Sub Menu" is the "Return to " of
-"Return to Top Menu", then "Sub" and "Menu" from places of their own. So
-the script's table is of lines -- the text, the line's size, the
-rectangle the game's own lettering fills, its look, and its pieces, each
-its key and where it begins along the line (from the dump's log, above)
--- and each line is drawn once, in Arimo (SIL Open Font Licence,
-`src/port/fonts/`), fitted to that rectangle at eight pixels a texel,
-and cut into its pieces. Every line of one height has letters of one
-size. The looks are the game's: the pause menu's letters with a shadow
-down and to the right, the select screens' with a dark edge all round,
-the captions' darkening downward, each in the colours its own lettering
-has (`--measure DIR...` prints them from a dump). Like the English
-menu's, the pictures are the project's own, kept in the repository.
+`src/port/mods/ui/` (`--check` as `port_english.py`'s). The game draws its
+lettering as sprites up to 64 texels wide cut from lettering laid out in
+a texture page: a line, lines one under another, or a long text wrapped
+from one row of the page to the next -- the narration and the training
+page are -- now and then in the middle of a letter. A word of one line is
+sometimes another line's: the pause menu's "Return to Sub Menu" is the
+"Return to " of "Return to Top Menu", then "Sub" and "Menu" from places of
+their own. So the script's table is of **blocks**: a block is a rectangle
+of a page as the game laid it out, its texts, each with the rectangle or
+rectangles its letters fill, its font and its look, any rule drawn under
+a title, and the pieces the game cuts from it, each its key and where it
+lies (from the dump's log, above). Each text is drawn once, fitted to its
+rectangle at eight pixels a texel -- a wrapped text as one line across its
+rectangles laid end to end, cut at their widths, so a letter the game
+split between two rows is split at the same place -- and each piece is
+cut from the block. A piece that holds anything but lettering (an icon
+beside a word) is left to the art mod.
+
+The fonts are of the SIL Open Font Licence (`src/port/fonts/`, each with
+its licence): **Archivo** at its widest (its width axis at 125) for the
+game's grotesque, which is wide -- in three weights, the menus', the
+names' thinner one and the digits' heavier one -- and **Marcellus** for
+its roman (the select screens' titles, the schools, the places, 1ST 2ND
+3RD, the stage card). The looks are the game's: letters darkening
+downward, with a shadow down and to the right (the pause menu's, the
+training page's), a dark edge all round (the select screens'), a panel
+under them (Side View, POV) or nothing, each in the colours its own
+lettering has. The colours, the rectangles and the looks of the blocks
+were measured from dumps of the screens (`--dump-textures`); those of the
+first lines (the pause menu's, the captions', the titles') `--measure
+DIR...` prints again. Like the English menu's, the pictures are the
+project's own, kept in the repository: no pixel of the game's is in them.
+
+The built-in font's characters are a texture each, the key of each worked
+out from the font's picture in `font.c` (four characters share a place in
+it, each through its own colour table): a character in Archivo, white,
+its capitals seven texels high, the tails of g j p q y in the eighth row.
 
 ## The art mod
 
@@ -451,6 +481,38 @@ portraits; none is used). Copy `tmp/mods/art/` into `mods/` beside the
 program; it is never committed. From one disc: 1,224 textures dumped,
 1,070 made larger (653 lettering, 360 of a few colours, 57 pictures), 154
 too small, in 8 seconds.
+
+## The title picture
+
+The picture held after the opening movie (the logo of Bushido Blade 2 on
+white, STR/TITLE.TIM) is not the movie's: the movie player loads it into
+video memory beside its display, at x 480, before the movie starts,
+shows it in the 16-bit mode from the movie's last frames on while the
+movie's sound runs out, and fades it out by copying it into its display
+buffers and darkening it ([`formats/MOVOVL.md`](formats/MOVOVL.md)). It is
+a picture the game writes into video memory, so a mod replaces it as it
+does the boot logo, by the key of its pixels (`320x240-16-...`): while
+nothing is shown (the display off, as the player loads it, or the
+movie's), a picture of a whole screen's size (320 by 240 or more) counts
+as one to be seen wherever it is written, and `--dump-textures` writes it
+out (`gl_replace.c`, `port_GlReplaceFindPicture`); the art mod makes it
+larger from the player's disc (`tools/port_art.py`, "a picture"). A mod's
+picture of a whole screen is drawn whole into the card's video memory,
+not only the columns of the display of the moment (`port_GlDrawBlits`).
+The copies the fade makes have the same pixels, so they are the same
+key.
+Nothing else written while the display is the movie's is looked up: each
+of its frames is new, and with mods on they filled the table of keys seen
+(16,384) before the top menu was reached, so that after the movie no new
+texture was replaced -- the English menu among them.
+
+While the player runs, the window shows the software GPU's picture (the
+movie is in the 24-bit mode, which the card does not draw), but for a
+display in the 16-bit mode that is wholly a picture drawn from a mod's
+and not written over since (`port_GlShowsReplacedPicture`, `gl.h`): then
+it is the remastered picture, so the title and its fade are the mod's
+picture at the window's resolution. With no mod's picture of it the
+title is the software GPU's, smoothed, as before.
 
 ## Skies
 
@@ -919,12 +981,10 @@ ending a kind's files must have.
 
 - **The fighters' textures by page**, as the stage's are: their own
   models are the larger step, and are taken already.
-- **More of the lettering in a font**: the dialogue boxes, the names on
-  the select screens and the options' pages are the art mod's for now,
-  made larger; each is a line of `tools/port_ui.py`'s table away.
-- **The title picture** after the opening movie is the movie's own
-  frame in its 24-bit mode, which the remastered picture leaves to the
-  software GPU (PORT.md, "Remastered in the window").
+- **More of the lettering in a font**: what no tour of the dumps
+  reached (the setup mode's own pages, the slash mode's, the results of
+  the other modes, the endings) is the art mod's, made larger; each is a
+  block of `tools/port_ui.py`'s table away, measured from a dump.
 - **Music by stage**: a key for a fight's piece with its stage
   (`bb2_m1-0` on stage 7 alone), so that a mod can give each stage a
   piece of its own though the game shares five among them.

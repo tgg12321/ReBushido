@@ -61,7 +61,7 @@ static const char g_port_window_usage[] =
     "            [--log FILE] [--graphics original|remastered]\n"
     "            [--resolution N] [--draw-distance original|far|max]\n"
     "            [--antialiasing off|2|4] [--aspect W:H]\n"
-    "            [--frame-rate original|display|N]\n"
+    "            [--frame-rate original|display|N] [--quick-loading on|off]\n"
     "\n"
     "  --image FILE   your own image of the game's disc: the .cue, or the\n"
     "                 .bin of raw sectors it names. Without it the first\n"
@@ -117,6 +117,11 @@ static const char g_port_window_usage[] =
     "                 picture between two of its frames is drawn from\n"
     "                 frames it has worked out already. It needs the\n"
     "                 remastered picture\n"
+    "  --quick-loading W  on, the default: the waits for the disc behind\n"
+    "                 a loading picture are hurried through; off: each\n"
+    "                 blank of them at the console's pace, as a run with\n"
+    "                 --plan or --frames has it unless this says on. The\n"
+    "                 game computes the same either way\n"
     "\n"
     "In the window: F1 opens the settings menu (Select does on the\n"
     "options page, the top menu and the pause, and a controller's guide\n"
@@ -170,6 +175,8 @@ static const char g_port_window_usage_end[] =
     "--menu-keys WORDS (presses in the settings menu, one a picture: up,\n"
     "down, left, right, accept, back, close, clear, key:NAME, pad:NAME,\n"
     "shot), --menu-shots FOLDER (where shot keeps the window),\n"
+    "--run-ahead 0|1|2 (frames run ahead, whatever the settings say;\n"
+    "with --fast or a picture taken for a test it is 0 unless this says),\n"
     "--profile FILE (where each blank's time went, and when each picture\n"
     "was shown: tools/port_profile.py reads it) and --display-rate N (a\n"
     "display made up of N blanks a second, which a swap waits for).\n";
@@ -566,8 +573,8 @@ int main(int argc, char **argv) {
     static char frames_endless[] = "2000000000";
     PortWindowOptions *options = &g_port_window_options;
     const char *config = NULL;
-    char *base = SDL_GetBasePath();
-    const char *beside = base != NULL ? base : "";
+    char *base;
+    const char *beside;
     s32 count = 0;
     s32 has_image = 0;
     s32 has_end = 0;
@@ -590,12 +597,19 @@ int main(int argc, char **argv) {
     s32 aspect_h = -1;
     s32 frame_rate = PORT_FRAME_RATE_ORIGINAL;
     s32 has_frame_rate = 0;
+    s32 run_ahead = -1;
     s32 stage_mesh = -1;
     s32 shadows = -1;
     PortRemasterView view;
     s32 code;
     s32 i;
 
+    /* the console's memory at its own addresses, before SDL, the card's
+     * driver or anything of the C library's can take one of them
+     * (port_host.h) */
+    port_MapFixedMemory();
+    base = SDL_GetBasePath();
+    beside = base != NULL ? base : "";
     SDL_SetMainReady();
     options->tap_every = 1;
     g_port_main_argc = argc;
@@ -657,6 +671,11 @@ int main(int argc, char **argv) {
             options->fault_in_sound = atoi(argv[++i]);
         } else if (strcmp(word, "--fast") == 0) {
             options->is_fast = 1;
+        } else if (strcmp(word, "--quick-loading") == 0 && has_value) {
+            options->quick_loading =
+                PORT_QUICK_OFF +
+                port_ChooseWord("--quick-loading takes off or on, not ",
+                                argv[++i], "off", "on", NULL);
         } else if (strcmp(word, "--config") == 0 && has_value) {
             config = argv[++i];
         } else if (strcmp(word, "--scale") == 0 && has_value) {
@@ -740,6 +759,14 @@ int main(int argc, char **argv) {
                 }
             }
             has_frame_rate = 1;
+        } else if (strcmp(word, "--run-ahead") == 0 && has_value) {
+            const char *how = argv[++i];
+
+            if (how[0] < '0' || how[0] > '0' + PORT_RUN_AHEAD_MAX ||
+                how[1] != 0) {
+                port_Complain("--run-ahead takes 0, 1 or 2, not ", how);
+            }
+            run_ahead = how[0] - '0';
         } else if (strcmp(word, "--tap-frames") == 0 && has_value) {
             options->tap_frames = argv[++i];
         } else if (strcmp(word, "--tap-window") == 0 && has_value) {
@@ -820,6 +847,14 @@ int main(int argc, char **argv) {
     if (has_frame_rate) {
         g_port_settings.frame_rate = frame_rate;
     }
+    if (run_ahead >= 0) {
+        g_port_settings.run_ahead = run_ahead;
+    } else if (options->is_fast || options->tap_frames != NULL ||
+               options->tap_window != NULL || options->shot_at > 0) {
+        /* a test that holds the window's pictures to the blanks they
+         * were drawn at, unless it asks for frames run ahead */
+        g_port_settings.run_ahead = 0;
+    }
     if (stage_mesh >= 0) {
         g_port_settings.stage_mesh = stage_mesh;
     }
@@ -854,6 +889,10 @@ int main(int argc, char **argv) {
          * this many blanks is a year. */
         passed[count++] = frames_option;
         passed[count++] = frames_endless;
+    } else if (options->quick_loading == PORT_QUICK_SETTINGS) {
+        /* a test's run keeps the console's pace through the loads, as
+         * every test's picture and sound were taken with it */
+        options->quick_loading = PORT_QUICK_OFF;
     }
     if (!has_mods && !g_port_settings.mods) {
         /* the settings file turned them off (docs/MODS.md) */
@@ -918,6 +957,11 @@ int main(int argc, char **argv) {
     } else {
         port_Say("shadows: the game's own black silhouettes.");
     }
+    port_Say("smooth_light: the game's own lights worked out %s.",
+             g_port_settings.smooth_light
+                 ? "at each pixel of the ground and the fighters' models"
+                 : "once a face and once a vertex, as the game does");
+    port_Say("effects: %s.", port_NameRemasterEffects(g_port_settings.effects));
     port_Say("memory cards: card1.mcd and card2.mcd beside the program "
              "unless --card1, --card2 or --no-cards says otherwise.");
     port_Say("settings: %s", g_port_settings_path != NULL

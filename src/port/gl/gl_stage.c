@@ -38,6 +38,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_light.h"
 #include "gl_scene.h"
 #include "gl_see.h"
 #include "gl_stage.h"
@@ -98,6 +99,7 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glClearDepth, (GLclampd))                                         \
     GL(void, glDepthFunc, (GLenum))                                            \
     GL(void, glDepthMask, (GLboolean))                                         \
+    GL(void, glColorMask, (GLboolean, GLboolean, GLboolean, GLboolean))        \
     GL(void, glBindTexture, (GLenum, GLuint))                                  \
     GL(void, glActiveTexture, (GLenum))                                        \
     GL(void, glBindFramebuffer, (GLenum, GLuint))                              \
@@ -199,6 +201,8 @@ PORT_GL_STAGE_FUNCTIONS
 #define FLAG_TEXTURED 1
 #define FLAG_RAW 2
 #define FLAG_HALF 4
+/* a piece's face lit at each corner, the colour run across it */
+#define FLAG_SHADED 8
 
 /* A game address as a pointer: the port keeps the game's memory below
  * 4 GB, so the low 32 bits are the whole of an address (docs/PORT.md,
@@ -230,6 +234,16 @@ PORT_GL_STAGE_FUNCTIONS
  * of them are drawn opened up fits in whole words. */
 #define TILES_MAX 512
 #define TILE_WORDS (TILES_MAX / 32)
+/* A piece's vertices name it by its number after the most tiles there
+ * can be (StageVertex.tile), and the shader by that (`a_tile - 512`). */
+#define PIECE_BASE TILES_MAX
+/* What a piece's face is (StageVertex.info[3]): a piece's at all; the
+ * back of a face drawn from both sides, drawn only from behind; left
+ * out nearer than the cutoff; and three corners, not four. */
+#define PIECE_FACE 1
+#define PIECE_BACK 2
+#define PIECE_CUTOFF 4
+#define PIECE_THREE 8
 
 /* ---- the mesh ---- */
 
@@ -256,6 +270,10 @@ typedef struct {
     u8 info[4];  /* the texel's bits, the mix, nothing, nothing */
     u16 tile;    /* which tile of the stage it belongs to */
     u16 pad;
+    /* The normal it is lit from with `smooth_light` (gl_light.h): the
+     * mean of the faces' about this corner that do not turn by more than
+     * a crease from its own, 4096 long; and nought. */
+    s16 normal[4];
     /* the rectangle of texels the face reads, its texture points' least
      * and most: a mod's picture of the page is read inside it, so that
      * nothing of a texture packed beside it is smoothed in (gl_scene.h) */
@@ -270,7 +288,7 @@ typedef struct {
      * nearer than the cutoff (RENDER_OT_CUTOFF), which is how the
      * ground between the camera and the fight is kept out of the way. */
     GLfloat corner[4][3];
-} StageVertex; /* 96 bytes */
+} StageVertex; /* 104 bytes */
 
 static struct {
     s32 is_started;
@@ -281,7 +299,7 @@ static struct {
      * (port_GlStageNews): -1 before there has been one */
     s32 said_stage;
     s32 has_news;
-    char news[128];
+    char news[256];
     GLuint program;
     GLuint buffer;
     GLuint array;
@@ -303,6 +321,10 @@ static struct {
     GLint at_depth_shift;
     GLint at_cutoff;
     GLint at_unit;
+    GLint at_smooth_light;
+    GLint at_light;
+    GLint at_color;
+    GLint at_back;
     GLint at_scene_lookup;
     GLint at_scene_pages;
     GLint at_scene_bases;
@@ -329,6 +351,30 @@ static struct {
     s32 is_drawn;
     u32 drawn_vertices;
     u32 draws;
+    /* the stage's pieces in the mesh (gl_stage.h, `stage_props_mesh`):
+     * the setting, and every stage whatever g_stage_props_proved says */
+    s32 is_props_on;
+    s32 is_props_every;
+    s32 is_props_hidden; /* left out of the picture altogether: a mask */
+    GLint at_pieces;
+    GLint at_far;
+    GLint at_occluding;
+    GLint at_slots;
+    s32 piece_first; /* the first of the mesh's vertices that are a piece's */
+    /* the view and the paint the mesh was last drawn with, which the
+     * pieces' marks in the shadows' mask are drawn with */
+    s32 has_drawn;
+    PortStageView drawn_view;
+    PortRemasterPrim drawn_paint;
+    PortAddress pieces; /* the first piece, which the rest follow */
+    const PortStagePiece *piece_list; /* as they were taken down */
+    s32 piece_count;
+    /* which pieces the mesh holds: one whose mesh it could not read all
+     * of is left to the game's own primitives, whole */
+    u32 piece_in[PORT_STAGE_PIECE_WORDS];
+    s32 piece_faces;
+    s32 pieces_held;
+    s32 pieces_missed;
 } g_stage;
 
 /* ---- the shaders ---- */
@@ -347,6 +393,7 @@ static const char g_stage_vertex_text[] =
     "layout(location = 8) in vec3 a_corner2;\n"
     "layout(location = 9) in vec3 a_corner3;\n"
     "layout(location = 10) in uvec4 a_box;\n"
+    "layout(location = 11) in vec3 a_normal;\n"
     /* the view the renderer drew the stage's tiles with: its rotation
      * already scaled as the tiles' own projection scales it, where the
      * camera is, the distance to the projection plane, and where the
@@ -362,17 +409,25 @@ static const char g_stage_vertex_text[] =
     "uniform int u_depth_shift;\n"
     "uniform int u_cutoff;\n"
     "uniform float u_unit;\n" /* a seam's step, in the tiles' scale */
+    /* which of the stage's pieces are drawn from the mesh this frame,
+     * and what a depth in the tiles' scale is times to be the world's */
+    "uniform uint u_pieces[2];\n"
+    "uniform float u_far;\n"
     "out vec2 v_texture;\n"
     "flat out float v_push;\n"
     "out float v_depth;\n"
     "flat out int v_cull;\n"
     /* a tile's face has one colour: there is nothing to interpolate */
     "flat out vec3 v_color;\n"
+    /* ... and a piece's face lit at each corner has three or four, which
+     * the chip runs across it (a Gouraud-shaded primitive) */
+    "out vec3 v_shade;\n"
     "flat out uvec4 v_flags;\n"
     "flat out ivec4 v_page;\n"
     "flat out uvec4 v_info;\n"
     "flat out uint v_tile;\n"
     "flat out float v_slot;\n"
+    "out vec3 v_smooth_normal;\n"
     "flat out vec4 v_box;\n"
     /* where the pixel is in the world, and which way its face looks, for
      * the walls seen through (gl_see.h) */
@@ -380,11 +435,13 @@ static const char g_stage_vertex_text[] =
     "flat out vec3 v_normal;\n"
     /* the ordering-table slot a depth is sorted at
      * (render_OtIndexShifted) */
-    "int slot_of(int depth) {\n"
-    "    int scaled = depth >> u_depth_shift;\n"
+    "int slot_scaled(int scaled) {\n"
     "    int octave = scaled >> 11;\n"
     "    int fraction = (scaled & 2047) - 4096;\n"
     "    return (fraction >> (octave & 31)) & 4095;\n"
+    "}\n"
+    "int slot_of(int depth) {\n"
+    "    return slot_scaled(depth >> u_depth_shift);\n"
     "}\n"
     "void main() {\n"
     "    vec3 v = u_view * (a_place - u_camera);\n"
@@ -409,6 +466,33 @@ static const char g_stage_vertex_text[] =
     /* the slot is also what a fighter is held against (gl_draw.c,
      * port_GlGroundSlotsBegin) */
     "    v_slot = float(slot_of(int(clamp(far, 0.0, 65535.0))));\n"
+    /* A piece of the stage that is not ground: a node's mesh, whose
+     * faces the renderer tests otherwise (render_EmitFT4 and the rest).
+     * Its depth is the plain average of its corners', each held at 0 as
+     * the coprocessor holds a depth behind the eye, and a face with none
+     * is left out; its ordering-table slot is that depth's with the
+     * node's scale undone (render_OtIndex: a node's depth goes in
+     * shifted by three less its scale, so by three in all); only the
+     * faces drawn through the packed table and the unlit ones are left
+     * out nearer than the cutoff; and a face is drawn from its front
+     * alone, or, for the other side of a face drawn from both, from its
+     * back. */
+    "    if ((a_info.w & 1u) != 0u) {\n"
+    "        bool three = (a_info.w & 8u) != 0u;\n"
+    "        float sort = three\n"
+    "            ? (max(c0.z, 0.0) + max(c1.z, 0.0) + max(c2.z, 0.0)) / 3.0\n"
+    "            : (max(c0.z, 0.0) + max(c1.z, 0.0) + max(c2.z, 0.0)\n"
+    "               + max(c3.z, 0.0)) / 4.0;\n"
+    "        int slot = slot_scaled(\n"
+    "            int(clamp(sort * u_far, 0.0, 16777215.0)) >> 3);\n"
+    "        uint piece = a_tile - 512u;\n"
+    "        bool shown = piece < 64u\n"
+    "            && (u_pieces[piece >> 5u] & (1u << (piece & 31u))) != 0u;\n"
+    "        bool seen = ((a_info.w & 2u) != 0u) ? !front : front;\n"
+    "        bool near = (a_info.w & 4u) != 0u && slot < u_cutoff;\n"
+    "        v_cull = (!shown || !seen || near || sort <= 0.0) ? 1 : 0;\n"
+    "        v_slot = float(slot);\n"
+    "    }\n"
     /* The projection the coprocessor makes, written so that every
      * component is linear in the point: the card's own divide by w puts
      * the corner where the GTE put it, and a face that crosses the near
@@ -434,11 +518,24 @@ static const char g_stage_vertex_text[] =
      * as far, the tile's seam number settles it, a quarter of a world
      * unit a number. */
     "    v_push = max(far, 0.0) / 256.0 + float(a_info.z) * u_unit;\n"
+    /* A piece's face is pushed back by a 256th of the depth the
+     * console sorted it at, as the ground's is by its farthest
+     * corner's: where it lies over the ground or over another piece in
+     * one plane, the face the console painted later wins, as it did
+     * there. */
+    "    if ((a_info.w & 1u) != 0u) {\n"
+    "        float sum = c0.z + c1.z + c2.z;\n"
+    "        float sort = ((a_info.w & 8u) != 0u) ? sum / 3.0\n"
+    "                                             : (sum + c3.z) / 4.0;\n"
+    "        v_push = max(sort, 0.0) / 256.0;\n"
+    "    }\n"
     "    v_color = vec3(a_color.xyz);\n"
+    "    v_shade = vec3(a_color.xyz);\n"
     "    v_flags = a_color;\n"
     "    v_page = a_page;\n"
     "    v_info = a_info;\n"
     "    v_tile = a_tile;\n"
+    "    v_smooth_normal = a_normal;\n"
     /* to the far edges of the last texels */
     "    v_box = vec4(vec2(a_box.xy), vec2(a_box.zw) + vec2(1.0));\n"
     "    v_place = a_place;\n"
@@ -456,11 +553,19 @@ static const char g_stage_fragment_text[] =
     "uniform ivec4 u_fog_rect;\n" /* the row the textures read */
     "uniform int u_depth_shift;\n"
     "uniform float u_depth;\n" /* what a depth is divided by */
+    /* `smooth_light` (gl_light.h): the tiles' lights, as the fighters'
+     * are given theirs (gl_fighter.c) */
+    "uniform int u_smooth_light;\n"
+    "uniform mat3 u_light;\n"
+    "uniform mat3 u_color;\n"
+    "uniform vec3 u_back;\n"
+    "in vec3 v_smooth_normal;\n"
     "in vec2 v_texture;\n"
     "in float v_depth;\n"
     "flat in float v_push;\n"
     "flat in int v_cull;\n"
     "flat in vec3 v_color;\n"
+    "in vec3 v_shade;\n"
     "flat in uvec4 v_flags;\n"
     "flat in ivec4 v_page;\n"
     "flat in uvec4 v_info;\n"
@@ -478,6 +583,10 @@ static const char g_stage_fragment_text[] =
     "uniform float u_see_radius[3];\n"
     "layout(location = 0) out vec4 o_color;\n"
     "layout(location = 1) out uint o_slot;\n"
+    /* the pieces' marks in the shadows' mask: a piece's pixel where the
+     * picture kept it, which is where the ground's slots hold its own */
+    "uniform int u_occluding;\n"
+    "uniform usampler2D u_slots;\n"
     "uint vram(int x, int y) {\n"
     "    return texelFetch(u_vram, ivec2(x & 1023, y & 511), 0).r;\n"
     "}\n"
@@ -604,7 +713,8 @@ static const char g_stage_fragment_text[] =
      * drawn where the farthest tile of the frame was, which is not
      * where such a face belongs in the painting, so it is left to the
      * game's own primitive (port_GlStageIsTile). */
-    "    bool open = (u_open[v_tile >> 5u] & (1u << (v_tile & 31u))) != 0u;\n"
+    "    bool open = v_tile < 512u\n"
+    "        && (u_open[v_tile >> 5u] & (1u << (v_tile & 31u))) != 0u;\n"
     "    if (open || (v_flags.w & 4u) != 0u) { discard; }\n"
     /* the whole face is nearer than the cutoff: the ground between the
      * camera and the fight, which the renderer leaves out too */
@@ -639,7 +749,17 @@ static const char g_stage_fragment_text[] =
     "        g_clut = ivec2(column + far.x, far.y);\n"
     "        g_fog_mix = place - float(first);\n"
     "    }\n"
-    "    vec3 color = v_color;\n"
+    /* a piece's face lit at each corner: the colour run across it */
+    "    vec3 color = ((v_flags.w & 8u) != 0u) ? v_shade : v_color;\n"
+    /* the face's NCS again at this pixel, from the normal that runs
+     * across it (render_EmitTile lights a face once, with the record's
+     * own normal) */
+    "    float length_of = length(v_smooth_normal);\n"
+    "    if (u_smooth_light != 0 && length_of > 0.25) {\n"
+    "        vec3 ir = max(u_light * (v_smooth_normal / length_of), vec3(0.0))\n"
+    "                * 4096.0;\n"
+    "        color = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
+    "    }\n"
     "    uint texel;\n"
     "    vec3 one_color = texel_color(int(floor(v_texture.x)),\n"
     "                                 int(floor(v_texture.y)), texel);\n"
@@ -700,6 +820,15 @@ static const char g_stage_fragment_text[] =
     "    }\n"
     "    color = clamp(color, vec3(0.0), vec3(255.0));\n"
     "    o_color = vec4(color / 255.0, 1.0);\n"
+    "    if (u_occluding != 0) {\n"
+    "        uint kept = texelFetch(u_slots, ivec2(gl_FragCoord.xy), 0).r;\n"
+    "        if ((v_info.w & 1u) == 0u || kept != uint(v_slot)) { discard; }\n"
+    /* a face that lies level, within 30 degrees, is floor a fighter may
+     * stand on, and the shadows fall on it as on the ground
+     * (gl_shadow.c, port_GlShadowIsFloor) */
+    "        vec3 level = normalize(v_normal);\n"
+    "        if (abs(level.y) >= 0.866) { discard; }\n"
+    "    }\n"
     /* The depth is kept as it is and not as the card's own divide
      * leaves it: a ground seen almost edge on reaches to the far end of
      * the stage, and a depth that falls off as one over the distance has
@@ -768,6 +897,8 @@ static void port_GlStageFormat(void) {
         9, 3, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->corner[3]);
     glVertexAttribIPointer(
         10, 4, GL_UNSIGNED_BYTE, (GLsizei)sizeof(*one), one->box);
+    glVertexAttribPointer(
+        11, 3, GL_SHORT, GL_FALSE, (GLsizei)sizeof(*one), one->normal);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
@@ -832,6 +963,10 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
     AT(at_depth_shift, "u_depth_shift");
     AT(at_cutoff, "u_cutoff");
     AT(at_unit, "u_unit");
+    AT(at_smooth_light, "u_smooth_light");
+    AT(at_light, "u_light");
+    AT(at_color, "u_color");
+    AT(at_back, "u_back");
     AT(at_scene_lookup, "u_scene_lookup");
     AT(at_scene_pages, "u_scene_pages");
     AT(at_scene_bases, "u_scene_bases");
@@ -841,6 +976,10 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
     AT(at_see_count, "u_see_count");
     AT(at_see_axis, "u_see_axis");
     AT(at_see_radius, "u_see_radius");
+    AT(at_pieces, "u_pieces");
+    AT(at_far, "u_far");
+    AT(at_occluding, "u_occluding");
+    AT(at_slots, "u_slots");
 #undef AT
     glGenBuffers(1, &g_stage.buffer);
     glGenVertexArrays(1, &g_stage.array);
@@ -872,6 +1011,34 @@ static const u8 g_stage_proved[STAGE_COUNT] = {
     1, 1, 1, 1, 1, 1, 1, 1, /* 24 to 31 */
     1, 1, 1, 1, 1, 1,       /* the modes' and the practice's own */
 };
+
+/* The stages the pieces are measured good on as meshes, stage by stage:
+ * the prover's own verdict (tools/port_stage_prove.py --props; docs/PORT.md,
+ * "The stage's pieces as meshes"). A 0 here draws that stage's pieces from
+ * the game's own primitives whatever the setting says. */
+static const u8 g_stage_props_proved[STAGE_COUNT] = {
+    1, 1, 1, 1, 1, 1, 1, 1, /* 0 to 7 */
+    1, 1, 1, 1, 1, 1, 1, 1, /* 8 to 15 */
+    1, 1, 1, 1, 1, 1, 1, 1, /* 16 to 23 */
+    1, 1, 1, 1, 1, 1, 1, 1, /* 24 to 31 */
+    1, 1, 1, 1, 1, 1,       /* the modes' and the practice's own */
+};
+
+void port_GlStageSetPropsOn(s32 on) {
+    g_stage.is_props_on = on != 0;
+    g_stage.is_props_every = on > 1;
+    g_stage.is_props_hidden = on == PORT_GL_PROPS_HIDE;
+    g_stage.said_stage = -1;
+}
+
+/* Whether this stage's pieces are drawn from the mesh: the ground's mesh
+ * first, then the setting and the measurements. */
+static s32 port_GlStagePropsAreOn(s32 stage) {
+    if (!g_stage.is_props_on || stage < 0 || stage >= STAGE_COUNT) {
+        return FALSE;
+    }
+    return g_stage.is_props_every || g_stage_props_proved[stage];
+}
 
 /* Whether this stage's ground is the mesh's, with no word said about it:
  * the setting, a stage the mesh is measured good on, or every stage where
@@ -910,6 +1077,17 @@ static void port_GlStageTellPath(s32 stage) {
     if (stage < 0) {
         snprintf(g_stage.news, sizeof(g_stage.news),
                  "no stage: the ground is drawn from %s.", how);
+    } else if (port_GlStageIsOnQuietly(stage)) {
+        snprintf(g_stage.news, sizeof(g_stage.news),
+                 "stage %d: the ground is drawn from %s; what stands on it "
+                 "from %s.",
+                 stage, how,
+                 !g_stage.is_props_on
+                     ? "the game's own primitives: stage_props_mesh is off"
+                 : port_GlStagePropsAreOn(stage)
+                     ? "the mesh as well"
+                     : "the game's own primitives: the pieces are not "
+                       "measured good on this stage");
     } else {
         snprintf(g_stage.news, sizeof(g_stage.news),
                  "stage %d: the ground is drawn from %s.", stage, how);
@@ -962,12 +1140,12 @@ void port_GlStageNewFrame(void) {
  * The whole of the coprocessor is put back afterwards: this runs while
  * the game's frame is being drawn, and nothing the game computes may
  * change. */
-static void port_GlStageLight(const s16 *normal, u8 *rgb) {
-    const LightSetup *lights = (const LightSetup *)port_RemasterTileLights();
+static void port_GlStageLightBy(
+    const LightSetup *lights, const void *matrix, const s16 *normal, u8 *rgb) {
     PortGte saved = g_port_gte;
     u32 color;
 
-    port_GteLoadControl(PORT_GTE_LIGHT, &lights->lmat, PORT_GTE_MATRIX_WORDS);
+    port_GteLoadControl(PORT_GTE_LIGHT, matrix, PORT_GTE_MATRIX_WORDS);
     port_GteLoadControl(
         PORT_GTE_LIGHT_COLOR, &lights->cmat, PORT_GTE_MATRIX_WORDS);
     /* the ambient colour, each byte times sixteen
@@ -984,6 +1162,12 @@ static void port_GlStageLight(const s16 *normal, u8 *rgb) {
     rgb[0] = (u8)color;
     rgb[1] = (u8)(color >> 8);
     rgb[2] = (u8)(color >> 16);
+}
+
+static void port_GlStageLight(const s16 *normal, u8 *rgb) {
+    const LightSetup *lights = (const LightSetup *)port_RemasterTileLights();
+
+    port_GlStageLightBy(lights, &lights->lmat, normal, rgb);
 }
 
 /* ---- building the mesh ---- */
@@ -1015,7 +1199,8 @@ typedef struct {
     u8 color[4]; /* red, green, blue, the flags */
     s16 page[4];
     u8 info[4];
-    u8 box[4]; /* its texture points' least and most */
+    s16 normal[3]; /* the record's, which the face is lit from */
+    u8 box[4];     /* its texture points' least and most */
     /* the face's corners in the world, in the order the record has
      * them, the fourth the third's again for a triangle */
     GLfloat corner[4][3];
@@ -1053,6 +1238,11 @@ static void port_GlStagePutVertex(
     }
     to->tile = (u16)face->tile;
     to->pad = 0;
+    /* the face's own until the mesh is whole (port_GlStageBuild) */
+    to->normal[0] = face->normal[0];
+    to->normal[1] = face->normal[1];
+    to->normal[2] = face->normal[2];
+    to->normal[3] = 0;
     for (i = 0; i < 4; i++) {
         to->box[i] = face->box[i];
     }
@@ -1178,6 +1368,9 @@ static void port_GlStageFace(s32 tile, const StageTile *at, const s16 *vertices,
     face.tile_x = at->x;
     face.tile_z = at->z;
     port_GlStageLight(normal, face.color);
+    face.normal[0] = normal[0];
+    face.normal[1] = normal[1];
+    face.normal[2] = normal[2];
     face.color[3] = (u8)(FLAG_TEXTURED | ((code & CODE_RAW) ? FLAG_RAW : 0) |
                          ((code & CODE_HALF) ? FLAG_HALF : 0));
     face.page[0] = (s16)((tpage & MODE_PAGE_X_MASK) * MODE_PAGE_X_STEP);
@@ -1360,6 +1553,612 @@ static void port_GlStageSeams(s32 count) {
     }
 }
 
+/* ---- the stage's pieces ---- */
+
+/* Everything of the stage that stands on the ground and is not a tile --
+ * the railings, the fences, the walls, the posts, the roofs -- is a piece
+ * (StageNode, stage.h): a node of its own with a mesh, a place and three
+ * angles, which the game queues from the cells the camera sees and the
+ * renderer projects again every frame (render_DrawQueue). Its faces are
+ * built into the mesh beside the ground's, in the world, so that they are
+ * drawn by the same camera: still where the camera is still, and in a
+ * picture between two frames moved by the camera alone. A piece's mesh is
+ * read as render_DrawQueue reads it -- parts, each its vertices and its
+ * groups of records, a group's type naming the routine that draws it --
+ * and each record as that routine reads it. */
+
+/* A mesh's part: how many vertices (or threes of them), and above that
+ * the form they are kept in (render_DrawPart). */
+#define PART_COUNT_MASK 0xFFFF
+#define PART_FORMAT_SHIFT 16
+#define PART_PREBUILT 0 /* threes of SVECTORs */
+#define PART_COMPACT 1  /* three halfwords each */
+#define PART_PACKED 4   /* the same, drawn through the packed table */
+#define SVECTOR_SIZE 8
+/* Nothing a piece has comes near these; they bound a walk through memory
+ * that is not a mesh. */
+#define PIECE_PARTS_MAX 64
+#define PIECE_POINTS_MAX 256
+
+/* The routines of g_render_handlers and g_render_packed_handlers a
+ * piece's group may name (render.c), and their records' sizes
+ * (render_asm.c, EMIT_..._SIZE). */
+#define TYPE_FT3 4
+#define TYPE_UNLIT_FT3 5
+#define TYPE_TWO_SIDED_FT3 6
+#define TYPE_FT4 12
+#define TYPE_UNLIT_FT4 13
+#define TYPE_TWO_SIDED_FT4 14
+#define TYPE_GT3 20
+#define TYPE_TWO_SIDED_GT3 22
+#define TYPE_GT4 28
+#define TYPE_TWO_SIDED_GT4 30
+#define SIZE_FT3 0x18
+#define SIZE_UNLIT_FT3 0x10
+#define SIZE_FT4 0x18
+#define SIZE_UNLIT_FT4 0x14
+#define SIZE_GT3 0x24
+#define SIZE_GT4 0x2C
+/* where a record keeps its corners and its normals */
+#define AT_CORNERS3 0x0C
+#define AT_CORNERS4 0x0E
+#define AT_GT4_CORNERS 0x10
+#define AT_FT3_NORMAL 0x10 /* x, y, z */
+#define AT_FT4_NORMAL_Z 0x12
+#define AT_FT4_NORMAL_XY 0x14
+#define AT_GT3_NORMAL_XY0 0x10
+#define AT_GT3_NORMAL_Z01 0x14 /* the first's z, then the second's */
+#define AT_GT3_NORMAL_XY1 0x18
+#define AT_GT3_NORMAL_XY2 0x1C
+#define AT_GT3_NORMAL_Z2 0x20
+#define AT_GT4_NORMAL_XY_FACE 0x14
+#define AT_GT4_NORMAL_Z_FACE_0 0x18 /* the face's z, then the first's */
+#define AT_GT4_NORMAL_XY0 0x1C
+#define AT_GT4_NORMAL_XY1 0x20
+#define AT_GT4_NORMAL_Z12 0x24
+#define AT_GT4_NORMAL_XY2 0x28
+/* the code byte of a record's first word, which the coprocessor's colour
+ * carries into the primitive (its RGBC); and the unlit routines' own
+ * (RENDER_UNLIT_FT3, RENDER_UNLIT_FT4: the texture as it is, opaque) */
+#define RECORD_CODE_SHIFT 24
+#define CODE_UNLIT 0x25
+/* the colour of an unlit face, which the chip does not use */
+#define UNLIT_GRAY 0x80
+
+/* One face of a piece, as the routine that draws it would make it. */
+typedef struct {
+    s32 count; /* 3 or 4 */
+    GLfloat place[4][3];
+    u32 uv[4];
+    u8 rgb[4][3];
+    u32 tpage;
+    u32 clut;
+    u32 code;
+    u8 shaded; /* a colour at each corner */
+    u8 how;    /* PIECE_... */
+    /* each corner's normal in the world, for `smooth_light` (gl_light.h),
+     * the one it is lit from */
+    s16 normal[4][3];
+} PieceFace;
+
+/* The piece being read: where its points are in the world, and how it
+ * is lit. */
+typedef struct {
+    s32 index;
+    const PortStagePiece *piece;
+    GLfloat point[PIECE_POINTS_MAX][3];
+    s32 points;
+} PieceRead;
+
+/* A normal of three halfwords, each turned bit for bit where the face is
+ * seen from behind (RENDER_FLIP), as the renderer turns them. */
+static void port_GlStagePieceNormal(s16 *normal, u32 xy, u32 z, u32 flip) {
+    xy ^= flip;
+    normal[0] = (s16)(xy & 0xFFFF);
+    normal[1] = (s16)(xy >> 16);
+    normal[2] = (s16)((z ^ flip) & 0xFFFF);
+}
+
+/* A normal of the piece's lit as the renderer lights it, and the same
+ * normal into the world, which the tiles' lights are in, for
+ * `smooth_light` (gl_light.h): turned by the piece's own matrix for a
+ * rotated one, as the renderer turns the lights the other way
+ * (render_LoadTurnedLights). */
+static void port_GlStagePieceLight(
+    const PieceRead *read, const s16 *normal, u8 *rgb, s16 *world) {
+    const PortStagePiece *piece = read->piece;
+    s32 row;
+
+    port_GlStageLightBy(
+        (const LightSetup *)piece->lights, piece->light_matrix, normal, rgb);
+    for (row = 0; row < 3; row++) {
+        if (piece->kind == NODE_KIND_ROTATED) {
+            world[row] =
+                (s16)(((s32)piece->rotation[row * 3] * normal[0] +
+                       (s32)piece->rotation[row * 3 + 1] * normal[1] +
+                       (s32)piece->rotation[row * 3 + 2] * normal[2]) >>
+                      12);
+        } else {
+            world[row] = normal[row];
+        }
+    }
+}
+
+/* A piece's face into the mesh: the chip's one or two triangles. */
+static void port_GlStagePieceFace(
+    const PieceRead *read, const PieceFace *face) {
+    static const s32 order[6] = {0, 1, 2, 1, 2, 3};
+    StageVertex *to;
+    s32 corners = face->count == 4 ? 6 : 3;
+    u32 tpage = face->tpage;
+    u32 clut = face->clut;
+    u8 flags;
+    u8 box[4];
+    s32 i;
+    s32 j;
+
+    /* A face that mixes with what is behind it is left to the game's own
+     * primitive, at its own place in the painting (port_GlStageIsTile:
+     * is_half). */
+    if (face->code & CODE_HALF) {
+        return;
+    }
+    flags = (u8)(FLAG_TEXTURED | ((face->code & CODE_RAW) ? FLAG_RAW : 0) |
+                 (face->shaded ? FLAG_SHADED : 0));
+    box[0] = box[1] = 0xFF;
+    box[2] = box[3] = 0;
+    for (i = 0; i < face->count; i++) {
+        u8 u = (u8)(face->uv[i] & 0xFF);
+        u8 v = (u8)((face->uv[i] >> 8) & 0xFF);
+
+        box[0] = u < box[0] ? u : box[0];
+        box[1] = v < box[1] ? v : box[1];
+        box[2] = u > box[2] ? u : box[2];
+        box[3] = v > box[3] ? v : box[3];
+    }
+    to = port_GlStageRoom(corners);
+    if (to == NULL) {
+        return;
+    }
+    for (i = 0; i < corners; i++) {
+        s32 k = order[i];
+        StageVertex *one = &to[i];
+
+        one->x = face->place[k][0];
+        one->y = face->place[k][1];
+        one->z = face->place[k][2];
+        one->u = (GLfloat)(face->uv[k] & 0xFF) + 0.5f;
+        one->v = (GLfloat)((face->uv[k] >> 8) & 0xFF) + 0.5f;
+        one->color[0] = face->rgb[k][0];
+        one->color[1] = face->rgb[k][1];
+        one->color[2] = face->rgb[k][2];
+        one->color[3] = flags;
+        one->page[0] = (s16)((tpage & MODE_PAGE_X_MASK) * MODE_PAGE_X_STEP);
+        one->page[1] = (s16)((tpage & MODE_PAGE_Y_BIT) ? MODE_PAGE_Y_STEP : 0);
+        one->page[2] = (s16)((clut & CLUT_X_MASK) * CLUT_X_STEP);
+        one->page[3] = (s16)((clut >> CLUT_Y_SHIFT) & (PORT_VRAM_HEIGHT - 1));
+        one->info[0] = (u8)((tpage >> MODE_DEPTH_SHIFT) & MODE_DEPTH_MASK);
+        one->info[1] = (u8)((tpage >> MODE_BLEND_SHIFT) & MODE_BLEND_MASK);
+        one->info[2] = 0;
+        one->info[3] =
+            (u8)(PIECE_FACE | face->how | (face->count == 3 ? PIECE_THREE : 0));
+        one->tile = (u16)(PIECE_BASE + read->index);
+        one->pad = 0;
+        one->normal[0] = face->normal[k][0];
+        one->normal[1] = face->normal[k][1];
+        one->normal[2] = face->normal[k][2];
+        one->normal[3] = 0;
+        for (j = 0; j < 4; j++) {
+            one->box[j] = box[j];
+        }
+        for (j = 0; j < 4; j++) {
+            const GLfloat *corner = face->place[j < face->count ? j : 2];
+
+            one->corner[j][0] = corner[0];
+            one->corner[j][1] = corner[1];
+            one->corner[j][2] = corner[2];
+        }
+    }
+    g_stage.piece_faces++;
+}
+
+/* The corners of a record, by the byte of each among the part's points;
+ * false where one names a point the part has not. */
+static s32 port_GlStagePieceCorners(
+    const PieceRead *read, PieceFace *face, const u8 *corners, s32 count) {
+    s32 i;
+
+    face->count = count;
+    for (i = 0; i < count; i++) {
+        s32 index = corners[i];
+
+        if (index >= read->points) {
+            return FALSE;
+        }
+        face->place[i][0] = read->point[index][0];
+        face->place[i][1] = read->point[index][1];
+        face->place[i][2] = read->point[index][2];
+    }
+    return TRUE;
+}
+
+/* What every record begins with: the texture page, the colour table and
+ * the texture points (EMIT_UV0_CLUT, EMIT_UV1_TPAGE). */
+static void port_GlStagePieceTexture(
+    PieceFace *face, const u8 *record, s32 count) {
+    s32 i;
+
+    face->tpage = STAGE_HALF(record, RECORD_TPAGE);
+    face->clut = STAGE_HALF(record, RECORD_CLUT);
+    for (i = 0; i < count; i++) {
+        face->uv[i] = STAGE_HALF(record, RECORD_UV0 + 2 * i);
+    }
+    face->shaded = FALSE;
+    /* none until a corner is lit: an unlit face keeps the game's own */
+    for (i = 0; i < 4; i++) {
+        face->normal[i][0] = face->normal[i][1] = face->normal[i][2] = 0;
+    }
+}
+
+static void port_GlStagePieceFlat(PieceFace *face, const u8 *rgb) {
+    s32 i;
+
+    for (i = 0; i < 4; i++) {
+        face->rgb[i][0] = rgb[0];
+        face->rgb[i][1] = rgb[1];
+        face->rgb[i][2] = rgb[2];
+        face->normal[i][0] = face->normal[0][0];
+        face->normal[i][1] = face->normal[0][1];
+        face->normal[i][2] = face->normal[0][2];
+    }
+}
+
+/* One record of a group, both sides of it where its routine draws both.
+ * `group_code` is the code of the group's first record, which some
+ * routines take for all of them. False where the type is not one a piece
+ * is read for. */
+static s32 port_GlStagePieceRecord(
+    const PieceRead *read, s32 type, s32 is_packed, const u8 *record,
+    u32 group_code) {
+    PieceFace face;
+    s16 normal[3];
+    u8 rgb[3];
+    u32 own_code = STAGE_WORD(record, RECORD_TPAGE) >> RECORD_CODE_SHIFT;
+    s32 sides;
+    s32 side;
+
+    switch (type) {
+    case TYPE_FT3:
+    case TYPE_TWO_SIDED_FT3:
+        sides = type == TYPE_TWO_SIDED_FT3 ? 2 : 1;
+        for (side = 0; side < sides; side++) {
+            u32 flip = side ? 0xFFFFFFFFU : 0;
+
+            port_GlStagePieceTexture(&face, record, 3);
+            if (!port_GlStagePieceCorners(
+                    read, &face, record + AT_CORNERS3, 3)) {
+                return FALSE;
+            }
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_FT3_NORMAL),
+                STAGE_WORD(record, AT_FT3_NORMAL + 4), flip);
+            port_GlStagePieceLight(read, normal, rgb, face.normal[0]);
+            port_GlStagePieceFlat(&face, rgb);
+            /* the packed routine takes the group's first colour and code
+             * (render_EmitPackedFT3) and leaves out what is nearer than
+             * the cutoff */
+            face.code = (is_packed && type == TYPE_FT3) ? group_code : own_code;
+            face.how =
+                (u8)((side ? PIECE_BACK : 0) |
+                     ((is_packed && type == TYPE_FT3) ? PIECE_CUTOFF : 0));
+            port_GlStagePieceFace(read, &face);
+        }
+        return TRUE;
+
+    case TYPE_FT4:
+    case TYPE_TWO_SIDED_FT4:
+        sides = type == TYPE_TWO_SIDED_FT4 ? 2 : 1;
+        for (side = 0; side < sides; side++) {
+            u32 flip = side ? 0xFFFFFFFFU : 0;
+
+            port_GlStagePieceTexture(&face, record, 4);
+            if (!port_GlStagePieceCorners(
+                    read, &face, record + AT_CORNERS4, 4)) {
+                return FALSE;
+            }
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_FT4_NORMAL_XY),
+                STAGE_HALF(record, AT_FT4_NORMAL_Z), flip);
+            port_GlStagePieceLight(read, normal, rgb, face.normal[0]);
+            port_GlStagePieceFlat(&face, rgb);
+            face.code = own_code;
+            face.how =
+                (u8)((side ? PIECE_BACK : 0) |
+                     ((is_packed && type == TYPE_FT4) ? PIECE_CUTOFF : 0));
+            port_GlStagePieceFace(read, &face);
+        }
+        return TRUE;
+
+    case TYPE_UNLIT_FT3:
+    case TYPE_UNLIT_FT4: {
+        s32 count = type == TYPE_UNLIT_FT3 ? 3 : 4;
+
+        port_GlStagePieceTexture(&face, record, count);
+        if (!port_GlStagePieceCorners(
+                read, &face, record + (count == 3 ? AT_CORNERS3 : AT_CORNERS4),
+                count)) {
+            return FALSE;
+        }
+        rgb[0] = rgb[1] = rgb[2] = UNLIT_GRAY;
+        port_GlStagePieceFlat(&face, rgb);
+        face.code = CODE_UNLIT;
+        face.how = PIECE_CUTOFF;
+        port_GlStagePieceFace(read, &face);
+        return TRUE;
+    }
+
+    case TYPE_GT3:
+    case TYPE_TWO_SIDED_GT3:
+        sides = type == TYPE_TWO_SIDED_GT3 ? 2 : 1;
+        for (side = 0; side < sides; side++) {
+            u32 flip = side ? 0xFFFFFFFFU : 0;
+            u32 z01 = STAGE_WORD(record, AT_GT3_NORMAL_Z01);
+
+            port_GlStagePieceTexture(&face, record, 3);
+            if (!port_GlStagePieceCorners(
+                    read, &face, record + AT_CORNERS3, 3)) {
+                return FALSE;
+            }
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_GT3_NORMAL_XY0), z01, flip);
+            port_GlStagePieceLight(read, normal, face.rgb[0], face.normal[0]);
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_GT3_NORMAL_XY1), z01 >> 16, flip);
+            port_GlStagePieceLight(read, normal, face.rgb[1], face.normal[1]);
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_GT3_NORMAL_XY2),
+                STAGE_WORD(record, AT_GT3_NORMAL_Z2), flip);
+            port_GlStagePieceLight(read, normal, face.rgb[2], face.normal[2]);
+            face.shaded = TRUE;
+            /* the colour and code are the group's first record's
+             * (render_EmitGT3) */
+            face.code = group_code;
+            face.how = (u8)(side ? PIECE_BACK : 0);
+            port_GlStagePieceFace(read, &face);
+        }
+        return TRUE;
+
+    case TYPE_GT4:
+    case TYPE_TWO_SIDED_GT4:
+        sides = type == TYPE_TWO_SIDED_GT4 ? 2 : 1;
+        for (side = 0; side < sides; side++) {
+            u32 flip = side ? 0xFFFFFFFFU : 0;
+            u32 z_face_0 = STAGE_WORD(record, AT_GT4_NORMAL_Z_FACE_0);
+            u32 z12 = STAGE_WORD(record, AT_GT4_NORMAL_Z12);
+
+            port_GlStagePieceTexture(&face, record, 4);
+            if (!port_GlStagePieceCorners(
+                    read, &face, record + AT_GT4_CORNERS, 4)) {
+                return FALSE;
+            }
+            /* the first corner is lit by the face's own normal, the other
+             * three by theirs; seen from behind, the renderer turns the
+             * second and fourth corners' x and y not at all
+             * (render_EmitBothSidesGT4), and neither does this */
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_GT4_NORMAL_XY_FACE), z_face_0,
+                flip);
+            port_GlStagePieceLight(read, normal, face.rgb[0], face.normal[0]);
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_GT4_NORMAL_XY0),
+                (z_face_0 ^ flip) >> 16, 0);
+            port_GlStagePieceLight(read, normal, face.rgb[1], face.normal[1]);
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_GT4_NORMAL_XY1), z12, flip);
+            port_GlStagePieceLight(read, normal, face.rgb[2], face.normal[2]);
+            port_GlStagePieceNormal(
+                normal, STAGE_WORD(record, AT_GT4_NORMAL_XY2),
+                (z12 ^ flip) >> 16, 0);
+            port_GlStagePieceLight(read, normal, face.rgb[3], face.normal[3]);
+            face.shaded = TRUE;
+            face.code = group_code;
+            face.how = (u8)(side ? PIECE_BACK : 0);
+            port_GlStagePieceFace(read, &face);
+        }
+        return TRUE;
+
+    default:
+        return FALSE;
+    }
+}
+
+/* How long a record of a group of this type is, 0 for a type a piece is
+ * not read for. */
+static s32 port_GlStagePieceRecordSize(s32 type) {
+    switch (type) {
+    case TYPE_FT3:
+    case TYPE_TWO_SIDED_FT3:
+        return SIZE_FT3;
+    case TYPE_UNLIT_FT3:
+        return SIZE_UNLIT_FT3;
+    case TYPE_FT4:
+    case TYPE_TWO_SIDED_FT4:
+        return SIZE_FT4;
+    case TYPE_UNLIT_FT4:
+        return SIZE_UNLIT_FT4;
+    case TYPE_GT3:
+    case TYPE_TWO_SIDED_GT3:
+        return SIZE_GT3;
+    case TYPE_GT4:
+    case TYPE_TWO_SIDED_GT4:
+        return SIZE_GT4;
+    default:
+        return 0;
+    }
+}
+
+/* A part's points, in the world: the piece's matrix and place for a
+ * rotated piece, its place alone for one the renderer draws unrotated
+ * (render_SetupNode). */
+static void port_GlStagePiecePoint(PieceRead *read, s32 at, const s16 *vertex) {
+    const PortStagePiece *piece = read->piece;
+    GLfloat x = (GLfloat)vertex[0];
+    GLfloat y = (GLfloat)vertex[1];
+    GLfloat z = (GLfloat)vertex[2];
+    s32 row;
+
+    for (row = 0; row < 3; row++) {
+        if (piece->kind == NODE_KIND_ROTATED) {
+            read->point[at][row] =
+                ((GLfloat)piece->rotation[row * 3] * x +
+                 (GLfloat)piece->rotation[row * 3 + 1] * y +
+                 (GLfloat)piece->rotation[row * 3 + 2] * z) /
+                    4096.0f +
+                (GLfloat)piece->place[row];
+        } else {
+            read->point[at][row] = (row == 0 ? x : (row == 1 ? y : z)) +
+                                   (GLfloat)piece->place[row];
+        }
+    }
+}
+
+/* One piece into the mesh. False, with nothing of it kept, where its mesh
+ * holds anything this does not read as the renderer would. */
+static s32 port_GlStagePiece(s32 index, const PortStagePiece *piece) {
+    static PieceRead read;
+    const u8 *walk = (const u8 *)piece->mesh;
+    s32 first = g_stage.built;
+    s32 faces = g_stage.piece_faces;
+    s32 parts;
+
+    if (walk == NULL || (piece->kind != NODE_KIND_ROTATED &&
+                         piece->kind != NODE_KIND_UNROTATED)) {
+        return FALSE;
+    }
+    read.index = index;
+    read.piece = piece;
+    for (parts = 0; parts < PIECE_PARTS_MAX; parts++) {
+        u32 word = STAGE_WORD(walk, 0);
+        s32 count = (s32)(word & PART_COUNT_MASK);
+        s32 format = (s32)(word >> PART_FORMAT_SHIFT);
+        s32 i;
+
+        walk += sizeof(u32);
+        if (count == 0) {
+            return TRUE;
+        }
+        if (format == PART_PREBUILT) {
+            read.points = count * 3;
+            if (read.points > PIECE_POINTS_MAX) {
+                break;
+            }
+            for (i = 0; i < read.points; i++) {
+                port_GlStagePiecePoint(&read, i, (const s16 *)walk);
+                walk += SVECTOR_SIZE;
+            }
+        } else if (format == PART_COMPACT || format == PART_PACKED) {
+            read.points = count;
+            if (read.points > PIECE_POINTS_MAX) {
+                break;
+            }
+            for (i = 0; i < read.points; i++) {
+                port_GlStagePiecePoint(&read, i, (const s16 *)walk);
+                walk += PACKED_VERTEX_SIZE;
+            }
+            /* moved on two bytes if that leaves it on a whole word
+             * (render_ProjectPackedVertices) */
+            walk += (PortAddress)walk & (sizeof(u32) - 1);
+        } else {
+            break;
+        }
+        /* the groups (render_DrawGroups): a count, a type and the
+         * records, until a count of none */
+        for (;;) {
+            s32 records = STAGE_HALF(walk, 0);
+            s32 type;
+            s32 size;
+            u32 group_code;
+
+            walk += sizeof(u16);
+            if (records == 0) {
+                break;
+            }
+            type = STAGE_HALF(walk, 0);
+            walk += sizeof(u16);
+            size = port_GlStagePieceRecordSize(type);
+            if (size == 0) {
+                goto missed;
+            }
+            group_code = STAGE_WORD(walk, RECORD_TPAGE) >> RECORD_CODE_SHIFT;
+            for (i = 0; i < records; i++) {
+                if (!port_GlStagePieceRecord(
+                        &read, type, format == PART_PACKED, walk, group_code)) {
+                    goto missed;
+                }
+                walk += size;
+            }
+        }
+        /* another part follows where the halfword after is not none
+         * (render_DrawQueue) */
+        walk += sizeof(u16);
+        if (STAGE_HALF(walk, -(s32)sizeof(u16)) == 0) {
+            return TRUE;
+        }
+    }
+missed:
+    g_stage.built = first;
+    g_stage.piece_faces = faces;
+    return FALSE;
+}
+
+/* Every piece of the stage into the mesh, after the ground. */
+static void port_GlStagePieces(void) {
+    s32 count = 0;
+    const PortStagePiece *pieces = port_RemasterStagePieces(&count);
+    s32 i;
+
+    g_stage.pieces = 0;
+    g_stage.piece_count = 0;
+    g_stage.piece_faces = 0;
+    g_stage.pieces_held = 0;
+    g_stage.pieces_missed = 0;
+    for (i = 0; i < PORT_STAGE_PIECE_WORDS; i++) {
+        g_stage.piece_in[i] = 0;
+    }
+    if (count <= 0) {
+        return;
+    }
+    for (i = 0; i < count && i < PORT_STAGE_PIECES_MAX; i++) {
+        if (port_GlStagePiece(i, &pieces[i])) {
+            g_stage.piece_in[i >> 5] |= 1U << (i & 31);
+            g_stage.pieces_held++;
+        } else {
+            g_stage.pieces_missed++;
+        }
+    }
+    g_stage.pieces = pieces[0].node;
+    g_stage.piece_list = pieces;
+    g_stage.piece_count = count;
+}
+
+/* Which piece of the stage this object is, or -1. */
+static s32 port_GlStagePieceOf(PortAddress object) {
+    s32 i;
+
+    /* by the addresses the pieces were taken down at, and not by the
+     * size of a StageNode: this file's build lays the game's structures
+     * out with pointers of its own size, the game's with PTR32 slots */
+    if (g_stage.piece_count == 0 || object < g_stage.pieces) {
+        return -1;
+    }
+    for (i = 0; i < g_stage.piece_count; i++) {
+        if (g_stage.piece_list[i].node == object) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 /* The whole of the stage's ground into one vertex buffer. */
 static void port_GlStageBuild(const PortStageView *view) {
     s32 count = 0;
@@ -1380,6 +2179,29 @@ static void port_GlStageBuild(const PortStageView *view) {
         port_GlStageTile(i, &tiles[i]);
     }
     port_GlStageSeams(count);
+    /* each corner's normal the mean of the faces' about it, for
+     * `smooth_light` (gl_light.h); a stage the memory cannot be had for
+     * keeps the faces' own, which light it as the game does */
+    if (g_stage.built > 0) {
+        port_GlLightSmoothNormals(
+            &g_stage.building[0].x,
+            (s32)(sizeof(StageVertex) / sizeof(GLfloat)),
+            g_stage.building[0].normal,
+            (s32)(sizeof(StageVertex) / sizeof(s16)), g_stage.built);
+    }
+    g_stage.piece_first = g_stage.built;
+    /* and what stands on it: built whatever the setting says, which
+     * decides frame by frame whether they are drawn from it */
+    port_GlStagePieces();
+    if (g_stage.piece_count > 0) {
+        /* what the mesh made of the pieces, for the run's log */
+        snprintf(g_stage.news, sizeof(g_stage.news),
+                 "the stage's mesh holds %d of its %d pieces, %d faces of "
+                 "them; %d are left to the game's own primitives.",
+                 g_stage.pieces_held, g_stage.piece_count, g_stage.piece_faces,
+                 g_stage.pieces_missed);
+        g_stage.has_news = TRUE;
+    }
     g_stage.vertex_count = g_stage.built;
     g_stage.tiles = (PortAddress)tiles;
     g_stage.tile_count = count;
@@ -1395,6 +2217,31 @@ static void port_GlStageBuild(const PortStageView *view) {
 }
 
 /* ---- drawing it ---- */
+
+/* The tiles' lights for `smooth_light`, as the coprocessor has them
+ * (port_GlStageLight): the light matrix and the colour matrix made 1,
+ * and the colour of the dark in bytes. */
+static void port_GlStageLights(void) {
+    const LightSetup *lights = (const LightSetup *)port_RemasterTileLights();
+    GLfloat light[9];
+    GLfloat color[9];
+    s32 i;
+
+    glUniform1i(g_stage.at_smooth_light,
+                port_GlLightIsSmooth() && lights != NULL ? 1 : 0);
+    if (lights == NULL) {
+        return;
+    }
+    for (i = 0; i < 9; i++) {
+        light[i] = (GLfloat)lights->lmat.m[i / 3][i % 3] / 4096.0f;
+        color[i] = (GLfloat)lights->cmat.m[i / 3][i % 3] / 4096.0f;
+    }
+    /* the numbers are a row after a row */
+    glUniformMatrix3fv(g_stage.at_light, 1, GL_TRUE, light);
+    glUniformMatrix3fv(g_stage.at_color, 1, GL_TRUE, color);
+    glUniform3f(g_stage.at_back, (GLfloat)lights->back[0],
+                (GLfloat)lights->back[1], (GLfloat)lights->back[2]);
+}
 
 /* The renderer's own framebuffer is what the mesh draws through: the
  * colour buffer the primitives are painted into, with the depth buffer
@@ -1475,21 +2322,19 @@ static void port_GlStageSeeThrough(const PortStageView *view) {
     glUniform1fv(g_stage.at_see_radius, PORT_SEE_FIGHTERS, radius);
 }
 
-static void port_GlStageDrawMesh(
-    const PortGlPicture *picture, const PortRemasterPrim *paint) {
-    const PortStageView *view =
-        g_stage.has_own_view ? &g_stage.own_view : port_GetRemasterStageView();
+/* The program and everything it is told, for a picture drawn with this
+ * view: the mesh itself, and the pieces' marks in the shadows' mask. */
+static void port_GlStageUniforms(
+    const PortStageView *view, const PortGlPicture *picture,
+    const PortRemasterPrim *paint) {
     GLfloat matrix[9];
     GLint slot[32];
     GLint clut[2 * (PORT_STAGE_FOG_LEVELS + 1)];
     GLuint open[TILE_WORDS];
+    GLuint pieces[PORT_STAGE_PIECE_WORDS];
     s32 scale_x = picture->draw_x;
     s32 scale_y = picture->draw_y;
     s32 i;
-
-    if (g_stage.vertex_count == 0 || !port_GlStageTarget(picture)) {
-        return;
-    }
     /* Which tiles the game drew opened up in the frame this view is of,
      * so that a fighter behind one can be seen: their faces mix with
      * what is behind them and are the game's own primitives, not the
@@ -1536,6 +2381,7 @@ static void port_GlStageDrawMesh(
     glUniform1f(
         g_stage.at_depth, DEPTH_RANGE / (GLfloat)(1 << (view->far_shift & 31)));
     glUniform1i(g_stage.at_depth_shift, view->depth_shift & 31);
+    port_GlStageLights();
     glUniform1i(g_stage.at_cutoff, view->ot_cutoff);
     /* a tile's seam number is a quarter of a world unit (SEAM_STEP) */
     glUniform1f(
@@ -1549,6 +2395,17 @@ static void port_GlStageDrawMesh(
                  (GLuint)paint->window_or_u, (GLuint)paint->window_and_v,
                  (GLuint)paint->window_or_v);
     glUniform1uiv(g_stage.at_open, TILE_WORDS, open);
+    /* which pieces the mesh draws: those the frame queued and left as
+     * they were, that the mesh holds, on a stage they are drawn from it
+     * on (port_GlStageIsTile leaves out their primitives by the same) */
+    for (i = 0; i < PORT_STAGE_PIECE_WORDS; i++) {
+        pieces[i] = port_GlStagePropsAreOn(port_RemasterStageNumber()) &&
+                            !g_stage.is_props_hidden
+                        ? view->pieces[i] & g_stage.piece_in[i]
+                        : 0;
+    }
+    glUniform1uiv(g_stage.at_pieces, PORT_STAGE_PIECE_WORDS, pieces);
+    glUniform1f(g_stage.at_far, (GLfloat)(1 << (view->far_shift & 31)));
     /* a mod's pictures of the stage's pages (gl_scene.h) */
     glUniform1i(g_stage.at_scene_lookup, PORT_GL_SCENE_LOOKUP_UNIT);
     glUniform1i(g_stage.at_scene_pages, PORT_GL_SCENE_PAGES_UNIT);
@@ -1556,6 +2413,26 @@ static void port_GlStageDrawMesh(
     glUniform1i(g_stage.at_scene_on, port_GlSceneBind() ? 1 : 0);
     glUniform1f(g_stage.at_scene_levels, port_GlSceneLevels());
     port_GlStageSeeThrough(view);
+    glUniform1i(g_stage.at_occluding, 0);
+    glUniform1i(g_stage.at_slots, 1);
+}
+
+static void port_GlStageDrawMesh(
+    const PortGlPicture *picture, const PortRemasterPrim *paint) {
+    const PortStageView *view =
+        g_stage.has_own_view ? &g_stage.own_view : port_GetRemasterStageView();
+    s32 scale_x = picture->draw_x;
+    s32 scale_y = picture->draw_y;
+
+    if (g_stage.vertex_count == 0 || !port_GlStageTarget(picture)) {
+        return;
+    }
+    port_GlStageUniforms(view, picture, paint);
+    /* what the pieces' marks in the shadows' mask are drawn with, at the
+     * picture's end (port_GlStageDrawOccluders) */
+    g_stage.drawn_view = *view;
+    g_stage.drawn_paint = *paint;
+    g_stage.has_drawn = TRUE;
 
     /* The whole depth buffer is cleared, and not only the part the mesh
      * draws in: the scene is held against it everywhere (gl_draw.c), so
@@ -1610,10 +2487,44 @@ static void port_GlStageDrawMesh(
     port_GlCountDraw(g_stage.drawn_vertices, g_stage.draws);
 }
 
+void port_GlStageDrawOccluders(u32 framebuffer) {
+    PortGlPicture picture;
+
+    if (!g_stage.is_drawn || !g_stage.has_drawn ||
+        g_stage.vertex_count <= g_stage.piece_first) {
+        return;
+    }
+    port_GlGetPicture(&picture);
+    if (picture.target_w <= 0) {
+        return;
+    }
+    port_GlStageUniforms(&g_stage.drawn_view, &picture, &g_stage.drawn_paint);
+    glUniform1i(g_stage.at_occluding, 1);
+    glActiveTexture(GL_TEXTURE0 + 1);
+    glBindTexture(GL_TEXTURE_2D, picture.slot_texture);
+    glActiveTexture(GL_TEXTURE0);
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    glViewport(0, 0, picture.target_w, picture.target_h);
+    /* the alpha alone, as the game's own faces mark it (gl_draw.c,
+     * port_GlDrawOccluders); the caller's scissor stands */
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_BLEND);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+    glDrawArrays(GL_TRIANGLES, g_stage.piece_first,
+                 g_stage.vertex_count - g_stage.piece_first);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glUniform1i(g_stage.at_occluding, 0);
+    port_GlCountDraw((u32)(g_stage.vertex_count - g_stage.piece_first), 1);
+    glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
+    port_GlForgetState();
+}
+
 /* Whether this primitive is a drawing of one of the stage's tiles, the
  * mesh being on and built of this stage. */
 static s32 port_GlStageIsTile(const PortRemasterPrim *prim, s32 may_build) {
     const PortStageView *view;
+    s32 piece;
 
     if (!port_GlStageIsOn() || prim->id.object == 0) {
         return FALSE;
@@ -1640,10 +2551,25 @@ static s32 port_GlStageIsTile(const PortRemasterPrim *prim, s32 may_build) {
     if (g_stage.tile_count == 0) {
         return FALSE;
     }
-    return prim->id.object >= g_stage.tiles &&
-           prim->id.object <
-               g_stage.tiles +
-                   (PortAddress)((u32)g_stage.tile_count * sizeof(StageTile));
+    if (prim->id.object >= g_stage.tiles &&
+        prim->id.object <
+            g_stage.tiles +
+                (PortAddress)((u32)g_stage.tile_count * sizeof(StageTile))) {
+        return TRUE;
+    }
+    /* A piece's, where the mesh holds the piece and draws it this frame:
+     * the frame the mesh is drawn with, a picture's own between two frames
+     * where there is one, says which pieces it queued and left as they
+     * were taken down (PortStageView.pieces). */
+    piece = port_GlStagePieceOf(prim->id.object);
+    if (piece < 0 || !port_GlStagePropsAreOn(port_RemasterStageNumber())) {
+        return FALSE;
+    }
+    if (g_stage.has_own_view) {
+        view = &g_stage.own_view;
+    }
+    return (view->pieces[piece >> 5] & g_stage.piece_in[piece >> 5] &
+            (1U << (piece & 31))) != 0;
 }
 
 s32 port_GlStageWouldTake(const PortRemasterPrim *prim) {

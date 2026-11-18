@@ -13,7 +13,8 @@
  *
  * Where a piece is is worked out from the sound's clock, which is the
  * game's, as samples since the stream began: a step run again after a
- * rollback is not heard (g_port_rerun) and moves nothing here, and the
+ * rollback is not heard (g_port_rerun, and a frame run ahead,
+ * g_port_ahead) and moves nothing here, and the
  * step after it goes on from where the clock is, so a rollback neither
  * restarts the piece nor makes it stutter. Nothing here is the game's
  * state (config/port_state.txt). */
@@ -846,7 +847,7 @@ void port_MusicStart(void) {
  * (port_music.h). */
 const s16 *port_PlayMusic(u32 frames, s16 **heard) {
     /* a step run again is not heard, and moves nothing here */
-    if (g_port_rerun || frames > FRAMES_MAX) {
+    if (g_port_rerun || g_port_ahead || frames > FRAMES_MAX) {
         return NULL;
     }
     port_MusicFollow();

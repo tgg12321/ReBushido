@@ -7,6 +7,7 @@ tiles, stage by stage, with nothing shown (docs/PORT.md, "Remastered",
             [--stages 0-37] [--scale 2] [--frames 4200] [--every 300]
             [--out build/stagemesh] [--pairs 2] [--distance max]
             [--mesh every|on] [--against tiles|nodepth] [--mods FOLDER]
+            [--props]
 
 Every stage the game can load is measured, 0 to 37: the 32 a fight can
 be set on, and the six the modes have of their own, which the menus
@@ -42,6 +43,16 @@ With --pairs N it writes N pictures a stage of the two side by side
 pictures a stage of the mesh's own with the cells that count reddened,
 which is how to see at once whether what differs is a wrongly drawn face
 or the speckle of a ground read half a texel along.
+
+With --props it proves the stage's pieces instead -- the railings,
+fences, walls and roofs drawn from the ground's mesh as well
+(`stage_props_mesh`; docs/PORT.md, "The stage's pieces as meshes"): both
+runs draw the ground from the mesh, one the pieces from it too
+(`--stage-props every`) and the other from the game's own primitives,
+by the same bar, into build/stageprops/ unless --out says, and the
+verdict's line is g_stage_props_proved's. Without it both runs leave
+the pieces to the game's primitives, so that what is measured is the
+ground alone.
 
 It needs the prover (tools/port_gl_build.py) and your own image of the
 disc. No check runs it: CI has no graphics card.
@@ -111,13 +122,22 @@ def verdict_of(row):
     return None
 
 
-def write_verdict(path, rows):
-    """The table a reader looks at, and the line of g_stage_proved it
-    comes to (src/port/gl/gl_stage.c)."""
+def write_verdict(path, rows, props=False):
+    """The table a reader looks at, and the line of g_stage_proved (or,
+    with --props, g_stage_props_proved) it comes to
+    (src/port/gl/gl_stage.c)."""
+    table = 'g_stage_props_proved' if props else 'g_stage_proved'
     with open(path, 'w', encoding='utf-8', newline='\n') as f:
-        f.write('The stage\'s ground as one mesh, held against the other run\n')
-        f.write('(tools/port_stage_prove.py; docs/PORT.md, "The ground as one '
-                'mesh").\n\n')
+        if props:
+            f.write('The stage\'s pieces drawn from the mesh, held against '
+                    'the game\'s own primitives\n')
+            f.write('(tools/port_stage_prove.py --props; docs/PORT.md, "The '
+                    'stage\'s pieces as meshes").\n\n')
+        else:
+            f.write('The stage\'s ground as one mesh, held against the other '
+                    'run\n')
+            f.write('(tools/port_stage_prove.py; docs/PORT.md, "The ground as '
+                    'one mesh").\n\n')
         f.write('%-3s %-22s %-6s %8s %8s %8s %8s %8s  %s\n'
                 % ('n', 'stage', 'trace', 'pictures', 'differ%', 'areas%',
                    'worst', 'black%', 'verdict'))
@@ -136,8 +156,9 @@ def write_verdict(path, rows):
         seen_stages = set(row['stage'] for row in rows)
         f.write('\nstages measured %d, the mesh kept on %d\n'
                 % (len(rows), len(kept)))
-        f.write('\ng_stage_proved, a stage a number, for the stages measured '
-                'here\n(a stage this run did not reach is left as it was):\n')
+        f.write('\n%s, a stage a number, for the stages measured '
+                'here\n(a stage this run did not reach is left as it was):\n'
+                % table)
         line = []
         for stage in sorted(seen_stages):
             line.append('%d' % (1 if stage in kept else 0))
@@ -323,11 +344,15 @@ def main():
     # his shadow eaten by the ground they stand on.
     ap.add_argument('--against', default='tiles',
                     choices=('tiles', 'nodepth'))
-    ap.add_argument('--out', default='build/stagemesh')
+    ap.add_argument('--out', default=None)
+    # the stage's pieces, and not its ground (the module's words)
+    ap.add_argument('--props', action='store_true')
     # the mods both runs draw with (docs/MODS.md): a mod of the stage's
     # pages is to hold the verdicts as the game's own textures do
     ap.add_argument('--mods', default=None)
     args = ap.parse_args()
+    if args.out is None:
+        args.out = 'build/stageprops' if args.props else 'build/stagemesh'
     if not os.path.isfile(PROGRAM):
         print('port_stage_prove: no %s (python3 tools/port_gl_build.py)'
               % PROGRAM)
@@ -368,10 +393,15 @@ def main():
                       '--gl-scale', str(args.scale),
                       '--gl-shots', shots, '--gl-every', str(args.every),
                       '--trace']
-            if which == 'on' or args.against == 'nodepth':
-                common += ['--stage-mesh', args.mesh]
+            if args.props:
+                # the ground the mesh's both ways; the pieces the
+                # mesh's in one run and the game's in the other
+                common += ['--stage-mesh', 'every', '--stage-props',
+                           args.mesh if which == 'on' else 'off']
+            elif which == 'on' or args.against == 'nodepth':
+                common += ['--stage-mesh', args.mesh, '--stage-props', 'off']
             else:
-                common += ['--stage-mesh', 'off']
+                common += ['--stage-mesh', 'off', '--stage-props', 'off']
             if which == 'off' and args.against == 'nodepth':
                 common += ['--stage-depth', 'off']
             if args.tall:
@@ -420,7 +450,8 @@ def main():
                        seen['worst'], row['off']['vertices_mean'],
                        row['on']['vertices_mean'], row['off']['seconds'],
                        row['on']['seconds']))
-    said = write_verdict(os.path.join(args.out, 'verdict.txt'), rows)
+    said = write_verdict(os.path.join(args.out, 'verdict.txt'), rows,
+                         args.props)
     print()
     for row in rows:
         why = verdict_of(row)

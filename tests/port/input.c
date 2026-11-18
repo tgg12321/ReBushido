@@ -384,6 +384,49 @@ static void test_Layouts(void) {
     CHECK_EQ(g_test_settings.count, count);
 }
 
+/* The keys read again just before the game takes its input
+ * (port_ReadDevicesNow): what the PC holds now goes in, and the plan's
+ * buttons stay as the blank found them, so that a plan's press made
+ * after the blank still reaches the game a frame later. */
+static void test_ReadLate(void) {
+    test_StartPads();
+    port_SetDefaultSettings(&g_test_settings, test_LookUp);
+    g_port_device_hook = test_DeviceButtons;
+
+    /* the blank's read: nothing held */
+    port_FillPads();
+    /* after it, a key goes down and a plan's button too */
+    port_ApplyInput(&g_test_settings, PORT_SOURCE_KEY, 0, KEY_Z, 1);
+    port_SetPadButton(1, PADstart, 1);
+    port_ReadDevicesNow();
+    pad_Update(0);
+    /* the key is taken now; the plan's Start waits for the next blank */
+    CHECK_EQ(g_port_input.buttons[0], PADRdown);
+    CHECK_EQ(g_port_input.buttons[1], 0);
+    CHECK_EQ(g_pad_state.pressed, PADRdown);
+    port_FillPads();
+    port_ReadDevicesNow();
+    pad_Update(0);
+    CHECK_EQ(g_port_input.buttons[1], PADstart);
+    CHECK_EQ(g_pad_state.held, PADRdown | PAD_OF(PADstart, 1));
+    /* a key let go after the blank is let go now; the plan's button held
+     * at the blank is still held */
+    port_ApplyInput(&g_test_settings, PORT_SOURCE_KEY, 0, KEY_Z, 0);
+    port_ReadDevicesNow();
+    pad_Update(0);
+    CHECK_EQ(g_port_input.buttons[0], 0);
+    CHECK_EQ(g_port_input.buttons[1], PADstart);
+    /* with no window it changes nothing */
+    port_SetPadButton(1, PADstart, 0);
+    g_port_device_hook = NULL;
+    port_FillPads();
+    port_SetPadButton(0, PADRdown, 1);
+    port_ReadDevicesNow();
+    pad_Update(0);
+    CHECK_EQ(g_port_input.buttons[0], 0);
+    port_SetPadButton(0, PADRdown, 0);
+}
+
 /* The movie player's reader, which is given the pads as they are now. */
 static void test_MoviePads(void) {
     s32 word;
@@ -406,5 +449,6 @@ void test_Main(void) {
     test_Unplugged();
     test_Mapping();
     test_Layouts();
+    test_ReadLate();
     test_MoviePads();
 }

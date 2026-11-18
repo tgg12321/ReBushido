@@ -38,6 +38,9 @@ static u32 g_port_pad_held[PORT_PADS];
 /* What the driver read at the last vertical blank since it started:
  * nothing answered before that. */
 static PortInput g_port_pad_read;
+/* ... of it, what the run's script held then: a read of the PC's own
+ * input later on keeps it (port_ReadDevicesNow). */
+static u32 g_port_pad_read_held[PORT_PADS];
 
 /* The window's keys and controllers, and the hook on each input
  * (port_platform.h): nothing in the build without one. */
@@ -77,8 +80,32 @@ void port_DriverInput(PortInput *input) { *input = g_port_pad_read; }
 
 /* The driver's read at a vertical blank (port_platform.h). */
 void port_FillPads(void) {
+    s32 pad;
+
     if (g_port_pads_started) {
         port_SampleInput(&g_port_pad_read);
+        for (pad = 0; pad < PORT_PADS; pad++) {
+            g_port_pad_read_held[pad] = g_port_pad_held[pad];
+        }
+    }
+}
+
+/* The PC's keys and controllers read again into the driver's last read,
+ * with the script's buttons as they were at that blank (port_platform.h):
+ * the window's, just before the game takes the input. */
+void port_ReadDevicesNow(void) {
+    s32 pad;
+
+    if (!g_port_pads_started || g_port_device_hook == NULL) {
+        return;
+    }
+    for (pad = 0; pad < PORT_PADS; pad++) {
+        u32 held = g_port_device_hook(pad);
+
+        held |= g_port_pad_read_held[pad];
+        if (g_port_pad_read.present[pad]) {
+            g_port_pad_read.buttons[pad] = (u16)(held & BUTTONS_MASK);
+        }
     }
 }
 

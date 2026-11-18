@@ -116,9 +116,10 @@ and a key or a button still held as the menu closes is not given to the
 game until it is let go. The sound runs out and comes back.
 
 What changes at once: the full screen, the picture's size and its
-pixels, waiting for the display, the counter and its corner, Graphics
-(as F2), the resolution, the ground as one mesh, the shadows, the dead
-zone, and the buttons. What waits for the program to start again is said
+pixels, waiting for the display, the counter and its corner, quick
+loading, run-ahead and low latency, Graphics
+(as F2), the resolution, the ground as one mesh, the shadows, smooth
+lighting, the effects, the dead zone, and the buttons. What waits for the program to start again is said
 on its line, `(after a restart)`: antialiasing, the draw distance, the
 shape, the frame rate, the English top menu, the sharp menus and the
 mods.
@@ -154,18 +155,24 @@ scale = integer          # fit (as large as fits), integer, or stretch
 filter = linear          # nearest (each pixel a block) or linear
 fullscreen = off         # start in a window (on, filling the screen, is built in)
 fps = off                # no counter in the corner (F3 brings it back)
+run_ahead = 1            # 0, 1 or 2 frames run ahead (2 is the default)
+low_latency = off        # let the driver queue pictures (on is the default)
 graphics = remastered    # original (the console's picture) or remastered
 resolution = 3           # how many times the console's; 0 = the window's
 draw_distance = far      # original, far, or max: how much of the stage
 antialiasing = 2         # off, 2 or 4: the scene's edges smoothed
 aspect = 4:3             # the console's shape; 16:9 is the default
 stage_mesh = off         # the game's own tiles; on is the default
+stage_props_mesh = off   # railings and walls from the game's own faces
 shadows = cast           # original (the game's black ones), soft or cast
+smooth_light = on        # the game's lights worked out at each pixel
+effects = smooth         # original (the default), exact or smooth
 frame_rate = display     # display (the default), original, or a number
 mods = off               # none of the mods in mods/ (on is the default)
 english = off            # the top menu in Japanese (on is the default)
 ui = off                 # the menus' own lettering (on is the default)
 music_mods = off         # the game's own music (on is the default)
+quick_loading = off      # every blank of a load at the console's pace
 p1.cross = key Space     # Space is player one's Cross, and Z no longer
 p1.circle = key Left Ctrl
 p2.start = pad a         # on player two's controller, A is Start
@@ -248,6 +255,9 @@ nothing at all while Graphics is Original.
 | `aspect` | `4:3`, `16:9`, any `W:H` | The shape of the picture. A wider one is a **wider view of the same scene**, not a stretched picture: the camera keeps its height and gains width. Use it with `draw_distance max`, which fills the sides. `16:9` with nothing said; the fight's counters, clocks and points are drawn at the new edges, while the menus, the select screens and the loading pictures keep the console's shape in the middle ([`PORT.md`](PORT.md), "A wider picture"). |
 | `shadows` | `original`, `soft`, a number, `cast`, `cast:N` | What a fighter's shadow is. `original`, the default, is the game's own: the fighter's shape flattened onto the ground and painted **black**, which hides the ground under it. `soft` **darkens** the ground under that same shape instead, by 55 hundredths, so the ground keeps its texture through the shadow; the edge is softened by about three pixels of the picture, two shadows that cross are no darker than one, and **a fighter standing in a shadow is never darkened** -- its own feet and legs are exactly as lit as they are with the setting off. A number says how much of the ground a shadow takes, in hundredths, for trying another. `cast` does the same with a shadow cast from the fighter's **own body** -- every polygon of him, his sword and his scabbard, flattened onto the ground along the stage's sun -- in place of the game's coarse shadow shape, so it has his hands and his blade and does not twitch while he stands still; it takes 68 hundredths, and `cast:N` takes N. **`original` with nothing said**: nobody has looked at the soft ones on a screen yet ([`PORT.md`](PORT.md), "The shadows"). |
 | `stage_mesh` | `on`, `off` | The stage's ground drawn from **one mesh of the whole stage**, built when the stage loads, instead of from the tiles the console builds again every frame. Nothing of the ground comes and goes as the camera turns, its detail never steps, the fog runs on instead of stepping in bands across a long floor, a piece of ground between the camera and a fighter veils him again, and a picture drawn between two of the game's frames has only to move the camera. **`on` with nothing said.** Every one of the game's 38 stages was measured against the console's own tiles, and a stage the measurements did not hold would keep the tiles whatever the setting says; the log says which path each stage took ([`PORT.md`](PORT.md), "The ground as one mesh"). |
+| `stage_props_mesh` | `on`, `off` | What **stands on the ground** -- the railings, the fences, the walls, the posts, the roofs -- drawn from meshes of its own, built when the stage loads from the stage's own pieces and drawn with the ground's mesh and the same camera, instead of from the faces the console projects again every frame. A railing then stands still where the camera is still, its corners no longer wobble by a pixel, and in a picture drawn between two of the game's frames it is moved by the camera alone, so nothing of it is held and then jumps. A piece the game moves or changes -- a bamboo cut down, a sign that falls -- and a face that mixes with what is behind it stay the game's own. It needs Graphics Remastered and `stage_mesh`, and changes nothing the game computes. **`on` with nothing said**; a stage the measurements did not hold would keep the game's own faces, and the log says which path each stage's pieces took ([`PORT.md`](PORT.md), "The stage's pieces as meshes"). |
+| `smooth_light` | `off`, `on` | The game's **own lights** -- each stage's three lights and its colour of the dark, the same ones the console uses -- worked out **at every pixel** of the ground and of the fighters' own models, instead of once a face of the ground and once a corner of a model. A slope of the ground is shaded as a slope instead of in flat facets, and a wall still meets the floor at an edge; a flat floor keeps exactly the colour it had, so a stage keeps its colours and its mood. **`off` with nothing said**: the owner has not looked at it yet ([`PORT.md`](PORT.md), "Lighting"). |
+| `effects` | `original`, `exact`, `smooth` | How blood, sparks, flashes, dust, splashes, footprints, the stage's flames and the surf are drawn. `original`, the default, is where the console put them, on whole pixels of its own screen. `exact` draws each where the camera's projection really put it, its size without the console's rounding, and moves it smoothly between two frames with `frame_rate`; `smooth` also reads its texture smoothed, so a spark or a drop of blood has a soft round edge instead of the console's square texels. Their colours, their timing and how they mix with what is behind them are the console's either way, and none is ever hidden behind the ground, as on the console. **`original` with nothing said** until the owner has looked ([`PORT.md`](PORT.md), "The effects"). |
 | `sky` | `night`, `original` | What is above a stage that is open to the sky. The console has no sky: a fight's picture begins as one flat colour, the stage's colour of the distance, black or a dark blue on every stage, and that is what shows wherever the stage does not cover it. `night` paints a **night sky of the port's own** there: a gradient that is the stage's own colour of the distance at the horizon, so that the ground's fog runs into it with no seam, lifting a little towards the stage's own ambient colour; stars; a few thin clouds; and a moon where the stage's light comes from. It turns with the camera and never moves as the camera moves. The halls, the dojos, the parking garage and the cavern keep the flat colour, and the castle rooftop its own painted sky and moon. A mod can give a stage a picture of its own sky ([`MODS.md`](MODS.md), "Skies"). It needs Graphics Remastered, and changes nothing the game computes. **`night` with nothing said** -- the owner's call, not yet seen on a real screen ([`PORT.md`](PORT.md), "The sky"). |
 | `see_through` | `on`, `off` | The stage's walls, terraces and the rock of the cavern **thinned where they stand between the camera and a fighter**, so that he can always be seen, as modern fighting and action games do: a soft hole through the wall the size of the fighter, a dither that `antialiasing` smooths into a fade. The floor someone may stand on is never thinned, and nothing far behind a fighter or beside him is. The game does this itself for a few tiles a stage marks (half-transparent while a fighter is behind them); this does it for every face of the ground's mesh. It needs Graphics Remastered and `stage_mesh`, and changes nothing the game computes. **`on` with nothing said** -- the owner's call ([`PORT.md`](PORT.md), "Seeing the fighters through the stage"). |
 
@@ -263,7 +273,8 @@ draws the scene again at any point between the two, every corner moved
 part of the way as the camera's own projection would move it. The HUD,
 the clock and the menus stay at the game's own rate, where they belong.
 **Nothing is guessed ahead and nothing is held back: a picture is never
-later than the console's own**, so this costs no input lag.
+later than the port's frame on show**, so this adds no input lag of its
+own; what lag there is, and what cuts it, is the next section.
 
 | | | |
 |---|---|---|
@@ -281,9 +292,71 @@ What may show: a weapon or a spark that appears or vanishes between two
 frames waits for the next frame rather than fading in, and a camera cut
 shows the console's own picture until the cut is over.
 
-What Remastered does **not** do yet: new lighting. That is the step
-after it ([`ROADMAP.md`](ROADMAP.md), item 7). The fighters' shadows it
-does do, where `shadows` asks for them (above).
+The lighting Remastered has is the game's own, worked out at each pixel
+where `smooth_light` asks for it, and the fighters' shadows where
+`shadows` asks for them (above); new lights of its own it does not add
+([`ROADMAP.md`](ROADMAP.md), item 7).
+
+## Loading
+
+The port reads your disc image as fast as the PC reads a file, so a
+load is not the drive's time but the game's own way of waiting for it:
+a fixed number of the console's blanks for each file, about 0.6 seconds
+a file at the console's pace, eleven files before a fight.
+
+| | | |
+|---|---|---|
+| `quick_loading` | `on`, `off` | `on`, which is the default: the blanks in which the game waits for the disc behind its loading picture (the map and the title, or a black screen) are **hurried through**, not shown one by one at the console's 60 a second; a fight's load is then a blink rather than six seconds. A loading screen you read -- story mode's card of the next stage, the team battle's scores -- stays up two seconds before its load is hurried. The fighters' own models (Remastered) are read during the load too, not at the fight's first frame. `off` shows every blank, as the console's pace. **Nothing the game computes changes** either way: it is the same game, its fades and its timings are its own, and online both players still meet at every load. `--quick-loading on|off` says it on the command line. |
+
+## Input lag
+
+From a press to the picture that shows it, the window now takes about
+two of the game's frames less than it did, and less than the console
+itself ([`PORT.md`](PORT.md), "Input lag"). Three things do it, and all
+three are on with nothing said:
+
+- **The keys and controllers are read again just before the game takes
+  its input**, not only at the vertical blank before it. Nothing to set:
+  in a fight the press is taken a blank (17 ms) sooner, in the menus most
+  of one.
+- **`run_ahead`**, `0`, `1` or `2` (`2` with nothing said; the settings
+  menu's window page, "Run ahead", at once): before each of the game's
+  frames the port runs the next one or two, with what you hold, keeps the
+  picture they leave, and puts the game back where it was; then the
+  frame runs as it always did, heard and paced, and that picture is what
+  is shown meanwhile. The game puts a frame on the screen two of its
+  frames after it reads the pads (a fight's frame is two blanks), and
+  the port draws a frame at once, where the console takes the frame's
+  time to draw it: so the picture shown is **never a guess**, it is the
+  frame the game will show, earlier. Each frame ahead is 33 ms sooner in
+  a fight and 17 ms in the menus. **What the game computes is exactly
+  the same** with it on or off: the sound is the game's own as it was,
+  a memory card is written only by the game's own frame, and online play
+  turns it off (it has its own way with time). What it costs is the
+  processor's time, the game's work done two or three times a frame;
+  with the pictures between frames on, at `2` the second frame ahead is
+  what they move towards, and that one is a guess: where you press,
+  the picture moves to the frame with the press in it when it comes.
+  If the counter (F3) shows the speed under 100% on your PC, `1` costs
+  half as much.
+- **`low_latency`**, `on` or `off` (`on` with nothing said; "Low
+  latency", at once): each picture waits for the graphics card to have
+  drawn it and the swap to be made before the next is begun, so no
+  picture waits in the driver's queue behind another. `off` lets the
+  driver queue them, which may be smoother on a PC that is only just
+  fast enough.
+
+What only your screen and PC decide, and what helps there:
+
+- **Full screen (F11), not a window.** A window, a maximized one
+  included (2,560 by 1,369 on a 2,560 by 1,440 screen is one), is
+  composed with the desktop by Windows, which can hold each picture for
+  a refresh of the screen. Full screen lets the driver put the picture
+  up itself.
+- **`vsync = on`** waits for the screen's refresh; `off` shows a picture
+  as soon as it is drawn, sooner by up to a refresh, and tears.
+- A screen's own processing (its "game mode") and the graphics driver's
+  own low-latency setting are outside the program.
 
 ## Mods
 

@@ -36,6 +36,7 @@
 #include <time.h>
 
 #include "gl.h"
+#include "gl_fighter.h"
 #include "gl_pause.h"
 #include "gl_sky.h"
 #include "gl_stage.h"
@@ -98,6 +99,10 @@
  * out every minute, in vertical blanks. */
 #define BEAT_BLANKS 600
 #define MINUTE_BLANKS 3600
+/* quick_loading: how long a loading screen the player reads (story
+ * mode's card of the next stage, the team battle's scores) is up at the
+ * console's pace before its load is hurried, in blanks: two seconds */
+#define READ_BLANKS 120
 /* The window under the settings menu, darkened by this much black. */
 #define MENU_DIM 0xA0000000U
 #define ALPHA_SHIFT 24
@@ -213,6 +218,23 @@ static s32 g_port_has_seen;
 static u32 g_port_lost_noted;
 static u32 g_port_underruns_noted;
 static u32 g_port_read_start;
+/* The load under way (port_LoadKind): its first blank, how many blanks
+ * it has taken, how many of them were hurried (quick_loading) and the
+ * clock as it began; and in the whole run, the loads and their blanks. */
+static u32 g_port_load_first;
+static u32 g_port_load_blanks;
+static u32 g_port_load_hurried;
+static u32 g_port_load_began;
+static u32 g_port_hurry_shown;
+static u32 g_port_loads;
+static u32 g_port_loads_hurried;
+static u32 g_port_load_blanks_all;
+static u32 g_port_load_ms_all;
+/* The loading screen the player reads that is up (port_ReadScreen), and
+ * how many of a load's blanks it has been shown for at the console's
+ * pace. */
+static s32 g_port_read_screen;
+static u32 g_port_read_blanks;
 
 /* The controller of each pad, and SDL's number for it while it is
  * plugged in. */
@@ -230,6 +252,23 @@ static u32 g_port_pad_changes;
 /* What the pads are not given until it is let go: what was held as the
  * settings menu closed, and the Select that opened it (sdl_menu.c). */
 static u32 g_port_held_back[PORT_PADS];
+/* --inject: a plan's presses, made as the PC's input at the next read of
+ * the events at a blank (port_ReadInput), as they always were, and never
+ * at the read just before the game takes its input */
+#define INJECT_WAITING_MAX 64
+
+typedef struct {
+    s32 pad;
+    u32 button;
+    s32 down;
+} PortInjectWaiting;
+
+static PortInjectWaiting g_port_inject_waiting[INJECT_WAITING_MAX];
+static s32 g_port_inject_waiting_count;
+/* Run-ahead (step.c; docs/PORT.md, "Input lag"): the display the frames
+ * run ahead left, which is what is shown while the step itself runs; its
+ * pixels are in g_port_frame. */
+static PortDisplay g_port_ahead_display;
 /* The settings menu's own texture, where SDL's renderer draws. */
 static SDL_Texture *g_port_menu_texture;
 static s32 g_port_menu_texture_w;
@@ -237,6 +276,7 @@ static s32 g_port_menu_texture_h;
 
 static void port_SwapPicture(void);
 static void port_ReadInput(u32 blank);
+static void port_ShownDisplay(PortDisplay *display);
 
 /* ---- names ---- */
 
@@ -385,6 +425,32 @@ static void SDLCALL port_FillAudio(void *unused, Uint8 *stream, int bytes) {
         &g_port_ring, (s16 *)(void *)stream, (u32)bytes / (2 * sizeof(s16)));
 }
 
+/* Whether quick_loading is on for this run (sdl_window.h). */
+static s32 port_QuickLoading(void) {
+    switch (g_port_window_options.quick_loading) {
+    case PORT_QUICK_OFF:
+        return FALSE;
+    case PORT_QUICK_ON:
+        return TRUE;
+    default:
+        return g_port_settings.quick_loading;
+    }
+}
+
+/* Whether this blank is one of a load's that is hurried through: behind
+ * a loading picture, at once; behind a screen the player reads, once it
+ * has been up for READ_BLANKS at the console's pace. */
+static s32 port_HurriesBlank(void) {
+    s32 kind;
+
+    if (!port_QuickLoading()) {
+        return FALSE;
+    }
+    kind = port_LoadKind();
+    return kind == PORT_LOAD_PICTURE ||
+           (kind == PORT_LOAD_READ && g_port_read_blanks >= READ_BLANKS);
+}
+
 /* A blank's samples, as they are made (port_spu.h). */
 static void port_QueueSound(const s16 *samples, u32 frames) {
     u32 slot = g_port_queued_count % QUEUED_HISTORY;
@@ -397,7 +463,14 @@ static void port_QueueSound(const s16 *samples, u32 frames) {
     g_port_queued_count++;
     if (g_port_audio != 0) {
         SDL_LockAudioDevice(g_port_audio);
-        port_WriteRing(&g_port_ring, samples, frames);
+        /* A hurried blank's sound goes to the card only while the queue
+         * is short of what it should hold: the card is not given seconds
+         * of a load's sound in a moment, nor left with nothing to play
+         * as the load ends. A load's sound is the loading picture's
+         * silence, or the end of a sound that was playing as it began. */
+        if (!port_HurriesBlank() || g_port_ring.count < g_port_ring.target) {
+            port_WriteRing(&g_port_ring, samples, frames);
+        }
         SDL_UnlockAudioDevice(g_port_audio);
     }
 }
@@ -713,6 +786,7 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     options->is_bilinear = FALSE;
     options->is_exact = FALSE;
     options->is_stage_mesh = g_port_settings.stage_mesh;
+    options->is_stage_props = g_port_settings.stage_props_mesh;
     options->is_fighter_models = g_port_settings.fighter_models;
     /* the scene held against the ground's own depth, which is part of
      * drawing the ground as one mesh and has no setting of its own
@@ -721,6 +795,8 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     /* the fighters' shadows as a darkening of the ground, or the game's
      * own black polygons (src/port/gl/gl_shadow.h) */
     options->shadows = g_port_settings.shadows;
+    options->is_smooth_light = g_port_settings.smooth_light;
+    options->effects = g_port_settings.effects;
     /* the sky and the walls seen through (gl_sky.h, gl_see.h) */
     options->sky = g_port_settings.sky;
     options->see_through = g_port_settings.see_through;
@@ -1030,7 +1106,7 @@ static void port_RemasterShape(s32 *across, s32 *down) {
     PortRemasterView view;
     s32 margin;
 
-    port_GetDisplay(&display);
+    port_ShownDisplay(&display);
     port_RemasterGetView(&view);
     margin = port_RemasterMargin(display.w, view.aspect_w, view.aspect_h);
     *across = PORT_PICTURE_ASPECT_W * (display.w + 2 * margin);
@@ -1069,16 +1145,20 @@ static s32 port_ShowRemastered(s32 window_w, s32 window_h) {
 
 /* Whether the window shows the remastered picture of this frame: not
  * while the movie player runs, whose frames are in the 24-bit mode the
- * card does not draw and whose title picture is put in video memory
- * outside the game's display, so that the software GPU's picture is the
- * one there is of them. */
+ * card does not draw, so that the software GPU's picture is the one there
+ * is of them. The title picture it holds after the movie, in the 16-bit
+ * mode, is the card's where a mod has a picture of it (the art mod's,
+ * made larger from the disc): it is drawn from that, and so is its fade. */
 static s32 port_ShowsRemastered(void) {
     PortDisplay display;
 
-    if (!g_port_has_gl || !port_RemasterIsOn() || port_MovieIsPlaying()) {
+    if (!g_port_has_gl || !port_RemasterIsOn()) {
         return FALSE;
     }
-    port_GetDisplay(&display);
+    port_ShownDisplay(&display);
+    if (port_MovieIsPlaying()) {
+        return !display.is_rgb24 && port_GlShowsReplacedPicture();
+    }
     return !display.is_rgb24;
 }
 
@@ -1238,7 +1318,7 @@ static void port_DrawPicture(u32 blank, s32 may_tap) {
     s32 window_h = 0;
     s32 is_tapped;
 
-    port_GetDisplay(&display);
+    port_ShownDisplay(&display);
     w = display.w < PORT_PICTURE_WIDTH_MAX ? display.w : PORT_PICTURE_WIDTH_MAX;
     h = display.h < PORT_PICTURE_HEIGHT_MAX
             ? display.h
@@ -1258,9 +1338,13 @@ static void port_DrawPicture(u32 blank, s32 may_tap) {
      * use for it */
     is_tapped = may_tap && g_port_window_options.tap_frames != NULL &&
                 blank % (u32)g_port_window_options.tap_every == 0;
+    /* where the frames were run ahead, g_port_frame holds what they left
+     * (port_AheadDone) */
     if (is_tapped) {
-        port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
-                            display.is_rgb24, g_port_frame);
+        if (!g_port_unseen) {
+            port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
+                                display.is_rgb24, g_port_frame);
+        }
         port_TapFrame(blank, w, h, display.is_on);
     }
     if (!display.is_on) {
@@ -1270,7 +1354,7 @@ static void port_DrawPicture(u32 blank, s32 may_tap) {
         port_ShowRemastered(window_w, window_h)) {
         return;
     }
-    if (!is_tapped) {
+    if (!is_tapped && !g_port_unseen) {
         port_ConvertDisplay(g_port_vram, display.x, display.y, w, h,
                             display.is_rgb24, g_port_frame);
     }
@@ -1772,8 +1856,11 @@ void port_WindowApplyChoice(s32 choice) {
                     g_port_settings.is_linear ? "1" : "0");
         g_port_texture_w = 0;
     } else if (
-        (strcmp(name, "stage_mesh") == 0 || strcmp(name, "shadows") == 0 ||
-         strcmp(name, "sky") == 0 || strcmp(name, "see_through") == 0 ||
+        (strcmp(name, "stage_mesh") == 0 ||
+         strcmp(name, "stage_props_mesh") == 0 ||
+         strcmp(name, "shadows") == 0 || strcmp(name, "smooth_light") == 0 ||
+         strcmp(name, "effects") == 0 || strcmp(name, "sky") == 0 ||
+         strcmp(name, "see_through") == 0 ||
          strcmp(name, "fighter_models") == 0) &&
         g_port_has_gl) {
         PortGlOptions options;
@@ -1782,6 +1869,8 @@ void port_WindowApplyChoice(s32 choice) {
         port_GlSetOptions(&options);
     } else if (strcmp(name, "music_mods") == 0) {
         port_MusicSetOn(g_port_settings.music_mods);
+    } else if (strcmp(name, "run_ahead") == 0) {
+        port_SetRunAhead(g_port_settings.run_ahead);
     }
     /* the picture's size and filter on the card, the resolution, the
      * counter's corner and the dead zone are read each time they are
@@ -1877,7 +1966,7 @@ static void port_TakeKey(const SDL_KeyboardEvent *key) {
 /* A plan's press, made as the PC's own input (port_platform.h): a key
  * event, or a button or an axis of a controller of SDL's making. The
  * events are read at the same blank, before the pads are filled. */
-static s32 port_InjectPress(s32 pad, u32 button, s32 down) {
+static void port_MakePress(s32 pad, u32 button, s32 down) {
     s32 keys = g_port_window_options.inject == PORT_INJECT_KEYS;
     const PortBinding *binding =
         port_FindBinding(&g_port_settings, keys, pad, button);
@@ -1929,17 +2018,34 @@ static s32 port_InjectPress(s32 pad, u32 button, s32 down) {
         }
     }
     g_port_injected++;
+}
+
+/* ... kept until the events are next read at a blank: a press of a
+ * plan's frame is made as the frame begins, after the blank and before
+ * the game takes its input, where the window reads the events again
+ * (port_ReadInputLate) and would have it a frame sooner than the plan
+ * says. */
+static s32 port_InjectPress(s32 pad, u32 button, s32 down) {
+    PortInjectWaiting *waiting;
+
+    if (g_port_inject_waiting_count >= INJECT_WAITING_MAX) {
+        port_Say(
+            "--inject: more than %d presses at one blank", INJECT_WAITING_MAX);
+        port_Quit(PORT_EXIT_FAILED);
+    }
+    waiting = &g_port_inject_waiting[g_port_inject_waiting_count++];
+    waiting->pad = pad;
+    waiting->button = button;
+    waiting->down = down;
     return 1;
 }
 
-/* A vertical blank, before the pads are filled (port_platform.h). */
-static void port_ReadInput(u32 blank) {
+/* The events SDL has, read: the keys and controllers' state, and the
+ * window's own keys. */
+static void port_ReadEvents(void) {
     SDL_Event event;
     s32 pad;
-    s32 was = port_ProfileSwitch(PORT_PROFILE_WINDOW);
 
-    (void)blank;
-    port_OpenWindow();
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
         case SDL_QUIT:
@@ -1981,8 +2087,121 @@ static void port_ReadInput(u32 blank) {
             break;
         }
     }
+}
+
+/* A vertical blank, before the pads are filled (port_platform.h). */
+static void port_ReadInput(u32 blank) {
+    s32 was = port_ProfileSwitch(PORT_PROFILE_WINDOW);
+    s32 i;
+
+    (void)blank;
+    port_OpenWindow();
+    for (i = 0; i < g_port_inject_waiting_count; i++) {
+        const PortInjectWaiting *waiting = &g_port_inject_waiting[i];
+
+        port_MakePress(waiting->pad, waiting->button, waiting->down);
+    }
+    g_port_inject_waiting_count = 0;
+    port_ReadEvents();
     port_SendPads();
     port_ProfileSwitch(was);
+}
+
+/* Just before the game takes its input, at a frame's boundary
+ * (port_platform.h): the events read again, and what the keys and
+ * controllers hold now put into the input the pads' driver read at the
+ * blank, the plan's buttons as they were then. A press is taken up to a
+ * blank sooner: in a fight the driver's read was a whole blank before
+ * the game takes it, the window's wait for the blank's time between
+ * them (docs/PORT.md, "Input lag"). */
+static void port_ReadInputLate(void) {
+    s32 was;
+
+    if (!g_port_is_open) {
+        return;
+    }
+    was = port_ProfileSwitch(PORT_PROFILE_WINDOW);
+    port_ReadEvents();
+    port_SendPads();
+    port_ReadDevicesNow();
+    /* in a load, no frame is run ahead across it (step.c) */
+    g_port_ahead_held = port_LoadKind() != PORT_LOAD_NONE;
+    if (g_port_has_gl && g_port_tween_on && port_GetRunAhead() > 0) {
+        /* The pictures between frames put back into the card's mirror of
+         * video memory what video memory holds at their blank, which,
+         * with frames run ahead, is a frame or two behind the frames the
+         * card draws; the step after them tells the card nothing. So the
+         * mirror is sent video memory as it is now, before the frames are
+         * run ahead and their writes go over it. */
+        port_ProfileSwitch(PORT_PROFILE_CARD);
+        port_GlUploadVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
+    }
+    port_ProfileSwitch(was);
+}
+
+/* ---- the frames run ahead (step.c) ---- */
+
+/* A blank of a frame run ahead: the card's frame is ended there as at
+ * any blank, so that each frame the game draws ahead is one of the
+ * card's and of the pictures between frames, and nothing is shown. */
+static void port_AheadBlankTurn(u32 blank) {
+    (void)blank;
+    /* no frame is run ahead into a load: its blanks are the step's own,
+     * hurried through or paced (quick_loading), and stop the frames
+     * ahead where it begins */
+    if (port_LoadKind() != PORT_LOAD_NONE) {
+        port_GiveUpAhead();
+        return;
+    }
+    if (g_port_has_gl) {
+        s32 was = port_ProfileSwitch(PORT_PROFILE_FINISH);
+
+        port_RemasterShow();
+        port_GlFinishFrame();
+        port_ProfileSwitch(was);
+    }
+}
+
+/* The frames ahead are done, their state still in place: the display
+ * they left is kept, with its pixels, and the card's frame is ended with
+ * it, so that while the step itself runs the window shows what the
+ * display will hold that many frames on. */
+static void port_AheadDone(void) {
+    PortDisplay *display = &g_port_ahead_display;
+    s32 w;
+    s32 h;
+
+    port_GetDisplay(display);
+    if (g_port_has_gl) {
+        s32 was = port_ProfileSwitch(PORT_PROFILE_FINISH);
+
+        port_RemasterShow();
+        port_GlFinishFrame();
+        port_ProfileSwitch(was);
+    }
+    w = display->w < PORT_PICTURE_WIDTH_MAX
+            ? display->w
+            : PORT_PICTURE_WIDTH_MAX;
+    h = display->h < PORT_PICTURE_HEIGHT_MAX
+            ? display->h
+            : PORT_PICTURE_HEIGHT_MAX;
+    if (display->is_on && w > 0 && h > 0) {
+        s32 was = port_ProfileSwitch(PORT_PROFILE_PICTURE);
+
+        port_ConvertDisplay(g_port_vram, display->x, display->y, w, h,
+                            display->is_rgb24, g_port_frame);
+        port_ProfileSwitch(was);
+    }
+}
+
+/* The display the window shows: the frames run ahead left it, where they
+ * were run before this step, and otherwise it is the console's own. */
+static void port_ShownDisplay(PortDisplay *display) {
+    if (g_port_unseen) {
+        *display = g_port_ahead_display;
+    } else {
+        port_GetDisplay(display);
+    }
 }
 
 /* ---- the pictures of one blank ---- */
@@ -1996,6 +2215,13 @@ static void port_SwapPicture(void) {
     }
     if (g_port_has_gl) {
         SDL_GL_SwapWindow(g_port_window);
+        if (g_port_vsync && g_port_settings.low_latency) {
+            /* `low_latency`: back only once the card has drawn it all and
+             * the swap is made, so that the next picture is begun from
+             * when this one went up and none waits in the driver's queue
+             * behind another (docs/PORT.md, "Input lag") */
+            port_GlWaitForCard();
+        }
     } else {
         SDL_RenderPresent(g_port_renderer);
     }
@@ -2209,14 +2435,109 @@ static void port_NoteProfile(u32 blank, s32 is_new_frame) {
     fputc('\n', g_port_profile_file);
 }
 
+/* ---- quick loading (docs/PORT.md, "Quick loading") ---- */
+
+/* A hurried blank's picture is shown at most this often, in the clock's
+ * samples: the loading picture's noise still moves and the window still
+ * answers, but the display is not waited for at every blank. */
+#define HURRY_PICTURE_SAMPLES (PORT_SPU_RATE / 30)
+
+/* The log's account of the loads: each blank of one counted, and a line
+ * as it ends. Where it was hurried through, the blanks after it are due
+ * from now on (port_PaceRebase): none of the game's time it took is
+ * waited for afterwards. */
+static void port_FollowLoad(u32 blank, s32 kind, s32 is_hurried) {
+    u32 now = port_ReadClock();
+    u32 ms;
+
+    if (kind != PORT_LOAD_NONE) {
+        if (g_port_load_blanks == 0) {
+            g_port_load_first = blank;
+            g_port_load_began = now;
+            g_port_hurry_shown = now;
+        }
+        g_port_load_blanks++;
+        g_port_load_hurried += is_hurried ? 1 : 0;
+        return;
+    }
+    if (g_port_load_blanks == 0) {
+        return;
+    }
+    ms = (u32)((u64)(now - g_port_load_began) * MILLISECONDS / PORT_SPU_RATE);
+    port_Note("load: %u blanks from blank %u, %u of them hurried through; "
+              "%u ms",
+              g_port_load_blanks, g_port_load_first, g_port_load_hurried, ms);
+    if (g_port_load_hurried != 0) {
+        port_PaceRebase(&g_port_pace, now, port_GetSampleCount());
+        g_port_last_due = now;
+        g_port_left_at = now;
+        g_port_loads_hurried++;
+    }
+    g_port_loads++;
+    g_port_load_blanks_all += g_port_load_blanks;
+    g_port_load_ms_all += ms;
+    g_port_load_blanks = 0;
+    g_port_load_hurried = 0;
+}
+
+/* A blank of a load, hurried through: the game's work for it goes on as
+ * ever (the card is given the frame, the log follows), but nothing waits
+ * for the PC's clock, and a picture is shown only now and then. */
+static void port_HurryBlank(u32 blank) {
+    /* where the frames were run ahead, the card's frame was ended as they
+     * ended (port_AheadDone) */
+    if (g_port_has_gl && !g_port_unseen) {
+        port_ProfileSwitch(PORT_PROFILE_FINISH);
+        port_RemasterShow();
+        port_GlFinishFrame();
+        port_ProfileSwitch(PORT_PROFILE_WINDOW);
+    }
+    port_WatchGame(blank);
+    if ((s32)(port_ReadClock() - g_port_hurry_shown) >= HURRY_PICTURE_SAMPLES) {
+        port_ProfileSwitch(PORT_PROFILE_PICTURE);
+        port_DrawPicture(blank, TRUE);
+        port_ProfileSwitch(PORT_PROFILE_WINDOW);
+        port_DrawCounter();
+        port_DrawNetLine();
+        port_SwapPicture();
+        g_port_hurry_shown = port_ReadClock();
+    }
+    g_port_blanks_shown++;
+    port_NoteProfile(blank, FALSE);
+    port_ProfileSwitch(PORT_PROFILE_GAME);
+}
+
 /* A vertical blank's end (port_platform.h): its pictures, when they are
  * due. */
 static void port_ShowBlank(u32 blank) {
     u32 due;
     u32 frames = g_port_tween_frames;
+    s32 load;
+    s32 is_hurried;
 
     port_ProfileSwitch(PORT_PROFILE_WINDOW);
     port_OpenWindow();
+    load = port_LoadKind();
+    if (port_ReadScreen() != g_port_read_screen) {
+        g_port_read_screen = port_ReadScreen();
+        g_port_read_blanks = 0;
+    }
+    is_hurried = port_HurriesBlank();
+    if (load == PORT_LOAD_READ && !is_hurried) {
+        g_port_read_blanks++;
+    }
+    port_FollowLoad(blank, load, is_hurried);
+    if (load != PORT_LOAD_NONE && g_port_has_gl) {
+        /* the fighters' own models read while the game loads, not at the
+         * fight's first frame */
+        port_ProfileSwitch(PORT_PROFILE_CARD);
+        port_GlFighterPreload();
+        port_ProfileSwitch(PORT_PROFILE_WINDOW);
+    }
+    if (is_hurried) {
+        port_HurryBlank(blank);
+        return;
+    }
     if (g_port_has_gl) {
         /* the frame the card drew is finished before anything is shown,
          * where the software GPU's picture is complete too
@@ -2226,8 +2547,12 @@ static void port_ShowBlank(u32 blank) {
         const char *news;
 
         port_ProfileSwitch(PORT_PROFILE_FINISH);
-        port_RemasterShow();
-        port_GlFinishFrame();
+        /* where the frames were run ahead, the card's frame was ended as
+         * they ended, with the display they left (port_AheadDone) */
+        if (!g_port_unseen) {
+            port_RemasterShow();
+            port_GlFinishFrame();
+        }
         port_ProfileSwitch(PORT_PROFILE_WINDOW);
         port_GlNoteFrameTime((SDL_GetTicks() - started) * MILLISECONDS);
         /* which path the stage's ground takes (gl_stage.h) */
@@ -2339,6 +2664,14 @@ static void port_CloseWindow(s32 code) {
                  samples % PORT_SPU_RATE * MILLISECONDS / PORT_SPU_RATE,
                  g_port_pace.lost, g_port_pace.nudged);
     }
+    if (g_port_loads != 0) {
+        port_Say("loads: %u, of %u blanks in %u.%03u seconds; %u hurried "
+                 "through (quick_loading %s)",
+                 g_port_loads, g_port_load_blanks_all,
+                 g_port_load_ms_all / MILLISECONDS,
+                 g_port_load_ms_all % MILLISECONDS, g_port_loads_hurried,
+                 port_QuickLoading() ? "on" : "off");
+    }
     port_Say("input: %u key events and %u controller events read, %u changes "
              "told to the pads; %u presses of a plan made as the PC's input",
              g_port_key_events, g_port_controller_events, g_port_pad_changes,
@@ -2403,5 +2736,9 @@ void port_StartWindow(void) {
     if (g_port_window_options.inject != PORT_INJECT_NONE) {
         g_port_press_hook = port_InjectPress;
     }
+    g_port_boundary_hook = port_ReadInputLate;
+    g_port_ahead_blank_hook = port_AheadBlankTurn;
+    g_port_ahead_done_hook = port_AheadDone;
+    port_SetRunAhead(g_port_settings.run_ahead);
     port_StartNetWindow();
 }

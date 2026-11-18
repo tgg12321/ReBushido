@@ -23,6 +23,7 @@
 #include "gl.h"
 #include "gl_fighter.h"
 #include "gl_fighter_file.h"
+#include "gl_light.h"
 #include "gl_stage.h"
 #include "port_fighter.h"
 #include "port_gpu.h"
@@ -254,6 +255,7 @@ static struct {
     GLint at_light;
     GLint at_color;
     GLint at_back;
+    GLint at_smooth_light;
     GLint at_texture;
     GLint c_at_layer;
     GLint c_at_layer_depth;
@@ -267,15 +269,18 @@ static struct {
      * primitives are only left out */
     s32 is_drawn;
     /* the layer of this picture is laid, and its depth is what a cloth is
-     * held against (port_GlFighterHolds) */
+     * held against (port_GlFighterHolds); and what the shadows' mask
+     * marks the fighters by at the picture's end
+     * (port_GlFighterDrawOccluders). Not `is_drawn`, which a picture
+     * between two frames puts back before it is finished: the mask of
+     * every such picture had no fighter in it, and the shadow darkened
+     * his feet, a flicker over them on a screen. */
     s32 is_laid;
     /* the primitive port_GlFighterTakes was last given is a cloth of a
      * fighter drawn from a model of his own */
     s32 holds;
-    /* where the layer was laid over the picture, and whether it was held
-     * against the ground's slots */
+    /* where the layer was laid over the picture */
     s32 laid[4];
-    s32 laid_order;
     /* a picture between two frames is being drawn, `phase` of the way */
     s32 tween_phase;
     /* the views of the last two frames the fighters were drawn in: the
@@ -336,6 +341,9 @@ static const char g_fighter_vertex_text[] =
     "uniform vec3 u_back;\n"  /* the colour of the dark, 0 to 255 */
     "out vec2 v_uv;\n"
     "out vec3 v_color;\n"
+    /* the normal the colour was lit from, for `smooth_light`; nought
+     * where there is none */
+    "out vec3 v_normal;\n"
     "out float v_depth;\n"
     "void main() {\n"
     "    mat4 skin = a_weight.x * u_joint[a_joint.x]\n"
@@ -371,9 +379,11 @@ static const char g_fighter_vertex_text[] =
     "    float length_of = length(normal);\n"
     "    if (length_of < 0.5) {\n"
     "        v_color = vec3(128.0);\n"
+    "        v_normal = vec3(0.0);\n"
     "    } else {\n"
     "        vec3 ir = max(u_light * (normal / length_of), vec3(0.0)) * 4096.0;\n"
     "        v_color = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
+    "        v_normal = normal / length_of;\n"
     "    }\n"
     "    v_uv = a_uv;\n"
     "    v_depth = v.z;\n"
@@ -387,8 +397,16 @@ static const char g_fighter_fragment_text[] =
     "uniform sampler2D u_index;\n"
     "uniform sampler2D u_palette;\n"
     "uniform int u_paletted;\n"
+    /* `smooth_light`: the same lights worked out at the pixel, from the
+     * normal the corners' colours were lit from (docs/PORT.md,
+     * "Lighting") */
+    "uniform int u_smooth_light;\n"
+    "uniform mat3 u_light;\n"
+    "uniform mat3 u_color;\n"
+    "uniform vec3 u_back;\n"
     "in vec2 v_uv;\n"
     "in vec3 v_color;\n"
+    "in vec3 v_normal;\n"
     "in float v_depth;\n"
     "layout(location = 0) out vec4 o_color;\n"
     "layout(location = 1) out float o_depth;\n"
@@ -407,7 +425,14 @@ static const char g_fighter_fragment_text[] =
     /* a texel of nothing is not drawn, as the chip leaves it */
     "    if (texel.a < 0.5) { discard; }\n"
     /* the chip's five bits a channel times the colour, 128 being one */
-    "    vec3 c = texel.rgb * 31.0 * v_color / 16.0;\n"
+    "    vec3 lit = v_color;\n"
+    "    float length_of = length(v_normal);\n"
+    "    if (u_smooth_light != 0 && length_of > 0.25) {\n"
+    "        vec3 ir = max(u_light * (v_normal / length_of), vec3(0.0))\n"
+    "                * 4096.0;\n"
+    "        lit = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
+    "    }\n"
+    "    vec3 c = texel.rgb * 31.0 * lit / 16.0;\n"
     "    o_color = vec4(clamp(c, 0.0, 255.0) / 255.0, 1.0);\n"
     "    o_depth = v_depth;\n"
     "}\n";
@@ -545,6 +570,7 @@ const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
     AT(at_light, "u_light");
     AT(at_color, "u_color");
     AT(at_back, "u_back");
+    AT(at_smooth_light, "u_smooth_light");
     AT(at_texture, "u_texture");
 #undef AT
 #define AT(member, name)                                                       \
@@ -802,6 +828,29 @@ static FighterModel *port_GlFighterWeaponModel(s32 weapon) {
     return port_GlFighterLoad(&g_fighter.weapon_model[weapon], name);
 }
 
+void port_GlFighterPreload(void) {
+    s32 i;
+
+    if (!g_fighter.is_on || !g_fighter.is_started) {
+        return;
+    }
+    for (i = 0; i < PORT_FIGHTER_SLOTS; i++) {
+        s32 model_id = port_FighterLoadedModel(i);
+
+        if (model_id >= 0) {
+            port_GlFighterModel(model_id);
+        }
+    }
+    for (i = 0; i < WEAPON_FILES; i++) {
+        s32 weapon = port_FighterLoadedWeapon(i);
+
+        if (weapon < 0) {
+            break;
+        }
+        port_GlFighterWeaponModel(weapon);
+    }
+}
+
 /* ---- a frame ---- */
 
 void port_GlFighterNewFrame(void) {
@@ -1002,6 +1051,7 @@ static void port_GlFighterUploadLights(const FighterPose *pose) {
     glUniformMatrix3fv(g_fighter.at_color, 1, GL_TRUE, color);
     glUniform3f(g_fighter.at_back, (GLfloat)pose->back[0],
                 (GLfloat)pose->back[1], (GLfloat)pose->back[2]);
+    glUniform1i(g_fighter.at_smooth_light, port_GlLightIsSmooth() ? 1 : 0);
 }
 
 /* A primitive of a drawn thing read a colour table at (x, y): kept, as
@@ -1394,8 +1444,6 @@ static void port_GlFighterDrawAll(
     g_fighter.laid[1] = y;
     g_fighter.laid[2] = w;
     g_fighter.laid[3] = h;
-    g_fighter.laid_order =
-        port_GlStageSaveFrame() && options.is_stage_depth ? 1 : 0;
     /* the depth is written whatever is there: the test is only how GL
      * lets a fragment write it */
     glEnable(GL_DEPTH_TEST);
@@ -1595,7 +1643,7 @@ s32 port_GlFighterLayerDepth(s32 rect[4]) {
 void port_GlFighterDrawOccluders(u32 framebuffer) {
     PortGlPicture picture;
 
-    if (!g_fighter.is_drawn || g_fighter.laid[2] <= 0) {
+    if (!g_fighter.is_laid || g_fighter.laid[2] <= 0) {
         return;
     }
     port_GlGetPicture(&picture);
@@ -1612,7 +1660,13 @@ void port_GlFighterDrawOccluders(u32 framebuffer) {
     glUniform1i(g_fighter.c_at_layer, 2);
     glUniform1i(g_fighter.c_at_layer_depth, 3);
     glUniform1i(g_fighter.c_at_ground_slots, 1);
-    glUniform1i(g_fighter.c_at_ground_order, g_fighter.laid_order);
+    /* Every pixel of the fighter, the ground's slots not asked: where his
+     * soles stand on the ground the slot of the face of the ground and his
+     * own are a step apart, and which wins changes from one picture to the
+     * next as he breathes. Darkened there, that is a flicker over his
+     * feet; kept out of the darkening, it is a sliver of ground the size
+     * of a sole's edge left as lit as the sole. */
+    glUniform1i(g_fighter.c_at_ground_order, 0);
     glUniform2f(g_fighter.c_at_origin, (GLfloat)g_fighter.laid[0],
                 (GLfloat)g_fighter.laid[1]);
     glUniform4f(g_fighter.c_at_rect, (GLfloat)g_fighter.laid[0],

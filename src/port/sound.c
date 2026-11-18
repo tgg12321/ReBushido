@@ -44,8 +44,8 @@
 
 /* The console's page of hardware registers, of which the chip's are a
  * part. */
-#define IO_PAGE_ADDR 0x1F801000U
-#define IO_PAGE_BYTES 0x1000U
+#define IO_PAGE_ADDR PORT_IO_PAGE_ADDR
+#define IO_PAGE_BYTES PORT_IO_PAGE_SIZE
 
 /* Samples a blank: a whole number and a fraction (the top of the
  * file). */
@@ -155,7 +155,7 @@ static void port_MapSpu(void) {
     if (g_port_spu_mapped) {
         return;
     }
-    if (!port_HostMapAt(IO_PAGE_ADDR, IO_PAGE_BYTES)) {
+    if (!port_MapFixed(IO_PAGE_ADDR, IO_PAGE_BYTES)) {
         port_Fail("rebushido: the system gave no memory at 0x%08X (%u bytes): "
                   "the sound chip's registers, which Sony's library reaches "
                   "by address\n",
@@ -478,6 +478,11 @@ static void port_MixSound(u32 frames) {
         if (g_port_rerun_sound_hook != NULL) {
             g_port_rerun_sound_hook(out, frames);
         }
+        return;
+    }
+    /* a frame run ahead is mixed and heard by nobody: the step itself is
+     * heard when it runs */
+    if (g_port_ahead) {
         return;
     }
     if (music == NULL) {

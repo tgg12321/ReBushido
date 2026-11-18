@@ -23,6 +23,8 @@ typedef enum {
     PORT_PROFILE_SWAP,     /* a picture handed to the display */
     PORT_PROFILE_WAIT,     /* waiting for the blank's or a picture's time */
     PORT_PROFILE_WINDOW,   /* the rest of the window's turn: input, log */
+    PORT_PROFILE_AHEAD,    /* frames run ahead, and the state kept and put
+                            * back (step.c) */
     PORT_PROFILE_PARTS
 } PortProfilePart;
 
