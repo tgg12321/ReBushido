@@ -10,6 +10,7 @@
 #include "common.h"
 #include "port_gpu.h"
 #include "port_host.h"
+#include "port_paint.h"
 #include "bb2.h"
 
 #define BUFFER_BYTES 0x4000
@@ -240,6 +241,7 @@ s32 port_WriteDisplayPng(s32 file) {
     s32 i;
     u8 rgb[CHANNELS];
 
+    port_PaintSyncAll();
     port_GetDisplay(&display);
     repeat = display.w >= WIDE_RATIO * display.h ? 2 : 1;
     port_BeginPng(file, display.w, display.h * repeat);
@@ -287,6 +289,7 @@ s32 port_WriteDisplayPixels(s32 file) {
     s32 line_bytes = PORT_VRAM_WIDTH * (s32)sizeof(u16);
     s32 y;
 
+    port_PaintSyncAll();
     port_GetDisplay(&display);
     for (y = 0; y < display.h; y++) {
         s32 line = (display.y + y) & (PORT_VRAM_HEIGHT - 1);
@@ -312,5 +315,6 @@ s32 port_WriteDisplayPixels(s32 file) {
 }
 
 s32 port_WriteVram(s32 file) {
+    port_PaintSyncAll();
     return port_HostAppend(file, g_port_vram, PORT_VRAM_BYTES);
 }

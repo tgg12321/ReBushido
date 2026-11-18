@@ -10,6 +10,7 @@
 #include "common.h"
 #include <psxsdk/libgpu.h>
 #include "src/port/raster.c"
+#include "src/port/paint.c"
 #include "src/port/remaster.c"
 #include "runtime/runtime.h"
 
@@ -24,6 +25,9 @@ s32 g_port_unseen;
 s32 g_port_ahead_kept;
 
 /* ---- what those files want of the rest of the port ---- */
+
+/* No clock: the painters' waits are counted in nothing (paint.c). */
+u32 port_HostTicks(void) { return 0; }
 
 RbSettings g_rb_settings;
 

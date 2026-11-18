@@ -5086,6 +5086,94 @@ pictures (`--tap-window`, 640 by 360, `frame_rate original`, the
 counter off, a fight on Lost Bridge) are the same to the byte as
 before, as two runs of one program are.
 
+### The software GPU beside the game
+
+**What the worst blanks were** (2026-11-18, main `984661052`, the
+bench's fight after its first second, the numbers in the main
+checkout's `build/bench/984661052/`): with the game at 30 frames a second and the
+bench unpaced, every other blank is a frame's (`F`) and the one between
+does a picture and little else. The between-blanks were 1.3 to 2 ms at
+their worst; **every blank over 6.94 ms was a frame's**, and none was a
+stall, a swap held up by the card or a periodic job: the frame's own
+work, in one blank. `run_ahead 1`, a frame's blank: the software GPU
+3.7 ms, the picture between frames 2.2 (0.65 of it pairing the two
+frames), the frame run ahead 1.3, the side channel 1.1, the game 1.1,
+the sound 0.9 (the frame ahead's mix). The swap was under 0.2 ms.
+
+**The painters** (`src/port/paint.c`, `include/port_paint.h`). The
+software GPU's primitives are painted on threads of their own in the
+window (`RB_PAINTERS=N`, 4 by default, `off` to paint on the game's
+thread as before; the tests, the provers and every Linux program paint
+as before). `raster.c` takes every word on the game's thread: the
+settings, the copies, loads, stores and the fill are done there; the
+polygons, rectangles and lines go into a ring that every painter reads,
+each painting only its band of each 256 lines (a primitive that is not
+in a painter's lines is passed by before anything of it is worked out),
+so each pixel is painted by one painter, by every primitive in order.
+Each square of video memory, 64 pixels by 8 lines, keeps the last
+primitive given that may write it (its corners' rectangle in the
+drawing area) and read it (its texture page and colour table). What
+reads video memory on the game's thread waits for the primitives that
+write what it reads; what writes it, for those that read or write it;
+the state's save, load and hash and the console's picture wait for all
+of them. A primitive that reads what it draws, or draws over what an
+earlier one still reads, and, in a step whose frames were run ahead, a
+copy or load of a colour table between the frame's draws, are done by
+the first painter alone behind a barrier of all of them, so that the
+game's thread does not wait there. The painters' settings are not the
+state's: they take the GPU's again after a load. Video memory is held
+to the byte: the budget fight's video memory at its end is the same
+with the painters as without, in every case and in repeated runs; the
+pictures (640 by 360, every eighth, `frame_rate original`, counter off)
+differ in 6 to 9 of 419, the same pictures and by as much as two runs
+of one program differ (loading screens' fades, the cloth).
+
+**The pairing beside the game** (`gl_tween.c`, `port_TweenSetWorker`):
+the pairing of two frames' primitives, 0.65 ms, is worked out on a
+thread of the window's as soon as the frame after is whole (with
+run-ahead, as the frame ahead ends, while the step itself runs), not in
+the first picture between them (`RB_PAIRING=game`: as before).
+
+**What it bought** (`run_ahead 1`, a frame's blank, the same program
+with `RB_PAINTERS=off RB_PAIRING=game` against itself, interleaved, on
+a machine other agents were also using): the median 7.5 to 6.0 ms, the
+99th centile after the first second 10.6 to 7.6, the software GPU's
+part 2.3 to 0.6 and the picture's 1.5 to 0.7. The gate's bench at
+`f695523ea` against main `984661052`, `run_ahead 1`: after the first
+second, the 99th centile 14.7 to 7.4 ms and the worst 17.3 to 8.3 (the
+worst now within its limit of 13.9); the frame's median 10.8 to 5.9.
+The other cases moved as much in runs on a quiet machine and were lost
+in other agents' load in the gate's. What is left of the
+frame's blank is the wait at the next boundary: the game draws its
+frame's list (DrawOTag) at the very end of its step, right before the
+frames are run ahead and the state is saved, so the painters have
+little else to overlap and the save waits for them (`ahead` 1.0 to 2.0
+ms). With the clock paced (`vsync off`) it is the same: the list is
+drawn after the step's last blank.
+
+**Tried, and left out:**
+
+- *The loads and copies of a step drawn ahead given to one painter*,
+  never waited for: the wait moved whole to the save at the boundary.
+- *Run-ahead saving and putting back all but video memory*, and
+  putting back what the frames ahead wrote of it from a log of their
+  writes (`port_StateSaveButVram`), so that the boundary does not wait
+  for the painters at all: it took the boundary's wait away (the
+  painters waited for 1.0 s in all of a run, then 0.02), but video
+  memory's top lines differed from the painters-off run's on the
+  loading screens in some runs, a race not found, and it was taken out.
+- *Lines a band of eight a painter* (each painter every fourth band of
+  eight lines): every painter worked out every primitive, so four were
+  little faster than one; bands one after another let most primitives
+  be one painter's.
+
+**What is left** for the worst blanks: the boundary's wait for the
+painters (about 1 ms; a save that needs no painted video memory is the
+way, the log above with its race found, or the HANDOFF's painting on
+demand); the frame run ahead's own work (its game, its side channel);
+the sound mixed for the frame ahead (0.3 ms a frame ahead; the voices
+must step, the mixing need not).
+
 ### The HD fighters on the card
 
 **What it was** (main at `8f09f98d1`, the card's measure above): the HD

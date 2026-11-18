@@ -28,6 +28,7 @@
 #include "gl_stage.h"
 #include "gl_tween.h"
 #include "port_gpu.h"
+#include "port_paint.h"
 #include "port_remaster.h"
 
 /* Frames kept: the one being written down, the frame after the one on
@@ -787,8 +788,15 @@ static void port_TweenWroteVram(s32 x, s32 y, s32 w, s32 h) {
     }
 }
 
+static void port_TweenJoin(void);
+static void port_TweenBeginPairing(void);
+
 static void port_TweenEnd(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24) {
-    TweenFrame *frame = port_TweenWriting();
+    TweenFrame *frame;
+
+    /* the slot written next is the frame the pairing reads */
+    port_TweenJoin();
+    frame = port_TweenWriting();
 
     if (frame->event_count != 0) {
         /* the game drew a frame: it is finished, and the next goes into
@@ -803,6 +811,7 @@ static void port_TweenEnd(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24) {
             g_tween.ready++;
         }
         port_TweenClearFrame(port_TweenWriting());
+        port_TweenBeginPairing();
     }
     if (g_tween.real != NULL && g_tween.real->end != NULL) {
         g_tween.real->end(x, y, w, h, is_on, is_rgb24);
@@ -820,6 +829,40 @@ static void port_TweenKeptVram(s32 x, s32 y, s32 w, s32 h) {
 static const PortRemasterBackend g_tween_backend = {
     port_TweenBegin, port_TweenDrawPrim, port_TweenWroteVram, port_TweenEnd,
     port_TweenKeptVram};
+
+/* ---- the pairing beside the game (gl_tween.h) ---- */
+
+static void (*g_tween_give)(void);
+static void (*g_tween_wait)(void);
+/* the host's thread is working the pairing out */
+static s32 g_tween_is_pairing;
+
+static void port_TweenPairFrames(void);
+
+void port_TweenSetWorker(void (*give)(void), void (*wait)(void)) {
+    g_tween_give = give;
+    g_tween_wait = wait;
+}
+
+void port_TweenPairWork(void) { port_TweenPairFrames(); }
+
+/* The pairing the host's thread was given, done: before anything reads
+ * or changes the frames or the pairing. */
+static void port_TweenJoin(void) {
+    if (g_tween_is_pairing) {
+        g_tween_wait();
+        g_tween_is_pairing = FALSE;
+    }
+}
+
+/* A frame is whole: its pairing with the one before it begun beside the
+ * game, where the host has a thread for it. */
+static void port_TweenBeginPairing(void) {
+    if (g_tween_give != NULL && port_TweenCanDraw() && !g_tween.guesses) {
+        g_tween_is_pairing = TRUE;
+        g_tween_give();
+    }
+}
 
 /* ---- starting and stopping ---- */
 
@@ -876,6 +919,7 @@ const char *port_TweenStart(void) {
 void port_TweenStop(void) {
     s32 i;
 
+    port_TweenJoin();
     if (g_tween.real != NULL) {
         port_RemasterSetBackend(g_tween.real);
     }
@@ -919,11 +963,13 @@ s32 port_TweenTakeMirrorBehind(void) {
 }
 
 void port_TweenGuessOnly(s32 on) {
+    port_TweenJoin();
     g_tween.guesses = on;
     g_tween.pair_frames = ~0U;
 }
 
 void port_TweenForget(void) {
+    port_TweenJoin();
     if (!g_tween.is_on) {
         return;
     }
@@ -1669,6 +1715,7 @@ s32 port_TweenDraw(s32 phase) {
     s32 is_held;
     s32 i;
 
+    port_TweenJoin();
     if (!port_TweenCanDraw()) {
         return FALSE;
     }
@@ -1701,6 +1748,10 @@ s32 port_TweenDraw(s32 phase) {
         none[i] = 0;
     }
     port_GlLoadCounts(none);
+    /* video memory is written here and put back: the software GPU's
+     * painter, which may still be painting the frame after (port_paint.h),
+     * holds still until it is */
+    port_PaintHold();
     port_TweenHoldVram(shown);
     is_held = port_GlMirrorHold();
     port_TweenBegin();
@@ -1749,12 +1800,16 @@ s32 port_TweenDraw(s32 phase) {
     port_GlFinishFrame();
     port_GlShadowSetPhase(-1);
     port_TweenGiveVramBack(shown, is_held);
+    port_PaintLetGo();
     port_GlLoadCounts(aside);
     g_tween.counts.pictures++;
     return TRUE;
 }
 
-const PortTweenCounts *port_TweenGetCounts(void) { return &g_tween.counts; }
+const PortTweenCounts *port_TweenGetCounts(void) {
+    port_TweenJoin();
+    return &g_tween.counts;
+}
 
 s32 port_TweenTrack(s32 *key, s32 *x, s32 *y) {
     *key = g_tween.track_key;

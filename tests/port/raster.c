@@ -10,6 +10,7 @@
 #include <psxsdk/libgpu.h>
 #include "src/main/psxsdk/libetc/vmode.c"
 #include "src/port/raster.c"
+#include "src/port/paint.c"
 #include "src/port/gpu.c"
 #include "src/port/picture.c"
 #include "port/remaster_stub.h"
@@ -20,10 +21,14 @@
 s32 g_port_rerun;
 s32 g_port_ahead;
 s32 g_port_ahead_unpainted;
+s32 g_port_unseen;
 /* the lines the GPU writes, which src/port/state.c keeps */
 u8 g_port_vram_lines_written[PORT_VRAM_HEIGHT];
 
 /* ---- what those files want of the rest of the port ---- */
+
+/* No clock: the painters' waits are counted in nothing (paint.c). */
+u32 port_HostTicks(void) { return 0; }
 
 void port_Fail(const char *format, ...) {
     test_Count(0, __FILE__, __LINE__, "the port stopped itself: %s", format);
