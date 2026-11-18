@@ -264,6 +264,16 @@ extern s32 g_port_unseen;
 /* Set by g_port_boundary_hook: no frame is run ahead at this boundary
  * (the window, while the game loads). */
 extern s32 g_port_ahead_held;
+/* Set by the window where what is shown of the frames ahead is the
+ * remastered picture alone: the software GPU then paints no pixel of
+ * them, as of a step run again (raster.c), since nothing reads what it
+ * would paint before the state is put back (docs/PORT.md, "The HD cloth
+ * and run-ahead"). */
+extern s32 g_port_ahead_unpainted;
+/* Whether the software GPU paints: not in a step run again, nor in a
+ * frame ahead whose picture is the remastered one. */
+#define PORT_PAINTS_NOTHING()                                                  \
+    (g_port_rerun || (g_port_ahead && g_port_ahead_unpainted))
 /* The host's turn before a step (main.c): g_port_boundary_hook, then the
  * frames ahead. */
 extern void port_BeforeStep(void);

@@ -2185,7 +2185,9 @@ static void port_AheadDone(void) {
     h = display->h < PORT_PICTURE_HEIGHT_MAX
             ? display->h
             : PORT_PICTURE_HEIGHT_MAX;
-    if (display->is_on && w > 0 && h > 0) {
+    /* the software GPU's picture of them, which only the original
+     * picture shows: not painted where it is not (g_port_ahead_unpainted) */
+    if (display->is_on && w > 0 && h > 0 && !g_port_ahead_unpainted) {
         s32 was = port_ProfileSwitch(PORT_PROFILE_PICTURE);
 
         port_ConvertDisplay(g_port_vram, display->x, display->y, w, h,
@@ -2527,6 +2529,11 @@ static void port_ShowBlank(u32 blank) {
         g_port_read_blanks++;
     }
     port_FollowLoad(blank, load, is_hurried);
+    /* what the frames ahead paint into the software GPU's video memory is
+     * shown only where the original picture is, or where a test takes
+     * it */
+    g_port_ahead_unpainted = g_port_has_gl && port_ShowsRemastered() &&
+                             g_port_window_options.tap_frames == NULL;
     if (load != PORT_LOAD_NONE && g_port_has_gl) {
         /* the fighters' own models read while the game loads, not at the
          * fight's first frame */

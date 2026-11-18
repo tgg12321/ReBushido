@@ -5,32 +5,39 @@
     python3 tools/port_budget.py [--keep]
 
 It runs the window's build (build/port-sdl/linux/rebushido, `make
-port-sdl`) twice side by side, with the player's defaults and the HD
-fighters' mod, through SDL's offscreen driver on Mesa's software OpenGL:
-port_game's plan with Kannuki against Mikado on Tatara Shrine (a `poke`:
-both wear cloth), once with `run_ahead 0` and once with `run_ahead 2`,
-each with `--profile`. Over the fight it adds up, for each blank in which
-the game drew a frame, the parts of the processor's own time that do not
-depend on the software OpenGL (the game, the software GPU, the side
-channel, the sound, the frames ahead, the HD cloth, the cast shadows:
-include/port_profile.h).
+port-sdl`) three times side by side, with the player's defaults and the
+HD fighters' mod, through SDL's offscreen driver on Mesa's software
+OpenGL: port_game's plan with Kannuki against Mikado on Tatara Shrine (a
+`poke`: both wear cloth), with `run_ahead` 0, 1 and 2, each with
+`--profile`. Over the fight it takes, for each blank in which the game
+drew a frame, the parts of the processor's own time (the game, the
+software GPU, the side channel, the sound, the frames ahead, the HD
+cloth, the cast shadows: include/port_profile.h), and what the session's
+log counts.
 
 It fails where
 
-  - run-ahead 2 costs more than RATIO_MAX times run-ahead 0 (two frames
-    ahead are two more steps of the game and of the side channel; what a
-    picture costs, the cloth above all, may not be paid again for them);
-  - the HD cloth costs more than CLOTH_SHARE_MAX of that time (it is kept
-    out of the body once a frame, not once a picture).
+  - with nothing run ahead, the game, the software GPU, the sound and
+    the cloth take more than OWN_MAX milliseconds of a fight frame;
+  - run_ahead 1 costs more than run_ahead 0 by more than a bare step of
+    the game, the state kept and put back and AHEAD_OVER_MAX (a frame
+    ahead draws the picture its step no longer draws, and paints nothing
+    into the software GPU's memory);
+  - run_ahead 2 costs more than RATIO_MAX times run_ahead 0, or the cloth
+    more than CLOTH_SHARE_MAX of it;
+  - the cloth is kept out of the body more than HOLDS_A_FRAME_MAX times a
+    frame written down, or more than PALETTES_MAX colour tables are sent
+    to the card: what is done once and not again for every picture.
 
-The two runs share the machine, so a busy machine slows both; the
-measure is their ratio, not milliseconds. Where the window's build, the
+The runs share the machine, so a busy machine slows them all; the
+milliseconds are those of the owner's PC, with room to spare. Where the window's build, the
 disc image or the hd mod is not there, it says so and passes: nothing of
 the build needs them. The runs go to build/budget/.
 """
 import argparse
 import concurrent.futures
 import os
+import re
 import statistics
 import subprocess
 import sys
@@ -52,6 +59,20 @@ PARTS = ('game', 'raster', 'remaster', 'sound', 'window', 'ahead', 'cloth', 'sha
 # and 28%.
 RATIO_MAX = 2.0
 CLOTH_SHARE_MAX = 0.20
+RUN_AHEADS = (0, 1, 2)
+# The processor's own parts of a fight frame with nothing run ahead, in
+# milliseconds (here, 2026-11-18: about 13; the cloth kept out for every
+# picture, as merged at 1e6878df3: over 40).
+OWN_PARTS = ('game', 'raster', 'sound', 'cloth')
+OWN_MAX = 18.0
+# What run_ahead 1 may cost over 0 beyond a bare step of the game and the
+# state kept and put back (here: about 1).
+AHEAD_OVER_MAX = 4.0
+# The cloth kept out of the body, for each frame written down for the
+# pictures between frames (here: 0.4; once a picture: several), and the
+# colour tables sent in the run (here: 4; once a drawing: thousands).
+HOLDS_A_FRAME_MAX = 1.0
+PALETTES_MAX = 64
 # The plan's pokes: the second fighter Mikado (ROSTER_MIKADO) and the
 # stage Tatara Shrine (3), from the character select on.
 POKES = (('config_roster_p2', 5), ('config_stage', 3), ('stage', 3))
@@ -160,6 +181,25 @@ def read(profile):
             for i, name in enumerate(parts) if i < len(rows[0])}, len(rows)
 
 
+def counts(output):
+    """What the run's log says it did: the frames written down, the cloth's
+    holds, the colour tables sent, and the state's share of a boundary."""
+    said = {}
+    with open(output, encoding='utf-8', errors='replace') as f:
+        for line in f:
+            m = re.search(r'(\d+) frames written down', line)
+            if m:
+                said['frames'] = int(m.group(1))
+            m = re.search(r'(\d+) colour tables sent; the HD cloth kept out of the body (\d+) times', line)
+            if m:
+                said['palettes'] = int(m.group(1))
+                said['holds'] = int(m.group(2))
+            m = re.search(r'ms a boundary, ([\d.]+) of it the state', line)
+            if m:
+                said['state'] = float(m.group(1))
+    return said
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.parse_args()
@@ -181,23 +221,48 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     plan = os.path.join(OUT_DIR, 'plan.txt')
     write_plan(plan)
-    with concurrent.futures.ThreadPoolExecutor(2) as pool:
-        profiles = list(pool.map(lambda r: run(r, image, mods, plan), (0, 2)))
-    (zero, n0), (two, n2) = read(profiles[0]), read(profiles[1])
-    cost0 = sum(zero.get(p, 0.0) for p in PARTS)
-    cost2 = sum(two.get(p, 0.0) for p in PARTS)
+    with concurrent.futures.ThreadPoolExecutor(len(RUN_AHEADS)) as pool:
+        profiles = list(pool.map(lambda r: run(r, image, mods, plan), RUN_AHEADS))
+    runs = {}
+    for ra, profile in zip(RUN_AHEADS, profiles):
+        parts, n = read(profile)
+        runs[ra] = (parts, n, sum(parts.get(p, 0.0) for p in PARTS),
+                    counts(os.path.join(os.path.dirname(profile), 'output.txt')))
     print('port-budget: a fight frame\'s processor time (median ms, the parts %s)' % ', '.join(PARTS))
-    for name, parts, n, cost in (('run_ahead 0', zero, n0, cost0), ('run_ahead 2', two, n2, cost2)):
-        print('  %-12s %7.2f ms over %d frames: %s' % (
-            name, cost, n, ' '.join('%s %.2f' % (p, parts.get(p, 0.0)) for p in PARTS)))
-    ratio = cost2 / cost0 if cost0 > 0 else 0.0
-    cloth = two.get('cloth', 0.0) / cost2 if cost2 > 0 else 0.0
-    print('  run_ahead 2 / 0: %.2f (at most %.2f); the cloth %.0f%% of run_ahead 2 (at most %.0f%%)'
-          % (ratio, RATIO_MAX, 100 * cloth, 100 * CLOTH_SHARE_MAX))
-    failed = ratio > RATIO_MAX or cloth > CLOTH_SHARE_MAX
+    for ra in RUN_AHEADS:
+        parts, n, cost, said = runs[ra]
+        print('  run_ahead %d %7.2f ms over %d frames: %s' % (
+            ra, cost, n, ' '.join('%s %.2f' % (p, parts.get(p, 0.0)) for p in PARTS)))
+    zero, _, cost0, said0 = runs[0]
+    one, _, cost1, said1 = runs[1]
+    two, _, cost2, _ = runs[2]
+    checks = []
+    # the processor's own work of a fight frame, with nothing run ahead:
+    # a number of milliseconds, not a ratio
+    own = sum(zero.get(p, 0.0) for p in OWN_PARTS)
+    checks.append(('run_ahead 0: the game, the software GPU, the sound and the cloth',
+                   own, OWN_MAX, 'ms'))
+    # a frame run ahead is the game's step and the state kept and put
+    # back: it draws the picture the step after it no longer draws, and
+    # paints nothing into the software GPU's memory
+    bare = zero.get('game', 0.0) + zero.get('sound', 0.0) + said1.get('state', 0.0)
+    checks.append(('run_ahead 1 over 0, less a bare step and the state (%.2f ms)' % bare,
+                   cost1 - cost0 - bare, AHEAD_OVER_MAX, 'ms'))
+    checks.append(('run_ahead 2 / 0', cost2 / cost0 if cost0 > 0 else 0.0, RATIO_MAX, ''))
+    checks.append(('the cloth\'s share of run_ahead 2',
+                   two.get('cloth', 0.0) / cost2 if cost2 > 0 else 0.0, CLOTH_SHARE_MAX, ''))
+    # what is done once and not again for every picture
+    frames = max(said0.get('frames', 0), 1)
+    checks.append(('the cloth kept out, a frame written down', said0.get('holds', 0) / frames,
+                   HOLDS_A_FRAME_MAX, ''))
+    checks.append(('colour tables sent to the card', said0.get('palettes', 0), PALETTES_MAX, ''))
+    failed = False
+    for what, value, most, unit in checks:
+        bad = value > most
+        failed = failed or bad
+        print('  %-66s %8.2f%s (at most %.2f)%s' % (what, value, unit, most, '  FAILED' if bad else ''))
     print('port-budget: %s' % ('FAILED' if failed else 'OK'))
     return 1 if failed else 0
-
 
 if __name__ == '__main__':
     sys.exit(main())
