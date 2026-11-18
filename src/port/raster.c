@@ -1298,9 +1298,16 @@ static void port_SubmitPrimitive(PortGpu *gpu, const u32 *words, s32 count,
      * time, and one that draws over what a primitive before it still reads
      * may draw it first: either is drawn by the first painter alone, of all
      * lines, in its turn (port_paint.h). */
-    if (port_PaintPainters() > 1 &&
-        (port_RectsMeet(&write, &page) || port_RectsMeet(&write, &table) ||
-         port_PaintIsReadPending(&write))) {
+    if (kind == COMMAND_LINES) {
+        /* a line of many points goes on past its first words, which only
+         * the painter that took them would know: it waits instead */
+        if (port_PaintPainters() > 1 && port_PaintIsReadPending(&write)) {
+            port_PaintSyncWrite(write.x, write.y, write.w, write.h);
+        }
+    } else if (port_PaintPainters() > 1 &&
+               (port_RectsMeet(&write, &page) ||
+                port_RectsMeet(&write, &table) ||
+                port_PaintIsReadPending(&write))) {
         PortPaintRect none;
 
         none.w = 0;

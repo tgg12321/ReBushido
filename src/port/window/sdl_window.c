@@ -3538,6 +3538,8 @@ static void port_PainterWake(s32 painter) {
 static void port_PainterYield(void) { SDL_Delay(0); }
 
 static int SDLCALL port_PainterThread(void *index) {
+    /* the painters are on the game's way: ahead of the rest of the PC */
+    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
     port_PaintRun((s32)(intptr_t)index);
     return 0;
 }
@@ -3612,6 +3614,7 @@ static void port_PairWait(void) { SDL_SemWait(g_port_pair_done); }
 
 static int SDLCALL port_PairThread(void *unused) {
     (void)unused;
+    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
     for (;;) {
         SDL_SemWait(g_port_pair_go);
         if (SDL_AtomicGet(&g_port_pair_stop)) {

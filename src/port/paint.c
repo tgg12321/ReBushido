@@ -233,7 +233,6 @@ static u32 port_PaintNeeds(const u32 *squares, s32 x, s32 y, s32 w, s32 h,
 /* Until every painter has painted `need` words. Painters held still are
  * read as they stand: nothing is given them while they are held. */
 static void port_PaintWaitFor(u32 need, s32 kind) {
-    s32 spins = 0;
     u32 start;
 
     if (g_paint.hold || (s32)(need - port_PaintDone()) <= 0) {
@@ -241,12 +240,10 @@ static void port_PaintWaitFor(u32 need, s32 kind) {
     }
     start = port_HostTicks();
     g_paint.waits[kind]++;
+    /* the game's thread does not give up the processor here: on a busy
+     * PC it may not have it back for a whole slice of the system's */
     while ((s32)(need - port_PaintDone()) > 0) {
-        if (++spins < SPINS_BEFORE_YIELD) {
-            port_PaintSpin();
-        } else {
-            g_paint.host.yield();
-        }
+        port_PaintSpin();
     }
     g_paint.waited[kind] += port_HostTicks() - start;
 }
