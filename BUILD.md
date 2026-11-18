@@ -261,7 +261,10 @@ python tools/baseline.py --list      # what is stored
 
 It builds both provers and the window, runs the bench alone, then the
 llvmpipe provers (in WSL) beside the card's (about an hour, the
-llvmpipe stage prover being most of it), and keeps what each measured --
+llvmpipe stage prover being most of it), each lane's runs in a folder of
+its own (`build/baseline-runs/<gpu>/`: two provers side by side with the
+same `--out` would write over each other's pictures and logs, which
+holds for any two runs at once), and keeps what each measured --
 its numbers, its verdicts, a hash of each trace and of each picture it
 wrote -- in the main checkout's `build/baseline/<commit>/<prover>-<gpu>.json`
 with each run's log beside it; the bench keeps its numbers in

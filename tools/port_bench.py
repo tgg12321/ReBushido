@@ -473,6 +473,11 @@ def main():
                       % (commit[:9], ', '.join(changed) if stored.get('code') else
                          'they were kept before the bench kept its code\'s hash'))
                 return 2
+            busy = [case for case, m in theirs.items() if m.get('load') and
+                    (m['load']['others'] or (m['load']['busy'] or 0) > LOAD_BUSY_MAX)]
+            if busy:
+                print('port-bench: (%s\'s numbers of %s were measured on a loaded machine)'
+                      % (commit[:9], ', '.join(sorted(busy))))
     # it times: alone on the card, no prover or other bench of any checkout
     # beside it (tools/card_lock.py)
     if not args.reuse:

@@ -375,14 +375,18 @@ def store(args):
     lanes = {}
     for short_name in [p for p in PROVERS if p in only]:
         script = 'tools/%s.py' % PROVERS[short_name]
+        # each lane's runs in a folder of their own: the two lanes side by
+        # side would otherwise write the same pictures and logs
         if 'llvmpipe' in gpus:
             lanes.setdefault('llvmpipe', []).append(
                 ('%s-llvmpipe' % PROVERS[short_name],
-                 ['wsl', 'python3', script, '--gpu', 'llvmpipe', '--store-baseline'], None))
+                 ['wsl', 'python3', script, '--gpu', 'llvmpipe', '--store-baseline',
+                  '--out', 'build/baseline-runs/llvmpipe/' + short_name], None))
         if 'card' in gpus:
             lanes.setdefault('card', []).append(
                 ('%s-card' % PROVERS[short_name],
-                 [sys.executable, script, '--gpu', 'card', '--store-baseline'], quiet))
+                 [sys.executable, script, '--gpu', 'card', '--store-baseline',
+                  '--out', 'build/baseline-runs/card/' + short_name], quiet))
     for cmds in lanes.values():
         for label, _, _ in cmds:
             old = os.path.join(folder, label + '.json')
