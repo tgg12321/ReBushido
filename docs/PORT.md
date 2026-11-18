@@ -1531,7 +1531,7 @@ accident: lights of its own ("What each later step needs").
 | | | |
 |---|---|---|
 | `draw_distance` | `original`, `far`, `max` | how many of the stage's cells are queued, and how far out the stage's fog is placed |
-| `antialiasing` | `off`, `2`, `4` | how many times over each way the scene is drawn before it is averaged down |
+| `antialiasing` | `off`, `2`, `4` | the scene's edges multisampled, N times N samples a pixel, eight at most ("Edges") |
 | `aspect` | `4:3`, `16:9`, any `W:H` | the shape of the picture: a wider one is a wider view of the same scene |
 
 They are a run's and are settled before the game starts: the primitive
@@ -2912,6 +2912,20 @@ ground (`port_GlStageViewNow`). It is made of:
 - **a few thin clouds**, low and lit from the moon's side, which hide
   the stars behind them.
 
+**What it costs.** The clouds are five octaves of a noise of the
+direction, forty hashes a pixel, which made the sky the card's second
+dearest pass (3.1 ms a fight frame at 2560 by 1440 with the picture
+supersampled, on the owner's RTX 3090). Being a function of the
+direction alone, the noise is worked out once, the first time a sky is
+painted, into a cube about the eye of six faces of 1,024 texels a side
+(`port_GlSkyBakeClouds`, 12 MB), and each pixel reads it there, the
+card smoothing between texels; the gradient, the moon, the stars and
+the clouds' colours are still worked out at each pixel, so that the
+stage's own light colours them. A texel is about a tenth of a degree,
+two pixels of that picture; the clouds lie where the noise's finest
+octave is several texels across, so they are the same clouds, softened
+by the smoothing where they are finest.
+
 **Which stages.** Looked at stage by stage over the prover's tour of
 each (`tools/port_stage_prove.py`, the pictures every 300 blanks of all
 38): the halls, the dojos, the parking garage, the purple cavern and
@@ -3318,7 +3332,60 @@ sun). Everything in "What is not done" above still holds for the mask.
 
 ### Edges
 
-The scene is drawn **two or four times over each way and averaged
+**Since 2026-11-18 the edges are multisampled** (`antialiasing N`: N
+times N samples a pixel, at most eight, `port_GlSamplesOf`,
+`src/port/gl/gl_draw.c`). The colour buffer, the depth buffer and the
+ground's slots keep that many samples a pixel at the picture's own
+scale, and the card averages them into the picture at the end
+(`port_GlResolve`, a blit). The card shades a pixel of a face once and
+keeps which of its samples the face covers, so a face costs what it
+costs at one sample a pixel: on the owner's RTX 3090 at 2560 by 1440 the
+ground's mesh went from 3.9 ms to 1.25 and the sky from 1.1 to
+0.27 (see "Measuring on the card"). What makes it work with the game's
+picture:
+
+- **The 2D layer is not multisampled.** A primitive that has no depth
+  (the HUD, the fonts, the menus, a rectangle of video memory stretched
+  into the picture) is drawn with the card's multisampling off
+  (`GL_MULTISAMPLE`, `port_GlSetState`, `port_GlDrawBlits`): it is
+  rasterised from the middle of each pixel by the chip's own rule, as
+  before, and writes every sample of a pixel or none. Its corners are
+  half a pixel in, as the chip's are, so multisampled it covered half of
+  each pixel along its edges: a grey line round every letter
+  (`--gl-blocks` counted 203,742 uneven blocks in `port_game`'s flat
+  screens). Off, the flat screens are block for block as they were.
+  A batch is all of the scene or none of it (`PortGlState.is_scene`).
+- **The ordering in which the game paints is kept exactly.** Each
+  sample is mixed with what is under it, in the order of the ordering
+  table, and the averaging comes after everything: a half-transparent
+  primitive over an edge mixes once at each sample, as it did at each
+  pixel of the larger buffer. (The worry below about multisampling is of
+  coverage folded into alpha, which this is not.)
+- **What reads a buffer reads one value a pixel.** The ground's slots,
+  which the scene and the fighters are held against, are taken down to
+  one a pixel as the mesh ends (the first sample's, by a shader:
+  `port_GlGroundSlotsEnd`; a blit of them took 30 ms a frame on the
+  card). The HD fighters are drawn into a layer of as many samples and
+  taken down into its colour, the share of the pixel they cover, and
+  their nearest depth (`port_GlFighterTakeDown`, `gl_fighter.c`), and
+  the layer is mixed over the picture by that share, so a fighter's edge
+  is smoothed as before. The pause's picture is drawn back, not blitted
+  (no blit draws into a buffer of several samples).
+- **Thinned walls fade.** A wall thinned so that a fighter behind it
+  shows keeps a share of its samples (`gl_SampleMask`) and not of its
+  pixels; the shadows' mask, of one sample a pixel, keeps the dither.
+- **What it does not smooth that supersampling did**: what is inside a
+  face (a texture is shaded once a pixel; the mod's textures are
+  mipmapped and the game's are averaged over the texels a pixel covers,
+  so this is the edges' smoothing only), the edge of a texel of nothing
+  in a texture (a fence's gaps), and where two faces cross (the depth a
+  face writes is one a pixel).
+
+`RB_SUPERSAMPLE=1` in the environment draws it the old way, which the
+rest of this section describes, to compare. With `off`, and with
+`--gl-exact`, there is one sample a pixel and nothing of this runs.
+
+**Before:** the scene was drawn **two or four times over each way and averaged
 down** (`antialiasing`): the colour buffer is `scale * sample` pixels to
 a pixel of video memory, and a pass at the end of the frame makes the
 picture by averaging each block of `sample` by `sample`
@@ -4380,7 +4447,44 @@ takes about a tenth off what the processor does for a fight frame here
 trace is the `-O1` program's line for line (2,338 and 2,462 lines) and
 every twentieth picture is the same to the byte (224 and 236); the
 headless programs at `-O2` pass the rollback self-test in both sizes.
-The players' build stays at `-O1` until the owner says.
+**The players' build is at `-O2`** since 2026-11-18 (the owner: performance
+first): `tools/port_sdl_build.py` compiles the game and the port's own
+files of both window programs, Linux's and Windows', at `-O2`
+(`WINDOW_OPT`; `PORT_OPT=N` says otherwise, into a folder of its own),
+and the headless programs the checks and the play tests run stay at
+`-O1`, the traces' reference. On the card (`tools/port_bench.py`, `ra1`,
+the median of a fight frame's processor work): 22.5 ms at `-O1`, 16.0 at
+`-O2` (the game 1.36 to 0.76 ms, the side channel 1.36 to 0.79, the
+frame run ahead 3.75 to 2.92); with the fighters' models off 13.7 to
+11.4. The traces of `port_game` and `port_other_fight` at `-O2` are the
+`-O1` programs' to the byte in both sizes (2,338 and 2,462 lines), and so
+are they with `--rollback-test 8 --run-ahead 2`.
+
+**The files with a C library** (the remastered renderer, the HD cloth,
+the pictures between frames, the window) of the 64-bit programs are at
+`-O3 -march=x86-64-v3 -ffp-contract=off`, linked whole (`-flto`;
+`HOSTED_FAST`, `RB_HOSTED_FLAGS` for a measurement): three turns each
+against `-O2` on the card, the medians of `ra1`'s parts went from 4.11,
+3.17 and 4.09 ms to 2.87, 3.00 and 2.46 for the pictures between frames,
+1.62, 1.11, 1.31 to 0.98, 1.03, 1.12 for the shadows, 3.02, 2.70, 2.92 to
+2.66, 2.76, 2.63 for the cloth; the work's median 18.3, 14.4, 17.9 to
+14.4, 15.3, 14.3. An x86-64 from 2013 on (AVX2) is what the window now
+needs; no multiply-add is fused, so the arithmetic is the same to the
+bit, and none of it is the game's state.
+
+Measured and not taken, with the bench run in turns against the `-O2`
+build because other agents' work was on the machine (a run's median
+moved by 4 ms from one turn to the next, the same program):
+
+- **`-march=x86-64-v3`** (Haswell, 2013) for every file: the game's,
+  the software GPU's and the side channel's medians the same to a tenth
+  of a millisecond. The game's files are built without SSE (`-mno-sse`,
+  the 64-bit port's rule), so there is nothing for it to use.
+- **LTO of the game's files** is not possible as they are linked: the
+  game's variables are put in the PlayStation's order by a script over
+  one section each, which LTO's own sections do not keep. `-fno-plt`
+  has nothing to do on Windows (no PLT) or in the statically placed
+  Linux program; profile-guided optimisation was not tried.
 
 ### The HD cloth and run-ahead
 
@@ -4518,6 +4622,168 @@ costs more than twice `run_ahead 0`, or the cloth more than a fifth of
 it; where the cloth is kept out more than once a frame written down
 (0.4 here); or where more than 64 colour tables are sent (4 here).
 
+### Pacing on a real display
+
+**A hidden window on the card is held to the real display.** On the
+owner's RTX 3090 (driver 616.92, Windows 11, a screen of 85 Hz) a
+`--hidden` window with vsync on swaps at the screen's refreshes: the
+median between two swaps of a paced fight is 11.53 ms (85 Hz is 11.76;
+the shorter ones are swaps that came back within a refresh). So the
+pacing is measured on the card itself, with nothing shown
+(runs of the Windows build: `--hidden --window 2560x1440
+--fight tatara-shrine kannuki mikado --profile FILE`, every default on,
+the five mods, SDL's dummy sound). What a hidden window cannot show is
+what Windows' compositor does to a shown one, full screen's own flips,
+a screen of another rate than the PC's own (60, 120, 144: those are the
+models below), and anything heard.
+
+**What held the game back with vsync on.** In a fight the frame's blank
+is 17 ms of the processor's work here (`run_ahead 1`, the HD fighters),
+more than a blank, and its first picture's swap then waited for the
+next refresh on top (5.5 ms, the median), and with `low_latency` for
+the card as well: the game fell behind, a step at a time, and the time
+was let go. Now **a blank more than a refresh late shows no picture of
+its own** where the blank before showed one (`port_ShowPictures`): its
+swap would make the game later still, and the screen shows the picture
+before for that refresh either way. A step that runs long costs a
+refresh of the picture, not the game's pace and not the sound.
+
+| a fight, 40 s, 2560x1440 at 85 Hz (hidden) | vsync on | vsync off (the owner's) |
+| --- | --- | --- |
+| before the files with a C library were at `-O3` (more work a blank): time let go | 2 (with a stall of 50 ms made every 5 s) | 19 |
+| ... the sound ran out | 4 | 16 |
+| ... pictures a second | 66 | 55 |
+| now: time let go | 0 | 0 |
+| ... the sound ran out | 0 | 1 |
+| ... pictures a second, and the spread between two | 81.2, 5.5 ms | 75.0, 2.9 ms |
+| ... blanks a refresh late that showed nothing | 25 | 0 |
+
+With `vsync = off` the driver's queue is never waited for at a swap, and
+the processor is held up inside the card's batches instead (15 ms at
+once, `card`), unevenly: where the processor's work was near a blank,
+the time was let go nine times as often. With room to spare `off` comes
+out as evenly paced as `on` (the clock holds the rate) but tears every
+picture; `on` shows more pictures and never tears. `on` is the default
+and the right choice.
+
+**`low_latency = off`** was measured too: the swaps come back at once,
+not at a refresh, so the moment each picture is shown is not known and
+the pictures between frames are drawn for the wrong moments (a phase
+went backwards between two pictures 890 times in the fight against 646
+with it on). It stays on.
+
+**`vsync = adaptive`** (`port_SetSwapInterval`: SDL's -1, where the
+driver has it; `on` where not, and the log says so) shows a picture that
+missed its refresh at once, torn, rather than a refresh late. On this
+card in a hidden window it measured as `on` (the driver tears nothing
+it does not show); on a shown window it is for the owner's screen.
+
+**The display's rate made up** (`--display-rate N`) now swaps with no
+interval of its own, so that a hidden window on a real card is held to
+the made-up display and not to its own as well. Measured with it
+(`frame_rate display`, the same fight):
+
+| `--display-rate` | pictures a second | between two, median | 95% | time let go | not shown |
+| --- | --- | --- | --- | --- | --- |
+| 60 | 47.7 | 16.8 ms | 33.6 | 0 | 554 |
+| 85, the real display | 81.2 | 11.7 | 22.2 | 0 | 25 |
+| 120 | 66.0 | 9.1 | 25.8 | 0 | 24 |
+| 144 | 83.9 | 7.0 | 21.2 | 0 | 26 |
+
+The game kept its pace at every rate (no time let go); what gave was the
+pictures. At 60 a fight's frame blank, 15 to 17 ms of work, misses its
+refresh most times, and the blank is not shown; at 120 and 144 the
+pictures are what the processor and the card leave room for, 66 and 84
+a second.
+
+The card's own time for a picture of the fight is about 9 ms at
+2560x1440 with `antialiasing = 2` (the ground's mesh 3.6, the sky 2.7):
+**144 a second (6.94 ms) is beyond the card's share alone** until the
+renderer's work comes down ("Measuring on the card"), and 85 is at the
+edge of it; what the pacing does about that is draw fewer pictures
+between frames, never slow the game.
+
+### Sound that does not run out
+
+The game's sound chip (`src/port/spu.c`) stays on the window's thread,
+stepped at each blank in lockstep with the game: which voices have
+ended and how far each envelope has come are read back by Sony's
+library, so they are the game's state, saved and put back by run-ahead
+and rollback and held to the emulator by `port_sound`. Its cost is half
+a millisecond a blank. What runs on SDL's thread is the copy out of the
+queue (`ring.c`), as before. The sound ran out because the queue was
+shorter than the time a blank can run late: a blank's samples are made
+at its end, so the queue has to hold a blank's (737), the card's gulp,
+and whatever a late picture or step adds.
+
+- The card is asked for **512** samples at a time (11.6 ms), not 1,024,
+  and the queue is kept **3,584** long (81 ms), not 2,560: 53 ms of a
+  stall is held. The sound is about 12 ms later than before (93 ms of
+  queue and gulp against 81).
+- Where it runs out all the same, the queue is made **256 longer**, up
+  to 4,800 (109 ms), unless that was time let go (a stall no queue
+  holds) or a load hurried through; the log says so.
+- The log says why each time, the first twenty: `sound: ran out before
+  blank 458: 1954 samples were queued after the blank before, which took
+  29.6 ms, 5.0 of it work: TWEEN 4.3 ...`.
+
+`tests/port/window.c` holds it on made-up time: a fight whose frame's
+blank takes 20 ms, or 27, with a stall of 50 ms more every five seconds,
+6,000 blanks: nothing runs out and no time is let go; the queue as it
+was ran out at every stall; a stall of 70 ms runs out at each. On the
+card, a paced fight with `--stall 50,300,1300` (the window stops 50 ms
+at every 300th blank) ran out at none of the stalls (once, at the fight's load, as every run with SDL's dummy card does).
+
+SDL's dummy sound card is not a clock (it takes its samples late and
+unevenly), and an agent may sound nothing: **what a real card does with
+the queue is for the owner's ears**, with the log's lines.
+
+### After a hitch
+
+`PORT_PACE_LOST` is still a tenth of a second: a blank later than that
+is not caught up, the time is let go, and the sound has run out by then
+whatever the queue. A shorter hitch is caught up at once, as before.
+Two things changed:
+
+- **The log says why**: `pace: blank 377 was 106 ms late, more than the
+  tenth of a second the game catches up, and the time was let go (1
+  times so far); the blank before took 39.7 ms, 27.6 of it work: TWEEN
+  5.6 AHEAD 5.4 FINISH 4.1 CLOTH 3.1` (`PortPace.lost_by`,
+  `port_LargestParts`).
+- **No crawl after it.** A frame's length for the pictures between
+  frames is the blanks' moments apart; across a let-go they jumped, and
+  the next frame's pictures were spread over the jump, crawling through
+  one frame. A frame that the moments say took more than four blanks now
+  lasts what the frame before lasted (`FRAME_PERIOD_MOST`).
+
+In the measured fight the hitches that let time go were the fight's
+first frames (40 ms blanks, the side channel and the cloth worked out
+the first time) and one stall of 115 ms in the swap 24 seconds in,
+the same blank in every run: the card waited on something the renderer
+sent (a texture or a program used the first time). Both are the
+renderer's to find.
+
+### A report (F9)
+
+The parts' times are now counted always (two reads of the clock a
+switch), and the card's passes timed always (`gl_bench.h`); the window
+keeps the last 600 blanks of both and the last 2,048 swaps in rings
+(`src/port/window/sdl_report.c`). **F9** (or `--report-at N`) makes
+`logs/report-YYYYMMDD-HHMMSS-N/` beside the session's log: `picture.png`
+(the window as F12 keeps it), `profile.txt` (the rings, in `--profile`'s
+form, so `tools/port_profile.py` reads it), `session.log` (its last
+256 KB), `rebushido.cfg`, and `about.txt` (the version, the system, the
+card and its driver, the display and its rate, vsync, the sound card and
+queue, the pace's account, the pictures shown and not, the settings that
+cost time, the last blank's parts). Tried on the card: a report at blank
+2300 of a paced fight is 3,250 lines of times and a picture of 2560 by
+1440.
+
+**The build's id** is the commit's (`ReBushido 0.1-dev (<commit>)`);
+a build made in a worktree says `unknown`, since `tools/mirror.sh` asks
+git from WSL, which cannot read a worktree's `.git` file of Windows
+paths. The owner's copy is built in the main checkout.
+
 ### Measuring on the card
 
 The owner's target (2026-11-18): **144 pictures a second at 2,560 by
@@ -4585,7 +4851,9 @@ for the clock and the display) and the card's time: medians, 95th and
 over 6.94 ms) and the stalls (blanks over three times a frame's median:
 a first use). Every result is kept in the main checkout's
 `build/bench/<commit>/results.json`; `--against REV` compares with
-another commit's without running it again.
+another commit's without running it again. `--set KEY=VALUE` changes a
+setting of every case for a trial (`--set antialiasing=off`), whose
+numbers are kept apart, as the commit's name with `+KEY-VALUE`.
 
 **Measured** (2026-11-18, `9f55dce56` with this instrument, RTX 3090,
 driver 616.92; another agent's runs were on the machine at the same
@@ -4620,6 +4888,45 @@ So the processor is the limit, by four times the budget, and the card
 too, by half again: **neither fits 144 a second today**, and the card
 does not fit 85 (11.8 ms) with run-ahead 2. What fails is listed by the
 budget below.
+
+**The card's share, cut (2026-11-18, later).** The ground and the sky
+were the card's whole problem, and both were fill: with `antialiasing
+off` they came to 1.1 and 0.8 ms, a quarter of what they cost
+supersampled. Three changes, `run_ahead 1`, card medians in ms (other
+agents' work was on the machine, so the processor's numbers here are
+not comparable with each other; the card's are):
+
+| | ground | sky | the card, a frame |
+| --- | --- | --- | --- |
+| before | 4.02 | 3.08 | 11.1 (9.7 measured quiet) |
+| the sky's clouds read from a cube worked out once ("The sky") | 3.85 | 1.08 | 8.3 |
+| ... and the edges multisampled, not supersampled ("Edges") | 1.25 | 0.27 | 5.2 |
+
+The ground's faces that are left out (turned away, nearer than the
+cutoff, opened up for a fighter behind them) are now left out by their
+vertices, before the card rasterises them (`gl_stage.c`), where each of
+their pixels was thrown away before; it bought little (4.02 to 3.85),
+being fill the depth test had mostly stopped already. The picture: the
+2D layer is block for block what it was (`--gl-blocks`, multisampled,
+`port_game`'s flat screens: no block uneven), and a fight on the card
+differs from the supersampled one in 1.1% of its pixels by more than 8
+of 255, at edges and inside textures, which multisampling shades once a
+pixel; the pair is in the owner's `ReBushido Screenshots\Performance
+2026-11-18`.
+
+Every case, with the fighters' agent's work of the same day merged
+(`f10dcbdda`; the card's medians and 95th centiles, ms): `run_ahead 0`
+4.4 and 7.2 (before, 9.5 and 11.0), `run_ahead 1` 4.0 and 8.5 (11.1 and
+20.3), `run_ahead 2` 9.3 and 13.9 (16.8 and 24.0), fighter models off
+3.0 and 4.1, four fighters on the ground twice 5.2 and 9.6 (22.0 and
+27.5). With `run_ahead 2` the video memory pass is 3.7 ms of it, against
+0.6 in the other cases, and every other pass is half again: the card
+draws each frame twice, as the first frame ahead of one boundary is the
+last of the boundary before (`port_BeforeStep`, `step.c`). Leaving the
+first out (`g_port_unseen`, as the step after them is) would halve it,
+but what that frame writes into video memory would then not reach the
+card's mirror where its input differs from the boundary before's; the
+mirror needs to be told of a write without drawing it first.
 
 **The budget** (`port_bench.py --budget`, the gate's step `port-bench`,
 run alone after every other with `port-budget`): the cases `ra0`, `ra1`,
@@ -4854,6 +5161,31 @@ built in it, 2.8 seconds there. What is left of a player's wait is that
 work of the port's own, and the boot picture (150 blanks, the
 publisher's, which is not a load), the fades and the game's own screens
 between, all frames of the game, which quick loading leaves alone.
+
+### Straight into a fight
+
+`--fight STAGE FIGHTER FIGHTER` (both programs, `src/port/fight.c`)
+starts the fight in place of the options page, the boot image and the
+opening, as the PlayStation's quick-boot build does
+([`REBUSHIDO.md`](REBUSHIDO.md), "Booting straight into a fight"), but
+chosen when the program starts: for the owner, for agents and for a
+benchmark. The names are the game's (`enum StageIndex`, `enum RosterId`,
+`enum WeaponId`), any case, spaces and dashes left out, the enum's
+prefix allowed, or the number: `--fight tatara-shrine kannuki
+mikado:nodachi`. A fighter's weapon follows a colon (a katana if none),
+the second fighter is the CPU's (`--fight-2p`: the second pad's), the
+mode is versus. A name not known prints the names and ends with the
+usage code. `rb_StartFight` (`src/rebushido/quickboot.c`, which the
+quick-boot build's `rb_QuickBoot` now calls too) does what the main menu does when it
+first opens, the choice into `g_fight_config`, and `fight_StartMode`.
+No card is read on the way, so the settings are the game's own until a
+card is loaded from the menus. Without `--fight` nothing changes: the
+traces of `port_game` and `port_other_fight` are the same, line for line.
+The headless program is in the fight by blank 600; the options page
+(`rb_RunOptionsPage`) and the boot image (`disp_ShowBootImage`) return at
+once under `RB_PORT` where a fight was asked for, and `main` starts it
+after choosing the movie's screen (`rb_PortQuickFight`), so `main`'s own
+shape is the original's.
 
 ### The fighters' own models
 

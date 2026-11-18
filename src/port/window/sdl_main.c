@@ -96,8 +96,8 @@ static const char g_port_window_usage[] =
     "                 far: the whole wedge the camera looks down; max:\n"
     "                 every cell of the stage, with the fog pushed out to\n"
     "                 match\n"
-    "  --antialiasing N    the scene drawn N times over each way and\n"
-    "                 averaged down: off, 2 or 4\n"
+    "  --antialiasing N    the scene's edges multisampled, N times N\n"
+    "                 samples a pixel (8 at most): off, 2 or 4\n"
     "  --aspect W:H   the shape of the picture: 4:3 as the console, 16:9\n"
     "                 for a wider view of the same scene\n"
     "  --stage-mesh W on, the default: the stage's ground drawn from one\n"
@@ -133,7 +133,10 @@ static const char g_port_window_usage[] =
     "counter in the corner: pictures shown a second, the game's own\n"
     "frames a second, and the speed against the console's. F12 keeps a\n"
     "picture of the window as a PNG in screenshots/ beside the program,\n"
-    "and the session's log says where it went.\n"
+    "and the session's log says where it went. F9 keeps a report of a\n"
+    "problem: the picture, the last ten seconds' times, the log, the\n"
+    "settings and what the PC is, in a folder report-... beside the log.\n"
+    "--fight STAGE FIGHTER FIGHTER starts straight in a fight (below).\n"
     "\n"
     "Online: the settings menu's Play online page, or --host ADDRESS:PORT\n"
     "(0.0.0.0:7845 to be found from other PCs) and --join ADDRESS:PORT\n"
@@ -182,7 +185,10 @@ static const char g_port_window_usage_end[] =
     "was shown: tools/port_profile.py reads it), --display-rate N (a\n"
     "display made up of N blanks a second, which a swap waits for) and\n"
     "--bench-stress fighters=N,stage=M (the HD fighters drawn as if there\n"
-    "were N, the ground M times over: tools/port_bench.py).\n";
+    "were N, the ground M times over: tools/port_bench.py), --report-at N\n"
+    "(what F9 does, at blank N) and --stall MS[,EVERY[,FROM]] (the window\n"
+    "stops MS milliseconds at every EVERYth blank from FROM: a hitch made\n"
+    "on purpose, for the pace and the sound).\n";
 
 static void port_Complain(const char *problem, const char *word) {
     fprintf(stderr, "rebushido: %s%s\nrebushido: --help says what it takes\n",
@@ -670,6 +676,26 @@ int main(int argc, char **argv) {
             /* a window of a size asked for is a window: a test's
              * picture is that size whatever the settings say */
             fullscreen = 0;
+        } else if (strcmp(word, "--report-at") == 0 && has_value) {
+            options->report_at = atoi(argv[++i]);
+        } else if (strcmp(word, "--stall") == 0 && has_value) {
+            /* MS[,EVERY[,FROM]]: a stall of MS at every EVERYth blank
+             * from blank FROM (600 and 1200 where not said) */
+            const char *how = argv[++i];
+
+            options->stall_ms = atoi(how);
+            options->stall_every = 600;
+            options->stall_at = 1200;
+            if (strchr(how, ',') != NULL) {
+                options->stall_every = atoi(strchr(how, ',') + 1);
+                how = strchr(how, ',') + 1;
+                if (strchr(how, ',') != NULL) {
+                    options->stall_at = atoi(strchr(how, ',') + 1);
+                }
+            }
+            if (options->stall_ms <= 0 || options->stall_every <= 0) {
+                port_Complain("--stall takes MS[,EVERY[,FROM]], not ", argv[i]);
+            }
         } else if (strcmp(word, "--fault-at") == 0 && has_value) {
             options->fault_at = atoi(argv[++i]);
         } else if (strcmp(word, "--fault-in-sound") == 0 && has_value) {

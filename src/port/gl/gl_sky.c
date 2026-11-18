@@ -62,6 +62,13 @@ typedef char GLchar;
 #define GL_FRAGMENT_SHADER 0x8B30
 #define GL_COMPILE_STATUS 0x8B81
 #define GL_LINK_STATUS 0x8B82
+#define GL_TEXTURE_CUBE_MAP 0x8513
+#define GL_TEXTURE_CUBE_MAP_POSITIVE_X 0x8515
+#define GL_TEXTURE_CUBE_MAP_SEAMLESS 0x884F
+#define GL_COLOR_ATTACHMENT0 0x8CE0
+#define GL_R16F 0x822D
+#define GL_RED 0x1903
+#define GL_FLOAT 0x1406
 
 #define PORT_GL_SKY_FUNCTIONS                                                  \
     GL(void, glViewport, (GLint, GLint, GLsizei, GLsizei))                     \
@@ -78,6 +85,9 @@ typedef char GLchar;
     GL(void, glGenerateMipmap, (GLenum))                                       \
     GL(void, glPixelStorei, (GLenum, GLint))                                   \
     GL(void, glBindFramebuffer, (GLenum, GLuint))                              \
+    GL(void, glGenFramebuffers, (GLsizei, GLuint *))                           \
+    GL(void, glDeleteFramebuffers, (GLsizei, const GLuint *))                  \
+    GL(void, glFramebufferTexture2D, (GLenum, GLenum, GLenum, GLuint, GLint))  \
     GL(void, glGenVertexArrays, (GLsizei, GLuint *))                           \
     GL(void, glBindVertexArray, (GLuint))                                      \
     GL(GLuint, glCreateShader, (GLenum))                                       \
@@ -112,6 +122,10 @@ PORT_GL_SKY_FUNCTIONS
  * fractions (1.12) */
 #define CHANNEL_MAX 255.0f
 #define GTE_ONE 4096.0f
+/* The clouds' cube about the eye: texels a side of each of its faces
+ * (port_GlSkyBakeClouds) */
+#define CLOUD_SIDE 1024
+#define CUBE_FACES 6
 /* A rotation's nine numbers */
 #define MATRIX_ELEMENTS 9
 /* How long a shader's complaint and a mod's file's key may be */
@@ -175,6 +189,41 @@ static const char g_sky_vertex_text[] =
     "    gl_Position = vec4(at, 0.0, 1.0);\n"
     "}\n";
 
+/* The noise the clouds are made of, in both of the shaders below. */
+#define SKY_NOISE                                                                \
+    "float hash(vec3 p) {\n"                                                     \
+    "    p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419));\n"                 \
+    "    p *= 17.0;\n"                                                           \
+    "    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));\n"                   \
+    "}\n"                                                                        \
+    "float noise(vec3 p) {\n"                                                    \
+    "    vec3 i = floor(p);\n"                                                   \
+    "    vec3 f = fract(p);\n"                                                   \
+    "    f = f * f * (3.0 - 2.0 * f);\n"                                         \
+    "    return mix(mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x),\n"           \
+    "                   mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)),\n" \
+    "                       f.x), f.y),\n"                                       \
+    "               mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)),\n" \
+    "                       f.x),\n"                                             \
+    "                   mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)),\n" \
+    "                       f.x), f.y), f.z);\n"                                 \
+    "}\n"                                                                        \
+    "float clouds(vec3 p) {\n"                                                   \
+    "    float sum = 0.0;\n"                                                     \
+    "    float part = 0.5;\n"                                                    \
+    "    for (int i = 0; i < 5; i++) {\n"                                        \
+    "        sum += part * noise(p);\n"                                          \
+    "        p = p * 2.03 + vec3(1.7, 9.2, 4.1);\n"                              \
+    "        part *= 0.5;\n"                                                     \
+    "    }\n"                                                                    \
+    "    return sum;\n"                                                          \
+    "}\n"                                                                        \
+    "float cloud_cover(vec3 dir) {\n"                                            \
+    "    float up = -dir.y;\n"                                                   \
+    "    vec3 sheet = vec3(dir.x, 0.0, dir.z) / max(up + 0.12, 0.05);\n"         \
+    "    return clouds(sheet * 1.6 + vec3(3.0, 0.0, 1.0));\n"                    \
+    "}\n"
+
 static const char g_sky_fragment_text[] =
     "#version 330 core\n"
     /* the view's rotation as the card wants it: a direction in the view
@@ -189,35 +238,10 @@ static const char g_sky_fragment_text[] =
     "uniform vec3 u_moon_color;\n"
     "uniform int u_has_picture;\n"
     "uniform sampler2D u_picture;\n"
+    /* the clouds' noise, worked out once (port_GlSkyBakeClouds) */
+    "uniform samplerCube u_clouds;\n"
     "layout(location = 0) out vec4 o_color;\n"
-    "const float PI = 3.14159265;\n"
-    "float hash(vec3 p) {\n"
-    "    p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419));\n"
-    "    p *= 17.0;\n"
-    "    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));\n"
-    "}\n"
-    "float noise(vec3 p) {\n"
-    "    vec3 i = floor(p);\n"
-    "    vec3 f = fract(p);\n"
-    "    f = f * f * (3.0 - 2.0 * f);\n"
-    "    return mix(mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x),\n"
-    "                   mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)),\n"
-    "                       f.x), f.y),\n"
-    "               mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)),\n"
-    "                       f.x),\n"
-    "                   mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)),\n"
-    "                       f.x), f.y), f.z);\n"
-    "}\n"
-    "float clouds(vec3 p) {\n"
-    "    float sum = 0.0;\n"
-    "    float part = 0.5;\n"
-    "    for (int i = 0; i < 5; i++) {\n"
-    "        sum += part * noise(p);\n"
-    "        p = p * 2.03 + vec3(1.7, 9.2, 4.1);\n"
-    "        part *= 0.5;\n"
-    "    }\n"
-    "    return sum;\n"
-    "}\n"
+    "const float PI = 3.14159265;\n" SKY_NOISE
     /* The stars of one layer: the direction onto the face of a cube about
      * the eye, the face cut into `cells` by `cells` cells, and a star in
      * a cell where the cell's number says so, as wide as a pixel. */
@@ -292,8 +316,7 @@ static const char g_sky_fragment_text[] =
     "               + 0.18 * exp(-moon_apart * 30.0);\n"
     "    color += u_moon_color * halo * smoothstep(-0.02, 0.08, high);\n"
     /* clouds: thin, low and lit from the side the moon is on */
-    "    vec3 sheet = vec3(dir.x, 0.0, dir.z) / max(up + 0.12, 0.05);\n"
-    "    float cover = clouds(sheet * 1.6 + vec3(3.0, 0.0, 1.0));\n"
+    "    float cover = texture(u_clouds, dir).r;\n"
     "    float cloud = smoothstep(0.52, 0.78, cover)\n"
     "                * smoothstep(0.0, 0.12, high)\n"
     "                * (1.0 - smoothstep(0.45, 0.9, high));\n"
@@ -323,6 +346,30 @@ static const char g_sky_fragment_text[] =
     "    o_color = vec4(clamp(color, 0.0, 1.0), 1.0);\n"
     "}\n";
 
+/* The clouds' noise, five octaves of it, is the dearest part of a sky's
+ * pixel and a function of the direction alone: it is worked out once,
+ * into a cube about the eye whose six faces are drawn one by one, and
+ * the sky reads it there (port_GlSkyBakeClouds). A texel of a face is
+ * the direction through its middle, by the card's own rule for which
+ * face and texel a direction reads. */
+static const char g_sky_bake_text[] =
+    "#version 330 core\n"
+    "uniform int u_face;\n"
+    "uniform float u_side;\n"
+    "layout(location = 0) out vec4 o_cover;\n" SKY_NOISE "void main() {\n"
+    "    vec2 st = gl_FragCoord.xy / u_side * 2.0 - vec2(1.0);\n"
+    "    float sc = st.x;\n"
+    "    float tc = st.y;\n"
+    "    vec3 dir;\n"
+    "    if (u_face == 0) { dir = vec3(1.0, -tc, -sc); }\n"
+    "    else if (u_face == 1) { dir = vec3(-1.0, -tc, sc); }\n"
+    "    else if (u_face == 2) { dir = vec3(sc, 1.0, tc); }\n"
+    "    else if (u_face == 3) { dir = vec3(sc, -1.0, -tc); }\n"
+    "    else if (u_face == 4) { dir = vec3(sc, -tc, 1.0); }\n"
+    "    else { dir = vec3(-sc, -tc, -1.0); }\n"
+    "    o_cover = vec4(cloud_cover(normalize(dir)), 0.0, 0.0, 1.0);\n"
+    "}\n";
+
 /* ---- the state ---- */
 
 static struct {
@@ -340,6 +387,12 @@ static struct {
     GLint at_moon_color;
     GLint at_has_picture;
     GLint at_picture;
+    GLint at_clouds;
+    /* the clouds' cube (port_GlSkyBakeClouds) and what makes it */
+    GLuint bake_program;
+    GLint bake_at_face;
+    GLint bake_at_side;
+    GLuint clouds;
     /* the stage's frames counted at the last clear: a clear after which
      * the renderer drew the stage's tiles is a fight's frame */
     s32 last_frames;
@@ -375,11 +428,22 @@ static GLuint port_GlSkyShader(GLenum kind, const char *text) {
     return shader;
 }
 
+static GLuint port_GlSkyLink(GLuint vertex, GLuint fragment) {
+    GLuint program = glCreateProgram();
+    GLint ok = 0;
+
+    glAttachShader(program, vertex);
+    glAttachShader(program, fragment);
+    glLinkProgram(program);
+    glGetProgramiv(program, GL_LINK_STATUS, &ok);
+    return ok ? program : 0;
+}
+
 /* The functions, the shader and its uniforms (gl_sky.h). */
 const char *port_GlSkyStart(void *(*getproc)(const char *name)) {
     GLuint vertex;
     GLuint fragment;
-    GLint ok = 0;
+    GLuint bake;
 
 #define GL(result, name, args)                                                 \
     name = (result(*) args)getproc(#name);                                     \
@@ -390,17 +454,18 @@ const char *port_GlSkyStart(void *(*getproc)(const char *name)) {
 #undef GL
     vertex = port_GlSkyShader(GL_VERTEX_SHADER, g_sky_vertex_text);
     fragment = port_GlSkyShader(GL_FRAGMENT_SHADER, g_sky_fragment_text);
-    if (vertex == 0 || fragment == 0) {
+    bake = port_GlSkyShader(GL_FRAGMENT_SHADER, g_sky_bake_text);
+    if (vertex == 0 || fragment == 0 || bake == 0) {
         return g_sky.news;
     }
-    g_sky.program = glCreateProgram();
-    glAttachShader(g_sky.program, vertex);
-    glAttachShader(g_sky.program, fragment);
-    glLinkProgram(g_sky.program);
-    glGetProgramiv(g_sky.program, GL_LINK_STATUS, &ok);
-    if (!ok) {
+    g_sky.program = port_GlSkyLink(vertex, fragment);
+    g_sky.bake_program = port_GlSkyLink(vertex, bake);
+    if (g_sky.program == 0 || g_sky.bake_program == 0) {
         return "the sky's shaders do not link";
     }
+    g_sky.bake_at_face = glGetUniformLocation(g_sky.bake_program, "u_face");
+    g_sky.bake_at_side = glGetUniformLocation(g_sky.bake_program, "u_side");
+    g_sky.clouds = 0;
     g_sky.at_turn = glGetUniformLocation(g_sky.program, "u_turn");
     g_sky.at_middle = glGetUniformLocation(g_sky.program, "u_middle");
     g_sky.at_h = glGetUniformLocation(g_sky.program, "u_h");
@@ -411,6 +476,7 @@ const char *port_GlSkyStart(void *(*getproc)(const char *name)) {
     g_sky.at_moon_color = glGetUniformLocation(g_sky.program, "u_moon_color");
     g_sky.at_has_picture = glGetUniformLocation(g_sky.program, "u_has_picture");
     g_sky.at_picture = glGetUniformLocation(g_sky.program, "u_picture");
+    g_sky.at_clouds = glGetUniformLocation(g_sky.program, "u_clouds");
     /* the triangle is made of its vertices' numbers alone, but a core
      * context draws nothing with no vertex array bound */
     glGenVertexArrays(1, &g_sky.array);
@@ -499,6 +565,53 @@ static GLuint port_GlSkyPicture(s32 stage) {
     return texture;
 }
 
+/* ---- the clouds ---- */
+
+/* The clouds' cube, made the first time a sky is painted: six faces of
+ * CLOUD_SIDE texels a side, each texel the clouds' noise of the
+ * direction through it, read smoothly between texels (a texel is about
+ * a tenth of a degree, two pixels of a 2560-wide picture: the noise's
+ * finest octave is still a few texels across where the clouds are). It
+ * does not change with the stage: the clouds' colours are the stage's,
+ * and worked out at each pixel. 0 where it cannot be made. */
+static GLuint port_GlSkyBakeClouds(u32 framebuffer) {
+    GLuint texture = 0;
+    GLuint target = 0;
+    s32 face;
+
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, texture);
+    for (face = 0; face < CUBE_FACES; face++) {
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, 0, GL_R16F,
+                     CLOUD_SIDE, CLOUD_SIDE, 0, GL_RED, GL_FLOAT, NULL);
+    }
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    /* a face's edge read with its neighbour's, so that no seam shows */
+    glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+    glGenFramebuffers(1, &target);
+    glBindFramebuffer(GL_FRAMEBUFFER, target);
+    glUseProgram(g_sky.bake_program);
+    glBindVertexArray(g_sky.array);
+    glUniform1f(g_sky.bake_at_side, (GLfloat)CLOUD_SIDE);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_SCISSOR_TEST);
+    glViewport(0, 0, CLOUD_SIDE, CLOUD_SIDE);
+    for (face = 0; face < CUBE_FACES; face++) {
+        glFramebufferTexture2D(
+            GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+            GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, texture, 0);
+        glUniform1i(g_sky.bake_at_face, face);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    glDeleteFramebuffers(1, &target);
+    return texture;
+}
+
 /* ---- painting it ---- */
 
 /* The stage's light, as the sky is coloured by it: the scenery's ambient
@@ -575,6 +688,9 @@ void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color) {
         turn[i] = (GLfloat)view->matrix[i] / GTE_ONE;
     }
     port_GlSkyLight(ambient, moon, moon_color);
+    if (g_sky.clouds == 0 && own == 0) {
+        g_sky.clouds = port_GlSkyBakeClouds(picture.framebuffer);
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
     glUseProgram(g_sky.program);
     glBindVertexArray(g_sky.array);
@@ -599,6 +715,10 @@ void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, own);
     glUniform1i(g_sky.at_picture, 0);
+    glActiveTexture(GL_TEXTURE0 + 1);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, g_sky.clouds);
+    glUniform1i(g_sky.at_clouds, 1);
+    glActiveTexture(GL_TEXTURE0);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     glEnable(GL_SCISSOR_TEST);

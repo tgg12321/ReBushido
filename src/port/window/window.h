@@ -141,6 +141,9 @@ typedef struct {
     s32 nudged;        /* samples the blanks have been moved by, in all */
     s32 queue_average; /* the queue's error, smoothed, in 256ths */
     u32 held;          /* samples of a hold still to be taken */
+    u32 late;          /* how late the last blank was, in samples */
+    s32 lost_by;       /* how late the blank was when time was last let
+                        * go, in samples (negative: early) */
 } PortPace;
 
 /* A blank is about to be shown. `now` is the PC's clock, `due` the
@@ -259,7 +262,8 @@ typedef struct {
     s32 scale;         /* PORT_SCALE_... */
     s32 is_fullscreen; /* at the start */
     s32 is_linear;     /* the picture smoothed as it is scaled */
-    s32 vsync;         /* wait for the display */
+    s32 vsync;         /* wait for the display: 0, 1, or
+                        * PORT_VSYNC_ADAPTIVE */
     s32 deadzone;      /* parts of a hundred */
     s32 fps;           /* the counter in the corner is shown: 1, or
                         * PORT_FPS_TIMES with the times under it */
@@ -564,6 +568,10 @@ extern void port_CountFps(PortFpsMeter *meter, u32 now, u32 events);
 /* `fps = times`: the counter with the processor's and the card's time
  * per part of a frame under it (sdl_window.c, port_DrawCounter) */
 #define PORT_FPS_TIMES 2
+/* `vsync = adaptive`: the display waited for, but a picture that missed
+ * its refresh is shown at once, torn, rather than a refresh late
+ * (sdl_window.c, port_SetSwapInterval) */
+#define PORT_VSYNC_ADAPTIVE 2
 extern void port_FormatFps(
     char *out, u32 shown_tenths, u32 game_tenths, u32 blank_tenths);
 

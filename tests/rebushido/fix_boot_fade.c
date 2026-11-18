@@ -16,6 +16,11 @@ static s32 g_test_loads;
 
 void SetDispMask(s32 mask) {}
 
+#if RB_PORT
+/* the port's --fight: none asked for, so the boot image is shown */
+const PortFight *port_QuickFight(void) { return NULL; }
+#endif
+
 DISPENV *SetDefDispEnv(DISPENV *env, s32 x, s32 y, s32 w, s32 h) { return env; }
 
 DISPENV *PutDispEnv(DISPENV *env) { return env; }

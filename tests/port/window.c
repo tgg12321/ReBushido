@@ -374,6 +374,70 @@ static u32 test_RunWithCard(s32 card_rate, u32 blanks, s32 *nudged_out) {
     return ring.underruns - start_underruns;
 }
 
+/* The window's queue (sdl_window.c: 3584 pairs, the card asking for 512
+ * at a time) through `blanks` blanks of a fight, in which a frame's
+ * blank takes `heavy` samples' time to work out and the blank after it
+ * 2 ms, and every 300th blank stalls `stall` more. The card asks for its
+ * samples by the PC's clock, a gulp whenever a gulp's time has passed,
+ * so it reads while the game works a blank out. Returns the times the
+ * sound ran out after it first began; `late_out` the largest lateness
+ * the pace saw, in samples. */
+static u32 test_RunWithStalls(
+    u32 target, u32 gulp, u32 heavy, u32 stall, u32 blanks, u32 *late_out) {
+    static s16 ring_samples[8192 * 2];
+    PortRing ring;
+    PortPace pace;
+    u32 now = 5000;
+    u32 due = 0;
+    u32 fraction = 0;
+    u32 card_taken = 5000;
+    u32 blank;
+    u32 begun = 0;
+    u32 late = 0;
+
+    port_InitRing(&ring, ring_samples, 8192, target);
+    pace.is_started = 0;
+    test_FillSound(1000, 1000, 1024);
+    for (blank = 1; blank <= blanks; blank++) {
+        u32 frames = TEST_BLANK_FRAMES;
+        u32 step = (blank & 1) ? heavy : 88;
+        u32 until;
+
+        if (blank % 300 == 0) {
+            step += stall;
+        }
+        /* the step: the card goes on reading while the game works */
+        until = now + step;
+        while ((s32)(until - (card_taken + gulp)) >= 0) {
+            port_ReadRing(&ring, g_test_heard, gulp);
+            card_taken += gulp;
+        }
+        now = until;
+        /* the blank's samples, at its end */
+        fraction += TEST_BLANK_FRACTION;
+        if (fraction >= TEST_BLANK_FRACTION_ONE) {
+            fraction -= TEST_BLANK_FRACTION_ONE;
+            frames++;
+        }
+        due += frames;
+        port_WriteRing(&ring, g_test_sound, frames);
+        until = now + port_PaceBlank(&pace, blank, now, due,
+                                     (s32)ring.count - (s32)ring.target);
+        late = pace.late > late ? pace.late : late;
+        while ((s32)(until - (card_taken + gulp)) >= 0) {
+            port_ReadRing(&ring, g_test_heard, gulp);
+            card_taken += gulp;
+        }
+        now = until;
+        if (blank == 60) {
+            begun = ring.underruns;
+        }
+    }
+    *late_out = late;
+    CHECK_EQ(pace.lost, 0);
+    return ring.underruns - begun;
+}
+
 static void test_Pace(void) {
     PortPace pace;
     u32 blank;
@@ -491,6 +555,36 @@ static void test_Pace(void) {
     CHECK(nudged < -26000 && nudged > -33000);
     CHECK_EQ(test_RunWithCard(99800, 20000, &nudged), 0);
     CHECK(nudged > 26000 && nudged < 33000);
+
+    /* the window's queue holds a fight whose frame's blank takes 20 ms
+     * to work out, with a stall of 50 ms more every five seconds: nothing
+     * runs out and no time is let go (docs/PORT.md, "Sound that does not
+     * run out") */
+    {
+        u32 late = 0;
+
+        CHECK_EQ(test_RunWithStalls(3584, 512, 882, 2205, 6000, &late), 0);
+        /* (the stall, less the blank's own time it fell in) */
+        CHECK(late > 2205 - 737);
+        /* ... and with the step at a whole blank and more, 27 ms, which
+         * the light blank after it makes up */
+        CHECK_EQ(test_RunWithStalls(3584, 512, 1190, 2205, 6000, &late), 0);
+        /* a stall of 70 ms is more than the queue holds: it runs out once
+         * at each, but the last, at the run's last blank */
+        CHECK_EQ(test_RunWithStalls(3584, 512, 882, 3087, 6000, &late),
+                 6000 / 300 - 1);
+        /* the queue as it was (2560, the card asking for 1024 at a time)
+         * ran out at every stall of 50 ms */
+        CHECK_EQ(test_RunWithStalls(2560, 1024, 882, 2205, 6000, &late),
+                 6000 / 300 - 1);
+    }
+    /* how late the last blank was, for the window (sdl_window.c) */
+    pace.is_started = 0;
+    port_PaceBlank(&pace, 1, 1000, 737, 0);
+    port_PaceBlank(&pace, 2, 1000 + 737 + 300, 737 * 2, 0);
+    CHECK_EQ(pace.late, 300);
+    port_PaceBlank(&pace, 3, 1000 + 737 * 2, 737 * 3, 0);
+    CHECK_EQ(pace.late, 0);
 }
 
 /* When a picture is shown, and of what moment (pace.c). */

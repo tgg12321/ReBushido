@@ -136,14 +136,12 @@ static void port_GlPauseHold(s32 what, s32 from_x, s32 from_y, s32 x, s32 y) {
     }
     port_GlPauseSize(&picture, &w, &h);
     if (is_kept && w > 0 && h > 0) {
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, g_pause.framebuffer);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, picture.framebuffer);
-        glBlitFramebuffer(
-            0, 0, g_pause.kept_w, g_pause.kept_h, x * picture.draw_x,
-            y * picture.draw_y, x * picture.draw_x + w, y * picture.draw_y + h,
-            GL_COLOR_BUFFER_BIT,
-            w == g_pause.kept_w && h == g_pause.kept_h ? GL_NEAREST
-                                                       : GL_LINEAR);
+        /* drawn, not blitted: the colour buffer may have several
+         * samples a pixel, which no blit draws into */
+        port_GlDrawTexture(
+            g_pause.texture, g_pause.room_w, g_pause.room_h, g_pause.kept_w,
+            g_pause.kept_h, x * picture.draw_x, y * picture.draw_y, w, h,
+            w != g_pause.kept_w || h != g_pause.kept_h);
     }
     glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
     glEnable(GL_SCISSOR_TEST);

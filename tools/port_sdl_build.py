@@ -78,7 +78,7 @@ WINDOW_PLAIN = ['scale.c', 'ring.c', 'pace.c', 'keymap.c', 'logname.c', 'fps.c',
 # as well, and not in that test, which has no game.
 WINDOW_GAME = ['gamestate.c']
 # What talks to SDL and to the C library: compiled as any program is.
-WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'sdl_net.c', 'menu.c', 'font.c']
+WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'sdl_net.c', 'sdl_report.c', 'menu.c', 'font.c']
 # The settings menu's font, put into the program as a C array of its bytes
 # (src/port/window/font.c), and the mods the program ships, copied into
 # mods/ beside it.
@@ -99,6 +99,19 @@ OTHER_HOSTS = ('src/port/host_linux.c', 'src/port/host_windows.c')
 # (a path cut short by snprintf is what snprintf is used for)
 HOSTED_FLAGS = ['-O2', '-g', '-std=gnu99', '-Wall', '-Wextra', '-Werror', '-Wno-format-truncation', '-D_FILE_OFFSET_BITS=64',
                 '-Iinclude', '-I' + WINDOW_DIR.rstrip('/'), '-I' + GL_DIR.rstrip('/')]
+# The players' program is optimised further than the headless one the
+# checks and the play tests run (tools/port_build.py, -O1): the game and
+# the port's own files at -O2, which was measured faster with the same
+# traces (docs/PORT.md, "Where the time goes", "-O2"). PORT_OPT=N says
+# otherwise, into a folder of its own.
+WINDOW_OPT = '2'
+# ... and the files with SDL and the C library of the 64-bit programs at
+# -O3 for an x86-64 of 2013 on (Haswell: AVX2), linked whole (LTO): the
+# pictures between frames, the shadows and the cloth were a fifth to a
+# third quicker on the card's bench (docs/PORT.md, "Where the time goes").
+# No multiply-add is fused, so their arithmetic is the same to the bit as
+# without (-ffp-contract=off). None of it is the game's state.
+HOSTED_FAST = ['-O3', '-march=x86-64-v3', '-ffp-contract=off', '-flto=auto']
 # Where the program is linked: where the build without a window is
 # (tools/port_build.py, PROGRAM_BASE), so that the game's state's two runs
 # of variables have low 24 bits that no other place a primitive may be has
@@ -169,11 +182,14 @@ class Target:
         self.windows = windows
         self.bits = bits
         self.size_flag = '-m%d' % bits
-        # PORT_OPT=2: optimised otherwise, in a folder of its own
-        # (tools/port_build.py, set_bits)
+        # PORT_OPT=N: the game optimised otherwise than the players' build
+        # is (WINDOW_OPT), in a folder of its own; RB_WINDOW_FLAGS: flags
+        # more for every file, to be measured, into the folder
+        # RB_WINDOW_NAME names
         self.name = (('windows' if windows else 'linux')
                      + ('' if bits == port_build.DEFAULT_BITS else str(bits))
-                     + ('-O' + os.environ['PORT_OPT'] if os.environ.get('PORT_OPT') else ''))
+                     + ('-O' + os.environ['PORT_OPT'] if os.environ.get('PORT_OPT') else '')
+                     + os.environ.get('RB_WINDOW_NAME', ''))
         self.dir = '%s/%s' % (OUT_DIR, self.name)
         self.obj_dir = self.dir + '/obj'
         if windows:
@@ -624,6 +640,18 @@ def main():
     if bits is None:
         return 1
     port_build.set_bits(bits)
+    optimise = '-O' + (os.environ.get('PORT_OPT') or WINDOW_OPT)
+    more = os.environ.get('RB_WINDOW_FLAGS', '').split()
+    port_build.GAME_FLAGS = [optimise if re.match(r'-O\d$', f) else f for f in port_build.GAME_FLAGS] + more
+    # The files with SDL and the C library (the remastered renderer, the
+    # HD cloth, the window) of the 64-bit programs: HOSTED_FAST, given to
+    # the link too (-flto). RB_HOSTED_FLAGS says otherwise, for a
+    # measurement.
+    if 'RB_HOSTED_FLAGS' in os.environ:
+        hosted_more = os.environ['RB_HOSTED_FLAGS'].split()
+    else:
+        hosted_more = HOSTED_FAST if bits == 64 else []
+    HOSTED_FLAGS.extend(more + hosted_more)
     target = Target('--windows' in args, bits)
     problem = check_host(target)
     if problem:
@@ -685,7 +713,7 @@ def main():
     if blob is None:
         print("FAILED: port-sdl: the game's object does not link")
         return 1
-    if not link_program(target, target.program, [blob] + hosted, target.link_flags()):
+    if not link_program(target, target.program, [blob] + hosted, target.link_flags() + hosted_more):
         return 1
     made = [target.program]
     made += ['%s/mods/%s/' % (target.dir, name) for name in copy_mods(target)]

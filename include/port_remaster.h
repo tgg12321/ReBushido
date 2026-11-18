@@ -78,6 +78,9 @@ enum {
 /* How many times over the picture may be drawn and averaged down, which
  * is how the remastered picture's edges are smoothed ("Edges"). */
 #define PORT_SUPERSAMPLE_MAX 4
+/* ... and the most samples a pixel the window's card is asked for, when
+ * the edges are multisampled (src/port/gl/gl_draw.c) */
+#define PORT_MULTISAMPLE_MAX 8
 
 /* The shape of the picture. The console's is four by three; a wider one
  * is a wider view of the scene and not a stretched picture, so the

@@ -51,6 +51,21 @@ build/port-sdl/linux/rebushido --image "Bushido Blade 2 (USA).cue"
 It starts filling the screen; F11 or Alt+Enter, or `--windowed`, puts
 it in a window. `rebushido --help` lists the rest.
 
+**Straight into a fight**, with no options page, opening or menu:
+
+```
+rebushido.exe --fight tatara-shrine kannuki mikado:nodachi
+```
+
+The stage, then the two fighters, by the game's names in any case and
+with or without spaces or dashes (`"Tatara Shrine"`, `tatara-shrine`,
+`STAGE_TATARA_SHRINE` and `3` are one stage); a fighter's weapon after a
+colon, a katana if none. The second fighter is the CPU's; `--fight-2p`
+gives it to the second pad. A name the game does not have lists the
+ones it does. The fight starts with the settings the game starts with:
+the memory card is not read on the way. After it, the game's own menu
+comes up and the game goes on as ever.
+
 ## The keys
 
 | | Player one | Player two | A controller |
@@ -73,6 +88,16 @@ guide button. **Escape**, or closing the window, ends the program. **F11** or
 the counter in the corner: `59.8/30.0 100%` is the pictures shown a
 second, the game's own frames a second (30 in a fight and 60 in the
 main menu are full speed), and the speed against the console's.
+
+**F9 keeps a report of a problem**: press it when something looked or
+sounded wrong, or the game stuttered, and a folder
+`logs/report-YYYYMMDD-HHMMSS-N/` beside the program holds the picture
+on the screen, where the time went in the last ten seconds (the
+processor's work and the graphics card's, part by part, and when each
+picture went up), the session's log, your `rebushido.cfg`, and what the
+PC is (the card and its driver, the screen, the sound card). Send the
+folder: it says where the time goes on your PC. The log says where it
+went.
 
 **F12 keeps a picture of the window**, exactly the pixels on the screen
 at that moment, as a PNG in a `screenshots/` folder beside the program
@@ -353,8 +378,17 @@ What only your screen and PC decide, and what helps there:
   composed with the desktop by Windows, which can hold each picture for
   a refresh of the screen. Full screen lets the driver put the picture
   up itself.
-- **`vsync = on`** waits for the screen's refresh; `off` shows a picture
-  as soon as it is drawn, sooner by up to a refresh, and tears.
+- **`vsync = on`** waits for the screen's refresh, and is the one to
+  use. A step of the game that runs long no longer waits for the screen
+  as well: a blank more than a refresh late shows no picture of its
+  own, so a slow moment costs a refresh of the picture and not the
+  game's pace or the sound (on the owner's RTX 3090 at 85 Hz, with the
+  processor's work near a blank, a fight let time go 2 times in 40
+  seconds with `on` and 19 times with `off`; [`PORT.md`](PORT.md),
+  "Pacing on a real display"). `adaptive` waits too, but shows a picture
+  that missed its refresh at once, torn, where the driver can; `off`
+  shows each picture as soon as it is drawn, sooner by up to a refresh,
+  and tears every one.
 - A screen's own processing (its "game mode") and the graphics driver's
   own low-latency setting are outside the program.
 
@@ -518,6 +552,11 @@ screen, each fight with its fighters and stage) and a line every ten
 seconds. If the game stops by itself, a box says so and names the log,
 and the log's last lines say where it stopped: that file is what to
 send. A line in it that begins `rebushido: stopped:` is the game's own
-code failing, with where. A
+code failing, with where. Where the game stuttered or the sound broke
+up, the log says why each time: `pace: blank N was 106 ms late ...; the
+blank before took 39.7 ms, 27.6 of it work: TWEEN 5.6 AHEAD 5.4 ...`
+and `sound: ran out before blank N: ...` name the parts that took the
+time. **F9** (above) keeps all of that with the last ten seconds' times
+and a picture, in one folder. A
 picture or a sound that is wrong is worth reporting with what was on the
 screen: this is the first time anyone looks.
