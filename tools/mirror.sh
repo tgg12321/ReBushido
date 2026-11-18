@@ -51,8 +51,10 @@ sync_in() {
     (
         flock 9
         # the sources: everything but what is built, scratch, git and what
-        # is linked below
-        rsync -a --delete \
+        # is linked below. What git ignores is neither copied nor deleted
+        # there: the overlay's movovl/build/, and whatever else a build
+        # writes beside its sources, stays the copy's own.
+        rsync -a --delete --filter=':- .gitignore' \
             --exclude=/build --exclude=/tmp --exclude=/.git --exclude=/.venv \
             --exclude=/.claude --exclude=/tools/gcc-2.7.2 --exclude=/tools/sdl2-mingw \
             --exclude='/*.bin' --exclude='/*.cue' --exclude='/*.iso' \

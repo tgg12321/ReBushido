@@ -46,8 +46,18 @@ def write_wav(path, loop):
         smpl = struct.pack('<9I', 0, 0, 22675, 60, 0, 0, 0, 1, 0)
         smpl += struct.pack('<6I', 0, 0, LOOP_START, LOOP_END - 1, 0, 0)
         chunks += b'smpl' + struct.pack('<I', len(smpl)) + smpl
-    with open(path, 'wb') as f:
-        f.write(b'RIFF' + struct.pack('<I', 4 + len(chunks)) + b'WAVE' + chunks)
+    write_whole(path, b'RIFF' + struct.pack('<I', 4 + len(chunks)) + b'WAVE' + chunks)
+
+
+def write_whole(path, data):
+    """`data` into `path` at once: the 32-bit and the 64-bit runs of the
+    test (tests/run.py --rebushido) write the same files side by side, and
+    one's program must never read a file the other has half written."""
+    import threading
+    part = '%s.%d.%d' % (path, os.getpid(), threading.get_ident())
+    with open(part, 'wb') as f:
+        f.write(data)
+    os.replace(part, path)
 
 
 def write_ogg(path):
@@ -113,8 +123,7 @@ def write_ogg(path):
         drain()
     vorbis.vorbis_analysis_wrote(dsp, 0)
     drain()
-    with open(path, 'wb') as f:
-        f.write(bytes(out))
+    write_whole(path, bytes(out))
     return True
 
 
