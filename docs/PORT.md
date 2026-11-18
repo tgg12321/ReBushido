@@ -5415,6 +5415,112 @@ quiet one `run_ahead 1` was at 7.4 before this.
   step itself with `run_ahead 2`) needs only the first half.
 - *The side channel* beside the game, as the painters are.
 
+### The tween off video memory
+
+**What the window's thread did for a picture** (2026-11-18, the bench's
+fight on the RTX 3090, `run_ahead 1`, main `598fddd73`; sampled with
+`--sample` and timed section by section): the picture between frames
+(`tween`) was 1.2 to 1.5 ms of a frame's blank and the side channel
+(`remaster`) 1.0 to 1.15. Neither was the replay of the primitives
+itself:
+
+- **Half the picture was waiting.** A picture wrote the frame on show's
+  writes of video memory back into it and put them back after, so it
+  held the painters still (`port_PaintHold`) until they had painted the
+  step just ended; and the first picture after a frame then waited for
+  the pairing, which took 1.1 ms on its thread.
+- **The fighters' colour tables were looked for at every primitive.**
+  `port_GlFighterFindPlace`, which works out where a model's colour
+  tables are from those its primitives read, ran again at every textured
+  primitive of every fighter, in the frame and in every picture, while
+  the place stayed unknown (two of the file's tables a shift apart, both
+  seen): the file's tables by the file's tables by the sightings, some
+  1,500 cycles a primitive, 0.3 ms a picture.
+- **A square root was forty divisions.** `port_GlFighterRoot`, three a
+  bone of each pose, took Newton's forty steps where six come to rest;
+  posing the fighters for a picture was 0.11 ms.
+- **The frame's clear was looked at pixel by pixel**, 640 by 240, at
+  every frame and every picture, to tell whether it is a fill and no
+  picture of a mod's (`port_ReplaceIsPlain`).
+
+**Now:**
+
+- **A picture touches neither video memory nor the painters.** Where
+  the renderer is the card's (`port_GlBackend`), the frame on show's
+  writes are given again from the frame's own pixels into the backend's
+  copy of what the mirror holds (`port_GlReplayVram`), and what the
+  renderer and the files about it look up in video memory while a
+  picture is drawn -- a mod's pictures by their keys, the stage's pages,
+  the fighters' colour tables, the clear's colour -- is read from that
+  copy (`g_port_gl_vram`, `port_GlReadMirrorCopy`; outside a picture it
+  is `g_port_vram` as before). The undo of the mirror's lines puts the
+  copy back after. So nothing of a picture between frames reads or
+  writes what the step is painting, which is also what a step on a
+  thread of its own needs (the frame-loop work of the same day).
+- **The pairing:** a moved thing's faces walked by thing
+  (`port_TweenPairMoved`, its lists), not the whole frame for every pair
+  of a thing that lost its name and a thing that may have it; the points'
+  tables emptied by the slots filled, not 3 MB cleared a pair; and the
+  frame after's table taken over as the next pair's frame on show's.
+  1.16 ms a pair to about 0.3.
+- **The fighters:** the colour tables' place not looked for again with
+  the same sightings and model (`tried_count`); a loaded model handed
+  back without its name made again (`snprintf`) or the loader's stack
+  frame probed; the square root stops where the steps come to rest --
+  a step that gives what it was given, or what the step before was given
+  (back and forth) -- the same number to the bit (fifty million numbers
+  against the forty steps, none different).
+- **A fill** looked at by its first line and each other line against it
+  whole (`memcmp`); **the stage's pieces** not searched for an object
+  past the last of them (`port_GlStagePieceOf`); **the painters'
+  squares** also kept by blocks of a texture page's height, the latest
+  count of any of their squares, so a page read before a textured
+  primitive is four blocks and not 128 squares (`paint.c`).
+
+**Measured** (the bench's fight, `run_ahead 1`, main's program and this
+one run one after the other twice, `port_bench.py --program`; other
+agents' work was on the machine), medians of a fight frame's blank, ms:
+
+| | main | this |
+| --- | --- | --- |
+| the picture between frames (`tween`) | 1.24, 1.15 | **0.28, 0.31** |
+| the side channel (`remaster`) | 1.08, 1.00 | **0.44, 0.43** |
+| the card's batches (`card`) | 0.18, 0.16 | 0.09, 0.09 |
+| the shadows | 0.12, 0.11 | 0.06, 0.06 |
+| the software GPU (`raster`) | 1.55, 1.60 | 1.70, 1.65 |
+| the processor, a frame's blank | 6.03, 5.63 | **4.11, 4.03** |
+| ... its 99th centile | 8.78, 8.30 | 7.71, 7.00 |
+
+The software GPU's part is a little larger: the painters are no longer
+made to finish by the picture between frames, so the next step's waits
+for them (a colour table loaded again, `port_PaintSyncWrite`) find more
+still to paint. The card's time is unchanged.
+
+**The pictures**: `port_gl_prove.py --gpu card` gives main's numbers to
+the pixel (623,545, 6,805,770 and 648,625 pixels against the software
+GPU at scale 1, the flat screens' 8,609, 8,626 and 8,744 a step out),
+**TODO** the others.
+
+**Not done, and next:** the picture between frames is still the frame
+on show's primitives given to the backend again every picture (some
+950 a fight's picture, 800 of them a fighter's, which the backend leaves
+out for the HD model): a list of what the first picture of a pair drew
+(batch state and vertex ranges, the blits, the mesh at its event) kept
+and replayed, with the corners mixed by the vertex shader, would make a
+picture uniforms and a hundred draws. What a picture still decides per
+phase (a primitive held where moved it would not be drawn, a face
+coming or going drawn while it turns the right way) is per primitive,
+so it needs the primitive's corners in each vertex or a geometry
+shader. And the side channel still draws each frame on the card while
+the step runs; a step that only writes its frame down, drawn by the
+window afterwards (`port_GlStepRecords`, `port_GlDrawPending`, agreed
+with the frame-loop work) needs a frame's own copy of what the backend
+reads live today: the fighters' views (`port_GetFighterView`, read at a
+frame's first fighter primitive), a node's kind read from the game's
+memory at every fighter primitive (`port_FighterIsCloth`,
+`port_FighterIsTinyBody`), the stage's view, the shadows' casters and
+the cloth's points.
+
 ### The HD fighters on the card
 
 **What it was** (main at `8f09f98d1`, the card's measure above): the HD
