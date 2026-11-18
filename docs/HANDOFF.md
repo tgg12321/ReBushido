@@ -179,7 +179,7 @@ What is still done on the processor, in the order I would move it:
    of the body~~: both on the card now, by compute shaders and the
    shadows' own vertex shader (docs/PORT.md, "The HD fighters on the
    card"); the processor gives the bones and the cloth's points. What
-   is left is the card's: the cloth's hold, about 1.4 ms of a frame
+   is left is the card's: the cloth's hold, about 1.1 ms of a frame
    whose cloths are new (a coarser body for the first walk, or a
    distance field of the body made once a pose, would take most of
    it).
