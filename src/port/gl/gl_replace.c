@@ -739,10 +739,10 @@ s32 port_GlReplaceFind(const PortRemasterPrim *prim, PortGlReplacement *out) {
      * the projection placed -- is left to video memory: it reads a piece
      * of its page that is not a texture of its own (docs/MODS.md, "What
      * is not replaced"), and the scene drawn again under the pause has
-     * lost both (port_RemasterIsRedrawing). */
+     * lost both (port_RemasterIsRedrawing, as the primitive was decoded). */
     if (!prim->is_textured || prim->has_depth || prim->has_place ||
-        prim->id.object != 0 || port_RemasterIsRedrawing() ||
-        !port_ReplaceIsOn() || !port_ReplaceRegionOf(prim, &region)) {
+        prim->id.object != 0 || prim->is_redrawing || !port_ReplaceIsOn() ||
+        !port_ReplaceRegionOf(prim, &region)) {
         return FALSE;
     }
     out->texture = port_ReplaceOf(&region, FALSE, TRUE, &out->mix, &out->tint);

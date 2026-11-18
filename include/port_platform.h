@@ -336,6 +336,22 @@ extern s32 g_port_ahead_sync;
 extern s32 g_port_ahead_quiet;
 extern void port_HeldBlank(u32 blank);
 extern void port_AfterStep(void);
+/* Its first part, the frames ahead but one (step.c): what the window's
+ * runner of a step runs on the step's thread before the step's turn is
+ * the window's (g_port_step_runner). Returns TRUE where they were run to
+ * the end, FALSE where they were given up, -1 where the step's blanks
+ * were not held; port_AfterStep then gives the blanks their turns. */
+extern s32 port_AfterStepAhead(void);
+/* Where set, a step whose blanks are held (g_port_holding) is run by
+ * this and not entered at once: the window runs it on a thread of its
+ * own, and draws pictures meanwhile (docs/PORT.md, "The step on a thread
+ * of its own"). It returns once the step has ended, its frames ahead run
+ * (port_AfterStepAhead). */
+extern void (*g_port_step_runner)(void);
+/* Called in a step before what must be on the window's own thread: a
+ * blank's turn given while the step runs. A step run beside the window
+ * is then moved to the window's thread, and goes on there. */
+extern void (*g_port_step_to_host)(void);
 /* The window's, as a step whose turns are held begins, the boundary's
  * read of the input made: where the step and its first picture would
  * miss the display's next refresh, the window shows a picture for it

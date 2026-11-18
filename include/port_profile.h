@@ -47,6 +47,15 @@ extern u32 (*g_port_profile_clock)(void);
  * (port_host.h), into `ticks` (PORT_PROFILE_PARTS of them); and from
  * zero again. */
 extern void port_ProfileTake(u32 *ticks);
+/* Where the window runs the step on a thread of its own (docs/PORT.md,
+ * "The step on a thread of its own"), that thread's parts are counted
+ * apart, by its own clock: this says which thread asks (0 the window's,
+ * 1 the step's); NULL, every switch is the window's. */
+#define PORT_PROFILE_THREADS 2
+extern s32 (*g_port_profile_thread)(void);
+/* The step's thread's parts since the last take, as port_ProfileTake;
+ * the window's thread takes them while the step's is still. */
+extern void port_ProfileTakeStep(u32 *ticks);
 /* The part the time is counted to now (the sampler's: sampler.c). */
 extern s32 port_ProfilePart(void);
 /* A part's short name, for a report. */

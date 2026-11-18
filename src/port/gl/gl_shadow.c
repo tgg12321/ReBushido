@@ -1517,7 +1517,8 @@ static void port_GlShadowGather(CastFrame *frame) {
     for (i = 0; i < faces; i++, face++) {
         static const s32 corner[2][3] = {{0, 1, 2}, {1, 3, 2}};
         float flat[PORT_REMASTER_CORNERS][3];
-        s32 caster = port_GlFighterCaster(face->object);
+        s32 caster = port_GlFighterCaster(
+            face->object, port_RemasterCasterFaceIsCloth(i));
         s32 ground_y;
         s32 halves;
         s32 j;
@@ -1525,7 +1526,7 @@ static void port_GlShadowGather(CastFrame *frame) {
         if (caster >= 0 && caster < PORT_FIGHTER_SLOTS) {
             has_faces[caster] = TRUE;
         }
-        if (!port_RemasterCasterGround(face->object, &ground_y)) {
+        if (!port_RemasterCasterFaceGround(i, &ground_y)) {
             g_shadow.cast_orphans++;
             continue;
         }

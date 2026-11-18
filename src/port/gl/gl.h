@@ -179,6 +179,17 @@ extern void port_GlReadMirrorCopy(s32 on);
  * into the mirror and the colour buffer as port_GlWroteVram puts the
  * game's, but from `pixels` and not from `g_port_vram`. */
 extern void port_GlReplayVram(s32 x, s32 y, s32 w, s32 h, const u16 *pixels);
+/* The pixels of the rectangle (left, top, w, h) of video memory that the
+ * calls of the backend to come tell of are these, not video memory's own
+ * (gl_record.h: the step's record, drawn after the step has gone on);
+ * NULL: video memory's again. A rectangle that goes round an edge is
+ * given as port_AddDirtyRect takes it. */
+extern void port_GlTellPixels(
+    const u16 *pixels, s32 left, s32 top, s32 w, s32 h);
+/* The pixel at (x, y): the told one, where there are pixels told and it
+ * is among them, or video memory's. A row runs on to the told
+ * rectangle's right edge. */
+extern const u16 *port_GlVramAt(s32 x, s32 y);
 
 /* **The mirror is a buffer**, which the card reads as a texture of 16-bit
  * words, a line of video memory after another: `vram_texture` of

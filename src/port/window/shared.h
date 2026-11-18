@@ -46,5 +46,8 @@ extern s32 (*g_port_held_blank_hook)(u32 blank);
 extern void (*g_port_held_begin_hook)(void);
 extern s32 g_port_ahead_sync;
 extern s32 g_port_ahead_quiet;
+extern void (*g_port_step_runner)(void);
+extern void (*g_port_step_to_host)(void);
+extern s32 port_AfterStepAhead(void);
 
 #endif /* PORT_WINDOW_SHARED_H */

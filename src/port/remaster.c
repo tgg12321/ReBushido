@@ -153,16 +153,19 @@ static PortStageView g_stage_view;
  * fighter has one a bone that casts one and one a weapon. */
 #define CASTERS_MAX 64
 
-typedef struct {
-    PortAddress parent;
-    s32 ground_y;
-} ShadowCaster;
+typedef PortShadowGround ShadowCaster;
 
 static PortShadowCaster g_caster_faces[CASTER_FACES_MAX];
 static s32 g_caster_face_count;
 static u32 g_caster_lost;
 static ShadowCaster g_casters[CASTERS_MAX];
 static s32 g_caster_count;
+
+/* What the backend reads of the above changed (port_RemasterSideStamp),
+ * and the copy the getters answer from instead, or NULL
+ * (port_RemasterUseSide). */
+static u32 g_side_version;
+static const PortRemasterSide *g_side_use;
 
 /* ---- the numbers of the chip (src/port/raster.c has the same) ---- */
 
@@ -668,6 +671,7 @@ static void port_RemasterKeepCaster(s32 count) {
         g_caster_lost++;
         return;
     }
+    g_side_version++;
     to = &g_caster_faces[g_caster_face_count++];
     to->object = g_id.object;
     to->group = g_id.group;
@@ -1003,6 +1007,8 @@ void port_RemasterNoteShadow(s32 is_shadow) {
     g_is_shadow = is_shadow != 0;
 }
 
+/* One of the game's shadow nodes of the frame, its caster and its ground
+ * (port_remaster.h). */
 void port_RemasterNoteShadowCaster(PortAddress parent, s32 ground_y) {
     if (g_backend == NULL || parent == 0) {
         return;
@@ -1010,21 +1016,29 @@ void port_RemasterNoteShadowCaster(PortAddress parent, s32 ground_y) {
     if (g_caster_count >= CASTERS_MAX) {
         return;
     }
+    g_side_version++;
     g_casters[g_caster_count].parent = parent;
     g_casters[g_caster_count].ground_y = ground_y;
     g_caster_count++;
 }
 
 const PortShadowCaster *port_RemasterCasterFaces(s32 *count) {
+    if (g_side_use != NULL) {
+        *count = g_side_use->face_count;
+        return g_side_use->faces;
+    }
     *count = g_caster_face_count;
     return g_caster_faces;
 }
 
 u32 port_RemasterCasterLost(void) { return g_caster_lost; }
 
-/* The ground the thing at `object` casts onto: the game's shadow node
- * of it, or of a bone of the same body (port_remaster.h). */
-s32 port_RemasterCasterGround(PortAddress object, s32 *ground_y) {
+/* The ground the thing at `object` casts onto, among `grounds`: the
+ * game's shadow node of it, or of a bone of the same body, where it is a
+ * fighter's skinned body (port_remaster.h). */
+static s32 port_RemasterGroundOf(
+    const ShadowCaster *grounds, s32 count, PortAddress object, s32 is_skinned,
+    s32 *ground_y) {
     s32 i;
 
     if (object == 0) {
@@ -1032,34 +1046,72 @@ s32 port_RemasterCasterGround(PortAddress object, s32 *ground_y) {
     }
     /* a weapon, a scabbard, a bone with a mesh of its own: its shadow
      * node is its own */
-    for (i = 0; i < g_caster_count; i++) {
-        if (g_casters[i].parent == object) {
-            *ground_y = g_casters[i].ground_y;
+    for (i = 0; i < count; i++) {
+        if (grounds[i].parent == object) {
+            *ground_y = grounds[i].ground_y;
             return TRUE;
         }
     }
     /* A fighter's body is one skinned mesh drawn by the body's root bone
      * (model->bones[1]), and the game's shadow nodes hang from the bones
      * after it (model_BuildShadows): one of those is the same body's. */
-    if (((const SceneNode *)object)->kind != NODE_KIND_SKINNED) {
+    if (!is_skinned) {
         return FALSE;
     }
-    for (i = 0; i < g_caster_count; i++) {
-        PortAddress apart = g_casters[i].parent - object;
+    for (i = 0; i < count; i++) {
+        PortAddress apart = grounds[i].parent - object;
 
-        if (g_casters[i].parent > object &&
+        if (grounds[i].parent > object &&
             apart % (PortAddress)sizeof(ModelNode) == 0 &&
             apart / (PortAddress)sizeof(ModelNode) < MODEL_BODY_BONES) {
-            *ground_y = g_casters[i].ground_y;
+            *ground_y = grounds[i].ground_y;
             return TRUE;
         }
     }
     return FALSE;
 }
 
+static s32 port_RemasterIsSkinned(PortAddress object) {
+    return object != 0 &&
+           ((const SceneNode *)object)->kind == NODE_KIND_SKINNED;
+}
+
+s32 port_RemasterCasterGround(PortAddress object, s32 *ground_y) {
+    return port_RemasterGroundOf(g_casters, g_caster_count, object,
+                                 port_RemasterIsSkinned(object), ground_y);
+}
+
+/* The ground of a face by its place among the faces: of the copy the
+ * getters answer from, with what the game's memory said of its node as the
+ * copy was made, or of the side channel itself (port_remaster.h). */
+s32 port_RemasterCasterFaceGround(s32 face, s32 *ground_y) {
+    const PortRemasterSide *side = g_side_use;
+
+    if (side == NULL) {
+        return face >= 0 && face < g_caster_face_count &&
+               port_RemasterCasterGround(g_caster_faces[face].object, ground_y);
+    }
+    return face >= 0 && face < side->face_count &&
+           port_RemasterGroundOf(
+               side->grounds, side->ground_count, side->faces[face].object,
+               (side->face_kinds[face] & PORT_SIDE_FACE_SKINNED) != 0,
+               ground_y);
+}
+
+s32 port_RemasterCasterFaceIsCloth(s32 face) {
+    const PortRemasterSide *side = g_side_use;
+
+    if (side == NULL) {
+        return face >= 0 && face < g_caster_face_count &&
+               port_FighterIsCloth(g_caster_faces[face].object);
+    }
+    return face >= 0 && face < side->face_count &&
+           (side->face_kinds[face] & PORT_SIDE_FACE_CLOTH) != 0;
+}
+
 /* light_SetShadowMatrix's own arithmetic on the same sun: its matrix is
  * the scene's own and not given out. */
-void port_RemasterShadowShear(s32 *x_shear, s32 *z_shear) {
+static void port_RemasterShearNow(s32 *x_shear, s32 *z_shear) {
     const MATRIX *sun = &g_light_setups[LIGHT_FIGHTER_1].lmat;
     s32 sun_y = sun->m[LIGHT_SUN][1];
 
@@ -1071,6 +1123,71 @@ void port_RemasterShadowShear(s32 *x_shear, s32 *z_shear) {
     *x_shear = -(s16)((sun->m[LIGHT_SUN][0] << 12) / sun_y);
     *z_shear = -(s16)((sun->m[LIGHT_SUN][2] << 12) / sun_y);
 }
+
+void port_RemasterShadowShear(s32 *x_shear, s32 *z_shear) {
+    if (g_side_use != NULL) {
+        *x_shear = g_side_use->shear_x;
+        *z_shear = g_side_use->shear_z;
+        return;
+    }
+    port_RemasterShearNow(x_shear, z_shear);
+}
+
+/* ---- what the backend reads of the side channel, kept (port_remaster.h) */
+
+/* The sun's slope is the game's own light setup, which nothing here is
+ * told of changing: it is in the stamp as it is now. */
+u32 port_RemasterSideStamp(void) {
+    s32 x;
+    s32 z;
+
+    port_RemasterShearNow(&x, &z);
+    return g_side_version * MIX ^ ((u32)x << HALF_SHIFT ^ ((u32)z & HALF_MASK));
+}
+
+#define SIDE_ALIGN 8
+#define SIDE_ROUND(n) (((n) + SIDE_ALIGN - 1) & ~(u32)(SIDE_ALIGN - 1))
+
+u32 port_RemasterSideBytes(void) {
+    return SIDE_ROUND((u32)g_caster_face_count * sizeof(PortShadowCaster)) +
+           SIDE_ROUND((u32)g_caster_count * sizeof(ShadowCaster)) +
+           SIDE_ROUND((u32)g_caster_face_count);
+}
+
+/* The stage's view, the sun's slope and the casters copied, the faces'
+ * nodes read for what the backend asks of them (port_remaster.h). */
+void port_RemasterKeepSide(PortRemasterSide *side, void *room) {
+    u8 *at = (u8 *)room;
+    PortShadowCaster *faces = (PortShadowCaster *)(void *)at;
+    ShadowCaster *grounds;
+    u8 *kinds;
+    s32 i;
+
+    at += SIDE_ROUND((u32)g_caster_face_count * sizeof(PortShadowCaster));
+    grounds = (ShadowCaster *)(void *)at;
+    at += SIDE_ROUND((u32)g_caster_count * sizeof(ShadowCaster));
+    kinds = at;
+    side->view = g_stage_view;
+    port_RemasterShearNow(&side->shear_x, &side->shear_z);
+    side->face_count = g_caster_face_count;
+    side->ground_count = g_caster_count;
+    for (i = 0; i < g_caster_face_count; i++) {
+        PortAddress object = g_caster_faces[i].object;
+
+        faces[i] = g_caster_faces[i];
+        kinds[i] =
+            (u8)((port_FighterIsCloth(object) ? PORT_SIDE_FACE_CLOTH : 0) |
+                 (port_RemasterIsSkinned(object) ? PORT_SIDE_FACE_SKINNED : 0));
+    }
+    for (i = 0; i < g_caster_count; i++) {
+        grounds[i] = g_casters[i];
+    }
+    side->faces = faces;
+    side->grounds = grounds;
+    side->face_kinds = kinds;
+}
+
+void port_RemasterUseSide(const PortRemasterSide *side) { g_side_use = side; }
 
 void port_RemasterNoteFighter(s32 is_fighter) {
     g_is_fighter = g_backend != NULL && is_fighter != 0;
@@ -1312,9 +1429,11 @@ void port_RemasterNoteStageView(
     port_RemasterNoteOpenTiles();
     port_RemasterNotePieces();
     g_stage_view.frames++;
+    g_side_version++;
 }
 
 void port_RemasterNoteFogRows(s32 x, s32 y, s32 w, s32 h) {
+    g_side_version++;
     g_stage_view.fog_x = x;
     g_stage_view.fog_y = y;
     g_stage_view.fog_w = w;
@@ -1325,15 +1444,21 @@ void port_RemasterNoteFogLevel(s32 level, s32 slot) {
     if (g_backend == NULL || level < 0 || level >= PORT_STAGE_FOG_LEVELS) {
         return;
     }
+    g_side_version++;
     g_stage_view.fog_slot[level] = slot;
     if (level + 1 > g_stage_view.fog_levels) {
         g_stage_view.fog_levels = level + 1;
     }
 }
 
-void port_RemasterStageChanged(void) { g_stage_view.version++; }
+void port_RemasterStageChanged(void) {
+    g_stage_view.version++;
+    g_side_version++;
+}
 
-const PortStageView *port_GetRemasterStageView(void) { return &g_stage_view; }
+const PortStageView *port_GetRemasterStageView(void) {
+    return g_side_use != NULL ? &g_side_use->view : &g_stage_view;
+}
 
 /* What the mesh reads of the game, which the backend's own files cannot
  * name themselves (port_remaster.h). */
@@ -1527,6 +1652,7 @@ void port_RemasterNewFrame(void) {
     /* the stage's fog is placed again every frame, and a stage without
      * any places none (port_remaster.h) */
     g_stage_view.fog_levels = 0;
+    g_side_version++;
     /* nothing of the scene is being drawn yet: what the game builds
      * before the renderer's walk is the 2D layer, which has no identity
      * and is never moved */
@@ -1541,6 +1667,7 @@ void port_RemasterNewFrame(void) {
      * and the faces they were cast from go now */
     g_caster_face_count = 0;
     g_caster_count = 0;
+    g_side_version++;
 }
 
 void port_RemasterSetPrim(PortAddress prim) { g_prim = prim; }
@@ -1808,6 +1935,11 @@ static void port_RemasterDrawPrim(PortRemasterPrim *prim, s32 kind) {
     g_counts.drawn[kind]++;
     g_frame_counts.drawn[kind]++;
     if (g_backend->draw != NULL) {
+        /* what the backend asks of the game about the node, asked now
+         * (PortRemasterPrim) */
+        prim->is_cloth_node = port_FighterIsCloth(prim->id.object);
+        prim->is_tiny_body = port_FighterIsTinyBody(prim->id.object);
+        prim->is_redrawing = g_pause_redraws;
         g_backend->draw(prim);
     }
     port_NoteDrawn(prim);
@@ -2274,6 +2406,13 @@ void port_RemasterSetPauseHolder(PortPauseHolder holder) {
     g_pause_begun = FALSE;
     g_pause_holds = FALSE;
     g_pause_skips = FALSE;
+}
+
+PortPauseHolder port_RemasterSwapPauseHolder(PortPauseHolder holder) {
+    PortPauseHolder was = g_pause_holder;
+
+    g_pause_holder = holder;
+    return was;
 }
 
 s32 port_RemasterIsHolding(void) { return g_pause_holds; }

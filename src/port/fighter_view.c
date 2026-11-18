@@ -31,6 +31,11 @@ static PortFighterView g_tiny;
 static PortFighterWeapon g_weapons[PORT_FIGHTER_WEAPONS];
 static s32 g_weapon_count;
 static u32 g_serial;
+/* Anything noted since: a kept copy of before it is out of date
+ * (port_FighterKeepViews). */
+static u32 g_version;
+/* The copy the getters answer from, or NULL (port_FighterUseViews). */
+static const PortFighterViews *g_use;
 
 static void port_FighterCopyMatrix(PortFighterMatrix *out, const MATRIX *in) {
     s32 i;
@@ -169,7 +174,9 @@ s32 port_FighterIsTinyBody(PortAddress node) {
            ((const SceneNode *)node)->mesh < TINY_BODY_MESHES;
 }
 
-const PortFighterView *port_GetFighterTinyView(void) { return &g_tiny; }
+const PortFighterView *port_GetFighterTinyView(void) {
+    return g_use != NULL ? &g_use->tiny : &g_tiny;
+}
 
 /* A cloth of the slot's model is being drawn (render_DrawCloth): its
  * points as the game has moved them, which are what it is drawn from. The
@@ -232,6 +239,7 @@ void port_FighterNoteNode(PortAddress at) {
     if (node == NULL) {
         return;
     }
+    g_version++;
     if (node->kind == NODE_KIND_TINY) {
         port_FighterNoteTiny(node);
         return;
@@ -270,10 +278,12 @@ void port_FighterNoteNode(PortAddress at) {
     }
 }
 
+/* A frame is being built: nothing of it is noted yet (port_fighter.h). */
 void port_FighterNewFrame(void) {
     s32 slot;
 
     g_serial++;
+    g_version++;
     for (slot = 0; slot < PORT_FIGHTER_SLOTS; slot++) {
         g_views[slot].model_id = -1;
         g_views[slot].cloth_count = 0;
@@ -286,17 +296,47 @@ const PortFighterView *port_GetFighterView(s32 slot) {
     if (slot < 0 || slot >= PORT_FIGHTER_SLOTS) {
         return NULL;
     }
-    return &g_views[slot];
+    return g_use != NULL ? &g_use->views[slot] : &g_views[slot];
 }
 
+/* The weapons noted, or those of the copy the getters answer from. */
 const PortFighterWeapon *port_GetFighterWeapons(s32 *count) {
+    if (g_use != NULL) {
+        if (count != NULL) {
+            *count = g_use->weapon_count;
+        }
+        return g_use->weapons;
+    }
     if (count != NULL) {
         *count = g_weapon_count;
     }
     return g_weapons;
 }
 
-u32 port_FighterSerial(void) { return g_serial; }
+u32 port_FighterSerial(void) {
+    return g_use != NULL ? g_use->serial : g_serial;
+}
+
+/* ---- kept for a record of the step (port_fighter.h) ---- */
+
+u32 port_FighterViewsVersion(void) { return g_version; }
+
+/* Everything noted, copied into `views` (port_fighter.h). */
+void port_FighterKeepViews(PortFighterViews *views) {
+    s32 i;
+
+    for (i = 0; i < PORT_FIGHTER_SLOTS; i++) {
+        views->views[i] = g_views[i];
+    }
+    views->tiny = g_tiny;
+    for (i = 0; i < g_weapon_count; i++) {
+        views->weapons[i] = g_weapons[i];
+    }
+    views->weapon_count = g_weapon_count;
+    views->serial = g_serial;
+}
+
+void port_FighterUseViews(const PortFighterViews *views) { g_use = views; }
 
 /* The cloth is moved by the game itself (render_DrawCloth) and is no part
  * of a model's file: it stays the game's own primitives. Its nodes are

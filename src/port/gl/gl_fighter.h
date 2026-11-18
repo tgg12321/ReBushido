@@ -87,8 +87,9 @@ extern void port_GlFighterTween(s32 phase);
  * drawn thing of the frame on show the caster node `object` is, if it is
  * drawn from a model of its own, or -1 (a cloth drawn smooth is its
  * fighter's, and casts with him; a cloth that is the game's own is -1 and
- * casts its own faces). */
-extern s32 port_GlFighterCaster(PortAddress object);
+ * casts its own faces). `is_cloth`: the node is a cloth
+ * (port_RemasterCasterFaceIsCloth). */
+extern s32 port_GlFighterCaster(PortAddress object, s32 is_cloth);
 /* The fighters' layer of the picture into the alpha of `framebuffer`, the
  * shadows' mask: what a model covers is not the ground, as the game's own
  * faces of a fighter are not (gl_shadow.c). */

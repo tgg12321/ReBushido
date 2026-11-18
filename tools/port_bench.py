@@ -296,6 +296,10 @@ def measure(folder):
     if last is None:
         last = FRAMES
     parts, gpu_parts, rows, gpu = [], [], {}, {}
+    # the step's own thread, where it ran beside the window's: its parts
+    # at each blank that took them (docs/PORT.md, "The step on a thread of
+    # its own")
+    steps = {}
     # each picture handed to the display: when its swap came back (ms),
     # the blank whose line follows it, and whether it was shown beside
     # the step (docs/PORT.md, "The step beside the pictures")
@@ -324,6 +328,8 @@ def measure(folder):
                 rows[int(words[1])] = (int(words[2]), [int(w) / 1000.0 for w in words[3:]])
             elif words[0] == 'g' and first <= int(words[1]) <= last:
                 gpu[int(words[1])] = [int(w) / 1000.0 for w in words[2:]]
+            elif words[0] == 's' and first <= int(words[1]) <= last:
+                steps[int(words[1])] = [int(w) / 1000.0 for w in words[2:]]
     work_parts = [i for i, name in enumerate(parts) if name not in ('wait', 'swap')]
     held_parts = [i for i, name in enumerate(parts) if name != 'wait']
 
@@ -361,6 +367,17 @@ def measure(folder):
             if first + SETTLE_BLANKS <= at <= last]
     beside = sum(1 for _, at, is_beside, _ in swaps if is_beside and first <= at <= last)
     paced = paced_measures(swaps, boundaries, first + SETTLE_BLANKS, last, frames) if PACED else {}
+    # The step on its own thread: its work, a step a blank that took it.
+    # The window's thread's numbers above are then that thread's alone.
+    step_work = [work(v) for b, v in steps.items() if b >= first + SETTLE_BLANKS]
+    on_its_own = {
+        'step_p50': statistics.median(step_work),
+        'step_p95': centile(step_work, 0.95),
+        'step_p99': centile(step_work, 0.99),
+        'step_worst': max(step_work),
+        'step_parts': {parts[i]: statistics.median(v[i] for v in steps.values()) for i in work_parts},
+    } if step_work else {}
+    paced = dict(paced, **on_its_own)
     said = port_budget.counts(os.path.join(folder, 'output.txt'))
     return dict(paced, **{
         'fight': [first, last],
@@ -449,6 +466,10 @@ def report(name, m):
               ' over %.2f ms: %.1f%%; %d pictures beside the step'
               % (m['gap_p50'], m['gap_p95'], m['gap_p99'], m['gap_worst'], BUDGET_MS, m['gap_over'],
                  m['pictures_beside']))
+    if 'step_p50' in m:
+        print("  the step's own thread, after the first second: median %.2f  95%% %.2f  99%% %.2f  worst %.2f;"
+              ' parts (median ms): %s' % (m['step_p50'], m['step_p95'], m['step_p99'], m['step_worst'], ' '.join(
+                  '%s %.2f' % kv for kv in sorted(m['step_parts'].items(), key=lambda kv: -kv[1]) if kv[1] >= 0.01)))
     if m['stalls']:
         print('  stalls: ' + ', '.join('blank %d %.1f ms (%s %.1f)' % s for s in m['stalls']))
 

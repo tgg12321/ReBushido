@@ -54,8 +54,17 @@ void port_StartGame(void (*function)(void)) {
     port_HostStartGame(function, PORT_STACK_ADDR + PORT_STACK_SIZE);
 }
 
+/* The window's way of running a step whose blanks it holds: on a thread
+ * of its own beside the window's pictures (port_platform.h). */
+void (*g_port_step_runner)(void);
+void (*g_port_step_to_host)(void);
+
 void port_StepGame(void) {
-    port_HostEnterGame();
+    if (g_port_holding && g_port_step_runner != NULL) {
+        g_port_step_runner();
+    } else {
+        port_HostEnterGame();
+    }
     g_port_steps++;
 }
 
@@ -199,6 +208,11 @@ void port_HeldBlank(u32 blank) {
         g_port_held[g_port_held_count++] = blank;
         return;
     }
+    /* the window's turns are the window's thread's: a step run beside it
+     * goes on there (g_port_step_to_host) */
+    if (g_port_step_to_host != NULL) {
+        g_port_step_to_host();
+    }
     /* the card draws the rest of the step as it comes, and nothing is
      * run ahead after it */
     g_port_ahead_kept = FALSE;
@@ -209,14 +223,20 @@ void port_HeldBlank(u32 blank) {
     }
 }
 
-/* The host's turn after a step (port_platform.h): where the step was the
- * first frame ahead, the frames ahead but one, the step's display kept,
- * and the blanks' turns given. */
-void port_AfterStep(void) {
+/* What port_AfterStepAhead found, where the step's runner ran it
+ * (AHEAD_NOT_RUN: it did not). */
+#define AHEAD_NOT_RUN (-2)
+#define AHEAD_NOT_HELD (-1)
+static s32 g_port_ahead_part = AHEAD_NOT_RUN;
+
+/* The frames ahead after a step whose blanks were held (port_platform.h):
+ * TRUE where they were run to the end, FALSE where they were given up,
+ * AHEAD_NOT_HELD where the step's blanks were not held. */
+s32 port_AfterStepAhead(void) {
     s32 is_shown;
 
     if (!g_port_holding) {
-        return;
+        return g_port_ahead_part = AHEAD_NOT_HELD;
     }
     g_port_holding = FALSE;
     /* the step itself was drawn as a frame ahead's last one, or written
@@ -231,6 +251,22 @@ void port_AfterStep(void) {
         is_shown = TRUE;
     }
     g_port_ahead_last = is_shown ? g_port_ahead_frames : 0;
+    return g_port_ahead_part = is_shown;
+}
+
+/* The host's turn after a step (port_platform.h): where the step was the
+ * first frame ahead, the frames ahead but one, the step's display kept,
+ * and the blanks' turns given. */
+void port_AfterStep(void) {
+    s32 is_shown = g_port_ahead_part;
+
+    if (is_shown == AHEAD_NOT_RUN) {
+        is_shown = port_AfterStepAhead();
+    }
+    g_port_ahead_part = AHEAD_NOT_RUN;
+    if (is_shown == AHEAD_NOT_HELD) {
+        return;
+    }
     if (g_port_ahead_sync) {
         /* the step's primitives, which the painters painted while the side
          * channel decoded them, the card was given the frame and the
