@@ -98,9 +98,9 @@ the game's PlayStation output on the processor while the card waits
    what is not converted; the side channel only where it is still used.
 3. **Pictures between frames by matrices**, blended on the card, not
    faces paired on the processor.
-4. **Shadow maps** (roadmap 14) in place of the cast shadow's projection
-   on the processor (44,000 triangles a picture with the HD models), and
-   the HD cloth's hold in a shader.
+4. **Shadow maps** (roadmap 14) in place of the cast shadow (its
+   projection is on the card since `4527a5a8f`; posing the HD body for
+   it is still on the processor), and the HD cloth's hold in a shader.
 5. **Run-ahead's save and load by the pages that changed** (about 116 KB a
    frame of 4.7 MB), not the whole state (2.4 ms today).
 
@@ -108,6 +108,37 @@ Run-ahead with the HD models is the case to measure it by: today it
 throttles the owner's PC at `run_ahead = 1` (he plays with 0), after the
 fixes of 2026-11-18 (the tint's colour tables sent 3,689 times a fight,
 now 4; the run-ahead frame no longer painting the software picture).
+
+### What is left of the HD fighters' cost
+
+Found and fixed on 2026-11-18 (docs/PORT.md, "The HD cloth and
+run-ahead"): the cloth kept out once a picture (now once a frame), vsync
+given up for good after three hitches (the tearing), the fighters' colour
+tables made again for every drawing (the owner's `fighter_models` stall,
+confirmed fixed on his card), the software GPU painting frames run ahead,
+and the cast shadows projected on the processor every picture (now by
+the card). `run_ahead 1` still "throttles" with the HD models on the
+owner's card as of `d982fa6a9`; after `4527a5a8f` it is for him to say.
+What is still done on the processor, in the order I would move it:
+
+1. **The HD body posed for the shadows** (`port_GlFighterCastTriangles`,
+   once a frame): every vertex's eight terms, then 44,000 triangles
+   copied. Skin on the card into a buffer (transform feedback) or draw
+   the skinned mesh flattened straight into the mask.
+2. **The cloth kept out of the body** (`port_GlFighterHeldCloth`, once a
+   new pose: about 4 ms for two fighters here). A compute-free way: the
+   body as a signed-distance texture, or hold the control points only
+   and let the subdivision follow.
+3. **A frame run ahead mixes its sound** (`sound` 0.8 ms to 5 to 9 ms
+   here, much of it the disc read through WSL): the SPU's voices must
+   step, the mixing need not.
+4. **The state kept and put back** (2.4 ms a boundary on his PC): 10 MB
+   copied twice; only the pages written since could be.
+5. **The owner's "orange flashes"**: not reproduced headless; vsync stays
+   on in his logs now. An F12 picture of one is what is needed.
+
+`tools/port_budget.py` (run alone at the gate's end) holds the
+processor's share; it cannot see the card's.
 
 ## Faster iteration, for the start of the next session
 
