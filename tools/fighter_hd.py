@@ -4,11 +4,15 @@ player's own disc image, into a mod the native port reads (docs/PORT.md,
 "The fighters' own models"; docs/MODS.md).
 
     python tools/fighter_hd.py --image "Bushido Blade 2 (USA).cue"
-            [--out tmp/mods/hd] [--models all|M100,W00,...]
+            [--out tmp/mods/hd] [--models all|fighters|weapons|tiny|M100,...]
             [--recipe tools/fighter_hd.json] [--sheet FOLDER]
 
 It writes `<out>/models/<name>.glb` for every model the recipe names
-(`M000`..`M306`, the weapons `W00`..`W57`) and `<out>/mod.txt`. Nothing of
+(`M000`..`M306`, the weapons `W00`..`W57`, the first-person view's tiny
+figures `T00`..`T26`) and `<out>/mod.txt`. A fighter's cloth is not in his
+mesh: its faces go into the file as the game has them (`rb_cloth`), and
+the port draws them as a surface of their own (src/port/gl/gl_cloth.h).
+Nothing of
 the game is in the repository: the recipe (tools/fighter_hd.json) is
 numbers, and what is written goes into a folder git ignores.
 
@@ -517,7 +521,7 @@ def png_bytes(image):
 def recipe_of(recipe, name):
     out = dict(DEFAULTS)
     out.update(recipe.get('default', {}))
-    kind = 'weapons' if name.startswith('W') else 'fighters'
+    kind = {'W': 'weapons', 'T': 'tiny'}.get(name[0], 'fighters')
     out.update(recipe.get(kind, {}))
     out.update(recipe.get('models', {}).get(name, {}))
     return out
@@ -548,8 +552,11 @@ def build(md, params, bones, out_dir):
 def names_of(spec):
     fighters = list(fe.MODEL_NAMES)
     weapons = ['W%02d' % i for i in range(fe.WEAPON_MODELS)]
+    tiny = ['T%02d' % i for i in range(fe.TINY_MODELS)]
     if spec == 'all':
-        return fighters + weapons
+        return fighters + weapons + tiny
+    if spec == 'tiny':
+        return tiny
     if spec == 'fighters':
         return fighters
     if spec == 'weapons':
@@ -578,6 +585,8 @@ def main():
             continue
         if name.startswith('W'):
             md = fe.read_weapon(nd, int(name[1:]))
+        elif name.startswith('T'):
+            md = fe.read_tiny(nd, int(name[1:]), bones)
         else:
             md = fe.read_model(nd, fe.MODEL_NAMES.index(name), bones, scales, args.pose, 24)
         if md.problems:

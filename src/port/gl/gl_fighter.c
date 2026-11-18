@@ -21,6 +21,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_cloth.h"
 #include "gl_fighter.h"
 #include "gl_fighter_file.h"
 #include "gl_light.h"
@@ -82,12 +83,14 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_ARRAY_BUFFER 0x8892
 #define GL_ELEMENT_ARRAY_BUFFER 0x8893
 #define GL_STATIC_DRAW 0x88E4
+#define GL_STREAM_DRAW 0x88E0
 #define GL_VERTEX_SHADER 0x8B31
 #define GL_FRAGMENT_SHADER 0x8B30
 #define GL_COMPILE_STATUS 0x8B81
 #define GL_LINK_STATUS 0x8B82
 #define GL_BLEND 0x0BE2
 #define GL_SCISSOR_TEST 0x0C11
+#define GL_POLYGON_OFFSET_FILL 0x8037
 
 #define PORT_GL_FIGHTER_FUNCTIONS                                              \
     GL(void, glViewport, (GLint, GLint, GLsizei, GLsizei))                     \
@@ -101,6 +104,7 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glClearBufferfv, (GLenum, GLint, const GLfloat *))                \
     GL(void, glDepthFunc, (GLenum))                                            \
     GL(void, glDepthMask, (GLboolean))                                         \
+    GL(void, glPolygonOffset, (GLfloat, GLfloat))                              \
     GL(void, glDrawBuffers, (GLsizei, const GLenum *))                         \
     GL(void, glColorMask, (GLboolean, GLboolean, GLboolean, GLboolean))        \
     GL(void, glGenerateMipmap, (GLenum))                                       \
@@ -170,6 +174,14 @@ PORT_GL_FIGHTER_FUNCTIONS
 #define WEAPON_FILES 58
 /* GL's float texture, for what the game has done to a colour table */
 #define GL_RGBA32F 0x8814
+/* How much nearer the game sorts a cloth's face than it is
+ * (render_SidedDepth), in the coprocessor's depth at the scale the
+ * fighter is drawn at: so many times two to that scale in the world's. */
+#define CLOTH_NEAR 80
+/* How far outside the model's body its cloth is kept, in the world's
+ * units (a fighter stands some 1,800 tall, the model's vertices some 26
+ * apart). */
+#define CLOTH_GAP 6.0
 /* The planes the layer's depth is kept between, in the world's units. */
 #define NEAR_PLANE 1.0f
 #define FAR_PLANE 262144.0f
@@ -183,6 +195,17 @@ static const char * const g_model_files[MODEL_FILES] = {
 };
 
 enum { MODEL_UNTRIED, MODEL_LOADED, MODEL_MISSING };
+
+/* A cloth of a model drawn as a smooth surface through the game's points
+ * (gl_cloth.h): which of the model file's meshes it is, its surface, and
+ * what the card draws it from, made again each picture. */
+typedef struct {
+    s32 mesh;
+    PortGlCloth *surface;
+    GLuint array;
+    GLuint buffer;
+    GLuint elements;
+} FighterCloth;
 
 typedef struct {
     s32 state;
@@ -203,6 +226,11 @@ typedef struct {
     GLuint index_texture;
     s32 clut_count;
     PortFighterClut *clut;
+    /* rb_cloth: the cloths drawn smooth, and the texture they are laid
+     * from, the atlas of the body's first part */
+    s32 cloth_count;
+    FighterCloth cloth[PORT_FIGHTER_FILE_CLOTHS];
+    GLuint cloth_texture;
 } FighterModel;
 
 /* Where the game has put a drawn thing's colour tables: the primitives
@@ -223,6 +251,23 @@ typedef struct {
     s32 dy;
 } ClutPlace;
 
+/* What the models are drawn into before they are laid over the picture:
+ * the fighters' layer, and the tiny model's, which the game draws after
+ * the scene into a corner of the screen (model_tiny.c). */
+enum { LAYER_FIGHTERS, LAYER_TINY, LAYERS };
+
+typedef struct {
+    GLuint framebuffer;
+    GLuint color;
+    GLuint depth_value;
+    GLuint depth;
+    s32 w;
+    s32 h;
+} FighterLayer;
+
+/* The tiny models' files, `T00` to `T26` (g_model_tiny_ids). */
+#define TINY_FILES 27
+
 /* The things drawn into the layer whose tables are followed: the fighters'
  * slots, and the weapon models after them. */
 #define PLACES (PORT_FIGHTER_SLOTS + WEAPON_FILES)
@@ -235,12 +280,7 @@ static struct {
     GLuint composite_program;
     GLuint quad_array;
     GLuint quad_buffer;
-    GLuint layer_framebuffer;
-    GLuint layer_color;
-    GLuint layer_depth_value;
-    GLuint layer_depth;
-    s32 layer_w;
-    s32 layer_h;
+    FighterLayer layer[LAYERS];
     GLint at_joint;
     GLint at_world;
     GLint at_index;
@@ -257,6 +297,8 @@ static struct {
     GLint at_back;
     GLint at_smooth_light;
     GLint at_texture;
+    GLint at_cloth;
+    GLint at_cloth_near;
     GLint c_at_layer;
     GLint c_at_layer_depth;
     GLint c_at_ground_slots;
@@ -299,12 +341,24 @@ static struct {
     GLuint palette_texture[PLACES];
     float palette[256 * PORT_FIGHTER_FILE_CLUTS * 4];
     s32 cull;
+    /* the cloths drawn smooth where a file has them (RB_HD_CLOTH=0: the
+     * game's own faces, as before) */
+    s32 is_cloth_smooth;
+    /* ... and kept out of the body (RB_HD_CLOTH_HOLD=0: as the game moved
+     * them, for measuring) */
+    s32 is_cloth_held;
     /* --gl-fighter-pose: the next frame's poses and primitives */
     char dump_folder[512];
     s32 dump_armed;
     FILE *dump;
     FighterModel model[MODELS_MAX];
     FighterModel weapon_model[WEAPON_FILES];
+    FighterModel tiny_model[TINY_FILES];
+    /* the tiny model of the frame on show and the frame after it, and
+     * whether it is drawn in this picture */
+    PortFighterView tiny_before[PORT_FIGHTER_SLOTS];
+    PortFighterView tiny_latest[PORT_FIGHTER_SLOTS];
+    s32 is_tiny_drawn;
     PortGlFighterCounts counts;
     char problem[512];
 } g_fighter;
@@ -339,25 +393,50 @@ static const char g_fighter_vertex_text[] =
     "uniform mat3 u_light;\n" /* the coprocessor's light matrix, made 1 */
     "uniform mat3 u_color;\n" /* ... and its colour matrix */
     "uniform vec3 u_back;\n"  /* the colour of the dark, 0 to 255 */
+    /* a cloth (gl_cloth.h): its places are in the world already, less the
+     * camera's, its normals the surface's own, and it is seen from both
+     * sides, the side that looks away lit as the game lights such a face
+     * of a cloth, by the normal turned round */
+    "uniform int u_cloth;\n"
     "out vec2 v_uv;\n"
     "out vec3 v_color;\n"
+    "out vec3 v_color_back;\n"
     /* the normal the colour was lit from, for `smooth_light`; nought
      * where there is none */
     "out vec3 v_normal;\n"
     "out float v_depth;\n"
+    /* NCS: each light's turn on the normal, none below nought, through
+     * the colour matrix onto the colour of the dark; a byte of colour is
+     * that over sixteen, held to 255 */
+    "vec3 lit(vec3 normal) {\n"
+    "    float length_of = length(normal);\n"
+    "    if (length_of < 0.5) {\n"
+    "        return vec3(128.0);\n"
+    "    }\n"
+    "    vec3 ir = max(u_light * (normal / length_of), vec3(0.0)) * 4096.0;\n"
+    "    return clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
+    "}\n"
     "void main() {\n"
-    "    mat4 skin = a_weight.x * u_joint[a_joint.x]\n"
-    "              + a_weight.y * u_joint[a_joint.y]\n"
-    "              + a_weight.z * u_joint[a_joint.z]\n"
-    "              + a_weight.w * u_joint[a_joint.w];\n"
-    "    vec3 world = (u_world[a_term_joint.x] * a_term[0]\n"
-    "               + u_world[a_term_joint.y] * a_term[1]\n"
-    "               + u_world[a_term_joint.z] * a_term[2]\n"
-    "               + u_world[a_term_joint.w] * a_term[3]\n"
-    "               + u_world[a_term_joint1.x] * a_term[4]\n"
-    "               + u_world[a_term_joint1.y] * a_term[5]\n"
-    "               + u_world[a_term_joint1.z] * a_term[6]\n"
-    "               + u_world[a_term_joint1.w] * a_term[7]).xyz;\n"
+    "    vec3 world;\n"
+    "    vec3 normal;\n"
+    "    if (u_cloth != 0) {\n"
+    "        world = a_place;\n"
+    "        normal = a_normal;\n"
+    "    } else {\n"
+    "        mat4 skin = a_weight.x * u_joint[a_joint.x]\n"
+    "                  + a_weight.y * u_joint[a_joint.y]\n"
+    "                  + a_weight.z * u_joint[a_joint.z]\n"
+    "                  + a_weight.w * u_joint[a_joint.w];\n"
+    "        world = (u_world[a_term_joint.x] * a_term[0]\n"
+    "              + u_world[a_term_joint.y] * a_term[1]\n"
+    "              + u_world[a_term_joint.z] * a_term[2]\n"
+    "              + u_world[a_term_joint.w] * a_term[3]\n"
+    "              + u_world[a_term_joint1.x] * a_term[4]\n"
+    "              + u_world[a_term_joint1.y] * a_term[5]\n"
+    "              + u_world[a_term_joint1.z] * a_term[6]\n"
+    "              + u_world[a_term_joint1.w] * a_term[7]).xyz;\n"
+    "        normal = mat3(skin) * a_normal;\n"
+    "    }\n"
     "    vec3 v = u_view * world;\n"
     /* the projection the coprocessor makes, as the stage's mesh has it
      * (gl_stage.c), every component linear in the point */
@@ -372,19 +451,9 @@ static const char g_fighter_vertex_text[] =
     ";\n"
     "    gl_Position = vec4(ndc, (v.z * (f + n) - 2.0 * f * n) / (f - n),\n"
     "                       v.z);\n"
-    /* NCS: each light's turn on the normal, none below nought, through
-     * the colour matrix onto the colour of the dark; a byte of colour is
-     * that over sixteen, held to 255 */
-    "    vec3 normal = mat3(skin) * a_normal;\n"
-    "    float length_of = length(normal);\n"
-    "    if (length_of < 0.5) {\n"
-    "        v_color = vec3(128.0);\n"
-    "        v_normal = vec3(0.0);\n"
-    "    } else {\n"
-    "        vec3 ir = max(u_light * (normal / length_of), vec3(0.0)) * 4096.0;\n"
-    "        v_color = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
-    "        v_normal = normal / length_of;\n"
-    "    }\n"
+    "    v_color = lit(normal);\n"
+    "    v_color_back = u_cloth != 0 ? lit(-normal) : v_color;\n"
+    "    v_normal = length(normal) < 0.5 ? vec3(0.0) : normalize(normal);\n"
     "    v_uv = a_uv;\n"
     "    v_depth = v.z;\n"
     "}\n";
@@ -397,6 +466,8 @@ static const char g_fighter_fragment_text[] =
     "uniform sampler2D u_index;\n"
     "uniform sampler2D u_palette;\n"
     "uniform int u_paletted;\n"
+    "uniform int u_cloth;\n"
+    "uniform float u_cloth_near;\n"
     /* `smooth_light`: the same lights worked out at the pixel, from the
      * normal the corners' colours were lit from (docs/PORT.md,
      * "Lighting") */
@@ -406,6 +477,7 @@ static const char g_fighter_fragment_text[] =
     "uniform vec3 u_back;\n"
     "in vec2 v_uv;\n"
     "in vec3 v_color;\n"
+    "in vec3 v_color_back;\n"
     "in vec3 v_normal;\n"
     "in float v_depth;\n"
     "layout(location = 0) out vec4 o_color;\n"
@@ -424,17 +496,25 @@ static const char g_fighter_fragment_text[] =
     "    }\n"
     /* a texel of nothing is not drawn, as the chip leaves it */
     "    if (texel.a < 0.5) { discard; }\n"
-    /* the chip's five bits a channel times the colour, 128 being one */
-    "    vec3 lit = v_color;\n"
-    "    float length_of = length(v_normal);\n"
+    /* the chip's five bits a channel times the colour, 128 being one; a
+     * cloth's face seen from behind is lit from behind (the front being
+     * the side its normal is on, gl_cloth.h) */
+    "    bool is_back = u_cloth != 0 && !gl_FrontFacing;\n"
+    "    vec3 lit = is_back ? v_color_back : v_color;\n"
+    "    vec3 normal = is_back ? -v_normal : v_normal;\n"
+    "    float length_of = length(normal);\n"
     "    if (u_smooth_light != 0 && length_of > 0.25) {\n"
-    "        vec3 ir = max(u_light * (v_normal / length_of), vec3(0.0))\n"
+    "        vec3 ir = max(u_light * (normal / length_of), vec3(0.0))\n"
     "                * 4096.0;\n"
     "        lit = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
     "    }\n"
     "    vec3 c = texel.rgb * 31.0 * lit / 16.0;\n"
     "    o_color = vec4(clamp(c, 0.0, 255.0) / 255.0, 1.0);\n"
-    "    o_depth = v_depth;\n"
+    /* the depth the layer is held to the scene by: a cloth's nearer by
+     * what the game sorts its faces nearer by (render_SidedDepth), so
+     * that a hem on the ground is not cut by the ground nor painted over
+     * by the shadow under it, as the game's own is not */
+    "    o_depth = v_depth - (u_cloth != 0 ? u_cloth_near : 0.0);\n"
     "}\n";
 
 /* The layer laid over the picture. */
@@ -537,6 +617,8 @@ static GLuint port_GlFighterProgram(
 const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
     static const GLfloat corners[12] = {0, 0, 1, 0, 0, 1, 1, 0, 1, 1, 0, 1};
     const char *cull = getenv("RB_FIGHTER_CULL");
+    const char *smooth_cloth = getenv("RB_HD_CLOTH");
+    const char *held_cloth = getenv("RB_HD_CLOTH_HOLD");
 
     g_fighter.problem[0] = 0;
 #define GL(result, name, args)                                                 \
@@ -572,6 +654,8 @@ const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
     AT(at_back, "u_back");
     AT(at_smooth_light, "u_smooth_light");
     AT(at_texture, "u_texture");
+    AT(at_cloth, "u_cloth");
+    AT(at_cloth_near, "u_cloth_near");
 #undef AT
 #define AT(member, name)                                                       \
     g_fighter.member = glGetUniformLocation(g_fighter.composite_program, name)
@@ -593,10 +677,18 @@ const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(GLfloat), NULL);
     glEnableVertexAttribArray(0);
     glBindVertexArray(0);
-    glGenFramebuffers(1, &g_fighter.layer_framebuffer);
-    glGenTextures(1, &g_fighter.layer_color);
-    glGenTextures(1, &g_fighter.layer_depth_value);
-    glGenRenderbuffers(1, &g_fighter.layer_depth);
+    {
+        s32 i;
+
+        for (i = 0; i < LAYERS; i++) {
+            FighterLayer *layer = &g_fighter.layer[i];
+
+            glGenFramebuffers(1, &layer->framebuffer);
+            glGenTextures(1, &layer->color);
+            glGenTextures(1, &layer->depth_value);
+            glGenRenderbuffers(1, &layer->depth);
+        }
+    }
     glGenTextures(PLACES, g_fighter.palette_texture);
     {
         s32 i;
@@ -604,10 +696,17 @@ const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
         for (i = 0; i < PLACES; i++) {
             g_fighter.place[i].model = -1;
         }
+        /* the tiny model has the first of its views alone */
+        for (i = 0; i < PORT_FIGHTER_SLOTS; i++) {
+            g_fighter.tiny_before[i].model_id = -1;
+            g_fighter.tiny_latest[i].model_id = -1;
+        }
     }
     /* which way round a face is its front, as the console's (the
      * renderer's own test: render_FaceFront) */
     g_fighter.cull = cull != NULL ? atoi(cull) : 1;
+    g_fighter.is_cloth_smooth = smooth_cloth == NULL || atoi(smooth_cloth) != 0;
+    g_fighter.is_cloth_held = held_cloth == NULL || atoi(held_cloth) != 0;
     g_fighter.tween_phase = -1;
     g_fighter.is_started = TRUE;
     return NULL;
@@ -634,6 +733,11 @@ void port_GlFighterSetFolder(const char *folder) {
     for (i = 0; i < WEAPON_FILES; i++) {
         if (g_fighter.weapon_model[i].state == MODEL_MISSING) {
             g_fighter.weapon_model[i].state = MODEL_UNTRIED;
+        }
+    }
+    for (i = 0; i < TINY_FILES; i++) {
+        if (g_fighter.tiny_model[i].state == MODEL_MISSING) {
+            g_fighter.tiny_model[i].state = MODEL_UNTRIED;
         }
     }
 }
@@ -682,6 +786,53 @@ static GLuint port_GlFighterTexture(
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     return texture;
+}
+
+/* A cloth of the file's as a smooth surface, and what the card draws it
+ * from: the places and normals are written again each picture. */
+static void port_GlFighterMakeCloth(
+    FighterModel *model, const PortFighterFileCloth *from) {
+    const PortGlClothVertex *one = NULL;
+    FighterCloth *cloth = &model->cloth[model->cloth_count];
+    PortGlCloth *surface;
+
+    if (!g_fighter.is_cloth_smooth ||
+        from->point_count > PORT_FIGHTER_CLOTH_POINTS) {
+        return;
+    }
+    surface = port_GlClothMake(
+        from->point_count, from->face_count, from->corners,
+        (const s32(*)[4])from->face, (const float(*)[4][2])from->uv);
+    if (surface == NULL) {
+        return;
+    }
+    cloth->mesh = from->mesh;
+    cloth->surface = surface;
+    glGenVertexArrays(1, &cloth->array);
+    glGenBuffers(1, &cloth->buffer);
+    glGenBuffers(1, &cloth->elements);
+    glBindVertexArray(cloth->array);
+    glBindBuffer(GL_ARRAY_BUFFER, cloth->buffer);
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        (GLsizeiptr)((size_t)port_GlClothVertices(surface) * sizeof(*one)),
+        NULL, GL_STREAM_DRAW);
+    glVertexAttribPointer(
+        0, 3, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->place);
+    glVertexAttribPointer(
+        1, 3, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->normal);
+    glVertexAttribPointer(
+        2, 2, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->uv);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, cloth->elements);
+    glBufferData(
+        GL_ELEMENT_ARRAY_BUFFER,
+        (GLsizeiptr)((size_t)port_GlClothTriangles(surface) * 3 * sizeof(u32)),
+        port_GlClothIndices(surface), GL_STATIC_DRAW);
+    glBindVertexArray(0);
+    model->cloth_count++;
 }
 
 /* A model's file, `name`.glb, read and made ready for the card the first
@@ -802,6 +953,13 @@ static FighterModel *port_GlFighterLoad(FighterModel *model, const char *name) {
             model->index_texture = port_GlFighterTexture(&file.index, FALSE);
         }
     }
+    model->cloth_count = 0;
+    if (file.part_count > 0 && file.part[0].texture >= 0) {
+        model->cloth_texture = model->texture[file.part[0].texture];
+        for (i = 0; i < file.cloth_count; i++) {
+            port_GlFighterMakeCloth(model, &file.cloth[i]);
+        }
+    }
     port_FighterFileFree(&file);
     model->state = MODEL_LOADED;
     g_fighter.counts.loaded++;
@@ -828,6 +986,17 @@ static FighterModel *port_GlFighterWeaponModel(s32 weapon) {
     return port_GlFighterLoad(&g_fighter.weapon_model[weapon], name);
 }
 
+/* A tiny model's (g_model_tiny_ids): `T00` to `T26`. */
+static FighterModel *port_GlFighterTinyModel(s32 tiny) {
+    char name[8];
+
+    if (tiny < 0 || tiny >= TINY_FILES) {
+        return NULL;
+    }
+    snprintf(name, sizeof(name), "T%02d", tiny);
+    return port_GlFighterLoad(&g_fighter.tiny_model[tiny], name);
+}
+
 void port_GlFighterPreload(void) {
     s32 i;
 
@@ -839,6 +1008,8 @@ void port_GlFighterPreload(void) {
 
         if (model_id >= 0) {
             port_GlFighterModel(model_id);
+            /* and its first-person view's figure, a small file */
+            port_GlFighterTinyModel(port_FighterLoadedTiny(i));
         }
     }
     for (i = 0; i < WEAPON_FILES; i++) {
@@ -856,6 +1027,7 @@ void port_GlFighterPreload(void) {
 void port_GlFighterNewFrame(void) {
     g_fighter.is_drawn = FALSE;
     g_fighter.is_laid = FALSE;
+    g_fighter.is_tiny_drawn = FALSE;
 }
 
 /* The slot whose model the primitive is a drawing of, by where its node
@@ -981,48 +1153,48 @@ static void port_GlFighterPoseOf(FighterPose *pose, const PortFighterView *a,
     pose->back = t < 0.5 ? a->back : b->back;
 }
 
-/* The layer the fighters are drawn into: at least `w` by `h`. */
-static s32 port_GlFighterLayer(s32 w, s32 h) {
+/* A layer the models are drawn into: at least `w` by `h`. */
+static s32 port_GlFighterLayer(FighterLayer *layer, s32 w, s32 h) {
     static const GLenum both[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
 
-    if (w <= g_fighter.layer_w && h <= g_fighter.layer_h) {
-        glBindFramebuffer(GL_FRAMEBUFFER, g_fighter.layer_framebuffer);
+    if (w <= layer->w && h <= layer->h) {
+        glBindFramebuffer(GL_FRAMEBUFFER, layer->framebuffer);
         glDrawBuffers(2, both);
         return TRUE;
     }
-    if (w < g_fighter.layer_w) {
-        w = g_fighter.layer_w;
+    if (w < layer->w) {
+        w = layer->w;
     }
-    if (h < g_fighter.layer_h) {
-        h = g_fighter.layer_h;
+    if (h < layer->h) {
+        h = layer->h;
     }
-    glBindTexture(GL_TEXTURE_2D, g_fighter.layer_color);
+    glBindTexture(GL_TEXTURE_2D, layer->color);
     glTexImage2D(
         GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glBindTexture(GL_TEXTURE_2D, g_fighter.layer_depth_value);
+    glBindTexture(GL_TEXTURE_2D, layer->depth_value);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, w, h, 0, GL_RED, GL_FLOAT, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glBindRenderbuffer(GL_RENDERBUFFER, g_fighter.layer_depth);
+    glBindRenderbuffer(GL_RENDERBUFFER, layer->depth);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, w, h);
-    glBindFramebuffer(GL_FRAMEBUFFER, g_fighter.layer_framebuffer);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                           g_fighter.layer_color, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, layer->framebuffer);
+    glFramebufferTexture2D(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, layer->color, 0);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D,
-                           g_fighter.layer_depth_value, 0);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                              GL_RENDERBUFFER, g_fighter.layer_depth);
+                           layer->depth_value, 0);
+    glFramebufferRenderbuffer(
+        GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, layer->depth);
     glDrawBuffers(2, both);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         port_GlFighterSay("the fighters' layer cannot be drawn into", NULL);
-        g_fighter.layer_w = 0;
-        g_fighter.layer_h = 0;
+        layer->w = 0;
+        layer->h = 0;
         return FALSE;
     }
-    g_fighter.layer_w = w;
-    g_fighter.layer_h = h;
+    layer->w = w;
+    layer->h = h;
     return TRUE;
 }
 
@@ -1253,6 +1425,292 @@ static void port_GlFighterDrawOne(
     g_fighter.counts.triangles += (u32)model->triangles;
 }
 
+/* ---- the cloths (gl_cloth.h) ---- */
+
+/* The model's smooth cloth that a cloth the frame drew is, or NULL: the
+ * same mesh of the model's file, of as many points. */
+static const FighterCloth *port_GlFighterClothFor(
+    const FighterModel *model, const PortFighterCloth *drawn) {
+    s32 i;
+
+    for (i = 0; i < model->cloth_count; i++) {
+        const FighterCloth *cloth = &model->cloth[i];
+
+        if (cloth->mesh == drawn->mesh &&
+            port_GlClothPoints(cloth->surface) == drawn->count) {
+            return cloth;
+        }
+    }
+    return NULL;
+}
+
+/* Which of the view's cloths the node is, if it is drawn smooth: its
+ * number in the view, or -1. */
+static s32 port_GlFighterClothOfNode(
+    const FighterModel *model, const PortFighterView *view, PortAddress node) {
+    s32 k;
+
+    if (model == NULL) {
+        return -1;
+    }
+    for (k = 0; k < view->cloth_count; k++) {
+        if (view->cloth[k].node == node) {
+            return port_GlFighterClothFor(model, &view->cloth[k]) != NULL
+                       ? k
+                       : -1;
+        }
+    }
+    return -1;
+}
+
+/* The model's body as `pose` poses it, less the camera's place: what its
+ * cloths are kept out of (gl_cloth.h). Each vertex is where the card puts
+ * it (the sum of its terms) and its normal turned as the card turns it
+ * (the joints' rotations, blended). Kept for the slot until it is asked
+ * for again. NULL where the cloths are not kept out. */
+static const PortGlClothBody *port_GlFighterBody(
+    const FighterModel *model, const FighterPose *pose, s32 slot) {
+    static PortGlClothBody *bodies[PORT_FIGHTER_SLOTS];
+    static float *places;
+    static float *normals;
+    static s32 room;
+    double turn[PORT_FIGHTER_FILE_JOINTS][9];
+    s32 i;
+    s32 j;
+    s32 k;
+
+    if (model->vertices == NULL || slot < 0 || slot >= PORT_FIGHTER_SLOTS) {
+        return NULL;
+    }
+    if (bodies[slot] == NULL) {
+        bodies[slot] = port_GlClothBodyMake();
+    }
+    if (room < model->vertex_count) {
+        float *more_places =
+            realloc(places, (size_t)model->vertex_count * 3 * sizeof(float));
+        float *more_normals =
+            more_places == NULL
+                ? NULL
+                : realloc(
+                      normals, (size_t)model->vertex_count * 3 * sizeof(float));
+
+        if (more_places != NULL) {
+            places = more_places;
+        }
+        if (more_normals == NULL) {
+            return NULL;
+        }
+        normals = more_normals;
+        room = model->vertex_count;
+    }
+    if (bodies[slot] == NULL) {
+        return NULL;
+    }
+    /* each joint's turn: the bone's rotation times the inverse bind
+     * matrix's */
+    for (j = 0; j < PORT_FIGHTER_FILE_JOINTS; j++) {
+        const float *ibm = model->inverse_bind[j];
+        s32 r;
+        s32 c;
+
+        for (r = 0; r < 3; r++) {
+            for (c = 0; c < 3; c++) {
+                double sum = 0.0;
+
+                for (k = 0; k < 3; k++) {
+                    sum += pose->bone_rotation[j][r * 3 + k] *
+                           (double)ibm[c * 4 + k];
+                }
+                turn[j][r * 3 + c] = sum;
+            }
+        }
+    }
+    for (i = 0; i < model->vertex_count; i++) {
+        const PortFighterVertex *v = &model->vertices[i];
+        double place[3] = {0.0, 0.0, 0.0};
+        double normal[3] = {0.0, 0.0, 0.0};
+
+        for (j = 0; j < PORT_FIGHTER_TERMS; j++) {
+            const double *r = pose->bone_rotation[v->term_joint[j]];
+            const double *t = pose->bone_place[v->term_joint[j]];
+            const float *term = v->term[j];
+
+            if (term[0] == 0.0f && term[1] == 0.0f && term[2] == 0.0f &&
+                term[3] == 0.0f) {
+                continue;
+            }
+            for (k = 0; k < 3; k++) {
+                place[k] += r[k * 3] * term[0] + r[k * 3 + 1] * term[1] +
+                            r[k * 3 + 2] * term[2] + t[k] * term[3];
+            }
+        }
+        for (j = 0; j < 4; j++) {
+            const double *r = turn[v->joint[j] % PORT_FIGHTER_FILE_JOINTS];
+
+            if (v->weight[j] == 0.0f) {
+                continue;
+            }
+            for (k = 0; k < 3; k++) {
+                normal[k] +=
+                    v->weight[j] *
+                    (r[k * 3] * v->normal[0] + r[k * 3 + 1] * v->normal[1] +
+                     r[k * 3 + 2] * v->normal[2]);
+            }
+        }
+        for (k = 0; k < 3; k++) {
+            places[i * 3 + k] = (float)(place[k] - pose->camera[k]);
+            normals[i * 3 + k] = (float)normal[k];
+        }
+    }
+    if (!port_GlClothBodySet(
+            bodies[slot], places, normals, model->vertex_count)) {
+        return NULL;
+    }
+    return bodies[slot];
+}
+
+/* A place of a cloth kept out of the body (port_GlClothHold), and
+ * counted: whether the game's cloth had it inside the body, and whether
+ * it is still inside once kept out. */
+static void port_GlFighterHoldPlace(void *context, double *place) {
+    const PortGlClothBody *body = context;
+    double where[3] = {place[0], place[1], place[2]};
+
+    g_fighter.counts.cloth_places++;
+    if (port_GlClothBodyHold(body, where, CLOTH_GAP)) {
+        g_fighter.counts.cloth_inside++;
+    }
+    if (g_fighter.is_cloth_held) {
+        place[0] = where[0];
+        place[1] = where[1];
+        place[2] = where[2];
+    }
+    where[0] = place[0];
+    where[1] = place[1];
+    where[2] = place[2];
+    if (port_GlClothBodyHold(body, where, 0.0)) {
+        g_fighter.counts.cloth_left_inside++;
+    }
+}
+
+/* A cloth's surface through its points as the frame drew them, or `t` of
+ * the way to where the frame after it drew them (the same mesh, in
+ * `after`), less `camera`, kept out of `body` where there is one: the
+ * vertices to draw, in room kept here. */
+static const PortGlClothVertex *port_GlFighterPoseCloth(
+    const FighterCloth *cloth, const PortFighterCloth *drawn,
+    const PortFighterView *after, double t, const double *camera,
+    const PortGlClothBody *body) {
+    static PortGlClothVertex *room;
+    static s32 room_count;
+    const PortFighterCloth *next = drawn;
+    double points[PORT_FIGHTER_CLOTH_POINTS * 3];
+    s32 count = port_GlClothVertices(cloth->surface);
+    s32 i;
+    s32 k;
+
+    if (room_count < count) {
+        PortGlClothVertex *more = realloc(room, (size_t)count * sizeof(*room));
+
+        if (more == NULL) {
+            return NULL;
+        }
+        room = more;
+        room_count = count;
+    }
+    for (i = 0; after != NULL && i < after->cloth_count; i++) {
+        if (after->cloth[i].mesh == drawn->mesh &&
+            after->cloth[i].count == drawn->count) {
+            next = &after->cloth[i];
+            break;
+        }
+    }
+    if (next == drawn) {
+        t = 0.0;
+    }
+    /* a point is in 128ths of the world's unit (ClothPoint) */
+    for (i = 0; i < drawn->count; i++) {
+        for (k = 0; k < 3; k++) {
+            points[i * 3 + k] =
+                ((1.0 - t) * drawn->point[i][k] + t * next->point[i][k]) /
+                    128.0 -
+                camera[k];
+        }
+        /* the points the surface is made through are kept out of the
+         * body first, and then every place of the surface */
+        if (body != NULL && g_fighter.is_cloth_held) {
+            port_GlClothBodyHold(body, &points[i * 3], CLOTH_GAP);
+        }
+    }
+    port_GlClothPose(
+        cloth->surface, points, body != NULL ? port_GlFighterHoldPlace : NULL,
+        (void *)body, room);
+    return room;
+}
+
+/* The slot's cloths that are drawn smooth, into the layer after his body,
+ * with the body's view, lights and colour tables; from both sides. */
+static void port_GlFighterDrawCloths(
+    const FighterModel *model, const PortFighterView *view,
+    const PortFighterView *after, double t, const FighterPose *pose, s32 slot) {
+    const PortGlClothBody *body = NULL;
+    s32 drawn = 0;
+    s32 k;
+
+    if (after != NULL && after->model_id != view->model_id) {
+        after = NULL;
+    }
+    for (k = 0; k < view->cloth_count; k++) {
+        const FighterCloth *cloth =
+            port_GlFighterClothFor(model, &view->cloth[k]);
+        const PortGlClothVertex *vertices;
+
+        if (cloth == NULL) {
+            continue;
+        }
+        if (body == NULL) {
+            body = port_GlFighterBody(model, pose, slot);
+        }
+        vertices = port_GlFighterPoseCloth(
+            cloth, &view->cloth[k], after, t, pose->camera, body);
+        if (vertices == NULL) {
+            continue;
+        }
+        if (drawn++ == 0) {
+            glUniform1i(g_fighter.at_cloth, 1);
+            glUniform1f(g_fighter.at_cloth_near,
+                        (GLfloat)(CLOTH_NEAR << (view->scale_shift & 3)));
+            glDisable(GL_CULL_FACE);
+            /* kept out of the body by CLOTH_GAP, and taken a little
+             * nearer in the depth buffer as well, so that where it lies
+             * close over the body the two never flicker in turn */
+            glEnable(GL_POLYGON_OFFSET_FILL);
+            glPolygonOffset(-1.0f, -4.0f);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, model->cloth_texture);
+        }
+        glBindVertexArray(cloth->array);
+        glBindBuffer(GL_ARRAY_BUFFER, cloth->buffer);
+        glBufferData(GL_ARRAY_BUFFER,
+                     (GLsizeiptr)((size_t)port_GlClothVertices(cloth->surface) *
+                                  sizeof(*vertices)),
+                     vertices, GL_STREAM_DRAW);
+        glDrawElements(GL_TRIANGLES, port_GlClothTriangles(cloth->surface) * 3,
+                       GL_UNSIGNED_INT, NULL);
+        g_fighter.counts.triangles +=
+            (u32)port_GlClothTriangles(cloth->surface);
+        g_fighter.counts.cloths++;
+    }
+    if (drawn > 0) {
+        glBindVertexArray(0);
+        glUniform1i(g_fighter.at_cloth, 0);
+        glDisable(GL_POLYGON_OFFSET_FILL);
+        if (g_fighter.cull != 0) {
+            glEnable(GL_CULL_FACE);
+        }
+    }
+}
+
 /* A weapon's place in the frame after the one on show: the weapon of the
  * same model drawn there in the same turn, or another of the same model. */
 static const PortFighterWeapon *port_GlFighterWeaponAfter(
@@ -1306,10 +1764,12 @@ static void port_GlFighterWeaponPose(
  * the layer, and the layer over the picture, in place of the primitive
  * `paint`. */
 static void port_GlFighterDrawAll(
-    const PortRemasterPrim *paint, const PortFighterView *views,
+    const PortRemasterPrim *paint, s32 which, const PortFighterView *views,
     const PortFighterView *after, double t, const PortFighterWeapon *weapons,
     s32 weapon_count, const PortFighterWeapon *after_weapons,
     s32 after_weapon_count) {
+    FighterLayer *layer = &g_fighter.layer[which];
+    s32 is_tiny = which == LAYER_TINY;
     static const GLfloat clear_color[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     static const GLfloat clear_depth[4] = {FAR_PLANE, 0.0f, 0.0f, 0.0f};
     PortGlPicture picture;
@@ -1338,7 +1798,7 @@ static void port_GlFighterDrawAll(
         x = (paint->clip_left + picture.margin) * picture.draw_x;
         w = (paint->clip_right - paint->clip_left + 1) * picture.draw_x;
     }
-    if (w <= 0 || h <= 0 || !port_GlFighterLayer(w, h)) {
+    if (w <= 0 || h <= 0 || !port_GlFighterLayer(layer, w, h)) {
         return;
     }
     glDisable(GL_SCISSOR_TEST);
@@ -1378,7 +1838,8 @@ static void port_GlFighterDrawAll(
             frame = pose;
             has_frame = TRUE;
         }
-        model = port_GlFighterModel(view->model_id);
+        model = is_tiny ? port_GlFighterTinyModel(view->model_id)
+                        : port_GlFighterModel(view->model_id);
         if (model == NULL) {
             continue;
         }
@@ -1387,6 +1848,8 @@ static void port_GlFighterDrawAll(
                     (GLfloat)(pose.ofy + paint->offset_y));
         glUseProgram(g_fighter.program);
         port_GlFighterDrawOne(model, &pose, slot);
+        port_GlFighterDrawCloths(
+            model, view, after != NULL ? &after[slot] : NULL, t, &pose, slot);
         drawn++;
     }
     for (i = 0; i < weapon_count && has_frame; i++) {
@@ -1422,17 +1885,19 @@ static void port_GlFighterDrawAll(
     glScissor(x, y, w, h);
     glUseProgram(g_fighter.composite_program);
     glActiveTexture(GL_TEXTURE0 + 2);
-    glBindTexture(GL_TEXTURE_2D, g_fighter.layer_color);
+    glBindTexture(GL_TEXTURE_2D, layer->color);
     glActiveTexture(GL_TEXTURE0 + 3);
-    glBindTexture(GL_TEXTURE_2D, g_fighter.layer_depth_value);
+    glBindTexture(GL_TEXTURE_2D, layer->depth_value);
     glActiveTexture(GL_TEXTURE0 + 1);
     glBindTexture(GL_TEXTURE_2D, picture.slot_texture);
     glActiveTexture(GL_TEXTURE0);
     glUniform1i(g_fighter.c_at_layer, 2);
     glUniform1i(g_fighter.c_at_layer_depth, 3);
     glUniform1i(g_fighter.c_at_ground_slots, 1);
-    glUniform1i(g_fighter.c_at_ground_order,
-                port_GlStageSaveFrame() && options.is_stage_depth ? 1 : 0);
+    /* the tiny model is drawn after the scene, over everything */
+    glUniform1i(
+        g_fighter.c_at_ground_order,
+        !is_tiny && port_GlStageSaveFrame() && options.is_stage_depth ? 1 : 0);
     glUniform2f(g_fighter.c_at_origin, (GLfloat)x, (GLfloat)y);
     glUniform4f(
         g_fighter.c_at_rect, (GLfloat)x, (GLfloat)y, (GLfloat)w, (GLfloat)h);
@@ -1440,10 +1905,12 @@ static void port_GlFighterDrawAll(
                 (GLfloat)picture.target_h);
     glUniform1f(g_fighter.c_at_depth_range, PORT_GL_DEPTH_RANGE);
     /* kept for the shadows' mask (port_GlFighterDrawOccluders) */
-    g_fighter.laid[0] = x;
-    g_fighter.laid[1] = y;
-    g_fighter.laid[2] = w;
-    g_fighter.laid[3] = h;
+    if (!is_tiny) {
+        g_fighter.laid[0] = x;
+        g_fighter.laid[1] = y;
+        g_fighter.laid[2] = w;
+        g_fighter.laid[3] = h;
+    }
     /* the depth is written whatever is there: the test is only how GL
      * lets a fragment write it */
     glEnable(GL_DEPTH_TEST);
@@ -1456,6 +1923,9 @@ static void port_GlFighterDrawAll(
     glDepthFunc(GL_LESS);
     glDisable(GL_DEPTH_TEST);
     port_GlForgetState();
+    if (is_tiny) {
+        return;
+    }
     g_fighter.is_laid = TRUE;
     if (drawn > 0) {
         g_fighter.counts.frames++;
@@ -1516,6 +1986,37 @@ static s32 port_GlFighterWeaponIndexOf(
     return -1;
 }
 
+/* A primitive of the tiny model's body (port_GetFighterTinyView) where a
+ * file of it is drawn instead: left out, and the model drawn into a layer
+ * of its own at the first of them, held to nothing of the scene, as the
+ * game draws the figure after it. Its weapon is the game's. */
+static s32 port_GlFighterTakesTiny(const PortRemasterPrim *prim) {
+    const PortFighterView *views =
+        g_fighter.tween_phase >= 0 ? g_fighter.tiny_before
+                                   : g_fighter.tiny_latest;
+    const PortFighterView *view = &views[0];
+
+    if (view->model_id < 0 || prim->id.object < view->nodes_from ||
+        prim->id.object >= view->nodes_to ||
+        !port_FighterIsTinyBody(prim->id.object) ||
+        port_GlFighterTinyModel(view->model_id) == NULL) {
+        return FALSE;
+    }
+    if (!g_fighter.is_tiny_drawn) {
+        g_fighter.is_tiny_drawn = TRUE;
+        port_GlFlushBatch();
+        port_GlFighterDrawAll(
+            prim, LAYER_TINY, views,
+            g_fighter.tween_phase >= 0 ? g_fighter.tiny_latest : NULL,
+            g_fighter.tween_phase >= 0
+                ? (double)g_fighter.tween_phase / (double)(1 << 16)
+                : 0.0,
+            NULL, 0, NULL, 0);
+    }
+    g_fighter.counts.left_out++;
+    return TRUE;
+}
+
 s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
     const PortFighterView *views;
     const PortFighterView *after = NULL;
@@ -1525,6 +2026,7 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
     s32 after_weapon_count = 0;
     const FighterModel *model = NULL;
     s32 place = 0;
+    s32 is_cloth;
     s32 slot;
     s32 s;
 
@@ -1561,27 +2063,38 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
             built = port_GetFighterWeapons(&g_fighter.latest_weapons);
             memcpy(g_fighter.latest_weapon, built,
                    (size_t)g_fighter.latest_weapons * sizeof(*built));
+            memcpy(g_fighter.tiny_before, g_fighter.tiny_latest,
+                   sizeof(g_fighter.tiny_before));
+            g_fighter.tiny_latest[0] = *port_GetFighterTinyView();
             g_fighter.latest_serial = port_FighterSerial();
             port_GlFighterDumpFrame();
         }
         weapon_count = g_fighter.latest_weapons;
     }
+    if (port_GlFighterTakesTiny(prim)) {
+        return TRUE;
+    }
     slot = port_GlFighterSlotOf(prim, views);
-    if (slot >= 0 && port_FighterIsCloth(prim->id.object)) {
-        /* The cloth is the game's own (port_fighter.h), held against the
-         * layer's depth where its fighter is drawn from a model. So the
-         * layer is drawn before the first cloth as well: a cloth the
-         * table painted before the models would otherwise be painted
-         * over by them wherever they lie, in front of it or not (the
-         * long robes: 646 of 16,384 cloth faces in port_game's fight of
-         * ROSTER_VICTIM against ROSTER_LAST_2). */
-        if (port_GlFighterModel(views[slot].model_id) == NULL) {
+    is_cloth = slot >= 0 && port_FighterIsCloth(prim->id.object);
+    if (is_cloth) {
+        /* A cloth whose model's file has it is drawn smooth in the layer
+         * (gl_cloth.h) and its faces left out. Any other is the game's
+         * own (port_fighter.h), held against the layer's depth where its
+         * fighter is drawn from a model. So the layer is drawn before the
+         * first cloth as well: a cloth the table painted before the
+         * models would otherwise be painted over by them wherever they
+         * lie, in front of it or not (the long robes: 646 of 16,384 cloth
+         * faces in port_game's fight of ROSTER_VICTIM against
+         * ROSTER_LAST_2). */
+        model = port_GlFighterModel(views[slot].model_id);
+        if (model == NULL) {
             return FALSE;
         }
-        g_fighter.holds = TRUE;
+        g_fighter.holds =
+            port_GlFighterClothOfNode(model, &views[slot], prim->id.object) < 0;
     }
     if (!g_fighter.holds) {
-        if (slot >= 0 && g_fighter.dump != NULL) {
+        if (slot >= 0 && !is_cloth && g_fighter.dump != NULL) {
             port_GlFighterDumpPrim(prim, &views[slot], slot);
         }
         if (slot >= 0) {
@@ -1611,7 +2124,7 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
         g_fighter.is_drawn = TRUE;
         port_GlFlushBatch();
         port_GlFighterDrawAll(
-            prim, views, after,
+            prim, LAYER_FIGHTERS, views, after,
             g_fighter.tween_phase >= 0
                 ? (double)g_fighter.tween_phase / (double)(1 << 16)
                 : 0.0,
@@ -1635,7 +2148,7 @@ s32 port_GlFighterLayerDepth(s32 rect[4]) {
     rect[1] = g_fighter.laid[1];
     rect[2] = g_fighter.laid[2];
     rect[3] = g_fighter.laid[3];
-    return (s32)g_fighter.layer_depth_value;
+    return (s32)g_fighter.layer[LAYER_FIGHTERS].depth_value;
 }
 
 /* ---- the shadows cast from the models (gl_fighter.h) ---- */
@@ -1651,9 +2164,9 @@ void port_GlFighterDrawOccluders(u32 framebuffer) {
     glViewport(0, 0, picture.target_w, picture.target_h);
     glUseProgram(g_fighter.composite_program);
     glActiveTexture(GL_TEXTURE0 + 2);
-    glBindTexture(GL_TEXTURE_2D, g_fighter.layer_color);
+    glBindTexture(GL_TEXTURE_2D, g_fighter.layer[LAYER_FIGHTERS].color);
     glActiveTexture(GL_TEXTURE0 + 3);
-    glBindTexture(GL_TEXTURE_2D, g_fighter.layer_depth_value);
+    glBindTexture(GL_TEXTURE_2D, g_fighter.layer[LAYER_FIGHTERS].depth_value);
     glActiveTexture(GL_TEXTURE0 + 1);
     glBindTexture(GL_TEXTURE_2D, picture.slot_texture);
     glActiveTexture(GL_TEXTURE0);
@@ -1701,11 +2214,16 @@ s32 port_GlFighterCaster(PortAddress object) {
 
         if (view->model_id >= 0 && object >= view->nodes_from &&
             object < view->nodes_to) {
-            /* the cloth is the game's own, and casts its own */
-            return !port_FighterIsCloth(object) &&
-                           port_GlFighterModel(view->model_id) != NULL
-                       ? slot
-                       : -1;
+            const FighterModel *model = port_GlFighterModel(view->model_id);
+
+            /* a cloth drawn smooth casts with the body, after his
+             * triangles (port_GlFighterCastTriangles); one that is the
+             * game's own casts its own faces */
+            if (port_FighterIsCloth(object) &&
+                port_GlFighterClothOfNode(model, view, object) < 0) {
+                return -1;
+            }
+            return model != NULL ? slot : -1;
         }
     }
     for (i = 0; i < g_fighter.latest_weapons; i++) {
@@ -1717,6 +2235,55 @@ s32 port_GlFighterCaster(PortAddress object) {
         }
     }
     return -1;
+}
+
+/* A fighter's smooth cloths as the frame drew them, each triangle in the
+ * world's units given to `emit`, numbered on from `first`. How many. */
+static s32 port_GlFighterCastCloths(
+    const FighterModel *model, const PortFighterView *view, s32 slot, s32 first,
+    PortGlFighterEmit emit, void *context) {
+    const PortGlClothBody *body = NULL;
+    FighterPose pose;
+    s32 count = 0;
+    s32 k;
+
+    /* in the world's own units: no camera taken off */
+    port_GlFighterPoseOf(&pose, view, NULL, 0.0);
+    pose.camera[0] = 0.0;
+    pose.camera[1] = 0.0;
+    pose.camera[2] = 0.0;
+
+    for (k = 0; k < view->cloth_count; k++) {
+        const FighterCloth *cloth =
+            port_GlFighterClothFor(model, &view->cloth[k]);
+        const PortGlClothVertex *vertices;
+        const u32 *index;
+        s32 i;
+
+        if (cloth == NULL) {
+            continue;
+        }
+        if (body == NULL) {
+            body = port_GlFighterBody(model, &pose, slot);
+        }
+        vertices = port_GlFighterPoseCloth(
+            cloth, &view->cloth[k], NULL, 0.0, pose.camera, body);
+        if (vertices == NULL) {
+            continue;
+        }
+        index = port_GlClothIndices(cloth->surface);
+        for (i = 0; i < port_GlClothTriangles(cloth->surface); i++) {
+            float p[3][3];
+            s32 c;
+
+            for (c = 0; c < 3; c++) {
+                memcpy(
+                    p[c], vertices[index[i * 3 + c]].place, 3 * sizeof(float));
+            }
+            emit(context, p, first + count++);
+        }
+    }
+    return count;
 }
 
 s32 port_GlFighterCastTriangles(
@@ -1803,12 +2370,18 @@ s32 port_GlFighterCastTriangles(
         }
         emit(context, p, i);
     }
+    if (caster < PORT_FIGHTER_SLOTS) {
+        return model->triangles + port_GlFighterCastCloths(
+                                      model, &g_fighter.latest[caster], caster,
+                                      model->triangles, emit, context);
+    }
     return model->triangles;
 }
 
 void port_GlFighterTween(s32 phase) {
     g_fighter.tween_phase = phase;
     g_fighter.is_drawn = FALSE;
+    g_fighter.is_tiny_drawn = FALSE;
     /* a new picture has no layer yet; the end of one keeps its layer
      * until the batch is drawn (port_GlFinishFrame) */
     if (phase >= 0) {

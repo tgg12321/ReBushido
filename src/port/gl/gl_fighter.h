@@ -19,9 +19,13 @@
  * port_GlIsOverGround), and its depth written where the ground's is, so
  * that what the scene paints after it is held against the fighter too.
  *
- * Only what has a file is replaced: a model with none, the cloth, the
- * shadows and the weapons are the game's own primitives as before. The
- * hitboxes are not the model's and are untouched (port_fighter.h). */
+ * Only what has a file is replaced: a model with none, a cloth its file
+ * does not have, the shadows and a weapon with none are the game's own
+ * primitives as before. A cloth its file has is drawn in the layer as a
+ * smooth surface through the game's own points, kept out of the body
+ * (gl_cloth.h); the first-person view's tiny figure is drawn from its own
+ * file into a layer of its own. The hitboxes are not the model's and are
+ * untouched (port_fighter.h). */
 
 #include "common.h"
 #include "port_remaster.h"
@@ -76,9 +80,12 @@ extern void port_GlFighterTween(s32 phase);
 
 /* The shadows cast from the models (gl_shadow.c, `shadows cast`): which
  * drawn thing of the frame on show the caster node `object` is, if it is
- * drawn from a model of its own (its cloth is not), or -1; and each
- * triangle of that thing's model as the frame posed it, in the world's
- * own units, given to `emit` with its number. */
+ * drawn from a model of its own, or -1 (a cloth drawn smooth is its
+ * fighter's: his slot's triangles are his body's and then his smooth
+ * cloths', numbered on after the body's; a cloth that is the game's own is
+ * -1 and casts its own faces); and each triangle of that thing's model as
+ * the frame posed it, in the world's own units, given to `emit` with its
+ * number. */
 extern s32 port_GlFighterCaster(PortAddress object);
 /* The fighters' layer of the picture into the alpha of `framebuffer`, the
  * shadows' mask: what a model covers is not the ground, as the game's own
@@ -99,6 +106,12 @@ typedef struct {
     u32 left_out;
     u32 triangles;
     u32 tinted; /* drawings whose colour tables the game had changed */
+    u32 cloths; /* cloths drawn smooth (gl_cloth.h) */
+    /* their surfaces' places, how many the game's moving had inside the
+     * model's body, and how many are inside it as drawn */
+    u32 cloth_places;
+    u32 cloth_inside;
+    u32 cloth_left_inside;
 } PortGlFighterCounts;
 
 extern const PortGlFighterCounts *port_GlFighterCounts(void);

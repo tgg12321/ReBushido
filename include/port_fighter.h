@@ -34,10 +34,26 @@ typedef __UINTPTR_TYPE__ PortAddress;
 /* What a fighter may hold or wear in a frame, at most. */
 #define PORT_FIGHTER_WEAPONS 8
 
+/* The cloth meshes one model can have (MODEL_CLOTH_PIECES), and the most
+ * points one of the game's has (29, M102's). */
+#define PORT_FIGHTER_CLOTHS 5
+#define PORT_FIGHTER_CLOTH_POINTS 64
+
 typedef struct {
     s16 m[9]; /* a MATRIX's rotation, 1.12 */
     s32 t[3];
 } PortFighterMatrix;
+
+/* A cloth as the game drew it (render_DrawCloth): its node, which of the
+ * model's meshes it is, and each of its points where the game moved it,
+ * in the world, in 128ths of a unit (ClothPoint.pos), in the order of the
+ * mesh's vertices, which its faces name. */
+typedef struct {
+    PortAddress node;
+    s32 mesh;
+    s32 count;
+    s32 point[PORT_FIGHTER_CLOTH_POINTS][3];
+} PortFighterCloth;
 
 typedef struct {
     /* The model being drawn (Model.model_id), or -1 where the slot's body
@@ -72,6 +88,9 @@ typedef struct {
     /* the scale the renderer drew the body at (render_SetupNode), which
      * its depths and its ordering-table slots are worked out in */
     s32 scale_shift;
+    /* his cloths drawn in the frame, whether his body was or not */
+    s32 cloth_count;
+    PortFighterCloth cloth[PORT_FIGHTER_CLOTHS];
 } PortFighterView;
 
 /* A weapon or a thing worn, as drawn this frame: the node, which weapon
@@ -88,8 +107,8 @@ typedef struct {
 
 /* The renderer is about to draw a node that is a fighter's own
  * (port_RemasterNoteFighter): where it is the body of a model, the model
- * is written down; where it is a weapon, the weapon. Called only with a
- * backend attached. */
+ * is written down; where it is a cloth, its points; where it is a weapon,
+ * the weapon. Called only with a backend attached. */
 extern void port_FighterNoteNode(PortAddress node);
 
 /* The slot's model as the last frame built drew it. */
@@ -105,10 +124,23 @@ extern u32 port_FighterSerial(void);
  * fight's first frame (docs/PORT.md, "Quick loading"). */
 extern s32 port_FighterLoadedModel(s32 slot);
 extern s32 port_FighterLoadedWeapon(s32 place);
+/* ... and the tiny model of the slot's model (g_model_tiny_ids), or -1. */
+extern s32 port_FighterLoadedTiny(s32 slot);
 
 /* Whether a node is a piece of cloth, which the game moves and draws
- * itself and a model's file does not replace. */
+ * itself; a model's file may draw it as a smooth surface through the same
+ * points (gl_fighter.c, extras.rb_cloth). */
 extern s32 port_FighterIsCloth(PortAddress node);
+
+/* The tiny model of the first-person view (model_tiny.c) as the last frame
+ * built drew it: `model_id` is its number (g_model_tiny_ids), or -1 where
+ * none was drawn; the bones are its fighter's, the view and the camera
+ * the figure's own (g_model_tiny_matrix), and the projection about the
+ * figure's corner of the screen. */
+extern const PortFighterView *port_GetFighterTinyView(void);
+/* Whether a node is a part of the tiny model's body, and not the weapon
+ * or the thing it holds. */
+extern s32 port_FighterIsTinyBody(PortAddress node);
 
 /* A new frame of primitives is about to be built (port_RemasterNewFrame):
  * what the frame before drew is forgotten. */

@@ -39,8 +39,9 @@ mods/
   picture").
 - Each folder of `mods/` is one mod. Its kinds of file are folders of
   their own: `textures/` (read and used), `models/` (the fighters'
-  `.glb` models, by the file's name on the disc, `M100.glb`, and the
-  weapons', by the weapon model's number, `W00.glb` to `W57.glb`: PORT.md,
+  `.glb` models, by the file's name on the disc, `M100.glb`, the
+  weapons', by the weapon model's number, `W00.glb` to `W57.glb`, and the
+  first-person view's tiny figures, `T00.glb` to `T26.glb`: PORT.md,
   "The fighters' own models"; `tools/fighter_hd.py` makes a whole mod of
   them, the hd mod, from your disc), `skies/` (a stage's sky, below),
   `music/` (`.ogg` and `.wav`: "Music"), `stages/` (any ending:

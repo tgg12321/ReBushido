@@ -33,7 +33,14 @@
  *     a texel is of a table. With it the game's own changes to those
  *     tables (a tint, a fade) reach the model (gl_fighter.c);
  *   - `extras.rb_weapon`: the file is a weapon's (enum WeaponModel), drawn
- *     on the weapon's world matrix, which every bone is given. */
+ *     on the weapon's world matrix, which every bone is given;
+ *   - `extras.rb_cloth`: the model's cloths, each `mesh` (its number among
+ *     the model file's meshes), `points` (how many vertices that mesh
+ *     has, which the game moves) and `faces` (each a list of three or four
+ *     of those vertices, round the face) with `uvs` (for each face its
+ *     corners' places in the texture, two numbers a corner). With it the
+ *     cloth is drawn as a smooth surface through the game's moving points
+ *     (gl_cloth.h) in place of the game's faces. */
 
 #include "common.h"
 
@@ -76,6 +83,22 @@ typedef struct {
     u8 *rgba;
 } PortFighterTexture;
 
+/* A cloth of the model (extras.rb_cloth): which of the model file's
+ * meshes it is, how many points the game moves it by (the mesh's
+ * vertices), and its faces as the game draws them, each a round of three
+ * or four of those points and their places in the texture. */
+#define PORT_FIGHTER_FILE_CLOTHS 5
+#define PORT_FIGHTER_FILE_CLOTH_FACES 64
+
+typedef struct {
+    s32 mesh;
+    s32 point_count;
+    s32 face_count;
+    s32 corners[PORT_FIGHTER_FILE_CLOTH_FACES];
+    s32 face[PORT_FIGHTER_FILE_CLOTH_FACES][4];
+    float uv[PORT_FIGHTER_FILE_CLOTH_FACES][4][2];
+} PortFighterFileCloth;
+
 typedef struct {
     s32 vertex_count;
     PortFighterVertex *vertices;
@@ -95,6 +118,9 @@ typedef struct {
     PortFighterTexture index;
     /* rb_weapon, or -1 */
     s32 weapon;
+    /* rb_cloth */
+    s32 cloth_count;
+    PortFighterFileCloth cloth[PORT_FIGHTER_FILE_CLOTHS];
 } PortFighterFile;
 
 /* Reads the file at `path`. NULL, or why it could not; what was read is

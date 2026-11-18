@@ -1061,9 +1061,12 @@ static void port_GlQuit(s32 code) {
 
         fprintf(stderr,
                 "gl run fighters loaded %u failed %u frames %u left_out %u "
-                "triangles %u tinted %u%s%s\n",
+                "triangles %u tinted %u cloths %u cloth_places %u "
+                "cloth_inside %u cloth_left_inside %u%s%s\n",
                 fighters->loaded, fighters->failed, fighters->frames,
                 fighters->left_out, fighters->triangles, fighters->tinted,
+                fighters->cloths, fighters->cloth_places,
+                fighters->cloth_inside, fighters->cloth_left_inside,
                 port_GlFighterProblem() != NULL ? " problem " : "",
                 port_GlFighterProblem() != NULL ? port_GlFighterProblem() : "");
     }
