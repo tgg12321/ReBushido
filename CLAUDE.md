@@ -131,6 +131,13 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   (address 0), the port's code is under `RB_PORT` with the console's
   value explained in a comment; the table is in `docs/PORT.md`,
   "Memory".
+- A new window setting is one entry of `src/port/window/settings_list.h`
+  (its member, value built in, `--help` comment, reader, menu row, all
+  from that one entry; `docs/PORT.md`, "Every setting is one entry of
+  one list"). Never add one by hand to `PortSettings`, `keymap.c` or
+  `choices.c`; what it does when changed in the menu goes in
+  `port_WindowApplyChoice`. Then `python3 tests/run.py --rebushido
+  port/settings`.
 - The game's state is saved, put back and hashed by `src/port/state.c`
   (`docs/NETPLAY.md`, "Save, load and hash"). A new port variable that
   is not the game's (picture, output, host, window) goes in a file of

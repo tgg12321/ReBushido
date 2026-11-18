@@ -88,7 +88,7 @@ enum {
 #define PORT_ASPECT_W_ORIGINAL 4
 #define PORT_ASPECT_H_ORIGINAL 3
 /* What the window the player runs shows the remastered picture at with
- * nothing said (src/port/window/keymap.c). The builds with no window of
+ * nothing said (src/port/window/settings_list.h). The builds with no window of
  * their own keep the console's shape, so that their picture can still be
  * held to the software GPU's pixel for pixel (tools/port_gl_prove.py). */
 #define PORT_ASPECT_W_WIDE 16
