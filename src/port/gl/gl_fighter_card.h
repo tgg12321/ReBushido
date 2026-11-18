@@ -50,15 +50,31 @@ extern u32 port_GlFighterCardFeetBuffer(s32 pose);
  * vertices sent once. NULL where there is no memory. */
 typedef struct PortGlCardCloth PortGlCardCloth;
 extern PortGlCardCloth *port_GlFighterCardCloth(const PortGlCloth *surface);
-/* The cloth through `points` (point_count of them, three numbers each,
- * in the world's units), kept out of pose `pose` by `gap` where
- * `is_held` (each point first, then each place of the surface), into
- * `out`: port_GlClothVertices PortGlClothVertex. Where `is_counting`, a
- * place kept out is looked at again for the count of those still inside
- * (port_GlFighterCardCounts). */
+/* Cloths made through the game's points, each `points` (its point_count
+ * of them, three numbers each, in the world's units) into `out`
+ * (port_GlClothVertices PortGlClothVertex), kept out of pose `pose` by
+ * `gap` where `is_held` (each point first, then each place of the
+ * surface). Where `is_counting`, a place kept out is looked at again for
+ * the count of those still inside (port_GlFighterCardCounts). The
+ * fighter's cloths are made together, each step for all of them at
+ * once: a step's barrier waits on the card. */
+typedef struct {
+    PortGlCardCloth *cloth;
+    const float *points;
+    u32 out;
+} PortGlCardHold;
+
 extern void port_GlFighterCardHold(
-    PortGlCardCloth *cloth, s32 pose, const float *points, double gap,
-    s32 is_held, s32 is_counting, u32 out);
+    const PortGlCardHold *holds, s32 count, s32 pose, double gap, s32 is_held,
+    s32 is_counting);
+/* While the game loads: the slot's poses given room for the model, and
+ * every program run once on its bind pose, with `holds` (the model's
+ * cloths, through points of nought, into buffers of the caller's): a
+ * first dispatch, and a buffer's first room, cost the fight's first
+ * frame some tens of milliseconds where they were not done before. */
+extern void port_GlFighterCardWarm(s32 slot, u32 vertex_buffer,
+                                   s32 vertex_count,
+                                   const PortGlCardHold *holds, s32 count);
 /* A buffer of `bytes` on the card for such a cloth, or 0. */
 extern u32 port_GlFighterCardBuffer(s32 bytes);
 /* The places of the cloths kept out that the game's cloth had inside the

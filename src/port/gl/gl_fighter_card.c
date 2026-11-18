@@ -301,13 +301,13 @@ static const char g_sort_text[] =
  * the model's body"): the processor's BODY_LOOK 2, BODY_FAR 100,
  * BODY_REACH 48 and 1.5 over the nearest, BODY_STEPS 4.
  *
- * **A group of 64 threads a point.** A point's sums walk some 27 cubes of
+ * **A group of 32 threads a point.** A point's sums walk some 27 cubes of
  * the body's vertices, a few thousand of them, ten times over (the
  * nearest and then the sum, for each of up to five steps out): done by
  * one thread a point, as the processor did it, each thread waited on
  * memory for every vertex in turn, and the few thousand places of a
  * frame's cloths took 34 ms of an RTX 3090. Here the group walks the
- * cubes together, each thread every 64th vertex of a cube, and the sums
+ * cubes together, each thread every 32nd vertex of a cube, and the sums
  * are added up by a fixed tree in shared memory: the same sums every
  * run, in another order than the processor's. Every decision is the
  * group's, from the summed values, so every thread takes the same path
@@ -318,24 +318,27 @@ static const char g_sort_text[] =
  * moves a few units, so mostly stays in its cube: the group copies those
  * cubes' vertices into shared memory once (CACHE of them at most, in the
  * walk's own order) and walks the copy until the point's cube changes.
- * A walk farther out, or of more vertices, reads the body itself. */
-#define CARD_GROUP_TEXT "layout(local_size_x = 64) in;\n"
+ * A walk farther out, or of more vertices, reads the body itself. The
+ * copy is three floats a vertex's place and three its normal, 512 of
+ * them: 12 KB, so that many groups fit on a multiprocessor at once (at
+ * 30 KB three did, and each waited on memory with nothing to run beside
+ * it). Some 0.5% of the places' 27 cubes hold more. */
+#define CARD_GROUP_TEXT "layout(local_size_x = 32) in;\n"
 #define CARD_BODY_TEXT                                                         \
     "layout(std430, binding = 1) readonly buffer Posed { vec4 posed[]; };\n"   \
     "layout(std430, binding = 2) readonly buffer Grid { int grid[]; };\n"      \
     "layout(std430, binding = 4) readonly buffer Order { int order[]; };\n"    \
     "layout(std430, binding = 8) buffer Counts { uint counts[]; };\n"          \
-    /* three floats each, in the 32 KB a group is sure of */                 \
-    "const int CACHE = 1200;\n"                                                 \
+    "const int CACHE = 512;\n"                                                 \
     "shared float s_place[CACHE * 3];\n"                                       \
     "shared float s_turn[CACHE * 3];\n"                                        \
     "shared int s_offset[28];\n"                                               \
     "shared int s_cached;\n"                                                   \
     "shared ivec3 s_at;\n"                                                     \
-    "shared float s_nearest[64];\n"                                            \
-    "shared float s_along[64];\n"                                              \
-    "shared vec3 s_normal[64];\n"                                              \
-    "shared float s_weight[64];\n"                                             \
+    "shared float s_nearest[32];\n"                                            \
+    "shared float s_along[32];\n"                                              \
+    "shared vec3 s_normal[32];\n"                                              \
+    "shared float s_weight[32];\n"                                             \
     "int cell(float x) { return int(floor(x / 64.0)); }\n"                     \
     "struct Sums { float nearest; float along; vec3 normal; float weight; };\n" \
     "float least(float a, float b) {\n"                                        \
@@ -373,7 +376,7 @@ static const char g_sort_text[] =
     "        for (int k = 0; k < 27; k++) {\n"                                 \
     "            int from = grid[4096 + cube_bucket(c, k)];\n"                 \
     "            int count = s_offset[k + 1] - s_offset[k];\n"                 \
-    "            for (int i = t; i < count; i += 64) {\n"                      \
+    "            for (int i = t; i < count; i += 32) {\n"                      \
     "                int v = order[from + i];\n"                               \
     "                int at = (s_offset[k] + i) * 3;\n"                        \
     "                vec3 place = posed[v * 2].xyz;\n"                         \
@@ -399,7 +402,7 @@ static const char g_sort_text[] =
     "    float reach2 = reach * reach;\n"                                      \
     "    if (look == 1 && (s_cached == -2 || s_at != c)) { cache_cubes(c); }\n" \
     "    bool is_cached = look == 1 && s_cached >= 0;\n"                       \
-    "    for (int i = t; is_cached && i < s_cached; i += 64) {\n"             \
+    "    for (int i = t; is_cached && i < s_cached; i += 32) {\n"             \
     "        vec3 m = vec3(s_turn[i * 3], s_turn[i * 3 + 1], s_turn[i * 3 + 2]);\n" \
     "        if (m == vec3(0.0)) { continue; }\n"                              \
     "        vec3 d = p - vec3(s_place[i * 3], s_place[i * 3 + 1],\n"          \
@@ -420,7 +423,7 @@ static const char g_sort_text[] =
     "        int b = int(((uint(x) * 73856093u) ^ (uint(y) * 19349663u)\n"     \
     "                     ^ (uint(z) * 83492791u)) & 4095u);\n"                \
     "        int to = grid[4096 + b + 1];\n"                                   \
-    "        for (int i = grid[4096 + b] + t; i < to; i += 64) {\n"            \
+    "        for (int i = grid[4096 + b] + t; i < to; i += 32) {\n"            \
     "            int v = order[i];\n"                                          \
     "            vec3 m = posed[v * 2 + 1].xyz;\n"                             \
     "            if (m == vec3(0.0)) { continue; }\n"                          \
@@ -443,7 +446,7 @@ static const char g_sort_text[] =
     "    s_normal[t] = normal;\n"                                              \
     "    s_weight[t] = weight;\n"                                              \
     "    barrier();\n"                                                         \
-    "    for (int half_of = 32; half_of > 0; half_of /= 2) {\n"                \
+    "    for (int half_of = 16; half_of > 0; half_of /= 2) {\n"                \
     "        if (t < half_of) {\n"                                             \
     "            s_nearest[t] = least(s_nearest[t], s_nearest[t + half_of]);\n" \
     "            s_along[t] += s_along[t + half_of];\n"                        \
@@ -758,6 +761,36 @@ s32 port_GlFighterCardPose(
     return at;
 }
 
+void port_GlFighterCardWarm(s32 slot, u32 vertex_buffer, s32 vertex_count,
+                            const PortGlCardHold *holds, s32 count) {
+    static float world[PORT_FIGHTER_FILE_JOINTS][16];
+    static float turn[PORT_FIGHTER_FILE_JOINTS][9];
+    s32 pose;
+    s32 i;
+
+    if (!g_card.is_started || slot < 0 || slot >= PORT_FIGHTER_SLOTS) {
+        return;
+    }
+    for (i = 0; i < PORT_FIGHTER_FILE_JOINTS; i++) {
+        world[i][0] = world[i][5] = world[i][10] = world[i][15] = 1.0f;
+        turn[i][0] = turn[i][4] = turn[i][8] = 1.0f;
+    }
+    /* every pose's room at the model's size */
+    for (i = 0; i < POSES_KEPT; i++) {
+        port_GlFighterCardRoom(&g_card.pose[slot * POSES_KEPT + i],
+                               vertex_count);
+    }
+    /* each program run once, on the bind pose: the driver makes a
+     * compute shader ready for the card at its first dispatch */
+    pose = port_GlFighterCardPose(
+        slot, 1, vertex_buffer, vertex_count, (const float(*)[16])world,
+        (const float(*)[9])turn);
+    port_GlFighterCardHold(holds, count, pose, 0.0, TRUE, FALSE);
+    for (i = 0; i < POSES_KEPT; i++) {
+        g_card.pose[slot * POSES_KEPT + i].key = 0;
+    }
+}
+
 u32 port_GlFighterCardFeetBuffer(s32 pose) {
     if (pose < 0 || pose >= POSE_SLOTS || g_card.pose[pose].key == 0) {
         return 0;
@@ -858,12 +891,13 @@ u32 port_GlFighterCardBuffer(s32 bytes) {
 }
 
 void port_GlFighterCardHold(
-    PortGlCardCloth *cloth, s32 pose, const float *points, double gap,
-    s32 is_held, s32 is_counting, u32 out) {
-    const PortGlClothSums *sums = &cloth->sums;
+    const PortGlCardHold *holds, s32 count, s32 pose, double gap, s32 is_held,
+    s32 is_counting) {
     const CardPose *body;
+    s32 i;
 
-    if (pose < 0 || pose >= POSE_SLOTS || g_card.pose[pose].key == 0) {
+    if (count <= 0 || pose < 0 || pose >= POSE_SLOTS ||
+        g_card.pose[pose].key == 0) {
         return;
     }
     body = &g_card.pose[pose];
@@ -871,33 +905,51 @@ void port_GlFighterCardHold(
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, body->posed);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, body->grid);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, body->order);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cloth->data);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, cloth->points);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, cloth->places);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, g_card.counts);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, out);
+    /* each step for every cloth, and one barrier after it: the cloths'
+     * own buffers are their own, so the card runs them side by side */
     glUseProgram(g_card.hold_points);
-    glUniform3fv(g_card.points_at_points, sums->point_count, points);
     glUniform1f(g_card.points_at_gap, (GLfloat)gap);
     glUniform1i(g_card.points_at_held, is_held);
-    glDispatchCompute((GLuint)sums->point_count, 1, 1);
+    for (i = 0; i < count; i++) {
+        const PortGlCardCloth *cloth = holds[i].cloth;
+
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, cloth->points);
+        glUniform3fv(g_card.points_at_points, cloth->sums.point_count,
+                     holds[i].points);
+        glDispatchCompute((GLuint)cloth->sums.point_count, 1, 1);
+    }
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     glUseProgram(g_card.hold_places);
-    glUniform1i(g_card.places_at_points, sums->point_count);
     glUniform1f(g_card.places_at_gap, (GLfloat)gap);
     glUniform1i(g_card.places_at_held, is_held);
     glUniform1i(g_card.places_at_counting, is_counting);
-    glDispatchCompute((GLuint)sums->place_count, 1, 1);
+    for (i = 0; i < count; i++) {
+        const PortGlCardCloth *cloth = holds[i].cloth;
+
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cloth->data);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, cloth->points);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, cloth->places);
+        glUniform1i(g_card.places_at_points, cloth->sums.point_count);
+        glDispatchCompute((GLuint)cloth->sums.place_count, 1, 1);
+    }
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     glUseProgram(g_card.vertices);
-    glUniform1i(g_card.vertices_at_count, sums->vertex_count);
-    glUniform1i(g_card.vertices_at_quads, cloth->quads_at);
-    glUniform1i(g_card.vertices_at_first, cloth->first_at);
-    glUniform1i(g_card.vertices_at_list, cloth->list_at);
-    glUniform1i(g_card.vertices_at_place, cloth->place_at);
-    glUniform1i(g_card.vertices_at_uv, cloth->uv_at);
-    glDispatchCompute(
-        port_GlFighterCardGroups(sums->vertex_count, GROUP), 1, 1);
+    for (i = 0; i < count; i++) {
+        const PortGlCardCloth *cloth = holds[i].cloth;
+
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, cloth->data);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, cloth->places);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, holds[i].out);
+        glUniform1i(g_card.vertices_at_count, cloth->sums.vertex_count);
+        glUniform1i(g_card.vertices_at_quads, cloth->quads_at);
+        glUniform1i(g_card.vertices_at_first, cloth->first_at);
+        glUniform1i(g_card.vertices_at_list, cloth->list_at);
+        glUniform1i(g_card.vertices_at_place, cloth->place_at);
+        glUniform1i(g_card.vertices_at_uv, cloth->uv_at);
+        glDispatchCompute(
+            port_GlFighterCardGroups(cloth->sums.vertex_count, GROUP), 1, 1);
+    }
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     glUseProgram(0);
     PORT_GPU_END();

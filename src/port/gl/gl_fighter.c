@@ -29,6 +29,7 @@
 #include "gl_light.h"
 #include "gl_load.h"
 #include "port_profile.h"
+#include "gl_shadow.h"
 #include "gl_stage.h"
 #include "port_fighter.h"
 #include "port_gpu.h"
@@ -1083,31 +1084,6 @@ static FighterModel *port_GlFighterTinyModel(s32 tiny) {
     return port_GlFighterLoad(&g_fighter.tiny_model[tiny], name);
 }
 
-void port_GlFighterPreload(void) {
-    s32 i;
-
-    if (!g_fighter.is_on || !g_fighter.is_started) {
-        return;
-    }
-    for (i = 0; i < PORT_FIGHTER_SLOTS; i++) {
-        s32 model_id = port_FighterLoadedModel(i);
-
-        if (model_id >= 0) {
-            port_GlFighterModel(model_id);
-            /* and its first-person view's figure, a small file */
-            port_GlFighterTinyModel(port_FighterLoadedTiny(i));
-        }
-    }
-    for (i = 0; i < WEAPON_FILES; i++) {
-        s32 weapon = port_FighterLoadedWeapon(i);
-
-        if (weapon < 0) {
-            break;
-        }
-        port_GlFighterWeaponModel(weapon);
-    }
-}
-
 /* ---- a frame ---- */
 
 void port_GlFighterNewFrame(void) {
@@ -1657,65 +1633,196 @@ static u64 port_GlFighterHeldKey(
     return hash != 0 ? hash : 1;
 }
 
+/* The slot's cloth kept out under `key`, of `count` vertices, or NULL. */
+static HeldCloth *port_GlFighterHeldFind(s32 slot, u64 key, s32 count) {
+    s32 i;
+
+    for (i = 0; i < HELD_KEPT; i++) {
+        HeldCloth *held = &g_held[slot][i];
+
+        if (held->key == key && held->count == count) {
+            return held;
+        }
+    }
+    return NULL;
+}
+
+/* Every smooth cloth of the view kept out of its posed body: those not
+ * kept yet made on the card together (gl_fighter_card.h). */
+static void port_GlFighterHoldView(
+    const FighterModel *model, const PortFighterView *view, s32 slot) {
+    static float points[PORT_FIGHTER_CLOTHS][PORT_FIGHTER_CLOTH_POINTS * 3];
+    PortGlCardHold holds[PORT_FIGHTER_CLOTHS];
+    HeldCloth *made[PORT_FIGHTER_CLOTHS];
+    u64 keys[PORT_FIGHTER_CLOTHS];
+    s32 places[PORT_FIGHTER_CLOTHS];
+    s32 count = 0;
+    s32 pose;
+    s32 i;
+    s32 k;
+
+    for (k = 0; k < view->cloth_count && count < PORT_FIGHTER_CLOTHS; k++) {
+        const PortFighterCloth *drawn = &view->cloth[k];
+        const FighterCloth *cloth = port_GlFighterClothFor(model, drawn);
+        PortGlClothSums sums;
+        HeldCloth *held;
+        u64 key;
+        s32 vertices;
+        s32 c;
+
+        if (cloth == NULL || cloth->card == NULL) {
+            continue;
+        }
+        key = port_GlFighterHeldKey(view, drawn);
+        vertices = port_GlClothVertices(cloth->surface);
+        if (port_GlFighterHeldFind(slot, key, vertices) != NULL) {
+            continue;
+        }
+        held = &g_held[slot][g_held_next[slot]];
+        g_held_next[slot] = (g_held_next[slot] + 1) % HELD_KEPT;
+        held->key = 0;
+        if (held->room < vertices) {
+            if (held->buffer != 0) {
+                glDeleteBuffers(1, &held->buffer);
+            }
+            held->room = 0;
+            held->buffer = port_GlFighterCardBuffer(
+                (s32)((size_t)vertices * sizeof(PortGlClothVertex)));
+            if (held->buffer == 0) {
+                continue;
+            }
+            held->room = vertices;
+        }
+        held->count = vertices;
+        /* a point is in 128ths of the world's unit (ClothPoint) */
+        for (i = 0; i < drawn->count; i++) {
+            for (c = 0; c < 3; c++) {
+                points[count][i * 3 + c] =
+                    (float)((double)drawn->point[i][c] / 128.0);
+            }
+        }
+        port_GlClothSums(cloth->surface, &sums);
+        holds[count].cloth = cloth->card;
+        holds[count].points = points[count];
+        holds[count].out = held->buffer;
+        made[count] = held;
+        keys[count] = key;
+        places[count] = sums.place_count;
+        count++;
+    }
+    if (count == 0) {
+        return;
+    }
+    pose = port_GlFighterPoseOnCard(model, view, slot);
+    if (pose < 0) {
+        return;
+    }
+    port_GlFighterCardHold(holds, count, pose, CLOTH_GAP,
+                           g_fighter.is_cloth_held, g_fighter.is_counting_cloth);
+    for (i = 0; i < count; i++) {
+        made[i]->key = keys[i];
+        g_fighter.counts.cloth_holds++;
+        g_fighter.counts.cloth_places += (u32)places[i];
+    }
+}
+
 /* The view's cloth `drawn` kept out of the posed body, in the world's
- * units: made on the card the first time it is asked for, and then read.
- * Its buffer, or 0. */
+ * units: made on the card the first time it is asked for, with the
+ * view's other cloths, and then read. Its buffer, or 0. */
 static GLuint port_GlFighterHeldCloth(
     const FighterModel *model, const FighterCloth *cloth,
     const PortFighterView *view, const PortFighterCloth *drawn, s32 slot) {
     u64 key = port_GlFighterHeldKey(view, drawn);
     s32 count = port_GlClothVertices(cloth->surface);
-    float points[PORT_FIGHTER_CLOTH_POINTS * 3];
-    PortGlClothSums sums;
-    HeldCloth *held;
-    s32 pose;
-    s32 i;
-    s32 k;
+    HeldCloth *held = port_GlFighterHeldFind(slot, key, count);
 
     if (cloth->card == NULL) {
         return 0;
     }
-    for (i = 0; i < HELD_KEPT; i++) {
-        held = &g_held[slot][i];
-        if (held->key == key && held->count == count) {
-            g_fighter.counts.cloth_reused++;
-            return held->buffer;
-        }
+    if (held != NULL) {
+        g_fighter.counts.cloth_reused++;
+        return held->buffer;
     }
-    held = &g_held[slot][g_held_next[slot]];
-    if (held->room < count) {
+    port_GlFighterHoldView(model, view, slot);
+    held = port_GlFighterHeldFind(slot, key, count);
+    return held != NULL ? held->buffer : 0;
+}
+
+/* A slot's room on the card made for its model while the game loads,
+ * and the card's programs run once (port_GlFighterCardWarm): the held
+ * cloths' buffers at the size of the model's largest cloth. */
+static void port_GlFighterWarm(const FighterModel *model, s32 slot) {
+    static const float points[PORT_FIGHTER_CLOTH_POINTS * 3];
+    PortGlCardHold holds[PORT_FIGHTER_FILE_CLOTHS];
+    s32 largest = 0;
+    s32 count = 0;
+    s32 i;
+
+    for (i = 0; i < model->cloth_count; i++) {
+        s32 vertices = port_GlClothVertices(model->cloth[i].surface);
+
+        largest = vertices > largest ? vertices : largest;
+    }
+    for (i = 0; i < HELD_KEPT && largest > 0; i++) {
+        HeldCloth *held = &g_held[slot][i];
+
+        if (held->room >= largest) {
+            continue;
+        }
         if (held->buffer != 0) {
             glDeleteBuffers(1, &held->buffer);
         }
+        held->key = 0;
         held->room = 0;
         held->buffer = port_GlFighterCardBuffer(
-            (s32)((size_t)count * sizeof(PortGlClothVertex)));
-        if (held->buffer == 0) {
-            return 0;
-        }
-        held->room = count;
-    }
-    held->key = 0;
-    held->count = count;
-    pose = port_GlFighterPoseOnCard(model, view, slot);
-    if (pose < 0) {
-        return 0;
-    }
-    g_fighter.counts.cloth_holds++;
-    /* a point is in 128ths of the world's unit (ClothPoint) */
-    for (i = 0; i < drawn->count; i++) {
-        for (k = 0; k < 3; k++) {
-            points[i * 3 + k] = (float)((double)drawn->point[i][k] / 128.0);
+            (s32)((size_t)largest * sizeof(PortGlClothVertex)));
+        if (held->buffer != 0) {
+            held->room = largest;
         }
     }
-    port_GlFighterCardHold(cloth->card, pose, points, CLOTH_GAP,
-                           g_fighter.is_cloth_held, g_fighter.is_counting_cloth,
-                           held->buffer);
-    port_GlClothSums(cloth->surface, &sums);
-    g_fighter.counts.cloth_places += (u32)sums.place_count;
-    held->key = key;
-    g_held_next[slot] = (g_held_next[slot] + 1) % HELD_KEPT;
-    return held->buffer;
+    for (i = 0; i < model->cloth_count; i++) {
+        if (model->cloth[i].card == NULL || g_held[slot][i].buffer == 0) {
+            continue;
+        }
+        holds[count].cloth = model->cloth[i].card;
+        holds[count].points = points;
+        holds[count].out = g_held[slot][i].buffer;
+        count++;
+    }
+    port_GlFighterCardWarm(
+        slot, model->buffer, model->vertex_count, holds, count);
+}
+
+void port_GlFighterPreload(void) {
+    static s32 warmed[PORT_FIGHTER_SLOTS];
+    s32 i;
+
+    if (!g_fighter.is_on || !g_fighter.is_started) {
+        return;
+    }
+    for (i = 0; i < PORT_FIGHTER_SLOTS; i++) {
+        s32 model_id = port_FighterLoadedModel(i);
+
+        if (model_id >= 0) {
+            const FighterModel *model = port_GlFighterModel(model_id);
+
+            if (model != NULL && warmed[i] != model_id + 1) {
+                port_GlFighterWarm(model, i);
+                port_GlShadowWarm();
+                warmed[i] = model_id + 1;
+            }
+            /* and its first-person view's figure, a small file */
+            port_GlFighterTinyModel(port_FighterLoadedTiny(i));
+        }
+    }
+    for (i = 0; i < WEAPON_FILES; i++) {
+        s32 weapon = port_FighterLoadedWeapon(i);
+
+        if (weapon < 0) {
+            break;
+        }
+        port_GlFighterWeaponModel(weapon);
+    }
 }
 
 /* The view's cloth `k` as a picture draws it: kept out of the body as its

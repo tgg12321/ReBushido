@@ -711,6 +711,44 @@ const char *port_GlShadowStart(void *(*getproc)(const char *name)) {
     return NULL;
 }
 
+void port_GlShadowWarm(void) {
+    static const float corners[18];
+    static GLuint pixel;
+    static GLuint framebuffer;
+
+    if (!g_shadow.is_started || pixel != 0) {
+        return;
+    }
+    glGenTextures(1, &pixel);
+    glBindTexture(GL_TEXTURE_2D, pixel);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA,
+                 GL_UNSIGNED_BYTE, NULL);
+    glGenFramebuffers(1, &framebuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    glFramebufferTexture2D(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, pixel, 0);
+    glViewport(0, 0, 1, 1);
+    glDisable(GL_BLEND);
+    glDisable(GL_SCISSOR_TEST);
+    glUseProgram(g_shadow.cast_program);
+    glBindVertexArray(g_shadow.cast_array);
+    glBindBuffer(GL_ARRAY_BUFFER, g_shadow.cast_buffer);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(corners), corners,
+                 GL_STREAM_DRAW);
+    /* one triangle of the game's faces, every corner at nought and so
+     * left out by the near plane; the models' kinds are branches of the
+     * same program */
+    glUniform1i(g_shadow.cast_at_kind, 0);
+    glUniform1f(g_shadow.cast_at_t, 0.0f);
+    glUniform4f(g_shadow.cast_at_project, 1.0f, 0.0f, 0.0f, 1.0f);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    g_shadow.sent_one = 0;
+    g_shadow.sent_two = 0;
+    port_GlForgetState();
+}
+
 /* The mask, as large as the colour buffer and in the same pixels, so
  * that nothing here has a coordinate of its own. It is asked for only
  * when a frame first has a shadow in it and `shadows soft` is on. */
