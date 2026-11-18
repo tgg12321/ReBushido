@@ -2549,7 +2549,7 @@ texture points the game never cut, and which tile the console showed in
 a strip depends on the camera, which no cut made once can follow.
 
 **What it is worth, measured.** The mesh held against itself with the
-test on and off (`--against nodepth`), four pictures of each of five
+test on and off (`--other nodepth`), four pictures of each of five
 stages: the terraced fields 0.83% of pixels, the purple cavern 0.20%, the
 parking lot 0.02%, the castle rooftop and the practice floor nothing at
 all. Of the terraced fields' 0.83%, 0.016% is black where the mesh

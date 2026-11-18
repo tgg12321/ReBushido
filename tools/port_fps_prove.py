@@ -7,6 +7,7 @@ nothing shown (docs/PORT.md, "Remastered", "More pictures a second").
             [--phases 5] [--scale 2] [--out build/fps] [--quick]
             [--bits 64,32] [--effects original|exact|smooth]
             [--smooth-light off|on] [--gpu llvmpipe|card]
+            [--against REV] [--store-baseline]
 
 For each play test's plan it runs build/port-gl/rebushido-gl with each
 game frame drawn as `--phases` pictures: the first the frame on show, the
@@ -35,6 +36,10 @@ Last it writes a strip of consecutive pictures of a fight, every phase
 of every frame, as PNGs, so that what a screen would show can be looked
 at. It prints what it measured; no emulator is started and no window is
 opened.
+
+`--against REV` holds what it measured, plan by plan, to the baseline
+stored for REV (main's, by tools/baseline.py --store) and prints what
+differs; `--store-baseline` keeps this run as the commit's.
 """
 import argparse
 import os
@@ -217,6 +222,9 @@ def main():
     import port_gl_prove as gl
 
     gl.add_gpu_option(ap)
+    import baseline
+
+    baseline.add_options(ap)
     args = ap.parse_args()
     global PROGRAM
     PROGRAM = gl.use_gpu(args.gpu)
@@ -230,8 +238,13 @@ def main():
     if problem:
         print('port-fps: %s' % problem)
         return 1
+    held = baseline.Baseline('port_fps_prove', args.gpu,
+                             {'phases': args.phases, 'scale': args.scale, 'stage_mesh': args.stage_mesh,
+                              'effects': args.effects, 'smooth_light': args.smooth_light}, args,
+                             [os.path.join('tests', 'play', name + '.toml') for name in plans])
     rows = []
     traces = []
+    units = {}
     for name in plans:
         folder = os.path.join(args.out, name)
         os.makedirs(folder, exist_ok=True)
@@ -241,6 +254,7 @@ def main():
                   '--plan', plan, '--out', folder, '--graphics', 'remastered',
                   '--stage-mesh', args.stage_mesh, '--effects', args.effects,
                   '--smooth-light', args.smooth_light]
+        started = time.time()
         print('%s: every frame drawn as %d pictures, at scale %d'
               % (name, args.phases, args.scale))
         seconds = run(common + ['--gl-scale', str(args.scale),
@@ -277,6 +291,10 @@ def main():
         off = trace_of(os.path.join(folder, 'trace_off%d.log' % bits))
         apart = [i for i, (x, y) in enumerate(zip(on, off)) if x != y]
         traces.append((name, bits, on == off and len(on) > 0, len(on), apart))
+        units[name] = dict(got, trace_on_is_off=on == off and len(on) > 0, trace_lines=len(on),
+                           trace=baseline.lines_hash(on), trace_apart=len(apart),
+                           unexplained_order=unexplained_order(name, got),
+                           pictures=baseline.pictures(folder, started))
     print()
     print('%-18s %7s %7s %8s %7s %7s %6s %7s %s'
           % ('plan', 'frames', 'checked', 'pictures', 'order', 'point',
@@ -351,6 +369,7 @@ def main():
               and got['checked'] > 0 for name, got in rows)
           and all(same or name == 'port_bugfixes'
                   for name, _, same, _, _ in traces))
+    held.finish(units)
     return 0 if ok else 1
 
 

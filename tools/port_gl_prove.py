@@ -5,7 +5,7 @@
     python3 tools/port_gl_prove.py --image "Bushido Blade 2 (USA).cue"
             [--plans port_game,port_other_fight,port_bugfixes]
             [--scale 4] [--every 400] [--out build/remaster] [--quick]
-            [--gpu llvmpipe|card]
+            [--gpu llvmpipe|card] [--against REV] [--store-baseline]
 
 For each play test's plan it runs build/port-gl/rebushido-gl twice:
 
@@ -33,6 +33,10 @@ software, the exact reference; `--gpu card` (the default on Windows,
 machine's own card. What it holds is the same on both: the traces, the
 flat screens' blocks and the fighters' places. The plans are written from tests/play/*.toml for this
 program's own addresses (tools/playtest.py writes them).
+
+`--against REV` holds what it measured, plan by plan, to the baseline
+stored for REV (main's, by tools/baseline.py --store) and prints what
+differs; `--store-baseline` keeps this run as the commit's.
 """
 import argparse
 import os
@@ -73,6 +77,11 @@ def use_gpu(gpu):
     """Makes `gpu` the one this module's runs draw on: its program, and
     the environment its child is given. Returns the program's path."""
     global PROGRAM, ENVIRONMENT
+    # beside other provers, never while a bench times (tools/card_lock.py):
+    # on llvmpipe too, which keeps every processor busy
+    import card_lock
+
+    card_lock.hold(False, 'the prover on %s' % gpu)
     PROGRAM = GPU_PROGRAMS[gpu]
     ENVIRONMENT = dict(os.environ)
     if gpu == 'llvmpipe':
@@ -213,6 +222,9 @@ def main():
     ap.add_argument('--out', default='build/remaster')
     ap.add_argument('--quick', action='store_true', help='the first plan only, and no pictures')
     add_gpu_option(ap)
+    import baseline
+
+    baseline.add_options(ap)
     args = ap.parse_args()
     use_gpu(args.gpu)
     problem = missing_program(args.gpu)
@@ -223,7 +235,10 @@ def main():
         print('port-gl: no %s: --image names your own image of the disc' % args.image)
         return 1
     plans = args.plans.split(',')[:1] if args.quick else args.plans.split(',')
+    held = baseline.Baseline('port_gl_prove', args.gpu, {'scale': args.scale, 'every': args.every}, args,
+                             [os.path.join('tests', 'play', name + '.toml') for name in plans])
     rows = []
+    units = {}
     for name in plans:
         folder = os.path.join(args.out, name)
         os.makedirs(folder, exist_ok=True)
@@ -232,6 +247,7 @@ def main():
         # and they go into the run's own folder, not the tree's root
         common = [command(PROGRAM), '--image', args.image, '--plan', plan,
                   '--out', folder]
+        started = time.time()
         print('%s: scale 1, as the console, comparing every picture' % name)
         seconds = run(common + ['--graphics', 'remastered', '--gl-scale', '1', '--gl-exact',
                                 '--gl-compare', '--gl-every', '20'],
@@ -259,6 +275,10 @@ def main():
         off = trace_of(os.path.join(folder, 'trace_off.log'))
         same = on == off and len(on) > 0
         rows.append((name, exact, same, len(on)))
+        units[name] = dict(exact, trace_on_is_off=same, trace_lines=len(on),
+                           trace=baseline.lines_hash(on), blocks_hold=blocks_hold(exact),
+                           fighters_hold=fighters_hold(exact),
+                           pictures=baseline.pictures(folder, started))
     print()
     print('%-18s %8s %9s %10s %8s %7s %8s %6s %s'
           % ('plan', 'blanks', 'pictures', 'pixels', 'differ', 'close', 'worst', 'us/f', 'trace on == off'))
@@ -291,6 +311,7 @@ def main():
     traces_agree = all(row[2] for row in rows)
     blocks_agree = all(blocks_hold(row[1]) for row in rows)
     fighters_agree = all(fighters_hold(row[1]) for row in rows)
+    held.finish(units)
     return 0 if traces_agree and blocks_agree and fighters_agree else 1
 
 

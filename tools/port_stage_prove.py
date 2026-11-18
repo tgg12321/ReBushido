@@ -6,8 +6,8 @@ tiles, stage by stage, with nothing shown (docs/PORT.md, "Remastered",
     python3 tools/port_stage_prove.py --image "Bushido Blade 2 (USA).cue"
             [--stages 0-37] [--scale 2] [--frames 4200] [--every 300]
             [--out build/stagemesh] [--pairs 2] [--distance max]
-            [--mesh every|on] [--against tiles|nodepth] [--mods FOLDER]
-            [--props] [--gpu llvmpipe|card]
+            [--mesh every|on] [--other tiles|nodepth] [--mods FOLDER]
+            [--props] [--gpu llvmpipe|card] [--against REV] [--store-baseline]
 
 Every stage the game can load is measured, 0 to 37: the 32 a fight can
 be set on, and the six the modes have of their own, which the menus
@@ -34,7 +34,7 @@ right round -- once with the mesh and once without, and reports:
 --mesh says what the run with the mesh is told: `every` draws it on
 whatever stage the run reaches, which is what measuring a stage needs,
 and `on` is what the player gets, which is how to check the table
-itself. --against says what the other run draws: `tiles` is the game's
+itself. --other says what the other run draws: `tiles` is the game's
 own ground, and `nodepth` is the mesh with the scene not held against
 its depth, which is how to see what that test alone changed.
 
@@ -53,6 +53,11 @@ by the same bar, into build/stageprops/ unless --out says, and the
 verdict's line is g_stage_props_proved's. Without it both runs leave
 the pieces to the game's primitives, so that what is measured is the
 ground alone.
+
+`--against REV` holds what it measured, stage by stage, to the baseline
+stored for REV (main's, by tools/baseline.py --store) and prints what
+differs; `--store-baseline` keeps this run as the commit's. (`--against
+tiles` and `--against nodepth` are still taken as --other's.)
 
 It needs the prover (tools/port_gl_build.py) and your own image of the
 disc. No check runs it: CI has no graphics card.
@@ -345,8 +350,7 @@ def main():
     # depth, which is how to see what that test alone changed --
     # the ground that veils a fighter, and nothing of his feet or
     # his shadow eaten by the ground they stand on.
-    ap.add_argument('--against', default='tiles',
-                    choices=('tiles', 'nodepth'))
+    ap.add_argument('--other', default='tiles', choices=('tiles', 'nodepth'))
     ap.add_argument('--out', default=None)
     # the stage's pieces, and not its ground (the module's words)
     ap.add_argument('--props', action='store_true')
@@ -354,7 +358,13 @@ def main():
     # pages is to hold the verdicts as the game's own textures do
     ap.add_argument('--mods', default=None)
     gl.add_gpu_option(ap)
+    import baseline
+
+    baseline.add_options(ap)
     args = ap.parse_args()
+    if args.against in ('tiles', 'nodepth'):
+        # what --other was called before the baselines
+        args.other, args.against = args.against, None
     if args.out is None:
         args.out = 'build/stageprops' if args.props else 'build/stagemesh'
     global PROGRAM
@@ -375,6 +385,11 @@ def main():
         else:
             stages.append(int(piece))
     stages = [s for s in stages if 0 <= s < remaster.ALL_STAGES]
+    held = baseline.Baseline(
+        'port_stage_prove' + ('-props' if args.props else ''), args.gpu,
+        dict((key, getattr(args, key)) for key in ('scale', 'tall', 'frames', 'every', 'distance', 'aspect',
+                                                   'from_blank', 'mesh', 'other', 'mods')), args)
+    units = {}
     os.makedirs(args.out, exist_ok=True)
     toml_path = remaster.write_tour(
         os.path.join(args.out, 'tour.toml'), args.frames, 20)
@@ -404,11 +419,11 @@ def main():
                 # mesh's in one run and the game's in the other
                 common += ['--stage-mesh', 'every', '--stage-props',
                            args.mesh if which == 'on' else 'off']
-            elif which == 'on' or args.against == 'nodepth':
+            elif which == 'on' or args.other == 'nodepth':
                 common += ['--stage-mesh', args.mesh, '--stage-props', 'off']
             else:
                 common += ['--stage-mesh', 'off', '--stage-props', 'off']
-            if which == 'off' and args.against == 'nodepth':
+            if which == 'off' and args.other == 'nodepth':
                 common += ['--stage-depth', 'off']
             if args.tall:
                 common += ['--gl-tall', str(args.tall)]
@@ -431,6 +446,13 @@ def main():
         row = {'stage': stage, 'name': STAGE_NAMES[stage], 'same_trace': same,
                'off': runs['off'], 'on': runs['on'], 'pixels': seen}
         rows.append(row)
+        units['%02d-%s' % (stage, STAGE_NAMES[stage])] = dict(
+            row, verdict=verdict_of(row),
+            trace=dict((which, baseline.file_hash(os.path.join(folder, which + '.log'))
+                        if os.path.exists(os.path.join(folder, which + '.log')) else None)
+                       for which in ('off', 'on')),
+            pictures=dict(('%s/%s' % (which, name), digest) for which in ('off', 'on')
+                          for name, digest in baseline.pictures(os.path.join(folder, which)).items()))
         print('%-24s trace %-5s  pictures %2d  differ %5.2f%%  '
               'patches %7d (%5.3f%%) worst %6d  holes %6d  filled %7d  '
               'vertices %6d -> %6d  %5.1f s -> %5.1f s'
@@ -466,6 +488,7 @@ def main():
                             else 'THE TILES: ' + why))
     print()
     print('port_stage_prove: %d stages; %s; %s' % (len(rows), table, said))
+    held.finish(units)
     return 0
 
 
