@@ -105,8 +105,37 @@ static s32 port_FighterWeaponModel(s32 place) {
     return -1;
 }
 
+/* A cloth of the slot's model is being drawn (render_DrawCloth): its
+ * points as the game has moved them, which are what it is drawn from. The
+ * mesh's first halfword is how many vertices it has, a point for each. */
+static void port_FighterNoteCloth(s32 slot, const SceneNode *node) {
+    PortFighterView *view = &g_views[slot];
+    const ClothPoint *points =
+        (const ClothPoint *)PTR(((const ModelNode *)node)->cloth_points);
+    const u16 *mesh =
+        (const u16 *)ADDR(g_reloc_tables[node->mesh_block][node->mesh]);
+    PortFighterCloth *cloth;
+    s32 i;
+    s32 k;
+
+    if (points == NULL || mesh == NULL ||
+        view->cloth_count >= PORT_FIGHTER_CLOTHS ||
+        mesh[0] > PORT_FIGHTER_CLOTH_POINTS) {
+        return;
+    }
+    cloth = &view->cloth[view->cloth_count++];
+    cloth->node = (PortAddress)node;
+    cloth->mesh = node->mesh;
+    cloth->count = mesh[0];
+    for (i = 0; i < cloth->count; i++) {
+        for (k = 0; k < 3; k++) {
+            cloth->point[i][k] = points[i].pos[k];
+        }
+    }
+}
+
 /* A fighter's own node (port_fighter.h): his body's root, which draws the
- * whole body, or a weapon. */
+ * whole body, a cloth, or a weapon. */
 void port_FighterNoteNode(PortAddress at) {
     const SceneNode *node = (const SceneNode *)at;
     s32 slot;
@@ -120,6 +149,11 @@ void port_FighterNoteNode(PortAddress at) {
         if (model != NULL && node == &model->bones[1].node &&
             node->kind == NODE_KIND_SKINNED) {
             port_FighterNoteBody(slot, model);
+            return;
+        }
+        if (model != NULL && node->kind == NODE_KIND_CLOTH &&
+            at >= (PortAddress)model && at < (PortAddress)(model + 1)) {
+            port_FighterNoteCloth(slot, node);
             return;
         }
     }
@@ -144,6 +178,7 @@ void port_FighterNewFrame(void) {
     g_serial++;
     for (slot = 0; slot < PORT_FIGHTER_SLOTS; slot++) {
         g_views[slot].model_id = -1;
+        g_views[slot].cloth_count = 0;
     }
     g_weapon_count = 0;
 }

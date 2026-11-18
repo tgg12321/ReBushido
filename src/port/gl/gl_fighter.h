@@ -93,6 +93,12 @@ typedef struct {
     u32 left_out;
     u32 triangles;
     u32 tinted; /* drawings whose colour tables the game had changed */
+    u32 cloths; /* cloths drawn smooth (gl_cloth.h) */
+    /* their surfaces' places, how many the game's moving had inside the
+     * model's body, and how many are inside it as drawn */
+    u32 cloth_places;
+    u32 cloth_inside;
+    u32 cloth_left_inside;
 } PortGlFighterCounts;
 
 extern const PortGlFighterCounts *port_GlFighterCounts(void);

@@ -12,7 +12,11 @@ skinned across thirteen bones (render_DrawSkinnedMesh), and the rigid parts
 the bones carry (the head's pieces, the hands, the feet), as one mesh skinned
 on the 21 bones of the skeleton every model shares (g_model_bones), with its
 textures decoded from the file's TIMs into one picture. The cloth, which the
-game moves itself (render_DrawCloth), and the shadows are not in it.
+game moves itself (render_DrawCloth), is not in the mesh: its faces, by the
+points the game moves, and their places in the same picture are in the
+file's extras (`rb_cloth`), from which the port draws it as a smooth
+surface through those points (src/port/gl/gl_cloth.h). The shadows are not
+in it.
 
 Nothing of the game is in this repository: the data is read from the image
 the player gives, and what is written goes into a folder git ignores. The
@@ -1015,6 +1019,12 @@ def read_model(nd, model_id, bones, scales, pose_path, samples_count):
         part_meshes.append((mesh, bone, verts, faces))
         for f in faces:
             atlas.note(f)
+    cloth_pieces = []
+    for mesh in sorted(cloth):
+        count, faces = read_cloth(b, mesh_at[mesh], problems)
+        cloth_pieces.append((mesh, count, faces))
+        for f in faces:
+            atlas.note(f)
     atlas.pack()
 
     def skin_normal(f, c):
@@ -1045,6 +1055,7 @@ def read_model(nd, model_id, bones, scales, pose_path, samples_count):
         'bind_translation': [[round(x, 4) for x in bind_pos[i]] for i in range(BONES)],
         'rb_palette': atlas.palette(),
         'parts': [[m, bone] for m, bone, _, _ in part_meshes],
+        'rb_cloth': [cloth_extras(atlas, mesh, count, faces) for mesh, count, faces in cloth_pieces],
     }
     # the terms are the game's own sum: held to it at the samples
     worst = 0.0
@@ -1200,6 +1211,51 @@ def export_data(md, out, bones, quiet=False):
               % (md.name, md.summary, nv, nt,
                  'ok' if not md.problems else '%d problems: %s' % (len(md.problems), '; '.join(md.problems[:5]))))
     return not md.problems
+
+
+# A cloth's groups by handler (render_DrawCloth, g_render_cloth_handlers):
+# the records are those of the faces drawn from both sides.
+CLOTH_KINDS = [6, 14, 22, 30]
+
+
+def read_cloth(b, at, problems):
+    """A cloth's mesh (render_DrawCloth): how many vertices it has, which
+    are the points the game moves in their order, and its faces, by those
+    points."""
+    count = u16(b, at)
+    cursor = at + 4 + 6 * count
+    cursor += cursor & 3
+    faces = []
+    while True:
+        n = u16(b, cursor)
+        if n == 0:
+            break
+        kind = CLOTH_KINDS[(u16(b, cursor + 2) >> 3) & 3]
+        cursor += 4
+        size, quad, corners_at, how, lit = COMPACT[kind]
+        for k in range(n):
+            o = cursor + k * size
+            f = Face()
+            f.tpage, f.clut, f.uvs = texture_words(b, o, quad)
+            f.verts = [b[o + corners_at + c] for c in range(4 if quad else 3)]
+            f.kind = kind
+            if max(f.verts) >= count:
+                problems.append('a cloth\'s face names point %d of %d' % (max(f.verts), count))
+                continue
+            faces.append(f)
+        cursor += n * size
+    return count, faces
+
+
+def cloth_extras(atlas, mesh, count, faces):
+    """A cloth as the file's extras.rb_cloth has it: its corners round each
+    face, and their places in the atlas."""
+    out = {'mesh': mesh, 'points': count, 'faces': [], 'uvs': []}
+    for f in faces:
+        order = corner_order(len(f.verts))
+        out['faces'].append([f.verts[c] for c in order])
+        out['uvs'].append([round(x, 7) for c in order for x in atlas.uv(f, c)])
+    return out
 
 
 def cloth_meshes(b, at):

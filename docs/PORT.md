@@ -4114,7 +4114,8 @@ game's state (`config/port_state.txt`).
 fighter that has a model of his own -- his body or a part of it, not his
 cloth, which the game moves itself, nor his shadow -- is left out, as the
 stage's tiles are for the ground's mesh. At the first of them in the
-frame the fighters are drawn together into a layer of their own with a
+frame the fighters are drawn together, with their cloths ("The cloth,
+smooth", below), into a layer of their own with a
 depth buffer of its own, skinned on the card (a joint's matrix is the
 game's world matrix of the bone times the file's inverse bind matrix),
 projected exactly as the coprocessor projects (the stage's mesh's
@@ -4126,10 +4127,11 @@ table's slots, as a fighter's own primitives are ("Depth: the scene is
 held against the ground"; a fighter's depth goes into the table shifted
 by three whatever his scale, `render_DrawSkinned`), and it writes its
 depth where the ground's is, so what the scene paints after it is held
-against him. His cloth is still the game's own faces, painted by the
+against him. A cloth that a model's file does not have (a file made
+before `rb_cloth`) is still the game's own faces, painted by the
 table after the layer and, as a fighter's own, not held to that depth:
 so it was painted over the model wherever it lay, and the back of
-Kannuki's hakama showed through his legs from the front. A cloth of a
+Kannuki's hakama showed through his legs from the front. Such a cloth of a
 fighter drawn from a model is now held against the layer's own depth,
 pixel by pixel (`port_GlFighterHolds`, `u_fighter_depth` in
 `gl_draw.c`), taken 8 units nearer than it is, which keeps it where it
@@ -4141,6 +4143,55 @@ the body: 646 of 16,384 cloth faces in `port_game`'s fight of
 `ROSTER_VICTIM` against `ROSTER_LAST_2`). In a picture between two frames (`gl_tween.c`) the bones
 and the camera are the two frames' mixed, the rotations made rotations
 again.
+
+**The cloth, smooth** (`src/port/gl/gl_cloth.c`). The game moves each
+cloth's few points itself (8 to 29 of them, `cloth.c`) and draws flat
+faces between them (`render_DrawCloth`). A model's file now carries each
+cloth's faces, by those points, with their places in its atlas
+(`extras.rb_cloth`, written by `fighter_export.py`, whose atlas takes the
+cloth's textures too). As the renderer comes to a cloth node
+`port_FighterNoteNode` writes its points down (`PortFighterCloth`, in
+128ths of a unit, as `ClothPoint` has them); the layer draws the cloth
+from them as a **Catmull-Clark surface**: the points are the control
+points, the faces are turned to agree, the subdivision is done three
+times (a triangle becomes 48 quads, a quad 64; the open hems are
+creases), and the surface is **fitted to pass through every point** (the
+inverse of the rows of the points' own places, worked out once when the
+file loads, so that each vertex of the surface is a fixed sum of the
+points). The texture points are carried linearly within each of the
+game's faces, so the texture lies as the game lays it, at the hd mod's
+resolution and with the colour tables' tints. It is lit as the body is
+(`NCS` of the surface's own normal, made each picture), from both sides
+as the game lights a cloth (the side that looks away by the normal turned
+round), held in the layer's depth with the body, and its depth against the
+scene taken nearer by what the game sorts a cloth's face nearer by
+(80 of the coprocessor's depth at the fighter's scale,
+`render_SidedDepth`), so that a hem on the ground is neither cut by the
+ground's slots nor painted over by the shadow under it. Between two frames
+each point is mixed between where the two frames have it. The game's own
+faces of such a cloth are left out; a cloth whose model has no file, or
+whose file has no `rb_cloth`, is the game's as before. `RB_HD_CLOTH=0` in
+the environment draws the game's faces for every cloth.
+
+**The cloth kept out of the body.** The game moved its cloth round its
+own low body; the model is fuller, and the cloth the game moved went into
+its hips and legs (the owner: "cloth can clip into the existing model").
+So each picture the model's body is posed on the CPU as the card poses it
+(the terms, and the normals turned by the joints), and every point of the
+cloth, and then every place of the subdivided surface, is put out of it
+to 5 units outside along the surface's normal there
+(`port_GlClothBodyHold`): a point's distance from the body is the sum of
+the body's vertices about it, each one's distance along its own normal,
+weighed by (1 - d²/r²)², r one and a half times the nearest vertex's
+distance and at least 48 units, found through a hashed grid of 64-unit
+cubes. The sum is smooth, so a point kept out moves smoothly from picture
+to picture, and in the pictures between frames the body is the mixed
+one. Nothing of it goes back to the game: its points, its collisions and
+its hitboxes are its own. `RB_HD_CLOTH_HOLD=0` draws the cloth as the game
+moved it, for measuring; the prover's log counts the surface's places, how
+many the game's cloth had inside the model's body and how many are inside
+it as drawn (`gl run fighters ... cloth_places cloth_inside
+cloth_left_inside`).
 
 **A joint as the game builds it.** The game makes a vertex of a joint as
 the sum of two bones' turns of two vectors, and its place by a third: a
@@ -4184,8 +4235,11 @@ fighter or a weapon drawn from a model of its own casts the model: each
 triangle of it, posed by its terms on the frame's bones, is slid onto the
 ground along the game's sun as the game's faces are, in the place of the
 game's faces of that thing (`port_GlFighterCaster`,
-`port_GlFighterCastTriangles`). Its cloth is still the game's and casts
-its own faces. A shadow between two frames moves each triangle the way
+`port_GlFighterCastTriangles`). A cloth drawn smooth casts with its
+fighter: `port_GlFighterCaster` gives a cloth node his slot, and the
+slot's triangles are the body's and then the smooth cloths', kept out of
+the body as they are drawn (`port_GlFighterCastCloths`); a cloth that is
+the game's own casts its own faces. A shadow between two frames moves each triangle the way
 it went, as before, found again by its number.
 
 **The file** (`src/port/gl/gl_fighter_file.h`): glTF 2.0 binary, one skin
@@ -4269,9 +4323,7 @@ faces), and the models are not darkened by them: what a model covers is
 marked in the shadows' mask as the game's faces are
 (`port_GlFighterDrawOccluders`).
 
-**What is not done.** The tiny mode's model; the cloth, which the game
-moves and draws itself, is still the game's own faces beside a smooth
-model; the order of a model against the game's own faces is per pixel,
+**What is not done.** The tiny mode's model; the order of a model against the game's own faces is per pixel,
 so a hakama's hem now hides the sandal it was painted under, and a
 sandal's sole that lies in the ground is cut by the ground's slots (both
 as before the hd mod); a texture a mod's model draws in a layout other

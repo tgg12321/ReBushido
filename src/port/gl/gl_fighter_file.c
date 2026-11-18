@@ -1051,6 +1051,67 @@ static const char *port_GltfTerms(
     return NULL;
 }
 
+/* extras.rb_cloth (gl_fighter_file.h): a cloth that does not read is left
+ * out, and the game's own faces are drawn for it. */
+static void port_GltfCloth(const Json *json, s32 extras, PortFighterFile *out) {
+    s32 list = port_JsonGet(json, extras, "rb_cloth");
+    s32 i;
+
+    out->cloth_count = 0;
+    if (list < 0 || json->token[list].kind != JSON_ARRAY) {
+        return;
+    }
+    for (i = 0; i < json->token[list].size &&
+                out->cloth_count < PORT_FIGHTER_FILE_CLOTHS;
+         i++) {
+        s32 item = port_JsonItem(json, list, i);
+        s32 faces = port_JsonGet(json, item, "faces");
+        s32 uvs = port_JsonGet(json, item, "uvs");
+        PortFighterFileCloth *cloth = &out->cloth[out->cloth_count];
+        s32 is_whole = TRUE;
+        s32 f;
+
+        if (faces < 0 || uvs < 0 || json->token[faces].kind != JSON_ARRAY ||
+            json->token[uvs].kind != JSON_ARRAY ||
+            json->token[faces].size <= 0 ||
+            json->token[faces].size > PORT_FIGHTER_FILE_CLOTH_FACES ||
+            json->token[uvs].size != json->token[faces].size) {
+            continue;
+        }
+        cloth->mesh = port_JsonInt(json, port_JsonGet(json, item, "mesh"), -1);
+        cloth->point_count =
+            port_JsonInt(json, port_JsonGet(json, item, "points"), 0);
+        cloth->face_count = json->token[faces].size;
+        for (f = 0; f < cloth->face_count && is_whole; f++) {
+            s32 face = port_JsonItem(json, faces, f);
+            s32 uv = port_JsonItem(json, uvs, f);
+            s32 n = face >= 0 ? json->token[face].size : 0;
+            s32 c;
+
+            if ((n != 3 && n != 4) || uv < 0 || json->token[uv].size != 2 * n) {
+                is_whole = FALSE;
+                break;
+            }
+            cloth->corners[f] = n;
+            for (c = 0; c < n; c++) {
+                cloth->face[f][c] =
+                    port_JsonInt(json, port_JsonItem(json, face, c), -1);
+                cloth->uv[f][c][0] = (float)port_JsonNumber(
+                    json, port_JsonItem(json, uv, 2 * c), 0.0);
+                cloth->uv[f][c][1] = (float)port_JsonNumber(
+                    json, port_JsonItem(json, uv, 2 * c + 1), 0.0);
+                if (cloth->face[f][c] < 0 ||
+                    cloth->face[f][c] >= cloth->point_count) {
+                    is_whole = FALSE;
+                }
+            }
+        }
+        if (is_whole && cloth->mesh >= 0) {
+            out->cloth_count++;
+        }
+    }
+}
+
 /* extras.rb_palette and extras.rb_weapon (gl_fighter_file.h). */
 static const char *port_GltfPalette(
     const Gltf *g, s32 extras, PortFighterFile *out) {
@@ -1069,6 +1130,7 @@ static const char *port_GltfPalette(
 
     out->weapon =
         port_JsonInt(json, port_JsonGet(json, extras, "rb_weapon"), -1);
+    port_GltfCloth(json, extras, out);
     if (cluts < 0 || colors < 0 || image < 0) {
         return NULL;
     }
