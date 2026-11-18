@@ -78,6 +78,44 @@ play is [`PLAYING.md`](PLAYING.md); online play is
    `src/port/window/` outside lint and count; the music a tenth louder
    than the emulator's; the original's bugs left alone (REBUSHIDO.md).
 
+## Faster iteration, for the start of the next session
+
+The owner's ask (2026-11-17): make development faster. In the order of
+what they buy for what they cost:
+
+1. **Build in WSL's own file system, not on `/mnt/c`.** Every build
+   compiles through the Windows drive, which is slow for thousands of
+   small files: a large part of the 3–4 minutes a port build takes. A
+   Linux-side copy synced from the repository typically builds 3–10
+   times faster.
+2. **A compiler cache (ccache)** for the Linux and the Windows cross
+   builds: most of a rebuild is files that did not change.
+3. **The owner's RTX 3090 for the picture provers.** Every prover and
+   headless screenshot runs on Mesa's software renderer, often 10–50
+   times slower than a card. WSL can reach the card through Mesa's D3D12
+   driver (`GALLIUM_DRIVER=d3d12`), or the Windows build can draw into a
+   hidden window on the card: prover runs in minutes, and numbers that
+   match what the owner sees.
+4. **No more merge conflicts in the same three places.** Nearly every
+   merge collided in the settings table (`src/port/window/choices.c` and
+   its groups), its built-in test list (`tests/port/settings.c`) and the
+   defaults in `keymap.c`. Each feature registering its own settings in
+   its own file ends most "merge main into your branch" round trips.
+5. **A "report a bug" key**: one press keeps the screenshot, the log's
+   last seconds, `rebushido.cfg`, the frame-time profile and the build
+   in one folder, so each report comes with what an agent needs.
+6. **Quick-boot in the window build** (`--fight STAGE FIGHTER FIGHTER`,
+   as the PlayStation build's quick-boot): straight into a fight, for
+   the owner and for agents.
+7. **A frame-time budget in the gate**, so a slowdown like run-ahead's
+   on 2026-11-17 is caught before it reaches the owner's copy (being
+   added with the run-ahead fix).
+8. **Main's baseline numbers cached per commit** (provers, profiles):
+   agents stop re-running main to compare against it.
+9. **Fewer heavy agents at once**: five agents building and running
+   provers on one machine starve each other; three focused ones may
+   finish sooner.
+
 ## The owner's decisions
 
 - Release 0.1 (tagging and publishing are the owner's).
