@@ -4359,7 +4359,8 @@ picture of the software GPU's from 2.71 to 0.11.
 window's build, the player's settings and the hd mod, the fight above,
 `--profile` with `run_ahead` 0, 1 and 2 side by side. It fails where,
 with nothing run ahead, the game, the software GPU, the sound and the
-cloth take more than 18 ms of a fight frame (about 13 here); where
+cloth take more than 30 ms of a fight frame (about 13 here alone, 23
+within the gate); where
 `run_ahead 1` costs more over `run_ahead 0` than a bare step of the game
 and the state kept and put back by more than 4 ms; where `run_ahead 2`
 costs more than twice `run_ahead 0`, or the cloth more than a fifth of
