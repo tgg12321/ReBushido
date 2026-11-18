@@ -2801,7 +2801,29 @@ pixels are theirs) -- and over a piece's pixels in neighbouring pictures
 the mean change of a pixel from one picture to the next (`churn`) and
 the second difference of three in a row (`jolt`: what moves smoothly
 has little of it, a corner that wobbles or a face held and then jumping
-a lot). JITTER
+a lot). Measured at blank 3,020 of the tour, eight blanks, at scale 2
+and 16 by 9 (1,704 by 960), the pieces from the game's primitives and
+from the mesh:
+
+| | churn | jolt | jumps (per 1,000 pixels) | primitives paired a frame |
+|---|---|---|---|---|
+| the lost bridge, nobody moving | 2.44 -> **1.44** | 5.00 -> **2.91** | 13.9 -> **6.9** | 909 -> 876 |
+| the lost bridge, the tour | 7.92 -> 7.74 | 14.94 -> 14.59 | 33.3 -> 32.0 | 909 -> 876 |
+| the building rooftop, nobody moving | 4.50 -> 4.64 | 8.71 -> 9.51 | 32.5 -> 36.2 | 931 -> 879 |
+| the building rooftop, the tour | 124.8 -> 119.4 | 175.0 -> 165.0 | 541 -> 513 | 928 -> 878 |
+
+Where the camera barely moves -- which is where jitter is seen -- the
+railings of the lost bridge change 41% less from picture to picture and
+have half as many jumps; in the difference of two pictures between
+frames, the top rail of the rooftop's railing moves as one line with the
+game's primitives and as the ground's own speckle with the mesh. What is
+left in the counts is not the pieces' corners: on the rooftop the
+measure is ruled by the city's lights behind the railing, a backdrop
+piece whose texture of single bright texels shimmers as any texture
+smaller than a pixel does, and by the camera itself, which is never
+quite still while the fighters stand; with the camera moving, the
+change of a pixel is the motion itself. Every trace of the three runs
+of each is the same.
 
 `stage_props_mesh` is **on with nothing said**, and needs the ground's
 mesh: where the ground is the game's tiles the pieces are too. A stage

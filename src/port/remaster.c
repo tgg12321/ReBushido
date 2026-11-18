@@ -964,6 +964,7 @@ static void port_RemasterPieceWas(PortPieceWas *was, const SceneNode *node) {
     was->world = node->world;
 }
 
+/* Whether the piece is still drawn by what it was taken down with. */
 static s32 port_RemasterPieceIsAsWas(
     const PortPieceWas *was, const SceneNode *node) {
     s32 i;

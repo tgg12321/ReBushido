@@ -795,6 +795,11 @@ static const char g_stage_fragment_text[] =
     "    if (u_occluding != 0) {\n"
     "        uint kept = texelFetch(u_slots, ivec2(gl_FragCoord.xy), 0).r;\n"
     "        if ((v_info.w & 1u) == 0u || kept != uint(v_slot)) { discard; }\n"
+    /* a face that lies level, within 30 degrees, is floor a fighter may
+     * stand on, and the shadows fall on it as on the ground
+     * (gl_shadow.c, port_GlShadowIsFloor) */
+    "        vec3 level = normalize(v_normal);\n"
+    "        if (abs(level.y) >= 0.866) { discard; }\n"
     "    }\n"
     /* The depth is kept as it is and not as the card's own divide
      * leaves it: a ground seen almost edge on reaches to the far end of
