@@ -171,8 +171,24 @@ What is still done on the processor, in the order I would move it:
    step, the mixing need not.
 4. **The state kept and put back** (2.4 ms a boundary on his PC): 10 MB
    copied twice; only the pages written since could be.
-5. **The owner's "orange flashes"**: not reproduced headless; vsync stays
-   on in his logs now. An F12 picture of one is what is needed.
+5. ~~The owner's "orange flashes"~~: found on his card and fixed
+   (docs/PORT.md, "The orange flashes": an effect the chip leaves out,
+   drawn by its true places).
+
+Done since (docs/PORT.md, "A mod's pictures, read beside the game"): a
+mod's pictures are read and decoded on threads beside the game; the
+stage's pages are no longer looked up again at every picture (a sixth
+of the processor in a fight); the cloth's hold and the body's posing
+for the cloth and the shadows are shared out among four threads. A
+fight frame with the HD fighters, cast shadows and `run_ahead 2` went
+from 39 ms to 28 ms of the window's thread on the owner's card; the
+time let go from 107 to 53 times in the fight's run, and 0 with his
+own settings. Still to do, in order: the cast shadows from the skinned
+mesh on the card (items 1 above; 3.6 ms), the cloth on the card (2;
+3.6 ms of wall-clock time even shared out), and the card's own work
+(the swap waits 3 ms in a fight frame: timer queries will say which
+pass). The sound queue (58 ms) was left: with the hitches gone it runs
+out far less, and a longer one is a later sound.
 
 `tools/port_budget.py` (run alone at the gate's end) holds the
 processor's share; it cannot see the card's.
