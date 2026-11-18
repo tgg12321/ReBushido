@@ -27,6 +27,7 @@
 #include <string.h>
 
 #include "common.h"
+#include "gl_load.h"
 #include "gl_scene.h"
 #include "port_gpu.h"
 #include "port_host.h"
@@ -147,6 +148,9 @@ PORT_GL_SCENE_FUNCTIONS
 /* the folder of the dump the pages are written into */
 #define DUMP_PAGES "pages"
 
+/* what a layer holds */
+enum { LAYER_READING = 0, LAYER_READY, LAYER_FAILED };
+
 typedef struct {
     s16 page_x;
     s16 page_y;
@@ -155,7 +159,8 @@ typedef struct {
     s16 base_x; /* ... and where its colours are as the stage loaded it */
     s16 base_y;
     s16 bits;
-    s16 is_stale; /* written over since: looked up again next frame */
+    s16 is_stale;   /* written over since: looked up again next frame */
+    s16 is_waiting; /* its picture is being read (gl_load.h) */
     u64 key;
     const char *path; /* a mod's picture of it, or NULL */
 } Looked;
@@ -176,7 +181,12 @@ static struct {
     s32 capacity;      /* layers the array has room for */
     s32 layer_count;
     u64 layer_keys[LAYERS_MAX];
-    u16 *base_rows; /* the bases, LAYERS_MAX rows of COLORS_MAX */
+    s8 layer_state[LAYERS_MAX]; /* LAYER_... */
+    /* one more each time the layers are forgotten: a picture read for
+     * one before is not put in */
+    u32 generation;
+    s32 is_full_said; /* the stage's pages filled the array, said once */
+    u16 *base_rows;   /* the bases, LAYERS_MAX rows of COLORS_MAX */
     Looked *looked;
     s32 looked_count;
     s32 has_stale;
@@ -223,6 +233,7 @@ const char *port_GlSceneStart(void *(*getproc)(const char *name)) {
     g_scene.bases = 0;
     g_scene.capacity = 0;
     g_scene.layer_count = 0;
+    g_scene.generation++;
     /* the stage's textures read again into the new tables */
     g_scene.version = VERSION_NONE;
     g_scene.is_started = TRUE;
@@ -331,6 +342,7 @@ static s32 port_GlSceneMakeArray(s32 side, s32 layers) {
         glDeleteTextures(1, &g_scene.pages);
         g_scene.pages = 0;
     }
+    g_scene.generation++;
     g_scene.side = side;
     g_scene.capacity = layers;
     /* down to a quarter of the game's texel: a picture of four times the
@@ -420,82 +432,120 @@ static void port_GlSceneHalve(const u8 *from, s32 side, u8 *to) {
     }
 }
 
-/* The mod's picture at `path` into layer `layer`, every level of it. */
-static s32 port_GlSceneLoad(const char *path, const char *name, s32 layer) {
-    char problem[TEXT_SIZE / 4];
-    PortPngInfo info;
-    u32 size = port_ModFileSize(path);
-    u8 *file = size > 0 ? malloc(size) : NULL;
-    u8 *work = NULL;
-    u8 *rgba = NULL;
-    u8 *level_pixels = NULL;
-    s32 is_loaded = FALSE;
+/* On the thread that reads it (gl_load.h): the picture made the array's
+ * size, and every level of it below, one after another. */
+static s32 port_GlScenePrepare(PortGlLoad *load) {
+    s32 side = load->side;
+    size_t bytes = 0;
+    u8 *levels;
+    u8 *now;
+    s32 level;
+    s32 size;
+
+    for (level = 0, size = side; level < load->levels; level++, size >>= 1) {
+        bytes += (size_t)size * (size_t)size * RGBA;
+    }
+    levels = malloc(bytes);
+    if (levels == NULL) {
+        snprintf(load->problem, sizeof(load->problem), "no memory for it");
+        return FALSE;
+    }
+    if (load->w == side && load->h == side) {
+        memcpy(levels, load->pixels, (size_t)side * side * RGBA);
+    } else {
+        port_GlSceneResize(load->pixels, load->w, load->h, levels, side);
+    }
+    for (level = 0, now = levels, size = side; level + 1 < load->levels;
+         level++, size >>= 1) {
+        u8 *next = now + (size_t)size * size * RGBA;
+
+        port_GlSceneHalve(now, size, next);
+        now = next;
+    }
+    free(load->pixels);
+    load->pixels = levels;
+    return TRUE;
+}
+
+static void port_GlSceneEnter(Looked *one);
+
+/* A page's picture read, put into its layer, every level of it; and each
+ * page and table that waited for it given it. Nothing where the layers
+ * have been forgotten since it was asked for. */
+static void port_GlSceneLoaded(PortGlLoad *load) {
+    const char *name = load->owner != NULL ? (const char *)load->owner : "?";
+    s32 layer = load->tag;
     s32 level;
     s32 side;
-    u32 i;
+    s32 i;
 
-    problem[0] = 0;
-    if (file == NULL || port_ModReadFile(path, file, size) != size) {
-        snprintf(problem, sizeof(problem), "it cannot be read");
-    } else if (port_PngMeasure(file, size, &info, problem, sizeof(problem))) {
-        work = malloc(info.work_bytes);
-        rgba = malloc((size_t)info.w * (size_t)info.h * RGBA);
-        level_pixels =
-            malloc((size_t)g_scene.side * (size_t)g_scene.side * RGBA * 2);
-        if (work == NULL || rgba == NULL || level_pixels == NULL) {
-            snprintf(problem, sizeof(problem), "no memory for it");
-        } else if (
-            port_PngDecode(file, size, work, rgba, problem, sizeof(problem))) {
-            u8 *now = level_pixels;
-            u8 *next =
-                level_pixels + (size_t)g_scene.side * g_scene.side * RGBA;
+    if (load->generation != g_scene.generation || g_scene.pages == 0 ||
+        layer >= g_scene.layer_count ||
+        g_scene.layer_keys[layer] != load->key ||
+        g_scene.layer_state[layer] != LAYER_READING) {
+        free(load->owner);
+        load->owner = NULL;
+        return;
+    }
+    if (load->is_loaded) {
+        const u8 *now = load->pixels;
 
-            /* kept multiplied by their alpha, so that smoothing a clear
-             * texel into the next does not darken it; the shader divides
-             * them out again */
-            for (i = 0; i < (u32)info.w * (u32)info.h * RGBA; i += RGBA) {
-                rgba[i] = (u8)(rgba[i] * rgba[i + 3] / BYTE_MAX);
-                rgba[i + 1] = (u8)(rgba[i + 1] * rgba[i + 3] / BYTE_MAX);
-                rgba[i + 2] = (u8)(rgba[i + 2] * rgba[i + 3] / BYTE_MAX);
-            }
-            if (info.w == g_scene.side && info.h == g_scene.side) {
-                memcpy(now, rgba, (size_t)g_scene.side * g_scene.side * RGBA);
-            } else {
-                port_GlSceneResize(rgba, info.w, info.h, now, g_scene.side);
-            }
-            glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_PAGES_UNIT);
-            glBindTexture(GL_TEXTURE_2D_ARRAY, g_scene.pages);
-            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            for (level = 0, side = g_scene.side; level < g_scene.levels;
-                 level++, side >>= 1) {
-                u8 *swap;
+        glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_PAGES_UNIT);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, g_scene.pages);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        for (level = 0, side = g_scene.side; level < g_scene.levels; level++,
+            side >>= 1) {
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, level, 0, 0, layer, side, side,
+                            1, GL_RGBA, GL_UNSIGNED_BYTE, now);
+            now += (size_t)side * side * RGBA;
+        }
+        glPixelStorei(GL_UNPACK_ALIGNMENT, RGBA);
+        glActiveTexture(GL_TEXTURE0);
+        g_scene.loaded++;
+        g_scene.layer_state[layer] = LAYER_READY;
+        port_GlSceneSay("mods: texture %s is %s (%dx%d)", name, load->path,
+                        load->w, load->h);
+    } else {
+        g_scene.layer_state[layer] = LAYER_FAILED;
+        port_GlSceneSay("mods: texture %s: %s is not used: %s", name,
+                        load->path, load->problem);
+    }
+    free(load->owner);
+    load->owner = NULL;
+    for (i = 0; i < g_scene.looked_count; i++) {
+        Looked *one = &g_scene.looked[i];
 
-                glTexSubImage3D(GL_TEXTURE_2D_ARRAY, level, 0, 0, layer, side,
-                                side, 1, GL_RGBA, GL_UNSIGNED_BYTE, now);
-                if (level + 1 < g_scene.levels) {
-                    port_GlSceneHalve(now, side, next);
-                    swap = now;
-                    now = next;
-                    next = swap;
-                }
-            }
-            glPixelStorei(GL_UNPACK_ALIGNMENT, RGBA);
-            glActiveTexture(GL_TEXTURE0);
-            is_loaded = TRUE;
-            g_scene.loaded++;
-            port_GlSceneSay(
-                "mods: texture %s is %s (%dx%d)", name, path, info.w, info.h);
+        if (one->is_waiting && one->key == load->key) {
+            port_GlSceneEnter(one);
         }
     }
-    if (!is_loaded) {
-        port_GlSceneSay(
-            "mods: texture %s: %s is not used: %s", name, path, problem);
+}
+
+/* The mod's picture at `path` asked for, for layer `layer`: read beside
+ * the game, or at once where it cannot be (gl_load.h). */
+static void port_GlSceneLoad(const char *path, const char *name, s32 layer) {
+    PortGlLoad load;
+    size_t length = strlen(name) + 1;
+
+    memset(&load, 0, sizeof(load));
+    load.path = path;
+    load.prepare = port_GlScenePrepare;
+    load.done = port_GlSceneLoaded;
+    load.key = g_scene.layer_keys[layer];
+    load.tag = layer;
+    load.side = g_scene.side;
+    load.levels = g_scene.levels;
+    load.generation = g_scene.generation;
+    load.owner = malloc(length);
+    if (load.owner == NULL) {
+        g_scene.layer_state[layer] = LAYER_FAILED;
+        return;
     }
-    free(file);
-    free(work);
-    free(rgba);
-    free(level_pixels);
-    return is_loaded;
+    memcpy(load.owner, name, length);
+    if (!port_GlLoadAsk(&load)) {
+        free(load.owner);
+        g_scene.layer_state[layer] = LAYER_FAILED;
+    }
 }
 
 /* How large the array's pictures are: the first picture's own width, made
@@ -687,20 +737,31 @@ static s32 port_GlSceneLayerOf(u64 key, const char *path, const char *name) {
 
     for (i = 0; i < g_scene.layer_count; i++) {
         if (g_scene.layer_keys[i] == key) {
-            return i;
+            return g_scene.layer_state[i] == LAYER_FAILED ? -1 : i;
         }
     }
     if (g_scene.layer_count >= g_scene.capacity) {
-        port_GlSceneSay("mods: texture %s: no room for more than %d pages of "
-                        "one stage",
-                        name, g_scene.capacity);
+        /* said once a stage: a page the game writes again and again (a
+         * stage's water) is a new key each time */
+        if (!g_scene.is_full_said) {
+            g_scene.is_full_said = TRUE;
+            port_GlSceneSay("mods: texture %s: no room for more than %d "
+                            "pages of one stage (said once a stage)",
+                            name, g_scene.capacity);
+        }
         return -1;
     }
-    if (!port_GlSceneLoad(path, name, g_scene.layer_count)) {
+    i = g_scene.layer_count++;
+    g_scene.layer_keys[i] = key;
+    g_scene.layer_state[i] = LAYER_READING;
+    port_GlSceneLoad(path, name, i);
+    if (g_scene.layer_state[i] == LAYER_FAILED &&
+        i == g_scene.layer_count - 1) {
+        /* read at once and of no use: the layer is the next one's */
+        g_scene.layer_count--;
         return -1;
     }
-    g_scene.layer_keys[g_scene.layer_count] = key;
-    return g_scene.layer_count++;
+    return g_scene.layer_state[i] == LAYER_FAILED ? -1 : i;
 }
 
 /* The entry of the lookup table for a page and a table whose key has been
@@ -718,6 +779,12 @@ static void port_GlSceneEnter(Looked *one) {
     port_TexturePageKeyName(one->key, &page, name, sizeof(name));
     if (one->path != NULL && g_scene.pages != 0) {
         layer = port_GlSceneLayerOf(one->key, one->path, name);
+    }
+    /* a picture still being read: the game's own page until it is in
+     * (port_GlSceneLoaded enters it again) */
+    one->is_waiting = layer >= 0 && g_scene.layer_state[layer] == LAYER_READING;
+    if (one->is_waiting) {
+        layer = -1;
     }
     if (layer >= 0) {
         u16 *row = &g_scene.base_rows[layer * COLORS_MAX];
@@ -812,6 +879,7 @@ static s32 port_GlSceneAdd(
     one->base_y = (s16)base_y;
     one->bits = (s16)bits;
     one->is_stale = FALSE;
+    one->is_waiting = FALSE;
     one->key = 0;
     one->path = NULL;
     if (is_now) {
@@ -894,6 +962,8 @@ static void port_GlSceneReadStage(void) {
     glActiveTexture(GL_TEXTURE0);
     g_scene.looked_count = 0;
     g_scene.layer_count = 0;
+    g_scene.generation++;
+    g_scene.is_full_said = FALSE;
     g_scene.has_stale = FALSE;
     port_GlSceneOwn(textures, count);
     for (i = 0; i < count; i++) {
@@ -994,7 +1064,35 @@ static s32 port_GlSceneMeets(
     return x < x2 + w2 && x2 < x + w && y < y2 + h2 && y2 < y + h;
 }
 
+/* Whether the rectangle holds any pixel that is the stage's own: a page's
+ * key is made of those alone (port_TexturePageKey, `own`), so a write of
+ * none of them (the fog's colour tables, a line at a time every frame,
+ * which lie inside the pages' rectangles) cannot change it. Looking the
+ * pages up again for those writes was a sixth of the processor's time in
+ * a fight on the owner's PC (2026-11-18). */
+static s32 port_GlSceneWritesOwn(s32 x, s32 y, s32 w, s32 h) {
+    s32 right = x + w < PORT_VRAM_WIDTH ? x + w : PORT_VRAM_WIDTH;
+    s32 bottom = y + h < PORT_VRAM_HEIGHT ? y + h : PORT_VRAM_HEIGHT;
+    s32 i;
+    s32 j;
+
+    if (x < 0 || y < 0 || w <= 0 || h <= 0) {
+        return TRUE;
+    }
+    for (j = y; j < bottom; j++) {
+        const u8 *row = g_scene.own + j * PORT_VRAM_WIDTH;
+
+        for (i = x; i < right; i++) {
+            if (row[i] != 0) {
+                return TRUE;
+            }
+        }
+    }
+    return FALSE;
+}
+
 void port_GlSceneWroteVram(s32 x, s32 y, s32 w, s32 h) {
+    s32 writes_own = -1; /* not yet asked */
     s32 i;
 
     if (g_scene.looked == NULL) {
@@ -1008,9 +1106,12 @@ void port_GlSceneWroteVram(s32 x, s32 y, s32 w, s32 h) {
         if (one->is_stale) {
             continue;
         }
-        if (port_GlSceneMeets(x, y, w, h, one->page_x, one->page_y,
-                              port_TexturePagePixel(&page, PORT_MOD_PAGE_SIDE),
-                              PORT_MOD_PAGE_SIDE) ||
+        if ((port_GlSceneMeets(x, y, w, h, one->page_x, one->page_y,
+                               port_TexturePagePixel(&page, PORT_MOD_PAGE_SIDE),
+                               PORT_MOD_PAGE_SIDE) &&
+             (writes_own >= 0
+                  ? writes_own
+                  : (writes_own = port_GlSceneWritesOwn(x, y, w, h)))) ||
             port_GlSceneMeets(
                 x, y, w, h, one->base_x, one->base_y,
                 one->bits == PORT_MOD_TEXELS_4 ? COLORS_4 : COLORS_MAX, 1)) {

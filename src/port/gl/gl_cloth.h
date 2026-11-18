@@ -52,12 +52,15 @@ extern s32 port_GlClothTriangles(const PortGlCloth *cloth);
 extern const u32 *port_GlClothIndices(const PortGlCloth *cloth);
 
 /* What a place of the surface is held by before its normal is made (the
- * body it must stay out of, below), or NULL. */
-typedef void (*PortGlClothHold)(void *context, double *place);
+ * body it must stay out of, below), or NULL. The places are shared out
+ * among the helpers (port_GlParallel, gl_load.h): `worker` names which
+ * one holds this place, for room of the hold's own that only it uses. */
+typedef void (*PortGlClothHold)(void *context, double *place, s32 worker);
 
 /* The surface through `points` (three numbers each, any units) into `out`,
  * port_GlClothVertices of them; each of its places given to `hold` first
- * where there is one. */
+ * where there is one, the places shared out among the helpers (each
+ * place its own work, so the same to the bit). */
 extern void port_GlClothPose(
     const PortGlCloth *cloth, const double *points, PortGlClothHold hold,
     void *context, PortGlClothVertex *out);
@@ -88,5 +91,9 @@ extern s32 port_GlClothBodySet(PortGlClothBody *body, const float *places,
  * inside the body's surface. */
 extern s32 port_GlClothBodyHold(
     const PortGlClothBody *body, double *point, double gap);
+/* ... by helper `worker` (port_GlParallel), which may run beside the
+ * others. */
+extern s32 port_GlClothBodyHoldBy(
+    const PortGlClothBody *body, double *point, double gap, s32 worker);
 
 #endif /* PORT_GL_CLOTH_H */

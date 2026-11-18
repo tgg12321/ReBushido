@@ -4281,13 +4281,122 @@ one is shown (0.4 ms a blank). The geometry shader of a flat polygon
 runs for every batch, the scene's too, where it passes the triangle
 through; a program without it for the scene would halve Mesa's cost
 and is nothing on a real card, and was left. A mod's textures are
-decoded when they are first drawn: the top menu's thirteen English
-textures took about 10 ms each here (4 of them reading the file through
-WSL, 1.3 decoding, the rest Mesa's mipmaps), and the HD fighters about
-half a second, which was at the fight's first frame and is now during
-the load before it ("Quick loading"). On the owner's machine both are a
-fraction of that, and both are a single hitch where the picture changes
-anyway.
+read beside the game (below, "A mod's pictures, read beside the
+game"); the HD fighters' models are read during the load before a
+fight ("Quick loading").
+
+### A mod's pictures, read beside the game
+
+**What the owner saw** (2026-11-18, his log, `fighter_models off`,
+`run_ahead 2`, vsync off): the time let go 54 times in 150 seconds,
+many of them as an `art` texture was decoded at its first use in a
+fight, and the sound running out 111 times. Measured on his card
+(`--hidden`, his settings, `port_budget.py`'s fight; the program's
+own `--profile`), a blank's part `remaster` went to 50 to 320 ms where a
+picture of the `art` or `stages-hd` mod was first drawn: the file read,
+the PNG decoded, its colours multiplied by its alpha and, for a page of
+the stage, made the array's size with every level below it, all on the
+thread that draws.
+
+**Now** (`src/port/gl/gl_load.c`): a picture asked for is read and
+decoded on threads the window lends (a quarter of the processors, two
+to six: SDL's, `port_LendThreads`), and handed back to the thread that
+draws at the next frame's start (`port_GlLoadCollect`, at most 32 MB a
+frame), which sends it to the card. Until then the face draws what it
+would with no mod, the game's own texture: a picture read at first use
+comes a frame or two late, and nothing waits for a file. The stage's
+pages are asked for as the stage loads, as before; each waits in its
+layer (`LAYER_READING`) and the pages and tables that name it are
+entered again when it is in. A context made again forgets every key
+and the generation of the stage's layers, and what was asked for
+before is not put in. The fades (`gl_replace.c`) keep a replacement's
+key with its texture, which is filled in when it is read.
+
+The build without a window (the provers) lends no threads, and
+`RB_TEXTURES_AT_ONCE=1` takes them away from the window's: then a
+picture is read where it is asked for, as before, the same pictures to
+the byte.
+
+**The stage's pages looked up again for nothing.** A page of the stage
+is looked up again (its key over all of its 65,536 texels) when the
+game writes over it. Two things that put video memory back as it was
+told it so as well: every picture between two frames giving back what
+it wrote (`port_TweenGiveVramBack`, a rectangle of 784 by 488), and,
+with frames run ahead, the whole of video memory sent to the card at
+every blank. So every page was looked up again at every picture: a
+sixth of the window's thread's time in a fight on the owner's PC
+(samples of its program counter: `port_TextureValue` and
+`port_TexturePageKey`). Both now send the pixels without telling the
+stage (`port_GlRestoreVram`), and a write that holds none of the
+stage's own pixels (the fog's colour tables lie inside the pages'
+rectangles) no longer makes a page stale. A stage whose array is full
+says so once, not at every lookup (Lost Bridge's log had 20,000 such
+lines).
+
+**The HD cloth and body shared out.** The places of the body posed
+for the cloth and for the cast shadows, and each place of a cloth kept
+out of the body, are each their own sum, so they are shared out among
+the window's helper threads (`port_GlParallel`, `gl_load.h`: four with
+the drawing thread), each with room of its own for the body's search
+(`port_GlClothBodyHoldBy`): the same vertices to the bit however they
+are shared.
+
+**Measured** on the owner's card (RTX 3090, 2560 by 1440, his
+settings, `fighter_models on`, `shadows cast`, `run_ahead 2`, the
+fight of `port_budget.py` from blank 2950 to 4150; wall-clock
+milliseconds, medians of the blanks in which the game drew a frame;
+other agents' work was running on the machine, so a millisecond is
+noise):
+
+| part | `main` at `f7760876f` | now |
+| --- | --- | --- |
+| the HD cloth (`cloth`) | 9.5 | 3.6 |
+| the frames ahead (`ahead`) | 9.5 | 4.5 |
+| pictures between frames (`tween`), a frame's blank | 4.6 | 3.8 |
+| ... a blank with no frame | 4.9 | 0.85 |
+| all but the wait, a frame's blank | 39.1 | 27.9 |
+| ... a blank with no frame | 6.0 | 2.9 |
+| pictures shown a second | 39.6 | 48.0 |
+| time let go (the whole run) | 107 | 53 |
+| sound ran out | 166 | 90 |
+| run-ahead, a boundary | 11.1 | 6.8 |
+
+With the owner's own settings (`fighter_models off`), the two run one
+after the other while the eleven checks ran beside them: a fight
+frame's blank 28.7 ms before and 18.0 after, 46 pictures a second and
+66, the time let go 67 times and 6, the sound run out 103 times and
+11, and 14 blanks of the fight over 40 ms and none. What is left of a fight frame's 28 ms is the card's work
+waited for at the swap (3), the frames run ahead and the state kept and
+put back, the cast shadows posed and copied on the processor (3.6), the
+cloth (3.6), the software GPU (2.6) and the side channel (2.1): see
+docs/HANDOFF.md.
+
+### The orange flashes
+
+**What they were** (the owner, 2026-11-18, "occasional orange
+flashes"; found by tapping every fourth blank of a fight with his
+settings and looking for pictures with far more saturated orange than
+both their neighbours): a band of orange right across the picture for
+one picture, at a torch's height or a sword's, a few times a fight. An
+effect's sprite (a torch's flame, a clash's streak) whose point the
+projection put all but on the camera's plane is sized from that depth
+to about 2,000 pixels across. The chip never draws a primitive more
+than 1023 across, and the game counts on it; but a primitive with its
+true places was measured against SPAN_TRUE_X_MAX (2,048, kept for the
+ground of a wider picture), and 2,022 passed. An effect is now held to
+the chip's own rule by its whole pixels as well (`port_GlChipSpans`,
+`gl_draw.c`). The same search after it found no such picture; the
+pictures of the dark blue of the night sky alone that it also found,
+at the cut after a kill, are the game's own (the Original picture has
+them at the same blanks).
+
+**Held to `main`** (`21418d68b`) on the owner's card: the budget's fight
+with the HD fighters, cast shadows, smooth light, the five mods
+(`RB_TEXTURES_AT_ONCE=1`), `frame_rate original`, `--fast`, every eighth
+blank's window at 640 by 360. Two runs of this branch are the same to
+the byte (437 pictures); against `main`, 434 of 437 are the same to the
+byte, and the three that differ are the three with the band of orange
+across them, gone.
 
 **The pictures, evenly.** At `frame_rate = display` a picture between
 two frames was of the moment it was begun, counted from the moment the

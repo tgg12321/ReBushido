@@ -38,6 +38,7 @@
 #include "gl.h"
 #include "gl_bench.h"
 #include "gl_fighter.h"
+#include "gl_load.h"
 #include "gl_pause.h"
 #include "gl_sky.h"
 #include "gl_stage.h"
@@ -846,6 +847,75 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     options->see_through = g_port_settings.see_through;
 }
 
+/* ---- SDL's threads, lent to the reading of a mod's pictures (gl_load.h) */
+
+typedef struct {
+    s32 (*body)(void *arg);
+    void *arg;
+} PortThreadStart;
+
+static int SDLCALL port_ThreadBody(void *data) {
+    PortThreadStart start = *(PortThreadStart *)data;
+
+    free(data);
+    return start.body(start.arg);
+}
+
+static s32 port_ThreadStart(s32 (*body)(void *arg), void *arg) {
+    PortThreadStart *start = malloc(sizeof(*start));
+    SDL_Thread *thread;
+
+    if (start == NULL) {
+        return FALSE;
+    }
+    start->body = body;
+    start->arg = arg;
+    thread = SDL_CreateThread(port_ThreadBody, "rebushido-read", start);
+    if (thread == NULL) {
+        free(start);
+        return FALSE;
+    }
+    /* below the game's own thread, which a picture read late does not
+     * hold up */
+    SDL_DetachThread(thread);
+    return TRUE;
+}
+
+static void *port_ThreadMakeLock(void) { return SDL_CreateMutex(); }
+
+static void port_ThreadLock(void *lock) { SDL_LockMutex(lock); }
+
+static void port_ThreadUnlock(void *lock) { SDL_UnlockMutex(lock); }
+
+static void *port_ThreadMakeSignal(void) { return SDL_CreateSemaphore(0); }
+
+static void port_ThreadWait(void *signal) { SDL_SemWait(signal); }
+
+static void port_ThreadPost(void *signal) { SDL_SemPost(signal); }
+
+/* Threads to read a mod's pictures on, beside the game: a quarter of the
+ * processors, two at the least and six at the most. Once. */
+static void port_LendThreads(void) {
+    static const PortGlThreads threads = {
+        port_ThreadStart,  port_ThreadMakeLock,   port_ThreadLock,
+        port_ThreadUnlock, port_ThreadMakeSignal, port_ThreadWait,
+        port_ThreadPost};
+    static s32 is_lent;
+    s32 count = SDL_GetCPUCount() / 4;
+
+    if (is_lent) {
+        return;
+    }
+    is_lent = TRUE;
+    count = count < 2 ? 2 : count > 6 ? 6 : count;
+    port_GlLoadSetThreads(&threads, count);
+    if (port_GlLoadIsBeside()) {
+        port_Note("graphics: a mod's pictures are read on %d threads beside "
+                  "the game",
+                  count);
+    }
+}
+
 /* The window's context and the remastered renderer on it: NULL, or why
  * there is none. The window must have been made with SDL_WINDOW_OPENGL.
  * Nothing of this changes what the game computes: with no card the port
@@ -865,6 +935,7 @@ static const char *port_StartGl(void) {
     g_port_gl_scale = port_WantedScale();
     port_GlOptionsFor(g_port_gl_scale, &options);
     g_port_gl_tall = options.tall;
+    port_LendThreads();
     problem = port_GlStart(SDL_GL_GetProcAddress, &options);
     if (problem != NULL) {
         return problem;
@@ -2401,9 +2472,11 @@ static void port_ReadInputLate(void) {
          * with frames run ahead, is a frame or two behind the frames the
          * card draws; the step after them tells the card nothing. So the
          * mirror is sent video memory as it is now, before the frames are
-         * run ahead and their writes go over it. */
+         * run ahead and their writes go over it. The stage's pages are
+         * not looked up again for it (gl.h, port_GlRestoreVram): the
+         * frames run ahead tell the card of each page they write. */
         port_ProfileSwitch(PORT_PROFILE_CARD);
-        port_GlUploadVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
+        port_GlRestoreVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
     }
     port_ProfileSwitch(was);
 }

@@ -7,6 +7,7 @@
 
 #include "common.h"
 #include "gl_cloth.h"
+#include "gl_load.h"
 
 /* A mesh of one level of the subdivision: each vertex a sum of the points
  * (a row of `points` numbers), and faces of three or four corners. */
@@ -760,6 +761,26 @@ double port_GlClothRoot(double x) {
     return root;
 }
 
+/* What the places' hold, shared out, is given. */
+typedef struct {
+    const PortGlCloth *cloth;
+    PortGlClothHold hold;
+    void *context;
+} ClothHolding;
+
+/* The places from `from` to `to` held (port_GlParallel). */
+static void port_GlClothHoldPart(void *context, s32 from, s32 to, s32 worker) {
+    const ClothHolding *holding = context;
+    s32 i;
+
+    for (i = from; i < to; i++) {
+        holding->hold(holding->context, holding->cloth->place[i], worker);
+    }
+}
+
+/* places a piece of the hold: some tens of microseconds of work */
+#define HOLD_PIECE 64
+
 void port_GlClothPose(
     const PortGlCloth *cloth, const double *points, PortGlClothHold hold,
     void *context, PortGlClothVertex *out) {
@@ -783,9 +804,16 @@ void port_GlClothPose(
                 }
             }
         }
-        if (hold != NULL) {
-            hold(context, place);
-        }
+    }
+    /* each place held on its own, so shared out: the same to the bit */
+    if (hold != NULL) {
+        ClothHolding holding;
+
+        holding.cloth = cloth;
+        holding.hold = hold;
+        holding.context = context;
+        port_GlParallel(
+            port_GlClothHoldPart, &holding, cloth->place_count, HOLD_PIECE);
     }
     /* each quad's turn across its diagonals, on its four corners */
     for (i = 0; i < cloth->quad_count; i++) {
@@ -1016,13 +1044,14 @@ typedef struct {
     const float *normal;
 } BodyNearOne;
 
-static BodyNearOne g_body_gathered[BODY_GATHERED_MAX];
+static BodyNearOne g_body_gathered[PORT_GL_WORKERS][BODY_GATHERED_MAX];
 
 /* The cubes one about `point` walked once: their vertices kept, and the
  * nearest one's distance squared (-1: none). How many were kept, or -1
  * where there were more than there is room for. */
 static s32 port_GlClothBodyGather(
-    const PortGlClothBody *body, const double *point, double *nearest) {
+    const PortGlClothBody *body, const double *point, double *nearest,
+    s32 worker) {
     s32 cx = port_GlClothCell(point[0]);
     s32 cy = port_GlClothCell(point[1]);
     s32 cz = port_GlClothCell(point[2]);
@@ -1056,10 +1085,10 @@ static s32 port_GlClothBodyGather(
                     if (count == BODY_GATHERED_MAX) {
                         return -1;
                     }
-                    g_body_gathered[count].d2 = d2;
-                    g_body_gathered[count].along =
+                    g_body_gathered[worker][count].d2 = d2;
+                    g_body_gathered[worker][count].along =
                         d[0] * m[0] + d[1] * m[1] + d[2] * m[2];
-                    g_body_gathered[count].normal = m;
+                    g_body_gathered[worker][count].normal = m;
                     count++;
                 }
             }
@@ -1070,12 +1099,12 @@ static s32 port_GlClothBodyGather(
 
 /* The sums of port_GlClothBodyNear over the vertices gathered. */
 static void port_GlClothBodySumGathered(
-    s32 count, double reach, BodySums *sums) {
+    s32 count, double reach, BodySums *sums, s32 worker) {
     double reach2 = reach * reach;
     s32 i;
 
     for (i = 0; i < count; i++) {
-        const BodyNearOne *one = &g_body_gathered[i];
+        const BodyNearOne *one = &g_body_gathered[worker][i];
         double w;
 
         if (one->d2 >= reach2) {
@@ -1097,7 +1126,7 @@ static void port_GlClothBodySumGathered(
  * piece seen from both its sides). */
 static s32 port_GlClothBodyDistance(
     const PortGlClothBody *body, const double *point, double *distance,
-    double *out) {
+    double *out, s32 worker) {
     BodySums sums;
     double reach;
     double length;
@@ -1110,7 +1139,7 @@ static s32 port_GlClothBodyDistance(
      * (no part of a fighter is so thick that a point inside it is that
      * far from all its vertices) */
     memset(&sums, 0, sizeof(sums));
-    gathered = port_GlClothBodyGather(body, point, &sums.nearest);
+    gathered = port_GlClothBodyGather(body, point, &sums.nearest, worker);
     if (gathered < 0) {
         port_GlClothBodyNear(body, point, 1, 0.0, &sums);
     }
@@ -1130,7 +1159,7 @@ static s32 port_GlClothBodyDistance(
     look = (s32)(reach / BODY_CELL) + 1;
     if (look == 1 && gathered >= 0) {
         /* the same cubes: the vertices the first walk kept */
-        port_GlClothBodySumGathered(gathered, reach, &sums);
+        port_GlClothBodySumGathered(gathered, reach, &sums, worker);
     } else {
         port_GlClothBodyNear(body, point, look, reach, &sums);
     }
@@ -1149,6 +1178,11 @@ static s32 port_GlClothBodyDistance(
 
 s32 port_GlClothBodyHold(
     const PortGlClothBody *body, double *point, double gap) {
+    return port_GlClothBodyHoldBy(body, point, gap, 0);
+}
+
+s32 port_GlClothBodyHoldBy(
+    const PortGlClothBody *body, double *point, double gap, s32 worker) {
     double distance;
     double out[3];
     s32 was_inside;
@@ -1156,7 +1190,7 @@ s32 port_GlClothBodyHold(
     s32 k;
 
     if (body == NULL || body->count == 0 ||
-        !port_GlClothBodyDistance(body, point, &distance, out)) {
+        !port_GlClothBodyDistance(body, point, &distance, out, worker)) {
         return FALSE;
     }
     was_inside = distance < 0.0;
@@ -1166,7 +1200,7 @@ s32 port_GlClothBodyHold(
         for (k = 0; k < 3; k++) {
             point[k] += (gap - distance) * out[k];
         }
-        if (!port_GlClothBodyDistance(body, point, &distance, out)) {
+        if (!port_GlClothBodyDistance(body, point, &distance, out, worker)) {
             break;
         }
     }
