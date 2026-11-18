@@ -65,11 +65,15 @@ ANCESTORS = 400
 
 
 def git(*args):
-    try:
-        return subprocess.run(['git'] + list(args), cwd=REPO, capture_output=True, text=True,
-                              check=True).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return None
+    # WSL's git cannot read a worktree Windows' git made; Windows' git,
+    # called from WSL, can
+    for program in ('git', 'git.exe') if os.name != 'nt' else ('git',):
+        try:
+            return subprocess.run([program] + list(args), cwd=REPO, capture_output=True, text=True,
+                                  check=True).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            continue
+    return None
 
 
 def main_checkout():
@@ -202,9 +206,11 @@ class Baseline:
         self.started = time.time()
         self.record = None
         if self.store:
-            if git('status', '--porcelain', '--untracked-files=no'):
-                sys.exit('%s: --store-baseline: the tree has changes not committed; '
-                         'a baseline is a commit\'s' % prover)
+            self.commit = git('rev-parse', 'HEAD')
+            changes = git('status', '--porcelain', '--untracked-files=no')
+            if not self.commit or changes is None or changes:
+                sys.exit('%s: --store-baseline: the tree has changes not committed (or git cannot '
+                         'read it); a baseline is a commit\'s' % prover)
         if self.rev:
             found, why = find_record(self.rev, prover, gpu)
             if not found:
@@ -237,7 +243,9 @@ class Baseline:
         'pictures' (name -> hash) and 'trace' (a hash) where it has them."""
         units = plain(units)
         if self.store:
-            commit = git('rev-parse', 'HEAD')
+            commit = self.commit
+            if git('rev-parse', 'HEAD') != commit:
+                sys.exit('%s: --store-baseline: HEAD moved during the run; nothing stored' % self.prover)
             folder = store_dir(commit)
             os.makedirs(folder, exist_ok=True)
             path = os.path.join(folder, '%s-%s.json' % (self.prover, self.gpu))
@@ -334,10 +342,11 @@ def store(args):
     if os.name != 'nt':
         print('baseline: --store runs from Windows\' Python, on the PC with the card')
         return 1
-    if git('status', '--porcelain', '--untracked-files=no'):
+    changes = git('status', '--porcelain', '--untracked-files=no')
+    commit = git('rev-parse', 'HEAD')
+    if changes is None or changes or not commit:
         print('baseline: the tree has changes not committed; a baseline is a commit\'s')
         return 1
-    commit = git('rev-parse', 'HEAD')
     only = args.only.split(',')
     gpus = args.gpu.split(',')
     folder = store_dir(commit)
