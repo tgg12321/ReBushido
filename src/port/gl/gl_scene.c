@@ -480,7 +480,8 @@ static void port_GlSceneLoaded(PortGlLoad *load) {
     s32 i;
 
     if (load->generation != g_scene.generation || g_scene.pages == 0 ||
-        layer >= g_scene.layer_count || g_scene.layer_keys[layer] != load->key ||
+        layer >= g_scene.layer_count ||
+        g_scene.layer_keys[layer] != load->key ||
         g_scene.layer_state[layer] != LAYER_READING) {
         free(load->owner);
         load->owner = NULL;
@@ -492,10 +493,10 @@ static void port_GlSceneLoaded(PortGlLoad *load) {
         glActiveTexture(GL_TEXTURE0 + PORT_GL_SCENE_PAGES_UNIT);
         glBindTexture(GL_TEXTURE_2D_ARRAY, g_scene.pages);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        for (level = 0, side = g_scene.side; level < g_scene.levels;
-             level++, side >>= 1) {
-            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, level, 0, 0, layer, side,
-                            side, 1, GL_RGBA, GL_UNSIGNED_BYTE, now);
+        for (level = 0, side = g_scene.side; level < g_scene.levels; level++,
+            side >>= 1) {
+            glTexSubImage3D(GL_TEXTURE_2D_ARRAY, level, 0, 0, layer, side, side,
+                            1, GL_RGBA, GL_UNSIGNED_BYTE, now);
             now += (size_t)side * side * RGBA;
         }
         glPixelStorei(GL_UNPACK_ALIGNMENT, RGBA);
@@ -754,7 +755,8 @@ static s32 port_GlSceneLayerOf(u64 key, const char *path, const char *name) {
     g_scene.layer_keys[i] = key;
     g_scene.layer_state[i] = LAYER_READING;
     port_GlSceneLoad(path, name, i);
-    if (g_scene.layer_state[i] == LAYER_FAILED && i == g_scene.layer_count - 1) {
+    if (g_scene.layer_state[i] == LAYER_FAILED &&
+        i == g_scene.layer_count - 1) {
         /* read at once and of no use: the layer is the next one's */
         g_scene.layer_count--;
         return -1;
@@ -780,8 +782,7 @@ static void port_GlSceneEnter(Looked *one) {
     }
     /* a picture still being read: the game's own page until it is in
      * (port_GlSceneLoaded enters it again) */
-    one->is_waiting =
-        layer >= 0 && g_scene.layer_state[layer] == LAYER_READING;
+    one->is_waiting = layer >= 0 && g_scene.layer_state[layer] == LAYER_READING;
     if (one->is_waiting) {
         layer = -1;
     }
@@ -1063,7 +1064,35 @@ static s32 port_GlSceneMeets(
     return x < x2 + w2 && x2 < x + w && y < y2 + h2 && y2 < y + h;
 }
 
+/* Whether the rectangle holds any pixel that is the stage's own: a page's
+ * key is made of those alone (port_TexturePageKey, `own`), so a write of
+ * none of them (the fog's colour tables, a line at a time every frame,
+ * which lie inside the pages' rectangles) cannot change it. Looking the
+ * pages up again for those writes was a sixth of the processor's time in
+ * a fight on the owner's PC (2026-11-18). */
+static s32 port_GlSceneWritesOwn(s32 x, s32 y, s32 w, s32 h) {
+    s32 right = x + w < PORT_VRAM_WIDTH ? x + w : PORT_VRAM_WIDTH;
+    s32 bottom = y + h < PORT_VRAM_HEIGHT ? y + h : PORT_VRAM_HEIGHT;
+    s32 i;
+    s32 j;
+
+    if (x < 0 || y < 0 || w <= 0 || h <= 0) {
+        return TRUE;
+    }
+    for (j = y; j < bottom; j++) {
+        const u8 *row = g_scene.own + j * PORT_VRAM_WIDTH;
+
+        for (i = x; i < right; i++) {
+            if (row[i] != 0) {
+                return TRUE;
+            }
+        }
+    }
+    return FALSE;
+}
+
 void port_GlSceneWroteVram(s32 x, s32 y, s32 w, s32 h) {
+    s32 writes_own = -1; /* not yet asked */
     s32 i;
 
     if (g_scene.looked == NULL) {
@@ -1077,9 +1106,12 @@ void port_GlSceneWroteVram(s32 x, s32 y, s32 w, s32 h) {
         if (one->is_stale) {
             continue;
         }
-        if (port_GlSceneMeets(x, y, w, h, one->page_x, one->page_y,
-                              port_TexturePagePixel(&page, PORT_MOD_PAGE_SIDE),
-                              PORT_MOD_PAGE_SIDE) ||
+        if ((port_GlSceneMeets(x, y, w, h, one->page_x, one->page_y,
+                               port_TexturePagePixel(&page, PORT_MOD_PAGE_SIDE),
+                               PORT_MOD_PAGE_SIDE) &&
+             (writes_own >= 0
+                  ? writes_own
+                  : (writes_own = port_GlSceneWritesOwn(x, y, w, h)))) ||
             port_GlSceneMeets(
                 x, y, w, h, one->base_x, one->base_y,
                 one->bits == PORT_MOD_TEXELS_4 ? COLORS_4 : COLORS_MAX, 1)) {

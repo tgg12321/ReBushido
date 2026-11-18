@@ -33,6 +33,7 @@ typedef struct {
 #define PORT_GL_LOAD_PROBLEM 160
 
 typedef struct PortGlLoad PortGlLoad;
+
 struct PortGlLoad {
     /* what is asked: the file, which lives as long as the mods do */
     const char *path;
@@ -78,5 +79,22 @@ extern void port_GlLoadCollect(u32 bytes);
 extern void port_GlLoadFinish(void);
 /* How many pictures are being read now. */
 extern s32 port_GlLoadPending(void);
+
+/* ---- work shared out (the HD fighters' bodies and cloth) ----
+ *
+ * `part(context, from, to, worker)` run for every piece of `count`
+ * things, `piece` at a time, on the drawing thread and the helpers the
+ * window lent (PORT_GL_WORKERS at most, the drawing thread's own number
+ * 0), and returned from when all of it is done. Each thing must be its
+ * own work, so that the answer is the same to the bit however it was
+ * shared out; `worker` names room of the caller's own that only one
+ * piece at a time uses. With no helpers it is one call, on this
+ * thread. */
+#define PORT_GL_WORKERS 4
+
+typedef void (*PortGlPart)(void *context, s32 from, s32 to, s32 worker);
+
+extern void port_GlParallel(
+    PortGlPart part, void *context, s32 count, s32 piece);
 
 #endif

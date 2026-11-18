@@ -25,6 +25,7 @@
 #include "gl_fighter.h"
 #include "gl_fighter_file.h"
 #include "gl_light.h"
+#include "gl_load.h"
 #include "port_profile.h"
 #include "gl_stage.h"
 #include "port_fighter.h"
@@ -1503,6 +1504,20 @@ static s32 port_GlFighterClothOfNode(
  * it (the sum of its terms) and its normal turned as the card turns it
  * (the joints' rotations, blended). Kept for the slot until it is asked
  * for again. NULL where the cloths are not kept out. */
+/* What posing the body's vertices, shared out, is given. */
+typedef struct {
+    const FighterModel *model;
+    const FighterPose *pose;
+    double (*turn)[9];
+    float *places;
+    float *normals;
+} BodyPosing;
+
+/* vertices a piece of the posing */
+#define POSE_PIECE 512
+
+static void port_GlFighterPosePart(void *context, s32 from, s32 to, s32 worker);
+
 static const PortGlClothBody *port_GlFighterBody(
     const FighterModel *model, const FighterPose *pose, s32 slot) {
     static PortGlClothBody *bodies[PORT_FIGHTER_SLOTS];
@@ -1510,7 +1525,7 @@ static const PortGlClothBody *port_GlFighterBody(
     static float *normals;
     static s32 room;
     double turn[PORT_FIGHTER_FILE_JOINTS][9];
-    s32 i;
+    BodyPosing posing;
     s32 j;
     s32 k;
 
@@ -1560,7 +1575,36 @@ static const PortGlClothBody *port_GlFighterBody(
             }
         }
     }
-    for (i = 0; i < model->vertex_count; i++) {
+    posing.model = model;
+    posing.pose = pose;
+    posing.turn = turn;
+    posing.places = places;
+    posing.normals = normals;
+    port_GlParallel(
+        port_GlFighterPosePart, &posing, model->vertex_count, POSE_PIECE);
+    if (!port_GlClothBodySet(
+            bodies[slot], places, normals, model->vertex_count)) {
+        return NULL;
+    }
+    return bodies[slot];
+}
+
+/* The body's vertices from `from` to `to` posed (port_GlParallel): each
+ * its own work. */
+static void port_GlFighterPosePart(
+    void *context, s32 from, s32 to, s32 worker) {
+    const BodyPosing *posing = context;
+    const FighterModel *model = posing->model;
+    const FighterPose *pose = posing->pose;
+    double(*turn)[9] = posing->turn;
+    float *places = posing->places;
+    float *normals = posing->normals;
+    s32 i;
+    s32 j;
+    s32 k;
+
+    (void)worker;
+    for (i = from; i < to; i++) {
         const PortFighterVertex *v = &model->vertices[i];
         double place[3] = {0.0, 0.0, 0.0};
         double normal[3] = {0.0, 0.0, 0.0};
@@ -1597,23 +1641,21 @@ static const PortGlClothBody *port_GlFighterBody(
             normals[i * 3 + k] = (float)normal[k];
         }
     }
-    if (!port_GlClothBodySet(
-            bodies[slot], places, normals, model->vertex_count)) {
-        return NULL;
-    }
-    return bodies[slot];
 }
 
 /* A place of a cloth kept out of the body (port_GlClothHold), and
  * counted: whether the game's cloth had it inside the body, and whether
- * it is still inside once kept out. */
-static void port_GlFighterHoldPlace(void *context, double *place) {
+ * it is still inside once kept out; counted by each helper on its own
+ * (port_GlParallel), and added up when the surface is made. */
+static u32 g_hold_counts[PORT_GL_WORKERS][3];
+
+static void port_GlFighterHoldPlace(void *context, double *place, s32 worker) {
     const PortGlClothBody *body = context;
     double where[3] = {place[0], place[1], place[2]};
 
-    g_fighter.counts.cloth_places++;
-    if (port_GlClothBodyHold(body, where, CLOTH_GAP)) {
-        g_fighter.counts.cloth_inside++;
+    g_hold_counts[worker][0]++;
+    if (port_GlClothBodyHoldBy(body, where, CLOTH_GAP, worker)) {
+        g_hold_counts[worker][1]++;
     }
     if (g_fighter.is_cloth_held) {
         place[0] = where[0];
@@ -1628,8 +1670,8 @@ static void port_GlFighterHoldPlace(void *context, double *place) {
     where[0] = place[0];
     where[1] = place[1];
     where[2] = place[2];
-    if (port_GlClothBodyHold(body, where, 0.0)) {
-        g_fighter.counts.cloth_left_inside++;
+    if (port_GlClothBodyHoldBy(body, where, 0.0, worker)) {
+        g_hold_counts[worker][2]++;
     }
 }
 
@@ -1685,6 +1727,14 @@ static const PortGlClothVertex *port_GlFighterPoseCloth(
     port_GlClothPose(
         cloth->surface, points, body != NULL ? port_GlFighterHoldPlace : NULL,
         (void *)body, room);
+    for (i = 0; i < PORT_GL_WORKERS; i++) {
+        g_fighter.counts.cloth_places += g_hold_counts[i][0];
+        g_fighter.counts.cloth_inside += g_hold_counts[i][1];
+        g_fighter.counts.cloth_left_inside += g_hold_counts[i][2];
+        g_hold_counts[i][0] = 0;
+        g_hold_counts[i][1] = 0;
+        g_hold_counts[i][2] = 0;
+    }
     return room;
 }
 

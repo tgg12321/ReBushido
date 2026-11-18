@@ -848,18 +848,23 @@ static s32 port_ThreadStart(s32 (*body)(void *arg), void *arg) {
 }
 
 static void *port_ThreadMakeLock(void) { return SDL_CreateMutex(); }
+
 static void port_ThreadLock(void *lock) { SDL_LockMutex(lock); }
+
 static void port_ThreadUnlock(void *lock) { SDL_UnlockMutex(lock); }
+
 static void *port_ThreadMakeSignal(void) { return SDL_CreateSemaphore(0); }
+
 static void port_ThreadWait(void *signal) { SDL_SemWait(signal); }
+
 static void port_ThreadPost(void *signal) { SDL_SemPost(signal); }
 
 /* Threads to read a mod's pictures on, beside the game: a quarter of the
  * processors, two at the least and six at the most. Once. */
 static void port_LendThreads(void) {
     static const PortGlThreads threads = {
-        port_ThreadStart,      port_ThreadMakeLock, port_ThreadLock,
-        port_ThreadUnlock,     port_ThreadMakeSignal, port_ThreadWait,
+        port_ThreadStart,  port_ThreadMakeLock,   port_ThreadLock,
+        port_ThreadUnlock, port_ThreadMakeSignal, port_ThreadWait,
         port_ThreadPost};
     static s32 is_lent;
     s32 count = SDL_GetCPUCount() / 4;
@@ -2219,9 +2224,11 @@ static void port_ReadInputLate(void) {
          * with frames run ahead, is a frame or two behind the frames the
          * card draws; the step after them tells the card nothing. So the
          * mirror is sent video memory as it is now, before the frames are
-         * run ahead and their writes go over it. */
+         * run ahead and their writes go over it. The stage's pages are
+         * not looked up again for it (gl.h, port_GlRestoreVram): the
+         * frames run ahead tell the card of each page they write. */
         port_ProfileSwitch(PORT_PROFILE_CARD);
-        port_GlUploadVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
+        port_GlRestoreVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
     }
     port_ProfileSwitch(was);
 }

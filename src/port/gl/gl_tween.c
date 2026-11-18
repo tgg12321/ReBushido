@@ -985,8 +985,8 @@ static void port_TweenGiveVramBack(const TweenFrame *frame) {
      * clear, and the fog's thirty-one colour tables), and a hundred small
      * sends cost far more than the one rectangle holding them all. */
     if (!sent.is_empty) {
-        port_GlUploadVram(sent.left, sent.top, sent.right - sent.left + 1,
-                          sent.bottom - sent.top + 1);
+        port_GlRestoreVram(sent.left, sent.top, sent.right - sent.left + 1,
+                           sent.bottom - sent.top + 1);
     }
 }
 

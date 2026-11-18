@@ -139,6 +139,13 @@ extern u32 port_GlBackground(void);
  * the colour buffer; this is for a caller that has changed what
  * `g_port_vram` holds and has to put it back (gl_tween.c). */
 extern void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h);
+/* The same for pixels put back exactly as they were before a picture
+ * between frames wrote over them: the stage's pages are not looked up
+ * again for it (gl_scene.h). Every picture between two frames gave the
+ * whole of video memory back, so every page of the stage was looked up
+ * again each picture: a sixth of the processor's time in a fight on the
+ * owner's PC (2026-11-18). */
+extern void port_GlRestoreVram(s32 x, s32 y, s32 w, s32 h);
 
 /* The counts of the frame being drawn (vertices, draws, pixels of the
  * mirror sent, triangles left out), kept aside and put back: a picture

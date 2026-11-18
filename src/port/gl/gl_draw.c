@@ -1845,6 +1845,35 @@ static s32 port_GlHasTruePlace(const PortRemasterPrim *prim) {
  * projection that came apart -- a corner all but on the camera's own
  * plane, whose place runs to thousands of pixels -- which is what the
  * chip's rule was protecting the picture from. */
+/* Whether the chip would draw the triangle of these three corners for
+ * its span, by the whole pixels it was given.
+ *
+ * **The orange flashes** (the owner, 2026-11-18): an effect's sprite --
+ * a clash's streak, a torch's flame -- whose point the projection put
+ * all but on the camera's own plane is sized from that depth to some
+ * 2,000 pixels across; the chip never draws it (more than 1023), but
+ * measured by its true places it was inside SPAN_TRUE_X_MAX and was
+ * drawn, a band of orange right across the picture for a frame. An
+ * effect is held to the chip's rule as well: the game counts on the
+ * chip's leaving it out. */
+static s32 port_GlChipSpans(const PortRemasterPrim *prim, const s32 *corner) {
+    s32 left = prim->corner[corner[0]].ix;
+    s32 right = left;
+    s32 top = prim->corner[corner[0]].iy;
+    s32 bottom = top;
+    s32 i;
+
+    for (i = 1; i < 3; i++) {
+        const PortRemasterCorner *one = &prim->corner[corner[i]];
+
+        left = one->ix < left ? one->ix : left;
+        right = one->ix > right ? one->ix : right;
+        top = one->iy < top ? one->iy : top;
+        bottom = one->iy > bottom ? one->iy : bottom;
+    }
+    return right - left <= SPAN_X_MAX && bottom - top <= SPAN_Y_MAX;
+}
+
 static s32 port_GlIsDrawn(const PortRemasterPrim *prim, s32 a, s32 b, s32 c) {
     s32 corner[3];
     s32 x[3];
@@ -1877,6 +1906,9 @@ static s32 port_GlIsDrawn(const PortRemasterPrim *prim, s32 a, s32 b, s32 c) {
         bottom = y[i] > bottom ? y[i] : bottom;
     }
     if (right - left > span_x || bottom - top > span_y) {
+        return FALSE;
+    }
+    if (is_true && prim->is_effect && !port_GlChipSpans(prim, corner)) {
         return FALSE;
     }
     if (is_true) {
@@ -2635,6 +2667,15 @@ void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h) {
     port_GlMarkMirror(x, y, w, h);
     port_GlUploadMirror();
     port_GlSceneWroteVram(x, y, w, h);
+}
+
+void port_GlRestoreVram(s32 x, s32 y, s32 w, s32 h) {
+    if (!g_gl.is_started || w <= 0 || h <= 0) {
+        return;
+    }
+    port_GlDrawBlits();
+    port_GlMarkMirror(x, y, w, h);
+    port_GlUploadMirror();
 }
 
 void port_GlSaveCounts(u32 *four) {

@@ -319,8 +319,7 @@ static void port_ReplaceLoaded(PortGlLoad *load) {
     const char *name = load->owner != NULL ? (const char *)load->owner : "?";
     GLuint texture = 0;
 
-    if (slot != NULL && slot->state == SLOT_LOADING &&
-        slot->key == load->key) {
+    if (slot != NULL && slot->state == SLOT_LOADING && slot->key == load->key) {
         if (load->is_loaded) {
             glActiveTexture(GL_TEXTURE0 + PORT_GL_REPLACE_UNIT);
             glGenTextures(1, &texture);
@@ -356,8 +355,8 @@ static void port_ReplaceLoaded(PortGlLoad *load) {
 /* The mod's picture at `path` asked for, for the slot: read beside the
  * game, the slot drawing the game's own texture until it is on the card,
  * or at once where it cannot be (gl_load.h). */
-static void port_ReplaceLoad(ReplaceSlot *slot, const char *path,
-                             const char *name) {
+static void port_ReplaceLoad(
+    ReplaceSlot *slot, const char *path, const char *name) {
     PortGlLoad load;
     size_t length = strlen(name) + 1;
 

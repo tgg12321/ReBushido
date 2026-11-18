@@ -44,7 +44,8 @@ static u8 *port_GlLoadFile(const char *path, u32 *size) {
         return NULL;
     }
     bytes = malloc((size_t)length);
-    if (bytes != NULL && fread(bytes, 1, (size_t)length, file) != (size_t)length) {
+    if (bytes != NULL &&
+        fread(bytes, 1, (size_t)length, file) != (size_t)length) {
         free(bytes);
         bytes = NULL;
     }
@@ -131,16 +132,110 @@ static s32 port_GlLoadThread(void *arg) {
     return 0;
 }
 
+/* ---- work shared out ---- */
+
+static struct {
+    s32 helpers;
+    void *lock;
+    void *go[PORT_GL_WORKERS];
+    void *finished;
+    PortGlPart part;
+    void *context;
+    s32 count;
+    s32 piece;
+    s32 next; /* the next piece's first thing */
+} g_share;
+
+/* Pieces taken one after another until there are none left. */
+static void port_GlShareTake(s32 worker) {
+    for (;;) {
+        s32 from;
+
+        g_load.threads.lock(g_share.lock);
+        from = g_share.next;
+        g_share.next += g_share.piece;
+        g_load.threads.unlock(g_share.lock);
+        if (from >= g_share.count) {
+            return;
+        }
+        g_share.part(g_share.context, from,
+                     from + g_share.piece < g_share.count ? from + g_share.piece
+                                                          : g_share.count,
+                     worker);
+    }
+}
+
+static s32 g_share_numbers[PORT_GL_WORKERS];
+
+static s32 port_GlShareThread(void *arg) {
+    s32 worker = *(const s32 *)arg;
+
+    for (;;) {
+        g_load.threads.wait(g_share.go[worker]);
+        port_GlShareTake(worker);
+        g_load.threads.post(g_share.finished);
+    }
+    return 0;
+}
+
+static void port_GlShareStart(void) {
+    s32 i;
+
+    g_share.lock = g_load.threads.make_lock();
+    g_share.finished = g_load.threads.make_signal();
+    if (g_share.lock == NULL || g_share.finished == NULL) {
+        return;
+    }
+    for (i = 1; i < PORT_GL_WORKERS; i++) {
+        g_share.go[i] = g_load.threads.make_signal();
+        g_share_numbers[i] = i;
+        if (g_share.go[i] == NULL ||
+            !g_load.threads.start(port_GlShareThread, &g_share_numbers[i])) {
+            return;
+        }
+        g_share.helpers = i;
+    }
+}
+
+void port_GlParallel(PortGlPart part, void *context, s32 count, s32 piece) {
+    s32 i;
+
+    if (piece < 1) {
+        piece = 1;
+    }
+    if (g_share.helpers == 0 || count <= piece) {
+        if (count > 0) {
+            part(context, 0, count, 0);
+        }
+        return;
+    }
+    g_share.part = part;
+    g_share.context = context;
+    g_share.count = count;
+    g_share.piece = piece;
+    g_share.next = 0;
+    for (i = 1; i <= g_share.helpers; i++) {
+        g_load.threads.post(g_share.go[i]);
+    }
+    port_GlShareTake(0);
+    for (i = 1; i <= g_share.helpers; i++) {
+        g_load.threads.wait(g_share.finished);
+    }
+}
+
 void port_GlLoadSetThreads(const PortGlThreads *threads, s32 count) {
     const char *at_once = getenv("RB_TEXTURES_AT_ONCE");
     s32 started = 0;
     s32 i;
 
-    if (threads == NULL || count <= 0 || g_load.is_beside ||
-        (at_once != NULL && at_once[0] != 0 && at_once[0] != '0')) {
+    if (threads == NULL || count <= 0 || g_load.lock != NULL) {
         return;
     }
     g_load.threads = *threads;
+    port_GlShareStart();
+    if (at_once != NULL && at_once[0] != 0 && at_once[0] != '0') {
+        return;
+    }
     g_load.lock = threads->make_lock();
     g_load.asked_signal = threads->make_signal();
     g_load.done_signal = threads->make_signal();
