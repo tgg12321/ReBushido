@@ -135,7 +135,7 @@ ALL_O_FILES  := $(S_O_FILES) $(C_O_FILES) $(ASM_FUNC_O_FILES)
 # -- Top-level targets --
 .PHONY: all clean check clean-check shift movovl modern test checks \
 	rebushido rebushido-disc rebushido-patch rebushido-test rebushido-modern rb-build \
-	quickboot quickboot-compile quickboot-disc playtest playtest-discs gte-probe port \
+	quickboot quickboot-compile quickboot-disc playtest playtest-discs playtest-console gte-probe port \
 	patcher port-sdl port-sdl-windows port-rollback port-net
 
 ifeq ($(REBUSHIDO),1)
@@ -259,8 +259,13 @@ PLAYTEST_QB  := QB_NAME=QuickBoot-playtest QB_MODE=FIGHT_MODE_VS QB_P1=ROSTER_MI
 PLAYTEST_BUGS := QB_MODE=FIGHT_MODE_VS QB_P1=ROSTER_VANISHER QB_P2=ROSTER_UTAMARU \
                 QB_WEAPON1=WEAPON_ID_NAGINATA QB_WEAPON2=WEAPON_ID_KATANA QB_STAGE=STAGE_LIGHTHOUSE QB_CPU2=1
 playtest-discs:
-	$(MAKE) gte-probe
 	$(MAKE) port
+	$(MAKE) playtest-console
+
+# The tests' programs of the PlayStation alone, without the port's: what
+# tools/gate.py builds beside `make port`.
+playtest-console:
+	$(MAKE) gte-probe
 	@if [ -f "$(RETAIL_IMAGE)" ]; then \
 		$(MAKE) rebushido-disc && $(MAKE) quickboot-disc $(PLAYTEST_QB) && \
 		$(MAKE) quickboot-disc $(PLAYTEST_BUGS) QB_NAME=QuickBoot-bugs QB_BUGFIXES=0 && \
@@ -359,15 +364,14 @@ port-rollback:
 # state hashes; a session set up by --host and --join through versus
 # select, a fight, a rematch and the guest's leaving; and the same
 # between two of the window's programs, headless and in real time, and
-# from the settings menu's Play online page. Both sizes, about eight
-# minutes; it needs the disc's image, as port-rollback does, and runs
-# what make port and make port-sdl built (the window's part is skipped
-# where there is none).
+# from the settings menu's Play online page. Both sizes; the four at
+# once, each on UDP ports of its own from PORT_NET_BASE up (96 of them);
+# it needs the disc's image, as port-rollback does, and runs what make
+# port and make port-sdl built (the window's part is skipped where there
+# is none).
+PORT_NET_BASE ?= 47000
 port-net:
-	python3 tools/port_net.py link
-	python3 tools/port_net.py rollback
-	python3 tools/port_net.py session
-	python3 tools/port_net.py window
+	python3 tools/port_net.py all --port-base $(PORT_NET_BASE)
 
 # The native port with a window (docs/PORT.md, "The window"): the same
 # program with SDL 2 and a C library, for a person to play, into

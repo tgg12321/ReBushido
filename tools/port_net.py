@@ -4,7 +4,8 @@
 
     python3 tools/port_net.py link|rollback [--bits 32|64] [--out FOLDER]
                                             [--latency MS] [--loss PERCENT]
-                                            [--delay N]
+                                            [--delay N] [--port-base PORT]
+    python3 tools/port_net.py all [--port-base PORT]    the four at once
 
 `link`: the game's own link-cable versus mode, in lockstep with a frame of
 delay. Each program is one console (--link-side 0 and 1) with its own plan:
@@ -25,8 +26,10 @@ end well, both see the kill, neither finds a desync, and every state hash
 both print (one each 30 frames, once both pads' inputs before it are
 known) is the same on both, to the last frame they share near the end.
 
-Both sockets are bound to 127.0.0.1, on two ports from 47000 up: nothing
-listens on any other address. The programs are the ones `make port` built
+Both sockets are bound to 127.0.0.1, on two ports from 47000 up (--port-base
+another number: each of link, rollback, session and window takes 24 ports
+from it, the same numbers for each, so that runs at once are given bases
+24 apart or more): nothing listens on any other address. The programs are the ones `make port` built
 (build them again first), and the retail disc's image is needed
 (REBUSHIDO_RETAIL, or the .cue at the checkout's root); no emulator.
 Without the image it says so and passes, as the play tests do."""
@@ -45,6 +48,9 @@ PROGRAMS = {64: 'build/port/rebushido', 32: 'build/port32/rebushido'}
 WINDOW_PROGRAM = 'build/port-sdl/linux/rebushido'
 SECONDS = 600
 BASE_PORT = 47000
+# The ports one run may take from its base: two for each size, ten apart
+# for a session, and four more for the window's.
+PORTS_USED = 24
 LOCALHOST = '127.0.0.1'
 
 # From power on to the top menu, as port_game's plan (tests/play/
@@ -538,10 +544,47 @@ def check_link(label, program, args, ports):
     return problems
 
 
+def run_all(args):
+    """link, rollback, session and window at once, each a program of this
+    file with its own PORTS_USED ports from --port-base on and its own
+    folder of --out; what each printed, in that order, and 1 if one
+    failed."""
+    whats = ('link', 'rollback', 'session', 'window')
+    if not 1024 <= args.port_base <= 65535 - PORTS_USED * len(whats):
+        print('FAILED: port_net: --port-base: from 1024 to %d for all' % (65535 - PORTS_USED * len(whats)))
+        return 1
+    os.makedirs(args.out, exist_ok=True)
+    runs = []
+    for n, what in enumerate(whats):
+        cmd = [sys.executable, os.path.abspath(__file__), what, '--out', args.out, '--delay', str(args.delay),
+               '--port-base', str(args.port_base + PORTS_USED * n)]
+        for flag, value in (('--bits', args.bits), ('--latency', args.latency), ('--loss', args.loss)):
+            if value is not None:
+                cmd += [flag, str(value)]
+        log = open(os.path.join(args.out, what + '.log'), 'wb')
+        runs.append((what, log, time.time(), subprocess.Popen(cmd, cwd=REPO, stdout=log, stderr=subprocess.STDOUT,
+                                                                stdin=subprocess.DEVNULL)))
+    failed = []
+    for what, log, start, proc in runs:
+        code = proc.wait()
+        log.close()
+        with open(os.path.join(args.out, what + '.log'), encoding='utf-8', errors='replace') as f:
+            sys.stdout.write(f.read())
+        print('port_net: %s: %s (%.0fs)' % (what, 'ok' if code == 0 else 'FAILED', time.time() - start))
+        if code != 0:
+            failed.append(what)
+    if failed:
+        print('FAILED: port_net: %s' % ' '.join(failed))
+        return 1
+    print('OK: port_net all')
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description='Two programs of the port playing each other over UDP on this PC.')
-    ap.add_argument('what', choices=('link', 'rollback', 'session', 'window'),
-                    help="what they play: session is a session's headless programs, window the window's")
+    ap.add_argument('what', choices=('link', 'rollback', 'session', 'window', 'all'),
+                    help="what they play: session is a session's headless programs, window the window's; all "
+                    "the four at once (make port-net), each with ports of its own")
     ap.add_argument('--bits', type=int, choices=(32, 64), help='one size only')
     ap.add_argument('--out', default=os.path.join(REPO, 'build', 'net'), help='where the runs go')
     ap.add_argument('--latency', type=int, help='milliseconds each datagram waits (--net-latency): 0 for the '
@@ -549,7 +592,14 @@ def main():
     ap.add_argument('--loss', type=int, help='datagrams in a hundred dropped (--net-loss): 0 for the link, 5 '
                     'for rollback')
     ap.add_argument('--delay', type=int, default=2, help="frames a press counts on, rollback's (--net-delay)")
+    ap.add_argument('--port-base', type=int, default=BASE_PORT,
+                    help='the first of the 24 UDP ports of 127.0.0.1 it may use (default %d)' % BASE_PORT)
     args = ap.parse_args()
+    if not 1024 <= args.port_base <= 65535 - PORTS_USED:
+        ap.error('--port-base: from 1024 to %d' % (65535 - PORTS_USED))
+    base = args.port_base
+    if args.what == 'all':
+        return run_all(args)
     rollback = args.what != 'link'
     if args.latency is None:
         args.latency = {'link': 0, 'rollback': 100, 'session': 100, 'window': 60}[args.what]
@@ -565,14 +615,14 @@ def main():
         if not os.path.isfile(program):
             print('port_net: window: skipped: no %s (make port-sdl)' % WINDOW_PROGRAM)
         else:
-            problems += check_session('window', program, args, (BASE_PORT + 20, BASE_PORT + 21), True)
-            problems += check_menu(program, args, (BASE_PORT + 22, BASE_PORT + 23))
+            problems += check_session('window', program, args, (base + 20, base + 21), True)
+            problems += check_menu(program, args, (base + 22, base + 23))
     for n, bits in enumerate([] if args.what == 'window' else [args.bits] if args.bits else [64, 32]):
         program = os.path.join(REPO, PROGRAMS[bits])
         if not os.path.isfile(program):
             problems.append('%d-bit: no %s (make port)' % (bits, PROGRAMS[bits]))
             continue
-        ports = (BASE_PORT + 2 * n, BASE_PORT + 2 * n + 1)
+        ports = (base + 2 * n, base + 2 * n + 1)
         if args.what == 'session':
             problems += check_session('%d-bit' % bits, program, args, (ports[0] + 10, ports[1] + 10), False)
             continue

@@ -103,8 +103,7 @@ def write_headers(rebushido=False):
     if POLLHOST_OLD not in text:
         sys.exit('run.py: include/psxsdk/libsn.h no longer has `%s`' % POLLHOST_OLD)
     os.makedirs(OUT_DIR + '/include/psxsdk', exist_ok=True)
-    with open(OUT_DIR + '/include/psxsdk/libsn.h', 'w', encoding='utf-8', newline='\n') as f:
-        f.write(text.replace(POLLHOST_OLD, POLLHOST_NEW))
+    port_gte_macros.write_shared(OUT_DIR + '/include/psxsdk/libsn.h', text.replace(POLLHOST_OLD, POLLHOST_NEW))
 
 
 def include_flags(rebushido=False):

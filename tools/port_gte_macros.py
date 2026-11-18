@@ -236,6 +236,25 @@ def rewrite(text, name):
     return '\n'.join(out) + '\n', count, left_out
 
 
+def write_shared(path, text, encoding='utf-8'):
+    """A header that several builds write and read at once (the port's,
+    the window's, the host tests', modern's, tools/gate.py running them
+    side by side): written only if it would change, and then whole, by a
+    file of its own moved into its place, so that a compiler never reads
+    it half written."""
+    data = text.encode(encoding)
+    try:
+        with open(path, 'rb') as f:
+            if f.read() == data:
+                return
+    except OSError:
+        pass
+    temporary = '%s.%d.tmp' % (path, os.getpid())
+    with open(temporary, 'wb') as f:
+        f.write(data)
+    os.replace(temporary, path)
+
+
 def write_headers():
     """Writes the port's two headers; returns {header: (macros, left out)}."""
     done = {}
@@ -244,8 +263,7 @@ def write_headers():
     for name in HEADERS:
         with open(os.path.join(SOURCE_DIR, name), encoding='latin-1') as f:
             text, count, left_out = rewrite(f.read(), name)
-        with open(os.path.join(folder, name), 'w', encoding='latin-1', newline='\n') as f:
-            f.write(text)
+        write_shared(os.path.join(folder, name), text, 'latin-1')
         done[name] = (count, left_out)
     return done
 
