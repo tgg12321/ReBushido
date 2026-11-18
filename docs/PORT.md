@@ -2031,7 +2031,21 @@ per cent either way is noise):
 
 | The prover | llvmpipe (WSL) | The card (Windows) |
 |---|---|---|
-| `port_gl_prove.py` (three plans) | 728 s | 95 s |
+| `port_gl_prove.py` (three plans) | 728 s (496 s with the machine quieter) | 93 s |
+| `port_fps_prove.py` (three plans) | 1,087 s (1,025 s) | 264 s |
+| `port_stage_prove.py` (38 stages) | 1,767 s | 527 s |
+
+`port_fps_prove.py` holds the same on both: the same frames checked,
+the first picture the game's own to the pixel, every corner between its
+own ends, the same one frame out of order by the pixels and explained.
+Of its time on the card most is the game and the read-back of five
+pictures a frame, not the drawing (0.3 ms a picture inside the renderer
+against 11 to 19 ms on llvmpipe). `port_stage_prove.py`'s verdicts come
+to the same `g_stage_proved` on both: all 38 stages keep the mesh, every trace the same both ways, and the stages' shares of pixels that differ, of areas plainly another colour and of black within a tenth of a per cent of each other (the most that differs on any stage: 76.9% and 77.0%; black 0.599% on both). Its measures of
+pixels are each GPU's own -- which of two texels a ground read half a
+texel along takes is the last bit of each one's arithmetic -- and the
+bar it holds them to (areas of 16 by 16 pixels plainly another colour)
+is set well above that speckle on purpose.
 
 ### What is not done, and what may be wrong
 
@@ -2740,9 +2754,9 @@ pictures a second", "What made a fighter standing still move"): the
 watched point was off its line because it was a different primitive at
 different phases, or one held where it is at the last; it is now one
 primitive chosen for the pair of frames, and `port_game` and
-`port_bugfixes` hold every check. `port_other_fight`'s 20 out of order
-are on the cave stage, where rails against the camera are black in one
-of the game's own frames and red in the next.
+`port_bugfixes` hold every check. `port_other_fight`'s out of order
+were the cave's railings a pixel off between two frames, and are gone
+("More pictures a second", "The railings that jumped a pixel").
 
 **What it costs.** On this machine, which has no graphics card at all
 (Mesa's llvmpipe) and was busy with other work throughout, a run of
@@ -4247,6 +4261,33 @@ geometry: where a textured scene slides across the screen, a shift of a
 quarter of the way can line fewer texels up than a shift of none. The
 watched point is in order at every phase of it, and so is the distance
 from the *first* picture.
+
+**The railings that jumped a pixel** (2026-11-18). Later the same plan
+had 14 frames out of order, all on the cave, and `port_fps_prove.py`
+failed on them every run; they were not the measure. At blank 3,036 the
+railing a step before the camera is a pixel higher at phases 2 and 3
+than at both ends, which agree to the pixel (rows 762 to 800 of 960).
+The stage's mesh -- ground and railings -- is drawn between two frames
+with a view mixed between theirs (`port_GlStageMixView`), and that view
+kept the camera in whole units of the world and the rotation in 1.12
+numbers, as the game does. The camera went from (-5000, -461, 10316) to
+(-5000, -462, 10320): its depth moved a unit a phase, while its height,
+a single unit for the whole frame, stayed at -461 until the last phase
+and then stepped. Off the line between the two cameras, the near railing
+went up with the depth and came back down with the height. The mixed
+rotation and camera are now kept unrounded for the card
+(`g_stage_mixed`, `src/port/gl/gl_stage.c`; the frame on show is drawn as
+before): **14 frames out of order to 1**, the same on llvmpipe and on the
+card. At 144 pictures a second that was a shimmer of whatever stood
+close to the camera whenever it moved slowly.
+
+The one left, blank 2,952, is right and is the measure's: a railing a
+step before the camera comes down into the picture from above, 25 lines
+of it in the first picture and 90 in the second, so the second is
+further from the last than the first, by 7%; every corner is between its
+own two ends. `port_fps_prove.py` lists such a frame with why
+(`ORDER_EXPLAINED`) and fails on any frame out of order that is not
+there.
 
 **`port_bugfixes`' trace parts company at the options page**, as it does
 for anything that moves the program's memory about: the page reads

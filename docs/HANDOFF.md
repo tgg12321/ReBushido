@@ -72,10 +72,7 @@ play is [`PLAYING.md`](PLAYING.md); online play is
 6. **2D still only upscaled**: setup mode's pages, slash mode, the
    endings, other modes' results, "Waiting for Challenger", portraits,
    the loading maps (each a table row in `tools/port_ui.py`).
-7. **Older open items**: `port_fps_prove.py` still fails on
-   `port_other_fight` alone (14 to 20 out-of-order pictures between
-   frames on the cave stage, where rails before the camera change colour
-   from frame to frame in the game's own pictures); music per stage (the game shares five pieces);
+7. **Older open items**: music per stage (the game shares five pieces);
    `src/port/window/` outside lint and count; the music a tenth louder
    than the emulator's; the original's bugs left alone (REBUSHIDO.md).
 
@@ -296,8 +293,10 @@ what they buy for what they cost:
    (`wsl bash tools/build.sh port-gl-windows`), with SDL's context on a
    window never shown in place of EGL's, and `port_gl_prove.py`,
    `port_fps_prove.py` and `port_stage_prove.py` run it with
-   `--gpu card` (the default under Windows' Python): `port_gl_prove.py`
-   728 s on llvmpipe, 95 s on the card, the same verdicts. llvmpipe stays
+   `--gpu card` (the default under Windows' Python), with the same
+   verdicts: `port_gl_prove.py` 496 to 728 s on llvmpipe against 93 s on
+   the card, `port_fps_prove.py` 1,025 to 1,087 s against 264 s,
+   `port_stage_prove.py` 1,767 s against 527 s. llvmpipe stays
    the exact reference (PORT.md, "The provers on a graphics card").
    Mesa's D3D12 driver in WSL is no way to the card: it draws wrong.
 4. **No more merge conflicts in the same three places.** Nearly every
