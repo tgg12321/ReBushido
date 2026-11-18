@@ -118,6 +118,10 @@ LIMITS = [
     ('ra1', 'settled_worst', 2 * BUDGET_MS, "the worst blank after the fight's first second"),
     ('ra2', 'settled_p99', BUDGET_MS, 'the same, run_ahead 2'),
     ('ra1-stress', 'settled_p99', BUDGET_MS, 'the same, four fighters, the ground twice'),
+    # the step on its own thread (`s` lines): what it takes from the input
+    # to the end of its frame, which the frame's first picture waits for
+    ('ra1', 'step_p95', BUDGET_MS, "the step's own thread, a fight frame, 95%, run_ahead 1"),
+    ('ra2', 'step_p95', BUDGET_MS, 'the same, run_ahead 2'),
 ]
 # What the program meets with room to spare (2026-11-18: the card's 95th
 # centile of a fight frame 3.9 to 5.2 ms with run_ahead 0 to 2, the RTX
@@ -127,6 +131,16 @@ MET_LIMITS = [
     ('ra0', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, run_ahead 0"),
     ('ra1', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, run_ahead 1"),
     ('ra2', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, run_ahead 2"),
+    # Met since the step runs on a thread of its own (docs/PORT.md, "The step
+    # on a thread of its own"): the window's thread's own work, a picture and
+    # a record, held to a refresh whatever --report-only says. ra1's cpu_p95
+    # 1.2 to 1.6 ms and settled_p99 1.6 to 2.8 in interleaved runs on a
+    # machine other agents were using; the step's thread has its own
+    # measures (step_p95, LIMITS).
+    ('ra1', 'cpu_p95', BUDGET_MS, "the window's thread's work of a fight frame, 95%, run_ahead 1"),
+    ('ra1', 'settled_p99', BUDGET_MS, "the window's thread, any blank after the fight's first second, 99%"),
+    ('ra2', 'settled_p99', BUDGET_MS, 'the same, run_ahead 2'),
+    ('ra1-stress', 'settled_p99', BUDGET_MS, 'the same, four fighters, the ground twice'),
 ]
 # The fight's first second is the end of its load: the limits on the
 # worst blanks are of what follows it.
@@ -649,7 +663,8 @@ def main():
         for case, key, most, what in LIMITS:
             if case not in results:
                 continue
-            value = results[case][key]
+            # the step's own measures only where it ran on its own thread
+            value = results[case].get(key, 0.0)
             over = value > most
             failed = failed or over
             print('  %-11s %-12s %7.2f (at most %6.2f) %-5s %s' % (case, key, value, most,

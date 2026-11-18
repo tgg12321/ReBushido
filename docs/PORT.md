@@ -5557,7 +5557,8 @@ reads live today: the fighters' views (`port_GetFighterView`, read at a
 frame's first fighter primitive), a node's kind read from the game's
 memory at every fighter primitive (`port_FighterIsCloth`,
 `port_FighterIsTinyBody`), the stage's view, the shadows' casters and
-the cloth's points.
+the cloth's points. Since done: "The step on a thread of its own",
+below.
 
 ### The pause and the frames ahead
 
@@ -5698,16 +5699,184 @@ the card. A shown window had the fine timer all along.
   `p` line's third word, and its time is the refresh it was handed over
   for.
 
-**What is left** for the step beside the pictures: the record (the
-tween agent's: the backend recording on the step's side, everything it
-reads of the game's state at a draw kept with it, and the staged copy of
-video memory and the fighters' views owned by the record). Then the
-fiber can run on a thread of its own and come to the window's thread only
-where the step still needs it. The window would draw pictures between
-frames at every refresh the step spans, and a step longer than a refresh
-would cost no refresh at all. Until then a step and its first picture
-together must fit in two refreshes, 13.9 ms at 144 a second, which they
-do.
+**Since done**: the record and the step on a thread of its own ("The
+step on a thread of its own", below). The step's refresh is what the
+window draws beside a step with `RB_STEP_THREAD=off`.
+
+### The step on a thread of its own
+
+**What was asked** (2026-11-18): make the step only record what the card
+draws, with everything the draw reads of the game kept in the record, and
+then run the step on a thread of its own beside the window's pictures, so
+that a refresh costs the more of the two and not their sum, and a long
+step costs no refresh. The input is read at the same moment, and the game
+stays the same to the byte.
+
+**The record** (`src/port/gl/gl_record.c`, `gl_record.h`). While a held
+step runs (`g_port_holding`: run-ahead on, the window's build), the side
+channel's backend (`port_RemasterSetBackend`) is a recorder, and so is the
+pause's holder (`port_RemasterSwapPauseHolder`). Every call the backend
+would have had -- `begin`, `draw`, `wrote_vram`, `end`, `kept_vram`, the
+card's frame ended at a blank (`port_GlFinishOrRecord`, from the held and
+ahead blanks' turns and `port_AheadDone`) and the holder's turns -- is
+written down in order, into blocks kept from one record to the next. What
+the backend reads of the game at a call is written down with it:
+
+- *the pixels of each rectangle of video memory told of*, as they are at
+  the call (a write of a frame the card does not draw waits for the
+  painters first, as `port_GlUploadVram` did). Drawn, the backend reads
+  them from the record (`port_GlTellPixels`, `port_GlVramAt`), and looks
+  up what it looks up in video memory -- a mod's pictures, the stage's
+  pages, the fighters' colour tables, the clear's colour -- in its own copy
+  of what the mirror holds (`g_port_gl_vram`), as a picture between
+  frames does;
+- *the fighters' views, the tiny model's and the weapons*
+  (`port_FighterKeepViews`) and *the side channel's stage view, the
+  shadows' casters with what the game's memory says of each face's node,
+  and the sun's slope* (`port_RemasterKeepSide`): copied where they have
+  changed since the last copy (a version, and a stamp with the sun's slope
+  in it), two or three times a step; the getters answer from the copy in
+  force (`port_FighterUseViews`, `port_RemasterUseSide`), the casters by
+  their place among the faces (`port_RemasterCasterFaceGround`,
+  `port_RemasterCasterFaceIsCloth`);
+- *what the backend asked of the game about a primitive's node* -- a
+  cloth, the tiny model's body, the pause drawing the fight's last table
+  again -- is asked as the primitive is decoded and kept in it
+  (`PortRemasterPrim.is_cloth_node`, `is_tiny_body`, `is_redrawing`), so
+  that neither the record nor a picture between frames reads the game for
+  it.
+
+Read live still, as they are only between loads and stage changes: the
+stage's tiles, pieces, textures and number, and the meshes they name. The
+window draws a record only where the game is still, or, while the step
+runs, never past the stage's view of another version (the meshes are
+built again then, from the game's memory and with its coprocessor,
+`port_GlStageLightBy`): that waits for the step's end.
+
+**The step's thread** (`sdl_window.c`, "the step on a thread of its
+own"; `step.c`, `g_port_step_runner`). The window's thread reads the
+input at the boundary as ever (`port_ReadInputLate`), then hands the
+game's fiber to the step's thread, which enters it, runs the step -- the
+game, the software GPU's game-thread part, the side channel, the sound's
+stepping -- and the frames ahead after it (`port_AfterStepAhead`), and
+says so. The window's thread meanwhile:
+
+- *draws the record as it is written* once the frame's list has begun
+  (`port_GlDrawSoFar`; the first primitive written wakes it), up to a hold
+  the step's thread writes as the step itself ends (`port_GlRecordHold`):
+  what the frames ahead write is drawn only once the step's thread is
+  still, before their state is put back (`port_FlushRecord`, the step's
+  thread waiting). The rest is drawn once the step has ended
+  (`port_GlDrawPending`), and the blanks' turns are given as before;
+- *draws a picture for each refresh the step would miss*
+  (`port_BesideStep`): a picture between the two frames written down
+  already, handed over for that refresh and not waited for, where the
+  step still runs with no more time before the refresh than the rest of
+  its record and its first picture take after it (on average, and a
+  millisecond to spare). The decision is made at the last moment, not
+  guessed at the boundary as the step's refresh had to: a step that ends
+  in time has its own picture shown. Once the record's frame is being
+  drawn no picture can be (the card's frame is under way), so as the
+  frame's list begins the next refresh is given one first where the
+  list, the rest and the first picture would miss it.
+
+A step that comes to what only the window's thread may do -- a blank's
+turn while the step runs, which is a load beginning or a step of more
+than four blanks -- is moved there: the step's thread leaves the fiber
+where it is (`port_StepToHost`, `g_port_step_to_host`), the window's
+thread draws the record and enters it, and the step goes on there as any
+step (7 of the bench's 1,781 steps). The program's end from inside the
+step goes the same way (`port_CloseFromStep`). The fiber's switch keeps
+each thread's record of its stack, so a fiber may be left on one thread
+and entered on another.
+
+**What a blank inside the step reads.** The window's events are the
+window's thread's to read (SDL), and it reads them at the boundary; a
+blank inside the step sends the pads what the keys and controllers held
+then (`port_ReadInput` on the step's thread: `port_SendPads` alone). The
+game takes its input at the boundary, so nothing it takes moves. A run
+with `--inject` (presses made as the PC's own, read at a blank) keeps the
+old flow.
+
+**Counted apart.** Each thread's parts are its own (`profile.c`,
+`g_port_profile_thread`): the window's `b` lines are the window's thread's
+alone, and the step's thread's are `s` lines at the blank that takes them
+(`tools/port_bench.py`: "the step's own thread", `step_p50` and the
+rest). The window's waiting for the step is `wait`. With the step on its
+own thread the window's numbers are a picture's and a record's, and the
+step's are the game's; a refresh costs the larger, not the sum.
+
+`RB_STEP_THREAD=off` runs every step on the window's thread as before;
+`RB_STEP_STREAM=off` draws the record only once the step has ended. The
+headless programs, the tests and netplay never hold a step and are as
+they were.
+
+**Held to the same game** (the bench's fight on the card, 640 by 360,
+`--trace`, `--vram` at the end, run_ahead 1 and 2, against
+`RB_STEP_THREAD=off` of the same program): the traces, the plan's
+checkpoints and video memory at the end are the same to the byte, and so
+are the pictures (`--tap-window` every eighth blank, `frame_rate
+original`, the counter off, `RB_TEXTURES_AT_ONCE=1`): 419 of 419, both
+cases. port-rollback and port-net pass; the eleven checks pass.
+
+**Measured** (RTX 3090 at 2,560 by 1,440, the bench's fight; this
+program against main's `29bbb3810` run one after the other with
+`port_bench.py --program`, interleaved; other agents' work was on the
+machine in the unpaced rounds and less of it in the paced ones; medians
+of the rounds, ms). Unpaced (`--fast`, the gate's bench), two rounds:
+
+| case | main: window 95%, after 1 s 99% | now: window 95%, after 1 s 99% | now: the step's thread 50%, 95%, 99% | picture to picture 99%, main, now |
+| --- | --- | --- | --- | --- |
+| `run_ahead 0` | 6.19, 6.48 | 5.38, 6.09 | (not held) | 6.48, 6.08 |
+| `run_ahead 1` | 6.54, 6.85 | **1.61, 2.22** | 4.44, 5.33, 6.56 | 6.85, 8.03 |
+| `run_ahead 2` | 6.83, 7.20 | **1.39, 1.53** | 6.06, 7.08, 7.88 | 7.19, 8.43 |
+| four fighters, the ground twice | 5.90, 6.12 | **1.55, 1.85** | 4.26, 4.95, 5.46 | 6.11, 6.32 |
+
+The window's thread's own work is now a picture and a record: a frame's
+blank 1.2 to 1.6 ms at the 95th centile against 6.5, every blank after the
+first second under 3.4 ms. Unpaced, nothing is drawn beside the step (no
+display to wait for), so the time from one picture to the next is the
+step and its record and first picture one after the other, as before,
+with the hand-overs: about 1 ms more at the 99th centile.
+
+Paced at 144 a second (`--paced`), three rounds:
+
+| case | refreshes no new picture reached, main, now | a frame's input to its first picture, mean refreshes, main, now | the step's thread 50%, 95% |
+| --- | --- | --- | --- |
+| `run_ahead 1` | 0.59, 0.15, 0.29 %; 0.73, 0.59, 0.73 % | 1.23, 1.25, 1.21; 1.22, 1.24, 1.24 | 3.35, 3.88 |
+| `run_ahead 2` | 3.81, 3.38, 1.60 %; 2.93, 2.20, 2.06 % | 1.39, 1.40, 1.93; 1.62, 1.48, 1.43 | 5.14, 5.92 |
+
+So the lag is what it was (the input is read at the same moment, and the
+step's first picture is shown at the first refresh it can make), the
+misses at `run_ahead 2`, whose step is the longest, are fewer, and at
+`run_ahead 1` they stay under one in a hundred. On a busier machine
+(earlier rounds of the same day, the step's thread preempted), main's
+`run_ahead 1` missed 3 to 9% and this 2 to 6%. What a miss still is: a
+step that ends in time for a refresh by the average, whose record and
+first picture then take longer than the average; once the frame's list
+is being drawn, no picture can be drawn for a refresh beside it.
+`RB_STEP_STREAM=off` (the record drawn only after the step) missed as
+many and was no later, within the noise.
+
+**What is left.**
+
+- *`run_ahead 0` is not held*, so its steps stay on the window's thread
+  (its blanks are shown as they come, inside the step).
+- *The window's part after a step*: the rest of the record (the card's
+  frame ended: the shadows, the resolve) and the first picture of the new
+  pair, about 1 to 2 ms, which the step's own picture waits for. The step
+  and that together still come to about a refresh, so a frame's first
+  picture is often the second refresh after its input. The software
+  GPU's part of the step (2 ms, much of it the side channel's decoding
+  and the waits for the painters) is the largest.
+- *Pictures between frames on the card* (HANDOFF, "The tween as it is
+  now"): the record is the natural place for it -- a frame's calls kept,
+  with both frames' corners in one vertex buffer and the phase a
+  uniform -- but it is not done: a picture is still the frame on show's
+  primitives given to the backend again on the processor.
+- *A frame drawn and not shown*: with pictures between frames, the
+  record's own frame is drawn into the colour buffer and then drawn over
+  by the first picture of the pair; the card could be spared it.
 
 ### The HD fighters on the card
 

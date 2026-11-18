@@ -231,6 +231,22 @@ the scene and the fighters hold against a linear depth today).
   processor; a load of a frame the card is given only the writes of
   (`g_port_ahead_kept`, the step itself with two ahead) handed to the
   painters with its pixels kept for the mirror, so that it does not wait.
+- **The step on a thread of its own** (docs/PORT.md, of that name):
+  with run-ahead on, the step calls no OpenGL. What it hands the card is
+  written down with everything the backend reads of the game
+  (`gl_record.c`), the step runs on a thread of its own, and the window's
+  thread draws the record (as it is written, once the frame's list has
+  begun) and a picture for each refresh the step would miss. The game,
+  video memory and the pictures are the same to the byte as with
+  `RB_STEP_THREAD=off`. The window's thread's frame is 1.2 to 1.6 ms at
+  the 95th centile (was 6.5), so the bench's `cpu_p95` and
+  `settled_p99` of `run_ahead 1` and 2 are now held as met
+  (`MET_LIMITS`); the step's own thread is 4 to 6 ms (`step_p95`).
+  Paced, the lag is what it was. Next: the record's frame is drawn into
+  the colour buffer and then drawn over by the first picture of the pair
+  (the card could be spared it); the pictures between frames on the card
+  from the kept calls (the "tween as it is now" item above); `run_ahead
+  0`, whose steps are not held, is unchanged.
 - **The side channel** (`remaster`, about 0.9 ms) and the scene as real
   3D (item 2 above) are untouched, and so is the ground's early depth
   test.
