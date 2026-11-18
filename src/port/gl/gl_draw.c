@@ -26,6 +26,7 @@
 #include "gl.h"
 #include "gl_fighter.h"
 #include "gl_light.h"
+#include "gl_load.h"
 #include "gl_replace.h"
 #include "gl_scene.h"
 #include "gl_see.h"
@@ -49,6 +50,11 @@ typedef float GLfloat;
 typedef char GLchar;
 typedef ptrdiff_t GLsizeiptr;
 typedef ptrdiff_t GLintptr;
+
+/* what of a mod's pictures read beside the game is sent to the card a
+ * frame, at the most (gl_load.h): 32 MB, a page of the stage and its levels
+ * several times over */
+#define LOAD_BYTES_A_FRAME (32U << 20)
 
 #define GL_FALSE 0
 #define GL_TRUE 1
@@ -2461,6 +2467,9 @@ static void port_GlBegin(void) {
      * first. */
     port_GlShadowNewFrame();
     g_gl.has_state = FALSE;
+    /* a mod's pictures read beside the game since the last frame, sent
+     * to the card: a few megabytes a frame, the rest the next */
+    port_GlLoadCollect(LOAD_BYTES_A_FRAME);
     port_GlForgetOccluders();
     port_GlStageNewFrame();
     port_GlFighterNewFrame();

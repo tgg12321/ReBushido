@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "common.h"
+#include "gl_load.h"
 #include "gl_replace.h"
 #include "port_gpu.h"
 #include "port_host.h"
@@ -88,7 +89,8 @@ enum {
     SLOT_EMPTY = 0, /* no key */
     SLOT_NONE,      /* the key has no replacement */
     SLOT_LOADED,    /* ... has one, on the card */
-    SLOT_FAILED     /* ... has one that cannot be read */
+    SLOT_FAILED,    /* ... has one that cannot be read */
+    SLOT_LOADING    /* ... has one being read beside the game (gl_load.h) */
 };
 
 typedef struct {
@@ -117,6 +119,7 @@ typedef struct {
 
 typedef struct {
     u64 texel_key;
+    u64 key; /* the replacement's own: its texture is 0 while it is read */
     s32 bits;
     u32 texture;
     s32 mix;
@@ -130,6 +133,7 @@ typedef struct {
 typedef struct {
     s32 w;
     s32 h;
+    u64 key;
     u32 texture;
     u16 *pixels;
 } FadePicture;
@@ -301,40 +305,29 @@ static void port_ReplaceDump(
 
 /* ---- reading a replacement ---- */
 
-/* The mod's picture at `path` on the card: its texture, or 0. Its colours
- * are kept multiplied by its alpha, so that smoothing a clear texel into
- * the next does not darken it; the shader divides them out again. */
-static u32 port_ReplaceLoad(const char *path, const char *name) {
-    char problem[TEXT_SIZE / 4];
-    PortPngInfo info;
-    u32 size = port_ModFileSize(path);
-    u8 *file = size > 0 ? malloc(size) : NULL;
-    u8 *work = NULL;
-    u8 *rgba = NULL;
-    GLuint texture = 0;
-    u32 i;
+static ReplaceSlot *port_ReplaceSlotOf(u64 key);
+static void port_ReplaceKeptLoaded(u64 key, u32 texture);
 
-    problem[0] = 0;
-    if (file == NULL || port_ModReadFile(path, file, size) != size) {
-        snprintf(problem, sizeof(problem), "it cannot be read");
-    } else if (port_PngMeasure(file, size, &info, problem, sizeof(problem))) {
-        work = malloc(info.work_bytes);
-        rgba = malloc((size_t)info.w * (size_t)info.h * RGBA);
-        if (work == NULL || rgba == NULL) {
-            snprintf(problem, sizeof(problem), "no memory for it");
-        } else if (
-            port_PngDecode(file, size, work, rgba, problem, sizeof(problem))) {
-            for (i = 0; i < (u32)info.w * (u32)info.h * RGBA; i += RGBA) {
-                rgba[i] = (u8)(rgba[i] * rgba[i + 3] / BYTE_MAX);
-                rgba[i + 1] = (u8)(rgba[i + 1] * rgba[i + 3] / BYTE_MAX);
-                rgba[i + 2] = (u8)(rgba[i + 2] * rgba[i + 3] / BYTE_MAX);
-            }
+/* A mod's picture read (gl_load.h) given to the card: the texture of the
+ * slot of its key, where the slot is still waiting for it (a new context
+ * forgets every key). Its colours are kept multiplied by its alpha, so
+ * that smoothing a clear texel into the next does not darken it; the
+ * shader divides them out again. */
+static void port_ReplaceLoaded(PortGlLoad *load) {
+    ReplaceSlot *slot =
+        g_replace.slots != NULL ? port_ReplaceSlotOf(load->key) : NULL;
+    const char *name = load->owner != NULL ? (const char *)load->owner : "?";
+    GLuint texture = 0;
+
+    if (slot != NULL && slot->state == SLOT_LOADING &&
+        slot->key == load->key) {
+        if (load->is_loaded) {
             glActiveTexture(GL_TEXTURE0 + PORT_GL_REPLACE_UNIT);
             glGenTextures(1, &texture);
             glBindTexture(GL_TEXTURE_2D, texture);
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, info.w, info.h, 0, GL_RGBA,
-                         GL_UNSIGNED_BYTE, rgba);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, load->w, load->h, 0,
+                         GL_RGBA, GL_UNSIGNED_BYTE, load->pixels);
             glPixelStorei(GL_UNPACK_ALIGNMENT, RGBA);
             glGenerateMipmap(GL_TEXTURE_2D);
             glTexParameteri(
@@ -344,18 +337,46 @@ static u32 port_ReplaceLoad(const char *path, const char *name) {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             glActiveTexture(GL_TEXTURE0);
             g_replace.loaded++;
-            port_ReplaceSay(
-                "mods: texture %s is %s (%dx%d)", name, path, info.w, info.h);
+            port_ReplaceSay("mods: texture %s is %s (%dx%d)", name, load->path,
+                            load->w, load->h);
+        } else {
+            port_ReplaceSay("mods: texture %s: %s is not used: %s", name,
+                            load->path, load->problem);
+        }
+        slot->texture = texture;
+        slot->state = texture != 0 ? SLOT_LOADED : SLOT_FAILED;
+        if (texture != 0) {
+            port_ReplaceKeptLoaded(load->key, texture);
         }
     }
-    if (texture == 0) {
-        port_ReplaceSay(
-            "mods: texture %s: %s is not used: %s", name, path, problem);
+    free(load->owner);
+    load->owner = NULL;
+}
+
+/* The mod's picture at `path` asked for, for the slot: read beside the
+ * game, the slot drawing the game's own texture until it is on the card,
+ * or at once where it cannot be (gl_load.h). */
+static void port_ReplaceLoad(ReplaceSlot *slot, const char *path,
+                             const char *name) {
+    PortGlLoad load;
+    size_t length = strlen(name) + 1;
+
+    memset(&load, 0, sizeof(load));
+    load.path = path;
+    load.done = port_ReplaceLoaded;
+    load.key = slot->key;
+    load.owner = malloc(length);
+    slot->state = SLOT_LOADING;
+    slot->texture = 0;
+    if (load.owner == NULL) {
+        slot->state = SLOT_FAILED;
+        return;
     }
-    free(file);
-    free(work);
-    free(rgba);
-    return texture;
+    memcpy(load.owner, name, length);
+    if (!port_GlLoadAsk(&load)) {
+        free(load.owner);
+        slot->state = SLOT_FAILED;
+    }
 }
 
 /* ---- fading ---- */
@@ -412,6 +433,7 @@ static void port_ReplaceKeepForFades(
         free(kept->pixels);
         kept->w = region->w;
         kept->h = region->h;
+        kept->key = slot->key;
         kept->texture = slot->texture;
         kept->pixels = pixels;
         g_replace.picture_next =
@@ -431,10 +453,32 @@ static void port_ReplaceKeepForFades(
         kept = &g_replace.fades[g_replace.fade_count++];
         kept->texel_key = port_TextureTexelKey(g_port_vram, region);
         kept->bits = region->bits;
+        kept->key = slot->key;
         kept->texture = slot->texture;
         kept->mix = slot->mix;
         kept->colors = port_ReplaceColors(region);
         port_ReplaceTable(region, kept->table);
+    }
+    g_replace.generation++;
+}
+
+/* The texture of a replacement read beside the game, given to what was
+ * kept of it for the fades while it was read; and every key with no
+ * replacement of its own looked for among the fades again. */
+static void port_ReplaceKeptLoaded(u64 key, u32 texture) {
+    s32 i;
+
+    for (i = 0; i < PICTURE_FADES_MAX; i++) {
+        if (g_replace.pictures[i].pixels != NULL &&
+            g_replace.pictures[i].texture == 0 &&
+            g_replace.pictures[i].key == key) {
+            g_replace.pictures[i].texture = texture;
+        }
+    }
+    for (i = 0; i < g_replace.fade_count; i++) {
+        if (g_replace.fades[i].texture == 0 && g_replace.fades[i].key == key) {
+            g_replace.fades[i].texture = texture;
+        }
     }
     g_replace.generation++;
 }
@@ -449,8 +493,8 @@ static u32 port_ReplacePictureFade(const PortTextureRegion *region, u32 *tint) {
     for (i = 0; i < PICTURE_FADES_MAX && texture == 0; i++) {
         FadePicture *kept = &g_replace.pictures[i];
 
-        if (kept->pixels == NULL || kept->w != region->w ||
-            kept->h != region->h) {
+        if (kept->pixels == NULL || kept->texture == 0 ||
+            kept->w != region->w || kept->h != region->h) {
             continue;
         }
         if (now == NULL) {
@@ -485,7 +529,8 @@ static const FadeTexture *port_ReplaceTextureFade(
     for (i = 0; i < g_replace.fade_count; i++) {
         const FadeTexture *kept = &g_replace.fades[i];
 
-        if (kept->texel_key == texel_key && kept->bits == region->bits &&
+        if (kept->texture != 0 && kept->texel_key == texel_key &&
+            kept->bits == region->bits &&
             port_TextureFadeOf(kept->table, table, (u32)kept->colors, tint)) {
             return kept;
         }
@@ -636,15 +681,14 @@ static u32 port_ReplaceOf(const PortTextureRegion *region, s32 is_picture,
         }
         return 0;
     }
-    slot->texture = port_ReplaceLoad(path, name);
-    slot->state = slot->texture != 0 ? SLOT_LOADED : SLOT_FAILED;
     slot->mix = is_picture ? PORT_GL_MIX_TEXEL : port_ReplaceMixOf(region);
-    if (slot->texture != 0) {
+    port_ReplaceLoad(slot, path, name);
+    if (slot->state != SLOT_FAILED) {
         port_ReplaceKeepForFades(region, is_picture, slot);
     }
     *mix = slot->mix;
     *tint = slot->tint;
-    return slot->texture;
+    return slot->state == SLOT_LOADED ? slot->texture : 0;
 }
 
 /* The texels a primitive reads: a sprite's rectangle, or the rectangle
