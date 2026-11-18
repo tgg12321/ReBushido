@@ -553,6 +553,48 @@ On the machine of section 1 (other builds running):
 The copy is the processor's own (`rep movsb`), so a frame's snapshot
 costs about a twentieth of a frame. Eight snapshots are 38 MB.
 
+**Only the pages written** (2026-11-18). A save and a load no longer
+copy every byte: of a snapshot taken a frame or two ago, little has
+changed (about a hundred of the state's 1,700 pages in a fight's two
+frames, most of them video memory's). The four big pieces -- the RAM,
+the primitive buffers and the two runs of variables -- are kept by page
+(4 KB); the rest (the scratchpad, the I/O page, the stack, the stack
+pointer and the bytes of a piece before its first page bound and after
+its last) is copied whole every time, some 80 KB.
+
+- *Epochs.* Every save and every load ends an epoch. Each page notes the
+  epoch it was last written in, each snapshot the epoch it was taken in.
+  A save into a snapshot copies the pages written after the snapshot's
+  epoch, a load copies them back; a snapshot never taken here (or one
+  whose buffer is new) copies all. A page put back from the newest
+  snapshot is noted as of that snapshot's epoch, so a save into it again
+  (run-ahead's one buffer) leaves it; from an older one, as of the epoch
+  now. So netplay's ring may load any of its snapshots, the self-test
+  its two, and run-ahead composes with both: what holds is that a page
+  not written since a snapshot's epoch is what that snapshot holds.
+- *What writes a page.* Video memory is written only by the software
+  GPU (`raster.c`), which marks each line it writes
+  (`g_port_vram_lines_written`, kept in `state.c`, outside the state).
+  Every other page is made read-only at the end of each epoch
+  (`port_HostProtect`): the first write to it faults, and
+  `port_StateOnWrite` notes it and makes it writable for the rest of the
+  epoch (`port_HostWatchWrites`: SIGSEGV on Linux, a vectored handler on
+  Windows; any other fault is still a crash). A fault costs about 2
+  microseconds on Windows and 5.5 in WSL, a page's copy a tenth of that,
+  so a page written in two epochs running is left writable and taken for
+  written in every epoch (*hot*), and is watched again every 128 epochs.
+  A fight's run-ahead boundary has about 3 faults.
+- *What the system writes.* A read of a file, or a datagram, into a page
+  that is read-only would fail in the system, which does not fault: the
+  hosts touch each page of where it goes first (`port_HostTouchPages`).
+  The game's stack is never watched: a fault's handler may run on it.
+  The picture between frames (`gl_tween.c`) writes video memory without
+  the GPU's marks, and gives back every byte before the next save or
+  load, as it has to anyway.
+- `--whole-state` copies every byte, as before, for measuring.
+
+The hash is unchanged: it reads everything, as before.
+
 The test was shown to fail where it should: with the I/O page left out
 of the snapshot it stopped at the first round (the state's hash
 differed), and with the port's own variables left out it stopped at the
