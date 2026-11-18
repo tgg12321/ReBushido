@@ -907,9 +907,9 @@ static void port_GlFighterCastBox(
         for (k = 0; k < PORT_FIGHTER_TERMS; k++) {
             const float *term = v->term[k];
 
-            reach += port_GlClothRoot((double)term[0] * term[0] +
-                                      (double)term[1] * term[1] +
-                                      (double)term[2] * term[2]);
+            reach += port_GlClothRoot(
+                (double)term[0] * term[0] + (double)term[1] * term[1] +
+                (double)term[2] * term[2]);
             shares += term[3];
             sizes += term[3] < 0.0f ? -term[3] : term[3];
         }
@@ -1592,9 +1592,9 @@ static s32 port_GlFighterPoseOnCard(
         }
         world[j][15] = 1.0f;
     }
-    return port_GlFighterCardPose(slot, key, model->buffer, model->vertex_count,
-                                  (const float(*)[16])world,
-                                  (const float(*)[9])turn);
+    return port_GlFighterCardPose(
+        slot, key, model->buffer, model->vertex_count,
+        (const float(*)[16])world, (const float(*)[9])turn);
 }
 
 /* **A cloth is kept out of the body once a frame** (docs/PORT.md, "Where
@@ -1717,8 +1717,9 @@ static void port_GlFighterHoldView(
     if (pose < 0) {
         return;
     }
-    port_GlFighterCardHold(holds, count, pose, CLOTH_GAP,
-                           g_fighter.is_cloth_held, g_fighter.is_counting_cloth);
+    port_GlFighterCardHold(
+        holds, count, pose, CLOTH_GAP, g_fighter.is_cloth_held,
+        g_fighter.is_counting_cloth);
     for (i = 0; i < count; i++) {
         made[i]->key = keys[i];
         g_fighter.counts.cloth_holds++;
@@ -1859,8 +1860,8 @@ void port_GlFighterPreload(void) {
  * none, `t` then 0). FALSE where there is none. */
 static s32 port_GlFighterClothPicture(
     const FighterModel *model, const FighterCloth *cloth,
-    const PortFighterView *view, s32 k, const PortFighterView *after,
-    double *t, s32 slot, GLuint *one, GLuint *two) {
+    const PortFighterView *view, s32 k, const PortFighterView *after, double *t,
+    s32 slot, GLuint *one, GLuint *two) {
     const PortFighterCloth *drawn = &view->cloth[k];
     s32 i;
 
@@ -2603,7 +2604,8 @@ s32 port_GlFighterCastOf(s32 caster, s32 with_feet, PortGlFighterCast *cast) {
 
         cast->feet = port_GlFighterCardFeetBuffer(at);
     }
-    for (i = 0; i < view->cloth_count && cast->cloth_count < PORT_GL_CAST_CLOTHS;
+    for (i = 0;
+         i < view->cloth_count && cast->cloth_count < PORT_GL_CAST_CLOTHS;
          i++) {
         const PortFighterCloth *drawn = &view->cloth[i];
         const FighterCloth *cloth = port_GlFighterClothFor(model, drawn);

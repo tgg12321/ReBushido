@@ -130,7 +130,7 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glReadPixels,                                                     \
        (GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void *))               \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))                           \
-    GL(void, glDrawElements, (GLenum, GLsizei, GLenum, const void *))         \
+    GL(void, glDrawElements, (GLenum, GLsizei, GLenum, const void *))          \
     GL(void, glUniform1iv, (GLint, GLsizei, const GLint *))                    \
     GL(void, glUniformMatrix4fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glBindBufferBase, (GLenum, GLuint, GLuint))
@@ -367,8 +367,7 @@ static const char g_shadow_cast_vertex_text[] =
     "uniform vec4 u_project;\n"
     "uniform vec2 u_target;\n"
     "uniform vec2 u_scale;\n"
-    "out float v_ok;\n"
-    PORT_GL_CARD_FEET_GLSL
+    "out float v_ok;\n" PORT_GL_CARD_FEET_GLSL
     /* light_ProjectShadow's arithmetic: x and z move by the height above
      * the ground times the sun's slope, and y becomes the ground's */
     "float ground_one() {\n"
@@ -723,8 +722,8 @@ void port_GlShadowWarm(void) {
     }
     glGenTextures(1, &pixel);
     glBindTexture(GL_TEXTURE_2D, pixel);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA,
-                 GL_UNSIGNED_BYTE, NULL);
+    glTexImage2D(
+        GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     glGenFramebuffers(1, &framebuffer);
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
     glFramebufferTexture2D(
@@ -735,8 +734,8 @@ void port_GlShadowWarm(void) {
     glUseProgram(g_shadow.cast_program);
     glBindVertexArray(g_shadow.cast_array);
     glBindBuffer(GL_ARRAY_BUFFER, g_shadow.cast_buffer);
-    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(corners), corners,
-                 GL_STREAM_DRAW);
+    glBufferData(
+        GL_ARRAY_BUFFER, (GLsizeiptr)sizeof(corners), corners, GL_STREAM_DRAW);
     /* one triangle of the game's faces, every corner at nought and so
      * left out by the near plane; the models' kinds are branches of the
      * same program */
@@ -1230,7 +1229,8 @@ static void port_GlShadowDrawModels(void) {
                     break;
                 }
             }
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, a->cast.cloth_held[k]);
+            glBindBufferBase(
+                GL_SHADER_STORAGE_BUFFER, 0, a->cast.cloth_held[k]);
             glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, after);
             glBindVertexArray(a->cast.cloth_array[k]);
             glDrawElements(

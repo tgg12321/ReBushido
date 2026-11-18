@@ -105,8 +105,9 @@ PORT_GL_CARD_FUNCTIONS
 #define GROUP 64
 #define SCAN_GROUP 1024
 
-typedef char PortGlCardVertexWords
-    [sizeof(PortFighterVertex) == VERTEX_WORDS * 4 ? 1 : -1];
+typedef char PortGlCardVertexWords[sizeof(PortFighterVertex) == VERTEX_WORDS * 4
+                                       ? 1
+                                       : -1];
 
 typedef struct {
     u64 key; /* 0: nothing */
@@ -168,8 +169,7 @@ static struct {
 
 /* A vertex placed as the fighters' shader places it, its normal turned
  * as that shader turns it, and counted into its cube's list. */
-static const char g_skin_text[] =
-    CARD_VERSION
+static const char g_skin_text[] = CARD_VERSION
     "layout(local_size_x = 64) in;\n"
     "layout(std430, binding = 0) readonly buffer Model { uint m[]; };\n"
     "layout(std430, binding = 1) writeonly buffer Posed { vec4 posed[]; };\n"
@@ -213,8 +213,7 @@ static const char g_skin_text[] =
     "}\n";
 
 /* Where each list begins: the counts summed, four lists a thread. */
-static const char g_scan_text[] =
-    CARD_VERSION
+static const char g_scan_text[] = CARD_VERSION
     "layout(local_size_x = 1024) in;\n"
     "layout(std430, binding = 2) buffer Grid { int grid[]; };\n"
     "shared int s_sum[1024];\n"
@@ -241,8 +240,7 @@ static const char g_scan_text[] =
     "    if (t == 1023) { grid[8192] = s_sum[t]; }\n"
     "}\n";
 
-static const char g_scatter_text[] =
-    CARD_VERSION
+static const char g_scatter_text[] = CARD_VERSION
     "layout(local_size_x = 64) in;\n"
     "layout(std430, binding = 2) readonly buffer Grid { int grid[]; };\n"
     "layout(std430, binding = 3) readonly buffer Rank { ivec2 rank[]; };\n"
@@ -260,8 +258,7 @@ static const char g_scatter_text[] =
  * same). A list of more than SORTED (none was seen) is sorted by one
  * thread. A thread a list sorting in place took a millisecond and more
  * where a list was long, the fingers' and the face's. */
-static const char g_sort_text[] =
-    CARD_VERSION
+static const char g_sort_text[] = CARD_VERSION
     "layout(local_size_x = 64) in;\n"
     "layout(std430, binding = 2) readonly buffer Grid { int grid[]; };\n"
     "layout(std430, binding = 4) buffer Order { int order[]; };\n"
@@ -322,169 +319,168 @@ static const char g_sort_text[] =
  * copy is three floats a vertex's place and three its normal, 512 of
  * them: 12 KB, so that many groups fit on a multiprocessor at once (at
  * 30 KB three did, and each waited on memory with nothing to run beside
- * it). Some 0.5% of the places' 27 cubes hold more. */
+ * it). Some 0.5% of the places' 27 cubes hold more, and are walked in
+ * the body itself (cache_cubes leaves s_cached -1); cache_start, at the
+ * start of a group's work, says nothing is kept yet. */
 #define CARD_GROUP_TEXT "layout(local_size_x = 32) in;\n"
-#define CARD_BODY_TEXT                                                         \
-    "layout(std430, binding = 1) readonly buffer Posed { vec4 posed[]; };\n"   \
-    "layout(std430, binding = 2) readonly buffer Grid { int grid[]; };\n"      \
-    "layout(std430, binding = 4) readonly buffer Order { int order[]; };\n"    \
-    "layout(std430, binding = 8) buffer Counts { uint counts[]; };\n"          \
-    "const int CACHE = 512;\n"                                                 \
-    "shared float s_place[CACHE * 3];\n"                                       \
-    "shared float s_turn[CACHE * 3];\n"                                        \
-    "shared int s_offset[28];\n"                                               \
-    "shared int s_cached;\n"                                                   \
-    "shared ivec3 s_at;\n"                                                     \
-    "shared float s_nearest[32];\n"                                            \
-    "shared float s_along[32];\n"                                              \
-    "shared vec3 s_normal[32];\n"                                              \
-    "shared float s_weight[32];\n"                                             \
-    "int cell(float x) { return int(floor(x / 64.0)); }\n"                     \
-    "struct Sums { float nearest; float along; vec3 normal; float weight; };\n" \
-    "float least(float a, float b) {\n"                                        \
-    "    return a < 0.0 ? b : (b < 0.0 ? a : min(a, b));\n"                    \
-    "}\n"                                                                      \
-    "int bucket(int x, int y, int z) {\n"                                     \
-    "    return int(((uint(x) * 73856093u) ^ (uint(y) * 19349663u)\n"         \
-    "                ^ (uint(z) * 83492791u)) & 4095u);\n"                    \
-    "}\n"                                                                      \
-    "int cube_bucket(ivec3 c, int k) {\n"                                     \
+#define CARD_BODY_TEXT                                                              \
+    "layout(std430, binding = 1) readonly buffer Posed { vec4 posed[]; };\n"        \
+    "layout(std430, binding = 2) readonly buffer Grid { int grid[]; };\n"           \
+    "layout(std430, binding = 4) readonly buffer Order { int order[]; };\n"         \
+    "layout(std430, binding = 8) buffer Counts { uint counts[]; };\n"               \
+    "const int CACHE = 512;\n"                                                      \
+    "shared float s_place[CACHE * 3];\n"                                            \
+    "shared float s_turn[CACHE * 3];\n"                                             \
+    "shared int s_offset[28];\n"                                                    \
+    "shared int s_cached;\n"                                                        \
+    "shared ivec3 s_at;\n"                                                          \
+    "shared float s_nearest[32];\n"                                                 \
+    "shared float s_along[32];\n"                                                   \
+    "shared vec3 s_normal[32];\n"                                                   \
+    "shared float s_weight[32];\n"                                                  \
+    "int cell(float x) { return int(floor(x / 64.0)); }\n"                          \
+    "struct Sums { float nearest; float along; vec3 normal; float weight; };\n"     \
+    "float least(float a, float b) {\n"                                             \
+    "    return a < 0.0 ? b : (b < 0.0 ? a : min(a, b));\n"                         \
+    "}\n"                                                                           \
+    "int bucket(int x, int y, int z) {\n"                                           \
+    "    return int(((uint(x) * 73856093u) ^ (uint(y) * 19349663u)\n"               \
+    "                ^ (uint(z) * 83492791u)) & 4095u);\n"                          \
+    "}\n"                                                                           \
+    "int cube_bucket(ivec3 c, int k) {\n"                                           \
     "    return bucket(c.x - 1 + k / 9, c.y - 1 + (k / 3) % 3, c.z - 1 + k % 3);\n" \
-    "}\n"                                                                      \
-    /* nothing kept yet: at the start of a group's work */                     \
-    "void cache_start() {\n"                                                  \
-    "    if (gl_LocalInvocationIndex == 0u) { s_cached = -2; }\n"             \
-    "    barrier();\n"                                                         \
-    "}\n"                                                                      \
-    /* the 27 cubes about cube `c` copied, or s_cached -1 where they hold \
-     * more than there is room for */                                          \
-    "void cache_cubes(ivec3 c) {\n"                                           \
-    "    int t = int(gl_LocalInvocationIndex);\n"                              \
-    "    if (t < 27) {\n"                                                      \
-    "        int b = cube_bucket(c, t);\n"                                    \
-    "        s_offset[t + 1] = grid[4096 + b + 1] - grid[4096 + b];\n"         \
-    "    }\n"                                                                  \
-    "    barrier();\n"                                                         \
-    "    if (t == 0) {\n"                                                      \
-    "        s_offset[0] = 0;\n"                                               \
-    "        for (int k = 1; k <= 27; k++) { s_offset[k] += s_offset[k - 1]; }\n" \
-    "        s_cached = s_offset[27] <= CACHE ? s_offset[27] : -1;\n"          \
-    "        s_at = c;\n"                                                      \
-    "    }\n"                                                                  \
-    "    barrier();\n"                                                         \
-    "    if (s_cached >= 0) {\n"                                               \
-    "        for (int k = 0; k < 27; k++) {\n"                                 \
-    "            int from = grid[4096 + cube_bucket(c, k)];\n"                 \
-    "            int count = s_offset[k + 1] - s_offset[k];\n"                 \
-    "            for (int i = t; i < count; i += 32) {\n"                      \
-    "                int v = order[from + i];\n"                               \
-    "                int at = (s_offset[k] + i) * 3;\n"                        \
-    "                vec3 place = posed[v * 2].xyz;\n"                         \
-    "                vec3 turn = posed[v * 2 + 1].xyz;\n"                      \
-    "                s_place[at] = place.x;\n"                                 \
-    "                s_place[at + 1] = place.y;\n"                             \
-    "                s_place[at + 2] = place.z;\n"                             \
-    "                s_turn[at] = turn.x;\n"                                   \
-    "                s_turn[at + 1] = turn.y;\n"                               \
-    "                s_turn[at + 2] = turn.z;\n"                               \
-    "            }\n"                                                          \
-    "        }\n"                                                              \
-    "    }\n"                                                                  \
-    "    barrier();\n"                                                         \
-    "}\n"                                                                      \
-    "Sums near_of(vec3 p, int look, float reach) {\n"                          \
-    "    int t = int(gl_LocalInvocationIndex);\n"                              \
-    "    float nearest = -1.0;\n"                                              \
-    "    float along = 0.0;\n"                                                 \
-    "    vec3 normal = vec3(0.0);\n"                                           \
-    "    float weight = 0.0;\n"                                                \
-    "    ivec3 c = ivec3(cell(p.x), cell(p.y), cell(p.z));\n"                  \
-    "    float reach2 = reach * reach;\n"                                      \
-    "    if (look == 1 && (s_cached == -2 || s_at != c)) { cache_cubes(c); }\n" \
-    "    bool is_cached = look == 1 && s_cached >= 0;\n"                       \
-    "    for (int i = t; is_cached && i < s_cached; i += 32) {\n"             \
+    "}\n"                                                                           \
+    "void cache_start() {\n"                                                        \
+    "    if (gl_LocalInvocationIndex == 0u) { s_cached = -2; }\n"                   \
+    "    barrier();\n"                                                              \
+    "}\n"                                                                           \
+    "void cache_cubes(ivec3 c) {\n"                                                 \
+    "    int t = int(gl_LocalInvocationIndex);\n"                                   \
+    "    if (t < 27) {\n"                                                           \
+    "        int b = cube_bucket(c, t);\n"                                          \
+    "        s_offset[t + 1] = grid[4096 + b + 1] - grid[4096 + b];\n"              \
+    "    }\n"                                                                       \
+    "    barrier();\n"                                                              \
+    "    if (t == 0) {\n"                                                           \
+    "        s_offset[0] = 0;\n"                                                    \
+    "        for (int k = 1; k <= 27; k++) { s_offset[k] += s_offset[k - 1]; }\n"   \
+    "        s_cached = s_offset[27] <= CACHE ? s_offset[27] : -1;\n"               \
+    "        s_at = c;\n"                                                           \
+    "    }\n"                                                                       \
+    "    barrier();\n"                                                              \
+    "    if (s_cached >= 0) {\n"                                                    \
+    "        for (int k = 0; k < 27; k++) {\n"                                      \
+    "            int from = grid[4096 + cube_bucket(c, k)];\n"                      \
+    "            int count = s_offset[k + 1] - s_offset[k];\n"                      \
+    "            for (int i = t; i < count; i += 32) {\n"                           \
+    "                int v = order[from + i];\n"                                    \
+    "                int at = (s_offset[k] + i) * 3;\n"                             \
+    "                vec3 place = posed[v * 2].xyz;\n"                              \
+    "                vec3 turn = posed[v * 2 + 1].xyz;\n"                           \
+    "                s_place[at] = place.x;\n"                                      \
+    "                s_place[at + 1] = place.y;\n"                                  \
+    "                s_place[at + 2] = place.z;\n"                                  \
+    "                s_turn[at] = turn.x;\n"                                        \
+    "                s_turn[at + 1] = turn.y;\n"                                    \
+    "                s_turn[at + 2] = turn.z;\n"                                    \
+    "            }\n"                                                               \
+    "        }\n"                                                                   \
+    "    }\n"                                                                       \
+    "    barrier();\n"                                                              \
+    "}\n"                                                                           \
+    "Sums near_of(vec3 p, int look, float reach) {\n"                               \
+    "    int t = int(gl_LocalInvocationIndex);\n"                                   \
+    "    float nearest = -1.0;\n"                                                   \
+    "    float along = 0.0;\n"                                                      \
+    "    vec3 normal = vec3(0.0);\n"                                                \
+    "    float weight = 0.0;\n"                                                     \
+    "    ivec3 c = ivec3(cell(p.x), cell(p.y), cell(p.z));\n"                       \
+    "    float reach2 = reach * reach;\n"                                           \
+    "    if (look == 1 && (s_cached == -2 || s_at != c)) { cache_cubes(c); }\n"     \
+    "    bool is_cached = look == 1 && s_cached >= 0;\n"                            \
+    "    for (int i = t; is_cached && i < s_cached; i += 32) {\n"                   \
     "        vec3 m = vec3(s_turn[i * 3], s_turn[i * 3 + 1], s_turn[i * 3 + 2]);\n" \
-    "        if (m == vec3(0.0)) { continue; }\n"                              \
-    "        vec3 d = p - vec3(s_place[i * 3], s_place[i * 3 + 1],\n"          \
-    "                          s_place[i * 3 + 2]);\n"                         \
-    "        float d2 = d.x * d.x + d.y * d.y + d.z * d.z;\n"                  \
-    "        nearest = least(nearest, d2);\n"                                  \
-    "        if (d2 >= reach2) { continue; }\n"                                \
-    "        float w = 1.0 - d2 / reach2;\n"                                   \
-    "        w *= w;\n"                                                        \
-    "        along += w * (d.x * m.x + d.y * m.y + d.z * m.z);\n"              \
-    "        normal += w * m;\n"                                               \
-    "        weight += w;\n"                                                   \
-    "    }\n"                                                                  \
-    "    if (!is_cached) {\n"                                                  \
-    "    for (int x = c.x - look; x <= c.x + look; x++) {\n"                   \
-    "    for (int y = c.y - look; y <= c.y + look; y++) {\n"                   \
-    "    for (int z = c.z - look; z <= c.z + look; z++) {\n"                   \
-    "        int b = int(((uint(x) * 73856093u) ^ (uint(y) * 19349663u)\n"     \
-    "                     ^ (uint(z) * 83492791u)) & 4095u);\n"                \
-    "        int to = grid[4096 + b + 1];\n"                                   \
-    "        for (int i = grid[4096 + b] + t; i < to; i += 32) {\n"            \
-    "            int v = order[i];\n"                                          \
-    "            vec3 m = posed[v * 2 + 1].xyz;\n"                             \
-    "            if (m == vec3(0.0)) { continue; }\n"                          \
-    "            vec3 d = p - posed[v * 2].xyz;\n"                             \
-    "            float d2 = d.x * d.x + d.y * d.y + d.z * d.z;\n"              \
-    "            nearest = least(nearest, d2);\n"                              \
-    "            if (d2 >= reach2) { continue; }\n"                            \
-    "            float w = 1.0 - d2 / reach2;\n"                               \
-    "            w *= w;\n"                                                    \
-    "            along += w * (d.x * m.x + d.y * m.y + d.z * m.z);\n"          \
-    "            normal += w * m;\n"                                           \
-    "            weight += w;\n"                                               \
-    "        }\n"                                                              \
-    "    }\n"                                                                  \
-    "    }\n"                                                                  \
-    "    }\n"                                                                  \
-    "    }\n"                                                                  \
-    "    s_nearest[t] = nearest;\n"                                            \
-    "    s_along[t] = along;\n"                                                \
-    "    s_normal[t] = normal;\n"                                              \
-    "    s_weight[t] = weight;\n"                                              \
-    "    barrier();\n"                                                         \
-    "    for (int half_of = 16; half_of > 0; half_of /= 2) {\n"                \
-    "        if (t < half_of) {\n"                                             \
-    "            s_nearest[t] = least(s_nearest[t], s_nearest[t + half_of]);\n" \
-    "            s_along[t] += s_along[t + half_of];\n"                        \
-    "            s_normal[t] += s_normal[t + half_of];\n"                      \
-    "            s_weight[t] += s_weight[t + half_of];\n"                      \
-    "        }\n"                                                              \
-    "        barrier();\n"                                                     \
-    "    }\n"                                                                  \
-    "    Sums s = Sums(s_nearest[0], s_along[0], s_normal[0], s_weight[0]);\n" \
-    "    barrier();\n"                                                         \
-    "    return s;\n"                                                          \
-    "}\n"                                                                      \
-    "bool distance_of(vec3 p, out float distance, out vec3 way) {\n"           \
-    "    distance = 0.0;\n"                                                    \
-    "    way = vec3(0.0);\n"                                                   \
-    "    Sums s = near_of(p, 1, 0.0);\n"                                       \
-    "    if (s.nearest < 0.0) { s = near_of(p, 2, 0.0); }\n"                   \
-    "    if (s.nearest < 0.0 || s.nearest > 10000.0) { return false; }\n"      \
-    "    float reach = max(1.5 * sqrt(s.nearest), 48.0);\n"                    \
-    "    s = near_of(p, int(reach / 64.0) + 1, reach);\n"                      \
-    "    float length_of = length(s.normal);\n"                                \
-    "    if (s.weight <= 0.0 || length_of < 0.25 * s.weight) {\n"              \
-    "        return false;\n"                                                  \
-    "    }\n"                                                                  \
-    "    distance = s.along / s.weight;\n"                                     \
-    "    way = s.normal / length_of;\n"                                        \
-    "    return true;\n"                                                       \
-    "}\n"                                                                      \
-    "bool hold(inout vec3 p, float gap) {\n"                                   \
-    "    float distance;\n"                                                    \
-    "    vec3 way;\n"                                                          \
-    "    if (!distance_of(p, distance, way)) { return false; }\n"              \
-    "    bool was_inside = distance < 0.0;\n"                                  \
-    "    for (int step = 0; step < 4 && distance < gap; step++) {\n"           \
-    "        p += (gap - distance) * way;\n"                                   \
-    "        if (!distance_of(p, distance, way)) { break; }\n"                 \
-    "    }\n"                                                                  \
-    "    return was_inside;\n"                                                 \
+    "        if (m == vec3(0.0)) { continue; }\n"                                   \
+    "        vec3 d = p - vec3(s_place[i * 3], s_place[i * 3 + 1],\n"               \
+    "                          s_place[i * 3 + 2]);\n"                              \
+    "        float d2 = d.x * d.x + d.y * d.y + d.z * d.z;\n"                       \
+    "        nearest = least(nearest, d2);\n"                                       \
+    "        if (d2 >= reach2) { continue; }\n"                                     \
+    "        float w = 1.0 - d2 / reach2;\n"                                        \
+    "        w *= w;\n"                                                             \
+    "        along += w * (d.x * m.x + d.y * m.y + d.z * m.z);\n"                   \
+    "        normal += w * m;\n"                                                    \
+    "        weight += w;\n"                                                        \
+    "    }\n"                                                                       \
+    "    if (!is_cached) {\n"                                                       \
+    "    for (int x = c.x - look; x <= c.x + look; x++) {\n"                        \
+    "    for (int y = c.y - look; y <= c.y + look; y++) {\n"                        \
+    "    for (int z = c.z - look; z <= c.z + look; z++) {\n"                        \
+    "        int b = int(((uint(x) * 73856093u) ^ (uint(y) * 19349663u)\n"          \
+    "                     ^ (uint(z) * 83492791u)) & 4095u);\n"                     \
+    "        int to = grid[4096 + b + 1];\n"                                        \
+    "        for (int i = grid[4096 + b] + t; i < to; i += 32) {\n"                 \
+    "            int v = order[i];\n"                                               \
+    "            vec3 m = posed[v * 2 + 1].xyz;\n"                                  \
+    "            if (m == vec3(0.0)) { continue; }\n"                               \
+    "            vec3 d = p - posed[v * 2].xyz;\n"                                  \
+    "            float d2 = d.x * d.x + d.y * d.y + d.z * d.z;\n"                   \
+    "            nearest = least(nearest, d2);\n"                                   \
+    "            if (d2 >= reach2) { continue; }\n"                                 \
+    "            float w = 1.0 - d2 / reach2;\n"                                    \
+    "            w *= w;\n"                                                         \
+    "            along += w * (d.x * m.x + d.y * m.y + d.z * m.z);\n"               \
+    "            normal += w * m;\n"                                                \
+    "            weight += w;\n"                                                    \
+    "        }\n"                                                                   \
+    "    }\n"                                                                       \
+    "    }\n"                                                                       \
+    "    }\n"                                                                       \
+    "    }\n"                                                                       \
+    "    s_nearest[t] = nearest;\n"                                                 \
+    "    s_along[t] = along;\n"                                                     \
+    "    s_normal[t] = normal;\n"                                                   \
+    "    s_weight[t] = weight;\n"                                                   \
+    "    barrier();\n"                                                              \
+    "    for (int half_of = 16; half_of > 0; half_of /= 2) {\n"                     \
+    "        if (t < half_of) {\n"                                                  \
+    "            s_nearest[t] = least(s_nearest[t], s_nearest[t + half_of]);\n"     \
+    "            s_along[t] += s_along[t + half_of];\n"                             \
+    "            s_normal[t] += s_normal[t + half_of];\n"                           \
+    "            s_weight[t] += s_weight[t + half_of];\n"                           \
+    "        }\n"                                                                   \
+    "        barrier();\n"                                                          \
+    "    }\n"                                                                       \
+    "    Sums s = Sums(s_nearest[0], s_along[0], s_normal[0], s_weight[0]);\n"      \
+    "    barrier();\n"                                                              \
+    "    return s;\n"                                                               \
+    "}\n"                                                                           \
+    "bool distance_of(vec3 p, out float distance, out vec3 way) {\n"                \
+    "    distance = 0.0;\n"                                                         \
+    "    way = vec3(0.0);\n"                                                        \
+    "    Sums s = near_of(p, 1, 0.0);\n"                                            \
+    "    if (s.nearest < 0.0) { s = near_of(p, 2, 0.0); }\n"                        \
+    "    if (s.nearest < 0.0 || s.nearest > 10000.0) { return false; }\n"           \
+    "    float reach = max(1.5 * sqrt(s.nearest), 48.0);\n"                         \
+    "    s = near_of(p, int(reach / 64.0) + 1, reach);\n"                           \
+    "    float length_of = length(s.normal);\n"                                     \
+    "    if (s.weight <= 0.0 || length_of < 0.25 * s.weight) {\n"                   \
+    "        return false;\n"                                                       \
+    "    }\n"                                                                       \
+    "    distance = s.along / s.weight;\n"                                          \
+    "    way = s.normal / length_of;\n"                                             \
+    "    return true;\n"                                                            \
+    "}\n"                                                                           \
+    "bool hold(inout vec3 p, float gap) {\n"                                        \
+    "    float distance;\n"                                                         \
+    "    vec3 way;\n"                                                               \
+    "    if (!distance_of(p, distance, way)) { return false; }\n"                   \
+    "    bool was_inside = distance < 0.0;\n"                                       \
+    "    for (int step = 0; step < 4 && distance < gap; step++) {\n"                \
+    "        p += (gap - distance) * way;\n"                                        \
+    "        if (!distance_of(p, distance, way)) { break; }\n"                      \
+    "    }\n"                                                                       \
+    "    return was_inside;\n"                                                      \
     "}\n"
 
 /* The cloth's points, kept out first: a group a point. */
@@ -535,8 +531,7 @@ static const char g_hold_places_text[] =
 /* Each vertex: its place, the turns of the quads about it across their
  * diagonals added in the quads' order, and its texture point, as
  * PortGlClothVertex lays them. */
-static const char g_vertices_text[] =
-    CARD_VERSION
+static const char g_vertices_text[] = CARD_VERSION
     "layout(local_size_x = 64) in;\n"
     "layout(std430, binding = 5) readonly buffer Data { uint data[]; };\n"
     "layout(std430, binding = 7) readonly buffer Places { vec4 places[]; };\n"
@@ -728,9 +723,9 @@ s32 port_GlFighterCardPose(
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, pose->grid);
     glClearBufferSubData(GL_SHADER_STORAGE_BUFFER, GL_R32I, 0,
                          BUCKETS * sizeof(s32), GL_RED_INTEGER, GL_INT, NULL);
-    glClearBufferSubData(GL_SHADER_STORAGE_BUFFER, GL_R32I,
-                         PORT_GL_CARD_FEET_WORD * sizeof(s32), sizeof(s32),
-                         GL_RED_INTEGER, GL_INT, &lowest);
+    glClearBufferSubData(
+        GL_SHADER_STORAGE_BUFFER, GL_R32I, PORT_GL_CARD_FEET_WORD * sizeof(s32),
+        sizeof(s32), GL_RED_INTEGER, GL_INT, &lowest);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, vertex_buffer);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, pose->posed);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, pose->grid);
@@ -738,8 +733,8 @@ s32 port_GlFighterCardPose(
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, pose->order);
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     glUseProgram(g_card.skin);
-    glUniformMatrix4fv(g_card.skin_at_world, PORT_FIGHTER_FILE_JOINTS,
-                       GL_FALSE, world[0]);
+    glUniformMatrix4fv(
+        g_card.skin_at_world, PORT_FIGHTER_FILE_JOINTS, GL_FALSE, world[0]);
     glUniformMatrix3fv(
         g_card.skin_at_turn, PORT_FIGHTER_FILE_JOINTS, GL_TRUE, turn[0]);
     glUniform1i(g_card.skin_at_count, vertex_count);
@@ -777,8 +772,8 @@ void port_GlFighterCardWarm(s32 slot, u32 vertex_buffer, s32 vertex_count,
     }
     /* every pose's room at the model's size */
     for (i = 0; i < POSES_KEPT; i++) {
-        port_GlFighterCardRoom(&g_card.pose[slot * POSES_KEPT + i],
-                               vertex_count);
+        port_GlFighterCardRoom(
+            &g_card.pose[slot * POSES_KEPT + i], vertex_count);
     }
     /* each program run once, on the bind pose: the driver makes a
      * compute shader ready for the card at its first dispatch */
@@ -840,9 +835,9 @@ PortGlCardCloth *port_GlFighterCardCloth(const PortGlCloth *surface) {
         free(cloth);
         return NULL;
     }
-    memcpy(data, sums->weight,
-           (size_t)sums->place_count * (size_t)sums->point_count *
-               sizeof(float));
+    memcpy(
+        data, sums->weight,
+        (size_t)sums->place_count * (size_t)sums->point_count * sizeof(float));
     for (i = 0; i < sums->quad_count; i++) {
         for (c = 0; c < 4; c++) {
             data[cloth->quads_at + i * 4 + c] = (u32)sums->quad[i][c];
@@ -862,14 +857,14 @@ PortGlCardCloth *port_GlFighterCardCloth(const PortGlCloth *surface) {
     }
     for (i = 0; i < sums->vertex_count; i++) {
         data[cloth->place_at + i] = (u32)sums->vertex_place[i];
-        memcpy(&data[cloth->uv_at + i * 2], sums->vertex_uv[i],
-               2 * sizeof(float));
+        memcpy(
+            &data[cloth->uv_at + i * 2], sums->vertex_uv[i], 2 * sizeof(float));
     }
     free(first);
     glGenBuffers(1, &cloth->data);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, cloth->data);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)words * 4, data,
-                 GL_STATIC_DRAW);
+    glBufferData(
+        GL_SHADER_STORAGE_BUFFER, (GLsizeiptr)words * 4, data, GL_STATIC_DRAW);
     free(data);
     cloth->points = port_GlFighterCardMake(
         (GLsizeiptr)PORT_FIGHTER_CLOTH_POINTS * 4 * sizeof(float));
@@ -890,9 +885,8 @@ u32 port_GlFighterCardBuffer(s32 bytes) {
     return buffer;
 }
 
-void port_GlFighterCardHold(
-    const PortGlCardHold *holds, s32 count, s32 pose, double gap, s32 is_held,
-    s32 is_counting) {
+void port_GlFighterCardHold(const PortGlCardHold *holds, s32 count, s32 pose,
+                            double gap, s32 is_held, s32 is_counting) {
     const CardPose *body;
     s32 i;
 
@@ -915,8 +909,8 @@ void port_GlFighterCardHold(
         const PortGlCardCloth *cloth = holds[i].cloth;
 
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, cloth->points);
-        glUniform3fv(g_card.points_at_points, cloth->sums.point_count,
-                     holds[i].points);
+        glUniform3fv(
+            g_card.points_at_points, cloth->sums.point_count, holds[i].points);
         glDispatchCompute((GLuint)cloth->sums.point_count, 1, 1);
     }
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);

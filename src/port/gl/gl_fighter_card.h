@@ -50,6 +50,7 @@ extern u32 port_GlFighterCardFeetBuffer(s32 pose);
  * vertices sent once. NULL where there is no memory. */
 typedef struct PortGlCardCloth PortGlCardCloth;
 extern PortGlCardCloth *port_GlFighterCardCloth(const PortGlCloth *surface);
+
 /* Cloths made through the game's points, each `points` (its point_count
  * of them, three numbers each, in the world's units) into `out`
  * (port_GlClothVertices PortGlClothVertex), kept out of pose `pose` by
@@ -72,9 +73,9 @@ extern void port_GlFighterCardHold(
  * cloths, through points of nought, into buffers of the caller's): a
  * first dispatch, and a buffer's first room, cost the fight's first
  * frame some tens of milliseconds where they were not done before. */
-extern void port_GlFighterCardWarm(s32 slot, u32 vertex_buffer,
-                                   s32 vertex_count,
-                                   const PortGlCardHold *holds, s32 count);
+extern void port_GlFighterCardWarm(
+    s32 slot, u32 vertex_buffer, s32 vertex_count, const PortGlCardHold *holds,
+    s32 count);
 /* A buffer of `bytes` on the card for such a cloth, or 0. */
 extern u32 port_GlFighterCardBuffer(s32 bytes);
 /* The places of the cloths kept out that the game's cloth had inside the
