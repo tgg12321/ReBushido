@@ -321,7 +321,9 @@ def main():
     os.chdir(ROOT)
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--image', default='Bushido Blade 2 (USA).cue')
-    ap.add_argument('--stages', default='0-31')
+    # every stage the game can load (the module's words), not the 32 a
+    # fight's menus offer: g_stage_proved has a number for each
+    ap.add_argument('--stages', default='0-%d' % (remaster.ALL_STAGES - 1))
     ap.add_argument('--scale', type=int, default=2)
     ap.add_argument('--tall', type=int, default=0)
     ap.add_argument('--frames', type=int, default=4200)
