@@ -26,6 +26,9 @@ s32 g_port_ahead_kept;
 
 /* ---- what those files want of the rest of the port ---- */
 
+/* No clock: the painters' waits are counted in nothing (paint.c). */
+u32 port_HostTicks(void) { return 0; }
+
 RbSettings g_rb_settings;
 
 /* The frame's two primitive buffers, by which the decoder names where a

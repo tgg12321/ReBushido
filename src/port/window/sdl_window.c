@@ -3547,8 +3547,8 @@ static int SDLCALL port_PainterThread(void *index) {
 /* The primitives painted on threads of their own: RB_PAINTERS of them
  * (0 or `off`: the game's thread paints them, to compare). */
 static void port_StartPainters(void) {
-    static const PortPaintHost host = {port_PainterSleep, port_PainterWake,
-                                       port_PainterYield};
+    static const PortPaintHost host = {
+        port_PainterSleep, port_PainterWake, port_PainterYield};
     const char *setting = SDL_getenv("RB_PAINTERS");
     s32 count = PAINTERS;
     s32 i;

@@ -43,10 +43,9 @@ typedef struct {
     s32 h;
 } PortPaintRect;
 
-extern void port_PaintSubmit(const u32 *words, s32 count,
-                             const PortPaintRect *write,
-                             const PortPaintRect *read,
-                             const PortPaintRect *table);
+extern void port_PaintSubmit(
+    const u32 *words, s32 count, const PortPaintRect *write,
+    const PortPaintRect *read, const PortPaintRect *table);
 /* Commands not painted (a step run again, a frame ahead): the painter is
  * given none of them, settings included ... */
 extern void port_PaintSkipped(void);
@@ -68,9 +67,9 @@ extern s32 port_PaintMayGiveWrites(void);
  * painter reads what every other's lines hold (a colour table), so a
  * write must keep its place among all of them. `write` and `read` are
  * the places it writes and reads. */
-extern void port_PaintGiveAlone(s32 count, const PortPaintRect *write,
-                                const PortPaintRect *read,
-                                const PortPaintRect *table);
+extern void port_PaintGiveAlone(
+    s32 count, const PortPaintRect *write, const PortPaintRect *read,
+    const PortPaintRect *table);
 /* How many painters there are (1 where the game's thread paints). */
 extern s32 port_PaintPainters(void);
 /* Whether a primitive still to be painted reads the rectangle. */

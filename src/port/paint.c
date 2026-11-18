@@ -55,6 +55,7 @@
 /* What one painter's counters take, so that two painters never share a
  * line of the processor's cache. */
 #define CACHE_LINE 64
+#define MICROSECONDS_A_MILLISECOND 1000U
 /* A word no command begins with in the ring (a GP0 no-op's code, which
  * is never given): the next word is how many words after it the first
  * painter does alone (port_PaintGiveAlone). */
@@ -161,6 +162,7 @@ typedef struct {
     s32 down;
 } PortSquares;
 
+/* The squares of the rectangle into `out`; 0 where it is empty. */
 static s32 port_PaintSquares(s32 x, s32 y, s32 w, s32 h, PortSquares *out) {
     if (w <= 0 || h <= 0) {
         return 0;
@@ -185,8 +187,7 @@ static s32 port_PaintSquares(s32 x, s32 y, s32 w, s32 h, PortSquares *out) {
 }
 
 /* `value` set in each square of the rectangle. */
-static void port_PaintMark(u32 *squares, const PortPaintRect *rect,
-                           u32 value) {
+static void port_PaintMark(u32 *squares, const PortPaintRect *rect, u32 value) {
     PortSquares at;
     s32 i;
     s32 j;
@@ -204,8 +205,8 @@ static void port_PaintMark(u32 *squares, const PortPaintRect *rect,
 }
 
 /* The latest count of `need` and the squares of the rectangle. */
-static u32 port_PaintNeeds(const u32 *squares, s32 x, s32 y, s32 w, s32 h,
-                           u32 need) {
+static u32 port_PaintNeeds(
+    const u32 *squares, s32 x, s32 y, s32 w, s32 h, u32 need) {
     PortSquares at;
     s32 i;
     s32 j;
@@ -214,8 +215,7 @@ static u32 port_PaintNeeds(const u32 *squares, s32 x, s32 y, s32 w, s32 h,
         return need;
     }
     for (j = 0; j < at.down; j++) {
-        const u32 *row =
-            squares + ((at.y + j) % SQUARES_DOWN) * SQUARES_ACROSS;
+        const u32 *row = squares + ((at.y + j) % SQUARES_DOWN) * SQUARES_ACROSS;
 
         for (i = 0; i < at.across; i++) {
             u32 one = row[(at.x + i) % SQUARES_ACROSS];
@@ -263,8 +263,8 @@ void port_PaintSyncWrite(s32 x, s32 y, s32 w, s32 h) {
     if (!g_paint.is_threaded) {
         return;
     }
-    need = port_PaintNeeds(g_paint.square_write, x, y, w, h,
-                           g_paint.given - RING_WORDS);
+    need = port_PaintNeeds(
+        g_paint.square_write, x, y, w, h, g_paint.given - RING_WORDS);
     need = port_PaintNeeds(g_paint.square_read, x, y, w, h, need);
     port_PaintWaitFor(need, PAINT_WAIT_WRITE);
 }
@@ -284,9 +284,11 @@ s32 port_PaintIsReadPending(const PortPaintRect *rect) {
     return (s32)(need - port_PaintDone()) > 0;
 }
 
-void port_PaintGiveAlone(s32 count, const PortPaintRect *write,
-                         const PortPaintRect *read,
-                         const PortPaintRect *table) {
+/* The marker and the count of words done alone, and their places marked
+ * as done with once all of them are (port_paint.h). */
+void port_PaintGiveAlone(
+    s32 count, const PortPaintRect *write, const PortPaintRect *read,
+    const PortPaintRect *table) {
     u32 words[2];
     PortPaintRect none;
     u32 end;
@@ -309,8 +311,8 @@ s32 port_PaintIsInWay(s32 x, s32 y, s32 w, s32 h) {
     if (!g_paint.is_threaded) {
         return FALSE;
     }
-    need = port_PaintNeeds(g_paint.square_write, x, y, w, h,
-                           g_paint.given - RING_WORDS);
+    need = port_PaintNeeds(
+        g_paint.square_write, x, y, w, h, g_paint.given - RING_WORDS);
     need = port_PaintNeeds(g_paint.square_read, x, y, w, h, need);
     return (s32)(need - port_PaintDone()) > 0;
 }
@@ -331,6 +333,7 @@ void port_PaintResync(void) {
     }
 }
 
+/* The painters held still between two commands (port_paint.h). */
 void port_PaintHold(void) {
     s32 spins = 0;
     s32 i;
@@ -372,6 +375,8 @@ void port_PaintWillPaint(void) {
     }
 }
 
+/* Words given to the painters, or painted here where there are none
+ * (port_paint.h). */
 void port_PaintSubmit(const u32 *words, s32 count, const PortPaintRect *write,
                       const PortPaintRect *read, const PortPaintRect *table) {
     s32 i;
@@ -394,11 +399,12 @@ void port_PaintSubmit(const u32 *words, s32 count, const PortPaintRect *write,
     }
     /* a texture another painter may still be drawing into */
     if (g_paint.count > 1 && (read->w > 0 || table->w > 0)) {
-        u32 need = port_PaintNeeds(g_paint.square_drawn, read->x, read->y,
-                                   read->w, read->h, g_paint.given - RING_WORDS);
+        u32 need =
+            port_PaintNeeds(g_paint.square_drawn, read->x, read->y, read->w,
+                            read->h, g_paint.given - RING_WORDS);
 
-        need = port_PaintNeeds(g_paint.square_drawn, table->x, table->y,
-                               table->w, table->h, need);
+        need = port_PaintNeeds(
+            g_paint.square_drawn, table->x, table->y, table->w, table->h, need);
         port_PaintWaitFor(need, PAINT_WAIT_TEXTURE);
     }
     /* room in the ring */
@@ -474,7 +480,7 @@ s32 port_PaintStart(const PortPaintHost *host, s32 count) {
 
 /* What waited for the painters, and how long, in the log. */
 static void port_PaintReport(void) {
-    static const char *const names[PAINT_WAIT_KINDS] = {
+    static const char * const names[PAINT_WAIT_KINDS] = {
         "a read", "a write", "all", "room", "a texture drawn into"};
     s32 i;
 
@@ -482,15 +488,17 @@ static void port_PaintReport(void) {
         u32 us = g_paint.waited[i] / PORT_HOST_TICKS_PER_MICROSECOND;
 
         port_Log("rebushido: painters: %u waits for %s, %u.%03u ms in all\n",
-                 g_paint.waits[i], names[i], us / 1000U, us % 1000U);
+                 g_paint.waits[i], names[i], us / MICROSECONDS_A_MILLISECOND,
+                 us % MICROSECONDS_A_MILLISECOND);
     }
     for (i = 0; i < g_paint.count; i++) {
         port_Log("rebushido: painter %d: %u ms painting\n", i,
                  g_painters[i].painting / PORT_HOST_TICKS_PER_MICROSECOND /
-                     1000U);
+                     MICROSECONDS_A_MILLISECOND);
     }
 }
 
+/* Everything painted, the painters told to end (port_paint.h). */
 void port_PaintStop(void) {
     s32 i;
 
@@ -573,6 +581,7 @@ static u32 port_PaintAlone(PortPainter *painter, s32 index, u32 at) {
     return end;
 }
 
+/* Painter `index`: the ring in order, its own lines (port_paint.h). */
 void port_PaintRun(s32 index) {
     PortPainter *painter = &g_painters[index];
     u32 at = port_PaintLoad(&painter->done);

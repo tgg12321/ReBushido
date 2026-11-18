@@ -31,7 +31,7 @@ struct PortGpu;
 /* How a primitive's pixels are made. */
 typedef struct {
     const struct PortGpu *gpu; /* whose settings: a painter's */
-    s32 is_shaded; /* the colour is interpolated */
+    s32 is_shaded;             /* the colour is interpolated */
     s32 is_textured;
     s32 is_raw;  /* the texel as it is */
     s32 is_half; /* half-transparent */
@@ -111,7 +111,7 @@ typedef struct PortGpu {
 #define PORT_BAND_LINES 256
 #define PORT_BAND_LINES_BITS 8
 #define PORT_PAINTS_LINE(gpu, y)                                               \
-    ((s32)((u32)((y) & (PORT_BAND_LINES - 1)) >>                              \
+    ((s32)((u32)((y) & (PORT_BAND_LINES - 1)) >>                               \
            (PORT_BAND_LINES_BITS - (gpu)->band_bits)) == (gpu)->band)
 
 /* A word given to a painter, whose settings `gpu` are (raster.c): the

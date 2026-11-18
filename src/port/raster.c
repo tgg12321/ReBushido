@@ -131,6 +131,8 @@
 #define CLUT_X_MASK 0x3F
 #define CLUT_X_STEP 16
 #define CLUT_Y_SHIFT 6
+#define CLUT_ENTRIES_4 16 /* a 4-bit page's table, in pixels */
+#define CLUT_ENTRIES_8 256
 /* A 4-bit texel is a quarter of a word, an 8-bit one a half. */
 #define TEXELS_4_SHIFT 2
 #define TEXELS_4_MASK 3
@@ -343,8 +345,8 @@ static u16 port_BlendPixels(u16 back, u16 front, s32 blend) {
 /* Puts a pixel of 15 bits, with whatever top bit it has, where the mask
  * lets it; `is_mixed` mixes it with what is there first. The place is
  * inside the drawing area already. */
-static void port_PutPixel(const PortGpu *gpu, s32 x, s32 y, u16 pixel,
-                          s32 is_mixed, s32 blend) {
+static void port_PutPixel(
+    const PortGpu *gpu, s32 x, s32 y, u16 pixel, s32 is_mixed, s32 blend) {
     u16 *at = port_PixelToWrite(x, y);
     u16 back = *at;
 
@@ -432,8 +434,8 @@ static void port_PaintPixel(
 
 /* The paint of a primitive of this code, with the drawing mode as it is
  * now. */
-static void port_SetUpPaint(const PortGpu *gpu, PortPaint *paint, u32 code,
-                            u32 clut) {
+static void port_SetUpPaint(
+    const PortGpu *gpu, PortPaint *paint, u32 code, u32 clut) {
     u32 mode = gpu->mode;
 
     paint->gpu = gpu;
@@ -458,13 +460,12 @@ static void port_SetCornerColor(PortCorner *corner, u32 color) {
 }
 
 /* A corner's place from a word of x and y, with the drawing offset. */
-static void port_SetCornerPlace(const PortGpu *gpu, PortCorner *corner,
-                                u32 word) {
+static void port_SetCornerPlace(
+    const PortGpu *gpu, PortCorner *corner, u32 word) {
     corner->x = port_SignExtendPosition(
         port_SignExtendPosition((s32)word) + gpu->offset_x);
     corner->y = port_SignExtendPosition(
-        port_SignExtendPosition((s32)(word >> HALF_SHIFT)) +
-        gpu->offset_y);
+        port_SignExtendPosition((s32)(word >> HALF_SHIFT)) + gpu->offset_y);
 }
 
 static void port_SetCornerTexture(PortCorner *corner, u32 word) {
@@ -592,7 +593,8 @@ static void port_DrawTriangle(const PortCorner *first, const PortCorner *second,
     /* none of its lines the painter's: nothing worked out */
     if (!port_PaintsAnyLine(
             gpu, top->y > gpu->clip_top ? top->y : gpu->clip_top,
-            bottom->y - 1 < gpu->clip_bottom ? bottom->y - 1 : gpu->clip_bottom)) {
+            bottom->y - 1 < gpu->clip_bottom ? bottom->y - 1
+                                             : gpu->clip_bottom)) {
         return;
     }
     for (i = 0; i < ATTRIBUTE_COUNT; i++) {
@@ -689,7 +691,7 @@ static void port_DrawPolygon(PortGpu *gpu, const u32 *words) {
             } else if (i == 1) {
                 /* the page and the mix come with the polygon, and stay */
                 gpu->mode = (gpu->mode & ~(u32)MODE_POLYGON) |
-                                  ((words[at] >> HALF_SHIFT) & MODE_POLYGON);
+                            ((words[at] >> HALF_SHIFT) & MODE_POLYGON);
             }
             at++;
         }
@@ -758,8 +760,8 @@ static void port_DrawLine(
     }
 }
 
-static void port_SetUpLinePaint(const PortGpu *gpu, PortPaint *paint,
-                                u32 code) {
+static void port_SetUpLinePaint(
+    const PortGpu *gpu, PortPaint *paint, u32 code) {
     port_SetUpPaint(gpu, paint, code & ~(u32)(CODE_TEXTURED | CODE_RAW), 0);
     paint->is_dithered = (gpu->mode & MODE_DITHER) != 0;
 }
@@ -1137,8 +1139,8 @@ static void port_AreaRect(const PortGpu *gpu, PortPaintRect *rect) {
 /* The rectangle a polygon or a rectangle may write: the corners' own,
  * inside the drawing area (the painter's places, with the offset as
  * port_SetCornerPlace adds it). */
-static void port_PrimitiveRect(const PortGpu *gpu, const u32 *words,
-                               PortPaintRect *rect) {
+static void port_PrimitiveRect(
+    const PortGpu *gpu, const u32 *words, PortPaintRect *rect) {
     static const s16 sizes[] = {0, 1, 8, 16}; /* by the code's two bits */
     u32 code = words[0] >> COMMAND_SHIFT;
     s32 left = 0;
@@ -1218,8 +1220,8 @@ static s32 port_RectsMeet(const PortPaintRect *one, const PortPaintRect *two) {
 
 /* What a textured primitive may read: its page, by the mode as it is,
  * and its colour table `clut` where the page's texels are indices. */
-static void port_TextureRects(const PortGpu *gpu, u32 clut, PortPaintRect *page,
-                              PortPaintRect *table) {
+static void port_TextureRects(
+    const PortGpu *gpu, u32 clut, PortPaintRect *page, PortPaintRect *table) {
     static const s16 widths[] = {64, 128, 256, 256}; /* by depth */
     s32 depth = (s32)((gpu->mode >> MODE_DEPTH_SHIFT) & MODE_DEPTH_MASK);
 
@@ -1232,7 +1234,7 @@ static void port_TextureRects(const PortGpu *gpu, u32 clut, PortPaintRect *page,
     if (depth == DEPTH_4 || depth == DEPTH_8) {
         table->x = (s32)(clut & CLUT_X_MASK) * CLUT_X_STEP;
         table->y = (s32)((clut >> CLUT_Y_SHIFT) & VRAM_Y_MASK);
-        table->w = depth == DEPTH_4 ? 16 : 256;
+        table->w = depth == DEPTH_4 ? CLUT_ENTRIES_4 : CLUT_ENTRIES_8;
         table->h = 1;
     }
 }
@@ -1267,8 +1269,8 @@ static u32 port_PolygonPage(PortGpu *gpu, const u32 *words) {
  * one, not painted at all (port_platform.h): the painter is then given
  * nothing, and takes the settings afresh where painting begins again
  * (port_PaintWillPaint). A polygon's page is the game's all the same. */
-static void port_SubmitPrimitive(PortGpu *gpu, const u32 *words, s32 count,
-                                 s32 is_painted) {
+static void port_SubmitPrimitive(
+    PortGpu *gpu, const u32 *words, s32 count, s32 is_painted) {
     u32 code = words[0] >> COMMAND_SHIFT;
     u32 kind = code & COMMAND_KIND_MASK;
     PortPaintRect write;
@@ -1304,10 +1306,10 @@ static void port_SubmitPrimitive(PortGpu *gpu, const u32 *words, s32 count,
         if (port_PaintPainters() > 1 && port_PaintIsReadPending(&write)) {
             port_PaintSyncWrite(write.x, write.y, write.w, write.h);
         }
-    } else if (port_PaintPainters() > 1 &&
-               (port_RectsMeet(&write, &page) ||
-                port_RectsMeet(&write, &table) ||
-                port_PaintIsReadPending(&write))) {
+    } else if (
+        port_PaintPainters() > 1 &&
+        (port_RectsMeet(&write, &page) || port_RectsMeet(&write, &table) ||
+         port_PaintIsReadPending(&write))) {
         PortPaintRect none;
 
         none.w = 0;
@@ -1339,8 +1341,7 @@ static void port_FollowLine(PortGpu *gpu, u32 word) {
         gpu->line_has_color = 1;
         return;
     }
-    if (!(gpu->line_code & CODE_SHADED) &&
-        (word & LINE_END_MASK) == LINE_END) {
+    if (!(gpu->line_code & CODE_SHADED) && (word & LINE_END_MASK) == LINE_END) {
         gpu->is_in_line = 0;
         return;
     }
@@ -1410,14 +1411,16 @@ static void port_RunCommand(const u32 *words, s32 count) {
         if (is_painted && g_port_unseen && port_GiveCopy(words)) {
             break;
         }
-        port_PaintSyncRead((s32)(words[1] & VRAM_X_MASK),
-                           (s32)((words[1] >> HALF_SHIFT) & VRAM_Y_MASK),
-                           port_TransferSize(words[3] & HALF_MASK, VRAM_X_MASK),
-                           port_TransferSize(words[3] >> HALF_SHIFT, VRAM_Y_MASK));
-        port_PaintSyncWrite((s32)(words[2] & VRAM_X_MASK),
-                            (s32)((words[2] >> HALF_SHIFT) & VRAM_Y_MASK),
-                            port_TransferSize(words[3] & HALF_MASK, VRAM_X_MASK),
-                            port_TransferSize(words[3] >> HALF_SHIFT, VRAM_Y_MASK));
+        port_PaintSyncRead(
+            (s32)(words[1] & VRAM_X_MASK),
+            (s32)((words[1] >> HALF_SHIFT) & VRAM_Y_MASK),
+            port_TransferSize(words[3] & HALF_MASK, VRAM_X_MASK),
+            port_TransferSize(words[3] >> HALF_SHIFT, VRAM_Y_MASK));
+        port_PaintSyncWrite(
+            (s32)(words[2] & VRAM_X_MASK),
+            (s32)((words[2] >> HALF_SHIFT) & VRAM_Y_MASK),
+            port_TransferSize(words[3] & HALF_MASK, VRAM_X_MASK),
+            port_TransferSize(words[3] >> HALF_SHIFT, VRAM_Y_MASK));
         port_CopyVram(gpu, words);
         break;
     case COMMAND_LOAD:
@@ -1428,8 +1431,8 @@ static void port_RunCommand(const u32 *words, s32 count) {
          * again between its draws), the painters load it in their turn, and
          * this side does not wait for them. */
         if (is_painted && g_port_unseen && port_PaintMayGiveWrites() &&
-            port_PaintIsInWay(gpu->load.x, gpu->load.y, gpu->load.w,
-                              gpu->load.h)) {
+            port_PaintIsInWay(
+                gpu->load.x, gpu->load.y, gpu->load.w, gpu->load.h)) {
             PortPaintRect write;
 
             write.x = gpu->load.x;
@@ -1446,7 +1449,8 @@ static void port_RunCommand(const u32 *words, s32 count) {
         break;
     case COMMAND_STORE:
         port_BeginTransfer(&gpu->store, words);
-        port_PaintSyncRead(gpu->store.x, gpu->store.y, gpu->store.w, gpu->store.h);
+        port_PaintSyncRead(
+            gpu->store.x, gpu->store.y, gpu->store.w, gpu->store.h);
         break;
     case COMMAND_SETTINGS:
         port_RunSetting(gpu, words[0]);
