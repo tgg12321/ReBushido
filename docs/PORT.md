@@ -4323,6 +4323,14 @@ pictures of the dark blue of the night sky alone that it also found,
 at the cut after a kill, are the game's own (the Original picture has
 them at the same blanks).
 
+**Held to `main`** (`21418d68b`) on the owner's card: the budget's fight
+with the HD fighters, cast shadows, smooth light, the five mods
+(`RB_TEXTURES_AT_ONCE=1`), `frame_rate original`, `--fast`, every eighth
+blank's window at 640 by 360. Two runs of this branch are the same to
+the byte (437 pictures); against `main`, 434 of 437 are the same to the
+byte, and the three that differ are the three with the band of orange
+across them, gone.
+
 **The pictures, evenly.** At `frame_rate = display` a picture between
 two frames was of the moment it was begun, counted from the moment the
 game's step ended; it is shown at the display's next refresh, which is
