@@ -107,11 +107,14 @@ u32 port_HostFileSize(s32 file) {
     return (u32)size.QuadPart;
 }
 
+/* `count` bytes of the file from `offset` into `dest`: how many it got
+ * (port_host.h). */
 u32 port_HostReadAt(s32 file, u32 offset, void *dest, u32 count) {
     LARGE_INTEGER at;
     DWORD got = 0;
 
     at.QuadPart = offset;
+    port_HostTouchPages(dest, count);
     if (!SetFilePointerEx(g_port_windows_files[file], at, NULL, FILE_BEGIN) ||
         !ReadFile(g_port_windows_files[file], dest, count, &got, NULL)) {
         return 0;
@@ -218,6 +221,7 @@ s32 port_HostUdpReceive(
     if (select(0, &readable, NULL, NULL, &wait) <= 0) {
         return -1;
     }
+    port_HostTouchPages(bytes, room);
     got = recvfrom((SOCKET)socket, (char *)bytes, (s32)room, 0,
                    (struct sockaddr *)&address, &address_bytes);
     if (got < 0) {
@@ -405,6 +409,39 @@ void port_HostCatchCrashes(void (*report)(const PortCrash *crash)) {
 #if !defined(__i386__)
     AddVectoredExceptionHandler(1, port_WindowsOnFirstFault);
 #endif
+}
+
+/* What a write to a page made read-only is handed to first
+ * (port_HostWatchWrites). */
+static s32 (*g_port_windows_on_write)(PortAddress address);
+
+/* The system calls this first for every fault of the program, on any
+ * thread: a write the watcher takes goes on where it was; anything
+ * else is left to the handlers after it. */
+static LONG WINAPI port_WindowsOnWrite(EXCEPTION_POINTERS *fault) {
+    const EXCEPTION_RECORD *record = fault->ExceptionRecord;
+
+    if (record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION &&
+        record->NumberParameters >= 2 && record->ExceptionInformation[0] == 1 &&
+        g_port_windows_on_write((PortAddress)record->ExceptionInformation[1])) {
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void port_HostWatchWrites(s32 (*on_write)(PortAddress address)) {
+    if (g_port_windows_on_write == NULL) {
+        AddVectoredExceptionHandler(1, port_WindowsOnWrite);
+    }
+    g_port_windows_on_write = on_write;
+}
+
+s32 port_HostProtect(void *start, u32 bytes, s32 is_writable) {
+    DWORD was;
+
+    return VirtualProtect(start, bytes,
+                          is_writable ? PAGE_READWRITE : PAGE_READONLY, &was) !=
+           0;
 }
 
 /* ---- the game's stack, as a fiber (port_host.h, port_fiber.h) ---- */

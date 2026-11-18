@@ -116,6 +116,7 @@ u32 port_HostReadAt(s32 file, u32 offset, void *dest, u32 count) {
     if (stream == NULL || fseeko(stream, (off_t)offset, SEEK_SET) != 0) {
         return 0;
     }
+    port_HostTouchPages(dest, count);
     return (u32)fread(dest, 1, count, stream);
 }
 
@@ -202,6 +203,7 @@ s32 port_HostUdpReceive(
     if (poll(&poll_file, 1, (int)wait_ms) <= 0) {
         return -1;
     }
+    port_HostTouchPages(bytes, room);
     got = recvfrom(
         socket, bytes, room, 0, (struct sockaddr *)&address, &address_bytes);
     if (got < 0) {
@@ -328,21 +330,59 @@ static void port_PosixOnSignal(int number, siginfo_t *info, void *context) {
     _exit(PORT_EXIT_CRASH);
 }
 
-/* The four faults, on a stack of the handler's own: the fault may be
- * the game's stack running out (port_host.h). */
-void port_HostCatchCrashes(void (*report)(const PortCrash *crash)) {
-    static const int signals[] = {SIGSEGV, SIGBUS, SIGFPE, SIGILL};
-    static char signal_stack[SIGNAL_STACK_BYTES];
-    struct sigaction action;
-    stack_t stack;
-    size_t i;
+/* What a write to a page made read-only is handed to first
+ * (port_HostWatchWrites). */
+static s32 (*g_port_posix_on_write)(PortAddress address);
 
-    g_port_posix_report = report;
+/* SIGSEGV while writes are watched: a write the watcher takes goes on
+ * where it was; any other is a crash, or the system's own end where
+ * crashes are not caught. */
+static void port_PosixOnSegv(int number, siginfo_t *info, void *context) {
+    struct sigaction action;
+
+    if (g_port_posix_on_write((PortAddress)info->si_addr)) {
+        return;
+    }
+    if (g_port_posix_report != NULL) {
+        port_PosixOnSignal(number, info, context);
+    }
+    /* the fault again, with nothing to take it */
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = SIG_DFL;
+    sigaction(SIGSEGV, &action, NULL);
+}
+
+/* The handlers run on a stack of their own: the fault may be the game's
+ * stack running out. */
+static void port_PosixSignalStack(void) {
+    static char signal_stack[SIGNAL_STACK_BYTES];
+    stack_t stack;
+
     stack.ss_sp = signal_stack;
     stack.ss_flags = 0;
     stack.ss_size = sizeof(signal_stack);
     sigaltstack(&stack, NULL);
+}
 
+/* SIGSEGV to the watcher of writes, for good: it comes back from the
+ * faults it takes. */
+static void port_PosixWatchSegv(void) {
+    struct sigaction action;
+
+    action.sa_sigaction = port_PosixOnSegv;
+    action.sa_flags = SA_SIGINFO | SA_ONSTACK;
+    sigemptyset(&action.sa_mask);
+    sigaction(SIGSEGV, &action, NULL);
+}
+
+/* The four faults (port_host.h). */
+void port_HostCatchCrashes(void (*report)(const PortCrash *crash)) {
+    static const int signals[] = {SIGSEGV, SIGBUS, SIGFPE, SIGILL};
+    struct sigaction action;
+    size_t i;
+
+    g_port_posix_report = report;
+    port_PosixSignalStack();
     action.sa_sigaction = port_PosixOnSignal;
     /* a second fault, in the report itself, ends the program as the
      * system would have */
@@ -351,6 +391,22 @@ void port_HostCatchCrashes(void (*report)(const PortCrash *crash)) {
     for (i = 0; i < sizeof(signals) / sizeof(signals[0]); i++) {
         sigaction(signals[i], &action, NULL);
     }
+    if (g_port_posix_on_write != NULL) {
+        port_PosixWatchSegv();
+    }
+}
+
+void port_HostWatchWrites(s32 (*on_write)(PortAddress address)) {
+    if (g_port_posix_on_write == NULL && g_port_posix_report == NULL) {
+        port_PosixSignalStack();
+    }
+    g_port_posix_on_write = on_write;
+    port_PosixWatchSegv();
+}
+
+s32 port_HostProtect(void *start, u32 bytes, s32 is_writable) {
+    return mprotect(start, bytes,
+                    is_writable ? PROT_READ | PROT_WRITE : PROT_READ) == 0;
 }
 
 /* ---- the game's stack, as a fiber (port_host.h, port_fiber.h) ---- */

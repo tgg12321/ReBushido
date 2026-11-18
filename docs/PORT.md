@@ -4337,11 +4337,10 @@ lines).
 
 **The HD cloth and body shared out.** The places of the body posed
 for the cloth and for the cast shadows, and each place of a cloth kept
-out of the body, are each their own sum, so they are shared out among
-the window's helper threads (`port_GlParallel`, `gl_load.h`: four with
-the drawing thread), each with room of its own for the body's search
-(`port_GlClothBodyHoldBy`): the same vertices to the bit however they
-are shared.
+out of the body, are each their own sum, so they were shared out among
+four of the window's threads: the same vertices to the bit however they
+were shared. All of it is now done on the card ("The HD fighters on the
+card"), and the threads are gone.
 
 **Measured** on the owner's card (RTX 3090, 2560 by 1440, his
 settings, `fighter_models on`, `shadows cast`, `run_ahead 2`, the
@@ -4569,6 +4568,32 @@ what it costs over a bare step is its own picture, drawn there in place
 of the step. The software GPU's part of a fight frame at `run_ahead 1`
 went from 6.99 ms to 3.42 (`run_ahead 0`: 3.4), and the window's
 picture of the software GPU's from 2.71 to 0.11.
+
+**The state kept and put back by the pages written** (2026-11-18). A
+boundary saved the whole state (about 7 MB in the window) and put it
+back: 1.5 to 1.9 ms of it on the owner's PC, of which only a hundred or
+so pages a fight's frame had written. Now a save and a load copy only
+the pages written since the snapshot was taken, found by the software
+GPU's marks for video memory and by the system's page protection for
+the rest, with the pages written every frame left writable and copied
+each time (docs/NETPLAY.md, "Save, load and hash", "Only the pages
+written"). `port_game`'s plan, the state's part of a boundary (all of
+it on a machine other agents were using; `--whole-state` is the old
+way):
+
+| | `run_ahead 1` | `run_ahead 2` |
+| --- | --- | --- |
+| the window on the card (`port_bench.py`), before | 1.49 to 1.95 ms of 3.2 to 4.1 | 1.80 of 5.68 |
+| ... after | 0.18 of 2.08 | 0.14 of 2.72 |
+| Windows without a window (`rebushido-headless.exe`), whole / pages | 0.20 / 0.07 ms | 0.44 / 0.08 |
+| Linux, 64-bit, whole / pages | 0.26 / 0.11 ms | 0.41 / 0.09 |
+
+besides about 3 first writes a boundary that fault (2 microseconds each
+on Windows, 5.5 in WSL). The traces are the plain run's with
+`run_ahead` 0, 1 and 2 in both sizes and on Windows; `port-rollback`,
+`port_net.py all` and the play tests `port_game` and `port_sound` pass.
+What a frame ahead still costs besides its own step is its sound
+(`sound`), which the sound chip makes as ever.
 
 **The cast shadows projected by the card.** With the HD fighters the
 shadows are cast from some 44,000 triangles a picture, and each picture
@@ -4982,6 +5007,117 @@ targets are met: then take `--report-only` out of `OWN` in
 `tools/gate.py`**. Where there is no card (CI, WSL), no Windows build,
 no disc or no hd mod, it says so and passes.
 
+### The HD fighters on the card
+
+**What it was** (main at `8f09f98d1`, the card's measure above): the HD
+body was posed on the processor for the cast shadows once a frame (every
+vertex's eight terms, then 44,000 triangles copied, slid onto the ground
+and sent to the card again, 3 MB a pair of frames), and posed again for
+each cloth, whose every place was then kept out of it on four threads
+(`port_GlClothBodyHold`): 2.4 and 5.7 ms of a fight frame with nothing
+run ahead, 2.6 and 7.1 with `run_ahead 1`.
+
+**Now** (`src/port/gl/gl_fighter_card.c`) none of it is the
+processor's. Once for each set of a fighter's bones, compute shaders
+over the model's own vertex buffer (the file's `PortFighterVertex`, read
+as words) pose the body as the fighters' shader does, count each vertex
+into the same hashed grid of 64-unit cubes, sum the counts into where
+each cube's list begins, and put each list in the order of the
+vertices' numbers (a group a list, each vertex placed by how many of the
+list are below it): the same lists every run, whatever order the card
+ran the vertices in. Each smooth cloth of the fighter is then made
+through the game's points in three steps, all of his cloths side by
+side and one barrier after each: his points kept out of the body, each
+place of the surface (its fixed sum of the points, `gl_cloth.h`) kept
+out, and each vertex given its place, the normal of the quads about it
+and its texture point, into a buffer of `PortGlClothVertex` that the
+fighters' layer and the shadows draw from by `gl_VertexID`. Nothing comes
+back: the shadows read the body's lowest point (the soles' ground,
+"A body the game casts no shadow of") from the card's own buffer.
+
+- **A point kept out** is the processor's arithmetic of before, in single
+  precision: the sum of the body's vertices about it, each one's distance
+  along its own normal, weighed by (1 - d²/r²)², r one and a half times
+  the nearest one's distance and at least 48, up to four steps out. A
+  thread a point waited on memory for each of the few thousand vertices
+  it walked, ten times over: 34 ms of the card a frame. Now **a group of
+  32 threads a point** walks the cubes together and adds up by a fixed
+  tree, and **the 27 cubes about the point are copied into shared memory**
+  (512 vertices, 12 KB, so that many groups fit on a multiprocessor;
+  0.5% of the places' cubes hold more and are walked in the body), kept
+  until the point leaves its cube.
+- **The cast shadows from the skinned mesh**: a model's caster is its
+  vertex array, the 21 bones' world matrices of the frame and its
+  ground (`port_GlFighterCastOf`), and the shadows' vertex shader poses
+  each vertex by its terms on each of the two frames' bones, slides it
+  onto that frame's ground along the sun and mixes the two; a smooth
+  cloth casts from the buffer it was made into. Pairing between frames is
+  by the caster and its model (it was by the triangle's place in the
+  frame's list, and 1,456 of `port_game`'s mixed pictures' triangles found
+  no pair; now 8). The mask's box is the model's: the bones' places and,
+  for each vertex, its terms' lengths and shares worked out when the file
+  loads, so it holds every vertex in any pose.
+- **The first frames** (`port_GlFighterPreload`, while the game loads):
+  each slot's poses and held cloths given room at the model's size, every
+  compute program dispatched once on the bind pose, the fighters' layer
+  made at the picture's size and drawn with, and the shadows' programs
+  drawn with once and their mask made (`port_GlShadowWarm`). A driver
+  readies a program at its first use: the fight's first frame had the
+  cloth at 14 ms, the shadows at 15 and the frame ahead at 11 of the
+  processor. Asking GL which program was in use waited on NVIDIA's
+  driver thread (6 ms a frame); the card's functions leave none in use
+  and the callers bind their own.
+
+**Held to main's pictures.** The prover (`port_game`, the hd mod, `shadows
+cast`, scale 1, every 300th blank, and scale 2 with three pictures a
+frame, every 150th): the cloth's counts are the same but one (53,898
+places of the game's cloth inside the body, as before; 1,372 left inside
+as drawn against 1,373), and the pictures differ from main's in at most 4
+pixels of 1,228,800, by at most 205 of 255, single pixels at the cloth's
+edge where a place kept out in single precision lies a hair from where
+double put it. On the owner's card (`--tap-window`, the budget's fight,
+every eighth blank at 640 by 360, `frame_rate original`,
+`RB_TEXTURES_AT_ONCE=1`, the counter off): two runs of this build are the
+same to the byte (419 pictures); against main (`77ee9f758`) 367 are the same to the byte and the 52 that
+differ do so in at most 7 pixels by more than 16 of 255 (the most 77),
+single pixels at the cloth's edge, as in the prover. GPU skinning,
+posing and keeping out in single precision cannot give the processor's
+double-precision places to the bit; a place kept out a hundredth of a
+unit elsewhere moves an edge pixel at most, which is what is seen.
+
+**Measured** on the owner's card (`port_bench.py --against 77ee9f758`,
+RTX 3090 at 2,560 by 1,440, `e9d514aa4`; the stage prover was running on
+the processor beside it, so the processor's numbers are if anything
+high). A fight frame's blank, milliseconds:
+
+| case | processor median | 95% | worst | card median | 95% |
+| --- | --- | --- | --- | --- | --- |
+| `run_ahead 0`, main | 14.8 | 17.4 | 30.1 | 4.1 | 8.2 |
+| `run_ahead 0`, now | 11.0 | 14.7 | 17.2 | 6.5 | 10.2 |
+| `run_ahead 1`, main | 20.7 | 25.7 | 40.3 | 5.6 | 8.6 |
+| `run_ahead 1`, now | 9.4 | 11.6 | 16.5 | 6.1 | 9.3 |
+| `run_ahead 2`, main | 21.7 | 32.8 | 54.7 | 6.7 | 9.1 |
+| `run_ahead 2`, now | 14.7 | 17.9 | 36.4 | 8.4 | 12.3 |
+| four fighters, the ground twice, main | 16.3 | 18.1 | 39.5 | 5.6 | 7.8 |
+| four fighters, the ground twice, now | 12.0 | 18.8 | 28.1 | 10.2 | 15.8 |
+
+The cloth and shadows' parts of the processor went from 2.6 and 7.1 ms
+(`run_ahead 1`, `8f09f98d1`) to under 0.1 each, and no blank of the
+fight is a stall (`8f09f98d1`'s worst 69 ms, at its first frames). The
+card pays for it: the cloth's pass (`cloth`, the bodies posed and the
+cloths made) was 1.7 ms a fight frame then, and 1.1 since (one barrier a
+walk where a tree took five, and the smaller copy of the cubes). It is
+paid once a game frame, not once a picture: at 144 pictures a second
+three pictures of four have none of it.
+
+What is left of the fighters on the card: the cloth's hold, about 1.1 ms
+of a frame with two fighters' cloths new (the places' walks; a coarser
+body for the first walk, or a distance field of the body made once a
+pose, would take most of it), and the shadows' mask and darkening
+(0.4 ms, mostly fill). Four fighters cost the processor
+nothing per fighter but his bones and his cloths' points; the card about
+half a millisecond a fighter whose pose and cloth are new.
+
 ### Input lag
 
 **Where a press went** (measured headless: `port_game`'s plan with one
@@ -5317,18 +5453,19 @@ the environment draws the game's faces for every cloth.
 **The cloth kept out of the body.** The game moved its cloth round its
 own low body; the model is fuller, and the cloth the game moved went into
 its hips and legs (the owner: "cloth can clip into the existing model").
-So once a frame the model's body is posed on the CPU as the card poses it
-(the terms, and the normals turned by the joints), and every point of the
-cloth, and then every place of the subdivided surface, is put out of it
-to 5 units outside along the surface's normal there
-(`port_GlClothBodyHold`): a point's distance from the body is the sum of
+So once a frame the model's body is posed as the fighters' shader poses
+it (the terms, and the normals turned by the joints), and every point of
+the cloth, and then every place of the subdivided surface, is put out of
+it to 6 units outside along the surface's normal there, all on the card
+("The HD fighters on the card", `gl_fighter_card.c`): a point's distance
+from the body is the sum of
 the body's vertices about it, each one's distance along its own normal,
 weighed by (1 - d²/r²)², r one and a half times the nearest vertex's
 distance and at least 48 units, found through a hashed grid of 64-unit
 cubes. The sum is smooth, so a point kept out moves smoothly from frame
 to frame. The frame's cloth kept out is written down in the world's units
 under what it was made from (the model, its 21 bones and the cloth's
-points: `port_GlFighterHeldCloth`, sixteen a slot: three frames of five cloths), and the frame's picture,
+points: `port_GlFighterHeldCloth`, a buffer on the card each, 32 a slot), and the frame's picture,
 its shadow, every picture between it and the next frame and a frame run
 ahead to the same pose all read it; a picture between two frames mixes
 the two frames' kept-out surfaces, place by place and normal by normal.
@@ -5422,12 +5559,14 @@ fighter or a weapon drawn from a model of its own casts the model: each
 triangle of it, posed by its terms on the frame's bones, is slid onto the
 ground along the game's sun as the game's faces are, in the place of the
 game's faces of that thing (`port_GlFighterCaster`,
-`port_GlFighterCastTriangles`). A cloth drawn smooth casts with its
-fighter: `port_GlFighterCaster` gives a cloth node his slot, and the
-slot's triangles are the body's and then the smooth cloths', kept out of
-the body as they are drawn (`port_GlFighterCastCloths`); a cloth that is
-the game's own casts its own faces. A shadow between two frames moves each triangle the way
-it went, as before, found again by its number.
+`port_GlFighterCastOf`), posed and slid by the card's own vertex shader
+from the model's buffers ("The HD fighters on the card"). A cloth drawn
+smooth casts with its fighter: `port_GlFighterCaster` gives a cloth node
+his slot, and the slot casts the body and then the smooth cloths, from
+the buffers the card kept them out of the body into; a cloth that is the
+game's own casts its own faces. A shadow between two frames moves each
+vertex the way it went: the same thing's model in the frame after it,
+posed on that frame's bones.
 
 **The file** (`src/port/gl/gl_fighter_file.h`): glTF 2.0 binary, one skin
 whose joints are named `bone00` to `bone20`, vertices in the game's own

@@ -5,6 +5,7 @@
 
 #include "common.h"
 #include "gl_load.h"
+#include "port_host.h"
 #include "port_png.h"
 
 #define RGBA 4
@@ -132,97 +133,6 @@ static s32 port_GlLoadThread(void *arg) {
     return 0;
 }
 
-/* ---- work shared out ---- */
-
-static struct {
-    s32 helpers;
-    void *lock;
-    void *go[PORT_GL_WORKERS];
-    void *finished;
-    PortGlPart part;
-    void *context;
-    s32 count;
-    s32 piece;
-    s32 next; /* the next piece's first thing */
-} g_share;
-
-/* Pieces taken one after another until there are none left. */
-static void port_GlShareTake(s32 worker) {
-    for (;;) {
-        s32 from;
-
-        g_load.threads.lock(g_share.lock);
-        from = g_share.next;
-        g_share.next += g_share.piece;
-        g_load.threads.unlock(g_share.lock);
-        if (from >= g_share.count) {
-            return;
-        }
-        g_share.part(g_share.context, from,
-                     from + g_share.piece < g_share.count ? from + g_share.piece
-                                                          : g_share.count,
-                     worker);
-    }
-}
-
-static s32 g_share_numbers[PORT_GL_WORKERS];
-
-static s32 port_GlShareThread(void *arg) {
-    s32 worker = *(const s32 *)arg;
-
-    for (;;) {
-        g_load.threads.wait(g_share.go[worker]);
-        port_GlShareTake(worker);
-        g_load.threads.post(g_share.finished);
-    }
-    return 0;
-}
-
-static void port_GlShareStart(void) {
-    s32 i;
-
-    g_share.lock = g_load.threads.make_lock();
-    g_share.finished = g_load.threads.make_signal();
-    if (g_share.lock == NULL || g_share.finished == NULL) {
-        return;
-    }
-    for (i = 1; i < PORT_GL_WORKERS; i++) {
-        g_share.go[i] = g_load.threads.make_signal();
-        g_share_numbers[i] = i;
-        if (g_share.go[i] == NULL ||
-            !g_load.threads.start(port_GlShareThread, &g_share_numbers[i])) {
-            return;
-        }
-        g_share.helpers = i;
-    }
-}
-
-void port_GlParallel(PortGlPart part, void *context, s32 count, s32 piece) {
-    s32 i;
-
-    if (piece < 1) {
-        piece = 1;
-    }
-    if (g_share.helpers == 0 || count <= piece) {
-        if (count > 0) {
-            part(context, 0, count, 0);
-        }
-        return;
-    }
-    g_share.part = part;
-    g_share.context = context;
-    g_share.count = count;
-    g_share.piece = piece;
-    g_share.next = 0;
-    for (i = 1; i <= g_share.helpers; i++) {
-        g_load.threads.post(g_share.go[i]);
-    }
-    port_GlShareTake(0);
-    for (i = 1; i <= g_share.helpers; i++) {
-        g_load.threads.wait(g_share.finished);
-    }
-}
-
 void port_GlLoadSetThreads(const PortGlThreads *threads, s32 count) {
     const char *at_once = getenv("RB_TEXTURES_AT_ONCE");
     s32 started = 0;
@@ -232,7 +142,6 @@ void port_GlLoadSetThreads(const PortGlThreads *threads, s32 count) {
         return;
     }
     g_load.threads = *threads;
-    port_GlShareStart();
     if (at_once != NULL && at_once[0] != 0 && at_once[0] != '0') {
         return;
     }
@@ -291,8 +200,17 @@ s32 port_GlLoadAsk(const PortGlLoad *asked) {
     return TRUE;
 }
 
+/* How long a frame's collecting may go on after its first picture, in
+ * the host's ticks: 2 ms. Bytes alone did not hold it: forty of the ui
+ * mod's small pictures came in one blank of the top menu, each its own
+ * texture and mipmaps made, and the blank took 44 to 58 ms on an RTX
+ * 3090, most of it waiting on the driver. A picture held back comes a
+ * frame later. Not where everything is asked for (port_GlLoadFinish). */
+#define LOAD_TICKS_A_FRAME (2000 * PORT_HOST_TICKS_PER_MICROSECOND)
+
 void port_GlLoadCollect(u32 bytes) {
     u32 sent = 0;
+    u32 started = port_HostTicks();
 
     if (!g_load.is_beside) {
         return;
@@ -317,6 +235,10 @@ void port_GlLoadCollect(u32 bytes) {
         sent += load->is_loaded ? (u32)load->w * (u32)load->h * RGBA : 1;
         free(load->pixels);
         free(load);
+        if (bytes != 0xFFFFFFFFU &&
+            port_HostTicks() - started > (u32)LOAD_TICKS_A_FRAME) {
+            return;
+        }
     }
 }
 

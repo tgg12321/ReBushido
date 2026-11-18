@@ -58,6 +58,11 @@
  * when a frame first needs it. Called where the backend starts
  * (gl_draw.c). Returns why it could not, or NULL. */
 extern const char *port_GlShadowStart(void *(*getproc)(const char *name));
+/* While the game loads (gl_fighter.h, port_GlFighterPreload): the cast
+ * shadows' program drawn with once, into a pixel of its own, of each
+ * kind it casts: a driver makes a program ready for the card at its
+ * first draw, which was some milliseconds of a fight's first frame. */
+extern void port_GlShadowWarm(void);
 
 /* The `shadows` setting (port_remaster.h, port_ReadRemasterShadows): how
  * much the shadows darken what they fall on, in hundredths, 0 for the

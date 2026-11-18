@@ -221,19 +221,20 @@ the card). `run_ahead 1` still "throttles" with the HD models on the
 owner's card as of `d982fa6a9`; after `4527a5a8f` it is for him to say.
 What is still done on the processor, in the order I would move it:
 
-1. **The HD body posed for the shadows** (`port_GlFighterCastTriangles`,
-   once a frame): every vertex's eight terms, then 44,000 triangles
-   copied. Skin on the card into a buffer (transform feedback) or draw
-   the skinned mesh flattened straight into the mask.
-2. **The cloth kept out of the body** (`port_GlFighterHeldCloth`, once a
-   new pose: about 4 ms for two fighters here). A compute-free way: the
-   body as a signed-distance texture, or hold the control points only
-   and let the subdivision follow.
+1. ~~The HD body posed for the shadows~~ and 2. ~~the cloth kept out
+   of the body~~: both on the card now, by compute shaders and the
+   shadows' own vertex shader (docs/PORT.md, "The HD fighters on the
+   card"); the processor gives the bones and the cloth's points. What
+   is left is the card's: the cloth's hold, about 1.1 ms of a frame
+   whose cloths are new (a coarser body for the first walk, or a
+   distance field of the body made once a pose, would take most of
+   it).
 3. **A frame run ahead mixes its sound** (`sound` 0.8 ms to 5 to 9 ms
    here, much of it the disc read through WSL): the SPU's voices must
    step, the mixing need not.
-4. **The state kept and put back** (2.4 ms a boundary on his PC): 10 MB
-   copied twice; only the pages written since could be.
+4. ~~The state kept and put back~~ (2.4 ms a boundary on his PC): now
+   only the pages written since (docs/PORT.md, "The state kept and put
+   back by the pages written"): 0.14 to 0.18 ms on his card.
 5. ~~The owner's "orange flashes"~~: found on his card and fixed
    (docs/PORT.md, "The orange flashes": an effect the chip leaves out,
    drawn by its true places).
@@ -246,11 +247,9 @@ for the cloth and the shadows are shared out among four threads. A
 fight frame with the HD fighters, cast shadows and `run_ahead 2` went
 from 39 ms to 28 ms of the window's thread on the owner's card; the
 time let go from 107 to 53 times in the fight's run, and 0 with his
-own settings. Still to do, in order: the cast shadows from the skinned
-mesh on the card (items 1 above; 3.6 ms), the cloth on the card (2;
-3.6 ms of wall-clock time even shared out), and the card's own work
-(the swap waits 3 ms in a fight frame: timer queries will say which
-pass). The sound queue (58 ms) was left: with the hitches gone it runs
+own settings. The cast shadows and the cloth have since gone to the
+card (items 1 and 2), and the fight's first frames no longer stall on
+the card's first use of them. The sound queue (58 ms) was left: with the hitches gone it runs
 out far less, and a longer one is a later sound.
 
 `tools/port_budget.py` (run alone at the gate's end) holds the

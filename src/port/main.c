@@ -6,6 +6,7 @@
  *             [--wav FILE] [--spu FILE]
  *             [--card1 FILE] [--card2 FILE] [--no-cards]
  *             [--rollback-test N] [--rollback-every M] [--rollback-quiet]
+ *             [--whole-state]
  *             [--net-bind ADDRESS:PORT --net-peer ADDRESS:PORT]
  *             [--link-side 0|1] [--net-latency MS] [--net-loss PERCENT]
  *             [--netplay 1|2] [--net-delay N]
@@ -68,6 +69,7 @@ static const char g_port_usage[] =
     "            [--fight STAGE FIGHTER FIGHTER] [--fight-2p]\n"
     "            [--rollback-test N] [--rollback-every M] "
     "[--rollback-quiet]\n"
+    "            [--whole-state]\n"
     "            [--mods FOLDER|off] [--dump-textures FOLDER]\n"
     "            [--music-mods on|off] [--dump-music FOLDER]\n"
     "            [--dump-stages FOLDER] [--weapon 1|2=NAME]\n"
@@ -114,6 +116,8 @@ static const char g_port_usage[] =
     "  --rollback-every M  ... M frames from one save to the next (24)\n"
     "  --rollback-quiet    ... and run them again as netplay does: nothing\n"
     "                 drawn, heard or printed; video memory not compared\n"
+    "  --whole-state  save and put back every byte of the state, not only\n"
+    "                 the pages written since (for measuring)\n"
     "  --run-ahead N  before each frame run the next N (0 to 2) and put\n"
     "                 the state back: what the window does to show a\n"
     "                 press sooner (docs/PORT.md, \"Input lag\")\n"
@@ -324,6 +328,8 @@ s32 port_Main(s32 argc, char **argv) {
             i += 3;
         } else if (port_TextsEqual(word, "--rollback-quiet")) {
             rollback_quiet = 1;
+        } else if (port_TextsEqual(word, "--whole-state")) {
+            port_SetWholeState();
         } else if (
             port_TextsEqual(word, "--help") || port_TextsEqual(word, "-h")) {
             port_Print("%s", g_port_usage);

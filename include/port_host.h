@@ -121,6 +121,42 @@ extern s32 port_HostMapAt(u32 address, u32 size);
  * back. */
 extern void *port_HostAllocate(u32 size);
 
+/* The pages a run writes, found by the system (src/port/state.c keeps
+ * only those of the state; docs/NETPLAY.md, "Save, load and hash"). The
+ * pages from `start` for `bytes`, both on a page's bounds, made
+ * read-only or writable again: 1, or 0 if the system would not. */
+#define PORT_HOST_PAGE_BYTES 0x1000U
+extern s32 port_HostProtect(void *start, u32 bytes, s32 is_writable);
+/* From now on a write to a page made read-only, on any thread, calls
+ * `on_write` with the address written first: if it returns 1 it has
+ * made the page writable and the write is made again; if 0, the fault is
+ * a crash as any other. A handler that is called for a fault must
+ * neither print nor allocate. */
+extern void port_HostWatchWrites(s32 (*on_write)(PortAddress address));
+
+/* A page of `bytes` from `dest` written by the program before the system
+ * writes it: a read of a file or a datagram into a page made read-only
+ * would fail in the system, which does not fault, where a write of the
+ * program's own is taken by `on_write`. Each host calls it before it has
+ * the system write into memory it was given. */
+static inline void port_HostTouchPages(void *dest, u32 bytes) {
+    volatile u8 *at = (volatile u8 *)dest;
+    PortAddress end = (PortAddress)dest + bytes;
+
+    if (bytes == 0) {
+        return;
+    }
+    for (;;) {
+        *at = *at;
+        at = (volatile u8 *)(((PortAddress)at &
+                              ~(PortAddress)(PORT_HOST_PAGE_BYTES - 1)) +
+                             PORT_HOST_PAGE_BYTES);
+        if ((PortAddress)at >= end) {
+            break;
+        }
+    }
+}
+
 /* The game runs on a stack of its own, the memory below `stack_top`, as
  * a fiber the host enters and the game leaves (docs/NETPLAY.md, "The
  * step"; the switch is include/port_fiber.h). port_HostStartGame makes
