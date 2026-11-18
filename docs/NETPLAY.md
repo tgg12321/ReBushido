@@ -618,6 +618,29 @@ plain run's trace is unchanged. Any other read of what was never written
 that reaches the state will show the same way: the test finds it where
 the stack's garbage differs between the two runs of a frame.
 
+**What failed in the gate, and was not the state** (2026-11-18). Now
+and then `python tools/gate.py` failed at `port-rollback` with "the run
+with rollbacks wrote CP.fighters.snap otherwise than the plain run", in
+the 64-bit program only, while the run's own hashes passed; it never
+failed alone. The game was not at fault: the files were not the ones
+the plain run had written. `wsl bash tools/build.sh port-rollback` runs
+in the build's copy of the checkout (`tools/mirror.sh`, BUILD.md, "Where
+the build runs"), so that copy kept a `build/rollback/` of its own, from
+whatever program it last ran. The gate runs `port-rollback` in place,
+and each of its build steps, when it ends, brings the copy's `build/`
+back by what is newer or missing here (rsync `--update`): a file that
+`port_rollback.py` had just cleared away to run again was missing, and
+the copy's old one came back, or replaced the new one as it was written.
+It was the 64-bit run because it runs first, while the window's builds
+and the discs are still ending; by the 32-bit run they have ended.
+Shown by running `port-rollback` in place beside `tools/mirror.sh out`
+with an old `build/rollback/` in the copy: it failed so; with the fix,
+never (`tmp`'s race script, 30 runs). The fix: the copy brings back no
+folder that a run in place writes (`rollback`, `net`, `budget`, `bench`,
+`gate`), `tools/build.sh` runs `port-rollback` and `port-net`, which
+build nothing, in place, and `port_rollback.py` fails a file older than
+its run with a word on where it came from.
+
 **What the later changes need from this.**
 
 - *Change 1* (done) moved the hook between two steps, and put the

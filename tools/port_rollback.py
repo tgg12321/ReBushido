@@ -23,7 +23,8 @@ headless:
 
 It fails if any run fails, if a run with rollbacks finds a difference,
 or if one printed or wrote anything otherwise than the plain run: going back and running again must
-change nothing a run shows. What each run printed is in FOLDER/64-bit/
+change nothing a run shows. It fails as well on a file of a run older
+than the run, which something else put there. What each run printed is in FOLDER/64-bit/
 and 32-bit/ (build/rollback/ if nothing says); the second's report of its rollbacks
 and of how long a save and a load took is the last lines of
 rollback.err.
@@ -54,6 +55,11 @@ SECONDS = 900
 # it). The second runs each frame again as netplay does, drawing,
 # sounding and printing nothing (--rollback-quiet).
 RUNS = [('rollback', [], ''), ('quiet', ['--rollback-quiet'], ', run again quietly')]
+# When each run (its folder) started: a file in it older than that was
+# not written by it (docs/NETPLAY.md, "What failed in the gate").
+STARTED = {}
+# Seconds a file's time may lag the clock (a file system's own rounding).
+SLACK = 2
 
 
 def write_plan(program, test_name, folder):
@@ -80,6 +86,7 @@ def run(program, plan, folder, name, more):
         shutil.rmtree(os.path.join(folder, name))
     os.makedirs(os.path.join(folder, name))
     start = time.time()
+    STARTED[os.path.join(folder, name)] = start
     with open(os.path.join(folder, name + '.out'), 'wb') as out, \
             open(os.path.join(folder, name + '.err'), 'wb') as err:
         try:
@@ -184,6 +191,11 @@ def check_run(label, program, plan, folder, args, name, more, what):
     written = sorted(set(os.listdir(os.path.join(folder, 'plain'))) | set(os.listdir(os.path.join(folder, name))))
     for file_name in written:
         paths = [os.path.join(folder, run_name, file_name) for run_name in ('plain', name)]
+        for path in paths:
+            if os.path.isfile(path) and os.path.getmtime(path) < STARTED[os.path.dirname(path)] - SLACK:
+                problems.append('%s: %s is older than its run: something else put it there (the build\'s '
+                                'copy of the checkout bringing its own build/rollback/ back, tools/mirror.sh?)'
+                                % (label, os.path.relpath(path, REPO)))
         contents = [open(path, 'rb').read() if os.path.isfile(path) else None for path in paths]
         if contents[0] != contents[1]:
             problems.append('%s: the run with rollbacks%s wrote %s otherwise than the plain run'
