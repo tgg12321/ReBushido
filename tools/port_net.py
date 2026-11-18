@@ -2,9 +2,10 @@
 """Two programs of the native port playing each other over UDP on this PC
 (docs/NETPLAY.md, sections 11 and 12), headless:
 
-    python3 tools/port_net.py link|rollback [--bits 32|64] [--out FOLDER]
-                                            [--latency MS] [--loss PERCENT]
-                                            [--delay N]
+    python3 tools/port_net.py link|rollback|session|window [--bits 32|64]
+                              [--out FOLDER] [--latency MS] [--loss PERCENT]
+                              [--delay N] [--port-base PORT] [--stress N]
+                              [--burn K] [--cpus LIST] [--pause MS]
 
 `link`: the game's own link-cable versus mode, in lockstep with a frame of
 delay. Each program is one console (--link-side 0 and 1) with its own plan:
@@ -25,15 +26,31 @@ end well, both see the kill, neither finds a desync, and every state hash
 both print (one each 30 frames, once both pads' inputs before it are
 known) is the same on both, to the last frame they share near the end.
 
-Both sockets are bound to 127.0.0.1, on two ports from 47000 up: nothing
+`session` and `window` are a session's, set up by --host and --join
+(section 13).
+
+Under load (docs/NETPLAY.md, section 12, "Under load"): `--stress N` runs
+the checks N times over and counts the runs that failed and those that
+found a desync, keeping each run's folder; `--burn K` starts K programs
+that only burn a processor meanwhile, `--cpus LIST` puts the two programs
+and the burners on those processors alone (taskset), and `--pause MS`
+stops one program or the other for MS milliseconds every second or so, so
+that the other runs ahead and the stopped one wakes to a burst of
+datagrams.
+
+Both sockets are bound to 127.0.0.1, on two ports from 47000 up
+(--port-base moves them, so that two runs at once do not meet): nothing
 listens on any other address. The programs are the ones `make port` built
 (build them again first), and the retail disc's image is needed
 (REBUSHIDO_RETAIL, or the .cue at the checkout's root); no emulator.
 Without the image it says so and passes, as the play tests do."""
 import argparse
 import os
+import random
+import signal
 import subprocess
 import sys
+import threading
 import time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -46,6 +63,8 @@ WINDOW_PROGRAM = 'build/port-sdl/linux/rebushido'
 SECONDS = 600
 BASE_PORT = 47000
 LOCALHOST = '127.0.0.1'
+# --cpus: what each program is started under (taskset), or nothing
+PINNED = []
 
 # From power on to the top menu, as port_game's plan (tests/play/
 # port_game.toml); then five rows down (versus is three: the rows are the
@@ -281,7 +300,9 @@ def run_pair(program, plans, folder, more, ports):
         os.makedirs(os.path.join(folder, 'side%d' % side), exist_ok=True)
         out = open(os.path.join(folder, 'side%d.out' % side), 'wb')
         err = open(os.path.join(folder, 'side%d.err' % side), 'wb')
-        procs.append((subprocess.Popen(cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL), out, err))
+        procs.append((subprocess.Popen(PINNED + cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL),
+                      out, err))
+    pauser = Pauser([proc for proc, _, _ in procs])
     results = []
     for proc, out, err in procs:
         try:
@@ -293,7 +314,45 @@ def run_pair(program, plans, folder, more, ports):
         out.close()
         err.close()
         results.append((code, time.time() - start))
+    pauser.stop()
     return results
+
+
+class Pauser:
+    """--pause MS: one of the two programs, each in turn, stopped for MS
+    milliseconds (SIGSTOP, SIGCONT) at times of a fixed sequence of random
+    numbers, as a PC that is busy with something else stops a program; the
+    other runs on to the frames it may guess and its datagrams wait, so
+    that the stopped one wakes to a burst of them."""
+    pause_ms = 0
+
+    def __init__(self, procs):
+        self.procs = procs
+        self.done = threading.Event()
+        self.thread = None
+        if Pauser.pause_ms and hasattr(signal, 'SIGSTOP'):
+            self.thread = threading.Thread(target=self.run, daemon=True)
+            self.thread.start()
+
+    def run(self):
+        rng = random.Random(1)
+        side = 0
+        while not self.done.wait(rng.uniform(0.2, 1.5)):
+            proc = self.procs[side]
+            side = 1 - side
+            if proc.poll() is not None:
+                continue
+            try:
+                os.kill(proc.pid, signal.SIGSTOP)
+                self.done.wait(Pauser.pause_ms / 1000.0)
+                os.kill(proc.pid, signal.SIGCONT)
+            except ProcessLookupError:
+                pass
+
+    def stop(self):
+        self.done.set()
+        if self.thread is not None:
+            self.thread.join()
 
 
 def hashes_of(text):
@@ -386,10 +445,11 @@ def check_session(label, program, args, ports, window):
         os.makedirs(os.path.join(folder, 'side%d' % side), exist_ok=True)
         out = open(os.path.join(folder, 'side%d.out' % side), 'wb')
         err = open(os.path.join(folder, 'side%d.err' % side), 'wb')
-        procs.append((subprocess.Popen(cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL, env=env),
-                      out, err))
+        procs.append((subprocess.Popen(PINNED + cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
+                                       env=env), out, err))
         if side == 0:
             time.sleep(0.5)
+    pauser = Pauser([proc for proc, _, _ in procs])
     results = []
     for proc, out, err in procs:
         try:
@@ -401,6 +461,7 @@ def check_session(label, program, args, ports, window):
         out.close()
         err.close()
         results.append((code, time.time() - start))
+    pauser.stop()
     problems = []
     hashes = []
     for side, (code, seconds) in enumerate(results):
@@ -542,7 +603,77 @@ def check_link(label, program, args, ports):
     return problems
 
 
+def run_checks(args, base):
+    """The checks of `args.what` once, on ports from `base` up: the
+    problems found."""
+    rollback = args.what != 'link'
+    problems = []
+    if args.what == 'window':
+        program = os.path.join(REPO, WINDOW_PROGRAM)
+        if not os.path.isfile(program):
+            print('port_net: window: skipped: no %s (make port-sdl)' % WINDOW_PROGRAM)
+        else:
+            problems += check_session('window', program, args, (base + 20, base + 21), True)
+            if not args.stress:
+                problems += check_menu(program, args, (base + 22, base + 23))
+    for n, bits in enumerate([] if args.what == 'window' else [args.bits] if args.bits else [64, 32]):
+        program = os.path.join(REPO, PROGRAMS[bits])
+        if not os.path.isfile(program):
+            problems.append('%d-bit: no %s (make port)' % (bits, PROGRAMS[bits]))
+            continue
+        ports = (base + 2 * n, base + 2 * n + 1)
+        if args.what == 'session':
+            problems += check_session('%d-bit' % bits, program, args, (ports[0] + 10, ports[1] + 10), False)
+            continue
+        check = check_rollback if rollback else check_link
+        problems += check('%d-bit' % bits, program, args, ports)
+    return problems
+
+
+def start_burners(count, cpus):
+    """`count` programs that only burn a processor (on `cpus`, if given),
+    to starve the two under test: their processes."""
+    burners = []
+    for _ in range(count):
+        cmd = [sys.executable, '-c', 'while True: pass']
+        burners.append(subprocess.Popen((['taskset', '-c', cpus] if cpus else []) + cmd, stdin=subprocess.DEVNULL,
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+    return burners
+
+
+def stress(args):
+    """--stress N: the checks N times over, under --burn's load, each run
+    in a folder of its own, which is kept where it failed; a count of the
+    runs that failed and of those that found a desync."""
+    out = args.out
+    failed = []
+    desyncs = 0
+    burners = start_burners(args.burn, args.cpus)
+    try:
+        for run in range(args.stress):
+            args.out = os.path.join(out, 'stress', 'run%03d' % run)
+            problems = run_checks(args, args.port_base)
+            if problems:
+                failed.append(run)
+                desyncs += 1 if any('desync' in p or 'hashes differ' in p for p in problems) else 0
+                for problem in problems:
+                    print('port_net: stress: run %d: %s' % (run, problem), flush=True)
+            print('port_net: stress: run %d of %d: %s' % (run + 1, args.stress, 'FAILED' if problems else 'ok'),
+                  flush=True)
+    finally:
+        for burner in burners:
+            burner.kill()
+            burner.wait()
+    print('port_net: stress: %s %s, %d runs under %d burners%s: %d failed, %d of them with a desync%s'
+          % (args.what, '(the window\'s programs)' if args.what == 'window' else '%d-bit' % args.bits if args.bits
+             else 'both sizes', args.stress, args.burn,
+             ' on processors %s' % args.cpus if args.cpus else '', len(failed), desyncs,
+             ' (runs %s)' % ' '.join(str(r) for r in failed) if failed else ''))
+    return ['stress: %d of %d runs failed' % (len(failed), args.stress)] if failed else []
+
+
 def main():
+    global PINNED
     ap = argparse.ArgumentParser(description='Two programs of the port playing each other over UDP on this PC.')
     ap.add_argument('what', choices=('link', 'rollback', 'session', 'window'),
                     help="what they play: session is a session's headless programs, window the window's")
@@ -553,35 +684,30 @@ def main():
     ap.add_argument('--loss', type=int, help='datagrams in a hundred dropped (--net-loss): 0 for the link, 5 '
                     'for rollback')
     ap.add_argument('--delay', type=int, default=2, help="frames a press counts on, rollback's (--net-delay)")
+    ap.add_argument('--port-base', type=int, default=BASE_PORT,
+                    help='the first of the ports on 127.0.0.1 the runs use (%d; up to 23 above it)' % BASE_PORT)
+    ap.add_argument('--stress', type=int, default=0, metavar='N',
+                    help='run the checks N times over and count the runs that fail and the desyncs')
+    ap.add_argument('--burn', type=int, default=0, metavar='K',
+                    help='with --stress: K programs that burn a processor each, for load')
+    ap.add_argument('--cpus', help='start both programs and the burners on these processors only (taskset -c), '
+                    'so that they starve each other')
+    ap.add_argument('--pause', type=int, default=0, metavar='MS',
+                    help='stop one program or the other for MS milliseconds every second or so, as a busy PC does')
     args = ap.parse_args()
+    Pauser.pause_ms = args.pause
     rollback = args.what != 'link'
     if args.latency is None:
         args.latency = {'link': 0, 'rollback': 100, 'session': 100, 'window': 60}[args.what]
     if args.loss is None:
         args.loss = 5 if rollback else 0
+    if args.cpus:
+        PINNED = ['taskset', '-c', args.cpus]
     if not os.path.isfile(playtest.RETAIL_CUE):
         print('port_net: skipped: no %s (your own image of the retail disc; REBUSHIDO_RETAIL names it)'
               % playtest.RETAIL_CUE)
         return 0
-    problems = []
-    if args.what == 'window':
-        program = os.path.join(REPO, WINDOW_PROGRAM)
-        if not os.path.isfile(program):
-            print('port_net: window: skipped: no %s (make port-sdl)' % WINDOW_PROGRAM)
-        else:
-            problems += check_session('window', program, args, (BASE_PORT + 20, BASE_PORT + 21), True)
-            problems += check_menu(program, args, (BASE_PORT + 22, BASE_PORT + 23))
-    for n, bits in enumerate([] if args.what == 'window' else [args.bits] if args.bits else [64, 32]):
-        program = os.path.join(REPO, PROGRAMS[bits])
-        if not os.path.isfile(program):
-            problems.append('%d-bit: no %s (make port)' % (bits, PROGRAMS[bits]))
-            continue
-        ports = (BASE_PORT + 2 * n, BASE_PORT + 2 * n + 1)
-        if args.what == 'session':
-            problems += check_session('%d-bit' % bits, program, args, (ports[0] + 10, ports[1] + 10), False)
-            continue
-        check = check_rollback if rollback else check_link
-        problems += check('%d-bit' % bits, program, args, ports)
+    problems = stress(args) if args.stress else run_checks(args, args.port_base)
     for problem in problems:
         print('FAILED: port_net: ' + problem)
     if not problems:
