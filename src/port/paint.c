@@ -417,7 +417,9 @@ void port_PaintSubmit(const u32 *words, s32 count, const PortPaintRect *write,
     port_PaintMark(g_paint.square_drawn, write, g_paint.given);
     port_PaintMark(g_paint.square_read, read, g_paint.given);
     port_PaintMark(g_paint.square_read, table, g_paint.given);
-    port_PaintPublish(&g_paint.written, g_paint.given);
+    /* in the order of all of them with the painters' sleep: a painter that
+     * has said it sleeps sees these words, or is woken below */
+    __atomic_store_n(&g_paint.written, g_paint.given, __ATOMIC_SEQ_CST);
     for (i = 0; i < g_paint.count; i++) {
         PortPainter *painter = &g_painters[i];
 
@@ -521,7 +523,7 @@ void port_PaintStop(void) {
 
 /* Whether there is a reason to wake: words, a hold or the end. */
 static s32 port_PaintHasNews(u32 at) {
-    return port_PaintLoad(&g_paint.written) != at ||
+    return __atomic_load_n(&g_paint.written, __ATOMIC_SEQ_CST) != at ||
            port_PaintFlag(&g_paint.hold) || port_PaintFlag(&g_paint.stop);
 }
 
