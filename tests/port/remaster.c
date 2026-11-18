@@ -21,6 +21,7 @@ s32 g_port_ahead_unpainted;
 /* the lines the GPU writes, which src/port/state.c keeps */
 u8 g_port_vram_lines_written[PORT_VRAM_HEIGHT];
 s32 g_port_unseen;
+s32 g_port_ahead_kept;
 
 /* ---- what those files want of the rest of the port ---- */
 

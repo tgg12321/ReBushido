@@ -1657,7 +1657,9 @@ of the console's picture is two lines of the screen.
   colour runs evenly across the screen (`noperspective`), as the chip's
   does.
 - A **texel** is read from a mirror of the software GPU's video memory,
-  a 1024 by 512 texture of 16-bit words, by the shader: four bits or
+  1024 by 512 16-bit words, a buffer the card reads as a texture a line
+  after another ("Measuring on the card", "The mirror sent without
+  waiting"), by the shader: four bits or
   eight through the colour table or fifteen as they are, through the
   texture window, a texel of nothing not drawn. Nothing is decoded on
   the processor and no texture is cached by page: the mirror is the
@@ -4927,6 +4929,89 @@ first out (`g_port_unseen`, as the step after them is) would halve it,
 but what that frame writes into video memory would then not reach the
 card's mirror where its input differs from the boundary before's; the
 mirror needs to be told of a write without drawing it first.
+
+**Now it is** (`g_port_ahead_kept`, step.c): with two frames ahead and
+more, every frame ahead but the last, which the boundary before ran and
+the card drew already, is run for the state alone. The card is not
+given its primitives, nor its frame's beginning and end; its copies,
+fills and loads go into the mirror and are drawn nowhere (the backend's
+`kept_vram`). That happens only where the boundary before ran as many
+frames ahead in full, so the card has drawn the frame. `run_ahead 2`,
+the card's median 8.6 to 4.25 ms a frame (`run_ahead 1`: 3.9), the
+video memory pass 3.7 to 0.31. The pictures, every eighth at 640 by 360
+against the build before: 410 of 419 the same. The fight's differ in
+the HD cloth's folds, now stepped once a frame as with `run_ahead 1`
+and not twice. A menu's animated preview is a frame of its own earlier,
+being the card's picture of the boundary before. Every other difference
+is under 50 pixels, of the size two runs of one build differ by.
+
+**The mirror sent without waiting** (2026-11-18, the performance run).
+On Windows the processor's parts are the window thread's wall time, and
+a large share of it was the thread waiting in NVIDIA's driver for the
+card. It waited at every write of the card's mirror of video memory: a
+texture the card may still be reading can only be written once the card
+has drawn everything given it before. A fight frame writes video memory
+between its draws (the fog's colour tables, three times), and a picture
+between frames wrote again what its frame wrote and then put back all
+of it, some 400,000 pixels, the frame's cleared screen included.
+Three changes, `run_ahead 1`, the bench's fight, medians:
+
+- **Only what changed is sent.** A written rectangle is held against
+  the copy the backend keeps of what the card has, and only its lines
+  that differ are sent. A frame's clear is the same as two frames
+  before, and so are most of its colour tables. The rectangles waiting
+  are kept apart (`MIRROR_RECTS`), not as the one rectangle about all of
+  them, which, with the screen at one end of video memory and the fog
+  at the other, was most of it.
+- **A picture between frames puts back what it changed** of that copy
+  (`port_GlMirrorHold`, `port_GlMirrorGiveBack`, an undo of its lines),
+  not what video memory holds, which is the software GPU's picture where
+  the frame was cleared and is no business of the mirror's. With
+  run-ahead, the window's sending all of video memory before the frames
+  run ahead was there only for that put-back, and now happens only where
+  a picture's changes were too many to keep (`port_TweenTakeMirrorBehind`).
+- **The mirror is a buffer**, which the card reads as a texture a line
+  after another (`PORT_GL_VRAM_SHADER`, gl.h), so a write is a
+  `glBufferSubData` the driver queues in its turn among the draws, and
+  neither the processor nor the card waits.
+
+The processor's `card` part went from 1.0 to 0.24 ms, the tween from
+3.7 to about 2.7, the video memory pass on the card from 0.55 to 0.15 and
+the card from 4.8 to 3.4 ms a frame; the ground is unchanged at 1.28. What
+was tried and measured worse, all on the card: sending the texture
+through a pixel buffer, orphaned or mapped for good (the video memory
+pass 6.6 to 9 ms: the card then waits where the driver did); a ring of
+mirror textures, copied on the card or brought up to date from the
+processor (7 to 8 ms); and the small writes alone in a buffer, looked up
+in a table at every texel (the ground 1.3 to 3.3 ms). The pictures: the
+GL prover's figures are main's to the pixel, and on the card the budget
+fight at 640 by 360, every eighth picture, 378 of 419 are identical to
+main's (the counter left out). The other 41 are within 8 of 255, but
+for a loading screen's fade a step apart and a few pixels that also
+differ between two runs of one build.
+
+All of it against main `a7f754af8`, which has the fighters' cloth on
+the card and the window built `-O3`. The two programs were run one after
+the other on the 3090 (`port_bench.py --program`), medians of a fight
+frame's blank, in ms:
+
+| case | processor, main | this | card, main | this |
+| --- | --- | --- | --- | --- |
+| `run_ahead 0` | 7.64 | 4.52 | 6.41 | 4.56 |
+| `run_ahead 1` | 6.22 | 5.45 | 4.94 | 4.67 |
+| `run_ahead 2` | 9.45 | 7.46 | 6.04 | 4.88 |
+| `run_ahead 1`, four fighters, the ground twice | 6.64 | 7.03 | 5.23 | 5.62 |
+
+The waits on the driver (`card`) went from 0.6–2.0 ms to 0.13–0.21. The
+stress case is slightly worse on both. Its ground read 2.44 ms against
+1.80, though nothing here changes how the ground is drawn: probably
+noise, not proved.
+
+**The colour buffer's targets are kept for each size**
+(`port_GlTakeTargets`): the fight's picture has another scale than the
+menus', and making the multisampled targets again at every way into a
+fight held the window's thread for some 20 ms of the fight's first
+picture.
 
 **The budget** (`port_bench.py --budget`, the gate's step `port-bench`,
 run alone after every other with `port-budget`): the cases `ra0`, `ra1`,

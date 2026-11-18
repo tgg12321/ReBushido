@@ -814,6 +814,10 @@ typedef struct {
     /* The frame is done: what the display shows is this rectangle of
      * video memory. */
     void (*end)(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24);
+    /* Video memory changed in a frame the card does not draw (a frame run
+     * ahead again, g_port_ahead_kept): the rectangle into the mirror the
+     * card reads texels from, and nothing drawn. May be NULL. */
+    void (*kept_vram)(s32 x, s32 y, s32 w, s32 h);
 } PortRemasterBackend;
 
 /* NULL takes the backend away, and with it everything above: the port

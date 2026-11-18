@@ -124,6 +124,8 @@ typedef ptrdiff_t GLintptr;
 #define GL_R32F 0x822E
 #define GL_RED 0x1903
 #define GL_BGRA 0x80E1
+#define GL_TEXTURE_BUFFER 0x8C2A
+#define GL_DYNAMIC_DRAW 0x88E8
 
 /* Every GL function this file calls: the name, and the type of the
  * pointer it is kept in. */
@@ -159,6 +161,8 @@ typedef ptrdiff_t GLintptr;
     GL(void, glFramebufferTexture2D, (GLenum, GLenum, GLenum, GLuint, GLint))  \
     GL(void, glFramebufferRenderbuffer, (GLenum, GLenum, GLenum, GLuint))      \
     GL(void, glGenRenderbuffers, (GLsizei, GLuint *))                          \
+    GL(void, glDeleteRenderbuffers, (GLsizei, const GLuint *))                 \
+    GL(void, glDeleteTextures, (GLsizei, const GLuint *))                      \
     GL(void, glBindRenderbuffer, (GLenum, GLuint))                             \
     GL(void, glRenderbufferStorage, (GLenum, GLenum, GLsizei, GLsizei))        \
     GL(GLenum, glCheckFramebufferStatus, (GLenum))                             \
@@ -188,6 +192,8 @@ typedef ptrdiff_t GLintptr;
     GL(void, glUseProgram, (GLuint))                                           \
     GL(GLint, glGetUniformLocation, (GLuint, const GLchar *))                  \
     GL(void, glUniform1i, (GLint, GLint))                                      \
+    GL(void, glBufferSubData, (GLenum, GLintptr, GLsizeiptr, const void *))    \
+    GL(void, glTexBuffer, (GLenum, GLenum, GLuint))                            \
     GL(void, glUniform1f, (GLint, GLfloat))                                    \
     GL(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat))                  \
     GL(void, glUniform2f, (GLint, GLfloat, GLfloat))                           \
@@ -217,6 +223,40 @@ PORT_GL_FUNCTIONS
 /* Rectangles of video memory written since the card last drew, kept to
  * be stretched into the colour buffer together (port_GlDrawBlits). */
 #define BLITS_MAX 32
+/* The rectangles of video memory the card has not been sent, kept apart
+ * (port_GlMarkMirror): a frame's clear is at one end of video memory and
+ * the fog's colour tables at the other, and the one rectangle holding
+ * both is most of it. */
+#define MIRROR_RECTS 16
+/* Two rectangles are sent as one where that adds no more than this many
+ * pixels that were not written. */
+#define MIRROR_SLACK 4096
+/* Sets of the colour buffer's targets kept, one for each size of them
+ * (port_GlMakeTarget): the menus' and the fight's. */
+#define TARGET_SETS 2
+
+/* The targets of one size of the colour buffer (gl_draw.c's `g_gl`, where
+ * the set in use is copied). */
+typedef struct {
+    s32 is_made;
+    s32 draw_x;
+    s32 draw_y;
+    s32 samples;
+    u32 used; /* when it was last the one in use, counted */
+    GLuint color_texture;
+    GLuint depth_buffer;
+    GLuint slot_texture;
+    GLuint color_samples;
+    GLuint slot_samples;
+    GLuint slot_one;
+} PortGlTargets;
+
+/* What a picture between two frames changed of the copy of video memory
+ * here, kept to be put back (port_GlMirrorHold): rows of rectangles, and
+ * their pixels as they were. A picture writes again what its frame wrote,
+ * nearly all of which the copy holds already. */
+#define UNDO_ROWS 4096
+#define UNDO_PIXELS PORT_VRAM_PIXELS
 /* Rectangles written from a mod's picture that are remembered: the movie
  * player's title picture, and the two buffers it copies it into to fade
  * it out. */
@@ -368,6 +408,7 @@ static struct {
     GLuint program;
     GLuint blit_program;
     GLuint vram_texture;
+    GLuint vram_buffer;
     GLuint color_texture;
     GLuint framebuffer;
     /* The depth buffer beside the colour buffer: the ground's mesh
@@ -500,6 +541,20 @@ static struct {
      * (port_GlMarkMirror). `mirror` is what the card has not been sent. */
     u16 *staged;
     PortDirtyRect mirror;
+    PortDirtyRect mirror_rect[MIRROR_RECTS];
+    s32 mirror_rects;
+    /* the colour buffer's targets of each size made so far */
+    PortGlTargets target_set[TARGET_SETS];
+    u32 target_uses;
+    /* while a picture between two frames is drawn: the rows of the copy
+     * it changed, as they were (port_GlMirrorHold) */
+    s32 is_holding;
+    s32 undo_lost;
+    s32 undo_rows;
+    u32 undo_used;
+    PortDirtyRect *undo_row;
+    u32 *undo_at;
+    u16 *undo;
     /* what is to be stretched into the colour buffer before the card
      * next draws anything else (port_GlDrawBlits) */
     PortGlBlit blit[BLITS_MAX];
@@ -770,9 +825,7 @@ static const char g_gl_geometry_text[] =
     "}\n";
 
 static const char g_gl_fragment_text[] =
-    "#version 330 core\n"
-    "uniform usampler2D u_vram;\n"
-    "uniform vec2 u_target;\n"
+    "#version 330 core\n" PORT_GL_VRAM_SHADER "uniform vec2 u_target;\n"
     "uniform vec2 u_scale;\n"
     "uniform int u_affine;\n" /* the texture flat, as the console */
     "uniform int u_exact;\n"  /* five bits a channel, with the dither */
@@ -891,9 +944,6 @@ static const char g_gl_fragment_text[] =
      * of video memory */
     "const int dither[16] = int[16](-4, 0, -3, 1, 2, -2, 3, -1,\n"
     "                               -3, 1, -4, 0, 3, -1, 2, -2);\n"
-    "uint vram(int x, int y) {\n"
-    "    return texelFetch(u_vram, ivec2(x & 1023, y & 511), 0).r;\n"
-    "}\n"
     /* the texel at (u, v) of this primitive's page, through the texture
      * window and its colour table */
     "uint texel_at(int u, int v) {\n"
@@ -1213,8 +1263,7 @@ static const char g_gl_blit_vertex_text[] =
     "}\n";
 
 static const char g_gl_blit_fragment_text[] =
-    "#version 330 core\n"
-    "uniform usampler2D u_vram;\n"
+    "#version 330 core\n" PORT_GL_VRAM_SHADER
     /* a mod's picture in the place of the rectangle (gl_replace.h) */
     "uniform sampler2D u_replace;\n"
     "uniform int u_replaced;\n"
@@ -1229,7 +1278,7 @@ static const char g_gl_blit_fragment_text[] =
     "        return;\n"
     "    }\n"
     "    ivec2 at = ivec2(floor(v_at));\n"
-    "    uint pixel = texelFetch(u_vram, ivec2(at.x & 1023, at.y & 511), 0).r;\n"
+    "    uint pixel = vram(at.x, at.y);\n"
     "    ivec3 five = ivec3(int(pixel & 31u), int((pixel >> 5) & 31u),\n"
     "                       int((pixel >> 10) & 31u));\n"
     "    o_color = vec4(vec3(five * 255 / 31) / 255.0, 1.0);\n"
@@ -1511,6 +1560,75 @@ void port_GlGroundSlotsEnd(void) {
     g_gl.has_state = FALSE;
 }
 
+static void port_GlStoreTargets(s32 is_multi);
+static s32 port_GlFastenTargets(s32 is_multi);
+
+/* The set of targets of the size asked for, made where there is none: the
+ * one used longest ago gives its place up. TRUE where it was made now, and
+ * its storage is to be given. */
+static s32 port_GlTakeTargets(void) {
+    PortGlTargets *set = NULL;
+    s32 i;
+
+    for (i = 0; i < TARGET_SETS; i++) {
+        PortGlTargets *one = &g_gl.target_set[i];
+
+        if (one->is_made && one->draw_x == g_gl.draw_x &&
+            one->draw_y == g_gl.draw_y && one->samples == g_gl.samples) {
+            set = one;
+            break;
+        }
+    }
+    if (set == NULL) {
+        for (i = 0; i < TARGET_SETS; i++) {
+            PortGlTargets *one = &g_gl.target_set[i];
+
+            if (set == NULL || !one->is_made ||
+                (set->is_made && one->used < set->used)) {
+                set = one;
+            }
+        }
+        if (set->is_made) {
+            glDeleteTextures(1, &set->color_texture);
+            glDeleteTextures(1, &set->slot_texture);
+            glDeleteTextures(1, &set->slot_samples);
+            glDeleteTextures(1, &set->slot_one);
+            glDeleteRenderbuffers(1, &set->depth_buffer);
+            glDeleteRenderbuffers(1, &set->color_samples);
+        }
+        glGenTextures(1, &set->color_texture);
+        glGenTextures(1, &set->slot_texture);
+        glGenTextures(1, &set->slot_samples);
+        glGenTextures(1, &set->slot_one);
+        glGenRenderbuffers(1, &set->depth_buffer);
+        glGenRenderbuffers(1, &set->color_samples);
+        set->is_made = FALSE;
+        set->draw_x = g_gl.draw_x;
+        set->draw_y = g_gl.draw_y;
+        set->samples = g_gl.samples;
+    }
+    set->used = ++g_gl.target_uses;
+    g_gl.color_texture = set->color_texture;
+    g_gl.depth_buffer = set->depth_buffer;
+    g_gl.slot_texture = set->slot_texture;
+    g_gl.color_samples = set->color_samples;
+    g_gl.slot_samples = set->slot_samples;
+    g_gl.slot_one = set->slot_one;
+    if (set->is_made) {
+        return FALSE;
+    }
+    set->is_made = TRUE;
+    return TRUE;
+}
+
+/* The colour buffer and what goes with it, at the scale and samples asked
+ * for. **Each size's are kept** (port_GlTakeTargets): the fight's picture
+ * is four times the console's resolution and eight times its lines on the
+ * owner's screen where the menus' is half that, and making them again at
+ * every way into a fight and back to a menu held the window's thread for
+ * some 20 ms of the fight's first picture, waiting on the driver
+ * (2026-11-18). Changing between two sizes made once is only fastening
+ * them to the framebuffers again. */
 static s32 port_GlMakeTarget(void) {
     s32 is_multi = g_gl.samples > 1;
 
@@ -1518,6 +1636,14 @@ static s32 port_GlMakeTarget(void) {
     g_gl.draw_y = g_gl.scale_y * g_gl.sample;
     g_gl.target_w = PORT_VRAM_WIDTH * g_gl.draw_x;
     g_gl.target_h = PORT_VRAM_HEIGHT * g_gl.draw_y;
+    if (port_GlTakeTargets()) {
+        port_GlStoreTargets(is_multi);
+    }
+    return port_GlFastenTargets(is_multi);
+}
+
+/* The storage of the targets in use, at the size in use. */
+static void port_GlStoreTargets(s32 is_multi) {
     /* with samples, the colour buffer is the renderbuffer of them, and
      * the texture is not drawn into at all: a pixel of it is kept, so
      * that it is still a texture */
@@ -1558,6 +1684,10 @@ static s32 port_GlMakeTarget(void) {
                  is_multi ? 1 : g_gl.target_h, 0, GL_RED, GL_FLOAT, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+}
+
+/* The targets in use fastened to the framebuffers. */
+static s32 port_GlFastenTargets(s32 is_multi) {
     glBindFramebuffer(GL_FRAMEBUFFER, g_gl.slot_framebuffer);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                            g_gl.slot_texture, 0);
@@ -1584,27 +1714,95 @@ static s32 port_GlMakeTarget(void) {
 
 /* ---- the mirror of video memory ---- */
 
+/* The rectangles of the copy here that the card has not been sent, sent
+ * to the mirror on the card. */
 static void port_GlUploadMirror(void) {
-    s32 w;
-    s32 h;
+    s32 i;
 
     if (g_gl.mirror.is_empty) {
         return;
     }
     PORT_GPU_BEGIN(PORT_GPU_VRAM);
-    w = g_gl.mirror.right - g_gl.mirror.left + 1;
-    h = g_gl.mirror.bottom - g_gl.mirror.top + 1;
-    glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
-    glPixelStorei(GL_UNPACK_ROW_LENGTH, PORT_VRAM_WIDTH);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
-    glTexSubImage2D(
-        GL_TEXTURE_2D, 0, g_gl.mirror.left, g_gl.mirror.top, w, h,
-        GL_RED_INTEGER, GL_UNSIGNED_SHORT,
-        &g_gl.staged[g_gl.mirror.top * PORT_VRAM_WIDTH + g_gl.mirror.left]);
-    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-    g_gl.upload_count += (u32)(w * h);
+    glBindBuffer(GL_TEXTURE_BUFFER, g_gl.vram_buffer);
+    for (i = 0; i < g_gl.mirror_rects; i++) {
+        const PortDirtyRect *rect = &g_gl.mirror_rect[i];
+        /* from the rectangle's first pixel to its last, the lines between
+         * whole: the buffer is laid out as the copy here is */
+        u32 first = (u32)(rect->top * PORT_VRAM_WIDTH + rect->left);
+        u32 last = (u32)(rect->bottom * PORT_VRAM_WIDTH + rect->right);
+
+        glBufferSubData(GL_TEXTURE_BUFFER, (GLintptr)(first * sizeof(u16)),
+                        (GLsizeiptr)((last - first + 1) * sizeof(u16)),
+                        &g_gl.staged[first]);
+        g_gl.upload_count += last - first + 1;
+    }
+    glBindBuffer(GL_TEXTURE_BUFFER, 0);
+    g_gl.mirror_rects = 0;
     port_ClearDirtyRect(&g_gl.mirror);
     PORT_GPU_END();
+}
+
+/* The pixels the rectangle about both `a` and `b` has that neither has
+ * (where they overlap, counted twice: near enough for a choice). */
+static s32 port_GlMergeWaste(const PortDirtyRect *a, const PortDirtyRect *b) {
+    PortDirtyRect both = *a;
+
+    both.left = a->left < b->left ? a->left : b->left;
+    both.top = a->top < b->top ? a->top : b->top;
+    both.right = a->right > b->right ? a->right : b->right;
+    both.bottom = a->bottom > b->bottom ? a->bottom : b->bottom;
+    return port_DirtyRectPixels(&both) - port_DirtyRectPixels(a) -
+           port_DirtyRectPixels(b);
+}
+
+/* `rect` among the rectangles the card has not been sent: with the one it
+ * costs least to send it with, where that costs little, or the one it
+ * costs least with of all where there is no room for it alone. */
+static void port_GlKeepMirrorRect(const PortDirtyRect *rect) {
+    s32 best = -1;
+    s32 best_waste = 0;
+    s32 i;
+
+    for (i = 0; i < g_gl.mirror_rects; i++) {
+        s32 waste = port_GlMergeWaste(&g_gl.mirror_rect[i], rect);
+
+        if (best < 0 || waste < best_waste) {
+            best = i;
+            best_waste = waste;
+        }
+    }
+    if (best < 0 ||
+        (best_waste > MIRROR_SLACK && g_gl.mirror_rects < MIRROR_RECTS)) {
+        g_gl.mirror_rect[g_gl.mirror_rects++] = *rect;
+        return;
+    }
+    port_AddDirtyRect(
+        &g_gl.mirror_rect[best], rect->left, rect->top,
+        rect->right - rect->left + 1, rect->bottom - rect->top + 1);
+}
+
+/* A row of the copy here, from `left` to `right`, as it is before a picture
+ * between two frames writes over it (port_GlMirrorHold). */
+static void port_GlKeepUndo(s32 row, s32 left, s32 right, const u16 *was) {
+    u32 count = (u32)(right - left + 1);
+    PortDirtyRect *one;
+
+    if (!g_gl.is_holding || g_gl.undo_lost) {
+        return;
+    }
+    if (g_gl.undo_rows == UNDO_ROWS || g_gl.undo_used + count > UNDO_PIXELS) {
+        g_gl.undo_lost = TRUE;
+        return;
+    }
+    one = &g_gl.undo_row[g_gl.undo_rows];
+    one->left = left;
+    one->right = right;
+    one->top = row;
+    one->bottom = row;
+    one->is_empty = FALSE;
+    g_gl.undo_at[g_gl.undo_rows++] = g_gl.undo_used;
+    memcpy(&g_gl.undo[g_gl.undo_used], was, count * sizeof(u16));
+    g_gl.undo_used += count;
 }
 
 /* A rectangle of video memory, as it is now, to be sent to the card: it
@@ -1614,6 +1812,10 @@ static void port_GlUploadMirror(void) {
  * port_AddDirtyRect takes it. */
 static void port_GlMarkMirror(s32 x, s32 y, s32 w, s32 h) {
     PortDirtyRect rect;
+    size_t bytes;
+    s32 is_all;
+    s32 first = -1;
+    s32 last = -1;
     s32 row;
 
     if (w <= 0 || h <= 0) {
@@ -1621,12 +1823,32 @@ static void port_GlMarkMirror(s32 x, s32 y, s32 w, s32 h) {
     }
     port_ClearDirtyRect(&rect);
     port_AddDirtyRect(&rect, x, y, w, h);
+    bytes = (size_t)(rect.right - rect.left + 1) * sizeof(u16);
+    /* All of video memory is sent as it is, whatever the copy holds: it is
+     * what a new mirror on the card is first filled with. */
+    is_all = port_DirtyRectPixels(&rect) == PORT_VRAM_PIXELS;
     for (row = rect.top; row <= rect.bottom; row++) {
-        memcpy(&g_gl.staged[row * PORT_VRAM_WIDTH + rect.left],
-               &g_port_vram[row * PORT_VRAM_WIDTH + rect.left],
-               (size_t)(rect.right - rect.left + 1) * sizeof(u16));
+        u16 *to = &g_gl.staged[row * PORT_VRAM_WIDTH + rect.left];
+        const u16 *from = &g_port_vram[row * PORT_VRAM_WIDTH + rect.left];
+
+        if (!is_all && memcmp(to, from, bytes) == 0) {
+            continue;
+        }
+        port_GlKeepUndo(row, rect.left, rect.right, to);
+        memcpy(to, from, bytes);
+        if (first < 0) {
+            first = row;
+        }
+        last = row;
     }
-    port_AddDirtyRect(&g_gl.mirror, x, y, w, h);
+    if (first < 0) {
+        return;
+    }
+    rect.top = first;
+    rect.bottom = last;
+    port_AddDirtyRect(&g_gl.mirror, rect.left, rect.top,
+                      rect.right - rect.left + 1, rect.bottom - rect.top + 1);
+    port_GlKeepMirrorRect(&rect);
 }
 
 /* ---- the batches ---- */
@@ -1717,7 +1939,7 @@ static void port_GlSetFighterDepth(void) {
 
 static void port_GlSetUniforms(void) {
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
+    glBindTexture(GL_TEXTURE_BUFFER, g_gl.vram_texture);
     glUniform1i(g_gl.at_vram, 0);
     glUniform2f(g_gl.at_target, (GLfloat)g_gl.target_w, (GLfloat)g_gl.target_h);
     glUniform2f(g_gl.at_scale, (GLfloat)g_gl.draw_x, (GLfloat)g_gl.draw_y);
@@ -2451,7 +2673,7 @@ static void port_GlDrawBlits(void) {
     glBindVertexArray(g_gl.blit_array);
     glUniform1i(g_gl.blit_at_replace, PORT_GL_REPLACE_UNIT);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
+    glBindTexture(GL_TEXTURE_BUFFER, g_gl.vram_texture);
     glUniform1i(g_gl.blit_at_vram, 0);
     glUniform2f(
         g_gl.blit_at_target, (GLfloat)g_gl.target_w, (GLfloat)g_gl.target_h);
@@ -2823,7 +3045,7 @@ static void port_GlEnd(s32 x, s32 y, s32 w, s32 h, s32 is_on, s32 is_rgb24) {
 }
 
 static const PortRemasterBackend g_gl_backend = {
-    port_GlBegin, port_GlDraw, port_GlWroteVram, port_GlEnd};
+    port_GlBegin, port_GlDraw, port_GlWroteVram, port_GlEnd, port_GlUploadVram};
 
 const PortRemasterBackend *port_GlBackend(void) { return &g_gl_backend; }
 
@@ -2836,6 +3058,59 @@ void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h) {
     port_GlMarkMirror(x, y, w, h);
     port_GlUploadMirror();
     port_GlSceneWroteVram(x, y, w, h);
+}
+
+s32 port_GlMirrorHold(void) {
+    if (!g_gl.is_started) {
+        return FALSE;
+    }
+    if (g_gl.undo == NULL) {
+        g_gl.undo_row = malloc(UNDO_ROWS * sizeof(*g_gl.undo_row));
+        g_gl.undo_at = malloc(UNDO_ROWS * sizeof(*g_gl.undo_at));
+        g_gl.undo = malloc(UNDO_PIXELS * sizeof(*g_gl.undo));
+        if (g_gl.undo_row == NULL || g_gl.undo_at == NULL ||
+            g_gl.undo == NULL) {
+            free(g_gl.undo_row);
+            free(g_gl.undo_at);
+            free(g_gl.undo);
+            g_gl.undo_row = NULL;
+            g_gl.undo_at = NULL;
+            g_gl.undo = NULL;
+            return FALSE;
+        }
+    }
+    g_gl.is_holding = TRUE;
+    g_gl.undo_lost = FALSE;
+    g_gl.undo_rows = 0;
+    g_gl.undo_used = 0;
+    return TRUE;
+}
+
+s32 port_GlMirrorGiveBack(void) {
+    s32 i;
+
+    if (!g_gl.is_holding) {
+        return FALSE;
+    }
+    g_gl.is_holding = FALSE;
+    if (g_gl.undo_lost) {
+        return FALSE;
+    }
+    port_GlDrawBlits();
+    /* the last row kept first: a row written twice goes back to what it
+     * was before the first */
+    for (i = g_gl.undo_rows - 1; i >= 0; i--) {
+        const PortDirtyRect *one = &g_gl.undo_row[i];
+
+        memcpy(&g_gl.staged[one->top * PORT_VRAM_WIDTH + one->left],
+               &g_gl.undo[g_gl.undo_at[i]],
+               (size_t)(one->right - one->left + 1) * sizeof(u16));
+        port_AddDirtyRect(
+            &g_gl.mirror, one->left, one->top, one->right - one->left + 1, 1);
+        port_GlKeepMirrorRect(one);
+    }
+    port_GlUploadMirror();
+    return TRUE;
 }
 
 void port_GlRestoreVram(s32 x, s32 y, s32 w, s32 h) {
@@ -3108,22 +3383,23 @@ const char *port_GlStart(
     g_gl.show_at_over = glGetUniformLocation(g_gl.show_program, "u_over");
     glGenTextures(1, &g_gl.host_texture);
 
+    /* the mirror (gl.h, PORT_GL_VRAM_SHADER) */
+    glGenBuffers(1, &g_gl.vram_buffer);
+    glBindBuffer(GL_TEXTURE_BUFFER, g_gl.vram_buffer);
+    glBufferData(
+        GL_TEXTURE_BUFFER, (GLsizeiptr)(PORT_VRAM_PIXELS * sizeof(u16)), NULL,
+        GL_DYNAMIC_DRAW);
     glGenTextures(1, &g_gl.vram_texture);
-    glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R16UI, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT,
-                 0, GL_RED_INTEGER, GL_UNSIGNED_SHORT, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_BUFFER, g_gl.vram_texture);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R16UI, g_gl.vram_buffer);
+    glBindTexture(GL_TEXTURE_BUFFER, 0);
+    glBindBuffer(GL_TEXTURE_BUFFER, 0);
 
-    glGenTextures(1, &g_gl.color_texture);
     glGenFramebuffers(1, &g_gl.framebuffer);
-    glGenRenderbuffers(1, &g_gl.depth_buffer);
-    glGenTextures(1, &g_gl.slot_texture);
-    glGenRenderbuffers(1, &g_gl.color_samples);
-    glGenTextures(1, &g_gl.slot_samples);
-    glGenTextures(1, &g_gl.slot_one);
+    /* the targets, of each size as it is asked for (port_GlMakeTarget) */
+    for (i = 0; i < TARGET_SETS; i++) {
+        g_gl.target_set[i].is_made = FALSE;
+    }
     glGenFramebuffers(1, &g_gl.slot_framebuffer);
     glGenTextures(1, &g_gl.picture_texture);
     glGenFramebuffers(1, &g_gl.picture_framebuffer);
@@ -3228,6 +3504,7 @@ const char *port_GlStart(
     glScissor(0, 0, g_gl.target_w, g_gl.target_h);
     g_gl.is_started = TRUE;
     /* video memory as it is now, all of it */
+    g_gl.mirror_rects = 0;
     port_ClearDirtyRect(&g_gl.mirror);
     g_gl.blit_count = 0;
     for (i = 0; i < REPLACED_MAX; i++) {

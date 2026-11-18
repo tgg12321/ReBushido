@@ -2792,15 +2792,19 @@ static void port_ReadInputLate(void) {
     port_ReadDevicesNow();
     /* in a load, no frame is run ahead across it (step.c) */
     g_port_ahead_held = port_LoadKind() != PORT_LOAD_NONE;
-    if (g_port_has_gl && g_port_tween_on && port_GetRunAhead() > 0) {
-        /* The pictures between frames put back into the card's mirror of
-         * video memory what video memory holds at their blank, which,
-         * with frames run ahead, is a frame or two behind the frames the
-         * card draws; the step after them tells the card nothing. So the
-         * mirror is sent video memory as it is now, before the frames are
-         * run ahead and their writes go over it. The stage's pages are
-         * not looked up again for it (gl.h, port_GlRestoreVram): the
-         * frames run ahead tell the card of each page they write. */
+    if (g_port_has_gl && g_port_tween_on && port_GetRunAhead() > 0 &&
+        port_TweenTakeMirrorBehind()) {
+        /* A picture between frames that could not keep what it changed of
+         * the card's mirror of video memory put back what video memory
+         * holds at its blank, which, with frames run ahead, is a frame or
+         * two behind the frames the card draws; the step after them tells
+         * the card nothing. So the mirror is sent video memory as it is
+         * now, before the frames are run ahead and their writes go over
+         * it. (Every picture did, before the mirror was put back by what
+         * the picture changed of it: the whole of video memory sent at
+         * every boundary.) The stage's pages are not looked up again for
+         * it (gl.h, port_GlRestoreVram): the frames run ahead tell the
+         * card of each page they write. */
         port_ProfileSwitch(PORT_PROFILE_CARD);
         port_GlRestoreVram(0, 0, PORT_VRAM_WIDTH, PORT_VRAM_HEIGHT);
     }
@@ -2821,7 +2825,9 @@ static void port_AheadBlankTurn(u32 blank) {
         port_GiveUpAhead();
         return;
     }
-    if (g_port_has_gl) {
+    /* a frame the card does not draw has nothing to end
+     * (g_port_ahead_kept) */
+    if (g_port_has_gl && !g_port_ahead_kept) {
         s32 was = port_ProfileSwitch(PORT_PROFILE_FINISH);
 
         port_RemasterShow();

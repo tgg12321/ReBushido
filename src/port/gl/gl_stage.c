@@ -569,8 +569,7 @@ static const char g_stage_vertex_text[] =
 static const char g_stage_fragment_text[] =
     "#version 400 core\n"
     /* the picture's samples a pixel (gl.h, PortGlPicture.samples) */
-    "uniform int u_samples;\n"
-    "uniform usampler2D u_vram;\n"
+    "uniform int u_samples;\n" PORT_GL_VRAM_SHADER
     "uniform uvec4 u_window;\n" /* the texture window, and or or */
     "uniform int u_fog_levels;\n"
     "uniform int u_fog_slot[32];\n"
@@ -614,9 +613,6 @@ static const char g_stage_fragment_text[] =
      * picture kept it, which is where the ground's slots hold its own */
     "uniform int u_occluding;\n"
     "uniform usampler2D u_slots;\n"
-    "uint vram(int x, int y) {\n"
-    "    return texelFetch(u_vram, ivec2(x & 1023, y & 511), 0).r;\n"
-    "}\n"
     /* a mod's picture of a whole page (gl_scene.h) */
     PORT_GL_SCENE_SHADER
     /* the ordering-table slot a depth is sorted at
@@ -2392,7 +2388,7 @@ static void port_GlStageUniforms(
     glUseProgram(g_stage.program);
     glBindVertexArray(g_stage.array);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, picture->vram_texture);
+    glBindTexture(PORT_GL_VRAM_TARGET, picture->vram_texture);
     glUniform1i(g_stage.at_vram, 0);
     glUniformMatrix3fv(g_stage.at_view, 1, GL_FALSE, matrix);
     glUniform3f(g_stage.at_camera, (GLfloat)view->camera[0],
