@@ -99,6 +99,12 @@ OTHER_HOSTS = ('src/port/host_linux.c', 'src/port/host_windows.c')
 # (a path cut short by snprintf is what snprintf is used for)
 HOSTED_FLAGS = ['-O2', '-g', '-std=gnu99', '-Wall', '-Wextra', '-Werror', '-Wno-format-truncation', '-D_FILE_OFFSET_BITS=64',
                 '-Iinclude', '-I' + WINDOW_DIR.rstrip('/'), '-I' + GL_DIR.rstrip('/')]
+# The players' program is optimised further than the headless one the
+# checks and the play tests run (tools/port_build.py, -O1): the game and
+# the port's own files at -O2, which was measured faster with the same
+# traces (docs/PORT.md, "Where the time goes", "-O2"). PORT_OPT=N says
+# otherwise, into a folder of its own.
+WINDOW_OPT = '2'
 # Where the program is linked: where the build without a window is
 # (tools/port_build.py, PROGRAM_BASE), so that the game's state's two runs
 # of variables have low 24 bits that no other place a primitive may be has
@@ -169,11 +175,14 @@ class Target:
         self.windows = windows
         self.bits = bits
         self.size_flag = '-m%d' % bits
-        # PORT_OPT=2: optimised otherwise, in a folder of its own
-        # (tools/port_build.py, set_bits)
+        # PORT_OPT=N: the game optimised otherwise than the players' build
+        # is (WINDOW_OPT), in a folder of its own; RB_WINDOW_FLAGS: flags
+        # more for every file, to be measured, into the folder
+        # RB_WINDOW_NAME names
         self.name = (('windows' if windows else 'linux')
                      + ('' if bits == port_build.DEFAULT_BITS else str(bits))
-                     + ('-O' + os.environ['PORT_OPT'] if os.environ.get('PORT_OPT') else ''))
+                     + ('-O' + os.environ['PORT_OPT'] if os.environ.get('PORT_OPT') else '')
+                     + os.environ.get('RB_WINDOW_NAME', ''))
         self.dir = '%s/%s' % (OUT_DIR, self.name)
         self.obj_dir = self.dir + '/obj'
         if windows:
@@ -624,6 +633,10 @@ def main():
     if bits is None:
         return 1
     port_build.set_bits(bits)
+    optimise = '-O' + (os.environ.get('PORT_OPT') or WINDOW_OPT)
+    more = os.environ.get('RB_WINDOW_FLAGS', '').split()
+    port_build.GAME_FLAGS = [optimise if re.match(r'-O\d$', f) else f for f in port_build.GAME_FLAGS] + more
+    HOSTED_FLAGS.extend(more)
     target = Target('--windows' in args, bits)
     problem = check_host(target)
     if problem:
