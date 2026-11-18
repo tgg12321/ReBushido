@@ -18,6 +18,8 @@
 /* Whether a step is run again (src/port/step.c): every step here is the
  * first. */
 s32 g_port_rerun;
+s32 g_port_ahead;
+s32 g_port_ahead_unpainted;
 
 /* ---- what those files want of the rest of the port ---- */
 
