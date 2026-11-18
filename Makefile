@@ -501,7 +501,10 @@ PIPELINE_DEPS := Makefile \
 # is written again only when it changes, so version.o is rebuilt then and
 # not otherwise.
 ifeq ($(REBUSHIDO),1)
+# (given by tools/mirror.sh where the build runs in a copy with no .git)
+ifeq ($(origin RB_GIT_HASH),undefined)
 RB_GIT_HASH  := $(shell h=$$(git rev-parse --short HEAD 2>/dev/null) && { git diff --quiet HEAD 2>/dev/null || h=$$h-dirty; }; echo $${h:-unknown})
+endif
 # A release's version has no -dev after its number: RB_RELEASE=1, which
 # `make rebushido-patch RB_RELEASE=1` is given (include/rebushido.h).
 RB_VERSION_AS := $(RB_GIT_HASH)$(if $(filter 1,$(RB_RELEASE)), release)

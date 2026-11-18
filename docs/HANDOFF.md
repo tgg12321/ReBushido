@@ -104,14 +104,16 @@ What that asks:
 - **Run-ahead and rollback cheap** at four players: the state saved by
   pages written, the step itself lean (`-O2`), sound mixing out of
   re-run frames.
-- **The parallel play tests are not yet trustworthy under load.** On
-  2026-11-18 the gate's four-at-once run failed seven tests at once, all
-  PlayStation-side runs that never reached a checkpoint ("gave up at blank
-  4092") while the owner was playing; the same 17 passed one at a time
-  (`playtest -j 1`). Something in the emulator's runs still depends on
-  the host's speed (the emulated CD's timing, a wall-clock wait in the
-  runner): find it before trusting `-j 4` again; until then the gate's
-  play tests are run with `-j 1` when a run fails.
+- **The parallel play tests' failures under load: found.** The seven
+  failures of 2026-11-18 were, by every sign in their logs (options
+  changed on the options page, another mode at the top menu, the port's
+  own runs all passing), not the load but the owner's controller:
+  the emulator's pads, left at `Auto`, read the host's game controllers
+  with no window focused, so his presses went into every run going
+  through the menus. The runner now sets both pads to the keyboard,
+  which a run on its own desktop never has (tests/play/README.md, "How
+  the emulator is run"); load alone was measured again and changes
+  nothing.
 - **Profiling built in** for the owner: `--profile` and F3 showing CPU
   and GPU time per part, so a report from his PC says where the time
   goes.
@@ -217,19 +219,28 @@ on the card", with the first numbers).
 The owner's ask (2026-11-17): make development faster. In the order of
 what they buy for what they cost:
 
-1. **Build in WSL's own file system, not on `/mnt/c`.** Every build
-   compiles through the Windows drive, which is slow for thousands of
-   small files: a large part of the 3–4 minutes a port build takes. A
-   Linux-side copy synced from the repository typically builds 3–10
-   times faster.
-2. **A compiler cache (ccache)** for the Linux and the Windows cross
-   builds: most of a rebuild is files that did not change.
-3. **The owner's RTX 3090 for the picture provers.** Every prover and
-   headless screenshot runs on Mesa's software renderer, often 10–50
-   times slower than a card. WSL can reach the card through Mesa's D3D12
-   driver (`GALLIUM_DRIVER=d3d12`), or the Windows build can draw into a
-   hidden window on the card: prover runs in minutes, and numbers that
-   match what the owner sees.
+1. **Build in WSL's own file system, not on `/mnt/c`: done.**
+   `tools/build.sh` and the gate's builds run in a copy on WSL's disk
+   (`tools/mirror.sh`; BUILD.md, "Where the build runs"): `port` from
+   nothing 80 s to 16 s, a one-file change 31–68 s to 14–16 s,
+   `port-sdl-windows` 46–57 s to 8–11 s. `make port` itself no longer
+   compiles every file again for its checks nor relinks when nothing
+   changed (no-op 68 s to 23 s on the drive).
+2. **A compiler cache (ccache): not taken.** Every compile of the port
+   and the window takes its source on standard input (rewritten by
+   `tools/modern/check.py`), which ccache does not cache, and the
+   PlayStation's is `cpp | cc1 | maspsx | as`, no gcc driver; with the
+   copy on WSL's disk and the dumps kept, a rebuild is now mostly the
+   link and the checks' Python.
+3. **The owner's RTX 3090 for the picture provers: not yet.** Mesa's
+   D3D12 driver in WSL (`GALLIUM_DRIVER=d3d12`) runs the prover but
+   draws wrong (half the pixels differ at scale 1 and the flat screens
+   fail where llvmpipe passes), so its numbers prove nothing. The
+   Windows build's `--hidden` gets the card (port_game remastered at 4x:
+   60 s for 4481 blanks), but the provers' measures (`--gl-compare`,
+   `--gl-exact`, `--gl-blocks`) are only in the EGL program
+   (`src/port/gl/gl_main.c`): moving them into the window build is the
+   way, a change to `src/port/` for a quieter time.
 4. **No more merge conflicts in the same three places.** Nearly every
    merge collided in the settings table (`src/port/window/choices.c` and
    its groups), its built-in test list (`tests/port/settings.c`) and the
