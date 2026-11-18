@@ -94,9 +94,14 @@ sync_out() {
         # what the copy built, newer than what is here; nothing deleted. Not
         # the compilers' objects, lists of inputs and dumps, which only the
         # build reads: thousands of small files, which take seconds only to
-        # look at on the Windows drive.
+        # look at on the Windows drive. Nor the folders that runs in place
+        # write (IN_PLACE of tools/gate.py; tools/build.sh runs those in
+        # place too): a copy's old build/rollback/ brought back while
+        # port-rollback ran here replaced the files it had just written
+        # (docs/NETPLAY.md, "What failed in the gate").
         rsync -a --update --prune-empty-dirs \
             --exclude='*.o' --exclude='*.d' --exclude='*.gimple' --exclude='*.ssa' --exclude=/play \
+            --exclude=/rollback --exclude=/net --exclude=/budget --exclude=/bench --exclude=/gate \
             "$MIRROR/build/" "$ROOT/build/"
         status=$?
         # 24: files that vanished while it copied, the temporary files of
