@@ -1648,6 +1648,9 @@ static s32 port_MayShowBox(void) {
 #if defined(_WIN32)
     const char *driver = getenv("SDL_VIDEODRIVER");
 
+    if (g_port_window_options.is_hidden) {
+        return 0; /* a run nobody watches: no dialog to wait on */
+    }
     return driver == NULL ||
            (strcmp(driver, "dummy") != 0 && strcmp(driver, "offscreen") != 0);
 #else
