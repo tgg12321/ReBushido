@@ -396,6 +396,11 @@ static void test_Pace(void) {
     CHECK_EQ(port_PaceBlank(&pace, 6, 2000000, 737 * 6, 0), 0);
     CHECK_EQ(pace.lost, 1);
     CHECK_EQ(port_PaceBlank(&pace, 7, 2000000 + 37, 737 * 7, 0), 700);
+    /* a quick load: a hundred blanks of the game's time in no time of
+     * the PC's, rebased, are neither waited for nor lost time */
+    port_PaceRebase(&pace, 2000000 + 737 + 40, 737 * 107);
+    CHECK_EQ(port_PaceBlank(&pace, 108, 2000000 + 737 + 40, 737 * 108, 0), 737);
+    CHECK_EQ(pace.lost, 1);
     /* a clock that jumped back is let go as well */
     CHECK_EQ(port_PaceBlank(&pace, 8, 1500000, 737 * 8, 0), 0);
     CHECK_EQ(pace.lost, 2);

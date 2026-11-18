@@ -228,6 +228,12 @@ static struct {
     s32 cast_faces;
     s32 cast_orphans;
     u32 cast_model_triangles; /* cast from the models, the run's */
+    /* frames a model's shadow was laid at its feet, the game casting none
+     * of its body (port_GlShadowCast), the run's */
+    u32 cast_feet_grounds;
+    /* faces of the stage's pieces taken for floor (port_GlShadowIsFloor),
+     * the run's */
+    u32 floor_faces;
     s32 cast_triangles;
     u32 cast_fallbacks;
     u32 cast_unpaired;
@@ -516,6 +522,10 @@ u32 port_GlShadowCastUnpaired(void) { return g_shadow.cast_unpaired; }
 
 u32 port_GlShadowCastFromModels(void) { return g_shadow.cast_model_triangles; }
 
+u32 port_GlShadowCastFeet(void) { return g_shadow.cast_feet_grounds; }
+
+u32 port_GlShadowFloorFaces(void) { return g_shadow.floor_faces; }
+
 s32 port_GlShadowIsSoft(void) {
     return g_shadow.is_started && g_shadow.strength > 0;
 }
@@ -618,6 +628,88 @@ void port_GlShadowNewFrame(void) {
  * should not have those holes in it, so the darkening is laid on the
  * whole silhouette. What the ground does not do, the fighters and
  * everything else in the scene do. */
+/* How near to level a face of the stage's pieces is a floor the shadows
+ * fall on: the cosine of the angle between its normal and the vertical,
+ * 30 degrees. */
+#define FLOOR_COS 0.866
+
+/* Whether a face of the stage drawn as a piece of the scene and not as a
+ * tile -- a deck, a bridge's boards, a stage's floor the game builds as a
+ * model -- lies level, and so is floor a fighter may stand on and his
+ * shadow falls on. Its corners are taken back from the screen into the
+ * camera's space by the view the stage was drawn with (the projection is
+ * the coprocessor's: screen = h * v / z + the middle), and from there
+ * into the world by the inverse of the view's rotation, whose second row
+ * the renderer halves and the inverse undoes; the world's vertical is y.
+ * The scale the renderer drew a thing at scales all three of a corner's
+ * numbers alike and leaves the direction of a normal as it is. */
+static s32 port_GlShadowIsFloor(const PortRemasterPrim *prim) {
+    s32 is_between = FALSE;
+    const PortStageView *view = port_GlStageViewNow(&is_between);
+    double m[3][3];
+    double inv[3][3];
+    double world[3][3];
+    double det;
+    double a[3];
+    double b[3];
+    double n[3];
+    double length;
+    s32 i;
+    s32 j;
+
+    if (view == NULL || view->h <= 0 || prim->corner_count < 3 ||
+        !prim->has_depth) {
+        return FALSE;
+    }
+    for (i = 0; i < 9; i++) {
+        m[i / 3][i % 3] = (double)view->matrix[i] / 4096.0;
+    }
+    det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+          m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+          m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    if (det > -1e-9 && det < 1e-9) {
+        return FALSE;
+    }
+    inv[0][0] = (m[1][1] * m[2][2] - m[1][2] * m[2][1]) / det;
+    inv[0][1] = (m[0][2] * m[2][1] - m[0][1] * m[2][2]) / det;
+    inv[0][2] = (m[0][1] * m[1][2] - m[0][2] * m[1][1]) / det;
+    inv[1][0] = (m[1][2] * m[2][0] - m[1][0] * m[2][2]) / det;
+    inv[1][1] = (m[0][0] * m[2][2] - m[0][2] * m[2][0]) / det;
+    inv[1][2] = (m[0][2] * m[1][0] - m[0][0] * m[1][2]) / det;
+    inv[2][0] = (m[1][0] * m[2][1] - m[1][1] * m[2][0]) / det;
+    inv[2][1] = (m[0][1] * m[2][0] - m[0][0] * m[2][1]) / det;
+    inv[2][2] = (m[0][0] * m[1][1] - m[0][1] * m[1][0]) / det;
+    for (i = 0; i < 3; i++) {
+        const PortRemasterCorner *c = &prim->corner[i];
+        double z = (double)c->depth;
+        double v[3];
+
+        if (c->depth <= 0) {
+            return FALSE;
+        }
+        v[0] = ((double)(c->x - (prim->offset_x << 16)) - (double)view->ofx) /
+               65536.0 * z / (double)view->h;
+        v[1] = ((double)(c->y - (prim->offset_y << 16)) - (double)view->ofy) /
+               65536.0 * z / (double)view->h;
+        v[2] = z;
+        for (j = 0; j < 3; j++) {
+            world[i][j] =
+                inv[j][0] * v[0] + inv[j][1] * v[1] + inv[j][2] * v[2];
+        }
+    }
+    for (j = 0; j < 3; j++) {
+        a[j] = world[1][j] - world[0][j];
+        b[j] = world[2][j] - world[0][j];
+    }
+    n[0] = a[1] * b[2] - a[2] * b[1];
+    n[1] = a[2] * b[0] - a[0] * b[2];
+    n[2] = a[0] * b[1] - a[1] * b[0];
+    length = n[0] * n[0] + n[1] * n[1] + n[2] * n[2];
+    /* level: the vertical part of the normal is most of it, whichever
+     * way the face is wound */
+    return length > 0.0 && n[1] * n[1] >= FLOOR_COS * FLOOR_COS * length;
+}
+
 s32 port_GlShadowIsGround(const PortRemasterPrim *prim) {
     s32 count = 0;
     PortAddress tiles;
@@ -626,12 +718,19 @@ s32 port_GlShadowIsGround(const PortRemasterPrim *prim) {
         return FALSE;
     }
     tiles = port_RemasterStageTiles(&count);
-    if (tiles == 0 || count <= 0) {
-        return FALSE;
+    if (tiles != 0 && count > 0 && prim->id.object >= tiles &&
+        prim->id.object <
+            tiles + (PortAddress)((u32)count * sizeof(StageTile))) {
+        return TRUE;
     }
-    return prim->id.object >= tiles &&
-           prim->id.object <
-               tiles + (PortAddress)((u32)count * sizeof(StageTile));
+    /* a level face of the stage's own pieces, which a fighter may stand
+     * on (a deck, a bridge): the shadows fall on it as on the ground */
+    if (!prim->is_fighter && !prim->is_shadow && !prim->is_effect &&
+        !prim->is_half && port_GlShadowIsFloor(prim)) {
+        g_shadow.floor_faces++;
+        return TRUE;
+    }
+    return FALSE;
 }
 
 /* The first primitive of a picture that has a shadow in it: the drawing
@@ -951,6 +1050,26 @@ typedef struct {
     double z_shear;
 } ModelCast;
 
+/* The lowest point of a model as the frame posed it: the greatest y, the
+ * world's y running down. */
+typedef struct {
+    s32 has_any;
+    double y;
+} LowestPoint;
+
+static void port_GlShadowLowest(void *context, const float p[3][3], s32 index) {
+    LowestPoint *lowest = context;
+    s32 k;
+
+    (void)index;
+    for (k = 0; k < 3; k++) {
+        if (!lowest->has_any || (double)p[k][1] > lowest->y) {
+            lowest->y = (double)p[k][1];
+            lowest->has_any = TRUE;
+        }
+    }
+}
+
 static void port_GlShadowCastModel(
     void *context, const float p[3][3], s32 index) {
     ModelCast *cast = context;
@@ -982,6 +1101,9 @@ static void port_GlShadowGather(CastFrame *frame) {
      * onto, by the first of its faces, or no ground yet */
     s32 model_ground[PORT_FIGHTER_SLOTS + PORT_FIGHTER_WEAPONS];
     s32 has_ground[PORT_FIGHTER_SLOTS + PORT_FIGHTER_WEAPONS];
+    /* ... and whether any face of it was drawn this frame, with a ground or
+     * not */
+    s32 has_faces[PORT_FIGHTER_SLOTS];
     s32 faces = 0;
     double r[9];
     double back[9];
@@ -1011,6 +1133,7 @@ static void port_GlShadowGather(CastFrame *frame) {
     z_shear = (double)shear_z / 4096.0;
     g_shadow.cast_faces = faces;
     memset(has_ground, 0, sizeof(has_ground));
+    memset(has_faces, 0, sizeof(has_faces));
     for (i = 0; i < faces; i++, face++) {
         static const s32 corner[2][3] = {{0, 1, 2}, {1, 3, 2}};
         float flat[PORT_REMASTER_CORNERS][3];
@@ -1019,6 +1142,9 @@ static void port_GlShadowGather(CastFrame *frame) {
         s32 halves;
         s32 j;
 
+        if (caster >= 0 && caster < PORT_FIGHTER_SLOTS) {
+            has_faces[caster] = TRUE;
+        }
         if (!port_RemasterCasterGround(face->object, &ground_y)) {
             g_shadow.cast_orphans++;
             continue;
@@ -1074,6 +1200,26 @@ static void port_GlShadowGather(CastFrame *frame) {
     for (i = 0; i < PORT_FIGHTER_SLOTS + PORT_FIGHTER_WEAPONS; i++) {
         ModelCast cast;
 
+        if (i < PORT_FIGHTER_SLOTS && !has_ground[i] && has_faces[i]) {
+            /* A fighter drawn from a model whose body the game casts no
+             * shadow of this frame: on some floors the game's shadow nodes
+             * of a body are not drawn at all -- the raised floor of the
+             * Tatara shrine, where a fighter standing in line with the
+             * shrine had his sword's shadow and no other. His shadow falls
+             * on the floor his soles are on: the lowest point of the
+             * model as the frame posed it. */
+            LowestPoint lowest;
+
+            lowest.has_any = FALSE;
+            lowest.y = 0.0;
+            if (port_GlFighterCastTriangles(i, port_GlShadowLowest, &lowest) >
+                    0 &&
+                lowest.has_any) {
+                has_ground[i] = TRUE;
+                model_ground[i] = (s32)lowest.y;
+                g_shadow.cast_feet_grounds++;
+            }
+        }
         if (!has_ground[i]) {
             continue;
         }

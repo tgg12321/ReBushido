@@ -38,6 +38,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_light.h"
 #include "gl_scene.h"
 #include "gl_see.h"
 #include "gl_stage.h"
@@ -269,6 +270,10 @@ typedef struct {
     u8 info[4];  /* the texel's bits, the mix, nothing, nothing */
     u16 tile;    /* which tile of the stage it belongs to */
     u16 pad;
+    /* The normal it is lit from with `smooth_light` (gl_light.h): the
+     * mean of the faces' about this corner that do not turn by more than
+     * a crease from its own, 4096 long; and nought. */
+    s16 normal[4];
     /* the rectangle of texels the face reads, its texture points' least
      * and most: a mod's picture of the page is read inside it, so that
      * nothing of a texture packed beside it is smoothed in (gl_scene.h) */
@@ -283,7 +288,7 @@ typedef struct {
      * nearer than the cutoff (RENDER_OT_CUTOFF), which is how the
      * ground between the camera and the fight is kept out of the way. */
     GLfloat corner[4][3];
-} StageVertex; /* 96 bytes */
+} StageVertex; /* 104 bytes */
 
 static struct {
     s32 is_started;
@@ -316,6 +321,10 @@ static struct {
     GLint at_depth_shift;
     GLint at_cutoff;
     GLint at_unit;
+    GLint at_smooth_light;
+    GLint at_light;
+    GLint at_color;
+    GLint at_back;
     GLint at_scene_lookup;
     GLint at_scene_pages;
     GLint at_scene_bases;
@@ -384,6 +393,7 @@ static const char g_stage_vertex_text[] =
     "layout(location = 8) in vec3 a_corner2;\n"
     "layout(location = 9) in vec3 a_corner3;\n"
     "layout(location = 10) in uvec4 a_box;\n"
+    "layout(location = 11) in vec3 a_normal;\n"
     /* the view the renderer drew the stage's tiles with: its rotation
      * already scaled as the tiles' own projection scales it, where the
      * camera is, the distance to the projection plane, and where the
@@ -417,6 +427,7 @@ static const char g_stage_vertex_text[] =
     "flat out uvec4 v_info;\n"
     "flat out uint v_tile;\n"
     "flat out float v_slot;\n"
+    "out vec3 v_smooth_normal;\n"
     "flat out vec4 v_box;\n"
     /* where the pixel is in the world, and which way its face looks, for
      * the walls seen through (gl_see.h) */
@@ -524,6 +535,7 @@ static const char g_stage_vertex_text[] =
     "    v_page = a_page;\n"
     "    v_info = a_info;\n"
     "    v_tile = a_tile;\n"
+    "    v_smooth_normal = a_normal;\n"
     /* to the far edges of the last texels */
     "    v_box = vec4(vec2(a_box.xy), vec2(a_box.zw) + vec2(1.0));\n"
     "    v_place = a_place;\n"
@@ -541,6 +553,13 @@ static const char g_stage_fragment_text[] =
     "uniform ivec4 u_fog_rect;\n" /* the row the textures read */
     "uniform int u_depth_shift;\n"
     "uniform float u_depth;\n" /* what a depth is divided by */
+    /* `smooth_light` (gl_light.h): the tiles' lights, as the fighters'
+     * are given theirs (gl_fighter.c) */
+    "uniform int u_smooth_light;\n"
+    "uniform mat3 u_light;\n"
+    "uniform mat3 u_color;\n"
+    "uniform vec3 u_back;\n"
+    "in vec3 v_smooth_normal;\n"
     "in vec2 v_texture;\n"
     "in float v_depth;\n"
     "flat in float v_push;\n"
@@ -732,6 +751,15 @@ static const char g_stage_fragment_text[] =
     "    }\n"
     /* a piece's face lit at each corner: the colour run across it */
     "    vec3 color = ((v_flags.w & 8u) != 0u) ? v_shade : v_color;\n"
+    /* the face's NCS again at this pixel, from the normal that runs
+     * across it (render_EmitTile lights a face once, with the record's
+     * own normal) */
+    "    float length_of = length(v_smooth_normal);\n"
+    "    if (u_smooth_light != 0 && length_of > 0.25) {\n"
+    "        vec3 ir = max(u_light * (v_smooth_normal / length_of), vec3(0.0))\n"
+    "                * 4096.0;\n"
+    "        color = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
+    "    }\n"
     "    uint texel;\n"
     "    vec3 one_color = texel_color(int(floor(v_texture.x)),\n"
     "                                 int(floor(v_texture.y)), texel);\n"
@@ -869,6 +897,8 @@ static void port_GlStageFormat(void) {
         9, 3, GL_FLOAT, GL_FALSE, (GLsizei)sizeof(*one), one->corner[3]);
     glVertexAttribIPointer(
         10, 4, GL_UNSIGNED_BYTE, (GLsizei)sizeof(*one), one->box);
+    glVertexAttribPointer(
+        11, 3, GL_SHORT, GL_FALSE, (GLsizei)sizeof(*one), one->normal);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
@@ -933,6 +963,10 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
     AT(at_depth_shift, "u_depth_shift");
     AT(at_cutoff, "u_cutoff");
     AT(at_unit, "u_unit");
+    AT(at_smooth_light, "u_smooth_light");
+    AT(at_light, "u_light");
+    AT(at_color, "u_color");
+    AT(at_back, "u_back");
     AT(at_scene_lookup, "u_scene_lookup");
     AT(at_scene_pages, "u_scene_pages");
     AT(at_scene_bases, "u_scene_bases");
@@ -1165,7 +1199,8 @@ typedef struct {
     u8 color[4]; /* red, green, blue, the flags */
     s16 page[4];
     u8 info[4];
-    u8 box[4]; /* its texture points' least and most */
+    s16 normal[3]; /* the record's, which the face is lit from */
+    u8 box[4];     /* its texture points' least and most */
     /* the face's corners in the world, in the order the record has
      * them, the fourth the third's again for a triangle */
     GLfloat corner[4][3];
@@ -1203,6 +1238,11 @@ static void port_GlStagePutVertex(
     }
     to->tile = (u16)face->tile;
     to->pad = 0;
+    /* the face's own until the mesh is whole (port_GlStageBuild) */
+    to->normal[0] = face->normal[0];
+    to->normal[1] = face->normal[1];
+    to->normal[2] = face->normal[2];
+    to->normal[3] = 0;
     for (i = 0; i < 4; i++) {
         to->box[i] = face->box[i];
     }
@@ -1328,6 +1368,9 @@ static void port_GlStageFace(s32 tile, const StageTile *at, const s16 *vertices,
     face.tile_x = at->x;
     face.tile_z = at->z;
     port_GlStageLight(normal, face.color);
+    face.normal[0] = normal[0];
+    face.normal[1] = normal[1];
+    face.normal[2] = normal[2];
     face.color[3] = (u8)(FLAG_TEXTURED | ((code & CODE_RAW) ? FLAG_RAW : 0) |
                          ((code & CODE_HALF) ? FLAG_HALF : 0));
     face.page[0] = (s16)((tpage & MODE_PAGE_X_MASK) * MODE_PAGE_X_STEP);
@@ -1593,6 +1636,9 @@ typedef struct {
     u32 code;
     u8 shaded; /* a colour at each corner */
     u8 how;    /* PIECE_... */
+    /* each corner's normal in the world, for `smooth_light` (gl_light.h),
+     * the one it is lit from */
+    s16 normal[4][3];
 } PieceFace;
 
 /* The piece being read: where its points are in the world, and how it
@@ -1613,10 +1659,29 @@ static void port_GlStagePieceNormal(s16 *normal, u32 xy, u32 z, u32 flip) {
     normal[2] = (s16)((z ^ flip) & 0xFFFF);
 }
 
+/* A normal of the piece's lit as the renderer lights it, and the same
+ * normal into the world, which the tiles' lights are in, for
+ * `smooth_light` (gl_light.h): turned by the piece's own matrix for a
+ * rotated one, as the renderer turns the lights the other way
+ * (render_LoadTurnedLights). */
 static void port_GlStagePieceLight(
-    const PieceRead *read, const s16 *normal, u8 *rgb) {
-    port_GlStageLightBy((const LightSetup *)read->piece->lights,
-                        read->piece->light_matrix, normal, rgb);
+    const PieceRead *read, const s16 *normal, u8 *rgb, s16 *world) {
+    const PortStagePiece *piece = read->piece;
+    s32 row;
+
+    port_GlStageLightBy(
+        (const LightSetup *)piece->lights, piece->light_matrix, normal, rgb);
+    for (row = 0; row < 3; row++) {
+        if (piece->kind == NODE_KIND_ROTATED) {
+            world[row] =
+                (s16)(((s32)piece->rotation[row * 3] * normal[0] +
+                       (s32)piece->rotation[row * 3 + 1] * normal[1] +
+                       (s32)piece->rotation[row * 3 + 2] * normal[2]) >>
+                      12);
+        } else {
+            world[row] = normal[row];
+        }
+    }
 }
 
 /* A piece's face into the mesh: the chip's one or two triangles. */
@@ -1679,6 +1744,10 @@ static void port_GlStagePieceFace(
             (u8)(PIECE_FACE | face->how | (face->count == 3 ? PIECE_THREE : 0));
         one->tile = (u16)(PIECE_BASE + read->index);
         one->pad = 0;
+        one->normal[0] = face->normal[k][0];
+        one->normal[1] = face->normal[k][1];
+        one->normal[2] = face->normal[k][2];
+        one->normal[3] = 0;
         for (j = 0; j < 4; j++) {
             one->box[j] = box[j];
         }
@@ -1725,6 +1794,10 @@ static void port_GlStagePieceTexture(
         face->uv[i] = STAGE_HALF(record, RECORD_UV0 + 2 * i);
     }
     face->shaded = FALSE;
+    /* none until a corner is lit: an unlit face keeps the game's own */
+    for (i = 0; i < 4; i++) {
+        face->normal[i][0] = face->normal[i][1] = face->normal[i][2] = 0;
+    }
 }
 
 static void port_GlStagePieceFlat(PieceFace *face, const u8 *rgb) {
@@ -1734,6 +1807,9 @@ static void port_GlStagePieceFlat(PieceFace *face, const u8 *rgb) {
         face->rgb[i][0] = rgb[0];
         face->rgb[i][1] = rgb[1];
         face->rgb[i][2] = rgb[2];
+        face->normal[i][0] = face->normal[0][0];
+        face->normal[i][1] = face->normal[0][1];
+        face->normal[i][2] = face->normal[0][2];
     }
 }
 
@@ -1766,7 +1842,7 @@ static s32 port_GlStagePieceRecord(
             port_GlStagePieceNormal(
                 normal, STAGE_WORD(record, AT_FT3_NORMAL),
                 STAGE_WORD(record, AT_FT3_NORMAL + 4), flip);
-            port_GlStagePieceLight(read, normal, rgb);
+            port_GlStagePieceLight(read, normal, rgb, face.normal[0]);
             port_GlStagePieceFlat(&face, rgb);
             /* the packed routine takes the group's first colour and code
              * (render_EmitPackedFT3) and leaves out what is nearer than
@@ -1793,7 +1869,7 @@ static s32 port_GlStagePieceRecord(
             port_GlStagePieceNormal(
                 normal, STAGE_WORD(record, AT_FT4_NORMAL_XY),
                 STAGE_HALF(record, AT_FT4_NORMAL_Z), flip);
-            port_GlStagePieceLight(read, normal, rgb);
+            port_GlStagePieceLight(read, normal, rgb, face.normal[0]);
             port_GlStagePieceFlat(&face, rgb);
             face.code = own_code;
             face.how =
@@ -1835,14 +1911,14 @@ static s32 port_GlStagePieceRecord(
             }
             port_GlStagePieceNormal(
                 normal, STAGE_WORD(record, AT_GT3_NORMAL_XY0), z01, flip);
-            port_GlStagePieceLight(read, normal, face.rgb[0]);
+            port_GlStagePieceLight(read, normal, face.rgb[0], face.normal[0]);
             port_GlStagePieceNormal(
                 normal, STAGE_WORD(record, AT_GT3_NORMAL_XY1), z01 >> 16, flip);
-            port_GlStagePieceLight(read, normal, face.rgb[1]);
+            port_GlStagePieceLight(read, normal, face.rgb[1], face.normal[1]);
             port_GlStagePieceNormal(
                 normal, STAGE_WORD(record, AT_GT3_NORMAL_XY2),
                 STAGE_WORD(record, AT_GT3_NORMAL_Z2), flip);
-            port_GlStagePieceLight(read, normal, face.rgb[2]);
+            port_GlStagePieceLight(read, normal, face.rgb[2], face.normal[2]);
             face.shaded = TRUE;
             /* the colour and code are the group's first record's
              * (render_EmitGT3) */
@@ -1872,18 +1948,18 @@ static s32 port_GlStagePieceRecord(
             port_GlStagePieceNormal(
                 normal, STAGE_WORD(record, AT_GT4_NORMAL_XY_FACE), z_face_0,
                 flip);
-            port_GlStagePieceLight(read, normal, face.rgb[0]);
+            port_GlStagePieceLight(read, normal, face.rgb[0], face.normal[0]);
             port_GlStagePieceNormal(
                 normal, STAGE_WORD(record, AT_GT4_NORMAL_XY0),
                 (z_face_0 ^ flip) >> 16, 0);
-            port_GlStagePieceLight(read, normal, face.rgb[1]);
+            port_GlStagePieceLight(read, normal, face.rgb[1], face.normal[1]);
             port_GlStagePieceNormal(
                 normal, STAGE_WORD(record, AT_GT4_NORMAL_XY1), z12, flip);
-            port_GlStagePieceLight(read, normal, face.rgb[2]);
+            port_GlStagePieceLight(read, normal, face.rgb[2], face.normal[2]);
             port_GlStagePieceNormal(
                 normal, STAGE_WORD(record, AT_GT4_NORMAL_XY2),
                 (z12 ^ flip) >> 16, 0);
-            port_GlStagePieceLight(read, normal, face.rgb[3]);
+            port_GlStagePieceLight(read, normal, face.rgb[3], face.normal[3]);
             face.shaded = TRUE;
             face.code = group_code;
             face.how = (u8)(side ? PIECE_BACK : 0);
@@ -2103,6 +2179,16 @@ static void port_GlStageBuild(const PortStageView *view) {
         port_GlStageTile(i, &tiles[i]);
     }
     port_GlStageSeams(count);
+    /* each corner's normal the mean of the faces' about it, for
+     * `smooth_light` (gl_light.h); a stage the memory cannot be had for
+     * keeps the faces' own, which light it as the game does */
+    if (g_stage.built > 0) {
+        port_GlLightSmoothNormals(
+            &g_stage.building[0].x,
+            (s32)(sizeof(StageVertex) / sizeof(GLfloat)),
+            g_stage.building[0].normal,
+            (s32)(sizeof(StageVertex) / sizeof(s16)), g_stage.built);
+    }
     g_stage.piece_first = g_stage.built;
     /* and what stands on it: built whatever the setting says, which
      * decides frame by frame whether they are drawn from it */
@@ -2131,6 +2217,31 @@ static void port_GlStageBuild(const PortStageView *view) {
 }
 
 /* ---- drawing it ---- */
+
+/* The tiles' lights for `smooth_light`, as the coprocessor has them
+ * (port_GlStageLight): the light matrix and the colour matrix made 1,
+ * and the colour of the dark in bytes. */
+static void port_GlStageLights(void) {
+    const LightSetup *lights = (const LightSetup *)port_RemasterTileLights();
+    GLfloat light[9];
+    GLfloat color[9];
+    s32 i;
+
+    glUniform1i(g_stage.at_smooth_light,
+                port_GlLightIsSmooth() && lights != NULL ? 1 : 0);
+    if (lights == NULL) {
+        return;
+    }
+    for (i = 0; i < 9; i++) {
+        light[i] = (GLfloat)lights->lmat.m[i / 3][i % 3] / 4096.0f;
+        color[i] = (GLfloat)lights->cmat.m[i / 3][i % 3] / 4096.0f;
+    }
+    /* the numbers are a row after a row */
+    glUniformMatrix3fv(g_stage.at_light, 1, GL_TRUE, light);
+    glUniformMatrix3fv(g_stage.at_color, 1, GL_TRUE, color);
+    glUniform3f(g_stage.at_back, (GLfloat)lights->back[0],
+                (GLfloat)lights->back[1], (GLfloat)lights->back[2]);
+}
 
 /* The renderer's own framebuffer is what the mesh draws through: the
  * colour buffer the primitives are painted into, with the depth buffer
@@ -2270,6 +2381,7 @@ static void port_GlStageUniforms(
     glUniform1f(
         g_stage.at_depth, DEPTH_RANGE / (GLfloat)(1 << (view->far_shift & 31)));
     glUniform1i(g_stage.at_depth_shift, view->depth_shift & 31);
+    port_GlStageLights();
     glUniform1i(g_stage.at_cutoff, view->ot_cutoff);
     /* a tile's seam number is a quarter of a world unit (SEAM_STEP) */
     glUniform1f(

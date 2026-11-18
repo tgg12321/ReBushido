@@ -127,7 +127,12 @@ No dates.
       is still the default, and a camera cut shows the game's own
       picture.
    6. **Lighting and shadows**: the normals the mesh has and the
-      primitive does not.
+      primitive does not. Done for what is drawn from meshes
+      (`smooth_light`, off until the owner has looked): the game's own
+      lights worked out at each pixel of the ground's mesh, its normals
+      smoothed below a crease, and of the fighters' models. The effects
+      are placed where the projection put them and moved between frames
+      (`effects`; [`PORT.md`](PORT.md), "Lighting", "The effects").
 
    On the PlayStation build only what is cheap: about 17 KB is left
    there before a fixed buffer has to move.
@@ -228,19 +233,26 @@ the stage").
     larger from the player's own disc by `tools/port_art.py` (the art
     mod, never committed); a texture or picture faded through its colour
     table or rewritten is drawn from its replacement, tinted
-    ([`MODS.md`](MODS.md), "Fades"). Left: the rest of the lettering in
-    a font (the dialogue boxes, the names on the select screens, the
-    options' pages), and the title picture after the opening movie, which
-    is the movie's own 24-bit frame.
+    ([`MODS.md`](MODS.md), "Fades"). The rest of the lettering is in a
+    font too (Archivo at its widest, and Marcellus): the narration, the
+    training page, the memory card's messages, the names on the select
+    screens and the group battle's, the stage card, the results, and
+    ReBushido's options page's characters; and the title picture after
+    the opening movie is the art mod's, at the window's resolution
+    ([`MODS.md`](MODS.md), "The sharp menus", "The title picture"). Left:
+    the lettering of screens no dump has reached (the setup mode's
+    pages, the slash mode's, the endings), each a block of
+    `tools/port_ui.py`'s table away.
 12. **Optimisation**, for a smooth and seamless game.
     Begun on the port's window ([`PORT.md`](PORT.md), "Where the time
     goes"): `--profile` says where each blank's time goes; the video
     memory a frame writes is sent to the card in one go; the card is no
     longer waited for at each picture; each picture between two frames
-    is of the moment it is shown. Left: the players' build at `-O2`
-    (the owner's call; its traces are the same), the HD fighters'
-    models read before the fight's first frame, and whether 85 Hz is
-    smooth on the owner's screen.
+    is of the moment it is shown; the loads hurried through and the HD
+    fighters' models read during them (`quick_loading`, "Quick
+    loading"). Left: the players' build at `-O2` (the owner's call; its
+    traces are the same), and whether 85 Hz is smooth on the owner's
+    screen.
 13. **Loading as short as possible, or none** (the owner, 2026-11-17):
     every loading screen of the window build cut to what the PC needs,
     if not taken out. The port reads the player's disc image from a PC's
@@ -249,6 +261,7 @@ the stage").
     the port's frames with the emulator's, and that netplay's two
     players must load in the same frames. So quick loading is the
     window's (a setting, on), with the play tests' runs as they are.
+    Done: `quick_loading` (item 12; PORT.md, "Quick loading").
 14. **Shadow maps and lights of a stage's own** (the owner, 2026-11-17):
     the cast shadow is the game's one sun flattening the fighters onto
     the ground; lights that cast shadows of their own kinds (torches,

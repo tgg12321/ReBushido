@@ -143,6 +143,9 @@ static s32 port_CdNowAt(void) { return port_CdAtSample(0); }
  * build without one. */
 void (*g_port_disc_hook)(s32 kind, u32 sector);
 
+/* The game waits for the disc (port_platform.h). */
+s32 g_port_load_wait;
+
 static void port_CdStopMoving(void) {
     if (g_port_cd.reading && g_port_disc_hook != NULL) {
         g_port_disc_hook(0, (u32)g_port_cd.next_sector);

@@ -52,6 +52,13 @@ const PortChoice g_port_choices[] = {
      4,
      {"top-left", "top-right", "bottom-left", "bottom-right"},
      {"Top left", "Top right", "Bottom left", "Bottom right"}},
+    {"quick_loading",
+     "Quick loading",
+     "The waits for the disc behind a loading picture hurried through",
+     PORT_TAKES_NOW,
+     2,
+     {"off", "on"},
+     {"Off", "On"}},
     /* the remastered picture */
     {"graphics",
      "Graphics",
@@ -130,6 +137,20 @@ const PortChoice g_port_choices[] = {
      2,
      {"off", "on"},
      {"Off", "On"}},
+    {"smooth_light",
+     "Smooth lighting",
+     "The game's own lights worked out at each pixel of ground and body",
+     PORT_TAKES_NOW,
+     2,
+     {"off", "on"},
+     {"Off", "On"}},
+    {"effects",
+     "Effects",
+     "Blood, sparks and dust: as placed, exactly placed, or smoothed too",
+     PORT_TAKES_NOW,
+     3,
+     {"original", "exact", "smooth"},
+     {"Original", "Exact", "Smooth"}},
     {"frame_rate",
      "Frame rate",
      "Pictures a second; the game itself steps as the console does",
@@ -180,10 +201,10 @@ const s32 g_port_choice_count =
     (s32)(sizeof(g_port_choices) / sizeof(g_port_choices[0]));
 
 const PortChoiceGroup g_port_choice_groups[PORT_CHOICE_GROUPS] = {
-    {"The window", 0, 6},
-    {"The remastered picture", 6, 12},
-    {"Mods", 18, 4},
-    {"Controls", 22, 1},
+    {"The window", 0, 7},
+    {"The remastered picture", 7, 14},
+    {"Mods", 21, 4},
+    {"Controls", 25, 1},
 };
 
 /* `name = word` into `line`: FALSE if it does not fit. */

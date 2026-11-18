@@ -63,6 +63,23 @@ typedef struct {
     s32 anchor; /* PORT_ANCHOR_... */
 } AnchorSlot;
 
+/* The fourth table is the effects' quads (port_RemasterNoteEffect): a
+ * fight frame has a few hundred. Its own, so that the faces' table, which
+ * is the most of the port's memory here, does not grow for them. */
+#define EFFECT_SLOTS 1024
+
+typedef struct {
+    PortAddress prim;
+    u32 epoch;
+    /* a sprite about one point (port_RemasterNoteSprite): the point, the
+     * word the game had there when it built the quad, and how much larger
+     * the sprite is without the rounding, 16.16 */
+    s32 is_sprite;
+    PortPrecisePoint center;
+    u32 center_word;
+    s32 sprite_ratio;
+} EffectSlot;
+
 /* A frame's own primitives are built after the frame before it was
  * drawn, so a point or a face is used in the frame it was written down
  * in. The frame before that one is kept as well, because the game has
@@ -74,6 +91,7 @@ typedef struct {
 static PointSlot g_point_slots[POINT_SLOTS];
 static FaceSlot g_face_slots[FACE_SLOTS];
 static AnchorSlot g_anchor_slots[ANCHOR_SLOTS];
+static EffectSlot g_effect_slots[EFFECT_SLOTS];
 static u32 g_epoch = EPOCHS_KEPT;
 /* What the renderer is drawing now, and which piece of it comes next:
  * the identity every primitive linked from here on is given. */
@@ -710,10 +728,34 @@ void port_RemasterNoteFace(PortAddress points, const s32 *index, s32 count) {
     }
 }
 
+/* The slot of the faces' table a primitive is written down in: its own
+ * from before, or one no live entry has, or, where every slot it could
+ * have is another's, the oldest of them, as in the points' table. */
+static FaceSlot *port_SlotForFace(PortAddress prim) {
+    u32 slot = port_RemasterSlot(prim, FACE_SLOTS);
+    FaceSlot *found = &g_face_slots[slot];
+    u32 i;
+
+    for (i = 0; i < PROBES; i++) {
+        FaceSlot *one = &g_face_slots[(slot + i) & (FACE_SLOTS - 1)];
+
+        if (one->prim == prim || !port_EpochIsLive(one->epoch)) {
+            found = one;
+            break;
+        }
+    }
+    if (i == PROBES) {
+        g_counts.full++;
+        g_frame_counts.full++;
+    }
+    found->prim = prim;
+    found->epoch = g_epoch;
+    return found;
+}
+
 /* That face became the primitive at `prim` (port_remaster.h). */
 void port_RemasterAttachFace(PortAddress prim) {
-    u32 slot;
-    u32 i;
+    FaceSlot *found;
     s32 corner;
 
     if (g_backend == NULL) {
@@ -723,61 +765,222 @@ void port_RemasterAttachFace(PortAddress prim) {
      * for its identity: a tile of the stage has no face looked up --
      * the GTE stored its corners into the primitive itself -- and it is
      * a tile that most needs to be found again in the next frame. */
-    slot = port_RemasterSlot(prim, FACE_SLOTS);
-    for (i = 0; i <= PROBES; i++) {
-        FaceSlot *found = &g_face_slots[(slot + i) & (FACE_SLOTS - 1)];
+    found = port_SlotForFace(prim);
+    found->count = g_face_count;
+    /* The scale the renderer is drawing this thing at: it scales a
+     * node's matrix and its place down by the distance so that the
+     * coprocessor's sixteen bits are enough (render_SetupNode), so
+     * the depth it works out for a corner is the depth in the world
+     * shifted down by this. The ground drawn as one mesh and the
+     * rest of the scene are held against each other by a depth in
+     * the world's own units, so the backend is given the shift to
+     * put one back with (gl_draw.c, port_remaster.h).
+     *
+     * Not RENDER_DEPTH_SHIFT, which is the shift a depth takes into
+     * the ordering table and is not one thing: `3 - scale_shift`
+     * for a node's parts and for the cloth, and the scale itself
+     * for a skinned mesh, which is the fighters (render_DrawPart,
+     * render_SetupNode's NODE_KIND_SKINNED). A primitive the
+     * renderer made from a stage tile has a scale of its own
+     * (g_scene_settings.far_shift) and not this one; nothing reads
+     * a tile's, the mesh having taken its place, and where the mesh
+     * is not drawn there is no test at all. */
+    found->depth_shift = g_render_walk.scale_shift;
+    if (found->depth_shift < 0) {
+        found->depth_shift = 0;
+    } else if (found->depth_shift > PORT_REMASTER_DEPTH_SHIFT_MAX) {
+        found->depth_shift = PORT_REMASTER_DEPTH_SHIFT_MAX;
+    }
+    found->is_shadow = g_is_shadow;
+    found->is_fighter = g_is_fighter;
+    found->ot_slot = g_ot_slot;
+    g_ot_slot = -1;
+    found->id = g_id;
+    g_id.piece++;
+    for (corner = 0; corner < g_face_count; corner++) {
+        found->point[corner] = g_face[corner];
+    }
+    if (g_face_count != 0) {
+        g_counts.attached++;
+        g_frame_counts.attached++;
+    }
+}
 
-        if (i == PROBES) {
-            /* as the points' table: the oldest of the slots it could
-             * have goes */
-            found = &g_face_slots[slot];
-            g_counts.full++;
-            g_frame_counts.full++;
-        } else if (found->prim != prim && port_EpochIsLive(found->epoch)) {
-            continue;
+/* ---- the effects (port_remaster.h) ---- */
+
+/* What `effects` asks for: PORT_EFFECTS_... */
+static s32 g_effects;
+
+static const char * const g_effects_names[] = {"original", "exact", "smooth"};
+
+#define EFFECTS_KINDS 3
+
+/* The `effects` setting's word (port_remaster.h). */
+s32 port_ReadRemasterEffects(const char *word) {
+    s32 i;
+
+    if (word == NULL) {
+        return -1;
+    }
+    for (i = 0; i < EFFECTS_KINDS; i++) {
+        const char *rest = port_AfterWord(word, g_effects_names[i]);
+
+        if (rest != NULL && *rest == 0) {
+            return i;
         }
-        found->prim = prim;
-        found->epoch = g_epoch;
-        found->count = g_face_count;
-        /* The scale the renderer is drawing this thing at: it scales a
-         * node's matrix and its place down by the distance so that the
-         * coprocessor's sixteen bits are enough (render_SetupNode), so
-         * the depth it works out for a corner is the depth in the world
-         * shifted down by this. The ground drawn as one mesh and the
-         * rest of the scene are held against each other by a depth in
-         * the world's own units, so the backend is given the shift to
-         * put one back with (gl_draw.c, port_remaster.h).
-         *
-         * Not RENDER_DEPTH_SHIFT, which is the shift a depth takes into
-         * the ordering table and is not one thing: `3 - scale_shift`
-         * for a node's parts and for the cloth, and the scale itself
-         * for a skinned mesh, which is the fighters (render_DrawPart,
-         * render_SetupNode's NODE_KIND_SKINNED). A primitive the
-         * renderer made from a stage tile has a scale of its own
-         * (g_scene_settings.far_shift) and not this one; nothing reads
-         * a tile's, the mesh having taken its place, and where the mesh
-         * is not drawn there is no test at all. */
-        found->depth_shift = g_render_walk.scale_shift;
-        if (found->depth_shift < 0) {
-            found->depth_shift = 0;
-        } else if (found->depth_shift > PORT_REMASTER_DEPTH_SHIFT_MAX) {
-            found->depth_shift = PORT_REMASTER_DEPTH_SHIFT_MAX;
+    }
+    return -1;
+}
+
+const char *port_NameRemasterEffects(s32 effects) {
+    return (effects >= 0 && effects < EFFECTS_KINDS)
+               ? g_effects_names[effects]
+               : "?";
+}
+
+void port_RemasterSetEffects(s32 effects) {
+    g_effects = (effects >= 0 && effects < EFFECTS_KINDS)
+                    ? effects
+                    : PORT_EFFECTS_ORIGINAL;
+}
+
+s32 port_RemasterEffects(void) { return g_effects; }
+
+/* An effect's quad as the faces' table has it, with what every effect's
+ * has: no scale of the renderer's (the effects project with the view
+ * itself, eff_SetViewMatrix, so a depth is in the world's units), no
+ * slot of the ordering table the renderer linked, and its own name; and
+ * its slot of the effects' table, which says it is an effect's. NULL
+ * where nothing is wanted. */
+static FaceSlot *port_EffectFace(
+    PortAddress prim, PortAddress name, s32 piece, EffectSlot **effect) {
+    u32 slot = port_RemasterSlot(prim, EFFECT_SLOTS);
+    FaceSlot *found;
+    u32 i;
+
+    if (g_backend == NULL || g_effects == PORT_EFFECTS_ORIGINAL || prim == 0) {
+        return NULL;
+    }
+    *effect = &g_effect_slots[slot];
+    for (i = 0; i < PROBES; i++) {
+        EffectSlot *one = &g_effect_slots[(slot + i) & (EFFECT_SLOTS - 1)];
+
+        if (one->prim == prim || !port_EpochIsLive(one->epoch)) {
+            *effect = one;
+            break;
         }
-        found->is_shadow = g_is_shadow;
-        found->is_fighter = g_is_fighter;
-        found->ot_slot = g_ot_slot;
-        g_ot_slot = -1;
-        found->id = g_id;
-        g_id.piece++;
-        for (corner = 0; corner < g_face_count; corner++) {
-            found->point[corner] = g_face[corner];
+    }
+    (*effect)->prim = prim;
+    (*effect)->epoch = g_epoch;
+    (*effect)->is_sprite = FALSE;
+    found = port_SlotForFace(prim);
+    found->count = 0;
+    found->depth_shift = 0;
+    found->is_shadow = FALSE;
+    found->is_fighter = FALSE;
+    found->ot_slot = -1;
+    found->id.object = name;
+    found->id.group = 0;
+    found->id.face = 0;
+    found->id.piece = piece;
+    return found;
+}
+
+/* The effects' slot of a primitive, or NULL: it is not an effect's. */
+static const EffectSlot *port_FindEffect(PortAddress prim) {
+    u32 slot = port_RemasterSlot(prim, EFFECT_SLOTS);
+    u32 i;
+
+    if (prim == 0) {
+        return NULL;
+    }
+    for (i = 0; i < PROBES; i++) {
+        const EffectSlot *found =
+            &g_effect_slots[(slot + i) & (EFFECT_SLOTS - 1)];
+
+        if (found->prim == prim && port_EpochIsLive(found->epoch)) {
+            return found;
         }
-        if (g_face_count != 0) {
-            g_counts.attached++;
-            g_frame_counts.attached++;
-        }
+    }
+    return NULL;
+}
+
+/* An effect's quad whose corners are points the GTE stored
+ * (port_remaster.h): they are kept with it as a face's are. */
+void port_RemasterNoteEffect(PortAddress prim, PortAddress points, s32 count,
+                             PortAddress name, s32 piece) {
+    EffectSlot *effect;
+    FaceSlot *found = port_EffectFace(prim, name, piece, &effect);
+    s32 i;
+
+    if (found == NULL || count > PORT_REMASTER_CORNERS) {
         return;
     }
+    for (i = 0; i < count; i++) {
+        const PortPrecisePoint *point =
+            port_FindPoint(points + (PortAddress)((u32)i * sizeof(u32)));
+
+        if (point == NULL) {
+            /* a corner it does not have: the quad is drawn where the
+             * console put it */
+            return;
+        }
+        found->point[i] = *point;
+    }
+    found->count = count;
+}
+
+/* The least quotient a sprite's size is made larger for, and the two
+ * halves the ratio is worked out in (port_SpriteRatio). */
+#define SPRITE_QUOTIENT_MIN 8
+#define SPRITE_RATIO_HALF_BITS 8
+
+/* How much larger a sprite is without the rounding the game made: its
+ * size was worked out from `number / depth` rounded down, so the share
+ * of a whole step that was dropped is put back, 16.16. A quotient under
+ * eight is left alone: there the game holds a sprite to a least size
+ * that the quotient no longer says anything about. */
+static s32 port_SpriteRatio(s32 number, s32 depth) {
+    s32 quotient;
+    s32 left;
+
+    if (number <= 0 || depth <= 0) {
+        return PORT_REMASTER_ONE;
+    }
+    quotient = number / depth;
+    left = number - quotient * depth;
+    if (quotient < SPRITE_QUOTIENT_MIN) {
+        return PORT_REMASTER_ONE;
+    }
+    /* 1 + left / (depth * quotient), in two halves of eight bits so
+     * that nothing passes 32 bits */
+    return PORT_REMASTER_ONE + (((left << SPRITE_RATIO_HALF_BITS) / depth)
+                                << SPRITE_RATIO_HALF_BITS) /
+                                   quotient;
+}
+
+/* An effect's sprite (port_remaster.h): the point it was built about, as
+ * the GTE worked it out, and the word the game had there, kept with it
+ * until it is drawn. */
+void port_RemasterNoteSprite(
+    PortAddress prim, PortAddress center, s32 scale_number, s32 depth,
+    PortAddress name, s32 piece) {
+    const PortPrecisePoint *point;
+    EffectSlot *effect;
+
+    if (g_backend == NULL || g_effects == PORT_EFFECTS_ORIGINAL ||
+        center == 0) {
+        return;
+    }
+    point = port_FindPoint(center);
+    if (port_EffectFace(prim, name, piece, &effect) == NULL || point == NULL ||
+        point->depth <= 0) {
+        return;
+    }
+    effect->is_sprite = TRUE;
+    effect->center = *point;
+    effect->center_word = *(const u32 *)center;
+    effect->sprite_ratio = port_SpriteRatio(scale_number, depth);
 }
 
 void port_RemasterNoteObject(PortAddress object) {
@@ -1659,6 +1862,40 @@ static s32 port_PointFits(
                point->y, state->offset_y, corner->iy, stored_y, point->depth);
 }
 
+/* How far the game may have moved a sprite's point by whole pixels after
+ * the GTE stored it (the water's drops are shaken by up to 20) and its
+ * place still be the point's. */
+#define SPRITE_MOVED_MAX 32
+
+/* A corner of a sprite (port_RemasterNoteSprite): its point's place,
+ * moved as far as the game moved the point itself, and the corner's own
+ * whole-pixel offset from it made as large as the sprite is without the
+ * rounding; at its point's depth. FALSE where the point the game built
+ * about is not the one written down. */
+static s32 port_PlaceSpriteCorner(
+    const EffectSlot *slot, const PortGpuState *state,
+    PortRemasterCorner *corner, s32 stored_x, s32 stored_y) {
+    const PortPrecisePoint *center = &slot->center;
+    s32 center_x = port_RemasterPosition((s32)(slot->center_word & HALF_MASK));
+    s32 center_y =
+        port_RemasterPosition((s32)(slot->center_word >> HALF_SHIFT));
+    s32 moved_x = center_x - (center->x >> PORT_REMASTER_FRACTION);
+    s32 moved_y = center_y - (center->y >> PORT_REMASTER_FRACTION);
+
+    if (moved_x < -SPRITE_MOVED_MAX || moved_x > SPRITE_MOVED_MAX ||
+        moved_y < -SPRITE_MOVED_MAX || moved_y > SPRITE_MOVED_MAX) {
+        return FALSE;
+    }
+    corner->x = center->x + (moved_x << PORT_REMASTER_FRACTION) +
+                (stored_x - center_x) * slot->sprite_ratio +
+                (state->offset_x << PORT_REMASTER_FRACTION);
+    corner->y = center->y + (moved_y << PORT_REMASTER_FRACTION) +
+                (stored_y - center_y) * slot->sprite_ratio +
+                (state->offset_y << PORT_REMASTER_FRACTION);
+    corner->depth = center->depth;
+    return TRUE;
+}
+
 /* A polygon: three corners or four, each a place and, by the code, a
  * colour and a texture point. The side channel gives each corner where
  * the GTE really put it and how deep it is: by the face the renderer
@@ -1672,6 +1909,7 @@ static void port_DecodePolygon(
     PortRemasterPrim prim;
     const FaceSlot *slot = port_FindFace(g_prim);
     const FaceSlot *face = slot;
+    const EffectSlot *effect = port_FindEffect(g_prim);
     s32 corner_count = (code & CODE_QUAD) ? 4 : 3;
     u32 clut = 0;
     s32 at = 0;
@@ -1702,6 +1940,7 @@ static void port_DecodePolygon(
      * ground and painted black (port_remaster.h) */
     prim.is_shadow = slot != NULL && slot->is_shadow;
     prim.is_fighter = slot != NULL && slot->is_fighter;
+    prim.is_effect = effect != NULL;
     prim.ot_slot = (slot != NULL) ? slot->ot_slot : -1;
     if (prim.is_shadow) {
         g_counts.shadows++;
@@ -1739,6 +1978,17 @@ static void port_DecodePolygon(
                 clut = words[at] >> HALF_SHIFT;
             }
             at++;
+        }
+        if (effect != NULL && effect->is_sprite) {
+            if (!port_PlaceSpriteCorner(
+                    effect, state, corner, stored_x, stored_y)) {
+                corner->x = corner->ix << PORT_REMASTER_FRACTION;
+                corner->y = corner->iy << PORT_REMASTER_FRACTION;
+                corner->depth = 0;
+                prim.has_depth = FALSE;
+                prim.has_place = FALSE;
+            }
+            continue;
         }
         if (face != NULL) {
             point = &face->point[i];
@@ -1792,6 +2042,13 @@ static void port_DecodePolygon(
             g_counts.fighter_unplaced++;
             g_frame_counts.fighter_unplaced++;
         }
+    } else if (prim.is_effect) {
+        g_counts.effect_faces++;
+        g_frame_counts.effect_faces++;
+        if (!prim.has_place) {
+            g_counts.effect_unplaced++;
+            g_frame_counts.effect_unplaced++;
+        }
     } else if (prim.id.object != 0 && !prim.has_place) {
         g_counts.walked_unplaced++;
         g_frame_counts.walked_unplaced++;
@@ -1820,6 +2077,7 @@ static void port_DecodeRectangle(
     prim.depth_shift = 0;
     prim.is_shadow = FALSE;
     prim.is_fighter = FALSE;
+    prim.is_effect = FALSE;
     prim.ot_slot = -1;
     prim.id.object = 0;
     prim.id.group = 0;

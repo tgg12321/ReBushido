@@ -5,7 +5,8 @@ nothing shown (docs/PORT.md, "Remastered", "More pictures a second").
     python3 tools/port_fps_prove.py --image "Bushido Blade 2 (USA).cue"
             [--plans port_game,port_other_fight,port_bugfixes]
             [--phases 5] [--scale 2] [--out build/fps] [--quick]
-            [--bits 64,32]
+            [--bits 64,32] [--effects original|exact|smooth]
+            [--smooth-light off|on]
 
 For each play test's plan it runs build/port-gl/rebushido-gl with each
 game frame drawn as `--phases` pictures: the first the frame on show, the
@@ -51,11 +52,19 @@ STRIP_BLANKS = 12
 
 
 def run(args, log, quiet=False):
-    """The run's output into `log`; its own output is the game's trace."""
+    """The run's output into `log`. Its own output is the game's trace. A quiet run's error
+    output goes beside it (`log` + `.err`) rather than nowhere, and a run
+    that ends badly says so with the last of it: a run that stopped before
+    its first frame otherwise leaves only an empty log."""
     started = time.time()
-    with open(log, 'w', encoding='utf-8', errors='replace', newline='\n') as f:
-        subprocess.run(args, stdout=f,
-                       stderr=subprocess.DEVNULL if quiet else f, cwd=ROOT)
+    with open(log, 'w', encoding='utf-8', errors='replace', newline='\n') as f, \
+            open(log + '.err' if quiet else os.devnull, 'w', encoding='utf-8',
+                 errors='replace', newline='\n') as err:
+        done = subprocess.run(args, stdout=f, stderr=err if quiet else f, cwd=ROOT)
+    if done.returncode != 0:
+        with open(log + '.err' if quiet else log, encoding='utf-8', errors='replace') as f:
+            last = f.read().splitlines()[-3:]
+        print('%s: the run ended with %d: %s' % (log, done.returncode, ' / '.join(last)))
     return time.time() - started
 
 
@@ -159,6 +168,12 @@ def main():
     # pair, so this is the path to prove.
     ap.add_argument('--stage-mesh', default='on',
                     choices=('on', 'off', 'every'))
+    # How the effects are drawn and whether the light is worked out at
+    # each pixel (docs/PORT.md, "The effects", "Lighting"): what the
+    # window has with nothing said, unless asked.
+    ap.add_argument('--effects', default='original',
+                    choices=('original', 'exact', 'smooth'))
+    ap.add_argument('--smooth-light', default='off', choices=('off', 'on'))
     args = ap.parse_args()
     if not os.path.isfile(args.image):
         print('port-fps: no %s: --image names your own image of the disc'
@@ -181,7 +196,8 @@ def main():
         plan = gl.write_plan(name, os.path.join(folder, 'plan.txt'))
         common = [os.path.join('.', PROGRAM), '--image', args.image,
                   '--plan', plan, '--out', folder, '--graphics', 'remastered',
-                  '--stage-mesh', args.stage_mesh]
+                  '--stage-mesh', args.stage_mesh, '--effects', args.effects,
+                  '--smooth-light', args.smooth_light]
         print('%s: every frame drawn as %d pictures, at scale %d'
               % (name, args.phases, args.scale))
         seconds = run(common + ['--gl-scale', str(args.scale),
@@ -206,7 +222,9 @@ def main():
         # the game could possibly see of it.
         both = [os.path.join('.', PROGRAM), '--image', args.image,
                 '--plan', plan, '--out', folder, '--graphics', 'remastered',
-                '--stage-mesh', args.stage_mesh, '--gl-scale', '1', '--trace']
+                '--stage-mesh', args.stage_mesh, '--effects', args.effects,
+                '--smooth-light', args.smooth_light, '--gl-scale', '1',
+                '--trace']
         print('%s: the game with the pictures between frames on and off '
               '(%d-bit)' % (name, bits))
         run(both + ['--gl-tween', '2'],

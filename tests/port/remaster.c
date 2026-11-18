@@ -278,6 +278,16 @@ static void test_View(void) {
     CHECK_EQ(port_ReadRemasterShadows("softer"), -1);
     CHECK_EQ(port_ReadRemasterShadows(""), -1);
 
+    /* the `effects` setting's words */
+    CHECK_EQ(port_ReadRemasterEffects("original"), PORT_EFFECTS_ORIGINAL);
+    CHECK_EQ(port_ReadRemasterEffects("exact"), PORT_EFFECTS_EXACT);
+    CHECK_EQ(port_ReadRemasterEffects("smooth"), PORT_EFFECTS_SMOOTH);
+    CHECK_EQ(port_ReadRemasterEffects("smoother"), -1);
+    CHECK_EQ(port_ReadRemasterEffects(""), -1);
+    CHECK(test_TextsAreEqual(
+        port_NameRemasterEffects(PORT_EFFECTS_SMOOTH), "smooth"));
+    CHECK(test_TextsAreEqual(port_NameRemasterEffects(3), "?"));
+
     /* the fog's reach for each, in 256ths of the console's */
     CHECK_EQ(
         port_RemasterFogFactor(PORT_DISTANCE_ORIGINAL), PORT_FOG_FACTOR_ONE);
@@ -566,6 +576,67 @@ static void test_SideInPrimitive(void) {
     CHECK_EQ(g_drawn_prims[0].has_depth, TRUE);
     CHECK_EQ(g_drawn_prims[0].corner[0].x, (30 << 16) + 0x8000);
     CHECK_EQ(g_drawn_prims[0].corner[2].depth, 0x3200);
+}
+
+/* **An effect's sprite** (port_RemasterNoteSprite): its corners are the
+ * point it was built about, as the projection put it, plus their whole-
+ * pixel offsets made as large as the size was without the rounding; all
+ * at the point's depth, and named by the effect. With `effects original`
+ * nothing of it is kept. */
+static void test_Sprite(void) {
+    static u32 center_word[1];
+    static u32 prim_words[10];
+    static u32 name_word[1];
+    PortAddress center = (PortAddress)center_word;
+    PortAddress prim = (PortAddress)prim_words;
+    const PortRemasterPrim *drawn;
+    s32 i;
+
+    for (i = 0; i < 2; i++) {
+        test_Reset();
+        port_RemasterSetEffects(
+            i == 0 ? PORT_EFFECTS_ORIGINAL : PORT_EFFECTS_EXACT);
+        /* the point a quarter of a pixel past (100, 50), which the game
+         * kept as (100, 50) and then moved two pixels across itself */
+        test_NotePoint(center, (100 << 16) + 0x4000, (50 << 16), 0x2000);
+        center_word[0] = (u32)(102 | 50 << 16);
+        /* 1000 / 100 is 10 exactly, and 1050 / 100 is 10 and a half
+         * rounded down: the sprite is a twentieth larger than the game
+         * made it */
+        port_RemasterNoteSprite(
+            prim, center, 1050, 100, (PortAddress)name_word, 3);
+        port_RemasterSetPrim(prim);
+        gp0(CODE(0x2C) | RGB(0x80, 0x80, 0x80));
+        gp0(XY(92, 40));
+        gp0(UV(0, 0, 0));
+        gp0(XY(112, 40));
+        gp0(UV(31, 0, 0x001A));
+        gp0(XY(92, 60));
+        gp0(UV(0, 31, 0));
+        gp0(XY(112, 60));
+        gp0(UV(31, 31, 0));
+        port_RemasterSetPrim(0);
+        CHECK_EQ(g_drawn_count, 1);
+        drawn = &g_drawn_prims[0];
+        if (i == 0) {
+            CHECK_EQ(drawn->is_effect, FALSE);
+            CHECK_EQ(drawn->has_place, FALSE);
+            continue;
+        }
+        CHECK_EQ(drawn->is_effect, TRUE);
+        CHECK_EQ(drawn->has_place, TRUE);
+        CHECK_EQ(drawn->has_depth, TRUE);
+        CHECK(drawn->id.object == (PortAddress)name_word);
+        CHECK_EQ(drawn->id.piece, 3);
+        /* (102.25, 50) less ten pixels times 1.05 across and down */
+        CHECK_EQ(drawn->corner[0].x, (102 << 16) + 0x4000 - 10 * 0x10CCC);
+        CHECK_EQ(drawn->corner[0].y, (50 << 16) - 10 * 0x10CCC);
+        CHECK_EQ(drawn->corner[3].x, (102 << 16) + 0x4000 + 10 * 0x10CCC);
+        CHECK_EQ(drawn->corner[3].depth, 0x2000);
+        CHECK_EQ(port_GetRemasterCounts()->effect_faces, 1);
+        CHECK_EQ(port_GetRemasterCounts()->effect_unplaced, 0);
+    }
+    port_RemasterSetEffects(PORT_EFFECTS_ORIGINAL);
 }
 
 /* **Which face of which thing a primitive is a drawing of** -- the name
@@ -926,6 +997,7 @@ void test_Main(void) {
     test_Limits();
     test_Side();
     test_SideInPrimitive();
+    test_Sprite();
     test_Identity();
     test_Shadow();
     test_Frames();
