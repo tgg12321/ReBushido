@@ -687,5 +687,12 @@ such a program does not have.)
   the runs wrote (logs, pictures, memory, video memory, the emulator's
   states, the cards) the same, byte for byte, 998 of them each time.
   So a test that fails on a busy machine has not failed for being slow.
+  Measured again on 2026-11-18 with the pads' fix: `-j 1` against `-j 4`
+  beside 16 programs keeping processors busy (twice) and `-j 8` beside
+  12, while other builds ran: the same 998 files, but for one sound-chip
+  file (`.spu`) of `port_sound`'s emulator run in two of the three, in
+  its first 4 KB alone, the chip's buffers of recent samples, which the
+  emulator fills at its sound thread's own pace and which no test
+  compares (`tools/play/spu.py`).
   A run whose disc, program or names are written while it runs (a build
   of the discs beside it) fails as that, and asks to be run again.
