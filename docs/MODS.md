@@ -234,6 +234,10 @@ makes its pictures from.
 - A pixel of the picture whose alpha is under a half is not drawn;
   whether a pixel mixes, on a half-transparent face, is still the game's
   texel's to say.
+- The stage's pieces -- its railings, fences, walls and roofs -- drawn
+  from the ground's mesh (`stage_props_mesh`, PORT.md, "The stage's
+  pieces as meshes") read the pictures the same way, each face inside its
+  own rectangle.
 - With no mod's textures nothing is looked up and no shader takes the
   path; with `--gl-exact` neither.
 

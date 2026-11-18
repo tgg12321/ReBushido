@@ -2691,6 +2691,132 @@ where there is one (`src/port/gl/gl_scene.c`), each face inside its own
 rectangle of texels, which every vertex carries, and with its colours
 made to follow the fog's two levels as the game's texels do. With no mod
 the mesh draws exactly what it did.
+### The stage's pieces as meshes
+
+The owner, on a real card at 85 Hz with the pictures between frames on:
+"railings and fences are acting jittery and strangely on a lot of
+maps." Everything of a stage that stands on the ground and is not a tile
+-- the railings, the fences, the walls, the posts, the roofs -- is a
+**piece** (`StageNode`, `stage.h`): a node with a mesh, a place and three
+angles, read from the stage file (`stage_ReadCells`), queued from the
+cells the camera sees (`stage_Draw`) and projected again every frame by
+`render_DrawQueue`. With the ground drawn as one mesh, the pieces were
+the last of the stage still drawn from the game's own primitives, and
+three things made them move where nothing moved:
+
+- **Each corner is the coprocessor's projection of that frame**, from a
+  matrix the renderer rounds to 1.12 and a node's scale chosen by its
+  distance (`render_SetupNode`): a corner a pixel of the console off,
+  and on a thin rail seen edge on that is the whole rail.
+- **The pictures between two frames pair a face with a face**
+  (`gl_tween.c`): a face one frame has and the next has not -- the
+  console drops one turned away, off its screen or with no depth -- is
+  held where it is and then jumps; on a railing, which is many small
+  faces at every angle, that is the "strangely".
+- **What is left out is the console's per face**, so a fence's faces come
+  and go one by one at the edges of the picture.
+
+**`stage_props_mesh on` builds every piece into the ground's mesh**
+(`src/port/gl/gl_stage.c`), in the world, when the stage is first drawn,
+and draws it with the ground, by the same camera: still where the camera
+is still, and in a picture between two frames moved by the camera alone.
+The game goes on drawing its pieces exactly as it did; the backend leaves
+out the primitives of a piece the mesh draws, as it leaves out the
+tiles'.
+
+**What is read, and how.** A piece's mesh is read as `render_DrawQueue`
+reads it -- parts, each a count of points and the form they are kept in
+(threes of SVECTORs, or packed halfwords), then groups of records, a
+group's type naming the routine that draws it -- and each record as that
+routine reads it (`render_EmitFT3` and its eleven neighbours): the
+corners among the part's points, the texture page, colour table and
+points, and the normals. A point is put into the world by the piece's
+own matrix and place, or its place alone where the renderer draws it
+unrotated (the stage file's angles test, `stage_ReadCells`). A face is
+lit as the routine lights it: the coprocessor's own `NCS` on the
+record's normal, through the light matrix turned into the piece's space
+by the game's own `math_MulMatrix` (`render_LoadTurnedLights`), with the
+whole coprocessor put back afterwards; a Gouraud face at each corner,
+the first corner of a quad by the face's own normal as `render_EmitGT4`
+does; the back of a face drawn from both sides with its normal turned
+bit for bit, and of a `GT4` the second and fourth corners' x and y not
+at all, as the renderer has it; the colour and code of a `GT` group, and
+of the packed table's `FT3`, its first record's. A face whose code says
+it mixes is not built: it stays the game's primitive, at its own place
+in the painting. A piece holding any group of another type (the black
+faces of a prebuilt mesh, a tinted one, outlines) is not built at all
+and keeps its own primitives; the log says how many pieces each stage's
+mesh holds. **Every piece of all 38 stages is read**: N pieces, N faces.
+
+**What is left out, as the console leaves it out**, of each face, in the
+shader, from the face's own corners which every vertex carries (as the
+ground's): a face turned away (the sign of the three first corners'
+volume with the eye, `render_FaceFront`), or for the back of a two-sided
+face one turned towards the camera; a face whose depth -- the plain
+average of its corners', each held at 0 as the coprocessor holds a depth
+behind the eye -- is none; and, for the packed table's faces and the
+unlit ones alone, a face whose ordering-table slot is nearer than the
+cutoff. A piece is drawn only in a frame that queued it (the cells), so
+`draw_distance` holds for it as for the ground; which pieces those are
+is taken with the camera where the renderer draws the tiles
+(`PortStageView.pieces`), so a picture between two frames draws the
+pieces of the frame on show.
+
+**A piece the game changes keeps its own primitives.** The pieces are
+taken down once, when the stage is first drawn (`port_RemasterNotePieces`,
+`src/port/remaster.c`: its mesh, matrix and light matrix); a piece whose
+kind, mesh, flags, lights or world matrix are not what they were is left
+out of the mesh from that frame on and drawn from the game's faces -- a
+bamboo cut down on the bamboo thicket, a sign on the bus stop, what
+remains of a post on the lumberyard (`stage_CutProp`, which makes the
+piece what remains and moves it).
+
+**Where it sits in the painting.** A piece's face is sorted by the
+console at its average depth, not its farthest corner's as a tile is, and
+that is what it is held by: it writes its depth into the depth buffer
+pushed back by a 256th of that average (so of a piece and the ground, or
+two pieces, in one plane the one the console painted later wins), and
+its slot into the ground's slots (`render_OtIndex`: a node's depth goes
+into the table shifted by three in all, its scale undone), so a fighter
+in front of a railing is drawn over it and one behind it is hidden by
+it, by the console's own order. The scene is held against it as against
+the ground. In the shadows' mask a piece is marked as the game's own
+faces were (`port_GlStageDrawOccluders`), so a shadow on the ground
+behind a railing does not darken the railing. The walls seen through
+(`see_through`) thin a piece as they thin the ground, and a mod's
+pictures of the stage's pages (`gl_scene.c`) are read for a piece's
+faces as for the ground's. (A smoother lighting of the ground, when it
+comes, has the pieces' normals to light: the hook is the colour each
+vertex carries, made in one place, `port_GlStagePieceLight`.)
+
+**How it is proved.** The pieces against the game's own primitives,
+stage by stage (`tools/port_stage_prove.py --props`, into
+`build/stageprops/`): both runs draw the ground from the mesh, one the
+pieces too, by the ground's own bar. VERDICTS
+
+**How still it stands** (`tools/port_props_prove.py`): each stage's tour
+run three times, each frame drawn as five pictures -- the pieces from
+the game's primitives, from the mesh, and left out (which says which
+pixels are theirs) -- and over a piece's pixels in neighbouring pictures
+the mean change of a pixel from one picture to the next (`churn`) and
+the second difference of three in a row (`jolt`: what moves smoothly
+has little of it, a corner that wobbles or a face held and then jumping
+a lot). JITTER
+
+`stage_props_mesh` is **on with nothing said**, and needs the ground's
+mesh: where the ground is the game's tiles the pieces are too. A stage
+the measurements did not hold is a 0 in `g_stage_props_proved` and keeps
+the game's faces, and the log says which path a stage's pieces took.
+`--stage-props every|on|off|hide` is the prover's (`hide` leaves them
+out, for the mask).
+
+**What is left.** The pieces are the game's own shapes: a railing is
+still a few flat faces with a painted texture. Remodelled pieces, as the
+fighters have, would be a mod's: a file for a piece's mesh read in the
+place of the stage's, which this path is ready for (the faces are built
+in one place from the piece's matrix). A fence's cut-out texture is cut
+at its texels' edges as the game's own faces were; with `antialiasing`
+the edges are smoothed as every other edge is.
 ### The sky
 
 **What the console has.** No sky. A fight's frame begins with a fill of

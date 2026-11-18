@@ -97,7 +97,10 @@ No dates.
       a terrace's face that runs back past him does not), and a picture between
       two frames has
       only to move the camera: all 38 stages are measured against the
-      console's own tiles ("The ground as one mesh"). Left of it: a
+      console's own tiles ("The ground as one mesh"). What stands on
+      the ground -- railings, fences, walls, roofs -- is drawn from the
+      same mesh (`stage_props_mesh`, on with nothing said), so it stands
+      still between frames ("The stage's pieces as meshes"). Left of it: a
       stage's geometry was never meant to be seen whole, so its far edge
       shows where the ground stops.
    4. **The wide picture.** Done (`aspect`, and `16:9` is what the

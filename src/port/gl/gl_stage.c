@@ -358,6 +358,7 @@ static struct {
     PortStageView drawn_view;
     PortRemasterPrim drawn_paint;
     PortAddress pieces; /* the first piece, which the rest follow */
+    const PortStagePiece *piece_list; /* as they were taken down */
     s32 piece_count;
     /* which pieces the mesh holds: one whose mesh it could not read all
      * of is left to the game's own primitives, whole */
@@ -2055,22 +2056,26 @@ static void port_GlStagePieces(void) {
         }
     }
     g_stage.pieces = pieces[0].node;
+    g_stage.piece_list = pieces;
     g_stage.piece_count = count;
 }
 
 /* Which piece of the stage this object is, or -1. */
 static s32 port_GlStagePieceOf(PortAddress object) {
-    PortAddress offset;
+    s32 i;
 
+    /* by the addresses the pieces were taken down at, and not by the
+     * size of a StageNode: this file's build lays the game's structures
+     * out with pointers of its own size, the game's with PTR32 slots */
     if (g_stage.piece_count == 0 || object < g_stage.pieces) {
         return -1;
     }
-    offset = object - g_stage.pieces;
-    if (offset % sizeof(StageNode) != 0 ||
-        offset / sizeof(StageNode) >= (PortAddress)g_stage.piece_count) {
-        return -1;
+    for (i = 0; i < g_stage.piece_count; i++) {
+        if (g_stage.piece_list[i].node == object) {
+            return i;
+        }
     }
-    return (s32)(offset / sizeof(StageNode));
+    return -1;
 }
 
 /* The whole of the stage's ground into one vertex buffer. */

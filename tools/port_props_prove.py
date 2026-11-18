@@ -4,7 +4,7 @@ between two of the game's frames, with nothing shown (docs/PORT.md,
 "The stage's pieces as meshes").
 
     python3 tools/port_props_prove.py --image "Bushido Blade 2 (USA).cue"
-            [--stages 5,13,19,21,22,29] [--at 3400] [--blanks 12]
+            [--stages 5,13,19,21,22,29] [--at 3020] [--blanks 12]
             [--phases 5] [--scale 2] [--still] [--out build/stageprops-jitter]
 
 The railings, fences, walls and roofs of a stage are its pieces. Drawn
@@ -38,6 +38,8 @@ the same either way. It prints a table and writes `jitter.tsv`.
 """
 import argparse
 import os
+import re
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -75,6 +77,21 @@ def pictures(folder, phases):
         if phase < phases - 1:
             keep.append(name)
     return keep
+
+
+def pairing(err):
+    """The mean of a picture's primitives to pair between two frames and
+    of those left unpaired (gl_tween.c's own line)."""
+    prims = unpaired = count = 0
+    with open(err, encoding='utf-8', errors='replace') as f:
+        for line in f:
+            m = re.search(r'gl tween blank \d+ prims (\d+) mixed \d+ '
+                          r'unpaired (\d+)', line)
+            if m:
+                prims += int(m.group(1))
+                unpaired += int(m.group(2))
+                count += 1
+    return prims // max(count, 1), unpaired // max(count, 1)
 
 
 def measure(folders, names):
@@ -156,7 +173,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--image', default='Bushido Blade 2 (USA).cue')
     ap.add_argument('--stages', default='5,13,19,21,22,29')
-    ap.add_argument('--at', type=int, default=3400)
+    ap.add_argument('--at', type=int, default=3020)
     ap.add_argument('--blanks', type=int, default=12)
     ap.add_argument('--phases', type=int, default=5)
     ap.add_argument('--scale', type=int, default=2)
@@ -174,7 +191,9 @@ def main():
         return 1
     stages = [int(s) for s in args.stages.split(',')]
     os.makedirs(args.out, exist_ok=True)
-    frames = args.at + args.blanks + 60
+    # the run ends with the strip: every picture of the fight up to it
+    # is drawn as `--phases` pictures too, which is most of the time
+    frames = args.at + args.blanks + 4
     toml_path = tour(os.path.join(args.out, 'tour.toml'), frames, args.still)
     rows = []
     for stage in stages:
@@ -185,6 +204,7 @@ def main():
             toml_path, os.path.join(folder, 'plan.txt'), stage, frames)
         folders = {}
         traces = {}
+        going = []
         for run in RUNS:
             shots = os.path.join(folder, run)
             os.makedirs(shots, exist_ok=True)
@@ -201,16 +221,27 @@ def main():
                        '--gl-strip', '%d,%d' % (args.at, args.blanks),
                        '--stage-mesh', 'every', '--stage-props',
                        'every' if run == 'on' else run, '--trace']
-            log = os.path.join(folder, run + '.log')
-            remaster.run(command, log, os.path.join(folder, run + '.err'))
+            # the three runs at once: each is one program of its own
+            log = open(os.path.join(folder, run + '.log'), 'w')
+            err = open(os.path.join(folder, run + '.err'), 'w')
+            going.append((run, subprocess.Popen(command, stdout=log,
+                                                stderr=err, cwd=ROOT),
+                          log, err))
             folders[run] = shots
-            with open(log, 'rb') as f:
+        for run, process, log, err in going:
+            process.wait()
+            log.close()
+            err.close()
+            with open(os.path.join(folder, run + '.log'), 'rb') as f:
                 traces[run] = f.read()
         names = pictures(folders['off'], args.phases)
         names = [n for n in names
                  if all(os.path.exists(os.path.join(folders[r], n))
                         for r in RUNS)]
         got = measure(folders, names)
+        for run in ('off', 'on'):
+            got[run]['prims'], got[run]['unpaired'] = pairing(
+                os.path.join(folder, run + '.err'))
         same = traces['off'] == traces['on'] == traces['hide']
         row = (stage, STAGE_NAMES[stage], same, len(names), got)
         rows.append(row)
@@ -238,14 +269,16 @@ def print_row(row):
     off = got['off']
     on = got['on']
     print('%-24s trace %-6s pictures %3d  churn %6.2f -> %6.2f  '
-          'jolt %6.2f -> %6.2f  jumps %6.2f -> %6.2f per mille'
+          'jolt %6.2f -> %6.2f  jumps %6.2f -> %6.2f per mille  '
+          'paired a frame %d -> %d, unpaired %d -> %d'
           % (name, 'same' if same else 'DIFFER', count,
              off['churn'] / max(off['pixels'], 1),
              on['churn'] / max(on['pixels'], 1),
              off['jolt'] / max(off['jolt_pixels'], 1),
              on['jolt'] / max(on['jolt_pixels'], 1),
              1000.0 * off['jumps'] / max(off['jolt_pixels'], 1),
-             1000.0 * on['jumps'] / max(on['jolt_pixels'], 1)))
+             1000.0 * on['jumps'] / max(on['jolt_pixels'], 1),
+             off['prims'], on['prims'], off['unpaired'], on['unpaired']))
 
 
 if __name__ == '__main__':
