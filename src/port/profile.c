@@ -10,6 +10,7 @@ s32 g_port_profile_on;
 
 static s32 g_port_profile_part;
 static u32 g_port_profile_since;
+u32 (*g_port_profile_clock)(void) = port_HostTicks;
 static u32 g_port_profile_ticks[PORT_PROFILE_PARTS];
 
 static const char * const g_port_profile_names[PORT_PROFILE_PARTS] = {
@@ -26,7 +27,7 @@ s32 port_ProfileSwitch(s32 part) {
     if (!g_port_profile_on) {
         return was;
     }
-    now = port_HostTicks();
+    now = g_port_profile_clock();
     g_port_profile_ticks[was] += now - g_port_profile_since;
     g_port_profile_since = now;
     g_port_profile_part = part;

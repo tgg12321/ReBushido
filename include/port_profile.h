@@ -38,6 +38,11 @@ extern s32 g_port_profile_on;
 /* From now the time is `part`'s: the part it was is returned, to be
  * switched back to. */
 extern s32 port_ProfileSwitch(s32 part);
+/* The clock the parts are counted by, in the host's ticks: the wall's
+ * (port_HostTicks), or the window's thread's own processor time where a
+ * run asks for it (RB_PROFILE_CPU; tools/port_budget.py), which another
+ * program on the machine does not lengthen. */
+extern u32 (*g_port_profile_clock)(void);
 /* Each part's time since the last take, in the host's ticks
  * (port_host.h), into `ticks` (PORT_PROFILE_PARTS of them); and from
  * zero again. */

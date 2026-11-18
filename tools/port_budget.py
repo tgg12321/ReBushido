@@ -61,12 +61,13 @@ RATIO_MAX = 2.0
 CLOTH_SHARE_MAX = 0.20
 RUN_AHEADS = (0, 1, 2)
 # The processor's own parts of a fight frame with nothing run ahead, in
-# milliseconds (here, 2026-11-18: about 13; the cloth kept out for every
-# picture, as merged at 1e6878df3: over 40). tools/gate.py runs this step
-# alone, after every other (ALONE): 23 was measured beside the gate's
-# builds.
+# milliseconds of the window's thread's own processor time (RB_PROFILE_CPU),
+# which other programs on the machine do not lengthen (here, 2026-11-18:
+# 20.5, of it the cloth 10; with the cloth kept out for every picture, as
+# merged at 1e6878df3, over 40). tools/gate.py runs this step alone, after
+# every other (ALONE), all the same.
 OWN_PARTS = ('game', 'raster', 'sound', 'cloth')
-OWN_MAX = 18.0
+OWN_MAX = 26.0
 # What run_ahead 1 may cost over 0 beyond a bare step of the game and the
 # state kept and put back (here: about 1).
 AHEAD_OVER_MAX = 4.0
@@ -146,8 +147,10 @@ def run(run_ahead, image, mods, plan):
     config = os.path.join(folder, 'rebushido.cfg')
     with open(config, 'w', encoding='utf-8', newline='\n') as f:
         f.write(SETTINGS.format(run_ahead=run_ahead))
+    # the window's thread's own processor time, which the gate's other
+    # runs on the machine do not lengthen (port_profile.h)
     env = dict(os.environ, SDL_VIDEODRIVER='offscreen', SDL_AUDIODRIVER='dummy',
-               LIBGL_ALWAYS_SOFTWARE='1')
+               LIBGL_ALWAYS_SOFTWARE='1', RB_PROFILE_CPU='1')
     for name in ('RB_HD_CLOTH', 'RB_HD_CLOTH_HOLD'):
         env.pop(name, None)
     profile = os.path.join(folder, 'profile.txt')

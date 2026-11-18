@@ -276,6 +276,16 @@ static s32 g_port_menu_texture_h;
 
 static void port_SwapPicture(void);
 static void port_ReadInput(u32 blank);
+#if !defined(_WIN32)
+/* The window's thread's own processor time, in the host's ticks: what
+ * --profile counts by where RB_PROFILE_CPU says (port_profile.h). */
+static u32 port_ThreadTicks(void) {
+    struct timespec now;
+
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now);
+    return (u32)now.tv_sec * 10000000U + (u32)now.tv_nsec / 100U;
+}
+#endif
 static void port_ShownDisplay(PortDisplay *display);
 
 /* ---- names ---- */
@@ -1047,6 +1057,11 @@ static void port_OpenWindow(void) {
         }
         fputc('\n', g_port_profile_file);
         g_port_profile_on = 1;
+#if !defined(_WIN32)
+        if (getenv("RB_PROFILE_CPU") != NULL) {
+            g_port_profile_clock = port_ThreadTicks;
+        }
+#endif
         /* what was counted before is no blank's */
         port_ProfileTake(ticks);
     }
