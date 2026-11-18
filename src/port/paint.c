@@ -55,6 +55,10 @@
 /* What one painter's counters take, so that two painters never share a
  * line of the processor's cache. */
 #define CACHE_LINE 64
+/* A word no command begins with in the ring (a GP0 no-op's code, which
+ * is never given): the next word is how many words after it the first
+ * painter does alone (port_PaintGiveAlone). */
+#define PAINT_ALONE 0x00A10E00U
 
 /* What waited for the painters (port_PaintReport). */
 enum {
@@ -85,9 +89,16 @@ typedef struct {
     s32 hold;    /* the game's thread asks the painters to hold still */
     s32 stop;
     s32 is_skipping; /* commands were not given since the settings */
+    /* the words done alone: painters arrived at them, and the place in
+     * the ring of the last the first painter has done */
+    s32 arrived;
+    u32 alone_done;
     u32 fresh; /* `given` when the squares were last taken afresh */
     u32 square_write[SQUARES];
     u32 square_read[SQUARES];
+    /* ... and written by a primitive, which only its own painter's lines
+     * are: a copy or a load done alone keeps its place among all of them */
+    u32 square_drawn[SQUARES];
     /* the waits that found something still to paint, by what waited, and
      * their time in the host's ticks */
     u32 waits[PAINT_WAIT_KINDS];
@@ -261,8 +272,23 @@ void port_PaintSyncWrite(s32 x, s32 y, s32 w, s32 h) {
     port_PaintWaitFor(need, PAINT_WAIT_WRITE);
 }
 
-s32 port_PaintMayGiveWrites(void) {
-    return g_paint.is_threaded && g_paint.count == 1;
+s32 port_PaintMayGiveWrites(void) { return g_paint.is_threaded; }
+
+void port_PaintGiveAlone(s32 count, const PortPaintRect *write,
+                         const PortPaintRect *read) {
+    u32 words[2];
+    PortPaintRect none;
+    u32 end;
+
+    words[0] = PAINT_ALONE;
+    words[1] = (u32)count;
+    none.w = 0;
+    none.h = 0;
+    port_PaintSubmit(words, 2, &none, &none, &none);
+    /* its places are done with only once all its words are */
+    end = g_paint.given + (u32)count;
+    port_PaintMark(g_paint.square_write, write, end);
+    port_PaintMark(g_paint.square_read, read, end);
 }
 
 s32 port_PaintIsInWay(s32 x, s32 y, s32 w, s32 h) {
@@ -350,15 +376,16 @@ void port_PaintSubmit(const u32 *words, s32 count, const PortPaintRect *write,
         for (i = 0; i < SQUARES; i++) {
             g_paint.square_write[i] = g_paint.given;
             g_paint.square_read[i] = g_paint.given;
+            g_paint.square_drawn[i] = g_paint.given;
         }
         g_paint.fresh = g_paint.given;
     }
     /* a texture another painter may still be drawing into */
     if (g_paint.count > 1 && (read->w > 0 || table->w > 0)) {
-        u32 need = port_PaintNeeds(g_paint.square_write, read->x, read->y,
+        u32 need = port_PaintNeeds(g_paint.square_drawn, read->x, read->y,
                                    read->w, read->h, g_paint.given - RING_WORDS);
 
-        need = port_PaintNeeds(g_paint.square_write, table->x, table->y,
+        need = port_PaintNeeds(g_paint.square_drawn, table->x, table->y,
                                table->w, table->h, need);
         port_PaintWaitFor(need, PAINT_WAIT_TEXTURE);
     }
@@ -369,6 +396,7 @@ void port_PaintSubmit(const u32 *words, s32 count, const PortPaintRect *write,
     }
     g_paint.given += (u32)count;
     port_PaintMark(g_paint.square_write, write, g_paint.given);
+    port_PaintMark(g_paint.square_drawn, write, g_paint.given);
     port_PaintMark(g_paint.square_read, read, g_paint.given);
     port_PaintMark(g_paint.square_read, table, g_paint.given);
     port_PaintPublish(&g_paint.written, g_paint.given);
@@ -413,6 +441,7 @@ s32 port_PaintStart(const PortPaintHost *host, s32 count) {
     for (i = 0; i < SQUARES; i++) {
         g_paint.square_write[i] = g_paint.given;
         g_paint.square_read[i] = g_paint.given;
+        g_paint.square_drawn[i] = g_paint.given;
     }
     for (i = 0; i < count; i++) {
         PortPainter *painter = &g_painters[i];
@@ -476,6 +505,62 @@ static s32 port_PaintHasNews(u32 at) {
            port_PaintFlag(&g_paint.hold) || port_PaintFlag(&g_paint.stop);
 }
 
+/* The ring's word at `at`, once it is there. */
+static u32 port_PaintWord(u32 at) {
+    s32 spins = 0;
+
+    while (port_PaintLoad(&g_paint.written) - at - 1 >= RING_WORDS) {
+        if (++spins < SPINS_BEFORE_YIELD) {
+            port_PaintSpin();
+        } else {
+            g_paint.host.yield();
+        }
+    }
+    return g_paint_ring[at & RING_MASK];
+}
+
+/* Words done alone (port_PaintGiveAlone), from `at`, which is their
+ * marker: the first painter waits for the others to arrive and does
+ * them, of all lines; the others arrive and wait for it. The place after
+ * them. */
+static u32 port_PaintAlone(PortPainter *painter, s32 index, u32 at) {
+    u32 count = port_PaintWord(at + 1);
+    u32 end = at + 2 + count;
+    s32 spins = 0;
+
+    if (index != 0) {
+        __atomic_add_fetch(&g_paint.arrived, 1, __ATOMIC_SEQ_CST);
+        while (port_PaintLoad(&g_paint.alone_done) != end) {
+            if (++spins < SPINS_BEFORE_YIELD) {
+                port_PaintSpin();
+            } else {
+                g_paint.host.yield();
+            }
+        }
+        return end;
+    }
+    while (port_PaintFlag(&g_paint.arrived) != g_paint.count - 1) {
+        if (++spins < SPINS_BEFORE_YIELD) {
+            port_PaintSpin();
+        } else {
+            g_paint.host.yield();
+        }
+    }
+    port_PaintSetFlag(&g_paint.arrived, 0);
+    {
+        s32 band_bits = painter->gpu.band_bits;
+        u32 i;
+
+        painter->gpu.band_bits = 0;
+        for (i = at + 2; i != end; i++) {
+            port_PaintGp0(&painter->gpu, port_PaintWord(i));
+        }
+        painter->gpu.band_bits = band_bits;
+    }
+    port_PaintPublish(&g_paint.alone_done, end);
+    return end;
+}
+
 void port_PaintRun(s32 index) {
     PortPainter *painter = &g_painters[index];
     u32 at = port_PaintLoad(&painter->done);
@@ -523,7 +608,16 @@ void port_PaintRun(s32 index) {
         }
         start = port_HostTicks();
         while (at != written) {
-            port_PaintGp0(&painter->gpu, g_paint_ring[at & RING_MASK]);
+            u32 word = g_paint_ring[at & RING_MASK];
+
+            if (word == PAINT_ALONE && painter->gpu.count == 0 &&
+                !painter->gpu.is_in_line && !painter->gpu.load.is_active) {
+                at = port_PaintAlone(painter, index, at);
+                port_PaintPublish(&painter->done, at);
+                written = port_PaintLoad(&g_paint.written);
+                continue;
+            }
+            port_PaintGp0(&painter->gpu, word);
             at++;
             port_PaintPublish(&painter->done, at);
             /* held between two commands */

@@ -1315,10 +1315,10 @@ static void port_FollowLine(PortGpu *gpu, u32 word) {
     gpu->line_has_color = 0;
 }
 
-/* A copy given to the painter, in a step whose frames were run ahead,
- * where it is in its way (a colour table the frame copies between its
- * draws): it is done in its turn (port_PaintMayGiveWrites). FALSE where
- * this side is to do it. */
+/* A copy given to the painters, in a step whose frames were run ahead,
+ * where it is in their way (a colour table the frame copies between its
+ * draws): it is done in its turn (port_PaintGiveAlone). FALSE where this
+ * side is to do it. */
 static s32 port_GiveCopy(const u32 *words) {
     PortPaintRect read;
     PortPaintRect write;
@@ -1338,7 +1338,8 @@ static s32 port_GiveCopy(const u32 *words) {
     }
     none.w = 0;
     none.h = 0;
-    port_PaintSubmit(words, COPY_WORDS, &write, &read, &none);
+    port_PaintGiveAlone(COPY_WORDS, &write, &read);
+    port_PaintSubmit(words, COPY_WORDS, &none, &none, &none);
     return TRUE;
 }
 
@@ -1404,7 +1405,9 @@ static void port_RunCommand(const u32 *words, s32 count) {
             write.w = gpu->load.w;
             write.h = gpu->load.h;
             gpu->is_load_painted = 1;
-            port_PaintSubmit(words, count, &write, &none, &none);
+            port_PaintGiveAlone(
+                count + (gpu->load.w * gpu->load.h + 1) / 2, &write, &none);
+            port_PaintSubmit(words, count, &none, &none, &none);
             break;
         }
         port_PaintSyncWrite(gpu->load.x, gpu->load.y, gpu->load.w, gpu->load.h);

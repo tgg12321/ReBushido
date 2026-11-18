@@ -60,10 +60,16 @@ extern void port_PaintSyncRead(s32 x, s32 y, s32 w, s32 h);
 extern void port_PaintSyncWrite(s32 x, s32 y, s32 w, s32 h);
 extern void port_PaintSyncAll(void);
 /* Whether a write of video memory may be given to the painters, to be
- * done in its turn: only where there is one, since a painter reads what
- * every other's lines hold (a colour table), and only it would keep the
- * order of a write and the primitives that read the place before. */
+ * done in its turn (port_PaintGiveAlone): where they are threads. */
 extern s32 port_PaintMayGiveWrites(void);
+/* A copy or a load of `count` words, given next, done in its turn by the
+ * first painter alone, all of its lines, once every painter has painted
+ * all that came before it and before any paints what comes after: a
+ * painter reads what every other's lines hold (a colour table), so a
+ * write must keep its place among all of them. `write` and `read` are
+ * the places it writes and reads. */
+extern void port_PaintGiveAlone(s32 count, const PortPaintRect *write,
+                                const PortPaintRect *read);
 /* Whether a write of the rectangle would wait for the painters. */
 extern s32 port_PaintIsInWay(s32 x, s32 y, s32 w, s32 h);
 /* After the state is put back: everything painted, and the settings the
