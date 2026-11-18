@@ -18,6 +18,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_bench.h"
 #include "gl_fighter.h"
 #include "gl_fighter_card.h"
 #include "gl_shadow.h"
@@ -1339,6 +1340,7 @@ static void port_GlShadowPaint(void) {
     }
 
     /* the mask */
+    PORT_GPU_BEGIN(PORT_GPU_SMASK);
     glBindFramebuffer(GL_FRAMEBUFFER, g_shadow.framebuffer);
     glViewport(0, 0, picture.target_w, picture.target_h);
     glEnable(GL_SCISSOR_TEST);
@@ -1364,6 +1366,7 @@ static void port_GlShadowPaint(void) {
     /* ... and the stage's pieces the mesh drew (gl_stage.h) */
     port_GlShadowScissorBox(&cleared);
     port_GlStageDrawOccluders(g_shadow.framebuffer);
+    PORT_GPU_END();
 
     /* the darkening, into the picture */
     glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);

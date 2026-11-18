@@ -88,8 +88,8 @@ s32 g_port_gpu_on;
 s32 g_port_gpu_base = PORT_GPU_SCENE;
 
 static const char * const g_bench_names[PORT_GPU_PASSES] = {
-    "scene", "vram",    "stage", "fighters", "shadow",
-    "sky",   "resolve", "tween", "present",  "cloth",
+    "scene", "vram",    "stage", "fighters", "shadow", "sky",  "resolve",
+    "tween", "present", "cloth", "skin",     "flayer", "flay", "smask",
 };
 
 const char *port_GlBenchName(s32 pass) {

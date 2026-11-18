@@ -33,6 +33,26 @@ extern const char *port_GlFighterCardStart(void *(*getproc)(const char *));
 extern s32 port_GlFighterCardPose(
     s32 slot, u64 key, u32 vertex_buffer, s32 vertex_count,
     const float (*world)[16], const float (*turn)[9]);
+/* ... and several at once (all the fighters of a frame): each step of
+ * every new pose dispatched before the barrier after it, so that the
+ * card makes them side by side. Each ask's `pose` is set (-1: none);
+ * at most PORT_GL_CARD_ASKS are made in one batch. */
+#define PORT_GL_CARD_ASKS 24
+
+typedef struct {
+    s32 slot;
+    u64 key;
+    u32 vertex_buffer;
+    s32 vertex_count;
+    const float (*world)[16];
+    const float (*turn)[9];
+    s32 pose;
+} PortGlCardPoseAsk;
+
+extern void port_GlFighterCardPoses(PortGlCardPoseAsk *asks, s32 count);
+/* How many copies of each fighter the benchmark's stress draws, each
+ * with poses of his own: room in each slot for as many more. */
+extern void port_GlFighterCardKeep(s32 copies);
 /* The buffer holding a pose's lowest point, the greatest y of its
  * vertices, at word PORT_GL_CARD_FEET_WORD as an ordered integer
  * (port_GlFighterCardFeet in GLSL, below), or 0. */
@@ -68,6 +88,17 @@ typedef struct {
 extern void port_GlFighterCardHold(
     const PortGlCardHold *holds, s32 count, s32 pose, double gap, s32 is_held,
     s32 is_counting);
+
+/* ... and the cloths of several bodies at once, each step of every one
+ * before the barrier after it. */
+typedef struct {
+    const PortGlCardHold *holds;
+    s32 count;
+    s32 pose;
+} PortGlCardHoldSet;
+
+extern void port_GlFighterCardHolds(const PortGlCardHoldSet *sets, s32 count,
+                                    double gap, s32 is_held, s32 is_counting);
 /* While the game loads: the slot's poses given room for the model, and
  * every program run once on its bind pose, with `holds` (the model's
  * cloths, through points of nought, into buffers of the caller's): a

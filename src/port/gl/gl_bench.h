@@ -31,8 +31,15 @@ typedef enum {
     PORT_GPU_TWEEN,    /* a picture between frames: the game's primitives
                         * drawn again (gl_tween.c) */
     PORT_GPU_PRESENT,  /* the picture into the window, the counter */
-    PORT_GPU_CLOTH,    /* the HD bodies posed and the cloth made, by compute
-                        * (gl_fighter_card.c) */
+    PORT_GPU_CLOTH,    /* the HD cloth kept out of the body and made, by
+                        * compute (gl_fighter_card.c) */
+    PORT_GPU_SKIN,     /* the HD bodies posed for the cloth, by compute */
+    PORT_GPU_FLAYER,   /* the fighters' layer cleared, and taken down from
+                        * its samples */
+    PORT_GPU_FLAY,     /* the fighters' layer laid over the picture, and
+                        * into the shadows' mask */
+    PORT_GPU_SMASK,    /* the shadows' mask: cleared, the silhouettes and
+                        * what stands over the ground */
     PORT_GPU_PASSES
 } PortGpuPass;
 

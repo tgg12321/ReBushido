@@ -408,6 +408,11 @@ static struct {
     PortFighterView tiny_before[PORT_FIGHTER_SLOTS];
     PortFighterView tiny_latest[PORT_FIGHTER_SLOTS];
     s32 is_tiny_drawn;
+    /* the copy of a fighter the benchmark's stress is drawing
+     * (port_GlBenchFighterCopies), 0 the fighter himself: a copy's cloth
+     * is kept out under keys of its own, so that the card makes it once
+     * for each, as it would for so many fighters */
+    s32 copy;
     PortGlFighterCounts counts;
     char problem[512];
 } g_fighter;
@@ -1718,21 +1723,24 @@ static s32 port_GlFighterClothOfNode(
 
 /* The view's body posed on the card (gl_fighter_card.h), in the world's
  * own units: what his cloths are kept out of, and where the shadows find
- * his lowest point. Posed once for each set of his bones. The pose's
- * number, or -1. */
-static s32 port_GlFighterPoseOnCard(
-    const FighterModel *model, const PortFighterView *view, s32 slot) {
-    float world[PORT_FIGHTER_FILE_JOINTS][16];
-    float turn[PORT_FIGHTER_FILE_JOINTS][9];
+ * his lowest point. Posed once for each set of his bones: the ask for it
+ * (port_GlFighterCardPoses), with its matrices in `world` and `turn`.
+ * FALSE where the model has no buffer to pose. */
+static s32 port_GlFighterPoseAsk(
+    const FighterModel *model, const PortFighterView *view, s32 slot,
+    float (*world)[16], float (*turn)[9], PortGlCardPoseAsk *ask) {
     FighterPose pose;
     u64 key = HASH_START;
     s32 j;
 
     if (model->buffer == 0 || model->vertex_count <= 0) {
-        return -1;
+        return FALSE;
     }
     key = port_GlFighterHash(key, &view->model_id, sizeof(view->model_id));
     key = port_GlFighterHash(key, view->bone, sizeof(view->bone));
+    if (g_fighter.copy != 0) {
+        key = port_GlFighterHash(key, &g_fighter.copy, sizeof(g_fighter.copy));
+    }
     port_GlFighterPoseOf(&pose, view, NULL, 0.0);
     /* each bone's world matrix, a column after a column; and each joint's
      * turn, the bone's rotation times the inverse bind matrix's, row
@@ -1759,9 +1767,28 @@ static s32 port_GlFighterPoseOnCard(
         }
         world[j][15] = 1.0f;
     }
-    return port_GlFighterCardPose(
-        slot, key, model->buffer, model->vertex_count,
-        (const float(*)[16])world, (const float(*)[9])turn);
+    ask->slot = slot;
+    ask->key = key;
+    ask->vertex_buffer = model->buffer;
+    ask->vertex_count = model->vertex_count;
+    ask->world = (const float(*)[16])world;
+    ask->turn = (const float(*)[9])turn;
+    ask->pose = -1;
+    return TRUE;
+}
+
+/* ... posed now, alone: the pose's number, or -1. */
+static s32 port_GlFighterPoseOnCard(
+    const FighterModel *model, const PortFighterView *view, s32 slot) {
+    static float world[PORT_FIGHTER_FILE_JOINTS][16];
+    static float turn[PORT_FIGHTER_FILE_JOINTS][9];
+    PortGlCardPoseAsk ask;
+
+    if (!port_GlFighterPoseAsk(model, view, slot, world, turn, &ask)) {
+        return -1;
+    }
+    port_GlFighterCardPoses(&ask, 1);
+    return ask.pose;
 }
 
 /* **A cloth is kept out of the body once a frame** (docs/PORT.md, "Where
@@ -1773,7 +1800,7 @@ static s32 port_GlFighterPoseOnCard(
  * the cloth's points), and a picture between two frames mixes the two
  * frames' buffers in the fighters' shader. Enough are kept for the
  * shadows' two frames, the frames run ahead and five cloths a fighter. */
-#define HELD_KEPT 32
+#define HELD_KEPT 64
 
 typedef struct {
     u64 key; /* 0: nothing kept here */
@@ -1797,6 +1824,10 @@ static u64 port_GlFighterHeldKey(
     hash = port_GlFighterHash(hash, &drawn->count, sizeof(drawn->count));
     hash = port_GlFighterHash(
         hash, drawn->point, (size_t)drawn->count * sizeof(drawn->point[0]));
+    if (g_fighter.copy != 0) {
+        hash =
+            port_GlFighterHash(hash, &g_fighter.copy, sizeof(g_fighter.copy));
+    }
     return hash != 0 ? hash : 1;
 }
 
@@ -1814,27 +1845,38 @@ static HeldCloth *port_GlFighterHeldFind(s32 slot, u64 key, s32 count) {
     return NULL;
 }
 
-/* Every smooth cloth of the view kept out of its posed body: those not
- * kept yet made on the card together (gl_fighter_card.h). */
-static void port_GlFighterHoldView(
-    const FighterModel *model, const PortFighterView *view, s32 slot) {
-    static float points[PORT_FIGHTER_CLOTHS][PORT_FIGHTER_CLOTH_POINTS * 3];
-    PortGlCardHold holds[PORT_FIGHTER_CLOTHS];
+/* What one view asks of the card: its smooth cloths not kept yet, each
+ * given its place among the kept, and its body posed. */
+typedef struct {
+    PortGlCardHold hold[PORT_FIGHTER_CLOTHS];
     HeldCloth *made[PORT_FIGHTER_CLOTHS];
-    u64 keys[PORT_FIGHTER_CLOTHS];
+    u64 key[PORT_FIGHTER_CLOTHS];
     s32 places[PORT_FIGHTER_CLOTHS];
-    s32 count = 0;
-    s32 pose;
+    float points[PORT_FIGHTER_CLOTHS][PORT_FIGHTER_CLOTH_POINTS * 3];
+    float world[PORT_FIGHTER_FILE_JOINTS][16];
+    float turn[PORT_FIGHTER_FILE_JOINTS][9];
+    s32 count;
+} HoldAsk;
+
+/* The view's smooth cloths that are not kept yet, into `ask`: each one's
+ * buffer taken from the slot's ring (its key 0 until it is made). The
+ * cloths asked for, 0 where every one is kept. */
+static s32 port_GlFighterHoldAsk(
+    const FighterModel *model, const PortFighterView *view, s32 slot,
+    HoldAsk *ask) {
     s32 i;
     s32 k;
 
-    for (k = 0; k < view->cloth_count && count < PORT_FIGHTER_CLOTHS; k++) {
+    ask->count = 0;
+    for (k = 0; k < view->cloth_count && ask->count < PORT_FIGHTER_CLOTHS;
+         k++) {
         const PortFighterCloth *drawn = &view->cloth[k];
         const FighterCloth *cloth = port_GlFighterClothFor(model, drawn);
         PortGlClothSums sums;
         HeldCloth *held;
         u64 key;
         s32 vertices;
+        s32 n = ask->count;
         s32 c;
 
         if (cloth == NULL || cloth->card == NULL) {
@@ -1864,34 +1906,117 @@ static void port_GlFighterHoldView(
         /* a point is in 128ths of the world's unit (ClothPoint) */
         for (i = 0; i < drawn->count; i++) {
             for (c = 0; c < 3; c++) {
-                points[count][i * 3 + c] =
+                ask->points[n][i * 3 + c] =
                     (float)((double)drawn->point[i][c] / 128.0);
             }
         }
         port_GlClothSums(cloth->surface, &sums);
-        holds[count].cloth = cloth->card;
-        holds[count].points = points[count];
-        holds[count].out = held->buffer;
-        made[count] = held;
-        keys[count] = key;
-        places[count] = sums.place_count;
-        count++;
+        ask->hold[n].cloth = cloth->card;
+        ask->hold[n].points = ask->points[n];
+        ask->hold[n].out = held->buffer;
+        ask->made[n] = held;
+        ask->key[n] = key;
+        ask->places[n] = sums.place_count;
+        ask->count++;
     }
-    if (count == 0) {
+    return ask->count;
+}
+
+/* The views' smooth cloths kept out of their posed bodies, those not
+ * kept yet made on the card together (gl_fighter_card.h): the bodies
+ * posed side by side, then the cloths. `copy` of each view (the stress's
+ * copies, 0 the fighter himself). */
+static void port_GlFighterHoldViews(
+    const FighterModel * const *models, const PortFighterView * const *views,
+    const s32 *slots, const s32 *copies, s32 count) {
+    static HoldAsk asks[PORT_GL_CARD_ASKS];
+    PortGlCardPoseAsk poses[PORT_GL_CARD_ASKS];
+    PortGlCardHoldSet sets[PORT_GL_CARD_ASKS];
+    s32 n = 0;
+    s32 was = g_fighter.copy;
+    s32 i;
+    s32 k;
+
+    for (k = 0; k < count && n < PORT_GL_CARD_ASKS; k++) {
+        g_fighter.copy = copies[k];
+        if (port_GlFighterHoldAsk(models[k], views[k], slots[k], &asks[n]) >
+                0 &&
+            port_GlFighterPoseAsk(models[k], views[k], slots[k], asks[n].world,
+                                  asks[n].turn, &poses[n])) {
+            n++;
+        }
+    }
+    g_fighter.copy = was;
+    if (n == 0) {
         return;
     }
-    pose = port_GlFighterPoseOnCard(model, view, slot);
-    if (pose < 0) {
-        return;
+    port_GlFighterCardPoses(poses, n);
+    for (k = 0; k < n; k++) {
+        sets[k].holds = asks[k].hold;
+        sets[k].count = poses[k].pose >= 0 ? asks[k].count : 0;
+        sets[k].pose = poses[k].pose;
     }
-    port_GlFighterCardHold(
-        holds, count, pose, CLOTH_GAP, g_fighter.is_cloth_held,
-        g_fighter.is_counting_cloth);
-    for (i = 0; i < count; i++) {
-        made[i]->key = keys[i];
-        g_fighter.counts.cloth_holds++;
-        g_fighter.counts.cloth_places += (u32)places[i];
+    port_GlFighterCardHolds(sets, n, CLOTH_GAP, g_fighter.is_cloth_held,
+                            g_fighter.is_counting_cloth);
+    for (k = 0; k < n; k++) {
+        for (i = 0; i < sets[k].count; i++) {
+            asks[k].made[i]->key = asks[k].key[i];
+            g_fighter.counts.cloth_holds++;
+            g_fighter.counts.cloth_places += (u32)asks[k].places[i];
+        }
     }
+}
+
+/* Every smooth cloth of the view kept out of its posed body: those not
+ * kept yet made on the card together. */
+static void port_GlFighterHoldView(
+    const FighterModel *model, const PortFighterView *view, s32 slot) {
+    s32 copy = g_fighter.copy;
+
+    port_GlFighterHoldViews(&model, &view, &slot, &copy, 1);
+}
+
+/* Before a picture's fighters are drawn, the cloths of all of them (the
+ * frame's and, for a picture between two frames, the frame after it's;
+ * and the stress's copies') kept out at once: one fighter's after
+ * another's, each waited for in turn, took as long again for each. */
+static void port_GlFighterHoldAll(
+    const PortFighterView *views, const PortFighterView *after) {
+    const FighterModel *models[PORT_GL_CARD_ASKS];
+    const PortFighterView *asked[PORT_GL_CARD_ASKS];
+    s32 slots[PORT_GL_CARD_ASKS];
+    s32 copies[PORT_GL_CARD_ASKS];
+    s32 count = 0;
+    s32 copy;
+    s32 slot;
+    s32 f;
+
+    for (copy = 0; copy < port_GlBenchFighterCopies(); copy++) {
+        for (slot = 0; slot < PORT_FIGHTER_SLOTS; slot++) {
+            for (f = 0; f < 2 && count < PORT_GL_CARD_ASKS; f++) {
+                const PortFighterView *view =
+                    f == 0 ? &views[slot]
+                           : (after != NULL ? &after[slot] : NULL);
+                const FighterModel *model;
+
+                if (view == NULL || view->model_id < 0 ||
+                    view->cloth_count <= 0 ||
+                    (f == 1 && view->model_id != views[slot].model_id)) {
+                    continue;
+                }
+                model = port_GlFighterModel(view->model_id);
+                if (model == NULL || model->cloth_count <= 0) {
+                    continue;
+                }
+                models[count] = model;
+                asked[count] = view;
+                slots[count] = slot;
+                copies[count] = copy;
+                count++;
+            }
+        }
+    }
+    port_GlFighterHoldViews(models, asked, slots, copies, count);
 }
 
 /* The view's cloth `drawn` kept out of the posed body, in the world's
@@ -1926,6 +2051,7 @@ static void port_GlFighterWarm(const FighterModel *model, s32 slot) {
     s32 count = 0;
     s32 i;
 
+    port_GlFighterCardKeep(port_GlBenchFighterCopies());
     for (i = 0; i < model->cloth_count; i++) {
         s32 vertices = port_GlClothVertices(model->cloth[i].surface);
 
@@ -2190,7 +2316,9 @@ static void port_GlFighterDrawCopies(
             (GLfloat)(pose->ofx + paint->offset_x + picture->margin + shift),
             (GLfloat)(pose->ofy + paint->offset_y));
         port_GlFighterDrawOne(model, pose, slot);
+        g_fighter.copy = copy;
         port_GlFighterDrawCloths(model, view, after, t, pose, slot);
+        g_fighter.copy = 0;
     }
 }
 
@@ -2236,17 +2364,23 @@ static void port_GlFighterDrawAll(
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_BLEND);
     glViewport(0, 0, w, h);
+    PORT_GPU_BEGIN(PORT_GPU_FLAYER);
     glClearBufferfv(GL_COLOR, 0, clear_color);
     glClearBufferfv(GL_COLOR, 1, clear_depth);
     glClearDepth(1.0);
     glDepthMask(GL_TRUE);
     glClear(GL_DEPTH_BUFFER_BIT);
+    PORT_GPU_END();
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     if (g_fighter.cull != 0) {
         glEnable(GL_CULL_FACE);
         glCullFace(GL_BACK);
         glFrontFace(g_fighter.cull == 1 ? GL_CW : GL_CCW);
+    }
+    /* the card's own programs, before this one is set up */
+    if (!is_tiny && g_fighter.is_cloth_smooth) {
+        port_GlFighterHoldAll(views, after);
     }
     glUseProgram(g_fighter.program);
     glUniform1i(g_fighter.at_texture, 0);
@@ -2311,8 +2445,11 @@ static void port_GlFighterDrawAll(
     glDisable(GL_CULL_FACE);
 
     if (layer->samples > 1) {
+        PORT_GPU_BEGIN(PORT_GPU_FLAYER);
         port_GlFighterTakeDown(layer, w, h);
+        PORT_GPU_END();
     }
+    PORT_GPU_BEGIN(PORT_GPU_FLAY);
 
     /* the layer over the picture */
     glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
@@ -2370,6 +2507,7 @@ static void port_GlFighterDrawAll(
     glDepthMask(GL_FALSE);
     glDepthFunc(GL_LESS);
     glDisable(GL_DEPTH_TEST);
+    PORT_GPU_END();
     port_GlForgetState();
     if (is_tiny) {
         return;
@@ -2647,9 +2785,11 @@ void port_GlFighterDrawOccluders(u32 framebuffer) {
     glDepthMask(GL_FALSE);
     glDisable(GL_BLEND);
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+    PORT_GPU_BEGIN(PORT_GPU_FLAY);
     glBindVertexArray(g_fighter.quad_array);
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
+    PORT_GPU_END();
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
     port_GlForgetState();
