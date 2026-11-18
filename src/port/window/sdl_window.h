@@ -59,6 +59,14 @@ typedef struct {
      * loads unless --quick-loading says otherwise (docs/PORT.md, "Quick
      * loading") */
     s32 quick_loading;
+    /* what F9 does, at this blank: a report (sdl_report.c) */
+    s32 report_at;
+    /* a stall made on purpose, for a test of the pace and the sound:
+     * the window's thread sleeps `stall_ms` at every `stall_every`th
+     * blank from `stall_at` on (0: none) */
+    s32 stall_at;
+    s32 stall_every;
+    s32 stall_ms;
 } PortWindowOptions;
 
 enum {
@@ -148,6 +156,22 @@ extern void port_HoldPace(u32 blanks);
 extern void port_SoundRerunBegins(u32 blanks);
 extern void port_SoundRerun(const s16 *samples, u32 frames);
 extern void port_SoundRerunEnds(void);
+
+/* ---- a report of a problem, F9 (sdl_report.c) ---- */
+
+/* What the last seconds are kept of: a blank's processor time by part
+ * (port_profile.h, in microseconds), the card's passes of a blank it has
+ * finished (gl_bench.h, in nanoseconds), and a picture handed to the
+ * display (when, in microseconds since the window opened, and its
+ * phase between two frames, -1 for the game's own). */
+extern void port_ReportNoteBlank(u32 blank, s32 is_new_frame, const u32 *cpu);
+extern void port_ReportNoteCard(u32 blank, const u32 *nanoseconds);
+extern void port_ReportNoteSwap(unsigned long long microseconds, s32 phase);
+/* A new report's folder, made, into `out`: 1, or 0 if it cannot be. */
+extern s32 port_ReportFolder(char *out, u32 room);
+/* The report's files but the picture, into `folder`: the last seconds'
+ * times, the log, the settings file and `about`. */
+extern void port_WriteReport(const char *folder, const char *about);
 
 /* ---- the session's log (sdl_log.c) ---- */
 

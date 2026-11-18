@@ -45,7 +45,10 @@ const char g_port_default_settings[] =
     "scale = fit            # fit, integer or stretch\n"
     "filter = nearest       # nearest or linear\n"
     "fullscreen = on        # on or off: how it starts\n"
-    "vsync = on             # on or off: wait for the display\n"
+    "vsync = on             # on, off or adaptive: wait for the display;\n"
+    "                       # adaptive does not wait for a picture that\n"
+    "                       # is late, which tears it rather than show\n"
+    "                       # the one before twice\n"
     "deadzone = 40          # how far a stick counts, in parts of 100\n"
     "fps = on               # on or off: the counter in the corner (F3)\n"
     "fps_corner = top-left  # top-left, top-right, bottom-left,\n"
@@ -598,9 +601,13 @@ static const char *port_ReadSetting(
                    : "fullscreen is on or off";
     }
     if (port_WordsMatch(name, "vsync")) {
+        if (port_WordsMatch(value, "adaptive")) {
+            settings->vsync = PORT_VSYNC_ADAPTIVE;
+            return NULL;
+        }
         return port_ReadChoice(value, "off", "on", &settings->vsync)
                    ? NULL
-                   : "vsync is on or off";
+                   : "vsync is on, off or adaptive";
     }
     if (port_WordsMatch(name, "fps")) {
         /* `times`: the counter, and the processor's and the card's time

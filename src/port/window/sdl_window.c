@@ -64,11 +64,28 @@
 /* Pictures a second to draw where the display does not say its rate and
  * the settings ask for the display's. */
 #define REFRESH_UNKNOWN 60
-/* The sound card is asked for this many samples at a time (23 ms), and
- * the queue before it is kept this long (58 ms) of the room it has. */
-#define AUDIO_DEVICE_FRAMES 1024
-#define AUDIO_QUEUE_FRAMES 2560
+/* The sound card is asked for this many samples at a time (12 ms), and
+ * the queue before it is kept this long (81 ms) of the room it has
+ * (docs/PORT.md, "Sound that does not run out"). The samples of a blank
+ * are made at its end, so the queue holds what the card plays while the
+ * next blank is worked out (a blank, 737), what it may take in one gulp,
+ * and what is left for a picture or a step that runs late: 53 ms. The
+ * queue and the card's gulp together are what the queue and the gulp
+ * were before (58 + 23 ms), less one gulp's worth of waiting in the
+ * card's own buffer. */
+#define AUDIO_DEVICE_FRAMES 512
+#define AUDIO_QUEUE_FRAMES 3584
 #define AUDIO_RING_FRAMES 8192
+/* Where the sound runs out all the same, a PC whose hitches are longer:
+ * the queue is made this much longer each time, up to the most (109 ms),
+ * and the log says why the first few times. */
+#define AUDIO_QUEUE_STEP 256
+#define AUDIO_QUEUE_MOST 4800
+#define UNDERRUNS_TOLD 20
+#define LOST_NEAR 8
+/* A frame of the game is a blank in a menu and two in a fight; one that
+ * the blanks' moments say took more than this many is a jump of them. */
+#define FRAME_PERIOD_MOST 4
 /* Netplay's rollback takes back what the queue holds of the blanks it
  * runs again, but this much (23 ms) is left to play while it runs; the
  * pieces of sound of the last blanks are remembered. */
@@ -246,11 +263,31 @@ static u32 g_port_draw_cost;
 static u32 g_port_ready_after;
 static u32 g_port_pictures;
 static u32 g_port_pictures_between;
+/* Blanks that showed nothing for being more than a refresh late
+ * (port_ShowPictures), in all, and whether the last one did. */
+static u32 g_port_pictures_unshown;
+static s32 g_port_unshown;
 /* The game as the log last saw it, and what the log has counted. */
 static PortGameState g_port_seen;
 static s32 g_port_has_seen;
 static u32 g_port_lost_noted;
 static u32 g_port_underruns_noted;
+/* The sound's running out as each blank saw it (port_WatchSound): the
+ * count, how many were told of one by one, and the queue's length after
+ * the last blank's samples. */
+static u32 g_port_underruns_seen;
+static u32 g_port_underruns_told;
+static u32 g_port_queue_seen;
+/* ... and the last blank at which time was let go: the sound running out
+ * within LOST_NEAR blanks of it is that, which no queue holds. */
+static u32 g_port_lost_counted;
+static u32 g_port_lost_blank;
+/* What the last blank's time went to, by part, in microseconds: what the
+ * log says where time is let go or the sound runs out. */
+static u32 g_port_last_ticks[PORT_PROFILE_PARTS];
+/* A report (F9): asked for, and its folder while its picture is kept. */
+static s32 g_port_wants_report;
+static char g_port_report_folder[PATH_BYTES_MAX];
 static u32 g_port_read_start;
 /* The load under way (port_LoadKind): its first blank, how many blanks
  * it has taken, how many of them were hurried (quick_loading) and the
@@ -310,6 +347,8 @@ static s32 g_port_menu_texture_h;
 
 static void port_SwapPicture(void);
 static void port_ReadInput(u32 blank);
+static s32 port_WatchSound(u32 blank, s32 is_hurried);
+static void port_MakeReport(void);
 #if !defined(_WIN32)
 /* The window's thread's own processor time, in the host's ticks: what
  * --profile counts by where RB_PROFILE_CPU says (port_profile.h). */
@@ -920,6 +959,29 @@ static void port_LendThreads(void) {
  * there is none. The window must have been made with SDL_WINDOW_OPENGL.
  * Nothing of this changes what the game computes: with no card the port
  * is what it was. */
+/* The display waited for as the settings say: with `vsync = adaptive`
+ * the driver's late swap tear (SDL's -1), where it has one; where it has
+ * none, waited for as `on` does, and the log says so. */
+static void port_SetSwapInterval(void) {
+    if (g_port_window_options.display_rate > 0) {
+        /* --display-rate: the display made up is the one waited for
+         * (port_WaitForMadeUpBlank), not the PC's own, which a hidden
+         * window on a real card is held to as well */
+        SDL_GL_SetSwapInterval(0);
+        return;
+    }
+    if (g_port_vsync == PORT_VSYNC_ADAPTIVE &&
+        SDL_GL_SetSwapInterval(-1) == 0) {
+        return;
+    }
+    if (g_port_vsync == PORT_VSYNC_ADAPTIVE) {
+        port_Note("video: the driver has no adaptive vsync (%s): waited for "
+                  "as with vsync on",
+                  SDL_GetError());
+    }
+    SDL_GL_SetSwapInterval(g_port_vsync != 0 ? 1 : 0);
+}
+
 static const char *port_StartGl(void) {
     PortGlOptions options;
     const char *problem;
@@ -931,7 +993,7 @@ static const char *port_StartGl(void) {
     if (SDL_GL_MakeCurrent(g_port_window, g_port_gl_context) != 0) {
         return SDL_GetError();
     }
-    SDL_GL_SetSwapInterval(g_port_vsync ? 1 : 0);
+    port_SetSwapInterval();
     g_port_gl_scale = port_WantedScale();
     port_GlOptionsFor(g_port_gl_scale, &options);
     g_port_gl_tall = options.tall;
@@ -1094,7 +1156,7 @@ static void port_OpenWindow(void) {
     if (g_port_is_fullscreen) {
         SDL_ShowCursor(SDL_DISABLE);
     }
-    g_port_vsync = g_port_settings.vsync && !g_port_window_options.is_fast;
+    g_port_vsync = g_port_window_options.is_fast ? 0 : g_port_settings.vsync;
     if (SDL_GetCurrentDisplayMode(
             SDL_GetWindowDisplayIndex(g_port_window), &mode) == 0) {
         g_port_display_rate = mode.refresh_rate;
@@ -1404,6 +1466,118 @@ static void port_KeepShot(s32 which) {
     g_port_shot_between = which;
 }
 
+/* What a report says of the program, the PC and the session, into
+ * `out` (port_MakeReport). */
+static void port_DescribeForReport(char *out, u32 room) {
+    SDL_version linked;
+    SDL_DisplayMode mode;
+    s32 window_w = 0;
+    s32 window_h = 0;
+    u32 used = 0;
+    u32 i;
+    const PortSettings *set = &g_port_settings;
+
+#define REPORT_LINE(...)                                                       \
+    do {                                                                       \
+        if (used < room) {                                                     \
+            s32 n = snprintf(out + used, room - used, __VA_ARGS__);            \
+            used += n > 0 ? (u32)n : 0;                                        \
+        }                                                                      \
+    } while (0)
+
+    SDL_GetVersion(&linked);
+    port_WindowSize(&window_w, &window_h);
+    REPORT_LINE("%s\n", port_GetVersionText());
+    REPORT_LINE("system: %s, %d processors, %d MB; SDL %d.%d.%d\n",
+                SDL_GetPlatform(), SDL_GetCPUCount(), SDL_GetSystemRAM(),
+                linked.major, linked.minor, linked.patch);
+    REPORT_LINE("video: driver %s", SDL_GetCurrentVideoDriver());
+    if (g_port_has_gl) {
+        REPORT_LINE("; card %s, %s; OpenGL %s", port_GlDescribe(PORT_GL_VENDOR),
+                    port_GlDescribe(PORT_GL_RENDERER),
+                    port_GlDescribe(PORT_GL_VERSION));
+    }
+    REPORT_LINE("\n");
+    if (g_port_window != NULL &&
+        SDL_GetCurrentDisplayMode(
+            SDL_GetWindowDisplayIndex(g_port_window), &mode) == 0) {
+        REPORT_LINE("display: %d by %d at %d a second\n", mode.w, mode.h,
+                    mode.refresh_rate);
+    }
+    REPORT_LINE("window: %d by %d%s%s; vsync %s, the display's rate taken as "
+                "%d; refresh measured every %u samples\n",
+                window_w, window_h, g_port_is_fullscreen ? ", full screen" : "",
+                g_port_window_options.is_hidden ? ", hidden" : "",
+                g_port_vsync == PORT_VSYNC_ADAPTIVE ? "adaptive"
+                : g_port_vsync != 0                 ? "on"
+                                                    : "off",
+                g_port_display_rate, g_port_refresh.period);
+    REPORT_LINE("sound: %s; the queue %u long (%u at the last blank), ran out "
+                "%u times, %u pairs thrown away\n",
+                g_port_audio != 0 ? SDL_GetCurrentAudioDriver() : "none",
+                g_port_ring.target, g_port_queue_seen, g_port_ring.underruns,
+                g_port_ring.dropped);
+    REPORT_LINE("pace: time let go %u times; the blanks moved %d samples in "
+                "all to keep the queue\n",
+                g_port_pace.lost, g_port_pace.nudged);
+    REPORT_LINE("pictures: %u shown, %u of them between frames; %u blanks, "
+                "%u of them a refresh late and not shown; now %u.%u a second "
+                "and %u.%u of the game's frames\n",
+                g_port_pictures, g_port_pictures_between, g_port_blanks_shown,
+                g_port_pictures_unshown, g_port_shown_meter.tenths / 10,
+                g_port_shown_meter.tenths % 10, g_port_game_meter.tenths / 10,
+                g_port_game_meter.tenths % 10);
+    REPORT_LINE(
+        "settings: graphics %s, frame_rate %d, run_ahead %d, "
+        "low_latency %d, resolution %d, antialiasing %d, aspect %d:%d, "
+        "fighter_models %d, shadows %d, smooth_light %d, effects %d, "
+        "sky %d, see_through %d, stage_mesh %d, quick_loading %d\n",
+        port_RemasterIsOn() ? "remastered" : "original", set->frame_rate,
+        set->run_ahead, set->low_latency, set->resolution, set->supersample,
+        set->aspect_w, set->aspect_h, set->fighter_models, set->shadows,
+        set->smooth_light, set->effects, set->sky, set->see_through,
+        set->stage_mesh, set->quick_loading);
+    REPORT_LINE("the last blank's time, microseconds:");
+    for (i = 0; i < PORT_PROFILE_PARTS; i++) {
+        REPORT_LINE(" %s %u", port_ProfileName((s32)i), g_port_last_ticks[i]);
+    }
+    REPORT_LINE("\n");
+#undef REPORT_LINE
+}
+
+/* A report of a problem (F9): its folder beside the log, the picture the
+ * window was showing, and everything else (sdl_report.c). */
+static void port_MakeReport(void) {
+    static char about[4096];
+    char path[PATH_BYTES_MAX];
+    s32 picture = FALSE;
+
+    if (!port_ReportFolder(
+            g_port_report_folder, sizeof(g_port_report_folder))) {
+        port_Say("F9: no folder can be made for the report");
+        return;
+    }
+    if (g_port_has_shot) {
+        s32 file;
+
+        g_port_has_shot = FALSE;
+        snprintf(path, sizeof(path), "%s/picture.png", g_port_report_folder);
+        file = port_HostCreate(path);
+        picture = file >= 0 &&
+                  port_WritePixelsPng(
+                      file, g_port_window_pixels, g_port_shot_w, g_port_shot_h);
+        if (file >= 0) {
+            port_HostClose(file);
+        }
+    }
+    /* the line first, so that the log the report keeps has it */
+    port_Say("F9: a report of the last seconds%s: %s",
+             picture ? ", with a picture of the window" : "",
+             g_port_report_folder);
+    port_DescribeForReport(about, sizeof(about));
+    port_WriteReport(g_port_report_folder, about);
+}
+
 /* The window as the player sees it, into
  * `screenshots/shot-YYYYMMDD-HHMMSS-NNN.png` beside the program, and a
  * line of the log saying where it went (docs/PLAYING.md). */
@@ -1421,6 +1595,13 @@ static void port_WriteShot(void) {
 
     g_port_wants_shot = FALSE;
     g_port_shot_picture = -1;
+    if (g_port_wants_report) {
+        /* F9: the picture is the report's, and the rest follows it */
+        g_port_wants_report = FALSE;
+        SDL_free(base);
+        port_MakeReport();
+        return;
+    }
     if (!g_port_has_shot || when == NULL) {
         port_Say("F12: the window's pixels cannot be read");
         SDL_free(base);
@@ -1547,10 +1728,12 @@ static void port_PicturePlace(s32 window_w, s32 window_h, PortRect *out) {
 
 /* ---- the times under the counter (`fps = times`) ---- */
 
-/* Whether the parts' times are counted: for --profile, or for the
- * counter's times. Turned on, the time counted before is no blank's. */
+/* The parts' times are counted always: for --profile, for the counter's
+ * times, and for a report (F9, sdl_report.c), which keeps the last ten
+ * seconds of them; a switch is two reads of the clock. Turned on, the
+ * time counted before is no blank's. */
 static void port_CountTimes(void) {
-    s32 on = g_port_profile_file != NULL || g_port_show_fps == PORT_FPS_TIMES;
+    s32 on = TRUE;
     u32 ticks[PORT_PROFILE_PARTS];
 
     if (on && !g_port_profile_on) {
@@ -1647,6 +1830,26 @@ static void port_FormatLargest(
     }
 }
 
+/* The last blank's time for the log: all of it, the processor's work,
+ * and its four largest parts, in milliseconds. */
+static void port_LargestParts(char *out, size_t room) {
+    u32 all = 0;
+    u32 work = 0;
+    size_t at;
+    s32 i;
+
+    for (i = 0; i < PORT_PROFILE_PARTS; i++) {
+        all += g_port_last_ticks[i];
+        work += port_IsWork(i) ? g_port_last_ticks[i] : 0;
+    }
+    at = (size_t)SDL_snprintf(
+        out, room, "%.1f ms, %.1f of it work:", all / 1000.0, work / 1000.0);
+    if (at < room) {
+        port_FormatLargest(out + at, room - at, "", g_port_last_ticks,
+                           PORT_PROFILE_PARTS, 1, port_ProfileName, TRUE);
+    }
+}
+
 /* The lines under the counter, from the last half second's sums. */
 static s32 port_FormatTimes(char lines[][COUNTER_TEXT_BYTES]) {
     const PortTimes *t = &g_port_times_shown;
@@ -1701,6 +1904,8 @@ static void port_NoteProfile(u32 blank, s32 is_new_frame) {
         ticks[i] /= PORT_HOST_TICKS_PER_MICROSECOND;
     }
     g_port_frame_blanks[blank % sizeof(g_port_frame_blanks)] = (u8)is_new_frame;
+    port_ReportNoteBlank(blank, is_new_frame, ticks);
+    memcpy(g_port_last_ticks, ticks, sizeof(g_port_last_ticks));
     if (g_port_profile_file != NULL) {
         fprintf(g_port_profile_file, "b %u %d", blank, is_new_frame);
         for (i = 0; i < PORT_PROFILE_PARTS; i++) {
@@ -1714,6 +1919,7 @@ static void port_NoteProfile(u32 blank, s32 is_new_frame) {
     if (g_port_has_gl && g_port_gpu_on) {
         port_GlBenchBlank(blank);
         while (port_GlBenchTake(&timed, gpu)) {
+            port_ReportNoteCard(timed, gpu);
             if (g_port_profile_file != NULL) {
                 fprintf(g_port_profile_file, "g %u", timed);
                 for (i = 0; i < PORT_GPU_PASSES; i++) {
@@ -1853,10 +2059,19 @@ static void port_WatchGame(u32 blank) {
                   blank, now.frames);
     }
     if (g_port_pace.lost != g_port_lost_noted) {
-        port_Note("pace: the program was held up for more than a tenth of a "
-                  "second, and the time was let go (%u times so far); blank "
-                  "%u",
-                  g_port_pace.lost, blank);
+        char parts[COUNTER_TEXT_BYTES * 2];
+
+        port_LargestParts(parts, sizeof(parts));
+        port_Note(
+            "pace: blank %u was %d ms %s, more than the tenth of a "
+            "second the game catches up, and the time was let go (%u "
+            "times so far); the blank before took %s",
+            blank - 1,
+            (g_port_pace.lost_by < 0 ? -g_port_pace.lost_by
+                                     : g_port_pace.lost_by) *
+                MILLISECONDS / PORT_SPU_RATE,
+            g_port_pace.lost_by < 0 ? "early (the clock went back)" : "late",
+            g_port_pace.lost, parts);
         g_port_lost_noted = g_port_pace.lost;
     }
     if (blank % BEAT_BLANKS == 0) {
@@ -2183,11 +2398,12 @@ void port_WindowApplyChoice(s32 choice) {
     } else if (strcmp(name, "fps") == 0) {
         port_SetCounter(g_port_settings.fps);
     } else if (strcmp(name, "vsync") == 0) {
-        g_port_vsync = g_port_settings.vsync && !g_port_window_options.is_fast;
+        g_port_vsync =
+            g_port_window_options.is_fast ? 0 : g_port_settings.vsync;
         if (g_port_has_gl) {
-            SDL_GL_SetSwapInterval(g_port_vsync ? 1 : 0);
+            port_SetSwapInterval();
         } else {
-            SDL_RenderSetVSync(g_port_renderer, g_port_vsync);
+            SDL_RenderSetVSync(g_port_renderer, g_port_vsync != 0);
         }
     } else if (strcmp(name, "filter") == 0 && !g_port_has_gl) {
         /* SDL's renderer takes the filter as a texture is made */
@@ -2286,6 +2502,15 @@ static void port_TakeKey(const SDL_KeyboardEvent *key) {
         /* the window's own: the settings menu */
         if (down) {
             port_AskForMenu("F1");
+        }
+        return;
+    }
+    if (key->keysym.scancode == SDL_SCANCODE_F9) {
+        /* the window's own: a report of a problem, its picture taken as
+         * F12's is (port_WriteShot) */
+        if (down) {
+            g_port_wants_report = TRUE;
+            g_port_wants_shot = TRUE;
         }
         return;
     }
@@ -2557,6 +2782,7 @@ static void port_ShownDisplay(PortDisplay *display) {
 /* The picture that is ready, shown. */
 static void port_SwapPicture(void) {
     s32 was = port_ProfileSwitch(PORT_PROFILE_SWAP);
+    Uint64 swapped;
 
     if (g_port_window_options.display_rate > 0 && g_port_vsync) {
         port_WaitForMadeUpBlank();
@@ -2577,15 +2803,14 @@ static void port_SwapPicture(void) {
     if (g_port_vsync) {
         port_NoteSwap(&g_port_refresh, port_ReadClock());
     }
+    /* when the swap came back, in microseconds, and the picture's phase:
+     * for --profile, and for a report */
+    swapped = (SDL_GetPerformanceCounter() - g_port_clock_start) *
+              MICROSECONDS / SDL_GetPerformanceFrequency();
+    port_ReportNoteSwap(swapped, g_port_profile_phase);
     if (g_port_profile_file != NULL) {
-        /* when the swap came back, in microseconds, and the picture's
-         * phase */
-        fprintf(
-            g_port_profile_file, "p %llu %d\n",
-            (unsigned long long)((SDL_GetPerformanceCounter() -
-                                  g_port_clock_start) *
-                                 MICROSECONDS / SDL_GetPerformanceFrequency()),
-            g_port_profile_phase);
+        fprintf(g_port_profile_file, "p %llu %d\n", (unsigned long long)swapped,
+                g_port_profile_phase);
     }
     g_port_pictures++;
     port_CountFps(&g_port_shown_meter, port_ReadClock(), 1);
@@ -2700,6 +2925,23 @@ static void port_ShowPictures(u32 due) {
     g_port_refresh.period = g_port_vsync && g_port_display_rate > 0
                                 ? (u32)(PORT_SPU_RATE / g_port_display_rate)
                                 : 0;
+    /* A blank more than a refresh late shows nothing, where the one before
+     * showed something: its swap would wait for the display's next
+     * refresh and make the game later still, and the display shows the
+     * picture before for that refresh either way. So with the display
+     * waited for, a step that ran long costs a refresh of the picture and
+     * not the game's pace, which is what `vsync = off` was for. */
+    if (g_port_refresh.period != 0 && !g_port_wants_shot &&
+        !g_port_window_options.is_fast && !g_port_unshown &&
+        g_port_pace.late > g_port_refresh.period) {
+        g_port_unshown = TRUE;
+        g_port_pictures_unshown++;
+        g_port_wants_lag = FALSE;
+        g_port_last_due = due;
+        g_port_left_at = port_ReadClock();
+        return;
+    }
+    g_port_unshown = FALSE;
     /* The first picture: the game's own frame as the blank began, and,
      * where pictures between frames are drawn, the picture of the moment
      * it will be shown at instead -- unless a test asked for the game's
@@ -2825,6 +3067,7 @@ static void port_HurryBlank(u32 blank) {
         port_ProfileSwitch(PORT_PROFILE_WINDOW);
     }
     port_WatchGame(blank);
+    (void)port_WatchSound(blank, TRUE);
     if ((s32)(port_ReadClock() - g_port_hurry_shown) >= HURRY_PICTURE_SAMPLES) {
         port_ProfileSwitch(PORT_PROFILE_PICTURE);
         port_DrawPicture(blank, TRUE);
@@ -2841,6 +3084,58 @@ static void port_HurryBlank(u32 blank) {
 
 /* A vertical blank's end (port_platform.h): its pictures, when they are
  * due. */
+/* The sound card's side as this blank finds it, and how far the queue is
+ * from its length, for the pace. Where the sound ran out since the last
+ * blank, the log says what the blank before took and how far behind the
+ * game was, and the queue is made longer, unless that was time let go
+ * (a stall longer than any queue) or a load hurried through. */
+static s32 port_WatchSound(u32 blank, s32 is_hurried) {
+    u32 underruns;
+    u32 count;
+    u32 target;
+
+    if (g_port_audio == 0) {
+        return 0;
+    }
+    SDL_LockAudioDevice(g_port_audio);
+    underruns = g_port_ring.underruns;
+    count = g_port_ring.count;
+    target = g_port_ring.target;
+    SDL_UnlockAudioDevice(g_port_audio);
+    if (g_port_pace.lost != g_port_lost_counted) {
+        g_port_lost_counted = g_port_pace.lost;
+        g_port_lost_blank = blank;
+    }
+    if (underruns != g_port_underruns_seen) {
+        s32 grow = !is_hurried && blank - g_port_lost_blank > LOST_NEAR &&
+                   target < AUDIO_QUEUE_MOST;
+
+        if (g_port_underruns_told < UNDERRUNS_TOLD) {
+            char parts[COUNTER_TEXT_BYTES * 2];
+
+            port_LargestParts(parts, sizeof(parts));
+            port_Note("sound: ran out before blank %u: %u samples were queued "
+                      "after the blank before, which took %s%s",
+                      blank, g_port_queue_seen, parts,
+                      g_port_underruns_told + 1 == UNDERRUNS_TOLD
+                          ? " (no more of these lines: the count each minute)"
+                          : "");
+            g_port_underruns_told++;
+        }
+        if (grow) {
+            target += AUDIO_QUEUE_STEP;
+            SDL_LockAudioDevice(g_port_audio);
+            g_port_ring.target = target;
+            SDL_UnlockAudioDevice(g_port_audio);
+            port_Note("sound: the queue is %u long from here (%u ms)", target,
+                      target * MILLISECONDS / PORT_SPU_RATE);
+        }
+        g_port_underruns_seen = underruns;
+    }
+    g_port_queue_seen = count;
+    return (s32)count - (s32)target;
+}
+
 static void port_ShowBlank(u32 blank) {
     u32 due;
     u32 frames = g_port_tween_frames;
@@ -2910,7 +3205,20 @@ static void port_ShowBlank(u32 blank) {
          * held to, so that a step that took longer or shorter moves no
          * picture (pace.c) */
         if (g_port_tween_frames != 0) {
-            g_port_frame_period = g_port_last_due - g_port_frame_at;
+            u32 period = g_port_last_due - g_port_frame_at;
+
+            /* Where the time was let go or a load hurried through between
+             * the two, the blanks' moments jumped: the frame lasts what
+             * the frame before lasted, not the jump, so that the pictures
+             * after a hitch go on at the game's pace rather than crawl
+             * through one frame (docs/PORT.md, "After a hitch"). */
+            if (period <= FRAME_PERIOD_MOST * BLANK_SAMPLES ||
+                g_port_frame_period == 0) {
+                g_port_frame_period =
+                    period <= FRAME_PERIOD_MOST * BLANK_SAMPLES
+                        ? period
+                        : 2 * BLANK_SAMPLES;
+            }
         }
         g_port_frame_at = g_port_last_due;
         g_port_tween_frames = port_TweenGeneration();
@@ -2935,6 +3243,20 @@ static void port_ShowBlank(u32 blank) {
         g_port_wants_shot = TRUE;
         g_port_shot_picture = g_port_window_options.shot_picture;
     }
+    if (g_port_window_options.report_at > 0 &&
+        blank == (u32)g_port_window_options.report_at) {
+        /* for a test: what F9 does */
+        g_port_wants_report = TRUE;
+        g_port_wants_shot = TRUE;
+    }
+    if (g_port_window_options.stall_ms > 0 &&
+        blank >= (u32)g_port_window_options.stall_at &&
+        (blank - (u32)g_port_window_options.stall_at) %
+                (u32)g_port_window_options.stall_every ==
+            0) {
+        /* for a test: a hitch, as a driver's or the system's would be */
+        SDL_Delay((Uint32)g_port_window_options.stall_ms);
+    }
     if (g_port_window_options.toggle_at > 0 &&
         blank % (u32)g_port_window_options.toggle_at == 0) {
         /* for a test, which cannot press a key that is no pad's button:
@@ -2947,13 +3269,8 @@ static void port_ShowBlank(u32 blank) {
     }
     due = port_ReadClock();
     if (!g_port_window_options.is_fast) {
-        s32 queue_error = 0;
+        s32 queue_error = port_WatchSound(blank, is_hurried);
 
-        if (g_port_audio != 0) {
-            SDL_LockAudioDevice(g_port_audio);
-            queue_error = (s32)g_port_ring.count - (s32)g_port_ring.target;
-            SDL_UnlockAudioDevice(g_port_audio);
-        }
         due += port_PaceBlank(
             &g_port_pace, blank, due, port_GetSampleCount(), queue_error);
     }
@@ -3009,10 +3326,13 @@ static void port_CloseWindow(s32 code) {
         u32 samples = port_ReadClock();
 
         port_Say("window: %u blanks shown in %u.%03u seconds; time let go %u "
-                 "times, blanks moved %d samples in all",
+                 "times, blanks moved %d samples in all; %u blanks a refresh "
+                 "late showed nothing; the sound ran out %u times, its queue "
+                 "%u long",
                  g_port_blanks_shown, samples / PORT_SPU_RATE,
                  samples % PORT_SPU_RATE * MILLISECONDS / PORT_SPU_RATE,
-                 g_port_pace.lost, g_port_pace.nudged);
+                 g_port_pace.lost, g_port_pace.nudged, g_port_pictures_unshown,
+                 g_port_ring.underruns, g_port_ring.target);
     }
     if (g_port_loads != 0) {
         port_Say("loads: %u, of %u blanks in %u.%03u seconds; %u hurried "

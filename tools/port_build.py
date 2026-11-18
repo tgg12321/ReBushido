@@ -97,8 +97,9 @@ SONY_FILES = ['libgpu/prim.c', 'libgpu/ext.c', 'libetc/vmode.c', 'libc2/memcpy.c
               'libc2/strcpy.c', 'libc2/strlen.c', 'libc2/rand.c', 'libc2/ctype.c',
               # _card_clear, which is Sony's C over two BIOS calls the port supplies
               'libcard/card.c']
-# Files of src/rebushido/ that are another build's.
-NOT_THE_PORTS = ('quickboot.c',)
+# Files of src/rebushido/ that are another build's: none since quickboot.c
+# is the port's `--fight` too.
+NOT_THE_PORTS = ()
 
 # The movie player (docs/PORT.md, "The movie"). The overlay is a second
 # PlayStation program with its own main and its own copies of 43 of Sony's

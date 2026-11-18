@@ -327,6 +327,14 @@ void rb_RunOptionsPage(void) {
     s32 i;
 
     /* the page comes up at once and waits for the card on show */
+#if RB_PORT
+    /* the port's --fight goes straight to its fight, with the settings the
+     * game starts with */
+    if (port_QuickFight() != NULL) {
+        g_rb_page_state = RB_PAGE_DONE;
+        return;
+    }
+#endif
     g_rb_page_state = RB_PAGE_LOADING;
     rb_OpenPage();
     rb_HoldPage("Reading the memory card", 2);

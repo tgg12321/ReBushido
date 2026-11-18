@@ -42,6 +42,7 @@ state    src/port/xa.c          the XA reader and its buffer
 
 # the picture, the output, the program and the host
 outside  src/port/crash.c       the crash report
+outside  src/port/fight.c       the fight --fight starts, chosen once as the program starts
 outside  src/port/fighter_view.c  the remastered fighter's bones, camera and lights, read and written down
 outside  src/port/host_linux.c  the host: file handles, the signal stack, the fiber's host side
 outside  src/port/host_windows.c  the host on Windows
