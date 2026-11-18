@@ -320,6 +320,13 @@ static u16 *port_PixelAt(s32 x, s32 y) {
                         (x & VRAM_X_MASK)];
 }
 
+/* The same for a pixel about to be written: its line is marked, for the
+ * state's pages written (src/port/state.c). */
+static u16 *port_PixelToWrite(s32 x, s32 y) {
+    g_port_vram_lines_written[y & VRAM_Y_MASK] = 1;
+    return port_PixelAt(x, y);
+}
+
 /* Eleven bits with a sign. */
 static s32 port_SignExtendPosition(s32 value) {
     value &= POSITION_MASK;
@@ -422,7 +429,7 @@ static u16 port_BlendPixels(u16 back, u16 front, s32 blend) {
  * lets it; `is_mixed` mixes it with what is there first. The place is
  * inside the drawing area already. */
 static void port_PutPixel(s32 x, s32 y, u16 pixel, s32 is_mixed, s32 blend) {
-    u16 *at = port_PixelAt(x, y);
+    u16 *at = port_PixelToWrite(x, y);
     u16 back = *at;
 
     if (back & g_port_gpu.mask_check) {
@@ -908,7 +915,7 @@ static void port_FillVram(const u32 *words) {
 
     for (y = 0; y < h; y++) {
         for (x = 0; x < w; x++) {
-            *port_PixelAt(left + x, top + y) = pixel;
+            *port_PixelToWrite(left + x, top + y) = pixel;
         }
     }
 }
@@ -934,7 +941,7 @@ static void port_CopyVram(const u32 *words) {
     for (y = 0; y < h; y++) {
         for (x = 0; x < w; x++) {
             u16 pixel = *port_PixelAt(from_x + x, from_y + y);
-            u16 *to = port_PixelAt(to_x + x, to_y + y);
+            u16 *to = port_PixelToWrite(to_x + x, to_y + y);
 
             if ((*to & g_port_gpu.mask_check) == 0) {
                 *to = pixel | g_port_gpu.mask_set;
@@ -973,6 +980,8 @@ static void port_LoadWord(u32 word) {
 
     for (i = 0; i < 2 && g_port_gpu.load.is_active; i++) {
         u16 *at = port_NextTransferPixel(&g_port_gpu.load);
+
+        g_port_vram_lines_written[(at - g_port_vram) / PORT_VRAM_WIDTH] = 1;
 
         if ((*at & g_port_gpu.mask_check) == 0) {
             *at = (u16)(word & HALF_MASK) | g_port_gpu.mask_set;
