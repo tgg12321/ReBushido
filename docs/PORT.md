@@ -2758,7 +2758,8 @@ it mixes is not built: it stays the game's primitive, at its own place
 in the painting. A piece holding any group of another type (the black
 faces of a prebuilt mesh, a tinted one, outlines) is not built at all
 and keeps its own primitives; the log says how many pieces each stage's
-mesh holds. **Every piece of all 38 stages is read**: N pieces, N faces.
+mesh holds. **Every piece of all 38 stages is read**: 412 pieces on the 34 stages
+that have any, 6,043 faces, none left to the game's primitives.
 
 **What is left out, as the console leaves it out**, of each face, in the
 shader, from the face's own corners which every vertex carries (as the
@@ -2804,7 +2805,25 @@ vertex carries, made in one place, `port_GlStagePieceLight`.)
 **How it is proved.** The pieces against the game's own primitives,
 stage by stage (`tools/port_stage_prove.py --props`, into
 `build/stageprops/`): both runs draw the ground from the mesh, one the
-pieces too, by the ground's own bar. VERDICTS
+pieces too, by the ground's own bar, four pictures of each stage's tour at
+`draw_distance max`, twice the console's resolution:
+
+| | |
+|---|---|
+| Stages | **38, every one kept** (`g_stage_props_proved`, `build/stageprops/verdict.txt`) |
+| **The trace, pieces from the mesh and from the game** | **the same on all 38** |
+| Pixels that differ at all | 3.00% |
+| In areas of plainly other colour | 0.14% on the mean; the most the railway's 1.04%, the largest one area the purple cavern's 40,192 pixels (the bar: 5% and 60,000) |
+| Black where the game's faces drew | 0.030% |
+| Drawn where the game's faces drew nothing | 0.045% |
+| Vertices a frame, the mean over a run | 3,351 with the game's faces, 3,280 with the mesh |
+
+Looked at, what differs is a piece's edge a fraction of a pixel along
+(the mesh's corners are where the projection puts them, not held to the
+console's whole pixels), and the rails nearest the camera: a face that
+crosses the plane of the eye is drawn by the console with a corner
+thrown wherever its projection put it, so the purple cavern's near rail
+breaks into pieces, and the mesh draws it whole, cut at the near plane.
 
 **How still it stands** (`tools/port_props_prove.py`): each stage's tour
 run three times, each frame drawn as five pictures -- the pieces from
