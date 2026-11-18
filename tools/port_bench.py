@@ -98,6 +98,30 @@ LIMITS = [
     ('ra2', 'gpu_p95', BUDGET_MS, "the card's, run_ahead 2"),
     ('ra1-stress', 'cpu_p95', BUDGET_MS, 'four fighters, the ground twice: the processor'),
     ('ra1-stress', 'gpu_p95', BUDGET_MS, 'four fighters, the ground twice: the card'),
+    # the worst blanks, which decide whether a game is smooth: after the
+    # fight's first second, each blank's whole time on the window's
+    # thread but the wait for the clock (the swap counts: the card
+    # waited for is waited for there)
+    ('ra1', 'settled_p99', BUDGET_MS, "any blank after the fight's first second, 99%"),
+    ('ra1', 'settled_worst', 2 * BUDGET_MS, "the worst blank after the fight's first second"),
+    ('ra2', 'settled_p99', BUDGET_MS, 'the same, run_ahead 2'),
+    ('ra1-stress', 'settled_p99', BUDGET_MS, 'the same, four fighters, the ground twice'),
+]
+# The fight's first second is the end of its load: the limits on the
+# worst blanks are of what follows it.
+SETTLE_BLANKS = 60
+# A blank of the fight, after its first second, over this is a stall
+# (the card's driver doing something for the first time, a file read on
+# the thread that draws): it fails the budget even with --report-only,
+# since nothing the program does in play should take it.
+STALL_HARD_MS = 50.0
+# Limits that hold now, whatever --report-only says: (case, measure, at
+# most, what it is).
+HARD_LIMITS = [
+    ('ra1', 'settled_stalls', 0, 'blanks of the fight after its first second over %.0f ms' % STALL_HARD_MS),
+    ('ra0', 'settled_stalls', 0, 'the same, run_ahead 0'),
+    ('ra2', 'settled_stalls', 0, 'the same, run_ahead 2'),
+    ('ra1-stress', 'settled_stalls', 0, 'the same, four fighters, the ground twice'),
 ]
 # --against: a measure that grows by more than this share and this many
 # milliseconds is a regression.
@@ -265,9 +289,17 @@ def measure(folder):
             elif words[0] == 'g' and first <= int(words[1]) <= last:
                 gpu[int(words[1])] = [int(w) / 1000.0 for w in words[2:]]
     work_parts = [i for i, name in enumerate(parts) if name not in ('wait', 'swap')]
+    held_parts = [i for i, name in enumerate(parts) if name != 'wait']
 
     def work(values):
         return sum(values[i] for i in work_parts)
+
+    def held(values):
+        return sum(values[i] for i in held_parts)
+
+    settled = [held(v) for b, (_, v) in rows.items() if b >= first + SETTLE_BLANKS]
+    settled_stalls = sorted((b, round(held(v), 1)) for b, (_, v) in rows.items()
+                            if b >= first + SETTLE_BLANKS and held(v) > STALL_HARD_MS)
 
     frames = [b for b, (new, _) in rows.items() if new]
     cpu = [work(rows[b][1]) for b in frames]
@@ -300,6 +332,10 @@ def measure(folder):
         'gpu_worst': max(all_card.values()) if all_card else 0.0,
         'hitches': 100.0 * over / len(rows) if rows else 0.0,
         'stalls': stalls[:12],
+        'settled_p99': centile(settled, 0.99),
+        'settled_worst': max(settled) if settled else 0.0,
+        'settled_stalls': len(settled_stalls),
+        'settled_stall_blanks': settled_stalls[:12],
         'cpu_parts': {parts[i]: statistics.median(rows[b][1][i] for b in frames) for i in work_parts} if frames else {},
         'gpu_parts': {name: statistics.median(gpu[b][i] for b in frames if b in gpu)
                       for i, name in enumerate(gpu_parts)} if card else {},
@@ -318,6 +354,10 @@ def report(name, m):
         '%s %.2f' % kv for kv in sorted(m['cpu_parts'].items(), key=lambda kv: -kv[1]) if kv[1] >= 0.01))
     print('  card passes (median ms):     ' + ' '.join(
         '%s %.2f' % kv for kv in sorted(m['gpu_parts'].items(), key=lambda kv: -kv[1]) if kv[1] >= 0.01))
+    print('  after the first second: 99%% %.2f  worst %.2f; blanks over %.0f ms: %d%s'
+          % (m['settled_p99'], m['settled_worst'], STALL_HARD_MS, m['settled_stalls'],
+             ' (' + ', '.join('blank %d %.1f ms' % s for s in m['settled_stall_blanks']) + ')'
+             if m['settled_stalls'] else ''))
     if m['stalls']:
         print('  stalls: ' + ', '.join('blank %d %.1f ms (%s %.1f)' % s for s in m['stalls']))
 
@@ -387,6 +427,7 @@ def main():
         json.dump({'commit': name, 'card': card, 'window': WINDOW, 'cases': old}, f, indent=1)
     print('port-bench: the numbers in %s' % path)
     failed = False
+    theirs = None
     if args.against:
         rev = git('rev-parse', '--short=9', args.against)
         theirs_path = os.path.join(cache_dir(rev or args.against), 'results.json')
@@ -398,7 +439,7 @@ def main():
                 theirs = json.load(f)['cases']
             print('port-bench: against %s (%s)' % (args.against, rev))
             for case, m in results.items():
-                for key in ('cpu_p50', 'cpu_p95', 'gpu_p50', 'gpu_p95', 'worst'):
+                for key in ('cpu_p50', 'cpu_p95', 'gpu_p50', 'gpu_p95', 'worst', 'settled_p99'):
                     if case in theirs and key in theirs[case]:
                         was, now = theirs[case][key], m[key]
                         worse = now > was * (1 + REGRESSION_SHARE) and now - was > REGRESSION_MS
@@ -414,6 +455,27 @@ def main():
             failed = failed or over
             print('  %-11s %-12s %7.2f (at most %6.2f) %-5s %s' % (case, key, value, most,
                                                                  'OVER' if over else 'ok', what))
+    stalled = False
+    if args.budget:
+        print('port-bench: stalls, which fail whatever --report-only says')
+        for case, key, most, what in HARD_LIMITS:
+            if case not in results:
+                continue
+            value = results[case][key]
+            over = value > most
+            stalled = stalled or over
+            print('  %-11s %-14s %5d (at most %d) %-5s %s' % (case, key, value, most,
+                                                           'OVER' if over else 'ok', what))
+    if theirs is not None:
+        for case, m in results.items():
+            was = theirs.get(case, {}).get('settled_stalls')
+            if was is not None and m['settled_stalls'] > was:
+                print('  %-11s a stall more than %s: %d -> %d  REGRESSION'
+                      % (case, args.against, was, m['settled_stalls']))
+                stalled = True
+    if stalled:
+        print('port-bench: FAILED (a stall)')
+        return 1
     if failed and args.report_only:
         print('port-bench: over the budget, reported only (--report-only)')
         return 0

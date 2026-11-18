@@ -5007,6 +5007,68 @@ targets are met: then take `--report-only` out of `OWN` in
 `tools/gate.py`**. Where there is no card (CI, WSL), no Windows build,
 no disc or no hd mod, it says so and passes.
 
+**The worst blanks** (2026-11-18, later): a game is as smooth as its
+worst frames, so the budget also holds, after the fight's first second
+(its load's end, `SETTLE_BLANKS`), every blank's whole time on the
+window's thread but the wait for the clock, the swap included, since a
+card waited for is waited for there: `settled_p99` at most 6.94 ms
+(`ra1`, `ra2`, `ra1-stress`) and `settled_worst` at most twice it
+(`ra1`). Those are reported only, with the rest. **A stall fails now**:
+`settled_stalls`, the blanks after the fight's first second over
+`STALL_HARD_MS` (50 ms), must be none in every case, whatever
+`--report-only` says, and with `--against REV` there may be no more
+than that commit had.
+
+### Stalls
+
+**The hunter** (`tools/port_stalls.py`): the Windows build on the card,
+hidden, as `port_bench.py` runs it (2560 by 1440, unpaced, the budget's
+settings, the five mods), through long sessions: port_game's plan from
+the boot through the menus, a fight, its replay, the menus after and a
+second fight, with F9's report, the settings menu (F1) and F12's
+picture on the way; and fights from `--fight` on Lost Bridge, Castle
+Rooftop, Bamboo Thicket, Kabuki Stage, Ferry Dock and Snake Cliff, with
+other fighters, all three `run_ahead`s, and one with F2 pressed every
+400 blanks. Each runs with `--profile` and with **`--sample FILE`**
+(`src/port/window/sampler.c`, the 64-bit Windows program): a thread of
+its own stops the window's thread a thousand times a second, keeps its
+stack (the system's unwinder, which reads the driver's unwind
+information as well as the program's; the game's own files have none,
+so a stack ends at the first of them) with its blank and its part, and,
+while the window's thread has waited outside the program for three
+samples in a row, samples every other thread of the program too. The
+report (`build/stalls/report.txt`) lists each blank over 25 ms, a load's
+apart (a `(set-up)` or loading screen, a screen's first blanks, a
+fight's first second), with its screen, its parts, the card's passes,
+the functions it was in (the program's innermost on each stack, behind
+the modules under it: `[nvoglv64.dll>KERNELBASE.dll>ntdll.dll]
+port_GlUploadMirror < ...` is the window's thread waiting in the
+driver) and what the other threads were doing meanwhile.
+
+**What it found** (RTX 3090, driver 616.92, `main` at `77ee9f758`;
+another agent's program was on the card, so a few milliseconds either
+way are noise):
+
+| where | how long | why | now |
+| --- | --- | --- | --- |
+| about 30 s after the program starts, whatever is on the screen (a fight, a menu: the "115 ms at blank 1790") | 92 to 180 ms, once | NVIDIA's OpenGL driver holds the drawing thread up, once, at the first thread of the process to end; a thread of CRYPT32 that the system starts as the program opens ends when it has been idle for half a minute. Shown by ending a thread at blank 1000 on purpose: the stall went there, and the CRYPT32 thread's end cost nothing. The samples: the window's thread in `nvoglv64.dll` waiting, no other thread busy, that thread gone at the same blank | `warm.c`: a thread made and ended at the eighth picture, on the loading screen (73 to 85 ms there). At the first picture it was not enough. |
+| every blank | about 1.9 ms of waiting a blank on average, a fifth of the window's thread | `port_GlUploadMirror`'s `glTexSubImage2D` from the program's memory into the mirror the card is still reading makes the driver wait for the card | the renderer's: the mirror as a buffer texture written by `glBufferSubData`, only the rows changed (renderer agent's branch). A pixel-unpack buffer moved the wait onto the card instead (7 ms a frame). |
+| a fight's first frames | 50 to 130 ms | the shadows' program and mask, the fighters' program and layer, all first used there; the picture's targets made again because the scene's scale differs between the menus and the fight (`port_GlMakeTarget`, 20 ms) | the fighters' warm-up at load (fighters agent's branch); targets kept for each scale (renderer agent's) |
+| the top menu, as it opens | 40 to 58 ms, three times | some forty of the `ui` mod's pictures handed to the card in one blank, each a `glTexImage2D` and `glGenerateMipmap` | `port_GlLoadCollect` stops 2 ms after its first picture (fighters agent's branch) |
+| F9 and F12 | 61 to 96 ms | the window's PNG of 2560 by 1440 encoded and written on the drawing thread | encoded and written on a thread of its own: F9's blank 38 ms (the window read back, the report's files), F12's 26 |
+| the settings menu (F1) opened in a fight | 39 ms | the menu's first picture | not yet |
+
+The fights themselves, past their first second, had no blank over 50 ms
+in any session but those of the table; what is over the 144 Hz budget
+there is every frame, the averages' work. The benchmark's own fight
+(blanks 2915 to 3257, long after the 30 seconds) is the same before
+and after these changes, within the noise of the machine's other work
+(`ra1`: after the first second 99% 31.4 and 38.4 ms, worst 33.3 and
+46.9; no blank over 50 ms in any case, before or after). The window's
+pictures (`--tap-window`, 640 by 360, `frame_rate original`, the
+counter off, a fight on Lost Bridge) are the same to the byte as
+before, as two runs of one program are.
+
 ### The HD fighters on the card
 
 **What it was** (main at `8f09f98d1`, the card's measure above): the HD

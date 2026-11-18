@@ -78,13 +78,16 @@ def ndata_entry(index):
     """The bytes of one entry of the NDATA archive: from disc/NDATA if
     NDATA.DAT was extracted there, else out of the disc's image. The test is
     skipped if there is neither."""
+    # the tests run on threads: the archive is found whole before it is
+    # kept, so that no thread reads it half kept
     if not _NDATA:
+        found = {}
         dat = os.path.join(DISC, 'NDATA', 'NDATA.DAT')
         if os.path.exists(dat):
-            _NDATA['read'] = _file_reader(dat)
+            found['read'] = _file_reader(dat)
             inf_path = os.path.join(DISC, 'NDATA', 'NDATA.INF')
             with open(inf_path, 'rb') as f:
-                _NDATA['inf'] = f.read()
+                found['inf'] = f.read()
         else:
             image = disc_image()
             files = image_files(image)
@@ -96,10 +99,11 @@ def ndata_entry(index):
                     return b''.join(extract_iso.read_sector(f, dat_sector + sector + i)
                                     for i in range(sectors))
 
-            _NDATA['read'] = read
+            found['read'] = read
             with open(image, 'rb') as f:
-                _NDATA['inf'] = b''.join(extract_iso.read_sector(f, inf_sector + i)
-                                         for i in range(2))[:inf_size]
+                found['inf'] = b''.join(extract_iso.read_sector(f, inf_sector + i)
+                                        for i in range(2))[:inf_size]
+        _NDATA.update(found)
     start, length = struct.unpack_from('<HH', _NDATA['inf'], index * 4)
     return _NDATA['read'](start, length)
 

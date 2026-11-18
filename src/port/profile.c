@@ -45,6 +45,8 @@ void port_ProfileTake(u32 *ticks) {
     }
 }
 
+s32 port_ProfilePart(void) { return g_port_profile_part; }
+
 const char *port_ProfileName(s32 part) {
     return part >= 0 && part < PORT_PROFILE_PARTS
                ? g_port_profile_names[part]

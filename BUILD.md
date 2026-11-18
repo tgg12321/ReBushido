@@ -298,7 +298,20 @@ python tools/port_bench.py --case ra1 --against main   # and against main's numb
 Its runs are in `build/bench/runs/<case>/` (each with `profile.txt`,
 which `tools/port_profile.py` reads), and every result is kept by commit
 in the main checkout's `build/bench/<commit>/results.json`, so that a
-worktree compares itself to `main` without running `main` again.
+worktree compares itself to `main` without running `main` again. With
+`--budget`, a blank of a fight over 50 ms after its first second (a
+stall) fails even with `--report-only` (docs/PORT.md, "Measuring on
+the card").
+
+The stall hunter, the same way: long sessions through the menus and
+fights on six stages, every blank over 25 ms named with the functions
+the window's thread was in (docs/PORT.md, "Stalls"):
+
+```bash
+python tools/port_stalls.py                     # every session; build/stalls/report.txt
+python tools/port_stalls.py --session game      # one (--list: the sessions)
+python tools/port_stalls.py --reuse             # the runs already made, read again
+```
 
 ## How a file is built
 

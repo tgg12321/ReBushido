@@ -20,7 +20,8 @@
  *             [--tap-window FOLDER] [--tap-every N] [--tap-audio FILE]
  *             [--toggle-at N] [--shot-at N] [--fault-at N]
  *             [--fault-in-sound N] [--menu-at N[,N...]] [--menu-keys WORDS]
- *             [--menu-shots FOLDER] [--profile FILE] [--display-rate N]
+ *             [--menu-shots FOLDER] [--profile FILE] [--sample FILE]
+ *             [--display-rate N]
  *             [--bench-stress fighters=N,stage=M] */
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
@@ -182,7 +183,9 @@ static const char g_port_window_usage_end[] =
     "--run-ahead 0|1|2 (frames run ahead, whatever the settings say;\n"
     "with --fast or a picture taken for a test it is 0 unless this says),\n"
     "--profile FILE (where each blank's time went, and when each picture\n"
-    "was shown: tools/port_profile.py reads it), --display-rate N (a\n"
+    "was shown: tools/port_profile.py reads it), --sample FILE (the\n"
+    "window's thread sampled a thousand times a second, for\n"
+    "tools/port_stalls.py), --display-rate N (a\n"
     "display made up of N blanks a second, which a swap waits for) and\n"
     "--bench-stress fighters=N,stage=M (the HD fighters drawn as if there\n"
     "were N, the ground M times over: tools/port_bench.py), --report-at N\n"
@@ -811,6 +814,8 @@ int main(int argc, char **argv) {
             options->tap_audio = argv[++i];
         } else if (strcmp(word, "--profile") == 0 && has_value) {
             options->profile = argv[++i];
+        } else if (strcmp(word, "--sample") == 0 && has_value) {
+            options->sample = argv[++i];
         } else if (strcmp(word, "--bench-stress") == 0 && has_value) {
             options->bench_stress = argv[++i];
         } else if (strcmp(word, "--display-rate") == 0 && has_value) {
