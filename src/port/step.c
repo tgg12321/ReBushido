@@ -169,6 +169,7 @@ s32 g_port_ahead_quiet = TRUE;
 #define HELD_BLANKS_MAX AHEAD_BLANKS_A_FRAME
 static u32 g_port_held[HELD_BLANKS_MAX];
 static s32 g_port_held_count;
+void (*g_port_held_begin_hook)(void);
 
 /* The held blanks given their window's turns, one after another:
  * showing what the frames ahead left where `is_ahead_shown`, and
@@ -269,6 +270,9 @@ void port_BeforeStep(void) {
         g_port_held_count = 0;
         g_port_ahead_kept =
             g_port_ahead_frames > 1 && g_port_ahead_last == g_port_ahead_frames;
+        if (g_port_held_begin_hook != NULL) {
+            g_port_held_begin_hook();
+        }
         return;
     }
     is_drawn = port_RunAhead(

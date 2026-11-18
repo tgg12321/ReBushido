@@ -43,6 +43,7 @@ extern void (*g_port_ahead_blank_hook)(u32 blank);
 extern void (*g_port_ahead_done_hook)(void);
 extern s32 g_port_ahead;
 extern s32 (*g_port_held_blank_hook)(u32 blank);
+extern void (*g_port_held_begin_hook)(void);
 extern s32 g_port_ahead_sync;
 extern s32 g_port_ahead_quiet;
 

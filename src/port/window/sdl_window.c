@@ -262,6 +262,26 @@ static s32 g_port_has_lag;
 static s32 g_port_wants_lag;
 static u32 g_port_draw_cost;
 static u32 g_port_ready_after;
+/* The step's refresh (docs/PORT.md, "The step's refresh"): on unless
+ * RB_STEP_REFRESH=off; the refresh the picture shown before the step was
+ * handed over for, where the swap after it is still to come (0: none);
+ * and how many steps had one, and how many of those the step's own first
+ * picture would have made in time after all. */
+static s32 g_port_step_refresh_on = TRUE;
+static u32 g_port_queued_for;
+/* What a held step and its first picture take, from the boundary's read
+ * of the input, on average (a peak held too many steps to it that would
+ * have been in time); the step begun and not yet shown,
+ * when it began, and what the picture shown before it took. */
+static u32 g_port_step_ready;
+static s32 g_port_step_pending;
+static u32 g_port_step_began;
+static u32 g_port_step_spent;
+static u32 g_port_step_refreshes;
+static u32 g_port_step_refresh_early;
+/* The clock's samples waited for since the last picture was handed to
+ * the display, for --profile's `p` line. */
+static u32 g_port_waited;
 static u32 g_port_pictures;
 static u32 g_port_pictures_between;
 /* Blanks that showed nothing for being more than a refresh late
@@ -347,6 +367,7 @@ static s32 g_port_menu_texture_w;
 static s32 g_port_menu_texture_h;
 
 static void port_SwapPicture(void);
+static void port_NoteStepRefresh(u32 now, u32 shown_for);
 static void port_ReadInput(u32 blank);
 static s32 port_WatchSound(u32 blank, s32 is_hurried);
 static void port_MakeReport(void);
@@ -453,13 +474,15 @@ static u32 port_ReadClock(void) {
 
 /* Waits `samples` of the clock: most of it asleep, the end awake. */
 static void port_WaitFor(u32 samples) {
-    u32 until = port_ReadClock() + samples;
+    u32 began = port_ReadClock();
+    u32 until = began + samples;
     s32 was = port_ProfileSwitch(PORT_PROFILE_WAIT);
 
     for (;;) {
         s32 left = (s32)(until - port_ReadClock());
 
         if (left <= 0) {
+            g_port_waited += port_ReadClock() - began;
             port_ProfileSwitch(was);
             return;
         }
@@ -477,6 +500,17 @@ static void port_WaitForMadeUpBlank(void) {
     Uint64 period = frequency / (Uint64)g_port_window_options.display_rate;
     Uint64 since = SDL_GetPerformanceCounter() - g_port_clock_start;
     Uint64 next = (since / period + 1) * period;
+
+    /* a picture handed over for a refresh without waiting for it
+     * (port_HandPicture) is shown at that refresh: this one at the next */
+    if (g_port_queued_for != 0) {
+        Uint64 queued =
+            (Uint64)g_port_queued_for * frequency / (Uint64)PORT_SPU_RATE;
+
+        if (next < queued + period / 2) {
+            next = (queued + period / 2) / period * period + period;
+        }
+    }
 
     for (;;) {
         Uint64 now = SDL_GetPerformanceCounter() - g_port_clock_start;
@@ -1098,6 +1132,50 @@ static s32 port_PictureRate(void) {
     return g_port_settings.frame_rate;
 }
 
+#if defined(_WIN32)
+/* A hidden window's program keeps the clock's fine waits: since Windows
+ * 11 a program none of whose windows can be seen is held to the system's
+ * coarse timer (15.6 ms) whatever it asked for, so a wait of a millisecond
+ * or two in a paced run on the card (--hidden) slept a refresh and more
+ * (docs/PORT.md, "The step's refresh"). The call is Windows 11's own
+ * (SetProcessInformation, ProcessPowerThrottling,
+ * PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION); an older system has
+ * none and needs none. */
+#define POWER_THROTTLING_CLASS 4
+#define POWER_THROTTLING_VERSION 1
+#define POWER_THROTTLING_IGNORE_TIMER_RESOLUTION 0x4
+
+static void port_KeepFineTimer(void) {
+    typedef struct {
+        u32 version;
+        u32 control;
+        u32 state;
+    } Throttling;
+
+    typedef int (*SetInformation)(
+        void *process, int what, void *data, u32 size);
+    void *kernel = SDL_LoadObject("kernel32.dll");
+    SetInformation set;
+    Throttling throttling;
+
+    if (kernel == NULL) {
+        return;
+    }
+    set = (SetInformation)SDL_LoadFunction(kernel, "SetProcessInformation");
+    if (set == NULL) {
+        return;
+    }
+    throttling.version = POWER_THROTTLING_VERSION;
+    throttling.control = POWER_THROTTLING_IGNORE_TIMER_RESOLUTION;
+    throttling.state = 0;
+    /* the current process: the handle (HANDLE)-1 */
+    if (!set((void *)(intptr_t)-1, POWER_THROTTLING_CLASS, &throttling,
+             sizeof(throttling))) {
+        port_Note("video: a hidden window's fine timer is not kept");
+    }
+}
+#endif
+
 /* The window itself, with a context for the graphics card or without
  * one. */
 static void port_MakeWindow(s32 wants_gl) {
@@ -1105,6 +1183,9 @@ static void port_MakeWindow(s32 wants_gl) {
 
     if (g_port_window_options.is_hidden) {
         flags |= SDL_WINDOW_HIDDEN;
+#if defined(_WIN32)
+        port_KeepFineTimer();
+#endif
     } else if (g_port_settings.is_fullscreen) {
         flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     }
@@ -2795,6 +2876,16 @@ static void port_ReadInputLate(void) {
     port_ReadEvents();
     port_SendPads();
     port_ReadDevicesNow();
+    if (g_port_profile_file != NULL) {
+        /* when the game took its input, in microseconds as the `p` lines:
+         * a press's lag to the picture that shows it (tools/port_bench.py
+         * --paced) */
+        fprintf(
+            g_port_profile_file, "k %llu\n",
+            (unsigned long long)((SDL_GetPerformanceCounter() -
+                                  g_port_clock_start) *
+                                 MICROSECONDS / SDL_GetPerformanceFrequency()));
+    }
     /* in a load, no frame is run ahead across it (step.c) */
     g_port_ahead_held = port_LoadKind() != PORT_LOAD_NONE;
     if (g_port_has_gl && g_port_tween_on && port_GetRunAhead() > 0 &&
@@ -2937,20 +3028,26 @@ static void port_ShownDisplay(PortDisplay *display) {
 
 /* ---- the pictures of one blank ---- */
 
-/* The picture that is ready, shown. */
-static void port_SwapPicture(void) {
+/* The picture that is ready, shown; or, where `for_refresh` is not 0,
+ * handed over for that refresh and not waited for (the step's refresh,
+ * below): the display shows it then while the program goes on, and the
+ * next picture is shown at the refresh after it. */
+static void port_HandPicture(u32 for_refresh) {
     s32 was = port_ProfileSwitch(PORT_PROFILE_SWAP);
     Uint64 swapped;
 
-    if (g_port_window_options.display_rate > 0 && g_port_vsync) {
+    if (g_port_window_options.display_rate > 0 && g_port_vsync &&
+        for_refresh == 0) {
         port_WaitForMadeUpBlank();
     }
     if (g_port_has_gl) {
-        SDL_GL_SwapWindow(g_port_window);
+        if (for_refresh == 0 || g_port_window_options.display_rate == 0) {
+            SDL_GL_SwapWindow(g_port_window);
+        }
         /* the driver's first time of a thread ended, on the loading
          * screen (warm.c) */
         port_WarmDriver();
-        if (g_port_vsync && g_port_settings.low_latency) {
+        if (g_port_vsync && g_port_settings.low_latency && for_refresh == 0) {
             /* `low_latency`: back only once the card has drawn it all and
              * the swap is made, so that the next picture is begun from
              * when this one went up and none waits in the driver's queue
@@ -2962,20 +3059,33 @@ static void port_SwapPicture(void) {
     }
     port_ProfileSwitch(was);
     if (g_port_vsync) {
-        port_NoteSwap(&g_port_refresh, port_ReadClock());
+        port_NoteSwap(
+            &g_port_refresh, for_refresh != 0 ? for_refresh : port_ReadClock());
     }
     /* when the swap came back, in microseconds, and the picture's phase:
-     * for --profile, and for a report */
-    swapped = (SDL_GetPerformanceCounter() - g_port_clock_start) *
-              MICROSECONDS / SDL_GetPerformanceFrequency();
+     * for --profile, and for a report; a picture not waited for, when it
+     * is shown */
+    swapped = for_refresh != 0
+                  ? (Uint64)for_refresh * MICROSECONDS / PORT_SPU_RATE
+                  : (SDL_GetPerformanceCounter() - g_port_clock_start) *
+                        MICROSECONDS / SDL_GetPerformanceFrequency();
     port_ReportNoteSwap(swapped, g_port_profile_phase);
     if (g_port_profile_file != NULL) {
-        fprintf(g_port_profile_file, "p %llu %d\n", (unsigned long long)swapped,
-                g_port_profile_phase);
+        /* then 1 for a picture not waited for, and the microseconds
+         * waited for the clock since the picture before
+         * (tools/port_bench.py) */
+        fprintf(g_port_profile_file, "p %llu %d %d %u\n",
+                (unsigned long long)swapped, g_port_profile_phase,
+                for_refresh != 0 ? 1 : 0,
+                (u32)((u64)g_port_waited * MICROSECONDS / PORT_SPU_RATE));
     }
+    g_port_waited = 0;
+    g_port_queued_for = for_refresh;
     g_port_pictures++;
     port_CountFps(&g_port_shown_meter, port_ReadClock(), 1);
 }
+
+static void port_SwapPicture(void) { port_HandPicture(0); }
 
 /* A picture between the frame on show and the frame after it, at the
  * phase the clock has reached, ready to be shown. FALSE where there is
@@ -3113,6 +3223,7 @@ static void port_ShowPictures(u32 due) {
     }
     /* how long after the last blank's pictures this one's first is ready:
      * the game's step and that picture, at its recent peak */
+    port_NoteStepRefresh(port_ReadClock(), g_port_queued_for);
     ready = port_ReadClock() - g_port_left_at;
     g_port_ready_after = ready > g_port_ready_after
                              ? ready
@@ -3168,6 +3279,70 @@ static void port_ShowPictures(u32 due) {
     }
     g_port_last_due = due;
     g_port_left_at = port_ReadClock();
+}
+
+/* ---- the step's refresh (docs/PORT.md, "The step's refresh") ---- */
+
+/* What is kept to spare before a refresh, in the clock's samples (a
+ * millisecond). */
+#define STEP_REFRESH_SPARE (PORT_SPU_RATE / 1000)
+
+/* A step whose window's turns are held begins (step.c), its input read:
+ * where the display's next refresh comes before the step and its first
+ * picture can be ready (the time they take, on average), that
+ * refresh would show the picture before it again. A picture between the
+ * two frames written down already is drawn for it now, and handed over
+ * without waiting for the card: the step runs while the display shows
+ * it, and the step's own first picture is shown at the refresh after,
+ * which is the one it would have made anyway. The input was read as
+ * before, so nothing is later. Only with the display waited for and its
+ * refreshes known; never for a picture a test or the player asked for. */
+static void port_StepRefresh(void) {
+    u32 now = port_ReadClock();
+    u32 next;
+
+    g_port_step_pending = TRUE;
+    g_port_step_began = now;
+    g_port_step_spent = 0;
+    if (!g_port_step_refresh_on || !g_port_is_open || !g_port_vsync ||
+        g_port_refresh.period == 0 || !g_port_refresh.is_seen ||
+        g_port_window_options.is_fast || g_port_wants_shot ||
+        port_PictureRate() == 0 || g_port_step_ready == 0) {
+        return;
+    }
+    next = port_NextRefresh(&g_port_refresh, now, g_port_draw_cost);
+    /* a refresh is seen a little after it comes, at the swap's return:
+     * the step's picture is held to it with that much to spare */
+    if ((s32)(now + g_port_step_ready + STEP_REFRESH_SPARE - next) <= 0) {
+        return;
+    }
+    if (!port_DrawTween(1)) {
+        return;
+    }
+    port_DrawCounter();
+    port_HandPicture(next);
+    g_port_step_spent = port_ReadClock() - now;
+    g_port_step_refreshes++;
+}
+
+/* The held step's first picture is drawn, at `now`: what the step and it
+ * took, less the picture shown before it, into their average; and whether
+ * that picture was needed after all (the log's count). */
+static void port_NoteStepRefresh(u32 now, u32 shown_for) {
+    u32 took;
+
+    if (!g_port_step_pending) {
+        return;
+    }
+    g_port_step_pending = FALSE;
+    took = now - g_port_step_began - g_port_step_spent;
+    g_port_step_ready =
+        g_port_step_ready == 0 ? took
+                               : port_PaceAverage(g_port_step_ready, took);
+    if (shown_for != 0 &&
+        (s32)(g_port_step_began + took - shown_for) + STEP_REFRESH_SPARE < 0) {
+        g_port_step_refresh_early++;
+    }
 }
 
 /* ---- quick loading (docs/PORT.md, "Quick loading") ---- */
@@ -3479,6 +3654,12 @@ static void port_StopPainters(void);
 static void port_StopPairing(void);
 
 static void port_CloseWindow(s32 code) {
+    if (g_port_step_refreshes != 0) {
+        port_Note("the step's refresh: %u steps showed a picture for the "
+                  "refresh they would have missed, %u of them in time for "
+                  "their own",
+                  g_port_step_refreshes, g_port_step_refresh_early);
+    }
     port_StopPainters();
     port_StopPairing();
     if (g_port_audio_tap != NULL) {
@@ -3752,6 +3933,11 @@ void port_StartWindow(void) {
         strcmp(SDL_getenv("RB_AHEAD"), "old") != 0) {
         g_port_held_blank_hook = port_HeldBlankTurn;
     }
+    /* the step's refresh; RB_STEP_REFRESH=off: the refresh shows the
+     * picture before it again, as before */
+    g_port_step_refresh_on = SDL_getenv("RB_STEP_REFRESH") == NULL ||
+                             strcmp(SDL_getenv("RB_STEP_REFRESH"), "off") != 0;
+    g_port_held_begin_hook = port_StepRefresh;
     g_port_ahead_sync = SDL_getenv("RB_DONE_SYNC") == NULL;
     g_port_ahead_quiet = SDL_getenv("RB_AHEAD_SOUND") == NULL ||
                          strcmp(SDL_getenv("RB_AHEAD_SOUND"), "mix") != 0;
