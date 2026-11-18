@@ -1791,6 +1791,34 @@ static void port_GlFighterWarm(const FighterModel *model, s32 slot) {
     }
     port_GlFighterCardWarm(
         slot, model->buffer, model->vertex_count, holds, count);
+    /* the layer at the picture's size, and the program drawn with once,
+     * the body and a cloth, three corners each: the layer is cleared
+     * before every drawing of it */
+    {
+        PortGlPicture picture;
+
+        port_GlGetPicture(&picture);
+        if (picture.target_w > 0 && picture.target_h > 0 &&
+            port_GlFighterLayer(&g_fighter.layer[LAYER_FIGHTERS],
+                                picture.target_w, picture.target_h)) {
+            glViewport(0, 0, 1, 1);
+            glUseProgram(g_fighter.program);
+            glUniform1i(g_fighter.at_cloth, 0);
+            glBindVertexArray(model->array);
+            glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, NULL);
+            if (count > 0) {
+                glUniform1i(g_fighter.at_cloth, 1);
+                glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, holds[0].out);
+                glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, holds[0].out);
+                glBindVertexArray(model->cloth[0].array);
+                glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, NULL);
+                glUniform1i(g_fighter.at_cloth, 0);
+            }
+            glBindVertexArray(0);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            port_GlForgetState();
+        }
+    }
 }
 
 void port_GlFighterPreload(void) {
@@ -2459,9 +2487,9 @@ s32 port_GlFighterCaster(PortAddress object) {
             object < view->nodes_to) {
             const FighterModel *model = port_GlFighterModel(view->model_id);
 
-            /* a cloth drawn smooth casts with the body, after his
-             * triangles (port_GlFighterCastTriangles); one that is the
-             * game's own casts its own faces */
+            /* a cloth drawn smooth casts with the body
+             * (port_GlFighterCastOf); one that is the game's own casts
+             * its own faces */
             if (port_FighterIsCloth(object) &&
                 port_GlFighterClothOfNode(model, view, object) < 0) {
                 return -1;

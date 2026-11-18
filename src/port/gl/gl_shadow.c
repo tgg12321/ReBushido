@@ -711,6 +711,8 @@ const char *port_GlShadowStart(void *(*getproc)(const char *name)) {
     return NULL;
 }
 
+static s32 port_GlShadowMakeMask(const PortGlPicture *picture);
+
 void port_GlShadowWarm(void) {
     static const float corners[18];
     static GLuint pixel;
@@ -742,7 +744,22 @@ void port_GlShadowWarm(void) {
     glUniform1f(g_shadow.cast_at_t, 0.0f);
     glUniform4f(g_shadow.cast_at_project, 1.0f, 0.0f, 0.0f, 1.0f);
     glDrawArrays(GL_TRIANGLES, 0, 3);
+    /* ... and the darkening, of a pixel */
+    glUseProgram(g_shadow.dark);
+    glBindVertexArray(g_shadow.quad_array);
+    glUniform2f(g_shadow.dark_at_target, 1.0f, 1.0f);
+    glUniform4f(g_shadow.dark_at_rect, 0.0f, 0.0f, 1.0f, 1.0f);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
+    /* the mask, at the picture's size */
+    {
+        PortGlPicture picture;
+
+        port_GlGetPicture(&picture);
+        if (picture.target_w > 0 && picture.target_h > 0) {
+            port_GlShadowMakeMask(&picture);
+        }
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     g_shadow.sent_one = 0;
     g_shadow.sent_two = 0;

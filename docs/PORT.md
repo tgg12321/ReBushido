@@ -4268,11 +4268,10 @@ lines).
 
 **The HD cloth and body shared out.** The places of the body posed
 for the cloth and for the cast shadows, and each place of a cloth kept
-out of the body, are each their own sum, so they are shared out among
-the window's helper threads (`port_GlParallel`, `gl_load.h`: four with
-the drawing thread), each with room of its own for the body's search
-(`port_GlClothBodyHoldBy`): the same vertices to the bit however they
-are shared.
+out of the body, are each their own sum, so they were shared out among
+four of the window's threads: the same vertices to the bit however they
+were shared. All of it is now done on the card ("The HD fighters on the
+card"), and the threads are gone.
 
 **Measured** on the owner's card (RTX 3090, 2560 by 1440, his
 settings, `fighter_models on`, `shadows cast`, `run_ahead 2`, the
@@ -4943,18 +4942,19 @@ the environment draws the game's faces for every cloth.
 **The cloth kept out of the body.** The game moved its cloth round its
 own low body; the model is fuller, and the cloth the game moved went into
 its hips and legs (the owner: "cloth can clip into the existing model").
-So once a frame the model's body is posed on the CPU as the card poses it
-(the terms, and the normals turned by the joints), and every point of the
-cloth, and then every place of the subdivided surface, is put out of it
-to 5 units outside along the surface's normal there
-(`port_GlClothBodyHold`): a point's distance from the body is the sum of
+So once a frame the model's body is posed as the fighters' shader poses
+it (the terms, and the normals turned by the joints), and every point of
+the cloth, and then every place of the subdivided surface, is put out of
+it to 6 units outside along the surface's normal there, all on the card
+("The HD fighters on the card", `gl_fighter_card.c`): a point's distance
+from the body is the sum of
 the body's vertices about it, each one's distance along its own normal,
 weighed by (1 - d²/r²)², r one and a half times the nearest vertex's
 distance and at least 48 units, found through a hashed grid of 64-unit
 cubes. The sum is smooth, so a point kept out moves smoothly from frame
 to frame. The frame's cloth kept out is written down in the world's units
 under what it was made from (the model, its 21 bones and the cloth's
-points: `port_GlFighterHeldCloth`, sixteen a slot: three frames of five cloths), and the frame's picture,
+points: `port_GlFighterHeldCloth`, a buffer on the card each, 32 a slot), and the frame's picture,
 its shadow, every picture between it and the next frame and a frame run
 ahead to the same pose all read it; a picture between two frames mixes
 the two frames' kept-out surfaces, place by place and normal by normal.
@@ -5048,12 +5048,14 @@ fighter or a weapon drawn from a model of its own casts the model: each
 triangle of it, posed by its terms on the frame's bones, is slid onto the
 ground along the game's sun as the game's faces are, in the place of the
 game's faces of that thing (`port_GlFighterCaster`,
-`port_GlFighterCastTriangles`). A cloth drawn smooth casts with its
-fighter: `port_GlFighterCaster` gives a cloth node his slot, and the
-slot's triangles are the body's and then the smooth cloths', kept out of
-the body as they are drawn (`port_GlFighterCastCloths`); a cloth that is
-the game's own casts its own faces. A shadow between two frames moves each triangle the way
-it went, as before, found again by its number.
+`port_GlFighterCastOf`), posed and slid by the card's own vertex shader
+from the model's buffers ("The HD fighters on the card"). A cloth drawn
+smooth casts with its fighter: `port_GlFighterCaster` gives a cloth node
+his slot, and the slot casts the body and then the smooth cloths, from
+the buffers the card kept them out of the body into; a cloth that is the
+game's own casts its own faces. A shadow between two frames moves each
+vertex the way it went: the same thing's model in the frame after it,
+posed on that frame's bones.
 
 **The file** (`src/port/gl/gl_fighter_file.h`): glTF 2.0 binary, one skin
 whose joints are named `bone00` to `bone20`, vertices in the game's own
