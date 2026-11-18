@@ -217,6 +217,20 @@ PORT_GL_FUNCTIONS
 /* Rectangles of video memory written since the card last drew, kept to
  * be stretched into the colour buffer together (port_GlDrawBlits). */
 #define BLITS_MAX 32
+/* The rectangles of video memory the card has not been sent, kept apart
+ * (port_GlMarkMirror): a frame's clear is at one end of video memory and
+ * the fog's colour tables at the other, and the one rectangle holding
+ * both is most of it. */
+#define MIRROR_RECTS 16
+/* Two rectangles are sent as one where that adds no more than this many
+ * pixels that were not written. */
+#define MIRROR_SLACK 4096
+/* What a picture between two frames changed of the copy of video memory
+ * here, kept to be put back (port_GlMirrorHold): rows of rectangles, and
+ * their pixels as they were. A picture writes again what its frame wrote,
+ * nearly all of which the copy holds already. */
+#define UNDO_ROWS 4096
+#define UNDO_PIXELS PORT_VRAM_PIXELS
 /* Rectangles written from a mod's picture that are remembered: the movie
  * player's title picture, and the two buffers it copies it into to fade
  * it out. */
@@ -500,6 +514,17 @@ static struct {
      * (port_GlMarkMirror). `mirror` is what the card has not been sent. */
     u16 *staged;
     PortDirtyRect mirror;
+    PortDirtyRect mirror_rect[MIRROR_RECTS];
+    s32 mirror_rects;
+    /* while a picture between two frames is drawn: the rows of the copy
+     * it changed, as they were (port_GlMirrorHold) */
+    s32 is_holding;
+    s32 undo_lost;
+    s32 undo_rows;
+    u32 undo_used;
+    PortDirtyRect *undo_row;
+    u32 *undo_at;
+    u16 *undo;
     /* what is to be stretched into the colour buffer before the card
      * next draws anything else (port_GlDrawBlits) */
     PortGlBlit blit[BLITS_MAX];
@@ -1584,27 +1609,96 @@ static s32 port_GlMakeTarget(void) {
 
 /* ---- the mirror of video memory ---- */
 
+/* The rectangles of the copy here that the card has not been sent, sent
+ * to the mirror on the card. */
 static void port_GlUploadMirror(void) {
-    s32 w;
-    s32 h;
+    s32 i;
 
     if (g_gl.mirror.is_empty) {
         return;
     }
     PORT_GPU_BEGIN(PORT_GPU_VRAM);
-    w = g_gl.mirror.right - g_gl.mirror.left + 1;
-    h = g_gl.mirror.bottom - g_gl.mirror.top + 1;
     glBindTexture(GL_TEXTURE_2D, g_gl.vram_texture);
     glPixelStorei(GL_UNPACK_ROW_LENGTH, PORT_VRAM_WIDTH);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
-    glTexSubImage2D(
-        GL_TEXTURE_2D, 0, g_gl.mirror.left, g_gl.mirror.top, w, h,
-        GL_RED_INTEGER, GL_UNSIGNED_SHORT,
-        &g_gl.staged[g_gl.mirror.top * PORT_VRAM_WIDTH + g_gl.mirror.left]);
+    for (i = 0; i < g_gl.mirror_rects; i++) {
+        const PortDirtyRect *rect = &g_gl.mirror_rect[i];
+        s32 w = rect->right - rect->left + 1;
+        s32 h = rect->bottom - rect->top + 1;
+
+        glTexSubImage2D(
+            GL_TEXTURE_2D, 0, rect->left, rect->top, w, h, GL_RED_INTEGER,
+            GL_UNSIGNED_SHORT,
+            &g_gl.staged[rect->top * PORT_VRAM_WIDTH + rect->left]);
+        g_gl.upload_count += (u32)(w * h);
+    }
     glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-    g_gl.upload_count += (u32)(w * h);
+    g_gl.mirror_rects = 0;
     port_ClearDirtyRect(&g_gl.mirror);
     PORT_GPU_END();
+}
+
+/* The pixels the rectangle about both `a` and `b` has that neither has
+ * (where they overlap, counted twice: near enough for a choice). */
+static s32 port_GlMergeWaste(const PortDirtyRect *a, const PortDirtyRect *b) {
+    PortDirtyRect both = *a;
+
+    both.left = a->left < b->left ? a->left : b->left;
+    both.top = a->top < b->top ? a->top : b->top;
+    both.right = a->right > b->right ? a->right : b->right;
+    both.bottom = a->bottom > b->bottom ? a->bottom : b->bottom;
+    return port_DirtyRectPixels(&both) - port_DirtyRectPixels(a) -
+           port_DirtyRectPixels(b);
+}
+
+/* `rect` among the rectangles the card has not been sent: with the one it
+ * costs least to send it with, where that costs little, or the one it
+ * costs least with of all where there is no room for it alone. */
+static void port_GlKeepMirrorRect(const PortDirtyRect *rect) {
+    s32 best = -1;
+    s32 best_waste = 0;
+    s32 i;
+
+    for (i = 0; i < g_gl.mirror_rects; i++) {
+        s32 waste = port_GlMergeWaste(&g_gl.mirror_rect[i], rect);
+
+        if (best < 0 || waste < best_waste) {
+            best = i;
+            best_waste = waste;
+        }
+    }
+    if (best < 0 ||
+        (best_waste > MIRROR_SLACK && g_gl.mirror_rects < MIRROR_RECTS)) {
+        g_gl.mirror_rect[g_gl.mirror_rects++] = *rect;
+        return;
+    }
+    port_AddDirtyRect(&g_gl.mirror_rect[best], rect->left, rect->top,
+                      rect->right - rect->left + 1,
+                      rect->bottom - rect->top + 1);
+}
+
+/* A row of the copy here, from `left` to `right`, as it is before a picture
+ * between two frames writes over it (port_GlMirrorHold). */
+static void port_GlKeepUndo(s32 row, s32 left, s32 right, const u16 *was) {
+    u32 count = (u32)(right - left + 1);
+    PortDirtyRect *one;
+
+    if (!g_gl.is_holding || g_gl.undo_lost) {
+        return;
+    }
+    if (g_gl.undo_rows == UNDO_ROWS || g_gl.undo_used + count > UNDO_PIXELS) {
+        g_gl.undo_lost = TRUE;
+        return;
+    }
+    one = &g_gl.undo_row[g_gl.undo_rows];
+    one->left = left;
+    one->right = right;
+    one->top = row;
+    one->bottom = row;
+    one->is_empty = FALSE;
+    g_gl.undo_at[g_gl.undo_rows++] = g_gl.undo_used;
+    memcpy(&g_gl.undo[g_gl.undo_used], was, count * sizeof(u16));
+    g_gl.undo_used += count;
 }
 
 /* A rectangle of video memory, as it is now, to be sent to the card: it
@@ -1614,6 +1708,10 @@ static void port_GlUploadMirror(void) {
  * port_AddDirtyRect takes it. */
 static void port_GlMarkMirror(s32 x, s32 y, s32 w, s32 h) {
     PortDirtyRect rect;
+    size_t bytes;
+    s32 is_all;
+    s32 first = -1;
+    s32 last = -1;
     s32 row;
 
     if (w <= 0 || h <= 0) {
@@ -1621,12 +1719,32 @@ static void port_GlMarkMirror(s32 x, s32 y, s32 w, s32 h) {
     }
     port_ClearDirtyRect(&rect);
     port_AddDirtyRect(&rect, x, y, w, h);
+    bytes = (size_t)(rect.right - rect.left + 1) * sizeof(u16);
+    /* All of video memory is sent as it is, whatever the copy holds: it is
+     * what a new mirror on the card is first filled with. */
+    is_all = port_DirtyRectPixels(&rect) == PORT_VRAM_PIXELS;
     for (row = rect.top; row <= rect.bottom; row++) {
-        memcpy(&g_gl.staged[row * PORT_VRAM_WIDTH + rect.left],
-               &g_port_vram[row * PORT_VRAM_WIDTH + rect.left],
-               (size_t)(rect.right - rect.left + 1) * sizeof(u16));
+        u16 *to = &g_gl.staged[row * PORT_VRAM_WIDTH + rect.left];
+        const u16 *from = &g_port_vram[row * PORT_VRAM_WIDTH + rect.left];
+
+        if (!is_all && memcmp(to, from, bytes) == 0) {
+            continue;
+        }
+        port_GlKeepUndo(row, rect.left, rect.right, to);
+        memcpy(to, from, bytes);
+        if (first < 0) {
+            first = row;
+        }
+        last = row;
     }
-    port_AddDirtyRect(&g_gl.mirror, x, y, w, h);
+    if (first < 0) {
+        return;
+    }
+    rect.top = first;
+    rect.bottom = last;
+    port_AddDirtyRect(&g_gl.mirror, rect.left, rect.top,
+                      rect.right - rect.left + 1, rect.bottom - rect.top + 1);
+    port_GlKeepMirrorRect(&rect);
 }
 
 /* ---- the batches ---- */
@@ -2838,6 +2956,59 @@ void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h) {
     port_GlSceneWroteVram(x, y, w, h);
 }
 
+s32 port_GlMirrorHold(void) {
+    if (!g_gl.is_started) {
+        return FALSE;
+    }
+    if (g_gl.undo == NULL) {
+        g_gl.undo_row = malloc(UNDO_ROWS * sizeof(*g_gl.undo_row));
+        g_gl.undo_at = malloc(UNDO_ROWS * sizeof(*g_gl.undo_at));
+        g_gl.undo = malloc(UNDO_PIXELS * sizeof(*g_gl.undo));
+        if (g_gl.undo_row == NULL || g_gl.undo_at == NULL ||
+            g_gl.undo == NULL) {
+            free(g_gl.undo_row);
+            free(g_gl.undo_at);
+            free(g_gl.undo);
+            g_gl.undo_row = NULL;
+            g_gl.undo_at = NULL;
+            g_gl.undo = NULL;
+            return FALSE;
+        }
+    }
+    g_gl.is_holding = TRUE;
+    g_gl.undo_lost = FALSE;
+    g_gl.undo_rows = 0;
+    g_gl.undo_used = 0;
+    return TRUE;
+}
+
+s32 port_GlMirrorGiveBack(void) {
+    s32 i;
+
+    if (!g_gl.is_holding) {
+        return FALSE;
+    }
+    g_gl.is_holding = FALSE;
+    if (g_gl.undo_lost) {
+        return FALSE;
+    }
+    port_GlDrawBlits();
+    /* the last row kept first: a row written twice goes back to what it
+     * was before the first */
+    for (i = g_gl.undo_rows - 1; i >= 0; i--) {
+        const PortDirtyRect *one = &g_gl.undo_row[i];
+
+        memcpy(&g_gl.staged[one->top * PORT_VRAM_WIDTH + one->left],
+               &g_gl.undo[g_gl.undo_at[i]],
+               (size_t)(one->right - one->left + 1) * sizeof(u16));
+        port_AddDirtyRect(&g_gl.mirror, one->left, one->top,
+                          one->right - one->left + 1, 1);
+        port_GlKeepMirrorRect(one);
+    }
+    port_GlUploadMirror();
+    return TRUE;
+}
+
 void port_GlRestoreVram(s32 x, s32 y, s32 w, s32 h) {
     if (!g_gl.is_started || w <= 0 || h <= 0) {
         return;
@@ -3228,6 +3399,7 @@ const char *port_GlStart(
     glScissor(0, 0, g_gl.target_w, g_gl.target_h);
     g_gl.is_started = TRUE;
     /* video memory as it is now, all of it */
+    g_gl.mirror_rects = 0;
     port_ClearDirtyRect(&g_gl.mirror);
     g_gl.blit_count = 0;
     for (i = 0; i < REPLACED_MAX; i++) {

@@ -91,6 +91,15 @@ extern void port_TweenGuessOnly(s32 on);
  * longer the ones on the display. */
 extern void port_TweenForget(void);
 
+/* Whether a picture between frames has put the card's mirror of video
+ * memory back from video memory as it is since this was last asked: what
+ * it does where what the picture changed of the mirror was too much to
+ * keep (gl.h, port_GlMirrorHold). With frames run ahead that is a frame or
+ * two behind the frames the card draws, and the window sends the mirror
+ * video memory as it is before the frames are run ahead (sdl_window.c,
+ * port_ReadInputLate). */
+extern s32 port_TweenTakeMirrorBehind(void);
+
 /* How many frames have been written down: the caller watches this to
  * see when the game has drawn a new one, and takes the time then. */
 extern u32 port_TweenGeneration(void);

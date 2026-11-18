@@ -146,6 +146,20 @@ extern void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h);
  * again each picture: a sixth of the processor's time in a fight on the
  * owner's PC (2026-11-18). */
 extern void port_GlRestoreVram(s32 x, s32 y, s32 w, s32 h);
+/* A picture between two frames writes again, into the mirror, what the
+ * frame on show wrote of video memory, and then puts the mirror back as it
+ * was. Put back by what the picture changed of the mirror -- nearly
+ * nothing, since a frame's clear and its fog's colour tables are mostly
+ * what the mirror holds already -- and not by what video memory holds
+ * now, which is the software GPU's picture where the frame was cleared
+ * and is not the mirror's business: putting that back sent the card some
+ * 400,000 pixels each picture, and sending them to a texture the card was
+ * still reading from held the window's thread for 3 ms (2026-11-18).
+ * Hold before the picture's first write; give back after its last.
+ * FALSE from GiveBack where what was changed was too much to keep: the
+ * caller then puts the rectangles back as before (port_GlRestoreVram). */
+extern s32 port_GlMirrorHold(void);
+extern s32 port_GlMirrorGiveBack(void);
 
 /* The counts of the frame being drawn (vertices, draws, pixels of the
  * mirror sent, triangles left out), kept aside and put back: a picture

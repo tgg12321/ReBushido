@@ -206,6 +206,9 @@ static struct {
     s32 track_x;
     s32 track_y;
     s32 has_track;
+    /* the mirror was put back from video memory as it is, and not as the
+     * card's frames left it (port_TweenGiveVramBack) */
+    s32 mirror_behind;
 } g_tween;
 
 /* ---- the room a frame is written down in ---- */
@@ -899,6 +902,13 @@ void port_TweenStop(void) {
 
 s32 port_TweenIsOn(void) { return g_tween.is_on; }
 
+s32 port_TweenTakeMirrorBehind(void) {
+    s32 was = g_tween.mirror_behind;
+
+    g_tween.mirror_behind = FALSE;
+    return was;
+}
+
 void port_TweenGuessOnly(s32 on) {
     g_tween.guesses = on;
     g_tween.pair_frames = ~0U;
@@ -964,10 +974,12 @@ static void port_TweenHoldVram(const TweenFrame *frame) {
     }
 }
 
-static void port_TweenGiveVramBack(const TweenFrame *frame) {
+static void port_TweenGiveVramBack(const TweenFrame *frame, s32 is_held) {
     PortDirtyRect sent;
     s32 i;
 
+    /* the mirror on the card, by what the picture changed of it */
+    is_held = is_held && port_GlMirrorGiveBack();
     port_ClearDirtyRect(&sent);
     for (i = 0; i < frame->vram_count; i++) {
         const TweenVram *one = &frame->vram[i];
@@ -980,13 +992,13 @@ static void port_TweenGiveVramBack(const TweenFrame *frame) {
         }
         port_AddDirtyRect(&sent, one->x, one->y, one->w, one->h);
     }
-    /* The mirror the card reads texels from is sent the true pixels again
-     * in one go: a frame writes video memory a hundred times over (its
-     * clear, and the fog's thirty-one colour tables), and a hundred small
-     * sends cost far more than the one rectangle holding them all. */
-    if (!sent.is_empty) {
+    /* Where what the picture changed of the mirror was too much to keep,
+     * the mirror is sent video memory as it is under everything the frame
+     * wrote, as every picture did before (gl.h, port_GlMirrorHold). */
+    if (!is_held && !sent.is_empty) {
         port_GlRestoreVram(sent.left, sent.top, sent.right - sent.left + 1,
                            sent.bottom - sent.top + 1);
+        g_tween.mirror_behind = TRUE;
     }
 }
 
@@ -1645,6 +1657,7 @@ s32 port_TweenDraw(s32 phase) {
     u32 aside[PORT_GL_COUNTS];
     u32 none[PORT_GL_COUNTS];
     s32 stage_state;
+    s32 is_held;
     s32 i;
 
     if (!port_TweenCanDraw()) {
@@ -1680,6 +1693,7 @@ s32 port_TweenDraw(s32 phase) {
     }
     port_GlLoadCounts(none);
     port_TweenHoldVram(shown);
+    is_held = port_GlMirrorHold();
     port_TweenBegin();
     /* the shadows cast from the fighters' faces are moved with them
      * (gl_shadow.h) */
@@ -1725,7 +1739,7 @@ s32 port_TweenDraw(s32 phase) {
      * card reads its texels from the mirror of it */
     port_GlFinishFrame();
     port_GlShadowSetPhase(-1);
-    port_TweenGiveVramBack(shown);
+    port_TweenGiveVramBack(shown, is_held);
     port_GlLoadCounts(aside);
     g_tween.counts.pictures++;
     return TRUE;
