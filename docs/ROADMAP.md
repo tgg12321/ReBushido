@@ -280,10 +280,15 @@ the stage").
     in), the jitter gone with the mask; b, the light list's lights per
     pixel on the ground, the pieces and the fighters, the strongest four
     with cube shadows (`lights = on`), and a remade model's normal and
-    material maps. **Left:** c, reflections (screen space, the sky as the
-    fallback), and d, HDR with a tonemap held to the game's look, ambient
-    occlusion and bloom (PORT.md, "The lighting overhaul", "What is left
-    of it").
+    material maps; c, reflections on the screen on the stages whose floor
+    is polished, lacquered, glazed or wet, the sky the picture shows as
+    the fallback (`reflections`); d, the tonemap that rolls off only the
+    light the frame's lights add, so a stage keeps its own look
+    (`tonemap`), ambient occlusion of the ground (`ambient_occlusion`) and
+    the lights' bloom (`bloom`), all four on (PORT.md, "The lighting
+    overhaul"). **Left:** the light files' placing and strength, and the
+    normal map's bitangent on a remade model in a fight (PORT.md, "What is
+    left of it").
 15. **Input lag cut** (the owner, 2026-11-17): the press to the picture
     measured part by part, then cut where it is safe: the devices read
     as late as the game's step allows, run-ahead on the rollback's save

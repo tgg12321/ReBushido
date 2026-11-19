@@ -23,10 +23,12 @@
  * a reflection's ray meets only the ground and the fighters, never the
  * HUD painted over them.
  *
- * **What depth there is.** The ground's mesh and the fighters' layer write
- * the depth buffer, in the world's units over PORT_GL_DEPTH_RANGE (gl.h);
- * it is taken down to the picture's size (a blit, the first sample of
- * several) and read with the view the mesh was drawn with. */
+ * **What depth there is.** The ground's mesh writes its depth beside its
+ * slots and the fighters' layer adds its own (gl.h, PortGlPicture's
+ * `ground_depth`: the world's units, one a pixel of the buffer), which is
+ * read with the view the drawing on show was drawn with. The depth buffer
+ * itself is multisampled and never read: reading it held the card for
+ * most of a millisecond. */
 
 #include "common.h"
 #include "gl.h"

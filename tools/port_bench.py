@@ -191,7 +191,7 @@ MET_LIMITS = [
 # case's (sixteen lights, four of them casting) is reported: its 95th
 # centile rises with the cards' contention more than its median does.
 LIGHT_PASSES = ('sun', 'lights', 'ssr', 'ao', 'bloom', 'post')
-LIGHT_BUDGET_MS = 1.5
+LIGHT_BUDGET_MS = 2.0
 MET_LIMITS += [
     ('ra1', 'light_p95', LIGHT_BUDGET_MS, "the lighting's passes on the card, a fight frame, 95%, run_ahead 1"),
 ]

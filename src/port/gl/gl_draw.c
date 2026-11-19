@@ -1374,9 +1374,10 @@ static const char g_gl_slot_fragment_text[] =
     "layout(location = 1) out float o_depth;\n"
     "void main() {\n"
     "    ivec2 at = ivec2(gl_FragCoord.xy);\n"
-    "    o_slot = uint(texelFetch(u_slots, at, 0).r);\n"
-    "    float deep = texelFetch(u_deep, at, 0).r;\n"
-    "    o_depth = deep > 0.0 ? deep * 8.0 : 262144.0;\n"
+    "    float slot = texelFetch(u_slots, at, 0).r;\n"
+    "    o_slot = uint(slot);\n"
+    "    o_depth = slot < 65535.0 ? texelFetch(u_deep, at, 0).r * 8.0\n"
+    "                             : 262144.0;\n"
     "}\n";
 
 static const char g_gl_slot_one_fragment_text[] =
@@ -1387,9 +1388,10 @@ static const char g_gl_slot_one_fragment_text[] =
     "layout(location = 1) out float o_depth;\n"
     "void main() {\n"
     "    ivec2 at = ivec2(gl_FragCoord.xy);\n"
-    "    o_slot = uint(texelFetch(u_slots, at, 0).r);\n"
-    "    float deep = texelFetch(u_deep, at, 0).r;\n"
-    "    o_depth = deep > 0.0 ? deep * 8.0 : 262144.0;\n"
+    "    float slot = texelFetch(u_slots, at, 0).r;\n"
+    "    o_slot = uint(slot);\n"
+    "    o_depth = slot < 65535.0 ? texelFetch(u_deep, at, 0).r * 8.0\n"
+    "                             : 262144.0;\n"
     "}\n";
 
 /* The fighters' layer's depth (gl_fighter.c) into the ground's, where the
@@ -1574,9 +1576,6 @@ void port_GlGroundSlotsBegin(void) {
     static const GLenum all[3] = {
         GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2};
     static const GLfloat far[4] = {65535.0f, 0.0f, 0.0f, 0.0f};
-    /* nought, which the take-down reads as the far end: a card clears
-     * to nought by its marks alone (port_GlGroundSlotsEnd) */
-    static const GLfloat deep[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
     if (g_gl.samples > 1) {
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1,
@@ -1589,13 +1588,12 @@ void port_GlGroundSlotsBegin(void) {
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2,
                                GL_TEXTURE_2D, g_gl.deep_one, 0);
     }
-    /* the depth beside them only where the lighting's passes read it */
+    /* The depth beside them only where the lighting's passes read it,
+     * and not cleared: where the mesh draws nothing its slot says so, and
+     * the take-down writes the far end there (g_gl_slot_fragment_text). */
     g_gl.is_deep = port_GlPostNeedsDepth();
     glDrawBuffers(g_gl.is_deep ? 3 : 2, all);
     glClearBufferfv(GL_COLOR, 1, far);
-    if (g_gl.is_deep) {
-        glClearBufferfv(GL_COLOR, 2, deep);
-    }
 }
 
 void port_GlGroundSlotsEnd(void) {

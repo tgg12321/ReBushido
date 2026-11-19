@@ -10,7 +10,7 @@
  * picture averaged down to the window's own pixels, before it is shown or
  * read back:
  *
- *   light     at half the size, one pass with two outputs: the occlusion
+ *   light     at a third of the size, one pass with two outputs: the occlusion
  *             of each pixel of ground, and its reflection -- a ray along
  *             the view reflected in its face, walked across the picture
  *             through the depth until it passes behind something; where
@@ -218,6 +218,13 @@ float port_GlPostReflectance(s32 stage, const float *normal) {
 
 /* ---- the shaders ---- */
 
+/* The passes' own size: a texel of the depth, the occlusion and the
+ * reflections they read and write is this many of the picture's pixels
+ * each way. At half the size they cost the card about twice as long, for
+ * detail the smoothing takes away again. */
+#define POST_SHRINK 3
+#define POST_SHRINK_TEXT "3.0"
+
 /* one triangle over the whole of the target */
 static const char g_post_vertex_text[] =
     "#version 430 core\n"
@@ -227,16 +234,17 @@ static const char g_post_vertex_text[] =
     "    gl_Position = vec4(at, 0.0, 1.0);\n"
     "}\n";
 
-/* The depth at half the picture's size, from the buffer's (gl.h,
+/* The depth at a third of the picture's size, from the buffer's (gl.h,
  * `ground_depth`): the one the passes below read. */
 static const char g_post_half_text[] =
     "#version 430 core\n"
+    "const float SHRINK = " POST_SHRINK_TEXT ";\n"
     "uniform sampler2D u_ground;\n"
     "uniform vec2 u_from;\n" /* the picture's corner in the buffer */
     "uniform float u_sample;\n"
     "layout(location = 0) out vec4 o_depth;\n"
     "void main() {\n"
-    "    vec2 f = floor(gl_FragCoord.xy) * 2.0 + vec2(1.0);\n"
+    "    vec2 f = (floor(gl_FragCoord.xy) + 0.5) * SHRINK;\n"
     "    ivec2 at = ivec2(u_from + (f + 0.5) * u_sample);\n"
     "    o_depth = vec4(texelFetch(u_ground,\n"
     "        clamp(at, ivec2(0), textureSize(u_ground, 0) - 1), 0).r);\n"
@@ -255,61 +263,62 @@ static const char g_post_half_text[] =
  * tall as it is wide), so a pixel and its depth give its point back. The
  * picture's pixel is `u_sample` of the buffer's each way, and the picture
  * begins at `u_from` of the buffer's depth. */
-#define POST_COMMON                                                              \
-    "uniform sampler2D u_depth;\n"                                               \
-    "uniform sampler2D u_picture;\n"                                             \
-    "uniform vec2 u_full;\n"                                                     \
-    "uniform float u_range;\n"                                                   \
-    "uniform float u_h;\n"                                                       \
-    "uniform vec2 u_middle;\n"                                                   \
-    "uniform vec2 u_corner;\n"                                                   \
-    "uniform vec2 u_scale;\n"                                                    \
-    "uniform float u_sample;\n"                                                  \
-    "uniform vec2 u_from;\n"                                                     \
-    "vec2 screen_of(vec2 f) {\n"                                                 \
-    "    return u_corner + (f * u_sample - 0.5) / u_scale;\n"                    \
-    "}\n"                                                                        \
-    "vec2 picture_of(vec3 v) {\n"                                                \
-    "    vec2 s = u_middle + vec2(v.x, 0.5 * v.y) * u_h / v.z;\n"                \
-    "    return ((s - u_corner) * u_scale + 0.5) / u_sample;\n"                  \
-    "}\n" /* the depth is at half the picture's size: a texel of it is the       \
-           * depth at the middle of its two by two pixels */                     \
-    "ivec2 half_of(vec2 f) {\n"                                                  \
-    "    return clamp(ivec2(f * 0.5), ivec2(0), textureSize(u_depth, 0) - 1);\n" \
-    "}\n"                                                                        \
-    "float depth_at(vec2 f) {\n"                                                 \
-    "    return texelFetch(u_depth, half_of(f), 0).r;\n"                         \
-    "}\n"                                                                        \
-    "vec3 view_of(vec2 f, float z) {\n"                                          \
-    "    vec2 s = screen_of(f) - u_middle;\n"                                    \
-    "    return vec3(s.x * z / u_h, 2.0 * s.y * z / u_h, z);\n"                  \
-    "}\n"                                                                        \
-    "vec3 view_at(vec2 f) {\n"                                                   \
-    "    ivec2 at = half_of(f);\n"                                               \
-    "    return view_of(vec2(at) * 2.0 + vec2(1.0),\n"                           \
-    "                   texelFetch(u_depth, at, 0).r);\n"                        \
-    "}\n" /* the face's normal from the depth about the pixel, each way from     \
-           * the side whose depth runs on more evenly, so that an edge does                      \
-           * not bend it */                                                                           \
-    "vec3 normal_at(vec2 f, vec3 p) {\n"                                         \
-    "    float step = 2.0;\n"                                                    \
-    "    vec3 r = view_at(f + vec2(step, 0.0)) - p;\n"                           \
-    "    vec3 l = p - view_at(f - vec2(step, 0.0));\n"                           \
-    "    vec3 d = view_at(f + vec2(0.0, step)) - p;\n"                           \
-    "    vec3 u = p - view_at(f - vec2(0.0, step));\n"                           \
-    "    vec3 across = abs(r.z) < abs(l.z) ? r : l;\n"                           \
-    "    vec3 down = abs(d.z) < abs(u.z) ? d : u;\n"                             \
-    "    vec3 n = normalize(cross(down, across));\n"                             \
-    "    return dot(n, p) > 0.0 ? -n : n;\n"                                     \
-    "}\n" /* what painted the pixel last (gl_post.h): the ground's               \
-           * reflectance, or -1 where it was not the ground */                                            \
-    "float ground_of(float a) {\n"                                               \
-    "    if (a < 0.575 || a >= 0.9) { return -1.0; }\n"                          \
-    "    return clamp((a - 0.6) / 0.25, 0.0, 1.0);\n"                            \
-    "}\n"                                                                        \
-    "float noise_at(vec2 f) {\n"                                                 \
-    "    return fract(52.9829189\n"                                              \
-    "                 * fract(dot(f, vec2(0.06711056, 0.00583715))));\n"         \
+#define POST_COMMON                                                                 \
+    "const float SHRINK = " POST_SHRINK_TEXT ";\n"                                  \
+    "uniform sampler2D u_depth;\n"                                                  \
+    "uniform sampler2D u_picture;\n"                                                \
+    "uniform vec2 u_full;\n"                                                        \
+    "uniform float u_range;\n"                                                      \
+    "uniform float u_h;\n"                                                          \
+    "uniform vec2 u_middle;\n"                                                      \
+    "uniform vec2 u_corner;\n"                                                      \
+    "uniform vec2 u_scale;\n"                                                       \
+    "uniform float u_sample;\n"                                                     \
+    "uniform vec2 u_from;\n"                                                        \
+    "vec2 screen_of(vec2 f) {\n"                                                    \
+    "    return u_corner + (f * u_sample - 0.5) / u_scale;\n"                       \
+    "}\n"                                                                           \
+    "vec2 picture_of(vec3 v) {\n"                                                   \
+    "    vec2 s = u_middle + vec2(v.x, 0.5 * v.y) * u_h / v.z;\n"                   \
+    "    return ((s - u_corner) * u_scale + 0.5) / u_sample;\n"                     \
+    "}\n" /* the depth is at a third of the picture's size: a texel                 \
+           * of it is the depth at the middle of its pixels */                      \
+    "ivec2 half_of(vec2 f) {\n"                                                     \
+    "    return clamp(ivec2(f / SHRINK), ivec2(0), textureSize(u_depth, 0) - 1);\n" \
+    "}\n"                                                                           \
+    "float depth_at(vec2 f) {\n"                                                    \
+    "    return texelFetch(u_depth, half_of(f), 0).r;\n"                            \
+    "}\n"                                                                           \
+    "vec3 view_of(vec2 f, float z) {\n"                                             \
+    "    vec2 s = screen_of(f) - u_middle;\n"                                       \
+    "    return vec3(s.x * z / u_h, 2.0 * s.y * z / u_h, z);\n"                     \
+    "}\n"                                                                           \
+    "vec3 view_at(vec2 f) {\n"                                                      \
+    "    ivec2 at = half_of(f);\n"                                                  \
+    "    return view_of((vec2(at) + 0.5) * SHRINK,\n"                               \
+    "                   texelFetch(u_depth, at, 0).r);\n"                           \
+    "}\n" /* the face's normal from the depth about the pixel, each way from        \
+           * the side whose depth runs on more evenly, so that an edge does         \
+           * not bend it */                                                         \
+    "vec3 normal_at(vec2 f, vec3 p) {\n"                                            \
+    "    float step = SHRINK;\n"                                                    \
+    "    vec3 r = view_at(f + vec2(step, 0.0)) - p;\n"                              \
+    "    vec3 l = p - view_at(f - vec2(step, 0.0));\n"                              \
+    "    vec3 d = view_at(f + vec2(0.0, step)) - p;\n"                              \
+    "    vec3 u = p - view_at(f - vec2(0.0, step));\n"                              \
+    "    vec3 across = abs(r.z) < abs(l.z) ? r : l;\n"                              \
+    "    vec3 down = abs(d.z) < abs(u.z) ? d : u;\n"                                \
+    "    vec3 n = normalize(cross(down, across));\n"                                \
+    "    return dot(n, p) > 0.0 ? -n : n;\n"                                        \
+    "}\n" /* what painted the pixel last (gl_post.h): the ground's                  \
+           * reflectance, or -1 where it was not the ground */                      \
+    "float ground_of(float a) {\n"                                                  \
+    "    if (a < 0.575 || a >= 0.9) { return -1.0; }\n"                             \
+    "    return clamp((a - 0.6) / 0.25, 0.0, 1.0);\n"                               \
+    "}\n"                                                                           \
+    "float noise_at(vec2 f) {\n"                                                    \
+    "    return fract(52.9829189\n"                                                 \
+    "                 * fract(dot(f, vec2(0.06711056, 0.00583715))));\n"            \
     "}\n"
 
 /* At half the size, for each pixel of ground: the occlusion (McGuire's
@@ -433,7 +442,7 @@ static const char g_post_light_text[] =
     "    return vec4(seen * a, a);\n"
     "}\n"
     "void main() {\n"
-    "    vec2 f = floor(gl_FragCoord.xy) * 2.0 + vec2(1.0);\n"
+    "    vec2 f = (floor(gl_FragCoord.xy) + 0.5) * SHRINK;\n"
     "    float shine = ground_of(texelFetch(u_picture, ivec2(f), 0).a);\n"
     "    float z = depth_at(f);\n"
     "    o_ao = vec4(1.0);\n"
@@ -909,8 +918,8 @@ static s32 port_GlPostPair(
 }
 
 static s32 port_GlPostTargets(s32 w, s32 h) {
-    s32 half_w = (w + 1) / 2;
-    s32 half_h = (h + 1) / 2;
+    s32 half_w = (w + POST_SHRINK - 1) / POST_SHRINK;
+    s32 half_h = (h + POST_SHRINK - 1) / POST_SHRINK;
     s32 ok = TRUE;
     s32 i;
 
@@ -1060,7 +1069,7 @@ static float port_GlPostAmbient(void) {
     return back < 0.35f ? 0.35f : back > 1.0f ? 1.0f : back;
 }
 
-/* The occlusion and the reflections of the ground, at half the size. */
+/* The occlusion and the reflections of the ground, at a third of the size. */
 static void port_GlPostLight(const PostFrame *frame, GLuint picture_texture) {
     s32 stage = port_RemasterStageNumber();
     float rough = stage >= 0 && stage < POST_STAGES
@@ -1185,7 +1194,7 @@ void port_GlPostRun(const PortGlPicture *picture, u32 picture_framebuffer,
     frame.from[0] = (float)(picture->display_x * picture->draw_x);
     frame.from[1] = (float)(picture->display_y * picture->draw_y);
 
-    /* the depth at half the size */
+    /* the depth at a third of the size */
     PORT_GPU_BEGIN(PORT_GPU_POST);
     glUseProgram(g_post.half_program);
     glActiveTexture(GL_TEXTURE0);
