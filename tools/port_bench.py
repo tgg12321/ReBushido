@@ -393,6 +393,13 @@ def run(case, image, mods, plan, overrides=()):
     # 1: ended at --frames
     if process.returncode not in (0, 1):
         sys.exit('port-bench: %s ended with %d (%s)' % (case, process.returncode, folder))
+    # The window's thread runs none of the game's code while the step runs
+    # beside it (docs/PORT.md, "The window's thread and the game's state"):
+    # whatever --report-only says, a run that did is a fault in the port.
+    with open(log, encoding='utf-8', errors='replace') as f:
+        foreign = [line.strip() for line in f if 'beside the step, off its thread' in line]
+    if foreign:
+        sys.exit('port-bench: %s: %s (%s)' % (case, foreign[0], log))
     return folder, time.time() - start
 
 

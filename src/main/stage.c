@@ -1040,8 +1040,11 @@ void stage_ReadCells(u16 *stream, s32 block_id) {
 
 #if RB_REMASTER_VIEW
 /* The stage's tiles and how many there are, for the remastered picture's
- * mesh of the ground (port_remaster.h). */
-StageTile *stage_GetTiles(s32 *count) {
+ * mesh of the ground (port_remaster.h). Neither this nor the next is
+ * counted as a function of the game begun (src/port/plan.c): the
+ * window's thread asks them beside the step (docs/PORT.md, "The
+ * window's thread and the game's state"). */
+__attribute__((no_instrument_function)) StageTile *stage_GetTiles(s32 *count) {
     if (count != NULL) {
         *count = g_stage_tile_count;
     }
@@ -1050,7 +1053,7 @@ StageTile *stage_GetTiles(s32 *count) {
 
 /* The stage's pieces and how many there are, for the remastered
  * picture's meshes of what stands on the ground (port_remaster.h). */
-StageNode *stage_GetPieces(s32 *count) {
+__attribute__((no_instrument_function)) StageNode *stage_GetPieces(s32 *count) {
     if (count != NULL) {
         *count = g_stage_piece_count;
     }
