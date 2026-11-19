@@ -30,6 +30,27 @@ and for the pictures, nothing else. Everything else is Python with numpy
 and Pillow (Windows' Python, as `fighter_hd.py`): a fighter takes about
 two minutes to assemble and four to check.
 
+## The geometry-only pass
+
+The owner (2026-11-19) set the remade models aside: a new model's first
+pass is the game's own, with its texture, texels, colour tables and
+NEAREST filtering untouched, and only its geometry mended where the
+remastered renderer shows it wrong.
+
+    python tools/port_models/geometry.py tmp/models/ref/M101.glb tmp/models/versions/geo-01/M101.glb --passes 1 --joints 5-6,9-10
+
+`geometry.py` parts the layers of one rigid piece that cross at a
+shallow angle (a lock of hair through the hair's cap, a finger across the
+fist: a depth buffer draws them in stripes the PlayStation's order never
+showed) and cuts the joints' bands asked for (`--joints`, bone pairs;
+the elbows for Tatsumi), each new vertex the mix of how its two ends are
+carried, so that the band bends rounder rather than folding. Nothing
+else is changed; `check.py` holds it as it holds a remade model. Cutting
+the shoulders', the knees' and the neck's bands this way was measured
+over Tatsumi's motions and made them pass through the body more, not
+less: a linear mix of bones cannot turn the band, and they are left the
+game's.
+
 ## What a remade fighter is
 
 The owner's rule (2026-11-18): the game's own design, cleaned, not a new
