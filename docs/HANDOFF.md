@@ -122,10 +122,16 @@ lighting overhaul".
   into a world grid, the strongest four with cube shadows; a remade
   fighter's normal and ORM maps read and lit (GGX highlight from the
   sun).
-- **Left:** c (reflections) and d (HDR/tonemap, AO, bloom), with a plan
-  each in PORT.md, "What is left of it"; the light files' placing (only
-  the parking lot's reach the fight in the tour); the normal map's
-  bitangent sign on a remade model in a fight.
+- **c and d** (2026-11-19, `src/port/gl/gl_post.c`): reflections on the
+  screen (`reflections`), ambient occlusion (`ambient_occlusion`), the
+  lights' bloom (`bloom`) and a tonemap that rolls off only the light the
+  frame's lights add (`tonemap`), all on; the colour buffer's alpha says
+  what painted a pixel, the mesh writes its depth beside its slots. About
+  0.7 ms of the card at 2560x1440 (PORT.md, "What it costs").
+- **Left:** the light files' placing (only the parking lot's reach the
+  fight in the tour); the normal map's bitangent sign on a remade model
+  in a fight; the stage pass 0.2 ms above main's with c and d off; the
+  stress case's card over the refresh (main's too).
 - **Waits on the owner:** his own cfg says `shadows = cast`, so he sees
   the sun's maps only after setting `shadows = map` (or Shadows: Sun in
   the menu); whether a stage's own geometry should cast at all (the

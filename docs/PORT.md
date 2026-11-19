@@ -7666,6 +7666,14 @@ main's own build measured beside it with `--program`, interleaved):
 | main (97474f2d1) | 3.63 / 4.76 | 1.53 | -- | -- | -- | -- | 0.10 |
 | this, c and d off | 3.83 / 4.44 | 1.75 | -- | -- | -- | -- | 0.10 |
 | this, c and d on | 4.61 / 6.05 | 1.81 | 0.20 | 0.10 | 0.00 | 0.28 | 0.19 |
+| ra1-stress, main | 5.95 / 7.06, 5.61 / 7.04 | 2.54, 2.39 | -- | -- | -- | -- | 0.10 |
+| ra1-stress, this | 7.17 / 8.22, 6.62 / 7.68 | 3.03, 2.77 | 0.17 | 0.08 | 0.00 | 0.25 | 0.19 |
+
+The gate's bench (`--budget`) on the last commit, a quiet machine: the
+card's 95% 5.78, 6.43 and 5.06 ms at `run_ahead` 0, 1 and 2, the
+lighting's 1.49 against 2.0; the stress case's card 95% 7.76, over the
+refresh, as main's own is (7.04 and 7.06 above, its met limit failing on
+main as it stands).
 
 `ssr` is the one pass of a third of the size that works out the
 reflections and the occlusion together, `ao` the smoothing of both,
@@ -7682,7 +7690,8 @@ is not cleared (where the mesh drew nothing its slot says so), the
 passes run at a third of the picture's size and not at half, the
 reflections and the occlusion are one pass and their smoothing one, and
 the last pass's buffer and the picture's change places instead of a
-copy. Left:
+copy. Left: the stress case's card (the ground drawn twice doubles the
+mesh's share), and
 `stage` is 0.2 ms above main's with all four off; nothing of c and d
 runs then but the tonemap's switch in the shader and the alpha code.
 
