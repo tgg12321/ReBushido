@@ -74,6 +74,9 @@ extern void port_StageLeftPages(void);
 /* The grid's own cross on `stage`: the fight is on the disc's stage, in
  * the kind the switch left it, with the run's own arena (--arena). */
 extern void port_StageChosen(s32 stage);
+/* The select screen loads (select.c, select_Load): the fight's kind the
+ * default, the arena the run's own, the arenas' page down. */
+extern void port_StageChoiceReset(void);
 /* As the fight's stage is loaded (fight.c, fight_LoadStage), the modes
  * that choose no stage (all but versus and link) take the default kind
  * and the run's arena. TRUE if the arena in play is not the one the stage

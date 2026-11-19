@@ -7098,6 +7098,10 @@ The game's hooks, all under `RB_PORT`:
   the fight's kind is that stage's, and the arena is the run's own
   (`--arena`, or none).
 - `select_Update`: off the stage pages, `port_StageLeftPages`.
+- `select_Load`: `port_StageChoiceReset`, the fight's kind the default and
+  the arena the run's own whenever a mode's select screen opens, so that
+  a story's cutscene never loads its stage with an arena versus mode
+  chose.
 - `fight_LoadStage` (`fight.c`): `port_StageChoiceAtLoad` first. The modes
   that have no stage page (story, versus the CPU, training, chanbara, the
   group battle) take the default kind and the run's arena there; and the

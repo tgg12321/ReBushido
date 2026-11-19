@@ -158,6 +158,14 @@ void port_StageChosen(s32 stage) {
     choice->page_open = FALSE;
 }
 
+void port_StageChoiceReset(void) {
+    PortStageChoice *choice = port_StageChoice();
+
+    choice->fight_kind = choice->default_kind;
+    choice->arena = (s8)port_ArenaAsked();
+    choice->page_open = FALSE;
+}
+
 void port_StageLeftPages(void) { g_port_stage_choice.on_stages = FALSE; }
 
 s32 port_StageChoiceAtLoad(s32 mode) {

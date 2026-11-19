@@ -603,6 +603,12 @@ s32 select_Load(
     rect = g_select_palette_rect;
     g_select_stage_row = 0;
     g_select_stage_col = 0;
+#if RB_PORT
+    /* a mode begun again: no arena chosen, the kinds' default
+     * (port_stage_choice.h), so that a story's cutscene never loads its
+     * stage with an arena versus mode chose */
+    port_StageChoiceReset();
+#endif
     DrawSync(0);
     MoveImage(&rect, SPRITE_STRIP_COPY_X, SPRITE_STRIP_COPY_Y);
     DrawSync(0);
