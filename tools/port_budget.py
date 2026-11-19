@@ -86,9 +86,14 @@ stage_mesh = on
 stage_props_mesh = on
 antialiasing = 2
 shadows = cast
-# the lights' passes are the card's (port_bench.py holds them); on Mesa's
-# software renderer they would be counted as the processor's
+# the lights' passes and the lighting's finish are the card's
+# (port_bench.py holds them); on Mesa's software renderer they would be
+# counted as the processor's
 lights = off
+reflections = off
+ambient_occlusion = off
+bloom = off
+tonemap = off
 fighter_models = on
 see_through = on
 sky = night
