@@ -20,7 +20,14 @@ For each play test's plan it runs build/port-gl/rebushido-gl twice:
     picture that has no scene in it to the console's own picture scaled
     up by whole blocks (--gl-blocks): what the game draws flat must be
     the console's picture at any scale, which is what the first run on
-    a real card found it was not (docs/PORT.md, "Remastered").
+    a real card found it was not (docs/PORT.md, "Remastered");
+  - the first plan once more with the fighters drawn from models of
+    their own (the game's, written from the image by
+    tools/fighter_export.py) and `shadows original`: every model loads,
+    its triangles are drawn and the card refuses none of its draws.
+    Since the lighting's sun maps the fighters' program had samplers of
+    two kinds on one unit when the maps were off, and nothing of the
+    models was drawn while every other check passed.
 
 It also runs the game once with the remastered renderer on and once
 with it off and holds the two traces to each other: the game must
@@ -206,6 +213,25 @@ def fighters_hold(got):
     return got.get('fighter_faces', 0) > 0 and got.get('fighter_unplaced', 0) == 0
 
 
+def models_of(log):
+    """What a run with the fighters' models said of them."""
+    out = {'loaded': 0, 'failed': 0, 'triangles': 0, 'problem': ''}
+    with open(log, encoding='utf-8', errors='replace') as f:
+        for line in f:
+            m = re.search(r'gl run fighters loaded (\d+) failed (\d+) frames \d+ left_out \d+ '
+                          r'triangles (\d+).*?(?: problem (.*))?$', line.rstrip('\n'))
+            if m:
+                out.update(loaded=int(m.group(1)), failed=int(m.group(2)), triangles=int(m.group(3)),
+                           problem=m.group(4) or '')
+    return out
+
+
+def models_hold(got):
+    """Whether the fighters drawn from models were drawn: both loaded,
+    none failed, triangles sent and no draw refused."""
+    return got['loaded'] >= 2 and got['failed'] == 0 and got['triangles'] > 0 and not got['problem']
+
+
 def trace_of(log):
     """A run's trace lines alone."""
     with open(log, encoding='utf-8', errors='replace') as f:
@@ -308,11 +334,26 @@ def main():
               % (exact.get('fighter_faces', 0), exact.get('fighter_unplaced', 0),
                  'ok' if fighters_hold(exact) else 'NO (a fighter is drawn torn at his joints)',
                  exact.get('walked_unplaced', 0)))
+    # the fighters from models of their own, once, on the first plan
+    name = plans[0]
+    folder = os.path.join(args.out, name)
+    models = os.path.join(args.out, 'models')
+    print('%s: the fighters drawn from models of their own (the game\'s, %s)' % (name, models))
+    subprocess.run([sys.executable, os.path.join('tools', 'fighter_export.py'), '--image', args.image,
+                    '--models', 'all', '--out', models], cwd=ROOT, stdout=subprocess.DEVNULL)
+    run([command(PROGRAM), '--image', args.image, '--plan', os.path.join(folder, 'plan.txt'), '--out', folder,
+         '--graphics', 'remastered', '--gl-scale', '1', '--shadows', 'original', '--fighter-models', models],
+        os.path.join(folder, 'models.log'))
+    drawn = models_of(os.path.join(folder, 'models.log'))
+    print('    models: %d loaded, %d failed, %d triangles%s: %s'
+          % (drawn['loaded'], drawn['failed'], drawn['triangles'],
+             ', ' + drawn['problem'] if drawn['problem'] else '',
+             'ok' if models_hold(drawn) else 'NO (the fighters\' models are not drawn)'))
     traces_agree = all(row[2] for row in rows)
     blocks_agree = all(blocks_hold(row[1]) for row in rows)
     fighters_agree = all(fighters_hold(row[1]) for row in rows)
     held.finish(units)
-    return 0 if traces_agree and blocks_agree and fighters_agree else 1
+    return 0 if traces_agree and blocks_agree and fighters_agree and models_hold(drawn) else 1
 
 
 if __name__ == '__main__':
