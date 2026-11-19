@@ -1221,8 +1221,8 @@ static void port_GlQuit(s32 code) {
         s32 listed = 0;
 
         (void)port_GlLightsNow(&listed);
-        fprintf(stderr, "gl run lights listed %d most %d shadowed %d\n",
-                listed, port_GlLightsShown(), port_GlLightsShadowed());
+        fprintf(stderr, "gl run lights listed %d most %d shadowed %d\n", listed,
+                port_GlLightsShown(), port_GlLightsShadowed());
     }
     if (port_GlShadowIsCast()) {
         fprintf(stderr,

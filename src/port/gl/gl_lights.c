@@ -65,8 +65,9 @@ typedef ptrdiff_t GLintptr;
     GL(void, glGenTextures, (GLsizei, GLuint *))                               \
     GL(void, glBindTexture, (GLenum, GLuint))                                  \
     GL(void, glActiveTexture, (GLenum))                                        \
-    GL(void, glTexImage3D, (GLenum, GLint, GLint, GLsizei, GLsizei, GLsizei,   \
-                            GLint, GLenum, GLenum, const void *))              \
+    GL(void, glTexImage3D,                                                     \
+       (GLenum, GLint, GLint, GLsizei, GLsizei, GLsizei, GLint, GLenum,        \
+        GLenum, const void *))                                                 \
     GL(void, glTexParameteri, (GLenum, GLenum, GLint))                         \
     GL(void, glGenFramebuffers, (GLsizei, GLuint *))                           \
     GL(void, glBindFramebuffer, (GLenum, GLuint))                              \
@@ -233,9 +234,9 @@ const char *port_GlLightsStart(void *(*getproc)(const char *name)) {
     glGenBuffers(1, &g_lights.face_buffer);
     glGenTextures(1, &g_lights.map);
     glBindTexture(GL_TEXTURE_2D_ARRAY, g_lights.map);
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, (GLint)GL_DEPTH_COMPONENT32F,
-                 LIGHT_MAP_SIZE, LIGHT_MAP_SIZE, LIGHT_LAYERS, 0,
-                 GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexImage3D(
+        GL_TEXTURE_2D_ARRAY, 0, (GLint)GL_DEPTH_COMPONENT32F, LIGHT_MAP_SIZE,
+        LIGHT_MAP_SIZE, LIGHT_LAYERS, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -273,11 +274,14 @@ void port_GlLightsSetMadeUp(s32 count) {
                                                     : count;
 }
 
-void port_GlLightsSetPhase(s32 phase) { g_lights.phase = phase < 0 ? -1 : phase; }
+void port_GlLightsSetPhase(s32 phase) {
+    g_lights.phase = phase < 0 ? -1 : phase;
+}
 
 void port_GlLightsNewPicture(void) { g_lights.is_prepared = FALSE; }
 
 s32 port_GlLightsShown(void) { return g_lights.most; }
+
 s32 port_GlLightsShadowed(void) { return g_lights.shadowed; }
 
 /* ---- the arithmetic ---- */
@@ -387,7 +391,8 @@ static s32 port_LightsMadeUp(PortGlLight *out, const PortStageView *view) {
         centre[1] /= (float)good;
         centre[2] /= (float)good;
         tall /= (float)good;
-    }    if (tall <= 0.0f) {
+    }
+    if (tall <= 0.0f) {
         return 0;
     }
     for (i = 0; i < g_lights.made_up; i++) {
@@ -415,6 +420,7 @@ static s32 port_LightsMadeUp(PortGlLight *out, const PortStageView *view) {
     }
     return g_lights.made_up;
 }
+
 /* A face of a light's shadow: looking from `at` along an axis, a quarter
  * turn wide, from LIGHT_NEAR to `far` (a column after a column). */
 static void port_LightsFace(float *m, const float *at, s32 face, float far) {
@@ -487,7 +493,8 @@ static s32 port_LightsOfPicture(PortGlLight *out, const PortStageView *view) {
                         l->position[n] = b->position[n] +
                                          (l->position[n] - b->position[n]) * t;
                     }
-                    l->intensity = b->intensity + (l->intensity - b->intensity) * t;
+                    l->intensity =
+                        b->intensity + (l->intensity - b->intensity) * t;
                     break;
                 }
             }
@@ -593,9 +600,9 @@ void port_GlLightsPrepare(void) {
         }
         c->color[3] = l->kind == PORT_GL_LIGHT_SPOT ? 1.0f : 0.0f;
         c->aim[3] = port_LightsCos(l->cone_inner);
-        c->extra[0] = port_LightsCos(l->cone_outer > l->cone_inner
-                                         ? l->cone_outer
-                                         : l->cone_inner + 1.0f);
+        c->extra[0] = port_LightsCos(
+            l->cone_outer > l->cone_inner ? l->cone_outer
+                                          : l->cone_inner + 1.0f);
         c->extra[1] = -1.0f;
         c->extra[2] = 0.0f;
         c->extra[3] = 0.0f;
@@ -691,7 +698,8 @@ void port_GlLightsPrepare(void) {
                 float *m = g_lights.face[slot + face];
 
                 port_LightsFace(m, c->place, face, c->place[3]);
-                glBindFramebuffer(GL_FRAMEBUFFER, g_lights.framebuffer[slot + face]);
+                glBindFramebuffer(
+                    GL_FRAMEBUFFER, g_lights.framebuffer[slot + face]);
                 glClear(GL_DEPTH_BUFFER_BIT);
                 port_GlStageDrawSunCasters(m);
                 port_GlShadowDrawSunCasters(m);

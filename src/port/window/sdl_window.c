@@ -2746,9 +2746,8 @@ void port_WindowApplyChoice(s32 choice) {
         (strcmp(name, "stage_mesh") == 0 ||
          strcmp(name, "stage_props_mesh") == 0 ||
          strcmp(name, "shadows") == 0 || strcmp(name, "smooth_light") == 0 ||
-         strcmp(name, "lights") == 0 ||
-         strcmp(name, "effects") == 0 || strcmp(name, "sky") == 0 ||
-         strcmp(name, "see_through") == 0 ||
+         strcmp(name, "lights") == 0 || strcmp(name, "effects") == 0 ||
+         strcmp(name, "sky") == 0 || strcmp(name, "see_through") == 0 ||
          strcmp(name, "stage_lights") == 0 ||
          strcmp(name, "effect_lights") == 0 ||
          strcmp(name, "fighter_models") == 0) &&

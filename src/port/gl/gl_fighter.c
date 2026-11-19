@@ -1269,8 +1269,9 @@ static FighterModel *port_GlFighterLoad(FighterModel *model, const char *name) {
         /* a material's maps are smoothed as any picture finer than the
          * colour tables' is */
         model->texture[i] = port_GlFighterTexture(
-            &file.texture[i], file.is_map[i] || (file.index.w > 0 &&
-                                                 file.texture[i].w > file.index.w));
+            &file.texture[i],
+            file.is_map[i] ||
+                (file.index.w > 0 && file.texture[i].w > file.index.w));
     }
     for (i = 0; i < PORT_FIGHTER_FILE_JOINTS; i++) {
         if (file.has_joint[i]) {

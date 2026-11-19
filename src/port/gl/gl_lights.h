@@ -145,82 +145,83 @@ extern s32 port_GlLightsShadowed(void);
  * at a point of the world whose surface faces `normal` (of length one), in
  * the game's bytes of light (128 a texel at its own colour), to be added
  * to what the stage's own lights give there. Needs GLSL 4.3. */
-#define PORT_GL_LIGHTS_SHADER                                                  \
-    "struct PortLight {\n"                                                     \
-    "    vec4 place;\n"  /* xyz, and the radius */                             \
-    "    vec4 color;\n"  /* rgb in bytes of light, and the kind */             \
-    "    vec4 aim;\n"    /* a spot's direction, and the cosine inside */       \
-    "    vec4 extra;\n"  /* the cosine outside, the shadow's first layer */    \
-    "};\n"                                                                     \
-    "layout(std430, binding = 4) readonly buffer PortLights {\n"               \
-    "    PortLight port_light[];\n"                                            \
-    "};\n"                                                                     \
-    "layout(std430, binding = 5) readonly buffer PortLightGrid {\n"            \
-    "    vec4 grid_origin;\n" /* the grid's corner, x and z */                 \
-    "    uint grid_cell[];\n" /* each cell's first, and how many */            \
-    "};\n"                                                                     \
-    "layout(std430, binding = 6) readonly buffer PortLightList {\n"            \
-    "    uint grid_list[];\n"                                                  \
-    "};\n"                                                                     \
-    "layout(std430, binding = 7) readonly buffer PortLightFaces {\n"           \
-    "    mat4 light_face[];\n"                                                 \
-    "};\n"                                                                     \
-    "uniform int u_lights_count;\n"                                            \
-    "uniform sampler2DArrayShadow u_lights_map;\n"                             \
-    "float light_shadow(int first, vec3 to_point, vec3 world, vec3 n) {\n"     \
-    "    vec3 a = abs(to_point);\n"                                            \
-    "    int face = a.x >= a.y && a.x >= a.z ? (to_point.x > 0.0 ? 0 : 1)\n"   \
-    "             : a.y >= a.z ? (to_point.y > 0.0 ? 2 : 3)\n"                 \
-    "                          : (to_point.z > 0.0 ? 4 : 5);\n"                \
-    "    float far_of = max(a.x, max(a.y, a.z));\n"                            \
-    "    vec3 p = world + n * far_of * 0.006;\n"                               \
-    "    vec4 c = light_face[first + face] * vec4(p, 1.0);\n"                  \
-    "    vec3 at = c.xyz / c.w * 0.5 + vec3(0.5);\n"                           \
-    "    float texel = 1.0 / float(textureSize(u_lights_map, 0).x);\n"         \
-    "    float lit = 0.0;\n"                                                   \
-    "    for (int j = 0; j < 4; j++) {\n"                                      \
-    "        vec2 o = vec2(float(j & 1), float(j >> 1)) - vec2(0.5);\n"        \
-    "        lit += texture(u_lights_map,\n"                                   \
-    "            vec4(at.xy + o * 1.5 * texel, float(first + face), at.z));\n" \
-    "    }\n"                                                                  \
-    "    return lit * 0.25;\n"                                                 \
-    "}\n"                                                                      \
-    "vec3 lights_add(vec3 world, vec3 n) {\n"                                  \
-    "    if (u_lights_count == 0) { return vec3(0.0); }\n"                     \
-    "    ivec2 cell = ivec2(floor((world.xz - grid_origin.xy)\n"               \
-    "                             / grid_origin.z));\n"                        \
-    "    int side = int(grid_origin.w);\n"                                     \
-    "    if (any(lessThan(cell, ivec2(0))) || any(greaterThanEqual(cell,\n"    \
-    "                                         ivec2(side)))) {\n"              \
-    "        return vec3(0.0);\n"                                              \
-    "    }\n"                                                                  \
-    "    int at = (cell.y * side + cell.x) * 2;\n"                             \
-    "    uint first = grid_cell[at];\n"                                        \
-    "    uint count = grid_cell[at + 1];\n"                                    \
-    /* RB_LIGHTS_DEBUG: how many lights the pixel's cell names, in red */    \
-    "    if (u_lights_count < 0) { return vec3(float(count) * 60.0, 0.0, 0.0); }\n"\
-    "    vec3 sum = vec3(0.0);\n"                                              \
-    "    for (uint k = 0u; k < count; k++) {\n"                                \
-    "        PortLight l = port_light[grid_list[first + k]];\n"                \
-    "        vec3 to_light = l.place.xyz - world;\n"                           \
-    "        float d = length(to_light);\n"                                    \
-    "        if (d >= l.place.w || d < 1e-3) { continue; }\n"                  \
-    "        vec3 dir = to_light / d;\n"                                       \
-    "        float turn = dot(n, dir);\n"                                      \
-    "        if (turn <= 0.0) { continue; }\n"                                 \
-    "        float near = d / l.place.w;\n"                                    \
-    "        float fall = clamp(1.0 - near * near, 0.0, 1.0);\n"               \
-    "        fall *= fall;\n"                                                  \
-    "        if (l.color.w > 0.5) {\n"                                         \
-    "            fall *= smoothstep(l.extra.x, l.aim.w, dot(-dir, l.aim.xyz));\n"\
-    "        }\n"                                                              \
-    "        if (fall <= 0.0) { continue; }\n"                                 \
-    "        if (l.extra.y >= 0.0) {\n"                                        \
-    "            fall *= light_shadow(int(l.extra.y), -to_light, world, n);\n" \
-    "        }\n"                                                              \
-    "        sum += l.color.rgb * (turn * fall);\n"                            \
-    "    }\n"                                                                  \
-    "    return sum;\n"                                                        \
+#define PORT_GL_LIGHTS_SHADER                                                       \
+    "struct PortLight {\n"                                                          \
+    "    vec4 place;\n" /* xyz, and the radius */                                   \
+    "    vec4 color;\n" /* rgb in bytes of light, and the kind */                   \
+    "    vec4 aim;\n"   /* a spot's direction, and the cosine inside */             \
+    "    vec4 extra;\n" /* the cosine outside, the shadow's first layer */          \
+    "};\n"                                                                          \
+    "layout(std430, binding = 4) readonly buffer PortLights {\n"                    \
+    "    PortLight port_light[];\n"                                                 \
+    "};\n"                                                                          \
+    "layout(std430, binding = 5) readonly buffer PortLightGrid {\n"                 \
+    "    vec4 grid_origin;\n" /* the grid's corner, x and z */                      \
+    "    uint grid_cell[];\n" /* each cell's first, and how many */                 \
+    "};\n"                                                                          \
+    "layout(std430, binding = 6) readonly buffer PortLightList {\n"                 \
+    "    uint grid_list[];\n"                                                       \
+    "};\n"                                                                          \
+    "layout(std430, binding = 7) readonly buffer PortLightFaces {\n"                \
+    "    mat4 light_face[];\n"                                                      \
+    "};\n"                                                                          \
+    "uniform int u_lights_count;\n"                                                 \
+    "uniform sampler2DArrayShadow u_lights_map;\n"                                  \
+    "float light_shadow(int first, vec3 to_point, vec3 world, vec3 n) {\n"          \
+    "    vec3 a = abs(to_point);\n"                                                 \
+    "    int face = a.x >= a.y && a.x >= a.z ? (to_point.x > 0.0 ? 0 : 1)\n"        \
+    "             : a.y >= a.z ? (to_point.y > 0.0 ? 2 : 3)\n"                      \
+    "                          : (to_point.z > 0.0 ? 4 : 5);\n"                     \
+    "    float far_of = max(a.x, max(a.y, a.z));\n"                                 \
+    "    vec3 p = world + n * far_of * 0.006;\n"                                    \
+    "    vec4 c = light_face[first + face] * vec4(p, 1.0);\n"                       \
+    "    vec3 at = c.xyz / c.w * 0.5 + vec3(0.5);\n"                                \
+    "    float texel = 1.0 / float(textureSize(u_lights_map, 0).x);\n"              \
+    "    float lit = 0.0;\n"                                                        \
+    "    for (int j = 0; j < 4; j++) {\n"                                           \
+    "        vec2 o = vec2(float(j & 1), float(j >> 1)) - vec2(0.5);\n"             \
+    "        lit += texture(u_lights_map,\n"                                        \
+    "            vec4(at.xy + o * 1.5 * texel, float(first + face), at.z));\n"      \
+    "    }\n"                                                                       \
+    "    return lit * 0.25;\n"                                                      \
+    "}\n"                                                                           \
+    "vec3 lights_add(vec3 world, vec3 n) {\n"                                       \
+    "    if (u_lights_count == 0) { return vec3(0.0); }\n"                          \
+    "    ivec2 cell = ivec2(floor((world.xz - grid_origin.xy)\n"                    \
+    "                             / grid_origin.z));\n"                             \
+    "    int side = int(grid_origin.w);\n"                                          \
+    "    if (any(lessThan(cell, ivec2(0))) || any(greaterThanEqual(cell,\n"         \
+    "                                         ivec2(side)))) {\n"                   \
+    "        return vec3(0.0);\n"                                                   \
+    "    }\n"                                                                       \
+    "    int at = (cell.y * side + cell.x) * 2;\n"                                  \
+    "    uint first = grid_cell[at];\n"                                             \
+    "    uint count = grid_cell[at + 1];\n" /* RB_LIGHTS_DEBUG: how many            \
+                                               lights the pixel's cell names,       \
+                                               in red */                            \
+    "    if (u_lights_count < 0) { return vec3(float(count) * 60.0, 0.0, 0.0); }\n" \
+    "    vec3 sum = vec3(0.0);\n"                                                   \
+    "    for (uint k = 0u; k < count; k++) {\n"                                     \
+    "        PortLight l = port_light[grid_list[first + k]];\n"                     \
+    "        vec3 to_light = l.place.xyz - world;\n"                                \
+    "        float d = length(to_light);\n"                                         \
+    "        if (d >= l.place.w || d < 1e-3) { continue; }\n"                       \
+    "        vec3 dir = to_light / d;\n"                                            \
+    "        float turn = dot(n, dir);\n"                                           \
+    "        if (turn <= 0.0) { continue; }\n"                                      \
+    "        float near = d / l.place.w;\n"                                         \
+    "        float fall = clamp(1.0 - near * near, 0.0, 1.0);\n"                    \
+    "        fall *= fall;\n"                                                       \
+    "        if (l.color.w > 0.5) {\n"                                              \
+    "            fall *= smoothstep(l.extra.x, l.aim.w, dot(-dir, l.aim.xyz));\n"   \
+    "        }\n"                                                                   \
+    "        if (fall <= 0.0) { continue; }\n"                                      \
+    "        if (l.extra.y >= 0.0) {\n"                                             \
+    "            fall *= light_shadow(int(l.extra.y), -to_light, world, n);\n"      \
+    "        }\n"                                                                   \
+    "        sum += l.color.rgb * (turn * fall);\n"                                 \
+    "    }\n"                                                                       \
+    "    return sum;\n"                                                             \
     "}\n"
 
 #endif /* PORT_GL_LIGHTS_H */

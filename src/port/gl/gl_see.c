@@ -54,7 +54,9 @@ s32 port_GlSeeIsOn(void) { return g_see_on; }
  * for its reach (gl_see.h). */
 static s32 port_GlSeeFind(PortSeeFighter *out, s32 always);
 
-s32 port_GlSeeFighters(PortSeeFighter *out) { return port_GlSeeFind(out, FALSE); }
+s32 port_GlSeeFighters(PortSeeFighter *out) {
+    return port_GlSeeFind(out, FALSE);
+}
 
 s32 port_GlSeeFightersAlways(PortSeeFighter *out) {
     return port_GlSeeFind(out, TRUE);

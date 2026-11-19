@@ -903,9 +903,8 @@ static s32 port_GltfCount(const Gltf *g, s32 index) {
 
 /* The picture a material's texture (`base`, a textureInfo) is, decoded,
  * among the file's textures; -1 if there is none. */
-static s32 port_GltfImage(
-    const Gltf *g, s32 base, s32 is_map, PortFighterFile *out,
-    const char **problem);
+static s32 port_GltfImage(const Gltf *g, s32 base, s32 is_map,
+                          PortFighterFile *out, const char **problem);
 
 static s32 port_GltfTexture(
     const Gltf *g, s32 material, PortFighterFile *out, const char **problem) {
@@ -935,9 +934,8 @@ static void port_GltfMaps(const Gltf *g, s32 material, PortFighterPart *part,
     part->orm_map = port_GltfImage(g, orm, TRUE, out, problem);
 }
 
-static s32 port_GltfImage(
-    const Gltf *g, s32 base, s32 is_map, PortFighterFile *out,
-    const char **problem) {
+static s32 port_GltfImage(const Gltf *g, s32 base, s32 is_map,
+                          PortFighterFile *out, const char **problem) {
     const Json *json = g->json;
     s32 texture = port_JsonItem(
         json, port_JsonGet(json, 0, "textures"),

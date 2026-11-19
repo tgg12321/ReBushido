@@ -672,8 +672,8 @@ static const char g_stage_fragment_text[] =
     "uniform usampler2D u_slots;\n"
     /* a mod's picture of a whole page (gl_scene.h) */
     PORT_GL_SCENE_SHADER
-    /* the sun's maps (gl_sun.h) */
-    PORT_GL_SUN_SHADER
+        /* the sun's maps (gl_sun.h) */
+        PORT_GL_SUN_SHADER
     /* the lights of a frame (gl_lights.h) */
     PORT_GL_LIGHTS_SHADER
     /* the ordering-table slot a depth is sorted at
