@@ -278,3 +278,14 @@ the stage").
     measured part by part, then cut where it is safe: the devices read
     as late as the game's step allows, run-ahead on the rollback's save
     and load, and the fewest pictures queued to the display.
+    Done (2026-11-18): measured part by part (`port_bench.py --paced`,
+    `--rate`; PORT.md, "The press to the screen, part by part"), the
+    made-up display held to the card, and the keys read again just in
+    time for the refresh a frame's first picture makes (`late_input`, on;
+    "The input read late"); the bench's budget holds the read to the
+    screen at 144 a second. Run-ahead already uses the rollback's save
+    and load for its second frame, and a third would show guesses; none
+    is queued with `low_latency`. Left: the card's share of the first
+    picture (the record's own frame drawn under it), and what a real
+    screen and Windows' compositor add, which only the owner's screen
+    shows.

@@ -36,8 +36,12 @@ hidden window's swaps are not held to the PC's own display), and says
 what only a paced run shows: the refreshes after the fight's first second
 that no new picture reached (the display shows the one before again), and
 the lag from the game taking its input at a frame's boundary to the first
-picture of that frame handed to the display, in refreshes. Its numbers
-are kept apart (+paced).
+picture of that frame handed to the display, in refreshes; and a press's
+way to the screen part by part, in the fight and in the menus before it
+(docs/PORT.md, "The press to the screen, part by part"). --rate N makes
+the display N a second (0: the PC's own, which a hidden window's swaps
+wait for). Its numbers are kept apart (+paced). The budget's case
+ra1-paced is ra1 paced at 144 a second whatever --paced says.
 
 --budget runs the gate's cases and holds them to LIMITS: what the owner
 targets (2026-11-18: 144 pictures a second at 2560 by 1440, with run-ahead,
@@ -53,6 +57,7 @@ checkout can hold itself to another's (`--against REV`) without running
 it again.
 """
 import argparse
+import bisect
 import json
 import os
 import statistics
@@ -82,6 +87,25 @@ RUN_SECONDS = 240
 # --paced: the display made up, refreshes a second.
 PACED_RATE = 144
 PACED = False
+# --paced: whether the display is waited for (vsync, from --set)
+VSYNC = True
+# A `l` line (the keys read again late) belongs to the boundary before it
+# when it is this soon after it, in ms.
+LATE_MOST_MS = 20.0
+# A press's way to the screen (--paced), part by part: (measure, what it
+# is). The parts after the read add up to `shown` but for the refresh the
+# swap waited for and its own return, which a made-up display has none of.
+LAG_PARTS = [
+    ('to_step', "hand-over to the step's thread"),
+    ('step', 'the step and the frames ahead'),
+    ('from_step', 'hand-over back'),
+    ('record', 'the record drawn'),
+    ('to_picture', "the blanks' turns to the picture begun"),
+    ('picture', 'the picture drawn'),
+    ('card', 'handed to the card done'),
+    ('swap', 'to the swap back'),
+    ('shown', 'the read to the screen'),
+]
 DISC_MADE_MODS = ('hd', 'art', 'stages-hd')
 SHIPPED_MODS = ('english', 'ui')
 
@@ -94,9 +118,14 @@ CASES = {
     # four HD fighters' worth and the ground twice over: four players on
     # a larger stage
     'ra1-stress': (1, 'on', 'fighters=4,stage=2'),
+    # ra1 at the game's pace against a display of 144 a second whatever
+    # --paced says: the press's way to the screen (docs/PORT.md, "Input
+    # lag")
+    'ra1-paced': (1, 'on', None),
 }
+PACED_CASES = ('ra1-paced',)
 DEFAULT_CASES = ('ra0', 'ra1', 'ra2', 'ra1-plain', 'ra1-stress')
-BUDGET_CASES = ('ra0', 'ra1', 'ra2', 'ra1-stress')
+BUDGET_CASES = ('ra0', 'ra1', 'ra2', 'ra1-stress', 'ra1-paced')
 
 # The budget (--budget): (case, measure, at most, what it is). The
 # measures are of the fight's blanks in which the game drew a frame,
@@ -144,6 +173,14 @@ MET_LIMITS = [
     ('ra1', 'settled_worst', 2 * BUDGET_MS, "the worst blank after the fight's first second"),
     ('ra1', 'step_p95', BUDGET_MS, "the step's own thread, a fight frame, 95%, run_ahead 1"),
     ('ra2', 'step_p95', BUDGET_MS, 'the same, run_ahead 2'),
+    # The press's way to the screen (docs/PORT.md, "The press to the screen,
+    # part by part"), ra1 paced at 144 a second with late_input: the read to
+    # the refresh that shows the frame's first picture 10.6 to 12.1 ms on
+    # average (12.4 to 14.5 before it), the refreshes no new picture
+    # reached 0.3 to 9% (16 to 18% before), interleaved with other agents'
+    # work on the machine. Two refreshes are 13.9 ms.
+    ('ra1-paced', 'lag_shown_mean', 13.0, "a fight frame's input read to the screen, mean, paced at 144"),
+    ('ra1-paced', 'missed_refreshes', 12.0, 'refreshes no new picture reached, percent, paced at 144'),
 ]
 # The fight's first second is the end of its load: the limits on the
 # worst blanks are of what follows it.
@@ -310,7 +347,16 @@ def run(case, image, mods, plan, overrides=()):
         f.write(settings)
     profile = os.path.join(folder, 'profile.txt')
     log = os.path.join(folder, 'log.txt')
-    pace = ['--display-rate', str(PACED_RATE)] if PACED else ['--fast']
+    if not (PACED or case in PACED_CASES):
+        pace = ['--fast']
+    elif PACED_RATE and case not in PACED_CASES:
+        pace = ['--display-rate', str(PACED_RATE)]
+    elif case in PACED_CASES:
+        pace = ['--display-rate', '144']
+    else:
+        # --rate 0: the PC's own display, which a hidden window's swaps
+        # wait for
+        pace = []
     cmd = [PROGRAM, '--hidden', '--image', image, '--config', config, '--mods', mods, '--plan', plan,
            '--out', folder, '--no-cards'] + pace + ['--run-ahead', str(run_ahead), '--window', WINDOW,
            '--frames', str(FRAMES), '--profile', profile, '--log', log]
@@ -350,7 +396,36 @@ def fight_blanks(log):
     return first, last
 
 
-def measure(folder):
+def menu_blanks(log):
+    """The menu's first and last blank before the fight, from the log's
+    screens (a menu's frame is a blank), or None."""
+    first = last = None
+    with open(log, encoding='utf-8', errors='replace') as f:
+        for line in f:
+            if 'game: screen' not in line:
+                continue
+            blank = int(line.split('blank ')[1].split(',')[0])
+            if first is None and ', menu;' in line:
+                first = blank
+            elif first is not None and last is None:
+                last = blank - 1
+    return (first, last) if first is not None and last is not None else None
+
+
+def case_paced_at_144(folder):
+    return os.path.basename(folder) in PACED_CASES
+
+
+def display_rate(log):
+    """The PC's own display's refreshes a second, from the log."""
+    with open(log, encoding='utf-8', errors='replace') as f:
+        for line in f:
+            if 'video: display' in line and 'pictures a second' in line:
+                return int(line.split(', ')[1].split()[0])
+    return 60
+
+
+def measure(folder, paced=False):
     """The case's numbers over its fight (the module's doc)."""
     first, last = fight_blanks(os.path.join(folder, 'log.txt'))
     if first is None:
@@ -368,6 +443,12 @@ def measure(folder):
     swaps = []
     # when the game took its input at each frame's boundary (ms)
     boundaries = []
+    # a held step's end: when the window's thread heard it, when the step's
+    # thread took it up and said it was done, and when its record was drawn
+    # (ms)
+    ends, records = [], []
+    # the keys read again late, just before the step began (late_input)
+    lates = []
     blank = None
     with open(os.path.join(folder, 'profile.txt'), encoding='utf-8') as f:
         for line in f:
@@ -379,9 +460,18 @@ def measure(folder):
             elif words[0] == 'p':
                 swaps.append((int(words[1]) / 1000.0, (blank + 1) if blank is not None else 0,
                               len(words) > 3 and words[3] == '1',
-                              int(words[4]) / 1000.0 if len(words) > 4 else 0.0))
+                              int(words[4]) / 1000.0 if len(words) > 4 else 0.0,
+                              int(words[5]) / 1000.0 if len(words) > 6 else None,
+                              int(words[6]) / 1000.0 if len(words) > 6 else None,
+                              int(words[7]) / 1000.0 if len(words) > 7 and words[7] != '0' else None))
             elif words[0] == 'k':
                 boundaries.append((int(words[1]) / 1000.0, (blank + 1) if blank is not None else 0))
+            elif words[0] == 'e' and len(words) > 3:
+                ends.append(tuple(int(w) / 1000.0 for w in words[1:4]))
+            elif words[0] == 'r':
+                records.append(int(words[1]) / 1000.0)
+            elif words[0] == 'l':
+                lates.append(int(words[1]) / 1000.0)
             if words[0] == 'parts':
                 parts = words[1:]
             elif words[0] == 'gpu_parts':
@@ -425,10 +515,30 @@ def measure(folder):
     # thread drew the picture. With the pictures beside the step, a
     # frame's blank has two (docs/PORT.md, "The step beside the
     # pictures"); without, a blank's work is the gap before its picture.
-    gaps = [now - was - waited for (was, _, _, _), (now, at, _, waited) in zip(swaps, swaps[1:])
-            if first + SETTLE_BLANKS <= at <= last]
-    beside = sum(1 for _, at, is_beside, _ in swaps if is_beside and first <= at <= last)
-    paced = paced_measures(swaps, boundaries, first + SETTLE_BLANKS, last, frames) if PACED else {}
+    gaps = [now[0] - was[0] - now[3] for was, now in zip(swaps, swaps[1:])
+            if first + SETTLE_BLANKS <= now[1] <= last]
+    beside = sum(1 for swap in swaps if swap[2] and first <= swap[1] <= last)
+    # a boundary read late is read when it was read again
+    late_at = []
+    for n, (at_ms, at) in enumerate(boundaries):
+        i = bisect.bisect_right(lates, at_ms)
+        before = boundaries[n + 1][0] if n + 1 < len(boundaries) else at_ms + LATE_MOST_MS
+        late_at.append((lates[i] if i < len(lates) and lates[i] < before and lates[i] - at_ms < LATE_MOST_MS
+                        else at_ms, at))
+    rate = 144 if case_paced_at_144(folder) else PACED_RATE
+    if rate == 0:
+        rate = -display_rate(os.path.join(folder, 'log.txt'))
+    paced = paced_measures(swaps, late_at, ends, records, first + SETTLE_BLANKS, last,
+                           frames, rate) if paced else {}
+    menu = menu_blanks(os.path.join(folder, 'log.txt')) if paced else None
+    if menu:
+        # the menus before the fight: every blank a frame
+        in_menu = paced_measures(swaps, late_at, ends, records, menu[0] + SETTLE_BLANKS, menu[1],
+                                 [], rate)
+        paced.update(('menu_' + key, value) for key, value in in_menu.items() if key.startswith('lag_'))
+    if paced and late_at:
+        paced['late_mean'] = statistics.mean(t - b[0] for t, b in zip((t for t, _ in late_at), boundaries)
+                                             if first + SETTLE_BLANKS <= b[1] <= last)
     # The step on its own thread: its work, a step a blank that took it.
     # The window's thread's numbers above are then that thread's alone.
     step_work = [work(v) for b, v in steps.items() if b >= first + SETTLE_BLANKS]
@@ -473,12 +583,20 @@ def measure(folder):
     })
 
 
-def paced_measures(swaps, boundaries, first, last, frames):
+def paced_measures(swaps, boundaries, ends, records, first, last, frames, rate):
     """--paced: the refreshes of the made-up display no new picture
-    reached, and each frame's lag from its input to its first picture."""
-    period = 1000.0 / PACED_RATE
+    reached, and a press's way to the picture, part by part (docs/PORT.md,
+    "Input lag"): for each frame's boundary, the game taking its input
+    (`k`), the step's thread taking the step up and saying it was done and
+    the window's thread hearing it (`e`), its record drawn (`r`), the
+    frame's first picture begun and handed over and its swap back (`p`),
+    and the refresh that shows it."""
+    # the PC's own display (rate 0 asked for): its refreshes are the
+    # swaps' return
+    real = rate < 0
+    period = 1000.0 / abs(rate)
     # a swap comes back just after the refresh it waited for
-    shown = sorted({int(t / period) for t, at, _, _ in swaps if first <= at <= last})
+    shown = sorted({int(swap[0] / period) for swap in swaps if first <= swap[1] <= last})
     if not shown:
         return {}
     seen = set(shown)
@@ -487,21 +605,69 @@ def paced_measures(swaps, boundaries, first, last, frames):
     # A frame's boundary: the first of its blank's swaps that is not one
     # shown beside the step is the first picture of the frame (with
     # run-ahead the step's own frame is on show from its first blank).
-    frame_blanks = set(frames)
+    # (with `frame_rate original` no blank says it drew a frame: every
+    # boundary of the fight is one)
+    frame_blanks = set(frames) if frames else {at for _, at in boundaries}
+    swap_times = [swap[0] for swap in swaps]
+    end_times = [end[0] for end in ends]
     lags = []
+    parts = {name: [] for name, _ in LAG_PARTS}
     for at_ms, at in boundaries:
         if not (first <= at <= last) or at not in frame_blanks:
             continue
-        after = [t for t, b, is_beside, _ in swaps if t > at_ms and not is_beside and b >= at]
-        if after:
-            lags.append(int(after[0] / period) - int(at_ms / period))
-    return {
+        i = bisect.bisect_right(swap_times, at_ms)
+        while i < len(swaps) and (swaps[i][2] or swaps[i][1] < at):
+            i += 1
+        if i == len(swaps):
+            continue
+        swap, _, _, _, began, handed, drawn = swaps[i]
+        lags.append(int(swap / period) - int(at_ms / period))
+        # the refresh that shows it: the one the swap waited for, or with
+        # nothing waited for, the swap itself (torn in)
+        on_screen = int(swap / period) * period if VSYNC and not real else swap
+        parts['shown'].append(on_screen - at_ms)
+        if began is None:
+            continue
+        j = bisect.bisect_right(end_times, at_ms)
+        k = bisect.bisect_right(records, at_ms)
+        if j < len(ends) and ends[j][0] < swap and k < len(records) and records[k] < swap:
+            heard, woke, ended = ends[j]
+            parts['to_step'].append(woke - at_ms)
+            parts['step'].append(ended - woke)
+            parts['from_step'].append(heard - ended)
+            parts['record'].append(records[k] - heard)
+            ready = records[k]
+        else:
+            ready = at_ms
+        parts['to_picture'].append(began - ready)
+        parts['picture'].append(handed - began)
+        if drawn is not None:
+            parts['card'].append(drawn - handed)
+            parts['swap'].append(swap - drawn)
+        else:
+            parts['swap'].append(swap - handed)
+    # A press comes at any moment and waits for the next boundary's read: on
+    # average the sum of the gaps' squares over twice their sum.
+    times = [t for t, at in boundaries if first <= at <= last]
+    # (a gap of more than four blanks is a load, where nothing is pressed)
+    gaps = [b - a for a, b in zip(times, times[1:]) if b - a < 70.0]
+    wait = sum(g * g for g in gaps) / (2 * sum(gaps)) if gaps else 0.0
+    measures = {
+        'rate': abs(rate),
         'missed_refreshes': 100.0 * missed / total,
         'refreshes': total,
         'lag_p50': statistics.median(lags) if lags else 0.0,
         'lag_mean': statistics.mean(lags) if lags else 0.0,
         'lag_p95': centile(lags, 0.95),
+        'lag_read_wait': wait,
     }
+    for name, values in parts.items():
+        if values:
+            measures['lag_%s_mean' % name] = statistics.mean(values)
+            measures['lag_%s_p95' % name] = centile(values, 0.95)
+    if parts['shown']:
+        measures['lag_press_mean'] = wait + measures['lag_shown_mean']
+    return measures
 
 
 def report(name, m):
@@ -522,7 +688,18 @@ def report(name, m):
     if 'missed_refreshes' in m:
         print('  paced at %d a second: %.1f%% of %d refreshes after the first second reached by no new picture;'
               ' a frame\'s input to its first picture: median %.1f, mean %.2f, 95%% %.1f refreshes'
-              % (PACED_RATE, m['missed_refreshes'], m['refreshes'], m['lag_p50'], m['lag_mean'], m['lag_p95']))
+              % (m.get('rate', PACED_RATE), m['missed_refreshes'], m['refreshes'], m['lag_p50'], m['lag_mean'], m['lag_p95']))
+        if 'lag_shown_mean' in m:
+            print('  a press to the screen, mean ms: %.2f = waiting for the read %.2f + the read to the screen %.2f'
+                  ' (95%% %.2f; read %.2f ms after the boundary); of that: %s' % (
+                      m['lag_press_mean'], m['lag_read_wait'], m['lag_shown_mean'], m['lag_shown_p95'],
+                      m.get('late_mean', 0.0),
+                      ', '.join('%s %.2f' % (what, m['lag_%s_mean' % name]) for name, what in LAG_PARTS
+                                if name != 'shown' and 'lag_%s_mean' % name in m)))
+        if 'menu_lag_shown_mean' in m:
+            print('  in the menus: a press to the screen %.2f = waiting for the read %.2f + the read to the screen %.2f'
+                  ' (95%% %.2f)' % (m['menu_lag_press_mean'], m['menu_lag_read_wait'], m['menu_lag_shown_mean'],
+                                   m['menu_lag_shown_p95']))
     if 'gap_p50' in m:
         print('  picture to picture, after the first second: median %.2f  95%% %.2f  99%% %.2f  worst %.2f;'
               ' over %.2f ms: %.1f%%; %d pictures beside the step'
@@ -537,6 +714,7 @@ def report(name, m):
 
 
 def main():
+    global PACED, PACED_RATE, VSYNC
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('--case', action='append', choices=sorted(CASES), help='a case to run (again: more)')
     ap.add_argument('--budget', action='store_true', help="the gate's cases, held to LIMITS")
@@ -550,14 +728,18 @@ def main():
     ap.add_argument('--label', help="kept as the commit's name and +LABEL, beside the commit's own numbers")
     ap.add_argument('--paced', action='store_true',
                     help='at the game\'s pace against a display of %d a second (the module\'s doc)' % PACED_RATE)
+    ap.add_argument('--rate', type=int, default=PACED_RATE,
+                    help="--paced: the made-up display's refreshes a second (%d)" % PACED_RATE)
     args = ap.parse_args()
-    global PACED
     PACED = args.paced
+    PACED_RATE = args.rate
+    VSYNC = not any(item.replace(' ', '') == 'vsync=off' for item in args.set)
     global PROGRAM
     if args.program:
         PROGRAM = os.path.abspath(args.program)
     global LABEL
-    LABEL = ('+' + args.label if args.label else '') + ('+paced' if args.paced else '')
+    LABEL = (('+' + args.label if args.label else '') + ('+paced' if args.paced else '')
+             + ('%d' % PACED_RATE if args.paced and PACED_RATE != 144 else ''))
     cases = args.case or (BUDGET_CASES if args.budget else DEFAULT_CASES)
     main_repo = port_budget.main_checkout()
     image = port_budget.find(os.environ.get('REBUSHIDO_RETAIL'),
@@ -622,7 +804,7 @@ def main():
             before = system_times()
             folder, seconds = run(case, image, mods, plan, [tuple(s.split("=", 1)) for s in args.set])
             load = {'others': seen, 'busy': busy_since(before)}
-        results[case] = measure(folder)
+        results[case] = measure(folder, PACED or case in PACED_CASES)
         report('%s (%.0f s)' % (case, seconds), results[case])
         if load is not None:
             results[case]['load'] = load
