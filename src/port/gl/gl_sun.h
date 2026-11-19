@@ -143,6 +143,20 @@ extern u32 port_GlSunTriangles(void);
     "        lit += texture(u_sun_map, vec4(uv, float(i), at.z));\n"                                                                          \
     "    }\n"                                                                                                                                 \
     "    return lit / 10.0;\n"                                                                                                                \
+    "}\n" /* the far maps, whose texels are wide already: four compared reads                                                                 \
+           */                                                                                                                                 \
+    "float sun_cheap(int i, vec3 at, float spread) {\n"                                                                                       \
+    "    if (spread <= 0.0) {\n"                                                                                                              \
+    "        return texture(u_sun_map, vec4(at.xy, float(i), at.z));\n"                                                                       \
+    "    }\n"                                                                                                                                 \
+    "    vec2 step_of = spread / vec2(textureSize(u_sun_raw, 0).xy);\n"                                                                       \
+    "    float lit = 0.0;\n"                                                                                                                  \
+    "    for (int k = 0; k < 4; k++) {\n"                                                                                                     \
+    "        vec2 o = vec2(float(k & 1), float(k >> 1)) - vec2(0.5);\n"                                                                       \
+    "        lit += texture(u_sun_map,\n"                                                                                                     \
+    "                       vec4(at.xy + o * step_of, float(i), at.z));\n"                                                                    \
+    "    }\n"                                                                                                                                 \
+    "    return lit * 0.25;\n"                                                                                                                \
     "}\n"                                                                                                                                     \
     "float sun_visible(vec3 world, vec3 normal) {\n"                                                                                          \
     "    if (u_sun_on == 0) { return 1.0; }\n" /* A face turned away from the                                                                 \
@@ -165,7 +179,9 @@ extern u32 port_GlSunTriangles(void);
     "        vec3 at = c.xyz * 0.5 + vec3(0.5);\n"                                                                                            \
     "        if (all(greaterThan(at.xy, vec2(0.03)))\n"                                                                                       \
     "            && all(lessThan(at.xy, vec2(0.97))) && at.z < 1.0) {\n"                                                                      \
-    "            return 1.0 - let_in * (1.0 - sun_filter(i, at, texel));\n"                                                                   \
+    "            float lit = i == 0 ? sun_filter(i, at, texel)\n"                                                                             \
+    "                      : sun_cheap(i, at, i == 1 ? 1.5 : 0.0);\n"                                                                         \
+    "            return 1.0 - let_in * (1.0 - lit);\n"                                                                                        \
     "        }\n"                                                                                                                             \
     "    }\n"                                                                                                                                 \
     "    return 1.0;\n"                                                                                                                       \
