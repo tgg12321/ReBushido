@@ -105,6 +105,10 @@ extern void port_GlLightsTake(void);
 extern void port_GlLightsSetPhase(s32 phase);
 /* A picture begins: what was worked out for the last is forgotten. */
 extern void port_GlLightsNewPicture(void);
+/* The last picture's lights, as the card has them, bound to their buffer's
+ * binding (PORT_GL_LIGHTS_BINDING) for a pass after the scene (gl_post.c,
+ * the glow): how many, 0 for none. */
+extern s32 port_GlLightsBindLast(void);
 /* This picture's lights placed, sorted into the grid and handed to the
  * card, and the shadows of the strongest few drawn, once a picture, before
  * anything reads them. Leaves the card's state forgotten and the picture's

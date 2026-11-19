@@ -312,6 +312,16 @@ void port_GlLightsSetPhase(s32 phase) {
 
 void port_GlLightsNewPicture(void) { g_lights.is_prepared = FALSE; }
 
+s32 port_GlLightsBindLast(void) {
+    if (!g_lights.is_started || !port_GlLightsIsOn() ||
+        g_lights.card_count <= 0) {
+        return 0;
+    }
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, PORT_GL_LIGHTS_BINDING,
+                     g_lights.light_buffer);
+    return g_lights.card_count;
+}
+
 s32 port_GlLightsShown(void) { return g_lights.most; }
 
 s32 port_GlLightsShadowed(void) { return g_lights.shadowed; }

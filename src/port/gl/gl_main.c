@@ -38,6 +38,7 @@
 #include "gl_shadow.h"
 #include "gl_sky.h"
 #include "gl_stage.h"
+#include "gl_post.h"
 #include "gl_sun.h"
 #include "gl_lights.h"
 #include "gl_tween.h"
@@ -1217,6 +1218,11 @@ static void port_GlQuit(s32 code) {
         fprintf(stderr, "gl run sun pictures %u last_triangles %u\n",
                 port_GlSunPictures(), port_GlSunTriangles());
     }
+    if (port_GlPostPictures() > 0 || port_GlPostProblem() != NULL) {
+        fprintf(stderr, "gl run post pictures %u problem %s\n",
+                port_GlPostPictures(),
+                port_GlPostProblem() != NULL ? port_GlPostProblem() : "none");
+    }
     if (port_GlLightsIsOn()) {
         s32 listed = 0;
 
@@ -1422,6 +1428,16 @@ int main(int argc, char **argv) {
             options.is_smooth_light = strcmp(argv[++i], "off") != 0;
         } else if (!strcmp(word, "--lights")) {
             options.is_lights = strcmp(argv[++i], "off") != 0;
+        } else if (!strcmp(word, "--reflections")) {
+            /* the lighting's finish (gl_post.h): off unless asked, so
+             * that the provers hold the picture they always held */
+            options.is_reflections = !strcmp(argv[++i], "on");
+        } else if (!strcmp(word, "--ambient-occlusion")) {
+            options.is_ambient_occlusion = !strcmp(argv[++i], "on");
+        } else if (!strcmp(word, "--bloom")) {
+            options.is_bloom = !strcmp(argv[++i], "on");
+        } else if (!strcmp(word, "--tonemap")) {
+            options.is_tonemap = !strcmp(argv[++i], "on");
         } else if (!strcmp(word, "--gl-made-up-lights")) {
             port_GlLightsSetMadeUp(atoi(argv[++i]));
         } else if (!strcmp(word, "--effects")) {
