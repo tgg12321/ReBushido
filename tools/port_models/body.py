@@ -36,8 +36,31 @@ def body_mesh(ref, recipe):
     for level in range(LEVELS):
         body = smoother(body, R, T, recipe.get('smooth', 1.0), small=recipe.get('small_piece', 24) * 4 ** level, most=recipe.get('most_units', 12.0) / 2 ** level)
     moved, worst = pull_in(body, ref, R, recipe['pull_in_units'], recipe.get('inside_units', 8.0))
+    # a small triangle that smoothing turned over (its corners drawn past
+    # one another) goes back to where the game's flat face has it, its
+    # neighbours with it, until none is turned
+    flat = Mesh.of_model(ref)
+    for level in range(LEVELS):
+        flat = smoother(flat, R, T, 0.0)
+
+    def face(m):
+        p0, p1, p2 = (m.pos[m.tris[:, k]] for k in range(3))
+        n = np.cross(p1 - p0, p2 - p0)
+        return n / np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-12)
+    was = face(flat)
+    back = 0
+    for _ in range(6):
+        bad = ((face(body) * was).sum(1) < 0.0) & (np.linalg.norm(was, axis=1) > 0.5)
+        if not bad.any():
+            break
+        v = np.unique(body.tris[bad])
+        # (every vertex at those places: the two sides of a seam of the texture go together)
+        key = {tuple(k) for k in np.round(flat.pos[v] * 8).astype(np.int64)}
+        v = np.array([i for i, k in enumerate(np.round(flat.pos * 8).astype(np.int64)) if tuple(k) in key])
+        body.pos[v], body.terms[v], body.tjoints[v] = flat.pos[v], flat.terms[v], flat.tjoints[v]
+        back += len(v)
     renormal(body)
-    return body, {'pulled_in': moved, 'swelled': worst}
+    return body, {'pulled_in': moved, 'swelled': worst, 'put_back': back}
 
 
 def groups(ref, recipe):
@@ -48,7 +71,67 @@ def groups(ref, recipe):
     out = np.full(len(ref.tris), 'body', object)
     for name, bones in recipe.get('charts', {}).items():
         out[np.isin(dom[ref.tris], bones).any(1)] = name
+    # a chart kept as the game painted it (the face): the triangles of
+    # another chart whose texture is mostly one material
+    for name, spec in recipe.get('kept', {}).items():
+        share = of_material(Mesh.of_model(ref), ref, recipe, spec['material'])
+        out[(out == spec['chart']) & (share >= 0.3)] = name
     return out
+
+
+def kept_layout(part, ref, rect):
+    """The layout of a chart kept as the game painted it: the game's own
+    layout of it, a whole number of times larger, so that each of the
+    game's texels is a square block of the new texture's and nothing is
+    filtered or smoothed. The parts of the game's texture its triangles
+    use are boxes, put side by side in the chart's rectangle at the
+    largest whole scale that fits. Returns each triangle's corners'
+    places and the scale."""
+    gh, gw = fg.png_array(ref.base_color_png()).shape[:2]
+    size = np.array([gw, gh], float)
+    per = 4 ** LEVELS
+    uv = part.uv[part.tris] * size                          # (n, 3, 2) in the game's texels
+    n0 = len(part.tris) // per
+    lo = np.floor(uv.reshape(n0, per * 3, 2).min(1) - 1e-6).astype(int) - 1
+    hi = np.ceil(uv.reshape(n0, per * 3, 2).max(1) + 1e-6).astype(int) + 1
+    # the boxes: the game's triangles whose parts of the texture meet
+    box = list(range(n0))
+
+    def find(i):
+        while box[i] != i:
+            box[i] = box[box[i]]
+            i = box[i]
+        return i
+    changed = True
+    while changed:
+        changed = False
+        roots = sorted({find(i) for i in range(n0)})
+        for x in range(len(roots)):
+            for y in range(x + 1, len(roots)):
+                a, b = find(roots[x]), find(roots[y])
+                if a != b and (lo[a] < hi[b]).all() and (lo[b] < hi[a]).all():
+                    box[b] = a
+                    lo[a], hi[a] = np.minimum(lo[a], lo[b]), np.maximum(hi[a], hi[b])
+                    changed = True
+    roots = sorted({find(i) for i in range(n0)}, key=lambda r: -(hi[r][1] - lo[r][1]))
+    _, _, w, h = rect
+    for k in range(16, 0, -1):
+        at, x, y, shelf = {}, 0, 0, 0
+        for r in roots:
+            bw, bh = (hi[r] - lo[r]) * k
+            if x + bw > w:
+                x, y, shelf = 0, y + shelf, 0
+            at[r] = (x, y)
+            x += bw
+            shelf = max(shelf, bh)
+        if y + shelf <= h and all(p[0] + (hi[r][0] - lo[r][0]) * k <= w for r, p in at.items()):
+            break
+    out = np.zeros_like(uv)
+    for g in range(n0):
+        r = find(g)
+        rows = slice(g * per, (g + 1) * per)
+        out[rows] = ((uv[rows] - lo[r]) * k + np.array(at[r], float)) / np.array([w, h], float)
+    return out, k
 
 
 def group_mesh(body, of_triangle, name):
@@ -332,7 +415,12 @@ def chart(ref, recipe, name, unwrapped, rect):
     body, of_triangle, clean, said = made(ref, recipe)
     said = dict(said)
     part = group_mesh(body, of_triangle, name)
-    mesh, island, turned, corner_uv = laid_out(part, cut(part), unwrapped)
+    kept = name in recipe.get('kept', {})
+    if kept:
+        corner_uv, times = kept_layout(part, ref, rect)
+        mesh = split(part, corner_uv)
+    else:
+        mesh, island, turned, corner_uv = laid_out(part, cut(part), unwrapped)
     if charts_.LEVEL:
         low = part
         for _ in range(charts_.LEVEL):
@@ -347,9 +435,25 @@ def chart(ref, recipe, name, unwrapped, rect):
         return Chart(name, rect, out), {'triangles': int(len(out.tris))}
     _, _, w, h = rect
     tid, bary = bake.rasterize(mesh.uv, mesh.tris, (w, h))
+    c = Chart(name, rect, mesh)
+    if kept:
+        # the game's own texels, each a block: nothing cleaned, nothing smoothed
+        c.on = tid >= 0
+        old = bake.at_texels(mesh.old_uv, mesh.tris, tid, bary)
+        texel = bake.sample_nearest(fg.png_array(ref.base_color_png()), old)
+        c.color = texel[..., :3].astype(np.float32)
+        c.alpha = (texel[..., 3] >= 128).astype(np.float32)
+        c.spread = 1
+        c.rough[...] = KINDS['skin']['rough']
+        pal = ref.extras.get('rb_palette')
+        if pal is not None:
+            idx = bake.sample_nearest(fg.png_array(ref.images()[pal['image']]), old)
+            c.entry = idx[..., :2]
+            c.entry_on = c.on & (idx[..., 3] > 0)
+        said.update(triangles=int(len(mesh.tris)), times_the_games_texels=int(times))
+        return c, said
     scale = texel_scale(mesh, mesh.tris, (w, h))[1]
     p = paint(mesh, tid, bary, ref, recipe, scale, clean, recipe.get('chart_materials', {}).get(name))
-    c = Chart(name, rect, mesh)
     c.on = p['on']
     c.alpha = p['drawn']
     c.color = p['color']

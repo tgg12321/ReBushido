@@ -31,14 +31,15 @@ sys.path.insert(0, HERE)
 import body as bd  # noqa: E402
 import charts as ch  # noqa: E402
 import fighter_glb as fg  # noqa: E402
-from meshes import K, Mesh, outward, winding_sign  # noqa: E402
+from meshes import K, Mesh  # noqa: E402
 from recipe import recipe_of  # noqa: E402
 
 # each chart's rectangle of a texture 2048 texels square: the head has
 # more texels to a unit than the body (a face is looked at)
 RECTS = {
     'body': (0, 0, 2048, 1280),
-    'head': (0, 1280, 1728, 768),
+    'face': (0, 1280, 1024, 768),
+    'head': (1024, 1280, 704, 768),
     'cloth': (1728, 1280, 128, 128),
 }
 
@@ -77,8 +78,11 @@ def write(path, mesh, template, images, extras):
         imgs.append(entry)
     names = [n for n, _ in images]
     tex = lambda name: names.index(name)  # noqa: E731
+    # (the metal factor is nought: a viewer that reads the factor and
+    # fails to read the map then draws the colour, not a black metal; the
+    # port's lighting reads the map's own blue)
     material = {'name': 'rb_remade', 'pbrMetallicRoughness': {
-        'baseColorTexture': {'index': tex('rb_albedo')}, 'metallicFactor': 1.0, 'roughnessFactor': 1.0,
+        'baseColorTexture': {'index': tex('rb_albedo')}, 'metallicFactor': 0.0, 'roughnessFactor': 1.0,
         'metallicRoughnessTexture': {'index': tex('rb_orm')}},
         'normalTexture': {'index': tex('rb_normal')}, 'occlusionTexture': {'index': tex('rb_orm')},
         'alphaMode': 'MASK', 'alphaCutoff': 0.5}
@@ -103,7 +107,7 @@ def write(path, mesh, template, images, extras):
     w.write(path, gltf)
 
 
-def join(charts, size, sign):
+def join(charts, size):
     """The charts' pieces as one mesh, their texture points the atlas's."""
     out = None
     for c in charts:
@@ -112,7 +116,6 @@ def join(charts, size, sign):
         m = Mesh(**{k: v for k, v in c.mesh.__dict__.items()
                     if k in ('pos', 'nrm', 'uv', 'joints', 'weights', 'terms', 'tjoints', 'tris')})
         m.uv = c.to_atlas(m.uv, size)
-        outward(m, sign)
         out = m if out is None else out.plus(m)
     return out
 
@@ -129,7 +132,6 @@ def main():
     work = os.path.join(args.work, args.name)
     ref = fg.Model(os.path.join(args.ref, args.name + '.glb'))
     size = r['atlas']
-    sign = winding_sign(ref)
     cloth, moved = bd.cloth_chart(ref, r, rect_of('cloth', size))
 
     def pieces(level):
@@ -137,7 +139,7 @@ def main():
         first level's: the lower ones are meshes alone, in its layout)."""
         ch.LEVEL = level
         charts = []
-        for name in charts_of(r):
+        for name in charts_of(r) + list(r.get('kept', {})):
             c, said = bd.chart(ref, r, name, os.path.join(work, 'unwrap_out_%s.json' % name), rect_of(name, size))
             charts.append(c)
             print('assemble: level %d: the chart %s: %s' % (level, name, json.dumps(said)))
@@ -146,7 +148,7 @@ def main():
         ch.LEVEL = 0
         return charts
     charts = pieces(0)
-    mesh = join(charts, size, sign)
+    mesh = join(charts, size)
     color, normal, orm, entry = ch.compose(charts, size)
     images = [('rb_albedo', fg.png_bytes(color)), ('rb_normal', fg.png_bytes(normal)),
               ('rb_orm', fg.png_bytes(orm))]
@@ -165,7 +167,7 @@ def main():
     lod_dir = os.path.join(os.path.dirname(os.path.abspath(args.out)), 'lod')
     os.makedirs(lod_dir, exist_ok=True)
     for level in (1, 2):
-        mesh = join(pieces(level), size, sign)
+        mesh = join(pieces(level), size)
         path = os.path.join(lod_dir, '%s.lod%d.glb' % (args.name, level))
         write(path, mesh, ref, images, extras)
         print('assemble: %s: %d vertices, %d triangles' % (path, len(mesh.pos), len(mesh.tris)))
