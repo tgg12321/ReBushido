@@ -10,6 +10,7 @@ sample's source, which is the repository's own."""
 import contextlib
 import io
 import os
+import tempfile
 
 import arena_compile
 import arena_validate
@@ -81,8 +82,13 @@ def run(checks):
     checks.equal('five textures, each with two smaller copies', len(textures['tims']), 15)
 
     # ---- the validator ----
-    folder = os.path.join(ROOT, 'build', 'tests', 'arena')
-    os.makedirs(folder, exist_ok=True)
+    with tempfile.TemporaryDirectory() as folder:
+        validator(checks, folder, data, ground_bytes, ground)
+
+
+def validator(checks, folder, data, ground_bytes, ground):
+    """The validator on the sample, then on the sample with a hole made in
+    it, both written to `folder`."""
     good = os.path.join(folder, 'courtyard.arena')
     with open(good, 'wb') as f:
         f.write(data)
