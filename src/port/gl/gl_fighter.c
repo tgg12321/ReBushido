@@ -179,7 +179,7 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glUniformMatrix4fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))                           \
-    GL(void, glDrawElements, (GLenum, GLsizei, GLenum, const void *))         \
+    GL(void, glDrawElements, (GLenum, GLsizei, GLenum, const void *))          \
     GL(GLenum, glGetError, (void))
 
 #define GL(result, name, args) static result(*name) args;
