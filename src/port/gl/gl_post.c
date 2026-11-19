@@ -503,7 +503,10 @@ static const char g_post_smooth_text[] =
 
 /* Each light of the frame's list a glow at a quarter of the size: a
  * quad about the point the light is at, gone where the scene stands in
- * front of it. The list is the card's own (gl_lights.h, binding 4). */
+ * front of it: the whole quad where all about its middle is nearer, and
+ * each pixel of it where what that pixel shows is nearer, so that the
+ * halo of a torch behind a fighter is not laid over him where it reaches
+ * past his edge. The list is the card's own (gl_lights.h, binding 4). */
 static const char g_post_glow_vertex_text[] =
     "#version 430 core\n" POST_COMMON
     "struct PortLight { vec4 place; vec4 color; vec4 aim; vec4 extra; };\n"
@@ -515,6 +518,8 @@ static const char g_post_glow_vertex_text[] =
     "uniform float u_gain;\n"
     "out vec2 v_corner;\n"
     "out vec3 v_color;\n"
+    "out vec2 v_at;\n"   /* where the corner is, in the picture's pixels */
+    "out float v_far;\n" /* nearer than this hides the light */
     "void main() {\n"
     "    int corner = gl_VertexID % 6;\n"
     "    vec2 c = vec2((corner == 1 || corner == 2 || corner == 4) ? 1.0 : -1.0,\n"
@@ -547,15 +552,20 @@ static const char g_post_glow_vertex_text[] =
     "    if (seen <= 0.0) { return; }\n"
     "    v_color = l.color.rgb / 128.0 * u_gain * seen;\n"
     "    vec2 at = middle + c * across * 3.0;\n"
+    "    v_at = at;\n"
+    "    v_far = v.z - size * 0.5;\n"
     "    gl_Position = vec4(at / u_full * 2.0 - vec2(1.0), 0.0, 1.0);\n"
     "}\n";
 
 static const char g_post_glow_fragment_text[] =
-    "#version 430 core\n"
-    "in vec2 v_corner;\n"
+    "#version 430 core\n" POST_COMMON "in vec2 v_corner;\n"
     "in vec3 v_color;\n"
+    "in vec2 v_at;\n"
+    "in float v_far;\n"
     "layout(location = 0) out vec4 o_color;\n"
     "void main() {\n"
+    /* what this pixel shows stands in front of the light */
+    "    if (depth_at(v_at) < v_far) { discard; }\n"
     "    float r = length(v_corner) * 3.0;\n"
     /* a bright middle and a wide soft fall */
     "    float glow = exp(-r * r * 2.0) + 0.25 * exp(-r * r * 0.35);\n"
@@ -738,6 +748,8 @@ static struct {
      * picture shown may be either. */
     PostView live;
     PostView kept;
+    /* the ground's mesh drawn since the frame began (port_GlPostNewFrame) */
+    s32 is_noted;
     /* the depth the passes read (gl.h) */
     GLuint depth;
     u32 pictures;
@@ -995,6 +1007,7 @@ void port_GlPostNoteView(const float *rotation, const float *camera, float h,
     view->middle[1] = middle_y;
     view->top = top;
     view->is_set = h > 0.0f;
+    g_post.is_noted = TRUE;
     {
         s32 count = 0;
         const void *card = port_GlLightsCard(&count);
@@ -1027,6 +1040,20 @@ void port_GlPostBeforeMesh(const PortGlPicture *picture) {
         g_post.kept = g_post.live;
     }
     g_post.live.is_set = FALSE;
+}
+
+void port_GlPostNewFrame(void) {
+    /* the game draws a frame while it shows the last, the two halves of
+     * video memory in turn: a frame with no ground painted over the
+     * older of the two drawings kept, then over the newer */
+    if (!g_post.is_noted) {
+        if (g_post.kept.is_set) {
+            g_post.kept.is_set = FALSE;
+        } else {
+            g_post.live.is_set = FALSE;
+        }
+    }
+    g_post.is_noted = FALSE;
 }
 
 s32 port_GlPostWanted(const PortGlPicture *picture) {

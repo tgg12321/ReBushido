@@ -7615,10 +7615,26 @@ between frames and flickered, kept with its view and sent again) is a
 soft glow at a quarter of the size where it is: a bright middle and
 a wide fall, its size a share of the light's reach and more for a
 brighter light, its colour its own, gone where the depth about it says
-the scene stands in front. Spread wider at an eighth and a sixteenth and
+the scene stands in front -- the whole glow where all about its middle
+is nearer, and each pixel of it where what that pixel shows is nearer
+than the light by more than half the glow's size: the owner
+(2026-11-19) saw a torch behind a fighter glow over his hands, the halo
+reaching past his edge laid over him whole. Spread wider at an eighth and a sixteenth and
 brought back up added, and added over the picture. So a torch, a lamp of
 the parking lot and the flash where blades meet glow, and nothing else
-does; with `lights = off` there is no bloom.
+does; with `lights = off` there is no bloom. The depth is the ground's
+mesh and the fighters drawn from models: a fighter of the game's own
+primitives is not in it and does not hide a glow.
+
+**Only over the ground it was drawn with.** The passes keep the views
+of the ground's last two drawings, one for each half of video memory
+the game draws into in turn, each with the lights it was lit by. A game
+frame that draws no ground's mesh -- a menu, the stage select, the
+pause holding the fight's last frame -- forgets the view of the half it
+painted (`port_GlPostNewFrame`, the older of the two first): before,
+the views stayed, and the passes ran over the stage select with the
+glow of the torches of the stage just left (the owner, 2026-11-19), and
+over the pause with each glow where the wider picture had it.
 
 **Where it is drawn.** The passes run in `port_GlFinishFrame`, after the
 shadows' darkening, over the picture the resolve averaged down (with one
