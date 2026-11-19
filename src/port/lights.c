@@ -5,7 +5,6 @@
  * Nothing here is the game's state (config/port_state.txt: outside). */
 #include "common.h"
 #include "port_host.h"
-#include "port_lights.h"
 #include "port_mods.h"
 #include "bb2.h"
 
@@ -17,6 +16,12 @@
 #define TENS 10
 #define HEX_DIGITS 16
 #define COLOR_MOST 255
+/* the largest whole part of a number read */
+#define WHOLE_MOST 1000000
+/* `#RRGGBB`: its hexadecimal digits, and its length with the `#` */
+#define COLOR_DIGITS 6
+#define COLOR_TEXT_LENGTH (COLOR_DIGITS + 1)
+#define PROBLEM_SIZE 128
 #define CONE_MOST 90
 #define FIGHTERS 2
 
@@ -107,7 +112,7 @@ static s32 port_LightsFraction(const char *text, u32 length, s32 *value) {
         i++;
     }
     for (; i < length && text[i] >= '0' && text[i] <= '9'; i++) {
-        if (whole > 1000000) {
+        if (whole > WHOLE_MOST) {
             return FALSE;
         }
         whole = whole * TENS + (text[i] - '0');
@@ -177,7 +182,7 @@ static s32 port_LightsColor(const char *text, const char *end, u8 *rgb) {
     s32 parts[3];
     s32 i;
 
-    if (length == 7 && word[0] == '#') {
+    if (length == COLOR_TEXT_LENGTH && word[0] == '#') {
         for (i = 0; i < 3; i++) {
             s32 high = port_LightsHexDigit(word[1 + 2 * i]);
             s32 low = port_LightsHexDigit(word[2 + 2 * i]);
@@ -201,6 +206,7 @@ static s32 port_LightsColor(const char *text, const char *end, u8 *rgb) {
     return TRUE;
 }
 
+/* `yes` or `on`, `no` or `off`, and nothing after it. */
 static s32 port_LightsYesOrNo(const char *text, const char *end, s32 *out) {
     const char *word;
     u32 length = port_LightsWord(&text, end, &word);
@@ -234,11 +240,13 @@ static const char *port_LightsComment(const char *at, const char *end) {
         if (*hash != '#' || (hash > at && !port_LightsIsSpace(hash[-1]))) {
             continue;
         }
-        while (digits < 6 && hash + 1 + digits < end &&
+        while (digits < COLOR_DIGITS && hash + 1 + digits < end &&
                port_LightsHexDigit(hash[1 + digits]) >= 0) {
             digits++;
         }
-        if (digits == 6 && (hash + 7 == end || port_LightsIsSpace(hash[7]))) {
+        if (digits == COLOR_DIGITS &&
+            (hash + COLOR_TEXT_LENGTH == end ||
+             port_LightsIsSpace(hash[COLOR_TEXT_LENGTH]))) {
             continue; /* a colour */
         }
         return hash;
@@ -453,6 +461,7 @@ static const char *port_LightsSet(
     return "not a word a light has";
 }
 
+/* One file over the set, line by line (port_lights.h). */
 s32 port_LightsParse(
     const char *text, u32 length, PortLightSet *set, char *problem, u32 room) {
     const char *at = text;
@@ -606,14 +615,10 @@ void port_LightsStageKey(s32 stage, char *key, u32 room) {
     port_LightsSay(key, room, "stage_%02d", stage);
 }
 
-/* A custom arena standing in for a stage names a light file of its own
- * (include/port_arenas.h, `lights = KEY`): its key, or NULL with no arena.
- * Weak until the arenas are in this program: no arena, then. */
-extern const char *port_ArenaLightsKey(void) __attribute__((weak));
-
+/* The stage's set, or a custom arena's (port_lights.h). */
 const PortLightSet *port_LightsOfStage(s32 stage) {
     char key[PORT_MOD_KEY_SIZE];
-    char problem[128];
+    char problem[PROBLEM_SIZE];
     const char *arena =
         port_ArenaLightsKey != NULL ? port_ArenaLightsKey() : NULL;
     const char *path;
@@ -683,6 +688,7 @@ void port_LightsNoteEffects(void) {
     g_port_lights.game.glow_count = 0;
 }
 
+/* The game's point light, and whether it is a new one. */
 void port_LightsNoteFlash(const void *position, s32 color, s32 frames) {
     PortLightsGame *game = &g_port_lights.game;
 
@@ -703,6 +709,7 @@ void port_LightsNoteFlash(const void *position, s32 color, s32 frames) {
     game->flash_frames = frames;
 }
 
+/* A glowing quad, once a frame however often it is drawn. */
 void port_LightsNoteGlow(s32 flash, const void *position) {
     PortLightsGame *game = &g_port_lights.game;
     s32 i;
@@ -720,6 +727,8 @@ void port_LightsNoteGlow(s32 flash, const void *position) {
     game->glow_count++;
 }
 
+/* The stage's flames as eff_DrawFlames reads them, told the log when
+ * they change. */
 void port_LightsNoteFlames(const void *flames) {
     const Flame *flame = (const Flame *)flames;
     PortLightsGame *game = &g_port_lights.game;

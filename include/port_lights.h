@@ -82,7 +82,13 @@ extern s32 port_LightsParse(
 /* The key of stage `stage`'s light files: `stage_NN` (as the skies'). */
 extern void port_LightsStageKey(s32 stage, char *key, u32 room);
 
-/* Every mod's light file of the stage, in the mods' order, made into one
+/* A custom arena standing in for a stage names a light file of its own
+ * (include/port_arenas.h, `lights = KEY`): its key, or NULL with no
+ * arena. Weak until the arenas are in this program: none, then. */
+extern const char *port_ArenaLightsKey(void) __attribute__((weak));
+
+/* Every mod's light file of the stage (or of the arena standing in for
+ * it), in the mods' order, made into one
  * set, which is kept until another stage is asked for; problems go to
  * the run's log. NULL for no stage (stage < 0). */
 extern const PortLightSet *port_LightsOfStage(s32 stage);
