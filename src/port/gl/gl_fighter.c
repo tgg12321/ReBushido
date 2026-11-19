@@ -208,9 +208,22 @@ PORT_GL_FIGHTER_FUNCTIONS
  * units (a fighter stands some 1,800 tall, the model's vertices some 26
  * apart). */
 #define CLOTH_GAP 6.0
-/* The planes the layer's depth is kept between, in the world's units. */
-#define NEAR_PLANE 1.0f
+/* The planes the layer's depth is kept between, in the world's units.
+ * A depth buffer of 24 bits in perspective holds a step of about
+ * z * z / (NEAR_PLANE * 2^24) at depth z: a fighter in a fight stands some
+ * 9,000 to 10,000 units from the camera, where a near plane of 1 made the
+ * step 5 units, and faces of the game's models that lie a few units over
+ * one another (a hand's fingers over its palm, a collar over the neck,
+ * the belt) took turns in front from one picture to the next. At 16, the
+ * stage's own near plane (gl_stage.c), the step there is a third of a
+ * unit; nothing of a fighter comes nearer the camera than that. */
+#define NEAR_PLANE 16.0f
+#define NEAR_PLANE_TEXT "16.0"
 #define FAR_PLANE 262144.0f
+/* The cloth's faces taken nearer than the body in the layer's depth, in
+ * steps of it (glPolygonOffset's units): the 4 steps they were at a near
+ * plane of 1, the same depth in the world's units now */
+#define CLOTH_OFFSET_UNITS (-4.0f * NEAR_PLANE)
 
 static const char * const g_model_files[MODEL_FILES] = {
     "M000", "M001", "M002", "M100", "M101", "M102", "M103", "M104",
@@ -556,9 +569,7 @@ static const char g_fighter_vertex_text[] =
     "    vec2 at = (u_h * v.xy + u_screen * v.z) * u_scale\n"
     "            + vec2(0.5) * v.z - u_origin * v.z;\n"
     "    vec2 ndc = at / u_size * 2.0 - vec2(v.z);\n"
-    "    float n = "
-    "1.0"
-    ";\n"
+    "    float n = " NEAR_PLANE_TEXT ";\n"
     "    float f = "
     "262144.0"
     ";\n"
@@ -2507,7 +2518,7 @@ static void port_GlFighterDrawCloths(
              * nearer in the depth buffer as well, so that where it lies
              * close over the body the two never flicker in turn */
             glEnable(GL_POLYGON_OFFSET_FILL);
-            glPolygonOffset(-1.0f, -4.0f);
+            glPolygonOffset(-1.0f, CLOTH_OFFSET_UNITS);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, model->cloth_texture);
         }
