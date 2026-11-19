@@ -122,7 +122,14 @@ def motion(folder, name):
 
 
 def outcome(new, ref, folder, limits):
-    import check
+    # by its path: another test of the run may have put tools/modern's
+    # check.py in sys.modules under the same name
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'port_models_check',
+        os.path.join(HERE, '..', '..', 'tools', 'port_models', 'check.py'))
+    check = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(check)
     rep = check.Report()
     check.print = lambda *a, **k: None
     check.check_skeleton(new, ref, limits, rep)
