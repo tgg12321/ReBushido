@@ -101,7 +101,7 @@ sync_out() {
         # (docs/NETPLAY.md, "What failed in the gate").
         rsync -a --update --prune-empty-dirs \
             --exclude='*.o' --exclude='*.d' --exclude='*.gimple' --exclude='*.ssa' --exclude=/play \
-            --exclude=/rollback --exclude=/net --exclude=/budget --exclude=/bench --exclude=/gate \
+            --exclude=/rollback --exclude=/stage-select --exclude=/net --exclude=/budget --exclude=/bench --exclude=/gate \
             "$MIRROR/build/" "$ROOT/build/"
         status=$?
         # 24: files that vanished while it copied, the temporary files of

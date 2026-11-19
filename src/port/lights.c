@@ -624,7 +624,9 @@ const PortLightSet *port_LightsOfStage(s32 stage) {
     s32 place;
     u32 i;
 
-    if (stage < 0) {
+    /* a stage fought Classic has none of its dressing: no lights of its
+     * own (port_stage_choice.h) */
+    if (stage < 0 || !port_StageIsDressed()) {
         return NULL;
     }
     if (arena != NULL) {

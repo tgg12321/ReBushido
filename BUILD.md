@@ -99,9 +99,10 @@ commands are the same and the outputs land in `build/` as before:
   copy's build as `RB_GIT_HASH`);
 - `RB_BUILD_IN_PLACE=1` builds in the checkout as before, and so does a
   checkout that is not on `/mnt/`. The gate's steps that only run what was
-  built (`port-rollback`, `port-net`, `port-budget`) run in place, and so
-  do `build.sh port-rollback` and `build.sh port-net`. What they write
-  (`build/rollback/`, `net/`, `budget/`, `bench/`, and the gate's
+  built (`port-rollback`, `port-stage-select`, `port-net`,
+  `port-budget`) run in place, and so do `build.sh port-rollback` and
+  `build.sh port-net`. What they write (`build/rollback/`,
+  `stage-select/`, `net/`, `budget/`, `bench/`, and the gate's
   `build/gate/`) is never brought back from the copy: a copy's old
   `build/rollback/` brought back by a build step that ended mid-run
   replaced the files `port-rollback` was comparing, and failed the gate

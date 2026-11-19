@@ -24,6 +24,7 @@
 #include "port_mods.h"
 #include "port_png.h"
 #include "port_remaster.h"
+#include "port_stage_choice.h"
 
 /* the game's own header, for the shape of a light setup */
 #include "light.h"
@@ -658,6 +659,11 @@ void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color) {
     }
     if (!g_sky.is_started || g_sky.kind == PORT_SKY_ORIGINAL ||
         !g_sky.is_stage_frame || view->h <= 0) {
+        return;
+    }
+    /* port_StageIsDressed(): a stage fought Classic keeps the game's
+     * colour of the distance */
+    if (!port_StageIsDressed()) {
         return;
     }
     stage = port_RemasterStageNumber();

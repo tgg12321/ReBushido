@@ -44,6 +44,7 @@
 #include "port_mods.h"
 #include "port_music.h"
 #include "port_remaster.h"
+#include "port_stage_choice.h"
 #include "shared.h"
 #include "sdl_window.h"
 
@@ -956,6 +957,8 @@ int main(int argc, char **argv) {
     /* a mod's music, or the game's own (docs/MODS.md, "Music"); the
      * command line's --music-mods comes after and has the last word */
     port_MusicSetOn(g_port_settings.music_mods);
+    /* the kind of stage the stages start as (port_stage_choice.h) */
+    port_SetStageKindDefault(g_port_settings.stage_kind);
     passed[count] = NULL;
     {
         char line[2 * PATH_BYTES_MAX];

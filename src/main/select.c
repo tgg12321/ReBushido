@@ -706,6 +706,12 @@ s32 select_Update(s32 held, s32 pressed) {
     if (g_select_mode == FIGHT_MODE_PRACTICE) {
         g_select_pressed = pressed & 0xFFFF;
     }
+#if RB_PORT
+    if (g_select_step < SELECT_STEP_STAGE_1 ||
+        g_select_step >= SELECT_STEP_COUNT) {
+        port_StageLeftPages();
+    }
+#endif
     select_StepDoor();
     pool_frame = g_select_work->pool_frame + 1;
     g_select_work->frames = g_select_work->frames + 1;
@@ -2218,6 +2224,32 @@ static void select_StageStep(
     draw.ft4_out = ctx->prims.ft4;
     ctx->prims.ft4 = sprite_DrawScaled(&draw, SPRITE_QUAD_MIRROR_X);
 
+#if RB_PORT
+    /* the port's kinds of stage (port_stage_choice.h): Square switches the
+     * stage under the cursor between Classic and Remastered Classic,
+     * Select opens the arenas' page, which then has the presses */
+    {
+        s32 chosen = codes[(g_select_step - SELECT_STEP_STAGE_1) *
+                               SELECT_STAGE_PAGE_CODES +
+                           g_select_stage_row * SELECT_STAGE_PAGE_COLS +
+                           g_select_stage_col];
+        s32 taken;
+
+        if (chosen == SELECT_STAGE_LINK_FROM &&
+            g_select_mode == FIGHT_MODE_NETWORK) {
+            chosen = SELECT_STAGE_LINK_TO;
+        }
+        taken = port_StagePageStep(
+            g_select_pressed, &chosen, g_select_door == SELECT_DOOR_OPEN);
+        if (taken == PORT_STAGE_PAGE_ARENA) {
+            g_select_settings->stage_index = chosen;
+            g_select_result = PAGE_CONFIRMED;
+        }
+        if (taken != PORT_STAGE_PAGE_GRID) {
+            g_select_pressed = 0;
+        }
+    }
+#endif
     if (g_select_pressed & PAD_ANY(PADLright | PADLleft)) {
         if ((g_select_door & SELECT_DOOR_STATE) == SELECT_DOOR_OPEN) {
             snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
@@ -2339,6 +2371,9 @@ static void select_StageStep(
                 g_select_settings->stage_index = SELECT_STAGE_LINK_TO;
             }
             g_select_result = PAGE_CONFIRMED;
+#if RB_PORT
+            port_StageChosen(g_select_settings->stage_index);
+#endif
         }
     }
 end:

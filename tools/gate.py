@@ -14,7 +14,7 @@ From Windows or inside WSL; a step of the builds runs in WSL (`wsl -e`
 from Windows), the play tests in Windows' Python, which runs the
 emulator. The steps are the eleven checks of tools/checks.sh, read from
 it, so that the list is the one CI runs; the window's two builds; the
-play tests' discs; `format.py --check --all`; port-rollback; port-net;
+play tests' discs; `format.py --check --all`; port-rollback; port-stage-select; port-net;
 port-budget (tools/port_budget.py: the window's processor time for a
 fight with run-ahead, held to a budget); port-bench (tools/port_bench.py:
 the Windows build on the real graphics card, the processor's and the
@@ -68,6 +68,7 @@ WAITS = {
     'port-sdl': [],
     'port-sdl-windows': [],
     'port-rollback': ['port'],
+    'port-stage-select': ['port'],
     'port-net': ['port', 'port-sdl'],
     # the window's build timed: after every other step, alone on the
     # machine, so that its milliseconds are its own (ALONE)
@@ -84,7 +85,7 @@ WAITS = {
 ALONE = ['port-budget', 'port-bench', 'port-pause']
 # Steps that run what was built, in the checkout itself: the others build in
 # tools/mirror.sh's copy of it.
-IN_PLACE = ['port-rollback', 'port-net', 'port-budget', 'port-bench', 'port-pause']
+IN_PLACE = ['port-rollback', 'port-stage-select', 'port-net', 'port-budget', 'port-bench', 'port-pause']
 BUILDS = ['game', 'rb-build', 'discs', 'port', 'port-sdl', 'port-sdl-windows']
 # The steps of the gate's own beside the checks: (name, command, where).
 OWN = [
@@ -95,6 +96,7 @@ OWN = [
     ('port-sdl', ['make', 'port-sdl'], 'wsl'),
     ('port-sdl-windows', ['make', 'port-sdl-windows'], 'wsl'),
     ('port-rollback', ['make', 'port-rollback'], 'wsl'),
+    ('port-stage-select', ['make', 'port-stage-select'], 'wsl'),
     ('port-net', None, 'wsl'),  # with its ports (net_base)
     ('port-budget', ['python3', 'tools/port_budget.py'], 'wsl'),
     # --report-only until the owner's targets are met (docs/PORT.md,

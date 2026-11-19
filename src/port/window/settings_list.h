@@ -382,6 +382,27 @@ PORT_SETTING(effect_lights,
     .label = "Flash lights",
     .help = "The flash of a clash, a hit or a shot lights the scene")
 
+/* The kind every stage starts as on the stage select, and the kind the
+ * modes with no stage page fight on (include/port_stage_choice.h;
+ * docs/PLAYING.md, "Kinds of stage"): 0 Classic, the disc's stage with
+ * the engine's and the renderer's improvements only; 1 Remastered
+ * Classic, the same stage dressed (its lights, the stages-hd textures,
+ * the sky). Square on a stage page switches one stage; in a session the
+ * host's holds. */
+PORT_SETTING(stage_kind,
+    .name = "stage_kind", .value = "remastered",
+    .note = "remastered: the stages dressed (their own\n"
+            "lights, the stages-hd textures, the sky);\n"
+            "classic: as the disc has them. Square\n"
+            "switches a stage on the stage select",
+    .read = PORT_READ_WORDS, .words = {"classic", "remastered"},
+    .is = "classic or remastered",
+    .menu = PORT_MENU_REMASTER, .rank = 165, .takes = PORT_TAKES_NOW,
+    .label = "Stages",
+    .help = "Every stage dressed (Remastered Classic), or as the disc has "
+            "it (Classic); Square on the stage select switches one",
+    .shown = {"Classic", "Remastered Classic"})
+
 /* The mods beside the program are read (docs/MODS.md); 0 runs the game
  * with none of them, as `--mods off` does. */
 PORT_SETTING(mods,

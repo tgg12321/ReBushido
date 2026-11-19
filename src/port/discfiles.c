@@ -477,60 +477,15 @@ void port_StartStageMods(const PortDisc *disc) {
     }
 }
 
-/* An arena's ground over its host's sectors (port_discfiles.h). The
- * overrides are looked through in order, so it goes in front of the
- * list: it wins over a stage mod's file of the same sectors. */
-s32 port_SetArenaGround(s32 stage, const u8 *data, u32 bytes, u32 *room) {
-    PortDiscOverride *override;
-    u32 sector;
-    u32 length;
-    u32 sectors;
-    u32 i;
-
-    *room = 0;
+/* Where an arena's host has its ground on the disc (port_discfiles.h),
+ * and the reader told to ask the arenas first from now on. */
+s32 port_FindArenaRoom(s32 stage, u32 *sector, u32 *length) {
+    *sector = 0;
+    *length = 0;
     if (!port_FindStageFile(stage, PORT_STAGE_FILE_GROUND,
-                            g_port_disc_files.ndata_inf, &sector, &length)) {
+                            g_port_disc_files.ndata_inf, sector, length)) {
         return FALSE;
     }
-    *room = length;
-    sectors = length / PORT_DISC_DATA_BYTES;
-    if (bytes == 0 || bytes > length) {
-        return FALSE;
-    }
-    if (g_port_disc_files.overrides == NULL) {
-        g_port_disc_files.overrides =
-            port_HostAllocate(OVERRIDES_MAX * sizeof(PortDiscOverride));
-    }
-    if (g_port_disc_files.overrides == NULL ||
-        g_port_disc_files.override_count >= OVERRIDES_MAX) {
-        return FALSE;
-    }
-    override = &g_port_disc_files.overrides[0];
-    /* the others one place on, the arena's first */
-    for (i = g_port_disc_files.override_count; i > 0; i--) {
-        override[i] = override[i - 1];
-    }
-    override->data = port_HostAllocate(sectors * PORT_DISC_DATA_BYTES);
-    if (override->data == NULL) {
-        for (i = 0; i < g_port_disc_files.override_count; i++) {
-            override[i] = override[i + 1];
-        }
-        return FALSE;
-    }
-    /* the rest of the host's sectors read as zeros, as a shorter mod's */
-    for (i = 0; i < sectors * PORT_DISC_DATA_BYTES; i++) {
-        override->data[i] = i < bytes ? data[i] : 0;
-    }
-    override->sector = sector;
-    override->count = sectors;
-    if (g_port_disc_files.override_count == 0 ||
-        sector < g_port_disc_files.lowest) {
-        g_port_disc_files.lowest = sector;
-    }
-    if (sector + sectors > g_port_disc_files.highest) {
-        g_port_disc_files.highest = sector + sectors;
-    }
-    g_port_disc_files.override_count++;
     g_port_disc_override = port_OverrideDiscSector;
     return TRUE;
 }
@@ -540,6 +495,11 @@ s32 port_SetArenaGround(s32 stage, const u8 *data, u32 bytes, u32 *room) {
 s32 port_OverrideDiscSector(u32 sector, u8 *raw) {
     u32 i;
 
+    /* the arena in play's ground over its host's, which wins over a stage
+     * mod's file of the same sectors (port_arenas.h) */
+    if (port_ArenaGroundSector(sector, raw + PORT_DISC_DATA_OFFSET)) {
+        return 1;
+    }
     if (sector < g_port_disc_files.lowest ||
         sector >= g_port_disc_files.highest) {
         return 0;

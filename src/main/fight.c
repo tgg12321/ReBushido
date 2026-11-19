@@ -601,13 +601,21 @@ void fight_LoadStage(void) {
 
     disp_Reset();
 
-    if (g_fight_stage != g_fight_loaded_stage ||
+    if (
+#if RB_PORT
+        /* another arena, or none, over the same host (port_stage_choice.h) */
+        port_StageChoiceAtLoad(g_fight_mode) ||
+#endif
+        g_fight_stage != g_fight_loaded_stage ||
         g_fighter_roster_classes[g_fight_config.roster[0]] !=
             g_fight_loaded_classes[0] ||
         g_fighter_roster_classes[g_fight_config.roster[1]] !=
             g_fight_loaded_classes[1]) {
         motion_DropChanbaraPack();
         stage_Load(g_fight_stage, load_addr);
+#if RB_PORT
+        port_StageChoiceLoaded();
+#endif
         fight_ResetObstacles();
         snd_CloseStageVabs();
 

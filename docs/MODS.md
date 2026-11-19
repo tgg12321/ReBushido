@@ -899,11 +899,21 @@ rebushido --image GAME.cue --arena courtyard              # wherever its host is
 rebushido --image GAME.cue --fight courtyard kannuki mikado   # straight into a fight on it
 ```
 
-With `--arena` the arena is fought whenever its host is: on the select
-screen, in a session (both players give the same `--arena`), from
-`--fight HOST ...`. Without it no arena is in play and the game is
-exactly what it was: the host's own files and tables, the play tests'
-traces the same.
+**On the stage select** every arena of the mods is on a page of its
+own: Select on a stage page opens it, Cross on one fights on it in place
+of its host, which the player is never shown (PLAYING.md, "Kinds of
+stage"; PORT.md, "The stage select's kinds of stage"). The page shows
+the arena's `name` and its picture: the file's preview (`preview =` of
+`arena.txt`, a PNG), or one the compiler draws of the scene. The choice
+is the game's state: rolled back with it, the same on both machines of
+a session, and changed from one fight to the next (another arena, or
+the host itself from the grid, is loaded again).
+
+With `--arena` the arena is also fought whenever its host is chosen from
+the grid or fought by a mode with no stage page, and from `--fight HOST
+...`. Without it and with none chosen on the page no arena is in play
+and the game is exactly what it was: the host's own files and tables,
+the play tests' traces the same.
 
 **Making one.** A source folder of `arena.txt` and a scene
 (`tools/arenas/courtyard/`, the sample, is one), compiled by
@@ -954,6 +964,11 @@ chain = ring 6 37 -500 -500 500 -500 500 500 -500 500
                                 # ring or open, a kind, a margin, corners
 texture flagstone = flagstone.png   # a material's picture, if the scene
                                     # does not carry it
+preview = preview.png           # the stage select's picture of it; if not
+                                # given, the compiler draws one of the scene
+                                # (from above, each face in its texture,
+                                # 320 by 240): `--preview SOURCE OUT.png`
+                                # draws only that, to start one from
 ```
 
 A value not given is the host's own. The `.arena` file is that text
@@ -961,24 +976,32 @@ A value not given is the host's own. The `.arena` file is that text
 (`ground = BYTES`, its last line):
 
 ```
-RBARENA 1
+RBARENA 2
 name = Stone courtyard
 stands_in_for = 25
 ...
 start1 = -2000 0 0 2000 0 0
+preview = 62572
+<the picture, a PNG, and a newline>
 ground = 61440
 <the ground file, formats/GROUND.md>
 ```
+
+(Format 1 is the same without the picture; the program reads both, and
+an arena with no picture is shown on the page as a card of its name.)
 
 A file wrong in one line is not used at all, and the log says which
 line and why (`arenas: x (mods/a/arenas/x.arena): line 4: fog is on or
 off; left out`); `--arena` of an arena no mod has ends the run.
 
 **How it is played.** As the program starts (`port_ArenasStart`,
-`src/port/arenas.c`) the arena asked for has its ground put over its
-host's sectors of NDATA.DAT (`port_SetArenaGround`, the stage mods' way:
-`port_OverrideDiscSector`), so the game loads it as it loads its own, by
-its own commands, into its own arena block. Where the game reads one of
+`src/port/arenas.c`) every arena is read and the place of its host's
+ground in NDATA.DAT found (`port_FindArenaRoom`); an arena longer than
+that is left out. While one is in play -- the game's state says which,
+`port_StageArena` -- the disc reader asks for its ground in place of
+its host's sectors first (`port_ArenaGroundSector`, from
+`port_OverrideDiscSector`, the stage mods' way), so the game loads it as
+it loads its own, by its own commands, into its own arena block. Where the game reads one of
 its stage tables it asks the port, with its own value, and is given the
 arena's for the host's row and its own for every other stage
 (`include/port_arenas.h`, under `RB_PORT`):
@@ -1004,16 +1027,19 @@ of that changed, and item 16's select page can choose it the same way
 (below).
 
 **Gameplay, rollback, netplay.** The arenas are read once and only read
-after; none of this is the game's state (`config/port_state.txt`,
-`outside`). What the game makes of an arena -- its ground in the arena
-block, the fighters' places, the light -- is in the game's own variables,
-saved and put back as the disc's stage's are. The session's set-up hashes
-the arena in play (its file and its key, `port_ArenaSessionHash`) with
-the gameplay mods: a guest whose arena differs, or who has none where the
-host has one, is turned away, "the other player's mods that change how
-the game plays (weapons, motions, stages, the arena in play) or --weapon
-and --arena are not the same as this one's" (`make port-net`'s session
-check runs it, both sizes).
+after; none of them is the game's state (`config/port_state.txt`,
+`outside`). Which is in play is: `g_port_stage_choice`
+(`src/port/stage_choice.c`, a state file) beside the stage the game
+keeps. What the game makes of an arena -- its ground in the arena
+block, the fighters' places, the light -- is in the game's own
+variables, saved and put back as the disc's stage's are. The session's
+set-up hashes every arena the stage select offers (each file and key,
+in their order) and the one `--arena` asks for, `port_ArenaSessionHash`,
+with the gameplay mods: a guest whose arenas differ, or who has none
+where the host has some, is turned away, "the other player's mods that
+change how the game plays (weapons, motions, stages, the arena in play)
+or --weapon and --arena are not the same as this one's" (`make
+port-net`'s session check runs it, both sizes).
 
 **The validator.** `python3 tools/arena_validate.py FILE.arena` fails
 an arena a fight cannot be fought on, saying where:
@@ -1073,9 +1099,15 @@ such a hole failing.
   and read back whole, the validator passing it and failing it with the
   floor taken from under the first start.
 - `tests/port/arenas.c`: an arena's file read and every line that can be
-  wrong refused with its reason, the mods' arenas with one in play and
-  one left out, every answer to the game for the host, for the other
-  stages and with no arena, the session's hash.
+  wrong refused with its reason, its picture found, the mods' arenas with
+  one in play and one left out, every answer to the game for the host,
+  for the other stages and with no arena, the ground read in place of the
+  host's, the arena in play changed to another, to none and back, the
+  session's hash.
+- `tools/port_stage_select.py` (`make port-stage-select`, a step of the
+  gate): the stage select's page driven to a fight on the sample and then
+  to its host from the disc, on both sizes (PORT.md, "The stage select's
+  kinds of stage").
 - `tools/arena_validate.py --fight` on the sample, above; `make
   port-net`'s session check refusing a guest without the host's arena;
   the play tests (`same_as_original` and the port's) and port-rollback
@@ -1083,18 +1115,9 @@ such a hole failing.
 
 ### What a stage editor needs next
 
-- **The stage select (ROADMAP 16)**: a page of the arenas
-  (`port_ArenaCount`, `port_ArenaAt`, each one's `name`) that, when one is
-  chosen, puts it in play over its host and starts the host's fight as
-  the select screen does. Today the arena in play is chosen as the
-  program starts and stays the session's; a choice on the select screen
-  must be the game's state (a byte where the game keeps its stage, saved
-  and put back by a rollback, both players' the same), and putting a
-  ground over the host's sectors must then be able to change between two
-  fights (`port_SetArenaGround` adds an override; one that is replaced
-  and taken away is the step). The host stays hidden from the player:
-  the page shows the arena's own name and, when it has one, a picture of
-  its own.
+- **The stage select (ROADMAP 16)**: done, above. Left: more than five
+  arenas are scrolled through five rows; a page of pages, or the
+  arenas' pictures as a grid like the stages', when there are many.
 - **Larger arenas**: a ground longer than its host's needs NDATA.INF
   given its new length and room in the arena block (`ARENA_STAGE`); and
   past the grid's 32 by 32 cells, the game's collision and its cells'

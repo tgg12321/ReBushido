@@ -36,6 +36,7 @@ state    src/port/plan.c        a play test's plan: the run's input, rolled back
 state    src/port/raster.c      the GPU and its video memory
 state    src/port/sound.c       libsnd's tick and the mixer
 state    src/port/spu.c         the sound chip and its memory
+state    src/port/stage_choice.c  the kinds of stage chosen on the stage pages, and the arena in play
 state    src/port/stream.c      the movie's ring of sectors
 state    src/port/stub.c        the counts of what the port does not do yet
 state    src/port/xa.c          the XA reader and its buffer

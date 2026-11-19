@@ -145,7 +145,8 @@ ALL_O_FILES  := $(S_O_FILES) $(C_O_FILES) $(ASM_FUNC_O_FILES)
 .PHONY: all clean check clean-check shift movovl modern test checks \
 	rebushido rebushido-disc rebushido-patch rebushido-test rebushido-modern rb-build \
 	quickboot quickboot-compile quickboot-disc playtest playtest-discs playtest-console gte-probe port \
-	patcher port-sdl port-sdl-windows port-gl-windows port-rollback port-net
+	patcher port-sdl port-sdl-windows port-gl-windows port-rollback port-net \
+	port-stage-select
 
 ifeq ($(REBUSHIDO),1)
 all: rb-build
@@ -365,6 +366,15 @@ endif
 # so it is not one of the checks, which run without the disc.
 port-rollback:
 	python3 tools/port_rollback.py
+
+# The stage select's kinds of stage driven on both sizes of the port
+# (docs/PORT.md, "The stage select's kinds of stage";
+# tools/port_stage_select.py): the switch between Classic and Remastered
+# Classic, the arenas' page and a fight on the sample arena, then its host
+# from the disc. It needs the disc's image, as port-rollback does, and
+# runs what make port built.
+port-stage-select:
+	python3 tools/port_stage_select.py
 
 # Two programs of the port playing each other over UDP on 127.0.0.1
 # (docs/NETPLAY.md, sections 11 to 13; tools/port_net.py): the game's own

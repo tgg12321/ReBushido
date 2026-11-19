@@ -41,6 +41,11 @@ MEMBERS = {
     'vanish_count': 'Fighter.vanish_count',
     'rb_bugfixes': 'RbSettings.bugfixes',
     'rb_graphics': 'RbSettings.graphics',
+    'port_tier': 'PortStageChoice.fight_kind',
+    'port_arena': 'PortStageChoice.arena',
+    'port_page': 'PortStageChoice.page_open',
+    'port_on_stages': 'PortStageChoice.on_stages',
+    'port_cursor_tier': 'PortStageChoice.cursor_kind',
 }
 
 

@@ -497,6 +497,17 @@ typedef struct {
 } PortGameState;
 
 extern void port_ReadGameState(PortGameState *state);
+/* TRUE while the select screen is on one of its stage pages
+ * (port_stage_choice.h), where the window lays the kinds of stage over
+ * the picture (stage_page.c). */
+extern s32 port_IsOnStagePages(void);
+/* What the window lays over the stage pages, for a picture whose 4:3
+ * game area is `area_w` by `area_h` pixels of the window: its pixels
+ * (0xAARRGGBB, `box->w` by `box->h`) and where they go in the area;
+ * FALSE when nothing is to be shown. Drawn again only when what it
+ * shows has changed. */
+extern s32 port_StagePagePixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
 /* Whether the game is waiting for the disc now (g_port_load_wait), and
  * what it shows meanwhile: PORT_LOAD_NONE, PORT_LOAD_PICTURE where its
  * loading picture, a black screen or what was on it last is up, which

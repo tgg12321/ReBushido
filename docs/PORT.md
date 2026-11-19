@@ -51,6 +51,7 @@ runs ("The window", "Remastered in the window").
 | "Graphics: Remastered" | done in the window: the scene drawn again by a graphics card at the window's resolution, from the geometry the PlayStation threw away — OpenGL 4.5 core, high resolution, sub-pixel corners, textures in perspective, true-colour mixing, the 2D layer crisp; supersampled edges, the whole stage drawn, a wider picture at 16:9, and the fighters' shadows as a soft darkening of the ground they fall on and never of the fighter standing in one ("The shadows"). Proved with nothing shown against the software GPU's own picture, and hung on the window, where F2 changes picture as the game runs ("Remastered", "Remastered in the window") |
 | The memory card | done: a standard card image of 128 KB a slot, under the BIOS calls the game makes ("The memory card"). The card the port writes for the options page is byte for byte the one the emulator's BIOS wrote |
 | The movie | done: the opening plays, 3,320 frames of 320 by 240 at 29.97 a second, by the overlay's own C over a picture decompressor in C ("The movie"). Its sound is the drive's own, as the console has it |
+| The stage select's kinds of stage | done: each stage Classic or Remastered Classic by Square on the stage pages, a page of the custom arenas by Select, the choice the game's state, the same on both machines of a session ("The stage select's kinds of stage") |
 
 ## The switch
 
@@ -7042,6 +7043,120 @@ So nothing of that branch is merged; what was worth keeping is
   on another -- a fighter's shadow across the other fighter, or up a
   wall -- which wants the ground's own depth, or a shadow map from the
   stage's sun.)
+
+## The stage select's kinds of stage
+
+ROADMAP 16 (the owner, 2026-11-18): three kinds of stage at the select
+screen. **Classic** is the disc's stage with only what the engine and the
+renderer improve; **Remastered Classic** is the same stage and the same
+collision, dressed; a **custom arena** is a mod's stage fought in place
+of its host (MODS.md, "Custom arenas").
+
+**What the kind switches.** One function, `port_StageIsDressed()`
+(`include/port_stage_choice.h`), is the question; each feature of the
+dressing asks it where it decides:
+
+| Feature | Classic | Remastered Classic | Where it asks |
+|---|---|---|---|
+| The stage's own lights (torches, fires, lanterns: the lights files, MODS.md "Lights") | off | as `stage_lights` says | `port_LightsOfStage` (`src/port/lights.c`) |
+| The stages' pages made larger (`stages-hd`) and any mod's page pictures | the game's own textures | the mod's | `port_GlSceneFind` (`src/port/gl/gl_scene.c`) |
+| The night sky | the game's colour of the distance | as `sky` says | the sky's drawing (`src/port/gl/gl_sky.c`) |
+| Item 17's dressing (foliage, water, particles), when it comes | off | on | the same question |
+
+Everything else is the engine's and the renderer's and is the same in
+both: the resolution and the wide picture, the draw distance, the frame
+rate and the pictures between frames, the ground as one mesh and the
+pieces as meshes, the walls seen through, the fighters' models, the
+shadows, the smooth light, the effects' flashes as lights
+(`effect_lights`), and the new lighting of ROADMAP 14 as it lands. F2 to
+the Original picture shows the console's picture and the console's
+light whatever the kind. An arena counts as dressed: it brings its own
+lights (`lights =`) and nothing of the host's is shown.
+
+**Where the choice lives.** `src/port/stage_choice.c` is a state file
+(`config/port_state.txt`): `g_port_stage_choice` holds each stage's kind
+as the switch left it, the fight's kind, the arena in play, the arena the
+stage in memory was loaded with, and the arenas' page with its cursor.
+It is saved, put back and hashed with the game's own variables, so a
+rollback puts the choice back with the stage the game keeps
+(`g_game_settings.stage_index`, `g_fight_config.stage`), and two players
+of a session, whose presses are the same on both machines, choose the
+same thing on both. What the run gives it from outside -- `--arena`, and
+the window's `stage_kind` -- is kept in `src/port/arenas.c`, outside the
+state, and taken in by the game's step when it next asks: a change of
+the setting reaches the state at a frame of the game, and nothing a
+rollback or run-ahead loads can put it back.
+
+The game's hooks, all under `RB_PORT`:
+
+- `select_StageStep` (`select.c`), before the grid reads its presses:
+  `port_StagePageStep` with the stage under the cursor. Square switches
+  that stage's kind; Select opens the arenas' page, which then has every
+  press: up and down, Cross to fight on the arena (the grid's stage index
+  set to its host, the page confirmed as the grid's own Cross does),
+  Triangle or Select back. The grid's own Cross calls `port_StageChosen`:
+  the fight's kind is that stage's, and the arena is the run's own
+  (`--arena`, or none).
+- `select_Update`: off the stage pages, `port_StageLeftPages`.
+- `fight_LoadStage` (`fight.c`): `port_StageChoiceAtLoad` first. The modes
+  that have no stage page (story, versus the CPU, training, chanbara, the
+  group battle) take the default kind and the run's arena there; and the
+  stage is loaded again when the arena in play is not the one the stage
+  in memory was loaded with, though the stage number is the same (an
+  arena, then its host from the disc). `port_StageChoiceLoaded` after
+  `stage_Load`.
+
+**The arena's ground can change between two fights.** The disc reader
+asks `port_ArenaGroundSector` (`src/port/arenas.c`) first for every
+sector (`port_OverrideDiscSector`, `src/port/discfiles.c`): with an arena
+in play, a sector of its host's ground is the arena's ground (zeros past
+its end), and any other sector, or with none in play every sector, is
+the disc's or a stage mod's. Each arena's room on the disc is found as
+the program starts (`port_FindArenaRoom`); an arena too long for its host
+is left out with a line in the log (and ends the run if `--arena` asked
+for it). The start table and the CPU's obstacles the game is handed are
+made again when the arena in play changes.
+
+**What is drawn, and where.** Nothing of it is in the game's video
+memory: the window lays it over the picture, at its own resolution and
+in the settings menu's font (`src/port/window/stage_page.c`, from
+`port_DrawCounter`), the same over the remastered picture and over the
+console's. On a stage page a strip under the scroll says the kind of the
+stage under the cursor ("Remastered Classic" in gold, "Classic" in white)
+and what Square and Select do. The arenas' page covers the map and the
+scroll: the arenas by their names (five rows, scrolled), the picture of
+the one under the cursor (the PNG its file carries, or a card of its
+name), and what Cross and Triangle do. It reads the state and the
+arenas only, and is drawn again only when what it shows changes. So the
+play tests that hold the port's video memory to the emulator's
+(`port_picture`'s `select_stage`) see the console's screen, and the
+headless port has the whole choice without any of the drawing.
+
+**Netplay.** The presses on the stage pages are both players', as the
+grid's are, so the kind switched, the page and the arena chosen are the
+same on both machines. The kind the stages start as is the host's: the
+welcome carries it (`MEET_KIND`, protocol 3) and both hold it for the
+session (`port_HoldStageKindDefault`: the settings menu's change does
+nothing until the program starts again). The set-up's hash of the
+gameplay mods covers every arena the page offers, in its order and by
+its file's bytes and key, and the one `--arena` asked for
+(`port_ArenaSessionHash`): a guest without the host's arenas is turned
+away (`make port-net`).
+
+**How it is proved.** `python3 tools/port_stage_select.py` (in WSL, after
+`make port`; a step of `tools/gate.py`): a plan presses through versus
+mode's select screen on both sizes of the port with the sample arena as
+a mod: Square twice on one stage (Classic, then back) and once on
+another, Select to the arenas' page, Cross on the courtyard; a fight on
+stage 25 with the arena's starts; the pause menu back to the select
+screen and Abandoned Station from the grid, which must be loaded again
+from the disc with its own starts. Each checkpoint's values are held to
+what the presses chose, and the two sizes print the same trace.
+`--shots FOLDER` keeps the console's pictures of each step.
+`tests/port/arenas.c` holds the file's picture, the ground read in place
+of the host's, and the arena in play changed to another, to none and
+back. With no arena and the kind as built in, every play test is as it
+was.
 
 ## 64 bits
 
