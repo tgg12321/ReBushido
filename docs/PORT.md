@@ -7608,9 +7608,10 @@ and nothing of the HUD or the game's primitives is.
 **Bloom (`bloom = on`).** From the lights, not from the picture: the
 picture is eight bits and a white wall or a white line is as bright as a
 lamp in it (the light files' own finding), so bright pixels are no sign
-of light. Each light of the frame's list (`port_GlLightsBindLast`: the
-card's own buffer of them, already moved between frames and flickered)
-is a soft glow at a quarter of the size where it is: a bright middle and
+of light. Each light of the drawing on show (`port_GlLightsCard`: the
+lights as they were sent to the card when it was drawn, already moved
+between frames and flickered, kept with its view and sent again) is a
+soft glow at a quarter of the size where it is: a bright middle and
 a wide fall, its size a share of the light's reach and more for a
 brighter light, its colour its own, gone where the depth about it says
 the scene stands in front. Spread wider at an eighth and a sixteenth and

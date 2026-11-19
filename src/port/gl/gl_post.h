@@ -56,7 +56,7 @@
     "    vec3 knee = max(vec3(191.0), min(base, vec3(255.0)));\n"              \
     "    vec3 room = max(vec3(255.0) - knee, vec3(1e-3));\n"                   \
     "    vec3 over = max(total - knee, vec3(0.0));\n"                          \
-    "    vec3 rolled = knee + room * (vec3(1.0) - exp(-over / room));\n"       \
+    "    vec3 rolled = knee + room * over / (over + room);\n"                  \
     "    return clamp(mix(total, rolled, step(knee, total)), 0.0, 255.0);\n"   \
     "}\n"
 

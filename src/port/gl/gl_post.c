@@ -67,6 +67,8 @@ typedef char GLchar;
 #define GL_RGBA 0x1908
 #define GL_RGBA16F 0x881A
 #define GL_RGBA8 0x8058
+#define GL_SHADER_STORAGE_BUFFER 0x90D2
+#define GL_STREAM_DRAW 0x88E0
 #define GL_R8 0x8229
 #define GL_R32F 0x822E
 #define GL_RED 0x1903
@@ -127,7 +129,11 @@ typedef char GLchar;
     GL(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat))                  \
     GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))                           \
-    GL(void, glDrawArraysInstanced, (GLenum, GLint, GLsizei, GLsizei))
+    GL(void, glDrawArraysInstanced, (GLenum, GLint, GLsizei, GLsizei))         \
+    GL(void, glGenBuffers, (GLsizei, GLuint *))                                \
+    GL(void, glBindBuffer, (GLenum, GLuint))                                   \
+    GL(void, glBufferData, (GLenum, ptrdiff_t, const void *, GLenum))          \
+    GL(void, glBindBufferBase, (GLenum, GLuint, GLuint))
 
 #define GL(result, name, args) static result(*name) args;
 PORT_GL_POST_FUNCTIONS
@@ -658,6 +664,9 @@ typedef struct {
     float h;
     float middle[2];
     s32 top;
+    /* the lights it was lit by, as the card had them (gl_lights.h) */
+    s32 lights;
+    u8 light[PORT_GL_LIGHTS_MAX * PORT_GL_LIGHTS_CARD_SIZE];
 } PostView;
 
 static struct {
@@ -715,6 +724,8 @@ static struct {
     /* what the passes lay the picture into, the picture's size (it and
      * the picture change places after: port_GlPostRun) */
     PostTarget out;
+    /* the drawing on show's lights, sent again for the glow */
+    GLuint light_buffer;
     /* The view the passes read the depth with: the one the picture on
      * show was drawn with (port_GlPostRun chooses it) */
     float rotation[9];
@@ -984,6 +995,16 @@ void port_GlPostNoteView(const float *rotation, const float *camera, float h,
     view->middle[1] = middle_y;
     view->top = top;
     view->is_set = h > 0.0f;
+    {
+        s32 count = 0;
+        const void *card = port_GlLightsCard(&count);
+
+        view->lights = count > PORT_GL_LIGHTS_MAX ? PORT_GL_LIGHTS_MAX : count;
+        if (view->lights > 0) {
+            memcpy(view->light, card,
+                   (size_t)view->lights * PORT_GL_LIGHTS_CARD_SIZE);
+        }
+    }
 }
 
 static s32 port_GlPostIsOn(void) {
@@ -1110,15 +1131,25 @@ static void port_GlPostLight(const PostFrame *frame, GLuint picture_texture) {
 
 /* The lights' glow at a quarter of the size, spread wider below it, or 0
  * where the frame has no lights. */
-static s32 port_GlPostGlow(const PostFrame *frame, GLuint picture_texture) {
+static s32 port_GlPostGlow(
+    const PostFrame *frame, GLuint picture_texture, const PostView *view) {
     static const GLfloat nothing[4] = {0.0f, 0.0f, 0.0f, 0.0f};
     GLfloat turn[9];
-    s32 lights = port_GlLightsBindLast();
+    s32 lights = view->lights;
     s32 i;
 
     if (lights <= 0) {
         return 0;
     }
+    if (g_post.light_buffer == 0) {
+        glGenBuffers(1, &g_post.light_buffer);
+    }
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, g_post.light_buffer);
+    glBufferData(
+        GL_SHADER_STORAGE_BUFFER, (ptrdiff_t)lights * PORT_GL_LIGHTS_CARD_SIZE,
+        view->light, GL_STREAM_DRAW);
+    glBindBufferBase(
+        GL_SHADER_STORAGE_BUFFER, PORT_GL_LIGHTS_BINDING, g_post.light_buffer);
     PORT_GPU_BEGIN(PORT_GPU_BLOOM);
     glBindFramebuffer(GL_FRAMEBUFFER, g_post.glow_level[0].framebuffer);
     glViewport(0, 0, g_post.glow_level[0].w, g_post.glow_level[0].h);
@@ -1217,7 +1248,7 @@ void port_GlPostRun(const PortGlPicture *picture, u32 *picture_framebuffer,
         port_GlPostLight(&frame, picture_texture_in);
     }
     if (g_post.is_glow) {
-        lights = port_GlPostGlow(&frame, picture_texture_in);
+        lights = port_GlPostGlow(&frame, picture_texture_in, view);
     }
 
     /* the lot over the picture, into the buffer it is laid into */
