@@ -148,7 +148,12 @@ void light_DisablePointLight(void) { light_ApplyPointLight(0, 0); }
 
 /* Sets up the lighting of stage `stage`. */
 void light_SetStage(s32 stage) {
+#if RB_PORT
+    /* a mod's arena's own light (port_arenas.h) */
+    s32 *preset = port_ArenaLightPreset(stage, g_light_stage_presets[stage]);
+#else
     s32 *preset = g_light_stage_presets[stage];
+#endif
     s32 angles;
     s32 pitch;
     light_SetStageColor(stage, *preset++, 0, 0);

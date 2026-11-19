@@ -73,5 +73,10 @@ extern void port_StartStageMods(const struct PortDisc *disc);
 /* A sector as the disc reader hands it out (`raw`, 2352 bytes): its data
  * replaced by a mod's, where a mod's file covers it. 1 if it was. */
 extern s32 port_OverrideDiscSector(u32 sector, u8 *raw);
+/* An arena's ground (port_arenas.h), `bytes` of `data`, read in place of
+ * stage `stage`'s ground on the disc, after port_StartStageMods: FALSE if
+ * the stage has none or it is longer than the disc's file, whose length
+ * (whole sectors) is put in `room` either way. */
+extern s32 port_SetArenaGround(s32 stage, const u8 *data, u32 bytes, u32 *room);
 
 #endif /* PORT_DISCFILES_H */

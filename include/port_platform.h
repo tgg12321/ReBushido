@@ -53,6 +53,8 @@ extern s32 port_ChooseFight(
     const char *stage, const char *first, const char *second);
 /* The second fighter is the second pad's, not the CPU's (--fight-2p). */
 extern void port_FightTwoPlayers(void);
+/* Both fighters are the CPU's (--fight-cpu). */
+extern void port_FightBothCpu(void);
 /* The fight asked for, which the game's main starts in place of the
  * options page, the boot image and the opening; NULL where none was. */
 extern const PortFight *port_QuickFight(void);

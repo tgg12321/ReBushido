@@ -1040,6 +1040,8 @@ have met:
   the same **gameplay mods** (`port_WeaponsSessionHash`: every byte of
   the mods' `stages/`, `weapons/` and `motions/` files with their keys,
   and the `--weapon`s each was given; MODS.md, "Weapons and motions";
+  and the arena in play, its file and key, `port_ArenaSessionHash`:
+  MODS.md, "Custom arenas";
   textures, models, skies and music are not in it, and may differ). A
   guest that differs is turned away with the reason, which both logs
   say;

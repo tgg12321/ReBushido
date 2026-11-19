@@ -39,6 +39,9 @@ void rb_PortQuickFight(void) {
     const PortFight *fight = port_QuickFight();
 
     if (fight != NULL) {
+        /* --fight-cpu: the first fighter is the CPU's too (the select
+         * screen's own choice, fight_start.c); rb_StartFight leaves it */
+        g_fight_config.is_cpu[0] = fight->is_cpu[0];
         rb_StartFight(fight->mode, fight->roster, fight->weapon, fight->stage,
                       fight->is_cpu[1], g_rb_settings.bugfixes);
     }

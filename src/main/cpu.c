@@ -2042,7 +2042,13 @@ static s32 cpu_Decide(Fighter *fighter) {
 
     /* ---- 3. getting to the opponent ---- */
     if (fighter->cpu_flags & (CPU_RUNNING | CPU_STANDING | CPU_WALKING)) {
+#if RB_PORT
+        /* a mod's arena's own obstacles (port_arenas.h) */
+        nav_set = (NavSet *)port_ArenaNavSet(
+            g_fight_stage, &g_cpu_stage_obstacles[g_fight_stage]);
+#else
         nav_set = &g_cpu_stage_obstacles[g_fight_stage];
+#endif
         if (fighter->cpu_circling == 0) {
             tx = fighter->other->world_pos.x;
             tz = fighter->other->world_pos.z;

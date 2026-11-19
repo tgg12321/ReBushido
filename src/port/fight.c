@@ -14,6 +14,8 @@
 #include "bb2.h"
 
 #define NAME_BYTES_MAX 48
+/* the stage of --fight while it is an arena's name not yet looked for */
+#define FIGHT_STAGE_ARENA (-2)
 #define DECIMAL 10
 #define COUNT(array) ((s32)(sizeof(array) / sizeof((array)[0])))
 
@@ -185,11 +187,15 @@ static s32 port_FightFighter(const char *text, s32 side) {
 /* The fight to start (port_platform.h). */
 s32 port_ChooseFight(const char *stage, const char *first, const char *second) {
     g_port_fight.mode = FIGHT_MODE_VS;
-    g_port_fight.is_cpu[0] = FALSE;
     g_port_fight.is_cpu[1] = TRUE;
     g_port_fight.stage = port_FightFind(
         stage, NULL, "stage_", g_port_fight_stages, COUNT(g_port_fight_stages));
-    if (g_port_fight.stage < 0) {
+    if (g_port_fight.stage < 0 && port_ArenaAsk(stage)) {
+        /* a mod's arena, perhaps: port_ArenasStart says, and the fight is
+         * on the stage it stands in for (port_QuickFight) */
+        g_port_fight.stage = FIGHT_STAGE_ARENA;
+    }
+    if (g_port_fight.stage < 0 && g_port_fight.stage != FIGHT_STAGE_ARENA) {
         port_Log("--fight: no stage is called %s; the stages:\n", stage);
         port_FightList(g_port_fight_stages, COUNT(g_port_fight_stages));
         return FALSE;
@@ -211,6 +217,15 @@ s32 port_ChooseFight(const char *stage, const char *first, const char *second) {
  * second pad's, not the CPU's. */
 void port_FightTwoPlayers(void) { g_port_fight.is_cpu[1] = FALSE; }
 
+/* Both fighters the CPU's (--fight-cpu): a fight that plays itself. */
+void port_FightBothCpu(void) { g_port_fight.is_cpu[0] = TRUE; }
+
 const PortFight *port_QuickFight(void) {
+    if (g_port_fight_chosen && g_port_fight.stage == FIGHT_STAGE_ARENA) {
+        const PortArena *arena = port_ArenaInPlay();
+
+        /* port_ArenasStart has ended the run if no mod has it */
+        g_port_fight.stage = arena != NULL ? arena->host : 0;
+    }
     return g_port_fight_chosen ? &g_port_fight : NULL;
 }

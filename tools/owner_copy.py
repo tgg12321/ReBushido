@@ -21,7 +21,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILT = os.path.join(ROOT, 'build', 'port-sdl', 'windows')
 FILES = ['rebushido.exe', 'SDL2.dll']
-SHIPPED_MODS = ['english', 'ui']
+SHIPPED_MODS = ['english', 'ui', 'arena-courtyard']
 DISC_MODS = ['hd', 'art', 'stages-hd']
 
 

@@ -7,7 +7,8 @@
  * to the same thing: the same protocol, the same build of the port (the
  * game's state is only comparable between programs whose variables lie
  * alike: NETPLAY.md, section 7), the same disc and the same mods that
- * change how the game plays (port_WeaponsSessionHash). The host then sends
+ * change how the game plays (port_WeaponsSessionHash), the arena in play
+ * among them (port_ArenaSessionHash). The host then sends
  * the guest its two memory cards, whole, and a random seed. Both play on
  * the host's cards, kept in memory (port_card.h): the unlocks, the button
  * layouts, the records and ReBushido's own settings, Bugfixes among them,
@@ -219,8 +220,8 @@ static const char *port_RefusalText(s32 reason) {
         return "the other player's disc image is not the same as this one's";
     case REFUSE_MODS:
         return "the other player's mods that change how the game plays "
-               "(weapons, motions, stages) or --weapon are not the same as "
-               "this one's";
+               "(weapons, motions, stages, the arena in play) or --weapon "
+               "and --arena are not the same as this one's";
     default:
         return "the other program turned this one away";
     }
@@ -597,7 +598,7 @@ s32 port_StartSession(const PortDisc *disc, u32 delay) {
 
     g_session.build = port_SessionBuild();
     g_session.disc = port_SessionDisc(disc);
-    g_session.mods = port_WeaponsSessionHash();
+    g_session.mods = port_WeaponsSessionHash() + port_ArenaSessionHash();
     g_session.delay = delay;
     port_RemasterGetView(&view);
     g_session.shape =

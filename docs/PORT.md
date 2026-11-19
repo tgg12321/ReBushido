@@ -6345,9 +6345,13 @@ benchmark. The names are the game's (`enum StageIndex`, `enum RosterId`,
 `enum WeaponId`), any case, spaces and dashes left out, the enum's
 prefix allowed, or the number: `--fight tatara-shrine kannuki
 mikado:nodachi`. A fighter's weapon follows a colon (a katana if none),
-the second fighter is the CPU's (`--fight-2p`: the second pad's), the
-mode is versus. A name not known prints the names and ends with the
-usage code. `rb_StartFight` (`src/rebushido/quickboot.c`, which the
+the second fighter is the CPU's (`--fight-2p`: the second pad's;
+`--fight-cpu`: the first is the CPU's too, a fight that plays itself, as
+the select screen's own choice of two CPUs), the mode is versus. A
+stage's name that is no stage's is a mod's arena's (MODS.md, "Custom
+arenas": the fight is on the stage it stands in for, with the arena in
+play); a fighter's name not known prints the names, and a stage's that no
+arena has either says so, and both end with the usage code. `rb_StartFight` (`src/rebushido/quickboot.c`, which the
 quick-boot build's `rb_QuickBoot` now calls too) does what the main menu does when it
 first opens, the choice into `g_fight_config`, and `fight_StartMode`.
 No card is read on the way, so the settings are the game's own until a

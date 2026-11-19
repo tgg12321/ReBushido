@@ -1,0 +1,18 @@
+# The stone courtyard: ReBushido's sample arena (docs/MODS.md, "Custom
+# arenas"). tools/arena_compile.py makes courtyard.arena of it; the scene
+# is courtyard_blender.py's.
+name = Stone courtyard
+scene = courtyard.glb
+scale = 1000
+# fought in place of the Abandoned Station, which the select screen has
+stands_in_for = 25
+# the starts are the scene's empties, stood on the floor by the compiler
+# the fighters' sun and ambient, the scenery's, the sun's pitch and yaw,
+# and the distance's colour (light.c's presets): a clear afternoon
+light = 0xE8DCC4 0x3A3A48 0xD8CCB4 0x403E50 0x0D800A7D 0x101418
+fog = on
+fog_span = 32000
+fog_farthest = 0
+# Main Tatara Shrine's music, sounds and echo: stone underfoot
+music = 0
+sounds = 0

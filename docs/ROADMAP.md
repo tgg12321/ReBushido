@@ -303,6 +303,23 @@ the stage").
     bounds, a headless fight of the CPU on it); netplay's set-up holds
     both players to the same arena. The game's own limits (32 by 32
     cells of 2,000 units) first.
+    Done for the game's limits ([`MODS.md`](MODS.md), "Custom arenas"):
+    the ground file read and written back byte for byte (all 38,
+    [`formats/GROUND.md`](formats/GROUND.md)); `tools/arena_compile.py`
+    from a glTF/OBJ scene (render mesh, collision mesh with each face's
+    surface by its material, starts and posts by name) and `arena.txt`
+    (starts, light, fog, music, sounds, the CPU's chains, the remastered
+    light's key) into one `.arena`; the port's `--arena NAME` puts it
+    over a host stage (25 unless it says), the game asking the port
+    where it reads each table; `tools/arena_validate.py` (limits, a walk
+    of every reachable point for a floor, the starts, what is met
+    against what is drawn, and `--fight`: CPU against CPU on both sizes,
+    the same trace); netplay's set-up turns away a guest whose arena
+    differs (`make port-net`). The sample, a stone courtyard made in
+    Blender, passes. Left: the stage select's page for the arenas (item
+    16; MODS.md, "What a stage editor needs next"), arenas larger than
+    their host's room, pieces, textures past 64 by 64, the
+    ground-as-one-mesh proved on an arena.
 19. **The fighters' models overhauled**, AI-made (the owner,
     2026-11-18): a pipeline that holds the new model to the game's
     skeleton, motions and proportions, so the hitboxes (body spheres,

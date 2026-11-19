@@ -6,14 +6,15 @@ stand in for the game's own. This is the roadmap's item 10
 replace, with **replacement textures** as its first user, and the
 English top menu the program ships as its first mod ("The English
 menu", below). The fighters' models, **music** ("Music"), a
-**stage's files** ("Stages"), **weapons** and **motions** ("Weapons and
-motions") find their files the same way.
+**stage's files** ("Stages"), **custom arenas** ("Custom arenas"),
+**weapons** and **motions** ("Weapons and motions") find their files the
+same way.
 
 Textures, models and music touch nothing of the game: what the game
 computes is the same with those mods and without, and the PlayStation
 builds have none of it. With no mod's textures and nothing to write out,
 the picture is exactly what it was; with no mod's music, the sound.
-Stages, weapons and motions are the game's own data: such a mod changes
+Stages, arenas, weapons and motions are the game's own data: such a mod changes
 what the game loads or reads, and so how it plays; two netplay players
 must have the same ones, and the session's set-up holds them to it.
 
@@ -45,8 +46,8 @@ mods/
   "The fighters' own models"; `tools/fighter_hd.py` makes a whole mod of
   them, the hd mod, from your disc), `skies/` (a stage's sky, below),
   `music/` (`.ogg` and `.wav`: "Music"), `stages/` (any ending:
-  "Stages"), `weapons/` (`.txt`) and `motions/` (`.bbm`: "Weapons and
-  motions"). Under a kind's folder the files may be in folders of any
+  "Stages"), `arenas/` (`.arena`: "Custom arenas"), `weapons/` (`.txt`)
+  and `motions/` (`.bbm`: "Weapons and motions"). Under a kind's folder the files may be in folders of any
   names, four deep.
 - A file's **key** is its name without its ending, in small letters,
   wherever it is under its kind's folder. A texture has to end `.png`,
@@ -682,7 +683,8 @@ last bit); a WAV is the same in both.
 ## Stages
 
 A stage is **files on the disc and tables in the program**. A mod can
-replace the files; the tables are the next step (below).
+replace the files; a **custom arena** (below) brings a ground of its own
+and the tables with it, and stands in for one of the game's stages.
 
 ### What the game reads for a stage
 
@@ -751,24 +753,230 @@ the disc's sectors: one that fits, one shorter, one too long, and every
 other sector untouched. Nothing of the player's disc is in the
 repository.
 
+### Custom arenas
+
+An **arena** is a stage of a mod's own (ROADMAP 18): a ground made in
+Blender, or in anything that writes glTF or OBJ, and the program's
+tables for it, in one file, `arenas/NAME.arena`, that **stands in for
+one of the game's stages, its host**, where the run says so:
+
+```
+rebushido --image GAME.cue --arena courtyard              # wherever its host is fought
+rebushido --image GAME.cue --fight courtyard kannuki mikado   # straight into a fight on it
+```
+
+With `--arena` the arena is fought whenever its host is: on the select
+screen, in a session (both players give the same `--arena`), from
+`--fight HOST ...`. Without it no arena is in play and the game is
+exactly what it was: the host's own files and tables, the play tests'
+traces the same.
+
+**Making one.** A source folder of `arena.txt` and a scene
+(`tools/arenas/courtyard/`, the sample, is one), compiled by
+
+```
+python3 tools/arena_compile.py SOURCE_FOLDER mods/my-arenas/arenas/NAME.arena
+```
+
+The scene's objects are told apart by their names: `collision...`
+objects are what the fighters stand on and walk into, each face's
+**surface its material's name** (`firm`, `firm2`, `sand`, `sand2`, `wet`,
+`wet2`, `barrier`, `plain` for a wall; what follows a `.` or `_` is the
+author's own, `sand_yard`); `start1a`, `start1b` ... `start4b` are where
+the fighters of each of four pairs start (empties; the compiler stands
+each on the floor under it); `obstacle...` is a post a blade stops at
+(its middle and its top); everything else is drawn, each material's
+picture made 64 by 64 in 16 colours. The scene is Y up in metres as
+glTF and Blender write it (`scale = 1000` makes a metre 1,000 of the
+game's units: the fighters are about 1,700 tall). A face is drawn and met
+from its front only. What is drawn and what is met are two meshes on
+purpose: steps drawn as steps are met as a ramp (the sample's), a wall
+of a barrier may be met where nothing is drawn.
+
+`arena.txt` has the scene's name and the program's tables, every line
+optional but the scene:
+
+```
+name = Stone courtyard
+scene = courtyard.glb           # .gltf, .glb or .obj with its .mtl
+scale = 1000
+stands_in_for = 25              # the host: a stage of the select screen
+                                # with no hook, areas, props or code of its
+                                # own (0, 1, 6, 9, 10, 12, 15-17, 19-22,
+                                # 25-31); 25 if not given
+start1 = -2000 0 0 2000 0 0     # a pair given here and not by the scene;
+                                # pairs not given are the first
+light = 0xE8DCC4 0x3A3A48 0xD8CCB4 0x403E50 0x0D800A7D 0x101418
+                                # light.c's preset: the fighters' sun and
+                                # ambient, the scenery's, the sun's pitch
+                                # and yaw (pitch << 16 | yaw), the distance's
+fog = on                        # and fog_span = 32000, fog_farthest = 0|1
+music = 0                       # one of the stages' five pieces (0 to 4)
+sounds = 0                      # the stage whose sound file, echo and
+                                # ambience are heard (LOADSE's STAGEnn.BIN)
+lights = courtyard-noon         # the remastered light's key (lights/)
+chain = ring 6 37 -500 -500 500 -500 500 500 -500 500
+                                # the CPU's obstacles (cpu.h, NavChain):
+                                # ring or open, a kind, a margin, corners
+texture flagstone = flagstone.png   # a material's picture, if the scene
+                                    # does not carry it
+```
+
+A value not given is the host's own. The `.arena` file is that text
+(the compiler writes the starts it found in) and then the ground file
+(`ground = BYTES`, its last line):
+
+```
+RBARENA 1
+name = Stone courtyard
+stands_in_for = 25
+...
+start1 = -2000 0 0 2000 0 0
+ground = 61440
+<the ground file, formats/GROUND.md>
+```
+
+A file wrong in one line is not used at all, and the log says which
+line and why (`arenas: x (mods/a/arenas/x.arena): line 4: fog is on or
+off; left out`); `--arena` of an arena no mod has ends the run.
+
+**How it is played.** As the program starts (`port_ArenasStart`,
+`src/port/arenas.c`) the arena asked for has its ground put over its
+host's sectors of NDATA.DAT (`port_SetArenaGround`, the stage mods' way:
+`port_OverrideDiscSector`), so the game loads it as it loads its own, by
+its own commands, into its own arena block. Where the game reads one of
+its stage tables it asks the port, with its own value, and is given the
+arena's for the host's row and its own for every other stage
+(`include/port_arenas.h`, under `RB_PORT`):
+
+| The game reads | Where | The port's answer |
+|---|---|---|
+| where the fighters start | `fight_GetStartPositions` (`scene_frame.c`), which all five readers go through | a copy of `g_fight_start_positions` with the host's row the arena's |
+| the light | `light_SetStage` (`light.c`) | the arena's preset |
+| the fog | `stage_QueueFog` (`stage.c`) | whether, how deep, the farthest copy |
+| the music | `snd_StartFightMusic` (`fight.c`) | the arena's track |
+| the sound file, the echo, the ambience | `fight_LoadStage`, `fight_Init` (`fight.c`), `snd_UpdateStageSounds` (`fight_event.c`) | the stage the arena is heard as |
+| the CPU's obstacles | `cpu_Decide` (`cpu.c`) | the arena's chains |
+
+The host is chosen so that nothing else of it is asked for: no hook
+(`g_stage_hooks`), no areas or props, no `g_fight_stage == STAGE_...` of
+its own in the code, and on the select screen. Stage 25 (Abandoned
+Station) is the default for its room: 87 sectors (178,176 bytes), and
+73,604 bytes kept in memory. **A new stage number** (38 and on) was not
+taken: `g_fight_stage` indexes nine tables of the game, the music's has
+only 32 rows, NDATA's ids past `0x4C` are the tiny models, the select
+screen's grid is the game's; an arena standing in for a stage needs none
+of that changed, and item 16's select page can choose it the same way
+(below).
+
+**Gameplay, rollback, netplay.** The arenas are read once and only read
+after; none of this is the game's state (`config/port_state.txt`,
+`outside`). What the game makes of an arena -- its ground in the arena
+block, the fighters' places, the light -- is in the game's own variables,
+saved and put back as the disc's stage's are. The session's set-up hashes
+the arena in play (its file and its key, `port_ArenaSessionHash`) with
+the gameplay mods: a guest whose arena differs, or who has none where the
+host has one, is turned away, "the other player's mods that change how
+the game plays (weapons, motions, stages, the arena in play) or --weapon
+and --arena are not the same as this one's" (`make port-net`'s session
+check runs it, both sizes).
+
+**The validator.** `python3 tools/arena_validate.py FILE.arena` fails
+an arena a fight cannot be fought on, saying where:
+
+1. the file is one the port reads, its ground six sections read whole
+   and written again the same;
+2. within the game's limits: a plain host; the ground no longer than the
+   host's on the disc and no more of it kept in memory than the host's;
+   500 tiles, 1,000 entries of the cells' lists, 256 corners a tile, a
+   collision grid of 65,534 bytes; every collision face convex, on its
+   plane, within the 8,000 units of its middle the GTE's projection
+   reaches; 20 colour tables in the fog's row;
+3. **the floor**: from every start, every point a fighter can get to is
+   walked 250 units at a time with the game's own cast in Python
+   (`tools/ground_cast.py`, `collision.c` number for number): a wall
+   stops the walk, one he could climb does not; every point reached must
+   have a floor under it, and the grid's edge must never be reached. So
+   the barriers must close the arena, or ground lie where the author
+   meant a fighter to fall to;
+4. **the starts**: each on a level floor of its height (not a wall's or a
+   barrier's surface), no wall within 500 units, the two of a pair 1,500
+   apart, among the points walked;
+5. **what is met is what is seen**: a floor drawn within 200 units of the
+   floor met at every point walked, a face drawn within 200 units of
+   every wall met but a barrier;
+6. with `--fight` (in WSL, the programs of `make port`, the player's
+   disc): the CPU against the CPU on the arena (`--fight NAME kannuki
+   gengoro:nodachi --fight-cpu --no-cards`, a play test's plan written
+   for each program), **both sizes of the port printing the same trace**,
+   both fighters within the points walked and a floor's height at every
+   checkpoint, a winner before 20,000 blanks.
+
+**The sample**, `tools/arenas/courtyard/`: a stone courtyard of 16 by 16
+metres, flagstones with two beds of sand, three steps of 15 cm up to a
+dais along the north wall, a wall 3 metres high all round and two wooden
+posts, built in Blender by `courtyard_blender.py` (headless: `blender -b
+--factory-startup --python ...`; its textures by `make_textures.py`) and
+exported as `courtyard.glb`, which is what is compiled: 96 tiles of 208
+faces, 640 collision faces in 100 cells, 5 textures, 2 posts; a ground of
+61,440 bytes of the host's 178,176, 44,580 kept in memory of its 73,604.
+The window's build ships it compiled, as the mod `arena-courtyard`. The
+validator passes it, the fight included: a fight of 9,800 frames to a
+kill, both sizes the same, 329 lines. Its first draft had a hole -- the
+collision floor's rectangles missed a strip beside a sand bed that the
+drawn floor covered -- and the CPU, walking there, fell through the
+world to a y of 7.3 million; the validator's walk found the hole at
+the same place, (-5,250, -1,250), and `tests/rebushido/arena.py` keeps
+such a hole failing.
+
+**How it is proved.**
+
+- `tools/stage_ground.py roundtrip FOLDER`: the 38 grounds of the disc
+  (`--dump-stages`) read into numbers and written back byte for byte.
+- `tests/rebushido/arena.py` (`make rebushido-test`; nothing of the disc):
+  the cast on a grid made by hand (a face met from the front only, the
+  next cell's, none past the grid), the sample compiled twice the same
+  and read back whole, the validator passing it and failing it with the
+  floor taken from under the first start.
+- `tests/port/arenas.c`: an arena's file read and every line that can be
+  wrong refused with its reason, the mods' arenas with one in play and
+  one left out, every answer to the game for the host, for the other
+  stages and with no arena, the session's hash.
+- `tools/arena_validate.py --fight` on the sample, above; `make
+  port-net`'s session check refusing a guest without the host's arena;
+  the play tests (`same_as_original` and the port's) and port-rollback
+  as they were, with no arena in play.
+
 ### What a stage editor needs next
 
-- **The ground file written, not only changed**: a reader and writer of
-  its sections (`tools/inspect_stage.py` reads the BIN files; the ground
-  wants the same), and an exporter from a modelling program: meshes into
-  the game's mesh format by cell, the collision grid made from the
-  meshes (each face's cells and surface), the cells' table, textures
-  packed into the stage's place in video memory with their colour
-  tables.
-- **Larger files**: a ground longer than the disc's needs NDATA.INF
-  given its new length (the INF is read off the disc like the rest, and
-  can be replaced the same way) and room in the arena block the stage is
-  loaded into (`ARENA_STAGE`).
-- **The program's tables as data**: the light, the fog, the start
-  positions and the music by stage from a stage mod's own file, read
-  where the game reads its tables (a switch of the port's).
-- **New stages**, not only replaced ones: a stage number past 37, and
-  the menus to choose it.
+- **The stage select (ROADMAP 16)**: a page of the arenas
+  (`port_ArenaCount`, `port_ArenaAt`, each one's `name`) that, when one is
+  chosen, puts it in play over its host and starts the host's fight as
+  the select screen does. Today the arena in play is chosen as the
+  program starts and stays the session's; a choice on the select screen
+  must be the game's state (a byte where the game keeps its stage, saved
+  and put back by a rollback, both players' the same), and putting a
+  ground over the host's sectors must then be able to change between two
+  fights (`port_SetArenaGround` adds an override; one that is replaced
+  and taken away is the step). The host stays hidden from the player:
+  the page shows the arena's own name and, when it has one, a picture of
+  its own.
+- **Larger arenas**: a ground longer than its host's needs NDATA.INF
+  given its new length and room in the arena block (`ARENA_STAGE`); and
+  past the grid's 32 by 32 cells, the game's collision and its cells'
+  tables are of that size.
+- **Pieces**: the compiler writes tiles alone; a piece (a mesh of its own
+  placed and turned, `stage_ReadCells`) would let a repeated thing be one
+  mesh drawn many times, and could be opened up when it hides a fighter.
+- **Textures** larger than 64 by 64, repeating across a face (a texture
+  window), and more than 12 of them; the stage's pages from a mod's
+  pictures in the remastered picture as the disc's are
+  ("The stages' pages made larger").
+- **The remastered picture's ground as one mesh** is proved stage by
+  stage on the disc's grounds (`g_stage_proved`); an arena stands on its
+  host's number, so `stage_mesh` takes the host's verdict; an arena
+  should be held to it as the disc's grounds are
+  (`tools/port_stage_prove.py`), and was not yet.
 
 ## Weapons and motions
 
@@ -991,5 +1199,5 @@ ending a kind's files must have.
   piece of its own though the game shares five among them.
 - **FLAC**: a third kind of music file, with a decoder of whole numbers
   (dr_flac, public domain, is one).
-- Stages: "What a stage editor needs next", above.
+- Stages and arenas: "What a stage editor needs next", above.
 - Weapons and motions: "What is not done yet", above.
