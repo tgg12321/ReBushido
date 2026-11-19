@@ -1,384 +1,154 @@
-# Handoff, 2026-11-17
+# Handoff, 2026-11-18
 
-Where ReBushido stands at the end of the session that took the native port
-from "playable with a remastered picture" through most of the owner's
-longer roadmap. The standing rules are in [`CLAUDE.md`](../CLAUDE.md) and
-[`AGENTS.md`](../AGENTS.md); the plan is [`ROADMAP.md`](ROADMAP.md); how to
-play is [`PLAYING.md`](PLAYING.md); online play is
-[`NETPLAY.md`](NETPLAY.md); mods are [`MODS.md`](MODS.md).
+Where ReBushido stands at the end of the performance run. The standing
+rules are in [`CLAUDE.md`](../CLAUDE.md) and [`AGENTS.md`](../AGENTS.md);
+the plan is [`ROADMAP.md`](ROADMAP.md); how to play is
+[`PLAYING.md`](PLAYING.md); online play is [`NETPLAY.md`](NETPLAY.md);
+mods are [`MODS.md`](MODS.md). How each piece below works, with what was
+measured and what was tried and dropped, is in [`PORT.md`](PORT.md).
+
+**The next session is the lighting work** (the owner, 2026-11-18):
+ROADMAP item 14, shadow maps for the sun first, then lights of a stage's
+own that a mod can add, casting on walls, steps and the fighters
+themselves. The cast shadow's jitter at rest was left to it on purpose
+(item 14 lists the suspects); check it is gone when it lands.
 
 ## What there is
 
-- `main` holds everything and is pushed. Every agent branch is merged.
-- **The gate** is `python tools/gate.py` (about 9 minutes: every check,
-  the port's builds, rollback, netplay, the 17 play tests four at a time;
-  `--owner` refreshes the owner's copy, `--push` pushes; `--changed REV`
-  picks the play tests a change reaches). Play tests may run side by side
-  (a lock per run, about eight emulators at most); a test fails on wrong
-  results, never on slowness ([`BUILD.md`](../BUILD.md), "The gate").
-- **The owner's copy** (`rebushido.exe`, `SDL2.dll`, `mods/` at the
-  repository's root, not committed) is refreshed after every verified
-  merge by `python tools/owner_copy.py` (`CLAUDE.md`). The mods made from
-  the disc live in `tmp/mods/` (`hd`, `art`, `stages-hd`); rebuild one
-  there when its tool changes.
-- **Defaults:** every new feature is on in the window build (the owner,
-  2026-11-17): Remastered, cast shadows, `frame_rate = display`,
-  `smooth_light`, `effects = smooth`, sky, see-through, the ground and the
-  stage's pieces as meshes, the fighters' own models, quick loading,
-  `run_ahead = 1` (2 until the HD cloth's cost was found: PORT.md, "The
-  HD cloth and run-ahead"), `low_latency`, the English and sharp menus. Settings
-  that change how fights play (Bugfixes, gameplay mods) and build options
-  (`-O2`) are still asked.
+- `main` holds everything and is pushed; every agent branch is merged.
+- **The gate** is `python tools/gate.py` (about 11 minutes: the eleven
+  checks, the port's builds, port-rollback, port-net, port-budget,
+  port-bench, port-pause and the 17 play tests). The play tests run with
+  `--strict`: a missing emulator or a skipped test fails the gate.
+- **The owner's copy** (`rebushido.exe`, `SDL2.dll`, `mods/` at the root)
+  is refreshed after every verified merge (`tools/owner_copy.py`).
+- **The owner's cfg** now has `vsync = on` and `fighter_models = on` (he
+  asked, 2026-11-18); `run_ahead = 2`, `shadows = cast`.
 
-### Built this session
+## The performance run, 2026-11-18
 
-| Area | What | Where it is written down |
-|---|---|---|
-| Picture fixes | fighters' joint gaps (16.7% of body faces lost their exact place), floor z-fighting on tile seams, fighters hidden by terraces (the console's slot rule), movies and the title black under Remastered, the pause dropping to the old look, full screen at start | PORT.md |
-| Shadows | `cast`: from the fighters', weapons' and HD models' own faces; never on a fighter (also lying down, also between frames); on floors built of stage pieces; at the feet where the game casts none | PORT.md, "The shadows" |
-| Fighters | all 37 models and 58 weapons rebuilt in HD from the disc (`tools/fighter_hd.py`), skinned on the game's bones, colour tables and tints, exact joints; HD cloth, a smooth surface through the game's own cloth points, pushed 6 units outside the HD body (cloth inside it: 9.2% to 0.23%); the first-person tiny figure; hitboxes untouched | PORT.md, "The fighters' own models" |
-| Scene | night sky on 28 open stages, walls thinned before a fighter, the stage's static pieces (railings, fences, walls, props: 412 on 34 stages) built as meshes, HD stage textures by page, smooth per-pixel light, effects placed exactly | PORT.md |
-| 2D | the `ui` mod (lettering in OFL fonts, Archivo and Marcellus), the English top menu, the `art` mod (every 2D texture 6x from the disc), the title picture, fades kept remastered | MODS.md |
-| Mods | `mods/` with manifests; textures, models, skies, music (`.ogg`/`.wav`), a stage's files, weapons and motions (`weapons/NAME.txt`, `motions/`) | MODS.md |
-| Controls | one input point; remapping per player in `rebushido.cfg` and the settings menu (F1) | PLAYING.md |
-| Online | rollback netplay (GGPO's design in C) in the window: Play online page, host/join, build and disc checks, the host's cards, versus select over the net, rematch, disconnect; a false-desync alarm under load found and fixed; stress options in `tools/port_net.py` | NETPLAY.md |
-| Speed | batched video-memory uploads, pacing at 85 Hz, `--profile`; quick loading (11.9 s of loads to 0.76 s); input lag about 117 ms to about 33 ms (late input read, run-ahead, `low_latency`) | PORT.md, "Where the time goes", "Quick loading", "Input lag" |
+The target (the owner): 144 a second at 2560 by 1440 on his RTX 3090 and
+Ryzen 9 9950X3D, 6.94 ms a refresh, with headroom for four players online
+on a large modded stage with much richer lighting and models.
+
+**Where it ended** (`port_bench.py` at `c212be752`, a quiet machine, ms;
+the window's thread draws the pictures, the step's thread runs the game):
+
+| case | window, 95% | window, 99% after 1 s | step, 95% / 99% | picture to picture, 99% | card, 95% |
+|---|---|---|---|---|---|
+| ra0 | 3.78 | 4.09 | (one thread) | 4.08 | 3.19 |
+| ra1 | 0.95 | 1.38 | 3.56 / 3.83 | 4.37 | 3.30 |
+| ra2 | 0.79 | 1.15 | 4.66 / 5.07 | 5.51 | 3.54 |
+| ra1, four fighters, the ground twice | 1.05 | 1.53 | 3.47 / 4.02 | 4.30 | 4.28 |
+
+At the start of the day ra1 was about 28 ms of processor and 10 ms of
+card a frame. No blank after a fight's first second goes over 6.94 ms in
+any case; the one slow blank left is the fight's very first (16 to 18 ms,
+the card's or the shadows' first use), inside the first second.
+
+**What did it** (each a section of PORT.md):
+
+- The software GPU paints on four threads beside the game ("The software
+  GPU beside the game").
+- The step itself is the first frame ahead: run-ahead 1 no longer saves
+  and loads, run-ahead 2 runs one frame ahead, frames ahead mix no sound.
+- The pictures between frames no longer touch video memory or hold the
+  painters; the pairing of frames 1.16 to 0.3 ms; a fighter's colour
+  tables no longer searched at every primitive ("The tween off video
+  memory").
+- The step records what the card draws and runs on a thread of its own;
+  the window's thread draws the record and the pictures beside it ("The
+  step on a thread of its own"). `RB_STEP_THREAD=off` restores the old
+  flow.
+- The refresh inside a step gets a picture of its own ("The step's
+  refresh"); a hidden window keeps Windows' fine timer.
+- The HD fighters on the card: two fighters 2.5 to 0.9 ms, four 1.27 ms
+  ("The fighters cheap on the card").
+- Earlier in the day: only changed video memory uploaded, MSAA for
+  supersampling, compute skinning and cloth, state saved by pages
+  written, the driver's first-thread-exit stall moved to the load, mod
+  textures loaded off the drawing thread, the orange flashes (effects
+  near the camera) fixed.
+
+**What the gate holds** (`tools/port_bench.py`): the card's 95% (ra0,
+ra1, ra2, stress), the window's 95% and settled 99% (ra1, ra2, stress),
+ra0's processor 95%, ra1's worst settled blank, the step's 95% (ra1,
+ra2), and no blank over 50 ms after the first second, fail the gate
+whatever `--report-only` says. Still reported only: the fight's worst
+blank including its first second, the hitches share and the picture to
+picture gap. The bench takes the card lock and records the machine's
+load; a loaded run warns.
+
+**Fixed along the way:** the pause menu invisible at run_ahead 2 with the
+remastered picture (now `port-pause` in the gate); Escape pauses and goes
+back and never ends the program (Quit is the settings menu's last row);
+the cave railing's shimmer (an in-between camera rounded to whole units);
+the port-rollback flake (the build mirror copying old files back); the
+quick-boot disc flake (WSL's clock stepping backwards).
+
+**What is left of the performance work**, none of it blocking:
+
+- The picture to picture 99% has the least room (4.4 to 5.5 ms): the
+  step's end, its record and the first picture come one after another.
+  Interpolating on the card (a persistent vertex buffer, a shader mixing
+  two frames) and not drawing the record's own frame under the first
+  picture would cut it.
+- The fight's first blank (16 to 18 ms): warm the shadows' and the
+  card's first draws at the load.
+- A heavier made-up scene for the bench: the stress case only doubles
+  the ground; four HD fighters on a large modded stage with many lights
+  is what the owner's goal needs measured, and the lighting work will
+  add to it.
+- A backward step of WSL's clock could in principle leave an object
+  stale after a source edit (BUILD.md, "Where the build runs").
 
 ## What is left, in the order I would take it
 
-1. **The owner plays this build.** Every proof is headless (Mesa's
-   software OpenGL, scripted input). Most worth looking at: the HD
-   fighters and their cloth, shadows on every kind of floor and on a
-   fallen fighter, railings and fences now meshes, the building
-   rooftop's shimmer (the city-lights backdrop, not the railing: it wants
-   a filter of its own), smoothness at 85 Hz with `run_ahead = 2` (F3: if
-   under 100%, `run_ahead = 1`), input feel in true full screen (F11),
-   quick loading's two-second holds on screens you read.
-2. **Online between two real PCs**, and on Windows (the Play online
-   page's restart uses `_spawnv`, never run). The owner's calls in
-   NETPLAY.md, section 13: the address a host listens at, getting through
-   routers (port forwarding, hole punching or a relay), the draw distance
-   online.
-3. **Shadow maps and a stage's own lights** (ROADMAP 14): the cast shadow
-   is one sun flattened onto the ground; walls, steps, self-shadowing and
-   torches need shadow maps. The HD meshes and the stage's meshes are
-   what they need.
-4. **Faces and hands** of the HD fighters (`tools/fighter_hd.py` rounds
-   them only); the chanbara, henchman and practice tints were never
-   reached in a fight.
-5. **New weapons**: a slot on the select screens, a motion set of a
-   mod's own, a tool to add one motion to a BBM, sounds in the weapon file
-   (MODS.md, "Weapons and motions").
-6. **2D still only upscaled**: setup mode's pages, slash mode, the
-   endings, other modes' results, "Waiting for Challenger", portraits,
-   the loading maps (each a table row in `tools/port_ui.py`).
-7. **Older open items**: music per stage (the game shares five pieces);
-   `src/port/window/` outside lint and count; the music a tenth louder
-   than the emulator's; the original's bugs left alone (REBUSHIDO.md).
-
-## The next session: a platform that is fast, and stays fast
-
-The owner, 2026-11-18, closing this session: the next session is a full
-optimisation run, before any new feature. The HD fighters keep his RTX
-3090 under 60 even without run-ahead (he plays with Fighters' own models
-off until then), and run-ahead makes it worse. The goal is not to fix
-that one case but a platform with headroom that new work cannot throttle
-so severely: **up to four players online, on a larger modded stage, with
-much richer lighting, textures and 3D models**, at the display's rate.
-What that asks:
-
-- **A performance target and a budget held by the gate**, on a real GPU,
-  not the software renderer: e.g. a fight with four HD fighters, a large
-  stage and every feature on, rendering at 2560x1440 well inside one
-  85 Hz refresh, with run-ahead, measured in CPU time per thread and GPU
-  time (timer queries) per pass, failing on any regression.
-- **The GPU-first renderer** below, in full: nothing per vertex or per
-  triangle on the processor in a picture; the processor steps the game
-  and sends matrices and changed data only.
-- **Scaling with fighters and stage size**: costs that grow with the
-  number of fighters, lights and triangles go to the card; culling and
-  level of detail for big stages; batching by material.
-- **Run-ahead and rollback cheap** at four players: the state saved by
-  pages written, the step itself lean (`-O2`), sound mixing out of
-  re-run frames.
-- **The parallel play tests' failures under load: found.** The seven
-  failures of 2026-11-18 were, by every sign in their logs (options
-  changed on the options page, another mode at the top menu, the port's
-  own runs all passing), not the load but the owner's controller:
-  the emulator's pads, left at `Auto`, read the host's game controllers
-  with no window focused, so his presses went into every run going
-  through the menus. The runner now sets both pads to the keyboard,
-  which a run on its own desktop never has (tests/play/README.md, "How
-  the emulator is run"); load alone was measured again and changes
-  nothing.
-- **Profiling built in** for the owner: `--profile` and F3 showing CPU
-  and GPU time per part, so a report from his PC says where the time
-  goes.
-
-## A GPU-first renderer, the first big work of the next session
-
-The owner, 2026-11-18: offload all that can go to the graphics card, and
-assume hardware of the last ten years: **OpenGL 4.5 is the remastered
-picture's minimum** (compute shaders, direct state access, persistent
-mapped buffers); Graphics: Original stays the fallback; Vulkan is a
-later option. The remastered picture is still rebuilt each frame from
-the game's PlayStation output on the processor while the card waits
-(about 13 ms of a fight frame on the owner's PC). In order:
-
-1. **The software GPU only where the game needs it**: with Remastered on,
-   only the video memory the game copies, uploads or reads back, the
-   card drawing what the game reads (about 3.4 ms a frame today).
-2. **The scene as real 3D**: the ground, the stage's pieces and the HD
-   fighters are meshes already; draw them from their matrices on the
-   card, the PlayStation path kept for the 2D layer, the effects and
-   what is not converted; the side channel only where it is still used.
-3. **Pictures between frames by matrices**, blended on the card, not
-   faces paired on the processor.
-4. **Shadow maps** (roadmap 14) in place of the cast shadow (its
-   projection is on the card since `4527a5a8f`; posing the HD body for
-   it is still on the processor), and the HD cloth's hold in a shader.
-5. **Run-ahead's save and load by the pages that changed** (about 116 KB a
-   frame of 4.7 MB), not the whole state (2.4 ms today).
-
-Run-ahead with the HD models is the case to measure it by: today it
-throttles the owner's PC at `run_ahead = 1` (he plays with 0), after the
-fixes of 2026-11-18 (the tint's colour tables sent 3,689 times a fight,
-now 4; the run-ahead frame no longer painting the software picture).
-
-**The card's share, done first (2026-11-18, the renderer-core branch).**
-The card's own time was the ground and the sky, both fill at the
-supersampled size: the sky's clouds are now a cube worked out once, and
-`antialiasing` multisamples the scene's edges instead of drawing it four
-times over (the 2D layer keeps one sample's coverage and stays block for
-block). A fight frame's card time is 11.1 to 5.2 ms (ground 4.0 to 1.25,
-sky 3.1 to 0.27); docs/PORT.md, "Measuring on the card" and "Edges".
-Still open of this list, in this order: 1 (the software GPU only where
-the game reads it: video memory is part of the state that run-ahead and
-netplay save and hash, so what is left unpainted must be the same on
-every peer, or kept out of the hash), 3 (the tween is 4.6 ms of the
-processor's frame), 2, 5. The ground could be cheaper still with the
-depth from the rasteriser and not `gl_FragDepth` (early depth tests;
-the scene and the fighters hold against a linear depth today).
-
-**The renderer-perf branch (2026-11-18, after it)**, docs/PORT.md,
-"Measuring on the card":
-
-- **Done.** The card's mirror of video memory is a buffer, written
-  between draws without the window's thread waiting for the card. Only
-  the changed lines are sent, and a picture between frames puts back
-  what it changed, not all of video memory. The colour buffer's targets
-  are kept for each size, so the fight's first picture makes none.
-  `run_ahead 2` no longer draws each frame twice
-  (`g_port_ahead_kept`). The card at `run_ahead 1` went from 4.8 to
-  3.4 ms a frame and at `run_ahead 2` from 8.6 to 4.25. The processor's
-  waits on the driver went from about 1 ms a frame to 0.3, and the
-  tween from 3.7 to about 2.7.
-- **The tween as it is now**, a picture between frames on the processor
-  with the waits gone: pairing the frames 0.65 ms once a pair; the
-  primitives replayed 0.58 ms, the frame's writes 0.17, and the cast
-  shadows laid again 0.57 (`port_GlShadowLay`, fighters2's) every
-  picture. At 144 a second that is about 2.4 pictures a blank, so the
-  per-picture 1.3 ms is the multiplier. **Next:** the frame on show's
-  primitives into one vertex buffer once a pair, each vertex with both
-  frames' places, mixed by the vertex shader with the phase a uniform.
-  What is decided per picture today goes to a geometry shader: a
-  primitive held where it would not be drawn moved
-  (`port_GlWouldDraw`, the chip's span rule), and a face that is coming
-  or going drawn while it turns the right way (`port_TweenTurnsAlike`).
-  Record the backend's draws of the first picture of a pair (batch
-  state, vertex range, the blits and the sky between them, the ground's
-  mesh at its event) and replay the list on the others. Then a picture
-  is uniforms and some hundred draws.
-- **The software GPU only where the game needs it** (2.2 ms a frame).
-  Painting cannot simply be left out: the real step after the frames
-  ahead paints into video memory, which is the state run-ahead saves at
-  the next boundary and netplay hashes, and a peer may show Original.
-  The design that keeps determinism: the frame's GPU command words are
-  kept as they are submitted (about 80 KB a frame), and painted only
-  where something reads. That is a store, a copy or a texture from a
-  region drawn into and not yet painted, a write of a page the kept
-  commands read from, a hash, and the Original picture. The kept list is
-  then part of the saved state (`state.c`, fighters2's: a hook for a
-  blob of the renderer's). The hash is of video memory as painted, so
-  it paints, or better hashes the list and the unpainted memory
-  together on every peer alike.
-- **The worst blanks** (the p99 branch, 2026-11-18; docs/PORT.md, "The
-  software GPU beside the game"): every blank over the budget was a
-  game frame's blank, its own work in one blank. The software GPU's
-  primitives are now painted by four threads beside the game, in bands
-  of lines, video memory the same to the byte, and the pairing of two
-  frames is worked out on a thread as the frame after ends. What is
-  left of a frame's blank at `run_ahead 1` is mostly the boundary's wait
-  for the painters (about 1 ms): the game draws its list at the end of
-  its step, right before the state is saved for the frames ahead. Next:
-  a run-ahead save that needs no painted video memory. A version that
-  saved all but video memory and put back the frames ahead's writes
-  from a log removed that wait but left a race on the loading screens'
-  top lines, not found (PORT.md, "Tried, and left out"); then the frame
-  ahead's sound mix (0.3 ms) and its side channel.
-- **The step itself as the first frame ahead** (docs/PORT.md, of that
-  name): with `run_ahead 1` no frame is computed twice and no state is
-  saved or put back; the step's blanks are shown after it. With 2, the
-  one frame ahead runs while the painters finish the step (video memory
-  put back by what the frame ahead wrote over), and its sound is not
-  mixed. What is left of a frame's blank is the game's thread's own
-  work, measured there: the pairing of the two frames is waited for at
-  the first picture after a frame (about 0.7 ms: it can no longer
-  overlap the step that came after the frames ahead), the side channel
-  and the painters' waits inside the step (a colour table loaded again
-  waits for what still reads it), the tween's replay. Next: the tween
-  on the card (above), which takes the pairing and the replay off the
-  processor; a load of a frame the card is given only the writes of
-  (`g_port_ahead_kept`, the step itself with two ahead) handed to the
-  painters with its pixels kept for the mirror, so that it does not wait.
-- **The step on a thread of its own** (docs/PORT.md, of that name):
-  with run-ahead on, the step calls no OpenGL. What it hands the card is
-  written down with everything the backend reads of the game
-  (`gl_record.c`), the step runs on a thread of its own, and the window's
-  thread draws the record (as it is written, once the frame's list has
-  begun) and a picture for each refresh the step would miss. The game,
-  video memory and the pictures are the same to the byte as with
-  `RB_STEP_THREAD=off`. The window's thread's frame is 1.2 to 1.6 ms at
-  the 95th centile (was 6.5), so the bench's `cpu_p95` and
-  `settled_p99` of `run_ahead 1` and 2 are now held as met
-  (`MET_LIMITS`); the step's own thread is 4 to 6 ms (`step_p95`).
-  Paced, the lag is what it was. Next: the record's frame is drawn into
-  the colour buffer and then drawn over by the first picture of the pair
-  (the card could be spared it); the pictures between frames on the card
-  from the kept calls (the "tween as it is now" item above); `run_ahead
-  0`, whose steps are not held, is unchanged.
-- **The side channel** (`remaster`, about 0.9 ms) and the scene as real
-  3D (item 2 above) are untouched, and so is the ground's early depth
-  test.
-
-### What is left of the HD fighters' cost
-
-Found and fixed on 2026-11-18 (docs/PORT.md, "The HD cloth and
-run-ahead"): the cloth kept out once a picture (now once a frame), vsync
-given up for good after three hitches (the tearing), the fighters' colour
-tables made again for every drawing (the owner's `fighter_models` stall,
-confirmed fixed on his card), the software GPU painting frames run ahead,
-and the cast shadows projected on the processor every picture (now by
-the card). `run_ahead 1` still "throttles" with the HD models on the
-owner's card as of `d982fa6a9`; after `4527a5a8f` it is for him to say.
-What is still done on the processor, in the order I would move it:
-
-1. ~~The HD body posed for the shadows~~ and 2. ~~the cloth kept out
-   of the body~~: both on the card now, by compute shaders and the
-   shadows' own vertex shader (docs/PORT.md, "The HD fighters on the
-   card"); the processor gives the bones and the cloth's points. What
-   is left is the card's: the cloth's hold, about 1.1 ms of a frame
-   whose cloths are new (a coarser body for the first walk, or a
-   distance field of the body made once a pose, would take most of
-   it).
-3. **A frame run ahead mixes its sound** (`sound` 0.8 ms to 5 to 9 ms
-   here, much of it the disc read through WSL): the SPU's voices must
-   step, the mixing need not.
-4. ~~The state kept and put back~~ (2.4 ms a boundary on his PC): now
-   only the pages written since (docs/PORT.md, "The state kept and put
-   back by the pages written"): 0.14 to 0.18 ms on his card.
-5. ~~The owner's "orange flashes"~~: found on his card and fixed
-   (docs/PORT.md, "The orange flashes": an effect the chip leaves out,
-   drawn by its true places).
-
-Done since (docs/PORT.md, "A mod's pictures, read beside the game"): a
-mod's pictures are read and decoded on threads beside the game; the
-stage's pages are no longer looked up again at every picture (a sixth
-of the processor in a fight); the cloth's hold and the body's posing
-for the cloth and the shadows are shared out among four threads. A
-fight frame with the HD fighters, cast shadows and `run_ahead 2` went
-from 39 ms to 28 ms of the window's thread on the owner's card; the
-time let go from 107 to 53 times in the fight's run, and 0 with his
-own settings. The cast shadows and the cloth have since gone to the
-card (items 1 and 2), and the fight's first frames no longer stall on
-the card's first use of them. The sound queue (58 ms) was left: with the hitches gone it runs
-out far less, and a longer one is a later sound.
-
-`tools/port_budget.py` (run alone at the gate's end) holds the
-processor's share; `tools/port_bench.py` (the gate's `port-bench`, on
-the real card, `--report-only` until the targets are met) holds both to
-144 a second at 2560 by 1440, with the card's time per pass, and F3's
-third state shows both on the owner's screen (docs/PORT.md, "Measuring
-on the card", with the first numbers).
-
-## Faster iteration, for the start of the next session
-
-The owner's ask (2026-11-17): make development faster. In the order of
-what they buy for what they cost:
-
-1. **Build in WSL's own file system, not on `/mnt/c`: done.**
-   `tools/build.sh` and the gate's builds run in a copy on WSL's disk
-   (`tools/mirror.sh`; BUILD.md, "Where the build runs"): `port` from
-   nothing 80 s to 16 s, a one-file change 31–68 s to 14–16 s,
-   `port-sdl-windows` 46–57 s to 8–11 s. `make port` itself no longer
-   compiles every file again for its checks nor relinks when nothing
-   changed (no-op 68 s to 23 s on the drive).
-2. **A compiler cache (ccache): not taken.** Every compile of the port
-   and the window takes its source on standard input (rewritten by
-   `tools/modern/check.py`), which ccache does not cache, and the
-   PlayStation's is `cpp | cc1 | maspsx | as`, no gcc driver; with the
-   copy on WSL's disk and the dumps kept, a rebuild is now mostly the
-   link and the checks' Python.
-3. **The owner's RTX 3090 for the picture provers: done.** The prover
-   (`src/port/gl/gl_main.c`) is built for Windows too
-   (`wsl bash tools/build.sh port-gl-windows`), with SDL's context on a
-   window never shown in place of EGL's, and `port_gl_prove.py`,
-   `port_fps_prove.py` and `port_stage_prove.py` run it with
-   `--gpu card` (the default under Windows' Python), with the same
-   verdicts: `port_gl_prove.py` 496 to 728 s on llvmpipe against 93 s on
-   the card, `port_fps_prove.py` 1,025 to 1,087 s against 264 s,
-   `port_stage_prove.py` 1,767 s against 527 s. llvmpipe stays
-   the exact reference (PORT.md, "The provers on a graphics card").
-   Mesa's D3D12 driver in WSL is no way to the card: it draws wrong.
-4. **No more merge conflicts in the same three places: done.** Nearly
-   every merge collided in the settings table (`src/port/window/choices.c`
-   and its groups), its built-in test list (`tests/port/settings.c`) and
-   the defaults in `keymap.c`. Every setting is now one entry of
-   `src/port/window/settings_list.h`, from which the member, the reader,
-   the defaults, the `--help` text and the menu are made (PORT.md, "Every
-   setting is one entry of one list").
-5. **A "report a bug" key**: one press keeps the screenshot, the log's
-   last seconds, `rebushido.cfg`, the frame-time profile and the build
-   in one folder, so each report comes with what an agent needs.
-6. **Quick-boot in the window build** (`--fight STAGE FIGHTER FIGHTER`,
-   as the PlayStation build's quick-boot): straight into a fight, for
-   the owner and for agents.
-7. **A frame-time budget in the gate**, so a slowdown like run-ahead's
-   on 2026-11-17 is caught before it reaches the owner's copy (being
-   added with the run-ahead fix).
-8. **Main's baseline numbers cached per commit** (provers, profiles):
-   agents stop re-running main to compare against it.
-9. **Fewer heavy agents at once**: five agents building and running
-   provers on one machine starve each other; three focused ones may
-   finish sooner.
+1. **The lighting work** (ROADMAP 14), above; give it a budget in
+   `port_bench.py` from its first commit.
+2. **The owner plays this build**: the HD fighters with vsync on at
+   run_ahead 2, the pause, Escape, shadows (the jitter at rest is known).
+3. **Online between two real PCs**, and on Windows (NETPLAY.md, section
+   13: the listen address, routers, the draw distance online).
+4. **Input lag** (ROADMAP 15): measured part by part (`port_bench.py
+   --paced` now reports the lag in refreshes), then cut where safe.
+5. **Faces and hands** of the HD fighters; the chanbara, henchman and
+   practice tints never reached in a fight.
+6. **New weapons**, **2D still only upscaled**, and the older items: as
+   in ROADMAP.md.
 
 ## The owner's decisions
 
 - Release 0.1 (tagging and publishing are the owner's).
-- `-O2` for the players' build: 10–35% faster, traces identical everywhere
-  checked.
-- Online: listen address, NAT, draw distance (above).
-- Which of the original's bugs to fix (REBUSHIDO.md, "Left as the original
-  has it").
-- A modern control layout (one more table in `src/port/window/keymap.c`).
-- `READ_BLANKS` (quick loading's two-second hold on screens one reads).
+- `-O2` for the players' build: 10–35% faster, traces identical.
+- Online: listen address, NAT, draw distance.
+- Which of the original's bugs to fix (REBUSHIDO.md).
+- A modern control layout; `READ_BLANKS` (quick loading's hold).
 
 ## Picking the work up
 
-- New agents are Opus, in their own worktrees, up to five at once; give
-  their WSL builds a private `TMPDIR`; disc-made mods go in the main
-  checkout's `tmp/mods/`, never only in a worktree.
-- Merge an agent's branch, then `python tools/gate.py --owner --push`.
-  A branch that conflicts goes back to its agent to merge `main`.
-- The picture provers use `build/port-gl/rebushido-gl` (llvmpipe), built
-  only by `python3 tools/port_gl_build.py`, or on the card
-  `build/port-gl/windows/rebushido-gl.exe`, built only by
-  `wsl bash tools/build.sh port-gl-windows`: rebuild the one used before
-  `tools/port_gl_prove.py` / `port_fps_prove.py` / `port_stage_prove.py`.
-- Pictures for the owner go in `Desktop\ReBushido Screenshots`; this
-  session's are in its `Session 2026-11-17` and `Investigation
-  2026-11-16` folders.
-- Six empty folders `.claude/worktrees/agent-*` were held open by this
-  session's agents when it closed; delete them (they are no worktrees and
-  hold nothing). `tmp\sdl-dl` can go too; `tmp\pcsx-redux`,
-  `tmp\redux-portable`, `tmp\tools` (Blender) and `tmp\mods` stay.
+- New agents are Opus, in their own worktrees, up to five at once (the
+  owner, 2026-11-18). Brief them with the rules of CLAUDE.md, the
+  worktree's junctions (`tools\gcc-2.7.2`, `tools\sdl2-mingw`, `.venv`)
+  and hardlinks of the disc, `REBUSHIDO_EMULATOR` for play tests, and a
+  private `TMPDIR` for WSL builds (WSL's `/tmp` gets wiped). A junction is
+  removed alone (`cmd /c rmdir LINK`), never through a recursive delete:
+  one wiped the shared `.venv` on 2026-11-18.
+- **Provers:** `--gpu card` while iterating (93 to 527 s), llvmpipe once
+  on the final commit; compare with `--against main` against the stored
+  baseline instead of re-running main.
+- **After each verified merge:** `wsl bash tools/build.sh
+  port-sdl-windows`, `python tools/owner_copy.py`, push; and
+  `python tools/baseline.py --store` (about an hour; `--only bench` six
+  minutes) so the next agents have main's numbers. The stored provers'
+  records are of `5c0eead12`; the bench's of `c212be752`.
+- **Timings:** only a run holding the card lock (`tools/card_lock.py`) on
+  a quiet machine is a number; with several agents at work, judge by
+  interleaved A/B runs. Five agents at once once put the processors at
+  73% and doubled every time.
+- An agent's report can go to another agent that messaged it last: ask
+  it to report to the coordinator.
+- If every `wsl` call fails with `E_UNEXPECTED`, `wsl --shutdown` brings
+  it back (it ends every WSL process: tell the agents to rerun).
+- One empty folder, `.claude/worktrees/agent-ac424a93b83bf5773`, was held
+  open when the session closed; delete it.

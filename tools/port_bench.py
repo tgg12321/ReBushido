@@ -106,22 +106,17 @@ LIMITS = [
     ('ra1', 'all_cpu_p95', BUDGET_MS, "the processor's work of any blank of the fight, 95%"),
     ('ra1', 'hitches', 1.0, 'blanks of the fight over 6.94 ms, percent'),
     ('ra1', 'worst', 2 * BUDGET_MS, 'the worst blank of the fight (a stall)'),
-    ('ra0', 'cpu_p95', BUDGET_MS, 'the same, run_ahead 0'),
     ('ra2', 'cpu_p95', BUDGET_MS, 'the same, run_ahead 2'),
     ('ra1-stress', 'cpu_p95', BUDGET_MS, 'four fighters, the ground twice: the processor'),
-    ('ra1-stress', 'gpu_p95', BUDGET_MS, 'four fighters, the ground twice: the card'),
     # the worst blanks, which decide whether a game is smooth: after the
     # fight's first second, each blank's whole time on the window's
     # thread but the wait for the clock (the swap counts: the card
     # waited for is waited for there)
     ('ra1', 'settled_p99', BUDGET_MS, "any blank after the fight's first second, 99%"),
-    ('ra1', 'settled_worst', 2 * BUDGET_MS, "the worst blank after the fight's first second"),
     ('ra2', 'settled_p99', BUDGET_MS, 'the same, run_ahead 2'),
     ('ra1-stress', 'settled_p99', BUDGET_MS, 'the same, four fighters, the ground twice'),
     # the step on its own thread (`s` lines): what it takes from the input
     # to the end of its frame, which the frame's first picture waits for
-    ('ra1', 'step_p95', BUDGET_MS, "the step's own thread, a fight frame, 95%, run_ahead 1"),
-    ('ra2', 'step_p95', BUDGET_MS, 'the same, run_ahead 2'),
 ]
 # What the program meets with room to spare (2026-11-18: the card's 95th
 # centile of a fight frame 3.9 to 5.2 ms with run_ahead 0 to 2, the RTX
@@ -141,6 +136,14 @@ MET_LIMITS = [
     ('ra1', 'settled_p99', BUDGET_MS, "the window's thread, any blank after the fight's first second, 99%"),
     ('ra2', 'settled_p99', BUDGET_MS, 'the same, run_ahead 2'),
     ('ra1-stress', 'settled_p99', BUDGET_MS, 'the same, four fighters, the ground twice'),
+    # Met on a quiet machine at c212be752 (2026-11-18) with room to spare:
+    # ra0's processor 3.78, the stress case's card 4.28, ra1's worst settled
+    # blank 1.45, the step's thread 3.56 (ra1) and 4.66 (ra2).
+    ('ra0', 'cpu_p95', BUDGET_MS, 'the same, run_ahead 0'),
+    ('ra1-stress', 'gpu_p95', BUDGET_MS, 'four fighters, the ground twice: the card'),
+    ('ra1', 'settled_worst', 2 * BUDGET_MS, "the worst blank after the fight's first second"),
+    ('ra1', 'step_p95', BUDGET_MS, "the step's own thread, a fight frame, 95%, run_ahead 1"),
+    ('ra2', 'step_p95', BUDGET_MS, 'the same, run_ahead 2'),
 ]
 # The fight's first second is the end of its load: the limits on the
 # worst blanks are of what follows it.

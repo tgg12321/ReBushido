@@ -5452,7 +5452,7 @@ quiet one `run_ahead 1` was at 7.4 before this.
 
 **What is left**, in the order it would pay:
 
-- *The tween on the card* (HANDOFF, "The tween as it is now"): the
+- *The tween on the card* (HANDOFF, "What is left of the performance work"): the
   pairing waited for and the replay of the primitives, some 1.4 ms of
   the frame's blank and as much of the blank between.
 - *The painters' waits inside a drawn step*: a load in the painters' way
@@ -5891,8 +5891,8 @@ many and was no later, within the noise.
   picture is often the second refresh after its input. The software
   GPU's part of the step (2 ms, much of it the side channel's decoding
   and the waits for the painters) is the largest.
-- *Pictures between frames on the card* (HANDOFF, "The tween as it is
-  now"): the record is the natural place for it -- a frame's calls kept,
+- *Pictures between frames on the card* (HANDOFF, "What is left of the
+  performance work"): the record is the natural place for it -- a frame's calls kept,
   with both frames' corners in one vertex buffer and the phase a
   uniform -- but it is not done: a picture is still the frame on show's
   primitives given to the backend again on the processor.
