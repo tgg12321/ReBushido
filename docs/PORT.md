@@ -7183,6 +7183,99 @@ terrace's shadow and stays: the abandoned shipyard 0.60, team 1 0.73,
 the terraced fields and the building rooftop 0.77, every other stage
 0.86 to 1.00.
 
+#### b. Lights with a place (`lights = on`)
+
+`src/port/gl/gl_lights.c`, `gl_lights.h`. The list (`PortGlLight`, up to
+128 a frame: a place in the world, a colour and intensity, a reach, a
+point or a spot with its cone, a flicker, whether it should cast, an
+`id`) is filled once a game frame by whoever knows the lights -- a
+stage's file of them and a fight's events, the mods' side -- between
+`port_GlLightsBegin` and `port_GlLightsEnd`, which may be called on the
+step's thread: End hands the list over under a lock, and the picture
+takes it at the next game frame's `begin` (`port_GlLightsTake`). It is
+the picture's alone: outside the state, never saved, hashed or read by
+the game.
+
+- **Once a picture** (`port_GlLightsPrepare`, before the first thing that
+  reads it): each light is moved between its place in the list before
+  and this one by its `id` where the picture is between two frames, its
+  flicker worked out from its `id` and the frames taken (three waves of
+  prime periods, the same at any frame rate and in every run), and the
+  lot sent to the card in a buffer.
+- **Sorted by where they reach** (a grid over the ground about the
+  camera, 64 by 64 cells of 256 world units, seen from above): each cell
+  names the lights whose reach overlaps it, so a pixel loops over the
+  few lights near it, whatever the list holds. The grid is in the world,
+  not the screen, because three different shaders read it with three
+  different projections (the ground's, the fighters' layer, the cloths)
+  and a stage is a floor: a cell is the same for every picture of a
+  frame, and the processor's work is the lights times the cells
+  (4,096), a few tens of microseconds for a full list.
+- **Lit at the pixel.** The ground, the pieces and the fighters' models
+  add each light that reaches them (`lights_add`, `PORT_GL_LIGHTS_SHADER`)
+  to what the stage's own lights give, in the game's own bytes of light:
+  its colour times its intensity times 128, times its turn on the normal,
+  falling off smoothly to nothing at its reach (the square of one less
+  the square of the distance over the reach), a spot's cone smoothed
+  between its two half-angles.
+- **Shadows of the strongest few.** Of the lights that ask, the four
+  that are brightest at the camera (intensity times reach squared over
+  the distance squared) are given a cube of six depth maps of 512 texels
+  (`PORT_GL_LIGHTS_SHADOWED`), drawn with the sun's casters: the stage
+  and the fighters, at the picture's phase. A point reads the face its
+  direction from the light falls in, four compared reads.
+- **Made up, for measuring** (`--bench-stress lights=N`, the prover's
+  `--gl-made-up-lights N`): where a frame's list is empty, N lights of
+  the renderer's own in a ring about the place the camera looks at, each
+  its own colour, a quarter of them spots, a quarter flickering, the
+  first four casting.
+
+#### The fighters' material (rb_remade)
+
+A remade model's file has, beside its base colour, a normal map and a
+map of ambient occlusion, roughness and metal (`extras.rb_remade`;
+`gl_fighter_file.h`). Where a piece has them the fighters' shader turns
+its normal by the normal map at the pixel (the file has no tangents:
+they are worked out from how the place and the texture point change
+across the pixel, as glTF's own sample viewer does), lights that normal
+with the stage's own lights and the light list, lets the occlusion darken
+the colour of the dark (the light that comes from all about), and gives
+the sun a highlight (GGX with Smith's masking and Schlick's Fresnel)
+from its roughness and metal, where the sun's maps say it reaches. A
+model without the maps is flat, unoccluded, rough (0.8) and not metal:
+its highlight is a faint sheen.
+
+#### What is left of it
+
+- **c. Reflections.** The plan: the ground's mesh and the pieces write,
+  beside their colour, a reflectance (0 but for a stage's water and its
+  polished floors, which a stage's light file can say, as `stage_lights`
+  says its lamps) and their normal into two more targets of the
+  picture's framebuffer; after the scene, a screen-space march along the
+  reflected ray through the mesh's own depth (the only depth of the
+  whole scene the picture keeps), and where it leaves the screen or
+  meets nothing, the sky (`gl_sky.c`) or the colour of the distance as
+  the fallback, mixed by Fresnel. Planar reflection for the stages with
+  one large water plane (the Kimigaura coast, the ferry dock) only if
+  the screen-space one is plainly short of it there.
+- **d. The finish.** The picture is eight bits a channel and the game's
+  colours are clamped at 255 where they are made, so HDR means the
+  colour buffer in half floats and every shader's clamp moved to a
+  tonemap pass before the resolve, tuned so that with the lights off a
+  stage is its own picture (an identity below the knee); then bloom from
+  what is above the knee (the lights, the flashes), and GTAO from the
+  mesh's depth, darkening only the light that is not the sun's. Each a
+  setting (`tonemap`, `bloom`, `ambient_occlusion`).
+- **The light files' placing and strength** are the lights' own side
+  (`gl_light_list.c`, the mods' `lights/`): of the stages measured here
+  only the parking lot's ceiling spots reach the fight (107,172 pixels
+  brighter by more than 8 at blank 3,200); the flames of the Tatara
+  shrine, the kabuki stage, the purple cavern and the cemetery are
+  thousands of units from where the tour fights.
+- **The normal map's green** is OpenGL's convention as glTF says; with
+  the world's y running down, the sign of the bitangent the shader works
+  out is not yet checked on a remade model in a fight.
+
 ## 64 bits
 
 The port is built with 64-bit pointers and with 32-bit ones, from the

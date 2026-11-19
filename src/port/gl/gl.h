@@ -74,6 +74,9 @@ typedef struct {
      * stage's own lights (docs/PORT.md, "Lighting"): 0 as each vertex or
      * face was lit. */
     s32 is_smooth_light;
+    /* The lights of a frame beside the stage's own (gl_lights.h): 0 none
+     * of them. */
+    s32 is_lights;
     /* How the effects are drawn: PORT_EFFECTS_... (port_remaster.h). */
     s32 effects;
     /* A sky of the port's own behind the stages open to it, in the place

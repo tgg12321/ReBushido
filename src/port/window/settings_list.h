@@ -302,6 +302,22 @@ PORT_SETTING(smooth_light,
     .help = "The game's own lights worked out at each pixel of ground and "
             "body")
 
+/* The lights of a frame beside the stage's own -- a stage's torches and
+ * lanterns, the flash where blades meet -- each lighting the ground, the
+ * stage's pieces and the fighters at the pixel, the strongest few with
+ * shadows (src/port/gl/gl_lights.h; docs/PORT.md, "The lighting
+ * overhaul"). */
+PORT_SETTING(lights,
+    .name = "lights", .value = "on",
+    .note = "on: the lights of a stage's own and of a\n"
+            "fight (torches, lanterns, blades meeting)\n"
+            "light the ground and the fighters; off for\n"
+            "the stage's own lights alone",
+    .menu = PORT_MENU_REMASTER, .rank = 125, .takes = PORT_TAKES_NOW,
+    .label = "Lights",
+    .help = "Torches, lanterns and sparks lighting the stage and the "
+            "fighters")
+
 /* How the effects are drawn: PORT_EFFECTS_... (port_remaster.h;
  * docs/PORT.md, "The effects"). */
 PORT_SETTING(effects,

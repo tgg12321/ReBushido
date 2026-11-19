@@ -46,6 +46,7 @@
 #include "gl_see.h"
 #include "gl_stage.h"
 #include "gl_sun.h"
+#include "gl_lights.h"
 #include "port_gpu.h"
 #include "port_remaster.h"
 
@@ -394,6 +395,7 @@ static struct {
     GLint sun_at_window;
     GLint sun_at_vram;
     PortGlSunAt sun;
+    PortGlLightsAt lights;
 } g_stage;
 
 /* The view last mixed between two frames (port_GlStageMixView), kept
@@ -622,7 +624,7 @@ static const char g_stage_vertex_text[] =
     "}\n";
 
 static const char g_stage_fragment_text[] =
-    "#version 400 core\n"
+    "#version 430 core\n"
     /* the picture's samples a pixel (gl.h, PortGlPicture.samples) */
     "uniform int u_samples;\n" PORT_GL_VRAM_SHADER
     "uniform uvec4 u_window;\n" /* the texture window, and or or */
@@ -672,6 +674,8 @@ static const char g_stage_fragment_text[] =
     PORT_GL_SCENE_SHADER
     /* the sun's maps (gl_sun.h) */
     PORT_GL_SUN_SHADER
+    /* the lights of a frame (gl_lights.h) */
+    PORT_GL_LIGHTS_SHADER
     /* the ordering-table slot a depth is sorted at
      * (render_OtIndexShifted) */
     "int slot_of(int depth) {\n"
@@ -859,6 +863,11 @@ static const char g_stage_fragment_text[] =
     "            float turn = max(dot(to_sun, n), 0.0);\n"
     "            color = sun_shade(color, u_color[0] * turn * 256.0, seen);\n"
     "        }\n"
+    "    }\n"
+    /* the lights of a frame beside the stage's own (gl_lights.h), added to
+     * its light as the coprocessor adds its lights */
+    "    if (u_lights_count != 0 && length_of > 0.25) {\n"
+    "        color += lights_add(v_place, v_smooth_normal / length_of);\n"
     "    }\n"
     "    uint texel;\n"
     "    vec3 one_color = texel_color(int(floor(v_texture.x)),\n"
@@ -1147,6 +1156,7 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
     AT(at_slots, "u_slots");
 #undef AT
     port_GlSunLocate(g_stage.program, &g_stage.sun);
+    port_GlLightsLocate(g_stage.program, &g_stage.lights);
     vertex = port_GlStageShader(GL_VERTEX_SHADER, g_stage_sun_vertex_text);
     fragment =
         port_GlStageShader(GL_FRAGMENT_SHADER, g_stage_sun_fragment_text);
@@ -2641,8 +2651,13 @@ static void port_GlStageDrawMesh(
         port_GlSunPrepare(view);
         port_GlStageTarget(picture);
     }
+    if (port_GlLightsIsOn()) {
+        port_GlLightsPrepare();
+        port_GlStageTarget(picture);
+    }
     port_GlStageUniforms(view, picture, paint);
     port_GlSunBind(&g_stage.sun);
+    port_GlLightsBind(&g_stage.lights);
 
     /* The whole depth buffer is cleared, and not only the part the mesh
      * draws in: the scene is held against it everywhere (gl_draw.c), so
@@ -2712,12 +2727,15 @@ void port_GlStageSunPrepare(void) {
     s32 is_between = FALSE;
     const PortStageView *view = port_GlStageViewNow(&is_between);
 
-    if (!port_GlSunIsOn() || !port_GlStageIsOn() || !g_stage.has_drawn ||
+    if (!port_GlStageIsOn() || !g_stage.has_drawn ||
         g_stage.vertex_count == 0 || view->frames == 0 ||
         g_stage.version != view->version) {
         return;
     }
-    port_GlSunPrepare(view);
+    if (port_GlSunIsOn()) {
+        port_GlSunPrepare(view);
+    }
+    port_GlLightsPrepare();
 }
 
 u32 port_GlStageDrawSunCasters(const float *matrix) {

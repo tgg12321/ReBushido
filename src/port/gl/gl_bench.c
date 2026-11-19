@@ -14,6 +14,7 @@
 #include "common.h"
 #include "gl.h"
 #include "gl_bench.h"
+#include "gl_lights.h"
 
 /* ---- GL, as much of it as this file uses ---- */
 
@@ -90,7 +91,7 @@ s32 g_port_gpu_base = PORT_GPU_SCENE;
 static const char * const g_bench_names[PORT_GPU_PASSES] = {
     "scene",   "vram",  "stage",   "fighters", "shadow", "sky",
     "resolve", "tween", "present", "cloth",    "skin",   "flayer",
-    "flay",    "smask", "sdark",   "sun",
+    "flay",    "smask", "sdark",   "sun",      "lights",
 };
 
 const char *port_GlBenchName(s32 pass) {
@@ -296,6 +297,11 @@ s32 port_GlBenchStress(const char *text) {
                    port_GlBenchNumber(text + 6, &value)) {
             g_bench.stage_copies = value;
             text += 6;
+        } else if (strncmp(text, "lights=", 7) == 0 &&
+                   port_GlBenchNumber(text + 7, &value)) {
+            /* that many lights made up about the fight (gl_lights.h) */
+            port_GlLightsSetMadeUp(value);
+            text += 7;
         } else {
             return FALSE;
         }

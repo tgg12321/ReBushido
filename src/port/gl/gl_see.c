@@ -52,12 +52,20 @@ s32 port_GlSeeIsOn(void) { return g_see_on; }
 /* Each fighter of the frame as a cylinder about his bones: the mean of
  * them for its axis, the highest and the lowest for its ends, the widest
  * for its reach (gl_see.h). */
-s32 port_GlSeeFighters(PortSeeFighter *out) {
+static s32 port_GlSeeFind(PortSeeFighter *out, s32 always);
+
+s32 port_GlSeeFighters(PortSeeFighter *out) { return port_GlSeeFind(out, FALSE); }
+
+s32 port_GlSeeFightersAlways(PortSeeFighter *out) {
+    return port_GlSeeFind(out, TRUE);
+}
+
+static s32 port_GlSeeFind(PortSeeFighter *out, s32 always) {
     u32 serial = port_FighterSerial();
     s32 count = 0;
     s32 slot;
 
-    if (!g_see_on) {
+    if (!g_see_on && !always) {
         return 0;
     }
     for (slot = 0; slot < PORT_FIGHTER_SLOTS && count < PORT_SEE_FIGHTERS;

@@ -43,5 +43,7 @@ extern s32 port_GlSeeIsOn(void);
 /* The fighters of the frame being drawn, at most PORT_SEE_FIGHTERS:
  * how many. 0 when it is off or there are none. */
 extern s32 port_GlSeeFighters(PortSeeFighter *out);
+/* ... the same whether the walls are seen through or not (gl_lights.c) */
+extern s32 port_GlSeeFightersAlways(PortSeeFighter *out);
 
 #endif /* PORT_GL_SEE_H */

@@ -39,6 +39,7 @@
 #include "gl_sky.h"
 #include "gl_stage.h"
 #include "gl_sun.h"
+#include "gl_lights.h"
 #include "gl_tween.h"
 #include "port_gpu.h"
 #include "port_host.h"
@@ -185,6 +186,10 @@ static const char g_usage[] =
     "  --smooth-light W  on, off: the game's own lighting worked out\n"
     "                 at each pixel on the ground's mesh and the\n"
     "                 fighters' models (docs/PORT.md, \"Lighting\")\n"
+    "  --lights W     on, off: the lights of a frame beside the stage's\n"
+    "                 own (gl_lights.h); on with nothing said\n"
+    "  --gl-made-up-lights N  N lights of the renderer's own about the\n"
+    "                 fight, for looking at them (gl_lights.h)\n"
     "  --effects W    original, exact, smooth: the effects where the\n"
     "                 console put them; where the projection put them,\n"
     "                 moved between frames; and their textures smoothed\n"
@@ -1212,6 +1217,13 @@ static void port_GlQuit(s32 code) {
         fprintf(stderr, "gl run sun pictures %u last_triangles %u\n",
                 port_GlSunPictures(), port_GlSunTriangles());
     }
+    if (port_GlLightsIsOn()) {
+        s32 listed = 0;
+
+        (void)port_GlLightsNow(&listed);
+        fprintf(stderr, "gl run lights listed %d most %d shadowed %d\n",
+                listed, port_GlLightsShown(), port_GlLightsShadowed());
+    }
     if (port_GlShadowIsCast()) {
         fprintf(stderr,
                 "gl run shadows cast faces %d orphans %d triangles %d "
@@ -1408,6 +1420,10 @@ int main(int argc, char **argv) {
                      where);
         } else if (!strcmp(word, "--smooth-light")) {
             options.is_smooth_light = strcmp(argv[++i], "off") != 0;
+        } else if (!strcmp(word, "--lights")) {
+            options.is_lights = strcmp(argv[++i], "off") != 0;
+        } else if (!strcmp(word, "--gl-made-up-lights")) {
+            port_GlLightsSetMadeUp(atoi(argv[++i]));
         } else if (!strcmp(word, "--effects")) {
             options.effects = port_ReadRemasterEffects(argv[++i]);
             if (options.effects < 0) {

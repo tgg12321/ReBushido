@@ -23,6 +23,7 @@
 #include "gl_fighter_card.h"
 #include "gl_shadow.h"
 #include "gl_sun.h"
+#include "gl_lights.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
 #include "port_fighter.h"
@@ -873,6 +874,8 @@ void port_GlShadowSetPhase(s32 phase) {
      * this one's */
     g_shadow.is_prepared = FALSE;
     port_GlSunNewPicture();
+    port_GlLightsSetPhase(phase);
+    port_GlLightsNewPicture();
 }
 
 s32 port_GlShadowCastFaces(void) { return g_shadow.cast_faces; }
@@ -967,6 +970,7 @@ static void port_GlShadowForget(void) {
     g_shadow.is_on_card = FALSE;
     g_shadow.is_prepared = FALSE;
     port_GlSunNewPicture();
+    port_GlLightsNewPicture();
     g_shadow.cover_count = 0;
     port_GlShadowEmptyBox(&g_shadow.box);
     port_GlShadowEmptyBox(&g_shadow.clip);
@@ -1367,6 +1371,7 @@ void port_GlShadowFinish(void) {
     /* the picture is over, whether it had a shadow of the game's or not */
     g_shadow.is_prepared = FALSE;
     port_GlSunNewPicture();
+    port_GlLightsNewPicture();
 }
 
 /* The mask of the picture whose shadows have been gathered, and the
