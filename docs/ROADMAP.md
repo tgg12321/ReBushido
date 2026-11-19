@@ -278,3 +278,36 @@ the stage").
     measured part by part, then cut where it is safe: the devices read
     as late as the game's step allows, run-ahead on the rollback's save
     and load, and the fewest pictures queued to the display.
+16. **Three kinds of stage at the select screen** (the owner,
+    2026-11-18): **Classic**, the disc's stages with only what the engine
+    gives (resolution, the wide picture, draw distance, frame rate, and
+    the new lighting while the picture is Remastered: F2 to Original
+    gives the console's picture and the console's light); **Remastered
+    Classic**, the same stages, the same collision, dressed (lights,
+    textures, grass, skies, water, particles); and **Custom arenas**, any
+    stage a mod brings. The tier is part of the stage chosen: online,
+    both players play the same stage in the same tier (no mixing). The
+    stage select keeps the original grid with a Classic/Remastered
+    switch per stage and a page of its own for the custom arenas.
+17. **Remastered Classic stages**: a mod kind for dressing nobody
+    touches (foliage drawn by instancing and stirred by wind, the
+    fighters and the slashes; water; dust, leaves, embers; scenery
+    meshes that keep the original silhouette), with a check that
+    nothing that looks solid stands where the collision grid has none;
+    then a pass over all 38 stages. Builds on item 14's lights.
+18. **Custom arenas**: a stage authored in Blender as a render mesh and
+    a collision mesh with each face's surface (firm, sand, wet,
+    barrier), compiled into the game's ground (`MODS.md`, "Stages");
+    the program's stage tables (starts, fog, music, light, sounds) as a
+    mod's data; a validator (no hole to fall through, nothing out of
+    bounds, a headless fight of the CPU on it); netplay's set-up holds
+    both players to the same arena. The game's own limits (32 by 32
+    cells of 2,000 units) first.
+19. **The fighters' models overhauled**, AI-made (the owner,
+    2026-11-18): a pipeline that holds the new model to the game's
+    skeleton, motions and proportions, so the hitboxes (body spheres,
+    weapon points) stay where the eye expects them; a check laying the
+    new silhouette over the original's through every motion; materials
+    for item 14's lighting (normal and roughness maps, skin, cloth);
+    levels of detail; faces and hands; then every fighter and weapon
+    remade.
