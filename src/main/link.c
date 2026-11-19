@@ -585,7 +585,7 @@ s32 link_Connect(void) {
     } else
 #endif
     {
-        g_link_send_payload = link_PackUnlockMask(g_saved_record.unlock_mask);
+        g_link_send_payload = link_PackUnlockMask(SAVE_UNLOCKS());
         link_ExchangeIdle();
         VSync(1);
         link_ExchangeIdle();

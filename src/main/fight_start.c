@@ -99,6 +99,12 @@ void fight_StartMode(void) {
         g_fight_auto_pause_countdown = (g_fight_practice_round == 0) << 1;
         g_fight_stage =
             (g_fight_practice_round != 0) ? STAGE_PRACTICE_2 : STAGE_PRACTICE_1;
+#if RB_PORT
+        /* the stage the stage pages chose (port_play.h) */
+        if (port_PlayStageChosen(g_fight_mode)) {
+            g_fight_stage = g_fight_config.stage;
+        }
+#endif
         g_fight_config.is_cpu[1] = 1;
         if (g_fight_practice_round == 0) {
             /* the partner is the henchman of the player's clan */

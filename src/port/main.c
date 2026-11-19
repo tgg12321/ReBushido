@@ -74,6 +74,7 @@ static const char g_port_usage[] =
     "            [--music-mods on|off] [--dump-music FOLDER]\n"
     "            [--dump-stages FOLDER] [--weapon 1|2=NAME]\n"
     "            [--arena NAME] [--fight-cpu]\n"
+    "            [--unlock-all] [--stage-select]\n"
     "            [--net-bind ADDRESS:PORT --net-peer ADDRESS:PORT]\n"
     "            [--link-side 0|1] [--net-latency MS] [--net-loss PERCENT]\n"
     "            [--netplay 1|2] [--net-delay N]\n"
@@ -164,6 +165,12 @@ static const char g_port_usage[] =
     "  --weapon 1=NAME  the fighter in place 1 (or 2) fights with a mod's\n"
     "                 weapon NAME (weapons/NAME.txt) whenever his weapon\n"
     "                 is the one it is made on\n"
+    "  --unlock-all   every fighter and mode the save keeps for its\n"
+    "                 progress, without writing them into it (the\n"
+    "                 window's unlock_all; docs/PLAYING.md)\n"
+    "  --stage-select versus the CPU and training choose their stage on\n"
+    "                 the stage pages, as versus mode does (the window's\n"
+    "                 stage_select_everywhere)\n"
     "\n"
     "At the end it prints a line for each thing the game asked for that\n"
     "the port does not do yet, with how often: stub NAME COUNT.\n";
@@ -323,6 +330,10 @@ s32 port_Main(s32 argc, char **argv) {
             port_SetCardsOff();
         } else if (port_TextsEqual(word, "--fight-cpu")) {
             port_FightBothCpu();
+        } else if (port_TextsEqual(word, "--unlock-all")) {
+            port_SetUnlockAll(1);
+        } else if (port_TextsEqual(word, "--stage-select")) {
+            port_SetStageSelectEverywhere(1);
         } else if (port_TextsEqual(word, "--fight-2p")) {
             port_FightTwoPlayers();
         } else if (port_TextsEqual(word, "--fight")) {

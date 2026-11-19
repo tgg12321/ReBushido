@@ -960,6 +960,10 @@ int main(int argc, char **argv) {
     port_MusicSetOn(g_port_settings.music_mods);
     /* the kind of stage the stages start as (port_stage_choice.h) */
     port_SetStageKindDefault(g_port_settings.stage_kind);
+    /* the two gameplay switches (port_play.h); --unlock-all and
+     * --stage-select on the command line turn them on */
+    port_SetUnlockAll(g_port_settings.unlock_all);
+    port_SetStageSelectEverywhere(g_port_settings.stage_select_everywhere);
     passed[count] = NULL;
     {
         char line[2 * PATH_BYTES_MAX];

@@ -1054,6 +1054,13 @@ have met:
   host's on both, and neither writes a save of the session to a file.
   The copies are part of the state (256 KB), so a save that a rollback
   takes back is taken back too. With `--no-cards` the host sends none;
+- the welcome also carries the kind of stage the host's stages start as
+  (`MEET_KIND`) and the host's two gameplay switches, `unlock_all` and
+  `stage_select_everywhere` (`MEET_PLAY`, protocol 4; PORT.md, "Every
+  stage in every mode, and every unlock"); both programs hold them for
+  the session, so a guest plays with the host's unlocks whatever its own
+  settings say, and its settings menu changes nothing until it starts
+  again;
 - when the guest has the cards it says it is ready; the host says go and
   starts, and the guest starts on that or on the host's first inputs.
   The host is the first pad, the guest the second, and the host's

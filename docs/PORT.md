@@ -52,6 +52,7 @@ runs ("The window", "Remastered in the window").
 | The memory card | done: a standard card image of 128 KB a slot, under the BIOS calls the game makes ("The memory card"). The card the port writes for the options page is byte for byte the one the emulator's BIOS wrote |
 | The movie | done: the opening plays, 3,320 frames of 320 by 240 at 29.97 a second, by the overlay's own C over a picture decompressor in C ("The movie"). Its sound is the drive's own, as the console has it |
 | The stage select's kinds of stage | done: each stage Classic or Remastered Classic by Square on the stage pages, a page of the custom arenas by Select, the choice the game's state, the same on both machines of a session ("The stage select's kinds of stage") |
+| A stage in every mode, every unlock | done: versus the CPU and training through the game's own stage pages (`stage_select_everywhere`), and every fighter and slash mode open without writing them into the save (`unlock_all`); the game's state, the host's in a session ("Every stage in every mode, and every unlock") |
 
 ## The switch
 
@@ -7596,8 +7597,9 @@ The game's hooks, all under `RB_PORT`:
   a story's cutscene never loads its stage with an arena versus mode
   chose.
 - `fight_LoadStage` (`fight.c`): `port_StageChoiceAtLoad` first. The modes
-  that have no stage page (story, versus the CPU, training, chanbara, the
-  group battle) take the default kind and the run's arena there; and the
+  that have no stage page (story, chanbara, the group battle, and versus
+  the CPU and training when `stage_select_everywhere` did not send them
+  through the pages: "Every stage in every mode, and every unlock") take the default kind and the run's arena there; and the
   stage is loaded again when the arena in play is not the one the stage
   in memory was loaded with, though the stage number is the same (an
   arena, then its host from the disc). `port_StageChoiceLoaded` after
@@ -7632,7 +7634,7 @@ headless port has the whole choice without any of the drawing.
 **Netplay.** The presses on the stage pages are both players', as the
 grid's are, so the kind switched, the page and the arena chosen are the
 same on both machines. The kind the stages start as is the host's: the
-welcome carries it (`MEET_KIND`, protocol 3) and both hold it for the
+welcome carries it (`MEET_KIND`, since protocol 3) and both hold it for the
 session (`port_HoldStageKindDefault`: the settings menu's change does
 nothing until the program starts again). The set-up's hash of the
 gameplay mods covers every arena the page offers, in its order and by
@@ -7649,12 +7651,94 @@ stage 25 with the arena's starts; the pause menu back to the select
 screen and Abandoned Station from the grid, which must be loaded again
 from the disc with its own starts. Each checkpoint's values are held to
 what the presses chose, and the two sizes print the same trace.
+The same tool drives versus the CPU and training through the stage pages
+("Every stage in every mode, and every unlock").
 `--shots FOLDER` keeps the console's pictures of each step.
 `tests/port/arenas.c` holds the file's picture, the ground read in place
 of the host's, and the arena in play changed to another, to none and
 back. With no arena and the kind as built in, every play test is as it
 was.
 
+## Every stage in every mode, and every unlock
+
+The owner, 2026-11-19: practise on any stage with no second player, and
+a mod for full unlocks to try every fighter. Two gameplay switches of the
+window's settings (`settings_list.h`, the Mods group), and of the command
+line for the program without a window; `include/port_play.h`.
+
+**`stage_select_everywhere`** (on as built; `--stage-select`). Versus
+and link mode go from the crossed weapons to the stage pages; the
+one-player modes end the select screen there, versus the CPU (and story)
+with the first side's clan's stage (`select_GetClanStage`), and the
+modes then pick their own stage: versus the CPU each opponent's
+(`g_vscpu_stages`, `fight_NextVsCpuOpponent`), training its two halls
+(`STAGE_PRACTICE_1` and `_2`, `fight_StartMode`). With the switch on,
+`select_WeaponsOutStep` sends versus the CPU and training on to the second
+stage page as it does versus mode (`port_PlayGoesToStages`), and their
+fights are on the stage chosen there, `g_fight_config.stage`, for every
+opponent of a run (`port_PlayStageChosen` in `fight_StartMode` and
+`fight_NextVsCpuOpponent`). The page is the game's own,
+`select_StageStep`: the one-player modes' file, `SEL1.BIN`, has the
+same three pages, their pictures and the same `stage_codes` as
+`SEL.BIN`. On a one-player mode's page the presses are the first pad's
+alone, as its grid's are. The Classic/Remastered switch and the arenas'
+page come with it: `port_StageModeChooses` (`stage_choice.c`) counts a
+mode whose pages chose its stage, so the kind and the arena chosen stand
+for its fights. `select_Load` forgets the choice (`port_PlayReset`), and
+`port_PlayStageChosen` asks the mode as well, so another mode's fights
+never take it.
+
+**`unlock_all`** (off as built; `--unlock-all`). The save keeps the
+progress in two fields of `SaveRecord` (`include/memcard.h`):
+`unlock_mask`, a bit for each character won (an empty save has the six
+`SAVE_DEFAULT_UNLOCKS`), and `staff_roll_character_mask`, the stories
+finished with the six fighters each clan starts with. Every read of them
+that gates something goes through `SAVE_UNLOCKS()` and
+`SAVE_STAFF_ROLLS()`, which on the PlayStation are the fields and in the
+port `port_PlayUnlocks` and `port_PlayStaffRolls`: with the switch on,
+the mask has every bit a save can hold (`PORT_PLAY_ALL_UNLOCKS`: the
+twenty named fighters and the two clans' last fighters) and every story
+is finished. What reads them:
+
+| Where | What it opens |
+|---|---|
+| `menu_EnterMode`, `menu_OpenSoloSelect` (`menu_screen.c`) | the fighters each select screen offers, through each mode's own mask: versus all twenty and the two crests, group battle and link mode the twenty, the one-player modes the eighteen without the gunners |
+| `fight_BuildVsCpuOrder` (`fight_modes.c`) | versus the CPU's run: every opponent, the gunners at the eleventh place and the clan's last fighter, so the ending after the twentieth |
+| `link_Connect` (`link.c`) | what the link cable tells the other console this one has |
+| `menu_ResetToTop`, the options page's way back (`menu_screen.c`) | slash mode's row of the top menu |
+
+The weapons are behind no progress: a clan's five, or a gunner's gun,
+whatever the save says. **The save is never written by it.**
+`g_saved_record` keeps the player's own progress: what a story, a
+chanbara run or a staff roll wins is added to it as ever, from the
+fields themselves (`staff_Update`, `fight_NextChanbaraOpponent`), so the
+"now available" messages are the save's own, and the card's file, its
+title's counts and a save made with the switch on are exactly what they
+would be with it off.
+
+**The state.** What the run asks for is kept outside the state
+(`src/port/play_switches.c`) and taken in by the game's step whenever the
+game asks, into `g_port_play` (`src/port/play.c`, a state file), with
+whether the select screen went on to the pages. So a rollback puts the
+choice back with the rest of the game, and a change in the settings menu
+reaches the game at a frame of its own. In a session the welcome carries
+the host's two switches (`MEET_PLAY`, protocol 4) and both programs hold
+them (`port_HoldPlaySwitches`), as they hold the kind of stage the stages
+start as: a guest plays with the host's unlocks whatever its own settings
+say (NETPLAY.md, section 13).
+
+**How it is proved.** `tools/port_stage_select.py` (a step of the gate)
+runs three plans besides versus mode's, on both sizes of the port, each
+held to its values and the two traces to each other: versus the CPU with
+`--stage-select --unlock-all` picks Matsumushi, whom an empty save has
+not won, goes to the stage pages (the switch taken in, the pages marked
+used, the unlock mask all of it), switches Abandoned Station to Classic
+and fights there against the CPU; training with `--stage-select` alone
+picks Kannuki with the empty save's own unlocks and fights the ninja in
+Purple Cavern; versus mode with `--unlock-all` picks the Narukagami's
+last fighter and Utamaru. `--shots` keeps the pictures of the two
+one-player modes' stage pages. With both switches off, as the program
+without a window starts, every play test is as it was.
 ## 64 bits
 
 The port is built with 64-bit pointers and with 32-bit ones, from the

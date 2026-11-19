@@ -371,8 +371,10 @@ port-rollback:
 # (docs/PORT.md, "The stage select's kinds of stage";
 # tools/port_stage_select.py): the switch between Classic and Remastered
 # Classic, the arenas' page and a fight on the sample arena, then its host
-# from the disc. It needs the disc's image, as port-rollback does, and
-# runs what make port built.
+# from the disc; versus the CPU and training through the stage pages and
+# every unlock (docs/PORT.md, "Every stage in every mode, and every
+# unlock"). It needs the disc's image, as port-rollback does, and runs
+# what make port built.
 port-stage-select:
 	python3 tools/port_stage_select.py
 

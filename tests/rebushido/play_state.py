@@ -46,6 +46,10 @@ MEMBERS = {
     'port_page': 'PortStageChoice.page_open',
     'port_on_stages': 'PortStageChoice.on_stages',
     'port_cursor_tier': 'PortStageChoice.cursor_kind',
+    'port_unlock_all': 'PortPlay.unlock_all',
+    'port_stage_pages': 'PortPlay.stage_pages',
+    'port_page_used': 'PortPlay.page_used',
+    'port_unlocks': 'PortPlay.unlocks',
 }
 
 

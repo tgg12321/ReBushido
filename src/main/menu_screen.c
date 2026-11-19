@@ -243,7 +243,7 @@ static void menu_ResetToTop(void) {
 
     g_menu_page = MENU_PAGE_TOP;
     menu_FetchOptions();
-    if (g_saved_record.staff_roll_character_mask == STORY_FIGHTERS_ALL) {
+    if (SAVE_STAFF_ROLLS() == STORY_FIGHTERS_ALL) {
         enabled_rows = MENU_ROWS_ALL;
     } else {
         enabled_rows = MENU_ROWS_NO_SLASH;
@@ -356,8 +356,8 @@ static void menu_EnterMode(s32 mode) {
         /* Both consoles offer what either has unlocked. */
         link_result = link_Connect();
         if (link_result == 1) {
-            select_SetUnlocks((g_saved_record.unlock_mask |
-                               g_link_peer_unlock_mask | SAVE_DEFAULT_UNLOCKS) &
+            select_SetUnlocks((SAVE_UNLOCKS() | g_link_peer_unlock_mask |
+                               SAVE_DEFAULT_UNLOCKS) &
                               SELECT_MASK_ALL);
             select_Open(SYS_LOAD_ADDR);
             g_menu_page = MENU_PAGE_SELECT;
@@ -374,21 +374,21 @@ static void menu_EnterMode(s32 mode) {
         return;
 
     case FIGHT_MODE_VSCPU:
-        select_SetUnlocks(g_saved_record.unlock_mask & SELECT_MASK_SOLO);
+        select_SetUnlocks(SAVE_UNLOCKS() & SELECT_MASK_SOLO);
         select_Open(SYS_LOAD_ADDR);
         g_menu_page = MENU_PAGE_SELECT;
         menu_StartMusic();
         return;
 
     case FIGHT_MODE_TEAM:
-        select_SetUnlocks(g_saved_record.unlock_mask & SELECT_MASK_ALL);
+        select_SetUnlocks(SAVE_UNLOCKS() & SELECT_MASK_ALL);
         select_OpenTeam(SYS_LOAD_ADDR);
         g_menu_page = MENU_PAGE_TEAM_SELECT;
         menu_StartMusic();
         return;
 
     case FIGHT_MODE_VS:
-        select_SetUnlocks(g_saved_record.unlock_mask & SELECT_MASK_VS);
+        select_SetUnlocks(SAVE_UNLOCKS() & SELECT_MASK_VS);
         select_Open(SYS_LOAD_ADDR);
         g_menu_page = MENU_PAGE_SELECT;
         menu_StartMusic();
@@ -421,7 +421,7 @@ static inline void menu_Reload(void) {
 /* A one-player mode's first page is confirmed: on to character select. */
 static inline void menu_OpenSoloSelect(void) {
     cdrom_StopAndWait();
-    select_SetUnlocks(g_saved_record.unlock_mask & SELECT_MASK_SOLO);
+    select_SetUnlocks(SAVE_UNLOCKS() & SELECT_MASK_SOLO);
     select_Open(SYS_LOAD_ADDR);
     g_menu_page = MENU_PAGE_SELECT;
     menu_StartMusic();
@@ -527,8 +527,7 @@ void menu_Update(void) {
             g_menu_page = MENU_PAGE_TOP;
             menu_StoreOptions();
             g_sys_screen_frames = 0;
-            if (g_saved_record.staff_roll_character_mask ==
-                STORY_FIGHTERS_ALL) {
+            if (SAVE_STAFF_ROLLS() == STORY_FIGHTERS_ALL) {
                 menu_SetEnabledRows(MENU_ROWS_ALL);
             } else {
                 menu_SetEnabledRows(MENU_ROWS_NO_SLASH);

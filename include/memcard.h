@@ -81,6 +81,18 @@ typedef struct {
 
 extern SaveRecord g_saved_record;
 
+/* The progress the save keeps as the game reads it: the fighters won and
+ * the stories finished. The port's unlock_all reads every one of them
+ * without writing any into the save (port_play.h). */
+#if RB_PORT
+#define SAVE_UNLOCKS() port_PlayUnlocks(g_saved_record.unlock_mask)
+#define SAVE_STAFF_ROLLS()                                                     \
+    port_PlayStaffRolls(g_saved_record.staff_roll_character_mask)
+#else
+#define SAVE_UNLOCKS() (g_saved_record.unlock_mask)
+#define SAVE_STAFF_ROLLS() (g_saved_record.staff_roll_character_mask)
+#endif
+
 /* The save file is one 0x200-byte image: the card's file header (title and
  * icon), then SaveData. */
 #define MEMCARD_FILE_SIZE 0x200

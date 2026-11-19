@@ -33,6 +33,7 @@ state    src/port/memory.c      the console's memory, mapped
 state    src/port/movie.c       where the game runs the movie's player
 state    src/port/pad.c         the pads' driver and the one input point
 state    src/port/plan.c        a play test's plan: the run's input, rolled back with the game
+state    src/port/play.c        the gameplay switches as the game took them in, the one-player modes' stage pages
 state    src/port/raster.c      the GPU and its video memory
 state    src/port/sound.c       libsnd's tick and the mixer
 state    src/port/spu.c         the sound chip and its memory
@@ -57,6 +58,7 @@ outside  src/port/arenas.c      the mods' arenas, read once as the program start
 outside  src/port/weapons.c     the mods' weapons, read once as the program starts and only read after
 outside  src/port/net.c         the network: the socket, the link cable's numbers, the trouble it is given
 outside  src/port/paint.c       the software GPU's painter: its settings, its ring and its thread
+outside  src/port/play_switches.c  the gameplay switches the run asked for (unlock_all, stage_select_everywhere)
 outside  src/port/picture.c     the pictures a run writes
 outside  src/port/profile.c    where a blank's time goes, for --profile
 outside  src/port/session.c     netplay's session: who the other is, the host's cards as sent, the seed
