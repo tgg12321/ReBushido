@@ -7547,13 +7547,115 @@ a hall's walls or a roof's slopes. The collision grid's `wet` class
 (`SURFACE_WET`) was the hint looked at: it marks where a fighter splashes
 (the stream's edge under the lost bridge), not a surface that shines, and
 the water that does (the sea beyond the ferry dock and the coast) is no
-level ground of the fight's, so the table is by stage. No stage has a
-large water plane the fight looks across, so there is no planar
-reflection.
+level ground of the fight's, so the table is by stage.
 
-**How**: at half the picture's size, for each pixel of ground that
-reflects, its point and its face's normal from the depth, the view
-reflected in the face, and a ray walked across the picture in at most
+**The floor's plane, mirrored** (2026-11-19, after the owner on the
+Meikyokan: "they don't look quite right. They seem warped and not
+detailed in a way that looks unrealistic"). Where the warping came from,
+measured (`RB_POST_DEBUG=normal`): the reflection on the screen took each
+pixel's normal from the depth about it, at a third of the size, and that
+normal was three to ten degrees off the floor's own up on the
+Meikyokan's boards, most near the camera, in a checkerboard by tile and
+in bands across it. The tiles are the mesh's own doing: it pushes each
+tile's depth back by a 256th of its farthest corner's, so that two tiles
+in one plane sort as on the console, which makes the floor worked back
+from the depth a patchwork of planes each a little off; the bands are the
+depth's half floats (a 2048th of it). A ray turns twice what its normal
+does, so the reflections bent into streaks; and a third of the size, a
+ray of twelve steps jittered by the pixel and smoothed three by three
+took the detail away. Neither the low size nor the march would have
+mattered as much with the right normal; the normal was the warp.
+
+What it does now: the stages' level floors are level, and the stage's
+floor is one plane. While the mesh is built, the reflecting faces that
+lie level to a thousandth give their heights, each with its area
+(`port_GlPostFloorAdd`); the height with the most is the floor's plane.
+Each picture, at half its size, the scene is mirrored in that plane
+(screen-space planar reflection, by one pass of a compute shader):
+each texel of the picture whose pixel has a depth of its own (the
+ground's mesh and its pieces, the fighters' layer, by the alpha's code;
+the fighters the game draws itself, below) and stands above the plane
+is taken back into the world, mirrored, and put where the camera sees
+the mirrored point; at each texel of the mirror the nearest that lands
+there wins by an atomic least of one word -- its depth on a scale of
+logarithms in the top 14 bits, how much of it is the mirror's in the
+next 3, its colour in 5 bits a channel. A pass after reads the words
+into colours and works out how far each mirrored point stands from the
+floor where it is seen; a texel left empty with at least three of its
+eight neighbours filled takes their mean (where the angle stretches what
+is mirrored, the texels it lands on are a little apart). The same mirror
+drawn as points with a depth test cost the card 0.5 ms more than this,
+and as two compute passes (the nearest depth, then the nearest's colour
+in a buffer of its own) 0.6 ms more. A
+pixel of floor on that plane (within 6 units and a 250th of its depth)
+then reads the mirror at its own place: what stands over it, exactly
+where it is, as sharp as the picture at half its size, with nothing
+walked or jittered, so it is as steady as the picture as the camera
+moves. A pixel of floor off the plane (a step, a raised stage, a sloping
+face within the 20 degrees) keeps the reflection on the screen, whose
+ray now leaves along the world's up and not the worked-out normal.
+Where the mirror has nothing (what the picture never showed: the sky,
+the far distance, what is off the picture's edges, what has no depth)
+the reflection on the screen fills in, the sky behind as before.
+
+**The fighters the game draws itself.** With the HD fighters set aside
+(the owner, 2026-11-19), the fighters are the game's own primitives,
+which have no depth in the buffer and are not the fighters' layer: the
+mirror had nothing of them, and a fighter left no reflection at all
+(measured: the mirror of the Tatara shrine had the railings and the
+walls, and no fighter). The shadows' casters already take their faces back into
+the world each picture (`shadows` map or cast, the first the default;
+"a. The sun's shadow maps"), so where the shadows are laid over the
+picture they belong to, those faces are drawn once more, depth alone,
+through the drawing's own view into a depth buffer of the passes' at
+half the buffer's size (`port_GlPostFighterDepth`; one for each of the
+two drawings, as the views are kept). A pixel the game's primitives
+painted last is mirrored with that depth where it is nearer than the
+ground's: the fighter's own colours, where he stands. With `shadows`
+original or soft there are no casters, and no fighter in the mirror.
+
+The floor is not glass. The mirror is blurred at a quarter of the
+picture's size (nine reads in a disc, 1.5 plus 8 of the mirror's texels
+times the floor's roughness wide), and each pixel takes
+the blurred one the more the farther what it shows stands from the floor
+(the distance from the mirrored point to where its ray meets the floor,
+kept with the mirror, times the roughness over 400 units): a fighter's
+feet are sharp in it and his head soft, as on a real floor. Its own
+grain turns its normal a little (the slope of its brightness in the
+picture, the mirror read up to a few pixels aside, more on a rougher
+floor). How much shows: the reflectance times 0.6 and 0.4 of Schlick's
+Fresnel for a varnish, so a floor seen at a glance shows more than one
+seen from above. What is not mirrored: the top fifth of the picture
+(where the HUD is, which a mixed primitive leaves with the ground's
+code: its digits would be mirrored on the floor), coming in over the next
+twentieth, and gradually from the picture's sides, so that where the
+mirror ends is no hard edge across the floor. A stage of the wrong kind
+for it -- the camera under the plane, no level reflecting face -- has the
+reflection on the screen alone.
+
+`RB_POST_DEBUG=normal` (how far the worked-out normal is from the
+world's up), `=height` (the height above the plane of the ground and the
+fighters), `=mirror` (the mirror) and `=cover` (how much of each pixel
+the mirror covers, and each kind's share) are how it was looked at.
+Pictures, before and after, of the Meikyokan, the Tatara shrine and the
+ferry dock: the main checkout's `tmp/reflections2/`.
+
+**What the mirror costs** (the bench, `ra1` on the Tatara shrine with
+every setting of the lighting on, the game's own fighters as the owner
+plays, the build before beside it, interleaved, loads of 4 to 13%):
+`ssr` (the mirror, its filling and blur, and the reflection on the
+screen) 0.47 to 0.50 ms against 0.20, `post` 0.38 to 0.42 against 0.28
+(the lay reads the mirror), the fighters' depth 0.04; the lighting's
+95% 1.74 to 1.85 ms against 1.34 to 1.54, under the 2.0 held. With the
+archived HD fighters 1.89 against 1.65; the stress case 2.01 against
+2.27 (a loaded run, 24%). The lay finds the plane from the third's depth,
+not the buffer's own, and the ray on the screen is not walked where the
+mirror covers the pixel.
+
+**How the reflection on the screen goes** (the fallback): at a third of the picture's size, for each pixel of ground that
+reflects, its point from the depth, the view reflected in the world's
+up (it was the face's normal from the depth, the warp above), and a ray
+walked across the picture in at most
 twelve steps (one over the depth interpolated as the picture does,
 jittered by the pixel), then four halvings where it passes behind
 something no thicker than 40 units and 3% of its depth: what is there in
@@ -7563,7 +7665,7 @@ reflected direction (the sky is the same seen from anywhere, so its
 pixel at that direction's place on the screen is what the floor
 reflects), or the last of the open distance it passed over; else
 nothing, and the floor keeps its own colour. How much: the reflectance
-times 0.65 and 0.35 of Schlick's Fresnel for a varnish, less towards the
+times 0.6 and 0.4 of Schlick's Fresnel, as the mirror, less towards the
 picture's edges and the HUD's band at its top, and towards the end of the
 ray. Smoothed by the floor's roughness (three by three texels, spread up
 to four, only between pixels of one depth), and laid over the ground's
@@ -7718,12 +7820,22 @@ runs then but the tonemap's switch in the shader and the alpha code.
   lies level; a light file could say it a texture at a time (a stone
   path through grass), which no stage needed yet. The owner's eye on
   each stage's strength is wanted.
-- **What the screen does not show** is not reflected (a ray that leaves
-  the picture fades out, a wall behind the camera is never seen in the
-  floor); a probe of the stage would be the next step, if a stage asks.
+- **What the screen does not show** is not reflected (the mirror has only
+  what the picture shows: a wall behind the camera, the far side of a
+  fighter, what is above the HUD's band are never seen in the floor); a
+  true mirrored drawing of the stage and the fighters from below the
+  plane would have them, at the price of drawing the ground's mesh again
+  (the stage's pass is 1.5 to 2 ms of the card) and the fighters, which
+  is over the lighting's budget; a probe of the stage would be the
+  cheaper next step, if a stage asks.
+- **One plane a stage.** A floor at another height (a raised stage, a
+  step) has the reflection on the screen; a second plane would be a
+  second pair of passes.
 - **The fighters drawn from the game's own primitives** (no model of
-  their own) have no depth, so they are not reflected and cast no
-  occlusion; with the HD fighters (the owner's) they are.
+  their own) have no depth in the buffer: the mirror has them from the
+  shadows' casters (above), but the reflection on the screen does not
+  meet them and the occlusion does not see them. An effect painted over
+  a fighter is mirrored at the fighter's depth.
 - **The light files' placing and strength** are the lights' own side
   (`gl_light_list.c`, the mods' `lights/`): of the stages measured here
   only the parking lot's ceiling spots reach the fight (107,172 pixels

@@ -35,6 +35,7 @@
 #include "gl_bench.h"
 #include "gl_lights.h"
 #include "gl_post.h"
+#include "gl_shadow.h"
 #include "port_gpu.h"
 #include "port_remaster.h"
 
@@ -80,6 +81,19 @@ typedef char GLchar;
 #define GL_COLOR_ATTACHMENT1 0x8CE1
 #define GL_COLOR 0x1800
 #define GL_DEPTH_TEST 0x0B71
+#define GL_COMPUTE_SHADER 0x91B9
+#define GL_NONE 0
+#define GL_DEPTH_COMPONENT 0x1902
+#define GL_DEPTH_COMPONENT32F 0x8CAC
+#define GL_DEPTH_ATTACHMENT 0x8D00
+#define GL_DEPTH_BUFFER_BIT 0x00000100
+#define GL_LESS 0x0201
+#define GL_R32UI 0x8236
+#define GL_RED_INTEGER 0x8D94
+#define GL_UNSIGNED_INT 0x1405
+#define GL_READ_WRITE 0x88BA
+#define GL_TEXTURE_FETCH_BARRIER_BIT 0x00000008
+#define GL_R16F 0x822D
 #define GL_BLEND 0x0BE2
 #define GL_SCISSOR_TEST 0x0C11
 #define GL_CULL_FACE 0x0B44
@@ -133,7 +147,17 @@ typedef char GLchar;
     GL(void, glGenBuffers, (GLsizei, GLuint *))                                \
     GL(void, glBindBuffer, (GLenum, GLuint))                                   \
     GL(void, glBufferData, (GLenum, ptrdiff_t, const void *, GLenum))          \
-    GL(void, glBindBufferBase, (GLenum, GLuint, GLuint))
+    GL(void, glBindBufferBase, (GLenum, GLuint, GLuint))                       \
+    GL(void, glDispatchCompute, (GLuint, GLuint, GLuint))                      \
+    GL(void, glMemoryBarrier, (GLbitfield))                                    \
+    GL(void, glBindImageTexture,                                               \
+       (GLuint, GLuint, GLint, GLboolean, GLint, GLenum, GLenum))              \
+    GL(void, glClearTexImage, (GLuint, GLint, GLenum, GLenum, const void *))   \
+    GL(void, glClear, (GLbitfield))                                            \
+    GL(void, glClearDepth, (double))                                           \
+    GL(void, glDepthFunc, (GLenum))                                            \
+    GL(void, glDepthMask, (GLboolean))                                         \
+    GL(void, glReadBuffer, (GLenum))
 
 #define GL(result, name, args) static result(*name) args;
 PORT_GL_POST_FUNCTIONS
@@ -221,6 +245,95 @@ float port_GlPostReflectance(s32 stage, const float *normal) {
         return 0.0f;
     }
     return (float)g_post_floors[stage].percent / 100.0f;
+}
+
+/* ---- the floor's plane ---- */
+
+/* The heights the reflecting faces of the stage's mesh lie at, each with
+ * the area at it: the one with the most is the floor the reflections
+ * mirror the scene in (`plane` below). A face is counted if it lies level
+ * to a thousandth; its height is rounded to POST_PLANE_STEP. */
+#define POST_PLANE_HEIGHTS 64
+#define POST_PLANE_STEP 4.0f
+
+static struct {
+    s32 count;
+    float height[POST_PLANE_HEIGHTS];
+    float area[POST_PLANE_HEIGHTS];
+    s32 is_set;
+    float plane;
+} g_post_plane;
+
+/* A square root by Newton's steps (the window's C library is not asked
+ * for its arithmetic, as in gl_lights.c). */
+static float port_GlPostRoot(float s) {
+    float r = s > 1.0f ? s : 1.0f;
+    s32 k;
+
+    if (s <= 0.0f) {
+        return 0.0f;
+    }
+    /* from s itself, halving until it is near: enough for any face */
+    for (k = 0; k < 48; k++) {
+        r = 0.5f * (r + s / r);
+    }
+    return r;
+}
+
+void port_GlPostFloorsBegin(void) {
+    memset(&g_post_plane, 0, sizeof(g_post_plane));
+}
+
+void port_GlPostFloorAdd(const float *a, const float *b, const float *c) {
+    float u[3];
+    float v[3];
+    float n[3];
+    float area;
+    float height;
+    s32 i;
+
+    for (i = 0; i < 3; i++) {
+        u[i] = b[i] - a[i];
+        v[i] = c[i] - a[i];
+    }
+    n[0] = u[1] * v[2] - u[2] * v[1];
+    n[1] = u[2] * v[0] - u[0] * v[2];
+    n[2] = u[0] * v[1] - u[1] * v[0];
+    area = n[0] * n[0] + n[1] * n[1] + n[2] * n[2];
+    if (area <= 0.0f || n[1] * n[1] < 0.998f * area) {
+        return;
+    }
+    height = (a[1] + b[1] + c[1]) / 3.0f;
+    height =
+        POST_PLANE_STEP *
+        (float)(s32)(height / POST_PLANE_STEP + (height < 0.0f ? -0.5f : 0.5f));
+    for (i = 0; i < g_post_plane.count; i++) {
+        if (g_post_plane.height[i] == height) {
+            break;
+        }
+    }
+    if (i == g_post_plane.count) {
+        if (i == POST_PLANE_HEIGHTS) {
+            return;
+        }
+        g_post_plane.height[i] = height;
+        g_post_plane.count++;
+    }
+    /* the cross product's length is twice the face's area */
+    g_post_plane.area[i] += port_GlPostRoot(area);
+}
+
+void port_GlPostFloorsEnd(void) {
+    s32 best = -1;
+    s32 i;
+
+    for (i = 0; i < g_post_plane.count; i++) {
+        if (best < 0 || g_post_plane.area[i] > g_post_plane.area[best]) {
+            best = i;
+        }
+    }
+    g_post_plane.is_set = best >= 0;
+    g_post_plane.plane = best >= 0 ? g_post_plane.height[best] : 0.0f;
 }
 
 /* ---- the shaders ---- */
@@ -322,11 +435,34 @@ static const char g_post_half_text[] =
     "float ground_of(float a) {\n"                                                  \
     "    if (a < 0.575 || a >= 0.9) { return -1.0; }\n"                             \
     "    return clamp((a - 0.6) / 0.25, 0.0, 1.0);\n"                               \
+    "}\n" /* how much a floor of `shine` reflects seen at `facing` (the cosine      \
+           * of the view to its normal): Schlick's Fresnel for a varnish, and       \
+           * a floor seen from above still showing half of it */                    \
+    "float shine_amount(float shine, float facing) {\n"                             \
+    "    float fresnel = 0.04 + 0.96 * pow(1.0 - clamp(facing, 0.0, 1.0), 5.0);\n"  \
+    "    return shine * (0.6 + 0.4 * fresnel);\n"                                   \
     "}\n"                                                                           \
     "float noise_at(vec2 f) {\n"                                                    \
     "    return fract(52.9829189\n"                                                 \
     "                 * fract(dot(f, vec2(0.06711056, 0.00583715))));\n"            \
     "}\n"
+
+/* The world, for the passes that mirror in the floor's plane: the depth
+ * of the buffer's own pixels (`full_depth`, not the third's), the view
+ * into the world and back, and the plane. */
+#define POST_WORLD                                                             \
+    "uniform sampler2D u_ground;\n" /* the depth, the buffer's own */          \
+    "uniform mat3 u_turn;\n"        /* the world into the view */              \
+    "uniform mat3 u_back;\n"        /* the view into the world */              \
+    "uniform vec3 u_eye;\n"                                                    \
+    "uniform float u_plane;\n" /* the floor's height (y runs down) */          \
+    "float full_depth(vec2 f) {\n"                                             \
+    "    ivec2 at = ivec2(u_from + (floor(f) + 0.5) * u_sample);\n"            \
+    "    return texelFetch(u_ground,\n"                                        \
+    "        clamp(at, ivec2(0), textureSize(u_ground, 0) - 1), 0).r;\n"       \
+    "}\n"                                                                      \
+    "vec3 world_of(vec3 v) { return u_back * v + u_eye; }\n"                   \
+    "vec3 mirrored(vec3 w) { return vec3(w.x, 2.0 * u_plane - w.y, w.z); }\n"
 
 /* At half the size, for each pixel of ground: the occlusion (McGuire's
  * alchemy: the points about it in a disc of the world's `u_radius`, each
@@ -338,8 +474,11 @@ static const char g_post_light_text[] =
     "#version 430 core\n" POST_COMMON "uniform float u_radius;\n"
     "uniform float u_strength;\n"
     "uniform float u_reach;\n"
+    "uniform vec3 u_up;\n" /* the world's up in the view, as a normal */
+    "uniform int u_debug;\n"
     "uniform int u_ao_on;\n"
-    "uniform int u_reflect_on;\n"
+    "uniform int u_reflect_on;\n" POST_WORLD "uniform sampler2D u_mirror;\n"
+    "uniform int u_planar;\n"
     "layout(location = 0) out vec4 o_ao;\n"
     "layout(location = 1) out vec4 o_reflect;\n"
     /* how much of a reflection at `f` is believed: none at the picture's
@@ -379,11 +518,7 @@ static const char g_post_light_text[] =
     "    vec3 eye = normalize(p);\n"
     "    vec3 r = reflect(eye, n);\n"
     "    if (dot(r, n) <= 0.0) { return vec4(0.0); }\n"
-    "    float facing = clamp(dot(-eye, n), 0.0, 1.0);\n"
-    /* Schlick's Fresnel for a varnish, and a floor seen from above
-     * still showing some of it */
-    "    float fresnel = 0.04 + 0.96 * pow(1.0 - facing, 5.0);\n"
-    "    float amount = shine * (0.65 + 0.35 * fresnel);\n"
+    "    float amount = shine_amount(shine, dot(-eye, n));\n"
     "    float reach = u_reach;\n"
     "    if (r.z < 0.0) { reach = min(reach, (p.z - 24.0) / -r.z); }\n"
     "    vec3 e = p + r * reach;\n"
@@ -458,9 +593,214 @@ static const char g_post_light_text[] =
     "    vec3 p = view_of(floor(f) + 0.5, z);\n"
     "    vec3 n = normal_at(f, p);\n"
     "    if (u_ao_on != 0) { o_ao = vec4(occlusion(f, p, n), 0.0, 0.0, 1.0); }\n"
-    "    if (u_reflect_on != 0 && shine > 0.004) {\n"
-    "        o_reflect = reflection(f, p, n, shine);\n"
+    /* A reflecting face lies level (gl_post.h), so its normal is the
+     * world's up, not the one worked out from the depth. That one was
+     * measured (RB_POST_DEBUG=normal) off by three to ten degrees on the
+     * Meikyokan's floor, most near the camera, tile by tile (the mesh
+     * pushes each tile's depth back by its own share so that two in one
+     * plane sort as on the console, gl_stage.c) and in bands (the
+     * depth's half floats keep a 2048th of it), read over three pixels
+     * at a third of the size: a reflected ray turned twice that, which
+     * bent the reflections into streaks. */
+    "    vec3 up = u_up * (dot(u_up, p) > 0.0 ? -1.0 : 1.0);\n"
+    "    if (u_debug == 4) {\n"
+    "        float apart = degrees(acos(clamp(dot(n, up), -1.0, 1.0)));\n"
+    "        o_reflect = vec4(apart / 10.0, apart / 30.0, 0.0, 0.0);\n"
+    "        return;\n"
     "    }\n"
+    /* where the floor's plane is mirrored and the mirror has the whole of
+     * the pixel, the ray is not walked: what it found would not show */
+    "    if (u_planar != 0 && texture(u_mirror, f / u_full).a >= 0.999) {\n"
+    "        vec3 w = world_of(p);\n"
+    "        if (abs(w.y - u_plane) <= 6.0 + 0.004 * z) { return; }\n"
+    "    }\n"
+    "    if (u_reflect_on != 0 && shine > 0.004) {\n"
+    "        o_reflect = reflection(f, p, up, shine);\n"
+    "    }\n"
+    "}\n";
+
+/* The scene mirrored in the floor's plane, at half the picture's size
+ * (POST_MIRROR_SHRINK), by one pass of a compute shader over the
+ * picture's texels at that size. Each texel whose pixel has a depth of its
+ * own (the ground's mesh and its pieces, the fighters' layer, by the
+ * alpha's code; the fighters the game draws itself, by the shadows'
+ * casters) and stands above the plane is taken into the world, mirrored
+ * in the plane, and put where the camera sees the mirrored point; at each
+ * texel of the mirror the nearest that lands there wins, by an atomic
+ * least of one word: its depth on a scale of logarithms in the top 14
+ * bits, how much of it is the mirror's (`band`, below) in the next 3, its
+ * colour in 5 bits a channel in the low 15. So what the floor shows is
+ * exactly what stands over it, by the picture's own geometry: as sharp as
+ * the picture at half its size, and never bent. (Two passes, the nearest
+ * depth and then the nearest's colour in a buffer of its own, cost the
+ * card twice as long.) */
+#define POST_MIRROR_SHRINK 2
+#define POST_MIRROR_SHRINK_TEXT "2.0"
+/* the near end of the fighters' depth buffer, and of the mirror's scale of
+ * depths, in the world's units */
+#define POST_FIGHTER_NEAR 16.0f
+#define POST_FIGHTER_NEAR_TEXT "16.0"
+
+/* The mirror's word, made and read. */
+#define POST_MIRROR_WORD                                                         \
+    "const float STEP = " POST_MIRROR_SHRINK_TEXT ";\n"                          \
+    "const float NEAR = " POST_FIGHTER_NEAR_TEXT ";\n"                           \
+    "uint word_of(float z, float band, vec3 c) {\n"                              \
+    "    float d = clamp(log2(z / NEAR) / log2(u_range / NEAR), 0.0, 1.0);\n"    \
+    "    uvec3 q = uvec3(clamp(c, 0.0, 1.0) * 31.0 + 0.5);\n"                    \
+    "    uint b = uint(clamp(band, 0.0, 1.0) * 7.0 + 0.5);\n"                    \
+    "    return (uint(d * 16383.0 + 0.5) << 18) | (b << 15)\n"                   \
+    "         | (q.r << 10) | (q.g << 5) | q.b;\n"                               \
+    "}\n"                                                                        \
+    "float depth_of_word(uint w) {\n"                                            \
+    "    return NEAR * exp2(float(w >> 18) / 16383.0 * log2(u_range / NEAR));\n" \
+    "}\n"                                                                        \
+    "vec4 color_of_word(uint w) {\n"                                             \
+    "    float b = float((w >> 15) & 7u) / 7.0;\n"                               \
+    "    vec3 c = vec3(float((w >> 10) & 31u), float((w >> 5) & 31u),\n"         \
+    "                  float(w & 31u)) / 31.0;\n"                                \
+    "    return vec4(c, 1.0) * b;\n"                                             \
+    "}\n"
+
+static const char g_post_mirror_text[] =
+    "#version 430 core\n"
+    "layout(local_size_x = 8, local_size_y = 8) in;\n" POST_COMMON
+        POST_WORLD POST_MIRROR_WORD
+    "layout(r32ui, binding = 0) uniform uimage2D u_nearest;\n"
+    /* the depth of the fighters drawn from the game's own primitives, a
+     * depth buffer over the part of video memory from `u_fighter_corner`,
+     * `u_fighter_scale` of its texels a pixel of video memory
+     * (port_GlPostFighterDepth): its near and far are POST_FIGHTER_NEAR
+     * and the depth's range */
+    "uniform sampler2D u_fighters;\n"
+    "uniform int u_fighters_on;\n"
+    "uniform vec2 u_fighter_corner;\n"
+    "uniform vec2 u_fighter_scale;\n"
+    "float fighter_depth(vec2 f) {\n"
+    "    ivec2 at = ivec2(floor((screen_of(f) - u_fighter_corner) * u_fighter_scale));\n"
+    "    if (any(lessThan(at, ivec2(0)))\n"
+    "        || any(greaterThanEqual(at, textureSize(u_fighters, 0)))) {\n"
+    "        return u_range;\n"
+    "    }\n"
+    "    float d = texelFetch(u_fighters, at, 0).r;\n"
+    "    if (d >= 1.0) { return u_range; }\n"
+    "    return 2.0 * NEAR * u_range / (u_range + NEAR - (2.0 * d - 1.0) * (u_range - NEAR));\n"
+    "}\n"
+    "void main() {\n"
+    "    ivec2 size = imageSize(u_nearest);\n"
+    "    ivec2 cell = ivec2(gl_GlobalInvocationID.xy);\n"
+    "    ivec2 px = ivec2((vec2(cell) + 0.5) * STEP);\n"
+    "    if (any(greaterThanEqual(vec2(px), u_full))) { return; }\n"
+    "    vec4 c = texelFetch(u_picture, px, 0);\n"
+    /* only the ground's and the fighters' layer's pixels have a depth of
+     * their own: what else painted a pixel last is not at the depth
+     * there -- but for the fighters the game draws from its own
+     * primitives, which the shadows' casters give a depth of their own,
+     * where they are nearer than the ground */
+    "    vec2 f = vec2(px) + 0.5;\n"
+    "    bool coded = c.a >= 0.575 && c.a <= 0.975;\n"
+    "    if (!coded && (u_fighters_on == 0 || c.a < 0.975)) { return; }\n"
+    /* the HUD mixed over the ground keeps the ground's code (gl_post.h):
+     * nothing of the top's band, where it is, is mirrored, and below it
+     * the mirror comes in gradually; and gradually from the picture's
+     * sides, past which the mirror has nothing, so that where it ends is
+     * not a hard edge across the floor */
+    "    vec2 u = f / u_full;\n"
+    "    float band = smoothstep(0.16, 0.22, u.y)\n"
+    "               * smoothstep(0.0, 0.08, u.x) * smoothstep(0.0, 0.08, 1.0 - u.x);\n"
+    "    if (band <= 0.07) { return; }\n"
+    "    float z = full_depth(f);\n"
+    "    if (!coded) {\n"
+    "        float fighter = fighter_depth(f);\n"
+    "        if (fighter >= z - 4.0) { return; }\n"
+    "        z = fighter;\n"
+    "    }\n"
+    "    if (z <= 16.0 || z >= u_range * 0.999) { return; }\n"
+    "    vec3 w = world_of(view_of(f, z));\n"
+    /* the floor itself, within what its depth is sure of (the mesh's
+     * half floats and the push that sorts its tiles), mirrors nothing */
+    "    if (u_plane - w.y < 6.0 + 0.004 * z) { return; }\n"
+    "    vec3 v = u_turn * (mirrored(w) - u_eye);\n"
+    "    if (v.z < 32.0) { return; }\n"
+    "    ivec2 to = ivec2(floor(picture_of(v) / STEP));\n"
+    "    if (any(lessThan(to, ivec2(0))) || any(greaterThanEqual(to, size))) { return; }\n"
+    "    imageAtomicMin(u_nearest, to, word_of(v.z, band, c.rgb));\n"
+    "}\n";
+
+/* The mirror's words read into its colours, premultiplied by how much of
+ * the texel is the mirror's, and how far each mirrored point stands from
+ * the floor where it is seen (where the ray from the eye crosses the
+ * plane: the floor's roughness blurs a reflection the more the farther
+ * what it shows stands from it), times the same. A texel the mirror has
+ * nothing for, with at least three of its eight neighbours that have
+ * something, takes their mean (where the angle stretches what is
+ * mirrored, the texels it lands on are a little apart). */
+static const char g_post_fill_text[] =
+    "#version 430 core\n" POST_COMMON POST_WORLD POST_MIRROR_WORD
+    "uniform usampler2D u_nearest;\n"
+    "layout(location = 0) out vec4 o_color;\n"
+    "layout(location = 1) out vec4 o_far;\n"
+    "float far_of(ivec2 at, uint w) {\n"
+    "    vec3 d = world_of(view_of((vec2(at) + 0.5) * STEP, depth_of_word(w))) - u_eye;\n"
+    "    float t = clamp((u_plane - u_eye.y) / d.y, 0.0, 1.0);\n"
+    "    return length(d) * (1.0 - t);\n"
+    "}\n"
+    "void main() {\n"
+    "    ivec2 size = textureSize(u_nearest, 0);\n"
+    "    ivec2 at = ivec2(gl_FragCoord.xy);\n"
+    "    uint w = texelFetch(u_nearest, at, 0).r;\n"
+    "    vec4 c = vec4(0.0);\n"
+    "    float far = 0.0;\n"
+    "    if (w != 0xFFFFFFFFu) {\n"
+    "        c = color_of_word(w);\n"
+    "        far = far_of(at, w) * c.a;\n"
+    "    } else {\n"
+    "        vec4 sum = vec4(0.0);\n"
+    "        float far_sum = 0.0;\n"
+    "        float count = 0.0;\n"
+    "        for (int j = -1; j <= 1; j++) {\n"
+    "            for (int i = -1; i <= 1; i++) {\n"
+    "                ivec2 near = clamp(at + ivec2(i, j), ivec2(0), size - 1);\n"
+    "                uint n = texelFetch(u_nearest, near, 0).r;\n"
+    "                if (n != 0xFFFFFFFFu) {\n"
+    "                    vec4 s = color_of_word(n);\n"
+    "                    sum += s;\n"
+    "                    far_sum += far_of(near, n) * s.a;\n"
+    "                    count += 1.0;\n"
+    "                }\n"
+    "            }\n"
+    "        }\n"
+    "        if (count >= 3.0) { c = sum / count; far = far_sum / count; }\n"
+    "    }\n"
+    "    o_color = c;\n"
+    "    o_far = vec4(far);\n"
+    "}\n";
+
+/* The mirrored scene blurred as the floor's roughness blurs what stands
+ * far from it, at a quarter of the picture's size: a disc of nine reads
+ * of the half size's, `u_soft` of its texels wide, the empty ones counting
+ * as nothing (the colours are premultiplied by how much of the texel is
+ * the mirror's: its alpha). */
+static const char g_post_soft_text[] =
+    "#version 430 core\n"
+    "uniform sampler2D u_source;\n"
+    "uniform float u_soft;\n"
+    "uniform vec2 u_size;\n" /* the target's */
+    "layout(location = 0) out vec4 o_color;\n"
+    "void main() {\n"
+    "    vec2 source = vec2(textureSize(u_source, 0));\n"
+    "    vec2 uv = gl_FragCoord.xy / u_size;\n"
+    "    vec4 sum = texture(u_source, uv) * 2.0;\n"
+    "    float weight = 2.0;\n"
+    "    for (int i = 0; i < 8; i++) {\n"
+    "        float part = (float(i) + 0.5) / 8.0;\n"
+    "        float angle = float(i) * 2.39996323;\n"
+    "        vec2 at = vec2(cos(angle), sin(angle)) * sqrt(part) * u_soft;\n"
+    "        float w = 1.0 - 0.5 * part;\n"
+    "        sum += texture(u_source, uv + at / source) * w;\n"
+    "        weight += w;\n"
+    "    }\n"
+    "    o_color = sum / weight;\n"
     "}\n";
 
 /* Both of half the size smoothed in one pass, three by three texels,
@@ -603,13 +943,51 @@ static const char g_post_lay_text[] =
     "uniform int u_reflect_on;\n"
     "uniform int u_glow_on;\n"
     "uniform float u_ambient;\n"
-    "uniform int u_debug;\n"
+    "uniform int u_debug;\n" POST_WORLD "uniform sampler2D u_mirror;\n"
+    "uniform sampler2D u_mirror_soft;\n"
+    "uniform sampler2D u_mirror_far;\n"
+    "uniform int u_planar;\n"
+    "uniform float u_rough;\n"
+    "uniform float u_ripple;\n"
     "layout(location = 0) out vec4 o_color;\n"
+    /* The mirror's reflection of a pixel of the floor's plane, rgb times
+     * how much shows and a how much, and `cover` how much of the pixel
+     * the mirror has anything for. Off the plane (a step, a raised stage,
+     * a sloping face) nothing: the reflection on the screen has those. */
+    "vec4 planar(vec2 f, float shine, vec2 grain, out float cover) {\n"
+    "    cover = 0.0;\n"
+    /* on the plane: the point of the third's texel, its own middle and
+     * depth (one read of a small buffer, not the picture's own) */
+    "    vec3 p = view_at(f);\n"
+    "    if (p.z >= u_range * 0.999) { return vec4(0.0); }\n"
+    "    vec3 w = world_of(p);\n"
+    "    if (abs(w.y - u_plane) > 6.0 + 0.004 * p.z) { return vec4(0.0); }\n"
+    /* the floor is not glass: the slope of its own grain in the picture
+     * (`grain`) turns its normal a little, and the mirror is read that
+     * much aside */
+    "    vec2 uv = (f + grain * u_ripple) / u_full;\n"
+    "    vec4 sharp = texture(u_mirror, uv);\n"
+    "    vec4 soft = texture(u_mirror_soft, uv);\n"
+    "    if (sharp.a + soft.a <= 0.0) { return vec4(0.0); }\n"
+    /* the rougher the floor and the farther what it shows stands from
+     * it, the blurrier: a fighter's feet are sharp in it, his head soft;
+     * and past the mirror's edges only the blurred */
+    "    float far = texture(u_mirror_far, uv).r / max(sharp.a, 1e-3);\n"
+    "    float blur = clamp(far * u_rough / 400.0, 0.0, 1.0);\n"
+    "    vec4 m = mix(sharp, soft, max(blur, 1.0 - sharp.a));\n"
+    "    float amount = shine_amount(shine, abs(normalize(w - u_eye).y));\n"
+    "    cover = clamp(m.a, 0.0, 1.0);\n"
+    "    return vec4(m.rgb, m.a) * amount;\n"
+    "}\n"
     "void main() {\n"
     "    vec2 f = gl_FragCoord.xy;\n"
     "    vec4 c = texelFetch(u_picture, ivec2(f), 0);\n"
     "    vec2 uv = f / u_full;\n"
     "    float shine = ground_of(c.a);\n"
+    /* the slope of the picture's brightness, from the pixels beside it in
+     * its quad, taken where every pixel of the quad still runs */
+    "    float l = dot(c.rgb, vec3(0.3, 0.59, 0.11));\n"
+    "    vec2 grain = 2.0 * vec2(dFdx(l), dFdy(l));\n"
     "    if (shine >= 0.0) {\n"
     "        if (u_ao_on != 0) {\n"
     "            float ao = texture(u_ao, uv).r;\n"
@@ -618,8 +996,15 @@ static const char g_post_lay_text[] =
     "        }\n"
     "        if (u_reflect_on != 0) {\n"
     "            vec4 r = texture(u_reflect, uv);\n"
-    "            c.rgb = c.rgb * (1.0 - r.a) + r.rgb;\n"
-    "            if (u_debug == 2) { c.rgb = r.rgb + vec3(0.0, 0.0, r.a * 0.3); }\n"
+    "            float cover = 0.0;\n"
+    "            vec4 m = u_planar != 0 ? planar(f, shine, grain, cover) : vec4(0.0);\n"
+    /* the mirror where it has the scene, the reflection on the screen
+     * where it has none (what the mirror cannot have: the sky, the
+     * distance, what has no depth) */
+    "            r *= 1.0 - cover;\n"
+    "            c.rgb = c.rgb * (1.0 - r.a - m.a) + r.rgb + m.rgb;\n"
+    "            if (u_debug == 2 || u_debug == 4) { c.rgb = r.rgb + m.rgb + vec3(0.0, 0.0, r.a * 0.3); }\n"
+    "            if (u_debug == 7) { c.rgb = vec3(cover, r.a * 2.0, m.a * 2.0); }\n"
     "        }\n"
     "    }\n"
     "    if (u_glow_on != 0) {\n"
@@ -628,6 +1013,15 @@ static const char g_post_lay_text[] =
     "    if (u_debug == 3) {\n"
     "        float z = depth_at(f);\n"
     "        c.rgb = vec3(fract(z / 1000.0), z / u_range, max(shine, 0.0));\n"
+    "    }\n"
+    "    if (u_debug == 5 && c.a > 0.575 && c.a < 0.975) {\n"
+    "        float dy = world_of(view_of(f, full_depth(f))).y - u_plane;\n"
+    "        c.rgb = vec3(clamp(0.5 + dy / 40.0, 0.0, 1.0),\n"
+    "                     clamp(-dy / 400.0, 0.0, 1.0), float(u_planar));\n"
+    "    }\n"
+    "    if (u_debug == 6 && u_planar != 0) {\n"
+    "        vec4 m = texture(u_mirror, uv);\n"
+    "        c.rgb = m.rgb + vec3(0.0, 0.0, 0.25) * (1.0 - m.a);\n"
     "    }\n"
     "    o_color = vec4(clamp(c.rgb, 0.0, 1.0), c.a);\n"
     "}\n";
@@ -665,6 +1059,15 @@ typedef struct {
     s32 h;
 } PostTarget;
 
+/* Where a program keeps what POST_WORLD declares. */
+typedef struct {
+    GLint ground;
+    GLint turn;
+    GLint back;
+    GLint eye;
+    GLint plane;
+} PostWorld;
+
 /* A drawing of the ground: its view, and the line of video memory its
  * drawing area begins at. */
 typedef struct {
@@ -677,6 +1080,14 @@ typedef struct {
     /* the lights it was lit by, as the card had them (gl_lights.h) */
     s32 lights;
     u8 light[PORT_GL_LIGHTS_MAX * PORT_GL_LIGHTS_CARD_SIZE];
+    /* the depth of the fighters the game draws from its own primitives
+     * (port_GlPostFighterDepth): which of the two buffers, whether it was
+     * drawn, and the part of video memory it covers (its corner and its
+     * size, in video memory's pixels) */
+    s32 fighter_slot;
+    s32 has_fighters;
+    float fighter_corner[2];
+    float fighter_size[2];
 } PostView;
 
 static struct {
@@ -699,6 +1110,25 @@ static struct {
     GLint light_at_reach;
     GLint light_at_ao_on;
     GLint light_at_reflect_on;
+    GLint light_at_up;
+    GLint light_at_debug;
+    GLint light_at_mirror;
+    GLint light_at_planar;
+    PostWorld light_world;
+    /* the scene mirrored in the floor's plane, and blurred */
+    PostProgram mirror;
+    GLint mirror_at_fighters;
+    GLint mirror_at_fighters_on;
+    GLint mirror_at_fighter_corner;
+    GLint mirror_at_fighter_scale;
+    PostWorld mirror_world;
+    PostProgram fill;
+    PostWorld fill_world;
+    GLint fill_at_nearest;
+    GLuint soft_program;
+    GLint soft_at_source;
+    GLint soft_at_soft;
+    GLint soft_at_size;
     PostProgram smooth;
     GLint smooth_at_ao;
     GLint smooth_at_reflect;
@@ -719,6 +1149,13 @@ static struct {
     GLint lay_at_glow_on;
     GLint lay_at_ambient;
     GLint lay_at_debug;
+    PostWorld lay_world;
+    GLint lay_at_mirror;
+    GLint lay_at_mirror_soft;
+    GLint lay_at_mirror_far;
+    GLint lay_at_planar;
+    GLint lay_at_rough;
+    GLint lay_at_ripple;
     /* the targets, at the size they were last made: the occlusion and
      * the reflections twice over (for the smoothing), each pair drawn
      * through one framebuffer */
@@ -731,6 +1168,20 @@ static struct {
     GLuint pair_one;
     GLuint pair_two;
     PostTarget glow_level[GLOW_LEVELS];
+    /* the mirror, at half the size: the nearest's word at each texel;
+     * its colours and how far each stands from the floor, holes filled,
+     * drawn together; and its colours blurred, at a quarter */
+    PostTarget mirror_nearest;
+    PostTarget mirror_color;
+    PostTarget mirror_far;
+    PostTarget mirror_soft;
+    GLuint mirror_framebuffer;
+    /* the fighters' depth, one for each of the two drawings
+     * (PostView.fighter_slot), the buffer's own size */
+    GLuint fighter_depth[2];
+    GLuint fighter_framebuffer[2];
+    s32 fighter_w[2];
+    s32 fighter_h[2];
     /* what the passes lay the picture into, the picture's size (it and
      * the picture change places after: port_GlPostRun) */
     PostTarget out;
@@ -742,6 +1193,13 @@ static struct {
     float camera[3];
     float h_of;
     float middle[2];
+    /* its turn and the turn's inverse, row after row, and the world's
+     * up in the view (port_GlPostTurns); whether the floor's plane is
+     * mirrored in this picture */
+    float turn[9];
+    float back[9];
+    float up[3];
+    s32 is_planar;
     /* The views of the ground's last two drawings (port_GlPostNoteView):
      * the one being drawn, and the one before it. The game draws one frame
      * while it shows the last, in another part of video memory, so the
@@ -776,10 +1234,16 @@ static GLuint port_GlPostShader(GLenum kind, const char *text) {
     return shader;
 }
 
+/* A program of a vertex and a fragment shader, or, with no vertex
+ * shader's text, of `fragment_text` as a compute shader. */
 static GLuint port_GlPostLink(
     const char *vertex_text, const char *fragment_text) {
-    GLuint vertex = port_GlPostShader(GL_VERTEX_SHADER, vertex_text);
-    GLuint fragment = port_GlPostShader(GL_FRAGMENT_SHADER, fragment_text);
+    GLuint vertex = vertex_text != NULL
+                        ? port_GlPostShader(GL_VERTEX_SHADER, vertex_text)
+                        : 1;
+    GLuint fragment = port_GlPostShader(
+        vertex_text != NULL ? GL_FRAGMENT_SHADER : GL_COMPUTE_SHADER,
+        fragment_text);
     GLuint program;
     GLint ok = 0;
 
@@ -787,7 +1251,9 @@ static GLuint port_GlPostLink(
         return 0;
     }
     program = glCreateProgram();
-    glAttachShader(program, vertex);
+    if (vertex_text != NULL) {
+        glAttachShader(program, vertex);
+    }
     glAttachShader(program, fragment);
     glLinkProgram(program);
     glGetProgramiv(program, GL_LINK_STATUS, &ok);
@@ -818,6 +1284,14 @@ static s32 port_GlPostMake(
     return TRUE;
 }
 
+static void port_GlPostWorldAt(PostWorld *world, GLuint program) {
+    world->ground = glGetUniformLocation(program, "u_ground");
+    world->turn = glGetUniformLocation(program, "u_turn");
+    world->back = glGetUniformLocation(program, "u_back");
+    world->eye = glGetUniformLocation(program, "u_eye");
+    world->plane = glGetUniformLocation(program, "u_plane");
+}
+
 const char *port_GlPostStart(void *(*getproc)(const char *name)) {
     const char *debug = getenv("RB_POST_DEBUG");
 
@@ -833,14 +1307,18 @@ const char *port_GlPostStart(void *(*getproc)(const char *name)) {
     g_post.scale_program =
         port_GlPostLink(g_post_vertex_text, g_post_scale_text);
     g_post.half_program = port_GlPostLink(g_post_vertex_text, g_post_half_text);
+    g_post.soft_program = port_GlPostLink(g_post_vertex_text, g_post_soft_text);
     if (g_post.scale_program == 0 || g_post.half_program == 0 ||
+        g_post.soft_program == 0 ||
         !port_GlPostMake(
             &g_post.light, g_post_vertex_text, g_post_light_text) ||
         !port_GlPostMake(
             &g_post.smooth, g_post_vertex_text, g_post_smooth_text) ||
         !port_GlPostMake(
             &g_post.glow, g_post_glow_vertex_text, g_post_glow_fragment_text) ||
-        !port_GlPostMake(&g_post.lay, g_post_vertex_text, g_post_lay_text)) {
+        !port_GlPostMake(&g_post.lay, g_post_vertex_text, g_post_lay_text) ||
+        !port_GlPostMake(&g_post.mirror, NULL, g_post_mirror_text) ||
+        !port_GlPostMake(&g_post.fill, g_post_vertex_text, g_post_fill_text)) {
         return g_post.problem;
     }
 #define AT(member, program, name)                                              \
@@ -869,17 +1347,51 @@ const char *port_GlPostStart(void *(*getproc)(const char *name)) {
     AT(lay_at_glow_on, g_post.lay.program, "u_glow_on");
     AT(lay_at_ambient, g_post.lay.program, "u_ambient");
     AT(lay_at_debug, g_post.lay.program, "u_debug");
+    AT(light_at_up, g_post.light.program, "u_up");
+    AT(light_at_debug, g_post.light.program, "u_debug");
+    AT(light_at_mirror, g_post.light.program, "u_mirror");
+    AT(light_at_planar, g_post.light.program, "u_planar");
+    AT(mirror_at_fighters, g_post.mirror.program, "u_fighters");
+    AT(mirror_at_fighters_on, g_post.mirror.program, "u_fighters_on");
+    AT(mirror_at_fighter_corner, g_post.mirror.program, "u_fighter_corner");
+    AT(mirror_at_fighter_scale, g_post.mirror.program, "u_fighter_scale");
+    AT(fill_at_nearest, g_post.fill.program, "u_nearest");
+    AT(soft_at_size, g_post.soft_program, "u_size");
+    AT(soft_at_source, g_post.soft_program, "u_source");
+    AT(soft_at_soft, g_post.soft_program, "u_soft");
+    AT(lay_at_mirror, g_post.lay.program, "u_mirror");
+    AT(lay_at_mirror_soft, g_post.lay.program, "u_mirror_soft");
+    AT(lay_at_mirror_far, g_post.lay.program, "u_mirror_far");
+    AT(lay_at_planar, g_post.lay.program, "u_planar");
+    AT(lay_at_rough, g_post.lay.program, "u_rough");
+    AT(lay_at_ripple, g_post.lay.program, "u_ripple");
 #undef AT
+    port_GlPostWorldAt(&g_post.mirror_world, g_post.mirror.program);
+    port_GlPostWorldAt(&g_post.fill_world, g_post.fill.program);
+    port_GlPostWorldAt(&g_post.lay_world, g_post.lay.program);
+    port_GlPostWorldAt(&g_post.light_world, g_post.light.program);
     glGenVertexArrays(1, &g_post.array);
     /* RB_POST_DEBUG=ao, =reflect or =depth: the occlusion, the
      * reflections alone, or the depth (red its thousands, green all of
      * it) and the reflectance (blue), in the place of the picture: how
-     * they were looked at */
+     * they were looked at. And for the mirror: =normal, on the ground,
+     * how far the normal worked out from the depth turns from the
+     * world's up (red all of it at ten degrees, green at thirty);
+     * =height, on the ground and the fighters, the height above
+     * the floor's plane (red half at the plane, 20 units a quarter;
+     * green 400 units above), blue where the plane is mirrored; =mirror
+     * the mirror itself, blue where it has nothing; =cover how much of
+     * each pixel the mirror covers (red), and the reflection on the
+     * screen's (green) and the mirror's (blue) shares */
     g_post.debug =
         debug == NULL                   ? 0
         : strcmp(debug, "ao") == 0      ? 1
         : strcmp(debug, "reflect") == 0 ? 2
         : strcmp(debug, "depth") == 0   ? 3
+        : strcmp(debug, "normal") == 0  ? 4
+        : strcmp(debug, "height") == 0  ? 5
+        : strcmp(debug, "mirror") == 0  ? 6
+        : strcmp(debug, "cover") == 0   ? 7
                                         : 0;
     g_post.is_started = TRUE;
     return NULL;
@@ -944,6 +1456,41 @@ static s32 port_GlPostPair(
     return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
 }
 
+/* The mirror's targets, at half the picture's size: the words the compute
+ * shader writes, their colours and distances with the holes filled (drawn
+ * into at once), and the colours blurred at a quarter. */
+static s32 port_GlPostMirrorTargets(s32 w, s32 h) {
+    static const GLenum both[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+    s32 mirror_w = (w + POST_MIRROR_SHRINK - 1) / POST_MIRROR_SHRINK;
+    s32 mirror_h = (h + POST_MIRROR_SHRINK - 1) / POST_MIRROR_SHRINK;
+    s32 ok = TRUE;
+
+    ok = ok &&
+         port_GlPostTarget(&g_post.mirror_nearest, mirror_w, mirror_h, GL_R32UI,
+                           GL_RED_INTEGER, GL_UNSIGNED_INT, GL_NEAREST);
+    ok = ok &&
+         port_GlPostTarget(&g_post.mirror_color, mirror_w, mirror_h, GL_RGBA8,
+                           GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR);
+    ok = ok && port_GlPostTarget(&g_post.mirror_far, mirror_w, mirror_h,
+                                 GL_R16F, GL_RED, GL_FLOAT, GL_LINEAR);
+    ok = ok && port_GlPostTarget(
+                   &g_post.mirror_soft, (mirror_w + 1) / 2, (mirror_h + 1) / 2,
+                   GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, GL_LINEAR);
+    if (!ok) {
+        return FALSE;
+    }
+    if (g_post.mirror_framebuffer == 0) {
+        glGenFramebuffers(1, &g_post.mirror_framebuffer);
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, g_post.mirror_framebuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                           g_post.mirror_color.texture, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D,
+                           g_post.mirror_far.texture, 0);
+    glDrawBuffers(2, both);
+    return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+}
+
 static s32 port_GlPostTargets(s32 w, s32 h) {
     s32 half_w = (w + POST_SHRINK - 1) / POST_SHRINK;
     s32 half_h = (h + POST_SHRINK - 1) / POST_SHRINK;
@@ -977,6 +1524,7 @@ static s32 port_GlPostTargets(s32 w, s32 h) {
     }
     ok = ok && port_GlPostTarget(&g_post.out, w, h, GL_RGBA8, GL_RGBA,
                                  GL_UNSIGNED_BYTE, GL_NEAREST);
+    ok = ok && port_GlPostMirrorTargets(w, h);
     if (!ok) {
         snprintf(g_post.problem, sizeof(g_post.problem),
                  "the lighting's passes' buffers cannot be drawn into");
@@ -1040,6 +1588,127 @@ void port_GlPostBeforeMesh(const PortGlPicture *picture) {
         g_post.kept = g_post.live;
     }
     g_post.live.is_set = FALSE;
+    /* the fighters' depth of the drawing kept stays its own */
+    g_post.live.fighter_slot = 1 - g_post.kept.fighter_slot;
+    g_post.live.has_fighters = FALSE;
+}
+
+void port_GlPostFighterDepth(void) {
+    PostView *view = &g_post.live;
+    PortGlPicture picture;
+    GLfloat matrix[16];
+    float turn[9];
+    float row[4][3];
+    float constant[4];
+    float wide;
+    float tall;
+    float near_to_far;
+    float a;
+    float b;
+    s32 slot = view->fighter_slot & 1;
+    s32 w;
+    s32 h;
+    s32 i;
+    s32 k;
+
+    view->has_fighters = FALSE;
+    if (!g_post.is_started || !g_post.is_reflect || !view->is_set) {
+        return;
+    }
+    port_GlGetPicture(&picture);
+    if (picture.display_w <= 0 || picture.display_h <= 0) {
+        return;
+    }
+    /* the drawing's part of video memory, the picture's band in, at half
+     * the buffer's size: the mirror is at half the picture's */
+    wide = (float)(picture.display_w + 2 * picture.margin);
+    tall = (float)picture.display_h;
+    w = (s32)(wide * (float)picture.draw_x + 1.0f) / 2;
+    h = (s32)(tall * (float)picture.draw_y + 1.0f) / 2;
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    if (g_post.fighter_framebuffer[slot] == 0) {
+        glGenTextures(1, &g_post.fighter_depth[slot]);
+        glGenFramebuffers(1, &g_post.fighter_framebuffer[slot]);
+    }
+    if (g_post.fighter_w[slot] != w || g_post.fighter_h[slot] != h) {
+        glBindTexture(GL_TEXTURE_2D, g_post.fighter_depth[slot]);
+        glTexImage2D(GL_TEXTURE_2D, 0, (GLint)GL_DEPTH_COMPONENT32F, w, h, 0,
+                     GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_post.fighter_framebuffer[slot]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
+                               GL_TEXTURE_2D, g_post.fighter_depth[slot], 0);
+        {
+            static const GLenum none = GL_NONE;
+
+            glDrawBuffers(1, &none);
+        }
+        glReadBuffer(GL_NONE);
+        g_post.fighter_w[slot] = w;
+        g_post.fighter_h[slot] = h;
+    }
+    view->fighter_corner[0] = (float)picture.display_x;
+    view->fighter_corner[1] = (float)view->top;
+    view->fighter_size[0] = wide;
+    view->fighter_size[1] = tall;
+    /* The world into the depth buffer's clip space: the coprocessor's
+     * projection of the drawing's own view (screen = middle + h * (x, y /
+     * 2) / z, in video memory's pixels), each row linear in the point of
+     * the view and so in the world's, with an ordinary perspective depth
+     * from POST_FIGHTER_NEAR to the depth's range. */
+    for (i = 0; i < 9; i++) {
+        turn[i] = view->rotation[i] / 4096.0f;
+    }
+    near_to_far = PORT_GL_DEPTH_RANGE - POST_FIGHTER_NEAR;
+    a = (PORT_GL_DEPTH_RANGE + POST_FIGHTER_NEAR) / near_to_far;
+    b = -2.0f * PORT_GL_DEPTH_RANGE * POST_FIGHTER_NEAR / near_to_far;
+    for (k = 0; k < 3; k++) {
+        float x = turn[k];
+        float y = turn[3 + k];
+        float z = turn[6 + k];
+
+        row[0][k] = 2.0f / wide *
+                        ((view->middle[0] - view->fighter_corner[0]) * z +
+                         view->h * x) -
+                    z;
+        row[1][k] = 2.0f / tall *
+                        ((view->middle[1] - view->fighter_corner[1]) * z +
+                         0.5f * view->h * y) -
+                    z;
+        row[2][k] = a * z;
+        row[3][k] = z;
+    }
+    for (i = 0; i < 4; i++) {
+        constant[i] =
+            -(row[i][0] * view->camera[0] + row[i][1] * view->camera[1] +
+              row[i][2] * view->camera[2]);
+    }
+    constant[2] += b;
+    /* a column after a column */
+    for (i = 0; i < 4; i++) {
+        for (k = 0; k < 3; k++) {
+            matrix[k * 4 + i] = row[i][k];
+        }
+        matrix[12 + i] = constant[i];
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, g_post.fighter_framebuffer[slot]);
+    glViewport(0, 0, w, h);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glDepthMask(GL_TRUE);
+    glClearDepth(1.0);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+    view->has_fighters = port_GlShadowDrawSunCasters(matrix) > 0;
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glBindFramebuffer(GL_FRAMEBUFFER, picture.framebuffer);
+    port_GlForgetState();
 }
 
 void port_GlPostNewFrame(void) {
@@ -1123,12 +1792,125 @@ static float port_GlPostAmbient(void) {
     return back < 0.35f ? 0.35f : back > 1.0f ? 1.0f : back;
 }
 
+/* The view's turn (the world into the view) and its inverse, row after
+ * row, and the world's up in the view as a normal; FALSE where the turn
+ * has no inverse. */
+static s32 port_GlPostTurns(void) {
+    const float *t = g_post.turn;
+    float *b = g_post.back;
+    float det;
+    float length;
+    s32 i;
+
+    for (i = 0; i < 9; i++) {
+        g_post.turn[i] = g_post.rotation[i] / 4096.0f;
+    }
+    b[0] = t[4] * t[8] - t[5] * t[7];
+    b[1] = t[2] * t[7] - t[1] * t[8];
+    b[2] = t[1] * t[5] - t[2] * t[4];
+    b[3] = t[5] * t[6] - t[3] * t[8];
+    b[4] = t[0] * t[8] - t[2] * t[6];
+    b[5] = t[2] * t[3] - t[0] * t[5];
+    b[6] = t[3] * t[7] - t[4] * t[6];
+    b[7] = t[1] * t[6] - t[0] * t[7];
+    b[8] = t[0] * t[4] - t[1] * t[3];
+    det = t[0] * b[0] + t[1] * b[3] + t[2] * b[6];
+    if (det > -1e-6f && det < 1e-6f) {
+        return FALSE;
+    }
+    for (i = 0; i < 9; i++) {
+        b[i] /= det;
+    }
+    /* a normal goes into the view by the inverse's transpose: (0, -1, 0)
+     * takes the inverse's second row */
+    length = port_GlPostRoot(b[3] * b[3] + b[4] * b[4] + b[5] * b[5]);
+    if (length <= 0.0f) {
+        return FALSE;
+    }
+    for (i = 0; i < 3; i++) {
+        g_post.up[i] = -b[3 + i] / length;
+    }
+    return TRUE;
+}
+
+static void port_GlPostWorld(const PostWorld *world) {
+    glActiveTexture(GL_TEXTURE0 + 5);
+    glBindTexture(GL_TEXTURE_2D, g_post.depth);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(world->ground, 5);
+    glUniformMatrix3fv(world->turn, 1, GL_TRUE, g_post.turn);
+    glUniformMatrix3fv(world->back, 1, GL_TRUE, g_post.back);
+    glUniform3f(
+        world->eye, g_post.camera[0], g_post.camera[1], g_post.camera[2]);
+    glUniform1f(world->plane, g_post_plane.plane);
+}
+
+/* The scene mirrored in the floor's plane, at half the size, its holes
+ * filled, and blurred by the floor's roughness. */
+static void port_GlPostMirror(const PostFrame *frame, GLuint picture_texture,
+                              const PostView *view, float rough) {
+    static const GLuint farthest = 0xFFFFFFFFu;
+    GLuint groups_x = (GLuint)(g_post.mirror_nearest.w + 7) / 8;
+    GLuint groups_y = (GLuint)(g_post.mirror_nearest.h + 7) / 8;
+
+    PORT_GPU_BEGIN(PORT_GPU_SSR);
+    glClearTexImage(g_post.mirror_nearest.texture, 0, GL_RED_INTEGER,
+                    GL_UNSIGNED_INT, &farthest);
+    port_GlPostCommon(&g_post.mirror, frame, picture_texture);
+    port_GlPostWorld(&g_post.mirror_world);
+    glUniform1i(g_post.mirror_at_fighters_on, view->has_fighters);
+    glActiveTexture(GL_TEXTURE0 + 7);
+    glBindTexture(GL_TEXTURE_2D, g_post.fighter_depth[view->fighter_slot]);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(g_post.mirror_at_fighters, 7);
+    glUniform2f(g_post.mirror_at_fighter_corner, view->fighter_corner[0],
+                view->fighter_corner[1]);
+    glUniform2f(
+        g_post.mirror_at_fighter_scale,
+        (GLfloat)g_post.fighter_w[view->fighter_slot] /
+            (view->fighter_size[0] > 0.0f ? view->fighter_size[0] : 1.0f),
+        (GLfloat)g_post.fighter_h[view->fighter_slot] /
+            (view->fighter_size[1] > 0.0f ? view->fighter_size[1] : 1.0f));
+    glBindImageTexture(0, g_post.mirror_nearest.texture, 0, GL_FALSE, 0,
+                       GL_READ_WRITE, GL_R32UI);
+    glDispatchCompute(groups_x, groups_y, 1);
+    glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
+    /* read into colours and distances, its holes filled */
+    port_GlPostCommon(&g_post.fill, frame, picture_texture);
+    port_GlPostWorld(&g_post.fill_world);
+    glActiveTexture(GL_TEXTURE0 + 2);
+    glBindTexture(GL_TEXTURE_2D, g_post.mirror_nearest.texture);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(g_post.fill_at_nearest, 2);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_post.mirror_framebuffer);
+    glViewport(0, 0, g_post.mirror_color.w, g_post.mirror_color.h);
+    port_GlPostDraw();
+    /* blurred at a quarter of the size, as wide as the floor is rough */
+    glUseProgram(g_post.soft_program);
+    glActiveTexture(GL_TEXTURE0 + 2);
+    glBindTexture(GL_TEXTURE_2D, g_post.mirror_color.texture);
+    glUniform1i(g_post.soft_at_source, 2);
+    glUniform1f(g_post.soft_at_soft, 1.5f + 8.0f * rough);
+    glUniform2f(g_post.soft_at_size, (GLfloat)g_post.mirror_soft.w,
+                (GLfloat)g_post.mirror_soft.h);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_post.mirror_soft.framebuffer);
+    glViewport(0, 0, g_post.mirror_soft.w, g_post.mirror_soft.h);
+    port_GlPostDraw();
+    PORT_GPU_END();
+}
+
 /* The occlusion and the reflections of the ground, at a third of the size. */
-static void port_GlPostLight(const PostFrame *frame, GLuint picture_texture) {
+/* How rough the stage's floor is, 0 a mirror to 1. */
+static float port_GlPostRough(void) {
     s32 stage = port_RemasterStageNumber();
-    float rough = stage >= 0 && stage < POST_STAGES
-                      ? (float)g_post_floors[stage].rough / 100.0f
-                      : 0.5f;
+
+    return stage >= 0 && stage < POST_STAGES
+               ? (float)g_post_floors[stage].rough / 100.0f
+               : 0.5f;
+}
+
+static void port_GlPostLight(const PostFrame *frame, GLuint picture_texture) {
+    float rough = port_GlPostRough();
 
     PORT_GPU_BEGIN(g_post.is_reflect ? PORT_GPU_SSR : PORT_GPU_AO);
     port_GlPostCommon(&g_post.light, frame, picture_texture);
@@ -1137,6 +1919,16 @@ static void port_GlPostLight(const PostFrame *frame, GLuint picture_texture) {
     glUniform1f(g_post.light_at_reach, REFLECT_REACH);
     glUniform1i(g_post.light_at_ao_on, g_post.is_ao);
     glUniform1i(g_post.light_at_reflect_on, g_post.is_reflect);
+    glUniform3f(g_post.light_at_up, g_post.up[0], g_post.up[1], g_post.up[2]);
+    glUniform1i(g_post.light_at_debug, g_post.debug);
+    glUniform1i(g_post.light_at_planar, g_post.is_planar);
+    if (g_post.is_planar) {
+        port_GlPostWorld(&g_post.light_world);
+        glActiveTexture(GL_TEXTURE0 + 6);
+        glBindTexture(GL_TEXTURE_2D, g_post.mirror_color.texture);
+        glActiveTexture(GL_TEXTURE0);
+        glUniform1i(g_post.light_at_mirror, 6);
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, g_post.pair_one);
     glViewport(0, 0, g_post.ao_one.w, g_post.ao_one.h);
     port_GlPostDraw();
@@ -1271,6 +2063,19 @@ void port_GlPostRun(const PortGlPicture *picture, u32 *picture_framebuffer,
     glViewport(0, 0, g_post.half.w, g_post.half.h);
     port_GlPostDraw();
     PORT_GPU_END();
+    /* the floor's plane mirrored, where the stage has one that reflects
+     * and the camera is above it */
+    g_post.is_planar =
+        g_post.is_reflect && port_GlPostTurns() && g_post_plane.is_set &&
+        g_post.camera[1] < g_post_plane.plane;
+    if (!g_post.is_planar) {
+        g_post.up[0] = 0.0f;
+        g_post.up[1] = -1.0f;
+        g_post.up[2] = 0.0f;
+    }
+    if (g_post.is_planar) {
+        port_GlPostMirror(&frame, picture_texture_in, view, port_GlPostRough());
+    }
     if (g_post.is_ao || g_post.is_reflect) {
         port_GlPostLight(&frame, picture_texture_in);
     }
@@ -1296,6 +2101,24 @@ void port_GlPostRun(const PortGlPicture *picture, u32 *picture_framebuffer,
     glUniform1i(g_post.lay_at_glow_on, lights > 0);
     glUniform1f(g_post.lay_at_ambient, port_GlPostAmbient());
     glUniform1i(g_post.lay_at_debug, g_post.debug);
+    glUniform1i(g_post.lay_at_planar, g_post.is_planar);
+    if (g_post.is_planar) {
+        float rough = port_GlPostRough();
+
+        port_GlPostWorld(&g_post.lay_world);
+        glActiveTexture(GL_TEXTURE0 + 6);
+        glBindTexture(GL_TEXTURE_2D, g_post.mirror_color.texture);
+        glActiveTexture(GL_TEXTURE0 + 7);
+        glBindTexture(GL_TEXTURE_2D, g_post.mirror_soft.texture);
+        glActiveTexture(GL_TEXTURE0 + 8);
+        glBindTexture(GL_TEXTURE_2D, g_post.mirror_far.texture);
+        glActiveTexture(GL_TEXTURE0);
+        glUniform1i(g_post.lay_at_mirror, 6);
+        glUniform1i(g_post.lay_at_mirror_soft, 7);
+        glUniform1i(g_post.lay_at_mirror_far, 8);
+        glUniform1f(g_post.lay_at_rough, rough);
+        glUniform1f(g_post.lay_at_ripple, 24.0f * rough);
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, g_post.out.framebuffer);
     glViewport(0, 0, w, h);
     port_GlPostDraw();
@@ -1312,7 +2135,7 @@ void port_GlPostRun(const PortGlPicture *picture, u32 *picture_framebuffer,
         g_post.out.texture = texture;
         g_post.out.framebuffer = framebuffer;
     }
-    for (i = 0; i < 5; i++) {
+    for (i = 0; i < 9; i++) {
         glActiveTexture(GL_TEXTURE0 + i);
         glBindTexture(GL_TEXTURE_2D, 0);
     }

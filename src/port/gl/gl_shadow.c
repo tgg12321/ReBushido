@@ -24,6 +24,7 @@
 #include "gl_shadow.h"
 #include "gl_sun.h"
 #include "gl_lights.h"
+#include "gl_post.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
 #include "port_fighter.h"
@@ -2008,6 +2009,9 @@ static void port_GlShadowLay(void) {
     PORT_GPU_END();
     if (g_shadow.is_cast) {
         port_GlShadowCast();
+        /* the fighters' depth for the reflections, from the same faces
+         * (gl_post.h) */
+        port_GlPostFighterDepth();
     }
     g_shadow.shown_faces = g_shadow.count / 3;
     g_shadow.run_lost += g_shadow.lost;

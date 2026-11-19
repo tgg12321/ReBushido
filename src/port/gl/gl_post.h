@@ -79,6 +79,15 @@ extern s32 port_GlPostNeedsDepth(void);
  * reflects, by the stage's own kind of floor (gl_post.c, the table). */
 extern float port_GlPostReflectance(s32 stage, const float *normal);
 
+/* The floor the reflections mirror the scene in (gl_post.c, "the floor's
+ * plane"): while the mesh is built, Begin, each reflecting face's corners
+ * (the world's), End. The height with the most of the faces' area is the
+ * floor's plane; a reflecting pixel at it shows the scene mirrored in it,
+ * one off it (a step, a raised stage) the reflection on the screen. */
+extern void port_GlPostFloorsBegin(void);
+extern void port_GlPostFloorAdd(const float *a, const float *b, const float *c);
+extern void port_GlPostFloorsEnd(void);
+
 /* The ground's mesh was drawn with this view (gl_stage.c): the rotation
  * (1.12, a row after a row), the camera, the projection's distance, the
  * screen's middle in video memory's pixels (offsets and a wider picture's
@@ -96,6 +105,16 @@ extern void port_GlPostBeforeMesh(const PortGlPicture *picture);
  * that nothing of a stage left behind, its lights' glow above all, is
  * laid over what is shown there now. */
 extern void port_GlPostNewFrame(void);
+
+/* The depth of the fighters the game draws from its own primitives (no
+ * model of their own, so not in the fighters' layer and with no depth of
+ * theirs in the buffer): their faces, as the shadows' casters take them
+ * back into the world (gl_shadow.h), drawn through the drawing's own view
+ * into a depth buffer of the passes', so that the reflections mirror them
+ * too. Called where the shadows are laid over the picture they belong to
+ * (gl_shadow.c), with `shadows` cast or map; nothing with reflections
+ * off. */
+extern void port_GlPostFighterDepth(void);
 
 /* Whether the passes will run on the picture on show: a setting on, and
  * a drawing of the ground's mesh that is that picture. The picture is
