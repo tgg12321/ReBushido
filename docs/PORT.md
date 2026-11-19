@@ -7393,11 +7393,8 @@ shadow into view.
   soft search (`sun_visible_quick`); the game's light of it, its colour,
   loses in the sun's shadow what a shadow takes from the floor (the
   `shadows` strength), before the texture as the colour is. The frame's
-  lights (gl_lights.h) do not light these polygons yet: `lights_add` in
-  the scene's program, per pixel or at each corner in its geometry
-  shader, cost the scene's pass about 0.85 ms at the bench's 95th
-  centile even with no light to add (2026-11-19); it wants a program of
-  its own for the fighters' batches. What the game still draws
+  lights light them too, in a program of their own (b, "The fighters'
+  own polygons"). What the game still draws
   from its primitives otherwise (effects, the HUD) is as it drew it; with the ground the game's own
   tiles (`stage_mesh off`, or a stage the mesh is not measured good on),
   the picture falls back to `shadows cast`.
@@ -7509,6 +7506,44 @@ the game.
   the renderer's own in a ring about the place the camera looks at, each
   its own colour, a quarter of them spots, a quarter flickering, the
   first four casting.
+
+**The fighters' own polygons** (2026-11-19). The owner plays with the
+fighters the game draws itself -- body, weapon and cloth from its own
+primitives, the models put aside -- and those had the sun's maps
+(`FLAG_WORLD`, a) but no light of the list: a torch lit the floor about
+a fighter and not the fighter. They are lit now as the meshes are, in a
+program of their own:
+
+- **The scene's twin.** `lights_add` in the scene's own program, per
+  pixel or at each corner, cost every batch of the scene about 0.85 ms
+  of the card at the bench's 95th centile with no light at all: the
+  scene is the most fragments of the picture and its program the
+  longest. So the scene's three shaders are compiled twice
+  (`port_GlMakeLitProgram`, gl_draw.c): once as they were, and once as
+  GLSL 4.3 with `PORT_LIGHTS_LIT` defined, which brings the lights'
+  buffers, `lights_add` and the tonemap in. A fighter's own polygon
+  that takes the world back (`FLAG_WORLD`, now with the sun's maps or
+  the lights on) marks its batch `is_lit` where `lights` is on, a batch
+  is all lit or none of it, and the lit batches are drawn by the twin.
+  Nothing else pays for the loop; the twin's uniforms are its own
+  (`PortGlSceneAt`, one for each program).
+- **What it adds.** At the pixel, the place the geometry shader gave
+  back for the face (from its depth and the ground's view) and the
+  face's own normal: each light of the pixel's cell, its falloff, colour,
+  cone, flicker and shadow (the cube maps already hold these fighters:
+  the sun's casters are drawn into them, so a torch's light on a fighter
+  is shadowed by the scenery and by the other fighter, and by his own
+  arm). The game gave his polygons a light at each corner; the list has
+  only the face's normal, so a light is let 0.4 of the way past where it
+  turns away (`lights_add_wrapped`, `LIT_WRAP`), which keeps a body of
+  few polygons from being lit facet by facet. The light added is rolled
+  off above the game's own colour by the tonemap as the ground's is, the
+  game's own share being the colour times its light over the whole.
+- **What it leaves.** With `lights = off`, or no batch of a fighter's
+  own, the picture is the one drawn before to the byte (the tour of the
+  ferry dock at night, every picture); `Graphics: Original` marks
+  nothing. A fighter casting a torch's shadow onto the ground and the
+  walls was there before: the cube maps hold him.
 
 #### The fighters' material (rb_remade)
 
