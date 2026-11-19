@@ -7245,6 +7245,29 @@ from its roughness and metal, where the sun's maps say it reaches. A
 model without the maps is flat, unoccluded, rough (0.8) and not metal:
 its highlight is a faint sheen.
 
+#### What it costs (the bench, the RTX 3090 at 2,560 by 1,440)
+
+`tools/port_bench.py`, other agents' work on the machine (loads of 10 to
+46%: the numbers are a guide, the medians the steadiest), at 3126201d9:
+
+| case | card, median / 95% | the stage's pass | sun | lights | the lighting's 95% |
+|---|---|---|---|---|---|
+| ra1, main before (c212be752, quiet) | -- / 3.30 | 1.40 | -- | -- | -- |
+| ra1 | 3.61 / 4.32 | 1.53 | 0.32 | -- | 0.71 |
+| ra1-stress, 16 made-up lights, 4 casting | 5.73 / 8.55 (46% load) | 2.42 | 0.28 | 0.54 | 3.47 |
+| ra1-stress, the lights off | 5.44 / 6.17 | 3.07 (the soft filter on every map, before the cut) | 0.29 | -- | 0.32 |
+
+What brought it there: the sun's soft filter is the near map's alone,
+the far two read four compared texels and one; a light's shadow is one
+compared read (the card's own two by two); the stage's depth from a
+shadowed light is kept while the light stands still, and only the
+fighters are drawn over a copy of it. The stress case's card 95%
+still goes over the refresh on a loaded machine; its median is under
+it. On ra0 the processor's 95% moved between 5.91 and 9.07 ms from one run to the next with everything of the lighting off or on, interleaved (the step on the window's thread, a busy machine): the gate's ra0 and ra2 processor limits failed on that noise, not on the lighting. Left to take: the sun's map of the stage kept the same way (it
+moves only with the camera's whole texels), and the stage's shading
+done once a pixel where the ground is drawn twice over (the stress
+case's own doubling, which no stage has).
+
 #### What is left of it
 
 - **c. Reflections.** The plan: the ground's mesh and the pieces write,
