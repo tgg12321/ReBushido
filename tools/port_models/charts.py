@@ -58,6 +58,10 @@ def compose(charts, size, spread=10):
         col = bake.spread(c.color, on, spread)
         reach = bake.distance(on, most=spread) < spread     # drawn, or spread into
         color[y:y + h, x:x + w, :3] = np.clip(col + 0.5, 0, 255).astype(np.uint8)
+        drawn = getattr(c, 'alpha', None)
+        if drawn is not None:
+            # what the game does not draw of its texture (a lock's edge) is not drawn
+            reach &= bake.spread(drawn, on, spread) >= 0.5
         color[y:y + h, x:x + w, 3] = np.where(reach, 255, 0)
         n = bake.spread(c.normal, on, spread)
         n /= np.maximum(np.linalg.norm(n, axis=-1, keepdims=True), 1e-6)
@@ -78,36 +82,3 @@ def compose(charts, size, spread=10):
     # an entry is not a colour: the nearest texel's, never a mean
     quarter = entry[2::4, 2::4].copy()
     return color, normal, half, quarter
-
-
-def entries_by_color(color, on, ref_colors, ref_entries):
-    """For each texel drawn on, the entry (of the game's own on the piece
-    replaced) whose colour is nearest its own."""
-    h, w = on.shape
-    out = np.zeros((h, w, 2), np.uint8)
-    if len(ref_colors) == 0:
-        return out, np.zeros((h, w), bool)
-    c = color[on].astype(np.float32)
-    best = np.zeros(len(c), np.int64)
-    for s in range(0, len(c), 65536):
-        d = ((c[s:s + 65536, None, :] - ref_colors[None]) ** 2).sum(-1)
-        best[s:s + 65536] = d.argmin(1)
-    out[on] = ref_entries[best]
-    return out, on.copy()
-
-
-def piece_entries(ref, dom, bones):
-    """The colour tables' entries the game's texture has on the pieces of
-    `bones`, and their colours."""
-    import fighter_glb as fg
-    pal = ref.extras.get('rb_palette')
-    if pal is None:
-        return np.zeros((0, 3), np.float32), np.zeros((0, 2), np.uint8)
-    atlas = fg.png_array(ref.base_color_png()).astype(np.float32)
-    idx = fg.png_array(ref.images()[pal['image']])
-    sel = np.isin(dom, bones)
-    tris = ref.tris[np.all(sel[ref.tris], 1)]
-    tid, _ = bake.rasterize(ref.uv, tris, atlas.shape[1::-1], grow=0.5)
-    m = (tid >= 0) & (idx[..., 3] > 0)
-    keys, first = np.unique(idx[m][:, :2], axis=0, return_index=True)
-    return atlas[m][first][:, :3], keys.astype(np.uint8)

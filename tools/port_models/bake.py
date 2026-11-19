@@ -191,14 +191,6 @@ def fbm3(p, scale, octaves=3, seed=0, gain=0.5):
     return out / total
 
 
-def noise2(shape, scale, seed=0):
-    """Smooth noise over a picture (-1..1), a lump every `scale` texels."""
-    h, w = shape
-    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-    p = np.stack([xs, ys, np.zeros_like(xs)], -1)
-    return noise3(p, scale, seed)
-
-
 # ---- heights to normals ----
 
 def normal_of_height(height, texels_per_unit, mask=None):
@@ -218,52 +210,11 @@ def normal_of_height(height, texels_per_unit, mask=None):
     return n
 
 
-def normal_of_height_at(height, P, mask):
-    """The same of a layout that is not at one scale: P is each texel's
-    place (units), so that a texel's step along the picture is as long
-    as the surface says it is there."""
-    h = height.astype(np.float32)
-    ok = mask & np.roll(mask, 1, 1) & np.roll(mask, -1, 1) & np.roll(mask, 1, 0) & np.roll(mask, -1, 0)
-    sx = np.linalg.norm(np.roll(P, -1, 1) - np.roll(P, 1, 1), axis=-1)
-    sy = np.linalg.norm(np.roll(P, -1, 0) - np.roll(P, 1, 0), axis=-1)
-    gx = np.where(ok, (np.roll(h, -1, 1) - np.roll(h, 1, 1)) / np.maximum(sx, 1e-3), 0)
-    gy = np.where(ok, (np.roll(h, -1, 0) - np.roll(h, 1, 0)) / np.maximum(sy, 1e-3), 0)
-    n = np.stack([-gx, gy, np.ones_like(gx)], -1)
-    n /= np.linalg.norm(n, axis=-1, keepdims=True)
-    return n
-
-
 def pack_normal(n, mask=None):
     out = np.clip((n * 0.5 + 0.5) * 255.0 + 0.5, 0, 255).astype(np.uint8)
     if mask is not None:
         out[~mask] = (128, 128, 255)
     return np.concatenate([out, np.full(out.shape[:2] + (1,), 255, np.uint8)], -1)
-
-
-def blend_normals(base, detail):
-    """Two tangent-space normals as one (the slopes added)."""
-    s = base[..., :2] / np.maximum(base[..., 2:3], 1e-3) + detail[..., :2] / np.maximum(detail[..., 2:3], 1e-3)
-    n = np.concatenate([s, np.ones_like(s[..., :1])], -1)
-    return n / np.linalg.norm(n, axis=-1, keepdims=True)
-
-
-def frames(pos, nrm, uv, tris):
-    """Each triangle's tangent as the port's shader finds it: the way the
-    place changes along u, and whether the normal crossed with it goes up
-    the picture (+1) or down it (-1: the island is the mirror of what a
-    normal map wants)."""
-    p0, p1, p2 = (pos[tris[:, k]] for k in range(3))
-    u0, u1, u2 = (uv[tris[:, k]] for k in range(3))
-    e1, e2 = p1 - p0, p2 - p0
-    d1, d2 = u1 - u0, u2 - u0
-    det = d1[:, 0] * d2[:, 1] - d2[:, 0] * d1[:, 1]
-    det = np.where(np.abs(det) < 1e-20, 1e-20, det)
-    T = (e1 * d2[:, 1:2] - e2 * d1[:, 1:2]) / det[:, None]       # dP/du
-    Bv = (e2 * d1[:, 0:1] - e1 * d2[:, 0:1]) / det[:, None]      # dP/dv (down the picture)
-    n = nrm[tris].sum(1)
-    n /= np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)
-    hand = np.sign((np.cross(n, T) * -Bv).sum(1))
-    return T, Bv, hand
 
 
 def sample(img, uv, wrap=False):
@@ -293,6 +244,108 @@ def sample_nearest(img, uv):
     return img[y, x]
 
 
+def grown_twice(idx):
+    """A picture of numbers twice as large, its staircases cut across
+    (the rule known as Scale2x or EPX: a texel's corner takes the number
+    of the two neighbours that meet at it when they agree and the others
+    do not)."""
+    P = idx
+    A = np.roll(P, 1, 0)
+    A[0] = P[0]
+    D = np.roll(P, -1, 0)
+    D[-1] = P[-1]
+    C = np.roll(P, 1, 1)
+    C[:, 0] = P[:, 0]
+    B = np.roll(P, -1, 1)
+    B[:, -1] = P[:, -1]
+    out = np.zeros((P.shape[0] * 2, P.shape[1] * 2), P.dtype)
+    out[0::2, 0::2] = np.where((C == A) & (C != D) & (A != B), A, P)
+    out[0::2, 1::2] = np.where((A == B) & (A != C) & (B != D), B, P)
+    out[1::2, 0::2] = np.where((D == C) & (D != B) & (C != A), C, P)
+    out[1::2, 1::2] = np.where((B == D) & (B != A) & (D != C), D, P)
+    return out
+
+
+class Clean:
+    """The game's texture cleaned and made sharp, to be read at any
+    texture point: its design kept texel for texel, its staircases made
+    clean edges. The texture's colours are gathered into kinds (the
+    colours within `near` of a common one are a kind: the tones of one
+    cloth, of the skin); the picture of kinds is made eight times larger
+    with its staircases cut across (three times Scale2x), so that a
+    kind's edge is a line and the smallest thing painted (the light in an
+    eye, one texel) is still there; within a kind the tones run into one
+    another. What the game does not draw (alpha nought) is a kind of its
+    own, so that a lock of hair's edge is a clean edge too."""
+
+    def __init__(self, rgba, near=30.0, tone_soft=0.5, used=None, within=None):
+        rgba = np.asarray(rgba)
+        h, w = rgba.shape[:2]
+        solid = rgba[..., 3] >= 128
+        rgb = rgba[..., :3].astype(np.float32)
+        count = solid if used is None else (solid & used)
+        colors, counts = np.unique(rgba[..., :3][count], axis=0, return_counts=True)
+        colors = colors.astype(np.float32)
+        # kinds: the commonest colour is a kind's middle; each colour after
+        # it is of the first kind whose middle it is near, or a new one
+        middles, kind_of_color = [], np.zeros(len(colors), np.int64)
+        for i in np.argsort(-counts):
+            for k, mid in enumerate(middles):
+                if np.sqrt(((colors[i] - mid) ** 2).sum()) < near:
+                    kind_of_color[i] = k
+                    break
+            else:
+                kind_of_color[i] = len(middles)
+                middles.append(colors[i])
+        # each texel's kind (a colour not counted takes the nearest counted one's)
+        flat = rgb.reshape(-1, 3)
+        kind = np.zeros(len(flat), np.int64)
+        for s in range(0, len(flat), 16384):
+            kind[s:s + 16384] = kind_of_color[((flat[s:s + 16384, None] - colors[None]) ** 2).sum(-1).argmin(1)]
+        kind = kind.reshape(h, w)
+        self.kinds = int(kind_of_color.max()) + 1
+        if within is not None:
+            # a texel the game does not draw and no triangle lies on is not
+            # a hole in anything: it is its drawn neighbours' kind (a
+            # triangle's edge beside it is then not eaten into)
+            known = solid.copy()
+            stray = ~solid & ~within
+            for _ in range(8):
+                for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+                    src = np.roll(known, (dy, dx), (0, 1))
+                    take = stray & ~known & src
+                    kind[take] = np.roll(kind, (dy, dx), (0, 1))[take]
+                    rgb[take] = np.roll(rgb, (dy, dx), (0, 1))[take]
+                    known |= take
+            solid = known
+        kind = np.where(solid, kind, self.kinds).astype(np.int16)           # the last: not drawn
+        self.kind = kind
+        large = grown_twice(grown_twice(grown_twice(kind)))
+        # how much of each kind is in each quarter of a texel (the eighths'
+        # mean, two by two): an edge is a quarter of a texel wide
+        self.cover = []
+        self.tone = []
+        for k in range(self.kinds + 1):
+            m = (large == k).astype(np.float32)
+            self.cover.append((m[0::2, 0::2] + m[0::2, 1::2] + m[1::2, 0::2] + m[1::2, 1::2]) / 4.0)
+            if k < self.kinds:
+                own = kind == k
+                self.tone.append(np.clip(resize(blur_in(rgb, own, tone_soft), (w * 2, h * 2)), 0, 255))
+
+    def at(self, uv):
+        """The colour (0..255) and how much it is drawn (0..1) at texture
+        points (..., 2)."""
+        total = 0
+        color = 0
+        for k in range(self.kinds):
+            m = sample(self.cover[k], uv)
+            total = total + m
+            color = color + m[..., None] * sample(self.tone[k], uv)
+        clear = sample(self.cover[self.kinds], uv)
+        color = color / np.maximum(total, 1e-6)[..., None]
+        return color, total / np.maximum(total + clear, 1e-6)
+
+
 def resize(a, size, how=Image.BICUBIC):
     """A picture of floats (h, w) or (h, w, K) at another size (w, h)."""
     a = np.asarray(a, np.float32)
@@ -300,13 +353,3 @@ def resize(a, size, how=Image.BICUBIC):
         return np.array(Image.fromarray(a, 'F').resize(size, how))
     return np.stack([np.array(Image.fromarray(np.ascontiguousarray(a[..., k]), 'F').resize(size, how))
                      for k in range(a.shape[-1])], -1)
-
-
-def srgb_to_linear(c):
-    c = np.asarray(c, np.float32)
-    return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
-
-
-def linear_to_srgb(c):
-    c = np.clip(np.asarray(c, np.float32), 0, None)
-    return np.where(c <= 0.0031308, c * 12.92, 1.055 * c ** (1 / 2.4) - 0.055)

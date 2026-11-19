@@ -16,7 +16,6 @@ def recipe_of(name):
             r[k] = dict(r[k], **v)
         else:
             r[k] = v
-    r['replace'] = {k: int(v) for k, v in r['replace'].items()}
     if isinstance(r.get('materials'), dict):
         r['materials'] = {k: v for k, v in r['materials'].items() if k != 'about'}
     return r

@@ -10,14 +10,13 @@ reference  the game's own model (tools/fighter_export.py) and the hd mod's
            at two levels of subdivision (tools/fighter_hd.py), into
            tmp/models/ref/ of the main checkout
 motions    the game's motions of the fighter (motions.py, run in WSL)
-prepare    what the new pieces are made from: the body cut for its new
-           texture layout, the game's head seen from its middle, the
-           fighter standing, the hands' colours (prepare.py)
-unwrap     the body's new texture layout, laid flat in Blender
+prepare    the game's own mesh with more polygons, each of its charts cut
+           for its new texture layout (prepare.py)
+unwrap     the charts' new layouts, laid flat in Blender
            (tools/blender/fighter_unwrap.py)
-assemble   the body painted anew, the head and the hands made whole, the
-           file, its levels of detail and its maps (assemble.py), into the
-           `remade` mod, tmp/mods/remade/ of the main checkout (or --mod)
+assemble   the game's texture cleaned into the new layout, the file, its
+           levels of detail and its maps (assemble.py), into the `remade`
+           mod, tmp/mods/remade/ of the main checkout (or --mod)
 check      the checks (check.py); the build fails with them
 renders    the game's, the hd mod's (an older remake's, --also) and the new
            model side by side, in Blender, standing and through the
@@ -128,14 +127,16 @@ def main():
              '--against', against, '--image', to_wsl(args.image), '--models', to_wsl(ref),
              '--out', to_wsl(motions)])
     if 'prepare' in steps:
-        run([sys.executable, os.path.join(HERE, 'prepare.py'), '--name', name, '--ref', ref,
-             '--hd', os.path.join(ref, 'hd2', 'models'), '--work', work, '--motions', motions])
+        run([sys.executable, os.path.join(HERE, 'prepare.py'), '--name', name, '--ref', ref, '--work', work])
     if 'unwrap' in steps:
-        run_blender('tools/blender/fighter_unwrap.py', [os.path.join(work, name, 'unwrap_in.json'),
-                                                        os.path.join(work, name, 'unwrap_out.json')])
+        from prepare import charts_of
+        from recipe import recipe_of
+        for chart in charts_of(recipe_of(name)):
+            run_blender('tools/blender/fighter_unwrap.py', [os.path.join(work, name, 'unwrap_in_%s.json' % chart),
+                                                            os.path.join(work, name, 'unwrap_out_%s.json' % chart)])
     if 'assemble' in steps:
         run([sys.executable, os.path.join(HERE, 'assemble.py'), '--name', name, '--work', work, '--ref', ref,
-             '--hd', os.path.join(ref, 'hd2', 'models'), '--out', out])
+             '--out', out])
         with open(os.path.join(mod, 'mod.txt'), 'w', encoding='utf-8', newline='\n') as f:
             f.write(MOD)
     if 'check' in steps:

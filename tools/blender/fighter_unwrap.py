@@ -10,7 +10,8 @@ IN.json: `points` (each a place), `faces` (each three points), `seams`
 over its height), `margin` (between islands, a share of the rectangle).
 OUT.json: `uvs`, for each face its three corners' places in the
 rectangle (0..1 both ways, v down the picture), and `island`, each
-face's island.
+face's island. `larger`, if given, is for each face how many times
+larger than the rest its island is to be.
 """
 import json
 import sys
@@ -46,6 +47,43 @@ bpy.ops.uv.unwrap(method='ANGLE_BASED', margin=0.001)
 bpy.ops.uv.select_all(action='SELECT')
 bpy.ops.uv.average_islands_scale()
 bpy.ops.object.mode_set(mode='OBJECT')
+
+# the islands that are to be larger than the rest, made so about their
+# own middles (an island's faces are those joined across edges that are
+# not seams)
+larger = data.get('larger')
+if larger:
+    bm = bmesh.new()
+    bm.from_mesh(mesh)
+    bm.faces.ensure_lookup_table()
+    layer = bm.loops.layers.uv.verify()
+    seen = set()
+    for f in bm.faces:
+        if f.index in seen:
+            continue
+        stack, group = [f], [f]
+        seen.add(f.index)
+        while stack:
+            g = stack.pop()
+            for e in g.edges:
+                if e.seam:
+                    continue
+                for o in e.link_faces:
+                    if o.index not in seen:
+                        seen.add(o.index)
+                        stack.append(o)
+                        group.append(o)
+        by = sum(larger[g.index] for g in group) / len(group)
+        if abs(by - 1.0) < 1e-3:
+            continue
+        loops = [l for g in group for l in g.loops]
+        mx = sum(l[layer].uv.x for l in loops) / len(loops)
+        my = sum(l[layer].uv.y for l in loops) / len(loops)
+        for l in loops:
+            l[layer].uv.x = mx + (l[layer].uv.x - mx) * by
+            l[layer].uv.y = my + (l[layer].uv.y - my) * by
+    bm.to_mesh(mesh)
+    bm.free()
 
 # the islands narrowed by the rectangle's shape, packed into a square
 # without being turned, and widened again: packed into the rectangle

@@ -6742,60 +6742,54 @@ texels, four fighters 160,000 triangles and 216 MB of textures. The
 weapons are not remade: their models, lengths and grips are the game's
 files, and no hitbox is a model's ("The fighters' own models").
 
-**What is remade** (`fighters.json`, the recipe):
+**What a remade fighter is** (`tools/port_models/README.md` for each
+part). The owner's rule (2026-11-18): the game's own design, cleaned, not
+a new one; a remade fighter reads as the PlayStation's model at a glance.
+Two passes went another way first (new hands and a face in relief on the
+hd mod's body; then a body painted anew with folds, a head and hands
+modelled whole) and were set aside as too far from the game's; they are
+in the history (`2dc5ef3a7`).
 
-- **the hands**: modelled in Blender (`tools/blender/fighter_parts.py`)
-  in the hand bone's frame, a palm, a wrist, four fingers of three bones
-  closed round the grip and a thumb across them, made one surface (a
-  voxel remesh), coloured by what each part is (Tatsumi's black
-  fingerless glove open on the back, skin, nails, the stud at the
-  wrist, the colours read from the game's own texture of the hand),
-  baked from 51,000 faces to 2,200 triangles a hand with a normal map
-  of the leather's grain, fitted into the box of the game's hand, the
-  other hand its mirror, each wholly on its bone;
-- **the body**: the hd mod's, its every vertex the game's own sum of
-  bones, pulled back to 6 units outside the game's surface wherever the
-  smoothing swelled it further (2,240 of Tatsumi's vertices), each to
-  the surface of its own bone (at the bind pose the feet cross);
-- **the face**: the front of the head subdivided once more and raised
-  or sunk under the game's own painting of it (`face.py`): the brows,
-  sockets under the painted eyes, cheekbones, lips and chin (and a nose
-  where the game's mesh has none: Tatsumi's has a wedge of its own,
-  and a ridge raised on it darkened it), found where the painting has
-  them (texels of the game's atlas in the recipe, taken onto the head
-  by its mesh); by 4 units at most, a relief the light shows and the
-  outline does not;
-- **the maps for the lighting**: beside the colour, in its layout, a
-  normal map (tangent space, OpenGL's green) and an occlusion-roughness-
-  metal map (glTF's: R, G, B; half the colour's size; the trim's gold
-  metal, cloth rough, skin and leather between). The material names them
-  as glTF does (`normalTexture`, `occlusionTexture`,
-  `metallicRoughnessTexture`); the port reads only the colour so far;
-- **the levels of detail**: `lod/NAME.lod1.glb` (the hd mod at one level
-  of subdivision, 5,700 triangles) and `.lod2.glb` (the game's own
-  mesh with the hands at 180 triangles, 1,200), checked as the first;
-  the port does not choose between them yet.
+- **the mesh**: the game's own, each triangle made four, twice, as a
+  smooth surface through the game's shape (Loop's subdivision, most of
+  its smoothing), each vertex keeping its own bone, so that it bends
+  exactly as the game's. Nothing is fitted (the hd mod's fitting swelled
+  it, and made the chest bulge), and no vertex is let far inside the
+  game's surface; small pieces (a strap, a shoulder's plate) are cut and
+  not smoothed, and a joint's stretched triangles are left the game's
+  own (no vertex half way along one moves as the game's triangle does);
+- **the texture**: the game's own, cleaned and sharp (its colours
+  gathered into kinds, the picture of kinds made eight times larger with
+  its staircases cut across, the tones of a kind run into one another),
+  read into **a layout of its own** (cut where the game's is, laid flat
+  in Blender at one scale, no island over another; the head in a
+  rectangle of its own with more texels, its skin more still);
+- **the maps for the lighting**: beside the colour, in its layout, an
+  occlusion-roughness-metal map by what each texel is made of (the
+  recipe's materials, by the game's colours) and a normal map of the
+  braid's roundness and a fine grain; no fold, no wrinkle;
+- **the levels of detail**: the same surface at a quarter and a
+  sixteenth of the triangles, in the same layout (one texture for all
+  three); the port does not choose between them yet.
 
-One atlas still: the body's texture above, the new pieces' below, the
-colour tables' picture grown to match, each new texel taking the
-entry, of the game's own on the hand it replaces, nearest in colour, so
-that the fight's fade-in and the tints reach the new hands too.
+The colour tables' picture is in the same layout, each texel the entry
+the game's texture had there, so that the fight's fade-in and the tints
+reach it as they reach the game's own.
 
-**Tatsumi, measured**: 25,600 triangles (the hd mod's 20,216); every
-check passes, the worst pose 69 pixels outside the game's outline from
-the side (0.23%, within tolerance), the hd mod itself failing at its
-feet (162 pixels, 0.89%). In `--fight tatara-shrine tatsumi utsusemi`
-with the file the program loads it (`gl run fighters loaded 1 failed
-0`) and draws it as any model; the renders of the game's, the hd mod's
-and the new model are in the main checkout's `tmp/models/renders/`.
+**Tatsumi, measured**: 16,304 triangles (4,076 and 1,019 at the lower
+levels), 9.7 million texels; every check passes, with nothing outside
+the game's outline and nothing of it uncovered in any of 339 poses. The
+renders of the game's and the new model are in the main checkout's
+`tmp/models/renders/M101-fable/`, and the passes as the owner saw them
+in `tmp/models/versions/` (`tools/model_viewer/`).
 
-**What is left**: the other fighters (the recipe and the face's texels
-for each, and the hands' colours where the game's texture is not to be
-read for them); the face's own texture painted anew (it is the game's
-4x upscale) and a head modelled whole; the clothing's folds and seams
-in the normal map rather than the texture's light; the port reading the
-normal and roughness maps (`lighting-core`, ROADMAP 14) and the levels of
-detail.
+**What is left** (the owner's list): the joints, the shoulders first and
+then the elbows, the hips and the knees, which bend as the game's do
+(a rigid piece each side and a few triangles stretched between) and
+want edge loops and weights of their own; the clipping (a collar, a
+sleeve, the hair through another part), which is the game's own and
+would be taken out motion by motion; the other fighters; the port
+choosing among the levels of detail.
 
 ### The effects
 

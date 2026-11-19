@@ -266,6 +266,31 @@ def main():
                 look = middle
                 tall = (hi.z - lo.z) + 0.15
                 wide = abs((hi - lo).dot(right)) + 0.3
+            if close and out:
+                # each model alone in its own picture (a neighbour's arm is
+                # not in the way), the pictures side by side
+                tiles = []
+                for k, fighter in enumerate(fighters):
+                    for other in fighters:
+                        for o in other[2]:
+                            o.hide_render = other is not fighter
+                    at = head_middles(fighter[2], close[0])
+                    scene.render.resolution_x = scene.render.resolution_y = size
+                    cam_data.ortho_scale = tall
+                    cam.location = (at[0] if at else look) + d * 6.0
+                    cam.rotation_euler = Matrix((right, d.cross(right), d)).transposed().to_euler()
+                    scene.render.filepath = os.path.join(out, 'f%04d_%s.%d.png' % (f, view, k))
+                    bpy.ops.render.render(write_still=True)
+                    tiles.append(scene.render.filepath)
+                for other in fighters:
+                    for o in other[2]:
+                        o.hide_render = False
+                path = os.path.join(out, 'f%04d_%s.png' % (f, view))
+                sheet(tiles, path, len(tiles))
+                for t in tiles:
+                    os.remove(t)
+                written.append(path)
+                continue
             aspect = max(0.4, min(6.0, wide / tall))
             scene.render.resolution_y = size
             scene.render.resolution_x = int(size * aspect)
