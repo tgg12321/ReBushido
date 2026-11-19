@@ -635,7 +635,9 @@ void port_ArenasStart(void) {
                  room);
         return;
     }
-    port_Log("arenas: no mod has an arena %s (%d arenas)\n",
+    /* --arena NAME, or --fight NAME with a name no stage has */
+    port_Log("arenas: no mod has an arena %s (%d arenas), and no stage of "
+             "the game is called so\n",
              g_port_arenas.asked, g_port_arenas.count);
     port_Quit(PORT_EXIT_USAGE);
 }

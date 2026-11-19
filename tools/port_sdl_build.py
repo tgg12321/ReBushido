@@ -622,7 +622,8 @@ def write_font(target):
 
 def copy_mods(target):
     """The mods the program ships into mods/ beside it, each folder as it
-    is in the repository and nothing else: the names of the folders."""
+    is in the repository and nothing else, and the sample arenas compiled:
+    the names of the folders."""
     names = []
     for name in sorted(os.listdir(SHIPPED_MODS)):
         source = os.path.join(SHIPPED_MODS, name)
@@ -645,12 +646,8 @@ def copy_mods(target):
         if os.path.isdir(dest):
             shutil.rmtree(dest)
         os.makedirs(os.path.join(dest, 'arenas'))
-        with open(os.path.join(dest, 'mod.txt'), 'w', encoding='utf-8', newline='
-') as f:
-            f.write('# made by tools/port_sdl_build.py from %s
-name = arena %s
-author = ReBushido
-'
+        with open(os.path.join(dest, 'mod.txt'), 'w', encoding='utf-8', newline='\n') as f:
+            f.write('# made by tools/port_sdl_build.py from %s\nname = arena %s\nauthor = ReBushido\n'
                     % (source, name))
         with open(os.path.join(dest, 'arenas', name + '.arena'), 'wb') as f:
             f.write(arena_compile.compile_arena(source, report=lambda text: None))
