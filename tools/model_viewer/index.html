@@ -86,6 +86,27 @@ function makeScene() {
   return scene;
 }
 
+// the console's picture: the texture's own texels, no filtering or mipmaps,
+// light worked out at the corners and run across the face (Gouraud), no
+// highlights, the 15-bit colours the console has
+function ps1Look(root) {
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    o.material = [].concat(o.material).map(m => {
+      const map = m.map;
+      if (map) { map.magFilter = THREE.NearestFilter; map.minFilter = THREE.NearestFilter; map.generateMipmaps = false; map.needsUpdate = true; }
+      const n = new THREE.MeshLambertMaterial({ map, alphaTest: m.alphaTest, side: m.side });
+      n.onBeforeCompile = sh => {
+        // light at the vertices, as the GTE did, then 5 bits a channel
+        sh.fragmentShader = sh.fragmentShader.replace('#include <dithering_fragment>',
+          '#include <dithering_fragment>\n  gl_FragColor.rgb = floor(gl_FragColor.rgb * 31.0 + 0.5) / 31.0;');
+      };
+      return n;
+    });
+    if (o.material.length === 1) o.material = o.material[0];
+  });
+}
+
 function applyLooks() {
   const wire = document.getElementById('wire').checked, flat = document.getElementById('flat').checked;
   for (const p of panes) p.root && p.root.traverse(o => {
@@ -112,7 +133,7 @@ async function loadFighter(f) {
   versions = await (await fetch('/api/versions/' + f)).json();
   const box = document.getElementById('choices'); box.innerHTML = '';
   // the game's, the hd mod's and the two newest are shown to start with
-  const start = new Set(['game', 'hd', ...versions.slice(-2).map(v => v.label)]);
+  const start = new Set(['original (PS1)', 'hd', ...versions.slice(-2).map(v => v.label)]);
   versions.forEach((v, i) => {
     const l = document.createElement('label');
     l.innerHTML = `<input type="checkbox" data-i="${i}" ${start.has(v.label) ? 'checked' : ''}> ${v.label}`;
@@ -127,7 +148,7 @@ async function loadFighter(f) {
 
 async function showChosen() {
   const chosen = [...document.querySelectorAll('#choices input:checked')].map(c => versions[+c.dataset.i]);
-  panes = chosen.map(v => ({ label: v.label, changed: v.changed, scene: makeScene(), root: null }));
+  panes = chosen.map(v => ({ label: v.label, changed: v.changed, ps1: !!v.ps1, scene: makeScene(), root: null }));
   document.getElementById('labels').innerHTML = panes.map(p => `<div>${p.label}<small>${p.changed}</small></div>`).join('');
   await Promise.all(chosen.map((v, i) => new Promise(done => loader.load(v.url, g => {
     // the file's root turns the game's space (y down) upright; the bind
@@ -143,6 +164,7 @@ async function showChosen() {
     g.scene.traverse(o => { if (o.isBone && /^bone\d\d$/.test(o.name)) bones[+o.name.slice(4)] = o; });
     panes[i].k = k; panes[i].bones = bones; panes[i].model = g.scene;
     panes[i].bind = { pos: g.scene.position.clone(), local: bones.map(b => [b.position.clone(), b.quaternion.clone(), b.scale.clone()]) };
+    if (v.ps1) ps1Look(g.scene);
     panes[i].root = holder; panes[i].scene.add(holder); applyLooks(); done();
   }, undefined, e => { say(v.label + ': ' + e); done(); }))));
   document.body.dataset.loaded = panes.filter(p => p.root).length;

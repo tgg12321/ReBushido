@@ -55,9 +55,15 @@ def versions(fighter):
     for path in sorted(glob.glob(os.path.join(TMP, VERSIONS.format(f=fighter))),
                        key=os.path.getmtime):
         found.append((os.path.basename(os.path.dirname(path)), path))
-    return [{'label': label, 'url': '/model/%s/%d' % (fighter, i),
+    out = [{'label': label, 'url': '/model/%s/%d' % (fighter, i),
              'changed': datetime.datetime.fromtimestamp(os.path.getmtime(path)).strftime('%Y-%m-%d %H:%M')}
-            for i, (label, path) in enumerate(found)], [p for _, p in found]
+            for i, (label, path) in enumerate(found)]
+    # the game's own model once more, drawn as the PlayStation drew it
+    for v in out:
+        if v['label'] == 'game':
+            out.insert(0, dict(v, label='original (PS1)', ps1=True))
+            break
+    return out, [p for _, p in found]
 
 
 def motions(fighter):
