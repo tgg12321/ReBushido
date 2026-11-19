@@ -515,6 +515,34 @@ PORT_SETTING(music_mods,
     .label = "Mods' music",
     .help = "A mod's music in place of the game's, where a mod has some")
 
+/* Versus the CPU and training go on to the game's own stage pages after
+ * the weapons, as versus mode does, and fight on the stage chosen there
+ * (include/port_play.h; docs/PLAYING.md, "A stage in every mode"); 0 lets
+ * them pick their stages as the original does. A gameplay switch: in a
+ * session the host's holds. */
+PORT_SETTING(stage_select_everywhere,
+    .name = "stage_select_everywhere", .value = "on",
+    .note = "versus the CPU and training choose their\n"
+            "stage on the stage select, as versus mode\n"
+            "does; off: the stages the original picks",
+    .menu = PORT_MENU_MODS, .rank = 50, .takes = PORT_TAKES_NOW,
+    .label = "Stage select in every mode",
+    .help = "Versus the CPU and training choose their stage after the "
+            "weapons, as versus mode does")
+
+/* Every fighter and mode the save keeps for progress is open, read so
+ * wherever the game reads its save, never written into it
+ * (include/port_play.h; docs/PLAYING.md, "Everything unlocked"). A
+ * gameplay switch: in a session the host's holds. */
+PORT_SETTING(unlock_all,
+    .name = "unlock_all", .value = "off",
+    .note = "every hidden fighter and slash mode open,\n"
+            "without writing them into the save",
+    .menu = PORT_MENU_MODS, .rank = 60, .takes = PORT_TAKES_NOW,
+    .label = "Unlock everything",
+    .help = "Every hidden fighter and slash mode open; the save keeps "
+            "only what you have won")
+
 /* The blanks in which the game waits for the disc behind its loading
  * picture are hurried through, not shown at the console's pace
  * (docs/PORT.md, "Quick loading"); 0 shows each as the console would.

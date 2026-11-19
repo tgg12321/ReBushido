@@ -55,6 +55,7 @@
 #include "port_profile.h"
 #include "port_remaster.h"
 #include "port_spu.h"
+#include "port_play.h"
 #include "port_stage_choice.h"
 #include "shared.h"
 #include "sdl_window.h"
@@ -2847,6 +2848,10 @@ void port_WindowApplyChoice(s32 choice) {
         port_SetRunAhead(g_port_settings.run_ahead);
     } else if (strcmp(name, "stage_kind") == 0) {
         port_SetStageKindDefault(g_port_settings.stage_kind);
+    } else if (strcmp(name, "unlock_all") == 0) {
+        port_SetUnlockAll(g_port_settings.unlock_all);
+    } else if (strcmp(name, "stage_select_everywhere") == 0) {
+        port_SetStageSelectEverywhere(g_port_settings.stage_select_everywhere);
     }
     /* the picture's size and filter on the card, the resolution, the
      * counter's corner and the dead zone are read each time they are
