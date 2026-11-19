@@ -48,9 +48,14 @@ extern void port_GlStageSetPropsOn(s32 on);
  * the ground, the ground's shadow does not darken it. */
 extern void port_GlStageDrawOccluders(u32 framebuffer);
 /* The mesh as the sun sees it, through `matrix` (a column after a column),
- * into the depth map bound now (gl_sun.h): the ground and the pieces the
- * picture draws. The triangles drawn. */
+ * into the depth map bound now (gl_sun.h): the whole ground and every
+ * piece that stands as it was taken down, whether the picture draws it
+ * or not, so that what the camera does not look at still casts into
+ * view. The triangles drawn. */
 extern u32 port_GlStageDrawSunCasters(const float *matrix);
+/* The box the whole mesh stands in, in the world's units; FALSE where
+ * there is no mesh. */
+extern s32 port_GlStageBox(float *lo, float *hi);
 /* The sun's maps drawn for this picture now, if the ground is the mesh's
  * and they have not been: for what reads them before the mesh is drawn
  * (the fighters' models, which come where their first primitive is). */

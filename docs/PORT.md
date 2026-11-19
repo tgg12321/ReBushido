@@ -7343,16 +7343,35 @@ card's time of each new pass (`sun`, and those after it) and holds them
 
 #### a. The sun's shadow maps (`shadows = map`)
 
-`src/port/gl/gl_sun.c`, `gl_sun.h`. The stage's sun gets three depth maps
-of 2,048 texels a side, nested about the camera (cascades): each holds a
-slice of the view -- 16 to 1,600 world units, to 5,000, to 16,000 -- in
-the smallest sphere round it, seen along the sun and reaching 6,000 units
-further towards it so that a roof or a tall wall outside the slice still
-casts into it.
+`src/port/gl/gl_sun.c`, `gl_sun.h`. The stage's sun gets four depth maps
+of 2,048 texels a side. Three are nested about the camera (cascades):
+each holds a slice of the view -- 16 to 1,600 world units, to 5,000, to
+16,000 -- in the smallest sphere round it, seen along the sun and reaching
+6,000 units further towards it (and a caster further still is held to the
+map's near end, not cut: `GL_DEPTH_CLAMP`). The fourth is the whole
+stage: the box the ground's mesh stands in, seen along the sun, each side
+of the map scaled to the box's own (`port_SunWhole`; 31 to 45 units a
+texel on the largest stages). It holds everything past 16,000 units, as
+far as the stage is drawn (`draw_distance max` draws all of it, 90,000
+units corner to corner on the largest), and as it never moves while the
+stage and its sun stand it neither crawls nor needs holding still. The
+last 5 per cent of each nested map's square is mixed into the next map's,
+so no line shows where one gives way to the other; past the whole stage's
+box there is nothing to shade.
 
-- **What casts.** The ground's mesh and the stage's pieces the picture
-  draws (`port_GlStageDrawSunCasters`; a cut-out texel casts nothing, so
-  a fence casts its own shape), and the fighters, weapons and cloths
+Before the fourth map (2026-11-19, the owner: "shadows don't seem to have
+far draw distance") nothing past 16,000 units had a sun shadow at all,
+the third map ending in a hard edge, while the stage is drawn to 90,000;
+and of the stage's pieces only those the frame queued cast, so a building
+beside or behind the camera, or past the game's own cells, threw no
+shadow into view.
+
+- **What casts.** The whole of the ground's mesh and every piece of the
+  stage that stands as it was taken down, whether the frame drew it or not
+  (`port_GlStageDrawSunCasters`, `PortStageView.standing`; a cut-out texel
+  casts nothing, so a fence casts its own shape; a prop cut down is the
+  game's own primitives and casts nothing), and the fighters, weapons and
+  cloths
   (`port_GlShadowDrawSunCasters`): what `shadows cast` is made of -- the
   fighters' own faces taken back into the world from the coprocessor's
   sums, or their models posed on the card -- unflattened, at the picture's
@@ -7364,8 +7383,22 @@ casts into it.
   reading the maps at its pixel (`sun_visible`, `PORT_GL_SUN_SHADER`). So
   a fighter's shadow climbs a wall and a step, a pillar's shadow crosses
   the floor and the fighter standing in it, and a fighter's raised arm
-  shades his own body. What the game still draws from its primitives
-  (effects, the HUD) is as it drew it; with the ground the game's own
+  shades his own body. A fighter drawn from the game's own polygons (no
+  model: his body, weapon and cloth) takes them too: each such primitive
+  is marked (`FLAG_WORLD`, gl_draw.c), the geometry shader puts its three
+  corners back into the world from where the projection put them and
+  their depths (`sun_screen_world`, the view the ground was drawn with,
+  `port_GlSunNoteView`) for its face's normal, and the fragment its own
+  pixel, read by the nearest map's four compared reads rather than its
+  soft search (`sun_visible_quick`); the game's light of it, its colour,
+  loses in the sun's shadow what a shadow takes from the floor (the
+  `shadows` strength), before the texture as the colour is. The frame's
+  lights (gl_lights.h) do not light these polygons yet: `lights_add` in
+  the scene's program, per pixel or at each corner in its geometry
+  shader, cost the scene's pass about 0.85 ms at the bench's 95th
+  centile even with no light to add (2026-11-19); it wants a program of
+  its own for the fighters' batches. What the game still draws
+  from its primitives otherwise (effects, the HUD) is as it drew it; with the ground the game's own
   tiles (`stage_mesh off`, or a stage the mesh is not measured good on),
   the picture falls back to `shadows cast`.
 - **What a shadow does to the light.** The game lights a surface with its

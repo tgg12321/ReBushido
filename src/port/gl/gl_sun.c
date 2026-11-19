@@ -90,7 +90,12 @@ typedef char GLchar;
     GL(void, glUniform1i, (GLint, GLint))                                      \
     GL(void, glUniform1f, (GLint, GLfloat))                                    \
     GL(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat))                  \
-    GL(void, glUniformMatrix4fv, (GLint, GLsizei, GLboolean, const GLfloat *))
+    GL(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat))         \
+        GL(void, glUniform2f, (GLint, GLfloat, GLfloat))                       \
+            GL(void, glUniformMatrix3fv,                                       \
+               (GLint, GLsizei, GLboolean, const GLfloat *))                   \
+                GL(void, glUniformMatrix4fv,                                   \
+                   (GLint, GLsizei, GLboolean, const GLfloat *))
 
 #define GL(result, name, args) static result(*name) args;
 PORT_GL_SUN_FUNCTIONS
@@ -98,11 +103,20 @@ PORT_GL_SUN_FUNCTIONS
 
 /* ---- the cascades ---- */
 
-/* Where each map's slice of the view begins and ends, in the world's units
- * from the camera along its view: the nearest the fight, the farthest the
- * stage as far as it is drawn. A fight is seen from 500 to 1,500 units. */
-static const float g_sun_split[PORT_GL_SUN_CASCADES + 1] = {
+/* Where each of the nested maps' slices of the view begins and ends, in
+ * the world's units from the camera along its view, the nearest the
+ * fight's: a fight is seen from 500 to 1,500 units. Past the last, to the
+ * end of the stage however far it is drawn, the last map holds the whole
+ * stage (port_SunWhole). */
+#define SUN_SLICES (PORT_GL_SUN_CASCADES - 1)
+static const float g_sun_split[SUN_SLICES + 1] = {
     16.0f, 1600.0f, 5000.0f, 16000.0f};
+/* What the map of the whole stage holds where there is no mesh to say
+ * how big the stage is: a slice on to the far corner of the largest
+ * stage's grid (32 cells of 2,000 units, 90,510 across its diagonal). */
+#define SUN_WHOLE_FAR 92000.0f
+/* The texels the map of the whole stage leaves about the stage's box. */
+#define SUN_WHOLE_MARGIN 4.0f
 /* How far towards the sun each map reaches past its own slice, so that a
  * tall wall or a roof outside the slice still casts into it. */
 #define SUN_BEHIND 6000.0f
@@ -134,6 +148,14 @@ static struct {
     float depth[PORT_GL_SUN_CASCADES];
     u32 pictures;
     u32 triangles;
+    /* the view the ground was last drawn with, a pixel and its depth
+     * turned back into the world's place by it (port_GlSunNoteView) */
+    s32 has_view;
+    GLfloat unview[9];
+    float eye[3];
+    float h;
+    float middle[2];
+    u32 stamp; /* moved on with the maps and the view */
 } g_sun;
 
 const char *port_GlSunStart(void *(*getproc)(const char *name)) {
@@ -214,6 +236,8 @@ u32 port_GlSunPictures(void) { return g_sun.pictures; }
 
 u32 port_GlSunTriangles(void) { return g_sun.triangles; }
 
+u32 port_GlSunStamp(void) { return g_sun.stamp; }
+
 /* ---- the arithmetic ---- */
 
 static float port_SunRoot(float value) {
@@ -280,8 +304,8 @@ static s32 port_SunDirection(float *travel) {
  * the camera moves. */
 static void port_SunCascade(s32 i, const float *eye, const float *forward,
                             float spread, const float *right, const float *up) {
-    float near = g_sun_split[i];
-    float far = g_sun_split[i + 1];
+    float near = i < SUN_SLICES ? g_sun_split[i] : g_sun_split[SUN_SLICES];
+    float far = i < SUN_SLICES ? g_sun_split[i + 1] : SUN_WHOLE_FAR;
     /* the sphere's middle on the view's axis, where the near and the far
      * corners of the slice are as far from it */
     float k2 = spread * spread;
@@ -331,6 +355,71 @@ static void port_SunCascade(s32 i, const float *eye, const float *forward,
     m[15] = 1.0f;
     g_sun.texel[i] = texel;
     g_sun.depth[i] = hi - lo;
+}
+
+/* The last map: the whole of the stage's box seen along the sun, the
+ * same at every picture while the stage and its sun stand (so nothing of
+ * it crawls, and nothing needs moving by whole texels), for everything
+ * past the nested maps' slices however far the stage is drawn. Its two
+ * sides are scaled each to the box's own, which a stage's ground,
+ * longer one way than the other, gives texels the narrower for. */
+static s32 port_SunWhole(s32 i, const float *right, const float *up) {
+    float lo[3];
+    float hi[3];
+    float least[3];
+    float most[3];
+    float half_x;
+    float half_y;
+    float texel;
+    GLfloat *m = g_sun.matrix[i];
+    s32 c;
+    s32 k;
+
+    if (!port_GlStageBox(lo, hi)) {
+        return FALSE;
+    }
+    for (c = 0; c < 8; c++) {
+        float corner[3];
+        float along[3];
+
+        corner[0] = (c & 1) ? hi[0] : lo[0];
+        corner[1] = (c & 2) ? hi[1] : lo[1];
+        corner[2] = (c & 4) ? hi[2] : lo[2];
+        along[0] = port_SunDot(right, corner);
+        along[1] = port_SunDot(up, corner);
+        along[2] = port_SunDot(g_sun.travel, corner);
+        for (k = 0; k < 3; k++) {
+            if (c == 0 || along[k] < least[k]) {
+                least[k] = along[k];
+            }
+            if (c == 0 || along[k] > most[k]) {
+                most[k] = along[k];
+            }
+        }
+    }
+    half_x = 0.5f * (most[0] - least[0]);
+    half_y = 0.5f * (most[1] - least[1]);
+    half_x += SUN_WHOLE_MARGIN * 2.0f * half_x / (float)PORT_GL_SUN_SIZE + 1.0f;
+    half_y += SUN_WHOLE_MARGIN * 2.0f * half_y / (float)PORT_GL_SUN_SIZE + 1.0f;
+    /* the depths a little past the box's, as the slices' are, so that a
+     * fighter's sword over the highest roof is not held to its end */
+    least[2] -= SUN_DEPTH_STEP;
+    most[2] += SUN_DEPTH_STEP;
+    for (k = 0; k < 3; k++) {
+        m[k * 4 + 0] = right[k] / half_x;
+        m[k * 4 + 1] = up[k] / half_y;
+        m[k * 4 + 2] = 2.0f * g_sun.travel[k] / (most[2] - least[2]);
+        m[k * 4 + 3] = 0.0f;
+    }
+    m[12] = -0.5f * (most[0] + least[0]) / half_x;
+    m[13] = -0.5f * (most[1] + least[1]) / half_y;
+    m[14] = -2.0f * least[2] / (most[2] - least[2]) - 1.0f;
+    m[15] = 1.0f;
+    texel =
+        2.0f * (half_x > half_y ? half_x : half_y) / (float)PORT_GL_SUN_SIZE;
+    g_sun.texel[i] = texel;
+    g_sun.depth[i] = most[2] - least[2];
+    return TRUE;
 }
 
 /* Whether a stage's own ground and pieces cast the sun's shadows: not on a
@@ -415,7 +504,9 @@ s32 port_GlSunPrepare(const PortStageView *view) {
     glPolygonOffset(SUN_OFFSET_FACTOR, SUN_OFFSET_UNITS);
     glViewport(0, 0, PORT_GL_SUN_SIZE, PORT_GL_SUN_SIZE);
     for (i = 0; i < PORT_GL_SUN_CASCADES; i++) {
-        port_SunCascade(i, eye, forward, spread, right, up);
+        if (i < SUN_SLICES || !port_SunWhole(i, right, up)) {
+            port_SunCascade(i, eye, forward, spread, right, up);
+        }
         glBindFramebuffer(GL_FRAMEBUFFER, g_sun.framebuffer[i]);
         glClear(GL_DEPTH_BUFFER_BIT);
         if (port_SunStageCasts()) {
@@ -434,11 +525,82 @@ s32 port_GlSunPrepare(const PortStageView *view) {
     port_GlForgetState();
     PORT_GPU_END();
     g_sun.is_ready = TRUE;
+    g_sun.stamp++;
     g_sun.pictures++;
     return TRUE;
 }
 
 /* ---- the readers ---- */
+
+void port_GlSunNoteView(const float *rotation, const float *camera, float h,
+                        float middle_x, float middle_y) {
+    /* the view in the world's units, its second row halved as the
+     * projection halves it (gl_post.c, POST_COMMON) */
+    float m[9];
+    float det;
+    s32 i;
+
+    for (i = 0; i < 9; i++) {
+        m[i] = rotation[i] / 4096.0f * (i / 3 == 1 ? 0.5f : 1.0f);
+    }
+    det = m[0] * (m[4] * m[8] - m[5] * m[7]) -
+          m[1] * (m[3] * m[8] - m[5] * m[6]) +
+          m[2] * (m[3] * m[7] - m[4] * m[6]);
+    if (h <= 0.0f || det == 0.0f) {
+        g_sun.has_view = FALSE;
+        return;
+    }
+    /* its inverse, a column after a column: the cofactors over the
+     * determinant, transposed */
+    g_sun.unview[0] = (m[4] * m[8] - m[5] * m[7]) / det;
+    g_sun.unview[3] = (m[2] * m[7] - m[1] * m[8]) / det;
+    g_sun.unview[6] = (m[1] * m[5] - m[2] * m[4]) / det;
+    g_sun.unview[1] = (m[5] * m[6] - m[3] * m[8]) / det;
+    g_sun.unview[4] = (m[0] * m[8] - m[2] * m[6]) / det;
+    g_sun.unview[7] = (m[2] * m[3] - m[0] * m[5]) / det;
+    g_sun.unview[2] = (m[3] * m[7] - m[4] * m[6]) / det;
+    g_sun.unview[5] = (m[1] * m[6] - m[0] * m[7]) / det;
+    g_sun.unview[8] = (m[0] * m[4] - m[1] * m[3]) / det;
+    for (i = 0; i < 3; i++) {
+        g_sun.eye[i] = camera[i];
+    }
+    g_sun.h = h;
+    g_sun.middle[0] = middle_x;
+    g_sun.middle[1] = middle_y;
+    g_sun.has_view = TRUE;
+    g_sun.stamp++;
+}
+
+void port_GlSunLocateScreen(u32 program, PortGlSunScreenAt *at) {
+    if (glGetUniformLocation == NULL) {
+        memset(at, 0xFF, sizeof(*at));
+        return;
+    }
+    port_GlSunLocate(program, &at->sun);
+    at->unview = glGetUniformLocation(program, "u_sun_unview");
+    at->eye = glGetUniformLocation(program, "u_sun_eye");
+    at->h = glGetUniformLocation(program, "u_sun_h");
+    at->middle = glGetUniformLocation(program, "u_sun_middle");
+    at->dark = glGetUniformLocation(program, "u_sun_dark");
+}
+
+void port_GlSunBindScreen(const PortGlSunScreenAt *at) {
+    if (!g_sun.is_started) {
+        return;
+    }
+    if (!g_sun.has_view) {
+        /* no place in the world to be had: nothing is lit by it */
+        glUniform1i(at->sun.on, 0);
+        glUniform1f(at->h, 0.0f);
+        return;
+    }
+    port_GlSunBind(&at->sun);
+    glUniformMatrix3fv(at->unview, 1, GL_FALSE, g_sun.unview);
+    glUniform3f(at->eye, g_sun.eye[0], g_sun.eye[1], g_sun.eye[2]);
+    glUniform1f(at->h, g_sun.h);
+    glUniform2f(at->middle, g_sun.middle[0], g_sun.middle[1]);
+    glUniform1f(at->dark, (GLfloat)port_GlShadowStrength() / 100.0f);
+}
 
 /* How many times its own share of the light a shadow takes from the
  * stage's sunlit floor, so that it takes the `shadows` strength of all of
@@ -531,8 +693,10 @@ void port_GlSunBind(const PortGlSunAt *at) {
     glUniform1i(at->on, 1);
     glUniformMatrix4fv(
         at->matrix, PORT_GL_SUN_CASCADES, GL_FALSE, g_sun.matrix[0]);
-    glUniform3f(at->texel, g_sun.texel[0], g_sun.texel[1], g_sun.texel[2]);
-    glUniform3f(at->depth, g_sun.depth[0], g_sun.depth[1], g_sun.depth[2]);
+    glUniform4f(at->texel, g_sun.texel[0], g_sun.texel[1], g_sun.texel[2],
+                g_sun.texel[3]);
+    glUniform4f(at->depth, g_sun.depth[0], g_sun.depth[1], g_sun.depth[2],
+                g_sun.depth[3]);
     glUniform3f(at->travel, g_sun.travel[0], g_sun.travel[1], g_sun.travel[2]);
     glUniform1f(at->soft, SUN_SOFT);
     glUniform1f(

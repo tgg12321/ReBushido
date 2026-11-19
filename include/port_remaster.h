@@ -571,6 +571,11 @@ typedef struct {
      * cut down, what remains of it moving -- is not among them and is
      * drawn from the game's own primitives. */
     u32 pieces[PORT_STAGE_PIECE_WORDS];
+    /* Which of the stage's pieces stand as they were taken down, whether
+     * this frame queued them or not: what casts the sun's shadows
+     * (gl_sun.h), where a piece the camera does not look at, or one past
+     * the game's own draw distance, still throws its shadow into view. */
+    u32 standing[PORT_STAGE_PIECE_WORDS];
 } PortStageView;
 
 /* One of the stage's pieces (StageNode, stage.h) as the stage's meshes

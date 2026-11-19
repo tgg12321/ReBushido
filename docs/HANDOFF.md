@@ -115,7 +115,16 @@ lighting overhaul".
   jitter at rest is gone with the mask. Four stages under a roof keep
   their ceiling from casting (`g_sun_stage_casts`). Fixed on the way: the
   ground's normal attribute was never enabled, so `smooth_light` never
-  reached the ground.
+  reached the ground. 2026-11-19: a fourth map holds the whole stage
+  past 16,000 units (before, nothing past it had a sun shadow), every
+  standing piece casts whether the frame drew it or not, the nested
+  maps blend into each other at their edges, and the fighters drawn from
+  the game's own polygons take the sun's shadows too (`FLAG_WORLD`).
+  Still wanting, of a modern shadow stack: the frame's lights on those
+  polygons (too dear in the scene's program: a program of their own),
+  contact shadows (the fighters' own polygons are not in the kept
+  depth), shadows of stage pieces left to the game's primitives, and the
+  four roofed stages' sun.
 - **b, lights with a place** (`lights = on`): the light list
   (`gl_lights.h`, filled by `gl_light_list.c` from the mods' `lights/` and
   the clash effect) per pixel on the ground, pieces and fighters, sorted

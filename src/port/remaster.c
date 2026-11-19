@@ -1383,8 +1383,15 @@ static void port_RemasterNotePieces(void) {
     }
     for (i = 0; i < PORT_STAGE_PIECE_WORDS; i++) {
         g_stage_view.pieces[i] = 0;
+        g_stage_view.standing[i] = 0;
     }
     pieces = stage_GetPieces(NULL);
+    for (i = 0; i < g_stage_piece_count; i++) {
+        if (port_RemasterPieceIsAsWas(&g_stage_piece_was[i], &pieces[i].node)) {
+            g_stage_view.standing[i >> OPEN_WORD_SHIFT] |=
+                1U << (i & OPEN_BIT_MASK);
+        }
+    }
     for (queue = g_render_queue; queue != g_render_queue_end; queue++) {
         StageNode *one = (StageNode *)*queue;
         s32 index;

@@ -339,6 +339,13 @@ typedef struct {
  * effects"), carried in the third bit of `info[3]` (INFO_SMOOTH). */
 #define FLAG_SMOOTH_EFFECT 512
 #define INFO_SMOOTH 4
+/* A fighter's own polygon -- his body, his weapon, his cloth -- given
+ * its place in the world back, so that the sun's maps darken it where
+ * something stands between it and the sun as they do the meshes
+ * (gl_sun.h, PORT_GL_SUN_SCREEN_SHADER). In the fourth bit of `info[3]`
+ * (INFO_WORLD). */
+#define FLAG_WORLD 1024
+#define INFO_WORLD 8
 
 /* A corner's `w`: the depth the coprocessor worked out, in these units.
  * Any number in proportion to it will do -- it is the perspective divide
@@ -515,6 +522,11 @@ static struct {
     GLint at_minify;
     GLint at_pass;
     GLint at_w_scale;
+    PortGlSunScreenAt at_sun;
+    s32 has_world; /* the batch holds a vertex with FLAG_WORLD */
+    /* port_GlSunStamp when the program was last given the maps and the
+     * view, plus one; 0 never */
+    u32 world_stamp;
     GLint at_depth_range;
     GLint at_depth_bias;
     GLint at_ground_slots;
@@ -739,6 +751,27 @@ static const char g_gl_geometry_text[] =
     "flat out ivec4 v_down;\n"
     "flat out ivec4 v_start;\n"
     "flat out ivec4 v_last;\n"
+    /* a fighter's own face's way in the world (FLAG_WORLD): its three
+     * corners put back where the projection took them from */
+    PORT_GL_SUN_SCREEN_SHADER "uniform float u_w_scale;\n"
+    "flat out vec3 v_world_normal;\n"
+    "vec3 world_normal() {\n"
+    "    if ((g_info[0].w & 8u) == 0u || u_sun_h <= 0.0) {\n"
+    "        return vec3(0.0);\n"
+    "    }\n"
+    "    vec3 a = sun_screen_world(g_place[0], gl_in[0].gl_Position.w\n"
+    "        * u_w_scale * exp2(float(g_info[0].z)));\n"
+    "    vec3 b = sun_screen_world(g_place[1], gl_in[1].gl_Position.w\n"
+    "        * u_w_scale * exp2(float(g_info[1].z)));\n"
+    "    vec3 c = sun_screen_world(g_place[2], gl_in[2].gl_Position.w\n"
+    "        * u_w_scale * exp2(float(g_info[2].z)));\n"
+    "    vec3 n = cross(b - a, c - a);\n"
+    "    float length_of = length(n);\n"
+    "    if (length_of <= 0.0) { return vec3(0.0); }\n"
+    "    n /= length_of;\n"
+    /* the side the camera sees */
+    "    return dot(n, u_sun_eye - a) < 0.0 ? -n : n;\n"
+    "}\n"
     "void same(int i) {\n"
     "    v_slot = g_slot[i];\n"
     "    v_flags = g_flags[i];\n"
@@ -760,6 +793,7 @@ static const char g_gl_geometry_text[] =
     "}\n"
     "void main() {\n"
     "    if ((g_info[0].w & 1u) == 0u) {\n"
+    "        vec3 normal = world_normal();\n"
     "        vec2 least = min(min(g_texture[0], g_texture[1]), g_texture[2]);\n"
     "        vec2 most = max(max(g_texture[0], g_texture[1]), g_texture[2]);\n"
     "        for (int i = 0; i < 3; i++) {\n"
@@ -774,6 +808,7 @@ static const char g_gl_geometry_text[] =
     "            v_down = ivec4(0);\n"
     "            v_start = ivec4(0);\n"
     "            v_last = ivec4(0);\n"
+    "            v_world_normal = normal;\n"
     "            gl_Position = gl_in[i].gl_Position;\n"
     "            EmitVertex();\n"
     "        }\n"
@@ -850,6 +885,7 @@ static const char g_gl_geometry_text[] =
     "        v_down = ivec4(down[0], down[1], down[2], down[3]);\n"
     "        v_start = ivec4(start[0], start[1], start[2], start[3]);\n"
     "        v_last = ivec4(across[4], down[4], start[4], whole);\n"
+    "        v_world_normal = vec3(0.0);\n"
     /* as the vertex shader places a corner; a flat polygon's w is 1 */
     "        vec2 at = q * u_scale + vec2(0.5);\n"
     "        gl_Position = vec4(at / u_target * 2.0 - vec2(1.0), 0.0, 1.0);\n"
@@ -859,7 +895,11 @@ static const char g_gl_geometry_text[] =
     "}\n";
 
 static const char g_gl_fragment_text[] =
-    "#version 330 core\n" PORT_GL_VRAM_SHADER "uniform vec2 u_target;\n"
+    "#version 330 core\n" PORT_GL_VRAM_SHADER
+        /* the sun's maps, for a fighter's own polygons (FLAG_WORLD) */
+        PORT_GL_SUN_SHADER PORT_GL_SUN_SCREEN_SHADER
+    "flat in vec3 v_world_normal;\n"
+    "uniform vec2 u_target;\n"
     "uniform vec2 u_scale;\n"
     "uniform int u_affine;\n" /* the texture flat, as the console */
     "uniform int u_exact;\n"  /* five bits a channel, with the dither */
@@ -1100,6 +1140,24 @@ static const char g_gl_fragment_text[] =
     /* the chip works in whole numbers: a colour that comes out of the
      * interpolation as 203.99999 is the 204 it means */
     "    if (u_exact != 0) { color = floor(color + vec3(0.5)); }\n"
+    /* A fighter's own polygon lit as the meshes are (FLAG_WORLD): the
+     * pixel and its depth are his place in the world, and his face's way
+     * the geometry shader's. The game's light of him, which the colour
+     * is, loses in the sun's shadow what a shadow takes from the floor
+     * beside him (u_sun_dark), before the texture, as the colour is.
+     * (The frame's lights, gl_lights.h, do not light these polygons:
+     * their loop in this program, per pixel or at each corner, cost the
+     * scene's pass a millisecond at the worst of the bench's fight even
+     * with no light to add.) */
+    "    if ((v_info.w & 8u) != 0u && (v_flags.w & 2u) == 0u\n"
+    "        && dot(v_world_normal, v_world_normal) > 0.0) {\n"
+    "        float world_deep = (u_w_scale / gl_FragCoord.w)\n"
+    "                         * exp2(float(v_info.z));\n"
+    "        vec3 world = sun_screen_world(\n"
+    "            (gl_FragCoord.xy - vec2(0.5)) / u_scale, world_deep);\n"
+    "        float seen = sun_visible_quick(world, v_world_normal);\n"
+    "        color *= 1.0 - u_sun_dark * (1.0 - seen);\n"
+    "    }\n"
     "    float shade = 1.0;\n"
     "    if ((v_flags.w & 1u) != 0u) {\n"
     "        uint texel = 0u;\n"
@@ -2218,6 +2276,13 @@ static void port_GlFlush(void) {
         g_gl.vertices, GL_STREAM_DRAW);
     port_GlSetUniforms();
     port_GlSetReplacement(&g_gl.state);
+    /* once a picture: the maps and the view are the same for every batch
+     * of it, and the units they are on are theirs alone */
+    if (g_gl.has_world && g_gl.world_stamp != port_GlSunStamp() + 1) {
+        port_GlSunBindScreen(&g_gl.at_sun);
+        g_gl.world_stamp = port_GlSunStamp() + 1;
+    }
+    g_gl.has_world = FALSE;
     /* The scene against the ground (gl_stage.h). The ground's mesh has
      * drawn its own depth into the buffer this frame, so a primitive of
      * the scene that stands behind a piece of ground is left out: what
@@ -2352,7 +2417,11 @@ static void port_GlPutVertex(
                   ? INFO_FLAT_RULE
                   : 0) |
              ((flags & FLAG_HELD) != 0 ? INFO_HELD : 0) |
-             ((flags & FLAG_SMOOTH_EFFECT) != 0 ? INFO_SMOOTH : 0));
+             ((flags & FLAG_SMOOTH_EFFECT) != 0 ? INFO_SMOOTH : 0) |
+             ((flags & FLAG_WORLD) != 0 ? INFO_WORLD : 0));
+    if ((flags & FLAG_WORLD) != 0) {
+        g_gl.has_world = TRUE;
+    }
     to->window[0] = (u8)prim->window_and_u;
     to->window[1] = (u8)prim->window_or_u;
     to->window[2] = (u8)prim->window_and_v;
@@ -2673,6 +2742,11 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     }
     if (port_GlIsOverGround(prim)) {
         flags |= FLAG_OVER_GROUND;
+    }
+    /* a fighter's own polygon takes the sun's shadows as the meshes do */
+    if (prim->is_fighter && prim->has_depth && !prim->is_effect &&
+        !prim->is_shadow && !g_gl.options.is_exact && port_GlSunIsOn()) {
+        flags |= FLAG_WORLD;
     }
     if (prim->is_effect && prim->is_textured &&
         port_RemasterEffects() == PORT_EFFECTS_SMOOTH &&
@@ -3685,6 +3759,14 @@ const char *port_GlStart(
         if (why != NULL) {
             port_GlSay("the sun casts no shadow maps: ", why);
         }
+        /* where the scene's own program reads them (FLAG_SUN) */
+        port_GlSunLocateScreen(g_gl.program, &g_gl.at_sun);
+        /* its samplers on their own units from the start: two of other
+         * kinds on one unit is no draw at all */
+        glUseProgram(g_gl.program);
+        glUniform1i(g_gl.at_sun.sun.map, PORT_GL_SUN_UNIT);
+        glUniform1i(g_gl.at_sun.sun.raw, PORT_GL_SUN_RAW_UNIT);
+        glUseProgram(0);
     }
     /* The lights of a frame beside the stage's own (gl_lights.h), before
      * the programs that read them are made. A card that cannot have them
