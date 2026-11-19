@@ -1,19 +1,44 @@
 {
   "about": "The remake's recipe of each fighter (tools/port_models/README.md): which pieces are made anew, and how. A fighter not listed takes the default.",
   "default": {
-    "replace": {"hand_a": 7, "hand_b": 11},
-    "hand": {"glove": null, "skin": null, "fingerless": false, "triangles": 2200},
+    "replace": {"hand_a": 7, "hand_b": 11, "head": 3},
+    "replace_joint": [3],
+    "hand": {"glove": null, "skin": null, "fingerless": false, "open_back": false},
     "pull_in_units": 6,
-    "texture_scale": 4
+    "atlas": 2048
   },
   "fighters": {
     "M101": {
-      "about": "Tatsumi: a blue school uniform with gold trim, black fingerless gloves",
-      "hand": {"glove": [16, 16, 18], "fingerless": true},
-      "face": {"about": "the texels of the game's atlas (512 by 256) where the painting has each feature; his mesh has a nose of its own",
-               "texels": {"eye_left": [459, 189], "eye_right": [489, 189], "nose_tip": [401, 133],
-                          "mouth": [401, 139], "chin": [401, 151]},
-               "depth": 0.8, "nose": false}
+      "about": "Tatsumi: a blue high-collared uniform with gold trim, black fingerless gloves",
+      "hand": {"glove": [16, 16, 18], "fingerless": true, "open_back": true},
+      "face": {
+        "about": "the face's painting, in the head bone's frame as the game's own painting of him lies in it: units across the face (his own left is +) and up it (the head's joint is 0); tools/port_models/facepaint.py",
+        "skin": [250, 174, 140],
+        "eye": {"inner": [10.5, 47.5], "outer": [53, 52.5], "top": [31, 59.6], "bottom": [35, 43.2],
+                "iris": [35.5, 52], "iris_radii": [8.8, 9.8], "iris_dark": [54, 10, 22], "iris_lit": [160, 30, 52], "lash": 4.6},
+        "brow": {"line": [[5, 57.2], [20, 63.5], [40, 71.5], [58, 76.5]], "widths": [4.5, 8.6, 6, 1.2]},
+        "nose": {"tip": [0, 12]},
+        "mouth": {"line": [[-18, -9.6], [-10, -7.3], [0, -6.7], [10, -7.3], [18, -9.6]]}
+      },
+      "hair": {
+        "about": "the hair's locks (tools/port_models/hair.py): the strands' colours, and each layer's count round the head, width (units), lift over the game's outline, and where its roots are (degrees up from level)",
+        "colors": {"dark": [14, 9, 7], "mid": [88, 48, 28], "light": [146, 90, 54]},
+        "layers": [
+          {"count": 30, "width": 34, "lift": 0.0, "root": 80},
+          {"count": 22, "width": 26, "lift": 3.5, "offset": 0.5, "root": 74, "past": [0, 6]}
+        ],
+        "fringe": [-8, 2], "part": 5
+      },
+      "materials": {
+        "about": "what the game's texture is made of: each texel is the material whose seed colour is nearest its own (RRGGBB, or RRGGBB@T for colour table T alone); the kinds are in body.py",
+        "cloth": {"kind": "cloth", "seeds": ["2020b4", "181862", "3131ff", "10009c"]},
+        "trim": {"kind": "braid", "seeds": ["9c9418", "8b7329", "cdbd29", "6a4110", "6a6a00@9", "393108@9", "625a00@9"]},
+        "lining": {"kind": "lining", "seeds": ["41006a@9", "000031@9", "310052@9"]},
+        "shoe": {"kind": "leather", "seeds": ["000000@10", "202020@10", "525252@10", "b4b4b4@10", "4a1800@10", "000000@4", "dedede@4"]},
+        "sole": {"kind": "rubber", "seeds": ["311000@16", "8b4108@16", "000000@16", "000000@22"]},
+        "shirt": {"kind": "linen", "seeds": ["dedede", "b4b4b4", "6a6a6a@15"]},
+        "skin": {"kind": "skin", "seeds": ["ffa47b", "cd6a4a", "733929"]}
+      }
     }
   }
 }

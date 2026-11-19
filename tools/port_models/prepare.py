@@ -81,9 +81,11 @@ def main():
     ap.add_argument('--ref', default='tmp/models/ref')
     ap.add_argument('--hd', default=None)
     ap.add_argument('--work', default='tmp/models/work')
+    ap.add_argument('--motions', default=None, help='the folder of tools/port_models/motions.py')
     args = ap.parse_args()
     hd_dir = args.hd or os.path.join(main_checkout(), 'tmp', 'mods', 'hd', 'models')
     r = recipe_of(args.name)
+    r.get('materials', {}).pop('about', None)
     out = os.path.join(args.work, args.name)
     os.makedirs(out, exist_ok=True)
     ref = fg.Model(os.path.join(args.ref, args.name + '.glb'))
@@ -97,6 +99,25 @@ def main():
     colors = colors_of(ref, dr, r)
     with open(os.path.join(out, 'pieces.json'), 'w', encoding='utf-8', newline='\n') as f:
         json.dump({'name': args.name, 'recipe': r, 'pieces': pieces, 'colors': colors}, f)
+    # the body, cut for its new texture layout (tools/blender/fighter_unwrap.py)
+    import body as bd
+    from assemble import RECTS
+    mesh, said = bd.body_mesh(ref, hd, r)
+    cut = bd.write_unwrap(mesh, os.path.join(out, 'unwrap_in.json'), RECTS['body'][2] / RECTS['body'][3])
+    print('prepare: the body: %d triangles (%d of the hd mod\'s left out), %d edges to cut along'
+          % (len(mesh.tris), said['removed'], len(cut['seams'])))
+    # the head as the game has it, seen from its middle (head.py), and
+    # the fighter standing (the first frame of a fight of his: where the
+    # neck is a neck, which at the bind pose it is not)
+    if 'face' in r:
+        import head
+        np.savez(os.path.join(out, 'head_shells.npz'), **head.shells(ref, hd))
+    clips = fg.motion_files(args.motions, args.name) if args.motions else []
+    if clips:
+        own = [c for c in clips if c.endswith('.0.motion.txt')] or clips
+        _, Rs, Ts = fg.read_motion(own[0])[0]
+        with open(os.path.join(out, 'stance.json'), 'w', encoding='utf-8', newline='\n') as f:
+            json.dump({'from': os.path.basename(os.path.dirname(own[0])), 'R': Rs.tolist(), 'T': Ts.tolist()}, f)
     with open(os.path.join(out, 'atlas_game.png'), 'wb') as f:
         f.write(ref.base_color_png())
     with open(os.path.join(out, 'atlas_hd.png'), 'wb') as f:
