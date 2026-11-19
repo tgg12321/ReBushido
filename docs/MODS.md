@@ -43,7 +43,9 @@ mods/
   weapons', by the weapon model's number, `W00.glb` to `W57.glb`, and the
   first-person view's tiny figures, `T00.glb` to `T26.glb`: PORT.md,
   "The fighters' own models"; `tools/fighter_hd.py` makes a whole mod of
-  them, the hd mod, from your disc), `skies/` (a stage's sky, below),
+  them, the hd mod, from your disc, and `tools/port_models/build.py` the
+  remade mod, the fighters made anew one by one and checked against the
+  game's own: PORT.md, "The fighters remade"), `skies/` (a stage's sky, below),
   `music/` (`.ogg` and `.wav`: "Music"), `stages/` (any ending:
   "Stages"), `weapons/` (`.txt`) and `motions/` (`.bbm`: "Weapons and
   motions"). Under a kind's folder the files may be in folders of any
@@ -967,6 +969,7 @@ the game loaded it, as the disc's is.
 | `tools/port_art.py` | the art mod, made from the player's disc |
 | `src/port/gl/gl_scene.c`, `gl_scene.h` | the stage's pages: the keys looked up as a stage loads, the pictures as one array, the shaders' part |
 | `tools/port_stage_hd.py` | the stages-hd mod, made from the player's disc |
+| `tools/port_models/`, `tools/blender/fighter_parts.py`, `fighter_scene.py` | the remade mod (fighters made anew and held to the game's skeleton, proportions and outline), made from the player's disc; `tests/rebushido/fighter_check.py` |
 
 The mods' files are none of the game's state (`config/port_state.txt`,
 `docs/NETPLAY.md`): the table is made once, as

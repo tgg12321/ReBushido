@@ -163,5 +163,6 @@ extern const char *port_GlFighterProblem(void);
  * `<folder>/<file>.pose.json`: what tools/fighter_export.py takes as a
  * bind pose (`--pose`). The number written. */
 extern s32 port_GlFighterWritePoses(const char *folder);
+extern s32 port_GlFighterWriteMotion(const char *folder);
 
 #endif /* PORT_GL_FIGHTER_H */

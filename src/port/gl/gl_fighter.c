@@ -3462,6 +3462,56 @@ static s32 port_GlFighterWritePosesNow(
     return written;
 }
 
+/* --gl-fighter-motion: each frame's bones of each fighter, a line a frame
+ * appended to FOLDER/<model>.motion.txt (the frame's serial, then each
+ * bone's nine turns and three places), for the model pipeline's checks
+ * and Blender's review of a model in motion (tools/port_models/). A frame
+ * is written once, however many pictures show it. */
+s32 port_GlFighterWriteMotion(const char *folder) {
+    static u32 written_serial = 0xFFFFFFFFu;
+    s32 written = 0;
+    s32 slot;
+
+    if (!g_fighter.is_started || g_fighter.latest_serial == written_serial) {
+        return 0;
+    }
+    written_serial = g_fighter.latest_serial;
+    for (slot = 0; slot < PORT_FIGHTER_SLOTS; slot++) {
+        const PortFighterView *view = &g_fighter.latest[slot];
+        const char *name;
+        char path[700];
+        FILE *f;
+        s32 i;
+        s32 k;
+
+        if (view->model_id < 0) {
+            continue;
+        }
+        name = port_GlFighterFileName(view->model_id);
+        if (name == NULL) {
+            continue;
+        }
+        snprintf(
+            path, sizeof(path), "%s/%s.%d.motion.txt", folder, name, (int)slot);
+        f = fopen(path, "a");
+        if (f == NULL) {
+            continue;
+        }
+        fprintf(f, "%u", written_serial);
+        for (i = 0; i < PORT_FIGHTER_BONES; i++) {
+            for (k = 0; k < 9; k++) {
+                fprintf(f, " %d", view->bone[i].m[k]);
+            }
+            fprintf(f, " %d %d %d", view->bone[i].t[0], view->bone[i].t[1],
+                    view->bone[i].t[2]);
+        }
+        fprintf(f, "\n");
+        fclose(f);
+        written++;
+    }
+    return written;
+}
+
 s32 port_GlFighterWritePoses(const char *folder) {
     snprintf(
         g_fighter.dump_folder, sizeof(g_fighter.dump_folder), "%s", folder);

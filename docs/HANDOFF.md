@@ -112,8 +112,10 @@ quick-boot disc flake (WSL's clock stepping backwards).
    13: the listen address, routers, the draw distance online).
 4. **Input lag** (ROADMAP 15): measured part by part (`port_bench.py
    --paced` now reports the lag in refreshes), then cut where safe.
-5. **Faces and hands** of the HD fighters; the chanbara, henchman and
-   practice tints never reached in a fight.
+5. **Faces and hands** of the HD fighters (ROADMAP 19: the pipeline and
+   its checks are in, `tools/port_models/`, and Tatsumi is remade; the
+   other fighters are left); the chanbara, henchman and practice tints
+   never reached in a fight.
 6. **New weapons**, **2D still only upscaled**, and the older items: as
    in ROADMAP.md.
 

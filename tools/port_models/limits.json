@@ -1,0 +1,25 @@
+{
+  "about": "What tools/port_models/check.py holds a fighter's model to (tools/port_models/README.md, 'The checks'). Units are the game's (a fighter stands about 1,800 of them).",
+  "skeleton_units": 0.5,
+  "skeleton_turn": 0.001,
+  "weight_sum": 0.01,
+  "bone_used_weight": 0.05,
+  "proportion_units": 30,
+  "proportion_min_vertices": 4,
+  "silhouette_units_per_pixel": 4,
+  "silhouette_tolerance_units": 24,
+  "silhouette_stray_pixels": 40,
+  "silhouette_stray_share": 0.004,
+  "silhouette_every": 12,
+  "self_intersection_frames": 6,
+  "self_intersection_share": 0.002,
+  "budgets": {
+    "lod0": {"triangles": 40000, "vertices": 32000},
+    "lod1": {"triangles": 12000, "vertices": 9000},
+    "lod2": {"triangles": 4000, "vertices": 3000},
+    "texture_pixels": 10000000,
+    "four_fighters_triangles": 160000,
+    "four_fighters_texture_bytes": 216000000
+  },
+  "lod_silhouette_tolerance_units": [24, 32, 48]
+}

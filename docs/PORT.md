@@ -6698,6 +6698,101 @@ fight, because no roster entry draws them. The rebuild
 cannot add what the game's mesh does not have: a face is still a few
 painted quads, and a fold of cloth is the texture's.
 
+### The fighters remade
+
+The hd mod is the game's own mesh made smooth: a face is still a few
+painted quads, a hand a block, and the smoothing swells it beyond the
+game's outline (by up to 42 units at Tatsumi's feet). ROADMAP 19 remakes
+the fighters one by one, by a pipeline with checks that fail
+(`tools/port_models/`, its README for the commands), into a mod of its
+own, `remade` (`tmp/mods/remade/`, order 30, over the hd mod), made from
+the player's disc in one command:
+
+    python tools/port_models/build.py --fighter M101
+
+**The game's motions as the port poses them.** `--gl-fighter-motion
+F[,FROM[,TO]]` (the headless program) writes each fighter's 21 bones'
+world matrices once a frame into `F/<model>.<slot>.motion.txt`; it draws
+nothing and changes nothing of the game. `tools/port_models/motions.py`
+runs fights straight from `--fight` (`--fight-2p`, both pads pressed by a
+script of strikes high, middle and low, stances, guards, runs, jumps
+and crouches, each fighter on each side), so that a fighter's motions,
+his being struck and his fall are all in it: for Tatsumi four fights,
+339 poses at every 12th frame. `tools/blender/fighter_scene.py` keys
+them on any model's armature in Blender (a joint's pose is the game's
+world matrix times the file's inverse bind matrix, exactly the port's)
+and renders models side by side through them.
+
+**The checks** (`tools/port_models/check.py`, limits in `limits.json`;
+`tests/rebushido/fighter_check.py` holds them to made-up models): the
+skeleton and bind pose exactly the game's; every vertex wholly on the
+bones and no bone the game moves left without one; each bone's piece no
+longer, wider or deeper than the game's by more than 30 units; the
+silhouette through every motion, from the front, the side and above,
+within 24 units of the game's outline (at most 40 pixels of 4 units, or
+0.4% of the outline, beyond it in any one view; the worst drawn and the
+strays told by their nearest bone); no more triangles of one surface
+through itself than the game's own model has; and the budgets, 40,000
+triangles a fighter (12,000 and 4,000 at the lower levels), ten million
+texels, four fighters 160,000 triangles and 216 MB of textures. The
+weapons are not remade: their models, lengths and grips are the game's
+files, and no hitbox is a model's ("The fighters' own models").
+
+**What is remade** (`fighters.json`, the recipe):
+
+- **the hands**: modelled in Blender (`tools/blender/fighter_parts.py`)
+  in the hand bone's frame, a palm, a wrist, four fingers of three bones
+  closed round the grip and a thumb across them, made one surface (a
+  voxel remesh), coloured by what each part is (Tatsumi's black
+  fingerless glove open on the back, skin, nails, the stud at the
+  wrist, the colours read from the game's own texture of the hand),
+  baked from 51,000 faces to 2,200 triangles a hand with a normal map
+  of the leather's grain, fitted into the box of the game's hand, the
+  other hand its mirror, each wholly on its bone;
+- **the body**: the hd mod's, its every vertex the game's own sum of
+  bones, pulled back to 6 units outside the game's surface wherever the
+  smoothing swelled it further (2,240 of Tatsumi's vertices), each to
+  the surface of its own bone (at the bind pose the feet cross);
+- **the face**: the front of the head subdivided once more and raised
+  or sunk under the game's own painting of it (`face.py`): the brows,
+  sockets under the painted eyes, cheekbones, lips and chin (and a nose
+  where the game's mesh has none: Tatsumi's has a wedge of its own,
+  and a ridge raised on it darkened it), found where the painting has
+  them (texels of the game's atlas in the recipe, taken onto the head
+  by its mesh); by 4 units at most, a relief the light shows and the
+  outline does not;
+- **the maps for the lighting**: beside the colour, in its layout, a
+  normal map (tangent space, OpenGL's green) and an occlusion-roughness-
+  metal map (glTF's: R, G, B; half the colour's size; the trim's gold
+  metal, cloth rough, skin and leather between). The material names them
+  as glTF does (`normalTexture`, `occlusionTexture`,
+  `metallicRoughnessTexture`); the port reads only the colour so far;
+- **the levels of detail**: `lod/NAME.lod1.glb` (the hd mod at one level
+  of subdivision, 5,700 triangles) and `.lod2.glb` (the game's own
+  mesh with the hands at 180 triangles, 1,200), checked as the first;
+  the port does not choose between them yet.
+
+One atlas still: the body's texture above, the new pieces' below, the
+colour tables' picture grown to match, each new texel taking the
+entry, of the game's own on the hand it replaces, nearest in colour, so
+that the fight's fade-in and the tints reach the new hands too.
+
+**Tatsumi, measured**: 25,600 triangles (the hd mod's 20,216); every
+check passes, the worst pose 69 pixels outside the game's outline from
+the side (0.23%, within tolerance), the hd mod itself failing at its
+feet (162 pixels, 0.89%). In `--fight tatara-shrine tatsumi utsusemi`
+with the file the program loads it (`gl run fighters loaded 1 failed
+0`) and draws it as any model; the renders of the game's, the hd mod's
+and the new model are in the main checkout's `tmp/models/renders/`.
+
+**What is left**: the other fighters (the recipe and the face's texels
+for each, and the hands' colours where the game's texture is not to be
+read for them); the face's own texture painted anew (it is the game's
+4x upscale) and a head modelled whole; the clothing's folds and seams
+in the normal map rather than the texture's light; the port reading the
+normal and roughness maps (`lighting-core`, ROADMAP 14) and the levels of
+detail.
+
 ### The effects
 
 **How the game draws them** (`src/main/eff.c`, `include/eff.h`). Blood,

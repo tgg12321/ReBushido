@@ -117,6 +117,11 @@ static struct {
      * (--gl-fighter-pose) */
     char pose_folder[512];
     u32 pose_at;
+    /* where each fighter's bones of every frame are written, and from
+     * and to which blank (--gl-fighter-motion) */
+    char motion_folder[512];
+    u32 motion_from;
+    u32 motion_to;
     /* faces one frame has and the other not, moved by their points
      * (gl_tween.c, port_TweenPlaceUnpaired), over the pairs checked */
     u32 going;
@@ -179,6 +184,9 @@ static const char g_usage[] =
     "                 moved between frames; and their textures smoothed\n"
     "  --gl-fighter-pose F,N  each fighter's bones at blank N, into\n"
     "                 F/<model>.pose.json (tools/fighter_export.py --pose)\n"
+    "  --gl-fighter-motion F[,FROM[,TO]]  each fighter's bones of every\n"
+    "                 frame, into F/<model>.<slot>.motion.txt\n"
+    "                 (tools/port_models/)\n"
     "  --gl-exact     draw as the console: the corners where it held\n"
     "                 them, the texture flat, five bits a channel with\n"
     "                 the chip's dither. For the comparison at scale 1\n"
@@ -1108,6 +1116,11 @@ static void port_GlBlank(u32 blank) {
         fprintf(stderr, "gl blank %u fighter poses %d\n", blank,
                 port_GlFighterWritePoses(g_run.pose_folder));
     }
+    /* ... and of every frame, for the model pipeline (tools/port_models/) */
+    if (g_run.motion_folder[0] != 0 && blank >= g_run.motion_from &&
+        blank <= g_run.motion_to) {
+        port_GlFighterWriteMotion(g_run.motion_folder);
+    }
     if (g_run.tween > 1 && port_TweenGeneration() != g_run.generation) {
         g_run.generation = port_TweenGeneration();
         port_GlTweenPhases(blank);
@@ -1366,6 +1379,17 @@ int main(int argc, char **argv) {
 
             g_run.pose_at = comma != NULL ? (u32)atoi(comma + 1) : 600;
             snprintf(g_run.pose_folder, sizeof(g_run.pose_folder), "%.*s",
+                     comma != NULL ? (int)(comma - where) : (int)strlen(where),
+                     where);
+        } else if (!strcmp(word, "--gl-fighter-motion")) {
+            const char *where = argv[++i];
+            const char *comma = strchr(where, ',');
+            const char *second = comma != NULL ? strchr(comma + 1, ',') : NULL;
+
+            g_run.motion_from = comma != NULL ? (u32)atoi(comma + 1) : 0;
+            g_run.motion_to =
+                second != NULL ? (u32)atoi(second + 1) : 0xFFFFFFFFu;
+            snprintf(g_run.motion_folder, sizeof(g_run.motion_folder), "%.*s",
                      comma != NULL ? (int)(comma - where) : (int)strlen(where),
                      where);
         } else if (!strcmp(word, "--smooth-light")) {
