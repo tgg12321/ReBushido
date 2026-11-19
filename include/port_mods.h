@@ -26,6 +26,7 @@ enum {
     PORT_MOD_WEAPONS,  /* a weapon's numbers, .txt (port_weapons.h) */
     PORT_MOD_MOTIONS,  /* a motion file, .bbm (port_discfiles.h) */
     PORT_MOD_ARENAS,   /* a custom arena, .arena (port_arenas.h) */
+    PORT_MOD_LIGHTS,   /* a stage's lights, .txt (port_lights.h) */
     PORT_MOD_KINDS
 };
 
@@ -78,6 +79,11 @@ extern s32 port_ModsCount(s32 kind);
  * order that has one, or NULL. The key is as above: small letters, no
  * ending. */
 extern const char *port_ModFind(s32 kind, const char *key);
+/* Every mod's file of this kind and key, not only the last one's: the
+ * `place`-th from 0 in the order the mods are read, the first mod's
+ * first, for a kind whose files add to one another rather than stand in
+ * for each other (a stage's lights, port_lights.h). NULL past the last. */
+extern const char *port_ModFindEach(s32 kind, const char *key, s32 place);
 /* The file of a kind at `place`, from 0, in the order the mods were read:
  * TRUE and its key and path, or FALSE past the last. */
 extern s32 port_ModFileOf(

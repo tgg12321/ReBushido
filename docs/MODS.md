@@ -45,6 +45,7 @@ mods/
   first-person view's tiny figures, `T00.glb` to `T26.glb`: PORT.md,
   "The fighters' own models"; `tools/fighter_hd.py` makes a whole mod of
   them, the hd mod, from your disc), `skies/` (a stage's sky, below),
+  `lights/` (a stage's lights, `.txt`: "Lights"),
   `music/` (`.ogg` and `.wav`: "Music"), `stages/` (any ending:
   "Stages"), `arenas/` (`.arena`: "Custom arenas"), `weapons/` (`.txt`)
   and `motions/` (`.bbm`: "Weapons and motions"). Under a kind's folder the files may be in folders of any
@@ -545,6 +546,137 @@ mods/
 - Only the stages that have a sky use one: a hall or the cavern keeps
   the game's colour whatever the mods say. The log says which picture
   each stage took (`sky: stage N is the mod's picture ...`).
+
+## Lights
+
+The remastered picture lights a stage with lights that have a place --
+a torch, a lantern, a fire -- beside the stage's sun and its colour of
+the dark, which stay the stage's mood (PORT.md, "Where the lights come
+from"). A stage's lights are **a file of every mod's, read in the mods'
+order**, each one adding to the lights of those before it, changing
+them or putting them out: unlike every other kind, a later mod's file
+does not stand in for an earlier one's.
+
+```
+mods/
+  lanterns/
+    mod.txt              order = 10
+    lights/
+      stage_02.txt       Shainto HQ's lights
+```
+
+- The key is `stage_NN`, as the skies': the stage's number in two
+  digits (`STAGE_NAMES` of `tools/port_remaster_prove.py`).
+- The program ships one mod of them, `mods/lights/` (order -100, under
+  yours): the game's own flames lit on the nine stages that have them
+  and the lamps of two more (below). `stage_lights = off` puts every stage's lights out
+  ([`PLAYING.md`](PLAYING.md)); `effect_lights` is the fight's flashes',
+  which are no file's.
+- The log says what each stage's files came to (`lights: stage 2 has 1
+  lights of 1 files`) and any line not used, with why.
+
+### The file
+
+Lines of `name = value`; `#` after a space begins a comment, but for a
+colour (`#FF9442`). A light is a block that begins `[light NAME]`:
+
+```
+format = 1                # this program reads no other
+
+[light lantern_gate]      # a name of one word, at most 31 letters
+kind = point              # point, or spot: a cone
+at = 1500 -1200 -3000     # where, in the world's units; y runs DOWN
+color = #FFB060           # or three numbers of 0 to 255
+intensity = 0.6           # 1 lights a white wall facing it, close by, to its own
+                          # colour, as a noon sun does; a torch 0.3 to 0.8
+radius = 3500             # how far it reaches; nothing farther is lit
+flicker = 0.3             # 0 steady to 1: how much of it flickers
+shadow = yes              # asks to cast shadows (the strongest few do)
+direction = 0 1 0         # a spot's: which way it points (down)
+cone = 30 45              # a spot's: full inside 30 degrees, none past 45
+on = stage                # what it is fastened to (below)
+```
+
+Everything but the name may be left out: a light is a white point of
+intensity 0.5 and radius 3,000 at 0, 0, 0 of the stage, steady, casting
+no shadow, a spot pointing down with a cone of 30 and 45 degrees.
+
+**How bright.** `intensity = 1` lights a white surface facing the light,
+close to it, to its own texture's colour: the game's light byte of 128,
+about a stage's noon sun. A torch, a lantern or a lamp near the
+fighters sits well below that, 0.3 to 0.8, and `radius` does the
+falling off; only a flash goes near 1 or past it (the clash's is 1.5,
+`effect_lights`). The shipped files go from 0.3 (a candle at a grave)
+to 0.7 (the ferry dock's lamp, high up).
+
+| `on =` | `at` is | |
+|---|---|---|
+| `stage` | the world | where it stands |
+| `flames` | from each of the stage's own flames (the game's torches and fires, `eff.c`), in the world's axes | one light for every flame the game draws, each a little above the flame's foot, a fire reaching half as far again as a torch |
+| `flame N` | the same, from flame N alone (0 to 4) | |
+| `fighter N` | from the middle of fighter 1's or 2's body, in the world's axes | a light that walks with him: a lamp he carries |
+| `fighter N bone B` | in bone B's own space (0 to 20), turned with it | a glow on a hand or a head |
+| `weapon N` | in the N-th weapon drawn this frame's own space (from 0), turned with it | a glowing blade, a lantern on a staff |
+| `piece N` | in the stage's piece N's own space (from 0, the pieces as `gl_stage.c` reads them) | a lamp on a prop that falls when it is cut |
+
+A light fastened to something not in the frame (a fighter not drawn, a
+weapon past the last) is not lit that frame.
+
+**Layered.** A block of a name the files before it already gave
+**changes that light**: only the lines it says, the rest as they were.
+`remove NAME` puts one light out; `clear` puts out every light the files
+before it gave, so a mod's own set stands alone. At most 64 lights a
+stage, all the files together.
+
+```
+# mods/blue-flames/lights/stage_02.txt: the built-in torches made blue
+[light flames]
+color = #4080FF
+```
+
+### The lights the program ships
+
+`src/port/mods/lights/lights/`, one file a stage that has a light of its
+own to give, placed by hand with `tools/port_lights.py`:
+
+- `dump` loads every stage on the GL prover with `--dump-textures`, so
+  that the program writes the stage's mesh as it built it -- each
+  vertex in the world with its texture point, page and colour table --
+  with video memory and the stage's textures (`meshes/stage_NN.bin`),
+  and the stage's flames from the run's log (`flames.txt`); `--shots N`
+  adds pictures of the fight's tour, six to a sheet, with the lights on.
+- `find` reads the meshes, looks at every face's texels as they are
+  drawn and gathers what looks lit from within (bright and warm, or
+  bright and white) into drafts, beside the game's flames.
+- `check` runs the test that holds the shipped files: every line used,
+  every light on the stage inside the stage's bounds (`BOUNDS`, measured
+  from the meshes by `find --bounds`).
+
+Nothing of the disc is in the files: the flames' places are the game's
+own, read as it runs (`on = flames`), and what is placed by hand is
+numbers of where.
+
+What the program ships, each looked at in the pictures of its tour:
+
+| Stage | Lights | |
+|---|---|---|
+| 2 Shainto HQ | `on = flames`: 4 | candles on stands, and two before the Buddha |
+| 3 Tatara shrine | `on = flames`: 4 | fire baskets on the deck's railing |
+| 6 Tatara shrine path | `on = flames`: 4 | stone lanterns |
+| 8 Outside Meikyokan | `on = flames`: 2 | fire baskets by the dojo's door |
+| 20 Kabuki stage | `on = flames`: 4 | torches along the walkway |
+| 22 Ferry dock | 1 spot | the tall street lamp at the quay's edge, lit |
+| 23 Shainto gate | `on = flames`: 2 | small fires on the gate's deck |
+| 24 Purple cavern | `on = flames`: 4 | candles by the iron gate |
+| 30 Building parking lot | 5 spots | the fluorescent lights down the ceiling |
+| 31 Shainto cemetery | `on = flames`: 2 | candles at two graves |
+| 33 Team battle 2 | `on = flames`: 4 | fire baskets at the square's corners |
+
+None on the rest: lit by day, or by the moon (the castle rooftop), or
+with lamps that are not lit (the bus stop's and the outside of the
+Meikyokan's posts), or with sources too small to place from the meshes
+yet (the red warning lights of the building rooftop's mast, the
+lighthouse's lamp, which no fight's camera sees).
 
 ## Music
 
@@ -1159,6 +1291,10 @@ the game loaded it, as the disc's is.
 | `include/port_mods.h`, `src/port/mods.c` | the folder read, the manifests, the table (`port_ModFind(kind, key)`), the texture's key |
 | `include/port_png.h`, `src/port/png.c` | a PNG reader of every kind but the interlaced, with its own inflate, and the plainest PNG writer; no C library |
 | `src/port/gl/gl_sky.c` | a stage's sky (`PORT_MOD_SKIES`), looked for once a stage |
+| `include/port_lights.h`, `src/port/lights.c` | a stage's light files (`PORT_MOD_LIGHTS`) read and layered (`port_ModFindEach`), and what the effects say they lit up (`eff.c`, under `RB_REMASTER_VIEW`) |
+| `src/port/gl/gl_light_list.c` | a frame's lights made from them, each on what it is fastened to, into the renderer's list (`gl_lights.h`); the mesh's dump for `tools/port_lights.py` |
+| `tests/port/lights.c`, `lights.py` | a light file and its mistakes, two mods layered, the game's notes, and the shipped files held to their stages' bounds |
+| `tools/port_lights.py`, `src/port/mods/lights/` | the stages' lights the program ships, and what helps place them |
 | `src/port/gl/gl_replace.c` | the keys looked up per primitive and per picture, the mods' PNGs given to the card, the textures written out |
 | `src/port/gl/gl_draw.c` | the hooks: a batch's replacement texture (`PortGlState`), the shader's `u_replaced`, the picture's in the stretch of video memory |
 | `src/port/host_*.c` | `port_HostListFolder`, `port_HostMakeFolder` |

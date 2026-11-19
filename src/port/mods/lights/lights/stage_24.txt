@@ -1,0 +1,12 @@
+# The purple cavern (stage 24): candles by the iron gate in the dark of
+# the cave, the game's own flames. Their yellow against the cave's purple
+# is the only warm light there is.
+format = 1
+
+[light candles]
+on = flames
+color = #FFC060
+intensity = 0.45
+radius = 2800
+flicker = 0.25
+shadow = yes

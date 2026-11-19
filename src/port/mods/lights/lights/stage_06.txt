@@ -1,0 +1,12 @@
+# The path to the Tatara shrine (stage 6): stone lanterns along the path
+# at night, a small flame in each, the game's own: a dim, warm light that
+# the stone's openings let out.
+format = 1
+
+[light stone_lanterns]
+on = flames
+color = #FFA850
+intensity = 0.4
+radius = 2600
+flicker = 0.25
+shadow = yes

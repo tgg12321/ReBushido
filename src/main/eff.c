@@ -257,10 +257,22 @@ enum {
  * them is written down here (port_gte.h). */
 #define EFF_NOTE_STORED(first, words, count)                                   \
     port_GteNoteStored(PORT_GTE_SXY0 + (first), (words), (count))
+/* What the effects light up, for the remastered picture's lights
+ * (port_lights.h): the frame's effects begun, the game's own point light,
+ * a glowing quad, the stage's flames. Read, never written. */
+#define EFF_NOTE_EFFECTS() port_LightsNoteEffects()
+#define EFF_NOTE_FLASH(position, color, frames)                                \
+    port_LightsNoteFlash((position), (color), (frames))
+#define EFF_NOTE_GLOW(flash, position) port_LightsNoteGlow((flash), (position))
+#define EFF_NOTE_FLAMES(flames) port_LightsNoteFlames(flames)
 #else
 #define EFF_NOTE_SPRITE(prim, center, number, depth, name, piece)
 #define EFF_NOTE_CORNERS(prim, points, name, piece)
 #define EFF_NOTE_STORED(first, words, count)
+#define EFF_NOTE_EFFECTS()
+#define EFF_NOTE_FLASH(position, color, frames)
+#define EFF_NOTE_GLOW(flash, position)
+#define EFF_NOTE_FLAMES(flames)
 #endif
 
 /* The two quad buffers, one a frame. */
@@ -546,6 +558,7 @@ void eff_Update(s16 *view_angles, s32 *view_position) {
     s32 quad_count;
     s32 effect;
     eff_BindScratch(view_angles, view_position);
+    EFF_NOTE_EFFECTS();
     for (effect = 0; effect < EFF_COUNT; effect++) {
         SET_PTR(g_eff_request->alive_dest, &g_eff_alive[effect]);
         if (g_eff_alive[effect]) {
@@ -560,6 +573,8 @@ void eff_Update(s16 *view_angles, s32 *view_position) {
         light_DisablePointLight();
         g_eff_light_frames = 0;
     }
+    EFF_NOTE_FLASH(
+        &g_eff_light_position, g_eff_light_color, g_eff_light_frames);
     quad_count = g_eff_next_prim - g_eff_prims;
     if (quad_count >= EFF_PRIM_COUNT) {
         printf("eff prim over :%d \n", quad_count - EFF_PRIM_COUNT);
@@ -1071,6 +1086,7 @@ void eff_DrawFlames(s16 *view_angles, s32 *view_position) {
     /* in 256ths, as the sizes on screen are worked out */
     *g_eff_screen_dist = ReadGeomScreen() << 8;
     *g_eff_tpage = EFF_PAGE_ADD | EFF_PAGE_RIGHT;
+    EFF_NOTE_FLAMES(g_eff_flames);
     for (i = 0; g_eff_flames[i].x_bits & FLAME_PRESENT; i++) {
         switch (FLAME_KIND(g_eff_flames[i])) {
         case FLAME_FIRE_SMALLER:
@@ -2364,6 +2380,7 @@ static u8 eff_DrawFlash(s32 flash) {
         vertex, g_eff_screen_xy, depth_cue_out, g_eff_rtp_flag, g_eff_depth);
     EFF_NOTE_STORED(2, g_eff_screen_xy, 1);
     *g_eff_depth = *g_eff_depth ? *g_eff_depth << 2 : 1;
+    EFF_NOTE_GLOW(flash, &g_eff_flash_positions[flash]);
 
 again:
     *g_eff_base_width = FLASH_SIZE;

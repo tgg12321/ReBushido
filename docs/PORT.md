@@ -6835,6 +6835,75 @@ shaded across the fold, and every flat floor is the colour it was. It is
 mostly flat. Nothing measurable in the time a frame takes on Mesa's
 software renderer (2,228 against 2,226 microseconds).
 
+### Where the lights come from
+
+The renderer's list of a frame's lights (`gl_lights.h`) is filled once a
+game frame by `src/port/gl/gl_light_list.c`, from the backend's `begin`
+(`gl_draw.c`), out of three sources, none of them the game's state
+(`src/port/lights.c` is `outside` in `config/port_state.txt`; nothing
+the game computes reads any of it):
+
+- **The stage's light files** (`stage_lights`): every mod's
+  `lights/stage_NN.txt`, layered in the mods' order (MODS.md, "Lights";
+  `port_ModFindEach`), read once when the stage is first drawn. Each
+  light is placed each frame on what it is fastened to: the world, a
+  fighter's body or bone (`port_GetFighterView`), a weapon
+  (`port_GetFighterWeapons`), a piece of the stage
+  (`port_RemasterStagePieces`), or the stage's own flames.
+- **The game's flames.** Nine stages have flames of their own -- the
+  torches and fires `eff_DrawFlames` draws as sprites, two or four a
+  stage, from the stage's sound file (formats/STAGE_BIN.md, "Billboard
+  list"). `eff_DrawFlames` tells `port_LightsNoteFlames` the list each
+  frame it draws them, so a light file's `on = flames` puts a light at
+  each, the program's own files carry no place of the disc's, and a mod
+  that moves the flames (a stage's file) moves their lights. A light is
+  put half the flame's height above its foot (`FLAME_..._HEIGHT`), a
+  fire's reaching half as far again as a torch's.
+- **The fight's flashes** (`effect_lights`). The game has a point light
+  of its own: a clash, a hit, a lock and a shot ask for `EFF_LIT`, and
+  for ten frames `eff_Update` lights the fighters by a light at the
+  effect's place in its colour (white for a shot, rose for a hit, pale
+  blue for a lock, pale red for a clash: `g_eff_light_color`). The end
+  of `eff_Update` tells `port_LightsNoteFlash` where it is, its colour
+  and the frames it has left, and the list gets a light of that colour,
+  of intensity 1.5 falling to nothing with the game's own count, reaching
+  4,500 units, asking to cast shadows: the flash where blades meet
+  lights the ground, the walls and both fighters, and is gone when the
+  game's own light goes. Each glowing quad `eff_DrawFlash` draws (the
+  sparks of a clash, a hit's flash, a lock's star, the streaks) is told
+  to `port_LightsNoteGlow` and becomes a small light in its colour at
+  its place (intensity 0.4, 1,600 units).
+
+What the game is read for is read where it is already being computed,
+under `RB_REMASTER_VIEW` beside the effects' other notes; nothing of the
+game's is written. Under rollback the notes of a frame run again are
+written again, and the list is whatever the last frame said. A light's
+`id`, which pairs it between two frames and seeds its flicker, is the
+stage's number and its place in the files for a light of the files
+(with the flame's for `on = flames`), the event's count for a flash
+and the quad's slot for a glow.
+
+Where no stage has been drawn for 30 frames (the menus) or no effects
+have run for 30 (a pause), the lists of those sources are empty. The
+GL prover keeps both off unless `--stage-lights on` and
+`--effect-lights on` are given, so that the provers hold the console's
+lighting.
+
+**Finding them.** `tools/port_lights.py` (MODS.md, "The lights the
+program ships") dumps each stage's mesh, video memory and textures as the
+program built them (`port_GlLightListDumpMesh`, with `--dump-textures`),
+reads every face's texels as they are drawn (the vertex's colour times
+the texel, its colour table found where the stage loaded it, not on the
+row the fog writes over), and gathers what looks lit from within into
+drafts; and takes pictures of each stage's tour with the lights on.
+What it found: the texels alone tell little -- the game lit its night
+stages by their vertex colours, and a white line on the floor or a
+whitewashed wall is as bright as a lamp -- so its drafts are read
+beside the pictures. Two of them were lamps: the parking garage's
+ceiling fittings (five, 8,000 units apart) and the ferry dock's street
+lamp. The other nine stages with lights are the game's own flames
+(MODS.md, "The lights the program ships", has the table).
+
 ### What the old branch's lighting came to
 
 Branch `worktree-agent-adce6b210aa0a05f8` (10bd277dd) had four lighting
