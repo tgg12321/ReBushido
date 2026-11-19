@@ -10,7 +10,7 @@ sample's source, which is the repository's own."""
 import contextlib
 import io
 import os
-import tempfile
+import shutil
 
 import arena_compile
 import arena_validate
@@ -82,8 +82,14 @@ def run(checks):
     checks.equal('five textures, each with two smaller copies', len(textures['tims']), 15)
 
     # ---- the validator ----
-    with tempfile.TemporaryDirectory() as folder:
+    # a folder of its own, removed after (tempfile is not to be had here:
+    # tests/random.py stands in the way of the library's)
+    folder = os.path.join(ROOT, 'build', 'tests', 'arena-files')
+    os.makedirs(folder, exist_ok=True)
+    try:
         validator(checks, folder, data, ground_bytes, ground)
+    finally:
+        shutil.rmtree(folder)
 
 
 def validator(checks, folder, data, ground_bytes, ground):
