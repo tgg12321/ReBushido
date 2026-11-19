@@ -6764,6 +6764,9 @@ in the history (`2dc5ef3a7`).
   read into **a layout of its own** (cut where the game's is, laid flat
   in Blender at one scale, no island over another; the head in a
   rectangle of its own with more texels, its skin more still);
+- **the face**: the game's own texels, each a square block (eight
+  across for Tatsumi), neither cleaned nor smoothed: the owner's rule
+  for every fighter (2026-11-19), the face stays pixelated;
 - **the maps for the lighting**: beside the colour, in its layout, an
   occlusion-roughness-metal map by what each texel is made of (the
   recipe's materials, by the game's colours) and a normal map of the
@@ -6777,7 +6780,9 @@ the game's texture had there, so that the fight's fade-in and the tints
 reach it as they reach the game's own.
 
 **Tatsumi, measured**: 16,304 triangles (4,076 and 1,019 at the lower
-levels), 9.7 million texels; every check passes, with nothing outside
+levels), 5.8 million texels; every check passes (the watertight one
+among them: no edge left open that the game's is not, no triangle
+turned over), with nothing outside
 the game's outline and nothing of it uncovered in any of 339 poses. The
 renders of the game's and the new model are in the main checkout's
 `tmp/models/renders/M101-fable/`, and the passes as the owner saw them

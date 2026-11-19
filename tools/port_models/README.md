@@ -71,6 +71,13 @@ added.
   What the game does not draw is a kind too, so a lock of hair's edge is
   clean. Every texel of the new layout reads it where it lay in the
   game's layout.
+- **The face is the game's own texels** (the owner's rule for every
+  fighter, 2026-11-19): the face stays pixelated, stylized and true to
+  the game. It is not traced, cleaned or smoothed: the recipe's `kept`
+  chart (the head's triangles whose texture is mostly skin) keeps the
+  game's own layout a whole number of times larger (`body.kept_layout`,
+  8 for Tatsumi), so that each of the game's texels is a square block of
+  the new texture, read with no filtering between texels.
 - **The maps for the lighting**: each texel is a *material* (the
   recipe's, by the game's colours: cloth, braid, leather, skin, hair),
   which says how rough and how much a metal it is; the normal map has a
@@ -115,14 +122,21 @@ Exit 1 on any failure. The limits are `limits.json`:
 - **self-intersection**: triangles of one connected surface passing
   through another of it, at the bind pose and the six most bent poses, no
   more than the game's own model has (0.2% at the least);
+- **watertight**: no hole the game's model has not: every edge only one
+  triangle has lies along such an edge of the game's (within 16 units: a
+  hem, a cuff), and no more triangles are turned over against their
+  neighbours than the game's own are (a viewer that draws one side of a
+  face leaves a turned one out: fable-03's gaps at the chest, the elbows
+  and the neck were the joints' triangles turned over);
 - **budgets**: 40,000 triangles (12,000 and 4,000 at the lower levels),
   ten million texels in all the file's pictures, and four fighters at
   once 160,000 triangles and 216 MB of textures with their mipmaps.
 
 `tests/rebushido/fighter_check.py` holds the checks to models made up of
 boxes: the same model passes, and an arm made longer, a vertex half
-weighted, a bone's bind place moved, a budget exceeded and a surface
-pushed through itself each fail.
+weighted, a bone's bind place moved, a budget exceeded, a surface
+pushed through itself, one with triangles missing and one with
+triangles turned over each fail.
 
 ## The file
 
@@ -130,8 +144,11 @@ What the port reads is unchanged (`src/port/gl/gl_fighter_file.h`). The
 material names a normal map (`normalTexture`, tangent space, OpenGL's
 green) and an occlusion-roughness-metal map (`occlusionTexture` and
 `metallicRoughnessTexture`, one picture: R occlusion, G roughness, B
-metal, half the colour's size), in the colour's layout, which the
-lighting reads (ROADMAP 14). The colour tables' picture (`rb_palette`) is
+metal), in the colour's layout, which the lighting reads (ROADMAP 14);
+the normal map is half the colour's size and the other a quarter (they
+say little), and the material's metal factor is nought (the port reads
+the map's own blue; a viewer that fails to read the map draws the
+colour, not a black metal). The colour tables' picture (`rb_palette`) is
 in the same layout at a quarter of the size, each texel the entry the
 game's texture had there, so that the fight's fade-in and the tints
 reach it as they reach the game's own. The cloths (`rb_cloth`) keep the

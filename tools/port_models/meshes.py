@@ -39,17 +39,6 @@ class Mesh:
         return out
 
 
-def outward(mesh, sign):
-    """Each triangle turned so that its corners go round its vertices'
-    normals as the game's own files' do (`sign` of the reference)."""
-    a, b, c = (mesh.pos[mesh.tris[:, k]] for k in range(3))
-    face = np.cross(b - a, c - a)
-    nsum = mesh.nrm[mesh.tris].sum(1)
-    wrong = np.sign((face * nsum).sum(1)) != sign
-    mesh.tris[wrong] = mesh.tris[wrong][:, [0, 2, 1]]
-    return int(wrong.sum())
-
-
 def winding_sign(m):
     a, b, c = (m.pos[m.tris[:, k]] for k in range(3))
     face = np.cross(b - a, c - a)

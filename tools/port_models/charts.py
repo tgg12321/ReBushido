@@ -42,10 +42,10 @@ class Chart:
 
 
 def compose(charts, size, spread=10):
-    """The atlas's pictures: colour (RGBA), normal (RGBA), the occlusion,
-    roughness and metal at half the size (RGBA), and the entries at a
-    quarter (RGBA: the entry, the table, nought, 255 where there is
-    one)."""
+    """The atlas's pictures: colour (RGBA), normal at half its size
+    (RGBA), the occlusion, roughness and metal at a quarter (RGBA), and
+    the entries at a quarter (RGBA: the entry, the table, nought, 255
+    where there is one)."""
     color = np.zeros((size, size, 4), np.uint8)
     normal = np.zeros((size, size, 4), np.uint8)
     normal[...] = (128, 128, 255, 255)
@@ -55,20 +55,21 @@ def compose(charts, size, spread=10):
     for c in charts:
         x, y, w, h = c.rect
         on = c.on
-        col = bake.spread(c.color, on, spread)
-        reach = bake.distance(on, most=spread) < spread     # drawn, or spread into
+        far = getattr(c, 'spread', spread)
+        col = bake.spread(c.color, on, far)
+        reach = bake.distance(on, most=far) < far     # drawn, or spread into
         color[y:y + h, x:x + w, :3] = np.clip(col + 0.5, 0, 255).astype(np.uint8)
         drawn = getattr(c, 'alpha', None)
         if drawn is not None:
             # what the game does not draw of its texture (a lock's edge) is not drawn
-            reach &= bake.spread(drawn, on, spread) >= 0.5
+            reach &= bake.spread(drawn, on, far) >= 0.5
         color[y:y + h, x:x + w, 3] = np.where(reach, 255, 0)
-        n = bake.spread(c.normal, on, spread)
+        n = bake.spread(c.normal, on, far)
         n /= np.maximum(np.linalg.norm(n, axis=-1, keepdims=True), 1e-6)
         n[~reach] = (0, 0, 1)
         normal[y:y + h, x:x + w] = bake.pack_normal(n)
         packed = np.stack([c.occlusion, c.rough, c.metal], -1)
-        packed = bake.spread(packed, on, spread)
+        packed = bake.spread(packed, on, far)
         packed[~reach] = (1.0, 0.8, 0.0)
         orm[y:y + h, x:x + w] = packed
         if c.entry_on.any():
@@ -76,9 +77,13 @@ def compose(charts, size, spread=10):
             entry[y:y + h, x:x + w, :2] = np.where(c.entry_on[..., None], c.entry, e.astype(np.uint8))
             entry[y:y + h, x:x + w, 3] = np.where(c.entry_on, 255, 0)
     from PIL import Image
+    # the maps of the lighting say little (a grain, a braid's roundness,
+    # how rough): the normal map at half the colour's size, the other at a
+    # quarter, so that a fighter's pictures are 21 MB on the card, not 43
     half = np.array(Image.fromarray((np.clip(orm, 0, 1) * 255 + 0.5).astype(np.uint8)).resize(
-        (size // 2, size // 2), Image.BOX))
+        (size // 4, size // 4), Image.BOX))
     half = np.concatenate([half, np.full(half.shape[:2] + (1,), 255, np.uint8)], -1)
+    normal = np.array(Image.fromarray(normal).resize((size // 2, size // 2), Image.BOX))
     # an entry is not a colour: the nearest texel's, never a mean
     quarter = entry[2::4, 2::4].copy()
     return color, normal, half, quarter
