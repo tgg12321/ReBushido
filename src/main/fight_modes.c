@@ -49,7 +49,7 @@ void fight_BuildVsCpuOrder(void) {
         s32 bits;
         count = 0;
         i = 0;
-        bits = g_saved_record.unlock_mask & mask;
+        bits = SAVE_UNLOCKS() & mask;
         one = 1;
         slot = g_vscpu_order;
         do {
@@ -72,11 +72,10 @@ void fight_BuildVsCpuOrder(void) {
         }
     }
 
-    if (g_saved_record.unlock_mask &
+    if (SAVE_UNLOCKS() &
         (UNLOCK_BIT(CHARACTER_TSUBAME) | UNLOCK_BIT(CHARACTER_KATZE))) {
-        s32 gunner_1 =
-            g_saved_record.unlock_mask & UNLOCK_BIT(CHARACTER_TSUBAME);
-        s32 gunner_2 = g_saved_record.unlock_mask & UNLOCK_BIT(CHARACTER_KATZE);
+        s32 gunner_1 = SAVE_UNLOCKS() & UNLOCK_BIT(CHARACTER_TSUBAME);
+        s32 gunner_2 = SAVE_UNLOCKS() & UNLOCK_BIT(CHARACTER_KATZE);
         gunner_bits[0] = gunner_1;
         gunner_bits[1] = gunner_2;
         if (gunner_1 == 0) {
@@ -128,12 +127,12 @@ void fight_BuildVsCpuOrder(void) {
         u8 clan = g_fighter_clans
             [g_fighter_roster_characters[g_fight_config.roster[0]]];
         if (clan != 0) {
-            if (g_saved_record.unlock_mask & UNLOCK_BIT(CHARACTER_LAST_2)) {
+            if (SAVE_UNLOCKS() & UNLOCK_BIT(CHARACTER_LAST_2)) {
                 g_vscpu_order[count] = CHARACTER_LAST_2;
                 count++;
             }
         } else {
-            if (g_saved_record.unlock_mask & UNLOCK_BIT(CHARACTER_LAST_1)) {
+            if (SAVE_UNLOCKS() & UNLOCK_BIT(CHARACTER_LAST_1)) {
                 g_vscpu_order[count] = CHARACTER_LAST_1;
                 count++;
             }
@@ -193,6 +192,13 @@ void fight_NextVsCpuOpponent(void) {
         g_fight_config.cpu_levels[1] = FIGHT_CPU_LEVEL_DEFAULT;
         {
             s16 stage = g_vscpu_stages[character];
+#if RB_PORT
+            /* the stage the stage pages chose, for every opponent of the
+             * run (port_play.h) */
+            if (port_PlayStageChosen(g_fight_mode)) {
+                stage = g_fight_config.stage;
+            }
+#endif
             g_sys_screen = SCREEN_FIGHT_INIT;
             g_fight_stage = stage;
         }

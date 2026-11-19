@@ -147,7 +147,8 @@ game until it is let go. The sound runs out and comes back.
 
 What changes at once: the full screen, the picture's size and its
 pixels, waiting for the display, the counter and its corner, quick
-loading, run-ahead and low latency, Graphics
+loading, run-ahead and low latency, the stage select in every mode and
+unlocking everything (each at the next screen that reads it), Graphics
 (as F2), the resolution, the ground as one mesh, the shadows, smooth
 lighting, the effects, the dead zone, and the buttons. What waits for the program to start again is said
 on its line, `(after a restart)`: antialiasing, the draw distance, the
@@ -205,6 +206,8 @@ english = off            # the top menu in Japanese (on is the default)
 ui = off                 # the menus' own lettering (on is the default)
 music_mods = off         # the game's own music (on is the default)
 quick_loading = off      # every blank of a load at the console's pace
+stage_select_everywhere = off  # versus the CPU and training pick their own stage
+unlock_all = on          # every hidden fighter and slash mode, the save untouched
 p1.cross = key Space     # Space is player one's Cross, and Z no longer
 p1.circle = key Left Ctrl
 p2.start = pad a         # on player two's controller, A is Start
@@ -313,7 +316,8 @@ arenas a third ([`ROADMAP.md`](ROADMAP.md), item 16):
 - **a custom arena**: a stage a mod brings ([`MODS.md`](MODS.md),
   "Custom arenas").
 
-On a **stage page** of versus or link mode, a line under the scroll says
+On a **stage page** of versus or link mode (and of versus the CPU and
+training: "A stage in every mode", below), a line under the scroll says
 which the stage under the cursor is: **Square** switches it between
 Classic and Remastered Classic, and it stays so for as long as the
 program runs. **Select** opens the page of the **custom arenas** (when a
@@ -324,7 +328,8 @@ On the keyboard Square is A and Select is Right Shift for player one
 
 `stage_kind = remastered` (the default) or `classic` in `rebushido.cfg`,
 the settings menu's "Stages", is what every stage starts as, and what
-the modes with no stage page (story, versus the CPU, training) fight on.
+the modes with no stage page (story, chanbara, group battle, and versus
+the CPU and training with `stage_select_everywhere = off`) fight on.
 None of it is the game's play: Classic and Remastered Classic are the
 same fight. In the Original picture (F2) a stage looks as the console's
 whichever kind it is, and the line and the page are still laid over it.
@@ -332,6 +337,59 @@ Online, both players choose on the same screen as on a couch, so the
 kind and the arena are the same for both, and the kind the stages start
 as is the host's.
 
+## A stage in every mode
+
+In the original, versus the CPU and training choose their stage
+themselves: versus the CPU fights each opponent on that opponent's own
+stage, and training is in the dojo of its own. With
+**`stage_select_everywhere = on`** (the default; the settings menu's
+"Stage select in every mode", among the mods' lines) both go on, after
+the crossed weapons, to the **same stage pages versus mode has**: the
+game's own three pages of six stages, left and right across them, Cross
+to choose, Triangle back to the weapons. Player 1 drives them alone; no
+second controller is needed. Square switches the stage under the cursor
+between Classic and Remastered Classic and Select opens the custom
+arenas, as in versus mode ("Kinds of stage").
+
+- **Versus the CPU**: top menu, Vs. CPU, a fighter, a weapon, then the
+  stage pages. Every opponent of the run is fought on the stage chosen.
+- **Training**: top menu, Training, either kind of practice, a fighter
+  and the weapons, then the stage pages. The fight is on the stage
+  chosen, the ninja or the opponent and the pause menu's options as
+  before; "Return to Sub Menu" comes back to training's own page, and
+  from there through the select screen to the stage pages again.
+
+`stage_select_everywhere = off` gives both modes back their own stages,
+as the original has them. Online, the host's setting holds for both
+players (the session always plays versus mode, which has the pages
+anyway).
+
+## Everything unlocked
+
+**`unlock_all = on`** (the settings menu's "Unlock everything"; off with
+nothing said, and `--unlock-all` on the command line) opens everything
+the game keeps behind its progress, for trying every fighter:
+
+- every hidden fighter on the select screens: the fourteen of the twenty
+  named fighters an empty save has not won, in every mode that offers
+  them (the two gunners among them, Tsubame and Katze, are offered by
+  versus, group battle and link mode only, as in the original), and the
+  two clans' last fighters, the crests beside the grid, in versus mode,
+  the only mode that has them;
+- versus the CPU's full run: the gunners and the clan's last fighter
+  among the opponents, and the ending after the twentieth;
+- **slash mode** on the top menu, which the game opens once all six
+  stories have been finished.
+
+The weapons are not behind any progress: each fighter has his clan's
+five, or his gun, whatever the save says. **Nothing of it is written to
+the memory card**: the game reads the save as if everything were won, and
+the save itself keeps only what you have won, so a save made with the
+setting on (after a story, a chanbara run, or from the options page)
+writes your own progress and nothing more, and turning the setting off
+puts everything back as your card has it. It takes effect at the next
+screen that reads it: a select screen as it opens, and the top menu the
+next time it is shown. Online, the host's setting is both players'.
 ## More pictures a second
 
 The game steps 30 times a second in a fight and 60 in the menus, as the
@@ -520,7 +578,8 @@ one PC.
 **Then:** the host's memory cards are sent to the other player, and
 both play on them: the fighters the host has unlocked, the host's
 button layouts in the game's own options, the host's ReBushido settings
-(Bugfixes among them). Nothing of the session is saved to either
+(Bugfixes among them), and the host's `unlock_all` and
+`stage_select_everywhere`. Nothing of the session is saved to either
 player's cards. The game starts from the beginning on both PCs and goes
 by itself to **versus character select**, where you both choose at
 once, as on one console; the host picks the stage. After a fight the

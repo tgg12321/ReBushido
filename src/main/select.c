@@ -608,6 +608,7 @@ s32 select_Load(
      * (port_stage_choice.h), so that a story's cutscene never loads its
      * stage with an arena versus mode chose */
     port_StageChoiceReset();
+    port_PlayReset();
 #endif
     DrawSync(0);
     MoveImage(&rect, SPRITE_STRIP_COPY_X, SPRITE_STRIP_COPY_Y);
@@ -2038,8 +2039,16 @@ void select_WeaponsOutStep(MenuDrawCtx *ctx) {
         g_select_fade = FADE_FULL;
         g_select_door = SELECT_DOOR_RIGHT_CLOSING;
         snd_Play(SELECT_SOUND_DOOR_CLOSE, SND_VOLUME_MAX, SND_VOLUME_MAX);
-        if (g_select_mode >= FIGHT_MODE_STORY &&
-            g_select_mode <= FIGHT_MODE_VSCPU) {
+#if RB_PORT
+        /* versus the CPU and training to the stage pages too, with
+         * stage_select_everywhere (port_play.h), on the page versus mode
+         * opens on */
+        if (port_PlayGoesToStages(g_select_mode)) {
+            g_select_next_step = SELECT_STEP_STAGE_2;
+        } else
+#endif
+            if (g_select_mode >= FIGHT_MODE_STORY &&
+                g_select_mode <= FIGHT_MODE_VSCPU) {
             g_select_settings->stage_index = select_GetClanStage();
             g_select_result = PAGE_CONFIRMED;
         } else if (g_select_mode == FIGHT_MODE_VS) {
@@ -2241,6 +2250,11 @@ static void select_StageStep(
                            g_select_stage_col];
         s32 taken;
 
+        /* a one-player mode's stage pages (port_play.h): the first pad's
+         * alone, as its grid is */
+        if (g_select_mode < FIGHT_MODE_VS) {
+            g_select_pressed &= PAD_OF(0xFFFF, 0);
+        }
         if (chosen == SELECT_STAGE_LINK_FROM &&
             g_select_mode == FIGHT_MODE_NETWORK) {
             chosen = SELECT_STAGE_LINK_TO;

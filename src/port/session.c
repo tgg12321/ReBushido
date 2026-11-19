@@ -16,8 +16,10 @@
  * are the host's on both machines, and neither writes the session's saves
  * to a file. The kind of stage the stages start as (Classic or Remastered
  * Classic: port_stage_choice.h) is the host's too, and held for the
- * session. Then both start the game from power on, the host the first
- * pad and the guest the second.
+ * session, and so are the gameplay switches unlock_all and
+ * stage_select_everywhere (port_play.h): a guest plays with the host's
+ * unlocks whatever its own settings say. Then both start the game from power
+ * on, the host the first pad and the guest the second.
  *
  * From power on to the versus select screen the session presses for
  * both, the same buttons on both machines at the same frames: the options
@@ -35,7 +37,7 @@
 #include "bb2.h"
 
 /* The protocol's own number: two programs that differ in it do not meet. */
-#define SESSION_PROTOCOL 3
+#define SESSION_PROTOCOL 4
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -105,8 +107,8 @@ enum {
  * the welcome's delay,
  * seed and cards, the shape of the sender's remastered picture (its width
  * in the high half and its height in the low), the welcome's kind of
- * stage the stages start as (port_stage_choice.h), and last the
- * version's text. */
+ * stage the stages start as (port_stage_choice.h), the welcome's gameplay
+ * switches (port_play.h), and last the version's text. */
 enum {
     MEET_BUILD = PORT_NET_HEADER_BYTES,
     MEET_DISC = MEET_BUILD + 2 * WORD_BYTES,
@@ -116,7 +118,8 @@ enum {
     MEET_CARDS = MEET_SEED + WORD_BYTES,
     MEET_SHAPE = MEET_CARDS + WORD_BYTES,
     MEET_KIND = MEET_SHAPE + WORD_BYTES,
-    MEET_VERSION = MEET_KIND + WORD_BYTES,
+    MEET_PLAY = MEET_KIND + WORD_BYTES,
+    MEET_VERSION = MEET_PLAY + WORD_BYTES,
     MEET_BYTES = MEET_VERSION + VERSION_BYTES
 };
 
@@ -131,6 +134,7 @@ static struct {
     u32 cards;  /* a bit a slot that has a card */
     u32 shape;  /* this program's picture's shape, as MEET_SHAPE has it */
     u32 kind;   /* the host's kind of stage the stages start as */
+    u32 play;   /* the host's gameplay switches (port_PlaySwitchBits) */
     u32 wider;  /* the wider of the two players' */
     u32 have;   /* chunks the guest has */
     u32 needed; /* chunks there are to have */
@@ -268,6 +272,7 @@ static void port_SendMeet(s32 kind) {
     port_NetPutWord(out + MEET_CARDS, g_session.cards);
     port_NetPutWord(out + MEET_SHAPE, g_session.shape);
     port_NetPutWord(out + MEET_KIND, g_session.kind);
+    port_NetPutWord(out + MEET_PLAY, g_session.play);
     port_PutVersion(out + MEET_VERSION);
     port_NetSend(out, sizeof(out));
 }
@@ -538,6 +543,7 @@ static s32 port_JoinSession(void) {
                 g_session.seed = port_NetGetWord(in + MEET_SEED);
                 g_session.cards = port_NetGetWord(in + MEET_CARDS);
                 g_session.kind = port_NetGetWord(in + MEET_KIND);
+                g_session.play = port_NetGetWord(in + MEET_PLAY);
                 g_session.needed = 0;
                 for (number = 0; number < CHUNKS; number++) {
                     g_session.needed += (u32)port_ChunkIsNeeded(number);
@@ -609,6 +615,7 @@ s32 port_StartSession(const PortDisc *disc, u32 delay) {
     g_session.mods = port_WeaponsSessionHash() + port_ArenaSessionHash();
     g_session.delay = delay;
     g_session.kind = (u32)port_GetStageKindDefault();
+    g_session.play = port_PlaySwitchBits();
     port_RemasterGetView(&view);
     g_session.shape =
         ((u32)view.aspect_w << SHAPE_SHIFT) | ((u32)view.aspect_h & SHAPE_MASK);
@@ -646,6 +653,11 @@ s32 port_StartSession(const PortDisc *disc, u32 delay) {
     port_SetNetplay(
         g_session.role == PORT_SESSION_HOST ? 0 : 1, g_session.delay);
     port_HoldStageKindDefault((s32)g_session.kind);
+    port_HoldPlaySwitches(g_session.play);
+    port_Log("session: the host's unlock_all is %s, its "
+             "stage_select_everywhere %s\n",
+             (g_session.play & PORT_PLAY_BIT_UNLOCK_ALL) ? "on" : "off",
+             (g_session.play & PORT_PLAY_BIT_STAGE_PAGES) ? "on" : "off");
     port_RemasterFixMargin((s32)(g_session.wider >> SHAPE_SHIFT),
                            (s32)(g_session.wider & SHAPE_MASK));
     port_Log("session: begun: this program is player %d, with a delay of %u "

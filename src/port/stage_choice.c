@@ -21,9 +21,12 @@ PortStageChoice g_port_stage_choice;
 /* the rows of the arenas' page shown at once */
 #define PAGE_ROWS 5
 
-/* The modes whose fights come from a stage page: versus and link. */
+/* The modes whose fights come from a stage page: versus and link, and
+ * versus the CPU and training when their select screen went on to the
+ * stage pages (port_play.h). */
 static s32 port_StageModeChooses(s32 mode) {
-    return mode == FIGHT_MODE_VS || mode == FIGHT_MODE_NETWORK;
+    return mode == FIGHT_MODE_VS || mode == FIGHT_MODE_NETWORK ||
+           port_PlayStageChosen(mode);
 }
 
 /* Made the first time the game asks, and the default kind taken in when
