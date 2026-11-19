@@ -2641,9 +2641,11 @@ void port_TakeEscape(s32 down) {
 }
 
 /* Whether `blank` is one of a test's list ("1500,4000"). */
-static s32 port_IsListedBlank(const char *at, u32 blank) {
+static s32 port_IsListedBlank(const char *at, u32 after, u32 upto) {
     while (at != NULL && *at != 0) {
-        if ((u32)atoi(at) == blank) {
+        u32 listed = (u32)atoi(at);
+
+        if (listed > after && listed <= upto) {
             return TRUE;
         }
         at = strchr(at, ',');
@@ -2660,12 +2662,25 @@ static s32 port_IsListedBlank(const char *at, u32 blank) {
 #define ESCAPE_TEST_BLANKS 4
 
 static void port_PressEscapeForTest(u32 blank) {
+    /* the blanks since the last one read here: with the step on a thread
+     * of its own the window's thread reads only a frame's boundary, so a
+     * listed blank inside a step is pressed at the next boundary */
+    static u32 s_last;
     const char *at = g_port_window_options.escape_at;
-    s32 down = port_IsListedBlank(at, blank);
+    u32 last = s_last;
+    s32 down;
     SDL_Event event;
 
-    if (!down && (blank < ESCAPE_TEST_BLANKS ||
-                  !port_IsListedBlank(at, blank - ESCAPE_TEST_BLANKS))) {
+    s_last = blank;
+    if (at == NULL || blank <= last) {
+        return;
+    }
+    down = port_IsListedBlank(at, last, blank);
+    if (!down &&
+        (blank < ESCAPE_TEST_BLANKS ||
+         !port_IsListedBlank(
+             at, last < ESCAPE_TEST_BLANKS ? 0 : last - ESCAPE_TEST_BLANKS,
+             blank - ESCAPE_TEST_BLANKS))) {
         return;
     }
     SDL_zero(event);
@@ -3010,6 +3025,9 @@ static void port_ReadInputLate(void) {
         return;
     }
     was = port_ProfileSwitch(PORT_PROFILE_WINDOW);
+    /* with the step on a thread of its own, the boundary is where the
+     * window's thread reads the keys at all */
+    port_PressEscapeForTest(port_GetBlankCount());
     port_ReadEvents();
     port_SendPads();
     port_ReadDevicesNow();
