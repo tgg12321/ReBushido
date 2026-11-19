@@ -55,6 +55,7 @@
 #include "port_profile.h"
 #include "port_remaster.h"
 #include "port_spu.h"
+#include "port_play.h"
 #include "port_stage_choice.h"
 #include "shared.h"
 #include "sdl_window.h"
