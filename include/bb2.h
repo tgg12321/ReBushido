@@ -78,10 +78,12 @@
 /* What only the native port has (src/port/). */
 #if RB_PORT
 #include "port_gte.h"
+#include "port_lights.h"
 #include "port_platform.h"
 #include "port_remaster.h"
 #include "port_state.h"
 #include "port_weapons.h"
+#include "port_arenas.h"
 #endif
 
 #endif /* BB2_H */

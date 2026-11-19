@@ -1,0 +1,15 @@
+# The ferry dock (stage 22): the quay at night under one tall street
+# lamp at its edge, its head lit, the white fitting found by
+# tools/port_lights.py (a piece's faces 4,196 up). A pale light falling
+# wide over the concrete from high up.
+format = 1
+
+[light street_lamp]
+kind = spot
+at = 5300 -4050 -2000
+direction = 0 1 0
+cone = 50 80
+color = #F2F0DC
+intensity = 0.7
+radius = 9000
+shadow = yes

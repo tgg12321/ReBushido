@@ -39,6 +39,7 @@
 #include "gl.h"
 #include "gl_bench.h"
 #include "gl_fighter.h"
+#include "gl_light_list.h"
 #include "gl_load.h"
 #include "gl_pause.h"
 #include "gl_record.h"
@@ -942,6 +943,10 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     /* the sky and the walls seen through (gl_sky.h, gl_see.h) */
     options->sky = g_port_settings.sky;
     options->see_through = g_port_settings.see_through;
+    /* the lights beside the stage's own, which are no option of the
+     * backend's: told to their list here (gl_light_list.h) */
+    port_GlLightListSetStageOn(g_port_settings.stage_lights);
+    port_GlLightListSetEffectsOn(g_port_settings.effect_lights);
 }
 
 /* ---- SDL's threads, lent to the reading of a mod's pictures (gl_load.h) */
@@ -2742,6 +2747,8 @@ void port_WindowApplyChoice(s32 choice) {
          strcmp(name, "shadows") == 0 || strcmp(name, "smooth_light") == 0 ||
          strcmp(name, "effects") == 0 || strcmp(name, "sky") == 0 ||
          strcmp(name, "see_through") == 0 ||
+         strcmp(name, "stage_lights") == 0 ||
+         strcmp(name, "effect_lights") == 0 ||
          strcmp(name, "fighter_models") == 0) &&
         g_port_has_gl) {
         PortGlOptions options;

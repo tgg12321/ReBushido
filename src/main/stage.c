@@ -168,7 +168,12 @@ void stage_QueueFog(s32 stage, s32 eye_distance) {
     s32 offset;
 
     g_stage_fog_ot_index = STAGE_FOG_NONE;
+#if RB_PORT
+    /* a mod's arena's own fog (port_arenas.h) */
+    if (port_ArenaFogOn(stage, *g_stage_fog_settings[stage])) {
+#else
     if (*g_stage_fog_settings[stage]) {
+#endif
         {
             /* whether the view is the first-person one, then where its
              * scene ends */
@@ -207,14 +212,16 @@ void stage_QueueFog(s32 stage, s32 eye_distance) {
             s32 index = stage * 4;
 #if RB_REMASTER_VIEW
             /* the stage's own fog depth, pushed out with the scene's end
-             * where the remastered picture draws further */
-            s32 span_limit = STAGE_FAR_NOW(*span_limit_entry);
-            stage_QueueFogMoves(
-                eye_distance, STAGE_FOG_LEVELS, g_stage_fog_moves, span_limit,
-                *(s16 *)((u8 *)g_stage_fog_settings + 2 + index));
-            stage_QueueFogMoves(
-                eye_distance, STAGE_MODEL_FOG_LEVELS, g_stage_model_fog_moves,
-                span_limit, *(s16 *)((u8 *)g_stage_fog_settings + 2 + index));
+             * where the remastered picture draws further; a mod's arena's
+             * own depth and farthest copy (port_arenas.h) */
+            s32 span_limit =
+                STAGE_FAR_NOW(port_ArenaFogSpan(stage, *span_limit_entry));
+            s32 farthest = port_ArenaFogFarthest(
+                stage, *(s16 *)((u8 *)g_stage_fog_settings + 2 + index));
+            stage_QueueFogMoves(eye_distance, STAGE_FOG_LEVELS,
+                                g_stage_fog_moves, span_limit, farthest);
+            stage_QueueFogMoves(eye_distance, STAGE_MODEL_FOG_LEVELS,
+                                g_stage_model_fog_moves, span_limit, farthest);
 #else
             stage_QueueFogMoves(
                 eye_distance, STAGE_FOG_LEVELS, g_stage_fog_moves,

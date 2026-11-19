@@ -34,6 +34,7 @@
 #include "common.h"
 #include "gl.h"
 #include "gl_fighter.h"
+#include "gl_light_list.h"
 #include "gl_shadow.h"
 #include "gl_sky.h"
 #include "gl_stage.h"
@@ -118,6 +119,11 @@ static struct {
      * (--gl-fighter-pose) */
     char pose_folder[512];
     u32 pose_at;
+    /* where each fighter's bones of every frame are written, and from
+     * and to which blank (--gl-fighter-motion) */
+    char motion_folder[512];
+    u32 motion_from;
+    u32 motion_to;
     /* faces one frame has and the other not, moved by their points
      * (gl_tween.c, port_TweenPlaceUnpaired), over the pairs checked */
     u32 going;
@@ -167,6 +173,10 @@ static const char g_usage[] =
     "                 the stages open to it (gl_sky.h)\n"
     "  --see-through W  off (the default here) or on: the stage's walls\n"
     "                 thinned where they hide a fighter (gl_see.h)\n"
+    "  --stage-lights W  off (the default here) or on: the lights of\n"
+    "                 the stage's files and flames (gl_light_list.h)\n"
+    "  --effect-lights W  off (the default here) or on: the lights of\n"
+    "                 the fight's flashes and glows (gl_light_list.h)\n"
     "  --stage-depth W on, off: the scene held against the ground's\n"
     "                 own depth, so that ground between the camera and\n"
     "                 a fighter veils him (on with the mesh)\n"
@@ -180,6 +190,9 @@ static const char g_usage[] =
     "                 moved between frames; and their textures smoothed\n"
     "  --gl-fighter-pose F,N  each fighter's bones at blank N, into\n"
     "                 F/<model>.pose.json (tools/fighter_export.py --pose)\n"
+    "  --gl-fighter-motion F[,FROM[,TO]]  each fighter's bones of every\n"
+    "                 frame, into F/<model>.<slot>.motion.txt\n"
+    "                 (tools/port_models/)\n"
     "  --gl-exact     draw as the console: the corners where it held\n"
     "                 them, the texture flat, five bits a channel with\n"
     "                 the chip's dither. For the comparison at scale 1\n"
@@ -1109,6 +1122,11 @@ static void port_GlBlank(u32 blank) {
         fprintf(stderr, "gl blank %u fighter poses %d\n", blank,
                 port_GlFighterWritePoses(g_run.pose_folder));
     }
+    /* ... and of every frame, for the model pipeline (tools/port_models/) */
+    if (g_run.motion_folder[0] != 0 && blank >= g_run.motion_from &&
+        blank <= g_run.motion_to) {
+        port_GlFighterWriteMotion(g_run.motion_folder);
+    }
     if (g_run.tween > 1 && port_TweenGeneration() != g_run.generation) {
         g_run.generation = port_TweenGeneration();
         port_GlTweenPhases(blank);
@@ -1273,6 +1291,10 @@ int main(int argc, char **argv) {
     port_MapFixedMemory();
     port_RemasterDefaultView(&view);
     memset(&options, 0, sizeof(options));
+    /* the lights beside the stage's own (gl_light_list.h): off here, so
+     * that a prover's picture keeps the console's lighting unless asked */
+    port_GlLightListSetStageOn(FALSE);
+    port_GlLightListSetEffectsOn(FALSE);
     options.scale = 4;
     options.tall = 0; /* twice the scale, for square pixels */
     options.is_bilinear = FALSE;
@@ -1373,6 +1395,17 @@ int main(int argc, char **argv) {
             snprintf(g_run.pose_folder, sizeof(g_run.pose_folder), "%.*s",
                      comma != NULL ? (int)(comma - where) : (int)strlen(where),
                      where);
+        } else if (!strcmp(word, "--gl-fighter-motion")) {
+            const char *where = argv[++i];
+            const char *comma = strchr(where, ',');
+            const char *second = comma != NULL ? strchr(comma + 1, ',') : NULL;
+
+            g_run.motion_from = comma != NULL ? (u32)atoi(comma + 1) : 0;
+            g_run.motion_to =
+                second != NULL ? (u32)atoi(second + 1) : 0xFFFFFFFFu;
+            snprintf(g_run.motion_folder, sizeof(g_run.motion_folder), "%.*s",
+                     comma != NULL ? (int)(comma - where) : (int)strlen(where),
+                     where);
         } else if (!strcmp(word, "--smooth-light")) {
             options.is_smooth_light = strcmp(argv[++i], "off") != 0;
         } else if (!strcmp(word, "--effects")) {
@@ -1387,6 +1420,10 @@ int main(int argc, char **argv) {
              * the provers hold the picture to the console's */
             options.sky = !strcmp(argv[++i], "night") ? PORT_SKY_NIGHT
                                                       : PORT_SKY_ORIGINAL;
+        } else if (!strcmp(word, "--stage-lights")) {
+            port_GlLightListSetStageOn(!strcmp(argv[++i], "on"));
+        } else if (!strcmp(word, "--effect-lights")) {
+            port_GlLightListSetEffectsOn(!strcmp(argv[++i], "on"));
         } else if (!strcmp(word, "--see-through")) {
             options.see_through = !strcmp(argv[++i], "on");
         } else if (!strcmp(word, "--stage-depth")) {

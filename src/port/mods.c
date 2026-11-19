@@ -59,11 +59,13 @@
 #define VRAM_Y_MASK (PORT_VRAM_HEIGHT - 1)
 
 static const char * const g_port_mod_kind_folders[PORT_MOD_KINDS] = {
-    "textures", "models", "music", "stages", "skies", "weapons", "motions"};
+    "textures", "models",  "music",   "stages",
+    "skies",    "weapons", "motions", "arenas", "lights"};
 /* the ending a kind's file must have to be read, or one of several
  * separated by `|`; NULL for any */
 static const char * const g_port_mod_kind_endings[PORT_MOD_KINDS] = {
-    ".png", ".glb", ".ogg|.wav", NULL, ".png", ".txt", ".bbm"};
+    ".png", ".glb", ".ogg|.wav", NULL, ".png", ".txt", ".bbm", ".arena",
+    ".txt"};
 
 typedef struct {
     PortModManifest manifest;
@@ -78,7 +80,14 @@ typedef struct {
     s32 mod;
     u32 key_at; /* in the text */
     u32 path_at;
+    /* the file of the same kind and key from a mod earlier in the order,
+     * which this one overrode, or -1: kept out of the table's slots and
+     * out of its kind's files, for port_ModFindEach alone */
+    s32 earlier;
 } PortModFile;
+
+/* What an overridden file's record is kept as: a kind nothing asks for */
+#define KIND_OVERRIDDEN PORT_MOD_KINDS
 
 static struct {
     s32 is_off;
@@ -355,8 +364,16 @@ static void port_ModsAdd(
         return;
     }
     if (*slot >= 0) {
-        /* a mod earlier in the order had it: this one's is the one */
+        /* a mod earlier in the order had it: this one's is the one, and
+         * the earlier one's is kept beside it (port_ModFindEach) */
         file = &g_port_mods.files[*slot];
+        if (g_port_mods.file_count < FILES_MAX) {
+            PortModFile *kept = &g_port_mods.files[g_port_mods.file_count];
+
+            *kept = *file;
+            kept->kind = KIND_OVERRIDDEN;
+            file->earlier = g_port_mods.file_count++;
+        }
         g_port_mods.mods[file->mod].counts[kind]--;
         file->mod = mod;
         file->path_at = (u32)path_at;
@@ -375,6 +392,7 @@ static void port_ModsAdd(
     file->mod = mod;
     file->key_at = (u32)key_at;
     file->path_at = (u32)path_at;
+    file->earlier = -1;
     *slot = g_port_mods.file_count++;
     g_port_mods.mods[mod].counts[kind]++;
     g_port_mods.counts[kind]++;
@@ -689,13 +707,14 @@ void port_ModsStart(const char *program) {
             continue;
         }
         port_Log("mods:   %s%s%s (%s, order %d): %d textures, %d models, "
-                 "%d music, %d stages, %d skies, %d weapons, %d motions\n",
+                 "%d music, %d stages, %d skies, %d weapons, %d motions, "
+                 "%d lights\n",
                  mod->manifest.name, mod->manifest.version[0] != 0 ? " " : "",
                  mod->manifest.version, mod->folder, mod->manifest.order,
                  mod->counts[PORT_MOD_TEXTURES], mod->counts[PORT_MOD_MODELS],
                  mod->counts[PORT_MOD_MUSIC], mod->counts[PORT_MOD_STAGES],
                  mod->counts[PORT_MOD_SKIES], mod->counts[PORT_MOD_WEAPONS],
-                 mod->counts[PORT_MOD_MOTIONS]);
+                 mod->counts[PORT_MOD_MOTIONS], mod->counts[PORT_MOD_LIGHTS]);
     }
     if (g_port_mods.overridden > 0) {
         port_Log("mods: %d files of one mod overridden by a later one's\n",
@@ -720,6 +739,30 @@ const char *port_ModFind(s32 kind, const char *key) {
     slot = port_ModsSlotOf(kind, key, port_ModsHash(kind, key));
     return *slot >= 0 ? g_port_mods.text + g_port_mods.files[*slot].path_at
                       : NULL;
+}
+
+/* Every mod's file of a kind and key, the first in the order first
+ * (port_mods.h): the chain of those overridden, from the last one's
+ * back. */
+const char *port_ModFindEach(s32 kind, const char *key, s32 place) {
+    s32 *slot;
+    s32 chain = 0;
+    s32 at;
+
+    if (g_port_mods.files == NULL || g_port_mods.file_count == 0 || place < 0) {
+        return NULL;
+    }
+    slot = port_ModsSlotOf(kind, key, port_ModsHash(kind, key));
+    for (at = *slot; at >= 0; at = g_port_mods.files[at].earlier) {
+        chain++;
+    }
+    if (place >= chain) {
+        return NULL;
+    }
+    for (at = *slot; chain - 1 > place; chain--) {
+        at = g_port_mods.files[at].earlier;
+    }
+    return g_port_mods.text + g_port_mods.files[at].path_at;
 }
 
 /* The files of a kind, one by one (port_mods.h). */

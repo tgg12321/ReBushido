@@ -86,13 +86,15 @@ WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'sdl_n
 MENU_FONT = 'src/port/fonts/Marcellus-Regular.ttf'
 MENU_FONT_NAME = 'g_port_menu_font'
 SHIPPED_MODS = 'src/port/mods'
+# the sample arenas' sources (tools/arena_compile.py)
+SHIPPED_ARENAS = 'tools/arenas'
 
 # The remastered renderer's backend, which talks to OpenGL and to a C
 # library and so is compiled the same way (docs/PORT.md, "Remastered in
 # the window"). It calls GL only through pointers the window looks up with
 # SDL_GL_GetProcAddress, so nothing of GL is linked to.
 GL_DIR = 'src/port/gl/'
-GL_HOSTED = ['gl_bench.c', 'gl_cloth.c', 'gl_draw.c', 'gl_fighter.c', 'gl_fighter_card.c', 'gl_fighter_file.c', 'gl_light.c', 'gl_lights.c', 'gl_load.c', 'gl_pause.c', 'gl_record.c', 'gl_replace.c', 'gl_scene.c',
+GL_HOSTED = ['gl_bench.c', 'gl_cloth.c', 'gl_draw.c', 'gl_fighter.c', 'gl_fighter_card.c', 'gl_fighter_file.c', 'gl_light.c', 'gl_light_list.c', 'gl_lights.c', 'gl_load.c', 'gl_pause.c', 'gl_record.c', 'gl_replace.c', 'gl_scene.c',
              'gl_see.c', 'gl_shadow.c', 'gl_sky.c', 'gl_stage.c', 'gl_sun.c', 'gl_tween.c']
 # The hosts of the build without a window: not this one's on Linux, where
 # the C library's is host_posix.c; on Windows the one file is both builds'.
@@ -620,7 +622,8 @@ def write_font(target):
 
 def copy_mods(target):
     """The mods the program ships into mods/ beside it, each folder as it
-    is in the repository and nothing else: the names of the folders."""
+    is in the repository and nothing else, and the sample arenas compiled:
+    the names of the folders."""
     names = []
     for name in sorted(os.listdir(SHIPPED_MODS)):
         source = os.path.join(SHIPPED_MODS, name)
@@ -631,6 +634,24 @@ def copy_mods(target):
             shutil.rmtree(dest)
         shutil.copytree(source, dest)
         names.append(name)
+    # the sample arenas, compiled from their sources (docs/MODS.md,
+    # "Custom arenas"): mods/arena-NAME/arenas/NAME.arena, played only
+    # where the run says --arena NAME
+    import arena_compile
+    for name in sorted(os.listdir(SHIPPED_ARENAS)):
+        source = os.path.join(SHIPPED_ARENAS, name)
+        if not os.path.isfile(os.path.join(source, 'arena.txt')):
+            continue
+        dest = os.path.join(target.dir, 'mods', 'arena-' + name)
+        if os.path.isdir(dest):
+            shutil.rmtree(dest)
+        os.makedirs(os.path.join(dest, 'arenas'))
+        with open(os.path.join(dest, 'mod.txt'), 'w', encoding='utf-8', newline='\n') as f:
+            f.write('# made by tools/port_sdl_build.py from %s\nname = arena %s\nauthor = ReBushido\n'
+                    % (source, name))
+        with open(os.path.join(dest, 'arenas', name + '.arena'), 'wb') as f:
+            f.write(arena_compile.compile_arena(source, report=lambda text: None))
+        names.append('arena-' + name)
     return names
 
 

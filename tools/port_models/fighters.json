@@ -1,0 +1,19 @@
+{
+  "about": "The remake's recipe of each fighter (tools/port_models/README.md): which pieces are made anew, and how. A fighter not listed takes the default.",
+  "default": {
+    "replace": {"hand_a": 7, "hand_b": 11},
+    "hand": {"glove": null, "skin": null, "fingerless": false, "triangles": 2200},
+    "pull_in_units": 6,
+    "texture_scale": 4
+  },
+  "fighters": {
+    "M101": {
+      "about": "Tatsumi: a blue school uniform with gold trim, black fingerless gloves",
+      "hand": {"glove": [16, 16, 18], "fingerless": true},
+      "face": {"about": "the texels of the game's atlas (512 by 256) where the painting has each feature; his mesh has a nose of its own",
+               "texels": {"eye_left": [459, 189], "eye_right": [489, 189], "nose_tip": [401, 133],
+                          "mouth": [401, 139], "chin": [401, 151]},
+               "depth": 0.8, "nose": false}
+    }
+  }
+}

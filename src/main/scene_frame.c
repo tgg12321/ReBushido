@@ -173,7 +173,15 @@ void stage_Load(s32 stage, s32 staging_addr) {
     stage_BuildFog();
 }
 
-void *fight_GetStartPositions(void) { return g_fight_start_positions; }
+void *fight_GetStartPositions(void) {
+#if RB_PORT
+    /* a mod's arena in play: the table with its host's row the arena's
+     * (port_arenas.h) */
+    return port_ArenaStartPositions(g_fight_start_positions);
+#else
+    return g_fight_start_positions;
+#endif
+}
 
 /* ---- shadows (light.h) ----
  * A shadow is its caster's shape slid along the sun's direction until it

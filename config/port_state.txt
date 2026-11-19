@@ -47,10 +47,12 @@ outside  src/port/fighter_view.c  the remastered fighter's bones, camera and lig
 outside  src/port/host_linux.c  the host: file handles, the signal stack, the fiber's host side
 outside  src/port/host_windows.c  the host on Windows
 outside  src/port/main.c        the program's arguments and the disc's file
+outside  src/port/lights.c      the lights of the stages' files and what the effects lit up, for the picture alone
 outside  src/port/netplay.c     the session: inputs, guesses, the states kept, the hashes
 outside  src/port/mods.c        the mods' table, made once as the program starts
 outside  src/port/music.c       a mod's music: what it follows of the drive, its decoder, the dump
 outside  src/port/discfiles.c   the disc's files by name, and the mods' stage files over them
+outside  src/port/arenas.c      the mods' arenas, read once as the program starts and only read after
 outside  src/port/weapons.c     the mods' weapons, read once as the program starts and only read after
 outside  src/port/net.c         the network: the socket, the link cable's numbers, the trouble it is given
 outside  src/port/paint.c       the software GPU's painter: its settings, its ring and its thread

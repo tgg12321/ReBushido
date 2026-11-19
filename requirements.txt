@@ -7,3 +7,8 @@ clang-format==18.1.8
 
 # tools/repack_tim.py and tools/inspect_tim.py --png.
 Pillow
+
+# tools/fighter_hd.py and the model pipeline (tools/port_models/), and the
+# test of its checks (tests/rebushido/fighter_check.py), which is skipped
+# without it.
+numpy

@@ -278,3 +278,62 @@ the stage").
     measured part by part, then cut where it is safe: the devices read
     as late as the game's step allows, run-ahead on the rollback's save
     and load, and the fewest pictures queued to the display.
+16. **Three kinds of stage at the select screen** (the owner,
+    2026-11-18): **Classic**, the disc's stages with only what the engine
+    gives (resolution, the wide picture, draw distance, frame rate, and
+    the new lighting while the picture is Remastered: F2 to Original
+    gives the console's picture and the console's light); **Remastered
+    Classic**, the same stages, the same collision, dressed (lights,
+    textures, grass, skies, water, particles); and **Custom arenas**, any
+    stage a mod brings. The tier is part of the stage chosen: online,
+    both players play the same stage in the same tier (no mixing). The
+    stage select keeps the original grid with a Classic/Remastered
+    switch per stage and a page of its own for the custom arenas.
+17. **Remastered Classic stages**: a mod kind for dressing nobody
+    touches (foliage drawn by instancing and stirred by wind, the
+    fighters and the slashes; water; dust, leaves, embers; scenery
+    meshes that keep the original silhouette), with a check that
+    nothing that looks solid stands where the collision grid has none;
+    then a pass over all 38 stages. Builds on item 14's lights.
+18. **Custom arenas**: a stage authored in Blender as a render mesh and
+    a collision mesh with each face's surface (firm, sand, wet,
+    barrier), compiled into the game's ground (`MODS.md`, "Stages");
+    the program's stage tables (starts, fog, music, light, sounds) as a
+    mod's data; a validator (no hole to fall through, nothing out of
+    bounds, a headless fight of the CPU on it); netplay's set-up holds
+    both players to the same arena. The game's own limits (32 by 32
+    cells of 2,000 units) first.
+    Done for the game's limits ([`MODS.md`](MODS.md), "Custom arenas"):
+    the ground file read and written back byte for byte (all 38,
+    [`formats/GROUND.md`](formats/GROUND.md)); `tools/arena_compile.py`
+    from a glTF/OBJ scene (render mesh, collision mesh with each face's
+    surface by its material, starts and posts by name) and `arena.txt`
+    (starts, light, fog, music, sounds, the CPU's chains, the remastered
+    light's key) into one `.arena`; the port's `--arena NAME` puts it
+    over a host stage (25 unless it says), the game asking the port
+    where it reads each table; `tools/arena_validate.py` (limits, a walk
+    of every reachable point for a floor, the starts, what is met
+    against what is drawn, and `--fight`: CPU against CPU on both sizes,
+    the same trace); netplay's set-up turns away a guest whose arena
+    differs (`make port-net`). The sample, a stone courtyard made in
+    Blender, passes. Left: the stage select's page for the arenas (item
+    16; MODS.md, "What a stage editor needs next"), arenas larger than
+    their host's room, pieces, textures past 64 by 64, the
+    ground-as-one-mesh proved on an arena.
+19. **The fighters' models overhauled** (the owner, 2026-11-18: art made
+    entirely by AI): each fighter remade with faces and hands, faithful
+    to his original design and colours, and held by checks to the
+    game's skeleton, proportions and outline, since the hitboxes are
+    the balance. The pipeline and its checks are in
+    (`tools/port_models/`, PORT.md "The fighters remade"): the game's
+    motions from the port (`--gl-fighter-motion`), Blender driven
+    headless for the new pieces and the reviews, the checks that fail
+    (skeleton, weights, proportions, silhouette through every motion,
+    self-intersection, budgets; `tests/rebushido/fighter_check.py`),
+    the file with levels of detail and normal and
+    occlusion-roughness-metal maps. Tatsumi is the first: new hands
+    closed round the grip, the face in relief under its painting, the
+    body held inside the game's outline. Left: the other fighters; the
+    face's texture and a head modelled whole; folds and seams in the
+    normal map; the port reading the maps (ROADMAP 14) and the levels of
+    detail.

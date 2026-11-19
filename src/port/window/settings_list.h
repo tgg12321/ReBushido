@@ -363,6 +363,29 @@ PORT_SETTING(see_through,
     .label = "See through walls",
     .help = "The stage thinned where it hides a fighter from the camera")
 
+/* The stage's own lights, from the light files of the mods (the program
+ * ships one for the stages with torches, fires and lanterns) and the
+ * game's own flames (src/port/gl/gl_light_list.h; docs/MODS.md,
+ * "Lights"). */
+PORT_SETTING(stage_lights,
+    .name = "stage_lights", .value = "on",
+    .note = "the stage's torches, fires and lanterns\n"
+            "lighting what is about them (Remastered)",
+    .menu = PORT_MENU_REMASTER, .rank = 150, .takes = PORT_TAKES_NOW,
+    .label = "Stage lights",
+    .help = "Torches, fires and lanterns light the stage and the "
+            "fighters")
+
+/* The fight's flashes as lights: where blades meet, a hit, a shot, and
+ * the glow of the sparks (src/port/gl/gl_light_list.h). */
+PORT_SETTING(effect_lights,
+    .name = "effect_lights", .value = "on",
+    .note = "the flash where blades meet, and the\n"
+            "sparks, lighting what is about them",
+    .menu = PORT_MENU_REMASTER, .rank = 160, .takes = PORT_TAKES_NOW,
+    .label = "Flash lights",
+    .help = "The flash of a clash, a hit or a shot lights the scene")
+
 /* The mods beside the program are read (docs/MODS.md); 0 runs the game
  * with none of them, as `--mods off` does. */
 PORT_SETTING(mods,

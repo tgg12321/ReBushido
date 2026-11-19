@@ -6345,9 +6345,13 @@ benchmark. The names are the game's (`enum StageIndex`, `enum RosterId`,
 `enum WeaponId`), any case, spaces and dashes left out, the enum's
 prefix allowed, or the number: `--fight tatara-shrine kannuki
 mikado:nodachi`. A fighter's weapon follows a colon (a katana if none),
-the second fighter is the CPU's (`--fight-2p`: the second pad's), the
-mode is versus. A name not known prints the names and ends with the
-usage code. `rb_StartFight` (`src/rebushido/quickboot.c`, which the
+the second fighter is the CPU's (`--fight-2p`: the second pad's;
+`--fight-cpu`: the first is the CPU's too, a fight that plays itself, as
+the select screen's own choice of two CPUs), the mode is versus. A
+stage's name that is no stage's is a mod's arena's (MODS.md, "Custom
+arenas": the fight is on the stage it stands in for, with the arena in
+play); a fighter's name not known prints the names, and a stage's that no
+arena has either says so, and both end with the usage code. `rb_StartFight` (`src/rebushido/quickboot.c`, which the
 quick-boot build's `rb_QuickBoot` now calls too) does what the main menu does when it
 first opens, the choice into `g_fight_config`, and `fight_StartMode`.
 No card is read on the way, so the settings are the game's own until a
@@ -6698,6 +6702,101 @@ fight, because no roster entry draws them. The rebuild
 cannot add what the game's mesh does not have: a face is still a few
 painted quads, and a fold of cloth is the texture's.
 
+### The fighters remade
+
+The hd mod is the game's own mesh made smooth: a face is still a few
+painted quads, a hand a block, and the smoothing swells it beyond the
+game's outline (by up to 42 units at Tatsumi's feet). ROADMAP 19 remakes
+the fighters one by one, by a pipeline with checks that fail
+(`tools/port_models/`, its README for the commands), into a mod of its
+own, `remade` (`tmp/mods/remade/`, order 30, over the hd mod), made from
+the player's disc in one command:
+
+    python tools/port_models/build.py --fighter M101
+
+**The game's motions as the port poses them.** `--gl-fighter-motion
+F[,FROM[,TO]]` (the headless program) writes each fighter's 21 bones'
+world matrices once a frame into `F/<model>.<slot>.motion.txt`; it draws
+nothing and changes nothing of the game. `tools/port_models/motions.py`
+runs fights straight from `--fight` (`--fight-2p`, both pads pressed by a
+script of strikes high, middle and low, stances, guards, runs, jumps
+and crouches, each fighter on each side), so that a fighter's motions,
+his being struck and his fall are all in it: for Tatsumi four fights,
+339 poses at every 12th frame. `tools/blender/fighter_scene.py` keys
+them on any model's armature in Blender (a joint's pose is the game's
+world matrix times the file's inverse bind matrix, exactly the port's)
+and renders models side by side through them.
+
+**The checks** (`tools/port_models/check.py`, limits in `limits.json`;
+`tests/rebushido/fighter_check.py` holds them to made-up models): the
+skeleton and bind pose exactly the game's; every vertex wholly on the
+bones and no bone the game moves left without one; each bone's piece no
+longer, wider or deeper than the game's by more than 30 units; the
+silhouette through every motion, from the front, the side and above,
+within 24 units of the game's outline (at most 40 pixels of 4 units, or
+0.4% of the outline, beyond it in any one view; the worst drawn and the
+strays told by their nearest bone); no more triangles of one surface
+through itself than the game's own model has; and the budgets, 40,000
+triangles a fighter (12,000 and 4,000 at the lower levels), ten million
+texels, four fighters 160,000 triangles and 216 MB of textures. The
+weapons are not remade: their models, lengths and grips are the game's
+files, and no hitbox is a model's ("The fighters' own models").
+
+**What is remade** (`fighters.json`, the recipe):
+
+- **the hands**: modelled in Blender (`tools/blender/fighter_parts.py`)
+  in the hand bone's frame, a palm, a wrist, four fingers of three bones
+  closed round the grip and a thumb across them, made one surface (a
+  voxel remesh), coloured by what each part is (Tatsumi's black
+  fingerless glove open on the back, skin, nails, the stud at the
+  wrist, the colours read from the game's own texture of the hand),
+  baked from 51,000 faces to 2,200 triangles a hand with a normal map
+  of the leather's grain, fitted into the box of the game's hand, the
+  other hand its mirror, each wholly on its bone;
+- **the body**: the hd mod's, its every vertex the game's own sum of
+  bones, pulled back to 6 units outside the game's surface wherever the
+  smoothing swelled it further (2,240 of Tatsumi's vertices), each to
+  the surface of its own bone (at the bind pose the feet cross);
+- **the face**: the front of the head subdivided once more and raised
+  or sunk under the game's own painting of it (`face.py`): the brows,
+  sockets under the painted eyes, cheekbones, lips and chin (and a nose
+  where the game's mesh has none: Tatsumi's has a wedge of its own,
+  and a ridge raised on it darkened it), found where the painting has
+  them (texels of the game's atlas in the recipe, taken onto the head
+  by its mesh); by 4 units at most, a relief the light shows and the
+  outline does not;
+- **the maps for the lighting**: beside the colour, in its layout, a
+  normal map (tangent space, OpenGL's green) and an occlusion-roughness-
+  metal map (glTF's: R, G, B; half the colour's size; the trim's gold
+  metal, cloth rough, skin and leather between). The material names them
+  as glTF does (`normalTexture`, `occlusionTexture`,
+  `metallicRoughnessTexture`); the port reads only the colour so far;
+- **the levels of detail**: `lod/NAME.lod1.glb` (the hd mod at one level
+  of subdivision, 5,700 triangles) and `.lod2.glb` (the game's own
+  mesh with the hands at 180 triangles, 1,200), checked as the first;
+  the port does not choose between them yet.
+
+One atlas still: the body's texture above, the new pieces' below, the
+colour tables' picture grown to match, each new texel taking the
+entry, of the game's own on the hand it replaces, nearest in colour, so
+that the fight's fade-in and the tints reach the new hands too.
+
+**Tatsumi, measured**: 25,600 triangles (the hd mod's 20,216); every
+check passes, the worst pose 69 pixels outside the game's outline from
+the side (0.23%, within tolerance), the hd mod itself failing at its
+feet (162 pixels, 0.89%). In `--fight tatara-shrine tatsumi utsusemi`
+with the file the program loads it (`gl run fighters loaded 1 failed
+0`) and draws it as any model; the renders of the game's, the hd mod's
+and the new model are in the main checkout's `tmp/models/renders/`.
+
+**What is left**: the other fighters (the recipe and the face's texels
+for each, and the hands' colours where the game's texture is not to be
+read for them); the face's own texture painted anew (it is the game's
+4x upscale) and a head modelled whole; the clothing's folds and seams
+in the normal map rather than the texture's light; the port reading the
+normal and roughness maps (`lighting-core`, ROADMAP 14) and the levels of
+detail.
+
 ### The effects
 
 **How the game draws them** (`src/main/eff.c`, `include/eff.h`). Blood,
@@ -6830,6 +6929,75 @@ shaded across the fold, and every flat floor is the colour it was. It is
 **subtle by design**: the lights are the game's, and the game's ground is
 mostly flat. Nothing measurable in the time a frame takes on Mesa's
 software renderer (2,228 against 2,226 microseconds).
+
+### Where the lights come from
+
+The renderer's list of a frame's lights (`gl_lights.h`) is filled once a
+game frame by `src/port/gl/gl_light_list.c`, from the backend's `begin`
+(`gl_draw.c`), out of three sources, none of them the game's state
+(`src/port/lights.c` is `outside` in `config/port_state.txt`; nothing
+the game computes reads any of it):
+
+- **The stage's light files** (`stage_lights`): every mod's
+  `lights/stage_NN.txt`, layered in the mods' order (MODS.md, "Lights";
+  `port_ModFindEach`), read once when the stage is first drawn. Each
+  light is placed each frame on what it is fastened to: the world, a
+  fighter's body or bone (`port_GetFighterView`), a weapon
+  (`port_GetFighterWeapons`), a piece of the stage
+  (`port_RemasterStagePieces`), or the stage's own flames.
+- **The game's flames.** Nine stages have flames of their own -- the
+  torches and fires `eff_DrawFlames` draws as sprites, two or four a
+  stage, from the stage's sound file (formats/STAGE_BIN.md, "Billboard
+  list"). `eff_DrawFlames` tells `port_LightsNoteFlames` the list each
+  frame it draws them, so a light file's `on = flames` puts a light at
+  each, the program's own files carry no place of the disc's, and a mod
+  that moves the flames (a stage's file) moves their lights. A light is
+  put half the flame's height above its foot (`FLAME_..._HEIGHT`), a
+  fire's reaching half as far again as a torch's.
+- **The fight's flashes** (`effect_lights`). The game has a point light
+  of its own: a clash, a hit, a lock and a shot ask for `EFF_LIT`, and
+  for ten frames `eff_Update` lights the fighters by a light at the
+  effect's place in its colour (white for a shot, rose for a hit, pale
+  blue for a lock, pale red for a clash: `g_eff_light_color`). The end
+  of `eff_Update` tells `port_LightsNoteFlash` where it is, its colour
+  and the frames it has left, and the list gets a light of that colour,
+  of intensity 1.5 falling to nothing with the game's own count, reaching
+  4,500 units, asking to cast shadows: the flash where blades meet
+  lights the ground, the walls and both fighters, and is gone when the
+  game's own light goes. Each glowing quad `eff_DrawFlash` draws (the
+  sparks of a clash, a hit's flash, a lock's star, the streaks) is told
+  to `port_LightsNoteGlow` and becomes a small light in its colour at
+  its place (intensity 0.4, 1,600 units).
+
+What the game is read for is read where it is already being computed,
+under `RB_REMASTER_VIEW` beside the effects' other notes; nothing of the
+game's is written. Under rollback the notes of a frame run again are
+written again, and the list is whatever the last frame said. A light's
+`id`, which pairs it between two frames and seeds its flicker, is the
+stage's number and its place in the files for a light of the files
+(with the flame's for `on = flames`), the event's count for a flash
+and the quad's slot for a glow.
+
+Where no stage has been drawn for 30 frames (the menus) or no effects
+have run for 30 (a pause), the lists of those sources are empty. The
+GL prover keeps both off unless `--stage-lights on` and
+`--effect-lights on` are given, so that the provers hold the console's
+lighting.
+
+**Finding them.** `tools/port_lights.py` (MODS.md, "The lights the
+program ships") dumps each stage's mesh, video memory and textures as the
+program built them (`port_GlLightListDumpMesh`, with `--dump-textures`),
+reads every face's texels as they are drawn (the vertex's colour times
+the texel, its colour table found where the stage loaded it, not on the
+row the fog writes over), and gathers what looks lit from within into
+drafts; and takes pictures of each stage's tour with the lights on.
+What it found: the texels alone tell little -- the game lit its night
+stages by their vertex colours, and a white line on the floor or a
+whitewashed wall is as bright as a lamp -- so its drafts are read
+beside the pictures. Two of them were lamps: the parking garage's
+ceiling fittings (five, 8,000 units apart) and the ferry dock's street
+lamp. The other nine stages with lights are the game's own flames
+(MODS.md, "The lights the program ships", has the table).
 
 ### What the old branch's lighting came to
 

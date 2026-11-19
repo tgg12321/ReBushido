@@ -49,7 +49,7 @@ from port_build import host_tests, modern  # noqa: E402
 OUT_DIR = 'build/port-gl'
 GL_DIR = 'src/port/gl/'
 # What talks to EGL and to the C library.
-GL_HOSTED = ['gl_bench.c', 'gl_cloth.c', 'gl_draw.c', 'gl_fighter.c', 'gl_fighter_card.c', 'gl_fighter_file.c', 'gl_light.c', 'gl_lights.c', 'gl_load.c', 'gl_replace.c', 'gl_scene.c', 'gl_see.c',
+GL_HOSTED = ['gl_bench.c', 'gl_cloth.c', 'gl_draw.c', 'gl_fighter.c', 'gl_fighter_card.c', 'gl_fighter_file.c', 'gl_light.c', 'gl_light_list.c', 'gl_lights.c', 'gl_load.c', 'gl_replace.c', 'gl_scene.c', 'gl_see.c',
              'gl_shadow.c', 'gl_sky.c', 'gl_stage.c', 'gl_sun.c', 'gl_tween.c', 'gl_main.c']
 # The window's own arithmetic, which this program uses to make the
 # software GPU's picture for the comparison; and its host.

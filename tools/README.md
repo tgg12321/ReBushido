@@ -72,6 +72,9 @@ your own copy of the disc.
 | `inspect_ndata.py`, `repack_ndata.py` | The NDATA archive (models, stages, weapons, cutscenes) |
 | `inspect_bbm.py`, `inspect_windat.py` | Motion files and the win-pose table |
 | `inspect_stage.py`, `repack_stage.py` | `STAGE*.BIN` and the other container files |
+| `stage_ground.py` | A stage's ground file (NDATA's `S00`..`S37`, `docs/formats/GROUND.md`) read into numbers and written back: `roundtrip` (all 38 byte for byte), `unpack`/`pack` (JSON and TIMs), `info` |
+| `ground_cast.py` | The game's collision cast (`collision.c`) in Python, number for number, on a ground's collision grid |
+| `arena_compile.py`, `arena_validate.py` | A custom arena: compiled from a glTF/OBJ scene and `arena.txt` into a `.arena`, and held to what a fight needs, `--fight` playing the CPU against the CPU on both sizes of the port (`docs/MODS.md`, "Custom arenas"); `arenas/courtyard/` is the sample's source |
 | `inspect_bnk.py`, `repack_bnk.py`, `repack_vab.py` | The `.BNK` texture blocks and the `.SE` sound banks |
 | `inspect_tim.py`, `repack_tim.py` | TIM pictures, to and from PNG |
 | `inspect_str.py`, `inspect_movovl.py` | The opening movie's stream and the movie overlay's executable |
