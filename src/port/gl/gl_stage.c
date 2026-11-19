@@ -394,6 +394,10 @@ static struct {
     /* the sun's maps (gl_sun.h): what the mesh casts into them, and where
      * the mesh's own program reads them */
     GLuint sun_program;
+    /* the box the whole mesh stands in, in the world, for the sun's map of
+     * the whole stage (gl_sun.c) */
+    float box_lo[3];
+    float box_hi[3];
     GLint sun_at_matrix;
     GLint sun_at_pieces;
     GLint sun_at_window;
@@ -2459,6 +2463,19 @@ static void port_GlStageBuild(const PortStageView *view) {
                       100.0f +
                   0.5f);
     }
+    for (i = 0; i < g_stage.built; i++) {
+        const GLfloat *at = &g_stage.building[i].x;
+        s32 k;
+
+        for (k = 0; k < 3; k++) {
+            if (i == 0 || at[k] < g_stage.box_lo[k]) {
+                g_stage.box_lo[k] = at[k];
+            }
+            if (i == 0 || at[k] > g_stage.box_hi[k]) {
+                g_stage.box_hi[k] = at[k];
+            }
+        }
+    }
     g_stage.vertex_count = g_stage.built;
     g_stage.tiles = (PortAddress)tiles;
     g_stage.tile_count = count;
@@ -2731,6 +2748,12 @@ static void port_GlStageDrawMesh(
             (float)view->ofy / (float)PORT_REMASTER_ONE +
                 (float)paint->offset_y,
             paint->clip_top);
+        /* ... and the sun's maps' readers that have no mesh (gl_sun.h) */
+        port_GlSunNoteView(rotation, camera, (float)view->h,
+                           (float)view->ofx / (float)PORT_REMASTER_ONE +
+                               (float)(paint->offset_x + picture->margin),
+                           (float)view->ofy / (float)PORT_REMASTER_ONE +
+                               (float)paint->offset_y);
     }
     port_GlSunBind(&g_stage.sun);
     port_GlLightsBind(&g_stage.lights);
@@ -2829,7 +2852,7 @@ u32 port_GlStageDrawSunCasters(const float *matrix) {
     for (i = 0; i < PORT_STAGE_PIECE_WORDS; i++) {
         pieces[i] = port_GlStagePropsAreOn(port_RemasterStageNumber()) &&
                             !g_stage.is_props_hidden
-                        ? view->pieces[i] & g_stage.piece_in[i]
+                        ? view->standing[i] & g_stage.piece_in[i]
                         : 0;
     }
     glUseProgram(g_stage.sun_program);
@@ -2848,6 +2871,19 @@ u32 port_GlStageDrawSunCasters(const float *matrix) {
     port_GlCountDraw((u32)g_stage.vertex_count, 1);
     glBindVertexArray(0);
     return (u32)g_stage.vertex_count / 3;
+}
+
+s32 port_GlStageBox(float *lo, float *hi) {
+    s32 k;
+
+    if (!g_stage.is_started || g_stage.vertex_count == 0) {
+        return FALSE;
+    }
+    for (k = 0; k < 3; k++) {
+        lo[k] = g_stage.box_lo[k];
+        hi[k] = g_stage.box_hi[k];
+    }
+    return TRUE;
 }
 
 void port_GlStageDrawOccluders(u32 framebuffer) {

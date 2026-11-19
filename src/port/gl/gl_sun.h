@@ -6,9 +6,11 @@
  * overhaul").
  *
  * The game's shadow is the fighters flattened onto the ground along the
- * sun. Here the sun has a depth map instead -- three of them, each a
+ * sun. Here the sun has a depth map instead -- four of them, three a
  * square of the world seen along the sun, nested about the camera
- * (cascades) -- into which everything with a place in the world is drawn
+ * (cascades), and the fourth the whole stage, for what lies past the
+ * third however far the stage is drawn -- into which everything with a
+ * place in the world is drawn
  * as the sun sees it: the stage's ground and pieces (gl_stage.c) and the
  * fighters, their weapons and cloths (gl_shadow.c, from what the cast
  * shadows are made of). What is lit from a mesh of its own -- the ground,
@@ -31,8 +33,9 @@
 #include "common.h"
 #include "port_remaster.h"
 
-/* How many maps, nested, and how many texels a side each has. */
-#define PORT_GL_SUN_CASCADES 3
+/* How many maps (three nested and the whole stage's), and how many
+ * texels a side each has. */
+#define PORT_GL_SUN_CASCADES 4
 #define PORT_GL_SUN_SIZE 2048
 
 /* The texture units a reader binds the map to: compared (the shadow test
@@ -77,6 +80,34 @@ extern void port_GlSunLocate(u32 program, PortGlSunAt *at);
 /* The program in use is given the maps (or told there are none). */
 extern void port_GlSunBind(const PortGlSunAt *at);
 
+/* The view the ground was drawn with this picture (gl_stage.c, as the
+ * lighting's passes are given it): the rotation as the coprocessor has
+ * it (1.12, a row after a row), the camera, the distance to the
+ * projection plane and the middle of the screen in video memory's
+ * pixels. What a primitive of the game's drawn without a mesh of its own
+ * -- a fighter's own polygons, his weapon, his cloth -- needs to turn a
+ * pixel and its depth back into a place in the world and ask the maps
+ * about it (PORT_GL_SUN_SCREEN_SHADER). */
+extern void port_GlSunNoteView(const float *rotation, const float *camera,
+                               float h, float middle_x, float middle_y);
+
+typedef struct {
+    PortGlSunAt sun;
+    s32 unview;
+    s32 eye;
+    s32 h;
+    s32 middle;
+    s32 dark;
+} PortGlSunScreenAt;
+
+extern void port_GlSunLocateScreen(u32 program, PortGlSunScreenAt *at);
+/* The maps and the view given to the program in use (or nothing, where
+ * the picture has none). */
+extern void port_GlSunBindScreen(const PortGlSunScreenAt *at);
+/* A number that moves on whenever the maps or the view are new: what
+ * was given to a program stands until it does. */
+extern u32 port_GlSunStamp(void);
+
 /* The sun's direction of travel in the world, of length one, as the maps
  * are drawn along it; FALSE where there is none this picture. */
 extern s32 port_GlSunTravel(float *travel);
@@ -91,11 +122,11 @@ extern u32 port_GlSunTriangles(void);
  * length one, or nought), 1 where the maps do not reach. Needs GLSL 4.0. */
 #define PORT_GL_SUN_SHADER                                                                                                                    \
     "uniform int u_sun_on;\n"                                                                                                                 \
-    "uniform mat4 u_sun_matrix[3];\n" /* a texel of each map, in the world's                                                                  \
+    "uniform mat4 u_sun_matrix[4];\n" /* a texel of each map, in the world's                                                                  \
                                          units */                                                                                             \
-    "uniform vec3 u_sun_texel;\n" /* the depth each map holds, from 0 to 1, in                                                                \
+    "uniform vec4 u_sun_texel;\n" /* the depth each map holds, from 0 to 1, in                                                                \
                                      the world's units */                                                                                     \
-    "uniform vec3 u_sun_depth;\n"                                                                                                             \
+    "uniform vec4 u_sun_depth;\n"                                                                                                             \
     "uniform vec3 u_sun_travel;\n" /* how wide a penumbra grows a unit of                                                                     \
                                       distance from its caster */                                                                             \
     "uniform float u_sun_soft;\n"  /* how many times the sun's own share a                                                                    \
@@ -158,7 +189,20 @@ extern u32 port_GlSunTriangles(void);
     "    }\n"                                                                                                                                 \
     "    return lit * 0.25;\n"                                                                                                                \
     "}\n"                                                                                                                                     \
-    "float sun_visible(vec3 world, vec3 normal) {\n"                                                                                          \
+    "float sun_lit_of(int i, vec3 world, vec3 n, bool quick, out float inside) {\n"                                                           \
+    "    float texel = u_sun_texel[i];\n"                                                                                                     \
+    "    vec3 p = world + n * texel * 1.5 - u_sun_travel * texel;\n"                                                                          \
+    "    vec4 c = u_sun_matrix[i] * vec4(p, 1.0);\n"                                                                                          \
+    "    vec3 at = c.xyz * 0.5 + vec3(0.5);\n"                                                                                                \
+    "    float edge = i < 3 ? 0.03 : 0.0;\n"                                                                                                  \
+    "    vec2 low = at.xy - vec2(edge);\n"                                                                                                    \
+    "    vec2 high = vec2(1.0 - edge) - at.xy;\n"                                                                                             \
+    "    inside = min(min(low.x, low.y), min(high.x, high.y));\n"                                                                             \
+    "    if (inside <= 0.0 || at.z >= 1.0) { inside = -1.0; return 1.0; }\n"                                                                  \
+    "    return i == 0 && !quick ? sun_filter(i, at, texel)\n"                                                                                \
+    "                  : sun_cheap(i, at, i == 2 ? 0.0 : 1.5);\n"                                                                             \
+    "}\n"                                                                                                                                     \
+    "float sun_visible_by(vec3 world, vec3 normal, bool quick) {\n"                                                                           \
     "    if (u_sun_on == 0) { return 1.0; }\n" /* A face turned away from the                                                                 \
                                                 * maps' sun is in its own                                                                     \
                                                 * shadow by them, but the game                                                                \
@@ -171,20 +215,32 @@ extern u32 port_GlSunTriangles(void);
     "    float facing = -dot(normal, u_sun_travel);\n"                                                                                        \
     "    if (facing <= 0.0) { return 1.0; }\n"                                                                                                \
     "    float let_in = smoothstep(0.0, 0.15, facing);\n"                                                                                     \
-    "    vec3 n = normal;\n"                                                                                                                  \
-    "    for (int i = 0; i < 3; i++) {\n"                                                                                                     \
-    "        float texel = u_sun_texel[i];\n"                                                                                                 \
-    "        vec3 p = world + n * texel * 1.5 - u_sun_travel * texel;\n"                                                                      \
-    "        vec4 c = u_sun_matrix[i] * vec4(p, 1.0);\n"                                                                                      \
-    "        vec3 at = c.xyz * 0.5 + vec3(0.5);\n"                                                                                            \
-    "        if (all(greaterThan(at.xy, vec2(0.03)))\n"                                                                                       \
-    "            && all(lessThan(at.xy, vec2(0.97))) && at.z < 1.0) {\n"                                                                      \
-    "            float lit = i == 0 ? sun_filter(i, at, texel)\n"                                                                             \
-    "                      : sun_cheap(i, at, i == 1 ? 1.5 : 0.0);\n"                                                                         \
-    "            return 1.0 - let_in * (1.0 - lit);\n"                                                                                        \
+    "    for (int i = 0; i < 4; i++) {\n"                                                                                                     \
+    "        float inside;\n"                                                                                                                 \
+    "        float lit = sun_lit_of(i, world, normal, quick, inside);\n"                                                                      \
+    "        if (inside < 0.0) { continue; }\n"                                                                                               \
+    "        if (i < 3 && inside < 0.05) {\n"                                                                                                 \
+    "            float next_inside;\n"                                                                                                        \
+    "            float next = sun_lit_of(i + 1, world, normal, quick,\n"                                                                      \
+    "                                    next_inside);\n"                                                                                     \
+    "            if (next_inside >= 0.0) {\n"                                                                                                 \
+    "                lit = mix(next, lit, inside / 0.05);\n"                                                                                  \
+    "            }\n"                                                                                                                         \
     "        }\n"                                                                                                                             \
+    "        return 1.0 - let_in * (1.0 - lit);\n"                                                                                            \
     "    }\n"                                                                                                                                 \
     "    return 1.0;\n"                                                                                                                       \
+    "}\n"                                                                                                                                     \
+    "float sun_visible(vec3 world, vec3 normal) {\n"                                                                                          \
+    "    return sun_visible_by(world, normal, false);\n"                                                                                      \
+    "}\n" /* ... and `sun_visible_quick`, the nearest map read by the four                                                                    \
+           * compared reads the farther ones have and not its soft                                                                            \
+           * search: for a fighter's own polygons (gl_draw.c), many                                                                           \
+           * of the picture's samples, whose shadow from the scenery                                                                          \
+           * is a step further than the ground's and needs no                                                                                 \
+           * contact hardening of its own */                                                                                                  \
+    "float sun_visible_quick(vec3 world, vec3 normal) {\n"                                                                                    \
+    "    return sun_visible_by(world, normal, true);\n"                                                                                       \
     "}\n" /* What a shadow takes from `lit` (bytes of light, the game's                                                                       \
            * scale), of which `sun` is the sun's own share, `seen` of the sun                                                                 \
            * reaching it: the sun's share, and of the rest of the light (the                                                                  \
@@ -204,6 +260,24 @@ extern u32 port_GlSunTriangles(void);
     "        ? clamp((u_sun_gain - 1.0) * of_sun / of_rest, 0.0, 1.0) : 0.0;\n"                                                               \
     "    vec3 lost = sun + rest * more;\n"                                                                                                    \
     "    return max(lit - (1.0 - seen) * lost, vec3(0.0));\n"                                                                                 \
+    "}\n"
+
+/* The shader's side for a primitive of the game's own, which has no place
+ * in the world but its pixel and its depth: `sun_screen_world(pixel,
+ * depth)`, the place a point of video memory's picture at a depth in the
+ * world's units is a drawing of, and `u_sun_dark`, how much of a pixel's
+ * light a full shadow takes: the `shadows` strength, what a shadow takes
+ * from the stage's sunlit floor (sun_shade), so that one on a fighter is
+ * as dark as one on the floor beside him. After PORT_GL_SUN_SHADER. */
+#define PORT_GL_SUN_SCREEN_SHADER                                              \
+    "uniform mat3 u_sun_unview;\n"                                             \
+    "uniform vec3 u_sun_eye;\n"                                                \
+    "uniform float u_sun_h;\n"                                                 \
+    "uniform vec2 u_sun_middle;\n"                                             \
+    "uniform float u_sun_dark;\n"                                              \
+    "vec3 sun_screen_world(vec2 pixel, float depth) {\n"                       \
+    "    vec2 s = (pixel - u_sun_middle) * depth / u_sun_h;\n"                 \
+    "    return u_sun_eye + u_sun_unview * vec3(s, depth);\n"                  \
     "}\n"
 
 #endif /* PORT_GL_SUN_H */
