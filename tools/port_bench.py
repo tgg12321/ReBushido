@@ -151,6 +151,11 @@ LIMITS = [
 # centile of a fight frame 3.9 to 5.2 ms with run_ahead 0 to 2, the RTX
 # 3090 at 2560 by 1440, with other agents' work on the machine), held
 # whatever --report-only says: (case, measure, at most, what it is).
+# How far over its limit a met measure may go before it fails: the owner
+# (2026-11-19) wants good performance kept in general, not a gate that a
+# browser in the background tips over (ra0's cpu_p95 4.2 to 5.1 ms at 4% of
+# the processors busy, past 7 at 10%, the same code).
+MET_SLACK = 1.25
 MET_LIMITS = [
     ('ra0', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, run_ahead 0"),
     ('ra1', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, run_ahead 1"),
@@ -892,6 +897,12 @@ def main():
                 # program on the machine lengthens: said, not held
                 print('  %-11s %-12s %7.2f (at most %6.2f) %-5s %s' % (case, key, value, most,
                                                                      'over, on a loaded machine: not held', what))
+                continue
+            if over and value <= most * MET_SLACK:
+                # the owner (2026-11-19): not so strict, as long as it stays
+                # generally fast; a little over, as a busy machine makes it
+                print('  %-11s %-12s %7.2f (at most %6.2f) %-5s %s' % (case, key, value, most,
+                                                                     'over, within the slack: not held', what))
                 continue
             stalled = stalled or over
             print('  %-11s %-12s %7.2f (at most %6.2f) %-5s %s' % (case, key, value, most,
