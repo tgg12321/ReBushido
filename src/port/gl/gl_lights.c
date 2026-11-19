@@ -312,6 +312,13 @@ void port_GlLightsSetPhase(s32 phase) {
 
 void port_GlLightsNewPicture(void) { g_lights.is_prepared = FALSE; }
 
+const void *port_GlLightsCard(s32 *count) {
+    *count = g_lights.is_started && port_GlLightsIsOn() && g_lights.is_prepared
+                 ? g_lights.card_count
+                 : 0;
+    return g_lights.card;
+}
+
 s32 port_GlLightsShown(void) { return g_lights.most; }
 
 s32 port_GlLightsShadowed(void) { return g_lights.shadowed; }

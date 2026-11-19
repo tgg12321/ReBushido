@@ -26,6 +26,7 @@
 #include "gl_fighter.h"
 #include "gl_sun.h"
 #include "gl_lights.h"
+#include "gl_post.h"
 #include "gl_fighter_card.h"
 #include "gl_fighter_file.h"
 #include "gl_light.h"
@@ -102,6 +103,7 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_TEXTURE_2D_MULTISAMPLE 0x9100
 #define GL_SRC_ALPHA 0x0302
 #define GL_ONE_MINUS_SRC_ALPHA 0x0303
+#define GL_CONSTANT_ALPHA 0x8003
 #define GL_FUNC_ADD 0x8006
 
 #define PORT_GL_FIGHTER_FUNCTIONS                                              \
@@ -109,6 +111,8 @@ typedef ptrdiff_t GLsizeiptr;
        (GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLboolean))                 \
     GL(void, glBlendFunc, (GLenum, GLenum))                                    \
     GL(void, glBlendEquation, (GLenum))                                        \
+    GL(void, glBlendFuncSeparate, (GLenum, GLenum, GLenum, GLenum))            \
+    GL(void, glBlendColor, (GLfloat, GLfloat, GLfloat, GLfloat))               \
     GL(void, glRenderbufferStorageMultisample,                                 \
        (GLenum, GLsizei, GLenum, GLsizei, GLsizei))                            \
     GL(void, glViewport, (GLint, GLint, GLsizei, GLsizei))                     \
@@ -350,6 +354,7 @@ static struct {
     GLint at_color;
     GLint at_back;
     GLint at_smooth_light;
+    GLint at_tone_on;
     GLint at_texture;
     GLint at_cloth;
     GLint at_cloth_near;
@@ -630,7 +635,8 @@ static const char g_fighter_fragment_text[] =
     "layout(location = 0) out vec4 o_color;\n"
     "layout(location = 1) out float o_depth;\n"
     /* the sun's maps (gl_sun.h), the lights of a frame (gl_lights.h) */
-    PORT_GL_SUN_SHADER PORT_GL_LIGHTS_SHADER "void main() {\n"
+    PORT_GL_SUN_SHADER PORT_GL_LIGHTS_SHADER PORT_GL_TONE_SHADER
+    "void main() {\n"
     "    vec4 texel = texture(u_texture, v_uv);\n"
     "    if (u_paletted != 0) {\n"
     "        vec4 entry = texture(u_index, v_uv);\n"
@@ -689,10 +695,14 @@ static const char g_fighter_fragment_text[] =
     "            lit = sun_shade(lit, u_color[0] * turn * 256.0, seen);\n"
     "        }\n"
     "    }\n"
+    /* the game's own light, before the frame's are added: what the
+     * tonemap holds the picture to (gl_post.h) */
+    "    vec3 base_lit = lit;\n"
     "    if (u_lights_count != 0 && length_of > 0.25) {\n"
     "        lit += lights_add(v_world, normal / length_of);\n"
     "    }\n"
     /* a metal's colour is in its highlight, not in what it scatters */
+    "    vec3 base = texel.rgb * 31.0 * base_lit / 16.0 * (1.0 - 0.6 * metal);\n"
     "    vec3 c = texel.rgb * 31.0 * lit / 16.0 * (1.0 - 0.6 * metal);\n"
     /* the sun's highlight, where the sun reaches: its colour in the
      * game's bytes (128 one) made the picture's */
@@ -707,7 +717,7 @@ static const char g_fighter_fragment_text[] =
     "                 * (255.0 / 128.0) * sun_seen;\n"
     "        }\n"
     "    }\n"
-    "    o_color = vec4(clamp(c, 0.0, 255.0) / 255.0, 1.0);\n"
+    "    o_color = vec4(tone_map(base, c) / 255.0, 1.0);\n"
     /* the depth the layer is held to the scene by: a cloth's nearer by
      * what the game sorts its faces nearer by (render_SidedDepth), so
      * that a hem on the ground is not cut by the ground nor painted over
@@ -730,7 +740,9 @@ static const char g_composite_fragment_text[] =
     "#version 330 core\n"
     /* 1: the layer was taken down from several samples a pixel, and its
      * alpha is how much of a pixel the models cover (port_GlFighterTakeDown):
-     * an edge is mixed over the picture by it */
+     * an edge is mixed over the picture by it. 2: one sample a pixel, laid
+     * over the picture; 0: into the shadows' mask, whose alpha is 1. Over
+     * the picture the alpha says the fighters painted it (gl_post.h). */
     "uniform int u_soft;\n"
     "uniform sampler2D u_layer;\n"
     "uniform sampler2D u_layer_depth;\n"
@@ -753,7 +765,7 @@ static const char g_composite_fragment_text[] =
     "void main() {\n"
     "    ivec2 at = ivec2(gl_FragCoord.xy - u_origin);\n"
     "    vec4 c = texelFetch(u_layer, at, 0);\n"
-    "    if (c.a < (u_soft != 0 ? 0.01 : 0.5)) { discard; }\n"
+    "    if (c.a < (u_soft == 1 ? 0.01 : 0.5)) { discard; }\n"
     "    float deep = texelFetch(u_layer_depth, at, 0).r;\n"
     /* held against the ground's mesh by the slots, as the game's own
      * primitives of a fighter are (gl_draw.c, port_GlIsOverGround) */
@@ -762,7 +774,7 @@ static const char g_composite_fragment_text[] =
     "            < uint(slot_of(int(clamp(deep, 0.0, 1048575.0))))) {\n"
     "        discard;\n"
     "    }\n"
-    "    o_color = vec4(c.rgb, u_soft != 0 ? c.a : 1.0);\n"
+    "    o_color = vec4(c.rgb, u_soft == 1 ? c.a : u_soft == 2 ? 0.95 : 1.0);\n"
     /* what the scene paints after this is held against the fighter */
     "    gl_FragDepth = clamp(deep / u_depth_range, 0.0, 1.0);\n"
     "}\n";
@@ -904,6 +916,7 @@ const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
     AT(at_color, "u_color");
     AT(at_back, "u_back");
     AT(at_smooth_light, "u_smooth_light");
+    AT(at_tone_on, "u_tone_on");
     AT(at_texture, "u_texture");
     AT(at_cloth, "u_cloth");
     AT(at_cloth_near, "u_cloth_near");
@@ -1677,6 +1690,7 @@ static void port_GlFighterUploadLights(const FighterPose *pose) {
     glUniform3f(g_fighter.at_back, (GLfloat)pose->back[0],
                 (GLfloat)pose->back[1], (GLfloat)pose->back[2]);
     glUniform1i(g_fighter.at_smooth_light, port_GlLightIsSmooth() ? 1 : 0);
+    glUniform1i(g_fighter.at_tone_on, port_GlPostToneIsOn());
     glUniform3f(g_fighter.at_eye_world, (GLfloat)pose->camera[0],
                 (GLfloat)pose->camera[1], (GLfloat)pose->camera[2]);
     port_GlSunBind(&g_fighter.sun);
@@ -3047,11 +3061,15 @@ static void port_GlFighterDrawAll(
     glUniform2f(g_fighter.c_at_target, (GLfloat)picture.target_w,
                 (GLfloat)picture.target_h);
     glUniform1f(g_fighter.c_at_depth_range, PORT_GL_DEPTH_RANGE);
-    glUniform1i(g_fighter.c_at_soft, layer->samples > 1);
+    glUniform1i(g_fighter.c_at_soft, layer->samples > 1 ? 1 : 2);
     if (layer->samples > 1) {
+        /* the colour mixed by the share covered; the alpha the fighters'
+         * code by the same share (gl_post.h) */
         glEnable(GL_BLEND);
         glBlendEquation(GL_FUNC_ADD);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glBlendColor(0.0f, 0.0f, 0.0f, (GLfloat)PORT_GL_POST_ALPHA_FIGHTER);
+        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                            GL_CONSTANT_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
     /* kept for the shadows' mask (port_GlFighterDrawOccluders) */
     if (!is_tiny) {
@@ -3073,6 +3091,12 @@ static void port_GlFighterDrawAll(
     glDepthMask(GL_FALSE);
     glDepthFunc(GL_LESS);
     glDisable(GL_DEPTH_TEST);
+    /* the layer's depth into the ground's, for the lighting's passes
+     * after the scene (gl.h, gl_post.h) */
+    if (!is_tiny) {
+        port_GlGroundDepthAddLayer(
+            layer->depth_value, layer->color, x, y, w, h, bound);
+    }
     PORT_GPU_END();
     port_GlForgetState();
     if (is_tiny) {

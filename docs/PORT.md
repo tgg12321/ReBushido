@@ -7327,16 +7327,19 @@ a buffer, so a pixel loops over the few that reach it.
 | a | the sun's shadow maps, cascaded, soft | `shadows = map` |
 | b | lights with a place (point and spot), per pixel, the strongest few with shadows | `lights` |
 | c | reflections: on the screen, the sky behind as the fallback | `reflections` |
-| d | HDR and a tonemap held to the game's look, ambient occlusion, bloom | `tonemap`, `ambient_occlusion`, `bloom` |
+| d | a tonemap held to the game's look, ambient occlusion, bloom | `tonemap`, `ambient_occlusion`, `bloom` |
+
+All four phases are in, each setting on with nothing said.
 
 **The budget.** 144 a second at 2,560 by 1,440 on the owner's RTX 3090:
 6.94 ms a refresh in all, of which the picture was 3.2 to 4.3 ms of the
 card at the end of the performance run (HANDOFF). The lighting's own
-share is held at **1.5 ms of the card** with two fighters, and the
+share is held at **2.0 ms of the card** with two fighters (1.5 before c
+and d), and the
 stress case (four fighters, the ground twice, many lights) must still
 hold the card's 95% under the refresh. `tools/port_bench.py` reads the
 card's time of each new pass (`sun`, and those after it) and holds them
-(LIGHT_LIMITS).
+(`LIGHT_PASSES`: `sun`, `lights`, `ssr`, `ao`, `bloom`, `post`).
 
 #### a. The sun's shadow maps (`shadows = map`)
 
@@ -7489,6 +7492,150 @@ from its roughness and metal, where the sun's maps say it reaches. A
 model without the maps is flat, unoccluded, rough (0.8) and not metal:
 its highlight is a faint sheen.
 
+#### What painted a pixel, and its depth
+
+The passes of c and d run after the scene, so they have to know, at each
+pixel of the finished picture, what is there. The picture is painted in
+the console's order with the console's four mixes into an eight-bit
+colour buffer that is all of video memory at the scale, and only the
+ground's mesh and the fighters' layer have a depth. Two things are kept
+for the passes, neither of them read by anything else:
+
+- **The alpha says what painted the pixel last** (`gl_post.h`). Nothing
+  read the colour buffer's alpha before (the resolve and the window
+  took its colour alone, the read-back forces it opaque), so it is free:
+  the ground's mesh writes 0.6 plus a quarter of its face's reflectance,
+  the fighters' layer 0.95, and everything else -- the game's opaque
+  primitives, the clears, the sky, video memory written -- 1, as it
+  always did. A primitive that mixes with what is there keeps the larger
+  of the two alphas (`glBlendEquationSeparate(..., GL_MAX)`: its texels
+  that mix say 0 or a half), so smoke over the floor leaves the floor's
+  code and an opaque texel of a mixed primitive covers it. The colours
+  mix exactly as before: a picture with every setting of c and d off is
+  the picture main drew, to the byte (the prover's off runs, all 38
+  stages).
+- **The depth of the ground and the fighters, one a pixel**
+  (`PortGlPicture.ground_depth`). The depth buffer is a multisampled
+  renderbuffer the next drawing clears, and reading it -- a blit of its
+  samples down to one, or a shader's read of it as a texture -- held the
+  card for half a millisecond to most of one at 2,560 by 1,440. So the
+  mesh writes its depth again, in the world's units over eight, in half
+  floats, into a third buffer beside its slots (only where a pass reads
+  it), the slots' own take-down turns it into the world's units one a
+  pixel, and the fighters' layer, when it is laid over the picture, puts
+  its own depth into the same texture where it is nearer. Each drawing
+  area of video memory keeps its own: the game draws one frame while it
+  shows the last in another part of video memory, so the picture on show
+  is read with the depth and the view (`port_GlPostNoteView`) of the
+  drawing it is.
+
+#### c. Reflections (`reflections = on`)
+
+`src/port/gl/gl_post.c`. **Which surfaces**: the level faces (within
+about 20 degrees) of the ground's mesh and its pieces on the stages whose
+floor is polished, lacquered, glazed or wet, each stage's own strength
+and roughness in one table (`g_post_floors`), the face's reflectance put
+in its vertices when the mesh is built (`port_GlPostReflectance`):
+the halls' and dojos' boards (the main Tatara shrine, the Meikyokan, the
+Tatara shrine, the team, chanbara and practice halls, 40 to 50
+hundredths), the kabuki stage's lacquered stage, the castle rooftop's
+glazed tiles under the moon, the parking lot's sealed floor (35), Shainto
+HQ's open deck and the water tower's painted deck, the ferry dock's and
+the building rooftop's concrete at night (20 to 22). Earth, grass, sand,
+gravel, rough stone and weathered planks do not reflect, and neither do
+a hall's walls or a roof's slopes. The collision grid's `wet` class
+(`SURFACE_WET`) was the hint looked at: it marks where a fighter splashes
+(the stream's edge under the lost bridge), not a surface that shines, and
+the water that does (the sea beyond the ferry dock and the coast) is no
+level ground of the fight's, so the table is by stage. No stage has a
+large water plane the fight looks across, so there is no planar
+reflection.
+
+**How**: at half the picture's size, for each pixel of ground that
+reflects, its point and its face's normal from the depth, the view
+reflected in the face, and a ray walked across the picture in at most
+twelve steps (one over the depth interpolated as the picture does,
+jittered by the pixel), then four halvings where it passes behind
+something no thicker than 40 units and 3% of its depth: what is there in
+the picture is what the floor shows -- the fighters, the pillars, the
+railings. Where the ray meets nothing, the sky the picture shows in the
+reflected direction (the sky is the same seen from anywhere, so its
+pixel at that direction's place on the screen is what the floor
+reflects), or the last of the open distance it passed over; else
+nothing, and the floor keeps its own colour. How much: the reflectance
+times 0.65 and 0.35 of Schlick's Fresnel for a varnish, less towards the
+picture's edges and the HUD's band at its top, and towards the end of the
+ray. Smoothed by the floor's roughness (three by three texels, spread up
+to four, only between pixels of one depth), and laid over the ground's
+own colour: `colour * (1 - a) + reflection * a`.
+
+#### d. The finish (`tonemap`, `ambient_occlusion`, `bloom`)
+
+**HDR and the tonemap (`tonemap = on`).** The plan was the colour buffer
+in half floats with every clamp moved to a tonemap pass. It is not done
+so, and on purpose: the colour buffer is all of video memory, which the
+game's own primitives are mixed into with the console's four mixes, and
+the chip clamps each of them (an added mix stops at white, a subtracted
+one at black); a float buffer does not clamp a blend, so every effect,
+fade and HUD mix would change, and `Graphics: Original` would no longer
+be the console's picture. So the lighting is worked out unbounded in the
+two shaders that light (the ground's mesh and the fighters' models), and
+the tonemap is the last thing each does (`PORT_GL_TONE_SHADER`):
+`tone_map(base, total)` takes the colour as the game's own lights make it
+and with the frame's lights added. Where nothing is added it is the
+game's colour clamped, to the byte, so a stage is its own picture with
+its lights off and its mood does not move; what the added light takes
+above a knee -- the stage's own colour there, or three quarters of white,
+the higher -- rolls off towards white instead of clipping flat, so a
+torch's pool or a clash's flash on a fighter keeps its hue and its
+gradient. The energy above white is the lights' own, and that is what
+the bloom draws from (below).
+
+**Ambient occlusion (`ambient_occlusion = on`).** At half the size, in
+the same pass as the reflections: six points about each pixel of ground
+in a disc of 110 world units (a turned spiral, the pixel's own turn),
+each counting by how far it stands above the pixel's face over its
+distance (McGuire's alchemy AO, the cheapest of the kind that holds its
+size in the world), fading out from 8,000 to 16,000 units away and
+nothing where the disc is under three pixels; smoothed with the
+reflections. It darkens only the ground's own pixels, and of them only
+the share of the stage's light that is not the sun's: the colour of the
+dark against the sun's turn on a level floor, from the stage's own light
+setup (`port_GlPostAmbient`, at least 0.35), so a sunlit day stage takes
+a little and a night stage lit from all about takes more. A fighter is
+not darkened by it (he has his own maps where a remade model has them),
+and nothing of the HUD or the game's primitives is.
+
+**Bloom (`bloom = on`).** From the lights, not from the picture: the
+picture is eight bits and a white wall or a white line is as bright as a
+lamp in it (the light files' own finding), so bright pixels are no sign
+of light. Each light of the drawing on show (`port_GlLightsCard`: the
+lights as they were sent to the card when it was drawn, already moved
+between frames and flickered, kept with its view and sent again) is a
+soft glow at a quarter of the size where it is: a bright middle and
+a wide fall, its size a share of the light's reach and more for a
+brighter light, its colour its own, gone where the depth about it says
+the scene stands in front. Spread wider at an eighth and a sixteenth and
+brought back up added, and added over the picture. So a torch, a lamp of
+the parking lot and the flash where blades meet glow, and nothing else
+does; with `lights = off` there is no bloom.
+
+**Where it is drawn.** The passes run in `port_GlFinishFrame`, after the
+shadows' darkening, over the picture the resolve averaged down (with one
+sample a pixel the resolve now runs anyway when a pass is on, so the
+picture has a buffer of its own); the last pass lays the lot over that
+picture into a buffer of the picture's size, which then becomes the
+picture, the old one the next picture's to lay into (no copy; laying it
+in place behind a texture barrier held Mesa's software renderer for the
+whole of its drawing). The window shows it and the provers read it.
+`RB_POST_DEBUG=ao`, `=reflect` or `=depth` in a run's environment draws
+the occlusion, the reflections alone, or the depth and the reflectance in
+the place of the picture.
+
+**Classic stages** keep all four: they are the renderer's, not the
+stage's dressing (`port_StageIsDressed()`); on a Classic stage the stage
+lights are off, so the bloom has only the fight's flashes.
+
 #### What it costs (the bench, the RTX 3090 at 2,560 by 1,440)
 
 `tools/port_bench.py`, other agents' work on the machine (loads of 10 to
@@ -7512,27 +7659,55 @@ moves only with the camera's whole texels), and the stage's shading
 done once a pixel where the ground is drawn twice over (the stress
 case's own doubling, which no stage has).
 
+**c and d** (2026-11-19, a quiet machine, `ra1`, one picture a blank;
+main's own build measured beside it with `--program`, interleaved):
+
+| build | card, median / 95% | stage | ssr | ao | bloom | post | flay |
+|---|---|---|---|---|---|---|---|
+| main (97474f2d1) | 3.63 / 4.76 | 1.53 | -- | -- | -- | -- | 0.10 |
+| this, c and d off | 3.83 / 4.44 | 1.75 | -- | -- | -- | -- | 0.10 |
+| this, c and d on | 4.61 / 6.05 | 1.81 | 0.20 | 0.10 | 0.00 | 0.28 | 0.19 |
+| ra1-stress, main | 5.95 / 7.06, 5.61 / 7.04 | 2.54, 2.39 | -- | -- | -- | -- | 0.10 |
+| ra1-stress, this | 7.17 / 8.22, 6.62 / 7.68 | 3.03, 2.77 | 0.17 | 0.08 | 0.00 | 0.25 | 0.19 |
+
+The gate's bench (`--budget`) on the last commit, a quiet machine: the
+card's 95% 5.78, 6.43 and 5.06 ms at `run_ahead` 0, 1 and 2, the
+lighting's 1.49 against 2.0; the stress case's card 95% 7.76, over the
+refresh, as main's own is (7.04 and 7.06 above, its met limit failing on
+main as it stands).
+
+`ssr` is the one pass of a third of the size that works out the
+reflections and the occlusion together, `ao` the smoothing of both,
+`post` the depth at a third of the size and the lot laid over the
+picture, `flay` the fighters' layer laid and its depth added to the
+ground's; the mesh's own depth beside its slots is in `stage` (0.06).
+The bloom is nothing in `ra1`, which has no lights; it is a draw of a
+quad a light and three passes of a sixteenth to a quarter of the size.
+The lighting's 95% in all was 1.44 ms against the 2.0 held. What it
+took to get there, from 2.6 ms of `post` alone: the multisampled depth
+buffer is never read (a blit of it to one sample cost 0.9 ms, a shader's
+read of it as a texture 0.5), the mesh's depth buffer beside its slots
+is not cleared (where the mesh drew nothing its slot says so), the
+passes run at a third of the picture's size and not at half, the
+reflections and the occlusion are one pass and their smoothing one, and
+the last pass's buffer and the picture's change places instead of a
+copy. Left: the stress case's card (the ground drawn twice doubles the
+mesh's share), and
+`stage` is 0.2 ms above main's with all four off; nothing of c and d
+runs then but the tonemap's switch in the shader and the alpha code.
+
 #### What is left of it
 
-- **c. Reflections.** The plan: the ground's mesh and the pieces write,
-  beside their colour, a reflectance (0 but for a stage's water and its
-  polished floors, which a stage's light file can say, as `stage_lights`
-  says its lamps) and their normal into two more targets of the
-  picture's framebuffer; after the scene, a screen-space march along the
-  reflected ray through the mesh's own depth (the only depth of the
-  whole scene the picture keeps), and where it leaves the screen or
-  meets nothing, the sky (`gl_sky.c`) or the colour of the distance as
-  the fallback, mixed by Fresnel. Planar reflection for the stages with
-  one large water plane (the Kimigaura coast, the ferry dock) only if
-  the screen-space one is plainly short of it there.
-- **d. The finish.** The picture is eight bits a channel and the game's
-  colours are clamped at 255 where they are made, so HDR means the
-  colour buffer in half floats and every shader's clamp moved to a
-  tonemap pass before the resolve, tuned so that with the lights off a
-  stage is its own picture (an identity below the knee); then bloom from
-  what is above the knee (the lights, the flashes), and GTAO from the
-  mesh's depth, darkening only the light that is not the sun's. Each a
-  setting (`tonemap`, `bloom`, `ambient_occlusion`).
+- **The floors' table** (`g_post_floors`) is by stage and by what
+  lies level; a light file could say it a texture at a time (a stone
+  path through grass), which no stage needed yet. The owner's eye on
+  each stage's strength is wanted.
+- **What the screen does not show** is not reflected (a ray that leaves
+  the picture fades out, a wall behind the camera is never seen in the
+  floor); a probe of the stage would be the next step, if a stage asks.
+- **The fighters drawn from the game's own primitives** (no model of
+  their own) have no depth, so they are not reflected and cast no
+  occlusion; with the HD fighters (the owner's) they are.
 - **The light files' placing and strength** are the lights' own side
   (`gl_light_list.c`, the mods' `lights/`): of the stages measured here
   only the parking lot's ceiling spots reach the fight (107,172 pixels

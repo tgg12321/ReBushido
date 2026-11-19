@@ -47,6 +47,7 @@
 #include "gl_stage.h"
 #include "gl_sun.h"
 #include "gl_lights.h"
+#include "gl_post.h"
 #include "port_gpu.h"
 #include "port_remaster.h"
 
@@ -276,7 +277,9 @@ typedef struct {
     s16 page[4]; /* the page's corner, the colour table's first pixel */
     u8 info[4];  /* the texel's bits, the mix, nothing, nothing */
     u16 tile;    /* which tile of the stage it belongs to */
-    u16 pad;
+    /* how much the face reflects, in hundredths (gl_post.h,
+     * port_GlPostReflectance) */
+    u16 reflect;
     /* The normal it is lit from with `smooth_light` (gl_light.h): the
      * mean of the faces' about this corner that do not turn by more than
      * a crease from its own, 4096 long; and nought. */
@@ -341,6 +344,7 @@ static struct {
     GLint at_see_count;
     GLint at_see_axis;
     GLint at_see_radius;
+    GLint at_tone_on;
     /* the mesh as it stands */
     s32 version; /* which stage's data it was built from */
     PortAddress tiles;
@@ -454,6 +458,7 @@ static const char g_stage_vertex_text[] =
     "layout(location = 9) in vec3 a_corner3;\n"
     "layout(location = 10) in uvec4 a_box;\n"
     "layout(location = 11) in vec3 a_normal;\n"
+    "layout(location = 12) in uint a_reflect;\n" /* hundredths */
     /* the view the renderer drew the stage's tiles with: its rotation
      * already scaled as the tiles' own projection scales it, where the
      * camera is, the distance to the projection plane, and where the
@@ -492,6 +497,7 @@ static const char g_stage_vertex_text[] =
     "flat out float v_slot;\n"
     "out vec3 v_smooth_normal;\n"
     "flat out vec4 v_box;\n"
+    "flat out float v_reflect;\n"
     /* where the pixel is in the world, and which way its face looks, for
      * the walls seen through (gl_see.h) */
     "out vec3 v_place;\n"
@@ -599,6 +605,7 @@ static const char g_stage_vertex_text[] =
     "    v_info = a_info;\n"
     "    v_tile = a_tile;\n"
     "    v_smooth_normal = a_normal;\n"
+    "    v_reflect = float(a_reflect) / 100.0;\n"
     /* to the far edges of the last texels */
     "    v_box = vec4(vec2(a_box.xy), vec2(a_box.zw) + vec2(1.0));\n"
     "    v_place = a_place;\n"
@@ -653,6 +660,7 @@ static const char g_stage_fragment_text[] =
     "flat in uint v_tile;\n"
     "flat in float v_slot;\n"
     "flat in vec4 v_box;\n"
+    "flat in float v_reflect;\n"
     "in vec3 v_place;\n"
     "flat in vec3 v_normal;\n"
     /* the walls seen through (gl_see.h): where the camera is in the
@@ -666,6 +674,9 @@ static const char g_stage_fragment_text[] =
     /* a slot, a whole number below 65536, kept in floating point
      * (gl_draw.c, port_GlGroundSlotsEnd) */
     "layout(location = 1) out float o_slot;\n"
+    /* the depth in the world's units over eight, for the lighting's passes
+     * after the scene (gl_draw.c, port_GlGroundSlotsEnd; gl_post.h) */
+    "layout(location = 2) out float o_deep;\n"
     /* the pieces' marks in the shadows' mask: a piece's pixel where the
      * picture kept it, which is where the ground's slots hold its own */
     "uniform int u_occluding;\n"
@@ -674,8 +685,10 @@ static const char g_stage_fragment_text[] =
     PORT_GL_SCENE_SHADER
         /* the sun's maps (gl_sun.h) */
         PORT_GL_SUN_SHADER
-    /* the lights of a frame (gl_lights.h) */
-    PORT_GL_LIGHTS_SHADER
+            /* the lights of a frame (gl_lights.h) */
+            PORT_GL_LIGHTS_SHADER
+    /* the tonemap (gl_post.h) */
+    PORT_GL_TONE_SHADER
     /* the ordering-table slot a depth is sorted at
      * (render_OtIndexShifted) */
     "int slot_of(int depth) {\n"
@@ -866,6 +879,9 @@ static const char g_stage_fragment_text[] =
     "    }\n"
     /* the lights of a frame beside the stage's own (gl_lights.h), added to
      * its light as the coprocessor adds its lights */
+    /* the light the game's own lights give, before the frame's are added:
+     * what the tonemap holds the picture to */
+    "    vec3 base_light = color;\n"
     "    if (u_lights_count != 0 && length_of > 0.25) {\n"
     "        color += lights_add(v_place, v_smooth_normal / length_of);\n"
     "    }\n"
@@ -922,13 +938,16 @@ static const char g_stage_fragment_text[] =
     "        shown = one_color;\n"
     "    }\n"
     "    if ((v_flags.w & 2u) != 0u) {\n"
-    "        color = shown * 255.0 / 31.0;\n"
+    "        color = clamp(shown * 255.0 / 31.0, vec3(0.0), vec3(255.0));\n"
     "    } else {\n"
-    /* a texel times the colour, 128 being one */
-    "        color = shown * color / 16.0;\n"
+    /* a texel times the colour, 128 being one, the light the frame's
+     * lights add rolled off where it passes white (gl_post.h) */
+    "        color = tone_map(shown * base_light / 16.0, shown * color / 16.0);\n"
     "    }\n"
-    "    color = clamp(color, vec3(0.0), vec3(255.0));\n"
-    "    o_color = vec4(color / 255.0, 1.0);\n"
+    /* the alpha says the ground painted this pixel, and how much it
+     * reflects (gl_post.h); the shadows' mask keeps its own */
+    "    o_color = vec4(color / 255.0, u_occluding != 0 ? 1.0\n"
+    "                   : 0.6 + 0.25 * v_reflect);\n"
     "    if (u_occluding != 0) {\n"
     "        uint kept = texelFetch(u_slots, ivec2(gl_FragCoord.xy), 0).r;\n"
     "        if ((v_info.w & 1u) == 0u || kept != uint(v_slot)) { discard; }\n"
@@ -944,6 +963,7 @@ static const char g_stage_fragment_text[] =
      * nothing left out there to tell two faces apart by. */
     "    gl_FragDepth = clamp((v_depth + v_push) / u_depth, 0.0, 1.0);\n"
     "    o_slot = v_slot;\n"
+    "    o_deep = gl_FragDepth * 32768.0;\n"
     "}\n";
 
 /* The mesh as the sun sees it (gl_sun.h): into one of the sun's depth
@@ -1069,6 +1089,8 @@ static void port_GlStageFormat(void) {
         10, 4, GL_UNSIGNED_BYTE, (GLsizei)sizeof(*one), one->box);
     glVertexAttribPointer(
         11, 3, GL_SHORT, GL_FALSE, (GLsizei)sizeof(*one), one->normal);
+    glVertexAttribIPointer(
+        12, 1, GL_UNSIGNED_SHORT, (GLsizei)sizeof(*one), &one->reflect);
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
     glEnableVertexAttribArray(2);
@@ -1083,6 +1105,7 @@ static void port_GlStageFormat(void) {
     /* the normal `smooth_light` and the sun's maps light from: without it
      * every vertex read nought, and neither ever reached the ground */
     glEnableVertexAttribArray(11);
+    glEnableVertexAttribArray(12);
 }
 
 const char *port_GlStageStart(void *(*getproc)(const char *name)) {
@@ -1149,6 +1172,7 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
     AT(at_see_count, "u_see_count");
     AT(at_see_axis, "u_see_axis");
     AT(at_see_radius, "u_see_radius");
+    AT(at_tone_on, "u_tone_on");
     AT(at_pieces, "u_pieces");
     AT(at_far, "u_far");
     AT(at_occluding, "u_occluding");
@@ -1438,7 +1462,7 @@ static void port_GlStagePutVertex(
         to->info[i] = face->info[i];
     }
     to->tile = (u16)face->tile;
-    to->pad = 0;
+    to->reflect = 0;
     /* the face's own until the mesh is whole (port_GlStageBuild) */
     to->normal[0] = face->normal[0];
     to->normal[1] = face->normal[1];
@@ -1944,7 +1968,7 @@ static void port_GlStagePieceFace(
         one->info[3] =
             (u8)(PIECE_FACE | face->how | (face->count == 3 ? PIECE_THREE : 0));
         one->tile = (u16)(PIECE_BASE + read->index);
-        one->pad = 0;
+        one->reflect = 0;
         one->normal[0] = face->normal[k][0];
         one->normal[1] = face->normal[k][1];
         one->normal[2] = face->normal[k][2];
@@ -2414,6 +2438,27 @@ static void port_GlStageBuild(const PortStageView *view) {
                  g_stage.pieces_missed);
         g_stage.has_news = TRUE;
     }
+    /* how much each face reflects, by the stage's own kind of floor and
+     * how level the face lies (gl_post.h) */
+    for (i = 0; i < g_stage.built; i++) {
+        StageVertex *one = &g_stage.building[i];
+        float a[3];
+        float b[3];
+        float normal[3];
+        s32 k;
+
+        for (k = 0; k < 3; k++) {
+            a[k] = one->corner[1][k] - one->corner[0][k];
+            b[k] = one->corner[2][k] - one->corner[0][k];
+        }
+        normal[0] = a[1] * b[2] - a[2] * b[1];
+        normal[1] = a[2] * b[0] - a[0] * b[2];
+        normal[2] = a[0] * b[1] - a[1] * b[0];
+        one->reflect =
+            (u16)(port_GlPostReflectance(port_RemasterStageNumber(), normal) *
+                      100.0f +
+                  0.5f);
+    }
     g_stage.vertex_count = g_stage.built;
     g_stage.tiles = (PortAddress)tiles;
     g_stage.tile_count = count;
@@ -2626,6 +2671,7 @@ static void port_GlStageUniforms(
     glUniform1i(g_stage.at_scene_on, port_GlSceneBind() ? 1 : 0);
     glUniform1f(g_stage.at_scene_levels, port_GlSceneLevels());
     port_GlStageSeeThrough(view);
+    glUniform1i(g_stage.at_tone_on, port_GlPostToneIsOn());
     glUniform1i(g_stage.at_occluding, 0);
     glUniform1i(g_stage.at_samples, picture->samples);
     glUniform1i(g_stage.at_slots, 1);
@@ -2646,6 +2692,11 @@ static void port_GlStageDrawMesh(
     g_stage.drawn_view = *view;
     g_stage.drawn_paint = *paint;
     g_stage.has_drawn = TRUE;
+    /* the last drawing's depth kept for the lighting's passes, before
+     * this one clears it: its picture may be the one still shown while
+     * this one is drawn (gl_post.h) */
+    port_GlPostBeforeMesh(picture);
+    port_GlStageTarget(picture);
     /* the sun's maps, drawn before the mesh reads them (gl_sun.h) */
     if (port_GlSunIsOn()) {
         port_GlSunPrepare(view);
@@ -2656,6 +2707,31 @@ static void port_GlStageDrawMesh(
         port_GlStageTarget(picture);
     }
     port_GlStageUniforms(view, picture, paint);
+    /* the view the lighting's passes after the scene read the depth with
+     * (gl_post.h): the rotation and the camera unrounded where the picture
+     * is between two frames */
+    {
+        float rotation[9];
+        float camera[3];
+        s32 is_mixed = port_GlStageIsMixed(view);
+        s32 i;
+
+        for (i = 0; i < 9; i++) {
+            rotation[i] = is_mixed ? g_stage_mixed.exact_matrix[i]
+                                   : (float)view->matrix[i];
+        }
+        for (i = 0; i < 3; i++) {
+            camera[i] = is_mixed ? g_stage_mixed.exact_camera[i]
+                                 : (float)view->camera[i];
+        }
+        port_GlPostNoteView(
+            rotation, camera, (float)view->h,
+            (float)view->ofx / (float)PORT_REMASTER_ONE +
+                (float)(paint->offset_x + picture->margin),
+            (float)view->ofy / (float)PORT_REMASTER_ONE +
+                (float)paint->offset_y,
+            paint->clip_top);
+    }
     port_GlSunBind(&g_stage.sun);
     port_GlLightsBind(&g_stage.lights);
 

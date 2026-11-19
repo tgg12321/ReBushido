@@ -44,6 +44,11 @@ typedef enum {
     PORT_GPU_SUN,      /* the sun's shadow maps drawn (gl_sun.c) */
     PORT_GPU_LIGHTS,   /* the lights sorted and sent, their shadow maps
                         * drawn (gl_lights.c) */
+    PORT_GPU_SSR,      /* the reflections on the screen (gl_post.c) */
+    PORT_GPU_AO,       /* the ambient occlusion (gl_post.c) */
+    PORT_GPU_BLOOM,    /* the lights' glow (gl_post.c) */
+    PORT_GPU_POST,     /* the depth taken down, and the passes laid over
+                        * the picture (gl_post.c) */
     PORT_GPU_PASSES
 } PortGpuPass;
 

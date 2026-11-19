@@ -331,6 +331,44 @@ PORT_SETTING(lights,
     .help = "Torches, lanterns and sparks lighting the stage and the "
             "fighters")
 
+/* The lighting's finish (src/port/gl/gl_post.h; docs/PORT.md, "The
+ * lighting overhaul", c and d): each its own pass after the scene, on the
+ * remastered picture alone. */
+PORT_SETTING(reflections,
+    .name = "reflections", .value = "on",
+    .note = "on: polished floors, lacquered stages and\n"
+            "glazed tiles reflect the fighters and the\n"
+            "sky (Remastered)",
+    .menu = PORT_MENU_REMASTER, .rank = 126, .takes = PORT_TAKES_NOW,
+    .label = "Reflections",
+    .help = "Polished floors and glazed tiles reflect the fighters and the "
+            "sky")
+
+PORT_SETTING(ambient_occlusion,
+    .name = "ambient_occlusion", .value = "on",
+    .note = "on: the ground darkened softly where it\n"
+            "meets a wall, a step or a fighter's feet",
+    .menu = PORT_MENU_REMASTER, .rank = 127, .takes = PORT_TAKES_NOW,
+    .label = "Ambient occlusion",
+    .help = "The ground darkened softly in corners and under the fighters")
+
+PORT_SETTING(bloom,
+    .name = "bloom", .value = "on",
+    .note = "on: torches, lamps and the flash where\n"
+            "blades meet glow (with lights on)",
+    .menu = PORT_MENU_REMASTER, .rank = 128, .takes = PORT_TAKES_NOW,
+    .label = "Bloom",
+    .help = "Torches, lamps and the flash of a clash glow")
+
+PORT_SETTING(tonemap,
+    .name = "tonemap", .value = "on",
+    .note = "on: where the lights make a surface\n"
+            "brighter than white it rolls off instead\n"
+            "of clipping; the stage's own light as it was",
+    .menu = PORT_MENU_REMASTER, .rank = 129, .takes = PORT_TAKES_NOW,
+    .label = "Tonemap",
+    .help = "Bright light rolls off to white instead of clipping flat")
+
 /* How the effects are drawn: PORT_EFFECTS_... (port_remaster.h;
  * docs/PORT.md, "The effects"). */
 PORT_SETTING(effects,

@@ -77,6 +77,13 @@ typedef struct {
     /* The lights of a frame beside the stage's own (gl_lights.h): 0 none
      * of them. */
     s32 is_lights;
+    /* The lighting's finish (gl_post.h): reflections on the screen, the
+     * ambient occlusion, the lights' bloom, and the tonemap the lit
+     * shaders end in. Each 0 off. */
+    s32 is_reflections;
+    s32 is_ambient_occlusion;
+    s32 is_bloom;
+    s32 is_tonemap;
     /* How the effects are drawn: PORT_EFFECTS_... (port_remaster.h). */
     s32 effects;
     /* A sky of the port's own behind the stages open to it, in the place
@@ -278,6 +285,11 @@ typedef struct {
      * so that it is always of the buffer's own size, whether or not the
      * mesh is drawn at all. */
     u32 depth_buffer;
+    /* The depth of the ground's mesh and the fighters' layer, one a pixel
+     * of the buffer, in the world's units (the far end where neither
+     * drew), each drawing area keeping its own until it is drawn again:
+     * what the lighting's passes read (gl_post.h). */
+    u32 ground_depth;
     /* the slots of the ground's faces, which a fighter is held against
      * (port_GlGroundSlotsBegin) */
     u32 slot_texture;
@@ -296,6 +308,12 @@ typedef struct {
 } PortGlPicture;
 
 extern void port_GlGetPicture(PortGlPicture *picture);
+/* The fighters' layer (gl_fighter.c) laid over the picture: its depth
+ * (`depth`, the world's units) where its colour (`color`) covers a pixel,
+ * the layer's corner at (x, y) of the buffer, `w` by `h`, into the
+ * ground's depth inside `bound` (x, y, w, h), the nearer kept. */
+extern void port_GlGroundDepthAddLayer(
+    u32 depth, u32 color, s32 x, s32 y, s32 w, s32 h, const s32 *bound);
 /* A texture's corner of `source_w` by `source_h` texels drawn into the
  * colour buffer at (x, y), w by h of its pixels (a blit cannot draw into
  * a buffer of several samples a pixel). */

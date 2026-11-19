@@ -105,6 +105,11 @@ extern void port_GlLightsTake(void);
 extern void port_GlLightsSetPhase(s32 phase);
 /* A picture begins: what was worked out for the last is forgotten. */
 extern void port_GlLightsNewPicture(void);
+/* This picture's lights as they were sent to the card (once prepared):
+ * PORT_GL_LIGHTS_CARD_SIZE bytes each, `*count` of them (0 where none),
+ * for a pass after the scene to send again (gl_post.c, the glow). */
+#define PORT_GL_LIGHTS_CARD_SIZE 64
+extern const void *port_GlLightsCard(s32 *count);
 /* This picture's lights placed, sorted into the grid and handed to the
  * card, and the shadows of the strongest few drawn, once a picture, before
  * anything reads them. Leaves the card's state forgotten and the picture's

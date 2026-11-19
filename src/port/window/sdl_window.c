@@ -959,6 +959,11 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     options->shadows = g_port_settings.shadows;
     options->is_smooth_light = g_port_settings.smooth_light;
     options->is_lights = g_port_settings.lights;
+    /* the lighting's finish (gl_post.h) */
+    options->is_reflections = g_port_settings.reflections;
+    options->is_ambient_occlusion = g_port_settings.ambient_occlusion;
+    options->is_bloom = g_port_settings.bloom;
+    options->is_tonemap = g_port_settings.tonemap;
     options->effects = g_port_settings.effects;
     /* the sky and the walls seen through (gl_sky.h, gl_see.h) */
     options->sky = g_port_settings.sky;
@@ -2829,7 +2834,9 @@ void port_WindowApplyChoice(s32 choice) {
          strcmp(name, "sky") == 0 || strcmp(name, "see_through") == 0 ||
          strcmp(name, "stage_lights") == 0 ||
          strcmp(name, "effect_lights") == 0 ||
-         strcmp(name, "fighter_models") == 0) &&
+         strcmp(name, "reflections") == 0 ||
+         strcmp(name, "ambient_occlusion") == 0 || strcmp(name, "bloom") == 0 ||
+         strcmp(name, "tonemap") == 0 || strcmp(name, "fighter_models") == 0) &&
         g_port_has_gl) {
         PortGlOptions options;
 
