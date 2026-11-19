@@ -292,6 +292,12 @@ static u32 g_port_after_ready;
 /* The clock's samples waited for since the last picture was handed to
  * the display, for --profile's `p` line. */
 static u32 g_port_waited;
+/* ... and all the clock's samples waited for, never reset (the input read
+ * late: what a frame's first picture took, less its waits). */
+static u32 g_port_waited_all;
+/* When the picture about to be handed over began to be drawn, in
+ * microseconds as the `p` lines (docs/PORT.md, "Input lag"). */
+static Uint64 g_port_picture_began;
 static u32 g_port_pictures;
 static u32 g_port_pictures_between;
 /* Blanks that showed nothing for being more than a refresh late
@@ -381,6 +387,9 @@ static s32 g_port_menu_texture_h;
 
 static void port_SwapPicture(void);
 static void port_NoteStepRefresh(u32 now, u32 shown_for);
+static void port_LateRead(void);
+static void port_NoteLateDrawn(void);
+static void port_NoteLateShown(void);
 static void port_ReadInput(u32 blank);
 static s32 port_OnStepper(void);
 static SDL_Thread *g_port_stepper;
@@ -493,6 +502,13 @@ static u32 port_ReadClock(void) {
     return (u32)(whole * PORT_SPU_RATE + part * PORT_SPU_RATE / frequency);
 }
 
+/* The PC's clock in microseconds since the window opened: --profile's
+ * lines. */
+static Uint64 port_Micros(void) {
+    return (SDL_GetPerformanceCounter() - g_port_clock_start) * MICROSECONDS /
+           SDL_GetPerformanceFrequency();
+}
+
 /* Waits `samples` of the clock: most of it asleep, the end awake. */
 static void port_WaitFor(u32 samples) {
     u32 began = port_ReadClock();
@@ -504,6 +520,7 @@ static void port_WaitFor(u32 samples) {
 
         if (left <= 0) {
             g_port_waited += port_ReadClock() - began;
+            g_port_waited_all += port_ReadClock() - began;
             port_ProfileSwitch(was);
             return;
         }
@@ -1641,14 +1658,15 @@ static void port_DescribeForReport(char *out, u32 room) {
                 g_port_game_meter.tenths % 10);
     REPORT_LINE(
         "settings: graphics %s, frame_rate %d, run_ahead %d, "
-        "low_latency %d, resolution %d, antialiasing %d, aspect %d:%d, "
+        "low_latency %d, late_input %d, resolution %d, antialiasing %d, "
+        "aspect %d:%d, "
         "fighter_models %d, shadows %d, smooth_light %d, effects %d, "
         "sky %d, see_through %d, stage_mesh %d, quick_loading %d\n",
         port_RemasterIsOn() ? "remastered" : "original", set->frame_rate,
-        set->run_ahead, set->low_latency, set->resolution, set->supersample,
-        set->aspect_w, set->aspect_h, set->fighter_models, set->shadows,
-        set->smooth_light, set->effects, set->sky, set->see_through,
-        set->stage_mesh, set->quick_loading);
+        set->run_ahead, set->low_latency, set->late_input, set->resolution,
+        set->supersample, set->aspect_w, set->aspect_h, set->fighter_models,
+        set->shadows, set->smooth_light, set->effects, set->sky,
+        set->see_through, set->stage_mesh, set->quick_loading);
     REPORT_LINE("the last blank's time, microseconds:");
     for (i = 0; i < PORT_PROFILE_PARTS; i++) {
         REPORT_LINE(" %s %u", port_ProfileName((s32)i), g_port_last_ticks[i]);
@@ -3105,10 +3123,7 @@ static void port_ReadInputLate(void) {
          * a press's lag to the picture that shows it (tools/port_bench.py
          * --paced) */
         fprintf(
-            g_port_profile_file, "k %llu\n",
-            (unsigned long long)((SDL_GetPerformanceCounter() -
-                                  g_port_clock_start) *
-                                 MICROSECONDS / SDL_GetPerformanceFrequency()));
+            g_port_profile_file, "k %llu\n", (unsigned long long)port_Micros());
     }
     /* in a load, no frame is run ahead across it (step.c) */
     g_port_ahead_held = port_LoadKind() != PORT_LOAD_NONE;
@@ -3263,8 +3278,21 @@ static void port_ShownDisplay(PortDisplay *display) {
  * next picture is shown at the refresh after it. */
 static void port_HandPicture(u32 for_refresh) {
     s32 was = port_ProfileSwitch(PORT_PROFILE_SWAP);
+    Uint64 handed = port_Micros();
+    Uint64 drawn = 0;
     Uint64 swapped;
 
+    if (g_port_has_gl && g_port_vsync && g_port_settings.low_latency &&
+        for_refresh == 0) {
+        /* `low_latency`: the card's work for it done before it is handed
+         * over, and when, which is what the press's way to the screen
+         * waits for (port_LateRead). A display shows a picture at the
+         * first refresh after the card has drawn it, and so does the
+         * made-up one. */
+        port_GlWaitForCard();
+        drawn = port_Micros();
+        port_NoteLateDrawn();
+    }
     if (g_port_window_options.display_rate > 0 && g_port_vsync &&
         for_refresh == 0) {
         port_WaitForMadeUpBlank();
@@ -3277,10 +3305,10 @@ static void port_HandPicture(u32 for_refresh) {
          * screen (warm.c) */
         port_WarmDriver();
         if (g_port_vsync && g_port_settings.low_latency && for_refresh == 0) {
-            /* `low_latency`: back only once the card has drawn it all and
-             * the swap is made, so that the next picture is begun from
-             * when this one went up and none waits in the driver's queue
-             * behind another (docs/PORT.md, "Input lag") */
+            /* ... and back only once the swap is made, so that the next
+             * picture is begun from when this one went up and none waits
+             * in the driver's queue behind another (docs/PORT.md, "Input
+             * lag") */
             port_GlWaitForCard();
         }
     } else {
@@ -3291,23 +3319,32 @@ static void port_HandPicture(u32 for_refresh) {
         port_NoteSwap(
             &g_port_refresh, for_refresh != 0 ? for_refresh : port_ReadClock());
     }
+    if (for_refresh == 0) {
+        port_NoteLateShown();
+    }
     /* when the swap came back, in microseconds, and the picture's phase:
      * for --profile, and for a report; a picture not waited for, when it
      * is shown */
     swapped = for_refresh != 0
                   ? (Uint64)for_refresh * MICROSECONDS / PORT_SPU_RATE
-                  : (SDL_GetPerformanceCounter() - g_port_clock_start) *
-                        MICROSECONDS / SDL_GetPerformanceFrequency();
+                  : port_Micros();
     port_ReportNoteSwap(swapped, g_port_profile_phase);
     if (g_port_profile_file != NULL) {
-        /* then 1 for a picture not waited for, and the microseconds
-         * waited for the clock since the picture before
-         * (tools/port_bench.py) */
-        fprintf(g_port_profile_file, "p %llu %d %d %u\n",
+        /* then 1 for a picture not waited for, the microseconds waited
+         * for the clock since the picture before, when the picture
+         * began to be drawn, was handed over and had been drawn by the
+         * card (0: not waited for) (tools/port_bench.py: the press to the
+         * picture, part by part) */
+        fprintf(g_port_profile_file, "p %llu %d %d %u %llu %llu %llu\n",
                 (unsigned long long)swapped, g_port_profile_phase,
                 for_refresh != 0 ? 1 : 0,
-                (u32)((u64)g_port_waited * MICROSECONDS / PORT_SPU_RATE));
+                (u32)((u64)g_port_waited * MICROSECONDS / PORT_SPU_RATE),
+                (unsigned long long)(g_port_picture_began != 0
+                                         ? g_port_picture_began
+                                         : handed),
+                (unsigned long long)handed, (unsigned long long)drawn);
     }
+    g_port_picture_began = 0;
     g_port_waited = 0;
     g_port_queued_for = for_refresh;
     g_port_pictures++;
@@ -3353,6 +3390,7 @@ static s32 port_DrawTween(s32 slot) {
     }
     phase = port_PacePhase(shown_at, g_port_frame_at, g_port_lag,
                            g_port_frame_period, PORT_TWEEN_ONE);
+    g_port_picture_began = port_Micros();
     was = port_ProfileSwitch(PORT_PROFILE_TWEEN);
     g_port_gpu_base = PORT_GPU_TWEEN;
     if (!port_TweenDraw(phase)) {
@@ -3436,6 +3474,14 @@ static void port_ShowPictures(u32 due) {
         g_port_pace.late > g_port_refresh.period) {
         g_port_unshown = TRUE;
         g_port_pictures_unshown++;
+        if (g_port_profile_file != NULL) {
+            /* a blank too late to show, and by how much, in microseconds
+             * (tools/port_bench.py) */
+            fprintf(
+                g_port_profile_file, "u %llu %u\n",
+                (unsigned long long)port_Micros(),
+                (u32)((u64)g_port_pace.late * MICROSECONDS / PORT_SPU_RATE));
+        }
         g_port_wants_lag = FALSE;
         g_port_last_due = due;
         g_port_left_at = port_ReadClock();
@@ -3527,9 +3573,11 @@ static void port_ShowPictures(u32 due) {
  * before, so nothing is later. Only with the display waited for and its
  * refreshes known; never for a picture a test or the player asked for. */
 static void port_StepRefresh(void) {
-    u32 now = port_ReadClock();
+    u32 now;
     u32 next;
 
+    port_LateRead();
+    now = port_ReadClock();
     g_port_step_pending = TRUE;
     g_port_step_began = now;
     g_port_step_spent = 0;
@@ -3631,6 +3679,13 @@ static u32 g_port_list_left;
 static u32 g_port_steps_beside;
 static u32 g_port_steps_moved;
 static u32 g_port_pictures_beside;
+/* a picture the input's late read handed over for a refresh in its wait
+ * (port_LateRead) */
+static s32 g_port_late_beside;
+/* When the step's thread took the step up and when it said it was done,
+ * in microseconds as the `p` lines: what the hand-overs cost (`e`). */
+static Uint64 g_port_stepper_woke;
+static Uint64 g_port_stepper_ended;
 
 static s32 port_OnStepper(void) {
     return g_port_stepper != NULL && SDL_ThreadID() == g_port_stepper_id;
@@ -3649,6 +3704,7 @@ static int SDLCALL port_StepperThread(void *unused) {
         if (SDL_AtomicGet(&g_port_stepper_stop)) {
             return 0;
         }
+        g_port_stepper_woke = port_Micros();
         port_ProfileSwitch(PORT_PROFILE_GAME);
         g_port_stepper_moving = FALSE;
         port_HostEnterGame();
@@ -3659,6 +3715,7 @@ static int SDLCALL port_StepperThread(void *unused) {
             port_AfterStepAhead();
         }
         port_ProfileSwitch(PORT_PROFILE_WAIT);
+        g_port_stepper_ended = port_Micros();
         SDL_AtomicSet(&g_port_stepper_state,
                       g_port_stepper_moving ? STEPPER_MOVED : STEPPER_DONE);
         SDL_SemPost(g_port_stepper_back);
@@ -3865,7 +3922,9 @@ static void port_RunStep(void) {
         return;
     }
     g_port_beside = TRUE;
-    g_port_has_beside_until = FALSE;
+    /* a refresh the input's late read gave a picture to has it */
+    g_port_has_beside_until = g_port_late_beside;
+    g_port_late_beside = FALSE;
     port_GlStepRecords(TRUE);
     SDL_AtomicSet(&g_port_stepper_state, STEPPER_RUNNING);
     SDL_SemPost(g_port_stepper_go);
@@ -3882,8 +3941,20 @@ static void port_RunStep(void) {
     }
     g_port_step_done_at = port_ReadClock();
     g_port_step_done = TRUE;
+    if (g_port_profile_file != NULL) {
+        /* the step's thread done, and then its record drawn: parts of a
+         * press's way to the picture (tools/port_bench.py --paced) */
+        fprintf(g_port_profile_file, "e %llu %llu %llu\n",
+                (unsigned long long)port_Micros(),
+                (unsigned long long)g_port_stepper_woke,
+                (unsigned long long)g_port_stepper_ended);
+    }
     port_GlStepRecords(FALSE);
     port_DrawRecord();
+    if (g_port_profile_file != NULL) {
+        fprintf(
+            g_port_profile_file, "r %llu\n", (unsigned long long)port_Micros());
+    }
     g_port_beside = FALSE;
     g_port_steps_beside++;
     if (state == STEPPER_MOVED) {
@@ -3936,6 +4007,239 @@ static void port_StopStepper(void) {
     SDL_WaitThread(g_port_stepper, NULL);
     g_port_stepper = NULL;
     g_port_profile_thread = NULL;
+}
+
+/* ---- the input read late (docs/PORT.md, "Input lag") ----
+ *
+ * A held step's first picture goes up at the first refresh after the
+ * step, its record, the picture and the card's drawing of it are done;
+ * whatever is left between then and that refresh was time the press had
+ * already waited. So where the display is waited for, the boundary waits
+ * that much first and the keys and controllers are read again just
+ * before the step begins (the "frame delay" of other programs): the
+ * picture goes up at the same refresh, and a press made meanwhile is in
+ * it. What the read to the card's drawing takes is learnt from the last
+ * LATE_TOOK steps: the refresh aimed at is the one their median makes,
+ * and the wait leaves the step their 90th centile (LATE_RANK) and a spare
+ * is kept beyond it that a picture late for its refresh makes larger
+ * and each in time a little smaller, so that about one in a hundred of
+ * the frames' first pictures is late. A refresh that falls in the wait
+ * before the picture's is given a picture between the two frames
+ * written down already, as one inside the step would be. The game takes
+ * its input at the boundary as ever, and what it computes is the same:
+ * only the PC's own presses are read later. Only for a step on the
+ * step's thread, with the display waited for (`vsync`), its refreshes
+ * known and `low_latency`, whose wait for the card says when a picture
+ * was drawn; never with --fast, --inject or for a picture a test or the
+ * player asked for. `late_input = off` reads at the boundary only. */
+#define LATE_TOOK 32
+#define LATE_RANK 3
+/* The spare, in sixteenths of a sample: at first a millisecond, never
+ * under half of one or over four; a late picture adds a millisecond, one
+ * in time takes off a hundredth of that. */
+#define LATE_SPARE_ONE 16
+#define LATE_SPARE_FIRST (PORT_SPU_RATE / 1000 * LATE_SPARE_ONE)
+#define LATE_SPARE_LEAST (PORT_SPU_RATE / 2000 * LATE_SPARE_ONE)
+#define LATE_SPARE_MOST (PORT_SPU_RATE / 250 * LATE_SPARE_ONE)
+#define LATE_SPARE_MISS (PORT_SPU_RATE / 1000 * LATE_SPARE_ONE)
+#define LATE_SPARE_HIT (LATE_SPARE_MISS / 100)
+
+static u32 g_port_late_took[LATE_TOOK];
+static u32 g_port_late_count;
+static u32 g_port_late_spare = LATE_SPARE_FIRST;
+/* the next picture waited for is the held step's first: when the input
+ * was read for it, and the clock's waits by then */
+static s32 g_port_late_first;
+static u32 g_port_late_read_at;
+static u32 g_port_late_waited_at;
+/* the refresh a read late was timed for, and whether one was */
+static u32 g_port_late_target;
+static s32 g_port_late_timed;
+/* for the log: reads made late, the time waited, the first pictures late
+ * for their refresh */
+static u32 g_port_late_reads;
+static u64 g_port_late_waited;
+static u32 g_port_late_missed;
+
+static s32 port_MayReadLate(void) {
+    return g_port_settings.late_input && port_RunsBeside() && g_port_vsync &&
+           g_port_settings.low_latency && g_port_refresh.period != 0 &&
+           g_port_refresh.is_seen && !g_port_window_options.is_fast &&
+           !g_port_wants_shot &&
+           g_port_window_options.inject == PORT_INJECT_NONE;
+}
+
+/* What the read to a first picture drawn by the card takes: `*usual`
+ * the median of the last steps', the return its 90th centile and the
+ * spare; 0 until enough steps have said. */
+static u32 port_LateBudget(u32 *usual) {
+    u32 took[LATE_TOOK];
+    u32 count = g_port_late_count < LATE_TOOK ? g_port_late_count : LATE_TOOK;
+    u32 i;
+    u32 j;
+
+    if (count < LATE_TOOK / 2) {
+        return 0;
+    }
+    memcpy(took, g_port_late_took, count * sizeof(took[0]));
+    /* largest first, by as many passes of a selection as the median
+     * needs */
+    for (i = 0; i <= count / 2; i++) {
+        for (j = i + 1; j < count; j++) {
+            if (took[j] > took[i]) {
+                u32 swap = took[i];
+
+                took[i] = took[j];
+                took[j] = swap;
+            }
+        }
+    }
+    *usual = took[count / 2];
+    return took[LATE_RANK] + g_port_late_spare / LATE_SPARE_ONE;
+}
+
+/* A held step begins, its input read at the boundary (port_StepRefresh):
+ * the wait, where there is time to spare before the refresh its first
+ * picture will make, and the read again. That refresh is the one the
+ * step makes as it usually does without a wait (its median): never a
+ * later one, so that no picture of the frame comes later than it would
+ * have; and the wait is what leaves the step its 90th centile and the
+ * spare before it. */
+static void port_LateRead(void) {
+    s32 was;
+    u32 now;
+    u32 budget;
+    u32 usual = 0;
+    u32 earliest;
+    u32 earliest_blank;
+    u32 target;
+    u32 start;
+    s32 wait;
+
+    g_port_late_first = FALSE;
+    g_port_late_timed = FALSE;
+    g_port_late_beside = FALSE;
+    if (!port_MayReadLate()) {
+        return;
+    }
+    now = port_ReadClock();
+    g_port_late_first = TRUE;
+    g_port_late_read_at = now;
+    g_port_late_waited_at = g_port_waited_all;
+    budget = port_LateBudget(&usual);
+    if (budget == 0) {
+        return;
+    }
+    /* With `frame_rate original` the first picture is shown no sooner
+     * than its blank's own moment (port_ShowPictures), the blank after
+     * the one shown last. The refreshes are known by the swaps' return, a
+     * little after each: where one falls within a millisecond of that
+     * moment, which refresh the picture makes is not known, and nothing
+     * is waited for (a wait for the later one would push the picture past
+     * the earlier, and every blank after it a refresh late). */
+    if (g_port_pace.late > g_port_refresh.period / 2) {
+        /* the game is behind its pace: it catches up, and nothing is
+         * waited for */
+        return;
+    }
+    /* (the moment the last blank was due, which a late one was shown
+     * after) */
+    earliest_blank = g_port_last_due - g_port_pace.late + BLANK_SAMPLES;
+    earliest = now;
+    if (port_PictureRate() == 0) {
+        u32 near = port_NextRefresh(
+            &g_port_refresh, earliest_blank - STEP_REFRESH_SPARE, 0);
+
+        if ((s32)(near - earliest_blank) < STEP_REFRESH_SPARE) {
+            return;
+        }
+        earliest = earliest_blank;
+    }
+    if ((s32)(now + usual - earliest) > 0) {
+        earliest = now + usual;
+    }
+    target = port_NextRefresh(&g_port_refresh, earliest, 0);
+    start = target - budget;
+    /* and the step's first blank has its turn less than a refresh after
+     * its own moment, the millisecond spare: a blank later than that
+     * shows nothing (port_ShowPictures) */
+    if ((s32)(start + budget -
+              (earliest_blank + g_port_refresh.period - STEP_REFRESH_SPARE)) >
+        0) {
+        start = earliest_blank + g_port_refresh.period - STEP_REFRESH_SPARE -
+                budget;
+    }
+    wait = (s32)(start - now);
+    if (wait <= 0 || wait > BLANK_SAMPLES) {
+        return;
+    }
+    was = port_ProfileSwitch(PORT_PROFILE_WINDOW);
+    if (port_PictureRate() != 0 && port_MayDrawBeside()) {
+        /* a refresh that comes in the wait: a picture between the two
+         * frames written down already, handed over for it (one that comes
+         * later, in the step, is the step's to give one, port_BesideStep) */
+        u32 next = port_NextRefresh(&g_port_refresh, now, g_port_draw_cost);
+
+        if ((s32)(start - next) > 0 && next != g_port_queued_for) {
+            port_DrawBeside(next);
+            g_port_late_beside = TRUE;
+        }
+    }
+    wait = (s32)(start - port_ReadClock());
+    if (wait > 0) {
+        port_WaitFor((u32)wait);
+    }
+    /* the blank's pictures ended at the wait's end: what the next blank's
+     * first picture takes after them is the step's, as before */
+    g_port_left_at = port_ReadClock();
+    port_ProfileSwitch(PORT_PROFILE_WINDOW);
+    port_ReadEvents();
+    port_SendPads();
+    port_ReadDevicesNow();
+    g_port_late_read_at = port_ReadClock();
+    g_port_late_waited_at = g_port_waited_all;
+    g_port_late_target = target;
+    g_port_late_timed = TRUE;
+    g_port_late_reads++;
+    g_port_late_waited += g_port_late_read_at - now;
+    if (g_port_profile_file != NULL) {
+        /* the read made late, as the `k` line (tools/port_bench.py) */
+        fprintf(
+            g_port_profile_file, "l %llu\n", (unsigned long long)port_Micros());
+    }
+    port_ProfileSwitch(was);
+}
+
+/* The card has drawn a picture about to be handed over: where it is a
+ * held step's first, what it took from the read, less the clock's waits
+ * between (with `frame_rate original`, for the blank's own moment). */
+static void port_NoteLateDrawn(void) {
+    if (!g_port_late_first) {
+        return;
+    }
+    g_port_late_first = FALSE;
+    g_port_late_took[g_port_late_count++ % LATE_TOOK] =
+        port_ReadClock() - g_port_late_read_at -
+        (g_port_waited_all - g_port_late_waited_at);
+}
+
+/* ... and its swap has come back: where the read was timed for a
+ * refresh, whether it made it, and the spare kept by that. */
+static void port_NoteLateShown(void) {
+    if (!g_port_late_timed) {
+        return;
+    }
+    g_port_late_timed = FALSE;
+    if ((s32)(port_ReadClock() - g_port_late_target) >
+        (s32)(g_port_refresh.period / 2)) {
+        g_port_late_missed++;
+        g_port_late_spare += LATE_SPARE_MISS;
+        if (g_port_late_spare > LATE_SPARE_MOST) {
+            g_port_late_spare = LATE_SPARE_MOST;
+        }
+    } else if (g_port_late_spare > LATE_SPARE_LEAST + LATE_SPARE_HIT) {
+        g_port_late_spare -= LATE_SPARE_HIT;
+    }
 }
 
 /* ---- quick loading (docs/PORT.md, "Quick loading") ---- */
@@ -4158,6 +4462,7 @@ static void port_ShowBlank(u32 blank) {
         g_port_wants_lag = TRUE;
     }
     port_ProfileSwitch(PORT_PROFILE_PICTURE);
+    g_port_picture_began = port_Micros();
     port_DrawPicture(blank, TRUE);
     port_ProfileSwitch(PORT_PROFILE_WINDOW);
     g_port_profile_phase = -1;
@@ -4269,6 +4574,19 @@ static void port_CloseWindow(s32 code) {
                   "refresh they would have missed, %u of them in time for "
                   "their own",
                   g_port_step_refreshes, g_port_step_refresh_early);
+    }
+    if (g_port_late_reads != 0) {
+        /* in hundredths of a millisecond */
+        u32 waited = (u32)(g_port_late_waited * 100000U / PORT_SPU_RATE /
+                           g_port_late_reads);
+        u32 spare = (u32)((u64)g_port_late_spare / LATE_SPARE_ONE * 100000U /
+                          PORT_SPU_RATE);
+
+        port_Note("late_input: %u steps read the keys again later, by "
+                  "%u.%02u ms on average; %u of their first pictures late "
+                  "for their refresh; %u.%02u ms kept to spare at the end",
+                  g_port_late_reads, waited / 100U, waited % 100U,
+                  g_port_late_missed, spare / 100U, spare % 100U);
     }
     port_StopPainters();
     port_StopPairing();

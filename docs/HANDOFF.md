@@ -110,8 +110,17 @@ quick-boot disc flake (WSL's clock stepping backwards).
    run_ahead 2, the pause, Escape, shadows (the jitter at rest is known).
 3. **Online between two real PCs**, and on Windows (NETPLAY.md, section
    13: the listen address, routers, the draw distance online).
-4. **Input lag** (ROADMAP 15): measured part by part (`port_bench.py
-   --paced` now reports the lag in refreshes), then cut where safe.
+4. **Input lag** (ROADMAP 15): measured part by part and cut where safe
+   on 2026-11-18 (`late_input`; PORT.md, "The press to the screen, part
+   by part" and "The input read late"). The paced bench now counts the
+   card before a made-up refresh, so its older paced numbers (0.9% of
+   refreshes missed at 144) were the processor's alone: with the card,
+   `run_ahead 1` at 2560x1440 and 144 a second misses 9 to 16% and its
+   first picture is the second refresh after its input. Next cut: not
+   drawing the record's own frame under the first picture (the
+   renderer's). For the owner's screen: whether `late_input`'s
+   one-in-a-hundred late first picture is ever seen, and full screen
+   against a window.
 5. **Faces and hands** of the HD fighters (ROADMAP 19: the pipeline and
    its checks are in, `tools/port_models/`, and Tatsumi is remade; the
    other fighters are left); the chanbara, henchman and practice tints

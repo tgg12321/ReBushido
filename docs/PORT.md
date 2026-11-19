@@ -6244,6 +6244,189 @@ driver flip the picture itself, and SDL 2's OpenGL has no say in DXGI's
 flip model), and the screen's own processing. `--profile` with
 `--display-rate` measured the program's side only.
 
+### The press to the screen, part by part
+
+**How it is measured** (2026-11-18, ROADMAP item 15; `port_bench.py
+--paced`, `--rate N` for the made-up display's refreshes a second, `--rate
+0` for the PC's own display, `--set` for a setting). The profile's lines
+say when each part of a frame's way ended, in microseconds from the
+window's opening: `k`, the game taking its input at the boundary; `l`, the
+keys read again late (below); `e`, the window's thread hearing the step's
+end, with when the step's thread took the step up and said it was done;
+`r`, the step's record drawn; and in each `p` line, when the picture began
+to be drawn, was handed over, and had been drawn by the card. For each
+frame of the fight after its first second, and apart for the menus (every
+blank a frame), the bench reports the mean and 95th centile of each part
+and of the read to the screen: the refresh the frame's first picture
+waited for (with `vsync = off`, the swap itself, torn in; with the PC's
+own display, the swap's return). A press comes at any moment and waits for
+the next read: on average the sum of the gaps' squares over twice their
+sum (`waiting for the read`; a fight's boundary comes every 33 ms, so
+about 16.7 ms; a menu's every 17, about 8.4). The press to the screen is
+the two added. The gate's bench runs `ra1-paced` (ra1 at 144 a second)
+and fails where a fight frame's read to the screen is over 15 ms on
+average or more than 15% of the refreshes get no new picture (two
+refreshes are 13.9 ms: a first picture a refresh late is caught, the
+noise of a shared machine is not; and where the bench says the machine
+was loaded, these two are said and not held, since a paced run's
+measures are the clock's, which another program lengthens). Then comes what the game itself takes, which run-ahead
+cuts and nothing here touches ("Input lag", above): the frame that shows
+a press is the first picture after its step with `run_ahead 2`, the
+frame after with 1 (a fight's frame later, 33 ms; with pictures between
+frames it is mixed in from the next picture on), and two frames after
+with 0.
+
+**The made-up display now counts the card.** With `--display-rate` a
+picture was shown at the first made-up refresh after it was handed over,
+whether or not the card had drawn it: a refresh of 6.94 ms seemed to be
+met by a picture the card took 8 to finish. With `low_latency` (on) the
+window now waits for the card before it hands a picture over, on any
+display (`port_HandPicture`; a real display shows a picture at the first
+refresh after the card has drawn it either way, and the wait after the
+swap for the swap itself is as before), and the made-up display is held
+to it. So the paced numbers of "The step's refresh" and "The step on a
+thread of its own" were the processor's side only: counted with the card,
+`run_ahead 1` at 144 a second misses 9 to 16% of its refreshes (0.9% as
+measured before) and a frame's first picture is the second refresh after
+its input, not the first. `low_latency = off` on the made-up display
+says nothing: the swap comes back at once and the card is never waited
+for, so what a driver's queue holds only a screen shows.
+
+**Part by part** (RTX 3090 at 2560 by 1440, the bench's fight, main at
+`57bc9b315` with the measures alone, every default on, the made-up display
+at 144 a second; a quiet machine, means of a fight frame, ms):
+
+| part | `run_ahead 0` | `run_ahead 1` | `run_ahead 2` | `run_ahead 1`, 60 a second | `run_ahead 1`, `frame_rate original` |
+| --- | --- | --- | --- | --- | --- |
+| hand-over to the step's thread | (one thread) | 0.02 | 0.02 | 0.02 | 0.01 |
+| the step (and its frame ahead) | (in the blanks) | 3.55 | 7.51 | 4.50 | 3.48 |
+| hand-over back | | 0.05 | 0.03 | 0.02 | 0.01 |
+| the record drawn | | 0.48 | 0.00 | 0.26 | 0.17 |
+| the blanks' turns, the picture begun | 0.80 | 0.06 | 0.02 | 0.05 | 0.05 |
+| the picture drawn | 0.48 | 0.65 | 0.57 | 0.73 | 7.83 (with the wait for the blank's moment) |
+| handed over to the card done | 2.80 | 2.52 | 3.81 | 2.87 | 0.35 |
+| the card done to the swap back | 6.05 | 5.99 | 4.31 | 8.10 | 4.65 |
+| **the read to the screen** | 9.55 | **12.67** | **14.88** | **15.39** | **15.69** |
+| waiting for the read | 16.7 | 16.7 | 16.7 | 16.7 | 16.7 |
+
+(`run_ahead 0`'s first picture after the read is a frame older than the
+one with the input: the game's own two frames come on top. With
+`run_ahead 2` the frame ahead's record is drawn while the step's thread
+waits, inside "the step".) With `vsync = off` the read to the swap is
+6.2 ms, torn in, and with `low_latency = off` 2.8 ms to a swap that
+does not wait for the card, which the made-up display cannot follow.
+
+**Before and after `late_input`** (the same, main's measures against
+this, interleaved one run each, other agents' work on the machine at 4 to
+46% of the processors; fight frames, and the menus before the fight, ms;
+"missed", the refreshes after the fight's first second no new picture
+reached):
+
+| case | the read to the screen, before | after | a press to the screen, before | after | missed, before | after | the menus, a press to the screen, before | after |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `run_ahead 1`, 144 a second | 12.4 to 14.5 | **10.6 to 12.1** | 29.1 to 31.3 | **27.3 to 28.8** | 16 to 18% | **0.3 to 9%** | 14.2 | 13.4 to 13.8 |
+| `run_ahead 1`, 60 a second | 15.2 to 15.4 | **13.9 to 14.8** | 31.9 to 32.0 | **30.5 to 31.5** | 0 to 1.1% | 0 to 0.4% | 23.5 | 22.8 |
+| `run_ahead 2`, 144 a second | 14.9 to 17.6 | **13.0 to 15.4** | 31.7 to 34.3 | **29.7 to 32.2** | 9.5 to 17.5% | 4.2 to 9.3% | 14.3 | 14.8 |
+| `run_ahead 2`, 60 a second | 15.5 to 16.1 | **13.8 to 14.7** | 32.1 to 32.8 | **30.4 to 31.3** | 0.4 to 1.8% | 0% | 23.9 | 22.6 |
+| `frame_rate original`, 144 | 14.9 to 15.7 | **12.5 to 13.6** | 31.6 to 32.4 | **29.4 to 30.5** | 58% | 58% | 24.2 | 19.8 |
+| `frame_rate original`, 60 | 15.3 to 15.4 | **12.6 to 14.3** | 32.0 | **29.3 to 30.9** | 0% | 0 to 0.4% | 23.0 | 22.4 |
+| `run_ahead 1`, the PC's own 85 Hz | 11.3 to 11.5 | 12.1 | 27.9 to 28.2 | 28.8 | 2 to 5% | 4.5% | 11.6 | 13.4 |
+
+Blanks shown late, and so not shown, over the whole run: 32 and 39 with
+`frame_rate original` at 60, 34 and 45 with `run_ahead 1` at 60, 8 and 7
+at 144; time let go and the sound running out as before (1 or 2 times,
+the fight's load). The refreshes missed at 144 come down besides: a
+refresh that falls in the wait is given its picture before the step
+begins, where inside the step it was missed. On the PC's own 85 Hz display
+(a hidden window) the late read gains nothing that rounds clear of the
+noise; that display's refresh comes about a step after the boundary.
+
+**Tried and taken out on the way**: aiming at the refresh the 90th
+centile makes (at 60 a second that was often the refresh after the one
+the step makes, every frame's second picture a refresh late, the game
+behind and time let go 48 times); reading the blank's moment from the
+window's `due` where the blank was late (a late blank's `due` is the
+moment it was shown, so the wait took the time the game needed to catch
+up: 284 to 729 blanks not shown, against 32); and a millisecond's doubt
+about which refresh a blank's moment falls before, taken the wrong way.
+Now nothing is waited for where the last blank was more than half a
+refresh late, the blank's own moment is the pace's, and a moment within
+a millisecond of a refresh is not waited for. Earlier versions gained
+more in the menus (at 60 a second 24 to 12 ms) by waiting while the
+game was behind; that is the game's pace, and was given back.
+
+### The input read late
+
+**What was left.** Of `run_ahead 1`'s read to the screen at 144 a second
+(12.4 ms), the step and its frame ahead took 3 to 4.5 ms, the hand-overs
+to and from the step's thread 0.02 and 0.06, the record 0.5, the first
+picture 0.9, and the card 2 more after it was handed over: about 8 ms of
+work, and then 4 of waiting for the refresh. A frame's first picture goes
+up at the first refresh after all of it, so that wait was time the press
+had already spent; at 60 a second it is most of a refresh.
+
+**Now** (`late_input`, on; `port_LateRead`, from the held step's begin,
+`port_StepRefresh`). Where the display is waited for, the boundary waits
+that much first and then reads the keys and controllers again
+(`port_ReadEvents`, `port_SendPads`, `port_ReadDevicesNow`), just before
+the step begins: the "frame delay" of other programs. The picture goes up
+at the same refresh, and a press made meanwhile is in it. What a read to
+the card's drawing of the first picture takes is learnt from the last 32
+steps (`port_NoteLateDrawn`, less the clock's waits between): the refresh
+aimed at is the one their median makes (so no picture of the frame comes
+later than it would have, which a first version aiming by the 90th
+centile did, and at 60 a second it pushed every frame's second picture a
+refresh late and the game fell behind), and the wait leaves the step
+their 90th centile and a spare. The spare grows by a millisecond for a
+first picture late for its refresh and shrinks by a hundredth of that for
+one in time (`port_NoteLateShown`), so about one first picture in a
+hundred is late, which costs the refresh before it a picture held once
+more. A refresh that falls inside the wait is given a picture between the
+two frames already written down, as one inside the step would be. With
+`frame_rate original` a frame's picture is shown no sooner than its
+blank's own moment, so the wait reaches up to the refresh after it: the
+largest share.
+
+**What does not change.** The game takes its input at the boundary as
+ever, so the traces are the same: a plan's presses are the game's, read
+at their blanks; only the PC's own keys and controllers are read later.
+The blanks keep their moments (the pace is the sound's), and the pictures
+their refreshes. Only for a step on the step's thread (`run_ahead` 1 or
+2), with `vsync` on, its refreshes known and `low_latency` on, whose wait
+for the card says when a picture was drawn; never with `--fast`,
+`--inject` or for a picture a test or the player asked for; netplay and
+`run_ahead 0` never hold a step. The log's last lines say how many steps
+read late, by how much on average, how many first pictures were late, and
+the spare (`late_input: ...`).
+
+**What was looked at and not cut, and why.**
+
+- *The devices read on the step's thread, or at each refresh for the
+  pictures between frames*: the game takes its input only at the boundary,
+  so a read later inside the step changes nothing it takes (its blanks
+  send the pads what the boundary read), and a picture between frames is
+  of two frames already worked out; nothing a read could change is in it.
+  The late read is the latest moment the game's step allows.
+- *Run-ahead on the rollback's save and load*: `run_ahead 2` already runs
+  its second frame from a state saved and put back by the rollback's own
+  save and load (by the pages written), and 1 needs none ("The step
+  itself as the first frame ahead"). Two frames ahead take away all of
+  the game's own lag (the frame shown after them is the frame of the
+  input just read); a third would show a frame further on than the
+  input, a guess that snaps back where the input changes, which is not
+  how the original plays. So no more frames ahead.
+- *The fewest pictures queued*: with `low_latency` none is queued (each
+  waits for the card and its swap). SDL 2's OpenGL on Windows has no DXGI
+  swap chain to make waitable; whether a window's pictures are flipped or
+  composed is the driver's (NVIDIA's control panel, "OpenGL present
+  method: Prefer layered on DXGI swapchain") and full screen (F11)'s, for
+  the owner's screen to say. The "delay the frame start" technique is the
+  late read above.
+- *What is left on the way*: the card's 2 ms after the first picture is
+  handed over is mostly the record's own frame, drawn and then drawn over
+  by the first picture between two frames (HANDOFF, "What is left of the
+  performance work"); not drawing it is the renderer's, and the next cut.
+
 ### Quick loading
 
 The owner (2026-11-17): the loading screens as short as possible, if

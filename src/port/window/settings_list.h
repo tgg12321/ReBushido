@@ -149,6 +149,19 @@ PORT_SETTING(low_latency,
     .label = "Low latency",
     .help = "Each picture waits for the card: none queued behind another")
 
+/* ... and whether the keys and controllers are read again as late as the
+ * refresh a frame's first picture makes allows (port_LateRead) */
+PORT_SETTING(late_input,
+    .name = "late_input", .value = "on",
+    .note = "on: the keys and controllers read again\n"
+            "just in time for the refresh a frame's\n"
+            "first picture makes, so that a press is\n"
+            "in it sooner; off reads them only as the\n"
+            "frame begins",
+    .menu = PORT_MENU_WINDOW, .rank = 85, .takes = PORT_TAKES_NOW,
+    .label = "Late input",
+    .help = "The keys read again just in time for the frame's first picture")
+
 /* ---- the remastered picture ---- */
 
 PORT_SETTINGS_HEADING(

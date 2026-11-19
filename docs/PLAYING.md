@@ -187,6 +187,7 @@ fullscreen = off         # start in a window (on, filling the screen, is built i
 fps = off                # no counter in the corner (F3 brings it back)
 run_ahead = 2            # 0, 1 or 2 frames run ahead (1 is the default)
 low_latency = off        # let the driver queue pictures (on is the default)
+late_input = off         # read the keys only as a frame begins (on is the default)
 graphics = remastered    # original (the console's picture) or remastered
 resolution = 3           # how many times the console's; 0 = the window's
 draw_distance = far      # original, far, or max: how much of the stage
@@ -413,6 +414,17 @@ three are on with nothing said:
   picture waits in the driver's queue behind another. `off` lets the
   driver queue them, which may be smoother on a PC that is only just
   fast enough.
+- **`late_input`**, `on` or `off` (`on` with nothing said; "Late
+  input", at once): where a frame's first picture would be ready before
+  the screen's refresh that shows it, the port waits out the difference
+  first and reads the keys and controllers again just before the frame
+  is worked out, so a press made meanwhile is in that picture. The
+  picture comes at the same refresh as before, and the game is the same;
+  in a fight about 1 to 3 ms sooner (measured at 60 and 144 Hz), in the
+  menus up to 4. It needs `run_ahead` 1 or 2,
+  `vsync` and `low_latency` on. About one frame in a hundred is then a
+  refresh late for its picture, a picture held once more; `off` if that
+  is ever seen.
 
 What only your screen and PC decide, and what helps there:
 
