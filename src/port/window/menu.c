@@ -15,7 +15,10 @@
 #define TEXT_BYTES 0x10000
 /* how much room the text is given to grow in, a line at a time */
 #define TEXT_ROOM (TEXT_BYTES + 0x4000)
-#define ROWS_MAX 48
+/* the first page's rows: a header for each group, every setting of the
+ * menu and the rows after them (48 was full with 37 settings, and a
+ * row past it was left off: Play online, Back, Quit) */
+#define ROWS_MAX 96
 #define LABEL_BYTES 160
 #define VALUE_BYTES 160
 #define BUTTONS 14
