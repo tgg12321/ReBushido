@@ -20,7 +20,8 @@
  *   bloom     each light of the frame's list a soft glow at a quarter of
  *             the size where the scene does not hide it, spread wider
  *             at an eighth and a sixteenth
- *   lay       the lot laid over the picture, in its own place
+ *   lay       the lot laid over the picture into a buffer of the
+ *             picture's size, which then becomes the picture
  *
  * Nothing here changes a value the game computes, and nothing runs with
  * the console's picture (`Graphics: Original`, the prover's exact one). */
@@ -65,6 +66,7 @@ typedef char GLchar;
 #define GL_CLAMP_TO_EDGE 0x812F
 #define GL_RGBA 0x1908
 #define GL_RGBA16F 0x881A
+#define GL_RGBA8 0x8058
 #define GL_R8 0x8229
 #define GL_R32F 0x822E
 #define GL_RED 0x1903
@@ -105,7 +107,6 @@ typedef char GLchar;
     GL(void, glClearBufferfv, (GLenum, GLint, const GLfloat *))                \
     GL(void, glBlendFunc, (GLenum, GLenum))                                    \
     GL(void, glBlendEquation, (GLenum))                                        \
-    GL(void, glTextureBarrier, (void))                                         \
     GL(void, glGenVertexArrays, (GLsizei, GLuint *))                           \
     GL(void, glBindVertexArray, (GLuint))                                      \
     GL(GLuint, glCreateShader, (GLenum))                                       \
@@ -574,8 +575,8 @@ static const char g_post_scale_text[] =
     "                    + texture(u_source, at + vec2(one.x, one.y)));\n"
     "}\n";
 
-/* The lot over the picture, in its own place (each pixel reads its own
- * texel alone, after a barrier): the occlusion darkening the ground's
+/* The lot over the picture, into a buffer of its own: the occlusion
+ * darkening the ground's
  * light from all about, the reflections over it, and the glow added.
  * The alpha is the picture's own. */
 static const char g_post_lay_text[] =
@@ -711,6 +712,9 @@ static struct {
     GLuint pair_one;
     GLuint pair_two;
     PostTarget glow_level[GLOW_LEVELS];
+    /* what the passes lay the picture into, the picture's size (it and
+     * the picture change places after: port_GlPostRun) */
+    PostTarget out;
     /* The view the passes read the depth with: the one the picture on
      * show was drawn with (port_GlPostRun chooses it) */
     float rotation[9];
@@ -948,6 +952,8 @@ static s32 port_GlPostTargets(s32 w, s32 h) {
                        (h + (1 << shift) - 1) >> shift, GL_RGBA16F, GL_RGBA,
                        GL_FLOAT, GL_LINEAR);
     }
+    ok = ok && port_GlPostTarget(&g_post.out, w, h, GL_RGBA8, GL_RGBA,
+                                 GL_UNSIGNED_BYTE, GL_NEAREST);
     if (!ok) {
         snprintf(g_post.problem, sizeof(g_post.problem),
                  "the lighting's passes' buffers cannot be drawn into");
@@ -1159,8 +1165,9 @@ static s32 port_GlPostGlow(const PostFrame *frame, GLuint picture_texture) {
     return lights;
 }
 
-void port_GlPostRun(const PortGlPicture *picture, u32 picture_framebuffer,
-                    u32 picture_texture, s32 w, s32 h, s32 sample) {
+void port_GlPostRun(const PortGlPicture *picture, u32 *picture_framebuffer,
+                    u32 *picture_texture, s32 w, s32 h, s32 sample) {
+    GLuint picture_texture_in = *picture_texture;
     const PostView *view;
     PostFrame frame;
     s32 lights = 0;
@@ -1207,16 +1214,15 @@ void port_GlPostRun(const PortGlPicture *picture, u32 picture_framebuffer,
     port_GlPostDraw();
     PORT_GPU_END();
     if (g_post.is_ao || g_post.is_reflect) {
-        port_GlPostLight(&frame, picture_texture);
+        port_GlPostLight(&frame, picture_texture_in);
     }
     if (g_post.is_glow) {
-        lights = port_GlPostGlow(&frame, picture_texture);
+        lights = port_GlPostGlow(&frame, picture_texture_in);
     }
 
-    /* the lot over the picture, in its own place: each pixel reads its
-     * own texel alone, which a barrier makes safe */
+    /* the lot over the picture, into the buffer it is laid into */
     PORT_GPU_BEGIN(PORT_GPU_POST);
-    port_GlPostCommon(&g_post.lay, &frame, picture_texture);
+    port_GlPostCommon(&g_post.lay, &frame, picture_texture_in);
     glActiveTexture(GL_TEXTURE0 + 2);
     glBindTexture(GL_TEXTURE_2D, g_post.ao_two.texture);
     glActiveTexture(GL_TEXTURE0 + 3);
@@ -1232,12 +1238,22 @@ void port_GlPostRun(const PortGlPicture *picture, u32 picture_framebuffer,
     glUniform1i(g_post.lay_at_glow_on, lights > 0);
     glUniform1f(g_post.lay_at_ambient, port_GlPostAmbient());
     glUniform1i(g_post.lay_at_debug, g_post.debug);
-    glBindFramebuffer(GL_FRAMEBUFFER, picture_framebuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_post.out.framebuffer);
     glViewport(0, 0, w, h);
-    glTextureBarrier();
     port_GlPostDraw();
-    glTextureBarrier();
     PORT_GPU_END();
+    /* the picture is now the one just laid, and the one it was laid from
+     * is the next picture's to lay into: no copy, and no barrier (which
+     * held Mesa's software renderer for the whole of its drawing) */
+    {
+        GLuint texture = *picture_texture;
+        GLuint framebuffer = *picture_framebuffer;
+
+        *picture_texture = g_post.out.texture;
+        *picture_framebuffer = g_post.out.framebuffer;
+        g_post.out.texture = texture;
+        g_post.out.framebuffer = framebuffer;
+    }
     for (i = 0; i < 5; i++) {
         glActiveTexture(GL_TEXTURE0 + i);
         glBindTexture(GL_TEXTURE_2D, 0);

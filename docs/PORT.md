@@ -7622,8 +7622,10 @@ does; with `lights = off` there is no bloom.
 shadows' darkening, over the picture the resolve averaged down (with one
 sample a pixel the resolve now runs anyway when a pass is on, so the
 picture has a buffer of its own); the last pass lays the lot over that
-picture in place, each pixel reading its own texel after a texture
-barrier (OpenGL 4.5). The window shows it and the provers read it.
+picture into a buffer of the picture's size, which then becomes the
+picture, the old one the next picture's to lay into (no copy; laying it
+in place behind a texture barrier held Mesa's software renderer for the
+whole of its drawing). The window shows it and the provers read it.
 `RB_POST_DEBUG=ao`, `=reflect` or `=depth` in a run's environment draws
 the occlusion, the reflections alone, or the depth and the reflectance in
 the place of the picture.
@@ -7678,7 +7680,8 @@ read of it as a texture 0.5), the mesh's depth buffer beside its slots
 is not cleared (where the mesh drew nothing its slot says so), the
 passes run at a third of the picture's size and not at half, the
 reflections and the occlusion are one pass and their smoothing one, and
-the last pass writes the picture in place instead of a copy. Left:
+the last pass's buffer and the picture's change places instead of a
+copy. Left:
 `stage` is 0.2 ms above main's with all four off; nothing of c and d
 runs then but the tonemap's switch in the shader and the alpha code.
 

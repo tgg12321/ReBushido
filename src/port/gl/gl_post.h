@@ -96,13 +96,15 @@ extern void port_GlPostBeforeMesh(const PortGlPicture *picture);
  * pixel (gl_draw.c, port_GlIsResolved). */
 extern s32 port_GlPostWanted(const PortGlPicture *picture);
 
-/* The passes, over the picture averaged down (`picture_texture`, `w` by
- * `h`, through `picture_framebuffer`), reading the scene's depth from
- * `picture->framebuffer`. Leaves the picture's framebuffer bound and the
- * card's state forgotten. */
+/* The passes, over the picture averaged down (`*picture_texture`, `w` by
+ * `h`, with its `*picture_framebuffer`), reading the depth of
+ * `picture->ground_depth`. The lot is laid into a buffer of the
+ * picture's size, which is handed back in the place of the picture's
+ * texture and framebuffer, and the picture's become the next picture's
+ * to lay into. Leaves the card's state forgotten. */
 extern void port_GlPostRun(
-    const PortGlPicture *picture, u32 picture_framebuffer, u32 picture_texture,
-    s32 w, s32 h, s32 sample);
+    const PortGlPicture *picture, u32 *picture_framebuffer,
+    u32 *picture_texture, s32 w, s32 h, s32 sample);
 
 /* Why the passes could not be made, or NULL. */
 extern const char *port_GlPostProblem(void);

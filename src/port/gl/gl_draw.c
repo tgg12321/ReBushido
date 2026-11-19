@@ -3902,7 +3902,7 @@ void port_GlFinishFrame(void) {
             PORT_GPU_END();
             port_GlGetPicture(&picture);
             port_GlPostRun(
-                &picture, g_gl.picture_framebuffer, g_gl.picture_texture,
+                &picture, &g_gl.picture_framebuffer, &g_gl.picture_texture,
                 g_gl.picture_w, g_gl.picture_h, g_gl.sample);
             PORT_GPU_BEGIN(PORT_GPU_RESOLVE);
         }
