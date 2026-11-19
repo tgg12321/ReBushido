@@ -423,6 +423,10 @@ extern s32 port_RemasterCasterGround(PortAddress object, s32 *ground_y);
 /* The slope the game slides a shadow along, 1.12 (light_SetShadowMatrix):
  * x and z move by the height above the ground times these. */
 extern void port_RemasterShadowShear(s32 *x_shear, s32 *z_shear);
+/* The same of the `face`-th of port_RemasterCasterFaces: the ground it
+ * casts onto, and whether its node is a cloth (port_FighterIsCloth). */
+extern s32 port_RemasterCasterFaceGround(s32 face, s32 *ground_y);
+extern s32 port_RemasterCasterFaceIsCloth(s32 face);
 
 /* A new frame of primitives is about to be built: the ordering table was
  * cleared (src/port/gpu.c). What was written down before the frame
@@ -618,6 +622,43 @@ extern const void *port_RemasterTileLights(void);
 extern const PortStagePiece *port_RemasterStagePieces(s32 *count);
 extern s32 port_RemasterStageNumber(void);
 
+/* ---- what the backend reads of the side channel, kept (gl_record.h) ----
+ *
+ * The stage's view, the shadows' casters and the sun's slope, as they
+ * are now: a copy that the getters above answer from in their place
+ * while a record of the step is drawn after it (port_RemasterUseSide).
+ * What the game's memory says of each face (a cloth, a skinned body) is
+ * read as the copy is made. A stamp that changes with any of it says
+ * when a copy is out of date. */
+typedef struct {
+    PortAddress parent;
+    s32 ground_y;
+} PortShadowGround;
+
+typedef struct {
+    PortStageView view;
+    s32 shear_x;
+    s32 shear_z;
+    s32 face_count;
+    s32 ground_count;
+    const PortShadowCaster *faces;
+    const u8 *face_kinds; /* a byte a face: PORT_SIDE_FACE_... */
+    const PortShadowGround *grounds;
+} PortRemasterSide;
+
+#define PORT_SIDE_FACE_CLOTH 1
+#define PORT_SIDE_FACE_SKINNED 2
+
+extern u32 port_RemasterSideStamp(void);
+/* The bytes a copy takes beside the structure, as things are now. */
+extern u32 port_RemasterSideBytes(void);
+/* A copy into `side`, its arrays into `room` (port_RemasterSideBytes of
+ * it, on eight). */
+extern void port_RemasterKeepSide(PortRemasterSide *side, void *room);
+/* The getters answer from `side` from now on; NULL: from the side
+ * channel itself again. */
+extern void port_RemasterUseSide(const PortRemasterSide *side);
+
 /* ---- the stage's own textures (src/port/gl/gl_scene.c) ---- */
 
 /* A mod may give a picture of a whole texture page of the stage
@@ -798,6 +839,16 @@ typedef struct {
      * the same model is at the same offset in the frame after it: this
      * is the name by which two frames' primitives are paired. */
     s32 key;
+    /* What the backend asks of the game about the node the primitive is
+     * of, asked as it is decoded and kept with it, so that a backend that
+     * draws it later -- the step's record drawn by the window
+     * (gl_record.h), a picture between two frames -- reads nothing of
+     * the game: the node is a cloth (port_FighterIsCloth), it is of the
+     * tiny model's body (port_FighterIsTinyBody), and the pause is
+     * drawing the fight's last table again (port_RemasterIsRedrawing). */
+    s32 is_cloth_node;
+    s32 is_tiny_body;
+    s32 is_redrawing;
 } PortRemasterPrim;
 
 /* ---- the backend ---- */
@@ -992,5 +1043,9 @@ extern s32 port_RemasterIsRedrawing(void);
  * and a pause draws the table as before. */
 typedef void (*PortPauseHolder)(s32 what, s32 from_x, s32 from_y, s32 x, s32 y);
 extern void port_RemasterSetPauseHolder(PortPauseHolder holder);
+/* The holder called in its place, with nothing of the pause's own
+ * bookkeeping changed, and the one before returned: a record of the step
+ * keeps the calls and makes them later (gl_record.h). */
+extern PortPauseHolder port_RemasterSwapPauseHolder(PortPauseHolder holder);
 
 #endif /* PORT_REMASTER_H */

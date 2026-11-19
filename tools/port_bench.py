@@ -118,6 +118,10 @@ LIMITS = [
     ('ra1', 'settled_worst', 2 * BUDGET_MS, "the worst blank after the fight's first second"),
     ('ra2', 'settled_p99', BUDGET_MS, 'the same, run_ahead 2'),
     ('ra1-stress', 'settled_p99', BUDGET_MS, 'the same, four fighters, the ground twice'),
+    # the step on its own thread (`s` lines): what it takes from the input
+    # to the end of its frame, which the frame's first picture waits for
+    ('ra1', 'step_p95', BUDGET_MS, "the step's own thread, a fight frame, 95%, run_ahead 1"),
+    ('ra2', 'step_p95', BUDGET_MS, 'the same, run_ahead 2'),
 ]
 # What the program meets with room to spare (2026-11-18: the card's 95th
 # centile of a fight frame 3.9 to 5.2 ms with run_ahead 0 to 2, the RTX
@@ -127,6 +131,16 @@ MET_LIMITS = [
     ('ra0', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, run_ahead 0"),
     ('ra1', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, run_ahead 1"),
     ('ra2', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, run_ahead 2"),
+    # Met since the step runs on a thread of its own (docs/PORT.md, "The step
+    # on a thread of its own"): the window's thread's own work, a picture and
+    # a record, held to a refresh whatever --report-only says. ra1's cpu_p95
+    # 1.2 to 1.6 ms and settled_p99 1.6 to 2.8 in interleaved runs on a
+    # machine other agents were using; the step's thread has its own
+    # measures (step_p95, LIMITS).
+    ('ra1', 'cpu_p95', BUDGET_MS, "the window's thread's work of a fight frame, 95%, run_ahead 1"),
+    ('ra1', 'settled_p99', BUDGET_MS, "the window's thread, any blank after the fight's first second, 99%"),
+    ('ra2', 'settled_p99', BUDGET_MS, 'the same, run_ahead 2'),
+    ('ra1-stress', 'settled_p99', BUDGET_MS, 'the same, four fighters, the ground twice'),
 ]
 # The fight's first second is the end of its load: the limits on the
 # worst blanks are of what follows it.
@@ -341,6 +355,10 @@ def measure(folder):
     if last is None:
         last = FRAMES
     parts, gpu_parts, rows, gpu = [], [], {}, {}
+    # the step's own thread, where it ran beside the window's: its parts
+    # at each blank that took them (docs/PORT.md, "The step on a thread of
+    # its own")
+    steps = {}
     # each picture handed to the display: when its swap came back (ms),
     # the blank whose line follows it, and whether it was shown beside
     # the step (docs/PORT.md, "The step beside the pictures")
@@ -369,6 +387,8 @@ def measure(folder):
                 rows[int(words[1])] = (int(words[2]), [int(w) / 1000.0 for w in words[3:]])
             elif words[0] == 'g' and first <= int(words[1]) <= last:
                 gpu[int(words[1])] = [int(w) / 1000.0 for w in words[2:]]
+            elif words[0] == 's' and first <= int(words[1]) <= last:
+                steps[int(words[1])] = [int(w) / 1000.0 for w in words[2:]]
     work_parts = [i for i, name in enumerate(parts) if name not in ('wait', 'swap')]
     held_parts = [i for i, name in enumerate(parts) if name != 'wait']
 
@@ -406,6 +426,17 @@ def measure(folder):
             if first + SETTLE_BLANKS <= at <= last]
     beside = sum(1 for _, at, is_beside, _ in swaps if is_beside and first <= at <= last)
     paced = paced_measures(swaps, boundaries, first + SETTLE_BLANKS, last, frames) if PACED else {}
+    # The step on its own thread: its work, a step a blank that took it.
+    # The window's thread's numbers above are then that thread's alone.
+    step_work = [work(v) for b, v in steps.items() if b >= first + SETTLE_BLANKS]
+    on_its_own = {
+        'step_p50': statistics.median(step_work),
+        'step_p95': centile(step_work, 0.95),
+        'step_p99': centile(step_work, 0.99),
+        'step_worst': max(step_work),
+        'step_parts': {parts[i]: statistics.median(v[i] for v in steps.values()) for i in work_parts},
+    } if step_work else {}
+    paced = dict(paced, **on_its_own)
     said = port_budget.counts(os.path.join(folder, 'output.txt'))
     return dict(paced, **{
         'fight': [first, last],
@@ -494,6 +525,10 @@ def report(name, m):
               ' over %.2f ms: %.1f%%; %d pictures beside the step'
               % (m['gap_p50'], m['gap_p95'], m['gap_p99'], m['gap_worst'], BUDGET_MS, m['gap_over'],
                  m['pictures_beside']))
+    if 'step_p50' in m:
+        print("  the step's own thread, after the first second: median %.2f  95%% %.2f  99%% %.2f  worst %.2f;"
+              ' parts (median ms): %s' % (m['step_p50'], m['step_p95'], m['step_p99'], m['step_worst'], ' '.join(
+                  '%s %.2f' % kv for kv in sorted(m['step_parts'].items(), key=lambda kv: -kv[1]) if kv[1] >= 0.01)))
     if m['stalls']:
         print('  stalls: ' + ', '.join('blank %d %.1f ms (%s %.1f)' % s for s in m['stalls']))
 
@@ -628,7 +663,8 @@ def main():
         for case, key, most, what in LIMITS:
             if case not in results:
                 continue
-            value = results[case][key]
+            # the step's own measures only where it ran on its own thread
+            value = results[case].get(key, 0.0)
             over = value > most
             failed = failed or over
             print('  %-11s %-12s %7.2f (at most %6.2f) %-5s %s' % (case, key, value, most,

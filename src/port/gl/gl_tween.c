@@ -780,8 +780,7 @@ static void port_TweenNoteVram(s32 x, s32 y, s32 w, s32 h) {
     one->at = frame->words_used;
     for (row = 0; row < h; row++) {
         memcpy(frame->words + one->at + (u32)(row * w),
-               g_port_vram + (y + row) * PORT_VRAM_WIDTH + x,
-               (size_t)w * sizeof(u16));
+               port_GlVramAt(x, y + row), (size_t)w * sizeof(u16));
     }
     frame->words_used += (u32)(w * h);
     frame->event[frame->event_count].is_vram = TRUE;

@@ -1806,6 +1806,34 @@ static void port_GlKeepUndo(s32 row, s32 left, s32 right, const u16 *was) {
     g_gl.undo_used += count;
 }
 
+/* The pixels of the rectangle being told of, where a caller gives them
+ * (port_GlTellPixels): video memory as it was when the step wrote it, the
+ * step's record being drawn after it (gl_record.h). */
+static struct {
+    const u16 *pixels;
+    s32 left;
+    s32 top;
+    s32 w;
+    s32 h;
+} g_told;
+
+void port_GlTellPixels(const u16 *pixels, s32 left, s32 top, s32 w, s32 h) {
+    g_told.pixels = pixels;
+    g_told.left = left;
+    g_told.top = top;
+    g_told.w = w;
+    g_told.h = h;
+}
+
+const u16 *port_GlVramAt(s32 x, s32 y) {
+    if (g_told.pixels != NULL && x >= g_told.left &&
+        x < g_told.left + g_told.w && y >= g_told.top &&
+        y < g_told.top + g_told.h) {
+        return &g_told.pixels[(y - g_told.top) * g_told.w + (x - g_told.left)];
+    }
+    return &g_port_vram[y * PORT_VRAM_WIDTH + x];
+}
+
 /* A rectangle of video memory, as it is now, to be sent to the card: it
  * is copied into the backend's own copy at once, and sent with the rest
  * the next time the card reads it (port_GlUploadMirror). A rectangle
@@ -1833,9 +1861,8 @@ static void port_GlMarkMirrorFrom(
     is_all = port_DirtyRectPixels(&rect) == PORT_VRAM_PIXELS;
     for (row = rect.top; row <= rect.bottom; row++) {
         u16 *to = &g_gl.staged[row * PORT_VRAM_WIDTH + rect.left];
-        const u16 *from =
-            pixels != NULL ? &pixels[(row - rect.top) * w]
-                           : &g_port_vram[row * PORT_VRAM_WIDTH + rect.left];
+        const u16 *from = pixels != NULL ? &pixels[(row - rect.top) * w]
+                                         : port_GlVramAt(rect.left, row);
 
         if (!is_all && memcmp(to, from, bytes) == 0) {
             continue;
@@ -3082,8 +3109,11 @@ void port_GlUploadVram(s32 x, s32 y, s32 w, s32 h) {
     }
     /* what was written before is drawn from what it was */
     port_GlDrawBlits();
-    /* video memory as the primitives given leave it (port_paint.h) */
-    port_PaintSyncRead(x, y, w, h);
+    /* video memory as the primitives given leave it (port_paint.h), where
+     * its pixels are not told (port_GlTellPixels): those were taken so */
+    if (g_told.pixels == NULL) {
+        port_PaintSyncRead(x, y, w, h);
+    }
     port_GlMarkMirror(x, y, w, h);
     port_GlUploadMirror();
     port_GlSceneWroteVram(x, y, w, h);

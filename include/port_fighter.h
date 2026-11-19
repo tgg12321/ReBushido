@@ -117,6 +117,22 @@ extern const PortFighterView *port_GetFighterView(s32 slot);
 extern const PortFighterWeapon *port_GetFighterWeapons(s32 *count);
 /* How many frames the renderer has built (PortFighterView.serial). */
 extern u32 port_FighterSerial(void);
+
+/* All of the above as it is now, kept (gl_record.h): the getters answer
+ * from a copy in their place while a record of the step is drawn after
+ * it (port_FighterUseViews; NULL: from what is noted again). The version
+ * changes with anything noted. */
+typedef struct {
+    PortFighterView views[PORT_FIGHTER_SLOTS];
+    PortFighterView tiny;
+    PortFighterWeapon weapons[PORT_FIGHTER_WEAPONS];
+    s32 weapon_count;
+    u32 serial;
+} PortFighterViews;
+
+extern u32 port_FighterViewsVersion(void);
+extern void port_FighterKeepViews(PortFighterViews *views);
+extern void port_FighterUseViews(const PortFighterViews *views);
 /* What the game has loaded, before it draws any of it: the model in a
  * slot (-1 for none), and the place-th of the weapon models loaded
  * (enum WeaponModel; -1 past the last). A load reads them so that a

@@ -2999,8 +2999,7 @@ static s32 port_GlFighterTakesTiny(const PortRemasterPrim *prim) {
     const PortFighterView *view = &views[0];
 
     if (view->model_id < 0 || prim->id.object < view->nodes_from ||
-        prim->id.object >= view->nodes_to ||
-        !port_FighterIsTinyBody(prim->id.object) ||
+        prim->id.object >= view->nodes_to || !prim->is_tiny_body ||
         port_GlFighterTinyModel(view->model_id) == NULL) {
         return FALSE;
     }
@@ -3079,7 +3078,7 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
         return TRUE;
     }
     slot = port_GlFighterSlotOf(prim, views);
-    is_cloth = slot >= 0 && port_FighterIsCloth(prim->id.object);
+    is_cloth = slot >= 0 && prim->is_cloth_node;
     if (is_cloth) {
         /* A cloth whose model's file has it is drawn smooth in the layer
          * (gl_cloth.h) and its faces left out. Any other is the game's
@@ -3212,7 +3211,7 @@ void port_GlFighterDrawOccluders(u32 framebuffer) {
     port_GlForgetState();
 }
 
-s32 port_GlFighterCaster(PortAddress object) {
+s32 port_GlFighterCaster(PortAddress object, s32 is_cloth) {
     s32 slot;
     s32 i;
 
@@ -3229,7 +3228,7 @@ s32 port_GlFighterCaster(PortAddress object) {
             /* a cloth drawn smooth casts with the body
              * (port_GlFighterCastOf); one that is the game's own casts
              * its own faces */
-            if (port_FighterIsCloth(object) &&
+            if (is_cloth &&
                 port_GlFighterClothOfNode(model, view, object) < 0) {
                 return -1;
             }

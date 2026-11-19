@@ -66,6 +66,17 @@ void port_FighterNoteNode(PortAddress node) { (void)node; }
 
 void port_FighterNewFrame(void) {}
 
+/* ... nor nodes of theirs to ask after (PortRemasterPrim.is_cloth_node). */
+s32 port_FighterIsCloth(PortAddress node) {
+    (void)node;
+    return FALSE;
+}
+
+s32 port_FighterIsTinyBody(PortAddress node) {
+    (void)node;
+    return FALSE;
+}
+
 /* No time is counted here (port_profile.h). */
 s32 port_ProfileSwitch(s32 part) { return part; }
 

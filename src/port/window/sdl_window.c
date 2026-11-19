@@ -41,6 +41,7 @@
 #include "gl_fighter.h"
 #include "gl_load.h"
 #include "gl_pause.h"
+#include "gl_record.h"
 #include "gl_sky.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
@@ -280,6 +281,12 @@ static u32 g_port_step_began;
 static u32 g_port_step_spent;
 static u32 g_port_step_refreshes;
 static u32 g_port_step_refresh_early;
+/* A step run beside the window's thread (docs/PORT.md, "The step on a
+ * thread of its own"): when it ended, and what its record and first
+ * picture take after that, on average. */
+static u32 g_port_step_done_at;
+static s32 g_port_step_done;
+static u32 g_port_after_ready;
 /* The clock's samples waited for since the last picture was handed to
  * the display, for --profile's `p` line. */
 static u32 g_port_waited;
@@ -373,6 +380,10 @@ static s32 g_port_menu_texture_h;
 static void port_SwapPicture(void);
 static void port_NoteStepRefresh(u32 now, u32 shown_for);
 static void port_ReadInput(u32 blank);
+static s32 port_OnStepper(void);
+static SDL_Thread *g_port_stepper;
+static s32 port_RunsBeside(void);
+static void port_FlushRecord(void);
 static s32 port_WatchSound(u32 blank, s32 is_hurried);
 static void port_MakeReport(void);
 #if !defined(_WIN32)
@@ -2111,6 +2122,25 @@ static void port_NoteProfile(u32 blank, s32 is_new_frame) {
     if (is_new_frame) {
         port_AddCpuTimes(ticks);
     }
+    if (g_port_stepper != NULL) {
+        /* the step's thread's own parts, where it ran beside this one
+         * (docs/PORT.md, "The step on a thread of its own") */
+        u32 step[PORT_PROFILE_PARTS];
+        u32 any = 0;
+
+        port_ProfileTakeStep(step);
+        for (i = 0; i < PORT_PROFILE_PARTS; i++) {
+            step[i] /= PORT_HOST_TICKS_PER_MICROSECOND;
+            any |= i != PORT_PROFILE_WAIT ? step[i] : 0;
+        }
+        if (any != 0 && g_port_profile_file != NULL) {
+            fprintf(g_port_profile_file, "s %u", blank);
+            for (i = 0; i < PORT_PROFILE_PARTS; i++) {
+                fprintf(g_port_profile_file, " %u", step[i]);
+            }
+            fputc('\n', g_port_profile_file);
+        }
+    }
     if (g_port_has_gl && g_port_gpu_on) {
         port_GlBenchBlank(blank);
         while (port_GlBenchTake(&timed, gpu)) {
@@ -2944,6 +2974,15 @@ static void port_ReadInput(u32 blank) {
     s32 i;
 
     (void)blank;
+    if (port_OnStepper()) {
+        /* a step beside the window's thread: the events are that thread's
+         * to read, and were read at the frame's boundary; the pads are
+         * what the keys and controllers held then (docs/PORT.md, "The step
+         * on a thread of its own") */
+        port_SendPads();
+        port_ProfileSwitch(was);
+        return;
+    }
     port_OpenWindow();
     for (i = 0; i < g_port_inject_waiting_count; i++) {
         const PortInjectWaiting *waiting = &g_port_inject_waiting[i];
@@ -3027,7 +3066,7 @@ static void port_AheadBlankTurn(u32 blank) {
         s32 was = port_ProfileSwitch(PORT_PROFILE_FINISH);
 
         port_RemasterShow();
-        port_GlFinishFrame();
+        port_GlFinishOrRecord();
         port_ProfileSwitch(was);
     }
 }
@@ -3046,7 +3085,7 @@ static void port_AheadDone(void) {
         s32 was = port_ProfileSwitch(PORT_PROFILE_FINISH);
 
         port_RemasterShow();
-        port_GlFinishFrame();
+        port_GlFinishOrRecord();
         port_ProfileSwitch(was);
     }
     w = display->w < PORT_PICTURE_WIDTH_MAX
@@ -3064,6 +3103,11 @@ static void port_AheadDone(void) {
         port_ConvertDisplay(g_port_vram, display->x, display->y, w, h,
                             display->is_rgb24, g_port_frame);
         port_ProfileSwitch(was);
+    }
+    /* frames run ahead from a state about to be put back, beside the
+     * window: their record is drawn first (port_FlushRecord) */
+    if (g_port_ahead && g_port_has_gl && port_GlIsRecording()) {
+        port_FlushRecord();
     }
 }
 
@@ -3091,7 +3135,7 @@ static s32 port_HeldBlankTurn(u32 blank) {
         s32 was = port_ProfileSwitch(PORT_PROFILE_FINISH);
 
         port_RemasterShow();
-        port_GlFinishFrame();
+        port_GlFinishOrRecord();
         port_ProfileSwitch(was);
     }
     return TRUE;
@@ -3402,6 +3446,11 @@ static void port_StepRefresh(void) {
     g_port_step_pending = TRUE;
     g_port_step_began = now;
     g_port_step_spent = 0;
+    /* a step run beside the window's thread has its pictures drawn while
+     * it runs (port_BesideStep) */
+    if (port_RunsBeside()) {
+        return;
+    }
     if (!g_port_step_refresh_on || !g_port_is_open || !g_port_vsync ||
         g_port_refresh.period == 0 || !g_port_refresh.is_seen ||
         g_port_window_options.is_fast || g_port_wants_shot ||
@@ -3433,6 +3482,14 @@ static void port_NoteStepRefresh(u32 now, u32 shown_for) {
         return;
     }
     g_port_step_pending = FALSE;
+    if (g_port_step_done) {
+        u32 after = now - g_port_step_done_at;
+
+        g_port_step_done = FALSE;
+        g_port_after_ready = g_port_after_ready == 0
+                                 ? after
+                                 : port_PaceAverage(g_port_after_ready, after);
+    }
     took = now - g_port_step_began - g_port_step_spent;
     g_port_step_ready =
         g_port_step_ready == 0 ? took
@@ -3441,6 +3498,357 @@ static void port_NoteStepRefresh(u32 now, u32 shown_for) {
         (s32)(g_port_step_began + took - shown_for) + STEP_REFRESH_SPARE < 0) {
         g_port_step_refresh_early++;
     }
+}
+
+/* ---- the step on a thread of its own (docs/PORT.md, "The step on a
+ * thread of its own") ---- */
+
+/* A step whose blanks the window holds (step.c) runs on a thread of its
+ * own while the window's thread draws the pictures the display's
+ * refreshes ask for meanwhile. The step calls no OpenGL: what it hands
+ * the card is written down (gl_record.h) and drawn here once it has
+ * ended, before its blanks' turns. Its input was read at the boundary,
+ * on this thread, as ever. A step that comes to what only this thread
+ * may do (a blank's turn given while it runs: a load begins) is moved
+ * here, and goes on where it was (port_StepToHost); a step whose frames
+ * ahead put the state back has its record drawn before they do
+ * (port_FlushRecord). RB_STEP_THREAD=off runs every step on the
+ * window's thread, as before. */
+enum {
+    STEPPER_RUNNING,
+    STEPPER_DONE,  /* the step and its frames ahead have run */
+    STEPPER_MOVED, /* ... or it is to go on on the window's thread */
+    STEPPER_FLUSH  /* it waits for its record to be drawn */
+};
+
+static SDL_Thread *g_port_stepper;
+static SDL_threadID g_port_stepper_id;
+static SDL_sem *g_port_stepper_go;
+static SDL_sem *g_port_stepper_back;
+static SDL_sem *g_port_stepper_resume;
+static SDL_atomic_t g_port_stepper_state;
+static SDL_atomic_t g_port_stepper_stop;
+static s32 g_port_stepper_moving;
+static s32 g_port_stepper_on = TRUE;
+/* the step being run beside the window's thread now */
+static s32 g_port_beside;
+/* the latest refresh a picture beside the step was handed over for */
+static u32 g_port_beside_until;
+static s32 g_port_has_beside_until;
+/* The record drawn as it is written (RB_STEP_STREAM=off: once the step
+ * has ended), when the frame's list began, and how long it takes to the
+ * step's end, on average. */
+static s32 g_port_stream_on = TRUE;
+static u32 g_port_list_from;
+static u32 g_port_list_left;
+static u32 g_port_steps_beside;
+static u32 g_port_steps_moved;
+static u32 g_port_pictures_beside;
+
+static s32 port_OnStepper(void) {
+    return g_port_stepper != NULL && SDL_ThreadID() == g_port_stepper_id;
+}
+
+static s32 port_ProfileThreadOf(void) { return port_OnStepper(); }
+
+/* The step's thread: a step each time it is given one, entered here, and
+ * the frames ahead after it, unless it went to the window's thread. */
+static int SDLCALL port_StepperThread(void *unused) {
+    (void)unused;
+    g_port_stepper_id = SDL_ThreadID();
+    port_ProfileSwitch(PORT_PROFILE_WAIT);
+    for (;;) {
+        SDL_SemWait(g_port_stepper_go);
+        if (SDL_AtomicGet(&g_port_stepper_stop)) {
+            return 0;
+        }
+        port_ProfileSwitch(PORT_PROFILE_GAME);
+        g_port_stepper_moving = FALSE;
+        port_HostEnterGame();
+        if (!g_port_stepper_moving) {
+            /* what the frames ahead after it draw waits for the step's
+             * thread to be still (gl_record.h) */
+            port_GlRecordHold();
+            port_AfterStepAhead();
+        }
+        port_ProfileSwitch(PORT_PROFILE_WAIT);
+        SDL_AtomicSet(&g_port_stepper_state,
+                      g_port_stepper_moving ? STEPPER_MOVED : STEPPER_DONE);
+        SDL_SemPost(g_port_stepper_back);
+    }
+}
+
+/* In the step, on its thread: what follows is the window's thread's
+ * (g_port_step_to_host). The step leaves its thread where it is, and the
+ * window's enters it there; on any other thread, nothing. */
+static void port_StepToHost(void) {
+    if (!port_OnStepper()) {
+        return;
+    }
+    g_port_stepper_moving = TRUE;
+    port_HostLeaveGame();
+    /* on the window's thread from here */
+}
+
+/* In the step, on its thread: the record so far drawn now, by the
+ * window's thread, before the step goes on (the state about to be put
+ * back is what the backend reads of the game's memory). */
+static void port_FlushRecord(void) {
+    if (!port_OnStepper()) {
+        return;
+    }
+    SDL_AtomicSet(&g_port_stepper_state, STEPPER_FLUSH);
+    SDL_SemPost(g_port_stepper_back);
+    SDL_SemWait(g_port_stepper_resume);
+}
+
+/* The program ends from inside the step: on the window's thread. */
+static void port_CloseWindow(s32 code);
+
+static void port_CloseFromStep(s32 code) {
+    port_StepToHost();
+    port_CloseWindow(code);
+}
+
+/* Whether this held step runs beside the window's thread. */
+static s32 port_RunsBeside(void) {
+    return g_port_stepper != NULL && g_port_has_gl && g_port_is_open;
+}
+
+static void port_DrawRecord(void) {
+    s32 was = port_ProfileSwitch(PORT_PROFILE_CARD);
+
+    port_GlDrawPending();
+    port_ProfileSwitch(was);
+}
+
+/* Waits for the step's thread to say something, `samples` of the clock at
+ * the most: TRUE where it did. Most of the wait asleep, the end awake. */
+static s32 port_WaitForStepper(u32 samples) {
+    u32 until = port_ReadClock() + samples;
+
+    for (;;) {
+        s32 left = (s32)(until - port_ReadClock());
+
+        if (left <= 0) {
+            return SDL_SemTryWait(g_port_stepper_back) == 0;
+        }
+        if (left > WAIT_AWAKE) {
+            Uint32 ms =
+                (Uint32)(left - WAIT_AWAKE) * MILLISECONDS / PORT_SPU_RATE;
+
+            if (SDL_SemWaitTimeout(g_port_stepper_back, ms > 0 ? ms : 1) == 0) {
+                return TRUE;
+            }
+        } else if (SDL_SemTryWait(g_port_stepper_back) == 0) {
+            return TRUE;
+        }
+    }
+}
+
+/* Whether pictures are drawn beside the step: as for the step's refresh,
+ * with the display waited for and its refreshes known, never with
+ * --fast, and never for a picture a test or the player asked for. */
+static s32 port_MayDrawBeside(void) {
+    return g_port_step_refresh_on && g_port_vsync &&
+           g_port_refresh.period != 0 && g_port_refresh.is_seen &&
+           !g_port_window_options.is_fast && !g_port_wants_shot &&
+           port_PictureRate() != 0 && g_port_step_ready != 0;
+}
+
+/* The step's thread has something to say (port_WaitForStepper): its state
+ * other than running, and then any other word it posted drained. */
+static s32 port_StepperSays(void) {
+    s32 state = SDL_AtomicGet(&g_port_stepper_state);
+
+    if (state != STEPPER_RUNNING) {
+        while (SDL_SemTryWait(g_port_stepper_back) == 0) {
+        }
+    }
+    return state;
+}
+
+/* A picture between the two frames written down already, for the refresh
+ * `next`, handed over and not waited for. */
+static void port_DrawBeside(u32 next) {
+    if (port_DrawTween(1)) {
+        port_DrawCounter();
+        port_HandPicture(next);
+        g_port_pictures_beside++;
+    }
+    g_port_beside_until = next;
+    g_port_has_beside_until = TRUE;
+    port_ProfileSwitch(PORT_PROFILE_WAIT);
+}
+
+/* While the step runs. For each refresh of the display that comes while
+ * the step still runs with no more time before it than its record and
+ * its first picture take after it (on average, and a millisecond to
+ * spare), a picture between the two frames written down already, handed
+ * over for that refresh and not waited for. Nothing is guessed ahead: a
+ * step that ends in time for a refresh has its own picture shown at it.
+ * Once the step's frame's list has begun, its record is drawn as it is
+ * written (port_GlDrawSoFar), so that little of it is left once the step
+ * has ended; no picture can be drawn meanwhile, so the next refresh is
+ * given one first where the list, the rest of the record and the step's
+ * first picture would miss it. Returns what the step's thread said. */
+static s32 port_BesideStep(void) {
+    s32 was = port_ProfileSwitch(PORT_PROFILE_WAIT);
+    s32 is_drawing = FALSE;
+    s32 state;
+
+    for (;;) {
+        u32 now;
+        u32 next;
+        u32 after;
+        s32 left;
+
+        state = port_StepperSays();
+        if (state != STEPPER_RUNNING) {
+            break;
+        }
+        now = port_ReadClock();
+        next = port_NextRefresh(&g_port_refresh, now, g_port_draw_cost);
+        /* what the step's own first picture needs once the step has
+         * ended: the rest of its record drawn, and the picture */
+        after = g_port_after_ready > g_port_draw_cost ? g_port_after_ready
+                                                      : g_port_draw_cost;
+        if (!is_drawing && g_port_stream_on && port_GlRecordHasDraws()) {
+            if (port_MayDrawBeside() &&
+                !(g_port_has_beside_until &&
+                  (s32)(next - g_port_beside_until) <= 0) &&
+                (s32)(next - now - g_port_list_left - after -
+                      STEP_REFRESH_SPARE) <= 0) {
+                port_DrawBeside(next);
+            }
+            is_drawing = TRUE;
+            g_port_list_from = port_ReadClock();
+        }
+        if (is_drawing) {
+            u32 made;
+
+            port_ProfileSwitch(PORT_PROFILE_CARD);
+            made = port_GlDrawSoFar();
+            port_ProfileSwitch(PORT_PROFILE_WAIT);
+            if (made == 0) {
+                SDL_SemWaitTimeout(g_port_stepper_back, 1);
+            }
+            continue;
+        }
+        if (!port_MayDrawBeside()) {
+            SDL_SemWait(g_port_stepper_back);
+            continue;
+        }
+        if (g_port_has_beside_until && (s32)(next - g_port_beside_until) <= 0) {
+            /* that one has its picture: until a picture begun would make
+             * the one after it */
+            left = (s32)(g_port_beside_until - g_port_draw_cost - now) + 1;
+        } else {
+            left = (s32)(next - after - STEP_REFRESH_SPARE - now);
+            if (left <= 0) {
+                port_DrawBeside(next);
+                continue;
+            }
+        }
+        (void)port_WaitForStepper(left > 0 ? (u32)left : 0);
+    }
+    if (is_drawing) {
+        u32 took = port_ReadClock() - g_port_list_from;
+
+        g_port_list_left =
+            g_port_list_left == 0 ? took
+                                  : port_PaceAverage(g_port_list_left, took);
+    }
+    port_ProfileSwitch(was);
+    return state;
+}
+
+/* The step's thread's word that the frame's list has begun, which ends the
+ * window's thread's wait (port_BesideStep). */
+static void port_WakeWindow(void) { SDL_SemPost(g_port_stepper_back); }
+
+/* A held step (g_port_step_runner): on the step's thread, its drawing
+ * written down, the window's thread drawing pictures meanwhile; then its
+ * record drawn here. */
+static void port_RunStep(void) {
+    s32 state;
+
+    if (!port_RunsBeside()) {
+        port_HostEnterGame();
+        return;
+    }
+    g_port_beside = TRUE;
+    g_port_has_beside_until = FALSE;
+    port_GlStepRecords(TRUE);
+    SDL_AtomicSet(&g_port_stepper_state, STEPPER_RUNNING);
+    SDL_SemPost(g_port_stepper_go);
+    for (;;) {
+        state = port_BesideStep();
+        if (state != STEPPER_FLUSH) {
+            break;
+        }
+        port_GlStepRecords(FALSE);
+        port_DrawRecord();
+        port_GlStepRecords(TRUE);
+        SDL_AtomicSet(&g_port_stepper_state, STEPPER_RUNNING);
+        SDL_SemPost(g_port_stepper_resume);
+    }
+    g_port_step_done_at = port_ReadClock();
+    g_port_step_done = TRUE;
+    port_GlStepRecords(FALSE);
+    port_DrawRecord();
+    g_port_beside = FALSE;
+    g_port_steps_beside++;
+    if (state == STEPPER_MOVED) {
+        /* the rest of the step here, as any step's */
+        g_port_steps_moved++;
+        port_HostEnterGame();
+    }
+}
+
+static void port_StartStepper(void) {
+    const char *setting = SDL_getenv("RB_STEP_THREAD");
+
+    g_port_stepper_on = setting == NULL || strcmp(setting, "off") != 0;
+    setting = SDL_getenv("RB_STEP_STREAM");
+    g_port_stream_on = setting == NULL || strcmp(setting, "off") != 0;
+    /* a press made as the PC's own (--inject) is read at a blank, on the
+     * window's thread */
+    if (!g_port_stepper_on ||
+        g_port_window_options.inject != PORT_INJECT_NONE) {
+        return;
+    }
+    g_port_stepper_go = SDL_CreateSemaphore(0);
+    g_port_stepper_back = SDL_CreateSemaphore(0);
+    g_port_stepper_resume = SDL_CreateSemaphore(0);
+    if (g_port_stepper_go == NULL || g_port_stepper_back == NULL ||
+        g_port_stepper_resume == NULL) {
+        return;
+    }
+    g_port_stepper =
+        SDL_CreateThread(port_StepperThread, "rebushido-step", NULL);
+    if (g_port_stepper == NULL) {
+        return;
+    }
+    g_port_stepper_id = SDL_GetThreadID(g_port_stepper);
+    g_port_profile_thread = port_ProfileThreadOf;
+    g_port_step_runner = port_RunStep;
+    g_port_step_to_host = port_StepToHost;
+    g_port_quit_hook = port_CloseFromStep;
+    port_GlRecordWake(port_WakeWindow);
+}
+
+static void port_StopStepper(void) {
+    if (g_port_stepper == NULL || port_OnStepper() || g_port_beside) {
+        return;
+    }
+    g_port_step_runner = NULL;
+    g_port_step_to_host = NULL;
+    SDL_AtomicSet(&g_port_stepper_stop, 1);
+    SDL_SemPost(g_port_stepper_go);
+    SDL_WaitThread(g_port_stepper, NULL);
+    g_port_stepper = NULL;
+    g_port_profile_thread = NULL;
 }
 
 /* ---- quick loading (docs/PORT.md, "Quick loading") ---- */
@@ -3751,7 +4159,24 @@ static void port_ShowBlank(u32 blank) {
 static void port_StopPainters(void);
 static void port_StopPairing(void);
 
+static void port_StopStepper(void);
+
 static void port_CloseWindow(s32 code) {
+    port_StopStepper();
+    if (g_port_steps_beside != 0) {
+        const PortGlRecordCounts *records = port_GlRecordCounts();
+
+        port_Note(
+            "the step beside the window: %u steps on a thread of their "
+            "own, %u of them moved to the window's thread, %u pictures "
+            "drawn beside them; %u records of %u calls, %u of them drawn "
+            "while the step ran, %u views and %u side channels kept, %u KB "
+            "a record at the most, %u lost",
+            g_port_steps_beside, g_port_steps_moved, g_port_pictures_beside,
+            records->records, records->calls, records->streamed,
+            records->views_kept, records->sides_kept,
+            records->most_bytes / 1024U, records->lost);
+    }
     if (g_port_step_refreshes != 0) {
         port_Note("the step's refresh: %u steps showed a picture for the "
                   "refresh they would have missed, %u of them in time for "
@@ -4043,4 +4468,5 @@ void port_StartWindow(void) {
     port_StartNetWindow();
     port_StartPainters();
     port_StartPairing();
+    port_StartStepper();
 }
