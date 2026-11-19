@@ -41,6 +41,9 @@ typedef enum {
     PORT_GPU_SMASK,    /* the shadows' mask: cleared, the silhouettes and
                         * what stands over the ground */
     PORT_GPU_SDARK,    /* the ground darkened through the mask */
+    PORT_GPU_SUN,      /* the sun's shadow maps drawn (gl_sun.c) */
+    PORT_GPU_LIGHTS,   /* the lights sorted and sent, their shadow maps
+                        * drawn (gl_lights.c) */
     PORT_GPU_PASSES
 } PortGpuPass;
 
@@ -87,7 +90,7 @@ extern u32 port_GlBenchTimed(void);
 
 /* ---- the benchmark's stress (--bench-stress) ---- */
 
-/* `fighters=N,stage=M`: the HD fighters drawn as if there were N of
+/* `fighters=N,stage=M,lights=L`: the HD fighters drawn as if there were N of
  * them (each of the two drawn N/2 times, rounded up, the copies beside
  * him on the screen), and the ground's mesh drawn M times over. Nothing
  * of the game is touched: it is more work for the card and for the

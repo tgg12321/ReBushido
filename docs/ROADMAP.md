@@ -273,7 +273,17 @@ the stage").
     to this item, whose shadow maps replace the flattened shadow; check
     the jitter is gone when it lands (the ground the shadow falls on,
     the in-between pictures' camera, the darkening's bounding box were
-    the suspects).
+    the suspects). The owner (2026-11-18): a total overhaul as a modern
+    game would have it -- several lights, shadows of everything on
+    everything, reflections, the finish -- still Bushido Blade 2.
+    **Done:** a, the sun's cascaded shadow maps (`shadows = map`, built
+    in), the jitter gone with the mask; b, the light list's lights per
+    pixel on the ground, the pieces and the fighters, the strongest four
+    with cube shadows (`lights = on`), and a remade model's normal and
+    material maps. **Left:** c, reflections (screen space, the sky as the
+    fallback), and d, HDR with a tonemap held to the game's look, ambient
+    occlusion and bloom (PORT.md, "The lighting overhaul", "What is left
+    of it").
 15. **Input lag cut** (the owner, 2026-11-17): the press to the picture
     measured part by part, then cut where it is safe: the devices read
     as late as the game's step allows, run-ahead on the rollback's save

@@ -385,10 +385,16 @@ extern void port_RemasterNoteFighter(s32 is_fighter);
 #define PORT_SHADOWS_CAST 0x100
 #define PORT_SHADOWS_CAST_STRENGTH 68
 #define PORT_SHADOWS_STRENGTH_MASK 0xFF
+/* `shadows map`: the stage's sun casts from depth maps of its own
+ * (src/port/gl/gl_sun.h), onto the ground's mesh, the stage's pieces and
+ * the fighters' models, with the fighters' own faces among its casters; a
+ * picture whose ground is the game's own tiles falls back to `cast`. The
+ * setting's number is this bit with `cast`'s. */
+#define PORT_SHADOWS_MAP 0x200
 
 /* The `shadows` setting as a word says it: `original`, `soft`, a number
- * from 1 to 100 (soft, that strong), `cast`, or `cast:N` (cast, N
- * hundredths); -1 for anything else. Pure arithmetic: the host tests
+ * from 1 to 100 (soft, that strong), `cast`, `cast:N` (cast, N
+ * hundredths), or `map`; -1 for anything else. Pure arithmetic: the host tests
  * hold it (tests/port/remaster.c). */
 extern s32 port_ReadRemasterShadows(const char *word);
 

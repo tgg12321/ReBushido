@@ -45,6 +45,8 @@
 #include "gl_scene.h"
 #include "gl_see.h"
 #include "gl_stage.h"
+#include "gl_sun.h"
+#include "gl_lights.h"
 #include "port_gpu.h"
 #include "port_remaster.h"
 
@@ -142,6 +144,7 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glUniform4fv, (GLint, GLsizei, const GLfloat *))                  \
     GL(void, glUniform1uiv, (GLint, GLsizei, const GLuint *))                  \
     GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
+    GL(void, glUniformMatrix4fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))
 
 #define GL(result, name, args) static result(*name) args;
@@ -384,6 +387,15 @@ static struct {
     s32 piece_faces;
     s32 pieces_held;
     s32 pieces_missed;
+    /* the sun's maps (gl_sun.h): what the mesh casts into them, and where
+     * the mesh's own program reads them */
+    GLuint sun_program;
+    GLint sun_at_matrix;
+    GLint sun_at_pieces;
+    GLint sun_at_window;
+    GLint sun_at_vram;
+    PortGlSunAt sun;
+    PortGlLightsAt lights;
 } g_stage;
 
 /* The view last mixed between two frames (port_GlStageMixView), kept
@@ -612,7 +624,7 @@ static const char g_stage_vertex_text[] =
     "}\n";
 
 static const char g_stage_fragment_text[] =
-    "#version 400 core\n"
+    "#version 430 core\n"
     /* the picture's samples a pixel (gl.h, PortGlPicture.samples) */
     "uniform int u_samples;\n" PORT_GL_VRAM_SHADER
     "uniform uvec4 u_window;\n" /* the texture window, and or or */
@@ -660,6 +672,10 @@ static const char g_stage_fragment_text[] =
     "uniform usampler2D u_slots;\n"
     /* a mod's picture of a whole page (gl_scene.h) */
     PORT_GL_SCENE_SHADER
+        /* the sun's maps (gl_sun.h) */
+        PORT_GL_SUN_SHADER
+    /* the lights of a frame (gl_lights.h) */
+    PORT_GL_LIGHTS_SHADER
     /* the ordering-table slot a depth is sorted at
      * (render_OtIndexShifted) */
     "int slot_of(int depth) {\n"
@@ -835,6 +851,24 @@ static const char g_stage_fragment_text[] =
     "                * 4096.0;\n"
     "        color = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
     "    }\n"
+    /* `shadows map` (gl_sun.h): where the sun's map says the sun does not
+     * reach, its own share of the light -- the first light of the setup,
+     * its turn on the normal through its column of the colour matrix --
+     * is taken away, and the rest of the stage's light is left */
+    "    if (u_sun_on != 0 && length_of > 0.25) {\n"
+    "        vec3 n = v_smooth_normal / length_of;\n"
+    "        float seen = sun_visible(v_place, n);\n"
+    "        if (seen < 1.0) {\n"
+    "            vec3 to_sun = vec3(u_light[0][0], u_light[1][0], u_light[2][0]);\n"
+    "            float turn = max(dot(to_sun, n), 0.0);\n"
+    "            color = sun_shade(color, u_color[0] * turn * 256.0, seen);\n"
+    "        }\n"
+    "    }\n"
+    /* the lights of a frame beside the stage's own (gl_lights.h), added to
+     * its light as the coprocessor adds its lights */
+    "    if (u_lights_count != 0 && length_of > 0.25) {\n"
+    "        color += lights_add(v_place, v_smooth_normal / length_of);\n"
+    "    }\n"
     "    uint texel;\n"
     "    vec3 one_color = texel_color(int(floor(v_texture.x)),\n"
     "                                 int(floor(v_texture.y)), texel);\n"
@@ -912,6 +946,67 @@ static const char g_stage_fragment_text[] =
     "    o_slot = v_slot;\n"
     "}\n";
 
+/* The mesh as the sun sees it (gl_sun.h): into one of the sun's depth
+ * maps, every face the picture could show -- the ground, and the pieces
+ * the frame queued -- from both sides, a face that mixes with what is
+ * behind it left out as the picture leaves it to the game. A texel of
+ * nothing casts nothing, so a fence's cut-out texture casts its own
+ * shape. */
+static const char g_stage_sun_vertex_text[] =
+    "#version 330 core\n"
+    "layout(location = 0) in vec3 a_place;\n"
+    "layout(location = 1) in vec2 a_texture;\n"
+    "layout(location = 2) in uvec4 a_color;\n"
+    "layout(location = 3) in ivec4 a_page;\n"
+    "layout(location = 4) in uvec4 a_info;\n"
+    "layout(location = 5) in uint a_tile;\n"
+    "uniform mat4 u_sun;\n"
+    "uniform uint u_pieces[2];\n"
+    "out vec2 v_texture;\n"
+    "flat out ivec4 v_page;\n"
+    "flat out uvec4 v_info;\n"
+    "flat out uint v_flags;\n"
+    "void main() {\n"
+    "    bool hidden = (a_color.w & 4u) != 0u;\n"
+    "    if ((a_info.w & 1u) != 0u) {\n"
+    "        uint piece = a_tile - 512u;\n"
+    "        hidden = hidden || piece >= 64u\n"
+    "            || (u_pieces[piece >> 5u] & (1u << (piece & 31u))) == 0u;\n"
+    "    }\n"
+    "    gl_Position = hidden ? vec4(2.0, 2.0, 2.0, 1.0)\n"
+    "                         : u_sun * vec4(a_place, 1.0);\n"
+    "    v_texture = a_texture;\n"
+    "    v_page = a_page;\n"
+    "    v_info = a_info;\n"
+    "    v_flags = a_color.w;\n"
+    "}\n";
+
+static const char g_stage_sun_fragment_text[] =
+    "#version 330 core\n" PORT_GL_VRAM_SHADER "uniform uvec4 u_window;\n"
+    "in vec2 v_texture;\n"
+    "flat in ivec4 v_page;\n"
+    "flat in uvec4 v_info;\n"
+    "flat in uint v_flags;\n"
+    "void main() {\n"
+    "    if ((v_flags & 1u) == 0u) { return; }\n"
+    "    int u = (int(floor(v_texture.x)) & int(u_window.x)) | int(u_window.y);\n"
+    "    int v = (int(floor(v_texture.y)) & int(u_window.z)) | int(u_window.w);\n"
+    "    int y = v_page.y + v;\n"
+    "    uint texel;\n"
+    "    if (v_info.x == 0u) {\n"
+    "        uint word = vram(v_page.x + (u >> 2), y);\n"
+    "        uint index = (word >> ((uint(u) & 3u) * 4u)) & 15u;\n"
+    "        texel = vram(v_page.z + int(index), v_page.w);\n"
+    "    } else if (v_info.x == 1u) {\n"
+    "        uint word = vram(v_page.x + (u >> 1), y);\n"
+    "        uint index = (word >> ((uint(u) & 1u) * 8u)) & 255u;\n"
+    "        texel = vram(v_page.z + int(index), v_page.w);\n"
+    "    } else {\n"
+    "        texel = vram(v_page.x + u, y);\n"
+    "    }\n"
+    "    if (texel == 0u) { discard; }\n"
+    "}\n";
+
 /* ---- starting ---- */
 
 static void port_GlStageSay(const char *what, const char *more) {
@@ -985,6 +1080,9 @@ static void port_GlStageFormat(void) {
     glEnableVertexAttribArray(8);
     glEnableVertexAttribArray(9);
     glEnableVertexAttribArray(10);
+    /* the normal `smooth_light` and the sun's maps light from: without it
+     * every vertex read nought, and neither ever reached the ground */
+    glEnableVertexAttribArray(11);
 }
 
 const char *port_GlStageStart(void *(*getproc)(const char *name)) {
@@ -1057,6 +1155,33 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
     AT(at_samples, "u_samples");
     AT(at_slots, "u_slots");
 #undef AT
+    port_GlSunLocate(g_stage.program, &g_stage.sun);
+    port_GlLightsLocate(g_stage.program, &g_stage.lights);
+    vertex = port_GlStageShader(GL_VERTEX_SHADER, g_stage_sun_vertex_text);
+    fragment =
+        port_GlStageShader(GL_FRAGMENT_SHADER, g_stage_sun_fragment_text);
+    if (vertex == 0 || fragment == 0) {
+        return g_stage.problem;
+    }
+    g_stage.sun_program = glCreateProgram();
+    glAttachShader(g_stage.sun_program, vertex);
+    glAttachShader(g_stage.sun_program, fragment);
+    glLinkProgram(g_stage.sun_program);
+    glGetProgramiv(g_stage.sun_program, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        static char log[2048];
+
+        glGetProgramInfoLog(
+            g_stage.sun_program, (GLsizei)sizeof(log), NULL, log);
+        port_GlStageSay("the sun's shaders do not link: ", log);
+        return g_stage.problem;
+    }
+    g_stage.sun_at_matrix = glGetUniformLocation(g_stage.sun_program, "u_sun");
+    g_stage.sun_at_pieces =
+        glGetUniformLocation(g_stage.sun_program, "u_pieces");
+    g_stage.sun_at_window =
+        glGetUniformLocation(g_stage.sun_program, "u_window");
+    g_stage.sun_at_vram = glGetUniformLocation(g_stage.sun_program, "u_vram");
     glGenBuffers(1, &g_stage.buffer);
     glGenVertexArrays(1, &g_stage.array);
     port_GlStageFormat();
@@ -2516,12 +2641,23 @@ static void port_GlStageDrawMesh(
     if (g_stage.vertex_count == 0 || !port_GlStageTarget(picture)) {
         return;
     }
-    port_GlStageUniforms(view, picture, paint);
     /* what the pieces' marks in the shadows' mask are drawn with, at the
-     * picture's end (port_GlStageDrawOccluders) */
+     * picture's end (port_GlStageDrawOccluders), and the sun's maps */
     g_stage.drawn_view = *view;
     g_stage.drawn_paint = *paint;
     g_stage.has_drawn = TRUE;
+    /* the sun's maps, drawn before the mesh reads them (gl_sun.h) */
+    if (port_GlSunIsOn()) {
+        port_GlSunPrepare(view);
+        port_GlStageTarget(picture);
+    }
+    if (port_GlLightsIsOn()) {
+        port_GlLightsPrepare();
+        port_GlStageTarget(picture);
+    }
+    port_GlStageUniforms(view, picture, paint);
+    port_GlSunBind(&g_stage.sun);
+    port_GlLightsBind(&g_stage.lights);
 
     /* The whole depth buffer is cleared, and not only the part the mesh
      * draws in: the scene is held against it everywhere (gl_draw.c), so
@@ -2585,6 +2721,57 @@ static void port_GlStageDrawMesh(
     glDepthMask(GL_FALSE);
     glViewport(0, 0, picture->target_w, picture->target_h);
     port_GlCountDraw(g_stage.drawn_vertices, g_stage.draws);
+}
+
+void port_GlStageSunPrepare(void) {
+    s32 is_between = FALSE;
+    const PortStageView *view = port_GlStageViewNow(&is_between);
+
+    if (!port_GlStageIsOn() || !g_stage.has_drawn ||
+        g_stage.vertex_count == 0 || view->frames == 0 ||
+        g_stage.version != view->version) {
+        return;
+    }
+    if (port_GlSunIsOn()) {
+        port_GlSunPrepare(view);
+    }
+    port_GlLightsPrepare();
+}
+
+u32 port_GlStageDrawSunCasters(const float *matrix) {
+    PortGlPicture picture;
+    GLuint pieces[PORT_STAGE_PIECE_WORDS];
+    const PortStageView *view;
+    s32 i;
+
+    if (!g_stage.is_started || g_stage.vertex_count == 0 ||
+        !g_stage.has_drawn) {
+        return 0;
+    }
+    port_GlGetPicture(&picture);
+    view = g_stage.has_own_view ? &g_stage.own_view : &g_stage.drawn_view;
+    for (i = 0; i < PORT_STAGE_PIECE_WORDS; i++) {
+        pieces[i] = port_GlStagePropsAreOn(port_RemasterStageNumber()) &&
+                            !g_stage.is_props_hidden
+                        ? view->pieces[i] & g_stage.piece_in[i]
+                        : 0;
+    }
+    glUseProgram(g_stage.sun_program);
+    glBindVertexArray(g_stage.array);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(PORT_GL_VRAM_TARGET, picture.vram_texture);
+    glUniform1i(g_stage.sun_at_vram, 0);
+    glUniformMatrix4fv(g_stage.sun_at_matrix, 1, GL_FALSE, matrix);
+    glUniform1uiv(g_stage.sun_at_pieces, PORT_STAGE_PIECE_WORDS, pieces);
+    glUniform4ui(
+        g_stage.sun_at_window, (GLuint)g_stage.drawn_paint.window_and_u,
+        (GLuint)g_stage.drawn_paint.window_or_u,
+        (GLuint)g_stage.drawn_paint.window_and_v,
+        (GLuint)g_stage.drawn_paint.window_or_v);
+    glDrawArrays(GL_TRIANGLES, 0, g_stage.vertex_count);
+    port_GlCountDraw((u32)g_stage.vertex_count, 1);
+    glBindVertexArray(0);
+    return (u32)g_stage.vertex_count / 3;
 }
 
 void port_GlStageDrawOccluders(u32 framebuffer) {

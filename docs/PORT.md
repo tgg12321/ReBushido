@@ -7227,6 +7227,262 @@ So nothing of that branch is merged; what was worth keeping is
   wall -- which wants the ground's own depth, or a shadow map from the
   stage's sun.)
 
+### The lighting overhaul
+
+The owner (2026-11-18), on ROADMAP item 14: "a total overhaul as if this
+were a modern game": several lights, shadows of everything on
+everything, reflections, and the finish a modern renderer has -- but
+still Bushido Blade 2, by known techniques, the Remastered picture alone
+(`Graphics: Original` is the console's picture to the pixel), and
+nothing of it in the game's state or its step.
+
+**The base stays the game's.** Every surface the remastered picture
+lights itself -- the ground's mesh, the stage's pieces in it, the
+fighters' own models -- is lit first exactly as the coprocessor lights
+it ("Lighting"): the stage's three directional lights and its colour of
+the dark, from `light_SetStage`'s table of 38, so a night stage stays
+dim and blue and a dusk stage warm. What the overhaul adds is laid over
+that, in the same units (bytes of light, 128 being one, the texel times
+it over sixteen), so where it adds nothing the picture is what it was.
+What the game still draws from its own primitives (effects, the HUD, a
+piece the game has changed, fighters with no model of their own) keeps
+the colours in its primitives.
+
+**Forward, not deferred.** The game paints in the order of its ordering
+table, half-transparent primitives mixed in where they fall, and only the
+ground's mesh and the fighters' models have a depth of their own; there
+is no G-buffer to light afterwards without breaking that order and
+every half-transparent face. So each of the three shaders that light
+(gl_stage.c, gl_fighter.c, and the cloths through the fighters') reads
+what it needs -- the sun's maps, the light list -- and lights its own
+pixel, in the place the game paints it. The many lights are culled on
+the processor into a grid over the picture (clustered forward shading:
+which lights reach each cell of the screen and of depth), handed over in
+a buffer, so a pixel loops over the few that reach it.
+
+**The phases**, each a commit that passes the gate:
+
+| | what | setting |
+|---|---|---|
+| a | the sun's shadow maps, cascaded, soft | `shadows = map` |
+| b | lights with a place (point and spot), per pixel, the strongest few with shadows | `lights` |
+| c | reflections: on the screen, the sky behind as the fallback | `reflections` |
+| d | HDR and a tonemap held to the game's look, ambient occlusion, bloom | `tonemap`, `ambient_occlusion`, `bloom` |
+
+**The budget.** 144 a second at 2,560 by 1,440 on the owner's RTX 3090:
+6.94 ms a refresh in all, of which the picture was 3.2 to 4.3 ms of the
+card at the end of the performance run (HANDOFF). The lighting's own
+share is held at **1.5 ms of the card** with two fighters, and the
+stress case (four fighters, the ground twice, many lights) must still
+hold the card's 95% under the refresh. `tools/port_bench.py` reads the
+card's time of each new pass (`sun`, and those after it) and holds them
+(LIGHT_LIMITS).
+
+#### a. The sun's shadow maps (`shadows = map`)
+
+`src/port/gl/gl_sun.c`, `gl_sun.h`. The stage's sun gets three depth maps
+of 2,048 texels a side, nested about the camera (cascades): each holds a
+slice of the view -- 16 to 1,600 world units, to 5,000, to 16,000 -- in
+the smallest sphere round it, seen along the sun and reaching 6,000 units
+further towards it so that a roof or a tall wall outside the slice still
+casts into it.
+
+- **What casts.** The ground's mesh and the stage's pieces the picture
+  draws (`port_GlStageDrawSunCasters`; a cut-out texel casts nothing, so
+  a fence casts its own shape), and the fighters, weapons and cloths
+  (`port_GlShadowDrawSunCasters`): what `shadows cast` is made of -- the
+  fighters' own faces taken back into the world from the coprocessor's
+  sums, or their models posed on the card -- unflattened, at the picture's
+  own phase between two frames. The direction is the game's own shadow's
+  (`light_ProjectShadow`'s slope), so the shadows fall where the game's
+  fell.
+- **What it falls on.** Everything the remastered picture lights itself:
+  the ground's mesh, the pieces in it and the fighters' models, each
+  reading the maps at its pixel (`sun_visible`, `PORT_GL_SUN_SHADER`). So
+  a fighter's shadow climbs a wall and a step, a pillar's shadow crosses
+  the floor and the fighter standing in it, and a fighter's raised arm
+  shades his own body. What the game still draws from its primitives
+  (effects, the HUD) is as it drew it; with the ground the game's own
+  tiles (`stage_mesh off`, or a stage the mesh is not measured good on),
+  the picture falls back to `shadows cast`.
+- **What a shadow does to the light.** The game lights a surface with its
+  stage's three lights and its colour of the dark; the first light is the
+  sun. Where the maps hide the sun, its own share (its turn on the normal
+  through its column of the colour matrix) is taken away, and of the rest
+  as much again as makes a shadow on the stage's sunlit floor take the
+  `shadows` strength (68 hundredths, as `cast` took): the stage's own
+  ratio of sun to sky decides how much that is (`port_SunGain`, at most
+  four times the sun's share). It scales with the sun's own share, so a
+  face the sun barely reaches loses little and one turned away from it
+  loses nothing -- which is also what keeps a fighter lit by his own
+  lights from a side the stage's sun is not on as the game lit him.
+- **Soft.** Percentage-closer soft shadows: the casters about a point are
+  searched for in its map, how far they are from it sets the penumbra (a
+  sun of about two and a half degrees, `SUN_SOFT`), and sixteen compared
+  reads of a turned disc average the edge. The disc's turn is the pixel's
+  own and the same in every picture, so a still scene's penumbra is still.
+- **Held still.** Each map keeps its size whatever the view (a whole
+  number of units), its square moves over the ground by whole texels and
+  its depths by whole steps of 256 units, so a still caster's shadow does
+  not crawl as the camera breathes. The maps are drawn once a picture,
+  before the first thing that reads them (the ground's mesh, or the
+  fighters' models when they come first: `port_GlStageSunPrepare`), from
+  the picture's own camera and casters.
+- **Fixed on the way:** the ground's per-vertex normal was never enabled
+  as an attribute (`port_GlStageFormat`), so every vertex read nought and
+  `smooth_light` never reached the ground (it did reach the pieces' faces
+  lit at each corner and the fighters). It is enabled now, for the sun's
+  maps and `smooth_light` both.
+
+**The cast shadow's jitter at rest** (ROADMAP 14): the three suspects --
+the ground the shadow falls on, the in-between pictures' camera, the
+darkening's bounding box -- are all gone with the mask: the shadow is
+read in the world, from a map that stays where it is, by the surface
+itself. Measured on the Kimigaura coast and the castle rooftop, nobody
+pressing anything, each frame drawn as two pictures (`--gl-tween 2`), the
+pixels that change by more than 12 of 255 from one picture to the next
+in the lower two thirds of the picture: from a frame to the next, `map`
+changes as many as `cast` (the fighters breathing: 1,200 to 7,200 a
+step on the coast with either); inside a frame, `cast` changes 2 to 380
+and `map` 1,100 to 2,600, all of them on the fighters' own lit sides,
+where their self-shadow follows the breathing between the two frames.
+In the difference of two pictures no pixel of the ground's shadows
+changes at all (`tmp` runs, the coast at blank 3620).
+
+`RB_SUN_DEBUG=1` in a run's environment draws, in the place of every
+pixel the maps shade, the share of the sun that reaches it (white all of
+it, black none): how a self-shadow or a penumbra was looked at.
+
+**Stages under a roof.** A stage whose own ceiling stands between its
+floor and the sun would have its whole floor in shadow, which is not the
+game's lighting of it: those stages' own geometry does not cast
+(`g_sun_stage_casts`, gl_sun.c), and their fighters still cast onto the
+floor and onto each other. Found by every stage's picture with the maps
+against `shadows cast` (the tour, blank 3,200): the lower half's mean
+lightness fell to 0.40, 0.86, 0.70 and 0.32 of cast's on the main Tatara
+shrine, the kabuki stage, the building's parking lot and the chanbara
+hall, each a ceiling's shadow over the floor; held off, they come to
+0.98 to 1.00. Everywhere else what darkens is a wall's, a pillar's or a
+terrace's shadow and stays: the abandoned shipyard 0.60, team 1 0.73,
+the terraced fields and the building rooftop 0.77, every other stage
+0.86 to 1.00.
+
+#### b. Lights with a place (`lights = on`)
+
+`src/port/gl/gl_lights.c`, `gl_lights.h`. The list (`PortGlLight`, up to
+128 a frame: a place in the world, a colour and intensity, a reach, a
+point or a spot with its cone, a flicker, whether it should cast, an
+`id`) is filled once a game frame by whoever knows the lights -- a
+stage's file of them and a fight's events, the mods' side -- between
+`port_GlLightsBegin` and `port_GlLightsEnd`, which may be called on the
+step's thread: End hands the list over under a lock, and the picture
+takes it at the next game frame's `begin` (`port_GlLightsTake`). It is
+the picture's alone: outside the state, never saved, hashed or read by
+the game.
+
+- **Once a picture** (`port_GlLightsPrepare`, before the first thing that
+  reads it): each light is moved between its place in the list before
+  and this one by its `id` where the picture is between two frames, its
+  flicker worked out from its `id` and the frames taken (three waves of
+  prime periods, the same at any frame rate and in every run), and the
+  lot sent to the card in a buffer.
+- **Sorted by where they reach** (a grid over the ground about the
+  camera, 64 by 64 cells of 256 world units, seen from above): each cell
+  names the lights whose reach overlaps it, so a pixel loops over the
+  few lights near it, whatever the list holds. The grid is in the world,
+  not the screen, because three different shaders read it with three
+  different projections (the ground's, the fighters' layer, the cloths)
+  and a stage is a floor: a cell is the same for every picture of a
+  frame, and the processor's work is the lights times the cells
+  (4,096), a few tens of microseconds for a full list.
+- **Lit at the pixel.** The ground, the pieces and the fighters' models
+  add each light that reaches them (`lights_add`, `PORT_GL_LIGHTS_SHADER`)
+  to what the stage's own lights give, in the game's own bytes of light:
+  its colour times its intensity times 128, times its turn on the normal,
+  falling off smoothly to nothing at its reach (the square of one less
+  the square of the distance over the reach), a spot's cone smoothed
+  between its two half-angles.
+- **Shadows of the strongest few.** Of the lights that ask, the four
+  that are brightest at the camera (intensity times reach squared over
+  the distance squared) are given a cube of six depth maps of 512 texels
+  (`PORT_GL_LIGHTS_SHADOWED`), drawn with the sun's casters: the stage
+  and the fighters, at the picture's phase. A point reads the face its
+  direction from the light falls in, four compared reads.
+- **Made up, for measuring** (`--bench-stress lights=N`, the prover's
+  `--gl-made-up-lights N`): where a frame's list is empty, N lights of
+  the renderer's own in a ring about the place the camera looks at, each
+  its own colour, a quarter of them spots, a quarter flickering, the
+  first four casting.
+
+#### The fighters' material (rb_remade)
+
+A remade model's file has, beside its base colour, a normal map and a
+map of ambient occlusion, roughness and metal (`extras.rb_remade`;
+`gl_fighter_file.h`). Where a piece has them the fighters' shader turns
+its normal by the normal map at the pixel (the file has no tangents:
+they are worked out from how the place and the texture point change
+across the pixel, as glTF's own sample viewer does), lights that normal
+with the stage's own lights and the light list, lets the occlusion darken
+the colour of the dark (the light that comes from all about), and gives
+the sun a highlight (GGX with Smith's masking and Schlick's Fresnel)
+from its roughness and metal, where the sun's maps say it reaches. A
+model without the maps is flat, unoccluded, rough (0.8) and not metal:
+its highlight is a faint sheen.
+
+#### What it costs (the bench, the RTX 3090 at 2,560 by 1,440)
+
+`tools/port_bench.py`, other agents' work on the machine (loads of 10 to
+46%: the numbers are a guide, the medians the steadiest), at 3126201d9:
+
+| case | card, median / 95% | the stage's pass | sun | lights | the lighting's 95% |
+|---|---|---|---|---|---|
+| ra1, main before (c212be752, quiet) | -- / 3.30 | 1.40 | -- | -- | -- |
+| ra1 | 3.61 / 4.32 | 1.53 | 0.32 | -- | 0.71 |
+| ra1-stress, 16 made-up lights, 4 casting | 5.73 / 8.55 (46% load) | 2.42 | 0.28 | 0.54 | 3.47 |
+| ra1-stress, the lights off | 5.44 / 6.17 | 3.07 (the soft filter on every map, before the cut) | 0.29 | -- | 0.32 |
+
+What brought it there: the sun's soft filter is the near map's alone,
+the far two read four compared texels and one; a light's shadow is one
+compared read (the card's own two by two); the stage's depth from a
+shadowed light is kept while the light stands still, and only the
+fighters are drawn over a copy of it. The stress case's card 95%
+still goes over the refresh on a loaded machine; its median is under
+it. On ra0 the processor's 95% moved between 5.91 and 9.07 ms from one run to the next with everything of the lighting off or on, interleaved (the step on the window's thread, a busy machine): the gate's ra0 and ra2 processor limits failed on that noise, not on the lighting. Left to take: the sun's map of the stage kept the same way (it
+moves only with the camera's whole texels), and the stage's shading
+done once a pixel where the ground is drawn twice over (the stress
+case's own doubling, which no stage has).
+
+#### What is left of it
+
+- **c. Reflections.** The plan: the ground's mesh and the pieces write,
+  beside their colour, a reflectance (0 but for a stage's water and its
+  polished floors, which a stage's light file can say, as `stage_lights`
+  says its lamps) and their normal into two more targets of the
+  picture's framebuffer; after the scene, a screen-space march along the
+  reflected ray through the mesh's own depth (the only depth of the
+  whole scene the picture keeps), and where it leaves the screen or
+  meets nothing, the sky (`gl_sky.c`) or the colour of the distance as
+  the fallback, mixed by Fresnel. Planar reflection for the stages with
+  one large water plane (the Kimigaura coast, the ferry dock) only if
+  the screen-space one is plainly short of it there.
+- **d. The finish.** The picture is eight bits a channel and the game's
+  colours are clamped at 255 where they are made, so HDR means the
+  colour buffer in half floats and every shader's clamp moved to a
+  tonemap pass before the resolve, tuned so that with the lights off a
+  stage is its own picture (an identity below the knee); then bloom from
+  what is above the knee (the lights, the flashes), and GTAO from the
+  mesh's depth, darkening only the light that is not the sun's. Each a
+  setting (`tonemap`, `bloom`, `ambient_occlusion`).
+- **The light files' placing and strength** are the lights' own side
+  (`gl_light_list.c`, the mods' `lights/`): of the stages measured here
+  only the parking lot's ceiling spots reach the fight (107,172 pixels
+  brighter by more than 8 at blank 3,200); the flames of the Tatara
+  shrine, the kabuki stage, the purple cavern and the cemetery are
+  thousands of units from where the tour fights.
+- **The normal map's green** is OpenGL's convention as glTF says; with
+  the world's y running down, the sign of the bitangent the shader works
+  out is not yet checked on a remade model in a fight.
+
 ## The stage select's kinds of stage
 
 ROADMAP 16 (the owner, 2026-11-18): three kinds of stage at the select

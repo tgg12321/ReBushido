@@ -310,6 +310,10 @@ static void test_View(void) {
     CHECK_EQ(port_ReadRemasterShadows("cast:"), -1);
     CHECK_EQ(port_ReadRemasterShadows("cast:0"), -1);
     CHECK_EQ(port_ReadRemasterShadows("casts"), -1);
+    CHECK_EQ(port_ReadRemasterShadows("map"),
+             PORT_SHADOWS_MAP | PORT_SHADOWS_CAST | PORT_SHADOWS_CAST_STRENGTH);
+    CHECK_EQ(port_ReadRemasterShadows("maps"), -1);
+    CHECK_EQ(port_ReadRemasterShadows("map:40"), -1);
     CHECK_EQ(port_ReadRemasterShadows("softer"), -1);
     CHECK_EQ(port_ReadRemasterShadows(""), -1);
 

@@ -32,6 +32,13 @@
  *     the entry of a texel and green the table's number, alpha 255 where
  *     a texel is of a table. With it the game's own changes to those
  *     tables (a tint, a fade) reach the model (gl_fighter.c);
+ *   - a material's `normalTexture` (tangent space, OpenGL's convention, no
+ *     tangents: the shader works them out at the pixel) and its
+ *     `pbrMetallicRoughness.metallicRoughnessTexture` (or, without it,
+ *     `occlusionTexture`), glTF's packing of ambient occlusion, roughness
+ *     and metal in red, green and blue: a remade model's maps
+ *     (`extras.rb_remade`), read into the part's `normal_map` and
+ *     `orm_map`;
  *   - `extras.rb_weapon`: the file is a weapon's (enum WeaponModel), drawn
  *     on the weapon's world matrix, which every bone is given;
  *   - `extras.rb_cloth`: the model's cloths, each `mesh` (its number among
@@ -47,6 +54,9 @@
 #define PORT_FIGHTER_FILE_JOINTS 21
 /* The most primitives (pieces with a texture of their own) a model has. */
 #define PORT_FIGHTER_FILE_PARTS 16
+/* The most pictures: each piece's base colour, and its normal and
+ * occlusion-roughness-metal maps (a remade model's, rb_remade). */
+#define PORT_FIGHTER_FILE_TEXTURES (3 * PORT_FIGHTER_FILE_PARTS)
 /* The most bones a vertex's terms are of (_RB_TERM0 to _RB_TERM7). */
 #define PORT_FIGHTER_TERMS 8
 
@@ -75,6 +85,10 @@ typedef struct {
     s32 first; /* into the indices */
     s32 count;
     s32 texture; /* into the textures, or -1 */
+    /* the material's normal map and its ambient occlusion, roughness and
+     * metal (glTF's packing: red, green, blue), into the textures, or -1 */
+    s32 normal_map;
+    s32 orm_map;
 } PortFighterPart;
 
 typedef struct {
@@ -107,7 +121,9 @@ typedef struct {
     s32 part_count;
     PortFighterPart part[PORT_FIGHTER_FILE_PARTS];
     s32 texture_count;
-    PortFighterTexture texture[PORT_FIGHTER_FILE_PARTS];
+    PortFighterTexture texture[PORT_FIGHTER_FILE_TEXTURES];
+    /* which of them are a material's maps, not a base colour */
+    u8 is_map[PORT_FIGHTER_FILE_TEXTURES];
     /* each bone's inverse bind matrix, a column after a column, and
      * whether the file has it */
     float inverse_bind[PORT_FIGHTER_FILE_JOINTS][16];

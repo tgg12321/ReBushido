@@ -901,12 +901,42 @@ static s32 port_GltfCount(const Gltf *g, s32 index) {
     return port_JsonInt(g->json, port_JsonGet(g->json, accessor, "count"), -1);
 }
 
-/* The picture a material's base colour is, decoded; -1 if it has none. */
+/* The picture a material's texture (`base`, a textureInfo) is, decoded,
+ * among the file's textures; -1 if there is none. */
+static s32 port_GltfImage(const Gltf *g, s32 base, s32 is_map,
+                          PortFighterFile *out, const char **problem);
+
 static s32 port_GltfTexture(
     const Gltf *g, s32 material, PortFighterFile *out, const char **problem) {
     const Json *json = g->json;
     s32 pbr = port_JsonGet(json, material, "pbrMetallicRoughness");
-    s32 base = port_JsonGet(json, pbr, "baseColorTexture");
+
+    return port_GltfImage(
+        g, port_JsonGet(json, pbr, "baseColorTexture"), FALSE, out, problem);
+}
+
+/* A remade model's maps (rb_remade): the normal map, and the packed
+ * occlusion, roughness and metal. */
+static void port_GltfMaps(const Gltf *g, s32 material, PortFighterPart *part,
+                          PortFighterFile *out, const char **problem) {
+    const Json *json = g->json;
+    s32 pbr = port_JsonGet(json, material, "pbrMetallicRoughness");
+    s32 orm = port_JsonGet(json, pbr, "metallicRoughnessTexture");
+
+    part->normal_map = port_GltfImage(
+        g, port_JsonGet(json, material, "normalTexture"), TRUE, out, problem);
+    if (*problem != NULL) {
+        return;
+    }
+    if (orm < 0) {
+        orm = port_JsonGet(json, material, "occlusionTexture");
+    }
+    part->orm_map = port_GltfImage(g, orm, TRUE, out, problem);
+}
+
+static s32 port_GltfImage(const Gltf *g, s32 base, s32 is_map,
+                          PortFighterFile *out, const char **problem) {
+    const Json *json = g->json;
     s32 texture = port_JsonItem(
         json, port_JsonGet(json, 0, "textures"),
         port_JsonInt(json, port_JsonGet(json, base, "index"), -1));
@@ -921,7 +951,7 @@ static s32 port_GltfTexture(
     PortFighterTexture *t;
     const char *why;
 
-    if (view < 0 || out->texture_count >= PORT_FIGHTER_FILE_PARTS) {
+    if (view < 0 || out->texture_count >= PORT_FIGHTER_FILE_TEXTURES) {
         return -1;
     }
     offset = (u32)port_JsonInt(json, port_JsonGet(json, view, "byteOffset"), 0);
@@ -937,6 +967,7 @@ static s32 port_GltfTexture(
         *problem = why;
         return -1;
     }
+    out->is_map[out->texture_count] = (u8)is_map;
     return out->texture_count++;
 }
 
@@ -1383,6 +1414,15 @@ static const char *port_FighterFileOf(const Gltf *g, PortFighterFile *out) {
                 json, port_JsonGet(json, 0, "materials"),
                 port_JsonInt(json, port_JsonGet(json, prim, "material"), -1)),
             out, &problem);
+        if (problem != NULL) {
+            return problem;
+        }
+        port_GltfMaps(
+            g,
+            port_JsonItem(
+                json, port_JsonGet(json, 0, "materials"),
+                port_JsonInt(json, port_JsonGet(json, prim, "material"), -1)),
+            &out->part[out->part_count], out, &problem);
         if (problem != NULL) {
             return problem;
         }

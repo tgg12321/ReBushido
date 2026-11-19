@@ -35,6 +35,8 @@
 #include "gl_shadow.h"
 #include "gl_sky.h"
 #include "gl_stage.h"
+#include "gl_sun.h"
+#include "gl_lights.h"
 #include "port_gpu.h"
 #include "port_mods.h"
 #include "port_paint.h"
@@ -2951,8 +2953,10 @@ static void port_GlBegin(void) {
     port_GlStageNewFrame();
     port_GlFighterNewFrame();
     port_GlSceneNewFrame();
-    /* the frame's lights, from the stage's files and the effects */
+    /* the frame's lights, from the stage's files and the effects, handed
+     * over and taken as the frame's (gl_lights.h) */
     port_GlLightListFrame();
+    port_GlLightsTake();
 }
 
 /* ---- what the stage's own mesh asks of the picture (gl.h) ---- */
@@ -3286,6 +3290,7 @@ void port_GlSetOptions(const PortGlOptions *options) {
     port_RemasterSetEffects(
         options->is_exact ? PORT_EFFECTS_ORIGINAL : options->effects);
     port_GlLightSetSmooth(options->is_exact ? 0 : options->is_smooth_light);
+    port_GlLightsSetOn(options->is_exact ? 0 : options->is_lights);
     port_GlSceneSetOn(!options->is_exact);
     port_GlSkySetKind(options->is_exact ? 0 : options->sky);
     port_GlSeeSetOn(options->is_exact ? 0 : options->see_through);
@@ -3486,6 +3491,26 @@ const char *port_GlStart(
      * without a timer draws the same picture (gl_bench.h) */
     (void)port_GlBenchStart(getproc);
 
+    /* The sun's shadow maps (gl_sun.h), before the programs that read
+     * them are made. A card that cannot have them draws the shadows as
+     * `shadows cast` does. */
+    {
+        const char *why = port_GlSunStart(getproc);
+
+        if (why != NULL) {
+            port_GlSay("the sun casts no shadow maps: ", why);
+        }
+    }
+    /* The lights of a frame beside the stage's own (gl_lights.h), before
+     * the programs that read them are made. A card that cannot have them
+     * draws the stage's own lights alone. */
+    {
+        const char *why = port_GlLightsStart(getproc);
+
+        if (why != NULL) {
+            port_GlSay("the lights of a frame are not drawn: ", why);
+        }
+    }
     /* The stage's ground as one mesh, which draws into the same colour
      * buffer through a framebuffer of its own (gl_stage.h). A card that
      * cannot have it keeps the remastered picture and draws the game's
@@ -3548,6 +3573,7 @@ const char *port_GlStart(
     port_RemasterSetEffects(
         options->is_exact ? PORT_EFFECTS_ORIGINAL : options->effects);
     port_GlLightSetSmooth(options->is_exact ? 0 : options->is_smooth_light);
+    port_GlLightsSetOn(options->is_exact ? 0 : options->is_lights);
     /* the sky (gl_sky.h): a card that cannot have it shows the game's
      * own colour of the distance */
     {
