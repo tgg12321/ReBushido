@@ -24,6 +24,7 @@
 #include "gl_bench.h"
 #include "gl_cloth.h"
 #include "gl_fighter.h"
+#include "gl_sun.h"
 #include "gl_fighter_card.h"
 #include "gl_fighter_file.h"
 #include "gl_light.h"
@@ -353,6 +354,8 @@ static struct {
     GLint at_cloth_near;
     GLint at_cloth_t;
     GLint at_cloth_camera;
+    GLint at_eye_world;
+    PortGlSunAt sun;
     GLint c_at_layer;
     GLint c_at_layer_depth;
     GLint c_at_ground_slots;
@@ -475,7 +478,11 @@ static const char g_fighter_vertex_text[] =
     "layout(std430, binding = 1) readonly buffer ClothTwo { float two[]; };\n"
     "uniform float u_cloth_t;\n"
     "uniform vec3 u_cloth_camera;\n"
+    /* where the camera is in the world, which the places above are less */
+    "uniform vec3 u_eye_world;\n"
     "out vec2 v_uv;\n"
+    /* where the vertex is in the world, for the sun's maps (gl_sun.h) */
+    "out vec3 v_world;\n"
     "out vec3 v_color;\n"
     "out vec3 v_color_back;\n"
     /* the normal the colour was lit from, for `smooth_light`; nought
@@ -541,6 +548,7 @@ static const char g_fighter_vertex_text[] =
     "    v_normal = length(normal) < 0.5 ? vec3(0.0) : normalize(normal);\n"
     "    v_uv = uv;\n"
     "    v_depth = v.z;\n"
+    "    v_world = world + u_eye_world;\n"
     "}\n";
 
 static const char g_fighter_fragment_text[] =
@@ -565,9 +573,11 @@ static const char g_fighter_fragment_text[] =
     "in vec3 v_color_back;\n"
     "in vec3 v_normal;\n"
     "in float v_depth;\n"
+    "in vec3 v_world;\n"
     "layout(location = 0) out vec4 o_color;\n"
     "layout(location = 1) out float o_depth;\n"
-    "void main() {\n"
+    /* the sun's maps (gl_sun.h) */
+    PORT_GL_SUN_SHADER "void main() {\n"
     "    vec4 texel = texture(u_texture, v_uv);\n"
     "    if (u_paletted != 0) {\n"
     "        vec4 entry = texture(u_index, v_uv);\n"
@@ -592,6 +602,17 @@ static const char g_fighter_fragment_text[] =
     "        vec3 ir = max(u_light * (normal / length_of), vec3(0.0))\n"
     "                * 4096.0;\n"
     "        lit = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
+    "    }\n"
+    /* `shadows map`: the sun's own share taken away where its map says it
+     * does not reach, the fighter's own body casting on himself */
+    "    if (u_sun_on != 0 && length_of > 0.25) {\n"
+    "        vec3 n = normal / length_of;\n"
+    "        float seen = sun_visible(v_world, n);\n"
+    "        if (seen < 1.0) {\n"
+    "            vec3 to_sun = vec3(u_light[0][0], u_light[1][0], u_light[2][0]);\n"
+    "            float turn = max(dot(to_sun, n), 0.0);\n"
+    "            lit = sun_shade(lit, u_color[0] * turn * 256.0, seen);\n"
+    "        }\n"
     "    }\n"
     "    vec3 c = texel.rgb * 31.0 * lit / 16.0;\n"
     "    o_color = vec4(clamp(c, 0.0, 255.0) / 255.0, 1.0);\n"
@@ -796,6 +817,8 @@ const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
     AT(at_cloth_near, "u_cloth_near");
     AT(at_cloth_t, "u_cloth_t");
     AT(at_cloth_camera, "u_cloth_camera");
+    AT(at_eye_world, "u_eye_world");
+    port_GlSunLocate(g_fighter.program, &g_fighter.sun);
 #undef AT
 #define AT(member, name)                                                       \
     g_fighter.member = glGetUniformLocation(g_fighter.composite_program, name)
@@ -1554,6 +1577,9 @@ static void port_GlFighterUploadLights(const FighterPose *pose) {
     glUniform3f(g_fighter.at_back, (GLfloat)pose->back[0],
                 (GLfloat)pose->back[1], (GLfloat)pose->back[2]);
     glUniform1i(g_fighter.at_smooth_light, port_GlLightIsSmooth() ? 1 : 0);
+    glUniform3f(g_fighter.at_eye_world, (GLfloat)pose->camera[0],
+                (GLfloat)pose->camera[1], (GLfloat)pose->camera[2]);
+    port_GlSunBind(&g_fighter.sun);
 }
 
 /* A primitive of a drawn thing read a colour table at (x, y): kept, as
@@ -2730,6 +2756,11 @@ static void port_GlFighterDrawAll(
     s32 drawn = 0;
     s32 bound[4];
 
+    /* the sun's maps, which the models read, drawn first if the ground
+     * has not drawn them yet this picture (gl_sun.h) */
+    if (!is_tiny) {
+        port_GlStageSunPrepare();
+    }
     port_GlGetPicture(&picture);
     port_GlGetOptions(&options);
     /* the layer covers the drawing area, or the whole width of a wider
@@ -3050,28 +3081,7 @@ s32 port_GlFighterTakes(const PortRemasterPrim *prim) {
     } else {
         views = g_fighter.latest;
         weapons = g_fighter.latest_weapon;
-        if (g_fighter.latest_serial != port_FighterSerial()) {
-            /* the first primitive of a frame the game has built: its
-             * views become the latest, and the latest the one before */
-            const PortFighterWeapon *built;
-
-            memcpy(
-                g_fighter.before, g_fighter.latest, sizeof(g_fighter.before));
-            memcpy(g_fighter.before_weapon, g_fighter.latest_weapon,
-                   sizeof(g_fighter.before_weapon));
-            g_fighter.before_weapons = g_fighter.latest_weapons;
-            for (s = 0; s < PORT_FIGHTER_SLOTS; s++) {
-                g_fighter.latest[s] = *port_GetFighterView(s);
-            }
-            built = port_GetFighterWeapons(&g_fighter.latest_weapons);
-            memcpy(g_fighter.latest_weapon, built,
-                   (size_t)g_fighter.latest_weapons * sizeof(*built));
-            memcpy(g_fighter.tiny_before, g_fighter.tiny_latest,
-                   sizeof(g_fighter.tiny_before));
-            g_fighter.tiny_latest[0] = *port_GetFighterTinyView();
-            g_fighter.latest_serial = port_FighterSerial();
-            port_GlFighterDumpFrame();
-        }
+        port_GlFighterTakeViews();
         weapon_count = g_fighter.latest_weapons;
     }
     if (port_GlFighterTakesTiny(prim)) {
@@ -3394,6 +3404,34 @@ s32 port_GlFighterCastOf(s32 caster, s32 with_feet, PortGlFighterCast *cast) {
         }
     }
     return TRUE;
+}
+
+void port_GlFighterTakeViews(void) {
+    const PortFighterWeapon *built;
+    s32 s;
+
+    if (g_fighter.tween_phase >= 0 ||
+        g_fighter.latest_serial == port_FighterSerial()) {
+        return;
+    }
+    /* the first primitive of a frame the game has built, or the first
+     * thing of it that needs the fighters (the sun's maps, gl_sun.h): its
+     * views become the latest, and the latest the one before */
+    memcpy(g_fighter.before, g_fighter.latest, sizeof(g_fighter.before));
+    memcpy(g_fighter.before_weapon, g_fighter.latest_weapon,
+           sizeof(g_fighter.before_weapon));
+    g_fighter.before_weapons = g_fighter.latest_weapons;
+    for (s = 0; s < PORT_FIGHTER_SLOTS; s++) {
+        g_fighter.latest[s] = *port_GetFighterView(s);
+    }
+    built = port_GetFighterWeapons(&g_fighter.latest_weapons);
+    memcpy(g_fighter.latest_weapon, built,
+           (size_t)g_fighter.latest_weapons * sizeof(*built));
+    memcpy(g_fighter.tiny_before, g_fighter.tiny_latest,
+           sizeof(g_fighter.tiny_before));
+    g_fighter.tiny_latest[0] = *port_GetFighterTinyView();
+    g_fighter.latest_serial = port_FighterSerial();
+    port_GlFighterDumpFrame();
 }
 
 void port_GlFighterTween(s32 phase) {

@@ -365,7 +365,8 @@ static s32 port_ReadHundredths(const char *text) {
 }
 
 /* The `shadows` setting's word (port_remaster.h): `original`, `soft`, a
- * strength, `cast` or `cast:N`, as the number the backend is given. */
+ * strength, `cast`, `cast:N` or `map`, as the number the backend is
+ * given. */
 s32 port_ReadRemasterShadows(const char *word) {
     const char *rest;
 
@@ -379,6 +380,11 @@ s32 port_ReadRemasterShadows(const char *word) {
     rest = port_AfterWord(word, "soft");
     if (rest != NULL && *rest == 0) {
         return PORT_SHADOWS_SOFT;
+    }
+    rest = port_AfterWord(word, "map");
+    if (rest != NULL && *rest == 0) {
+        return PORT_SHADOWS_MAP | PORT_SHADOWS_CAST |
+               PORT_SHADOWS_CAST_STRENGTH;
     }
     rest = port_AfterWord(word, "cast");
     if (rest != NULL) {

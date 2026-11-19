@@ -145,6 +145,16 @@ MET_LIMITS = [
     ('ra1', 'step_p95', BUDGET_MS, "the step's own thread, a fight frame, 95%, run_ahead 1"),
     ('ra2', 'step_p95', BUDGET_MS, 'the same, run_ahead 2'),
 ]
+# The lighting's own share of the card (docs/PORT.md, "The lighting
+# overhaul"): the passes it adds, summed over a fight frame, its 95th
+# centile, held to LIGHT_BUDGET_MS whatever --report-only says -- in the
+# stress case too, which the lights' own stress makes heavier.
+LIGHT_PASSES = ('sun', 'lights', 'post')
+LIGHT_BUDGET_MS = 1.5
+MET_LIMITS += [
+    ('ra1', 'light_p95', LIGHT_BUDGET_MS, "the lighting's passes on the card, a fight frame, 95%, run_ahead 1"),
+    ('ra1-stress', 'light_p95', LIGHT_BUDGET_MS, 'the same, four fighters, the ground twice'),
+]
 # The fight's first second is the end of its load: the limits on the
 # worst blanks are of what follows it.
 SETTLE_BLANKS = 60
@@ -301,8 +311,12 @@ def run(case, image, mods, plan, overrides=()):
     folder = os.path.join(OUT_DIR, 'runs', case)
     os.makedirs(folder, exist_ok=True)
     config = os.path.join(folder, 'rebushido.cfg')
+    # the bench is the card's, and draws what the window draws built in:
+    # the sun's shadow maps (port_budget's processor-only runs keep cast,
+    # which Mesa's software renderer draws at no cost to the processor)
     settings = port_budget.SETTINGS.format(run_ahead=run_ahead).replace(
-        'fighter_models = on', 'fighter_models = ' + fighters)
+        'fighter_models = on', 'fighter_models = ' + fighters).replace(
+        'shadows = cast', 'shadows = map')
     for key, value in overrides:
         lines = [line for line in settings.splitlines() if line.split('=')[0].strip() != key]
         settings = '\n'.join(lines + ['%s = %s' % (key, value)]) + '\n'
@@ -409,6 +423,8 @@ def measure(folder):
     cpu = [work(rows[b][1]) for b in frames]
     all_cpu = [work(v) for _, v in rows.values()]
     card = [sum(gpu[b]) for b in frames if b in gpu]
+    light_index = [i for i, name in enumerate(gpu_parts) if name in LIGHT_PASSES]
+    light = [sum(gpu[b][i] for i in light_index if i < len(gpu[b])) for b in frames if b in gpu]
     all_card = {b: sum(v) for b, v in gpu.items()}
     over = sum(1 for b, (_, v) in rows.items() if work(v) > BUDGET_MS or all_card.get(b, 0.0) > BUDGET_MS)
     # a stall is against a frame's own work: the blanks between frames
@@ -454,6 +470,7 @@ def measure(folder):
         'gpu_p99': centile(card, 0.99),
         'worst': max(all_cpu) if all_cpu else 0.0,
         'gpu_worst': max(all_card.values()) if all_card else 0.0,
+        'light_p95': centile(light, 0.95),
         'hitches': 100.0 * over / len(rows) if rows else 0.0,
         'stalls': stalls[:12],
         'settled_p99': centile(settled, 0.99),
@@ -508,8 +525,8 @@ def report(name, m):
     print('%s: fight blanks %d-%d, %d of them frames' % (name, m['fight'][0], m['fight'][1], m['frames']))
     print('  processor: median %.2f  95%% %.2f  99%% %.2f  worst blank %.2f   any blank 95%% %.2f'
           % (m['cpu_p50'], m['cpu_p95'], m['cpu_p99'], m['worst'], m['all_cpu_p95']))
-    print('  card:      median %.2f  95%% %.2f  99%% %.2f  worst blank %.2f'
-          % (m['gpu_p50'], m['gpu_p95'], m['gpu_p99'], m['gpu_worst']))
+    print('  card:      median %.2f  95%% %.2f  99%% %.2f  worst blank %.2f   the lighting 95%% %.2f'
+          % (m['gpu_p50'], m['gpu_p95'], m['gpu_p99'], m['gpu_worst'], m.get('light_p95', 0.0)))
     print('  hitches (over %.2f ms): %.1f%% of the fight\'s blanks' % (BUDGET_MS, m['hitches']))
     print('  processor parts (median ms): ' + ' '.join(
         '%s %.2f' % kv for kv in sorted(m['cpu_parts'].items(), key=lambda kv: -kv[1]) if kv[1] >= 0.01))

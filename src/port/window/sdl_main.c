@@ -111,8 +111,9 @@ static const char g_port_window_usage[] =
     "                 instead, and never the fighter standing in it; or\n"
     "                 a number, how much of the ground it takes, in\n"
     "                 hundredths; cast (cast:N): the same, cast from\n"
-    "                 the fighters' own bodies. It needs the\n"
-    "                 remastered picture\n"
+    "                 the fighters' own bodies; map: the sun's own\n"
+    "                 shadow maps, on the ground, walls, steps and the\n"
+    "                 fighters. It needs the remastered picture\n"
     "  --frame-rate W  original: one picture a vertical blank, as the\n"
     "                 console; display: as many pictures a second as the\n"
     "                 screen shows; or a number of them. The game steps\n"
@@ -778,8 +779,8 @@ int main(int argc, char **argv) {
 
             shadows = port_ReadRemasterShadows(how);
             if (shadows < 0) {
-                port_Complain("--shadows takes original, soft, cast, cast:N "
-                              "or 1 to 100, not ",
+                port_Complain("--shadows takes original, soft, cast, cast:N, "
+                              "map or 1 to 100, not ",
                               how);
             }
         } else if (strcmp(word, "--frame-rate") == 0 && has_value) {
@@ -991,7 +992,10 @@ int main(int argc, char **argv) {
              g_port_settings.stage_mesh
                  ? "from one static mesh of its own"
                  : "from the game's own tile primitives");
-    if (g_port_settings.shadows & PORT_SHADOWS_CAST) {
+    if (g_port_settings.shadows & PORT_SHADOWS_MAP) {
+        port_Say("shadows: the sun's own shadow maps, on the ground, the "
+                 "stage's pieces and the fighters' models.");
+    } else if (g_port_settings.shadows & PORT_SHADOWS_CAST) {
         port_Say("shadows: cast from the fighters' own bodies, taking %d "
                  "hundredths of the ground they fall on.",
                  g_port_settings.shadows & PORT_SHADOWS_STRENGTH_MASK);

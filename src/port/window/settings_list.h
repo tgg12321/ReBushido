@@ -267,23 +267,27 @@ PORT_SETTING(fighter_models,
     .help = "The fighters drawn from a mod's models where it has them")
 
 /* How much a fighter's shadow darkens the ground it falls on, in
- * hundredths: 0 is the game's own black silhouettes; built in, the
- * shadows cast from the fighters' own bodies (src/port/gl/gl_shadow.h;
- * PORT_SHADOWS_SOFT, PORT_SHADOWS_CAST). */
+ * hundredths: 0 is the game's own black silhouettes; `cast`, the shadows
+ * cast from the fighters' own bodies; built in, `map`, the sun's own
+ * shadow maps (src/port/gl/gl_shadow.h, gl_sun.h; PORT_SHADOWS_SOFT,
+ * PORT_SHADOWS_CAST, PORT_SHADOWS_MAP). */
 PORT_SETTING(shadows,
-    .name = "shadows", .value = "cast",
+    .name = "shadows", .value = "map",
     .note = "original: the game's own black shadows;\n"
             "soft: the ground under them darkened;\n"
             "cast: cast from the fighters' own\n"
-            "bodies, darkened (cast:N, N hundredths)",
+            "bodies, darkened (cast:N, N hundredths);\n"
+            "map: the sun's shadows of everything, on\n"
+            "the ground, walls, steps and the fighters",
     .read = PORT_READ_BY, .reader = port_ReadShadows,
-    .is = "original, soft, cast, cast:N, or how much of the ground a "
+    .is = "original, soft, cast, cast:N, map, or how much of the ground a "
           "shadow takes away, in hundredths",
     .menu = PORT_MENU_REMASTER, .rank = 80, .takes = PORT_TAKES_NOW,
     .label = "Shadows",
-    .help = "The game's black ones, the ground darkened, or cast by the body",
-    .choices = {"original", "soft", "cast"},
-    .shown = {"Original", "Soft", "Cast"})
+    .help = "The game's black ones, the ground darkened, cast by the body, "
+            "or the sun's own",
+    .choices = {"original", "soft", "cast", "map"},
+    .shown = {"Original", "Soft", "Cast", "Sun"})
 
 /* The game's own lighting worked out at each pixel on the ground's mesh
  * and the fighters' models (src/port/gl/gl_light.h; docs/PORT.md,

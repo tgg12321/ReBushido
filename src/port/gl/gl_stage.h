@@ -47,6 +47,14 @@ extern void port_GlStageSetPropsOn(s32 on);
  * (gl_shadow.c, port_GlDrawOccluders): where a piece is in front of
  * the ground, the ground's shadow does not darken it. */
 extern void port_GlStageDrawOccluders(u32 framebuffer);
+/* The mesh as the sun sees it, through `matrix` (a column after a column),
+ * into the depth map bound now (gl_sun.h): the ground and the pieces the
+ * picture draws. The triangles drawn. */
+extern u32 port_GlStageDrawSunCasters(const float *matrix);
+/* The sun's maps drawn for this picture now, if the ground is the mesh's
+ * and they have not been: for what reads them before the mesh is drawn
+ * (the fighters' models, which come where their first primitive is). */
+extern void port_GlStageSunPrepare(void);
 extern s32 port_GlStageIsOn(void);
 
 /* Which path the stage's ground takes, once each time the stage or the

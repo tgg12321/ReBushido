@@ -34,6 +34,7 @@
 #include "gl_shadow.h"
 #include "gl_sky.h"
 #include "gl_stage.h"
+#include "gl_sun.h"
 #include "port_gpu.h"
 #include "port_mods.h"
 #include "port_paint.h"
@@ -3483,6 +3484,16 @@ const char *port_GlStart(
      * without a timer draws the same picture (gl_bench.h) */
     (void)port_GlBenchStart(getproc);
 
+    /* The sun's shadow maps (gl_sun.h), before the programs that read
+     * them are made. A card that cannot have them draws the shadows as
+     * `shadows cast` does. */
+    {
+        const char *why = port_GlSunStart(getproc);
+
+        if (why != NULL) {
+            port_GlSay("the sun casts no shadow maps: ", why);
+        }
+    }
     /* The stage's ground as one mesh, which draws into the same colour
      * buffer through a framebuffer of its own (gl_stage.h). A card that
      * cannot have it keeps the remastered picture and draws the game's

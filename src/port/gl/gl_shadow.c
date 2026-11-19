@@ -22,6 +22,7 @@
 #include "gl_fighter.h"
 #include "gl_fighter_card.h"
 #include "gl_shadow.h"
+#include "gl_sun.h"
 #include "gl_stage.h"
 #include "gl_tween.h"
 #include "port_fighter.h"
@@ -180,6 +181,9 @@ typedef struct {
  * mesh it is, by which a frame's triangle is found again in the next. */
 typedef struct {
     float p[3][3];
+    /* ... and where they were before they were flattened, which the sun's
+     * maps are drawn from (gl_sun.h) */
+    float w[3][3];
     PortAddress group;
     s32 face;
     s32 part; /* the first or the second half of a quad */
@@ -216,12 +220,20 @@ typedef struct {
 /* How far the pictures between two frames may cast outside the box of
  * the two frames' own silhouettes, in the console's pixels. */
 #define CAST_BOX_GROW 8
+/* A cast triangle as the card is sent it: three corners, each the two
+ * frames' flattened places and their places before they were flattened. */
+#define CAST_FLOATS 36
 
 static struct {
     s32 is_started;
     s32 strength; /* hundredths; 0 is the game's own black shadows */
     s32 is_cast;  /* cast from the fighters' own faces */
-    s32 phase;    /* of a picture between two frames, or -1 */
+    /* the sun's maps cast the shadows where the ground is the mesh
+     * (`shadows map`, gl_sun.h) */
+    s32 is_map;
+    /* this picture's casters are gathered and sent (port_GlShadowCast) */
+    s32 is_prepared;
+    s32 phase; /* of a picture between two frames, or -1 */
     char problem[256];
     /* the mask: red the shadows' coverage, alpha what is not the ground */
     GLuint mask;
@@ -279,6 +291,8 @@ static struct {
     GLint cast_at_world_two;
     GLint cast_at_flat_one;
     GLint cast_at_flat_two;
+    GLint cast_at_sun_mode;
+    GLint cast_at_sun;
     /* the frames the models are cast from in this picture */
     const CastFrame *card_one;
     const CastFrame *card_two;
@@ -343,6 +357,12 @@ static const char g_shadow_cast_vertex_text[] =
      * ground already */
     "layout(location = 0) in vec3 a_one;\n"
     "layout(location = 1) in vec3 a_two;\n"
+    /* ... and where they were before they were flattened */
+    "layout(location = 2) in vec3 a_world_one;\n"
+    "layout(location = 3) in vec3 a_world_two;\n"
+    /* 1: drawn into the sun's map (gl_sun.h), through `u_sun`, unflattened */
+    "uniform int u_sun_mode;\n"
+    "uniform mat4 u_sun;\n"
     /* a model's vertex: its terms on the bones, as the fighters' shader
      * places it (gl_fighter.c) */
     "layout(location = 5) in vec4 a_term[8];\n"
@@ -402,6 +422,22 @@ static const char g_shadow_cast_vertex_text[] =
     "          + u_world_two[a_term_joint1.w] * a_term[7]).xyz;\n"
     "}\n"
     "void main() {\n"
+    "    if (u_sun_mode != 0) {\n"
+    "        vec3 one = a_world_one;\n"
+    "        vec3 two = a_world_two;\n"
+    "        if (u_kind == 1) {\n"
+    "            one = skin_one();\n"
+    "            two = u_t > 0.0 ? skin_two() : one;\n"
+    "        } else if (u_kind == 2) {\n"
+    "            int b = gl_VertexID * 8;\n"
+    "            one = vec3(c_one[b], c_one[b + 1], c_one[b + 2]);\n"
+    "            two = u_t > 0.0 ? vec3(c_two[b], c_two[b + 1], c_two[b + 2])\n"
+    "                            : one;\n"
+    "        }\n"
+    "        v_ok = 1.0;\n"
+    "        gl_Position = u_sun * vec4(one + (two - one) * u_t, 1.0);\n"
+    "        return;\n"
+    "    }\n"
     "    vec3 one = a_one;\n"
     "    vec3 two = a_two;\n"
     "    if (u_kind == 1) {\n"
@@ -667,7 +703,10 @@ const char *port_GlShadowStart(void *(*getproc)(const char *name)) {
         glGetUniformLocation(g_shadow.cast_program, "u_flat_one");
     g_shadow.cast_at_flat_two =
         glGetUniformLocation(g_shadow.cast_program, "u_flat_two");
-    g_shadow.staged = malloc(TRIANGLES_MAX * 18 * sizeof(float));
+    g_shadow.cast_at_sun_mode =
+        glGetUniformLocation(g_shadow.cast_program, "u_sun_mode");
+    g_shadow.cast_at_sun = glGetUniformLocation(g_shadow.cast_program, "u_sun");
+    g_shadow.staged = malloc(TRIANGLES_MAX * CAST_FLOATS * sizeof(float));
     if (g_shadow.staged == NULL) {
         port_GlShadowSay("there is no memory for the shadows", NULL);
         return g_shadow.problem;
@@ -677,12 +716,20 @@ const char *port_GlShadowStart(void *(*getproc)(const char *name)) {
     glBindVertexArray(g_shadow.cast_array);
     glBindBuffer(GL_ARRAY_BUFFER, g_shadow.cast_buffer);
     glVertexAttribPointer(
-        0, 3, GL_FLOAT, GL_FALSE, (GLsizei)(6 * sizeof(float)), NULL);
+        0, 3, GL_FLOAT, GL_FALSE, (GLsizei)(12 * sizeof(float)), NULL);
     glVertexAttribPointer(
-        1, 3, GL_FLOAT, GL_FALSE, (GLsizei)(6 * sizeof(float)),
+        1, 3, GL_FLOAT, GL_FALSE, (GLsizei)(12 * sizeof(float)),
         (const void *)(3 * sizeof(float)));
+    glVertexAttribPointer(
+        2, 3, GL_FLOAT, GL_FALSE, (GLsizei)(12 * sizeof(float)),
+        (const void *)(6 * sizeof(float)));
+    glVertexAttribPointer(
+        3, 3, GL_FLOAT, GL_FALSE, (GLsizei)(12 * sizeof(float)),
+        (const void *)(9 * sizeof(float)));
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
+    glEnableVertexAttribArray(3);
     g_shadow.sent_one = 0;
     g_shadow.sent_two = 0;
     g_shadow.at_target = glGetUniformLocation(g_shadow.silhouette, "u_target");
@@ -810,6 +857,8 @@ void port_GlShadowSetStrength(s32 setting) {
 
     g_shadow.strength = strength > 100 ? 100 : strength;
     g_shadow.is_cast = setting > 0 && (setting & PORT_SHADOWS_CAST) != 0;
+    g_shadow.is_map = g_shadow.is_cast && (setting & PORT_SHADOWS_MAP) != 0;
+    port_GlSunSetOn(g_shadow.is_map);
 }
 
 s32 port_GlShadowStrength(void) { return g_shadow.strength; }
@@ -820,6 +869,10 @@ s32 port_GlShadowIsCast(void) {
 
 void port_GlShadowSetPhase(s32 phase) {
     g_shadow.phase = phase < 0 ? -1 : phase;
+    /* a picture of its own begins or ends: nothing gathered for another is
+     * this one's */
+    g_shadow.is_prepared = FALSE;
+    port_GlSunNewPicture();
 }
 
 s32 port_GlShadowCastFaces(void) { return g_shadow.cast_faces; }
@@ -912,6 +965,8 @@ static void port_GlShadowForget(void) {
     g_shadow.lost = 0;
     g_shadow.has_any = FALSE;
     g_shadow.is_on_card = FALSE;
+    g_shadow.is_prepared = FALSE;
+    port_GlSunNewPicture();
     g_shadow.cover_count = 0;
     port_GlShadowEmptyBox(&g_shadow.box);
     port_GlShadowEmptyBox(&g_shadow.clip);
@@ -1307,7 +1362,12 @@ static void port_GlShadowDrawCovers(const ShadowBox *inside) {
 
 /* A picture drawn between two of the game's frames is begun and finished
  * in one call (gl_tween.c), so that one is laid down here. */
-void port_GlShadowFinish(void) { port_GlShadowLay(); }
+void port_GlShadowFinish(void) {
+    port_GlShadowLay();
+    /* the picture is over, whether it had a shadow of the game's or not */
+    g_shadow.is_prepared = FALSE;
+    port_GlSunNewPicture();
+}
 
 /* The mask of the picture whose shadows have been gathered, and the
  * darkening over it: the caller has flushed what the picture still owed
@@ -1517,6 +1577,7 @@ static void port_GlShadowGather(CastFrame *frame) {
     for (i = 0; i < faces; i++, face++) {
         static const s32 corner[2][3] = {{0, 1, 2}, {1, 3, 2}};
         float flat[PORT_REMASTER_CORNERS][3];
+        float place[PORT_REMASTER_CORNERS][3];
         s32 caster = port_GlFighterCaster(
             face->object, port_RemasterCasterFaceIsCloth(i));
         s32 ground_y;
@@ -1554,6 +1615,9 @@ static void port_GlShadowGather(CastFrame *frame) {
                            back[k * 3 + 1] * v[1] + back[k * 3 + 2] * v[2];
             }
             above = world[1] - (double)ground_y;
+            for (k = 0; k < 3; k++) {
+                place[j][k] = (float)world[k];
+            }
             flat[j][0] = (float)(world[0] + above * x_shear);
             flat[j][1] = (float)ground_y;
             flat[j][2] = (float)(world[2] + above * z_shear);
@@ -1572,6 +1636,9 @@ static void port_GlShadowGather(CastFrame *frame) {
                 to->p[k][0] = flat[corner[j][k]][0];
                 to->p[k][1] = flat[corner[j][k]][1];
                 to->p[k][2] = flat[corner[j][k]][2];
+                to->w[k][0] = place[corner[j][k]][0];
+                to->w[k][1] = place[corner[j][k]][1];
+                to->w[k][2] = place[corner[j][k]][2];
             }
             to->group = face->group;
             to->face = face->face;
@@ -1818,12 +1885,18 @@ static void port_GlShadowSendPair(
             for (n = 0; n < 3; n++) {
                 *out++ = b->p[k][n];
             }
+            for (n = 0; n < 3; n++) {
+                *out++ = a->w[k][n];
+            }
+            for (n = 0; n < 3; n++) {
+                *out++ = b->w[k][n];
+            }
         }
     }
     glBindBuffer(GL_ARRAY_BUFFER, g_shadow.cast_buffer);
-    glBufferData(
-        GL_ARRAY_BUFFER, (GLsizeiptr)((size_t)one->count * 18 * sizeof(float)),
-        g_shadow.staged, GL_STREAM_DRAW);
+    glBufferData(GL_ARRAY_BUFFER,
+                 (GLsizeiptr)((size_t)one->count * CAST_FLOATS * sizeof(float)),
+                 g_shadow.staged, GL_STREAM_DRAW);
     port_GlShadowEmptyBox(&g_shadow.sent_box);
     port_GlShadowPairBox(one, picture, &g_shadow.sent_box);
     if (two != NULL) {
@@ -1856,6 +1929,10 @@ static void port_GlShadowCast(void) {
     double r[9];
     s32 i;
 
+    if (g_shadow.is_prepared) {
+        return;
+    }
+    g_shadow.is_prepared = TRUE;
     if (g_shadow.phase < 0) {
         s32 next = g_shadow.newest == 0 ? 1 : 0;
 
@@ -1929,6 +2006,44 @@ static void port_GlShadowLay(void) {
     }
     g_shadow.shown_faces = g_shadow.count / 3;
     g_shadow.run_lost += g_shadow.lost;
-    port_GlShadowPaint();
+    /* with `shadows map` the ground the mesh drew is shadowed by the sun's
+     * maps already; the mask is for a picture whose ground is the game's
+     * own tiles */
+    if (!port_GlSunIsReady()) {
+        port_GlShadowPaint();
+    }
     port_GlShadowForget();
+}
+
+u32 port_GlShadowDrawSunCasters(const float *matrix) {
+    if (!g_shadow.is_started || !g_shadow.is_cast) {
+        return 0;
+    }
+    /* the fighters' views of this frame, which the models are cast from:
+     * the sun's maps come before the fighters' first primitive, where
+     * they are taken otherwise */
+    if (g_shadow.phase < 0) {
+        port_GlFighterTakeViews();
+    }
+    /* the casters of this picture, gathered or paired once (and the
+     * silhouette the mask would be drawn from, if it is wanted after) */
+    port_GlShadowCast();
+    if (!g_shadow.is_on_card) {
+        return 0;
+    }
+    glUseProgram(g_shadow.cast_program);
+    glBindVertexArray(g_shadow.cast_array);
+    glUniform1f(g_shadow.cast_at_t, g_shadow.card_t);
+    glUniform1i(g_shadow.cast_at_sun_mode, 1);
+    glUniformMatrix4fv(g_shadow.cast_at_sun, 1, GL_FALSE, matrix);
+    glUniform1i(g_shadow.cast_at_kind, 0);
+    if (g_shadow.sent_count > 0) {
+        glDrawArrays(GL_TRIANGLES, 0, 3 * g_shadow.sent_count);
+        port_GlCountDraw((u32)(3 * g_shadow.sent_count), 1);
+    }
+    port_GlShadowDrawModels();
+    glUseProgram(g_shadow.cast_program);
+    glUniform1i(g_shadow.cast_at_sun_mode, 0);
+    glBindVertexArray(0);
+    return (u32)(g_shadow.count / 3);
 }

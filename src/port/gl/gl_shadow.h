@@ -110,6 +110,12 @@ extern void port_GlShadowWroteVram(s32 x, s32 y, s32 w, s32 h);
  * nothing happens in a frame that had no shadow in it. */
 extern void port_GlShadowFinish(void);
 
+/* The fighters, their weapons and cloths as the sun sees them, through
+ * `matrix` (a column after a column), into the depth map bound now
+ * (gl_sun.h): what the cast shadows are made of, this picture's, at its
+ * phase between two frames and not flattened. The triangles drawn. */
+extern u32 port_GlShadowDrawSunCasters(const float *matrix);
+
 /* The mask drawn into the picture in the place of the darkening, for a
  * run that measures what was darkened and what was kept out of it: red
  * is the silhouettes' coverage and green is everything of the frame that

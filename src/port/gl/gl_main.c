@@ -37,6 +37,7 @@
 #include "gl_shadow.h"
 #include "gl_sky.h"
 #include "gl_stage.h"
+#include "gl_sun.h"
 #include "gl_tween.h"
 #include "port_gpu.h"
 #include "port_host.h"
@@ -1189,6 +1190,10 @@ static void port_GlQuit(s32 code) {
             "widest_area %u occluders %d\n",
             port_GlShadowStrength(), counts->shadows, port_GlShadowFaces(),
             port_GlShadowLost(), port_GlShadowArea(), port_GlShadowOccluders());
+    if (port_GlSunIsOn()) {
+        fprintf(stderr, "gl run sun pictures %u last_triangles %u\n",
+                port_GlSunPictures(), port_GlSunTriangles());
+    }
     if (port_GlShadowIsCast()) {
         fprintf(stderr,
                 "gl run shadows cast faces %d orphans %d triangles %d "

@@ -129,6 +129,10 @@ typedef struct {
     s32 triangles;
 } PortGlFighterCast;
 
+/* The views of the frame the game has built taken as the latest, if they
+ * have not been: done at a frame's first fighter primitive, and before
+ * the sun's maps cast the fighters (gl_sun.h), which come first. */
+extern void port_GlFighterTakeViews(void);
 extern s32 port_GlFighterCastOf(
     s32 caster, s32 with_feet, PortGlFighterCast *cast);
 

@@ -41,6 +41,7 @@ typedef enum {
     PORT_GPU_SMASK,    /* the shadows' mask: cleared, the silhouettes and
                         * what stands over the ground */
     PORT_GPU_SDARK,    /* the ground darkened through the mask */
+    PORT_GPU_SUN,      /* the sun's shadow maps drawn (gl_sun.c) */
     PORT_GPU_PASSES
 } PortGpuPass;
 
