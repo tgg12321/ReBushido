@@ -65,7 +65,7 @@ typedef struct {
     PortLightDef light[PORT_LIGHTS_MOST];
 } PortLightSet;
 
-/* A light as a file starts it: a white point light of intensity 1 and
+/* A light as a file starts it: a white point light of intensity 0.5 and
  * radius 3,000 at the stage's 0, 0, 0, a spot's pointing down. */
 extern void port_LightDefault(
     PortLightDef *light, const char *name, u32 length);

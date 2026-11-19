@@ -272,7 +272,7 @@ void port_LightDefault(PortLightDef *light, const char *name, u32 length) {
     light->color[0] = COLOR_MOST;
     light->color[1] = COLOR_MOST;
     light->color[2] = COLOR_MOST;
-    light->intensity = PORT_LIGHT_ONE;
+    light->intensity = PORT_LIGHT_ONE / 2; /* a lantern's, not the sun's */
     light->radius = DEFAULT_RADIUS;
     light->direction[1] = 1; /* down: the world's y runs down */
     light->cone_inner = DEFAULT_CONE_INNER;

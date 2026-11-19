@@ -10,7 +10,7 @@ at = -5000 -4450 -15000
 direction = 0 1 0
 cone = 45 75
 color = #E4EEFF
-intensity = 1.0
+intensity = 0.6
 radius = 7000
 
 [light ceiling_2]
@@ -19,7 +19,7 @@ at = -5000 -4450 -7000
 direction = 0 1 0
 cone = 45 75
 color = #E4EEFF
-intensity = 1.0
+intensity = 0.6
 radius = 7000
 shadow = yes
 
@@ -29,7 +29,7 @@ at = -5000 -4450 1000
 direction = 0 1 0
 cone = 45 75
 color = #E4EEFF
-intensity = 1.0
+intensity = 0.6
 radius = 7000
 shadow = yes
 
@@ -39,7 +39,7 @@ at = -5000 -4450 9000
 direction = 0 1 0
 cone = 45 75
 color = #E4EEFF
-intensity = 1.0
+intensity = 0.6
 radius = 7000
 
 [light ceiling_5]
@@ -48,5 +48,5 @@ at = -5000 -4450 17000
 direction = 0 1 0
 cone = 45 75
 color = #E4EEFF
-intensity = 1.0
+intensity = 0.6
 radius = 7000

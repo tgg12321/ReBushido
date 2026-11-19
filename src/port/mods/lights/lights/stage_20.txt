@@ -5,7 +5,7 @@ format = 1
 [light torches]
 on = flames
 color = #FF8C38
-intensity = 1.4
+intensity = 0.6
 radius = 3200
 flicker = 0.4
 shadow = yes

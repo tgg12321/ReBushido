@@ -245,7 +245,7 @@ static void test_File(void) {
     CHECK_EQ(light->color[1], 128);
     /* what a light is with nothing said */
     CHECK_EQ(light->kind, PORT_LIGHT_POINT);
-    CHECK_EQ(light->intensity, PORT_LIGHT_ONE);
+    CHECK_EQ(light->intensity, PORT_LIGHT_ONE / 2);
     CHECK_EQ(light->radius, 3000);
     CHECK_EQ(light->on_bone, -1);
     CHECK_EQ(light->shadow, FALSE);

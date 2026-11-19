@@ -6,7 +6,7 @@ format = 1
 [light stone_lanterns]
 on = flames
 color = #FFA850
-intensity = 1.0
+intensity = 0.4
 radius = 2600
 flicker = 0.25
 shadow = yes

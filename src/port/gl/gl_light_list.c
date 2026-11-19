@@ -34,15 +34,15 @@
  * here -- a flash of the clash's own colour, strongest the frame it
  * starts and gone with the game's own. */
 #define FLASH_FRAMES 10.0f
-#define FLASH_INTENSITY 3.0f
+#define FLASH_INTENSITY 1.5f
 #define FLASH_RADIUS 4500.0f
 /* a glowing quad of the effects: a small light at its place */
-#define GLOW_INTENSITY 0.8f
+#define GLOW_INTENSITY 0.4f
 #define GLOW_RADIUS 1600.0f
 
 /* The flames' kinds (eff.h, enum FlameKind): how much farther than the
- * light file's radius each reaches and how much brighter, a fire being
- * larger than a torch. */
+ * light file's radius each reaches, a fire being larger than a torch; its
+ * intensity is the file's. */
 static const float g_flame_reach[4] = {1.5f, 1.1f, 1.0f, 1.25f};
 /* and half of each one's height in the world (eff.c, FLAME_..._HEIGHT):
  * its place is the flame's foot, the light is in its middle */
@@ -240,7 +240,6 @@ static void port_GlLightListStage(s32 stage) {
                                     g_flame_middle[at->kind & 3];
                 light.position[2] = (float)(at->at[2] + def->at[2]);
                 light.radius *= reach;
-                light.intensity *= reach;
                 port_GlLightListAdd(&light);
             }
         } else if (port_GlLightPlace(def, light.position, light.direction)) {

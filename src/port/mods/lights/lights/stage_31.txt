@@ -5,7 +5,7 @@ format = 1
 [light grave_candles]
 on = flames
 color = #FFB85C
-intensity = 0.9
+intensity = 0.3
 radius = 1800
 flicker = 0.2
 shadow = yes

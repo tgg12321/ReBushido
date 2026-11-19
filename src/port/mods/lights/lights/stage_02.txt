@@ -6,7 +6,7 @@ format = 1
 [light candles]
 on = flames
 color = #FFB45A
-intensity = 1.2
+intensity = 0.45
 radius = 2800
 flicker = 0.2
 shadow = yes

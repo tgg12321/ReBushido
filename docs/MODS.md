@@ -586,7 +586,8 @@ format = 1                # this program reads no other
 kind = point              # point, or spot: a cone
 at = 1500 -1200 -3000     # where, in the world's units; y runs DOWN
 color = #FFB060           # or three numbers of 0 to 255
-intensity = 1.5           # 1 lights as the stage's sun at full colour
+intensity = 0.6           # 1 lights a white wall facing it, close by, to its own
+                          # colour, as a noon sun does; a torch 0.3 to 0.8
 radius = 3500             # how far it reaches; nothing farther is lit
 flicker = 0.3             # 0 steady to 1: how much of it flickers
 shadow = yes              # asks to cast shadows (the strongest few do)
@@ -596,8 +597,16 @@ on = stage                # what it is fastened to (below)
 ```
 
 Everything but the name may be left out: a light is a white point of
-intensity 1 and radius 3,000 at 0, 0, 0 of the stage, steady, casting
+intensity 0.5 and radius 3,000 at 0, 0, 0 of the stage, steady, casting
 no shadow, a spot pointing down with a cone of 30 and 45 degrees.
+
+**How bright.** `intensity = 1` lights a white surface facing the light,
+close to it, to its own texture's colour: the game's light byte of 128,
+about a stage's noon sun. A torch, a lantern or a lamp near the
+fighters sits well below that, 0.3 to 0.8, and `radius` does the
+falling off; only a flash goes near 1 or past it (the clash's is 1.5,
+`effect_lights`). The shipped files go from 0.3 (a candle at a grave)
+to 0.7 (the ferry dock's lamp, high up).
 
 | `on =` | `at` is | |
 |---|---|---|

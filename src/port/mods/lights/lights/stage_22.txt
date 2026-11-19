@@ -10,6 +10,6 @@ at = 5300 -4050 -2000
 direction = 0 1 0
 cone = 50 80
 color = #F2F0DC
-intensity = 1.2
+intensity = 0.7
 radius = 9000
 shadow = yes

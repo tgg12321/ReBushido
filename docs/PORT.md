@@ -6862,13 +6862,13 @@ the game computes reads any of it):
   blue for a lock, pale red for a clash: `g_eff_light_color`). The end
   of `eff_Update` tells `port_LightsNoteFlash` where it is, its colour
   and the frames it has left, and the list gets a light of that colour,
-  of intensity 3 falling to nothing with the game's own count, reaching
+  of intensity 1.5 falling to nothing with the game's own count, reaching
   4,500 units, asking to cast shadows: the flash where blades meet
   lights the ground, the walls and both fighters, and is gone when the
   game's own light goes. Each glowing quad `eff_DrawFlash` draws (the
   sparks of a clash, a hit's flash, a lock's star, the streaks) is told
   to `port_LightsNoteGlow` and becomes a small light in its colour at
-  its place (intensity 0.8, 1,600 units).
+  its place (intensity 0.4, 1,600 units).
 
 What the game is read for is read where it is already being computed,
 under `RB_REMASTER_VIEW` beside the effects' other notes; nothing of the
