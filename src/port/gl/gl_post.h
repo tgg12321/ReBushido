@@ -89,6 +89,13 @@ extern void port_GlPostNoteView(
 /* The mesh is about to clear the depth buffer and draw again: the last
  * drawing's depth is kept, for when its picture is the one shown. */
 extern void port_GlPostBeforeMesh(const PortGlPicture *picture);
+/* A game frame has been built (gl_draw.c, the backend's `begin`). One
+ * that drew no ground's mesh -- a menu, the stage select, the pause's
+ * held picture -- painted a part of video memory the passes have no view
+ * of: the view of that part is forgotten (the older of the two kept), so
+ * that nothing of a stage left behind, its lights' glow above all, is
+ * laid over what is shown there now. */
+extern void port_GlPostNewFrame(void);
 
 /* Whether the passes will run on the picture on show: a setting on, and
  * a drawing of the ground's mesh that is that picture. The picture is

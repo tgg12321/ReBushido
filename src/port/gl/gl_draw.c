@@ -3081,6 +3081,9 @@ static void port_GlBegin(void) {
     port_GlStageNewFrame();
     port_GlFighterNewFrame();
     port_GlSceneNewFrame();
+    /* the lighting's passes forget the view of a part of video memory a
+     * frame painted with no ground (gl_post.h) */
+    port_GlPostNewFrame();
     /* the frame's lights, from the stage's files and the effects, handed
      * over and taken as the frame's (gl_lights.h) */
     port_GlLightListFrame();
