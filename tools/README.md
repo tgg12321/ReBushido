@@ -74,6 +74,7 @@ your own copy of the disc.
 | `inspect_stage.py`, `repack_stage.py` | `STAGE*.BIN` and the other container files |
 | `stage_ground.py` | A stage's ground file (NDATA's `S00`..`S37`, `docs/formats/GROUND.md`) read into numbers and written back: `roundtrip` (all 38 byte for byte), `unpack`/`pack` (JSON and TIMs), `info` |
 | `ground_cast.py` | The game's collision cast (`collision.c`) in Python, number for number, on a ground's collision grid |
+| `model_viewer/serve.py` | `python tools/model_viewer/serve.py`, then http://127.0.0.1:8765/: every version of a fighter's model found under `tmp/` (the game's, the hd mod's, each remade pass, and each folder of `tmp/models/versions/`) side by side in a browser under one camera, posed by the fights the model pipeline recorded (a slider through the frames, Play), with views, wireframe and no-texture. A note typed there is added to `tmp/models/feedback/<FIGHTER>.md` with the versions shown, the pose and a picture of the view, for the agent remaking that fighter. It needs three.js from unpkg.com; nothing of the disc is committed |
 | `arena_compile.py`, `arena_validate.py` | A custom arena: compiled from a glTF/OBJ scene and `arena.txt` into a `.arena`, and held to what a fight needs, `--fight` playing the CPU against the CPU on both sizes of the port (`docs/MODS.md`, "Custom arenas"); `arenas/courtyard/` is the sample's source |
 | `inspect_bnk.py`, `repack_bnk.py`, `repack_vab.py` | The `.BNK` texture blocks and the `.SE` sound banks |
 | `inspect_tim.py`, `repack_tim.py` | TIM pictures, to and from PNG |

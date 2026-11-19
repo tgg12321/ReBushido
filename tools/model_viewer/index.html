@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ReBushido: the fighters side by side</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1d2026; color: #ddd; font: 14px system-ui, sans-serif; }
+  #bar { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 8px 12px; background: #262a32; }
+  #bar label { white-space: nowrap; }
+  #bar button, #bar select { background: #353b46; color: #ddd; border: 1px solid #4a5160; border-radius: 4px; padding: 3px 9px; }
+  #main { position: absolute; top: 46px; bottom: 0; left: 0; right: 330px; }
+  #view { width: 100%; height: 100%; display: block; }
+  #labels { position: absolute; top: 6px; left: 0; right: 0; display: flex; pointer-events: none; }
+  #labels div { flex: 1; text-align: center; color: #e8c36a; font-size: 15px; text-shadow: 0 1px 2px #000; }
+  #labels small { display: block; color: #999; font-size: 11px; }
+  #side { position: absolute; top: 46px; bottom: 0; right: 0; width: 330px; display: flex; flex-direction: column; background: #22262d; border-left: 1px solid #333; }
+  #side h3 { margin: 10px 12px 4px; font-size: 14px; color: #e8c36a; }
+  #note { margin: 0 12px; height: 120px; background: #15181d; color: #eee; border: 1px solid #444; border-radius: 4px; padding: 6px; resize: vertical; }
+  #send { margin: 6px 12px; padding: 6px; background: #8a6d2a; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
+  #status { margin: 0 12px; color: #9c9; font-size: 12px; min-height: 16px; }
+  #history { flex: 1; overflow: auto; margin: 4px 12px 12px; white-space: pre-wrap; font-size: 12px; color: #bbb; }
+  #hint { position: absolute; bottom: 6px; left: 10px; color: #777; font-size: 12px; pointer-events: none; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.165.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.165.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="bar">
+  <label>Fighter <select id="fighter"></select></label>
+  <span id="choices"></span>
+  <span>View
+    <button data-view="front">Front</button><button data-view="side">Side</button>
+    <button data-view="back">Back</button><button data-view="three">3/4</button>
+    <button data-view="face">Face</button><button data-view="hands">Hands</button></span>
+  <span>Pose <select id="motion"><option value="-1">bind pose</option></select>
+    <input type="range" id="frame" min="0" max="0" value="0" style="width:160px;vertical-align:middle">
+    <button id="play">Play</button></span>
+  <label><input type="checkbox" id="spin"> Turn</label>
+  <label><input type="checkbox" id="wire"> Wireframe</label>
+  <label><input type="checkbox" id="flat"> No texture</label>
+</div>
+<div id="main"><canvas id="view"></canvas><div id="labels"></div>
+  <div id="errors" style="position:absolute;bottom:26px;left:10px;color:#e77;font-size:12px"></div><div id="hint">Drag to turn, right-drag to move, wheel to zoom: every model follows the same camera.</div></div>
+<div id="side">
+  <h3>Notes for the agent</h3>
+  <textarea id="note" placeholder="What to change: e.g. the face is too narrow, the gloves should be darker, the collar is too high..."></textarea>
+  <button id="send">Send note with this view</button>
+  <div id="status"></div>
+  <h3>Notes so far</h3>
+  <div id="history"></div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const say = m => { document.getElementById('errors').textContent += m + ' '; };
+window.addEventListener('error', e => say(e.message));
+window.addEventListener('unhandledrejection', e => say(String(e.reason)));
+const canvas = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.setScissorTest(true);
+const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(0, 0.95, 0);
+const loader = new GLTFLoader();
+
+let panes = [];   // {label, changed, scene, root}
+let facing = -Math.PI / 2;  // the game faces +x: turned so Front shows his front
+let versions = [];
+
+function makeScene() {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x2b2f37);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x404048, 1.6));
+  const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(1.5, 3, 2.5); scene.add(key);
+  const rim = new THREE.DirectionalLight(0xaabbff, 0.8); rim.position.set(-2, 2, -2); scene.add(rim);
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(0.8, 48), new THREE.MeshStandardMaterial({ color: 0x3a3f48 }));
+  floor.rotation.x = -Math.PI / 2; scene.add(floor);
+  return scene;
+}
+
+function applyLooks() {
+  const wire = document.getElementById('wire').checked, flat = document.getElementById('flat').checked;
+  for (const p of panes) p.root && p.root.traverse(o => {
+    if (!o.isMesh) return;
+    for (const m of [].concat(o.material)) {
+      m.wireframe = wire;
+      if (m.userData.map === undefined) m.userData.map = m.map;
+      m.map = flat ? null : m.userData.map;
+      m.needsUpdate = true;
+    }
+  });
+}
+
+function setView(v) {
+  // far enough that a narrow pane still holds the whole fighter
+  const d = 5.2;
+  const t = { front: [0, 1.0, d, 0.95], back: [0, 1.0, -d, 0.95], side: [d, 1.0, 0, 0.95],
+              three: [d * 0.7, 1.6, d * 0.7, 0.95], face: [0, 1.62, 1.3, 1.6], hands: [1.2, 1.2, 1.8, 1.0] }[v];
+  camera.position.set(t[0], t[1], t[2]); controls.target.set(0, t[3], 0); controls.update();
+}
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
+
+async function loadFighter(f) {
+  versions = await (await fetch('/api/versions/' + f)).json();
+  const box = document.getElementById('choices'); box.innerHTML = '';
+  // the game's, the hd mod's and the two newest are shown to start with
+  const start = new Set(['game', 'hd', ...versions.slice(-2).map(v => v.label)]);
+  versions.forEach((v, i) => {
+    const l = document.createElement('label');
+    l.innerHTML = `<input type="checkbox" data-i="${i}" ${start.has(v.label) ? 'checked' : ''}> ${v.label}`;
+    l.querySelector('input').onchange = async () => { await showChosen(); poseAll(); };
+    box.appendChild(l);
+  });
+  await showChosen();
+  await loadMotions(f);
+  draw(performance.now());
+  loadHistory();
+}
+
+async function showChosen() {
+  const chosen = [...document.querySelectorAll('#choices input:checked')].map(c => versions[+c.dataset.i]);
+  panes = chosen.map(v => ({ label: v.label, changed: v.changed, scene: makeScene(), root: null }));
+  document.getElementById('labels').innerHTML = panes.map(p => `<div>${p.label}<small>${p.changed}</small></div>`).join('');
+  await Promise.all(chosen.map((v, i) => new Promise(done => loader.load(v.url, g => {
+    // the file's root turns the game's space (y down) upright; the bind
+    // pose's height sets the scale, the same for every version
+    const holder = new THREE.Group(); holder.add(g.scene);
+    holder.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(g.scene);
+    const size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3());
+    const k = 1.8 / Math.max(size.y, 1e-6);
+    g.scene.scale.multiplyScalar(k);
+    g.scene.position.set(-mid.x * k, -box.min.y * k, -mid.z * k);
+    const bones = [];
+    g.scene.traverse(o => { if (o.isBone && /^bone\d\d$/.test(o.name)) bones[+o.name.slice(4)] = o; });
+    panes[i].k = k; panes[i].bones = bones; panes[i].model = g.scene;
+    panes[i].bind = { pos: g.scene.position.clone(), local: bones.map(b => [b.position.clone(), b.quaternion.clone(), b.scale.clone()]) };
+    panes[i].root = holder; panes[i].scene.add(holder); applyLooks(); done();
+  }, undefined, e => { say(v.label + ': ' + e); done(); }))));
+  document.body.dataset.loaded = panes.filter(p => p.root).length;
+}
+
+let motion = [];   // frames: Float32Array of 21 bones x (9 turns, 3 places)
+let playing = false;
+const BONES = 21;
+
+async function loadMotions(f) {
+  const sel = document.getElementById('motion');
+  const list = await (await fetch('/api/motions/' + f)).json();
+  sel.innerHTML = '<option value="-1">bind pose</option>' + list.map((l, i) => `<option value="${i}">${l}</option>`).join('');
+  sel.value = list.length ? '0' : '-1';
+  await chooseMotion();
+}
+
+async function chooseMotion() {
+  const i = +document.getElementById('motion').value;
+  motion = [];
+  if (i >= 0) {
+    const text = await (await fetch(`/motion/${document.getElementById('fighter').value}/${i}`)).text();
+    for (const line of text.split(/\r?\n/)) {
+      const v = line.trim().split(/\s+/);
+      if (v.length === 1 + BONES * 12) motion.push(Float32Array.from(v.slice(1), Number));
+    }
+  }
+  const range = document.getElementById('frame');
+  range.max = Math.max(motion.length - 1, 0); range.value = 0;
+  poseAll();
+}
+
+// each bone's world turn and place (the game's space) made local to its parent
+function poseAll() {
+  const n = +document.getElementById('frame').value, fr = motion[n];
+  for (const p of panes) {
+    if (!p.bones) continue;
+    if (!fr) {
+      p.bones.forEach((b, i) => { const l = p.bind.local[i]; b.position.copy(l[0]); b.quaternion.copy(l[1]); b.scale.copy(l[2]); });
+      p.model.position.copy(p.bind.pos);
+      continue;
+    }
+    const world = [];
+    for (let i = 0; i < BONES; i++) {
+      const a = fr.subarray(i * 12, i * 12 + 12), m = new THREE.Matrix4();
+      m.set(a[0] / 4096, a[1] / 4096, a[2] / 4096, a[9], a[3] / 4096, a[4] / 4096, a[5] / 4096, a[10],
+            a[6] / 4096, a[7] / 4096, a[8] / 4096, a[11], 0, 0, 0, 1);
+      world.push(m);
+    }
+    p.bones.forEach((b, i) => {
+      if (!b) return;
+      const parent = b.parent && b.parent.isBone ? world[+b.parent.name.slice(4)] : null;
+      const local = parent ? parent.clone().invert().multiply(world[i]) : world[i];
+      local.decompose(b.position, b.quaternion, b.scale);
+    });
+    // stand him where the floor is: x and z of the first bone, y of the lowest
+    let low = -Infinity;
+    for (let i = 0; i < BONES; i++) low = Math.max(low, fr[i * 12 + 10]);
+    const s = p.k * 0.001, x = fr[9], z = fr[11];
+    p.model.position.set(-x * s, -(low + 60) * s, z * s);
+  }
+}
+
+function resize() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (canvas.width !== Math.floor(w * renderer.getPixelRatio())) renderer.setSize(w, h, false);
+}
+
+function draw(t) {
+  resize();
+  const w = canvas.clientWidth, h = canvas.clientHeight, n = Math.max(panes.length, 1), pw = w / n;
+  camera.aspect = pw / h; camera.updateProjectionMatrix();
+  const spin = document.getElementById('spin').checked;
+  panes.forEach((p, i) => {
+    if (p.root) p.root.rotation.y = spin ? t / 3000 : facing;
+    renderer.setViewport(i * pw, 0, pw, h); renderer.setScissor(i * pw, 0, pw, h);
+    renderer.render(p.scene, camera);
+  });
+}
+function frame(t) {
+  if (playing && motion.length) {
+    const r = document.getElementById('frame'); r.value = (+r.value + 1) % motion.length; poseAll();
+  }
+  draw(t); requestAnimationFrame(frame);
+}
+document.getElementById('frame').oninput = poseAll;
+document.getElementById('motion').onchange = chooseMotion;
+document.getElementById('play').onclick = e => { playing = !playing; e.target.textContent = playing ? 'Pause' : 'Play'; };
+
+async function loadHistory() {
+  const f = document.getElementById('fighter').value;
+  document.getElementById('history').textContent = await (await fetch('/api/feedback/' + f)).text() || '(none yet)';
+}
+
+document.getElementById('send').onclick = async () => {
+  const text = document.getElementById('note').value.trim();
+  if (!text) return;
+  const f = document.getElementById('fighter').value;
+  const body = { text, shown: panes.map(p => p.label), picture: canvas.toDataURL('image/png'),
+                 pose: document.getElementById('motion').selectedOptions[0].text + ' frame ' + document.getElementById('frame').value };
+  const r = await fetch('/api/feedback/' + f, { method: 'POST', body: JSON.stringify(body) });
+  document.getElementById('status').textContent = r.ok ? 'Sent: saved for the agent with a picture of this view.' : 'Not saved: ' + r.status;
+  if (r.ok) { document.getElementById('note').value = ''; loadHistory(); }
+};
+document.getElementById('wire').onchange = applyLooks;
+document.getElementById('flat').onchange = applyLooks;
+
+const list = await (await fetch('/api/fighters')).json();
+const sel = document.getElementById('fighter');
+sel.innerHTML = list.map(f => `<option>${f}</option>`).join('');
+sel.onchange = () => loadFighter(sel.value);
+setView(new URLSearchParams(location.search).get('view') || 'front');
+if (list.length) { sel.value = list.includes('M101') ? 'M101' : list[0]; await loadFighter(sel.value); }
+requestAnimationFrame(frame);
+// a new pass appears without a reload: the list is looked at again every 20 s
+setInterval(async () => {
+  const now = await (await fetch('/api/versions/' + sel.value)).json();
+  if (now.length !== versions.length || now.some((v, i) => v.changed !== versions[i].changed)) loadFighter(sel.value);
+}, 20000);
+</script>
+</body>
+</html>
