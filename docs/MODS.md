@@ -44,14 +44,10 @@ mods/
   weapons', by the weapon model's number, `W00.glb` to `W57.glb`, and the
   first-person view's tiny figures, `T00.glb` to `T26.glb`: PORT.md,
   "The fighters' own models"; `tools/fighter_hd.py` makes a whole mod of
-<<<<<<< HEAD
-  them, the hd mod, from your disc), `skies/` (a stage's sky, below),
-  `lights/` (a stage's lights, `.txt`: "Lights"),
-=======
   them, the hd mod, from your disc, and `tools/port_models/build.py` the
   remade mod, the fighters made anew one by one and checked against the
   game's own: PORT.md, "The fighters remade"), `skies/` (a stage's sky, below),
->>>>>>> worktree-agent-ae458d4af112ac51c
+  `lights/` (a stage's lights, `.txt`: "Lights"),
   `music/` (`.ogg` and `.wav`: "Music"), `stages/` (any ending:
   "Stages"), `arenas/` (`.arena`: "Custom arenas"), `weapons/` (`.txt`)
   and `motions/` (`.bbm`: "Weapons and motions"). Under a kind's folder the files may be in folders of any
