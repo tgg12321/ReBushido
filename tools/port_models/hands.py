@@ -14,6 +14,7 @@ Needs numpy and Pillow.
 import numpy as np
 
 import bake
+import charts as charts_
 from charts import Chart
 from facepaint import curve
 import head as hd_
@@ -34,12 +35,15 @@ THUMB = (((-4.0, 26.0, 28.0), 15.0), ((-27.0, 58.0, 39.0), 12.5), ((-43.0, 86.0,
          ((-47.0, 108.0, 24.0), 9.0))
 
 
-def sweep(points, radii, flat=0.92, around=10, cap=4, side=None):
+def sweep(points, radii, flat=0.92, around=None, cap=None, side=None):
     """A tube along the smooth line through `points`: rows of `around`
     points, the radius between those given; the end closed round. Returns
     the rows (n, around + 1, 3), how far along each row is (0..1) and the
     angle of each column (0 on the side `side` points to)."""
-    line = curve(np.array(points, float), 6)
+    level = charts_.LEVEL
+    around = around or (10, 6, 4)[level]
+    cap = cap or (4, 2, 1)[level]
+    line = curve(np.array(points, float), (6, 3, 2)[level])
     r = np.interp(np.linspace(0, len(points) - 1, len(line)), np.arange(len(points)), radii)
     t = np.gradient(line, axis=0)
     t /= np.linalg.norm(t, axis=1, keepdims=True)
@@ -83,12 +87,14 @@ def palm(h):
     """The palm and the wrist as rows round the hand, from the wrist
     (y -30) to past the knuckles."""
     ys = np.array([-30.0, -22, -13, -4, 8, 24, 42, 62, 82, 98, 108, 114, 118, 120])
+    if charts_.LEVEL:
+        ys = ys[[0, 2, 4, 6, 8, 10, 12, 13]] if charts_.LEVEL == 1 else ys[[0, 3, 6, 9, 12, 13]]
     cx = np.interp(ys, [-30, 0, 45, 110, 120], [2.0, 2.0, 3.0, 5.0, 6.0])
     hx = np.interp(ys, [-30, -5, 10, 45, 100, 110, 116, 120], [14.5, 14.5, 15.0, 17.5, 16.5, 13.0, 8.0, 1.0])
     hz = np.interp(ys, [-30, -5, 12, 45, 85, 110, 116, 120], [24.0, 25.0, 31.0, 38.5, 41.0, 40.0, 37.0, 31.0])
     cz = np.interp(ys, [-30, 0, 60, 120], [0.0, 0.0, -1.0, -0.5])
     power = np.interp(ys, [-30, -5, 30, 120], [2.3, 2.4, 3.2, 3.4])
-    phi = np.linspace(0, 2 * np.pi, 25)
+    phi = np.linspace(0, 2 * np.pi, (25, 15, 9)[charts_.LEVEL])
     rows = []
     for i, y in enumerate(ys):
         c, s = np.cos(phi), np.sin(phi)
@@ -247,6 +253,8 @@ def hand_chart(name, bone, mirror, h, colors, rect, R, T):
     turned = hd_.right_handed(mesh)
     c = Chart(name, rect, mesh)
     c.bones = [bone]
+    if charts_.LEVEL:
+        return c, int(len(mesh.tris))
     _, _, w, hh = rect
     tid, bary = bake.rasterize(mesh.uv, mesh.tris, (w, hh), grow=1.5)
     c.on = tid >= 0

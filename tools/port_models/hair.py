@@ -11,6 +11,7 @@ The locks share a few strips of one texture of strands, painted here.
 import numpy as np
 
 import bake
+import charts as charts_
 from charts import Chart
 import head as hd_
 
@@ -126,7 +127,8 @@ def charts(maps, f, rect, R, T, skull=None):
         count += len(pts)
 
     # the cap
-    step = f.get('cap_step', 8.0)
+    level = charts_.LEVEL
+    step = f.get('cap_step', 6.0) * (1.0, 1.6, 3.0)[level]
     lon = np.arange(-180, 180.1, step)
     lat = np.arange(88, -80, -step)
     LON, LAT = np.meshgrid(lon, lat)
@@ -141,7 +143,7 @@ def charts(maps, f, rect, R, T, skull=None):
     covered = grown[yy, xx]
     # over the face the cap stops at the forehead's top: the fringe hangs
     # from there, with nothing behind it but the brow
-    covered &= ~(front[xx] & (LAT.ravel() < f.get('forehead', 16.0)))
+    covered &= ~(front[xx] & (LAT.ravel() < f.get('forehead', 22.0)))
     keep = covered[tris].all(1)
     pieces.append(pts)
     norms.append(nrm)
@@ -183,12 +185,18 @@ def charts(maps, f, rect, R, T, skull=None):
 
     # the locks, a layer after a layer
     locks = 0
-    for layer in f['layers']:
+    for number, layer in enumerate(f['layers']):
+        # the lower levels of detail: fewer rows to a lock, no wisps, and
+        # at the lowest one layer alone
+        if level and (layer.get('only') or (level > 1 and number > 0)):
+            continue
         n = layer['count']
         for i in range(n):
             lon_t = -180 + (i + layer.get('offset', 0.0) + rng.uniform(-0.25, 0.25)) * 360.0 / n
             xi = int(round(lon_t + 179.5)) % 360
             is_front = bool(front[xi])
+            if layer.get('only') == 'fringe' and not is_front:
+                continue
             edge = lat_of(line[xi])
             if is_front:
                 lo, hi = layer.get('fringe', f.get('fringe', [-6.0, 4.0]))
@@ -206,7 +214,8 @@ def charts(maps, f, rect, R, T, skull=None):
             root = (lon_t + rng.uniform(-6, 6), layer.get('root', 80.0) + rng.uniform(-3, 3))
             width = layer['width'] * rng.uniform(0.8, 1.2) * (f.get('fringe_width', 0.6) if is_front else 1.0)
             P = lock(shell, skin, root, (lon_t, tip_lat), width, layer.get('lift', 0.0) + rng.uniform(0, 1.5),
-                     sweep, tuck, flick, rng, layer.get('segments', 12), layer.get('across', 4))
+                     sweep, tuck, flick, rng, (layer.get('segments', 12), 7, 3)[level],
+                     (layer.get('across', 4), 2, 2)[level])
             add(P, int(rng.integers(0, VARIANTS)))
             locks += 1
     pts = np.concatenate(pieces)
@@ -214,6 +223,8 @@ def charts(maps, f, rect, R, T, skull=None):
     turned = hd_.right_handed(mesh)
     c = Chart('hair', rect, mesh)
     c.bones = [hd_.HEAD]
+    if level:
+        return [c], {'locks': locks, 'triangles': int(len(mesh.tris))}
     sw = w // (VARIANTS + 1)
     colors = f['colors']
     height = np.zeros((h, w), np.float32)

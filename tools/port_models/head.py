@@ -23,6 +23,7 @@ import numpy as np
 import bake
 import facepaint
 import fighter_glb as fg
+import charts as charts_
 from charts import Chart
 from check import dominant
 from meshes import K, Mesh
@@ -259,10 +260,12 @@ def sculpt(S, U, f):
 
 def face_grid():
     """The face's rows and columns as rays from the head's middle: close
-    together where the features are, far apart where the hair covers."""
-    lon = np.concatenate([np.arange(-102, -30, 4.0), np.arange(-30, 30, 1.5), np.arange(30, 102.1, 4.0)])
-    lat = np.concatenate([np.arange(84, 12, -12.0), np.arange(12, 4, -4.0), np.arange(4, -62, -1.6),
-                          np.arange(-62, -86.1, -6.0)])
+    together where the features are, far apart where the hair covers
+    (and further apart at the lower levels of detail)."""
+    k = (1.0, 2.0, 4.0)[charts_.LEVEL]
+    lon = np.concatenate([np.arange(-102, -30, 4.0 * k), np.arange(-30, 30, 1.5 * k), np.arange(30, 102.1, 4.0 * k)])
+    lat = np.concatenate([np.arange(84, 12, -12.0), np.arange(12, 4, -4.0), np.arange(4, -62, -1.6 * k),
+                          np.arange(-62, -86.1, -6.0 * min(k, 2.0))])
     return lon, lat
 
 
@@ -327,6 +330,8 @@ def face_chart(maps, f, rect, R, T):
     right_handed(mesh)
     c = Chart('face', rect, mesh)
     c.bones = [HEAD]
+    if charts_.LEVEL:
+        return c, {'triangles': len(tris)}
     tid, bary, at = texels(mesh, rect)
     N = bake.at_texels(nrm, mesh.tris, tid, bary)
     N /= np.maximum(np.linalg.norm(N, axis=-1, keepdims=True), 1e-6)
@@ -408,7 +413,7 @@ def neck_chart(ref, f, rect, R, T, stance):
     the chest, each of its points a share of both bones as the game's own
     neck's are, so that it stretches as the head turns."""
     top, bottom = neck_rungs(ref)
-    n, rows = 24, 6
+    n, rows = ((24, 6), (16, 4), (10, 3))[charts_.LEVEL]
     # both rings sampled at the same places round the neck (by the rungs)
     a, s, t = ring(top, n, f.get('neck_top', 0.8))
     idx = np.interp(t, s, np.arange(len(s)))
@@ -469,6 +474,8 @@ def neck_chart(ref, f, rect, R, T, stance):
         mesh.uv = mesh.uv * np.array([-1.0, 1.0]) + np.array([1.0, 0.0])
     c = Chart('neck', rect, mesh)
     c.bones = [HEAD]
+    if charts_.LEVEL:
+        return c, {'triangles': len(tris)}
     _, _, w, h = rect
     tid, bary = bake.rasterize(mesh.uv, mesh.tris, (w, h), grow=1.5)
     c.on = tid >= 0
@@ -487,12 +494,12 @@ def ear_chart(f, rect, R, T):
     """Both ears: each a shallow bowl with a rolled rim, standing out
     from the side of the head behind the jaw, a little pointed above."""
     e = f.get('ear', {})
-    at = np.array(e.get('at', [44.0, 63.0, 16.0]))             # (front, side, up) of the left one's middle
-    half_w, half_h = e.get('size', [13.0, 25.0])
-    flare = np.radians(e.get('flare', 32.0))
+    at = np.array(e.get('at', [42.0, 61.0, 15.0]))             # (front, side, up) of the left one's middle
+    half_w, half_h = e.get('size', [11.0, 21.0])
+    flare = np.radians(e.get('flare', 24.0))
     rho = np.array([0.06, 0.3, 0.55, 0.76, 0.92, 1.0, 1.0, 0.8])
     relief = np.array([-2.6, -3.2, 0.2, -1.0, 2.4, 0.6, -5.0, -7.0])      # out of the ear's own plane
-    psi = np.linspace(0, 2 * np.pi, 21)
+    psi = np.linspace(0, 2 * np.pi, (21, 13, 7)[charts_.LEVEL])
     pieces, norms, uvs, tris_all, count = [], [], [], [], 0
     for k, side in enumerate((1.0, -1.0)):
         wide = np.array([-np.cos(flare), side * np.sin(flare), 0.0])       # across the ear, to its back edge
@@ -526,6 +533,8 @@ def ear_chart(f, rect, R, T):
                  HEAD, R, T)
     c = Chart('ears', rect, mesh)
     c.bones = [HEAD]
+    if charts_.LEVEL:
+        return c, {'triangles': int(len(mesh.tris))}
     _, _, w, h = rect
     tid, bary = bake.rasterize(mesh.uv, mesh.tris, (w, h), grow=1.5)
     c.on = tid >= 0
@@ -556,8 +565,9 @@ def charts(ref, hd, recipe, work, rects):
     out.append(c)
     c, said['neck'] = neck_chart(ref, f, rects['neck'], R, T, stance)
     out.append(c)
-    c, said['ears'] = ear_chart(f, rects['ears'], R, T)
-    out.append(c)
+    if charts_.LEVEL < 2:
+        c, said['ears'] = ear_chart(f, rects['ears'], R, T)
+        out.append(c)
     if 'hair' in recipe:
         import hair
         made, said['hair'] = hair.charts(maps, recipe['hair'], rects['hair'], R, T, face_surface(maps, f, True))

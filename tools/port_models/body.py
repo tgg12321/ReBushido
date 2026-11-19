@@ -150,7 +150,7 @@ KINDS = {
     'cloth': {'rough': 0.86, 'metal': 0.0, 'fold': 12.0, 'grain': 0.35, 'grain_units': 3.0, 'cord': 0.0, 'shade': 0.7, 'paint': 0.0, 'wrinkle': 5.0},
     'lining': {'rough': 0.6, 'metal': 0.0, 'fold': 4.0, 'grain': 0.15, 'grain_units': 3.0, 'cord': 0.0, 'shade': 0.6, 'paint': 0.0, 'wrinkle': 2.0},
     'linen': {'rough': 0.8, 'metal': 0.0, 'fold': 4.0, 'grain': 0.3, 'grain_units': 2.5, 'cord': 0.0, 'shade': 0.5, 'paint': 0.0, 'wrinkle': 2.0},
-    'braid': {'rough': 0.38, 'metal': 0.85, 'fold': 0.0, 'grain': 0.5, 'grain_units': 5.0, 'cord': 2.5, 'shade': 0.25, 'paint': 0.0, 'wrinkle': 0.0},
+    'braid': {'rough': 0.4, 'metal': 0.55, 'fold': 0.0, 'grain': 0.5, 'grain_units': 5.0, 'cord': 2.5, 'shade': 0.25, 'paint': 0.0, 'wrinkle': 0.0},
     'leather': {'rough': 0.5, 'metal': 0.0, 'fold': 0.8, 'grain': 0.2, 'grain_units': 4.0, 'cord': 0.0, 'shade': 0.7, 'paint': 1.0, 'wrinkle': 0.0},
     'rubber': {'rough': 0.7, 'metal': 0.0, 'fold': 2.0, 'grain': 0.2, 'grain_units': 4.0, 'cord': 0.0, 'shade': 0.8, 'paint': 1.0, 'wrinkle': 0.0},
     'steel': {'rough': 0.3, 'metal': 0.9, 'fold': 1.0, 'grain': 0.1, 'grain_units': 4.0, 'cord': 0.0, 'shade': 0.6, 'paint': 0.0, 'wrinkle': 0.0},
@@ -255,7 +255,7 @@ def wrinkles(P, shares, ref):
         h = joint * 1.0 * ridges(x, around, radius, 15.0, 75.0, seed)
         h += cuff * 0.9 * ridges(x, around, radius, 17.0, 90.0, seed + 1)
         h += top * 0.7 * ridges(x + around * 25.0, around, radius, 24.0, 55.0, seed + 2)
-        h += (1 - np.maximum(joint, np.maximum(cuff, top))) * 0.4 * ridges(x, around, radius, 190.0, 24.0, seed + 3)
+        h += (1 - np.maximum(joint, np.maximum(cuff, top))) * 0.22 * ridges(x + 40.0 * np.sin(around * 2.0), around, radius, 150.0, 40.0, seed + 3)
         out[m] += (w[m] * strength * h).astype(np.float32)
         seed += 7
     w = shares[..., list(TRUNK)].sum(-1)
@@ -268,7 +268,7 @@ def wrinkles(P, shares, ref):
         skirt = np.clip((x - 40.0) / 120.0, 0, 1)
         chest = np.clip((-x - 40.0) / 120.0, 0, 1)
         h = waist * 0.7 * ridges(x, around, 170.0, 20.0, 110.0, 90)
-        h += skirt * 0.8 * ridges(x, around, 190.0, 300.0, 34.0, 91)
+        h += skirt * 0.6 * ridges(x + 50.0 * np.sin(around * 3.0), around, 190.0, 260.0, 46.0, 91)
         h += chest * 0.35 * ridges(x + around * 60.0, around, 170.0, 70.0, 70.0, 92)
         out[m] += (w[m] * h).astype(np.float32)
     return out
@@ -391,10 +391,63 @@ def paint(mesh, tid, bary, ref, recipe, scale, painted=None):
     return out
 
 
+def lighter(mesh, island, R, most):
+    """The body at a lower level of detail, of `most` triangles at most:
+    its vertices gathered by the cell of a grid they are in (the largest
+    grid that leaves few enough), each cell's of one bone drawn to one
+    place, and of each island there one kept, with all it carries (its
+    sum of bones, its place in the texture): the layout and the bending
+    are the full model's."""
+    from meshes import shift
+    share = np.abs(mesh.terms[:, :, 3])
+    bone = mesh.tjoints[np.arange(len(mesh.pos)), share.argmax(1)]
+    isle = np.zeros(len(mesh.pos), np.int64)
+    isle[mesh.tris.ravel()] = np.repeat(island, 3)
+
+    def at(size):
+        cell = np.floor(mesh.pos / size).astype(np.int64)
+        place_key = np.concatenate([cell, bone[:, None]], 1)
+        _, place = np.unique(place_key, axis=0, return_inverse=True)
+        place = place.ravel()
+        count = np.bincount(place).astype(float)
+        middle = np.stack([np.bincount(place, mesh.pos[:, k]) / count for k in range(3)], 1)
+        _, group = np.unique(np.stack([place, isle], 1), axis=0, return_inverse=True)
+        group = group.ravel()
+        far = np.linalg.norm(mesh.pos - middle[place], axis=1)
+        order = np.lexsort((far, group))
+        first = np.ones(len(order), bool)
+        first[1:] = group[order][1:] != group[order][:-1]
+        keep = order[first]                                   # each group's vertex nearest its cell's middle
+        tris = group[mesh.tris]
+        whole = (tris[:, 0] != tris[:, 1]) & (tris[:, 1] != tris[:, 2]) & (tris[:, 0] != tris[:, 2])
+        tris = tris[whole]
+        _, uniq = np.unique(np.sort(tris, 1), axis=0, return_index=True)
+        return keep, tris[np.sort(uniq)], middle[place[keep]]
+    lo, hi = 2.0, 400.0
+    for _ in range(18):
+        mid = (lo + hi) / 2
+        if len(at(mid)[1]) > most:
+            lo = mid
+        else:
+            hi = mid
+    keep, tris, where = at(hi)
+    out = Mesh(**{k: v[keep] for k, v in mesh.__dict__.items() if k != 'tris'})
+    out.tris = tris
+    shift(out, where - out.pos, R)
+    renormal(out)
+    return out, hi
+
+
 def chart(ref, hd, recipe, unwrapped, rect):
     """The body with its new layout and its pictures, as a chart."""
+    import charts as charts_
     body, said = body_mesh(ref, hd, recipe)
     mesh, island, turned = laid_out(body, cut(body), unwrapped)
+    if charts_.LEVEL:
+        most = recipe.get('body_triangles', [0, 4600, 1000])[charts_.LEVEL]
+        light, size = lighter(mesh, island, ref.bind()[0], most)
+        said.update(triangles=int(len(light.tris)), cell_units=size)
+        return Chart('body', rect, light), said
     _, _, w, h = rect
     tid, bary = bake.rasterize(mesh.uv, mesh.tris, (w, h))
     scale = texel_scale(mesh, mesh.tris, (w, h))[1]

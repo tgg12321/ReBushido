@@ -25,7 +25,8 @@
         "colors": {"dark": [14, 9, 7], "mid": [88, 48, 28], "light": [146, 90, 54]},
         "layers": [
           {"count": 30, "width": 34, "lift": 0.0, "root": 80},
-          {"count": 22, "width": 26, "lift": 3.5, "offset": 0.5, "root": 74, "past": [0, 6]}
+          {"count": 22, "width": 26, "lift": 3.5, "offset": 0.5, "root": 74, "past": [0, 6]},
+          {"count": 64, "width": 13, "lift": 5.5, "offset": 0.3, "root": 66, "only": "fringe", "fringe": [-12, 6], "segments": 9, "across": 2}
         ],
         "fringe": [-8, 2], "part": 5
       },

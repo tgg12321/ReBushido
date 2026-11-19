@@ -9,6 +9,11 @@ import numpy as np
 import bake
 
 
+# the level of detail being made: 0 the whole model, 1 and 2 lighter ones
+# (the pieces' own makers read it)
+LEVEL = 0
+
+
 class Chart:
     """mesh: the piece (its texture points 0..1 across the chart's own
     rectangle), or None; rect: (x, y, w, h) texels of the atlas; on (h, w):

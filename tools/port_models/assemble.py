@@ -154,24 +154,32 @@ def main():
     size = r['atlas']
     sign = winding_sign(ref)
     only = [x for x in args.only.split(',') if x]
-    charts = []
-    if not only or 'body' in only:
-        body, said = bd.chart(ref, hd, r, os.path.join(work, 'unwrap_out.json'), rect_of('body', size))
-        charts.append(body)
-        print('assemble: the body: %s' % json.dumps(said))
     cloth, moved = bd.cloth_chart(ref, hd, rect_of('cloth', size))
-    if cloth is not None:
-        charts.append(cloth)
-    if not only or 'head' in only:
-        import head
-        made, said = head.charts(ref, hd, r, work, {k: rect_of(k, size) for k in ('face', 'hair', 'neck', 'ears')})
-        charts += made
-        print('assemble: the head: %s' % json.dumps(said))
-    if not only or 'hands' in only:
-        import hands
-        made, said = hands.charts(ref, hd, r, work, {k: rect_of(k, size) for k in ('hand_a', 'hand_b')})
-        charts += made
-        print('assemble: the hands: %s' % json.dumps(said))
+
+    def pieces(level):
+        """The model's charts at a level of detail (the pictures are the
+        first level's: the lower ones are meshes alone, in its layout)."""
+        ch.LEVEL = level
+        charts = []
+        if not only or 'body' in only:
+            body, said = bd.chart(ref, hd, r, os.path.join(work, 'unwrap_out.json'), rect_of('body', size))
+            charts.append(body)
+            print('assemble: level %d: the body: %s' % (level, json.dumps(said)))
+        if cloth is not None and level == 0:
+            charts.append(cloth)
+        if not only or 'head' in only:
+            import head
+            made, said = head.charts(ref, hd, r, work, {k: rect_of(k, size) for k in ('face', 'hair', 'neck', 'ears')})
+            charts += made
+            print('assemble: level %d: the head: %s' % (level, json.dumps(said)))
+        if not only or 'hands' in only:
+            import hands
+            made, said = hands.charts(ref, hd, r, work, {k: rect_of(k, size) for k in ('hand_a', 'hand_b')})
+            charts += made
+            print('assemble: level %d: the hands: %s' % (level, json.dumps(said)))
+        ch.LEVEL = 0
+        return charts
+    charts = pieces(0)
     # a new piece's texels answer to the colour tables' entries of the
     # game's own piece, nearest in colour
     dom = dominant(ref)
@@ -197,6 +205,13 @@ def main():
     path = os.path.join(args.out, args.name + '.glb')
     write(path, mesh, hd, images, extras)
     print('assemble: %s: %d vertices, %d triangles' % (path, len(mesh.pos), len(mesh.tris)))
+    lod_dir = os.path.join(os.path.dirname(os.path.abspath(args.out)), 'lod')
+    os.makedirs(lod_dir, exist_ok=True)
+    for level in (1, 2):
+        mesh = join(pieces(level), size, sign)
+        path = os.path.join(lod_dir, '%s.lod%d.glb' % (args.name, level))
+        write(path, mesh, hd, images, extras)
+        print('assemble: %s: %d vertices, %d triangles' % (path, len(mesh.pos), len(mesh.tris)))
     from PIL import Image
     for name, pic in (('albedo', color), ('normal', normal), ('orm', orm)):
         Image.fromarray(pic).save(os.path.join(work, 'atlas_%s.png' % name))
