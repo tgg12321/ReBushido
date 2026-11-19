@@ -41,6 +41,7 @@
 #include "gl.h"
 #include "gl_bench.h"
 #include "gl_light.h"
+#include "gl_light_list.h"
 #include "gl_scene.h"
 #include "gl_see.h"
 #include "gl_stage.h"
@@ -2276,6 +2277,9 @@ static void port_GlStageBuild(const PortStageView *view) {
     /* and what stands on it: built whatever the setting says, which
      * decides frame by frame whether they are drawn from it */
     port_GlStagePieces();
+    /* for tools/port_lights.py, with --dump-textures alone */
+    port_GlLightListDumpMesh(g_stage.building, (s32)sizeof(StageVertex),
+                             g_stage.built, g_stage.piece_first);
     if (g_stage.piece_count > 0) {
         /* what the mesh made of the pieces, for the run's log */
         snprintf(g_stage.news, sizeof(g_stage.news),

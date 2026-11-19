@@ -27,6 +27,7 @@
 #include "gl_bench.h"
 #include "gl_fighter.h"
 #include "gl_light.h"
+#include "gl_light_list.h"
 #include "gl_load.h"
 #include "gl_replace.h"
 #include "gl_scene.h"
@@ -2950,6 +2951,8 @@ static void port_GlBegin(void) {
     port_GlStageNewFrame();
     port_GlFighterNewFrame();
     port_GlSceneNewFrame();
+    /* the frame's lights, from the stage's files and the effects */
+    port_GlLightListFrame();
 }
 
 /* ---- what the stage's own mesh asks of the picture (gl.h) ---- */

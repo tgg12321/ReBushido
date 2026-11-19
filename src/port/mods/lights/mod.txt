@@ -1,0 +1,8 @@
+# ReBushido's lights of the stages: built in, placed by hand with the help
+# of tools/port_lights.py (docs/MODS.md, "Lights"). `stage_lights = off` in
+# rebushido.cfg, or the settings menu, puts them out; a mod of yours with
+# a larger order adds to them, changes them or clears them.
+name = Stage lights
+version = 1.0
+order = -100      # under every mod of yours
+author = ReBushido

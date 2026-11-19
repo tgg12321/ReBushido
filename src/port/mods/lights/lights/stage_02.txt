@@ -1,0 +1,11 @@
+# Shainto HQ (stage 2): the courtyard at night, two tall torches by the
+# steps and two smaller fires further back, the game's own flames.
+format = 1
+
+[light flames]
+on = flames
+color = #FF9442
+intensity = 1.4
+radius = 3200
+flicker = 0.35
+shadow = yes

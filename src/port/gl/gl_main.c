@@ -34,6 +34,7 @@
 #include "common.h"
 #include "gl.h"
 #include "gl_fighter.h"
+#include "gl_light_list.h"
 #include "gl_shadow.h"
 #include "gl_sky.h"
 #include "gl_stage.h"
@@ -166,6 +167,10 @@ static const char g_usage[] =
     "                 the stages open to it (gl_sky.h)\n"
     "  --see-through W  off (the default here) or on: the stage's walls\n"
     "                 thinned where they hide a fighter (gl_see.h)\n"
+    "  --stage-lights W  off (the default here) or on: the lights of\n"
+    "                 the stage's files and flames (gl_light_list.h)\n"
+    "  --effect-lights W  off (the default here) or on: the lights of\n"
+    "                 the fight's flashes and glows (gl_light_list.h)\n"
     "  --stage-depth W on, off: the scene held against the ground's\n"
     "                 own depth, so that ground between the camera and\n"
     "                 a fighter veils him (on with the mesh)\n"
@@ -1268,6 +1273,10 @@ int main(int argc, char **argv) {
     port_MapFixedMemory();
     port_RemasterDefaultView(&view);
     memset(&options, 0, sizeof(options));
+    /* the lights beside the stage's own (gl_light_list.h): off here, so
+     * that a prover's picture keeps the console's lighting unless asked */
+    port_GlLightListSetStageOn(FALSE);
+    port_GlLightListSetEffectsOn(FALSE);
     options.scale = 4;
     options.tall = 0; /* twice the scale, for square pixels */
     options.is_bilinear = FALSE;
@@ -1382,6 +1391,10 @@ int main(int argc, char **argv) {
              * the provers hold the picture to the console's */
             options.sky = !strcmp(argv[++i], "night") ? PORT_SKY_NIGHT
                                                       : PORT_SKY_ORIGINAL;
+        } else if (!strcmp(word, "--stage-lights")) {
+            port_GlLightListSetStageOn(!strcmp(argv[++i], "on"));
+        } else if (!strcmp(word, "--effect-lights")) {
+            port_GlLightListSetEffectsOn(!strcmp(argv[++i], "on"));
         } else if (!strcmp(word, "--see-through")) {
             options.see_through = !strcmp(argv[++i], "on");
         } else if (!strcmp(word, "--stage-depth")) {

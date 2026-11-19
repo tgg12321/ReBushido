@@ -78,6 +78,7 @@
 /* What only the native port has (src/port/). */
 #if RB_PORT
 #include "port_gte.h"
+#include "port_lights.h"
 #include "port_platform.h"
 #include "port_remaster.h"
 #include "port_state.h"
