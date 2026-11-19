@@ -6262,7 +6262,13 @@ own display, the swap's return). A press comes at any moment and waits for
 the next read: on average the sum of the gaps' squares over twice their
 sum (`waiting for the read`; a fight's boundary comes every 33 ms, so
 about 16.7 ms; a menu's every 17, about 8.4). The press to the screen is
-the two added. Then comes what the game itself takes, which run-ahead
+the two added. The gate's bench runs `ra1-paced` (ra1 at 144 a second)
+and fails where a fight frame's read to the screen is over 15 ms on
+average or more than 15% of the refreshes get no new picture (two
+refreshes are 13.9 ms: a first picture a refresh late is caught, the
+noise of a shared machine is not; and where the bench says the machine
+was loaded, these two are said and not held, since a paced run's
+measures are the clock's, which another program lengthens). Then comes what the game itself takes, which run-ahead
 cuts and nothing here touches ("Input lag", above): the frame that shows
 a press is the first picture after its step with `run_ahead 2`, the
 frame after with 1 (a fight's frame later, 33 ms; with pictures between
