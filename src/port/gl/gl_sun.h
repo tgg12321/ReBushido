@@ -129,8 +129,8 @@ extern u32 port_GlSunTriangles(void);
     "    float search = clamp(u_sun_soft * 600.0 / texel, 2.0, 24.0);\n"                                                                      \
     "    float sum = 0.0;\n"                                                                                                                  \
     "    float found = 0.0;\n"                                                                                                                \
-    "    for (int k = 0; k < 8; k++) {\n"                                                                                                     \
-    "        vec2 uv = at.xy + turn * sun_disk[k * 2] * search / size;\n"                                                                     \
+    "    for (int k = 0; k < 6; k++) {\n"                                                                                                     \
+    "        vec2 uv = at.xy + turn * sun_disk[k * 2 + 1] * search / size;\n"                                                                 \
     "        float d = texture(u_sun_raw, vec3(uv, float(i))).r;\n"                                                                           \
     "        if (d < at.z) { sum += d; found += 1.0; }\n"                                                                                     \
     "    }\n"                                                                                                                                 \
@@ -138,11 +138,11 @@ extern u32 port_GlSunTriangles(void);
     "    float apart = (at.z - sum / found) * u_sun_depth[i];\n"                                                                              \
     "    float radius = clamp(apart * u_sun_soft / texel, 1.0, 16.0);\n"                                                                      \
     "    float lit = 0.0;\n"                                                                                                                  \
-    "    for (int k = 0; k < 16; k++) {\n"                                                                                                    \
+    "    for (int k = 0; k < 10; k++) {\n"                                                                                                    \
     "        vec2 uv = at.xy + turn * sun_disk[k] * radius / size;\n"                                                                         \
     "        lit += texture(u_sun_map, vec4(uv, float(i), at.z));\n"                                                                          \
     "    }\n"                                                                                                                                 \
-    "    return lit / 16.0;\n"                                                                                                                \
+    "    return lit / 10.0;\n"                                                                                                                \
     "}\n"                                                                                                                                     \
     "float sun_visible(vec3 world, vec3 normal) {\n"                                                                                          \
     "    if (u_sun_on == 0) { return 1.0; }\n" /* A face turned away from the                                                                 \

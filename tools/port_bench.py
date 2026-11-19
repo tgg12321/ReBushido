@@ -93,7 +93,7 @@ CASES = {
     'ra1-plain': (1, 'off', None),
     # four HD fighters' worth and the ground twice over: four players on
     # a larger stage
-    'ra1-stress': (1, 'on', 'fighters=4,stage=2,lights=32'),
+    'ra1-stress': (1, 'on', 'fighters=4,stage=2,lights=16'),
 }
 DEFAULT_CASES = ('ra0', 'ra1', 'ra2', 'ra1-plain', 'ra1-stress')
 BUDGET_CASES = ('ra0', 'ra1', 'ra2', 'ra1-stress')

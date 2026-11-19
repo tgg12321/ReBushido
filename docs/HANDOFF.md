@@ -102,6 +102,37 @@ quick-boot disc flake (WSL's clock stepping backwards).
 - A backward step of WSL's clock could in principle leave an object
   stale after a source edit (BUILD.md, "Where the build runs").
 
+## The lighting overhaul, 2026-11-18 (ROADMAP 14)
+
+The owner: a total overhaul as a modern game would have it, still Bushido
+Blade 2, the Remastered picture alone. How it works: PORT.md, "The
+lighting overhaul".
+
+- **a, the sun's shadow maps** (`shadows = map`, built in): three
+  cascades of 2,048 along the stage's own shadow direction; the ground,
+  the pieces and the fighters' models read them at the pixel; soft
+  (PCSS), held still by whole texels and depth steps. The cast shadow's
+  jitter at rest is gone with the mask. Four stages under a roof keep
+  their ceiling from casting (`g_sun_stage_casts`). Fixed on the way: the
+  ground's normal attribute was never enabled, so `smooth_light` never
+  reached the ground.
+- **b, lights with a place** (`lights = on`): the light list
+  (`gl_lights.h`, filled by `gl_light_list.c` from the mods' `lights/` and
+  the clash effect) per pixel on the ground, pieces and fighters, sorted
+  into a world grid, the strongest four with cube shadows; a remade
+  fighter's normal and ORM maps read and lit (GGX highlight from the
+  sun).
+- **Left:** c (reflections) and d (HDR/tonemap, AO, bloom), with a plan
+  each in PORT.md, "What is left of it"; the light files' placing (only
+  the parking lot's reach the fight in the tour); the normal map's
+  bitangent sign on a remade model in a fight.
+- **Waits on the owner:** his own cfg says `shadows = cast`, so he sees
+  the sun's maps only after setting `shadows = map` (or Shadows: Sun in
+  the menu); whether a stage's own geometry should cast at all (the
+  shipyard, team 1, the terraced fields and the building rooftop darken
+  by a quarter to two fifths in the lower half of the picture, PORT.md);
+  pictures in the main checkout's `tmp/lighting/`.
+
 ## What is left, in the order I would take it
 
 1. **The lighting work** (ROADMAP 14), above; give it a budget in

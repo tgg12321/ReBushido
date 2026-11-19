@@ -44,6 +44,7 @@ typedef ptrdiff_t GLintptr;
 #define GL_TEXTURE_WRAP_T 0x2803
 #define GL_LINEAR 0x2601
 #define GL_CLAMP_TO_EDGE 0x812F
+#define GL_NEAREST_L 0x2600
 #define GL_TEXTURE_COMPARE_MODE 0x884C
 #define GL_TEXTURE_COMPARE_FUNC 0x884D
 #define GL_COMPARE_REF_TO_TEXTURE 0x884E
@@ -90,7 +91,10 @@ typedef ptrdiff_t GLintptr;
     GL(void, glBufferData, (GLenum, GLsizeiptr, const void *, GLenum))         \
     GL(void, glBindBufferBase, (GLenum, GLuint, GLuint))                       \
     GL(GLint, glGetUniformLocation, (GLuint, const GLchar *))                  \
-    GL(void, glUniform1i, (GLint, GLint))
+    GL(void, glUniform1i, (GLint, GLint))                                      \
+    GL(void, glCopyImageSubData,                                               \
+       (GLuint, GLenum, GLint, GLint, GLint, GLint, GLuint, GLenum, GLint,     \
+        GLint, GLint, GLint, GLsizei, GLsizei, GLsizei))
 
 #define GL(result, name, args) static result(*name) args;
 PORT_GL_LIGHTS_FUNCTIONS
@@ -145,6 +149,15 @@ static struct {
     GLuint face_buffer;
     GLuint map;
     GLuint framebuffer[LIGHT_LAYERS];
+    /* The stage's own depth from each shadowed light, kept: the stage
+     * stands still, so a light that has not moved has the same, and only
+     * the fighters are drawn over a copy of it each picture. What it was
+     * drawn for: the light's place and reach, and the stage's mesh. */
+    GLuint stage_map;
+    GLuint stage_framebuffer[LIGHT_LAYERS];
+    float kept_place[PORT_GL_LIGHTS_SHADOWED][4];
+    s32 kept_mesh[PORT_GL_LIGHTS_SHADOWED];
+    u32 stage_redrawn;
     CardLight card[PORT_GL_LIGHTS_MAX];
     s32 card_count;
     s32 most; /* the most lights a picture of the run had */
@@ -245,6 +258,25 @@ const char *port_GlLightsStart(void *(*getproc)(const char *name)) {
                     GL_COMPARE_REF_TO_TEXTURE);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+    glGenTextures(1, &g_lights.stage_map);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, g_lights.stage_map);
+    glTexImage3D(
+        GL_TEXTURE_2D_ARRAY, 0, (GLint)GL_DEPTH_COMPONENT32F, LIGHT_MAP_SIZE,
+        LIGHT_MAP_SIZE, LIGHT_LAYERS, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST_L);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST_L);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+    glGenFramebuffers(LIGHT_LAYERS, g_lights.stage_framebuffer);
+    for (i = 0; i < LIGHT_LAYERS; i++) {
+        glBindFramebuffer(GL_FRAMEBUFFER, g_lights.stage_framebuffer[i]);
+        glFramebufferTextureLayer(
+            GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, g_lights.stage_map, 0, i);
+        glDrawBuffer(GL_NONE);
+        glReadBuffer(GL_NONE);
+    }
+    for (i = 0; i < PORT_GL_LIGHTS_SHADOWED; i++) {
+        g_lights.kept_mesh[i] = -1;
+    }
     glGenFramebuffers(LIGHT_LAYERS, g_lights.framebuffer);
     for (i = 0; i < LIGHT_LAYERS; i++) {
         glBindFramebuffer(GL_FRAMEBUFFER, g_lights.framebuffer[i]);
@@ -395,10 +427,29 @@ static s32 port_LightsMadeUp(PortGlLight *out, const PortStageView *view) {
     if (tall <= 0.0f) {
         return 0;
     }
+    /* placed once a stage, where the fighters first stand, and then left
+     * where they are, as a stage's own lamps are */
+    {
+        static s32 placed_stage = -1;
+        static float placed[4];
+        s32 stage = port_RemasterStageNumber();
+
+        if (stage != placed_stage) {
+            placed_stage = stage;
+            placed[0] = centre[0];
+            placed[1] = centre[1];
+            placed[2] = centre[2];
+            placed[3] = tall;
+        }
+        centre[0] = placed[0];
+        centre[1] = placed[1];
+        centre[2] = placed[2];
+        tall = placed[3];
+    }
     for (i = 0; i < g_lights.made_up; i++) {
         PortGlLight *l = &out[i];
         float turn = 360.0f * (float)i / (float)g_lights.made_up;
-        float ring = tall * (0.8f + 0.45f * (float)(i % 5));
+        float ring = tall * (0.4f + 0.25f * (float)(i % 5));
 
         memset(l, 0, sizeof(*l));
         l->position[0] = centre[0] + ring * port_LightsCos(turn);
@@ -409,7 +460,7 @@ static s32 port_LightsMadeUp(PortGlLight *out, const PortStageView *view) {
         l->colour[1] = 0.4f + 0.4f * (float)(i % 3 == 1);
         l->colour[2] = 0.3f + 0.6f * (float)(i % 3 == 2);
         l->intensity = 0.9f;
-        l->radius = tall * 2.5f;
+        l->radius = tall * 1.2f;
         l->kind = (i % 4 == 3) ? PORT_GL_LIGHT_SPOT : PORT_GL_LIGHT_POINT;
         l->direction[1] = 1.0f;
         l->cone_inner = 25.0f;
@@ -694,15 +745,42 @@ void port_GlLightsPrepare(void) {
                 continue;
             }
             slot = (s32)c->extra[1];
-            for (face = 0; face < LIGHT_FACES; face++) {
-                float *m = g_lights.face[slot + face];
+            {
+                s32 which = slot / LIGHT_FACES;
+                s32 mesh =
+                    port_GlStageVertices() * 64 + port_RemasterStageNumber();
+                s32 is_kept = g_lights.kept_mesh[which] == mesh &&
+                              memcmp(g_lights.kept_place[which], c->place,
+                                     sizeof(c->place)) == 0;
 
-                port_LightsFace(m, c->place, face, c->place[3]);
-                glBindFramebuffer(
-                    GL_FRAMEBUFFER, g_lights.framebuffer[slot + face]);
-                glClear(GL_DEPTH_BUFFER_BIT);
-                port_GlStageDrawSunCasters(m);
-                port_GlShadowDrawSunCasters(m);
+                for (face = 0; face < LIGHT_FACES; face++) {
+                    float *m = g_lights.face[slot + face];
+
+                    port_LightsFace(m, c->place, face, c->place[3]);
+                    if (!is_kept) {
+                        glBindFramebuffer(
+                            GL_FRAMEBUFFER,
+                            g_lights.stage_framebuffer[slot + face]);
+                        glClear(GL_DEPTH_BUFFER_BIT);
+                        port_GlStageDrawSunCasters(m);
+                    }
+                }
+                if (!is_kept) {
+                    memcpy(
+                        g_lights.kept_place[which], c->place, sizeof(c->place));
+                    g_lights.kept_mesh[which] = mesh;
+                    g_lights.stage_redrawn++;
+                }
+                /* the stage's depth, then the fighters over it */
+                glCopyImageSubData(
+                    g_lights.stage_map, GL_TEXTURE_2D_ARRAY, 0, 0, 0, slot,
+                    g_lights.map, GL_TEXTURE_2D_ARRAY, 0, 0, 0, slot,
+                    LIGHT_MAP_SIZE, LIGHT_MAP_SIZE, LIGHT_FACES);
+                for (face = 0; face < LIGHT_FACES; face++) {
+                    glBindFramebuffer(
+                        GL_FRAMEBUFFER, g_lights.framebuffer[slot + face]);
+                    port_GlShadowDrawSunCasters(g_lights.face[slot + face]);
+                }
             }
         }
         glDisable(GL_POLYGON_OFFSET_FILL);

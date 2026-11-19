@@ -176,14 +176,7 @@ extern s32 port_GlLightsShadowed(void);
     "    vec3 p = world + n * far_of * 0.006;\n"                                    \
     "    vec4 c = light_face[first + face] * vec4(p, 1.0);\n"                       \
     "    vec3 at = c.xyz / c.w * 0.5 + vec3(0.5);\n"                                \
-    "    float texel = 1.0 / float(textureSize(u_lights_map, 0).x);\n"              \
-    "    float lit = 0.0;\n"                                                        \
-    "    for (int j = 0; j < 4; j++) {\n"                                           \
-    "        vec2 o = vec2(float(j & 1), float(j >> 1)) - vec2(0.5);\n"             \
-    "        lit += texture(u_lights_map,\n"                                        \
-    "            vec4(at.xy + o * 1.5 * texel, float(first + face), at.z));\n"      \
-    "    }\n"                                                                       \
-    "    return lit * 0.25;\n"                                                      \
+    "    return texture(u_lights_map, vec4(at.xy, float(first + face), at.z));\n"   \
     "}\n"                                                                           \
     "vec3 lights_add(vec3 world, vec3 n) {\n"                                       \
     "    if (u_lights_count == 0) { return vec3(0.0); }\n"                          \
@@ -216,7 +209,7 @@ extern s32 port_GlLightsShadowed(void);
     "            fall *= smoothstep(l.extra.x, l.aim.w, dot(-dir, l.aim.xyz));\n"   \
     "        }\n"                                                                   \
     "        if (fall <= 0.0) { continue; }\n"                                      \
-    "        if (l.extra.y >= 0.0) {\n"                                             \
+    "        if (l.extra.y >= 0.0 && fall * turn > 0.02) {\n"                       \
     "            fall *= light_shadow(int(l.extra.y), -to_light, world, n);\n"      \
     "        }\n"                                                                   \
     "        sum += l.color.rgb * (turn * fall);\n"                                 \
