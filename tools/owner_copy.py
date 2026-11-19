@@ -8,7 +8,7 @@ build/port-sdl/windows/ -- rebushido.exe, SDL2.dll and the mods the
 program ships (every folder of its mods/: english, ui, lights, the sample
 arena) -- beside the repository's root, where the
 owner runs it, and the mods made from the owner's own disc in tmp/mods/
-(art, stages-hd: tools/port_art.py,
+(art, stages-hd, fighters: tools/port_art.py, tools/port_models/,
 tools/port_stage_hd.py) into the root's mods/ beside it. None of these is
 committed: .git/info/exclude keeps them out. rebushido.cfg, logs/,
 screenshots/ and the memory cards beside the program are the owner's and
@@ -22,7 +22,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILT = os.path.join(ROOT, 'build', 'port-sdl', 'windows')
 FILES = ['rebushido.exe', 'SDL2.dll']
-DISC_MODS = ['art', 'stages-hd']  # hd dropped 2026-11-19: the owner wants the fighters' own crisp texture
+DISC_MODS = ['art', 'stages-hd', 'fighters']  # fighters: geometry-fixed models, the game's own texture (2026-11-19)
 
 
 def copy_folder(source, target):
