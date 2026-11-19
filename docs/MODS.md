@@ -568,7 +568,7 @@ mods/
   digits (`STAGE_NAMES` of `tools/port_remaster_prove.py`).
 - The program ships one mod of them, `mods/lights/` (order -100, under
   yours): the game's own flames lit on the nine stages that have them
-  (below). `stage_lights = off` puts every stage's lights out
+  and the lamps of two more (below). `stage_lights = off` puts every stage's lights out
   ([`PLAYING.md`](PLAYING.md)); `effect_lights` is the fight's flashes',
   which are no file's.
 - The log says what each stage's files came to (`lights: stage 2 has 1
@@ -646,7 +646,27 @@ Nothing of the disc is in the files: the flames' places are the game's
 own, read as it runs (`on = flames`), and what is placed by hand is
 numbers of where.
 
-STAGE_TABLE_PLACEHOLDER
+What the program ships, each looked at in the pictures of its tour:
+
+| Stage | Lights | |
+|---|---|---|
+| 2 Shainto HQ | `on = flames`: 4 | candles on stands, and two before the Buddha |
+| 3 Tatara shrine | `on = flames`: 4 | fire baskets on the deck's railing |
+| 6 Tatara shrine path | `on = flames`: 4 | stone lanterns |
+| 8 Outside Meikyokan | `on = flames`: 2 | fire baskets by the dojo's door |
+| 20 Kabuki stage | `on = flames`: 4 | torches along the walkway |
+| 22 Ferry dock | 1 spot | the tall street lamp at the quay's edge, lit |
+| 23 Shainto gate | `on = flames`: 2 | small fires on the gate's deck |
+| 24 Purple cavern | `on = flames`: 4 | candles by the iron gate |
+| 30 Building parking lot | 5 spots | the fluorescent lights down the ceiling |
+| 31 Shainto cemetery | `on = flames`: 2 | candles at two graves |
+| 33 Team battle 2 | `on = flames`: 4 | fire baskets at the square's corners |
+
+None on the rest: lit by day, or by the moon (the castle rooftop), or
+with lamps that are not lit (the bus stop's and the outside of the
+Meikyokan's posts), or with sources too small to place from the meshes
+yet (the red warning lights of the building rooftop's mast, the
+lighthouse's lamp, which no fight's camera sees).
 
 ## Music
 

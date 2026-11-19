@@ -61,12 +61,22 @@ static struct {
     s32 still_frames; /* calls since they changed */
     u32 last_serial;  /* the effects' serial last seen */
     s32 still_serial;
+    s32 made;       /* lights given this frame */
+    s32 said_stage; /* the stage and count last told the log, plus one */
+    s32 said_made;
     u8 dumped[STAGES_MAX];
 } g_light_list;
 
 void port_GlLightListSetStageOn(s32 on) { g_light_list.is_stage_off = !on; }
 
 void port_GlLightListSetEffectsOn(s32 on) { g_light_list.is_effects_off = !on; }
+
+/* One light into the frame's list, counted. */
+static void port_GlLightListAdd(const PortGlLight *light) {
+    if (port_GlLightsAdd(light) >= 0) {
+        g_light_list.made++;
+    }
+}
 
 /* A colour as a screen shows it, 0 to 255, made linear (sRGB's curve, near
  * enough: the window's build has no mathematics library). */
@@ -209,7 +219,7 @@ static void port_GlLightListStage(s32 stage) {
             light.position[0] = (float)def->at[0];
             light.position[1] = (float)def->at[1];
             light.position[2] = (float)def->at[2];
-            port_GlLightsAdd(&light);
+            port_GlLightListAdd(&light);
         } else if (def->on == PORT_LIGHT_ON_FLAME) {
             s32 flame;
 
@@ -231,10 +241,10 @@ static void port_GlLightListStage(s32 stage) {
                 light.position[2] = (float)(at->at[2] + def->at[2]);
                 light.radius *= reach;
                 light.intensity *= reach;
-                port_GlLightsAdd(&light);
+                port_GlLightListAdd(&light);
             }
         } else if (port_GlLightPlace(def, light.position, light.direction)) {
-            port_GlLightsAdd(&light);
+            port_GlLightListAdd(&light);
         }
     }
 }
@@ -297,7 +307,7 @@ static void port_GlLightListEffects(void) {
         light.kind = PORT_GL_LIGHT_POINT;
         light.casts_shadow = TRUE;
         light.id = ID_FLASH | (game->flash_event & ID_EVENT_MASK);
-        port_GlLightsAdd(&light);
+        port_GlLightListAdd(&light);
     }
     for (i = 0; i < game->glow_count; i++) {
         memset(&light, 0, sizeof(light));
@@ -309,7 +319,7 @@ static void port_GlLightListEffects(void) {
         light.radius = GLOW_RADIUS;
         light.kind = PORT_GL_LIGHT_POINT;
         light.id = ID_GLOW | (u32)game->glow[i].flash << ID_GLOW_SHIFT;
-        port_GlLightsAdd(&light);
+        port_GlLightListAdd(&light);
     }
 }
 
@@ -324,6 +334,7 @@ void port_GlLightListFrame(void) {
         g_light_list.still_frames++;
     }
     port_GlLightsBegin();
+    g_light_list.made = 0;
     if (stage >= 0 && g_light_list.still_frames < STALE_FRAMES) {
         if (!g_light_list.is_stage_off) {
             port_GlLightListStage(stage);
@@ -333,6 +344,16 @@ void port_GlLightListFrame(void) {
         }
     }
     port_GlLightsEnd();
+    /* the run's log: the stage's lights as they first stand, and as the
+     * count of a stage's own changes (a flash comes and goes in it) */
+    if (stage >= 0 && g_light_list.made > 0 &&
+        (stage + 1 != g_light_list.said_stage ||
+         g_light_list.made > g_light_list.said_made)) {
+        g_light_list.said_stage = stage + 1;
+        g_light_list.said_made = g_light_list.made;
+        fprintf(stderr, "lights: stage %d's frame has %d lights\n", stage,
+                g_light_list.made);
+    }
 }
 
 /* ---- the mesh's dump ---- */

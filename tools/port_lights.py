@@ -52,7 +52,8 @@ ALL_STAGES = 38
 # how far a stage's tour is played: into its fight
 DUMP_FRAMES = 3200
 # and further with --shots, the fighter run across the stage
-SHOT_FRAMES = 1200
+SHOT_FRAMES = 2400
+SHOT_LAPS = 18
 SHEET_PICTURES = 6
 SHEET_WIDTH = 480
 
@@ -228,7 +229,8 @@ def dump(args):
     os.makedirs(empty)
     mods = os.path.abspath(args.mods) if args.mods else empty
     frames = DUMP_FRAMES + (SHOT_FRAMES if args.shots else 0)
-    toml = remaster.write_tour(os.path.join(work, 'tour.toml'), frames, 1)
+    # the fight's checkpoints, two seconds each: one, or the run across
+    toml = remaster.write_tour(os.path.join(work, 'tour.toml'), frames, SHOT_LAPS if args.shots else 1)
     waiting = stage_list(args.stages)
     running = []
     flames = {}
@@ -258,8 +260,13 @@ def dump(args):
         log.close()
         mesh = os.path.join(args.dump, 'meshes', 'stage_%02d.bin' % stage)
         with open(os.path.join(out, 'log.txt'), errors='replace') as f:
-            said = [line.split("flame", 1)[1].strip() for line in f
-                    if line.startswith("lights: stage %d's flame" % stage)]
+            log_lines = f.readlines()
+        said = [line.split("flame", 1)[1].strip() for line in log_lines
+                if line.startswith("lights: stage %d's flame" % stage)]
+        # what the mods' light files came to, and any line not used
+        for line in log_lines:
+            if line.startswith('lights: ') and "'s flame" not in line:
+                print('port_lights: stage %2d: %s' % (stage, line.strip()))
         flames[stage] = said
         if not os.path.exists(mesh) and stage not in tried:
             tried.add(stage)  # the machine busy: once more

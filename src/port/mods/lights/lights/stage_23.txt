@@ -1,0 +1,11 @@
+# The Shainto gate (stage 23): the gate's deck at night, a small fire
+# either side, the game's own flames.
+format = 1
+
+[light fires]
+on = flames
+color = #FF9038
+intensity = 1.3
+radius = 3000
+flicker = 0.4
+shadow = yes

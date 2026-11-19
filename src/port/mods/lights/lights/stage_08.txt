@@ -1,0 +1,11 @@
+# Outside the Meikyokan (stage 8): the dojo's yard at night, a fire
+# basket on its stand either side of the door, the game's own flames.
+format = 1
+
+[light fire_baskets]
+on = flames
+color = #FF8A32
+intensity = 1.5
+radius = 3200
+flicker = 0.4
+shadow = yes

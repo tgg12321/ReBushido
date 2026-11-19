@@ -6892,11 +6892,13 @@ reads every face's texels as they are drawn (the vertex's colour times
 the texel, its colour table found where the stage loaded it, not on the
 row the fog writes over), and gathers what looks lit from within into
 drafts; and takes pictures of each stage's tour with the lights on.
-What it found: no stage's textures are lit from within in a way the
-texels alone tell -- the game lit its night stages by their vertex
-colours, and its few lamps and windows are no brighter than the stone
-about them -- so the shipped lights are the game's own flames, and the
-rest are placed by hand from the pictures.
+What it found: the texels alone tell little -- the game lit its night
+stages by their vertex colours, and a white line on the floor or a
+whitewashed wall is as bright as a lamp -- so its drafts are read
+beside the pictures. Two of them were lamps: the parking garage's
+ceiling fittings (five, 8,000 units apart) and the ferry dock's street
+lamp. The other nine stages with lights are the game's own flames
+(MODS.md, "The lights the program ships", has the table).
 
 ### What the old branch's lighting came to
 

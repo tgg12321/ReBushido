@@ -18,6 +18,9 @@ import port_lights  # noqa: E402  (tools/port_lights.py)
 ON_STAGE = 0
 # how far from what it is fastened to a light may be put
 NEAR = 3000
+# how far past the ground's bounds a light may be: a lamp on a pole above
+# the highest of the ground, the pieces being outside the bounds
+MARGIN = 2000
 
 
 def shipped():
@@ -72,7 +75,7 @@ def check(lines, results):
         if bounds is None:
             continue
         least, most = bounds
-        inside = all(least[i] <= (x, y, z)[i] <= most[i] for i in range(3))
+        inside = all(least[i] - MARGIN <= (x, y, z)[i] <= most[i] + MARGIN for i in range(3))
         checks.check(inside, '%s: %s at %d %d %d is inside stage %d (%s to %s)' % (
             path, name, x, y, z, stage, least, most))
     checks.check(seen == set(files), 'every shipped file has lights: %s' % sorted(set(files) - seen))

@@ -1,0 +1,52 @@
+# The building's parking garage (stage 30): a row of fluorescent lights
+# on the ceiling over the middle lane, every 8,000 units, the bright white
+# fittings found by tools/port_lights.py (a piece's faces at 4,565 up).
+# Each is a spot lighting the floor below it, cool and steady.
+format = 1
+
+[light ceiling_1]
+kind = spot
+at = -5000 -4450 -15000
+direction = 0 1 0
+cone = 45 75
+color = #E4EEFF
+intensity = 1.0
+radius = 7000
+
+[light ceiling_2]
+kind = spot
+at = -5000 -4450 -7000
+direction = 0 1 0
+cone = 45 75
+color = #E4EEFF
+intensity = 1.0
+radius = 7000
+shadow = yes
+
+[light ceiling_3]
+kind = spot
+at = -5000 -4450 1000
+direction = 0 1 0
+cone = 45 75
+color = #E4EEFF
+intensity = 1.0
+radius = 7000
+shadow = yes
+
+[light ceiling_4]
+kind = spot
+at = -5000 -4450 9000
+direction = 0 1 0
+cone = 45 75
+color = #E4EEFF
+intensity = 1.0
+radius = 7000
+
+[light ceiling_5]
+kind = spot
+at = -5000 -4450 17000
+direction = 0 1 0
+cone = 45 75
+color = #E4EEFF
+intensity = 1.0
+radius = 7000

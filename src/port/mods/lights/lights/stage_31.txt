@@ -1,0 +1,11 @@
+# The Shainto cemetery (stage 31): a candle left at two of the graves,
+# the game's own flames: small, low and close to the stones.
+format = 1
+
+[light grave_candles]
+on = flames
+color = #FFB85C
+intensity = 0.9
+radius = 1800
+flicker = 0.2
+shadow = yes

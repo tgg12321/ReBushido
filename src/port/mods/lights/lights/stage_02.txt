@@ -1,11 +1,12 @@
-# Shainto HQ (stage 2): the courtyard at night, two tall torches by the
-# steps and two smaller fires further back, the game's own flames.
+# Shainto HQ (stage 2): the temple's hall at night. The game's own flames
+# are two tall candles on their stands by the fence and two small ones
+# before the Buddha at the back: a warm candlelight, steadier than a fire.
 format = 1
 
-[light flames]
+[light candles]
 on = flames
-color = #FF9442
-intensity = 1.4
-radius = 3200
-flicker = 0.35
+color = #FFB45A
+intensity = 1.2
+radius = 2800
+flicker = 0.2
 shadow = yes
