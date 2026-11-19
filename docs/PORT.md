@@ -5901,6 +5901,66 @@ many and was no later, within the noise.
   record's own frame is drawn into the colour buffer and then drawn over
   by the first picture of the pair; the card could be spared it.
 
+### The window's thread and the game's state
+
+**The crash** (the owner, 2026-11-18, `05b0f524d`, a fight against the
+CPU on Lost Bridge, `run_ahead = 2`, about four minutes in): "memory that
+is not there was touched" at `0x083E42C4`, which the build's names put at
+`g_port_call_depth` (`src/port/plan.c`), written by
+`__cyg_profile_func_enter`, called from `resource_GetStage`, called from
+`port_GlStageIsTile` through `port_RemasterStageNumber` (the report's own
+names were the nearest it knew, `port_TweenStop` and
+`sprite_DrawRotated`).
+
+**The cause.** The game's files are compiled with
+`-finstrument-functions`, and the hook at the top of each of the game's
+functions writes `plan.c`'s variables (the last functions begun, the
+depth of calls), which are the game's state, kept by page
+(`config/port_state.txt`; NETPLAY.md, "Save, load and hash"). The
+window's thread, drawing the record beside the step that runs on its own
+thread, asked the stage's number of the game's `resource_GetStage` for
+each primitive of a stage's piece it was deciding about
+(`port_GlStageIsTile`), some 84,000 times a bench fight; so it wrote the
+state's pages beside the step. A page that is watched is read-only and
+its first write faults; `port_StateOnWrite` declined a fault whose page
+was no longer noted as watched, and a declined write is a crash. The
+step's thread changes a page's note under the window's thread's fault:
+its own fault on the same page at the same moment (the step writes the
+same variables at every function it begins), or a run-ahead's load,
+which notes a page writable before it makes it so. Rare, and so it took
+minutes: the page is mostly hot (left writable), and watched again every
+128 epochs.
+
+**The fix**, three parts:
+
+- *The hook counts the game's own run alone*: a function begun off the
+  game's stack (`PORT_STACK_ADDR`: the port's code calling the game's
+  from a stack of the host's) writes nothing (`port_OnGameStack`).
+- *The window's thread runs none of the game's code while the step runs
+  beside it*: `port_RemasterStageNumber` reads `g_resource_stage` as it
+  is, and the port's own getters in the game's files that it asks there
+  (`stage_GetTiles`, `stage_GetPieces`) are not instrumented
+  (`no_instrument_function`). Such a call is told to the window (`g_port_foreign_call_hook`),
+  which says the first in the log ("a function of the game was begun
+  beside the step, off its thread") and their count at the end, and
+  `tools/port_bench.py` fails a run that says so, whatever
+  `--report-only`: the gate's bench would have failed on every run of
+  the crash's build.
+- *A fault on a page of the state that is already writable is taken*:
+  `port_StateOnWrite` holds a lock, makes the page writable whatever its
+  note says (but video memory's own, never made read-only) and lets the
+  write go on.
+
+**Shown** (the bench's plan and fight on the card, `run_ahead 2`, three
+runs side by side, with the race made wide in a trial build: a spin at
+the top of the fault's handler and one in the load between noting pages
+writable and making them so, and pages watched again every 2 epochs, not
+128): the build without the fix stopped in all three on the very write of
+the owner's report (`0x083E42C4`, `__cyg_profile_func_enter` from
+`resource_GetStage`), about 24 seconds in, and counted some 84,000 of the
+game's functions begun beside the step a run; with the fix the same
+trial ran all three to the end with none.
+
 ### The HD fighters on the card
 
 **What it was** (main at `8f09f98d1`, the card's measure above): the HD

@@ -343,31 +343,50 @@ u32 port_StateFaults(void) { return g_port_state_faults; }
 
 void port_SetWholeState(void) { g_port_state_tracking = TRACKING_OFF; }
 
+/* Held while a fault's write is noted: two threads may fault at once. */
+static u32 g_port_state_write_lock;
+
 /* A write to a page made read-only (port_HostWatchWrites): one of the
- * state's, noted and made writable, or not the state's (0). */
+ * state's, noted and made writable, or not the state's (0).
+ *
+ * The page may have been made writable already between the write's
+ * fault and this: by another thread's fault on it at the same moment,
+ * or by a load, which notes a page writable before it makes it so. Its
+ * write goes on all the same.
+ * Once this declined it, and the write was taken for a crash: the
+ * owner's fight stopped on 2026-11-18 (docs/PORT.md, "The window's
+ * thread and the game's state"). */
 static s32 port_StateOnWrite(PortAddress address) {
     s32 i;
 
     for (i = 0; i < g_port_state_span_count; i++) {
         const PortStateSpan *span = &g_port_state_spans[i];
         PortAddress start = (PortAddress)span->start;
+        u8 *kind;
         u32 page;
+        s32 is_taken;
 
         if (address < start ||
             address - start >= (PortAddress)span->pages * STATE_PAGE_BYTES) {
             continue;
         }
         page = (u32)((address - start) / STATE_PAGE_BYTES);
-        if (g_port_state_page_kinds[span->first + page] != PAGE_WATCHED ||
-            !port_HostProtect(
-                span->start + page * STATE_PAGE_BYTES, STATE_PAGE_BYTES, 1)) {
-            return 0;
+        kind = &g_port_state_page_kinds[span->first + page];
+        while (__atomic_exchange_n(
+            &g_port_state_write_lock, 1, __ATOMIC_ACQUIRE)) {
         }
-        g_port_state_page_kinds[span->first + page] = PAGE_WRITABLE;
-        g_port_state_page_epochs[span->first + page] = g_port_state_epoch;
-        g_port_state_writable++;
-        g_port_state_faults++;
-        return 1;
+        /* video memory's own pages are never made read-only */
+        is_taken = *kind != PAGE_PAINTED &&
+                   port_HostProtect(span->start + page * STATE_PAGE_BYTES,
+                                    STATE_PAGE_BYTES, 1);
+        if (is_taken && *kind == PAGE_WATCHED) {
+            *kind = PAGE_WRITABLE;
+            g_port_state_page_epochs[span->first + page] = g_port_state_epoch;
+            g_port_state_writable++;
+            g_port_state_faults++;
+        }
+        __atomic_store_n(&g_port_state_write_lock, 0, __ATOMIC_RELEASE);
+        return is_taken;
     }
     return 0;
 }

@@ -1475,8 +1475,12 @@ s32 port_RemasterStageNumber(void) {
     /* The stage whose data is in the arena, and so whose tiles the mesh
      * is built from -- not the fight's own (g_fight_stage), which a
      * cutscene drawing a stage of its own does not change
-     * (cutscene_Start, CUTSCENE_STAGE). -1 where none is loaded. */
-    return resource_GetStage();
+     * (cutscene_Start, CUTSCENE_STAGE). -1 where none is loaded.
+     * resource_GetStage's variable, read as it is: the window's thread
+     * asks this beside a step running on another (port_GlStageIsTile),
+     * and runs none of the game's functions while it does
+     * (docs/PORT.md, "The window's thread and the game's state"). */
+    return g_resource_stage;
 }
 
 /* ---- the stage's own textures (port_remaster.h) ---- */

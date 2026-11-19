@@ -1120,13 +1120,35 @@ void port_OnFrame(void) {
 u32 g_port_recent_calls[PORT_RECENT_CALLS];
 u32 g_port_recent_call_count;
 
+/* Whether the code that calls this runs on the game's own stack
+ * (PORT_STACK_ADDR): the game's fiber, on whichever thread entered it. */
+static s32 port_OnGameStack(void) {
+    volatile u8 here = 0;
+
+    return (PortAddress)&here - PORT_STACK_ADDR < PORT_STACK_SIZE;
+}
+
 /* A function of the game begins: the compiler calls this at the top of
  * every function of the files tools/port_build.py compiles with
  * -finstrument-functions, which are the game's and Sony's and none of
  * the port's own. A line of the list of calls, if one is being written,
- * and the checkpoint that waits for this function. */
+ * and the checkpoint that waits for this function.
+ *
+ * Only for the game's own run, on its stack. What is written here is the
+ * game's state (config/port_state.txt), and the port's code may call a
+ * function of the game from its own stack: the window's thread, drawing
+ * beside a step that runs on another, once wrote these variables while
+ * the step's thread was changing their page's watch, and the program
+ * stopped on the write (docs/PORT.md, "The window's thread and the
+ * game's state"). */
 void __cyg_profile_func_enter(void *function, void *call_site) {
     (void)call_site;
+    if (!port_OnGameStack()) {
+        if (g_port_foreign_call_hook != NULL) {
+            g_port_foreign_call_hook((u32)ADDR(function));
+        }
+        return;
+    }
     /* one that begins many times running is kept once */
     if (g_port_recent_call_count == 0 ||
         g_port_recent_calls[(g_port_recent_call_count - 1) %
@@ -1162,7 +1184,9 @@ void __cyg_profile_func_enter(void *function, void *call_site) {
 void __cyg_profile_func_exit(void *function, void *call_site) {
     (void)function;
     (void)call_site;
-    g_port_call_depth--;
+    if (port_OnGameStack()) {
+        g_port_call_depth--;
+    }
 }
 
 /* ---- the end ---- */

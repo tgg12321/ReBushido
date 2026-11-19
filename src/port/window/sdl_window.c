@@ -3693,6 +3693,49 @@ static s32 port_OnStepper(void) {
 
 static s32 port_ProfileThreadOf(void) { return port_OnStepper(); }
 
+/* The game's functions begun off its stack by a thread other than the
+ * step's while the step runs on it (g_port_foreign_call_hook), and the
+ * first of them: none is to be. Such a call runs the game's code beside
+ * the game, on memory the step is changing and run-ahead puts back
+ * (docs/PORT.md, "The window's thread and the game's state"): the
+ * window's thread asking the stage's number of resource_GetStage, as
+ * the mesh decided which primitives it draws, did, and that stopped
+ * the owner's fight on 2026-11-18. Said once in the log as it is first
+ * seen, and their count as the session ends; tools/port_bench.py fails a
+ * run whose log says so. */
+static SDL_atomic_t g_port_foreign_calls;
+static SDL_atomic_t g_port_foreign_first;
+static s32 g_port_foreign_said;
+
+static void port_OnForeignCall(u32 function) {
+    if (port_OnStepper() ||
+        SDL_AtomicGet(&g_port_stepper_state) != STEPPER_RUNNING ||
+        !g_port_beside) {
+        return;
+    }
+    if (SDL_AtomicIncRef(&g_port_foreign_calls) == 0) {
+        SDL_AtomicSet(&g_port_foreign_first, (int)function);
+    }
+}
+
+/* The first such call said, on the window's thread. */
+static void port_SayForeignCalls(void) {
+    u32 function;
+    u32 offset = 0;
+    const char *name;
+
+    if (g_port_foreign_said || SDL_AtomicGet(&g_port_foreign_calls) == 0) {
+        return;
+    }
+    g_port_foreign_said = TRUE;
+    function = (u32)SDL_AtomicGet(&g_port_foreign_first);
+    name = port_FindFunction(function, &offset);
+    port_Note("rebushido: a function of the game was begun beside the "
+              "step, off its thread: %s (0x%08X); the game's code is the "
+              "step's alone while it runs",
+              name != NULL ? name : "?", function);
+}
+
 /* The step's thread: a step each time it is given one, entered here, and
  * the frames ahead after it, unless it went to the window's thread. */
 static int SDLCALL port_StepperThread(void *unused) {
@@ -3957,6 +4000,7 @@ static void port_RunStep(void) {
     }
     g_port_beside = FALSE;
     g_port_steps_beside++;
+    port_SayForeignCalls();
     if (state == STEPPER_MOVED) {
         /* the rest of the step here, as any step's */
         g_port_steps_moved++;
@@ -3992,6 +4036,7 @@ static void port_StartStepper(void) {
     g_port_profile_thread = port_ProfileThreadOf;
     g_port_step_runner = port_RunStep;
     g_port_step_to_host = port_StepToHost;
+    g_port_foreign_call_hook = port_OnForeignCall;
     g_port_quit_hook = port_CloseFromStep;
     port_GlRecordWake(port_WakeWindow);
 }
@@ -4002,6 +4047,7 @@ static void port_StopStepper(void) {
     }
     g_port_step_runner = NULL;
     g_port_step_to_host = NULL;
+    g_port_foreign_call_hook = NULL;
     SDL_AtomicSet(&g_port_stepper_stop, 1);
     SDL_SemPost(g_port_stepper_go);
     SDL_WaitThread(g_port_stepper, NULL);
@@ -4568,6 +4614,12 @@ static void port_CloseWindow(s32 code) {
             records->records, records->calls, records->streamed,
             records->views_kept, records->sides_kept,
             records->most_bytes / 1024U, records->lost);
+    }
+    port_SayForeignCalls();
+    if (SDL_AtomicGet(&g_port_foreign_calls) != 0) {
+        port_Note("the step beside the window: %d functions of the game "
+                  "begun beside it, off its thread",
+                  SDL_AtomicGet(&g_port_foreign_calls));
     }
     if (g_port_step_refreshes != 0) {
         port_Note("the step's refresh: %u steps showed a picture for the "
