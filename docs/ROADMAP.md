@@ -378,3 +378,17 @@ the stage").
     the joints (shoulders first) and the clipping, which are the game's
     own; the other fighters (`tools/port_models/README.md`); the port
     choosing among the levels of detail.
+20. **Time of day and many lights** (the owner, 2026-11-19: the sun must
+    not be every stage's only light): each stage gets a time-of-day
+    choice on the stage select (dawn, day, dusk, night, and the stage's
+    own as built in), which turns the sun's angle and colour, the sky,
+    the fog and the ambient, and so the shadows' length and direction;
+    the host's choice holds online, as the stage does. More of the
+    stage's own lights (lanterns, torches, windows, street lamps) placed
+    in the lights mod, several casting shadows at once. Night is its own
+    approach, not a dark day: the moon as a weak, cool, soft key; the
+    shadows mostly from the near lights (torches' and lanterns' cube or
+    spot shadows, flickering with the flame, several per fighter);
+    darkness between the lights that the fighters walk through; the
+    bloom and the tonemap set for the dark. The stages that are night
+    in the original stay night as built in.
