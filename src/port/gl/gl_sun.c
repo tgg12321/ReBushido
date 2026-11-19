@@ -513,7 +513,15 @@ void port_GlSunLocate(u32 program, PortGlSunAt *at) {
 }
 
 void port_GlSunBind(const PortGlSunAt *at) {
+    /* the maps' samplers on their own units whether the maps are on or
+     * not: left on unit 0 beside the drawing's own texture, a sampler of
+     * another kind makes the card refuse every draw of the program (Mesa
+     * does), and the fighters' models were not drawn with `shadows` other
+     * than `map` */
+    glUniform1i(at->map, PORT_GL_SUN_UNIT);
+    glUniform1i(at->raw, PORT_GL_SUN_RAW_UNIT);
     if (!g_sun.is_started) {
+        glUniform1i(at->on, 0);
         return;
     }
     if (!g_sun.is_ready) {

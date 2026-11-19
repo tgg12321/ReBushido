@@ -817,7 +817,11 @@ void port_GlLightsLocate(u32 program, PortGlLightsAt *at) {
 }
 
 void port_GlLightsBind(const PortGlLightsAt *at) {
+    /* the map's sampler on its own unit whether the lights are on or not
+     * (port_GlSunBind) */
+    glUniform1i(at->map, PORT_GL_LIGHTS_MAP_UNIT);
     if (!g_lights.is_started) {
+        glUniform1i(at->count, 0);
         return;
     }
     if (!g_lights.is_prepared || g_lights.card_count == 0 ||
