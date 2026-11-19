@@ -320,11 +320,20 @@ the stage").
     16; MODS.md, "What a stage editor needs next"), arenas larger than
     their host's room, pieces, textures past 64 by 64, the
     ground-as-one-mesh proved on an arena.
-19. **The fighters' models overhauled**, AI-made (the owner,
-    2026-11-18): a pipeline that holds the new model to the game's
-    skeleton, motions and proportions, so the hitboxes (body spheres,
-    weapon points) stay where the eye expects them; a check laying the
-    new silhouette over the original's through every motion; materials
-    for item 14's lighting (normal and roughness maps, skin, cloth);
-    levels of detail; faces and hands; then every fighter and weapon
-    remade.
+19. **The fighters' models overhauled** (the owner, 2026-11-18: art made
+    entirely by AI): each fighter remade with faces and hands, faithful
+    to his original design and colours, and held by checks to the
+    game's skeleton, proportions and outline, since the hitboxes are
+    the balance. The pipeline and its checks are in
+    (`tools/port_models/`, PORT.md "The fighters remade"): the game's
+    motions from the port (`--gl-fighter-motion`), Blender driven
+    headless for the new pieces and the reviews, the checks that fail
+    (skeleton, weights, proportions, silhouette through every motion,
+    self-intersection, budgets; `tests/rebushido/fighter_check.py`),
+    the file with levels of detail and normal and
+    occlusion-roughness-metal maps. Tatsumi is the first: new hands
+    closed round the grip, the face in relief under its painting, the
+    body held inside the game's outline. Left: the other fighters; the
+    face's texture and a head modelled whole; folds and seams in the
+    normal map; the port reading the maps (ROADMAP 14) and the levels of
+    detail.

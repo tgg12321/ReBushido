@@ -7,6 +7,12 @@ against the release's list). Every script here runs it with nothing shown:
     blender --background --factory-startup --python tools/blender/<script>.py -- ARGS
 
 - `fighter_view.py IN.glb OUT.png`: the model from the front and the side.
+- `fighter_scene.py --model A.glb [--model B.glb ...] [--motion M.motion.txt]`:
+  models side by side on the game's skeleton, played through the game's
+  own motions, rendered from several views (`tools/port_models/`).
+- `fighter_parts.py WORK/NAME [--look]`: the remade fighters' new pieces
+  (the hands), modelled, baked and fitted to the game's pieces
+  (`tools/port_models/README.md`).
 - `fighter_rebuild.py IN.glb OUT.glb [--levels 2] [--crease 50] [--texture BIG.png]`:
   a fighter at a higher definition from the game's own, the first way it
   was done (docs/PORT.md, "The fighters' own models").
