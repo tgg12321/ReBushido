@@ -31,7 +31,7 @@ It fails where
 
 The runs share the machine, so a busy machine slows them all; the
 milliseconds are those of the owner's PC, with room to spare. Where the window's build, the
-disc image or the hd mod is not there, it says so and passes: nothing of
+disc image or a mods folder is not there, it says so and passes: nothing of
 the build needs them. The runs go to build/budget/.
 """
 import argparse
@@ -223,11 +223,13 @@ def main():
                  os.path.join(main_repo, 'Bushido Blade 2 (USA).cue'))
     mods = None
     for root in (os.path.join(REPO, 'mods'), os.path.join(main_repo, 'mods')):
-        if os.path.isdir(os.path.join(root, 'hd', 'models')):
+        # the hd fighters were the owner's until 2026-11-19; now the game's own
+        # are, so any mods folder does (the shipped ones at least)
+        if os.path.isdir(root):
             mods = root
             break
     for what, path in (('the window\'s build (make port-sdl)', find(PROGRAM)),
-                       ('the disc image (REBUSHIDO_RETAIL)', image), ('the hd mod (mods/hd)', mods)):
+                       ('the disc image (REBUSHIDO_RETAIL)', image), ('a mods folder (mods/)', mods)):
         if path is None:
             print('port-budget: skipped: there is no %s' % what)
             return 0

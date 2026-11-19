@@ -16,7 +16,7 @@ build/port-sdl/windows/rebushido.exe (`make port-sdl-windows`) with
 sound, a settings file of its own, no memory cards and a log of its own,
 at 2560 by 1440, unpaced (--fast), through port_game's plan with Kannuki
 against Mikado on Tatara Shrine (both wear cloth), every default feature
-on and the five mods: the shipped english and ui, and hd, art and
+on and the four mods: the shipped english and ui, and art and
 stages-hd from the main checkout's tmp/mods/ (read where they are, by
 junctions in build/bench/mods/). One case at a time: two runs side by
 side would share the card.
@@ -49,7 +49,7 @@ and room for four players and a larger stage), not what the program
 does today. It fails where one is over, unless --report-only, which the
 gate gives it until the targets are met. Where this is not Windows, or
 there is no NVIDIA, AMD or Intel card, no window's build, no disc image
-or no hd mod, it says so and passes.
+it says so and passes.
 
 Every run's numbers go to build/bench/<commit>/ in the main checkout
 (`-dirty` after a commit with changes not committed), so that one
@@ -106,7 +106,7 @@ LAG_PARTS = [
     ('swap', 'to the swap back'),
     ('shown', 'the read to the screen'),
 ]
-DISC_MADE_MODS = ('hd', 'art', 'stages-hd')
+DISC_MADE_MODS = ('art', 'stages-hd')  # not hd: the owner plays the game's own fighters (2026-11-19)
 SHIPPED_MODS = ('english', 'ui')
 
 # The cases: (name, run_ahead, fighter_models, --bench-stress).
@@ -775,9 +775,7 @@ def main():
     card = card_name()
     for what, there in (('a graphics card to measure on (Windows, NVIDIA, AMD or Intel)', card),
                         ("the window's Windows build (make port-sdl-windows)", os.path.exists(PROGRAM) or None),
-                        ('the disc image (REBUSHIDO_RETAIL)', image),
-                        ('the hd mod (tmp/mods/hd in the main checkout)',
-                         os.path.isdir(os.path.join(main_repo, 'tmp', 'mods', 'hd')) or None)):
+                        ('the disc image (REBUSHIDO_RETAIL)', image)):
         if there is None:
             print('port-bench: skipped: there is no %s' % what)
             return 0
