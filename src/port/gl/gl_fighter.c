@@ -83,6 +83,7 @@ typedef ptrdiff_t GLsizeiptr;
 #define GL_DEPTH_BUFFER_BIT 0x00000100
 #define GL_DEPTH_TEST 0x0B71
 #define GL_LESS 0x0201
+#define GL_NO_ERROR 0
 #define GL_ALWAYS 0x0207
 #define GL_CULL_FACE 0x0B44
 #define GL_BACK 0x0405
@@ -178,7 +179,8 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glUniformMatrix4fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))                           \
-    GL(void, glDrawElements, (GLenum, GLsizei, GLenum, const void *))
+    GL(void, glDrawElements, (GLenum, GLsizei, GLenum, const void *))         \
+    GL(GLenum, glGetError, (void))
 
 #define GL(result, name, args) static result(*name) args;
 PORT_GL_FIGHTER_FUNCTIONS
@@ -443,6 +445,10 @@ static struct {
      * for each, as it would for so many fighters */
     s32 copy;
     PortGlFighterCounts counts;
+    /* whether the card took the run's first draw of a body: a draw it
+     * refuses (a sampler of the wrong kind on a unit, gl_sun.c) draws
+     * nothing and says so only to glGetError, so it is asked once */
+    s32 is_draw_checked;
     char problem[512];
 } g_fighter;
 
@@ -1934,8 +1940,26 @@ static void port_GlFighterDrawOne(
         glUniform1i(g_fighter.at_orm_on, part->orm_map >= 0);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, model->texture[part->texture]);
+        if (!g_fighter.is_draw_checked) {
+            s32 left = 16;
+
+            while (glGetError() != GL_NO_ERROR && --left > 0) {
+            }
+        }
         glDrawElements(GL_TRIANGLES, part->count, GL_UNSIGNED_INT,
                        (const void *)(size_t)((u32)part->first * sizeof(u32)));
+        if (!g_fighter.is_draw_checked) {
+            GLenum error = glGetError();
+
+            g_fighter.is_draw_checked = TRUE;
+            if (error != GL_NO_ERROR) {
+                char code[32];
+
+                snprintf(code, sizeof(code), "0x%X", (unsigned)error);
+                port_GlFighterSay(
+                    "the card refused a body's draw: GL error ", code);
+            }
+        }
     }
     glBindVertexArray(0);
     /* what is drawn after (the cloths) has no maps of its own */
