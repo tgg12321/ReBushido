@@ -15,6 +15,7 @@
  * header has: the settings menu opens on Select at the top page. */
 extern u8 g_menu_page;
 #define MENU_PAGE_TOP 1
+#define MENU_PAGE_SELECT 3
 
 /* enum Screen (sys.h). */
 static const char * const g_port_screen_names[] = {
@@ -177,6 +178,12 @@ void port_ReadGameState(PortGameState *state) {
 #endif
     state->is_paused = port_RemasterIsPaused();
     state->is_cutscene = g_sys_screen == SCREEN_CUTSCENE_UPDATE;
+}
+
+s32 port_IsOnStagePages(void) {
+    return g_port_stage_choice.on_stages &&
+           g_sys_screen == SCREEN_MENU_UPDATE &&
+           g_menu_page == MENU_PAGE_SELECT;
 }
 
 s32 port_ReadScreen(void) {

@@ -55,6 +55,7 @@
 #include "port_profile.h"
 #include "port_remaster.h"
 #include "port_spu.h"
+#include "port_stage_choice.h"
 #include "shared.h"
 #include "sdl_window.h"
 
@@ -2169,6 +2170,62 @@ static void port_NoteProfile(u32 blank, s32 is_new_frame) {
     }
 }
 
+/* The kinds of stage over the stage pages (stage_page.c): where the
+ * game's 4:3 area is in the picture, and its pixels laid there, with the
+ * card or with SDL. */
+static SDL_Texture *g_port_stage_page;
+static s32 g_port_stage_page_w;
+static s32 g_port_stage_page_h;
+
+static void port_DrawStagePage(void) {
+    const u32 *pixels;
+    PortRect picture;
+    PortRect box;
+    SDL_Rect where;
+    s32 area_w;
+    s32 area_h;
+    s32 window_w = 0;
+    s32 window_h = 0;
+
+    port_WindowSize(&window_w, &window_h);
+    port_PicturePlace(window_w, window_h, &picture);
+    area_h = picture.h;
+    area_w = picture.h * 4 / 3;
+    if (area_w > picture.w) {
+        area_w = picture.w;
+        area_h = picture.w * 3 / 4;
+    }
+    if (!port_StagePagePixels(area_w, area_h, &pixels, &box)) {
+        return;
+    }
+    where.x = picture.x + (picture.w - area_w) / 2 + box.x;
+    where.y = picture.y + (picture.h - area_h) / 2 + box.y;
+    where.w = box.w;
+    where.h = box.h;
+    if (g_port_has_gl) {
+        port_GlShowPixels(pixels, box.w, box.h, window_w, window_h, where.x,
+                          where.y, where.w, where.h, FALSE, TRUE);
+        return;
+    }
+    if (g_port_stage_page == NULL || g_port_stage_page_w != box.w ||
+        g_port_stage_page_h != box.h) {
+        if (g_port_stage_page != NULL) {
+            SDL_DestroyTexture(g_port_stage_page);
+        }
+        g_port_stage_page =
+            SDL_CreateTexture(g_port_renderer, SDL_PIXELFORMAT_ARGB8888,
+                              SDL_TEXTUREACCESS_STREAMING, box.w, box.h);
+        if (g_port_stage_page == NULL) {
+            return;
+        }
+        SDL_SetTextureBlendMode(g_port_stage_page, SDL_BLENDMODE_BLEND);
+        g_port_stage_page_w = box.w;
+        g_port_stage_page_h = box.h;
+    }
+    SDL_UpdateTexture(g_port_stage_page, NULL, pixels, box.w * BYTES_PER_PIXEL);
+    SDL_RenderCopy(g_port_renderer, g_port_stage_page, NULL, &where);
+}
+
 static void port_DrawCounter(void) {
     char lines[COUNTER_LINES][COUNTER_TEXT_BYTES];
     PortRect picture;
@@ -2183,6 +2240,9 @@ static void port_DrawCounter(void) {
     s32 window_w = 0;
     s32 window_h = 0;
 
+    /* what is laid over the picture's corner is laid over it with the
+     * stage pages' kinds of stage (stage_page.c) */
+    port_DrawStagePage();
     if (!g_port_show_fps) {
         return;
     }
@@ -2759,6 +2819,8 @@ void port_WindowApplyChoice(s32 choice) {
         port_MusicSetOn(g_port_settings.music_mods);
     } else if (strcmp(name, "run_ahead") == 0) {
         port_SetRunAhead(g_port_settings.run_ahead);
+    } else if (strcmp(name, "stage_kind") == 0) {
+        port_SetStageKindDefault(g_port_settings.stage_kind);
     }
     /* the picture's size and filter on the card, the resolution, the
      * counter's corner and the dead zone are read each time they are

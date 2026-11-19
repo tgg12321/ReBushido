@@ -293,6 +293,42 @@ nothing at all while Graphics is Original.
 | `stage_lights` | `on`, `off` | The stage's own **torches, fires and lanterns light what is about them**: the ground, the walls and the fighters. They come from the light files of the mods: the program ships one (`mods/lights/`) with the game's own flames lit on the nine stages that have them and the lamps of two more, and a mod of yours can add lights, move them or put them out ([`MODS.md`](MODS.md), "Lights"). Graphics Remastered only; changes nothing the game computes. **`on` with nothing said.** |
 | `effect_lights` | `on`, `off` | **The flash where blades meet**, of a hit and of a shot, and the glow of the sparks, as short lights of their own colours that light the fighters and the ground about them for the few frames the game lights the fighters itself. Graphics Remastered only; changes nothing the game computes. **`on` with nothing said.** |
 
+## Kinds of stage
+
+Each stage of the select screen can be fought two ways, and a mod's
+arenas a third ([`ROADMAP.md`](ROADMAP.md), item 16):
+
+- **Remastered Classic**: the disc's stage, the same ground and the same
+  walls, dressed -- its own torches, fires and lanterns lit
+  (`stage_lights`), the stages' pages made larger if you made the
+  `stages-hd` mod, the night sky (`sky`), and later grass, water and
+  the like;
+- **Classic**: the disc's stage as it is, with only what the engine and
+  the renderer improve for every stage (the resolution, the wide
+  picture, the draw distance, the frame rate, the shadows, the walls
+  seen through, the new lighting);
+- **a custom arena**: a stage a mod brings ([`MODS.md`](MODS.md),
+  "Custom arenas").
+
+On a **stage page** of versus or link mode, a line under the scroll says
+which the stage under the cursor is: **Square** switches it between
+Classic and Remastered Classic, and it stays so for as long as the
+program runs. **Select** opens the page of the **custom arenas** (when a
+mod has any): up and down choose one, its picture beside the list;
+**Cross** fights on it; **Triangle** or Select goes back to the stages.
+On the keyboard Square is A and Select is Right Shift for player one
+("The keys").
+
+`stage_kind = remastered` (the default) or `classic` in `rebushido.cfg`,
+the settings menu's "Stages", is what every stage starts as, and what
+the modes with no stage page (story, versus the CPU, training) fight on.
+None of it is the game's play: Classic and Remastered Classic are the
+same fight. In the Original picture (F2) a stage looks as the console's
+whichever kind it is, and the line and the page are still laid over it.
+Online, both players choose on the same screen as on a couch, so the
+kind and the arena are the same for both, and the kind the stages start
+as is the host's.
+
 ## More pictures a second
 
 The game steps 30 times a second in a fight and 60 in the menus, as the

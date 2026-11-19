@@ -28,6 +28,12 @@ static const char *g_test_arena;
 
 const char *port_ArenaLightsKey(void) { return g_test_arena; }
 
+/* The fight's kind of stage (include/port_stage_choice.h): Classic has
+ * none of a stage's own lights. */
+static s32 g_test_classic;
+
+s32 port_StageIsDressed(void) { return !g_test_classic; }
+
 /* ---- the host, in memory ---- */
 
 typedef struct {
@@ -342,6 +348,9 @@ static void test_Layers(void) {
     }
 
     CHECK(port_LightsOfStage(-1) == NULL);
+    g_test_classic = TRUE;
+    CHECK(port_LightsOfStage(7) == NULL);
+    g_test_classic = FALSE;
     set = port_LightsOfStage(7);
     CHECK(set != NULL);
     /* the base's torch, lamp and flames; the later one's torch made

@@ -34,6 +34,7 @@
 #include "port_mods.h"
 #include "port_png.h"
 #include "port_remaster.h"
+#include "port_stage_choice.h"
 
 /* ---- GL, as much of it as this file uses ---- */
 
@@ -1039,6 +1040,11 @@ s32 port_GlSceneFind(const PortRemasterPrim *prim) {
     s32 column;
     u16 entry;
 
+    /* port_StageIsDressed(): a stage fought Classic is drawn from the
+     * game's own textures, not a mod's pages (stages-hd) */
+    if (!port_StageIsDressed()) {
+        return FALSE;
+    }
     if (!prim->is_textured || !prim->has_depth || prim->is_fighter ||
         prim->texel_bits == PORT_MOD_TEXELS_16 || g_scene.lookup == 0 ||
         !port_GlSceneIsWanted() ||

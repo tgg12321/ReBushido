@@ -84,6 +84,7 @@
 #include "port_state.h"
 #include "port_weapons.h"
 #include "port_arenas.h"
+#include "port_stage_choice.h"
 #endif
 
 #endif /* BB2_H */

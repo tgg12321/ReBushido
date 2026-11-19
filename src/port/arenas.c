@@ -6,15 +6,22 @@
  *
  * An arena's file is text and then its ground:
  *
- *   RBARENA 1                  the magic and the format
+ *   RBARENA 2                  the magic and the format
  *   name = Stone courtyard     lines of `name = value`, `#` a comment
  *   ...
+ *   preview = 40213            (format 2) so many bytes of a PNG follow
+ *   <the picture>              the line, and a newline after them
  *   ground = 51234             the last line: so many bytes follow it,
  *   <the ground file>          from the byte after its newline
  *
  * Nothing here is the game's state (config/port_state.txt): the arenas
- * are read once and only read after. */
+ * are read once and only read after. Which one is in play is the game's
+ * state (port_stage_choice.h, src/port/stage_choice.c): this file answers
+ * for the one that names, and keeps beside the arenas the run's own
+ * choices that the state starts from (--arena, the window's default kind
+ * of stage), which a rollback does not put back. */
 #include "common.h"
+#include "port_disc.h"
 #include "port_discfiles.h"
 #include "port_host.h"
 #include "port_mods.h"
@@ -26,7 +33,7 @@
 /* an arena's file is not larger than this: its text and a ground no
  * larger than the largest stage's room on the disc (stage 37's 96
  * sectors) */
-#define FILE_BYTES_MAX (256 * 1024)
+#define FILE_BYTES_MAX (1024 * 1024)
 #define NUMBERS_MAX (2 * PORT_ARENA_CHAIN_CORNERS_MAX + 2)
 #define FNV_OFFSET 0xCBF29CE484222325ULL
 #define FNV_PRIME 0x100000001B3ULL
@@ -63,13 +70,20 @@ static struct {
     s32 count;
     PortArena arenas[PORT_ARENAS_MAX];
     char asked[PORT_ARENA_KEY_SIZE]; /* the run's `--arena` */
-    PortArena *in_play;
-    u8 *file; /* the one in play's file, whole */
-    /* what the game is handed in place of its tables */
+    s32 asked_index;                 /* it in `arenas`, or NO_ARENA */
+    s32 kind_default;                /* PORT_STAGE_: the window's */
+    s32 kind_held;                   /* a session's: not changed after */
+    /* what the game is handed in place of its tables, made for the arena
+     * `built` (an index of `arenas`) */
+    s32 built;
     s16 starts[STAGE_COUNT * PORT_ARENA_START_HALVES];
     NavChain chains[PORT_ARENA_CHAINS_MAX];
     NavSet nav;
-} g_port_arenas;
+} g_port_arenas = {
+    .asked_index = PORT_STAGE_NO_ARENA,
+    .kind_default = PORT_STAGE_REMASTERED,
+    .built = PORT_STAGE_NO_ARENA,
+};
 
 /* ---- text ---- */
 
@@ -374,6 +388,8 @@ s32 port_ArenaParse(
     arena->chain_count = PORT_ARENA_UNSET;
     arena->ground_at = 0;
     arena->ground_bytes = 0;
+    arena->preview_at = 0;
+    arena->preview_bytes = 0;
     for (i = 0; i < (s32)length; i++) {
         hash = (hash ^ data[i]) * FNV_PRIME;
     }
@@ -438,6 +454,33 @@ s32 port_ArenaParse(
         value_at = equals + 1;
         while (value_at < end && port_ArenaIsSpace(text[value_at])) {
             value_at++;
+        }
+        if (port_ArenaNameIs(text + start, name_end - start, "preview")) {
+            s32 bytes;
+            char word[WORD_SIZE];
+            u32 size = end - value_at;
+
+            if (size + 1 > WORD_SIZE) {
+                size = WORD_SIZE - 1;
+            }
+            for (i = 0; i < (s32)size; i++) {
+                word[i] = text[value_at + i];
+            }
+            word[size] = TEXT_END;
+            if (!port_ParseNumber(word, &bytes) || bytes <= 0 ||
+                (u32)bytes > length - at) {
+                port_ArenaSay(problem, room,
+                              "line %d: preview: is the number of bytes of "
+                              "the PNG that follows the line",
+                              line);
+                return FALSE;
+            }
+            arena->preview_at = at;
+            arena->preview_bytes = (u32)bytes;
+            /* the picture, and the newline after it */
+            at += (u32)bytes;
+            at += at < length && text[at] == '\n';
+            continue;
         }
         if (port_ArenaNameIs(text + start, name_end - start, "ground")) {
             s32 bytes;
@@ -543,10 +586,15 @@ s32 port_ArenaAsk(const char *key) {
     return TRUE;
 }
 
-/* What the game is handed while `arena` is in play. */
-static void port_ArenaPutInPlay(PortArena *arena) {
+/* What the game is handed while `arena` is in play: made again when the
+ * arena in play is another than the one it was made for. */
+static void port_ArenaBuild(const PortArena *arena) {
     s16 *row;
     s32 i;
+
+    if (g_port_arenas.built == arena - g_port_arenas.arenas) {
+        return;
+    }
 
     for (i = 0; i < STAGE_COUNT * PORT_ARENA_START_HALVES; i++) {
         g_port_arenas.starts[i] = ((s16 *)g_fight_start_positions)[i];
@@ -561,28 +609,34 @@ static void port_ArenaPutInPlay(PortArena *arena) {
             g_port_arenas.chains[i].kind = arena->chains[i].kind;
             g_port_arenas.chains[i].margin = arena->chains[i].margin;
             g_port_arenas.chains[i].nvtx = arena->chains[i].corners;
-            g_port_arenas.chains[i].vtx = arena->chains[i].at;
+            /* the arena's own corners, which are this file's */
+            g_port_arenas.chains[i].vtx =
+                g_port_arenas.arenas[arena - g_port_arenas.arenas].chains[i].at;
         }
         g_port_arenas.nav.nchains = (u8)arena->chain_count;
         g_port_arenas.nav.chains = g_port_arenas.chains;
     }
-    g_port_arenas.in_play = arena;
+    g_port_arenas.built = (s32)(arena - g_port_arenas.arenas);
 }
 
-/* Every mod's arena read (port_arenas.h); the one --arena asked for, if
- * any, put over its host: its ground over the host's sectors, the tables
- * made. A name no mod has ends the run, as a mistake of its arguments. */
+/* Every mod's arena read (port_arenas.h), each checked to fit where its
+ * host's ground is on the disc; the one --arena asked for, if any, is the
+ * one the state starts with in play. A name no mod has ends the run, as a
+ * mistake of its arguments, and so does an arena asked for that does not
+ * fit; one not asked for is left out. */
 void port_ArenasStart(void) {
     const char *key;
     const char *path;
     s32 place;
-    s32 i;
 
     for (place = 0; port_ModFileOf(PORT_MOD_ARENAS, place, &key, &path);
          place++) {
         PortArena *arena = &g_port_arenas.arenas[g_port_arenas.count];
         char problem[PROBLEM_SIZE];
         u32 size = port_ModFileSize(path);
+        u32 sector;
+        u32 room;
+        s32 is_asked;
         u8 *data;
 
         if (g_port_arenas.count == PORT_ARENAS_MAX) {
@@ -605,34 +659,35 @@ void port_ArenasStart(void) {
             port_Log("arenas: %s (%s): %s; left out\n", key, path, problem);
             continue;
         }
-        g_port_arenas.count++;
-        if (port_TextsEqual(arena->key, g_port_arenas.asked)) {
-            g_port_arenas.file = data;
-        }
-    }
-    if (g_port_arenas.asked[0] == TEXT_END) {
-        return;
-    }
-    for (i = 0; i < g_port_arenas.count; i++) {
-        PortArena *arena = &g_port_arenas.arenas[i];
-        u32 room;
-
-        if (!port_TextsEqual(arena->key, g_port_arenas.asked)) {
-            continue;
-        }
-        if (!port_SetArenaGround(
-                arena->host, g_port_arenas.file + arena->ground_at,
-                arena->ground_bytes, &room)) {
+        is_asked = port_TextsEqual(arena->key, g_port_arenas.asked);
+        if (!port_FindArenaRoom(arena->host, &sector, &room) ||
+            arena->ground_bytes > room) {
             port_Log("arenas: %s's ground is %u bytes, where its host, stage "
                      "%d, has room for %u\n",
                      arena->key, arena->ground_bytes, arena->host, room);
-            port_Quit(PORT_EXIT_USAGE);
+            if (is_asked) {
+                port_Quit(PORT_EXIT_USAGE);
+            }
+            continue;
         }
-        port_ArenaPutInPlay(arena);
-        port_Log("arenas: %s (\"%s\") in play for stage %d, its ground %u "
-                 "bytes of the %u there is room for\n",
-                 arena->key, arena->name, arena->host, arena->ground_bytes,
-                 room);
+        arena->file = data;
+        arena->ground_sector = sector;
+        arena->ground_sectors = room / PORT_DISC_DATA_BYTES;
+        if (is_asked) {
+            g_port_arenas.asked_index = g_port_arenas.count;
+            port_Log("arenas: %s (\"%s\") in play for stage %d, its ground "
+                     "%u bytes of the %u there is room for\n",
+                     arena->key, arena->name, arena->host, arena->ground_bytes,
+                     room);
+        }
+        g_port_arenas.count++;
+    }
+    if (g_port_arenas.count > 0) {
+        port_Log(
+            "arenas: %d for the stage select's page\n", g_port_arenas.count);
+    }
+    if (g_port_arenas.asked[0] == TEXT_END ||
+        g_port_arenas.asked_index != PORT_STAGE_NO_ARENA) {
         return;
     }
     /* --arena NAME, or --fight NAME with a name no stage has */
@@ -650,43 +705,95 @@ const PortArena *port_ArenaAt(s32 index) {
                : NULL;
 }
 
-const PortArena *port_ArenaInPlay(void) { return g_port_arenas.in_play; }
+const PortArena *port_ArenaInPlay(void) {
+    return port_ArenaAt(port_StageArena());
+}
+
+s32 port_ArenaAsked(void) { return g_port_arenas.asked_index; }
+
+void port_SetStageKindDefault(s32 kind) {
+    if (!g_port_arenas.kind_held) {
+        g_port_arenas.kind_default =
+            kind == PORT_STAGE_CLASSIC ? PORT_STAGE_CLASSIC
+                                       : PORT_STAGE_REMASTERED;
+    }
+}
+
+void port_HoldStageKindDefault(s32 kind) {
+    g_port_arenas.kind_held = FALSE;
+    port_SetStageKindDefault(kind);
+    g_port_arenas.kind_held = TRUE;
+}
+
+s32 port_GetStageKindDefault(void) { return g_port_arenas.kind_default; }
+
+/* The arena in play's ground in place of its host's sectors: the data of
+ * `sector` into `data` (PORT_DISC_DATA_BYTES), the bytes past the ground
+ * zeros as a shorter stage mod's are. */
+s32 port_ArenaGroundSector(u32 sector, u8 *data) {
+    const PortArena *arena = port_ArenaInPlay();
+    u32 at;
+    u32 i;
+
+    if (arena == NULL || sector < arena->ground_sector ||
+        sector - arena->ground_sector >= arena->ground_sectors) {
+        return FALSE;
+    }
+    at = (sector - arena->ground_sector) * PORT_DISC_DATA_BYTES;
+    for (i = 0; i < PORT_DISC_DATA_BYTES; i++, at++) {
+        data[i] =
+            at < arena->ground_bytes ? arena->file[arena->ground_at + at] : 0;
+    }
+    return TRUE;
+}
 
 const char *port_ArenaLightsKey(void) {
-    const PortArena *arena = g_port_arenas.in_play;
+    const PortArena *arena = port_ArenaInPlay();
 
     return arena != NULL && arena->lights[0] != TEXT_END ? arena->lights : NULL;
 }
 
-/* The arena in play for netplay's set-up (port_arenas.h): its file's
- * hash, and its key, so that two arenas of the same bytes under two
- * names are not the same. */
+/* What netplay's set-up holds both players to (port_arenas.h): every
+ * arena the stage select offers, each by its key and its file's bytes,
+ * in their order, since the page chooses one by its place; and the one
+ * --arena asked for. 0 with none. */
 u64 port_ArenaSessionHash(void) {
-    const PortArena *arena = g_port_arenas.in_play;
     const char *key;
     u64 hash;
+    s32 i;
 
-    if (arena == NULL) {
+    if (g_port_arenas.count == 0) {
         return 0;
     }
-    hash = arena->hash;
-    for (key = arena->key; *key != TEXT_END; key++) {
-        hash = (hash ^ (u8)*key) * FNV_PRIME;
+    hash = FNV_OFFSET;
+    for (i = 0; i < g_port_arenas.count; i++) {
+        const PortArena *arena = &g_port_arenas.arenas[i];
+
+        hash = (hash ^ arena->hash) * FNV_PRIME;
+        for (key = arena->key; *key != TEXT_END; key++) {
+            hash = (hash ^ (u8)*key) * FNV_PRIME;
+        }
     }
-    return hash;
+    return (hash ^ (u64)(g_port_arenas.asked_index + 1)) * FNV_PRIME;
 }
 
 /* ---- what the game asks ---- */
 
 /* The arena in play if `stage` is its host, else NULL. */
 static const PortArena *port_ArenaFor(s32 stage) {
-    const PortArena *arena = g_port_arenas.in_play;
+    const PortArena *arena = port_ArenaInPlay();
 
     return arena != NULL && arena->host == stage ? arena : NULL;
 }
 
 void *port_ArenaStartPositions(void *table) {
-    return g_port_arenas.in_play != NULL ? (void *)g_port_arenas.starts : table;
+    const PortArena *arena = port_ArenaInPlay();
+
+    if (arena == NULL) {
+        return table;
+    }
+    port_ArenaBuild(arena);
+    return (void *)g_port_arenas.starts;
 }
 
 s32 *port_ArenaLightPreset(s32 stage, s32 *preset) {
@@ -736,7 +843,9 @@ s32 port_ArenaSoundStage(s32 stage) {
 void *port_ArenaNavSet(s32 stage, void *set) {
     const PortArena *arena = port_ArenaFor(stage);
 
-    return arena != NULL && arena->chain_count != PORT_ARENA_UNSET
-               ? (void *)&g_port_arenas.nav
-               : set;
+    if (arena == NULL || arena->chain_count == PORT_ARENA_UNSET) {
+        return set;
+    }
+    port_ArenaBuild(arena);
+    return (void *)&g_port_arenas.nav;
 }

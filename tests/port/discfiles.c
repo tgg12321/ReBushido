@@ -17,6 +17,13 @@
 #include "src/port/discfiles.c"
 #include "runtime/runtime.h"
 
+/* No arena is in play here (tests/port/arenas.c has them). */
+s32 port_ArenaGroundSector(u32 sector, u8 *data) {
+    (void)sector;
+    (void)data;
+    return FALSE;
+}
+
 #define MADE_SECTORS 200
 #define SECTOR PORT_DISC_DATA_BYTES
 /* where the made-up disc has things */

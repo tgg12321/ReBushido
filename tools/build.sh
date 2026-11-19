@@ -25,10 +25,11 @@ cd "$(dirname "$0")/.." || exit 1
 # On the Windows drive, the build runs in a copy of the sources on WSL's own
 # disk and brings build/ back (tools/mirror.sh; BUILD.md, "Where the build
 # runs"); RB_BUILD_IN_PLACE=1 builds here. What only runs the programs built
-# (port-rollback, port-net) runs here, as the gate runs it: its outputs are
-# this checkout's, and tools/mirror.sh brings none of a copy's back.
+# (port-rollback, port-stage-select, port-net) runs here, as the gate runs
+# it: its outputs are this checkout's, and tools/mirror.sh brings none of a
+# copy's back.
 case "$1" in
-    gate | playtest | port-rollback | port-net) ;;
+    gate | playtest | port-rollback | port-stage-select | port-net) ;;
     *)
         if [ -z "$RB_IN_MIRROR" ]; then
             exec bash tools/mirror.sh run bash tools/build.sh "$@"

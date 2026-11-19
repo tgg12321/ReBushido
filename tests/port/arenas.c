@@ -1,8 +1,10 @@
 /* The port's custom arenas (src/port/arenas.c; docs/MODS.md, "Custom
- * arenas"): an arena's file read and every way it can be wrong, the mods'
- * arenas with one in play over its host, the answers the game is given
- * where it reads its stage tables, for the host and for every other
- * stage and with no arena at all, and the hash the session compares. */
+ * arenas"): an arena's file read and every way it can be wrong, its
+ * picture for the stage select, the mods' arenas with one in play over
+ * its host, the answers the game is given where it reads its stage
+ * tables, for the host and for every other stage and with no arena at
+ * all, the ground read in place of the host's and changed from one arena
+ * to another and to none, and the hash the session compares. */
 /* Everything is made up here: the mods are files in memory, the ground a
  * header of six sections and nothing in them, and the game's tables the
  * game's shapes with numbers of the test's own. */
@@ -37,7 +39,9 @@ typedef struct {
 static MadeArena g_made[3];
 static s32 g_made_count;
 static s32 g_ground_stage = -1;
-static u32 g_ground_bytes;
+/* the arena in play, as the game's state has it (port_stage_choice.h) */
+static s32 g_in_play = PORT_STAGE_NO_ARENA;
+static s32 g_started;
 
 s32 port_ModFileOf(s32 kind, s32 place, const char **key, const char **path) {
     if (kind != PORT_MOD_ARENAS || place < 0 || place >= g_made_count) {
@@ -75,13 +79,18 @@ u32 port_ModReadFile(const char *path, void *dest, u32 room) {
     return made->size;
 }
 
-s32 port_SetArenaGround(s32 stage, const u8 *data, u32 bytes, u32 *room) {
-    (void)data;
-    *room = 178176;
+/* every host's ground: 87 sectors from sector 1000 */
+#define HOST_SECTOR 1000
+#define HOST_ROOM 178176
+
+s32 port_FindArenaRoom(s32 stage, u32 *sector, u32 *length) {
     g_ground_stage = stage;
-    g_ground_bytes = bytes;
+    *sector = HOST_SECTOR;
+    *length = HOST_ROOM;
     return TRUE;
 }
+
+s32 port_StageArena(void) { return g_started ? g_in_play : port_ArenaAsked(); }
 
 void *port_HostAllocate(u32 size) { return test_Alloc(size); }
 
@@ -193,7 +202,16 @@ static void test_File(void) {
     test_Wrong(
         "RBARENA\nstart1 = 0 0 0 4000 0 0\n", "no format on its first line");
     test_Wrong(
-        "RBARENA 2\nstart1 = 0 0 0 4000 0 0\n", "a later ReBushido is needed");
+        "RBARENA 3\nstart1 = 0 0 0 4000 0 0\n", "a later ReBushido is needed");
+    /* a picture of its own: so many bytes after its line, and a newline */
+    CHECK(test_Parse("RBARENA 2\npreview = 4\nPNG?\nstart1 = 0 0 0 4000 0 0\n",
+                     &arena, problem));
+    CHECK_EQ(arena.preview_bytes, 4);
+    CHECK_EQ(arena.preview_at, 22);
+    CHECK_EQ(arena.starts[3], 4000);
+    test_Wrong("RBARENA 2\nstart1 = 0 0 0 4000 0 0\npreview = 900000\n",
+               "preview: is the number of bytes of the PNG that follows "
+               "the line");
     test_Wrong("RBX 1\n", "not an arena's file (it begins with RBARENA)");
     test_Wrong("RBARENA 1\nname = x\n", "no start1: where the fighters start");
     test_Wrong(
@@ -259,8 +277,22 @@ static void test_Answers(void) {
           test_StringsEqual(port_ArenaAt(1)->key, "plain"));
     CHECK(port_ArenaAt(2) == NULL);
     CHECK(port_ArenaInPlay() == port_ArenaAt(0));
-    CHECK_EQ(g_ground_stage, 21);
-    CHECK_EQ(g_ground_bytes, GROUND_BYTES);
+    CHECK_EQ(port_ArenaAsked(), 0);
+    CHECK_EQ(g_ground_stage, 25); /* the last one's host, `plain`'s */
+    CHECK_EQ(port_ArenaAt(0)->ground_sector, HOST_SECTOR);
+    CHECK_EQ(port_ArenaAt(0)->ground_sectors, HOST_ROOM / 2048);
+    {
+        /* its ground in place of its host's: the header's six, then the
+         * zeros past its 32 bytes; another sector is the disc's */
+        u8 data[2048];
+
+        CHECK(port_ArenaGroundSector(HOST_SECTOR, data));
+        CHECK_EQ(data[0], 6);
+        CHECK_EQ(data[GROUND_BYTES], 0);
+        CHECK(port_ArenaGroundSector(HOST_SECTOR + 86, data));
+        CHECK(!port_ArenaGroundSector(HOST_SECTOR + 87, data));
+        CHECK(!port_ArenaGroundSector(HOST_SECTOR - 1, data));
+    }
 
     /* the host's row of the start table is the arena's, every other
      * stage's the game's */
@@ -300,9 +332,39 @@ static void test_Answers(void) {
         CHECK(port_ArenaNavSet(20, &game_nav) == (void *)&game_nav);
     }
     CHECK(test_StringsEqual(port_ArenaLightsKey(), "courtyard-noon"));
-    /* the session's hash: the file's bytes and the key */
+    /* the session's hash: every arena offered, by bytes and key, and the
+     * one asked for */
     CHECK(port_ArenaSessionHash() != 0);
     CHECK(port_ArenaSessionHash() != port_ArenaAt(1)->hash);
+
+    /* the stage select puts the other in play: its tables, its ground,
+     * made again for it */
+    g_started = TRUE;
+    g_in_play = 1;
+    CHECK(port_ArenaInPlay() == port_ArenaAt(1));
+    CHECK_EQ(port_ArenaFogOn(21, 1), 1); /* not its host */
+    CHECK_EQ(port_ArenaFogOn(25, 1), 1); /* its host, and it says nothing */
+    table = (s16 *)port_ArenaStartPositions(g_fight_start_positions);
+    CHECK_EQ(table[25 * PORT_ARENA_START_HALVES + 3], 4000);
+    CHECK_EQ(table[21 * PORT_ARENA_START_HALVES], 21 * PORT_ARENA_START_HALVES);
+    CHECK(port_ArenaNavSet(25, &game_nav) == (void *)&game_nav);
+    CHECK(port_ArenaLightsKey() == NULL);
+    /* and none: the disc's again, everywhere */
+    g_in_play = PORT_STAGE_NO_ARENA;
+    CHECK(port_ArenaInPlay() == NULL);
+    CHECK(port_ArenaStartPositions(g_fight_start_positions) ==
+          (void *)g_fight_start_positions);
+    {
+        u8 data[2048];
+
+        CHECK(!port_ArenaGroundSector(HOST_SECTOR, data));
+    }
+    /* back to the first: its tables made again */
+    g_in_play = 0;
+    table = (s16 *)port_ArenaStartPositions(g_fight_start_positions);
+    CHECK_EQ(table[21 * PORT_ARENA_START_HALVES], -2000);
+    CHECK_EQ(table[25 * PORT_ARENA_START_HALVES + 3],
+             25 * PORT_ARENA_START_HALVES + 3);
 }
 
 void test_Main(void) {

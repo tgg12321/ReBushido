@@ -6,6 +6,7 @@ ground file (docs/formats/GROUND.md) with the tables before it.
 Standard library alone.
 
     python3 tools/arena_compile.py SOURCE_FOLDER OUT.arena
+    python3 tools/arena_compile.py --preview SOURCE_FOLDER OUT.png
 
 SOURCE_FOLDER has `arena.txt`:
 
@@ -20,6 +21,9 @@ SOURCE_FOLDER has `arena.txt`:
     light = 0xC8C0B0 0x403C48 0xB8B0A0 0x383440 0x0CA20E9F 0x000000
     texture flagstone = flagstone.png   # a material's picture, if the
                                         # scene does not name it
+    preview = preview.png      # the stage select's picture of it; drawn
+                               # of the scene if not given (--preview
+                               # draws only that, for a start)
 
 and the scene, whose objects are told apart by their names:
 
@@ -724,6 +728,136 @@ def tile_record(quad, page, slot_clut, uvs, corners, normal, cut):
 
 # ---- the whole ----
 
+# ---- the stage select's picture of the arena ----
+
+# The picture the stage select's arenas' page shows (docs/MODS.md, "Custom
+# arenas"): `preview = FILE.png` of arena.txt, or one drawn here of the
+# scene, from above and to one side, each face in its texture and lit by
+# a sun from above: so many pixels, drawn at twice the size and made
+# smaller.
+PREVIEW_W = 320
+PREVIEW_H = 240
+PREVIEW_SAMPLES = 2
+PREVIEW_PITCH = math.radians(38)   # how far the camera looks down
+PREVIEW_YAW = math.radians(25)     # and turned from straight on
+PREVIEW_MARGIN = 0.94              # of the picture the arena fills
+PREVIEW_SUN = (0.35, -1.0, 0.45)   # towards the sun, in the game's axes
+PREVIEW_AMBIENT = 0.45
+PREVIEW_SKY = ((26, 30, 44), (8, 9, 14))  # the background, top to bottom
+PREVIEW_BYTES_MAX = 512 * 1024
+
+
+def write_png(width, height, rgb):
+    """The plainest PNG: 8 bits a channel, no alpha; `rgb` a bytes of
+    three a pixel, a row after a row from the top."""
+    def chunk(tag, data):
+        return (struct.pack('>I', len(data)) + tag + data +
+                struct.pack('>I', zlib.crc32(tag + data) & 0xFFFFFFFF))
+    rows = b''.join(b'\0' + bytes(rgb[y * width * 3:(y + 1) * width * 3]) for y in range(height))
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)) +
+            chunk(b'IDAT', zlib.compress(rows, 9)) + chunk(b'IEND', b''))
+
+
+def render_preview(polygons, textures):
+    """A picture of what is drawn of the scene (`polygons`: (object,
+    material, points, texture points) in the game's units), as a PNG."""
+    pts_all = [p for _, _, pts, _ in polygons for p in pts]
+    if not pts_all:
+        raise ArenaError('nothing of the scene is drawn: no picture of it can be made')
+    lo = [min(p[k] for p in pts_all) for k in range(3)]
+    hi = [max(p[k] for p in pts_all) for k in range(3)]
+    centre = [(lo[k] + hi[k]) / 2 for k in range(3)]
+    # the camera looks along `f`: down (the game's y grows downwards) and
+    # along z, turned by the yaw
+    f = norm([math.sin(PREVIEW_YAW) * math.cos(PREVIEW_PITCH), math.sin(PREVIEW_PITCH),
+              math.cos(PREVIEW_YAW) * math.cos(PREVIEW_PITCH)])
+    right = norm(cross(f, [0.0, -1.0, 0.0]))
+    down = norm(cross(f, right))
+    if down[1] < 0:  # the screen's down is the world's down
+        down = mul(down, -1)
+    if dot(cross(right, down), f) < 0:  # not seen from behind a mirror
+        right = mul(right, -1)
+    w, h = PREVIEW_W * PREVIEW_SAMPLES, PREVIEW_H * PREVIEW_SAMPLES
+    corners = [[x, y, z] for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])]
+    span_x = max(abs(dot(sub(c, centre), right)) for c in corners) * 2 or 1.0
+    span_y = max(abs(dot(sub(c, centre), down)) for c in corners) * 2 or 1.0
+    scale = PREVIEW_MARGIN * min(w / span_x, h / span_y)
+    eye_far = max(abs(dot(sub(c, centre), f)) for c in corners) * 4 + 1.0
+    eye = sub(centre, mul(f, eye_far))
+    sun = norm(list(PREVIEW_SUN))
+
+    pictures = {}
+    for mat, png in textures.items():
+        try:
+            pictures[mat] = read_png(png)
+        except (ArenaError, KeyError, struct.error, zlib.error):
+            pass
+
+    depth = [float('inf')] * (w * h)
+    color = bytearray(w * h * 3)
+    for y in range(h):
+        t = y / max(1, h - 1)
+        sky = [int(PREVIEW_SKY[0][k] + (PREVIEW_SKY[1][k] - PREVIEW_SKY[0][k]) * t) for k in range(3)]
+        color[y * w * 3:(y + 1) * w * 3] = bytes(sky) * w
+    for _, mat, pts, uvs in polygons:
+        n = norm(polygon_normal(pts))
+        if dot(n, sub(eye, pts[0])) <= 0:
+            continue  # seen from behind: a face is drawn from its front
+        light = PREVIEW_AMBIENT + (1 - PREVIEW_AMBIENT) * max(0.0, dot(n, sun))
+        picture = pictures.get(mat)
+        if picture is None:
+            flat = (150, 150, 150)
+        screen = []
+        for p in pts:
+            q = sub(p, centre)
+            screen.append((w / 2 + dot(q, right) * scale, h / 2 + dot(q, down) * scale, dot(q, f)))
+        uv = uvs if uvs and uvs[0] is not None else [[0.0, 0.0]] * len(pts)
+        for i in range(1, len(pts) - 1):
+            tri = (0, i, i + 1)
+            (x0, y0, z0), (x1, y1, z1), (x2, y2, z2) = (screen[j] for j in tri)
+            area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
+            if abs(area) < 1e-9:
+                continue
+            ys = max(0, int(math.floor(min(y0, y1, y2)))), min(h - 1, int(math.ceil(max(y0, y1, y2))))
+            xs = max(0, int(math.floor(min(x0, x1, x2)))), min(w - 1, int(math.ceil(max(x0, x1, x2))))
+            (u0, v0), (u1, v1), (u2, v2) = (uv[j] for j in tri)
+            for py in range(ys[0], ys[1] + 1):
+                cy = py + 0.5
+                for px in range(xs[0], xs[1] + 1):
+                    cx = px + 0.5
+                    a = ((x1 - cx) * (y2 - cy) - (x2 - cx) * (y1 - cy)) / area
+                    b = ((x2 - cx) * (y0 - cy) - (x0 - cx) * (y2 - cy)) / area
+                    c = 1.0 - a - b
+                    if a < 0 or b < 0 or c < 0:
+                        continue
+                    z = a * z0 + b * z1 + c * z2
+                    at = py * w + px
+                    if z >= depth[at]:
+                        continue
+                    depth[at] = z
+                    if picture is not None:
+                        tw, th, texels = picture
+                        u = (a * u0 + b * u1 + c * u2) % 1.0
+                        v = (a * v0 + b * v1 + c * v2) % 1.0
+                        rgb = texels[min(th - 1, int(v * th)) * tw + min(tw - 1, int(u * tw))]
+                    else:
+                        rgb = flat
+                    color[at * 3:at * 3 + 3] = bytes(min(255, int(ch * light)) for ch in rgb[:3])
+    # made smaller: each pixel the mean of its samples
+    out = bytearray(PREVIEW_W * PREVIEW_H * 3)
+    s = PREVIEW_SAMPLES
+    for y in range(PREVIEW_H):
+        for x in range(PREVIEW_W):
+            for k in range(3):
+                total = 0
+                for j in range(s):
+                    row = ((y * s + j) * w + x * s) * 3 + k
+                    for i in range(s):
+                        total += color[row + i * 3]
+                out[(y * PREVIEW_W + x) * 3 + k] = total // (s * s)
+    return write_png(PREVIEW_W, PREVIEW_H, out)
+
+
 def read_source(folder):
     path = os.path.join(folder, 'arena.txt')
     settings = {'texture': {}, 'lines': []}
@@ -738,13 +872,14 @@ def read_source(folder):
             key = name.lower().replace('-', '_')
             if key.startswith('texture '):
                 settings['texture'][name.split(None, 1)[1].strip()] = value
-            elif key in ('scene', 'scale'):
+            elif key in ('scene', 'scale', 'preview'):
                 settings[key] = value
             elif key in TABLE_NAMES:
                 settings['lines'].append((key, value))
             else:
                 raise ArenaError('arena.txt line %d: %s is not a name of an arena (%s)'
-                                 % (number, name, ', '.join(TABLE_NAMES + ('scene', 'scale', 'texture NAME'))))
+                                 % (number, name, ', '.join(TABLE_NAMES + ('scene', 'scale', 'preview',
+                                                                          'texture NAME'))))
     if 'scene' not in settings:
         raise ArenaError('arena.txt names no scene')
     return settings
@@ -964,16 +1099,26 @@ def compile_arena(folder, report=print):
             y = floor[0] if floor else int(round(p[1]))
             stood += [x, y, z]
         lines.append(('start' + pair, ' '.join(str(c) for c in stood)))
-    text = 'RBARENA 1\n# made by tools/arena_compile.py from %s\n' % os.path.basename(os.path.abspath(folder))
+    text = 'RBARENA 2\n# made by tools/arena_compile.py from %s\n' % os.path.basename(os.path.abspath(folder))
     for key, value in lines:
         text += '%s = %s\n' % (key, value)
-    text += 'ground = %d\n' % len(data)
+    # the stage select's picture: the source's own, or one drawn of the scene
+    if 'preview' in settings:
+        with open(os.path.join(folder, settings['preview']), 'rb') as f:
+            picture = f.read()
+        read_png(picture)
+    else:
+        picture = render_preview(render, scene.textures)
+    if len(picture) > PREVIEW_BYTES_MAX:
+        raise ArenaError('the preview is %d bytes; %d at most' % (len(picture), PREVIEW_BYTES_MAX))
+    text = text.encode('utf-8') + b'preview = %d\n' % len(picture) + picture + b'\n'
+    text += b'ground = %d\n' % len(data)
     faces = sum(len(f) for f in grid.values())
     report('arena_compile: %d tiles in %d cells, %d records; %d collision faces in %d cells; '
            '%d textures; %d obstacles; ground %d bytes'
            % (len(tiles), len(runs), sum(len(g['records']) for m in meshes for g in m['groups']),
               faces, len(grid), len(materials), len(obstacles), len(data)))
-    return text.encode('utf-8') + data
+    return text + data
 
 
 def read_arena(data):
@@ -997,10 +1142,35 @@ def read_arena(data):
         name, value = (s.strip() for s in line.split('=', 1))
         if name == 'ground':
             return lines, data[at:at + int(value)]
+        if name == 'preview':
+            # a PNG of so many bytes, and its newline
+            lines['preview'] = [data[at:at + int(value)]]
+            at += int(value) + 1
+            continue
         lines.setdefault(name, []).append(value)
 
 
 def main(argv):
+    if len(argv) == 4 and argv[1] == '--preview':
+        # only the picture of the scene, as compile_arena draws it
+        try:
+            settings = read_source(argv[2])
+            scale = float(settings.get('scale', 1000))
+            path = os.path.join(argv[2], settings['scene'])
+            scene = read_obj(path, scale) if path.lower().endswith('.obj') else read_gltf(path, scale)
+            for material, png in settings['texture'].items():
+                with open(os.path.join(argv[2], png), 'rb') as f:
+                    scene.textures[material] = f.read()
+            drawn = [p for p in merge_coplanar_triangles(scene.polygons)
+                     if not p[0].lower().startswith(('collision', 'obstacle', 'start'))]
+            picture = render_preview(drawn, scene.textures)
+        except ArenaError as e:
+            print('arena_compile: %s' % e, file=sys.stderr)
+            return 1
+        with open(argv[3], 'wb') as f:
+            f.write(picture)
+        print('arena_compile: wrote %s (%d bytes)' % (argv[3], len(picture)))
+        return 0
     if len(argv) != 3:
         print(__doc__)
         return 2

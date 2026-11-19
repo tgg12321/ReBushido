@@ -289,6 +289,20 @@ the stage").
     both players play the same stage in the same tier (no mixing). The
     stage select keeps the original grid with a Classic/Remastered
     switch per stage and a page of its own for the custom arenas.
+    Done ([`PORT.md`](PORT.md), "The stage select's kinds of stage";
+    [`PLAYING.md`](PLAYING.md), "Kinds of stage"): Square on a stage
+    page switches the stage under the cursor, Select opens the arenas'
+    page (each arena's name and picture: its file's, or one the compiler
+    draws of the scene), and the choice is the game's state, rolled back
+    with the stage and the same on both machines of a session; the
+    stages start as `stage_kind` says (the host's in a session), and the
+    modes with no stage page fight in it. What a kind switches is one
+    question, `port_StageIsDressed()`: Classic has none of the stage's
+    own lights, none of the stages-hd pages and no sky; everything the
+    engine and the renderer improve is in both. The window lays the
+    line and the page over the picture, so the console's screen is
+    untouched (the play tests). Left: item 17's dressing reads the same
+    question; the owner's look at the page.
 17. **Remastered Classic stages**: a mod kind for dressing nobody
     touches (foliage drawn by instancing and stirred by wind, the
     fighters and the slashes; water; dust, leaves, embers; scenery

@@ -26,7 +26,7 @@
 
 /* The version of the file's format this program reads; a later program
  * reads every earlier one. */
-#define PORT_ARENA_FORMAT 1
+#define PORT_ARENA_FORMAT 2
 #define PORT_ARENA_MAGIC "RBARENA"
 #define PORT_ARENA_NAME_SIZE 48
 #define PORT_ARENA_KEY_SIZE 64
@@ -79,6 +79,13 @@ typedef struct {
     u64 hash;      /* FNV-1a of the whole file, for netplay's set-up */
     u32 ground_at; /* where the ground is in the file, and how long */
     u32 ground_bytes;
+    u32 preview_at; /* the picture the stage select shows (a PNG), or 0 */
+    u32 preview_bytes;
+    const u8 *file; /* the whole file, as port_ArenasStart read it */
+    /* where its host's ground is on the disc: the first sector and how
+     * many */
+    u32 ground_sector;
+    u32 ground_sectors;
 } PortArena;
 
 /* An arena's file, `length` bytes of `data`, into `arena` (whose `key`
@@ -94,22 +101,29 @@ extern s32 port_ArenaParse(
  * play, by its key, resolved by port_ArenasStart. FALSE for a name too
  * long. */
 extern s32 port_ArenaAsk(const char *key);
-/* Reads every mod's arenas, and puts the one asked for in play: its
- * ground over its host's sectors. After port_StartStageMods. A name asked
- * for that no mod has ends the program with the usage code. */
+/* Reads every mod's arenas, each checked to fit where its host's ground
+ * is on the disc; the one asked for is the state's first arena in play
+ * (port_ArenaAsked). After port_StartStageMods. A name asked for that no
+ * mod has ends the program with the usage code. */
 extern void port_ArenasStart(void);
 
-/* For a stage select (ROADMAP 16): how many arenas the mods have, the
- * one at `index` (NULL past the end), and the one in play (NULL: none). */
+/* For the stage select (ROADMAP 16): how many arenas the mods have, the
+ * one at `index` (NULL past the end), and the one in play, which is the
+ * game's state's (port_StageArena; NULL: none). */
 extern s32 port_ArenaCount(void);
 extern const PortArena *port_ArenaAt(s32 index);
 extern const PortArena *port_ArenaInPlay(void);
 /* The remastered light's key for the stage in play (lighting's lights/):
  * the arena's `lights =`, or NULL for the stage's own. */
 extern const char *port_ArenaLightsKey(void);
-/* What netplay's set-up holds both players to: the arena in play, its key
- * and its file's bytes; 0 with none. */
+/* What netplay's set-up holds both players to: every arena the stage
+ * select offers, by its key and its file's bytes, and the one asked for;
+ * 0 with none. */
 extern u64 port_ArenaSessionHash(void);
+/* The disc reader's question (port_discfiles.h): with an arena in play,
+ * the data of a sector of its host's ground, from the arena's ground,
+ * into `data`; FALSE for any other sector. */
+extern s32 port_ArenaGroundSector(u32 sector, u8 *data);
 
 /* ---- what the game asks, where it reads its stage tables ---- */
 
