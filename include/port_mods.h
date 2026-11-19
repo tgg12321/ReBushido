@@ -25,6 +25,7 @@ enum {
     PORT_MOD_SKIES,    /* PNG pictures of a stage's sky (gl_sky.h) */
     PORT_MOD_WEAPONS,  /* a weapon's numbers, .txt (port_weapons.h) */
     PORT_MOD_MOTIONS,  /* a motion file, .bbm (port_discfiles.h) */
+    PORT_MOD_ARENAS,   /* a custom arena, .arena (port_arenas.h) */
     PORT_MOD_KINDS
 };
 

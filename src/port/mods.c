@@ -59,11 +59,12 @@
 #define VRAM_Y_MASK (PORT_VRAM_HEIGHT - 1)
 
 static const char * const g_port_mod_kind_folders[PORT_MOD_KINDS] = {
-    "textures", "models", "music", "stages", "skies", "weapons", "motions"};
+    "textures", "models",  "music",   "stages",
+    "skies",    "weapons", "motions", "arenas"};
 /* the ending a kind's file must have to be read, or one of several
  * separated by `|`; NULL for any */
 static const char * const g_port_mod_kind_endings[PORT_MOD_KINDS] = {
-    ".png", ".glb", ".ogg|.wav", NULL, ".png", ".txt", ".bbm"};
+    ".png", ".glb", ".ogg|.wav", NULL, ".png", ".txt", ".bbm", ".arena"};
 
 typedef struct {
     PortModManifest manifest;

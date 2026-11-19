@@ -86,6 +86,8 @@ WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'sdl_n
 MENU_FONT = 'src/port/fonts/Marcellus-Regular.ttf'
 MENU_FONT_NAME = 'g_port_menu_font'
 SHIPPED_MODS = 'src/port/mods'
+# the sample arenas' sources (tools/arena_compile.py)
+SHIPPED_ARENAS = 'tools/arenas'
 
 # The remastered renderer's backend, which talks to OpenGL and to a C
 # library and so is compiled the same way (docs/PORT.md, "Remastered in
@@ -631,6 +633,28 @@ def copy_mods(target):
             shutil.rmtree(dest)
         shutil.copytree(source, dest)
         names.append(name)
+    # the sample arenas, compiled from their sources (docs/MODS.md,
+    # "Custom arenas"): mods/arena-NAME/arenas/NAME.arena, played only
+    # where the run says --arena NAME
+    import arena_compile
+    for name in sorted(os.listdir(SHIPPED_ARENAS)):
+        source = os.path.join(SHIPPED_ARENAS, name)
+        if not os.path.isfile(os.path.join(source, 'arena.txt')):
+            continue
+        dest = os.path.join(target.dir, 'mods', 'arena-' + name)
+        if os.path.isdir(dest):
+            shutil.rmtree(dest)
+        os.makedirs(os.path.join(dest, 'arenas'))
+        with open(os.path.join(dest, 'mod.txt'), 'w', encoding='utf-8', newline='
+') as f:
+            f.write('# made by tools/port_sdl_build.py from %s
+name = arena %s
+author = ReBushido
+'
+                    % (source, name))
+        with open(os.path.join(dest, 'arenas', name + '.arena'), 'wb') as f:
+            f.write(arena_compile.compile_arena(source, report=lambda text: None))
+        names.append('arena-' + name)
     return names
 
 

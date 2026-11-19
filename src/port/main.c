@@ -73,6 +73,7 @@ static const char g_port_usage[] =
     "            [--mods FOLDER|off] [--dump-textures FOLDER]\n"
     "            [--music-mods on|off] [--dump-music FOLDER]\n"
     "            [--dump-stages FOLDER] [--weapon 1|2=NAME]\n"
+    "            [--arena NAME] [--fight-cpu]\n"
     "            [--net-bind ADDRESS:PORT --net-peer ADDRESS:PORT]\n"
     "            [--link-side 0|1] [--net-latency MS] [--net-loss PERCENT]\n"
     "            [--netplay 1|2] [--net-delay N]\n"
@@ -109,7 +110,10 @@ static const char g_port_usage[] =
     "                 `kannuki:nodachi` for a weapon (a katana if none); a\n"
     "                 name not known lists them (docs/PORT.md, \"Straight\n"
     "                 into a fight\")\n"
+    "                 STAGE may be a mod's arena (docs/MODS.md, \"Custom\n"
+    "                 arenas\"), fought on the stage it stands in for\n"
     "  --fight-2p     ... the second fighter is the second pad's\n"
+    "  --fight-cpu    ... the first fighter is the CPU's too\n"
     "  --rollback-test N   every so often save the game's state, run N\n"
     "                 frames, put it back and run them again; stop at the\n"
     "                 first difference, and report (docs/NETPLAY.md)\n"
@@ -155,6 +159,8 @@ static const char g_port_usage[] =
     "                 replaces, and its key\n"
     "  --dump-stages FOLDER  write every stage's files there from the disc,\n"
     "                 by their keys: what a mod's stage begins from\n"
+    "  --arena NAME   a mod's arena (arenas/NAME.arena) stands in for the\n"
+    "                 stage its file names, wherever that is fought\n"
     "  --weapon 1=NAME  the fighter in place 1 (or 2) fights with a mod's\n"
     "                 weapon NAME (weapons/NAME.txt) whenever his weapon\n"
     "                 is the one it is made on\n"
@@ -315,6 +321,8 @@ s32 port_Main(s32 argc, char **argv) {
             port_SetTrace(1);
         } else if (port_TextsEqual(word, "--no-cards")) {
             port_SetCardsOff();
+        } else if (port_TextsEqual(word, "--fight-cpu")) {
+            port_FightBothCpu();
         } else if (port_TextsEqual(word, "--fight-2p")) {
             port_FightTwoPlayers();
         } else if (port_TextsEqual(word, "--fight")) {
@@ -367,6 +375,10 @@ s32 port_Main(s32 argc, char **argv) {
             port_ModsSetDumpFolder(argv[++i]);
         } else if (port_TextsEqual(word, "--dump-music")) {
             port_MusicSetDumpFolder(argv[++i]);
+        } else if (port_TextsEqual(word, "--arena")) {
+            if (i + 1 >= argc || !port_ArenaAsk(argv[++i])) {
+                port_UsageError("--arena takes the name of a mod's arena", "");
+            }
         } else if (port_TextsEqual(word, "--dump-stages")) {
             port_SetStageDumpFolder(argv[++i]);
         } else if (port_TextsEqual(word, "--weapon")) {
@@ -481,6 +493,7 @@ s32 port_Main(s32 argc, char **argv) {
     port_MusicStart();
     port_StartStageMods(&g_port_disc);
     port_WeaponsStart();
+    port_ArenasStart();
     if (plan != NULL) {
         port_LoadPlan(plan);
     }

@@ -28,7 +28,10 @@ both print (one each 30 frames, once both pads' inputs before it are
 known) is the same on both, to the last frame they share near the end.
 
 `session` and `window` are a session's, set up by --host and --join
-(section 13).
+(section 13). `session` also holds the two players to the same arena
+(docs/MODS.md, "Custom arenas"): the sample arena compiled at test time,
+the host with it in play (--arena) and the guest without, which the host
+must turn away.
 
 Under load (docs/NETPLAY.md, section 12, "Under load"): `--stress N` runs
 the checks N times over and counts the runs that failed and those that
@@ -516,6 +519,57 @@ def check_session(label, program, args, ports, window):
     return problems
 
 
+ARENA_SOURCE = 'tools/arenas/courtyard'
+ARENA_SECONDS = 60
+
+
+def check_arena_refused(label, program, args, ports):
+    """The host has an arena in play and the guest has not: the guest is
+    turned away at the meeting, before either starts the game, and says
+    why (port_ArenaSessionHash, src/port/session.c)."""
+    import arena_compile
+    folder = os.path.join(args.out, 'session', label + '-arena')
+    mods = os.path.join(folder, 'mods')
+    os.makedirs(os.path.join(mods, 'courtyard', 'arenas'), exist_ok=True)
+    with open(os.path.join(mods, 'courtyard', 'mod.txt'), 'w', encoding='utf-8', newline='\n') as f:
+        f.write('name = Stone courtyard\n')
+    with open(os.path.join(mods, 'courtyard', 'arenas', 'courtyard.arena'), 'wb') as f:
+        f.write(arena_compile.compile_arena(os.path.join(REPO, ARENA_SOURCE), report=lambda text: None))
+    procs = []
+    for side in (0, 1):
+        cmd = [program, '--image', playtest.RETAIL_CUE, '--mods', mods, '--no-cards']
+        if side == 0:
+            cmd += ['--host', '%s:%d' % (LOCALHOST, ports[0]), '--arena', 'courtyard']
+        else:
+            cmd += ['--join', '%s:%d' % (LOCALHOST, ports[0]), '--net-bind', '%s:%d' % (LOCALHOST, ports[1])]
+        err = open(os.path.join(folder, 'side%d.err' % side), 'wb')
+        procs.append((subprocess.Popen(PINNED + cmd, cwd=REPO, stdout=subprocess.DEVNULL, stderr=err,
+                                       stdin=subprocess.DEVNULL), err))
+        if side == 0:
+            time.sleep(0.5)
+    problems = []
+    guest, guest_err = procs[1]
+    try:
+        code = guest.wait(timeout=ARENA_SECONDS)
+    except subprocess.TimeoutExpired:
+        guest.kill()
+        guest.wait()
+        code = None
+    host, host_err = procs[0]
+    host.kill()
+    host.wait()
+    guest_err.close()
+    host_err.close()
+    said = read(os.path.join(folder, 'side1.err'))
+    if code in (0, None) or 'turned this program away' not in said or 'the arena in play' not in said:
+        problems.append('session: %s: a guest without the host\'s arena was not turned away (exit %s; %s)'
+                        % (label, code, os.path.join(folder, 'side1.err')))
+    else:
+        print('port_net: session: %s: a guest without the host\'s arena turned away, as it must be' % label,
+              flush=True)
+    return problems
+
+
 def check_menu(program, args, ports):
     """The settings menu's Play online page, in two window programs: each
     is started as a player starts it, opens the menu (F1, here
@@ -630,6 +684,9 @@ def run_checks(args, base):
         ports = (base + 2 * n, base + 2 * n + 1)
         if args.what == 'session':
             problems += check_session('%d-bit' % bits, program, args, (ports[0] + 10, ports[1] + 10), False)
+            if not args.stress:
+                problems += check_arena_refused('%d-bit' % bits, program, args,
+                                                (ports[0] + 14, ports[1] + 14))
             continue
         check = check_rollback if rollback else check_link
         problems += check('%d-bit' % bits, program, args, ports)

@@ -612,7 +612,12 @@ void fight_LoadStage(void) {
         snd_CloseStageVabs();
 
         kept_size = snd_LoadStageVabs(
+#if RB_PORT
+            /* a mod's arena may be heard as another stage (port_arenas.h) */
+            load_addr, port_ArenaSoundStage(g_fight_stage),
+#else
             load_addr, g_fight_stage,
+#endif
             g_fighter_roster_classes[g_fight_config.roster[0]],
             g_fighter_roster_classes[g_fight_config.roster[1]]);
 
@@ -697,7 +702,13 @@ static void snd_StartFightMusic(void) {
     default:
         break;
     case FIGHT_MODE_VS:
+#if RB_PORT
+        /* a mod's arena's own track (port_arenas.h) */
+        cdrom_StartMusic(port_ArenaMusic(
+            g_fight_stage, g_snd_stage_music_tracks[g_fight_stage]));
+#else
         cdrom_StartMusic(g_snd_stage_music_tracks[g_fight_stage]);
+#endif
         break;
     case FIGHT_MODE_CHANBARA:
         if (g_fighter_clans[g_fighters[0].character] != 0) {
@@ -962,7 +973,11 @@ void fight_Init(void) {
     story_HenchmanShout();
     snd_StartFightMusic();
     snd_ResetStageSounds();
+#if RB_PORT
+    snd_SetStageReverb(port_ArenaSoundStage(g_fight_stage));
+#else
     snd_SetStageReverb(g_fight_stage);
+#endif
     if (g_fight_mode == FIGHT_MODE_NETWORK) {
         rng_SetSeed(g_fight_rng_seed);
     }

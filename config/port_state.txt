@@ -51,6 +51,7 @@ outside  src/port/netplay.c     the session: inputs, guesses, the states kept, t
 outside  src/port/mods.c        the mods' table, made once as the program starts
 outside  src/port/music.c       a mod's music: what it follows of the drive, its decoder, the dump
 outside  src/port/discfiles.c   the disc's files by name, and the mods' stage files over them
+outside  src/port/arenas.c      the mods' arenas, read once as the program starts and only read after
 outside  src/port/weapons.c     the mods' weapons, read once as the program starts and only read after
 outside  src/port/net.c         the network: the socket, the link cable's numbers, the trouble it is given
 outside  src/port/paint.c       the software GPU's painter: its settings, its ring and its thread

@@ -82,6 +82,7 @@
 #include "port_remaster.h"
 #include "port_state.h"
 #include "port_weapons.h"
+#include "port_arenas.h"
 #endif
 
 #endif /* BB2_H */

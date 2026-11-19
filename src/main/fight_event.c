@@ -911,7 +911,12 @@ void snd_StartPropSounds(Vec3 *position) {
  * plays the stage's ambient sounds. */
 void snd_UpdateStageSounds(void) {
     s32 i;
+#if RB_PORT
+    /* the sounds a mod's arena is heard with (port_arenas.h) */
+    u8 *ambience = g_snd_stage_ambience[port_ArenaSoundStage(g_fight_stage)];
+#else
     u8 *ambience = g_snd_stage_ambience[g_fight_stage];
+#endif
 
     for (i = 0; i < SND_PROP_SLOTS; i++) {
         if (g_snd_prop_sound_ticks[i] != 0) {
