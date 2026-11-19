@@ -2440,6 +2440,7 @@ static void port_GlStageBuild(const PortStageView *view) {
     }
     /* how much each face reflects, by the stage's own kind of floor and
      * how level the face lies (gl_post.h) */
+    port_GlPostFloorsBegin();
     for (i = 0; i < g_stage.built; i++) {
         StageVertex *one = &g_stage.building[i];
         float a[3];
@@ -2458,7 +2459,13 @@ static void port_GlStageBuild(const PortStageView *view) {
             (u16)(port_GlPostReflectance(port_RemasterStageNumber(), normal) *
                       100.0f +
                   0.5f);
+        /* the floor the reflections mirror in: the level reflecting
+         * faces' heights, once a triangle (its first vertex) */
+        if (one->reflect > 0 && i % 3 == 0) {
+            port_GlPostFloorAdd(one->corner[0], one->corner[1], one->corner[2]);
+        }
     }
+    port_GlPostFloorsEnd();
     g_stage.vertex_count = g_stage.built;
     g_stage.tiles = (PortAddress)tiles;
     g_stage.tile_count = count;

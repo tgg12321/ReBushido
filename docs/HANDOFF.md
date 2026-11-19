@@ -128,6 +128,16 @@ lighting overhaul".
   frame's lights add (`tonemap`), all on; the colour buffer's alpha says
   what painted a pixel, the mesh writes its depth beside its slots. About
   0.7 ms of the card at 2560x1440 (PORT.md, "What it costs").
+- **The floor's plane mirrored** (2026-11-19, the owner: the dojo's
+  reflections "warped and not detailed"): the warp was the normal worked
+  out from the depth, 3 to 10 degrees off by tile and in bands (the
+  mesh's per-tile depth push, the half floats). Level floors now reflect
+  in the stage's floor plane, mirrored on the screen by a compute shader
+  at half the size (exact, steady, blurred by roughness and distance);
+  the fighters the game draws itself mirrored too, their depth from the
+  shadows' casters; the screen's ray kept for what is off the plane.
+  The lighting's 95% 1.74 to 1.85 ms against 2.0 (PORT.md, "c.
+  Reflections"). Pictures: the main checkout's `tmp/reflections2/`.
 - **Left:** the light files' placing (only the parking lot's reach the
   fight in the tour); the normal map's bitangent sign on a remade model
   in a fight; the stage pass 0.2 ms above main's with c and d off; the
