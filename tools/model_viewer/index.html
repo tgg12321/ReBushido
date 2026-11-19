@@ -133,7 +133,8 @@ async function loadFighter(f) {
   versions = await (await fetch('/api/versions/' + f)).json();
   const box = document.getElementById('choices'); box.innerHTML = '';
   // the game's, the hd mod's and the two newest are shown to start with
-  const start = new Set(['original (PS1)', 'hd', ...versions.slice(-2).map(v => v.label)]);
+  const asked = new URLSearchParams(location.search).get('show');
+  const start = new Set(asked ? asked.split(',') : ['original (PS1)', 'hd', ...versions.slice(-2).map(v => v.label)]);
   versions.forEach((v, i) => {
     const l = document.createElement('label');
     l.innerHTML = `<input type="checkbox" data-i="${i}" ${start.has(v.label) ? 'checked' : ''}> ${v.label}`;
@@ -277,8 +278,9 @@ const sel = document.getElementById('fighter');
 sel.innerHTML = list.map(f => `<option>${f}</option>`).join('');
 sel.onchange = () => loadFighter(sel.value);
 setView(new URLSearchParams(location.search).get('view') || 'front');
-if (list.length) { sel.value = list.includes('M101') ? 'M101' : list[0]; await loadFighter(sel.value); }
+// drawn from the start, so a model still loading never holds the others back
 requestAnimationFrame(frame);
+if (list.length) { sel.value = list.includes('M101') ? 'M101' : list[0]; await loadFighter(sel.value); }
 // a new pass appears without a reload: the list is looked at again every 20 s
 setInterval(async () => {
   const now = await (await fetch('/api/versions/' + sel.value)).json();

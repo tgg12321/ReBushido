@@ -5,7 +5,8 @@
 
 Copies what `wsl bash tools/build.sh port-sdl-windows` made in
 build/port-sdl/windows/ -- rebushido.exe, SDL2.dll and the mods the
-program ships (english, ui) -- beside the repository's root, where the
+program ships (every folder of its mods/: english, ui, lights, the sample
+arena) -- beside the repository's root, where the
 owner runs it, and the mods made from the owner's own disc in tmp/mods/
 (hd, art, stages-hd: tools/fighter_hd.py, tools/port_art.py,
 tools/port_stage_hd.py) into the root's mods/ beside it. None of these is
@@ -21,7 +22,6 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILT = os.path.join(ROOT, 'build', 'port-sdl', 'windows')
 FILES = ['rebushido.exe', 'SDL2.dll']
-SHIPPED_MODS = ['english', 'ui', 'arena-courtyard']
 DISC_MODS = ['hd', 'art', 'stages-hd']
 
 
@@ -43,8 +43,10 @@ def main():
     mods = os.path.join(ROOT, 'mods')
     os.makedirs(mods, exist_ok=True)
     copied = []
-    for name in SHIPPED_MODS:
-        source = os.path.join(BUILT, 'mods', name)
+    # every mod the build ships, so that a new one is never left behind
+    built_mods = os.path.join(BUILT, 'mods')
+    for name in sorted(os.listdir(built_mods)) if os.path.isdir(built_mods) else []:
+        source = os.path.join(built_mods, name)
         if os.path.isdir(source):
             copy_folder(source, os.path.join(mods, name))
             copied.append(name)

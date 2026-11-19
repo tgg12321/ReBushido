@@ -5901,6 +5901,66 @@ many and was no later, within the noise.
   record's own frame is drawn into the colour buffer and then drawn over
   by the first picture of the pair; the card could be spared it.
 
+### The window's thread and the game's state
+
+**The crash** (the owner, 2026-11-18, `05b0f524d`, a fight against the
+CPU on Lost Bridge, `run_ahead = 2`, about four minutes in): "memory that
+is not there was touched" at `0x083E42C4`, which the build's names put at
+`g_port_call_depth` (`src/port/plan.c`), written by
+`__cyg_profile_func_enter`, called from `resource_GetStage`, called from
+`port_GlStageIsTile` through `port_RemasterStageNumber` (the report's own
+names were the nearest it knew, `port_TweenStop` and
+`sprite_DrawRotated`).
+
+**The cause.** The game's files are compiled with
+`-finstrument-functions`, and the hook at the top of each of the game's
+functions writes `plan.c`'s variables (the last functions begun, the
+depth of calls), which are the game's state, kept by page
+(`config/port_state.txt`; NETPLAY.md, "Save, load and hash"). The
+window's thread, drawing the record beside the step that runs on its own
+thread, asked the stage's number of the game's `resource_GetStage` for
+each primitive of a stage's piece it was deciding about
+(`port_GlStageIsTile`), some 84,000 times a bench fight; so it wrote the
+state's pages beside the step. A page that is watched is read-only and
+its first write faults; `port_StateOnWrite` declined a fault whose page
+was no longer noted as watched, and a declined write is a crash. The
+step's thread changes a page's note under the window's thread's fault:
+its own fault on the same page at the same moment (the step writes the
+same variables at every function it begins), or a run-ahead's load,
+which notes a page writable before it makes it so. Rare, and so it took
+minutes: the page is mostly hot (left writable), and watched again every
+128 epochs.
+
+**The fix**, three parts:
+
+- *The hook counts the game's own run alone*: a function begun off the
+  game's stack (`PORT_STACK_ADDR`: the port's code calling the game's
+  from a stack of the host's) writes nothing (`port_OnGameStack`).
+- *The window's thread runs none of the game's code while the step runs
+  beside it*: `port_RemasterStageNumber` reads `g_resource_stage` as it
+  is, and the port's own getters in the game's files that it asks there
+  (`stage_GetTiles`, `stage_GetPieces`) are not instrumented
+  (`no_instrument_function`). Such a call is told to the window (`g_port_foreign_call_hook`),
+  which says the first in the log ("a function of the game was begun
+  beside the step, off its thread") and their count at the end, and
+  `tools/port_bench.py` fails a run that says so, whatever
+  `--report-only`: the gate's bench would have failed on every run of
+  the crash's build.
+- *A fault on a page of the state that is already writable is taken*:
+  `port_StateOnWrite` holds a lock, makes the page writable whatever its
+  note says (but video memory's own, never made read-only) and lets the
+  write go on.
+
+**Shown** (the bench's plan and fight on the card, `run_ahead 2`, three
+runs side by side, with the race made wide in a trial build: a spin at
+the top of the fault's handler and one in the load between noting pages
+writable and making them so, and pages watched again every 2 epochs, not
+128): the build without the fix stopped in all three on the very write of
+the owner's report (`0x083E42C4`, `__cyg_profile_func_enter` from
+`resource_GetStage`), about 24 seconds in, and counted some 84,000 of the
+game's functions begun beside the step a run; with the fix the same
+trial ran all three to the end with none.
+
 ### The HD fighters on the card
 
 **What it was** (main at `8f09f98d1`, the card's measure above): the HD
@@ -6926,60 +6986,59 @@ texels, four fighters 160,000 triangles and 216 MB of textures. The
 weapons are not remade: their models, lengths and grips are the game's
 files, and no hitbox is a model's ("The fighters' own models").
 
-**What is remade** (`fighters.json`, the recipe):
+**What a remade fighter is** (`tools/port_models/README.md` for each
+part). The owner's rule (2026-11-18): the game's own design, cleaned, not
+a new one; a remade fighter reads as the PlayStation's model at a glance.
+Two passes went another way first (new hands and a face in relief on the
+hd mod's body; then a body painted anew with folds, a head and hands
+modelled whole) and were set aside as too far from the game's; they are
+in the history (`2dc5ef3a7`).
 
-- **the hands**: modelled in Blender (`tools/blender/fighter_parts.py`)
-  in the hand bone's frame, a palm, a wrist, four fingers of three bones
-  closed round the grip and a thumb across them, made one surface (a
-  voxel remesh), coloured by what each part is (Tatsumi's black
-  fingerless glove open on the back, skin, nails, the stud at the
-  wrist, the colours read from the game's own texture of the hand),
-  baked from 51,000 faces to 2,200 triangles a hand with a normal map
-  of the leather's grain, fitted into the box of the game's hand, the
-  other hand its mirror, each wholly on its bone;
-- **the body**: the hd mod's, its every vertex the game's own sum of
-  bones, pulled back to 6 units outside the game's surface wherever the
-  smoothing swelled it further (2,240 of Tatsumi's vertices), each to
-  the surface of its own bone (at the bind pose the feet cross);
-- **the face**: the front of the head subdivided once more and raised
-  or sunk under the game's own painting of it (`face.py`): the brows,
-  sockets under the painted eyes, cheekbones, lips and chin (and a nose
-  where the game's mesh has none: Tatsumi's has a wedge of its own,
-  and a ridge raised on it darkened it), found where the painting has
-  them (texels of the game's atlas in the recipe, taken onto the head
-  by its mesh); by 4 units at most, a relief the light shows and the
-  outline does not;
-- **the maps for the lighting**: beside the colour, in its layout, a
-  normal map (tangent space, OpenGL's green) and an occlusion-roughness-
-  metal map (glTF's: R, G, B; half the colour's size; the trim's gold
-  metal, cloth rough, skin and leather between). The material names them
-  as glTF does (`normalTexture`, `occlusionTexture`,
-  `metallicRoughnessTexture`); the port reads only the colour so far;
-- **the levels of detail**: `lod/NAME.lod1.glb` (the hd mod at one level
-  of subdivision, 5,700 triangles) and `.lod2.glb` (the game's own
-  mesh with the hands at 180 triangles, 1,200), checked as the first;
-  the port does not choose between them yet.
+- **the mesh**: the game's own, each triangle made four, twice, as a
+  smooth surface through the game's shape (Loop's subdivision, most of
+  its smoothing), each vertex keeping its own bone, so that it bends
+  exactly as the game's. Nothing is fitted (the hd mod's fitting swelled
+  it, and made the chest bulge), and no vertex is let far inside the
+  game's surface; small pieces (a strap, a shoulder's plate) are cut and
+  not smoothed, and a joint's stretched triangles are left the game's
+  own (no vertex half way along one moves as the game's triangle does);
+- **the texture**: the game's own, cleaned and sharp (its colours
+  gathered into kinds, the picture of kinds made eight times larger with
+  its staircases cut across, the tones of a kind run into one another),
+  read into **a layout of its own** (cut where the game's is, laid flat
+  in Blender at one scale, no island over another; the head in a
+  rectangle of its own with more texels, its skin more still);
+- **the face**: the game's own texels, each a square block (eight
+  across for Tatsumi), neither cleaned nor smoothed: the owner's rule
+  for every fighter (2026-11-19), the face stays pixelated;
+- **the maps for the lighting**: beside the colour, in its layout, an
+  occlusion-roughness-metal map by what each texel is made of (the
+  recipe's materials, by the game's colours) and a normal map of the
+  braid's roundness and a fine grain; no fold, no wrinkle;
+- **the levels of detail**: the same surface at a quarter and a
+  sixteenth of the triangles, in the same layout (one texture for all
+  three); the port does not choose between them yet.
 
-One atlas still: the body's texture above, the new pieces' below, the
-colour tables' picture grown to match, each new texel taking the
-entry, of the game's own on the hand it replaces, nearest in colour, so
-that the fight's fade-in and the tints reach the new hands too.
+The colour tables' picture is in the same layout, each texel the entry
+the game's texture had there, so that the fight's fade-in and the tints
+reach it as they reach the game's own.
 
-**Tatsumi, measured**: 25,600 triangles (the hd mod's 20,216); every
-check passes, the worst pose 69 pixels outside the game's outline from
-the side (0.23%, within tolerance), the hd mod itself failing at its
-feet (162 pixels, 0.89%). In `--fight tatara-shrine tatsumi utsusemi`
-with the file the program loads it (`gl run fighters loaded 1 failed
-0`) and draws it as any model; the renders of the game's, the hd mod's
-and the new model are in the main checkout's `tmp/models/renders/`.
+**Tatsumi, measured**: 16,304 triangles (4,076 and 1,019 at the lower
+levels), 5.8 million texels; every check passes (the watertight one
+among them: no edge left open that the game's is not, no triangle
+turned over), with nothing outside
+the game's outline and nothing of it uncovered in any of 339 poses. The
+renders of the game's and the new model are in the main checkout's
+`tmp/models/renders/M101-fable/`, and the passes as the owner saw them
+in `tmp/models/versions/` (`tools/model_viewer/`).
 
-**What is left**: the other fighters (the recipe and the face's texels
-for each, and the hands' colours where the game's texture is not to be
-read for them); the face's own texture painted anew (it is the game's
-4x upscale) and a head modelled whole; the clothing's folds and seams
-in the normal map rather than the texture's light; the port reading the
-normal and roughness maps (`lighting-core`, ROADMAP 14) and the levels of
-detail.
+**What is left** (the owner's list): the joints, the shoulders first and
+then the elbows, the hips and the knees, which bend as the game's do
+(a rigid piece each side and a few triangles stretched between) and
+want edge loops and weights of their own; the clipping (a collar, a
+sleeve, the hair through another part), which is the game's own and
+would be taken out motion by motion; the other fighters; the port
+choosing among the levels of detail.
 
 ### The effects
 

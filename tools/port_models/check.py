@@ -23,6 +23,9 @@ hitboxes are lies to the player). Fails (exit 1) on any of:
 - self-intersection: faces of one connected surface passing through one
   another (a fold, a crushed elbow), at the bind pose and in the frames
   of the motions that bend the most;
+- watertight: no hole the game's model has not (an edge only one
+  triangle has, where the game's has none: a crack, a missing face), and
+  no more triangles turned over against their neighbours than the game's;
 - budgets: triangles, vertices and texture of each level of detail, and
   four fighters at once.
 
@@ -376,6 +379,91 @@ def check_self_intersection(new, ref, frames, limits, rep):
                  ' (%s)' % worst[2] if worst[2] else '', 100 * ref_share, 100 * allowed))
 
 
+# ---- holes ----
+
+def open_edges(m):
+    """The edges only one triangle has (vertices at one place being one,
+    triangles that are no more than a line left out): the surface's
+    rims, and its cracks. A vertex set on another triangle's edge without
+    that triangle being cut there leaves three: the edge whole, and its
+    two halves."""
+    key = np.round(m.pos * 8).astype(np.int64)
+    points, weld = np.unique(key, axis=0, return_inverse=True)
+    weld = weld.ravel()
+    f = weld[m.tris]
+    f = f[(f[:, 0] != f[:, 1]) & (f[:, 1] != f[:, 2]) & (f[:, 0] != f[:, 2])]
+    e = np.sort(np.concatenate([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]]), 1)
+    pairs, count = np.unique(e, axis=0, return_counts=True)
+    alone = pairs[count == 1]
+    return points[alone[:, 0]] / 8.0, points[alone[:, 1]] / 8.0
+
+
+def far_from_segments(points, A, B):
+    """How far each point is from the nearest of the segments A-B."""
+    if len(A) == 0:
+        return np.full(len(points), np.inf)
+    out = np.full(len(points), np.inf)
+    d = B - A
+    dd = np.maximum((d * d).sum(1), 1e-12)
+    for s in range(0, len(points), 1024):
+        p = points[s:s + 1024, None, :]
+        t = np.clip(((p - A) * d).sum(2) / dd, 0, 1)
+        q = A + d * t[..., None]
+        out[s:s + 1024] = np.sqrt(((p - q) ** 2).sum(2).min(1))
+    return out
+
+
+def turned_edges(m):
+    """How many of the surface's edges that two triangles share are gone
+    round the same way by both (one of the two is turned over: a
+    renderer that draws one side of a face leaves it out), and how many
+    such edges there are."""
+    key = np.round(m.pos * 8).astype(np.int64)
+    _, weld = np.unique(key, axis=0, return_inverse=True)
+    weld = weld.ravel()
+    f = weld[m.tris]
+    f = f[(f[:, 0] != f[:, 1]) & (f[:, 1] != f[:, 2]) & (f[:, 0] != f[:, 2])]
+    e = np.concatenate([f[:, [0, 1]], f[:, [1, 2]], f[:, [2, 0]]])
+    forward = e[:, 0] < e[:, 1]
+    pair = np.sort(e, 1)
+    order = np.lexsort((pair[:, 1], pair[:, 0]))
+    pair, forward = pair[order], forward[order]
+    same = (pair[1:] == pair[:-1]).all(1)
+    first = np.concatenate([[True], ~same])
+    count = np.add.reduceat(np.ones(len(pair), np.int64), np.nonzero(first)[0])
+    starts = np.nonzero(first)[0][count == 2]
+    return int((forward[starts] == forward[starts + 1]).sum()), len(starts)
+
+
+def check_watertight(new, ref, limits, rep):
+    """No hole the game's model has not: every edge of the new surface
+    that only one triangle has lies along such an edge of the game's (a
+    hem, a cuff; within `open_edge_units`), and no more of its triangles
+    are turned over against their neighbours than the game's own are (a
+    renderer that draws one side of a face leaves a turned one out: a
+    hole all the same)."""
+    tol = limits.get('open_edge_units', 16.0)
+    a, b = open_edges(new)
+    ra, rb = open_edges(ref)
+    stray = 0
+    if len(a):
+        far = np.maximum(np.maximum(far_from_segments(a, ra, rb), far_from_segments(b, ra, rb)),
+                         far_from_segments((a + b) / 2, ra, rb))
+        stray = int((far > tol).sum())
+    turned, shared = turned_edges(new)
+    ref_turned, ref_shared = turned_edges(ref)
+    share = turned / max(1, shared)
+    allowed = ref_turned / max(1, ref_shared) + limits.get('turned_share', 0.002)
+    rep.numbers['watertight'] = {'open_edges': len(a), 'game_open_edges': len(ra), 'stray_open_edges': stray,
+                                 'turned_edges': turned, 'game_turned_edges': ref_turned}
+    rep.check('watertight', stray == 0 and share <= allowed,
+              '%d edges that one triangle alone has (the game\'s model %d), %d of them not along one of the game\'s '
+              'within %.0f units (a crack, a hole); %d of %d shared edges have a triangle turned over against its '
+              'neighbour (%.2f%%; the game\'s own %.2f%%; at most %.2f%%)'
+              % (len(a), len(ra), stray, tol, turned, shared, 100 * share, 100 * ref_turned / max(1, ref_shared),
+                 100 * allowed))
+
+
 # ---- budgets ----
 
 def texture_pixels(m):
@@ -437,6 +525,7 @@ def main():
     frames = frames_of(args.motions, name, every) if args.motions else []
     silhouette(new, ref, frames, limits, limits['silhouette_tolerance_units'], rep, args.report, '')
     check_self_intersection(new, ref, frames, limits, rep)
+    check_watertight(new, ref, limits, rep)
     lods = [new]
     tols = limits['lod_silhouette_tolerance_units']
     for level, path in enumerate(args.lod, 1):

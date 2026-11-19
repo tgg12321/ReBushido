@@ -71,6 +71,10 @@ GLTF_TO_BLENDER = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1
 GAME_TO_BLENDER = GLTF_TO_BLENDER @ GAME_TO_GLTF
 
 
+# each frame's bones' turns in Blender's space, as the last motion keyed has them
+POSED = []
+
+
 def import_model(path):
     before = set(bpy.data.objects)
     bpy.ops.import_scene.gltf(filepath=path)
@@ -101,7 +105,9 @@ def key_motion(arm, frames, bind_game, offset):
     # the fighter's own frame at the clip's start: his root bone's turn and
     # place taken off, so that he faces the front and stands at the middle
     shift = frames[0][0].inverted()
+    POSED.clear()
     for f, bones in enumerate(frames):
+        POSED.append([GAME_TO_BLENDER.to_3x3() @ (shift @ m).to_3x3() for m in bones])
         for pb in arm.pose.bones:
             if not pb.name.startswith('bone'):
                 continue
@@ -129,17 +135,17 @@ def bounds(meshes):
     return lo, hi
 
 
-def head_middles(meshes):
+def head_middles(meshes, bones=('bone03',)):
     """The middle of each model's head (the vertices bone03 carries most
-    of), posed."""
+    of), posed; or of the vertices of other bones."""
     deps = bpy.context.evaluated_depsgraph_get()
     out = []
     for o in meshes:
-        group = o.vertex_groups.get('bone03')
-        if group is None:
+        groups = [o.vertex_groups[b].index for b in bones if b in o.vertex_groups]
+        if not groups:
             continue
         carried = [v.index for v in o.data.vertices
-                   if any(g.group == group.index and g.weight > 0.5 for g in v.groups)]
+                   if any(g.group in groups and g.weight > 0.5 for g in v.groups)]
         if not carried:
             continue
         e = o.evaluated_get(deps)
@@ -218,16 +224,40 @@ def main():
     for f in frames:
         scene.frame_set(f)
         for view in a['views'].split(','):
+            # a view of one's own: NAME=X/Y/Z:BONE+BONE:TALL, looking from
+            # (X, Y, Z) at the middle of those bones' vertices, TALL metres
+            # of the fighter in the picture
+            # ... and with a fourth part, X/Y/Z again, the first is a way in
+            # the first bone's own frame and the fourth is that frame's up:
+            # a part seen upright however the fighter stands
+            close = None
+            up = Vector((0, 0, 1))
+            if '=' in view:
+                view, spec = view.split('=')
+                parts = spec.split(':')
+                way, bones, tall = parts[:3]
+                views[view] = tuple(float(x) for x in way.split('/'))
+                close = (bones.split('+'), float(tall))
             d = Vector(views[view]).normalized()
-            right = Vector((0, 0, 1)).cross(d).normalized()
+            if close and len(parts) > 3 and POSED:
+                turn = POSED[min(f, len(POSED)) - 1][int(close[0][0][4:])]
+                d = (turn @ d).normalized()
+                up = (turn @ Vector(tuple(float(x) for x in parts[3].split('/')))).normalized()
+            right = up.cross(d).normalized()
             # the models side by side across the view
             for k, fighter in enumerate(fighters):
                 for o, home in zip(fighter[3], homes[k]):
-                    o.location = home + right * (k - (count - 1) / 2) * (gap if not view.startswith("face") else 0.42)
+                    o.location = home + right * (k - (count - 1) / 2) * (
+                        close[1] * 1.05 if close else gap if not view.startswith("face") else 0.42)
             bpy.context.view_layer.update()
             lo, hi = bounds(every)
             middle = (lo + hi) / 2
-            if view.startswith('face'):
+            if close:
+                at = head_middles(every, close[0])
+                look = sum(at, Vector()) / len(at)
+                tall = close[1]
+                wide = close[1] * 1.05 * count
+            elif view.startswith('face'):
                 heads = head_middles(every)
                 look = sum(heads, Vector()) / len(heads) if heads else Vector((middle.x, middle.y, hi.z - 0.15))
                 tall = 0.36
@@ -236,12 +266,37 @@ def main():
                 look = middle
                 tall = (hi.z - lo.z) + 0.15
                 wide = abs((hi - lo).dot(right)) + 0.3
-            aspect = max(0.4, min(3.0, wide / tall))
+            if close and out:
+                # each model alone in its own picture (a neighbour's arm is
+                # not in the way), the pictures side by side
+                tiles = []
+                for k, fighter in enumerate(fighters):
+                    for other in fighters:
+                        for o in other[2]:
+                            o.hide_render = other is not fighter
+                    at = head_middles(fighter[2], close[0])
+                    scene.render.resolution_x = scene.render.resolution_y = size
+                    cam_data.ortho_scale = tall
+                    cam.location = (at[0] if at else look) + d * 6.0
+                    cam.rotation_euler = Matrix((right, d.cross(right), d)).transposed().to_euler()
+                    scene.render.filepath = os.path.join(out, 'f%04d_%s.%d.png' % (f, view, k))
+                    bpy.ops.render.render(write_still=True)
+                    tiles.append(scene.render.filepath)
+                for other in fighters:
+                    for o in other[2]:
+                        o.hide_render = False
+                path = os.path.join(out, 'f%04d_%s.png' % (f, view))
+                sheet(tiles, path, len(tiles))
+                for t in tiles:
+                    os.remove(t)
+                written.append(path)
+                continue
+            aspect = max(0.4, min(6.0, wide / tall))
             scene.render.resolution_y = size
             scene.render.resolution_x = int(size * aspect)
             cam_data.ortho_scale = max(wide, tall)
             cam.location = look + d * 6.0
-            cam.rotation_euler = (-d).to_track_quat('-Z', 'Y').to_euler()
+            cam.rotation_euler = Matrix((right, d.cross(right), d)).transposed().to_euler()
             if out:
                 scene.render.filepath = os.path.join(out, 'f%04d_%s.png' % (f, view))
                 bpy.ops.render.render(write_still=True)

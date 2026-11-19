@@ -58,6 +58,7 @@ void port_StartGame(void (*function)(void)) {
  * of its own beside the window's pictures (port_platform.h). */
 void (*g_port_step_runner)(void);
 void (*g_port_step_to_host)(void);
+void (*g_port_foreign_call_hook)(u32 function);
 
 void port_StepGame(void) {
     if (g_port_holding && g_port_step_runner != NULL) {

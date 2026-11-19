@@ -366,9 +366,10 @@ the stage").
     (skeleton, weights, proportions, silhouette through every motion,
     self-intersection, budgets; `tests/rebushido/fighter_check.py`),
     the file with levels of detail and normal and
-    occlusion-roughness-metal maps. Tatsumi is the first: new hands
-    closed round the grip, the face in relief under its painting, the
-    body held inside the game's outline. Left: the other fighters; the
-    face's texture and a head modelled whole; folds and seams in the
-    normal map; the port reading the maps (ROADMAP 14) and the levels of
-    detail.
+    occlusion-roughness-metal maps. The owner's rule (2026-11-18): the
+    game's own design, cleaned, not a new one. Tatsumi is the first: the
+    game's mesh made smooth (sixteen triangles for one, bending as the
+    game's), its texture cleaned and sharp in a layout of its own. Left:
+    the joints (shoulders first) and the clipping, which are the game's
+    own; the other fighters (`tools/port_models/README.md`); the port
+    choosing among the levels of detail.

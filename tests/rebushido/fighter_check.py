@@ -138,6 +138,7 @@ def outcome(new, ref, folder, limits):
     frames = check.frames_of(folder, 'M999', 1)
     check.silhouette(new, ref, frames, limits, limits['silhouette_tolerance_units'], rep, None, '')
     check.check_self_intersection(new, ref, frames, limits, rep)
+    check.check_watertight(new, ref, limits, rep)
     check.check_budgets([new], limits, rep)
     return rep.failed, len(frames)
 
@@ -202,4 +203,12 @@ def checks_of(checks, folder):
     folded.terms[back, 0, :3] += push
     failed, _ = outcome(folded, ref, folder, limits)
     checks.true('a surface pushed through itself fails self-intersection', 'self_intersection' in failed)
+    holed = model(path('holed'))
+    holed.tris = holed.tris[6:]
+    failed, _ = outcome(holed, ref, folder, limits)
+    checks.equal('a surface with triangles missing fails watertight alone', failed, ['watertight'])
+    turned = model(path('turned'))
+    turned.tris[:60] = turned.tris[:60][:, [0, 2, 1]]
+    failed, _ = outcome(turned, ref, folder, limits)
+    checks.true('triangles turned to face inwards fail watertight', 'watertight' in failed)
     checks.true('(numbers)', bool(np.isfinite(folded.pos).all()))

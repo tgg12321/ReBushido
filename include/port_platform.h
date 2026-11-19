@@ -474,6 +474,14 @@ extern s32 g_port_load_wait;
 #define PORT_RECENT_CALLS 32
 extern u32 g_port_recent_calls[PORT_RECENT_CALLS];
 extern u32 g_port_recent_call_count;
+/* A function of the game begun off the game's own stack: by the port's
+ * code calling it from a stack of the host's, the window's thread's
+ * among them. That call is not counted, as the game's are (plan.c);
+ * this is told of it where set (the window: one made while the step
+ * runs beside its thread is a fault in the port; docs/PORT.md, "The
+ * window's thread and the game's state"). Kept in step.c, outside the
+ * state. */
+extern void (*g_port_foreign_call_hook)(u32 function);
 
 /* ---- a crash (src/port/crash.c) ---- */
 

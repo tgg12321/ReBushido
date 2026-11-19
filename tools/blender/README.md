@@ -10,9 +10,11 @@ against the release's list). Every script here runs it with nothing shown:
 - `fighter_scene.py --model A.glb [--model B.glb ...] [--motion M.motion.txt]`:
   models side by side on the game's skeleton, played through the game's
   own motions, rendered from several views (`tools/port_models/`).
-- `fighter_parts.py WORK/NAME [--look]`: the remade fighters' new pieces
-  (the hands), modelled, baked and fitted to the game's pieces
-  (`tools/port_models/README.md`).
+- `fighter_unwrap.py IN.json OUT.json`: a surface cut along seams and
+  laid flat into a rectangle, every island at one scale (the remade
+  fighters' texture layout, `tools/port_models/README.md`).
+- `fighter_look.py MODEL.glb OUT.png BONE ...`: close pictures of one
+  part, upright in its own bone's frame.
 - `fighter_rebuild.py IN.glb OUT.glb [--levels 2] [--crease 50] [--texture BIG.png]`:
   a fighter at a higher definition from the game's own, the first way it
   was done (docs/PORT.md, "The fighters' own models").
