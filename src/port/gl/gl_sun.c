@@ -91,11 +91,9 @@ typedef char GLchar;
     GL(void, glUniform1f, (GLint, GLfloat))                                    \
     GL(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat))                  \
     GL(void, glUniform4f, (GLint, GLfloat, GLfloat, GLfloat, GLfloat))         \
-        GL(void, glUniform2f, (GLint, GLfloat, GLfloat))                       \
-            GL(void, glUniformMatrix3fv,                                       \
-               (GLint, GLsizei, GLboolean, const GLfloat *))                   \
-                GL(void, glUniformMatrix4fv,                                   \
-                   (GLint, GLsizei, GLboolean, const GLfloat *))
+    GL(void, glUniform2f, (GLint, GLfloat, GLfloat))                           \
+    GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
+    GL(void, glUniformMatrix4fv, (GLint, GLsizei, GLboolean, const GLfloat *))
 
 #define GL(result, name, args) static result(*name) args;
 PORT_GL_SUN_FUNCTIONS
