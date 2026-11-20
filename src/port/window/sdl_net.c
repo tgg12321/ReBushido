@@ -154,6 +154,7 @@ void port_DrawNetLine(void) {
 /* The panel of the session's set-up, before the game has a picture: a
  * title and what is being done. */
 static void port_NetPanel(const char *status) {
+    PortTextStyle title;
     PortRect place;
     s32 window_w = 0;
     s32 window_h = 0;
@@ -183,9 +184,13 @@ static void port_NetPanel(const char *status) {
     port_FillRect(g_net.pixels, place.w, place.h, 0, 0, place.w, 2, COLOR_EDGE);
     port_FillRect(
         g_net.pixels, place.w, place.h, 0, place.h - 2, place.w, 2, COLOR_EDGE);
-    port_FontSetSize(line * LETTER_PERCENT / PERCENT);
-    port_FontDraw(g_net.pixels, place.w, place.h, pad, pad + port_FontAscent(),
-                  "ReBushido: playing online", COLOR_TITLE);
+    memset(&title, 0, sizeof(title));
+    title.face = PORT_FACE_BOLD;
+    title.size = line * LETTER_PERCENT / PERCENT;
+    title.color = COLOR_TITLE;
+    port_TextDraw(
+        g_net.pixels, place.w, place.h, pad, pad + port_TextAscent(&title),
+        "ReBushido: playing online", &title);
     port_FontSetSize(line * LETTER_PERCENT / PERCENT * 3 / 4);
     port_FontDraw(g_net.pixels, place.w, place.h, pad,
                   pad + line + port_FontAscent(), status, COLOR_TEXT);

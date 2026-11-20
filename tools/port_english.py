@@ -9,8 +9,9 @@ English menu"): the top menu's Japanese lines drawn again in English.
                                                  game's own textures, dumped
                                                  into DIR (--dump-textures)
 
-The pictures are this project's own: text in two fonts of the SIL Open Font
-Licence (src/port/fonts/), drawn at six times the console's size across and twelve down. Not a
+The pictures are this project's own: text in the port's typeface, Shippori
+Mincho (src/port/fonts/, the SIL Open Font Licence; tools/port_lettering.py),
+drawn at six times the console's size across and twelve down. Not a
 pixel of the game's is in them or is read to make them, so they are kept in
 the repository and this script makes the same bytes again. What was taken
 from the game is in the table: each texture's key (its file's name), its
@@ -30,8 +31,8 @@ The title over the rows, 試練項目選択 ("the choice of trials") with "TOP
 MENU" spaced out under it, is four sprites 26 texels high, 210 wide in all,
 drawn as one picture and cut up.
 
-The lettering is white with a dark edge and a blue shadow down and to the
-right, as the game's is; the game colours a row itself (a lit row gold, the
+The lettering is the typeface's heaviest weight, white with a dark edge and a
+blue shadow down and to the right, as the game's is; the game colours a row itself (a lit row gold, the
 cursor's yellow), so white is what it is given. Needs Pillow.
 """
 import argparse
@@ -39,12 +40,17 @@ import io
 import os
 import sys
 
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageChops, ImageDraw
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from port_lettering import font, grow, paint  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, 'src', 'port', 'mods', 'english')
-BRUSH = os.path.join(ROOT, 'src', 'port', 'fonts', 'KaushanScript-Regular.ttf')
-ROMAN = os.path.join(ROOT, 'src', 'port', 'fonts', 'Marcellus-Regular.ttf')
+# the faces (port_lettering.FACES): the rows and the title in the heaviest,
+# "TOP MENU" in the bold
+ROWS_FACE = 'title'
+SMALL_FACE = 'bold'
 # How many of the picture's pixels a texel of the game's is, across and
 # down. The top menu is in the console's mode of 640 by 240, whose texel is
 # twice as tall as it is wide on the screen; a pixel of these pictures is
@@ -113,35 +119,40 @@ SMALL_EDGE = (8, 24, 32)
 # before it is drawn smaller
 SHADOW_STEP = 9
 EDGE_WIDTH = 5
-SQUEEZE_MIN = 0.8
+SQUEEZE_MIN = 0.85
+# A row whose name fits only at less than this of the size the others fit
+# at is drawn smaller than they are; the others are drawn at one size, the
+# smallest any of them needs ("Group Battle" is the long one).
+ROW_LONG = 0.5
 
 
-def font_fitting(path, text, box_w, box_h):
-    """The font at the size whose capitals fill `box_h` pixels, and how
-    much narrower the text is drawn to fit `box_w`: down to SQUEEZE_MIN,
-    and smaller beyond that."""
-    size = box_h * 2
+def font_fitting(face, text, box_w, box_h, size_max=None):
+    """The font at the size whose capitals fill `box_h` pixels (or at
+    `size_max`, if that is smaller), and how much narrower the text is drawn
+    to fit `box_w`: down to SQUEEZE_MIN, and smaller beyond that."""
+    size = box_h * 2 if size_max is None else size_max
     while size > 4:
-        font = ImageFont.truetype(path, size)
-        top, bottom = font.getbbox('H')[1], font.getbbox('H')[3]
-        left, _, right, _ = font.getbbox(text)
+        f = font(face, size)
+        top, bottom = f.getbbox('H')[1], f.getbbox('H')[3]
+        left, _, right, _ = f.getbbox(text)
         if bottom - top <= box_h and (right - left) * SQUEEZE_MIN <= box_w:
             break
         size -= 1
-    return font, min(1.0, box_w / float(right - left))
+    return f, min(1.0, box_w / float(right - left))
 
 
-def text_mask(path, text, box, align, canvas):
+def text_mask(face, text, box, align, canvas, size_max=None):
     """The letters of `text` as a mask of `canvas` (w, h), their capitals
-    filling the rows of `box` (x0, y0, x1, y1, in pixels) and the text set
-    to its left, right or middle, narrowed where it would not fit."""
+    filling the rows of `box` (x0, y0, x1, y1, in pixels), or standing on its
+    bottom where they are smaller, and the text set to its left, right or
+    middle, narrowed where it would not fit."""
     x0, y0, x1, y1 = box
-    font, squeeze = font_fitting(path, text, x1 - x0, y1 - y0)
-    left, _, right, bottom = font.getbbox(text)
-    cap_top = font.getbbox('H')[1]
+    f, squeeze = font_fitting(face, text, x1 - x0, y1 - y0, size_max)
+    left, _, right, bottom = f.getbbox(text)
+    cap_bottom = f.getbbox('H')[3]
     margin = 4 * SCALE_X
     wide = Image.new('L', (right - left + 2 * margin, bottom + margin), 0)
-    ImageDraw.Draw(wide).text((margin - left, 0), text, font=font, fill=255)
+    ImageDraw.Draw(wide).text((margin - left, 0), text, font=f, fill=255)
     if squeeze < 1.0:
         wide = wide.resize((max(1, int(wide.width * squeeze)), wide.height), Image.LANCZOS)
     width = (right - left) * squeeze
@@ -152,65 +163,48 @@ def text_mask(path, text, box, align, canvas):
     else:
         at_x = (x0 + x1 - width) / 2.0
     mask = Image.new('L', canvas, 0)
-    mask.paste(wide, (int(round(at_x - margin * squeeze)), int(y0 - cap_top)))
+    mask.paste(wide, (int(round(at_x - margin * squeeze)), int(y1 - cap_bottom)))
     return mask
-
-
-def grow(mask, pixels):
-    """The mask made thicker by `pixels` all round."""
-    return mask.filter(ImageFilter.MaxFilter(2 * pixels + 1)) if pixels > 0 else mask
-
-
-def shift(mask, dx, dy):
-    """The mask moved by (dx, dy) pixels, what leaves its edge lost."""
-    out = Image.new('L', mask.size, 0)
-    out.paste(mask, (dx, dy))
-    return out
-
-
-def gradient(size, top, bottom, y0, y1):
-    """Colour running from `top` at row y0 to `bottom` at row y1."""
-    w, h = size
-    out = Image.new('RGB', size)
-    draw = ImageDraw.Draw(out)
-    for y in range(h):
-        t = min(1.0, max(0.0, (y - y0) / float(max(1, y1 - y0))))
-        draw.line([(0, y), (w, y)], fill=tuple(int(a + (b - a) * t) for a, b in zip(top, bottom)))
-    return out
 
 
 def lettering(mask, colors, y0, y1):
     """The game's look over a mask: a dark edge round the letters and
     their shadow, the shadow, then the letters, white fading to pale."""
     white, pale, edge, shadowed = colors
-    shadow = shift(mask, SHADOW_STEP, SHADOW_STEP)
-    outline = grow(ImageChops.lighter(mask, shadow), EDGE_WIDTH)
-    out = Image.new('RGBA', mask.size, (0, 0, 0, 0))
-    out.paste(Image.new('RGBA', mask.size, edge + (255,)), (0, 0), outline)
-    out.paste(Image.new('RGBA', mask.size, shadowed + (255,)), (0, 0), shadow)
-    out.paste(gradient(mask.size, white, pale, y0, y1).convert('RGBA'), (0, 0), mask)
-    return out
+    return paint(mask, white, pale, edge, EDGE_WIDTH, shadowed, SHADOW_STEP, y0, y1)
 
 
-def row_piece(text, align):
-    w, h = ROW_W * SCALE_X, ROW_H * SCALE_Y
+def row_box(align):
     left = ROW_LEFT + (1 if align == 'left' else 0)
-    box = (left * SCALE_X, ROW_TOP * SCALE_Y, (ROW_RIGHT - 1) * SCALE_X, ROW_BOTTOM * SCALE_Y)
-    mask = text_mask(BRUSH, text, box, align, (w, h))
+    return (left * SCALE_X, ROW_TOP * SCALE_Y, (ROW_RIGHT - 1) * SCALE_X, ROW_BOTTOM * SCALE_Y)
+
+
+def row_size():
+    """The one size of the rows' names and of "Mode"."""
+    sizes = []
+    for text, align in [(text, 'right') for _, text in ROWS] + [(SHARED[1], 'left')]:
+        x0, y0, x1, y1 = row_box(align)
+        sizes.append(font_fitting(ROWS_FACE, text, x1 - x0, y1 - y0)[0].size)
+    return min(size for size in sizes if size >= ROW_LONG * max(sizes))
+
+
+def row_piece(text, align, size):
+    w, h = ROW_W * SCALE_X, ROW_H * SCALE_Y
+    mask = text_mask(ROWS_FACE, text, row_box(align), align, (w, h), size)
     return lettering(mask, (WHITE, PALE, EDGE, SHADOW), ROW_TOP * SCALE_Y, (ROW_BOTTOM + 1) * SCALE_Y)
 
 
 def title_picture():
     w, h = TITLE_W * SCALE_X, TITLE_H * SCALE_Y
     box = (TITLE_LEFT * SCALE_X, TITLE_TOP * SCALE_Y, TITLE_RIGHT * SCALE_X, TITLE_BOTTOM * SCALE_Y)
-    mask = text_mask(BRUSH, TITLE_TEXT, box, 'middle', (w, h))
+    mask = text_mask(ROWS_FACE, TITLE_TEXT, box, 'middle', (w, h))
     out = lettering(mask, (TITLE_WHITE, TITLE_PALE, TITLE_EDGE, TITLE_SHADOW),
                     TITLE_TOP * SCALE_Y, (TITLE_BOTTOM + 1) * SCALE_Y)
     small = Image.new('L', (w, h), 0)
     for letter, middle in SMALL_LETTERS:
         box = ((middle - 6) * SCALE_X, SMALL_TOP * SCALE_Y, (middle + 7) * SCALE_X, (SMALL_BOTTOM + 1) * SCALE_Y)
-        small = ImageChops.lighter(small, text_mask(ROMAN, letter, box, 'middle', (w, h)))
-    small = grow(small, 2)
+        small = ImageChops.lighter(small, text_mask(SMALL_FACE, letter, box, 'middle', (w, h)))
+    small = grow(small, 1)
     out.paste(Image.new('RGBA', (w, h), SMALL_EDGE + (255,)), (0, 0), grow(small, EDGE_WIDTH))
     out.paste(Image.new('RGBA', (w, h), SMALL_INK + (255,)), (0, 0), small)
     return out
@@ -226,9 +220,10 @@ def png_bytes(image):
 def pictures():
     """name: PNG bytes, for every file of the mod's textures/."""
     out = {}
+    size = row_size()
     for key, text in ROWS:
-        out[key] = png_bytes(row_piece(text, 'right'))
-    out[SHARED[0]] = png_bytes(row_piece(SHARED[1], 'left'))
+        out[key] = png_bytes(row_piece(text, 'right', size))
+    out[SHARED[0]] = png_bytes(row_piece(SHARED[1], 'left', size))
     title = title_picture()
     x = 0
     for key, width in TITLE:

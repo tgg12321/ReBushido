@@ -331,10 +331,12 @@ reason: 支度, "preparations", with the word the other rows have.
 
 **How it is made.** `python tools/port_english.py` draws the pictures
 into `src/port/mods/english/` (`--check` says whether what is there is
-what it would draw). They are the project's own art: text in two fonts
-of the SIL Open Font Licence, Kaushan Script for the brush lettering and
-Marcellus for "TOP MENU" (`src/port/fonts/`, each with its licence),
-with the game's look -- white letters fading to pale blue, a dark edge,
+what it would draw). They are the project's own art: text in the port's
+one typeface, Shippori Mincho (`src/port/fonts/`, the SIL Open Font
+Licence; [`PORT.md`](PORT.md), "The port's lettering"), its ExtraBold for
+the title and the rows -- every row's name at one size, and "Group
+Battle", too long for it, smaller on the same baseline -- and its Bold for
+"TOP MENU", with the game's look -- white letters fading to pale blue, a dark edge,
 a blue shadow down and to the right; the game tints a row itself (gold,
 the cursor's yellow). No pixel of the game's is in them or is read to
 draw them, so they are kept in the repository, and the script makes the
@@ -425,12 +427,18 @@ split between two rows is split at the same place -- and each piece is
 cut from the block. A piece that holds anything but lettering (an icon
 beside a word) is left to the art mod.
 
-The fonts are of the SIL Open Font Licence (`src/port/fonts/`, each with
-its licence): **Archivo** at its widest (its width axis at 125) for the
-game's grotesque, which is wide -- in three weights, the menus', the
-names' thinner one and the digits' heavier one -- and **Marcellus** for
-its roman (the select screens' titles, the schools, the places, 1ST 2ND
-3RD, the stage card). The looks are the game's: letters darkening
+The lettering is the port's one typeface, **Shippori Mincho**
+(`src/port/fonts/`, the SIL Open Font Licence; [`PORT.md`](PORT.md), "The
+port's lettering", which has how a text is fitted to its rectangle): its
+Bold for the game's grotesque (the menus' lines, the captions, the
+names), its ExtraBold for the fight's digits, and its Regular for the
+game's roman, which has a dark edge round it (the select screens'
+titles, the schools, the places, 1ST 2ND 3RD, the stage card). These
+screens are in the console's mode of 640 by 240, whose texel is twice
+as tall as it is wide, so the letters are drawn twice as wide in a texel
+as the face has them, to be seen as it has them; texts of one kind (one
+face, one height, capitals or not) are one size. The looks are the
+game's: letters darkening
 downward, with a shadow down and to the right (the pause menu's, the
 training page's), a dark edge all round (the select screens'), a panel
 under them (Side View, POV) or nothing, each in the colours its own
@@ -442,7 +450,8 @@ project's own, kept in the repository: no pixel of the game's is in them.
 
 The built-in font's characters are a texture each, the key of each worked
 out from the font's picture in `font.c` (four characters share a place in
-it, each through its own colour table): a character in Archivo, white,
+it, each through its own colour table): a character in Shippori Mincho's
+Bold, white,
 its capitals seven texels high, the tails of g j p q y in the eighth row.
 
 ## The art mod
