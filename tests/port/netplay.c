@@ -85,6 +85,56 @@ void port_SessionInput(u32 frame, PortInput *input, u16 *used) {
 
 s32 port_GetSessionRole(void) { return PORT_SESSION_NONE; }
 
+/* no room of several, no feed and no spectator here (src/port/room.c,
+ * watch.c) */
+void port_RoomTick(void) {}
+
+void port_RoomWait(u32 wait_ms) { (void)wait_ms; }
+
+s32 port_FeedIsOn(void) { return 0; }
+
+void port_FeedFrame(u32 frame, u16 first, u16 second) {
+    (void)frame;
+    (void)first;
+    (void)second;
+}
+
+void port_FeedHash(u32 frame, u64 hash) {
+    (void)frame;
+    (void)hash;
+}
+
+void port_FeedTick(void) {}
+
+void port_WatchTick(void) {}
+
+s32 port_WatchHash(u32 frame, u64 *hash) {
+    (void)frame;
+    (void)hash;
+    return 0;
+}
+
+s32 port_WatchEnd(u32 *frame, s32 *winner) {
+    *frame = 0;
+    *winner = 0;
+    return 0;
+}
+
+u32 port_WatchKnown(void) { return 0; }
+
+u32 port_WatchQuietMs(void) { return 0; }
+
+s32 port_WatchInput(u32 frame, u16 *first, u16 *second) {
+    (void)frame;
+    *first = 0;
+    *second = 0;
+    return 0;
+}
+
+u32 port_SessionLeftAt(void) { return 0; }
+
+s32 port_SessionResult(void) { return 0; }
+
 void port_DriverInput(PortInput *input) {
     input->buttons[0] = 0;
     input->buttons[1] = 0;

@@ -449,6 +449,15 @@ static s32 port_RoomAsk(
         s32 got;
 
         if (now - start > ASK_GIVE_UP_MS) {
+            PortRoom listed;
+            s32 total;
+
+            /* a server of version 1 says nothing to a room of several's
+             * words, but answers a list */
+            if (port_RelayListRooms(&g_room.server, &listed, 1, &total) >= 0) {
+                port_RoomRefusal(STATUS_VERSION, in, why, room);
+                return 0;
+            }
             port_RoomText(why, room,
                           "The lobby server does not answer. Is its address "
                           "right, and does your network let UDP through?");
