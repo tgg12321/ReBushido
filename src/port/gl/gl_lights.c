@@ -108,7 +108,7 @@ PORT_GL_LIGHTS_FUNCTIONS
 /* The nearest a light's shadow map sees, in world units. */
 #define LIGHT_NEAR 8.0f
 /* Of the grid's cells, how many lights one may name at most in all. */
-#define LIST_MAX (PORT_GL_LIGHTS_CELLS * PORT_GL_LIGHTS_CELLS * 8)
+#define LIST_MAX (PORT_GL_LIGHTS_CELLS * PORT_GL_LIGHTS_CELLS * 32)
 /* A byte of light for an intensity of 1 (gl_lights.h). */
 #define BYTES_ONE 128.0f
 #define PI_F 3.14159265f
@@ -575,6 +575,7 @@ void port_GlLightsPrepare(void) {
     PortGlPicture picture;
     float origin_x;
     float origin_z;
+    float cell;
     float strongest[PORT_GL_LIGHTS_SHADOWED];
     s32 shadow_of[PORT_GL_LIGHTS_SHADOWED];
     u32 used = 0;
@@ -598,13 +599,39 @@ void port_GlLightsPrepare(void) {
         return;
     }
     PORT_GPU_BEGIN(PORT_GPU_LIGHTS);
-    /* the grid: about the camera, moved by whole cells */
-    origin_x = port_LightsFloor((float)view->camera[0] / PORT_GL_LIGHTS_CELL -
-                                PORT_GL_LIGHTS_CELLS / 2) *
-               PORT_GL_LIGHTS_CELL;
-    origin_z = port_LightsFloor((float)view->camera[2] / PORT_GL_LIGHTS_CELL -
-                                PORT_GL_LIGHTS_CELLS / 2) *
-               PORT_GL_LIGHTS_CELL;
+    /* The grid: over the square that holds every light's reach, seen from
+     * above, so that no light lies outside it whatever the camera looks
+     * at (a fight's camera stands thousands of units behind the
+     * fighters, and a grid about it left the far half of the stage
+     * unlit). Its cells are at least PORT_GL_LIGHTS_CELL, in whole
+     * steps of it, its corner on whole cells: which cell a light is
+     * binned into changes only how many a pixel loops over, never what
+     * it is lit by. */
+    {
+        float low[2];
+        float high[2];
+        float side;
+
+        low[0] = low[1] = 1e30f;
+        high[0] = high[1] = -1e30f;
+        for (i = 0; i < count; i++) {
+            const PortGlLight *l = &light[i];
+
+            for (x = 0; x < 2; x++) {
+                float at = l->position[x * 2];
+
+                low[x] = at - l->radius < low[x] ? at - l->radius : low[x];
+                high[x] = at + l->radius > high[x] ? at + l->radius : high[x];
+            }
+        }
+        side = high[0] - low[0] > high[1] - low[1] ? high[0] - low[0]
+                                                   : high[1] - low[1];
+        cell = PORT_GL_LIGHTS_CELL *
+               (1.0f + port_LightsFloor(side / (PORT_GL_LIGHTS_CELLS - 1) /
+                                        PORT_GL_LIGHTS_CELL));
+        origin_x = port_LightsFloor(low[0] / cell) * cell;
+        origin_z = port_LightsFloor(low[1] / cell) * cell;
+    }
     /* the strongest few that ask cast shadows: the brightest at the
      * camera's distance */
     for (i = 0; i < PORT_GL_LIGHTS_SHADOWED; i++) {
@@ -681,21 +708,19 @@ void port_GlLightsPrepare(void) {
     for (z = 0; z < PORT_GL_LIGHTS_CELLS; z++) {
         for (x = 0; x < PORT_GL_LIGHTS_CELLS; x++) {
             u32 at = (u32)(z * PORT_GL_LIGHTS_CELLS + x) * 2u;
-            float x0 = origin_x + (float)(x * PORT_GL_LIGHTS_CELL);
-            float z0 = origin_z + (float)(z * PORT_GL_LIGHTS_CELL);
+            float x0 = origin_x + (float)x * cell;
+            float z0 = origin_z + (float)z * cell;
 
             g_lights.cell[at] = used;
             g_lights.cell[at + 1] = 0;
             for (i = 0; i < count && used < LIST_MAX; i++) {
                 const CardLight *c = &g_lights.card[i];
-                float nx = c->place[0] < x0 ? x0
-                           : c->place[0] > x0 + PORT_GL_LIGHTS_CELL
-                               ? x0 + PORT_GL_LIGHTS_CELL
-                               : c->place[0];
-                float nz = c->place[2] < z0 ? z0
-                           : c->place[2] > z0 + PORT_GL_LIGHTS_CELL
-                               ? z0 + PORT_GL_LIGHTS_CELL
-                               : c->place[2];
+                float nx = c->place[0] < x0          ? x0
+                           : c->place[0] > x0 + cell ? x0 + cell
+                                                     : c->place[0];
+                float nz = c->place[2] < z0          ? z0
+                           : c->place[2] > z0 + cell ? z0 + cell
+                                                     : c->place[2];
                 float dx = c->place[0] - nx;
                 float dz = c->place[2] - nz;
 
@@ -708,7 +733,7 @@ void port_GlLightsPrepare(void) {
     }
     g_lights.grid_head[0] = origin_x;
     g_lights.grid_head[1] = origin_z;
-    g_lights.grid_head[2] = (float)PORT_GL_LIGHTS_CELL;
+    g_lights.grid_head[2] = cell;
     g_lights.grid_head[3] = (float)PORT_GL_LIGHTS_CELLS;
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, g_lights.light_buffer);
     glBufferData(GL_SHADER_STORAGE_BUFFER,

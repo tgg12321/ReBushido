@@ -411,6 +411,10 @@ typedef struct {
      * begun the next frame, and asked then it was held against nothing
      * at all. */
     s32 is_held;
+    /* A fighter's own polygons lit by the frame's lights (FLAG_WORLD,
+     * `lights` on): drawn by the scene's twin program, which has the
+     * lights' loop, so that nothing else pays for it (port_GlFlush). */
+    s32 is_lit;
     /* A mod's replacement of the batch's texture (gl_replace.h), 0 for
      * none, and the texture points of the page it stands for. */
     u32 replace_texture;
@@ -429,6 +433,45 @@ typedef struct {
     u32 replacement;
     u32 tint;
 } PortGlBlit;
+
+/* Where a program of the scene has its uniforms: the scene's own and its
+ * twin for a fighter's own polygons lit by the frame's lights are made of
+ * the same text, but where a card puts a uniform is its own to say. */
+typedef struct {
+    GLint target;
+    GLint scale;
+    GLint vram;
+    GLint affine;
+    GLint exact;
+    GLint like_emulator;
+    GLint bilinear;
+    GLint minify;
+    GLint pass;
+    GLint w_scale;
+    GLint depth_range;
+    GLint depth_bias;
+    GLint ground_slots;
+    GLint fighter_depth;
+    GLint fighter_rect;
+    GLint fighter_bias;
+    GLint tone_on; /* the twin's alone (gl_post.h) */
+    GLint ground_order;
+    GLint replace;
+    GLint replaced;
+    GLint replace_rect;
+    GLint replace_mix;
+    GLint replace_tint;
+    GLint scene_lookup;
+    GLint scene_pages;
+    GLint scene_bases;
+    GLint scene_on;
+    GLint scene_levels;
+    PortGlSunScreenAt sun;
+    PortGlLightsAt lights;
+    /* port_GlSunStamp when the program was last given the maps and the
+     * view, plus one; 0 never */
+    u32 world_stamp;
+} PortGlSceneAt;
 
 static struct {
     s32 is_started;
@@ -518,43 +561,19 @@ static struct {
      * whose corners the side channel has wherever the projection put
      * them, fills the width. */
     s32 margin;
-    GLint at_target;
-    GLint at_scale;
-    GLint at_vram;
-    GLint at_affine;
-    GLint at_exact;
-    GLint at_like_emulator;
-    GLint at_bilinear;
-    GLint at_minify;
-    GLint at_pass;
-    GLint at_w_scale;
-    PortGlSunScreenAt at_sun;
+    /* where the scene's program (`scene_at`) and its twin that lights a
+     * fighter's own polygons by the frame's lights (`lit_at`) have their
+     * uniforms, and the one in use */
+    PortGlSceneAt scene_at;
+    PortGlSceneAt lit_at;
+    PortGlSceneAt *at;
+    GLuint lit_program;
     s32 has_world; /* the batch holds a vertex with FLAG_WORLD */
-    /* port_GlSunStamp when the program was last given the maps and the
-     * view, plus one; 0 never */
-    u32 world_stamp;
-    GLint at_depth_range;
-    GLint at_depth_bias;
-    GLint at_ground_slots;
-    GLint at_fighter_depth;
-    GLint at_fighter_rect;
-    GLint at_fighter_bias;
-    GLint at_ground_order;
     GLint blit_at_target;
     GLint blit_at_rect;
     GLint blit_at_scale;
     GLint blit_at_vram;
     GLint blit_at_shift;
-    GLint at_replace;
-    GLint at_replaced;
-    GLint at_replace_rect;
-    GLint at_replace_mix;
-    GLint at_replace_tint;
-    GLint at_scene_lookup;
-    GLint at_scene_pages;
-    GLint at_scene_bases;
-    GLint at_scene_on;
-    GLint at_scene_levels;
     GLint blit_at_tint;
     GLint blit_at_replace;
     GLint blit_at_replaced;
@@ -904,6 +923,10 @@ static const char g_gl_fragment_text[] =
     "#version 330 core\n" PORT_GL_VRAM_SHADER
         /* the sun's maps, for a fighter's own polygons (FLAG_WORLD) */
         PORT_GL_SUN_SHADER PORT_GL_SUN_SCREEN_SHADER
+    /* ... and, in the scene's twin, the frame's lights (port_GlFlush) */
+    "#ifdef PORT_LIGHTS_LIT\n" PORT_GL_LIGHTS_SHADER PORT_GL_TONE_SHADER
+    "const float LIT_WRAP = 0.4;\n"
+    "#endif\n"
     "flat in vec3 v_world_normal;\n"
     "uniform vec2 u_target;\n"
     "uniform vec2 u_scale;\n"
@@ -1151,10 +1174,17 @@ static const char g_gl_fragment_text[] =
      * the geometry shader's. The game's light of him, which the colour
      * is, loses in the sun's shadow what a shadow takes from the floor
      * beside him (u_sun_dark), before the texture, as the colour is.
-     * (The frame's lights, gl_lights.h, do not light these polygons:
-     * their loop in this program, per pixel or at each corner, cost the
-     * scene's pass a millisecond at the worst of the bench's fight even
-     * with no light to add.) */
+     * In the scene's twin (PORT_LIGHTS_LIT, port_GlFlush) the frame's
+     * lights are added to that light as the meshes add them, each with
+     * its falloff, colour, flicker and shadow (gl_lights.h); the face's
+     * normal is the face's own, not a corner's, so the light wraps a
+     * little past its edge (`LIT_WRAP`) and a low-polygon body is not
+     * lit facet by facet. In the scene's own program that loop cost
+     * every batch of the scene most of a millisecond, light or none. */
+    "#ifdef PORT_LIGHTS_LIT\n"
+    "    vec3 lit_base = vec3(0.0);\n"
+    "    vec3 lit_added = vec3(0.0);\n"
+    "#endif\n"
     "    if ((v_info.w & 8u) != 0u && (v_flags.w & 2u) == 0u\n"
     "        && dot(v_world_normal, v_world_normal) > 0.0) {\n"
     "        float world_deep = (u_w_scale / gl_FragCoord.w)\n"
@@ -1164,11 +1194,25 @@ static const char g_gl_fragment_text[] =
     "        float seen = sun_visible_quick(world, v_world_normal);\n"
     "        color *= 1.0 - u_sun_dark * (1.0 - seen);\n"
     /* and lit at the time of day as the stage is (gl_time.h) */
-    "        color = time_relight(color, normalize(v_world_normal));\n"
-    "    }\n"
+    "        color = time_relight(color, normalize(v_world_normal));
+"
+    "#ifdef PORT_LIGHTS_LIT
+"
+    "        lit_base = color;
+"
+    "        lit_added = lights_add_wrapped(world, v_world_normal, LIT_WRAP);
+"
+    "        color += lit_added;
+"
+    "#endif
+"
+    "    }
+"
     /* the stage's own polygons the game lit, by the time's floor */
-    "    if ((v_info.w & 16u) != 0u && (v_flags.w & 2u) == 0u) {\n"
-    "        color *= u_time_floor;\n"
+    "    if ((v_info.w & 16u) != 0u && (v_flags.w & 2u) == 0u) {
+"
+    "        color *= u_time_floor;
+"
     "    }\n"
     "    float shade = 1.0;\n"
     "    if ((v_flags.w & 1u) != 0u) {\n"
@@ -1295,6 +1339,15 @@ static const char g_gl_fragment_text[] =
     "            if (u_exact != 0) { color = floor(color); }\n"
     "        }\n"
     "    }\n"
+    /* what the frame's lights added rolled off above the game's own
+     * colour, as the meshes do it (gl_post.h): the colour is in
+     * proportion to the light, so the game's own is its share of it */
+    "#ifdef PORT_LIGHTS_LIT\n"
+    "    if (any(greaterThan(lit_added, vec3(0.0)))) {\n"
+    "        vec3 whole = max(lit_base + lit_added, vec3(1e-3));\n"
+    "        color = tone_map(color * max(lit_base, vec3(0.0)) / whole, color);\n"
+    "    }\n"
+    "#endif\n"
     "    if (u_exact != 0) {\n"
     "        float step = ((v_flags.w & 8u) != 0u)\n"
     "                   ? float(dither[(pixel.y & 3) * 4 + (pixel.x & 3)])\n"
@@ -1593,6 +1646,39 @@ static GLuint port_GlMakeProgramWith(
         return 0;
     }
     return program;
+}
+
+/* Where `program`, the scene's or its twin, has its uniforms. */
+static void port_GlLocateScene(GLuint program, PortGlSceneAt *at) {
+    at->target = glGetUniformLocation(program, "u_target");
+    at->scale = glGetUniformLocation(program, "u_scale");
+    at->vram = glGetUniformLocation(program, "u_vram");
+    at->affine = glGetUniformLocation(program, "u_affine");
+    at->exact = glGetUniformLocation(program, "u_exact");
+    at->like_emulator = glGetUniformLocation(program, "u_like_emulator");
+    at->bilinear = glGetUniformLocation(program, "u_bilinear");
+    at->minify = glGetUniformLocation(program, "u_minify");
+    at->pass = glGetUniformLocation(program, "u_pass");
+    at->w_scale = glGetUniformLocation(program, "u_w_scale");
+    at->depth_range = glGetUniformLocation(program, "u_depth_range");
+    at->depth_bias = glGetUniformLocation(program, "u_depth_bias");
+    at->ground_slots = glGetUniformLocation(program, "u_ground_slots");
+    at->fighter_depth = glGetUniformLocation(program, "u_fighter_depth");
+    at->fighter_rect = glGetUniformLocation(program, "u_fighter_rect");
+    at->fighter_bias = glGetUniformLocation(program, "u_fighter_bias");
+    at->ground_order = glGetUniformLocation(program, "u_ground_order");
+    at->replace = glGetUniformLocation(program, "u_replace");
+    at->replaced = glGetUniformLocation(program, "u_replaced");
+    at->replace_rect = glGetUniformLocation(program, "u_replace_rect");
+    at->replace_mix = glGetUniformLocation(program, "u_replace_mix");
+    at->replace_tint = glGetUniformLocation(program, "u_replace_tint");
+    at->scene_lookup = glGetUniformLocation(program, "u_scene_lookup");
+    at->scene_pages = glGetUniformLocation(program, "u_scene_pages");
+    at->scene_bases = glGetUniformLocation(program, "u_scene_bases");
+    at->scene_on = glGetUniformLocation(program, "u_scene_on");
+    at->scene_levels = glGetUniformLocation(program, "u_scene_levels");
+    at->tone_on = glGetUniformLocation(program, "u_tone_on");
+    at->world_stamp = 0;
 }
 
 static GLuint port_GlMakeProgram(const char *vertex, const char *fragment) {
@@ -2181,48 +2267,49 @@ static void port_GlSetFighterDepth(void) {
     glActiveTexture(GL_TEXTURE0 + FIGHTER_DEPTH_UNIT);
     glBindTexture(GL_TEXTURE_2D, texture);
     glActiveTexture(GL_TEXTURE0);
-    glUniform1i(g_gl.at_fighter_depth, FIGHTER_DEPTH_UNIT);
-    glUniform4f(g_gl.at_fighter_rect, (GLfloat)rect[0], (GLfloat)rect[1],
+    glUniform1i(g_gl.at->fighter_depth, FIGHTER_DEPTH_UNIT);
+    glUniform4f(g_gl.at->fighter_rect, (GLfloat)rect[0], (GLfloat)rect[1],
                 (GLfloat)(texture != 0 ? rect[2] : 0),
                 (GLfloat)(texture != 0 ? rect[3] : 0));
-    glUniform1f(g_gl.at_fighter_bias, FIGHTER_CLOTH_BIAS);
+    glUniform1f(g_gl.at->fighter_bias, FIGHTER_CLOTH_BIAS);
 }
 
 static void port_GlSetUniforms(void) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_BUFFER, g_gl.vram_texture);
-    glUniform1i(g_gl.at_vram, 0);
-    glUniform2f(g_gl.at_target, (GLfloat)g_gl.target_w, (GLfloat)g_gl.target_h);
-    glUniform2f(g_gl.at_scale, (GLfloat)g_gl.draw_x, (GLfloat)g_gl.draw_y);
-    glUniform1i(g_gl.at_affine, g_gl.options.is_exact ? 1 : 0);
-    glUniform1i(g_gl.at_exact, g_gl.options.is_exact ? 1 : 0);
-    glUniform1i(g_gl.at_like_emulator, port_GpuIsLikeEmulator() ? 1 : 0);
-    glUniform1i(
-        g_gl.at_bilinear, (g_gl.options.is_bilinear && !g_gl.options.is_exact));
+    glUniform1i(g_gl.at->vram, 0);
+    glUniform2f(
+        g_gl.at->target, (GLfloat)g_gl.target_w, (GLfloat)g_gl.target_h);
+    glUniform2f(g_gl.at->scale, (GLfloat)g_gl.draw_x, (GLfloat)g_gl.draw_y);
+    glUniform1i(g_gl.at->affine, g_gl.options.is_exact ? 1 : 0);
+    glUniform1i(g_gl.at->exact, g_gl.options.is_exact ? 1 : 0);
+    glUniform1i(g_gl.at->like_emulator, port_GpuIsLikeEmulator() ? 1 : 0);
+    glUniform1i(g_gl.at->bilinear,
+                (g_gl.options.is_bilinear && !g_gl.options.is_exact));
     /* the texels of a fragment averaged where it covers more than one of
      * them, which the console's own picture does not do */
-    glUniform1i(g_gl.at_minify, g_gl.options.is_exact ? 0 : 1);
+    glUniform1i(g_gl.at->minify, g_gl.options.is_exact ? 0 : 1);
     /* what the test against the ground's own depth needs: the unit a
      * corner's depth is in, the range a depth in the world's units is
      * kept over, and the offset that keeps what lies on the ground from
      * being eaten by it (gl_stage.h) */
-    glUniform1f(g_gl.at_w_scale, PORT_GL_DEPTH_UNIT);
-    glUniform1f(g_gl.at_depth_range, PORT_GL_DEPTH_RANGE);
-    glUniform1f(g_gl.at_depth_bias, PORT_GL_DEPTH_BIAS);
+    glUniform1f(g_gl.at->w_scale, PORT_GL_DEPTH_UNIT);
+    glUniform1f(g_gl.at->depth_range, PORT_GL_DEPTH_RANGE);
+    glUniform1f(g_gl.at->depth_bias, PORT_GL_DEPTH_BIAS);
     /* held against the slots of the ground only where port_GlFlush says
      * the mesh wrote them into the buffer being drawn into */
-    glUniform1i(g_gl.at_ground_order, 0);
-    glUniform1i(g_gl.at_ground_slots, 1);
+    glUniform1i(g_gl.at->ground_order, 0);
+    glUniform1i(g_gl.at->ground_slots, 1);
     port_GlSetFighterDepth();
-    glUniform1i(g_gl.at_replaced, 0);
-    glUniform1i(g_gl.at_replace, PORT_GL_REPLACE_UNIT);
+    glUniform1i(g_gl.at->replaced, 0);
+    glUniform1i(g_gl.at->replace, PORT_GL_REPLACE_UNIT);
     /* a mod's pictures of the stage's pages (gl_scene.h) */
-    glUniform1i(g_gl.at_scene_lookup, PORT_GL_SCENE_LOOKUP_UNIT);
-    glUniform1i(g_gl.at_scene_pages, PORT_GL_SCENE_PAGES_UNIT);
-    glUniform1i(g_gl.at_scene_bases, PORT_GL_SCENE_BASES_UNIT);
-    glUniform1i(
-        g_gl.at_scene_on, !g_gl.options.is_exact && port_GlSceneBind() ? 1 : 0);
-    glUniform1f(g_gl.at_scene_levels, port_GlSceneLevels());
+    glUniform1i(g_gl.at->scene_lookup, PORT_GL_SCENE_LOOKUP_UNIT);
+    glUniform1i(g_gl.at->scene_pages, PORT_GL_SCENE_PAGES_UNIT);
+    glUniform1i(g_gl.at->scene_bases, PORT_GL_SCENE_BASES_UNIT);
+    glUniform1i(g_gl.at->scene_on,
+                !g_gl.options.is_exact && port_GlSceneBind() ? 1 : 0);
+    glUniform1f(g_gl.at->scene_levels, port_GlSceneLevels());
 }
 
 /* A fade's tint (port_mods.h, PORT_MOD_TINT_ONE a part for as it was)
@@ -2244,10 +2331,10 @@ static void port_GlSetReplacement(const PortGlState *state) {
     glActiveTexture(GL_TEXTURE0 + PORT_GL_REPLACE_UNIT);
     glBindTexture(GL_TEXTURE_2D, state->replace_texture);
     glActiveTexture(GL_TEXTURE0);
-    glUniform1i(g_gl.at_replaced, 1);
-    glUniform1i(g_gl.at_replace_mix, state->replace_mix);
-    port_GlSetTint(g_gl.at_replace_tint, state->replace_tint);
-    glUniform4f(g_gl.at_replace_rect, (GLfloat)state->replace_u,
+    glUniform1i(g_gl.at->replaced, 1);
+    glUniform1i(g_gl.at->replace_mix, state->replace_mix);
+    port_GlSetTint(g_gl.at->replace_tint, state->replace_tint);
+    glUniform4f(g_gl.at->replace_rect, (GLfloat)state->replace_u,
                 (GLfloat)state->replace_v, (GLfloat)state->replace_w,
                 (GLfloat)state->replace_h);
 }
@@ -2284,10 +2371,25 @@ static void port_GlFlush(void) {
         return;
     }
     was = port_ProfileSwitch(PORT_PROFILE_CARD);
+    /* the lights (and the sun's maps) of the picture, if the ground has
+     * not had them made yet, as the fighters' models ask (gl_fighter.c) */
+    if (g_gl.state.is_lit) {
+        port_GlStageSunPrepare();
+    }
     PORT_GPU_BEGIN(g_port_gpu_base);
     port_GlKeepOccluders();
     port_GlUploadMirror();
-    glUseProgram(g_gl.program);
+    /* A fighter's own polygons lit by the frame's lights are drawn by the
+     * scene's twin, the same text with the lights' loop compiled in: in
+     * the scene's own program that loop cost every batch of the scene,
+     * light or none, most of a millisecond of the card. */
+    if (g_gl.state.is_lit) {
+        glUseProgram(g_gl.lit_program);
+        g_gl.at = &g_gl.lit_at;
+    } else {
+        glUseProgram(g_gl.program);
+        g_gl.at = &g_gl.scene_at;
+    }
     glBindVertexArray(g_gl.array);
     glBindBuffer(GL_ARRAY_BUFFER, g_gl.buffer);
     glBufferData(
@@ -2297,9 +2399,14 @@ static void port_GlFlush(void) {
     port_GlSetReplacement(&g_gl.state);
     /* once a picture: the maps and the view are the same for every batch
      * of it, and the units they are on are theirs alone */
-    if (g_gl.has_world && g_gl.world_stamp != port_GlSunStamp() + 1) {
-        port_GlSunBindScreen(&g_gl.at_sun);
-        g_gl.world_stamp = port_GlSunStamp() + 1;
+    if (g_gl.has_world && g_gl.at->world_stamp != port_GlSunStamp() + 1) {
+        port_GlSunBindScreen(&g_gl.at->sun);
+        g_gl.at->world_stamp = port_GlSunStamp() + 1;
+    }
+    /* ... and the lights, which a picture prepares once (gl_lights.h) */
+    if (g_gl.state.is_lit) {
+        port_GlLightsBind(&g_gl.at->lights);
+        glUniform1i(g_gl.at->tone_on, port_GlPostToneIsOn());
     }
     g_gl.has_world = FALSE;
     /* The scene against the ground (gl_stage.h). The ground's mesh has
@@ -2319,7 +2426,7 @@ static void port_GlFlush(void) {
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, g_gl.slot_texture);
         glActiveTexture(GL_TEXTURE0);
-        glUniform1i(g_gl.at_ground_order, 1);
+        glUniform1i(g_gl.at->ground_order, 1);
     } else {
         glDisable(GL_DEPTH_TEST);
     }
@@ -2331,14 +2438,14 @@ static void port_GlFlush(void) {
         g_gl.state.blend == PORT_REMASTER_BLEND_SUBTRACT) {
         /* what is there, less this: only the texels that mix are taken
          * away, and the others are drawn as they are */
-        glUniform1i(g_gl.at_pass, PASS_MIXED);
+        glUniform1i(g_gl.at->pass, PASS_MIXED);
         glDrawArrays(GL_TRIANGLES, 0, g_gl.count);
         glDisable(GL_BLEND);
-        glUniform1i(g_gl.at_pass, PASS_PLAIN);
+        glUniform1i(g_gl.at->pass, PASS_PLAIN);
         glDrawArrays(GL_TRIANGLES, 0, g_gl.count);
         g_gl.draw_count += 2;
     } else {
-        glUniform1i(g_gl.at_pass, PASS_ALL);
+        glUniform1i(g_gl.at->pass, PASS_ALL);
         glDrawArrays(GL_TRIANGLES, 0, g_gl.count);
         g_gl.draw_count++;
     }
@@ -2360,7 +2467,7 @@ static s32 port_GlStateIsSame(const PortGlState *a, const PortGlState *b) {
            a->clip_right == b->clip_right && a->clip_bottom == b->clip_bottom &&
            a->is_wide == b->is_wide && a->is_ground == b->is_ground &&
            a->is_scene == b->is_scene && a->is_held == b->is_held &&
-           a->replace_texture == b->replace_texture &&
+           a->is_lit == b->is_lit && a->replace_texture == b->replace_texture &&
            a->replace_u == b->replace_u && a->replace_v == b->replace_v &&
            a->replace_w == b->replace_w && a->replace_h == b->replace_h &&
            a->replace_mix == b->replace_mix &&
@@ -2667,6 +2774,7 @@ static void port_GlStateOf(const PortRemasterPrim *prim, PortGlState *state) {
     state->is_scene = prim->has_depth;
     state->is_held =
         port_GlStageSaveFrame() && g_gl.options.is_stage_depth ? TRUE : FALSE;
+    state->is_lit = FALSE;
     state->replace_texture = 0;
     state->replace_u = 0;
     state->replace_v = 0;
@@ -2764,10 +2872,11 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
         flags |= FLAG_OVER_GROUND;
     }
     /* a fighter's own polygon takes the sun's shadows as the meshes do,
-     * and the time of day's light (gl_time.h) */
+     * the time of day's light (gl_time.h), and the frame's lights in a
+     * program of its own (port_GlFlush) */
     if (prim->is_fighter && prim->has_depth && !prim->is_effect &&
         !prim->is_shadow && !g_gl.options.is_exact &&
-        (port_GlSunIsOn() || port_GlTime()->on)) {
+        (port_GlSunIsOn() || port_GlTime()->on || port_GlLightsIsOn())) {
         flags |= FLAG_WORLD;
     }
     if (!prim->is_fighter && prim->has_depth && !prim->is_effect &&
@@ -2789,6 +2898,8 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     }
     port_GlStateOf(prim, &state);
     port_GlReplacementOf(prim, &state);
+    state.is_lit = (flags & FLAG_WORLD) != 0 && g_gl.lit_program != 0 &&
+                   port_GlLightsIsOn();
     /* a face of the stage whose page a mod has a picture of: no state of
      * the batch's, so that the stage's faces stay one batch (gl_scene.h) */
     if (!g_gl.options.is_exact && state.replace_texture == 0 &&
@@ -3314,6 +3425,7 @@ void port_GlDrawOccluders(u32 framebuffer) {
     port_GlUploadMirror();
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
     glUseProgram(g_gl.program);
+    g_gl.at = &g_gl.scene_at;
     glBindVertexArray(g_gl.array);
     glBindBuffer(GL_ARRAY_BUFFER, g_gl.buffer);
     glBufferData(
@@ -3321,7 +3433,7 @@ void port_GlDrawOccluders(u32 framebuffer) {
         (GLsizeiptr)((u32)g_gl.occluder_count * sizeof(*g_gl.occluders)),
         g_gl.occluders, GL_STREAM_DRAW);
     port_GlSetUniforms();
-    glUniform1i(g_gl.at_pass, PASS_ALL);
+    glUniform1i(g_gl.at->pass, PASS_ALL);
     /* the alpha alone: what the fragment's colour is does not matter,
      * only that the picture kept it. Every one of these primitives is
      * opaque, so the shader's own alpha is 1 (gl_shadow.h). */
@@ -3595,6 +3707,55 @@ void port_GlGetOptions(PortGlOptions *options) { *options = g_gl.options; }
 
 s32 port_GlIsStarted(void) { return g_gl.is_started; }
 
+/* The scene's twin (PortGlState.is_lit): the scene's three shaders made
+ * again with the lights' loop compiled in (`PORT_LIGHTS_LIT`), which needs
+ * GLSL 4.3 for the lights' buffers. Its uniforms found and its samplers
+ * put on their own units, as the scene's are. 0 where it cannot be made. */
+static char *port_GlLitText(const char *text) {
+    static const char was[] = "#version 330 core\n";
+    static const char now[] = "#version 430 core\n#define PORT_LIGHTS_LIT 1\n";
+    size_t length = strlen(text);
+    char *out;
+
+    if (strncmp(text, was, sizeof(was) - 1) != 0) {
+        return NULL;
+    }
+    out = malloc(length + sizeof(now));
+    if (out == NULL) {
+        return NULL;
+    }
+    memcpy(out, now, sizeof(now) - 1);
+    memcpy(out + sizeof(now) - 1, text + sizeof(was) - 1,
+           length - (sizeof(was) - 1) + 1);
+    return out;
+}
+
+static GLuint port_GlMakeLitProgram(void) {
+    char *vertex = port_GlLitText(g_gl_vertex_text);
+    char *geometry = port_GlLitText(g_gl_geometry_text);
+    char *fragment = port_GlLitText(g_gl_fragment_text);
+    GLuint program = 0;
+
+    if (vertex != NULL && geometry != NULL && fragment != NULL) {
+        program = port_GlMakeProgramWith(vertex, geometry, fragment);
+    }
+    free(vertex);
+    free(geometry);
+    free(fragment);
+    if (program == 0) {
+        return 0;
+    }
+    port_GlLocateScene(program, &g_gl.lit_at);
+    port_GlSunLocateScreen(program, &g_gl.lit_at.sun);
+    port_GlLightsLocate(program, &g_gl.lit_at.lights);
+    glUseProgram(program);
+    glUniform1i(g_gl.lit_at.sun.sun.map, PORT_GL_SUN_UNIT);
+    glUniform1i(g_gl.lit_at.sun.sun.raw, PORT_GL_SUN_RAW_UNIT);
+    glUniform1i(g_gl.lit_at.lights.map, PORT_GL_LIGHTS_MAP_UNIT);
+    glUseProgram(0);
+    return program;
+}
+
 const char *port_GlStart(
     void *(*getproc)(const char *name), const PortGlOptions *options) {
     static const GLfloat corners[] = {
@@ -3645,45 +3806,18 @@ const char *port_GlStart(
     if (g_gl.program == 0) {
         return g_gl.problem;
     }
+    port_GlLocateScene(g_gl.program, &g_gl.scene_at);
+    g_gl.at = &g_gl.scene_at;
     g_gl.blit_program =
         port_GlMakeProgram(g_gl_blit_vertex_text, g_gl_blit_fragment_text);
     if (g_gl.blit_program == 0) {
         return g_gl.problem;
     }
-    g_gl.at_target = glGetUniformLocation(g_gl.program, "u_target");
-    g_gl.at_scale = glGetUniformLocation(g_gl.program, "u_scale");
-    g_gl.at_vram = glGetUniformLocation(g_gl.program, "u_vram");
-    g_gl.at_affine = glGetUniformLocation(g_gl.program, "u_affine");
-    g_gl.at_exact = glGetUniformLocation(g_gl.program, "u_exact");
-    g_gl.at_like_emulator =
-        glGetUniformLocation(g_gl.program, "u_like_emulator");
-    g_gl.at_bilinear = glGetUniformLocation(g_gl.program, "u_bilinear");
-    g_gl.at_minify = glGetUniformLocation(g_gl.program, "u_minify");
-    g_gl.at_w_scale = glGetUniformLocation(g_gl.program, "u_w_scale");
-    g_gl.at_depth_range = glGetUniformLocation(g_gl.program, "u_depth_range");
-    g_gl.at_depth_bias = glGetUniformLocation(g_gl.program, "u_depth_bias");
-    g_gl.at_ground_slots = glGetUniformLocation(g_gl.program, "u_ground_slots");
-    g_gl.at_fighter_depth =
-        glGetUniformLocation(g_gl.program, "u_fighter_depth");
-    g_gl.at_fighter_rect = glGetUniformLocation(g_gl.program, "u_fighter_rect");
-    g_gl.at_fighter_bias = glGetUniformLocation(g_gl.program, "u_fighter_bias");
-    g_gl.at_ground_order = glGetUniformLocation(g_gl.program, "u_ground_order");
-    g_gl.at_pass = glGetUniformLocation(g_gl.program, "u_pass");
     g_gl.blit_at_target = glGetUniformLocation(g_gl.blit_program, "u_target");
     g_gl.blit_at_rect = glGetUniformLocation(g_gl.blit_program, "u_rect");
     g_gl.blit_at_scale = glGetUniformLocation(g_gl.blit_program, "u_scale");
     g_gl.blit_at_vram = glGetUniformLocation(g_gl.blit_program, "u_vram");
     g_gl.blit_at_shift = glGetUniformLocation(g_gl.blit_program, "u_shift");
-    g_gl.at_replace = glGetUniformLocation(g_gl.program, "u_replace");
-    g_gl.at_replaced = glGetUniformLocation(g_gl.program, "u_replaced");
-    g_gl.at_replace_rect = glGetUniformLocation(g_gl.program, "u_replace_rect");
-    g_gl.at_replace_mix = glGetUniformLocation(g_gl.program, "u_replace_mix");
-    g_gl.at_replace_tint = glGetUniformLocation(g_gl.program, "u_replace_tint");
-    g_gl.at_scene_lookup = glGetUniformLocation(g_gl.program, "u_scene_lookup");
-    g_gl.at_scene_pages = glGetUniformLocation(g_gl.program, "u_scene_pages");
-    g_gl.at_scene_bases = glGetUniformLocation(g_gl.program, "u_scene_bases");
-    g_gl.at_scene_on = glGetUniformLocation(g_gl.program, "u_scene_on");
-    g_gl.at_scene_levels = glGetUniformLocation(g_gl.program, "u_scene_levels");
     g_gl.blit_at_tint = glGetUniformLocation(g_gl.blit_program, "u_tint");
     g_gl.blit_at_replace = glGetUniformLocation(g_gl.blit_program, "u_replace");
     g_gl.blit_at_replaced =
@@ -3785,13 +3919,13 @@ const char *port_GlStart(
         if (why != NULL) {
             port_GlSay("the sun casts no shadow maps: ", why);
         }
-        /* where the scene's own program reads them (FLAG_SUN) */
-        port_GlSunLocateScreen(g_gl.program, &g_gl.at_sun);
+        /* where the scene's own program reads them (FLAG_WORLD) */
+        port_GlSunLocateScreen(g_gl.program, &g_gl.scene_at.sun);
         /* its samplers on their own units from the start: two of other
          * kinds on one unit is no draw at all */
         glUseProgram(g_gl.program);
-        glUniform1i(g_gl.at_sun.sun.map, PORT_GL_SUN_UNIT);
-        glUniform1i(g_gl.at_sun.sun.raw, PORT_GL_SUN_RAW_UNIT);
+        glUniform1i(g_gl.scene_at.sun.sun.map, PORT_GL_SUN_UNIT);
+        glUniform1i(g_gl.scene_at.sun.sun.raw, PORT_GL_SUN_RAW_UNIT);
         glUseProgram(0);
     }
     /* The lights of a frame beside the stage's own (gl_lights.h), before
@@ -3803,6 +3937,9 @@ const char *port_GlStart(
         if (why != NULL) {
             port_GlSay("the lights of a frame are not drawn: ", why);
         }
+        /* the scene's twin for a fighter's own polygons, which reads them:
+         * without it they are lit by the stage's own lights alone */
+        g_gl.lit_program = why == NULL ? port_GlMakeLitProgram() : 0;
     }
     /* The stage's ground as one mesh, which draws into the same colour
      * buffer through a framebuffer of its own (gl_stage.h). A card that

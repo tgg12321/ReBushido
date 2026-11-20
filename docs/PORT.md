@@ -7393,11 +7393,8 @@ shadow into view.
   soft search (`sun_visible_quick`); the game's light of it, its colour,
   loses in the sun's shadow what a shadow takes from the floor (the
   `shadows` strength), before the texture as the colour is. The frame's
-  lights (gl_lights.h) do not light these polygons yet: `lights_add` in
-  the scene's program, per pixel or at each corner in its geometry
-  shader, cost the scene's pass about 0.85 ms at the bench's 95th
-  centile even with no light to add (2026-11-19); it wants a program of
-  its own for the fighters' batches. What the game still draws
+  lights light them too, in a program of their own (b, "The fighters'
+  own polygons"). What the game still draws
   from its primitives otherwise (effects, the HUD) is as it drew it; with the ground the game's own
   tiles (`stage_mesh off`, or a stage the mesh is not measured good on),
   the picture falls back to `shadows cast`.
@@ -7482,15 +7479,24 @@ the game.
   flicker worked out from its `id` and the frames taken (three waves of
   prime periods, the same at any frame rate and in every run), and the
   lot sent to the card in a buffer.
-- **Sorted by where they reach** (a grid over the ground about the
-  camera, 64 by 64 cells of 256 world units, seen from above): each cell
+- **Sorted by where they reach** (a grid of 64 by 64 cells seen from
+  above, over the square that holds every light's reach, its cells 256
+  world units or a whole number of times that): each cell
   names the lights whose reach overlaps it, so a pixel loops over the
   few lights near it, whatever the list holds. The grid is in the world,
   not the screen, because three different shaders read it with three
   different projections (the ground's, the fighters' layer, the cloths)
   and a stage is a floor: a cell is the same for every picture of a
   frame, and the processor's work is the lights times the cells
-  (4,096), a few tens of microseconds for a full list.
+  (4,096), a few tens of microseconds for a full list. Until
+  2026-11-19 the grid was 16,384 units a side about the camera, which in
+  a fight stands some 7,000 units behind the fighters: a light more than
+  a couple of thousand units beyond them was in no cell and lit nothing
+  (a door 12,000 out on the main Tatara shrine, the street lamps, the
+  building rooftop's stairwell). Fitted to the lights, every light is
+  in it; where they are spread over a whole stage the cells grow and a
+  pixel loops over more of them, which changes the cost, never the
+  picture.
 - **Lit at the pixel.** The ground, the pieces and the fighters' models
   add each light that reaches them (`lights_add`, `PORT_GL_LIGHTS_SHADER`)
   to what the stage's own lights give, in the game's own bytes of light:
@@ -7509,6 +7515,49 @@ the game.
   the renderer's own in a ring about the place the camera looks at, each
   its own colour, a quarter of them spots, a quarter flickering, the
   first four casting.
+
+**The fighters' own polygons** (2026-11-19). The owner plays with the
+fighters the game draws itself -- body, weapon and cloth from its own
+primitives, the models put aside -- and those had the sun's maps
+(`FLAG_WORLD`, a) but no light of the list: a torch lit the floor about
+a fighter and not the fighter. They are lit now as the meshes are, in a
+program of their own:
+
+- **The scene's twin.** `lights_add` in the scene's own program, per
+  pixel or at each corner, cost every batch of the scene about 0.85 ms
+  of the card at the bench's 95th centile with no light at all: the
+  scene is the most fragments of the picture and its program the
+  longest. So the scene's three shaders are compiled twice
+  (`port_GlMakeLitProgram`, gl_draw.c): once as they were, and once as
+  GLSL 4.3 with `PORT_LIGHTS_LIT` defined, which brings the lights'
+  buffers, `lights_add` and the tonemap in. A fighter's own polygon
+  that takes the world back (`FLAG_WORLD`, now with the sun's maps or
+  the lights on) marks its batch `is_lit` where `lights` is on, a batch
+  is all lit or none of it, and the lit batches are drawn by the twin.
+  Nothing else pays for the loop; the twin's uniforms are its own
+  (`PortGlSceneAt`, one for each program).
+- **What it adds.** At the pixel, the place the geometry shader gave
+  back for the face (from its depth and the ground's view) and the
+  face's own normal: each light of the pixel's cell, its falloff, colour,
+  cone, flicker and shadow (the cube maps already hold these fighters:
+  the sun's casters are drawn into them, so a torch's light on a fighter
+  is shadowed by the scenery and by the other fighter, and by his own
+  arm). The game gave his polygons a light at each corner; the list has
+  only the face's normal, so a light is let 0.4 of the way past where it
+  turns away (`lights_add_wrapped`, `LIT_WRAP`), which keeps a body of
+  few polygons from being lit facet by facet. The light added is rolled
+  off above the game's own colour by the tonemap as the ground's is, the
+  game's own share being the colour times its light over the whole.
+- **What it leaves.** With `lights = off`, or no batch of a fighter's
+  own, the picture is the one drawn before to the byte (the tour of the
+  ferry dock at night, every picture); `Graphics: Original` marks
+  nothing. A fighter casting a torch's shadow onto the ground and the
+  walls was there before: the cube maps hold him.
+- **What it costs.** Nothing the bench can see: `ra1-stress` (sixteen
+  made-up lights, four fighters), this build and main's interleaved on
+  a quiet machine, the card's median and 95% 3.58 / 4.08 ms against main's
+  3.62 / 4.57, the scene's pass 0.06 to 0.07 ms in both; the gate's
+  bench, `ra1`'s lighting 0.66 ms against its 2.0.
 
 #### The fighters' material (rb_remade)
 

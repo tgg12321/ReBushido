@@ -141,15 +141,19 @@ extern s32 port_GlLightsShadowed(void);
 #define PORT_GL_LIGHTS_BINDING 4
 #define PORT_GL_LIGHTS_GRID_BINDING 5
 #define PORT_GL_LIGHTS_LIST_BINDING 6
-/* The grid the lights are sorted into, over the ground about the camera:
- * cells of this many world units a side, this many a side. */
+/* The grid the lights are sorted into, seen from above, over the square
+ * that holds every light's reach: cells of at least this many world units
+ * a side (a whole number of times it), this many a side. */
 #define PORT_GL_LIGHTS_CELL 256
 #define PORT_GL_LIGHTS_CELLS 64
 
 /* The shader's side: `lights_add(world, normal)`, the light the list adds
  * at a point of the world whose surface faces `normal` (of length one), in
  * the game's bytes of light (128 a texel at its own colour), to be added
- * to what the stage's own lights give there. Needs GLSL 4.3. */
+ * to what the stage's own lights give there; `lights_add_wrapped(world,
+ * normal, wrap)` the same with the light let `wrap` (0 to 1) past the
+ * edge where it turns away, for a face lit by its own normal and not its
+ * corners' (gl_draw.c, a fighter's own polygons). Needs GLSL 4.3. */
 #define PORT_GL_LIGHTS_SHADER                                                       \
     "struct PortLight {\n"                                                          \
     "    vec4 place;\n" /* xyz, and the radius */                                   \
@@ -183,7 +187,7 @@ extern s32 port_GlLightsShadowed(void);
     "    vec3 at = c.xyz / c.w * 0.5 + vec3(0.5);\n"                                \
     "    return texture(u_lights_map, vec4(at.xy, float(first + face), at.z));\n"   \
     "}\n"                                                                           \
-    "vec3 lights_add(vec3 world, vec3 n) {\n"                                       \
+    "vec3 lights_add_wrapped(vec3 world, vec3 n, float wrap) {\n"                   \
     "    if (u_lights_count == 0) { return vec3(0.0); }\n"                          \
     "    ivec2 cell = ivec2(floor((world.xz - grid_origin.xy)\n"                    \
     "                             / grid_origin.z));\n"                             \
@@ -205,7 +209,7 @@ extern s32 port_GlLightsShadowed(void);
     "        float d = length(to_light);\n"                                         \
     "        if (d >= l.place.w || d < 1e-3) { continue; }\n"                       \
     "        vec3 dir = to_light / d;\n"                                            \
-    "        float turn = dot(n, dir);\n"                                           \
+    "        float turn = (dot(n, dir) + wrap) / (1.0 + wrap);\n"                   \
     "        if (turn <= 0.0) { continue; }\n"                                      \
     "        float near = d / l.place.w;\n"                                         \
     "        float fall = clamp(1.0 - near * near, 0.0, 1.0);\n"                    \
@@ -220,6 +224,9 @@ extern s32 port_GlLightsShadowed(void);
     "        sum += l.color.rgb * (turn * fall);\n"                                 \
     "    }\n"                                                                       \
     "    return sum;\n"                                                             \
+    "}\n"                                                                           \
+    "vec3 lights_add(vec3 world, vec3 n) {\n"                                       \
+    "    return lights_add_wrapped(world, n, 0.0);\n"                               \
     "}\n"
 
 #endif /* PORT_GL_LIGHTS_H */
