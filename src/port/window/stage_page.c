@@ -1,17 +1,21 @@
 /* The native port's window: the stage select's kinds of stage laid over
  * the game's picture (window.h; docs/PLAYING.md, "Kinds of stage";
- * include/port_stage_choice.h). On a stage page it says the kind of the
- * stage under the cursor, Classic or Remastered Classic, its time of
- * day, and what Square, L1 and R1, and Select do; with the arenas' page up it
- * is that page: the arenas by their names, the one under the cursor's picture
- * (its file's preview, or a card of its name where it has none), and what Cross
- * and Triangle do. It is drawn at the window's own resolution in the settings
- * menu's font, the same over the remastered picture and over the console's
- * (F2), and none of it is in the game's video memory: what the game has
- * on the screen is the console's, and the play tests that hold the
- * port's picture to the emulator's see that. Everything it shows it
- * reads of the game's state (src/port/stage_choice.c), which the game's
+ * include/port_stage_choice.h). On a stage page it is a panel under the
+ * scroll, a column for each choice the page makes -- the kind of the
+ * stage under the cursor (Classic or Remastered), its time of day, the
+ * fight's music, and the custom arenas where there are any -- each its
+ * value over the button that changes it (Square, L1 and R1, L2 and R2,
+ * Select); with the arenas' page up it is that page: the arenas by their
+ * names, the one under the cursor's picture (its file's preview, or a
+ * card of its name where it has none), and what Cross and Triangle do.
+ * It is drawn at the window's own resolution in the port's typeface, the
+ * same over the remastered picture and over the console's (F2), and none
+ * of it is in the game's video memory: what the game has on the screen is
+ * the console's, and the play tests that hold the port's picture to the
+ * emulator's see that. Everything it shows it reads of the game's state
+ * (src/port/stage_choice.c, src/port/fight_music.c), which the game's
  * step alone writes. */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -26,25 +30,41 @@
 #define GAME_W 640
 #define GAME_H 240
 
-/* The colours, 0xAARRGGBB, the settings menu's. */
+/* The colours, 0xAARRGGBB, the settings menu's; the panel's lets a little
+ * of the game's picture through. */
 #define COLOR_PANEL 0xFF0E121EU
+#define COLOR_STRIP 0xE00E121EU
 #define COLOR_EDGE 0xFF6A5530U
 #define COLOR_GOLD 0xFFE6C877U
 #define COLOR_TEXT 0xFFEDEDF2U
 #define COLOR_DIM 0xFF8E96AAU
 #define COLOR_BAR 0xFF26304AU
 #define COLOR_CARD 0xFF1A1E2AU
+#define COLOR_CAP 0xFF2C3346U
+#define COLOR_CAP_EDGE 0xFF56607CU
+/* the pad's own colours for its symbols */
+#define COLOR_SQUARE 0xFFE59AC6U
+#define COLOR_CROSS 0xFF8FB8EAU
+#define COLOR_TRIANGLE 0xFF5FCDA8U
 
-/* The strip under the stage pages' scroll, and the page over them, in
- * the game's places. */
+/* The panel under the stage pages' scroll, whose foot is at 207, and the
+ * page over them, in the game's places. */
 #define STRIP_X 40
-#define STRIP_Y 204
+#define STRIP_Y 209
 #define STRIP_W 560
-#define STRIP_H 36
+#define STRIP_H 31
 #define PAGE_X 40
 #define PAGE_Y 62
 #define PAGE_W 560
 #define PAGE_H 176
+
+/* The panel's columns: across the panel less this much at each end, a
+ * value's baseline, the buttons' baseline, and the room a column leaves
+ * at its sides. */
+#define STRIP_INSET 6
+#define VALUE_BASE 222
+#define KEYS_BASE 235
+#define COLUMN_PAD 8
 
 /* The page's rows: so many shown, their place, their pitch. */
 #define ROWS 5
@@ -60,12 +80,17 @@
 #define PICTURE_Y 94
 #define PICTURE_W 256
 #define PICTURE_H 96
+/* the buttons' line under the page */
+#define PAGE_KEYS_BASE 232
 
-/* The letters' sizes, in the game's lines. */
+/* The letters' sizes, in the game's lines: one for each kind of text.
+ * A value too wide for its column is made smaller, down to the least. */
 #define SIZE_TITLE 15
-#define SIZE_KIND 12
+#define SIZE_VALUE 11
+#define SIZE_VALUE_LEAST 7
 #define SIZE_ROW 11
-#define SIZE_HELP 9
+#define SIZE_LABEL 8
+#define SIZE_CAP 6
 
 typedef struct {
     s32 tried;
@@ -111,45 +136,219 @@ static s32 port_PageSize(s32 lines) {
     return size < 6 ? 6 : size;
 }
 
+static PortTextStyle port_PageStyle(s32 face, s32 lines, u32 color) {
+    PortTextStyle style;
+
+    memset(&style, 0, sizeof(style));
+    style.face = face;
+    style.size = port_PageSize(lines);
+    style.color = color;
+    return style;
+}
+
+/* Text at `x` and `baseline`, pixels of the page. */
+static void port_PageTextAt(
+    s32 x, s32 baseline, const char *text, const PortTextStyle *style) {
+    port_TextDraw(
+        g_page.pixels, g_page.box.w, g_page.box.h, x, baseline, text, style);
+}
+
 static void port_PageText(s32 x, s32 y, s32 lines, const char *text, u32 color,
                           s32 is_centred, s32 is_right) {
-    s32 px;
+    PortTextStyle style = port_PageStyle(PORT_FACE_TEXT, lines, color);
+    s32 px = port_PageX(x);
 
-    port_FontSetSize(port_PageSize(lines));
-    px = port_PageX(x);
     if (is_centred) {
-        px -= port_FontMeasure(text) / 2;
+        px -= port_TextMeasure(text, &style) / 2;
     } else if (is_right) {
-        px -= port_FontMeasure(text);
+        px -= port_TextMeasure(text, &style);
     }
-    port_FontDraw(g_page.pixels, g_page.box.w, g_page.box.h, px, port_PageY(y),
-                  text, color);
+    port_PageTextAt(px, port_PageY(y), text, &style);
+}
+
+/* A rectangle in pixels of the page. */
+static void port_PageFill(s32 x, s32 y, s32 w, s32 h, u32 color) {
+    port_FillRect(g_page.pixels, g_page.box.w, g_page.box.h, x, y, w, h, color);
 }
 
 static void port_PageRect(s32 x, s32 y, s32 w, s32 h, u32 color) {
     s32 x0 = port_PageX(x);
     s32 y0 = port_PageY(y);
 
-    port_FillRect(g_page.pixels, g_page.box.w, g_page.box.h, x0, y0,
-                  port_PageX(x + w) - x0, port_PageY(y + h) - y0, color);
+    port_PageFill(
+        x0, y0, port_PageX(x + w) - x0, port_PageY(y + h) - y0, color);
 }
 
-/* A frame a pixel of the window wide, or two on a large one. */
+/* A line a pixel of the window wide, or two on a large one. */
+static s32 port_PageLine(void) { return g_page.area_h >= 960 ? 2 : 1; }
+
 static void port_PageFrame(s32 x, s32 y, s32 w, s32 h, u32 color) {
     s32 x0 = port_PageX(x);
     s32 y0 = port_PageY(y);
     s32 x1 = port_PageX(x + w);
     s32 y1 = port_PageY(y + h);
-    s32 line = g_page.area_h >= 960 ? 2 : 1;
+    s32 line = port_PageLine();
 
-    port_FillRect(g_page.pixels, g_page.box.w, g_page.box.h, x0, y0, x1 - x0,
-                  line, color);
-    port_FillRect(g_page.pixels, g_page.box.w, g_page.box.h, x0, y1 - line,
-                  x1 - x0, line, color);
-    port_FillRect(g_page.pixels, g_page.box.w, g_page.box.h, x0, y0, line,
-                  y1 - y0, color);
-    port_FillRect(g_page.pixels, g_page.box.w, g_page.box.h, x1 - line, y0,
-                  line, y1 - y0, color);
+    port_PageFill(x0, y0, x1 - x0, line, color);
+    port_PageFill(x0, y1 - line, x1 - x0, line, color);
+    port_PageFill(x0, y0, line, y1 - y0, color);
+    port_PageFill(x1 - line, y0, line, y1 - y0, color);
+}
+
+/* ---- the buttons ---- */
+
+/* A square root good to far less than a pixel, for the symbols' edges
+ * (nothing of the window's links libm). */
+static float port_PageRoot(float value) {
+    float root = value > 1.0f ? value : 1.0f;
+    s32 i;
+
+    if (value <= 0.0f) {
+        return 0.0f;
+    }
+    for (i = 0; i < 16; i++) {
+        root = 0.5f * (root + value / root);
+    }
+    return root;
+}
+
+/* How far (px, py) is from the segment (ax, ay)-(bx, by). */
+static float port_PageToSegment(
+    float px, float py, float ax, float ay, float bx, float by) {
+    float dx = bx - ax;
+    float dy = by - ay;
+    float t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
+    float ex;
+    float ey;
+
+    t = t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
+    ex = px - (ax + t * dx);
+    ey = py - (ay + t * dy);
+    return port_PageRoot(ex * ex + ey * ey);
+}
+
+enum { SYMBOL_SQUARE, SYMBOL_CROSS, SYMBOL_TRIANGLE, SYMBOLS };
+
+/* How far a pixel's middle (x, y), from the symbol's middle, is from the
+ * symbol's stroke, `r` pixels out. */
+static float port_PageSymbolDistance(s32 symbol, float x, float y, float r) {
+    float d;
+    float d1;
+    float d2;
+
+    if (symbol == SYMBOL_SQUARE) {
+        float ax = x < 0.0f ? -x : x;
+        float ay = y < 0.0f ? -y : y;
+
+        d = (ax > ay ? ax : ay) - r * 0.8f;
+        return d < 0.0f ? -d : d;
+    }
+    if (symbol == SYMBOL_CROSS) {
+        r *= 0.8f;
+        d = port_PageToSegment(x, y, -r, -r, r, r);
+        d1 = port_PageToSegment(x, y, -r, r, r, -r);
+        return d1 < d ? d1 : d;
+    }
+    /* a triangle on its base, its middle a little low */
+    d = port_PageToSegment(x, y, 0.0f, -r, r, r * 0.72f);
+    d1 = port_PageToSegment(x, y, r, r * 0.72f, -r, r * 0.72f);
+    d2 = port_PageToSegment(x, y, -r, r * 0.72f, 0.0f, -r);
+    d = d1 < d ? d1 : d;
+    return d2 < d ? d2 : d;
+}
+
+/* One of the pad's symbols round (cx, cy), `r` pixels out, its stroke
+ * `stroke` pixels wide and its edges smoothed. */
+static void port_PageSymbol(
+    s32 symbol, s32 cx, s32 cy, s32 r, float stroke, u32 color) {
+    s32 i;
+    s32 j;
+
+    for (j = cy - r - 2; j <= cy + r + 2; j++) {
+        for (i = cx - r - 2; i <= cx + r + 2; i++) {
+            float d = port_PageSymbolDistance(symbol, (float)(i - cx) + 0.5f,
+                                              (float)(j - cy) + 0.5f, (float)r);
+            float cover = stroke * 0.5f + 0.5f - d;
+            u32 alpha;
+
+            if (cover <= 0.0f) {
+                continue;
+            }
+            alpha = (u32)((cover > 1.0f ? 1.0f : cover) * (float)(color >> 24));
+            port_PageFill(i, j, 1, 1, (alpha << 24) | (color & 0xFFFFFFU));
+        }
+    }
+}
+
+/* A button's cap at `x`, the line's baseline at `baseline` (pixels of the
+ * page): a dark key with the button's name on it, or the pad's symbol.
+ * `name` is the name, or "#square", "#cross", "#triangle". Drawn if
+ * `draw`; its width in pixels either way. */
+static s32 port_PageCap(s32 x, s32 baseline, const char *name, s32 draw) {
+    static const u32 colors[SYMBOLS] = {
+        COLOR_SQUARE, COLOR_CROSS, COLOR_TRIANGLE};
+    PortTextStyle label = port_PageStyle(PORT_FACE_TEXT, SIZE_LABEL, 0);
+    PortTextStyle style = port_PageStyle(PORT_FACE_BOLD, SIZE_CAP, COLOR_TEXT);
+    s32 ascent = port_TextAscent(&label);
+    s32 pad = port_PageSize(SIZE_LABEL) / 5 + 1;
+    s32 h = ascent + 2 * pad;
+    s32 top = baseline - ascent - pad;
+    s32 line = port_PageLine();
+    s32 symbol = -1;
+    s32 w;
+
+    if (strcmp(name, "#square") == 0) {
+        symbol = SYMBOL_SQUARE;
+    } else if (strcmp(name, "#cross") == 0) {
+        symbol = SYMBOL_CROSS;
+    } else if (strcmp(name, "#triangle") == 0) {
+        symbol = SYMBOL_TRIANGLE;
+    }
+    w = symbol >= 0 ? h : port_TextMeasure(name, &style) + 2 * pad + 2 * line;
+    if (!draw) {
+        return w;
+    }
+    /* the key, its corners cut by a line's width */
+    port_PageFill(x + line, top, w - 2 * line, h, COLOR_CAP_EDGE);
+    port_PageFill(x, top + line, w, h - 2 * line, COLOR_CAP_EDGE);
+    port_PageFill(x + line, top + line, w - 2 * line, h - 2 * line, COLOR_CAP);
+    if (symbol >= 0) {
+        float stroke = (float)h / 9.0f;
+
+        port_PageSymbol(symbol, x + w / 2, top + h / 2, h * 3 / 10,
+                        stroke < 1.2f ? 1.2f : stroke, colors[symbol]);
+    } else {
+        port_PageTextAt(x + (w - port_TextMeasure(name, &style)) / 2,
+                        top + (h + port_TextAscent(&style)) / 2, name, &style);
+    }
+    return w;
+}
+
+/* What buttons do: their caps (`between`, a word or NULL, between them),
+ * then the words; from `x` (pixels), drawn if `draw`. Its width. */
+static s32 port_PageKeys(
+    s32 x, s32 baseline, const char * const *caps, s32 count,
+    const char *between, const char *words, s32 draw) {
+    PortTextStyle style = port_PageStyle(PORT_FACE_TEXT, SIZE_LABEL, COLOR_DIM);
+    s32 gap = port_PageSize(SIZE_LABEL) / 3;
+    s32 at = x;
+    s32 i;
+
+    for (i = 0; i < count; i++) {
+        if (i > 0 && between != NULL) {
+            if (draw) {
+                port_PageTextAt(at, baseline, between, &style);
+            }
+            at += port_TextMeasure(between, &style) + gap;
+        } else if (i > 0) {
+            at -= gap / 2;
+        }
+        at += port_PageCap(at, baseline, caps[i], draw) + gap;
+    }
+    if (draw) {
+        port_PageTextAt(at, baseline, words, &style);
+    }
+    return at + port_TextMeasure(words, &style) - x;
 }
 
 /* ---- an arena's picture ---- */
@@ -237,71 +436,117 @@ static void port_PagePicture(
 
 /* ---- the two looks ---- */
 
-/* The times of day as the strip names them (PORT_TIME_...). */
+/* The times of day as the panel names them (PORT_TIME_...). */
 static const char * const g_page_times[PORT_TIME_COUNT] = {
-    "The stage's own time", "Time: Dawn", "Time: Day", "Time: Dusk",
-    "Time: Night"};
+    "Stage's own", "Dawn", "Day", "Dusk", "Night"};
 
-static void port_PageStrip(const PortStageChoice *choice, s32 count) {
-    port_PageText(
-        64, 222, SIZE_KIND,
-        choice->cursor_kind == PORT_STAGE_CLASSIC ? "Classic"
-                                                  : "Remastered Classic",
-        choice->cursor_kind == PORT_STAGE_CLASSIC ? COLOR_TEXT : COLOR_GOLD,
-        FALSE, FALSE);
-    port_PageText(64, 235, SIZE_HELP, "Square: Classic / Remastered", COLOR_DIM,
-                  FALSE, FALSE);
-    /* the time of day, which only a dressed stage's picture shows */
-    if (choice->cursor_kind == PORT_STAGE_CLASSIC) {
-        port_PageText(GAME_W / 2, 222, SIZE_KIND, "The game's own light",
-                      COLOR_DIM, TRUE, FALSE);
-    } else {
-        port_PageText(
-            GAME_W / 2, 222, SIZE_KIND,
-            g_page_times[choice->cursor_time < PORT_TIME_COUNT
-                             ? choice->cursor_time
-                             : PORT_TIME_OWN],
-            choice->cursor_time == PORT_TIME_OWN ? COLOR_TEXT : COLOR_GOLD,
-            TRUE, FALSE);
+/* A column of the panel: its value over its buttons and their words. */
+typedef struct {
+    const char *value;
+    u32 color;
+    const char *caps[2];
+    s32 cap_count;
+    const char *words;
+} Column;
+
+/* A column's value at `x`, made smaller where it is wider than `room`
+ * pixels. */
+static void port_PageValue(s32 x, const char *text, u32 color, s32 room) {
+    s32 lines = SIZE_VALUE;
+    PortTextStyle style = port_PageStyle(PORT_FACE_TEXT, lines, color);
+
+    while (lines > SIZE_VALUE_LEAST && port_TextMeasure(text, &style) > room) {
+        lines--;
+        style = port_PageStyle(PORT_FACE_TEXT, lines, color);
     }
-    port_PageText(GAME_W / 2, 235, SIZE_HELP, "L1 / R1: time of day", COLOR_DIM,
-                  TRUE, FALSE);
-    if (count > 0) {
-        port_PageText(576, 222, SIZE_HELP, "Select: custom arenas", COLOR_DIM,
-                      FALSE, TRUE);
-    }
+    port_PageTextAt(x, port_PageY(VALUE_BASE), text, &style);
 }
 
-/* The row of music, in the strip's middle between the kind's lines and
- * the arenas' (port_fight_music.h): the piece the fight starts with (a
- * mod's by its key), made smaller where it is wider than the gap, and
- * what L1 and R1 do. */
-#define MUSIC_X 334
-#define MUSIC_W 136
-#define SIZE_MUSIC_LEAST 6
-
-static void port_PageMusic(void) {
+static void port_PageStrip(const PortStageChoice *choice, s32 count) {
+    static char arenas[24];
+    Column columns[4];
+    s32 n = 0;
     s32 row = g_port_fight_music.row;
-    const char *name = port_FightMusicRowName(row);
-    s32 room = port_PageX(MUSIC_X + MUSIC_W / 2) - port_PageX(MUSIC_X);
-    s32 lines = SIZE_ROW;
+    s32 left = port_PageX(STRIP_X + STRIP_INSET);
+    s32 right = port_PageX(STRIP_X + STRIP_W - STRIP_INSET);
+    s32 pad = port_PageX(STRIP_X + COLUMN_PAD) - port_PageX(STRIP_X);
+    s32 i;
 
-    port_PageText(MUSIC_X, 215, SIZE_HELP, "Music", COLOR_DIM, TRUE, FALSE);
-    port_FontSetSize(port_PageSize(lines));
-    while (lines > SIZE_MUSIC_LEAST && port_FontMeasure(name) > 2 * room) {
-        lines--;
-        port_FontSetSize(port_PageSize(lines));
+    memset(columns, 0, sizeof(columns));
+    /* the kind */
+    columns[n].value =
+        choice->cursor_kind == PORT_STAGE_CLASSIC ? "Classic" : "Remastered";
+    columns[n].color =
+        choice->cursor_kind == PORT_STAGE_CLASSIC ? COLOR_TEXT : COLOR_GOLD;
+    columns[n].caps[0] = "#square";
+    columns[n].cap_count = 1;
+    columns[n].words = "Kind";
+    n++;
+    /* the time of day, which only a dressed stage's picture shows */
+    if (choice->cursor_kind == PORT_STAGE_CLASSIC) {
+        columns[n].value = "The game's light";
+        columns[n].color = COLOR_DIM;
+    } else {
+        columns[n].value = g_page_times[choice->cursor_time < PORT_TIME_COUNT
+                                            ? choice->cursor_time
+                                            : PORT_TIME_OWN];
+        columns[n].color =
+            choice->cursor_time == PORT_TIME_OWN ? COLOR_TEXT : COLOR_GOLD;
     }
-    port_PageText(
-        MUSIC_X, 225, lines, name,
-        row == PORT_FIGHT_MUSIC_ROW_OWN ? COLOR_TEXT : COLOR_GOLD, TRUE, FALSE);
-    port_PageText(
-        MUSIC_X, 235, SIZE_HELP, "L1 / R1: music", COLOR_DIM, TRUE, FALSE);
+    columns[n].caps[0] = "L1";
+    columns[n].caps[1] = "R1";
+    columns[n].cap_count = 2;
+    columns[n].words = "Time";
+    n++;
+    /* the fight's music (port_fight_music.h): a mod's piece by its key */
+    columns[n].value = port_FightMusicRowName(row);
+    columns[n].color =
+        row == PORT_FIGHT_MUSIC_ROW_OWN ? COLOR_TEXT : COLOR_GOLD;
+    columns[n].caps[0] = "L2";
+    columns[n].caps[1] = "R2";
+    columns[n].cap_count = 2;
+    columns[n].words = "Music";
+    n++;
+    if (count > 0) {
+        snprintf(arenas, sizeof(arenas), "%d custom", (int)count);
+        columns[n].value = arenas;
+        columns[n].color = COLOR_TEXT;
+        columns[n].caps[0] = "SELECT";
+        columns[n].cap_count = 1;
+        columns[n].words = "Arenas";
+        n++;
+    }
+
+    port_PageRect(STRIP_X, STRIP_Y, STRIP_W, STRIP_H, COLOR_STRIP);
+    port_PageFill(port_PageX(STRIP_X), port_PageY(STRIP_Y),
+                  port_PageX(STRIP_X + STRIP_W) - port_PageX(STRIP_X),
+                  port_PageLine(), COLOR_EDGE);
+    for (i = 0; i < n; i++) {
+        s32 x0 = left + (right - left) * i / n;
+        s32 x1 = left + (right - left) * (i + 1) / n;
+
+        if (i > 0) {
+            port_PageFill(
+                x0, port_PageY(STRIP_Y + 5), port_PageLine(),
+                port_PageY(STRIP_Y + STRIP_H - 4) - port_PageY(STRIP_Y + 5),
+                COLOR_EDGE);
+        }
+        port_PageValue(
+            x0 + pad, columns[i].value, columns[i].color, x1 - x0 - 2 * pad);
+        port_PageKeys(x0 + pad, port_PageY(KEYS_BASE), columns[i].caps,
+                      columns[i].cap_count, NULL, columns[i].words, TRUE);
+    }
 }
 
 static void port_PageArenas(const PortStageChoice *choice, s32 count) {
+    static const char * const fight[] = {"#cross"};
+    static const char * const back[] = {"#triangle", "SELECT"};
     const PortArena *chosen = port_ArenaAt(choice->page_cursor);
     const Preview *preview;
+    s32 base = port_PageY(PAGE_KEYS_BASE);
+    s32 gap = port_PageSize(SIZE_LABEL) * 2;
+    s32 w;
+    s32 x;
     s32 i;
 
     port_PageRect(PAGE_X, PAGE_Y, PAGE_W, PAGE_H, COLOR_PANEL);
@@ -326,11 +571,11 @@ static void port_PageArenas(const PortStageChoice *choice, s32 count) {
     }
     if (choice->page_top > 0) {
         port_PageText(ROW_BAR_X + ROW_BAR_W / 2, ROW_FIRST - ROW_PITCH + 4,
-                      SIZE_HELP, "more above", COLOR_DIM, TRUE, FALSE);
+                      SIZE_LABEL, "more above", COLOR_DIM, TRUE, FALSE);
     }
     if (choice->page_top + ROWS < count) {
         port_PageText(ROW_BAR_X + ROW_BAR_W / 2, ROW_FIRST + ROWS * ROW_PITCH,
-                      SIZE_HELP, "more below", COLOR_DIM, TRUE, FALSE);
+                      SIZE_LABEL, "more below", COLOR_DIM, TRUE, FALSE);
     }
     preview = port_PagePreview(choice->page_cursor);
     if (preview != NULL) {
@@ -349,9 +594,12 @@ static void port_PageArenas(const PortStageChoice *choice, s32 count) {
         port_PageText(PICTURE_X + PICTURE_W / 2, PICTURE_Y + PICTURE_H + 14,
                       SIZE_ROW, chosen->name, COLOR_GOLD, TRUE, FALSE);
     }
-    port_PageText(GAME_W / 2, 232, SIZE_HELP,
-                  "Cross: fight here      Triangle or Select: back", COLOR_DIM,
-                  TRUE, FALSE);
+    /* the buttons, as the panel under the scroll draws them, in the middle */
+    w = port_PageKeys(0, base, fight, 1, NULL, "Fight here", FALSE) + gap +
+        port_PageKeys(0, base, back, 2, "or", "Back", FALSE);
+    x = port_PageX(GAME_W / 2) - w / 2;
+    x += port_PageKeys(x, base, fight, 1, NULL, "Fight here", TRUE) + gap;
+    port_PageKeys(x, base, back, 2, "or", "Back", TRUE);
 }
 
 /* ---- what the window asks ---- */
@@ -411,7 +659,6 @@ s32 port_StagePagePixels(
             port_PageArenas(choice, count);
         } else {
             port_PageStrip(choice, count);
-            port_PageMusic();
         }
         g_page.drawn = TRUE;
     }

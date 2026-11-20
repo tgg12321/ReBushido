@@ -2,7 +2,8 @@
 """The stage select's three kinds of stage driven on the native port
 (docs/PORT.md, "The stage select's kinds of stage"; ROADMAP 16): a plan
 of the play tests' kind presses through versus mode's select screen,
-switches a stage to Classic and back, opens the arenas' page and fights on
+switches a stage to Classic and back, turns its time of day (L1, R1)
+and the fight's music (L2, R2), opens the arenas' page and fights on
 the sample arena, then rematches on a stage of the disc's. Then the two
 gameplay switches (docs/PORT.md, "Every stage in every mode, and every
 unlock"): versus the CPU with --stage-select and --unlock-all picks a
@@ -60,10 +61,12 @@ input = [
     "select+500 CROSS", "select+540 P2 CROSS",
     # the stage pages: the switch on the first place twice (Classic, then
     # back), once on the second place (Classic), and the arenas' page; L1
-    # turns the first place's time of day back, from its own to night
+    # turns the first place's time of day back, from its own to night; R2
+    # twice takes the fight's music two pieces on, L2 one back, and neither
+    # touches the time (L1 and R1)
     "stages+20 SQUARE",
-    "classic+10 L1", "classic+20 SQUARE",
-    "again+20 DOWN", "again+40 SQUARE",
+    "classic+4 R2", "classic+10 L1", "classic+16 R2", "classic+20 SQUARE",
+    "again+8 L2", "again+20 DOWN", "again+40 SQUARE",
     "second+20 SELECT",
     "arenas+20 CROSS",
     # the fight: walk, then the pause menu's way out to the sub menu
@@ -78,7 +81,7 @@ input = [
     "stages2+20 DOWN", "stages2+40 RIGHT", "stages2+60 R1", "stages2+80 CROSS",
 ]
 compare = ["screen", "stage", "config_stage", "port_arena", "port_tier", "port_page",
-           "port_time"]
+           "port_time", "port_music_row"]
 
 [[checkpoint]]
 name = "page"
@@ -118,12 +121,12 @@ expect = ["port_cursor_tier == 0", "port_cursor_time == 0"]
 [[checkpoint]]
 name = "again"
 after = 30
-expect = ["port_cursor_tier == 1", "port_cursor_time == 4"]
+expect = ["port_cursor_tier == 1", "port_cursor_time == 4", "port_music_row == 2"]
 
 [[checkpoint]]
 name = "second"
 after = 70
-expect = ["port_cursor_tier == 0"]
+expect = ["port_cursor_tier == 0", "port_music_row == 1"]
 
 [[checkpoint]]
 name = "arenas"
@@ -140,7 +143,7 @@ expect = ["stage == %(host)d", "port_arena == 0", "port_tier == 1", "port_time =
 [[checkpoint]]
 name = "walk"
 frames = 40
-expect = ["stage == %(host)d", "port_arena == 0"]
+expect = ["stage == %(host)d", "port_arena == 0", "port_music_row == 1", "port_music_heard == 1"]
 
 [[checkpoint]]
 name = "select2"

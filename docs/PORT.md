@@ -8136,14 +8136,21 @@ made again when the arena in play changes.
 
 **What is drawn, and where.** Nothing of it is in the game's video
 memory: the window lays it over the picture, at its own resolution and
-in the settings menu's font (`src/port/window/stage_page.c`, from
+in the port's typeface (`src/port/window/stage_page.c`, from
 `port_DrawCounter`), the same over the remastered picture and over the
-console's. On a stage page a strip under the scroll says the kind of the
-stage under the cursor ("Remastered Classic" in gold, "Classic" in white)
-and what Square and Select do. The arenas' page covers the map and the
+console's. On a stage page a panel under the scroll, laid in the game's
+4:3 area so that it keeps its place at any shape of window, has a column
+for each choice of the page, its value over the button that changes it
+(a dark key with the button's name, or the pad's own symbol drawn in its
+colour): **Kind** ("Remastered" in gold, "Classic" in white; Square),
+**Time** (L1, R1), **Music** (L2, R2) and, with arenas, **Arenas**
+(Select); one size of letters for the values, one for the buttons'
+words, a value too long for its column made smaller. The arenas' page
+covers the map and the
 scroll: the arenas by their names (five rows, scrolled), the picture of
 the one under the cursor (the PNG its file carries, or a card of its
-name), and what Cross and Triangle do. It reads the state and the
+name), and the same keys for what Cross, and Triangle or Select, do.
+It reads the state and the
 arenas only, and is drawn again only when what it shows changes. So the
 play tests that hold the port's video memory to the emulator's
 (`port_picture`'s `select_stage`) see the console's screen, and the
@@ -8200,9 +8207,9 @@ what the modes with no stage page fight at, kept outside the state in
 the host's (`MEET_TIME`, protocol 6) and both hold it for the session;
 the presses on the pages are both players', so a stage's time chosen on
 the page is the same on both machines and rolled back with the stage.
-The strip under the stage pages' scroll says the time of the stage
-under the cursor ("Time: Dusk", gold) and "L1 / R1: time of day"; on a
-Classic stage, "The game's own light".
+The panel under the stage pages' scroll says the time of the stage
+under the cursor (its Time column: "Dusk", gold) over L1 and R1; on a
+Classic stage, "The game's light".
 
 **The look** (`src/port/gl/gl_time.c`, `gl_time.h`) is worked out once
 for the stage and the time from the stage's own scenery setup
@@ -8421,8 +8428,11 @@ to the emulator is as it was.
 
 **The row.** On a stage page, after the kinds of stage have had the
 presses (so never while the arenas' page is up, which takes them all),
-`port_FightMusicPageStep` (`select_StageStep`) moves a row with L1 and
-R1: the rule's own (`PORT_FIGHT_MUSIC_ROW_OWN`), the thirteen pieces of
+`port_FightMusicPageStep` (`select_StageStep`) moves a row with L2 and
+R2 (L1 and R1 are the stage's time of day; `select_StageStep` hands the
+step L2 and R2 as the L1 and R1 it reads; the game takes L2 out of both
+pads everywhere, `camera_ReadPad`'s first-person zoom being its only use,
+and keeps it under `RB_PORT` while a stage page is up): the rule's own (`PORT_FIGHT_MUSIC_ROW_OWN`), the thirteen pieces of
 the game's (the twelve tracks of `cdrom.c`, the two that nothing asks
 for, 5 and 6, among them, and the staff roll's stream, `bb2_m2-4`, which
 is started as `fight_after.c` starts it, by `cdrom_StartAudio`), the
@@ -8431,9 +8441,9 @@ starts it again from the setting (`port_FightMusicReset`); the fights of
 a mode whose stage the pages chose take what it was left at (versus, link
 mode, and versus the CPU and training through `port_PlayStageChosen`, so
 every opponent of a versus the CPU run), the others the setting's. The
-window draws it in the middle of the stage pages' strip
-(`window/stage_page.c`, `port_PageMusic`), "Music" over the piece's name
-and "L1 / R1: music" under it.
+window draws it as the stage pages' panel's Music column
+(`window/stage_page.c`, `port_PageStrip`), the piece's name over L2 and
+R2.
 
 **The fight's start.** `snd_StartFightMusic` asks `port_FightMusicStart`
 first, which says the track to start, none, or the game's own switch

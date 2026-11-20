@@ -16,7 +16,7 @@
  * - none: no music, the ambient sounds alone (the row starts at None;
  *   its first place is then the stage's own).
  *
- * On a stage page L1 and R1 go through a row: the rule's own ("Stage's
+ * On a stage page L2 and R2 go through a row: the rule's own ("Stage's
  * own", or "Game's own" with `original`), then every piece of the game's
  * music (PORT_FIGHT_MUSIC_PIECES, the two nothing asks for among them),
  * then the pieces a music mod brings under keys of its own (docs/MODS.md,
@@ -89,8 +89,9 @@ extern PortFightMusic g_port_fight_music;
  * setting. */
 extern void port_FightMusicReset(void);
 /* A frame of a stage page, after the port's kinds of stage have had the
- * presses (select_StageStep): L1 and R1 move the row while the door is
- * open. TRUE if it took a press. */
+ * presses (select_StageStep): L1 and R1 of `pressed` move the row while
+ * the door is open -- the stage page hands it L2 and R2 as those, L1 and
+ * R1 being the stage's time of day. TRUE if it took a press. */
 extern s32 port_FightMusicPageStep(s32 pressed, s32 is_open);
 /* The fight starts (snd_StartFightMusic): what to start, for `mode` on
  * `stage`, the game's music off (the options' setting) or not. */

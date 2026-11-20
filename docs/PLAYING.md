@@ -380,15 +380,19 @@ arenas a third ([`ROADMAP.md`](ROADMAP.md), item 16):
   "Custom arenas").
 
 On a **stage page** of versus or link mode (and of versus the CPU and
-training: "A stage in every mode", below), a line under the scroll says
-which the stage under the cursor is: **Square** switches it between
-Classic and Remastered Classic, and it stays so for as long as the
-program runs. **Select** opens the page of the **custom arenas** (when a
-mod has any): up and down choose one, its picture beside the list;
-**Cross** fights on it; **Triangle** or Select goes back to the stages.
-**L1** and **R1** choose the fight's music ("Music on the stage
-select", below). On the keyboard Square is A, Select is Right Shift and
-L1 and R1 are Q and W for player one ("The keys").
+training: "A stage in every mode", below), a panel under the scroll
+has a column for each choice the page makes, its value over the button
+that changes it: **Kind** (Square), **Time** (L1 and R1), **Music** (L2
+and R2) and, when a mod brings any, **Arenas** (Select).
+**Square** switches the stage under the cursor between Classic and
+Remastered Classic, and it stays so for as long as the program runs.
+**Select** opens the page of the **custom arenas**: up and down choose
+one, its picture beside the list; **Cross** fights on it; **Triangle**
+or Select goes back to the stages. **L1** and **R1** turn the stage's
+time of day ("The time of day", below), **L2** and **R2** choose the
+fight's music ("Music on the stage select", below). On the keyboard
+Square is A, Select is Right Shift, L1 and R1 are Q and W and L2 and R2
+are 1 and 2 for player one ("The keys").
 
 `stage_kind = remastered` (the default) or `classic` in `rebushido.cfg`,
 the settings menu's "Stages", is what every stage starts as, and what
@@ -396,7 +400,7 @@ the modes with no stage page (story, chanbara, group battle, and versus
 the CPU and training with `stage_select_everywhere = off`) fight on.
 None of it is the game's play: Classic and Remastered Classic are the
 same fight. In the Original picture (F2) a stage looks as the console's
-whichever kind it is, and the line and the page are still laid over it.
+whichever kind it is, and the panel and the page are still laid over it.
 Online, both players choose on the same screen as on a couch, so the
 kind and the arena are the same for both, and the kind the stages start
 as is the host's.
@@ -408,9 +412,9 @@ Every stage of the disc is set at night. A **Remastered Classic** stage
 item 20): on a stage page **L1** and **R1** (Q and W for player one on
 the keyboard) turn the time of the stage under the cursor through
 **the stage's own** (the game's lighting, as it always was), **dawn**,
-**day**, **dusk** and **night**; the line under the scroll says which.
-A Classic stage keeps the game's own light ("The game's own light" on
-the line), and so does the Original picture (F2).
+**day**, **dusk** and **night**; the panel's Time says which.
+A Classic stage keeps the game's own light ("The game's light" in the
+panel), and so does the Original picture (F2).
 
 - **Dawn** and **dusk**: the sun low over the horizon, gold or deep
   orange, the shadows long, the sky coloured on the sun's side;
@@ -469,9 +473,9 @@ the CPU and group battle have none, only the stage's own sounds of wind,
 water and birds. In the port **every fight has its stage's music**,
 and the stage select lets you choose any other piece for it.
 
-On a **stage page**, the middle of the line under the scroll says what
-the fight will play. **L1** and **R1** (Q and W on the keyboard for
-player one) go back and forward through:
+On a **stage page**, the panel's Music says what the fight will play.
+**L2** and **R2** (1 and 2 on the keyboard for player one) go back and
+forward through:
 
 - **Stage's own** (where the row starts): the piece versus mode plays on
   that stage, in every mode; a mod's arena's own piece on an arena.

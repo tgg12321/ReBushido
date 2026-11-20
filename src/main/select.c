@@ -2276,11 +2276,14 @@ static void select_StageStep(
     }
 #endif
 #if RB_PORT
-    /* the fight's music (port_fight_music.h): L1 and R1 go through the
-     * row of pieces (the arenas' page, which has every press while it is
-     * up, has left none) */
+    /* the fight's music (port_fight_music.h): L2 and R2 go through the
+     * row of pieces, L1 and R1 being the stage's time of day (the arenas'
+     * page, which has every press while it is up, has left none). The
+     * row's step reads its back and on as L1 and R1: L2 and R2 are the
+     * bits two below those, on either pad. */
     if (port_FightMusicPageStep(
-            g_select_pressed, g_select_door == SELECT_DOOR_OPEN)) {
+            (s32)(((u32)g_select_pressed & PAD_ANY(PADL2 | PADR2)) << 2),
+            g_select_door == SELECT_DOOR_OPEN)) {
         g_select_pressed = 0;
     }
 #endif
