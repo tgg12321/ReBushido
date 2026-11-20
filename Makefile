@@ -145,7 +145,7 @@ ALL_O_FILES  := $(S_O_FILES) $(C_O_FILES) $(ASM_FUNC_O_FILES)
 .PHONY: all clean check clean-check shift movovl modern test checks \
 	rebushido rebushido-disc rebushido-patch rebushido-test rebushido-modern rb-build \
 	quickboot quickboot-compile quickboot-disc playtest playtest-discs playtest-console gte-probe port \
-	patcher port-sdl port-sdl-windows port-gl-windows port-rollback port-net \
+	patcher port-sdl port-sdl-windows port-release port-gl-windows port-rollback port-net \
 	port-stage-select
 
 ifeq ($(REBUSHIDO),1)
@@ -408,6 +408,15 @@ port-sdl:
 
 port-sdl-windows:
 	python3 tools/port_sdl_build.py --windows
+
+# The Windows program as a package for players, into build/release/
+# (tools/port_release.py; BUILD.md, "The port's package"): the build
+# above, then ReBushido-PC-<version>-<commit>.zip and its .sha256, which
+# hold nothing of the disc. RB_RELEASE=1 refuses a tree with anything
+# uncommitted and builds the version without -dev; without it the
+# package is a trial.
+port-release:
+	python3 tools/port_release.py $(if $(filter 1,$(RB_RELEASE)),--release)
 
 # The picture provers' program for Windows, on the machine's own graphics card
 # with a window never shown (tools/port_gl_build.py --windows; docs/PORT.md,

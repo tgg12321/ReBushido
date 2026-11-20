@@ -65,7 +65,12 @@ python3 tests/run.py --rebushido -v rebushido/settings # one, showing what it pr
   `make patcher` does, into `build/tests/patcher/`, runs it on patches
   the tool makes and on ones written by hand, and compares what it
   writes, and what it refuses and with which exit code, with the tool.
-  Made-up bytes again.
+  Made-up bytes again. `rebushido/port_release` is the PC package's
+  check (`tools/port_release.py --self-test`): a package of made-up
+  programs and the repository's own mods in `build/tests/port_release/`,
+  in which a disc image, a card, a log, a screenshot, a mod made from a
+  disc and a shipped mod's file changed are planted one by one, each
+  of which must be refused.
 - A test of one of ReBushido's fixes is `tests/rebushido/fix_NAME.c`: it
   includes the game's file that has the fix and runs the function with
   the "Bugfixes" setting off, for what the original does, and on

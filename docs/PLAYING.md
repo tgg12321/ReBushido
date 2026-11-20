@@ -19,9 +19,13 @@ say.
   it; nothing of the game is in this repository or in the program.
 - **Windows:** a 64-bit Windows 10 or 11. **Linux:** an x86-64 system
   with SDL 2 (`libsdl2-2.0-0` on Ubuntu).
-- **The program.** There is no release of it yet: it is built from this
-  repository ([`BUILD.md`](../BUILD.md), "The port with a window"), into
-  `build/port-sdl/`:
+- **The program.** For Windows it comes as a package,
+  `ReBushido-PC-<version>-<commit>.zip`: unpack it anywhere you can
+  write to and read its `README.txt`. It holds the program, `SDL2.dll`,
+  the shipped mods and the licences, and nothing of the game
+  ([`BUILD.md`](../BUILD.md), "The port's package", makes one). Or it is
+  built from this repository ([`BUILD.md`](../BUILD.md), "The port with
+  a window"), into `build/port-sdl/`:
 
   | | |
   |---|---|
