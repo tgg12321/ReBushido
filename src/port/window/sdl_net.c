@@ -125,9 +125,6 @@ static u32 port_NetWords(char *out, u32 room) {
 
 void port_DrawNetLine(void) {
     char words[LINE_BYTES];
-
-    port_PortMapTick(SDL_GetTicks());
-    {
     u32 color = port_NetWords(words, sizeof(words));
     s32 window_w = 0;
     s32 window_h = 0;
@@ -136,6 +133,8 @@ void port_DrawNetLine(void) {
     s32 box_w;
     s32 i;
 
+    /* the router's lease asked again when half of it has gone */
+    port_PortMapTick(SDL_GetTicks());
     if (words[0] == 0 || !port_NetFont()) {
         return;
     }

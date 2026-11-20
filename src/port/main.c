@@ -497,6 +497,16 @@ s32 port_Main(s32 argc, char **argv) {
             player = argv[++i];
         } else if (port_TextsEqual(word, "--room-password")) {
             password = argv[++i];
+        } else if (port_TextsEqual(word, "--room-key")) {
+            u8 salt[PORT_RELAY_SALT_BYTES];
+            u8 key[PORT_RELAY_KEY_BYTES];
+
+            if (!port_ParseRoomKey(argv[++i], salt, key)) {
+                port_UsageError("--room-key takes SALT:KEY in hex (16 and 32 "
+                                "bytes), not ",
+                                argv[i]);
+            }
+            port_SetRelayKey(salt, key);
         } else if (port_TextsEqual(word, "--punch-to")) {
             if (!port_ParseNetAddress(argv[++i], &punch_to) ||
                 punch_to.port == 0) {

@@ -481,6 +481,15 @@ static s32 g_port_map_off; /* --portmap off */
 
 const void *port_WindowPortMapOptions(void) { return &g_port_map_options; }
 
+/* An address no one on the internet reaches: unknown (0), private
+ * (10/8, 172.16/12, 192.168/16) or the providers' shared space
+ * (100.64/10). 127/8 is the tests' fake router's, and taken. */
+static s32 port_IsBehindAnother(u32 address) {
+    return address == 0 || (address >> 24) == 10 ||
+           (address >> 20) == 0xAC1 || (address >> 16) == 0xC0A8 ||
+           (address >> 22) == (0x64400000U >> 22);
+}
+
 /* A host's port opened in its router before the session begins (portmap.c;
  * docs/NETPLAY.md, section 14), where the settings and the command line
  * let it and the host is found through every network: what it found is
@@ -504,7 +513,20 @@ static void port_MapHostPort(s32 count, char **words) {
         bind.port == 0 || bind.is_v6 || (bind.address >> 24) == 127) {
         return;
     }
-    if (port_MapPort(bind.port, &g_port_map_options, &map)) {
+    if (port_MapPort(bind.port, &g_port_map_options, &map) &&
+        port_IsBehindAnother(map.external_address)) {
+        /* the router opened it, but it is not the internet's: another
+         * router (or the provider's NAT) stands before it */
+        snprintf(said, sizeof(said),
+                 "%s opened your router's port, but your router is behind "
+                 "another (it is at %u.%u.%u.%u): a lobby room finds the "
+                 "way instead",
+                 map.method, map.external_address >> 24,
+                 (map.external_address >> 16) & 0xFF,
+                 (map.external_address >> 8) & 0xFF,
+                 map.external_address & 0xFF);
+        atexit(port_UnmapPort);
+    } else if (map.ok) {
         PortNetAddress outside;
 
         port_ClearNetAddress(&outside);

@@ -260,6 +260,8 @@ extern void port_SetRelayRoom(const char *name, const char *player);
 extern void port_SetRelayPassword(const char *password);
 extern void port_SetRelayKey(const u8 *salt, const u8 *key);
 extern void port_RelayRoomKey(const u8 *salt, const char *password, u8 *key);
+/* --room-key's `SALT:KEY`, in hex: 1, or 0 if it is not one. */
+extern s32 port_ParseRoomKey(const char *text, u8 *salt, u8 *key);
 /* The port the window's router mapped, the host's first way. */
 extern void port_SetRelayMapped(const PortNetAddress *mapped);
 extern s32 port_IsRelayOn(void);

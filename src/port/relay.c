@@ -364,6 +364,41 @@ void port_SetRelayKey(const u8 *salt, const u8 *key) {
     g_relay.has_key = 1;
 }
 
+static s32 port_HexValue(char c) {
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    }
+    if (c >= 'A' && c <= 'F') {
+        return c - 'A' + 10;
+    }
+    return -1;
+}
+
+static s32 port_ParseHex(const char *text, u8 *out, u32 count) {
+    u32 i;
+
+    for (i = 0; i < count; i++) {
+        s32 high = port_HexValue(text[2 * i]);
+        s32 low = high < 0 ? -1 : port_HexValue(text[2 * i + 1]);
+
+        if (low < 0) {
+            return 0;
+        }
+        out[i] = (u8)((high << 4) | low);
+    }
+    return 1;
+}
+
+s32 port_ParseRoomKey(const char *text, u8 *salt, u8 *key) {
+    return port_TextLength(text) == 2 * SALT_BYTES + 1 + 2 * KEY_BYTES &&
+           text[2 * SALT_BYTES] == ':' &&
+           port_ParseHex(text, salt, SALT_BYTES) &&
+           port_ParseHex(text + 2 * SALT_BYTES + 1, key, KEY_BYTES);
+}
+
 void port_SetRelayMapped(const PortNetAddress *mapped) {
     g_relay.mapped = *mapped;
     g_relay.has_mapped = 1;
