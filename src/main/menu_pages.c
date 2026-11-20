@@ -671,10 +671,6 @@ s32 menu_StepNudge(u32 *pressed, s32 player, s16 *nudge, s16 *steps) {
  * MENU_ROW_OPTIONS): netplay's session takes both machines down to
  * versus with it (src/port/session.c). */
 s32 menu_GetTopRowMode(void) { return g_menu_top.row[TOP_ROW].mode; }
-
-/* The rows that can be chosen, a bit each (ReBushido's top menu lights its
- * rows from them; src/port/window/gamestate.c). */
-u32 menu_GetTopRowsOn(void) { return g_menu_top.rows_on; }
 #endif
 
 /* The top menu: up and down move the cursor over the rows that can be
@@ -1667,6 +1663,7 @@ static s32 menu_UpdatePortTop(MenuCtx *ctx, s32 events, u32 pressed) {
      * and what cross chooses (menu_GetTopRowMode reads it too) */
     g_menu_cursors = (g_menu_cursors & ~CURSOR_TOP) | of->row;
     port_TopMenuTakeOptions();
+    g_port_top_menu.rows_on = (u8)g_menu_top.rows_on;
     menu_DrawPageFrame(ctx, MENU_PANEL_TOP, db);
     menu_DrawPortTopRows(ctx, of);
     menu_DrawSideViewChoice(ctx, of->views);

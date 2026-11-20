@@ -181,23 +181,26 @@ void port_ReadGameState(PortGameState *state) {
     state->is_cutscene = g_sys_screen == SCREEN_CUTSCENE_UPDATE;
     state->is_top_menu_ours = g_port_top_menu.is_on;
     state->top_page = g_port_top_menu.page;
-    state->top_cursor = port_TopMenuCursor();
+    state->top_cursor = g_port_top_menu.cursor[g_port_top_menu.page];
     state->menu_asks = g_port_top_menu.asks;
     state->menu_ask_page = g_port_top_menu.ask_page;
 }
 
 void port_ReadTopMenu(PortTopView *view) {
     const PortTopRow *rows = g_port_top_rows[g_port_top_menu.page];
-    u32 rows_on = menu_GetTopRowsOn();
+    /* read from the state the step left, never by calling the game's
+     * code, which is the step's alone while it runs */
+    u32 rows_on = g_port_top_menu.rows_on;
     s32 i;
 
     view->is_up = g_port_top_menu.is_on && g_sys_screen == SCREEN_MENU_UPDATE &&
                   g_menu_page == MENU_PAGE_TOP;
     view->page = g_port_top_menu.page;
-    view->cursor = port_TopMenuCursor();
+    view->cursor = g_port_top_menu.cursor[g_port_top_menu.page];
     for (i = 0; i < PORT_TOP_ROWS; i++) {
         view->names[i] = rows[i].name;
-        view->is_on[i] = port_TopMenuRowIsOn(i, rows_on);
+        view->is_on[i] =
+            rows[i].kind != PORT_TOP_MODE || ((rows_on >> rows[i].row) & 1);
     }
     view->caption[0] = rows[view->cursor].caption[0];
     view->caption[1] = rows[view->cursor].caption[1];

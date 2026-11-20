@@ -84,6 +84,9 @@ typedef struct {
      * the window follows, and the page it is to open on */
     u8 asks;
     u8 ask_page;
+    /* the game's rows that can be chosen as the step last drew the page,
+     * for the window to read */
+    u8 rows_on;
 } PortTopMenu;
 
 extern PortTopMenu g_port_top_menu;

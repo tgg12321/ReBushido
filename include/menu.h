@@ -172,8 +172,6 @@ extern s32 menu_UpdateTop(s32 held, u32 pressed);
 /* The mode of the row the top menu's cursor is on (enum FightMode, or
  * MENU_ROW_OPTIONS). */
 extern s32 menu_GetTopRowMode(void);
-/* The rows that can be chosen, a bit each in the screen's order. */
-extern u32 menu_GetTopRowsOn(void);
 /* The main menu's page (menu_screen.c, enum MenuPage). */
 extern u8 g_menu_page;
 #endif
