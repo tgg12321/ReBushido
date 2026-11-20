@@ -760,7 +760,23 @@ void main(void) {
  * buffer on show, with its own small ordering table. The loaders call it
  * between files, so the picture moves while the disc is read. */
 void disp_DrawLoadingScreen(void) {
+#if RB_PORT
+    /* The original leaves g_disp_ot at this table when it returns, and a
+     * loader that ends inside a frame of the fight (the group battle's
+     * fight_NextTeamMatch, under fight_UpdateMode) has the HUD that the
+     * frame still draws linked into it: AddPrim writes the address of its
+     * primitive into a word of the stack that a later call's frame now
+     * holds. The PlayStation plays on through it, the table is never
+     * drawn, and the HUD of that one frame is lost behind the card. In the
+     * port's frames the word was the pointer
+     * hud_DrawPointsAndTime reads the time through (a crash as the first
+     * fight of a group battle ended, in the window's build). Here the
+     * table outlives the call, so the links land in it, still never
+     * drawn: the console's picture, and no word of anyone's stack. */
+    static u32 local_ot[2];
+#else
     u32 local_ot[2];
+#endif
     DRAWENV env;
     /* FAKE: one local for the number of noise streaks and the stage's mark */
     s32 work;

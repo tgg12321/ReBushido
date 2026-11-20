@@ -32,6 +32,13 @@ checkpoints must hold the score the fights made.
 - vscpu_crew: versus the CPU with --match crew:2: the player's crew, the
   CPU's led by the game's opponent, the match lost, the game's menu, and
   its Rematch the crews' first fighters loaded again.
+- group_stock, group_first_to, group_crew: group battle (the game's team
+  battle) with --match stock:2, first_to:2 and crew:3: the first match
+  won, the card of the scores between matches, the second match begun and
+  three hundred frames of it, and none of the rules in play at any of
+  them (they are versus' and versus the CPU's: port_MatchModeHasRules).
+  The window's build crashed as that first match ended (main.c,
+  disp_DrawLoadingScreen).
 
 In both versus plans the pictures of the game's screen at each fight's
 end (`card`, `result`) are held to have none of the game's own "WINS 00"
@@ -396,6 +403,108 @@ expect = ["mode == 1", "p1_character == %(p1)d", "p2_character == %(cpu_crew)d",
           "port_match_lives_p1 == 2", "port_match_lives_p2 == 2"]
 '''
 
+# Group battle (the game's team battle, FIGHT_MODE_TEAM): the top menu's
+# fifth row; the first side picks the first place of the grid and its
+# weapon, the second the same, three fighters each, one place down each
+# time; one point a match. The first player walks in and strikes until the
+# second fighter, whom nobody plays, falls: the match is the first side's,
+# the card of the scores between matches (the loading screen
+# LOADING_SCREEN_TEAM_SCORES, drawn by the loader that fight_NextTeamMatch
+# waits on from inside a frame of the fight), and the second match begun.
+# The port crashed there in the window's build (main.c,
+# disp_DrawLoadingScreen). Run under each match rule given on the command
+# line: none applies to the group battle, whose own rules are the game's.
+def group_menu():
+    presses = ['"menu+30 DOWN"', '"menu+60 DOWN"', '"menu+90 DOWN"', '"menu+120 DOWN"', '"menu+180 CROSS"',
+               '"menu+400 CROSS"', '"menu+520 CROSS"', '"menu+540 P2 CROSS"']
+    for t in range(620, 1311, 60):
+        presses += ['"menu+%d CROSS"' % t, '"menu+%d P2 CROSS"' % (t + 8), '"menu+%d DOWN"' % (t + 30),
+                    '"menu+%d P2 DOWN"' % (t + 38)]
+    return ', '.join(presses)
+
+
+def group_presses(last=2396):
+    """The first fighter's presses: a walk in, then a strike every 12
+    frames, Circle, Cross and Square in turn, and a step right after each
+    twenty."""
+    presses = ['"fight+60f RIGHT hold 40f"']
+    buttons = ['CIRCLE', 'CROSS', 'SQUARE']
+    at = 110
+    struck = 0
+    walked = 0
+    while at <= last:
+        if struck and struck % 20 == 0 and walked != struck:
+            presses.append('"fight+%df RIGHT hold 10f"' % at)
+            at += 14
+            walked = struck
+            continue
+        presses.append('"fight+%df %s"' % (at, buttons[struck % 3]))
+        struck += 1
+        at += 12
+    return ', '.join(presses)
+
+
+GROUP_COMPARE = COMPARE.replace('"port_match_card"]', '"port_match_card", "team_match", "team_points_p1", '
+                                '"team_points_p2", "loading_screen"]')
+GROUP_RULE_OFF = ['port_match_rule == 0', 'port_match_card == 0', 'port_match_fights == 0']
+TOML_GROUP = 'about = "Group battle under the rule %(rule)s, which does not apply to it (tools/port_match.py)"\n' + \
+    HEAD + '''input = [%(opening)s,
+    %(group_menu)s,
+    %(group_presses)s,
+]
+''' + GROUP_COMPARE + START.replace('screen_frames >= 120', 'screen_frames >= 60') + '''
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE && mode == FIGHT_MODE_TEAM"
+at_frame = true
+within = 3000
+expect = [%(fight)s]
+
+[[checkpoint]]
+name = "ippon"
+when = "team_points_p1 == 1"
+within = 6000
+shot = false
+expect = ["team_match == 0", "team_points_p2 == 0", "p2_defeated != 0", %(off)s]
+
+[[checkpoint]]
+name = "card"
+when = "loading_screen == 10 && team_match == 1"
+within = 3000
+shot = false
+expect = ["mode == FIGHT_MODE_TEAM", %(off)s]
+
+[[checkpoint]]
+name = "fight2"
+when = "screen == SCREEN_FIGHT_UPDATE && team_match == 1"
+at_frame = true
+within = 3000
+expect = ["mode == FIGHT_MODE_TEAM", "team_points_p1 == 0", "team_points_p2 == 0", "p1_defeated == 0",
+          "p2_defeated == 0", %(off)s]
+
+[[checkpoint]]
+name = "fight2_on"
+after = 300
+shot = false
+expect = ["mode == FIGHT_MODE_TEAM", "team_match == 1", %(off)s]
+'''
+# the rules, as --match gives them, under which the group battle is run
+GROUP_RULES = ['stock:2', 'first_to:2', 'crew:3']
+
+
+def group_plans():
+    """The group battle's plans, one a rule: name, plan, the program's
+    arguments."""
+    plans = []
+    for rule in GROUP_RULES:
+        off = ', '.join('"%s"' % claim for claim in GROUP_RULE_OFF)
+        fight = ', '.join('"%s"' % claim for claim in ['team_match == 0', 'team_points_p1 == 0',
+                                                        'team_points_p2 == 0'] + GROUP_RULE_OFF)
+        text = TOML_GROUP.replace('%(rule)s', rule).replace('%(off)s', off).replace('%(fight)s', fight)
+        plans.append(('group_' + rule.split(':')[0], text, ['--mods', 'off', '--match', rule]))
+    return plans
+
+
 # versus mode's first fighters (the grid's first place and the second
 # cursor's) on the second page's first stage (Building Rooftop); versus
 # the CPU's first opponent of the run as an empty save and the stage pages
@@ -426,7 +535,7 @@ def main(argv):
     parser.add_argument('--out', default=os.path.join(REPO, 'build', 'match'))
     parser.add_argument('--shots', default=None)
     parser.add_argument('--only', nargs='*', help='the plans to run (vs_stock, vs_first_to, vscpu_stock, vscpu_won, vs_crew, '
-                        'vs_crew_drawn, vscpu_crew)')
+                        'vs_crew_drawn, vscpu_crew, group_stock, group_first_to, group_crew)')
     parser.add_argument('--rollback', action='store_true',
                         help="vs_stock's match through tools/port_rollback.py instead: rolled back every "
                         "24 frames, on both sizes")
@@ -436,13 +545,14 @@ def main(argv):
     out = os.path.abspath(args.out)
     os.makedirs(out, exist_ok=True)
     values = dict(VALUES, opening=', '.join(OPENING), presses=fight_presses(),
-                  presses_crew=fight_presses(CREW_ROUNDS), presses_stock=fight_presses(STOCK_ROUNDS))
+                  presses_crew=fight_presses(CREW_ROUNDS), presses_stock=fight_presses(STOCK_ROUNDS),
+                  group_menu=group_menu(), group_presses=group_presses())
     plans = [
         ('vs_stock', TOML_VS_STOCK, ['--mods', 'off', '--match', 'stock:2']),
         ('vs_first_to', TOML_VS_FIRST_TO, ['--mods', 'off', '--match', 'stock:1']),
         ('vscpu_stock', TOML_VSCPU_STOCK, ['--mods', 'off', '--stage-select', '--unlock-all', '--match', 'stock:2']),
         ('vscpu_won', TOML_VSCPU_WON, ['--mods', 'off', '--stage-select', '--unlock-all', '--match', 'stock:1']),
-    ] + CREW_PLANS
+    ] + CREW_PLANS + group_plans()
     if args.rollback:
         # the Stock match, and a Crew match, its crews picked and its
         # fighters loaded afresh between fights

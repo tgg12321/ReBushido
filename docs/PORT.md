@@ -255,6 +255,25 @@ it here:
   The first two were found on the way to a fight's end, the others by
   the sweep of the menu's rows ("How it is proved"). The next one will
   stop the port and say where.
+- **A table on a stack that has gone.** `disp_DrawLoadingScreen`
+  (`main.c`) draws the loading screen with an ordering table of two
+  words on its own stack, makes it the frame's (`g_disp_ot`) and leaves
+  it so when it returns. Where a loader runs inside a frame of the fight,
+  what that frame draws after it is linked into a table that is no
+  longer there: in the group battle, `fight_UpdateMode` ends a match with
+  `fight_NextTeamMatch`, which waits on the disc behind the card of the
+  scores, and then draws the points and the time
+  (`hud_DrawPointsAndTime`), and each `AddPrim` writes a primitive's
+  address into a word of the stack that a later call's frame holds. The
+  PlayStation lives with it: the table is never drawn, so that one
+  frame's HUD is lost behind the card, and whatever the word belongs to
+  then on the console, the game plays on (the emulator plays the same
+  group battle through). In the window's build the word was the
+  pointer `hud_DrawPointsAndTime` reads the time through, and the port
+  stopped as the first match of a group battle ended. Under `RB_PORT`
+  the table is `static`: it outlives the call, the links land in it,
+  and it is still never drawn, so the picture is the console's.
+  `tools/port_match.py`'s group battle plans play through that card.
 
 ### What the PlayStation's compiler decided
 
@@ -8763,7 +8782,11 @@ is a fight won and two lost, the game's menu after it and its Rematch a
 new match; versus the CPU Stock 1, the match won and the next opponent
 with a fresh one. In the versus plans the game's pictures at each
 fight's end have none of the counter's red rules (252 pixels before it
-was left out). `tools/port_rollback.py`'s Stock plan rolls a match
+was left out). Group battle is played under `--match stock:2`,
+`first_to:2` and `crew:3` in turn: its first match won, the card of
+the scores, the second match begun and 300 frames of it, with no rule
+in play and no card of the strip at any of them ("Memory", "A table on
+a stack that has gone"). `tools/port_rollback.py`'s Stock plan rolls a match
 back every 24 frames; `tools/port_net.py session` plays its session as
 a Stock match.
 
