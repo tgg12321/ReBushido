@@ -20,6 +20,12 @@
  * (src/port/step.c): no host here, and every step is the first. */
 void port_EndStep(void) {}
 
+/* no replay is recorded here (src/port/replay.c) */
+void port_ReplayTook(const PortInput *input, u32 index) {
+    (void)input;
+    (void)index;
+}
+
 s32 g_port_rerun;
 
 /* Run-ahead (src/port/step.c): no frame is run ahead here. */

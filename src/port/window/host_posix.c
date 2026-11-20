@@ -393,6 +393,26 @@ s32 port_HostMakeFolder(const char *path) {
     return stat(path, &about) == 0 && S_ISDIR(about.st_mode);
 }
 
+s32 port_HostRemove(const char *path) { return unlink(path) == 0; }
+
+s32 port_HostRename(const char *from, const char *to) {
+    return rename(from, to) == 0;
+}
+
+void port_HostDate(PortDate *date) {
+    time_t now = time(NULL);
+    struct tm parts;
+
+    localtime_r(&now, &parts);
+    date->year = parts.tm_year + 1900;
+    date->month = parts.tm_mon + 1;
+    date->day = parts.tm_mday;
+    date->hour = parts.tm_hour;
+    date->minute = parts.tm_min;
+    date->second = parts.tm_sec;
+    date->is_utc = FALSE;
+}
+
 /* Whole pages at exactly `address`, or nothing (port_host.h). */
 /* The clock that only goes forward (port_host.h). */
 u32 port_HostTicks(void) {

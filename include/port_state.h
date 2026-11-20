@@ -48,6 +48,10 @@ extern char g_port_state_data_end[];
 extern char g_port_game_bss[];
 extern char g_port_game_bss_end[];
 extern char g_port_state_bss_end[];
+/* ... and the state's last files in each kind are the run's own
+ * (config/port_state.txt's `run`), from these marks to the second. */
+extern char g_port_run_data[];
+extern char g_port_run_bss[];
 
 /* The bytes a snapshot takes: the same all through a run. */
 extern u32 port_StateSize(void);
@@ -67,6 +71,28 @@ extern void port_StateSaveAhead(void *buf);
  * be painted is in its way (raster.c): FALSE where there is no room left,
  * and the step ahead is then given up before the write. */
 extern s32 port_StateKeepVram(s32 x, s32 y, s32 w, s32 h);
+
+/* The snapshot's pieces, in its order (a replay's file names them,
+ * port_replay.h): the piece's name, where it lies in the program now,
+ * its size, and where it begins in a snapshot. */
+typedef struct {
+    const char *name;
+    u8 *start;
+    u32 bytes;
+    u32 offset;
+} PortStatePiece;
+
+extern s32 port_StatePieceCount(void);
+extern void port_StateGetPiece(s32 piece, PortStatePiece *out);
+/* Where a byte of the state lies in a snapshot, or PORT_STATE_NOWHERE for
+ * one that is not the state's. */
+#define PORT_STATE_NOWHERE 0xFFFFFFFFU
+extern u32 port_StateOffsetOf(const void *address);
+/* `buf`, saved into before, holds nothing this program knows of from now
+ * on: its next save copies every page, and a load of it puts every page
+ * back. For a snapshot whose bytes were changed after it was saved (a
+ * replay's start, cleared of this run's own before it is written). */
+extern void port_StateForget(const void *buf);
 /* Every byte saved and put back each time, not only the pages written
  * since (--whole-state): what the state cost before, for measuring. */
 extern void port_SetWholeState(void);

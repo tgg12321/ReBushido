@@ -266,6 +266,41 @@ u32 port_StateSize(void) {
     return g_port_state_bytes;
 }
 
+s32 port_StatePieceCount(void) {
+    port_StateFindPieces();
+    return g_port_state_saved_count;
+}
+
+/* A piece of the snapshot, and where it begins in one (port_state.h). */
+void port_StateGetPiece(s32 piece, PortStatePiece *out) {
+    u32 offset = 0;
+    s32 i;
+
+    port_StateFindPieces();
+    for (i = 0; i < piece; i++) {
+        offset += g_port_state_saved[i].bytes;
+    }
+    out->name = g_port_state_saved[piece].name;
+    out->start = g_port_state_saved[piece].start;
+    out->bytes = g_port_state_saved[piece].bytes;
+    out->offset = offset;
+}
+
+/* Where a byte of the state is in a snapshot (port_state.h). */
+u32 port_StateOffsetOf(const void *address) {
+    PortStatePiece piece;
+    s32 i;
+
+    for (i = 0; i < port_StatePieceCount(); i++) {
+        port_StateGetPiece(i, &piece);
+        if ((const u8 *)address >= piece.start &&
+            (const u8 *)address < piece.start + piece.bytes) {
+            return piece.offset + (u32)((const u8 *)address - piece.start);
+        }
+    }
+    return PORT_STATE_NOWHERE;
+}
+
 /* ---- the pages written ---- */
 
 /* Where a run starts tracking, the pieces that are big enough to be
@@ -637,6 +672,17 @@ static PortStateSlot *port_StateFindSlot(const void *buf, s32 is_new) {
     g_port_state_slots[g_port_state_slot_count].epoch = 0;
     g_port_state_slots[g_port_state_slot_count].is_vram_left = FALSE;
     return &g_port_state_slots[g_port_state_slot_count++];
+}
+
+void port_StateForget(const void *buf) {
+    PortStateSlot *slot = port_StateFindSlot(buf, 0);
+
+    if (slot != NULL) {
+        /* epoch 0 holds nothing: the next save copies every page, and a
+         * load of it puts every page back */
+        slot->epoch = 0;
+        slot->is_vram_left = FALSE;
+    }
 }
 
 /* Whether no other snapshot is newer than `slot`. */

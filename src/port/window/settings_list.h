@@ -700,6 +700,51 @@ PORT_SETTING(quick_loading,
     .help = "The waits for the disc behind a loading picture hurried "
             "through")
 
+/* ---- replays ---- */
+
+PORT_SETTINGS_HEADING(
+    "Replays (docs/PLAYING.md): every fight kept, and how many of them.")
+
+/* Every fight kept as a replay in replays/ beside the program (docs/
+ * PLAYING.md, "Replays"; include/port_replay.h): its start and every
+ * input, a few hundred KB. A test's run (--plan, --frames) keeps none
+ * unless its --replays says where. */
+PORT_SETTING(replays,
+    .name = "replays", .value = "on",
+    .note = "every fight kept as a replay in replays/\n"
+            "beside the program (the settings menu's\n"
+            "Replays page plays them)",
+    .menu = PORT_MENU_GAME, .rank = 100, .takes = PORT_TAKES_NOW,
+    .label = "Keep replays",
+    .help = "Every fight kept in replays/ beside the program, to watch on "
+            "the Replays page")
+
+/* how many replays are kept: the oldest go once there are more (0: all) */
+PORT_SETTING(replays_keep,
+    .name = "replays_keep", .value = "200",
+    .note = "the newest so many replays are kept, the\n"
+            "oldest taken away (0: all of them)",
+    .read = PORT_READ_NUMBER, .least = 0, .most = PORT_REPLAYS_KEEP_MAX,
+    .is = "a number from 0 to 100000",
+    .menu = PORT_MENU_GAME, .rank = 110, .takes = PORT_TAKES_NOW,
+    .label = "Replays kept",
+    .help = "The newest so many are kept, the oldest taken away",
+    .choices = {"50", "100", "200", "500", "1000", "0"},
+    .shown = {"50", "100", "200", "500", "1000", "All"})
+
+/* ... and how many megabytes they take at most (0: no limit) */
+PORT_SETTING(replays_megabytes,
+    .name = "replays_megabytes", .value = "500",
+    .note = "megabytes the replays take at most, the\n"
+            "oldest taken away (0: no limit)",
+    .read = PORT_READ_NUMBER, .least = 0, .most = PORT_REPLAYS_MEGABYTES_MAX,
+    .is = "a number from 0 to 1000000",
+    .menu = PORT_MENU_GAME, .rank = 120, .takes = PORT_TAKES_NOW,
+    .label = "Replays' room",
+    .help = "Megabytes the replays take at most, the oldest taken away",
+    .choices = {"100", "250", "500", "1000", "5000", "0"},
+    .shown = {"100 MB", "250 MB", "500 MB", "1 GB", "5 GB", "No limit"})
+
 /* ---- playing online ---- */
 
 PORT_SETTINGS_HEADING(

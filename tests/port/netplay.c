@@ -74,6 +74,9 @@ u32 g_port_disc_sectors_read;
 
 void port_SessionSeed(void) {}
 
+/* no replay is recorded here (src/port/replay.c) */
+void port_ReplayBoundary(void) {}
+
 void port_SessionInput(u32 frame, PortInput *input, u16 *used) {
     (void)frame;
     (void)input;

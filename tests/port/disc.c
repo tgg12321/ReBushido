@@ -22,6 +22,9 @@ void port_StartDiscStream(s32 sector, s32 double_speed) {
 
 void port_StopDiscStream(void) {}
 
+/* no replay is recorded here (src/port/replay.c) */
+void port_ReplayNoteSector(u32 sector) { (void)sector; }
+
 s32 port_PumpStream(void) { return 0; }
 
 /* What Sony's libcd does to the sound chip as it starts (src/port/

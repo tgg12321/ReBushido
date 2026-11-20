@@ -3029,6 +3029,10 @@ void port_WindowApplyChoice(s32 choice) {
         /* the game's own, at once, as the options page at boot set it */
         port_WindowGameSwitches();
         port_SetBugfixes(g_port_settings.bugfixes);
+    } else if (
+        strcmp(name, "replays") == 0 || strcmp(name, "replays_keep") == 0 ||
+        strcmp(name, "replays_megabytes") == 0) {
+        port_ApplyReplaySettings();
     } else if (strcmp(name, "difficulty") == 0 || strcmp(name, "music") == 0 ||
                strcmp(name, "monitor") == 0) {
         port_WindowGameSwitches();
@@ -3221,6 +3225,10 @@ static void port_ReadEvents(void) {
     s32 pad;
 
     while (SDL_PollEvent(&event)) {
+        if (port_ReplayWindowEvent(&event)) {
+            /* a playback's key or button (sdl_replay.c) */
+            continue;
+        }
         switch (event.type) {
         case SDL_QUIT:
             port_Quit(PORT_EXIT_OK);

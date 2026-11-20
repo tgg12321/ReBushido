@@ -1166,6 +1166,10 @@ int main(int argc, char **argv) {
      * (--plan, --frames) presses through the original's menus, and has
      * them unless its --menu, which comes after, says otherwise */
     port_SetTopMenuSwitch(!has_end && g_port_settings.top_menu == 0);
+    /* every fight kept in replays/ beside the program, in a player's run;
+     * a test's keeps none unless its --replays, which comes after, says
+     * where (docs/PLAYING.md, "Replays") */
+    port_StartReplayWindow(beside, has_end);
     port_WindowGameSwitches();
     passed[count] = NULL;
     {

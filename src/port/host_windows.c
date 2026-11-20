@@ -458,6 +458,26 @@ s32 port_HostMakeFolder(const char *path) {
            GetLastError() == ERROR_ALREADY_EXISTS;
 }
 
+s32 port_HostRemove(const char *path) { return DeleteFileA(path) != 0; }
+
+s32 port_HostRename(const char *from, const char *to) {
+    return MoveFileExA(from, to, MOVEFILE_REPLACE_EXISTING) != 0;
+}
+
+/* The PC's own date and time, in its zone (port_host.h). */
+void port_HostDate(PortDate *date) {
+    SYSTEMTIME now;
+
+    GetLocalTime(&now);
+    date->year = now.wYear;
+    date->month = now.wMonth;
+    date->day = now.wDay;
+    date->hour = now.wHour;
+    date->minute = now.wMinute;
+    date->second = now.wSecond;
+    date->is_utc = FALSE;
+}
+
 /* The system's time is counted in tenths of a microsecond already: its
  * low half is the port's count (port_host.h). */
 u32 port_HostTicks(void) {

@@ -159,6 +159,24 @@ extern s32 port_RemasterLeftMargin(void);
  * 13). Before the game starts. */
 extern void port_RemasterFixMargin(s32 aspect_w, s32 aspect_h);
 
+/* What of the picture the game's own computation reads, which a replay
+ * keeps for each frame (port_replay.h): the draw distance, and the
+ * shape the left margin is worked out for (0 by 0: none). */
+typedef struct {
+    s32 distance;
+    s32 margin_w;
+    s32 margin_h;
+} PortGameView;
+
+/* What the game would read now, held or not. */
+extern void port_RemasterGameView(PortGameView *view);
+/* From now on the game reads `view` whatever the picture, until it is
+ * held otherwise or let go (NULL). The replay holds what each frame read
+ * as it was recorded, and holds the picture's own at every frame's
+ * boundary, so that a change made in the middle of a step (F2 at a
+ * blank) is read from the next. */
+extern void port_RemasterHoldGameView(const PortGameView *view);
+
 /* ---- the fight's HUD at a wider picture's edges ---- */
 
 /* A wider picture has a band of its own each side of the console's 640

@@ -7,6 +7,7 @@
  * window lays over ReBushido's top menu (port_ReadTopMenu). It only
  * reads, but for the settings menu's Bug fixes (port_SetBugfixes). */
 #include "common.h"
+#include "port_replay.h"
 #include "window.h"
 #include "bb2.h"
 
@@ -235,4 +236,11 @@ s32 port_LoadKind(void) {
  * before the first. */
 s32 port_GetBugfixes(void) { return g_rb_settings.bugfixes; }
 
-void port_SetBugfixes(s32 on) { g_rb_settings.bugfixes = (u8)(on != 0); }
+void port_SetBugfixes(s32 on) {
+    if (g_rb_settings.bugfixes != (u8)(on != 0)) {
+        /* no input made the change: a fight being recorded cannot be
+         * played back the same */
+        port_ReplayAbandon("Bug fixes was changed in the settings menu");
+    }
+    g_rb_settings.bugfixes = (u8)(on != 0);
+}

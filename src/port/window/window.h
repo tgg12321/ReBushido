@@ -269,6 +269,9 @@ enum {
 
 /* The most a stick's dead zone may be, in parts of a hundred. */
 #define PORT_DEADZONE_MAX 99
+/* the most replays kept, and megabytes they take (settings_list.h) */
+#define PORT_REPLAYS_KEEP_MAX 100000
+#define PORT_REPLAYS_MEGABYTES_MAX 1000000
 
 /* ---- the settings (keymap.c, settings_list.h) ---- */
 

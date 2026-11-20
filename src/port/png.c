@@ -588,6 +588,10 @@ static s32 png_Inflate(const u8 *in, u32 in_size, u8 *out, u32 out_size) {
     return z.out_at == out_size;
 }
 
+s32 port_Inflate(const u8 *in, u32 in_size, u8 *out, u32 out_size) {
+    return png_Inflate(in, in_size, out, out_size);
+}
+
 /* ---- the rows ---- */
 
 static u8 png_Paeth(u8 left, u8 up, u8 up_left) {

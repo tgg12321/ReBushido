@@ -55,6 +55,7 @@ Without the image it says so and passes, as the play tests do."""
 import argparse
 import os
 import random
+import shutil
 import signal
 import subprocess
 import sys
@@ -469,6 +470,12 @@ def check_session(label, program, args, ports, window):
     for side in (0, 1):
         cmd = [program, '--image', playtest.RETAIL_CUE, '--plan', plans[side], '--trace',
                '--out', os.path.join(folder, 'side%d' % side)] + trouble
+        # each machine keeps the session's fights as replays (docs/PORT.md,
+        # "Replays"), held to each other's below
+        replays = os.path.join(folder, 'side%d-replays' % side)
+        if os.path.isdir(replays):
+            shutil.rmtree(replays)
+        cmd += ['--replays', replays]
         if side == 0:
             # the host's cards, which it sends the guest: new ones here,
             # which no program writes (both play on copies in memory)
@@ -558,6 +565,50 @@ def check_session(label, program, args, ports, window):
     if not problems:
         print('port_net: session: %s: %d state hashes, the same on both, the last at frame %d: %s'
               % (label, len(common), common[-1], hashes[0][common[-1]]), flush=True)
+    problems += check_session_replays(label, program, folder, window)
+    return problems
+
+
+def check_session_replays(label, program, folder, window):
+    """The session's fights as both machines kept them, a fight's two files
+    found by the frame it began at: the same fights on each (but for the
+    window's host, which plays on alone after the guest has gone and keeps
+    that fight too), each fight's two files with the same inputs, views and
+    hashes, and each played back by the headless program of the same size
+    with every hash the one recorded (tools/port_replay.py)."""
+    import port_replay
+    problems = []
+    files = []
+    for side in (0, 1):
+        replays = os.path.join(folder, 'side%d-replays' % side)
+        names = sorted(f for f in os.listdir(replays) if f.endswith('.rbr')) if os.path.isdir(replays) else []
+        files.append({port_replay.read_replay(os.path.join(replays, name))[1].get('start_count'):
+                      os.path.join(replays, name) for name in names})
+    common = sorted(set(files[0]) & set(files[1]), key=int)
+    alone = set(files[0]) - set(files[1])
+    if not common or set(files[1]) - set(files[0]) or (alone and not window):
+        return ['session: %s: the two machines kept %d and %d replays, %d of the same fights'
+                % (label, len(files[0]), len(files[1]), len(common))]
+    for host, guest in ((files[0][start], files[1][start]) for start in common):
+        a, b = port_replay.read_replay(host), port_replay.read_replay(guest)
+        for chunk in ('INPT', 'HASH', 'VIEW'):
+            if a[0].get(chunk) != b[0].get(chunk):
+                problems.append('session: %s: %s and %s: their %s differ' % (label, host, guest, chunk))
+        if a[1].get('start_hash') != b[1].get('start_hash'):
+            problems.append('session: %s: %s and %s start otherwise' % (label, host, guest))
+        if window:
+            # the window's replays are held to each other's alone: the
+            # headless program is another build
+            continue
+        for path in (host, guest):
+            code, said = port_replay.check_replay(program, path, [])
+            if code != 0:
+                problems.append('session: %s: %s: %s' % (label, path, said))
+    if not problems:
+        print('port_net: session: %s: %d fights kept as replays on both machines, the same on both%s%s'
+              % (label, len(common), '' if window else ', each played back with every hash the same',
+                 ', and %d the host played on alone' % len(alone) if alone else ''),
+              flush=True)
     return problems
 
 

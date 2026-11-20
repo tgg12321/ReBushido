@@ -209,7 +209,9 @@ SECTIONS
         g_port_game_data = .;
 %(data)s
         g_port_game_data_end = .;
-        EXCLUDE_FILE(%(outside)s) *(.data .data.*)
+        EXCLUDE_FILE(%(outside)s %(run)s) *(.data .data.*)
+        g_port_run_data = .;
+%(run_data)s
         g_port_state_data_end = .;
         *(.data .data.*)
     }
@@ -217,7 +219,9 @@ SECTIONS
         g_port_game_bss = .;
 %(bss)s
         g_port_game_bss_end = .;
-        EXCLUDE_FILE(%(outside)s) *(.bss .bss.*) *(COMMON)
+        EXCLUDE_FILE(%(outside)s %(run)s) *(.bss .bss.*) *(COMMON)
+        g_port_run_bss = .;
+%(run_bss)s
         g_port_state_bss_end = .;
         *(.bss .bss.*) *(COMMON)
     }
@@ -233,11 +237,11 @@ SECTIONS
 # linked after the rest of their kind, so that what src/port/state.c saves
 # of the program's variables is two runs of memory (include/port_state.h).
 STATE_GROUPS = 'config/port_state.txt'
-GROUPS = ('state', 'outside')
+GROUPS = ('state', 'run', 'outside')
 
 
 def state_groups():
-    """{path: 'state' or 'outside'} of config/port_state.txt."""
+    """{path: 'state', 'run' or 'outside'} of config/port_state.txt."""
     groups = {}
     with open(STATE_GROUPS, encoding='utf-8') as f:
         for number, line in enumerate(f, 1):
@@ -245,7 +249,7 @@ def state_groups():
             if not words or words[0].startswith('#'):
                 continue
             if words[0] not in GROUPS or len(words) < 2 or words[1] in groups:
-                raise SystemExit('port: %s:%d: not "state PATH" nor "outside PATH", or a path said twice: %s'
+                raise SystemExit('port: %s:%d: not "state PATH", "run PATH" nor "outside PATH", or a path said twice: %s'
                                  % (STATE_GROUPS, number, line.strip()))
             groups[words[1]] = words[0]
     return groups
@@ -257,7 +261,7 @@ def check_state_groups(paths, folder):
     a line for each that is not, or none."""
     groups = state_groups()
     named = [path for path in groups if os.path.dirname(path) == folder.rstrip('/')]
-    problems = ['%s is in neither group of %s: put it in "state" or "outside" (docs/NETPLAY.md, '
+    problems = ['%s is in no group of %s: put it in "state", "run" or "outside" (docs/NETPLAY.md, '
                 '"State apart from presentation")' % (path, STATE_GROUPS)
                 for path in paths if path not in groups]
     problems += ['%s names %s, which is not built' % (STATE_GROUPS, path) for path in named if path not in paths]
@@ -270,6 +274,26 @@ def outside_state_patterns():
     folder."""
     return ' '.join('*%s.o' % path[:-2].replace('/', '_')
                     for path, group in sorted(state_groups().items()) if group == 'outside')
+
+
+def run_state_patterns():
+    """The objects of the files whose variables are the state's but the
+    run's own (`run`: a play test's plan), which are linked last in the
+    state, between the marks g_port_run_data and g_port_state_data_end
+    (and the same of the zeroed): a replay's start keeps this run's own
+    there (src/port/replay.c)."""
+    return ' '.join('*%s.o' % path[:-2].replace('/', '_')
+                    for path, group in sorted(state_groups().items()) if group == 'run')
+
+
+def run_state_sections(kinds, dot='.'):
+    """Those objects' sections of `kinds` (`.data`, or `.bss`), as a
+    link script's lines."""
+    run = run_state_patterns()
+    if not run:
+        return ''
+    names = ' '.join('%s %s%s*' % (kind, kind, dot) for kind in kinds)
+    return '\n'.join('        %s(%s)' % (pattern, names) for pattern in run.split())
 
 
 HOST_PROBE ='void _start(void) { for (;;) { } }\n'
@@ -517,7 +541,8 @@ def write_ld_script(objects):
             for kind in DATA_KINDS:
                 if sec['name'].startswith(kind + '.') and sec['name'][len(kind) + 1:] in playstation:
                     found[kind].add(sec['name'][len(kind) + 1:])
-    lines = {'outside': outside_state_patterns(), 'base': PROGRAM_BASE}
+    lines = {'outside': outside_state_patterns(), 'run': run_state_patterns(), 'base': PROGRAM_BASE,
+             'run_data': run_state_sections(['.data']), 'run_bss': run_state_sections(['.bss'])}
     for kind in DATA_KINDS:
         ordered = sorted(found[kind], key=lambda name: playstation[name])
         lines[kind[1:]] = '\n'.join('        *(%s.%s)' % (kind, name) for name in ordered)

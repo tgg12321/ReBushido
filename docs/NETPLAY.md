@@ -493,7 +493,10 @@ position independence) and are themselves in the state or never move;
 or it was set as the program started, before any save, and is the same
 in every snapshot (a hook, a path, the plan's text); or it lies in a file
 outside the state. So a snapshot is for the same program in the same
-run: it is never written to a file or given to another build.
+run: it is never given to another build. A replay's start is the one
+snapshot written to a file, for another run of the same build, which
+keeps its own hooks, cards and `run` group out of the load ([`PORT.md`](PORT.md),
+"Replays").
 
 **The hash** reads the console's RAM, the scratchpad, the sound chip's
 registers and its sound memory, the GTE's registers, and the game's and
@@ -730,11 +733,15 @@ one the same.
 
 Preparatory change 3 is built by file. `config/port_state.txt` puts every
 file of `src/port/`, and every file of `src/port/window/` that is linked
-into the game's object, in one of the link's two groups, with a line
+into the game's object, in one of the link's groups, with a line
 saying why: **state** (the console's machine as the game sees it: the
 clock, drive, disc reader, XA, sound chip and mixer, pads, card, events,
-GPU and video memory, GTE, the movie's decoder, the stubs' counts, a play
-test's plan) or **outside** (the remastered side channel, the run's
+GPU and video memory, GTE, the movie's decoder, the stubs' counts),
+**run** (state as well, but the run's own and never carried into another
+run: a play test's plan, linked last in the state between
+`g_port_run_data` / `g_port_run_bss` and the state's end, which a
+replay's start keeps this run's own of; [`PORT.md`](PORT.md), "Replays")
+or **outside** (the remastered side channel, the run's
 output, pictures and sound file, the crash report, the program's
 arguments, the host, the step's own count, the snapshot's bookkeeping,
 and the window's pacing, sound queue, keys, counter and log). The game's
@@ -1097,6 +1104,15 @@ pause menu would stop the other player's game too. Where the frame's
 input does not depend on the other's buttons (the session's presses, or
 Start in a fight), a guess of them that turns out otherwise rolls
 nothing back (`g_np_used`).
+
+**Each machine keeps the session's fights as replays** ([`PORT.md`](PORT.md),
+"Replays"): netplay's frames call the replay's boundary, a frame run
+again included, so that a fight's start and inputs are those of the
+frames as they were last run, and a file is written once every input to
+the fight's end is known and nothing is left to run again
+(`port_NetplayFinalFrames`). The two machines' files of a fight have the
+same inputs, views and hashes (`tools/port_net.py session`), and either
+plays back on either program of the build.
 
 **Movies are skipped where they begin, on both machines** (`PAD_dr`,
 `pad.c`, `g_port_movies_skipped`). The movie player reads the pads its

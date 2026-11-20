@@ -44,6 +44,7 @@ enum {
     PAGE_GROUP,   /* one group's settings */
     PAGE_BUTTONS, /* one pad's */
     PAGE_ONLINE,  /* Play online: host or join a session of netplay */
+    PAGE_REPLAYS, /* the replays kept, to watch (menu_replays.c) */
 };
 
 /* What can be typed into a row of the Play online page. */
@@ -61,6 +62,8 @@ enum {
     ROW_ONLINE,   /* the Play online page */
     ROW_NET_ITEM, /* the Play online page's: `index` its item (menu_online.c) */
     ROW_QUIT,     /* the program ended, the settings kept */
+    ROW_REPLAYS,  /* the Replays page */
+    ROW_REPLAY,   /* a replay of it: `index` its row (menu_replays.c) */
 };
 
 typedef struct {
@@ -135,6 +138,9 @@ static void port_MenuBuild(s32 page, s32 cursor) {
                 port_MenuAddRow(ROW_GROUP, group);
             }
         }
+        /* Replays above Play online: Play online stays the third row up
+         * from the first, where the tests reach it (tools/port_net.py) */
+        port_MenuAddRow(ROW_REPLAYS, 0);
         port_MenuAddRow(ROW_ONLINE, 0);
         port_MenuAddRow(ROW_CLOSE, 0);
         port_MenuAddRow(ROW_QUIT, 0);
@@ -155,6 +161,16 @@ static void port_MenuBuild(s32 page, s32 cursor) {
 
         for (i = 0; i < count; i++) {
             port_MenuAddRow(ROW_NET_ITEM, items[i]);
+        }
+        port_MenuAddRow(ROW_BACK, 0);
+    } else if (page == PAGE_REPLAYS) {
+        s32 count = port_ReplaysItems();
+
+        for (i = 0; i < count && i < ROWS_MAX - 1; i++) {
+            port_MenuAddRow(ROW_REPLAY, i);
+        }
+        if (count == 0) {
+            port_MenuAddRow(ROW_REPLAY, -1);
         }
         port_MenuAddRow(ROW_BACK, 0);
     } else {
@@ -337,6 +353,14 @@ static void port_MenuDescribe(
         snprintf(label, LABEL_BYTES, "Play online");
         snprintf(value, VALUE_BYTES, "...");
         break;
+    case ROW_REPLAYS:
+        snprintf(label, LABEL_BYTES, "Replays");
+        snprintf(value, VALUE_BYTES, "...");
+        break;
+    case ROW_REPLAY:
+        port_ReplaysDescribe(
+            row->index, label, LABEL_BYTES, value, VALUE_BYTES);
+        break;
     case ROW_NET_ITEM:
         port_OnlineDescribe(
             row->index,
@@ -379,6 +403,10 @@ static const char *port_MenuHelp(void) {
         return "Rollback netplay with another PC: host a game, or join one";
     case ROW_NET_ITEM:
         return port_OnlineHelp(row->index, g_menu.is_typing);
+    case ROW_REPLAYS:
+        return "The fights kept as replays: watch one again";
+    case ROW_REPLAY:
+        return port_ReplaysHelp(row->index);
     case ROW_QUIT:
         return "The program ends (closing the window does too); the "
                "settings are kept";
@@ -461,7 +489,7 @@ static void port_MenuMove(s32 step) {
 static void port_MenuBack(void) {
     if (g_menu.page == PAGE_BUTTONS) {
         port_MenuBuild(PAGE_GROUP, g_menu.group_cursor);
-    } else if (g_menu.page == PAGE_GROUP ||
+    } else if (g_menu.page == PAGE_GROUP || g_menu.page == PAGE_REPLAYS ||
                (g_menu.page == PAGE_ONLINE &&
                 g_menu.opened_on != PORT_MENU_OPEN_ONLINE)) {
         port_MenuBuild(PAGE_MAIN, g_menu.main_cursor);
@@ -516,6 +544,16 @@ static void port_MenuAccept(void) {
     case ROW_ONLINE:
         g_menu.main_cursor = g_menu.cursor;
         port_MenuBuild(PAGE_ONLINE, 0);
+        break;
+    case ROW_REPLAYS:
+        g_menu.main_cursor = g_menu.cursor;
+        port_MenuBuild(PAGE_REPLAYS, 0);
+        break;
+    case ROW_REPLAY:
+        if (port_ReplaysAccept(row->index, g_menu.note, sizeof(g_menu.note))) {
+            /* it plays from the game's next frame */
+            port_MenuClose();
+        }
         break;
     case ROW_NET_ITEM: {
         s32 page_cursor = g_menu.cursor;
@@ -767,10 +805,11 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
                  port_FindChoiceGroup(g_menu.group)->title);
     } else {
         snprintf(label, sizeof(label), "%s",
-                 g_menu.page == PAGE_MAIN     ? "ReBushido: settings"
-                 : g_menu.page == PAGE_ONLINE ? "ReBushido: play online"
-                 : g_menu.pad == 0            ? "Controls: player 1's buttons"
-                                              : "Controls: player 2's buttons");
+                 g_menu.page == PAGE_MAIN      ? "ReBushido: settings"
+                 : g_menu.page == PAGE_ONLINE  ? "ReBushido: play online"
+                 : g_menu.page == PAGE_REPLAYS ? "ReBushido: replays"
+                 : g_menu.pad == 0             ? "Controls: player 1's buttons"
+                                   : "Controls: player 2's buttons");
     }
     heading.color = COLOR_TITLE;
     port_TextDraw(pixels, panel_w, panel_h, x, y + line / 4, label, &heading);
