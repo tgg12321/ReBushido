@@ -575,6 +575,21 @@ PORT_SETTING(mods,
     .label = "Mods",
     .help = "The mods in mods/ beside the program")
 
+/* The mods made from the player's own disc, the art, the stages' pages
+ * and the fighters, by the package's prepare/ (prepare.c; docs/MODS.md,
+ * "Made from your disc"): at a start where one is not made for this disc
+ * and this version, with a screen of how far it has come that Escape
+ * skips; 0 never makes them. */
+PORT_SETTING(disc_mods,
+    .name = "disc_mods", .value = "on",
+    .note = "make the remastered art, stages and\n"
+            "fighters from your disc at the first start\n"
+            "(a few minutes; Escape skips); off: never",
+    .menu = PORT_MENU_MODS, .rank = 35, .takes = PORT_TAKES_RESTART,
+    .label = "Mods made from your disc",
+    .help = "The art, the stages' textures and the fighters made from your "
+            "disc at a start, when they are not made yet")
+
 /* The English top menu the program ships as a mod of its own,
  * mods/english/ (docs/MODS.md, "The English menu"); 0 leaves it out. */
 PORT_SETTING(english,

@@ -46,6 +46,11 @@ program, it asks for one with a file dialog. Or, from a terminal:
 rebushido.exe --image "C:\Games\Bushido Blade 2 (USA).cue"
 ```
 
+The first time it starts with your disc, the package's program first
+makes the remastered art, the stages' textures and the fighters from it,
+in about three and a half minutes, which Escape skips ("The first
+start", under "Mods" below).
+
 **Linux.**
 
 ```
@@ -260,6 +265,7 @@ difficulty = easy        # the CPU weaker (hard, the game's own default)
 music = off              # no music, the sounds alone
 monitor = bw             # the game's picture in black and white
 mods = off               # none of the mods in mods/ (on is the default)
+disc_mods = off          # never make the art, stages and fighters from the disc
 english = off            # the top menu in Japanese (on is the default)
 ui = off                 # the menus' own lettering (on is the default)
 music_mods = off         # the game's own music (on is the default)
@@ -666,13 +672,19 @@ menu after a fight, the top menu's captions, the select screens' titles
 and the group battle's page lettered again in a font, sharp at any size;
 `ui = off` leaves it out ("The sharp menus").
 
-**Every other screen at a higher resolution** is a mod you make from
-your own disc, since it is the game's own pictures made larger and is
-not the project's to give: `python tools/port_art.py` (the art mod:
-the menus, the select screens' portraits, the loading screens, the
-captions and the fight's counters, every 2D texture six times larger;
-[`MODS.md`](MODS.md), "The art mod"), then copy `tmp/mods/art/` into
-`mods/` beside the program. The first kind is
+**Every other screen at a higher resolution, the stages' textures and
+the fighters** are mods made from your own disc, since they are the
+game's own pictures and models made anew and are not the project's to
+give. The package for Windows makes them itself the first time it starts
+with your disc ("The first start", below): `mods/art/` (the menus, the
+select screens' portraits, the loading screens, the captions and the
+fight's counters, every 2D texture six times larger), `mods/stages-hd/`
+(every stage's textures four times larger) and `mods/fighters/`
+(Tatsumi's model with its joints and crossing layers mended). From the
+repository the same three are made by `tools/port_art.py`,
+`tools/port_stage_hd.py` and `tools/port_models/` ([`MODS.md`](MODS.md),
+"The art mod", "The stages' pages made larger"), into `tmp/mods/`, to be
+copied into `mods/` beside the program. The first kind is
 **replacement textures** for Graphics Remastered: the menus, the pause,
 the fight's counters and the boot logo redrawn at any size.
 `--dump-textures FOLDER` writes the game's textures out as PNGs to make
@@ -689,6 +701,26 @@ replacement must be, and `music_mods = off` (the settings menu's
 writes them all from your disc to begin from. A stage mod can change
 how fights play on it, so both players of a netplay session need the
 same ones. [`MODS.md`](MODS.md), "Music" and "Stages".
+
+### The first start
+
+The first time the package's `rebushido.exe` starts with a disc, before
+the game's window opens, it makes those three mods from the disc, with a
+screen of how far it has come ("Preparing the remastered art from your
+disc... 1/3", the step, a bar and the time). It plays the game itself
+with no window shown to see every texture (so the graphics card works
+and a fan may spin up), then makes each larger with the Python the
+package carries in `prepare/`: nothing is installed and nothing is
+downloaded. It takes about three and a half minutes on the PC it was measured on
+and needs about 500 MB free while it works. **Escape** (or B on a
+controller) skips it and the game starts with what is done; the next
+start goes on from there. Once made, the mods are made again only for
+another disc image or another version of the program; a folder of
+`mods/` deleted is made again at the next start, and one of your own
+(a `mod.txt`, no `made-from-disc.txt`) is never written over.
+`disc_mods = off` (the settings menu's Mods page, "Mods made from your
+disc") never makes them, and `rebushido.exe --prepare-only` makes them
+and ends. [`MODS.md`](MODS.md), "Made from your disc".
 
 ## Playing online
 

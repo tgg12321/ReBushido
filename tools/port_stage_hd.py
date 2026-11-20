@@ -62,7 +62,12 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
+
+# numpy's BLAS on one kernel, whatever the PC: OpenBLAS picks one by the
+# processor, and the kernels round alike only mostly, so the pages made on
+# two PCs differed in a few texels (docs/MODS.md, "The same bytes on every
+# PC"). Nehalem's runs on every processor numpy runs on.
+os.environ['OPENBLAS_CORETYPE'] = 'Nehalem'
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DUMP = os.path.join(ROOT, 'tmp', 'stage-hd', 'dump')
@@ -113,6 +118,8 @@ def dump(args):
     remaster.PROGRAM = os.path.relpath(program, ROOT)
     os.chdir(ROOT)
     os.makedirs(args.dump, exist_ok=True)
+    import tempfile  # here: the tests' own random.py is not the one tempfile needs
+
     work = tempfile.mkdtemp(prefix='port_stage_hd_')
     empty = os.path.join(work, 'no-mods')
     os.makedirs(empty)

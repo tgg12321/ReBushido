@@ -127,6 +127,18 @@ def main():
     flags = port_build.GAME_FLAGS + host_tests.include_flags(True) + modern.DEFS + host_tests.REBUSHIDO_DEFS
     flags += port_build.MOVOVL_INCLUDES
     flags += ['-DRB_GIT_HASH="%s"' % port_build.git_hash()]
+    # the version the program says, compiled again when the commit is
+    # another (as tools/port_sdl_build.py does): the options page draws
+    # it, so its letters are among the textures tools/port_art.py dumps
+    hash_file = target.dir + '/git_hash.txt'
+    old = open(hash_file).read() if os.path.exists(hash_file) else ''
+    if old != port_build.git_hash():
+        os.makedirs(target.dir, exist_ok=True)
+        with open(hash_file, 'w', newline='\n') as f:
+            f.write(port_build.git_hash())
+        version = target.object_of('src/rebushido/version.c')
+        if os.path.exists(version):
+            os.remove(version)
     stamp = max(os.path.getmtime(p) for p in (__file__, sdl.__file__, port_build.__file__, 'tests/run.py',
                                               'tools/modern/check.py', 'tools/port_gte_macros.py', modern.SHIM))
     jobs = [(target, path, 'port' if own else 'game', flags + mine, stamp)

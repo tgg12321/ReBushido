@@ -216,7 +216,29 @@ The zip's one folder of that name holds `rebushido.exe`, `SDL2.dll`,
 `lights`, `arena-courtyard`), `README.txt` for players (from
 `tools/port_release_readme.txt`, whose online part is one block between
 rules, to be revised as online play grows), `LICENSE.txt`, `NOTICE.txt`
-and `licenses/` (SDL 2's, the fonts' OFL, stb's).
+and `licenses/` (SDL 2's, the fonts' OFL, stb's), and `prepare/`, what
+makes the mods of the player's own disc at the first start
+([`docs/MODS.md`](docs/MODS.md), "Made from your disc"):
+`tools/port_prepare_bundle.py` takes CPython, numpy and Pillow from
+Windows' own Python as it is installed here (WSL runs `python.exe` to
+find it, or `RB_WINDOWS_PYTHON=FOLDER` names it; it must import numpy and
+Pillow, the versions the developer tools' `build` steps run on), with
+their licences in `prepare/licenses/`, and the tools from the
+repository; the packager writes `prepare/plans/` from the program's
+`.sym` (`tools/port_prepare.py`, `plans`). It is about 18 MB of the zip's
+28.
+
+The proof that a package makes the same bytes as the developer tools, on
+Windows with the disc, the GL prover built from the same commit
+(`python3 tools/port_gl_build.py` in WSL) and a package made of it:
+
+```
+python tools/port_prepare_prove.py      # the newest zip of build/release/
+```
+
+It unpacks the zip into `build/prepare-prove/`, runs its `rebushido.exe
+--prepare-only` with SDL's dummy drivers and no Python on PATH, makes the
+three mods again with the developer tools, and compares every file.
 
 It refuses a stale build (`build/port-sdl/windows/git_hash.txt` not
 HEAD, or a program that does not say that commit), a program that asks
@@ -225,7 +247,8 @@ its own: every file of `mods/` must be the bytes of `src/port/mods/` (as
 git tracks it) or of the arena compiled from `tools/arenas/`; a mod
 folder made from a disc (`art`, `stages-hd`, `hd`, anything of
 `tmp/mods/`), a disc image, card, `rebushido.cfg`, log or screenshot is
-refused, and so is any file it did not write itself.
+refused, and so is any file it did not write itself (a mod or a dump left
+in `prepare/`, a `prepare-work/`).
 `python3 tools/port_release.py --self-test` (and the test
 `rebushido/port_release`) plants each of those in a copy of a package
 and checks that it is refused. Nothing of `build/release/` is committed;
