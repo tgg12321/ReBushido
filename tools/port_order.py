@@ -52,6 +52,14 @@ reports, within one statement of the source:
           nothing more, and reads it first where the argument is worked
           out from it: to be looked at
 
+  short   a call passes fewer arguments than the function it calls is
+          defined with, which C allows where the function has no
+          prototype (`extern void f();`, as the original declares some):
+          the PlayStation passes what its registers happened to hold, a
+          PC something else, and two PCs need not agree. Never taken
+          from the list: the port passes the console's value under RB_PORT
+          (docs/PORT.md, "An argument that was not passed")
+
 "May write" is worked out from the same statements, for every function and
 what it calls: which variables it assigns, which members (by the member's
 name, whatever the structure's address), and whether it writes through a
@@ -109,6 +117,7 @@ class Function:
         self.reads = set()
         self.writes = set()
         self.calls = set()
+        self.parameters = 0     # how many it is defined with
 
 
 def split_arguments(text):
@@ -174,7 +183,9 @@ def parse(path, text, exposed):
             m = HEADER.match(raw)
             if m and number + 1 < len(lines) and lines[number + 1].rstrip().endswith('{'):
                 function = Function(m.group(1), path)
-                for parameter in split_arguments(m.group(2)):
+                parameters = split_arguments(m.group(2))
+                function.parameters = 0 if parameters in ([], ['void']) else len(parameters)
+                for parameter in parameters:
                     names = NAME.findall(parameter)
                     if names:
                         function.locals.add(names[-1])
@@ -344,6 +355,18 @@ def analyse(functions, exposed, everything=False):
             any(conflicts(w, x, exposed_variables, exposed_members) for w in w2 for x in r1)
 
     found = set()
+    # a call that passes fewer arguments than the function is defined with,
+    # which C allows where the function has no prototype: the parameters
+    # it leaves out are whatever their registers held, which is not what
+    # the PlayStation's held
+    parameters = {name: min(f.parameters for f in same) for name, same in by_name.items()}
+    for function in functions:
+        for group in function.groups:
+            for statement in group:
+                wanted = parameters.get(statement.callee)
+                if wanted is not None and len(statement.arguments) < wanted:
+                    found.add((statement.where[0], statement.where[1], 'short', statement.callee,
+                               '%d of its %d arguments' % (len(statement.arguments), wanted)))
     for function in functions:
         for group in function.groups:
             calls = [i for i, s in enumerate(group) if s.callee]
@@ -441,19 +464,23 @@ def main():
                     '# compiler may choose otherwise than the PlayStation\'s (tools/port_order.py),\n'
                     '# each looked at, with why it makes no difference. Written by --update, which\n'
                     '# keeps the reasons; a place with none has not been looked at.\n')
-            for key in sorted({key_of(place) for place in places}):
+            for key in sorted({key_of(place) for place in places if place[2] != 'short'}):
                 f.write(key + ('  # ' + accepted[key] if accepted.get(key) else '') + '\n')
         print('port_order: %s: %d places' % (ACCEPTED, len({key_of(place) for place in places})))
         return 0
-    new = [place for place in places if key_of(place) not in accepted]
+    new = [place for place in places if key_of(place) not in accepted or place[2] == 'short']
     shown = new if '--check' in args else places
     for path, line, kind, callee, what in shown:
         print('%s:%d: %-5s %s: %s' % (path, line, kind, callee, what))
     print('port_order: %d-bit: %d places where the order of evaluation is the compiler\'s and may matter; '
           '%d not in %s' % (port_build.BITS, len(places), len(new), ACCEPTED))
     if '--check' in args and new:
-        print('FAILED: port_order: put the call first under RB_PORT, or look at the place and add it to the list '
-              '(--update, then its reason)')
+        if any(place[2] == 'short' for place in new):
+            print("FAILED: port_order: a call leaves arguments out: under RB_PORT pass what the PlayStation's "
+                  'registers hold there, read from the listing')
+        if any(place[2] != 'short' for place in new):
+            print('FAILED: port_order: put the call first under RB_PORT, or look at the place and add it to the '
+                  'list (--update, then its reason)')
         return 1
     if '--check' in args:
         print('OK: port_order')

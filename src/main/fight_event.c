@@ -117,6 +117,13 @@ static const CameraView *snd_Listener(void) {
 #define SND_LISTENER g_camera_current
 #endif
 
+#if RB_PORT
+/* The left ear's volume snd_PlayAt last gave snd_Play: what the third
+ * argument's register holds after it, on the console (fight_RaiseEvent's
+ * thrown earth). */
+static s32 g_snd_last_left;
+#endif
+
 /* Plays a sound as heard from the camera. The volume falls with distance
  * (the distance is a table square root; past the table it is scaled by the
  * number's leading zeros). The camera's heading gives how far to one side
@@ -211,6 +218,9 @@ void snd_PlayAt(s32 sound, s32 *position) {
     }
 
     snd_Play(sound, right_volume, left_volume);
+#if RB_PORT
+    g_snd_last_left = left_volume;
+#endif
 }
 
 /* ---- the fight's events ---- */
@@ -301,7 +311,18 @@ void fight_RaiseEvent(s32 fighter_index, s32 event, s32 *pos, s16 *dir) {
         break;
     case FIGHT_EVENT_THROWN_EARTH:
         snd_PlayAt(SND_FIGHT_THROWN_EARTH, pos);
+#if RB_PORT
+        /* The original passes no `grass`, so it is whatever the third
+         * argument's register holds: as the original is compiled, the left
+         * ear's volume snd_PlayAt has just given snd_Play, which neither
+         * changes (read from the listing). Grass, then, where that volume
+         * is 1. A PC's register holds anything, which two machines need
+         * not agree on (docs/PORT.md, "An argument that was not
+         * passed"). */
+        eff_StartThrownDirt(pos, dir[1], g_snd_last_left);
+#else
         eff_StartThrownDirt(pos, dir[1]);
+#endif
         break;
     case FIGHT_EVENT_THROWN_WATER:
         snd_PlayAt(SND_FIGHT_THROWN_WATER, pos);

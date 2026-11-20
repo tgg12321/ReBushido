@@ -334,11 +334,31 @@ and in a run of the Windows program on the same presses, in
 `reloc_RebaseBlock` itself as the next fighter's model was loaded). The
 port passes the distance, the console's value, under `RB_PORT`
 (`resource.c`). `tools/port_stage_select.py`, plan `vscpu_rooftop`,
-holds it. Two other calls give fewer arguments than the function takes,
-neither of them a pointer: `eff_StartThrownDirt` without `grass` (dirt or
-grass, `eff.h`), and the pause menu's `pad_Update()` without
-`no_unplug_pause` (`main.c`); on the port each is whatever its register
-held.
+holds it.
+
+Two other calls left an argument out, neither a pointer, so nothing
+crashed, but a number from nowhere differs between two machines and
+would part two players' games online and a rollback's run again from
+the first. Each is now the console's, read from the listing, under
+`RB_PORT`. The thrown earth's `eff_StartThrownDirt(pos, dir[1])`
+(`fight_RaiseEvent`) leaves out `grass`, which says dirt or grass: the
+register holds the left ear's volume that `snd_PlayAt` has just passed to
+`snd_Play` (neither changes it), so it is grass where that volume is 1,
+and the port passes that volume. The pause menu's `pad_Update()`
+(`fight_RunPauseMenu`) leaves out `no_unplug_pause`: the register holds
+`0xFFFFFF`, the mask of an ordering table's address that Sony's
+`ClearOTagR`, called just before, loads last, so a pad pulled out is not
+taken for Start there, and the port passes it. And `select.c`'s
+`font_Printf("warning\n")` leaves out an argument that a text with no
+conversion never reads; the port passes 0.
+
+**Every call is held to it.** `tools/port_order.py`, which `make port`
+runs on both sizes, also reports each call in the port that passes fewer
+arguments than the function it calls is defined with (`short`), from the
+statements the port's compiler made of every file, across files. Such a
+place is never taken from `config/port_order.txt`: the build fails until
+the call passes what the PlayStation's registers hold. Its first run,
+after the rooftop's was put right, found these three and nothing else.
 
 ### The disc
 
