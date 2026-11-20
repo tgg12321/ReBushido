@@ -53,13 +53,6 @@ enum {
  * `intensity = 1.5` is 1500. */
 #define PORT_LIGHT_ONE 1000
 
-/* The times of day a light is lit in (`times = dusk night`), a bit each;
- * none of them: always. */
-#define PORT_LIGHT_TIME_DAWN 1
-#define PORT_LIGHT_TIME_DAY 2
-#define PORT_LIGHT_TIME_DUSK 4
-#define PORT_LIGHT_TIME_NIGHT 8
-
 typedef struct {
     char name[PORT_LIGHT_NAME_SIZE];
     s32 kind;         /* PORT_LIGHT_POINT or PORT_LIGHT_SPOT */
