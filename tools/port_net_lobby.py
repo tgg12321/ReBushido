@@ -534,7 +534,11 @@ def judge_rooms(case, segments):
 
 HEADLESS_CASES = [('punch', case_punch), ('relay', case_relay), ('mapped', case_mapped), ('v6', case_v6),
                   ('direct6', case_direct6), ('punchto', case_punchto), ('list', case_list),
-                  ('refused', case_refused), ('rooms', case_rooms)]
+                  ('refused', case_refused),
+                  # (a name of each system's: the gate runs the Linux and the
+                  # Windows halves at once, and this one is long enough for
+                  # the two to meet in one folder)
+                  ('rooms-win' if IS_WINDOWS else 'rooms', case_rooms)]
 
 
 # ---- the window's cases (Windows) ----
