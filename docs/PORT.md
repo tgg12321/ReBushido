@@ -273,7 +273,9 @@ it here:
   stopped as the first match of a group battle ended. Under `RB_PORT`
   the table is `static`: it outlives the call, the links land in it,
   and it is still never drawn, so the picture is the console's.
-  `tools/port_match.py`'s group battle plans play through that card.
+  `tools/port_match.py`'s group battle plans play through that card on
+  both sizes, and the play test `port_group` holds the port to the
+  emulator through it.
 
 ### What the PlayStation's compiler decided
 

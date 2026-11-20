@@ -1,0 +1,127 @@
+about = "The native port against the emulator in a group battle: its first match won, the card of the scores between matches, and the second match begun."
+discs = ["rebushido", "port"]
+# The card between matches is drawn by a loader that fight_NextTeamMatch
+# waits on inside a frame of the fight, after which the frame draws the
+# HUD into the loading screen's ordering table (main.c,
+# disp_DrawLoadingScreen): the window build crashed there. The presses and
+# checkpoints are tools/port_match.py's group battle plans'.
+cards = "none"
+limit = 12000
+seconds = 240
+input = [
+    "page+30 START", "movie+300 START", "movie+600 CROSS", "movie+900 START", "menu+30 DOWN",
+    "menu+60 DOWN", "menu+90 DOWN", "menu+120 DOWN", "menu+180 CROSS", "menu+400 CROSS",
+    "menu+520 CROSS", "menu+540 P2 CROSS", "menu+620 CROSS", "menu+628 P2 CROSS", "menu+650 DOWN",
+    "menu+658 P2 DOWN", "menu+680 CROSS", "menu+688 P2 CROSS", "menu+710 DOWN", "menu+718 P2 DOWN",
+    "menu+740 CROSS", "menu+748 P2 CROSS", "menu+770 DOWN", "menu+778 P2 DOWN", "menu+800 CROSS",
+    "menu+808 P2 CROSS", "menu+830 DOWN", "menu+838 P2 DOWN", "menu+860 CROSS", "menu+868 P2 CROSS",
+    "menu+890 DOWN", "menu+898 P2 DOWN", "menu+920 CROSS", "menu+928 P2 CROSS", "menu+950 DOWN",
+    "menu+958 P2 DOWN", "menu+980 CROSS", "menu+988 P2 CROSS", "menu+1010 DOWN",
+    "menu+1018 P2 DOWN", "menu+1040 CROSS", "menu+1048 P2 CROSS", "menu+1070 DOWN",
+    "menu+1078 P2 DOWN", "menu+1100 CROSS", "menu+1108 P2 CROSS", "menu+1130 DOWN",
+    "menu+1138 P2 DOWN", "menu+1160 CROSS", "menu+1168 P2 CROSS", "menu+1190 DOWN",
+    "menu+1198 P2 DOWN", "menu+1220 CROSS", "menu+1228 P2 CROSS", "menu+1250 DOWN",
+    "menu+1258 P2 DOWN", "menu+1280 CROSS", "menu+1288 P2 CROSS", "menu+1310 DOWN",
+    "menu+1318 P2 DOWN", "fight+60f RIGHT hold 40f", "fight+110f CIRCLE", "fight+122f CROSS",
+    "fight+134f SQUARE", "fight+146f CIRCLE", "fight+158f CROSS", "fight+170f SQUARE",
+    "fight+182f CIRCLE", "fight+194f CROSS", "fight+206f SQUARE", "fight+218f CIRCLE",
+    "fight+230f CROSS", "fight+242f SQUARE", "fight+254f CIRCLE", "fight+266f CROSS",
+    "fight+278f SQUARE", "fight+290f CIRCLE", "fight+302f CROSS", "fight+314f SQUARE",
+    "fight+326f CIRCLE", "fight+338f CROSS", "fight+350f RIGHT hold 10f", "fight+364f SQUARE",
+    "fight+376f CIRCLE", "fight+388f CROSS", "fight+400f SQUARE", "fight+412f CIRCLE",
+    "fight+424f CROSS", "fight+436f SQUARE", "fight+448f CIRCLE", "fight+460f CROSS",
+    "fight+472f SQUARE", "fight+484f CIRCLE", "fight+496f CROSS", "fight+508f SQUARE",
+    "fight+520f CIRCLE", "fight+532f CROSS", "fight+544f SQUARE", "fight+556f CIRCLE",
+    "fight+568f CROSS", "fight+580f SQUARE", "fight+592f CIRCLE", "fight+604f RIGHT hold 10f",
+    "fight+618f CROSS", "fight+630f SQUARE", "fight+642f CIRCLE", "fight+654f CROSS",
+    "fight+666f SQUARE", "fight+678f CIRCLE", "fight+690f CROSS", "fight+702f SQUARE",
+    "fight+714f CIRCLE", "fight+726f CROSS", "fight+738f SQUARE", "fight+750f CIRCLE",
+    "fight+762f CROSS", "fight+774f SQUARE", "fight+786f CIRCLE", "fight+798f CROSS",
+    "fight+810f SQUARE", "fight+822f CIRCLE", "fight+834f CROSS", "fight+846f SQUARE",
+    "fight+858f RIGHT hold 10f", "fight+872f CIRCLE", "fight+884f CROSS", "fight+896f SQUARE",
+    "fight+908f CIRCLE", "fight+920f CROSS", "fight+932f SQUARE", "fight+944f CIRCLE",
+    "fight+956f CROSS", "fight+968f SQUARE", "fight+980f CIRCLE", "fight+992f CROSS",
+    "fight+1004f SQUARE", "fight+1016f CIRCLE", "fight+1028f CROSS", "fight+1040f SQUARE",
+    "fight+1052f CIRCLE", "fight+1064f CROSS", "fight+1076f SQUARE", "fight+1088f CIRCLE",
+    "fight+1100f CROSS", "fight+1112f RIGHT hold 10f", "fight+1126f SQUARE", "fight+1138f CIRCLE",
+    "fight+1150f CROSS", "fight+1162f SQUARE", "fight+1174f CIRCLE", "fight+1186f CROSS",
+    "fight+1198f SQUARE", "fight+1210f CIRCLE", "fight+1222f CROSS", "fight+1234f SQUARE",
+    "fight+1246f CIRCLE", "fight+1258f CROSS", "fight+1270f SQUARE", "fight+1282f CIRCLE",
+    "fight+1294f CROSS", "fight+1306f SQUARE", "fight+1318f CIRCLE", "fight+1330f CROSS",
+    "fight+1342f SQUARE", "fight+1354f CIRCLE", "fight+1366f RIGHT hold 10f", "fight+1380f CROSS",
+    "fight+1392f SQUARE", "fight+1404f CIRCLE", "fight+1416f CROSS", "fight+1428f SQUARE",
+    "fight+1440f CIRCLE", "fight+1452f CROSS", "fight+1464f SQUARE", "fight+1476f CIRCLE",
+    "fight+1488f CROSS", "fight+1500f SQUARE", "fight+1512f CIRCLE", "fight+1524f CROSS",
+    "fight+1536f SQUARE", "fight+1548f CIRCLE", "fight+1560f CROSS", "fight+1572f SQUARE",
+    "fight+1584f CIRCLE", "fight+1596f CROSS", "fight+1608f SQUARE", "fight+1620f RIGHT hold 10f",
+    "fight+1634f CIRCLE", "fight+1646f CROSS", "fight+1658f SQUARE", "fight+1670f CIRCLE",
+    "fight+1682f CROSS", "fight+1694f SQUARE", "fight+1706f CIRCLE", "fight+1718f CROSS",
+    "fight+1730f SQUARE", "fight+1742f CIRCLE", "fight+1754f CROSS", "fight+1766f SQUARE",
+    "fight+1778f CIRCLE", "fight+1790f CROSS", "fight+1802f SQUARE", "fight+1814f CIRCLE",
+    "fight+1826f CROSS", "fight+1838f SQUARE", "fight+1850f CIRCLE", "fight+1862f CROSS",
+    "fight+1874f RIGHT hold 10f", "fight+1888f SQUARE", "fight+1900f CIRCLE", "fight+1912f CROSS",
+    "fight+1924f SQUARE", "fight+1936f CIRCLE", "fight+1948f CROSS", "fight+1960f SQUARE",
+    "fight+1972f CIRCLE", "fight+1984f CROSS", "fight+1996f SQUARE", "fight+2008f CIRCLE",
+    "fight+2020f CROSS", "fight+2032f SQUARE", "fight+2044f CIRCLE", "fight+2056f CROSS",
+    "fight+2068f SQUARE", "fight+2080f CIRCLE", "fight+2092f CROSS", "fight+2104f SQUARE",
+    "fight+2116f CIRCLE", "fight+2128f RIGHT hold 10f", "fight+2142f CROSS", "fight+2154f SQUARE",
+    "fight+2166f CIRCLE", "fight+2178f CROSS", "fight+2190f SQUARE", "fight+2202f CIRCLE",
+    "fight+2214f CROSS", "fight+2226f SQUARE", "fight+2238f CIRCLE", "fight+2250f CROSS",
+    "fight+2262f SQUARE", "fight+2274f CIRCLE", "fight+2286f CROSS", "fight+2298f SQUARE",
+    "fight+2310f CIRCLE", "fight+2322f CROSS", "fight+2334f SQUARE", "fight+2346f CIRCLE",
+    "fight+2358f CROSS", "fight+2370f SQUARE", "fight+2382f RIGHT hold 10f", "fight+2396f CIRCLE",
+]
+compare = ["p1_defeated", "p2_defeated", "p1_character", "p2_character", "screen", "stage", "mode", "winner", "team_match", "team_points_p1", "team_points_p2", "loading_screen"]
+
+[[checkpoint]]
+name = "page"
+when = "rb_page == RB_PAGE_UP"
+within = 2000
+shot = false
+
+[[checkpoint]]
+name = "movie"
+when = "screen == SCREEN_MOVIE"
+within = 1000
+shot = false
+
+[[checkpoint]]
+name = "menu"
+when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && screen_frames >= 60"
+within = 3000
+shot = false
+
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE && mode == FIGHT_MODE_TEAM"
+at_frame = true
+within = 3000
+expect = ["team_match == 0"]
+
+[[checkpoint]]
+name = "ippon"
+when = "team_points_p1 == 1"
+within = 6000
+shot = false
+expect = ["team_match == 0", "team_points_p2 == 0", "p2_defeated != 0"]
+
+[[checkpoint]]
+name = "card"
+when = "loading_screen == 10 && team_match == 1"
+within = 3000
+shot = false
+expect = ["mode == FIGHT_MODE_TEAM"]
+
+[[checkpoint]]
+name = "fight2"
+when = "screen == SCREEN_FIGHT_UPDATE && team_match == 1"
+at_frame = true
+within = 3000
+expect = ["mode == FIGHT_MODE_TEAM", "team_points_p1 == 0", "team_points_p2 == 0", "p1_defeated == 0",
+          "p2_defeated == 0"]
+
+[[checkpoint]]
+name = "fight2_on"
+after = 300
+shot = false
+expect = ["mode == FIGHT_MODE_TEAM", "team_match == 1"]

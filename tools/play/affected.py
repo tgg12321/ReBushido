@@ -22,8 +22,8 @@ ALL = "all"
 NONE = ()
 # The tests that run the native port beside the emulator, and the GTE
 # probe, whose expected numbers the port's C computes (tests/port/).
-PORT = ("port_bugfixes", "port_card", "port_game", "port_movie", "port_other_fight", "port_picture",
-        "port_sound")
+PORT = ("port_bugfixes", "port_card", "port_game", "port_group", "port_movie", "port_other_fight",
+        "port_picture", "port_sound")
 PROBE = ("gte_model",)
 SOUND = ("port_sound", "port_movie")
 
