@@ -15,6 +15,9 @@ from Windows), the play tests in Windows' Python, which runs the
 emulator. The steps are the eleven checks of tools/checks.sh, read from
 it, so that the list is the one CI runs; the window's two builds; the
 play tests' discs; `format.py --check --all`; port-rollback; port-stage-select; port-net;
+port-net-windows (tools/port_net_lobby.py windows: the Windows programs
+playing each other directly and through a lobby server run here, the
+menu's restart and every refusal on the screen; from Windows only);
 port-budget (tools/port_budget.py: the window's processor time for a
 fight with run-ahead, held to a budget); port-bench (tools/port_bench.py:
 the Windows build on the real graphics card, the processor's and the
@@ -70,6 +73,10 @@ WAITS = {
     'port-rollback': ['port'],
     'port-stage-select': ['port'],
     'port-net': ['port', 'port-sdl'],
+    # the Windows programs meeting each other, by address and through a
+    # lobby server run here, the menu's restart and the refusals
+    # (tools/port_net_lobby.py windows)
+    'port-net-windows': ['port-sdl-windows'],
     # the window's build timed: after every other step, alone on the
     # machine, so that its milliseconds are its own (ALONE)
     'port-budget': ['port-sdl'],
@@ -85,7 +92,8 @@ WAITS = {
 ALONE = ['port-budget', 'port-bench', 'port-pause']
 # Steps that run what was built, in the checkout itself: the others build in
 # tools/mirror.sh's copy of it.
-IN_PLACE = ['port-rollback', 'port-stage-select', 'port-net', 'port-budget', 'port-bench', 'port-pause']
+IN_PLACE = ['port-rollback', 'port-stage-select', 'port-net', 'port-net-windows', 'port-budget', 'port-bench',
+            'port-pause']
 BUILDS = ['game', 'rb-build', 'discs', 'port', 'port-sdl', 'port-sdl-windows']
 # The steps of the gate's own beside the checks: (name, command, where).
 OWN = [
@@ -98,6 +106,7 @@ OWN = [
     ('port-rollback', ['make', 'port-rollback'], 'wsl'),
     ('port-stage-select', ['make', 'port-stage-select'], 'wsl'),
     ('port-net', None, 'wsl'),  # with its ports (net_base)
+    ('port-net-windows', None, 'host'),  # with its ports (net_base) and Windows' Python
     ('port-budget', ['python3', 'tools/port_budget.py'], 'wsl'),
     # --report-only until the owner's targets are met (docs/PORT.md,
     # "Measuring on the card"); skips itself where there is no card
@@ -118,6 +127,11 @@ def checks_of(path=CHECKS):
             if m:
                 found.append((m.group(1), m.group(2).split()))
     return found
+
+
+# port-net-windows takes its ports this far below port-net's base (and
+# tools/port_net.py's lobby cases LOBBY_BELOW, 20000).
+WINDOWS_BELOW = 10000
 
 
 def net_base():
@@ -153,6 +167,10 @@ def steps_of(args):
     for name, cmd, where in OWN:
         if name == 'port-net':
             cmd = ['make', 'port-net', 'PORT_NET_BASE=%d' % args.net_base]
+        elif name == 'port-net-windows':
+            if os.name != 'nt':
+                continue
+            cmd = [python, 'tools/port_net_lobby.py', 'windows', '--port-base', str(args.net_base - WINDOWS_BELOW)]
         elif name == 'playtest':
             # --strict: no emulator or disc here is a failure, not a pass
             cmd = [python, 'tools/playtest.py', '--strict', '-j', str(args.jobs)]

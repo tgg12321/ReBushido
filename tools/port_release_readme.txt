@@ -115,10 +115,15 @@ Open the settings menu (F1) and choose Play online.
   password if it has one. Rooms you cannot join (another version, or
   another setup) are shown greyed.
 
-If your two routers do not let the two PCs reach each other directly,
-the program tries other ways by itself (IPv6, then "hole punching"),
-and in the last resort plays through the lobby server's relay, which
-only adds a little delay.
+The lobby is a small server of the project's (its address is on the
+page, "Lobby server"): it keeps the list of rooms and introduces the
+two PCs to each other. It never sees anything of the game but the
+datagrams it may pass on. Once you are introduced, the program tries
+every way between your PCs at once and takes the best that works:
+IPv6 directly, the host's router port it opened, a "hole punched"
+through both routers, and in the last resort the lobby server passing
+the game's datagrams on (a little more delay). The line at the top of
+the window says which way you got and the round trip ("ping").
 
 The first time you host or join, Windows Defender Firewall asks
 whether rebushido.exe may use the network: allow it, on Private
@@ -126,11 +131,17 @@ networks, and on Public ones too if Windows has your network marked as
 public. If you said no by mistake: Windows Security, Firewall and
 network protection, "Allow an app through firewall".
 
-Advanced: joining by address. The host can also "Host a game" on a
-port (7845 if you change nothing), and the other player "Join a game"
-with the host's address and port, such as 203.0.113.7:7845. Across the
-internet the host's router must then forward UDP port 7845 to the
-host's PC by hand. From a terminal:
+Advanced: by address, with no lobby. The host chooses "Host by
+address" on a port (7845 if you change nothing) and the other player
+"Join by address" with the host's address and port, such as
+203.0.113.7:7845 or [2001:db8::7]:7845. The host's program asks its
+router to open the port, as a room's does; if the router will not,
+forward UDP port 7845 to the host's PC by hand in the router's
+settings. "Your address for the other player" on the page finds the
+address to send. If neither router can be opened, both can still
+punch through: each finds their own address on the page, sends it to
+the other, the host types the other's into "The other player's
+address", and both start at once. From a terminal:
 
   rebushido.exe --host 0.0.0.0:7845           (the host)
   rebushido.exe --join 203.0.113.7:7845       (the other player)

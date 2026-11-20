@@ -748,6 +748,18 @@ s32 port_RelayMeet(s32 role, s32 again) {
     if (role == PORT_SESSION_HOST && !again) {
         g_relay.code[0] = 0;
     }
+    if (role == PORT_SESSION_HOST && !g_relay.has_key &&
+        g_relay.password[0] != 0) {
+        /* the room's salt: it only has to differ between rooms */
+        u32 seed = port_HostTicks() ^ (port_NetClock() << 16) ^ 0x9E3779B9U;
+
+        for (i = 0; i < SALT_BYTES; i++) {
+            seed = seed * 1664525U + 1013904223U;
+            g_relay.salt[i] = (u8)(seed >> 24);
+        }
+        port_RelayRoomKey(g_relay.salt, g_relay.password, g_relay.key);
+        g_relay.has_key = 1;
+    }
     for (;;) {
         u32 now = port_NetClock();
         PortNetAddress from;

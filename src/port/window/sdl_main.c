@@ -477,7 +477,8 @@ static void port_QuoteWord(const char *word, char *out, size_t room) {
 /* The port mapping's options: the tests' fake router, or the real one
  * (sdl_window.h). */
 static PortMapOptions g_port_map_options;
-static s32 g_port_map_off; /* --portmap off */
+static s32 g_port_map_off;    /* --portmap off */
+static s32 g_port_map_forced; /* --portmap on, whatever the settings say */
 
 const void *port_WindowPortMapOptions(void) { return &g_port_map_options; }
 
@@ -501,7 +502,7 @@ static void port_MapHostPort(s32 count, char **words) {
     PortMapResult map;
     s32 i;
 
-    if (g_port_map_off || !g_port_settings.net_portmap) {
+    if (g_port_map_off || (!g_port_settings.net_portmap && !g_port_map_forced)) {
         return;
     }
     for (i = 1; i + 1 < count; i++) {
@@ -509,10 +510,23 @@ static void port_MapHostPort(s32 count, char **words) {
             break;
         }
     }
+    /* (a host on this PC alone has no router to ask, but a test's fake
+     * one, which the options name) */
     if (i + 1 >= count || !port_ParseNetAddress(words[i + 1], &bind) ||
-        bind.port == 0 || bind.is_v6 || (bind.address >> 24) == 127) {
+        bind.port == 0 || bind.is_v6 ||
+        ((bind.address >> 24) == 127 && g_port_map_options.ssdp_at == NULL &&
+         g_port_map_options.gateway_at == NULL)) {
         return;
     }
+    port_Say("online: asking the router to open UDP port %u%s%s%s%s",
+             bind.port,
+             g_port_map_options.ssdp_at != NULL ? " (UPnP's search to " : "",
+             g_port_map_options.ssdp_at != NULL ? g_port_map_options.ssdp_at
+                                                : "",
+             g_port_map_options.gateway_at != NULL ? ", the gateway " : "",
+             g_port_map_options.gateway_at != NULL
+                 ? g_port_map_options.gateway_at
+                 : "");
     if (port_MapPort(bind.port, &g_port_map_options, &map) &&
         port_IsBehindAnother(map.external_address)) {
         /* the router opened it, but it is not the internet's: another
@@ -525,7 +539,6 @@ static void port_MapHostPort(s32 count, char **words) {
                  (map.external_address >> 16) & 0xFF,
                  (map.external_address >> 8) & 0xFF,
                  map.external_address & 0xFF);
-        atexit(port_UnmapPort);
     } else if (map.ok) {
         PortNetAddress outside;
 
@@ -540,7 +553,6 @@ static void port_MapHostPort(s32 count, char **words) {
                  (map.external_address >> 16) & 0xFF,
                  (map.external_address >> 8) & 0xFF,
                  map.external_address & 0xFF, map.external_port);
-        atexit(port_UnmapPort);
     } else {
         snprintf(said, sizeof(said), "%s", map.why);
     }
@@ -844,6 +856,7 @@ int main(int argc, char **argv) {
         } else if (strcmp(word, "--portmap") == 0 && has_value) {
             g_port_map_off = port_ChooseWord("--portmap takes on or off, not ",
                                              argv[++i], "on", "off", NULL);
+            g_port_map_forced = !g_port_map_off;
         } else if (strcmp(word, "--portmap-ssdp") == 0 && has_value) {
             g_port_map_options.ssdp_at = argv[++i];
         } else if (strcmp(word, "--portmap-gateway") == 0 && has_value) {

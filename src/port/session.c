@@ -718,7 +718,7 @@ static s32 port_HostSession(void) {
             port_Log("session: the guest stopped answering; waiting for "
                      "another\n");
             port_SessionText(note, sizeof(note),
-                             "The other player stopped answering");
+                             "The other player stopped answering.");
             met = 0;
             if (!port_HostWaitAgain()) {
                 return 0;
@@ -743,7 +743,7 @@ static s32 port_HostSession(void) {
             port_SessionAt(at, sizeof(at), "Hosting a game at");
             if (note[0] != 0) {
                 port_SessionText(status, sizeof(status),
-                                 "%s. Still waiting: %s", note, at);
+                                 "%s Still waiting: %s", note, at);
             } else {
                 port_SessionText(status, sizeof(status), "%s%s%s", at,
                                  g_session.mapped[0] != 0 ? ". " : "",
