@@ -30,6 +30,7 @@
 #include "common.h"
 #include "port_disc.h"
 #include "port_movie.h"
+#include "port_replay.h"
 #include "port_spu.h"
 #include "bb2.h"
 
@@ -357,6 +358,9 @@ static void port_CdDeliverSectors(void) {
         if (g_port_cd.disc != NULL && g_port_cd.next_sector >= 0) {
             result = port_ReadDiscSector(
                 g_port_cd.disc, (u32)g_port_cd.next_sector, g_port_cd.sector);
+        }
+        if (result == PORT_DISC_OK) {
+            port_ReplayNoteSector((u32)g_port_cd.next_sector);
         }
         if (result != PORT_DISC_OK) {
             port_CdComplain(g_port_cd.next_sector, result);

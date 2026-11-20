@@ -95,7 +95,8 @@ static u32 port_NetWords(char *out, u32 room) {
     port_GetNetplayStats(&stats);
     out[0] = 0;
     if (!stats.is_on) {
-        return COLOR_TEXT;
+        /* a replay's line, where one plays (sdl_replay.c) */
+        return port_ReplayWords(out, room);
     }
     if (stats.state == PORT_NETPLAY_ALONE) {
         if (stats.alone_ms < ALONE_SHOWN_MS) {

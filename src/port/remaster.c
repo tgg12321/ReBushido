@@ -258,6 +258,9 @@ static s32 g_left_margin;
 static s32 g_margin_is_fixed;
 static s32 g_margin_aspect_w;
 static s32 g_margin_aspect_h;
+/* What the game reads of the picture, held (port_RemasterHoldGameView). */
+static PortGameView g_game_view;
+static s32 g_game_view_is_held;
 /* Whether the port's own primitive buffers are the game's this run
  * (port_platform.h, PORT_PRIMS_ADDR). */
 static s32 g_prim_buffers_are_the_games;
@@ -413,6 +416,9 @@ const char *port_NameRemasterDistance(s32 distance) {
 }
 
 s32 port_RemasterDistance(void) {
+    if (g_game_view_is_held) {
+        return g_game_view.distance;
+    }
     if (!port_RemasterIsOn()) {
         return PORT_DISTANCE_ORIGINAL;
     }
@@ -1641,6 +1647,15 @@ static s32 port_FindAnchor(PortAddress prim) {
 static void port_RemasterFindLeftMargin(void) {
     PortDisplay display;
 
+    if (g_game_view_is_held) {
+        port_GetDisplay(&display);
+        g_left_margin =
+            g_game_view.margin_w == 0
+                ? 0
+                : port_RemasterMargin(
+                      display.w, g_game_view.margin_w, g_game_view.margin_h);
+        return;
+    }
     if (g_margin_is_fixed) {
         port_GetDisplay(&display);
         g_left_margin = port_RemasterMargin(
@@ -1657,6 +1672,33 @@ static void port_RemasterFindLeftMargin(void) {
 }
 
 s32 port_RemasterLeftMargin(void) { return g_left_margin; }
+
+/* What the game reads of the picture now (port_remaster.h). */
+void port_RemasterGameView(PortGameView *view) {
+    if (g_game_view_is_held) {
+        *view = g_game_view;
+        return;
+    }
+    view->distance =
+        port_RemasterIsOn() ? g_view.distance : PORT_DISTANCE_ORIGINAL;
+    if (g_margin_is_fixed) {
+        view->margin_w = g_margin_aspect_w;
+        view->margin_h = g_margin_aspect_h;
+    } else if (port_RemasterIsOn()) {
+        view->margin_w = g_view.aspect_w;
+        view->margin_h = g_view.aspect_h;
+    } else {
+        view->margin_w = 0;
+        view->margin_h = 0;
+    }
+}
+
+void port_RemasterHoldGameView(const PortGameView *view) {
+    g_game_view_is_held = view != NULL;
+    if (view != NULL) {
+        g_game_view = *view;
+    }
+}
 
 void port_RemasterFixMargin(s32 aspect_w, s32 aspect_h) {
     g_margin_is_fixed = TRUE;

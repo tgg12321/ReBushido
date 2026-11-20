@@ -97,6 +97,11 @@ extern s32 port_ReadCardFile(s32 slot, u8 *out);
  * NULL empties the slot. Before the game starts: netplay's guest plays on
  * the host's cards, and neither machine writes the session's saves. */
 extern void port_SetCardImage(s32 slot, const u8 *image);
+/* A replay's start was just put in (port_replay.h): its cards are
+ * another run's, so each that had a file is kept in memory from now on,
+ * its header block as the fight's start had it, and no file is read or
+ * written for it until the game's own state is put back. */
+extern void port_CardsForReplay(void);
 /* `card1.mcd` and `card2.mcd` beside the program, for the slots that
  * --card1 and --card2 did not name: `program` is the program's own path
  * (argv[0]). */

@@ -81,6 +81,7 @@ WINDOW_GAME = ['gamestate.c']
 # What talks to SDL and to the C library: compiled as any program is.
 WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'sdl_net.c', 'sdl_report.c', 'menu.c', 'font.c',
                  'stage_page.c', 'match_page.c', 'top_page.c', 'menu_online.c',
+                 'menu_replays.c', 'sdl_replay.c',
                  'sampler.c', 'warm.c', 'portmap.c', 'cpu_prefer.c',
                  'prepare.c', 'update.c', 'update_core.c', 'update_apply.c', 'online_pages.c']
 # Monocypher (src/port/vendor/monocypher/, CC0 or BSD-2): the updater's
@@ -166,7 +167,9 @@ BLOB_LD_TEXT = '''/* Written by tools/port_sdl_build.py: the game and the port a
         %(under)sg_port_game_data = .;
 %(data)s
         %(under)sg_port_game_data_end = .;
-        EXCLUDE_FILE(%(outside)s) *(.data .data%(dot)s*)
+        EXCLUDE_FILE(%(outside)s %(run)s) *(.data .data%(dot)s*)
+        %(under)sg_port_run_data = .;
+%(run_data)s
         %(under)sg_port_state_data_end = .;
         *(.data .data%(dot)s*)
         %(under)sg_port_blob_data_end = .;
@@ -176,7 +179,9 @@ BLOB_LD_TEXT = '''/* Written by tools/port_sdl_build.py: the game and the port a
         %(under)sg_port_game_bss = .;
 %(bss)s
         %(under)sg_port_game_bss_end = .;
-        EXCLUDE_FILE(%(outside)s) *(.bss .bss%(dot)s*) *(COMMON)
+        EXCLUDE_FILE(%(outside)s %(run)s) *(.bss .bss%(dot)s*) *(COMMON)
+        %(under)sg_port_run_bss = .;
+%(run_bss)s
         %(under)sg_port_state_bss_end = .;
         *(.bss .bss%(dot)s*) *(COMMON)
         %(under)sg_port_blob_bss_end = .;
@@ -440,6 +445,9 @@ def write_blob_script(target, objects, path):
     # (config/port_state.txt)
     outside = port_build.outside_state_patterns()
     words = {'under': target.under, 'dot': target.dot, 'rodata_name': target.kinds['.rodata'], 'outside': outside,
+             'run': port_build.run_state_patterns(),
+             'run_data': port_build.run_state_sections(['.data'], target.dot),
+             'run_bss': port_build.run_state_sections(['.bss'], target.dot),
              # an object, not a program: MinGW's linker takes a script of its
              # own for the second unless it is told
              'format': ('OUTPUT_FORMAT(%s)\n' % ('pe-x86-64' if target.bits == 64 else 'pe-i386')

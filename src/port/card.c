@@ -677,6 +677,32 @@ void port_SetCardImage(s32 slot, const u8 *image) {
     port_CardCopyBytes(g_port_card_images[slot], image, PORT_CARD_IMAGE_SIZE);
 }
 
+/* The cards of a replay's start, kept in memory (port_card.h). */
+void port_CardsForReplay(void) {
+    s32 slot;
+
+    for (slot = 0; slot < PORT_CARD_SLOTS; slot++) {
+        PortCardSlot *of = &g_port_card_slots[slot];
+
+        if (of->in_memory) {
+            continue;
+        }
+        if (g_port_cards_off || of->path == NULL) {
+            /* the slot was empty, and stays so */
+            of->path = NULL;
+            continue;
+        }
+        /* the path and the file are the other run's: neither is used */
+        of->path = NULL;
+        of->file = -1;
+        of->in_memory = TRUE;
+        if (of->present) {
+            port_CardCopyBytes(
+                g_port_card_images[slot], of->header, PORT_CARD_BLOCK_SIZE);
+        }
+    }
+}
+
 /* A card image beside the program for each slot no option named
  * (port_card.h): the program's own folder, which is the one place the
  * port is sure to be able to write today. */

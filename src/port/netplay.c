@@ -32,6 +32,7 @@
 #include "port_disc.h"
 #include "port_host.h"
 #include "port_net.h"
+#include "port_replay.h"
 #include "bb2.h"
 
 /* Frames the state is kept for, and the most run on what is guessed. */
@@ -569,6 +570,8 @@ static void port_NetplayRunFrame(void) {
     if (frame == 0) {
         port_SessionSeed();
     }
+    /* a replay of the session's fights (port_replay.h) */
+    port_ReplayBoundary();
     if (frame >= g_np_remote_count) {
         g_np_guessed[frame & NETPLAY_INPUT_MASK] = remote;
     }
@@ -811,6 +814,13 @@ s32 port_RunNetplay(void) {
         port_NetplayKeepTime();
         port_NetplayRunFrame();
     }
+}
+
+u32 port_NetplayFinalFrames(void) {
+    if (g_np_is_wrong && g_np_wrong_from < g_np_remote_count) {
+        return g_np_wrong_from;
+    }
+    return g_np_remote_count;
 }
 
 /* What netplay is doing now, for the window's line (port_net.h). */

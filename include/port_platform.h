@@ -410,7 +410,9 @@ extern const char *port_FindFunction(u32 address, u32 *offset);
 /* Reads a play test's plan (tools/play/runner.lua has the format): the
  * presses and the checkpoints of a run. Stops the program if it cannot. */
 extern void port_LoadPlan(const char *path);
-/* The run ends after this many vertical blanks (--frames). */
+/* The run ends after this many vertical blanks (--frames); PORT_NO_BLANK_LIMIT:
+ * only where the game or a replay ends it. */
+#define PORT_NO_BLANK_LIMIT 0xFFFFFFFFU
 extern void port_SetBlankLimit(u32 blanks);
 /* Print the values of tests/play/state.toml at every vertical blank where
  * one has changed (--trace). */

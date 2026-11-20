@@ -11,6 +11,7 @@
  * plugged in once the driver has started. */
 #include "common.h"
 #include "port_movie.h"
+#include "port_replay.h"
 #include "bb2.h"
 
 /* A pad's packet: a status byte (0 when the pad answered, 0xFF before
@@ -121,6 +122,7 @@ void port_TakeInput(void) {
     if (g_port_take_hook != NULL) {
         g_port_take_hook(&g_port_input);
     }
+    port_ReplayTook(&g_port_input, g_port_input_count);
     g_port_input_count++;
     for (pad = 0; pad < PORT_PADS; pad++) {
         u8 *packet = g_port_pad_buffers[pad];

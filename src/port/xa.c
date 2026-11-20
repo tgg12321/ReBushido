@@ -105,6 +105,33 @@ static struct {
     u32 sectors;
 } g_port_xa = {.mix = {MIX_ALL, 0, MIX_ALL, 0}};
 
+/* The queue's samples not waiting, cleared in a snapshot (port_spu.h). */
+void port_XaClearPlayed(u8 *snapshot) {
+    u32 offset = port_StateOffsetOf(g_port_xa.queue);
+    u32 read_at = port_StateOffsetOf(&g_port_xa.queue_read);
+    u32 count_at = port_StateOffsetOf(&g_port_xa.queue_count);
+    s16(*queue)[2];
+    u32 read;
+    u32 count;
+    u32 frame;
+
+    if (offset == PORT_STATE_NOWHERE || read_at == PORT_STATE_NOWHERE ||
+        count_at == PORT_STATE_NOWHERE) {
+        return;
+    }
+    queue = (s16(*)[2])(snapshot + offset);
+    /* the queue as the snapshot has it, which may be older than now */
+    read = *(const u32 *)(snapshot + read_at);
+    count = *(const u32 *)(snapshot + count_at);
+    /* what is not waiting is never read before it is written again */
+    for (frame = count; frame < QUEUE_FRAMES; frame++) {
+        u32 at = (read + frame) & QUEUE_MASK;
+
+        queue[at][0] = 0;
+        queue[at][1] = 0;
+    }
+}
+
 static s32 port_ClampXaSample(s32 value) {
     if (value > SAMPLE_MAX) {
         return SAMPLE_MAX;

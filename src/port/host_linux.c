@@ -67,6 +67,27 @@ typedef __INTPTR_TYPE__ LinuxWord;
 #define LINUX_SA_RESETHAND 0x80000000U
 #define LINUX_SIGNAL_SET_BYTES 8
 #define LINUX_CLOCK_MONOTONIC 1
+#define LINUX_CLOCK_REALTIME 0
+/* the days from 0000-03-01 to 1970-01-01, and the calendar's cycle of
+ * 400 years (Howard Hinnant's days_from_civil, the other way) */
+#define DAYS_TO_EPOCH 719468
+#define DAYS_PER_ERA 146097
+#define DAYS_PER_CENTURY 36524
+#define YEARS_PER_ERA 400
+#define SECONDS_PER_DAY 86400
+#define SECONDS_PER_HOUR 3600
+#define SECONDS_PER_MINUTE 60
+#define DAYS_PER_FOUR_YEARS 1460
+#define DAYS_PER_YEAR 365
+#define YEARS_PER_LEAP 4
+#define YEARS_PER_CENTURY 100
+/* the months from March in fives of 153 days */
+#define FIVE_MONTHS_DAYS 153
+#define FIVE_MONTHS 5
+#define MONTHS_TO_JANUARY 10
+#define MARCH 3
+#define DECEMBER_TO_JANUARY 9
+#define FEBRUARY 2
 #define LINUX_TICKS_PER_SECOND 10000000U
 #define LINUX_NANOSECONDS_PER_TICK 100U
 #define LINUX_AF_INET 2
@@ -107,6 +128,8 @@ enum {
     LINUX_GETSOCKNAME = 51,
     LINUX_SETSOCKOPT = 54,
     LINUX_MKDIR = 83,
+    LINUX_RENAME = 82,
+    LINUX_UNLINK = 87,
     LINUX_GETDENTS64 = 217,
 };
 
@@ -173,6 +196,8 @@ enum {
     LINUX_SOCKETCALL_GETSOCKNAME = 6,
     LINUX_SOCKETCALL_SETSOCKOPT = 14,
     LINUX_MKDIR = 39,
+    LINUX_RENAME = 38,
+    LINUX_UNLINK = 10,
     LINUX_GETDENTS64 = 220,
 };
 
@@ -700,6 +725,55 @@ s32 port_HostMakeFolder(const char *path) {
         port_LinuxCall(LINUX_MKDIR, (LinuxWord)path, LINUX_FOLDER_MODE, 0);
 
     return !LINUX_IS_ERROR(made) || (s32)(-made) == LINUX_EEXIST;
+}
+
+s32 port_HostRemove(const char *path) {
+    return !LINUX_IS_ERROR(port_LinuxCall(LINUX_UNLINK, (LinuxWord)path, 0, 0));
+}
+
+s32 port_HostRename(const char *from, const char *to) {
+    return !LINUX_IS_ERROR(
+        port_LinuxCall(LINUX_RENAME, (LinuxWord)from, (LinuxWord)to, 0));
+}
+
+/* The date in UTC, from the seconds since 1970: this host has no zone. */
+void port_HostDate(PortDate *date) {
+    LinuxWord time[2] = {0, 0};
+    u32 seconds;
+    s32 days;
+    s32 era;
+    s32 day_of_era;
+    s32 year_of_era;
+    s32 day_of_year;
+    s32 month_part;
+
+    port_LinuxCall(
+        LINUX_CLOCK_GETTIME, LINUX_CLOCK_REALTIME, (LinuxWord)time, 0);
+    seconds = (u32)time[0];
+    days = (s32)(seconds / SECONDS_PER_DAY) + DAYS_TO_EPOCH;
+    seconds %= SECONDS_PER_DAY;
+    date->hour = (s32)(seconds / SECONDS_PER_HOUR);
+    date->minute = (s32)(seconds % SECONDS_PER_HOUR / SECONDS_PER_MINUTE);
+    date->second = (s32)(seconds % SECONDS_PER_MINUTE);
+    era = days / DAYS_PER_ERA;
+    day_of_era = days - era * DAYS_PER_ERA;
+    /* the leap days of 4, 100 and 400 years taken away */
+    year_of_era =
+        (day_of_era - day_of_era / DAYS_PER_FOUR_YEARS +
+         day_of_era / DAYS_PER_CENTURY - day_of_era / (DAYS_PER_ERA - 1)) /
+        DAYS_PER_YEAR;
+    day_of_year = day_of_era -
+                  (DAYS_PER_YEAR * year_of_era + year_of_era / YEARS_PER_LEAP -
+                   year_of_era / YEARS_PER_CENTURY);
+    /* months from March, of 153 days each five */
+    month_part = (FIVE_MONTHS * day_of_year + 2) / FIVE_MONTHS_DAYS;
+    date->day =
+        day_of_year - (FIVE_MONTHS_DAYS * month_part + 2) / FIVE_MONTHS + 1;
+    date->month = month_part < MONTHS_TO_JANUARY
+                      ? month_part + MARCH
+                      : month_part - DECEMBER_TO_JANUARY;
+    date->year = year_of_era + era * YEARS_PER_ERA + (date->month <= FEBRUARY);
+    date->is_utc = TRUE;
 }
 
 /* The clock that only goes forward, in seconds and nanoseconds; the

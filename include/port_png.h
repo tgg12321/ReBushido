@@ -49,5 +49,8 @@ extern u32 port_PngEncode(const u8 *rgba, s32 w, s32 h, u8 *out);
  * `out`: 1 where it held exactly `out_size` bytes, 0 where it is damaged,
  * shorter or longer. */
 extern s32 port_Inflate(const u8 *in, u32 in_size, u8 *out, u32 out_size);
+/* A zlib stream (RFC 1950) into `out`: TRUE where it held exactly
+ * `out_size` bytes. A replay's start is one (port_replay.h, deflate.c). */
+extern s32 port_ZlibInflate(const u8 *in, u32 in_size, u8 *out, u32 out_size);
 
 #endif /* PORT_PNG_H */

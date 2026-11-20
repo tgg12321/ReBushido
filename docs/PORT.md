@@ -8892,6 +8892,187 @@ started, player's files intact, the dropped file gone, nothing left in
 `update/`), bad signature, bad zip hash, bad file hash, truncated,
 offline, timeout, rollback, off (no request at all).
 
+## Replays
+
+ROADMAP 23; the owner, 2026-11-20: "automatic replay saving, ideally in
+a format that is lightweight, like saving inputs and re-creating replays
+on the fly". How a player uses them: [`PLAYING.md`](PLAYING.md),
+"Replays". The code: `src/port/replay.c` and `include/port_replay.h`
+(outside the state), the compressor `src/port/deflate.c`, the window's
+part `src/port/window/sdl_replay.c` and the menu's page
+`menu_replays.c`.
+
+**What a replay is.** The port is deterministic (the play tests,
+port-rollback, netplay's hashes), so a fight is its first state and its
+inputs. A fight is from the first frame's boundary whose screen is the
+fight (`SCREEN_FIGHT_UPDATE`) to the first that is not; the pause menu is
+inside it. Its file begins one boundary sooner, at the last frame out of
+a fight, before the step that loads the fight: the state at every
+boundary out of a fight is saved (`port_StateSave`, NETPLAY.md section 7:
+the pages written since the last) with its hash, and where the next is a
+fight's first, that one is the start. So the playback loads the stage
+and the fighters itself, and everything the picture makes of a stage as
+it loads (the ground's mesh, the stage's textures noted for the HD ones,
+`port_RemasterStageChanged`) is made for the replay's stage. From there
+every input the game takes
+(`port_TakeInput`, after the take hook: the pads, a network's, a
+session's own presses) is kept, with what the game read of the picture
+for that frame, and the state's hash every 30 frames (once a second of a
+fight). As the fight ends the file is written. Playing it back puts the
+start in at a boundary, gives the game the inputs one by one through the
+take hook, holds every hash to the recorded one and ends at the last
+frame, where the state the game had before the playback is put back.
+
+**Why a start state and not the inputs from power on.** A fight's state
+hangs on everything before it in the session (the cards, the CPU's
+record, every menu frame), so inputs from power on would mean running a
+whole session again, minutes of it, to watch its last fight; the start
+state makes each file whole by itself and quick to begin (well under a
+second to read and put in). The online agent's pristine boot snapshot
+(for sessions with no restart) is a run's own and is not needed here.
+
+**The size.** The state is 4.8 MB (7.2 MB in the window, with the port's
+primitive buffers). Three things make a fight's file about 215 KB:
+
+- *What the disc holds is not written.* Most of a fight's start is what
+  the game read from the disc as it loaded the fight: the stage's and
+  the fighters' files in RAM, the sounds in the sound chip's memory
+  (measured: 188 of 214 probes of RAM's loaded part, and 84 of 85 of the
+  sound memory, are bytes of the disc). The last 4,096 sectors the game
+  read (`port_ReplayNoteSector`, `cd.c`) are indexed by a hash of each
+  64 bytes, the snapshot is looked through four bytes at a time with a
+  rolling hash, and each run of the disc found of 256 bytes or more is
+  cleared and noted (DISC: where, which sector, which byte, how long).
+  Playing back reads those from the player's own disc, which the disc's
+  sum holds to be the same. The disc as it is: a mod's sectors follow the
+  game's state (the arena in play) and are written with the rest.
+- *What is dead is cleared*: the samples of the drive's queue that are
+  not waiting to be played (`port_XaClearPlayed`), and the `run` group's
+  variables (below).
+- *Deflate* (zlib's stream, RFC 1950/1951), written by the port itself
+  (`deflate.c`: hash chains, a code of each block's own, a block stored
+  where shorter), since the program with no C library cannot link zlib.
+  `png.c`'s inflate reads it back (`port_Inflate`). In the window the
+  writing (the index, the look through, deflate) is done in pieces of
+  about a millisecond, as many at each boundary after the fight as fit
+  in 2.5 ms, so that no frame waits on it; the program with no window
+  does it at once. Measured in the window, port_game's fight: 57
+  boundaries, 188 ms in all, 3 ms the most at one. The folder's total
+  for `replays_megabytes` is read once a run and kept up after.
+
+Measured, `port_game`'s versus fight (568 frames with its load, 19
+seconds): 4,804,204 bytes of state, 1,449,480 of them in 581 runs of the
+disc, the start 205,859 bytes compressed (with the start at the fight's
+first frame and nothing taken out for the disc it was 1,369,159; zlib -9
+of that whole snapshot, 1,579,787), the inputs 271 bytes, the hashes 160:
+**216 KB**. The window's (7,163,744 bytes of state): 211,179. The fights
+of `tools/port_stage_select.py`'s plans: 215 to 217 KB, and 463 KB for
+the second fight of `vscpu_next`, whose start is the first fight's end,
+less of it bytes of the disc as they are.
+
+**The file** (`.rbr`): `RBREPLAY`, the format's version, then chunks of
+a tag of four letters, a size and the bytes, little-endian. META (text,
+a line `key value` each: the date, the version, the mode, the stage, each
+fighter's roster number, weapon and whether the CPU's, the kind of stage,
+the arena, the time of day, the fight's music, online and whose machine,
+Bug fixes, the winner, the frames, the frame of the first cut, the hash's
+period, the input's number at the start, the start's hash, and the
+build's, the disc's and the gameplay mods' sums), PIEC (the snapshot's
+pieces, a name and a size each), STRT (the start's size and its zlib
+stream), DISC, VIEW (each kind of game view once), INPT (runs of frames
+alike: which of the two pads' buttons, which pads answered and the view
+changed, the new values, then how many frames, a varint), HASH, END. A
+fight's inputs are a few hundred bytes.
+
+**Held to the program.** A replay plays only where the build's sum
+(netplay's, session.c, but for the state's size without the primitive
+buffers), the disc's and the gameplay mods' are the ones recorded, and
+the snapshot's pieces are laid out alike; the port's primitive buffers
+(a draw distance past the console's at the run's start) are needed where
+the fight had them, and kept as they are where it had none. Otherwise the
+page, `--replay` and `--replay-check` say why. The start's hash is checked
+as it is put in: a start that is not the one recorded stops the playback
+there.
+
+A replay is watched from a menu, never in the middle of a fight
+(`port_PlayReplay` says so): the picture's stage is the one loaded last
+until the next load, so the fight that was being played would go on with
+the replay's.
+
+**Another run's state.** NETPLAY.md, section 7, said a snapshot is never
+written to a file: the host's pointers among the variables are a run's.
+A replay is put in by another run of the same build, so what is a run's
+own is kept out of the load and put back after it:
+
+- the files of the new group `run` of `config/port_state.txt` (a play
+  test's plan, `plan.c`), state as ever for rollback, but linked last in
+  each kind between the marks `g_port_run_data` / `g_port_run_bss` and
+  the state's end (`tools/port_build.py`, `port_sdl_build.py`); the file
+  has them cleared;
+- the hooks the host set (`g_port_take_hook`, the device's, the blank's,
+  the sound's, the disc's and its override, the plan's press, the drive's
+  unmixed samples);
+- the memory cards: another run's slots hold its paths and file handles,
+  so each slot that had a file is kept in memory from the start's header
+  block (`port_CardsForReplay`), and nothing is read from or written to
+  a card file until the game's own state is put back;
+- the blank limit of a run with no plan, which the fight's clock is past
+  (`PORT_NO_BLANK_LIMIT`).
+
+**What the game reads of the picture.** The draw distance and the left
+margin are the two things of the picture the game's own computation
+reads (NETPLAY.md, section 13), and the player may change them in a
+fight (F2). The game now reads them as they were at the step's boundary
+(`port_RemasterHoldGameView`, every boundary): a change at a blank in the
+middle of a step counts from the next. A replay keeps each frame's
+(VIEW) and holds it while playing, so a fight played in Remastered at a
+far draw distance plays back as it was in Original, and the picture is
+the player's own.
+
+**Online.** Netplay's frames call the boundary too, reruns included: the
+start is taken again where a rollback goes back past it, every input and
+hash is written again as a frame is run again, and the file is written
+only when every input to the fight's end is known and nothing is left to
+run again (`port_NetplayFinalFrames`). Both machines' files of a fight
+have the same inputs and hashes. A fight a player leaves in the middle of
+is not kept.
+
+**Not kept**: a fight in which the settings menu's Bug fixes was changed
+(`port_SetBugfixes`: a change no input made), a fight longer than
+2^18 frames, a link cable's fight (the other console is not an input),
+a fight while a replay plays. A fight the program ends in the middle of
+is written as far as it went (`port_ReplayAtQuit`, `unfinished 1`).
+
+**Playing back.** In the window the settings menu's Replays page asks
+for one (`port_PlayReplay`); it begins at the next boundary in main's
+loop: the state is saved to come back to, the start put in, the take
+hook set. Each boundary holds the frame's view and hash; pause and the
+slower speeds wait in the window's hook (its events read and its picture
+shown again a blank at a time), the faster ones and the skips (from the
+start, to 90 frames before the first cut) run frames quietly as netplay
+runs a rollback's (`g_port_rerun`). `--replay FILE` plays one from the
+first boundary and ends; `--replay-check FILE` plays it quietly, with a
+restart from its middle and a skip to before the first cut on the way
+(as the keys ask for them), and ends with 0 if every hash, each time,
+was the one recorded. Headless runs record nothing
+unless `--replays FOLDER` says where (`--replays-keep N`); the window
+records into `replays/` beside the program unless it is a test's run
+(`--plan`, `--frames`). `replays_keep` and `replays_megabytes` take the
+oldest away after each one written.
+
+**Proved** by `python3 tools/port_replay.py` (WSL, the disc; no
+emulator): port_game's plan and four of `tools/port_stage_select.py`'s
+(the stage select's arena and rematch, versus the CPU through two fights,
+training, versus the CPU with `--stage-select --unlock-all`) recorded by
+both sizes, every file played back by both: the size that recorded it
+to the end with every hash the same, the other refusing it as another
+build's; the two sizes' files of a fight have the same inputs. And
+`tools/port_net.py session`: both machines of a session keep the fight,
+their files have the same inputs, hashes and views, and each plays back
+headlessly with every hash the same. The window's program recorded
+port_game's fight with `--replays` and played it back with
+`--replay-check`, every hash the same.
+
 ## 64 bits
 
 The port is built with 64-bit pointers and with 32-bit ones, from the

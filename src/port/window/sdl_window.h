@@ -156,13 +156,32 @@ extern void port_WindowGameSwitches(void);
  * its pacing and its sound in a rollback (port_net.h). */
 extern void port_StartNetWindow(void);
 /* Netplay's line over the picture: the ping, the rollback, the delay,
- * and what is being waited for. Nothing where netplay is off. */
+ * and what is being waited for. Where netplay is off, a replay's line
+ * (port_ReplayWords), or nothing. */
 extern void port_DrawNetLine(void);
 
 /* A session asked for, by the online pages or the settings menu's Play
  * online page (sdl_main.c): it begins at the game's next boundary in this
  * program (port_online.h), or, where it cannot, the program starts again
  * as the session's. */
+/* ---- replays (sdl_replay.c; port_replay.h) ---- */
+
+/* Every fight kept in replays/ in `beside` (the program's folder), but
+ * in a test's run, and the window's ways of a playback hung on the port. */
+extern void port_StartReplayWindow(const char *beside, s32 is_test);
+/* The settings' replays, kept or not and how many, given the port. */
+extern void port_ApplyReplaySettings(void);
+/* An event of SDL's taken by a playback (its keys and buttons, and every
+ * other key but F1 to F12, which are the game's no longer): TRUE where it
+ * was. */
+extern s32 port_ReplayWindowEvent(const union SDL_Event *event);
+/* The line's words while a replay plays, or for a moment after it, into
+ * `out` ("" for none), and their colour. */
+extern u32 port_ReplayWords(char *out, u32 room);
+
+/* The settings menu's Play online page: the program starts again as a
+ * session's (sdl_main.c), with the network's options of its command line
+ * given anew. */
 typedef struct {
     s32 role;            /* PORT_NET_ROLE_... (window.h) */
     const char *bind;    /* this program's socket, `ADDRESS:PORT` */

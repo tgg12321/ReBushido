@@ -427,6 +427,17 @@ the stage").
     back by running the game again (the port is deterministic); a
     replays page to watch, skip, slow and export; held by a test that a
     replay's state hashes match the fight's own. Online matches too.
+    **Done** ([`PORT.md`](PORT.md), "Replays"; [`PLAYING.md`](PLAYING.md),
+    "Replays"): every fight, online ones from either machine, kept in
+    `replays/` (`replays`, `replays_keep`, `replays_megabytes`) as its
+    start state (what the disc holds left out, deflated) and every input,
+    about 220 KB a fight, its inputs a few hundred bytes; the settings
+    menu's Replays page plays one with pause, a frame, slower and faster,
+    from the start and to the kill; `--replay`, `--replay-check`; every
+    hash held, and `tools/port_replay.py` and `tools/port_net.py session`
+    play every recorded fight back the same. Left: a replay's export (a
+    film of it), and replays across builds (inputs from a pristine boot
+    state, which a fight's start does not need).
 24. **2v2** (longer term): four fighters in one fight, two teams; a
     button retargets to the other enemy; online with four players
     (rollback of four, the bench's four-fighter case as the budget).

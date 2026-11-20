@@ -32,6 +32,7 @@
 #include "port_music.h"
 #include "port_net.h"
 #include "port_online.h"
+#include "port_replay.h"
 #include "port_spu.h"
 #include "bb2.h"
 
@@ -127,6 +128,15 @@ static const char g_port_usage[] =
     "  --rollback-every M  ... M frames from one save to the next (24)\n"
     "  --rollback-quiet    ... and run them again as netplay does: nothing\n"
     "                 drawn, heard or printed; video memory not compared\n"
+    "  --replays FOLDER   keep every fight as a replay in FOLDER\n"
+    "                 (docs/PORT.md, \"Replays\")\n"
+    "  --replays-keep N   ... and at most the N newest (100; 0: all)\n"
+    "  --replay FILE  play a replay from the first frame, then end\n"
+    "  --replay-check FILE   play it as fast as it runs, nothing drawn or\n"
+    "                 heard, from the start again at its middle and on\n"
+    "                 to before its first cut, and end: 0 where every\n"
+    "                 hash was the one recorded, 1 on a desync or a\n"
+    "                 replay not played\n"
     "  --whole-state  save and put back every byte of the state, not only\n"
     "                 the pages written since (for measuring)\n"
     "  --run-ahead N  before each frame run the next N (0 to 2) and put\n"
@@ -245,6 +255,7 @@ void port_Quit(s32 code) {
         port_PrintStubs();
         port_PrintRollbackReport();
         port_PrintAheadReport();
+        port_ReplayAtQuit();
         port_EndNetplay();
         port_PrintNetReport();
         if (g_port_quit_hook != NULL) {
@@ -383,6 +394,8 @@ s32 port_Main(s32 argc, char **argv) {
     static char shots_folder[PATH_BYTES_MAX];
     const char *image = NULL;
     const char *plan = NULL;
+    const char *replay = NULL;
+    s32 replay_quiet = 0;
     const char *shots = NULL;
     const char *problem;
     s32 frames = 0;
@@ -485,6 +498,21 @@ s32 port_Main(s32 argc, char **argv) {
             image = argv[++i];
         } else if (port_TextsEqual(word, "--plan")) {
             plan = argv[++i];
+        } else if (port_TextsEqual(word, "--replays")) {
+            port_SetReplayFolder(argv[++i]);
+        } else if (port_TextsEqual(word, "--replays-keep")) {
+            s32 keep;
+
+            if (!port_ParseNumber(argv[i + 1], &keep) || keep < 0) {
+                port_UsageError(
+                    "--replays-keep takes a count, not ", argv[i + 1]);
+            }
+            port_SetReplayKeep((u32)keep, 0);
+            i++;
+        } else if (port_TextsEqual(word, "--replay") ||
+                   port_TextsEqual(word, "--replay-check")) {
+            replay_quiet = port_TextsEqual(word, "--replay-check");
+            replay = argv[++i];
         } else if (port_TextsEqual(word, "--wav")) {
             port_StartWav(argv[++i]);
         } else if (port_TextsEqual(word, "--spu")) {
@@ -738,12 +766,26 @@ s32 port_Main(s32 argc, char **argv) {
     port_WeaponsStart();
     port_ArenasStart();
     port_SetSessionDisc(&g_port_disc);
+    port_SetReplayDisc(&g_port_disc);
     if (check_online) {
         port_PrintSessionCheck();
         return PORT_EXIT_OK;
     }
     if (plan != NULL) {
         port_LoadPlan(plan);
+    }
+    if (replay != NULL) {
+        char why[PORT_REPLAY_WHY_BYTES];
+
+        if (!port_PlayReplay(replay, replay_quiet, TRUE, why, sizeof(why))) {
+            port_Log("replay: %s: %s\n", replay, why);
+            return PORT_EXIT_FAILED;
+        }
+        if (frames == 0) {
+            /* the replay's clock goes on from the fight's: it ends the
+             * run itself */
+            port_SetBlankLimit(PORT_NO_BLANK_LIMIT);
+        }
     }
     if (frames > 0) {
         port_SetBlankLimit((u32)frames);
@@ -944,6 +986,8 @@ s32 port_Main(s32 argc, char **argv) {
      * session may begin in this program (online.c) */
     port_OnlineKeepBoot(&g_port_disc);
     for (;;) {
+        /* a replay's turn: a fight's start seen, or a playback's frame */
+        port_ReplayBoundary();
         port_BeforeStep();
         port_StepGame();
         port_AfterStep();

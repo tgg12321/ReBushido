@@ -410,6 +410,17 @@ static void port_SessionSums(void) {
     code[CODE_HEAD + 3 * CODE_PART] = 0;
 }
 
+u64 port_SessionDiscSum(void) {
+    static u64 sum;
+    static s32 is_known;
+
+    if (!is_known && g_session.disc_image != NULL) {
+        sum = port_SessionDisc(g_session.disc_image);
+        is_known = TRUE;
+    }
+    return sum;
+}
+
 void port_SessionSetupCode(char *out) {
     u32 i;
 

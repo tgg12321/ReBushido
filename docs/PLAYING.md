@@ -978,6 +978,60 @@ between Linux ones, through every way of the lobby, and through the
 owner's lobby server across the internet (NETPLAY.md, section 14); not
 yet between two players' PCs.
 
+## Replays
+
+**Every fight is kept** as a replay, by itself: versus, versus the CPU,
+the story, training, chanbara, team battles and online matches (from your
+own machine; the other player keeps theirs). They go into `replays/`
+beside the program, one file a fight, named by its date and its mode
+(`2026-11-20_143005_vs.rbr`), about 220 KB each: the game's state as the
+fight began, and every press of both players after it, so that the fight
+is played again rather than filmed. Keep replays (the settings menu, the
+game's page; `replays = off` in `rebushido.cfg`) turns it off.
+
+**Watching one**: the settings menu (F1, or Options on the top menu),
+Replays. The newest is at the top, with its date, both fighters and their
+weapons, the mode, the stage and how long it was. Enter or Cross plays it
+(from a menu, not in the middle of a fight), from the fight's loading
+picture on, in your own picture settings (Remastered or Original, the lights, the
+resolution); when it ends, or when you stop it, the game goes on where it
+was when you opened the menu. While it plays:
+
+| Key | Controller | What it does |
+|---|---|---|
+| Space, Enter or P | Cross, Start | pause, and go on |
+| Right or `.` | D-pad right, R1 | one frame on (and pause) |
+| Up or `=` | D-pad up | twice as fast, up to eight times |
+| Down or `-` | D-pad down | half as fast, down to an eighth |
+| R or Home | Square | from the start |
+| K or End | Triangle | to a moment before the first cut |
+| Escape or Backspace | Circle, Back | stop, back to the game |
+
+The line at the top says where it is, the speed, and the keys. F1, F2, F3
+and F12 are the window's as ever.
+
+**From the command line**: `rebushido --replay FILE` plays one and ends
+there; `--replay-check FILE` plays it as fast as it runs, showing and
+playing nothing, and says whether it played the same as it was recorded.
+
+**A replay plays only in the build that recorded it**, from the same disc
+image, with the same gameplay mods (stages, weapons, motions, arenas):
+it is the game run again, and another build runs otherwise. The Replays
+page says why one cannot be played. Each replay notes the state of the
+game every second as it was recorded and the playback holds itself to
+it; a difference (a "desync", which must never happen) stops it and says
+so on the line and in the log.
+
+**How many**: Replays kept (`replays_keep`, the newest 200) and Replays'
+room (`replays_megabytes`, 500 MB) take the oldest away as new ones come;
+0 keeps them all. Copy a replay out of the folder to keep it for good.
+
+A fight that the program ended in the middle of is kept as far as it
+went. A fight online is kept once both players' presses up to its end
+are known; one the other player left in the middle of is not kept. A
+fight in which the settings menu's Bug fixes was changed is not kept:
+that changes the game without a press.
+
 ## Where the saves are
 
 ReBushido saves what the game saves, in the same way: **memory card

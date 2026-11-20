@@ -127,6 +127,18 @@ extern void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out);
 /* A run's test (--menu-keys): what the menu is told, a word at a time. */
 extern s32 port_MenuWord(const char *word);
 
+/* ---- the settings menu's Replays page (menu_replays.c) ---- */
+
+/* The replays kept, read again: how many rows there are. */
+extern s32 port_ReplaysItems(void);
+/* A row's label and value (-1: the row that says there are none). */
+extern void port_ReplaysDescribe(
+    s32 item, char *label, u32 label_room, char *value, u32 value_room);
+extern const char *port_ReplaysHelp(s32 item);
+/* The row's replay played from the game's next frame: TRUE, and the menu
+ * closes; FALSE with why in `note`. */
+extern s32 port_ReplaysAccept(s32 item, char *note, u32 room);
+
 /* ---- the settings menu's Play online page (menu_online.c) ---- */
 
 /* The page's rows, each an item of its own (ONLINE_..., menu_online.c),

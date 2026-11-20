@@ -126,6 +126,11 @@ extern void port_MixCdAudio(s16 *samples, u32 frames);
 extern s16 *g_port_xa_unmixed;
 /* Sectors of sound taken since the program started. */
 extern u32 port_GetXaSectorCount(void);
+/* In `snapshot`, a snapshot of the state (port_state.h), the samples of
+ * the drive's queue that were not waiting to be played as it was taken
+ * are cleared: nothing reads them before they are written again, and a
+ * replay's start compresses the smaller for it. */
+extern void port_XaClearPlayed(u8 *snapshot);
 
 /* ---- the drive, as the sound's clock moves it (src/port/cd.c) ---- */
 

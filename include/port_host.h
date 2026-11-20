@@ -84,6 +84,25 @@ extern s32 port_HostListFolder(
     void *context);
 /* Makes a folder, if it is not there: 1 if it is there afterwards. */
 extern s32 port_HostMakeFolder(const char *path);
+/* A file taken away, and one given a new name over whatever had it: 1
+ * where it was done (the replays, src/port/replay.c). */
+extern s32 port_HostRemove(const char *path);
+extern s32 port_HostRename(const char *from, const char *to);
+
+/* The date and time now: the PC's own where the host knows its zone (the
+ * builds with a window), and otherwise UTC (`is_utc`). Only for what a
+ * replay says of itself and its name; nothing of the game reads it. */
+typedef struct {
+    s32 year;
+    s32 month; /* 1 to 12 */
+    s32 day;   /* 1 to 31 */
+    s32 hour;
+    s32 minute;
+    s32 second;
+    s32 is_utc;
+} PortDate;
+
+extern void port_HostDate(PortDate *date);
 
 /* The PC's clock, in tenths of a microsecond from some moment: only for
  * how long something took (the rollback self-test's report, state.c).

@@ -275,6 +275,12 @@ extern void port_SessionSeed(void);
  * named, and the mods are the ones started. */
 extern void port_SetSessionDisc(const struct PortDisc *disc);
 extern void port_SessionSetupCode(char *out);
+/* The disc's sum in full, worked out once (a replay's, port_replay.h). */
+extern u64 port_SessionDiscSum(void);
+/* Netplay's frames whose inputs are all known and taken as they are
+ * (none of them run on a guess still to be put right): a replay of a
+ * session is written once its fight's end is among them. */
+extern u32 port_NetplayFinalFrames(void);
 /* --check-online: the build, the disc, the mods and the protocol, each
  * in full and as the code, to the output. */
 extern void port_PrintSessionCheck(void);
