@@ -9,6 +9,7 @@
  * session would; at its end the player's own state, kept as the session
  * began, is put back, and the game goes on where it was. */
 #include "common.h"
+#include "port_net.h"
 
 struct PortDisc;
 
@@ -31,7 +32,54 @@ typedef struct {
     u32 paths; /* --net-paths, or 0 for all */
     u32 delay;
     s32 portmap; /* the host asks its router to open its port */
+    /* a room of several's match (docs/NETPLAY.md, section 16): its code
+     * (at's, for a guest), its ticket and its number */
+    s32 has_ticket;
+    u8 ticket[PORT_RELAY_TICKET_BYTES];
+    char code[PORT_RELAY_CODE_BYTES];
+    s32 room_number;
 } PortOnlineAsk;
+
+/* A room of several, as a program with no pages is given it (main.c's
+ * --room-open and --room-enter, for tests): opened or entered at its
+ * first boundary, its matches played and watched as they come. */
+typedef struct {
+    s32 on;
+    char lobby[PORT_ONLINE_TEXT_BYTES];
+    char name[PORT_ONLINE_TEXT_BYTES]; /* to open one, or "" */
+    char code[PORT_ONLINE_TEXT_BYTES]; /* to enter one */
+    char player[PORT_ONLINE_TEXT_BYTES];
+    char password[PORT_ONLINE_TEXT_BYTES];
+    char bind[PORT_ONLINE_TEXT_BYTES]; /* a match's socket, or "" */
+    s32 rule;                          /* PORT_ROOM_RULE_... (the host's) */
+    s32 plays;                         /* in the rotation, else a spectator */
+    s32 watch;       /* watches the room's matches it is not in */
+    u32 matches;     /* the program leaves the room, and ends, once the
+                        room has had so many results (0: never) */
+    s32 side;        /* a match beside: 1 opens one, 2 joins one */
+    u32 leave_match; /* leaves its match of this number ... */
+    u32 leave_frame; /* ... at this frame of it */
+    u32 delay;
+    u32 paths;
+} PortOnlineRoom;
+
+extern void port_OnlineRoomAuto(const PortOnlineRoom *room);
+/* A room's match (port_room.h's PortRoomNext) asked for by the pages: it
+ * is played or watched at the game's next boundary, by way of `how`'s
+ * lobby, with its player's name, socket and delay. NULL, or what is
+ * wrong. */
+struct PortRoomNext;
+extern const char *port_OnlineAskRoom(
+    const struct PortRoomNext *next, const PortOnlineAsk *how);
+/* Whether the session being met is a room's match: no lobby before it,
+ * the room decided. */
+extern s32 port_OnlineIsRoomMatch(void);
+/* Whether the room is the command line's (--room-open, --room-enter): no
+ * pages come up between its matches. */
+extern s32 port_OnlineIsRoomAuto(void);
+/* The player asks to leave the session or the watching (the window's
+ * keys): once shown, twice left. */
+extern void port_OnlineLeave(void);
 
 /* Whether sessions may begin in this program: the window's, or
  * --session-at. Before the game starts (main.c). */
@@ -63,6 +111,9 @@ enum {
     PORT_ONLINE_ENDS = 3,
     PORT_ONLINE_FAILED = 4,
 };
+
+/* (a room's match watched says the same: the waiting for its fight's
+ * start is the meeting, PORT_SESSION_PHASE_WATCHING) */
 
 extern void (*g_port_online_hook)(s32 event, const char *why);
 /* The window's port mapping, for a host whose ask says so (portmap.c):

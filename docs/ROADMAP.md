@@ -430,7 +430,7 @@ the stage").
     struck through) and on the cards; the crews kept on the stage page
     after the match. Versus the CPU a crew match per opponent, his crew
     led by the game's opponent and the rest drawn; online each player
-    picks his own, the host's rule held (protocol 10). Left: the owner's
+    picks his own, the host's rule held (protocol 11). Left: the owner's
     eye on the strip, the cards and the pick (`tmp/crew/`); whether the
     winner should stay hurt (he starts fresh, as the owner asked).
 22. **Online lobbies of more than two** (after the seamless online
@@ -439,6 +439,21 @@ the stage").
     rollback of their own); a **rotation** of three (A+B, B+C, C+A, the
     winner staying or a fixed turn, as the host sets); players in a room
     may also start their own matches beside it.
+    **Done** ([`NETPLAY.md`](NETPLAY.md), section 16; [`PORT.md`](PORT.md),
+    "Rooms of several"; [`PLAYING.md`](PLAYING.md), "Rooms of several"):
+    rooms of up to eight at the lobby (version 2; version 1 clients
+    refused), the rotation the server's (a fixed turn or the winner
+    staying), each match a session of two met by a ticket and ended where
+    it is decided (protocol 10), matches beside the room's, spectators who
+    take the match's feed from the lobby (its fight's start as a replay
+    keeps it, then its players' inputs and hashes) and run it with no
+    rollback, a member coming in mid-fight included; the room's page in
+    the online pages; with it the room list's ping and leaving an online
+    fight with F1 or Escape twice. Proved on one PC by six headless
+    programs and by three hidden windows, every match's hashes the same
+    on its players and spectators. Left: a room of real players on real
+    networks; a spectator sees nothing of a match's menus before its
+    first fight; the owner's eye on the room's page.
 23. **Replays, saved by themselves**: every fight's inputs, seed, cards
     and settings that the state depends on, a few KB a fight, played
     back by running the game again (the port is deterministic); a

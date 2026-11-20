@@ -287,6 +287,16 @@ s32 port_MatchAfterFight(s32 pressed) {
     return TRUE;
 }
 
+/* The game's wins counter of a fight of mode `mode` (port_match.h): left
+ * out while a match is in play, whose strip shows the score. Reads the
+ * state alone, as the window's port_MatchShown does. */
+s32 port_MatchHidesWins(s32 mode) {
+    const PortMatch *match = &g_port_match;
+
+    return match->rule != PORT_MATCH_SINGLE && match->mode == mode &&
+           port_MatchModeHasRules(mode);
+}
+
 /* The select screen loads (port_match.h): back to the stage pages after
  * a match of versus or link, the crews kept; otherwise begun afresh. */
 s32 port_MatchToStages(void) {

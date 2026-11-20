@@ -2919,6 +2919,16 @@ static u32 port_EscapeButton(void) {
 }
 
 void port_TakeEscape(s32 down) {
+    PortGameState now;
+
+    if (down && port_IsNetplayOn()) {
+        port_ReadGameState(&now);
+        if (now.in_fight) {
+            /* online, a fight's Escape (the pause is nobody's) asks to
+             * leave it: once shown on the line, twice left */
+            port_OnlineLeave();
+        }
+    }
     g_port_escape_held = down ? port_EscapeButton() : 0;
     if (down) {
         port_Note("Escape: %s of player one; blank %u",

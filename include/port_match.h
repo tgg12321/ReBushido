@@ -148,6 +148,10 @@ extern s32 port_MatchNextOpponent(void);
  * follows it, done here. TRUE if the frame is the match's, and the menu is
  * not shown. */
 extern s32 port_MatchAfterFight(s32 pressed);
+/* A frame of a fight of mode `mode` (fight.c, fight_UpdateMode): TRUE when
+ * a match is in play, whose strip over the fight shows the score, and the
+ * game's own "WINS 00" counter is left out. The game's one fight keeps it. */
+extern s32 port_MatchHidesWins(s32 mode);
 /* The select screen loads (select.c, select_Load): TRUE once after a match
  * of versus or link was decided, when the screen is to open on the stage
  * pages with the fighters and weapons kept. */

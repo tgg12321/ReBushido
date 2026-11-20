@@ -70,7 +70,11 @@ python3 tests/run.py --rebushido -v rebushido/settings # one, showing what it pr
   programs and the repository's own mods in `build/tests/port_release/`,
   in which a disc image, a card, a log, a screenshot, a mod made from a
   disc and a shipped mod's file changed are planted one by one, each
-  of which must be refused.
+  of which must be refused. `rebushido/ui_card_names` holds the sharp
+  menus' table (`tools/port_ui.py`) to the group battle card's names in
+  `hud.c`: every one of the twenty has a block cut as the card cuts it,
+  and a picture in `src/port/mods/ui/` for each piece; read from the
+  source alone, with no Pillow.
 - A test of one of ReBushido's fixes is `tests/rebushido/fix_NAME.c`: it
   includes the game's file that has the fix and runs the function with
   the "Bugfixes" setting off, for what the original does, and on

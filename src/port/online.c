@@ -22,14 +22,35 @@
  * the socket, the session's and the lobby's words, netplay's inputs --
  * the player's switches and picture are theirs again, and their own state
  * is put back: the game goes on at the boundary it was at, with their
- * cards. */
+ * cards.
+ *
+ * A room of several (port_room.h; docs/NETPLAY.md, section 16) asks the
+ * same of a member, a match at a time: a session of two met under the
+ * match's code with its ticket, ended where the match is decided, its
+ * result told to the room; or a match watched, from the start of its
+ * latest fight that its host served, put in as the player's own state is
+ * kept, and run on with the players' inputs to the match's end. */
 #include "common.h"
 #include "port_disc.h"
 #include "port_host.h"
 #include "port_net.h"
 #include "port_online.h"
 #include "port_paint.h"
+#include "port_replay.h"
+#include "port_room.h"
 #include "bb2.h"
+
+/* How long a spectator waits for a match's fight to begin, and for the
+ * room to show the match again once it shows another. */
+#define WATCH_WAIT_MS 300000
+#define WATCH_GONE_MS 5000
+#define WATCH_POLL_MS 2
+/* the server's word that there is no such match to watch (watch.c) */
+#define WATCH_NO_SUCH_MATCH 2
+/* a boundary of a room's program's own play, with nothing to do in the
+ * room, waits at least this long */
+#define ROOM_IDLE_MS 2
+#define WHY_BYTES 400
 
 void (*g_port_online_hook)(s32 event, const char *why);
 void (*g_port_online_map_hook)(const char *bind);
@@ -49,6 +70,15 @@ static struct {
     u32 times;
     u32 steps;
     u32 sessions; /* begun in this program */
+    /* a room's match asked for: played or watched */
+    s32 room_asked;
+    PortRoomNext next;
+    s32 room_match; /* the session being met is a room's */
+    /* a program with no pages: its room (--room-open, --room-enter) */
+    PortOnlineRoom room;
+    s32 room_opened;
+    s32 side_joined;
+    s32 side_played;
 } g_online;
 
 void port_OnlineWanted(void) { g_online.wanted = 1; }
@@ -73,7 +103,15 @@ void port_OnlineKeepBoot(const PortDisc *disc) {
 
 s32 port_OnlineCanBegin(void) { return g_online.boot != NULL; }
 
-s32 port_OnlineIsBusy(void) { return g_online.busy || g_online.asked; }
+s32 port_OnlineIsBusy(void) {
+    return g_online.busy || g_online.asked || g_online.room_asked;
+}
+
+s32 port_OnlineIsRoomMatch(void) { return g_online.room_match; }
+
+s32 port_OnlineIsRoomAuto(void) { return g_online.room.on; }
+
+void port_OnlineLeave(void) { port_NetplayAskLeave(); }
 
 /* A session asked for, its words checked as far as they can be before
  * the meeting (port_online.h). */
@@ -139,8 +177,12 @@ static s32 port_OnlineSetUp(void) {
     } else {
         port_ParseNetAddress(ask->at, &at);
         if (has_lobby) {
-            port_SetRelay(&lobby, "", paths);
+            /* a room of several's match is opened under its own code */
+            port_SetRelay(&lobby, ask->has_ticket ? ask->code : "", paths);
         }
+    }
+    if (has_lobby && ask->has_ticket) {
+        port_SetRelayTicket(ask->ticket);
     }
     if (has_lobby) {
         port_SetRelayRoom(
@@ -165,9 +207,13 @@ static s32 port_OnlineSetUp(void) {
     }
     port_SetSession(ask->role, &at);
     port_SetSessionPlayer(ask->player);
-    /* a session begun here ends where both go back to the top menu */
+    /* a session begun here ends where both go back to the top menu, and
+     * a room's match where it is decided */
     port_SetSessionRules(
-        ask->role == PORT_SESSION_HOST ? PORT_SESSION_RULE_TOP_MENU_LEAVES : 0);
+        ask->role != PORT_SESSION_HOST ? 0
+        : ask->has_ticket
+            ? PORT_SESSION_RULE_TOP_MENU_LEAVES | PORT_SESSION_RULE_ONE_MATCH
+            : PORT_SESSION_RULE_TOP_MENU_LEAVES);
     if (ask->role == PORT_SESSION_HOST && ask->portmap &&
         g_port_online_map_hook != NULL) {
         g_port_online_map_hook(ask->at);
@@ -201,6 +247,10 @@ static const char *port_OnlineEndWords(s32 end) {
     case PORT_NETPLAY_END_DESYNC:
         return "The two games parted (a desync): the log has the frame. "
                "Please send it to the project.";
+    case PORT_NETPLAY_END_MATCH:
+        return "The match is over.";
+    case PORT_NETPLAY_END_QUIT:
+        return "You left the fight.";
     default:
         return "You both went back to the top menu: the session is over.";
     }
@@ -219,6 +269,53 @@ static void port_OnlineCountDown(s32 failed) {
                  "ends\n");
         port_Quit(failed ? PORT_EXIT_FAILED : PORT_EXIT_OK);
     }
+}
+
+/* ---- a room's match ---- */
+
+/* A room's match begins, the state of the game's start put back: its
+ * host sends the match's feed for the spectators; a test's leave set. */
+static void port_OnlineMatchBegins(void) {
+    const PortRoomNext *next = &g_online.next;
+
+    port_Log("room: match %d (%s vs %s) begins: this program plays player "
+             "%d%s\n",
+             next->match.number, next->first, next->second,
+             next->role == PORT_SESSION_HOST ? 1 : 2,
+             next->side ? ", a match beside the room's" : "");
+    if (next->role == PORT_SESSION_HOST) {
+        port_FeedBegin(&next->match);
+    }
+    if (g_online.room.on && g_online.room.leave_match != 0 &&
+        (s32)g_online.room.leave_match == next->match.number) {
+        port_SetNetplayLeaveAt(g_online.room.leave_frame);
+    }
+}
+
+/* ... and ends: who won, by why it ended, to the feed and the room. */
+static void port_OnlineMatchEnds(s32 end) {
+    const PortRoomNext *next = &g_online.next;
+    s32 first = next->role == PORT_SESSION_HOST;
+    s32 winner = PORT_ROOM_DRAW;
+
+    if (end == PORT_NETPLAY_END_MATCH) {
+        s32 result = port_SessionResult();
+
+        winner = result == 1   ? PORT_ROOM_WON_FIRST
+                 : result == 2 ? PORT_ROOM_WON_SECOND
+                               : PORT_ROOM_DRAW;
+    } else if (end == PORT_NETPLAY_END_QUIT) {
+        /* this player left: the other won */
+        winner = first ? PORT_ROOM_WON_SECOND : PORT_ROOM_WON_FIRST;
+    } else if (
+        end == PORT_NETPLAY_END_PEER_LEFT || end == PORT_NETPLAY_END_SILENT) {
+        winner = first ? PORT_ROOM_WON_FIRST : PORT_ROOM_WON_SECOND;
+    }
+    port_FeedEnd(port_NetplayFrameNow(), winner);
+    port_FeedFinish();
+    port_RoomResult(next->match.number, winner);
+    port_RoomDone(next->match.number);
+    g_online.room_match = FALSE;
 }
 
 /* A session met, played and ended here. */
@@ -244,6 +341,12 @@ static void port_OnlineRun(void) {
         port_Log("online: %s; the program goes on with its own game\n",
                  canceled ? "the meeting was given up" : "no session");
         port_OnlineLetGo();
+        if (g_online.room_match) {
+            /* the room goes on: a match not met is nobody's */
+            port_RoomResult(g_online.next.match.number, PORT_ROOM_DRAW);
+            port_RoomDone(g_online.next.match.number);
+            g_online.room_match = FALSE;
+        }
         g_online.busy = 0;
         if (g_port_online_hook != NULL) {
             g_port_online_hook(
@@ -271,10 +374,16 @@ static void port_OnlineRun(void) {
     port_SetNetplayInProcess(1);
     port_Log("online: the state of the game's start put back: the session "
              "plays from power on, as a program started for it would\n");
+    if (g_online.room_match) {
+        port_OnlineMatchBegins();
+    }
     if (g_port_online_hook != NULL) {
         g_port_online_hook(PORT_ONLINE_BEGINS, NULL);
     }
     end = port_RunNetplay();
+    if (g_online.room_match) {
+        port_OnlineMatchEnds(end);
+    }
     port_EndNetplay();
     port_Log("online: session %u has ended: %s\n", g_online.sessions,
              port_OnlineEndWords(end));
@@ -296,10 +405,331 @@ static void port_OnlineRun(void) {
     port_OnlineCountDown(end == PORT_NETPLAY_END_DESYNC);
 }
 
+/* `text` into `out`, cut to `room`. */
+static void port_OnlineKeepWord(char *out, u32 room, const char *text) {
+    u32 i;
+
+    for (i = 0; text != NULL && text[i] != 0 && i + 1 < room; i++) {
+        out[i] = text[i];
+    }
+    out[i] = 0;
+}
+
+/* printf's work into `out`. */
+static void port_OnlineText(char *out, u32 room, const char *format, ...) {
+    PortArgs args;
+
+    PORT_ARGS_START(args, format);
+    port_FormatText(out, room, format, args);
+    PORT_ARGS_END(args);
+}
+
+/* Why a match watched ended, in a player's words. */
+static const char *port_OnlineWatchWords(s32 end) {
+    switch (end) {
+    case PORT_NETPLAY_END_DESYNC:
+        return "What you watched parted from the players' game (a desync): "
+               "the log has the frame.";
+    case PORT_NETPLAY_END_SILENT:
+        return "The match's feed stopped coming for 15 seconds.";
+    case PORT_NETPLAY_END_QUIT:
+        return "You stopped watching.";
+    default:
+        return "The match you watched is over.";
+    }
+}
+
+/* A spectator waits for the match's settings and its fight's start: 1
+ * once both are had, or 0 with why (the match over first, the player
+ * gave up, the wait too long). */
+static s32 port_OnlineWatchWaits(char *why, u32 room) {
+    const PortRoomNext *next = &g_online.next;
+    char status[WHY_BYTES];
+    u32 start = port_NetClock();
+    const u8 *blob;
+    u32 size;
+
+    port_SetSessionPhase(PORT_SESSION_PHASE_WATCHING);
+    port_OnlineText(status, sizeof(status),
+                    "Watching %s vs %s: waiting for their fight to begin",
+                    next->first, next->second);
+    for (;;) {
+        PortRoomView view;
+        u32 end_frame;
+        s32 winner;
+
+        port_RoomTick();
+        port_WatchTick();
+        if (port_WatchSettings() != NULL && port_WatchStart(&blob, &size)) {
+            return 1;
+        }
+        port_RoomGet(&view);
+        if (port_SessionIsCanceled()) {
+            why[0] = 0;
+            return 0;
+        }
+        if (!view.in_room || port_WatchNothing() >= WATCH_NO_SUCH_MATCH ||
+            port_WatchEnd(&end_frame, &winner) ||
+            (!next->side && view.match.number != next->match.number &&
+             port_NetClock() - start > WATCH_GONE_MS)) {
+            port_OnlineText(why, room, "Match %d ended before its fight began.",
+                            next->match.number);
+            return 0;
+        }
+        if (port_NetClock() - start > WATCH_WAIT_MS) {
+            port_OnlineText(why, room, "Match %d's fight did not begin.",
+                            next->match.number);
+            return 0;
+        }
+        port_SessionStatus(status);
+        port_RoomWait(WATCH_POLL_MS);
+    }
+}
+
+/* A room's match watched here, from its latest fight's start, the
+ * player's own game kept and put back after. */
+static void port_OnlineWatchRun(void) {
+#if RB_REMASTER_VIEW
+    PortRemasterView view;
+    PortRemasterView console;
+#endif
+    const PortRoomNext *next = &g_online.next;
+    char why[WHY_BYTES];
+    const u8 *blob;
+    u32 size;
+    u32 frame;
+    s32 end;
+
+    g_online.busy = 1;
+    port_Log("room: watching match %d (%s vs %s)\n", next->match.number,
+             next->first, next->second);
+    port_WatchBegin(&next->match);
+    if (g_port_online_hook != NULL) {
+        g_port_online_hook(PORT_ONLINE_MEETING, NULL);
+    }
+    if (!port_OnlineWatchWaits(why, sizeof(why))) {
+        port_Log("room: match %d not watched: %s\n", next->match.number,
+                 why[0] != 0 ? why : "the player gave it up");
+        port_WatchStop();
+        port_RoomDone(next->match.number);
+        port_ResetSession();
+        g_online.busy = 0;
+        if (g_port_online_hook != NULL) {
+            g_port_online_hook(PORT_ONLINE_FAILED, why[0] != 0 ? why : NULL);
+        }
+        return;
+    }
+    port_WatchStart(&blob, &size);
+    port_PaintSyncAll();
+    port_StateSave(g_online.own);
+    port_KeepPlaySwitches();
+    port_KeepStageDefaults();
+    if (!port_ReplayLoadServed(blob, size, &frame) ||
+        !port_WatchSession(port_WatchSettings())) {
+        port_Log("room: match %d's start could not be put in: it is not "
+                 "watched\n",
+                 next->match.number);
+        end = PORT_NETPLAY_END_DESYNC;
+    } else {
+#if RB_REMASTER_VIEW
+        port_RemasterGetView(&view);
+        console = view;
+        console.distance = PORT_DISTANCE_ORIGINAL;
+        port_RemasterSetView(&console);
+#endif
+        port_WatchStarted(frame);
+        if (g_port_online_hook != NULL) {
+            g_port_online_hook(PORT_ONLINE_BEGINS, NULL);
+        }
+        end = port_RunWatch(frame);
+        port_EndNetplay();
+#if RB_REMASTER_VIEW
+        port_RemasterSetView(&view);
+#endif
+    }
+    port_Log("room: match %d watched: %s\n", next->match.number,
+             port_OnlineWatchWords(end));
+    port_PaintSyncAll();
+    port_WatchStop();
+    port_ResetNetplay();
+    port_ResetSession();
+    port_RestorePlaySwitches();
+    port_RestoreStageDefaults();
+    port_RemasterFreeMargin();
+    port_StateLoad(g_online.own);
+    port_RoomDone(next->match.number);
+    g_online.busy = 0;
+    if (g_port_online_hook != NULL) {
+        g_port_online_hook(PORT_ONLINE_ENDS, port_OnlineWatchWords(end));
+    }
+}
+
+/* A room's match into a session's ask: met under its code, with its
+ * ticket, by way of the room's lobby. */
+static void port_OnlineMatchAsk(
+    PortOnlineAsk *ask, const PortRoomNext *next, const char *lobby,
+    const char *player, const char *bind, u32 delay, u32 paths) {
+    u32 seed;
+    u32 i;
+
+    for (i = 0; i < sizeof(*ask); i++) {
+        ((u8 *)ask)[i] = 0;
+    }
+    ask->role = next->role;
+    ask->delay = delay;
+    ask->paths = paths;
+    port_OnlineKeepWord(ask->lobby, sizeof(ask->lobby), lobby);
+    port_OnlineKeepWord(ask->player, sizeof(ask->player), player);
+    port_OnlineKeepWord(ask->code, sizeof(ask->code), next->match.code);
+    if (next->role == PORT_SESSION_HOST) {
+        port_OnlineKeepWord(
+            ask->at, sizeof(ask->at), bind[0] != 0 ? bind : "0.0.0.0:0");
+    } else {
+        port_OnlineKeepWord(ask->at, sizeof(ask->at), next->match.code);
+        port_OnlineKeepWord(ask->bind, sizeof(ask->bind), bind);
+    }
+    ask->has_ticket = TRUE;
+    for (i = 0; i < PORT_RELAY_TICKET_BYTES; i++) {
+        ask->ticket[i] = next->match.ticket[i];
+    }
+    ask->room_number = next->match.number;
+    if (port_GetSessionSeedAsked(&seed)) {
+        /* a test's seed, another for each match, that each be its own */
+        port_SetSessionSeed(seed + (u32)next->match.number);
+    }
+}
+
+/* A room's match asked for by the pages (port_online.h). */
+const char *port_OnlineAskRoom(
+    const PortRoomNext *next, const PortOnlineAsk *how) {
+    if (g_online.boot == NULL) {
+        return "This program cannot begin a session as it runs.";
+    }
+    if (g_online.busy || g_online.asked || g_online.room_asked) {
+        return "A session is under way.";
+    }
+    /* the lobby, the player's name, the delay: the match's ask is made of
+     * them (port_OnlineRoomRun) */
+    g_online.ask = *how;
+    g_online.next = *next;
+    g_online.room_asked = TRUE;
+    return NULL;
+}
+
+void port_OnlineRoomAuto(const PortOnlineRoom *room) {
+    g_online.room = *room;
+    g_online.room.on = TRUE;
+}
+
+/* The program's room, a program with no pages (--room-open, --room-enter):
+ * opened or entered at its first boundary, a match beside it asked for,
+ * its matches played and watched as they come, and the program ended once
+ * the room has had the results it was to wait for. */
+static void port_OnlineRoomTurn(void) {
+    PortOnlineRoom *room = &g_online.room;
+    PortRoomView view;
+    PortRoomNext next;
+    char why[WHY_BYTES];
+    s32 i;
+
+    if (!room->on) {
+        port_RoomTick();
+        return;
+    }
+    if (!g_online.room_opened) {
+        s32 ok =
+            room->name[0] != 0
+                ? port_RoomOpen(
+                      room->lobby, room->name, room->player, room->password,
+                      room->rule, room->plays, why, sizeof(why))
+                : port_RoomEnter(room->lobby, room->code, room->player,
+                                 room->password, room->plays, why, sizeof(why));
+
+        if (!ok) {
+            port_SessionFail(why);
+            port_Quit(PORT_EXIT_FAILED);
+        }
+        g_online.room_opened = TRUE;
+        port_RoomSetWatching(room->watch);
+        if (room->side == 1) {
+            port_RoomSideOpen();
+        }
+    }
+    port_RoomTick();
+    port_RoomGet(&view);
+    if (!view.in_room) {
+        return;
+    }
+    if (room->side == 2 && !g_online.side_joined) {
+        for (i = 0; i < view.side_count; i++) {
+            if (view.sides[i].b == PORT_ROOM_NOBODY &&
+                view.sides[i].a != view.you) {
+                port_Log("room: joining %s's match beside the room's\n",
+                         port_RoomPlayer(view.sides[i].a));
+                port_RoomSideJoin(i);
+                g_online.side_joined = TRUE;
+                break;
+            }
+        }
+    }
+    if ((room->matches != 0 && view.last_number >= (s32)room->matches &&
+         (view.match.number == 0 ||
+          (view.match.a != view.you && view.match.b != view.you) ||
+          view.match.number > (s32)room->matches)) ||
+        (room->side != 0 && g_online.side_played)) {
+        port_Log("room: the room has had what this program waited for (%d "
+                 "results); it leaves and ends\n",
+                 view.last_number);
+        port_RoomLeave();
+        port_Quit(PORT_EXIT_OK);
+    }
+    if (port_RoomNext(&next) != PORT_ROOM_NEXT_NONE &&
+        (room->matches == 0 || next.match.number <= (s32)room->matches ||
+         next.side)) {
+        if (next.side) {
+            g_online.side_played = TRUE;
+        }
+        g_online.next = next;
+        g_online.room_asked = TRUE;
+        return;
+    }
+    /* nothing to do in the room: the program's own game, which nothing
+     * paces with no window, is let run no faster than this */
+    port_RoomWait(ROOM_IDLE_MS);
+}
+
+/* The room's match asked for, played or watched here. */
+static void port_OnlineRoomRun(void) {
+    PortOnlineAsk ask;
+    const PortOnlineRoom *room = &g_online.room;
+
+    g_online.room_asked = FALSE;
+    if (g_online.next.what == PORT_ROOM_NEXT_WATCH) {
+        port_OnlineWatchRun();
+        return;
+    }
+    port_OnlineMatchAsk(
+        &ask, &g_online.next, room->on ? room->lobby : g_online.ask.lobby,
+        room->on ? room->player : g_online.ask.player,
+        room->on ? room->bind : g_online.ask.bind,
+        room->on ? room->delay : g_online.ask.delay,
+        room->on ? room->paths : g_online.ask.paths);
+    g_online.ask = ask;
+    g_online.room_match = TRUE;
+    port_OnlineRun();
+}
+
 /* A boundary of the program's own play (port_online.h): --session-at's
  * count, and a session asked for begun. */
 void port_OnlineBoundary(void) {
     if (g_online.boot == NULL) {
+        return;
+    }
+    if (!g_online.room_asked && !g_online.asked) {
+        port_OnlineRoomTurn();
+    }
+    if (g_online.room_asked) {
+        port_OnlineRoomRun();
         return;
     }
     if (g_online.times != 0 && !g_online.asked) {

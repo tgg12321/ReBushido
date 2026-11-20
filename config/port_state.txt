@@ -70,6 +70,8 @@ outside  src/port/play_switches.c  the gameplay switches the run asked for (unlo
 outside  src/port/picture.c     the pictures a run writes
 outside  src/port/profile.c    where a blank's time goes, for --profile
 outside  src/port/relay.c       the lobby's client: the room, its key, the ways tried
+outside  src/port/room.c        a room of several's client: its socket, its members and matches as the lobby says
+outside  src/port/watch.c       a room's match watched: its host's feed to the lobby, a spectator's start and inputs
 outside  src/port/session.c     netplay's session: who the other is, the host's cards as sent, the seed
 outside  src/port/png.c         PNG pictures read and written for the mods
 outside  src/port/replay.c      the replays: the fight being recorded, the one being played, the settings

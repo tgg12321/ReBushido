@@ -418,6 +418,13 @@ static void fight_UpdateMode(void) {
     } else if (
         (g_fight_mode == FIGHT_MODE_PRACTICE && g_fight_practice_round == 1) ||
         g_fight_mode == FIGHT_MODE_VS) {
+#if RB_PORT
+        /* a match's strip shows the score in place of the wins
+         * (port_match.h) */
+        if (port_MatchHidesWins(g_fight_mode)) {
+            return;
+        }
+#endif
         g_disp_prim_cursor +=
             hud_DrawWinCounts(
                 g_fight_wins_p1, g_fight_wins_p2, (s32)g_disp_prim_cursor, 1) /

@@ -4605,6 +4605,18 @@ The build without a window (the provers) lends no threads, and
 picture is read where it is asked for, as before, the same pictures to
 the byte.
 
+**What nothing clears is read at once.** A loading screen is drawn
+over the picture on show again and again, with no clear between
+(`disp_DrawLoadingScreen`), and the group battle's card is begun while
+the display is off. There a picture read beside the game left the game's
+own letters drawn under it for good: the card's names showed twice, the
+game's and the mod's a little apart (2026-11-20). So a primitive whose
+drawing area is the display's, or one drawn while the display is off,
+has its picture read where it is first asked for (`gl_draw.c`,
+`port_GlReplacementOf`; `PortGlLoad.at_once`): a few small pictures,
+once each, on a screen that is waiting anyway. Every other draw is into
+the buffer behind the display and reads beside the game as before.
+
 **The stage's pages looked up again for nothing.** A page of the stage
 is looked up again (its key over all of its 65,536 texels) when the
 game writes over it. Two things that put video memory back as it was
@@ -8724,7 +8736,13 @@ them; after a fight the card, its title the rule and the fight's
 number, each side's name, number and pips, and who took the fight, a
 draw, or who won the match. What is shown is `port_MatchShown`
 (`gamestate.c`): the card on the screens after a fight while one is up,
-the strip on `SCREEN_FIGHT_UPDATE` of the match's mode.
+the strip on `SCREEN_FIGHT_UPDATE` of the match's mode. The strip
+replaces the game's own "WINS 00" counter, which is not drawn while a
+match is in play (`fight_UpdateMode`, `port_MatchHidesWins`: any rule but
+the single fight, in the match's own mode; it is the game's step, so the
+software picture, the remastered one and both menus lose it alike); the
+game's single fight keeps it, as do the CPU's count of opponents and
+training's practice round.
 
 **How it is proved.** `tools/port_match.py` (run by `make
 port-stage-select`) plays a plan of each rule on both sizes, the traces
@@ -8735,7 +8753,9 @@ of the same fighters); versus First to 2, chosen on the stage page with
 Circle and Start; versus the CPU Stock 2, which as the port plays today
 is a fight won and two lost, the game's menu after it and its Rematch a
 new match; versus the CPU Stock 1, the match won and the next opponent
-with a fresh one. `tools/port_rollback.py`'s Stock plan rolls a match
+with a fresh one. In the versus plans the game's pictures at each
+fight's end have none of the counter's red rules (252 pixels before it
+was left out). `tools/port_rollback.py`'s Stock plan rolls a match
 back every 24 frames; `tools/port_net.py session` plays its session as
 a Stock match.
 
@@ -8809,11 +8829,15 @@ of both crews' first fighters, loaded again (`port_MatchRematchLoads`
 turns the game's restart where the fighters stand into a load).
 
 **Online.** The host's `match_rule` and `match_count` hold, as for the
-others (protocol 10: the rule may be Crew, which an older program does
+others (protocol 11: the rule may be Crew, which an older program does
 not know). Each player picks his own crew with his own pad on the
 shared select screen; the crews, the place being picked and the score
 are `g_port_match`, in the state, so a rollback, a replay and the two
-machines of a session hold them.
+machines of a session hold them. In a room of several (NETPLAY.md,
+section 16) a rotation's match of Crew ends where Stock's does: at the
+screen after a fight once the match is over (the result's card), its
+winner the room's result, a drawn match nobody's
+(`port_MatchIsDecided`, `session.c`).
 
 **The picture** (`match_page.c`). Over a fight a strip across the whole
 top: each side's label and fighter in play with his weapon, the rule
@@ -8844,7 +8868,10 @@ port_replay.py` plays a Crew 2 match's fights back from their replays
 (`vs_crew_won`: no draw, which no replay could hold), every hash the
 same; `tools/port_net.py session` plays a second session as a Crew 2
 match, each player picking his crew's second place, the hashes and the
-fight's replays the same on both machines.
+fight's replays the same on both machines; `tools/port_net_lobby.py
+headless`'s `rooms-crew` plays a room's rotation match as Crew 2, two
+players and a spectator: two fights, the match decided at the result's
+card, the players' hashes alike and the spectator's theirs.
 
 ## ReBushido's top menu
 
@@ -9181,6 +9208,61 @@ their files have the same inputs, hashes and views, and each plays back
 headlessly with every hash the same. The window's program recorded
 port_game's fight with `--replays` and played it back with
 `--replay-check`, every hash the same.
+
+**A replay's start for a room's spectators** (ROADMAP 22; NETPLAY.md,
+section 16). The host of a room of several's match serves its
+spectators the start of the match's latest fight (`port_ReplayServe`):
+the fight is recorded whether fights are written to files or not, and
+its start is compressed as soon as no rollback can take it back
+(`port_ReplayIsFinal` of its first input), a slice at each boundary as a
+file's writing is, into the replay's own chunks with a `SERV` chunk of
+its input's number, netplay's frame and the start's hash. The file
+written after the fight takes the same work (`WORK_DONE`: deflate is not
+run twice). A spectator puts it in as a playback puts its file's start
+in (`port_ReplayLoadServed`: this run's own kept, the hash held to the
+host's) and runs the match on from there (netplay.c, `port_RunWatch`).
+
+## Rooms of several
+
+ROADMAP 22; how they work on the network, NETPLAY.md, section 16; how a
+player uses them, PLAYING.md, "Rooms of several". The code:
+`src/port/room.c` (the room's client: its own socket, the roster, what a
+member asks), `src/port/watch.c` (a match's feed and a spectator's side),
+`include/port_room.h`, all outside the state; the room's matches as
+sessions in `online.c` (`port_OnlineRoomRun`, `port_OnlineWatchRun`),
+the spectator's frames in `netplay.c` (`port_RunWatch`), the match's end
+in `session.c` (`PORT_SESSION_RULE_ONE_MATCH`) and the room's page in
+`src/port/window/online_pages.c`.
+
+- **A room's match is a session** begun in the program (section 15 of
+  NETPLAY.md), met through the lobby under the match's code and let in
+  by its ticket, with no lobby before the fight. Its host's rule
+  `PORT_SESSION_RULE_ONE_MATCH` ends it where the match is decided: the
+  game's menu after the fight (`SCREEN_AFTER_FIGHT_UPDATE`), of a single
+  fight or of a Stock or First to match's last (`g_port_match.over`).
+  The session's presses note the frame and who won in the state
+  (`g_port_top_menu.session_left`, `.session_result`), so that a rollback
+  takes them back and both machines end at the same frame
+  (`PORT_NETPLAY_END_MATCH`); each player tells the room the result.
+- **Leaving a fight**: the window's F1, Escape in a fight (where it is
+  Start, nobody's online) or the guide button ask to leave
+  (`port_OnlineLeave`, `port_NetplayAskLeave`); the line says so, and a
+  second ask within three seconds leaves (`PORT_NETPLAY_END_QUIT`): the
+  other is told, its session ends as one whose other player left, and
+  both are back at their own games and pages. `--leave-at N:F` does it
+  for a test.
+- **A spectator** runs the match's frames with its players' inputs, no
+  guess and no rollback: every frame as it comes, `WATCH_LAG` frames
+  behind the newest it has, and quietly (`g_port_rerun`) while it is more
+  than `WATCH_CATCH_UP` behind, as a member who came in the middle of a
+  fight is. Its own game is kept and put back after, as a session's
+  player's is; it holds the match's settings as its players do
+  (`port_WatchSession`: the host's switches, rule and margin).
+- **The command line** (`--room-open NAME`, `--room-enter CODE`,
+  `--room-rule`, `--room-watcher`, `--room-no-watch`, `--room-matches N`,
+  `--room-side open|join`, `--net-plan-pads`) makes a program a room's
+  member with no pages, for the tests; its own game idles between
+  matches.
 
 ## 64 bits
 

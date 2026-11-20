@@ -419,6 +419,102 @@ def write_leave_plan(program, side, folder):
     return path
 
 
+# A room of several's match (docs/NETPLAY.md, section 16): one plan for
+# every member, both pads' presses in it, and each player presses only its
+# place's (--net-plan-pads). The session's start puts the plan back with
+# the state of the game's start, so that each match plays it from its
+# beginning; the session ends where the fight is decided, at the menu
+# after it. Nothing is given up in the member's own play between matches,
+# however long, and the plan never ends: the room ends the program
+# (--room-matches).
+ROOM_CHECKPOINTS = '''
+[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 100000000
+shot = false
+
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+at_frame = true
+within = 100000000
+shot = false
+
+[[checkpoint]]
+name = "kill"
+when = "winner != FIGHT_NOBODY"
+at_frame = true
+within = 100000000
+shot = false
+
+[[checkpoint]]
+name = "after_fight"
+when = "screen == SCREEN_AFTER_FIGHT_UPDATE"
+within = 100000000
+shot = false
+
+[[checkpoint]]
+name = "stay"
+after = 100000000
+shot = false
+'''
+
+
+# A room's match of Crew 2 (--match crew:2): the crews' second places
+# picked after the stage, as the same fighters and weapons, so that the
+# second fight, the loser's next against the winner, is the first's pair
+# again and ends the same way: the match decided at its result's card.
+ROOM_CREW_CHECKPOINTS = ROOM_CHECKPOINTS.replace('''
+[[checkpoint]]
+name = "fight"''', SESSION_CREW_PLACE.replace('within = 3000', 'within = 100000000') + '''
+[[checkpoint]]
+name = "fight"''').replace('''
+[[checkpoint]]
+name = "after_fight"''', '''
+[[checkpoint]]
+name = "fight2"
+when = "screen == SCREEN_FIGHT_UPDATE && winner == FIGHT_NOBODY"
+at_frame = true
+within = 100000000
+shot = false
+
+[[checkpoint]]
+name = "kill2"
+when = "winner != FIGHT_NOBODY"
+at_frame = true
+within = 100000000
+shot = false
+
+[[checkpoint]]
+name = "after_fight"''')
+
+
+def write_room_plan(program, folder, crew=False):
+    """The plan of every member of a room for `program`: its path. `crew`:
+    a Crew 2 match's (ROOM_CREW_CHECKPOINTS)."""
+    toml = os.path.join(folder, 'room.toml')
+    fight = port_game_fight()
+    presses = SESSION_SELECT + fight
+    if crew:
+        presses = SESSION_SELECT + SESSION_CREW_PICKS + fight + [p.replace('fight+', 'fight2+', 1) for p in fight]
+    with open(toml, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('about = "A room of several\'s matches, both pads."\n')
+        f.write('discs = ["port"]\nlimit = 200000000\nseconds = %d\n' % SECONDS)
+        f.write('input = [\n%s\n]\n' % ',\n'.join('    "%s"' % p for p in presses))
+        f.write(ROOM_CREW_CHECKPOINTS if crew else ROOM_CHECKPOINTS)
+    playtest.PORT_PROGRAM = program
+    playtest.PORT_SYMBOLS = program + '.sym'
+    test = playtest.Test(toml)
+    disc = playtest.Disc('port')
+    test.set_discs([disc])
+    _, lines = test.plan(disc, playtest.header_names(), 1)
+    path = os.path.join(folder, 'room_plan.txt')
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(lines) + '\n')
+    return path
+
+
 def own_pad(presses, side):
     """The presses of side `side`'s console: its player's, on its own pad."""
     out = []

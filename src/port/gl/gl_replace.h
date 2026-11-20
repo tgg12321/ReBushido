@@ -51,9 +51,14 @@ typedef struct {
 extern const char *port_GlReplaceStart(void *(*getproc)(const char *name));
 /* The replacement of a textured primitive: 1 and `out`, or 0 to draw it
  * from video memory as ever. The first time a texture is seen with no
- * replacement it is written out, where that was asked for. */
+ * replacement it is written out, where that was asked for. `is_on_show`:
+ * the primitive is drawn over the picture on show (a loading screen),
+ * or while the display is off, where nothing clears it before it is seen, so
+ * the first time its replacement is asked for it is read at once: read beside
+ * the game, the game's own texture drawn meanwhile would stay under it (the
+ * group battle's card, 2026-11-20). */
 extern s32 port_GlReplaceFind(
-    const PortRemasterPrim *prim, PortGlReplacement *out);
+    const PortRemasterPrim *prim, s32 is_on_show, PortGlReplacement *out);
 /* The replacement of the rectangle of video memory the game has just
  * written (a fill, a copy, a load): its texture, or 0, and in `tint` the
  * tint of its fade. `display_x` and `display_w` are the columns the

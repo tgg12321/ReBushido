@@ -1075,7 +1075,7 @@ have met:
   (`MEET_MUSIC`; PORT.md, "A fight's music") and the time of day the
   stages start at (`MEET_TIME`; PORT.md, "The time of day"), protocol 6,
   and the host's `match_rule` and `match_count` (`MEET_MATCH`, protocol
-  8; PORT.md, "Match rules"; protocol 10 when the rule may be Crew);
+  8; PORT.md, "Match rules"; protocol 11 when the rule may be Crew);
   both programs hold them for the session,
   so a guest plays with the host's unlocks, the host's fights' music
   and the host's match rule whatever its own settings say, and its
@@ -1405,7 +1405,7 @@ printable ASCII.
 | 48 `HELLO` | client | 208 | role and flags; the room's code, name, the player's name, the setup code, the salt, the verifier (host) or proof (guest), up to four candidates |
 | 49 `STATE` | server | 208 | waiting, password (salt, challenge), punch (the other's candidates, the token), direct4, direct6, relayed, or an error; the code, the address seen, the other's |
 | 50, 51 `PUNCH`, `PUNCH_ACK` | client to client | 16 | the token, the candidate aimed at, the sender's clock (echoed: the round trip) |
-| 52, 53 `LIST`, `ROOMS` | client, server | 16, 8 + 92 each | up to twelve rooms a datagram |
+| 52, 53 `LIST`, `ROOMS` | client, server | 16, 8 + 92 each | up to twelve rooms a datagram (and rooms of several, section 16) |
 | 55, 56 `WHOAMI`, `YOUARE` | client, server | 16, 28 | the address the server sees |
 
 An address or a candidate is 20 bytes: its family or kind, the port,
@@ -1433,7 +1433,7 @@ holds `portmap.c` to it on Linux and Windows.
 
 **Checking two players' setups.** `rebushido --check-online` prints the
 build's, the disc's and the gameplay mods' sums and the protocol, and
-the **setup code** made of them, `P8-BBBB-DDDD-MMMM` (each sum folded to
+the **setup code** made of them, `P10-BBBB-DDDD-MMMM` (each sum folded to
 20 bits, four digits of Crockford's base 32); the Play online page's
 last row shows it, the lobby's list shows each room's, and a refusal
 shows the player's own. Two players with the same code meet.
@@ -1689,7 +1689,167 @@ Pictures of every page are in the cases' `shots/` folders
 memory for it, or a program that never keeps one), the pages' ask
 starts the program again as before, and the log says why.
 
-**What is left.** Two players' PCs; the lobby showing a room's ping
-(the list has no round trip to the host, only to the server); a way to
-leave in the middle of a fight other than closing the window (the pause
-is no player's online).
+**What is left.** Two players' PCs. (The lobby's list shows a room's
+ping, and a player leaves the middle of a fight with F1 twice: section
+16.)
+
+## 16. Rooms of several, spectators and a rotation
+
+ROADMAP 22: a room at the lobby that holds several players and
+spectators; spectators who watch a match live, from its players'
+inputs, with no rollback of their own; a rotation of three (A+B, B+C,
+C+A), the winner staying or a fixed turn as the room's host sets; and
+matches beside the room's. Built on section 15's sessions in the running
+program. The code: PORT.md, "Rooms of several".
+
+**The design.** A room of several is the lobby's; each match in it is a
+session of two, as every session before.
+
+- *The room* (lobby version 2) holds up to eight members, each known by
+  a token the server gives it, not by its address, so that a member's
+  sessions may come from other sockets. A member says it is there every
+  second (`ROOM` with `STAY`) from whatever it is doing (its pages, its
+  own game, a meeting's loops, netplay's frames, a spectator's); the
+  server answers every word with the room as it has it (`ROSTER`) and
+  lets go of a member it has not heard from for 20 seconds.
+- *The rotation is the server's.* It keeps the members in the order
+  they came and, where the host has a rotation on and two who play are
+  free, makes the next match of the first two free: with **a fixed
+  turn** the match's first player then goes to the end of the order
+  (A+B, B+C, C+A, A+B ...); with **the winner staying** the winner goes
+  first and the loser last (a draw: both last). A player who leaves a
+  match, or the room, in the middle of it loses it. The server alone
+  decides, so every member sees the same order, and it is held by
+  `test_relay.py`.
+- *A match is met as a two-player room is*, under a code the server
+  gives it (not listed), and let in by a **ticket**: sixteen random
+  bytes the roster gives its two players alone, in the hello's secret
+  (`HELLO_TICKET`), in place of a password. The match's first player
+  hosts it (player 1, its cards and switches); every way of section 14
+  is open to it. A session of a room's match has no lobby before the
+  fight and ends where the match is decided (`ONE_MATCH`, below); each
+  player tells the room who won (`RESULT`), said again with each word
+  until the room shows it taken, and the room makes the next.
+- *Matches beside the room's* are the same, but asked for: a member
+  opens one (`SIDE_OPEN`) and another free member takes it
+  (`SIDE_JOIN`); the rotation goes on meanwhile without the two. They
+  are numbered from 1001, the rotation's from 1.
+- *Spectators pull from the lobby, not from the players.* The match's
+  host sends the server the match's **feed** once, whatever the
+  spectators' number: the session's settings (the host's switches, rule,
+  margin, 64 bytes, `port_SessionSettings`), the **start of its latest
+  fight** as a replay keeps it (PORT.md, "Replays": the state before the
+  fight's load, what the disc holds left out, deflated, about 215 KB),
+  and from that start's frame on every frame's two pads, once both are
+  known (never a guess), with every final hash. The server keeps the
+  feed in memory while the match lasts and 30 seconds after, and gives
+  every member who asks (`WATCH`) what it lacks (`SCENE`): the
+  settings, the start's chunks it has not, then the inputs from the
+  frame it wants, eight hashes to a datagram of 240 frames. A host's
+  upload does not grow with its spectators; the server's is about 215
+  KB a spectator as it comes in, then a few KB a second.
+- *A spectator* waits for a fight's start, keeps its own game (as a
+  session's player does), puts the start in (`port_ReplayLoadServed`,
+  the start's hash held to the host's), holds the session's settings
+  (`port_WatchSession`) and runs netplay's frame with the players' two
+  pads: the session's own presses, the replay's boundary, the step. It
+  never guesses, so it never rolls back; it holds each hash it makes to
+  the players' as they come, and stops at the first that differs. It
+  keeps six frames in hand behind the newest it has, so that inputs
+  coming in bursts are not seen; one who comes in the middle of a fight
+  begins at that fight's start and runs quietly (`g_port_rerun`, as a
+  rollback's frames) until it is with the players. The match decided
+  in its state, or its end said by the feed, it puts its own game back.
+  The way in is the fight's start rather than the session's power on:
+  the latter needs the host's cards sent and every menu frame run
+  again, minutes of a Stock match, where a fight's start is a few
+  seconds of frames at most; before the first fight a spectator waits
+  ("waiting for their fight to begin").
+
+**The match's end.** `PORT_SESSION_RULE_ONE_MATCH`, in the welcome of a
+room's match: where the game reaches its menu after a fight, of a single
+fight or of a Stock or First to match's last (PORT.md, "Match rules"),
+the session's presses (`port_SessionInput`) note the frame and the
+winner in the state (`g_port_top_menu.session_left`, `.session_result`)
+and press nothing more; netplay ends the session there on both machines
+once the frame's inputs are both the other's own (`END_MATCH`), as
+section 15's way back to the top menu does. A program now looks at the
+session's own end before at the other's goodbye: the other, ending at
+the same frame, may have said goodbye first, and the ending was a
+"peer left" with the wrong winner (found by the rooms case below).
+
+**Leaving a fight.** F1, Escape in a fight (Start, nobody's online) or
+the guide button ask to leave; the window's line says *Press F1 or
+Escape again*, and a second ask within three seconds leaves at the next
+frame (`END_QUIT`): the other is told (`BYE`), its session ends as one
+whose other player left, and both are back at their own games and the
+pages, in a room on its page. A spectator leaves its watching the same
+way.
+
+**The list's ping.** Each hello and each room's word carries the
+sender's round trip to the server, measured by its own hellos (the
+hello's two bytes after its count of candidates; a room's `STAY` its
+stamp, echoed). The list gives each room's host's, in the two bytes
+after its count of players, and the browsing program adds its own round
+trip to the server, measured by the list's ask: *ping ~N ms*, the way
+through the server, about what a direct way costs at most. The host's
+address is never given.
+
+**The wire, version 2.** Everything of section 14 stays, with three
+changes: `RELAY_VERSION` 2 (a version 1 client is answered `VERSION`, and
+a version 2 client a version 1 server's `VERSION`: each says "The lobby
+server is of another version"); `HELLO_TICKET` (0x20); the hello's and
+the list's round trips. The list's locked byte has a bit for a room of
+several (0x02), whose players are its members. New kinds, little-endian:
+
+| Kind | Who | Bytes | What |
+| --- | --- | --- | --- |
+| 57 `ROOM` | member | 160 | an action (`OPEN`, `ENTER`, `STAY`, `LEAVE`, `RULE`, `RESULT`, `SIDE_OPEN`, `SIDE_JOIN`, `SIDE_DONE`): the room's code, name, player, setup code, salt and verifier (open) or proof (enter), the member's token, whether it plays, the rule, an argument, a stamp, its round trip, a match's number |
+| 58 `ROSTER` | server | 472 | OK, `PASSWORD` (salt, challenge) or an error; the code, name, the member's token and id, the rule, the host, the setup code, the rotation's match (number, players, code, ticket to its players), the last result, eight members (id, flags, wins, round trip, name), four matches beside it |
+| 59 `FEED` | a match's host | to 1,200 | the match's code and ticket; its settings, a chunk of the start (its frame, size, place, count), inputs (the first frame, how many, up to eight hashes, four bytes a frame), or the end (the frame, who won) |
+| 60 `FEED_ACK` | server | 160 | the start's frame and its chunks had, the settings and the end had, the next frame wanted |
+| 61 `WATCH` | spectator | 192 | the room's code, the token, the match's code, the start it has and its chunks, the frame it wants |
+| 62 `SCENE` | server | to 1,144 | the settings and the two players' names, a chunk of the start, inputs with their hashes, the end, or nothing yet / no such match / not a member |
+
+`tools/relay/relay_client.py` builds and reads every one, and
+`tools/relay/test_relay.py` holds the server to them: the rotation's
+order with a fixed turn (four matches) and with the winner staying
+(through a draw), a result told twice or by one not in the match, the
+host's rule, a match's meeting by its ticket (before and after its host,
+a wrong ticket, none), matches beside it, a member leaving in the middle
+and the host leaving, a feed served to a spectator who comes in the
+middle (the start whole, the inputs from its frame with their hashes,
+inputs that overlap), a feed of a wrong ticket, a stranger's watch, a
+locked room's password, an incompatible setup, a ninth member, version
+1, and a silent member let go.
+
+**Limits and memory.** A room of several counts as a room against the
+server's 500 and a host's three; its matches do not count against their
+hosts' addresses. Per source address, `--watch-rate` (400 a second) for
+`WATCH` and `FEED` together; a start of at most 1 MB and 2^18 frames of
+inputs a feed. A feed is about the start's size and 4 bytes a frame: a
+few hundred KB a match, kept while it lasts and `--feed-linger` (30 s)
+after. `--member-timeout` (20 s) and `--side-timeout` (120 s) are the
+rest.
+
+**The protocol of the session**, 10 (setup codes `P10-...`): the rule
+`ONE_MATCH`, the result in the state and the leave. The setup code's
+protocol is written in full now, two digits past nine.
+
+**Proved** on this PC, the server run here, every program headless
+(`tools/port_net_lobby.py`'s `rooms`, in `make port-net` and the gate's
+`port-net-windows`) or a hidden window with SDL's dummy drivers
+(`win-room`, and `room` in `port_net.py window`), 60 ms each way and 5%
+lost on every match's session:
+
+| Case | What runs | Result |
+| --- | --- | --- |
+| `rooms` | six headless programs in one room: Ayame opens it (a fixed turn), Bunta and Chie play, Sora is a spectator who comes in once the first match's fight has begun, Dai and Eiko play a match beside the room's; Bunta leaves the second match in its fight (frame 1,700) | the rotation Ayame+Bunta, Bunta+Chie, Chie+Ayame; each match watched by the third player and by Sora; every hash of a match the same on its two players and its spectators: 67, 56 and 67 hashes, the spectators holding 21, 10 and 21 of them to the players' as they came (every one from the fight's start); Sora ran the first match from its fight's start, frame 1,387; the match beside the room's, 67 hashes, at the same time; Bunta's leave ended the second match on both, Chie its winner, both back to their own games and the room; about a minute |
+| `win-room` | three Windows windows: the host opens a room of several from its pages (Host a room, Room for: several), two windows of the command line come in; the host plays the first match and leaves it in its fight with Escape twice (`--escape-at`); back on its pages, in the room, it watches the second | each match's hashes the same on its two players and its spectator (one of them the host's window from its pages); the host left at frame 1,950, in the fight; 100 seconds |
+
+**What is left.** Two players' PCs, and a room of real players: the
+feed's and the watch's pacing over a real network (on one PC the
+spectators keep up at once). A spectator of a match's menus before its
+first fight sees nothing until the fight begins. Matches across builds
+are refused by the setup code as before. A ladder and Elo (ROADMAP 25)
+can take a room's results and the replays' starts as their check.
