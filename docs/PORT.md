@@ -4610,12 +4610,20 @@ over the picture on show again and again, with no clear between
 (`disp_DrawLoadingScreen`), and the group battle's card is begun while
 the display is off. There a picture read beside the game left the game's
 own letters drawn under it for good: the card's names showed twice, the
-game's and the mod's a little apart (2026-11-20). So a primitive whose
-drawing area is the display's, or one drawn while the display is off,
-has its picture read where it is first asked for (`gl_draw.c`,
-`port_GlReplacementOf`; `PortGlLoad.at_once`): a few small pictures,
-once each, on a screen that is waiting anyway. Every other draw is into
-the buffer behind the display and reads beside the game as before.
+game's and the mod's a little apart (2026-11-20). So a primitive drawn
+while the display is off has its picture read where it is first asked
+for (`gl_draw.c`, `port_GlReplacementOf`; `PortGlLoad.at_once`): the
+card's few dozen small pictures, once each, on a screen that is waiting
+anyway. Every other draw reads beside the game as before.
+
+At first a primitive whose drawing area was the display's was read at
+once as well. As the window sees them, though, every 2D primitive of the
+game's frames is drawn into the display's area (its buffers swap before
+the frame is drawn here), so that held for the menus and a fight's
+numbers too: each picture of the ui mod first seen in play was read on
+the drawing thread, 1.5 to 14 ms each, and `port_bench.py` found the
+fight's first blank at 20 to 30 ms against 4 before (its card part,
+2026-11-20). The card is drawn with the display off and needs only that.
 
 **The stage's pages looked up again for nothing.** A page of the stage
 is looked up again (its key over all of its 65,536 texels) when the

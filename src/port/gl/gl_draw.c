@@ -2842,16 +2842,13 @@ static void port_GlStateOf(const PortRemasterPrim *prim, PortGlState *state) {
 static void port_GlReplacementOf(
     const PortRemasterPrim *prim, PortGlState *state) {
     PortGlReplacement found;
-    /* drawn over the picture on show, as a loading screen is, and not
-     * into the buffer behind it (its drawing area is the display's); or
-     * drawn while the display is off, which may be what it shows once it
-     * is turned on (the group battle's card is begun so) */
-    s32 is_on_show =
-        !g_gl.display_is_on ||
-        (g_gl.display_h > 0 && prim->clip_top >= g_gl.display_y &&
-         prim->clip_bottom < g_gl.display_y + g_gl.display_h &&
-         prim->clip_left >= g_gl.display_x &&
-         prim->clip_right < g_gl.display_x + g_gl.display_w);
+    /* drawn while the display is off, which may be what it shows once it
+     * is turned on, with nothing cleared between (the group battle's card
+     * is begun so). Not a primitive whose drawing area is the display's:
+     * here every 2D primitive of the game's frames is, and a fight's first
+     * blank read the ui mod's pictures on this thread (docs/PORT.md,
+     * "What nothing clears is read at once") */
+    s32 is_on_show = !g_gl.display_is_on;
 
     if (g_gl.options.is_exact ||
         !port_GlReplaceFind(prim, is_on_show, &found)) {
