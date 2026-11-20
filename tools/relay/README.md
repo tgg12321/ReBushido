@@ -16,7 +16,13 @@ addresses and their candidates.
 
 ## The protocol
 
-Protocol version 1: summarized in `docs/NETPLAY.md`, section 14; every field, to the byte, in `relay_client.py` (and the client's `src/port/relay.c`).
+Protocol version 2: summarized in `docs/NETPLAY.md`, sections 14 and 16; every field, to the byte, in `relay_client.py` (and the client's `src/port/relay.c`, `room.c` and `watch.c`).
+Version 2 adds rooms of several (kinds 57 to 62: a room's members, its
+rotation, its matches' tickets, and each match's feed kept in memory for
+its spectators while it lasts and 30 seconds after) and each host's round
+trip in the list. A client of version 1 is answered VERSION: a release of
+protocol 9 (setup codes `P9-`) cannot use a server of version 2, and one of
+protocol 10 cannot use a server of version 1.
 In short, every datagram starts with the port's 8-byte header (`RB`, kind,
 detail, a little-endian u32); kinds 48 to 63 are the server's:
 
@@ -29,6 +35,10 @@ detail, a little-endian u32); kinds 48 to 63 are the server's:
 | 53 | ROOMS | server to client | the page, newest first |
 | 55 | WHOAMI | client to server | |
 | 56 | YOUARE | server to client | the address the server saw |
+| 57 | ROOM | member to server | a room of several: open, enter, stay, leave, rule, result, a match beside |
+| 58 | ROSTER | server to member | the room: members, the rotation's match (its ticket to its players), matches beside |
+| 59, 60 | FEED, FEED_ACK | a match's host, server | the match's settings, its fight's start, inputs and hashes; what the server has |
+| 61, 62 | WATCH, SCENE | spectator, server | what it has; what it lacks |
 
 A host's HELLO makes a room with a 6-character code; a guest's HELLO with
 that code joins it (a locked room first sends a challenge, answered with
@@ -121,11 +131,20 @@ each room is held to 240 datagrams and 300 KB a second, and a datagram over
 thousands of datagrams a second, so many relayed rooms at once are bound by
 one processor before memory.
 
+A room of several's members cost a few hundred bytes each; each match's
+feed is its fight's start (about 215 KB, at most 1 MB) and 4 bytes a
+frame, kept while the match lasts and `--feed-linger` (30 s) after, so a
+busy server holds a few hundred KB a match in play. A spectator coming in
+is sent its match's start once, then a few KB a second.
+
 Limits, all options: 500 rooms in all (then SERVER_FULL); per source IP
 (an IPv6 /64), 3 rooms hosted and 6 created a minute, 30 HELLOs and 10 LISTs
 or WHOAMIs a second, and 5 wrong passwords a minute (then its guests are
-refused for 60 s). Over a limit the server answers RATE_LIMITED at most once
-a second and drops the rest.
+refused for 60 s), and 400 WATCHes and FEEDs a second (`--watch-rate`).
+Over a limit the server answers RATE_LIMITED at most once a second and drops
+the rest. A room of several's member is let go after 20 s unheard
+(`--member-timeout`), a match beside a room after 120 s with nobody to play
+it (`--side-timeout`).
 
 ## What it logs
 
