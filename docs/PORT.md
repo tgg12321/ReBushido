@@ -7553,6 +7553,11 @@ program of their own:
   ferry dock at night, every picture); `Graphics: Original` marks
   nothing. A fighter casting a torch's shadow onto the ground and the
   walls was there before: the cube maps hold him.
+- **What it costs.** Nothing the bench can see: `ra1-stress` (sixteen
+  made-up lights, four fighters), this build and main's interleaved on
+  a quiet machine, the card's median and 95% 3.58 / 4.08 ms against main's
+  3.62 / 4.57, the scene's pass 0.06 to 0.07 ms in both; the gate's
+  bench, `ra1`'s lighting 0.66 ms against its 2.0.
 
 #### The fighters' material (rb_remade)
 
