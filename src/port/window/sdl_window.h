@@ -19,7 +19,9 @@ typedef struct {
     s32 no_sound;  /* open no sound card */
     s32 is_fast;   /* never wait: as fast as the PC goes */
     s32 is_hidden; /* a window never shown: agents' runs on a real card */
-    s32 inject;    /* PORT_INJECT_... */
+    /* make the mods of the disc (prepare.c) and end, with no game */
+    s32 prepare_only;
+    s32 inject;             /* PORT_INJECT_... */
     const char *tap_frames; /* a folder for the pictures as they are shown */
     /* ... and for the window's own pixels, which only the build with a
      * graphics card has (docs/PORT.md, "Remastered in the window") */
@@ -220,6 +222,20 @@ extern s32 port_ReportFolder(char *out, u32 room);
 /* The report's files but the picture, into `folder`: the last seconds'
  * times, the log, the settings file and `about`. */
 extern void port_WriteReport(const char *folder, const char *about);
+
+/* ---- the mods made from the player's disc (prepare.c) ---- */
+
+/* Makes the mods of mods/ that prepare/ beside the program makes and that
+ * are not yet made for `key` (the program's version and the disc's),
+ * showing how far it has come in a window of its own (never shown if
+ * `is_hidden`). `beside` is the program's folder with its last separator.
+ * Nonzero if one was not made, skipped or failed; *closed if the player
+ * closed the window. Nothing where there is no prepare/, or off Windows.
+ * For a test, `shots` (NULL for none) is a folder the screen is written
+ * into as each mod is begun. */
+extern s32 port_PrepareMods(
+    const char *beside, const char *image, const char *key, s32 is_hidden,
+    const char *shots, s32 *closed);
 
 /* ---- the session's log (sdl_log.c) ---- */
 

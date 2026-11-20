@@ -74,6 +74,94 @@ author = you      # read and not used, as `about` and `url` are
 A mod without a manifest is a mod all the same, named for its folder,
 in order 0.
 
+### Made from your disc
+
+Three mods are the game's own pictures and models made anew, which no
+package may carry: **the art** ("The art mod"), **the stages' pages made
+larger** ("The stages' pages made larger") and **the fighters** with their
+geometry fixed (`tools/port_models/README.md`, "The geometry-only pass").
+The PC package makes them itself, from the player's disc, the first time
+it starts with it, so a player who has only the zip and a disc image gets
+what the owner has (the owner, 2026-11-19):
+
+```
+Preparing the remastered art from your disc... 2/3
+Stages HD
+the stages loaded: stage 17
+[==============            ]  48%   1:12
+```
+
+- **What does it.** The package's `prepare/` (`tools/port_prepare_bundle.py`
+  puts it together): CPython 3.12 for Windows with numpy and Pillow, the
+  very files of the Python the developer tools' `build` steps run on, made
+  a Python of that folder alone (`python312._pth`: no setting, variable or
+  package of the PC's is seen), and the repository's tools as they are:
+  `tools/port_prepare.py`, `port_art.py`, `port_stage_hd.py`,
+  `fighter_export.py` and `port_models/geometry.py`, with the plans the
+  program plays (`prepare/plans/`, written by the packager from the
+  program's own `.sym`). About 18 MB of the zip.
+- **How.** `src/port/window/prepare.c`, at a player's start (no `--plan`,
+  `--frames`, `--fast` or `--mods`; `mods` and `disc_mods` on), looks at
+  `mods/art`, `mods/stages-hd` and `mods/fighters`: each is made unless its
+  `made-from-disc.txt` says the key of this program's version and this disc
+  (`ReBushido 0.1 disc 701714496-D5201087`: the version without its
+  commit, the disc's sectors by size and the CRC-32 of their first
+  megabyte). A folder with a `mod.txt` and no `made-from-disc.txt` is the
+  player's own and is never written over. It runs
+  `prepare\python\python.exe prepare\tools\port_prepare.py` in a job of its
+  own and draws the tool's `progress` lines on a screen of its own before
+  the game's window opens. The tool runs **this program itself** to dump
+  the textures, as the developer tools run the GL prover: `--hidden
+  --no-sound --fast --plan`, `--mods` of nothing, `--dump-textures`, and a
+  settings file of the prover's own (`CHILD_SETTINGS`: the stages the
+  original picks, its fight music, 4:3, nothing of the picture's costly
+  work), seven runs of the art's tour at once and the 38 stages' tours six
+  at once, on a window never shown, on the PC's graphics card. Then the
+  same `build` functions the developer tools call, and fighter_export and
+  geometry for Tatsumi. Each mod is written in `prepare-work/` and moved into
+  `mods/` whole, `made-from-disc.txt` beside its `mod.txt`; when all three
+  are made `prepare-work/` goes.
+- **Skipped and resumed.** Escape, or a controller's B, Back or Start, ends
+  the tool and everything it started (the job) and the game starts with
+  what was made. What was finished is kept in `prepare-work/` -- each run
+  of the program that dumped (`.done` beside it), and each mod made -- and
+  the next start goes on from there. Closing the window ends the program.
+  `disc_mods = off` (the settings menu's Mods page) never runs it;
+  `--prepare-only` makes them and ends, with no game.
+- **The same bytes.** Same disc, same program: what the package makes is
+  byte for byte what the developer tools make (`tools/port_prepare_prove.py`
+  unpacks the zip into a folder of its own, runs its program with no Python
+  on PATH and SDL's dummy drivers, makes the three again by the developer
+  tools, and compares every file; the fighter with the owner's
+  `tmp/mods/fighters/` too). Three things had to be held for it:
+  the program's runs play with the prover's settings, not the window's
+  (the window's stage select in every mode and its fight music took the
+  tour to other screens); the GL prover is compiled again when the commit
+  changes (`tools/port_gl_build.py`), since the options page draws the
+  version and its letters are among the textures dumped; and numpy's BLAS
+  is held to one kernel (`OPENBLAS_CORETYPE=Nehalem` in the three tools),
+  since OpenBLAS picks one by the processor (this PC's is SkylakeX's, a PC
+  with AVX2 and no AVX-512 gets Haswell's) and the stages' pages made with
+  another of its kernels differed in 40 of 955 pages; Nehalem's runs on
+  every processor numpy runs on. numpy's own code for each processor
+  (`NPY_DISABLE_CPU_FEATURES=X86_V3`, as a PC without AVX2 runs it) gives
+  the art and the stages the same bytes; the fighter's model, whose
+  vertices are floats written to the last bit, is the same on every PC
+  with AVX2 and FMA (any of the last ten years) and differs in a few of
+  its floats on one without.
+- **Time and room**, measured on the owner's PC (Ryzen 9 9950X3D, its own
+  graphics card): 205 seconds in all; the art 63 (50 of them the seven
+  runs that dump), the stages 139 (75 dumping, 64 making the 955 pages
+  larger, six at once), the fighter 3. `prepare-work/` holds about 500 MB
+  while it works; the mods are 190 MB (the art 29, the stages 160).
+- **Never shipped.** `tools/port_release.py` refuses any folder of `mods/`
+  it does not make from the repository (and any file of `prepare/` it did
+  not write, a `prepare-work/` or a picture outside `mods/`), and
+  `tools/owner_copy.py` copies the owner's `tmp/mods/art`, `stages-hd` and
+  `fighters` only where they have a `mod.txt`, and `prepare/` beside the
+  owner's `rebushido.exe`, so the owner's copy makes what is missing as a
+  player's does.
+
 ### The order
 
 The mods are read **by `order`, then by their folders' names**. Where
@@ -295,7 +383,8 @@ face that drew them through this table would still be drawn.
 
 No learned model and no program of anyone else's is used. It is the game's
 own pictures made larger, so it is never committed: copy
-`tmp/mods/stages-hd/` into `mods/` beside the program.
+`tmp/mods/stages-hd/` into `mods/` beside the program. The PC package
+makes the same bytes itself at its first start ("Made from your disc").
 
 ## The English menu
 
@@ -492,7 +581,8 @@ written here in numpy and Pillow; no model and no other project's
 program is used, so nothing is added to what the licence covers (a
 learned upscaler with weights of a clear licence would do better on the
 portraits; none is used). Copy `tmp/mods/art/` into `mods/` beside the
-program; it is never committed. From one disc: 1,224 textures dumped,
+program; it is never committed (the PC package makes it itself at its
+first start: "Made from your disc"). From one disc: 1,224 textures dumped,
 1,070 made larger (653 lettering, 360 of a few colours, 57 pictures), 154
 too small, in 8 seconds.
 

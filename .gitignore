@@ -25,6 +25,12 @@ __pycache__/
 tmp/
 *.log
 
+# The owner's copy of the PC program's prepare/, and the work folder it
+# makes the disc's mods in (tools/owner_copy.py; docs/MODS.md, "Made from
+# your disc")
+/prepare/
+/prepare-work/
+
 # Claude Code: only the shared settings are tracked
 .claude/*
 !.claude/settings.json

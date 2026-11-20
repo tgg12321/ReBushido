@@ -31,6 +31,10 @@ WHAT IS IN THE PACKAGE
   mods\               the mods it comes with: the English top menu,
                       the sharp menus, the stages' lights and a sample
                       arena
+  prepare\            what makes the rest of the remastered art from
+                      your own disc at the first start (below): a
+                      Python of its own with numpy and Pillow, and the
+                      project's tools. Nothing to install
   LICENSE.txt, NOTICE.txt, licenses\   the licences
 
 Unpack the folder anywhere you can write to (not Program Files): the
@@ -49,6 +53,28 @@ back. "rebushido.exe --help" lists everything else it can be told.
 
 Windows may warn that the program is from an unknown publisher (it is
 not signed): "More info", then "Run anyway".
+
+THE FIRST START
+---------------
+The first time it starts with your disc, the program makes three more
+mods from it, which no download may carry because they are the game's
+own pictures and models made anew: every menu, screen and caption drawn
+six times larger (mods\art), every stage's textures four times larger
+(mods\stages-hd) and Tatsumi with his joints and layers mended
+(mods\fighters). A screen says how far it has come:
+
+  Preparing the remastered art from your disc... 2/3
+
+It takes a few minutes (three and a half on the PC it was measured on)
+and needs about 500 MB of free space while it works and 190 MB after.
+It plays the game itself with no window shown, to see every
+texture, so the graphics card is busy and a fan may spin up. Escape
+(or B on a controller) skips it: the game starts at once, and the next
+start goes on from where it stopped. When it is done it never runs
+again, unless you use another disc image or a new version of the
+program; delete a folder of mods\ and it is made again.
+"disc_mods = off" in rebushido.cfg (the settings menu's Mods page,
+"Mods made from your disc") never makes them.
 
 THE KEYS
 --------

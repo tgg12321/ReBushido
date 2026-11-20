@@ -37,7 +37,13 @@ import copy
 import os
 import sys
 
-import numpy as np
+# numpy's BLAS on one kernel, whatever the PC: OpenBLAS picks one by the
+# processor, and the kernels round alike only mostly, so the pages made on
+# two PCs differed in a few texels (docs/MODS.md, "The same bytes on every
+# PC"). Nehalem's runs on every processor numpy runs on.
+os.environ['OPENBLAS_CORETYPE'] = 'Nehalem'
+
+import numpy as np  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)

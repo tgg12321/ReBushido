@@ -175,7 +175,10 @@ static const char g_port_window_usage_end[] =
     "\n"
     "The options of the build without a window work here too (--frames,\n"
     "--trace, --plan, --dump, --out, --shots, --every, --vram, --wav,\n"
-    "--spu), and for the tests, which show and sound nothing: --fast\n"
+    "--spu), --prepare-only (make the mods of the disc that prepare/\n"
+    "beside the program makes, as the first start does, and end:\n"
+    "docs/MODS.md, \"Made from your disc\"), and for the tests, which show\n"
+    "and sound nothing: --fast\n"
     "(never wait), --inject keys|pads (a plan's presses as key events,\n"
     "or as two controllers SDL makes up), --tap-frames FOLDER and\n"
     "--tap-every N (each Nth picture as SDL is given it), --tap-window\n"
@@ -364,39 +367,53 @@ static const char *port_FindImage(const char *beside) {
     exit(PORT_EXIT_USAGE);
 }
 
-/* For the log: a file of the image by name, its size, and a sum of its
- * first megabyte, which tells one image from another without reading
- * 700 MB as the program starts. (The port itself checks every sector
- * it reads for its mark and its own number: src/port/disc.c.) */
-static void port_NoteImageFile(const char *path) {
+/* A file of the image's size and the CRC-32 of its first megabyte, which
+ * tells one image from another without reading 700 MB as the program
+ * starts. (The port itself checks every sector it reads for its mark and
+ * its own number: src/port/disc.c.) FALSE if it cannot be opened. */
+static s32 port_SumImageFile(
+    const char *path, long long *size, u32 *sum, u32 *summed) {
     static u8 bytes[IMAGE_SUM_BYTES];
     FILE *file = fopen(path, "rb");
-    long long size = 0;
     size_t got;
 
+    *size = 0;
     if (file == NULL) {
-        port_Note("image: %s (cannot be opened)", path);
-        return;
+        return FALSE;
     }
     got = fread(bytes, 1, sizeof(bytes), file);
 #if defined(_WIN32)
     if (_fseeki64(file, 0, SEEK_END) == 0) {
-        size = _ftelli64(file);
+        *size = _ftelli64(file);
     }
 #else
     if (fseeko(file, 0, SEEK_END) == 0) {
-        size = ftello(file);
+        *size = ftello(file);
     }
 #endif
     fclose(file);
-    port_Note("image: %s; %lld bytes; CRC-32 of its first %u bytes %08X", path,
-              size, (unsigned)got, (unsigned)port_Crc32(0, bytes, (u32)got));
+    *sum = port_Crc32(0, bytes, (u32)got);
+    *summed = (u32)got;
+    return TRUE;
 }
 
-/* The image named, and, where that is a cue sheet, the file of sectors
- * its first FILE line names, beside it. */
-static void port_NoteImage(const char *path) {
-    char sectors[PATH_BYTES_MAX];
+/* For the log: a file of the image by name, its size and its sum. */
+static void port_NoteImageFile(const char *path) {
+    long long size;
+    u32 sum;
+    u32 summed;
+
+    if (!port_SumImageFile(path, &size, &sum, &summed)) {
+        port_Note("image: %s (cannot be opened)", path);
+        return;
+    }
+    port_Note("image: %s; %lld bytes; CRC-32 of its first %u bytes %08X", path,
+              size, (unsigned)summed, (unsigned)sum);
+}
+
+/* Where the image is a cue sheet, the file of sectors its first FILE line
+ * names, beside it, into `sectors`: FALSE if there is none. */
+static s32 port_SectorsOfCue(const char *path, char *sectors, size_t room) {
     char text[CUE_BYTES_MAX + 1];
     const char *name;
     const char *end;
@@ -405,9 +422,8 @@ static void port_NoteImage(const char *path) {
     FILE *file;
     size_t got;
 
-    port_NoteImageFile(path);
     if (!port_EndsWith(path, ".cue") || (file = fopen(path, "rb")) == NULL) {
-        return;
+        return FALSE;
     }
     got = fread(text, 1, CUE_BYTES_MAX, file);
     fclose(file);
@@ -415,7 +431,7 @@ static void port_NoteImage(const char *path) {
     name = strstr(text, "FILE \"");
     end = name != NULL ? strchr(name + 6, '"') : NULL;
     if (end == NULL) {
-        return;
+        return FALSE;
     }
     name += 6;
     /* the cue sheet's folder, then the name */
@@ -424,9 +440,39 @@ static void port_NoteImage(const char *path) {
             cut = at + 1;
         }
     }
-    snprintf(sectors, sizeof(sectors), "%.*s%.*s", (int)(cut - path), path,
+    snprintf(sectors, room, "%.*s%.*s", (int)(cut - path), path,
              (int)(end - name), name);
-    port_NoteImageFile(sectors);
+    return TRUE;
+}
+
+/* The image named, and, where that is a cue sheet, its file of sectors. */
+static void port_NoteImage(const char *path) {
+    char sectors[PATH_BYTES_MAX];
+
+    port_NoteImageFile(path);
+    if (port_SectorsOfCue(path, sectors, sizeof(sectors))) {
+        port_NoteImageFile(sectors);
+    }
+}
+
+/* What the mods made from the disc are made for (prepare.c): the
+ * program's version, without its commit, and the disc's sectors by their
+ * size and sum. */
+static void port_DiscModsKey(const char *image, char *key, size_t room) {
+    char sectors[PATH_BYTES_MAX];
+    const char *version = port_GetVersionText();
+    const char *commit = strstr(version, " (");
+    long long size = 0;
+    u32 sum = 0;
+    u32 summed;
+
+    if (!port_SectorsOfCue(image, sectors, sizeof(sectors))) {
+        snprintf(sectors, sizeof(sectors), "%s", image);
+    }
+    port_SumImageFile(sectors, &size, &sum, &summed);
+    snprintf(key, room, "%.*s disc %lld-%08X",
+             commit != NULL ? (int)(commit - version) : (int)strlen(version),
+             version, size, (unsigned)sum);
 }
 
 /* ---- starting again, online ---- */
@@ -796,6 +842,8 @@ int main(int argc, char **argv) {
             options->no_sound = 1;
         } else if (strcmp(word, "--hidden") == 0) {
             options->is_hidden = 1;
+        } else if (strcmp(word, "--prepare-only") == 0) {
+            options->prepare_only = 1;
         } else if (strcmp(word, "--no-fps") == 0) {
             no_fps = 1;
         } else if (strcmp(word, "--no-log") == 0) {
@@ -1133,6 +1181,28 @@ int main(int argc, char **argv) {
     }
     if (image != NULL) {
         port_NoteImage(image);
+    }
+    /* the mods made from the player's disc, the first time it is played
+     * (prepare.c): in a player's session with the mods beside the
+     * program, or for --prepare-only, which makes them and ends */
+    if (image != NULL &&
+        (options->prepare_only ||
+         (!has_end && !has_mods && !options->is_fast && g_port_settings.mods &&
+          g_port_settings.disc_mods))) {
+        char key[PATH_BYTES_MAX];
+        s32 closed = 0;
+        s32 failed;
+
+        port_DiscModsKey(image, key, sizeof(key));
+        port_Note("prepare: the disc's mods are made for \"%s\"", key);
+        failed = port_PrepareMods(beside, image, key, options->is_hidden,
+                                  options->tap_window, &closed);
+        if (options->prepare_only || closed) {
+            code = options->prepare_only && failed ? PORT_EXIT_FAILED
+                                                   : PORT_EXIT_OK;
+            port_EndSession(code);
+            return code;
+        }
     }
 
     port_Say("ReBushido in a window. Escape pauses and goes back; closing "

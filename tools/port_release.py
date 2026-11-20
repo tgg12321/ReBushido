@@ -16,7 +16,10 @@ is not in git:
 <version> is RB_VERSION_NUMBER of include/rebushido.h, <commit> the build's
 own (build/port-sdl/windows/git_hash.txt). The zip holds one folder of that
 name with rebushido.exe, SDL2.dll, rebushido.exe.sym, mods/ (the mods the
-build ships), README.txt (tools/port_release_readme.txt), LICENSE.txt,
+build ships), prepare/ (what makes the mods of the player's own disc at the
+first start: tools/port_prepare_bundle.py's Python, numpy, Pillow and tools,
+and the plans the program plays, from its .sym; docs/MODS.md, "Made from
+your disc"), README.txt (tools/port_release_readme.txt), LICENSE.txt,
 NOTICE.txt and licenses/ (SDL 2's, the fonts', stb's).
 
 Nothing of the game goes in, and it refuses a package that has any:
@@ -55,6 +58,8 @@ import zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 
+import port_prepare  # noqa: E402  (tools/port_prepare.py)
+import port_prepare_bundle  # noqa: E402  (tools/port_prepare_bundle.py)
 import port_sdl_build  # noqa: E402  (tools/port_sdl_build.py)
 
 BUILT = 'build/port-sdl/windows'
@@ -65,7 +70,7 @@ FONTS = 'src/port/fonts'
 STB = ['src/port/vendor/stb_vorbis.c', 'src/port/window/stb_truetype.h']
 PROGRAM = ['rebushido.exe', 'SDL2.dll', 'rebushido.exe.sym']
 TOP_FILES = PROGRAM + ['README.txt', 'LICENSE.txt', 'NOTICE.txt']
-TOP_FOLDERS = ['mods', 'licenses']
+TOP_FOLDERS = ['mods', 'licenses', 'prepare']
 # What a player's own folder holds and a package never may: the disc, the
 # cards, the settings, the logs and the pictures.
 REFUSED_ENDINGS = ('.bin', '.cue', '.iso', '.chd', '.img', '.mcd', '.cfg', '.log')
@@ -93,8 +98,22 @@ whose own terms allow that. It has in it, besides:
   License 1.1, licenses/OFL-*.txt.
 - Sony's libsnd and libspu, reconstructed with the rest of PsyQ (above).
 
+The mods made from the player's disc
+-----------------------------------
+prepare/ holds what rebushido.exe runs, the first time it starts with a
+disc, to make the remastered art, the stages' textures and the fighters
+from that disc into mods/: CPython for Windows with numpy and Pillow, and
+this repository's own tools (prepare/tools/, the same licence as the rest).
+Python is under the PSF licence, numpy under the BSD licence with what its
+wheel bundles (OpenBLAS, LAPACK, the GCC runtime under its Runtime Library
+Exception), Pillow under the MIT-CMU licence with the libraries it builds
+in: their texts are in prepare/licenses/ (README.txt there says which is
+which). They are programs of their own that rebushido.exe starts; none is
+built into it.
+
 Nothing of Bushido Blade 2's data is in this package: the program reads it
-from the player's own image of the disc.
+from the player's own image of the disc, and makes the mods above from it
+on the player's PC.
 """
 
 
@@ -184,9 +203,20 @@ def licence_of_stb(path):
                                   '-' * 60, body)
 
 
-def contents(built, sdl_licence, mods, version, commit):
+def prepare_files(built):
+    """{path under prepare/: bytes}: the Python and the tools
+    (tools/port_prepare_bundle.py) and the plans for the program in
+    `built`, from its .sym."""
+    out = port_prepare_bundle.files()
+    scratch = os.path.join(ROOT, 'build', 'port-prepare', 'plans')
+    for name, text in port_prepare.plans(os.path.join(built, 'rebushido.exe.sym'), scratch).items():
+        out['plans/' + name] = text.encode('utf-8')
+    return out
+
+
+def contents(built, sdl_licence, mods, version, commit, prepare):
     """{path in the package: bytes}, all of it, from the build's folder
-    `built` and the repository."""
+    `built`, the repository and `prepare` ({path under prepare/: bytes})."""
     out = {}
     for name in PROGRAM:
         path = os.path.join(built, name)
@@ -211,6 +241,8 @@ def contents(built, sdl_licence, mods, version, commit):
         if name.startswith('OFL') and name.endswith('.txt'):
             out['licenses/' + name] = crlf(read(os.path.join(FONTS, name)).decode('utf-8'))
     out['licenses/stb-LICENSE.txt'] = crlf('\n\n'.join(licence_of_stb(p) for p in STB))
+    for rel, data in prepare.items():
+        out['prepare/' + rel] = data
     return out
 
 
@@ -381,7 +413,7 @@ def package(release, no_build):
             fail(note)
         print('port_release: ' + note)
     name = 'ReBushido-PC-%s-%s' % (version, commit)
-    files = contents(BUILT, sdl_licence, mods, version, commit)
+    files = contents(BUILT, sdl_licence, mods, version, commit, prepare_files(BUILT))
     os.makedirs(RELEASE, exist_ok=True)
     folder = os.path.join(RELEASE, name)
     if os.path.exists(folder):
@@ -429,6 +461,10 @@ def plants():
         ('the arena changed', 'mods/arena-courtyard/arenas/courtyard.arena', None),
         ('a file more at the top', 'extra.txt', b'hello\n'),
         ('a folder more at the top', 'tools/x.py', b'print(1)\n'),
+        ('a mod made from the disc in prepare/', 'prepare/mods/art/mod.txt', b'name = art\n'),
+        ('a dump left in prepare/', 'prepare/work/art-dump/16x16-4-0.png', b'\x89PNG\r\n\x1a\n'),
+        ('the prepare work folder', 'prepare-work/key.txt', b'ReBushido\n'),
+        ('a tool of prepare/ changed', 'prepare/tools/port_prepare.py', None),
         ('the program changed', 'rebushido.exe', None),
     ]
 
@@ -450,7 +486,9 @@ def self_test(report=print):
         write_folder(os.path.join(built, 'mods'), mods)
         licence = os.path.join(work, 'SDL-LICENSE.txt')
         write_folder(work, {'SDL-LICENSE.txt': b'made up for the test\n'})
-        files = contents(built, licence, mods, version_number(), '0000000')
+        prepare = {'python/python.exe': b'made up for the test\n', 'tools/port_prepare.py': b'print(1)\n',
+                   'plans/art-vs.plan': b'limit 1\n'}
+        files = contents(built, licence, mods, version_number(), '0000000', prepare)
         written = dict((rel, sha256(data)) for rel, data in files.items())
         clean = os.path.join(work, 'clean')
         write_folder(clean, files)
