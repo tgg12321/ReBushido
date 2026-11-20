@@ -113,6 +113,10 @@ CAPTION = dict(look='plain', top=(255, 255, 255), bottom=(197, 197, 197), dark=(
 TITLE = dict(look='edge', top=(255, 255, 255), bottom=(165, 165, 173), dark=(8, 8, 8))
 GROUP = dict(look='edge', top=(255, 255, 0), bottom=(197, 197, 8), dark=(0, 0, 0))
 GROUP_TITLE = dict(look='edge', top=(255, 255, 255), bottom=(197, 197, 197), dark=(16, 16, 16))
+# the group battle card's names: white, a little greyer at the foot, as the
+# game's own are
+CARD_NAME_TOP = (255, 255, 255)
+CARD_NAME_BOTTOM = (214, 214, 214)
 
 
 def text(words, boxes, font, look, top, bottom, dark, panel=None, aspect=ASPECT):
@@ -696,9 +700,8 @@ BLOCKS = [
     # The group battle's pages: the fighters every unlock brings, and the
     # weapons, in the black of the list and the blue and red of the two
     # sides; its own small Select Weapon; and the card before the battle
-    # (the sides' names, 1ST 2ND 3RD; not its fighters' names, which the card
-    # draws a second time where these pictures do not reach). Measured from
-    # a dump of a group battle with --unlock-all.
+    # (the sides' names, 1ST 2ND 3RD; its fighters' names are at the end of
+    # this list). Measured from a dump of a group battle with --unlock-all.
     # NIGHTSTALKER
     block((94, 11), [
         text('NIGHTSTALKER', [(0, 1, 92, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
@@ -951,6 +954,152 @@ BLOCKS = [
         text('Shainto', [(0, 0, 73, 8)], 'serif', 'edge', (176, 176, 176), (176, 176, 176), (70, 70, 70)),
     ], [
         ('64x10-4-140e8cf74936a33d', 0, 0), ('9x10-4-ab8baf5fd6ed9add', 64, 0),
+    ]),
+    # The card before a group battle's fight and after each (hud.c,
+    # hud_DrawTeamScores): each fighter's name from the game's sheet of the
+    # twenty (g_hud_name_cells; NIGHTSTALKER's tail, g_hud_name_8_tail_cells,
+    # is its last three pieces), white; the loser's is the same texture dimmed
+    # by the sprite's colour. Measured from the video memory of a group
+    # battle's --dump-textures (the stage's meshes/stage_32.bin).
+    # KANNUKI
+    block((75, 12), [
+        text('KANNUKI', [(0, 0, 75, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-4c722f3b00911e3f', 0, 0), ('32x12-4-6280b85549615ce9', 32, 0),
+        ('11x12-4-0be04b7a4ddb7fdf', 64, 0),
+    ]),
+    # TATSUMI
+    block((75, 12), [
+        text('TATSUMI', [(0, 0, 75, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-615e188852b435c9', 0, 0), ('32x12-4-930d3010d0cff96d', 32, 0),
+        ('11x12-4-914aac30e3c5eecf', 64, 0),
+    ]),
+    # MIKADO
+    block((66, 12), [
+        text('MIKADO', [(0, 0, 66, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-6b02fe1df7faca5f', 0, 0), ('32x12-4-d38f151af99b5e12', 32, 0),
+        ('2x12-4-de01bf080559e37c', 64, 0),
+    ]),
+    # UTSUSEMI
+    block((86, 12), [
+        text('UTSUSEMI', [(1, 0, 86, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-7d180ce3068b8c78', 0, 0), ('32x12-4-e3cd32d9268340bc', 32, 0),
+        ('22x12-4-20cc1ef907023e2a', 64, 0),
+    ]),
+    # RED SHADOW
+    block((117, 12), [
+        text('RED SHADOW', [(1, 0, 117, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-38250a2e56d886f4', 0, 0), ('32x12-4-7e6088f4d028ffc4', 32, 0),
+        ('53x12-4-c3a273d3ac065eaa', 64, 0),
+    ]),
+    # TSUBAME
+    block((82, 12), [
+        text('TSUBAME', [(0, 0, 82, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-fafe512f39e6d1cf', 0, 0), ('32x12-4-903c925f3804c9ad', 32, 0),
+        ('18x12-4-061f77964a932169', 64, 0),
+    ]),
+    # SAZANKA
+    block((80, 12), [
+        text('SAZANKA', [(0, 0, 80, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-11fdc349b8de0f08', 0, 0), ('32x12-4-d9e931967c9d2c30', 32, 0),
+        ('16x12-4-cf77a07e1ac3cdc5', 64, 0),
+    ]),
+    # SUMINAGASHI
+    block((119, 12), [
+        text('SUMINAGASHI', [(0, 0, 119, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-c503b2e45aa0cbf0', 0, 0), ('32x12-4-b84968e4bae5fa81', 32, 0),
+        ('55x12-4-480de9eb96df47aa', 64, 0),
+    ]),
+    # NIGHTSTALKER
+    block((128, 12), [
+        text('NIGHTSTALKER', [(0, 0, 128, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('16x12-4-a8bd3871e1424272', 0, 0), ('16x12-4-30a483e064d8f655', 16, 0),
+        ('16x12-4-29c004cc871dc3ec', 32, 0), ('16x12-4-3b83613d7c431d08', 48, 0),
+        ('16x12-4-7bbf89a2f6ed2f23', 64, 0), ('48x12-4-f004a1d94cbd72ed', 80, 0),
+    ]),
+    # MATSUMUSHI
+    block((115, 12), [
+        text('MATSUMUSHI', [(1, 0, 115, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-72cecb6e3069f392', 0, 0), ('32x12-4-ce3ceae67cdc8993', 32, 0),
+        ('51x12-4-7f160821b690e224', 64, 0),
+    ]),
+    # GENGORO
+    block((88, 12), [
+        text('GENGORO', [(1, 0, 88, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-c897463cbeccb949', 0, 0), ('32x12-4-b7097f9ec3410c3d', 32, 0),
+        ('24x12-4-cf8fc891dc359ca9', 64, 0),
+    ]),
+    # KAUN
+    block((48, 12), [
+        text('KAUN', [(1, 0, 48, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('16x12-4-848ce7f03fbbb0a1', 0, 0), ('16x12-4-769e375a19162fc4', 16, 0),
+        ('16x12-4-9d30cc4e32650020', 32, 0),
+    ]),
+    # JO
+    block((23, 12), [
+        text('JO', [(0, 0, 23, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('7x12-4-9a7b126cb571fb10', 0, 0), ('7x12-4-ee006a9676771ff4', 7, 0), ('9x12-4-e25863b5a98f547e', 14, 0),
+    ]),
+    # HONGOU
+    block((78, 12), [
+        text('HONGOU', [(1, 0, 78, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-8203a59a5dc01508', 0, 0), ('32x12-4-4ff4e5bf6ecf5054', 32, 0),
+        ('14x12-4-eae5258c59b5acf6', 64, 0),
+    ]),
+    # KATZE
+    block((53, 12), [
+        text('KATZE', [(1, 0, 53, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('16x12-4-e1cb96c14c0f5dd1', 0, 0), ('16x12-4-d5b4aa737fff2503', 16, 0),
+        ('21x12-4-f5db6f33ae8224e3', 32, 0),
+    ]),
+    # HIGHWAYMAN
+    block((122, 12), [
+        text('HIGHWAYMAN', [(1, 0, 122, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-92f7072af2f8aeed', 0, 0), ('32x12-4-2972e89215775fc5', 32, 0),
+        ('58x12-4-8aa579e522c1512e', 64, 0),
+    ]),
+    # CHIHIRO
+    block((72, 12), [
+        text('CHIHIRO', [(1, 0, 72, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-ff9e177be2627210', 0, 0), ('32x12-4-c9c96e43c9f903e2', 32, 0),
+        ('8x12-4-b6e9a5d631c77d39', 64, 0),
+    ]),
+    # UTAMARU
+    block((86, 12), [
+        text('UTAMARU', [(1, 0, 85, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-155b1a8aa62dcd2b', 0, 0), ('32x12-4-29fce332cf0d4070', 32, 0),
+        ('22x12-4-42f02630b0611b46', 64, 0),
+    ]),
+    # TONY UMEDA
+    block((118, 12), [
+        text('TONY UMEDA', [(0, 0, 116, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-bbc8e7b1b5377dab', 0, 0), ('32x12-4-1fab298c51a628b8', 32, 0),
+        ('54x12-4-0dcecf0f10980263', 64, 0),
+    ]),
+    # ISOHACHI
+    block((82, 12), [
+        text('ISOHACHI', [(1, 0, 82, 12)], 'thin', 'plain', CARD_NAME_TOP, CARD_NAME_BOTTOM, (0, 0, 0)),
+    ], [
+        ('32x12-4-22954d4c95990b88', 0, 0), ('32x12-4-a1ee6b0eea567260', 32, 0),
+        ('18x12-4-be8c58b84ba0710e', 64, 0),
     ]),
 ]
 

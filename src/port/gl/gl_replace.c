@@ -354,9 +354,9 @@ static void port_ReplaceLoaded(PortGlLoad *load) {
 
 /* The mod's picture at `path` asked for, for the slot: read beside the
  * game, the slot drawing the game's own texture until it is on the card,
- * or at once where it cannot be (gl_load.h). */
+ * or at once where it cannot be (gl_load.h) or `at_once` asks. */
 static void port_ReplaceLoad(
-    ReplaceSlot *slot, const char *path, const char *name) {
+    ReplaceSlot *slot, const char *path, const char *name, s32 at_once) {
     PortGlLoad load;
     size_t length = strlen(name) + 1;
 
@@ -364,6 +364,7 @@ static void port_ReplaceLoad(
     load.path = path;
     load.done = port_ReplaceLoaded;
     load.key = slot->key;
+    load.at_once = at_once;
     load.owner = malloc(length);
     slot->state = SLOT_LOADING;
     slot->texture = 0;
@@ -633,9 +634,10 @@ static s32 port_ReplaceMixOf(const PortTextureRegion *region) {
 
 /* What became of the region's key, worked out the first time it is
  * seen: its texture, or 0, and in `mix` whether it mixes. A key with no
- * replacement is written out then, where `may_dump` says. */
+ * replacement is written out then, where `may_dump` says; one with a
+ * replacement has it read at once where `at_once` says. */
 static u32 port_ReplaceOf(const PortTextureRegion *region, s32 is_picture,
-                          s32 may_dump, s32 *mix, u32 *tint) {
+                          s32 may_dump, s32 at_once, s32 *mix, u32 *tint) {
     u64 key = port_TextureKey(g_port_gl_vram, region);
     ReplaceSlot *slot = port_ReplaceSlotOf(key);
     char name[PORT_MOD_KEY_SIZE];
@@ -682,7 +684,7 @@ static u32 port_ReplaceOf(const PortTextureRegion *region, s32 is_picture,
         return 0;
     }
     slot->mix = is_picture ? PORT_GL_MIX_TEXEL : port_ReplaceMixOf(region);
-    port_ReplaceLoad(slot, path, name);
+    port_ReplaceLoad(slot, path, name, at_once);
     if (slot->state != SLOT_FAILED) {
         port_ReplaceKeepForFades(region, is_picture, slot);
     }
@@ -732,7 +734,8 @@ static s32 port_ReplaceRegionOf(
            region->h <= REGION_SIDE_MAX;
 }
 
-s32 port_GlReplaceFind(const PortRemasterPrim *prim, PortGlReplacement *out) {
+s32 port_GlReplaceFind(
+    const PortRemasterPrim *prim, s32 is_on_show, PortGlReplacement *out) {
     PortTextureRegion region;
 
     /* The 2D layer. A face of the scene -- one the renderer named, or one
@@ -745,7 +748,8 @@ s32 port_GlReplaceFind(const PortRemasterPrim *prim, PortGlReplacement *out) {
         !port_ReplaceRegionOf(prim, &region)) {
         return FALSE;
     }
-    out->texture = port_ReplaceOf(&region, FALSE, TRUE, &out->mix, &out->tint);
+    out->texture =
+        port_ReplaceOf(&region, FALSE, TRUE, is_on_show, &out->mix, &out->tint);
     if (out->texture == 0) {
         return FALSE;
     }
@@ -831,5 +835,5 @@ u32 port_GlReplaceFindPicture(s32 x, s32 y, s32 w, s32 h, s32 display_x,
     if (!is_shown && port_ModsCount(PORT_MOD_TEXTURES) == 0) {
         return 0;
     }
-    return port_ReplaceOf(&region, TRUE, is_shown, &mix, tint);
+    return port_ReplaceOf(&region, TRUE, is_shown, FALSE, &mix, tint);
 }
