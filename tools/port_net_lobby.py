@@ -78,9 +78,9 @@ PICTURES = os.environ.get('RB_ONLINE_PICTURES')
 _write_session_plan = port_net.write_session_plan
 
 
-def _locked_plan(program, side, folder):
+def _locked_plan(program, side, folder, *more):
     with PLAN_LOCK:
-        return _write_session_plan(program, side, folder)
+        return _write_session_plan(program, side, folder, *more)
 
 
 port_net.write_session_plan = _locked_plan
