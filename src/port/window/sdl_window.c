@@ -741,6 +741,13 @@ static void port_OpenAudio(void) {
     SDL_AudioSpec want;
     SDL_AudioSpec have;
 
+    /* a window never shown is a test's or a tool's: it paces by SDL's
+     * dummy device and never sounds on the PC's own (the owner,
+     * 2026-11-19, heard the agents' hidden runs) */
+    if (g_port_window_options.is_hidden) {
+        SDL_SetHintWithPriority(
+            SDL_HINT_AUDIODRIVER, "dummy", SDL_HINT_OVERRIDE);
+    }
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
         port_Say("no sound: %s", SDL_GetError());
         return;
