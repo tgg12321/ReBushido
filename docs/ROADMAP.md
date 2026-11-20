@@ -400,3 +400,28 @@ the stage").
     the sky, the fighters, the bloom and the stage's lights (their files'
     `times`) all follow it; night a weak cool soft moon with the stage's
     lights brightened. Left: the owner's eye on each time's numbers.
+21. **Match rules for 1v1** (the owner, 2026-11-20): beside the game's
+    own one fight, a **Stock** match (each player has N lives; a kill
+    takes one; the match ends when a player has none, then back to the
+    stage select) and **First to N** (rounds until one player has N
+    wins, then the stage select). Chosen before the fight (versus, Vs.
+    CPU, online: the host's rule holds), shown on the HUD (lives or the
+    score), with the game's own kill and round flow inside each fight.
+22. **Online lobbies of more than two** (after the seamless online
+    menus): a room holds several players and spectators; spectators
+    watch a match live (the session's inputs, rolled forward, no
+    rollback of their own); a **rotation** of three (A+B, B+C, C+A, the
+    winner staying or a fixed turn, as the host sets); players in a room
+    may also start their own matches beside it.
+23. **Replays, saved by themselves**: every fight's inputs, seed, cards
+    and settings that the state depends on, a few KB a fight, played
+    back by running the game again (the port is deterministic); a
+    replays page to watch, skip, slow and export; held by a test that a
+    replay's state hashes match the fight's own. Online matches too.
+24. **2v2** (longer term): four fighters in one fight, two teams; a
+    button retargets to the other enemy; online with four players
+    (rollback of four, the bench's four-fighter case as the budget).
+25. **A ladder and Elo** (longer term): ranked matches through the
+    lobby server, an Elo (or Glicko) rating per player, a ladder page;
+    identities, anti-cheat by replay checks (item 23), and the
+    server's own care for the data it keeps.
