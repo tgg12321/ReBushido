@@ -21,6 +21,14 @@ void fight_ApplyConfig(void) {
     s8 stage = g_fight_config.stage;
     s32 every_hit_kills = g_fight_config.every_hit_kills;
 
+#if RB_PORT
+    /* ReBushido's top menu has no first person's view (port_top_menu.h):
+     * every fight is seen from the side */
+    if (port_TopMenuIsOn()) {
+        first_person = 0;
+        g_fight_config.first_person = 0;
+    }
+#endif
     g_fight_viewer = 0;
     g_fight_mode = mode;
     g_fight_first_person = first_person;

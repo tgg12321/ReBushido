@@ -182,6 +182,12 @@ go both ways ("The options page" has what ReBushido adds to the card).
 A ReBushido disc shows a page of its own first, before the boot image and
 the opening: the name and the version, a row for each setting, what the
 buttons do, and a line about the memory card.
+The PlayStation disc keeps it: it has no other menu of ReBushido's. The
+native port's window does not show it: with ReBushido's top menu (the
+window's `menu = rebushido`, as built) the program goes straight to the
+opening, Bugfixes is the settings menu's `bugfixes` and Graphics the
+window's own (`PORT.md`, "ReBushido's top menu"); with `menu =
+original`, and in every run of a test's plan, the page is as here.
 
 | Row | Choices | |
 |---|---|---|

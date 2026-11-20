@@ -15,9 +15,7 @@
 #define TEXT_BYTES 0x10000
 /* how much room the text is given to grow in, a line at a time */
 #define TEXT_ROOM (TEXT_BYTES + 0x4000)
-/* the first page's rows: a header for each group, every setting of the
- * menu and the rows after them (48 was full with 37 settings, and a
- * row past it was left off: Play online, Back, Quit) */
+/* a page's rows: the most is a group's, its settings and Back */
 #define ROWS_MAX 96
 #define LABEL_BYTES 160
 #define VALUE_BYTES 160
@@ -29,16 +27,21 @@
 #define COLOR_PANEL 0xF60E121EU
 #define COLOR_EDGE 0xFF6A5530U
 #define COLOR_TITLE 0xFFE6C877U
-#define COLOR_HEADER 0xFFC9A55AU
 #define COLOR_TEXT 0xFFEDEDF2U
 #define COLOR_DIM 0xFF8E96AAU
 #define COLOR_BAR 0xFF26304AU
 #define COLOR_BAR_EDGE 0xFFE6C877U
 #define COLOR_NOTE 0xFFF0A848U
 #define COLOR_CAPTURE 0xF0080A12U
+#define COLOR_DEFAULT 0xFF6E7A92U
+#define COLOR_CHANGED 0xFFE6C877U
+
+/* What marks the value built in, beside the cursor's setting. */
+#define MENU_BUILT_IN "default"
 
 enum {
-    PAGE_MAIN,
+    PAGE_MAIN,    /* the groups, Play online, back to the game, Quit */
+    PAGE_GROUP,   /* one group's settings */
     PAGE_BUTTONS, /* one pad's */
     PAGE_ONLINE,  /* Play online: host or join a session of netplay */
 };
@@ -51,10 +54,9 @@ enum {
 
 /* What a row of a page is. */
 enum {
-    ROW_HEADER,   /* a group's title: never the cursor's */
-    ROW_CHOICE,   /* a setting of port_FindChoice: `index` */
-    ROW_BUGFIXES, /* the game's own setting */
-    ROW_BUTTONS,  /* a pad's buttons: `index` the pad */
+    ROW_GROUP,   /* a group's page: `index` the group */
+    ROW_CHOICE,  /* a setting of port_FindChoice: `index` */
+    ROW_BUTTONS, /* a pad's buttons: `index` the pad */
     ROW_CLOSE,
     ROW_BUTTON, /* a button of the pad: `index` into g_port_menu_buttons */
     ROW_RESET,  /* the pad's buttons back to the layout's */
@@ -90,12 +92,17 @@ static const char * const g_port_menu_buttons[BUTTONS][2] = {
 static struct {
     s32 is_open;
     s32 page;
-    s32 pad; /* PAGE_BUTTONS's */
+    s32 group; /* PAGE_GROUP's */
+    s32 pad;   /* PAGE_BUTTONS's */
     MenuRow rows[ROWS_MAX];
     s32 row_count;
     s32 cursor;
-    s32 main_cursor; /* where the cursor was on the first page */
-    s32 first;       /* the first row in view */
+    s32 main_cursor;  /* where the cursor was on the first page */
+    s32 group_cursor; /* ... and on the group's page */
+    /* the page the next opening is on, and this one's (PORT_MENU_OPEN_...) */
+    s32 open_on;
+    s32 opened_on;
+    s32 first; /* the first row in view */
     s32 is_capturing;
     /* a row of the Play online page being typed into, and what is typed */
     s32 is_typing;
@@ -124,10 +131,6 @@ static void port_MenuAddRow(s32 kind, s32 index) {
     }
 }
 
-static s32 port_MenuIsCursorRow(s32 row) {
-    return g_menu.rows[row].kind != ROW_HEADER;
-}
-
 static void port_MenuBuild(s32 page, s32 cursor) {
     s32 group;
     s32 i;
@@ -136,22 +139,25 @@ static void port_MenuBuild(s32 page, s32 cursor) {
     g_menu.row_count = 0;
     if (page == PAGE_MAIN) {
         for (group = 0; group < PORT_CHOICE_GROUPS; group++) {
-            const PortChoiceGroup *of = port_FindChoiceGroup(group);
-
-            port_MenuAddRow(ROW_HEADER, group);
-            for (i = 0; i < of->count; i++) {
-                port_MenuAddRow(ROW_CHOICE, of->first + i);
-            }
-            if (group == PORT_CHOICE_GROUPS - 1) {
-                port_MenuAddRow(ROW_BUTTONS, 0);
-                port_MenuAddRow(ROW_BUTTONS, 1);
+            if (port_FindChoiceGroup(group)->count > 0 ||
+                group == PORT_MENU_CONTROLS - 1) {
+                port_MenuAddRow(ROW_GROUP, group);
             }
         }
-        port_MenuAddRow(ROW_HEADER, -1);
-        port_MenuAddRow(ROW_BUGFIXES, 0);
         port_MenuAddRow(ROW_ONLINE, 0);
         port_MenuAddRow(ROW_CLOSE, 0);
         port_MenuAddRow(ROW_QUIT, 0);
+    } else if (page == PAGE_GROUP) {
+        const PortChoiceGroup *of = port_FindChoiceGroup(g_menu.group);
+
+        for (i = 0; i < of->count; i++) {
+            port_MenuAddRow(ROW_CHOICE, of->first + i);
+        }
+        if (g_menu.group == PORT_MENU_CONTROLS - 1) {
+            port_MenuAddRow(ROW_BUTTONS, 0);
+            port_MenuAddRow(ROW_BUTTONS, 1);
+        }
+        port_MenuAddRow(ROW_BACK, 0);
     } else if (page == PAGE_ONLINE) {
         port_MenuAddRow(ROW_NET_ROLE, 0);
         if (g_port_settings.net_role == 0) {
@@ -172,10 +178,6 @@ static void port_MenuBuild(s32 page, s32 cursor) {
         port_MenuAddRow(ROW_BACK, 0);
     }
     g_menu.cursor = cursor;
-    while (g_menu.cursor < g_menu.row_count &&
-           !port_MenuIsCursorRow(g_menu.cursor)) {
-        g_menu.cursor++;
-    }
     if (g_menu.cursor >= g_menu.row_count) {
         g_menu.cursor = g_menu.row_count - 1;
     }
@@ -259,6 +261,10 @@ static s32 port_MenuChoiceValue(s32 choice) {
     if (strcmp(port_FindChoice(choice)->name, "graphics") == 0) {
         return port_WindowIsRemastered() ? 1 : 0;
     }
+    if (strcmp(port_FindChoice(choice)->name, "bugfixes") == 0) {
+        /* the game's own, which the options page at boot may have set */
+        return port_GetBugfixes() ? 1 : 0;
+    }
     return port_GetChoice(&g_port_settings, choice);
 }
 
@@ -301,10 +307,10 @@ static void port_MenuDescribe(
     *is_arrows = FALSE;
     value[0] = 0;
     switch (row->kind) {
-    case ROW_HEADER:
-        snprintf(label, LABEL_BYTES, "%s",
-                 row->index >= 0 ? port_FindChoiceGroup(row->index)->title
-                                 : "The game");
+    case ROW_GROUP:
+        snprintf(
+            label, LABEL_BYTES, "%s", port_FindChoiceGroup(row->index)->title);
+        snprintf(value, VALUE_BYTES, "...");
         break;
     case ROW_CHOICE: {
         const PortChoice *choice = port_FindChoice(row->index);
@@ -316,11 +322,6 @@ static void port_MenuDescribe(
         *is_arrows = TRUE;
         break;
     }
-    case ROW_BUGFIXES:
-        snprintf(label, LABEL_BYTES, "Bug fixes");
-        snprintf(value, VALUE_BYTES, "%s", port_GetBugfixes() ? "On" : "Off");
-        *is_arrows = TRUE;
-        break;
     case ROW_BUTTONS:
         snprintf(label, LABEL_BYTES, "Player %d's buttons", row->index + 1);
         snprintf(value, VALUE_BYTES, "...");
@@ -410,11 +411,14 @@ static const char *port_MenuHelp(void) {
                "as it is";
     }
     switch (row->kind) {
+    case ROW_GROUP:
+        return port_FindChoiceGroup(row->index)->help;
     case ROW_CHOICE:
         return port_FindChoice(row->index)->help;
-    case ROW_BUGFIXES:
-        return "The original's bugs fixed: for this session (the options "
-               "page at boot keeps it on the card)";
+    case ROW_CLOSE:
+        return "The settings closed; the game goes on where it was";
+    case ROW_BACK:
+        return "Back to the page before";
     case ROW_BUTTONS:
         return "Which keys and controller buttons press each button";
     case ROW_BUTTON:
@@ -601,15 +605,24 @@ static void port_MenuStepChoice(s32 choice, s32 step) {
 }
 
 static void port_MenuMove(s32 step) {
-    s32 at = g_menu.cursor;
-    s32 i;
+    if (g_menu.row_count > 0) {
+        g_menu.cursor =
+            (g_menu.cursor + step + g_menu.row_count) % g_menu.row_count;
+    }
+}
 
-    for (i = 0; i < g_menu.row_count; i++) {
-        at = (at + step + g_menu.row_count) % g_menu.row_count;
-        if (port_MenuIsCursorRow(at)) {
-            g_menu.cursor = at;
-            return;
-        }
+/* Back a page: from a pad's buttons to the controls, from a group's page
+ * or Play online to the first page, and from the first page (or a Play
+ * online page the menu was opened on) out of the menu. */
+static void port_MenuBack(void) {
+    if (g_menu.page == PAGE_BUTTONS) {
+        port_MenuBuild(PAGE_GROUP, g_menu.group_cursor);
+    } else if (g_menu.page == PAGE_GROUP ||
+               (g_menu.page == PAGE_ONLINE &&
+                g_menu.opened_on != PORT_MENU_OPEN_ONLINE)) {
+        port_MenuBuild(PAGE_MAIN, g_menu.main_cursor);
+    } else {
+        port_MenuClose();
     }
 }
 
@@ -630,14 +643,16 @@ static void port_MenuAccept(void) {
     const MenuRow *row = &g_menu.rows[g_menu.cursor];
 
     switch (row->kind) {
+    case ROW_GROUP:
+        g_menu.main_cursor = g_menu.cursor;
+        g_menu.group = row->index;
+        port_MenuBuild(PAGE_GROUP, 0);
+        break;
     case ROW_CHOICE:
         port_MenuStepChoice(row->index, 1);
         break;
-    case ROW_BUGFIXES:
-        port_SetBugfixes(!port_GetBugfixes());
-        break;
     case ROW_BUTTONS:
-        g_menu.main_cursor = g_menu.cursor;
+        g_menu.group_cursor = g_menu.cursor;
         g_menu.pad = row->index;
         port_MenuBuild(PAGE_BUTTONS, 0);
         break;
@@ -682,7 +697,7 @@ static void port_MenuAccept(void) {
         port_Say("settings menu: Quit");
         port_Quit(PORT_EXIT_OK);
     default:
-        port_MenuBuild(PAGE_MAIN, g_menu.main_cursor);
+        port_MenuBack();
         break;
     }
 }
@@ -724,8 +739,6 @@ void port_MenuPress(s32 what) {
     case PORT_MENU_RIGHT:
         if (row->kind == ROW_CHOICE) {
             port_MenuStepChoice(row->index, what == PORT_MENU_LEFT ? -1 : 1);
-        } else if (row->kind == ROW_BUGFIXES) {
-            port_SetBugfixes(!port_GetBugfixes());
         } else if (g_menu.page == PAGE_ONLINE) {
             port_MenuStepOnline(row, what == PORT_MENU_LEFT ? -1 : 1);
         }
@@ -734,11 +747,7 @@ void port_MenuPress(s32 what) {
         port_MenuAccept();
         break;
     case PORT_MENU_BACK:
-        if (g_menu.page != PAGE_MAIN) {
-            port_MenuBuild(PAGE_MAIN, g_menu.main_cursor);
-        } else {
-            port_MenuClose();
-        }
+        port_MenuBack();
         break;
     case PORT_MENU_CLOSE:
         port_MenuClose();
@@ -801,9 +810,23 @@ void port_MenuOpen(const char *path) {
     }
     g_menu.note[0] = 0;
     g_menu.is_capturing = FALSE;
+    g_menu.is_typing = FALSE;
+    g_menu.opened_on = g_menu.open_on;
+    g_menu.open_on = PORT_MENU_OPEN_MAIN;
     port_MenuBuild(PAGE_MAIN, 0);
+    if (g_menu.opened_on == PORT_MENU_OPEN_ONLINE) {
+        /* Online Play: its page, Back out of the menu */
+        for (i = 0; i < g_menu.row_count; i++) {
+            if (g_menu.rows[i].kind == ROW_ONLINE) {
+                g_menu.main_cursor = i;
+            }
+        }
+        port_MenuBuild(PAGE_ONLINE, 0);
+    }
     g_menu.is_open = TRUE;
 }
+
+void port_MenuOpenOn(s32 page) { g_menu.open_on = page; }
 
 s32 port_MenuIsOpen(void) { return g_menu.is_open; }
 
@@ -898,14 +921,18 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
     heading.size = size;
     x = pad * 2;
     y = pad + port_FontAscent();
+    if (g_menu.page == PAGE_GROUP) {
+        snprintf(label, sizeof(label), "Settings: %s",
+                 port_FindChoiceGroup(g_menu.group)->title);
+    } else {
+        snprintf(label, sizeof(label), "%s",
+                 g_menu.page == PAGE_MAIN     ? "ReBushido: settings"
+                 : g_menu.page == PAGE_ONLINE ? "ReBushido: play online"
+                 : g_menu.pad == 0            ? "Controls: player 1's buttons"
+                                              : "Controls: player 2's buttons");
+    }
     heading.color = COLOR_TITLE;
-    port_TextDraw(pixels, panel_w, panel_h, x, y + line / 4,
-                  g_menu.page == PAGE_MAIN     ? "ReBushido: settings"
-                  : g_menu.page == PAGE_ONLINE ? "ReBushido: play online"
-                  : g_menu.pad == 0            ? "ReBushido: player 1's buttons"
-                                    : "ReBushido: player 2's buttons",
-                  &heading);
-    heading.color = COLOR_HEADER;
+    port_TextDraw(pixels, panel_w, panel_h, x, y + line / 4, label, &heading);
     snprintf(value, sizeof(value), "%s", port_GetVersionText());
     port_FontDraw(
         pixels, panel_w, panel_h, panel_w - x - port_FontMeasure(value),
@@ -928,10 +955,7 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
     if (g_menu.cursor >= g_menu.first + rows_shown) {
         g_menu.first = g_menu.cursor - rows_shown + 1;
     }
-    if (g_menu.first > 0 && g_menu.rows[g_menu.first - 1].kind == ROW_HEADER &&
-        g_menu.cursor < g_menu.first + rows_shown - 1) {
-        g_menu.first--;
-    }
+
     for (i = g_menu.first;
          i < g_menu.row_count && i < g_menu.first + rows_shown; i++) {
         const MenuRow *row = &g_menu.rows[i];
@@ -941,13 +965,12 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
         u32 color = is_cursor ? COLOR_TEXT : COLOR_DIM;
 
         port_MenuDescribe(row, label, value, &is_arrows);
-        if (row->kind == ROW_HEADER) {
-            port_TextDraw(
-                pixels, panel_w, panel_h, x, baseline, label, &heading);
-            port_FillRect(pixels, panel_w, panel_h, x, y + line - 2,
+        if (g_menu.page == PAGE_MAIN && row->kind == ROW_ONLINE) {
+            /* the groups above, the rest below a rule */
+            port_FillRect(pixels, panel_w, panel_h, x, y + line / 8,
                           panel_w - 2 * x, 1, COLOR_EDGE);
-            y += line;
-            continue;
+            y += line / 4;
+            baseline += line / 4;
         }
         if (is_cursor) {
             port_FillRect(pixels, panel_w, panel_h, x - pad / 2, y + 1,
@@ -969,7 +992,17 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
         if (value[0] != 0) {
             char shown[VALUE_BYTES + 8];
             s32 width;
+            /* a setting's value: the one built in, or another, which is
+             * gold; the cursor's says which is built in */
+            s32 built_in = row->kind == ROW_CHOICE
+                               ? port_FindChoice(row->index)->built_in
+                               : -1;
+            s32 is_built_in =
+                built_in >= 0 && port_MenuChoiceValue(row->index) == built_in;
 
+            if (built_in >= 0 && !is_built_in && !is_cursor) {
+                color = COLOR_CHANGED;
+            }
             if (is_cursor && is_arrows) {
                 snprintf(shown, sizeof(shown), "<  %s  >", value);
             } else {
@@ -982,6 +1015,20 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
             port_FontDraw(
                 pixels, panel_w, panel_h, panel_w - x - width, baseline, shown,
                 is_cursor && g_menu.is_capturing ? COLOR_NOTE : color);
+            if (is_cursor && built_in >= 0 && !g_menu.is_capturing) {
+                char mark[VALUE_BYTES];
+
+                if (is_built_in) {
+                    snprintf(mark, sizeof(mark), "%s", MENU_BUILT_IN);
+                } else {
+                    snprintf(mark, sizeof(mark), "%s: %s", MENU_BUILT_IN,
+                             port_FindChoice(row->index)->shown[built_in]);
+                }
+                port_FontDraw(
+                    pixels, panel_w, panel_h,
+                    panel_w - x - width - pad - port_FontMeasure(mark),
+                    baseline, mark, COLOR_DEFAULT);
+            }
         }
         y += line;
     }

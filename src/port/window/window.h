@@ -276,13 +276,14 @@ enum {
 /* The settings menu's groups of settings, in its order. */
 enum {
     PORT_MENU_NONE = 0, /* not in the menu */
-    PORT_MENU_WINDOW = 1,
-    PORT_MENU_REMASTER = 2,
-    PORT_MENU_MODS = 3,
+    PORT_MENU_GAME = 1,
+    PORT_MENU_WINDOW = 2,
+    PORT_MENU_REMASTER = 3,
     PORT_MENU_CONTROLS = 4,
+    PORT_MENU_MODS = 5,
 };
 
-#define PORT_CHOICE_GROUPS 4
+#define PORT_CHOICE_GROUPS 5
 
 /* A number as the text of it, for a setting built in as a constant. */
 #define PORT_QUOTE(number) PORT_QUOTE_TEXT(number)
@@ -447,6 +448,7 @@ typedef struct {
     const char *help;  /* a line about it */
     s32 takes;         /* PORT_TAKES_... */
     s32 count;
+    s32 built_in; /* the value built in, of these; -1 for none */
     const char *words[PORT_CHOICES_MAX]; /* in the file */
     const char *shown[PORT_CHOICES_MAX]; /* in the menu */
 } PortChoice;
@@ -454,6 +456,7 @@ typedef struct {
 /* The groups the menu shows them in, each from its first choice. */
 typedef struct {
     const char *title;
+    const char *help; /* a line about it, for the menu's first page */
     s32 first;
     s32 count;
 } PortChoiceGroup;
@@ -494,6 +497,14 @@ typedef struct {
     s32 is_options_page; /* ReBushido's options page at boot */
     s32 is_paused;       /* the fight's pause menu */
     s32 is_cutscene;     /* a story's cutscene, which Cross skips */
+    /* ReBushido's top menu (port_top_menu.h): on, its page and cursor,
+     * and the settings menu it asked for: a count that only goes
+     * forward, and the page (PORT_TOP_ASK_...) */
+    s32 is_top_menu_ours;
+    s32 top_page;
+    s32 top_cursor;
+    s32 menu_asks;
+    s32 menu_ask_page;
 } PortGameState;
 
 extern void port_ReadGameState(PortGameState *state);
@@ -507,6 +518,28 @@ extern s32 port_IsOnStagePages(void);
  * FALSE when nothing is to be shown. Drawn again only when what it
  * shows has changed. */
 extern s32 port_StagePagePixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
+/* ReBushido's top menu as the window lays it over the game's page
+ * (top_page.c), read from the game (port_top_menu.h): whether the page is
+ * up, which of its two pages and rows, each row's name and whether it can
+ * be chosen, and the caption the window draws for the cursor's row (NULL
+ * where the game draws its own). */
+#define PORT_TOP_VIEW_ROWS 5 /* PORT_TOP_ROWS */
+
+typedef struct {
+    s32 is_up;
+    s32 page;
+    s32 cursor;
+    const char *names[PORT_TOP_VIEW_ROWS];
+    s32 is_on[PORT_TOP_VIEW_ROWS];
+    const char *caption[2];
+} PortTopView;
+
+extern void port_ReadTopMenu(PortTopView *view);
+/* The same for ReBushido's top menu (top_page.c): the rows' names and the
+ * captions the game has none for, laid over the game's own page while it
+ * is up (port_top_menu.h). */
+extern s32 port_TopPagePixels(
     s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
 /* Whether the game is waiting for the disc now (g_port_load_wait), and
  * what it shows meanwhile: PORT_LOAD_NONE, PORT_LOAD_PICTURE where its

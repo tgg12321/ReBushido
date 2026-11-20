@@ -75,13 +75,20 @@ extern void port_SetUnlockAll(s32 on);
 extern void port_SetStageSelectEverywhere(s32 on);
 extern s32 port_GetUnlockAll(void);
 extern s32 port_GetStageSelectEverywhere(void);
-/* A session holds both to the host's (src/port/session.c): the two
- * setters change nothing after. `bits` as port_PlaySwitchBits makes. */
+/* A session holds them all to the host's (src/port/session.c), these two
+ * and port_top_menu.h's: the setters change nothing after. `bits` as
+ * port_PlaySwitchBits makes. */
 extern void port_HoldPlaySwitches(u32 bits);
-/* The two as a word for the session's welcome: PORT_PLAY_BIT_... */
+/* The switches as a word for the session's welcome: PORT_PLAY_BIT_...,
+ * and the game's options (port_GetGameOptions) from
+ * PORT_PLAY_OPTION_SHIFT up. */
 extern u32 port_PlaySwitchBits(void);
 
 #define PORT_PLAY_BIT_UNLOCK_ALL 1
 #define PORT_PLAY_BIT_STAGE_PAGES 2
+#define PORT_PLAY_BIT_TOP_MENU 4
+#define PORT_PLAY_BIT_BUGFIXES 8
+#define PORT_PLAY_OPTION_SHIFT 4
+#define PORT_PLAY_OPTION_MASK 7
 
 #endif /* PORT_PLAY_H */

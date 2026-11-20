@@ -75,7 +75,7 @@ static const char g_port_usage[] =
     "            [--fight-music stage|original|none|KEY]\n"
     "            [--dump-stages FOLDER] [--weapon 1|2=NAME]\n"
     "            [--arena NAME] [--fight-cpu]\n"
-    "            [--unlock-all] [--stage-select]\n"
+    "            [--unlock-all] [--stage-select] [--menu rebushido|original]\n"
     "            [--net-bind ADDRESS:PORT --net-peer ADDRESS:PORT]\n"
     "            [--link-side 0|1] [--net-latency MS] [--net-loss PERCENT]\n"
     "            [--netplay 1|2] [--net-delay N]\n"
@@ -180,6 +180,10 @@ static const char g_port_usage[] =
     "  --stage-select versus the CPU and training choose their stage on\n"
     "                 the stage pages, as versus mode does (the window's\n"
     "                 stage_select_everywhere)\n"
+    "  --menu W       rebushido: ReBushido's top menu, with no options page\n"
+    "                 at boot (the window's menu; docs/PLAYING.md, \"The\n"
+    "                 top menu\"); original, as it is without it: the\n"
+    "                 game's own menus\n"
     "\n"
     "At the end it prints a line for each thing the game asked for that\n"
     "the port does not do yet, with how often: stub NAME COUNT.\n";
@@ -343,6 +347,16 @@ s32 port_Main(s32 argc, char **argv) {
             port_SetUnlockAll(1);
         } else if (port_TextsEqual(word, "--stage-select")) {
             port_SetStageSelectEverywhere(1);
+        } else if (port_TextsEqual(word, "--menu") && has_value) {
+            if (port_TextsEqual(argv[i + 1], "rebushido")) {
+                port_SetTopMenuSwitch(1);
+            } else if (port_TextsEqual(argv[i + 1], "original")) {
+                port_SetTopMenuSwitch(0);
+            } else {
+                port_UsageError(
+                    "--menu takes rebushido or original, not ", argv[i + 1]);
+            }
+            i++;
         } else if (port_TextsEqual(word, "--fight-2p")) {
             port_FightTwoPlayers();
         } else if (port_TextsEqual(word, "--fight")) {

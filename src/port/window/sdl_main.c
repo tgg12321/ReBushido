@@ -47,6 +47,7 @@
 #include "port_play.h"
 #include "port_stage_choice.h"
 #include "port_fight_music.h"
+#include "port_top_menu.h"
 #include "shared.h"
 #include "sdl_window.h"
 
@@ -971,6 +972,11 @@ int main(int argc, char **argv) {
     /* a fight's music (port_fight_music.h); --fight-music has the last
      * word */
     port_SetFightMusic(g_port_settings.fight_music);
+    /* ReBushido's top menu (port_top_menu.h), in a player's run: a test's
+     * (--plan, --frames) presses through the original's menus, and has
+     * them unless its --menu, which comes after, says otherwise */
+    port_SetTopMenuSwitch(!has_end && g_port_settings.top_menu == 0);
+    port_WindowGameSwitches();
     passed[count] = NULL;
     {
         char line[2 * PATH_BYTES_MAX];

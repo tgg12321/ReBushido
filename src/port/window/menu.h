@@ -12,7 +12,13 @@
  * closes the game goes on from that blank as if the time had not passed.
  * What it changes is the window's settings and the settings file, and
  * one setting of the game's own (the bug fixes, which the options page
- * at boot sets as well). */
+ * at boot sets as well).
+ *
+ * Its pages: the first, a row for each group of settings (the game, the
+ * display, the remastered picture, the controls, the mods), Play online,
+ * back to the game and Quit; a group's page, its settings, each with its
+ * value (the one built in marked) and a line about it under the rows; a
+ * pad's buttons; and Play online. */
 
 #include "common.h"
 #include "window.h"
@@ -87,9 +93,20 @@ enum {
     PORT_MENU_CLEAR,  /* Delete, Square: a button back to the layout's */
 };
 
-/* Opens it on its first page. `path` is the settings file it writes,
- * which need not be there yet. */
+/* Opens it on its first page, or on the page port_MenuOpenOn said last
+ * (and only that once). `path` is the settings file it writes, which need
+ * not be there yet. */
 extern void port_MenuOpen(const char *path);
+
+/* The page the next opening is on: its first, or Play online, whose Back
+ * then closes the menu (Options and Online Play on ReBushido's top
+ * menu). */
+enum {
+    PORT_MENU_OPEN_MAIN = 0,
+    PORT_MENU_OPEN_ONLINE = 1,
+};
+
+extern void port_MenuOpenOn(s32 page);
 extern s32 port_MenuIsOpen(void);
 extern void port_MenuPress(s32 what);
 /* Whether it is waiting for a key or a button to bind, and what it is

@@ -30,6 +30,10 @@ static void menu_DrawPageFrame(MenuCtx *ctx, s32 panels, GpuDb *db);
 static void menu_DrawTopRows(MenuCtx *ctx, u16 *draw_env, s32 views);
 static void menu_DrawPovChoice(MenuCtx *ctx, s32 views);
 static void menu_DrawSideViewChoice(MenuCtx *ctx, s32 views);
+#if RB_PORT
+static s32 menu_ChooseTopRow(u32 pressed);
+static s32 menu_UpdatePortTop(MenuCtx *ctx, s32 events, u32 pressed);
+#endif
 static RECT g_menu_palette_rect;
 static u32 g_menu_nudge_minus_buttons[2];
 static u32 g_menu_nudge_plus_buttons[2];
@@ -684,6 +688,11 @@ s32 menu_UpdateTop(s32 held, u32 pressed) {
     frame.pressed = (pressed & 0xFFFF) | (pressed >> PAD_BITS);
     events = menu_StepNudge(
         &frame.pressed, 0, g_menu_work->nudge, g_menu_nudge_steps);
+#if RB_PORT
+    if (port_TopMenuIsOn()) {
+        return menu_UpdatePortTop(&frame.ctx, events, pressed);
+    }
+#endif
     switch (NUDGE_DOWN(events)) {
     case NUDGE_PLUS:
         do {
@@ -743,6 +752,16 @@ s32 menu_UpdateTop(s32 held, u32 pressed) {
     menu_DrawTopRows(&frame.ctx, (u16 *)db, g_menu_top.row[TOP_ROW].views);
     menu_DrawPovChoice(&frame.ctx, g_menu_top.row[TOP_ROW].views);
     menu_DrawSideViewChoice(&frame.ctx, g_menu_top.row[TOP_ROW].views);
+#if RB_PORT
+    return menu_ChooseTopRow(pressed);
+}
+
+/* Cross or triangle on the top menu: the mode of the cursor's row, when
+ * its pad can choose it, or MENU_TOP_CANCELED; else MENU_TOP_RUNNING, with
+ * the cursor's sound where up or down was pressed. ReBushido's top menu
+ * (menu_UpdatePortTop) chooses a mode's row with it. */
+static s32 menu_ChooseTopRow(u32 pressed) {
+#endif
     if (pressed & PADRdown) {
         switch (g_menu_top.row[TOP_ROW].mode) {
         case FIGHT_MODE_VS:
@@ -1510,6 +1529,176 @@ static void menu_DrawTopRows(MenuCtx *ctx, u16 *draw_env, s32 views) {
     AddPrim(g_disp_ot, ctx->prims.mode);
     ctx->prims.mode++;
 }
+
+#if RB_PORT
+/* ReBushido's top menu as the game draws it (port_top_menu.h): what
+ * menu_DrawTopRows draws, for the page's five rows and the game's row
+ * `of` stands for, but the rows' names, which the window lays over the
+ * picture (src/port/window/top_page.c). The four rows are in the places of
+ * the game's first four, not scrolled, the last in the place of its last;
+ * the caption is the game's where it has one for the row. */
+static void menu_DrawPortTopRows(MenuCtx *ctx, const PortTopRow *of) {
+    SpriteDraw draw;
+    SpriteSheetSlot *sheets;
+    u32 rows_on = g_menu_top.rows_on;
+    s32 cursor = port_TopMenuCursor();
+    s32 row;
+
+    /* the underline lights the row that is TOP_ROW: the page's cursor for
+     * these, and the game's row it stands for again after them */
+    g_menu_cursors = (g_menu_cursors & ~CURSOR_TOP) | cursor;
+    for (row = 0; row < PORT_TOP_ROWS; row++) {
+        draw.x = TOP_ROWS_X;
+        draw.has_color = 1;
+        draw.y = row == PORT_TOP_LAST_ROW ? TOP_LAST_ROW_Y
+                                          : row * TOP_ROW_PITCH + TOP_ROWS_Y;
+        draw.ot_index = row == PORT_TOP_LAST_ROW ? MENU_LAYER_TOP_LAST_ROW
+                                                 : MENU_LAYER_TOP_ROWS;
+        if (row == cursor) {
+            draw.semi = 0;
+            draw.col_r = ROW_GLOW_R;
+            draw.col_g = ROW_GLOW_G;
+            draw.col_b = ROW_B;
+            g_menu_pulse++;
+        } else if (port_TopMenuRowIsOn(row, rows_on)) {
+            draw.col_r = ROW_R;
+            draw.col_g = ROW_G;
+            draw.col_b = ROW_B;
+            draw.semi = 1;
+        } else {
+            draw.col_r = ROW_OFF;
+            draw.col_g = ROW_OFF;
+            draw.col_b = ROW_OFF;
+            draw.semi = 1;
+        }
+        menu_DrawRowUnderline(ctx, &draw, row);
+    }
+    g_menu_cursors = (g_menu_cursors & ~CURSOR_TOP) | of->row;
+
+    if (of->caption[0] == NULL) {
+        sheets = PTR(ctx->file->mode_caption_sheets);
+        draw.ot_index = MENU_LAYER_PAGE;
+        draw.has_color = 0;
+        draw.semi = 0;
+        draw.x = 0;
+        draw.y = TOP_CAPTION_Y;
+        draw.header = PTR(sheets[of->row]);
+        draw.table = draw.header->cells;
+        draw.sprt_out = ctx->prims.sprt;
+        ctx->prims.sprt = sprite_Draw(&draw);
+        SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
+        AddPrim(g_disp_ot + draw.ot_index, ctx->prims.mode);
+        ctx->prims.mode++;
+    }
+
+    menu_DrawTopTitle(ctx, &draw);
+    draw.has_color = 0;
+    SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
+    AddPrim(g_disp_ot + MENU_LAYER_TOP_TITLE, ctx->prims.mode);
+    ctx->prims.mode++;
+
+    /* the sprites over the picture, its line of words, are the game's
+     * row's: left out where the window gives the row a caption */
+    sheets = PTR(ctx->file->mode_picture_sheets);
+    draw.has_color = 0;
+    draw.semi = 0;
+    draw.ot_index = MENU_LAYER_TOP_PICTURE;
+    if (of->caption[0] == NULL) {
+        draw.header = PTR(sheets[of->row + MENU_TOP_ROWS]);
+        draw.x = 0;
+        draw.y = TOP_PICTURE_Y;
+        draw.table = draw.header->cells;
+        draw.sprt_out = ctx->prims.sprt;
+        ctx->prims.sprt = sprite_Draw(&draw);
+        SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
+        AddPrim(g_disp_ot, ctx->prims.mode);
+        ctx->prims.mode++;
+    }
+
+    draw.header = PTR(sheets[of->row]);
+    draw.scale_x = 2 * SPRITE_SCALE_ONE;
+    draw.x = 0;
+    draw.y = 0;
+    draw.scale_y = SPRITE_SCALE_ONE;
+    draw.table = draw.header->cells;
+    draw.ft4_out = ctx->prims.ft4;
+    ctx->prims.ft4 = sprite_DrawScaled(&draw, SPRITE_QUAD_NORMAL);
+
+    SetTile(ctx->prims.tile);
+    setRGB0(ctx->prims.tile, 0, 0, 0);
+    ctx->prims.tile->x0 = TOP_FIELD_X;
+    ctx->prims.tile->y0 = TOP_FIELD_Y;
+    ctx->prims.tile->w = TOP_FIELD_WIDTH;
+    ctx->prims.tile->h = TOP_FIELD_HEIGHT;
+    SetSemiTrans(ctx->prims.tile, 0);
+    AddPrim(g_disp_ot + MENU_LAYER_TOP_TITLE, ctx->prims.tile);
+    ctx->prims.tile++;
+
+    SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw.header, 0), 0);
+    AddPrim(g_disp_ot, ctx->prims.mode);
+    ctx->prims.mode++;
+}
+
+/* A frame of ReBushido's top menu, from menu_UpdateTop with the cursor's
+ * nudge moved (`events`): up and down move the cursor over the page's rows
+ * that can be chosen; cross on a mode's row chooses it as the game's own
+ * row would be (the two-player modes need a second pad), on the others
+ * opens the Singleplayer page, goes back from it or asks the window for
+ * the settings menu; triangle goes back from the Singleplayer page, and
+ * from the top page to the opening as the game's does. The view is the
+ * side view. Returns as menu_UpdateTop. */
+static s32 menu_UpdatePortTop(MenuCtx *ctx, s32 events, u32 pressed) {
+    GpuDb *db = &g_disp_db[g_disp_frame_count & 1];
+    const PortTopRow *of;
+
+    if (NUDGE_DOWN(events) == NUDGE_PLUS) {
+        port_TopMenuMove(1, g_menu_top.rows_on);
+        g_menu_pulse = 0;
+    } else if (NUDGE_DOWN(events) == NUDGE_MINUS) {
+        port_TopMenuMove(-1, g_menu_top.rows_on);
+        g_menu_pulse = 0;
+    }
+    of = port_TopMenuRow();
+    /* the game's row the cursor's stands for: its picture, its caption,
+     * and what cross chooses (menu_GetTopRowMode reads it too) */
+    g_menu_cursors = (g_menu_cursors & ~CURSOR_TOP) | of->row;
+    port_TopMenuTakeOptions();
+    g_port_top_menu.rows_on = (u8)g_menu_top.rows_on;
+    menu_DrawPageFrame(ctx, MENU_PANEL_TOP, db);
+    menu_DrawPortTopRows(ctx, of);
+    menu_DrawSideViewChoice(ctx, of->views);
+    if (!(pressed & PAD_ANY(PADRdown)) && (pressed & PAD_ANY(PADRup)) &&
+        g_port_top_menu.page == PORT_TOP_PAGE_SINGLE) {
+        snd_Play(MENU_SOUND_CANCEL, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        port_TopMenuOpenPage(PORT_TOP_PAGE_TOP);
+        g_menu_pulse = 0;
+        return MENU_TOP_RUNNING;
+    }
+    if (of->kind == PORT_TOP_MODE || !(pressed & PAD_ANY(PADRdown))) {
+        return menu_ChooseTopRow(pressed);
+    }
+    switch (of->kind) {
+    case PORT_TOP_SINGLE:
+        snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        port_TopMenuOpenPage(PORT_TOP_PAGE_SINGLE);
+        break;
+    case PORT_TOP_BACK:
+        snd_Play(MENU_SOUND_CANCEL, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        port_TopMenuOpenPage(PORT_TOP_PAGE_TOP);
+        break;
+    case PORT_TOP_ONLINE:
+        snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        port_TopMenuAsk(PORT_TOP_ASK_ONLINE);
+        break;
+    default:
+        snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        port_TopMenuAsk(PORT_TOP_ASK_OPTIONS);
+        break;
+    }
+    g_menu_pulse = 0;
+    return MENU_TOP_RUNNING;
+}
+#endif
 
 /* ---- the options ---- */
 

@@ -87,6 +87,7 @@
 #include "port_stage_choice.h"
 #include "port_play.h"
 #include "port_fight_music.h"
+#include "port_top_menu.h"
 #endif
 
 #endif /* BB2_H */

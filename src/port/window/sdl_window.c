@@ -58,6 +58,7 @@
 #include "port_play.h"
 #include "port_stage_choice.h"
 #include "port_fight_music.h"
+#include "port_top_menu.h"
 #include "shared.h"
 #include "sdl_window.h"
 
@@ -2335,6 +2336,60 @@ static s32 port_DrawCounterLettered(
     return TRUE;
 }
 
+/* ReBushido's top menu over the game's page (top_page.c), the same way. */
+static SDL_Texture *g_port_top_page;
+static s32 g_port_top_page_w;
+static s32 g_port_top_page_h;
+
+static void port_DrawTopPage(void) {
+    const u32 *pixels;
+    PortRect picture;
+    PortRect box;
+    SDL_Rect where;
+    s32 area_w;
+    s32 area_h;
+    s32 window_w = 0;
+    s32 window_h = 0;
+
+    port_WindowSize(&window_w, &window_h);
+    port_PicturePlace(window_w, window_h, &picture);
+    area_h = picture.h;
+    area_w = picture.h * 4 / 3;
+    if (area_w > picture.w) {
+        area_w = picture.w;
+        area_h = picture.w * 3 / 4;
+    }
+    if (!port_TopPagePixels(area_w, area_h, &pixels, &box)) {
+        return;
+    }
+    where.x = picture.x + (picture.w - area_w) / 2 + box.x;
+    where.y = picture.y + (picture.h - area_h) / 2 + box.y;
+    where.w = box.w;
+    where.h = box.h;
+    if (g_port_has_gl) {
+        port_GlShowPixels(pixels, box.w, box.h, window_w, window_h, where.x,
+                          where.y, where.w, where.h, FALSE, TRUE);
+        return;
+    }
+    if (g_port_top_page == NULL || g_port_top_page_w != box.w ||
+        g_port_top_page_h != box.h) {
+        if (g_port_top_page != NULL) {
+            SDL_DestroyTexture(g_port_top_page);
+        }
+        g_port_top_page =
+            SDL_CreateTexture(g_port_renderer, SDL_PIXELFORMAT_ARGB8888,
+                              SDL_TEXTUREACCESS_STREAMING, box.w, box.h);
+        if (g_port_top_page == NULL) {
+            return;
+        }
+        SDL_SetTextureBlendMode(g_port_top_page, SDL_BLENDMODE_BLEND);
+        g_port_top_page_w = box.w;
+        g_port_top_page_h = box.h;
+    }
+    SDL_UpdateTexture(g_port_top_page, NULL, pixels, box.w * BYTES_PER_PIXEL);
+    SDL_RenderCopy(g_port_renderer, g_port_top_page, NULL, &where);
+}
+
 static void port_DrawCounter(void) {
     char lines[COUNTER_LINES][COUNTER_TEXT_BYTES];
     PortRect picture;
@@ -2352,6 +2407,7 @@ static void port_DrawCounter(void) {
     /* what is laid over the picture's corner is laid over it with the
      * stage pages' kinds of stage (stage_page.c) */
     port_DrawStagePage();
+    port_DrawTopPage();
     if (!g_port_show_fps) {
         return;
     }
@@ -2893,6 +2949,14 @@ void port_WindowSetRemastered(s32 on) {
     }
 }
 
+void port_WindowGameSwitches(void) {
+    port_SetBugfixesSwitch(g_port_settings.bugfixes);
+    /* the save's flags: SAVE_FLAG_GRAYSCALE, _EASY_CPU, _MUSIC_OFF */
+    port_SetGameOptions((g_port_settings.monitor != 0 ? 1U : 0U) |
+                        (g_port_settings.difficulty != 0 ? 2U : 0U) |
+                        (g_port_settings.music == 0 ? 4U : 0U));
+}
+
 void port_WindowApplyChoice(s32 choice) {
     const char *name = port_FindChoice(choice)->name;
 
@@ -2943,6 +3007,13 @@ void port_WindowApplyChoice(s32 choice) {
         port_SetStageSelectEverywhere(g_port_settings.stage_select_everywhere);
     } else if (strcmp(name, "fight_music") == 0) {
         port_SetFightMusic(g_port_settings.fight_music);
+    } else if (strcmp(name, "bugfixes") == 0) {
+        /* the game's own, at once, as the options page at boot set it */
+        port_WindowGameSwitches();
+        port_SetBugfixes(g_port_settings.bugfixes);
+    } else if (strcmp(name, "difficulty") == 0 || strcmp(name, "music") == 0 ||
+               strcmp(name, "monitor") == 0) {
+        port_WindowGameSwitches();
     }
     /* the picture's size and filter on the card, the resolution, the
      * counter's corner and the dead zone are read each time they are

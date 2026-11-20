@@ -39,6 +39,75 @@
 
 /* clang-format off */
 
+/* ---- the game ---- */
+
+/* ReBushido's top menu (include/port_top_menu.h; docs/PLAYING.md, "The
+ * top menu"): 0, Singleplayer, Versus, Training, Online Play and Options,
+ * seen from the side only, with no options page at boot; 1, the game's
+ * own menus and ReBushido's options page. A run of a test's (--plan or
+ * --frames) has the original's unless --menu says otherwise. */
+PORT_SETTING(top_menu,
+    .name = "menu", .value = "rebushido",
+    .note = "rebushido: ReBushido's top menu, with no\n"
+            "options page at boot; original: the game's\n"
+            "own menus and the options page",
+    .read = PORT_READ_WORDS, .words = {"rebushido", "original"},
+    .is = "rebushido or original",
+    .menu = PORT_MENU_GAME, .rank = 90, .takes = PORT_TAKES_RESTART,
+    .label = "Menus",
+    .help = "ReBushido's top menu, or the game's own with the options "
+            "page at boot",
+    .shown = {"ReBushido", "Original"})
+
+/* The original's bugs fixed (docs/REBUSHIDO.md, "The fixes"): what the
+ * options page at boot set, which ReBushido's top menu does not show. The
+ * settings menu changes the game's own at once, whichever menu. A gameplay
+ * switch: in a session the host's holds. */
+PORT_SETTING(bugfixes,
+    .name = "bugfixes", .value = "off",
+    .note = "the original's bugs fixed; off plays as the\n"
+            "retail disc (with menu = original the\n"
+            "options page at boot says)",
+    .menu = PORT_MENU_GAME, .rank = 10, .takes = PORT_TAKES_NOW,
+    .label = "Bug fixes",
+    .help = "The original's bugs fixed; off plays as the retail disc")
+
+/* The game's own three options, which its options page had (the save's
+ * flags): written into the game's record at each frame of ReBushido's top
+ * menu. With menu = original the game's options page and the card keep
+ * them instead. In a session the host's hold. */
+PORT_SETTING(difficulty,
+    .name = "difficulty", .value = "hard",
+    .note = "hard or easy: how the CPU fights (the game's\n"
+            "own Difficulty)",
+    .read = PORT_READ_WORDS, .words = {"hard", "easy"},
+    .is = "hard or easy",
+    .menu = PORT_MENU_GAME, .rank = 20, .takes = PORT_TAKES_NOW,
+    .label = "Difficulty",
+    .help = "How the CPU fights: the game's own Difficulty, from the next "
+            "fight",
+    .shown = {"Hard", "Easy"})
+
+PORT_SETTING(music,
+    .name = "music", .value = "on",
+    .note = "on or off: the game's music (its own option)",
+    .menu = PORT_MENU_GAME, .rank = 30, .takes = PORT_TAKES_NOW,
+    .label = "Music",
+    .help = "The game's music; off leaves the sounds alone, from the next "
+            "piece")
+
+PORT_SETTING(monitor,
+    .name = "monitor", .value = "color",
+    .note = "color or bw: the game's own Monitor, black\n"
+            "and white for a monochrome set",
+    .read = PORT_READ_WORDS, .words = {"color", "bw"},
+    .is = "color or bw",
+    .menu = PORT_MENU_GAME, .rank = 40, .takes = PORT_TAKES_NOW,
+    .label = "Monitor",
+    .help = "The game's own Monitor: its picture in color, or black and "
+            "white",
+    .shown = {"Color", "Black and white"})
+
 /* ---- the window ---- */
 
 PORT_SETTING(scale,
@@ -546,7 +615,7 @@ PORT_SETTING(stage_select_everywhere,
     .note = "versus the CPU and training choose their\n"
             "stage on the stage select, as versus mode\n"
             "does; off: the stages the original picks",
-    .menu = PORT_MENU_MODS, .rank = 50, .takes = PORT_TAKES_NOW,
+    .menu = PORT_MENU_GAME, .rank = 50, .takes = PORT_TAKES_NOW,
     .label = "Stage select in every mode",
     .help = "Versus the CPU and training choose their stage after the "
             "weapons, as versus mode does")
@@ -579,7 +648,7 @@ PORT_SETTING(unlock_all,
     .name = "unlock_all", .value = "off",
     .note = "every hidden fighter and slash mode open,\n"
             "without writing them into the save",
-    .menu = PORT_MENU_MODS, .rank = 60, .takes = PORT_TAKES_NOW,
+    .menu = PORT_MENU_GAME, .rank = 60, .takes = PORT_TAKES_NOW,
     .label = "Unlock everything",
     .help = "Every hidden fighter and slash mode open; the save keeps "
             "only what you have won")
