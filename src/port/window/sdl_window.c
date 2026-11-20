@@ -129,6 +129,13 @@
 #define COUNTER_PAD 2
 #define COUNTER_BOX 0xB0000000U
 #define COUNTER_INK 0xFFFFFFFFU
+/* The picture's lines a unit of the counter's box is a pixel of
+ * (port_PlaceCounter), and the typeface's size for capitals as tall as
+ * the digits' rows: Shippori Mincho's capitals are 737 of its 1448 units
+ * from the top of the tallest letter to the bottom of the deepest. */
+#define COUNTER_PICTURE_LINES 240
+#define COUNTER_SIZE_PERCENT 196
+#define COUNTER_PERCENT 100
 /* The player's own pictures of the window (F12): the folder they go in,
  * beside the program, and how the files are named. */
 #define SHOTS_FOLDER "screenshots"
@@ -2252,6 +2259,75 @@ static void port_DrawStagePage(void) {
     SDL_RenderCopy(g_port_renderer, g_port_stage_page, NULL, &where);
 }
 
+/* The counter in the port's typeface (font.c), at the window's own
+ * resolution, where there is a card: its box the size the digits' box
+ * would be (port_PlaceCounter), each of its units `times` pixels, the
+ * capitals as tall as the digits' seven rows. FALSE where the typeface
+ * cannot be read, and the digits' own shapes are drawn instead. */
+static s32 port_DrawCounterLettered(
+    char lines[][COUNTER_TEXT_BYTES], s32 count) {
+    static u32 *g_pixels;
+    static s32 g_room;
+    static s32 g_font_ok = -1;
+    PortTextStyle style;
+    PortRect picture;
+    PortRect place;
+    s32 window_w = 0;
+    s32 window_h = 0;
+    s32 times;
+    s32 text_w = 0;
+    s32 box_h;
+    s32 i;
+
+    if (g_font_ok < 0) {
+        g_font_ok = port_FontStart();
+    }
+    if (!g_font_ok) {
+        return FALSE;
+    }
+    port_WindowSize(&window_w, &window_h);
+    port_PicturePlace(window_w, window_h, &picture);
+    times = picture.h / COUNTER_PICTURE_LINES;
+    if (times < 1) {
+        times = 1;
+    }
+    memset(&style, 0, sizeof(style));
+    style.face = PORT_FACE_BOLD;
+    style.size = PORT_GLYPH_H * times * COUNTER_SIZE_PERCENT / COUNTER_PERCENT;
+    style.color = COUNTER_INK;
+    for (i = 0; i < count; i++) {
+        s32 w = port_TextMeasure(lines[i], &style) + 2 * COUNTER_PAD * times;
+
+        text_w = w > text_w ? w : text_w;
+    }
+    /* whole units, so that the box is placed as the digits' is */
+    text_w = (text_w + times - 1) / times * times;
+    box_h = (COUNTER_H + (count - 1) * COUNTER_LINE_H) * times;
+    if (text_w * box_h > g_room) {
+        u32 *grown =
+            SDL_realloc(g_pixels, (size_t)text_w * box_h * BYTES_PER_PIXEL);
+
+        if (grown == NULL) {
+            return FALSE;
+        }
+        g_pixels = grown;
+        g_room = text_w * box_h;
+    }
+    for (i = 0; i < text_w * box_h; i++) {
+        g_pixels[i] = COUNTER_BOX;
+    }
+    for (i = 0; i < count; i++) {
+        port_TextDraw(g_pixels, text_w, box_h, COUNTER_PAD * times,
+                      (COUNTER_PAD + i * COUNTER_LINE_H + PORT_GLYPH_H) * times,
+                      lines[i], &style);
+    }
+    port_PlaceCounter(&picture, text_w / times, box_h / times,
+                      g_port_settings.fps_corner, &place);
+    port_GlShowPixels(g_pixels, text_w, box_h, window_w, window_h, place.x,
+                      place.y, place.w, place.h, FALSE, TRUE);
+    return TRUE;
+}
+
 static void port_DrawCounter(void) {
     char lines[COUNTER_LINES][COUNTER_TEXT_BYTES];
     PortRect picture;
@@ -2288,6 +2364,9 @@ static void port_DrawCounter(void) {
                    g_port_game_meter.tenths, g_port_blank_meter.tenths);
     if (g_port_show_fps == PORT_FPS_TIMES) {
         count += port_FormatTimes(&lines[1]);
+    }
+    if (g_port_has_gl && port_DrawCounterLettered(lines, count)) {
+        return;
     }
     for (i = 0; i < count; i++) {
         s32 w = port_MeasureText(lines[i]) + 2 * COUNTER_PAD;

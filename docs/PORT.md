@@ -1180,7 +1180,7 @@ made, and as the program ends. The window's files are
 | `gamestate.c` | reads the game's variables out for the log, and has the names the log gives screens, modes, fighters, weapons and stages; it writes one, the Bug fixes setting, for the settings menu |
 | `sdl_window.c` | the window, the sound card and the controllers, on SDL; the counter; the log's notes of the game |
 | `sdl_log.c` | the session's log file |
-| `menu.c`, `sdl_menu.c`, `font.c`, `menu.h` | the settings menu ([`PLAYING.md`](PLAYING.md), "The settings menu"): its pages and what a press does, when it opens and the loop it runs in with the game stopped at a frame's boundary, and its text drawn at the window's resolution in Marcellus (`src/port/fonts/`, SIL Open Font Licence) by stb_truetype (`stb_truetype.h`, public domain). None of it is the game's state: these files are linked outside the game's object, as every file of the window is |
+| `menu.c`, `sdl_menu.c`, `font.c`, `menu.h` | the settings menu ([`PLAYING.md`](PLAYING.md), "The settings menu"): its pages and what a press does, when it opens and the loop it runs in with the game stopped at a frame's boundary, and its text drawn at the window's resolution in the port's typeface, Shippori Mincho (below, "The port's lettering"). None of it is the game's state: these files are linked outside the game's object, as every file of the window is |
 | `sdl_main.c` | where the program starts: its own options, the settings file, the disc image when none is named |
 | `host_posix.c` | `port_host.h` on a C library, for Linux (Windows has `src/port/host_windows.c`) |
 
@@ -1549,6 +1549,98 @@ are both in the log with the function's name, on Linux and on Windows.
   every register: the host's interface keeps three of them.
 - The game's stack is a megabyte, and SDL and the display's driver now
   run on it too.
+
+### The port's lettering
+
+Everything the port letters itself is one typeface, **Shippori Mincho**
+(FONTDASU; the SIL Open Font Licence 1.1, `src/port/fonts/OFL-ShipporiMincho.txt`):
+a Japanese mincho whose Latin letters were drawn to sit beside its
+kanji, with wedge serifs and a brush's stroke contrast, and figures that
+line up. It replaced three (Marcellus in the settings menu, Kaushan
+Script on the top menu, Archivo in the sharp menus) on the owner's word
+(2026-11-19): one family across the game, and a better one than the top
+menu's. Five others were held to it on real screens of the game first (Zen Old
+Mincho, Kaisei Tokumin, Alegreya, Cinzel, Cormorant Garamond); the
+Japanese mincho families read best at small sizes and carried the
+game's look, and Shippori's heaviest weight makes the best titles.
+
+Three weights are kept, cut down to Latin by `tools/port_fonts.py`
+(printable ASCII, Latin-1, dashes, quotes, the ellipsis, arrows; no
+hinting): about 34 KB each where the family's own files are eight
+megabytes for the Japanese. The licence allows a modified font to be
+shipped under it, and the family reserves no name, so the subset keeps
+it. `tools/port_sdl_build.py` puts the three into the program as C
+arrays.
+
+| Face | `font.c` | `tools/port_lettering.py` | For |
+|---|---|---|---|
+| Regular | `PORT_FACE_TEXT` | `'text'` | the settings menu's lines, notes, the stage select page, a roman with an edge (the select screens' titles, the stages' names) |
+| Bold | `PORT_FACE_BOLD` | `'bold'` | headings, the counter, the menus' lines, names, captions |
+| ExtraBold | `PORT_FACE_TITLE` | `'title'` | titles, the top menu's rows, the fight's digits |
+
+**In the program** (`src/port/window/font.c`, `menu.h`; the window's
+build alone). Letters are drawn from the outlines by stb_truetype at the
+size asked for, at the window's own resolution, kerned (the face's
+`GPOS` pairs), and kept for the next call of the same face and size
+(eight sizes at once, the oldest let go). The call for any text the port
+draws:
+
+```c
+PortTextStyle style = {0};
+style.face = PORT_FACE_TITLE;    /* PORT_FACE_TEXT, _BOLD, _TITLE */
+style.size = 64;                 /* pixels, top of the tallest letter to
+                                    the bottom of the deepest */
+style.color = 0xFFFFFFFFU;       /* 0xAARRGGBB */
+style.outline = 0xFF000818U;     /* an edge all round ... */
+style.outline_px = 3;            /* ... this wide; 0: none */
+style.shadow = 0xFF10298BU;      /* a shadow down and right ... */
+style.shadow_px = 5;             /* ... this far; 0: none */
+if (port_FontStart()) {
+    s32 w = port_TextMeasure("Online Play", &style);
+    port_TextDraw(pixels, pixels_w, pixels_h, (pixels_w - w) / 2,
+                  baseline, "Online Play", &style);
+}
+```
+
+`port_TextDraw` lays the text over pixels of 0xAARRGGBB (its alpha is how
+much it covers), `x` being the left of its edge and `baseline` its
+baseline; `port_TextMeasure` is its width with edge and shadow,
+`port_TextAscent` the baseline's distance below the tallest letter's
+top. Text is UTF-8; ASCII and Latin-1 are drawn, anything else is `?`.
+`port_FontSetSize` / `port_FontDraw` / `port_FontMeasure` /
+`port_FontAscent` are the same for plain letters in the Regular face (the
+stage select page's). The settings menu (its title and headings in
+Bold), the netplay line and panel, the stage select page and the counter
+(`fps`, Bold, at the window's resolution, its box placed as the digits'
+was; the 5 by 7 digits of `fps.c` stay for a window with no card and for
+when the typeface cannot be read) all draw through it.
+
+**In the tools** (`tools/port_lettering.py`, Pillow). The same faces for
+the pictures of the mods the port ships: `letter(text, face, size,
+color, top=, bottom=, outline=, outline_px=, shadow=, shadow_px=)` gives
+an RGBA picture of a text (`top` and `bottom` run the letters' colour
+down them, as the game's own lettering does), `font(face, size)` the
+Pillow font, and `line_mask` fits a text to a rectangle the game's
+lettering fills: as tall as the rectangle (fitted to the text with a
+capital, and a descender if it has small letters, so the lines of a menu
+come out one size on one baseline), as wide -- narrowed only to 0.8 of
+the face, and past that smaller on the same baseline; widened only to
+1.1, and past that spaced a little and set in the middle (or spaced to
+the ends, for a text the game cuts into pieces at fixed places) -- and
+twice as wide in a texel for a screen of 640 by 240 (`aspect`), whose
+texel is twice as tall as it is wide. `python tools/port_lettering.py
+OUT.png TEXT --face title --size 96` draws one to look at.
+`tools/port_english.py` (the top menu) and `tools/port_ui.py` (the sharp
+menus) letter through it; texts of one kind there (one face, one height,
+capitals or not) are drawn at one size.
+
+What the port does not letter: the game's own brush lettering and logos
+(the title, ブシドーブレード弐, SQUARESOFT), the Japanese of the weapons'
+scroll and the HUD's 時間, which are pictures, not text; and the
+publisher's card at boot ("Published by Square Electronic Arts L.L.C."),
+which is plain text but a picture the game writes into video memory
+that is not looked up while it is shown, so a mod's picture of it never
+shows.
 
 ## Remastered
 

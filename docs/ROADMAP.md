@@ -234,7 +234,8 @@ the stage").
     mod, never committed); a texture or picture faded through its colour
     table or rewritten is drawn from its replacement, tinted
     ([`MODS.md`](MODS.md), "Fades"). The rest of the lettering is in a
-    font too (Archivo at its widest, and Marcellus): the narration, the
+    font too (now the port's one typeface, Shippori Mincho: PORT.md,
+    "The port's lettering"): the narration, the
     training page, the memory card's messages, the names on the select
     screens and the group battle's, the stage card, the results, and
     ReBushido's options page's characters; and the title picture after
