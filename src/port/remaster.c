@@ -1664,6 +1664,8 @@ void port_RemasterFixMargin(s32 aspect_w, s32 aspect_h) {
     g_margin_aspect_h = aspect_h;
 }
 
+void port_RemasterFreeMargin(void) { g_margin_is_fixed = FALSE; }
+
 /* The frame the side channel is writing down begins (port_remaster.h):
  * the game has cleared this frame's ordering table and is about to build
  * its primitives. What the picture's own edges are is settled here. */

@@ -79,6 +79,11 @@ extern s32 port_GetStageSelectEverywhere(void);
  * and port_top_menu.h's: the setters change nothing after. `bits` as
  * port_PlaySwitchBits makes. */
 extern void port_HoldPlaySwitches(u32 bits);
+/* The player's own switches and fight music kept before a session begun
+ * in the running program holds the host's, and put back after it
+ * (online.c). */
+extern void port_KeepPlaySwitches(void);
+extern void port_RestorePlaySwitches(void);
 /* The switches as a word for the session's welcome: PORT_PLAY_BIT_...,
  * and the game's options (port_GetGameOptions) from
  * PORT_PLAY_OPTION_SHIFT up. */

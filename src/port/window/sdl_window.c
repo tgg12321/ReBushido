@@ -51,6 +51,7 @@
 #include "port_host.h"
 #include "port_movie.h"
 #include "port_music.h"
+#include "port_online.h"
 #include "port_paint.h"
 #include "port_profile.h"
 #include "port_remaster.h"
@@ -2718,6 +2719,18 @@ static void port_ChangePicture(const char *why) {
     port_NoteGraphics();
 }
 
+/* The state of another moment put back (sdl_window.h). */
+void port_WindowStateReplaced(void) {
+    if (g_port_tween_on) {
+        port_TweenForget();
+        g_port_frame_period = 0;
+    }
+    if (g_port_has_gl && port_RemasterIsOn()) {
+        port_GlRefresh();
+    }
+    port_MenuFollowAsks();
+}
+
 /* ---- for the settings menu (sdl_menu.c, menu.h) ---- */
 
 void port_GetWindowSize(s32 *w, s32 *h) { port_WindowSize(w, h); }
@@ -5160,6 +5173,10 @@ void port_StartWindow(void) {
                          strcmp(SDL_getenv("RB_AHEAD_SOUND"), "mix") != 0;
     port_SetRunAhead(g_port_settings.run_ahead);
     port_StartNetWindow();
+    /* sessions begin and end in this program: the state of the game's
+     * start is kept as it begins (port_online.h) */
+    port_OnlineWanted();
+    port_StartOnlinePages();
     port_CpuPreferStart(g_port_settings.cpu_prefer);
     port_StartPainters();
     port_StartPairing();

@@ -43,6 +43,7 @@
 #include "port_host.h"
 #include "port_mods.h"
 #include "port_net.h"
+#include "port_online.h"
 #include "portmap.h"
 #include "port_music.h"
 #include "port_remaster.h"
@@ -195,6 +196,10 @@ static const char g_port_window_usage_end[] =
     "--menu-keys WORDS (presses in the settings menu, one a picture: up,\n"
     "down, left, right, accept, back, close, clear, key:NAME, pad:NAME,\n"
     "shot), --menu-shots FOLDER (where shot keeps the window),\n"
+    "--online-at N (the online pages opened at blank N, as Online Play\n"
+    "opens them), --online-keys WORDS (presses on them: up, down, left,\n"
+    "right, accept, back, delete, shift, done, type:TEXT, shot, wait:N,\n"
+    "until:lobby|waiting|cards),\n"
     "--escape-at N[,N...] (Escape pressed at those blanks),\n"
     "--run-ahead 0|1|2 (frames run ahead, whatever the settings say;\n"
     "with --fast or a picture taken for a test it is 0 unless this says),\n"
@@ -499,9 +504,10 @@ static const struct {
     {"--link-side", 1},      {"--rollback-test", 1}, {"--rollback-every", 1},
     {"--rollback-quiet", 0}, {"--menu-at", 1},       {"--menu-keys", 1},
     {"--menu-shots", 1},     {"--escape-at", 1},     {"--lobby", 1},
-    {"--relay", 1},          {"--room", 1},          {"--player", 1},
-    {"--room-password", 1},  {"--room-key", 1},      {"--punch-to", 1},
-    {"--net-paths", 1},      {"--mapped", 1},
+    {"--online-at", 1},      {"--online-keys", 1},   {"--relay", 1},
+    {"--room", 1},           {"--player", 1},        {"--room-password", 1},
+    {"--room-key", 1},       {"--punch-to", 1},      {"--net-paths", 1},
+    {"--mapped", 1},
 };
 
 #if defined(_WIN32)
@@ -547,25 +553,19 @@ static s32 port_IsBehindAnother(u32 address) {
  * let it and the host is found through every network: what it found is
  * said where the host waits, and the port is the host's first way for a
  * lobby's guest. It is closed again as the program ends. */
-static void port_MapHostPort(s32 count, char **words) {
+static void port_MapBind(const char *text) {
     static char said[PORT_MAP_WHY_BYTES + 96];
     PortNetAddress bind;
     PortMapResult map;
-    s32 i;
 
     if (g_port_map_off ||
         (!g_port_settings.net_portmap && !g_port_map_forced)) {
         return;
     }
-    for (i = 1; i + 1 < count; i++) {
-        if (strcmp(words[i], "--host") == 0) {
-            break;
-        }
-    }
     /* (a host on this PC alone has no router to ask, but a test's fake
      * one, which the options name) */
-    if (i + 1 >= count || !port_ParseNetAddress(words[i + 1], &bind) ||
-        bind.port == 0 || bind.is_v6 ||
+    if (text == NULL || !port_ParseNetAddress(text, &bind) || bind.port == 0 ||
+        bind.is_v6 ||
         ((bind.address >> 24) == 127 && g_port_map_options.ssdp_at == NULL &&
          g_port_map_options.gateway_at == NULL)) {
         return;
@@ -610,13 +610,78 @@ static void port_MapHostPort(s32 count, char **words) {
     port_SetSessionMapped(said);
 }
 
-/* The program again, as a session's (sdl_window.h): the same command line
- * but the network's options, with the ones `start` says. The window and
- * the sound card are let go first. On Linux the program becomes the new
- * one; on Windows the new one is started (its process's number said, for
- * a test to wait on) and this one ends. Returns only if it could not be
- * done. */
-void port_StartOnline(const PortOnlineStart *start) {
+/* ... for a session the command line starts (--host). */
+static void port_MapHostPort(s32 count, char **words) {
+    s32 i;
+
+    for (i = 1; i + 1 < count; i++) {
+        if (strcmp(words[i], "--host") == 0) {
+            port_MapBind(words[i + 1]);
+            return;
+        }
+    }
+}
+
+/* ... for a session begun in the program (port_online.h), which asked
+ * for it: the settings say whether, as at the start. */
+static void port_MapOnlineHost(const char *bind) { port_MapBind(bind); }
+
+/* `text` into `out` (PORT_ONLINE_TEXT_BYTES or more), "" for NULL. */
+static void port_AskWord(char *out, size_t room, const char *text) {
+    snprintf(out, room, "%s", text != NULL ? text : "");
+}
+
+/* The session as the online pages ask it, begun in this program at the
+ * game's next boundary (port_online.h): TRUE, or FALSE with `problem`
+ * where it cannot be. */
+static s32 port_StartOnlineHere(
+    const PortOnlineStart *start, const char **problem) {
+    PortOnlineAsk ask;
+    s32 role = start->role;
+
+    *problem = NULL;
+    if (!port_OnlineCanBegin()) {
+        return FALSE;
+    }
+    memset(&ask, 0, sizeof(ask));
+    ask.role = role == PORT_NET_ROLE_HOST || role == PORT_NET_ROLE_ROOM
+                   ? PORT_SESSION_HOST
+                   : PORT_SESSION_JOIN;
+    ask.delay = (u32)start->delay;
+    ask.portmap = start->portmap;
+    port_AskWord(ask.player, sizeof(ask.player), start->player);
+    port_AskWord(ask.lobby, sizeof(ask.lobby), start->lobby);
+    port_AskWord(ask.key, sizeof(ask.key), start->key);
+    port_AskWord(ask.password, sizeof(ask.password), start->password);
+    if (ask.role == PORT_SESSION_HOST) {
+        port_AskWord(ask.at, sizeof(ask.at), start->bind);
+        port_AskWord(ask.room, sizeof(ask.room), start->room);
+        port_AskWord(ask.punch_to, sizeof(ask.punch_to), start->punch_to);
+    } else {
+        port_AskWord(
+            ask.at, sizeof(ask.at),
+            role == PORT_NET_ROLE_ROOMS ? start->code : start->address);
+        port_AskWord(ask.bind, sizeof(ask.bind), start->bind);
+    }
+    *problem = port_OnlineAskFor(&ask);
+    if (*problem == NULL) {
+        port_Say("online: a session as the %s%s%s; it begins at the game's "
+                 "next boundary, in this program (no start again)",
+                 ask.role == PORT_SESSION_HOST ? "host" : "guest",
+                 ask.lobby[0] != 0 ? " by way of the lobby at " : " at ",
+                 ask.lobby[0] != 0 ? ask.lobby : ask.at);
+    }
+    return TRUE;
+}
+
+/* A session asked for (sdl_window.h): begun in this program where it can
+ * be (port_StartOnlineHere). Where it cannot, the fallback: the program
+ * again, as a session's: the same command line but the network's options,
+ * with the ones `start` says. The window and the sound card are let go
+ * first. On Linux the program becomes the new one; on Windows the new one
+ * is started (its process's number said, for a test to wait on) and this
+ * one ends. Returns only if it could not be done. */
+const char *port_StartOnline(const PortOnlineStart *start) {
     static char *words[ARGUMENTS_MAX + 32];
     static char delay_text[16];
     static char opt_host[] = "--host";
@@ -636,9 +701,16 @@ void port_StartOnline(const PortOnlineStart *start) {
     s32 count = 0;
     s32 kept = 0;
     s32 i;
+    const char *problem;
 
+    if (port_StartOnlineHere(start, &problem)) {
+        return problem;
+    }
+    port_Say("online: this program cannot begin a session as it runs (no "
+             "state of the game's start was kept): it starts again as the "
+             "session's instead");
     if (g_port_main_path == NULL) {
-        return;
+        return "The program cannot be started again.";
     }
     words[count++] = g_port_main_path;
     for (i = 1; i < g_port_main_argc && count < ARGUMENTS_MAX; i++) {
@@ -721,7 +793,7 @@ void port_StartOnline(const PortOnlineStart *start) {
             _P_NOWAIT, g_port_main_path, (const char * const *)quoted_words);
         if (process == -1) {
             port_Say("online: the program cannot be started again");
-            return;
+            return "The program cannot be started again.";
         }
         port_Say("online: started again as process %lu",
                  (unsigned long)GetProcessId((HANDLE)process));
@@ -1048,6 +1120,10 @@ int main(int argc, char **argv) {
             options->menu_keys = argv[++i];
         } else if (strcmp(word, "--menu-shots") == 0 && has_value) {
             options->menu_shots = argv[++i];
+        } else if (strcmp(word, "--online-at") == 0 && has_value) {
+            options->online_at = atoi(argv[++i]);
+        } else if (strcmp(word, "--online-keys") == 0 && has_value) {
+            options->online_keys = argv[++i];
         } else if (strcmp(word, "--escape-at") == 0 && has_value) {
             options->escape_at = argv[++i];
         } else {
@@ -1300,6 +1376,10 @@ int main(int argc, char **argv) {
     /* whether there is a newer release, in the background */
     port_UpdateBegin();
     port_MapHostPort(count, passed);
+    /* a session begun in the program asks the router as it begins, and
+     * gives the port back as it ends (port_online.h) */
+    g_port_online_map_hook = port_MapOnlineHost;
+    g_port_online_unmap_hook = port_UnmapPort;
     /* the game never comes back; what does is a start that failed */
     code = port_Main(count, passed);
     port_EndSession(code);

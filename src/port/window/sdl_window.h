@@ -47,6 +47,12 @@ typedef struct {
     const char *menu_at;
     const char *menu_keys;
     const char *menu_shots;
+    /* the online pages (online_pages.c), for a test: opened as Online
+     * Play opens them, at this blank; told these words (port_PagesWord:
+     * presses, type:TEXT, shot, wait:N, until:lobby), the pictures kept in
+     * `menu_shots` */
+    s32 online_at;
+    const char *online_keys;
     /* Escape pressed at these blanks ("1500,4000") and let go a few after,
      * as SDL's events of the key (port_EscapeButton) */
     const char *escape_at;
@@ -153,9 +159,10 @@ extern void port_StartNetWindow(void);
  * and what is being waited for. Nothing where netplay is off. */
 extern void port_DrawNetLine(void);
 
-/* The settings menu's Play online page: the program starts again as a
- * session's (sdl_main.c), with the network's options of its command line
- * given anew. */
+/* A session asked for, by the online pages or the settings menu's Play
+ * online page (sdl_main.c): it begins at the game's next boundary in this
+ * program (port_online.h), or, where it cannot, the program starts again
+ * as the session's. */
 typedef struct {
     s32 role;            /* PORT_NET_ROLE_... (window.h) */
     const char *bind;    /* this program's socket, `ADDRESS:PORT` */
@@ -165,12 +172,29 @@ typedef struct {
     const char *room;    /* room: its name */
     const char *player;
     const char *key;      /* a locked room's SALT:KEY in hex, or NULL */
+    const char *password; /* rooms by code: the password typed, or NULL */
     const char *punch_to; /* host: the other player's address, or NULL */
     s32 delay;
     s32 portmap; /* the host asks its router for its port */
 } PortOnlineStart;
 
-extern void port_StartOnline(const PortOnlineStart *start);
+/* NULL, or what is wrong, in a player's words. */
+extern const char *port_StartOnline(const PortOnlineStart *start);
+
+/* ---- the online pages (online_pages.c) ---- */
+
+/* Hangs the pages on a session begun in the program (port_online.h). */
+extern void port_StartOnlinePages(void);
+/* Online Play: the pages open at the end of the next blank. */
+extern void port_AskForOnlinePages(const char *why);
+/* At a blank's end: the pages, where asked for; TRUE if they were up. */
+extern s32 port_MaybeRunOnlinePages(u32 blank);
+/* The state of another moment was put back (a session begun or ended in
+ * the program): nothing drawn between frames until two more, all of
+ * video memory given to the card, the settings menu's count of the top
+ * menu's asks followed (sdl_window.c, sdl_menu.c). */
+extern void port_WindowStateReplaced(void);
+extern void port_MenuFollowAsks(void);
 /* The port mapping's options (the tests' fake router: --portmap-ssdp,
  * --portmap-gateway), and whether --portmap off said none. */
 extern const void *port_WindowPortMapOptions(void);

@@ -485,6 +485,14 @@ void port_SetRelayMapped(const PortNetAddress *mapped) {
 
 s32 port_IsRelayOn(void) { return g_relay.is_on; }
 
+void port_ResetRelay(void) {
+    u32 i;
+
+    for (i = 0; i < sizeof(g_relay); i++) {
+        ((u8 *)&g_relay)[i] = 0;
+    }
+}
+
 /* --net-paths (port_net.h): each word of the list a bit. */
 u32 port_ParseNetPaths(const char *text) {
     static const char * const words[] = {
@@ -824,13 +832,17 @@ s32 port_RelayMeet(s32 role, s32 again) {
     u32 heard_at = start;
     u32 hello_at = 0;
     u32 punch_at = 0;
-    s32 resetting = again;
+    /* a host's first hello lets go of any guest the lobby still has in a
+     * room of this address: one of a session that has ended in the
+     * running program (online.c), whose room the lobby keeps a while */
+    s32 resetting = again || role == PORT_SESSION_HOST;
     s32 told_code = 0;
     u32 i;
 
     for (i = 0; i < sizeof(g_meet); i++) {
         ((u8 *)&g_meet)[i] = 0;
     }
+    port_SetSessionPhase(PORT_SESSION_PHASE_LOBBY_SERVER);
     port_FormatNetAddress(&g_relay.server, server, sizeof(server));
     port_RelayText(
         status, sizeof(status), "Reaching the lobby server at %s", server);
@@ -855,6 +867,10 @@ s32 port_RelayMeet(s32 role, s32 again) {
         PortNetAddress from;
         s32 got;
 
+        if (port_SessionIsCanceled()) {
+            port_Log("relay: the meeting was given up\n");
+            return 0;
+        }
         if (now - hello_at >= HELLO_EVERY_MS) {
             port_SendHello(role, resetting);
             hello_at = now;
@@ -884,6 +900,9 @@ s32 port_RelayMeet(s32 role, s32 again) {
                 }
                 if (detail == STATE_WAITING) {
                     resetting = 0;
+                    port_SetSessionPhase(
+                        role == PORT_SESSION_HOST ? PORT_SESSION_PHASE_WAITING
+                                                  : PORT_SESSION_PHASE_JOINING);
                     if (!told_code && g_relay.code[0] != 0) {
                         told_code = 1;
                         port_Log(

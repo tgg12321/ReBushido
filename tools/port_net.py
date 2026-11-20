@@ -29,6 +29,12 @@ end well, both see the kill, neither finds a desync, and every state hash
 both print (one each 30 frames, once both pads' inputs before it are
 known) is the same on both, to the last frame they share near the end.
 
+`inprocess`: sessions begun in the running program, with no start again
+(docs/NETPLAY.md, section 15; --session-at), held to a session of a
+program started for it: the first frame's hash and every one after the
+same with the same seed, two sessions one after the other in one process,
+and a guest turned away that goes on with its own game.
+
 `session` and `window` are a session's, set up by --host and --join
 (section 13). `session` also holds the two players to the same arena
 (docs/MODS.md, "Custom arenas"): the sample arena compiled at test time,
@@ -281,6 +287,46 @@ def write_session_plan(program, side, folder):
     test.set_discs([disc])
     _, lines = test.plan(disc, playtest.header_names(), 1)
     path = os.path.join(folder, 'plan_side%d.txt' % side)
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(lines) + '\n')
+    return path
+
+
+# A session that goes to the versus select screen and back: the guest's
+# Triangle there, with no fighter picked, takes both back to the top menu,
+# which ends a session begun in the running program on both
+# (docs/NETPLAY.md, section 15). Then each waits.
+LEAVE_PRESSES = ["select+300 P2 TRIANGLE"]
+LEAVE_CHECKPOINTS = '''
+[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 6000
+shot = false
+
+[[checkpoint]]
+name = "stay"
+after = 30000
+shot = false
+'''
+
+
+def write_leave_plan(program, side, folder):
+    """The plan of side `side` for a session that goes to the select screen
+    and back to the top menu: its path."""
+    toml = os.path.join(folder, 'leave_side%d.toml' % side)
+    with open(toml, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('about = "A session to the select screen and back, side %d."\n' % side)
+        f.write('discs = ["port"]\nlimit = 60000\nseconds = %d\n' % SECONDS)
+        f.write('input = [\n%s\n]\n' % ',\n'.join('    "%s"' % p for p in own_pad(LEAVE_PRESSES, side)))
+        f.write(LEAVE_CHECKPOINTS)
+    playtest.PORT_PROGRAM = program
+    playtest.PORT_SYMBOLS = program + '.sym'
+    test = playtest.Test(toml)
+    disc = playtest.Disc('port')
+    test.set_discs([disc])
+    _, lines = test.plan(disc, playtest.header_names(), 1)
+    path = os.path.join(folder, 'leave_plan_side%d.txt' % side)
     with open(path, 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(lines) + '\n')
     return path
@@ -617,17 +663,18 @@ def check_menu(program, args, ports):
     is started as a player starts it, opens the menu (F1, here
     --menu-at), goes to Play online and starts there, the first as the
     host and the second as a guest who types the host's address. Each
-    program starts again as the session's (sdl_main.c), and the two play
-    to the versus select screen and on a little. Both sockets are on
-    127.0.0.1: the settings say `net_listen = local`."""
+    begins the session in its own process, with no start again
+    (docs/NETPLAY.md, section 15), and the two play to the versus select
+    screen and on a little. Both sockets are on 127.0.0.1: the settings
+    say `net_listen = local`."""
     folder = os.path.join(args.out, 'menu')
     os.makedirs(folder, exist_ok=True)
     env = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy', **NO_CONTROLLERS)
     # up from the first row comes round to the last, Quit ReBushido; then
-    # Back to the game, and the row above it is Play online; on its page,
+    # Back to the game, Updates, and the row above it is Play online; on its page,
     # by address: You, the port (the host's address, typed), Start
-    keys = ['up up up accept down down accept',
-            'up up up accept down accept type:%s:%d down accept' % (LOCALHOST, ports[0])]
+    keys = ['up up up up accept down down accept',
+            'up up up up accept down accept type:%s:%d down accept' % (LOCALHOST, ports[0])]
     settings = ['net_role = host\nnet_port = %d\nnet_listen = local\nnet_delay = 2\n' % ports[0],
                 'net_role = join\nnet_listen = local\n']
     procs = []
@@ -638,6 +685,7 @@ def check_menu(program, args, ports):
             f.write('fullscreen = off\n' + settings[side])
         cmd = [program, '--image', playtest.RETAIL_CUE, '--config', config, '--windowed', '--frames', '1500',
                '--log', os.path.join(folder, 'side%d.log' % side), '--menu-at', '120', '--menu-keys', keys[side],
+               '--online-keys', 'until:lobby accept',
                '--card1', os.path.join(folder, 'card1.mcd'), '--card2', os.path.join(folder, 'card2.mcd')]
         out = open(os.path.join(folder, 'side%d.out' % side), 'wb')
         err = open(os.path.join(folder, 'side%d.err' % side), 'wb')
@@ -664,16 +712,228 @@ def check_menu(program, args, ports):
                 print('    ' + line)
         if codes[side] != 0:
             problems.append('menu: the %s ended with %s (%s/side%d.err)' % (who, codes[side], folder, side))
-        if 'the program starts again as the %s' % who not in err or 'session: begun' not in err:
-            problems.append('menu: the %s did not start again as the session\'s %s' % (who, who))
+        if 'session 1 begins in this program' not in err or 'session: begun' not in err or \
+                'starts again' in err:
+            problems.append('menu: the %s did not begin the session in its own process' % who)
         hashes.append(hashes_of(err))
     common = sorted(set(hashes[0]) & set(hashes[1]))
     if not common or any(hashes[0][f] != hashes[1][f] for f in common):
         problems.append('menu: the two programs\' state hashes are not the same (%d in common)' % len(common))
     elif not problems:
-        print('port_net: menu: both started again from the settings menu and played on: %d state hashes, the '
-              'same on both' % len(common), flush=True)
+        print('port_net: menu: both began the session from the settings menu in their own processes and played '
+              'on: %d state hashes, the same on both' % len(common), flush=True)
     return problems
+
+
+# ---- sessions begun in the running program (docs/NETPLAY.md, section 15)
+
+INPROCESS_SEED = 4242
+
+
+def first_frame_hash(text):
+    """The hash of a session's first frame (`netplay: the session's first
+    frame, hash H`), or None; with `all`, every one in order."""
+    found = [line.split()[-1] for line in text.split('\n')
+             if line.startswith("netplay: the session's first frame, hash ")]
+    return found
+
+
+def start_session_side(program, side, folder, label, plan, args, ports, more):
+    """One program of a session on 127.0.0.1 (the host side 0, the guest
+    1), with port_net's session plan and the test's fixed seed: its
+    process."""
+    trouble = ['--net-latency', str(args.latency), '--net-loss', str(args.loss), '--net-seed', str(INPROCESS_SEED)]
+    cmd = [program, '--image', playtest.RETAIL_CUE, '--plan', plan, '--trace',
+           '--out', os.path.join(folder, label)] + trouble
+    if side == 0:
+        cmd += ['--host', '%s:%d' % (LOCALHOST, ports[0]), '--net-delay', str(args.delay),
+                '--card1', os.path.join(folder, 'card1.mcd'), '--card2', os.path.join(folder, 'card2.mcd')]
+    else:
+        cmd += ['--join', '%s:%d' % (LOCALHOST, ports[0]), '--net-bind', '%s:%d' % (LOCALHOST, ports[1])]
+    cmd += more
+    os.makedirs(os.path.join(folder, label), exist_ok=True)
+    out = open(os.path.join(folder, label + '.out'), 'wb')
+    err = open(os.path.join(folder, label + '.err'), 'wb')
+    proc = subprocess.Popen(PINNED + cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL)
+    proc.files = (out, err)
+    return proc
+
+
+def wait_session_side(proc, seconds):
+    try:
+        code = proc.wait(timeout=max(1, seconds))
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        code = None
+    for f in proc.files:
+        f.close()
+    return code
+
+
+def inprocess_pair(program, folder, label, plans, args, ports, host_more, guest_more):
+    """A session's two programs, started together and waited for: their
+    exit codes and what each printed to its error output."""
+    host = start_session_side(program, 0, folder, label + '-host', plans[0], args, ports, host_more)
+    time.sleep(0.3)
+    guest = start_session_side(program, 1, folder, label + '-guest', plans[1], args, ports, guest_more)
+    codes = [wait_session_side(host, SECONDS), wait_session_side(guest, 60)]
+    return codes, [read(os.path.join(folder, label + side + '.err')) for side in ('-host', '-guest')]
+
+
+def check_inprocess(label, program, args, base):
+    """Sessions begun in the running program (--session-at), held to one
+    started for the session (--host and --join from the start), both with
+    the same seed (--net-seed):
+
+    - `restart`: the pair started for the session, as every session was
+      before: the hashes every 30 frames, and the first frame's;
+    - `inprocess`: the same pair, each playing its own game first (the
+      host 240 frames, the guest 120) and then beginning the session in
+      the same process: the first frame's hash and every one after must be
+      the restarted pair's;
+    - `again`: a host that begins two sessions one after the other in one
+      process, with two guests one after the other: both sessions' hashes
+      are the restarted pair's, so nothing of the first is left in the
+      second;
+    - `refused`: a guest of another build (--session-differ) is turned
+      away at the meeting and goes on with its own game, in the same
+      process."""
+    folder = os.path.join(args.out, 'inprocess', label)
+    os.makedirs(folder, exist_ok=True)
+    plans = [write_session_plan(program, side, folder) for side in (0, 1)]
+    problems = []
+    results = {}
+
+    def run(name, n, host_more, guest_more):
+        ports = (base + 2 * n, base + 2 * n + 1)
+        results[name] = inprocess_pair(program, folder, name, plans, args, ports, host_more, guest_more)
+
+    def run_again():
+        ports = (base + 4, base + 5)
+        host = start_session_side(program, 0, folder, 'again-host', plans[0], args, ports,
+                                  ['--session-at', '120', '--sessions', '2'])
+        guests = []
+        for n in (1, 2):
+            time.sleep(0.3)
+            guest = start_session_side(program, 1, folder, 'again-guest%d' % n, plans[1], args, ports,
+                                       ['--session-at', '60'])
+            guests.append(wait_session_side(guest, SECONDS))
+        code = wait_session_side(host, 120)
+        results['again'] = ([code] + guests, [read(os.path.join(folder, 'again-%s.err' % who))
+                                              for who in ('host', 'guest1', 'guest2')])
+
+    def run_refused():
+        ports = (base + 6, base + 7)
+        host = start_session_side(program, 0, folder, 'refused-host', plans[0], args, ports, ['--session-at', '60'])
+        time.sleep(0.3)
+        guest = start_session_side(program, 1, folder, 'refused-guest', plans[1], args, ports,
+                                   ['--session-at', '60', '--session-differ', 'build'])
+        code = wait_session_side(guest, 90)
+        host.kill()
+        wait_session_side(host, 10)
+        results['refused'] = ([code], [read(os.path.join(folder, 'refused-guest.err'))])
+
+    def run_leave():
+        ports = (base + 8, base + 9)
+        leave_plans = [write_leave_plan(program, side, folder) for side in (0, 1)]
+        results['leave'] = inprocess_pair(program, folder, 'leave', leave_plans, args, ports,
+                                          ['--session-at', '60'], ['--session-at', '60'])
+
+    threads = [threading.Thread(target=run_leave), threading.Thread(target=run, args=('restart', 0, [], [])),
+               threading.Thread(target=run, args=('inprocess', 1, ['--session-at', '240'],
+                                                  ['--session-at', '120'])),
+               threading.Thread(target=run_again), threading.Thread(target=run_refused)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    codes, errs = results['restart']
+    reference = hashes_of(errs[0])
+    first = first_frame_hash(errs[0])
+    if codes != [0, 0] or not first or len(reference) < 40:
+        problems.append('inprocess: %s: the pair started for the session did not play it through (exits %s, %d '
+                        'hashes)' % (label, codes, len(reference)))
+        return problems
+    print('port_net: inprocess: %s: started for the session: the first frame %s, %d hashes' % (
+        label, first[0], len(reference)), flush=True)
+
+    def same_as_reference(what, text, who):
+        hashes = hashes_of(text)
+        firsts = first_frame_hash(text)
+        common = sorted(set(hashes) & set(reference))
+        differ = [f for f in common if hashes[f] != reference[f]]
+        if firsts[:1] != first[:1]:
+            problems.append('inprocess: %s: %s: the %s\'s first frame is %s, not %s as in a program started for '
+                            'the session' % (label, what, who, firsts[:1], first[0]))
+        elif differ:
+            problems.append('inprocess: %s: %s: the %s\'s hashes part from the restarted pair\'s at frame %d'
+                            % (label, what, who, differ[0]))
+        elif len(common) < 40:
+            problems.append('inprocess: %s: %s: the %s has too few hashes in common with the restarted pair '
+                            '(%d)' % (label, what, who, len(common)))
+        return len(common)
+
+    codes, errs = results['inprocess']
+    if codes != [0, 0]:
+        problems.append('inprocess: %s: inprocess: exits %s (%s)' % (label, codes, folder))
+    for err, who in zip(errs, ('host', 'guest')):
+        if 'session 1 begins in this program' not in err or "the state of the game's start put back" not in err:
+            problems.append('inprocess: %s: the %s did not begin the session in its own process' % (label, who))
+    count = [same_as_reference('inprocess', err, who) for err, who in zip(errs, ('host', 'guest'))]
+    if not problems:
+        print('port_net: inprocess: %s: begun in the running program (the host after 240 frames of its own, the '
+              'guest after 120): the same first frame and the same %d and %d hashes as the restarted pair'
+              % (label, count[0], count[1]), flush=True)
+
+    codes, errs = results['again']
+    host_err = errs[0]
+    parts = host_err.split('online: session 2 begins in this program')
+    if codes != [0, 0, 0] or len(parts) != 2:
+        problems.append('inprocess: %s: again: exits %s, %d sessions begun (%s)' % (label, codes, len(parts),
+                                                                                   folder))
+    else:
+        counts = [same_as_reference('again, session %d' % (n + 1), part, 'host') for n, part in enumerate(parts)]
+        if 'the player\'s own game put back' not in parts[0] or 'the last session asked for has ended' not in \
+                parts[1]:
+            problems.append('inprocess: %s: again: the host did not go back to its own game between the two'
+                            % label)
+        if not problems:
+            print('port_net: inprocess: %s: two sessions one after the other in one host process, two guests: '
+                  'both the restarted pair\'s hashes (%d and %d)' % (label, counts[0], counts[1]), flush=True)
+
+    codes, errs = results['leave']
+    said = [("the players went back to the top menu at frame" in err and
+             'session 1 has ended: You both went back to the top menu' in err and
+             "the player's own game put back" in err) for err in errs]
+    if codes != [0, 0] or not all(said):
+        problems.append('inprocess: %s: leave: the way back to the top menu from the select screen did not end the '
+                        'session on both and send each back to its own game (exits %s; %s)' % (label, codes, folder))
+    elif not problems:
+        print('port_net: inprocess: %s: Triangle on the select screen took both back to the top menu: the session '
+              'ended on both at the same frame, each back to its own game' % label, flush=True)
+
+    codes, errs = results['refused']
+    err = errs[0]
+    if codes[0] != 1 or 'turned this program away' not in err or \
+            'no session; the program goes on with its own game' not in err:
+        problems.append('inprocess: %s: refused: a guest of another build was not turned away and sent back to '
+                        'its own game (exit %s; %s)' % (label, codes[0], os.path.join(folder, 'refused-guest.err')))
+    elif not problems:
+        print('port_net: inprocess: %s: a guest of another build turned away at the meeting, and back to its own '
+              'game in the same process' % label, flush=True)
+    return problems
+
+
+def check_pages(args):
+    """The online pages' cases of tools/port_net_lobby.py (sessions begun
+    from the pages in the running window, a guest turned away on them),
+    through this system's window program, with their lobby server: the
+    problems found."""
+    import port_net_lobby
+    return ['pages: ' + p for p in port_net_lobby.run(port_net_lobby.PAGES_CASES,
+                                                       args.port_base - LOBBY_BELOW + PAGES_ABOVE)]
 
 
 def check_link(label, program, args, ports):
@@ -740,12 +1000,16 @@ def run_checks(args, base):
             problems += check_session('window', program, args, (base + 20, base + 21), True)
             if not args.stress:
                 problems += check_menu(program, args, (base + 22, base + 23))
+                problems += check_pages(args)
     for n, bits in enumerate([] if args.what == 'window' else [args.bits] if args.bits else [64, 32]):
         program = os.path.join(REPO, PROGRAMS[bits])
         if not os.path.isfile(program):
             problems.append('%d-bit: no %s (make port)' % (bits, PROGRAMS[bits]))
             continue
         ports = (base + 2 * n, base + 2 * n + 1)
+        if args.what == 'inprocess':
+            problems += check_inprocess('%d-bit' % bits, program, args, base + 10 * n)
+            continue
         if args.what == 'session':
             problems += check_session('%d-bit' % bits, program, args, (ports[0] + 10, ports[1] + 10), False)
             if not args.stress:
@@ -802,6 +1066,8 @@ def stress(args):
 # The lobby's cases (tools/port_net_lobby.py) take their ports this far
 # below --port-base, out of the way of the four's.
 LOBBY_BELOW = 20000
+# ... and the online pages' cases (check_pages) this far above those
+PAGES_ABOVE = 500
 
 
 def run_all(args):
@@ -809,7 +1075,7 @@ def run_all(args):
     file with its own PORTS_USED ports from --port-base on and its own
     folder of --out; what each printed, in that order, and 1 if one
     failed (make port-net)."""
-    whats = ('link', 'rollback', 'session', 'window', 'lobby')
+    whats = ('link', 'rollback', 'session', 'window', 'inprocess', 'lobby')
     if not 1024 + LOBBY_BELOW <= args.port_base <= 65535 - PORTS_USED * len(whats):
         print('FAILED: port_net: --port-base: from 1024 to %d for all' % (65535 - PORTS_USED * len(whats)))
         return 1
@@ -847,9 +1113,10 @@ def run_all(args):
 def main():
     global PINNED
     ap = argparse.ArgumentParser(description='Two programs of the port playing each other over UDP on this PC.')
-    ap.add_argument('what', choices=('link', 'rollback', 'session', 'window', 'all'),
-                    help="what they play: session is a session's headless programs, window the window's; all "
-                    "the four at once (make port-net), each with ports of its own")
+    ap.add_argument('what', choices=('link', 'rollback', 'session', 'window', 'inprocess', 'all'),
+                    help="what they play: session is a session's headless programs, window the window's, "
+                    "inprocess sessions begun in the running program; all of them at once (make port-net), "
+                    "each with ports of its own")
     ap.add_argument('--bits', type=int, choices=(32, 64), help='one size only')
     ap.add_argument('--out', default=os.path.join(REPO, 'build', 'net'), help='where the runs go')
     ap.add_argument('--latency', type=int, help='milliseconds each datagram waits (--net-latency): 0 for the '
@@ -875,7 +1142,7 @@ def main():
     Pauser.pause_ms = args.pause
     rollback = args.what != 'link'
     if args.latency is None:
-        args.latency = {'link': 0, 'rollback': 100, 'session': 100, 'window': 60}[args.what]
+        args.latency = {'link': 0, 'rollback': 100, 'session': 100, 'window': 60, 'inprocess': 60}[args.what]
     if args.loss is None:
         args.loss = 5 if rollback else 0
     if args.cpus:

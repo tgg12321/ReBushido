@@ -533,7 +533,7 @@ s32 port_StartNet(void) {
     if (!g_port_net_wanted) {
         return 1;
     }
-    if (g_port_net_latency_ms != 0) {
+    if (g_port_net_latency_ms != 0 && g_port_net_delayed == NULL) {
         g_port_net_delayed =
             port_HostAllocate(NET_DELAYED_MAX * (u32)sizeof(PortNetDelayed));
         if (g_port_net_delayed == NULL) {
@@ -566,6 +566,24 @@ s32 port_StartNet(void) {
 }
 
 s32 port_IsNetOn(void) { return g_port_net_socket >= 0; }
+
+/* A session in the running program has ended (port_net.h): the socket
+ * closed, what it heard forgotten, and nothing wanted until the next
+ * session says where it goes. The trouble a test gave it stays. */
+void port_StopNet(void) {
+    if (g_port_net_socket >= 0) {
+        port_HostUdpClose(g_port_net_socket);
+    }
+    g_port_net_socket = -1;
+    g_port_net_wanted = 0;
+    g_port_net_has_peer = 0;
+    g_port_net_is_fixed = 0;
+    g_port_net_has_heard = 0;
+    g_port_net_delayed_count = 0;
+    g_port_net_sent = 0;
+    g_port_net_dropped = 0;
+    g_port_net_received = 0;
+}
 
 s32 port_NetIsV6(void) { return g_port_net_bind.is_v6; }
 

@@ -57,6 +57,9 @@ extern void port_SetNetTrouble(u32 latency_ms, u32 loss);
 /* Opens the socket, if the run asked for one: 1, or 0 if it could not. */
 extern s32 port_StartNet(void);
 extern s32 port_IsNetOn(void);
+/* The socket closed and the peer forgotten, as a session in the running
+ * program ends (online.c): the next one sets its addresses again. */
+extern void port_StopNet(void);
 /* The socket is of IPv6 (and IPv4 with it): a bind of 0.0.0.0 is one
  * where the system has IPv6. Where it is bound, its port the system's
  * where it chose: 1, or 0. */
@@ -106,8 +109,21 @@ extern s32 port_IsNetplayOn(void);
 /* Where the other program has gone, this one plays on alone instead of
  * ending (the window's: a player is not thrown out of the game). */
 extern void port_SetNetplayGoesOnAlone(s32 on);
-/* The session: the game a frame at a time, for ever (src/port/main.c). */
-extern void port_RunNetplay(void) __attribute__((noreturn));
+/* The session: the game a frame at a time, for ever (src/port/main.c);
+ * one begun in the running program (port_SetNetplayInProcess, online.c)
+ * until it ends, with why. */
+extern s32 port_RunNetplay(void);
+
+enum {
+    PORT_NETPLAY_END_PEER_LEFT = 1, /* the other program has gone */
+    PORT_NETPLAY_END_SILENT = 2,    /* nothing heard of it for 15 seconds */
+    PORT_NETPLAY_END_DESYNC = 3,    /* the two states parted */
+    PORT_NETPLAY_END_LEFT = 4,      /* both went back to the top menu */
+};
+
+extern void port_SetNetplayInProcess(s32 on);
+/* A session over: everything of it forgotten but the states' buffers. */
+extern void port_ResetNetplay(void);
 /* The run ends: the other is told, and the report (port_Quit). */
 extern void port_EndNetplay(void);
 
@@ -158,6 +174,8 @@ extern void (*g_port_net_rerun_hook)(s32 begins, u32 blanks);
 /* ---- the session (src/port/session.c; docs/NETPLAY.md, section 13)
  * ---- */
 
+#define PORT_SETUP_CODE_BYTES 24
+
 enum {
     PORT_SESSION_NONE = 0,
     PORT_SESSION_HOST = 1, /* waits for a guest at --host ADDRESS:PORT */
@@ -174,8 +192,73 @@ extern s32 port_GetSessionRole(void);
 /* Before the game starts: the other program found, the build, the disc
  * and the protocol held to each other's, the host's memory cards and
  * random seed sent to the guest. 1, or 0 with the reason in the log. On
- * 1 netplay is on, the host the first pad and the guest the second. */
+ * 1 netplay is on, the host the first pad and the guest the second. It
+ * is port_MeetSession and then port_ApplySession; a session begun in the
+ * running program (online.c) puts the state of the game's start back
+ * between the two. */
 extern s32 port_StartSession(const struct PortDisc *disc, u32 delay);
+extern s32 port_MeetSession(const struct PortDisc *disc, u32 delay);
+extern void port_ApplySession(void);
+/* A session over, in the running program: who the other was, the way,
+ * the cards as sent and the lobby's words forgotten; the sums, the
+ * player's name and --session-differ kept. */
+extern void port_ResetSession(void);
+/* The player gave up the meeting (the online pages' Back): the meeting's
+ * loops, the lobby's among them, end at their next turn with 0. */
+extern void port_CancelSession(void);
+extern s32 port_SessionIsCanceled(void);
+/* The name the other player is shown in the session's lobby. */
+extern void port_SetSessionPlayer(const char *name);
+/* For tests (--net-seed): the host's seed, not one of its clock's. */
+extern void port_SetSessionSeed(u32 seed);
+/* The host's rules for the session, sent in its welcome:
+ * PORT_SESSION_RULE_... A session begun from the online pages ends where
+ * both players go back to the top menu, rather than going on to versus
+ * again. */
+#define PORT_SESSION_RULE_TOP_MENU_LEAVES 1U
+extern void port_SetSessionRules(u32 rules);
+/* Where the game went back to its top menu in a session whose rule says
+ * that ends it: the frame and one, or 0 (the state's, top_menu.c). */
+extern u32 port_SessionLeftAt(void);
+
+/* The session's lobby, before the game (the pre-fight lobby of the
+ * online pages): whether this player is ready, from the hook; NULL is
+ * ready at once, as a program with no pages is. */
+enum {
+    PORT_SESSION_LEAVE = -1,
+    PORT_SESSION_NOT_YET = 0,
+    PORT_SESSION_READY = 1,
+};
+
+extern s32 (*g_port_session_ready_hook)(void);
+
+/* How far the meeting has come, for the pages. */
+enum {
+    PORT_SESSION_PHASE_NONE = 0,
+    PORT_SESSION_PHASE_LOBBY_SERVER = 1, /* reaching the lobby server */
+    PORT_SESSION_PHASE_WAITING = 2,      /* the host, for a player */
+    PORT_SESSION_PHASE_JOINING = 3,      /* the guest, for the host */
+    PORT_SESSION_PHASE_CARDS = 4,        /* the cards on their way */
+    PORT_SESSION_PHASE_READY = 5,        /* both here: the pre-fight lobby */
+};
+
+#define PORT_SESSION_NAME_BYTES 24
+
+typedef struct {
+    s32 role;  /* PORT_SESSION_... */
+    s32 phase; /* PORT_SESSION_PHASE_... */
+    s32 percent;
+    s32 peer_ready;
+    char name[PORT_SESSION_NAME_BYTES];
+    char peer_name[PORT_SESSION_NAME_BYTES];
+    char setup[PORT_SETUP_CODE_BYTES];
+    const char *code;   /* the room's at the lobby, or "" */
+    const char *path;   /* the way between the two, or "" */
+    const char *mapped; /* what the router said, or "" */
+} PortSessionLobby;
+
+extern void port_GetSessionLobby(PortSessionLobby *out);
+extern void port_SetSessionPhase(s32 phase);
 /* At frame `frame`, before the game takes `input`: from power on to the
  * versus select screen the same presses on both machines (the menus are
  * no player's), and in a fight no Start (the pause menu is off). `used`
@@ -190,7 +273,6 @@ extern void port_SessionSeed(void);
  * disc's and the gameplay mods' sums, `P7-BBBB-DDDD-MMMM`, into `out`
  * (PORT_SETUP_CODE_BYTES). The disc is the one port_SetSessionDisc
  * named, and the mods are the ones started. */
-#define PORT_SETUP_CODE_BYTES 24
 extern void port_SetSessionDisc(const struct PortDisc *disc);
 extern void port_SessionSetupCode(char *out);
 /* --check-online: the build, the disc, the mods and the protocol, each
@@ -268,6 +350,9 @@ extern void port_RelayRoomKey(const u8 *salt, const char *password, u8 *key);
 extern s32 port_ParseRoomKey(const char *text, u8 *salt, u8 *key);
 /* The port the window's router mapped, the host's first way. */
 extern void port_SetRelayMapped(const PortNetAddress *mapped);
+/* A session over, in the running program: the lobby, the room and its
+ * key forgotten (the next session says them again). */
+extern void port_ResetRelay(void);
 extern s32 port_IsRelayOn(void);
 /* The room's code: the one joined, or the one the host was given; ""
  * before there is one. */

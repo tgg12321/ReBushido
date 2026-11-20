@@ -136,7 +136,10 @@ network's: `--net-bind` and `--net-peer` (a UDP socket to one other
 program), with `--link-side 0|1` (the game's link cable over it) or
 `--netplay 1|2` and `--net-delay N` (rollback netplay), `--host
 ADDRESS:PORT` and `--join ADDRESS:PORT` (a session of netplay, set up
-between the two programs before the game starts), and
+between the two programs before the game starts; with `--session-at N`
+begun instead in the running program after N frames of its own, and
+`--sessions K` times one after another, `--net-seed N` fixing the
+host's seed: `NETPLAY.md`, section 15), and
 `--net-latency MS` and `--net-loss PERCENT` for tests (`NETPLAY.md`,
 sections 11 to 13), and the mods' (`MODS.md`): `--mods FOLDER|off`,
 `--dump-textures FOLDER`, `--music-mods on|off`, `--dump-music FOLDER`
@@ -8694,7 +8697,9 @@ page at the window's resolution, as `stage_page.c` does the stage
 pages', from what `gamestate.c` reads out (`port_ReadTopMenu`); its
 letters are drawn by one function, `port_TopPageText`. `sdl_menu.c`
 follows the count of asks and opens the settings menu on its first page
-or on Play online (`port_MenuOpenOn`).
+(Options), or the online pages (Online Play: `online_pages.c`, drawn
+over the game in the top menu's look; a session begins and ends there
+in the running program, `NETPLAY.md`, section 15).
 
 **The tests.** The switch is off in the program without a window, and
 in every run of a plan or `--frames` unless `--menu rebushido` comes

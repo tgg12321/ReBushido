@@ -31,6 +31,7 @@
 #include "port_movie.h"
 #include "port_music.h"
 #include "port_net.h"
+#include "port_online.h"
 #include "port_spu.h"
 #include "bb2.h"
 
@@ -171,6 +172,13 @@ static const char g_port_usage[] =
     "  --mapped ADDRESS:PORT   for tests: a port the router mapped, offered\n"
     "                 as a way (the window maps it itself)\n"
     "  --check-online print the setup code two players compare, and end\n"
+    "  --session-at N for tests: the session --host or --join says begins\n"
+    "                 in this program after N frames of its own, with no\n"
+    "                 start again (docs/NETPLAY.md, section 15); when it\n"
+    "                 ends the program goes on with its own game\n"
+    "  --sessions K   ... K of them, one after another, N frames apart;\n"
+    "                 the program ends after the last\n"
+    "  --net-seed N   for tests: the host's seed, not one of its clock's\n"
     "  --session-differ build|disc|mods|protocol   for tests: say another\n"
     "  --net-latency MS   for tests: every datagram waits this long first\n"
     "  --net-loss PERCENT ... and so many in a hundred are dropped\n"
@@ -312,6 +320,16 @@ static void port_LoadOwnNames(const char *program) {
     port_LoadNames(path);
 }
 
+/* `text` into `out`, cut to `room`. */
+static void port_KeepWord(char *out, u32 room, const char *text) {
+    u32 i;
+
+    for (i = 0; text != NULL && text[i] != 0 && i + 1 < room; i++) {
+        out[i] = text[i];
+    }
+    out[i] = 0;
+}
+
 /* The game, on its own stack. Its main does not return. */
 static void port_RunGame(void) {
     main();
@@ -353,6 +371,12 @@ s32 port_Main(s32 argc, char **argv) {
     PortNetAddress mapped;
     u32 paths = 0;
     s32 check_online = 0;
+    s32 session_after = 0;
+    s32 sessions = 1;
+    const char *bind_text = "";
+    const char *key_text = "";
+    const char *punch_text = "";
+    const char *lobby_text = "";
     s32 i;
 
     port_CatchCrashes();
@@ -509,7 +533,24 @@ s32 port_Main(s32 argc, char **argv) {
                 port_UsageError(
                     "--rollback-every takes a number, not ", argv[i]);
             }
+        } else if (port_TextsEqual(word, "--session-at")) {
+            if (!port_ParseNumber(argv[++i], &session_after) ||
+                session_after <= 0) {
+                port_UsageError("--session-at takes a number, not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--sessions")) {
+            if (!port_ParseNumber(argv[++i], &sessions) || sessions <= 0) {
+                port_UsageError("--sessions takes a number, not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--net-seed")) {
+            s32 seed = 0;
+
+            if (!port_ParseNumber(argv[++i], &seed) || seed < 0) {
+                port_UsageError("--net-seed takes a number, not ", argv[i]);
+            }
+            port_SetSessionSeed((u32)seed);
         } else if (port_TextsEqual(word, "--net-bind")) {
+            bind_text = argv[i + 1];
             if (!port_ParseNetAddress(argv[++i], &net_bind)) {
                 port_UsageError("--net-bind takes ADDRESS:PORT, not ", argv[i]);
             }
@@ -541,6 +582,7 @@ s32 port_Main(s32 argc, char **argv) {
             session_text = argv[++i];
         } else if (port_TextsEqual(word, "--lobby") ||
                    port_TextsEqual(word, "--relay")) {
+            lobby_text = argv[i + 1];
             if (!port_ParseNetAddress(argv[++i], &lobby) || lobby.port == 0) {
                 port_UsageError("--lobby takes ADDRESS:PORT, not ", argv[i]);
             }
@@ -555,6 +597,7 @@ s32 port_Main(s32 argc, char **argv) {
             u8 salt[PORT_RELAY_SALT_BYTES];
             u8 key[PORT_RELAY_KEY_BYTES];
 
+            key_text = argv[i + 1];
             if (!port_ParseRoomKey(argv[++i], salt, key)) {
                 port_UsageError("--room-key takes SALT:KEY in hex (16 and 32 "
                                 "bytes), not ",
@@ -562,6 +605,7 @@ s32 port_Main(s32 argc, char **argv) {
             }
             port_SetRelayKey(salt, key);
         } else if (port_TextsEqual(word, "--punch-to")) {
+            punch_text = argv[i + 1];
             if (!port_ParseNetAddress(argv[++i], &punch_to) ||
                 punch_to.port == 0) {
                 port_UsageError("--punch-to takes ADDRESS:PORT, not ", argv[i]);
@@ -675,7 +719,45 @@ s32 port_Main(s32 argc, char **argv) {
             session_text = "0.0.0.0:0";
         }
     }
-    if (session_role != PORT_SESSION_NONE) {
+    if (session_after > 0) {
+        /* the session begins later, in this program (online.c): it is
+         * set up then, from these words, as many times as asked */
+        PortOnlineAsk ask;
+        s32 is_room = room != NULL;
+
+        if (session_role == PORT_SESSION_NONE) {
+            port_UsageError("--session-at is a session's (--host, --join, "
+                            "--room)",
+                            "");
+        }
+        if (link_side >= 0 || netplay_pad != 0 || rollback_frames > 0) {
+            port_UsageError("a session (--host, --join) is neither the link "
+                            "cable, --netplay nor the rollback self-test",
+                            "");
+        }
+        for (i = 0; i < (s32)sizeof(ask); i++) {
+            ((u8 *)&ask)[i] = 0;
+        }
+        ask.role = session_role;
+        ask.delay = (u32)net_delay;
+        ask.paths = paths;
+        port_KeepWord(ask.at, sizeof(ask.at), session_text);
+        port_KeepWord(ask.bind, sizeof(ask.bind), bind_text);
+        port_KeepWord(ask.lobby, sizeof(ask.lobby), lobby_text);
+        port_KeepWord(ask.room, sizeof(ask.room), is_room ? room : "");
+        port_KeepWord(ask.player, sizeof(ask.player), player);
+        port_KeepWord(ask.password, sizeof(ask.password),
+                      password != NULL ? password : "");
+        port_KeepWord(ask.key, sizeof(ask.key), key_text);
+        port_KeepWord(ask.punch_to, sizeof(ask.punch_to), punch_text);
+        port_SetNetTrouble((u32)net_latency, (u32)net_loss);
+        port_OnlineWanted();
+        port_OnlineAt(&ask, (u32)session_after, (u32)sessions);
+        session_role = PORT_SESSION_NONE;
+        net_addresses = 0;
+        has_lobby = 0;
+        has_punch_to = 0;
+    } else if (session_role != PORT_SESSION_NONE) {
         if (has_lobby && session_role == PORT_SESSION_JOIN) {
             /* the room's code; the server is the peer until the way to
              * the host is found */
@@ -756,6 +838,7 @@ s32 port_Main(s32 argc, char **argv) {
         /* the other program found and held to this one, the host's cards
          * in hand: netplay is on from here (port_net.h) */
         port_SetSession(session_role, &session_at);
+        port_SetSessionPlayer(player);
         if (!port_StartSession(&g_port_disc, (u32)net_delay)) {
             port_Log("rebushido: no session\n");
             return PORT_EXIT_FAILED;
@@ -815,10 +898,14 @@ s32 port_Main(s32 argc, char **argv) {
     if (port_IsNetplayOn()) {
         port_RunNetplay();
     }
+    /* the state of the game's start, before its first step, where a
+     * session may begin in this program (online.c) */
+    port_OnlineKeepBoot(&g_port_disc);
     for (;;) {
         port_BeforeStep();
         port_StepGame();
         port_AfterStep();
         port_OnRollbackFrame();
+        port_OnlineBoundary();
     }
 }

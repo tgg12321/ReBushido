@@ -47,7 +47,7 @@ enum {
     PORT_TOP_MODE = 0,    /* a mode: the game's own row `row` is chosen */
     PORT_TOP_SINGLE = 1,  /* on to the Singleplayer page */
     PORT_TOP_BACK = 2,    /* back to the top page */
-    PORT_TOP_ONLINE = 3,  /* the settings menu's Play online page */
+    PORT_TOP_ONLINE = 3,  /* the window's online pages */
     PORT_TOP_OPTIONS = 4, /* the settings menu */
 };
 
@@ -87,6 +87,12 @@ typedef struct {
     /* the game's rows that can be chosen as the step last drew the page,
      * for the window to read */
     u8 rows_on;
+    /* a session's (session.c, port_SessionInput): the game has been at
+     * the select screen, and the frame and one where it came back to its
+     * top menu after that, which ends a session whose rule says so (0:
+     * not yet). In the state, so that a rollback takes it back. */
+    u8 session_away;
+    u32 session_left;
 } PortTopMenu;
 
 extern PortTopMenu g_port_top_menu;

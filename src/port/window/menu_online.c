@@ -306,11 +306,9 @@ void port_OnlineDescribe(
         break;
     case ONLINE_START:
         snprintf(label, label_room, "%s",
-                 port_Role() == PORT_NET_ROLE_ROOM
-                     ? "Open the room now (the game starts again)"
-                 : port_Role() == PORT_NET_ROLE_HOST
-                     ? "Host now (the game starts again)"
-                     : "Join now (the game starts again)");
+                 port_Role() == PORT_NET_ROLE_ROOM   ? "Open the room now"
+                 : port_Role() == PORT_NET_ROLE_HOST ? "Host now"
+                                                     : "Join now");
         break;
     default:
         snprintf(label, label_room, "Back");
@@ -372,7 +370,7 @@ const char *port_OnlineHelp(s32 item, s32 is_typing) {
         return "The other player's must be the same: compare them by "
                "message";
     case ONLINE_START:
-        return "The program starts again as a session: both go to versus "
+        return "The session begins here, from power on: both go to versus "
                "select";
     default:
         return "";
@@ -525,7 +523,13 @@ static void port_Start(const PortRoom *room, char *note, u32 note_room) {
         start.punch_to = g_port_settings.net_punch_to;
     }
     port_MenuLeave();
-    port_StartOnline(&start);
+    {
+        const char *problem = port_StartOnline(&start);
+
+        if (problem != NULL) {
+            snprintf(note, note_room, "%s", problem);
+        }
+    }
 }
 
 /* A room of the list chosen. */

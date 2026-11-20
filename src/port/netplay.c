@@ -187,6 +187,10 @@ static u32 g_np_wait_from;
 static u32 g_np_alone_at;
 /* When the inputs were last sent. */
 static u32 g_np_sent_at;
+/* A session begun in the running program (online.c): its end is not the
+ * program's. Why it ended, PORT_NETPLAY_END_..., or 0 while it goes on. */
+static s32 g_np_in_process;
+static s32 g_np_ended;
 
 void (*g_port_net_hold_hook)(u32 blanks);
 void (*g_port_net_wait_hook)(const char *status);
@@ -202,6 +206,79 @@ void port_SetNetplay(s32 pad, u32 delay) {
 s32 port_IsNetplayOn(void) { return g_np_on; }
 
 void port_SetNetplayGoesOnAlone(s32 on) { g_np_goes_on_alone = on; }
+
+void port_SetNetplayInProcess(s32 on) { g_np_in_process = on; }
+
+/* Everything of a session that the next one must not find (port_net.h):
+ * the inputs, the guesses, the hashes, the time and the counts. The
+ * states' buffers are kept for it. */
+void port_ResetNetplay(void) {
+    u32 i;
+
+    g_np_on = 0;
+    g_np_local = 0;
+    g_np_delay = NETPLAY_DELAY_DEFAULT;
+    g_np_frame = 0;
+    g_np_local_count = 0;
+    g_np_remote_count = 0;
+    g_np_peer_has = 0;
+    g_np_wrong_from = 0;
+    g_np_is_wrong = 0;
+    g_np_peer_left = 0;
+    for (i = 0; i < NETPLAY_INPUTS; i++) {
+        g_np_local_inputs[i] = 0;
+        g_np_remote_inputs[i] = 0;
+        g_np_guessed[i] = 0;
+        g_np_used[i] = 0;
+    }
+    for (i = 0; i < NETPLAY_SAVES; i++) {
+        g_np_save_frames[i] = (u32)-1;
+        g_np_save_blanks[i] = 0;
+    }
+    for (i = 0; i < NETPLAY_HASHES; i++) {
+        g_np_hashes[i].frame = 0;
+        g_np_hashes[i].hash = 0;
+        g_np_peer_hashes[i] = g_np_hashes[i];
+        g_np_compared[i] = 0;
+    }
+    g_np_last_final.frame = 0;
+    g_np_last_final.hash = 0;
+    g_np_hashes_compared = 0;
+    g_np_sync_until = 0;
+    g_np_peer_now = 0;
+    g_np_peer_stamp = 0;
+    g_np_peer_stamp_at = 0;
+    g_np_has_peer_stamp = 0;
+    g_np_ping_ms = 0;
+    g_np_has_ping = 0;
+    g_np_blanks_per_frame = BLANKS_PER_FRAME_START;
+    for (i = 0; i < NETPLAY_ADVANTAGES; i++) {
+        g_np_ahead[i] = 0;
+        g_np_peer_ahead[i] = 0;
+    }
+    g_np_ahead_count = 0;
+    g_np_peer_ahead_now = 0;
+    g_np_held_at = 0;
+    g_np_held_ms = 0;
+    g_np_holds = 0;
+    g_np_ahead_sum = 0;
+    g_np_rollbacks = 0;
+    g_np_frames_again = 0;
+    g_np_longest = 0;
+    g_np_recent = 0;
+    g_np_recent_at = 0;
+    g_np_waits = 0;
+    g_np_load_waits = 0;
+    g_np_rerun_ticks = 0;
+    g_np_state = PORT_NETPLAY_PLAYING;
+    g_np_wait_from = 0;
+    g_np_alone_at = 0;
+    g_np_sent_at = 0;
+    g_np_in_process = 0;
+    g_np_ended = 0;
+    g_port_take_hook = NULL;
+    g_port_movies_skipped = FALSE;
+}
 
 /* ---- the datagrams ---- */
 
@@ -268,7 +345,10 @@ static void port_NetplayCompareHash(u32 frame) {
                  "%08X%08X, the other's %08X%08X\n",
                  mine->frame, (u32)(mine->hash >> WORD_BITS), (u32)mine->hash,
                  (u32)(theirs->hash >> WORD_BITS), (u32)theirs->hash);
-        port_Quit(PORT_EXIT_FAILED);
+        if (!g_np_in_process) {
+            port_Quit(PORT_EXIT_FAILED);
+        }
+        g_np_ended = PORT_NETPLAY_END_DESYNC;
     }
 }
 
@@ -466,6 +546,13 @@ static void port_NetplaySave(u32 frame) {
 
         hash->frame = frame;
         hash->hash = port_StateHash();
+        if (frame == 0 && !g_port_rerun) {
+            /* the session's first frame: the same in a program started
+             * for the session and in one that began it as it ran
+             * (online.c) */
+            port_Log("netplay: the session's first frame, hash %08X%08X\n",
+                     (u32)(hash->hash >> WORD_BITS), (u32)hash->hash);
+        }
     }
 }
 
@@ -592,12 +679,19 @@ static void port_NetplayKeepLocal(void) {
 }
 
 /* The other has gone and every input of its is run. The headless program
- * ends there too; the window's plays on alone, its pads both its own. */
+ * ends there too; the window's plays on alone, its pads both its own; a
+ * session begun in the running program ends, and the program goes back
+ * to its own play (online.c). */
 static void port_NetplayEndWithPeer(const char *why) {
-    port_Log(
-        "netplay: the other program %s after frame %u; %s\n", why,
-        g_np_remote_count,
-        g_np_goes_on_alone ? "this one plays on alone" : "this one ends there");
+    port_Log("netplay: the other program %s after frame %u; %s\n", why,
+             g_np_remote_count,
+             g_np_in_process      ? "the session ends here"
+             : g_np_goes_on_alone ? "this one plays on alone"
+                                  : "this one ends there");
+    if (g_np_in_process) {
+        g_np_ended = PORT_NETPLAY_END_PEER_LEFT;
+        return;
+    }
     if (!g_np_goes_on_alone) {
         port_Quit(PORT_EXIT_OK);
     }
@@ -619,7 +713,7 @@ static void port_NetplayWait(s32 state, s32 (*enough)(void)) {
     u32 from = port_NetClock();
 
     g_np_wait_from = from;
-    while (!enough() && !g_np_peer_left) {
+    while (!enough() && !g_np_peer_left && !g_np_ended) {
         u32 now = port_NetClock();
 
         g_np_waits++;
@@ -627,10 +721,14 @@ static void port_NetplayWait(s32 state, s32 (*enough)(void)) {
             port_Log("netplay: nothing from the other program for %u "
                      "seconds\n",
                      NETPLAY_GIVE_UP_MS / MS_PER_SECOND);
-            if (!g_np_goes_on_alone) {
+            if (!g_np_goes_on_alone && !g_np_in_process) {
                 port_Quit(PORT_EXIT_FAILED);
             }
             port_NetplayEndWithPeer("has stopped answering");
+            if (g_np_in_process) {
+                g_np_ended = PORT_NETPLAY_END_SILENT;
+                break;
+            }
         }
         if (now - g_np_sent_at > NETPLAY_RESEND_MS) {
             port_NetplaySendInputs();
@@ -658,12 +756,15 @@ static s32 port_NetplayLoadIsShared(void) {
 }
 
 /* The session (port_net.h): the game from its first boundary on, a frame
- * at a time, for ever. */
-void port_RunNetplay(void) {
+ * at a time, for ever; or, begun in the running program, until it ends,
+ * with why (PORT_NETPLAY_END_...). */
+s32 port_RunNetplay(void) {
     s32 i;
 
     for (i = 0; i < NETPLAY_SAVES; i++) {
-        g_np_saves[i] = port_HostAllocate(port_StateSize());
+        if (g_np_saves[i] == NULL) {
+            g_np_saves[i] = port_HostAllocate(port_StateSize());
+        }
         if (g_np_saves[i] == NULL) {
             port_Fail("netplay: no memory for the states (%u bytes)\n",
                       port_StateSize() * NETPLAY_SAVES);
@@ -685,12 +786,27 @@ void port_RunNetplay(void) {
             g_np_load_waits++;
             port_NetplayWait(PORT_NETPLAY_LOADING, port_NetplayLoadIsShared);
         }
-        if (g_np_is_wrong) {
+        if (g_np_is_wrong && !g_np_ended) {
             port_NetplayRollBack();
         }
         port_NetplayFinalHashes();
-        if (g_np_peer_left && g_np_frame >= g_np_remote_count) {
+        if (g_np_peer_left && g_np_frame >= g_np_remote_count && !g_np_ended) {
             port_NetplayEndWithPeer("ended");
+        }
+        if (g_np_in_process && !g_np_ended && !g_np_is_wrong) {
+            /* a way back to the top menu, taken on frames both have the
+             * inputs of, is the session's end on both (session.c) */
+            u32 left = port_SessionLeftAt();
+
+            if (left != 0 && left - 1 < g_np_remote_count) {
+                port_Log("netplay: the players went back to the top menu at "
+                         "frame %u: the session ends there\n",
+                         left - 1);
+                g_np_ended = PORT_NETPLAY_END_LEFT;
+            }
+        }
+        if (g_np_ended) {
+            return g_np_ended;
         }
         port_NetplayKeepTime();
         port_NetplayRunFrame();
