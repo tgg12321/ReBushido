@@ -46,6 +46,10 @@ struct PortGlLoad {
     void (*done)(PortGlLoad *load);
     /* the asker's own, as it likes */
     void *owner;
+    /* read where it is asked, and given before port_GlLoadAsk returns,
+     * even where pictures are read beside the game: for what is drawn
+     * over the picture on show, which nothing clears (gl_replace.c) */
+    s32 at_once;
     u64 key;
     s32 tag;
     s32 side;

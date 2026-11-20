@@ -4605,6 +4605,18 @@ The build without a window (the provers) lends no threads, and
 picture is read where it is asked for, as before, the same pictures to
 the byte.
 
+**What nothing clears is read at once.** A loading screen is drawn
+over the picture on show again and again, with no clear between
+(`disp_DrawLoadingScreen`), and the group battle's card is begun while
+the display is off. There a picture read beside the game left the game's
+own letters drawn under it for good: the card's names showed twice, the
+game's and the mod's a little apart (2026-11-20). So a primitive whose
+drawing area is the display's, or one drawn while the display is off,
+has its picture read where it is first asked for (`gl_draw.c`,
+`port_GlReplacementOf`; `PortGlLoad.at_once`): a few small pictures,
+once each, on a screen that is waiting anyway. Every other draw is into
+the buffer behind the display and reads beside the game as before.
+
 **The stage's pages looked up again for nothing.** A page of the stage
 is looked up again (its key over all of its 65,536 texels) when the
 game writes over it. Two things that put video memory back as it was
@@ -8722,7 +8734,13 @@ them; after a fight the card, its title the rule and the fight's
 number, each side's name, number and pips, and who took the fight, a
 draw, or who won the match. What is shown is `port_MatchShown`
 (`gamestate.c`): the card on the screens after a fight while one is up,
-the strip on `SCREEN_FIGHT_UPDATE` of the match's mode.
+the strip on `SCREEN_FIGHT_UPDATE` of the match's mode. The strip
+replaces the game's own "WINS 00" counter, which is not drawn while a
+match is in play (`fight_UpdateMode`, `port_MatchHidesWins`: any rule but
+the single fight, in the match's own mode; it is the game's step, so the
+software picture, the remastered one and both menus lose it alike); the
+game's single fight keeps it, as do the CPU's count of opponents and
+training's practice round.
 
 **How it is proved.** `tools/port_match.py` (run by `make
 port-stage-select`) plays a plan of each rule on both sizes, the traces
@@ -8733,7 +8751,9 @@ of the same fighters); versus First to 2, chosen on the stage page with
 Circle and Start; versus the CPU Stock 2, which as the port plays today
 is a fight won and two lost, the game's menu after it and its Rematch a
 new match; versus the CPU Stock 1, the match won and the next opponent
-with a fresh one. `tools/port_rollback.py`'s Stock plan rolls a match
+with a fresh one. In the versus plans the game's pictures at each
+fight's end have none of the counter's red rules (252 pixels before it
+was left out). `tools/port_rollback.py`'s Stock plan rolls a match
 back every 24 frames; `tools/port_net.py session` plays its session as
 a Stock match.
 

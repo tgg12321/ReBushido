@@ -22,6 +22,11 @@ checkpoints must hold the score the fights made.
   match won, and the game's own next opponent follows, his match begun
   afresh.
 
+In both versus plans the pictures of the game's screen at each fight's
+end (`card`, `result`) are held to have none of the game's own "WINS 00"
+counter, which the match's strip replaces (fight.c, fight_UpdateMode;
+port_MatchHidesWins). The play tests' single fights keep it.
+
     python3 tools/port_match.py [--out FOLDER] [--shots FOLDER]
                                 [--only PLAN...] [--rollback]
 
@@ -34,6 +39,8 @@ tools/port_stage_select.py finds them). Exit 0 if every check passes."""
 import argparse
 import os
 import re
+import shutil
+import struct
 import subprocess
 import sys
 
@@ -239,9 +246,40 @@ def main(argv):
     if args.only:
         plans = [plan for plan in plans if plan[0] in args.only]
     for name, text, extra in plans:
-        if run_plan(playtest, report, out, name, text % values, extra, args.shots) is None:
+        traces = run_plan(playtest, report, out, name, text % values, extra, None)
+        if traces is None:
             return 1
+        run = os.path.join(out, name + '-out64')
+        shots = [line.split()[1:] for line in traces[64].splitlines() if line.startswith('shot ')]
+        if name.startswith('vs_'):
+            # the strip shows the score: the game's own wins counter is not
+            # drawn over a fight of the match
+            for shot, width, height, bpp in shots:
+                if shot in ('card', 'result'):
+                    count = wins_rule_pixels(os.path.join(run, shot + '.raw'), int(width), int(height), int(bpp))
+                    report.check(count == 0, '%s: at `%s` the game\'s "WINS 00" is not drawn (%s pixels of its '
+                                 'red rules)' % (name, shot, count))
+        if args.shots:
+            os.makedirs(args.shots, exist_ok=True)
+            for shot, width, height, bpp in shots:
+                if playtest.convert_shot(run, shot, int(width), int(height), int(bpp)) is not None:
+                    shutil.copy(os.path.join(run, shot + '.png'), os.path.join(args.shots, '%s-%s.png' % (name, shot)))
     return 1 if report.failed else 0
+
+
+def wins_rule_pixels(raw, width, height, bpp):
+    """The pixels of the wins counter's red rules (hud.c, hud_DrawWinCounts,
+    RULE_R/G/B: 255, 16, 16) in the top quarter of a checkpoint's picture of
+    the game's screen; None if there is no picture. The stage, the blood and
+    the strip have none of that colour (the picture of a Stock fight before
+    the counter was left out had 252, the rules alone)."""
+    if not os.path.isfile(raw) or bpp != 16:
+        return None
+    with open(raw, 'rb') as f:
+        data = f.read()
+    rule = 0xFF >> 3 | (0x10 >> 3) << 5 | (0x10 >> 3) << 10
+    pixels = struct.unpack('<%dH' % (width * (height // 4)), data[:width * (height // 4) * 2])
+    return sum(1 for v in pixels if v & 0x7FFF == rule)
 
 
 if __name__ == '__main__':

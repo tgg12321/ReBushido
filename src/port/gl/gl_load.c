@@ -180,7 +180,7 @@ s32 port_GlLoadAsk(const PortGlLoad *asked) {
     load->pixels = NULL;
     load->problem[0] = 0;
     load->next = NULL;
-    if (!g_load.is_beside) {
+    if (!g_load.is_beside || load->at_once) {
         port_GlLoadRead(load);
         load->done(load);
         free(load->pixels);
