@@ -129,6 +129,42 @@ static s32 port_FindCueImage(
     return 0;
 }
 
+/* Where the first track's data begins in its file, in sectors: its
+ * INDEX 01, `MM:SS:FF`, which is 00:00:00 in most dumps, and 00:02:00 in
+ * one that kept the two seconds of pregap before it. 0 if none is said. */
+static u32 port_FindCueStart(const char *cue) {
+    static const char word[] = "INDEX 01 ";
+    const char *at;
+
+    for (at = cue; *at != 0; at++) {
+        u32 i;
+        u32 parts[3];
+
+        for (i = 0; word[i] != 0 && at[i] == word[i]; i++) {
+        }
+        if (word[i] != 0) {
+            continue;
+        }
+        at += i;
+        while (*at == ' ') {
+            at++;
+        }
+        for (i = 0; i < 3; i++) {
+            if (at[0] < '0' || at[0] > '9' || at[1] < '0' || at[1] > '9' ||
+                (i < 2 && at[2] != ':')) {
+                return 0;
+            }
+            parts[i] = (u32)(at[0] - '0') * BCD_BASE + (u32)(at[1] - '0');
+            at += 3;
+        }
+        return (parts[POSITION_MINUTE] * SECONDS_PER_MINUTE +
+                parts[POSITION_SECOND]) *
+                   SECTORS_PER_SECOND +
+               parts[POSITION_FRAME];
+    }
+    return 0;
+}
+
 /* Opens an image by its own name or its cue sheet's (port_disc.h). */
 const char *port_OpenDisc(PortDisc *disc, const char *path) {
     char image_path[PATH_MAX_BYTES];
@@ -136,6 +172,7 @@ const char *port_OpenDisc(PortDisc *disc, const char *path) {
 
     disc->file = -1;
     disc->sector_count = 0;
+    disc->first = 0;
     if (port_TextEndsWith(path, ".cue")) {
         static char cue[CUE_BYTES_MAX + 1];
         s32 file = port_HostOpen(path);
@@ -155,6 +192,7 @@ const char *port_OpenDisc(PortDisc *disc, const char *path) {
         if (!port_FindCueImage(path, cue, image_path, sizeof(image_path))) {
             return "the cue sheet has no FILE \"...\" line";
         }
+        disc->first = port_FindCueStart(cue);
         path = image_path;
     }
     disc->file = port_HostOpen(path);
@@ -167,6 +205,11 @@ const char *port_OpenDisc(PortDisc *disc, const char *path) {
         return "the image is not whole raw sectors of 2352 bytes (a .bin)";
     }
     disc->sector_count = size / PORT_DISC_SECTOR_BYTES;
+    if (disc->first >= disc->sector_count) {
+        port_CloseDisc(disc);
+        return "the cue sheet's INDEX 01 is past the image's end";
+    }
+    disc->sector_count -= disc->first;
     return NULL;
 }
 
@@ -192,7 +235,8 @@ s32 port_ReadDiscSector(const PortDisc *disc, u32 sector, u8 *raw) {
         return PORT_DISC_OUT_OF_RANGE;
     }
     g_port_disc_sectors_read++;
-    if (port_HostReadAt(disc->file, sector * PORT_DISC_SECTOR_BYTES, raw,
+    if (port_HostReadAt(disc->file,
+                        (sector + disc->first) * PORT_DISC_SECTOR_BYTES, raw,
                         PORT_DISC_SECTOR_BYTES) != PORT_DISC_SECTOR_BYTES) {
         return PORT_DISC_READ_FAILED;
     }

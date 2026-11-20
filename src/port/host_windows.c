@@ -19,6 +19,7 @@
 #if defined(_WIN32)
 
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 #include <x86intrin.h>
 
@@ -155,61 +156,230 @@ void port_HostFlush(s32 file) { FlushFileBuffers(g_port_windows_files[file]); }
 
 static s32 g_port_windows_sockets_started;
 
-/* The port's address as Windows takes it. */
-static void port_WindowsToSocket(
-    struct sockaddr_in *out, const PortNetAddress *in) {
-    u32 i;
-
-    for (i = 0; i < sizeof(*out); i++) {
-        ((u8 *)out)[i] = 0;
-    }
-    out->sin_family = AF_INET;
-    out->sin_port = htons(in->port);
-    out->sin_addr.s_addr = htonl(in->address);
-}
-
-/* A socket of datagrams, bound where it is told; Windows' sockets are
- * started the first time. */
-s32 port_HostUdpOpen(const PortNetAddress *at) {
-    struct sockaddr_in address;
-    SOCKET file;
-
+/* Windows' sockets, the first time one is wanted: 1 if they are. */
+static s32 port_WindowsStartSockets(void) {
     if (!g_port_windows_sockets_started) {
         WSADATA data;
 
         if (WSAStartup(MAKEWORD(2, 2), &data) != 0) {
-            return -1;
+            return 0;
         }
         g_port_windows_sockets_started = 1;
     }
-    file = socket(AF_INET, SOCK_DGRAM, 0);
+    return 1;
+}
+
+/* The sockets opened for IPv6 (and IPv4 with it), whose addresses are
+ * given as IPv6 with IPv4 mapped. */
+#define V6_SOCKETS_MAX 8
+static SOCKET g_port_v6_sockets[V6_SOCKETS_MAX];
+static s32 g_port_v6_socket_count;
+/* WSAIoctl's SIO_UDP_CONNRESET, which MinGW's headers may not have. */
+#define UDP_CONNRESET_CODE 0x9800000CUL
+
+static s32 port_WindowsIsV6(SOCKET file) {
+    s32 i;
+
+    for (i = 0; i < g_port_v6_socket_count; i++) {
+        if (g_port_v6_sockets[i] == file) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void port_WindowsZero(void *bytes, u32 count) {
+    u32 i;
+
+    for (i = 0; i < count; i++) {
+        ((u8 *)bytes)[i] = 0;
+    }
+}
+
+/* The port's address as Windows takes it, for a socket of IPv6 or of
+ * IPv4: its length. */
+static s32 port_WindowsToSocket(
+    struct sockaddr_storage *out, const PortNetAddress *in, s32 v6) {
+    u32 i;
+
+    port_WindowsZero(out, sizeof(*out));
+    if (v6) {
+        struct sockaddr_in6 *six = (struct sockaddr_in6 *)out;
+        u8 *bytes = (u8 *)&six->sin6_addr;
+
+        six->sin6_family = AF_INET6;
+        six->sin6_port = htons(in->port);
+        if (in->is_v6) {
+            for (i = 0; i < PORT_NET_V6_BYTES; i++) {
+                bytes[i] = in->v6[i];
+            }
+        } else {
+            bytes[10] = 0xFF;
+            bytes[11] = 0xFF;
+            for (i = 0; i < 4; i++) {
+                bytes[12 + i] = (u8)(in->address >> (24 - 8 * i));
+            }
+        }
+        return sizeof(*six);
+    } else {
+        struct sockaddr_in *four = (struct sockaddr_in *)out;
+
+        four->sin_family = AF_INET;
+        four->sin_port = htons(in->port);
+        four->sin_addr.s_addr = htonl(in->address);
+        return sizeof(*four);
+    }
+}
+
+/* ... and back: an IPv4-mapped address as IPv4. */
+static void port_WindowsFromSocket(
+    PortNetAddress *out, const struct sockaddr_storage *in) {
+    u32 i;
+
+    port_WindowsZero(out, sizeof(*out));
+    if (in->ss_family == AF_INET6) {
+        const struct sockaddr_in6 *six = (const struct sockaddr_in6 *)in;
+        const u8 *bytes = (const u8 *)&six->sin6_addr;
+        s32 is_mapped = bytes[10] == 0xFF && bytes[11] == 0xFF;
+
+        for (i = 0; i < 10; i++) {
+            is_mapped = is_mapped && bytes[i] == 0;
+        }
+        out->port = ntohs(six->sin6_port);
+        if (is_mapped) {
+            for (i = 0; i < 4; i++) {
+                out->address = (out->address << 8) | bytes[12 + i];
+            }
+        } else {
+            out->is_v6 = 1;
+            for (i = 0; i < PORT_NET_V6_BYTES; i++) {
+                out->v6[i] = bytes[i];
+            }
+        }
+    } else {
+        const struct sockaddr_in *four = (const struct sockaddr_in *)in;
+
+        out->port = ntohs(four->sin_port);
+        out->address = ntohl(four->sin_addr.s_addr);
+    }
+}
+
+/* A socket of datagrams, bound where it is told: of both kinds where the
+ * address is IPv6. An answer of "port unreachable" to something it sent
+ * is not taken for an error of the socket's (SIO_UDP_CONNRESET off):
+ * Windows would otherwise fail its next receive, as the hole punching
+ * and a guest that comes before its host meet often. */
+s32 port_HostUdpOpen(const PortNetAddress *at) {
+    struct sockaddr_storage address;
+    SOCKET file;
+    BOOL off = FALSE;
+    DWORD returned = 0;
+    s32 length;
+
+    if (!port_WindowsStartSockets()) {
+        return -1;
+    }
+    if (at->is_v6 && g_port_v6_socket_count == V6_SOCKETS_MAX) {
+        return -1;
+    }
+    file = socket(at->is_v6 ? AF_INET6 : AF_INET, SOCK_DGRAM, 0);
     if (file == INVALID_SOCKET) {
         return -1;
     }
-    port_WindowsToSocket(&address, at);
-    if (bind(file, (struct sockaddr *)&address, sizeof(address)) != 0) {
+    if (at->is_v6) {
+        DWORD v6_only = 0;
+
+        setsockopt(file, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&v6_only,
+                   sizeof(v6_only));
+    }
+    WSAIoctl(file, UDP_CONNRESET_CODE, &off, sizeof(off), NULL, 0, &returned,
+             NULL, NULL);
+    length = port_WindowsToSocket(&address, at, at->is_v6);
+    if (bind(file, (struct sockaddr *)&address, length) != 0) {
         closesocket(file);
         return -1;
+    }
+    if (at->is_v6) {
+        g_port_v6_sockets[g_port_v6_socket_count++] = file;
     }
     /* a socket's handle is a small number in practice; the port keeps
      * it as one */
     return (s32)file;
 }
 
+void port_HostUdpClose(s32 socket) {
+    s32 i;
+
+    for (i = 0; i < g_port_v6_socket_count; i++) {
+        if (g_port_v6_sockets[i] == (SOCKET)socket) {
+            g_port_v6_sockets[i] = g_port_v6_sockets[--g_port_v6_socket_count];
+            break;
+        }
+    }
+    closesocket((SOCKET)socket);
+}
+
+s32 port_HostUdpBound(s32 socket, PortNetAddress *at) {
+    struct sockaddr_storage address;
+    s32 length = sizeof(address);
+
+    if (getsockname((SOCKET)socket, (struct sockaddr *)&address, &length) !=
+        0) {
+        return 0;
+    }
+    port_WindowsFromSocket(at, &address);
+    return 1;
+}
+
+s32 port_HostOwnAddress(s32 v6, PortNetAddress *at) {
+    /* a public address of each kind: nothing is sent to it */
+    static const PortNetAddress four = {0x08080808U, 53, 0, {0}};
+    static const PortNetAddress six = {
+        0, 53, 1, {0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0, 0, 0, 0, 0, 0, 0,
+                   0x88, 0x88}};
+    struct sockaddr_storage address;
+    SOCKET file;
+    s32 length;
+    s32 ok = 0;
+
+    if (!port_WindowsStartSockets()) {
+        return 0;
+    }
+    file = socket(v6 ? AF_INET6 : AF_INET, SOCK_DGRAM, 0);
+    if (file == INVALID_SOCKET) {
+        return 0;
+    }
+    length = port_WindowsToSocket(&address, v6 ? &six : &four, v6);
+    if (connect(file, (struct sockaddr *)&address, length) == 0) {
+        length = sizeof(address);
+        if (getsockname(file, (struct sockaddr *)&address, &length) == 0) {
+            port_WindowsFromSocket(at, &address);
+            ok = 1;
+        }
+    }
+    closesocket(file);
+    return ok;
+}
+
 /* One datagram to the peer. */
 s32 port_HostUdpSend(
     s32 socket, const PortNetAddress *to, const void *bytes, u32 count) {
-    struct sockaddr_in address;
+    struct sockaddr_storage address;
+    s32 v6 = port_WindowsIsV6((SOCKET)socket);
+    s32 length;
 
-    port_WindowsToSocket(&address, to);
+    if (to->is_v6 && !v6) {
+        return 0;
+    }
+    length = port_WindowsToSocket(&address, to, v6);
     return sendto((SOCKET)socket, (const char *)bytes, (s32)count, 0,
-                  (struct sockaddr *)&address, sizeof(address)) == (s32)count;
+                  (struct sockaddr *)&address, length) == (s32)count;
 }
 
 /* select, then recvfrom: a datagram, if one comes in time. */
 s32 port_HostUdpReceive(
     s32 socket, void *bytes, u32 room, PortNetAddress *from, u32 wait_ms) {
-    struct sockaddr_in address;
+    struct sockaddr_storage address;
     s32 address_bytes = sizeof(address);
     fd_set readable;
     struct timeval wait;
@@ -229,8 +399,7 @@ s32 port_HostUdpReceive(
         return -1;
     }
     if (from != NULL) {
-        from->address = ntohl(address.sin_addr.s_addr);
-        from->port = ntohs(address.sin_port);
+        port_WindowsFromSocket(from, &address);
     }
     return (s32)got;
 }

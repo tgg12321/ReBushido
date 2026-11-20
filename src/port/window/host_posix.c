@@ -154,45 +154,178 @@ void port_HostFlush(s32 file) {
 
 /* ---- the network (port_host.h) ---- */
 
-/* The port's address as the library takes it. */
-static void port_PosixToSocket(
-    struct sockaddr_in *out, const PortNetAddress *in) {
-    memset(out, 0, sizeof(*out));
-    out->sin_family = AF_INET;
-    out->sin_port = htons(in->port);
-    out->sin_addr.s_addr = htonl(in->address);
+/* The sockets opened for IPv6 (and IPv4 with it), whose addresses are
+ * given as IPv6 with IPv4 mapped. */
+#define V6_SOCKETS_MAX 8
+static int g_port_v6_sockets[V6_SOCKETS_MAX];
+static int g_port_v6_socket_count;
+
+static int port_PosixIsV6(int file) {
+    int i;
+
+    for (i = 0; i < g_port_v6_socket_count; i++) {
+        if (g_port_v6_sockets[i] == file) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
-/* A socket of datagrams, bound where it is told. */
+/* The port's address as the library takes it, for a socket of IPv6 or of
+ * IPv4: its length. */
+static socklen_t port_PosixToSocket(
+    struct sockaddr_storage *out, const PortNetAddress *in, int v6) {
+    memset(out, 0, sizeof(*out));
+    if (v6) {
+        struct sockaddr_in6 *six = (struct sockaddr_in6 *)out;
+
+        six->sin6_family = AF_INET6;
+        six->sin6_port = htons(in->port);
+        if (in->is_v6) {
+            memcpy(six->sin6_addr.s6_addr, in->v6, PORT_NET_V6_BYTES);
+        } else {
+            u32 address = htonl(in->address);
+
+            six->sin6_addr.s6_addr[10] = 0xFF;
+            six->sin6_addr.s6_addr[11] = 0xFF;
+            memcpy(six->sin6_addr.s6_addr + 12, &address, 4);
+        }
+        return sizeof(*six);
+    } else {
+        struct sockaddr_in *four = (struct sockaddr_in *)out;
+
+        four->sin_family = AF_INET;
+        four->sin_port = htons(in->port);
+        four->sin_addr.s_addr = htonl(in->address);
+        return sizeof(*four);
+    }
+}
+
+/* ... and back: an IPv4-mapped address as IPv4. */
+static void port_PosixFromSocket(
+    PortNetAddress *out, const struct sockaddr_storage *in) {
+    static const u8 mapped[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF};
+
+    memset(out, 0, sizeof(*out));
+    if (in->ss_family == AF_INET6) {
+        const struct sockaddr_in6 *six = (const struct sockaddr_in6 *)in;
+
+        out->port = ntohs(six->sin6_port);
+        if (memcmp(six->sin6_addr.s6_addr, mapped, sizeof(mapped)) == 0) {
+            u32 address;
+
+            memcpy(&address, six->sin6_addr.s6_addr + 12, 4);
+            out->address = ntohl(address);
+        } else {
+            out->is_v6 = 1;
+            memcpy(out->v6, six->sin6_addr.s6_addr, PORT_NET_V6_BYTES);
+        }
+    } else {
+        const struct sockaddr_in *four = (const struct sockaddr_in *)in;
+
+        out->port = ntohs(four->sin_port);
+        out->address = ntohl(four->sin_addr.s_addr);
+    }
+}
+
+/* A socket of datagrams, bound where it is told: of both kinds where the
+ * address is IPv6. */
 s32 port_HostUdpOpen(const PortNetAddress *at) {
-    struct sockaddr_in address;
-    int file = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_storage address;
+    socklen_t length;
+    int file = socket(at->is_v6 ? AF_INET6 : AF_INET, SOCK_DGRAM, 0);
 
     if (file < 0) {
         return -1;
     }
-    port_PosixToSocket(&address, at);
-    if (bind(file, (struct sockaddr *)&address, sizeof(address)) != 0) {
+    if (at->is_v6) {
+        int off = 0;
+
+        if (g_port_v6_socket_count == V6_SOCKETS_MAX) {
+            close(file);
+            return -1;
+        }
+        setsockopt(file, IPPROTO_IPV6, IPV6_V6ONLY, &off, sizeof(off));
+    }
+    length = port_PosixToSocket(&address, at, at->is_v6);
+    if (bind(file, (struct sockaddr *)&address, length) != 0) {
         close(file);
         return -1;
     }
+    if (at->is_v6) {
+        g_port_v6_sockets[g_port_v6_socket_count++] = file;
+    }
     return file;
+}
+
+void port_HostUdpClose(s32 socket) {
+    int i;
+
+    for (i = 0; i < g_port_v6_socket_count; i++) {
+        if (g_port_v6_sockets[i] == socket) {
+            g_port_v6_sockets[i] = g_port_v6_sockets[--g_port_v6_socket_count];
+            break;
+        }
+    }
+    close(socket);
+}
+
+s32 port_HostUdpBound(s32 socket, PortNetAddress *at) {
+    struct sockaddr_storage address;
+    socklen_t length = sizeof(address);
+
+    if (getsockname(socket, (struct sockaddr *)&address, &length) != 0) {
+        return 0;
+    }
+    port_PosixFromSocket(at, &address);
+    return 1;
+}
+
+s32 port_HostOwnAddress(s32 v6, PortNetAddress *at) {
+    /* a public address of each kind: nothing is sent to it */
+    static const PortNetAddress four = {0x08080808U, 53, 0, {0}};
+    static const PortNetAddress six = {
+        0, 53, 1, {0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0, 0, 0, 0, 0, 0, 0,
+                   0x88, 0x88}};
+    struct sockaddr_storage address;
+    socklen_t length;
+    int file = socket(v6 ? AF_INET6 : AF_INET, SOCK_DGRAM, 0);
+    s32 ok = 0;
+
+    if (file < 0) {
+        return 0;
+    }
+    length = port_PosixToSocket(&address, v6 ? &six : &four, v6);
+    if (connect(file, (struct sockaddr *)&address, length) == 0) {
+        length = sizeof(address);
+        if (getsockname(file, (struct sockaddr *)&address, &length) == 0) {
+            port_PosixFromSocket(at, &address);
+            ok = 1;
+        }
+    }
+    close(file);
+    return ok;
 }
 
 /* One datagram to the peer. */
 s32 port_HostUdpSend(
     s32 socket, const PortNetAddress *to, const void *bytes, u32 count) {
-    struct sockaddr_in address;
+    struct sockaddr_storage address;
+    int v6 = port_PosixIsV6(socket);
+    socklen_t length;
 
-    port_PosixToSocket(&address, to);
+    if (to->is_v6 && !v6) {
+        return 0;
+    }
+    length = port_PosixToSocket(&address, to, v6);
     return sendto(socket, bytes, count, 0, (struct sockaddr *)&address,
-                  sizeof(address)) == (ssize_t)count;
+                  length) == (ssize_t)count;
 }
 
 /* poll, then recvfrom: a datagram, if one comes in time. */
 s32 port_HostUdpReceive(
     s32 socket, void *bytes, u32 room, PortNetAddress *from, u32 wait_ms) {
-    struct sockaddr_in address;
+    struct sockaddr_storage address;
     socklen_t address_bytes = sizeof(address);
     struct pollfd poll_file;
     ssize_t got;
@@ -210,8 +343,7 @@ s32 port_HostUdpReceive(
         return -1;
     }
     if (from != NULL) {
-        from->address = ntohl(address.sin_addr.s_addr);
-        from->port = ntohs(address.sin_port);
+        port_PosixFromSocket(from, &address);
     }
     return (s32)got;
 }

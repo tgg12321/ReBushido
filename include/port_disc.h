@@ -38,7 +38,9 @@ enum PortDiscResult {
 
 typedef struct PortDisc {
     s32 file;         /* the image, open (port_host.h) */
-    u32 sector_count; /* whole sectors in it */
+    u32 sector_count; /* whole sectors in it, from the first of the data */
+    u32 first; /* the file's sectors before the data's first: a pregap the
+                  cue sheet's INDEX 01 says the file has (0 for most) */
 } PortDisc;
 
 /* Opens the image `path` names: a `.bin`, or a `.cue` whose first FILE

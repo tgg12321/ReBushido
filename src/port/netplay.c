@@ -190,6 +190,7 @@ static u32 g_np_sent_at;
 
 void (*g_port_net_hold_hook)(u32 blanks);
 void (*g_port_net_wait_hook)(const char *status);
+void (*g_port_net_fail_hook)(const char *why);
 void (*g_port_net_rerun_hook)(s32 begins, u32 blanks);
 
 void port_SetNetplay(s32 pad, u32 delay) {

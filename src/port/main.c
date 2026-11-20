@@ -79,6 +79,10 @@ static const char g_port_usage[] =
     "            [--link-side 0|1] [--net-latency MS] [--net-loss PERCENT]\n"
     "            [--netplay 1|2] [--net-delay N]\n"
     "            [--host ADDRESS:PORT | --join ADDRESS:PORT]\n"
+    "            [--lobby ADDRESS:PORT [--room NAME | --join CODE]\n"
+    "             [--player NAME] [--room-password WORD]]\n"
+    "            [--punch-to ADDRESS:PORT] [--net-paths LIST]\n"
+    "            [--check-online]\n"
     "\n"
     "  --image FILE   your own image of the game's disc: the .cue, or the\n"
     "                 .bin of raw sectors it names\n"
@@ -146,6 +150,27 @@ static const char g_port_usage[] =
     "  --join ADDRESS:PORT   ... join the host there (--net-bind says\n"
     "                 where this program's own socket is: 0.0.0.0, any\n"
     "                 port, if it does not)\n"
+    "                 ADDRESS:PORT is IPv4's a.b.c.d:PORT or IPv6's\n"
+    "                 [x:y::z]:PORT; a bind of 0.0.0.0 is of both kinds\n"
+    "  --lobby ADDRESS:PORT   meet by way of the lobby server there\n"
+    "                 (docs/NETPLAY.md, section 14): --room NAME opens a\n"
+    "                 room and hosts it, --join CODE joins the room of that\n"
+    "                 code; the two are told each other's addresses, try\n"
+    "                 them all at once, and play through the server where\n"
+    "                 no way is found\n"
+    "  --player NAME  ... the name the lobby shows\n"
+    "  --room-password WORD   ... the room's password (the host's), or\n"
+    "                 the one typed to join it\n"
+    "  --punch-to ADDRESS:PORT   with --host and no lobby: the other\n"
+    "                 player's public address, sent to while waiting, so\n"
+    "                 that both routers let the two through (both keep\n"
+    "                 the port they said)\n"
+    "  --net-paths LIST   for tests: the ways a lobby's meeting may take,\n"
+    "                 of public,lan,mapped,v6,relay\n"
+    "  --mapped ADDRESS:PORT   for tests: a port the router mapped, offered\n"
+    "                 as a way (the window maps it itself)\n"
+    "  --check-online print the setup code two players compare, and end\n"
+    "  --session-differ build|disc|mods|protocol   for tests: say another\n"
     "  --net-latency MS   for tests: every datagram waits this long first\n"
     "  --net-loss PERCENT ... and so many in a hundred are dropped\n"
     "  --mods FOLDER  the mods are in this folder (mods beside the program\n"
@@ -304,6 +329,17 @@ s32 port_Main(s32 argc, char **argv) {
     s32 net_delay = NET_DELAY;
     s32 session_role = PORT_SESSION_NONE;
     PortNetAddress session_at;
+    const char *session_text = NULL;
+    PortNetAddress lobby;
+    s32 has_lobby = 0;
+    const char *room = NULL;
+    const char *player = "";
+    const char *password = NULL;
+    PortNetAddress punch_to;
+    s32 has_punch_to = 0;
+    PortNetAddress mapped;
+    u32 paths = 0;
+    s32 check_online = 0;
     s32 i;
 
     port_CatchCrashes();
@@ -324,7 +360,9 @@ s32 port_Main(s32 argc, char **argv) {
         const char *word = argv[i];
         s32 has_value = i + 1 < argc;
 
-        if (port_TextsEqual(word, "--trace")) {
+        if (port_TextsEqual(word, "--check-online")) {
+            check_online = 1;
+        } else if (port_TextsEqual(word, "--trace")) {
             port_SetTrace(1);
         } else if (port_TextsEqual(word, "--no-cards")) {
             port_SetCardsOff();
@@ -445,10 +483,54 @@ s32 port_Main(s32 argc, char **argv) {
             }
             session_role = port_TextsEqual(word, "--host") ? PORT_SESSION_HOST
                                                            : PORT_SESSION_JOIN;
-            if (!port_ParseNetAddress(argv[++i], &session_at) ||
-                session_at.port == 0) {
-                port_UsageError(
-                    "--host and --join take ADDRESS:PORT, not ", argv[i]);
+            /* an address, or with --lobby a room's code: read below */
+            session_text = argv[++i];
+        } else if (port_TextsEqual(word, "--lobby") ||
+                   port_TextsEqual(word, "--relay")) {
+            if (!port_ParseNetAddress(argv[++i], &lobby) || lobby.port == 0) {
+                port_UsageError("--lobby takes ADDRESS:PORT, not ", argv[i]);
+            }
+            has_lobby = 1;
+        } else if (port_TextsEqual(word, "--room")) {
+            room = argv[++i];
+        } else if (port_TextsEqual(word, "--player")) {
+            player = argv[++i];
+        } else if (port_TextsEqual(word, "--room-password")) {
+            password = argv[++i];
+        } else if (port_TextsEqual(word, "--punch-to")) {
+            if (!port_ParseNetAddress(argv[++i], &punch_to) ||
+                punch_to.port == 0) {
+                port_UsageError("--punch-to takes ADDRESS:PORT, not ", argv[i]);
+            }
+            has_punch_to = 1;
+        } else if (port_TextsEqual(word, "--mapped")) {
+            if (!port_ParseNetAddress(argv[++i], &mapped) || mapped.port == 0) {
+                port_UsageError("--mapped takes ADDRESS:PORT, not ", argv[i]);
+            }
+            port_SetRelayMapped(&mapped);
+        } else if (port_TextsEqual(word, "--net-paths")) {
+            paths = port_ParseNetPaths(argv[++i]);
+            if (paths == 0) {
+                port_UsageError("--net-paths takes some of public,lan,mapped,"
+                                "v6,relay, not ",
+                                argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--session-differ")) {
+            static const char *const parts[] = {"build", "disc", "mods",
+                                                "protocol"};
+            s32 part;
+
+            i++;
+            for (part = 0; part < 4; part++) {
+                if (port_TextsEqual(argv[i], parts[part])) {
+                    port_SetSessionDiffer(PORT_SESSION_DIFFER_BUILD + part);
+                    break;
+                }
+            }
+            if (part == 4) {
+                port_UsageError("--session-differ takes build, disc, mods or "
+                                "protocol, not ",
+                                argv[i]);
             }
         } else if (port_TextsEqual(word, "--net-delay")) {
             if (!port_ParseNumber(argv[++i], &net_delay) || net_delay < 0 ||
@@ -505,6 +587,11 @@ s32 port_Main(s32 argc, char **argv) {
     port_StartStageMods(&g_port_disc);
     port_WeaponsStart();
     port_ArenasStart();
+    port_SetSessionDisc(&g_port_disc);
+    if (check_online) {
+        port_PrintSessionCheck();
+        return PORT_EXIT_OK;
+    }
     if (plan != NULL) {
         port_LoadPlan(plan);
     }
@@ -513,6 +600,44 @@ s32 port_Main(s32 argc, char **argv) {
     }
     if (shots != NULL) {
         port_SetShots(shots, (u32)every);
+    }
+    if (room != NULL) {
+        if (!has_lobby || session_role == PORT_SESSION_JOIN) {
+            port_UsageError("--room opens a room at a --lobby, and hosts it",
+                            "");
+        }
+        if (session_role == PORT_SESSION_NONE) {
+            session_role = PORT_SESSION_HOST;
+            session_text = "0.0.0.0:0";
+        }
+    }
+    if (session_role != PORT_SESSION_NONE) {
+        if (has_lobby && session_role == PORT_SESSION_JOIN) {
+            /* the room's code; the server is the peer until the way to
+             * the host is found */
+            port_SetRelay(&lobby, session_text, paths);
+            session_at = lobby;
+        } else if (!port_ParseNetAddress(session_text, &session_at) ||
+                   (session_at.port == 0 && !has_lobby)) {
+            port_UsageError("--host and --join take ADDRESS:PORT (--join "
+                            "a room's code with --lobby), not ",
+                            session_text);
+        } else if (has_lobby) {
+            port_SetRelay(&lobby, "", paths);
+        }
+        if (has_lobby) {
+            port_SetRelayRoom(room != NULL ? room : "", player);
+            if (password != NULL) {
+                port_SetRelayPassword(password);
+            }
+        }
+        if (has_punch_to) {
+            port_SetSessionPunchTo(&punch_to);
+        }
+    } else if (has_lobby || has_punch_to) {
+        port_UsageError("--lobby and --punch-to are a session's (--host, "
+                        "--join, --room)",
+                        "");
     }
     if (session_role != PORT_SESSION_NONE) {
         if (link_side >= 0 || netplay_pad != 0 || rollback_frames > 0) {
@@ -530,8 +655,7 @@ s32 port_Main(s32 argc, char **argv) {
         if (session_role == PORT_SESSION_JOIN && net_addresses == 0) {
             /* any address of this PC, any port: the host answers where
              * it was spoken to from */
-            net_bind.address = 0;
-            net_bind.port = 0;
+            port_ClearNetAddress(&net_bind);
         }
     } else if (net_addresses != 0 && net_addresses != 3) {
         port_UsageError("the network needs both --net-bind and --net-peer", "");

@@ -70,7 +70,10 @@ typedef __INTPTR_TYPE__ LinuxWord;
 #define LINUX_TICKS_PER_SECOND 10000000U
 #define LINUX_NANOSECONDS_PER_TICK 100U
 #define LINUX_AF_INET 2
+#define LINUX_AF_INET6 10
 #define LINUX_SOCK_DGRAM 2
+#define LINUX_IPPROTO_IPV6 41
+#define LINUX_IPV6_V6ONLY 26
 #define LINUX_POLLIN 1
 /* The most arguments a call of the sockets takes. */
 #define LINUX_CALL_ARGS 6
@@ -100,6 +103,9 @@ enum {
     LINUX_SENDTO = 44,
     LINUX_RECVFROM = 45,
     LINUX_BIND = 49,
+    LINUX_CONNECT = 42,
+    LINUX_GETSOCKNAME = 51,
+    LINUX_SETSOCKOPT = 54,
     LINUX_MKDIR = 83,
     LINUX_GETDENTS64 = 217,
 };
@@ -163,6 +169,9 @@ enum {
     LINUX_SOCKETCALL_BIND = 2,
     LINUX_SOCKETCALL_SENDTO = 11,
     LINUX_SOCKETCALL_RECVFROM = 12,
+    LINUX_SOCKETCALL_CONNECT = 3,
+    LINUX_SOCKETCALL_GETSOCKNAME = 6,
+    LINUX_SOCKETCALL_SETSOCKOPT = 14,
     LINUX_MKDIR = 39,
     LINUX_GETDENTS64 = 220,
 };
@@ -323,14 +332,18 @@ void port_HostFlush(s32 file) { port_LinuxCall(LINUX_FSYNC, file, 0, 0); }
 
 /* ---- the network (port_host.h) ---- */
 
-/* struct sockaddr_in: the port and the address in the network's order
- * of bytes, the most significant first. */
+/* struct sockaddr_in and struct sockaddr_in6: the family, the port in the
+ * network's order of bytes, then the address, its most significant byte
+ * first. */
+#define LINUX_ADDRESS_BYTES 28
+#define LINUX_V4_ADDRESS_BYTES 16
 typedef struct {
     u16 family;
     u16 port;
-    u32 address;
-    u8 zero[8];
+    u8 rest[LINUX_ADDRESS_BYTES - 4];
 } LinuxSocketAddress;
+/* where sockaddr_in6's address is, after the flow's word */
+#define LINUX_V6_AT 4
 
 /* struct pollfd. */
 typedef struct {
@@ -339,27 +352,9 @@ typedef struct {
     s16 answered;
 } LinuxPoll;
 
-/* A port's or an address's bytes, the other way round. */
+/* A port's bytes, the other way round. */
 static u16 port_LinuxSwap16(u16 value) {
     return (u16)((value >> BITS_PER_BYTE) | (value << BITS_PER_BYTE));
-}
-
-static u32 port_LinuxSwap32(u32 value) {
-    return ((u32)port_LinuxSwap16((u16)value) << (2 * BITS_PER_BYTE)) |
-           port_LinuxSwap16((u16)(value >> (2 * BITS_PER_BYTE)));
-}
-
-/* The port's address as the kernel takes it. */
-static void port_LinuxToSocket(
-    LinuxSocketAddress *out, const PortNetAddress *in) {
-    u32 i;
-
-    out->family = LINUX_AF_INET;
-    out->port = port_LinuxSwap16(in->port);
-    out->address = port_LinuxSwap32(in->address);
-    for (i = 0; i < sizeof(out->zero); i++) {
-        out->zero[i] = 0;
-    }
 }
 
 #if defined(__x86_64__)
@@ -373,25 +368,182 @@ static void port_LinuxToSocket(
         LINUX_SOCKETCALL, LINUX_SOCKETCALL_##name, (LinuxWord)(args), 0)
 #endif
 
-/* A socket of datagrams, bound where it is told. */
+/* The sockets opened for IPv6 (and IPv4 with it), whose addresses are
+ * given as IPv6 with IPv4 mapped. */
+#define LINUX_V6_SOCKETS_MAX 8
+static s32 g_port_linux_v6_sockets[LINUX_V6_SOCKETS_MAX];
+static s32 g_port_linux_v6_socket_count;
+
+static s32 port_LinuxIsV6(s32 file) {
+    s32 i;
+
+    for (i = 0; i < g_port_linux_v6_socket_count; i++) {
+        if (g_port_linux_v6_sockets[i] == file) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The port's address as the kernel takes it, for a socket of IPv6 or of
+ * IPv4: its length. */
+static u32 port_LinuxToSocket(
+    LinuxSocketAddress *out, const PortNetAddress *in, s32 v6) {
+    u32 i;
+
+    for (i = 0; i < sizeof(out->rest); i++) {
+        out->rest[i] = 0;
+    }
+    out->port = port_LinuxSwap16(in->port);
+    if (!v6) {
+        out->family = LINUX_AF_INET;
+        for (i = 0; i < 4; i++) {
+            out->rest[i] = (u8)(in->address >> (24 - 8 * i));
+        }
+        return LINUX_V4_ADDRESS_BYTES;
+    }
+    out->family = LINUX_AF_INET6;
+    if (in->is_v6) {
+        for (i = 0; i < PORT_NET_V6_BYTES; i++) {
+            out->rest[LINUX_V6_AT + i] = in->v6[i];
+        }
+    } else {
+        out->rest[LINUX_V6_AT + 10] = 0xFF;
+        out->rest[LINUX_V6_AT + 11] = 0xFF;
+        for (i = 0; i < 4; i++) {
+            out->rest[LINUX_V6_AT + 12 + i] =
+                (u8)(in->address >> (24 - 8 * i));
+        }
+    }
+    return LINUX_ADDRESS_BYTES;
+}
+
+/* ... and back: an IPv4-mapped address as IPv4. */
+static void port_LinuxFromSocket(
+    PortNetAddress *out, const LinuxSocketAddress *in) {
+    const u8 *bytes = in->rest;
+    s32 is_mapped;
+    u32 i;
+
+    out->address = 0;
+    out->is_v6 = 0;
+    for (i = 0; i < PORT_NET_V6_BYTES; i++) {
+        out->v6[i] = 0;
+    }
+    out->port = port_LinuxSwap16(in->port);
+    if (in->family == LINUX_AF_INET6) {
+        bytes += LINUX_V6_AT;
+        is_mapped = bytes[10] == 0xFF && bytes[11] == 0xFF;
+        for (i = 0; i < 10; i++) {
+            is_mapped = is_mapped && bytes[i] == 0;
+        }
+        if (!is_mapped) {
+            out->is_v6 = 1;
+            for (i = 0; i < PORT_NET_V6_BYTES; i++) {
+                out->v6[i] = bytes[i];
+            }
+            return;
+        }
+        bytes += 12;
+    }
+    for (i = 0; i < 4; i++) {
+        out->address = (out->address << 8) | bytes[i];
+    }
+}
+
+/* A socket of datagrams, bound where it is told: of both kinds where the
+ * address is IPv6. */
 s32 port_HostUdpOpen(const PortNetAddress *at) {
     LinuxSocketAddress address;
+    s32 off = 0;
     LinuxWord args[LINUX_CALL_ARGS] = {
-        LINUX_AF_INET, LINUX_SOCK_DGRAM, 0, 0, 0, 0};
-    LinuxWord file = LINUX_SOCKET_CALL(SOCKET, args);
+        at->is_v6 ? LINUX_AF_INET6 : LINUX_AF_INET, LINUX_SOCK_DGRAM, 0, 0, 0,
+        0};
+    LinuxWord file;
 
+    if (at->is_v6 && g_port_linux_v6_socket_count == LINUX_V6_SOCKETS_MAX) {
+        return -1;
+    }
+    file = LINUX_SOCKET_CALL(SOCKET, args);
     if (LINUX_IS_ERROR(file)) {
         return -1;
     }
-    port_LinuxToSocket(&address, at);
+    if (at->is_v6) {
+        args[0] = file;
+        args[1] = LINUX_IPPROTO_IPV6;
+        args[2] = LINUX_IPV6_V6ONLY;
+        args[3] = (LinuxWord)&off;
+        args[4] = sizeof(off);
+        LINUX_SOCKET_CALL(SETSOCKOPT, args);
+    }
     args[0] = file;
     args[1] = (LinuxWord)&address;
-    args[2] = sizeof(address);
+    args[2] = port_LinuxToSocket(&address, at, at->is_v6);
     if (LINUX_IS_ERROR(LINUX_SOCKET_CALL(BIND, args))) {
         port_LinuxCall(LINUX_CLOSE, file, 0, 0);
         return -1;
     }
+    if (at->is_v6) {
+        g_port_linux_v6_sockets[g_port_linux_v6_socket_count++] = (s32)file;
+    }
     return (s32)file;
+}
+
+void port_HostUdpClose(s32 socket) {
+    s32 i;
+
+    for (i = 0; i < g_port_linux_v6_socket_count; i++) {
+        if (g_port_linux_v6_sockets[i] == socket) {
+            g_port_linux_v6_sockets[i] =
+                g_port_linux_v6_sockets[--g_port_linux_v6_socket_count];
+            break;
+        }
+    }
+    port_LinuxCall(LINUX_CLOSE, socket, 0, 0);
+}
+
+s32 port_HostUdpBound(s32 socket, PortNetAddress *at) {
+    LinuxSocketAddress address;
+    u32 length = sizeof(address);
+    LinuxWord args[LINUX_CALL_ARGS] = {
+        (LinuxWord)socket, (LinuxWord)&address, (LinuxWord)&length, 0, 0, 0};
+
+    if (LINUX_IS_ERROR(LINUX_SOCKET_CALL(GETSOCKNAME, args))) {
+        return 0;
+    }
+    port_LinuxFromSocket(at, &address);
+    return 1;
+}
+
+s32 port_HostOwnAddress(s32 v6, PortNetAddress *at) {
+    /* a public address of each kind: nothing is sent to it */
+    static const PortNetAddress four = {0x08080808U, 53, 0, {0}};
+    static const PortNetAddress six = {
+        0, 53, 1, {0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0, 0, 0, 0, 0, 0, 0,
+                   0x88, 0x88}};
+    LinuxSocketAddress address;
+    u32 length;
+    LinuxWord args[LINUX_CALL_ARGS] = {
+        v6 ? LINUX_AF_INET6 : LINUX_AF_INET, LINUX_SOCK_DGRAM, 0, 0, 0, 0};
+    LinuxWord file = LINUX_SOCKET_CALL(SOCKET, args);
+    s32 ok = 0;
+
+    if (LINUX_IS_ERROR(file)) {
+        return 0;
+    }
+    args[0] = file;
+    args[1] = (LinuxWord)&address;
+    args[2] = port_LinuxToSocket(&address, v6 ? &six : &four, v6);
+    if (!LINUX_IS_ERROR(LINUX_SOCKET_CALL(CONNECT, args))) {
+        length = sizeof(address);
+        args[2] = (LinuxWord)&length;
+        if (!LINUX_IS_ERROR(LINUX_SOCKET_CALL(GETSOCKNAME, args))) {
+            port_LinuxFromSocket(at, &address);
+            ok = 1;
+        }
+    }
+    port_LinuxCall(LINUX_CLOSE, file, 0, 0);
+    return ok;
 }
 
 /* One datagram to the peer. */
@@ -400,14 +552,17 @@ s32 port_HostUdpSend(
     LinuxSocketAddress address;
     LinuxWord args[LINUX_CALL_ARGS];
     LinuxWord sent;
+    s32 v6 = port_LinuxIsV6(socket);
 
-    port_LinuxToSocket(&address, to);
+    if (to->is_v6 && !v6) {
+        return 0;
+    }
     args[0] = (LinuxWord)socket;
     args[1] = (LinuxWord)bytes;
     args[2] = count;
     args[3] = 0;
     args[4] = (LinuxWord)&address;
-    args[LINUX_CALL_ARGS - 1] = sizeof(address);
+    args[LINUX_CALL_ARGS - 1] = port_LinuxToSocket(&address, to, v6);
     sent = LINUX_SOCKET_CALL(SENDTO, args);
     return !LINUX_IS_ERROR(sent) && (u32)sent == count;
 }
@@ -440,8 +595,7 @@ s32 port_HostUdpReceive(
         return -1;
     }
     if (from != NULL) {
-        from->address = port_LinuxSwap32(address.address);
-        from->port = port_LinuxSwap16(address.port);
+        port_LinuxFromSocket(from, &address);
     }
     return (s32)got;
 }
