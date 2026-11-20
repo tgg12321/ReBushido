@@ -543,25 +543,26 @@ PORT_SETTING(stage_kind,
             "it (Classic); Square on the stage select switches one",
     .shown = {"Classic", "Remastered Classic"})
 
-/* The time of day every stage starts at on the stage select, and the
- * modes with no stage page fight at (include/port_stage_choice.h;
- * docs/PLAYING.md, "The time of day"): 0 the stage's own lighting, then
- * dawn, day, dusk and night, which the remastered picture of a dressed
- * stage shows. L1 and R1 on a stage page turn one stage's; in a session
- * the host's holds. */
+/* The time of day the modes with no stage page fight at
+ * (include/port_stage_choice.h; docs/PLAYING.md, "The time of day"): 0
+ * the stage's own lighting, then dawn, day, dusk and night, which the
+ * remastered picture of a dressed stage shows. The stage pages start
+ * every stage at its own (the owner, 2026-11-19); L1 and R1 there turn
+ * one stage's. In a session the host's holds. */
 PORT_SETTING(time_of_day,
     .name = "time_of_day", .value = "stage",
     .note = "stage: each stage's own light; or dawn,\n"
-            "day, dusk or night on every stage. L1 and\n"
-            "R1 turn a stage's on the stage select",
+            "day, dusk or night where no stage page\n"
+            "is shown. The stage select starts every\n"
+            "stage at its own; L1 and R1 turn it",
     .read = PORT_READ_WORDS,
     .words = {"stage", "dawn", "day", "dusk", "night"},
     .is = "stage, dawn, day, dusk or night",
     .menu = PORT_MENU_REMASTER, .rank = 167, .takes = PORT_TAKES_NOW,
     .label = "Time of day",
-    .help = "The time of day the stages start at: each one's own, or dawn, "
-            "day, dusk or night (Remastered Classic stages); L1 and R1 on "
-            "the stage select turn one",
+    .help = "The time of day of fights chosen without the stage select "
+            "(Remastered Classic stages); the stage select starts every "
+            "stage at its own, and L1 and R1 there turn one",
     .shown = {"The stage's own", "Dawn", "Day", "Dusk", "Night"})
 
 /* The mods beside the program are read (docs/MODS.md); 0 runs the game

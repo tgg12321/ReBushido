@@ -54,10 +54,13 @@ static PortStageChoice *port_StageChoice(void) {
             choice->kinds[i] = (u8)kind;
         }
     }
+    /* the stage pages start every stage at its own time, whatever the
+     * setting (the owner, 2026-11-19); `time_of_day` is the time of the
+     * modes with no stage page (fight_time above) */
     if (choice->default_time != time) {
         choice->default_time = (u8)time;
         for (i = 0; i < STAGE_COUNT; i++) {
-            choice->times[i] = (u8)time;
+            choice->times[i] = (u8)PORT_TIME_OWN;
         }
     }
     return choice;
