@@ -7479,15 +7479,24 @@ the game.
   flicker worked out from its `id` and the frames taken (three waves of
   prime periods, the same at any frame rate and in every run), and the
   lot sent to the card in a buffer.
-- **Sorted by where they reach** (a grid over the ground about the
-  camera, 64 by 64 cells of 256 world units, seen from above): each cell
+- **Sorted by where they reach** (a grid of 64 by 64 cells seen from
+  above, over the square that holds every light's reach, its cells 256
+  world units or a whole number of times that): each cell
   names the lights whose reach overlaps it, so a pixel loops over the
   few lights near it, whatever the list holds. The grid is in the world,
   not the screen, because three different shaders read it with three
   different projections (the ground's, the fighters' layer, the cloths)
   and a stage is a floor: a cell is the same for every picture of a
   frame, and the processor's work is the lights times the cells
-  (4,096), a few tens of microseconds for a full list.
+  (4,096), a few tens of microseconds for a full list. Until
+  2026-11-19 the grid was 16,384 units a side about the camera, which in
+  a fight stands some 7,000 units behind the fighters: a light more than
+  a couple of thousand units beyond them was in no cell and lit nothing
+  (a door 12,000 out on the main Tatara shrine, the street lamps, the
+  building rooftop's stairwell). Fitted to the lights, every light is
+  in it; where they are spread over a whole stage the cells grow and a
+  pixel loops over more of them, which changes the cost, never the
+  picture.
 - **Lit at the pixel.** The ground, the pieces and the fighters' models
   add each light that reaches them (`lights_add`, `PORT_GL_LIGHTS_SHADER`)
   to what the stage's own lights give, in the game's own bytes of light:

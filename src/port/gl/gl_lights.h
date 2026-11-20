@@ -141,8 +141,9 @@ extern s32 port_GlLightsShadowed(void);
 #define PORT_GL_LIGHTS_BINDING 4
 #define PORT_GL_LIGHTS_GRID_BINDING 5
 #define PORT_GL_LIGHTS_LIST_BINDING 6
-/* The grid the lights are sorted into, over the ground about the camera:
- * cells of this many world units a side, this many a side. */
+/* The grid the lights are sorted into, seen from above, over the square
+ * that holds every light's reach: cells of at least this many world units
+ * a side (a whole number of times it), this many a side. */
 #define PORT_GL_LIGHTS_CELL 256
 #define PORT_GL_LIGHTS_CELLS 64
 
