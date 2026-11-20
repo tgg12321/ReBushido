@@ -565,27 +565,79 @@ right in a moment ([`NETPLAY.md`](NETPLAY.md), sections 12 and 13). Both
 players need the **same build of ReBushido** (the same version, for the
 same system, 64-bit with 64-bit) and an image of **the same disc**; the
 two programs check both before anything starts, and say what differs.
+The way the two PCs reach each other is the program's to find: a room
+at the lobby is all either player has to choose.
 
-**One of you hosts, the other joins.** From the settings menu (F1, or
-Select on the top menu): *Play online*.
+**One of you hosts a room, the other joins it.** From the settings
+menu (F1, or Select on the top menu): *Play online*. The page's first
+row says what you do; Left and Right change it.
 
-- The host chooses *Host a game*, the port to wait at (7845 if you
-  change nothing) and *Host now*. The program starts again and waits.
-- The other chooses *Join a game*, types the host's address and port
-  (Enter on the row, then digits, dots and a colon, as
-  `203.0.113.7:7845`; Enter again keeps it) and *Join now*.
+- *Host a room*: a room at the **lobby** (a small server of the
+  project's: *Lobby server* on the page, the owner's built in), with a
+  name and, if you like, a password; then *Open the room now*. The
+  program starts again, asks your router to open its port (UPnP,
+  NAT-PMP or PCP: *Open the port in the router*), and waits. The panel
+  says the room's code too, for a player who would rather type it.
+- *Browse rooms*: *Look for rooms* lists the lobby's rooms; Enter on
+  one joins it, asking first for a locked room's password. A room
+  whose game is not compatible with yours says what differs (another
+  version, build, disc image or gameplay mods) and cannot be joined.
+
+The password is kept only while the program runs and never goes over
+the network: the host's program gives the lobby a salted hash of it,
+and the joining one proves it knows it by answering a fresh challenge
+(NETPLAY.md, section 14).
+
+**The way between you is found by itself.** Once the lobby has
+introduced you, both programs try every way at once and take the best
+that works: IPv6 directly, the host's router port it opened, a hole
+punched through both routers, or, in the last resort, the lobby passing
+the game's datagrams on (a little more delay). The line at the top of
+the window says which, with the round trip. No VPN or other program is
+needed.
+
+**By address, the advanced way:** *Host by address* waits at a port of
+your PC (7845 if you change nothing), asking the router to open it as a
+room does; *Join by address* types the host's address and port (Enter
+on the row, then type; `203.0.113.7:7845`, or IPv6 as
+`[2001:db8::7]:7845`; Enter again keeps it). *Your address for the
+other player* asks the router (or the lobby) what the internet sees you
+at. Where neither router can be opened, both can still punch through:
+each sends the other their address, the host types the joiner's into
+*The other player's address*, and both start at once.
 
 Or from the command line:
 
 ```
-rebushido --host 0.0.0.0:7845                 the host
-rebushido --join 203.0.113.7:7845             the other player
+rebushido --lobby 135.181.108.74:7845 --room "Tatara" --room-password sesame
+rebushido --lobby 135.181.108.74:7845 --join KGGRRY --room-password sesame
+rebushido --host 0.0.0.0:7845                 by address: the host
+rebushido --join 203.0.113.7:7845             ... and the other player
 ```
+
+**Check you can meet first:** `rebushido --check-online` prints your
+**setup code**, as `P5-6KT8-NYZ2-3ER0` (the protocol, then the build,
+the disc and the gameplay mods), and the Play online page shows it on
+its last row. Send each other your codes by message: the same code
+means you can play. A disc image is told by its contents, not its file:
+two dumps of the one disc have the same code however they were made
+(NETPLAY.md, section 14).
+
+**Turned away?** The window says why, in words, on both screens:
+another build, version, disc image or gameplay mods (with your setup
+code to compare), a wrong password, a full or closed room, an
+incompatible room, nobody answering at the address, a lobby that does
+not answer, or a player who stopped answering. Enter or Escape closes
+the message and the program; the log has it too.
 
 `--net-delay N` on the host's line sets the delay, 0 to 8 frames (2 if
 nothing says); it is both players'. *Through: This PC alone* on the
 page, or `--host 127.0.0.1:7845`, is for trying it with two windows on
 one PC.
+
+**The firewall.** The first time you host or join, Windows Defender
+Firewall asks whether rebushido.exe may use the network: allow it on
+Private networks (and Public, if Windows has yours marked public).
 
 **Then:** the host's memory cards are sent to the other player, and
 both play on them: the fighters the host has unlocked, the host's
@@ -608,16 +660,15 @@ leaves; the other player is told and plays on alone. The settings menu
 cannot be opened during a session (the other player's game would have
 to stop too).
 
-**Across the internet** the host's router has to let the port through:
-forward UDP port 7845 (or the one you chose) to the host's PC in the
-router's settings. The player who joins needs nothing. The draw distance
-is the console's online, whatever `draw_distance` says, and the two
-games keep the faces the wider of your two pictures shows: the two have
-to compute the same frame, whichever picture each of you looks at. F2
-still changes your own picture.
+The draw distance is the console's online, whatever `draw_distance`
+says, and the two games keep the faces the wider of your two pictures
+shows: the two have to compute the same frame, whichever picture each
+of you looks at. F2 still changes your own picture.
 
-Online play has been tried with two windows on one PC, not yet between
-two PCs, and not yet on Windows.
+Online play has been tried on one PC between Windows programs and
+between Linux ones, through every way of the lobby, and through the
+owner's lobby server across the internet (NETPLAY.md, section 14); not
+yet between two players' PCs.
 
 ## Where the saves are
 
