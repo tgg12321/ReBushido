@@ -95,6 +95,7 @@ typedef ptrdiff_t GLintptr;
 #define GL_DEPTH_COMPONENT24 0x81A6
 #define GL_DEPTH_TEST 0x0B71
 #define GL_LESS 0x0201
+#define GL_ALWAYS 0x0207
 #define GL_FRAMEBUFFER_COMPLETE 0x8CD5
 #define GL_COLOR_BUFFER_BIT 0x00004000
 #define GL_ARRAY_BUFFER 0x8892
@@ -346,6 +347,16 @@ typedef struct {
  * (INFO_WORLD). */
 #define FLAG_WORLD 1024
 #define INFO_WORLD 8
+/* A fighter's own polygon writes its own depth into the depth buffer,
+ * though it is held against the ground by the slots and not by it
+ * (port_GlMarksDepth), in the fifth bit of `info[3]` (INFO_MARK). */
+#define FLAG_MARK 2048
+#define INFO_MARK 16
+/* How far round a flame of the stage's what holds it reaches, in the
+ * world's units, at the least (port_GlW): a stone lantern's firebox about
+ * its candle (stage 6, the Tatara shrine path), whose walls hid the
+ * candle seen through its window at the candle's own width. */
+#define FLAME_HOLDER_REACH 256
 
 /* A corner's `w`: the depth the coprocessor worked out, in these units.
  * Any number in proportion to it will do -- it is the perspective divide
@@ -405,6 +416,9 @@ typedef struct {
      * begun the next frame, and asked then it was held against nothing
      * at all. */
     s32 is_held;
+    /* ... and these, a fighter's own polygons, write their depth there
+     * whatever is there (port_GlMarksDepth) */
+    s32 is_marking;
     /* A mod's replacement of the batch's texture (gl_replace.h), 0 for
      * none, and the texture points of the page it stands for. */
     u32 replace_texture;
@@ -1325,7 +1339,7 @@ static const char g_gl_fragment_text[] =
      * fonts, the menus, a polygon of the scene whose corners were not
      * written down -- is put at the very front: it was drawn where the
      * console drew it and has nothing to be behind. */
-    "    if ((v_flags.w & 96u) == 32u) {\n"
+    "    if ((v_flags.w & 96u) == 32u || (v_info.w & 16u) != 0u) {\n"
     "        float deep = (u_w_scale / gl_FragCoord.w) * exp2(float(v_info.z));\n"
     "        gl_FragDepth = clamp((deep - u_depth_bias) / u_depth_range,\n"
     "                             0.0, 1.0);\n"
@@ -2292,8 +2306,10 @@ static void port_GlFlush(void) {
      * painted in is untouched, and the test is off entirely in a frame
      * the mesh did not draw -- the buffer is then the frame before's. */
     if (g_gl.state.is_held) {
-        glDepthFunc(GL_LESS);
-        glDepthMask(GL_FALSE);
+        /* a fighter's own writes its depth whatever is there: the test
+         * is only how GL lets a fragment write it (port_GlMarksDepth) */
+        glDepthFunc(g_gl.state.is_marking ? GL_ALWAYS : GL_LESS);
+        glDepthMask(g_gl.state.is_marking ? GL_TRUE : GL_FALSE);
         glEnable(GL_DEPTH_TEST);
         /* a fighter is held by the slots and not by the depth
          * (port_GlIsOverGround) */
@@ -2328,6 +2344,8 @@ static void port_GlFlush(void) {
      * the picture down, the window itself -- has no depth of its own and
      * is never held against the ground's */
     glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glDepthFunc(GL_LESS);
     glEnable(GL_MULTISAMPLE);
     g_gl.vertex_count += (u32)g_gl.count;
     g_gl.count = 0;
@@ -2341,6 +2359,7 @@ static s32 port_GlStateIsSame(const PortGlState *a, const PortGlState *b) {
            a->clip_right == b->clip_right && a->clip_bottom == b->clip_bottom &&
            a->is_wide == b->is_wide && a->is_ground == b->is_ground &&
            a->is_scene == b->is_scene && a->is_held == b->is_held &&
+           a->is_marking == b->is_marking &&
            a->replace_texture == b->replace_texture &&
            a->replace_u == b->replace_u && a->replace_v == b->replace_v &&
            a->replace_w == b->replace_w && a->replace_h == b->replace_h &&
@@ -2418,7 +2437,8 @@ static void port_GlPutVertex(
                   : 0) |
              ((flags & FLAG_HELD) != 0 ? INFO_HELD : 0) |
              ((flags & FLAG_SMOOTH_EFFECT) != 0 ? INFO_SMOOTH : 0) |
-             ((flags & FLAG_WORLD) != 0 ? INFO_WORLD : 0));
+             ((flags & FLAG_WORLD) != 0 ? INFO_WORLD : 0) |
+             ((flags & FLAG_MARK) != 0 ? INFO_MARK : 0));
     if ((flags & FLAG_WORLD) != 0) {
         g_gl.has_world = TRUE;
     }
@@ -2429,6 +2449,16 @@ static void port_GlPutVertex(
     to->slot = (GLfloat)prim->ot_slot;
 }
 
+/* Whether this is a flame of the stage's held against what stands nearer
+ * at its own depth (port_RemasterNoteStanding), by the depth test: the
+ * ground's mesh and its pieces, the fighters drawn from models (their
+ * layer writes its depth, gl_fighter.c) and the fighters' own polygons
+ * (port_GlMarksDepth). Never in the console's own picture. */
+static s32 port_GlIsHeldFlame(const PortRemasterPrim *prim) {
+    return prim->is_effect && prim->standing_reach > 0 && prim->has_depth &&
+           !g_gl.options.is_exact;
+}
+
 /* The w of a corner: any positive number in proportion to how far the
  * point is, which is what a perspective-correct texture needs. Without
  * a depth every corner has 1, and the texture is flat across the
@@ -2436,10 +2466,23 @@ static void port_GlPutVertex(
  * it for the test against the ground's own mesh, so what it is divided
  * by is a number the shader is told (`u_w_scale`, PORT_GL_DEPTH_UNIT). */
 static GLfloat port_GlW(const PortRemasterPrim *prim, s32 corner) {
+    s32 depth;
+
     if (!prim->has_depth) {
         return 1.0f;
     }
-    return (GLfloat)prim->corner[corner].depth / PORT_GL_DEPTH_UNIT;
+    depth = prim->corner[corner].depth;
+    /* A flame of the stage's is tested as far nearer than its point as
+     * what it burns in reaches (port_GlIsHeldFlame): every corner of it
+     * has its point's depth, so the texture across it is the same either
+     * way. */
+    if (port_GlIsHeldFlame(prim)) {
+        depth -= prim->standing_reach > FLAME_HOLDER_REACH
+                     ? prim->standing_reach
+                     : FLAME_HOLDER_REACH;
+        depth = depth > 1 ? depth : 1;
+    }
+    return (GLfloat)depth / PORT_GL_DEPTH_UNIT;
 }
 
 /* Whether this primitive is drawn where the projection really put it,
@@ -2620,6 +2663,24 @@ static void port_GlRectangle(const PortRemasterPrim *prim, s32 flags) {
     port_GlTriangle(&quad, 1, 2, 3, flags);
 }
 
+/* Whether this primitive, a fighter's own polygon, writes its depth into
+ * the depth buffer as it is painted. He is held against the ground by
+ * the ordering table's slots and not by depth (port_GlIsOverGround), and
+ * that is unchanged: he writes his depth whatever is there. What it is
+ * for is a flame of the stage's painted after him (port_GlIsHeldFlame):
+ * the game sorts a flame by its own depth and the fighter's polygons by
+ * theirs at the renderer's scale, and a flame well behind him often came
+ * a slot nearer and was painted over his head and hands, as the
+ * fighters drawn from models, whose layer writes its depth, never let it
+ * be. Nothing else of the scene painted after him tests the depth but
+ * what the projection gave a depth to and the ground does not hold, and
+ * that is hidden by him only where he is the nearer. Never in the
+ * console's own picture. */
+static s32 port_GlMarksDepth(const PortRemasterPrim *prim) {
+    return prim->is_fighter && prim->has_depth && !prim->is_shadow &&
+           !prim->is_effect && !g_gl.options.is_exact;
+}
+
 /* What a batch of this primitive must share: its mix, the drawing area
  * and whether it is drawn across the whole of a wider picture. */
 static void port_GlStateOf(const PortRemasterPrim *prim, PortGlState *state) {
@@ -2647,6 +2708,7 @@ static void port_GlStateOf(const PortRemasterPrim *prim, PortGlState *state) {
     state->is_scene = prim->has_depth;
     state->is_held =
         port_GlStageSaveFrame() && g_gl.options.is_stage_depth ? TRUE : FALSE;
+    state->is_marking = state->is_held && port_GlMarksDepth(prim);
     state->replace_texture = 0;
     state->replace_u = 0;
     state->replace_v = 0;
@@ -2685,16 +2747,17 @@ static void port_GlReplacementOf(
  * own -- his body, his cloth, a weapon -- is hidden where the face of
  * the ground the pixel shows has a nearer slot than his own (the
  * shader, `u_ground_slots`); an effect, which comes with no node and no
- * slot, is never hidden. The stage's own pieces keep the depth of each
- * pixel, which is what hides a fence behind a terrace, and so does a
- * shadow, which lies on the ground and has its depth to within the
- * offset. */
+ * slot, is not hidden by them, and a flame of the stage's is held by the
+ * depth of each pixel (port_GlIsHeldFlame). The stage's own pieces keep
+ * the depth of each pixel, which is what hides a fence behind a terrace,
+ * and so does a shadow, which lies on the ground and has its depth to
+ * within the offset. */
 static s32 port_GlIsOverGround(const PortRemasterPrim *prim) {
-    if (prim->is_shadow) {
+    if (prim->is_shadow || port_GlIsHeldFlame(prim)) {
         return FALSE;
     }
-    /* an effect is named (port_RemasterNoteEffect) and still never
-     * hidden, as the console hid none */
+    /* any other effect is named (port_RemasterNoteEffect) and still
+     * never hidden, as the console hid none */
     return prim->is_fighter || prim->is_effect || prim->id.object == 0;
 }
 
@@ -2742,6 +2805,9 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     }
     if (port_GlIsOverGround(prim)) {
         flags |= FLAG_OVER_GROUND;
+    }
+    if (port_GlMarksDepth(prim)) {
+        flags |= FLAG_MARK;
     }
     /* a fighter's own polygon takes the sun's shadows as the meshes do */
     if (prim->is_fighter && prim->has_depth && !prim->is_effect &&

@@ -249,6 +249,10 @@ enum {
 #define EFF_NOTE_SPRITE(prim, center, number, depth, name, piece)              \
     port_RemasterNoteSprite((PortAddress)(prim), (PortAddress)(center),        \
                             (number), (depth), (PortAddress)(name), (piece))
+/* ... and it stands on that point, burning `reach` round it: a flame,
+ * held against what is nearer */
+#define EFF_NOTE_STANDING(prim, reach)                                         \
+    port_RemasterNoteStanding((PortAddress)(prim), (reach))
 #define EFF_NOTE_CORNERS(prim, points, name, piece)                            \
     port_RemasterNoteEffect((PortAddress)(prim), (PortAddress)(points), 4,     \
                             (PortAddress)(name), (piece))
@@ -267,6 +271,7 @@ enum {
 #define EFF_NOTE_FLAMES(flames) port_LightsNoteFlames(flames)
 #else
 #define EFF_NOTE_SPRITE(prim, center, number, depth, name, piece)
+#define EFF_NOTE_STANDING(prim, reach)
 #define EFF_NOTE_CORNERS(prim, points, name, piece)
 #define EFF_NOTE_STORED(first, words, count)
 #define EFF_NOTE_EFFECTS()
@@ -1179,6 +1184,7 @@ void eff_DrawFlames(s16 *view_angles, s32 *view_position) {
                 EFF_ADD_PRIM();
                 EFF_NOTE_SPRITE(prim, g_eff_screen_xy, *g_eff_screen_dist,
                                 *g_eff_depth, &g_eff_flames[i], 0);
+                EFF_NOTE_STANDING(prim, *g_eff_base_width);
                 prim++;
             }
         }

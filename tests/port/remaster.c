@@ -621,7 +621,8 @@ static void test_SideInPrimitive(void) {
  * point it was built about, as the projection put it, plus their whole-
  * pixel offsets made as large as the size was without the rounding; all
  * at the point's depth, and named by the effect. With `effects original`
- * nothing of it is kept. */
+ * nothing of it is kept. The third time it stands on its point, as a
+ * flame of the stage's does (port_RemasterNoteStanding), and says so. */
 static void test_Sprite(void) {
     static u32 center_word[1];
     static u32 prim_words[10];
@@ -631,7 +632,7 @@ static void test_Sprite(void) {
     const PortRemasterPrim *drawn;
     s32 i;
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < 3; i++) {
         test_Reset();
         port_RemasterSetEffects(
             i == 0 ? PORT_EFFECTS_ORIGINAL : PORT_EFFECTS_EXACT);
@@ -644,6 +645,9 @@ static void test_Sprite(void) {
          * made it */
         port_RemasterNoteSprite(
             prim, center, 1050, 100, (PortAddress)name_word, 3);
+        if (i == 2) {
+            port_RemasterNoteStanding(prim, 450);
+        }
         port_RemasterSetPrim(prim);
         gp0(CODE(0x2C) | RGB(0x80, 0x80, 0x80));
         gp0(XY(92, 40));
@@ -659,10 +663,12 @@ static void test_Sprite(void) {
         drawn = &g_drawn_prims[0];
         if (i == 0) {
             CHECK_EQ(drawn->is_effect, FALSE);
+            CHECK_EQ(drawn->standing_reach, 0);
             CHECK_EQ(drawn->has_place, FALSE);
             continue;
         }
         CHECK_EQ(drawn->is_effect, TRUE);
+        CHECK_EQ(drawn->standing_reach, i == 2 ? 450 : 0);
         CHECK_EQ(drawn->has_place, TRUE);
         CHECK_EQ(drawn->has_depth, TRUE);
         CHECK(drawn->id.object == (PortAddress)name_word);
@@ -672,7 +678,8 @@ static void test_Sprite(void) {
         CHECK_EQ(drawn->corner[0].y, (50 << 16) - 10 * 0x10CCC);
         CHECK_EQ(drawn->corner[3].x, (102 << 16) + 0x4000 + 10 * 0x10CCC);
         CHECK_EQ(drawn->corner[3].depth, 0x2000);
-        CHECK_EQ(port_GetRemasterCounts()->effect_faces, 1);
+        /* the run's counts, which no reset takes back: one a time round */
+        CHECK_EQ(port_GetRemasterCounts()->effect_faces, (u32)i);
         CHECK_EQ(port_GetRemasterCounts()->effect_unplaced, 0);
     }
     port_RemasterSetEffects(PORT_EFFECTS_ORIGINAL);

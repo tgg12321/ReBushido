@@ -78,6 +78,9 @@ typedef struct {
     PortPrecisePoint center;
     u32 center_word;
     s32 sprite_ratio;
+    /* ... and it stands on that point, burning this far round it
+     * (port_RemasterNoteStanding); 0 where it does not */
+    s32 standing_reach;
 } EffectSlot;
 
 /* A frame's own primitives are built after the frame before it was
@@ -883,6 +886,7 @@ static FaceSlot *port_EffectFace(
     (*effect)->prim = prim;
     (*effect)->epoch = g_epoch;
     (*effect)->is_sprite = FALSE;
+    (*effect)->standing_reach = 0;
     found = port_SlotForFace(prim);
     found->count = 0;
     found->depth_shift = 0;
@@ -991,6 +995,14 @@ void port_RemasterNoteSprite(
     effect->center = *point;
     effect->center_word = *(const u32 *)center;
     effect->sprite_ratio = port_SpriteRatio(scale_number, depth);
+}
+
+void port_RemasterNoteStanding(PortAddress prim, s32 reach) {
+    EffectSlot *effect = (EffectSlot *)port_FindEffect(prim);
+
+    if (effect != NULL && effect->is_sprite) {
+        effect->standing_reach = reach > 0 ? reach : 1;
+    }
 }
 
 void port_RemasterNoteObject(PortAddress object) {
@@ -2092,6 +2104,7 @@ static void port_DecodePolygon(
     prim.is_shadow = slot != NULL && slot->is_shadow;
     prim.is_fighter = slot != NULL && slot->is_fighter;
     prim.is_effect = effect != NULL;
+    prim.standing_reach = (effect != NULL) ? effect->standing_reach : 0;
     prim.ot_slot = (slot != NULL) ? slot->ot_slot : -1;
     if (prim.is_shadow) {
         g_counts.shadows++;
@@ -2229,6 +2242,7 @@ static void port_DecodeRectangle(
     prim.is_shadow = FALSE;
     prim.is_fighter = FALSE;
     prim.is_effect = FALSE;
+    prim.standing_reach = 0;
     prim.ot_slot = -1;
     prim.id.object = 0;
     prim.id.group = 0;
