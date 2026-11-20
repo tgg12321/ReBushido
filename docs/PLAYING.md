@@ -382,7 +382,7 @@ arenas a third ([`ROADMAP.md`](ROADMAP.md), item 16):
 On a **stage page** of versus or link mode (and of versus the CPU and
 training: "A stage in every mode", below), a panel under the scroll
 has a column for each choice the page makes, its value over the button
-that changes it: **Kind** (Square), **Time** (L1 and R1), **Music** (L2
+that changes it: **Style** (Square), **Time** (L1 and R1), **Music** (L2
 and R2) and, when a mod brings any, **Arenas** (Select).
 **Square** switches the stage under the cursor between Classic and
 Remastered Classic, and it stays so for as long as the program runs.

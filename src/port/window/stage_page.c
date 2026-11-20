@@ -480,7 +480,7 @@ static void port_PageStrip(const PortStageChoice *choice, s32 count) {
         choice->cursor_kind == PORT_STAGE_CLASSIC ? COLOR_TEXT : COLOR_GOLD;
     columns[n].caps[0] = "#square";
     columns[n].cap_count = 1;
-    columns[n].words = "Kind";
+    columns[n].words = "Style";
     n++;
     /* the time of day, which only a dressed stage's picture shows */
     if (choice->cursor_kind == PORT_STAGE_CLASSIC) {
