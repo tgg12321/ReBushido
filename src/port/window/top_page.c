@@ -86,7 +86,10 @@ static s32 port_TopY(s32 y) { return y * g_top.area_h / GAME_H - g_top.box.y; }
 /* A line of the page's text, `lines` of the game's lines high, its
  * baseline at the game's `y`, aligned on the game's `x`: the one function
  * that draws letters here, in the settings menu's font with a shadow down
- * and to the right, as the game's lettering has. */
+ * and to the right, as the game's lettering has. It maps onto the font
+ * work's port_TextDraw: a PortTextStyle of PORT_FACE_TEXT (a row's name,
+ * the caption's line) or PORT_FACE_TITLE (the caption's name), `size`
+ * pixels, `color`, and a shadow of `shadow` pixels in COLOR_SHADOW. */
 static void port_TopPageText(
     s32 x, s32 y, s32 lines, const char *text, u32 color, s32 align) {
     s32 size = lines * g_top.area_h / GAME_H;

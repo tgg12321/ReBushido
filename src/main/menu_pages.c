@@ -30,8 +30,8 @@ static void menu_DrawPageFrame(MenuCtx *ctx, s32 panels, GpuDb *db);
 static void menu_DrawTopRows(MenuCtx *ctx, u16 *draw_env, s32 views);
 static void menu_DrawPovChoice(MenuCtx *ctx, s32 views);
 static void menu_DrawSideViewChoice(MenuCtx *ctx, s32 views);
-static s32 menu_ChooseTopRow(u32 pressed);
 #if RB_PORT
+static s32 menu_ChooseTopRow(u32 pressed);
 static s32 menu_UpdatePortTop(MenuCtx *ctx, s32 events, u32 pressed);
 #endif
 static RECT g_menu_palette_rect;
@@ -756,13 +756,16 @@ s32 menu_UpdateTop(s32 held, u32 pressed) {
     menu_DrawTopRows(&frame.ctx, (u16 *)db, g_menu_top.row[TOP_ROW].views);
     menu_DrawPovChoice(&frame.ctx, g_menu_top.row[TOP_ROW].views);
     menu_DrawSideViewChoice(&frame.ctx, g_menu_top.row[TOP_ROW].views);
+#if RB_PORT
     return menu_ChooseTopRow(pressed);
 }
 
 /* Cross or triangle on the top menu: the mode of the cursor's row, when
  * its pad can choose it, or MENU_TOP_CANCELED; else MENU_TOP_RUNNING, with
- * the cursor's sound where up or down was pressed. */
+ * the cursor's sound where up or down was pressed. ReBushido's top menu
+ * (menu_UpdatePortTop) chooses a mode's row with it. */
 static s32 menu_ChooseTopRow(u32 pressed) {
+#endif
     if (pressed & PADRdown) {
         switch (g_menu_top.row[TOP_ROW].mode) {
         case FIGHT_MODE_VS:
@@ -1230,9 +1233,9 @@ static void menu_DrawTopTitle(MenuCtx *ctx, SpriteDraw *draw) {
 
 /* The line under a row of the top menu: three thin lines that step up to
  * the right and two sheets that fade it out at the ends. It takes its
- * colour from the row's (in `draw`) under the cursor's row (`is_lit`), and is
- * gray under a row the cursor is not on. */
-static void menu_DrawRowUnderline(MenuCtx *ctx, SpriteDraw *draw, s32 is_lit) {
+ * colour from the row's (in `draw`), and is gray under a row the cursor is not
+ * on. */
+static void menu_DrawRowUnderline(MenuCtx *ctx, SpriteDraw *draw, s32 row) {
     TILE *tile;
     SpriteSheetSlot *sheets;
     s32 abr_bits;
@@ -1240,7 +1243,7 @@ static void menu_DrawRowUnderline(MenuCtx *ctx, SpriteDraw *draw, s32 is_lit) {
     tile = ctx->prims.tile;
     SetTile(tile);
     /* the lowest line, the longest */
-    if (is_lit) {
+    if (TOP_ROW == row) {
         setRGB0(tile, draw->col_r, 0, draw->col_b);
         abr_bits = 0;
     } else {
@@ -1256,7 +1259,7 @@ static void menu_DrawRowUnderline(MenuCtx *ctx, SpriteDraw *draw, s32 is_lit) {
     tile++;
 
     SetTile(tile);
-    if (is_lit) {
+    if (TOP_ROW == row) {
         setRGB0(tile, draw->col_r, 0, draw->col_b);
     } else {
         setRGB0(tile, UNDERLINE_GRAY_2, UNDERLINE_GRAY_2, UNDERLINE_GRAY_2);
@@ -1270,7 +1273,7 @@ static void menu_DrawRowUnderline(MenuCtx *ctx, SpriteDraw *draw, s32 is_lit) {
     tile++;
 
     SetTile(tile);
-    if (is_lit) {
+    if (TOP_ROW == row) {
         setRGB0(tile, draw->col_r >> 1, 0, draw->col_b >> 1);
     } else {
         setRGB0(tile, UNDERLINE_GRAY_3, UNDERLINE_GRAY_3, UNDERLINE_GRAY_3);
@@ -1291,7 +1294,7 @@ static void menu_DrawRowUnderline(MenuCtx *ctx, SpriteDraw *draw, s32 is_lit) {
         SpriteSheet **header = &draw->header;
 
         *header = PTR(sheets[TOP_SHEET_UNDERLINE_LEFT]);
-        if (is_lit) {
+        if (TOP_ROW == row) {
             draw->col_g = 0;
             draw->col_r = draw->col_r >> 1;
             draw->col_b = draw->col_b >> 1;
@@ -1406,7 +1409,7 @@ static void menu_DrawTopRows(MenuCtx *ctx, u16 *draw_env, s32 views) {
         AddPrim(g_disp_ot + draw.ot_index, ctx->prims.mode);
         ctx->prims.mode++;
         draw.has_color = 1;
-        menu_DrawRowUnderline(ctx, &draw, TOP_ROW == row);
+        menu_DrawRowUnderline(ctx, &draw, row);
     }
 
     sheets = PTR(ctx->file->mode_caption_sheets);
@@ -1474,7 +1477,7 @@ static void menu_DrawTopRows(MenuCtx *ctx, u16 *draw_env, s32 views) {
     AddPrim(g_disp_ot + draw.ot_index, ctx->prims.mode);
     ctx->prims.mode++;
     draw.has_color = 1;
-    menu_DrawRowUnderline(ctx, &draw, TOP_ROW == MENU_TOP_LAST_ROW);
+    menu_DrawRowUnderline(ctx, &draw, MENU_TOP_LAST_ROW);
     menu_DrawTopTitle(ctx, &draw);
 
     draw.has_color = 0;
@@ -1545,6 +1548,9 @@ static void menu_DrawPortTopRows(MenuCtx *ctx, const PortTopRow *of) {
     s32 cursor = port_TopMenuCursor();
     s32 row;
 
+    /* the underline lights the row that is TOP_ROW: the page's cursor for
+     * these, and the game's row it stands for again after them */
+    g_menu_cursors = (g_menu_cursors & ~CURSOR_TOP) | cursor;
     for (row = 0; row < PORT_TOP_ROWS; row++) {
         draw.x = TOP_ROWS_X;
         draw.has_color = 1;
@@ -1569,8 +1575,9 @@ static void menu_DrawPortTopRows(MenuCtx *ctx, const PortTopRow *of) {
             draw.col_b = ROW_OFF;
             draw.semi = 1;
         }
-        menu_DrawRowUnderline(ctx, &draw, row == cursor);
+        menu_DrawRowUnderline(ctx, &draw, row);
     }
+    g_menu_cursors = (g_menu_cursors & ~CURSOR_TOP) | of->row;
 
     if (of->caption[0] == NULL) {
         sheets = PTR(ctx->file->mode_caption_sheets);

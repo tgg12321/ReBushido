@@ -49,7 +49,9 @@ const PortTopRow g_port_top_rows[PORT_TOP_PAGES][PORT_TOP_ROWS] = {
 
 PortTopMenu g_port_top_menu;
 
-/* The switch taken in at boot; with it, the options page's settings set as\n * the page would have left them, and the page not shown. */\ns32 port_TopMenuBoot(void) {
+/* The switch taken in at boot; with it, the options page's settings set as
+ * the page would have left them, and the page not shown. */
+s32 port_TopMenuBoot(void) {
     g_port_top_menu.is_on = (u8)(port_GetTopMenuSwitch() != 0);
     g_port_top_menu.page = PORT_TOP_PAGE_TOP;
     if (!g_port_top_menu.is_on) {
@@ -84,7 +86,8 @@ s32 port_TopMenuRowIsOn(s32 row, u32 rows_on) {
     return of->kind != PORT_TOP_MODE || ((rows_on >> of->row) & 1);
 }
 
-/* The cursor on to the next row that can be chosen, round at the ends. */\nvoid port_TopMenuMove(s32 step, u32 rows_on) {
+/* The cursor on to the next row that can be chosen, round at the ends. */
+void port_TopMenuMove(s32 step, u32 rows_on) {
     s32 row = port_TopMenuCursor();
     s32 i;
 
