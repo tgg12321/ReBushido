@@ -605,8 +605,11 @@ HEADLESS_CASES = [('punch', case_punch), ('relay', case_relay), ('mapped', case_
                   # (a name of each system's: the gate runs the Linux and the
                   # Windows halves at once, and this one is long enough for
                   # the two to meet in one folder)
-                  ('rooms-win' if IS_WINDOWS else 'rooms', case_rooms),
-                  ('rooms-crew-win' if IS_WINDOWS else 'rooms-crew', case_rooms_crew)]
+                  ('rooms-win' if IS_WINDOWS else 'rooms', case_rooms)]
+# Run after the cases above, not beside them (they all run at once, and
+# three programs more starve those that count their round trips), and in
+# the Linux half alone: a room's Crew match.
+LATER_CASES = [('rooms-crew', case_rooms_crew)]
 
 
 # ---- the window's cases (Windows) ----
@@ -1125,13 +1128,17 @@ def main():
         cases = HEADLESS_CASES + WINDOW_CASES
     else:
         cases = HEADLESS_CASES
+    later = LATER_CASES if args.what == 'headless' else []
     if args.only:
         cases = [c for c in cases if c[0] in args.only]
+        later = [c for c in later if c[0] in args.only]
     for program in {HEADLESS} | ({WINDOW} if args.what == 'windows' else set()):
         if not os.path.isfile(os.path.join(REPO, program)):
             print('FAILED: port_net_lobby: no %s (build it first)' % program)
             return 1
-    problems = run(cases, args.port_base)
+    problems = run(cases, args.port_base) if cases else []
+    if later:
+        problems += run(later, args.port_base + len(cases) * PORTS_PER_CASE)
     for problem in problems:
         print('FAILED: port_net_lobby: ' + problem)
     if not problems:
