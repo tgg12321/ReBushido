@@ -40,6 +40,8 @@
 #define HEX_BITS 4
 #define HEX_BASE 16
 #define DIGITS_MAX 12
+/* ::ffff:a.b.c.d: ten bytes of zeros, two of ones, then the IPv4. */
+#define V6_MAPPED_AT 10
 #define WORD_BYTES 4
 
 /* The link cable's packet and how long it is waited for. */
@@ -177,15 +179,16 @@ void port_ClearNetAddress(PortNetAddress *out) {
     }
 }
 
-static s32 port_HexDigit(char c) {
-    if (c >= '0' && c <= '9') {
-        return c - '0';
+/* A hex digit's value, or -1. */
+static s32 port_HexDigit(char digit) {
+    if (digit >= '0' && digit <= '9') {
+        return digit - '0';
     }
-    if (c >= 'a' && c <= 'f') {
-        return c - 'a' + DECIMAL;
+    if (digit >= 'a' && digit <= 'f') {
+        return digit - 'a' + DECIMAL;
     }
-    if (c >= 'A' && c <= 'F') {
-        return c - 'A' + DECIMAL;
+    if (digit >= 'A' && digit <= 'F') {
+        return digit - 'A' + DECIMAL;
     }
     return -1;
 }
@@ -279,17 +282,17 @@ s32 port_ParseNetAddress(const char *text, PortNetAddress *out) {
     out->is_v6 = 1;
     out->port = (u16)port;
     /* ::ffff:a.b.c.d is IPv4 (port_host.h) */
-    if (out->v6[10] == 0xFF && out->v6[11] == 0xFF) {
+    if (out->v6[V6_MAPPED_AT] == 0xFF && out->v6[V6_MAPPED_AT + 1] == 0xFF) {
         s32 zeros = 1;
         s32 i;
 
-        for (i = 0; i < 10; i++) {
+        for (i = 0; i < V6_MAPPED_AT; i++) {
             zeros = zeros && out->v6[i] == 0;
         }
         if (zeros) {
             out->is_v6 = 0;
             out->address = 0;
-            for (i = 12; i < PORT_NET_V6_BYTES; i++) {
+            for (i = V6_MAPPED_AT + 2; i < PORT_NET_V6_BYTES; i++) {
                 out->address = (out->address << BITS_PER_BYTE) | out->v6[i];
             }
             for (i = 0; i < PORT_NET_V6_BYTES; i++) {
@@ -300,15 +303,17 @@ s32 port_ParseNetAddress(const char *text, PortNetAddress *out) {
     return 1;
 }
 
-s32 port_NetAddressesEqual(const PortNetAddress *a, const PortNetAddress *b) {
+/* Whether two addresses are one (port_net.h). */
+s32 port_NetAddressesEqual(
+    const PortNetAddress *first, const PortNetAddress *second) {
     u32 i;
 
-    if (a->is_v6 != b->is_v6 || a->port != b->port ||
-        a->address != b->address) {
+    if (first->is_v6 != second->is_v6 || first->port != second->port ||
+        first->address != second->address) {
         return 0;
     }
-    for (i = 0; a->is_v6 && i < PORT_NET_V6_BYTES; i++) {
-        if (a->v6[i] != b->v6[i]) {
+    for (i = 0; first->is_v6 && i < PORT_NET_V6_BYTES; i++) {
+        if (first->v6[i] != second->v6[i]) {
             return 0;
         }
     }
@@ -317,8 +322,8 @@ s32 port_NetAddressesEqual(const PortNetAddress *a, const PortNetAddress *b) {
 
 /* A number into `out` as text, in base `base`, at least `least` digits:
  * where it ends. */
-static char *port_PutNumber(char *out, char *end, u32 value, u32 base,
-                            s32 least) {
+static char *port_PutNumber(
+    char *out, char *end, u32 value, u32 base, s32 least) {
     char digits[DIGITS_MAX];
     s32 count = 0;
 
@@ -332,6 +337,8 @@ static char *port_PutNumber(char *out, char *end, u32 value, u32 base,
     return out;
 }
 
+/* The address as text (port_net.h): IPv6 in brackets, its longest run
+ * of zero groups as `::`. */
 void port_FormatNetAddress(const PortNetAddress *at, char *out, u32 room) {
     char *end = out + room - 1;
     char *put = out;
@@ -342,11 +349,11 @@ void port_FormatNetAddress(const PortNetAddress *at, char *out, u32 room) {
     }
     if (!at->is_v6) {
         for (i = 0; i < ADDRESS_PARTS; i++) {
-            put = port_PutNumber(put, end,
-                                 (at->address >> (BITS_PER_BYTE *
-                                                  (ADDRESS_PARTS - 1 - i))) &
-                                     ADDRESS_PART_MAX,
-                                 DECIMAL, 1);
+            put = port_PutNumber(
+                put, end,
+                (at->address >> (BITS_PER_BYTE * (ADDRESS_PARTS - 1 - i))) &
+                    ADDRESS_PART_MAX,
+                DECIMAL, 1);
             if (put < end) {
                 *put++ = i + 1 < ADDRESS_PARTS ? '.' : ':';
             }
@@ -382,10 +389,10 @@ void port_FormatNetAddress(const PortNetAddress *at, char *out, u32 room) {
                 i += best_length - 1;
                 continue;
             }
-            put = port_PutNumber(put, end,
-                                 ((u32)at->v6[2 * i] << BITS_PER_BYTE) |
-                                     at->v6[2 * i + 1],
-                                 HEX_BASE, 1);
+            put = port_PutNumber(
+                put, end,
+                ((u32)at->v6[2 * i] << BITS_PER_BYTE) | at->v6[2 * i + 1],
+                HEX_BASE, 1);
             if (i + 1 < V6_GROUPS && put < end) {
                 *put++ = ':';
             }

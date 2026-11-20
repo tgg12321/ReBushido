@@ -115,18 +115,20 @@ extern s32 port_MenuWord(const char *word);
 /* The page's rows, each an item of its own (ONLINE_..., menu_online.c),
  * which menu.c lays out and moves the cursor over. */
 #define PORT_ONLINE_ITEMS_MAX 40
+
 /* What a press on an item asks of the menu. */
 enum {
     PORT_ONLINE_NOTHING = 0,
     PORT_ONLINE_REBUILD = 1, /* the page's rows are others now */
     PORT_ONLINE_TYPE = 2,    /* the row is typed into, from `typed` */
 };
+
 extern s32 port_OnlineItems(s32 *items, s32 most);
 /* An item's label and value; `typed` is what is being typed into it, or
  * NULL. */
-extern void port_OnlineDescribe(s32 item, const char *typed, char *label,
-                                u32 label_room, char *value, u32 value_room,
-                                s32 *is_arrows);
+extern void port_OnlineDescribe(
+    s32 item, const char *typed, char *label, u32 label_room, char *value,
+    u32 value_room, s32 *is_arrows);
 extern const char *port_OnlineHelp(s32 item, s32 is_typing);
 extern s32 port_OnlineAccept(
     s32 item, char *typed, u32 typed_room, char *note, u32 note_room);

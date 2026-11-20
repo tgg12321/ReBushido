@@ -444,9 +444,9 @@ static s32 port_ReadNetAddressOf(const char *value, char *out, s32 empty) {
         }
         if (c == ':') {
             colons++;
-        } else if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
-                     (c >= 'A' && c <= 'F') || c == '.' || c == '[' ||
-                     c == ']')) {
+        } else if (
+            !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+              (c >= 'A' && c <= 'F') || c == '.' || c == '[' || c == ']')) {
             return 0;
         }
     }
@@ -580,16 +580,16 @@ static s32 port_ReadNetRoom(PortSettings *settings, const char *value,
                             PortNameLookup lookup, const char **why) {
     (void)lookup;
     (void)why;
-    return port_ReadNetName(value, settings->net_room,
-                            sizeof(settings->net_room));
+    return port_ReadNetName(
+        value, settings->net_room, sizeof(settings->net_room));
 }
 
 static s32 port_ReadNetPlayer(PortSettings *settings, const char *value,
                               PortNameLookup lookup, const char **why) {
     (void)lookup;
     (void)why;
-    return port_ReadNetName(value, settings->net_player,
-                            sizeof(settings->net_player));
+    return port_ReadNetName(
+        value, settings->net_player, sizeof(settings->net_player));
 }
 
 /* `controls`: a layout's bindings, which say why not themselves. */

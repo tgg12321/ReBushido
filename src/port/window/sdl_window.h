@@ -139,6 +139,7 @@ extern void port_StartNetWindow(void);
 /* Netplay's line over the picture: the ping, the rollback, the delay,
  * and what is being waited for. Nothing where netplay is off. */
 extern void port_DrawNetLine(void);
+
 /* The settings menu's Play online page: the program starts again as a
  * session's (sdl_main.c), with the network's options of its command line
  * given anew. */
@@ -155,6 +156,7 @@ typedef struct {
     s32 delay;
     s32 portmap; /* the host asks its router for its port */
 } PortOnlineStart;
+
 extern void port_StartOnline(const PortOnlineStart *start);
 /* The port mapping's options (the tests' fake router: --portmap-ssdp,
  * --portmap-gateway), and whether --portmap off said none. */

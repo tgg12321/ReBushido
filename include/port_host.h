@@ -99,6 +99,7 @@ extern u32 port_HostTicks(void);
  * the network's order, and `address` 0; an IPv4 address is never given
  * as IPv6 (an IPv4-mapped one, ::ffff:a.b.c.d, is told as IPv4). */
 #define PORT_NET_V6_BYTES 16
+
 typedef struct {
     u32 address;
     u16 port;

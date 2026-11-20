@@ -187,7 +187,7 @@ extern void port_SessionSeed(void);
 
 /* What two players compare to know they can meet (--check-online, the
  * Play online page): the protocol, and short forms of the build's, the
- * disc's and the gameplay mods' sums, `P5-BBBB-DDDD-MMMM`, into `out`
+ * disc's and the gameplay mods' sums, `P7-BBBB-DDDD-MMMM`, into `out`
  * (PORT_SETUP_CODE_BYTES). The disc is the one port_SetSessionDisc
  * named, and the mods are the ones started. */
 #define PORT_SETUP_CODE_BYTES 24
@@ -210,6 +210,7 @@ extern void port_SetSessionPunchTo(const PortNetAddress *at);
 /* --net-paths' words, `public,lan,mapped,v6,relay`, as PORT_NET_PATH_...
  * bits: 0 if a word is none of them. */
 extern u32 port_ParseNetPaths(const char *text);
+
 /* For tests (--session-differ): this program says its build, disc,
  * gameplay mods or protocol is another, so that the other turns it away
  * (SESSION_DIFFER_..., session.c). */
@@ -220,6 +221,7 @@ enum {
     PORT_SESSION_DIFFER_MODS = 3,
     PORT_SESSION_DIFFER_PROTOCOL = 4,
 };
+
 extern void port_SetSessionDiffer(s32 what);
 /* The session's status and its failure, said to the window or the log
  * (session.c): relay.c's as well as the session's own. */
@@ -236,6 +238,7 @@ extern void port_SessionFail(const char *why);
 #define PORT_RELAY_PASSWORD_BYTES 33
 #define PORT_RELAY_SALT_BYTES 16
 #define PORT_RELAY_KEY_BYTES 32
+
 /* The ways between two players a meeting may try (--net-paths): each
  * candidate's kind, and the server's relay. */
 enum {
@@ -246,12 +249,13 @@ enum {
     PORT_NET_PATH_RELAY = 0x10,  /* the server passing the datagrams on */
     PORT_NET_PATHS_ALL = 0x1F,
 };
+
 /* The session meets by way of the lobby server at `server` (--lobby),
  * the guest in the room of `code` (--join CODE), the host in a room the
  * server gives a code (--room NAME). `paths`: PORT_NET_PATH_..., 0 for
  * every one. */
-extern void port_SetRelay(const PortNetAddress *server, const char *code,
-                          u32 paths);
+extern void port_SetRelay(
+    const PortNetAddress *server, const char *code, u32 paths);
 /* The host's room's name and the player's own (shown in the list). */
 extern void port_SetRelayRoom(const char *name, const char *player);
 /* The room's password, as typed (the host's salt is made from the clock;
@@ -287,15 +291,16 @@ typedef struct {
     u8 salt[PORT_RELAY_SALT_BYTES];
     u32 age; /* seconds */
 } PortRoom;
+
 /* The lobby's rooms, at most `most`, by a socket of their own (out of a
  * session): how many were had, and `total` the server's count; -1 if the
  * server did not answer. */
-extern s32 port_RelayListRooms(const PortNetAddress *server, PortRoom *rooms,
-                               s32 most, s32 *total);
+extern s32 port_RelayListRooms(
+    const PortNetAddress *server, PortRoom *rooms, s32 most, s32 *total);
 /* The address the server sees a socket of this PC's port `port` at (0:
  * any): 1 and `out`, or 0. What the other player types to punch through
  * to this one with no lobby (--punch-to). */
-extern s32 port_RelayWhoAmI(const PortNetAddress *server, u16 port,
-                            PortNetAddress *out);
+extern s32 port_RelayWhoAmI(
+    const PortNetAddress *server, u16 port, PortNetAddress *out);
 
 #endif /* PORT_NET_H */

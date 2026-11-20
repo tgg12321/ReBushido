@@ -56,9 +56,9 @@ enum {
     ROW_BUTTON, /* a button of the pad: `index` into g_port_menu_buttons */
     ROW_RESET,  /* the pad's buttons back to the layout's */
     ROW_BACK,
-    ROW_ONLINE, /* the Play online page */
+    ROW_ONLINE,   /* the Play online page */
     ROW_NET_ITEM, /* the Play online page's: `index` its item (menu_online.c) */
-    ROW_QUIT, /* the program ended, the settings kept */
+    ROW_QUIT,     /* the program ended, the settings kept */
 };
 
 typedef struct {
@@ -339,8 +339,9 @@ static void port_MenuDescribe(
     case ROW_NET_ITEM:
         port_OnlineDescribe(
             row->index,
-            g_menu.is_typing && row == &g_menu.rows[g_menu.cursor] ? g_menu.typed
-                                                                   : NULL,
+            g_menu.is_typing && row == &g_menu.rows[g_menu.cursor]
+                ? g_menu.typed
+                : NULL,
             label, LABEL_BYTES, value, VALUE_BYTES, is_arrows);
         break;
     default:
@@ -503,9 +504,9 @@ static void port_MenuAccept(void) {
         break;
     case ROW_NET_ITEM: {
         s32 page_cursor = g_menu.cursor;
-        s32 what = port_OnlineAccept(row->index, g_menu.typed,
-                                     sizeof(g_menu.typed), g_menu.note,
-                                     sizeof(g_menu.note));
+        s32 what =
+            port_OnlineAccept(row->index, g_menu.typed, sizeof(g_menu.typed),
+                              g_menu.note, sizeof(g_menu.note));
 
         if (what == PORT_ONLINE_TYPE) {
             g_menu.is_typing = TRUE;

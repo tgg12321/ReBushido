@@ -285,8 +285,11 @@ s32 port_HostOwnAddress(s32 v6, PortNetAddress *at) {
     /* a public address of each kind: nothing is sent to it */
     static const PortNetAddress four = {0x08080808U, 53, 0, {0}};
     static const PortNetAddress six = {
-        0, 53, 1, {0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0, 0, 0, 0, 0, 0, 0,
-                   0x88, 0x88}};
+        0,
+        53,
+        1,
+        {0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0x88,
+         0x88}};
     struct sockaddr_storage address;
     socklen_t length;
     int file = socket(v6 ? AF_INET6 : AF_INET, SOCK_DGRAM, 0);

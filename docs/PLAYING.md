@@ -696,7 +696,7 @@ rebushido --join 203.0.113.7:7845             ... and the other player
 ```
 
 **Check you can meet first:** `rebushido --check-online` prints your
-**setup code**, as `P5-6KT8-NYZ2-3ER0` (the protocol, then the build,
+**setup code**, as `P7-RN1C-NYZ2-3ER0` (the protocol, then the build,
 the disc and the gameplay mods), and the Play online page shows it on
 its last row. Send each other your codes by message: the same code
 means you can play. A disc image is told by its contents, not its file:

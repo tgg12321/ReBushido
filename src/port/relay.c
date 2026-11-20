@@ -46,6 +46,21 @@
 #define BITS_PER_BYTE 8
 #define WORD_BYTES 4
 #define V4_BYTES 4
+#define HEX_LETTER_VALUE 10
+#define HEX_DIGIT_BITS 4
+/* An address's family as the server writes it. */
+#define FAMILY_V6 6
+/* 127.0.0.1, and the first byte of every address of the loopback. */
+#define LOOPBACK 0x7F000001U
+#define LOOPBACK_FIRST 127
+#define ADDRESS_FIRST_SHIFT 24
+/* A salt made of the clock: a linear congruential step (Numerical
+ * Recipes'). */
+#define SALT_MULTIPLY 1664525U
+#define SALT_ADD 1013904223U
+#define SALT_BYTE_SHIFT 24
+#define SALT_SEED 0x9E3779B9U
+#define SALT_CLOCK_SHIFT 16
 
 /* How often things are said, and how long the server is waited for. */
 #define HELLO_EVERY_MS 250
@@ -163,14 +178,51 @@ static struct {
 
 #define SHA_BLOCK 64
 #define SHA_ROUNDS 64
+#define SHA_WORDS 8 /* the hash's state, a..h */
+#define SHA_BLOCK_WORDS 16
+#define SHA_WORD_BITS 32
+#define SHA_LENGTH_BYTES 8
+/* The bit that ends a message, and the pads of HMAC's two passes. */
+#define SHA_END_BIT 0x80
+#define HMAC_INNER 0x36
+#define HMAC_OUTER 0x5C
+
+/* The state's words by name (FIPS 180-4, 6.2.2). */
+enum { SHA_A, SHA_B, SHA_C, SHA_D, SHA_E, SHA_F, SHA_G, SHA_H };
+
+/* The turns of the message's schedule (sigma) and of a round (Sigma). */
+enum {
+    SCHEDULE0_TURN1 = 7,
+    SCHEDULE0_TURN2 = 18,
+    SCHEDULE0_SHIFT = 3,
+    SCHEDULE1_TURN1 = 17,
+    SCHEDULE1_TURN2 = 19,
+    SCHEDULE1_SHIFT = 10,
+    ROUND_A_TURN1 = 2,
+    ROUND_A_TURN2 = 13,
+    ROUND_A_TURN3 = 22,
+    ROUND_E_TURN1 = 6,
+    ROUND_E_TURN2 = 11,
+    ROUND_E_TURN3 = 25,
+};
+
+/* The words of the schedule a word is made of: 16, 15, 7 and 2 before it. */
+enum {
+    SCHEDULE_BACK_16 = 16,
+    SCHEDULE_BACK_15 = 15,
+    SCHEDULE_BACK_7 = 7,
+    SCHEDULE_BACK_2 = 2,
+};
 
 typedef struct {
-    u32 h[8];
+    u32 state[SHA_WORDS];
     u8 block[SHA_BLOCK];
     u32 used;
     u32 length; /* bytes: the messages here are short */
 } Sha256;
 
+/* The rounds' constants and the hash's first state (FIPS 180-4, 4.2.2
+ * and 5.3.3). */
 static const u32 g_sha_k[SHA_ROUNDS] = {
     0x428A2F98, 0x71374491, 0xB5C0FBCF, 0xE9B5DBA5, 0x3956C25B, 0x59F111F1,
     0x923F82A4, 0xAB1C5ED5, 0xD807AA98, 0x12835B01, 0x243185BE, 0x550C7DC3,
@@ -183,67 +235,87 @@ static const u32 g_sha_k[SHA_ROUNDS] = {
     0x19A4C116, 0x1E376C08, 0x2748774C, 0x34B0BCB5, 0x391C0CB3, 0x4ED8AA4A,
     0x5B9CCA4F, 0x682E6FF3, 0x748F82EE, 0x78A5636F, 0x84C87814, 0x8CC70208,
     0x90BEFFFA, 0xA4506CEB, 0xBEF9A3F7, 0xC67178F2};
+static const u32 g_sha_start[SHA_WORDS] = {
+    0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A,
+    0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19};
 
-static u32 port_ShaTurn(u32 x, s32 n) { return (x >> n) | (x << (32 - n)); }
+/* A word turned right by `count` bits. */
+static u32 port_ShaTurn(u32 word, s32 count) {
+    return (word >> count) | (word << (SHA_WORD_BITS - count));
+}
 
-static void port_ShaBlock(Sha256 *sha) {
-    u32 w[SHA_ROUNDS];
-    u32 v[8];
+/* A word of the block, its most significant byte first. */
+static u32 port_ShaWordOf(const u8 *bytes) {
+    u32 word = 0;
     s32 i;
 
-    for (i = 0; i < 16; i++) {
-        w[i] = ((u32)sha->block[4 * i] << 24) |
-               ((u32)sha->block[4 * i + 1] << 16) |
-               ((u32)sha->block[4 * i + 2] << 8) | sha->block[4 * i + 3];
+    for (i = 0; i < WORD_BYTES; i++) {
+        word = (word << BITS_PER_BYTE) | bytes[i];
+    }
+    return word;
+}
+
+/* One block of 64 bytes into the hash's state. */
+static void port_ShaBlock(Sha256 *sha) {
+    u32 schedule[SHA_ROUNDS];
+    u32 work[SHA_WORDS];
+    s32 i;
+
+    for (i = 0; i < SHA_BLOCK_WORDS; i++) {
+        schedule[i] = port_ShaWordOf(sha->block + WORD_BYTES * i);
     }
     for (; i < SHA_ROUNDS; i++) {
-        u32 s0 = port_ShaTurn(w[i - 15], 7) ^ port_ShaTurn(w[i - 15], 18) ^
-                 (w[i - 15] >> 3);
-        u32 s1 = port_ShaTurn(w[i - 2], 17) ^ port_ShaTurn(w[i - 2], 19) ^
-                 (w[i - 2] >> 10);
+        u32 back15 = schedule[i - SCHEDULE_BACK_15];
+        u32 back2 = schedule[i - SCHEDULE_BACK_2];
+        u32 sigma0 =
+            port_ShaTurn(back15, SCHEDULE0_TURN1) ^
+            port_ShaTurn(back15, SCHEDULE0_TURN2) ^ (back15 >> SCHEDULE0_SHIFT);
+        u32 sigma1 =
+            port_ShaTurn(back2, SCHEDULE1_TURN1) ^
+            port_ShaTurn(back2, SCHEDULE1_TURN2) ^ (back2 >> SCHEDULE1_SHIFT);
 
-        w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+        schedule[i] = schedule[i - SCHEDULE_BACK_16] + sigma0 +
+                      schedule[i - SCHEDULE_BACK_7] + sigma1;
     }
-    for (i = 0; i < 8; i++) {
-        v[i] = sha->h[i];
+    for (i = 0; i < SHA_WORDS; i++) {
+        work[i] = sha->state[i];
     }
     for (i = 0; i < SHA_ROUNDS; i++) {
-        u32 s1 = port_ShaTurn(v[4], 6) ^ port_ShaTurn(v[4], 11) ^
-                 port_ShaTurn(v[4], 25);
-        u32 choose = (v[4] & v[5]) ^ (~v[4] & v[6]);
-        u32 t1 = v[7] + s1 + choose + g_sha_k[i] + w[i];
-        u32 s0 = port_ShaTurn(v[0], 2) ^ port_ShaTurn(v[0], 13) ^
-                 port_ShaTurn(v[0], 22);
-        u32 major = (v[0] & v[1]) ^ (v[0] & v[2]) ^ (v[1] & v[2]);
-        u32 t2 = s0 + major;
+        u32 big_e = port_ShaTurn(work[SHA_E], ROUND_E_TURN1) ^
+                    port_ShaTurn(work[SHA_E], ROUND_E_TURN2) ^
+                    port_ShaTurn(work[SHA_E], ROUND_E_TURN3);
+        u32 choose = (work[SHA_E] & work[SHA_F]) ^ (~work[SHA_E] & work[SHA_G]);
+        u32 first = work[SHA_H] + big_e + choose + g_sha_k[i] + schedule[i];
+        u32 big_a = port_ShaTurn(work[SHA_A], ROUND_A_TURN1) ^
+                    port_ShaTurn(work[SHA_A], ROUND_A_TURN2) ^
+                    port_ShaTurn(work[SHA_A], ROUND_A_TURN3);
+        u32 major = (work[SHA_A] & work[SHA_B]) ^ (work[SHA_A] & work[SHA_C]) ^
+                    (work[SHA_B] & work[SHA_C]);
+        s32 k;
 
-        v[7] = v[6];
-        v[6] = v[5];
-        v[5] = v[4];
-        v[4] = v[3] + t1;
-        v[3] = v[2];
-        v[2] = v[1];
-        v[1] = v[0];
-        v[0] = t1 + t2;
+        for (k = SHA_H; k > SHA_A; k--) {
+            work[k] = work[k - 1];
+        }
+        work[SHA_E] += first;
+        work[SHA_A] = first + big_a + major;
     }
-    for (i = 0; i < 8; i++) {
-        sha->h[i] += v[i];
+    for (i = 0; i < SHA_WORDS; i++) {
+        sha->state[i] += work[i];
     }
 }
 
+/* A hash begun. */
 static void port_ShaStart(Sha256 *sha) {
-    static const u32 start[8] = {0x6A09E667, 0xBB67AE85, 0x3C6EF372,
-                                 0xA54FF53A, 0x510E527F, 0x9B05688C,
-                                 0x1F83D9AB, 0x5BE0CD19};
     s32 i;
 
-    for (i = 0; i < 8; i++) {
-        sha->h[i] = start[i];
+    for (i = 0; i < SHA_WORDS; i++) {
+        sha->state[i] = g_sha_start[i];
     }
     sha->used = 0;
     sha->length = 0;
 }
 
+/* `count` bytes more of the message. */
 static void port_ShaAdd(Sha256 *sha, const u8 *bytes, u32 count) {
     u32 i;
 
@@ -257,23 +329,26 @@ static void port_ShaAdd(Sha256 *sha, const u8 *bytes, u32 count) {
     }
 }
 
+/* The message's end, its length in bits, and the hash into `out`
+ * (KEY_BYTES), its most significant byte first. */
 static void port_ShaEnd(Sha256 *sha, u8 *out) {
     u64 length = (u64)sha->length * BITS_PER_BYTE;
-    u8 end[BITS_PER_BYTE];
-    u8 one = 0x80;
+    u8 end[SHA_LENGTH_BYTES];
+    u8 one = SHA_END_BIT;
     u8 zero = 0;
     s32 i;
 
     port_ShaAdd(sha, &one, 1);
-    while (sha->used != SHA_BLOCK - BITS_PER_BYTE) {
+    while (sha->used != SHA_BLOCK - SHA_LENGTH_BYTES) {
         port_ShaAdd(sha, &zero, 1);
     }
-    for (i = 0; i < BITS_PER_BYTE; i++) {
-        end[i] = (u8)(length >> (56 - 8 * i));
+    for (i = 0; i < SHA_LENGTH_BYTES; i++) {
+        end[i] = (u8)(length >> (BITS_PER_BYTE * (SHA_LENGTH_BYTES - 1 - i)));
     }
     port_ShaAdd(sha, end, sizeof(end));
     for (i = 0; i < KEY_BYTES; i++) {
-        out[i] = (u8)(sha->h[i / 4] >> (24 - 8 * (i % 4)));
+        out[i] = (u8)(sha->state[i / WORD_BYTES] >>
+                      (BITS_PER_BYTE * (WORD_BYTES - 1 - i % WORD_BYTES)));
     }
 }
 
@@ -285,14 +360,14 @@ static void port_Hmac(const u8 *key, const u8 *message, u32 count, u8 *out) {
     s32 i;
 
     for (i = 0; i < SHA_BLOCK; i++) {
-        pad[i] = (u8)((i < KEY_BYTES ? key[i] : 0) ^ 0x36);
+        pad[i] = (u8)((i < KEY_BYTES ? key[i] : 0) ^ HMAC_INNER);
     }
     port_ShaStart(&sha);
     port_ShaAdd(&sha, pad, SHA_BLOCK);
     port_ShaAdd(&sha, message, count);
     port_ShaEnd(&sha, inner);
     for (i = 0; i < SHA_BLOCK; i++) {
-        pad[i] = (u8)((i < KEY_BYTES ? key[i] : 0) ^ 0x5C);
+        pad[i] = (u8)((i < KEY_BYTES ? key[i] : 0) ^ HMAC_OUTER);
     }
     port_ShaStart(&sha);
     port_ShaAdd(&sha, pad, SHA_BLOCK);
@@ -329,6 +404,8 @@ static void port_CopyText(char *out, u32 room, const char *text) {
     out[i] = 0;
 }
 
+/* The lobby to meet at (port_net.h); a code typed in small letters is the
+ * same room. */
 void port_SetRelay(const PortNetAddress *server, const char *code, u32 paths) {
     u32 i;
 
@@ -364,19 +441,21 @@ void port_SetRelayKey(const u8 *salt, const u8 *key) {
     g_relay.has_key = 1;
 }
 
-static s32 port_HexValue(char c) {
-    if (c >= '0' && c <= '9') {
-        return c - '0';
+/* A hex digit's value, or -1. */
+static s32 port_HexValue(char digit) {
+    if (digit >= '0' && digit <= '9') {
+        return digit - '0';
     }
-    if (c >= 'a' && c <= 'f') {
-        return c - 'a' + 10;
+    if (digit >= 'a' && digit <= 'f') {
+        return digit - 'a' + HEX_LETTER_VALUE;
     }
-    if (c >= 'A' && c <= 'F') {
-        return c - 'A' + 10;
+    if (digit >= 'A' && digit <= 'F') {
+        return digit - 'A' + HEX_LETTER_VALUE;
     }
     return -1;
 }
 
+/* `count` bytes of hex into `out`: 1, or 0 if they are not. */
 static s32 port_ParseHex(const char *text, u8 *out, u32 count) {
     u32 i;
 
@@ -387,7 +466,7 @@ static s32 port_ParseHex(const char *text, u8 *out, u32 count) {
         if (low < 0) {
             return 0;
         }
-        out[i] = (u8)((high << 4) | low);
+        out[i] = (u8)((high << HEX_DIGIT_BITS) | low);
     }
     return 1;
 }
@@ -406,9 +485,10 @@ void port_SetRelayMapped(const PortNetAddress *mapped) {
 
 s32 port_IsRelayOn(void) { return g_relay.is_on; }
 
+/* --net-paths (port_net.h): each word of the list a bit. */
 u32 port_ParseNetPaths(const char *text) {
-    static const char *const words[] = {"public", "lan", "mapped", "v6",
-                                        "relay"};
+    static const char * const words[] = {
+        "public", "lan", "mapped", "v6", "relay"};
     u32 paths = 0;
 
     while (*text != 0) {
@@ -463,6 +543,7 @@ static void port_GetText(char *out, const u8 *in, u32 room) {
     out[i] = 0;
 }
 
+/* An ADDRESS or a CANDIDATE (20 bytes) of `at`, its first byte `type`. */
 static void port_PutAddress(u8 *out, s32 type, const PortNetAddress *at) {
     u32 i;
 
@@ -561,6 +642,8 @@ static s32 port_OwnCandidates(RelayCandidate *out) {
     return count;
 }
 
+/* A HELLO to the server: who this is, the room, the password's salt and
+ * verifier (the host) or its proof (a guest), and this side's ways. */
 static void port_SendHello(s32 role, s32 reset) {
     u8 out[HELLO_BYTES];
     RelayCandidate own[CANDIDATES_MAX];
@@ -594,15 +677,15 @@ static void port_SendHello(s32 role, s32 reset) {
         for (i = 0; i < KEY_BYTES; i++) {
             out[HELLO_SECRET + i] = g_relay.key[i];
         }
-    } else if (role != PORT_SESSION_HOST && g_relay.has_key &&
-               g_meet.has_challenge) {
-        port_Hmac(g_relay.key, g_meet.challenge, CHALLENGE_BYTES,
-                  out + HELLO_SECRET);
+    } else if (
+        role != PORT_SESSION_HOST && g_relay.has_key && g_meet.has_challenge) {
+        port_Hmac(
+            g_relay.key, g_meet.challenge, CHALLENGE_BYTES, out + HELLO_SECRET);
     }
     out[HELLO_COUNT] = (u8)count;
     for (i = 0; i < count; i++) {
-        port_PutAddress(out + HELLO_CANDIDATES + i * ADDRESS_FIELD,
-                        own[i].type, &own[i].at);
+        port_PutAddress(out + HELLO_CANDIDATES + i * ADDRESS_FIELD, own[i].type,
+                        &own[i].at);
     }
     port_NetSendTo(&g_relay.server, out, sizeof(out));
 }
@@ -621,6 +704,7 @@ static s32 port_TriesCandidate(const RelayCandidate *candidate) {
     return (g_relay.paths & path_of[candidate->type]) != 0;
 }
 
+/* A punch to each of the other's candidates this program tries. */
 static void port_SendPunches(void) {
     u8 out[PUNCH_BYTES];
     s32 i;
@@ -638,7 +722,7 @@ static void port_SendPunches(void) {
 
 /* Which of the two setup codes' parts differ, in words. */
 static const char *port_SetupDiffers(const char *mine, const char *theirs) {
-    static const char *const parts[] = {
+    static const char * const parts[] = {
         "the online protocol (another release)",
         "the build (another release, or another system)",
         "the disc image (the USA disc, SLUS-00663, is needed)",
@@ -665,43 +749,47 @@ static void port_RelayError(char *out, u32 room, s32 state) {
     switch (state) {
     case STATE_NO_ROOM:
         port_RelayText(out, room,
-                         "There is no room %s at the lobby: it may have "
-                         "closed.",
-                         g_relay.code);
+                       "There is no room %s at the lobby: it may have "
+                       "closed.",
+                       g_relay.code);
         break;
     case STATE_ROOM_FULL:
-        port_RelayText(out, room, "Room %s already has two players.",
-                         g_relay.code);
+        port_RelayText(
+            out, room, "Room %s already has two players.", g_relay.code);
         break;
     case STATE_SERVER_FULL:
-        port_RelayText(out, room, "The lobby is full just now: try again "
-                                    "in a while.");
+        port_RelayText(out, room,
+                       "The lobby is full just now: try again "
+                       "in a while.");
         break;
     case STATE_VERSION:
-        port_RelayText(out, room, "The lobby server is of another version: "
-                                    "this release cannot use it.");
+        port_RelayText(out, room,
+                       "The lobby server is of another version: "
+                       "this release cannot use it.");
         break;
     case STATE_WRONG_PASSWORD:
-        port_RelayText(out, room, "The password is not room %s's.",
-                         g_relay.code);
+        port_RelayText(
+            out, room, "The password is not room %s's.", g_relay.code);
         break;
     case STATE_RATE_LIMITED:
-        port_RelayText(out, room, "The lobby has had too many tries from "
-                                    "your address: wait a minute and try "
-                                    "again.");
+        port_RelayText(out, room,
+                       "The lobby has had too many tries from "
+                       "your address: wait a minute and try "
+                       "again.");
         break;
     case STATE_INCOMPATIBLE:
         port_RelayText(out, room,
-                         "Room %s's game is not compatible with yours: "
-                         "the host's setup code is %s, yours %s; they "
-                         "differ in %s.",
-                         g_relay.code, g_meet.peer_setup, mine,
-                         port_SetupDiffers(mine, g_meet.peer_setup));
+                       "Room %s's game is not compatible with yours: "
+                       "the host's setup code is %s, yours %s; they "
+                       "differ in %s.",
+                       g_relay.code, g_meet.peer_setup, mine,
+                       port_SetupDiffers(mine, g_meet.peer_setup));
         break;
     default:
-        port_RelayText(out, room, "The lobby could not take this request "
-                                    "(%d).",
-                         state);
+        port_RelayText(out, room,
+                       "The lobby could not take this request "
+                       "(%d).",
+                       state);
         break;
     }
 }
@@ -711,8 +799,7 @@ static void port_NamePath(s32 state) {
     char text[STATUS_BYTES];
 
     if (state == STATE_DIRECT6) {
-        port_RelayText(text, sizeof(text), "IPv6, direct (%u ms)",
-                         g_meet.rtt6);
+        port_RelayText(text, sizeof(text), "IPv6, direct (%u ms)", g_meet.rtt6);
     } else if (state == STATE_DIRECT4) {
         port_RelayText(
             text, sizeof(text), "%s (%u ms)",
@@ -726,6 +813,8 @@ static void port_NamePath(s32 state) {
     port_SetSessionPath(text);
 }
 
+/* The meeting at the lobby (port_net.h): HELLO until the server decides
+ * the way, punches meanwhile, and the answers to the other's. */
 s32 port_RelayMeet(s32 role, s32 again) {
     char status[STATUS_BYTES];
     char why[TEXT_BYTES];
@@ -743,19 +832,20 @@ s32 port_RelayMeet(s32 role, s32 again) {
         ((u8 *)&g_meet)[i] = 0;
     }
     port_FormatNetAddress(&g_relay.server, server, sizeof(server));
-    port_RelayText(status, sizeof(status), "Reaching the lobby server at %s",
-                     server);
+    port_RelayText(
+        status, sizeof(status), "Reaching the lobby server at %s", server);
     if (role == PORT_SESSION_HOST && !again) {
         g_relay.code[0] = 0;
     }
     if (role == PORT_SESSION_HOST && !g_relay.has_key &&
         g_relay.password[0] != 0) {
         /* the room's salt: it only has to differ between rooms */
-        u32 seed = port_HostTicks() ^ (port_NetClock() << 16) ^ 0x9E3779B9U;
+        u32 seed = port_HostTicks() ^ (port_NetClock() << SALT_CLOCK_SHIFT) ^
+                   SALT_SEED;
 
         for (i = 0; i < SALT_BYTES; i++) {
-            seed = seed * 1664525U + 1013904223U;
-            g_relay.salt[i] = (u8)(seed >> 24);
+            seed = seed * SALT_MULTIPLY + SALT_ADD;
+            g_relay.salt[i] = (u8)(seed >> SALT_BYTE_SHIFT);
         }
         port_RelayRoomKey(g_relay.salt, g_relay.password, g_relay.key);
         g_relay.has_key = 1;
@@ -796,30 +886,30 @@ s32 port_RelayMeet(s32 role, s32 again) {
                     resetting = 0;
                     if (!told_code && g_relay.code[0] != 0) {
                         told_code = 1;
-                        port_Log("relay: the room's code is %s\n",
-                                 g_relay.code);
+                        port_Log(
+                            "relay: the room's code is %s\n", g_relay.code);
                     }
-                    port_RelayText(status, sizeof(status),
-                                     "Room %s is open at the lobby: waiting "
-                                     "for the other player (they pick it in "
-                                     "Browse rooms, or join code %s)",
-                                     g_relay.room[0] != 0 ? g_relay.room
-                                                          : g_relay.code,
-                                     g_relay.code);
+                    port_RelayText(
+                        status, sizeof(status),
+                        "Room %s is open at the lobby: waiting "
+                        "for the other player (they pick it in "
+                        "Browse rooms, or join code %s)",
+                        g_relay.room[0] != 0 ? g_relay.room : g_relay.code,
+                        g_relay.code);
                 } else if (detail == STATE_PASSWORD) {
                     for (i = 0; i < CHALLENGE_BYTES; i++) {
                         g_meet.challenge[i] = in[STATE_CHALLENGE + i];
                     }
                     if (!g_relay.has_key && g_relay.password[0] != 0) {
-                        port_RelayRoomKey(in + STATE_SALT, g_relay.password,
-                                          g_relay.key);
+                        port_RelayRoomKey(
+                            in + STATE_SALT, g_relay.password, g_relay.key);
                         g_relay.has_key = 1;
                     }
                     if (!g_relay.has_key) {
                         port_RelayText(why, sizeof(why),
-                                         "Room %s is locked: it needs its "
-                                         "password.",
-                                         g_relay.code);
+                                       "Room %s is locked: it needs its "
+                                       "password.",
+                                       g_relay.code);
                         port_SessionFail(why);
                         return 0;
                     }
@@ -827,41 +917,42 @@ s32 port_RelayMeet(s32 role, s32 again) {
                         g_meet.has_challenge = 1;
                         hello_at = 0; /* the proof at once */
                     }
-                } else if (detail == STATE_PUNCH && g_meet.state != STATE_PUNCH) {
+                } else if (
+                    detail == STATE_PUNCH && g_meet.state != STATE_PUNCH) {
                     g_meet.state = STATE_PUNCH;
                     g_meet.token = number;
                     g_meet.peer_count = in[STATE_COUNT] < CANDIDATES_MAX
                                             ? in[STATE_COUNT]
                                             : CANDIDATES_MAX;
                     for (i = 0; i < (u32)g_meet.peer_count; i++) {
-                        const u8 *at = in + STATE_CANDIDATES + i * ADDRESS_FIELD;
+                        const u8 *at =
+                            in + STATE_CANDIDATES + i * ADDRESS_FIELD;
                         s32 type = at[0];
 
                         g_meet.peer[i].type = type;
                         if (type > CANDIDATE_GLOBAL6 ||
-                            !port_GetAddress(
-                                at,
-                                type == CANDIDATE_GLOBAL6 ||
-                                    (type == CANDIDATE_PUBLIC &&
-                                     in[STATE_PEER] == 6),
-                                &g_meet.peer[i].at)) {
+                            !port_GetAddress(at,
+                                             type == CANDIDATE_GLOBAL6 ||
+                                                 (type == CANDIDATE_PUBLIC &&
+                                                  in[STATE_PEER] == FAMILY_V6),
+                                             &g_meet.peer[i].at)) {
                             g_meet.peer[i].type = CANDIDATE_PUBLIC;
                             port_ClearNetAddress(&g_meet.peer[i].at);
                         }
                     }
-                    port_GetText(g_meet.peer_name, in + STATE_PLAYER,
-                                 PLAYER_BYTES);
+                    port_GetText(
+                        g_meet.peer_name, in + STATE_PLAYER, PLAYER_BYTES);
                     port_Log("relay: %s is in the room; trying %d ways to "
                              "them\n",
                              g_meet.peer_name[0] != 0 ? g_meet.peer_name
                                                       : "the other player",
                              g_meet.peer_count);
-                    port_RelayText(status, sizeof(status),
-                                     "%s is here: finding the way between "
-                                     "your PCs",
-                                     g_meet.peer_name[0] != 0
-                                         ? g_meet.peer_name
-                                         : "The other player");
+                    port_RelayText(
+                        status, sizeof(status),
+                        "%s is here: finding the way between "
+                        "your PCs",
+                        g_meet.peer_name[0] != 0 ? g_meet.peer_name
+                                                 : "The other player");
                     punch_at = 0;
                 } else if (detail == STATE_DIRECT6 && g_meet.punched6) {
                     port_SetNetPeerNow(&g_meet.via6);
@@ -914,10 +1005,10 @@ s32 port_RelayMeet(s32 role, s32 again) {
         }
         if (now - heard_at > SERVER_GIVE_UP_MS) {
             port_RelayText(why, sizeof(why),
-                             "The lobby server at %s does not answer. Is "
-                             "its address right, and does your network let "
-                             "UDP through?",
-                             server);
+                           "The lobby server at %s does not answer. Is "
+                           "its address right, and does your network let "
+                           "UDP through?",
+                           server);
             port_SessionFail(why);
             return 0;
         }
@@ -935,24 +1026,26 @@ static s32 port_AskSocket(u16 port) {
     port_ClearNetAddress(&at);
     at.port = port;
     at.is_v6 = g_relay.server.is_v6;
-    if (!at.is_v6 && (g_relay.server.address >> 24) == 127) {
-        at.address = 0x7F000001U;
+    if (!at.is_v6 &&
+        (g_relay.server.address >> ADDRESS_FIRST_SHIFT) == LOOPBACK_FIRST) {
+        at.address = LOOPBACK;
     } else if (at.is_v6) {
-        s32 loopback = g_relay.server.v6[15] == 1;
+        s32 loopback = g_relay.server.v6[PORT_NET_V6_BYTES - 1] == 1;
         u32 i;
 
         for (i = 0; i + 1 < PORT_NET_V6_BYTES; i++) {
             loopback = loopback && g_relay.server.v6[i] == 0;
         }
         if (loopback) {
-            at.v6[15] = 1;
+            at.v6[PORT_NET_V6_BYTES - 1] = 1;
         }
     }
     return port_HostUdpOpen(&at);
 }
 
-s32 port_RelayListRooms(const PortNetAddress *server, PortRoom *rooms,
-                        s32 most, s32 *total) {
+/* The lobby's list (port_net.h), page by page. */
+s32 port_RelayListRooms(
+    const PortNetAddress *server, PortRoom *rooms, s32 most, s32 *total) {
     u8 out[LIST_BYTES];
     u8 in[PORT_NET_DATAGRAM_MAX];
     s32 socket;
@@ -987,14 +1080,14 @@ s32 port_RelayListRooms(const PortNetAddress *server, PortRoom *rooms,
         if (got > 0 && got >= PORT_NET_HEADER_BYTES && in[0] == 'R' &&
             in[1] == 'B' && in[2] == KIND_ROOMS &&
             port_NetAddressesEqual(&from, server)) {
-            s32 n = in[3];
+            s32 listed = in[3];
 
-            if (got != PORT_NET_HEADER_BYTES + n * ROOM_BYTES) {
+            if (got != PORT_NET_HEADER_BYTES + listed * ROOM_BYTES) {
                 continue;
             }
             answered = 1;
             *total = (s32)port_NetGetWord(in + 4);
-            for (i = 0; i < n && count < most; i++) {
+            for (i = 0; i < listed && count < most; i++) {
                 const u8 *at = in + PORT_NET_HEADER_BYTES + i * ROOM_BYTES;
                 PortRoom *room = &rooms[count++];
                 s32 k;
@@ -1010,7 +1103,7 @@ s32 port_RelayListRooms(const PortNetAddress *server, PortRoom *rooms,
                 }
                 room->age = port_NetGetWord(at + ROOM_AGE);
             }
-            if (count >= *total || n == 0) {
+            if (count >= *total || listed == 0) {
                 break;
             }
         }
@@ -1019,8 +1112,9 @@ s32 port_RelayListRooms(const PortNetAddress *server, PortRoom *rooms,
     return answered ? count : -1;
 }
 
-s32 port_RelayWhoAmI(const PortNetAddress *server, u16 port,
-                     PortNetAddress *out) {
+/* WHOAMI until YOUARE comes (port_net.h). */
+s32 port_RelayWhoAmI(
+    const PortNetAddress *server, u16 port, PortNetAddress *out) {
     u8 ask[WHOAMI_BYTES];
     u8 in[PORT_NET_DATAGRAM_MAX];
     u32 start = port_NetClock();
@@ -1049,8 +1143,9 @@ s32 port_RelayWhoAmI(const PortNetAddress *server, u16 port,
         got = port_HostUdpReceive(socket, in, sizeof(in), &from, POLL_MS);
         if (got == YOUARE_BYTES && in[0] == 'R' && in[1] == 'B' &&
             in[2] == KIND_YOUARE && port_NetAddressesEqual(&from, server)) {
-            found = port_GetAddress(in + PORT_NET_HEADER_BYTES,
-                                    in[PORT_NET_HEADER_BYTES] == 6, out);
+            found =
+                port_GetAddress(in + PORT_NET_HEADER_BYTES,
+                                in[PORT_NET_HEADER_BYTES] == FAMILY_V6, out);
         }
     }
     port_HostUdpClose(socket);

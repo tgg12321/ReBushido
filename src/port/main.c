@@ -566,8 +566,8 @@ s32 port_Main(s32 argc, char **argv) {
                                 argv[i]);
             }
         } else if (port_TextsEqual(word, "--session-differ")) {
-            static const char *const parts[] = {"build", "disc", "mods",
-                                                "protocol"};
+            static const char * const parts[] = {
+                "build", "disc", "mods", "protocol"};
             s32 part;
 
             i++;
@@ -653,8 +653,8 @@ s32 port_Main(s32 argc, char **argv) {
     }
     if (room != NULL) {
         if (!has_lobby || session_role == PORT_SESSION_JOIN) {
-            port_UsageError("--room opens a room at a --lobby, and hosts it",
-                            "");
+            port_UsageError(
+                "--room opens a room at a --lobby, and hosts it", "");
         }
         if (session_role == PORT_SESSION_NONE) {
             session_role = PORT_SESSION_HOST;

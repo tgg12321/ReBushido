@@ -59,15 +59,15 @@ static struct {
     PortRoom rooms[ROOMS_MAX];
     s32 room_count;
     s32 total;
-    s32 listed;        /* the list has been asked for */
-    s32 pending;       /* a locked room chosen, waiting for its password */
+    s32 listed;  /* the list has been asked for */
+    s32 pending; /* a locked room chosen, waiting for its password */
     char my_address[LABEL_ROOM_BYTES];
     char setup[PORT_SETUP_CODE_BYTES];
 } g_online;
 
-static const char *const g_roles[] = {"Host by address", "Join by address",
-                                      "Host a room", "Browse rooms"};
-static const char *const g_role_words[] = {"host", "join", "room", "rooms"};
+static const char * const g_roles[] = {
+    "Host by address", "Join by address", "Host a room", "Browse rooms"};
+static const char * const g_role_words[] = {"host", "join", "room", "rooms"};
 
 static s32 port_Role(void) { return g_port_settings.net_role; }
 
@@ -133,9 +133,9 @@ s32 port_OnlineItems(s32 *items, s32 most) {
 
 /* Which part of two setup codes differs, in a few words; NULL if none. */
 static const char *port_SetupDiffers(const char *theirs) {
-    static const char *const parts[] = {"another version", "another build",
-                                        "another disc image",
-                                        "other gameplay mods"};
+    static const char * const parts[] = {
+        "another version", "another build", "another disc image",
+        "other gameplay mods"};
     const char *mine = port_Setup();
     s32 part = 0;
     s32 i;
@@ -151,8 +151,8 @@ static const char *port_SetupDiffers(const char *theirs) {
     return NULL;
 }
 
-static void port_ShowTyped(char *value, u32 room, const char *typed,
-                           s32 hidden) {
+static void port_ShowTyped(
+    char *value, u32 room, const char *typed, s32 hidden) {
     u32 i;
     u32 n = (u32)strlen(typed);
 
@@ -167,9 +167,9 @@ static void port_ShowTyped(char *value, u32 room, const char *typed,
     value[i] = 0;
 }
 
-void port_OnlineDescribe(s32 item, const char *typed, char *label,
-                         u32 label_room, char *value, u32 value_room,
-                         s32 *is_arrows) {
+void port_OnlineDescribe(
+    s32 item, const char *typed, char *label, u32 label_room, char *value,
+    u32 value_room, s32 *is_arrows) {
     *is_arrows = FALSE;
     value[0] = 0;
     if (typed != NULL) {
@@ -212,16 +212,16 @@ void port_OnlineDescribe(s32 item, const char *typed, char *label,
         snprintf(label, label_room, "Room's name");
         if (typed == NULL) {
             snprintf(value, value_room, "%s",
-                     g_port_settings.net_room[0] != 0
-                         ? g_port_settings.net_room
-                         : "(your player name)");
+                     g_port_settings.net_room[0] != 0 ? g_port_settings.net_room
+                                                      : "(your player name)");
         }
         break;
     case ONLINE_PASSWORD:
         snprintf(label, label_room, "%s",
-                 port_Role() == PORT_NET_ROLE_ROOM ? "Password (none: open "
-                                                     "to all)"
-                                                   : "A locked room's password");
+                 port_Role() == PORT_NET_ROLE_ROOM
+                     ? "Password (none: open "
+                       "to all)"
+                     : "A locked room's password");
         if (typed == NULL) {
             port_ShowTyped(value, value_room, g_online.password, TRUE);
             value[strlen(value) - 1] = 0;
@@ -264,9 +264,9 @@ void port_OnlineDescribe(s32 item, const char *typed, char *label,
         break;
     case ONLINE_PORTMAP:
         snprintf(label, label_room, "Open the port in the router");
-        snprintf(value, value_room, "%s",
-                 g_port_settings.net_portmap ? "Yes (UPnP, NAT-PMP, PCP)"
-                                             : "No");
+        snprintf(
+            value, value_room, "%s",
+            g_port_settings.net_portmap ? "Yes (UPnP, NAT-PMP, PCP)" : "No");
         *is_arrows = TRUE;
         break;
     case ONLINE_ADDRESS:
@@ -323,10 +323,11 @@ const char *port_OnlineHelp(s32 item, s32 is_typing) {
         return "Type the password.  Enter: keep it.  Escape: leave it";
     }
     if (is_typing) {
-        return item == ONLINE_PORT ? "Type it.  Enter: keep it.  Escape: "
-                                     "leave it"
-                                   : "Type it.  Enter: keep it (nothing: "
-                                     "none).  Escape: leave it";
+        return item == ONLINE_PORT
+                   ? "Type it.  Enter: keep it.  Escape: "
+                     "leave it"
+                   : "Type it.  Enter: keep it (nothing: "
+                     "none).  Escape: leave it";
     }
     if (item >= ONLINE_ROOM) {
         return "Enter: join this room (a locked one asks for its password "
@@ -400,21 +401,20 @@ static void port_FindMyAddress(void) {
                          port_WindowPortMapOptions(), &map)) {
             /* only to see: the session asks again as it starts */
             port_UnmapPort();
-            snprintf(g_online.my_address, sizeof(g_online.my_address),
-                     "%u.%u.%u.%u:%u (%s)", map.external_address >> 24,
-                     (map.external_address >> 16) & 0xFF,
-                     (map.external_address >> 8) & 0xFF,
-                     map.external_address & 0xFF, map.external_port,
-                     map.method);
+            snprintf(
+                g_online.my_address, sizeof(g_online.my_address),
+                "%u.%u.%u.%u:%u (%s)", map.external_address >> 24,
+                (map.external_address >> 16) & 0xFF,
+                (map.external_address >> 8) & 0xFF, map.external_address & 0xFF,
+                map.external_port, map.method);
             return;
         }
     }
     if (port_Lobby(&lobby) &&
-        port_RelayWhoAmI(&lobby,
-                         (u16)(g_port_settings.net_listen
-                                   ? g_port_settings.net_port
-                                   : 0),
-                         &seen)) {
+        port_RelayWhoAmI(
+            &lobby,
+            (u16)(g_port_settings.net_listen ? g_port_settings.net_port : 0),
+            &seen)) {
         port_FormatNetAddress(&seen, at, sizeof(at));
         snprintf(g_online.my_address, sizeof(g_online.my_address),
                  "%s (as the lobby sees it)", at);
@@ -466,10 +466,11 @@ static void port_Start(const PortRoom *room, char *note, u32 note_room) {
     start.delay = g_port_settings.net_delay;
     start.portmap = g_port_settings.net_portmap && !is_local;
     start.player = g_port_settings.net_player;
-    snprintf(bind, sizeof(bind), "%s:%d", is_local ? ADDRESS_LOCAL : ADDRESS_ALL,
-             role == PORT_NET_ROLE_JOIN || role == PORT_NET_ROLE_ROOMS
-                 ? (is_local ? 0 : g_port_settings.net_port)
-                 : g_port_settings.net_port);
+    snprintf(
+        bind, sizeof(bind), "%s:%d", is_local ? ADDRESS_LOCAL : ADDRESS_ALL,
+        role == PORT_NET_ROLE_JOIN || role == PORT_NET_ROLE_ROOMS
+            ? (is_local ? 0 : g_port_settings.net_port)
+            : g_port_settings.net_port);
     start.bind = bind;
     if (role == PORT_NET_ROLE_ROOM || role == PORT_NET_ROLE_ROOMS) {
         if (g_port_settings.net_lobby[0] == 0) {
@@ -479,15 +480,15 @@ static void port_Start(const PortRoom *room, char *note, u32 note_room) {
         start.lobby = g_port_settings.net_lobby;
     }
     if (role == PORT_NET_ROLE_ROOM) {
-        start.room = g_port_settings.net_room[0] != 0
-                         ? g_port_settings.net_room
-                         : g_port_settings.net_player[0] != 0
-                               ? g_port_settings.net_player
-                               : "ReBushido";
+        start.room = g_port_settings.net_room[0] != 0 ? g_port_settings.net_room
+                     : g_port_settings.net_player[0] != 0
+                         ? g_port_settings.net_player
+                         : "ReBushido";
         if (g_online.password[0] != 0) {
             u8 salt[PORT_RELAY_SALT_BYTES];
             u8 key[PORT_RELAY_KEY_BYTES];
-            u64 seed = SDL_GetPerformanceCounter() ^ ((u64)SDL_GetTicks() << 32);
+            u64 seed =
+                SDL_GetPerformanceCounter() ^ ((u64)SDL_GetTicks() << 32);
             u32 i;
 
             /* the salt only has to differ between rooms */
@@ -510,8 +511,8 @@ static void port_Start(const PortRoom *room, char *note, u32 note_room) {
             port_RelayRoomKey(room->salt, g_online.password, key);
             port_PutHex(key_text, room->salt, PORT_RELAY_SALT_BYTES);
             key_text[2 * PORT_RELAY_SALT_BYTES] = ':';
-            port_PutHex(key_text + 2 * PORT_RELAY_SALT_BYTES + 1, key,
-                        sizeof(key));
+            port_PutHex(
+                key_text + 2 * PORT_RELAY_SALT_BYTES + 1, key, sizeof(key));
             start.key = key_text;
         }
     } else if (role == PORT_NET_ROLE_JOIN) {
@@ -528,8 +529,8 @@ static void port_Start(const PortRoom *room, char *note, u32 note_room) {
 }
 
 /* A room of the list chosen. */
-static s32 port_ChooseRoom(s32 which, char *typed, u32 typed_room, char *note,
-                           u32 note_room) {
+static s32 port_ChooseRoom(
+    s32 which, char *typed, u32 typed_room, char *note, u32 note_room) {
     const PortRoom *room = &g_online.rooms[which];
     const char *differs = port_SetupDiffers(room->setup);
 
@@ -554,11 +555,11 @@ static s32 port_ChooseRoom(s32 which, char *typed, u32 typed_room, char *note,
     return PORT_ONLINE_NOTHING;
 }
 
-s32 port_OnlineAccept(s32 item, char *typed, u32 typed_room, char *note,
-                      u32 note_room) {
+s32 port_OnlineAccept(
+    s32 item, char *typed, u32 typed_room, char *note, u32 note_room) {
     if (item >= ONLINE_ROOM) {
-        return port_ChooseRoom(item - ONLINE_ROOM, typed, typed_room, note,
-                               note_room);
+        return port_ChooseRoom(
+            item - ONLINE_ROOM, typed, typed_room, note, note_room);
     }
     switch (item) {
     case ONLINE_ROLE:
@@ -635,8 +636,8 @@ s32 port_OnlineStep(s32 item, s32 step) {
         return PORT_ONLINE_NOTHING;
     case ONLINE_PORTMAP:
         g_port_settings.net_portmap = !g_port_settings.net_portmap;
-        port_MenuSetLine("net_portmap", g_port_settings.net_portmap ? "on"
-                                                                    : "off");
+        port_MenuSetLine(
+            "net_portmap", g_port_settings.net_portmap ? "on" : "off");
         return PORT_ONLINE_NOTHING;
     default:
         return PORT_ONLINE_NOTHING;

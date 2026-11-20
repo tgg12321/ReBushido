@@ -235,9 +235,9 @@ s32 port_ReadDiscSector(const PortDisc *disc, u32 sector, u8 *raw) {
         return PORT_DISC_OUT_OF_RANGE;
     }
     g_port_disc_sectors_read++;
-    if (port_HostReadAt(disc->file,
-                        (sector + disc->first) * PORT_DISC_SECTOR_BYTES, raw,
-                        PORT_DISC_SECTOR_BYTES) != PORT_DISC_SECTOR_BYTES) {
+    if (port_HostReadAt(
+            disc->file, (sector + disc->first) * PORT_DISC_SECTOR_BYTES, raw,
+            PORT_DISC_SECTOR_BYTES) != PORT_DISC_SECTOR_BYTES) {
         return PORT_DISC_READ_FAILED;
     }
     /* the sync: a zero, ten bytes of ones, a zero */

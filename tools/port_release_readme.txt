@@ -98,7 +98,7 @@ To be sure before you start, each run:
 
   rebushido.exe --check-online
 
-It prints a setup code such as P5-XXXX-XXXX-XXXX, and the Play online
+It prints a setup code such as P7-XXXX-XXXX-XXXX, and the Play online
 page shows it too. Send each other your codes by message: if they are
 the same, you can play. If they differ, the game says which part
 differs (the program, the disc, or the mods that change how fights

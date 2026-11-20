@@ -337,13 +337,26 @@ void port_HostFlush(s32 file) { port_LinuxCall(LINUX_FSYNC, file, 0, 0); }
  * first. */
 #define LINUX_ADDRESS_BYTES 28
 #define LINUX_V4_ADDRESS_BYTES 16
+
 typedef struct {
     u16 family;
     u16 port;
     u8 rest[LINUX_ADDRESS_BYTES - 4];
 } LinuxSocketAddress;
+
 /* where sockaddr_in6's address is, after the flow's word */
 #define LINUX_V6_AT 4
+/* ::ffff:a.b.c.d: ten bytes of zeros, two of ones, then the IPv4, its
+ * most significant byte first. */
+#define LINUX_V6_MAPPED_AT 10
+#define LINUX_V6_V4_AT 12
+#define LINUX_V4_BYTES 4
+/* A public address of each kind, which nothing is sent to: Google's
+ * DNS, 8.8.8.8 and 2001:4860:4860::8888, port 53. */
+#define LINUX_PUBLIC_V4 0x08080808U
+#define LINUX_PUBLIC_PORT 53
+#define LINUX_PUBLIC_V6                                                        \
+    {0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0x88, 0x88}
 
 /* struct pollfd. */
 typedef struct {
@@ -397,8 +410,9 @@ static u32 port_LinuxToSocket(
     out->port = port_LinuxSwap16(in->port);
     if (!v6) {
         out->family = LINUX_AF_INET;
-        for (i = 0; i < 4; i++) {
-            out->rest[i] = (u8)(in->address >> (24 - 8 * i));
+        for (i = 0; i < LINUX_V4_BYTES; i++) {
+            out->rest[i] =
+                (u8)(in->address >> (BITS_PER_BYTE * (LINUX_V4_BYTES - 1 - i)));
         }
         return LINUX_V4_ADDRESS_BYTES;
     }
@@ -408,11 +422,11 @@ static u32 port_LinuxToSocket(
             out->rest[LINUX_V6_AT + i] = in->v6[i];
         }
     } else {
-        out->rest[LINUX_V6_AT + 10] = 0xFF;
-        out->rest[LINUX_V6_AT + 11] = 0xFF;
-        for (i = 0; i < 4; i++) {
-            out->rest[LINUX_V6_AT + 12 + i] =
-                (u8)(in->address >> (24 - 8 * i));
+        out->rest[LINUX_V6_AT + LINUX_V6_MAPPED_AT] = 0xFF;
+        out->rest[LINUX_V6_AT + LINUX_V6_MAPPED_AT + 1] = 0xFF;
+        for (i = 0; i < LINUX_V4_BYTES; i++) {
+            out->rest[LINUX_V6_AT + LINUX_V6_V4_AT + i] =
+                (u8)(in->address >> (BITS_PER_BYTE * (LINUX_V4_BYTES - 1 - i)));
         }
     }
     return LINUX_ADDRESS_BYTES;
@@ -433,8 +447,9 @@ static void port_LinuxFromSocket(
     out->port = port_LinuxSwap16(in->port);
     if (in->family == LINUX_AF_INET6) {
         bytes += LINUX_V6_AT;
-        is_mapped = bytes[10] == 0xFF && bytes[11] == 0xFF;
-        for (i = 0; i < 10; i++) {
+        is_mapped = bytes[LINUX_V6_MAPPED_AT] == 0xFF &&
+                    bytes[LINUX_V6_MAPPED_AT + 1] == 0xFF;
+        for (i = 0; i < LINUX_V6_MAPPED_AT; i++) {
             is_mapped = is_mapped && bytes[i] == 0;
         }
         if (!is_mapped) {
@@ -444,10 +459,10 @@ static void port_LinuxFromSocket(
             }
             return;
         }
-        bytes += 12;
+        bytes += LINUX_V6_V4_AT;
     }
-    for (i = 0; i < 4; i++) {
-        out->address = (out->address << 8) | bytes[i];
+    for (i = 0; i < LINUX_V4_BYTES; i++) {
+        out->address = (out->address << BITS_PER_BYTE) | bytes[i];
     }
 }
 
@@ -457,7 +472,11 @@ s32 port_HostUdpOpen(const PortNetAddress *at) {
     LinuxSocketAddress address;
     s32 off = 0;
     LinuxWord args[LINUX_CALL_ARGS] = {
-        at->is_v6 ? LINUX_AF_INET6 : LINUX_AF_INET, LINUX_SOCK_DGRAM, 0, 0, 0,
+        at->is_v6 ? LINUX_AF_INET6 : LINUX_AF_INET,
+        LINUX_SOCK_DGRAM,
+        0,
+        0,
+        0,
         0};
     LinuxWord file;
 
@@ -489,6 +508,7 @@ s32 port_HostUdpOpen(const PortNetAddress *at) {
     return (s32)file;
 }
 
+/* A socket closed (port_host.h), and forgotten as one of IPv6. */
 void port_HostUdpClose(s32 socket) {
     s32 i;
 
@@ -502,6 +522,7 @@ void port_HostUdpClose(s32 socket) {
     port_LinuxCall(LINUX_CLOSE, socket, 0, 0);
 }
 
+/* Where a socket is bound (port_host.h): getsockname. */
 s32 port_HostUdpBound(s32 socket, PortNetAddress *at) {
     LinuxSocketAddress address;
     u32 length = sizeof(address);
@@ -515,12 +536,13 @@ s32 port_HostUdpBound(s32 socket, PortNetAddress *at) {
     return 1;
 }
 
+/* This PC's own address of the kind (port_host.h): a socket connected to a
+ * public address, which sends nothing, and the address it was given. */
 s32 port_HostOwnAddress(s32 v6, PortNetAddress *at) {
-    /* a public address of each kind: nothing is sent to it */
-    static const PortNetAddress four = {0x08080808U, 53, 0, {0}};
+    static const PortNetAddress four = {
+        LINUX_PUBLIC_V4, LINUX_PUBLIC_PORT, 0, {0}};
     static const PortNetAddress six = {
-        0, 53, 1, {0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0, 0, 0, 0, 0, 0, 0,
-                   0x88, 0x88}};
+        0, LINUX_PUBLIC_PORT, 1, LINUX_PUBLIC_V6};
     LinuxSocketAddress address;
     u32 length;
     LinuxWord args[LINUX_CALL_ARGS] = {

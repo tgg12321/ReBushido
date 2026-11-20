@@ -253,6 +253,7 @@ typedef struct {
 #define PORT_NET_LOBBY_DEFAULT "135.181.108.74:7845"
 #define PORT_NET_ROOM_BYTES 25
 #define PORT_NET_PLAYER_BYTES 17
+
 /* net_role's places */
 enum {
     PORT_NET_ROLE_HOST = 0,
@@ -260,6 +261,7 @@ enum {
     PORT_NET_ROLE_ROOM = 2,
     PORT_NET_ROLE_ROOMS = 3,
 };
+
 #define PORT_NET_PORT_DEFAULT 7845
 #define PORT_NET_PORT_MAX 65535
 #define PORT_NET_DELAY_DEFAULT 2
@@ -379,7 +381,7 @@ extern const PortSetting g_port_setting_list[];
 extern const s32 g_port_setting_count;
 
 /* The most bytes the built-in text may take, with its 0. */
-#define PORT_DEFAULT_SETTINGS_BYTES 8192
+#define PORT_DEFAULT_SETTINGS_BYTES 16384
 
 /* The settings built in, as the text of a settings file (--help prints
  * it), made from settings_list.h: each setting's line and its comment,

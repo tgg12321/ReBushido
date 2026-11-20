@@ -115,6 +115,7 @@ class Case:
         if os.path.basename(cmd[0]).lower().startswith('rebushido') and cmd[0] != HEADLESS:
             # a window's program: never a visible window, never a sound
             env = port_net.window_env(env if env is not None else dict(os.environ))
+            cmd = port_net.window_cmd(cmd)
         out = open(os.path.join(self.folder, label + '.out'), 'wb')
         err = open(os.path.join(self.folder, label + '.err'), 'wb')
         proc = subprocess.Popen(cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL, env=env)
@@ -385,11 +386,16 @@ HEADLESS_CASES = [('punch', case_punch), ('relay', case_relay), ('mapped', case_
 
 # ---- the window's cases (Windows) ----
 
-def wait_pid(pid, seconds):
-    """A process this program did not start, waited for (Windows): its exit
-    code, or None."""
+def open_pid(pid):
+    """A handle of a process this program did not start (Windows), taken
+    while it runs, so that its end can be waited for and its code read
+    however soon it ends: None if it has gone already."""
+    return ctypes.windll.kernel32.OpenProcess(0x00100000 | 0x1000, False, pid) or None  # SYNCHRONIZE | QUERY
+
+
+def wait_pid(handle, seconds):
+    """The process of `handle` waited for: its exit code, or None."""
     kernel = ctypes.windll.kernel32
-    handle = kernel.OpenProcess(0x00100000 | 0x1000, False, pid)  # SYNCHRONIZE | QUERY_LIMITED
     if not handle:
         return None
     try:
@@ -445,16 +451,29 @@ def menu_pair(case, settings, keys, first_waits=None):
                                         os.path.join(case.folder, 'card1.mcd'), '--card2',
                                         os.path.join(case.folder, 'card2.mcd')], DUMMY))
     hashes = []
+    children = []
+    # each child's handle taken as soon as its number is said, both before
+    # either is waited for
+    until = time.time() + 120
     for side, proc in enumerate(procs):
         label = 'side%d' % side
-        first = wait_all([proc], 120)[0]
-        pid = case.wait_for(label, r'started again as process (\d+)', 5)
+        pid = None
+        while pid is None and time.time() < until and (proc.poll() is None or pid is None):
+            pid = re.search(r'started again as process (\d+)', case.err(label))
+            if pid is None and proc.poll() is not None:
+                break
+            time.sleep(0.05)
+        children.append(open_pid(int(pid.group(1))) if pid else None)
+        first = wait_all([proc], 30)[0]
         if first != 0 or pid is None:
             case.fail('%s did not start again from the menu (exit %s)' % (label, first))
+    for side, child in enumerate(children):
+        label = 'side%d' % side
+        if child is None:
             continue
-        code = wait_pid(int(pid.group(1)), SECONDS)
+        code = wait_pid(child, SECONDS)
         if code != 0:
-            case.fail('%s, started again (process %s), ended with %s' % (label, pid.group(1), code))
+            case.fail('%s, started again, ended with %s' % (label, code))
         hashes.append(port_net.hashes_of(case.err(label)))
     if len(hashes) == 2:
         common = sorted(set(hashes[0]) & set(hashes[1]))

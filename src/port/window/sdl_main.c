@@ -447,9 +447,9 @@ static const struct {
     {"--net-peer", 1},       {"--netplay", 1},       {"--net-delay", 1},
     {"--link-side", 1},      {"--rollback-test", 1}, {"--rollback-every", 1},
     {"--rollback-quiet", 0}, {"--menu-at", 1},       {"--menu-keys", 1},
-    {"--menu-shots", 1},     {"--escape-at", 1},         {"--lobby", 1},
-    {"--relay", 1},          {"--room", 1},              {"--player", 1},
-    {"--room-password", 1},  {"--room-key", 1},          {"--punch-to", 1},
+    {"--menu-shots", 1},     {"--escape-at", 1},     {"--lobby", 1},
+    {"--relay", 1},          {"--room", 1},          {"--player", 1},
+    {"--room-password", 1},  {"--room-key", 1},      {"--punch-to", 1},
     {"--net-paths", 1},      {"--mapped", 1},
 };
 
@@ -487,9 +487,8 @@ const void *port_WindowPortMapOptions(void) { return &g_port_map_options; }
  * (10/8, 172.16/12, 192.168/16) or the providers' shared space
  * (100.64/10). 127/8 is the tests' fake router's, and taken. */
 static s32 port_IsBehindAnother(u32 address) {
-    return address == 0 || (address >> 24) == 10 ||
-           (address >> 20) == 0xAC1 || (address >> 16) == 0xC0A8 ||
-           (address >> 22) == (0x64400000U >> 22);
+    return address == 0 || (address >> 24) == 10 || (address >> 20) == 0xAC1 ||
+           (address >> 16) == 0xC0A8 || (address >> 22) == (0x64400000U >> 22);
 }
 
 /* A host's port opened in its router before the session begins (portmap.c;
@@ -503,7 +502,8 @@ static void port_MapHostPort(s32 count, char **words) {
     PortMapResult map;
     s32 i;
 
-    if (g_port_map_off || (!g_port_settings.net_portmap && !g_port_map_forced)) {
+    if (g_port_map_off ||
+        (!g_port_settings.net_portmap && !g_port_map_forced)) {
         return;
     }
     for (i = 1; i + 1 < count; i++) {
@@ -519,27 +519,25 @@ static void port_MapHostPort(s32 count, char **words) {
          g_port_map_options.gateway_at == NULL)) {
         return;
     }
-    port_Say("online: asking the router to open UDP port %u%s%s%s%s",
-             bind.port,
-             g_port_map_options.ssdp_at != NULL ? " (UPnP's search to " : "",
-             g_port_map_options.ssdp_at != NULL ? g_port_map_options.ssdp_at
-                                                : "",
-             g_port_map_options.gateway_at != NULL ? ", the gateway " : "",
-             g_port_map_options.gateway_at != NULL
-                 ? g_port_map_options.gateway_at
-                 : "");
+    port_Say(
+        "online: asking the router to open UDP port %u%s%s%s%s", bind.port,
+        g_port_map_options.ssdp_at != NULL ? " (UPnP's search to " : "",
+        g_port_map_options.ssdp_at != NULL ? g_port_map_options.ssdp_at : "",
+        g_port_map_options.gateway_at != NULL ? ", the gateway " : "",
+        g_port_map_options.gateway_at != NULL ? g_port_map_options.gateway_at
+                                              : "");
     if (port_MapPort(bind.port, &g_port_map_options, &map) &&
         port_IsBehindAnother(map.external_address)) {
         /* the router opened it, but it is not the internet's: another
          * router (or the provider's NAT) stands before it */
-        snprintf(said, sizeof(said),
-                 "%s opened your router's port, but your router is behind "
-                 "another (it is at %u.%u.%u.%u): a lobby room finds the "
-                 "way instead",
-                 map.method, map.external_address >> 24,
-                 (map.external_address >> 16) & 0xFF,
-                 (map.external_address >> 8) & 0xFF,
-                 map.external_address & 0xFF);
+        snprintf(
+            said, sizeof(said),
+            "%s opened your router's port, but your router is behind "
+            "another (it is at %u.%u.%u.%u): a lobby room finds the "
+            "way instead",
+            map.method, map.external_address >> 24,
+            (map.external_address >> 16) & 0xFF,
+            (map.external_address >> 8) & 0xFF, map.external_address & 0xFF);
     } else if (map.ok) {
         PortNetAddress outside;
 
@@ -610,7 +608,8 @@ void port_StartOnline(const PortOnlineStart *start) {
         }
         words[count++] = g_port_main_argv[i];
     }
-#define KEEP(text) (snprintf(strings[kept], PATH_BYTES_MAX, "%s", (text)), strings[kept++])
+#define KEEP(text)                                                             \
+    (snprintf(strings[kept], PATH_BYTES_MAX, "%s", (text)), strings[kept++])
     snprintf(delay_text, sizeof(delay_text), "%d", start->delay);
     if (start->lobby != NULL) {
         words[count++] = opt_lobby;
@@ -643,8 +642,8 @@ void port_StartOnline(const PortOnlineStart *start) {
         }
     } else {
         words[count++] = opt_join;
-        words[count++] = KEEP(role == PORT_NET_ROLE_ROOMS ? start->code
-                                                          : start->address);
+        words[count++] =
+            KEEP(role == PORT_NET_ROLE_ROOMS ? start->code : start->address);
         words[count++] = opt_bind;
         words[count++] = KEEP(start->bind);
     }
@@ -667,8 +666,8 @@ void port_StartOnline(const PortOnlineStart *start) {
             quoted_words[i] = quoted[i];
         }
         quoted_words[count] = NULL;
-        process = _spawnv(_P_NOWAIT, g_port_main_path,
-                          (const char * const *)quoted_words);
+        process = _spawnv(
+            _P_NOWAIT, g_port_main_path, (const char * const *)quoted_words);
         if (process == -1) {
             port_Say("online: the program cannot be started again");
             return;

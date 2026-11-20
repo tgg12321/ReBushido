@@ -176,6 +176,18 @@ static SOCKET g_port_v6_sockets[V6_SOCKETS_MAX];
 static s32 g_port_v6_socket_count;
 /* WSAIoctl's SIO_UDP_CONNRESET, which MinGW's headers may not have. */
 #define UDP_CONNRESET_CODE 0x9800000CUL
+/* ::ffff:a.b.c.d: ten bytes of zeros, two of ones, then the IPv4, its
+ * most significant byte first. */
+#define V6_MAPPED_AT 10
+#define V6_V4_AT 12
+#define V4_BYTES 4
+#define BYTE_BITS 8
+/* A public address of each kind, which nothing is sent to: Google's
+ * DNS, 8.8.8.8 and 2001:4860:4860::8888, port 53. */
+#define PUBLIC_V4 0x08080808U
+#define PUBLIC_PORT 53
+#define PUBLIC_V6                                                              \
+    {0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0, 0, 0, 0, 0, 0, 0, 0x88, 0x88}
 
 static s32 port_WindowsIsV6(SOCKET file) {
     s32 i;
@@ -214,10 +226,11 @@ static s32 port_WindowsToSocket(
                 bytes[i] = in->v6[i];
             }
         } else {
-            bytes[10] = 0xFF;
-            bytes[11] = 0xFF;
-            for (i = 0; i < 4; i++) {
-                bytes[12 + i] = (u8)(in->address >> (24 - 8 * i));
+            bytes[V6_MAPPED_AT] = 0xFF;
+            bytes[V6_MAPPED_AT + 1] = 0xFF;
+            for (i = 0; i < V4_BYTES; i++) {
+                bytes[V6_V4_AT + i] =
+                    (u8)(in->address >> (BYTE_BITS * (V4_BYTES - 1 - i)));
             }
         }
         return sizeof(*six);
@@ -240,15 +253,17 @@ static void port_WindowsFromSocket(
     if (in->ss_family == AF_INET6) {
         const struct sockaddr_in6 *six = (const struct sockaddr_in6 *)in;
         const u8 *bytes = (const u8 *)&six->sin6_addr;
-        s32 is_mapped = bytes[10] == 0xFF && bytes[11] == 0xFF;
+        s32 is_mapped =
+            bytes[V6_MAPPED_AT] == 0xFF && bytes[V6_MAPPED_AT + 1] == 0xFF;
 
-        for (i = 0; i < 10; i++) {
+        for (i = 0; i < V6_MAPPED_AT; i++) {
             is_mapped = is_mapped && bytes[i] == 0;
         }
         out->port = ntohs(six->sin6_port);
         if (is_mapped) {
-            for (i = 0; i < 4; i++) {
-                out->address = (out->address << 8) | bytes[12 + i];
+            for (i = 0; i < V4_BYTES; i++) {
+                out->address =
+                    (out->address << BYTE_BITS) | bytes[V6_V4_AT + i];
             }
         } else {
             out->is_v6 = 1;
@@ -331,12 +346,11 @@ s32 port_HostUdpBound(s32 socket, PortNetAddress *at) {
     return 1;
 }
 
+/* This PC's own address of the kind (port_host.h): a socket connected to a
+ * public address, which sends nothing, and the address it was given. */
 s32 port_HostOwnAddress(s32 v6, PortNetAddress *at) {
-    /* a public address of each kind: nothing is sent to it */
-    static const PortNetAddress four = {0x08080808U, 53, 0, {0}};
-    static const PortNetAddress six = {
-        0, 53, 1, {0x20, 0x01, 0x48, 0x60, 0x48, 0x60, 0, 0, 0, 0, 0, 0, 0, 0,
-                   0x88, 0x88}};
+    static const PortNetAddress four = {PUBLIC_V4, PUBLIC_PORT, 0, {0}};
+    static const PortNetAddress six = {0, PUBLIC_PORT, 1, PUBLIC_V6};
     struct sockaddr_storage address;
     SOCKET file;
     s32 length;

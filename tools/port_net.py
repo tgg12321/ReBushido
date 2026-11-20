@@ -84,13 +84,20 @@ def window_env(env):
     return env
 
 
+def window_cmd(cmd):
+    """A window's program's command line with --hidden, which keeps its
+    window from ever being shown and its sound on SDL's dummy device
+    whatever the environment says (sdl_window.c)."""
+    return cmd if '--hidden' in cmd else cmd[:1] + ['--hidden'] + cmd[1:]
+
+
 def heard_only_dummy(text):
     """None if every sound driver a window's log names is the dummy one,
     else the one it named."""
     import re
     for driver in re.findall(r'sound: driver (\S+)', text):
         if driver.rstrip(',') != 'dummy':
-            return driver
+            return driver.rstrip(',')
     return None
 
 
@@ -484,7 +491,8 @@ def check_session(label, program, args, ports, window):
         os.makedirs(os.path.join(folder, 'side%d' % side), exist_ok=True)
         out = open(os.path.join(folder, 'side%d.out' % side), 'wb')
         err = open(os.path.join(folder, 'side%d.err' % side), 'wb')
-        procs.append((subprocess.Popen(PINNED + cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
+        procs.append((subprocess.Popen(PINNED + (window_cmd(cmd) if window else cmd), cwd=REPO, stdout=out,
+                                       stderr=err, stdin=subprocess.DEVNULL,
                                        env=window_env(env) if window else env), out, err))
         if side == 0:
             time.sleep(0.5)
@@ -616,9 +624,10 @@ def check_menu(program, args, ports):
     os.makedirs(folder, exist_ok=True)
     env = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy', **NO_CONTROLLERS)
     # up from the first row comes round to the last, Quit ReBushido; then
-    # Back to the game, and the row above it is Play online
-    keys = ['up up up accept down down down down accept',
-            'up up up accept down accept type:%s:%d down down accept' % (LOCALHOST, ports[0])]
+    # Back to the game, and the row above it is Play online; on its page,
+    # by address: You, the port (the host's address, typed), Start
+    keys = ['up up up accept down down accept',
+            'up up up accept down accept type:%s:%d down accept' % (LOCALHOST, ports[0])]
     settings = ['net_role = host\nnet_port = %d\nnet_listen = local\nnet_delay = 2\n' % ports[0],
                 'net_role = join\nnet_listen = local\n']
     procs = []
@@ -632,7 +641,7 @@ def check_menu(program, args, ports):
                '--card1', os.path.join(folder, 'card1.mcd'), '--card2', os.path.join(folder, 'card2.mcd')]
         out = open(os.path.join(folder, 'side%d.out' % side), 'wb')
         err = open(os.path.join(folder, 'side%d.err' % side), 'wb')
-        procs.append((subprocess.Popen(cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
+        procs.append((subprocess.Popen(window_cmd(cmd), cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
                                        env=window_env(env)), out, err))
     codes = []
     for proc, out, err in procs:

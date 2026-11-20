@@ -163,9 +163,9 @@ void port_DrawNetLine(void) {
 /* `text` drawn into the panel's pixels in lines no wider than `width`,
  * broken between words, from `y` down by `step`: the lines drawn, at
  * most `most`. With no `pixels`, only counted. */
-static s32 port_NetDrawWrapped(u32 *pixels, s32 w, s32 h, s32 x, s32 y,
-                               s32 step, s32 width, s32 most,
-                               const char *text, u32 color) {
+static s32 port_NetDrawWrapped(
+    u32 *pixels, s32 w, s32 h, s32 x, s32 y, s32 step, s32 width, s32 most,
+    const char *text, u32 color) {
     char line[LINE_BYTES];
     s32 lines = 0;
 
@@ -212,8 +212,8 @@ static s32 port_NetDrawWrapped(u32 *pixels, s32 w, s32 h, s32 x, s32 y,
 
 /* The panel of the session's set-up, before the game has a picture: a
  * title, what is being done (or what went wrong), and a last line. */
-static void port_NetPanelOf(const char *title, const char *status,
-                            u32 status_color, const char *last) {
+static void port_NetPanelOf(
+    const char *title, const char *status, u32 status_color, const char *last) {
     PortTextStyle heading;
     PortRect place;
     s32 window_w = 0;
@@ -263,9 +263,9 @@ static void port_NetPanelOf(const char *title, const char *status,
     port_TextDraw(g_net.pixels, place.w, place.h, pad,
                   pad + port_TextAscent(&heading), title, &heading);
     port_FontSetSize(line * LETTER_PERCENT / PERCENT * 3 / 4);
-    port_NetDrawWrapped(g_net.pixels, place.w, place.h, pad, pad + line, small,
-                        place.w - 2 * pad, PANEL_LINES_MAX, status,
-                        status_color);
+    port_NetDrawWrapped(
+        g_net.pixels, place.w, place.h, pad, pad + line, small,
+        place.w - 2 * pad, PANEL_LINES_MAX, status, status_color);
     port_FontDraw(g_net.pixels, place.w, place.h, pad,
                   pad + line + lines * small + pad / 2 + port_FontAscent(),
                   last, COLOR_DIM);

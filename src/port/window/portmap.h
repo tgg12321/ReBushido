@@ -14,11 +14,11 @@
 #define PORT_MAP_LEASE_SECONDS 7200
 
 typedef struct {
-    s32 ok;                            /* 1 if a mapping is in place */
+    s32 ok;                             /* 1 if a mapping is in place */
     char method[PORT_MAP_METHOD_BYTES]; /* "UPnP", "NAT-PMP", "PCP" or "" */
-    u32 external_address;              /* IPv4, the host's own order */
+    u32 external_address;               /* IPv4, the host's own order */
     u16 external_port;
-    u32 lease_seconds; /* as the router granted it; 0: for ever */
+    u32 lease_seconds;            /* as the router granted it; 0: for ever */
     char why[PORT_MAP_WHY_BYTES]; /* not ok: why, in a player's words */
 } PortMapResult;
 
