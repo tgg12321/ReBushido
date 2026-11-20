@@ -5,7 +5,8 @@
  * the game keeps and is the same on both machines of a session.
  *
  * On a stage page Square switches the stage under the cursor between
- * Classic and Remastered Classic, and Select opens the arenas' page over
+ * Classic and Remastered Classic, L1 and R1 turn its time of day (its
+ * own, dawn, day, dusk, night), and Select opens the arenas' page over
  * it: up and down choose an arena, Cross fights on it (on the stage it
  * stands in for, which the player is never shown), Triangle or Select
  * goes back to the stages. Nothing here draws: the window lays the
@@ -35,6 +36,7 @@ static s32 port_StageModeChooses(s32 mode) {
 static PortStageChoice *port_StageChoice(void) {
     PortStageChoice *choice = &g_port_stage_choice;
     s32 kind = port_GetStageKindDefault();
+    s32 time = port_GetStageTimeDefault();
     s32 i;
 
     if (!choice->is_started) {
@@ -43,11 +45,19 @@ static PortStageChoice *port_StageChoice(void) {
         choice->fight_kind = (u8)kind;
         choice->arena = (s8)port_ArenaAsked();
         choice->loaded_arena = PORT_STAGE_NO_ARENA;
+        choice->default_time = (u8)(time + 1); /* reset below */
+        choice->fight_time = (u8)time;
     }
     if (choice->default_kind != kind) {
         choice->default_kind = (u8)kind;
         for (i = 0; i < STAGE_COUNT; i++) {
             choice->kinds[i] = (u8)kind;
+        }
+    }
+    if (choice->default_time != time) {
+        choice->default_time = (u8)time;
+        for (i = 0; i < STAGE_COUNT; i++) {
+            choice->times[i] = (u8)time;
         }
     }
     return choice;
@@ -62,6 +72,17 @@ s32 port_StageIsDressed(void) {
     }
     return choice->arena != PORT_STAGE_NO_ARENA ||
            choice->fight_kind == PORT_STAGE_REMASTERED;
+}
+
+s32 port_StageTime(void) {
+    const PortStageChoice *choice = &g_port_stage_choice;
+    s32 time =
+        choice->is_started ? choice->fight_time : port_GetStageTimeDefault();
+
+    if (!port_StageIsDressed() || time >= PORT_TIME_COUNT) {
+        return PORT_TIME_OWN;
+    }
+    return time;
 }
 
 s32 port_StageArena(void) {
@@ -98,6 +119,9 @@ s32 port_StagePageStep(s32 pressed, s32 *stage, s32 is_open) {
     choice->cursor_kind = *stage >= 0 && *stage < STAGE_COUNT
                               ? choice->kinds[*stage]
                               : choice->default_kind;
+    choice->cursor_time = *stage >= 0 && *stage < STAGE_COUNT
+                              ? choice->times[*stage]
+                              : choice->default_time;
     if (!choice->page_open) {
         if (!is_open) {
             return PORT_STAGE_PAGE_GRID;
@@ -107,6 +131,17 @@ s32 port_StagePageStep(s32 pressed, s32 *stage, s32 is_open) {
             snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
             choice->kinds[*stage] ^= 1;
             choice->cursor_kind = choice->kinds[*stage];
+            return PORT_STAGE_PAGE_TAKEN;
+        }
+        /* L1 and R1: the stage's time of day, back and on */
+        if ((pressed & PAD_ANY(PADL1 | PADR1)) && *stage >= 0 &&
+            *stage < STAGE_COUNT) {
+            s32 step = (pressed & PAD_ANY(PADR1)) ? 1 : PORT_TIME_COUNT - 1;
+
+            snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
+            choice->times[*stage] =
+                (u8)((choice->times[*stage] + step) % PORT_TIME_COUNT);
+            choice->cursor_time = choice->times[*stage];
             return PORT_STAGE_PAGE_TAKEN;
         }
         if ((pressed & PAD_ANY(PADselect)) && port_ArenaCount() > 0) {
@@ -144,6 +179,7 @@ s32 port_StagePageStep(s32 pressed, s32 *stage, s32 is_open) {
         choice->arena = (s8)choice->page_cursor;
         /* an arena brings its own dressing: the remastered picture's */
         choice->fight_kind = PORT_STAGE_REMASTERED;
+        choice->fight_time = choice->default_time;
         choice->page_open = FALSE;
         *stage = arena->host;
         return PORT_STAGE_PAGE_ARENA;
@@ -151,12 +187,17 @@ s32 port_StagePageStep(s32 pressed, s32 *stage, s32 is_open) {
     return PORT_STAGE_PAGE_TAKEN;
 }
 
+/* The grid's Cross (port_stage_choice.h): the fight takes the stage's kind
+ * and time of day as the page left them. */
 void port_StageChosen(s32 stage) {
     PortStageChoice *choice = port_StageChoice();
 
     choice->fight_kind = stage >= 0 && stage < STAGE_COUNT
                              ? choice->kinds[stage]
                              : choice->default_kind;
+    choice->fight_time = stage >= 0 && stage < STAGE_COUNT
+                             ? choice->times[stage]
+                             : choice->default_time;
     choice->arena = (s8)port_ArenaAsked();
     choice->page_open = FALSE;
 }
@@ -165,12 +206,15 @@ void port_StageChoiceReset(void) {
     PortStageChoice *choice = port_StageChoice();
 
     choice->fight_kind = choice->default_kind;
+    choice->fight_time = choice->default_time;
     choice->arena = (s8)port_ArenaAsked();
     choice->page_open = FALSE;
 }
 
 void port_StageLeftPages(void) { g_port_stage_choice.on_stages = FALSE; }
 
+/* The fight's stage loads (port_stage_choice.h): a mode with no stage page
+ * takes the default kind and time and the run's arena. */
 s32 port_StageChoiceAtLoad(s32 mode) {
     PortStageChoice *choice = port_StageChoice();
 
@@ -178,6 +222,7 @@ s32 port_StageChoiceAtLoad(s32 mode) {
     choice->page_open = FALSE;
     if (!port_StageModeChooses(mode)) {
         choice->fight_kind = choice->default_kind;
+        choice->fight_time = choice->default_time;
         choice->arena = (s8)port_ArenaAsked();
     }
     return choice->arena != choice->loaded_arena;

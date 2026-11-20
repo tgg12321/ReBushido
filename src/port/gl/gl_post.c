@@ -36,6 +36,7 @@
 #include "gl_lights.h"
 #include "gl_post.h"
 #include "gl_shadow.h"
+#include "gl_time.h"
 #include "port_gpu.h"
 #include "port_remaster.h"
 
@@ -1765,7 +1766,7 @@ static void port_GlPostCommon(
  * occlusion darkens that share alone (the light from all about), the
  * sun's being a direct light the occlusion has no say over. */
 static float port_GlPostAmbient(void) {
-    const LightSetup *lights = (const LightSetup *)port_RemasterTileLights();
+    const LightSetup *lights = (const LightSetup *)port_GlTimeTileLights();
     float back;
     float sun;
     float turn;
@@ -1982,7 +1983,8 @@ static s32 port_GlPostGlow(
     glUniformMatrix3fv(g_post.glow_at_turn, 1, GL_TRUE, turn);
     glUniform3f(g_post.glow_at_eye, g_post.camera[0], g_post.camera[1],
                 g_post.camera[2]);
-    glUniform1f(g_post.glow_at_gain, GLOW_GAIN);
+    /* brighter as the time of day darkens (gl_time.h) */
+    glUniform1f(g_post.glow_at_gain, GLOW_GAIN * port_GlTime()->bloom);
     glEnable(GL_BLEND);
     glBlendEquation(GL_FUNC_ADD);
     glBlendFunc(GL_ONE, GL_ONE);

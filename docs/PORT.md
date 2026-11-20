@@ -7897,6 +7897,7 @@ dressing asks it where it decides:
 | The stages' pages made larger (`stages-hd`) and any mod's page pictures | the game's own textures | the mod's | `port_GlSceneFind` (`src/port/gl/gl_scene.c`) |
 | The night sky | the game's colour of the distance | as `sky` says | the sky's drawing (`src/port/gl/gl_sky.c`) |
 | Item 17's dressing (foliage, water, particles), when it comes | off | on | the same question |
+| The time of day ("The time of day") | the game's own | as chosen | `port_StageTime` (`src/port/stage_choice.c`) |
 
 Everything else is the engine's and the renderer's and is the same in
 both: the resolution and the wide picture, the draw distance, the frame
@@ -7999,6 +8000,129 @@ The same tool drives versus the CPU and training through the stage pages
 of the host's, and the arena in play changed to another, to none and
 back. With no arena and the kind as built in, every play test is as it
 was.
+
+## The time of day
+
+ROADMAP 20 (the owner, 2026-11-19: the sun must not be every stage's
+only light). Every one of the 38 stages is set at night on the disc
+(`light_SetStage`'s table; "The sky"). A dressed stage -- Remastered
+Classic, or an arena -- can be fought at **the stage's own** time (the
+game's lighting, exactly as before), **dawn**, **day**, **dusk** or
+**night**; Classic and the Original picture (F2) keep the game's own.
+
+**The choice** is the game's state, beside the kind
+(`include/port_stage_choice.h`, `src/port/stage_choice.c`): each stage's
+time as L1 and R1 left it on a stage page (`times[38]`), the fight's
+(`fight_time`, taken as the grid's Cross takes the kind; an arena takes
+the default), and the one under the cursor for the strip
+(`cursor_time`). `port_StageTime()` is the picture's question: the
+fight's time, or the stage's own on a stage that is not dressed. The
+window's `time_of_day` (`stage`, `dawn`, `day`, `dusk`, `night`;
+`settings_list.h`) and `--time-of-day` are what every stage starts at and
+what the modes with no stage page fight at, kept outside the state in
+`src/port/arenas.c` as the kind's default is. Online the welcome carries
+the host's (`MEET_TIME`, protocol 5) and both hold it for the session;
+the presses on the pages are both players', so a stage's time chosen on
+the page is the same on both machines and rolled back with the stage.
+The strip under the stage pages' scroll says the time of the stage
+under the cursor ("Time: Dusk", gold) and "L1 / R1: time of day"; on a
+Classic stage, "The game's own light".
+
+**The look** (`src/port/gl/gl_time.c`, `gl_time.h`) is worked out once
+for the stage and the time from the stage's own scenery setup
+(`LIGHT_SCENERY`), and every reader of the stage's light in the picture
+asks `port_GlTimeTileLights()` instead of the game's setup: the ground's
+mesh and its pieces (the light matrix and colours `smooth_light` uses,
+and the colours the mesh is built with), the sun's maps and their
+strength (`port_SunGain`), the sky's moon and ambient, and the
+occlusion's share of the light. At the stage's own time it is the game's
+setup itself, every multiplier 1 and the fog's amount 0, so nothing of
+the picture changes (the provers, the bench, the play tests).
+
+| | dawn | day | dusk | night |
+|---|---|---|---|---|
+| the sun's height | 14 degrees | 55 | 12 | 35 (the moon) |
+| its bearing | the stage's own turned back 50 degrees | the stage's own | turned on 55 | turned on 25 |
+| its colour | pale gold | white | deep orange | weak, cool blue |
+| the floor's light, of the stage's own | 0.80 | 1.15 | 0.72 | 0.40 |
+| the sun's share of it | 0.42 | 0.65 | 0.42 | 0.55 |
+| the fog's colour, its most | lilac grey, 0.70 | pale haze, 0.50 | dusky rose, 0.75 | near black blue, 0.85 |
+| the sky | gold horizon to blue, a few stars | a blue sky, clouds | orange horizon to violet, stars | the night sky, stars, the moon |
+| the sun's penumbra | 1.3 times | 1 | 1.3 | 2.5 |
+| the bloom | 1.0 | 0.6 | 1.25 | 1.6 |
+| the stage's own lights | 0.7 | 0.4 | 1.2 | 1.6 |
+
+- **The sun.** Its direction is the time's: height and a bearing turned
+  from the stage's own sun's, so a stage keeps its sense of where the
+  light comes from, and the shadows run long and low at dawn and dusk.
+  The sun's maps are drawn along it (`port_SunDirection`): the cascades
+  and the whole stage's fourth map are fitted to it each picture as
+  before. Its colour and the ambient are the time's hues, scaled so the
+  stage's own lit floor (clamped to 60 to 230) keeps its place in the
+  time's range of light, the sun's light where it meets a face at most
+  `sun_most`; the ambient keeps a quarter of the stage's own hue (the
+  cemetery stays a little purple). That scaling is the exposure: the
+  picture is eight bits and the lighting a byte scale, so a darker time
+  is less light, not a camera's stop.
+- **Night** is its own: the moon a weak, cool key (at most 115 of 255
+  where it meets a face), its penumbra two and a half times the sun's;
+  the ambient dark and blue, so what lies between the lights is dark; the
+  stage's own lights (the lights files, the game's flames) 1.6 times as
+  bright and glowing 1.6 times as much; the sky the night sky with the
+  time's moon. The shadows of the stage's own lights are the scene's then
+  (the four strongest cast cube shadows, "b. Lights with a place").
+- **The stage's own lights at a time** (`port_GlTimeLightGain`,
+  `gl_light_list.c`): a light file's `times =` (MODS.md, "Lights") leaves
+  a light out at the times it does not name; the stage's own time counts
+  as night (every stage of the disc is night), so a light that says
+  `times = night` is lit as it always was. The others are scaled as the
+  table says.
+- **The fog.** The game's fog is its colour tables copied over each
+  other towards the colour of the distance (black on every stage). At a
+  time of the port's own the ground's mesh reads the nearest level's
+  colours, unfogged, and lays the time's fog over the lit pixel by how far
+  into the levels its depth is (`u_time_fog`), on every face of the mesh;
+  so the ground runs into the time's horizon.
+- **The sky** (`gl_sky.c`): dawn, day and dusk have a sky of their own --
+  the time's horizon (the fog's colour, so the ground runs into it)
+  rising to its zenith, the sun's disc and glow where its light comes
+  from, colouring the horizon on its side, the baked clouds lit by it, a
+  few stars at dawn and dusk; night is the night sky with the time's
+  horizon and moon. A mod's picture of a sky is the stage's own time's.
+  A time of the port's own has its sky whatever `sky` says (a day over a
+  black fill is no day); a closed stage has none.
+- **Under a roof** (the halls, the dojos, the cave, the garage: the sky's
+  closed stages) the sun keeps the stage's own way, the colours move half
+  way to the time's and there is no time's fog: light through the doors.
+- **The fighters.** The game's own polygons of a fighter (`FLAG_WORLD`,
+  now also set when a time is on without the sun's maps) are relit at
+  their face's normal by how much the time's light differs from the
+  stage's own there, each channel, at most twice (`time_relight`,
+  `PORT_GL_TIME_SHADER`); a fighter's model takes the time's light on a
+  floor over the stage's own in its colours (its light's way is the
+  game's). The stage's own polygons the game lit (props, pieces the mesh
+  does not hold) take that floor ratio (`FLAG_TIME`), and a face the game
+  drew unlit (a stone, a sign) three quarters of it, on the mesh and off,
+  so it is not bright at night while a lamp so drawn still shows.
+  Effects and the HUD keep their colours.
+- **The bloom** is the lights' glow times the table's (`gl_post.c`).
+
+**What is left, and wants the owner's eye.** Every number of the table
+is a judgement on the pictures (`tmp/timeofday/` of the work, not
+committed): the hues, how dark night is, the bearing turns. The HUD's
+white letters are the game's half-transparent ones and read less well
+over a day sky. The surf's sparkles and other effects keep the game's
+colours (bluish at day). A fighter's model's light keeps the game's way.
+No disc stage is day in the original, so "the stage's own" is night on
+all 38; an arena's own light is its file's.
+
+**How it is proved.** `tools/port_stage_select.py`'s versus plan presses
+L1 on the first place (its own to night) and R1 on Abandoned Station,
+and holds the cursor's and the fight's time (`port_cursor_time`,
+`port_time` in `tests/play/state.toml`) on both sizes, the same trace.
+Pictures of six stages at the five times (rebushido-gl,
+`--time-of-day`). At the stage's own time the GL prover's Original is
+pixel-exact and the stage prover's numbers are main's.
 
 ## Every stage in every mode, and every unlock
 

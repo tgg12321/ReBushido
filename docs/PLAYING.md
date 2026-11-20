@@ -345,6 +345,39 @@ Online, both players choose on the same screen as on a couch, so the
 kind and the arena are the same for both, and the kind the stages start
 as is the host's.
 
+## The time of day
+
+Every stage of the disc is set at night. A **Remastered Classic** stage
+(and an arena) can be fought at another time ([`ROADMAP.md`](ROADMAP.md),
+item 20): on a stage page **L1** and **R1** (Q and W for player one on
+the keyboard) turn the time of the stage under the cursor through
+**the stage's own** (the game's lighting, as it always was), **dawn**,
+**day**, **dusk** and **night**; the line under the scroll says which.
+A Classic stage keeps the game's own light ("The game's own light" on
+the line), and so does the Original picture (F2).
+
+- **Dawn** and **dusk**: the sun low over the horizon, gold or deep
+  orange, the shadows long, the sky coloured on the sun's side;
+- **day**: a high white sun, a blue sky with clouds, a light haze in the
+  distance;
+- **night**: not the stage's own night made darker but a night of its
+  own -- a weak, cool moon with soft shadows, real darkness between the
+  lights, and the stage's own torches, lanterns and lamps brighter and
+  glowing more, the main light of the scene; stars and a moon in the
+  sky.
+
+The sun's way, the shadows, the sky, the fog's colour, the light on the
+fighters and the glow of the lights all follow the time. A hall, a
+cave or a garage keeps its own sun's way and no sky, and takes half the
+time's colour, as light through its doors. Nothing of it touches the
+fight.
+
+`time_of_day = stage` (the default), `dawn`, `day`, `dusk` or `night` in
+`rebushido.cfg`, the settings menu's "Time of day", is the time every
+stage starts at and the one the modes with no stage page fight at.
+Online the host's holds for both, as the kind does, and the presses on
+the stage pages are both players'.
+
 ## A stage in every mode
 
 In the original, versus the CPU and training choose their stage

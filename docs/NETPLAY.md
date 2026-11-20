@@ -1057,7 +1057,9 @@ have met:
 - the welcome also carries the kind of stage the host's stages start as
   (`MEET_KIND`) and the host's two gameplay switches, `unlock_all` and
   `stage_select_everywhere` (`MEET_PLAY`, protocol 4; PORT.md, "Every
-  stage in every mode, and every unlock"); both programs hold them for
+  stage in every mode, and every unlock"), and the time of day the
+  stages start at (`MEET_TIME`, protocol 5; PORT.md, "The time of
+  day"); both programs hold them for
   the session, so a guest plays with the host's unlocks whatever its own
   settings say, and its settings menu changes nothing until it starts
   again;

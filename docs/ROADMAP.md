@@ -392,3 +392,10 @@ the stage").
     darkness between the lights that the fighters walk through; the
     bloom and the tonemap set for the dark. The stages that are night
     in the original stay night as built in.
+    **Time of day done** ([`PORT.md`](PORT.md), "The time of day";
+    [`PLAYING.md`](PLAYING.md), "The time of day"): L1 and R1 on a stage
+    page, `time_of_day` for the rest, the host's online (protocol 5);
+    the sun's way and colour, the maps along it, the ambient, the fog,
+    the sky, the fighters, the bloom and the stage's lights (their files'
+    `times`) all follow it; night a weak cool soft moon with the stage's
+    lights brightened. Left: the owner's eye on each time's numbers.

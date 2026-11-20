@@ -24,6 +24,19 @@ enum {
     PORT_STAGE_REMASTERED = 1,
 };
 
+/* The time of day a stage is fought at (ROADMAP 20; docs/PORT.md, "The
+ * time of day"): the stage's own lighting as the disc has it, or the
+ * port's dawn, day, dusk or night, which only the remastered picture of a
+ * dressed stage shows (port_StageTime). In this order on the page. */
+enum {
+    PORT_TIME_OWN = 0,
+    PORT_TIME_DAWN = 1,
+    PORT_TIME_DAY = 2,
+    PORT_TIME_DUSK = 3,
+    PORT_TIME_NIGHT = 4,
+    PORT_TIME_COUNT = 5
+};
+
 /* no arena in play */
 #define PORT_STAGE_NO_ARENA (-1)
 
@@ -39,6 +52,10 @@ typedef struct {
     u8 on_stages;    /* a stage page ran this frame (for the play tests) */
     u8 cursor_kind;  /* the kind of the stage under the grid's cursor */
     u8 is_started;
+    u8 times[38];    /* each stage's PORT_TIME_ as L1 and R1 left it */
+    u8 default_time; /* what the times were last reset to */
+    u8 fight_time;   /* the fight's: the stage chosen's, or the default */
+    u8 cursor_time;  /* the time of the stage under the grid's cursor */
 } PortStageChoice;
 
 extern PortStageChoice g_port_stage_choice;
@@ -49,6 +66,10 @@ extern PortStageChoice g_port_stage_choice;
  * arena (which brings its own dressing). Classic is the stage as the disc
  * has it with only what the engine and renderer improve. */
 extern s32 port_StageIsDressed(void);
+/* The time of day the picture lights the stage in play at: the fight's
+ * PORT_TIME_, or PORT_TIME_OWN on a stage fought Classic, which keeps the
+ * game's own lighting. */
+extern s32 port_StageTime(void);
 /* The arena in play, as port_ArenaAt counts them, or PORT_STAGE_NO_ARENA. */
 extern s32 port_StageArena(void);
 
@@ -63,7 +84,8 @@ enum {
 };
 
 /* A frame of a stage page (select.c, select_StageStep), before the grid
- * reads the presses: `pressed` the pads' presses, `stage` the stage under
+ * reads the presses (L1 and R1 turn the time of day of the stage under
+ * the cursor back and on): `pressed` the pads' presses, `stage` the stage under
  * the grid's cursor (-1: none), `is_open` the door open so the grid
  * takes presses. Keeps the kind of the stage under the cursor and the
  * arenas' page for the window to draw. Returns PORT_STAGE_PAGE_...; with
@@ -96,6 +118,12 @@ extern void port_SetStageKindDefault(s32 kind);
 extern s32 port_GetStageKindDefault(void);
 /* The session holds it: port_SetStageKindDefault changes nothing after. */
 extern void port_HoldStageKindDefault(s32 kind);
+/* The time of day the stages start at, and the modes with no stage page
+ * fight at (the window's `time_of_day`, PORT_TIME_...), as the kind is:
+ * in a session the host's, held. */
+extern void port_SetStageTimeDefault(s32 time);
+extern s32 port_GetStageTimeDefault(void);
+extern void port_HoldStageTimeDefault(s32 time);
 /* The arena the run asked for (--arena): the one fought on its host
  * whenever no arena is chosen, or PORT_STAGE_NO_ARENA. */
 extern s32 port_ArenaAsked(void);

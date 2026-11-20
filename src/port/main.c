@@ -162,6 +162,9 @@ static const char g_port_usage[] =
     "                 by their keys: what a mod's stage begins from\n"
     "  --arena NAME   a mod's arena (arenas/NAME.arena) stands in for the\n"
     "                 stage its file names, wherever that is fought\n"
+    "  --time-of-day W  stage (the default), dawn, day, dusk or night:\n"
+    "                 the time the stages start at (the window's\n"
+    "                 time_of_day; docs/PLAYING.md, \"The time of day\")\n"
     "  --weapon 1=NAME  the fighter in place 1 (or 2) fights with a mod's\n"
     "                 weapon NAME (weapons/NAME.txt) whenever his weapon\n"
     "                 is the one it is made on\n"
@@ -390,6 +393,25 @@ s32 port_Main(s32 argc, char **argv) {
             if (i + 1 >= argc || !port_ArenaAsk(argv[++i])) {
                 port_UsageError("--arena takes the name of a mod's arena", "");
             }
+        } else if (port_TextsEqual(word, "--time-of-day")) {
+            static const char * const times[PORT_TIME_COUNT] = {
+                "stage", "dawn", "day", "dusk", "night"};
+            s32 time = PORT_TIME_COUNT;
+
+            if (i + 1 < argc) {
+                i++;
+                for (time = 0; time < PORT_TIME_COUNT; time++) {
+                    if (port_TextsEqual(argv[i], times[time])) {
+                        break;
+                    }
+                }
+            }
+            if (time >= PORT_TIME_COUNT) {
+                port_UsageError("--time-of-day takes stage, dawn, day, "
+                                "dusk or night",
+                                "");
+            }
+            port_SetStageTimeDefault(time);
         } else if (port_TextsEqual(word, "--dump-stages")) {
             port_SetStageDumpFolder(argv[++i]);
         } else if (port_TextsEqual(word, "--weapon")) {

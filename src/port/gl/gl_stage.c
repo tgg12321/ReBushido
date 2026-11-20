@@ -46,6 +46,7 @@
 #include "gl_see.h"
 #include "gl_stage.h"
 #include "gl_sun.h"
+#include "gl_time.h"
 #include "gl_lights.h"
 #include "gl_post.h"
 #include "port_gpu.h"
@@ -142,6 +143,7 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glUniform1iv, (GLint, GLsizei, const GLint *))                    \
     GL(void, glUniform2iv, (GLint, GLsizei, const GLint *))                    \
     GL(void, glUniform1fv, (GLint, GLsizei, const GLfloat *))                  \
+    GL(void, glUniform3fv, (GLint, GLsizei, const GLfloat *))                  \
     GL(void, glUniform4fv, (GLint, GLsizei, const GLfloat *))                  \
     GL(void, glUniform1uiv, (GLint, GLsizei, const GLuint *))                  \
     GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
@@ -328,6 +330,8 @@ static struct {
     GLint at_fog_slot;
     GLint at_fog_clut;
     GLint at_fog_rect;
+    GLint at_time_fog;
+    GLint at_time_floor;
     GLint at_depth_shift;
     GLint at_cutoff;
     GLint at_unit;
@@ -643,6 +647,11 @@ static const char g_stage_fragment_text[] =
     "uniform int u_fog_slot[32];\n"
     "uniform ivec2 u_fog_clut[32];\n"
     "uniform ivec4 u_fog_rect;\n" /* the row the textures read */
+    /* a time of day's fog (gl_time.h): its colour, and how much of it the
+     * farthest level is (0: the game's own fog) */
+    "uniform vec4 u_time_fog;\n"
+    /* ... and its light on a floor over the stage's own, each channel */
+    "uniform vec3 u_time_floor;\n"
     "uniform int u_depth_shift;\n"
     "uniform float u_depth;\n" /* what a depth is divided by */
     /* `smooth_light` (gl_light.h): the tiles' lights, as the fighters'
@@ -856,6 +865,27 @@ static const char g_stage_fragment_text[] =
     "        g_clut_near = ivec2(column + near.x, near.y);\n"
     "        g_clut = ivec2(column + far.x, far.y);\n"
     "        g_fog_mix = place - float(first);\n"
+    /* a time of day of the port's own (gl_time.h): the nearest level's
+     * colours, unfogged, and the time's fog laid over the lit pixel */
+    "        if (u_time_fog.a > 0.0) {\n"
+    "            g_clut = ivec2(column + u_fog_clut[0].x, u_fog_clut[0].y);\n"
+    "            g_clut_near = g_clut;\n"
+    "            g_fog_mix = 1.0;\n"
+    "        }\n"
+    "    }\n"
+    /* ... by how far into the fog's levels the pixel's depth is, on every
+     * face of the mesh */
+    "    float time_fog = 0.0;\n"
+    "    if (u_time_fog.a > 0.0 && u_fog_levels > 0) {\n"
+    "        int level = fog_level(slot);\n"
+    "        int low = (level > 0) ? u_fog_slot[level - 1] : 0;\n"
+    "        int high = (level < u_fog_levels) ? u_fog_slot[level] : low;\n"
+    "        float part = (high > low)\n"
+    "                   ? clamp(float(slot - low) / float(high - low),\n"
+    "                           0.0, 1.0) : 1.0;\n"
+    "        time_fog = clamp((float(level) + part - 0.5)\n"
+    "                         / float(u_fog_levels), 0.0, 1.0)\n"
+    "                 * u_time_fog.a;\n"
     "    }\n"
     /* a piece's face lit at each corner: the colour run across it */
     "    vec3 color = ((v_flags.w & 8u) != 0u) ? v_shade : v_color;\n"
@@ -942,12 +972,17 @@ static const char g_stage_fragment_text[] =
     "        shown = one_color;\n"
     "    }\n"
     "    if ((v_flags.w & 2u) != 0u) {\n"
-    "        color = clamp(shown * 255.0 / 31.0, vec3(0.0), vec3(255.0));\n"
+    /* a face the game drew unlit: three quarters of the time of day's
+     * change, as the scene's (gl_draw.c) */
+    "        color = clamp(shown * 255.0 / 31.0\n"
+    "                      * mix(vec3(1.0), u_time_floor, 0.75),\n"
+    "                      vec3(0.0), vec3(255.0));\n"
     "    } else {\n"
     /* a texel times the colour, 128 being one, the light the frame's
      * lights add rolled off where it passes white (gl_post.h) */
     "        color = tone_map(shown * base_light / 16.0, shown * color / 16.0);\n"
     "    }\n"
+    "    color = mix(color, u_time_fog.rgb * 255.0, time_fog);\n"
     /* the alpha says the ground painted this pixel, and how much it
      * reflects (gl_post.h); the shadows' mask keeps its own */
     "    o_color = vec4(color / 255.0, u_occluding != 0 ? 1.0\n"
@@ -1160,6 +1195,8 @@ const char *port_GlStageStart(void *(*getproc)(const char *name)) {
     AT(at_fog_slot, "u_fog_slot");
     AT(at_fog_clut, "u_fog_clut");
     AT(at_fog_rect, "u_fog_rect");
+    AT(at_time_fog, "u_time_fog");
+    AT(at_time_floor, "u_time_floor");
     AT(at_depth_shift, "u_depth_shift");
     AT(at_cutoff, "u_cutoff");
     AT(at_unit, "u_unit");
@@ -1394,7 +1431,7 @@ static void port_GlStageLightBy(
 }
 
 static void port_GlStageLight(const s16 *normal, u8 *rgb) {
-    const LightSetup *lights = (const LightSetup *)port_RemasterTileLights();
+    const LightSetup *lights = (const LightSetup *)port_GlTimeTileLights();
 
     port_GlStageLightBy(lights, &lights->lmat, normal, rgb);
 }
@@ -2503,7 +2540,7 @@ static void port_GlStageBuild(const PortStageView *view) {
  * (port_GlStageLight): the light matrix and the colour matrix made 1,
  * and the colour of the dark in bytes. */
 static void port_GlStageLights(void) {
-    const LightSetup *lights = (const LightSetup *)port_RemasterTileLights();
+    const LightSetup *lights = (const LightSetup *)port_GlTimeTileLights();
     GLfloat light[9];
     GLfloat color[9];
     s32 i;
@@ -2673,6 +2710,22 @@ static void port_GlStageUniforms(
     glUniform2iv(g_stage.at_fog_clut, PORT_STAGE_FOG_LEVELS + 1, clut);
     glUniform4i(g_stage.at_fog_rect, view->fog_x, view->fog_y, view->fog_w,
                 view->fog_h);
+    {
+        const PortGlTime *look = port_GlTime();
+        GLfloat fog[4];
+
+        fog[0] = look->fog[0];
+        fog[1] = look->fog[1];
+        fog[2] = look->fog[2];
+        fog[3] = look->on ? look->fog_amount : 0.0f;
+        glUniform4fv(g_stage.at_time_fog, 1, fog);
+        for (i = 0; i < 3; i++) {
+            fog[i] = !look->on               ? 1.0f
+                     : look->floor[i] > 2.0f ? 2.0f
+                                             : look->floor[i];
+        }
+        glUniform3fv(g_stage.at_time_floor, 1, fog);
+    }
     glUniform4ui(g_stage.at_window, (GLuint)paint->window_and_u,
                  (GLuint)paint->window_or_u, (GLuint)paint->window_and_v,
                  (GLuint)paint->window_or_v);

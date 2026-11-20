@@ -2848,6 +2848,8 @@ void port_WindowApplyChoice(s32 choice) {
         port_SetRunAhead(g_port_settings.run_ahead);
     } else if (strcmp(name, "stage_kind") == 0) {
         port_SetStageKindDefault(g_port_settings.stage_kind);
+    } else if (strcmp(name, "time_of_day") == 0) {
+        port_SetStageTimeDefault(g_port_settings.time_of_day);
     } else if (strcmp(name, "unlock_all") == 0) {
         port_SetUnlockAll(g_port_settings.unlock_all);
     } else if (strcmp(name, "stage_select_everywhere") == 0) {

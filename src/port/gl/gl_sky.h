@@ -54,6 +54,9 @@ extern void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color);
  * nothing new to say. */
 extern const char *port_GlSkyNews(void);
 
+/* Whether stage `stage` is open to the sky (the table of gl_sky.c). */
+extern s32 port_GlSkyIsOpen(s32 stage);
+
 /* How many pictures the sky was painted in, for the prover. */
 extern u32 port_GlSkyDrawn(void);
 
