@@ -700,7 +700,28 @@ void snd_EndFight(void) {
  * track in versus, and a track of their own in chanbara (by the player's
  * clan) and in the two kinds of practice. */
 static void snd_StartFightMusic(void) {
+#if RB_PORT
+    s32 piece;
+#endif
+
     snd_EnableCdAudio();
+#if RB_PORT
+    /* the music chosen on the stage pages, or the window's fight_music
+     * (port_fight_music.h): the stage's piece in every mode, another
+     * piece, none, or what the game itself starts */
+    piece = port_FightMusicStart(g_fight_mode, g_fight_stage, snd_IsMusicOff());
+    if (piece != PORT_FIGHT_MUSIC_GAME) {
+        if (piece == PORT_FIGHT_MUSIC_STAFF_ROLL) {
+            cdrom_StartAudio(
+                cdrom_GetFileIndex(CDROM_GROUP_AUDIO, CDROM_AUDIO_BB2_M2),
+                PORT_FIGHT_MUSIC_STAFF_ROLL_CHANNEL);
+        } else if (piece != PORT_FIGHT_MUSIC_QUIET) {
+            cdrom_StartMusic(piece);
+        }
+        cdrom_SetAudioLoop(1);
+        return;
+    }
+#endif
     if (snd_IsMusicOff()) {
         return;
     }
@@ -744,6 +765,13 @@ static void snd_StartFightMusic(void) {
 s32 snd_AmbienceEnabled(void) {
     s32 fight_mode = g_fight_mode;
 
+#if RB_PORT
+    /* a fight whose music the port chose: the ambient sounds where no
+     * music plays, as versus has them with the music off */
+    if (port_FightMusicAmbience() >= 0) {
+        return port_FightMusicAmbience();
+    }
+#endif
     if (fight_mode >= FIGHT_MODE_TEAM) {
         return 1;
     }

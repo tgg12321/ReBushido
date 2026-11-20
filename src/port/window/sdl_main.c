@@ -48,6 +48,7 @@
 #include "port_remaster.h"
 #include "port_play.h"
 #include "port_stage_choice.h"
+#include "port_fight_music.h"
 #include "shared.h"
 #include "sdl_window.h"
 
@@ -1104,10 +1105,15 @@ int main(int argc, char **argv) {
     port_MusicSetOn(g_port_settings.music_mods);
     /* the kind of stage the stages start as (port_stage_choice.h) */
     port_SetStageKindDefault(g_port_settings.stage_kind);
+    /* ... and the time of day they start at */
+    port_SetStageTimeDefault(g_port_settings.time_of_day);
     /* the two gameplay switches (port_play.h); --unlock-all and
      * --stage-select on the command line turn them on */
     port_SetUnlockAll(g_port_settings.unlock_all);
     port_SetStageSelectEverywhere(g_port_settings.stage_select_everywhere);
+    /* a fight's music (port_fight_music.h); --fight-music has the last
+     * word */
+    port_SetFightMusic(g_port_settings.fight_music);
     passed[count] = NULL;
     {
         char line[2 * PATH_BYTES_MAX];

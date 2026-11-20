@@ -24,11 +24,13 @@ the table here is of blocks: a block is a rectangle of a page as the game
 laid its lettering out, the texts in it, each with the rectangle or
 rectangles its letters fill and its look, and the pieces the game cuts from
 it, each its key and where it lies in the block. Each text is drawn once,
-in a font of the SIL Open Font Licence (src/port/fonts/: Archivo, wide, for
-the game's wide lettering; Marcellus for its roman), fitted to its
-rectangle at eight pixels a texel -- a text wrapped over several rectangles
-is drawn as one line across them laid end to end and cut at their widths --
-and each piece is cut from the block. Where the pieces' places came from:
+in the port's typeface, Shippori Mincho (src/port/fonts/, the SIL Open Font
+Licence; tools/port_lettering.py), fitted to its rectangle at eight pixels
+a texel -- as tall as the game's lettering, and as wide: a little wider than
+the face has it and then spaced, where the game's is wider, so the serifs
+keep their shape -- a text wrapped over several rectangles drawn as one
+line across them laid end to end and cut at their widths -- and each piece
+is cut from the block. Where the pieces' places came from:
 the log of a run with --dump-textures, which says where each texture was
 (docs/MODS.md, "Making one").
 
@@ -51,20 +53,23 @@ import io
 import os
 import sys
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from port_lettering import common_size, fitted_size, font, gradient, line_mask  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, 'src', 'port', 'mods', 'ui')
-FONTS_DIR = os.path.join(ROOT, 'src', 'port', 'fonts')
-# The fonts: the file, and its weight and width where it has those. The
-# game's lettering is wide, most of it a grotesque (Archivo at its widest),
-# its titles and names of places a roman (Marcellus).
+# The kinds of the game's lettering and the face of the port's typeface
+# each is drawn in (port_lettering.FACES): its menus' lines, the thinner
+# lettering of its names and captions, its heavy digits, the built-in
+# font's characters, and its titles and names of places.
 FONTS = {
-    'sans': ('Archivo-Variable.ttf', (600, 125)),
-    'thin': ('Archivo-Variable.ttf', (400, 125)),
-    'heavy': ('Archivo-Variable.ttf', (800, 125)),
-    'glyph': ('Archivo-Variable.ttf', (600, 100)),
-    'serif': ('Marcellus-Regular.ttf', None),
+    'sans': 'bold',
+    'thin': 'bold',
+    'heavy': 'title',
+    'glyph': 'bold',
+    'serif': 'text',
 }
 # How many of a picture's pixels a texel of the game's is, each way. The
 # letters are fitted to the rectangle the game's own fill, so whatever the
@@ -75,6 +80,10 @@ SHADOW_STEP = 1
 # the edge round the select screens' letters, in pixels
 EDGE_PIXELS = 5
 SQUEEZE_MIN = 0.7
+# The screens these are of are in the console's mode of 640 by 240, whose
+# texel is twice as tall as it is wide: the letters are drawn twice as wide
+# in a texel as the face has them, to be seen as it has them
+ASPECT = 2.0
 # the built-in font's characters: seven texels high but for the tails of
 # g j p q y, which are in the eighth row
 GLYPH_HEIGHT = 7
@@ -100,12 +109,14 @@ GROUP = dict(look='edge', top=(255, 255, 0), bottom=(197, 197, 8), dark=(0, 0, 0
 GROUP_TITLE = dict(look='edge', top=(255, 255, 255), bottom=(197, 197, 197), dark=(16, 16, 16))
 
 
-def text(words, boxes, font, look, top, bottom, dark, panel=None):
+def text(words, boxes, font, look, top, bottom, dark, panel=None, aspect=ASPECT):
     """A text of a block: its words, the rectangles its letters fill
     (left, top, right, bottom: texels, the right and bottom past it; more
-    than one where it is wrapped), its font and its look; and for a panel,
-    the panel's rectangle."""
-    return dict(words=words, boxes=boxes, font=font, look=look, top=top, bottom=bottom, dark=dark, panel=panel)
+    than one where it is wrapped), its font and its look; for a panel, the
+    panel's rectangle; and the texel's width on the screen for its height
+    there, if its screen is not one of 640 by 240 (ASPECT)."""
+    return dict(words=words, boxes=boxes, font=font, look=look, top=top, bottom=bottom, dark=dark, panel=panel,
+                aspect=aspect)
 
 
 def rule(box, colour):
@@ -159,11 +170,12 @@ LINES = [
     line('Option Menu', (147, 14), (0, 1, 147, 14), CAPTION,
          [('64x14-4-e98a7279e31fa5d0', 0), ('64x14-4-239ba02c4dc709fd', 64), ('19x14-4-6627bf02eef48edd', 128)], font='thin'),
     # the select screens' titles: "Select", then "Character" or "Weapon"
+    # (Weapon's rectangle is Select's rows, so that the two are one size)
     line('Select', (91, 16), (0, 1, 91, 14), TITLE,
          [('64x16-4-5fb9a70b547a8650', 0), ('27x16-4-5fc5181ae677b109', 64)], font='serif'),
     line('Character', (152, 16), (6, 1, 152, 14), TITLE,
          [('64x16-4-8e7b22c1b4b49d3a', 0), ('64x16-4-d031c43e8b6d182e', 64), ('24x16-4-9eeba8ac2432d453', 128)], font='serif'),
-    line('Weapon', (140, 16), (6, 0, 140, 16), TITLE,
+    line('Weapon', (140, 16), (6, 1, 140, 14), TITLE,
          [('64x16-4-3c0184e19dac46ad', 0), ('64x16-4-3ceafe251e7f1584', 64), ('12x16-4-2ff66a2727f219ab', 128)], font='serif'),
     # the group battle's page
     line('Number of Entries', (210, 16), (0, 1, 210, 12), GROUP,
@@ -444,7 +456,7 @@ BLOCKS = [
     ]),
     # Battle Stage
     block((75, 48), [
-        text('Battle Stage', [(6, 0, 75, 16), (0, 16, 75, 32), (0, 32, 30, 48)], 'serif', 'edge', (250, 250, 250), (220, 220, 220), (57, 57, 57)),
+        text('Battle Stage', [(6, 1, 75, 14), (0, 17, 75, 30), (0, 33, 30, 46)], 'serif', 'edge', (250, 250, 250), (220, 220, 220), (57, 57, 57)),
     ], [
         ('64x16-4-cd5052c53e91f3ce', 0, 0), ('11x16-4-13724f0250e6fe98', 64, 0), ('64x16-4-587b0da0ee5d3dd9', 0, 16),
         ('11x16-4-fb419fef2351d79e', 64, 16), ('30x16-4-75bbfa41b00c82f0', 0, 32),
@@ -582,61 +594,61 @@ GLYPHS = [
 
 
 def font_of(name, size):
-    path, axes = FONTS[name]
-    font = ImageFont.truetype(os.path.join(FONTS_DIR, path), size)
-    if axes:
-        font.set_variation_by_axes(list(axes))
-    return font
+    return font(FONTS[name], size)
 
 
-def font_fitting(words, font_name, box_h):
-    """The font at the size whose drawing of `words`, from its highest
-    point to its lowest, is `box_h` pixels high: so the letters fill the
-    rectangle the game's own fill, whatever of them the words have."""
-    size = box_h * 3
-    while size > 4:
-        font = font_of(font_name, size)
-        _, top, _, bottom = font.getbbox(words)
-        if bottom - top <= box_h:
-            return font
-        size -= 1
-    return font_of(font_name, 4)
+def strip_size(item):
+    """A text's strip, its rectangles laid end to end, and the room its
+    letters fill, the dark round them left out: (W, H, box_w, box_h, room)."""
+    boxes = item['boxes']
+    W = sum(x1 - x0 for x0, _, x1, _ in boxes) * SCALE
+    H = max(y1 - y0 for _, y0, _, y1 in boxes) * SCALE
+    look = item['look']
+    room = SHADOW_STEP * SCALE if look == 'shadow' else EDGE_PIXELS if look == 'edge' else 0
+    return W, H, W - room, H - room, room
 
 
-def gradient(size, top, bottom, y0, y1):
-    """Colour running from `top` at row y0 to `bottom` at row y1."""
-    w, h = size
-    out = Image.new('RGB', size)
-    draw = ImageDraw.Draw(out)
-    for y in range(h):
-        t = min(1.0, max(0.0, (y - y0) / float(max(1, y1 - y0))))
-        draw.line([(0, y), (w, y)], fill=tuple(int(a + (b - a) * t) for a, b in zip(top, bottom)))
-    return out
+def kind(item):
+    """Texts of one kind are drawn one size: one face, one height, and
+    capitals alone or not (the fighters' names, the menus' lines)."""
+    return item['font'], strip_size(item)[3], item['words'].isupper(), item['aspect']
+
+
+def kind_sizes():
+    """{kind: its one size} (port_lettering.common_size)."""
+    sizes = {}
+    for entry in LINES + BLOCKS:
+        for item in entry['texts']:
+            if 'rule' in item:
+                continue
+            _, _, box_w, box_h, _ = strip_size(item)
+            sizes.setdefault(kind(item), []).append(
+                fitted_size(item['words'], FONTS[item['font']], box_w, box_h, item['aspect']))
+    return {k: common_size(v) for k, v in sizes.items()}
+
+
+KIND_SIZES = {}
 
 
 def text_strip(item):
     """The text drawn as one line across its rectangles laid end to end:
     letters, and the dark round them, SCALE pixels a texel."""
-    boxes = item['boxes']
-    W = sum(x1 - x0 for x0, _, x1, _ in boxes) * SCALE
-    H = max(y1 - y0 for _, y0, _, y1 in boxes) * SCALE
+    W, H, box_w, box_h, room = strip_size(item)
     step = SHADOW_STEP * SCALE
     look = item['look']
-    # the letters fill the rectangle less the dark round them
-    room = step if look == 'shadow' else EDGE_PIXELS if look == 'edge' else 0
-    box_w, box_h = W - room, H - room
-    font = font_fitting(item['words'], item['font'], box_h)
-    left, top, right, bottom = font.getbbox(item['words'])
-    margin = 4 * SCALE
-    wide = Image.new('L', (right - left + 2 * margin, bottom - top + 2 * margin), 0)
-    ImageDraw.Draw(wide).text((margin - left, margin - top), item['words'], font=font, fill=255)
-    stretch = box_w / float(right - left)
-    if stretch < SQUEEZE_MIN:
-        print('port_ui: "%s" is drawn %.2f as wide as the font has it' % (item['words'], stretch))
-    wide = wide.resize((max(1, int(round(wide.width * stretch))), wide.height), Image.LANCZOS)
+
+    def narrowed(stretch):
+        if stretch < SQUEEZE_MIN:
+            print('port_ui: "%s" is drawn %.2f as wide as the face has it' % (item['words'], stretch))
+
+    # a text wrapped over rectangles, or a line of the menus the game cuts
+    # into pieces at fixed places (LINES), reaches the ends of its strip
+    fill = len(item['boxes']) > 1 or any(item is t for entry in LINES for t in entry['texts'])
+    letters = line_mask(item['words'], FONTS[item['font']], box_w, box_h, narrowed, item['aspect'],
+                        KIND_SIZES.get(kind(item)), fill)
     inset = room // 2 if look == 'edge' else 0
     mask = Image.new('L', (W, H), 0)
-    mask.paste(wide, (int(round(inset - margin * stretch)), inset - margin))
+    mask.paste(letters, (inset, inset))
     dark = Image.new('L', (W, H), 0)
     if look == 'shadow':
         dark.paste(mask, (step, step))
@@ -678,18 +690,18 @@ def glyph_picture(char, side):
     cap = GLYPH_HEIGHT * SCALE
     size = cap * 2
     while size > 4:
-        font = font_of('glyph', size)
-        _, top, _, bottom = font.getbbox('H')
+        f = font_of('glyph', size)
+        _, top, _, bottom = f.getbbox('H')
         if bottom - top <= cap - SCALE // 2:
             break
         size -= 1
-    _, cap_top, _, base = font.getbbox('H')
-    left, _, right, _ = font.getbbox(char)
+    _, cap_top, _, base = f.getbbox('H')
+    left, _, right, _ = f.getbbox(char)
     width = right - left
     room = GLYPH_HEIGHT * SCALE - SCALE // 2
     margin = 2 * SCALE
     drawn = Image.new('L', (width + 2 * margin, S + 2 * margin), 0)
-    ImageDraw.Draw(drawn).text((margin - left, margin + SCALE // 4 - cap_top), char, font=font, fill=255)
+    ImageDraw.Draw(drawn).text((margin - left, margin + SCALE // 4 - cap_top), char, font=f, fill=255)
     if width > room:
         drawn = drawn.resize((int(drawn.width * room / float(width)), drawn.height), Image.LANCZOS)
         width = room
@@ -709,6 +721,7 @@ def png_bytes(image):
 def pictures():
     """name: PNG bytes, for every file of the mod's textures/."""
     out = {}
+    KIND_SIZES.update(kind_sizes())
     for entry in LINES + BLOCKS:
         whole = block_picture(entry)
         for key, x, y in entry['pieces']:

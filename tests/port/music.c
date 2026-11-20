@@ -67,7 +67,21 @@ const PortDiscFile *port_DiscFileAt(u32 sector) {
     return sector >= 1000 && sector < 2000 ? &g_made_file : NULL;
 }
 
-/* the mods: bb2_m1-3 is the looped WAV, bb2_m1-5 the other */
+const PortDiscFile *port_DiscFileNumber(u32 index) {
+    return index == 0 ? &g_made_file : NULL;
+}
+
+/* netplay's session: none, or one (which offers no mod's own piece) */
+static s32 g_made_role;
+
+s32 port_GetSessionRole(void) { return g_made_role; }
+
+/* the mods: bb2_m1-3 is the looped WAV, bb2_m1-5 the other, and
+ * my_theme, a piece of its own, the other again; bb2_m1-5 a second
+ * time, from a later mod */
+static const char * const g_made_keys[] = {
+    "bb2_m1-3", "bb2_m1-5", "my_theme", "bb2_m1-5", "bb2_m1"};
+
 const char *port_ModFind(s32 kind, const char *key) {
     if (kind != PORT_MOD_MUSIC) {
         return NULL;
@@ -75,10 +89,19 @@ const char *port_ModFind(s32 kind, const char *key) {
     if (port_TextsEqual(key, "bb2_m1-3")) {
         return g_made_looped;
     }
-    if (port_TextsEqual(key, "bb2_m1-5")) {
+    if (port_TextsEqual(key, "bb2_m1-5") || port_TextsEqual(key, "my_theme")) {
         return g_made_once;
     }
     return NULL;
+}
+
+s32 port_ModFileOf(s32 kind, s32 place, const char **key, const char **path) {
+    if (kind != PORT_MOD_MUSIC || place < 0 || place >= 5) {
+        return FALSE;
+    }
+    *key = g_made_keys[place];
+    *path = port_ModFind(kind, *key);
+    return TRUE;
 }
 
 s32 port_ModsCount(s32 kind) { return kind == PORT_MOD_MUSIC ? 2 : 0; }
@@ -520,6 +543,34 @@ static void test_Player(void) {
     made_Stream(3, 70000);
     g_made_sector = 5000;
     CHECK(port_PlayMusic(BLANK, &heard) == NULL);
+    /* the fight's piece of a mod's own over its stream, bb2_m1-4, which
+     * no mod has: the piece from its start */
+    port_MusicSetFightPiece("bb2_m1-4", "my_theme");
+    made_Stream(4, 80000);
+    got = port_PlayMusic(BLANK, &heard);
+    CHECK(got != NULL && made_IsPiece(got, 0, BLANK, FALSE));
+    /* another stream ends it: the disc's own after, on the same stream
+     * too */
+    made_Stream(2, 90000);
+    CHECK(port_PlayMusic(BLANK, &heard) == NULL);
+    made_Stream(4, 100000);
+    CHECK(port_PlayMusic(BLANK, &heard) == NULL);
+    /* set and then taken back before the stream starts: nothing */
+    port_MusicSetFightPiece("bb2_m1-4", "my_theme");
+    port_MusicSetFightPiece(NULL, NULL);
+    made_Stream(4, 110000);
+    CHECK(port_PlayMusic(BLANK, &heard) == NULL);
+}
+
+/* The mods' pieces of their own: a key that is no stream of the disc's,
+ * once however many mods have it; none in a session. */
+static void test_Extras(void) {
+    g_made_role = 1;
+    CHECK_EQ(port_MusicExtraCount(), 0);
+    g_made_role = 0;
+    CHECK_EQ(port_MusicExtraCount(), 1);
+    CHECK(port_TextsEqual(port_MusicExtraKey(0), "my_theme"));
+    CHECK(port_MusicExtraKey(1) == NULL);
 }
 
 void test_Main(void) {
@@ -533,4 +584,5 @@ void test_Main(void) {
     test_WavFiles();
     test_Ogg(test_Arg(2));
     test_Player();
+    test_Extras();
 }

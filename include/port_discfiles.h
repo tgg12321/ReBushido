@@ -33,6 +33,9 @@ typedef struct {
 extern s32 port_ReadDiscFiles(const struct PortDisc *disc);
 /* The file of this path (letters of either case), or NULL. */
 extern const PortDiscFile *port_FindDiscFile(const char *path);
+/* The directory's file `index`, from 0 (a folder's path ends with `/`),
+ * or NULL past the last. */
+extern const PortDiscFile *port_DiscFileNumber(u32 index);
 /* The file `sector` is in, or NULL. */
 extern const PortDiscFile *port_DiscFileAt(u32 sector);
 

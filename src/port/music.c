@@ -23,6 +23,7 @@
 #include "port_host.h"
 #include "port_mods.h"
 #include "port_music.h"
+#include "port_net.h"
 #include "port_spu.h"
 #include "bb2.h"
 
@@ -167,6 +168,14 @@ static struct {
     s32 dump_file;
     s32 dump_slot;
     s32 dump_is_this_play;
+    /* the fight's piece of a mod's, heard over the disc's stream
+     * `fight_carrier` (port_MusicSetFightPiece) */
+    char fight_carrier[PORT_MOD_KEY_SIZE];
+    char fight_extra[PORT_MOD_KEY_SIZE];
+    /* the mods' pieces under keys of their own, found once */
+    s32 extras_found;
+    s32 extra_count;
+    char extras[PORT_FIGHT_MUSIC_EXTRAS_MAX][PORT_MOD_KEY_SIZE];
 } g_port_music = {.dump_file = -1, .dump_slot = -1};
 
 static void port_MusicSay(char *out, u32 room, const char *format, ...) {
@@ -732,6 +741,7 @@ static void port_MusicFollow(void) {
     u32 since;
     const PortDiscFile *file;
     const char *path;
+    const char *wanted;
 
     g_port_music.drive_on = port_GetCdStream(&sector, &channel, &since);
     if (!g_port_music.drive_on) {
@@ -757,19 +767,27 @@ static void port_MusicFollow(void) {
     if (g_port_music.dump_folder != NULL) {
         port_MusicDumpStart();
     }
-    path = g_port_music.key[0] != TEXT_END
-               ? port_ModFind(PORT_MOD_MUSIC, g_port_music.key)
-               : NULL;
+    /* the fight's own piece of a mod's over its stream, or the stream's
+     * own key; any other stream ends the fight's piece */
+    wanted = g_port_music.key;
+    if (g_port_music.fight_extra[0] != TEXT_END) {
+        if (port_TextsEqual(g_port_music.key, g_port_music.fight_carrier)) {
+            wanted = g_port_music.fight_extra;
+        } else {
+            g_port_music.fight_extra[0] = TEXT_END;
+        }
+    }
+    path = wanted[0] != TEXT_END ? port_ModFind(PORT_MOD_MUSIC, wanted) : NULL;
     if (path == NULL) {
         g_port_music.replacing = 0;
         return;
     }
-    if (port_TextsEqual(g_port_music.source_key, g_port_music.key)) {
+    if (port_TextsEqual(g_port_music.source_key, wanted)) {
         /* the same piece again: from its start, as the stream is */
         g_port_music.replacing = 1;
         return;
     }
-    g_port_music.replacing = port_MusicOpen(g_port_music.key, path);
+    g_port_music.replacing = port_MusicOpen(wanted, path);
 }
 
 /* The piece's next `frames` samples into g_port_music.out, before the
@@ -861,4 +879,99 @@ const s16 *port_PlayMusic(u32 frames, s16 **heard) {
     port_MixCdAudio(g_port_music.out, frames);
     *heard = g_port_music.heard;
     return g_port_music.out;
+}
+
+/* ---- a mod's own pieces (port_fight_music.h) ---- */
+
+/* Whether `key` names a stream of the disc's: a file's key, alone or
+ * with a dash and a channel. */
+static s32 port_MusicIsDiscKey(const char *key) {
+    char name[PORT_MOD_KEY_SIZE];
+    const PortDiscFile *file;
+    u32 i;
+
+    for (i = 0; (file = port_DiscFileNumber(i)) != NULL; i++) {
+        u32 at = 0;
+
+        port_MusicKey(file->path + file->name_at, -1, name, sizeof(name));
+        while (name[at] != TEXT_END && name[at] == key[at]) {
+            at++;
+        }
+        if (name[at] != TEXT_END) {
+            continue;
+        }
+        if (key[at] == TEXT_END) {
+            return TRUE;
+        }
+        if (key[at] == '-' && key[at + 1] != TEXT_END) {
+            at++;
+            while (key[at] >= '0' && key[at] <= '9') {
+                at++;
+            }
+            if (key[at] == TEXT_END) {
+                return TRUE;
+            }
+        }
+    }
+    return FALSE;
+}
+
+/* The mods' pieces that stand in for none of the disc's, once: the mods
+ * and the disc's directory are read before the game's first step, and
+ * neither changes after. */
+static void port_MusicFindExtras(void) {
+    const char *key;
+    const char *path;
+    s32 place;
+    s32 i;
+
+    g_port_music.extras_found = TRUE;
+    for (place = 0; port_ModFileOf(PORT_MOD_MUSIC, place, &key, &path);
+         place++) {
+        if (g_port_music.extra_count >= PORT_FIGHT_MUSIC_EXTRAS_MAX) {
+            break;
+        }
+        if (port_MusicIsDiscKey(key)) {
+            continue;
+        }
+        for (i = 0; i < g_port_music.extra_count; i++) {
+            if (port_TextsEqual(g_port_music.extras[i], key)) {
+                break;
+            }
+        }
+        if (i < g_port_music.extra_count) {
+            continue;
+        }
+        port_MusicSay(g_port_music.extras[g_port_music.extra_count],
+                      PORT_MOD_KEY_SIZE, "%s", key);
+        g_port_music.extra_count++;
+        port_Log("music: %s is a piece of its own, offered on the stage "
+                 "select\n",
+                 key);
+    }
+}
+
+s32 port_MusicExtraCount(void) {
+    if (port_GetSessionRole() != PORT_SESSION_NONE) {
+        return 0;
+    }
+    if (!g_port_music.extras_found) {
+        port_MusicFindExtras();
+    }
+    return g_port_music.extra_count;
+}
+
+const char *port_MusicExtraKey(s32 index) {
+    return index >= 0 && index < port_MusicExtraCount()
+               ? g_port_music.extras[index]
+               : NULL;
+}
+
+void port_MusicSetFightPiece(const char *carrier, const char *extra) {
+    if (carrier == NULL || extra == NULL) {
+        g_port_music.fight_extra[0] = TEXT_END;
+        return;
+    }
+    port_MusicSay(g_port_music.fight_carrier, PORT_MOD_KEY_SIZE, "%s", carrier);
+    port_MusicSay(g_port_music.fight_extra, PORT_MOD_KEY_SIZE, "%s", extra);
 }

@@ -10,3 +10,23 @@ intensity = 0.65
 radius = 3000
 flicker = 0.4
 shadow = yes
+
+# The shrine's hall at the west end: its paper screens (x -16,000, up to
+# 4,000 high; z 4,300 to 6,040 and 10,300 to 12,040, and the same south)
+# lit from within, a lamp behind the paper: a soft warm light spilling
+# out over the deck. Lit from dusk.
+[light shoji_south]
+at = -15500 -1800 -8200
+color = #FFC88C
+intensity = 0.3
+radius = 5500
+flicker = 0.05
+times = dusk night
+
+[light shoji_north]
+at = -15500 -1800 8200
+color = #FFC88C
+intensity = 0.3
+radius = 5500
+flicker = 0.05
+times = dusk night

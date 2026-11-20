@@ -1,0 +1,26 @@
+# The bus stop (stage 4): the shelter by the road (x -12,000 to -3,550,
+# z 9,600 to 14,000, its roof 3,500 up). A shelter like it has a
+# fluorescent tube under its roof, lit from dusk: two, each a spot
+# lighting the bench and the pavement in front, cool and steady.
+format = 1
+
+[light shelter_west]
+kind = spot
+at = -9800 -3300 11600
+direction = 0 1 0
+cone = 50 80
+color = #E6F0FF
+intensity = 0.5
+radius = 6500
+shadow = yes
+times = dusk night
+
+[light shelter_east]
+kind = spot
+at = -5800 -3300 11600
+direction = 0 1 0
+cone = 50 80
+color = #E6F0FF
+intensity = 0.5
+radius = 6500
+times = dusk night

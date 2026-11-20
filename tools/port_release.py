@@ -89,7 +89,7 @@ whose own terms allow that. It has in it, besides:
   licenses/SDL2-LICENSE.txt.
 - stb_vorbis and stb_truetype by Sean Barrett (https://github.com/nothings/stb):
   public domain or MIT, as you prefer, licenses/stb-LICENSE.txt.
-- The fonts Marcellus, Archivo and Kaushan Script: the SIL Open Font
+- The typeface Shippori Mincho (Regular, Bold, ExtraBold): the SIL Open Font
   License 1.1, licenses/OFL-*.txt.
 - Sony's libsnd and libspu, reconstructed with the rest of PsyQ (above).
 

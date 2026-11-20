@@ -24,6 +24,7 @@
 #include "gl_bench.h"
 #include "gl_cloth.h"
 #include "gl_fighter.h"
+#include "gl_time.h"
 #include "gl_sun.h"
 #include "gl_lights.h"
 #include "gl_post.h"
@@ -1694,18 +1695,22 @@ static void port_GlFighterUpload3(
 }
 
 static void port_GlFighterUploadLights(const FighterPose *pose) {
+    /* the time of day's light over the stage's own, each channel
+     * (gl_time.h): 1 at the stage's own time */
+    const float *time = port_GlTime()->floor;
     GLfloat light[9];
     GLfloat color[9];
     s32 i;
 
     for (i = 0; i < 9; i++) {
         light[i] = (GLfloat)pose->light[i] / 4096.0f;
-        color[i] = (GLfloat)pose->color[i] / 4096.0f;
+        color[i] = (GLfloat)pose->color[i] / 4096.0f * time[i / 3];
     }
     glUniformMatrix3fv(g_fighter.at_light, 1, GL_TRUE, light);
     glUniformMatrix3fv(g_fighter.at_color, 1, GL_TRUE, color);
-    glUniform3f(g_fighter.at_back, (GLfloat)pose->back[0],
-                (GLfloat)pose->back[1], (GLfloat)pose->back[2]);
+    glUniform3f(
+        g_fighter.at_back, (GLfloat)pose->back[0] * time[0],
+        (GLfloat)pose->back[1] * time[1], (GLfloat)pose->back[2] * time[2]);
     glUniform1i(g_fighter.at_smooth_light, port_GlLightIsSmooth() ? 1 : 0);
     glUniform1i(g_fighter.at_tone_on, port_GlPostToneIsOn());
     glUniform3f(g_fighter.at_eye_world, (GLfloat)pose->camera[0],

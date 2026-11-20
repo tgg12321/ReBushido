@@ -1,0 +1,82 @@
+# The building's rooftop (stage 29): the two towers beside it, north and
+# south (z 17,750 and -17,750), each with red aviation lights at its
+# corners, at the roof's height and 6,000 above it (the red faces of
+# their pieces). A small red light at each, blinking as the flicker lets
+# it, which colours only the tower's own face around it.
+format = 1
+
+# The stairwell's housing on the roof (x 3,900 to 12,040, z 3,900 to
+# 12,040): a bulkhead lamp over its door (the door in its west face, x
+# 4,000, z 4,920 to 6,040, 2,400 high), lit from dusk, the light nearest
+# the fight.
+[light door_lamp]
+at = 3800 -2800 5480
+color = #F0F4FF
+intensity = 0.45
+radius = 4500
+shadow = yes
+times = dusk night
+
+[light warning_north_west_high]
+at = -12500 -6000 17500
+color = #FF1E10
+intensity = 0.4
+radius = 2200
+flicker = 0.6
+times = dusk night
+
+[light warning_north_east_high]
+at = 12500 -6000 17500
+color = #FF1E10
+intensity = 0.4
+radius = 2200
+flicker = 0.6
+times = dusk night
+
+[light warning_north_west_low]
+at = -12500 0 17500
+color = #FF1E10
+intensity = 0.4
+radius = 2200
+flicker = 0.6
+times = dusk night
+
+[light warning_north_east_low]
+at = 12500 0 17500
+color = #FF1E10
+intensity = 0.4
+radius = 2200
+flicker = 0.6
+times = dusk night
+
+[light warning_south_west_high]
+at = -10500 -6000 -17500
+color = #FF1E10
+intensity = 0.4
+radius = 2200
+flicker = 0.6
+times = dusk night
+
+[light warning_south_east_high]
+at = 10500 -6000 -17500
+color = #FF1E10
+intensity = 0.4
+radius = 2200
+flicker = 0.6
+times = dusk night
+
+[light warning_south_west_low]
+at = -10500 0 -17500
+color = #FF1E10
+intensity = 0.4
+radius = 2200
+flicker = 0.6
+times = dusk night
+
+[light warning_south_east_low]
+at = 10500 0 -17500
+color = #FF1E10
+intensity = 0.4
+radius = 2200
+flicker = 0.6
+times = dusk night

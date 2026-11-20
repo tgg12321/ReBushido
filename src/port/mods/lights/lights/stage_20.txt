@@ -9,3 +9,30 @@ intensity = 0.6
 radius = 3200
 flicker = 0.4
 shadow = yes
+
+# The theatre's front at the west end: the band of pale paper under its
+# eaves (x -11,416, 4,000 to 5,600 up, z -3,180 to 3,220), a row of
+# paper lanterns. Three lights along it, warm and low, from dusk.
+[light eave_lanterns_south]
+at = -11000 -4600 -2200
+color = #FFB070
+intensity = 0.3
+radius = 4500
+flicker = 0.1
+times = dusk night
+
+[light eave_lanterns_middle]
+at = -11000 -4600 0
+color = #FFB070
+intensity = 0.3
+radius = 4500
+flicker = 0.1
+times = dusk night
+
+[light eave_lanterns_north]
+at = -11000 -4600 2200
+color = #FFB070
+intensity = 0.3
+radius = 4500
+flicker = 0.1
+times = dusk night

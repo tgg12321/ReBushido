@@ -38,19 +38,30 @@ enum {
 /* A light's kind (the same numbers as gl_lights.h's). */
 enum { PORT_LIGHT_POINT = 0, PORT_LIGHT_SPOT = 1 };
 
+/* The times of day a light is lit at (`times = dusk night`), for the
+ * stage select's time of day (ROADMAP 20): a light whose `times` is not 0
+ * and leaves out the time chosen is not lit. 0, a light with no `times`,
+ * is lit at every time. */
+enum {
+    PORT_LIGHT_TIME_DAWN = 1,
+    PORT_LIGHT_TIME_DAY = 2,
+    PORT_LIGHT_TIME_DUSK = 4,
+    PORT_LIGHT_TIME_NIGHT = 8
+};
+
 /* What a light keeps of the file's numbers. A fraction is in thousandths:
  * `intensity = 1.5` is 1500. */
 #define PORT_LIGHT_ONE 1000
 
 typedef struct {
     char name[PORT_LIGHT_NAME_SIZE];
-    s32 kind;     /* PORT_LIGHT_POINT or PORT_LIGHT_SPOT */
-    s32 on;       /* PORT_LIGHT_ON_... */
-    s32 on_index; /* which fighter, weapon, piece or flame */
-    s32 on_bone;  /* a fighter's bone, or -1 for the middle of his body */
-    s32 at[3];    /* where, in world units, y down */
-    u8 color[3];  /* red, green, blue, as a screen shows them (0..255) */
-    u8 pad;
+    s32 kind;         /* PORT_LIGHT_POINT or PORT_LIGHT_SPOT */
+    s32 on;           /* PORT_LIGHT_ON_... */
+    s32 on_index;     /* which fighter, weapon, piece or flame */
+    s32 on_bone;      /* a fighter's bone, or -1 for the middle of his body */
+    s32 at[3];        /* where, in world units, y down */
+    u8 color[3];      /* red, green, blue, as a screen shows them (0..255) */
+    u8 times;         /* PORT_LIGHT_TIME_... bits, 0 always */
     s32 intensity;    /* thousandths: 1000 is the stage's sun at full colour */
     s32 radius;       /* world units: how far it reaches */
     s32 direction[3]; /* a spot's: which way it points */

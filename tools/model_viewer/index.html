@@ -69,6 +69,8 @@ renderer.setScissorTest(true);
 const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
 const controls = new OrbitControls(camera, canvas);
 controls.target.set(0, 0.95, 0);
+controls.minDistance = 0.25;  // close enough for the face, never through it
+controls.zoomToCursor = true;  // zoom in on what is under the mouse
 const loader = new GLTFLoader();
 
 let panes = [];   // {label, changed, scene, root}
@@ -162,6 +164,9 @@ async function showChosen() {
     g.scene.scale.multiplyScalar(k);
     g.scene.position.set(-mid.x * k, -box.min.y * k, -mid.z * k);
     const bones = [];
+    // a skinned mesh's bounds are its bind pose's, at the file's own scale:
+    // culled by them, a model vanished as the camera came close
+    g.scene.traverse(o => { if (o.isMesh) o.frustumCulled = false; });
     g.scene.traverse(o => { if (o.isBone && /^bone\d\d$/.test(o.name)) bones[+o.name.slice(4)] = o; });
     panes[i].k = k; panes[i].bones = bones; panes[i].model = g.scene;
     panes[i].bind = { pos: g.scene.position.clone(), local: bones.map(b => [b.position.clone(), b.quaternion.clone(), b.scale.clone()]) };

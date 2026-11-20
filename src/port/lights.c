@@ -374,6 +374,38 @@ static const char *port_LightsOn(
                : "nothing after the bone";
 }
 
+/* `times`: one or more of dawn, day, dusk and night, or `always` (0). */
+static const char *port_LightsTimes(
+    const char *value, const char *end, u8 *times) {
+    static const char * const names[4] = {"dawn", "day", "dusk", "night"};
+    const char *word;
+    u32 length;
+    u32 i;
+    u8 out = 0;
+    s32 words = 0;
+
+    while ((length = port_LightsWord(&value, end, &word)) != 0) {
+        words++;
+        if (port_LightsWordIs(word, length, "always")) {
+            continue;
+        }
+        for (i = 0; i < 4; i++) {
+            if (port_LightsWordIs(word, length, names[i])) {
+                out |= (u8)(1 << i);
+                break;
+            }
+        }
+        if (i == 4) {
+            return "`times` is dawn, day, dusk, night or always";
+        }
+    }
+    if (words == 0) {
+        return "`times` is dawn, day, dusk, night or always";
+    }
+    *times = out;
+    return NULL;
+}
+
 /* `name = value` of a light: NULL, or what is wrong with it. */
 static const char *port_LightsSet(
     PortLightDef *light, const char *name, u32 name_length, const char *value,
@@ -457,6 +489,9 @@ static const char *port_LightsSet(
         return port_LightsYesOrNo(value, end, &light->shadow)
                    ? NULL
                    : "`shadow` is yes or no";
+    }
+    if (port_LightsWordIs(name, name_length, "times")) {
+        return port_LightsTimes(value, end, &light->times);
     }
     return "not a word a light has";
 }

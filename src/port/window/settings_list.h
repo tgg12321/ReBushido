@@ -474,6 +474,27 @@ PORT_SETTING(stage_kind,
             "it (Classic); Square on the stage select switches one",
     .shown = {"Classic", "Remastered Classic"})
 
+/* The time of day every stage starts at on the stage select, and the
+ * modes with no stage page fight at (include/port_stage_choice.h;
+ * docs/PLAYING.md, "The time of day"): 0 the stage's own lighting, then
+ * dawn, day, dusk and night, which the remastered picture of a dressed
+ * stage shows. L1 and R1 on a stage page turn one stage's; in a session
+ * the host's holds. */
+PORT_SETTING(time_of_day,
+    .name = "time_of_day", .value = "stage",
+    .note = "stage: each stage's own light; or dawn,\n"
+            "day, dusk or night on every stage. L1 and\n"
+            "R1 turn a stage's on the stage select",
+    .read = PORT_READ_WORDS,
+    .words = {"stage", "dawn", "day", "dusk", "night"},
+    .is = "stage, dawn, day, dusk or night",
+    .menu = PORT_MENU_REMASTER, .rank = 167, .takes = PORT_TAKES_NOW,
+    .label = "Time of day",
+    .help = "The time of day the stages start at: each one's own, or dawn, "
+            "day, dusk or night (Remastered Classic stages); L1 and R1 on "
+            "the stage select turn one",
+    .shown = {"The stage's own", "Dawn", "Day", "Dusk", "Night"})
+
 /* The mods beside the program are read (docs/MODS.md); 0 runs the game
  * with none of them, as `--mods off` does. */
 PORT_SETTING(mods,
@@ -529,6 +550,26 @@ PORT_SETTING(stage_select_everywhere,
     .label = "Stage select in every mode",
     .help = "Versus the CPU and training choose their stage after the "
             "weapons, as versus mode does")
+
+/* A fight's music (include/port_fight_music.h; docs/PLAYING.md, "Music on
+ * the stage select"): the stage's piece in every mode, story, versus the
+ * CPU and team battle too, which the original plays with none; the
+ * game's own rule; or none. The stage select's row (L1 and R1) starts
+ * from it. In a session the host's holds. */
+PORT_SETTING(fight_music,
+    .name = "fight_music", .value = "stage",
+    .note = "stage: the stage's music in every mode;\n"
+            "original: none in story, versus the CPU\n"
+            "and team battle, as the original; none.\n"
+            "L1 and R1 choose another on the stage select",
+    .read = PORT_READ_WORDS, .words = {"stage", "original", "none"},
+    .is = "stage, original or none",
+    .menu = PORT_MENU_MODS, .rank = 55, .takes = PORT_TAKES_NOW,
+    .label = "Fight music",
+    .help = "The stage's music in every mode, the original's (none in "
+            "versus the CPU), or none; L1 and R1 on the stage select choose "
+            "any piece",
+    .shown = {"Stage's own", "Original", "None"})
 
 /* Every fighter and mode the save keeps for progress is open, read so
  * wherever the game reads its save, never written into it

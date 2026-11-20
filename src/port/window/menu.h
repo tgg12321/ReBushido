@@ -17,22 +17,55 @@
 #include "common.h"
 #include "window.h"
 
-/* ---- the font (font.c) ---- */
+/* ---- the lettering (font.c; docs/PORT.md, "The port's lettering") ---- */
 
-/* The font's file, which the build puts into the program
- * (tools/port_sdl_build.py, from src/port/fonts/Marcellus-Regular.ttf). */
-extern const unsigned char g_port_menu_font[];
+/* The port's one typeface, Shippori Mincho, in three weights: the files,
+ * which the build puts into the program (tools/port_sdl_build.py, from
+ * src/port/fonts/). */
+extern const unsigned char g_port_font_text[];
+extern const unsigned char g_port_font_bold[];
+extern const unsigned char g_port_font_title[];
 
-/* FALSE if the font cannot be read. */
+enum {
+    PORT_FACE_TEXT,  /* Regular: lines of the settings menu, notes */
+    PORT_FACE_BOLD,  /* Bold: headings, a menu's lines, names */
+    PORT_FACE_TITLE, /* ExtraBold: titles, the top menu's rows */
+    PORT_FACES
+};
+
+/* How a text is drawn. A style of zeros but its face, size and colour is
+ * plain letters. */
+typedef struct {
+    s32 face;    /* PORT_FACE_ */
+    s32 size;    /* pixels from the top of the tallest letter to the bottom of
+                    the deepest */
+    u32 color;   /* 0xAARRGGBB; its alpha is how much it covers */
+    u32 outline; /* an edge all round the letters, in this colour ... */
+    s32 outline_px; /* ... this many pixels wide (0: none) */
+    u32 shadow;     /* a shadow of the letters (and their edge) ... */
+    s32 shadow_px;  /* ... this many pixels down and right (0: none) */
+} PortTextStyle;
+
+/* FALSE if the typeface cannot be read. Every call below draws nothing
+ * and measures 0 until this has been TRUE. */
 extern s32 port_FontStart(void);
-/* The letters made at this many pixels from the top of the tallest to the
- * bottom of the deepest. */
-extern void port_FontSetSize(s32 pixels);
+/* Text (UTF-8: ASCII and Latin-1 are drawn, any other letter is `?`) into
+ * pixels of 0xAARRGGBB, `w` by `h`: `x` is the left of its edge, if it
+ * has one, and `baseline` the baseline. The letters are drawn from the
+ * typeface's outlines at the style's size, kerned, and kept for the next
+ * call of the same face and size. */
+extern void port_TextDraw(u32 *pixels, s32 w, s32 h, s32 x, s32 baseline,
+                          const char *text, const PortTextStyle *style);
+/* How many pixels wide it is, its edge and shadow with it. */
+extern s32 port_TextMeasure(const char *text, const PortTextStyle *style);
 /* From the top of the tallest letter to the baseline, in pixels. */
+extern s32 port_TextAscent(const PortTextStyle *style);
+
+/* The same, for plain letters in the Regular face at one size set
+ * beforehand. */
+extern void port_FontSetSize(s32 pixels);
 extern s32 port_FontAscent(void);
 extern s32 port_FontMeasure(const char *text);
-/* Text into pixels of 0xAARRGGBB, `w` by `h`, its baseline at `baseline`,
- * in `color` (its alpha is how much it covers). */
 extern void port_FontDraw(u32 *pixels, s32 w, s32 h, s32 x, s32 baseline,
                           const char *text, u32 color);
 /* A rectangle of `color` laid over them. */

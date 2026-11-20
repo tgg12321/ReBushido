@@ -31,6 +31,7 @@
  * changes a value the game computes. */
 
 #include "common.h"
+#include "gl_time.h"
 #include "port_remaster.h"
 
 /* How many maps (three nested and the whole stage's), and how many
@@ -98,6 +99,7 @@ typedef struct {
     s32 h;
     s32 middle;
     s32 dark;
+    PortGlTimeAt time; /* the time of day's (gl_time.h) */
 } PortGlSunScreenAt;
 
 extern void port_GlSunLocateScreen(u32 program, PortGlSunScreenAt *at);
@@ -268,7 +270,8 @@ extern u32 port_GlSunTriangles(void);
  * world's units is a drawing of, and `u_sun_dark`, how much of a pixel's
  * light a full shadow takes: the `shadows` strength, what a shadow takes
  * from the stage's sunlit floor (sun_shade), so that one on a fighter is
- * as dark as one on the floor beside him. After PORT_GL_SUN_SHADER. */
+ * as dark as one on the floor beside him; and the time of day's
+ * `time_relight` (gl_time.h). After PORT_GL_SUN_SHADER. */
 #define PORT_GL_SUN_SCREEN_SHADER                                              \
     "uniform mat3 u_sun_unview;\n"                                             \
     "uniform vec3 u_sun_eye;\n"                                                \
@@ -278,6 +281,6 @@ extern u32 port_GlSunTriangles(void);
     "vec3 sun_screen_world(vec2 pixel, float depth) {\n"                       \
     "    vec2 s = (pixel - u_sun_middle) * depth / u_sun_h;\n"                 \
     "    return u_sun_eye + u_sun_unview * vec3(s, depth);\n"                  \
-    "}\n"
+    "}\n" PORT_GL_TIME_SHADER
 
 #endif /* PORT_GL_SUN_H */

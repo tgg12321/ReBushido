@@ -331,10 +331,12 @@ reason: 支度, "preparations", with the word the other rows have.
 
 **How it is made.** `python tools/port_english.py` draws the pictures
 into `src/port/mods/english/` (`--check` says whether what is there is
-what it would draw). They are the project's own art: text in two fonts
-of the SIL Open Font Licence, Kaushan Script for the brush lettering and
-Marcellus for "TOP MENU" (`src/port/fonts/`, each with its licence),
-with the game's look -- white letters fading to pale blue, a dark edge,
+what it would draw). They are the project's own art: text in the port's
+one typeface, Shippori Mincho (`src/port/fonts/`, the SIL Open Font
+Licence; [`PORT.md`](PORT.md), "The port's lettering"), its ExtraBold for
+the title and the rows -- every row's name at one size, and "Group
+Battle", too long for it, smaller on the same baseline -- and its Bold for
+"TOP MENU", with the game's look -- white letters fading to pale blue, a dark edge,
 a blue shadow down and to the right; the game tints a row itself (gold,
 the cursor's yellow). No pixel of the game's is in them or is read to
 draw them, so they are kept in the repository, and the script makes the
@@ -425,12 +427,18 @@ split between two rows is split at the same place -- and each piece is
 cut from the block. A piece that holds anything but lettering (an icon
 beside a word) is left to the art mod.
 
-The fonts are of the SIL Open Font Licence (`src/port/fonts/`, each with
-its licence): **Archivo** at its widest (its width axis at 125) for the
-game's grotesque, which is wide -- in three weights, the menus', the
-names' thinner one and the digits' heavier one -- and **Marcellus** for
-its roman (the select screens' titles, the schools, the places, 1ST 2ND
-3RD, the stage card). The looks are the game's: letters darkening
+The lettering is the port's one typeface, **Shippori Mincho**
+(`src/port/fonts/`, the SIL Open Font Licence; [`PORT.md`](PORT.md), "The
+port's lettering", which has how a text is fitted to its rectangle): its
+Bold for the game's grotesque (the menus' lines, the captions, the
+names), its ExtraBold for the fight's digits, and its Regular for the
+game's roman, which has a dark edge round it (the select screens'
+titles, the schools, the places, 1ST 2ND 3RD, the stage card). These
+screens are in the console's mode of 640 by 240, whose texel is twice
+as tall as it is wide, so the letters are drawn twice as wide in a texel
+as the face has them, to be seen as it has them; texts of one kind (one
+face, one height, capitals or not) are one size. The looks are the
+game's: letters darkening
 downward, with a shadow down and to the right (the pause menu's, the
 training page's), a dark edge all round (the select screens'), a panel
 under them (Side View, POV) or nothing, each in the colours its own
@@ -442,7 +450,8 @@ project's own, kept in the repository: no pixel of the game's is in them.
 
 The built-in font's characters are a texture each, the key of each worked
 out from the font's picture in `font.c` (four characters share a place in
-it, each through its own colour table): a character in Archivo, white,
+it, each through its own colour table): a character in Shippori Mincho's
+Bold, white,
 its capitals seven texels high, the tails of g j p q y in the eighth row.
 
 ## The art mod
@@ -570,8 +579,8 @@ mods/
 - The key is `stage_NN`, as the skies': the stage's number in two
   digits (`STAGE_NAMES` of `tools/port_remaster_prove.py`).
 - The program ships one mod of them, `mods/lights/` (order -100, under
-  yours): the game's own flames lit on the nine stages that have them
-  and the lamps of two more (below). `stage_lights = off` puts every stage's lights out
+  yours): the game's own flames lit on the nine stages that have them,
+  and the lamps, lit windows and doors of more (below). `stage_lights = off` puts every stage's lights out
   ([`PLAYING.md`](PLAYING.md)); `effect_lights` is the fight's flashes',
   which are no file's.
 - The log says what each stage's files came to (`lights: stage 2 has 1
@@ -597,6 +606,7 @@ shadow = yes              # asks to cast shadows (the strongest few do)
 direction = 0 1 0         # a spot's: which way it points (down)
 cone = 30 45              # a spot's: full inside 30 degrees, none past 45
 on = stage                # what it is fastened to (below)
+times = dusk night        # lit only at these times of day (below)
 ```
 
 Everything but the name may be left out: a light is a white point of
@@ -609,7 +619,8 @@ about a stage's noon sun. A torch, a lantern or a lamp near the
 fighters sits well below that, 0.3 to 0.8, and `radius` does the
 falling off; only a flash goes near 1 or past it (the clash's is 1.5,
 `effect_lights`). The shipped files go from 0.3 (a candle at a grave)
-to 0.7 (the ferry dock's lamp, high up).
+to 0.7 (the ferry dock's lamp, high up); the moon or the day through a
+hall's doors and windows is 0.5 and 0.4, falling off over the hall.
 
 | `on =` | `at` is | |
 |---|---|---|
@@ -623,6 +634,13 @@ to 0.7 (the ferry dock's lamp, high up).
 
 A light fastened to something not in the frame (a fighter not drawn, a
 weapon past the last) is not lit that frame.
+
+**When.** `times` is one or more of `dawn`, `day`, `dusk` and `night`:
+the light is lit only when the stage is played at one of them (the stage
+select's time of day, ROADMAP 20, which says what a stage's own time
+counts as). Left out, or
+`always`, it is lit at every time: a fire burns at noon too, a street
+lamp waits for dusk.
 
 **Layered.** A block of a name the files before it already gave
 **changes that light**: only the lines it says, the rest as they were.
@@ -662,23 +680,32 @@ What the program ships, each looked at in the pictures of its tour:
 
 | Stage | Lights | |
 |---|---|---|
+| 0 Main Tatara shrine | 4 spots | the two open doors of the hall: the moon through them at night, the day by day |
+| 1 Meikyokan dojo | 4 spots | the two high windows of the hall, the same |
 | 2 Shainto HQ | `on = flames`: 4 | candles on stands, and two before the Buddha |
-| 3 Tatara shrine | `on = flames`: 4 | fire baskets on the deck's railing |
+| 3 Tatara shrine | `on = flames`: 4; 2 | fire baskets on the deck's railing; the hall's paper screens lit from within (dusk, night) |
+| 4 Bus stop | 2 spots | the fluorescent tubes under the shelter's roof (dusk, night) |
 | 6 Tatara shrine path | `on = flames`: 4 | stone lanterns |
-| 8 Outside Meikyokan | `on = flames`: 2 | fire baskets by the dojo's door |
-| 20 Kabuki stage | `on = flames`: 4 | torches along the walkway |
+| 8 Outside Meikyokan | `on = flames`: 2; 1 | fire baskets by the dojo's door; the stone lantern by the path (dusk, night) |
+| 16 Under the railway | 2 spots | the street lamps on the two utility poles (dusk, night) |
+| 20 Kabuki stage | `on = flames`: 4; 3 | torches along the walkway; the lanterns under the theatre's eaves (dusk, night) |
 | 22 Ferry dock | 1 spot | the tall street lamp at the quay's edge, lit |
 | 23 Shainto gate | `on = flames`: 2 | small fires on the gate's deck |
 | 24 Purple cavern | `on = flames`: 4 | candles by the iron gate |
+| 29 Building rooftop | 9 | the lamp over the stairwell's door; the red aviation lights at the corners of the two towers beside it (dusk, night) |
 | 30 Building parking lot | 5 spots | the fluorescent lights down the ceiling |
 | 31 Shainto cemetery | `on = flames`: 2 | candles at two graves |
+| 32 Team battle 1 | 6 spots | the band of windows along the hall's south wall, the moon's and the day's |
 | 33 Team battle 2 | `on = flames`: 4 | fire baskets at the square's corners |
 
-None on the rest: lit by day, or by the moon (the castle rooftop), or
-with lamps that are not lit (the bus stop's and the outside of the
-Meikyokan's posts), or with sources too small to place from the meshes
-yet (the red warning lights of the building rooftop's mast, the
-lighthouse's lamp, which no fight's camera sees).
+A light of a window or a door comes twice, `times = night` in the moon's
+cool colour and `times = dawn day dusk` in the day's; a lamp is lit from
+dusk; a fire burns at every time. None on the rest: open ground lit by
+the moon or the day alone (the bridges, the fields, the coast, the
+cliffs, the railway, the castle rooftop), or places abandoned, whose lamps
+would not be lit (the abandoned ship, station, tunnel and shipyard), or
+with lamps drawn unlit (the outside of the Meikyokan's posts), or with a
+source no fight's camera sees (the lighthouse's lamp, 16,000 up).
 
 ## Music
 
@@ -699,7 +726,7 @@ movie's sound, which is chosen by no channel, is the file's name alone.
 | `bb2_m1-0` | the narration, and the stages whose fight it is (most of them: below) |
 | `bb2_m1-1` | the menu's pages: character select and the rest |
 | `bb2_m1-2`, `-3`, `-4` | stages' fights |
-| `bb2_m1-5`, `-6` | on the disc; nothing asks for them |
+| `bb2_m1-5`, `-6` | on the disc; nothing of the original asks for them (the stage select's row of music can: below) |
 | `bb2_m1-7` | the top menu |
 | `bb2_m2-0`, `bb2_m2-1` | chanbara, the one clan and the other |
 | `bb2_m2-2`, `bb2_m2-3` | a practice round; practice |
@@ -710,7 +737,29 @@ movie's sound, which is chosen by no channel, is the file's name alone.
 
 A versus fight's piece is its stage's (`g_snd_stage_music_tracks`,
 `src/main/fight_data.c`): one of `bb2_m1-0` to `-4`, so one piece is
-heard on several stages, and a mod replaces it on all of them.
+heard on several stages, and a mod replaces it on all of them. With the
+window's `fight_music = stage` (the default) every mode's fight plays
+its stage's piece, versus the CPU, story and group battle too, and the
+stage select's **row of music** (L1 and R1: [`PLAYING.md`](PLAYING.md),
+"Music on the stage select") chooses any piece of the table's music for
+a fight, `bb2_m1-0` to `-7` and `bb2_m2-0` to `-4`: a mod's
+replacement of one is heard wherever it is chosen.
+
+### A piece of its own
+
+A mod's piece whose key is **none of the disc's** (`music/my
+theme.ogg`, `music/rain.wav`: any name that is not a file of the disc's,
+alone or with a dash and a number) stands in for nothing; it is offered
+by its key in the stage select's row of music, after the game's own
+pieces, up to 32 of them in the order the mods are read. Chosen, the
+fight starts its stage's own stream of the disc's as ever, and the
+mod's piece is heard in that stream's place, as a replacement is (the
+loop, the length cut at the original's, the volumes: above), for as long
+as the stream plays; the next stream the game starts ends it. So the
+game's state is what it is with the stage's own piece, and
+`music_mods = off` plays that piece. A session of netplay does not
+offer them: the other player may not have them (and the row is part of
+what both machines hold the same).
 
 `--dump-music FOLDER` writes each piece **as the game plays it**,
 `KEY.wav`: the drive's own sound before the game's volumes, 16 bits,

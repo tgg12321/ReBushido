@@ -120,9 +120,8 @@ lighting overhaul".
   standing piece casts whether the frame drew it or not, the nested
   maps blend into each other at their edges, and the fighters drawn from
   the game's own polygons take the sun's shadows too (`FLAG_WORLD`).
-  Still wanting, of a modern shadow stack: the frame's lights on those
-  polygons (too dear in the scene's program: a program of their own),
-  contact shadows (the fighters' own polygons are not in the kept
+  The frame's lights on those polygons came after (b). Still wanting, of
+  a modern shadow stack: contact shadows (the fighters' own polygons are not in the kept
   depth), shadows of stage pieces left to the game's primitives, and the
   four roofed stages' sun.
 - **b, lights with a place** (`lights = on`): the light list
@@ -130,7 +129,10 @@ lighting overhaul".
   the clash effect) per pixel on the ground, pieces and fighters, sorted
   into a world grid, the strongest four with cube shadows; a remade
   fighter's normal and ORM maps read and lit (GGX highlight from the
-  sun).
+  sun). 2026-11-19: the fighters the game draws itself (what the owner
+  plays) lit and shadowed by the list too, in a twin of the scene's
+  program that only their batches use (PORT.md, "The fighters' own
+  polygons"); pictures in the main checkout's `tmp/fighterlights/`.
 - **c and d** (2026-11-19, `src/port/gl/gl_post.c`): reflections on the
   screen (`reflections`), ambient occlusion (`ambient_occlusion`), the
   lights' bloom (`bloom`) and a tonemap that rolls off only the light the
@@ -157,6 +159,21 @@ lighting overhaul".
   shipyard, team 1, the terraced fields and the building rooftop darken
   by a quarter to two fifths in the lower half of the picture, PORT.md);
   pictures in the main checkout's `tmp/lighting/`.
+
+## The time of day, 2026-11-19 (ROADMAP 20)
+
+- **In:** L1 and R1 on a stage page turn a dressed stage's time (its own,
+  dawn, day, dusk, night); `time_of_day` in the cfg and the menu for the
+  modes with no page; the host's online (`MEET_TIME`, protocol 6). The
+  look is `src/port/gl/gl_time.c`: the sun's way and colour (the maps
+  along it), the ambient, the fog laid over the mesh, a day sky, the
+  game's own fighters and props relit, the bloom, the light files'
+  `times` and the stage's lights brighter at night (PORT.md, "The time
+  of day"). At the stage's own time nothing changes.
+- **Waits on the owner:** his eye on each time's numbers (the table in
+  PORT.md is judged on pictures: the main checkout's `tmp/timeofday/`,
+  `sheet_stageNN.png` the five times side by side, and
+  `stage_page_dusk.png` the strip); the HUD's letters over a day sky.
 
 ## What is left, in the order I would take it
 

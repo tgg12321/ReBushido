@@ -239,6 +239,11 @@ const PortDiscFile *port_FindDiscFile(const char *path) {
     return NULL;
 }
 
+const PortDiscFile *port_DiscFileNumber(u32 index) {
+    return index < g_port_disc_files.count ? &g_port_disc_files.files[index]
+                                           : NULL;
+}
+
 /* The file a sector is in (port_discfiles.h). */
 const PortDiscFile *port_DiscFileAt(u32 sector) {
     u32 i;

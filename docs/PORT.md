@@ -1180,7 +1180,7 @@ made, and as the program ends. The window's files are
 | `gamestate.c` | reads the game's variables out for the log, and has the names the log gives screens, modes, fighters, weapons and stages; it writes one, the Bug fixes setting, for the settings menu |
 | `sdl_window.c` | the window, the sound card and the controllers, on SDL; the counter; the log's notes of the game |
 | `sdl_log.c` | the session's log file |
-| `menu.c`, `sdl_menu.c`, `font.c`, `menu.h` | the settings menu ([`PLAYING.md`](PLAYING.md), "The settings menu"): its pages and what a press does, when it opens and the loop it runs in with the game stopped at a frame's boundary, and its text drawn at the window's resolution in Marcellus (`src/port/fonts/`, SIL Open Font Licence) by stb_truetype (`stb_truetype.h`, public domain). None of it is the game's state: these files are linked outside the game's object, as every file of the window is |
+| `menu.c`, `sdl_menu.c`, `font.c`, `menu.h` | the settings menu ([`PLAYING.md`](PLAYING.md), "The settings menu"): its pages and what a press does, when it opens and the loop it runs in with the game stopped at a frame's boundary, and its text drawn at the window's resolution in the port's typeface, Shippori Mincho (below, "The port's lettering"). None of it is the game's state: these files are linked outside the game's object, as every file of the window is |
 | `sdl_main.c` | where the program starts: its own options, the settings file, the disc image when none is named |
 | `host_posix.c` | `port_host.h` on a C library, for Linux (Windows has `src/port/host_windows.c`) |
 
@@ -1549,6 +1549,98 @@ are both in the log with the function's name, on Linux and on Windows.
   every register: the host's interface keeps three of them.
 - The game's stack is a megabyte, and SDL and the display's driver now
   run on it too.
+
+### The port's lettering
+
+Everything the port letters itself is one typeface, **Shippori Mincho**
+(FONTDASU; the SIL Open Font Licence 1.1, `src/port/fonts/OFL-ShipporiMincho.txt`):
+a Japanese mincho whose Latin letters were drawn to sit beside its
+kanji, with wedge serifs and a brush's stroke contrast, and figures that
+line up. It replaced three (Marcellus in the settings menu, Kaushan
+Script on the top menu, Archivo in the sharp menus) on the owner's word
+(2026-11-19): one family across the game, and a better one than the top
+menu's. Five others were held to it on real screens of the game first (Zen Old
+Mincho, Kaisei Tokumin, Alegreya, Cinzel, Cormorant Garamond); the
+Japanese mincho families read best at small sizes and carried the
+game's look, and Shippori's heaviest weight makes the best titles.
+
+Three weights are kept, cut down to Latin by `tools/port_fonts.py`
+(printable ASCII, Latin-1, dashes, quotes, the ellipsis, arrows; no
+hinting): about 34 KB each where the family's own files are eight
+megabytes for the Japanese. The licence allows a modified font to be
+shipped under it, and the family reserves no name, so the subset keeps
+it. `tools/port_sdl_build.py` puts the three into the program as C
+arrays.
+
+| Face | `font.c` | `tools/port_lettering.py` | For |
+|---|---|---|---|
+| Regular | `PORT_FACE_TEXT` | `'text'` | the settings menu's lines, notes, the stage select page, a roman with an edge (the select screens' titles, the stages' names) |
+| Bold | `PORT_FACE_BOLD` | `'bold'` | headings, the counter, the menus' lines, names, captions |
+| ExtraBold | `PORT_FACE_TITLE` | `'title'` | titles, the top menu's rows, the fight's digits |
+
+**In the program** (`src/port/window/font.c`, `menu.h`; the window's
+build alone). Letters are drawn from the outlines by stb_truetype at the
+size asked for, at the window's own resolution, kerned (the face's
+`GPOS` pairs), and kept for the next call of the same face and size
+(eight sizes at once, the oldest let go). The call for any text the port
+draws:
+
+```c
+PortTextStyle style = {0};
+style.face = PORT_FACE_TITLE;    /* PORT_FACE_TEXT, _BOLD, _TITLE */
+style.size = 64;                 /* pixels, top of the tallest letter to
+                                    the bottom of the deepest */
+style.color = 0xFFFFFFFFU;       /* 0xAARRGGBB */
+style.outline = 0xFF000818U;     /* an edge all round ... */
+style.outline_px = 3;            /* ... this wide; 0: none */
+style.shadow = 0xFF10298BU;      /* a shadow down and right ... */
+style.shadow_px = 5;             /* ... this far; 0: none */
+if (port_FontStart()) {
+    s32 w = port_TextMeasure("Online Play", &style);
+    port_TextDraw(pixels, pixels_w, pixels_h, (pixels_w - w) / 2,
+                  baseline, "Online Play", &style);
+}
+```
+
+`port_TextDraw` lays the text over pixels of 0xAARRGGBB (its alpha is how
+much it covers), `x` being the left of its edge and `baseline` its
+baseline; `port_TextMeasure` is its width with edge and shadow,
+`port_TextAscent` the baseline's distance below the tallest letter's
+top. Text is UTF-8; ASCII and Latin-1 are drawn, anything else is `?`.
+`port_FontSetSize` / `port_FontDraw` / `port_FontMeasure` /
+`port_FontAscent` are the same for plain letters in the Regular face (the
+stage select page's). The settings menu (its title and headings in
+Bold), the netplay line and panel, the stage select page and the counter
+(`fps`, Bold, at the window's resolution, its box placed as the digits'
+was; the 5 by 7 digits of `fps.c` stay for a window with no card and for
+when the typeface cannot be read) all draw through it.
+
+**In the tools** (`tools/port_lettering.py`, Pillow). The same faces for
+the pictures of the mods the port ships: `letter(text, face, size,
+color, top=, bottom=, outline=, outline_px=, shadow=, shadow_px=)` gives
+an RGBA picture of a text (`top` and `bottom` run the letters' colour
+down them, as the game's own lettering does), `font(face, size)` the
+Pillow font, and `line_mask` fits a text to a rectangle the game's
+lettering fills: as tall as the rectangle (fitted to the text with a
+capital, and a descender if it has small letters, so the lines of a menu
+come out one size on one baseline), as wide -- narrowed only to 0.8 of
+the face, and past that smaller on the same baseline; widened only to
+1.1, and past that spaced a little and set in the middle (or spaced to
+the ends, for a text the game cuts into pieces at fixed places) -- and
+twice as wide in a texel for a screen of 640 by 240 (`aspect`), whose
+texel is twice as tall as it is wide. `python tools/port_lettering.py
+OUT.png TEXT --face title --size 96` draws one to look at.
+`tools/port_english.py` (the top menu) and `tools/port_ui.py` (the sharp
+menus) letter through it; texts of one kind there (one face, one height,
+capitals or not) are drawn at one size.
+
+What the port does not letter: the game's own brush lettering and logos
+(the title, ブシドーブレード弐, SQUARESOFT), the Japanese of the weapons'
+scroll and the HUD's 時間, which are pictures, not text; and the
+publisher's card at boot ("Published by Square Electronic Arts L.L.C."),
+which is plain text but a picture the game writes into video memory
+that is not looked up while it is shown, so a mod's picture of it never
+shows.
 
 ## Remastered
 
@@ -7393,11 +7485,8 @@ shadow into view.
   soft search (`sun_visible_quick`); the game's light of it, its colour,
   loses in the sun's shadow what a shadow takes from the floor (the
   `shadows` strength), before the texture as the colour is. The frame's
-  lights (gl_lights.h) do not light these polygons yet: `lights_add` in
-  the scene's program, per pixel or at each corner in its geometry
-  shader, cost the scene's pass about 0.85 ms at the bench's 95th
-  centile even with no light to add (2026-11-19); it wants a program of
-  its own for the fighters' batches. What the game still draws
+  lights light them too, in a program of their own (b, "The fighters'
+  own polygons"). What the game still draws
   from its primitives otherwise (effects, the HUD) is as it drew it; with the ground the game's own
   tiles (`stage_mesh off`, or a stage the mesh is not measured good on),
   the picture falls back to `shadows cast`.
@@ -7482,15 +7571,24 @@ the game.
   flicker worked out from its `id` and the frames taken (three waves of
   prime periods, the same at any frame rate and in every run), and the
   lot sent to the card in a buffer.
-- **Sorted by where they reach** (a grid over the ground about the
-  camera, 64 by 64 cells of 256 world units, seen from above): each cell
+- **Sorted by where they reach** (a grid of 64 by 64 cells seen from
+  above, over the square that holds every light's reach, its cells 256
+  world units or a whole number of times that): each cell
   names the lights whose reach overlaps it, so a pixel loops over the
   few lights near it, whatever the list holds. The grid is in the world,
   not the screen, because three different shaders read it with three
   different projections (the ground's, the fighters' layer, the cloths)
   and a stage is a floor: a cell is the same for every picture of a
   frame, and the processor's work is the lights times the cells
-  (4,096), a few tens of microseconds for a full list.
+  (4,096), a few tens of microseconds for a full list. Until
+  2026-11-19 the grid was 16,384 units a side about the camera, which in
+  a fight stands some 7,000 units behind the fighters: a light more than
+  a couple of thousand units beyond them was in no cell and lit nothing
+  (a door 12,000 out on the main Tatara shrine, the street lamps, the
+  building rooftop's stairwell). Fitted to the lights, every light is
+  in it; where they are spread over a whole stage the cells grow and a
+  pixel loops over more of them, which changes the cost, never the
+  picture.
 - **Lit at the pixel.** The ground, the pieces and the fighters' models
   add each light that reaches them (`lights_add`, `PORT_GL_LIGHTS_SHADER`)
   to what the stage's own lights give, in the game's own bytes of light:
@@ -7509,6 +7607,49 @@ the game.
   the renderer's own in a ring about the place the camera looks at, each
   its own colour, a quarter of them spots, a quarter flickering, the
   first four casting.
+
+**The fighters' own polygons** (2026-11-19). The owner plays with the
+fighters the game draws itself -- body, weapon and cloth from its own
+primitives, the models put aside -- and those had the sun's maps
+(`FLAG_WORLD`, a) but no light of the list: a torch lit the floor about
+a fighter and not the fighter. They are lit now as the meshes are, in a
+program of their own:
+
+- **The scene's twin.** `lights_add` in the scene's own program, per
+  pixel or at each corner, cost every batch of the scene about 0.85 ms
+  of the card at the bench's 95th centile with no light at all: the
+  scene is the most fragments of the picture and its program the
+  longest. So the scene's three shaders are compiled twice
+  (`port_GlMakeLitProgram`, gl_draw.c): once as they were, and once as
+  GLSL 4.3 with `PORT_LIGHTS_LIT` defined, which brings the lights'
+  buffers, `lights_add` and the tonemap in. A fighter's own polygon
+  that takes the world back (`FLAG_WORLD`, now with the sun's maps or
+  the lights on) marks its batch `is_lit` where `lights` is on, a batch
+  is all lit or none of it, and the lit batches are drawn by the twin.
+  Nothing else pays for the loop; the twin's uniforms are its own
+  (`PortGlSceneAt`, one for each program).
+- **What it adds.** At the pixel, the place the geometry shader gave
+  back for the face (from its depth and the ground's view) and the
+  face's own normal: each light of the pixel's cell, its falloff, colour,
+  cone, flicker and shadow (the cube maps already hold these fighters:
+  the sun's casters are drawn into them, so a torch's light on a fighter
+  is shadowed by the scenery and by the other fighter, and by his own
+  arm). The game gave his polygons a light at each corner; the list has
+  only the face's normal, so a light is let 0.4 of the way past where it
+  turns away (`lights_add_wrapped`, `LIT_WRAP`), which keeps a body of
+  few polygons from being lit facet by facet. The light added is rolled
+  off above the game's own colour by the tonemap as the ground's is, the
+  game's own share being the colour times its light over the whole.
+- **What it leaves.** With `lights = off`, or no batch of a fighter's
+  own, the picture is the one drawn before to the byte (the tour of the
+  ferry dock at night, every picture); `Graphics: Original` marks
+  nothing. A fighter casting a torch's shadow onto the ground and the
+  walls was there before: the cube maps hold him.
+- **What it costs.** Nothing the bench can see: `ra1-stress` (sixteen
+  made-up lights, four fighters), this build and main's interleaved on
+  a quiet machine, the card's median and 95% 3.58 / 4.08 ms against main's
+  3.62 / 4.57, the scene's pass 0.06 to 0.07 ms in both; the gate's
+  bench, `ra1`'s lighting 0.66 ms against its 2.0.
 
 #### The fighters' material (rb_remade)
 
@@ -7897,6 +8038,7 @@ dressing asks it where it decides:
 | The stages' pages made larger (`stages-hd`) and any mod's page pictures | the game's own textures | the mod's | `port_GlSceneFind` (`src/port/gl/gl_scene.c`) |
 | The night sky | the game's colour of the distance | as `sky` says | the sky's drawing (`src/port/gl/gl_sky.c`) |
 | Item 17's dressing (foliage, water, particles), when it comes | off | on | the same question |
+| The time of day ("The time of day") | the game's own | as chosen | `port_StageTime` (`src/port/stage_choice.c`) |
 
 Everything else is the engine's and the renderer's and is the same in
 both: the resolution and the wide picture, the draw distance, the frame
@@ -8000,6 +8142,145 @@ of the host's, and the arena in play changed to another, to none and
 back. With no arena and the kind as built in, every play test is as it
 was.
 
+## The time of day
+
+ROADMAP 20 (the owner, 2026-11-19: the sun must not be every stage's
+only light). Every one of the 38 stages is set at night on the disc
+(`light_SetStage`'s table; "The sky"). A dressed stage -- Remastered
+Classic, or an arena -- can be fought at **the stage's own** time (the
+game's lighting, exactly as before), **dawn**, **day**, **dusk** or
+**night**; Classic and the Original picture (F2) keep the game's own.
+
+**The choice** is the game's state, beside the kind
+(`include/port_stage_choice.h`, `src/port/stage_choice.c`): each stage's
+time as L1 and R1 left it on a stage page (`times[38]`), the fight's
+(`fight_time`, taken as the grid's Cross takes the kind; an arena takes
+the default), and the one under the cursor for the strip
+(`cursor_time`). `port_StageTime()` is the picture's question: the
+fight's time, or the stage's own on a stage that is not dressed. The
+window's `time_of_day` (`stage`, `dawn`, `day`, `dusk`, `night`;
+`settings_list.h`) and `--time-of-day` are what every stage starts at and
+what the modes with no stage page fight at, kept outside the state in
+`src/port/arenas.c` as the kind's default is. Online the welcome carries
+the host's (`MEET_TIME`, protocol 6) and both hold it for the session;
+the presses on the pages are both players', so a stage's time chosen on
+the page is the same on both machines and rolled back with the stage.
+The strip under the stage pages' scroll says the time of the stage
+under the cursor ("Time: Dusk", gold) and "L1 / R1: time of day"; on a
+Classic stage, "The game's own light".
+
+**The look** (`src/port/gl/gl_time.c`, `gl_time.h`) is worked out once
+for the stage and the time from the stage's own scenery setup
+(`LIGHT_SCENERY`), and every reader of the stage's light in the picture
+asks `port_GlTimeTileLights()` instead of the game's setup: the ground's
+mesh and its pieces (the light matrix and colours `smooth_light` uses;
+a face lit as the game lit it -- `smooth_light off`, or a piece's own
+colours -- takes the time's light on a floor over the stage's own,
+`u_time_floor`, so the mesh is built with the game's light whatever the
+time), the sun's maps and their
+strength (`port_SunGain`), the sky's moon and ambient, and the
+occlusion's share of the light. At the stage's own time it is the game's
+setup itself, every multiplier 1 and the fog's amount 0, so nothing of
+the picture changes (the provers, the bench, the play tests).
+
+| | dawn | day | dusk | night |
+|---|---|---|---|---|
+| the sun's height | 14 degrees | 55 | 12 | 35 (the moon) |
+| its bearing | the stage's own turned back 50 degrees | the stage's own | turned on 55 | turned on 25 |
+| its colour | pale gold | white | deep orange | weak, cool blue |
+| the floor's light, of the stage's own | 0.80 | 1.15 | 0.72 | 0.40 |
+| the sun's share of it | 0.42 | 0.65 | 0.42 | 0.55 |
+| the fog's colour, its most | lilac grey, 0.70 | pale haze, 0.50 | dusky rose, 0.75 | near black blue, 0.85 |
+| the sky | gold horizon to blue, a few stars | a blue sky, clouds | orange horizon to violet, stars | the night sky, stars, the moon |
+| the sun's penumbra | 1.3 times | 1 | 1.3 | 2.5 |
+| the bloom | 1.0 | 0.6 | 1.25 | 1.6 |
+| the stage's own lights | 0.7 | 0.4 | 1.2 | 1.6 |
+
+- **The sun.** Its direction is the time's: height and a bearing turned
+  from the stage's own sun's, so a stage keeps its sense of where the
+  light comes from, and the shadows run long and low at dawn and dusk.
+  The sun's maps are drawn along it (`port_SunDirection`): the cascades
+  and the whole stage's fourth map are fitted to it each picture as
+  before. Its colour and the ambient are the time's hues, scaled so the
+  stage's own lit floor (clamped to 60 to 230) keeps its place in the
+  time's range of light, the sun's light where it meets a face at most
+  `sun_most`; the ambient keeps a quarter of the stage's own hue (the
+  cemetery stays a little purple). That scaling is the exposure: the
+  picture is eight bits and the lighting a byte scale, so a darker time
+  is less light, not a camera's stop.
+- **Night** is its own: the moon a weak, cool key (at most 115 of 255
+  where it meets a face), its penumbra two and a half times the sun's;
+  the ambient dark and blue, so what lies between the lights is dark; the
+  stage's own lights (the lights files, the game's flames) 1.6 times as
+  bright and glowing 1.6 times as much; the sky the night sky with the
+  time's moon. The shadows of the stage's own lights are the scene's then
+  (the four strongest cast cube shadows, "b. Lights with a place").
+- **The stage's own lights at a time** (`port_GlTimeLightGain`,
+  `gl_light_list.c`): a light file's `times =` (MODS.md, "Lights") leaves
+  a light out at the times it does not name; the stage's own time counts
+  as night (every stage of the disc is night), so a light that says
+  `times = night` is lit as it always was. The others are scaled as the
+  table says.
+- **The fog.** The game's fog is its colour tables copied over each
+  other towards the colour of the distance (black on every stage). At a
+  time of the port's own the ground's mesh reads the nearest level's
+  colours, unfogged, and lays the time's fog over the lit pixel by how far
+  into the levels its depth is (`u_time_fog`), on every face of the mesh;
+  so the ground runs into the time's horizon.
+- **The sky** (`gl_sky.c`): dawn, day and dusk have a sky of their own --
+  the time's horizon (the fog's colour, so the ground runs into it)
+  rising to its zenith, the sun's disc and glow where its light comes
+  from, colouring the horizon on its side, the baked clouds lit by it, a
+  few stars at dawn and dusk; night is the night sky with the time's
+  horizon and moon. A mod's picture of a sky is the stage's own time's.
+  A time of the port's own has its sky whatever `sky` says (a day over a
+  black fill is no day); a closed stage has none.
+- **Under a roof** (the halls, the dojos, the cave, the garage: the sky's
+  closed stages) the sun keeps the stage's own way, the colours move half
+  way to the time's and there is no time's fog: light through the doors.
+- **The fighters.** The game's own polygons of a fighter (`FLAG_WORLD`,
+  now also set when a time is on without the sun's maps) are relit at
+  their face's normal by how much the time's light differs from the
+  stage's own there, each channel, at most twice (`time_relight`,
+  `PORT_GL_TIME_SHADER`); a fighter's model takes the time's light on a
+  floor over the stage's own in its colours (its light's way is the
+  game's). The stage's own polygons the game lit (props, pieces the mesh
+  does not hold) take that floor ratio (`FLAG_TIME`), and a face the game
+  drew unlit (a stone, a sign) three quarters of it, on the mesh and off,
+  so it is not bright at night while a lamp so drawn still shows.
+  Effects and the HUD keep their colours.
+- **The bloom** is the lights' glow times the table's (`gl_post.c`).
+
+**What is left, and wants the owner's eye.** Every number of the table
+is a judgement on the pictures (`tmp/timeofday/` of the work, not
+committed): the hues, how dark night is, the bearing turns. The HUD's
+white letters are the game's half-transparent ones and read less well
+over a day sky. The surf's sparkles and other effects keep the game's
+colours (bluish at day). A fighter's model's light keeps the game's way.
+No disc stage is day in the original, so "the stage's own" is night on
+all 38; an arena's own light is its file's.
+
+**How it is proved.** `tools/port_stage_select.py`'s versus plan presses
+L1 on the first place (its own to night) and R1 on Abandoned Station,
+and holds the cursor's and the fight's time (`port_cursor_time`,
+`port_time` in `tests/play/state.toml`) on both sizes, the same trace.
+Pictures of six stages at the five times (rebushido-gl,
+`--time-of-day`, `--smooth-light on` as the window has it). At the
+stage's own time `port_gl_prove.py --gpu card` passes (the Original
+picture the console's, to the pixel) and `port_stage_prove.py --gpu card
+--against main` has every stage's trace the same both ways and the
+pictures main's stored ones (2026-11-19).
+
+**What it costs** (the bench, the RTX 3090 at 2,560 by 1,440, a machine
+loaded 36 to 46% by other agents' emulators, so a guide): `--budget` at
+the stage's own time, ra1's card 95% 4.50 ms and the lighting's 0.76
+against 2.0, the card under the refresh in every case; `--case ra1 --set
+time_of_day=night`, the card's 95% 4.99 ms and the lighting's 0.35. What
+a time adds to a frame is a few uniforms, one more read of the fog's
+levels in the mesh's shader and the sky's branch: nothing measurable
+above the load's noise. The processor's side is unchanged (the look is
+worked out when the stage or the time changes).
+
 ## Every stage in every mode, and every unlock
 
 The owner, 2026-11-19: practise on any stage with no second player, and
@@ -8063,7 +8344,7 @@ game asks, into `g_port_play` (`src/port/play.c`, a state file), with
 whether the select screen went on to the pages. So a rollback puts the
 choice back with the rest of the game, and a change in the settings menu
 reaches the game at a frame of its own. In a session the welcome carries
-the host's two switches (`MEET_PLAY`, protocol 4) and both programs hold
+the host's two switches (`MEET_PLAY`, since protocol 4) and both programs hold
 them (`port_HoldPlaySwitches`), as they hold the kind of stage the stages
 start as: a guest plays with the host's unlocks whatever its own settings
 say (NETPLAY.md, section 13).
@@ -8080,6 +8361,85 @@ Purple Cavern; versus mode with `--unlock-all` picks the Narukagami's
 last fighter and Utamaru. `--shots` keeps the pictures of the two
 one-player modes' stage pages. With both switches off, as the program
 without a window starts, every play test is as it was.
+
+## A fight's music
+
+The owner, 2026-11-19: fights have no music in versus the CPU; "allow a
+way to select music during stage select, defaulting to the stage's own
+music but let me choose any track for any stage." The original's rule is
+`snd_StartFightMusic` (`fight.c`): versus starts the stage's piece,
+`g_snd_stage_music_tracks[stage]` (one of tracks 0 to 4, `bb2_m1-0` to
+`-4`; a mod's arena's own through `port_ArenaMusic`), chanbara a piece by
+the player's clan (8 or 9), practice its two (10, 11), and story, versus
+the CPU, team battle and link mode nothing. With no music the stage's
+ambient sounds play (`snd_AmbienceEnabled`): always in those modes, and
+in versus, practice and chanbara when the options turn the music off.
+`include/port_fight_music.h`.
+
+**The rule.** The window's **`fight_music`** (`settings_list.h`, the
+Mods group; `--fight-music` on the command line): `stage` (built in)
+starts the stage's versus piece in every mode, practice and chanbara
+keeping their own; `original` is the game's own; `none` starts none. The
+program without a window, which reads no settings, plays the game's own
+rule unless `--fight-music` says, so every play test that holds the port
+to the emulator is as it was.
+
+**The row.** On a stage page, after the kinds of stage have had the
+presses (so never while the arenas' page is up, which takes them all),
+`port_FightMusicPageStep` (`select_StageStep`) moves a row with L1 and
+R1: the rule's own (`PORT_FIGHT_MUSIC_ROW_OWN`), the thirteen pieces of
+the game's (the twelve tracks of `cdrom.c`, the two that nothing asks
+for, 5 and 6, among them, and the staff roll's stream, `bb2_m2-4`, which
+is started as `fight_after.c` starts it, by `cdrom_StartAudio`), the
+pieces a mod brings under keys of their own, and None. `select_Load`
+starts it again from the setting (`port_FightMusicReset`); the fights of
+a mode whose stage the pages chose take what it was left at (versus, link
+mode, and versus the CPU and training through `port_PlayStageChosen`, so
+every opponent of a versus the CPU run), the others the setting's. The
+window draws it in the middle of the stage pages' strip
+(`window/stage_page.c`, `port_PageMusic`), "Music" over the piece's name
+and "L1 / R1: music" under it.
+
+**The fight's start.** `snd_StartFightMusic` asks `port_FightMusicStart`
+first, which says the track to start, none, or the game's own switch
+(the rule's own under `original`, or in practice and chanbara; and the
+options' music off, which is then quiet as ever). A piece started here
+loops as the game's do (`cdrom_SetAudioLoop`). Ambience follows the
+music as versus has it: `snd_AmbienceEnabled` asks
+`port_FightMusicAmbience`, off where the port started a piece, on where
+the row said None, the game's own rule otherwise.
+
+**A mod's own piece.** A mod's `music/KEY.ogg` whose key names no stream
+of the disc's (`port_MusicExtraCount`, `music.c`: no file of the disc's
+directory, alone or with a dash and a channel) is offered in the row by
+its key. The game cannot play what is not on the disc, and what it plays
+is the game's state; so the fight starts the stage's own stream as ever,
+and `port_MusicSetFightPiece` tells the music player, which follows the
+drive outside the state (MODS.md, "Music"), to put the mod's piece in its
+place the next time that stream starts, until another stream does. The
+state is then the stage's own piece's, whatever the mods. In a session
+the row offers none of them: two peers' mods may differ, and the row is
+the state.
+
+**The state.** The row and what the fight's start made of it are
+`g_port_fight_music` (`src/port/fight_music.c`, a state file); the run's
+setting is outside it (`play_switches.c`) and taken in when the game
+asks. The music itself is the drive's XA stream (`cd.c`, `xa.c`, the
+chip), all of it state, so a rollback puts back the piece with the rest
+(NETPLAY.md, "Sound"); what a mod's piece sounds like is the player's
+alone. In a session the welcome carries the host's setting (`MEET_MUSIC`,
+protocol 6) and both programs hold it (`port_HoldFightMusic`); the
+pages' presses are the same on both machines, so the row is.
+
+**How it is proved.** `tools/port_fight_music.py` runs versus the CPU
+through the stage pages to Abandoned Station (track 3) on both sizes,
+the two traces held to each other: with nothing said no piece is
+started; with `--fight-music stage` track 3 is, and the drive streams
+about 370 sectors of XA more than with none over the fight's ten seconds;
+R1 six times starts track 5 (`bb2_m1-5`, never heard in the original);
+L1 twice the staff roll's piece; L1 once None, the same sectors as with
+no music and the ambience on. `tests/port/music.c` holds the mods' own
+pieces and the piece over its stream.
 ## 64 bits
 
 The port is built with 64-bit pointers and with 32-bit ones, from the

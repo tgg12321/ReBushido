@@ -308,7 +308,7 @@ nothing at all while Graphics is Original.
 | `effects` | `original`, `exact`, `smooth` | How blood, sparks, flashes, dust, splashes, footprints, the stage's flames and the surf are drawn. `original`, the default, is where the console put them, on whole pixels of its own screen. `exact` draws each where the camera's projection really put it, its size without the console's rounding, and moves it smoothly between two frames with `frame_rate`; `smooth` also reads its texture smoothed, so a spark or a drop of blood has a soft round edge instead of the console's square texels. Their colours, their timing and how they mix with what is behind them are the console's either way, and none is ever hidden behind the ground, as on the console. **`original` with nothing said** until the owner has looked ([`PORT.md`](PORT.md), "The effects"). |
 | `sky` | `night`, `original` | What is above a stage that is open to the sky. The console has no sky: a fight's picture begins as one flat colour, the stage's colour of the distance, black or a dark blue on every stage, and that is what shows wherever the stage does not cover it. `night` paints a **night sky of the port's own** there: a gradient that is the stage's own colour of the distance at the horizon, so that the ground's fog runs into it with no seam, lifting a little towards the stage's own ambient colour; stars; a few thin clouds; and a moon where the stage's light comes from. It turns with the camera and never moves as the camera moves. The halls, the dojos, the parking garage and the cavern keep the flat colour, and the castle rooftop its own painted sky and moon. A mod can give a stage a picture of its own sky ([`MODS.md`](MODS.md), "Skies"). It needs Graphics Remastered, and changes nothing the game computes. **`night` with nothing said** -- the owner's call, not yet seen on a real screen ([`PORT.md`](PORT.md), "The sky"). |
 | `see_through` | `on`, `off` | The stage's walls, terraces and the rock of the cavern **thinned where they stand between the camera and a fighter**, so that he can always be seen, as modern fighting and action games do: a soft hole through the wall the size of the fighter, a dither that `antialiasing` smooths into a fade. The floor someone may stand on is never thinned, and nothing far behind a fighter or beside him is. The game does this itself for a few tiles a stage marks (half-transparent while a fighter is behind them); this does it for every face of the ground's mesh. It needs Graphics Remastered and `stage_mesh`, and changes nothing the game computes. **`on` with nothing said** -- the owner's call ([`PORT.md`](PORT.md), "Seeing the fighters through the stage"). |
-| `stage_lights` | `on`, `off` | The stage's own **torches, fires and lanterns light what is about them**: the ground, the walls and the fighters. They come from the light files of the mods: the program ships one (`mods/lights/`) with the game's own flames lit on the nine stages that have them and the lamps of two more, and a mod of yours can add lights, move them or put them out ([`MODS.md`](MODS.md), "Lights"). Graphics Remastered only; changes nothing the game computes. **`on` with nothing said.** |
+| `stage_lights` | `on`, `off` | The stage's own **torches, fires and lanterns light what is about them**: the ground, the walls and the fighters. They come from the light files of the mods: the program ships one (`mods/lights/`) with the game's own flames lit on the nine stages that have them and the lamps, lit windows and doors of more, and a mod of yours can add lights, move them or put them out ([`MODS.md`](MODS.md), "Lights"). Graphics Remastered only; changes nothing the game computes. **`on` with nothing said.** |
 | `effect_lights` | `on`, `off` | **The flash where blades meet**, of a hit and of a shot, and the glow of the sparks, as short lights of their own colours that light the fighters and the ground about them for the few frames the game lights the fighters itself. Graphics Remastered only; changes nothing the game computes. **`on` with nothing said.** |
 
 ## Kinds of stage
@@ -335,8 +335,9 @@ Classic and Remastered Classic, and it stays so for as long as the
 program runs. **Select** opens the page of the **custom arenas** (when a
 mod has any): up and down choose one, its picture beside the list;
 **Cross** fights on it; **Triangle** or Select goes back to the stages.
-On the keyboard Square is A and Select is Right Shift for player one
-("The keys").
+**L1** and **R1** choose the fight's music ("Music on the stage
+select", below). On the keyboard Square is A, Select is Right Shift and
+L1 and R1 are Q and W for player one ("The keys").
 
 `stage_kind = remastered` (the default) or `classic` in `rebushido.cfg`,
 the settings menu's "Stages", is what every stage starts as, and what
@@ -348,6 +349,39 @@ whichever kind it is, and the line and the page are still laid over it.
 Online, both players choose on the same screen as on a couch, so the
 kind and the arena are the same for both, and the kind the stages start
 as is the host's.
+
+## The time of day
+
+Every stage of the disc is set at night. A **Remastered Classic** stage
+(and an arena) can be fought at another time ([`ROADMAP.md`](ROADMAP.md),
+item 20): on a stage page **L1** and **R1** (Q and W for player one on
+the keyboard) turn the time of the stage under the cursor through
+**the stage's own** (the game's lighting, as it always was), **dawn**,
+**day**, **dusk** and **night**; the line under the scroll says which.
+A Classic stage keeps the game's own light ("The game's own light" on
+the line), and so does the Original picture (F2).
+
+- **Dawn** and **dusk**: the sun low over the horizon, gold or deep
+  orange, the shadows long, the sky coloured on the sun's side;
+- **day**: a high white sun, a blue sky with clouds, a light haze in the
+  distance;
+- **night**: not the stage's own night made darker but a night of its
+  own -- a weak, cool moon with soft shadows, real darkness between the
+  lights, and the stage's own torches, lanterns and lamps brighter and
+  glowing more, the main light of the scene; stars and a moon in the
+  sky.
+
+The sun's way, the shadows, the sky, the fog's colour, the light on the
+fighters and the glow of the lights all follow the time. A hall, a
+cave or a garage keeps its own sun's way and no sky, and takes half the
+time's colour, as light through its doors. Nothing of it touches the
+fight.
+
+`time_of_day = stage` (the default), `dawn`, `day`, `dusk` or `night` in
+`rebushido.cfg`, the settings menu's "Time of day", is the time every
+stage starts at and the one the modes with no stage page fight at.
+Online the host's holds for both, as the kind does, and the presses on
+the stage pages are both players'.
 
 ## A stage in every mode
 
@@ -375,6 +409,52 @@ arenas, as in versus mode ("Kinds of stage").
 as the original has them. Online, the host's setting holds for both
 players (the session always plays versus mode, which has the pages
 anyway).
+
+## Music on the stage select
+
+The original plays music over a fight only in versus mode (the stage's
+own piece), practice and chanbara (pieces of their own); story, versus
+the CPU and group battle have none, only the stage's own sounds of wind,
+water and birds. In the port **every fight has its stage's music**,
+and the stage select lets you choose any other piece for it.
+
+On a **stage page**, the middle of the line under the scroll says what
+the fight will play. **L1** and **R1** (Q and W on the keyboard for
+player one) go back and forward through:
+
+- **Stage's own** (where the row starts): the piece versus mode plays on
+  that stage, in every mode; a mod's arena's own piece on an arena.
+  Practice and chanbara keep the pieces they have in the original;
+- every piece the game has, by where the game plays it: Tatara Shrine
+  (most stages', and the narration's), Select screen, Snake Cliff,
+  Bamboo Thicket, Meikyokan Dojo, **Unheard I** and **Unheard II** (two
+  pieces on the disc that the game never plays), Title menu, Chanbara:
+  Narukagami, Chanbara: Shainto, Practice round, Practice and Staff
+  roll;
+- any piece a music mod brings under a name of its own (`music/my
+  piece.ogg`: [`MODS.md`](MODS.md), "Music"), by that name;
+- **None**: no music, the stage's own sounds instead.
+
+The choice is the fight's, and in versus the CPU every opponent's of the
+run, since they are all fought on the stage chosen; the row starts again
+from the setting the next time the select screen opens. Whenever a fight
+plays music the stage's own sounds are left out, and with None they are
+heard, as versus mode has them with the music on and off. The options'
+own music setting off still silences all of it.
+
+**`fight_music`** in `rebushido.cfg` (the settings menu's "Fight music",
+among the mods' lines) is where the row starts and what the modes with
+no stage page play (story, group battle, chanbara, and versus the CPU
+and training with `stage_select_everywhere = off`):
+
+- `stage` (the default): the stage's own piece in every mode, as above;
+- `original`: the game's own rule, no music in story, versus the CPU and
+  group battle; the row's first place then reads "Game's own";
+- `none`: no music in any fight; the row starts at None.
+
+Online, the host's setting holds for both players, and both choose the
+piece on the same page; a mod's own pieces are not offered online,
+since the two players' mods may differ.
 
 ## Everything unlocked
 

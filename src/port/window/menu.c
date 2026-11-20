@@ -695,6 +695,7 @@ s32 port_MenuWord(const char *word) {
 void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
     char label[LABEL_BYTES];
     char value[VALUE_BYTES];
+    PortTextStyle heading;
     s32 line = h / 30;
     s32 size;
     s32 pad;
@@ -732,14 +733,19 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
         return;
     }
     port_FontSetSize(size);
+    memset(&heading, 0, sizeof(heading));
+    heading.face = PORT_FACE_BOLD;
+    heading.size = size;
     x = pad * 2;
     y = pad + port_FontAscent();
-    port_FontDraw(pixels, panel_w, panel_h, x, y + line / 4,
+    heading.color = COLOR_TITLE;
+    port_TextDraw(pixels, panel_w, panel_h, x, y + line / 4,
                   g_menu.page == PAGE_MAIN     ? "ReBushido: settings"
                   : g_menu.page == PAGE_ONLINE ? "ReBushido: play online"
                   : g_menu.pad == 0            ? "ReBushido: player 1's buttons"
                                     : "ReBushido: player 2's buttons",
-                  COLOR_TITLE);
+                  &heading);
+    heading.color = COLOR_HEADER;
     snprintf(value, sizeof(value), "%s", port_GetVersionText());
     port_FontDraw(
         pixels, panel_w, panel_h, panel_w - x - port_FontMeasure(value),
@@ -776,8 +782,8 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
 
         port_MenuDescribe(row, label, value, &is_arrows);
         if (row->kind == ROW_HEADER) {
-            port_FontDraw(
-                pixels, panel_w, panel_h, x, baseline, label, COLOR_HEADER);
+            port_TextDraw(
+                pixels, panel_w, panel_h, x, baseline, label, &heading);
             port_FillRect(pixels, panel_w, panel_h, x, y + line - 2,
                           panel_w - 2 * x, 1, COLOR_EDGE);
             y += line;

@@ -253,7 +253,7 @@ def dump(args):
                 cmd[cmd.index('--gl-scale') + 1] = '2'
                 cmd += ['--gl-shots', os.path.join(out, 'shots'), '--gl-every', str(args.shots),
                         '--sky', 'night', '--draw-distance', 'max', '--fighter-models', 'off',
-                        '--stage-lights', 'on', '--effect-lights', 'on']
+                        '--lights', 'on', '--stage-lights', 'on', '--effect-lights', 'on']
             running.append((stage, subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT), log, out))
         stage, process, log, out = running.pop(0)
         process.wait()

@@ -202,7 +202,14 @@ follows the drive by the sound's clock, a step run again quietly hears
 none of it and moves nothing of it, and the samples heard with it are
 made beside the mixer's own, which stay the state's. So two peers may
 have different music mods. A mod's stage files are the game's own data,
-loaded into its state: the peers must have the same.
+loaded into its state: the peers must have the same. The piece a fight
+starts with, chosen on the stage pages or by `fight_music` (PORT.md, "A
+fight's music"), is a stream of the drive's like any other: the row is
+`g_port_fight_music` (`fight_music.c`, a state file), the stream the
+drive's and the chip's, so a rollback over a fight's start starts the
+same piece on the same sample; the piece of a mod's own that the row can
+offer is heard over the stage's own stream, outside the state, and a
+session does not offer it.
 
 **`gl_tween` and the side channel.** The tween draws between the frame on
 show (F-1) and the next frame (F), which is worked out before F-1 leaves
@@ -1057,10 +1064,12 @@ have met:
 - the welcome also carries the kind of stage the host's stages start as
   (`MEET_KIND`) and the host's two gameplay switches, `unlock_all` and
   `stage_select_everywhere` (`MEET_PLAY`, protocol 4; PORT.md, "Every
-  stage in every mode, and every unlock"); both programs hold them for
-  the session, so a guest plays with the host's unlocks whatever its own
-  settings say, and its settings menu changes nothing until it starts
-  again;
+  stage in every mode, and every unlock"), the host's `fight_music`
+  (`MEET_MUSIC`; PORT.md, "A fight's music") and the time of day the
+  stages start at (`MEET_TIME`; PORT.md, "The time of day"), protocol 6;
+  both programs hold them for the session, so a guest plays with the
+  host's unlocks and the host's fights' music whatever its own settings
+  say, and its settings menu changes nothing until it starts again;
 - when the guest has the cards it says it is ready; the host says go and
   starts, and the guest starts on that or on the host's first inputs.
   The host is the first pad, the guest the second, and the host's

@@ -1,0 +1,28 @@
+# Under the railway (stage 16): a utility pole at either end of the lane,
+# each with a street lamp on an arm reaching over the road (the lamp's
+# head at x 900 to 1,280, 4,840 to 5,150 up; z 11,600 to 11,830 and
+# -14,080 to -13,880). Lit from dusk: a pale mercury light falling wide
+# from high up, reaching the fighters only faintly in the middle.
+format = 1
+
+[light street_lamp_north]
+kind = spot
+at = 1090 -4800 11715
+direction = 0 1 0
+cone = 50 80
+color = #E4ECFF
+intensity = 0.55
+radius = 9000
+shadow = yes
+times = dusk night
+
+[light street_lamp_south]
+kind = spot
+at = 1090 -4800 -13975
+direction = 0 1 0
+cone = 50 80
+color = #E4ECFF
+intensity = 0.55
+radius = 9000
+shadow = yes
+times = dusk night

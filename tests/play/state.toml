@@ -80,8 +80,14 @@ port_arena = "g_port_stage_choice+40:s8"   # the arena in play, or -1
 port_page = "g_port_stage_choice+42:u8"    # the arenas' page is up
 port_on_stages = "g_port_stage_choice+45:u8"  # a stage page ran this frame
 port_cursor_tier = "g_port_stage_choice+46:u8"  # the kind under the cursor
+port_time = "g_port_stage_choice+87:u8"    # the fight's time of day (PORT_TIME_)
+port_cursor_time = "g_port_stage_choice+88:u8"  # the time under the cursor
 # -- the native port's gameplay switches (port_play.h) --
 port_unlock_all = "g_port_play+0:u8"     # unlock_all as the game took it in
 port_stage_pages = "g_port_play+1:u8"    # stage_select_everywhere likewise
 port_page_used = "g_port_play+2:u8"      # the one-player mode's fights are on the stage its pages chose
 port_unlocks = "g_port_play+4:s32"       # the unlock mask the game was last handed
+# -- the native port's fight music (port_fight_music.h) --
+port_music_row = "g_port_fight_music+0:u8"    # the stage pages' row: PORT_FIGHT_MUSIC_ROW_...
+port_music_heard = "g_port_fight_music+2:u8"  # the fight's start: 0 the game's, 1 a piece, 2 none
+port_music_track = "g_port_fight_music+3:s8"  # the track the port started, or -1

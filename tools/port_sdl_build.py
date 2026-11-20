@@ -22,8 +22,9 @@ port_build.py), from the same files compiled the same way, and then:
     sdl_main.c, sdl_window.c, and host_posix.c or src/port/host_windows.c),
     compiled as any program is;
   - SDL 2 and a C library, which `make port` has neither of;
-  - the settings menu's font (src/port/fonts/Marcellus-Regular.ttf), as a
-    C array written into the build's folder, and the English top menu
+  - the port's typeface, Shippori Mincho in three weights
+    (src/port/fonts/), as C arrays written into the build's folder, and
+    the English top menu
     (src/port/mods/english/), copied into mods/ beside the program
     (docs/MODS.md, "The English menu").
 
@@ -81,11 +82,12 @@ WINDOW_GAME = ['gamestate.c']
 WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'sdl_net.c', 'sdl_report.c', 'menu.c', 'font.c',
                  'stage_page.c', 'menu_online.c',
                  'sampler.c', 'warm.c', 'portmap.c']
-# The settings menu's font, put into the program as a C array of its bytes
-# (src/port/window/font.c), and the mods the program ships, copied into
-# mods/ beside it.
-MENU_FONT = 'src/port/fonts/Marcellus-Regular.ttf'
-MENU_FONT_NAME = 'g_port_menu_font'
+# The port's typeface, each weight put into the program as a C array of its
+# bytes (src/port/window/font.c; docs/PORT.md, "The port's lettering"), and
+# the mods the program ships, copied into mods/ beside it.
+FONTS = [('src/port/fonts/ShipporiMincho-Regular.ttf', 'g_port_font_text'),
+         ('src/port/fonts/ShipporiMincho-Bold.ttf', 'g_port_font_bold'),
+         ('src/port/fonts/ShipporiMincho-ExtraBold.ttf', 'g_port_font_title')]
 SHIPPED_MODS = 'src/port/mods'
 # the sample arenas' sources (tools/arena_compile.py)
 SHIPPED_ARENAS = 'tools/arenas'
@@ -96,7 +98,7 @@ SHIPPED_ARENAS = 'tools/arenas'
 # SDL_GL_GetProcAddress, so nothing of GL is linked to.
 GL_DIR = 'src/port/gl/'
 GL_HOSTED = ['gl_bench.c', 'gl_cloth.c', 'gl_draw.c', 'gl_fighter.c', 'gl_fighter_card.c', 'gl_fighter_file.c', 'gl_light.c', 'gl_light_list.c', 'gl_lights.c', 'gl_load.c', 'gl_pause.c', 'gl_post.c', 'gl_record.c', 'gl_replace.c', 'gl_scene.c',
-             'gl_see.c', 'gl_shadow.c', 'gl_sky.c', 'gl_stage.c', 'gl_sun.c', 'gl_tween.c']
+             'gl_see.c', 'gl_shadow.c', 'gl_sky.c', 'gl_stage.c', 'gl_sun.c', 'gl_time.c', 'gl_tween.c']
 # The hosts of the build without a window: not this one's on Linux, where
 # the C library's is host_posix.c; on Windows the one file is both builds'.
 OTHER_HOSTS = ('src/port/host_linux.c', 'src/port/host_windows.c')
@@ -603,19 +605,22 @@ def link_program(target, program, objects, more):
 
 
 def write_font(target):
-    """The menu's font as a C file of the build's own, written again only
-    when the font is newer: its path."""
+    """The typeface's weights as a C file of the build's own, written again
+    only when a weight or this script is newer: its path."""
     path = target.dir + '/menu_font.c'
-    if os.path.exists(path) and os.path.getmtime(path) >= os.path.getmtime(MENU_FONT):
+    newest = max([os.path.getmtime(font) for font, _ in FONTS] + [os.path.getmtime(__file__)])
+    if os.path.exists(path) and os.path.getmtime(path) >= newest:
         return path
-    data = open(MENU_FONT, 'rb').read()
-    lines = ['/* Written by tools/port_sdl_build.py from %s (SIL Open Font Licence,' % MENU_FONT,
-             ' * src/port/fonts/OFL-Marcellus.txt): the settings menu\'s font. */',
-             'extern const unsigned char %s[];' % MENU_FONT_NAME,
-             'const unsigned char %s[%d] = {' % (MENU_FONT_NAME, len(data))]
-    for at in range(0, len(data), 16):
-        lines.append('    ' + ' '.join('%d,' % byte for byte in data[at:at + 16]))
-    lines.append('};')
+    lines = ['/* Written by tools/port_sdl_build.py from src/port/fonts/ (SIL Open Font',
+             ' * Licence, src/port/fonts/OFL-ShipporiMincho.txt): the port\'s typeface. */']
+    for font, name in FONTS:
+        data = open(font, 'rb').read()
+        lines += ['/* %s */' % font,
+                  'extern const unsigned char %s[];' % name,
+                  'const unsigned char %s[%d] = {' % (name, len(data))]
+        for at in range(0, len(data), 16):
+            lines.append('    ' + ' '.join('%d,' % byte for byte in data[at:at + 16]))
+        lines.append('};')
     with open(path, 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(lines) + '\n')
     return path

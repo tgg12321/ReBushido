@@ -214,6 +214,7 @@ static s32 port_NetDrawWrapped(u32 *pixels, s32 w, s32 h, s32 x, s32 y,
  * title, what is being done (or what went wrong), and a last line. */
 static void port_NetPanelOf(const char *title, const char *status,
                             u32 status_color, const char *last) {
+    PortTextStyle heading;
     PortRect place;
     s32 window_w = 0;
     s32 window_h = 0;
@@ -255,9 +256,12 @@ static void port_NetPanelOf(const char *title, const char *status,
     port_FillRect(g_net.pixels, place.w, place.h, 0, 0, place.w, 2, COLOR_EDGE);
     port_FillRect(
         g_net.pixels, place.w, place.h, 0, place.h - 2, place.w, 2, COLOR_EDGE);
-    port_FontSetSize(line * LETTER_PERCENT / PERCENT);
-    port_FontDraw(g_net.pixels, place.w, place.h, pad, pad + port_FontAscent(),
-                  title, COLOR_TITLE);
+    memset(&heading, 0, sizeof(heading));
+    heading.face = PORT_FACE_BOLD;
+    heading.size = line * LETTER_PERCENT / PERCENT;
+    heading.color = COLOR_TITLE;
+    port_TextDraw(g_net.pixels, place.w, place.h, pad,
+                  pad + port_TextAscent(&heading), title, &heading);
     port_FontSetSize(line * LETTER_PERCENT / PERCENT * 3 / 4);
     port_NetDrawWrapped(g_net.pixels, place.w, place.h, pad, pad + line, small,
                         place.w - 2 * pad, PANEL_LINES_MAX, status,

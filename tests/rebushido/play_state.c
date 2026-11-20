@@ -38,10 +38,15 @@ void test_Main(void) {
     WHERE(PortStageChoice, page_open);
     WHERE(PortStageChoice, on_stages);
     WHERE(PortStageChoice, cursor_kind);
+    WHERE(PortStageChoice, fight_time);
+    WHERE(PortStageChoice, cursor_time);
     WHERE(PortPlay, unlock_all);
     WHERE(PortPlay, stage_pages);
     WHERE(PortPlay, page_used);
     WHERE(PortPlay, unlocks);
+    WHERE(PortFightMusic, row);
+    WHERE(PortFightMusic, heard);
+    WHERE(PortFightMusic, track);
     /* the hit tests' scratch, which first_frame_sweep.toml reads by
      * address: a sweep's far end as it is and as it was */
     CHECK_EQ(SCRATCHPAD, 0x1F800000);
