@@ -118,6 +118,10 @@ extern void port_SetStageKindDefault(s32 kind);
 extern s32 port_GetStageKindDefault(void);
 /* The session holds it: port_SetStageKindDefault changes nothing after. */
 extern void port_HoldStageKindDefault(s32 kind);
+/* The player's own kind and time of day kept before a session begun in
+ * the running program holds the host's, and put back after it. */
+extern void port_KeepStageDefaults(void);
+extern void port_RestoreStageDefaults(void);
 /* The time of day the stages start at, and the modes with no stage page
  * fight at (the window's `time_of_day`, PORT_TIME_...), as the kind is:
  * in a session the host's, held. */

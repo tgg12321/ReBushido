@@ -141,7 +141,7 @@ in the game's own look, with five rows:
 | **Singleplayer** | a page of its own: **Story**, **Vs. CPU**, **Slash** (once it is won, as in the original) and **Group Battle**, and **Back** |
 | **Versus** | two players, the second on the second pad |
 | **Training** | the game's training, either kind of practice |
-| **Online Play** | the settings menu's *Play online* page: host or join a game with another PC ("Playing online"); Back on it comes back here |
+| **Online Play** | the online pages, over the game: Quick Match, host a room, browse rooms, join by code or by address ("Playing online"); Back on them comes back here |
 | **Options** | the settings menu (below), in place of the game's own options page |
 
 Up and down choose, Cross takes the row, Triangle goes back (from the
@@ -782,25 +782,55 @@ two programs check both before anything starts, and say what differs.
 The way the two PCs reach each other is the program's to find: a room
 at the lobby is all either player has to choose.
 
-**One of you hosts a room, the other joins it.** **Online Play** on the
-top menu, or *Play online* in the settings menu (F1). The page's first
-row says what you do; Left and Right change it.
+**Online Play** on the top menu opens the online pages, drawn over the
+game in the top menu's look. Up and Down choose, Enter or Cross takes
+a row, Escape or Circle goes back; a controller's buttons work as on
+the top menu. Nothing starts again: the session begins in the program
+you are playing, and when it ends you are back where you were.
 
-- *Host a room*: a room at the **lobby** (a small server of the
-  project's: *Lobby server* on the page, the owner's built in), with a
-  name and, if you like, a password; then *Open the room now*. The
-  program starts again, asks your router to open its port (UPnP,
-  NAT-PMP or PCP: *Open the port in the router*), and waits. The panel
-  says the room's code too, for a player who would rather type it.
-- *Browse rooms*: *Look for rooms* lists the lobby's rooms; Enter on
-  one joins it, asking first for a locked room's password. A room
-  whose game is not compatible with yours says what differs (another
-  version, build, disc image or gameplay mods) and cannot be joined.
+- **Quick Match** joins the first open room at the lobby that is your
+  kind (the same setup code) and has no password, or opens a room of
+  your own and waits if there is none. Two players who both take Quick
+  Match meet.
+- **Host a room**: a room at the **lobby** (a small server of the
+  project's; the owner's is built in, and the settings menu's Play
+  online page has *Lobby server*), its name (yours if you give none)
+  and, if you like, a password; then *Open the room*. The page says
+  **Waiting for a player**, with the room's **code** in large letters
+  for a player who would rather type it, and what your router said of
+  its port.
+- **Browse rooms** lists the rooms: the room's name, its host, its
+  players, whether it is locked, how long it has been open, and, for a
+  room you cannot join, why (another version, build, disc image or
+  gameplay mods). Enter joins one, asking first for a locked room's
+  password. *Look again* asks the lobby again.
+- **Join by code**: the six letters and digits the host reads out.
+- **Join by address** (advanced): no lobby; type the host's address
+  and port, or *Host here* at your port (below).
+- **Your name**: what the lobby and the other player see.
+
+Anything typed is typed on the keyboard, or, with a pad, on the
+keyboard drawn on the page: Cross types the key under the cursor,
+Square deletes, Triangle changes between capitals and small letters,
+Start (or the key *Done*) keeps it, Circle leaves it.
+
+**The lobby before the fight.** Once the two have met and the host's
+memory cards have come, both pages show **Ready to fight**: both
+players' names, which of you is player 1, and that your setup codes
+match. Each says *Ready* (or *Leave*); when both are ready the game
+starts from power on on both PCs and goes by itself to the versus
+select screen. *Leave* in the lobby, or Escape while you wait, takes
+you back to the online pages, and the other player is told.
 
 The password is kept only while the program runs and never goes over
 the network: the host's program gives the lobby a salted hash of it,
 and the joining one proves it knows it by answering a fresh challenge
 (NETPLAY.md, section 14).
+
+The settings menu's *Play online* page (F1) has the same ways with
+every advanced choice (the port, the delay, the router, the lobby
+server); its *Open the room now*, *Host now* and *Join now* begin the
+session in the program too.
 
 **The way between you is found by itself.** Once the lobby has
 introduced you, both programs try every way at once and take the best
@@ -810,7 +840,8 @@ the game's datagrams on (a little more delay). The line at the top of
 the window says which, with the round trip. No VPN or other program is
 needed.
 
-**By address, the advanced way:** *Host by address* waits at a port of
+**By address, the advanced way:** the online pages' *Join by address*,
+or the settings menu's page. *Host by address* waits at a port of
 your PC (7845 if you change nothing), asking the router to open it as a
 room does; *Join by address* types the host's address and port (Enter
 on the row, then type; `203.0.113.7:7845`, or IPv6 as
@@ -830,8 +861,9 @@ rebushido --join 203.0.113.7:7845             ... and the other player
 ```
 
 **Check you can meet first:** `rebushido --check-online` prints your
-**setup code**, as `P7-RN1C-NYZ2-3ER0` (the protocol, then the build,
-the disc and the gameplay mods), and the Play online page shows it on
+**setup code**, as `P8-RN1C-NYZ2-3ER0` (the protocol, then the build,
+the disc and the gameplay mods); the online pages show it in their
+corner, and the settings menu's Play online page on
 its last row. Send each other your codes by message: the same code
 means you can play. A disc image is told by its contents, not its file:
 two dumps of the one disc have the same code however they were made
@@ -841,8 +873,10 @@ two dumps of the one disc have the same code however they were made
 another build, version, disc image or gameplay mods (with your setup
 code to compare), a wrong password, a full or closed room, an
 incompatible room, nobody answering at the address, a lobby that does
-not answer, or a player who stopped answering. Enter or Escape closes
-the message and the program; the log has it too.
+not answer, or a player who stopped answering. The online pages say
+it and stay up; OK, and you try again or go back to the top menu. The
+log has it too. (A session started from the command line, below, shows
+the message and then ends, as before.)
 
 `--net-delay N` on the host's line sets the delay, 0 to 8 frames (2 if
 nothing says); it is both players'. *Through: This PC alone* on the
@@ -861,8 +895,14 @@ button layouts in the game's own options, the host's ReBushido settings
 player's cards. The game starts from the beginning on both PCs and goes
 by itself to **versus character select**, where you both choose at
 once, as on one console; the host picks the stage. After a fight the
-game's menu offers a **rematch**. In a fight Start does nothing: there
-is no pause online. The opening movie is skipped.
+game's menu offers a **rematch**, the select screen again, or the main
+menu. **The main menu leaves**: going back to the top menu after a
+fight (or Triangle on the select screen before either has chosen) ends
+the session for both players at the same moment, and each is back at
+their own top menu, with their own memory cards, unlocks and settings,
+where they were before they went online; the online pages say the
+session is over. In a fight Start does nothing: there is no pause
+online. The opening movie is skipped.
 
 You play with your own keys or controller, whichever player's they are
 in your settings: the host is player 1 and the other player 2 in the
@@ -870,9 +910,12 @@ game. A line at the top of the window says who you are, the **ping**
 (the round trip to the other PC), the longest **rollback** of the last
 seconds (frames the game went back and ran again) and the **delay**; or
 that it is waiting for the other player. Closing the window
-leaves; the other player is told and plays on alone. The settings menu
-cannot be opened during a session (the other player's game would have
-to stop too).
+leaves; the other player is told and is back at their own top menu
+(in a session started from the command line, they play on alone). If
+nothing is heard from the other PC for 15 seconds, or the two games
+part (a desync), the session ends the same way, and the pages say why.
+The settings menu cannot be opened during a session (the other
+player's game would have to stop too).
 
 The draw distance is the console's online, whatever `draw_distance`
 says, and the two games keep the faces the wider of your two pictures

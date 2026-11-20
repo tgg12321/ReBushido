@@ -9,14 +9,16 @@
 #include "common.h"
 #include "bb2.h"
 
-static struct {
+typedef struct {
     s32 unlock_all;
     s32 stage_pages;
     s32 top_menu;
     s32 bugfixes;
     u32 game_options; /* the save's SAVE_FLAG_... bits */
     s32 held;
-} g_port_play_switches;
+} PortPlaySwitches;
+
+static PortPlaySwitches g_port_play_switches;
 
 void port_SetUnlockAll(s32 on) {
     if (!g_port_play_switches.held) {
@@ -88,12 +90,30 @@ void port_HoldPlaySwitches(u32 bits) {
 
 /* With nothing said the game's own rule, as the console plays it: the
  * window's fight_music is `stage` unless its file says otherwise. */
-static struct {
+typedef struct {
     s32 rule;
     s32 row;
     const char *piece; /* --fight-music KEY: the page starts on it */
     s32 held;
-} g_port_fight_music_asked = {.rule = PORT_FIGHT_MUSIC_ORIGINAL};
+} PortFightMusicAsked;
+
+static PortFightMusicAsked g_port_fight_music_asked = {
+    .rule = PORT_FIGHT_MUSIC_ORIGINAL};
+
+/* The player's own, kept while a session begun in the running program
+ * holds the host's (online.c). */
+static PortPlaySwitches g_port_play_switches_kept;
+static PortFightMusicAsked g_port_fight_music_kept;
+
+void port_KeepPlaySwitches(void) {
+    g_port_play_switches_kept = g_port_play_switches;
+    g_port_fight_music_kept = g_port_fight_music_asked;
+}
+
+void port_RestorePlaySwitches(void) {
+    g_port_play_switches = g_port_play_switches_kept;
+    g_port_fight_music_asked = g_port_fight_music_kept;
+}
 
 /* The rule, and the row it starts the page at: None for `none`, the
  * rule's own otherwise. */

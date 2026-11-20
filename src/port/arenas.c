@@ -746,6 +746,24 @@ void port_HoldStageTimeDefault(s32 time) {
 
 s32 port_GetStageTimeDefault(void) { return g_port_arenas.time_default; }
 
+/* The player's own kind and time, kept while a session begun in the
+ * running program holds the host's (online.c). */
+static s32 g_port_arenas_kept[4];
+
+void port_KeepStageDefaults(void) {
+    g_port_arenas_kept[0] = g_port_arenas.kind_default;
+    g_port_arenas_kept[1] = g_port_arenas.kind_held;
+    g_port_arenas_kept[2] = g_port_arenas.time_default;
+    g_port_arenas_kept[3] = g_port_arenas.time_held;
+}
+
+void port_RestoreStageDefaults(void) {
+    g_port_arenas.kind_default = g_port_arenas_kept[0];
+    g_port_arenas.kind_held = g_port_arenas_kept[1];
+    g_port_arenas.time_default = g_port_arenas_kept[2];
+    g_port_arenas.time_held = g_port_arenas_kept[3];
+}
+
 /* The arena in play's ground in place of its host's sectors: the data of
  * `sector` into `data` (PORT_DISC_DATA_BYTES), the bytes past the ground
  * zeros as a shorter stage mod's are. */

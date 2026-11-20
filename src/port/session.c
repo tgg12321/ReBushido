@@ -30,7 +30,14 @@
  * match's set-up, both players choosing at once as on a couch, and after
  * a fight the game's own menu offers the rematch; a way back to the top
  * menu comes straight back to versus. In a fight Start is nobody's: the
- * pause menu would stop the other player's game too. */
+ * pause menu would stop the other player's game too.
+ *
+ * Begun from the window's online pages, the meeting ends in a lobby
+ * before the game: both players' names, and each says ready (or leaves)
+ * before the host says go. Such a session's host also sets the rule that
+ * a way back to the top menu after the select screen is the session's
+ * end, on both machines at the same frame (port_SessionInput), and both
+ * go back to their own game (online.c). */
 #include "common.h"
 #include "port_card.h"
 #include "port_disc.h"
@@ -42,8 +49,9 @@
  * 7 (main's 6 and more): a guest that finds the host is not its kind
  * says so, either side gives up on the other after SILENT_GIVE_UP_MS of
  * silence, the disc's sum is of its data alone, and the two may meet by
- * way of the lobby (relay.c). */
-#define SESSION_PROTOCOL 7
+ * way of the lobby (relay.c). 8: the players' names, the lobby before the
+ * game (each ready or gone), and the host's rules. */
+#define SESSION_PROTOCOL 8
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -60,6 +68,7 @@
 #define POLL_MS 2
 #define PUNCH_EVERY_MS 100
 #define STATUS_EVERY_MS 16
+#define LOBBY_EVERY_MS 100
 /* The guest gives up when nobody has answered for this long; the host
  * waits as long as it is left to (closing the window ends it), or, with
  * no window, this long. */
@@ -120,7 +129,9 @@ enum {
     KIND_CARD,
     KIND_CARD_ACK,
     KIND_READY,
-    KIND_GO
+    KIND_GO,
+    KIND_LOBBY, /* the host's, in the lobby: whether its player is ready */
+    KIND_LEAVE  /* either's: its player has left the lobby */
 };
 
 /* Why a host turned a guest away (KIND_REFUSE's detail). */
@@ -138,8 +149,9 @@ enum {
  * in the high half and its height in the low), the welcome's kind of
  * stage the stages start as (port_stage_choice.h), the welcome's gameplay
  * switches (port_play.h), the welcome's fight_music (port_fight_music.h),
- * the time of day the stages start at (port_stage_choice.h), and last
- * the version's text. */
+ * the time of day the stages start at (port_stage_choice.h), the
+ * welcome's rules (PORT_SESSION_RULE_...), the version's text, and last
+ * the player's name. */
 enum {
     MEET_BUILD = PORT_NET_HEADER_BYTES,
     MEET_DISC = MEET_BUILD + 2 * WORD_BYTES,
@@ -152,8 +164,10 @@ enum {
     MEET_PLAY = MEET_KIND + WORD_BYTES,
     MEET_MUSIC = MEET_PLAY + WORD_BYTES,
     MEET_TIME = MEET_MUSIC + WORD_BYTES,
-    MEET_VERSION = MEET_TIME + WORD_BYTES,
-    MEET_BYTES = MEET_VERSION + VERSION_BYTES
+    MEET_RULES = MEET_TIME + WORD_BYTES,
+    MEET_VERSION = MEET_RULES + WORD_BYTES,
+    MEET_NAME = MEET_VERSION + VERSION_BYTES,
+    MEET_BYTES = MEET_NAME + PORT_SESSION_NAME_BYTES
 };
 
 static struct {
@@ -177,13 +191,24 @@ static struct {
     u32 play;   /* the host's gameplay switches (port_PlaySwitchBits) */
     u32 music;  /* the host's fight_music (port_FightMusicBits) */
     u32 time;   /* the host's time of day the stages start at */
+    u32 rules;  /* the host's PORT_SESSION_RULE_... */
     u32 wider;  /* the wider of the two players' */
     u32 have;   /* chunks the guest has */
     u32 needed; /* chunks there are to have */
     u8 map[CHUNK_MAP_BYTES];
     u32 next_chunk; /* the host's turn round them */
     u32 status_at;
+    s32 summed;   /* the sums are worked out (they do not change) */
+    s32 seed_set; /* --net-seed */
+    u32 seed_asked;
+    s32 canceled; /* the player gave the meeting up */
+    s32 phase;    /* PORT_SESSION_PHASE_... */
+    s32 peer_ready;
+    char name[PORT_SESSION_NAME_BYTES];
+    char peer_name[PORT_SESSION_NAME_BYTES];
 } g_session;
+
+s32 (*g_port_session_ready_hook)(void);
 
 /* The host's two cards, and what the guest is given of them: memory the
  * system gives as the session begins (none of the state's), copied into
@@ -200,6 +225,39 @@ s32 port_GetSessionRole(void) { return g_session.role; }
 void port_SetSessionDiffer(s32 what) { g_session.differ = what; }
 
 void port_SetSessionDisc(const PortDisc *disc) { g_session.disc_image = disc; }
+
+static void port_CopyName(char *out, const char *text) {
+    u32 i;
+
+    for (i = 0; text != NULL && text[i] != 0 && i + 1 < PORT_SESSION_NAME_BYTES;
+         i++) {
+        out[i] = text[i] >= ' ' && text[i] <= '~' ? text[i] : '?';
+    }
+    out[i] = 0;
+}
+
+void port_SetSessionPlayer(const char *name) {
+    port_CopyName(g_session.name, name);
+}
+
+void port_SetSessionSeed(u32 seed) {
+    g_session.seed_asked = seed & SEED_MASK;
+    g_session.seed_set = 1;
+}
+
+void port_SetSessionRules(u32 rules) { g_session.rules = rules; }
+
+void port_CancelSession(void) { g_session.canceled = 1; }
+
+s32 port_SessionIsCanceled(void) { return g_session.canceled; }
+
+void port_SetSessionPhase(s32 phase) { g_session.phase = phase; }
+
+/* The player's answer in the lobby: ready at once with no pages. */
+static s32 port_SessionReady(void) {
+    return g_port_session_ready_hook != NULL ? g_port_session_ready_hook()
+                                             : PORT_SESSION_READY;
+}
 
 /* ---- who is who ---- */
 
@@ -321,6 +379,10 @@ static u32 port_SessionProtocol(void) {
 static void port_SessionSums(void) {
     char *code = g_session.setup;
 
+    if (g_session.summed) {
+        return;
+    }
+    g_session.summed = 1;
     g_session.build = port_SessionBuild();
     g_session.disc = g_session.disc_image != NULL
                          ? port_SessionDisc(g_session.disc_image)
@@ -445,6 +507,7 @@ static u64 port_GetLong(const u8 *in) {
 /* A hello (the guest's) or a welcome (the host's). */
 static void port_SendMeet(s32 kind) {
     u8 out[MEET_BYTES];
+    u32 i;
 
     port_NetHeader(out, kind, 0, port_SessionProtocol());
     port_PutLong(out + MEET_BUILD, g_session.build);
@@ -458,7 +521,11 @@ static void port_SendMeet(s32 kind) {
     port_NetPutWord(out + MEET_PLAY, g_session.play);
     port_NetPutWord(out + MEET_MUSIC, g_session.music);
     port_NetPutWord(out + MEET_TIME, g_session.time);
+    port_NetPutWord(out + MEET_RULES, g_session.rules);
     port_PutVersion(out + MEET_VERSION);
+    for (i = 0; i < PORT_SESSION_NAME_BYTES; i++) {
+        out[MEET_NAME + i] = (u8)g_session.name[i];
+    }
     port_NetSend(out, sizeof(out));
 }
 
@@ -513,8 +580,38 @@ static s32 port_CheckMeet(const u8 *in, s32 bytes, u32 protocol) {
         return REFUSE_MODS;
     }
     port_TakeShape(port_NetGetWord(in + MEET_SHAPE));
+    for (i = 0; i < PORT_SESSION_NAME_BYTES; i++) {
+        version[i] = (char)in[MEET_NAME + i];
+    }
+    version[PORT_SESSION_NAME_BYTES - 1] = 0;
+    port_CopyName(g_session.peer_name, version);
     return 0;
 }
+
+/* The lobby's state for the pages (port_net.h). */
+void port_GetSessionLobby(PortSessionLobby *out) {
+    u32 i;
+
+    out->role = g_session.role;
+    out->phase = g_session.phase;
+    out->percent = g_session.needed == 0
+                       ? PERCENT
+                       : (s32)(g_session.have * PERCENT / g_session.needed);
+    out->peer_ready = g_session.peer_ready;
+    for (i = 0; i < PORT_SESSION_NAME_BYTES; i++) {
+        out->name[i] = g_session.name[i];
+        out->peer_name[i] = g_session.peer_name[i];
+    }
+    for (i = 0; i < PORT_SETUP_CODE_BYTES; i++) {
+        out->setup[i] = g_session.setup[i];
+    }
+    out->code = port_IsRelayOn() ? port_GetRelayCode() : "";
+    out->path = g_session.path;
+    out->mapped = g_session.mapped;
+}
+
+/* The player left the lobby: the other is told, a few times. */
+static void port_SendLeave(void) { port_SendShort(KIND_LEAVE, 0, 0); }
 
 /* The status line, now and then, to the window (port_net.h) or once to
  * the log where there is none. */
@@ -625,6 +722,9 @@ static s32 port_HostWaitAgain(void) {
     g_session.have = 0;
     g_session.next_chunk = 0;
     g_session.wider = g_session.shape;
+    g_session.peer_ready = 0;
+    g_session.peer_name[0] = 0;
+    g_session.phase = PORT_SESSION_PHASE_WAITING;
     for (i = 0; i < CHUNK_MAP_BYTES; i++) {
         g_session.map[i] = 0;
     }
@@ -649,15 +749,35 @@ static s32 port_HostSession(void) {
     u32 welcomed_at = 0;
     u32 heard_at = 0;
     u32 punched_at = 0;
+    u32 lobby_at = 0;
     s32 met = 0;
 
     note[0] = 0;
+    g_session.phase = PORT_SESSION_PHASE_WAITING;
     if (g_session.has_punch_to) {
         port_SetSessionPath("a punched hole (no lobby)");
     }
     for (;;) {
         u32 now = port_NetClock();
         s32 bytes = port_NetReceive(in, sizeof(in), POLL_MS);
+        s32 ready = PORT_SESSION_NOT_YET;
+
+        if (g_session.canceled) {
+            if (met) {
+                port_SendLeave();
+            }
+            port_Log("session: the host gave the meeting up\n");
+            return 0;
+        }
+        if (met && g_session.needed == g_session.have) {
+            ready = port_SessionReady();
+            if (ready == PORT_SESSION_LEAVE) {
+                port_SendLeave();
+                port_Log("session: the host left the lobby\n");
+                g_session.canceled = 1;
+                return 0;
+            }
+        }
 
         if (bytes > 0) {
             s32 detail;
@@ -665,8 +785,21 @@ static s32 port_HostSession(void) {
             s32 kind = port_NetReadHeader(in, bytes, &detail, &number);
             s32 reason;
 
-            if (kind >= KIND_HELLO && kind <= KIND_GO) {
+            if (kind >= KIND_HELLO && kind <= KIND_LEAVE) {
                 heard_at = now;
+            }
+            if (kind == KIND_LEAVE && met) {
+                port_Log("session: the guest left the lobby; waiting for "
+                         "another\n");
+                port_SessionText(
+                    note, sizeof(note), "%s left.",
+                    g_session.peer_name[0] != 0 ? g_session.peer_name
+                                                : "The other player");
+                met = 0;
+                if (!port_HostWaitAgain()) {
+                    return 0;
+                }
+                continue;
             }
             if (kind == KIND_HELLO && !met) {
                 reason = port_CheckMeet(in, bytes, number);
@@ -685,6 +818,7 @@ static s32 port_HostSession(void) {
                 port_FixNetPeer();
                 met = 1;
                 note[0] = 0;
+                g_session.phase = PORT_SESSION_PHASE_CARDS;
                 port_Log("session: the guest has come; sending it the "
                          "memory cards\n");
             }
@@ -714,9 +848,18 @@ static s32 port_HostSession(void) {
                 }
                 g_session.have = number;
             } else if (kind == KIND_READY && met) {
-                port_SendShort(KIND_GO, 0, 0);
-                return 1;
+                g_session.peer_ready = 1;
             }
+        }
+        if (met && g_session.peer_ready && ready == PORT_SESSION_READY) {
+            port_SendShort(KIND_GO, 0, 0);
+            return 1;
+        }
+        if (met && g_session.needed == g_session.have &&
+            now - lobby_at >= LOBBY_EVERY_MS) {
+            /* the lobby: the guest is told whether this player is ready */
+            port_SendShort(KIND_LOBBY, ready == PORT_SESSION_READY, 0);
+            lobby_at = now;
         }
         if (!met && g_session.has_punch_to &&
             now - punched_at >= PUNCH_EVERY_MS) {
@@ -749,10 +892,20 @@ static s32 port_HostSession(void) {
                 port_SendChunks();
                 sent_at = now;
             }
-            port_SessionProgress(status, sizeof(status),
-                                 "The other player has come: sending your "
-                                 "memory cards");
+            if (g_session.have == g_session.needed) {
+                g_session.phase = PORT_SESSION_PHASE_READY;
+                port_SessionText(
+                    status, sizeof(status), "%s is here: %s",
+                    g_session.peer_name[0] != 0 ? g_session.peer_name
+                                                : "The other player",
+                    g_session.peer_ready ? "ready" : "not ready yet");
+            } else {
+                port_SessionProgress(status, sizeof(status),
+                                     "The other player has come: sending "
+                                     "your memory cards");
+            }
         } else {
+            g_session.phase = PORT_SESSION_PHASE_WAITING;
             char at[STATUS_BYTES];
 
             port_SessionAt(at, sizeof(at), "Hosting a game at");
@@ -802,6 +955,7 @@ static s32 port_JoinSession(void) {
     u32 heard_at = 0;
     s32 welcomed = 0;
 
+    g_session.phase = PORT_SESSION_PHASE_JOINING;
     port_SessionAt(status, sizeof(status), "Joining the game at");
     if (port_IsRelayOn()) {
         port_SessionText(at, sizeof(at), "room %s", port_GetRelayCode());
@@ -811,14 +965,44 @@ static s32 port_JoinSession(void) {
     for (;;) {
         u32 now = port_NetClock();
         s32 bytes = port_NetReceive(in, sizeof(in), POLL_MS);
+        s32 ready = PORT_SESSION_NOT_YET;
 
+        if (g_session.canceled) {
+            if (welcomed) {
+                port_SendLeave();
+            }
+            port_Log("session: the guest gave the meeting up\n");
+            return 0;
+        }
+        if (welcomed && g_session.have == g_session.needed) {
+            ready = port_SessionReady();
+            if (ready == PORT_SESSION_LEAVE) {
+                port_SendLeave();
+                port_Log("session: the guest left the lobby\n");
+                g_session.canceled = 1;
+                return 0;
+            }
+        }
         if (bytes > 0) {
             s32 detail;
             u32 number;
             s32 kind = port_NetReadHeader(in, bytes, &detail, &number);
 
-            if (kind >= KIND_HELLO && kind <= KIND_GO) {
+            if (kind >= KIND_HELLO && kind <= KIND_LEAVE) {
                 heard_at = now;
+            }
+            if (kind == KIND_LEAVE && welcomed) {
+                port_Log("session: the host left the lobby\n");
+                port_SessionText(
+                    why, sizeof(why),
+                    "%s closed the room before the game began.",
+                    g_session.peer_name[0] != 0 ? g_session.peer_name
+                                                : "The host");
+                port_SessionFail(why);
+                return 0;
+            }
+            if (kind == KIND_LOBBY && welcomed) {
+                g_session.peer_ready = detail != 0;
             }
             if (kind == KIND_REFUSE) {
                 port_Log("session: the host turned this program away: %s\n",
@@ -851,6 +1035,8 @@ static s32 port_JoinSession(void) {
                     return 0;
                 }
                 welcomed = 1;
+                g_session.phase = PORT_SESSION_PHASE_CARDS;
+                g_session.rules = port_NetGetWord(in + MEET_RULES);
                 g_session.delay = port_NetGetWord(in + MEET_DELAY);
                 g_session.seed = port_NetGetWord(in + MEET_SEED);
                 g_session.cards = port_NetGetWord(in + MEET_CARDS);
@@ -894,12 +1080,21 @@ static s32 port_JoinSession(void) {
         }
         if (welcomed && now - ack_at >= ACK_EVERY_MS) {
             port_SendCardAck();
-            if (g_session.have == g_session.needed) {
+            if (g_session.have == g_session.needed &&
+                ready == PORT_SESSION_READY) {
                 port_SendShort(KIND_READY, 0, 0);
             }
             ack_at = now;
         }
-        if (welcomed) {
+        if (welcomed && g_session.have == g_session.needed) {
+            g_session.phase = PORT_SESSION_PHASE_READY;
+            port_SessionText(
+                status, sizeof(status), "%s's room: %s",
+                g_session.peer_name[0] != 0 ? g_session.peer_name : "The host",
+                g_session.peer_ready ? "the host is ready"
+                                     : "the host is not ready "
+                                       "yet");
+        } else if (welcomed) {
             port_SessionProgress(status, sizeof(status),
                                  "The host has let you in: receiving its "
                                  "memory cards");
@@ -960,15 +1155,48 @@ const char *port_GetSessionPath(void) {
     return g_session.role == PORT_SESSION_NONE ? "" : "direct";
 }
 
-/* The session set up (port_net.h): the sums, the meeting (by way of the
- * lobby or not), the cards, the seed, and netplay begun. */
-s32 port_StartSession(const PortDisc *disc, u32 delay) {
+/* A session over in the running program (port_net.h). */
+void port_ResetSession(void) {
+    u32 i;
+
+    g_session.role = PORT_SESSION_NONE;
+    port_ClearNetAddress(&g_session.address);
+    g_session.mapped[0] = 0;
+    g_session.path[0] = 0;
+    g_session.has_punch_to = 0;
+    g_session.seed = 0;
+    g_session.cards = 0;
+    g_session.rules = 0;
+    g_session.have = 0;
+    g_session.needed = 0;
+    g_session.next_chunk = 0;
+    g_session.status_at = 0;
+    g_session.canceled = 0;
+    g_session.phase = PORT_SESSION_PHASE_NONE;
+    g_session.peer_ready = 0;
+    g_session.peer_name[0] = 0;
+    for (i = 0; i < CHUNK_MAP_BYTES; i++) {
+        g_session.map[i] = 0;
+    }
+}
+
+/* The meeting (port_net.h): the sums, the other found by way of the lobby
+ * or not and held to this program, the cards and the seed. */
+s32 port_MeetSession(const PortDisc *disc, u32 delay) {
     PortRemasterView view;
     u32 chunk;
     s32 slot;
     s32 ok;
 
     g_session.disc_image = disc;
+    g_session.canceled = 0;
+    g_session.peer_ready = 0;
+    g_session.peer_name[0] = 0;
+    g_session.have = 0;
+    g_session.next_chunk = 0;
+    for (chunk = 0; chunk < CHUNK_MAP_BYTES; chunk++) {
+        g_session.map[chunk] = 0;
+    }
     port_SessionSums();
     port_Log("session: this program's setup code is %s\n", g_session.setup);
     g_session.delay = delay;
@@ -980,7 +1208,10 @@ s32 port_StartSession(const PortDisc *disc, u32 delay) {
     g_session.shape =
         ((u32)view.aspect_w << SHAPE_SHIFT) | ((u32)view.aspect_h & SHAPE_MASK);
     g_session.wider = g_session.shape;
-    g_session_cards = port_HostAllocate(PORT_CARD_SLOTS * PORT_CARD_IMAGE_SIZE);
+    if (g_session_cards == NULL) {
+        g_session_cards =
+            port_HostAllocate(PORT_CARD_SLOTS * PORT_CARD_IMAGE_SIZE);
+    }
     if (g_session_cards == NULL) {
         port_Log("session: no memory for the memory cards\n");
         return 0;
@@ -997,16 +1228,23 @@ s32 port_StartSession(const PortDisc *disc, u32 delay) {
             g_session.needed += (u32)port_ChunkIsNeeded(chunk);
         }
         /* nothing of the game's: only that two sessions differ */
-        g_session.seed = (port_HostTicks() ^ port_NetClock()) & SEED_MASK;
+        g_session.seed = g_session.seed_set
+                             ? g_session.seed_asked
+                             : (port_HostTicks() ^ port_NetClock()) & SEED_MASK;
         ok = (!port_IsRelayOn() || port_RelayMeet(PORT_SESSION_HOST, 0)) &&
              port_HostSession();
     } else {
         ok = (!port_IsRelayOn() || port_RelayMeet(PORT_SESSION_JOIN, 0)) &&
              port_JoinSession();
     }
-    if (!ok) {
-        return 0;
-    }
+    return ok;
+}
+
+/* The session as the game starts (port_net.h): the host's cards in both
+ * slots, netplay on, the host's switches held and the margin fixed. */
+void port_ApplySession(void) {
+    s32 slot;
+
     for (slot = 0; slot < PORT_CARD_SLOTS; slot++) {
         port_SetCardImage(
             slot,
@@ -1036,6 +1274,13 @@ s32 port_StartSession(const PortDisc *disc, u32 delay) {
              (g_session.cards & 2)  ? "slot 2"
              : g_session.cards == 0 ? "none"
                                     : "");
+}
+
+s32 port_StartSession(const PortDisc *disc, u32 delay) {
+    if (!port_MeetSession(disc, delay)) {
+        return 0;
+    }
+    port_ApplySession();
     return 1;
 }
 
@@ -1046,6 +1291,8 @@ void port_SessionSeed(void) {
     rng_SetSeed((s32)g_session.seed);
     srand(g_session.seed);
 }
+
+u32 port_SessionLeftAt(void) { return g_port_top_menu.session_left; }
 
 /* ---- the presses that are nobody's ---- */
 
@@ -1105,6 +1352,27 @@ void port_SessionInput(u32 frame, PortInput *input, u16 *used) {
     *used = 0xFFFF;
     if (g_session.role == PORT_SESSION_NONE) {
         return;
+    }
+    if (g_session.rules & PORT_SESSION_RULE_TOP_MENU_LEAVES) {
+        /* back to the top menu from the select screen or after a fight:
+         * the session ends there (netplay.c), and nothing is pressed */
+        if (g_sys_screen == SCREEN_MENU_UPDATE &&
+            (g_menu_page == MENU_PAGE_SELECT ||
+             g_menu_page == MENU_PAGE_TEAM_SELECT)) {
+            g_port_top_menu.session_away = 1;
+        }
+        if (g_port_top_menu.session_away &&
+            (g_port_top_menu.session_left != 0 ||
+             (g_sys_screen == SCREEN_MENU_UPDATE &&
+              g_menu_page == MENU_PAGE_TOP))) {
+            if (g_port_top_menu.session_left == 0) {
+                g_port_top_menu.session_left = frame + 1;
+            }
+            input->buttons[0] = 0;
+            input->buttons[1] = 0;
+            *used = 0;
+            return;
+        }
     }
     if (port_SessionPilots()) {
         input->buttons[0] = port_SessionPress(frame);

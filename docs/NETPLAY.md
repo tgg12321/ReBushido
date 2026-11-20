@@ -1211,12 +1211,13 @@ host or join; the port to wait at, or the host's address and port
 (typed: digits, dots, a colon); whether the program is found through
 every network of the PC or on this PC alone; the delay. They are kept in
 `rebushido.cfg` (`net_role`, `net_port`, `net_address`, `net_listen`,
-`net_delay`). *Host now* or *Join now* starts the program again as the
-session's (`port_StartOnline`, `sdl_main.c`): the same command line
-without the network's options, with `--host` or `--join`. On Linux the
-program becomes the new one (`execv`); on Windows the new one is started
-and this one ends (`_spawnv`). The menu is refused during netplay, as
-before.
+`net_delay`). *Host now* or *Join now* begins the session in the
+running program (section 15), as the online pages do. Starting the
+program again as the session's (`port_StartOnline`, `sdl_main.c`: the
+same command line without the network's options, with `--host` or
+`--join`; `execv` on Linux, `_spawnv` on Windows) is kept only as the
+fallback where the program has no state of the game's start, and the
+log says so. The menu is refused during netplay, as before.
 
 **The bind address.** The Play online
 page's `net_listen` is `all` with nothing said: a host is found through
@@ -1255,8 +1256,9 @@ socket on 127.0.0.1:
 - `window`, the menu: two window programs started as a player starts
   them open the settings menu (`--menu-at`), go to Play online and
   start, the host on 127.0.0.1 and the guest typing the host's address
-  (`--menu-keys ... type:127.0.0.1:47022`); each starts again as the
-  session's, and the two play on with the same 35 hashes.
+  (`--menu-keys ... type:127.0.0.1:47022`); each begins the session in
+  its own process (section 15), and the two play on with the same
+  hashes.
 
 The whole of `make port-net` takes about eight minutes.
 
@@ -1270,7 +1272,7 @@ The whole of `make port-net` takes about eight minutes.
   keep apart: both programs read one clock.
 - *A Windows session* is run now (section 14: Windows programs headless
   and with a window, by address, through the lobby, from the menu by
-  `_spawnv`); not yet between a Windows and a Linux one (which the
+  section 15); not yet between a Windows and a Linux one (which the
   build's sum keeps apart until it is proved they agree).
 - The desync report's snapshots, spectators; section 14's own list.
 - *The view*: computing the host's draw distance on both rather than
@@ -1396,7 +1398,7 @@ holds `portmap.c` to it on Linux and Windows.
 
 **Checking two players' setups.** `rebushido --check-online` prints the
 build's, the disc's and the gameplay mods' sums and the protocol, and
-the **setup code** made of them, `P7-BBBB-DDDD-MMMM` (each sum folded to
+the **setup code** made of them, `P8-BBBB-DDDD-MMMM` (each sum folded to
 20 bits, four digits of Crockford's base 32); the Play online page's
 last row shows it, the lobby's list shows each room's, and a refusal
 shows the player's own. Two players with the same code meet.
@@ -1438,7 +1440,7 @@ lobby that does not answer, a wrong password, a full, closed or
 incompatible room, or a host that goes quiet once the guest is in
 (after `SILENT_GIVE_UP_MS`, 15 seconds) is said on the guest's screen in
 plain words (`g_port_net_fail_hook`, `sdl_net.c`: a panel until Enter
-or Escape, then the program ends) with the guest's setup code to
+or Escape, then the program ends; in a session begun from the online pages they say it instead, and the program goes on: section 15) with the guest's setup code to
 compare; a guest that finds the host is not its kind tells the host
 too. The host's panel says it turned a player away and why, or that its
 guest stopped answering, and waits for another (its room's guest let go
@@ -1449,7 +1451,7 @@ log.
 something it sent was answered "port unreachable", as a hello sent
 before its host is up, or a punch to an address not yet open, is: the
 port's sockets turn that off (`SIO_UDP_CONNRESET`, `host_windows.c`).
-The start again from the Play online page (`_spawnv`) says the new
+The fallback start again (section 15, `_spawnv`) says the new
 process's number, which the tests wait on.
 
 **Proved** on this PC, every socket on loopback (127.0.0.x and ::1),
@@ -1470,8 +1472,8 @@ lost unless it says otherwise:
 | `refused` | headless | a wrong password, none, an incompatible disc, no such room, a lobby that does not answer | each turned away, and said why |
 | `win-headless` | Windows, headless | section 13's session, 100 ms each way, 5% lost | 82 the same; 72 and 83 rollbacks, the longest 8 |
 | `win-window` | Windows, window (hidden) | the same in real time, 60 ms, 5% | 82 the same; 0.7 frames apart on average; the host plays on alone |
-| `win-menu` | Windows, window | the Play online page by address, started again by `_spawnv` | both started again and played on: 35 hashes the same |
-| `win-rooms` | Windows, window | *Host a room* with a password, *Browse rooms*, *Look for rooms*, the room chosen and its password typed | both started again, met through the lobby (a punched hole), 35 the same |
+| `win-menu` | Windows, window | the Play online page by address | both began the session in their own processes (section 15) and played on, the hashes the same |
+| `win-rooms` | Windows, window | *Host a room* with a password, *Browse rooms*, *Look for rooms*, the room chosen and its password typed | both began it in their own processes, met through the lobby (a punched hole), the hashes the same |
 | `win-portmap` | Windows, window | the fake router's UPnP: `AddPortMapping` as the host began, `DeletePortMapping` as it ended; the guest came by the mapped port | 82 the same |
 | `win-refused` | Windows, window | another build, disc, mods and protocol (`--session-differ`), nobody at the address | each said on the guest's screen and the host's |
 | `win-quiet` | Windows, window | the host stopped (`NtSuspendProcess`) once the guest was in | the guest's screen: "The host stopped answering"; the host, woken, waits for another |
@@ -1501,3 +1503,158 @@ the relay, as it must. The lobby's room is gone from its list once a
 direct session is under way (the host says nothing to it then). Names of
 servers (`--lobby` takes numbers only: the port without a C library has
 no resolver).
+
+## 15. A session begun in the running program
+
+Sections 13 and 14 began every session with a program started for it:
+the Play online page started the program again (`execv`, `_spawnv`)
+with `--host` or `--join`, so that both peers began from the same
+fresh state, the host's cards in both slots. Now a session begins and
+ends in the program the player is playing (the owner, 2026-11-20:
+"In-game menus and lobbies, no 'restart game' requirement to host or
+join"). `src/port/online.c`, `include/port_online.h`; the pages,
+`src/port/window/online_pages.c`.
+
+**The state of the game's start.** Section 7's snapshot holds the
+whole state: the console's memory, the game's stack with its stack
+pointer, every variable of the game's, Sony's and the port's console.
+As the program begins, after `port_StartGame` has made the game's fiber
+and before its first step, the window's program (and the headless one
+with `--session-at`) saves it once (`port_OnlineKeepBoot`): the game's
+start, not yet run. A program started for a session has, at the same
+moment, the same state but for what the session puts in before the
+game starts: nothing of the meeting is the state's (`session.c`,
+`net.c`, `relay.c`, `netplay.c` are outside it, `config/port_state.txt`),
+and what `port_StartSession` puts in after the meeting -- the host's
+cards in both slots (`card.c`), its switches held (`play_switches.c`,
+`arenas.c`), the margin fixed (`remaster.c`) -- is put in again here.
+So `port_StartSession` is now two halves, `port_MeetSession` (the sums,
+the lobby, the way, the checks, the cards and the seed) and
+`port_ApplySession`, and a session begun in the program runs, at a
+boundary of the player's own game (`port_OnlineBoundary`, `main.c`):
+
+1. the meeting, its socket opened now and the window's router asked
+   (`g_port_online_map_hook`), the online pages showing it;
+2. the player's own state saved (`port_StateSave`, a second buffer), and
+   their switches and stage defaults kept;
+3. the state of the game's start put back (`port_StateLoad`), the
+   session applied, the draw distance the console's, netplay told it is
+   in the program (`port_SetNetplayInProcess`);
+4. `port_RunNetplay` from there, as in a program started for it: its
+   first `port_StepGame` begins the game's main on the fiber as it was
+   made, since the fiber's frame is in the stack the snapshot keeps.
+
+The paged snapshots (section 7, "Only the pages written") make the two
+loads cheap and need nothing new: a load from a snapshot older than the
+newest marks its pages as of the epoch now, so the netplay ring's next
+saves copy them.
+
+**Proved.** `port_net.py inprocess` (part of `make port-net`) holds it to
+a program started for the session, in both sizes, with a fixed seed
+(`--net-seed`) so that the two runs can be compared hash for hash:
+
+| Case | What runs | Result, 64-bit and 32-bit |
+| --- | --- | --- |
+| `restart` | the pair of section 13's session, `--host` and `--join` from the start, port_net's plan (a fight to the kill, a rematch) | the reference: the first frame's hash, 82 hashes |
+| `inprocess` | the same pair, each playing its own game first (the host 240 frames, the guest 120) and then beginning the session (`--session-at`) | the first frame's hash and all 82 the same as the reference, on both sides |
+| `again` | one host process, two sessions one after the other (`--sessions 2`), two guest processes one after the other | both sessions' 82 hashes the same as the reference: nothing of the first is left in the second |
+| `leave` | a session to the versus select screen, where the guest's Triangle takes both back to the top menu | ended on both at the same frame, each back to its own game; the programs end well |
+| `refused` | a guest of another build (`--session-differ build`) | turned away at the meeting, and back to its own game in the same process |
+
+The first frame's hash (`netplay: the session's first frame, hash H`,
+printed by both) is `AC3FE9C01064D55B` in the 64-bit program and
+`97C379FEA8862E86` in the 32-bit one, the same in the restarted pair and
+in every session begun in a running program, whatever that program had
+played before.
+
+**The end.** A session begun in the program ends, on both sides, where
+both players go back to the top menu (the host's rule, below), where
+the other program has gone (its window closed, its plan ended), where
+nothing is heard of it for 15 seconds, or at a desync, which no longer
+ends the program. `port_RunNetplay` returns why
+(`PORT_NETPLAY_END_...`); the other is told and answered for a moment
+(`port_EndNetplay`), as before; then everything of the session is let
+go (`port_StopNet`, `port_ResetNetplay`, `port_ResetSession`,
+`port_ResetRelay`, the router's port given back), the player's switches,
+stage defaults, margin and picture are theirs again, and their own
+state is put back. The game goes on at the boundary it was at, with
+their cards and unlocks, and the window's pages say why it ended.
+
+**Leaving by the game's own menus.** A session begun from the pages
+carries the host's rule `PORT_SESSION_RULE_TOP_MENU_LEAVES` in its
+welcome (protocol 8). Under it, the session's presses no longer take a
+way back to the top menu straight on to versus: once the game has been
+at the select screen, its top menu again -- the main menu after a fight,
+or Triangle on the select screen before either player has chosen -- is
+the session's end. `port_SessionInput` notes the frame
+(`g_port_top_menu.session_left`, in the state, so that a rollback takes
+it back) and presses nothing more; netplay ends the session at the first
+turn where every input up to that frame is the other's own, not a
+guess, so that both end at the same frame of the game. The game's own
+after-fight menu keeps its Rematch and select screen.
+
+**The lobby before the fight.** Protocol 8 also carries each player's
+name in the hello and the welcome, and adds two datagrams: the host's
+`KIND_LOBBY`, every 100 ms once the guest has the cards, saying whether
+its player is ready, and either's `KIND_LEAVE`. The guest says it is
+ready (`KIND_READY`) only when its player is, and the host says go only
+when both are (`g_port_session_ready_hook`; with none, as in the
+headless program and a session from the command line, at once). A
+guest that leaves the lobby lets the host wait for another; a host that
+leaves tells the guest, whose pages say so. The pages' Back gives up a
+meeting at any point (`port_CancelSession`, which the meeting's loops
+and the lobby's client look at every turn).
+
+**The lobby server and a second room.** The server keeps a room of a
+host's address for a while after a direct session began, its old guest
+in it. A host's first hello of a meeting now says `HELLO_RESET`, so
+that the server lets that guest go and the room waits again: the
+second room of a running program is the first's, under its old code.
+
+**The pages** (`online_pages.c`): Online Play on the top menu opens
+them (the count of `port_TopMenuAsk`, `sdl_menu.c`) over the game,
+stopped at a blank as the settings menu stops it, drawn at the window's
+resolution in the top menu's look (the port's typeface, `port_TextDraw`;
+none of it in the game's video memory): Quick Match, Host a room,
+Browse rooms, Join by code, Join by address, Your name, Back; a
+keyboard drawn on the page for a pad; and, while the two meet (drawn by
+the session's waits at the boundary), the host's *Waiting for a player*
+with the room's code and what the router said, the cards' progress, and
+*Ready to fight* with both names and the setup code, Ready and Leave. A
+refusal, a failure or the session's end comes back to them in a
+player's words (`g_port_net_fail_hook` is the pages' while they meet,
+and the program goes on). Quick Match lists the lobby's rooms and joins
+the first of the same setup code, unlocked and not full, or opens a room
+of the player's own. While they or a session are up the updater neither
+downloads nor asks (`port_UpdateSetOnline`). The settings menu's Play
+online page asks the same way (`port_StartOnline`), with its advanced
+rows. The window's own state is told a load happened
+(`port_WindowStateReplaced`): nothing is drawn between frames until two
+more, video memory goes to the card again, and the settings menu's
+count of asks follows the state's.
+
+**Proved in the window** by `tools/port_net_lobby.py` (`win-pages` and
+`win-pages-refused` on Windows; the same cases through the Linux window
+in `port_net.py window`), the windows hidden, with dummy drivers:
+
+| Case | What runs | Result |
+| --- | --- | --- |
+| `win-pages` | a host window opens a locked room from its pages (Host a room, a password typed on the keyboard page); a guest window finds it in Browse rooms, types its password and joins; both say Ready; at the select screen the guest's Triangle ends the session on both; the host, back at its own game, takes Quick Match, and a second guest window's Quick Match finds its room | two sessions in one host process, never started again; 17 and 17 state hashes the same on both sides of each; Windows and Linux |
+| `win-pages-refused` | a guest window of another build joins a room by its code, typed on the keyboard page | the lobby turns it away; the pages say which part of the setup code differs, and the program goes on |
+| `win-menu`, `win-rooms`, port-net's `menu` | the settings menu's Play online page, by address and by a browsed room with its password, with Ready in the lobby | both programs begin the session in their own processes; 35 state hashes the same |
+
+The whole of `python tools/port_net_lobby.py windows` passes, the earlier
+cases with them (each session's checks, the refusals, the router's
+mapping, the host gone quiet), and `make port-net` on Linux.
+
+Pictures of every page are in the cases' `shots/` folders
+(`--online-keys ... shot`, `--menu-shots`).
+
+**The fallback.** Where no state of the game's start was kept (no
+memory for it, or a program that never keeps one), the pages' ask
+starts the program again as before, and the log says why.
+
+**What is left.** Two players' PCs; the lobby showing a room's ping
+(the list has no round trip to the host, only to the server); a way to
+leave in the middle of a fight other than closing the window (the pause
+is no player's online).

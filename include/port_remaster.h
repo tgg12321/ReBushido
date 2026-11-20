@@ -158,6 +158,9 @@ extern s32 port_RemasterLeftMargin(void);
  * must not follow either player's picture (docs/NETPLAY.md, section
  * 13). Before the game starts. */
 extern void port_RemasterFixMargin(s32 aspect_w, s32 aspect_h);
+/* ... and from now on the picture's own again: a session begun in the
+ * running program has ended (online.c). */
+extern void port_RemasterFreeMargin(void);
 
 /* ---- the fight's HUD at a wider picture's edges ---- */
 

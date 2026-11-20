@@ -73,6 +73,8 @@ DUMMY = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy', **por
 # A plan is made for one program's names (playtest's globals): one at a
 # time, the cases running side by side.
 PLAN_LOCK = threading.Lock()
+# where the online pages' cases copy their pictures (RB_ONLINE_PICTURES), or none
+PICTURES = os.environ.get('RB_ONLINE_PICTURES')
 _write_session_plan = port_net.write_session_plan
 
 
@@ -433,9 +435,9 @@ def case_win_window(case):
 
 def menu_pair(case, settings, keys, first_waits=None):
     """Two window programs started as a player starts them, each opening the
-    menu and starting again from the Play online page: then the new ones,
-    whose process numbers they print, waited for and their hashes held to
-    each other."""
+    menu and beginning the session from the Play online page in its own
+    process (docs/NETPLAY.md, section 15): both waited for, neither started
+    again, and their hashes held to each other."""
     procs = []
     for side in (0, 1):
         cfg = os.path.join(case.folder, 'side%d.cfg' % side)
@@ -447,48 +449,34 @@ def menu_pair(case, settings, keys, first_waits=None):
         procs.append(case.start(label, [os.path.join(REPO, WINDOW), '--image', playtest.RETAIL_CUE, '--config', cfg,
                                         '--windowed', '--frames', '1500', '--log',
                                         os.path.join(case.folder, label + '.log'), '--menu-at', '120',
-                                        '--menu-keys', keys[side](), '--card1',
+                                        '--menu-keys', keys[side](), '--online-keys', 'until:lobby accept', '--card1',
                                         os.path.join(case.folder, 'card1.mcd'), '--card2',
                                         os.path.join(case.folder, 'card2.mcd')], DUMMY))
     hashes = []
-    children = []
-    # each child's handle taken as soon as its number is said, both before
-    # either is waited for
-    until = time.time() + 120
-    for side, proc in enumerate(procs):
+    codes = wait_all(procs, SECONDS)
+    for side, code in enumerate(codes):
         label = 'side%d' % side
-        pid = None
-        while pid is None and time.time() < until and (proc.poll() is None or pid is None):
-            pid = re.search(r'started again as process (\d+)', case.err(label))
-            if pid is None and proc.poll() is not None:
-                break
-            time.sleep(0.05)
-        children.append(open_pid(int(pid.group(1))) if pid else None)
-        first = wait_all([proc], 30)[0]
-        if first != 0 or pid is None:
-            case.fail('%s did not start again from the menu (exit %s)' % (label, first))
-    for side, child in enumerate(children):
-        label = 'side%d' % side
-        if child is None:
-            continue
-        code = wait_pid(child, SECONDS)
+        err = case.err(label)
         if code != 0:
-            case.fail('%s, started again, ended with %s' % (label, code))
-        hashes.append(port_net.hashes_of(case.err(label)))
-    if len(hashes) == 2:
-        common = sorted(set(hashes[0]) & set(hashes[1]))
-        if not common or any(hashes[0][f] != hashes[1][f] for f in common):
-            case.fail('the two programs\' hashes are not the same (%d in common)' % len(common))
-        else:
-            case.said.append('both started again (_spawnv) and played on: %d state hashes the same' % len(common))
+            case.fail('%s ended with %s' % (label, code))
+        if 'session 1 begins in this program' not in err or 'started again as process' in err:
+            case.fail('%s did not begin the session in its own process' % label)
+        hashes.append(port_net.hashes_of(err))
+    common = sorted(set(hashes[0]) & set(hashes[1]))
+    if not common or any(hashes[0][f] != hashes[1][f] for f in common):
+        case.fail('the two programs\' hashes are not the same (%d in common)' % len(common))
+    elif not case.problems:
+        case.said.append('both began the session in their own processes (%d, %d), no start again, and played on: '
+                         '%d state hashes the same' % (procs[0].pid, procs[1].pid, len(common)))
 
 
 def case_win_menu(case):
     port = case.port(1)
-    # the page's rows: by address the host's are You, its port, Start; the
+    # up from the first row comes round to Quit, Back to the game, Updates,
+    # then Play online; the page's rows: by address the host's are You, its port, Start; the
     # guest's You, the host's address, Start
-    keys = [lambda: 'up up up accept down down accept',
-            lambda: 'up up up accept down accept type:127.0.0.1:%d down accept' % port]
+    keys = [lambda: 'up up up up accept down down accept',
+            lambda: 'up up up up accept down accept type:127.0.0.1:%d down accept' % port]
     settings = ['net_role = host\nnet_port = %d\nnet_delay = 2\n' % port, 'net_role = join\n']
     menu_pair(case, settings, keys)
 
@@ -498,8 +486,8 @@ def case_win_rooms(case):
     port = case.port(1)
     # Host a room: You, Lobby, Room's name, Password, Your name, Start;
     # Browse rooms: You, Lobby, Your name, Look for rooms, the rooms
-    keys = [lambda: 'up up up accept down down down accept type:%s down down accept' % PASSWORD,
-            lambda: 'up up up accept down down down accept down accept type:%s' % PASSWORD]
+    keys = [lambda: 'up up up up accept down down down accept type:%s down down accept' % PASSWORD,
+            lambda: 'up up up up accept down down down accept down accept type:%s' % PASSWORD]
     settings = ['net_role = room\nnet_lobby = %s\nnet_room = Menu room\nnet_player = Hostess\nnet_port = %d\n'
                 % (lobby, port), 'net_role = rooms\nnet_lobby = %s\nnet_player = Browser\n' % lobby]
 
@@ -507,7 +495,7 @@ def case_win_rooms(case):
         if case.wait_for('side0', r"room's code is (\w+)", 60) is None:
             case.fail('the host\'s room was not opened from the menu')
     menu_pair(case, settings, keys, host_open)
-    if 'starts again as the guest of a session by way of the lobby' not in case.err('side1'):
+    if 'a session as the guest by way of the lobby' not in case.err('side1'):
         case.fail('the guest did not join by way of the lobby\'s list')
 
 
@@ -634,9 +622,145 @@ def case_win_lobby_refused(case):
             case.said.append('%s, the guest\'s screen: %s' % (label, shown.group(1)))
 
 
+# ---- the online pages (online_pages.c): sessions begun in the running
+# window, with no start again (docs/NETPLAY.md, section 15)
+
+def pages_window(case, label, settings, keys, plan_side, more=()):
+    """A window program started as a player starts it, its online pages
+    opened at blank 120 (what Online Play on the top menu opens) and told
+    `keys`; its pictures in the case's folder `shots`: its process."""
+    cfg = os.path.join(case.folder, label + '.cfg')
+    os.makedirs(os.path.join(case.folder, 'shots', label), exist_ok=True)
+    with open(cfg, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('fullscreen = off\nnet_listen = local\nnet_portmap = off\n' + settings)
+    cmd = [WINDOW, '--image', playtest.RETAIL_CUE, '--config', cfg, '--windowed', '--log',
+           os.path.join(case.folder, label + '.log'), '--online-at', '120', '--online-keys', keys,
+           '--menu-shots', os.path.join(case.folder, 'shots', label), '--card1',
+           os.path.join(case.folder, label + '-card1.mcd'), '--card2', os.path.join(case.folder, label + '-card2.mcd'), '--quick-loading', 'on'] + list(more)
+    if plan_side is not None:
+        with PLAN_LOCK:
+            plan = port_net.write_leave_plan(WINDOW, plan_side, case.folder)
+        cmd += ['--plan', plan]
+    return case.start(label, cmd, DUMMY)
+
+
+def session_hashes(text, n):
+    """The hashes of session `n` (1 on) of what a program printed."""
+    parts = re.split(r'online: session \d+ begins in this program', text)
+    return port_net.hashes_of(parts[n]) if len(parts) > n else {}
+
+
+def case_pages(case):
+    """Two sessions in one host window, from its online pages: the host
+    opens a locked room (Host a room, a password typed); a guest finds it
+    in Browse rooms, types its password and joins; both say ready in the
+    lobby before the fight; the session plays from power on to the versus
+    select screen, where the guest's Triangle takes both back to the top
+    menu, which ends it on both. The host is back at its own game with the
+    pages saying so; then it takes Quick Match, which opens a room of its
+    own, and a second guest's Quick Match finds it: a second session, in
+    the same process. Each session's hashes are the same on both sides,
+    and the host never starts again."""
+    lobby = case.server()
+    host_keys = ('shot down accept shot down accept type:%s shot done down accept '
+                 'until:waiting wait:20 shot until:lobby wait:10 shot accept '
+                 'wait:5 shot accept up accept until:lobby accept' % PASSWORD)
+    guest_keys = 'down down accept wait:10 shot accept type:%s shot done until:lobby wait:10 shot accept' % PASSWORD
+    host = pages_window(case, 'host', 'net_lobby = %s\nnet_player = Hostess\nnet_room = Pages room\nnet_delay = 2\n'
+                        % lobby, host_keys, 0)
+    if case.wait_for('host', r"room's code is (\w+)", 90) is None:
+        case.fail('the host\'s room was not opened from the pages')
+        return
+    guest = pages_window(case, 'guest1', 'net_lobby = %s\nnet_player = Browser\n' % lobby, guest_keys, 1)
+    for label in ('host', 'guest1'):
+        if case.wait_for(label, r'session 1 has ended', 240) is None:
+            case.fail('%s: the first session did not end (%s.err)' % (label, label))
+            return
+    guest.kill()
+    first = [session_hashes(case.err(label), 1) for label in ('host', 'guest1')]
+    if len(re.findall(r"room's code is (\w+)", case.err('host'))) < 1 or \
+            case.wait_for('host', r"Quick Match found no room to join", 60) is None:
+        case.fail('the host did not take Quick Match after the first session')
+        return
+    until = time.time() + 60
+    while time.time() < until and len(re.findall(r"room's code is (\w+)", case.err('host'))) < 2:
+        time.sleep(0.1)
+    guest2 = pages_window(case, 'guest2', 'net_lobby = %s\nnet_player = Quick\n' % lobby, 'accept until:lobby accept',
+                          1)
+    for label in ('host', 'guest2'):
+        if case.wait_for(label, r'session \d+ has ended', 240) is None or \
+                (label == 'host' and case.wait_for(label, r'session 2 has ended', 240) is None):
+            case.fail('%s: the second session did not end (%s.err)' % (label, label))
+            return
+    second = [session_hashes(case.err('host'), 2), session_hashes(case.err('guest2'), 1)]
+    for n, pair in enumerate((first, second)):
+        common = sorted(set(pair[0]) & set(pair[1]))
+        if len(common) < 10 or any(pair[0][f] != pair[1][f] for f in common):
+            case.fail('session %d: the two windows\' hashes are not the same (%d in common)' % (n + 1, len(common)))
+    host_err = case.err('host')
+    if 'starts again' in host_err or 'started again as process' in host_err:
+        case.fail('the host started again')
+    if host.poll() is not None:
+        case.fail('the host\'s process ended (exit %s): it must be the one that played both' % host.returncode)
+    if 'Quick Match joins room' not in read(os.path.join(case.folder, 'guest2.log')):
+        case.fail('the second guest\'s Quick Match did not join the host\'s room')
+    if not case.problems:
+        case.said.append('two sessions in one host process (%d), begun from its online pages: a locked room browsed '
+                         'and joined with its password, then Quick Match on both; %d and %d state hashes the same; '
+                         'each ended by the way back to the top menu' % (
+                             host.pid, len(set(first[0]) & set(first[1])), len(set(second[0]) & set(second[1]))))
+    guest2.kill()
+    host.kill()
+    save_pictures(case, PICTURES)
+
+
+def case_pages_refused(case):
+    """A guest of another build (--session-differ) joins a room by its code
+    from the pages: the lobby turns it away, the pages say why in plain
+    words and stay up, and the program goes on."""
+    lobby = case.server()
+    host = case.start('host', [HEADLESS, '--image', playtest.RETAIL_CUE, '--no-cards', '--lobby', lobby, '--host',
+                               '127.0.0.2:%d' % case.port(1), '--room', 'Shut'])
+    code = case.wait_for('host', r"room's code is (\w+)", 30)
+    if code is None:
+        case.fail('no room code')
+        return
+    keys = ('down down down down accept shot back up accept type:%s shot done wait:100 shot accept wait:5 shot'
+            % code.group(1))
+    guest = pages_window(case, 'guest', 'net_lobby = %s\nnet_player = Odd\n' % lobby, keys, None,
+                         ['--session-differ', 'build', '--frames', '100000'])
+    shown = case.wait_for('guest', r'netplay: could not play online: (.*)', 60)
+    if shown is None or 'not compatible' not in shown.group(1):
+        case.fail('the guest\'s pages did not say it was turned away (%s)' % (shown.group(1) if shown else 'nothing'))
+    elif case.wait_for('guest', r'online pages: open', 30) is None or \
+            case.wait_for('guest', r'online-002\.png', 30) is None or guest.poll() is not None:
+        case.fail('the guest did not go back to its pages, in the same process')
+    else:
+        case.said.append('turned away, on the pages: %s' % shown.group(1))
+    guest.kill()
+    host.kill()
+    save_pictures(case, PICTURES)
+
+
+def save_pictures(case, into):
+    """The case's pictures of the pages, copied into `into`."""
+    shots = os.path.join(case.folder, 'shots')
+    if not into or not os.path.isdir(shots):
+        return
+    for root, _, names in os.walk(shots):
+        for name in names:
+            if name.endswith('.png'):
+                who = os.path.basename(root)
+                os.makedirs(into, exist_ok=True)
+                shutil.copy(os.path.join(root, name), os.path.join(into, '%s-%s-%s' % (case.name, who, name)))
+
+
 WINDOW_CASES = [('win-headless', case_win_headless), ('win-window', case_win_window), ('win-menu', case_win_menu),
                 ('win-rooms', case_win_rooms), ('win-portmap', case_win_portmap), ('win-refused', case_win_refused),
-                ('win-quiet', case_win_quiet), ('win-lobby-refused', case_win_lobby_refused)]
+                ('win-quiet', case_win_quiet), ('win-lobby-refused', case_win_lobby_refused),
+                ('win-pages', case_pages), ('win-pages-refused', case_pages_refused)]
+# the online pages' cases, which the window's half of tools/port_net.py runs on Linux too
+PAGES_CASES = [('pages', case_pages), ('pages-refused', case_pages_refused)]
 
 
 # ---- through a real server ----

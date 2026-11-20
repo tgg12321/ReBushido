@@ -480,19 +480,35 @@ static s32 port_IsMenuBlank(u32 blank) {
     return FALSE;
 }
 
+void port_MenuFollowAsks(void) {
+    PortGameState now;
+
+    port_ReadGameState(&now);
+    g_port_menu.asks_seen = now.menu_asks;
+}
+
 void port_MaybeRunMenu(u32 blank) {
     PortGameState now;
 
     port_ReadGameState(&now);
     if (now.menu_asks != g_port_menu.asks_seen) {
         /* Options or Online Play on ReBushido's top menu: the count only
-         * goes forward, and a frame run again does not count twice */
+         * goes forward, and a frame run again does not count twice.
+         * Online Play is the online pages (online_pages.c) */
         g_port_menu.asks_seen = now.menu_asks;
-        port_MenuOpenOn(now.menu_ask_page == PORT_TOP_ASK_ONLINE
-                            ? PORT_MENU_OPEN_ONLINE
-                            : PORT_MENU_OPEN_MAIN);
-        port_AskForMenu(now.menu_ask_page == PORT_TOP_ASK_ONLINE ? "Online Play"
-                                                                 : "Options");
+        if (now.menu_ask_page == PORT_TOP_ASK_ONLINE) {
+            port_AskForOnlinePages("Online Play");
+        } else {
+            port_MenuOpenOn(PORT_MENU_OPEN_MAIN);
+            port_AskForMenu("Options");
+        }
+    }
+    if (g_port_window_options.online_at > 0 &&
+        blank == (u32)g_port_window_options.online_at) {
+        port_AskForOnlinePages("--online-at");
+    }
+    if (port_MaybeRunOnlinePages(blank)) {
+        return;
     }
     if (port_IsMenuBlank(blank)) {
         port_AskForMenu("--menu-at");

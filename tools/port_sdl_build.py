@@ -82,7 +82,7 @@ WINDOW_GAME = ['gamestate.c']
 WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'sdl_net.c', 'sdl_report.c', 'menu.c', 'font.c',
                  'stage_page.c', 'top_page.c', 'menu_online.c',
                  'sampler.c', 'warm.c', 'portmap.c', 'cpu_prefer.c',
-                 'prepare.c', 'update.c', 'update_core.c', 'update_apply.c']
+                 'prepare.c', 'update.c', 'update_core.c', 'update_apply.c', 'online_pages.c']
 # Monocypher (src/port/vendor/monocypher/, CC0 or BSD-2): the updater's
 # Ed25519, as it is shipped
 VENDOR_HOSTED = ['src/port/vendor/monocypher/monocypher.c', 'src/port/vendor/monocypher/monocypher-ed25519.c']
