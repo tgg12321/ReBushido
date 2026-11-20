@@ -115,6 +115,8 @@ static void port_MatchCrewBegin(PortMatch *match) {
     match->crew_kept = TRUE;
 }
 
+/* A mode begun from the menus (port_match.h): its match, of the stage
+ * pages' rule, from the start. */
 void port_MatchBegin(s32 mode) {
     PortMatch *match = port_Match();
 
@@ -284,6 +286,8 @@ s32 port_MatchAfterFight(s32 pressed) {
     return TRUE;
 }
 
+/* The select screen loads (port_match.h): back to the stage pages after
+ * a match of versus or link, the crews kept; otherwise begun afresh. */
 s32 port_MatchToStages(void) {
     PortMatch *match = port_Match();
     s32 to_stages = match->to_stages;
@@ -356,6 +360,8 @@ s32 port_MatchCrewWanted(s32 mode, s32 sides) {
     return TRUE;
 }
 
+/* A side's pick into the place being picked; the last side's takes the
+ * place, and the grid is due for the next. */
 void port_MatchCrewTake(s32 side, s32 fighter, s32 weapon) {
     PortMatch *match = port_Match();
 
@@ -414,10 +420,17 @@ void port_MatchCrewDrop(void) {
 
 /* ---- Crew: versus the CPU ---- */
 
+/* The dice's sequence: a 16-bit linear congruential one (its multiplier
+ * and increment), and what spreads the frame count over the seed. */
+#define CREW_DIE_MULTIPLY 0x6255U
+#define CREW_DIE_ADD 0x3619U
+#define CREW_SEED_SPREAD 0x9E37U
+
 /* The CPU's dice, `sides` of them: a sequence of its own, so that the
  * game's rand() is drawn on as it would be without a crew. */
 static s32 port_MatchCrewDie(PortMatch *match, s32 sides) {
-    match->crew_seed = (u16)(match->crew_seed * 25173U + 13849U);
+    match->crew_seed =
+        (u16)(match->crew_seed * CREW_DIE_MULTIPLY + CREW_DIE_ADD);
     return (s32)((u32)match->crew_seed * (u32)sides >> 16);
 }
 
@@ -460,7 +473,7 @@ void port_MatchOpponentChosen(void) {
         }
     }
     match->crew_seed =
-        (u16)((u32)g_disp_frame_count * 40503U + (u32)g_vscpu_faced);
+        (u16)((u32)g_disp_frame_count * CREW_SEED_SPREAD + (u32)g_vscpu_faced);
     match->crew[1][0].fighter =
         g_fighter_roster_characters[(u8)g_fight_config.roster[1]];
     match->crew[1][0].weapon = (u8)g_fight_config.weapon[1];
