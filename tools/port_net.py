@@ -706,6 +706,22 @@ def check_link(label, program, args, ports):
     return problems
 
 
+def stale_window():
+    """(built, head) when the window program was built from a commit
+    other than HEAD (its git_hash.txt, by tools/port_build.py), or None
+    when it is HEAD's or either cannot be told."""
+    try:
+        with open(os.path.join(REPO, os.path.dirname(WINDOW_PROGRAM), 'git_hash.txt'), encoding='utf-8') as f:
+            built = f.read().strip().replace('-dirty', '')
+        proc = subprocess.run(['git', 'rev-parse', '--short', 'HEAD'], cwd=REPO, capture_output=True, text=True)
+    except OSError:
+        return None
+    head = proc.stdout.strip()
+    if proc.returncode != 0 or not head or built in ('', 'unknown') or built.startswith(head)             or head.startswith(built):
+        return None
+    return built, head
+
+
 def run_checks(args, base):
     """The checks of `args.what` once, on ports from `base` up: the
     problems found."""
@@ -715,6 +731,11 @@ def run_checks(args, base):
         program = os.path.join(REPO, WINDOW_PROGRAM)
         if not os.path.isfile(program):
             print('port_net: window: skipped: no %s (make port-sdl)' % WINDOW_PROGRAM)
+        elif stale_window():
+            # make port-net builds neither program: an older window
+            # program's menus are not this commit's, and its key paths miss
+            problems.append('window: %s was built from %s, not from HEAD (%s): make port-sdl first'
+                            % ((WINDOW_PROGRAM,) + stale_window()))
         else:
             problems += check_session('window', program, args, (base + 20, base + 21), True)
             if not args.stress:
