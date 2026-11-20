@@ -8032,8 +8032,11 @@ Classic stage, "The game's own light".
 for the stage and the time from the stage's own scenery setup
 (`LIGHT_SCENERY`), and every reader of the stage's light in the picture
 asks `port_GlTimeTileLights()` instead of the game's setup: the ground's
-mesh and its pieces (the light matrix and colours `smooth_light` uses,
-and the colours the mesh is built with), the sun's maps and their
+mesh and its pieces (the light matrix and colours `smooth_light` uses;
+a face lit as the game lit it -- `smooth_light off`, or a piece's own
+colours -- takes the time's light on a floor over the stage's own,
+`u_time_floor`, so the mesh is built with the game's light whatever the
+time), the sun's maps and their
 strength (`port_SunGain`), the sky's moon and ambient, and the
 occlusion's share of the light. At the stage's own time it is the game's
 setup itself, every multiplier 1 and the fog's amount 0, so nothing of

@@ -897,6 +897,11 @@ static const char g_stage_fragment_text[] =
     "        vec3 ir = max(u_light * (v_smooth_normal / length_of), vec3(0.0))\n"
     "                * 4096.0;\n"
     "        color = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"
+    "    } else {\n"
+    /* a face lit as the game lit it (a piece's, with its own setup):
+     * the time of day's light on a floor over the stage's own
+     * (gl_time.h; 1 at the stage's own time) */
+    "        color *= u_time_floor;\n"
     "    }\n"
     /* `shadows map` (gl_sun.h): where the sun's map says the sun does not
      * reach, its own share of the light -- the first light of the setup,
@@ -1430,8 +1435,11 @@ static void port_GlStageLightBy(
     rgb[2] = (u8)(color >> 16);
 }
 
+/* The mesh's colours are built with the game's own light, whatever the
+ * time of day: the shader takes the time's over them (u_time_floor), so
+ * a time chosen after the mesh was built still reaches it. */
 static void port_GlStageLight(const s16 *normal, u8 *rgb) {
-    const LightSetup *lights = (const LightSetup *)port_GlTimeTileLights();
+    const LightSetup *lights = (const LightSetup *)port_RemasterTileLights();
 
     port_GlStageLightBy(lights, &lights->lmat, normal, rgb);
 }
