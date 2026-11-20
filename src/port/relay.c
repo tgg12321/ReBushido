@@ -1078,13 +1078,6 @@ s32 port_RelayMeet(s32 role, s32 again) {
 
 /* A socket of its own for asking the server something, out of a session:
  * on this PC alone where the server is, else every address of the kind. */
-static s32 port_AskSocket(u16 port);
-
-s32 port_RelayOpenSocket(const PortNetAddress *server) {
-    g_relay.server = *server;
-    return port_AskSocket(0);
-}
-
 static s32 port_AskSocket(u16 port) {
     PortNetAddress at;
 
@@ -1106,6 +1099,13 @@ static s32 port_AskSocket(u16 port) {
         }
     }
     return port_HostUdpOpen(&at);
+}
+
+/* A socket of its own for the server at `server` (port_net.h): a room's
+ * (room.c). */
+s32 port_RelayOpenSocket(const PortNetAddress *server) {
+    g_relay.server = *server;
+    return port_AskSocket(0);
 }
 
 /* The lobby's list (port_net.h), page by page. */
@@ -1172,9 +1172,9 @@ s32 port_RelayListRooms(
                 /* the way through the server: this PC's round trip to
                  * it and the host's, about what a direct way costs at
                  * most */
-                room->ping = own_rtt + (u32)(at[ROOM_LOCKED + 1] |
-                                             (at[ROOM_LOCKED + 2]
-                                              << BITS_PER_BYTE));
+                room->ping =
+                    own_rtt + (u32)(at[ROOM_LOCKED + 1] |
+                                    (at[ROOM_LOCKED + 2] << BITS_PER_BYTE));
                 for (k = 0; k < SALT_BYTES; k++) {
                     room->salt[k] = at[ROOM_SALT + k];
                 }

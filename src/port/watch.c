@@ -182,6 +182,8 @@ static s32 port_MapHas(const u8 *map, u32 chunk) {
     return (map[chunk / BITS_PER_BYTE] >> (chunk % BITS_PER_BYTE)) & 1;
 }
 
+/* This program hosts a room's match (port_room.h): the feed's words
+ * forgotten, the session's settings taken, the fights' starts served. */
 void port_FeedBegin(const PortRoomMatch *match) {
     u32 i;
 
@@ -269,7 +271,8 @@ static void port_FeedChunks(void) {
         u32 i;
 
         g_feed.next_chunk = (g_feed.next_chunk + 1) % count;
-        if (g_feed.start_had == g_feed.frame && port_MapHas(g_feed.map, chunk)) {
+        if (g_feed.start_had == g_feed.frame &&
+            port_MapHas(g_feed.map, chunk)) {
             continue;
         }
         bytes = g_feed.size - chunk * CHUNK_BYTES < CHUNK_BYTES
@@ -327,13 +330,16 @@ static void port_FeedInputs(void) {
         out[FEED_BODY + WORD_BYTES + HALF_BYTES + 1] = 0;
         at = FEED_INPUT_HASHES + hashes * HASH_BYTES;
         for (i = 0; i < count; i++) {
-            port_NetPutWord(out + at + i * INPUT_BYTES, g_feed.inputs[first + i]);
+            port_NetPutWord(
+                out + at + i * INPUT_BYTES, g_feed.inputs[first + i]);
         }
         port_RoomSend(out, at + count * INPUT_BYTES);
         first += count;
     }
 }
 
+/* The feed's turn (port_room.h): the settings, the newest start's chunks
+ * and the inputs the server lacks, and the end, every FEED_EVERY_MS. */
 void port_FeedTick(void) {
     u8 out[PORT_NET_DATAGRAM_MAX];
     const u8 *blob;
@@ -414,13 +420,14 @@ static void port_FeedTakeAck(const u8 *in, s32 bytes) {
     }
 }
 
+/* The feed's last words (port_room.h). */
 void port_FeedFinish(void) {
     u32 start = port_NetClock();
 
     /* the end and every input before it, had by the server */
     while (g_feed.on && g_feed.ended &&
-           (!g_feed.end_had ||
-            (g_feed.server_next != NO_START && g_feed.server_next < g_feed.fed)) &&
+           (!g_feed.end_had || (g_feed.server_next != NO_START &&
+                                g_feed.server_next < g_feed.fed)) &&
            port_NetClock() - start < FINISH_MS) {
         port_FeedTick();
         port_RoomWait(POLL_MS);
@@ -455,6 +462,8 @@ static struct {
     u32 heard_at;
 } g_watch;
 
+/* A spectator of `match` (port_room.h): the memory for a start and the
+ * inputs, given once, and what was had of another match forgotten. */
 void port_WatchBegin(const PortRoomMatch *match) {
     u32 i;
 
@@ -483,6 +492,8 @@ void port_WatchBegin(const PortRoomMatch *match) {
 
 void port_WatchStop(void) { g_watch.on = FALSE; }
 
+/* A spectator's ask, every WATCH_EVERY_MS: the start it has and its
+ * chunks, or the frame it wants next. */
 void port_WatchTick(void) {
     u8 out[WATCH_BYTES];
     char code[CODE_FIELD];
@@ -505,7 +516,8 @@ void port_WatchTick(void) {
     }
     port_WatchPutCode(out + WATCH_MATCH, g_watch.match.code);
     port_NetPutWord(out + WATCH_START, g_watch.start_frame);
-    port_NetPutWord(out + WATCH_WANTS, g_watch.started ? g_watch.known : NO_START);
+    port_NetPutWord(
+        out + WATCH_WANTS, g_watch.started ? g_watch.known : NO_START);
     out[WATCH_FLAGS] = (u8)(g_watch.has_settings ? 1 : 0);
     port_NetPutWord(out + WATCH_STAMP, now);
     for (i = 0; i < CHUNK_MAP_BYTES; i++) {
@@ -576,12 +588,14 @@ static void port_WatchTakeInputs(const u8 *in, s32 bytes) {
         u32 frame = first + i;
 
         if (frame == g_watch.known && frame < FRAMES_MAX) {
-            g_watch.inputs[frame] = port_NetGetWord(in + inputs + i * INPUT_BYTES);
+            g_watch.inputs[frame] =
+                port_NetGetWord(in + inputs + i * INPUT_BYTES);
             g_watch.known++;
         }
     }
 }
 
+/* The server's word of a feed or a scene (port_room.h), by its part. */
 void port_WatchTake(const u8 *in, s32 bytes) {
     s32 detail;
     u32 number;

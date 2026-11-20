@@ -147,6 +147,7 @@ enum { WORK_INDEX, WORK_SCAN, WORK_DEFLATE, WORK_DONE };
 
 /* the start a match's spectators are given (port_ReplayServe) */
 enum { SERVE_NONE, SERVE_PACKING, SERVE_READY };
+
 #define TAG_SERVE TAG('S', 'E', 'R', 'V')
 #define SERVE_HEAD_WORDS 4
 
@@ -1531,8 +1532,8 @@ static void port_ReplayServeBuild(void) {
     port_CopyBytes(out + at, g_rec.packed, g_rec.deflate.out_at);
     at += g_rec.deflate.out_at;
     port_PutWord(out + at, TAG_DISC);
-    port_PutWord(out + at + WORD_BYTES,
-                 WORD_BYTES + g_dedupe.match_count * MATCH_BYTES);
+    port_PutWord(
+        out + at + WORD_BYTES, WORD_BYTES + g_dedupe.match_count * MATCH_BYTES);
     port_PutWord(out + at + CHUNK_HEAD_BYTES, g_dedupe.match_count);
     at += CHUNK_HEAD_BYTES + WORD_BYTES;
     for (k = 0; k < g_dedupe.match_count; k++) {
@@ -1584,8 +1585,7 @@ static void port_ReplayServeBoundary(void) {
         g_dedupe.ticks = 0;
         g_dedupe.ticks_most = 0;
         port_ClearBytes(g_dedupe.index, INDEX_SIZE * sizeof(u32));
-        port_ClearBytes(
-            g_dedupe.slot_of, (SECTOR_SLOT_MASK + 1) * sizeof(u32));
+        port_ClearBytes(g_dedupe.slot_of, (SECTOR_SLOT_MASK + 1) * sizeof(u32));
         g_roll_top = 1;
         for (i = 1; i < BLOCK_WORDS; i++) {
             g_roll_top *= ROLL;
@@ -1597,16 +1597,14 @@ static void port_ReplayServeBoundary(void) {
     start = port_HostTicks();
     do {
         done = port_ReplayWork(g_slice != 0 ? WORK_PIECE : FILE_MAX);
-    } while (!done &&
-             port_HostTicks() - start <
-                 g_slice * PORT_HOST_TICKS_PER_MICROSECOND);
+    } while (!done && port_HostTicks() - start <
+                          g_slice * PORT_HOST_TICKS_PER_MICROSECOND);
     if (done) {
         port_ReplayServeBuild();
     }
 }
 
-s32 port_ReplayServedStart(
-    const u8 **blob, u32 *size, u32 *frame, u32 *made) {
+s32 port_ReplayServedStart(const u8 **blob, u32 *size, u32 *frame, u32 *made) {
     if (g_serve.state != SERVE_READY) {
         return FALSE;
     }

@@ -88,12 +88,12 @@ typedef struct {
 /* A room opened at the lobby `lobby` (ADDRESS:PORT), or one entered by its
  * code, with a password or none ("" or NULL): 1, or 0 with why in a
  * player's words. They wait for the server's answer a few seconds. */
-extern s32 port_RoomOpen(const char *lobby, const char *name,
-                         const char *player, const char *password, s32 rule,
-                         s32 plays, char *why, u32 room);
-extern s32 port_RoomEnter(const char *lobby, const char *code,
-                          const char *player, const char *password, s32 plays,
-                          char *why, u32 room);
+extern s32 port_RoomOpen(
+    const char *lobby, const char *name, const char *player,
+    const char *password, s32 rule, s32 plays, char *why, u32 room);
+extern s32 port_RoomEnter(
+    const char *lobby, const char *code, const char *player,
+    const char *password, s32 plays, char *why, u32 room);
 /* The room left (the server told), and everything of it forgotten. */
 extern void port_RoomLeave(void);
 extern s32 port_RoomIsOn(void);

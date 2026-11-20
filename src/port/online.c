@@ -109,6 +109,8 @@ s32 port_OnlineIsBusy(void) {
 
 s32 port_OnlineIsRoomMatch(void) { return g_online.room_match; }
 
+s32 port_OnlineIsRoomAuto(void) { return g_online.room.on; }
+
 void port_OnlineLeave(void) { port_NetplayAskLeave(); }
 
 /* A session asked for, its words checked as far as they can be before
@@ -207,10 +209,11 @@ static s32 port_OnlineSetUp(void) {
     port_SetSessionPlayer(ask->player);
     /* a session begun here ends where both go back to the top menu, and
      * a room's match where it is decided */
-    port_SetSessionRules(ask->role != PORT_SESSION_HOST ? 0
-                         : ask->has_ticket ? PORT_SESSION_RULE_TOP_MENU_LEAVES |
-                                                 PORT_SESSION_RULE_ONE_MATCH
-                                           : PORT_SESSION_RULE_TOP_MENU_LEAVES);
+    port_SetSessionRules(
+        ask->role != PORT_SESSION_HOST ? 0
+        : ask->has_ticket
+            ? PORT_SESSION_RULE_TOP_MENU_LEAVES | PORT_SESSION_RULE_ONE_MATCH
+            : PORT_SESSION_RULE_TOP_MENU_LEAVES);
     if (ask->role == PORT_SESSION_HOST && ask->portmap &&
         g_port_online_map_hook != NULL) {
         g_port_online_map_hook(ask->at);
@@ -304,8 +307,8 @@ static void port_OnlineMatchEnds(s32 end) {
     } else if (end == PORT_NETPLAY_END_QUIT) {
         /* this player left: the other won */
         winner = first ? PORT_ROOM_WON_SECOND : PORT_ROOM_WON_FIRST;
-    } else if (end == PORT_NETPLAY_END_PEER_LEFT ||
-               end == PORT_NETPLAY_END_SILENT) {
+    } else if (
+        end == PORT_NETPLAY_END_PEER_LEFT || end == PORT_NETPLAY_END_SILENT) {
         winner = first ? PORT_ROOM_WON_FIRST : PORT_ROOM_WON_SECOND;
     }
     port_FeedEnd(port_NetplayFrameNow(), winner);
@@ -469,8 +472,7 @@ static s32 port_OnlineWatchWaits(char *why, u32 room) {
             port_WatchEnd(&end_frame, &winner) ||
             (!next->side && view.match.number != next->match.number &&
              port_NetClock() - start > WATCH_GONE_MS)) {
-            port_OnlineText(why, room,
-                            "Match %d ended before its fight began.",
+            port_OnlineText(why, room, "Match %d ended before its fight began.",
                             next->match.number);
             return 0;
         }
@@ -564,9 +566,9 @@ static void port_OnlineWatchRun(void) {
 
 /* A room's match into a session's ask: met under its code, with its
  * ticket, by way of the room's lobby. */
-static void port_OnlineMatchAsk(PortOnlineAsk *ask, const PortRoomNext *next,
-                                const char *lobby, const char *player,
-                                const char *bind, u32 delay, u32 paths) {
+static void port_OnlineMatchAsk(
+    PortOnlineAsk *ask, const PortRoomNext *next, const char *lobby,
+    const char *player, const char *bind, u32 delay, u32 paths) {
     u32 seed;
     u32 i;
 
@@ -580,8 +582,8 @@ static void port_OnlineMatchAsk(PortOnlineAsk *ask, const PortRoomNext *next,
     port_OnlineKeepWord(ask->player, sizeof(ask->player), player);
     port_OnlineKeepWord(ask->code, sizeof(ask->code), next->match.code);
     if (next->role == PORT_SESSION_HOST) {
-        port_OnlineKeepWord(ask->at, sizeof(ask->at),
-                      bind[0] != 0 ? bind : "0.0.0.0:0");
+        port_OnlineKeepWord(
+            ask->at, sizeof(ask->at), bind[0] != 0 ? bind : "0.0.0.0:0");
     } else {
         port_OnlineKeepWord(ask->at, sizeof(ask->at), next->match.code);
         port_OnlineKeepWord(ask->bind, sizeof(ask->bind), bind);
@@ -597,13 +599,18 @@ static void port_OnlineMatchAsk(PortOnlineAsk *ask, const PortRoomNext *next,
     }
 }
 
-const char *port_OnlineAskRoom(const PortRoomNext *next) {
+/* A room's match asked for by the pages (port_online.h). */
+const char *port_OnlineAskRoom(
+    const PortRoomNext *next, const PortOnlineAsk *how) {
     if (g_online.boot == NULL) {
         return "This program cannot begin a session as it runs.";
     }
     if (g_online.busy || g_online.asked || g_online.room_asked) {
         return "A session is under way.";
     }
+    /* the lobby, the player's name, the delay: the match's ask is made of
+     * them (port_OnlineRoomRun) */
+    g_online.ask = *how;
     g_online.next = *next;
     g_online.room_asked = TRUE;
     return NULL;
@@ -630,13 +637,13 @@ static void port_OnlineRoomTurn(void) {
         return;
     }
     if (!g_online.room_opened) {
-        s32 ok = room->name[0] != 0
-                     ? port_RoomOpen(room->lobby, room->name, room->player,
-                                     room->password, room->rule, room->plays,
-                                     why, sizeof(why))
-                     : port_RoomEnter(room->lobby, room->code, room->player,
-                                      room->password, room->plays, why,
-                                      sizeof(why));
+        s32 ok =
+            room->name[0] != 0
+                ? port_RoomOpen(
+                      room->lobby, room->name, room->player, room->password,
+                      room->rule, room->plays, why, sizeof(why))
+                : port_RoomEnter(room->lobby, room->code, room->player,
+                                 room->password, room->plays, why, sizeof(why));
 
         if (!ok) {
             port_SessionFail(why);
@@ -701,12 +708,12 @@ static void port_OnlineRoomRun(void) {
         port_OnlineWatchRun();
         return;
     }
-    port_OnlineMatchAsk(&ask, &g_online.next,
-                        room->on ? room->lobby : g_online.ask.lobby,
-                        room->on ? room->player : g_online.ask.player,
-                        room->on ? room->bind : g_online.ask.bind,
-                        room->on ? room->delay : g_online.ask.delay,
-                        room->on ? room->paths : g_online.ask.paths);
+    port_OnlineMatchAsk(
+        &ask, &g_online.next, room->on ? room->lobby : g_online.ask.lobby,
+        room->on ? room->player : g_online.ask.player,
+        room->on ? room->bind : g_online.ask.bind,
+        room->on ? room->delay : g_online.ask.delay,
+        room->on ? room->paths : g_online.ask.paths);
     g_online.ask = ask;
     g_online.room_match = TRUE;
     port_OnlineRun();

@@ -893,6 +893,86 @@ def case_pages_refused(case):
     save_pictures(case, PICTURES)
 
 
+# The room page's host leaves the first match in its fight: two Escapes,
+# at these blanks of the session (its fight is from near blank 2,900 to
+# 4,000).
+ROOM_ESCAPES = '3200,3300'
+
+
+def case_win_room(case):
+    """A room of several from the online pages of a window: its host opens
+    it (Host a room, Room for: several, Open), two windows of the command
+    line come in, and the rotation's first match is the host's; the host
+    leaves it in the middle of its fight with Escape twice, and is back on
+    its pages, in the room; the second match, the two others', it watches
+    from its pages. Each match's hashes the same on the three windows."""
+    lobby = case.server(*ROOM_SERVER)
+    with PLAN_LOCK:
+        plan = port_net.write_room_plan(WINDOW, case.folder)
+    os.makedirs(os.path.join(case.folder, 'shots', 'hostess'), exist_ok=True)
+    common = ['--image', playtest.RETAIL_CUE, '--windowed', '--quick-loading', 'on', '--plan', plan,
+              '--net-plan-pads', '--net-seed', str(ROOM_SEED), '--no-cards']
+
+    def window(label, settings, more):
+        cfg = os.path.join(case.folder, label + '.cfg')
+        with open(cfg, 'w', encoding='utf-8', newline='\n') as f:
+            f.write('fullscreen = off\nnet_listen = local\nnet_portmap = off\nnet_lobby = %s\nnet_player = %s\n%s'
+                    % (lobby, label.capitalize(), settings))
+        return case.start(label, [WINDOW, '--config', cfg, '--log', os.path.join(case.folder, label + '.log'),
+                                  '--out', os.path.join(case.folder, label)] + common + more, DUMMY)
+
+    keys = ('down accept down down down accept shot up accept until:room wait:10 shot '
+            'until:message wait:10 shot accept until:message wait:10 shot accept')
+    host = window('hostess', 'net_room = Group room\nnet_delay = 2\n',
+                  ['--online-at', '120', '--online-keys', keys, '--escape-at', ROOM_ESCAPES,
+                   '--menu-shots', os.path.join(case.folder, 'shots', 'hostess')])
+    code = case.wait_for('hostess', r"room's code is (\w+) \(a room of several", 90)
+    if code is None:
+        case.fail('the room of several was not opened from the pages')
+        return
+    members = [window(label, '', ['--lobby', lobby, '--room-enter', code.group(1), '--room-matches', '2',
+                                  '--player', label.capitalize()])
+               for label in ('bunta', 'chie')]
+    codes = wait_all(members, SECONDS)
+    watched = case.wait_for('hostess', r'room: match 2 watched', 120)
+    host.kill()
+    for label, code_ in zip(('bunta', 'chie'), codes):
+        if code_ != 0:
+            case.fail('%s ended with %s' % (label, code_))
+    segments = {label: room_segments(case.err(label) + read(os.path.join(case.folder, label + '.log')))
+                for label in ('hostess', 'bunta', 'chie')}
+    for number in (1, 2):
+        who = {label: seg[number] for label, seg in segments.items() if number in seg}
+        if len(who) != 3:
+            case.fail('match %d was run by %s, not all three' % (number, ', '.join(who) or 'nobody'))
+            continue
+        players = [label for label, part in who.items() if part['role'] != 'watch']
+        reference = who[players[0]]['hashes'] if players else {}
+        for label, part in who.items():
+            common_frames = sorted(set(part['hashes']) & set(reference))
+            if any(part['hashes'][f] != reference[f] for f in common_frames) or \
+                    (label != players[0] and len(common_frames) < 5):
+                case.fail('match %d: %s\'s hashes are not its players\' (%d in common)' % (
+                    number, label, len(common_frames)))
+        case.said.append('match %d (%s vs %s): played by %s, watched by %s; the hashes the same' % (
+            number, who[players[0]]['pair'][0], who[players[0]]['pair'][1], ' and '.join(players),
+            ', '.join(l for l in who if l not in players)))
+    hostess = case.err('hostess') + read(os.path.join(case.folder, 'hostess.log'))
+    left = re.search(r'this player left the session at frame (\d+)', hostess)
+    if not left or int(left.group(1)) < 1387 or 'You left the fight' not in hostess or \
+            'room: match 1 over: its second player won' not in hostess:
+        case.fail('the host did not leave match 1 in its fight, back to its pages (%s)' %
+                  (left.group(0) if left else 'no leave'))
+    else:
+        case.said.append('the host left match 1 at frame %s, in its fight, with Escape twice; back on its pages, '
+                         'in the room, it watched match 2' % left.group(1))
+    if watched is None:
+        case.fail('the host did not watch match 2 from its pages')
+    if 'starts again' in hostess or 'started again as process' in hostess:
+        case.fail('the host started again')
+    save_pictures(case, PICTURES)
+
+
 def save_pictures(case, into):
     """The case's pictures of the pages, copied into `into`."""
     shots = os.path.join(case.folder, 'shots')
@@ -909,9 +989,9 @@ def save_pictures(case, into):
 WINDOW_CASES = [('win-headless', case_win_headless), ('win-window', case_win_window), ('win-menu', case_win_menu),
                 ('win-rooms', case_win_rooms), ('win-portmap', case_win_portmap), ('win-refused', case_win_refused),
                 ('win-quiet', case_win_quiet), ('win-lobby-refused', case_win_lobby_refused),
-                ('win-pages', case_pages), ('win-pages-refused', case_pages_refused)]
+                ('win-pages', case_pages), ('win-pages-refused', case_pages_refused), ('win-room', case_win_room)]
 # the online pages' cases, which the window's half of tools/port_net.py runs on Linux too
-PAGES_CASES = [('pages', case_pages), ('pages-refused', case_pages_refused)]
+PAGES_CASES = [('pages', case_pages), ('pages-refused', case_pages_refused), ('room', case_win_room)]
 
 
 # ---- through a real server ----

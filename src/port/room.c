@@ -172,9 +172,8 @@ static void port_RoomGetText(char *out, const u8 *in, u32 room) {
 
 /* A ROOM: `action`, with this member's words; `secret` a password's
  * verifier (an open) or proof (an enter), or NULL. */
-static void port_RoomSay(
-    s32 action, s32 arg, u32 number, const char *name, const u8 *salt,
-    const u8 *secret) {
+static void port_RoomSay(s32 action, s32 arg, u32 number, const char *name,
+                         const u8 *salt, const u8 *secret) {
     u8 out[ROOM_HELLO_BYTES];
     char setup[PORT_SETUP_CODE_BYTES];
     u32 now = port_NetClock();
@@ -253,7 +252,7 @@ static void port_RoomTake(const u8 *in) {
     view->in_room = TRUE;
     view->you = in[ROSTER_YOU];
     view->count = in[ROSTER_HOW_MANY] < PORT_ROOM_MEMBERS ? in[ROSTER_HOW_MANY]
-                                                       : PORT_ROOM_MEMBERS;
+                                                          : PORT_ROOM_MEMBERS;
     view->rule = in[ROSTER_RULE];
     view->host = in[ROSTER_HOST];
     view->plays = g_room.plays;
@@ -276,7 +275,8 @@ static void port_RoomTake(const u8 *in) {
         member->id = at[0];
         member->flags = at[1];
         member->wins = at[2];
-        member->rtt = (u32)(at[WORD_BYTES] | (at[WORD_BYTES + 1] << BITS_PER_BYTE));
+        member->rtt =
+            (u32)(at[WORD_BYTES] | (at[WORD_BYTES + 1] << BITS_PER_BYTE));
         port_RoomGetText(member->player, at + 2 * WORD_BYTES, PLAYER_FIELD);
     }
     view->side_count = 0;
@@ -287,8 +287,8 @@ static void port_RoomTake(const u8 *in) {
         if (at[0] == PORT_ROOM_NOBODY) {
             continue;
         }
-        port_RoomTakeMatch(side, at, at + 2 * WORD_BYTES,
-                           at + 2 * WORD_BYTES + CODE_FIELD);
+        port_RoomTakeMatch(
+            side, at, at + 2 * WORD_BYTES, at + 2 * WORD_BYTES + CODE_FIELD);
         side->number = (s32)port_NetGetWord(at + WORD_BYTES);
         view->side_count++;
     }
@@ -327,8 +327,8 @@ static void port_RoomReceive(u32 wait_ms) {
     if (g_room.socket < 0) {
         return;
     }
-    for (got = port_HostUdpReceive(
-             g_room.socket, in, sizeof(in), &from, wait_ms);
+    for (got =
+             port_HostUdpReceive(g_room.socket, in, sizeof(in), &from, wait_ms);
          got > 0;
          got = port_HostUdpReceive(g_room.socket, in, sizeof(in), &from, 0)) {
         s32 detail;
@@ -367,17 +367,17 @@ static void port_RoomRefusal(s32 status, const u8 *in, char *why, u32 room) {
 
     switch (status) {
     case STATUS_NO_ROOM:
-        port_RoomText(why, room,
-                      "There is no room %s at the lobby: it may have closed.",
-                      g_room.code);
+        port_RoomText(
+            why, room, "There is no room %s at the lobby: it may have closed.",
+            g_room.code);
         break;
     case STATUS_ROOM_FULL:
-        port_RoomText(why, room, "Room %s has eight members already.",
-                      g_room.code);
+        port_RoomText(
+            why, room, "Room %s has eight members already.", g_room.code);
         break;
     case STATUS_SERVER_FULL:
-        port_RoomText(why, room,
-                      "The lobby is full just now: try again in a while.");
+        port_RoomText(
+            why, room, "The lobby is full just now: try again in a while.");
         break;
     case STATUS_VERSION:
         port_RoomText(why, room,
@@ -434,9 +434,9 @@ static s32 port_RoomStart(
 /* An open or an enter said until the server answers: 1 and the room, or
  * 0 with why. A locked room's challenge is answered with `key`'s proof
  * (an enter), made of the password and the salt it gives. */
-static s32 port_RoomAsk(s32 action, const char *name, const u8 *salt,
-                        const u8 *verifier, const char *password, char *why,
-                        u32 room) {
+static s32 port_RoomAsk(
+    s32 action, const char *name, const u8 *salt, const u8 *verifier,
+    const char *password, char *why, u32 room) {
     u8 in[PORT_NET_DATAGRAM_MAX];
     u8 proof[PORT_RELAY_KEY_BYTES];
     s32 has_proof = FALSE;
@@ -461,7 +461,8 @@ static s32 port_RoomAsk(s32 action, const char *name, const u8 *salt,
                                                : NULL);
             asked_at = now;
         }
-        got = port_HostUdpReceive(g_room.socket, in, sizeof(in), &from, POLL_MS);
+        got =
+            port_HostUdpReceive(g_room.socket, in, sizeof(in), &from, POLL_MS);
         if (got == ROSTER_BYTES && in[0] == 'R' && in[1] == 'B' &&
             in[2] == KIND_ROSTER &&
             port_NetAddressesEqual(&from, &g_room.server)) {
@@ -476,14 +477,13 @@ static s32 port_RoomAsk(s32 action, const char *name, const u8 *salt,
                 u8 key[PORT_RELAY_KEY_BYTES];
 
                 if (password == NULL || password[0] == 0) {
-                    port_RoomText(why, room,
-                                  "Room %s is locked: it needs its password.",
-                                  g_room.code);
+                    port_RoomText(
+                        why, room, "Room %s is locked: it needs its password.",
+                        g_room.code);
                     return 0;
                 }
                 port_RelayRoomKey(in + ROSTER_SALT, password, key);
-                port_RelayHmac(
-                    key, in + ROSTER_CHALLENGE, SALT_FIELD, proof);
+                port_RelayHmac(key, in + ROSTER_CHALLENGE, SALT_FIELD, proof);
                 has_proof = TRUE;
                 asked_at = 0;
                 continue;
@@ -494,9 +494,11 @@ static s32 port_RoomAsk(s32 action, const char *name, const u8 *salt,
     }
 }
 
-s32 port_RoomOpen(const char *lobby, const char *name, const char *player,
-                  const char *password, s32 rule, s32 plays, char *why,
-                  u32 room) {
+/* A room of several opened at the lobby (port_room.h): its password's
+ * salt made of the clock and its verifier, as a two-player room's. */
+s32 port_RoomOpen(
+    const char *lobby, const char *name, const char *player,
+    const char *password, s32 rule, s32 plays, char *why, u32 room) {
     u8 salt[SALT_FIELD];
     u8 verifier[PORT_RELAY_KEY_BYTES];
     s32 locked = password != NULL && password[0] != 0;
@@ -524,14 +526,15 @@ s32 port_RoomOpen(const char *lobby, const char *name, const char *player,
         port_RoomLeave();
         return 0;
     }
-    port_Log("room: the room's code is %s (a room of several, %s)\n",
-             g_room.code,
-             rule == PORT_ROOM_RULE_FIXED    ? "a fixed turn"
-             : rule == PORT_ROOM_RULE_WINNER ? "the winner stays"
-                                             : "no rotation");
+    port_Log(
+        "room: the room's code is %s (a room of several, %s)\n", g_room.code,
+        rule == PORT_ROOM_RULE_FIXED    ? "a fixed turn"
+        : rule == PORT_ROOM_RULE_WINNER ? "the winner stays"
+                                        : "no rotation");
     return 1;
 }
 
+/* A room of several entered by its code (port_room.h). */
 s32 port_RoomEnter(const char *lobby, const char *code, const char *player,
                    const char *password, s32 plays, char *why, u32 room) {
     u32 i;
@@ -579,6 +582,9 @@ void port_RoomLeave(void) {
 
 s32 port_RoomIsOn(void) { return g_room.is_on; }
 
+/* The room's turn (port_room.h): the server's answers read, and every
+ * STAY_EVERY_MS what is asked and not yet taken, or that this member is
+ * still there. */
 void port_RoomTick(void) {
     u32 now;
 
@@ -682,8 +688,8 @@ static void port_RoomNextOf(
     out->what = what;
     out->side = side;
     out->match = *match;
-    out->role = match->a == g_room.view.you ? PORT_SESSION_HOST
-                                            : PORT_SESSION_JOIN;
+    out->role =
+        match->a == g_room.view.you ? PORT_SESSION_HOST : PORT_SESSION_JOIN;
     for (i = 0; i < PORT_RELAY_PLAYER_BYTES; i++) {
         out->first[i] = port_RoomPlayer(match->a)[i];
         out->second[i] = port_RoomPlayer(match->b)[i];
@@ -695,6 +701,9 @@ static void port_RoomNextOf(
     out->second[PORT_RELAY_PLAYER_BYTES - 1] = 0;
 }
 
+/* What this member is to do now (port_room.h): a match of its own
+ * first, the rotation's or one beside it, then the rotation's to
+ * watch. */
 s32 port_RoomNext(PortRoomNext *out) {
     const PortRoomView *view = &g_room.view;
     const PortRoomMatch *match = &view->match;

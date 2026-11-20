@@ -687,11 +687,10 @@ s32 port_Main(s32 argc, char **argv) {
                           PORT_ONLINE_TEXT_BYTES, argv[++i]);
         } else if (port_TextsEqual(word, "--room-rule")) {
             i++;
-            room_auto.rule = port_TextsEqual(argv[i], "winner")
-                                 ? PORT_ROOM_RULE_WINNER
-                             : port_TextsEqual(argv[i], "off")
-                                 ? PORT_ROOM_RULE_OFF
-                                 : PORT_ROOM_RULE_FIXED;
+            room_auto.rule =
+                port_TextsEqual(argv[i], "winner") ? PORT_ROOM_RULE_WINNER
+                : port_TextsEqual(argv[i], "off")  ? PORT_ROOM_RULE_OFF
+                                                   : PORT_ROOM_RULE_FIXED;
             if (!port_TextsEqual(argv[i], "winner") &&
                 !port_TextsEqual(argv[i], "off") &&
                 !port_TextsEqual(argv[i], "fixed")) {
@@ -715,7 +714,8 @@ s32 port_Main(s32 argc, char **argv) {
                              : port_TextsEqual(argv[i], "join") ? 2
                                                                 : 0;
             if (room_auto.side == 0) {
-                port_UsageError("--room-side takes open or join, not ", argv[i]);
+                port_UsageError(
+                    "--room-side takes open or join, not ", argv[i]);
             }
         } else if (port_TextsEqual(word, "--leave-at")) {
             s32 match = 0;

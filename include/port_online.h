@@ -51,12 +51,12 @@ typedef struct {
     char player[PORT_ONLINE_TEXT_BYTES];
     char password[PORT_ONLINE_TEXT_BYTES];
     char bind[PORT_ONLINE_TEXT_BYTES]; /* a match's socket, or "" */
-    s32 rule;  /* PORT_ROOM_RULE_... (the host's) */
-    s32 plays; /* in the rotation, else a spectator */
-    s32 watch; /* watches the room's matches it is not in */
-    u32 matches; /* the program leaves the room, and ends, once the
-                    room has had so many results (0: never) */
-    s32 side;    /* a match beside: 1 opens one, 2 joins one */
+    s32 rule;                          /* PORT_ROOM_RULE_... (the host's) */
+    s32 plays;                         /* in the rotation, else a spectator */
+    s32 watch;       /* watches the room's matches it is not in */
+    u32 matches;     /* the program leaves the room, and ends, once the
+                        room has had so many results (0: never) */
+    s32 side;        /* a match beside: 1 opens one, 2 joins one */
     u32 leave_match; /* leaves its match of this number ... */
     u32 leave_frame; /* ... at this frame of it */
     u32 delay;
@@ -65,13 +65,18 @@ typedef struct {
 
 extern void port_OnlineRoomAuto(const PortOnlineRoom *room);
 /* A room's match (port_room.h's PortRoomNext) asked for by the pages: it
- * is played or watched at the game's next boundary. NULL, or what is
+ * is played or watched at the game's next boundary, by way of `how`'s
+ * lobby, with its player's name, socket and delay. NULL, or what is
  * wrong. */
 struct PortRoomNext;
-extern const char *port_OnlineAskRoom(const struct PortRoomNext *next);
+extern const char *port_OnlineAskRoom(
+    const struct PortRoomNext *next, const PortOnlineAsk *how);
 /* Whether the session being met is a room's match: no lobby before it,
  * the room decided. */
 extern s32 port_OnlineIsRoomMatch(void);
+/* Whether the room is the command line's (--room-open, --room-enter): no
+ * pages come up between its matches. */
+extern s32 port_OnlineIsRoomAuto(void);
 /* The player asks to leave the session or the watching (the window's
  * keys): once shown, twice left. */
 extern void port_OnlineLeave(void);
@@ -106,6 +111,7 @@ enum {
     PORT_ONLINE_ENDS = 3,
     PORT_ONLINE_FAILED = 4,
 };
+
 /* (a room's match watched says the same: the waiting for its fight's
  * start is the meeting, PORT_SESSION_PHASE_WATCHING) */
 

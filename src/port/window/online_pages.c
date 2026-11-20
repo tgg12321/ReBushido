@@ -29,6 +29,7 @@
 #include "menu.h"
 #include "port_net.h"
 #include "port_online.h"
+#include "port_room.h"
 #include "shared.h"
 #include "sdl_window.h"
 #include "update.h"
@@ -89,6 +90,8 @@ enum {
     PAGE_ADDRESS,
     PAGE_KEYBOARD,
     PAGE_MESSAGE,
+    /* a room of several: its members, its matches, the member's choices */
+    PAGE_ROOM,
     /* while the two meet (drawn by the session's waits) */
     PAGE_MEETING,
 };
@@ -129,7 +132,33 @@ enum {
     MAIN_ROWS
 };
 
-enum { HOST_NAME, HOST_PASSWORD, HOST_OPEN, HOST_BACK, HOST_ROWS };
+/* (a room's kind and rotation after Open, so that the rows above keep
+ * their places) */
+enum {
+    HOST_NAME,
+    HOST_PASSWORD,
+    HOST_OPEN,
+    HOST_KIND,
+    HOST_ROTATION,
+    HOST_BACK,
+    HOST_ROWS
+};
+
+/* The room of several's page. */
+enum { ROOM_WATCH, ROOM_PLAY, ROOM_RULE, ROOM_SIDE, ROOM_LEAVE, ROOM_ROWS };
+
+/* A room's match begins this long after the page says so. */
+#define ROOM_NOTICE_MS 2000
+/* The room's page: its members in two columns, its matches, its rows. */
+#define ROOM_MEMBERS_Y 56
+#define ROOM_MEMBER_PITCH 11
+#define ROOM_COLUMN_W 260
+#define ROOM_MATCH_Y 104
+#define ROOM_ROWS_Y 128
+/* --online-keys' `until:room`: the room's page up, with another member */
+#define UNTIL_ROOM 100
+/* ... `until:message`: a message up */
+#define UNTIL_MESSAGE 101
 
 enum {
     ADDRESS_JOIN_AT,
@@ -165,6 +194,13 @@ static struct {
     char password[PASSWORD_LENGTH + 1];
     char room_password[PASSWORD_LENGTH + 1];
     char code[CODE_LENGTH + 1];
+    /* a room to host: of several (else of two), and its rotation */
+    s32 group;
+    s32 rotation;
+    /* in a room of several: a match it asks for, and when it begins */
+    PortRoomNext room_next;
+    u32 room_due;
+    s32 room_waiting;
     /* the lobby's rooms */
     PortRoom rooms[ROOMS_MAX];
     s32 room_count;
@@ -194,7 +230,7 @@ static struct {
     s32 area_w;
     s32 area_h;
     s32 font_ok;
-} g_pages = {.until = -1};
+} g_pages = {.until = -1, .rotation = PORT_ROOM_RULE_FIXED};
 
 /* ---- places and letters ---- */
 
@@ -347,10 +383,93 @@ static s32 port_PageRowCount(void) {
         return g_pages.room_count + 2;
     case PAGE_MESSAGE:
         return 1;
+    case PAGE_ROOM:
+        return ROOM_ROWS;
     case PAGE_MEETING:
         return 2;
     default:
         return 0;
+    }
+}
+
+/* The open match beside the room's that this member may join: its place
+ * among the sides, or -1. */
+static s32 port_PageOpenSide(const PortRoomView *view) {
+    s32 i;
+
+    for (i = 0; i < view->side_count; i++) {
+        if (view->sides[i].b == PORT_ROOM_NOBODY &&
+            view->sides[i].a != view->you) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* Whether this member is in a match now, the rotation's or beside it. */
+static s32 port_PageIsBusy(const PortRoomView *view) {
+    s32 i;
+
+    for (i = 0; i < view->count; i++) {
+        if (view->members[i].id == view->you) {
+            return (view->members[i].flags & PORT_ROOM_BUSY) != 0;
+        }
+    }
+    return FALSE;
+}
+
+/* A row of the room of several's page. */
+static void port_PageRoomRow(s32 row, char *name, u32 name_room, char *value,
+                             u32 value_room, const char **help) {
+    PortRoomView view;
+    s32 side;
+
+    port_RoomGet(&view);
+    side = port_PageOpenSide(&view);
+    switch (row) {
+    case ROOM_WATCH:
+        snprintf(name, name_room, "Watch the matches");
+        snprintf(value, value_room, "%s", view.watching ? "on" : "off");
+        *help = "The room's matches you are not in, live, as their players "
+                "play them";
+        break;
+    case ROOM_PLAY:
+        snprintf(name, name_room, "Play in the rotation");
+        snprintf(
+            value, value_room, "%s", view.plays ? "yes" : "no: a spectator");
+        *help = "Whether the lobby picks you for the room's matches";
+        break;
+    case ROOM_RULE:
+        snprintf(name, name_room, "Rotation");
+        snprintf(value, value_room, "%s%s",
+                 view.rule == PORT_ROOM_RULE_WINNER  ? "the winner stays"
+                 : view.rule == PORT_ROOM_RULE_FIXED ? "a fixed turn"
+                                                     : "none",
+                 view.you == view.host ? "" : "   (the host's)");
+        *help = view.you == view.host
+                    ? "A fixed turn: A+B, B+C, C+A. The winner stays: the "
+                      "loser waits"
+                    : "Only the room's host sets it";
+        break;
+    case ROOM_SIDE:
+        if (side >= 0) {
+            snprintf(name, name_room, "Join a match beside");
+            snprintf(
+                value, value_room, "%s's", port_RoomPlayer(view.sides[side].a));
+            *help = "A match of your own beside the room's, now";
+        } else {
+            snprintf(name, name_room, "A match beside");
+            *help = "A match beside the room's: another member joins it "
+                    "from this row";
+        }
+        if (port_PageIsBusy(&view)) {
+            snprintf(value, value_room, "(you are in a match)");
+        }
+        break;
+    default:
+        snprintf(name, name_room, "Leave the room");
+        *help = "Back to the online pages";
+        break;
     }
 }
 
@@ -398,7 +517,28 @@ static void port_PageRow(s32 row, char *name, u32 name_room, char *value,
                     "the network as it is";
         } else if (row == HOST_OPEN) {
             snprintf(name, name_room, "Open the room");
-            *help = "Then wait for the other player here";
+            snprintf(value, value_room, "%s",
+                     g_pages.group ? "of several" : "for two players");
+            *help = g_pages.group ? "Then the room's page: its members, its "
+                                    "matches and who watches"
+                                  : "Then wait for the other player here";
+        } else if (row == HOST_KIND) {
+            snprintf(name, name_room, "Room for");
+            snprintf(value, value_room, "%s",
+                     g_pages.group ? "several: up to eight, players and "
+                                     "spectators"
+                                   : "two players");
+            *help = "Several: matches in turn, the others watching them";
+        } else if (row == HOST_ROTATION) {
+            snprintf(name, name_room, "Rotation");
+            snprintf(
+                value, value_room, "%s",
+                !g_pages.group ? "(a room of several's)"
+                : g_pages.rotation == PORT_ROOM_RULE_WINNER ? "the winner stays"
+                : g_pages.rotation == PORT_ROOM_RULE_FIXED
+                    ? "a fixed turn: A+B, B+C, C+A"
+                    : "none: matches beside it alone");
+            *help = "Who plays next, as the lobby picks it";
         } else {
             snprintf(name, name_room, "Back");
         }
@@ -427,21 +567,26 @@ static void port_PageRow(s32 row, char *name, u32 name_room, char *value,
             const PortRoom *room = &g_pages.rooms[row];
             const char *differs = port_PagesDiffer(room->setup);
 
-            snprintf(name, name_room, "%s%s", room->locked ? "[locked] " : "",
-                     room->name);
+            s32 most = room->group ? PORT_ROOM_MEMBERS : 2;
+
+            snprintf(name, name_room, "%s%s%s", room->locked ? "[locked] " : "",
+                     room->group ? "[several] " : "", room->name);
             if (differs != NULL) {
-                snprintf(value, value_room, "%s   %d/2   not for you: %s",
-                         room->player, room->players, differs);
-            } else if (room->players >= 2) {
-                snprintf(value, value_room, "%s   2/2   full", room->player);
+                snprintf(value, value_room, "%s   %d/%d   not for you: %s",
+                         room->player, room->players, most, differs);
+            } else if (room->players >= most) {
+                snprintf(value, value_room, "%s   %d/%d   full", room->player,
+                         most, most);
             } else {
-                snprintf(value, value_room, "%s   %d/2   open %u min",
-                         room->player, room->players,
+                snprintf(value, value_room,
+                         "%s   %d/%d   ping ~%u ms   open %u min", room->player,
+                         room->players, most, room->ping,
                          room->age / SECONDS_A_MINUTE);
             }
             *help = differs != NULL ? "Its setup code is not yours: it "
                                       "cannot be joined"
                     : room->locked  ? "Locked: its password is asked for"
+                    : room->group   ? "Enter this room of several"
                                     : "Join this room";
         } else if (row == g_pages.room_count) {
             snprintf(name, name_room, "Look again");
@@ -453,6 +598,9 @@ static void port_PageRow(s32 row, char *name, u32 name_room, char *value,
         break;
     case PAGE_MESSAGE:
         snprintf(name, name_room, "OK");
+        break;
+    case PAGE_ROOM:
+        port_PageRoomRow(row, name, name_room, value, value_room, help);
         break;
     default:
         name[0] = 0;
@@ -489,7 +637,9 @@ static void port_PageDrawRows(void) {
         char name[TEXT_BYTES];
         char value[TEXT_BYTES];
         const char *row_help;
-        s32 y = ROWS_Y + (i - first) * ROW_PITCH;
+        /* (the room's page has its members and matches above its rows) */
+        s32 y = (g_pages.page == PAGE_ROOM ? ROOM_ROWS_Y : ROWS_Y) +
+                (i - first) * ROW_PITCH;
         s32 is_cursor = i == g_pages.cursor[g_pages.page];
         u32 color = is_cursor ? COLOR_CURSOR : COLOR_ROW;
 
@@ -591,6 +741,73 @@ static void port_PageKeyboard(void) {
                   COLOR_DIM, ALIGN_LEFT);
 }
 
+/* The room of several: its name and code, its members (who plays, who
+ * watches, who is in a match, their wins and their round trips), the
+ * rotation's match and the last result, the matches beside it. */
+static void port_PageRoom(void) {
+    PortRoomView view;
+    char line[TEXT_BYTES];
+    s32 i;
+
+    port_RoomGet(&view);
+    snprintf(line, sizeof(line), "%s   %s", view.name, view.code);
+    port_PageTitle(line);
+    for (i = 0; i < view.count; i++) {
+        const PortRoomMember *member = &view.members[i];
+        s32 x = ROWS_X + (i % 2) * ROOM_COLUMN_W;
+        s32 y = ROOM_MEMBERS_Y + (i / 2) * ROOM_MEMBER_PITCH;
+
+        snprintf(line, sizeof(line), "%s%s  %s  %d won  %u ms", member->player,
+                 member->id == view.you ? " (you)" : "",
+                 (member->flags & PORT_ROOM_BUSY)    ? "in a match"
+                 : (member->flags & PORT_ROOM_PLAYS) ? "plays"
+                                                     : "watches",
+                 member->wins, member->rtt);
+        port_PageText(
+            x, y, SIZE_TEXT, line,
+            (member->flags & PORT_ROOM_HOST) ? COLOR_CURSOR : COLOR_TEXT,
+            ALIGN_LEFT);
+    }
+    if (g_pages.room_waiting) {
+        snprintf(line, sizeof(line), "%s %s vs %s: in a moment",
+                 g_pages.room_next.what == PORT_ROOM_NEXT_WATCH ? "Watching"
+                                                                : "Your match,",
+                 g_pages.room_next.first, g_pages.room_next.second);
+    } else if (view.match.number != 0) {
+        snprintf(line, sizeof(line), "Match %d: %s vs %s", view.match.number,
+                 port_RoomPlayer(view.match.a), port_RoomPlayer(view.match.b));
+    } else {
+        snprintf(line, sizeof(line), "%s",
+                 view.rule == PORT_ROOM_RULE_OFF
+                     ? "No rotation: matches beside the room's alone"
+                     : "The next match when two players are free");
+    }
+    port_PageText(GAME_W / 2, ROOM_MATCH_Y, SIZE_ROW, line,
+                  g_pages.room_waiting ? COLOR_GOOD : COLOR_TEXT, ALIGN_CENTRE);
+    if (view.last_number != 0) {
+        snprintf(line, sizeof(line), "Match %d: %s", view.last_number,
+                 view.last_winner == PORT_ROOM_WON_FIRST
+                     ? port_RoomPlayer(view.last_a)
+                 : view.last_winner == PORT_ROOM_WON_SECOND
+                     ? port_RoomPlayer(view.last_b)
+                     : "nobody");
+        snprintf(line + strlen(line), sizeof(line) - strlen(line), " won");
+    } else {
+        line[0] = 0;
+    }
+    for (i = 0; i < view.side_count; i++) {
+        snprintf(line + strlen(line), sizeof(line) - strlen(line),
+                 "%sBeside: %s vs %s", line[0] != 0 ? "   " : "",
+                 port_RoomPlayer(view.sides[i].a),
+                 view.sides[i].b == PORT_ROOM_NOBODY
+                     ? "(waiting)"
+                     : port_RoomPlayer(view.sides[i].b));
+    }
+    port_PageText(GAME_W / 2, ROOM_MATCH_Y + ROOM_MEMBER_PITCH + 2, SIZE_NOTE,
+                  line, COLOR_DIM, ALIGN_CENTRE);
+    port_PageDrawRows();
+}
+
 /* While the two meet: the host's room and its code and the way, or the
  * guest's progress; then the lobby before the fight. */
 static void port_PageMeeting(void) {
@@ -670,6 +887,10 @@ static void port_PageMeeting(void) {
         port_PageText(
             GAME_W / 2, y + 10, SIZE_ROW, line, COLOR_TEXT, ALIGN_CENTRE);
         y += 24;
+    } else if (lobby.phase == PORT_SESSION_PHASE_WATCHING) {
+        port_PageTitle("Watching");
+    } else if (port_OnlineIsRoomMatch()) {
+        port_PageTitle("Your match in the room");
     } else {
         port_PageTitle(is_host ? "Opening the room" : "Joining");
     }
@@ -681,9 +902,11 @@ static void port_PageMeeting(void) {
         port_PageWrapped(ROWS_X, y + 6, PANEL_W - 2 * (ROWS_X - PANEL_X), 2,
                          lobby.mapped, COLOR_DIM);
     }
-    port_PageText(
-        ROWS_X + 120, ROWS_Y + 8 * ROW_PITCH - 4, SIZE_ROW,
-        is_host ? "Close the room" : "Give up", COLOR_CURSOR, ALIGN_LEFT);
+    port_PageText(ROWS_X + 120, ROWS_Y + 8 * ROW_PITCH - 4, SIZE_ROW,
+                  lobby.phase == PORT_SESSION_PHASE_WATCHING ? "Stop watching"
+                  : is_host                                  ? "Close the room"
+                                                             : "Give up",
+                  COLOR_CURSOR, ALIGN_LEFT);
     port_PageText(ROWS_X, HELP_Y, SIZE_TEXT,
                   "Circle, Escape or Cross here: back to the online pages",
                   COLOR_DIM, ALIGN_LEFT);
@@ -762,6 +985,10 @@ static void port_PageDraw(void) {
         break;
     case PAGE_KEYBOARD:
         port_PageKeyboard();
+        break;
+    case PAGE_ROOM:
+        port_PageRoom();
+        port_PageFoot("A room of several: players and spectators");
         break;
     case PAGE_MESSAGE:
         port_PageTitle("Online Play");
@@ -938,6 +1165,143 @@ static s32 port_PagesStart(s32 role, const PortRoom *room, const char *code) {
     return TRUE;
 }
 
+/* A room of several opened (`code` NULL) or entered: its page, or a
+ * message of why not. TRUE where it was. */
+static s32 port_PagesRoom(const char *code, const char *password) {
+    PortNetAddress lobby;
+    char why[TEXT_BYTES];
+    s32 ok;
+
+    if (!port_PagesLobby(&lobby)) {
+        port_PageMessage("No lobby server is set: the settings menu's Play "
+                         "online page has it.",
+                         COLOR_WARN);
+        return FALSE;
+    }
+    ok =
+        code == NULL
+            ? port_RoomOpen(
+                  g_port_settings.net_lobby,
+                  g_port_settings.net_room[0] != 0 ? g_port_settings.net_room
+                                                   : port_PlayerName(),
+                  port_PlayerName(), g_pages.password, g_pages.rotation, TRUE,
+                  why, sizeof(why))
+            : port_RoomEnter(g_port_settings.net_lobby, code, port_PlayerName(),
+                             password, TRUE, why, sizeof(why));
+    if (!ok) {
+        port_PageMessage(why, COLOR_WARN);
+        g_pages.back_to = PAGE_MAIN;
+        return FALSE;
+    }
+    port_Note("online pages: in room %s, a room of several",
+              code != NULL ? code : "(opened)");
+    g_pages.room_waiting = FALSE;
+    g_pages.cursor[PAGE_ROOM] = 0;
+    port_PageGo(PAGE_ROOM);
+    return TRUE;
+}
+
+/* What is chosen on the room's page. */
+static void port_PagesRoomAccept(s32 row) {
+    PortRoomView view;
+    s32 side;
+
+    port_RoomGet(&view);
+    switch (row) {
+    case ROOM_WATCH:
+        port_RoomSetWatching(!view.watching);
+        break;
+    case ROOM_PLAY:
+        port_RoomSetPlays(!view.plays);
+        break;
+    case ROOM_RULE:
+        if (view.you != view.host) {
+            port_PageNote(
+                "Only the room's host sets its rotation.", COLOR_WARN);
+            break;
+        }
+        port_RoomSetRule(
+            view.rule == PORT_ROOM_RULE_FIXED    ? PORT_ROOM_RULE_WINNER
+            : view.rule == PORT_ROOM_RULE_WINNER ? PORT_ROOM_RULE_OFF
+                                                 : PORT_ROOM_RULE_FIXED);
+        break;
+    case ROOM_SIDE:
+        side = port_PageOpenSide(&view);
+        if (port_PageIsBusy(&view)) {
+            port_PageNote("You are in a match already.", COLOR_WARN);
+        } else if (side >= 0) {
+            port_RoomSideJoin(side);
+        } else {
+            port_RoomSideOpen();
+            port_PageNote("Your match beside the room's is open: another "
+                          "member joins it from this row.",
+                          COLOR_GOOD);
+        }
+        break;
+    default:
+        port_RoomLeave();
+        port_PageGo(PAGE_MAIN);
+        break;
+    }
+}
+
+/* The room's turn while the pages are up: the room stayed in, and a match
+ * this member is to play or watch begun, after a moment's notice on the
+ * page. */
+static void port_PagesRoomTurn(void) {
+    PortRoomView view;
+    PortRoomNext next;
+    PortOnlineAsk how;
+    const char *problem;
+
+    if (!port_RoomIsOn()) {
+        return;
+    }
+    port_RoomTick();
+    port_RoomGet(&view);
+    if (!view.in_room) {
+        port_RoomLeave();
+        port_PageMessage("You are no longer in the room: the lobby let you "
+                         "go (nothing was heard from this PC for a while).",
+                         COLOR_WARN);
+        g_pages.back_to = PAGE_MAIN;
+        return;
+    }
+    if (g_pages.page != PAGE_ROOM) {
+        return;
+    }
+    if (!g_pages.room_waiting) {
+        if (port_RoomNext(&next) == PORT_ROOM_NEXT_NONE) {
+            return;
+        }
+        g_pages.room_next = next;
+        g_pages.room_waiting = TRUE;
+        g_pages.room_due = SDL_GetTicks() +
+                           (g_port_window_options.is_fast ? 0 : ROOM_NOTICE_MS);
+        port_Note("online pages: room: %s match %d (%s vs %s) next",
+                  next.what == PORT_ROOM_NEXT_WATCH ? "watching" : "playing",
+                  next.match.number, next.first, next.second);
+        return;
+    }
+    if ((s32)(SDL_GetTicks() - g_pages.room_due) < 0) {
+        return;
+    }
+    g_pages.room_waiting = FALSE;
+    memset(&how, 0, sizeof(how));
+    snprintf(how.lobby, sizeof(how.lobby), "%s", g_port_settings.net_lobby);
+    snprintf(how.player, sizeof(how.player), "%s", port_PlayerName());
+    snprintf(
+        how.bind, sizeof(how.bind), "%s",
+        g_port_settings.net_listen ? ADDRESS_ALL ":0" : ADDRESS_LOCAL ":0");
+    how.delay = (u32)g_port_settings.net_delay;
+    problem = port_OnlineAskRoom(&g_pages.room_next, &how);
+    if (problem != NULL) {
+        port_PageNote(problem, COLOR_WARN);
+        return;
+    }
+    g_pages.is_open = FALSE;
+}
+
 /* Quick Match: the first room that can be joined, or one of the player's
  * own. */
 static void port_PagesQuickMatch(void) {
@@ -1028,6 +1392,8 @@ static void port_KeyboardType(char c) {
     }
 }
 
+static void port_PagesChooseRoom(s32 which);
+
 /* What was typed kept, and what it was typed for done. */
 static void port_KeyboardDone(void) {
     const char *typed = g_pages.typed;
@@ -1054,7 +1420,13 @@ static void port_KeyboardDone(void) {
             s32 which = g_pages.pending_room - 1;
 
             g_pages.pending_room = 0;
-            port_PagesStart(PORT_NET_ROLE_ROOMS, &g_pages.rooms[which], NULL);
+            if (g_pages.rooms[which].group) {
+                port_PagesRoom(
+                    g_pages.rooms[which].code, g_pages.room_password);
+            } else {
+                port_PagesStart(
+                    PORT_NET_ROLE_ROOMS, &g_pages.rooms[which], NULL);
+            }
         } else if (g_pages.code[0] != 0) {
             port_PagesStart(PORT_NET_ROLE_ROOMS, NULL, g_pages.code);
         }
@@ -1067,6 +1439,20 @@ static void port_KeyboardDone(void) {
         }
         snprintf(g_pages.code, sizeof(g_pages.code), "%s", typed);
         g_pages.room_password[0] = 0;
+        /* a room of several's code: the lobby's list says which it is */
+        port_PagesListRooms();
+        g_pages.note[0] = 0;
+        {
+            s32 i;
+
+            for (i = 0; i < g_pages.room_count; i++) {
+                if (g_pages.rooms[i].group &&
+                    strcmp(g_pages.rooms[i].code, g_pages.code) == 0) {
+                    port_PagesChooseRoom(i);
+                    return;
+                }
+            }
+        }
         port_PagesStart(PORT_NET_ROLE_ROOMS, NULL, g_pages.code);
         break;
     default: {
@@ -1162,7 +1548,7 @@ static void port_PagesChooseRoom(s32 which) {
         port_PageNote(text, COLOR_WARN);
         return;
     }
-    if (room->players >= 2) {
+    if (room->players >= (room->group ? PORT_ROOM_MEMBERS : 2)) {
         port_PageNote("That room is full.", COLOR_WARN);
         return;
     }
@@ -1172,6 +1558,10 @@ static void port_PagesChooseRoom(s32 which) {
         return;
     }
     g_pages.room_password[0] = 0;
+    if (room->group) {
+        port_PagesRoom(room->code, "");
+        return;
+    }
     port_PagesStart(PORT_NET_ROLE_ROOMS, room, NULL);
 }
 
@@ -1210,11 +1600,21 @@ static void port_PagesAccept(void) {
             port_PagesType(FIELD_ROOM, g_port_settings.net_room);
         } else if (row == HOST_PASSWORD) {
             port_PagesType(FIELD_PASSWORD, g_pages.password);
+        } else if (row == HOST_OPEN && g_pages.group) {
+            port_PagesRoom(NULL, NULL);
         } else if (row == HOST_OPEN) {
             port_PagesStart(PORT_NET_ROLE_ROOM, NULL, NULL);
+        } else if (row == HOST_KIND) {
+            g_pages.group = !g_pages.group;
+        } else if (row == HOST_ROTATION) {
+            g_pages.rotation =
+                (g_pages.rotation + 1) % (PORT_ROOM_RULE_WINNER + 1);
         } else {
             port_PageGo(PAGE_MAIN);
         }
+        break;
+    case PAGE_ROOM:
+        port_PagesRoomAccept(row);
         break;
     case PAGE_ADDRESS:
         if (row == ADDRESS_JOIN_AT) {
@@ -1267,6 +1667,9 @@ static void port_PagesPress(s32 press) {
     } else if (press == PRESS_BACK) {
         if (g_pages.page == PAGE_MAIN) {
             g_pages.is_open = FALSE;
+        } else if (g_pages.page == PAGE_ROOM) {
+            /* nobody leaves a room by a slip: Back goes to its Leave row */
+            *cursor = ROOM_LEAVE;
         } else if (g_pages.page == PAGE_MESSAGE) {
             g_pages.page = g_pages.back_to;
             g_pages.note[0] = 0;
@@ -1477,7 +1880,22 @@ static s32 port_PagesWord(s32 *is_shot) {
         g_pages.waiting--;
         return PRESS_NONE;
     }
-    if (g_pages.until >= 0) {
+    if (g_pages.until == UNTIL_MESSAGE) {
+        /* a message up on the pages (a session's end, a refusal) */
+        if (g_pages.page != PAGE_MESSAGE || !g_pages.is_open) {
+            return PRESS_NONE;
+        }
+        g_pages.until = -1;
+    } else if (g_pages.until == UNTIL_ROOM) {
+        /* a room of several's page up, with someone else in the room */
+        PortRoomView view;
+
+        port_RoomGet(&view);
+        if (g_pages.page != PAGE_ROOM || !g_pages.is_open || view.count < 2) {
+            return PRESS_NONE;
+        }
+        g_pages.until = -1;
+    } else if (g_pages.until >= 0) {
         PortSessionLobby lobby;
 
         port_GetSessionLobby(&lobby);
@@ -1521,9 +1939,11 @@ static s32 port_PagesWord(s32 *is_shot) {
     }
     if (strncmp(word, "until:", 6) == 0) {
         g_pages.until =
-            strcmp(word + 6, "lobby") == 0   ? PORT_SESSION_PHASE_READY
-            : strcmp(word + 6, "cards") == 0 ? PORT_SESSION_PHASE_CARDS
-                                             : PORT_SESSION_PHASE_WAITING;
+            strcmp(word + 6, "lobby") == 0     ? PORT_SESSION_PHASE_READY
+            : strcmp(word + 6, "cards") == 0   ? PORT_SESSION_PHASE_CARDS
+            : strcmp(word + 6, "room") == 0    ? UNTIL_ROOM
+            : strcmp(word + 6, "message") == 0 ? UNTIL_MESSAGE
+                                               : PORT_SESSION_PHASE_WAITING;
         return PRESS_NONE;
     }
     for (i = 0; i < sizeof(presses) / sizeof(presses[0]); i++) {
@@ -1567,6 +1987,9 @@ static void port_RunPages(u32 blank) {
         }
         if (g_pages.is_open) {
             port_PagesPress(port_PagesWord(&is_shot));
+        }
+        if (g_pages.is_open) {
+            port_PagesRoomTurn();
         }
         if (!g_pages.is_open) {
             break;
@@ -1638,6 +2061,10 @@ static void port_PagesFail(const char *why) {
 }
 
 static s32 port_PagesReady(void) {
+    if (port_OnlineIsRoomMatch() && !g_pages.leave) {
+        /* a room's match: the room has decided, nobody says ready */
+        return PORT_SESSION_READY;
+    }
     return g_pages.leave   ? PORT_SESSION_LEAVE
            : g_pages.ready ? PORT_SESSION_READY
                            : PORT_SESSION_NOT_YET;
@@ -1679,8 +2106,10 @@ static void port_PagesOnline(s32 event, const char *why) {
         port_HoldBackPads();
         port_PageMessage(
             why != NULL ? why : "The session is over.", COLOR_TEXT);
-        g_pages.back_to = PAGE_MAIN;
-        g_pages.wanted = TRUE;
+        /* a room's match over: back to the room (the command line's has
+         * no pages) */
+        g_pages.back_to = port_RoomIsOn() ? PAGE_ROOM : PAGE_MAIN;
+        g_pages.wanted = !port_OnlineIsRoomAuto();
         port_Say("online: the session has ended: %s; back to your own game",
                  why != NULL ? why : "");
         break;
@@ -1690,16 +2119,17 @@ static void port_PagesOnline(s32 event, const char *why) {
         g_port_session_ready_hook = NULL;
         g_pages.meeting = FALSE;
         port_HoldBackPads();
-        g_pages.page = PAGE_MAIN;
+        g_pages.page = port_RoomIsOn() ? PAGE_ROOM : PAGE_MAIN;
         if (why != NULL) {
             port_PageMessage(
                 g_pages.failed[0] != 0 ? g_pages.failed
+                : port_RoomIsOn()      ? why
                                        : "The session could not be set up: the "
                                          "log says why.",
                 COLOR_WARN);
-            g_pages.back_to = PAGE_MAIN;
+            g_pages.back_to = port_RoomIsOn() ? PAGE_ROOM : PAGE_MAIN;
         }
-        g_pages.wanted = TRUE;
+        g_pages.wanted = !port_OnlineIsRoomAuto();
         break;
     }
 }

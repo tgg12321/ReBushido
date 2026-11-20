@@ -253,8 +253,8 @@ void port_NetplayAskLeave(void) {
     }
     if (g_np_leave_asked_at != 0 &&
         now - g_np_leave_asked_at <= NETPLAY_LEAVE_MS) {
-        port_Log("netplay: the player leaves the session at frame %u\n",
-                 g_np_frame);
+        port_Log(
+            "netplay: the player leaves the session at frame %u\n", g_np_frame);
         g_np_leave = TRUE;
         return;
     }
@@ -941,9 +941,8 @@ s32 port_RunWatch(u32 frame) {
         known = port_WatchKnown();
         /* WATCH_LAG frames held in hand while the match goes on; at its
          * end, every frame to its last */
-        if (known <= g_np_frame + (port_WatchEnd(&end_frame, &winner)
-                                       ? 0
-                                       : WATCH_LAG)) {
+        if (known <=
+            g_np_frame + (port_WatchEnd(&end_frame, &winner) ? 0 : WATCH_LAG)) {
             if (port_WatchEnd(&end_frame, &winner) && g_np_wait_from != 0 &&
                 port_NetClock() - g_np_wait_from > WATCH_END_WAIT_MS) {
                 /* the session ended and its last frames do not come */
@@ -1102,10 +1101,11 @@ void port_GetNetplayStats(PortNetplayStats *stats) {
     stats->behind = g_np_watch && port_WatchKnown() > g_np_frame
                         ? port_WatchKnown() - g_np_frame
                         : 0;
-    stats->leave_ms = g_np_leave_asked_at != 0 &&
-                              now - g_np_leave_asked_at <= NETPLAY_LEAVE_MS
-                          ? now - g_np_leave_asked_at + 1
-                          : 0;
+    stats->leave_ms =
+        g_np_leave_asked_at != 0 &&
+                now - g_np_leave_asked_at <= NETPLAY_LEAVE_MS
+            ? now - g_np_leave_asked_at + 1
+            : 0;
 }
 
 /* For a moment after this program ends, until the other has said
