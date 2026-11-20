@@ -416,6 +416,23 @@ the stage").
     last lives), no point in First to N; the host's online (protocol 8),
     the score in the state. Left: the owner's eye on the cards and the
     strip.
+    **Crew** (the owner, 2026-11-20: "select 5 fighters and five weapons
+    and those are essentially your five lives. First to kill all the
+    opponents' fighters wins"). **Done** ([`PORT.md`](PORT.md), "Match
+    rules", "Crew"; [`PLAYING.md`](PLAYING.md), "Crew"): Crew N (2 to 8,
+    five to begin with) after First to on the stage page's Circle; each
+    side's crew picked on the game's own select screen, the first place
+    before the stage page and the grid and weapons again for each place
+    after it, a strip of the crews so far at the foot; the loser's
+    fighter out and the next in, the winner staying, every fight loaded
+    afresh; a draw one out of each, both crews out a drawn match; the
+    crews' names over the fight (the one in play coloured, the fallen
+    struck through) and on the cards; the crews kept on the stage page
+    after the match. Versus the CPU a crew match per opponent, his crew
+    led by the game's opponent and the rest drawn; online each player
+    picks his own, the host's rule held (protocol 10). Left: the owner's
+    eye on the strip, the cards and the pick (`tmp/crew/`); whether the
+    winner should stay hurt (he starts fresh, as the owner asked).
 22. **Online lobbies of more than two** (after the seamless online
     menus): a room holds several players and spectators; spectators
     watch a match live (the session's inputs, rolled forward, no

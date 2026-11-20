@@ -10,8 +10,8 @@ checkpoints must hold the score the fights made.
   card, the next fight on the same stage with the same fighters, the
   second life taken, the result's card, then the stage select with the
   fighters kept, and Cross there starts a new match with them (the
-  first fighter's presses go on over the stage page, so its cursor and
-  rule are not held to anything there).
+  first fighter's presses end before that stage page, where their
+  Circle would turn the rule).
 - vs_first_to: versus mode with --match stock:1, turned on the stage page
   to First to (Circle) and 2 (Start); two fights won, then the stage
   select.
@@ -21,13 +21,25 @@ checkpoints must hold the score the fights made.
 - vscpu_won: versus the CPU with --match stock:1: the fight won is the
   match won, and the game's own next opponent follows, his match begun
   afresh.
+- vs_crew: versus mode with --match crew:3: the crews' later places
+  picked on the grid after the stage page; a fight won (the loser's
+  next comes in, the winner stays), a draw (one out of each; the plan
+  writes the first fighter's fall, a `poke`), a fight won that empties
+  the second crew; the stage select with the crews kept, and Cross there
+  a new match of them.
+- vs_crew_drawn: Crew 2 of two draws: both crews out at once, a drawn
+  match.
+- vscpu_crew: versus the CPU with --match crew:2: the player's crew, the
+  CPU's led by the game's opponent, the match lost, the game's menu, and
+  its Rematch the crews' first fighters loaded again.
 
     python3 tools/port_match.py [--out FOLDER] [--shots FOLDER]
                                 [--only PLAN...] [--rollback]
 
-With --rollback, vs_stock's match is run by tools/port_rollback.py
-instead (make port-rollback): the state saved, put back and run again
-every 24 frames across the whole match, on both sizes.
+With --rollback, vs_stock's match and a Crew 2 match (vs_crew_won, no
+draw) are run by tools/port_rollback.py instead (make port-rollback):
+the state saved, put back and run again every 24 frames across the
+whole match, on both sizes.
 
 In WSL, with the programs `make port` builds and the player's disc (as
 tools/port_stage_select.py finds them). Exit 0 if every check passes."""
@@ -92,7 +104,7 @@ TOML_VS_STOCK = 'about = "Versus mode, a Stock match of two lives (tools/port_ma
     '''input = [%(opening)s,
     %(menu)s,
     "stages+40 CROSS",
-    %(presses)s,
+    %(presses_stock)s,
     "back+60 CROSS",
 ]
 ''' + COMPARE + START + SELECT + \
@@ -309,6 +321,26 @@ within = 3000
 expect = ["menu_page == MENU_PAGE_SELECT", "port_match_over == 1", "port_match_winner == 2"]
 '''
 
+# Versus mode, Crew 2, both fights the first player's: the second crew
+# out. tools/port_replay.py's, whose fights are played back from their
+# replays (no draw: a plan's draw is written into memory, which no replay
+# holds).
+TOML_VS_CREW_WON = 'about = "Versus mode, a Crew match of two won (tools/port_match.py)"\n' + CREW_HEAD + \
+    '''input = [%(opening)s,
+    %(menu)s,
+    "stages+40 CROSS",
+    "crew2+60 DOWN", "crew2+70 P2 DOWN", "crew2+100 CROSS", "crew2+110 P2 CROSS",
+    "crew2+300 CROSS", "crew2+340 P2 CROSS",
+    %(presses)s,
+]
+''' + CREW_COMPARE + START + SELECT + CREW_PLACES.split('\n[[checkpoint]]\nname = "crew3"')[0].replace(
+        '"port_match_crew_size == 3"', '"port_match_crew_size == 2"') + \
+    fight('fight', ['port_match_rule == 3', 'port_match_lives_p1 == 2', 'port_match_lives_p2 == 2'],
+          'card', ['port_match_card == 1', 'port_match_last == 0', 'port_match_lives_p2 == 1']) + \
+    fight('fight2', ['p1_character == %(p1)d', 'p2_character == %(p2_2)d'],
+          'result', ['port_match_card == 2', 'port_match_lives_p1 == 2', 'port_match_lives_p2 == 0',
+                     'port_match_winner == 0'])
+
 # Versus the CPU, Crew 2, through the stage pages: the player's second
 # place picked after the stage, the CPU's crew led by the game's first
 # opponent (character 9 after these presses) and the rest drawn (7). As
@@ -375,6 +407,11 @@ CREW_PLANS = [
      [('down', CREW_POKE, 'p1_defeated', 1), ('down2', CREW_POKE, 'p1_defeated', 1)]),
     ('vscpu_crew', TOML_VSCPU_CREW, ['--mods', 'off', '--stage-select', '--unlock-all', '--match', 'crew:2']),
 ]
+# tools/port_replay.py's Crew match
+CREW_REPLAY_PLAN = ('vs_crew_won', TOML_VS_CREW_WON, ['--mods', 'off', '--match', 'crew:2'])
+# vs_stock's first player's presses end before the stage page after the
+# match, as vs_crew's
+STOCK_ROUNDS = 34
 
 
 def main(argv):
@@ -392,7 +429,7 @@ def main(argv):
     out = os.path.abspath(args.out)
     os.makedirs(out, exist_ok=True)
     values = dict(VALUES, opening=', '.join(OPENING), presses=fight_presses(),
-                  presses_crew=fight_presses(CREW_ROUNDS))
+                  presses_crew=fight_presses(CREW_ROUNDS), presses_stock=fight_presses(STOCK_ROUNDS))
     plans = [
         ('vs_stock', TOML_VS_STOCK, ['--mods', 'off', '--match', 'stock:2']),
         ('vs_first_to', TOML_VS_FIRST_TO, ['--mods', 'off', '--match', 'stock:1']),
@@ -400,15 +437,21 @@ def main(argv):
         ('vscpu_won', TOML_VSCPU_WON, ['--mods', 'off', '--stage-select', '--unlock-all', '--match', 'stock:1']),
     ] + CREW_PLANS
     if args.rollback:
-        toml = os.path.join(out, 'vs_stock-rollback.toml')
-        with open(toml, 'w', encoding='utf-8', newline='\n') as f:
-            # no pictures: a frame run again quietly paints none, and a
-            # checkpoint's picture in it would not be the first run's
-            text = re.sub(r'^shot = .*\n', '', TOML_VS_STOCK % values, flags=re.M)
-            f.write(re.sub(r'^(name = .*)$', r'\1\nshot = false', text, flags=re.M))
-        more = ['--with=' + arg for arg in plans[0][2]]
-        return subprocess.run([sys.executable, os.path.join(REPO, 'tools', 'port_rollback.py'), '--test', toml,
-                               '--out', os.path.join(out, 'rollback')] + more, cwd=REPO).returncode
+        # the Stock match, and a Crew match, its crews picked and its
+        # fighters loaded afresh between fights
+        code = 0
+        for name, text, extra in (plans[0], CREW_REPLAY_PLAN):
+            toml = os.path.join(out, '%s-rollback.toml' % name)
+            with open(toml, 'w', encoding='utf-8', newline='\n') as f:
+                # no pictures: a frame run again quietly paints none, and a
+                # checkpoint's picture in it would not be the first run's
+                text = re.sub(r'^shot = .*\n', '', text % values, flags=re.M)
+                f.write(re.sub(r'^(name = .*)$', r'\1\nshot = false', text, flags=re.M))
+            more = ['--with=' + arg for arg in extra]
+            folder = os.path.join(out, 'rollback' if name == 'vs_stock' else 'rollback-' + name)
+            code |= subprocess.run([sys.executable, os.path.join(REPO, 'tools', 'port_rollback.py'), '--test', toml,
+                                    '--out', folder] + more, cwd=REPO).returncode
+        return code
     if args.only:
         plans = [plan for plan in plans if plan[0] in args.only]
     for plan in plans:

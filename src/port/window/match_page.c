@@ -32,6 +32,9 @@
 #define COLOR_TEXT 0xFFEDEDF2U
 #define COLOR_DIM 0xFF8E96AAU
 #define COLOR_LOST 0xFF4A5268U
+/* a Crew's fallen fighter, and the line through his name */
+#define COLOR_OUT 0xFF6A7288U
+#define COLOR_STRUCK 0xFFB04A40U
 /* each side's colour: the first's warm, the second's cool */
 #define COLOR_SIDE_1 0xFFE8A05AU
 #define COLOR_SIDE_2 0xFF7AB4F0U
@@ -342,7 +345,7 @@ static void port_MatchCrewSlot(const PortMatch *match, s32 side, s32 place,
     char name[24];
     s32 stand = port_MatchCrewStand(match, side, place);
     u32 side_color = side == 0 ? COLOR_SIDE_1 : COLOR_SIDE_2;
-    u32 color = stand == CREW_OUT       ? COLOR_LOST
+    u32 color = stand == CREW_OUT       ? COLOR_OUT
                 : stand == CREW_IN_PLAY ? side_color
                                         : COLOR_TEXT;
     s32 face = stand == CREW_IN_PLAY ? PORT_FACE_BOLD : PORT_FACE_TEXT;
@@ -357,7 +360,7 @@ static void port_MatchCrewSlot(const PortMatch *match, s32 side, s32 place,
         port_MatchStyle(&style, lines, face, color);
         w = port_TextMeasure(name, &style) * GAME_W / g_match_page.area_w;
         port_MatchRect(
-            align > 0 ? x - w : x, y - lines / 3 - 1, w, 1, COLOR_DIM);
+            align > 0 ? x - w : x, y - (lines + 2) / 4, w, 1, COLOR_STRUCK);
     }
 }
 
@@ -525,8 +528,8 @@ static void port_MatchCrewCard(const PortMatch *match) {
 
 /* The strip over the select screen while a Crew match's later places are
  * picked: each crew so far, the place being picked marked. */
-#define CREW_PICK_Y 196
-#define CREW_PICK_H 40
+#define CREW_PICK_Y 202
+#define CREW_PICK_H 36
 
 static void port_MatchCrewPick(const PortMatch *match) {
     char line[48];
@@ -543,15 +546,15 @@ static void port_MatchCrewPick(const PortMatch *match) {
         CREW_HUD_X, CREW_PICK_Y, CREW_HUD_W, CREW_PICK_H, COLOR_EDGE);
     snprintf(line, sizeof(line), "Crew %d: pick %d of %d", (int)count,
              (int)match->crew_picked + 1, (int)count);
-    port_MatchText(GAME_W / 2, CREW_PICK_Y + 12, SIZE_HUD, PORT_FACE_BOLD, line,
+    port_MatchText(GAME_W / 2, CREW_PICK_Y + 11, SIZE_HUD, PORT_FACE_BOLD, line,
                    COLOR_GOLD, 0);
-    port_MatchText(CREW_HUD_X + 6, CREW_PICK_Y + 12, SIZE_HUD - 1,
+    port_MatchText(CREW_HUD_X + 6, CREW_PICK_Y + 11, SIZE_HUD - 1,
                    PORT_FACE_BOLD, "1P", COLOR_SIDE_1, -1);
-    port_MatchText(right, CREW_PICK_Y + 12, SIZE_HUD - 1, PORT_FACE_BOLD,
+    port_MatchText(right, CREW_PICK_Y + 11, SIZE_HUD - 1, PORT_FACE_BOLD,
                    match->crew_sides > 1 ? "2P" : "CPU", COLOR_SIDE_2, 1);
     if (match->crew_sides < 2) {
         port_MatchText(
-            right - 30, CREW_PICK_Y + 12, SIZE_HUD - 1, PORT_FACE_TEXT,
+            right - 30, CREW_PICK_Y + 11, SIZE_HUD - 1, PORT_FACE_TEXT,
             "drawn at random, led by the opponent", COLOR_DIM, 1);
     }
     for (side = 0; side < match->crew_sides && side < 2; side++) {
@@ -567,17 +570,17 @@ static void port_MatchCrewPick(const PortMatch *match) {
                     name, sizeof(name),
                     port_MatchCrewName(match->crew[side][place].fighter),
                     CREW_SIZE_NAME + 1, PORT_FACE_BOLD, slot - 4);
-                port_MatchText(x, CREW_PICK_Y + 25, CREW_SIZE_NAME + 1,
+                port_MatchText(x, CREW_PICK_Y + 23, CREW_SIZE_NAME + 1,
                                PORT_FACE_BOLD, name, color, align);
                 port_MatchFit(name, sizeof(name),
                               port_NameWeapon(match->crew[side][place].weapon),
                               CREW_SIZE_NAME, PORT_FACE_TEXT, slot - 4);
-                port_MatchText(x, CREW_PICK_Y + 35, CREW_SIZE_NAME,
+                port_MatchText(x, CREW_PICK_Y + 32, CREW_SIZE_NAME,
                                PORT_FACE_TEXT, name, COLOR_DIM, align);
             } else {
                 snprintf(name, sizeof(name), "%d", (int)place + 1);
                 port_MatchText(
-                    x, CREW_PICK_Y + 25, CREW_SIZE_NAME + 1, PORT_FACE_BOLD,
+                    x, CREW_PICK_Y + 23, CREW_SIZE_NAME + 1, PORT_FACE_BOLD,
                     name, place == match->crew_picked ? COLOR_GOLD : COLOR_LOST,
                     align);
             }

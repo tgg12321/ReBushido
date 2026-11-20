@@ -172,7 +172,17 @@ def main(argv):
         ('vscpu_next', port_stage_select.TOML_VSCPU_NEXT,
          ['--mods', 'off', '--stage-select', '--unlock-all', '--fight-music', 'stage']),
     ]
-    for name, text, extra in plans:
+    # a Crew match of versus (tools/port_match.py): two fights, the second
+    # of the winner and the loser's next fighter, loaded afresh (no draw:
+    # the plans' draws are written into memory, which no replay holds)
+    import port_match
+    values.update(port_match.VALUES, opening=', '.join(port_stage_select.OPENING),
+                  presses=port_stage_select.fight_presses(),
+                  presses_crew=port_stage_select.fight_presses(port_match.CREW_ROUNDS))
+    plans.append(port_match.CREW_REPLAY_PLAN)
+    for plan in plans:
+        name, text, extra = plan[:3]
+        pokes = plan[3] if len(plan) > 3 else ()
         if not wanted(name):
             continue
         folder = os.path.join(out, name)
@@ -181,7 +191,7 @@ def main(argv):
             shutil.rmtree(folder)
         os.makedirs(replays)
         if port_stage_select.run_plan(playtest, report, folder, name, text % values,
-                                      extra + ['--replays', replays], None) is None:
+                                      extra + ['--replays', replays], None, pokes) is None:
             return 1
         count += check_folder(report, name, replays, extra)
     print('port_replay: %d replays, %d checks failed' % (count, report.failed))

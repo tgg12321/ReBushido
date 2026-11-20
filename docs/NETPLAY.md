@@ -1075,7 +1075,8 @@ have met:
   (`MEET_MUSIC`; PORT.md, "A fight's music") and the time of day the
   stages start at (`MEET_TIME`; PORT.md, "The time of day"), protocol 6,
   and the host's `match_rule` and `match_count` (`MEET_MATCH`, protocol
-  8; PORT.md, "Match rules"); both programs hold them for the session,
+  8; PORT.md, "Match rules"; protocol 10 when the rule may be Crew);
+  both programs hold them for the session,
   so a guest plays with the host's unlocks, the host's fights' music
   and the host's match rule whatever its own settings say, and its
   settings menu changes nothing until it starts again;
@@ -1101,9 +1102,10 @@ question, and the row is Versus, which stands for the game's own
 the match's set-up**, both players choosing at once as on a couch, and
 the host takes the stage. After a fight the game's own menu offers
 Rematch, the select screen, or the main menu; a way back to the top menu
-comes straight back to versus. A Stock or First to match (PORT.md,
-"Match rules") goes from fight to fight by itself, with a card of the
-score, and back to the stage pages; its score is the game's state
+comes straight back to versus. A Stock, First to or Crew match
+(PORT.md, "Match rules") goes from fight to fight by itself, with a card
+of the score, and back to the stage pages; its score (and a Crew's
+crews, each player's picked with his own pad) is the game's state
 (`g_port_match`, `src/port/match.c`), so a rollback puts it back with
 the fight and both machines keep the same. **In a fight Start is nobody's**: the
 pause menu would stop the other player's game too. Where the frame's
@@ -1269,7 +1271,14 @@ socket on 127.0.0.1:
   state hashes are the same on both and no card file was written. (The
   `window` pair below keeps the game's own menu and its Rematch.) 64-bit: about 2,490 frames, 82 hashes the same on both;
   67 and 79 rollbacks, the longest 8 frames; 32-bit: 69 and 77, the same
-  82 hashes on both (each size's own, section 7);
+  82 hashes on both (each size's own, section 7). Then a second session
+  of each size plays a **Crew** match of two (the host's `--match
+  crew:2`; PORT.md, "Match rules", "Crew"): after the stage each player
+  picks his crew's second place on the grid with his own pad, the crews
+  and the score in the state on both, the second fight the crews' next
+  fighters loaded afresh. 64-bit: about 2,830 frames, 94 hashes the same
+  on both, 63 and 73 rollbacks, the first fight's replays alike and
+  played back;
 - `window`: the same between two of the window's programs, headless
   (dummy drivers), in real time with their sound card and pacing, 60 ms
   each way and 5% lost; the host must play on alone after the guest
