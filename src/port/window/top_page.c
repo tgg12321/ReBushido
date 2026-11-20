@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "menu.h"
+#include "update.h"
 
 /* The game's screen, whose places the page's are given in: 640 by 240,
  * shown 4:3, so that a unit across is half a unit down. */
@@ -46,6 +47,11 @@
 #define CAPTION_LINE_Y 157
 #define SIZE_NAME 14
 #define SIZE_LINE 9
+/* the updater's notice (update.c, port_UpdateNotice): two lines under
+ * the caption, in its line's size */
+#define NOTICE_FIRST_Y 196
+#define NOTICE_SECOND_Y 208
+#define NOTICE_BYTES 128
 
 /* The colours, 0xAARRGGBB: a row the cursor is on, one that can be
  * chosen (the game's gold), one that cannot, the caption's white, and
@@ -55,6 +61,7 @@
 #define COLOR_ROW_OFF 0xFF606060U
 #define COLOR_CAPTION 0xFFF2F2F2U
 #define COLOR_SHADOW 0xC0101838U
+#define COLOR_NOTICE 0xFFFFD27AU
 
 enum {
     ALIGN_LEFT = 0,
@@ -68,6 +75,7 @@ static struct {
     s32 area_w;
     s32 area_h;
     PortTopView view;
+    s32 notice_generation;
     /* the pixels, `box` of the game's area */
     u32 *pixels;
     u32 room;
@@ -119,6 +127,9 @@ static void port_TopPageText(
 /* ---- the page ---- */
 
 static void port_TopPageDraw(const PortTopView *view) {
+    char first[NOTICE_BYTES];
+    char second[NOTICE_BYTES];
+    s32 generation;
     s32 i;
 
     for (i = 0; i < PORT_TOP_VIEW_ROWS; i++) {
@@ -139,6 +150,12 @@ static void port_TopPageDraw(const PortTopView *view) {
     }
     if (view->caption[1] != NULL) {
         port_TopPageText(CAPTION_X, CAPTION_LINE_Y, SIZE_LINE, view->caption[1],
+                         COLOR_CAPTION, ALIGN_CENTRE);
+    }
+    if (port_UpdateNotice(first, second, sizeof(first), &generation)) {
+        port_TopPageText(CAPTION_X, NOTICE_FIRST_Y, SIZE_LINE, first,
+                         COLOR_NOTICE, ALIGN_CENTRE);
+        port_TopPageText(CAPTION_X, NOTICE_SECOND_Y, SIZE_LINE, second,
                          COLOR_CAPTION, ALIGN_CENTRE);
     }
 }
@@ -163,9 +180,13 @@ static s32 port_TopViewsDiffer(const PortTopView *a, const PortTopView *b) {
 s32 port_TopPagePixels(
     s32 area_w, s32 area_h, const u32 **pixels, PortRect *box) {
     PortTopView view;
+    char first[NOTICE_BYTES];
+    char second[NOTICE_BYTES];
+    s32 notice_generation;
     u32 need;
 
     port_ReadTopMenu(&view);
+    port_UpdateNotice(first, second, sizeof(first), &notice_generation);
     if (!view.is_up || area_w <= 0 || area_h <= 0) {
         return FALSE;
     }
@@ -176,7 +197,9 @@ s32 port_TopPagePixels(
         }
     }
     if (!g_top.drawn || g_top.area_w != area_w || g_top.area_h != area_h ||
-        port_TopViewsDiffer(&g_top.view, &view)) {
+        port_TopViewsDiffer(&g_top.view, &view) ||
+        g_top.notice_generation != notice_generation) {
+        g_top.notice_generation = notice_generation;
         g_top.area_w = area_w;
         g_top.area_h = area_h;
         g_top.view = view;

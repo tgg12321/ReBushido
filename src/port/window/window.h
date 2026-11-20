@@ -697,6 +697,12 @@ extern void port_PlaceCounter(
 /* cpu_prefer's words */
 #define PORT_CPU_PREFER_OFF 0
 #define PORT_CPU_PREFER_AUTO 1
+/* updates' words and update_channel's (update.c) */
+#define PORT_UPDATES_ASK 0
+#define PORT_UPDATES_AUTO 1
+#define PORT_UPDATES_OFF 2
+#define PORT_UPDATE_CHANNEL_RELEASE 0
+#define PORT_UPDATE_CHANNEL_BETA 1
 
 /* logical processors by number, a bit each (a Windows processor group's
  * processor n is number 64 * group + n) */

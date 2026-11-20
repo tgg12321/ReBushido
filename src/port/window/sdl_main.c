@@ -52,6 +52,7 @@
 #include "port_top_menu.h"
 #include "shared.h"
 #include "sdl_window.h"
+#include "update.h"
 
 #define PATH_BYTES_MAX 1024
 #define ARGUMENTS_MAX 64
@@ -206,7 +207,10 @@ static const char g_port_window_usage_end[] =
     "were N, the ground M times over: tools/port_bench.py), --report-at N\n"
     "(what F9 does, at blank N) and --stall MS[,EVERY[,FROM]] (the window\n"
     "stops MS milliseconds at every EVERYth blank from FROM: a hitch made\n"
-    "on purpose, for the pace and the sound).\n";
+    "on purpose, for the pace and the sound). A trial build (-dev) takes\n"
+    "--update-url URL and --update-key HEX: its updater asks a test's\n"
+    "server, with a test's key (tools/port_update_test.py; docs/PORT.md,\n"
+    "\"Updates\").\n";
 
 static void port_Complain(const char *problem, const char *word) {
     fprintf(stderr, "rebushido: %s%s\nrebushido: --help says what it takes\n",
@@ -803,9 +807,16 @@ int main(int argc, char **argv) {
     s32 stage_mesh = -1;
     s32 shadows = -1;
     PortRemasterView view;
+    s32 is_session = 0; /* started into a session of online play */
     s32 code;
     s32 i;
 
+    /* the step that puts a downloaded update in place, which the program
+     * starts as a copy of itself and which is nothing else (update.h) */
+    code = port_UpdateApplyMain();
+    if (code >= 0) {
+        return code;
+    }
     /* the console's memory at its own addresses, before SDL, the card's
      * driver or anything of the C library's can take one of them
      * (port_host.h) */
@@ -844,6 +855,14 @@ int main(int argc, char **argv) {
             options->is_hidden = 1;
         } else if (strcmp(word, "--prepare-only") == 0) {
             options->prepare_only = 1;
+        } else if (strcmp(word, "--update-url") == 0 && has_value) {
+            options->update_url = argv[++i];
+        } else if (strcmp(word, "--update-key") == 0 && has_value) {
+            options->update_key = argv[++i];
+        } else if (strcmp(word, "--update-started") == 0) {
+            options->update_started = 1;
+        } else if (strcmp(word, "--update-rolled-back") == 0 && has_value) {
+            options->update_rolled_back = argv[++i];
         } else if (strcmp(word, "--no-fps") == 0) {
             no_fps = 1;
         } else if (strcmp(word, "--no-log") == 0) {
@@ -1043,6 +1062,10 @@ int main(int argc, char **argv) {
             if (strcmp(word, "--frames") == 0 || strcmp(word, "--plan") == 0) {
                 has_end = 1;
             }
+            if (strcmp(word, "--host") == 0 || strcmp(word, "--join") == 0 ||
+                strcmp(word, "--lobby") == 0) {
+                is_session = 1;
+            }
             if (count == ARGUMENTS_MAX) {
                 port_Complain("too many words on the command line", "");
             }
@@ -1053,6 +1076,25 @@ int main(int argc, char **argv) {
         port_OpenLog(log, beside);
     }
     port_LoadSettings(config, beside);
+    /* the updater (update.h): never in a session of online play or a
+     * test's run, unless the test names its server; a downloaded update
+     * put in place before anything else is done */
+    if ((options->update_url != NULL || options->update_key != NULL) &&
+        strstr(port_GetVersionText(), "-dev") == NULL) {
+        port_Complain("--update-url and --update-key are a trial build's, "
+                      "for its tests: not a release's",
+                      "");
+    }
+    port_UpdateSetUp(beside, options->update_url, options->update_key,
+                     !is_session && !options->prepare_only &&
+                         (!has_end || options->update_url != NULL));
+    if (options->update_rolled_back != NULL) {
+        port_UpdateRolledBack(options->update_rolled_back);
+    }
+    if (!options->update_started && port_UpdateAtStart()) {
+        port_EndSession(PORT_EXIT_OK);
+        return PORT_EXIT_OK;
+    }
     if (no_fps) {
         g_port_settings.fps = 0;
     }
@@ -1182,6 +1224,11 @@ int main(int argc, char **argv) {
     if (image != NULL) {
         port_NoteImage(image);
     }
+    if (options->update_started) {
+        /* started by the step that installed an update: it has started,
+         * its settings and the disc read, so it is kept */
+        port_UpdateSayStarted();
+    }
     /* the mods made from the player's disc, the first time it is played
      * (prepare.c): in a player's session with the mods beside the
      * program, or for --prepare-only, which makes them and ends */
@@ -1250,6 +1297,8 @@ int main(int argc, char **argv) {
                                  : "the ones built in (--help shows them)");
     port_DescribeControls();
     port_StartWindow();
+    /* whether there is a newer release, in the background */
+    port_UpdateBegin();
     port_MapHostPort(count, passed);
     /* the game never comes back; what does is a start that failed */
     code = port_Main(count, passed);

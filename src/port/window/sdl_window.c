@@ -62,6 +62,7 @@
 #include "shared.h"
 #include "portmap.h"
 #include "sdl_window.h"
+#include "update.h"
 
 #define WINDOW_TITLE "ReBushido"
 /* The window as it opens: the picture three times. */
@@ -2498,6 +2499,8 @@ static void port_WatchGame(u32 blank) {
     s32 frames;
 
     port_ReadGameState(&now);
+    /* an update is never downloaded during a fight (update.c) */
+    port_UpdateWatch(now.in_fight);
     frames = g_port_has_seen ? now.frames - g_port_seen.frames : 0;
     port_CountFps(&g_port_shown_meter, clock, 0);
     port_CountFps(&g_port_blank_meter, clock, 1);

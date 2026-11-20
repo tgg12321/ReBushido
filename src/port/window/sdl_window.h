@@ -74,6 +74,13 @@ typedef struct {
     s32 stall_at;
     s32 stall_every;
     s32 stall_ms;
+    /* the updater's (update.h): a test's server and key, which a trial
+     * build alone takes; and the words the step that installs an update
+     * gives the program it starts */
+    const char *update_url;
+    const char *update_key;
+    s32 update_started;
+    const char *update_rolled_back;
 } PortWindowOptions;
 
 enum {

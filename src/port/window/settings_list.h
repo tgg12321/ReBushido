@@ -108,6 +108,37 @@ PORT_SETTING(monitor,
             "white",
     .shown = {"Color", "Black and white"})
 
+/* The PC package's updater (update.c; docs/PLAYING.md, "Updates"): ask,
+ * the newest release asked for at a start, at most once a day, and a
+ * notice on the top menu where there is a newer one; auto, downloaded as
+ * well and put in place at the next start; off, nothing asked unless
+ * the settings menu's Updates page is told to. */
+PORT_SETTING(updates,
+    .name = "updates", .value = "ask",
+    .note = "ask: a newer release is shown on the top\n"
+            "menu (asked for at most once a day); auto:\n"
+            "downloaded too, installed at the next\n"
+            "start; off: never asked for by itself",
+    .read = PORT_READ_WORDS, .words = {"ask", "auto", "off"},
+    .is = "ask, auto or off",
+    .menu = PORT_MENU_GAME, .rank = 100, .takes = PORT_TAKES_NOW,
+    .label = "Updates",
+    .help = "A newer release shown, or downloaded and installed at the "
+            "next start, or never asked for",
+    .shown = {"Ask", "Automatic", "Off"})
+
+/* Which releases: release, the repository's latest (never a
+ * prerelease); beta, the newest of all, prereleases too. */
+PORT_SETTING(update_channel,
+    .name = "update_channel", .value = "release",
+    .note = "release or beta: beta takes prereleases too",
+    .read = PORT_READ_WORDS, .words = {"release", "beta"},
+    .is = "release or beta",
+    .menu = PORT_MENU_GAME, .rank = 110, .takes = PORT_TAKES_NOW,
+    .label = "Update channel",
+    .help = "Releases only, or the prereleases (beta) as well",
+    .shown = {"Release", "Beta"})
+
 /* ---- the window ---- */
 
 PORT_SETTING(scale,

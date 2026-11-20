@@ -463,6 +463,7 @@ s32 port_PrepareMods(const char *beside, const char *image, const char *key,
     (void)is_hidden;
     (void)shots;
     (void)port_PrepareNeeded;
+    (void)g_prepare_mods;
     *closed = 0;
     return 0;
 }

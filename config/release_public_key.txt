@@ -1,0 +1,15 @@
+# The release key's public half: the Ed25519 key every release's
+# update-manifest.txt is signed with, and which the PC program holds each
+# update to before it downloads or installs anything (src/port/window/
+# update.c; docs/PORT.md, "Updates"). The 64 hex digits of its 32 bytes,
+# or `none`: a program built with `none` never updates itself, and
+# `make port-release RB_RELEASE=1` refuses to make a release of it.
+#
+# The owner makes the key once, outside the repository, and puts its public
+# half here (BUILD.md, "Publishing a release"):
+#
+#     python tools/release_sign.py --generate
+#
+# Only the public half is ever written here. The secret half never leaves
+# the owner's PC.
+none

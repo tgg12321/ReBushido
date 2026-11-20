@@ -82,7 +82,13 @@ WINDOW_GAME = ['gamestate.c']
 WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'sdl_net.c', 'sdl_report.c', 'menu.c', 'font.c',
                  'stage_page.c', 'top_page.c', 'menu_online.c',
                  'sampler.c', 'warm.c', 'portmap.c', 'cpu_prefer.c',
-                 'prepare.c']
+                 'prepare.c', 'update.c', 'update_core.c', 'update_apply.c']
+# Monocypher (src/port/vendor/monocypher/, CC0 or BSD-2): the updater's
+# Ed25519, as it is shipped
+VENDOR_HOSTED = ['src/port/vendor/monocypher/monocypher.c', 'src/port/vendor/monocypher/monocypher-ed25519.c']
+# The release key the updater holds every release's manifest to (docs/
+# PORT.md, "Updates"): its public half, the hex of 32 bytes, or `none`
+RELEASE_KEY = 'config/release_public_key.txt'
 # The port's typeface, each weight put into the program as a C array of its
 # bytes (src/port/window/font.c; docs/PORT.md, "The port's lettering"), and
 # the mods the program ships, copied into mods/ beside it.
@@ -226,7 +232,7 @@ class Target:
                 self.game_flags.append('-mcmodel=small')
             self.sdl = self.find_sdl(bits)
             self.sdl_flags = ['-I%s/include/SDL2' % self.sdl] if self.sdl else []
-            self.hosted = ([WINDOW_DIR + f for f in WINDOW_HOSTED]
+            self.hosted = ([WINDOW_DIR + f for f in WINDOW_HOSTED] + VENDOR_HOSTED
                            + [GL_DIR + f for f in GL_HOSTED] + ['src/port/host_windows.c'])
         else:
             self.cc, self.objcopy, self.nm, self.objdump = 'gcc', 'objcopy', 'nm', 'objdump'
@@ -237,7 +243,7 @@ class Target:
             self.game_flags = []
             self.sdl = None
             self.sdl_flags = ['-I/usr/include/SDL2', '-D_REENTRANT']
-            self.hosted = ([WINDOW_DIR + f for f in WINDOW_HOSTED]
+            self.hosted = ([WINDOW_DIR + f for f in WINDOW_HOSTED] + VENDOR_HOSTED
                            + [GL_DIR + f for f in GL_HOSTED] + [WINDOW_DIR + 'host_posix.c'])
 
     @staticmethod
@@ -266,7 +272,7 @@ class Target:
 
     def link_flags(self):
         if self.windows:
-            return (['-L%s/lib' % self.sdl, '-lSDL2', '-lcomdlg32', '-lws2_32', '-static-libgcc']
+            return (['-L%s/lib' % self.sdl, '-lSDL2', '-lcomdlg32', '-lws2_32', '-lwinhttp', '-static-libgcc']
                     + self.windows_link_flags())
         # (-lm: the menu's font is drawn with the C library's arithmetic)
         return [self.size_flag, '-no-pie', '-lSDL2', '-lm', '-Wl,-Ttext-segment=0x%X' % PROGRAM_BASE]
@@ -627,6 +633,37 @@ def write_font(target):
     return path
 
 
+def release_key():
+    """The release key's public half as config/release_public_key.txt has
+    it: 64 hex digits, or '' where the file says `none` (no key yet: the
+    program then never updates itself). Ends the build on anything else."""
+    words = [line.strip() for line in open(RELEASE_KEY, encoding='utf-8')
+             if line.strip() and not line.strip().startswith('#')]
+    if words == ['none']:
+        return ''
+    if len(words) != 1 or not re.fullmatch(r'[0-9a-f]{64}', words[0]):
+        sys.exit('port-sdl: %s is neither `none` nor the 64 hex digits of an Ed25519 public key' % RELEASE_KEY)
+    return words[0]
+
+
+def write_update_key(target):
+    """The release key as a C file of the build's own, written again only
+    when it changed: its path."""
+    path = target.dir + '/update_key.c'
+    key = release_key()
+    text = ('/* Written by tools/port_sdl_build.py from %s: the key every\n'
+            ' * release\'s manifest is held to (src/port/window/update.c). */\n'
+            'extern const char g_port_update_key[];\n'
+            'const char g_port_update_key[] = "%s";\n' % (RELEASE_KEY, key))
+    if not os.path.exists(path) or open(path, encoding='utf-8').read() != text:
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(text)
+    if not key:
+        print('port-sdl: %s says none: this program never updates itself (BUILD.md, "Publishing a release")'
+              % RELEASE_KEY)
+    return path
+
+
 def arena_mod_text(name):
     """The mod.txt of the sample arena `name`'s folder of mods/ (tools/
     port_release.py holds a package's copy to it)."""
@@ -727,7 +764,8 @@ def main():
     jobs = [(target, path, 'port' if own else 'game', flags + mine, stamp)
             for path, own, mine in port_build.sources() if path not in OTHER_HOSTS]
     jobs += [(target, WINDOW_DIR + f, 'port', flags, stamp) for f in WINDOW_PLAIN + WINDOW_GAME]
-    jobs += [(target, path, 'hosted', flags, stamp) for path in target.hosted + [write_font(target)]]
+    jobs += [(target, path, 'hosted', flags, stamp)
+             for path in target.hosted + [write_font(target), write_update_key(target)]]
     game, hosted, failed, built = [], [], 0, 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
         for job, (path, obj, compiled, messages) in zip(jobs, pool.map(compile_one, jobs)):

@@ -17,7 +17,8 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-AS_SHIPPED = {"inline_o.h", "inline_c.h", "gtemac.h", "libsn.h", "stb_truetype.h", "stb_vorbis.c"}
+AS_SHIPPED = {"inline_o.h", "inline_c.h", "gtemac.h", "libsn.h", "stb_truetype.h", "stb_vorbis.c",
+              "monocypher.c", "monocypher.h", "monocypher-ed25519.c", "monocypher-ed25519.h"}
 
 
 def main():
