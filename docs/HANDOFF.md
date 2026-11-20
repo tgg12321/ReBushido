@@ -1,4 +1,141 @@
-# Handoff, 2026-11-18
+# Handoff, 2026-11-20
+
+Where ReBushido stands after the session of 2026-11-18 to 20 (lighting,
+models, menus, online, match rules, replays, releases). The standing
+rules are in [`CLAUDE.md`](../CLAUDE.md) and [`AGENTS.md`](../AGENTS.md);
+the plan is [`ROADMAP.md`](ROADMAP.md) (items 14 to 25 are this
+session's); how to play is [`PLAYING.md`](PLAYING.md); online play is
+[`NETPLAY.md`](NETPLAY.md) (sections 13 to 15); mods are
+[`MODS.md`](MODS.md); how each piece works is in [`PORT.md`](PORT.md).
+
+## The state
+
+- `main` is pushed at `ab47df77e`; the gate passed on it (one step,
+  port-update, failed on a test's menu path and passed after its fix).
+  Every agent branch of the session is merged.
+- **The owner's copy** at the root is `ab47df77e`, with `prepare/` (the
+  first start rebuilds `mods/art` and `mods/stages-hd` from the disc,
+  about 3.5 minutes; the old ones had been emptied by a cleanup on
+  2026-11-19 and are gone) and `mods/fighters` (Tatsumi's geometry-only
+  model, geo-01).
+- **The release zip** for the first real online test is
+  `build/release/ReBushido-PC-0.1-ab47df77e.zip` (protocol 9; setup
+  codes begin `P9`). Both players must run that same build.
+- **The owner's cfg** still has `time_of_day = day` (the stage pages now
+  ignore it and start at the stage's own) and `shadows` as the owner set it.
+
+## Waiting on the owner
+
+1. **The first real online test** with a friend, from the zip above
+   (steps: PLAYING.md, "Playing online"; the friend needs only the US
+   disc image, SLUS-00663, as .cue/.bin). Afterwards, read both
+   players' `logs/`: the connection's path (direct, router port, punch,
+   relay) and the round trip.
+2. **The release key**, before any public release: `python
+   tools/release_sign.py --generate` (key outside the repo, in
+   `%USERPROFILE%\.rebushido-release-key\`; back it up), paste the public
+   key into `config/release_public_key.txt`, commit; then each release
+   is `python tools/release_publish.py --notes NOTES.txt` (BUILD.md).
+   Until then the updater is inert and `make port-release RB_RELEASE=1`
+   refuses. Publishing is the owner's.
+3. **Looks to judge in the game**: each time of day's colours
+   (PORT.md, "The time of day"), each stage's floor reflections
+   (`g_post_floors`), the stage lights placed (`tmp/stagelights/`; is
+   the Kabuki eaves' band lanterns?), the font (Shippori Mincho), the
+   match strip and cards (`tmp/matchrules/`), the online pages
+   (`tmp/online-ui/`).
+4. **Tatsumi's shoulders, knees and neck** (geo-01 left them as the
+   game has them): a hand rebuild of the joints in Blender, or the
+   renderer blending joints by rotation (every fighter at once).
+
+## The VPS (the lobby, rendezvous and relay)
+
+`ssh -i ~/.ssh/id_ed25519 root@135.181.108.74` (Git Bash; PowerShell has
+no ssh). Hetzner, Ubuntu 26.04; also runs the owner's PokeBowl, an IPsec
+VPN and AdGuard: leave those alone. The service is `rebushido-relay`
+(systemd, DynamicUser, `/opt/rebushido-relay/`), UDP 7845, opened in
+Hetzner's cloud firewall by the owner. Uninstall:
+`bash /root/rebushido-relay-src/deploy.sh uninstall`. The internet test
+(`wsl python3 tools/port_net_lobby.py internet --lobby
+135.181.108.74:7845`) passed: punch and relay, 82 hashes alike; the
+relay's own cost about 290 ms round trip from here (Helsinki).
+
+## What the session built (all merged)
+
+- **Lighting** (ROADMAP 14, 20): sun cascades plus a whole-stage map,
+  every standing piece casting, scenery shadows on the game's own
+  fighters; stage lights (mods/lights, 26 more, `times =`); fighters lit
+  and shadowed by them (a twin shader program); planar floor
+  reflections; AO, bloom (depth-tested), tonemap; flames held by depth;
+  a time of day per stage (L1/R1 on the stage page) and night's own
+  light.
+- **Fighters**: the HD and Fable-remade models scrapped (archived in
+  `tmp/models/archive-2026-11-19/`); geometry-only passes from the
+  game's own texture (`tools/port_models/geometry.py`); the fighters'
+  near plane at 16; the model viewer (`tools/model_viewer/serve.py`).
+- **Menus**: ReBushido's top menu (Singleplayer, Versus, Training,
+  Online Play, Options), no boot options page, no POV, the settings menu
+  grouped (`menu = original` brings the old ones back; tests use it);
+  one typeface everywhere; the stage page's panel (Style, Time, Music
+  L2/R2, Match Circle/Start, Arenas).
+- **Gameplay**: stage select in every mode, `unlock_all`, fight music
+  in every mode (`fight_music`), match rules Stock N / First to N.
+- **Online**: the lobby with rooms and passwords, the ways between two
+  PCs (IPv6, UPnP/NAT-PMP/PCP, punch, relay), setup codes
+  (`--check-online`), refusals on screen, sessions begun and ended in
+  the running program (no restart), the online pages in the game's look
+  (Quick Match, Host, Browse, Join by code or address).
+- **Replays**: every fight to `replays/` (~215 KB: the start state,
+  inputs, hashes), a Replays page, `--replay`, `--replay-check`.
+- **Releases**: `make port-release` (refuses disc-made files), the
+  first-start builder of the disc-made mods (a bundled Python, byte-
+  identical output), the signed auto-updater (GitHub Releases,
+  Ed25519/Monocypher, install on restart with a rollback).
+- **Fixes**: the rooftop crash (a call short of an argument; `make port`
+  now fails on any such call), the Vs. CPU next-fight hang (a looping
+  piece before a read; a hurried load that reads nothing is paced),
+  hidden windows never opening the PC's sound device, `cpu_prefer` (the
+  step and painters on the larger-cache CCD of an X3D, nothing
+  elsewhere), the bench's held measures with 25% slack (the owner: good
+  performance in general, not strict).
+
+## Next, in the owner's order
+
+1. Whatever the online test shows.
+2. ROADMAP 22: lobbies of more than two, spectators, the rotation of
+   three (A+B, B+C, C+A). It builds on the no-restart sessions.
+3. ROADMAP 25: a ladder and Elo through the lobby server (replays as the
+   check of a result).
+4. ROADMAP 24: 2v2 (four fighters in one fight, retargeting): the
+   largest; the game's fight logic is for two.
+5. Smaller: the room list's ping; leaving an online fight without
+   closing the window; the group battle card's names still in the
+   game's letters; the game's "WINS 00" beside the match strip.
+
+## Lessons of the session (for agents too)
+
+- **Disk**: an agent's worktree is ~4 GB; remove each after its merge
+  with `tmp/cleanup/worktrees.ps1 -Do` (it now skips locked, dirty and
+  recent trees: an earlier version removed a running agent's tree). C:
+  filled once and made WSL's disk read-only until `wsl --shutdown`.
+- **Junctions**: never delete through one (`build/bench/mods/*` point
+  at `tmp/mods/*`; something emptied `tmp/mods/art` and `stages-hd`
+  that way). Remove a junction alone with `cmd /c rmdir`.
+- **Sound**: a Windows run must pass `--hidden` (now forces SDL's dummy
+  audio) or `--no-sound`; the environment variable alone did not stop
+  the Windows build from opening the real device.
+- **Merges**: parallel branches collide in `session.c` (protocol and
+  MEET fields), `menu.c` (rows; tests navigate by position), the build
+  lists of `tools/port_sdl_build.py`, and `gl_draw.c` (FLAG/INFO bits:
+  two branches took the same bit). Check each after a merge.
+- **Agents forget `python tools/format.py --check --all`**; the gate's
+  format step catches it.
+- **Python heredocs through the Bash tool** turn `\\n` inside C string
+  literals into newlines: write such scripts with the Write tool.
+
+---
+
+# Earlier: the handoff of 2026-11-18
 
 Where ReBushido stands at the end of the performance run. The standing
 rules are in [`CLAUDE.md`](../CLAUDE.md) and [`AGENTS.md`](../AGENTS.md);
