@@ -8124,8 +8124,21 @@ L1 on the first place (its own to night) and R1 on Abandoned Station,
 and holds the cursor's and the fight's time (`port_cursor_time`,
 `port_time` in `tests/play/state.toml`) on both sizes, the same trace.
 Pictures of six stages at the five times (rebushido-gl,
-`--time-of-day`). At the stage's own time the GL prover's Original is
-pixel-exact and the stage prover's numbers are main's.
+`--time-of-day`, `--smooth-light on` as the window has it). At the
+stage's own time `port_gl_prove.py --gpu card` passes (the Original
+picture the console's, to the pixel) and `port_stage_prove.py --gpu card
+--against main` has every stage's trace the same both ways and the
+pictures main's stored ones (2026-11-19).
+
+**What it costs** (the bench, the RTX 3090 at 2,560 by 1,440, a machine
+loaded 36 to 46% by other agents' emulators, so a guide): `--budget` at
+the stage's own time, ra1's card 95% 4.50 ms and the lighting's 0.76
+against 2.0, the card under the refresh in every case; `--case ra1 --set
+time_of_day=night`, the card's 95% 4.99 ms and the lighting's 0.35. What
+a time adds to a frame is a few uniforms, one more read of the fog's
+levels in the mesh's shader and the sky's branch: nothing measurable
+above the load's noise. The processor's side is unchanged (the look is
+worked out when the stage or the time changes).
 
 ## Every stage in every mode, and every unlock
 
