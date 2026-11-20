@@ -542,6 +542,23 @@ extern s32 port_IsOnStagePages(void);
  * shows has changed. */
 extern s32 port_StagePagePixels(
     s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
+
+/* What of the match rules is over the picture (include/port_match.h):
+ * nothing, the lives or the score over a fight of a match, or the card
+ * after one (match_page.c). */
+enum {
+    PORT_MATCH_SHOWN_NONE = 0,
+    PORT_MATCH_SHOWN_HUD = 1,
+    PORT_MATCH_SHOWN_CARD = 2,
+};
+
+extern s32 port_MatchShown(void);
+/* What the window lays over the picture for them, as
+ * port_StagePagePixels does for the stage pages. */
+extern s32 port_MatchPixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
+/* "Single fight", "Stock N" or "First to N" into `out`. */
+extern void port_MatchRuleName(char *out, s32 room, s32 rule, s32 count);
 /* ReBushido's top menu as the window lays it over the game's page
  * (top_page.c), read from the game (port_top_menu.h): whether the page is
  * up, which of its two pages and rows, each row's name and whether it can

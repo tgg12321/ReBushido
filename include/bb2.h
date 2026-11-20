@@ -88,6 +88,7 @@
 #include "port_play.h"
 #include "port_fight_music.h"
 #include "port_top_menu.h"
+#include "port_match.h"
 #endif
 
 #endif /* BB2_H */

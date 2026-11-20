@@ -55,6 +55,19 @@ MEMBERS = {
     'port_music_row': 'PortFightMusic.row',
     'port_music_heard': 'PortFightMusic.heard',
     'port_music_track': 'PortFightMusic.track',
+    'port_match_page_rule': 'PortMatch.page_rule',
+    'port_match_page_count': 'PortMatch.page_count',
+    'port_match_rule': 'PortMatch.rule',
+    'port_match_count': 'PortMatch.count',
+    'port_match_lives_p1': 'PortMatch.lives[0]',
+    'port_match_lives_p2': 'PortMatch.lives[1]',
+    'port_match_wins_p1': 'PortMatch.wins[0]',
+    'port_match_wins_p2': 'PortMatch.wins[1]',
+    'port_match_fights': 'PortMatch.fights',
+    'port_match_last': 'PortMatch.last',
+    'port_match_over': 'PortMatch.over',
+    'port_match_winner': 'PortMatch.winner',
+    'port_match_card': 'PortMatch.card',
 }
 
 

@@ -406,6 +406,13 @@ void fight_AfterMatchUpdate(void) {
         &g_camera_main.focus, &g_camera_main.angles, TURNING_VIEW_DISTANCE);
     scene_End(1);
 
+#if RB_PORT
+    /* a match goes on, or is decided, with a card in place of the menu
+     * (port_match.h) */
+    if (port_MatchAfterFight(g_pad_state.pressed)) {
+        return;
+    }
+#endif
     if (g_fight_choice_timer == 0) {
         g_disp_prim_cursor +=
             hud_DrawPanel(HUD_PANEL_AFTER_FIGHT, g_fight_choice,
@@ -643,6 +650,11 @@ void cutscene_KaishakuUpdate(void) {
             /* the second count is reached from the first (see fight.h) */
             (&g_fight_wins_p1)[g_fight_winner]++;
         }
+#if RB_PORT
+        /* the surrenderer's loss, counted into the match (port_match.h) */
+        port_MatchFightOver(
+            g_fight_mode, g_fight_winner != 0, g_fight_winner == 0);
+#endif
         /* the cutscene read through the motion files' streams */
         motion_OpenStream(0, g_motion_common_sections.stream);
 #if RB_PORT

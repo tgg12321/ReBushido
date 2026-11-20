@@ -407,6 +407,15 @@ the stage").
     wins, then the stage select). Chosen before the fight (versus, Vs.
     CPU, online: the host's rule holds), shown on the HUD (lives or the
     score), with the game's own kill and round flow inside each fight.
+    **Done** ([`PORT.md`](PORT.md), "Match rules"; [`PLAYING.md`](PLAYING.md),
+    "Match rules"): Circle and Start on a stage page (`match_rule`,
+    `match_count` for where it starts), lives or wins as pips over the
+    fight, a card of the score between fights and of the winner at the
+    end, then the stage select with the fighters kept; versus the CPU a
+    match per opponent; a draw a life from both in Stock (none on both
+    last lives), no point in First to N; the host's online (protocol 8),
+    the score in the state. Left: the owner's eye on the cards and the
+    strip.
 22. **Online lobbies of more than two** (after the seamless online
     menus): a room holds several players and spectators; spectators
     watch a match live (the session's inputs, rolled forward, no

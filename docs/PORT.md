@@ -8657,6 +8657,83 @@ versus' rematch always has. `tools/port_stage_select.py`, plan
 CPU cut down by low strikes, the next opponent's fight loaded and
 started with its own piece, both sizes the same.
 
+## Match rules
+
+ROADMAP 21 (the owner, 2026-11-20): beside the game's single fight, a
+**Stock N** match (each side N lives, a fight lost takes one) and
+**First to N** (fights until a side has won N), for versus, link,
+online versus and versus the CPU (PLAYING.md, "Match rules", for how
+they play). `include/port_match.h` has the rules; all of it is under
+`RB_PORT`, and the PlayStation builds play as they did.
+
+**Where the choice is.** On a stage page Circle turns the rule and Start
+its number (`port_MatchPageStep`, from `select_StageStep` after the
+kinds, the time and the music: neither button was the page's). The
+page's rule starts at the window's `match_rule` and `match_count`
+(`--match single|stock:N|first_to:N` headless), kept outside the state
+in `play_switches.c` as the fight's music is, and keeps what the players
+left it at until the setting changes; the window's panel shows it as a
+column "Match" (`stage_page.c`) where the mode plays matches.
+
+**The game's flow, and where the port steps in.** A mode started from
+the menus (`fight_ApplyConfig`) begins a match with the page's rule
+(`port_MatchBegin`); a rematch and versus the CPU's next opponent do not
+pass there. Each fight runs as the game has it. Where the game counts a
+versus win (`fight_AfterDefeat`, two seconds after the first fall: both
+fallen is a draw; `cutscene_KaishakuUpdate`, a surrender) the port
+counts the fight into the match (`port_MatchFightOver`): a draw takes a
+life from both in Stock unless both are on their last (then none, so
+the next fight decides and a Stock match always has a winner), and
+scores nothing in First to N. The replay and the winner's view follow
+as ever; versus the CPU's win goes to the screen after a fight while
+its match is not won (`port_MatchNextOpponent`). On the screens after a
+fight and after a kaishaku, before their menu, `port_MatchAfterFight`
+holds a card up for 75 frames (120 for the match's result; Cross after
+20 takes it down), then starts the next fight as Rematch does (where
+the fighters are, `fight_FindNearestStartPair`) but without a continue
+counted or the CPU made to forget; or, the match decided, goes the way
+"Return to Sub Menu" goes (`g_menu_reopen_mode`) with a mark that
+`select_Load` reads: the select screen opens on the stage page versus
+opens on, each side's pick the settings' `match_picks` and its grid
+cursor on its fighter, so Triangle goes back to the weapons
+(`select_PortBackToStages`). Versus the CPU's match won goes on to the
+game's next opponent, whose match starts afresh; its match lost is
+handed to the game's own menu after a defeat, the score reset, so its
+Rematch is a new match.
+
+**The state.** The page's rule and the match's score (lives, wins, the
+last fight, the card and its frames) are `g_port_match`
+(`src/port/match.c`, a state file): saved, put back and hashed with the
+game, so a rollback puts the score back with the fight and the two
+machines of a session keep the same. In a session the welcome carries
+the host's `match_rule` and `match_count` (`MEET_MATCH`, protocol 8) and
+both hold them (`port_HoldMatch`); the pages' presses are the same on
+both machines, so the rule is.
+
+**The picture.** None of it is in the game's video memory: the window
+lays it over the picture at its own resolution (`match_page.c`, through
+the overlay `port_DrawOverlay` that the stage pages' panel uses too).
+Over a fight of a match a strip at the top: 1P's and 2P's (or the
+CPU's) pips, filled for the lives left or the wins, the rule between
+them; after a fight the card, its title the rule and the fight's
+number, each side's name, number and pips, and who took the fight, a
+draw, or who won the match. What is shown is `port_MatchShown`
+(`gamestate.c`): the card on the screens after a fight while one is up,
+the strip on `SCREEN_FIGHT_UPDATE` of the match's mode.
+
+**How it is proved.** `tools/port_match.py` (run by `make
+port-stage-select`) plays a plan of each rule on both sizes, the traces
+held to each other: versus Stock 2 (two kills by the first fighter's
+low strikes, the score's card 2-1, the next fight on the same stage and
+fighters, the result's card, the stage select, Cross there a new match
+of the same fighters); versus First to 2, chosen on the stage page with
+Circle and Start; versus the CPU Stock 2, which as the port plays today
+is a fight won and two lost, the game's menu after it and its Rematch a
+new match; versus the CPU Stock 1, the match won and the next opponent
+with a fresh one. `tools/port_rollback.py`'s Stock plan rolls a match
+back every 24 frames; `tools/port_net.py session` plays its session as
+a Stock match.
+
 ## ReBushido's top menu
 
 The owner, 2026-11-19: drop the options page at boot, put every setting

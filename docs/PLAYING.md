@@ -518,6 +518,55 @@ Online, the host's setting holds for both players, and both choose the
 piece on the same page; a mod's own pieces are not offered online,
 since the two players' mods may differ.
 
+## Match rules
+
+A fight in Bushido Blade is usually one kill. For versus (two players,
+online too) and versus the CPU the port adds two **matches** of several
+fights:
+
+- **Single fight**: the game's own, one fight and its menu (the
+  default);
+- **Stock N** (1 to 9): each player has N lives, shown as pips at the top
+  of the screen; a fight lost takes one. The next fight is on the same
+  stage with the same fighters, each keeping the lives left, until one
+  player has none;
+- **First to N** (1 to 9): fights until one player has won N; the pips
+  at the top fill as fights are won.
+
+On a **stage page** the panel's Match says what the fight will be:
+**Circle** (X on the keyboard for player one) turns the rule, Single
+fight, Stock, First to, and **Start** (Return) its number. The page
+keeps what you left it at; the settings menu's **Match rule** and
+**Match count** (`match_rule = single|stock|first_to` and `match_count
+= N` in `rebushido.cfg`) are where it starts, and what versus the CPU
+plays when it has no stage page (`stage_select_everywhere = off`).
+
+Inside each fight everything is the game's own: the kill, the replay,
+the winner's view. Then, in place of the menu after a fight, a card
+says who took the fight and the score, and the next fight starts by
+itself a couple of seconds later where the fighters stand, as Rematch
+starts one (Cross makes the card go sooner). When the match is decided
+a card names the winner, and then:
+
+- in **versus** and **online**, the **stage select**, the fighters and
+  weapons kept: choose the next stage (and rule) and fight, or
+  **Triangle** to go back to the weapons and the characters;
+- in **versus the CPU** each opponent is a match of its own: win it and
+  the game goes on to the next opponent, whose match starts afresh;
+  lose it and the game's own menu after a defeat comes up, whose
+  Rematch is a new match against the same opponent.
+
+**Draws.** A fight where both fighters fall is a draw. In Stock it
+takes a life from each, except when both are on their last life: then
+neither loses it and the next fight decides, so a Stock match always
+has a winner. In First to N a draw scores nothing. A surrender (the
+kaishaku) is the surrenderer's lost fight. There is no clock in versus,
+so a fight never ends on time.
+
+Online the **host's** `match_rule` and `match_count` are where both
+players' stage pages start; either player's Circle and Start change it
+there, as on one console, and both PCs keep the same score.
+
 ## Everything unlocked
 
 **`unlock_all = on`** (the settings menu's "Unlock everything"; off with
@@ -824,7 +873,9 @@ button layouts in the game's own options, the host's ReBushido settings
 player's cards. The game starts from the beginning on both PCs and goes
 by itself to **versus character select**, where you both choose at
 once, as on one console; the host picks the stage. After a fight the
-game's menu offers a **rematch**. In a fight Start does nothing: there
+game's menu offers a **rematch**; or play a Stock or First to match
+(the host's `match_rule`; "Match rules" above), which goes from fight to
+fight by itself and back to the stage select. In a fight Start does nothing: there
 is no pause online. The opening movie is skipped.
 
 You play with your own keys or controller, whichever player's they are

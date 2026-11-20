@@ -686,6 +686,40 @@ PORT_SETTING(unlock_all,
     .help = "Every hidden fighter and slash mode open; the save keeps "
             "only what you have won")
 
+/* The match rule of one against one (include/port_match.h; docs/PLAYING.md,
+ * "Match rules"): the game's own single fight; Stock, each player
+ * match_count lives; First to, match_count wins. The stage select starts
+ * at it, Circle and Start there change it; versus the CPU with the
+ * original's stages plays it. In a session the host's holds. */
+PORT_SETTING(match_rule,
+    .name = "match_rule", .value = "single",
+    .note = "single: one fight, as the game; stock:\n"
+            "match_count lives each; first_to:\n"
+            "match_count wins. Circle and Start\n"
+            "change it on the stage select",
+    .read = PORT_READ_WORDS, .words = {"single", "stock", "first_to"},
+    .is = "single, stock or first_to",
+    .menu = PORT_MENU_GAME, .rank = 70, .takes = PORT_TAKES_NOW,
+    .label = "Match rule",
+    .help = "One fight as the game has it, a Stock match of lives, or "
+            "First to a number of wins; Circle on the stage select "
+            "changes it",
+    .shown = {"Single fight", "Stock", "First to"})
+
+/* The lives of a Stock match, the wins of a First to (1 to 9; the menu
+ * offers seven of them, the file and Start on the stage select any). */
+PORT_SETTING(match_count,
+    .name = "match_count", .value = "3",
+    .note = "lives of stock, wins of first_to: 1 to 9",
+    .read = PORT_READ_NUMBER, .least = 1, .most = 9,
+    .is = "a number from 1 to 9",
+    .menu = PORT_MENU_GAME, .rank = 75, .takes = PORT_TAKES_NOW,
+    .label = "Match count",
+    .help = "The lives of a Stock match or the wins of a First to; Start "
+            "on the stage select changes it",
+    .choices = {"1", "2", "3", "4", "5", "7", "9"},
+    .shown = {"1", "2", "3", "4", "5", "7", "9"})
+
 /* The blanks in which the game waits for the disc behind its loading
  * picture are hurried through, not shown at the console's pace
  * (docs/PORT.md, "Quick loading"); 0 shows each as the console would.

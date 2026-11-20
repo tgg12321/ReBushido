@@ -259,21 +259,68 @@ SESSION_END = {0: '\n[[checkpoint]]\nname = "alone"\nafter = 900\nshot = false\n
                1: '\n[[checkpoint]]\nname = "end"\nframes = 30\nshot = false\n'}
 
 
-def write_session_plan(program, side, folder):
+# The headless session plays a Stock match of two lives (docs/PORT.md,
+# "Match rules"): the host's --match, which the guest is not given and
+# takes from the welcome. After the first kill the card of the score
+# stands in for the menu, and the second fight starts by itself; the host's
+# Cross after it only takes the card down sooner.
+SESSION_MATCH = ['--match', 'stock:2']
+SESSION_MATCH_EXPECT = {
+    'after_fight': 'expect = ["port_match_rule == 1", "port_match_card == 1", "port_match_fights == 1"]\n',
+    'rematch': 'expect = ["mode == FIGHT_MODE_VS", "wins_p1 + wins_p2 == 1", "port_match_rule == 1", '
+               '"port_match_count == 2", "port_match_lives_p1 + port_match_lives_p2 == 3"]\n',
+}
+
+
+def session_checkpoints(match):
+    """SESSION_CHECKPOINTS, with what a Stock match expects."""
+    if not match:
+        return SESSION_CHECKPOINTS
+    text = SESSION_CHECKPOINTS
+    for name, expect in SESSION_MATCH_EXPECT.items():
+        head = 'name = "%s"\n' % name
+        start = text.index(head)
+        end = text.index('\n\n', start) if '\n\n' in text[start:] else len(text)
+        block = '\n'.join(line for line in text[start:end].split('\n') if not line.startswith('expect')) + '\n'
+        text = text[:start] + block + expect + text[end:]
+    return text
+
+
+def session_match_problems(label, who, err, out, plan):
+    """The Stock match of a headless session: each side holds the host's
+    rule (the guest was given none), and where the second fight's
+    checkpoint is printed its score is one life lost of four."""
+    problems = []
+    if "session: the host's match rule is stock, 2" not in err:
+        problems.append('session: %s: the %s did not hold the host\'s match rule, stock 2' % (label, who))
+    names = [line.split()[1] for line in read(plan).split('\n') if line.startswith('var ')]
+    for line in out.split('\n'):
+        words = line.split()
+        if len(words) > 3 and words[0] == 'cp' and words[1] in SESSION_MATCH_EXPECT:
+            values = dict(playtest.header_names())
+            values.update(zip(names, (int(v) for v in words[3:])))
+            claims = SESSION_MATCH_EXPECT[words[1]].split('"')[1::2]
+            for claim in claims:
+                if not playtest.evaluate(claim, values):
+                    problems.append('session: %s: the %s at `%s`: not %s' % (label, who, words[1], claim))
+    return problems
+
+
+def write_session_plan(program, side, folder, match=False):
     """The plan of the host (side 0) or the guest (1) for `program`: its
-    path."""
+    path. `match`: the session plays SESSION_MATCH."""
     fight = port_game_fight()
     rematch = [p.replace('fight+', 'rematch+', 1) for p in fight]
     presses = own_pad(SESSION_SELECT + fight + rematch, side)
     if side == 0:
-        presses.append("after_fight+120 CROSS")
+        presses.append("after_fight+%d CROSS" % (30 if match else 120))
     toml = os.path.join(folder, 'session_side%d.toml' % side)
     with open(toml, 'w', encoding='utf-8', newline='\n') as f:
         f.write('about = "A session of netplay, side %d."\n' % side)
         # (the cards are the host's own, as the command line names them)
         f.write('discs = ["port"]\nlimit = 16000\nseconds = %d\n' % SECONDS)
         f.write('input = [\n%s\n]\n' % ',\n'.join('    "%s"' % p for p in presses))
-        f.write(SESSION_CHECKPOINTS + SESSION_END[side])
+        f.write(session_checkpoints(match) + SESSION_END[side])
     playtest.PORT_PROGRAM = program
     playtest.PORT_SYMBOLS = program + '.sym'
     test = playtest.Test(toml)
@@ -461,7 +508,7 @@ def check_session(label, program, args, ports, window):
     real time; or else the headless ones, as fast as they go."""
     folder = os.path.join(args.out, 'session', label)
     os.makedirs(folder, exist_ok=True)
-    plans = [write_session_plan(program, side, folder) for side in (0, 1)]
+    plans = [write_session_plan(program, side, folder, not window) for side in (0, 1)]
     trouble = ['--net-latency', str(args.latency), '--net-loss', str(args.loss)]
     env = dict(os.environ)
     procs = []
@@ -474,6 +521,8 @@ def check_session(label, program, args, ports, window):
             # which no program writes (both play on copies in memory)
             cmd += ['--host', '%s:%d' % (LOCALHOST, ports[0]), '--net-delay', str(args.delay),
                     '--card1', os.path.join(folder, 'card1.mcd'), '--card2', os.path.join(folder, 'card2.mcd')]
+            if not window:
+                cmd += SESSION_MATCH
         else:
             cmd += ['--join', '%s:%d' % (LOCALHOST, ports[0]), '--net-bind', '%s:%d' % (LOCALHOST, ports[1])]
         if window:
@@ -536,6 +585,8 @@ def check_session(label, program, args, ports, window):
         else:
             print('    checkpoints printed: %s; the last reached: %s' % (
                 ' '.join(order[n] for n in printed), order[max(printed)]))
+        if not window:
+            problems += session_match_problems(label, who, err, out, plans[side])
         hashes.append(hashes_of(err))
     host_err = read(os.path.join(folder, 'side0.err'))
     if 'the other program ended after frame' not in host_err:

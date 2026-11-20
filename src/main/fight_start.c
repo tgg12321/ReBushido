@@ -42,6 +42,10 @@ void fight_ApplyConfig(void) {
     g_fight_rematch_offered = 2;
     g_fight_wins_p2 = 0;
     g_fight_wins_p1 = 0;
+#if RB_PORT
+    /* a match begins with the rule chosen (port_match.h) */
+    port_MatchBegin(mode);
+#endif
 }
 
 /* The names of the modes (enum FightMode), which nothing reads:

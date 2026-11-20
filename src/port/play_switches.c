@@ -5,7 +5,8 @@
  * in when it next asks (src/port/play.c, src/port/top_menu.c), and nothing
  * a rollback or run-ahead loads puts them back. In a session the host's
  * hold. The fight's music as the window's fight_music or --fight-music
- * asks (port_fight_music.h) is kept here likewise. */
+ * asks (port_fight_music.h) is kept here likewise, and the match rule of
+ * the window's match_rule and match_count, or --match (port_match.h). */
 #include "common.h"
 #include "bb2.h"
 
@@ -165,4 +166,48 @@ void port_HoldFightMusic(u32 bits) {
     g_port_fight_music_asked.row =
         row < PORT_FIGHT_MUSIC_ROW_FIRST_EXTRA ? row : PORT_FIGHT_MUSIC_ROW_OWN;
     g_port_fight_music_asked.held = TRUE;
+}
+
+/* ---- the match rule (port_match.h) ---- */
+
+/* in the session's word: the rule in the low byte, the number above */
+#define MATCH_COUNT_SHIFT 8
+#define MATCH_BYTE 0xFF
+
+static struct {
+    s32 rule;
+    s32 count;
+    s32 held;
+} g_port_match_asked = {PORT_MATCH_SINGLE, PORT_MATCH_COUNT_DEFAULT, FALSE};
+
+/* The window's or the command line's rule and number, each kept to what
+ * there is; nothing once the session holds the host's. */
+void port_SetMatchDefault(s32 rule, s32 count) {
+    if (g_port_match_asked.held) {
+        return;
+    }
+    g_port_match_asked.rule =
+        rule >= PORT_MATCH_SINGLE && rule < PORT_MATCH_RULES
+            ? rule
+            : PORT_MATCH_SINGLE;
+    g_port_match_asked.count =
+        count >= PORT_MATCH_COUNT_LEAST && count <= PORT_MATCH_COUNT_MOST
+            ? count
+            : PORT_MATCH_COUNT_DEFAULT;
+}
+
+s32 port_GetMatchRule(void) { return g_port_match_asked.rule; }
+
+s32 port_GetMatchCount(void) { return g_port_match_asked.count; }
+
+u32 port_MatchBits(void) {
+    return (u32)g_port_match_asked.rule |
+           (u32)g_port_match_asked.count << MATCH_COUNT_SHIFT;
+}
+
+void port_HoldMatch(u32 bits) {
+    g_port_match_asked.held = FALSE;
+    port_SetMatchDefault((s32)(bits & MATCH_BYTE),
+                         (s32)(bits >> MATCH_COUNT_SHIFT & MATCH_BYTE));
+    g_port_match_asked.held = TRUE;
 }
