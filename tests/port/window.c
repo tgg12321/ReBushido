@@ -1,5 +1,5 @@
 /* The port's window, without SDL: the picture's place, the sound's queue, the
- * clock, the keys, the log's names and lines, the counter. */
+ * clock, the keys, the log's names and lines, the counter, the caches. */
 /* The arithmetic of the native port's window (src/port/window/; docs/
  * PORT.md, "The window"), held to cases worked out by hand. Nothing here
  * opens a window or a sound card: the four files ask nothing of SDL or
@@ -11,6 +11,7 @@
 #include "src/port/window/keymap.c"
 #include "src/port/window/logname.c"
 #include "src/port/window/fps.c"
+#include "src/port/window/cpus.c"
 #include "runtime/runtime.h"
 
 /* ---- where the picture goes ---- */
@@ -1332,6 +1333,144 @@ static void test_Counter(void) {
     CHECK_EQ(g_test_settings.fps_corner, PORT_CORNER_TOP_RIGHT);
 }
 
+/* ---- the processors with the larger cache ---- */
+
+static PortCacheTable g_test_caches;
+
+/* A made-up table: every processor of `all`, one kind of core. */
+static void test_NewCaches(const char *all) {
+    static const PortCacheTable empty;
+
+    test_Copy(&g_test_caches, &empty, sizeof(g_test_caches));
+    CHECK(port_ReadCpuList(all, &g_test_caches.all));
+    g_test_caches.kinds = 1;
+}
+
+static void test_AddCache(u32 kb, const char *on) {
+    CHECK(port_ReadCpuList(on, &g_test_caches.on[g_test_caches.caches]));
+    g_test_caches.kb[g_test_caches.caches++] = kb;
+}
+
+/* What a table makes, and the processors preferred as Linux writes
+ * them. */
+static void test_CheckChoice(s32 choice, const char *preferred) {
+    PortCpuSet prefer;
+    char list[PORT_CPU_LIST_BYTES];
+
+    CHECK_EQ(port_ChooseCpus(&g_test_caches, &prefer), choice);
+    port_FormatCpuList(&prefer, list);
+    CHECK(test_StringsEqual(list, preferred));
+}
+
+static void test_Cpus(void) {
+    PortCpuSet set;
+    char list[PORT_CPU_LIST_BYTES];
+
+    /* Linux's texts */
+    CHECK(port_ReadCpuList("0-7,16-23\n", &set));
+    CHECK_EQ(port_CountCpus(&set), 16);
+    CHECK(port_HasCpu(&set, 16) && !port_HasCpu(&set, 8));
+    port_FormatCpuList(&set, list);
+    CHECK(test_StringsEqual(list, "0-7,16-23"));
+    CHECK(port_ReadCpuList("3", &set));
+    port_FormatCpuList(&set, list);
+    CHECK(test_StringsEqual(list, "3"));
+    CHECK(!port_ReadCpuList("", &set));
+    CHECK(!port_ReadCpuList("7-3", &set));
+    CHECK(!port_ReadCpuList("0-15,x", &set));
+    CHECK(!port_ReadCpuList("0-999", &set));
+    CHECK_EQ(port_ReadCacheSize("32768K\n"), 32768);
+    CHECK_EQ(port_ReadCacheSize("96M"), 96 * 1024);
+    CHECK_EQ(port_ReadCacheSize("1048576"), 1024);
+    CHECK_EQ(port_ReadCacheSize("big"), 0);
+    CHECK_EQ(port_ReadCacheSize("32768KB"), 0);
+
+    /* the owner's Ryzen 9 9950X3D: 96 MB over the first die, 32 MB over
+     * the second (Windows' numbers: each core's two threads together) */
+    test_NewCaches("0-31");
+    test_AddCache(96 * 1024, "0-15");
+    test_AddCache(32 * 1024, "16-31");
+    test_CheckChoice(PORT_CPUS_PREFER, "0-15");
+    /* ... the larger second, and Linux's numbers (a core's threads n and
+     * n + 16) */
+    test_NewCaches("0-31");
+    test_AddCache(32 * 1024, "0-7,16-23");
+    test_AddCache(96 * 1024, "8-15,24-31");
+    test_CheckChoice(PORT_CPUS_PREFER, "8-15,24-31");
+    /* two dies of one size (a 9950X): nothing */
+    test_NewCaches("0-31");
+    test_AddCache(32 * 1024, "0-15");
+    test_AddCache(32 * 1024, "16-31");
+    test_CheckChoice(PORT_CPUS_ONE_SIZE, "-");
+    /* larger, but not 1.5 times: nothing */
+    test_NewCaches("0-15");
+    test_AddCache(40 * 1024, "0-7");
+    test_AddCache(32 * 1024, "8-15");
+    test_CheckChoice(PORT_CPUS_ONE_SIZE, "-");
+    /* exactly 1.5 times: preferred */
+    test_NewCaches("0-15");
+    test_AddCache(48 * 1024, "0-7");
+    test_AddCache(32 * 1024, "8-15");
+    test_CheckChoice(PORT_CPUS_PREFER, "0-7");
+    /* one die (a 9800X3D, any single-die processor): nothing */
+    test_NewCaches("0-15");
+    test_AddCache(96 * 1024, "0-15");
+    test_CheckChoice(PORT_CPUS_ONE_CACHE, "-");
+    /* eight dies, two of them larger (a server's): those two */
+    test_NewCaches("0-63");
+    test_AddCache(32 * 1024, "0-7");
+    test_AddCache(96 * 1024, "8-15");
+    test_AddCache(32 * 1024, "16-23");
+    test_AddCache(32 * 1024, "24-31");
+    test_AddCache(96 * 1024, "32-39");
+    test_AddCache(32 * 1024, "40-47");
+    test_AddCache(32 * 1024, "48-55");
+    test_AddCache(32 * 1024, "56-63");
+    test_CheckChoice(PORT_CPUS_PREFER, "8-15,32-39");
+    /* Intel's hybrid (P cores 0-15, E cores 16-31, one L3): nothing */
+    test_NewCaches("0-31");
+    g_test_caches.kinds = 2;
+    test_AddCache(36 * 1024, "0-31");
+    test_CheckChoice(PORT_CPUS_HYBRID, "-");
+    /* ... even had its kinds of core L3s of their own that differ */
+    test_NewCaches("0-31");
+    g_test_caches.kinds = 2;
+    test_AddCache(36 * 1024, "0-15");
+    test_AddCache(4 * 1024, "16-31");
+    test_CheckChoice(PORT_CPUS_HYBRID, "-");
+    /* a low-power island with no L3 (Meteor Lake): not whole */
+    test_NewCaches("0-21");
+    test_AddCache(24 * 1024, "0-19");
+    test_CheckChoice(PORT_CPUS_UNREAD, "-");
+    /* unreadable: nothing read, a size of 0, a cache with no
+     * processors, a processor under two caches, a cache's processor not
+     * the system's, or the reader said so */
+    test_NewCaches("0-31");
+    test_CheckChoice(PORT_CPUS_UNREAD, "-");
+    test_AddCache(96 * 1024, "0-15");
+    test_AddCache(0, "16-31");
+    test_CheckChoice(PORT_CPUS_UNREAD, "-");
+    test_NewCaches("0-31");
+    test_AddCache(96 * 1024, "0-15");
+    test_AddCache(32 * 1024, "16-31");
+    g_test_caches.caches++;
+    g_test_caches.kb[2] = 32 * 1024;
+    test_CheckChoice(PORT_CPUS_UNREAD, "-");
+    test_NewCaches("0-31");
+    test_AddCache(96 * 1024, "0-16");
+    test_AddCache(32 * 1024, "16-31");
+    test_CheckChoice(PORT_CPUS_UNREAD, "-");
+    test_NewCaches("0-31");
+    test_AddCache(96 * 1024, "0-15");
+    test_AddCache(32 * 1024, "16-33");
+    test_CheckChoice(PORT_CPUS_UNREAD, "-");
+    test_NewCaches("0-31");
+    test_AddCache(96 * 1024, "0-15");
+    test_AddCache(32 * 1024, "16-31");
+    g_test_caches.is_unread = TRUE;
+    test_CheckChoice(PORT_CPUS_UNREAD, "-");
+}
+
 void test_Main(void) {
     test_Place();
     test_Shape();
@@ -1343,4 +1482,5 @@ void test_Main(void) {
     test_Keys();
     test_Log();
     test_Counter();
+    test_Cpus();
 }

@@ -3699,6 +3699,9 @@ static s32 g_port_late_beside;
  * in microseconds as the `p` lines: what the hand-overs cost (`e`). */
 static Uint64 g_port_stepper_woke;
 static Uint64 g_port_stepper_ended;
+/* what the step's thread was told of the processors it asked for
+ * (PORT_CPU_ASKED...) */
+static s32 g_port_stepper_cpus;
 
 static s32 port_OnStepper(void) {
     return g_port_stepper != NULL && SDL_ThreadID() == g_port_stepper_id;
@@ -3754,6 +3757,11 @@ static void port_SayForeignCalls(void) {
 static int SDLCALL port_StepperThread(void *unused) {
     (void)unused;
     g_port_stepper_id = SDL_ThreadID();
+    /* the larger cache's processors, where the processor has one
+     * (cpu_prefer; docs/PORT.md, "The processors with the larger
+     * cache"); the window's thread waits for this and says it */
+    g_port_stepper_cpus = port_CpuPreferHere();
+    SDL_SemPost(g_port_stepper_back);
     port_ProfileSwitch(PORT_PROFILE_WAIT);
     for (;;) {
         SDL_SemWait(g_port_stepper_go);
@@ -4045,7 +4053,9 @@ static void port_StartStepper(void) {
     if (g_port_stepper == NULL) {
         return;
     }
-    g_port_stepper_id = SDL_GetThreadID(g_port_stepper);
+    /* the thread's id and processors set, by itself */
+    SDL_SemWait(g_port_stepper_back);
+    port_CpuPreferSay(g_port_stepper_cpus, "step");
     g_port_profile_thread = port_ProfileThreadOf;
     g_port_step_runner = port_RunStep;
     g_port_step_to_host = port_StepToHost;
@@ -4771,6 +4781,10 @@ static void port_PainterYield(void) { SDL_Delay(0); }
 static int SDLCALL port_PainterThread(void *index) {
     /* the painters are on the game's way: ahead of the rest of the PC */
     SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH);
+    /* ... and beside the step's thread, under the same cache
+     * (cpu_prefer; docs/PORT.md, "The processors with the larger
+     * cache") */
+    port_CpuPreferHere();
     port_PaintRun((s32)(intptr_t)index);
     return 0;
 }
@@ -4936,6 +4950,7 @@ void port_StartWindow(void) {
                          strcmp(SDL_getenv("RB_AHEAD_SOUND"), "mix") != 0;
     port_SetRunAhead(g_port_settings.run_ahead);
     port_StartNetWindow();
+    port_CpuPreferStart(g_port_settings.cpu_prefer);
     port_StartPainters();
     port_StartPairing();
     port_StartStepper();

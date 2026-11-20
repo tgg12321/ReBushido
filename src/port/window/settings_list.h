@@ -162,6 +162,23 @@ PORT_SETTING(late_input,
     .label = "Late input",
     .help = "The keys read again just in time for the frame's first picture")
 
+/* PORT_CPU_PREFER_...: where one L3 cache is clearly the larger (AMD's
+ * X3D of two dies), the step's thread asks for its processors
+ * (cpu_prefer.c; docs/PORT.md, "The processors with the larger cache") */
+PORT_SETTING(cpu_prefer,
+    .name = "cpu_prefer", .value = "auto",
+    .note = "auto: where one of the processor's caches\n"
+            "is clearly the larger (two dies, one with\n"
+            "3D V-Cache), the game runs on its cores;\n"
+            "elsewhere nothing changes. off: never",
+    .read = PORT_READ_WORDS, .words = {"off", "auto"},
+    .is = "auto or off",
+    .menu = PORT_MENU_WINDOW, .rank = 90, .takes = PORT_TAKES_RESTART,
+    .label = "Larger-cache cores",
+    .help = "On a processor with 3D V-Cache on one die, the game on that "
+            "die",
+    .shown = {"Off", "Auto"})
+
 /* ---- the remastered picture ---- */
 
 PORT_SETTINGS_HEADING(

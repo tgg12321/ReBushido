@@ -178,6 +178,18 @@ extern void port_SampleStart(const char *path);
 /* What the card's driver does once, done in the first pictures (warm.c):
  * called at every swap. */
 extern void port_WarmDriver(void);
+
+/* The processors with the larger cache (cpu_prefer.c): the system's
+ * caches read and what is to be done said in the log, with
+ * PORT_CPU_PREFER_OFF or _AUTO; then the calling thread asked to run on
+ * the processors preferred, where something is to be asked, and what
+ * was said to that put in the log (by the window's thread: the log is
+ * its). */
+enum { PORT_CPU_ASKED_NOTHING, PORT_CPU_ASKED, PORT_CPU_REFUSED };
+
+extern void port_CpuPreferStart(s32 setting);
+extern s32 port_CpuPreferHere(void);
+extern void port_CpuPreferSay(s32 asked, const char *thread);
 extern void port_SampleEnd(void);
 extern volatile u32 g_port_sample_blank;
 extern void port_ReportNoteBlank(u32 blank, s32 is_new_frame, const u32 *cpu);
