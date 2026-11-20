@@ -248,7 +248,18 @@ typedef struct {
 
 /* Playing online: `A.B.C.D:PORT` with room to spare, the port a host
  * waits at with nothing said, and the frames of delay. */
-#define PORT_NET_ADDRESS_BYTES 24
+#define PORT_NET_ADDRESS_BYTES 48
+/* The lobby server built in: the owner's (tools/relay/README.md). */
+#define PORT_NET_LOBBY_DEFAULT "135.181.108.74:7845"
+#define PORT_NET_ROOM_BYTES 25
+#define PORT_NET_PLAYER_BYTES 17
+/* net_role's places */
+enum {
+    PORT_NET_ROLE_HOST = 0,
+    PORT_NET_ROLE_JOIN = 1,
+    PORT_NET_ROLE_ROOM = 2,
+    PORT_NET_ROLE_ROOMS = 3,
+};
 #define PORT_NET_PORT_DEFAULT 7845
 #define PORT_NET_PORT_MAX 65535
 #define PORT_NET_DELAY_DEFAULT 2
@@ -258,6 +269,9 @@ typedef struct {
 #define PORT_DEADZONE_MAX 99
 
 /* ---- the settings (keymap.c, settings_list.h) ---- */
+
+/* A letter a name the lobby shows may have (net_room, net_player). */
+extern s32 port_IsNameLetter(char c);
 
 /* Every setting of rebushido.cfg is an entry of settings_list.h, which
  * gives its member here, its line of the built-in text, how it is read
@@ -298,6 +312,13 @@ typedef struct {
     s32 aspect_h;
     /* the host to join (`net_address`), as it was written */
     char net_address[PORT_NET_ADDRESS_BYTES];
+    /* the lobby (`net_lobby`), the room's name and the player's
+     * (`net_room`, `net_player`), and the address a host by address
+     * punches to (`net_punch_to`): each as written, "" for none */
+    char net_lobby[PORT_NET_ADDRESS_BYTES];
+    char net_room[PORT_NET_ROOM_BYTES];
+    char net_player[PORT_NET_PLAYER_BYTES];
+    char net_punch_to[PORT_NET_ADDRESS_BYTES];
     /* the rest, each the member of an entry of settings_list.h */
 #define PORT_SETTING(member, ...) s32 member;
 #define PORT_SETTING_CUSTOM(...)

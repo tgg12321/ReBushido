@@ -428,27 +428,29 @@ static const char *port_ReadLayout(
     return NULL;
 }
 
-/* `A.B.C.D:PORT` into `out` (PORT_NET_ADDRESS_BYTES), as it was written:
- * 1, or 0 if it is not one. Only its form is looked at here; the port
- * reads it again as it starts (port_ParseNetAddress). */
-static s32 port_ReadNetAddress(const char *value, char *out) {
-    s32 dots = 0;
+/* `A.B.C.D:PORT` or `[IPv6]:PORT` into `out` (PORT_NET_ADDRESS_BYTES), as
+ * it was written: 1, or 0 if it is not one. Only its form is looked at
+ * here; the port reads it again as it starts (port_ParseNetAddress). An
+ * empty one is kept only where `empty` says it may be. */
+static s32 port_ReadNetAddressOf(const char *value, char *out, s32 empty) {
     s32 colons = 0;
     s32 i;
 
     for (i = 0; value[i] != 0; i++) {
+        char c = value[i];
+
         if (i == PORT_NET_ADDRESS_BYTES - 1) {
             return 0;
         }
-        if (value[i] == '.') {
-            dots++;
-        } else if (value[i] == ':') {
+        if (c == ':') {
             colons++;
-        } else if (value[i] < '0' || value[i] > '9') {
+        } else if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+                     (c >= 'A' && c <= 'F') || c == '.' || c == '[' ||
+                     c == ']')) {
             return 0;
         }
     }
-    if (dots != 3 || colons != 1) {
+    if (i == 0 ? !empty : colons == 0) {
         return 0;
     }
     for (i = 0; value[i] != 0; i++) {
@@ -456,6 +458,33 @@ static s32 port_ReadNetAddress(const char *value, char *out) {
     }
     out[i] = 0;
     return 1;
+}
+
+static s32 port_ReadNetAddress(const char *value, char *out) {
+    return port_ReadNetAddressOf(value, out, FALSE);
+}
+
+/* A name the lobby shows into `out` of `room` bytes: 1, or 0 if it has
+ * a letter it cannot show (port_IsNameLetter). */
+static s32 port_ReadNetName(const char *value, char *out, u32 room) {
+    u32 i;
+
+    for (i = 0; value[i] != 0; i++) {
+        if (i + 1 >= room || !port_IsNameLetter(value[i])) {
+            return 0;
+        }
+    }
+    for (i = 0; value[i] != 0; i++) {
+        out[i] = value[i];
+    }
+    out[i] = 0;
+    return 1;
+}
+
+s32 port_IsNameLetter(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == ' ' || c == '-' || c == '_' ||
+           c == '.' || c == '!' || c == '?';
 }
 
 /* ---- the settings' own readers (settings_list.h) ---- */
@@ -524,12 +553,43 @@ static s32 port_ReadEffects(PortSettings *settings, const char *value,
     return TRUE;
 }
 
-/* `net_address`. `lookup` and `why` are not used. */
+/* `net_address`, `net_lobby`, `net_punch_to`, `net_room` and
+ * `net_player`. `lookup` and `why` are not used. */
 static s32 port_ReadNetSetting(PortSettings *settings, const char *value,
                                PortNameLookup lookup, const char **why) {
     (void)lookup;
     (void)why;
     return port_ReadNetAddress(value, settings->net_address);
+}
+
+static s32 port_ReadNetLobby(PortSettings *settings, const char *value,
+                             PortNameLookup lookup, const char **why) {
+    (void)lookup;
+    (void)why;
+    return port_ReadNetAddressOf(value, settings->net_lobby, TRUE);
+}
+
+static s32 port_ReadNetPunchTo(PortSettings *settings, const char *value,
+                               PortNameLookup lookup, const char **why) {
+    (void)lookup;
+    (void)why;
+    return port_ReadNetAddressOf(value, settings->net_punch_to, TRUE);
+}
+
+static s32 port_ReadNetRoom(PortSettings *settings, const char *value,
+                            PortNameLookup lookup, const char **why) {
+    (void)lookup;
+    (void)why;
+    return port_ReadNetName(value, settings->net_room,
+                            sizeof(settings->net_room));
+}
+
+static s32 port_ReadNetPlayer(PortSettings *settings, const char *value,
+                              PortNameLookup lookup, const char **why) {
+    (void)lookup;
+    (void)why;
+    return port_ReadNetName(value, settings->net_player,
+                            sizeof(settings->net_player));
 }
 
 /* `controls`: a layout's bindings, which say why not themselves. */
@@ -788,6 +848,10 @@ void port_SetDefaultSettings(PortSettings *settings, PortNameLookup lookup) {
     settings->own_controls = 0;
     settings->layout = 0;
     settings->net_address[0] = 0;
+    settings->net_lobby[0] = 0;
+    settings->net_room[0] = 0;
+    settings->net_player[0] = 0;
+    settings->net_punch_to[0] = 0;
     /* each setting's value as its line of the built-in text has it; a
      * name the window's library does not know leaves that binding out */
     for (i = 0; i < g_port_setting_count; i++) {

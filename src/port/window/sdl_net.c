@@ -26,6 +26,7 @@
 
 #include "menu.h"
 #include "port_net.h"
+#include "portmap.h"
 #include "port_spu.h"
 #include "shared.h"
 #include "sdl_window.h"
@@ -124,6 +125,9 @@ static u32 port_NetWords(char *out, u32 room) {
 
 void port_DrawNetLine(void) {
     char words[LINE_BYTES];
+
+    port_PortMapTick(SDL_GetTicks());
+    {
     u32 color = port_NetWords(words, sizeof(words));
     s32 window_w = 0;
     s32 window_h = 0;

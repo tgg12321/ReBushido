@@ -101,11 +101,30 @@ static void port_MenuStick(s32 axis, s32 value) {
     g_port_menu.stick[which] = now;
 }
 
-/* A key while a row of the Play online page is typed into: a digit, a
- * dot, a colon (the key of ; and :) or Backspace. TRUE if it was one;
- * Enter and Escape are the menu's own (port_MenuPress). */
+/* A key while a row of the Play online page is typed into: a letter
+ * (Shift for a capital), a digit, a dot, a colon (the key of ; and :),
+ * brackets, a space, - and _, ! and ? (Shift with 1 and /), or Backspace.
+ * TRUE if it was one; Enter and Escape are the menu's own
+ * (port_MenuPress). What a row takes of them is its own
+ * (menu_online.c). */
 static s32 port_MenuTypedKey(SDL_Scancode code) {
-    if (code >= SDL_SCANCODE_1 && code <= SDL_SCANCODE_9) {
+    s32 shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+
+    if (code >= SDL_SCANCODE_A && code <= SDL_SCANCODE_Z) {
+        port_MenuType((char)((shift ? 'A' : 'a') + (code - SDL_SCANCODE_A)));
+    } else if (code == SDL_SCANCODE_1 && shift) {
+        port_MenuType('!');
+    } else if (code == SDL_SCANCODE_SLASH && shift) {
+        port_MenuType('?');
+    } else if (code == SDL_SCANCODE_MINUS) {
+        port_MenuType(shift ? '_' : '-');
+    } else if (code == SDL_SCANCODE_LEFTBRACKET) {
+        port_MenuType('[');
+    } else if (code == SDL_SCANCODE_RIGHTBRACKET) {
+        port_MenuType(']');
+    } else if (code == SDL_SCANCODE_SPACE) {
+        port_MenuType(' ');
+    } else if (code >= SDL_SCANCODE_1 && code <= SDL_SCANCODE_9) {
         port_MenuType((char)('1' + (code - SDL_SCANCODE_1)));
     } else if (code == SDL_SCANCODE_0 || code == SDL_SCANCODE_KP_0) {
         port_MenuType('0');

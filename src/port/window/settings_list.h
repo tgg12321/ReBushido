@@ -563,21 +563,63 @@ PORT_SETTINGS_HEADING(
     "Playing online (docs/PLAYING.md): what the settings menu's Play\n"
     "online page starts with, and keeps.")
 
-/* The settings menu's Play online page (docs/PLAYING.md): host (0) or
- * join (1) */
+/* The settings menu's Play online page (docs/PLAYING.md): host by
+ * address (0), join by address (1), host a room of the lobby (2), or
+ * browse the lobby's rooms (3) */
 PORT_SETTING(net_role,
-    .name = "net_role", .value = "host",
-    .note = "host: wait for the other player; join: go to\n"
-            "the host at net_address",
-    .read = PORT_READ_WORDS, .words = {"host", "join"},
-    .is = "host or join")
+    .name = "net_role", .value = "room",
+    .note = "room: host a room at the lobby; rooms: browse\n"
+            "its rooms and join one; host: wait for the other\n"
+            "player at your address; join: go to the host at\n"
+            "net_address",
+    .read = PORT_READ_WORDS, .words = {"host", "join", "room", "rooms"},
+    .is = "room, rooms, host or join")
+
+/* the lobby server, `A.B.C.D:PORT` or `[IPv6]:PORT`; "" for none */
+PORT_SETTING_CUSTOM(
+    .name = "net_lobby", .value = PORT_NET_LOBBY_DEFAULT,
+    .note = "the lobby server: its address and port (nothing\n"
+            "for none)",
+    .read = PORT_READ_BY, .reader = port_ReadNetLobby,
+    .is = "an address and a port, as 135.181.108.74:7845, or nothing")
+
+/* the room's name a host opens, and the name the lobby shows */
+PORT_SETTING_CUSTOM(
+    .name = "net_room", .value = "",
+    .note = "the name of the room you host (your player name if\n"
+            "nothing)",
+    .read = PORT_READ_BY, .reader = port_ReadNetRoom,
+    .is = "letters, digits, spaces and - _ . ! ?, up to 24")
+
+PORT_SETTING_CUSTOM(
+    .name = "net_player", .value = "",
+    .note = "your name in the lobby",
+    .read = PORT_READ_BY, .reader = port_ReadNetPlayer,
+    .is = "letters, digits, spaces and - _ . ! ?, up to 16")
 
 /* the host to join, `A.B.C.D:PORT` as it was written */
 PORT_SETTING_CUSTOM(
     .name = "net_address", .value = "127.0.0.1:7845",
     .note = "the host's address and port",
     .read = PORT_READ_BY, .reader = port_ReadNetSetting,
-    .is = "four numbers and a port, as 192.168.1.20:7845")
+    .is = "an address and a port, as 192.168.1.20:7845 or\n"
+          "[2001:db8::7]:7845")
+
+/* a host by address: the other player's public address, sent to while
+ * waiting so that both routers let the two through; "" for none */
+PORT_SETTING_CUSTOM(
+    .name = "net_punch_to", .value = "",
+    .note = "hosting by address: the other player's public\n"
+            "address, to punch through to (nothing for none)",
+    .read = PORT_READ_BY, .reader = port_ReadNetPunchTo,
+    .is = "an address and a port, or nothing")
+
+/* whether the host asks its router to open its port (UPnP, NAT-PMP,
+ * PCP: portmap.c) */
+PORT_SETTING(net_portmap,
+    .name = "net_portmap", .value = "on",
+    .note = "the host asks its router to open its port (UPnP,\n"
+            "NAT-PMP or PCP), and closes it again as it ends")
 
 /* the port a host waits at */
 PORT_SETTING(net_port,

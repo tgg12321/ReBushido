@@ -79,7 +79,7 @@ WINDOW_PLAIN = ['scale.c', 'ring.c', 'pace.c', 'keymap.c', 'logname.c', 'fps.c',
 WINDOW_GAME = ['gamestate.c']
 # What talks to SDL and to the C library: compiled as any program is.
 WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'sdl_net.c', 'sdl_report.c', 'menu.c', 'font.c',
-                 'stage_page.c',
+                 'stage_page.c', 'menu_online.c',
                  'sampler.c', 'warm.c']
 # The settings menu's font, put into the program as a C array of its bytes
 # (src/port/window/font.c), and the mods the program ships, copied into
