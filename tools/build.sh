@@ -20,6 +20,9 @@
 #   game from your image of the disc
 #   wsl bash tools/build.sh rebushido-patch [RB_RELEASE=1]   a release's
 #   patch, into build/release/ (docs/REBUSHIDO.md, "Making a release")
+#   wsl bash tools/build.sh port-release [RB_RELEASE=1]   the Windows program
+#   as a package for players, a zip into build/release/ (tools/port_release.py;
+#   BUILD.md, "The port's package")
 # Exits with make's status: a build that fails is not hidden by the filter.
 cd "$(dirname "$0")/.." || exit 1
 # On the Windows drive, the build runs in a copy of the sources on WSL's own

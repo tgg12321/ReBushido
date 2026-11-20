@@ -198,6 +198,39 @@ Nothing of SDL is in this repository.
 `python3 tools/port_sdl_build.py --host [--windows] [--bits N]` says
 whether the machine can build it, and what is missing if not.
 
+### The port's package
+
+What a player on Windows is given, a zip of the program with nothing of
+the game in it:
+
+```bash
+bash tools/build.sh port-release                 # a trial
+bash tools/build.sh port-release RB_RELEASE=1    # a release: a clean tree, no -dev
+```
+
+`make port-release` (`tools/port_release.py`) builds `port-sdl-windows`
+and writes `build/release/ReBushido-PC-<version>-<commit>.zip` and its
+`.sha256`; `<version>` is `RB_VERSION_NUMBER` of `include/rebushido.h`.
+The zip's one folder of that name holds `rebushido.exe`, `SDL2.dll`,
+`rebushido.exe.sym`, `mods/` (the shipped mods: `english`, `ui`,
+`lights`, `arena-courtyard`), `README.txt` for players (from
+`tools/port_release_readme.txt`, whose online part is one block between
+rules, to be revised as online play grows), `LICENSE.txt`, `NOTICE.txt`
+and `licenses/` (SDL 2's, the fonts' OFL, stb's).
+
+It refuses a stale build (`build/port-sdl/windows/git_hash.txt` not
+HEAD, or a program that does not say that commit), a program that asks
+for a DLL a player's Windows has not, and anything disc-derived or not
+its own: every file of `mods/` must be the bytes of `src/port/mods/` (as
+git tracks it) or of the arena compiled from `tools/arenas/`; a mod
+folder made from a disc (`art`, `stages-hd`, `hd`, anything of
+`tmp/mods/`), a disc image, card, `rebushido.cfg`, log or screenshot is
+refused, and so is any file it did not write itself.
+`python3 tools/port_release.py --self-test` (and the test
+`rebushido/port_release`) plants each of those in a copy of a package
+and checks that it is refused. Nothing of `build/release/` is committed;
+publishing is the owner's.
+
 ## The remastered renderer, with nothing shown
 
 The port's remastered picture ([`docs/PORT.md`](docs/PORT.md),
