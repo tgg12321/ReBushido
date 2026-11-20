@@ -265,7 +265,7 @@ static void port_PageMusic(void) {
     s32 room = port_PageX(MUSIC_X + MUSIC_W / 2) - port_PageX(MUSIC_X);
     s32 lines = SIZE_ROW;
 
-    port_PageText(MUSIC_X, 213, SIZE_HELP, "Music", COLOR_DIM, TRUE, FALSE);
+    port_PageText(MUSIC_X, 215, SIZE_HELP, "Music", COLOR_DIM, TRUE, FALSE);
     port_FontSetSize(port_PageSize(lines));
     while (lines > SIZE_MUSIC_LEAST && port_FontMeasure(name) > 2 * room) {
         lines--;
