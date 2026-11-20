@@ -55,9 +55,10 @@ input = [
     "select+280 CROSS", "select+320 P2 CROSS",
     "select+500 CROSS", "select+540 P2 CROSS",
     # the stage pages: the switch on the first place twice (Classic, then
-    # back), once on the second place (Classic), and the arenas' page
+    # back), once on the second place (Classic), and the arenas' page; L1
+    # turns the first place's time of day back, from its own to night
     "stages+20 SQUARE",
-    "classic+20 SQUARE",
+    "classic+10 L1", "classic+20 SQUARE",
     "again+20 DOWN", "again+40 SQUARE",
     "second+20 SELECT",
     "arenas+20 CROSS",
@@ -69,9 +70,11 @@ input = [
     # must be loaded again without the arena
     "select2+280 CROSS", "select2+320 P2 CROSS",
     "select2+500 CROSS", "select2+540 P2 CROSS",
-    "stages2+20 DOWN", "stages2+40 RIGHT", "stages2+80 CROSS",
+    # ... at dawn: R1 once on it
+    "stages2+20 DOWN", "stages2+40 RIGHT", "stages2+60 R1", "stages2+80 CROSS",
 ]
-compare = ["screen", "stage", "config_stage", "port_arena", "port_tier", "port_page"]
+compare = ["screen", "stage", "config_stage", "port_arena", "port_tier", "port_page",
+           "port_time"]
 
 [[checkpoint]]
 name = "page"
@@ -106,12 +109,12 @@ expect = ["port_cursor_tier == 1", "port_page == 0"]
 [[checkpoint]]
 name = "classic"
 after = 30
-expect = ["port_cursor_tier == 0"]
+expect = ["port_cursor_tier == 0", "port_cursor_time == 0"]
 
 [[checkpoint]]
 name = "again"
 after = 30
-expect = ["port_cursor_tier == 1"]
+expect = ["port_cursor_tier == 1", "port_cursor_time == 4"]
 
 [[checkpoint]]
 name = "second"
@@ -128,7 +131,7 @@ name = "fight"
 when = "screen == SCREEN_FIGHT_UPDATE"
 at_frame = true
 within = 3000
-expect = ["stage == %(host)d", "port_arena == 0", "port_tier == 1"]
+expect = ["stage == %(host)d", "port_arena == 0", "port_tier == 1", "port_time == 0"]
 
 [[checkpoint]]
 name = "walk"
@@ -152,7 +155,8 @@ name = "fight2"
 when = "screen == SCREEN_FIGHT_UPDATE"
 at_frame = true
 within = 3000
-expect = ["stage == %(host)d", "port_arena == -1", "port_tier == 1", "p1_x != -2000"]
+expect = ["stage == %(host)d", "port_arena == -1", "port_tier == 1", "port_time == 1",
+          "p1_x != -2000"]
 
 [[checkpoint]]
 name = "walk2"

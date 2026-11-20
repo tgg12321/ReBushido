@@ -1,12 +1,12 @@
 /* The native port's window: the stage select's kinds of stage laid over
  * the game's picture (window.h; docs/PLAYING.md, "Kinds of stage";
  * include/port_stage_choice.h). On a stage page it says the kind of the
- * stage under the cursor, Classic or Remastered Classic, and what Square
- * and Select do; with the arenas' page up it is that page: the arenas by
- * their names, the one under the cursor's picture (its file's preview,
- * or a card of its name where it has none), and what Cross and Triangle
- * do. It is drawn at the window's own resolution in the settings menu's
- * font, the same over the remastered picture and over the console's
+ * stage under the cursor, Classic or Remastered Classic, its time of
+ * day, and what Square, L1 and R1, and Select do; with the arenas' page up it
+ * is that page: the arenas by their names, the one under the cursor's picture
+ * (its file's preview, or a card of its name where it has none), and what Cross
+ * and Triangle do. It is drawn at the window's own resolution in the settings
+ * menu's font, the same over the remastered picture and over the console's
  * (F2), and none of it is in the game's video memory: what the game has
  * on the screen is the console's, and the play tests that hold the
  * port's picture to the emulator's see that. Everything it shows it
@@ -83,6 +83,7 @@ static struct {
     s32 cursor;
     s32 top;
     s32 kind;
+    s32 time;
     s32 count;
     s32 music; /* the row of music, and its rule's (port_fight_music.h) */
     s32 music_rule;
@@ -236,6 +237,11 @@ static void port_PagePicture(
 
 /* ---- the two looks ---- */
 
+/* The times of day as the strip names them (PORT_TIME_...). */
+static const char * const g_page_times[PORT_TIME_COUNT] = {
+    "The stage's own time", "Time: Dawn", "Time: Day", "Time: Dusk",
+    "Time: Night"};
+
 static void port_PageStrip(const PortStageChoice *choice, s32 count) {
     port_PageText(
         64, 222, SIZE_KIND,
@@ -245,6 +251,21 @@ static void port_PageStrip(const PortStageChoice *choice, s32 count) {
         FALSE, FALSE);
     port_PageText(64, 235, SIZE_HELP, "Square: Classic / Remastered", COLOR_DIM,
                   FALSE, FALSE);
+    /* the time of day, which only a dressed stage's picture shows */
+    if (choice->cursor_kind == PORT_STAGE_CLASSIC) {
+        port_PageText(GAME_W / 2, 222, SIZE_KIND, "The game's own light",
+                      COLOR_DIM, TRUE, FALSE);
+    } else {
+        port_PageText(
+            GAME_W / 2, 222, SIZE_KIND,
+            g_page_times[choice->cursor_time < PORT_TIME_COUNT
+                             ? choice->cursor_time
+                             : PORT_TIME_OWN],
+            choice->cursor_time == PORT_TIME_OWN ? COLOR_TEXT : COLOR_GOLD,
+            TRUE, FALSE);
+    }
+    port_PageText(GAME_W / 2, 235, SIZE_HELP, "L1 / R1: time of day", COLOR_DIM,
+                  TRUE, FALSE);
     if (count > 0) {
         port_PageText(576, 222, SIZE_HELP, "Select: custom arenas", COLOR_DIM,
                       FALSE, TRUE);
@@ -355,7 +376,8 @@ s32 port_StagePagePixels(
         g_page.open != open || g_page.cursor != choice->page_cursor ||
         g_page.top != choice->page_top || g_page.kind != choice->cursor_kind ||
         g_page.count != count || g_page.music != g_port_fight_music.row ||
-        g_page.music_rule != port_GetFightMusicRule()) {
+        g_page.music_rule != port_GetFightMusicRule() ||
+        g_page.time != choice->cursor_time) {
         g_page.music = g_port_fight_music.row;
         g_page.music_rule = port_GetFightMusicRule();
         g_page.area_w = area_w;
@@ -364,6 +386,7 @@ s32 port_StagePagePixels(
         g_page.cursor = choice->page_cursor;
         g_page.top = choice->page_top;
         g_page.kind = choice->cursor_kind;
+        g_page.time = choice->cursor_time;
         g_page.count = count;
         g_page.box.x = (open ? PAGE_X : STRIP_X) * area_w / GAME_W;
         g_page.box.y = (open ? PAGE_Y : STRIP_Y) * area_h / GAME_H;

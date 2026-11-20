@@ -20,6 +20,7 @@
 #include "common.h"
 #include "gl.h"
 #include "gl_sky.h"
+#include "gl_time.h"
 #include "gl_stage.h"
 #include "port_mods.h"
 #include "port_png.h"
@@ -179,6 +180,10 @@ static const u8 g_sky_open[SKY_STAGES] = {
     0, /* stage 37: a small model of a castle town, seen from afar */
 };
 
+s32 port_GlSkyIsOpen(s32 stage) {
+    return stage >= 0 && stage < SKY_STAGES && g_sky_open[stage];
+}
+
 /* ---- the shaders ---- */
 
 static const char g_sky_vertex_text[] =
@@ -239,6 +244,14 @@ static const char g_sky_fragment_text[] =
     "uniform vec3 u_moon_color;\n"
     "uniform int u_has_picture;\n"
     "uniform sampler2D u_picture;\n"
+    /* a time of day with a sun (gl_time.h): its sky's colours, the sun's
+     * way and colour, how many stars are left */
+    "uniform int u_time_sun;\n"
+    "uniform vec3 u_horizon;\n"
+    "uniform vec3 u_zenith;\n"
+    "uniform vec3 u_sun_way;\n"
+    "uniform vec3 u_sun_light;\n"
+    "uniform float u_stars;\n"
     /* the clouds' noise, worked out once (port_GlSkyBakeClouds) */
     "uniform samplerCube u_clouds;\n"
     "layout(location = 0) out vec4 o_color;\n"
@@ -287,6 +300,45 @@ static const char g_sky_fragment_text[] =
     "    }\n"
     /* how wide a pixel of the buffer is, as an angle */
     "    float pixel = 1.0 / (u_h * u_scale.x);\n"
+    /* Dawn, day and dusk: the time's horizon running up into its zenith,
+     * the sun where its light comes from with a glow about it that
+     * colours the horizon on its side, the clouds lit by it, a few stars
+     * left in a dawn's or a dusk's sky; below the horizon its colour,
+     * which is the fog's. */
+    "    if (u_time_sun != 0) {\n"
+    "        float high = clamp(up, 0.0, 1.0);\n"
+    "        vec3 sun = normalize(u_sun_way);\n"
+    "        float sun_apart = acos(clamp(dot(dir, sun), -1.0, 1.0));\n"
+    "        vec2 flat_dir = length(dir.xz) > 1e-4 ? normalize(dir.xz)\n"
+    "                                              : vec2(0.0, 1.0);\n"
+    "        vec2 flat_sun = length(sun.xz) > 1e-4 ? normalize(sun.xz)\n"
+    "                                              : vec2(0.0, 1.0);\n"
+    "        float side = 0.5 + 0.5 * dot(flat_dir, flat_sun);\n"
+    "        vec3 low = mix(u_horizon * 0.8,\n"
+    "                       u_horizon * 1.1 + u_sun_light * 0.12, side * side);\n"
+    "        color = mix(low, u_zenith,\n"
+    "                    smoothstep(0.0, 0.4, high));\n"
+    "        color += u_sun_light * (0.25 * exp(-sun_apart * 3.0)\n"
+    "                              + 0.55 * exp(-sun_apart * 16.0));\n"
+    "        float cover = texture(u_clouds, dir).r;\n"
+    "        float cloud = smoothstep(0.50, 0.80, cover)\n"
+    "                    * smoothstep(0.0, 0.12, high)\n"
+    "                    * (1.0 - smoothstep(0.5, 0.95, high));\n"
+    "        vec3 cloud_color = mix(u_horizon, vec3(1.0), 0.35)\n"
+    "                         * (0.55 + 0.45 * side)\n"
+    "                         + u_sun_light * 0.5 * exp(-sun_apart * 2.5);\n"
+    "        float star = stars(dir, 90.0, 0.05, pixel) * u_stars\n"
+    "                   * smoothstep(0.15, 0.5, high) * (1.0 - cloud);\n"
+    "        color += vec3(0.80, 0.85, 1.0) * star;\n"
+    "        color = mix(color, cloud_color, cloud * 0.7);\n"
+    "        float disc = 1.0 - smoothstep(0.022 - pixel, 0.022 + pixel,\n"
+    "                                      sun_apart);\n"
+    "        color = mix(color, u_sun_light * 1.5 + vec3(0.2),\n"
+    "                    disc * (1.0 - cloud * 0.8));\n"
+    "        color = mix(u_far, color, smoothstep(-0.03, 0.01, up));\n"
+    "        o_color = vec4(clamp(color, 0.0, 1.0), 1.0);\n"
+    "        return;\n"
+    "    }\n"
     /* The moon: the way the stage's light comes from, seen from above
      * whichever way its vector is meant, and put low in the sky -- a
      * fight's camera looks along the ground, and sees little more than
@@ -389,6 +441,12 @@ static struct {
     GLint at_has_picture;
     GLint at_picture;
     GLint at_clouds;
+    GLint at_time_sun;
+    GLint at_horizon;
+    GLint at_zenith;
+    GLint at_sun_way;
+    GLint at_sun_light;
+    GLint at_stars;
     /* the clouds' cube (port_GlSkyBakeClouds) and what makes it */
     GLuint bake_program;
     GLint bake_at_face;
@@ -478,6 +536,12 @@ const char *port_GlSkyStart(void *(*getproc)(const char *name)) {
     g_sky.at_has_picture = glGetUniformLocation(g_sky.program, "u_has_picture");
     g_sky.at_picture = glGetUniformLocation(g_sky.program, "u_picture");
     g_sky.at_clouds = glGetUniformLocation(g_sky.program, "u_clouds");
+    g_sky.at_time_sun = glGetUniformLocation(g_sky.program, "u_time_sun");
+    g_sky.at_horizon = glGetUniformLocation(g_sky.program, "u_horizon");
+    g_sky.at_zenith = glGetUniformLocation(g_sky.program, "u_zenith");
+    g_sky.at_sun_way = glGetUniformLocation(g_sky.program, "u_sun_way");
+    g_sky.at_sun_light = glGetUniformLocation(g_sky.program, "u_sun_light");
+    g_sky.at_stars = glGetUniformLocation(g_sky.program, "u_stars");
     /* the triangle is made of its vertices' numbers alone, but a core
      * context draws nothing with no vertex array bound */
     glGenVertexArrays(1, &g_sky.array);
@@ -620,7 +684,7 @@ static GLuint port_GlSkyBakeClouds(u32 framebuffer) {
  * goes (the shader puts it above the horizon). */
 static void port_GlSkyLight(
     GLfloat *ambient, GLfloat *moon, GLfloat *moon_color) {
-    const LightSetup *lights = (const LightSetup *)port_RemasterTileLights();
+    const LightSetup *lights = (const LightSetup *)port_GlTimeTileLights();
     s32 i;
 
     for (i = 0; i < 3; i++) {
@@ -643,6 +707,7 @@ void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color) {
     GLfloat ambient[3];
     GLfloat moon[3];
     GLfloat moon_color[3];
+    const PortGlTime *look;
     GLuint own;
     s32 left;
     s32 right;
@@ -657,7 +722,10 @@ void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color) {
         g_sky.is_stage_frame = view->frames != g_sky.last_frames;
         g_sky.last_frames = view->frames;
     }
-    if (!g_sky.is_started || g_sky.kind == PORT_SKY_ORIGINAL ||
+    /* a time of day of the port's own has its sky whatever `sky` says: a
+     * day over a black fill is no day */
+    if (!g_sky.is_started ||
+        (g_sky.kind == PORT_SKY_ORIGINAL && !port_GlTime()->on) ||
         !g_sky.is_stage_frame || view->h <= 0) {
         return;
     }
@@ -682,7 +750,9 @@ void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color) {
     if (!g_sky_open[stage]) {
         return;
     }
-    own = port_GlSkyPicture(stage);
+    /* a mod's picture of the sky is the stage's own time's */
+    look = port_GlTime();
+    own = look->on ? 0 : port_GlSkyPicture(stage);
     port_GlGetPicture(&picture);
     if (picture.framebuffer == 0 && picture.color_texture == 0) {
         return;
@@ -710,9 +780,32 @@ void port_GlSkyCleared(s32 x, s32 y, s32 w, s32 h, u32 color) {
     glUniform1f(g_sky.at_h, (GLfloat)view->h);
     glUniform2f(
         g_sky.at_scale, (GLfloat)picture.draw_x, (GLfloat)picture.draw_y);
-    glUniform3f(g_sky.at_far, (GLfloat)((color >> 16) & 0xFF) / CHANNEL_MAX,
-                (GLfloat)((color >> 8) & 0xFF) / CHANNEL_MAX,
-                (GLfloat)(color & 0xFF) / CHANNEL_MAX);
+    /* a time of day's sky (gl_time.h): its horizon is the fog's colour,
+     * which the ground runs into, and the night's moon is its own */
+    if (look->on) {
+        glUniform3f(
+            g_sky.at_far, look->horizon[0], look->horizon[1], look->horizon[2]);
+        for (i = 0; i < 3; i++) {
+            moon[i] = look->to_sun[i] * GTE_ONE;
+        }
+        moon_color[0] = 0.78f;
+        moon_color[1] = 0.84f;
+        moon_color[2] = 0.96f;
+    } else {
+        glUniform3f(g_sky.at_far, (GLfloat)((color >> 16) & 0xFF) / CHANNEL_MAX,
+                    (GLfloat)((color >> 8) & 0xFF) / CHANNEL_MAX,
+                    (GLfloat)(color & 0xFF) / CHANNEL_MAX);
+    }
+    glUniform1i(g_sky.at_time_sun, look->on && look->has_moon == 0.0f);
+    glUniform3f(
+        g_sky.at_horizon, look->horizon[0], look->horizon[1], look->horizon[2]);
+    glUniform3f(
+        g_sky.at_zenith, look->zenith[0], look->zenith[1], look->zenith[2]);
+    glUniform3f(
+        g_sky.at_sun_way, look->to_sun[0], look->to_sun[1], look->to_sun[2]);
+    glUniform3f(g_sky.at_sun_light, look->sun[0] / CHANNEL_MAX,
+                look->sun[1] / CHANNEL_MAX, look->sun[2] / CHANNEL_MAX);
+    glUniform1f(g_sky.at_stars, look->stars);
     glUniform3f(g_sky.at_ambient, ambient[0], ambient[1], ambient[2]);
     glUniform3f(g_sky.at_moon, moon[0], moon[1], moon[2]);
     glUniform3f(

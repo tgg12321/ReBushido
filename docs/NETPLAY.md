@@ -1064,11 +1064,12 @@ have met:
 - the welcome also carries the kind of stage the host's stages start as
   (`MEET_KIND`) and the host's two gameplay switches, `unlock_all` and
   `stage_select_everywhere` (`MEET_PLAY`, protocol 4; PORT.md, "Every
-  stage in every mode, and every unlock"), and the host's `fight_music`
-  (`MEET_MUSIC`, protocol 5; PORT.md, "A fight's music"); both programs
-  hold them for the session, so a guest plays with the host's unlocks
-  and the host's fights' music whatever its own settings say, and its
-  settings menu changes nothing until it starts again;
+  stage in every mode, and every unlock"), the host's `fight_music`
+  (`MEET_MUSIC`; PORT.md, "A fight's music") and the time of day the
+  stages start at (`MEET_TIME`; PORT.md, "The time of day"), protocol 6;
+  both programs hold them for the session, so a guest plays with the
+  host's unlocks and the host's fights' music whatever its own settings
+  say, and its settings menu changes nothing until it starts again;
 - when the guest has the cards it says it is ready; the host says go and
   starts, and the guest starts on that or on the host's first inputs.
   The host is the first pad, the guest the second, and the host's

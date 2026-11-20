@@ -346,6 +346,12 @@ typedef struct {
  * (INFO_WORLD). */
 #define FLAG_WORLD 1024
 #define INFO_WORLD 8
+/* A polygon of the stage's own the game lit (a prop, a piece the mesh
+ * does not hold, the ground's tiles without the mesh), tinted by the time
+ * of day's light on a floor over the stage's own (gl_time.h). In the
+ * fifth bit of `info[3]` (INFO_TIME). */
+#define FLAG_TIME 2048
+#define INFO_TIME 16
 
 /* A corner's `w`: the depth the coprocessor worked out, in these units.
  * Any number in proportion to it will do -- it is the perspective divide
@@ -1157,6 +1163,12 @@ static const char g_gl_fragment_text[] =
     "            (gl_FragCoord.xy - vec2(0.5)) / u_scale, world_deep);\n"
     "        float seen = sun_visible_quick(world, v_world_normal);\n"
     "        color *= 1.0 - u_sun_dark * (1.0 - seen);\n"
+    /* and lit at the time of day as the stage is (gl_time.h) */
+    "        color = time_relight(color, normalize(v_world_normal));\n"
+    "    }\n"
+    /* the stage's own polygons the game lit, by the time's floor */
+    "    if ((v_info.w & 16u) != 0u && (v_flags.w & 2u) == 0u) {\n"
+    "        color *= u_time_floor;\n"
     "    }\n"
     "    float shade = 1.0;\n"
     "    if ((v_flags.w & 1u) != 0u) {\n"
@@ -1269,6 +1281,13 @@ static const char g_gl_fragment_text[] =
     "        mixes = mixes && (texel & 32768u) != 0u;\n"
     "        if ((v_flags.w & 2u) != 0u) {\n"
     "            color = texel_color * 255.0 / 31.0;\n"
+    /* a texture the game drew unlit, of the stage's own: three
+     * quarters of the time of day's change (gl_time.h), so that a
+     * stone the game left bright is not bright at night, and a lamp
+     * the game drew so still shows */
+    "            if ((v_info.w & 16u) != 0u) {\n"
+    "                color *= mix(vec3(1.0), u_time_floor, 0.75);\n"
+    "            }\n"
     "        } else {\n"
     /* a texel times the colour, 128 being one: the chip drops what is
      * left over, so nothing is rounded up here */
@@ -2418,8 +2437,9 @@ static void port_GlPutVertex(
                   : 0) |
              ((flags & FLAG_HELD) != 0 ? INFO_HELD : 0) |
              ((flags & FLAG_SMOOTH_EFFECT) != 0 ? INFO_SMOOTH : 0) |
-             ((flags & FLAG_WORLD) != 0 ? INFO_WORLD : 0));
-    if ((flags & FLAG_WORLD) != 0) {
+             ((flags & FLAG_WORLD) != 0 ? INFO_WORLD : 0) |
+             ((flags & FLAG_TIME) != 0 ? INFO_TIME : 0));
+    if ((flags & (FLAG_WORLD | FLAG_TIME)) != 0) {
         g_gl.has_world = TRUE;
     }
     to->window[0] = (u8)prim->window_and_u;
@@ -2743,10 +2763,16 @@ static void port_GlDraw(const PortRemasterPrim *prim) {
     if (port_GlIsOverGround(prim)) {
         flags |= FLAG_OVER_GROUND;
     }
-    /* a fighter's own polygon takes the sun's shadows as the meshes do */
+    /* a fighter's own polygon takes the sun's shadows as the meshes do,
+     * and the time of day's light (gl_time.h) */
     if (prim->is_fighter && prim->has_depth && !prim->is_effect &&
-        !prim->is_shadow && !g_gl.options.is_exact && port_GlSunIsOn()) {
+        !prim->is_shadow && !g_gl.options.is_exact &&
+        (port_GlSunIsOn() || port_GlTime()->on)) {
         flags |= FLAG_WORLD;
+    }
+    if (!prim->is_fighter && prim->has_depth && !prim->is_effect &&
+        !prim->is_shadow && !g_gl.options.is_exact && port_GlTime()->on) {
+        flags |= FLAG_TIME;
     }
     if (prim->is_effect && prim->is_textured &&
         port_RemasterEffects() == PORT_EFFECTS_SMOOTH &&

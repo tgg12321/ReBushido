@@ -11,6 +11,7 @@
 #include "gl_shadow.h"
 #include "gl_stage.h"
 #include "gl_sun.h"
+#include "gl_time.h"
 #include "port_remaster.h"
 
 /* the game's own header, for the shape of a light setup */
@@ -285,9 +286,20 @@ static float port_SunDot(const float *a, const float *b) {
  * `above` times each slope (light_ProjectShadow), so the light goes down
  * one unit for every minus slope across. */
 static s32 port_SunDirection(float *travel) {
+    const PortGlTime *look = port_GlTime();
     s32 shear_x;
     s32 shear_z;
 
+    /* a time of day of the port's own has a sun of its own (gl_time.h),
+     * which the maps are drawn along instead of the game's: the cascades
+     * and the whole stage's map are fitted to it again each picture */
+    if (look->on && look->to_sun[1] < -0.01f) {
+        travel[0] = -look->to_sun[0];
+        travel[1] = -look->to_sun[1];
+        travel[2] = -look->to_sun[2];
+        port_SunNormalise(travel);
+        return TRUE;
+    }
     port_RemasterShadowShear(&shear_x, &shear_z);
     travel[0] = -(float)shear_x / 4096.0f;
     travel[1] = 1.0f;
@@ -580,12 +592,52 @@ void port_GlSunLocateScreen(u32 program, PortGlSunScreenAt *at) {
     at->h = glGetUniformLocation(program, "u_sun_h");
     at->middle = glGetUniformLocation(program, "u_sun_middle");
     at->dark = glGetUniformLocation(program, "u_sun_dark");
+    at->time.on = glGetUniformLocation(program, "u_time_on");
+    at->time.own_light = glGetUniformLocation(program, "u_time_own_light");
+    at->time.own_color = glGetUniformLocation(program, "u_time_own_color");
+    at->time.own_back = glGetUniformLocation(program, "u_time_own_back");
+    at->time.light = glGetUniformLocation(program, "u_time_light");
+    at->time.color = glGetUniformLocation(program, "u_time_color");
+    at->time.back = glGetUniformLocation(program, "u_time_back");
+    at->time.floor = glGetUniformLocation(program, "u_time_floor");
+}
+
+/* The time of day's lights and the stage's own, for `time_relight`
+ * (gl_time.h). */
+static void port_SunBindTime(const PortGlTimeAt *at) {
+    const void *own = port_RemasterTileLights();
+    GLfloat light[9];
+    GLfloat color[9];
+    GLfloat back[3];
+    const PortGlTime *look = port_GlTime();
+    s32 on = own != NULL && look->on;
+    s32 i;
+
+    glUniform1i(at->on, on);
+    for (i = 0; i < 3; i++) {
+        float f = look->floor[i];
+
+        back[i] = on ? (f > 2.0f ? 2.0f : f) : 1.0f;
+    }
+    glUniform3f(at->floor, back[0], back[1], back[2]);
+    if (!on) {
+        return;
+    }
+    port_GlTimeSetupFloats(own, light, color, back);
+    glUniformMatrix3fv(at->own_light, 1, GL_TRUE, light);
+    glUniformMatrix3fv(at->own_color, 1, GL_TRUE, color);
+    glUniform3f(at->own_back, back[0], back[1], back[2]);
+    port_GlTimeSetupFloats(port_GlTimeTileLights(), light, color, back);
+    glUniformMatrix3fv(at->light, 1, GL_TRUE, light);
+    glUniformMatrix3fv(at->color, 1, GL_TRUE, color);
+    glUniform3f(at->back, back[0], back[1], back[2]);
 }
 
 void port_GlSunBindScreen(const PortGlSunScreenAt *at) {
     if (!g_sun.is_started) {
         return;
     }
+    port_SunBindTime(&at->time);
     if (!g_sun.has_view) {
         /* no place in the world to be had: nothing is lit by it */
         glUniform1i(at->sun.on, 0);
@@ -611,7 +663,7 @@ void port_GlSunBindScreen(const PortGlSunScreenAt *at) {
 #define SUN_GAIN_MOST 4.0f
 
 static float port_SunGain(void) {
-    const LightSetup *lights = (const LightSetup *)port_RemasterTileLights();
+    const LightSetup *lights = (const LightSetup *)port_GlTimeTileLights();
     float strength = (float)port_GlShadowStrength() / 100.0f;
     float lit[3];
     float sun[3];
@@ -696,7 +748,8 @@ void port_GlSunBind(const PortGlSunAt *at) {
     glUniform4f(at->depth, g_sun.depth[0], g_sun.depth[1], g_sun.depth[2],
                 g_sun.depth[3]);
     glUniform3f(at->travel, g_sun.travel[0], g_sun.travel[1], g_sun.travel[2]);
-    glUniform1f(at->soft, SUN_SOFT);
+    /* the moon's softer, a low sun's a little (gl_time.h) */
+    glUniform1f(at->soft, SUN_SOFT * port_GlTime()->soft);
     glUniform1f(
         at->gain, getenv("RB_SUN_DEBUG") != NULL ? -1.0f : port_SunGain());
     glActiveTexture(GL_TEXTURE0 + PORT_GL_SUN_UNIT);

@@ -73,6 +73,8 @@ static struct {
     s32 asked_index;                 /* it in `arenas`, or NO_ARENA */
     s32 kind_default;                /* PORT_STAGE_: the window's */
     s32 kind_held;                   /* a session's: not changed after */
+    s32 time_default;                /* PORT_TIME_: the window's */
+    s32 time_held;                   /* a session's: not changed after */
     /* what the game is handed in place of its tables, made for the arena
      * `built` (an index of `arenas`) */
     s32 built;
@@ -726,6 +728,23 @@ void port_HoldStageKindDefault(s32 kind) {
 }
 
 s32 port_GetStageKindDefault(void) { return g_port_arenas.kind_default; }
+
+void port_SetStageTimeDefault(s32 time) {
+    if (!g_port_arenas.time_held) {
+        g_port_arenas.time_default =
+            time > PORT_TIME_OWN && time < PORT_TIME_COUNT
+                ? time
+                : PORT_TIME_OWN;
+    }
+}
+
+void port_HoldStageTimeDefault(s32 time) {
+    g_port_arenas.time_held = FALSE;
+    port_SetStageTimeDefault(time);
+    g_port_arenas.time_held = TRUE;
+}
+
+s32 port_GetStageTimeDefault(void) { return g_port_arenas.time_default; }
 
 /* The arena in play's ground in place of its host's sectors: the data of
  * `sector` into `data` (PORT_DISC_DATA_BYTES), the bytes past the ground

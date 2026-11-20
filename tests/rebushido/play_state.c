@@ -38,6 +38,8 @@ void test_Main(void) {
     WHERE(PortStageChoice, page_open);
     WHERE(PortStageChoice, on_stages);
     WHERE(PortStageChoice, cursor_kind);
+    WHERE(PortStageChoice, fight_time);
+    WHERE(PortStageChoice, cursor_time);
     WHERE(PortPlay, unlock_all);
     WHERE(PortPlay, stage_pages);
     WHERE(PortPlay, page_used);

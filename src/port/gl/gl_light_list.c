@@ -9,6 +9,7 @@
 #include "common.h"
 #include "gl_light_list.h"
 #include "gl_lights.h"
+#include "gl_time.h"
 #include "port_fighter.h"
 #include "port_gpu.h"
 #include "port_host.h"
@@ -213,8 +214,15 @@ static void port_GlLightListStage(s32 stage) {
         u32 id =
             ID_STAGE | (u32)stage << ID_STAGE_SHIFT | (u32)i << ID_LIGHT_SHIFT;
         PortGlLight light;
+        /* out at a time of day its file leaves out, and brighter as the
+         * day darkens (gl_time.h) */
+        float gain = port_GlTimeLightGain(def->times);
 
+        if (gain <= 0.0f) {
+            continue;
+        }
         port_GlLightFrom(&light, def, id);
+        light.intensity *= gain;
         if (def->on == PORT_LIGHT_ON_STAGE) {
             light.position[0] = (float)def->at[0];
             light.position[1] = (float)def->at[1];
@@ -234,6 +242,7 @@ static void port_GlLightListStage(s32 stage) {
                     continue;
                 }
                 port_GlLightFrom(&light, def, id | (u32)flame);
+                light.intensity *= gain;
                 light.position[0] = (float)(at->at[0] + def->at[0]);
                 /* the world's y runs down: the middle is above the foot */
                 light.position[1] = (float)(at->at[1] + def->at[1]) -

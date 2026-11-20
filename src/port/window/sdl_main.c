@@ -962,6 +962,8 @@ int main(int argc, char **argv) {
     port_MusicSetOn(g_port_settings.music_mods);
     /* the kind of stage the stages start as (port_stage_choice.h) */
     port_SetStageKindDefault(g_port_settings.stage_kind);
+    /* ... and the time of day they start at */
+    port_SetStageTimeDefault(g_port_settings.time_of_day);
     /* the two gameplay switches (port_play.h); --unlock-all and
      * --stage-select on the command line turn them on */
     port_SetUnlockAll(g_port_settings.unlock_all);

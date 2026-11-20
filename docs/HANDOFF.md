@@ -158,6 +158,21 @@ lighting overhaul".
   by a quarter to two fifths in the lower half of the picture, PORT.md);
   pictures in the main checkout's `tmp/lighting/`.
 
+## The time of day, 2026-11-19 (ROADMAP 20)
+
+- **In:** L1 and R1 on a stage page turn a dressed stage's time (its own,
+  dawn, day, dusk, night); `time_of_day` in the cfg and the menu for the
+  modes with no page; the host's online (`MEET_TIME`, protocol 6). The
+  look is `src/port/gl/gl_time.c`: the sun's way and colour (the maps
+  along it), the ambient, the fog laid over the mesh, a day sky, the
+  game's own fighters and props relit, the bloom, the light files'
+  `times` and the stage's lights brighter at night (PORT.md, "The time
+  of day"). At the stage's own time nothing changes.
+- **Waits on the owner:** his eye on each time's numbers (the table in
+  PORT.md is judged on pictures: the main checkout's `tmp/timeofday/`,
+  `sheet_stageNN.png` the five times side by side, and
+  `stage_page_dusk.png` the strip); the HUD's letters over a day sky.
+
 ## What is left, in the order I would take it
 
 1. **The lighting work** (ROADMAP 14), above; give it a budget in

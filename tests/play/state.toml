@@ -80,6 +80,8 @@ port_arena = "g_port_stage_choice+40:s8"   # the arena in play, or -1
 port_page = "g_port_stage_choice+42:u8"    # the arenas' page is up
 port_on_stages = "g_port_stage_choice+45:u8"  # a stage page ran this frame
 port_cursor_tier = "g_port_stage_choice+46:u8"  # the kind under the cursor
+port_time = "g_port_stage_choice+87:u8"    # the fight's time of day (PORT_TIME_)
+port_cursor_time = "g_port_stage_choice+88:u8"  # the time under the cursor
 # -- the native port's gameplay switches (port_play.h) --
 port_unlock_all = "g_port_play+0:u8"     # unlock_all as the game took it in
 port_stage_pages = "g_port_play+1:u8"    # stage_select_everywhere likewise
