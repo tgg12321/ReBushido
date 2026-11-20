@@ -26,11 +26,17 @@
 
 #include "menu.h"
 #include "port_net.h"
+#include "portmap.h"
 #include "port_spu.h"
 #include "shared.h"
 #include "sdl_window.h"
 
-#define LINE_BYTES 160
+#define LINE_BYTES 400
+/* A failure's panel: the least time it is shown before a key closes it,
+ * and the most. */
+#define FAIL_LEAST_MS 600
+#define FAIL_MOST_MS 600000
+#define PANEL_LINES_MAX 8
 /* The line's height against the window's, its letters against the line,
  * and the least it is. */
 #define LINE_PART 34
@@ -110,9 +116,10 @@ static u32 port_NetWords(char *out, u32 room) {
         return COLOR_WAIT;
     }
     snprintf(out, room,
-             "Online: player %d   |   ping %u ms   |   rollback %u   "
+             "Online: player %d   |   %s   |   ping %u ms   |   rollback %u   "
              "|   delay %u",
-             stats.pad + 1, stats.ping_ms, stats.rollback, stats.delay);
+             stats.pad + 1, port_GetSessionPath(), stats.ping_ms,
+             stats.rollback, stats.delay);
     return COLOR_TEXT;
 }
 
@@ -126,6 +133,8 @@ void port_DrawNetLine(void) {
     s32 box_w;
     s32 i;
 
+    /* the router's lease asked again when half of it has gone */
+    port_PortMapTick(SDL_GetTicks());
     if (words[0] == 0 || !port_NetFont()) {
         return;
     }
@@ -151,15 +160,68 @@ void port_DrawNetLine(void) {
     port_LayPixels(g_net.pixels, box_w, line, (window_w - box_w) / 2, pad);
 }
 
+/* `text` drawn into the panel's pixels in lines no wider than `width`,
+ * broken between words, from `y` down by `step`: the lines drawn, at
+ * most `most`. With no `pixels`, only counted. */
+static s32 port_NetDrawWrapped(
+    u32 *pixels, s32 w, s32 h, s32 x, s32 y, s32 step, s32 width, s32 most,
+    const char *text, u32 color) {
+    char line[LINE_BYTES];
+    s32 lines = 0;
+
+    while (*text != 0 && lines < most) {
+        s32 length = 0;
+        s32 fits = 0;
+
+        while (*text == ' ') {
+            text++;
+        }
+        /* the most words that fit */
+        for (;;) {
+            s32 end = length;
+
+            while (text[end] != 0 && text[end] != ' ' &&
+                   end + 1 < (s32)sizeof(line)) {
+                end++;
+            }
+            memcpy(line, text, (size_t)end);
+            line[end] = 0;
+            if (fits != 0 && port_FontMeasure(line) > width) {
+                break;
+            }
+            fits = end;
+            if (text[end] == 0 || end + 1 >= (s32)sizeof(line)) {
+                break;
+            }
+            length = end + 1;
+        }
+        if (fits == 0) {
+            break;
+        }
+        memcpy(line, text, (size_t)fits);
+        line[fits] = 0;
+        if (pixels != NULL) {
+            port_FontDraw(pixels, w, h, x, y + lines * step + port_FontAscent(),
+                          line, color);
+        }
+        lines++;
+        text += fits;
+    }
+    return lines;
+}
+
 /* The panel of the session's set-up, before the game has a picture: a
- * title and what is being done. */
-static void port_NetPanel(const char *status) {
-    PortTextStyle title;
+ * title, what is being done (or what went wrong), and a last line. */
+static void port_NetPanelOf(
+    const char *title, const char *status, u32 status_color, const char *last) {
+    PortTextStyle heading;
     PortRect place;
     s32 window_w = 0;
     s32 window_h = 0;
     s32 line;
+    s32 small;
     s32 pad;
+    s32 lines;
     s32 i;
 
     port_GetWindowSize(&window_w, &window_h);
@@ -171,11 +233,21 @@ static void port_NetPanel(const char *status) {
         line = LINE_LEAST;
     }
     pad = line / 2;
+    small = line * 3 / 4;
     place.w = line * 26 < window_w - 2 * pad ? line * 26 : window_w - 2 * pad;
-    place.h = line * 4;
+    if (place.w <= 2 * pad) {
+        return;
+    }
+    port_FontSetSize(line * LETTER_PERCENT / PERCENT * 3 / 4);
+    lines = port_NetDrawWrapped(NULL, 0, 0, 0, 0, small, place.w - 2 * pad,
+                                PANEL_LINES_MAX, status, status_color);
+    if (lines == 0) {
+        lines = 1;
+    }
+    place.h = 2 * pad + line + lines * small + small + pad / 2;
     place.x = (window_w - place.w) / 2;
     place.y = (window_h - place.h) / 2;
-    if (place.w <= 0 || !port_NetRoom(place.w, place.h)) {
+    if (!port_NetRoom(place.w, place.h)) {
         return;
     }
     for (i = 0; i < place.w * place.h; i++) {
@@ -184,20 +256,52 @@ static void port_NetPanel(const char *status) {
     port_FillRect(g_net.pixels, place.w, place.h, 0, 0, place.w, 2, COLOR_EDGE);
     port_FillRect(
         g_net.pixels, place.w, place.h, 0, place.h - 2, place.w, 2, COLOR_EDGE);
-    memset(&title, 0, sizeof(title));
-    title.face = PORT_FACE_BOLD;
-    title.size = line * LETTER_PERCENT / PERCENT;
-    title.color = COLOR_TITLE;
-    port_TextDraw(
-        g_net.pixels, place.w, place.h, pad, pad + port_TextAscent(&title),
-        "ReBushido: playing online", &title);
+    memset(&heading, 0, sizeof(heading));
+    heading.face = PORT_FACE_BOLD;
+    heading.size = line * LETTER_PERCENT / PERCENT;
+    heading.color = COLOR_TITLE;
+    port_TextDraw(g_net.pixels, place.w, place.h, pad,
+                  pad + port_TextAscent(&heading), title, &heading);
     port_FontSetSize(line * LETTER_PERCENT / PERCENT * 3 / 4);
+    port_NetDrawWrapped(
+        g_net.pixels, place.w, place.h, pad, pad + line, small,
+        place.w - 2 * pad, PANEL_LINES_MAX, status, status_color);
     port_FontDraw(g_net.pixels, place.w, place.h, pad,
-                  pad + line + port_FontAscent(), status, COLOR_TEXT);
-    port_FontDraw(
-        g_net.pixels, place.w, place.h, pad, pad + line * 2 + port_FontAscent(),
-        "Close the window to give up", COLOR_DIM);
+                  pad + line + lines * small + pad / 2 + port_FontAscent(),
+                  last, COLOR_DIM);
     port_ShowMenu(port_GetBlankCount(), g_net.pixels, &place, NULL);
+}
+
+static void port_NetPanel(const char *status) {
+    port_NetPanelOf("ReBushido: playing online", status, COLOR_TEXT,
+                    "Close the window to give up");
+}
+
+/* The session could not be set up (port_net.h): what went wrong, on the
+ * screen until a key says it has been read (or the window is closed);
+ * then the program ends, as it does with no window. */
+static void port_NetFail(const char *why) {
+    u32 shown_at = SDL_GetTicks();
+
+    port_Note("netplay: could not play online: %s", why);
+    for (;;) {
+        const Uint8 *keys;
+        u32 now = SDL_GetTicks();
+
+        port_PollWindow();
+        port_NetPanelOf("Could not play online", why, COLOR_WAIT,
+                        "Enter or Escape: close   (the log has it too)");
+        keys = SDL_GetKeyboardState(NULL);
+        if (now - shown_at > FAIL_LEAST_MS &&
+            (keys[SDL_SCANCODE_RETURN] || keys[SDL_SCANCODE_ESCAPE] ||
+             keys[SDL_SCANCODE_SPACE] || keys[SDL_SCANCODE_KP_ENTER])) {
+            break;
+        }
+        if (now - shown_at > FAIL_MOST_MS) {
+            break;
+        }
+        SDL_Delay(WAIT_DRAW_MS);
+    }
 }
 
 /* Netplay waits on the network (port_net.h): the window's events read,
@@ -234,6 +338,7 @@ static void port_NetRerun(s32 begins, u32 blanks) {
 void port_StartNetWindow(void) {
     g_port_net_hold_hook = port_HoldPace;
     g_port_net_wait_hook = port_NetWait;
+    g_port_net_fail_hook = port_NetFail;
     g_port_net_rerun_hook = port_NetRerun;
     g_port_rerun_sound_hook = port_SoundRerun;
     /* a player whose partner goes is not thrown out of the game */

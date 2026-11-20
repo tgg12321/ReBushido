@@ -297,13 +297,19 @@ static s32 port_FindStageFile(
     u32 i;
 
     if (kind == PORT_STAGE_FILE_GROUND) {
-        const u8 *entry =
-            ndata_inf + (NDATA_STAGES + stage) * NDATA_ENTRY_BYTES;
-        u32 start = entry[0] | (entry[1] << 8);
-        u32 length = entry[2] | (entry[3] << 8);
+        const u8 *entry;
+        u32 start;
+        u32 length;
 
+        /* (a disc whose directory could not be read has no NDATA.INF) */
         file = port_FindDiscFile("NDATA/NDATA.DAT");
-        if (ndata_inf == NULL || file == NULL || start == NDATA_LEFT_OUT) {
+        if (ndata_inf == NULL || file == NULL) {
+            return 0;
+        }
+        entry = ndata_inf + (NDATA_STAGES + stage) * NDATA_ENTRY_BYTES;
+        start = entry[0] | (entry[1] << 8);
+        length = entry[2] | (entry[3] << 8);
+        if (start == NDATA_LEFT_OUT) {
             return 0;
         }
         *sector = file->sector + start;

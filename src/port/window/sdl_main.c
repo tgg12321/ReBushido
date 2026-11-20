@@ -42,6 +42,8 @@
 
 #include "port_host.h"
 #include "port_mods.h"
+#include "port_net.h"
+#include "portmap.h"
 #include "port_music.h"
 #include "port_remaster.h"
 #include "port_play.h"
@@ -446,7 +448,10 @@ static const struct {
     {"--net-peer", 1},       {"--netplay", 1},       {"--net-delay", 1},
     {"--link-side", 1},      {"--rollback-test", 1}, {"--rollback-every", 1},
     {"--rollback-quiet", 0}, {"--menu-at", 1},       {"--menu-keys", 1},
-    {"--menu-shots", 1},     {"--escape-at", 1},
+    {"--menu-shots", 1},     {"--escape-at", 1},     {"--lobby", 1},
+    {"--relay", 1},          {"--room", 1},          {"--player", 1},
+    {"--room-password", 1},  {"--room-key", 1},      {"--punch-to", 1},
+    {"--net-paths", 1},      {"--mapped", 1},
 };
 
 #if defined(_WIN32)
@@ -471,23 +476,115 @@ static void port_QuoteWord(const char *word, char *out, size_t room) {
 }
 #endif
 
-/* The program again, as the host of a session at `address` or its guest
- * going there (sdl_window.h): the same command line, but the network's
- * options, with these. The window and the sound card are let go first.
- * On Linux the program becomes the new one; on Windows the new one is
- * started and this one ends. Returns only if it could not be done. */
-void port_StartOnline(
-    s32 is_host, const char *address, s32 delay, s32 is_local) {
-    static char *words[ARGUMENTS_MAX + 16];
+/* The port mapping's options: the tests' fake router, or the real one
+ * (sdl_window.h). */
+static PortMapOptions g_port_map_options;
+static s32 g_port_map_off;    /* --portmap off */
+static s32 g_port_map_forced; /* --portmap on, whatever the settings say */
+
+const void *port_WindowPortMapOptions(void) { return &g_port_map_options; }
+
+/* An address no one on the internet reaches: unknown (0), private
+ * (10/8, 172.16/12, 192.168/16) or the providers' shared space
+ * (100.64/10). 127/8 is the tests' fake router's, and taken. */
+static s32 port_IsBehindAnother(u32 address) {
+    return address == 0 || (address >> 24) == 10 || (address >> 20) == 0xAC1 ||
+           (address >> 16) == 0xC0A8 || (address >> 22) == (0x64400000U >> 22);
+}
+
+/* A host's port opened in its router before the session begins (portmap.c;
+ * docs/NETPLAY.md, section 14), where the settings and the command line
+ * let it and the host is found through every network: what it found is
+ * said where the host waits, and the port is the host's first way for a
+ * lobby's guest. It is closed again as the program ends. */
+static void port_MapHostPort(s32 count, char **words) {
+    static char said[PORT_MAP_WHY_BYTES + 96];
+    PortNetAddress bind;
+    PortMapResult map;
+    s32 i;
+
+    if (g_port_map_off ||
+        (!g_port_settings.net_portmap && !g_port_map_forced)) {
+        return;
+    }
+    for (i = 1; i + 1 < count; i++) {
+        if (strcmp(words[i], "--host") == 0) {
+            break;
+        }
+    }
+    /* (a host on this PC alone has no router to ask, but a test's fake
+     * one, which the options name) */
+    if (i + 1 >= count || !port_ParseNetAddress(words[i + 1], &bind) ||
+        bind.port == 0 || bind.is_v6 ||
+        ((bind.address >> 24) == 127 && g_port_map_options.ssdp_at == NULL &&
+         g_port_map_options.gateway_at == NULL)) {
+        return;
+    }
+    port_Say(
+        "online: asking the router to open UDP port %u%s%s%s%s", bind.port,
+        g_port_map_options.ssdp_at != NULL ? " (UPnP's search to " : "",
+        g_port_map_options.ssdp_at != NULL ? g_port_map_options.ssdp_at : "",
+        g_port_map_options.gateway_at != NULL ? ", the gateway " : "",
+        g_port_map_options.gateway_at != NULL ? g_port_map_options.gateway_at
+                                              : "");
+    if (port_MapPort(bind.port, &g_port_map_options, &map) &&
+        port_IsBehindAnother(map.external_address)) {
+        /* the router opened it, but it is not the internet's: another
+         * router (or the provider's NAT) stands before it */
+        snprintf(
+            said, sizeof(said),
+            "%s opened your router's port, but your router is behind "
+            "another (it is at %u.%u.%u.%u): a lobby room finds the "
+            "way instead",
+            map.method, map.external_address >> 24,
+            (map.external_address >> 16) & 0xFF,
+            (map.external_address >> 8) & 0xFF, map.external_address & 0xFF);
+    } else if (map.ok) {
+        PortNetAddress outside;
+
+        port_ClearNetAddress(&outside);
+        outside.address = map.external_address;
+        outside.port = map.external_port;
+        port_SetRelayMapped(&outside);
+        snprintf(said, sizeof(said),
+                 "%s opened your router's port: the other player joins "
+                 "%u.%u.%u.%u:%u",
+                 map.method, map.external_address >> 24,
+                 (map.external_address >> 16) & 0xFF,
+                 (map.external_address >> 8) & 0xFF,
+                 map.external_address & 0xFF, map.external_port);
+    } else {
+        snprintf(said, sizeof(said), "%s", map.why);
+    }
+    port_Say("online: %s", said);
+    port_SetSessionMapped(said);
+}
+
+/* The program again, as a session's (sdl_window.h): the same command line
+ * but the network's options, with the ones `start` says. The window and
+ * the sound card are let go first. On Linux the program becomes the new
+ * one; on Windows the new one is started (its process's number said, for
+ * a test to wait on) and this one ends. Returns only if it could not be
+ * done. */
+void port_StartOnline(const PortOnlineStart *start) {
+    static char *words[ARGUMENTS_MAX + 32];
     static char delay_text[16];
-    static char host_option[] = "--host";
-    static char join_option[] = "--join";
-    static char delay_option[] = "--net-delay";
-    static char bind_option[] = "--net-bind";
-    static char bind_local[] = "127.0.0.1:0";
-    static char bind_any[] = "0.0.0.0:0";
-    static char where[PATH_BYTES_MAX];
+    static char opt_host[] = "--host";
+    static char opt_join[] = "--join";
+    static char opt_delay[] = "--net-delay";
+    static char opt_bind[] = "--net-bind";
+    static char opt_lobby[] = "--lobby";
+    static char opt_room[] = "--room";
+    static char opt_player[] = "--player";
+    static char opt_key[] = "--room-key";
+    static char opt_punch[] = "--punch-to";
+    static char opt_portmap[] = "--portmap";
+    static char word_off[] = "off";
+    static char strings[8][PATH_BYTES_MAX];
+    s32 role = start->role;
+    s32 is_host = role == PORT_NET_ROLE_HOST || role == PORT_NET_ROLE_ROOM;
     s32 count = 0;
+    s32 kept = 0;
     s32 i;
 
     if (g_port_main_path == NULL) {
@@ -512,35 +609,72 @@ void port_StartOnline(
         }
         words[count++] = g_port_main_argv[i];
     }
-    snprintf(where, sizeof(where), "%s", address);
-    snprintf(delay_text, sizeof(delay_text), "%d", delay);
-    words[count++] = is_host ? host_option : join_option;
-    words[count++] = where;
-    if (is_host) {
-        words[count++] = delay_option;
-        words[count++] = delay_text;
-    } else {
-        words[count++] = bind_option;
-        words[count++] = is_local ? bind_local : bind_any;
+#define KEEP(text)                                                             \
+    (snprintf(strings[kept], PATH_BYTES_MAX, "%s", (text)), strings[kept++])
+    snprintf(delay_text, sizeof(delay_text), "%d", start->delay);
+    if (start->lobby != NULL) {
+        words[count++] = opt_lobby;
+        words[count++] = KEEP(start->lobby);
+        if (start->player != NULL && start->player[0] != 0) {
+            words[count++] = opt_player;
+            words[count++] = KEEP(start->player);
+        }
+        if (start->key != NULL) {
+            words[count++] = opt_key;
+            words[count++] = KEEP(start->key);
+        }
     }
+    if (is_host) {
+        words[count++] = opt_host;
+        words[count++] = KEEP(start->bind);
+        words[count++] = opt_delay;
+        words[count++] = delay_text;
+        if (role == PORT_NET_ROLE_ROOM) {
+            words[count++] = opt_room;
+            words[count++] = KEEP(start->room);
+        }
+        if (start->punch_to != NULL) {
+            words[count++] = opt_punch;
+            words[count++] = KEEP(start->punch_to);
+        }
+        if (!start->portmap) {
+            words[count++] = opt_portmap;
+            words[count++] = word_off;
+        }
+    } else {
+        words[count++] = opt_join;
+        words[count++] =
+            KEEP(role == PORT_NET_ROLE_ROOMS ? start->code : start->address);
+        words[count++] = opt_bind;
+        words[count++] = KEEP(start->bind);
+    }
+#undef KEEP
     words[count] = NULL;
-    port_Say("online: the program starts again as the %s of a session at %s",
-             is_host ? "host" : "guest", address);
+    port_Say("online: the program starts again as the %s of a session%s%s",
+             is_host ? "host" : "guest",
+             start->lobby != NULL ? " by way of the lobby at " : " at ",
+             start->lobby != NULL ? start->lobby
+             : is_host            ? start->bind
+                                  : start->address);
 #if defined(_WIN32)
     {
-        static char quoted[ARGUMENTS_MAX + 16][PATH_BYTES_MAX];
-        static char *quoted_words[ARGUMENTS_MAX + 16];
+        static char quoted[ARGUMENTS_MAX + 32][PATH_BYTES_MAX];
+        static char *quoted_words[ARGUMENTS_MAX + 32];
+        intptr_t process;
 
         for (i = 0; i < count; i++) {
             port_QuoteWord(words[i], quoted[i], sizeof(quoted[i]));
             quoted_words[i] = quoted[i];
         }
         quoted_words[count] = NULL;
-        if (_spawnv(_P_NOWAIT, g_port_main_path,
-                    (const char * const *)quoted_words) == -1) {
+        process = _spawnv(
+            _P_NOWAIT, g_port_main_path, (const char * const *)quoted_words);
+        if (process == -1) {
             port_Say("online: the program cannot be started again");
             return;
         }
+        port_Say("online: started again as process %lu",
+                 (unsigned long)GetProcessId((HANDLE)process));
         port_Quit(PORT_EXIT_OK);
     }
 #else
@@ -720,6 +854,14 @@ int main(int argc, char **argv) {
                 PORT_QUICK_OFF +
                 port_ChooseWord("--quick-loading takes off or on, not ",
                                 argv[++i], "off", "on", NULL);
+        } else if (strcmp(word, "--portmap") == 0 && has_value) {
+            g_port_map_off = port_ChooseWord("--portmap takes on or off, not ",
+                                             argv[++i], "on", "off", NULL);
+            g_port_map_forced = !g_port_map_off;
+        } else if (strcmp(word, "--portmap-ssdp") == 0 && has_value) {
+            g_port_map_options.ssdp_at = argv[++i];
+        } else if (strcmp(word, "--portmap-gateway") == 0 && has_value) {
+            g_port_map_options.gateway_at = argv[++i];
         } else if (strcmp(word, "--config") == 0 && has_value) {
             config = argv[++i];
         } else if (strcmp(word, "--scale") == 0 && has_value) {
@@ -1038,6 +1180,7 @@ int main(int argc, char **argv) {
                                  : "the ones built in (--help shows them)");
     port_DescribeControls();
     port_StartWindow();
+    port_MapHostPort(count, passed);
     /* the game never comes back; what does is a start that failed */
     code = port_Main(count, passed);
     port_EndSession(code);

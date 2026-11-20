@@ -127,6 +127,40 @@ extern void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out);
 /* A run's test (--menu-keys): what the menu is told, a word at a time. */
 extern s32 port_MenuWord(const char *word);
 
+/* ---- the settings menu's Play online page (menu_online.c) ---- */
+
+/* The page's rows, each an item of its own (ONLINE_..., menu_online.c),
+ * which menu.c lays out and moves the cursor over. */
+#define PORT_ONLINE_ITEMS_MAX 40
+
+/* What a press on an item asks of the menu. */
+enum {
+    PORT_ONLINE_NOTHING = 0,
+    PORT_ONLINE_REBUILD = 1, /* the page's rows are others now */
+    PORT_ONLINE_TYPE = 2,    /* the row is typed into, from `typed` */
+};
+
+extern s32 port_OnlineItems(s32 *items, s32 most);
+/* An item's label and value; `typed` is what is being typed into it, or
+ * NULL. */
+extern void port_OnlineDescribe(
+    s32 item, const char *typed, char *label, u32 label_room, char *value,
+    u32 value_room, s32 *is_arrows);
+extern const char *port_OnlineHelp(s32 item, s32 is_typing);
+extern s32 port_OnlineAccept(
+    s32 item, char *typed, u32 typed_room, char *note, u32 note_room);
+extern s32 port_OnlineStep(s32 item, s32 step);
+/* What was typed into an item kept: PORT_ONLINE_..., or -1 with `note`
+ * saying why not. */
+extern s32 port_OnlineKeep(
+    s32 item, const char *typed, char *note, u32 note_room);
+/* Whether the item takes the letter `c` as it is typed into. */
+extern s32 port_OnlineTakes(s32 item, char c);
+/* A setting's line of the settings file written (menu.c), and the menu
+ * closed, as before the program starts again. */
+extern void port_MenuSetLine(const char *name, const char *value);
+extern void port_MenuLeave(void);
+
 /* ---- what the window does for it (sdl_window.c, sdl_menu.c) ---- */
 
 /* A setting the menu changed that takes at once (PORT_TAKES_NOW). */

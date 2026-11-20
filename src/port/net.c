@@ -34,6 +34,14 @@
 #define PORT_DIGITS_MAX 5
 #define DECIMAL 10
 #define BITS_PER_BYTE 8
+/* IPv6's text: eight groups of up to four hex digits. */
+#define V6_GROUPS 8
+#define HEX_GROUP_DIGITS 4
+#define HEX_BITS 4
+#define HEX_BASE 16
+#define DIGITS_MAX 12
+/* ::ffff:a.b.c.d: ten bytes of zeros, two of ones, then the IPv4. */
+#define V6_MAPPED_AT 10
 #define WORD_BYTES 4
 
 /* The link cable's packet and how long it is waited for. */
@@ -112,11 +120,12 @@ static u8 g_port_link_last[NET_HEADER_BYTES + LINK_PACKET_BYTES];
 static s32 g_port_link_has_last;
 static u32 g_port_link_resent;
 
+static void port_NetFlush(void);
+
 /* ---- the socket ---- */
 
-/* `ADDRESS:PORT`, four numbers and a port: 1, or 0 if it is not one
- * (port_net.h). */
-s32 port_ParseNetAddress(const char *text, PortNetAddress *out) {
+/* `ADDRESS:PORT`, four numbers and a port: 1, or 0 if it is not one. */
+static s32 port_ParseNetAddress4(const char *text, PortNetAddress *out) {
     u32 parts[ADDRESS_PARTS + 1];
     s32 count = 0;
     u32 value = 0;
@@ -148,7 +157,7 @@ s32 port_ParseNetAddress(const char *text, PortNetAddress *out) {
     if (count != ADDRESS_PARTS + 1 || parts[ADDRESS_PARTS] > PORT_NUMBER_MAX) {
         return 0;
     }
-    out->address = 0;
+    port_ClearNetAddress(out);
     for (i = 0; i < ADDRESS_PARTS; i++) {
         if (parts[i] > ADDRESS_PART_MAX) {
             return 0;
@@ -157,6 +166,246 @@ s32 port_ParseNetAddress(const char *text, PortNetAddress *out) {
     }
     out->port = (u16)parts[ADDRESS_PARTS];
     return 1;
+}
+
+void port_ClearNetAddress(PortNetAddress *out) {
+    u32 i;
+
+    out->address = 0;
+    out->port = 0;
+    out->is_v6 = 0;
+    for (i = 0; i < PORT_NET_V6_BYTES; i++) {
+        out->v6[i] = 0;
+    }
+}
+
+/* A hex digit's value, or -1. */
+static s32 port_HexDigit(char digit) {
+    if (digit >= '0' && digit <= '9') {
+        return digit - '0';
+    }
+    if (digit >= 'a' && digit <= 'f') {
+        return digit - 'a' + DECIMAL;
+    }
+    if (digit >= 'A' && digit <= 'F') {
+        return digit - 'A' + DECIMAL;
+    }
+    return -1;
+}
+
+/* An IPv6 address's text, as RFC 4291 writes it (groups of hex digits,
+ * `::` once for a run of zeros; no IPv4 at its end), up to `end`: its
+ * sixteen bytes into `out`, 1; or 0. */
+static s32 port_ParseV6(const char *text, const char *end, u8 *out) {
+    u16 groups[V6_GROUPS];
+    s32 count = 0;
+    s32 gap = -1;
+    s32 i;
+
+    if (end - text >= 2 && text[0] == ':' && text[1] == ':') {
+        gap = 0;
+        text += 2;
+    }
+    while (text < end) {
+        u32 value = 0;
+        s32 digits = 0;
+
+        while (text < end && port_HexDigit(*text) >= 0) {
+            value = (value << HEX_BITS) | (u32)port_HexDigit(*text++);
+            if (++digits > HEX_GROUP_DIGITS) {
+                return 0;
+            }
+        }
+        if (digits == 0 || count == V6_GROUPS) {
+            return 0;
+        }
+        groups[count++] = (u16)value;
+        if (text == end) {
+            break;
+        }
+        if (*text++ != ':') {
+            return 0;
+        }
+        if (text < end && *text == ':') {
+            if (gap >= 0) {
+                return 0;
+            }
+            gap = count;
+            text++;
+        } else if (text == end) {
+            return 0;
+        }
+    }
+    if (gap < 0 ? count != V6_GROUPS : count >= V6_GROUPS) {
+        return 0;
+    }
+    for (i = 0; i < PORT_NET_V6_BYTES; i++) {
+        out[i] = 0;
+    }
+    for (i = 0; i < count; i++) {
+        s32 at = gap >= 0 && i >= gap ? V6_GROUPS - count + i : i;
+
+        out[2 * at] = (u8)(groups[i] >> BITS_PER_BYTE);
+        out[2 * at + 1] = (u8)groups[i];
+    }
+    return 1;
+}
+
+/* `ADDRESS:PORT`, IPv4's four numbers, or `[IPv6]:PORT` (port_net.h). */
+s32 port_ParseNetAddress(const char *text, PortNetAddress *out) {
+    const char *close = text;
+    s32 port = 0;
+    s32 digits = 0;
+
+    if (*text != '[') {
+        return port_ParseNetAddress4(text, out);
+    }
+    while (*close != 0 && *close != ']') {
+        close++;
+    }
+    if (*close != ']' || close[1] != ':') {
+        return 0;
+    }
+    port_ClearNetAddress(out);
+    if (!port_ParseV6(text + 1, close, out->v6)) {
+        return 0;
+    }
+    for (text = close + 2; *text >= '0' && *text <= '9'; text++) {
+        port = port * DECIMAL + (*text - '0');
+        if (++digits > PORT_DIGITS_MAX || port > PORT_NUMBER_MAX) {
+            return 0;
+        }
+    }
+    if (digits == 0 || *text != 0) {
+        return 0;
+    }
+    out->is_v6 = 1;
+    out->port = (u16)port;
+    /* ::ffff:a.b.c.d is IPv4 (port_host.h) */
+    if (out->v6[V6_MAPPED_AT] == 0xFF && out->v6[V6_MAPPED_AT + 1] == 0xFF) {
+        s32 zeros = 1;
+        s32 i;
+
+        for (i = 0; i < V6_MAPPED_AT; i++) {
+            zeros = zeros && out->v6[i] == 0;
+        }
+        if (zeros) {
+            out->is_v6 = 0;
+            out->address = 0;
+            for (i = V6_MAPPED_AT + 2; i < PORT_NET_V6_BYTES; i++) {
+                out->address = (out->address << BITS_PER_BYTE) | out->v6[i];
+            }
+            for (i = 0; i < PORT_NET_V6_BYTES; i++) {
+                out->v6[i] = 0;
+            }
+        }
+    }
+    return 1;
+}
+
+/* Whether two addresses are one (port_net.h). */
+s32 port_NetAddressesEqual(
+    const PortNetAddress *first, const PortNetAddress *second) {
+    u32 i;
+
+    if (first->is_v6 != second->is_v6 || first->port != second->port ||
+        first->address != second->address) {
+        return 0;
+    }
+    for (i = 0; first->is_v6 && i < PORT_NET_V6_BYTES; i++) {
+        if (first->v6[i] != second->v6[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* A number into `out` as text, in base `base`, at least `least` digits:
+ * where it ends. */
+static char *port_PutNumber(
+    char *out, char *end, u32 value, u32 base, s32 least) {
+    char digits[DIGITS_MAX];
+    s32 count = 0;
+
+    do {
+        digits[count++] = "0123456789abcdef"[value % base];
+        value /= base;
+    } while (value != 0 || count < least);
+    while (count > 0 && out < end) {
+        *out++ = digits[--count];
+    }
+    return out;
+}
+
+/* The address as text (port_net.h): IPv6 in brackets, its longest run
+ * of zero groups as `::`. */
+void port_FormatNetAddress(const PortNetAddress *at, char *out, u32 room) {
+    char *end = out + room - 1;
+    char *put = out;
+    s32 i;
+
+    if (room == 0) {
+        return;
+    }
+    if (!at->is_v6) {
+        for (i = 0; i < ADDRESS_PARTS; i++) {
+            put = port_PutNumber(
+                put, end,
+                (at->address >> (BITS_PER_BYTE * (ADDRESS_PARTS - 1 - i))) &
+                    ADDRESS_PART_MAX,
+                DECIMAL, 1);
+            if (put < end) {
+                *put++ = i + 1 < ADDRESS_PARTS ? '.' : ':';
+            }
+        }
+    } else {
+        /* the longest run of zero groups, if two or more, as `::` */
+        s32 best = -1;
+        s32 best_length = 1;
+        s32 run = 0;
+
+        for (i = 0; i < V6_GROUPS; i++) {
+            if (at->v6[2 * i] == 0 && at->v6[2 * i + 1] == 0) {
+                run++;
+                if (run > best_length) {
+                    best_length = run;
+                    best = i - run + 1;
+                }
+            } else {
+                run = 0;
+            }
+        }
+        if (put < end) {
+            *put++ = '[';
+        }
+        for (i = 0; i < V6_GROUPS; i++) {
+            if (i == best) {
+                if (put < end) {
+                    *put++ = ':';
+                }
+                if (i == 0 && put < end) {
+                    *put++ = ':';
+                }
+                i += best_length - 1;
+                continue;
+            }
+            put = port_PutNumber(
+                put, end,
+                ((u32)at->v6[2 * i] << BITS_PER_BYTE) | at->v6[2 * i + 1],
+                HEX_BASE, 1);
+            if (i + 1 < V6_GROUPS && put < end) {
+                *put++ = ':';
+            }
+        }
+        if (put < end) {
+            *put++ = ']';
+        }
+        if (put < end) {
+            *put++ = ':';
+        }
+    }
+    put = port_PutNumber(put, end, at->port, DECIMAL, 1);
+    *put = 0;
 }
 
 /* Where the socket goes and whom it talks to (port_net.h). */
@@ -194,6 +443,49 @@ void port_FixNetPeer(void) {
         g_port_net_has_peer = 1;
     }
     g_port_net_is_fixed = g_port_net_has_peer;
+}
+
+void port_SetNetPeerNow(const PortNetAddress *peer) {
+    g_port_net_peer = *peer;
+    g_port_net_has_peer = 1;
+    g_port_net_is_fixed = 1;
+}
+
+/* A datagram straight to `to`, past --net-latency and --net-loss: the
+ * relay server's, which is no part of the session (port_net.h). */
+void port_NetSendTo(const PortNetAddress *to, const void *bytes, u32 count) {
+    if (g_port_net_socket >= 0 && count <= NET_DATAGRAM_MAX) {
+        port_HostUdpSend(g_port_net_socket, to, bytes, count);
+    }
+}
+
+/* Anybody's next datagram and who sent it, whoever the peer is: -1 if
+ * none came in `wait_ms` (port_net.h). What --net-latency holds back
+ * still goes on time. */
+s32 port_NetReceiveFrom(
+    void *bytes, u32 room, u32 wait_ms, PortNetAddress *from) {
+    s32 got;
+
+    if (g_port_net_socket < 0) {
+        return -1;
+    }
+    for (;;) {
+        u32 wait = wait_ms;
+
+        port_NetFlush();
+        if (g_port_net_delayed_count != 0 && wait > NET_POLL_MS) {
+            wait = NET_POLL_MS;
+        }
+        got = port_HostUdpReceive(g_port_net_socket, bytes, room, from, wait);
+        if (got >= 0) {
+            g_port_net_received++;
+            return got;
+        }
+        if (wait >= wait_ms) {
+            return -1;
+        }
+        wait_ms -= wait;
+    }
 }
 
 /* The PC's clock in milliseconds (port_net.h): the host's ticks wrap
@@ -249,19 +541,37 @@ s32 port_StartNet(void) {
             return 0;
         }
     }
-    g_port_net_socket = port_HostUdpOpen(&g_port_net_bind);
+    if (!g_port_net_bind.is_v6 && g_port_net_bind.address == 0) {
+        /* every address of the PC: of both kinds where the system has
+         * IPv6 (port_host.h), so that a player with IPv6 is found by it */
+        PortNetAddress any = g_port_net_bind;
+
+        any.is_v6 = 1;
+        g_port_net_socket = port_HostUdpOpen(&any);
+        if (g_port_net_socket >= 0) {
+            g_port_net_bind = any;
+        }
+    }
     if (g_port_net_socket < 0) {
-        port_Log("rebushido: the network: no socket at %u.%u.%u.%u:%u\n",
-                 g_port_net_bind.address >> 24,
-                 (g_port_net_bind.address >> 16) & 0xFF,
-                 (g_port_net_bind.address >> 8) & 0xFF,
-                 g_port_net_bind.address & 0xFF, g_port_net_bind.port);
+        g_port_net_socket = port_HostUdpOpen(&g_port_net_bind);
+    }
+    if (g_port_net_socket < 0) {
+        char at[PORT_NET_ADDRESS_TEXT_BYTES];
+
+        port_FormatNetAddress(&g_port_net_bind, at, sizeof(at));
+        port_Log("rebushido: the network: no socket at %s\n", at);
         return 0;
     }
     return 1;
 }
 
 s32 port_IsNetOn(void) { return g_port_net_socket >= 0; }
+
+s32 port_NetIsV6(void) { return g_port_net_bind.is_v6; }
+
+s32 port_GetNetBound(PortNetAddress *at) {
+    return g_port_net_socket >= 0 && port_HostUdpBound(g_port_net_socket, at);
+}
 
 /* The next of the run's own random numbers, for --net-loss. */
 static u32 port_NetRandom(void) {
@@ -362,8 +672,7 @@ s32 port_NetReceive(void *bytes, u32 room, u32 wait_ms) {
         if (got >= 0) {
             /* only the peer's own, once it is fixed */
             if (g_port_net_is_fixed &&
-                (from.address != g_port_net_peer.address ||
-                 from.port != g_port_net_peer.port)) {
+                !port_NetAddressesEqual(&from, &g_port_net_peer)) {
                 continue;
             }
             if (!g_port_net_is_fixed) {

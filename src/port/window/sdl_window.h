@@ -143,12 +143,28 @@ extern void port_StartNetWindow(void);
 /* Netplay's line over the picture: the ping, the rollback, the delay,
  * and what is being waited for. Nothing where netplay is off. */
 extern void port_DrawNetLine(void);
+
 /* The settings menu's Play online page: the program starts again as a
- * session's host at `address` or its guest going there (sdl_main.c);
- * `address` is `A.B.C.D:PORT`. A guest's own socket is on this PC alone
- * (127.0.0.1) where `is_local`. */
-extern void port_StartOnline(
-    s32 is_host, const char *address, s32 delay, s32 is_local);
+ * session's (sdl_main.c), with the network's options of its command line
+ * given anew. */
+typedef struct {
+    s32 role;            /* PORT_NET_ROLE_... (window.h) */
+    const char *bind;    /* this program's socket, `ADDRESS:PORT` */
+    const char *address; /* join: the host's */
+    const char *lobby;   /* room, rooms: the lobby server's */
+    const char *code;    /* rooms: the room's code */
+    const char *room;    /* room: its name */
+    const char *player;
+    const char *key;      /* a locked room's SALT:KEY in hex, or NULL */
+    const char *punch_to; /* host: the other player's address, or NULL */
+    s32 delay;
+    s32 portmap; /* the host asks its router for its port */
+} PortOnlineStart;
+
+extern void port_StartOnline(const PortOnlineStart *start);
+/* The port mapping's options (the tests' fake router: --portmap-ssdp,
+ * --portmap-gateway), and whether --portmap off said none. */
+extern const void *port_WindowPortMapOptions(void);
 
 /* ---- what sdl_window.c does for it ---- */
 

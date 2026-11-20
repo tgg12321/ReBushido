@@ -63,6 +63,7 @@ outside  src/port/paint.c       the software GPU's painter: its settings, its ri
 outside  src/port/play_switches.c  the gameplay switches the run asked for (unlock_all, stage_select_everywhere, menu, bugfixes, the game's options)
 outside  src/port/picture.c     the pictures a run writes
 outside  src/port/profile.c    where a blank's time goes, for --profile
+outside  src/port/relay.c       the lobby's client: the room, its key, the ways tried
 outside  src/port/session.c     netplay's session: who the other is, the host's cards as sent, the seed
 outside  src/port/png.c         PNG pictures read and written for the mods
 outside  src/port/remaster.c    the remastered picture's side channel: its epoch only goes forward

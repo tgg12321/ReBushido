@@ -91,19 +91,37 @@ extern s32 port_HostMakeFolder(const char *path);
 #define PORT_HOST_TICKS_PER_MICROSECOND 10
 extern u32 port_HostTicks(void);
 
-/* ---- the network: datagrams of UDP over IPv4 (docs/NETPLAY.md, section
- * 11; src/port/net.c) ---- */
+/* ---- the network: datagrams of UDP over IPv4 and IPv6 (docs/NETPLAY.md,
+ * sections 11 and 14; src/port/net.c) ---- */
 
 /* An address and a port, in the host's own order of bytes: 127.0.0.1 is
- * 0x7F000001. */
+ * 0x7F000001. An IPv6 one has `is_v6` and its sixteen bytes in `v6`, in
+ * the network's order, and `address` 0; an IPv4 address is never given
+ * as IPv6 (an IPv4-mapped one, ::ffff:a.b.c.d, is told as IPv4). */
+#define PORT_NET_V6_BYTES 16
+
 typedef struct {
     u32 address;
     u16 port;
+    u8 is_v6;
+    u8 v6[PORT_NET_V6_BYTES];
 } PortNetAddress;
 
 /* A socket bound to `at`: a number that is not negative, or -1. Nothing
- * here chooses the address: the program binds where it is told. */
+ * here chooses the address: the program binds where it is told. An IPv6
+ * address binds a socket of both kinds (IPV6_V6ONLY off), which sends
+ * and receives IPv4 too; [::] is every address of the PC of either kind. */
 extern s32 port_HostUdpOpen(const PortNetAddress *at);
+/* A socket closed. */
+extern void port_HostUdpClose(s32 socket);
+/* The address and port a socket is bound to (its port, where the system
+ * chose it): 1, or 0. */
+extern s32 port_HostUdpBound(s32 socket, PortNetAddress *at);
+/* This PC's own address of the kind asked (IPv6 if `v6`), the one it
+ * would send from to the internet: found by a socket connected to a
+ * public address, which sends nothing. 1, or 0 if it has none (no route
+ * of that kind). */
+extern s32 port_HostOwnAddress(s32 v6, PortNetAddress *at);
 /* One datagram to `to`. Returns 1 if it went. */
 extern s32 port_HostUdpSend(
     s32 socket, const PortNetAddress *to, const void *bytes, u32 count);

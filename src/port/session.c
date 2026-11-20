@@ -38,8 +38,12 @@
 #include "port_net.h"
 #include "bb2.h"
 
-/* The protocol's own number: two programs that differ in it do not meet. */
-#define SESSION_PROTOCOL 6
+/* The protocol's own number: two programs that differ in it do not meet.
+ * 7 (main's 6 and more): a guest that finds the host is not its kind
+ * says so, either side gives up on the other after SILENT_GIVE_UP_MS of
+ * silence, the disc's sum is of its data alone, and the two may meet by
+ * way of the lobby (relay.c). */
+#define SESSION_PROTOCOL 7
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -54,12 +58,16 @@
 #define CHUNKS_AT_ONCE 8
 #define GOES 4
 #define POLL_MS 2
+#define PUNCH_EVERY_MS 100
 #define STATUS_EVERY_MS 16
 /* The guest gives up when nobody has answered for this long; the host
  * waits as long as it is left to (closing the window ends it), or, with
  * no window, this long. */
 #define JOIN_GIVE_UP_MS 30000
 #define HOST_GIVE_UP_MS 600000
+/* Once the two have met, either gives up on the other after this long
+ * with nothing heard: the host waits for another guest, the guest ends. */
+#define SILENT_GIVE_UP_MS 15000
 /* The disc is told from another by a sum of its sectors: every this
  * many from the first, and the volume's own description. */
 #define DISC_SAMPLE_EVERY 997
@@ -69,11 +77,30 @@
 #define BITS_PER_BYTE 8
 #define WORD_BYTES 4
 #define WORD_BITS 32
-#define STATUS_BYTES 160
+#define STATUS_BYTES 400
+#define MS_PER_SECOND 1000
 #define SEED_MASK 0xFFFF
 #define PERCENT 100
 #define SHAPE_SHIFT 16
 #define SHAPE_MASK 0xFFFF
+#define DECIMAL 10
+/* The setup code (port_SessionSetupCode): each sum folded to this many
+ * bits, written as four of Crockford's base-32 digits. */
+#define CODE_BITS 20
+#define CODE_DIGITS 4
+#define CODE_DIGIT_BITS 5
+#define CODE_DIGIT_MASK 0x1F
+/* `P5` before the parts, and a part with the dash before it */
+#define CODE_HEAD 2
+#define CODE_PART (CODE_DIGITS + 1)
+/* The disc's primary volume descriptor, in its sector's data: its mark
+ * and the size of the volume in sectors. */
+#define SECTOR_DATA 24
+#define VOLUME_SIZE 80
+#define FORM1_BYTES 2048
+#define FORM2_BYTES 2324
+#define SUBHEADER_BYTES 8
+#define WHY_BYTES 400
 
 /* The session's presses (port_SessionInput): one every this many frames;
  * on the top menu, whose cursor glides from row to row over several
@@ -131,6 +158,13 @@ enum {
 
 static struct {
     s32 role;
+    s32 differ;                 /* --session-differ: PORT_SESSION_DIFFER_... */
+    const PortDisc *disc_image; /* the disc the game runs from */
+    char setup[PORT_SETUP_CODE_BYTES]; /* this program's setup code */
+    char mapped[STATUS_BYTES];         /* what the window says of its router */
+    char path[STATUS_BYTES];           /* the way the two found to each other */
+    PortNetAddress punch_to;           /* --punch-to */
+    s32 has_punch_to;
     PortNetAddress address;
     u64 build;
     u64 disc;
@@ -162,6 +196,10 @@ void port_SetSession(s32 role, const PortNetAddress *address) {
 }
 
 s32 port_GetSessionRole(void) { return g_session.role; }
+
+void port_SetSessionDiffer(s32 what) { g_session.differ = what; }
+
+void port_SetSessionDisc(const PortDisc *disc) { g_session.disc_image = disc; }
 
 /* ---- who is who ---- */
 
@@ -202,30 +240,147 @@ static u64 port_SessionBuild(void) {
     return port_SumWord(sum, (u32)(PortAddress)port_Main);
 }
 
-/* The disc: its size, its volume's description and a sector in every
- * DISC_SAMPLE_EVERY, read whole. Two images of the same disc agree; a
- * disc of another region, a hacked one or another game does not. */
+/* A sector's data into the disc's sum: its subheader and what it carries
+ * for the game, its 2048 bytes (form 1) or 2324 (form 2). Not its sync,
+ * its header's address nor its error codes (EDC and ECC), which follow
+ * from where and what it is, and which one dumping program writes again
+ * and another keeps as read: two dumps of one disc agree. */
+static u64 port_SumSector(u64 sum, const u8 *raw) {
+    const u8 *subheader = raw + PORT_DISC_SYNC_BYTES + PORT_DISC_HEADER_BYTES;
+    u32 bytes = (subheader[PORT_DISC_SUBMODE] & PORT_DISC_SUBMODE_FORM2)
+                    ? FORM2_BYTES
+                    : FORM1_BYTES;
+
+    sum = port_SumBytes(sum, subheader, SUBHEADER_BYTES);
+    return port_SumBytes(sum, raw + SECTOR_DATA, bytes);
+}
+
+/* The disc: the size of its volume as its own description says (sectors
+ * a dump adds after the volume, its run-out, are no part of it), the
+ * description, and a sector in every DISC_SAMPLE_EVERY of the volume,
+ * each by its data (port_SumSector). Two images of the same disc agree
+ * however they were dumped; a disc of another region, a hacked one or
+ * another game does not. It is the disc as it is, with no mod's stage
+ * files in it: those are the gameplay mods' sum. */
 static u64 port_SessionDisc(const PortDisc *disc) {
     static u8 raw[PORT_DISC_SECTOR_BYTES];
+    s32 (*override)(u32 sector, u8 *raw) = g_port_disc_override;
     u32 reads = g_port_disc_sectors_read;
+    u32 sectors = disc->sector_count;
     u64 sum = FNV_OFFSET;
     u32 sector;
 
-    sum = port_SumWord(sum, disc->sector_count);
+    g_port_disc_override = NULL;
     if (port_ReadDiscSector(disc, DISC_VOLUME_SECTOR, raw) == PORT_DISC_OK) {
-        sum = port_SumBytes(sum, raw, sizeof(raw));
+        const u8 *volume = raw + SECTOR_DATA;
+        u32 size = port_NetGetWord(volume + VOLUME_SIZE);
+
+        if (volume[0] == 1 && volume[1] == 'C' && volume[2] == 'D' &&
+            size != 0 && size <= sectors) {
+            sectors = size;
+        }
+        sum = port_SumSector(sum, raw);
     }
-    for (sector = 0; sector < disc->sector_count; sector += DISC_SAMPLE_EVERY) {
+    sum = port_SumWord(sum, sectors);
+    for (sector = 0; sector < sectors; sector += DISC_SAMPLE_EVERY) {
         if (port_ReadDiscSector(disc, sector, raw) == PORT_DISC_OK) {
-            sum = port_SumBytes(sum, raw, sizeof(raw));
+            sum = port_SumSector(sum, raw);
         }
     }
+    g_port_disc_override = override;
     /* what was read here is none of the game's */
     g_port_disc_sectors_read = reads;
     return sum;
 }
 
-/* Why a host turned a guest away, in words for the log and the window. */
+/* A sum folded to CODE_BITS and written as CODE_DIGITS digits of
+ * Crockford's base 32 (no I, L, O or U: none is read for another). */
+static void port_PutCodeDigits(char *out, u64 sum) {
+    static const char digits[] = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    u32 folded = 0;
+    s32 i;
+
+    while (sum != 0) {
+        folded ^= (u32)(sum & ((1U << CODE_BITS) - 1));
+        sum >>= CODE_BITS;
+    }
+    for (i = CODE_DIGITS - 1; i >= 0; i--) {
+        out[i] = digits[folded & CODE_DIGIT_MASK];
+        folded >>= CODE_DIGIT_BITS;
+    }
+}
+
+static u32 port_SessionProtocol(void) {
+    return SESSION_PROTOCOL +
+           (g_session.differ == PORT_SESSION_DIFFER_PROTOCOL ? 1 : 0);
+}
+
+/* The sums as this program says them to the other (--session-differ
+ * changes one, for a test), and the setup code of them,
+ * `P7-BBBB-DDDD-MMMM` (port_net.h). */
+static void port_SessionSums(void) {
+    char *code = g_session.setup;
+
+    g_session.build = port_SessionBuild();
+    g_session.disc = g_session.disc_image != NULL
+                         ? port_SessionDisc(g_session.disc_image)
+                         : 0;
+    g_session.mods = port_WeaponsSessionHash() + port_ArenaSessionHash();
+    if (g_session.differ == PORT_SESSION_DIFFER_BUILD) {
+        g_session.build ^= 1;
+    } else if (g_session.differ == PORT_SESSION_DIFFER_DISC) {
+        g_session.disc ^= 1;
+    } else if (g_session.differ == PORT_SESSION_DIFFER_MODS) {
+        g_session.mods ^= 1;
+    }
+    /* `P5`, then each part after a dash */
+    code[0] = 'P';
+    code[1] = (char)('0' + port_SessionProtocol() % DECIMAL);
+    code[CODE_HEAD] = '-';
+    port_PutCodeDigits(code + CODE_HEAD + 1, g_session.build);
+    code[CODE_HEAD + CODE_PART] = '-';
+    port_PutCodeDigits(code + CODE_HEAD + CODE_PART + 1, g_session.disc);
+    code[CODE_HEAD + 2 * CODE_PART] = '-';
+    port_PutCodeDigits(code + CODE_HEAD + 2 * CODE_PART + 1, g_session.mods);
+    code[CODE_HEAD + 3 * CODE_PART] = 0;
+}
+
+void port_SessionSetupCode(char *out) {
+    u32 i;
+
+    if (g_session.setup[0] == 0) {
+        port_SessionSums();
+    }
+    for (i = 0; g_session.setup[i] != 0; i++) {
+        out[i] = g_session.setup[i];
+    }
+    out[i] = 0;
+}
+
+/* --check-online (port_net.h). */
+void port_PrintSessionCheck(void) {
+    port_SessionSums();
+    port_Print("%s, for %s, %d-bit; the online protocol %u\n", g_rb_version,
+#if defined(_WIN32)
+               "Windows",
+#else
+               "Linux",
+#endif
+               (s32)(sizeof(void *) * BITS_PER_BYTE), port_SessionProtocol());
+    port_Print("  build          %08x%08x\n",
+               (u32)(g_session.build >> WORD_BITS), (u32)g_session.build);
+    port_Print("  disc           %08x%08x\n",
+               (u32)(g_session.disc >> WORD_BITS), (u32)g_session.disc);
+    port_Print("  gameplay mods  %08x%08x\n",
+               (u32)(g_session.mods >> WORD_BITS), (u32)g_session.mods);
+    port_Print("Your setup code: %s\n", g_session.setup);
+    port_Print("Two players can play each other online when their codes are "
+               "the same.\nIts parts: the protocol, then the build, the disc "
+               "and the gameplay mods.\n");
+    port_FlushOutput();
+}
+
+/* Why a host turned a guest away, in words for the log. */
 static const char *port_RefusalText(s32 reason) {
     switch (reason) {
     case REFUSE_PROTOCOL:
@@ -242,6 +397,26 @@ static const char *port_RefusalText(s32 reason) {
                "and --arena are not the same as this one's";
     default:
         return "the other program turned this one away";
+    }
+}
+
+/* ... and in a player's, for the screen. */
+static const char *port_RefusalWords(s32 reason) {
+    switch (reason) {
+    case REFUSE_PROTOCOL:
+        return "The other player's ReBushido is another version: you both "
+               "need the same release.";
+    case REFUSE_BUILD:
+        return "The other player has another build of ReBushido: you both "
+               "need the same release, for the same system.";
+    case REFUSE_DISC:
+        return "The other player's disc image is not the same as yours: you "
+               "both need an image of the USA disc, SLUS-00663.";
+    case REFUSE_MODS:
+        return "The other player's gameplay mods (weapons, motions, stages, "
+               "arenas) are not the same as yours.";
+    default:
+        return "The other player's game turned yours away.";
     }
 }
 
@@ -271,7 +446,7 @@ static u64 port_GetLong(const u8 *in) {
 static void port_SendMeet(s32 kind) {
     u8 out[MEET_BYTES];
 
-    port_NetHeader(out, kind, 0, SESSION_PROTOCOL);
+    port_NetHeader(out, kind, 0, port_SessionProtocol());
     port_PutLong(out + MEET_BUILD, g_session.build);
     port_PutLong(out + MEET_DISC, g_session.disc);
     port_PutLong(out + MEET_MODS, g_session.mods);
@@ -319,7 +494,7 @@ static s32 port_CheckMeet(const u8 *in, s32 bytes, u32 protocol) {
     char version[VERSION_BYTES];
     s32 i;
 
-    if (bytes < MEET_BYTES || protocol != SESSION_PROTOCOL) {
+    if (bytes < MEET_BYTES || protocol != port_SessionProtocol()) {
         return REFUSE_PROTOCOL;
     }
     for (i = 0; i < VERSION_BYTES; i++) {
@@ -343,7 +518,7 @@ static s32 port_CheckMeet(const u8 *in, s32 bytes, u32 protocol) {
 
 /* The status line, now and then, to the window (port_net.h) or once to
  * the log where there is none. */
-static void port_SessionStatus(const char *text) {
+void port_SessionStatus(const char *text) {
     static char said[STATUS_BYTES];
     u32 now = port_NetClock();
     u32 i;
@@ -365,6 +540,15 @@ static void port_SessionStatus(const char *text) {
     port_Log("session: %s\n", text);
 }
 
+/* The session cannot be set up: said in a player's words to the window,
+ * which shows it until it has been read, or to the log (port_net.h). */
+void port_SessionFail(const char *why) {
+    port_Log("session: could not play online: %s\n", why);
+    if (g_port_net_fail_hook != NULL) {
+        g_port_net_fail_hook(why);
+    }
+}
+
 /* printf's work into `out`. */
 static void port_SessionText(char *out, u32 room, const char *format, ...) {
     PortArgs args;
@@ -374,13 +558,18 @@ static void port_SessionText(char *out, u32 room, const char *format, ...) {
     PORT_ARGS_END(args);
 }
 
-/* `what` and the address the session is at, `ADDRESS:PORT`. */
+/* `what` and the address the session is at, `ADDRESS:PORT`, or the
+ * relay's room. */
 static void port_SessionAt(char *out, u32 room, const char *what) {
-    const PortNetAddress *at = &g_session.address;
+    char at[PORT_NET_ADDRESS_TEXT_BYTES];
 
-    port_SessionText(out, room, "%s %u.%u.%u.%u:%u", what, at->address >> 24,
-                     (at->address >> 16) & 0xFF, (at->address >> 8) & 0xFF,
-                     at->address & 0xFF, at->port);
+    if (port_IsRelayOn()) {
+        port_SessionText(
+            out, room, "%s room %s (lobby)", what, port_GetRelayCode());
+        return;
+    }
+    port_FormatNetAddress(&g_session.address, at, sizeof(at));
+    port_SessionText(out, room, "%s %s", what, at);
 }
 
 /* `what`, and how far the cards have come. */
@@ -427,18 +616,45 @@ static void port_SendChunks(void) {
     }
 }
 
+/* The host lets the guest it had go (turned away, or gone quiet) and
+ * waits for another: at its own address again, or under the same room
+ * at the relay. 0 if the relay cannot be had again. */
+static s32 port_HostWaitAgain(void) {
+    u32 i;
+
+    g_session.have = 0;
+    g_session.next_chunk = 0;
+    g_session.wider = g_session.shape;
+    for (i = 0; i < CHUNK_MAP_BYTES; i++) {
+        g_session.map[i] = 0;
+    }
+    if (port_IsRelayOn()) {
+        return port_RelayMeet(PORT_SESSION_HOST, 1);
+    }
+    port_SetNetListen(&g_session.address);
+    return 1;
+}
+
 /* The host: waits for a hello, holds it to this program and turns it
  * away or lets it in; then sends its cards until the guest has them all
- * and says it is ready, and tells it to go. 1, or 0 if nobody came. */
+ * and says it is ready, and tells it to go. A guest that goes quiet for
+ * SILENT_GIVE_UP_MS, or that turns this host away, is let go, and
+ * another waited for. 1, or 0 if nobody came. */
 static s32 port_HostSession(void) {
     char status[STATUS_BYTES];
+    char note[STATUS_BYTES];
     u8 in[PORT_NET_DATAGRAM_MAX];
     u32 start = port_NetClock();
     u32 sent_at = 0;
     u32 welcomed_at = 0;
+    u32 heard_at = 0;
+    u32 punched_at = 0;
     s32 met = 0;
 
-    port_SessionAt(status, sizeof(status), "Hosting a game at");
+    note[0] = 0;
+    if (g_session.has_punch_to) {
+        port_SetSessionPath("a punched hole (no lobby)");
+    }
     for (;;) {
         u32 now = port_NetClock();
         s32 bytes = port_NetReceive(in, sizeof(in), POLL_MS);
@@ -449,18 +665,42 @@ static s32 port_HostSession(void) {
             s32 kind = port_NetReadHeader(in, bytes, &detail, &number);
             s32 reason;
 
+            if (kind >= KIND_HELLO && kind <= KIND_GO) {
+                heard_at = now;
+            }
             if (kind == KIND_HELLO && !met) {
                 reason = port_CheckMeet(in, bytes, number);
                 if (reason != 0) {
                     port_SendShort(KIND_REFUSE, reason, 0);
                     port_Log("session: a guest was turned away: %s\n",
                              port_RefusalText(reason));
+                    port_SessionText(
+                        note, sizeof(note), "A player was turned away: %s",
+                        port_RefusalWords(reason));
+                    if (port_IsRelayOn() && !port_HostWaitAgain()) {
+                        return 0;
+                    }
                     continue;
                 }
                 port_FixNetPeer();
                 met = 1;
+                note[0] = 0;
                 port_Log("session: the guest has come; sending it the "
                          "memory cards\n");
+            }
+            if (kind == KIND_REFUSE && met) {
+                /* the guest found this host is not its kind */
+                port_Log("session: the guest turned this host away: %s\n",
+                         port_RefusalText(detail));
+                port_SessionText(note, sizeof(note),
+                                 "The other player's game turned yours "
+                                 "away: %s",
+                                 port_RefusalWords(detail));
+                met = 0;
+                if (!port_HostWaitAgain()) {
+                    return 0;
+                }
+                continue;
             }
             if (kind == KIND_HELLO && met) {
                 port_SendMeet(KIND_WELCOME);
@@ -478,6 +718,28 @@ static s32 port_HostSession(void) {
                 return 1;
             }
         }
+        if (!met && g_session.has_punch_to &&
+            now - punched_at >= PUNCH_EVERY_MS) {
+            u8 punch[PORT_NET_HEADER_BYTES];
+
+            /* nothing the guest reads: it opens this side's router and
+             * firewall to the guest's address, as the guest's hellos open
+             * its own to this one */
+            port_NetHeader(punch, PORT_NET_KIND_RELAY + 2, 0, 0);
+            port_NetSendTo(&g_session.punch_to, punch, sizeof(punch));
+            punched_at = now;
+        }
+        if (met && now - heard_at > SILENT_GIVE_UP_MS) {
+            port_Log("session: the guest stopped answering; waiting for "
+                     "another\n");
+            port_SessionText(
+                note, sizeof(note), "The other player stopped answering.");
+            met = 0;
+            if (!port_HostWaitAgain()) {
+                return 0;
+            }
+            continue;
+        }
         if (met) {
             if (now - welcomed_at >= HELLO_EVERY_MS && g_session.have == 0) {
                 port_SendMeet(KIND_WELCOME);
@@ -490,6 +752,18 @@ static s32 port_HostSession(void) {
             port_SessionProgress(status, sizeof(status),
                                  "The other player has come: sending your "
                                  "memory cards");
+        } else {
+            char at[STATUS_BYTES];
+
+            port_SessionAt(at, sizeof(at), "Hosting a game at");
+            if (note[0] != 0) {
+                port_SessionText(
+                    status, sizeof(status), "%s Still waiting: %s", note, at);
+            } else {
+                port_SessionText(
+                    status, sizeof(status), "%s%s%s", at,
+                    g_session.mapped[0] != 0 ? ". " : "", g_session.mapped);
+            }
         }
         port_SessionStatus(status);
         if (g_port_net_wait_hook == NULL && now - start > HOST_GIVE_UP_MS) {
@@ -515,16 +789,25 @@ static void port_SendCardAck(void) {
 /* The guest: says hello until the host lets it in or turns it away,
  * takes the host's delay, seed and cards, says which parts of the cards
  * it has until it has them all, and goes when the host says go (or its
- * first inputs come). 1, or 0 if it was turned away or nobody answered. */
+ * first inputs come). 1, or 0 if it was turned away or nobody answered,
+ * said to the player (port_SessionFail). */
 static s32 port_JoinSession(void) {
     char status[STATUS_BYTES];
+    char why[WHY_BYTES];
+    char at[PORT_NET_ADDRESS_TEXT_BYTES];
     u8 in[PORT_NET_DATAGRAM_MAX];
     u32 start = port_NetClock();
     u32 hello_at = 0;
     u32 ack_at = 0;
+    u32 heard_at = 0;
     s32 welcomed = 0;
 
     port_SessionAt(status, sizeof(status), "Joining the game at");
+    if (port_IsRelayOn()) {
+        port_SessionText(at, sizeof(at), "room %s", port_GetRelayCode());
+    } else {
+        port_FormatNetAddress(&g_session.address, at, sizeof(at));
+    }
     for (;;) {
         u32 now = port_NetClock();
         s32 bytes = port_NetReceive(in, sizeof(in), POLL_MS);
@@ -534,9 +817,20 @@ static s32 port_JoinSession(void) {
             u32 number;
             s32 kind = port_NetReadHeader(in, bytes, &detail, &number);
 
+            if (kind >= KIND_HELLO && kind <= KIND_GO) {
+                heard_at = now;
+            }
             if (kind == KIND_REFUSE) {
                 port_Log("session: the host turned this program away: %s\n",
                          port_RefusalText(detail));
+                port_SessionText(
+                    why, sizeof(why),
+                    "The host turned you away. %s Your setup "
+                    "code is %s: compare it with the host's "
+                    "(Play online page, or rebushido "
+                    "--check-online).",
+                    port_RefusalWords(detail), g_session.setup);
+                port_SessionFail(why);
                 return 0;
             }
             if (kind == KIND_WELCOME && !welcomed) {
@@ -546,6 +840,14 @@ static s32 port_JoinSession(void) {
                     port_Log("session: the host is not this program's kind: "
                              "%s\n",
                              port_RefusalText(reason));
+                    /* and the host is told, so that it says so too */
+                    port_SendShort(KIND_REFUSE, reason, 0);
+                    port_SessionText(
+                        why, sizeof(why),
+                        "%s Your setup code is %s: compare it "
+                        "with the host's.",
+                        port_RefusalWords(reason), g_session.setup);
+                    port_SessionFail(why);
                     return 0;
                 }
                 welcomed = 1;
@@ -601,13 +903,25 @@ static s32 port_JoinSession(void) {
             port_SessionProgress(status, sizeof(status),
                                  "The host has let you in: receiving its "
                                  "memory cards");
-            start = now;
+            if (now - heard_at > SILENT_GIVE_UP_MS) {
+                port_Log("session: the host stopped answering\n");
+                port_SessionText(why, sizeof(why),
+                                 "The host stopped answering, after letting "
+                                 "you in (%u seconds with nothing heard).",
+                                 SILENT_GIVE_UP_MS / MS_PER_SECOND);
+                port_SessionFail(why);
+                return 0;
+            }
         } else if (now - start > JOIN_GIVE_UP_MS) {
-            port_Log("session: nobody answered at %u.%u.%u.%u:%u\n",
-                     g_session.address.address >> 24,
-                     (g_session.address.address >> 16) & 0xFF,
-                     (g_session.address.address >> 8) & 0xFF,
-                     g_session.address.address & 0xFF, g_session.address.port);
+            port_Log("session: nobody answered at %s\n", at);
+            port_SessionText(
+                why, sizeof(why),
+                "Nobody answered at %s in %u seconds. Is the other player "
+                "hosting, with the same port, and can your PCs reach each "
+                "other (the router's port mapped or forwarded, or a lobby "
+                "room)?",
+                at, JOIN_GIVE_UP_MS / MS_PER_SECOND);
+            port_SessionFail(why);
             return 0;
         }
         port_SessionStatus(status);
@@ -616,15 +930,47 @@ static s32 port_JoinSession(void) {
 
 /* ---- the start ---- */
 
+void port_SetSessionPunchTo(const PortNetAddress *at) {
+    g_session.punch_to = *at;
+    g_session.has_punch_to = 1;
+}
+
+void port_SetSessionMapped(const char *text) {
+    u32 i;
+
+    for (i = 0; text[i] != 0 && i + 1 < sizeof(g_session.mapped); i++) {
+        g_session.mapped[i] = text[i];
+    }
+    g_session.mapped[i] = 0;
+}
+
+void port_SetSessionPath(const char *text) {
+    u32 i;
+
+    for (i = 0; text[i] != 0 && i + 1 < sizeof(g_session.path); i++) {
+        g_session.path[i] = text[i];
+    }
+    g_session.path[i] = 0;
+}
+
+const char *port_GetSessionPath(void) {
+    if (g_session.path[0] != 0) {
+        return g_session.path;
+    }
+    return g_session.role == PORT_SESSION_NONE ? "" : "direct";
+}
+
+/* The session set up (port_net.h): the sums, the meeting (by way of the
+ * lobby or not), the cards, the seed, and netplay begun. */
 s32 port_StartSession(const PortDisc *disc, u32 delay) {
     PortRemasterView view;
     u32 chunk;
     s32 slot;
     s32 ok;
 
-    g_session.build = port_SessionBuild();
-    g_session.disc = port_SessionDisc(disc);
-    g_session.mods = port_WeaponsSessionHash() + port_ArenaSessionHash();
+    g_session.disc_image = disc;
+    port_SessionSums();
+    port_Log("session: this program's setup code is %s\n", g_session.setup);
     g_session.delay = delay;
     g_session.kind = (u32)port_GetStageKindDefault();
     g_session.play = port_PlaySwitchBits();
@@ -652,9 +998,11 @@ s32 port_StartSession(const PortDisc *disc, u32 delay) {
         }
         /* nothing of the game's: only that two sessions differ */
         g_session.seed = (port_HostTicks() ^ port_NetClock()) & SEED_MASK;
-        ok = port_HostSession();
+        ok = (!port_IsRelayOn() || port_RelayMeet(PORT_SESSION_HOST, 0)) &&
+             port_HostSession();
     } else {
-        ok = port_JoinSession();
+        ok = (!port_IsRelayOn() || port_RelayMeet(PORT_SESSION_JOIN, 0)) &&
+             port_JoinSession();
     }
     if (!ok) {
         return 0;
@@ -680,9 +1028,11 @@ s32 port_StartSession(const PortDisc *disc, u32 delay) {
     port_RemasterFixMargin((s32)(g_session.wider >> SHAPE_SHIFT),
                            (s32)(g_session.wider & SHAPE_MASK));
     port_Log("session: begun: this program is player %d, with a delay of %u "
-             "frames and the seed %u; the host's memory cards (%s%s)\n",
+             "frames and the seed %u, by way of %s; the host's memory cards "
+             "(%s%s)\n",
              g_session.role == PORT_SESSION_HOST ? 1 : 2, g_session.delay,
-             g_session.seed, (g_session.cards & 1) ? "slot 1 " : "",
+             g_session.seed, port_GetSessionPath(),
+             (g_session.cards & 1) ? "slot 1 " : "",
              (g_session.cards & 2)  ? "slot 2"
              : g_session.cards == 0 ? "none"
                                     : "");

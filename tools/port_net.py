@@ -6,7 +6,9 @@
                               [--out FOLDER] [--latency MS] [--loss PERCENT]
                               [--delay N] [--port-base PORT] [--stress N]
                               [--burn K] [--cpus LIST] [--pause MS]
-    python3 tools/port_net.py all [--port-base PORT]    the four at once
+    python3 tools/port_net.py all [--port-base PORT]    the four at once,
+                              and the lobby's ways (tools/port_net_lobby.py
+                              headless, its ports LOBBY_BELOW under the base)
 
 `link`: the game's own link-cable versus mode, in lockstep with a frame of
 delay. Each program is one console (--link-side 0 and 1) with its own plan:
@@ -72,6 +74,40 @@ BASE_PORT = 47000
 # for a session, and four more for the window's.
 PORTS_USED = 24
 LOCALHOST = '127.0.0.1'
+def window_env(env):
+    """`env` for a window's program, held to CLAUDE.md's rule: no visible
+    window and no sound, ever (SDL's dummy video, or offscreen, and dummy
+    audio). A run without them is refused, not started."""
+    if env.get('SDL_VIDEODRIVER') not in ('dummy', 'offscreen') or env.get('SDL_AUDIODRIVER') != 'dummy':
+        raise SystemExit('port_net: refused to start a window program without SDL_VIDEODRIVER=dummy (or offscreen) '
+                         'and SDL_AUDIODRIVER=dummy')
+    return env
+
+
+def window_cmd(cmd):
+    """A window's program's command line with --hidden, which keeps its
+    window from ever being shown and its sound on SDL's dummy device
+    whatever the environment says (sdl_window.c)."""
+    return cmd if '--hidden' in cmd else cmd[:1] + ['--hidden'] + cmd[1:]
+
+
+def heard_only_dummy(text):
+    """None if every sound driver a window's log names is the dummy one,
+    else the one it named."""
+    import re
+    for driver in re.findall(r'sound: driver (\S+)', text):
+        if driver.rstrip(',') != 'dummy':
+            return driver.rstrip(',')
+    return None
+
+
+# SDL's controllers turned off for the window's programs: a controller
+# plugged into the PC would otherwise be read by the hidden windows too,
+# and its drift pressed into their scripted fights (SDL's hints, as
+# environment variables: every backend of Windows' and Linux's).
+NO_CONTROLLERS = {'SDL_JOYSTICK_HIDAPI': '0', 'SDL_JOYSTICK_RAWINPUT': '0', 'SDL_XINPUT_ENABLED': '0',
+                  'SDL_JOYSTICK_WGI': '0', 'SDL_DIRECTINPUT_ENABLED': '0', 'SDL_JOYSTICK_LINUX_CLASSIC': '0',
+                  'SDL_JOYSTICK_DEVICE': ''}
 # --cpus: what each program is started under (taskset), or nothing
 PINNED = []
 
@@ -451,11 +487,13 @@ def check_session(label, program, args, ports, window):
                     '--quick-loading', 'on']
             env['SDL_VIDEODRIVER'] = 'dummy'
             env['SDL_AUDIODRIVER'] = 'dummy'
+            env.update(NO_CONTROLLERS)
         os.makedirs(os.path.join(folder, 'side%d' % side), exist_ok=True)
         out = open(os.path.join(folder, 'side%d.out' % side), 'wb')
         err = open(os.path.join(folder, 'side%d.err' % side), 'wb')
-        procs.append((subprocess.Popen(PINNED + cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
-                                       env=env), out, err))
+        procs.append((subprocess.Popen(PINNED + (window_cmd(cmd) if window else cmd), cwd=REPO, stdout=out,
+                                       stderr=err, stdin=subprocess.DEVNULL,
+                                       env=window_env(env) if window else env), out, err))
         if side == 0:
             time.sleep(0.5)
     pauser = Pauser([proc for proc, _, _ in procs])
@@ -502,6 +540,10 @@ def check_session(label, program, args, ports, window):
     host_err = read(os.path.join(folder, 'side0.err'))
     if 'the other program ended after frame' not in host_err:
         problems.append('session: %s: the host was not told that the guest had gone' % label)
+    for side in (0, 1):
+        driver = window and heard_only_dummy(read(os.path.join(folder, 'side%d.log' % side)))
+        if driver:
+            problems.append('session: %s: side %d played sound through %s, not the dummy driver' % (label, side, driver))
     if window and 'plays on alone' not in host_err:
         problems.append('session: %s: the host did not play on alone' % label)
     for card in ('card1.mcd', 'card2.mcd'):
@@ -580,11 +622,12 @@ def check_menu(program, args, ports):
     127.0.0.1: the settings say `net_listen = local`."""
     folder = os.path.join(args.out, 'menu')
     os.makedirs(folder, exist_ok=True)
-    env = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy')
+    env = dict(os.environ, SDL_VIDEODRIVER='dummy', SDL_AUDIODRIVER='dummy', **NO_CONTROLLERS)
     # up from the first row comes round to the last, Quit ReBushido; then
-    # Back to the game, and the row above it is Play online
-    keys = ['up up up accept down down down down accept',
-            'up up up accept down accept type:%s:%d down down accept' % (LOCALHOST, ports[0])]
+    # Back to the game, and the row above it is Play online; on its page,
+    # by address: You, the port (the host's address, typed), Start
+    keys = ['up up up accept down down accept',
+            'up up up accept down accept type:%s:%d down accept' % (LOCALHOST, ports[0])]
     settings = ['net_role = host\nnet_port = %d\nnet_listen = local\nnet_delay = 2\n' % ports[0],
                 'net_role = join\nnet_listen = local\n']
     procs = []
@@ -598,8 +641,8 @@ def check_menu(program, args, ports):
                '--card1', os.path.join(folder, 'card1.mcd'), '--card2', os.path.join(folder, 'card2.mcd')]
         out = open(os.path.join(folder, 'side%d.out' % side), 'wb')
         err = open(os.path.join(folder, 'side%d.err' % side), 'wb')
-        procs.append((subprocess.Popen(cmd, cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL, env=env),
-                      out, err))
+        procs.append((subprocess.Popen(window_cmd(cmd), cwd=REPO, stdout=out, stderr=err, stdin=subprocess.DEVNULL,
+                                       env=window_env(env)), out, err))
     codes = []
     for proc, out, err in procs:
         try:
@@ -735,23 +778,32 @@ def stress(args):
     return ['stress: %d of %d runs failed' % (len(failed), args.stress)] if failed else []
 
 
+# The lobby's cases (tools/port_net_lobby.py) take their ports this far
+# below --port-base, out of the way of the four's.
+LOBBY_BELOW = 20000
+
+
 def run_all(args):
-    """link, rollback, session and window at once, each a program of this
+    """link, rollback, session, window and the lobby's at once, each a program of this
     file with its own PORTS_USED ports from --port-base on and its own
     folder of --out; what each printed, in that order, and 1 if one
     failed (make port-net)."""
-    whats = ('link', 'rollback', 'session', 'window')
-    if not 1024 <= args.port_base <= 65535 - PORTS_USED * len(whats):
+    whats = ('link', 'rollback', 'session', 'window', 'lobby')
+    if not 1024 + LOBBY_BELOW <= args.port_base <= 65535 - PORTS_USED * len(whats):
         print('FAILED: port_net: --port-base: from 1024 to %d for all' % (65535 - PORTS_USED * len(whats)))
         return 1
     os.makedirs(args.out, exist_ok=True)
     runs = []
     for n, what in enumerate(whats):
-        cmd = [sys.executable, os.path.abspath(__file__), what, '--out', args.out, '--delay', str(args.delay),
-               '--port-base', str(args.port_base + PORTS_USED * n)]
-        for flag, value in (('--bits', args.bits), ('--latency', args.latency), ('--loss', args.loss)):
-            if value is not None:
-                cmd += [flag, str(value)]
+        if what == 'lobby':
+            cmd = [sys.executable, os.path.join(REPO, 'tools', 'port_net_lobby.py'), 'headless', '--port-base',
+                   str(args.port_base - LOBBY_BELOW)]
+        else:
+            cmd = [sys.executable, os.path.abspath(__file__), what, '--out', args.out, '--delay', str(args.delay),
+                   '--port-base', str(args.port_base + PORTS_USED * n)]
+            for flag, value in (('--bits', args.bits), ('--latency', args.latency), ('--loss', args.loss)):
+                if value is not None:
+                    cmd += [flag, str(value)]
         log = open(os.path.join(args.out, what + '.log'), 'wb')
         runs.append((what, log, time.time(), subprocess.Popen(cmd, cwd=REPO, stdout=log, stderr=subprocess.STDOUT,
                                                                 stdin=subprocess.DEVNULL)))

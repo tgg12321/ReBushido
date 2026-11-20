@@ -80,8 +80,8 @@ WINDOW_PLAIN = ['scale.c', 'ring.c', 'pace.c', 'keymap.c', 'logname.c', 'fps.c',
 WINDOW_GAME = ['gamestate.c']
 # What talks to SDL and to the C library: compiled as any program is.
 WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'sdl_net.c', 'sdl_report.c', 'menu.c', 'font.c',
-                 'stage_page.c', 'top_page.c',
-                 'sampler.c', 'warm.c']
+                 'stage_page.c', 'top_page.c', 'menu_online.c',
+                 'sampler.c', 'warm.c', 'portmap.c']
 # The port's typeface, each weight put into the program as a C array of its
 # bytes (src/port/window/font.c; docs/PORT.md, "The port's lettering"), and
 # the mods the program ships, copied into mods/ beside it.
@@ -626,6 +626,13 @@ def write_font(target):
     return path
 
 
+def arena_mod_text(name):
+    """The mod.txt of the sample arena `name`'s folder of mods/ (tools/
+    port_release.py holds a package's copy to it)."""
+    return ('# made by tools/port_sdl_build.py from %s/%s\nname = arena %s\nauthor = ReBushido\n'
+            % (SHIPPED_ARENAS, name, name))
+
+
 def copy_mods(target):
     """The mods the program ships into mods/ beside it, each folder as it
     is in the repository and nothing else, and the sample arenas compiled:
@@ -653,8 +660,7 @@ def copy_mods(target):
             shutil.rmtree(dest)
         os.makedirs(os.path.join(dest, 'arenas'))
         with open(os.path.join(dest, 'mod.txt'), 'w', encoding='utf-8', newline='\n') as f:
-            f.write('# made by tools/port_sdl_build.py from %s\nname = arena %s\nauthor = ReBushido\n'
-                    % (source, name))
+            f.write(arena_mod_text(name))
         with open(os.path.join(dest, 'arenas', name + '.arena'), 'wb') as f:
             f.write(arena_compile.compile_arena(source, report=lambda text: None))
         names.append('arena-' + name)

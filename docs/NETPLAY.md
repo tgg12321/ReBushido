@@ -1218,27 +1218,17 @@ program becomes the new one (`execv`); on Windows the new one is started
 and this one ends (`_spawnv`). The menu is refused during netplay, as
 before.
 
-**The bind address and NAT are the owner's call.** The Play online
+**The bind address.** The Play online
 page's `net_listen` is `all` with nothing said: a host is found through
 every network of the PC (`0.0.0.0`), which is what play between two PCs
 needs, and opens a port to the network while it waits. `local` keeps it
 on 127.0.0.1. On the command line `--host` always names its address, and
 `--join` binds `0.0.0.0` and a port of the system's unless `--net-bind`
-says otherwise. Across the internet the host's router must let the port
-through; the ways, none of them built:
-
-- *port forwarding*: the host forwards the UDP port (7845 with nothing
-  said) to its PC, by hand or by UPnP or NAT-PMP from the program. The
-  guest needs nothing: the host answers where it was spoken to from;
-- *hole punching*: a small public server (STUN-like) tells each program
-  the other's public address and both send at once; works through most
-  home routers, not through symmetric NATs;
-- *a relay*: both programs send to a public server that passes the
-  datagrams on. Works everywhere and costs the relay's round trip and
-  its upkeep; the datagrams are small (under 200 bytes, about 60 a
-  second each way), so one modest server carries many sessions;
-- *a platform's networking* (Steam's, which relays and punches), if the
-  port is ever on one.
+says otherwise; a bind of `0.0.0.0` is of IPv6 and IPv4 at once where
+the system has IPv6. How the two get through their routers (the
+router's own mapping, hole punching, a relay, all built) and the lobby
+that finds them each other is section 14; a platform's networking
+(Steam's) is not needed for any of it.
 
 **Proved** by `make port-net` (`tools/port_net.py`), on one PC, every
 socket on 127.0.0.1:
@@ -1278,14 +1268,236 @@ The whole of `make port-net` takes about eight minutes.
   the pacing's numbers, and the first play by people: the line, the
   feel of a rollback, the sound. On one PC the pacing has nothing to
   keep apart: both programs read one clock.
-- *A Windows session*: the Windows programs build with all of it, and
-  starting again from the menu is `_spawnv` there; no session has been
-  run between Windows programs yet, nor between a Windows and a Linux
-  one (which the build's sum keeps apart until it is proved they agree).
-- *NAT* (above), the desync report's snapshots, spectators.
+- *A Windows session* is run now (section 14: Windows programs headless
+  and with a window, by address, through the lobby, from the menu by
+  `_spawnv`); not yet between a Windows and a Linux one (which the
+  build's sum keeps apart until it is proved they agree).
+- The desync report's snapshots, spectators; section 14's own list.
 - *The view*: computing the host's draw distance on both rather than
   the console's (above).
 - *The play tests owed*: none changes; the port's play tests run with
   netplay off, and nothing they run reads what changed (the pads'
   driver gives the movie player its pads as before, the cards are files
   as before).
+
+## 14. The lobby and the ladder of ways
+
+Section 13's session needs the two programs to reach each other. Here
+is how they do with nothing but this program on either side: no VPN,
+no tool of anyone else's.
+
+**The ladder.** The host's program first asks its own router to open
+its port (*the router's mapping*, below). The two then meet at the
+**lobby** (`tools/relay/`), which tells each the other's addresses, and
+both try every way at once, taking the best that works:
+
+1. **IPv6, directly.** Each socket is of both kinds where the system
+   has IPv6 (a bind of `0.0.0.0` opens `[::]` with `IPV6_V6ONLY` off,
+   `net.c`; `--host [x::y]:P` and `--join [x::y]:P` name IPv6 too), and
+   each offers its global IPv6 address (found by a socket connected to
+   a public address, which sends nothing: `port_HostOwnAddress`). There
+   is no NAT there; the routers' stateful firewalls are opened by the
+   two sending to each other at once.
+2. **The host's mapped port** (UPnP, NAT-PMP or PCP).
+3. **A punched hole**: the address the lobby saw each at, and each one's
+   address on its own network; a punch sent to each opens the sender's
+   router to the other, so the other's punch comes through.
+4. **The lobby's relay**: the server passes the two's datagrams on, so
+   that a session is had however the routers are.
+
+Each way is a **candidate**. A punch answered (`PUNCH_ACK`) proves a
+way works in both directions, and each tells the server which kinds it
+has had answered (`PUNCHED4`, `PUNCHED6`). The server decides for both
+alike, so that the two never take different ways: IPv6 if both have it,
+else IPv4 (waiting a second for IPv6 where either offered it), else
+after three seconds the relay. Each program's peer is then the address
+its answer came from, or the server; the session's own checks of
+section 13 (protocol, build, disc, gameplay mods, the cards) run over
+that way unchanged. The window's line says which way it is and its round
+trip (`Online: player 1 | IPv6, direct (12 ms) | ping 24 ms | ...`).
+
+With no lobby, the advanced ways stay: `--host` and `--join` by
+address, the host's port mapped by its router, and **a punch by
+address** (`--punch-to`): each player reads their own address off the
+Play online page (*Your address for the other player*: the router's
+mapping, or what the lobby sees), sends it to the other, the host types
+the joiner's, the joiner keeps the port it said (`net_port`), and both
+start at once; the host sends to the joiner while it waits, as the
+joiner's hellos do the other way.
+
+**The lobby** (`tools/relay/rebushido_relay.py`, `README.md` beside it)
+is one process of standard-library Python, UDP alone, on the owner's
+server (`PORT_NET_LOBBY_DEFAULT`, `135.181.108.74:7845`; `net_lobby` and
+`--lobby` name another). It keeps rooms in memory, nothing on disk: a
+room's code, its name, its host's name and setup code, its password's
+salt and verifier, and the two addresses. It reads no game datagram:
+it passes on those of a relayed room, between that room's two addresses
+alone, at most 240 a second and 300 KB a second each room. It logs
+counts only (`--verbose` for more). Its limits: 500 rooms, 3 a host's
+address, 6 made a minute, 30 hellos a second, 10 lists a second, and 5
+wrong passwords a minute before an address is shut out for a minute.
+
+**Rooms.** A host's hello opens a room, with a name and its host's
+setup code; the server gives it a code of six letters and digits. The
+list (`LIST`, `ROOMS`) shows each room's name, its host, its setup code,
+whether it is locked and has one player or two. A room is gone when its
+host has said nothing for 20 seconds while it waits, 30 after a direct
+session began, or 60 after a relayed one's last datagram. A guest asks
+for a room by its code; one whose setup code is not the host's is
+turned away by the server itself (`INCOMPATIBLE`, with the host's code,
+so the guest's screen says which part differs).
+
+**Passwords** never go over the network as typed. The host's program
+makes a salt and gives the server the salt and `SHA-256(salt ||
+password)`; the server keeps only those, for the room's life. A guest
+of a locked room is sent the salt and a fresh random challenge and
+answers `HMAC-SHA256(SHA-256(salt || password), challenge)`; the server
+compares it with its own (`hmac.compare_digest`). The page keeps a
+password in memory alone, never in `rebushido.cfg`, and starts the
+session again with the key made of it (`--room-key SALT:KEY`), not the
+word. `relay.c` has its own SHA-256 and HMAC, as the program without a C
+library has no other.
+
+**The wire.** Every datagram has the port's header (`RB`, a kind, a
+detail byte, a number); kinds 48 and up are the server's, all below it
+the game's. Words are little-endian; text fields are fixed, zero-padded
+printable ASCII.
+
+| Kind | Who | Bytes | What |
+| --- | --- | --- | --- |
+| 48 `HELLO` | client | 208 | role and flags; the room's code, name, the player's name, the setup code, the salt, the verifier (host) or proof (guest), up to four candidates |
+| 49 `STATE` | server | 208 | waiting, password (salt, challenge), punch (the other's candidates, the token), direct4, direct6, relayed, or an error; the code, the address seen, the other's |
+| 50, 51 `PUNCH`, `PUNCH_ACK` | client to client | 16 | the token, the candidate aimed at, the sender's clock (echoed: the round trip) |
+| 52, 53 `LIST`, `ROOMS` | client, server | 16, 8 + 92 each | up to twelve rooms a datagram |
+| 55, 56 `WHOAMI`, `YOUARE` | client, server | 16, 28 | the address the server sees |
+
+An address or a candidate is 20 bytes: its family or kind, the port,
+and 16 bytes of address (IPv4 in the first four). The full layout is in
+`relay.c`'s enums and `tools/relay/relay_client.py`, which the server's
+test (`tools/relay/test_relay.py`) drives: every state, error, limit and
+expiry, IPv4 and IPv6, the relay's forwarding and its refusal to pass on
+a third address's datagrams.
+
+**The router's mapping** (`src/port/window/portmap.c`, the window's
+build alone: it speaks HTTP, through the C library): PCP (RFC 6887),
+then NAT-PMP (RFC 6886), then UPnP's Internet Gateway Device (SSDP's
+search, the device's description, `GetExternalIPAddress` and
+`AddPortMapping`, falling back to a lease of 0 where a router takes
+only permanent ones, and to the next port where the one asked is
+taken), within four seconds; a lease of two hours, asked again when half
+has gone (`port_PortMapTick`, each blank of netplay), and given back as
+the program ends (`port_EndSession`). A mapping whose outside address is
+private or the providers' shared space (another router stands before
+this one) is not offered as a way. What it found is said where the host
+waits ("UPnP opened your router's port: the other player joins
+203.0.113.7:7845") and in the log. `tools/relay/fake_router.py` is a
+router of all three for the tests, and `tools/relay/test_portmap.py`
+holds `portmap.c` to it on Linux and Windows.
+
+**Checking two players' setups.** `rebushido --check-online` prints the
+build's, the disc's and the gameplay mods' sums and the protocol, and
+the **setup code** made of them, `P7-BBBB-DDDD-MMMM` (each sum folded to
+20 bits, four digits of Crockford's base 32); the Play online page's
+last row shows it, the lobby's list shows each room's, and a refusal
+shows the player's own. Two players with the same code meet.
+
+**The disc's sum, redumped.** Section 13's sum read the image's raw
+sectors and its size. Two dumps of one disc differ in what a dumping
+program writes of its own: an image whose form 2 sectors' EDC was
+written as zero (as some programs write it, and as the disc may hold
+it) and one with 150 sectors of run-out after the volume had other sums
+than the owner's Redump image, though the game reads the same from all
+three. The sum (protocol 7) now takes the volume's size from its own
+description (sector 16), not the file's, and each sector's subheader
+and data (2048 bytes of form 1, 2324 of form 2), not its sync, address
+or error codes; and it reads the disc with no stage mod's files laid
+over it (those are the gameplay mods' sum). Tried on images made from
+the owner's (scratch, deleted after):
+
+| Image | Old sum | New sum |
+| --- | --- | --- |
+| the Redump image | `fe20bc34015c8494` | `8defc7e1a5290e7f` |
+| its form 2 EDC zeroed (153,577 sectors) | `0ee491bce942bc7c` | `8defc7e1a5290e7f` |
+| 150 sectors of run-out added | `50274db961e28307` | `8defc7e1a5290e7f` |
+| 2 seconds of pregap before it (`INDEX 01 00:02:00`) | the port stopped (below) | `8defc7e1a5290e7f` |
+| the same image under another name or cue | the same | the same |
+
+What changes the sum is what changes the game's data: another region,
+a hacked or damaged image, a missing sector. The port reads `.cue` and
+`.bin` of raw 2352-byte sectors alone; `.iso` (2048-byte sectors, which
+lose the XA sound and the movies), `.chd`, `.ecm` and `.pbp` it does not
+read at all. The pregap image stopped the port where it began: the cue
+sheet's `INDEX 01` was not read, so every sector was looked for 150
+sectors early, the disc had no directory, and `port_FindStageFile` read
+a table it had not found. The cue's first `INDEX 01` is now where the
+data begins (`PortDisc.first`, `disc.c`), and a disc with no directory
+no longer stops it.
+
+**Refusals on the screen.** A guest turned away, a host not found, a
+lobby that does not answer, a wrong password, a full, closed or
+incompatible room, or a host that goes quiet once the guest is in
+(after `SILENT_GIVE_UP_MS`, 15 seconds) is said on the guest's screen in
+plain words (`g_port_net_fail_hook`, `sdl_net.c`: a panel until Enter
+or Escape, then the program ends) with the guest's setup code to
+compare; a guest that finds the host is not its kind tells the host
+too. The host's panel says it turned a player away and why, or that its
+guest stopped answering, and waits for another (its room's guest let go
+at the lobby: `HELLO_RESET`). Section 13's refusal texts stay in the
+log.
+
+**Windows.** A UDP socket of Windows fails its next receive when
+something it sent was answered "port unreachable", as a hello sent
+before its host is up, or a punch to an address not yet open, is: the
+port's sockets turn that off (`SIO_UDP_CONNRESET`, `host_windows.c`).
+The start again from the Play online page (`_spawnv`) says the new
+process's number, which the tests wait on.
+
+**Proved** on this PC, every socket on loopback (127.0.0.x and ::1),
+with the server run here, by `tools/port_net_lobby.py` (and its
+`headless` half in `make port-net`), each case a session of section
+13's plan, a fight to the kill and a rematch, with 60 ms each way and 5%
+lost unless it says otherwise:
+
+| Case | Programs | The way | Result |
+| --- | --- | --- | --- |
+| `punch` | headless | a locked room, the right password; a punched hole between 127.0.0.2 and 127.0.0.3 | 82 hashes the same on both; 61 and 77 rollbacks |
+| `relay` | headless | `--net-paths relay`: the lobby passing every datagram on | 82 the same; 63 and 80 |
+| `mapped` | headless | the host's mapped port (`--mapped`), the only way the guest tries | 82 the same; 70 and 75 |
+| `v6` | headless | IPv6 on ::1, the lobby too | 82 the same; 70 and 72 |
+| `direct6` | headless | no lobby: `--host [::1]:P`, `--join [::1]:P` | 82 the same |
+| `punchto` | headless | no lobby: `--punch-to` and a guest of a fixed port | 82 the same |
+| `list` | headless | the lobby's list while a host waits | its name, host, 1/2, locked, its setup code |
+| `refused` | headless | a wrong password, none, an incompatible disc, no such room, a lobby that does not answer | each turned away, and said why |
+| `win-headless` | Windows, headless | section 13's session, 100 ms each way, 5% lost | 82 the same; 72 and 83 rollbacks, the longest 8 |
+| `win-window` | Windows, window (hidden) | the same in real time, 60 ms, 5% | 82 the same; 0.7 frames apart on average; the host plays on alone |
+| `win-menu` | Windows, window | the Play online page by address, started again by `_spawnv` | both started again and played on: 35 hashes the same |
+| `win-rooms` | Windows, window | *Host a room* with a password, *Browse rooms*, *Look for rooms*, the room chosen and its password typed | both started again, met through the lobby (a punched hole), 35 the same |
+| `win-portmap` | Windows, window | the fake router's UPnP: `AddPortMapping` as the host began, `DeletePortMapping` as it ended; the guest came by the mapped port | 82 the same |
+| `win-refused` | Windows, window | another build, disc, mods and protocol (`--session-differ`), nobody at the address | each said on the guest's screen and the host's |
+| `win-quiet` | Windows, window | the host stopped (`NtSuspendProcess`) once the guest was in | the guest's screen: "The host stopped answering"; the host, woken, waits for another |
+| `win-lobby-refused` | Windows, window | a wrong password and an incompatible build at the lobby | each said on the guest's screen |
+
+The `headless` half (on Linux, `make port-net`; on Windows the same with
+the Windows headless program) takes under half a minute, the whole of
+`windows` about a minute and a half with its cases side by side
+(`python tools/port_net_lobby.py windows`, the gate's `port-net-windows`).
+The window's programs are run with `--hidden` (SDL's dummy sound device,
+whatever the environment says), SDL's dummy video and every controller
+backend off (`NO_CONTROLLERS`, `tools/port_net.py`: a controller plugged
+into the PC was read by the hidden windows and its drift pressed into
+their fights); the harnesses refuse to start one otherwise, and fail a
+run whose log names a sound driver other than the dummy.
+
+**Through the owner's server, across the internet**, two Windows
+programs of this PC (`tools/port_net_lobby.py internet --lobby
+135.181.108.74:7845`):
+
+INTERNET_TABLE
+
+**What is left.** Two players' PCs on two networks, behind two real
+routers: the hole punching and the router's mapping have met only the
+fake router and the loopback here. A symmetric NAT on both sides takes
+the relay, as it must. The lobby's room is gone from its list once a
+direct session is under way (the host says nothing to it then). Names of
+servers (`--lobby` takes numbers only: the port without a C library has
+no resolver).

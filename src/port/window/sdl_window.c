@@ -60,6 +60,7 @@
 #include "port_fight_music.h"
 #include "port_top_menu.h"
 #include "shared.h"
+#include "portmap.h"
 #include "sdl_window.h"
 
 #define WINDOW_TITLE "ReBushido"
@@ -2668,6 +2669,10 @@ static void port_AfterCrash(void) {
 
 /* The session's end (sdl_window.h). */
 void port_EndSession(s32 code) {
+    /* the router's port given back (portmap.c): the program ends by the
+     * system's own exit, which runs no atexit, so here; a crash's lease
+     * runs out by itself */
+    port_UnmapPort();
     port_Note(
         "session: ended %s (exit code %d) after %u.%03u seconds",
         code == PORT_EXIT_OK ? "as asked" : "because something stopped it",
