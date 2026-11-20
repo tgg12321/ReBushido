@@ -204,6 +204,7 @@ static void test_Choices(void) {
     s32 group;
     s32 choice;
     s32 value;
+    s32 scale;
     s32 next = 0;
 
     /* the groups take every setting once, in order */
@@ -280,12 +281,24 @@ static void test_Choices(void) {
             CHECK_EQ(settings->aspect_h, 3);
         }
     }
-    /* stepping goes round both ways */
-    CHECK_EQ(port_StepChoice(1, 2, 1), 0);
-    CHECK_EQ(port_StepChoice(1, 0, -1), 2);
-    CHECK_EQ(port_StepChoice(1, 1, 1), 2);
+    /* stepping goes round both ways: `scale`, of three values */
+    for (scale = 0; scale < port_CountChoices(); scale++) {
+        if (test_StringsEqual(port_FindChoice(scale)->name, "scale")) {
+            break;
+        }
+    }
+    CHECK_EQ(port_FindChoice(scale)->count, 3);
+    CHECK_EQ(port_StepChoice(scale, 2, 1), 0);
+    CHECK_EQ(port_StepChoice(scale, 0, -1), 2);
+    CHECK_EQ(port_StepChoice(scale, 1, 1), 2);
     CHECK_EQ(port_StepChoice(-1, 0, 1), -1);
     CHECK_EQ(port_GetChoice(settings, port_CountChoices()), -1);
+    /* each choice knows the value built in, where it is one of them */
+    for (choice = 0; choice < port_CountChoices(); choice++) {
+        const PortChoice *of = port_FindChoice(choice);
+
+        CHECK(of->built_in >= -1 && of->built_in < of->count);
+    }
     CHECK(!port_SetChoice(settings, 0, 9));
 }
 

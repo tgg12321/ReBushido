@@ -3,9 +3,11 @@
  * controllers while it is open, and the loop it runs in with the game
  * stopped. Only the build with a window has this file.
  *
- * It is opened by F1 or a controller's guide button anywhere, and by
- * Select on the three screens whose own loops do nothing with Select: the
- * top menu, ReBushido's options page at boot, and the fight's pause menu.
+ * It is opened by F1 or a controller's guide button anywhere, by Select
+ * on the three screens whose own loops do nothing with Select: the top
+ * menu, ReBushido's options page at boot, and the fight's pause menu; and
+ * by Options and Online Play on ReBushido's top menu, which ask for it
+ * through the game's state (port_top_menu.h).
  * Asked for, it opens at the end of the first vertical blank where the
  * game has shown a new frame (the game's own frame boundary, where the
  * window has just shown it), or after a few blanks where the game shows
@@ -23,6 +25,7 @@
 #include "menu.h"
 #include "port_net.h"
 #include "port_remaster.h"
+#include "port_top_menu.h"
 #include "shared.h"
 #include "sdl_window.h"
 
@@ -46,6 +49,9 @@ static struct {
     u32 shots;
     /* the left stick's last direction, so that a push is one press */
     s32 stick[2];
+    /* the times ReBushido's top menu has asked for the menu, as far as
+     * the menu has followed them (port_top_menu.h) */
+    s32 asks_seen;
 } g_port_menu;
 
 void port_AskForMenu(const char *why) {
@@ -458,13 +464,23 @@ static s32 port_IsMenuBlank(u32 blank) {
 void port_MaybeRunMenu(u32 blank) {
     PortGameState now;
 
+    port_ReadGameState(&now);
+    if (now.menu_asks != g_port_menu.asks_seen) {
+        /* Options or Online Play on ReBushido's top menu: the count only
+         * goes forward, and a frame run again does not count twice */
+        g_port_menu.asks_seen = now.menu_asks;
+        port_MenuOpenOn(now.menu_ask_page == PORT_TOP_ASK_ONLINE
+                            ? PORT_MENU_OPEN_ONLINE
+                            : PORT_MENU_OPEN_MAIN);
+        port_AskForMenu(now.menu_ask_page == PORT_TOP_ASK_ONLINE ? "Online Play"
+                                                                 : "Options");
+    }
     if (port_IsMenuBlank(blank)) {
         port_AskForMenu("--menu-at");
     }
     if (!g_port_menu.is_wanted) {
         return;
     }
-    port_ReadGameState(&now);
     if (now.frames != g_port_menu.asked_frame ||
         blank - g_port_menu.asked_at >= WAIT_BLANKS) {
         port_RunMenu(blank);

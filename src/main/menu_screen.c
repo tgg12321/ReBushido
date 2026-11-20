@@ -222,6 +222,12 @@ static void menu_FetchOptions(void) {
         src++;
     }
     times = g_saved_record.times;
+#if RB_PORT
+    /* ReBushido's top menu: the options are the window's settings */
+    if (port_TopMenuIsOn()) {
+        port_TopMenuTakeOptions();
+    }
+#endif
     for (i = 0; i < BEST_TIMES_ROWS; i++) {
         settings->time_records[i].minutes =
             frames_to_minutes(times[i].time_frames);
@@ -258,6 +264,10 @@ void menu_Init(void) {
     disp_Blank();
     if (!g_menu_reopen_mode) {
         link_RequestClose();
+#if RB_PORT
+        /* ReBushido's top menu comes up on its top page */
+        port_TopMenuReset();
+#endif
     }
     motion_ForgetFiles();
     model_Free(0);
@@ -454,6 +464,13 @@ void menu_Update(void) {
         result = memcard_BootCheckScreen();
         if (result == 1) { /* there is a save */
             g_menu_page = MENU_PAGE_CARD_ASK_LOAD;
+#if RB_PORT
+            /* ReBushido's top menu loads it without asking: the port's
+             * cards are files kept beside it */
+            if (port_TopMenuIsOn()) {
+                g_menu_page = MENU_PAGE_CARD_LOAD;
+            }
+#endif
             break;
         }
         if (result == -1) { /* there is none */

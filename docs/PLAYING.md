@@ -51,7 +51,7 @@ build/port-sdl/linux/rebushido --image "Bushido Blade 2 (USA).cue"
 It starts filling the screen; F11 or Alt+Enter, or `--windowed`, puts
 it in a window. `rebushido --help` lists the rest.
 
-**Straight into a fight**, with no options page, opening or menu:
+**Straight into a fight**, with no opening or menu:
 
 ```
 rebushido.exe --fight tatara-shrine kannuki mikado:nodachi
@@ -119,14 +119,53 @@ pressed in -- which is usually one of those, and is what is on the
 screen when you press it. That is the picture to send when something
 looks wrong only while the game is moving.
 
+## The top menu
+
+The program goes straight to the game's opening: ReBushido's options
+page, which the PlayStation disc shows first, is not shown, and its
+setting, Bug fixes, is in the settings menu with the rest. A memory card
+with the game's save on it is loaded without asking. Then the top menu,
+in the game's own look, with five rows:
+
+| The row | What it is |
+|---|---|
+| **Singleplayer** | a page of its own: **Story**, **Vs. CPU**, **Slash** (once it is won, as in the original) and **Group Battle**, and **Back** |
+| **Versus** | two players, the second on the second pad |
+| **Training** | the game's training, either kind of practice |
+| **Online Play** | the settings menu's *Play online* page: host or join a game with another PC ("Playing online"); Back on it comes back here |
+| **Options** | the settings menu (below), in place of the game's own options page |
+
+Up and down choose, Cross takes the row, Triangle goes back (from the
+top page, to the opening, as the game's does). Every fight is seen from
+the side: the game's first person's view (POV) is not offered, and the
+link cable's mode is Online Play. What the game's options page had --
+Difficulty, Music and Monitor -- are settings of the settings menu's
+first group, *The game*; its Memory Card and Key Configuration are not
+needed (the cards are files kept beside the program, written whenever
+the game saves; the keys and buttons are in *Controls*).
+
+`menu = original` in `rebushido.cfg` (or *Menus* in *The game*) puts
+the game's own menus back, the options page at boot included, the next
+time the program starts. A test's run (`--plan`, `--frames`) has the
+original's unless `--menu rebushido` says otherwise.
+
 ## The settings menu
 
 Every setting of `rebushido.cfg` below and the buttons of both players
 are in a menu of the program's own, drawn over the game at the window's
-own resolution. **F1** or a controller's **guide button** opens it
-anywhere; **Select** opens it on the three screens where the game has
-no use for Select: the options page at boot, the top menu and the
-fight's pause menu (Start, then Select).
+own resolution. **Options** on the top menu opens it, and **F1** or a
+controller's **guide button** anywhere; **Select** opens it on the
+screens where the game has no use for Select: the top menu, the options
+page at boot (`menu = original`) and the fight's pause menu (Start,
+then Select).
+
+Its first page is a row for each group of settings -- **The game**,
+**Display**, **The remastered picture**, **Controls** and **Mods** --
+then **Play online**, **Back to the game** and **Quit ReBushido**. A
+group's row opens its page: its settings, each with its value, a line
+under them about the one the cursor is on, and beside the cursor's value
+the one built in (`default`, or `default: Hard`); a value that is not
+the one built in is gold.
 
 | | The keyboard | A controller |
 |---|---|---|
@@ -148,11 +187,12 @@ game until it is let go. The sound runs out and comes back.
 What changes at once: the full screen, the picture's size and its
 pixels, waiting for the display, the counter and its corner, quick
 loading, run-ahead and low latency, the stage select in every mode and
-unlocking everything (each at the next screen that reads it), Graphics
+unlocking everything (each at the next screen that reads it), the bug
+fixes, the game's Difficulty, Music and Monitor, Graphics
 (as F2), the resolution, the ground as one mesh, the shadows, smooth
 lighting, the effects, the dead zone, and the buttons. What waits for the program to start again is said
 on its line, `(after a restart)`: antialiasing, the draw distance, the
-shape, the frame rate, the English top menu, the sharp menus and the
+shape, the frame rate, the menus (`menu`), the English top menu, the sharp menus and the
 mods.
 
 **Player 1's buttons** and **Player 2's buttons** list each of the
@@ -162,9 +202,14 @@ or a stick or a trigger pushed far, and binds it, as a `pN.BUTTON` line
 of the file would (below); Escape leaves it as it was, Delete gives it
 back the layout's own.
 
-**Bug fixes**, the game's own setting, is the one the options page at
-boot has: the menu changes it for the session, and the options page
-keeps it on the memory card.
+**Bug fixes**, in *The game*, is the game's own setting, the one the
+options page at boot has on the PlayStation: the menu changes it at once
+and keeps it in `rebushido.cfg`, and the program starts with it. With
+`menu = original` the options page at boot sets it from the memory card
+instead. **Difficulty** (Hard, which the game starts with, or Easy),
+**Music** and **Monitor** (Color, or black and white) are the game's
+own options, taken at the next frame of the top menu and written into
+the game's save as its options page did.
 
 **The menu writes `rebushido.cfg`** as it closes, if anything was
 changed: the file beside the program, or the one `--config` named, made
@@ -205,6 +250,11 @@ tonemap = on             # bright light rolls off instead of clipping
 smooth_light = on        # the game's lights worked out at each pixel
 effects = smooth         # original (the default), exact or smooth
 frame_rate = display     # display (the default), original, or a number
+menu = original          # the game's own menus and the options page at boot
+bugfixes = on            # the original's bugs fixed (off is the default)
+difficulty = easy        # the CPU weaker (hard, the game's own default)
+music = off              # no music, the sounds alone
+monitor = bw             # the game's picture in black and white
 mods = off               # none of the mods in mods/ (on is the default)
 english = off            # the top menu in Japanese (on is the default)
 ui = off                 # the menus' own lettering (on is the default)
@@ -265,9 +315,9 @@ window would throw the others away and leave the distance crawling.
 
 ## The picture: Original and Remastered
 
-The options page at boot has a second line, **Graphics**, with
-**Original** and **Remastered** (`REBUSHIDO.md`, "The options page").
-Original is the PlayStation's own picture, pixel for pixel. Remastered
+**Graphics**, in the settings menu's *The remastered picture*, is
+**Original** or **Remastered**. Original is the PlayStation's own
+picture, pixel for pixel. Remastered
 draws the scene again with the graphics card, at the window's
 resolution: the corners where the camera really put them instead of on
 whole pixels, textures in perspective instead of sliding, true colours
@@ -277,7 +327,8 @@ fonts and the HUD crisp at the window's size (`PORT.md`,
 
 **F2 changes picture while the game runs**, at once and as often as you
 like, and `--graphics original` or `--graphics remastered` starts it
-either way; with neither, the window follows the options page. The
+either way; with neither, the window follows `graphics` (`follow`
+follows the options page at boot, with `menu = original`). The
 window needs a graphics card that does OpenGL 3.3, which anything since
 about 2010 does. If it cannot get one it says so in the session's log
 and draws the console's picture instead, and F2 then does nothing.
@@ -393,7 +444,7 @@ The weapons are not behind any progress: each fighter has his clan's
 five, or his gun, whatever the save says. **Nothing of it is written to
 the memory card**: the game reads the save as if everything were won, and
 the save itself keeps only what you have won, so a save made with the
-setting on (after a story, a chanbara run, or from the options page)
+setting on (after a story, a chanbara run, or from the game's own options page)
 writes your own progress and nothing more, and turning the setting off
 puts everything back as your card has it. It takes effect at the next
 screen that reads it: a select screen as it opens, and the top menu the
@@ -562,8 +613,8 @@ players need the **same build of ReBushido** (the same version, for the
 same system, 64-bit with 64-bit) and an image of **the same disc**; the
 two programs check both before anything starts, and say what differs.
 
-**One of you hosts, the other joins.** From the settings menu (F1, or
-Select on the top menu): *Play online*.
+**One of you hosts, the other joins.** **Online Play** on the top menu,
+or *Play online* in the settings menu (F1).
 
 - The host chooses *Host a game*, the port to wait at (7845 if you
   change nothing) and *Host now*. The program starts again and waits.
@@ -624,7 +675,7 @@ them, and the game never touches ReBushido's:
 | The file | What it holds |
 |---|---|
 | `BASLUS-00663BUSHIDO2` | the game's own save: the fighters unlocked, chanbara's best times and the game's options. One block |
-| `BASLUS-00663REBUSHI` | ReBushido's settings, which the options page sets. One block |
+| `BASLUS-00663REBUSHI` | ReBushido's settings, which the options page sets (`menu = original`; ReBushido's top menu keeps them in `rebushido.cfg`). One block |
 
 On a PlayStation, and in an emulator, they are on the memory card in slot
 1, as any save is. In the port each slot is a file on the computer: an

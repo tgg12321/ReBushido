@@ -8004,7 +8004,7 @@ was.
 
 The owner, 2026-11-19: practise on any stage with no second player, and
 a mod for full unlocks to try every fighter. Two gameplay switches of the
-window's settings (`settings_list.h`, the Mods group), and of the command
+window's settings (`settings_list.h`, the Game group), and of the command
 line for the program without a window; `include/port_play.h`.
 
 **`stage_select_everywhere`** (on as built; `--stage-select`). Versus
@@ -8080,6 +8080,59 @@ Purple Cavern; versus mode with `--unlock-all` picks the Narukagami's
 last fighter and Utamaru. `--shots` keeps the pictures of the two
 one-player modes' stage pages. With both switches off, as the program
 without a window starts, every play test is as it was.
+
+## ReBushido's top menu
+
+The owner, 2026-11-19: drop the options page at boot, put every setting
+in the menu's Options, drop the first person's view, Link Mode becomes
+Online Play, and Group Battle, Slash, Vs. CPU and Story go under one
+Singleplayer row; Training stays on the top menu. The window's setting
+`menu` (`rebushido`, as built, or `original`; `--menu` on the command
+line), `include/port_top_menu.h`; docs/PLAYING.md, "The top menu".
+
+**What the game does.** `src/port/top_menu.c` (a state file) holds the
+two pages' rows, the page and the cursor, and a count of the times the
+settings menu was asked for. At boot `main` asks `port_TopMenuBoot`
+before the options page: with the switch on the page is not run, the
+Bug fixes are the window's `bugfixes` and `g_rb_page_state` is done.
+`menu_UpdateTop` (`menu_pages.c`) hands the frame to
+`menu_UpdatePortTop`, which moves the cursor with the game's own nudge,
+sets the game's row (`TOP_ROW`) to the one the cursor's row stands for
+-- its picture, its caption, and what `menu_ChooseTopRow`, the game's
+own cross and triangle, chooses for a mode's row, the second pad's
+rules and the sounds included -- and draws the page as
+`menu_DrawTopRows` does, its five rows in the places of the game's
+first four and its last, without their names. Cross on Singleplayer,
+Back, Online Play or Options is the port's: a page, or the count and
+the page asked for (`port_TopMenuAsk`). The view is the side view
+(`first_person` held at 0 there and in `fight_ApplyConfig`). The
+game's Difficulty, Music and Monitor are the window's `difficulty`,
+`music`, `monitor`, written into `g_game_settings` and the save's flags
+at each frame of the top menu and as the options are fetched
+(`port_TopMenuTakeOptions`); the save found at boot is loaded without
+the question (`menu_Update`, `MENU_PAGE_CARD_CHECK`).
+
+**What the window does.** `top_page.c` lays the rows' names, and the
+two lines of the rows the game has no caption for, over the game's
+page at the window's resolution, as `stage_page.c` does the stage
+pages', from what `gamestate.c` reads out (`port_ReadTopMenu`); its
+letters are drawn by one function, `port_TopPageText`. `sdl_menu.c`
+follows the count of asks and opens the settings menu on its first page
+or on Play online (`port_MenuOpenOn`).
+
+**The tests.** The switch is off in the program without a window, and
+in every run of a plan or `--frames` unless `--menu rebushido` comes
+after: the play tests, port-rollback, port-net, the bench and the
+provers press through the original's menus, options page included, as
+before. In a session the host's switches hold (`PORT_PLAY_BIT_TOP_MENU`,
+`_BUGFIXES` and the three options from `PORT_PLAY_OPTION_SHIFT`), and
+the session's own presses to versus select find Versus as they found
+Vs. Mode (`menu_GetTopRowMode`). Proved: a headless run of the window
+boots to the top menu and reaches Singleplayer then Vs. CPU's select
+screen, Training's page, Online Play's page and Options; port-rollback
+of that plan with `--with=--menu --with=rebushido` is the same with and
+without rollbacks.
+
 ## 64 bits
 
 The port is built with 64-bit pointers and with 32-bit ones, from the

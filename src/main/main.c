@@ -619,7 +619,14 @@ void main(void) {
 #if RB_OPTIONS_PAGE && !RB_QUICK_BOOT
     /* the settings are read from the card and the player may change them
      * (none of it where the port's --fight asks for a fight) */
-    rb_RunOptionsPage();
+#if RB_PORT
+    /* nor with ReBushido's top menu, whose settings are the window's
+     * (port_top_menu.h) */
+    if (!port_TopMenuBoot())
+#endif
+    {
+        rb_RunOptionsPage();
+    }
 #endif
 #if RB_QUICK_BOOT
     /* no boot image and no movie: the first screen is the fight's */

@@ -129,6 +129,10 @@ extern void port_TakeControllerEvent(const union SDL_Event *event);
 /* The pad of a controller by SDL's number for it; -1 for none. */
 extern s32 port_PadOfController(s32 id);
 extern void port_ToggleFullscreen(void);
+/* The game's switches of the settings -- bugfixes and the game's three
+ * options -- given to the run (port_top_menu.h): as it starts, and as the
+ * settings menu changes one. */
+extern void port_WindowGameSwitches(void);
 
 /* ---- netplay in the window (sdl_net.c; docs/NETPLAY.md, section 13)
  * ---- */

@@ -11,12 +11,17 @@
 /* The most settings the menu has room for. */
 #define PORT_SETTINGS_IN_MENU_MAX 64
 
-/* The menu's groups, by PORT_MENU_... less one. */
-static const char * const g_port_group_titles[PORT_CHOICE_GROUPS] = {
-    "The window",
-    "The remastered picture",
-    "Mods",
-    "Controls",
+/* The menu's groups, by PORT_MENU_... less one: each one's title and the
+ * line about it on the menu's first page. */
+static const char * const g_port_group_titles[PORT_CHOICE_GROUPS][2] = {
+    {"The game",
+     "Bug fixes, the game's own options, the stages and unlocks, the menus"},
+    {"Display",
+     "The window, the picture's size, the counter, input lag and loading"},
+    {"The remastered picture",
+     "The scene drawn again: resolution, shadows, light, sky and effects"},
+    {"Controls", "The keys and controller buttons of both players"},
+    {"Mods", "The mods beside the program, and the menus the program ships"},
 };
 
 /* What the menu shows of a switch. */
@@ -27,6 +32,15 @@ static const char * const g_port_switch_shown[PORT_CHOICES_MAX] = {"Off", "On"};
 static PortChoice g_port_choices[PORT_SETTINGS_IN_MENU_MAX];
 static s32 g_port_choice_count;
 static PortChoiceGroup g_port_choice_groups[PORT_CHOICE_GROUPS];
+
+/* Whether two words are the same, letter for letter. */
+static s32 port_TextsMatch(const char *a, const char *b) {
+    while (*a != 0 && *a == *b) {
+        a++;
+        b++;
+    }
+    return *a == *b;
+}
 
 /* Whether setting `a` comes before setting `b` in the menu. */
 static s32 port_ComesBefore(const PortSetting *a, const PortSetting *b) {
@@ -51,9 +65,13 @@ static void port_MakeChoice(PortChoice *choice, const PortSetting *setting) {
     choice->help = setting->help;
     choice->takes = setting->takes;
     choice->count = 0;
+    choice->built_in = -1;
     for (i = 0; i < PORT_CHOICES_MAX && words[i] != NULL; i++) {
         choice->words[i] = words[i];
         choice->shown[i] = shown[i];
+        if (port_TextsMatch(words[i], setting->value)) {
+            choice->built_in = i;
+        }
         choice->count++;
     }
 }
@@ -86,7 +104,8 @@ static void port_ListChoices(void) {
         count++;
     }
     for (i = 0; i < PORT_CHOICE_GROUPS; i++) {
-        g_port_choice_groups[i].title = g_port_group_titles[i];
+        g_port_choice_groups[i].title = g_port_group_titles[i][0];
+        g_port_choice_groups[i].help = g_port_group_titles[i][1];
         g_port_choice_groups[i].first = count;
         g_port_choice_groups[i].count = 0;
     }

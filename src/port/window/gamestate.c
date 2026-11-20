@@ -3,8 +3,9 @@
  * see the game's variables (they are compiled with a C library's
  * headers, and the game's names are the game's object's own), so this
  * file, which is compiled as the port's own are, reads them out for
- * those files and has the names the log gives things. It only reads, but
- * for the settings menu's Bug fixes (port_SetBugfixes). */
+ * those files and has the names the log gives things, and what the
+ * window lays over ReBushido's top menu (port_ReadTopMenu). It only
+ * reads, but for the settings menu's Bug fixes (port_SetBugfixes). */
 #include "common.h"
 #include "window.h"
 #include "bb2.h"
@@ -178,6 +179,28 @@ void port_ReadGameState(PortGameState *state) {
 #endif
     state->is_paused = port_RemasterIsPaused();
     state->is_cutscene = g_sys_screen == SCREEN_CUTSCENE_UPDATE;
+    state->is_top_menu_ours = g_port_top_menu.is_on;
+    state->top_page = g_port_top_menu.page;
+    state->top_cursor = port_TopMenuCursor();
+    state->menu_asks = g_port_top_menu.asks;
+    state->menu_ask_page = g_port_top_menu.ask_page;
+}
+
+void port_ReadTopMenu(PortTopView *view) {
+    const PortTopRow *rows = g_port_top_rows[g_port_top_menu.page];
+    u32 rows_on = menu_GetTopRowsOn();
+    s32 i;
+
+    view->is_up = g_port_top_menu.is_on && g_sys_screen == SCREEN_MENU_UPDATE &&
+                  g_menu_page == MENU_PAGE_TOP;
+    view->page = g_port_top_menu.page;
+    view->cursor = port_TopMenuCursor();
+    for (i = 0; i < PORT_TOP_ROWS; i++) {
+        view->names[i] = rows[i].name;
+        view->is_on[i] = port_TopMenuRowIsOn(i, rows_on);
+    }
+    view->caption[0] = rows[view->cursor].caption[0];
+    view->caption[1] = rows[view->cursor].caption[1];
 }
 
 s32 port_IsOnStagePages(void) {
