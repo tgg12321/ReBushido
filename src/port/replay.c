@@ -141,8 +141,14 @@ typedef struct {
 
 enum { REC_IDLE, REC_FIGHT, REC_ENDED, REC_WRITING };
 
-/* what the writing of a fight's file is doing */
-enum { WORK_INDEX, WORK_SCAN, WORK_DEFLATE };
+/* what the writing of a fight's file is doing: done, where the start was
+ * compressed already for a room's spectators (port_ReplayServe) */
+enum { WORK_INDEX, WORK_SCAN, WORK_DEFLATE, WORK_DONE };
+
+/* the start a match's spectators are given (port_ReplayServe) */
+enum { SERVE_NONE, SERVE_PACKING, SERVE_READY };
+#define TAG_SERVE TAG('S', 'E', 'R', 'V')
+#define SERVE_HEAD_WORDS 4
 
 /* A run of the snapshot that the disc holds: where it is in the
  * snapshot, and from which sector and byte of it on, how long. */
@@ -171,6 +177,7 @@ static s32 g_folder_known;
 static struct {
     s32 state;
     u32 start_count; /* the input's number at the fight's first boundary */
+    u32 start_frame; /* netplay's frame there, in a session */
     u32 end_count;   /* ... and at its first boundary out of it */
     u32 length;      /* the frames whose input was taken */
     u32 kill;        /* the first frame with a fighter cut down, or NONE */
@@ -230,14 +237,31 @@ static struct {
 } g_dedupe;
 
 /* The state at the last boundary out of a fight, with its hash, its
- * input's number and its view; and the last input the game took. */
+ * input's number, netplay's frame there and its view; and the last input
+ * the game took. */
 static struct {
     u8 *snapshot;
     u64 hash;
     u32 count;
+    u32 frame;
     PortGameView view;
     s32 is_kept;
 } g_before;
+
+/* The start of the fight a match's host gives its spectators: compressed
+ * as soon as it is final, a slice at each boundary, into a replay's own
+ * chunks (port_ReplayServe). */
+static struct {
+    s32 on;
+    s32 state; /* SERVE_... */
+    u32 count; /* the start's input */
+    u32 frame; /* and netplay's frame */
+    u64 hash;
+    u8 *blob;
+    u32 size;
+    u32 room;
+    u32 made; /* starts made, so that a new one is told from the last */
+} g_serve;
 
 static struct {
     u32 index;
@@ -603,8 +627,15 @@ static void port_ReplayClearOwn(u8 *snapshot) {
     port_StateForget(snapshot);
 }
 
+/* Whether fights are written to files: the folder set and recording on. */
+static s32 port_ReplayWrites(void) {
+    return g_recording_on && g_folder[0] != 0;
+}
+
+/* Whether fights are recorded: written, or their starts given to a
+ * room's spectators (port_ReplayServe). */
 static s32 port_ReplayMayRecord(void) {
-    return g_recording_on && g_folder[0] != 0 && !port_LinkIsUp() &&
+    return (port_ReplayWrites() || g_serve.on) && !port_LinkIsUp() &&
            g_play.state == PLAY_OFF;
 }
 
@@ -1034,6 +1065,8 @@ static void port_ReplayName(char *path, u32 room) {
     }
 }
 
+static void port_ReplayServeBuild(void);
+
 /* The fight's file, its start compressed: written beside, then given its
  * name. */
 static void port_ReplayWrite(void) {
@@ -1056,9 +1089,16 @@ static void port_ReplayWrite(void) {
     s32 ok;
     s32 i;
 
+    /* the spectators' copy of the start first: the inputs are put where
+     * the compressed start is */
+    port_ReplayServeBuild();
     g_rec.state = REC_IDLE;
     if (g_rec.deflate.failed) {
         port_Log("replay: the fight's start would not compress\n");
+        return;
+    }
+    if (!port_ReplayWrites()) {
+        /* recorded for the spectators alone */
         return;
     }
     port_HostMakeFolder(g_folder);
@@ -1169,6 +1209,10 @@ static void port_ReplayFinish(void) {
     s32 i;
 
     g_rec.state = REC_WRITING;
+    if (g_serve.state != SERVE_NONE && g_serve.count == g_rec.start_count) {
+        /* the start compressed for the spectators already, or being */
+        return;
+    }
     g_dedupe.work = WORK_INDEX;
     g_dedupe.sector_count = 0;
     g_dedupe.indexed = 0;
@@ -1192,6 +1236,9 @@ static void port_ReplayFinish(void) {
 static s32 port_ReplayWork(u32 budget) {
     u32 size = port_StateSize();
 
+    if (g_dedupe.work == WORK_DONE) {
+        return TRUE;
+    }
     if (g_dedupe.work == WORK_INDEX) {
         u32 count = budget / PORT_DISC_DATA_BYTES + 1;
 
@@ -1216,7 +1263,12 @@ static s32 port_ReplayWork(u32 budget) {
         }
         return FALSE;
     }
-    return port_DeflateSome(&g_rec.deflate, budget);
+    if (!port_DeflateSome(&g_rec.deflate, budget)) {
+        return FALSE;
+    }
+    /* the stream is whole: asked again, it is not compressed again */
+    g_dedupe.work = WORK_DONE;
+    return TRUE;
 }
 
 /* The view of the frame at `index`, by its number among the fight's. */
@@ -1247,6 +1299,12 @@ static void port_ReplayStart(u32 count) {
         }
         port_ReplayWrite();
     }
+    if (g_serve.state == SERVE_PACKING) {
+        /* ... or for the spectators: the snapshot is about to be another */
+        while (!port_ReplayWork(FILE_MAX)) {
+        }
+        port_ReplayServeBuild();
+    }
     if (!port_ReplayRoom()) {
         return;
     }
@@ -1265,6 +1323,7 @@ static void port_ReplayStart(u32 count) {
 
         port_CopyBytes(g_rec.snapshot, g_before.snapshot, size);
         g_rec.start_count = g_before.count;
+        g_rec.start_frame = g_before.frame;
         g_rec.start_hash = g_before.hash;
         g_rec.hashes[0] = g_before.hash;
         g_rec.hash_count = 1;
@@ -1275,6 +1334,7 @@ static void port_ReplayStart(u32 count) {
         /* no boundary before it (a run that starts in a fight) */
         port_StateSave(g_rec.snapshot);
         g_rec.start_count = count;
+        g_rec.start_frame = port_IsNetplayOn() ? port_NetplayFrameNow() : 0;
         g_rec.start_hash = port_StateHash();
     }
     port_ReplayClearOwn(g_rec.snapshot);
@@ -1393,6 +1453,209 @@ void port_ReplayAtQuit(void) {
     }
 }
 
+/* ---- the start a match's spectators are given ----
+ *
+ * A room's match is watched from the start of its latest fight, as a
+ * replay is played from it (docs/NETPLAY.md, section 16): the match's
+ * host compresses that start as soon as no rollback can take it back, a
+ * slice at each boundary as a fight's file is written, into a replay's
+ * own chunks (SERV, PIEC, STRT, DISC); the file of the fight, written
+ * after it, takes the same work. A spectator puts it in, as a playback
+ * puts in its file's start, and runs on from there with the match's
+ * inputs (netplay.c). */
+
+void port_ReplayServe(s32 on) {
+    g_serve.on = on;
+    g_serve.state = SERVE_NONE;
+}
+
+/* The spectators' copy of the start just compressed, in a replay's chunks:
+ * where the start compressed is the served one. */
+static void port_ReplayServeBuild(void) {
+    u8 *out;
+    u32 at = 0;
+    u32 k;
+    s32 i;
+
+    if (g_serve.state != SERVE_PACKING || g_serve.count != g_rec.start_count ||
+        g_rec.deflate.failed) {
+        return;
+    }
+    if (g_serve.blob == NULL) {
+        g_serve.room = g_rec.packed_room + MATCHES_MAX * MATCH_BYTES +
+                       PIECES_MAX * (PIECE_NAME_BYTES + WORD_BYTES) + KILOBYTE;
+        g_serve.blob = port_HostAllocate(g_serve.room);
+    }
+    out = g_serve.blob;
+    if (out == NULL ||
+        g_rec.deflate.out_at + g_dedupe.match_count * MATCH_BYTES + KILOBYTE +
+                PIECES_MAX * (PIECE_NAME_BYTES + WORD_BYTES) >
+            g_serve.room) {
+        g_serve.state = SERVE_NONE;
+        return;
+    }
+    port_CopyBytes(out, g_magic, MAGIC_BYTES);
+    port_PutWord(out + MAGIC_BYTES, FORMAT_VERSION);
+    at = HEAD_BYTES;
+    port_PutWord(out + at, TAG_SERVE);
+    port_PutWord(out + at + WORD_BYTES, SERVE_HEAD_WORDS * WORD_BYTES);
+    at += CHUNK_HEAD_BYTES;
+    port_PutWord(out + at, g_rec.start_count);
+    port_PutWord(out + at + WORD_BYTES, g_rec.start_frame);
+    port_PutWord(out + at + 2 * WORD_BYTES, (u32)g_rec.start_hash);
+    port_PutWord(
+        out + at + 3 * WORD_BYTES, (u32)(g_rec.start_hash >> WORD_BITS));
+    at += SERVE_HEAD_WORDS * WORD_BYTES;
+    port_PutWord(out + at, TAG_PIECES);
+    port_PutWord(out + at + WORD_BYTES,
+                 WORD_BYTES + (u32)port_StatePieceCount() *
+                                  (PIECE_NAME_BYTES + WORD_BYTES));
+    at += CHUNK_HEAD_BYTES;
+    port_PutWord(out + at, (u32)port_StatePieceCount());
+    at += WORD_BYTES;
+    for (i = 0; i < port_StatePieceCount() && i < PIECES_MAX; i++) {
+        PortStatePiece piece;
+
+        port_StateGetPiece(i, &piece);
+        port_ClearBytes(out + at, PIECE_NAME_BYTES);
+        for (k = 0; piece.name[k] != 0 && k + 1 < PIECE_NAME_BYTES; k++) {
+            out[at + k] = (u8)piece.name[k];
+        }
+        port_PutWord(out + at + PIECE_NAME_BYTES, piece.bytes);
+        at += PIECE_NAME_BYTES + WORD_BYTES;
+    }
+    port_PutWord(out + at, TAG_START);
+    port_PutWord(out + at + WORD_BYTES, WORD_BYTES + g_rec.deflate.out_at);
+    port_PutWord(out + at + CHUNK_HEAD_BYTES, port_StateSize());
+    at += CHUNK_HEAD_BYTES + WORD_BYTES;
+    port_CopyBytes(out + at, g_rec.packed, g_rec.deflate.out_at);
+    at += g_rec.deflate.out_at;
+    port_PutWord(out + at, TAG_DISC);
+    port_PutWord(out + at + WORD_BYTES,
+                 WORD_BYTES + g_dedupe.match_count * MATCH_BYTES);
+    port_PutWord(out + at + CHUNK_HEAD_BYTES, g_dedupe.match_count);
+    at += CHUNK_HEAD_BYTES + WORD_BYTES;
+    for (k = 0; k < g_dedupe.match_count; k++) {
+        port_PutWord(out + at, g_dedupe.matches[k].at);
+        port_PutWord(out + at + WORD_BYTES, g_dedupe.matches[k].sector);
+        port_PutWord(out + at + 2 * WORD_BYTES, g_dedupe.matches[k].offset);
+        port_PutWord(out + at + 3 * WORD_BYTES, g_dedupe.matches[k].length);
+        at += MATCH_BYTES;
+    }
+    port_PutWord(out + at, TAG_END);
+    port_PutWord(out + at + WORD_BYTES, 0);
+    at += CHUNK_HEAD_BYTES;
+    g_serve.size = at;
+    g_serve.frame = g_rec.start_frame;
+    g_serve.hash = g_rec.start_hash;
+    g_serve.state = SERVE_READY;
+    g_serve.made++;
+    at = port_StateSize();
+    port_Log("replay: the fight's start for the spectators, netplay's frame "
+             "%u: %u bytes (of %u)\n",
+             g_serve.frame, g_serve.size, at);
+}
+
+/* The serving's turn at a boundary: a fight's start, once final, begun
+ * compressing, and a slice of it. */
+static void port_ReplayServeBoundary(void) {
+    u32 start;
+    s32 done;
+
+    if (!g_serve.on || g_rec.state == REC_WRITING) {
+        return;
+    }
+    if (g_rec.state == REC_FIGHT &&
+        (g_serve.state == SERVE_NONE || g_serve.count != g_rec.start_count) &&
+        port_ReplayIsFinal(g_rec.start_count + 1)) {
+        s32 i;
+
+        /* port_ReplayFinish's, with the fight going on */
+        g_serve.state = SERVE_PACKING;
+        g_serve.count = g_rec.start_count;
+        g_dedupe.work = WORK_INDEX;
+        g_dedupe.sector_count = 0;
+        g_dedupe.indexed = 0;
+        g_dedupe.scanned = 0;
+        g_dedupe.cleared_to = 0;
+        g_dedupe.match_count = 0;
+        g_dedupe.saved = 0;
+        g_dedupe.slices = 0;
+        g_dedupe.ticks = 0;
+        g_dedupe.ticks_most = 0;
+        port_ClearBytes(g_dedupe.index, INDEX_SIZE * sizeof(u32));
+        port_ClearBytes(
+            g_dedupe.slot_of, (SECTOR_SLOT_MASK + 1) * sizeof(u32));
+        g_roll_top = 1;
+        for (i = 1; i < BLOCK_WORDS; i++) {
+            g_roll_top *= ROLL;
+        }
+    }
+    if (g_serve.state != SERVE_PACKING) {
+        return;
+    }
+    start = port_HostTicks();
+    do {
+        done = port_ReplayWork(g_slice != 0 ? WORK_PIECE : FILE_MAX);
+    } while (!done &&
+             port_HostTicks() - start <
+                 g_slice * PORT_HOST_TICKS_PER_MICROSECOND);
+    if (done) {
+        port_ReplayServeBuild();
+    }
+}
+
+s32 port_ReplayServedStart(
+    const u8 **blob, u32 *size, u32 *frame, u32 *made) {
+    if (g_serve.state != SERVE_READY) {
+        return FALSE;
+    }
+    *blob = g_serve.blob;
+    *size = g_serve.size;
+    *frame = g_serve.frame;
+    *made = g_serve.made;
+    return TRUE;
+}
+
+static s32 port_ReplayPlayRoom(void);
+static s32 port_FindChunk(
+    const u8 *bytes, u32 size, u32 tag, const u8 **found, u32 *found_size);
+static s32 port_ReplayUnpackStart(const u8 *bytes, u32 size);
+static void port_ReplayKeep(s32 out);
+
+/* A match's start, as its host served it, put into the state, this run's
+ * own kept (port_replay.h): netplay's frame it is at, and FALSE where it
+ * is not whole or not the state its host had. */
+s32 port_ReplayLoadServed(const u8 *blob, u32 size, u32 *frame) {
+    const u8 *serve;
+    u32 serve_size;
+    u64 hash;
+    u64 put_in;
+
+    if (!port_ReplayPlayRoom() ||
+        !port_FindChunk(blob, size, TAG_SERVE, &serve, &serve_size) ||
+        serve_size < SERVE_HEAD_WORDS * WORD_BYTES ||
+        !port_ReplayUnpackStart(blob, size)) {
+        return FALSE;
+    }
+    *frame = port_GetWord(serve + WORD_BYTES);
+    hash = port_GetWord(serve + 2 * WORD_BYTES) |
+           ((u64)port_GetWord(serve + 3 * WORD_BYTES) << WORD_BITS);
+    port_ReplayKeep(TRUE);
+    port_StateLoad(g_play.start);
+    port_ReplayKeep(FALSE);
+    port_CardsForReplay();
+    put_in = port_StateHash();
+    if (put_in != hash) {
+        port_Log("replay: the match's start put in is not its host's: its "
+                 "hash %08X%08X, the host's %08X%08X\n",
+                 (u32)(put_in >> WORD_BITS), (u32)put_in,
+                 (u32)(hash >> WORD_BITS), (u32)hash);
+        return FALSE;
+    }
+    return TRUE;
+}
+
 /* The recording's turn at a boundary: a fight's start seen (and seen
  * again where a rollback went back before it), its frames noted, its end,
  * and the file's writing a slice at a time. */
@@ -1446,9 +1709,11 @@ static void port_ReplayRecordBoundary(
         port_StateSave(g_before.snapshot);
         g_before.hash = port_StateHash();
         g_before.count = count;
+        g_before.frame = port_IsNetplayOn() ? port_NetplayFrameNow() : 0;
         g_before.view = *view;
         g_before.is_kept = TRUE;
     }
+    port_ReplayServeBoundary();
     if (g_rec.state == REC_ENDED && port_ReplayIsFinal(g_rec.end_count)) {
         if (g_rec.length != g_rec.end_count - g_rec.start_count) {
             port_ReplayAbandon("its inputs are not whole");

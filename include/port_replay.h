@@ -72,6 +72,22 @@ extern void port_ReplayTook(const struct PortInput *input, u32 index);
 extern void port_SetReplayDisc(const struct PortDisc *disc);
 extern void port_ReplayNoteSector(u32 sector);
 
+/* ---- a room's spectators (docs/NETPLAY.md, section 16) ---- */
+
+/* This program is a room's match's host: each fight's start is recorded
+ * (whether fights are written or not) and compressed as soon as it is
+ * final, for the match's spectators. */
+extern void port_ReplayServe(s32 on);
+/* The latest fight's start so compressed, a replay's chunks: TRUE, its
+ * bytes, netplay's frame it is of and a count that is new for each new
+ * start; FALSE before there is one. */
+extern s32 port_ReplayServedStart(
+    const u8 **blob, u32 *size, u32 *frame, u32 *made);
+/* A spectator: a start served so put into the state, this run's own kept
+ * as a playback keeps it; netplay's frame it is of. FALSE where it is not
+ * whole, or not the state its host had (its hash). */
+extern s32 port_ReplayLoadServed(const u8 *blob, u32 size, u32 *frame);
+
 /* ---- playing back ---- */
 
 /* What a replay says of itself, read from its file. */

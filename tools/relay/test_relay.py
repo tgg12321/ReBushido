@@ -709,11 +709,11 @@ def test_group_feed(server):
     for index in range(3):
         feeder.send(rc.feed_start(code, ticket, 600, start, index))
         feeder.recv(rc.K_FEED_ACK)
-    frames = bytes(range(256)) * 4  # 256 frames
+    frames = bytes(range(240)) * 4  # 240 frames, the most of a datagram
     hashes = [(630, b"H" * 8), (660, b"I" * 8)]
     feeder.send(rc.feed_inputs(code, ticket, 600, frames, hashes))
     ack = rc.parse_feed_ack(feeder.recv(rc.K_FEED_ACK))
-    check(ack["start_frame"] == 600 and ack["chunks"] == {0, 1, 2} and ack["next"] == 856, "the feed's ack: %r" % ack)
+    check(ack["start_frame"] == 600 and ack["chunks"] == {0, 1, 2} and ack["next"] == 840, "the feed's ack: %r" % ack)
     # inputs that overlap are taken from where the server is
     feeder.send(rc.feed_inputs(code, ticket, 800, bytes(4) * 100))
     check(rc.parse_feed_ack(feeder.recv(rc.K_FEED_ACK))["next"] == 900, "overlapping inputs")
@@ -737,7 +737,7 @@ def test_group_feed(server):
             break
         scenes.append(rc.parse_scene(reply))
     inputs = b"".join(s["inputs"] for s in scenes if s["part"] == rc.P_INPUTS)
-    check(inputs == frames + bytes(4) * 44, "the inputs from the start: %d bytes" % len(inputs))
+    check(inputs == frames + bytes(4) * 60, "the inputs from the start: %d bytes" % len(inputs))
     check(scenes[0]["hashes"] == hashes, "the hashes among them: %r" % scenes[0]["hashes"])
     # the end, and a spectator who is not a member
     feeder.send(rc.feed_end(code, ticket, 900, rc.W_SECOND))

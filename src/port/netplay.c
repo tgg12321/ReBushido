@@ -33,6 +33,7 @@
 #include "port_host.h"
 #include "port_net.h"
 #include "port_replay.h"
+#include "port_room.h"
 #include "bb2.h"
 
 /* Frames the state is kept for, and the most run on what is guessed. */
@@ -58,6 +59,15 @@
 #define NETPLAY_QUIET_MS 500
 /* A wait longer than this is shown on the window's line. */
 #define NETPLAY_WAIT_SHOWN_MS 100
+/* A second ask to leave within this long leaves. */
+#define NETPLAY_LEAVE_MS 3000
+/* A spectator runs this many frames behind the newest it has, so that
+ * the inputs' coming in bursts is not seen, and quietly while it is more
+ * than this many behind (it came in the middle of a fight). */
+#define WATCH_LAG 6
+#define WATCH_CATCH_UP 45
+/* ... and gives up the match's last frames this long after its end */
+#define WATCH_END_WAIT_MS 5000
 /* A step that read more sectors than this loaded something. */
 #define NETPLAY_LOAD_SECTORS 64
 /* Time sync: the frames each side reckons the other is ahead by, averaged
@@ -192,6 +202,19 @@ static u32 g_np_sent_at;
  * program's. Why it ended, PORT_NETPLAY_END_..., or 0 while it goes on. */
 static s32 g_np_in_process;
 static s32 g_np_ended;
+/* The player leaves: asked once (when, for the window's line), then
+ * again to leave; --leave-at's frame. --net-plan-pads. */
+static u32 g_np_leave_asked_at;
+static s32 g_np_leave;
+static u32 g_np_leave_at;
+static s32 g_np_own_pad_only;
+/* A room's match's host: the frames whose inputs are final and sent to
+ * the match's feed (watch.c). A spectator: watching, and its own hashes
+ * held to the players'. */
+static u32 g_np_fed;
+static s32 g_np_watch;
+static PortNetplayHash g_np_watch_hashes[NETPLAY_HASHES];
+static u32 g_np_watch_held;
 
 void (*g_port_net_hold_hook)(u32 blanks);
 void (*g_port_net_wait_hook)(const char *status);
@@ -209,6 +232,36 @@ s32 port_IsNetplayOn(void) { return g_np_on; }
 void port_SetNetplayGoesOnAlone(s32 on) { g_np_goes_on_alone = on; }
 
 void port_SetNetplayInProcess(s32 on) { g_np_in_process = on; }
+
+void port_SetNetplayOwnPadOnly(s32 on) { g_np_own_pad_only = on; }
+
+void port_SetNetplayLeaveAt(u32 frame) { g_np_leave_at = frame; }
+
+void port_NetplayLeave(void) {
+    if (g_np_on) {
+        g_np_leave = TRUE;
+    }
+}
+
+/* A leave asked (the window's keys): the first ask is shown on the line,
+ * and a second within NETPLAY_LEAVE_MS leaves. */
+void port_NetplayAskLeave(void) {
+    u32 now = port_NetClock();
+
+    if (!g_np_on) {
+        return;
+    }
+    if (g_np_leave_asked_at != 0 &&
+        now - g_np_leave_asked_at <= NETPLAY_LEAVE_MS) {
+        port_Log("netplay: the player leaves the session at frame %u\n",
+                 g_np_frame);
+        g_np_leave = TRUE;
+        return;
+    }
+    g_np_leave_asked_at = now == 0 ? 1 : now;
+}
+
+u32 port_NetplayFrameNow(void) { return g_np_frame; }
 
 /* Everything of a session that the next one must not find (port_net.h):
  * the inputs, the guesses, the hashes, the time and the counts. The
@@ -277,6 +330,15 @@ void port_ResetNetplay(void) {
     g_np_sent_at = 0;
     g_np_in_process = 0;
     g_np_ended = 0;
+    g_np_leave_asked_at = 0;
+    g_np_leave = FALSE;
+    g_np_leave_at = 0;
+    g_np_fed = 0;
+    g_np_watch = FALSE;
+    g_np_watch_held = 0;
+    for (i = 0; i < NETPLAY_HASHES; i++) {
+        g_np_watch_hashes[i].frame = (u32)-1;
+    }
     g_port_take_hook = NULL;
     g_port_movies_skipped = FALSE;
 }
@@ -652,6 +714,7 @@ static void port_NetplayFinalHashes(void) {
         g_np_last_final = *hash;
         port_Log("netplay: frame %u hash %08X%08X\n", frame,
                  (u32)(hash->hash >> WORD_BITS), (u32)hash->hash);
+        port_FeedHash(frame, hash->hash);
         port_NetplayCompareHash(frame);
         frame += NETPLAY_HASH_EVERY;
     }
@@ -672,7 +735,8 @@ static void port_NetplayKeepLocal(void) {
         if (g_np_local_count >= g_np_delay) {
             port_DriverInput(&read);
             buttons = read.buttons[g_np_local];
-            if (port_GetSessionRole() != PORT_SESSION_NONE) {
+            if (port_GetSessionRole() != PORT_SESSION_NONE &&
+                !g_np_own_pad_only) {
                 buttons |= read.buttons[1 - g_np_local];
             }
         }
@@ -716,7 +780,7 @@ static void port_NetplayWait(s32 state, s32 (*enough)(void)) {
     u32 from = port_NetClock();
 
     g_np_wait_from = from;
-    while (!enough() && !g_np_peer_left && !g_np_ended) {
+    while (!enough() && !g_np_peer_left && !g_np_ended && !g_np_leave) {
         u32 now = port_NetClock();
 
         g_np_waits++;
@@ -736,6 +800,9 @@ static void port_NetplayWait(s32 state, s32 (*enough)(void)) {
         if (now - g_np_sent_at > NETPLAY_RESEND_MS) {
             port_NetplaySendInputs();
         }
+        /* a room's member stays in it, and its match's feed goes on */
+        port_RoomTick();
+        port_FeedTick();
         if (now - from > NETPLAY_WAIT_SHOWN_MS) {
             g_np_state = state;
             if (g_port_net_wait_hook != NULL) {
@@ -756,6 +823,170 @@ static s32 port_NetplayInWindow(void) {
 
 static s32 port_NetplayLoadIsShared(void) {
     return g_np_remote_count >= g_np_sync_until;
+}
+
+/* A room's match's host: each frame whose two pads are known (this
+ * program's and the other's, neither a guess) to the match's feed, the
+ * first pad first; and the room stayed in. */
+static void port_NetplayFeed(void) {
+    u32 final = g_np_local_count < g_np_remote_count ? g_np_local_count
+                                                     : g_np_remote_count;
+
+    port_RoomTick();
+    if (!port_FeedIsOn()) {
+        return;
+    }
+    while (g_np_fed < final) {
+        u16 mine = g_np_local_inputs[g_np_fed & NETPLAY_INPUT_MASK];
+        u16 theirs = g_np_remote_inputs[g_np_fed & NETPLAY_INPUT_MASK];
+
+        port_FeedFrame(g_np_fed, g_np_local == 0 ? mine : theirs,
+                       g_np_local == 0 ? theirs : mine);
+        g_np_fed++;
+    }
+    port_FeedTick();
+}
+
+/* ---- a spectator (docs/NETPLAY.md, section 16) ---- */
+
+/* A spectator's own hash of a frame, kept to be held to the players' as
+ * it comes; and each such pair held: FALSE at one that differs. */
+static s32 port_WatchHold(void) {
+    s32 i;
+
+    for (i = 0; i < NETPLAY_HASHES; i++) {
+        PortNetplayHash *mine = &g_np_watch_hashes[i];
+        u64 theirs;
+
+        if (mine->frame == (u32)-1 || !port_WatchHash(mine->frame, &theirs)) {
+            continue;
+        }
+        if (theirs != mine->hash) {
+            port_Log("watch: DESYNC at frame %u: this spectator's state hash "
+                     "is %08X%08X, the players' %08X%08X\n",
+                     mine->frame, (u32)(mine->hash >> WORD_BITS),
+                     (u32)mine->hash, (u32)(theirs >> WORD_BITS), (u32)theirs);
+            return FALSE;
+        }
+        mine->frame = (u32)-1;
+        g_np_watch_held++;
+    }
+    return TRUE;
+}
+
+/* Waits a moment for the match's next frames, the window told: FALSE
+ * where nothing has been heard of them for NETPLAY_GIVE_UP_MS. */
+static s32 port_WatchWait(void) {
+    u32 now = port_NetClock();
+
+    if (g_np_wait_from == 0) {
+        g_np_wait_from = now;
+    }
+    g_np_state = PORT_NETPLAY_WAITING;
+    if (now - g_np_wait_from > NETPLAY_WAIT_SHOWN_MS &&
+        g_port_net_wait_hook != NULL) {
+        g_port_net_wait_hook("Watching: waiting for the match's next frames");
+    }
+    port_RoomWait(NETPLAY_POLL_MS);
+    return port_WatchQuietMs() <= NETPLAY_GIVE_UP_MS;
+}
+
+/* The match watched (port_net.h): every frame of its, as its players ran
+ * it, from the start put in. */
+s32 port_RunWatch(u32 frame) {
+    u32 end_frame;
+    s32 winner;
+
+    g_np_on = 1;
+    g_np_watch = TRUE;
+    g_np_frame = frame;
+    g_np_in_process = 1;
+    /* nobody to say goodbye to: the lobby is told by the room */
+    g_np_peer_left = 1;
+    g_np_wait_from = 0;
+    g_port_take_hook = port_NetplayTakeHook;
+    g_port_movies_skipped = TRUE;
+    port_Log("watch: from frame %u, as the match's players ran it\n", frame);
+    for (;;) {
+        u32 known;
+        u32 left;
+        u16 first;
+        u16 second;
+        u16 used;
+
+        port_RoomTick();
+        port_WatchTick();
+        if (!port_WatchHold()) {
+            return PORT_NETPLAY_END_DESYNC;
+        }
+        left = port_SessionLeftAt();
+        if (left != 0 && left - 1 < g_np_frame) {
+            port_Log("watch: the match was decided at frame %u; %u hashes "
+                     "the same as its players'\n",
+                     left - 1, g_np_watch_held);
+            return port_SessionResult() != 0 ? PORT_NETPLAY_END_MATCH
+                                             : PORT_NETPLAY_END_LEFT;
+        }
+        if (port_WatchEnd(&end_frame, &winner) && g_np_frame >= end_frame) {
+            port_Log("watch: the match's session ended at frame %u; %u "
+                     "hashes the same as its players'\n",
+                     end_frame, g_np_watch_held);
+            return PORT_NETPLAY_END_PEER_LEFT;
+        }
+        if (g_np_leave) {
+            port_Log("watch: the spectator stopped watching at frame %u\n",
+                     g_np_frame);
+            return PORT_NETPLAY_END_QUIT;
+        }
+        known = port_WatchKnown();
+        /* WATCH_LAG frames held in hand while the match goes on; at its
+         * end, every frame to its last */
+        if (known <= g_np_frame + (port_WatchEnd(&end_frame, &winner)
+                                       ? 0
+                                       : WATCH_LAG)) {
+            if (port_WatchEnd(&end_frame, &winner) && g_np_wait_from != 0 &&
+                port_NetClock() - g_np_wait_from > WATCH_END_WAIT_MS) {
+                /* the session ended and its last frames do not come */
+                port_Log("watch: the match's session ended at frame %u, and "
+                         "its frames from %u did not come; %u hashes the "
+                         "same as its players'\n",
+                         end_frame, known, g_np_watch_held);
+                return PORT_NETPLAY_END_PEER_LEFT;
+            }
+            if (!port_WatchWait()) {
+                port_Log("watch: nothing from the lobby of the match for %u "
+                         "seconds\n",
+                         NETPLAY_GIVE_UP_MS / MS_PER_SECOND);
+                return PORT_NETPLAY_END_SILENT;
+            }
+            continue;
+        }
+        g_np_wait_from = 0;
+        g_np_state = PORT_NETPLAY_PLAYING;
+        g_np_remote_count = known;
+        /* far behind (come in the middle of a fight): unseen, unheard */
+        g_port_rerun = known - g_np_frame > WATCH_CATCH_UP;
+        if (g_np_frame % NETPLAY_HASH_EVERY == 0) {
+            PortNetplayHash *mine =
+                &g_np_watch_hashes[(g_np_frame / NETPLAY_HASH_EVERY) %
+                                   NETPLAY_HASHES];
+
+            mine->frame = g_np_frame;
+            mine->hash = port_StateHash();
+            port_Log("netplay: frame %u hash %08X%08X\n", g_np_frame,
+                     (u32)(mine->hash >> WORD_BITS), (u32)mine->hash);
+        }
+        port_ReplayBoundary();
+        port_WatchInput(g_np_frame, &first, &second);
+        g_np_input.buttons[0] = first;
+        g_np_input.buttons[1] = second;
+        g_np_input.present[0] = 1;
+        g_np_input.present[1] = 1;
+        port_SessionInput(g_np_frame, &g_np_input, &used);
+        port_StepGame();
+        g_port_rerun = 0;
+        g_np_frame++;
+    }
 }
 
 /* The session (port_net.h): the game from its first boundary on, a frame
@@ -793,20 +1024,40 @@ s32 port_RunNetplay(void) {
             port_NetplayRollBack();
         }
         port_NetplayFinalHashes();
-        if (g_np_peer_left && g_np_frame >= g_np_remote_count && !g_np_ended) {
-            port_NetplayEndWithPeer("ended");
-        }
+        port_NetplayFeed();
+        /* (the session's own end first: the other, ending there too, may
+         * have said goodbye already) */
         if (g_np_in_process && !g_np_ended && !g_np_is_wrong) {
-            /* a way back to the top menu, taken on frames both have the
-             * inputs of, is the session's end on both (session.c) */
+            /* a way back to the top menu, or a room's match decided,
+             * taken on frames both have the inputs of, is the session's
+             * end on both (session.c) */
             u32 left = port_SessionLeftAt();
 
             if (left != 0 && left - 1 < g_np_remote_count) {
-                port_Log("netplay: the players went back to the top menu at "
-                         "frame %u: the session ends there\n",
-                         left - 1);
-                g_np_ended = PORT_NETPLAY_END_LEFT;
+                if (port_SessionResult() != 0) {
+                    port_Log("netplay: the match was decided at frame %u: "
+                             "the session ends there\n",
+                             left - 1);
+                    g_np_ended = PORT_NETPLAY_END_MATCH;
+                } else {
+                    port_Log("netplay: the players went back to the top "
+                             "menu at frame %u: the session ends there\n",
+                             left - 1);
+                    g_np_ended = PORT_NETPLAY_END_LEFT;
+                }
             }
+        }
+        if (g_np_peer_left && g_np_frame >= g_np_remote_count && !g_np_ended) {
+            port_NetplayEndWithPeer("ended");
+        }
+        if (!g_np_ended && (g_np_leave || (g_np_leave_at != 0 &&
+                                           g_np_frame >= g_np_leave_at))) {
+            port_Log("netplay: this player left the session at frame %u\n",
+                     g_np_frame);
+            if (!g_np_in_process) {
+                port_Quit(PORT_EXIT_OK);
+            }
+            g_np_ended = PORT_NETPLAY_END_QUIT;
         }
         if (g_np_ended) {
             return g_np_ended;
@@ -847,6 +1098,14 @@ void port_GetNetplayStats(PortNetplayStats *stats) {
         g_np_state == PORT_NETPLAY_ALONE ? now - g_np_alone_at : 0;
     stats->held_ms = g_np_held_ms;
     stats->is_session = port_GetSessionRole() != PORT_SESSION_NONE;
+    stats->watching = g_np_watch;
+    stats->behind = g_np_watch && port_WatchKnown() > g_np_frame
+                        ? port_WatchKnown() - g_np_frame
+                        : 0;
+    stats->leave_ms = g_np_leave_asked_at != 0 &&
+                              now - g_np_leave_asked_at <= NETPLAY_LEAVE_MS
+                          ? now - g_np_leave_asked_at + 1
+                          : 0;
 }
 
 /* For a moment after this program ends, until the other has said

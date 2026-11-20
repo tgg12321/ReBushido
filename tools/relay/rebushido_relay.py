@@ -162,7 +162,7 @@ CHUNK = 1024
 CHUNKS_MAX = 1024  # a start of at most 1 MB
 CHUNK_MAP = CHUNKS_MAX // 8
 INPUT_SIZE = 4  # a frame: both pads' buttons
-INPUTS_A_DATAGRAM = 256
+INPUTS_A_DATAGRAM = 240  # eight hashes' frames: every hash among them fits
 HASHES_A_DATAGRAM = 8
 FRAMES_MAX = 0x40000
 FEED_ACK_SIZE = 160
@@ -172,6 +172,8 @@ NONE_NOTHING_YET = 1
 NONE_NO_MATCH = 2
 NONE_NOT_MEMBER = 3
 CHUNKS_A_WATCH = 16
+# matches beside a room are numbered from here, the rotation's from 1
+SIDE_NUMBERS = 1000
 
 
 def log(text):
@@ -538,7 +540,7 @@ class Group:
     """A room of several: its members, its rotation and its matches."""
 
     __slots__ = ("code", "seq", "created", "name", "setup", "salt", "verifier", "members", "queue", "rule", "match",
-                 "sides", "ended", "number", "next_id", "last", "challenges", "host_id")
+                 "sides", "ended", "number", "side_number", "next_id", "last", "challenges", "host_id")
 
     def __init__(self, code, seq, hello, now):
         self.code = code
@@ -554,7 +556,8 @@ class Group:
         self.match = None  # the rotation's match now
         self.sides = []  # matches beside it
         self.ended = []  # matches over, their feeds kept a while
-        self.number = 0  # matches made
+        self.number = 0  # the rotation's matches made
+        self.side_number = SIDE_NUMBERS  # and those beside it
         self.next_id = 1
         self.last = (0, NOBODY, NOBODY, NOBODY)  # the last result: number, a, b, winner
         self.challenges = {}
@@ -1128,8 +1131,8 @@ class Server:
         elif action == A_RESULT:
             self.group_result(group, member, hello.number, hello.arg, now)
         elif action == A_SIDE_OPEN and not group.busy(member.id) and len(group.sides) < SIDES_MAX:
-            group.number += 1
-            side = Match(self.new_code(), group.number, member.id, NOBODY, True, now)
+            group.side_number += 1
+            side = Match(self.new_code(), group.side_number, member.id, NOBODY, True, now)
             group.sides.append(side)
             self.match_codes[side.code] = (group, side)
             if self.verbose:
@@ -1443,7 +1446,7 @@ class Server:
                     break
                 count = min(INPUTS_A_DATAGRAM, known - wants)
                 at = (wants - feed.inputs_from) * INPUT_SIZE
-                hashes = [(f, h) for f, h in feed.hashes.items() if wants <= f <= wants + count][:HASHES_A_DATAGRAM]
+                hashes = [(f, h) for f, h in feed.hashes.items() if wants <= f < wants + count][:HASHES_A_DATAGRAM]
                 self.send(endpoint, header(K_SCENE, P_INPUTS) + pad(code, 8) +
                           struct.pack("<IHBx", wants, count, len(hashes)) +
                           b"".join(struct.pack("<I", f) + h for f, h in hashes) +

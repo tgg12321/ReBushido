@@ -92,6 +92,9 @@ typedef struct {
      * top menu after that, which ends a session whose rule says so (0:
      * not yet). In the state, so that a rollback takes it back. */
     u8 session_away;
+    /* a room's match (PORT_SESSION_RULE_ONE_MATCH): who won it, 1 or 2
+     * for the first or second pad, 3 for nobody; 0 while it goes on */
+    u8 session_result;
     u32 session_left;
 } PortTopMenu;
 

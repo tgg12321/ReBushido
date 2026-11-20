@@ -381,9 +381,160 @@ def case_refused(case):
         t.join()
 
 
+# ---- a room of several (docs/NETPLAY.md, section 16) ----
+
+# The lobby's limits, for six programs of one address.
+ROOM_SERVER = ['--rooms-per-ip', '100', '--creations-per-min', '1000', '--hello-rate', '2000', '--query-rate', '1000',
+               '--watch-rate', '100000']
+ROOM_SEED = 4242
+# Bunta leaves the second match in the middle of its fight, at this frame
+# of the session (its fight begins near 1,450 and is decided near 2,000).
+LEAVE_FRAME = 1700
+
+
+def room_segments(text):
+    """What one program printed, by the room's match it was of: {number:
+    {'role': 'player 1'|'player 2'|'watch', 'hashes': {frame: hash},
+    'text': ...}}."""
+    out = {}
+    current = None
+    for line in text.split('\n'):
+        m = re.match(r'room: match (\d+) \((.*) vs (.*)\) begins: this program plays (player \d)', line)
+        w = re.match(r'room: watching match (\d+) \((.*) vs (.*)\)', line)
+        if m or w:
+            number = int((m or w).group(1))
+            current = out.setdefault(number, {'role': m.group(4) if m else 'watch', 'hashes': {}, 'text': [],
+                                              'pair': ((m or w).group(2), (m or w).group(3))})
+        if current is None:
+            continue
+        current['text'].append(line)
+        h = re.match(r'netplay: frame (\d+) hash ([0-9A-F]+)', line)
+        if h:
+            current['hashes'][int(h.group(1))] = h.group(2)
+    return out
+
+
+def case_rooms(case):
+    """Six programs in one room of several: a rotation of three (Ayame,
+    Bunta, Chie; a fixed turn), each match watched by the one not in it; a
+    spectator (Sora) who comes in the middle of the first match's fight;
+    Bunta leaving the second match in the middle of its fight; and Dai and
+    Eiko playing a match beside the room's meanwhile. Every hash of a match
+    the same on every program that ran it, its players' and its
+    spectators'."""
+    lobby = case.server(*ROOM_SERVER)
+    with PLAN_LOCK:
+        plan = port_net.write_room_plan(HEADLESS, case.folder)
+    base = [HEADLESS, '--image', playtest.RETAIL_CUE, '--no-cards', '--lobby', lobby, '--net-plan-pads',
+            '--net-seed', str(ROOM_SEED), '--plan', plan, '--trace'] + TROUBLE
+
+    def member(label, *more):
+        return case.start(label, base + ['--out', os.path.join(case.folder, label), '--player', label.capitalize()] +
+                          list(more))
+
+    host = member('ayame', '--room-open', 'Many', '--room-rule', 'fixed', '--room-matches', '3')
+    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", 30)
+    if code is None:
+        case.fail('the room of several was given no code')
+        return
+    code = code.group(1)
+    procs = [host]
+    procs.append(member('bunta', '--room-enter', code, '--room-matches', '3', '--leave-at', '2:%d' % LEAVE_FRAME))
+    procs.append(member('chie', '--room-enter', code, '--room-matches', '3'))
+    procs.append(member('dai', '--room-enter', code, '--room-watcher', '--room-no-watch', '--room-side', 'open'))
+    procs.append(member('eiko', '--room-enter', code, '--room-watcher', '--room-no-watch', '--room-side', 'join'))
+    # the spectator comes once the first match's fight is under way
+    if case.wait_for('ayame', r'watch: the lobby has the fight\'s start', 240) is None:
+        case.fail('the first match\'s host never gave the lobby its fight\'s start')
+    time.sleep(1.0)
+    procs.append(member('sora', '--room-enter', code, '--room-watcher', '--room-matches', '3'))
+    labels = ['ayame', 'bunta', 'chie', 'dai', 'eiko', 'sora']
+    codes = wait_all(procs, SECONDS)
+    segments = {}
+    for label, code_ in zip(labels, codes):
+        err = case.err(label)
+        if code_ != 0:
+            case.fail('%s ended with %s (%s)' % (label, code_, os.path.join(case.folder, label + '.err')))
+        if 'DESYNC' in err:
+            case.fail('%s found a desync' % label)
+        segments[label] = room_segments(err)
+    judge_rooms(case, segments)
+
+
+def judge_rooms(case, segments):
+    """The rotation's order, every match's hashes alike on all who ran it,
+    the spectators', the leave and the match beside."""
+    turns = {}
+    for label, seg in segments.items():
+        for number, part in seg.items():
+            if part['role'] != 'watch':
+                turns[number] = part['pair']
+    rotation = [turns.get(n) for n in (1, 2, 3)]
+    if rotation != [('Ayame', 'Bunta'), ('Bunta', 'Chie'), ('Chie', 'Ayame')]:
+        case.fail('the rotation was not A+B, B+C, C+A: %r' % rotation)
+    else:
+        case.said.append('the rotation: %s' % ', '.join('%s+%s' % p for p in rotation))
+    numbers = sorted({n for seg in segments.values() for n in seg})
+    for number in numbers:
+        who = {label: seg[number] for label, seg in segments.items() if number in seg}
+        players = [label for label, part in who.items() if part['role'] != 'watch']
+        watchers = [label for label, part in who.items() if part['role'] == 'watch']
+        if len(players) != 2:
+            case.fail('match %d: %d programs played it (%s)' % (number, len(players), ', '.join(who)))
+            continue
+        reference = who[players[0]]['hashes']
+        frames = set(reference)
+        for label in players[1:] + watchers:
+            mine = who[label]['hashes']
+            common = sorted(set(mine) & frames)
+            differ = [f for f in common if mine[f] != reference[f]]
+            if differ:
+                case.fail('match %d: %s\'s hash of frame %d is not %s\'s' % (number, label, differ[0], players[0]))
+            least = 10 if label in watchers else 40
+            if len(common) < least:
+                case.fail('match %d: %s has %d hashes in common with %s' % (number, label, len(common), players[0]))
+        held = {label: re.search(r'(\d+) hashes the same as its players\'', '\n'.join(who[label]['text']))
+                for label in watchers}
+        case.said.append('match %d (%s vs %s): played by %s, %d hashes; watched by %s' % (
+            number, who[players[0]]['pair'][0], who[players[0]]['pair'][1], ' and '.join(players),
+            len(reference), ', '.join('%s (%s held)' % (w, held[w].group(1) if held[w] else 'none')
+                                      for w in watchers) or 'nobody'))
+        for label in watchers:
+            if not held[label] or int(held[label].group(1)) < 5:
+                case.fail('match %d: %s held too few of its hashes to the players\' (%s)' % (
+                    number, label, held[label].group(0) if held[label] else 'none'))
+    # the spectator came in the middle of the first match's fight
+    sora = segments.get('sora', {})
+    first = sora.get(1)
+    if first is None:
+        case.fail('sora did not watch the first match')
+    else:
+        start = re.search(r'watch: from frame (\d+)', '\n'.join(first['text']))
+        if not start or not first['hashes'] or min(first['hashes']) > int(start.group(1)) + 30:
+            case.fail('sora did not run the first match from its fight\'s start')
+        else:
+            case.said.append('sora came in the middle of match 1 and ran it from its fight\'s start, frame %s' %
+                             start.group(1))
+    # Bunta left the second match in its fight: Chie won it, both went on
+    bunta = '\n'.join(segments.get('bunta', {}).get(2, {}).get('text', []))
+    chie = '\n'.join(segments.get('chie', {}).get(2, {}).get('text', []))
+    if 'this player left the session at frame %d' % LEAVE_FRAME not in bunta or \
+            'room: match 2 over: its second player won' not in bunta + chie or \
+            "the player's own game put back" not in bunta or "the player's own game put back" not in chie:
+        case.fail('the leave in the middle of match 2 was not as it must be')
+    else:
+        case.said.append('Bunta left match 2 at frame %d, in its fight; Chie won it, both back to their own '
+                         'game and the room' % LEAVE_FRAME)
+    # the match beside: Dai and Eiko
+    beside = [part for label in ('dai', 'eiko') for part in segments.get(label, {}).values()
+              if part['role'] != 'watch']
+    if len(beside) != 2 or 'a match beside the room' not in '\n'.join(beside[0]['text'] + beside[1]['text']):
+        case.fail('Dai and Eiko did not play a match beside the room\'s')
+
+
 HEADLESS_CASES = [('punch', case_punch), ('relay', case_relay), ('mapped', case_mapped), ('v6', case_v6),
                   ('direct6', case_direct6), ('punchto', case_punchto), ('list', case_list),
-                  ('refused', case_refused)]
+                  ('refused', case_refused), ('rooms', case_rooms)]
 
 
 # ---- the window's cases (Windows) ----
