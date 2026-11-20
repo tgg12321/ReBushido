@@ -31,13 +31,13 @@ session's); how to play is [`PLAYING.md`](PLAYING.md); online play is
    disc image, SLUS-00663, as .cue/.bin). Afterwards, read both
    players' `logs/`: the connection's path (direct, router port, punch,
    relay) and the round trip.
-2. **The release key**, before any public release: `python
-   tools/release_sign.py --generate` (key outside the repo, in
-   `%USERPROFILE%\.rebushido-release-key\`; back it up), paste the public
-   key into `config/release_public_key.txt`, commit; then each release
-   is `python tools/release_publish.py --notes NOTES.txt` (BUILD.md).
-   Until then the updater is inert and `make port-release RB_RELEASE=1`
-   refuses. Publishing is the owner's.
+2. **The release key** is made (2026-11-20): the secret in
+   `%USERPROFILE%\.rebushido-release-key\`, a copy on the VPS in
+   `/root/.rebushido-release-key/` (mode 700/600), the public half in
+   `config/release_public_key.txt`. Each release is `python
+   tools/release_publish.py --notes NOTES.txt` (BUILD.md). Publishing is
+   the owner's. The test zip of `ab47df77e` was built with `none` and
+   never updates itself.
 3. **Looks to judge in the game**: each time of day's colours
    (PORT.md, "The time of day"), each stage's floor reflections
    (`g_post_floors`), the stage lights placed (`tmp/stagelights/`; is
