@@ -10,7 +10,11 @@ fighter the save has not won, goes on to the stage pages, switches a
 stage to Classic and fights there; training with --stage-select alone
 goes through the same pages to a fight on the stage chosen, with the
 save's own unlocks; and versus mode with --unlock-all picks the
-Narukagami's last fighter and a fighter the save has not won. Both sizes
+Narukagami's last fighter and a fighter the save has not won. Last,
+versus the CPU with --fight-music stage through two fights: the stage's
+piece over the first, the CPU cut down, and the next opponent's fight
+loaded and started (the stream used to loop on and the load wait for
+ever; docs/PORT.md, "A fight's music"). Both sizes
 of the port (build/port/, build/port32/) must print the same trace of
 each plan, line for line, and each checkpoint's values must be what the
 presses chose.
@@ -321,6 +325,70 @@ within = 3000
 expect = ["mode == 4", "stage == 29", "p1_character == 24", "p2_character == 19"]
 '''
 
+# Versus the CPU with --fight-music stage, through two fights: the stage's
+# own piece plays over the first, where the game plays none, and the CPU
+# is cut down; the next opponent's fight must load and start, with its
+# own piece (the owner's hang of 2026-11-19: the stream looped on and the
+# next fight's load waited for the drive for ever). The first fighter
+# walks in and strikes low, twice, again and again until the CPU falls (as
+# the port plays today the first opponent falls to it; high strikes lose).
+FIGHT_ROUND_FRAMES = 60
+FIGHT_ROUNDS = 66
+FIGHT_ROUND = [(0, 'RIGHT hold 20f'), (25, 'CIRCLE'), (40, 'CIRCLE')]
+
+
+def fight_presses(rounds=FIGHT_ROUNDS, every=FIGHT_ROUND_FRAMES, pattern=FIGHT_ROUND):
+    """The first fighter's presses through a fight, in its frames."""
+    return ', '.join('"fight+%df %s"' % (n * every + offset, button)
+                     for n in range(rounds) for offset, button in pattern)
+
+
+TOML_VSCPU_NEXT = 'about = "Versus the CPU, the stage\'s music, to the next opponent (tools/port_stage_select.py)"\n' + \
+    HEAD + '''input = [%(opening)s,
+    "menu+30 DOWN", "menu+90 CROSS",
+    "select+300 CROSS", "select+520 CROSS",
+    "stages+40 CROSS",
+    %(presses)s,
+]
+''' % {'opening': ', '.join(OPENING), 'presses': fight_presses()} + COMPARE.replace('"port_page_used"]', '"port_page_used", "port_music_heard", "winner"]') + START + '''
+[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 1500
+shot = false
+
+[[checkpoint]]
+name = "stages"
+when = "port_on_stages == 1"
+within = 1500
+shot = false
+
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+at_frame = true
+within = 3000
+expect = ["mode == 1", "port_music_heard == 1", "port_music_track >= 0", "winner == FIGHT_NOBODY"]
+
+[[checkpoint]]
+name = "kill"
+when = "winner != FIGHT_NOBODY"
+within = 6000
+expect = ["winner == 0", "p2_defeated != 0", "p1_defeated == 0"]
+
+[[checkpoint]]
+name = "next"
+when = "screen == SCREEN_FIGHT_UPDATE && winner == FIGHT_NOBODY"
+within = 3000
+expect = ["mode == 1", "port_music_heard == 1", "port_music_track >= 0",
+          "p1_defeated == 0", "p2_defeated == 0"]
+
+[[checkpoint]]
+name = "walk"
+after = 120
+expect = ["screen == SCREEN_FIGHT_UPDATE", "mode == 1"]
+'''
+
 # every unlock the save can hold (PORT_PLAY_ALL_UNLOCKS), and an empty
 # save's (SAVE_DEFAULT_UNLOCKS)
 ALL_UNLOCKS = 0x053FF3FF
@@ -354,7 +422,7 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--out', default=os.path.join(REPO, 'build', 'stage-select'))
     parser.add_argument('--shots', default=None)
-    parser.add_argument('--only', nargs='*', help='the plans to run (stage_select, vscpu, practice, vs_unlocked)')
+    parser.add_argument('--only', nargs='*', help='the plans to run (stage_select, vscpu, practice, vs_unlocked, vscpu_next)')
     args = parser.parse_args(argv[1:])
     import playtest
     report = Report()
@@ -368,6 +436,8 @@ def main(argv):
         ('vscpu', TOML_VSCPU, ['--mods', 'off', '--stage-select', '--unlock-all']),
         ('practice', TOML_PRACTICE, ['--mods', 'off', '--stage-select']),
         ('vs_unlocked', TOML_VS_UNLOCKED, ['--mods', 'off', '--unlock-all']),
+        ('vscpu_next', TOML_VSCPU_NEXT,
+         ['--mods', 'off', '--stage-select', '--unlock-all', '--fight-music', 'stage']),
     ]
     if args.only:
         plans = [plan for plan in plans if plan[0] in args.only]

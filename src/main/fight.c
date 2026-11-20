@@ -1364,6 +1364,13 @@ void fight_WinnerViewUpdate(void) {
             break;
         case FIGHT_MODE_VSCPU:
             if (g_fight_winner == 0) {
+#if RB_PORT
+                /* the stage's piece the port's fight_music plays here,
+                 * where the game plays none, ends with the fight, as
+                 * versus ends its own before what follows is loaded
+                 * (port_fight_music.h) */
+                cdrom_StopAndWait();
+#endif
                 snd_EndFight();
                 g_disp_loading_screen = LOADING_SCREEN_NEXT_OPPONENT;
                 fight_NextVsCpuOpponent();

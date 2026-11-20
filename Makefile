@@ -373,7 +373,9 @@ port-rollback:
 # Classic, the arenas' page and a fight on the sample arena, then its host
 # from the disc; versus the CPU and training through the stage pages and
 # every unlock (docs/PORT.md, "Every stage in every mode, and every
-# unlock"). It needs the disc's image, as port-rollback does, and runs
+# unlock"); versus the CPU with the stage's music on to its next opponent
+# (docs/PORT.md, "A fight's music"). It needs the disc's image, as
+# port-rollback does, and runs
 # what make port built.
 port-stage-select:
 	python3 tools/port_stage_select.py

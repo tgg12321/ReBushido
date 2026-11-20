@@ -6642,6 +6642,17 @@ The log says of every load how many blanks it took, how many were
 hurried and how long it took (`load:`), and at the end the run's loads
 in all.
 
+**A load that reads nothing** is not hurried for ever. A load hurried
+through that has read nothing of the disc for `STALL_SECONDS` (3) of
+the PC's clock is waiting for something that does not come (a hang of
+the game's), and hurrying it only races its blanks and their sound; from
+then to its end it is paced as with quick_loading off, and the log says
+`load: WARNING: ... nothing read of the disc for 3 seconds ...` once
+(`port_LoadStalls`, `g_port_load_stalled`). A read's start and end are
+what count (the disc's hook, kinds 0 and 1); a stream of sound is not a
+read. Shown on the hang of "A fight's music" built without its fix: the
+warning 3 seconds into the stalled load, then 60 blanks a second.
+
 **Measured** (the window at the console's pace with SDL's dummy drivers,
 each plan run with `--quick-loading off` and `on`, on a machine with
 other builds running; the blanks are the game's and the same both
@@ -8440,6 +8451,29 @@ R1 six times starts track 5 (`bb2_m1-5`, never heard in the original);
 L1 twice the staff roll's piece; L1 once None, the same sectors as with
 no music and the ambience on. `tests/port/music.c` holds the mods' own
 pieces and the piece over its stream.
+
+**The piece ends with the fight.** A looping stream never goes idle by
+itself, and a read waits for an idle drive. The original never reads
+behind one: each screen that leaves a mode's music stops it first
+(`cdrom_StopAndWait`: versus' menu after the fight, practice's pause
+menu, the team battle's next match). The modes the game played no music
+in have no such stop. So with `stage`, a win against the CPU went to the
+next opponent's load with the piece still looping, and the load waited
+for ever (the owner, 2026-11-19: frame 13363 on the loading screen,
+quick_loading racing ~2000 blanks a second, the stream restarting, the
+loading picture's red streaks piling up as long as it was drawn). Now
+the win against the CPU stops the drive before `snd_EndFight`, as versus
+does (`fight_WinnerViewUpdate`). For every other way into a read,
+`cdrom_StartRead` and `cdrom_WaitIdle` stop a looping stream themselves
+(`cdrom_EndLoopingAudio`, under `RB_PORT`) and the log says `game: a
+looping stream of music stopped for a read of the disc`: story's fights
+after a band of henchmen, its cutscenes and stage cards. In the original
+that state was a hang, so nothing the original does changes. A restart
+(a rematch, practice's next round) reads nothing and keeps its piece, as
+versus' rematch always has. `tools/port_stage_select.py`, plan
+`vscpu_next`, holds it: versus the CPU with `--fight-music stage`, the
+CPU cut down by low strikes, the next opponent's fight loaded and
+started with its own piece, both sizes the same.
 
 ## ReBushido's top menu
 
