@@ -98,6 +98,21 @@ static u32 port_NetWords(char *out, u32 room) {
         /* a replay's line, where one plays (sdl_replay.c) */
         return port_ReplayWords(out, room);
     }
+    if (stats.leave_ms != 0) {
+        /* the leave asked once: the second leaves (port_online.h) */
+        snprintf(out, room, "%s",
+                 stats.watching ? "Press F1 or Escape again to stop watching"
+                                : "Press F1 or Escape again to leave the "
+                                  "fight: the other player wins it");
+        return COLOR_WAIT;
+    }
+    if (stats.watching) {
+        snprintf(out, room,
+                 "Watching   |   %u frames behind the players   |   F1 twice: "
+                 "stop",
+                 stats.behind);
+        return stats.state == PORT_NETPLAY_WAITING ? COLOR_WAIT : COLOR_TEXT;
+    }
     if (stats.state == PORT_NETPLAY_ALONE) {
         if (stats.alone_ms < ALONE_SHOWN_MS) {
             snprintf(out, room,

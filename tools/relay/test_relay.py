@@ -443,7 +443,8 @@ def test_bad_requests(server):
     check(answer(rc.hello(rc.F_HOST | rc.F_GUEST, name="x")) == rc.E_BAD_REQUEST, "HOST and GUEST")
     check(answer(rc.hello(0, name="x")) == rc.E_BAD_REQUEST, "neither HOST nor GUEST")
     check(answer(rc.hello(rc.F_GUEST | rc.F_RESET, code="AAAAAA")) == rc.E_BAD_REQUEST, "a guest's RESET")
-    check(answer(rc.hello(rc.F_HOST | 0x20, name="x")) == rc.E_BAD_REQUEST, "an unknown detail bit")
+    check(answer(rc.hello(rc.F_HOST | 0x40, name="x")) == rc.E_BAD_REQUEST, "an unknown detail bit")
+    check(answer(rc.hello(rc.F_HOST | rc.F_TICKET, code="AAAAAA", name="x")) == rc.E_NO_ROOM, "a ticket of no match")
     check(answer(host_hello(name="")) == rc.E_BAD_REQUEST, "a room with no name")
     check(answer(host_hello(player="Mi\x01kado")) == rc.E_BAD_REQUEST, "a control byte in a name")
     check(answer(host_hello(name=b"Dojo\0x")) == rc.E_BAD_REQUEST, "text after a name's padding")
@@ -456,7 +457,9 @@ def test_bad_requests(server):
     five = host_hello(cands=[LAN] * 4)
     five = five[:124] + b"\x05" + five[125:]
     check(answer(five) == rc.E_BAD_REQUEST, "five candidates")
-    check(answer(rc.hello(rc.F_HOST, name="x", version=2)) == rc.E_VERSION, "version 2")
+    # the clients of version 1 are refused, cleanly
+    check(answer(rc.hello(rc.F_HOST, name="x", version=1)) == rc.E_VERSION, "version 1")
+    check(answer(rc.hello(rc.F_HOST, name="x", version=3)) == rc.E_VERSION, "version 3")
     # None of these made a room.
     check(answer(host_hello(name="Good")) == rc.S_WAITING, "a good HELLO after bad ones")
 
@@ -509,6 +512,305 @@ def main_server():
         server.stop()
         check(any(line.startswith("rooms ") for line in server.lines), "no count line")
         check(any("joined" in line for line in server.lines), "--verbose logs no rooms")
+    finally:
+        server.kill()
+
+
+# --- rooms of several (docs/NETPLAY.md, section 16) --------------------------
+
+
+class Member:
+    """A member of a room of several: its client, token and last roster."""
+
+    def __init__(self, server, player, plays=True):
+        self.client = Client(server)
+        self.player = player
+        self.plays = plays
+        self.token = b""
+        self.code = ""
+        self.roster = None
+
+    def say(self, action, **fields):
+        fields.setdefault("plays", self.plays)
+        fields.setdefault("code", self.code)
+        fields.setdefault("token", self.token)
+        self.client.drain()
+        self.client.send(rc.room_hello(action, player=self.player, setup=SETUP, **fields))
+        reply = self.client.recv(rc.K_ROSTER)
+        check(reply is not None, "%s: no ROSTER to action %d" % (self.player, action))
+        self.roster = rc.parse_roster(reply)
+        if self.roster["status"] == 1:
+            self.token = self.roster["token"]
+            self.code = self.roster["code"]
+        return self.roster
+
+    def stay(self):
+        return self.say(rc.A_STAY)
+
+    def names(self, *ids):
+        by_id = {m["id"]: m["player"] for m in self.roster["members"]}
+        return tuple(by_id.get(i) for i in ids)
+
+
+def open_group(server, rule, players=("Ayame", "Bunta", "Chie"), **fields):
+    members = [Member(server, p) for p in players]
+    r = members[0].say(rc.A_OPEN, name="Many", rule=rule, rtt=37, **fields)
+    check(r["status"] == 1 and len(r["code"]) == 6 and r["you"] == r["host"], "OPEN: %r" % r["name"])
+    for m in members[1:]:
+        e = m.say(rc.A_ENTER, code=r["code"])
+        check(e["status"] == 1 and e["code"] == r["code"] and e["token"] != members[0].token, "ENTER: %r" % e["name"])
+    return members
+
+
+def pair_now(member):
+    """The rotation's match as `member` sees it: the two players' names."""
+    match = member.stay()["match"]
+    return member.names(match["a"], match["b"])
+
+
+def test_group_rotation(server):
+    a, b, c = open_group(server, rc.RULE_FIXED)
+    # each stay says the member's round trip to the server
+    r = a.say(rc.A_STAY, rtt=37)
+    check(len(r["members"]) == 3 and r["rule"] == rc.RULE_FIXED, "three members: %r" % r["members"])
+    listed = [x for x in list_all(a.client) if x["code"] == a.code]
+    check(listed and listed[0]["group"] and listed[0]["players"] == 3 and listed[0]["ping"] == 37,
+          "a room of several is listed with its members and its host's round trip: %r" % listed)
+    turns = []
+    for number in range(1, 5):
+        match = a.stay()["match"]
+        turns.append(a.names(match["a"], match["b"]))
+        check(match["number"] == number, "match %d numbered %d" % (number, match["number"]))
+        # the ticket only to the two who play
+        seen = {m.player: m.stay()["match"]["ticket"] for m in (a, b, c)}
+        players = a.names(match["a"], match["b"])
+        for who, ticket in seen.items():
+            check((ticket != bytes(16)) == (who in players), "%s's ticket of match %d" % (who, number))
+        first = [m for m in (a, b, c) if m.player == players[0]][0]
+        first.say(rc.A_RESULT, number=number, arg=rc.W_FIRST)
+    check(turns == [("Ayame", "Bunta"), ("Bunta", "Chie"), ("Chie", "Ayame"), ("Ayame", "Bunta")],
+          "a fixed turn: %r" % turns)
+    wins = {m["player"]: m["wins"] for m in a.stay()["members"]}
+    check(wins == {"Ayame": 2, "Bunta": 1, "Chie": 1}, "the wins: %r" % wins)
+    last = a.roster["last"]
+    check(last["number"] == 4 and a.names(last["a"])[0] == "Ayame" and last["winner"] == rc.W_FIRST,
+          "the last result: %r" % last)
+    return a, b, c
+
+
+def test_group_winner_stays(server):
+    a, b, c = open_group(server, rc.RULE_WINNER, ("Dai", "Eiko", "Fumi"))
+    turns = []
+    # the second wins, then the first, then a draw
+    for winner in (rc.W_SECOND, rc.W_FIRST, rc.W_DRAW, rc.W_FIRST):
+        match = a.stay()["match"]
+        turns.append(a.names(match["a"], match["b"]))
+        a.say(rc.A_RESULT, number=match["number"], arg=winner) if a.player in turns[-1] else \
+            b.say(rc.A_RESULT, number=match["number"], arg=winner)
+    # Dai+Eiko, Eiko wins and stays: Eiko+Fumi; Eiko wins: Eiko+Dai; a
+    # draw: both to the end, Fumi first: Fumi+Eiko
+    check(turns == [("Dai", "Eiko"), ("Eiko", "Fumi"), ("Eiko", "Dai"), ("Fumi", "Eiko")],
+          "the winner staying: %r" % turns)
+    # Fumi+Dai now: a result by one not in the match counts for nothing,
+    # and one told twice once
+    match = a.stay()["match"]
+    check(a.names(match["a"], match["b"]) == ("Fumi", "Dai"), "the fifth match: %r" % (match,))
+    b.say(rc.A_RESULT, number=match["number"], arg=rc.W_FIRST)
+    check(a.stay()["match"]["number"] == match["number"], "a result by one not in the match")
+    c.say(rc.A_RESULT, number=match["number"], arg=rc.W_FIRST)
+    c.say(rc.A_RESULT, number=match["number"], arg=rc.W_FIRST)
+    check(a.stay()["match"]["number"] == match["number"] + 1, "a result told twice")
+    # the host turns the rotation off: no match after this one
+    a.say(rc.A_RULE, rule=rc.RULE_OFF)
+    match = a.stay()["match"]
+    first = [m for m in (a, b, c) if m.player == a.names(match["a"])[0]][0]
+    first.say(rc.A_RESULT, number=match["number"], arg=rc.W_FIRST)
+    check(a.stay()["match"]["a"] == rc.NOBODY, "a match made with the rotation off")
+    check(b.say(rc.A_RULE, rule=rc.RULE_FIXED)["rule"] == rc.RULE_OFF, "a member who is not the host set the rule")
+
+
+def test_group_meeting(server):
+    """A match is met as a two-player room is, by its ticket alone."""
+    a, b, c = open_group(server, rc.RULE_FIXED, ("Goro", "Hana", "Isao"))
+    match = a.stay()["match"]
+    b.stay()
+    ticket = match["ticket"]
+    check(match["code"] not in codes(a.client), "a match's meeting is listed before it opens")
+    guest = Client(server)
+    early = guest.ask(rc.hello(rc.F_GUEST | rc.F_TICKET, code=match["code"], player="Hana", setup=SETUP, secret=ticket))
+    check(early["detail"] == rc.S_WAITING, "a guest before the match's host: %r" % early["name"])
+    host = Client(server)
+    s = host.ask(rc.hello(rc.F_HOST | rc.F_TICKET, code=match["code"], player="Goro", setup=SETUP, secret=ticket))
+    check(s["detail"] == rc.S_WAITING and s["code"] == match["code"], "the match's host: %r" % s)
+    check(match["code"] not in codes(a.client), "a match's meeting is listed")
+    wrong = Client(server).ask(rc.hello(rc.F_GUEST | rc.F_TICKET, code=match["code"], setup=SETUP,
+                                        secret=bytes(16)))
+    check(wrong["detail"] == rc.E_NO_ROOM, "a wrong ticket: %r" % wrong["name"])
+    plain = Client(server).ask(guest_hello(match["code"]))
+    check(plain["detail"] == rc.E_NO_ROOM, "a guest without a ticket: %r" % plain["name"])
+    g = guest.ask(rc.hello(rc.F_GUEST | rc.F_TICKET, code=match["code"], player="Hana", setup=SETUP, secret=ticket))
+    check(g["detail"] == rc.S_PUNCH and g["peer"] == host.address(), "the match's guest: %r" % g["name"])
+    # the room of several's opener can open a two-player room still
+    check(a.client.ask(host_hello(name="Two"))["detail"] == rc.S_WAITING, "a room of the same address")
+    return a, b, c, match, host, guest
+
+
+def test_group_sides(server):
+    a, b, c, d, e = open_group(server, rc.RULE_FIXED, ("Jun", "Kei", "Mai", "Nao", "Oto"))
+    rotation = pair_now(a)
+    check(rotation == ("Jun", "Kei"), "the rotation's first: %r" % (rotation,))
+    s = d.say(rc.A_SIDE_OPEN)
+    check(len(s["sides"]) == 1 and d.names(s["sides"][0]["a"]) == ("Nao",) and s["sides"][0]["b"] == rc.NOBODY,
+          "a match beside: %r" % s["sides"])
+    check(s["sides"][0]["ticket"] != bytes(16), "the side's opener has no ticket")
+    check(c.stay()["sides"][0]["ticket"] == bytes(16), "a member not in the side has its ticket")
+    s = e.say(rc.A_SIDE_JOIN, arg=0)
+    side = s["sides"][0]
+    check(e.names(side["b"]) == ("Oto",) and side["ticket"] != bytes(16), "the side joined: %r" % side)
+    check(side["code"] != a.stay()["match"]["code"], "the side's code is the rotation's")
+    busy = {m["player"]: bool(m["flags"] & rc.M_BUSY) for m in a.roster["members"]}
+    check(busy == {"Jun": True, "Kei": True, "Mai": False, "Nao": True, "Oto": True}, "busy: %r" % busy)
+    # the rotation goes on without the two beside it
+    a.say(rc.A_RESULT, number=a.roster["match"]["number"], arg=rc.W_FIRST)
+    check(pair_now(a) == ("Kei", "Mai"), "the rotation took a member beside it: %r" % (pair_now(a),))
+    d.say(rc.A_SIDE_DONE, number=side["number"])
+    check(a.stay()["sides"] == [], "a side done is still there")
+    # leaving in the middle: the one who stays wins
+    match = a.stay()["match"]
+    b.say(rc.A_LEAVE)
+    r = a.stay()
+    check(len(r["members"]) == 4 and r["last"]["number"] == match["number"] and r["last"]["winner"] == rc.W_SECOND,
+          "a member left a match: %r" % r["last"])
+    # the host leaves: the next is the host
+    a.say(rc.A_LEAVE)
+    r = c.stay()
+    check(r["host"] == [m["id"] for m in r["members"] if m["player"] == "Mai"][0], "the host after the host left")
+
+
+def test_group_feed(server):
+    """A match's feed, from its host, to a spectator who comes in the middle."""
+    a, b, c, match, host, guest = test_group_meeting(server)
+    code, ticket = match["code"], match["ticket"]
+    feeder = Client(server)
+    settings = bytes(range(64))
+    start = os.urandom(2500)
+    feeder.send(rc.feed_settings(code, ticket, settings))
+    ack = feeder.recv(rc.K_FEED_ACK)
+    check(ack and rc.parse_feed_ack(ack)["settings"], "the settings not taken")
+    feeder.send(rc.feed_settings(code, bytes(16), settings))
+    check(feeder.recv(rc.K_FEED_ACK, 0.3) is None, "a feed of a wrong ticket was taken")
+    # a spectator before the start: nothing yet
+    c.stay()
+    c.client.send(rc.watch(c.code, c.token, code))
+    got = [rc.parse_scene(c.client.recv(rc.K_SCENE)) for _ in range(2)]
+    check(got[0]["part"] == rc.P_SETTINGS and got[0]["settings"] == settings and got[0]["first"] == "Goro",
+          "the settings to a spectator: %r" % got[0])
+    check(got[1]["part"] == rc.P_NONE and got[1]["why"] == 1, "nothing yet: %r" % got[1])
+    for index in range(3):
+        feeder.send(rc.feed_start(code, ticket, 600, start, index))
+        feeder.recv(rc.K_FEED_ACK)
+    frames = bytes(range(240)) * 4  # 240 frames, the most of a datagram
+    hashes = [(630, b"H" * 8), (660, b"I" * 8)]
+    feeder.send(rc.feed_inputs(code, ticket, 600, frames, hashes))
+    ack = rc.parse_feed_ack(feeder.recv(rc.K_FEED_ACK))
+    check(ack["start_frame"] == 600 and ack["chunks"] == {0, 1, 2} and ack["next"] == 840, "the feed's ack: %r" % ack)
+    # inputs that overlap are taken from where the server is
+    feeder.send(rc.feed_inputs(code, ticket, 800, bytes(4) * 100))
+    check(rc.parse_feed_ack(feeder.recv(rc.K_FEED_ACK))["next"] == 900, "overlapping inputs")
+    # the start, all of it, then the inputs
+    c.client.drain()
+    c.client.send(rc.watch(c.code, c.token, code, has_settings=True))
+    pieces = {}
+    while True:
+        reply = c.client.recv(rc.K_SCENE, 0.3)
+        if reply is None:
+            break
+        scene = rc.parse_scene(reply)
+        if scene["part"] == rc.P_START:
+            pieces[scene["index"]] = scene["data"]
+    check(b"".join(pieces[i] for i in range(3)) == start, "the start as it was sent: %r" % sorted(pieces))
+    c.client.send(rc.watch(c.code, c.token, code, 600, 600, True, {0, 1, 2}))
+    scenes = []
+    while True:
+        reply = c.client.recv(rc.K_SCENE, 0.3)
+        if reply is None:
+            break
+        scenes.append(rc.parse_scene(reply))
+    inputs = b"".join(s["inputs"] for s in scenes if s["part"] == rc.P_INPUTS)
+    check(inputs == frames + bytes(4) * 60, "the inputs from the start: %d bytes" % len(inputs))
+    check(scenes[0]["hashes"] == hashes, "the hashes among them: %r" % scenes[0]["hashes"])
+    # the end, and a spectator who is not a member
+    feeder.send(rc.feed_end(code, ticket, 900, rc.W_SECOND))
+    feeder.recv(rc.K_FEED_ACK)
+    c.client.send(rc.watch(c.code, c.token, code, 600, 900, True, {0, 1, 2}))
+    end = rc.parse_scene(c.client.recv(rc.K_SCENE))
+    check(end["part"] == rc.P_END and end["frame"] == 900 and end["winner"] == rc.W_SECOND, "the end: %r" % end)
+    stranger = Client(server)
+    stranger.send(rc.watch(c.code, bytes(16), code))
+    scene = rc.parse_scene(stranger.recv(rc.K_SCENE))
+    check(scene["part"] == rc.P_NONE and scene["why"] == 3, "a stranger watched: %r" % scene)
+    # the match over, its feed is kept a while for those still watching
+    a.say(rc.A_RESULT, number=match["number"], arg=rc.W_SECOND)
+    c.client.send(rc.watch(c.code, c.token, code, 600, 900, True, {0, 1, 2}))
+    check(rc.parse_scene(c.client.recv(rc.K_SCENE))["part"] == rc.P_END, "the feed of a match over")
+
+
+def test_group_refusals(server):
+    salt = os.urandom(16)
+    verifier = rc.verifier(salt, "kabuto")
+    a = Member(server, "Ran")
+    a.say(rc.A_OPEN, name="Locked many", salt=salt, secret=verifier)
+    listed = [x for x in list_all(a.client) if x["code"] == a.code][0]
+    check(listed["locked"] and listed["group"] and listed["salt"] == salt, "a locked room of several: %r" % listed)
+    b = Member(server, "Sora")
+    p = b.say(rc.A_ENTER, code=a.code)
+    check(p["status"] == rc.S_PASSWORD and p["salt"] == salt and p["challenge"] != bytes(16), "PASSWORD: %r" % p)
+    w = b.say(rc.A_ENTER, code=a.code, secret=rc.proof(rc.verifier(salt, "nope"), p["challenge"]))
+    check(w["status"] == rc.E_WRONG_PASSWORD, "a wrong password: %r" % w["name"])
+    ok = b.say(rc.A_ENTER, code=a.code, secret=rc.proof(verifier, w["challenge"]))
+    check(ok["status"] == 1, "the right password: %r" % ok["name"])
+    other = Member(server, "Taro")
+    other.client.send(rc.room_hello(rc.A_ENTER, code=a.code, player="Taro", setup="P5-0000-0000-0001"))
+    inc = rc.parse_roster(other.client.recv(rc.K_ROSTER))
+    check(inc["status"] == rc.E_INCOMPATIBLE and inc["setup"] == SETUP, "INCOMPATIBLE: %r" % inc)
+    check(other.say(rc.A_ENTER, code="ZZZZZZ")["status"] == rc.E_NO_ROOM, "no such room")
+    check(other.say(rc.A_STAY, code=a.code, token=os.urandom(16))["status"] == rc.E_NO_ROOM, "a stranger's token")
+    other.client.send(rc.room_hello(rc.A_OPEN, name="Old", player="Taro", setup=SETUP, version=1))
+    check(rc.parse_roster(other.client.recv(rc.K_ROSTER))["status"] == rc.E_VERSION, "a client of version 1")
+    other.client.send(rc.room_hello(rc.A_OPEN, name="x")[:100])
+    check(rc.parse_roster(other.client.recv(rc.K_ROSTER))["status"] == rc.E_BAD_REQUEST, "a short ROOM")
+    many = open_group(server, rc.RULE_OFF, ["P%d" % i for i in range(8)])
+    full = Member(server, "Ninth").say(rc.A_ENTER, code=many[0].code)
+    check(full["status"] == rc.E_ROOM_FULL, "a ninth member: %r" % full["name"])
+
+
+def test_group_timeout(server, member_timeout):
+    a, b, c = open_group(server, rc.RULE_FIXED, ("Uta", "Waka", "Yui"))
+    pair = pair_now(a)
+    end = time.monotonic() + member_timeout + 1.5
+    while time.monotonic() < end:
+        a.stay()
+        c.stay()
+        time.sleep(0.2)
+    r = a.stay()
+    check([m["player"] for m in r["members"]] == ["Uta", "Yui"], "a silent member is still in: %r" % r["members"])
+    check(pair == ("Uta", "Waka") and r["last"]["winner"] == rc.W_FIRST, "the silent one's match: %r" % r["last"])
+    check(pair_now(a) == ("Uta", "Yui") or pair_now(a) == ("Yui", "Uta"), "the next match: %r" % (pair_now(a),))
+
+
+def groups_server():
+    member_timeout = 3.0
+    server = Server("--verbose", "--rooms-per-ip", "1000", "--creations-per-min", "100000", "--hello-rate", "100000",
+                    "--query-rate", "100000", "--watch-rate", "100000", "--wrong-passwords-per-min", "1000",
+                    "--member-timeout", str(member_timeout), v6=False)
+    try:
+        test_group_rotation(server)
+        test_group_winner_stays(server)
+        test_group_sides(server)
+        test_group_feed(server)
+        test_group_refusals(server)
+        test_group_timeout(server, member_timeout)
+        server.stop()
     finally:
         server.kill()
 
@@ -640,7 +942,8 @@ def limits_relay():
 
 def main():
     start = time.monotonic()
-    tests = [main_server, limits_default, limits_creations, limits_server_full, limits_wrong_passwords, limits_relay]
+    tests = [main_server, groups_server, limits_default, limits_creations, limits_server_full, limits_wrong_passwords,
+             limits_relay]
     for test in tests:
         try:
             test()

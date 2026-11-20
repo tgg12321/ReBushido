@@ -848,11 +848,15 @@ you are playing, and when it ends you are back where you were.
   **Waiting for a player**, with the room's **code** in large letters
   for a player who would rather type it, and what your router said of
   its port.
+  *Room for* makes it a **room of several** (below), and *Rotation*
+  says who plays next in it.
 - **Browse rooms** lists the rooms: the room's name, its host, its
-  players, whether it is locked, how long it has been open, and, for a
-  room you cannot join, why (another version, build, disc image or
-  gameplay mods). Enter joins one, asking first for a locked room's
-  password. *Look again* asks the lobby again.
+  players (of eight in a room of several, marked `[several]`), whether
+  it is locked, its **ping** (about the round trip between you and the
+  host: yours to the lobby and the host's, added), how long it has been
+  open, and, for a room you cannot join, why (another version, build,
+  disc image or gameplay mods). Enter joins one, asking first for a
+  locked room's password. *Look again* asks the lobby again.
 - **Join by code**: the six letters and digits the host reads out.
 - **Join by address** (advanced): no lobby; type the host's address
   and port, or *Host here* at your port (below).
@@ -910,7 +914,7 @@ rebushido --join 203.0.113.7:7845             ... and the other player
 ```
 
 **Check you can meet first:** `rebushido --check-online` prints your
-**setup code**, as `P8-RN1C-NYZ2-3ER0` (the protocol, then the build,
+**setup code**, as `P10-RN1C-NYZ2-3ER0` (the protocol, then the build,
 the disc and the gameplay mods); the online pages show it in their
 corner, and the settings menu's Play online page on
 its last row. Send each other your codes by message: the same code
@@ -960,8 +964,13 @@ in your settings: the host is player 1 and the other player 2 in the
 game. A line at the top of the window says who you are, the **ping**
 (the round trip to the other PC), the longest **rollback** of the last
 seconds (frames the game went back and ran again) and the **delay**; or
-that it is waiting for the other player. Closing the window
-leaves; the other player is told and is back at their own top menu
+that it is waiting for the other player. **To leave in the middle of a
+fight**, press **F1** (or Escape, or a controller's guide button): the
+line says *Press F1 or Escape again to leave the fight*, and a second
+press within three seconds leaves it. The other player wins it, both of
+you are back at your own games, and the online pages (or the room's
+page, in a room of several) say so. Closing the window
+leaves too; the other player is told and is back at their own top menu
 (in a session started from the command line, they play on alone). If
 nothing is heard from the other PC for 15 seconds, or the two games
 part (a desync), the session ends the same way, and the pages say why.
@@ -973,10 +982,45 @@ says, and the two games keep the faces the wider of your two pictures
 shows: the two have to compute the same frame, whichever picture each
 of you looks at. F2 still changes your own picture.
 
+### Rooms of several
+
+A **room of several** holds up to eight members, players and spectators
+(NETPLAY.md, section 16). *Host a room* with *Room for: several* opens
+one; *Browse rooms* or *Join by code* enters one. Its page shows every
+member (who plays, who watches, who is in a match now, their wins and
+their round trip to the lobby), the match now and the last result.
+
+- **The rotation.** The lobby picks the matches from the members who
+  play, in the order they came: with **a fixed turn**, A+B, then B+C,
+  then C+A, and round again; with **the winner staying**, the winner of
+  each match plays the next member waiting, and the loser waits at the
+  end. The room's host sets it (*Rotation* on the room's page; *none*
+  for matches beside it alone). When it is your match the page says so
+  and the match begins by itself a moment later: no lobby, no Ready.
+  A match is one fight, or the host of the match's Stock or First to
+  match ("Match rules"); it ends where it is decided, and you are back
+  on the room's page.
+- **Watching.** Whoever is not in the match watches it live, from the
+  start of its fight, as its players play it, a moment behind them; a
+  member who comes in the middle of a fight sees it from that fight's
+  beginning, run quickly up to where the players are. *Watch the
+  matches* turns it off; F1 twice stops watching one. *Play in the
+  rotation: no* makes you a spectator only.
+- **A match beside the room's**: on the room's page, *A match beside*
+  opens one of your own, and another member who is not playing takes it
+  with *Join a match beside*. It is played as the rotation's are, while
+  the rotation goes on, and can be watched too.
+- *Leave the room* takes you back to the online pages; Escape on the
+  room's page goes to that row, so that nobody leaves by a slip.
+
+Each match is the host of the match's (its first player's) cards,
+unlocks and settings, as any session is.
+
 Online play has been tried on one PC between Windows programs and
 between Linux ones, through every way of the lobby, and through the
-owner's lobby server across the internet (NETPLAY.md, section 14); not
-yet between two players' PCs.
+owner's lobby server across the internet (NETPLAY.md, section 14); a
+room of several of six programs on one PC (section 16); not yet between
+two players' PCs.
 
 ## Replays
 

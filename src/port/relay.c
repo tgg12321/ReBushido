@@ -24,9 +24,12 @@
 #include "common.h"
 #include "port_host.h"
 #include "port_net.h"
+#include "port_room.h"
 #include "bb2.h"
 
-#define RELAY_VERSION 1
+/* 2: rooms of several (docs/NETPLAY.md, section 16); a server of 1 says
+ * VERSION to this program, and this one's to one of 1 */
+#define RELAY_VERSION 2
 #define SALT_BYTES 16
 #define KEY_BYTES 32
 #define CHALLENGE_BYTES 16
@@ -89,6 +92,7 @@ enum {
     HELLO_RESET = 0x04,
     HELLO_PUNCHED4 = 0x08,
     HELLO_PUNCHED6 = 0x10,
+    HELLO_TICKET = 0x20, /* a room's match: the secret is its ticket */
 };
 
 /* STATE's detail. */
@@ -142,6 +146,10 @@ enum {
     STATE_SETUP = STATE_PLAYER + PLAYER_BYTES,
 };
 
+/* ROOMS' locked byte: locked, and a room of several (section 16). */
+#define ROOM_LOCKED_BIT 0x01
+#define ROOM_GROUP_BIT 0x02
+
 /* A room of ROOMS. */
 enum {
     ROOM_CODE = 0,
@@ -172,6 +180,9 @@ static struct {
     s32 has_key;
     s32 has_mapped;
     PortNetAddress mapped;
+    u8 ticket[PORT_RELAY_TICKET_BYTES]; /* a room's match's */
+    s32 has_ticket;
+    u32 rtt; /* the round trip to the server, as the meeting found it */
 } g_relay;
 
 /* ---- SHA-256 (FIPS 180-4) and HMAC (RFC 2104) ---- */
@@ -353,7 +364,7 @@ static void port_ShaEnd(Sha256 *sha, u8 *out) {
 }
 
 /* HMAC-SHA256 of `message` with a key of KEY_BYTES. */
-static void port_Hmac(const u8 *key, const u8 *message, u32 count, u8 *out) {
+void port_RelayHmac(const u8 *key, const u8 *message, u32 count, u8 *out) {
     u8 pad[SHA_BLOCK];
     u8 inner[KEY_BYTES];
     Sha256 sha;
@@ -476,6 +487,15 @@ s32 port_ParseRoomKey(const char *text, u8 *salt, u8 *key) {
            text[2 * SALT_BYTES] == ':' &&
            port_ParseHex(text, salt, SALT_BYTES) &&
            port_ParseHex(text + 2 * SALT_BYTES + 1, key, KEY_BYTES);
+}
+
+void port_SetRelayTicket(const u8 *ticket) {
+    u32 i;
+
+    for (i = 0; i < PORT_RELAY_TICKET_BYTES; i++) {
+        g_relay.ticket[i] = ticket[i];
+    }
+    g_relay.has_ticket = 1;
 }
 
 void port_SetRelayMapped(const PortNetAddress *mapped) {
@@ -669,6 +689,9 @@ static void port_SendHello(s32 role, s32 reset) {
     if (g_meet.punched6) {
         detail |= HELLO_PUNCHED6;
     }
+    if (g_relay.has_ticket) {
+        detail |= HELLO_TICKET;
+    }
     for (i = 0; i < HELLO_BYTES; i++) {
         out[i] = 0;
     }
@@ -678,7 +701,12 @@ static void port_SendHello(s32 role, s32 reset) {
     port_PutText(out + HELLO_PLAYER, PLAYER_BYTES, g_relay.player);
     port_SessionSetupCode(setup);
     port_PutText(out + HELLO_SETUP, SETUP_BYTES, setup);
-    if (role == PORT_SESSION_HOST && g_relay.has_key) {
+    if (g_relay.has_ticket) {
+        /* a room's match is let in by its ticket, either side */
+        for (i = 0; i < PORT_RELAY_TICKET_BYTES; i++) {
+            out[HELLO_SECRET + i] = g_relay.ticket[i];
+        }
+    } else if (role == PORT_SESSION_HOST && g_relay.has_key) {
         for (i = 0; i < SALT_BYTES; i++) {
             out[HELLO_SALT + i] = g_relay.salt[i];
         }
@@ -687,10 +715,13 @@ static void port_SendHello(s32 role, s32 reset) {
         }
     } else if (
         role != PORT_SESSION_HOST && g_relay.has_key && g_meet.has_challenge) {
-        port_Hmac(
+        port_RelayHmac(
             g_relay.key, g_meet.challenge, CHALLENGE_BYTES, out + HELLO_SECRET);
     }
     out[HELLO_COUNT] = (u8)count;
+    /* this program's round trip to the server: the list's ping */
+    out[HELLO_COUNT + 2] = (u8)g_relay.rtt;
+    out[HELLO_COUNT + 3] = (u8)(g_relay.rtt >> BITS_PER_BYTE);
     for (i = 0; i < count; i++) {
         port_PutAddress(out + HELLO_CANDIDATES + i * ADDRESS_FIELD, own[i].type,
                         &own[i].at);
@@ -846,7 +877,8 @@ s32 port_RelayMeet(s32 role, s32 again) {
     port_FormatNetAddress(&g_relay.server, server, sizeof(server));
     port_RelayText(
         status, sizeof(status), "Reaching the lobby server at %s", server);
-    if (role == PORT_SESSION_HOST && !again) {
+    if (role == PORT_SESSION_HOST && !again && !g_relay.has_ticket) {
+        /* (a room's match is met under the code its room gave it) */
         g_relay.code[0] = 0;
     }
     if (role == PORT_SESSION_HOST && !g_relay.has_key &&
@@ -867,6 +899,7 @@ s32 port_RelayMeet(s32 role, s32 again) {
         PortNetAddress from;
         s32 got;
 
+        port_RoomTick();
         if (port_SessionIsCanceled()) {
             port_Log("relay: the meeting was given up\n");
             return 0;
@@ -887,6 +920,12 @@ s32 port_RelayMeet(s32 role, s32 again) {
 
             if (kind == KIND_STATE && got == STATE_BYTES &&
                 port_IsServer(&from)) {
+                if (now - hello_at < HELLO_EVERY_MS &&
+                    (g_relay.rtt == 0 || now - hello_at < g_relay.rtt)) {
+                    /* the answer to the last hello: the round trip, at
+                     * least as short as found */
+                    g_relay.rtt = now - hello_at;
+                }
                 heard_at = now;
                 port_GetText(g_meet.peer_setup, in + STATE_SETUP, SETUP_BYTES);
                 if (detail >= STATE_NO_ROOM) {
@@ -1062,6 +1101,13 @@ static s32 port_AskSocket(u16 port) {
     return port_HostUdpOpen(&at);
 }
 
+/* A socket of its own for the server at `server` (port_net.h): a room's
+ * (room.c). */
+s32 port_RelayOpenSocket(const PortNetAddress *server) {
+    g_relay.server = *server;
+    return port_AskSocket(0);
+}
+
 /* The lobby's list (port_net.h), page by page. */
 s32 port_RelayListRooms(
     const PortNetAddress *server, PortRoom *rooms, s32 most, s32 *total) {
@@ -1073,6 +1119,7 @@ s32 port_RelayListRooms(
     s32 answered = 0;
     u32 start = port_NetClock();
     u32 sent_at = 0;
+    u32 own_rtt = 0;
     s32 i;
 
     g_relay.server = *server;
@@ -1104,6 +1151,10 @@ s32 port_RelayListRooms(
             if (got != PORT_NET_HEADER_BYTES + listed * ROOM_BYTES) {
                 continue;
             }
+            if (!answered) {
+                /* this PC's round trip to the server */
+                own_rtt = port_NetClock() - sent_at;
+            }
             answered = 1;
             *total = (s32)port_NetGetWord(in + 4);
             for (i = 0; i < listed && count < most; i++) {
@@ -1116,7 +1167,14 @@ s32 port_RelayListRooms(
                 port_GetText(room->player, at + ROOM_PLAYER, PLAYER_BYTES);
                 port_GetText(room->setup, at + ROOM_SETUP, SETUP_BYTES);
                 room->players = at[ROOM_PLAYERS];
-                room->locked = at[ROOM_LOCKED];
+                room->locked = at[ROOM_LOCKED] & ROOM_LOCKED_BIT;
+                room->group = (at[ROOM_LOCKED] & ROOM_GROUP_BIT) != 0;
+                /* the way through the server: this PC's round trip to
+                 * it and the host's, about what a direct way costs at
+                 * most */
+                room->ping =
+                    own_rtt + (u32)(at[ROOM_LOCKED + 1] |
+                                    (at[ROOM_LOCKED + 2] << BITS_PER_BYTE));
                 for (k = 0; k < SALT_BYTES; k++) {
                     room->salt[k] = at[ROOM_SALT + k];
                 }

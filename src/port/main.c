@@ -33,6 +33,7 @@
 #include "port_net.h"
 #include "port_online.h"
 #include "port_replay.h"
+#include "port_room.h"
 #include "port_spu.h"
 #include "bb2.h"
 
@@ -50,6 +51,7 @@
  * at most. */
 #define NET_DELAY 2
 #define NET_DELAY_MAX 8
+#define DECIMAL 10
 
 static PortDisc g_port_disc;
 static s32 g_port_quitting;
@@ -189,6 +191,19 @@ static const char g_port_usage[] =
     "  --sessions K   ... K of them, one after another, N frames apart;\n"
     "                 the program ends after the last\n"
     "  --net-seed N   for tests: the host's seed, not one of its clock's\n"
+    "  --room-open NAME   with --lobby: open a room of several there\n"
+    "                 (docs/NETPLAY.md, section 16) and play and watch its\n"
+    "                 matches as they come; --room-enter CODE enters one\n"
+    "  --room-rule fixed|winner|off   ... the rotation (the opener's)\n"
+    "  --room-watcher ... a spectator, not in the rotation; --room-no-watch\n"
+    "                 watches none of the matches it is not in\n"
+    "  --room-matches N   ... leave the room and end once it has had N\n"
+    "                 results\n"
+    "  --room-side open|join   ... open a match beside the room's, or join\n"
+    "                 one, and end after it\n"
+    "  --leave-at N:F for tests: leave match N of the room at its frame F\n"
+    "  --net-plan-pads   for tests: in a session, the plan's pad of this\n"
+    "                 program's place alone (a plan presses both)\n"
     "  --session-differ build|disc|mods|protocol   for tests: say another\n"
     "  --net-latency MS   for tests: every datagram waits this long first\n"
     "  --net-loss PERCENT ... and so many in a hundred are dropped\n"
@@ -430,9 +445,14 @@ s32 port_Main(s32 argc, char **argv) {
     const char *key_text = "";
     const char *punch_text = "";
     const char *lobby_text = "";
+    /* a room of several (--room-open, --room-enter) */
+    static PortOnlineRoom room_auto;
     s32 i;
 
     port_CatchCrashes();
+    room_auto.rule = PORT_ROOM_RULE_FIXED;
+    room_auto.plays = TRUE;
+    room_auto.watch = TRUE;
     /* everything the game can point at is below 4 GB (docs/PORT.md, "64
      * bits"): the program is linked there, and says so if it was not */
     if (((u64)(PortAddress)g_port_data_end >> ADDRESS_BITS) != 0 ||
@@ -659,6 +679,63 @@ s32 port_Main(s32 argc, char **argv) {
             has_lobby = 1;
         } else if (port_TextsEqual(word, "--room")) {
             room = argv[++i];
+        } else if (port_TextsEqual(word, "--room-open") ||
+                   port_TextsEqual(word, "--room-enter")) {
+            room_auto.on = TRUE;
+            port_KeepWord(port_TextsEqual(word, "--room-open") ? room_auto.name
+                                                               : room_auto.code,
+                          PORT_ONLINE_TEXT_BYTES, argv[++i]);
+        } else if (port_TextsEqual(word, "--room-rule")) {
+            i++;
+            room_auto.rule =
+                port_TextsEqual(argv[i], "winner") ? PORT_ROOM_RULE_WINNER
+                : port_TextsEqual(argv[i], "off")  ? PORT_ROOM_RULE_OFF
+                                                   : PORT_ROOM_RULE_FIXED;
+            if (!port_TextsEqual(argv[i], "winner") &&
+                !port_TextsEqual(argv[i], "off") &&
+                !port_TextsEqual(argv[i], "fixed")) {
+                port_UsageError(
+                    "--room-rule takes fixed, winner or off, not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--room-watcher")) {
+            room_auto.plays = FALSE;
+        } else if (port_TextsEqual(word, "--room-no-watch")) {
+            room_auto.watch = FALSE;
+        } else if (port_TextsEqual(word, "--room-matches")) {
+            s32 count = 0;
+
+            if (!port_ParseNumber(argv[++i], &count) || count < 0) {
+                port_UsageError("--room-matches takes a number, not ", argv[i]);
+            }
+            room_auto.matches = (u32)count;
+        } else if (port_TextsEqual(word, "--room-side")) {
+            i++;
+            room_auto.side = port_TextsEqual(argv[i], "open")   ? 1
+                             : port_TextsEqual(argv[i], "join") ? 2
+                                                                : 0;
+            if (room_auto.side == 0) {
+                port_UsageError(
+                    "--room-side takes open or join, not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--leave-at")) {
+            s32 match = 0;
+            s32 frame = 0;
+            const char *at = argv[++i];
+            u32 k;
+
+            for (k = 0; at[k] != 0 && at[k] != ':'; k++) {
+            }
+            if (at[k] != ':' || !port_ParseNumber(at + k + 1, &frame) ||
+                frame <= 0) {
+                port_UsageError("--leave-at takes MATCH:FRAME, not ", at);
+            }
+            for (k = 0; at[k] >= '0' && at[k] <= '9'; k++) {
+                match = match * DECIMAL + (at[k] - '0');
+            }
+            room_auto.leave_match = (u32)match;
+            room_auto.leave_frame = (u32)frame;
+        } else if (port_TextsEqual(word, "--net-plan-pads")) {
+            port_SetNetplayOwnPadOnly(TRUE);
         } else if (port_TextsEqual(word, "--player")) {
             player = argv[++i];
         } else if (port_TextsEqual(word, "--room-password")) {
@@ -792,6 +869,28 @@ s32 port_Main(s32 argc, char **argv) {
     }
     if (shots != NULL) {
         port_SetShots(shots, (u32)every);
+    }
+    if (room_auto.on) {
+        /* a room of several: its matches are sessions begun in this
+         * program (online.c), each from the state of the game's start */
+        if (!has_lobby || session_role != PORT_SESSION_NONE || room != NULL ||
+            session_after > 0) {
+            port_UsageError("--room-open and --room-enter need a --lobby, "
+                            "and no --host, --join, --room or --session-at",
+                            "");
+        }
+        port_KeepWord(room_auto.lobby, sizeof(room_auto.lobby), lobby_text);
+        port_KeepWord(room_auto.player, sizeof(room_auto.player), player);
+        port_KeepWord(room_auto.password, sizeof(room_auto.password),
+                      password != NULL ? password : "");
+        port_KeepWord(room_auto.bind, sizeof(room_auto.bind), bind_text);
+        room_auto.delay = (u32)net_delay;
+        room_auto.paths = paths;
+        port_SetNetTrouble((u32)net_latency, (u32)net_loss);
+        port_OnlineWanted();
+        port_OnlineRoomAuto(&room_auto);
+        has_lobby = 0;
+        net_addresses = 0;
     }
     if (room != NULL) {
         if (!has_lobby || session_role == PORT_SESSION_JOIN) {

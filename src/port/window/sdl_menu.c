@@ -24,6 +24,7 @@
 
 #include "menu.h"
 #include "port_net.h"
+#include "port_online.h"
 #include "port_remaster.h"
 #include "port_top_menu.h"
 #include "shared.h"
@@ -64,7 +65,12 @@ void port_AskForMenu(const char *why) {
      * a setting changed would be this one's alone (docs/NETPLAY.md,
      * section 12) */
     if (port_IsNetplayOn()) {
-        port_Note("settings menu: asked for by %s; not during netplay", why);
+        /* online, the menu's key asks to leave the session (or the
+         * watching): once shown on the line, twice left (port_online.h) */
+        port_Note("settings menu: asked for by %s; not during netplay: a "
+                  "leave asked",
+                  why);
+        port_OnlineLeave();
         return;
     }
     port_ReadGameState(&now);

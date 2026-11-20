@@ -119,9 +119,29 @@ enum {
     PORT_NETPLAY_END_SILENT = 2,    /* nothing heard of it for 15 seconds */
     PORT_NETPLAY_END_DESYNC = 3,    /* the two states parted */
     PORT_NETPLAY_END_LEFT = 4,      /* both went back to the top menu */
+    PORT_NETPLAY_END_MATCH = 5,     /* a room's match is decided */
+    PORT_NETPLAY_END_QUIT = 6,      /* this player left the fight */
 };
 
 extern void port_SetNetplayInProcess(s32 on);
+/* The player leaves the session where it is, a fight's middle too (the
+ * window's keys, port_OnlineLeave): it ends at the next frame, the other
+ * told. For tests (--leave-at): at the session's frame `frame`. */
+extern void port_NetplayLeave(void);
+extern void port_NetplayAskLeave(void);
+extern void port_SetNetplayLeaveAt(u32 frame);
+/* For tests (--net-plan-pads): the local pad is only the PC's pad of this
+ * program's place in the session (a plan presses both pads, each program
+ * its own); a player plays with either. */
+extern void port_SetNetplayOwnPadOnly(s32 on);
+/* The frame whose input the game takes next: netplay's turn (replay.c). */
+extern u32 port_NetplayFrameNow(void);
+/* A spectator of a room's match (docs/NETPLAY.md, section 16): the state
+ * put in is the session's at `frame` (port_ReplayLoadServed); the match's
+ * inputs, as they come (watch.c), are run from there, no rollback of its
+ * own, every hash held to its players', until the match ends: why
+ * (PORT_NETPLAY_END_...). */
+extern s32 port_RunWatch(u32 frame);
 /* A session over: everything of it forgotten but the states' buffers. */
 extern void port_ResetNetplay(void);
 /* The run ends: the other is told, and the report (port_Quit). */
@@ -149,6 +169,9 @@ typedef struct {
     u32 alone_ms;   /* how long ago the other went, if it has */
     u32 held_ms;    /* how long this program has held back, in all */
     s32 is_session; /* set up by --host or --join */
+    s32 watching;   /* a spectator of a room's match */
+    u32 behind;     /* a spectator: the frames it has and has not run */
+    u32 leave_ms;   /* a leave asked: how long ago (0: none) */
 } PortNetplayStats;
 
 extern void port_GetNetplayStats(PortNetplayStats *stats);
@@ -178,8 +201,9 @@ extern void (*g_port_net_rerun_hook)(s32 begins, u32 blanks);
 
 enum {
     PORT_SESSION_NONE = 0,
-    PORT_SESSION_HOST = 1, /* waits for a guest at --host ADDRESS:PORT */
-    PORT_SESSION_JOIN = 2, /* goes to the host at --join ADDRESS:PORT */
+    PORT_SESSION_HOST = 1,  /* waits for a guest at --host ADDRESS:PORT */
+    PORT_SESSION_JOIN = 2,  /* goes to the host at --join ADDRESS:PORT */
+    PORT_SESSION_WATCH = 3, /* a spectator of a room's match */
 };
 
 struct PortDisc;
@@ -216,10 +240,27 @@ extern void port_SetSessionSeed(u32 seed);
  * both players go back to the top menu, rather than going on to versus
  * again. */
 #define PORT_SESSION_RULE_TOP_MENU_LEAVES 1U
+/* A room of several's match (protocol 10): the session ends where the
+ * match is decided, the game's menu after its last fight, who won kept
+ * in the state (port_SessionResult). */
+#define PORT_SESSION_RULE_ONE_MATCH 2U
 extern void port_SetSessionRules(u32 rules);
 /* Where the game went back to its top menu in a session whose rule says
- * that ends it: the frame and one, or 0 (the state's, top_menu.c). */
+ * that ends it, or its match was decided: the frame and one, or 0 (the
+ * state's, top_menu.c). */
 extern u32 port_SessionLeftAt(void);
+/* Who won a room's match: 1 or 2 (the first or second pad),
+ * PORT_SESSION_RESULT_DRAW, or 0 while it goes on. */
+#define PORT_SESSION_RESULT_DRAW 3
+extern s32 port_SessionResult(void);
+/* --net-seed's seed, if one was given: 1 and it, or 0. */
+extern s32 port_GetSessionSeedAsked(u32 *seed);
+/* What a room's spectator holds as the players do (the host's switches,
+ * rule, the margin): the match's host's, into 64 bytes; and a spectator's
+ * taking of them, 0 if they are of another protocol. */
+#define PORT_SESSION_SETTINGS_BYTES 64
+extern void port_SessionSettings(u8 *out);
+extern s32 port_WatchSession(const u8 *in);
 
 /* The session's lobby, before the game (the pre-fight lobby of the
  * online pages): whether this player is ready, from the hook; NULL is
@@ -240,6 +281,7 @@ enum {
     PORT_SESSION_PHASE_JOINING = 3,      /* the guest, for the host */
     PORT_SESSION_PHASE_CARDS = 4,        /* the cards on their way */
     PORT_SESSION_PHASE_READY = 5,        /* both here: the pre-fight lobby */
+    PORT_SESSION_PHASE_WATCHING = 6,     /* a spectator, for the start */
 };
 
 #define PORT_SESSION_NAME_BYTES 24
@@ -326,6 +368,7 @@ extern void port_SessionFail(const char *why);
 #define PORT_RELAY_PASSWORD_BYTES 33
 #define PORT_RELAY_SALT_BYTES 16
 #define PORT_RELAY_KEY_BYTES 32
+#define PORT_RELAY_TICKET_BYTES 16
 
 /* The ways between two players a meeting may try (--net-paths): each
  * candidate's kind, and the server's relay. */
@@ -352,6 +395,17 @@ extern void port_SetRelayRoom(const char *name, const char *player);
 extern void port_SetRelayPassword(const char *password);
 extern void port_SetRelayKey(const u8 *salt, const u8 *key);
 extern void port_RelayRoomKey(const u8 *salt, const char *password, u8 *key);
+/* HMAC-SHA256 of `message` with a key of PORT_RELAY_KEY_BYTES: a guest's
+ * proof of a room's password. */
+extern void port_RelayHmac(
+    const u8 *key, const u8 *message, u32 count, u8 *out);
+/* A room of several's match (docs/NETPLAY.md, section 16): met under its
+ * code (port_SetRelay's), let in by the ticket the room gave its two
+ * players, with no password. */
+extern void port_SetRelayTicket(const u8 *ticket);
+/* A socket of its own for the server at `server`, out of a session: on
+ * this PC alone where the server is. The host's, or -1. */
+extern s32 port_RelayOpenSocket(const PortNetAddress *server);
 /* --room-key's `SALT:KEY`, in hex: 1, or 0 if it is not one. */
 extern s32 port_ParseRoomKey(const char *text, u8 *salt, u8 *key);
 /* The port the window's router mapped, the host's first way. */
@@ -377,8 +431,10 @@ typedef struct {
     char name[PORT_RELAY_NAME_BYTES];
     char player[PORT_RELAY_PLAYER_BYTES];
     char setup[PORT_SETUP_CODE_BYTES];
-    s32 players;
+    s32 players; /* of a room of several, its members */
     s32 locked;
+    s32 group; /* a room of several (section 16) */
+    u32 ping;  /* ms: this PC's round trip to the server and its host's */
     u8 salt[PORT_RELAY_SALT_BYTES];
     u32 age; /* seconds */
 } PortRoom;

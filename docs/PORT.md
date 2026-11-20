@@ -9093,6 +9093,61 @@ headlessly with every hash the same. The window's program recorded
 port_game's fight with `--replays` and played it back with
 `--replay-check`, every hash the same.
 
+**A replay's start for a room's spectators** (ROADMAP 22; NETPLAY.md,
+section 16). The host of a room of several's match serves its
+spectators the start of the match's latest fight (`port_ReplayServe`):
+the fight is recorded whether fights are written to files or not, and
+its start is compressed as soon as no rollback can take it back
+(`port_ReplayIsFinal` of its first input), a slice at each boundary as a
+file's writing is, into the replay's own chunks with a `SERV` chunk of
+its input's number, netplay's frame and the start's hash. The file
+written after the fight takes the same work (`WORK_DONE`: deflate is not
+run twice). A spectator puts it in as a playback puts its file's start
+in (`port_ReplayLoadServed`: this run's own kept, the hash held to the
+host's) and runs the match on from there (netplay.c, `port_RunWatch`).
+
+## Rooms of several
+
+ROADMAP 22; how they work on the network, NETPLAY.md, section 16; how a
+player uses them, PLAYING.md, "Rooms of several". The code:
+`src/port/room.c` (the room's client: its own socket, the roster, what a
+member asks), `src/port/watch.c` (a match's feed and a spectator's side),
+`include/port_room.h`, all outside the state; the room's matches as
+sessions in `online.c` (`port_OnlineRoomRun`, `port_OnlineWatchRun`),
+the spectator's frames in `netplay.c` (`port_RunWatch`), the match's end
+in `session.c` (`PORT_SESSION_RULE_ONE_MATCH`) and the room's page in
+`src/port/window/online_pages.c`.
+
+- **A room's match is a session** begun in the program (section 15 of
+  NETPLAY.md), met through the lobby under the match's code and let in
+  by its ticket, with no lobby before the fight. Its host's rule
+  `PORT_SESSION_RULE_ONE_MATCH` ends it where the match is decided: the
+  game's menu after the fight (`SCREEN_AFTER_FIGHT_UPDATE`), of a single
+  fight or of a Stock or First to match's last (`g_port_match.over`).
+  The session's presses note the frame and who won in the state
+  (`g_port_top_menu.session_left`, `.session_result`), so that a rollback
+  takes them back and both machines end at the same frame
+  (`PORT_NETPLAY_END_MATCH`); each player tells the room the result.
+- **Leaving a fight**: the window's F1, Escape in a fight (where it is
+  Start, nobody's online) or the guide button ask to leave
+  (`port_OnlineLeave`, `port_NetplayAskLeave`); the line says so, and a
+  second ask within three seconds leaves (`PORT_NETPLAY_END_QUIT`): the
+  other is told, its session ends as one whose other player left, and
+  both are back at their own games and pages. `--leave-at N:F` does it
+  for a test.
+- **A spectator** runs the match's frames with its players' inputs, no
+  guess and no rollback: every frame as it comes, `WATCH_LAG` frames
+  behind the newest it has, and quietly (`g_port_rerun`) while it is more
+  than `WATCH_CATCH_UP` behind, as a member who came in the middle of a
+  fight is. Its own game is kept and put back after, as a session's
+  player's is; it holds the match's settings as its players do
+  (`port_WatchSession`: the host's switches, rule and margin).
+- **The command line** (`--room-open NAME`, `--room-enter CODE`,
+  `--room-rule`, `--room-watcher`, `--room-no-watch`, `--room-matches N`,
+  `--room-side open|join`, `--net-plan-pads`) makes a program a room's
+  member with no pages, for the tests; its own game idles between
+  matches.
+
 ## 64 bits
 
 The port is built with 64-bit pointers and with 32-bit ones, from the

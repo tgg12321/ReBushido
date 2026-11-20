@@ -43,6 +43,7 @@
 #include "port_disc.h"
 #include "port_host.h"
 #include "port_net.h"
+#include "port_room.h"
 #include "bb2.h"
 
 /* The protocol's own number: two programs that differ in it do not meet.
@@ -51,8 +52,11 @@
  * silence, the disc's sum is of its data alone, and the two may meet by
  * way of the lobby (relay.c). 8: the players' names, the lobby before the
  * game (each ready or gone), and the host's rules. 9: the welcome carries
- * the host's match rule (port_match.h). */
-#define SESSION_PROTOCOL 9
+ * the host's match rule (port_match.h). 10: a room of several's match
+ * (the lobby's version 2; NETPLAY.md, section 16): the rule that the
+ * match's end is the session's, with who won in the state, and a player
+ * who leaves in the middle of a fight. */
+#define SESSION_PROTOCOL 10
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -100,8 +104,7 @@
 #define CODE_DIGITS 4
 #define CODE_DIGIT_BITS 5
 #define CODE_DIGIT_MASK 0x1F
-/* `P5` before the parts, and a part with the dash before it */
-#define CODE_HEAD 2
+/* a part with the dash before it */
 #define CODE_PART (CODE_DIGITS + 1)
 /* The disc's primary volume descriptor, in its sector's data: its mark
  * and the size of the volume in sectors. */
@@ -378,9 +381,11 @@ static u32 port_SessionProtocol(void) {
 
 /* The sums as this program says them to the other (--session-differ
  * changes one, for a test), and the setup code of them,
- * `P7-BBBB-DDDD-MMMM` (port_net.h). */
+ * `P10-BBBB-DDDD-MMMM` (port_net.h). */
 static void port_SessionSums(void) {
     char *code = g_session.setup;
+    u32 protocol;
+    u32 head;
 
     if (g_session.summed) {
         return;
@@ -398,16 +403,21 @@ static void port_SessionSums(void) {
     } else if (g_session.differ == PORT_SESSION_DIFFER_MODS) {
         g_session.mods ^= 1;
     }
-    /* `P5`, then each part after a dash */
+    /* `P10`, then each part after a dash */
     code[0] = 'P';
-    code[1] = (char)('0' + port_SessionProtocol() % DECIMAL);
-    code[CODE_HEAD] = '-';
-    port_PutCodeDigits(code + CODE_HEAD + 1, g_session.build);
-    code[CODE_HEAD + CODE_PART] = '-';
-    port_PutCodeDigits(code + CODE_HEAD + CODE_PART + 1, g_session.disc);
-    code[CODE_HEAD + 2 * CODE_PART] = '-';
-    port_PutCodeDigits(code + CODE_HEAD + 2 * CODE_PART + 1, g_session.mods);
-    code[CODE_HEAD + 3 * CODE_PART] = 0;
+    protocol = port_SessionProtocol();
+    head = 1;
+    if (protocol >= DECIMAL) {
+        code[head++] = (char)('0' + protocol / DECIMAL % DECIMAL);
+    }
+    code[head++] = (char)('0' + protocol % DECIMAL);
+    code[head] = '-';
+    port_PutCodeDigits(code + head + 1, g_session.build);
+    code[head + CODE_PART] = '-';
+    port_PutCodeDigits(code + head + CODE_PART + 1, g_session.disc);
+    code[head + 2 * CODE_PART] = '-';
+    port_PutCodeDigits(code + head + 2 * CODE_PART + 1, g_session.mods);
+    code[head + 3 * CODE_PART] = 0;
 }
 
 u64 port_SessionDiscSum(void) {
@@ -777,6 +787,8 @@ static s32 port_HostSession(void) {
         s32 bytes = port_NetReceive(in, sizeof(in), POLL_MS);
         s32 ready = PORT_SESSION_NOT_YET;
 
+        /* a room's member says it is still there while it meets */
+        port_RoomTick();
         if (g_session.canceled) {
             if (met) {
                 port_SendLeave();
@@ -982,6 +994,7 @@ static s32 port_JoinSession(void) {
         s32 bytes = port_NetReceive(in, sizeof(in), POLL_MS);
         s32 ready = PORT_SESSION_NOT_YET;
 
+        port_RoomTick();
         if (g_session.canceled) {
             if (welcomed) {
                 port_SendLeave();
@@ -1317,6 +1330,110 @@ void port_SessionSeed(void) {
 
 u32 port_SessionLeftAt(void) { return g_port_top_menu.session_left; }
 
+s32 port_SessionResult(void) { return g_port_top_menu.session_result; }
+
+s32 port_GetSessionSeedAsked(u32 *seed) {
+    *seed = g_session.seed_asked;
+    return g_session.seed_set;
+}
+
+/* ---- a room's spectators (docs/NETPLAY.md, section 16) ---- */
+
+/* The settings' words, as the feed carries them. */
+enum {
+    SETTING_PROTOCOL,
+    SETTING_KIND,
+    SETTING_PLAY,
+    SETTING_MUSIC,
+    SETTING_TIME,
+    SETTING_MATCH,
+    SETTING_RULES,
+    SETTING_WIDER,
+    SETTING_DELAY,
+    SETTING_SEED,
+    SETTING_WORDS
+};
+
+/* What a spectator must hold as the session's players hold it, into
+ * `out` (PORT_SESSION_SETTINGS_BYTES): the host's switches, rule and the
+ * margin both cut faces off at. */
+void port_SessionSettings(u8 *out) {
+    u32 words[SETTING_WORDS];
+    u32 i;
+
+    words[SETTING_PROTOCOL] = port_SessionProtocol();
+    words[SETTING_KIND] = g_session.kind;
+    words[SETTING_PLAY] = g_session.play;
+    words[SETTING_MUSIC] = g_session.music;
+    words[SETTING_TIME] = g_session.time;
+    words[SETTING_MATCH] = g_session.match;
+    words[SETTING_RULES] = g_session.rules;
+    words[SETTING_WIDER] = g_session.wider;
+    words[SETTING_DELAY] = g_session.delay;
+    words[SETTING_SEED] = g_session.seed;
+    for (i = 0; i < PORT_SESSION_SETTINGS_BYTES; i++) {
+        out[i] = 0;
+    }
+    for (i = 0; i < SETTING_WORDS; i++) {
+        port_NetPutWord(out + i * WORD_BYTES, words[i]);
+    }
+}
+
+/* A spectator takes the session's settings and holds them as a player
+ * does (port_ApplySession), but the cards and netplay's pads: the cards
+ * are in the start it puts in. 0 where the settings are of another
+ * protocol. */
+s32 port_WatchSession(const u8 *in) {
+    if (port_NetGetWord(in + SETTING_PROTOCOL * WORD_BYTES) !=
+        port_SessionProtocol()) {
+        return 0;
+    }
+    g_session.role = PORT_SESSION_WATCH;
+    g_session.kind = port_NetGetWord(in + SETTING_KIND * WORD_BYTES);
+    g_session.play = port_NetGetWord(in + SETTING_PLAY * WORD_BYTES);
+    g_session.music = port_NetGetWord(in + SETTING_MUSIC * WORD_BYTES);
+    g_session.time = port_NetGetWord(in + SETTING_TIME * WORD_BYTES);
+    g_session.match = port_NetGetWord(in + SETTING_MATCH * WORD_BYTES);
+    g_session.rules = port_NetGetWord(in + SETTING_RULES * WORD_BYTES);
+    g_session.wider = port_NetGetWord(in + SETTING_WIDER * WORD_BYTES);
+    g_session.delay = port_NetGetWord(in + SETTING_DELAY * WORD_BYTES);
+    g_session.seed = port_NetGetWord(in + SETTING_SEED * WORD_BYTES);
+    port_HoldStageKindDefault((s32)g_session.kind);
+    port_HoldPlaySwitches(g_session.play);
+    port_HoldFightMusic(g_session.music);
+    port_HoldStageTimeDefault((s32)g_session.time);
+    port_HoldMatch(g_session.match);
+    port_RemasterFixMargin((s32)(g_session.wider >> SHAPE_SHIFT),
+                           (s32)(g_session.wider & SHAPE_MASK));
+    port_Log("session: watching: the players' rules %u, match rule %s, %d; "
+             "their margin %ux%u\n",
+             g_session.rules,
+             port_GetMatchRule() == PORT_MATCH_STOCK      ? "stock"
+             : port_GetMatchRule() == PORT_MATCH_FIRST_TO ? "first_to"
+                                                          : "single",
+             port_GetMatchCount(), g_session.wider >> SHAPE_SHIFT,
+             g_session.wider & SHAPE_MASK);
+    return 1;
+}
+
+/* Whether the match of a room's session is decided at this frame: the
+ * game's menu after a fight, of a single fight or of the match's last; its
+ * winner, 0 or 1, or -1 for nobody. */
+static s32 port_MatchIsDecided(s32 *winner) {
+    if (g_sys_screen != SCREEN_AFTER_FIGHT_UPDATE) {
+        return FALSE;
+    }
+    if (g_port_match.rule != PORT_MATCH_SINGLE) {
+        if (!g_port_match.over) {
+            return FALSE;
+        }
+        *winner = g_port_match.winner;
+        return TRUE;
+    }
+    *winner = g_fight_winner == 0 || g_fight_winner == 1 ? g_fight_winner : -1;
+    return TRUE;
+}
+
 /* ---- the presses that are nobody's ---- */
 
 /* Whether the session presses for both at this frame: everything from
@@ -1374,6 +1491,24 @@ void port_SessionInput(u32 frame, PortInput *input, u16 *used) {
 
     *used = 0xFFFF;
     if (g_session.role == PORT_SESSION_NONE) {
+        return;
+    }
+    if ((g_session.rules & PORT_SESSION_RULE_ONE_MATCH) &&
+        g_port_top_menu.session_left == 0) {
+        s32 winner;
+
+        /* a room's match: its end is the session's, on both machines at
+         * the same frame (netplay.c), who won kept in the state */
+        if (port_MatchIsDecided(&winner)) {
+            g_port_top_menu.session_left = frame + 1;
+            g_port_top_menu.session_result =
+                (u8)(winner >= 0 ? winner + 1 : PORT_SESSION_RESULT_DRAW);
+        }
+    }
+    if (g_port_top_menu.session_result != 0) {
+        input->buttons[0] = 0;
+        input->buttons[1] = 0;
+        *used = 0;
         return;
     }
     if (g_session.rules & PORT_SESSION_RULE_TOP_MENU_LEAVES) {
