@@ -715,14 +715,12 @@ void port_GlLightsPrepare(void) {
             g_lights.cell[at + 1] = 0;
             for (i = 0; i < count && used < LIST_MAX; i++) {
                 const CardLight *c = &g_lights.card[i];
-                float nx = c->place[0] < x0 ? x0
-                           : c->place[0] > x0 + cell
-                               ? x0 + cell
-                               : c->place[0];
-                float nz = c->place[2] < z0 ? z0
-                           : c->place[2] > z0 + cell
-                               ? z0 + cell
-                               : c->place[2];
+                float nx = c->place[0] < x0          ? x0
+                           : c->place[0] > x0 + cell ? x0 + cell
+                                                     : c->place[0];
+                float nz = c->place[2] < z0          ? z0
+                           : c->place[2] > z0 + cell ? z0 + cell
+                                                     : c->place[2];
                 float dx = c->place[0] - nx;
                 float dz = c->place[2] - nz;
 
