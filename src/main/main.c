@@ -505,7 +505,17 @@ static void fight_RunPauseMenu(GpuDb *paused_frame_db, s32 paused_db_index) {
         current_db = &g_disp_db[index];
 
         ClearOTagR(g_disp_ot, 1);
+#if RB_PORT
+        /* The original passes no `no_unplug_pause`, so it is whatever the
+         * first argument's register holds: as Sony's ClearOTagR is
+         * compiled, the mask of an ordering table's address, 0xFFFFFF, it
+         * loads last (read from the listing). Not zero: a pad pulled out
+         * is not taken for Start here. A PC's register holds
+         * anything (docs/PORT.md, "An argument that was not passed"). */
+        pad_Update(0xFFFFFF);
+#else
         pad_Update();
+#endif
         if (has_toggle_rows) {
             /* the options' bits ride above the row */
             hud_DrawPanel(HUD_PANEL_PAUSE_OPTIONS,

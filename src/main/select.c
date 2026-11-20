@@ -2701,8 +2701,15 @@ s32 sprite_Draw(SpriteDraw *draw) {
             SetSemiTrans(sprt, draw->semi);
             if (draw->ot_index >= SPRITE_OT_LIMIT) {
                 draw->ot_index = 1;
-                /* called with the text alone, as the original has it */
+                /* called with the text alone, as the original has it; its
+                 * second parameter is never used, the text having no
+                 * conversion, and the port passes 0 for it so that no call
+                 * leaves a parameter out (tools/port_order.py) */
+#if RB_PORT
+                font_Printf("warning\n", 0);
+#else
                 ((void (*)())font_Printf)("warning\n");
+#endif
             }
             AddPrim(g_disp_ot + draw->ot_index, sprt);
 #if RB_REMASTER_VIEW
