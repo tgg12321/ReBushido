@@ -72,9 +72,9 @@ planned in [docs/ROADMAP.md](docs/ROADMAP.md)).
   where the order an expression is evaluated in may matter is fixed under
   `RB_PORT` (the call first) or added to `config/port_order.txt` with its
   reason (`--update`).
-- Port against emulator: seven play tests (`port_game`,
+- Port against emulator: eight play tests (`port_game`,
   `port_other_fight`, `port_bugfixes`, `port_picture`, `port_sound`,
-  `port_card`, `port_movie`); to find a divergence,
+  `port_card`, `port_movie`, `port_group`); to find a divergence,
   `tests/play/README.md`, "Finding where two runs part"
   (`tools/port_compare.py`). In a fight, time presses and checkpoints in
   game frames (`72f`, `frames =`), not blanks. The play tests take about
