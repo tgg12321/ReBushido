@@ -8779,7 +8779,10 @@ the match is over, its winner the other, or `PORT_MATCH_DRAWN` (2) when
 both ran out at once. Between fights the card, then
 `port_MatchNextCrewFight`: each side's fighter in play into
 `g_fight_config` (roster and weapon), `g_fight_restart` 0, and the
-fight is loaded and begun afresh, as any fight starts, the winner too,
+fight is loaded and begun afresh, behind a black screen
+(`LOADING_SCREEN_NONE`: the game's loading pictures are not in video
+memory once the screen after a fight has drawn its menu's sheets over
+them, and either shows scraps of it), as any fight starts, the winner too,
 at the stage's own places (where the Stock and First to fights start
 where the fighters stood). The winner's fighter and weapon stay; the
 game's own wins count goes on counting (the HUD hides it under any

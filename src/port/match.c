@@ -229,9 +229,10 @@ static void port_MatchNextCrewFight(PortMatch *match) {
     port_MatchCrewPut(match, 0);
     port_MatchCrewPut(match, 1);
     g_fight_restart = 0;
-    /* the next opponent's loading picture, in every mode: the plain one's
-     * pictures are not in video memory after a fight */
-    g_disp_loading_screen = LOADING_SCREEN_NEXT_OPPONENT;
+    /* no loading picture, the screen black (fight_Init blanks it): the
+     * screen after a fight has drawn over the pictures' place in video
+     * memory */
+    g_disp_loading_screen = LOADING_SCREEN_NONE;
     g_sys_screen = SCREEN_FIGHT_INIT;
 }
 
@@ -490,7 +491,7 @@ void port_MatchOpponentChosen(void) {
 }
 
 /* The game's Rematch (port_match.h): a Crew match begun again loads its
- * first fighters, as the next opponent is loaded. */
+ * first fighters, behind a black screen as the next fight of a match. */
 s32 port_MatchRematchLoads(void) {
     PortMatch *match = port_Match();
 
@@ -499,6 +500,6 @@ s32 port_MatchRematchLoads(void) {
     }
     cdrom_StopAndWait();
     snd_EndFight();
-    g_disp_loading_screen = LOADING_SCREEN_NEXT_OPPONENT;
+    g_disp_loading_screen = LOADING_SCREEN_NONE;
     return TRUE;
 }
