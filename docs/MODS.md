@@ -400,8 +400,8 @@ says otherwise; its order is -100, as the English menu's.
 | The pause menu | Pause Menu, Continue, Return to Sub Menu, Return to Top Menu |
 | The menu after a fight | Rematch, Return to Sub Menu, Return to Top Menu |
 | The top menu's captions | Story Mode, Vs. CPU Mode, Training Mode, Vs. Mode, Group Battle Mode, Link Mode, Option Menu, and the second ones under the picture (Battle of the Two Schools, Trust Your Skills, Master Your Weapon, Select Battle Stage, May the Best School Win, 2 Player Link Battle, Other Options); Side View and POV on their panel |
-| The select screens | Select Character, Select Weapon, Select School; the fighters' names; the schools; the weapon's name; the stages' names and ( Map ? ) |
-| The group battle | its page (Group Battle Mode, Number of Entries, Match, Time Limit, Start, Return to Top Menu, and the values: 1 point, 3 point, 3 4 5, 60 120 sec); the teams' names; 1ST 2ND 3RD in each colour; WINS, KILLS |
+| The select screens | Select Character, Select Weapon, Select School, and Select Battle Stage, its "Battle Stage" in the titles' look; every fighter's name, the fourteen every unlock brings among them; every weapon's name (Katana, Nodachi, Long Sword, Broadsword, Naginata, Yari); the stages' names on all three pages and ( Map 1 ), ( Map ? ), ( Map 3 ) |
+| The group battle | its page (Group Battle Mode, Number of Entries, Match, Time Limit, Start, Return to Top Menu, and the values: 1 point, 3 point, 3 4 5, 60 120 sec); the teams' names; 1ST 2ND 3RD in each colour; the fighters and the weapons in the list's black and the sides' blue and red, and its small Select Weapon; the card before the battle (the sides, 1ST 2ND 3RD; its fighters' names stay the game's: the card draws them a second time where a mod's picture does not reach) -- each name in each colour that one group battle's picks showed (a name in a colour no run has shown yet is still the game's); WINS, KILLS |
 | The training mode | Training Mode, Practice, Practice Round, Return to Top Menu and the six lines under them; the Select button's page (Attack, Dash) |
 | The story | the narration that opens it (Off the sea of Setonaikai ...); the stage card (Next Battle Stage, Battle Stage, Outside the Meikyokan) |
 | The memory card | Checking Memory Card, Please wait, Do not remove Memory Card |
@@ -740,7 +740,7 @@ A versus fight's piece is its stage's (`g_snd_stage_music_tracks`,
 heard on several stages, and a mod replaces it on all of them. With the
 window's `fight_music = stage` (the default) every mode's fight plays
 its stage's piece, versus the CPU, story and group battle too, and the
-stage select's **row of music** (L1 and R1: [`PLAYING.md`](PLAYING.md),
+stage select's **row of music** (L2 and R2: [`PLAYING.md`](PLAYING.md),
 "Music on the stage select") chooses any piece of the table's music for
 a fight, `bb2_m1-0` to `-7` and `bb2_m2-0` to `-4`: a mod's
 replacement of one is heard wherever it is chosen.

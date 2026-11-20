@@ -495,6 +495,14 @@ void camera_ReadPad(s32 *held) {
         }
         g_camera_offset.eye_distance = g_camera_zoom / ZOOM_ONE;
     }
+#if RB_PORT
+    /* the port's stage pages keep it (select.c clears `on_stages` as it
+     * leaves them): L2 and R2 choose the fight's music there
+     * (port_fight_music.h), L1 and R1 being the stage's time */
+    if (g_port_stage_choice.on_stages && g_sys_screen == SCREEN_MENU_UPDATE) {
+        return;
+    }
+#endif
     *held = *held & ~(PADL2 | (PADL2 << 16));
 }
 

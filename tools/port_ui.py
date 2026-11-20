@@ -84,6 +84,12 @@ SQUEEZE_MIN = 0.7
 # texel is twice as tall as it is wide: the letters are drawn twice as wide
 # in a texel as the face has them, to be seen as it has them
 ASPECT = 2.0
+# The kinds whose strokes are made this many pixels thicker at each side:
+# the names, small on the screen, whose mincho hairlines (the bar of an H)
+# a picture of eight pixels a texel shown at four or five loses to the
+# half-covered texel the console does not draw
+THICKENED = ('thin',)
+THICKEN_PIXELS = 2
 # the built-in font's characters: seven texels high but for the tails of
 # g j p q y, which are in the eighth row
 GLYPH_HEIGHT = 7
@@ -312,7 +318,7 @@ BLOCKS = [
     block((65, 8), [
         text('Katana', [(1, 0, 64, 7)], 'serif', 'edge', (199, 199, 199), (246, 246, 246), (90, 90, 90)),
     ], [
-        ('64x8-4-ac71dc3823862eb2', 0, 0),
+        ('64x8-4-ac71dc3823862eb2', 0, 0), ('1x8-4-6639f5570a0faecf', 64, 0),
     ]),
     # Off the sea of Setonaikai, lies / the ancient island of Kounoshima. / Eight hundred years 
     block((256, 180), [
@@ -454,9 +460,10 @@ BLOCKS = [
         ('64x16-4-1713dc2c43310dbd', 0, 0), ('12x16-4-e84b5ca31735692e', 64, 0), ('64x16-4-d40bd32abd298375', 0, 16),
         ('12x16-4-4a59e2d8c2c8fc15', 64, 16), ('64x16-4-22665dc84cd32f4b', 0, 32),
     ]),
-    # Battle Stage
+    # Battle Stage: the story's card, and the stage select's title after
+    # "Select" (LINES), whose look it takes so that the title is one
     block((75, 48), [
-        text('Battle Stage', [(6, 1, 75, 14), (0, 17, 75, 30), (0, 33, 30, 46)], 'serif', 'edge', (250, 250, 250), (220, 220, 220), (57, 57, 57)),
+        text('Battle Stage', [(6, 1, 75, 14), (0, 17, 75, 30), (0, 33, 30, 46)], 'serif', **TITLE),
     ], [
         ('64x16-4-cd5052c53e91f3ce', 0, 0), ('11x16-4-13724f0250e6fe98', 64, 0), ('64x16-4-587b0da0ee5d3dd9', 0, 16),
         ('11x16-4-fb419fef2351d79e', 64, 16), ('30x16-4-75bbfa41b00c82f0', 0, 32),
@@ -521,6 +528,429 @@ BLOCKS = [
         text('KILLS', [(1, 15, 60, 26)], 'sans', 'shadow', (255, 255, 255), (210, 210, 210), (8, 8, 8)),
     ], [
         ('60x14-4-095f806dd1552234', 0, 0), ('45x14-4-e81f4e0890f28474', 0, 14), ('60x14-4-057606db84d2594f', 0, 14),
+    ]),
+    # The select screens' lettering the first table had not: the fighters
+    # every unlock brings (the six of an empty save are above), the
+    # weapons but the katana, and the stage pages' first and third pages
+    # (Map 1, Map 3; Map ? is above). Measured from dumps of versus mode
+    # and versus the CPU with --unlock-all, both cursors walked over the
+    # grid, the weapons and the pages.
+    # UTSUSEMI
+    block((75, 11), [
+        text('UTSUSEMI', [(1, 1, 74, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('75x11-4-7645bbdcfad25c2b', 0, 0),
+    ]),
+    # CHIHIRO
+    block((60, 11), [
+        text('CHIHIRO', [(1, 1, 59, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('60x11-4-cd9afb0ba1888c95', 0, 0),
+    ]),
+    # RED SHADOW
+    block((90, 11), [
+        text('RED SHADOW', [(1, 1, 89, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('90x11-4-a82c3d2e41b0b08f', 0, 0),
+    ]),
+    # SUMINAGASHI
+    block((90, 11), [
+        text('SUMINAGASHI', [(1, 1, 89, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('90x11-4-f7895f6f594790a8', 0, 0),
+    ]),
+    # MATSUMUSHI
+    block((88, 11), [
+        text('MATSUMUSHI', [(1, 1, 87, 11)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('88x11-4-bcbeed06cda56469', 0, 0),
+    ]),
+    # HONGOU
+    block((63, 11), [
+        text('HONGOU', [(1, 1, 62, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('63x11-4-3e9bd9b1ac99ce0b', 0, 0),
+    ]),
+    # NIGHTSTALKER
+    block((94, 11), [
+        text('NIGHTSTALKER', [(1, 1, 93, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('94x11-4-19d2cff7f050729d', 0, 0),
+    ]),
+    # HIGHWAYMAN
+    block((93, 11), [
+        text('HIGHWAYMAN', [(1, 1, 92, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('64x11-4-50f6f7face2e67a4', 0, 0), ('29x11-4-09b76b9dbabba143', 64, 0),
+    ]),
+    # TONY UMEDA
+    block((95, 11), [
+        text('TONY UMEDA', [(1, 1, 94, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('64x11-4-a23dfccaed6f5c49', 0, 0), ('31x11-4-2c7a8151bc2840a9', 64, 0),
+    ]),
+    # KATZE
+    block((46, 11), [
+        text('KATZE', [(1, 1, 45, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('46x11-4-599c8a3e07171098', 0, 0),
+    ]),
+    # SAZANKA
+    block((71, 11), [
+        text('SAZANKA', [(1, 1, 70, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('71x11-4-5f9e96432cb9abdb', 0, 0),
+    ]),
+    # UTAMARU
+    block((71, 11), [
+        text('UTAMARU', [(1, 1, 70, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('71x11-4-8cbf279ede07bc29', 0, 0),
+    ]),
+    # TSUBAME
+    block((71, 11), [
+        text('TSUBAME', [(1, 1, 70, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('71x11-4-634d829391177d29', 0, 0),
+    ]),
+    # ISOHACHI
+    block((70, 11), [
+        text('ISOHACHI', [(1, 1, 69, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('64x11-4-67c99996add1a73b', 0, 0), ('6x11-4-f23e1d2d252a5430', 64, 0),
+    ]),
+    # Naginata
+    block((85, 8), [
+        text('Naginata', [(1, 0, 84, 8)], 'serif', 'edge', (194, 194, 194), (183, 183, 183), (84, 84, 84)),
+    ], [
+        ('64x8-4-3b908eeaa21d44c1', 0, 0), ('21x8-4-8ebf0b3d5f3911e5', 64, 0),
+    ]),
+    # Broadsword
+    block((117, 8), [
+        text('Broadsword', [(1, 0, 116, 7)], 'serif', 'edge', (187, 187, 187), (180, 180, 180), (82, 82, 82)),
+    ], [
+        ('64x8-4-a8934af1ecdede21', 0, 0), ('53x8-4-cb627189f247660d', 64, 0),
+    ]),
+    # Nodachi
+    block((80, 8), [
+        text('Nodachi', [(1, 0, 79, 7)], 'serif', 'edge', (195, 195, 195), (183, 183, 183), (84, 84, 84)),
+    ], [
+        ('64x8-4-e273cceb2d51f13b', 0, 0), ('16x8-4-2de9528a008b21e4', 64, 0),
+    ]),
+    # Long Sword
+    block((117, 8), [
+        text('Long Sword', [(1, 0, 116, 8)], 'serif', 'edge', (181, 181, 181), (161, 161, 161), (76, 76, 76)),
+    ], [
+        ('64x8-4-89f524be3b546e12', 0, 0), ('53x8-4-facff04831683e6f', 64, 0),
+    ]),
+    # Yari
+    block((38, 8), [
+        text('Yari', [(0, 0, 38, 7)], 'serif', 'edge', (203, 203, 203), (210, 210, 210), (81, 81, 81)),
+    ], [
+        ('19x8-4-f8f2dbd709249ded', 0, 0), ('19x8-4-5a5593f83269731f', 19, 0),
+    ]),
+    # Shainto Gate / Shainto Cemetery / Ferry Dock / Kimigaura Coast / Snake Cliff / Lumberyard
+    block((155, 72), [
+        text('Shainto Gate', [(1, 1, 113, 9)], 'serif', 'edge', (147, 141, 129), (135, 130, 118), (38, 37, 33)),
+        text('Shainto Cemetery', [(1, 13, 155, 24)], 'serif', 'edge', (144, 138, 125), (136, 131, 119), (41, 40, 36)),
+        text('Ferry Dock', [(1, 25, 95, 36)], 'serif', 'edge', (137, 132, 120), (141, 134, 122), (41, 41, 36)),
+        text('Kimigaura Coast', [(0, 37, 141, 48)], 'serif', 'edge', (150, 143, 131), (149, 144, 130), (41, 40, 35)),
+        text('Snake Cliff', [(1, 49, 93, 57)], 'serif', 'edge', (144, 138, 125), (145, 139, 127), (41, 40, 36)),
+        text('Lumberyard', [(1, 61, 107, 72)], 'serif', 'edge', (141, 136, 124), (132, 125, 115), (40, 39, 35)),
+    ], [
+        ('64x12-4-a10a8d8d92758374', 0, 0), ('50x12-4-cb387ab2236e1b44', 64, 0), ('64x12-4-8b4cfc341ff4970f', 0, 12),
+        ('64x12-4-08193d466387f55c', 64, 12), ('27x12-4-38d20465e1abe62d', 128, 12),
+        ('64x12-4-7dae4866bb0dec28', 0, 24), ('31x12-4-08232aa62153fe2a', 64, 24), ('64x12-4-2cdb344b65414467', 0, 36),
+        ('64x12-4-5625423fd38f0ea4', 64, 36), ('14x12-4-184ca58e21384f52', 128, 36),
+        ('64x12-4-ef0d2bcf1010ba75', 0, 48), ('30x12-4-260adb9ff2543f01', 64, 48), ('64x12-4-f2f14d988c330458', 0, 60),
+        ('44x12-4-cfb29923d84e4e50', 64, 60),
+    ]),
+    # Abandoned Tunnel / Terraced Fields / Railway / Meikyokan Dojo / Castle Rooftop / Under Railway
+    block((171, 72), [
+        text('Abandoned Tunnel', [(0, 1, 171, 10)], 'serif', 'edge', (143, 136, 125), (141, 135, 123), (36, 35, 31)),
+        text('Terraced Fields', [(0, 13, 131, 21)], 'serif', 'edge', (148, 140, 128), (143, 136, 125), (43, 43, 37)),
+        text('Railway', [(0, 25, 68, 35)], 'serif', 'edge', (148, 141, 129), (128, 121, 111), (40, 39, 35)),
+        text('Meikyokan Dojo', [(0, 37, 144, 47)], 'serif', 'edge', (143, 137, 125), (132, 125, 114), (37, 37, 33)),
+        text('Castle Rooftop', [(0, 49, 124, 59)], 'serif', 'edge', (141, 136, 123), (128, 121, 111), (43, 42, 37)),
+        text('Under Railway', [(0, 61, 128, 71)], 'serif', 'edge', (143, 138, 126), (130, 123, 113), (41, 40, 36)),
+    ], [
+        ('64x12-4-24eadfbdaaf5e5dc', 0, 0), ('64x12-4-e24db762fcd9e5d2', 64, 0), ('43x12-4-85650a2073c342ab', 128, 0),
+        ('64x12-4-2fb448dbd28951d4', 0, 12), ('64x12-4-d27a96c17f8fbd5f', 64, 12), ('4x12-4-d4d2fda53bc11cb0', 128, 12),
+        ('64x12-4-0184934a6f6693ae', 0, 24), ('6x1-4-00a37096aefc8fc5', 26, 24), ('5x12-4-d2b38d5b51f9c1f4', 64, 24),
+        ('64x12-4-f35e6d3468f77c89', 0, 36), ('64x12-4-e2d15234f77ed0da', 64, 36),
+        ('16x12-4-f004015a2d27dec3', 128, 36), ('64x12-4-99738657e3793415', 0, 48),
+        ('61x12-4-f9b6f6194629ef75', 64, 48), ('64x12-4-3788102451f3e309', 0, 60), ('64x12-4-3c06ba10c0c2dc72', 64, 60),
+    ]),
+    # ( Map 1 )
+    block((74, 12), [
+        text('( Map 1 )', [(1, 0, 73, 11)], 'serif', 'edge', (143, 136, 125), (140, 134, 123), (37, 36, 32)),
+    ], [
+        ('64x12-4-e1cddb52dc2a54b1', 0, 0),
+    ]),
+    # ( Map 3 )
+    block((74, 12), [
+        text('( Map 3 )', [(1, 0, 73, 11)], 'serif', 'edge', (145, 139, 127), (139, 133, 122), (40, 39, 34)),
+    ], [
+        ('64x12-4-a4127d28ab9d8b2d', 0, 0),
+    ]),
+    # The group battle's pages: the fighters every unlock brings, and the
+    # weapons, in the black of the list and the blue and red of the two
+    # sides; its own small Select Weapon; and the card before the battle
+    # (the sides' names, 1ST 2ND 3RD; not its fighters' names, which the card
+    # draws a second time where these pictures do not reach). Measured from
+    # a dump of a group battle with --unlock-all.
+    # NIGHTSTALKER
+    block((94, 11), [
+        text('NIGHTSTALKER', [(0, 1, 92, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('64x11-4-80d4b58c6de0530a', 0, 0), ('30x11-4-b4405cdc56bc8786', 64, 0),
+    ]),
+    # ISOHACHI
+    block((70, 11), [
+        text('ISOHACHI', [(0, 1, 68, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('64x11-4-8f6e5f339b91f4d9', 0, 0), ('6x11-4-09b11af9a123714f', 64, 0),
+    ]),
+    # HIGHWAYMAN
+    block((93, 11), [
+        text('HIGHWAYMAN', [(0, 1, 91, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('64x11-4-4f679d9a1683ded4', 0, 0), ('29x11-4-694772c54a4bcdb9', 64, 0),
+    ]),
+    # TONY UMEDA
+    block((95, 11), [
+        text('TONY UMEDA', [(0, 1, 93, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('64x11-4-05507950ab71641b', 0, 0), ('31x11-4-98aadd25491259f3', 64, 0),
+    ]),
+    # UTSUSEMI
+    block((75, 11), [
+        text('UTSUSEMI', [(1, 1, 74, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('75x11-4-29c0f3d6dd3bcfee', 0, 0),
+    ]),
+    # KATZE
+    block((46, 11), [
+        text('KATZE', [(0, 1, 44, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('46x11-4-c86f426e1c3c0d76', 0, 0),
+    ]),
+    # SAZANKA
+    block((71, 11), [
+        text('SAZANKA', [(1, 1, 70, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('71x11-4-999bddffdf322c5a', 0, 0),
+    ]),
+    # RED SHADOW
+    block((90, 11), [
+        text('RED SHADOW', [(1, 1, 89, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('90x11-4-21aabce47315865c', 0, 0),
+    ]),
+    # UTAMARU
+    block((71, 11), [
+        text('UTAMARU', [(0, 1, 69, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('71x11-4-bfea1d01c01886ba', 0, 0),
+    ]),
+    # SUMINAGASHI
+    block((90, 11), [
+        text('SUMINAGASHI', [(1, 1, 89, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('90x11-4-29d0f6842bf170d0', 0, 0),
+    ]),
+    # TSUBAME
+    block((71, 11), [
+        text('TSUBAME', [(0, 1, 69, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('71x11-4-49d780ad03c5b489', 0, 0),
+    ]),
+    # MATSUMUSHI
+    block((88, 11), [
+        text('MATSUMUSHI', [(1, 1, 87, 11)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('88x11-4-20346bfce21d5bf2', 0, 0),
+    ]),
+    # HONGOU
+    block((63, 11), [
+        text('HONGOU', [(1, 1, 62, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('63x11-4-a5e79c8e9afe327c', 0, 0),
+    ]),
+    # CHIHIRO
+    block((60, 11), [
+        text('CHIHIRO', [(0, 1, 58, 10)], 'thin', 'plain', (0, 0, 0), (0, 0, 0), (0, 0, 0)),
+    ], [
+        ('60x11-4-d8d1f9eba3362c06', 0, 0),
+    ]),
+    # KAUN
+    block((40, 11), [
+        text('KAUN', [(1, 1, 39, 10)], 'thin', 'plain', (69, 56, 180), (76, 62, 180), (0, 0, 0)),
+    ], [
+        ('40x11-4-0510e57ec839111e', 0, 0),
+    ]),
+    # HIGHWAYMAN
+    block((93, 11), [
+        text('HIGHWAYMAN', [(0, 1, 91, 10)], 'thin', 'plain', (77, 64, 180), (77, 65, 181), (0, 0, 0)),
+    ], [
+        ('64x11-4-b4ebfb4ed9863dea', 0, 0), ('29x11-4-0c680a7f427e7c1f', 64, 0),
+    ]),
+    # TONY UMEDA
+    block((95, 11), [
+        text('TONY UMEDA', [(0, 1, 93, 10)], 'thin', 'plain', (80, 67, 181), (79, 66, 180), (0, 0, 0)),
+    ], [
+        ('64x11-4-31c3ba7c79553c71', 0, 0), ('31x11-4-37301476b7ea02f9', 64, 0),
+    ]),
+    # KATZE
+    block((46, 11), [
+        text('KATZE', [(0, 1, 44, 10)], 'thin', 'plain', (87, 74, 182), (76, 63, 181), (0, 0, 0)),
+    ], [
+        ('46x11-4-aea9fc3bb20087f4', 0, 0),
+    ]),
+    # JO
+    block((22, 11), [
+        text('JO', [(1, 1, 21, 10)], 'thin', 'plain', (77, 64, 180), (81, 68, 180), (0, 0, 0)),
+    ], [
+        ('22x11-4-8097dc7110b38cd1', 0, 0),
+    ]),
+    # GENGORO
+    block((73, 11), [
+        text('GENGORO', [(0, 1, 71, 10)], 'thin', 'plain', (86, 72, 180), (84, 69, 180), (0, 0, 0)),
+    ], [
+        ('64x11-4-668b61baa8fb9b2b', 0, 0), ('9x11-4-1eef05f883294abb', 64, 0),
+    ]),
+    # KANNUKI
+    block((64, 11), [
+        text('KANNUKI', [(1, 1, 63, 10)], 'thin', 'plain', (173, 53, 37), (174, 59, 43), (0, 0, 0)),
+    ], [
+        ('64x11-4-6e35ad5299a16861', 0, 0),
+    ]),
+    # NIGHTSTALKER
+    block((94, 11), [
+        text('NIGHTSTALKER', [(0, 1, 92, 10)], 'thin', 'plain', (175, 63, 47), (173, 56, 40), (0, 0, 0)),
+    ], [
+        ('64x11-4-bb284171c53167dc', 0, 0), ('30x11-4-ae5a6ed6a386cf80', 64, 0),
+    ]),
+    # MIKADO
+    block((59, 11), [
+        text('MIKADO', [(1, 1, 58, 10)], 'thin', 'plain', (176, 63, 47), (175, 60, 44), (0, 0, 0)),
+    ], [
+        ('59x11-4-8a2867f4448b6ea9', 0, 0),
+    ]),
+    # TATSUMI
+    block((62, 11), [
+        text('TATSUMI', [(1, 1, 61, 10)], 'thin', 'plain', (175, 59, 43), (173, 54, 38), (0, 0, 0)),
+    ], [
+        ('62x11-4-0a3dade6f2abc515', 0, 0),
+    ]),
+    # SAZANKA
+    block((71, 11), [
+        text('SAZANKA', [(1, 1, 70, 10)], 'thin', 'plain', (177, 70, 54), (174, 62, 45), (0, 0, 0)),
+    ], [
+        ('71x11-4-dc97c0f29925450c', 0, 0),
+    ]),
+    # TSUBAME
+    block((71, 11), [
+        text('TSUBAME', [(0, 1, 69, 10)], 'thin', 'plain', (176, 65, 49), (174, 60, 44), (0, 0, 0)),
+    ], [
+        ('71x11-4-64b92f8a0609c13b', 0, 0),
+    ]),
+    # Katana
+    block((63, 10), [
+        text('Katana', [(0, 1, 63, 8)], 'serif', 'edge', (140, 133, 124), (132, 128, 117), (49, 47, 44)),
+    ], [
+        ('63x10-4-4f0f7dd1642d8015', 0, 0),
+    ]),
+    # Long Sword
+    block((114, 10), [
+        text('Long Sword', [(0, 1, 114, 10)], 'serif', 'edge', (146, 141, 131), (126, 123, 114), (45, 43, 40)),
+    ], [
+        ('64x10-4-fd77dc5439c0d6ef', 0, 0), ('50x10-4-debe5d646ec502b0', 64, 0),
+    ]),
+    # Katana
+    block((63, 10), [
+        text('Katana', [(0, 1, 63, 8)], 'serif', 'edge', (143, 133, 180), (137, 125, 180), (64, 49, 180)),
+    ], [
+        ('63x10-4-9c47212524813ffb', 0, 0),
+    ]),
+    # Nodachi
+    block((79, 10), [
+        text('Nodachi', [(0, 1, 79, 8)], 'serif', 'edge', (160, 146, 180), (134, 123, 180), (59, 44, 180)),
+    ], [
+        ('64x10-4-ea51651216149650', 0, 0), ('15x10-4-8cca9fd874e68ee0', 64, 0),
+    ]),
+    # Long Sword
+    block((114, 10), [
+        text('Long Sword', [(0, 1, 114, 10)], 'serif', 'edge', (152, 139, 180), (132, 122, 180), (59, 44, 180)),
+    ], [
+        ('64x10-4-1ab15dae91bf2795', 0, 0), ('50x10-4-e9000fe074e59f16', 64, 0),
+    ]),
+    # Katana
+    block((63, 10), [
+        text('Katana', [(0, 1, 63, 8)], 'serif', 'edge', (194, 132, 117), (190, 124, 108), (169, 47, 31)),
+    ], [
+        ('63x10-4-a07f3d22935cc0bf', 0, 0),
+    ]),
+    # Nodachi
+    block((79, 10), [
+        text('Nodachi', [(0, 1, 79, 8)], 'serif', 'edge', (197, 146, 133), (188, 120, 104), (168, 43, 27)),
+    ], [
+        ('64x10-4-5c3c79c6d8013e14', 0, 0), ('15x10-4-9f9fd0bcfedb17e4', 64, 0),
+    ]),
+    # Long Sword
+    block((114, 10), [
+        text('Long Sword', [(0, 1, 114, 10)], 'serif', 'edge', (195, 138, 124), (188, 118, 103), (168, 43, 26)),
+    ], [
+        ('64x10-4-7175322fa0ea4c09', 0, 0), ('50x10-4-c29458fd051e6e3a', 64, 0),
+    ]),
+    # 3RD
+    block((58, 12), [
+        text('3RD', [(4, 1, 55, 10)], 'serif', 'edge', (146, 133, 180), (147, 134, 180), (67, 52, 180)),
+    ], [
+        ('58x12-4-f636caf2835b186c', 0, 0),
+    ]),
+    # 3RD
+    block((58, 12), [
+        text('3RD', [(4, 1, 55, 10)], 'serif', 'edge', (192, 131, 117), (192, 131, 118), (170, 50, 34)),
+    ], [
+        ('58x12-4-7ca1063cdb4b0078', 0, 0),
+    ]),
+    # Select Weapon
+    block((156, 12), [
+        text('Select Weapon', [(8, 0, 149, 10)], 'serif', 'edge', (161, 154, 146), (138, 133, 123), (48, 46, 43)),
+        rule((0, 11, 156, 12), (90, 90, 82)),
+    ], [
+        ('64x12-4-fb671b6ef8314c87', 0, 0), ('64x12-4-4d741c003a9fe4b8', 64, 0), ('28x12-4-48ce5cdc9609b55e', 128, 0),
+    ]),
+    # 1ST
+    block((46, 12), [
+        text('1ST', [(4, 2, 41, 10)], 'serif', 'edge', (212, 212, 212), (199, 199, 199), (70, 70, 70)),
+    ], [
+        ('46x12-4-4e109de55213c02a', 0, 0),
+    ]),
+    # 2ND
+    block((46, 12), [
+        text('2ND', [(0, 2, 45, 10)], 'serif', 'edge', (209, 209, 209), (204, 204, 204), (83, 83, 83)),
+    ], [
+        ('46x12-4-27424166deac5df9', 0, 0),
+    ]),
+    # 3RD
+    block((46, 12), [
+        text('3RD', [(1, 2, 44, 10)], 'serif', 'edge', (207, 207, 207), (215, 215, 215), (79, 79, 79)),
+    ], [
+        ('46x12-4-1257ccc2b24c5ee8', 0, 0),
+    ]),
+    # Narukagami
+    block((117, 10), [
+        text('Narukagami', [(0, 0, 117, 10)], 'serif', 'edge', (166, 166, 166), (162, 162, 162), (68, 68, 68)),
+    ], [
+        ('64x10-4-b7931d10e5507471', 0, 0), ('53x10-4-a64057e517d7648b', 64, 0),
+    ]),
+    # Shainto
+    block((73, 10), [
+        text('Shainto', [(0, 0, 73, 8)], 'serif', 'edge', (176, 176, 176), (176, 176, 176), (70, 70, 70)),
+    ], [
+        ('64x10-4-140e8cf74936a33d', 0, 0), ('9x10-4-ab8baf5fd6ed9add', 64, 0),
     ]),
 ]
 
@@ -646,6 +1076,8 @@ def text_strip(item):
     fill = len(item['boxes']) > 1 or any(item is t for entry in LINES for t in entry['texts'])
     letters = line_mask(item['words'], FONTS[item['font']], box_w, box_h, narrowed, item['aspect'],
                         KIND_SIZES.get(kind(item)), fill)
+    if item['font'] in THICKENED:
+        letters = letters.filter(ImageFilter.MaxFilter(THICKEN_PIXELS * 2 + 1))
     inset = room // 2 if look == 'edge' else 0
     mask = Image.new('L', (W, H), 0)
     mask.paste(letters, (inset, inset))

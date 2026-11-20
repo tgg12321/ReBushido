@@ -9,10 +9,10 @@ track 3, bb2_m1-3), five ways:
 - `original` (nothing said, as the console plays): no music, as the
   original has none in versus the CPU;
 - `stage` (--fight-music stage, the window's default): the stage's piece;
-- `piece`: R1 six times on the page, the row at bb2_m1-5, which nothing
+- `piece`: R2 six times on the page, the row at bb2_m1-5, which nothing
   of the original asks for;
-- `none`: L1 once, the row at None: no music, the ambient sounds;
-- `staff`: L1 twice, the row at the staff roll's piece (bb2_m2-4).
+- `none`: L2 once, the row at None: no music, the ambient sounds;
+- `staff`: L2 twice, the row at the staff roll's piece (bb2_m2-4).
 
 Both sizes of the port must print the same trace of each plan, each
 checkpoint's values must be what the presses chose, and where a piece
@@ -43,9 +43,9 @@ import port_stage_select  # noqa: E402
 PLANS = [
     ('original', [], [], 0, -1, 0),
     ('stage', ['--fight-music', 'stage'], [], 0, 3, 1),
-    ('piece', ['--fight-music', 'stage'], ['R1'] * 6, 6, 5, 1),
-    ('none', ['--fight-music', 'stage'], ['L1'], 14, -1, 2),
-    ('staff', ['--fight-music', 'stage'], ['L1', 'L1'], 13, 12, 1),
+    ('piece', ['--fight-music', 'stage'], ['R2'] * 6, 6, 5, 1),
+    ('none', ['--fight-music', 'stage'], ['L2'], 14, -1, 2),
+    ('staff', ['--fight-music', 'stage'], ['L2', 'L2'], 13, 12, 1),
 ]
 # the stage: the second page's fourth place
 STAGE = 25
