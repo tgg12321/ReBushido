@@ -185,6 +185,29 @@ version, another disc, another setup (with the part that differs), a
 wrong password, a full room, or a host that could not be reached.
 ======================================================================
 
+UPDATES
+-------
+At a start (at most once a day) the program asks the project's GitHub
+releases, in the background, whether there is a newer version. If
+there is, the top menu says so; Options (or F1), Updates, has "Update
+now", "Later" and what is new in it. Update now downloads it beside the
+program (into update\), and "Restart and install" ends the game, puts
+the new files in place and starts it again. Your settings
+(rebushido.cfg), memory cards, logs, screenshots, your disc and the
+mods made from it, and any mod of your own are never touched. If the
+new version does not start, the old one is put back by itself.
+
+Every release is signed: the program refuses an update whose signature
+is not the project's release key, or any file whose SHA-256 is not the
+one the signed list says. Nothing is checked during an online session
+or downloaded during a fight. Online, both players need the same
+version, so updating keeps you and your friends in step.
+
+In the settings menu, The game: Updates is Ask (the notice), Automatic
+(downloaded by itself and installed at the next start) or Off (never
+asked unless you choose "Check for updates now"); Update channel is
+Release, or Beta for prereleases too.
+
 IF SOMETHING IS WRONG
 ---------------------
 Every session writes a log in the folder logs\ beside the program. If

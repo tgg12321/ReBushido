@@ -254,6 +254,75 @@ in `prepare/`, a `prepare-work/`).
 and checks that it is refused. Nothing of `build/release/` is committed;
 publishing is the owner's.
 
+The zip also holds `package-files.txt` (every other file's SHA-256, size
+and path: what the updater takes away when a newer version no longer has
+a file) and `licenses/Monocypher-LICENCE.txt`.
+
+### Publishing a release
+
+The program updates itself from the repository's GitHub releases
+([`docs/PORT.md`](docs/PORT.md), "Updates"): it holds each release's
+`update-manifest.txt` to a signature made with the **release key**, an
+Ed25519 key whose public half is built into it from
+`config/release_public_key.txt`. Until that file has a key (it says
+`none`) the program never updates itself and `make port-release
+RB_RELEASE=1` refuses to make a release.
+
+Once, on the owner's PC (Windows' own Python):
+
+```
+python tools/release_sign.py --generate
+```
+
+It makes the key pair in `%USERPROFILE%\.rebushido-release-key\`
+(`--key-dir` for another place outside the repository; it refuses one
+inside it and never writes over a key): `secret.txt` and `public.txt`.
+Put the public half it prints into `config/release_public_key.txt` in
+place of `none` and commit that file; keep a private copy of the folder
+(a password manager, a USB stick). The secret half is never committed or
+copied into the repository. Lose it and the programs already out can no
+longer be updated by themselves (the players download the next release
+by hand); a new key means a new `config/release_public_key.txt`, which
+only programs built after it trust.
+
+Each release, from a clean tree at the commit to release, with the
+notes the players see before they update, a line each (120 bytes at
+most):
+
+```
+python tools/release_publish.py --notes NOTES.txt [--beta]
+```
+
+It builds `make port-release RB_RELEASE=1`, writes
+`build/release/update-manifest.txt` (the version, the commit, the zip's
+size and SHA-256, every file's, the notes, the updater version the
+program must have) and its signature `update-manifest.txt.sig`, checks
+the signature with the key of the config, and runs `gh release create
+v<version>` with the zip, its `.sha256`, the manifest and the signature
+(`--beta`: a prerelease, which only `update_channel = beta` takes). Bump
+`RB_VERSION_NUMBER` first: the program installs only a version after its
+own. `--dry-run` does all but `gh` and prints the command; `--dry-run
+--trial` packs a trial and signs it with a key made for the run alone
+(`build/release/dry-run-key/`), for trying the whole of it anywhere.
+
+`python tools/release_sign.py --verify build/release/update-manifest.txt`
+holds a manifest to the config's key; `--self-test` holds the signing to
+RFC 8032's cases.
+
+The updater's own tests, on Windows after `make port-sdl-windows`, with
+the disc and no network (a server of the test's on 127.0.0.1 and a key
+of its own, which only a trial build takes):
+
+```
+python tools/port_update_test.py         # about three minutes
+```
+
+Its cases: up to date; a newer release downloaded, checked, put in place
+and started with the player's files intact; a bad signature, a bad zip
+hash, a bad file hash and a truncated download refused; no server and a
+server that never answers (the game plays as ever); a new program that
+cannot start rolled back; `updates = off` asking nothing.
+
 ## The remastered renderer, with nothing shown
 
 The port's remastered picture ([`docs/PORT.md`](docs/PORT.md),

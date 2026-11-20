@@ -10,6 +10,7 @@
 #include "menu.h"
 #include "shared.h"
 #include "sdl_window.h"
+#include "update.h"
 
 /* The settings file's text, as large as the program reads one. */
 #define TEXT_BYTES 0x10000
@@ -44,6 +45,7 @@ enum {
     PAGE_GROUP,   /* one group's settings */
     PAGE_BUTTONS, /* one pad's */
     PAGE_ONLINE,  /* Play online: host or join a session of netplay */
+    PAGE_UPDATE,  /* Updates: the newer release, its notes (update.h) */
 };
 
 /* What can be typed into a row of the Play online page. */
@@ -61,6 +63,11 @@ enum {
     ROW_ONLINE,   /* the Play online page */
     ROW_NET_ITEM, /* the Play online page's: `index` its item (menu_online.c) */
     ROW_QUIT,     /* the program ended, the settings kept */
+    ROW_UPDATES,  /* the Updates page */
+    ROW_UPDATE_CHECK, /* ask the releases now */
+    ROW_UPDATE_NOW,   /* download the newer one, or restart into it */
+    ROW_UPDATE_LATER, /* its notice not shown again */
+    ROW_UPDATE_NOTE,  /* a line of its notes: `index`, -1 their heading */
 };
 
 typedef struct {
@@ -107,6 +114,8 @@ static struct {
     s32 has_start;
     s32 start[CHOICES_KEPT];
     s32 font_ok;
+    /* the updater's view the Updates page was built for */
+    s32 update_generation;
 } g_menu;
 
 /* Defined further down. */
@@ -126,6 +135,10 @@ static void port_MenuBuild(s32 page, s32 cursor) {
     s32 group;
     s32 i;
 
+    /* nothing of the updater's while Play online is up (update.h) */
+    if (page == PAGE_ONLINE || g_menu.page == PAGE_ONLINE) {
+        port_UpdateSetOnline(page == PAGE_ONLINE);
+    }
     g_menu.page = page;
     g_menu.row_count = 0;
     if (page == PAGE_MAIN) {
@@ -136,6 +149,7 @@ static void port_MenuBuild(s32 page, s32 cursor) {
             }
         }
         port_MenuAddRow(ROW_ONLINE, 0);
+        port_MenuAddRow(ROW_UPDATES, 0);
         port_MenuAddRow(ROW_CLOSE, 0);
         port_MenuAddRow(ROW_QUIT, 0);
     } else if (page == PAGE_GROUP) {
@@ -147,6 +161,31 @@ static void port_MenuBuild(s32 page, s32 cursor) {
         if (g_menu.group == PORT_MENU_CONTROLS - 1) {
             port_MenuAddRow(ROW_BUTTONS, 0);
             port_MenuAddRow(ROW_BUTTONS, 1);
+        }
+        port_MenuAddRow(ROW_BACK, 0);
+    } else if (page == PAGE_UPDATE) {
+        PortUpdateView view;
+
+        port_UpdateGetView(&view);
+        g_menu.update_generation = view.generation;
+        port_MenuAddRow(ROW_UPDATE_CHECK, 0);
+        if (view.status == PORT_UPDATE_AVAILABLE ||
+            view.status == PORT_UPDATE_DOWNLOADING ||
+            view.status == PORT_UPDATE_READY ||
+            (view.status == PORT_UPDATE_FAILED && view.version[0] != 0 &&
+             port_UpdateCompareVersions(view.version, view.own) > 0)) {
+            port_MenuAddRow(ROW_UPDATE_NOW, 0);
+        }
+        if (view.status == PORT_UPDATE_AVAILABLE ||
+            view.status == PORT_UPDATE_TOO_NEW) {
+            port_MenuAddRow(ROW_UPDATE_LATER, 0);
+        }
+        if (view.version[0] != 0 && view.note_count > 0 &&
+            port_UpdateCompareVersions(view.version, view.own) > 0) {
+            port_MenuAddRow(ROW_UPDATE_NOTE, -1);
+            for (i = 0; i < view.note_count; i++) {
+                port_MenuAddRow(ROW_UPDATE_NOTE, i);
+            }
         }
         port_MenuAddRow(ROW_BACK, 0);
     } else if (page == PAGE_ONLINE) {
@@ -289,6 +328,95 @@ static void port_MenuBindingsOf(
     }
 }
 
+/* A row of the Updates page, or the first page's row of it. */
+static void port_MenuDescribeUpdate(
+    const MenuRow *row, char *label, char *value) {
+    PortUpdateView view;
+    const char *status;
+
+    port_UpdateGetView(&view);
+    switch (view.status) {
+    case PORT_UPDATE_OFF:
+        status = "off";
+        break;
+    case PORT_UPDATE_CHECKING:
+        status = "asking...";
+        break;
+    case PORT_UPDATE_UP_TO_DATE:
+        status = "up to date";
+        break;
+    case PORT_UPDATE_AVAILABLE:
+    case PORT_UPDATE_TOO_NEW:
+        status = "a newer version";
+        break;
+    case PORT_UPDATE_DOWNLOADING:
+        status = "downloading";
+        break;
+    case PORT_UPDATE_READY:
+        status = "ready to install";
+        break;
+    case PORT_UPDATE_FAILED:
+        status = "it did not work";
+        break;
+    default:
+        status = "not asked yet";
+        break;
+    }
+    switch (row->kind) {
+    case ROW_UPDATES:
+        snprintf(label, LABEL_BYTES, "Updates");
+        if (view.status == PORT_UPDATE_AVAILABLE ||
+            view.status == PORT_UPDATE_READY ||
+            view.status == PORT_UPDATE_TOO_NEW) {
+            snprintf(value, VALUE_BYTES, "%s: %s  ...", view.version, status);
+        } else {
+            snprintf(value, VALUE_BYTES, "%s  ...", status);
+        }
+        break;
+    case ROW_UPDATE_CHECK:
+        snprintf(label, LABEL_BYTES, "Check for updates now");
+        if (view.status == PORT_UPDATE_OFF ||
+            view.status == PORT_UPDATE_FAILED) {
+            snprintf(value, VALUE_BYTES, "%s: %s", status, view.text);
+        } else if (view.status == PORT_UPDATE_UP_TO_DATE) {
+            snprintf(value, VALUE_BYTES, "up to date: %s", view.own);
+        } else if (view.version[0] != 0 &&
+                   port_UpdateCompareVersions(view.version, view.own) > 0) {
+            snprintf(
+                value, VALUE_BYTES, "%s; this is %s", view.version, view.own);
+        } else {
+            snprintf(value, VALUE_BYTES, "%s; this is %s", status, view.own);
+        }
+        break;
+    case ROW_UPDATE_NOW:
+        if (view.status == PORT_UPDATE_READY) {
+            snprintf(
+                label, LABEL_BYTES, "Restart and install %s", view.version);
+        } else if (view.status == PORT_UPDATE_DOWNLOADING) {
+            snprintf(label, LABEL_BYTES, "Downloading %s", view.version);
+            snprintf(value, VALUE_BYTES, "%d%%", view.permille / 10);
+        } else if (view.status == PORT_UPDATE_FAILED) {
+            snprintf(
+                label, LABEL_BYTES, "Try the update to %s again", view.version);
+        } else {
+            snprintf(label, LABEL_BYTES, "Update now to %s", view.version);
+        }
+        break;
+    case ROW_UPDATE_LATER:
+        snprintf(label, LABEL_BYTES, "Later");
+        break;
+    default:
+        if (row->index < 0) {
+            snprintf(label, LABEL_BYTES, "What's new in %s:", view.version);
+        } else if (row->index < view.note_count) {
+            snprintf(label, LABEL_BYTES, "    %s", view.notes[row->index]);
+        } else {
+            label[0] = 0;
+        }
+        break;
+    }
+}
+
 static void port_MenuDescribe(
     const MenuRow *row, char *label, char *value, s32 *is_arrows) {
     *is_arrows = FALSE;
@@ -337,6 +465,13 @@ static void port_MenuDescribe(
         snprintf(label, LABEL_BYTES, "Play online");
         snprintf(value, VALUE_BYTES, "...");
         break;
+    case ROW_UPDATES:
+    case ROW_UPDATE_CHECK:
+    case ROW_UPDATE_NOW:
+    case ROW_UPDATE_LATER:
+    case ROW_UPDATE_NOTE:
+        port_MenuDescribeUpdate(row, label, value);
+        break;
     case ROW_NET_ITEM:
         port_OnlineDescribe(
             row->index,
@@ -379,6 +514,28 @@ static const char *port_MenuHelp(void) {
         return "Rollback netplay with another PC: host a game, or join one";
     case ROW_NET_ITEM:
         return port_OnlineHelp(row->index, g_menu.is_typing);
+    case ROW_UPDATES:
+        return "Whether there is a newer ReBushido, what is new in it, and "
+               "installing it";
+    case ROW_UPDATE_CHECK:
+        return "Asks the releases now, whatever the Updates setting says";
+    case ROW_UPDATE_NOW: {
+        PortUpdateView view;
+
+        port_UpdateGetView(&view);
+        return view.status == PORT_UPDATE_READY
+                   ? "The program ends, the new version is put in place and "
+                     "started; your settings, cards and mods are kept"
+               : view.status == PORT_UPDATE_DOWNLOADING
+                   ? "Downloaded beside the program, each file held to the "
+                     "release's signed manifest"
+                   : "Downloads it beside the program; it is installed when "
+                     "you restart";
+    }
+    case ROW_UPDATE_LATER:
+        return "The top menu's notice is not shown again for this version";
+    case ROW_UPDATE_NOTE:
+        return "The release's notes, signed with it";
     case ROW_QUIT:
         return "The program ends (closing the window does too); the "
                "settings are kept";
@@ -461,7 +618,7 @@ static void port_MenuMove(s32 step) {
 static void port_MenuBack(void) {
     if (g_menu.page == PAGE_BUTTONS) {
         port_MenuBuild(PAGE_GROUP, g_menu.group_cursor);
-    } else if (g_menu.page == PAGE_GROUP ||
+    } else if (g_menu.page == PAGE_GROUP || g_menu.page == PAGE_UPDATE ||
                (g_menu.page == PAGE_ONLINE &&
                 g_menu.opened_on != PORT_MENU_OPEN_ONLINE)) {
         port_MenuBuild(PAGE_MAIN, g_menu.main_cursor);
@@ -479,6 +636,9 @@ static void port_MenuButtonName(char *out, u32 room) {
 
 static void port_MenuClose(void) {
     port_MenuWriteFile();
+    if (g_menu.page == PAGE_ONLINE) {
+        port_UpdateSetOnline(FALSE);
+    }
     g_menu.is_open = FALSE;
     g_menu.is_capturing = FALSE;
 }
@@ -530,6 +690,32 @@ static void port_MenuAccept(void) {
         }
         break;
     }
+    case ROW_UPDATES:
+        g_menu.main_cursor = g_menu.cursor;
+        port_MenuBuild(PAGE_UPDATE, 0);
+        break;
+    case ROW_UPDATE_CHECK:
+        port_UpdateCheckNow();
+        break;
+    case ROW_UPDATE_NOW: {
+        PortUpdateView view;
+
+        port_UpdateGetView(&view);
+        if (view.status == PORT_UPDATE_READY) {
+            port_MenuClose();
+            port_Say("settings menu: restart and install %s", view.version);
+            port_UpdateRestartNow();
+        } else {
+            port_UpdateDownloadNow();
+        }
+        break;
+    }
+    case ROW_UPDATE_LATER:
+        port_UpdateLater();
+        port_MenuBack();
+        break;
+    case ROW_UPDATE_NOTE:
+        break;
     case ROW_QUIT:
         port_MenuClose();
         port_Say("settings menu: Quit");
@@ -730,6 +916,14 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
     s32 rows_shown;
     s32 i;
 
+    if (g_menu.page == PAGE_UPDATE) {
+        PortUpdateView view;
+
+        port_UpdateGetView(&view);
+        if (view.generation != g_menu.update_generation) {
+            port_MenuBuild(PAGE_UPDATE, g_menu.cursor);
+        }
+    }
     if (line < 12) {
         line = 12;
     }
@@ -769,6 +963,7 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
         snprintf(label, sizeof(label), "%s",
                  g_menu.page == PAGE_MAIN     ? "ReBushido: settings"
                  : g_menu.page == PAGE_ONLINE ? "ReBushido: play online"
+                 : g_menu.page == PAGE_UPDATE ? "ReBushido: updates"
                  : g_menu.pad == 0            ? "Controls: player 1's buttons"
                                               : "Controls: player 2's buttons");
     }

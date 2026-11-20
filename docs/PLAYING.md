@@ -229,6 +229,43 @@ again has its lines of that kind replaced -- and everything else of the
 file, comments and lines it does not know included, is left as you
 wrote it.
 
+## Updates
+
+The Windows package updates itself from the project's GitHub releases
+([docs/PORT.md](PORT.md), "Updates"). At a start, at most once a day,
+it asks in the background for the newest release (never during a fight,
+in a session of online play or on its pages, and never holding up the
+start: a PC with no network starts as ever). If it is newer, the top
+menu says so under the caption, and the settings menu's first page has
+**Updates**, whose page has:
+
+- **Check for updates now**: asks at once, whatever the setting.
+- **Update now to X**: downloads it into `update\` beside the program,
+  holding the zip and every file in it to the release's signed manifest;
+  then **Restart and install X** ends the program, puts the new files in
+  place, and starts it again.
+- **Later**: the top menu's notice is not shown again for that version.
+- **What's new in X**: the release's notes, signed with it.
+
+Nothing of yours is touched: `rebushido.cfg`, the memory cards, `logs\`,
+`screenshots\`, the disc image, the mods made from it (`made-from-disc.txt`)
+and any mod of your own. A file the new version no longer has is taken
+away only if it is still what the old version shipped. If the new
+program does not start, every file is put back and the old program is
+started again; it says so on the top menu and does not offer that
+version by itself again. What the step did is in `update\apply.log`.
+
+| setting | values | |
+|---|---|---|
+| `updates` | `ask`, `auto`, `off` | ask: the notice; auto: downloaded by itself and installed at the next start; off: asked only by Check for updates now |
+| `update_channel` | `release`, `beta` | beta takes prereleases too |
+
+A release is refused unless its manifest is signed with the release key
+the program was built with, and a file unless its SHA-256 is the
+manifest's: HTTPS alone is not trusted. A trial build (`-dev`, the
+repository's own) asks only when told to. Both players of an online
+session need the same build, so updating keeps friends in step.
+
 ## Changing the keys and the picture
 
 Make a text file `rebushido.cfg` beside the program, or let the

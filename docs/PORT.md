@@ -8709,6 +8709,107 @@ screen, Training's page, Online Play's page and Options; port-rollback
 of that plan with `--with=--menu --with=rebushido` is the same with and
 without rollbacks.
 
+## Updates
+
+The Windows package updates itself from GitHub Releases of the public
+repository (`src/port/window/update.c`, `update_core.c`,
+`update_apply.c`, `update.h`; for players [PLAYING.md](PLAYING.md),
+"Updates"; for the owner [BUILD.md](../BUILD.md), "Publishing a
+release"). Only the build with a window has it, and only the one for
+Windows asks the network; none of it is the game's state.
+
+**Where updates come from.** `GET
+https://api.github.com/repos/tgg12321/ReBushido/releases/latest` (never a
+prerelease or a draft), or `/releases?per_page=10` with `update_channel
+= beta`, through WinHTTP (the system's own TLS and proxy, no OpenSSL),
+with a five-second timeout. The answer's `browser_download_url`s name
+the release's assets: `update-manifest.txt`, its signature
+`update-manifest.txt.sig`, and the zip of `make port-release`.
+
+**The manifest** (`tools/release_sign.py` writes it), text, a line each:
+
+```
+rebushido-update 1
+version = 0.2
+commit = abc1234
+channel = release
+updater = 1                      the least PORT_UPDATER_VERSION that installs it
+zip = ReBushido-PC-0.2-abc1234.zip
+zip_size = 28123456
+zip_sha256 = <hex>
+folder = ReBushido-PC-0.2-abc1234
+note = a line of the release notes        (any number)
+file = <sha256> <size> <path>             (every file of the zip's folder)
+```
+
+**Security.** The `.sig` is the hex of an Ed25519 signature (RFC 8032) of
+the manifest's bytes, made with the release key, whose public half is
+built in from `config/release_public_key.txt` (`tools/port_sdl_build.py`
+writes `update_key.c`; `none` builds a program that never updates).
+The program checks it with Monocypher 4.0.2's `crypto_ed25519_check`
+(`src/port/vendor/monocypher/`, CC0 or BSD-2, as shipped, cross-checked
+against the tag's sources) before it reads anything else of the
+manifest; then the zip's size and SHA-256 as it downloads, then each
+file's SHA-256 and size as it unpacks (the port's own inflate,
+`port_Inflate` of `src/port/png.c`), refusing a file the manifest does
+not name, one it names twice, one missing, and any path that is not a
+package's (`..`, a drive, `\`, a setting, card, log, disc, `logs/`,
+`screenshots/`, `update/`, `made-from-disc.txt`:
+`port_UpdatePathIsOurs`). The step that installs checks the signature
+and every staged file again. HTTPS is not what is trusted. A trial
+build (`-dev`) takes `--update-url URL` and `--update-key HEX` for the
+tests; a release refuses both, and its install step uses the built-in
+key whatever it is given. `make port-release RB_RELEASE=1` refuses a
+`none` key, and `tools/release_publish.py` refuses to sign with a key
+whose public half is not the config's.
+
+**When.** At a start, if it is a day since the last answer
+(`update/state.txt`), on a thread of its own at a low priority, after
+the window has started: the start never waits for it. Not at all in a
+program started into a session (`--host`, `--join`, `--lobby`), in a
+test's run (`--frames`, `--plan`) unless it names `--update-url`, with
+`--prepare-only`, or by itself in a trial build. `updates = off` asks
+only when the menu's **Check for updates now** is chosen. The download
+waits while a fight is on (`port_UpdateWatch`, from the window's watch of
+the game) or online play's pages are up (`port_UpdateSetOnline`, which
+the settings menu's Play online page calls and online play's own pages
+are to call), and is given up if one begins; nothing is shown or
+installed meanwhile.
+
+**Installing** (`update_apply.c`). The zip is unpacked into
+`update/staged/`, and `update/ready.txt` and `ready.sig` (the manifest)
+are written last. At the next start (`updates = auto`), or at **Restart
+and install** (`ask`), the program copies itself and `SDL2.dll` into
+`update/apply/` and starts the copy as `--update-apply PID KEY -- WORDS`
+and ends. The copy waits for PID to end, checks everything again, and
+for each file of the manifest: leaves it if the folder's is already that
+file; otherwise moves the folder's into `update/old/` (a running
+program's file can be renamed, never written over) and the staged one
+in, `MoveFileEx`, retried for a few seconds where a scanner holds one.
+A file the old version's `package-files.txt` names and the new manifest
+does not is set aside too, if it is still the old version's bytes. Then
+it starts the new program with WORDS and `--update-started`, which writes
+`update/started.txt` once its settings and disc are read (before the
+disc's mods are made, which may take minutes). If a move fails, the
+program does not start, ends without that file, or says nothing in a
+minute, every move is undone in reverse and the old program is started
+with `--update-rolled-back VERSION`, which keeps `failed = VERSION`
+(that version is not downloaded by itself again) and says so on the top
+menu. Nothing else of the folder is ever touched: the player's files are
+named by no manifest. The disc's mods are made again by the new version
+at its first start (their key has the version, `prepare.c`).
+
+**Tests** (`tools/port_update_test.py`, Windows, the disc, no network):
+a server of its own on 127.0.0.1 answering as the API does, a key made
+for the run, the build's program installed in `build/tests/port_update/`
+with a player's files beside it, run with SDL's dummy drivers,
+`--hidden`, `--no-sound`, `--no-cards` and `--frames`. The newer version
+is the same program with its version text one more, a README changed, a
+file added and one dropped. Ten cases: up to date, newer (installed and
+started, player's files intact, the dropped file gone, nothing left in
+`update/`), bad signature, bad zip hash, bad file hash, truncated,
+offline, timeout, rollback, off (no request at all).
+
 ## 64 bits
 
 The port is built with 64-bit pointers and with 32-bit ones, from the

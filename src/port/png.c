@@ -546,20 +546,16 @@ static s32 png_Dynamic(PngInflate *z) {
     return png_Symbols(z, &literals, &distances);
 }
 
-/* A zlib stream into `out`: TRUE where it held exactly `out_size`
- * bytes. */
-static s32 png_Inflate(const u8 *in, u32 in_size, u8 *out, u32 out_size) {
+/* A deflate stream with no header (RFC 1951) into `out`: TRUE where it
+ * held exactly `out_size` bytes. A zip's files are this (the updater,
+ * src/port/window/update.c). */
+s32 port_Inflate(const u8 *in, u32 in_size, u8 *out, u32 out_size) {
     PngInflate z;
     s32 is_last = FALSE;
 
-    if (in_size < 2 || (in[0] & ZLIB_METHOD_MASK) != ZLIB_DEFLATE ||
-        (in[1] & ZLIB_DICTIONARY) != 0 ||
-        (((u32)in[0] << BITS_PER_BYTE) | in[1]) % ZLIB_CHECK != 0) {
-        return FALSE;
-    }
     z.in = in;
     z.in_size = in_size;
-    z.in_at = 2;
+    z.in_at = 0;
     z.bits = 0;
     z.bit_count = 0;
     z.out = out;
@@ -586,6 +582,17 @@ static s32 png_Inflate(const u8 *in, u32 in_size, u8 *out, u32 out_size) {
         }
     }
     return z.out_at == out_size;
+}
+
+/* A zlib stream into `out`: TRUE where it held exactly `out_size`
+ * bytes. */
+static s32 png_Inflate(const u8 *in, u32 in_size, u8 *out, u32 out_size) {
+    if (in_size < 2 || (in[0] & ZLIB_METHOD_MASK) != ZLIB_DEFLATE ||
+        (in[1] & ZLIB_DICTIONARY) != 0 ||
+        (((u32)in[0] << BITS_PER_BYTE) | in[1]) % ZLIB_CHECK != 0) {
+        return FALSE;
+    }
+    return port_Inflate(in + 2, in_size - 2, out, out_size);
 }
 
 /* ---- the rows ---- */

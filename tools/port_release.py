@@ -20,7 +20,11 @@ build ships), prepare/ (what makes the mods of the player's own disc at the
 first start: tools/port_prepare_bundle.py's Python, numpy, Pillow and tools,
 and the plans the program plays, from its .sym; docs/MODS.md, "Made from
 your disc"), README.txt (tools/port_release_readme.txt), LICENSE.txt,
-NOTICE.txt and licenses/ (SDL 2's, the fonts', stb's).
+NOTICE.txt, licenses/ (SDL 2's, the fonts', stb's, Monocypher's) and
+package-files.txt (every other file's SHA-256, size and path, for the
+updater). A release (--release) needs the release key's public half in
+config/release_public_key.txt; tools/release_publish.py signs the
+manifest of its zip and publishes it (BUILD.md, "Publishing a release").
 
 Nothing of the game goes in, and it refuses a package that has any:
 
@@ -69,7 +73,12 @@ README = 'tools/port_release_readme.txt'
 FONTS = 'src/port/fonts'
 STB = ['src/port/vendor/stb_vorbis.c', 'src/port/window/stb_truetype.h']
 PROGRAM = ['rebushido.exe', 'SDL2.dll', 'rebushido.exe.sym']
-TOP_FILES = PROGRAM + ['README.txt', 'LICENSE.txt', 'NOTICE.txt']
+# package-files.txt: every other file's SHA-256, size and path, which the
+# updater reads to take away what a newer version no longer has
+# (src/port/window/update_apply.c)
+PACKAGE_FILES = 'package-files.txt'
+TOP_FILES = PROGRAM + ['README.txt', 'LICENSE.txt', 'NOTICE.txt', PACKAGE_FILES]
+MONOCYPHER_LICENCE = 'src/port/vendor/monocypher/LICENCE.md'
 TOP_FOLDERS = ['mods', 'licenses', 'prepare']
 # What a player's own folder holds and a package never may: the disc, the
 # cards, the settings, the logs and the pictures.
@@ -79,7 +88,7 @@ REFUSED_FOLDERS = ('logs', 'screenshots')
 # beside it. Anything else (libwinpthread, libstdc++) the player would not have.
 SYSTEM_DLLS = {'kernel32.dll', 'user32.dll', 'gdi32.dll', 'comdlg32.dll', 'ws2_32.dll', 'msvcrt.dll', 'shell32.dll',
                'advapi32.dll', 'ole32.dll', 'oleaut32.dll', 'winmm.dll', 'imm32.dll', 'version.dll', 'setupapi.dll',
-               'iphlpapi.dll', 'bcrypt.dll', 'opengl32.dll', 'dbghelp.dll', 'sdl2.dll'}
+               'iphlpapi.dll', 'bcrypt.dll', 'opengl32.dll', 'dbghelp.dll', 'winhttp.dll', 'sdl2.dll'}
 SYSTEM_DLL_PREFIXES = ('api-ms-win-',)
 
 NOTICE_PORT = """
@@ -96,6 +105,9 @@ whose own terms allow that. It has in it, besides:
   public domain or MIT, as you prefer, licenses/stb-LICENSE.txt.
 - The typeface Shippori Mincho (Regular, Bold, ExtraBold): the SIL Open Font
   License 1.1, licenses/OFL-*.txt.
+- Monocypher 4.0.2 (https://monocypher.org/), its Ed25519, with which the
+  updater checks each release's signature: CC0 or the 2-clause BSD licence,
+  as you prefer, licenses/Monocypher-LICENCE.txt.
 - Sony's libsnd and libspu, reconstructed with the rest of PsyQ (above).
 
 The mods made from the player's disc
@@ -241,9 +253,21 @@ def contents(built, sdl_licence, mods, version, commit, prepare):
         if name.startswith('OFL') and name.endswith('.txt'):
             out['licenses/' + name] = crlf(read(os.path.join(FONTS, name)).decode('utf-8'))
     out['licenses/stb-LICENSE.txt'] = crlf('\n\n'.join(licence_of_stb(p) for p in STB))
+    out['licenses/Monocypher-LICENCE.txt'] = crlf(read(MONOCYPHER_LICENCE).decode('utf-8'))
     for rel, data in prepare.items():
         out['prepare/' + rel] = data
+    out[PACKAGE_FILES] = package_files(out)
     return out
+
+
+def package_files(files):
+    """package-files.txt of the package `files` ({path: bytes}): a line
+    `SHA256 SIZE PATH` a file, every one but itself, as the updater reads
+    it (src/port/window/update_core.c, port_UpdateReadFileLine)."""
+    lines = ['# The files of this package, which the updater takes away when a',
+             '# newer version no longer has them (README.txt, "Updates").']
+    lines += ['%s %d %s' % (sha256(files[rel]), len(files[rel]), rel) for rel in sorted(files) if rel != PACKAGE_FILES]
+    return ('\n'.join(lines) + '\n').encode('utf-8')
 
 
 def write_folder(folder, files):
@@ -376,6 +400,9 @@ def package(release, no_build):
             fail('--release needs git: run it in the checkout itself (make port-release RB_RELEASE=1)')
         if git('status', '--porcelain'):
             fail('no release from a tree with changes or files that are not committed')
+    if release and not port_sdl_build.release_key():
+        fail('%s says none: a release must be able to update itself (BUILD.md, "Publishing a release": '
+             'python tools/release_sign.py --generate)' % port_sdl_build.RELEASE_KEY)
     if not no_build:
         build(release)
     head = port_sdl_build.port_build.git_hash()
