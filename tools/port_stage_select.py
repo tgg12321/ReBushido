@@ -15,7 +15,10 @@ Narukagami's last fighter and a fighter the save has not won. Last,
 versus the CPU with --fight-music stage through two fights: the stage's
 piece over the first, the CPU cut down, and the next opponent's fight
 loaded and started (the stream used to loop on and the load wait for
-ever; docs/PORT.md, "A fight's music"). Both sizes
+ever; docs/PORT.md, "A fight's music"); and again on the Castle Rooftop,
+Tony Umeda against Kannuki and then Utsusemi on the stage kept in memory
+(the port stopped there: the rooftop's backdrop was moved by whatever a
+register held; docs/PORT.md, "An argument that was not passed"). Both sizes
 of the port (build/port/, build/port32/) must print the same trace of
 each plan, line for line, and each checkpoint's values must be what the
 presses chose.
@@ -392,6 +395,71 @@ after = 120
 expect = ["screen == SCREEN_FIGHT_UPDATE", "mode == 1"]
 '''
 
+# Versus the CPU on the Castle Rooftop, the owner's crash of 2026-11-19:
+# Tony Umeda with the long sword cuts Kannuki down, and Utsusemi's fight
+# is set up on the stage kept in memory. Loading her model frees
+# Kannuki's, the arena moves the stage's block down, and the rooftop's
+# backdrop is moved by a distance its call never passes
+# (resource_OnStageMoved): on the console the register still holds the
+# stage's own, on a PC it held anything and the port stopped in the load
+# or drawing the next frame. The fighters, the stage and the order of the
+# run are written in (`poke`) rather than picked: from the stage pages,
+# for as long as the first fight takes to start, Tony Umeda, his long
+# sword, the rooftop and Kannuki with the katana; from the first fight on,
+# Utsusemi second in the run (g_vscpu_order). The presses are vscpu_next's.
+ROOFTOP = 13
+ROOFTOP_POKES = (('stages', 400, 'config_roster_p1', 26), ('stages', 400, 'config_weapon_p1', 1),
+                 ('stages', 400, 'config_stage', ROOFTOP), ('stages', 400, 'stage', ROOFTOP),
+                 ('stages', 300, 'config_roster_p2', 3), ('stages', 300, 'config_weapon_p2', 0),
+                 ('fight', 1500, 'g_vscpu_order+1', 3))
+TOML_VSCPU_ROOFTOP = 'about = "Versus the CPU on the rooftop, to the next opponent on the stage kept ' \
+    '(tools/port_stage_select.py)"\n' + HEAD + '''input = [%(opening)s,
+    "menu+30 DOWN", "menu+90 CROSS",
+    "select+300 CROSS", "select+520 CROSS",
+    "stages+40 CROSS",
+    %(presses)s,
+]
+''' % {'opening': ', '.join(OPENING), 'presses': fight_presses()} + COMPARE.replace(
+    '"port_page_used"]', '"port_page_used", "loaded_stage", "winner"]') + START + '''
+[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 1500
+shot = false
+
+[[checkpoint]]
+name = "stages"
+when = "port_on_stages == 1"
+within = 1500
+shot = false
+
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+at_frame = true
+within = 3000
+expect = ["mode == 1", "stage == %(rooftop)d", "p1_character == 20", "p1_weapon == 1",
+          "p2_character == 0", "p2_weapon == 0", "winner == FIGHT_NOBODY"]
+
+[[checkpoint]]
+name = "kill"
+when = "winner != FIGHT_NOBODY"
+within = 6000
+expect = ["winner == 0", "p2_defeated != 0", "p1_defeated == 0"]
+
+[[checkpoint]]
+name = "next"
+when = "screen == SCREEN_FIGHT_UPDATE && winner == FIGHT_NOBODY"
+within = 3000
+expect = ["stage == %(rooftop)d", "loaded_stage == %(rooftop)d", "p1_character == 20",
+          "p2_character == 3", "p2_weapon == 4", "p1_defeated == 0", "p2_defeated == 0"]
+
+[[checkpoint]]
+name = "walk"
+after = 120
+expect = ["screen == SCREEN_FIGHT_UPDATE", "stage == %(rooftop)d"]
+'''
+
 # every unlock the save can hold (PORT_PLAY_ALL_UNLOCKS), and an empty
 # save's (SAVE_DEFAULT_UNLOCKS)
 ALL_UNLOCKS = 0x053FF3FF
@@ -425,15 +493,17 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--out', default=os.path.join(REPO, 'build', 'stage-select'))
     parser.add_argument('--shots', default=None)
-    parser.add_argument('--only', nargs='*', help='the plans to run (stage_select, vscpu, practice, vs_unlocked, vscpu_next)')
+    parser.add_argument('--only', nargs='*',
+                        help='the plans to run (stage_select, vscpu, practice, vs_unlocked, vscpu_next, vscpu_rooftop)')
     args = parser.parse_args(argv[1:])
     import playtest
     report = Report()
     out = os.path.abspath(args.out)
     os.makedirs(out, exist_ok=True)
     mods = make_mods(out)
-    values = {'host': ARENA_HOST, 'all': ALL_UNLOCKS, 'default': DEFAULT_UNLOCKS}
-    # each plan: its name, its test, and what the run is given besides
+    values = {'host': ARENA_HOST, 'all': ALL_UNLOCKS, 'default': DEFAULT_UNLOCKS, 'rooftop': ROOFTOP}
+    # each plan: its name, its test, what the run is given besides, and
+    # what is written into the game's memory
     plans = [
         ('stage_select', TOML, ['--mods', mods]),
         ('vscpu', TOML_VSCPU, ['--mods', 'off', '--stage-select', '--unlock-all']),
@@ -441,16 +511,39 @@ def main(argv):
         ('vs_unlocked', TOML_VS_UNLOCKED, ['--mods', 'off', '--unlock-all']),
         ('vscpu_next', TOML_VSCPU_NEXT,
          ['--mods', 'off', '--stage-select', '--unlock-all', '--fight-music', 'stage']),
+        ('vscpu_rooftop', TOML_VSCPU_ROOFTOP,
+         ['--mods', 'off', '--stage-select', '--unlock-all', '--fight-music', 'stage'], ROOFTOP_POKES),
     ]
     if args.only:
         plans = [plan for plan in plans if plan[0] in args.only]
-    for name, text, extra in plans:
-        if run_plan(playtest, report, out, name, text % values, extra, args.shots) is None:
+    for name, text, extra, *pokes in plans:
+        if run_plan(playtest, report, out, name, text % values, extra, args.shots, *pokes) is None:
             return 1
     return 1 if report.failed else 0
 
 
-def run_plan(playtest, report, out, name, text, extra, shots):
+def poke_lines(playtest, program, lines, pokes):
+    """The plan's `poke` lines: (checkpoint, blanks held, name, value)
+    each, the name a value the plan reads or a variable of the program's,
+    and an offset into it after a `+`; a byte unless the plan reads it
+    wider."""
+    where = {}
+    for line in lines:
+        word = line.split()
+        if word and word[0] == 'var':
+            where[word[1]] = (int(word[2]), int(word[3]))
+    symbols = playtest.read_port_symbols(program + '.sym')[0]
+    cps = [line.split()[1] for line in lines if line.startswith('cp ')]
+    result = []
+    for checkpoint, hold, name, value in pokes:
+        base, _, offset = name.partition('+')
+        address, size = where[base] if base in where else (symbols[base], 1)
+        result.append('poke %d 0 %d %d %d %d'
+                      % (cps.index(checkpoint) + 1, hold, address + int(offset or 0), size, value))
+    return result
+
+
+def run_plan(playtest, report, out, name, text, extra, shots, pokes=()):
     """One plan on both sizes of the port: each checkpoint reached and what
     it expects, and the two traces the same. None if a program is not
     built."""
@@ -468,6 +561,7 @@ def run_plan(playtest, report, out, name, text, extra, shots):
         disc = playtest.Disc('port')
         test.set_discs([disc])
         names, lines = test.plan(disc, playtest.header_names(), 1)
+        lines += poke_lines(playtest, program, lines, pokes)
         prefix = '' if name == 'stage_select' else name + '-'
         plan = os.path.join(out, '%splan%d.txt' % (prefix, bits))
         with open(plan, 'w', encoding='utf-8', newline='\n') as f:

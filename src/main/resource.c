@@ -652,7 +652,17 @@ static void resource_OnStageMoved(s32 block_id, s32 delta) {
     case STAGE_CASTLE_ROOFTOP:
         /* The original's behaviour: the delta is not passed, so the
          * backdrop's meshes are moved by whatever the last call left in the
-         * register. */
+         * register. As the original is compiled that is the delta: the
+         * first call above leaves it there and collision_RebaseGrid does
+         * not touch it. A PC's compiler leaves anything there, and the
+         * backdrop's table went off into memory that is not there when
+         * the next fight was set up on the rooftop kept in memory (the
+         * owner's crash of 2026-11-19): the port passes what the
+         * console's register holds (docs/PORT.md, "An argument that was
+         * not passed"). */
+#if RB_PORT
+        reloc_RebaseBlock(RELOC_STAGE_PROPS, delta);
+#else
 #if RB_FIX_ROOFTOP_REBASE
         if (g_rb_settings.bugfixes) {
             reloc_RebaseBlock(RELOC_STAGE_PROPS, delta);
@@ -661,6 +671,7 @@ static void resource_OnStageMoved(s32 block_id, s32 delta) {
         {
             reloc_RebaseBlock(RELOC_STAGE_PROPS);
         }
+#endif
         break;
     case STAGE_KIMIGAURA_COAST:
         wave_RebaseBuffer(delta);

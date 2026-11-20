@@ -315,6 +315,31 @@ declared to return (`snd_Play`, `fighter_TryDropSecondSword`,
 `eff_SetUpParticles`, and `font_Printf` called with the text alone in
 `select.c`); no caller uses what they return.
 
+**An argument that was not passed.** When the arena moves the Castle
+Rooftop's block, `resource_OnStageMoved` moves the backdrop's table of
+meshes with `reloc_RebaseBlock(RELOC_STAGE_PROPS)`, no distance given
+(the function has no prototype; `RB_FIX_ROOFTOP_REBASE` passes it). On
+the PlayStation the distance is whatever the second argument's register
+holds, and that is the distance itself: the call to `reloc_RebaseBlock`
+just before passes it there and leaves it, and `collision_RebaseGrid`
+does not touch it (read from the listing). On a PC the register holds
+anything, so the backdrop's table and every pointer in it went off by a
+number from nowhere. The arena moves the stage only when a block before
+it is freed with the stage kept: the next opponent of a run against the
+CPU on the stage the stage pages chose, whose classes are the last
+one's. The owner's game stopped there (2026-11-19: Tony Umeda against
+Kannuki and then Utsusemi on the rooftop, a fault in `render_DrawQueue`
+reading a mesh of the backdrop on the next fight's first frame; on Linux
+and in a run of the Windows program on the same presses, in
+`reloc_RebaseBlock` itself as the next fighter's model was loaded). The
+port passes the distance, the console's value, under `RB_PORT`
+(`resource.c`). `tools/port_stage_select.py`, plan `vscpu_rooftop`,
+holds it. Two other calls give fewer arguments than the function takes,
+neither of them a pointer: `eff_StartThrownDirt` without `grass` (dirt or
+grass, `eff.h`), and the pause menu's `pad_Update()` without
+`no_unplug_pause` (`main.c`); on the port each is whatever its register
+held.
+
 ### The disc
 
 `src/port/disc.c` reads the player's image: the `.bin` of raw 2,352-byte
