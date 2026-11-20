@@ -38,6 +38,17 @@ enum {
 /* A light's kind (the same numbers as gl_lights.h's). */
 enum { PORT_LIGHT_POINT = 0, PORT_LIGHT_SPOT = 1 };
 
+/* The times of day a light is lit at (`times = dusk night`), for the
+ * stage select's time of day (ROADMAP 20): a light whose `times` is not 0
+ * and leaves out the time chosen is not lit. 0, a light with no `times`,
+ * is lit at every time. */
+enum {
+    PORT_LIGHT_TIME_DAWN = 1,
+    PORT_LIGHT_TIME_DAY = 2,
+    PORT_LIGHT_TIME_DUSK = 4,
+    PORT_LIGHT_TIME_NIGHT = 8
+};
+
 /* What a light keeps of the file's numbers. A fraction is in thousandths:
  * `intensity = 1.5` is 1500. */
 #define PORT_LIGHT_ONE 1000

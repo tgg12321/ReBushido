@@ -570,8 +570,8 @@ mods/
 - The key is `stage_NN`, as the skies': the stage's number in two
   digits (`STAGE_NAMES` of `tools/port_remaster_prove.py`).
 - The program ships one mod of them, `mods/lights/` (order -100, under
-  yours): the game's own flames lit on the nine stages that have them
-  and the lamps of two more (below). `stage_lights = off` puts every stage's lights out
+  yours): the game's own flames lit on the nine stages that have them,
+  and the lamps, lit windows and doors of more (below). `stage_lights = off` puts every stage's lights out
   ([`PLAYING.md`](PLAYING.md)); `effect_lights` is the fight's flashes',
   which are no file's.
 - The log says what each stage's files came to (`lights: stage 2 has 1
@@ -597,6 +597,7 @@ shadow = yes              # asks to cast shadows (the strongest few do)
 direction = 0 1 0         # a spot's: which way it points (down)
 cone = 30 45              # a spot's: full inside 30 degrees, none past 45
 on = stage                # what it is fastened to (below)
+times = dusk night        # lit only at these times of day (below)
 ```
 
 Everything but the name may be left out: a light is a white point of
@@ -609,7 +610,8 @@ about a stage's noon sun. A torch, a lantern or a lamp near the
 fighters sits well below that, 0.3 to 0.8, and `radius` does the
 falling off; only a flash goes near 1 or past it (the clash's is 1.5,
 `effect_lights`). The shipped files go from 0.3 (a candle at a grave)
-to 0.7 (the ferry dock's lamp, high up).
+to 0.7 (the ferry dock's lamp, high up); the moon or the day through a
+hall's doors and windows is 0.5 and 0.4, falling off over the hall.
 
 | `on =` | `at` is | |
 |---|---|---|
@@ -623,6 +625,13 @@ to 0.7 (the ferry dock's lamp, high up).
 
 A light fastened to something not in the frame (a fighter not drawn, a
 weapon past the last) is not lit that frame.
+
+**When.** `times` is one or more of `dawn`, `day`, `dusk` and `night`:
+the light is lit only when the stage is played at one of them (the stage
+select's time of day, ROADMAP 20, which says what a stage's own time
+counts as). Left out, or
+`always`, it is lit at every time: a fire burns at noon too, a street
+lamp waits for dusk.
 
 **Layered.** A block of a name the files before it already gave
 **changes that light**: only the lines it says, the rest as they were.
@@ -662,23 +671,32 @@ What the program ships, each looked at in the pictures of its tour:
 
 | Stage | Lights | |
 |---|---|---|
+| 0 Main Tatara shrine | 4 spots | the two open doors of the hall: the moon through them at night, the day by day |
+| 1 Meikyokan dojo | 4 spots | the two high windows of the hall, the same |
 | 2 Shainto HQ | `on = flames`: 4 | candles on stands, and two before the Buddha |
-| 3 Tatara shrine | `on = flames`: 4 | fire baskets on the deck's railing |
+| 3 Tatara shrine | `on = flames`: 4; 2 | fire baskets on the deck's railing; the hall's paper screens lit from within (dusk, night) |
+| 4 Bus stop | 2 spots | the fluorescent tubes under the shelter's roof (dusk, night) |
 | 6 Tatara shrine path | `on = flames`: 4 | stone lanterns |
-| 8 Outside Meikyokan | `on = flames`: 2 | fire baskets by the dojo's door |
-| 20 Kabuki stage | `on = flames`: 4 | torches along the walkway |
+| 8 Outside Meikyokan | `on = flames`: 2; 1 | fire baskets by the dojo's door; the stone lantern by the path (dusk, night) |
+| 16 Under the railway | 2 spots | the street lamps on the two utility poles (dusk, night) |
+| 20 Kabuki stage | `on = flames`: 4; 3 | torches along the walkway; the lanterns under the theatre's eaves (dusk, night) |
 | 22 Ferry dock | 1 spot | the tall street lamp at the quay's edge, lit |
 | 23 Shainto gate | `on = flames`: 2 | small fires on the gate's deck |
 | 24 Purple cavern | `on = flames`: 4 | candles by the iron gate |
+| 29 Building rooftop | 9 | the lamp over the stairwell's door; the red aviation lights at the corners of the two towers beside it (dusk, night) |
 | 30 Building parking lot | 5 spots | the fluorescent lights down the ceiling |
 | 31 Shainto cemetery | `on = flames`: 2 | candles at two graves |
+| 32 Team battle 1 | 6 spots | the band of windows along the hall's south wall, the moon's and the day's |
 | 33 Team battle 2 | `on = flames`: 4 | fire baskets at the square's corners |
 
-None on the rest: lit by day, or by the moon (the castle rooftop), or
-with lamps that are not lit (the bus stop's and the outside of the
-Meikyokan's posts), or with sources too small to place from the meshes
-yet (the red warning lights of the building rooftop's mast, the
-lighthouse's lamp, which no fight's camera sees).
+A light of a window or a door comes twice, `times = night` in the moon's
+cool colour and `times = dawn day dusk` in the day's; a lamp is lit from
+dusk; a fire burns at every time. None on the rest: open ground lit by
+the moon or the day alone (the bridges, the fields, the coast, the
+cliffs, the railway, the castle rooftop), or places abandoned, whose lamps
+would not be lit (the abandoned ship, station, tunnel and shipyard), or
+with lamps drawn unlit (the outside of the Meikyokan's posts), or with a
+source no fight's camera sees (the lighthouse's lamp, 16,000 up).
 
 ## Music
 

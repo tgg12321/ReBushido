@@ -218,6 +218,7 @@ static void test_File(void) {
             "  cone = 20 40\n"
             "  flicker = 0.25\n"
             "  shadow = yes\n"
+            "  times = Dusk night\n"
             "[fire]\n"
             "on = flame 2\n"
             "color = 255 128 0\n",
@@ -244,6 +245,7 @@ static void test_File(void) {
     CHECK_EQ(light->cone_outer, 40);
     CHECK_EQ(light->flicker, 250);
     CHECK_EQ(light->shadow, TRUE);
+    CHECK_EQ(light->times, PORT_LIGHT_TIME_DUSK | PORT_LIGHT_TIME_NIGHT);
     light = &set.light[1];
     CHECK(test_StringsEqual(light->name, "fire"));
     CHECK_EQ(light->on, PORT_LIGHT_ON_FLAME);
@@ -256,6 +258,7 @@ static void test_File(void) {
     CHECK_EQ(light->on_bone, -1);
     CHECK_EQ(light->shadow, FALSE);
     CHECK_EQ(light->flicker, 0);
+    CHECK_EQ(light->times, 0);
 
     /* the same name again changes it; remove and clear */
     CHECK_EQ(test_Parse("[light FIRE]\nradius = 9000\nremove lantern_1\n", &set,
@@ -282,6 +285,8 @@ static void test_File(void) {
     test_Wrong("[light a]\ndirection = 0 0 0\n", "line 2: `direction`");
     test_Wrong("[light a]\nkind = area\n", "line 2: `kind`");
     test_Wrong("[light a]\nshadow = maybe\n", "line 2: `shadow`");
+    test_Wrong("[light a]\ntimes = noon\n", "line 2: `times`");
+    test_Wrong("[light a]\ntimes =\n", "line 2: `times`");
     test_Wrong("[light a]\non = fighter 3\n", "line 2: a fighter is 1 or 2");
     test_Wrong("[light a]\non = weapon\n", "line 2: `on` names a thing");
     test_Wrong("[light a]\non = piece 2 bone 1\n", "line 2: only a fighter");
