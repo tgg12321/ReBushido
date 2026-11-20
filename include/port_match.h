@@ -8,7 +8,14 @@
  * - Stock N: each side has N lives; a fight's loser loses one; the next
  *   fight is on the same stage with the same fighters, each side keeping
  *   its lives, until one side has none;
- * - First to N: fights until one side has won N.
+ * - First to N: fights until one side has won N;
+ * - Crew N: each side picks a crew of N fighters and weapons, in order,
+ *   before the match (the select screen's grid and weapons once a place,
+ *   after the stage page); each fight is the two crews' fighters in play,
+ *   the loser's is out and the next of its crew comes in, the winner
+ *   stays, loaded afresh as any fight starts; a draw takes one from both.
+ *   The match ends when a crew has none left, drawn when both run out at
+ *   once.
  *
  * Inside a fight the game's own kill, replay and winner's view run. A
  * fight both fighters fall in is a draw: in Stock it takes a life from
@@ -45,12 +52,17 @@ enum {
     PORT_MATCH_SINGLE = 0,   /* the game's own one fight */
     PORT_MATCH_STOCK = 1,    /* lives */
     PORT_MATCH_FIRST_TO = 2, /* wins */
-    PORT_MATCH_RULES = 3
+    PORT_MATCH_CREW = 3,     /* crews of fighters */
+    PORT_MATCH_RULES = 4
 };
 
 #define PORT_MATCH_COUNT_LEAST 1
 #define PORT_MATCH_COUNT_MOST 9
 #define PORT_MATCH_COUNT_DEFAULT 3
+/* A crew's size: the count of a Crew match. */
+#define PORT_MATCH_CREW_LEAST 2
+#define PORT_MATCH_CREW_MOST 8
+#define PORT_MATCH_CREW_DEFAULT 5
 
 /* What a fight of the match came to (PortMatch.last). */
 enum {
@@ -59,6 +71,9 @@ enum {
     PORT_MATCH_DRAW = 2,
     PORT_MATCH_NOT_YET = 3
 };
+
+/* PortMatch.winner of a Crew match whose two crews ran out at once. */
+#define PORT_MATCH_DRAWN 2
 
 /* The card up after a fight (PortMatch.card). */
 enum {
@@ -72,6 +87,13 @@ enum {
 #define PORT_MATCH_SCORE_FRAMES 75
 #define PORT_MATCH_RESULT_FRAMES 120
 #define PORT_MATCH_CARD_LEAST 20
+
+/* A place of a crew: the fighter (enum CharacterId, as the select screen
+ * picks it) and the weapon (enum WeaponId). */
+typedef struct {
+    u8 fighter;
+    u8 weapon;
+} PortCrewPick;
 
 typedef struct {
     u8 is_started;
@@ -92,6 +114,17 @@ typedef struct {
     u8 mode;         /* the match's mode (enum FightMode) */
     u8 page_on;      /* the stage page this frame offers a match */
     u16 card_frames; /* frames the card has been up */
+    /* Crew (PORT_MATCH_CREW). The two crews are crew[side][place], the
+     * fighter of a side in play crew[side][count - lives[side]]; versus
+     * the CPU the second crew is the CPU's. */
+    u8 page_crew;   /* the stage pages' crew size */
+    u8 crew_size;   /* the crews picked or being picked: their size */
+    u8 crew_picked; /* places of the crews picked, the same for each side */
+    u8 crew_sides;  /* the sides the select screen picks for: 1 or 2 */
+    u8 crew_grid;   /* the grid is to be cleared for the next place */
+    u8 crew_kept;   /* the crews of the match before, kept for the next */
+    u16 crew_seed;  /* the CPU's crew's dice */
+    PortCrewPick crew[2][PORT_MATCH_CREW_MOST];
 } PortMatch;
 
 extern PortMatch g_port_match;
@@ -125,6 +158,39 @@ extern s32 port_MatchToStages(void);
 extern s32 port_MatchPageStep(s32 mode, s32 pressed, s32 is_open);
 /* TRUE for the modes that play matches: versus, link, versus the CPU. */
 extern s32 port_MatchModeHasRules(s32 mode);
+
+/* ---- Crew: the picks and the fighters (under RB_PORT) ---- */
+
+/* The select screen would be done (select.c: a stage chosen, or the
+ * weapons of a mode with no stage page): TRUE while the mode's rule is
+ * Crew and its crews are not yet all picked, so the place the screen's
+ * `sides` picks have just made is taken (port_MatchCrewTake) and the grid
+ * comes up again for the next. FALSE if the crews are picked (or kept
+ * from the match before at the page's size): the screen is done. */
+extern s32 port_MatchCrewWanted(s32 mode, s32 sides);
+/* A side's pick for the place being picked. */
+extern void port_MatchCrewTake(s32 side, s32 fighter, s32 weapon);
+/* The place just taken was the crews' last. */
+extern s32 port_MatchCrewDone(void);
+/* A crew's place after the first is being picked (the grid, the weapons). */
+extern s32 port_MatchCrewPicking(void);
+/* The grid has come up for the next place: TRUE once, to clear the
+ * picks. */
+extern s32 port_MatchCrewGridDue(void);
+/* The crews' first places (what the settings' match_picks hold for the
+ * first fight): the side's fighter and weapon. */
+extern s32 port_MatchCrewFirst(s32 side, s32 *fighter, s32 *weapon);
+/* The crews picked are let go: Triangle back from a stage page or from
+ * the grid of a later place, or a select screen begun afresh. */
+extern void port_MatchCrewDrop(void);
+/* Versus the CPU's next opponent is chosen (fight_modes.c,
+ * fight_NextVsCpuOpponent): in a Crew match it leads the CPU's crew, the
+ * rest at random. */
+extern void port_MatchOpponentChosen(void);
+/* The game's Rematch of a lost Crew match (versus the CPU): TRUE if the
+ * fighters are to be loaded again (the crews' first), FALSE to start
+ * where the fighters are, as the game does. */
+extern s32 port_MatchRematchLoads(void);
 
 /* ---- the run's choice, outside the state (src/port/play_switches.c) ---- */
 

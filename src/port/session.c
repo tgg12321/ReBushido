@@ -51,8 +51,9 @@
  * silence, the disc's sum is of its data alone, and the two may meet by
  * way of the lobby (relay.c). 8: the players' names, the lobby before the
  * game (each ready or gone), and the host's rules. 9: the welcome carries
- * the host's match rule (port_match.h). */
-#define SESSION_PROTOCOL 9
+ * the host's match rule (port_match.h). 10: the rule may be Crew, whose
+ * crews the game's state carries. */
+#define SESSION_PROTOCOL 10
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -1277,6 +1278,7 @@ void port_ApplySession(void) {
     port_Log("session: the host's match rule is %s, %d\n",
              port_GetMatchRule() == PORT_MATCH_STOCK      ? "stock"
              : port_GetMatchRule() == PORT_MATCH_FIRST_TO ? "first_to"
+             : port_GetMatchRule() == PORT_MATCH_CREW     ? "crew"
                                                           : "single",
              port_GetMatchCount());
     port_Log("session: the host's unlock_all is %s, its "

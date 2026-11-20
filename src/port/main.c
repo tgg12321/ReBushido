@@ -214,8 +214,9 @@ static const char g_port_usage[] =
     "  --time-of-day W  stage (the default), dawn, day, dusk or night:\n"
     "                 the time the stages start at (the window's\n"
     "                 time_of_day; docs/PLAYING.md, \"The time of day\")\n"
-    "  --match single|stock:N|first_to:N  the match rule the stage select\n"
-    "                 starts at, N 1 to 9 (the window's match_rule and\n"
+    "  --match single|stock:N|first_to:N|crew:N  the match rule the stage\n"
+    "                 select starts at, N 1 to 9, a crew's 2 to 8 (five\n"
+    "                 if not given; the window's match_rule and\n"
     "                 match_count; docs/PLAYING.md, \"Match rules\")\n"
     "  --weapon 1=NAME  the fighter in place 1 (or 2) fights with a mod's\n"
     "                 weapon NAME (weapons/NAME.txt) whenever his weapon\n"
@@ -274,12 +275,13 @@ static void port_UsageError(const char *problem, const char *word) {
 /* the longest of the match rules' names, and its end */
 #define MATCH_NAME_BYTES 12
 
-/* --match's `single`, `stock:N` or `first_to:N` (port_match.h). */
+/* --match's `single`, `stock:N`, `first_to:N` or `crew:N` (port_match.h),
+ * a crew of five without its number. */
 static void port_ParseMatch(const char *text) {
     static const char * const rules[PORT_MATCH_RULES] = {
-        "single", "stock", "first_to"};
+        "single", "stock", "first_to", "crew"};
     char name[MATCH_NAME_BYTES];
-    s32 count = PORT_MATCH_COUNT_DEFAULT;
+    s32 count = -1;
     s32 length = 0;
     s32 rule = PORT_MATCH_RULES;
 
@@ -302,8 +304,13 @@ static void port_ParseMatch(const char *text) {
     }
     if (rule >= PORT_MATCH_RULES) {
         port_UsageError(
-            "--match takes single, stock:N or first_to:N (N 1 to 9), not ",
+            "--match takes single, stock:N, first_to:N or crew:N (N 1 to 9), "
+            "not ",
             text);
+    }
+    if (count < 0) {
+        count = rule == PORT_MATCH_CREW ? PORT_MATCH_CREW_DEFAULT
+                                        : PORT_MATCH_COUNT_DEFAULT;
     }
     port_SetMatchDefault(rule, count);
 }

@@ -1285,6 +1285,12 @@ void fight_AfterFightUpdate(void) {
     }
     if (g_fight_choice == FIGHT_CHOICE_REMATCH) {
         g_fight_restart = 1;
+#if RB_PORT
+        /* a Crew match begun again loads its crews' first (port_match.h) */
+        if (port_MatchRematchLoads()) {
+            g_fight_restart = 0;
+        }
+#endif
         g_fight_continues++;
         g_fight_restart_pair =
             fight_FindNearestStartPair(&g_fighters[g_fight_winner].world_pos);

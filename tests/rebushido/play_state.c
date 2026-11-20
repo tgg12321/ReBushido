@@ -60,6 +60,16 @@ void test_Main(void) {
     WHERE(PortMatch, over);
     WHERE(PortMatch, winner);
     WHERE(PortMatch, card);
+    WHERE(PortMatch, page_crew);
+    WHERE(PortMatch, crew_size);
+    WHERE(PortMatch, crew_picked);
+    WHERE(PortMatch, crew_sides);
+    WHERE(PortMatch, crew[0][0].fighter);
+    WHERE(PortMatch, crew[0][1].fighter);
+    WHERE(PortMatch, crew[0][2].fighter);
+    WHERE(PortMatch, crew[1][0].fighter);
+    WHERE(PortMatch, crew[1][1].fighter);
+    WHERE(PortMatch, crew[1][2].fighter);
     /* the hit tests' scratch, which first_frame_sweep.toml reads by
      * address: a sweep's far end as it is and as it was */
     CHECK_EQ(SCRATCHPAD, 0x1F800000);

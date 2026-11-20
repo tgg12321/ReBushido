@@ -547,20 +547,25 @@ extern s32 port_StagePagePixels(
     s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
 
 /* What of the match rules is over the picture (include/port_match.h):
- * nothing, the lives or the score over a fight of a match, or the card
- * after one (match_page.c). */
+ * nothing, the lives or the score over a fight of a match, the card
+ * after one, or the crews so far while a Crew match's later places are
+ * picked on the select screen (match_page.c). */
 enum {
     PORT_MATCH_SHOWN_NONE = 0,
     PORT_MATCH_SHOWN_HUD = 1,
     PORT_MATCH_SHOWN_CARD = 2,
+    PORT_MATCH_SHOWN_PICK = 3,
 };
 
 extern s32 port_MatchShown(void);
+/* A Crew match's place of a side: the fighter's name as the window shows
+ * it (match_page.c reads the crews; the game's tables are here). */
+extern const char *port_MatchCrewName(s32 fighter);
 /* What the window lays over the picture for them, as
  * port_StagePagePixels does for the stage pages. */
 extern s32 port_MatchPixels(
     s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
-/* "Single fight", "Stock N" or "First to N" into `out`. */
+/* "Single fight", "Stock N", "First to N" or "Crew N" into `out`. */
 extern void port_MatchRuleName(char *out, s32 room, s32 rule, s32 count);
 /* ReBushido's top menu as the window lays it over the game's page
  * (top_page.c), read from the game (port_top_menu.h): whether the page is
