@@ -498,6 +498,57 @@ static GpuDb *g_select_db;
 static SelectWork *g_select_work;
 static s16 g_select_weapon_fly[2]; /* frames left of each weapon's flight */
 
+#if RB_PORT
+/* After a match of versus or link (port_match.h) the screen opens on the
+ * page of stages versus opens on, each side's fighter and weapon those of
+ * the match (the settings' picks), its cursor on its fighter's place of
+ * the grid, so that Triangle goes back to the weapons as from any stage
+ * page. */
+static void select_PortBackToStages(void) {
+    s32 side;
+    s32 row;
+    s32 col;
+
+    for (side = 0; side < 2; side++) {
+        u8 fighter = g_select_settings->match_picks[side][0].fighter;
+
+        g_select_fighter_flags[g_select_grid[g_select_fighter_rows[side]]
+                                            [g_select_fighter_cols[side]]
+                                                .value] &=
+            ~SELECT_FIGHTER_TAKEN;
+        for (row = 0; row < SELECT_GRID_ROWS; row++) {
+            for (col = 0; col < SELECT_GRID_COLS; col++) {
+                if (g_select_grid[row][col].fighter == fighter) {
+                    g_select_fighter_rows[side] = (s16)row;
+                    g_select_fighter_cols[side] = (s16)col;
+                }
+            }
+        }
+    }
+    for (side = 0; side < 2; side++) {
+        row = g_select_fighter_rows[side];
+        col = g_select_fighter_cols[side];
+        g_select_fighter_flags[g_select_grid[row][col].value] |=
+            SELECT_FIGHTER_TAKEN;
+        g_select_picks.rec[side].hover = g_select_grid[row][col].value;
+        g_select_picks.rec[side].fighter =
+            g_select_settings->match_picks[side][0].fighter;
+        g_select_picks.rec[side].weapon =
+            g_select_settings->match_picks[side][0].weapon;
+        g_select_weapon_cursors[side] = SELECT_WEAPON_START;
+        g_select_weapon_fly[side] = 0;
+    }
+    g_select_fade = 0;
+    if (g_select_mode == FIGHT_MODE_NETWORK) {
+        g_select_step = SELECT_STEP_STAGE_3;
+        g_select_stage_row = 1;
+        g_select_stage_col = 1;
+    } else {
+        g_select_step = SELECT_STEP_STAGE_2;
+    }
+}
+#endif
+
 /* ---- loading ---- */
 
 /* Loads the mode's file to `memory` (the two frames' pool records come
@@ -614,6 +665,12 @@ s32 select_Load(
     /* the stage pages' row of music starts from the window's fight_music
      * (port_fight_music.h) */
     port_FightMusicReset();
+#endif
+#if RB_PORT
+    /* after a match, back to the stage pages (port_match.h) */
+    if (port_MatchToStages()) {
+        select_PortBackToStages();
+    }
 #endif
     DrawSync(0);
     MoveImage(&rect, SPRITE_STRIP_COPY_X, SPRITE_STRIP_COPY_Y);
@@ -2284,6 +2341,11 @@ static void select_StageStep(
     if (port_FightMusicPageStep(
             (s32)(((u32)g_select_pressed & PAD_ANY(PADL2 | PADR2)) << 2),
             g_select_door == SELECT_DOOR_OPEN)) {
+        g_select_pressed = 0;
+    }
+    /* the match rule (port_match.h): Circle and Start */
+    if (port_MatchPageStep(g_select_mode, g_select_pressed,
+                           g_select_door == SELECT_DOOR_OPEN)) {
         g_select_pressed = 0;
     }
 #endif

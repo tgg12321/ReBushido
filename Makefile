@@ -363,9 +363,12 @@ endif
 # fails on any difference of the state, of what the two runs print or of
 # what they write. About half a minute. It needs the retail disc's image
 # (REBUSHIDO_RETAIL, or the .cue at the checkout's root) and no emulator,
-# so it is not one of the checks, which run without the disc.
+# so it is not one of the checks, which run without the disc. Then a
+# versus Stock match the same way (tools/port_match.py --rollback; PORT.md,
+# "Match rules").
 port-rollback:
 	python3 tools/port_rollback.py
+	python3 tools/port_match.py --rollback
 
 # The stage select's kinds of stage driven on both sizes of the port
 # (docs/PORT.md, "The stage select's kinds of stage";
@@ -374,11 +377,13 @@ port-rollback:
 # from the disc; versus the CPU and training through the stage pages and
 # every unlock (docs/PORT.md, "Every stage in every mode, and every
 # unlock"); versus the CPU with the stage's music on to its next opponent
-# (docs/PORT.md, "A fight's music"). It needs the disc's image, as
-# port-rollback does, and runs
-# what make port built.
+# (docs/PORT.md, "A fight's music"); and the match rules, a match of each
+# rule in versus and versus the CPU (docs/PORT.md, "Match rules";
+# tools/port_match.py). It needs the disc's image, as port-rollback does,
+# and runs what make port built.
 port-stage-select:
 	python3 tools/port_stage_select.py
+	python3 tools/port_match.py
 
 # Two programs of the port playing each other over UDP on 127.0.0.1
 # (docs/NETPLAY.md, sections 11 to 13; tools/port_net.py): the game's own

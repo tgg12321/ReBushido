@@ -47,6 +47,19 @@ void test_Main(void) {
     WHERE(PortFightMusic, row);
     WHERE(PortFightMusic, heard);
     WHERE(PortFightMusic, track);
+    WHERE(PortMatch, page_rule);
+    WHERE(PortMatch, page_count);
+    WHERE(PortMatch, rule);
+    WHERE(PortMatch, count);
+    WHERE(PortMatch, lives[0]);
+    WHERE(PortMatch, lives[1]);
+    WHERE(PortMatch, wins[0]);
+    WHERE(PortMatch, wins[1]);
+    WHERE(PortMatch, fights);
+    WHERE(PortMatch, last);
+    WHERE(PortMatch, over);
+    WHERE(PortMatch, winner);
+    WHERE(PortMatch, card);
     /* the hit tests' scratch, which first_frame_sweep.toml reads by
      * address: a sweep's far end as it is and as it was */
     CHECK_EQ(SCRATCHPAD, 0x1F800000);

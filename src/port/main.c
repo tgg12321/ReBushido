@@ -75,7 +75,7 @@ static const char g_port_usage[] =
     "            [--music-mods on|off] [--dump-music FOLDER]\n"
     "            [--fight-music stage|original|none|KEY]\n"
     "            [--dump-stages FOLDER] [--weapon 1|2=NAME]\n"
-    "            [--arena NAME] [--fight-cpu]\n"
+    "            [--arena NAME] [--fight-cpu] [--match RULE[:N]]\n"
     "            [--unlock-all] [--stage-select] [--menu rebushido|original]\n"
     "            [--net-bind ADDRESS:PORT --net-peer ADDRESS:PORT]\n"
     "            [--link-side 0|1] [--net-latency MS] [--net-loss PERCENT]\n"
@@ -204,6 +204,9 @@ static const char g_port_usage[] =
     "  --time-of-day W  stage (the default), dawn, day, dusk or night:\n"
     "                 the time the stages start at (the window's\n"
     "                 time_of_day; docs/PLAYING.md, \"The time of day\")\n"
+    "  --match single|stock:N|first_to:N  the match rule the stage select\n"
+    "                 starts at, N 1 to 9 (the window's match_rule and\n"
+    "                 match_count; docs/PLAYING.md, \"Match rules\")\n"
     "  --weapon 1=NAME  the fighter in place 1 (or 2) fights with a mod's\n"
     "                 weapon NAME (weapons/NAME.txt) whenever his weapon\n"
     "                 is the one it is made on\n"
@@ -255,6 +258,43 @@ void port_Quit(s32 code) {
 static void port_UsageError(const char *problem, const char *word) {
     port_Log("rebushido: %s%s\n\n%s", problem, word, g_port_usage);
     port_HostExit(PORT_EXIT_USAGE);
+}
+
+/* the longest of the match rules' names, and its end */
+#define MATCH_NAME_BYTES 12
+
+/* --match's `single`, `stock:N` or `first_to:N` (port_match.h). */
+static void port_ParseMatch(const char *text) {
+    static const char * const rules[PORT_MATCH_RULES] = {
+        "single", "stock", "first_to"};
+    char name[MATCH_NAME_BYTES];
+    s32 count = PORT_MATCH_COUNT_DEFAULT;
+    s32 length = 0;
+    s32 rule = PORT_MATCH_RULES;
+
+    while (text[length] != 0 && text[length] != ':' &&
+           length < MATCH_NAME_BYTES - 1) {
+        name[length] = text[length];
+        length++;
+    }
+    name[length] = 0;
+    if (text[length] == ':' && text[length + 1] >= '1' &&
+        text[length + 1] <= '9' && text[length + 2] == 0) {
+        count = text[length + 1] - '0';
+    } else if (text[length] != 0) {
+        name[0] = 0;
+    }
+    for (rule = 0; rule < PORT_MATCH_RULES; rule++) {
+        if (port_TextsEqual(name, rules[rule])) {
+            break;
+        }
+    }
+    if (rule >= PORT_MATCH_RULES) {
+        port_UsageError(
+            "--match takes single, stock:N or first_to:N (N 1 to 9), not ",
+            text);
+    }
+    port_SetMatchDefault(rule, count);
 }
 
 /* `NAME=ADDRESS:BYTES`, cut in place. */
@@ -494,6 +534,8 @@ s32 port_Main(s32 argc, char **argv) {
                                 "");
             }
             port_SetStageTimeDefault(time);
+        } else if (port_TextsEqual(word, "--match")) {
+            port_ParseMatch(i + 1 < argc ? argv[++i] : "");
         } else if (port_TextsEqual(word, "--dump-stages")) {
             port_SetStageDumpFolder(argv[++i]);
         } else if (port_TextsEqual(word, "--weapon")) {

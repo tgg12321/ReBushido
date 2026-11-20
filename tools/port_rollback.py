@@ -2,7 +2,7 @@
 """The native port's rollback self-test (docs/NETPLAY.md, "Save, load and
 hash"), in both sizes of the program:
 
-    python3 tools/port_rollback.py [--bits 32|64] [--test NAME] [--frames N]
+    python3 tools/port_rollback.py [--bits 32|64] [--test NAME|FILE.toml] [--frames N]
                                    [--every M] [--out FOLDER] [--plain-only]
                                    [--program PATH] [--with=ARG ...]
 
@@ -66,7 +66,8 @@ def write_plan(program, test_name, folder):
     """plan.txt of the test's run on `program`, into `folder`: its path."""
     playtest.PORT_PROGRAM = program
     playtest.PORT_SYMBOLS = program + '.sym'
-    test = playtest.Test(os.path.join(REPO, 'tests', 'play', test_name + '.toml'))
+    path = test_name if test_name.endswith('.toml') else os.path.join(REPO, 'tests', 'play', test_name + '.toml')
+    test = playtest.Test(path)
     disc = playtest.Disc('port')
     test.set_discs([disc])
     _, lines = test.plan(disc, playtest.header_names(), test.discs.index('port') + 1)
@@ -209,7 +210,9 @@ def check_run(label, program, plan, folder, args, name, more, what):
 def main():
     ap = argparse.ArgumentParser(description="The native port's rollback self-test, in both sizes.")
     ap.add_argument('--bits', type=int, choices=(32, 64), help='one size only')
-    ap.add_argument('--test', default='port_game', help="the play test whose plan is run (tests/play/)")
+    ap.add_argument('--test', default='port_game',
+                    help="the play test whose plan is run (tests/play/), or a test's file (NAME.toml) "
+                    "of another tool's (tools/port_match.py)")
     ap.add_argument('--frames', type=int, default=DEFAULT_FRAMES, help='frames run twice each time')
     ap.add_argument('--every', type=int, default=DEFAULT_EVERY, help='frames from one save to the next')
     ap.add_argument('--out', default=os.path.join(REPO, 'build', 'rollback'), help='where the runs go')

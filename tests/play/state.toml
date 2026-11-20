@@ -91,3 +91,17 @@ port_unlocks = "g_port_play+4:s32"       # the unlock mask the game was last han
 port_music_row = "g_port_fight_music+0:u8"    # the stage pages' row: PORT_FIGHT_MUSIC_ROW_...
 port_music_heard = "g_port_fight_music+2:u8"  # the fight's start: 0 the game's, 1 a piece, 2 none
 port_music_track = "g_port_fight_music+3:s8"  # the track the port started, or -1
+# -- the native port's match rules (port_match.h) --
+port_match_page_rule = "g_port_match+1:u8"   # the stage pages' rule: 0 single, 1 stock, 2 first to
+port_match_page_count = "g_port_match+2:u8"  # and its number
+port_match_rule = "g_port_match+5:u8"        # the match in play's rule
+port_match_count = "g_port_match+6:u8"
+port_match_lives_p1 = "g_port_match+7:u8"    # Stock: lives left
+port_match_lives_p2 = "g_port_match+8:u8"
+port_match_wins_p1 = "g_port_match+9:u8"     # First to N: wins
+port_match_wins_p2 = "g_port_match+10:u8"
+port_match_fights = "g_port_match+11:u8"     # fights of the match decided
+port_match_last = "g_port_match+12:u8"       # the last: 0 the first won, 1 the second, 2 a draw
+port_match_over = "g_port_match+13:u8"       # the match is decided
+port_match_winner = "g_port_match+14:u8"     # by whom
+port_match_card = "g_port_match+15:u8"       # 0 none, 1 the score, 2 the result

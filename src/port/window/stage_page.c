@@ -22,6 +22,7 @@
 #include "menu.h"
 #include "port_arenas.h"
 #include "port_fight_music.h"
+#include "port_match.h"
 #include "port_png.h"
 #include "port_stage_choice.h"
 
@@ -46,6 +47,7 @@
 #define COLOR_SQUARE 0xFFE59AC6U
 #define COLOR_CROSS 0xFF8FB8EAU
 #define COLOR_TRIANGLE 0xFF5FCDA8U
+#define COLOR_CIRCLE 0xFFE8737AU
 
 /* The panel under the stage pages' scroll, whose foot is at 207, and the
  * page over them, in the game's places. */
@@ -112,6 +114,7 @@ static struct {
     s32 count;
     s32 music; /* the row of music, and its rule's (port_fight_music.h) */
     s32 music_rule;
+    s32 match; /* the match rule's column (port_PageMatchKey) */
     /* the pixels, `box` of the game's area */
     u32 *pixels;
     u32 room;
@@ -227,7 +230,7 @@ static float port_PageToSegment(
     return port_PageRoot(ex * ex + ey * ey);
 }
 
-enum { SYMBOL_SQUARE, SYMBOL_CROSS, SYMBOL_TRIANGLE, SYMBOLS };
+enum { SYMBOL_SQUARE, SYMBOL_CROSS, SYMBOL_TRIANGLE, SYMBOL_CIRCLE, SYMBOLS };
 
 /* How far a pixel's middle (x, y), from the symbol's middle, is from the
  * symbol's stroke, `r` pixels out. */
@@ -241,6 +244,10 @@ static float port_PageSymbolDistance(s32 symbol, float x, float y, float r) {
         float ay = y < 0.0f ? -y : y;
 
         d = (ax > ay ? ax : ay) - r * 0.8f;
+        return d < 0.0f ? -d : d;
+    }
+    if (symbol == SYMBOL_CIRCLE) {
+        d = port_PageRoot(x * x + y * y) - r * 0.85f;
         return d < 0.0f ? -d : d;
     }
     if (symbol == SYMBOL_CROSS) {
@@ -282,11 +289,12 @@ static void port_PageSymbol(
 
 /* A button's cap at `x`, the line's baseline at `baseline` (pixels of the
  * page): a dark key with the button's name on it, or the pad's symbol.
- * `name` is the name, or "#square", "#cross", "#triangle". Drawn if
+ * `name` is the name, or "#square", "#cross", "#triangle", "#circle".
+ * Drawn if
  * `draw`; its width in pixels either way. */
 static s32 port_PageCap(s32 x, s32 baseline, const char *name, s32 draw) {
     static const u32 colors[SYMBOLS] = {
-        COLOR_SQUARE, COLOR_CROSS, COLOR_TRIANGLE};
+        COLOR_SQUARE, COLOR_CROSS, COLOR_TRIANGLE, COLOR_CIRCLE};
     PortTextStyle label = port_PageStyle(PORT_FACE_TEXT, SIZE_LABEL, 0);
     PortTextStyle style = port_PageStyle(PORT_FACE_BOLD, SIZE_CAP, COLOR_TEXT);
     s32 ascent = port_TextAscent(&label);
@@ -303,6 +311,8 @@ static s32 port_PageCap(s32 x, s32 baseline, const char *name, s32 draw) {
         symbol = SYMBOL_CROSS;
     } else if (strcmp(name, "#triangle") == 0) {
         symbol = SYMBOL_TRIANGLE;
+    } else if (strcmp(name, "#circle") == 0) {
+        symbol = SYMBOL_CIRCLE;
     }
     w = symbol >= 0 ? h : port_TextMeasure(name, &style) + 2 * pad + 2 * line;
     if (!draw) {
@@ -464,7 +474,8 @@ static void port_PageValue(s32 x, const char *text, u32 color, s32 room) {
 
 static void port_PageStrip(const PortStageChoice *choice, s32 count) {
     static char arenas[24];
-    Column columns[4];
+    static char match[24];
+    Column columns[5];
     s32 n = 0;
     s32 row = g_port_fight_music.row;
     s32 left = port_PageX(STRIP_X + STRIP_INSET);
@@ -507,6 +518,20 @@ static void port_PageStrip(const PortStageChoice *choice, s32 count) {
     columns[n].cap_count = 2;
     columns[n].words = "Music";
     n++;
+    /* the match rule (port_match.h), where the mode plays matches */
+    if (g_port_match.page_on) {
+        port_MatchRuleName(match, sizeof(match), g_port_match.page_rule,
+                           g_port_match.page_count);
+        columns[n].value = match;
+        columns[n].color = g_port_match.page_rule == PORT_MATCH_SINGLE
+                               ? COLOR_TEXT
+                               : COLOR_GOLD;
+        columns[n].caps[0] = "#circle";
+        columns[n].caps[1] = "START";
+        columns[n].cap_count = 2;
+        columns[n].words = "Match";
+        n++;
+    }
     if (count > 0) {
         snprintf(arenas, sizeof(arenas), "%d custom", (int)count);
         columns[n].value = arenas;
@@ -604,6 +629,12 @@ static void port_PageArenas(const PortStageChoice *choice, s32 count) {
 
 /* ---- what the window asks ---- */
 
+/* What the panel's match column shows, as one number. */
+static s32 port_PageMatchKey(void) {
+    return g_port_match.page_on << 16 | g_port_match.page_rule << 8 |
+           g_port_match.page_count;
+}
+
 s32 port_StagePagePixels(
     s32 area_w, s32 area_h, const u32 **pixels, PortRect *box) {
     const PortStageChoice *choice = &g_port_stage_choice;
@@ -625,7 +656,9 @@ s32 port_StagePagePixels(
         g_page.top != choice->page_top || g_page.kind != choice->cursor_kind ||
         g_page.count != count || g_page.music != g_port_fight_music.row ||
         g_page.music_rule != port_GetFightMusicRule() ||
-        g_page.time != choice->cursor_time) {
+        g_page.time != choice->cursor_time ||
+        g_page.match != port_PageMatchKey()) {
+        g_page.match = port_PageMatchKey();
         g_page.music = g_port_fight_music.row;
         g_page.music_rule = port_GetFightMusicRule();
         g_page.area_w = area_w;

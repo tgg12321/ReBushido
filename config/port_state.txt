@@ -30,7 +30,8 @@ state    src/port/fight_music.c  the fight's music chosen on the stage pages, an
 state    src/port/gpu.c        libgpu's calls, the display, the ordering tables' walk
 state    src/port/gte.c         the GTE's registers
 state    src/port/mdec.c        the movie's decoder
-state    src/port/memory.c      the console's memory, mapped
+state    src/port/match.c       the match rule the stage pages hold, and the match's score
+state    src/port/memory.c     the console's memory, mapped
 state    src/port/movie.c       where the game runs the movie's player
 state    src/port/pad.c         the pads' driver and the one input point
 state    src/port/plan.c        a play test's plan: the run's input, rolled back with the game

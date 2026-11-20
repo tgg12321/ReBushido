@@ -212,6 +212,21 @@ s32 port_IsOnStagePages(void) {
            g_menu_page == MENU_PAGE_SELECT;
 }
 
+s32 port_MatchShown(void) {
+    const PortMatch *match = &g_port_match;
+
+    if (match->rule == PORT_MATCH_SINGLE || match->mode != g_fight_mode) {
+        return PORT_MATCH_SHOWN_NONE;
+    }
+    if (match->card != PORT_MATCH_CARD_NONE &&
+        (g_sys_screen == SCREEN_AFTER_FIGHT_UPDATE ||
+         g_sys_screen == SCREEN_AFTER_MATCH_UPDATE)) {
+        return PORT_MATCH_SHOWN_CARD;
+    }
+    return g_sys_screen == SCREEN_FIGHT_UPDATE ? PORT_MATCH_SHOWN_HUD
+                                               : PORT_MATCH_SHOWN_NONE;
+}
+
 s32 port_ReadScreen(void) {
     if (g_sys_screen == SCREEN_FIGHT_UPDATE) {
         return 0;

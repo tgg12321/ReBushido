@@ -59,6 +59,7 @@
 #include "port_play.h"
 #include "port_stage_choice.h"
 #include "port_fight_music.h"
+#include "port_match.h"
 #include "port_top_menu.h"
 #include "shared.h"
 #include "portmap.h"
@@ -2224,14 +2225,23 @@ static void port_NoteProfile(u32 blank, s32 is_new_frame) {
     }
 }
 
-/* The kinds of stage over the stage pages (stage_page.c): where the
- * game's 4:3 area is in the picture, and its pixels laid there, with the
- * card or with SDL. */
-static SDL_Texture *g_port_stage_page;
-static s32 g_port_stage_page_w;
-static s32 g_port_stage_page_h;
+/* What is laid over the game's 4:3 area, the kinds of stage over the
+ * stage pages (stage_page.c) and the match rules' strip and cards
+ * (match_page.c): where the area is in the picture, and the pixels laid
+ * there, with the card or with SDL, each through a texture of its own. */
+typedef s32 (*PortOverlayPixels)(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
 
-static void port_DrawStagePage(void) {
+typedef struct {
+    SDL_Texture *texture;
+    s32 w;
+    s32 h;
+} PortOverlay;
+
+static PortOverlay g_port_stage_page;
+static PortOverlay g_port_match_page;
+
+static void port_DrawOverlay(PortOverlay *overlay, PortOverlayPixels make) {
     const u32 *pixels;
     PortRect picture;
     PortRect box;
@@ -2249,7 +2259,7 @@ static void port_DrawStagePage(void) {
         area_w = picture.w;
         area_h = picture.w * 3 / 4;
     }
-    if (!port_StagePagePixels(area_w, area_h, &pixels, &box)) {
+    if (!make(area_w, area_h, &pixels, &box)) {
         return;
     }
     where.x = picture.x + (picture.w - area_w) / 2 + box.x;
@@ -2261,23 +2271,31 @@ static void port_DrawStagePage(void) {
                           where.y, where.w, where.h, FALSE, TRUE);
         return;
     }
-    if (g_port_stage_page == NULL || g_port_stage_page_w != box.w ||
-        g_port_stage_page_h != box.h) {
-        if (g_port_stage_page != NULL) {
-            SDL_DestroyTexture(g_port_stage_page);
+    if (overlay->texture == NULL || overlay->w != box.w ||
+        overlay->h != box.h) {
+        if (overlay->texture != NULL) {
+            SDL_DestroyTexture(overlay->texture);
         }
-        g_port_stage_page =
+        overlay->texture =
             SDL_CreateTexture(g_port_renderer, SDL_PIXELFORMAT_ARGB8888,
                               SDL_TEXTUREACCESS_STREAMING, box.w, box.h);
-        if (g_port_stage_page == NULL) {
+        if (overlay->texture == NULL) {
             return;
         }
-        SDL_SetTextureBlendMode(g_port_stage_page, SDL_BLENDMODE_BLEND);
-        g_port_stage_page_w = box.w;
-        g_port_stage_page_h = box.h;
+        SDL_SetTextureBlendMode(overlay->texture, SDL_BLENDMODE_BLEND);
+        overlay->w = box.w;
+        overlay->h = box.h;
     }
-    SDL_UpdateTexture(g_port_stage_page, NULL, pixels, box.w * BYTES_PER_PIXEL);
-    SDL_RenderCopy(g_port_renderer, g_port_stage_page, NULL, &where);
+    SDL_UpdateTexture(overlay->texture, NULL, pixels, box.w * BYTES_PER_PIXEL);
+    SDL_RenderCopy(g_port_renderer, overlay->texture, NULL, &where);
+}
+
+static void port_DrawStagePage(void) {
+    port_DrawOverlay(&g_port_stage_page, port_StagePagePixels);
+}
+
+static void port_DrawMatchPage(void) {
+    port_DrawOverlay(&g_port_match_page, port_MatchPixels);
 }
 
 /* The counter in the port's typeface (font.c), at the window's own
@@ -2420,6 +2438,7 @@ static void port_DrawCounter(void) {
     /* what is laid over the picture's corner is laid over it with the
      * stage pages' kinds of stage (stage_page.c) */
     port_DrawStagePage();
+    port_DrawMatchPage();
     port_DrawTopPage();
     if (!g_port_show_fps) {
         return;
@@ -3041,6 +3060,10 @@ void port_WindowApplyChoice(s32 choice) {
         port_SetStageSelectEverywhere(g_port_settings.stage_select_everywhere);
     } else if (strcmp(name, "fight_music") == 0) {
         port_SetFightMusic(g_port_settings.fight_music);
+    } else if (
+        strcmp(name, "match_rule") == 0 || strcmp(name, "match_count") == 0) {
+        port_SetMatchDefault(
+            g_port_settings.match_rule, g_port_settings.match_count);
     } else if (strcmp(name, "bugfixes") == 0) {
         /* the game's own, at once, as the options page at boot set it */
         port_WindowGameSwitches();

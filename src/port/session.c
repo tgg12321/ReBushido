@@ -50,8 +50,9 @@
  * says so, either side gives up on the other after SILENT_GIVE_UP_MS of
  * silence, the disc's sum is of its data alone, and the two may meet by
  * way of the lobby (relay.c). 8: the players' names, the lobby before the
- * game (each ready or gone), and the host's rules. */
-#define SESSION_PROTOCOL 8
+ * game (each ready or gone), and the host's rules. 9: the welcome carries
+ * the host's match rule (port_match.h). */
+#define SESSION_PROTOCOL 9
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -149,9 +150,9 @@ enum {
  * in the high half and its height in the low), the welcome's kind of
  * stage the stages start as (port_stage_choice.h), the welcome's gameplay
  * switches (port_play.h), the welcome's fight_music (port_fight_music.h),
- * the time of day the stages start at (port_stage_choice.h), the
- * welcome's rules (PORT_SESSION_RULE_...), the version's text, and last
- * the player's name. */
+ * the time of day the stages start at (port_stage_choice.h), the match
+ * rule (port_match.h), the welcome's rules (PORT_SESSION_RULE_...), the
+ * version's text, and last the player's name. */
 enum {
     MEET_BUILD = PORT_NET_HEADER_BYTES,
     MEET_DISC = MEET_BUILD + 2 * WORD_BYTES,
@@ -164,7 +165,8 @@ enum {
     MEET_PLAY = MEET_KIND + WORD_BYTES,
     MEET_MUSIC = MEET_PLAY + WORD_BYTES,
     MEET_TIME = MEET_MUSIC + WORD_BYTES,
-    MEET_RULES = MEET_TIME + WORD_BYTES,
+    MEET_MATCH = MEET_TIME + WORD_BYTES,
+    MEET_RULES = MEET_MATCH + WORD_BYTES,
     MEET_VERSION = MEET_RULES + WORD_BYTES,
     MEET_NAME = MEET_VERSION + VERSION_BYTES,
     MEET_BYTES = MEET_NAME + PORT_SESSION_NAME_BYTES
@@ -192,6 +194,7 @@ static struct {
     u32 music;  /* the host's fight_music (port_FightMusicBits) */
     u32 time;   /* the host's time of day the stages start at */
     u32 rules;  /* the host's PORT_SESSION_RULE_... */
+    u32 match;  /* the host's match rule (port_MatchBits) */
     u32 wider;  /* the wider of the two players' */
     u32 have;   /* chunks the guest has */
     u32 needed; /* chunks there are to have */
@@ -522,6 +525,7 @@ static void port_SendMeet(s32 kind) {
     port_NetPutWord(out + MEET_MUSIC, g_session.music);
     port_NetPutWord(out + MEET_TIME, g_session.time);
     port_NetPutWord(out + MEET_RULES, g_session.rules);
+    port_NetPutWord(out + MEET_MATCH, g_session.match);
     port_PutVersion(out + MEET_VERSION);
     for (i = 0; i < PORT_SESSION_NAME_BYTES; i++) {
         out[MEET_NAME + i] = (u8)g_session.name[i];
@@ -1044,6 +1048,7 @@ static s32 port_JoinSession(void) {
                 g_session.play = port_NetGetWord(in + MEET_PLAY);
                 g_session.music = port_NetGetWord(in + MEET_MUSIC);
                 g_session.time = port_NetGetWord(in + MEET_TIME);
+                g_session.match = port_NetGetWord(in + MEET_MATCH);
                 g_session.needed = 0;
                 for (number = 0; number < CHUNKS; number++) {
                     g_session.needed += (u32)port_ChunkIsNeeded(number);
@@ -1204,6 +1209,7 @@ s32 port_MeetSession(const PortDisc *disc, u32 delay) {
     g_session.play = port_PlaySwitchBits();
     g_session.music = port_FightMusicBits();
     g_session.time = (u32)port_GetStageTimeDefault();
+    g_session.match = port_MatchBits();
     port_RemasterGetView(&view);
     g_session.shape =
         ((u32)view.aspect_w << SHAPE_SHIFT) | ((u32)view.aspect_h & SHAPE_MASK);
@@ -1256,6 +1262,12 @@ void port_ApplySession(void) {
     port_HoldPlaySwitches(g_session.play);
     port_HoldFightMusic(g_session.music);
     port_HoldStageTimeDefault((s32)g_session.time);
+    port_HoldMatch(g_session.match);
+    port_Log("session: the host's match rule is %s, %d\n",
+             port_GetMatchRule() == PORT_MATCH_STOCK      ? "stock"
+             : port_GetMatchRule() == PORT_MATCH_FIRST_TO ? "first_to"
+                                                          : "single",
+             port_GetMatchCount());
     port_Log("session: the host's unlock_all is %s, its "
              "stage_select_everywhere %s, its fight_music %s\n",
              (g_session.play & PORT_PLAY_BIT_UNLOCK_ALL) ? "on" : "off",

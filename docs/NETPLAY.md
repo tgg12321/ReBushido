@@ -1066,10 +1066,12 @@ have met:
   `stage_select_everywhere` (`MEET_PLAY`, protocol 4; PORT.md, "Every
   stage in every mode, and every unlock"), the host's `fight_music`
   (`MEET_MUSIC`; PORT.md, "A fight's music") and the time of day the
-  stages start at (`MEET_TIME`; PORT.md, "The time of day"), protocol 6;
-  both programs hold them for the session, so a guest plays with the
-  host's unlocks and the host's fights' music whatever its own settings
-  say, and its settings menu changes nothing until it starts again;
+  stages start at (`MEET_TIME`; PORT.md, "The time of day"), protocol 6,
+  and the host's `match_rule` and `match_count` (`MEET_MATCH`, protocol
+  8; PORT.md, "Match rules"); both programs hold them for the session,
+  so a guest plays with the host's unlocks, the host's fights' music
+  and the host's match rule whatever its own settings say, and its
+  settings menu changes nothing until it starts again;
 - when the guest has the cards it says it is ready; the host says go and
   starts, and the guest starts on that or on the host's first inputs.
   The host is the first pad, the guest the second, and the host's
@@ -1092,7 +1094,11 @@ question, and the row is Versus, which stands for the game's own
 the match's set-up**, both players choosing at once as on a couch, and
 the host takes the stage. After a fight the game's own menu offers
 Rematch, the select screen, or the main menu; a way back to the top menu
-comes straight back to versus. **In a fight Start is nobody's**: the
+comes straight back to versus. A Stock or First to match (PORT.md,
+"Match rules") goes from fight to fight by itself, with a card of the
+score, and back to the stage pages; its score is the game's state
+(`g_port_match`, `src/port/match.c`), so a rollback puts it back with
+the fight and both machines keep the same. **In a fight Start is nobody's**: the
 pause menu would stop the other player's game too. Where the frame's
 input does not depend on the other's buttons (the session's presses, or
 Start in a fight), a guess of them that turns out otherwise rolls
@@ -1237,11 +1243,15 @@ socket on 127.0.0.1:
 - `session`: two headless programs of each size, `--host` and `--join`
   with 100 ms each way and 5% lost: the meeting, the host's two new
   cards sent, the session's presses to versus select, both players'
-  picks, `port_game`'s fight to the kill, the menu after it, Rematch,
-  the fight again to the kill, and then the guest's plan ends: the host
-  is told and ends there. It passes if both end well, neither finds a
-  desync, at least 40 state hashes are the same on both and no card file
-  was written. 64-bit: about 2,490 frames, 82 hashes the same on both;
+  picks, `port_game`'s fight to the kill, played as a Stock match of two
+  lives (the host's `--match stock:2`, the guest given none): the
+  score's card in place of the menu after it, the next fight started by
+  itself, the fight again to the kill, and then the guest's plan ends:
+  the host is told and ends there. It passes if both end well, neither
+  finds a desync, both hold the host's rule (the guest's log says so)
+  with three lives left of four at the second fight's start, at least 40
+  state hashes are the same on both and no card file was written. (The
+  `window` pair below keeps the game's own menu and its Rematch.) 64-bit: about 2,490 frames, 82 hashes the same on both;
   67 and 79 rollbacks, the longest 8 frames; 32-bit: 69 and 77, the same
   82 hashes on both (each size's own, section 7);
 - `window`: the same between two of the window's programs, headless

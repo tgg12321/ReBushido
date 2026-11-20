@@ -317,6 +317,12 @@ static inline void fight_AfterDefeat(void) {
     case FIGHT_MODE_TEAM:
         return;
     }
+#if RB_PORT
+    /* the fight counted into the match in play (port_match.h): who fell,
+     * both for a draw */
+    port_MatchFightOver(
+        g_fight_mode, g_fighters[0].is_defeated, g_fighters[1].is_defeated);
+#endif
     g_sys_screen = SCREEN_REPLAY_INIT;
 }
 
@@ -1222,6 +1228,13 @@ void fight_AfterFightUpdate(void) {
                 &time, g_chanbara_count, (s32)g_disp_prim_cursor, 1) /
             4;
     }
+#if RB_PORT
+    /* a match goes on, or is decided, with a card in place of the menu
+     * (port_match.h) */
+    if (port_MatchAfterFight(g_pad_state.pressed)) {
+        return;
+    }
+#endif
     if (g_fight_choice_timer == 0) {
         g_disp_prim_cursor +=
             hud_DrawPanel(HUD_PANEL_AFTER_FIGHT, g_fight_choice,
@@ -1363,6 +1376,13 @@ void fight_WinnerViewUpdate(void) {
             next_screen = SCREEN_AFTER_FIGHT_INIT;
             break;
         case FIGHT_MODE_VSCPU:
+#if RB_PORT
+            /* a match not yet won goes on after the fight (port_match.h) */
+            if (g_fight_winner == 0 && !port_MatchNextOpponent()) {
+                next_screen = SCREEN_AFTER_FIGHT_INIT;
+                break;
+            }
+#endif
             if (g_fight_winner == 0) {
 #if RB_PORT
                 /* the stage's piece the port's fight_music plays here,
