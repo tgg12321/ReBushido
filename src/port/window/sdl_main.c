@@ -46,6 +46,7 @@
 #include "port_remaster.h"
 #include "port_play.h"
 #include "port_stage_choice.h"
+#include "port_fight_music.h"
 #include "shared.h"
 #include "sdl_window.h"
 
@@ -965,6 +966,9 @@ int main(int argc, char **argv) {
      * --stage-select on the command line turn them on */
     port_SetUnlockAll(g_port_settings.unlock_all);
     port_SetStageSelectEverywhere(g_port_settings.stage_select_everywhere);
+    /* a fight's music (port_fight_music.h); --fight-music has the last
+     * word */
+    port_SetFightMusic(g_port_settings.fight_music);
     passed[count] = NULL;
     {
         char line[2 * PATH_BYTES_MAX];

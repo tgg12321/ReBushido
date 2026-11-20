@@ -50,6 +50,9 @@ MEMBERS = {
     'port_stage_pages': 'PortPlay.stage_pages',
     'port_page_used': 'PortPlay.page_used',
     'port_unlocks': 'PortPlay.unlocks',
+    'port_music_row': 'PortFightMusic.row',
+    'port_music_heard': 'PortFightMusic.heard',
+    'port_music_track': 'PortFightMusic.track',
 }
 
 

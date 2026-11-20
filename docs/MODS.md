@@ -699,7 +699,7 @@ movie's sound, which is chosen by no channel, is the file's name alone.
 | `bb2_m1-0` | the narration, and the stages whose fight it is (most of them: below) |
 | `bb2_m1-1` | the menu's pages: character select and the rest |
 | `bb2_m1-2`, `-3`, `-4` | stages' fights |
-| `bb2_m1-5`, `-6` | on the disc; nothing asks for them |
+| `bb2_m1-5`, `-6` | on the disc; nothing of the original asks for them (the stage select's row of music can: below) |
 | `bb2_m1-7` | the top menu |
 | `bb2_m2-0`, `bb2_m2-1` | chanbara, the one clan and the other |
 | `bb2_m2-2`, `bb2_m2-3` | a practice round; practice |
@@ -710,7 +710,29 @@ movie's sound, which is chosen by no channel, is the file's name alone.
 
 A versus fight's piece is its stage's (`g_snd_stage_music_tracks`,
 `src/main/fight_data.c`): one of `bb2_m1-0` to `-4`, so one piece is
-heard on several stages, and a mod replaces it on all of them.
+heard on several stages, and a mod replaces it on all of them. With the
+window's `fight_music = stage` (the default) every mode's fight plays
+its stage's piece, versus the CPU, story and group battle too, and the
+stage select's **row of music** (L1 and R1: [`PLAYING.md`](PLAYING.md),
+"Music on the stage select") chooses any piece of the table's music for
+a fight, `bb2_m1-0` to `-7` and `bb2_m2-0` to `-4`: a mod's
+replacement of one is heard wherever it is chosen.
+
+### A piece of its own
+
+A mod's piece whose key is **none of the disc's** (`music/my
+theme.ogg`, `music/rain.wav`: any name that is not a file of the disc's,
+alone or with a dash and a number) stands in for nothing; it is offered
+by its key in the stage select's row of music, after the game's own
+pieces, up to 32 of them in the order the mods are read. Chosen, the
+fight starts its stage's own stream of the disc's as ever, and the
+mod's piece is heard in that stream's place, as a replacement is (the
+loop, the length cut at the original's, the volumes: above), for as long
+as the stream plays; the next stream the game starts ends it. So the
+game's state is what it is with the stage's own piece, and
+`music_mods = off` plays that piece. A session of netplay does not
+offer them: the other player may not have them (and the row is part of
+what both machines hold the same).
 
 `--dump-music FOLDER` writes each piece **as the game plays it**,
 `KEY.wav`: the drive's own sound before the game's volumes, 16 bits,

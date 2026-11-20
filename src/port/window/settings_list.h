@@ -530,6 +530,26 @@ PORT_SETTING(stage_select_everywhere,
     .help = "Versus the CPU and training choose their stage after the "
             "weapons, as versus mode does")
 
+/* A fight's music (include/port_fight_music.h; docs/PLAYING.md, "Music on
+ * the stage select"): the stage's piece in every mode, story, versus the
+ * CPU and team battle too, which the original plays with none; the
+ * game's own rule; or none. The stage select's row (L1 and R1) starts
+ * from it. In a session the host's holds. */
+PORT_SETTING(fight_music,
+    .name = "fight_music", .value = "stage",
+    .note = "stage: the stage's music in every mode;\n"
+            "original: none in story, versus the CPU\n"
+            "and team battle, as the original; none.\n"
+            "L1 and R1 choose another on the stage select",
+    .read = PORT_READ_WORDS, .words = {"stage", "original", "none"},
+    .is = "stage, original or none",
+    .menu = PORT_MENU_MODS, .rank = 55, .takes = PORT_TAKES_NOW,
+    .label = "Fight music",
+    .help = "The stage's music in every mode, the original's (none in "
+            "versus the CPU), or none; L1 and R1 on the stage select choose "
+            "any piece",
+    .shown = {"Stage's own", "Original", "None"})
+
 /* Every fighter and mode the save keeps for progress is open, read so
  * wherever the game reads its save, never written into it
  * (include/port_play.h; docs/PLAYING.md, "Everything unlocked"). A

@@ -57,6 +57,7 @@
 #include "port_spu.h"
 #include "port_play.h"
 #include "port_stage_choice.h"
+#include "port_fight_music.h"
 #include "shared.h"
 #include "sdl_window.h"
 
@@ -2852,6 +2853,8 @@ void port_WindowApplyChoice(s32 choice) {
         port_SetUnlockAll(g_port_settings.unlock_all);
     } else if (strcmp(name, "stage_select_everywhere") == 0) {
         port_SetStageSelectEverywhere(g_port_settings.stage_select_everywhere);
+    } else if (strcmp(name, "fight_music") == 0) {
+        port_SetFightMusic(g_port_settings.fight_music);
     }
     /* the picture's size and filter on the card, the resolution, the
      * counter's corner and the dead zone are read each time they are

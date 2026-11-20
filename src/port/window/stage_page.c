@@ -17,6 +17,7 @@
 
 #include "menu.h"
 #include "port_arenas.h"
+#include "port_fight_music.h"
 #include "port_png.h"
 #include "port_stage_choice.h"
 
@@ -83,6 +84,8 @@ static struct {
     s32 top;
     s32 kind;
     s32 count;
+    s32 music; /* the row of music, and its rule's (port_fight_music.h) */
+    s32 music_rule;
     /* the pixels, `box` of the game's area */
     u32 *pixels;
     u32 room;
@@ -248,6 +251,33 @@ static void port_PageStrip(const PortStageChoice *choice, s32 count) {
     }
 }
 
+/* The row of music, in the strip's middle between the kind's lines and
+ * the arenas' (port_fight_music.h): the piece the fight starts with (a
+ * mod's by its key), made smaller where it is wider than the gap, and
+ * what L1 and R1 do. */
+#define MUSIC_X 334
+#define MUSIC_W 136
+#define SIZE_MUSIC_LEAST 6
+
+static void port_PageMusic(void) {
+    s32 row = g_port_fight_music.row;
+    const char *name = port_FightMusicRowName(row);
+    s32 room = port_PageX(MUSIC_X + MUSIC_W / 2) - port_PageX(MUSIC_X);
+    s32 lines = SIZE_ROW;
+
+    port_PageText(MUSIC_X, 215, SIZE_HELP, "Music", COLOR_DIM, TRUE, FALSE);
+    port_FontSetSize(port_PageSize(lines));
+    while (lines > SIZE_MUSIC_LEAST && port_FontMeasure(name) > 2 * room) {
+        lines--;
+        port_FontSetSize(port_PageSize(lines));
+    }
+    port_PageText(
+        MUSIC_X, 225, lines, name,
+        row == PORT_FIGHT_MUSIC_ROW_OWN ? COLOR_TEXT : COLOR_GOLD, TRUE, FALSE);
+    port_PageText(
+        MUSIC_X, 235, SIZE_HELP, "L1 / R1: music", COLOR_DIM, TRUE, FALSE);
+}
+
 static void port_PageArenas(const PortStageChoice *choice, s32 count) {
     const PortArena *chosen = port_ArenaAt(choice->page_cursor);
     const Preview *preview;
@@ -324,7 +354,10 @@ s32 port_StagePagePixels(
     if (!g_page.drawn || g_page.area_w != area_w || g_page.area_h != area_h ||
         g_page.open != open || g_page.cursor != choice->page_cursor ||
         g_page.top != choice->page_top || g_page.kind != choice->cursor_kind ||
-        g_page.count != count) {
+        g_page.count != count || g_page.music != g_port_fight_music.row ||
+        g_page.music_rule != port_GetFightMusicRule()) {
+        g_page.music = g_port_fight_music.row;
+        g_page.music_rule = port_GetFightMusicRule();
         g_page.area_w = area_w;
         g_page.area_h = area_h;
         g_page.open = open;
@@ -355,6 +388,7 @@ s32 port_StagePagePixels(
             port_PageArenas(choice, count);
         } else {
             port_PageStrip(choice, count);
+            port_PageMusic();
         }
         g_page.drawn = TRUE;
     }

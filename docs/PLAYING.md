@@ -331,8 +331,9 @@ Classic and Remastered Classic, and it stays so for as long as the
 program runs. **Select** opens the page of the **custom arenas** (when a
 mod has any): up and down choose one, its picture beside the list;
 **Cross** fights on it; **Triangle** or Select goes back to the stages.
-On the keyboard Square is A and Select is Right Shift for player one
-("The keys").
+**L1** and **R1** choose the fight's music ("Music on the stage
+select", below). On the keyboard Square is A, Select is Right Shift and
+L1 and R1 are Q and W for player one ("The keys").
 
 `stage_kind = remastered` (the default) or `classic` in `rebushido.cfg`,
 the settings menu's "Stages", is what every stage starts as, and what
@@ -371,6 +372,52 @@ arenas, as in versus mode ("Kinds of stage").
 as the original has them. Online, the host's setting holds for both
 players (the session always plays versus mode, which has the pages
 anyway).
+
+## Music on the stage select
+
+The original plays music over a fight only in versus mode (the stage's
+own piece), practice and chanbara (pieces of their own); story, versus
+the CPU and group battle have none, only the stage's own sounds of wind,
+water and birds. In the port **every fight has its stage's music**,
+and the stage select lets you choose any other piece for it.
+
+On a **stage page**, the middle of the line under the scroll says what
+the fight will play. **L1** and **R1** (Q and W on the keyboard for
+player one) go back and forward through:
+
+- **Stage's own** (where the row starts): the piece versus mode plays on
+  that stage, in every mode; a mod's arena's own piece on an arena.
+  Practice and chanbara keep the pieces they have in the original;
+- every piece the game has, by where the game plays it: Tatara Shrine
+  (most stages', and the narration's), Select screen, Snake Cliff,
+  Bamboo Thicket, Meikyokan Dojo, **Unheard I** and **Unheard II** (two
+  pieces on the disc that the game never plays), Title menu, Chanbara:
+  Narukagami, Chanbara: Shainto, Practice round, Practice and Staff
+  roll;
+- any piece a music mod brings under a name of its own (`music/my
+  piece.ogg`: [`MODS.md`](MODS.md), "Music"), by that name;
+- **None**: no music, the stage's own sounds instead.
+
+The choice is the fight's, and in versus the CPU every opponent's of the
+run, since they are all fought on the stage chosen; the row starts again
+from the setting the next time the select screen opens. Whenever a fight
+plays music the stage's own sounds are left out, and with None they are
+heard, as versus mode has them with the music on and off. The options'
+own music setting off still silences all of it.
+
+**`fight_music`** in `rebushido.cfg` (the settings menu's "Fight music",
+among the mods' lines) is where the row starts and what the modes with
+no stage page play (story, group battle, chanbara, and versus the CPU
+and training with `stage_select_everywhere = off`):
+
+- `stage` (the default): the stage's own piece in every mode, as above;
+- `original`: the game's own rule, no music in story, versus the CPU and
+  group battle; the row's first place then reads "Game's own";
+- `none`: no music in any fight; the row starts at None.
+
+Online, the host's setting holds for both players, and both choose the
+piece on the same page; a mod's own pieces are not offered online,
+since the two players' mods may differ.
 
 ## Everything unlocked
 
