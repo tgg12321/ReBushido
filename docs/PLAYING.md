@@ -238,6 +238,7 @@ fps = off                # no counter in the corner (F3 brings it back)
 run_ahead = 2            # 0, 1 or 2 frames run ahead (1 is the default)
 low_latency = off        # let the driver queue pictures (on is the default)
 late_input = off         # read the keys only as a frame begins (on is the default)
+cpu_prefer = off         # never ask for the larger-cache cores (auto is the default)
 graphics = remastered    # original (the console's picture) or remastered
 resolution = 3           # how many times the console's; 0 = the window's
 draw_distance = far      # original, far, or max: how much of the stage
@@ -632,6 +633,15 @@ three are on with nothing said:
   `vsync` and `low_latency` on. About one frame in a hundred is then a
   refresh late for its picture, a picture held once more; `off` if that
   is ever seen.
+- **`cpu_prefer`**, `auto` or `off` (`auto` with nothing said; "Larger-cache
+  cores", the next start): on a processor whose cores are on two dies
+  and only one of them has the larger cache (AMD's Ryzen 9 7950X3D,
+  7900X3D, 9950X3D and 9900X3D: 3D V-Cache on one die), the game's own
+  work runs on that die's cores, where it is quicker. On any other
+  processor (one die, two dies alike, Intel's P and E cores) nothing is
+  changed and the system decides as ever; the log says what was found.
+  Where the game runs changes how soon a frame is ready, never what it
+  computes.
 
 What only your screen and PC decide, and what helps there:
 

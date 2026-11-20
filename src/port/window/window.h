@@ -684,4 +684,67 @@ enum {
 extern void port_PlaceCounter(
     const PortRect *picture, s32 box_w, s32 box_h, s32 corner, PortRect *out);
 
+/* ---- the processors with the larger cache (cpus.c) ---- */
+
+/* What the system says of its processors' third-level caches, and which
+ * of them the step's thread is to prefer (cpu_prefer; docs/PORT.md,
+ * "The processors with the larger cache"). The system's own reading is
+ * cpu_prefer.c's; what is made of it is here, held to made-up tables by
+ * tests/port/window.c. */
+#define PORT_CPUS_MAX 256
+#define PORT_CACHES_MAX 32
+#define PORT_CPU_LIST_BYTES 128
+/* cpu_prefer's words */
+#define PORT_CPU_PREFER_OFF 0
+#define PORT_CPU_PREFER_AUTO 1
+
+/* logical processors by number, a bit each (a Windows processor group's
+ * processor n is number 64 * group + n) */
+typedef struct {
+    u32 words[PORT_CPUS_MAX / 32];
+} PortCpuSet;
+
+typedef struct {
+    /* every logical processor the system has */
+    PortCpuSet all;
+    /* the third-level caches: each one's size in KB and the processors
+     * that share it */
+    s32 caches;
+    u32 kb[PORT_CACHES_MAX];
+    PortCpuSet on[PORT_CACHES_MAX];
+    /* how many kinds of core (efficiency classes, or Linux's cpu_core and
+     * cpu_atom): more than one is a hybrid processor */
+    s32 kinds;
+    /* something could not be read */
+    s32 is_unread;
+} PortCacheTable;
+
+enum {
+    PORT_CPUS_UNREAD = 0, /* nothing done: the table is not whole */
+    PORT_CPUS_ONE_CACHE,  /* one L3 for all */
+    PORT_CPUS_ONE_SIZE,   /* L3s of one size, or none clearly larger */
+    PORT_CPUS_HYBRID,     /* cores of more than one kind: the system's */
+    PORT_CPUS_PREFER      /* the larger cache's processors preferred */
+};
+
+/* The larger cache is preferred where it is this much larger than any
+ * other, in tenths: 1.5 times. */
+#define PORT_CPUS_LARGER_TENTHS 15
+
+extern void port_AddCpu(PortCpuSet *set, s32 cpu);
+extern s32 port_HasCpu(const PortCpuSet *set, s32 cpu);
+extern s32 port_CountCpus(const PortCpuSet *set);
+/* What is to be done with a table, and in `prefer` the processors
+ * preferred where it is PORT_CPUS_PREFER (else nothing in it). */
+extern s32 port_ChooseCpus(const PortCacheTable *table, PortCpuSet *prefer);
+/* Linux's list of processors, `0-7,16-23` and an end of line, into a
+ * set; FALSE for one that cannot be read. */
+extern s32 port_ReadCpuList(const char *text, PortCpuSet *set);
+/* Linux's size of a cache, `32768K` (or `96M`), in KB; 0 for one that
+ * cannot be read. */
+extern u32 port_ReadCacheSize(const char *text);
+/* A set as Linux writes it, `0-7,16-23`, into PORT_CPU_LIST_BYTES (cut
+ * short with `...` where it is longer). */
+extern void port_FormatCpuList(const PortCpuSet *set, char *out);
+
 #endif /* PORT_WINDOW_H */

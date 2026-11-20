@@ -83,3 +83,4 @@ outside  src/port/window/ring.c      the sound card's queue
 outside  src/port/window/scale.c     the window's scaling
 outside  src/port/window/choices.c   the settings menu's choices
 outside  src/port/window/settext.c   rebushido.cfg changed a line at a time
+outside  src/port/window/cpus.c       which processors the step prefers

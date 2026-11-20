@@ -6042,6 +6042,109 @@ many and was no later, within the noise.
   record's own frame is drawn into the colour buffer and then drawn over
   by the first picture of the pair; the card could be spared it.
 
+### The processors with the larger cache
+
+**What was asked** (2026-11-19): the owner's processor, a Ryzen 9
+9950X3D, has its cores on two dies, and only the first (logical
+processors 0 to 15) under the 3D V-Cache, 96 MB of L3 against the other's
+32. The step's thread pinned there by hand was quicker. So: prefer the
+larger cache's processors where a machine has them, and change nothing
+on any other.
+
+**What is read** (`src/port/window/cpu_prefer.c`, at the start, before the
+painters and the step's thread are made). On Windows,
+`GetLogicalProcessorInformationEx(RelationAll)`: every core's processors
+and its efficiency class, and every third-level cache (unified or data)
+with its size and processors. On Linux, `/sys/devices/system/cpu/online`
+and each processor's `cache/index*/` of level 3 (`size`,
+`shared_cpu_list`; processors with the same list share the cache), with
+`/sys/devices/cpu_atom/` or a `cpu_capacity` that differs as a hybrid.
+
+**What is made of it** (`cpus.c`, `port_ChooseCpus`; no system call, held
+to made-up tables in `tests/port/window.c`, "the processors with the
+larger cache"): something is asked only where every processor is under
+exactly one L3 that was read, the cores are all of one kind, there are
+two L3s or more, and the largest is at least 1.5 times every smaller one
+(`PORT_CPUS_LARGER_TENTHS`); then its processors (the union, where more
+than one cache has the largest size) are preferred. Otherwise nothing:
+one L3 (any one-die processor, Intel's client processors), L3s of one size
+(a 9950X, two dies alike), hybrid cores (Intel's P and E cores, ARM's big
+and little: left to the system's scheduler, which knows them, even where
+their caches differ), a processor under no L3 (Meteor Lake's low-power
+island) or anything not read. The log says which:
+
+    cpu: L3 96 MB on 0-15, 32 MB on 16-31; preferring 0-15 for the step and the software GPU's painters
+    cpu: the step's thread runs on them
+    cpu: one L3 (96 MB on 0-23), nothing done
+    cpu: L3 32 MB on 0-15, 32 MB on 16-31, none clearly larger, nothing done
+
+The owner's PC reads the first two; the same PC's WSL (24 processors
+under one 96 MB L3, as the virtual machine reports it) is the third.
+
+**What is asked**: the step's thread (`port_StepperThread`, before it
+says it is ready: the window's thread waits for that and writes its line)
+and the software GPU's painters (`port_PainterThread`) set their own
+affinity to those processors (`SetThreadGroupAffinity`, only where they
+are all in one processor group, and less any the process may not use;
+`pthread_setaffinity_np`). The window's thread is left to the system.
+`cpu_prefer = off` (`settings_list.h`; the settings menu's window page,
+"Larger-cache cores", at the next start) asks nothing.
+
+**The same game.** Where a thread runs changes how soon it is done, never
+what it computes or in what order the threads hand the step over: nothing
+of the game's state, the record or a frame's result reads it. The
+headless programs, the tests, port-rollback and port-net never read
+`cpu_prefer` and are as they were.
+
+**Measured** (RTX 3090 at 2,560 by 1,440, `port_bench.py --report-only`,
+interleaved runs of the same program with `--set cpu_prefer=off`; other
+agents' emulators and builds were on the machine, 8 to 68% of the
+processors busy, so single runs vary by a millisecond or more; ms).
+First, which threads (two rounds each, then four of the three best):
+
+| asked of | the step's thread 50%, 95% (medians of the runs) | its `game` part | its `raster` part |
+| --- | --- | --- | --- |
+| nothing (`off`) | 6.1, 7.5 | 1.35 | 2.05 |
+| the step's thread alone | 5.9, 6.9 | 0.80 | 2.6 |
+| the step's thread and the painters | 5.3, 6.2 | 0.82 | 2.0 |
+| ... and the window's thread | 5.2, 6.2 | 0.85 | 1.9 |
+| the step's thread's ideal processor alone (`SetThreadIdealProcessorEx`) | 6.3, 8.3 | 1.35 | 1.9 |
+
+The step's own work (`game`, `ahead`) is quicker on the larger cache
+whichever way; with the step's thread alone there, its waits for the
+painters on the other die (`raster`) grew by about what it saved. The
+painters beside it keep both. The window's thread there too was no
+better and its pictures were later (picture to picture 95% 7.5 and 7.8
+against 6.1 and 6.9), so it is left out. An ideal processor is only a
+hint, and was not taken.
+
+Then `auto` (the step's thread and the painters) against `off`, run by
+run, with the load line of each (the step's thread 50%, 95%; its `game`
+part; picture to picture 95%):
+
+| case, round | `off` | `auto` |
+| --- | --- | --- |
+| `ra2`, 0 (46%, 22% busy) | 7.41, 10.07; 1.11; 12.64 | 7.04, 9.00; 0.89; 10.68 |
+| `ra2`, 1 (40%, 68%) | 7.24, 9.44; 1.47; 10.29 | 6.42, 8.06; 0.79; 10.97 |
+| `ra2`, 2 (42%, 35%) | 7.69, 8.82; 1.46; 9.64 | 7.62, 10.81; 0.93; 13.54 |
+| `ra2`, 3 (45%, 21%) | 13.75, 21.27; 1.83; 25.57 | 5.79, 6.67; 0.96; 7.54 |
+| `ra1`, 0 (26%, 31%) | 4.53, 5.37; 1.27; 8.95 | 3.91, 4.75; 0.88; 13.13 |
+| `ra1`, 1 (18%, 10%) | 4.17, 4.96; 1.44; 6.21 | **3.16, 3.79; 0.63; 4.80** |
+| `ra1-stress`, 0 (4%, 4%) | 3.86, 4.86; 1.28; 6.00 | **3.24, 3.63; 0.75; 4.79** |
+| `ra1-stress`, 1 (3%, 6%) | 3.76, 4.14; 1.24; 5.12 | **3.59, 3.93; 0.88; 5.01** |
+| `ra1-stress`, 2 (20%, 33%) | 4.23, 5.29; 1.43; 6.58 | 4.11, 5.28; 1.14; 9.63 |
+
+On a quiet machine the step's thread is up to a quarter quicker at the
+95th centile, its game's part a third to a half quicker, and the
+pictures no later. The game's part is quicker in every pair, whatever the load. The
+runs where `auto` came out later (`ra2` 2, `ra1-stress` 2, and the
+budget's `ra1-stress` once: `settled_p99` 9.74) are the ones where a
+third of the processors or more were busy with other agents' provers
+on the same card; ra1-stress's two quiet pairs are 2.87 and 1.90 `off`
+against 2.55 and 2.33 `auto`. The whole budget once with `auto`
+(`--budget --report-only`): every measure but ra1-stress's (that run
+loaded) within its limit; `step_p95` ra1 4.16, ra2 6.46.
+
 ### The window's thread and the game's state
 
 **The crash** (the owner, 2026-11-18, `05b0f524d`, a fight against the
