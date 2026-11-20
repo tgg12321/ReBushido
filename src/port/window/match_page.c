@@ -394,10 +394,19 @@ static s32 port_MatchCrewHudH(const PortMatch *match) {
     return CREW_HUD_HEAD + 5 + port_MatchCrewRows(match->count) * CREW_HUD_ROW;
 }
 
+/* The strip's top: versus the CPU under the game's own count of the
+ * opponents, which is at the top right. */
+#define CREW_HUD_Y_CPU 38
+
+static s32 port_MatchCrewHudY(const PortMatch *match) {
+    return match->mode == MODE_VSCPU ? CREW_HUD_Y_CPU : HUD_Y;
+}
+
 static void port_MatchCrewHud(const PortMatch *match) {
     char rule[24];
     char now[48];
     char fit[48];
+    s32 top = port_MatchCrewHudY(match);
     s32 h = port_MatchCrewHudH(match);
     s32 rows = port_MatchCrewRows(match->count);
     s32 per_row = (match->count + rows - 1) / rows;
@@ -405,30 +414,28 @@ static void port_MatchCrewHud(const PortMatch *match) {
     s32 right = CREW_HUD_X + CREW_HUD_W - 6;
     s32 place;
 
-    port_MatchRect(CREW_HUD_X, HUD_Y, CREW_HUD_W, h, COLOR_STRIP);
-    port_MatchFrame(CREW_HUD_X, HUD_Y, CREW_HUD_W, h, COLOR_EDGE);
+    port_MatchRect(CREW_HUD_X, top, CREW_HUD_W, h, COLOR_STRIP);
+    port_MatchFrame(CREW_HUD_X, top, CREW_HUD_W, h, COLOR_EDGE);
     port_MatchRuleName(rule, sizeof(rule), match->rule, match->count);
-    port_MatchText(GAME_W / 2, HUD_Y + CREW_HUD_HEAD - 1, SIZE_HUD,
+    port_MatchText(GAME_W / 2, top + CREW_HUD_HEAD - 1, SIZE_HUD,
                    PORT_FACE_BOLD, rule, COLOR_GOLD, 0);
-    port_MatchText(CREW_HUD_X + 6, HUD_Y + CREW_HUD_HEAD - 1, SIZE_HUD - 1,
+    port_MatchText(CREW_HUD_X + 6, top + CREW_HUD_HEAD - 1, SIZE_HUD - 1,
                    PORT_FACE_BOLD, "1P", COLOR_SIDE_1, -1);
-    port_MatchText(
-        right, HUD_Y + CREW_HUD_HEAD - 1, SIZE_HUD - 1, PORT_FACE_BOLD,
-        match->mode == MODE_VSCPU ? "CPU" : "2P", COLOR_SIDE_2, 1);
+    port_MatchText(right, top + CREW_HUD_HEAD - 1, SIZE_HUD - 1, PORT_FACE_BOLD,
+                   match->mode == MODE_VSCPU ? "CPU" : "2P", COLOR_SIDE_2, 1);
     port_MatchCrewNow(now, sizeof(now), match, 0);
     port_MatchFit(fit, sizeof(fit), now, SIZE_HUD - 1, PORT_FACE_BOLD, 200);
-    port_MatchText(CREW_HUD_X + 30, HUD_Y + CREW_HUD_HEAD - 1, SIZE_HUD - 1,
+    port_MatchText(CREW_HUD_X + 30, top + CREW_HUD_HEAD - 1, SIZE_HUD - 1,
                    PORT_FACE_BOLD, fit, COLOR_TEXT, -1);
     port_MatchCrewNow(now, sizeof(now), match, 1);
     port_MatchFit(fit, sizeof(fit), now, SIZE_HUD - 1, PORT_FACE_BOLD, 200);
-    port_MatchText(right - 30, HUD_Y + CREW_HUD_HEAD - 1, SIZE_HUD - 1,
+    port_MatchText(right - 30, top + CREW_HUD_HEAD - 1, SIZE_HUD - 1,
                    PORT_FACE_BOLD, fit, COLOR_TEXT, 1);
-    port_MatchRect(CREW_HUD_X + 6, HUD_Y + CREW_HUD_HEAD + 2, CREW_HUD_W - 12,
-                   1, COLOR_EDGE);
+    port_MatchRect(CREW_HUD_X + 6, top + CREW_HUD_HEAD + 2, CREW_HUD_W - 12, 1,
+                   COLOR_EDGE);
     for (place = 0; place < match->count; place++) {
         s32 col = place % per_row;
-        s32 y =
-            HUD_Y + CREW_HUD_HEAD + 2 + (place / per_row + 1) * CREW_HUD_ROW;
+        s32 y = top + CREW_HUD_HEAD + 2 + (place / per_row + 1) * CREW_HUD_ROW;
 
         port_MatchCrewSlot(match, 0, place, CREW_HUD_X + 6 + col * slot, y,
                            slot - 4, CREW_SIZE_NAME, -1);
@@ -535,7 +542,9 @@ static void port_MatchCrewPick(const PortMatch *match) {
     char line[48];
     char name[32];
     s32 count = match->crew_size;
-    s32 slot = CREW_HUD_SIDE / (count > 0 ? count : 1);
+    s32 rows = port_MatchCrewRows(count);
+    s32 per_row = count > 0 ? (count + rows - 1) / rows : 1;
+    s32 slot = CREW_HUD_SIDE / per_row;
     s32 right = CREW_HUD_X + CREW_HUD_W - 6;
     s32 side;
     s32 place;
@@ -562,16 +571,23 @@ static void port_MatchCrewPick(const PortMatch *match) {
         s32 align = side == 0 ? -1 : 1;
 
         for (place = 0; place < count; place++) {
-            s32 x = side == 0 ? CREW_HUD_X + 6 + place * slot
-                              : right - place * slot;
+            s32 col = place % per_row;
+            s32 x =
+                side == 0 ? CREW_HUD_X + 6 + col * slot : right - col * slot;
+            /* a row of names, the weapons under them; a crew of more
+             * than five two rows of names alone */
+            s32 y = CREW_PICK_Y + 23 + (place / per_row) * 9;
 
             if (place < match->crew_picked) {
                 port_MatchFit(
                     name, sizeof(name),
                     port_MatchCrewName(match->crew[side][place].fighter),
                     CREW_SIZE_NAME + 1, PORT_FACE_BOLD, slot - 4);
-                port_MatchText(x, CREW_PICK_Y + 23, CREW_SIZE_NAME + 1,
-                               PORT_FACE_BOLD, name, color, align);
+                port_MatchText(x, y, CREW_SIZE_NAME + 1, PORT_FACE_BOLD, name,
+                               color, align);
+                if (rows > 1) {
+                    continue;
+                }
                 port_MatchFit(name, sizeof(name),
                               port_NameWeapon(match->crew[side][place].weapon),
                               CREW_SIZE_NAME, PORT_FACE_TEXT, slot - 4);
@@ -580,8 +596,8 @@ static void port_MatchCrewPick(const PortMatch *match) {
             } else {
                 snprintf(name, sizeof(name), "%d", (int)place + 1);
                 port_MatchText(
-                    x, CREW_PICK_Y + 23, CREW_SIZE_NAME + 1, PORT_FACE_BOLD,
-                    name, place == match->crew_picked ? COLOR_GOLD : COLOR_LOST,
+                    x, y, CREW_SIZE_NAME + 1, PORT_FACE_BOLD, name,
+                    place == match->crew_picked ? COLOR_GOLD : COLOR_LOST,
                     align);
             }
         }
@@ -623,7 +639,8 @@ static void port_MatchArea(
         *h = CREW_PICK_H;
     } else if (match->rule == PORT_MATCH_CREW) {
         *x = shown == PORT_MATCH_SHOWN_HUD ? CREW_HUD_X : CREW_CARD_X;
-        *y = shown == PORT_MATCH_SHOWN_HUD ? HUD_Y : CREW_CARD_Y;
+        *y = shown == PORT_MATCH_SHOWN_HUD ? port_MatchCrewHudY(match)
+                                           : CREW_CARD_Y;
         *w = shown == PORT_MATCH_SHOWN_HUD ? CREW_HUD_W : CREW_CARD_W;
         *h = shown == PORT_MATCH_SHOWN_HUD ? port_MatchCrewHudH(match)
                                            : port_MatchCrewCardH(match);

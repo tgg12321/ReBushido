@@ -229,9 +229,9 @@ static void port_MatchNextCrewFight(PortMatch *match) {
     port_MatchCrewPut(match, 0);
     port_MatchCrewPut(match, 1);
     g_fight_restart = 0;
-    g_disp_loading_screen =
-        match->mode == FIGHT_MODE_VSCPU ? LOADING_SCREEN_NEXT_OPPONENT
-                                        : LOADING_SCREEN_PLAIN;
+    /* the next opponent's loading picture, in every mode: the plain one's
+     * pictures are not in video memory after a fight */
+    g_disp_loading_screen = LOADING_SCREEN_NEXT_OPPONENT;
     g_sys_screen = SCREEN_FIGHT_INIT;
 }
 
