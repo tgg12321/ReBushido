@@ -359,7 +359,7 @@ extern const PortSetting g_port_setting_list[];
 extern const s32 g_port_setting_count;
 
 /* The most bytes the built-in text may take, with its 0. */
-#define PORT_DEFAULT_SETTINGS_BYTES 8192
+#define PORT_DEFAULT_SETTINGS_BYTES 16384
 
 /* The settings built in, as the text of a settings file (--help prints
  * it), made from settings_list.h: each setting's line and its comment,
