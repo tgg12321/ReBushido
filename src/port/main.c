@@ -72,6 +72,7 @@ static const char g_port_usage[] =
     "            [--whole-state]\n"
     "            [--mods FOLDER|off] [--dump-textures FOLDER]\n"
     "            [--music-mods on|off] [--dump-music FOLDER]\n"
+    "            [--fight-music stage|original|none|KEY]\n"
     "            [--dump-stages FOLDER] [--weapon 1|2=NAME]\n"
     "            [--arena NAME] [--fight-cpu]\n"
     "            [--unlock-all] [--stage-select]\n"
@@ -158,6 +159,11 @@ static const char g_port_usage[] =
     "  --dump-music FOLDER   write each piece of music the game plays\n"
     "                 there as it plays, KEY.wav: what a mod's music\n"
     "                 replaces, and its key\n"
+    "  --fight-music stage|original|none|KEY   a fight's music: the\n"
+    "                 stage's piece in every mode, the game's own rule\n"
+    "                 (with nothing said), none, or the piece KEY\n"
+    "                 (bb2_m1-5, or a mod's); the stage select's row\n"
+    "                 starts there (the window's fight_music)\n"
     "  --dump-stages FOLDER  write every stage's files there from the disc,\n"
     "                 by their keys: what a mod's stage begins from\n"
     "  --arena NAME   a mod's arena (arenas/NAME.arena) stands in for the\n"
@@ -404,6 +410,18 @@ s32 port_Main(s32 argc, char **argv) {
                 port_MusicSetOn(port_TextsEqual(argv[i], "on"));
             } else {
                 port_UsageError("--music-mods is on or off, not ", argv[i]);
+            }
+        } else if (port_TextsEqual(word, "--fight-music")) {
+            i++;
+            if (port_TextsEqual(argv[i], "stage")) {
+                port_SetFightMusic(PORT_FIGHT_MUSIC_STAGE);
+            } else if (port_TextsEqual(argv[i], "original")) {
+                port_SetFightMusic(PORT_FIGHT_MUSIC_ORIGINAL);
+            } else if (port_TextsEqual(argv[i], "none")) {
+                port_SetFightMusic(PORT_FIGHT_MUSIC_NONE);
+            } else {
+                /* a piece's key, found once the mods are read */
+                port_SetFightMusicPiece(argv[i]);
             }
         } else if (port_TextsEqual(word, "--rollback-test")) {
             if (!port_ParseNumber(argv[++i], &rollback_frames) ||

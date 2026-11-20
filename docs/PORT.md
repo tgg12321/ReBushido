@@ -8063,7 +8063,7 @@ game asks, into `g_port_play` (`src/port/play.c`, a state file), with
 whether the select screen went on to the pages. So a rollback puts the
 choice back with the rest of the game, and a change in the settings menu
 reaches the game at a frame of its own. In a session the welcome carries
-the host's two switches (`MEET_PLAY`, protocol 4) and both programs hold
+the host's two switches (`MEET_PLAY`, since protocol 4) and both programs hold
 them (`port_HoldPlaySwitches`), as they hold the kind of stage the stages
 start as: a guest plays with the host's unlocks whatever its own settings
 say (NETPLAY.md, section 13).
@@ -8080,6 +8080,85 @@ Purple Cavern; versus mode with `--unlock-all` picks the Narukagami's
 last fighter and Utamaru. `--shots` keeps the pictures of the two
 one-player modes' stage pages. With both switches off, as the program
 without a window starts, every play test is as it was.
+
+## A fight's music
+
+The owner, 2026-11-19: fights have no music in versus the CPU; "allow a
+way to select music during stage select, defaulting to the stage's own
+music but let me choose any track for any stage." The original's rule is
+`snd_StartFightMusic` (`fight.c`): versus starts the stage's piece,
+`g_snd_stage_music_tracks[stage]` (one of tracks 0 to 4, `bb2_m1-0` to
+`-4`; a mod's arena's own through `port_ArenaMusic`), chanbara a piece by
+the player's clan (8 or 9), practice its two (10, 11), and story, versus
+the CPU, team battle and link mode nothing. With no music the stage's
+ambient sounds play (`snd_AmbienceEnabled`): always in those modes, and
+in versus, practice and chanbara when the options turn the music off.
+`include/port_fight_music.h`.
+
+**The rule.** The window's **`fight_music`** (`settings_list.h`, the
+Mods group; `--fight-music` on the command line): `stage` (built in)
+starts the stage's versus piece in every mode, practice and chanbara
+keeping their own; `original` is the game's own; `none` starts none. The
+program without a window, which reads no settings, plays the game's own
+rule unless `--fight-music` says, so every play test that holds the port
+to the emulator is as it was.
+
+**The row.** On a stage page, after the kinds of stage have had the
+presses (so never while the arenas' page is up, which takes them all),
+`port_FightMusicPageStep` (`select_StageStep`) moves a row with L1 and
+R1: the rule's own (`PORT_FIGHT_MUSIC_ROW_OWN`), the thirteen pieces of
+the game's (the twelve tracks of `cdrom.c`, the two that nothing asks
+for, 5 and 6, among them, and the staff roll's stream, `bb2_m2-4`, which
+is started as `fight_after.c` starts it, by `cdrom_StartAudio`), the
+pieces a mod brings under keys of their own, and None. `select_Load`
+starts it again from the setting (`port_FightMusicReset`); the fights of
+a mode whose stage the pages chose take what it was left at (versus, link
+mode, and versus the CPU and training through `port_PlayStageChosen`, so
+every opponent of a versus the CPU run), the others the setting's. The
+window draws it in the middle of the stage pages' strip
+(`window/stage_page.c`, `port_PageMusic`), "Music" over the piece's name
+and "L1 / R1: music" under it.
+
+**The fight's start.** `snd_StartFightMusic` asks `port_FightMusicStart`
+first, which says the track to start, none, or the game's own switch
+(the rule's own under `original`, or in practice and chanbara; and the
+options' music off, which is then quiet as ever). A piece started here
+loops as the game's do (`cdrom_SetAudioLoop`). Ambience follows the
+music as versus has it: `snd_AmbienceEnabled` asks
+`port_FightMusicAmbience`, off where the port started a piece, on where
+the row said None, the game's own rule otherwise.
+
+**A mod's own piece.** A mod's `music/KEY.ogg` whose key names no stream
+of the disc's (`port_MusicExtraCount`, `music.c`: no file of the disc's
+directory, alone or with a dash and a channel) is offered in the row by
+its key. The game cannot play what is not on the disc, and what it plays
+is the game's state; so the fight starts the stage's own stream as ever,
+and `port_MusicSetFightPiece` tells the music player, which follows the
+drive outside the state (MODS.md, "Music"), to put the mod's piece in its
+place the next time that stream starts, until another stream does. The
+state is then the stage's own piece's, whatever the mods. In a session
+the row offers none of them: two peers' mods may differ, and the row is
+the state.
+
+**The state.** The row and what the fight's start made of it are
+`g_port_fight_music` (`src/port/fight_music.c`, a state file); the run's
+setting is outside it (`play_switches.c`) and taken in when the game
+asks. The music itself is the drive's XA stream (`cd.c`, `xa.c`, the
+chip), all of it state, so a rollback puts back the piece with the rest
+(NETPLAY.md, "Sound"); what a mod's piece sounds like is the player's
+alone. In a session the welcome carries the host's setting (`MEET_MUSIC`,
+protocol 5) and both programs hold it (`port_HoldFightMusic`); the
+pages' presses are the same on both machines, so the row is.
+
+**How it is proved.** `tools/port_fight_music.py` runs versus the CPU
+through the stage pages to Abandoned Station (track 3) on both sizes,
+the two traces held to each other: with nothing said no piece is
+started; with `--fight-music stage` track 3 is, and the drive streams
+about 370 sectors of XA more than with none over the fight's ten seconds;
+R1 six times starts track 5 (`bb2_m1-5`, never heard in the original);
+L1 twice the staff roll's piece; L1 once None, the same sectors as with
+no music and the ambience on. `tests/port/music.c` holds the mods' own
+pieces and the piece over its stream.
 ## 64 bits
 
 The port is built with 64-bit pointers and with 32-bit ones, from the

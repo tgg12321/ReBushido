@@ -610,6 +610,11 @@ s32 select_Load(
     port_StageChoiceReset();
     port_PlayReset();
 #endif
+#if RB_PORT
+    /* the stage pages' row of music starts from the window's fight_music
+     * (port_fight_music.h) */
+    port_FightMusicReset();
+#endif
     DrawSync(0);
     MoveImage(&rect, SPRITE_STRIP_COPY_X, SPRITE_STRIP_COPY_Y);
     DrawSync(0);
@@ -2268,6 +2273,15 @@ static void select_StageStep(
         if (taken != PORT_STAGE_PAGE_GRID) {
             g_select_pressed = 0;
         }
+    }
+#endif
+#if RB_PORT
+    /* the fight's music (port_fight_music.h): L1 and R1 go through the
+     * row of pieces (the arenas' page, which has every press while it is
+     * up, has left none) */
+    if (port_FightMusicPageStep(
+            g_select_pressed, g_select_door == SELECT_DOOR_OPEN)) {
+        g_select_pressed = 0;
     }
 #endif
     if (g_select_pressed & PAD_ANY(PADLright | PADLleft)) {

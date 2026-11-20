@@ -18,7 +18,9 @@
  * Classic: port_stage_choice.h) is the host's too, and held for the
  * session, and so are the gameplay switches unlock_all and
  * stage_select_everywhere (port_play.h): a guest plays with the host's
- * unlocks whatever its own settings say. Then both start the game from power
+ * unlocks whatever its own settings say. The host's fight_music
+ * (port_fight_music.h) holds likewise, and the stage pages' row of music
+ * starts from it on both. Then both start the game from power
  * on, the host the first pad and the guest the second.
  *
  * From power on to the versus select screen the session presses for
@@ -37,7 +39,7 @@
 #include "bb2.h"
 
 /* The protocol's own number: two programs that differ in it do not meet. */
-#define SESSION_PROTOCOL 4
+#define SESSION_PROTOCOL 5
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -108,7 +110,8 @@ enum {
  * seed and cards, the shape of the sender's remastered picture (its width
  * in the high half and its height in the low), the welcome's kind of
  * stage the stages start as (port_stage_choice.h), the welcome's gameplay
- * switches (port_play.h), and last the version's text. */
+ * switches (port_play.h), the welcome's fight_music (port_fight_music.h),
+ * and last the version's text. */
 enum {
     MEET_BUILD = PORT_NET_HEADER_BYTES,
     MEET_DISC = MEET_BUILD + 2 * WORD_BYTES,
@@ -119,7 +122,8 @@ enum {
     MEET_SHAPE = MEET_CARDS + WORD_BYTES,
     MEET_KIND = MEET_SHAPE + WORD_BYTES,
     MEET_PLAY = MEET_KIND + WORD_BYTES,
-    MEET_VERSION = MEET_PLAY + WORD_BYTES,
+    MEET_MUSIC = MEET_PLAY + WORD_BYTES,
+    MEET_VERSION = MEET_MUSIC + WORD_BYTES,
     MEET_BYTES = MEET_VERSION + VERSION_BYTES
 };
 
@@ -135,6 +139,7 @@ static struct {
     u32 shape;  /* this program's picture's shape, as MEET_SHAPE has it */
     u32 kind;   /* the host's kind of stage the stages start as */
     u32 play;   /* the host's gameplay switches (port_PlaySwitchBits) */
+    u32 music;  /* the host's fight_music (port_FightMusicBits) */
     u32 wider;  /* the wider of the two players' */
     u32 have;   /* chunks the guest has */
     u32 needed; /* chunks there are to have */
@@ -273,6 +278,7 @@ static void port_SendMeet(s32 kind) {
     port_NetPutWord(out + MEET_SHAPE, g_session.shape);
     port_NetPutWord(out + MEET_KIND, g_session.kind);
     port_NetPutWord(out + MEET_PLAY, g_session.play);
+    port_NetPutWord(out + MEET_MUSIC, g_session.music);
     port_PutVersion(out + MEET_VERSION);
     port_NetSend(out, sizeof(out));
 }
@@ -544,6 +550,7 @@ static s32 port_JoinSession(void) {
                 g_session.cards = port_NetGetWord(in + MEET_CARDS);
                 g_session.kind = port_NetGetWord(in + MEET_KIND);
                 g_session.play = port_NetGetWord(in + MEET_PLAY);
+                g_session.music = port_NetGetWord(in + MEET_MUSIC);
                 g_session.needed = 0;
                 for (number = 0; number < CHUNKS; number++) {
                     g_session.needed += (u32)port_ChunkIsNeeded(number);
@@ -616,6 +623,7 @@ s32 port_StartSession(const PortDisc *disc, u32 delay) {
     g_session.delay = delay;
     g_session.kind = (u32)port_GetStageKindDefault();
     g_session.play = port_PlaySwitchBits();
+    g_session.music = port_FightMusicBits();
     port_RemasterGetView(&view);
     g_session.shape =
         ((u32)view.aspect_w << SHAPE_SHIFT) | ((u32)view.aspect_h & SHAPE_MASK);
@@ -654,10 +662,14 @@ s32 port_StartSession(const PortDisc *disc, u32 delay) {
         g_session.role == PORT_SESSION_HOST ? 0 : 1, g_session.delay);
     port_HoldStageKindDefault((s32)g_session.kind);
     port_HoldPlaySwitches(g_session.play);
+    port_HoldFightMusic(g_session.music);
     port_Log("session: the host's unlock_all is %s, its "
-             "stage_select_everywhere %s\n",
+             "stage_select_everywhere %s, its fight_music %s\n",
              (g_session.play & PORT_PLAY_BIT_UNLOCK_ALL) ? "on" : "off",
-             (g_session.play & PORT_PLAY_BIT_STAGE_PAGES) ? "on" : "off");
+             (g_session.play & PORT_PLAY_BIT_STAGE_PAGES) ? "on" : "off",
+             port_GetFightMusicRule() == PORT_FIGHT_MUSIC_STAGE  ? "stage"
+             : port_GetFightMusicRule() == PORT_FIGHT_MUSIC_NONE ? "none"
+                                                                 : "original");
     port_RemasterFixMargin((s32)(g_session.wider >> SHAPE_SHIFT),
                            (s32)(g_session.wider & SHAPE_MASK));
     port_Log("session: begun: this program is player %d, with a delay of %u "
