@@ -181,8 +181,16 @@ lighting overhaul".
    `port_bench.py` from its first commit.
 2. **The owner plays this build**: the HD fighters with vsync on at
    run_ahead 2, the pause, Escape, shadows (the jitter at rest is known).
-3. **Online between two real PCs**, and on Windows (NETPLAY.md, section
-   13: the listen address, routers, the draw distance online).
+3. **Online between two real PCs.** The ways through routers are built
+   and proved on one PC (NETPLAY.md, section 14: the lobby with rooms
+   and passwords, IPv6, the router's mapping, hole punching, the relay;
+   Windows sessions, the menu's restart and the refusals on screen, all
+   in `port-net-windows`). The lobby runs on the owner's server
+   (`tools/relay/README.md`); UDP 7845 still has to be let in by its
+   cloud firewall before the internet test (`tools/port_net_lobby.py
+   internet --lobby 135.181.108.74:7845`) and a first play with a
+   friend. The players' package is `make port-release` (BUILD.md, "The
+   port's package").
 4. **Input lag** (ROADMAP 15): measured part by part and cut where safe
    on 2026-11-18 (`late_input`; PORT.md, "The press to the screen, part
    by part" and "The input read late"). The paced bench now counts the
@@ -205,7 +213,7 @@ lighting overhaul".
 
 - Release 0.1 (tagging and publishing are the owner's).
 - `-O2` for the players' build: 10–35% faster, traces identical.
-- Online: listen address, NAT, draw distance.
+- Online: the draw distance (NAT and the lobby are built, section 14).
 - Which of the original's bugs to fix (REBUSHIDO.md).
 - A modern control layout; `READ_BLANKS` (quick loading's hold).
 

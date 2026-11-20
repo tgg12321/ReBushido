@@ -152,7 +152,17 @@ versus select, a fight, a rematch, and the guest leaving, the same
 hashes on both and no card file written; the same between two of the
 window's programs, headless, in real time (`window`), where the host
 must play on alone; and two window programs started from the settings
-menu's Play online page (NETPLAY.md, section 13). About eight minutes;
+menu's Play online page (NETPLAY.md, section 13); and the lobby's
+ways (`tools/port_net_lobby.py headless`): the lobby server of
+`tools/relay/` run here, a locked room met by a punched hole, by the
+relay, by the host's mapped port and by IPv6 on ::1, IPv6 and a punch
+by address with no lobby, the lobby's list, and the refusals (NETPLAY.md,
+section 14). From Windows, `python tools/port_net_lobby.py windows`
+adds the Windows window's programs: a session, the menu's restart, a
+room browsed from the page, a fake router's port mapping and every
+refusal on the screen. The lobby server's own test is
+`python tools/relay/test_relay.py`, the port mapping's
+`python tools/relay/test_portmap.py`. About eight minutes;
 run it after a change to the step, the state, the input point, the
 network, the session or the window's pacing. Under load, for what only
 timing shows: `python3 tools/port_net.py session --stress 20 --pause

@@ -369,7 +369,8 @@ needs the game running, and the source's layout
 
 What a change to `main` passes before it is pushed: the eleven checks,
 the window's two builds, the play tests' discs, the layout, the port's
-rollback self-test, `make port-net`, the window's budget
+rollback self-test, `make port-net` (and from Windows `port-net-windows`,
+below), the window's budget
 (`tools/port_budget.py`: a fight's processor time with `run_ahead 2`
 against `run_ahead 0`, with the HD fighters; docs/PORT.md, "The
 budget"), the bench on the graphics card (`tools/port_bench.py --budget
@@ -401,7 +402,20 @@ headers several builds write (`build/modern/include/`,
 `build/port/include/`) are written whole and only when they change, so
 that builds side by side never read one half written. `port-net` takes
 96 UDP ports of 127.0.0.1 from a base chosen by the checkout's path
-(`--net-base`), so that two checkouts' gates do not meet; the play tests
+(`--net-base`), so that two checkouts' gates do not meet, and its lobby
+cases (`tools/port_net_lobby.py headless`: the lobby server of
+`tools/relay/` run here, and two programs meeting through it by every
+way, docs/NETPLAY.md, section 14) 80 more, 20000 below that base;
+`port-net-windows` (`python tools/port_net_lobby.py windows`, from
+Windows' Python alone, after `port-sdl-windows`) runs the same between
+the Windows programs, with the window's: a session, the Play online
+page's restart by `_spawnv`, a room hosted and browsed from the page,
+the router's port mapped by a fake router, and every refusal said on the
+screen, about a minute and a half, 10000 below the base. Every window
+program these start has `--hidden` (SDL's dummy sound device whatever
+the environment says), SDL's dummy video and every controller backend
+off; the harnesses refuse to start one otherwise and fail a run whose
+log names another sound driver; the play tests
 run four at once (`-j`) and with `--strict`: a checkout with no emulator
 or disc, or a test skipped, fails the gate rather than passing it with no
 play test run (`REBUSHIDO_EMULATOR` names the emulator from a worktree). The builds and checks run in the copy on WSL's

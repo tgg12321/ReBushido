@@ -57,6 +57,17 @@ static u8 *g_made_image;
 static const char g_made_cue[] =
     "FILE \"disc.bin\" BINARY\n  TRACK 01 MODE2/2352\n    INDEX 01 00:00:00\n";
 static const char g_made_cue_no_file[] = "TRACK 01 MODE2/2352\n";
+/* A dump that kept the two seconds before the data, here two sectors:
+ * the cue sheet's INDEX 01 says where the data begins; and one whose
+ * INDEX 01 is past the image's end. */
+#define MADE_PREGAP 2
+static u8 *g_made_pregap;
+static const char g_made_cue_pregap[] =
+    "FILE \"pregap.bin\" BINARY\n  TRACK 01 MODE2/2352\n"
+    "    INDEX 00 00:00:00\n    INDEX 01 00:00:02\n";
+static const char g_made_cue_past[] =
+    "FILE \"pregap.bin\" BINARY\n  TRACK 01 MODE2/2352\n"
+    "    INDEX 01 00:01:00\n";
 
 /* The byte of the image's data at `offset` of `sector`: every one says
  * which sector and where in it. */
@@ -98,7 +109,7 @@ static struct {
     const char *path;
     const u8 *bytes;
     u32 size;
-} g_made_files[5];
+} g_made_files[8];
 
 static void made_AddFiles(void) {
     g_made_files[0].path = "made/disc.bin";
@@ -118,12 +129,28 @@ static void made_AddFiles(void) {
     g_made_files[4].path = "other/disc.cue";
     g_made_files[4].bytes = (const u8 *)g_made_cue;
     g_made_files[4].size = sizeof(g_made_cue) - 1;
+    /* the same image after two empty sectors */
+    g_made_pregap =
+        test_Alloc((MADE_SECTORS + MADE_PREGAP) * PORT_DISC_SECTOR_BYTES);
+    test_Copy(g_made_pregap + MADE_PREGAP * PORT_DISC_SECTOR_BYTES,
+              g_made_image, MADE_SECTORS * PORT_DISC_SECTOR_BYTES);
+    g_made_files[5].path = "made/pregap.bin";
+    g_made_files[5].bytes = g_made_pregap;
+    g_made_files[5].size =
+        (MADE_SECTORS + MADE_PREGAP) * PORT_DISC_SECTOR_BYTES;
+    g_made_files[6].path = "made/pregap.cue";
+    g_made_files[6].bytes = (const u8 *)g_made_cue_pregap;
+    g_made_files[6].size = sizeof(g_made_cue_pregap) - 1;
+    g_made_files[7].path = "made/past.cue";
+    g_made_files[7].bytes = (const u8 *)g_made_cue_past;
+    g_made_files[7].size = sizeof(g_made_cue_past) - 1;
 }
 
 s32 port_HostOpen(const char *path) {
     s32 i;
 
-    for (i = 0; i < 5; i++) {
+    for (i = 0; i < (s32)(sizeof(g_made_files) / sizeof(g_made_files[0]));
+         i++) {
         if (test_StringsEqual(path, g_made_files[i].path)) {
             return i;
         }
@@ -226,6 +253,22 @@ static void test_Opening(void) {
     CHECK_EQ(disc.sector_count, 0);
     CHECK(port_OpenDisc(&disc, "made/nofile.cue") != NULL);
     CHECK(port_OpenDisc(&disc, "other/disc.cue") != NULL);
+    /* a pregap the cue sheet says the file has: the data from INDEX 01 */
+    CHECK(port_OpenDisc(&disc, "made/pregap.cue") == NULL);
+    CHECK_EQ(disc.first, MADE_PREGAP);
+    CHECK_EQ(disc.sector_count, MADE_SECTORS);
+    {
+        static u8 raw[PORT_DISC_SECTOR_BYTES];
+
+        CHECK_EQ(port_ReadDiscSector(&disc, 0, raw), PORT_DISC_OK);
+        CHECK_EQ(raw[PORT_DISC_DATA_OFFSET + 5], made_Byte(0, 5));
+        CHECK_EQ(
+            port_ReadDiscSector(&disc, MADE_SECTORS - 1, raw), PORT_DISC_OK);
+        CHECK_EQ(port_ReadDiscSector(&disc, MADE_SECTORS, raw),
+                 PORT_DISC_OUT_OF_RANGE);
+    }
+    port_CloseDisc(&disc);
+    CHECK(port_OpenDisc(&disc, "made/past.cue") != NULL);
     CHECK(port_TextEndsWith("A/B.CUE", ".cue"));
     CHECK(!port_TextEndsWith("cue", ".cue"));
 }

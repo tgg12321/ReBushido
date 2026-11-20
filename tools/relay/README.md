@@ -16,7 +16,7 @@ addresses and their candidates.
 
 ## The protocol
 
-Protocol version 1, specified to the byte in `docs/NETPLAY.md`, section 14.
+Protocol version 1: summarized in `docs/NETPLAY.md`, section 14; every field, to the byte, in `relay_client.py` (and the client's `src/port/relay.c`).
 In short, every datagram starts with the port's 8-byte header (`RB`, kind,
 detail, a little-endian u32); kinds 48 to 63 are the server's:
 
