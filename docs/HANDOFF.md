@@ -18,15 +18,16 @@ session's); how to play is [`PLAYING.md`](PLAYING.md); online play is
   about 3.5 minutes; the old ones had been emptied by a cleanup on
   2026-11-19 and are gone) and `mods/fighters` (Tatsumi's geometry-only
   model, geo-01).
-- **The release zip** for the first real online test is
-  `build/release/ReBushido-PC-0.1-ab47df77e.zip` (protocol 9; setup
-  codes begin `P9`). Both players must run that same build.
+- **Releases** are the owner's, on GitHub Releases (2026-11-20): players
+  and testers get builds from there; no hand-made test zips. None is
+  published yet. The lobby on the VPS is version 2 (rooms of several,
+  2026-11-20); keep it matching the latest published release.
 - **The owner's cfg** still has `time_of_day = day` (the stage pages now
   ignore it and start at the stage's own) and `shadows` as the owner set it.
 
 ## Waiting on the owner
 
-1. **The first real online test** with a friend, from the zip above
+1. **The first real online test** with a friend, from a GitHub release
    (steps: PLAYING.md, "Playing online"; the friend needs only the US
    disc image, SLUS-00663, as .cue/.bin). Afterwards, read both
    players' `logs/`: the connection's path (direct, router port, punch,
