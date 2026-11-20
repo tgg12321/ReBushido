@@ -24,6 +24,10 @@ winner = "g_fight_winner:s8"               # 0, 1 or FIGHT_NOBODY
 defeat_frames = "g_fight_defeat_frames:s16"
 wins_p1 = "g_fight_wins_p1:u8"
 wins_p2 = "g_fight_wins_p2:u8"
+team_match = "g_team_match:u8"             # the group battle's match being fought, from 0
+team_points_p1 = "g_team_points:u8"        # its points
+team_points_p2 = "g_team_points_p2:u8"
+loading_screen = "g_disp_loading_screen:u8"  # enum LoadingScreen (disp.h): 10 the group battle's card
 
 # -- what was asked for (FightConfig, fight.h) --
 config_roster_p1 = "g_fight_config+4:s8"   # enum RosterId

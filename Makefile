@@ -378,7 +378,8 @@ port-rollback:
 # every unlock (docs/PORT.md, "Every stage in every mode, and every
 # unlock"); versus the CPU with the stage's music on to its next opponent
 # (docs/PORT.md, "A fight's music"); and the match rules, a match of each
-# rule in versus and versus the CPU (docs/PORT.md, "Match rules";
+# rule in versus and versus the CPU, and group battle's first two matches
+# under each rule, which it does not take (docs/PORT.md, "Match rules";
 # tools/port_match.py). It needs the disc's image, as port-rollback does,
 # and runs what make port built.
 port-stage-select:

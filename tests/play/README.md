@@ -27,7 +27,7 @@ python tools/playtest.py --changed main     # only the tests what changed since 
 python tools/playtest.py --list
 ```
 
-About ten minutes for the seventeen tests one run at a time, after up to
+About ten minutes for the eighteen tests one run at a time, after up to
 two minutes of building discs, and about three and a half with `-j 4`
 (four runs at once; "How the emulator is run").
 It prints a table and exits 1 if a test failed:
@@ -122,6 +122,7 @@ retail program has none.
 | `port_card` | ReBushido twice, then the native port twice, one card passed from each run to the next | The port's memory card is the console's: the options page's round trip over four boots, the first two in the emulator and the last two on the port, so that the settings' file is written by the console's own BIOS code and read back by the port. Afterwards the four card images are the same file, byte for byte (`docs/PORT.md`, "The memory card") |
 | `port_sound` | ReBushido, then the native port | The port's sound is the emulator's: `port_game`'s run, comparing what Sony's sound libraries keep in memory (the common bank's header, where each bank is in sound memory, each voice's registers as last set, the library's record of each voice with its envelope's level, the keys, the reverb, the disc's volume) and, at twenty checkpoints, the sound chip itself: all of sound memory but the chip's own first 4 KB, and every register a program writes ("The sound") |
 | `port_movie` | ReBushido, then the native port | The opening movie: the port plays it to its end, and what is compared is the game's state through the whole movie and after it, the title picture to the pixel, all of video memory at that moment (the two display buffers hold the last frame each program decoded, at different frames of it: 74,241 pixels differ, the number the test holds), and the sound chip at three moments of the movie, which is what showed that the console's movie is not silent (docs/PORT.md, "The movie") |
+| `port_group` | ReBushido, then the native port | A group battle: the first side's three and the second's picked, the first match won by the first fighter's strikes, the card of the scores between matches, and the second match begun and 300 frames of it, the two held to each other on the fighters, the screen, the match, its points and the loading screen. The card is drawn by a loader that runs inside a frame of the fight, after which the frame's HUD is linked into the loading screen's ordering table: on the stack in the original, which crashed the window's build (docs/PORT.md, "A table on a stack that has gone") |
 | `gte_model` | the GTE probe, no disc | The native port's C does what the PlayStation's coprocessor and assembly do: 125,800 made-up cases come out the same on the emulator and on the host ("The GTE probe") |
 
 ## The GTE probe
@@ -608,8 +609,8 @@ choice). The first rule that matches a path decides:
 | `tests/play/probe/*`, `tests/port/*` | `gte_model` |
 | `src/port/gl/`, `src/port/window/`, `src/port/fonts/`, the window's build and provers | none: the tests run the port without a window |
 | `src/port/spu.c`, `sound.c`, `xa.c`, `wav.c` | `port_sound`, `port_movie` |
-| the rest of `src/port/`, `include/port_*`, `tools/port_gte_macros.py` | the seven `port_*` tests and `gte_model` |
-| `tools/port_build.py` | the seven `port_*` tests |
+| the rest of `src/port/`, `include/port_*`, `tools/port_gte_macros.py` | the eight `port_*` tests and `gte_model` |
+| `tools/port_build.py` | the eight `port_*` tests |
 | documents, CI, the patcher, the host tests, port-net, rollback and the gate's own tools | none |
 | anything else (`src/main/`, `src/rebushido/`, `include/`, `asm/`, `bb2.ld`, the `Makefile`, `config/`, `movovl/`, the build's tools) | all |
 
