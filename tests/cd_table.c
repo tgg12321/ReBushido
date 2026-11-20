@@ -3,6 +3,42 @@
 #include "src/main/psxsdk/libcd/sys.c"
 #include "runtime/runtime.h"
 
+/* What cdrom_StartRead reaches where a looping stream of music is playing
+ * (the port's, under RB_PORT): it stops the drive and waits for it, as
+ * cdrom_WaitIdle does, between frames of the loading screen. The test
+ * plays none, so none of these is called. */
+CdlCB CD_cbsync;
+CdlCB CD_cbready;
+s32 CD_status;
+s32 g_port_load_wait;
+u8 g_snd_initialized;
+
+s32 CD_cw(u8 com, u8 *param, u8 *result, s32 async) { return 0; }
+
+s32 CD_sync(s32 mode, u8 *result) { return 0; }
+
+s32 CD_ready(s32 mode, u8 *result) { return 0; }
+
+s32 CD_getsector(void *madr, s32 size) { return 0; }
+
+s32 CD_vol(CdlATV *vol) { return 0; }
+
+void CD_flush(void) {}
+
+s32 VSync(s32 mode) { return 0; }
+
+void link_BeginWait(void) {}
+
+void link_EndWait(void) {}
+
+void link_ExchangeIdle(void) {}
+
+void disp_DrawLoadingScreen(void) {}
+
+void snd_FlushQueue(void) {}
+
+void printf(const char *format, ...) {}
+
 #define FILE_COUNT (s32)(sizeof(g_cdrom_files) / sizeof(g_cdrom_files[0]))
 
 /* Prints every file of the table as the sector it starts at and its size,

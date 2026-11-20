@@ -149,6 +149,9 @@
  * mode's card of the next stage, the team battle's scores) is up at the
  * console's pace before its load is hurried, in blanks: two seconds */
 #define READ_BLANKS 120
+/* How long a hurried load may go without reading the disc before it is
+ * paced again (g_port_load_stalled), in seconds. */
+#define STALL_SECONDS 3
 /* The window under the settings menu, darkened by this much black. */
 #define MENU_DIM 0xA0000000U
 #define ALPHA_SHIFT 24
@@ -352,6 +355,13 @@ static u32 g_port_load_ms_all;
  * pace. */
 static s32 g_port_read_screen;
 static u32 g_port_read_blanks;
+/* A load hurried through that reads nothing is not hurried any more: the
+ * clock at its last read of the disc (or its last blank at the console's
+ * pace), and whether it has gone STALL_SECONDS since and is paced to its
+ * end. A load that never ends is a hang, whose blanks hurried would race
+ * thousands a second and its sound with them. */
+static u32 g_port_load_read_at;
+static s32 g_port_load_stalled;
 
 /* The controller of each pad, and SDL's number for it while it is
  * plugged in. */
@@ -613,7 +623,7 @@ static s32 port_QuickLoading(void) {
 static s32 port_HurriesBlank(void) {
     s32 kind;
 
-    if (!port_QuickLoading()) {
+    if (!port_QuickLoading() || g_port_load_stalled) {
         return FALSE;
     }
     kind = port_LoadKind();
@@ -2499,6 +2509,9 @@ static void port_WatchGame(u32 blank) {
 
 /* What the disc's drive reads (port_platform.h). */
 static void port_NoteDisc(s32 kind, u32 sector) {
+    if (kind != 2) {
+        g_port_load_read_at = port_ReadClock();
+    }
     if (kind == 1) {
         g_port_read_start = sector;
     } else if (kind == 2) {
@@ -4410,6 +4423,7 @@ static void port_FollowLoad(u32 blank, s32 kind, s32 is_hurried) {
         g_port_load_hurried += is_hurried ? 1 : 0;
         return;
     }
+    g_port_load_stalled = FALSE;
     if (g_port_load_blanks == 0) {
         return;
     }
@@ -4428,6 +4442,29 @@ static void port_FollowLoad(u32 blank, s32 kind, s32 is_hurried) {
     g_port_load_ms_all += ms;
     g_port_load_blanks = 0;
     g_port_load_hurried = 0;
+}
+
+/* Whether a load hurried through has read nothing of the disc for
+ * STALL_SECONDS (g_port_load_stalled): from then to its end it is paced,
+ * and the log says so once. */
+static s32 port_LoadStalls(u32 blank) {
+    u32 now = port_ReadClock();
+
+    if (g_port_load_blanks == 0 || g_port_load_hurried == 0) {
+        /* its first blank, or its first hurried one */
+        g_port_load_read_at = now;
+        return FALSE;
+    }
+    if (now - g_port_load_read_at < (u32)STALL_SECONDS * PORT_SPU_RATE) {
+        return FALSE;
+    }
+    g_port_load_stalled = TRUE;
+    port_Note("load: WARNING: %u blanks from blank %u hurried through and "
+              "nothing read of the disc for %d seconds: the game waits for "
+              "something that does not come; the load is paced from blank "
+              "%u, no longer hurried (quick_loading)",
+              g_port_load_blanks, g_port_load_first, STALL_SECONDS, blank);
+    return TRUE;
 }
 
 /* A blank of a load, hurried through: the game's work for it goes on as
@@ -4527,6 +4564,9 @@ static void port_ShowBlank(u32 blank) {
         g_port_read_blanks = 0;
     }
     is_hurried = port_HurriesBlank();
+    if (is_hurried && port_LoadStalls(blank)) {
+        is_hurried = FALSE;
+    }
     if (load == PORT_LOAD_READ && !is_hurried) {
         g_port_read_blanks++;
     }

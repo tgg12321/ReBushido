@@ -601,9 +601,34 @@ void cdrom_Update(void) {
 
 static s32 cdrom_IsIdle(void) { return g_cdrom.state == CDROM_STATE_IDLE; }
 
+#if RB_PORT
+static void cdrom_Stop(void);
+
+/* A stream that loops never ends by itself, so a read asked for behind it
+ * would wait for ever. The original never asks for one: each screen that
+ * leaves a mode's music stops it first. The port's fight_music plays a
+ * piece in modes the game played none in (port_fight_music.h), whose
+ * screens do not; the stream is stopped here, before the read, as they
+ * would have stopped it. Returns whether it was. */
+static s32 cdrom_EndLoopingAudio(void) {
+    if (g_cdrom.state < CDROM_STATE_AUDIO_SETMODE || !g_cdrom.audio_loop ||
+        g_cdrom.stop_request) {
+        return 0;
+    }
+    printf("a looping stream of music stopped for a read of the disc\n");
+    cdrom_Stop();
+    return 1;
+}
+#endif
+
 /* Asks for the whole of file `file_index` of the table to be read to `dest`.
  * Returns 0, having done nothing, if a request is running. */
 s32 cdrom_StartRead(s32 file_index, s32 dest) {
+#if RB_PORT
+    if (cdrom_EndLoopingAudio()) {
+        cdrom_WaitIdle();
+    }
+#endif
     if (g_cdrom.state != CDROM_STATE_IDLE) {
         return 0;
     }
@@ -656,6 +681,8 @@ void cdrom_WaitIdle(void) {
     /* the window may hurry these blanks, the link cable's too: nothing
      * here waits on the player (docs/PORT.md, "Quick loading") */
     g_port_load_wait++;
+    /* a wait before a read, behind a stream that would not end */
+    (void)cdrom_EndLoopingAudio();
 #endif
     link_BeginWait();
     while (!cdrom_IsIdle()) {
