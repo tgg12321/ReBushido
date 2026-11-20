@@ -68,6 +68,16 @@ MEMBERS = {
     'port_match_over': 'PortMatch.over',
     'port_match_winner': 'PortMatch.winner',
     'port_match_card': 'PortMatch.card',
+    'port_match_page_crew': 'PortMatch.page_crew',
+    'port_match_crew_size': 'PortMatch.crew_size',
+    'port_match_crew_picked': 'PortMatch.crew_picked',
+    'port_match_crew_sides': 'PortMatch.crew_sides',
+    'port_crew_p1_1': 'PortMatch.crew[0][0].fighter',
+    'port_crew_p1_2': 'PortMatch.crew[0][1].fighter',
+    'port_crew_p1_3': 'PortMatch.crew[0][2].fighter',
+    'port_crew_p2_1': 'PortMatch.crew[1][0].fighter',
+    'port_crew_p2_2': 'PortMatch.crew[1][1].fighter',
+    'port_crew_p2_3': 'PortMatch.crew[1][2].fighter',
 }
 
 

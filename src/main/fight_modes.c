@@ -202,6 +202,10 @@ void fight_NextVsCpuOpponent(void) {
             g_sys_screen = SCREEN_FIGHT_INIT;
             g_fight_stage = stage;
         }
+#if RB_PORT
+        /* in a Crew match he leads the CPU's crew (port_match.h) */
+        port_MatchOpponentChosen();
+#endif
     }
 }
 

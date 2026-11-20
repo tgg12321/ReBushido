@@ -216,6 +216,13 @@ s32 port_IsOnStagePages(void) {
 s32 port_MatchShown(void) {
     const PortMatch *match = &g_port_match;
 
+    if (g_sys_screen == SCREEN_MENU_UPDATE && g_menu_page == MENU_PAGE_SELECT) {
+        /* a Crew match's later places being picked */
+        return match->page_rule == PORT_MATCH_CREW && match->crew_picked > 0 &&
+                       match->crew_picked < match->crew_size
+                   ? PORT_MATCH_SHOWN_PICK
+                   : PORT_MATCH_SHOWN_NONE;
+    }
     if (match->rule == PORT_MATCH_SINGLE || match->mode != g_fight_mode) {
         return PORT_MATCH_SHOWN_NONE;
     }
@@ -226,6 +233,12 @@ s32 port_MatchShown(void) {
     }
     return g_sys_screen == SCREEN_FIGHT_UPDATE ? PORT_MATCH_SHOWN_HUD
                                                : PORT_MATCH_SHOWN_NONE;
+}
+
+const char *port_MatchCrewName(s32 fighter) {
+    return fighter >= 0 && fighter <= CHARACTER_COUNT
+               ? port_NameRoster(g_fighter_character_rosters[fighter])
+               : "?";
 }
 
 s32 port_ReadScreen(void) {

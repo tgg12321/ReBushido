@@ -521,7 +521,9 @@ static void port_PageStrip(const PortStageChoice *choice, s32 count) {
     /* the match rule (port_match.h), where the mode plays matches */
     if (g_port_match.page_on) {
         port_MatchRuleName(match, sizeof(match), g_port_match.page_rule,
-                           g_port_match.page_count);
+                           g_port_match.page_rule == PORT_MATCH_CREW
+                               ? g_port_match.page_crew
+                               : g_port_match.page_count);
         columns[n].value = match;
         columns[n].color = g_port_match.page_rule == PORT_MATCH_SINGLE
                                ? COLOR_TEXT
@@ -632,7 +634,7 @@ static void port_PageArenas(const PortStageChoice *choice, s32 count) {
 /* What the panel's match column shows, as one number. */
 static s32 port_PageMatchKey(void) {
     return g_port_match.page_on << 16 | g_port_match.page_rule << 8 |
-           g_port_match.page_count;
+           g_port_match.page_count | g_port_match.page_crew << 4;
 }
 
 s32 port_StagePagePixels(

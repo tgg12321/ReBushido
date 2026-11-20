@@ -364,8 +364,8 @@ endif
 # what they write. About half a minute. It needs the retail disc's image
 # (REBUSHIDO_RETAIL, or the .cue at the checkout's root) and no emulator,
 # so it is not one of the checks, which run without the disc. Then a
-# versus Stock match the same way (tools/port_match.py --rollback; PORT.md,
-# "Match rules").
+# versus Stock match and a Crew match the same way (tools/port_match.py
+# --rollback; PORT.md, "Match rules").
 port-rollback:
 	python3 tools/port_rollback.py
 	python3 tools/port_match.py --rollback

@@ -39,7 +39,9 @@ and a guest turned away that goes on with its own game.
 (section 13). `session` also holds the two players to the same arena
 (docs/MODS.md, "Custom arenas"): the sample arena compiled at test time,
 the host with it in play (--arena) and the guest without, which the host
-must turn away.
+must turn away. And a second headless session of each size plays a Crew
+match of two (PORT.md, "Match rules", "Crew"), each player picking his
+crew's second place.
 
 Under load (docs/NETPLAY.md, section 12, "Under load"): `--stress N` runs
 the checks N times over and counts the runs that failed and those that
@@ -277,14 +279,48 @@ SESSION_MATCH_EXPECT = {
     'rematch': 'expect = ["mode == FIGHT_MODE_VS", "wins_p1 + wins_p2 == 1", "port_match_rule == 1", '
                '"port_match_count == 2", "port_match_lives_p1 + port_match_lives_p2 == 3"]\n',
 }
+# And a session of its own plays a Crew match of two (docs/PORT.md, "Match
+# rules"), the host's rule again: each player picks the second place of
+# his crew on the grid after the stage (the fighter and weapon under the
+# cursors, the same as the first), and the second fight is the crews' next
+# fighters, loaded afresh, the loser's next against the winner, which is
+# the first fight's pair again. It ends the match: the result's card.
+SESSION_CREW = ['--match', 'crew:2']
+SESSION_CREW_PICKS = ["crew2+100 CROSS", "crew2+110 P2 CROSS", "crew2+300 CROSS", "crew2+340 P2 CROSS"]
+SESSION_CREW_PLACE = '''
+[[checkpoint]]
+name = "crew2"
+when = "port_match_crew_picked == 1"
+within = 3000
+shot = false
+'''
+SESSION_CREW_EXPECT = {
+    'crew2': 'expect = ["port_match_page_rule == 3", "port_match_crew_size == 2", '
+             '"port_match_crew_sides == 2"]\n',
+    'fight': 'expect = ["mode == FIGHT_MODE_VS", "port_match_rule == 3", "port_match_crew_picked == 2", '
+             '"port_match_lives_p1 == 2", "port_match_lives_p2 == 2"]\n',
+    'after_fight': 'expect = ["port_match_rule == 3", "port_match_card == 1", "port_match_fights == 1", '
+                   '"port_match_lives_p1 + port_match_lives_p2 == 3"]\n',
+    'rematch': 'expect = ["mode == FIGHT_MODE_VS", "port_match_rule == 3", "port_match_count == 2", '
+               '"port_match_lives_p1 + port_match_lives_p2 == 3", "p1_defeated == 0", "p2_defeated == 0"]\n',
+}
+# what each kind of session's match is: the host's arguments, what its
+# checkpoints expect, what both sides' logs say of the rule
+SESSION_MATCHES = {
+    'stock': (SESSION_MATCH, SESSION_MATCH_EXPECT, "session: the host's match rule is stock, 2"),
+    'crew': (SESSION_CREW, SESSION_CREW_EXPECT, "session: the host's match rule is crew, 2"),
+}
 
 
 def session_checkpoints(match):
-    """SESSION_CHECKPOINTS, with what a Stock match expects."""
+    """SESSION_CHECKPOINTS, with what the match (a key of SESSION_MATCHES)
+    expects."""
     if not match:
         return SESSION_CHECKPOINTS
     text = SESSION_CHECKPOINTS
-    for name, expect in SESSION_MATCH_EXPECT.items():
+    if match == 'crew':
+        text = text.replace('\n[[checkpoint]]\nname = "fight"', SESSION_CREW_PLACE + '\n[[checkpoint]]\nname = "fight"')
+    for name, expect in SESSION_MATCHES[match][1].items():
         head = 'name = "%s"\n' % name
         start = text.index(head)
         end = text.index('\n\n', start) if '\n\n' in text[start:] else len(text)
@@ -293,32 +329,35 @@ def session_checkpoints(match):
     return text
 
 
-def session_match_problems(label, who, err, out, plan):
-    """The Stock match of a headless session: each side holds the host's
-    rule (the guest was given none), and where the second fight's
-    checkpoint is printed its score is one life lost of four."""
+def session_match_problems(label, who, err, out, plan, match='stock'):
+    """The match of a headless session (a key of SESSION_MATCHES): each
+    side holds the host's rule (the guest was given none), and where a
+    checkpoint is printed its score is the one expected (Stock: one life
+    lost of four at the second fight)."""
     problems = []
-    if "session: the host's match rule is stock, 2" not in err:
-        problems.append('session: %s: the %s did not hold the host\'s match rule, stock 2' % (label, who))
+    _, expects, said = SESSION_MATCHES[match]
+    if said not in err:
+        problems.append('session: %s: the %s did not hold the host\'s match rule (%s)' % (label, who, said))
     names = [line.split()[1] for line in read(plan).split('\n') if line.startswith('var ')]
     for line in out.split('\n'):
         words = line.split()
-        if len(words) > 3 and words[0] == 'cp' and words[1] in SESSION_MATCH_EXPECT:
+        if len(words) > 3 and words[0] == 'cp' and words[1] in expects:
             values = dict(playtest.header_names())
             values.update(zip(names, (int(v) for v in words[3:])))
-            claims = SESSION_MATCH_EXPECT[words[1]].split('"')[1::2]
+            claims = expects[words[1]].split('"')[1::2]
             for claim in claims:
                 if not playtest.evaluate(claim, values):
                     problems.append('session: %s: the %s at `%s`: not %s' % (label, who, words[1], claim))
     return problems
 
 
-def write_session_plan(program, side, folder, match=False):
+def write_session_plan(program, side, folder, match=None):
     """The plan of the host (side 0) or the guest (1) for `program`: its
-    path. `match`: the session plays SESSION_MATCH."""
+    path. `match`: the session plays that of SESSION_MATCHES."""
     fight = port_game_fight()
     rematch = [p.replace('fight+', 'rematch+', 1) for p in fight]
-    presses = own_pad(SESSION_SELECT + fight + rematch, side)
+    picks = SESSION_CREW_PICKS if match == 'crew' else []
+    presses = own_pad(SESSION_SELECT + picks + fight + rematch, side)
     if side == 0:
         presses.append("after_fight+%d CROSS" % (30 if match else 120))
     toml = os.path.join(folder, 'session_side%d.toml' % side)
@@ -422,14 +461,48 @@ shot = false
 '''
 
 
-def write_room_plan(program, folder):
-    """The plan of every member of a room for `program`: its path."""
+# A room's match of Crew 2 (--match crew:2): the crews' second places
+# picked after the stage, as the same fighters and weapons, so that the
+# second fight, the loser's next against the winner, is the first's pair
+# again and ends the same way: the match decided at its result's card.
+ROOM_CREW_CHECKPOINTS = ROOM_CHECKPOINTS.replace('''
+[[checkpoint]]
+name = "fight"''', SESSION_CREW_PLACE.replace('within = 3000', 'within = 100000000') + '''
+[[checkpoint]]
+name = "fight"''').replace('''
+[[checkpoint]]
+name = "after_fight"''', '''
+[[checkpoint]]
+name = "fight2"
+when = "screen == SCREEN_FIGHT_UPDATE && winner == FIGHT_NOBODY"
+at_frame = true
+within = 100000000
+shot = false
+
+[[checkpoint]]
+name = "kill2"
+when = "winner != FIGHT_NOBODY"
+at_frame = true
+within = 100000000
+shot = false
+
+[[checkpoint]]
+name = "after_fight"''')
+
+
+def write_room_plan(program, folder, crew=False):
+    """The plan of every member of a room for `program`: its path. `crew`:
+    a Crew 2 match's (ROOM_CREW_CHECKPOINTS)."""
     toml = os.path.join(folder, 'room.toml')
+    fight = port_game_fight()
+    presses = SESSION_SELECT + fight
+    if crew:
+        presses = SESSION_SELECT + SESSION_CREW_PICKS + fight + [p.replace('fight+', 'fight2+', 1) for p in fight]
     with open(toml, 'w', encoding='utf-8', newline='\n') as f:
         f.write('about = "A room of several\'s matches, both pads."\n')
         f.write('discs = ["port"]\nlimit = 200000000\nseconds = %d\n' % SECONDS)
-        f.write('input = [\n%s\n]\n' % ',\n'.join('    "%s"' % p for p in SESSION_SELECT + port_game_fight()))
-        f.write(ROOM_CHECKPOINTS)
+        f.write('input = [\n%s\n]\n' % ',\n'.join('    "%s"' % p for p in presses))
+        f.write(ROOM_CREW_CHECKPOINTS if crew else ROOM_CHECKPOINTS)
     playtest.PORT_PROGRAM = program
     playtest.PORT_SYMBOLS = program + '.sym'
     test = playtest.Test(toml)
@@ -610,14 +683,14 @@ def check_rollback(label, program, args, ports):
     return problems
 
 
-def check_session(label, program, args, ports, window):
+def check_session(label, program, args, ports, window, match='stock'):
     """A session between two programs, set up by --host and --join, through
     the versus select screen, a fight, a rematch and the guest's leaving.
     `window`: the programs are the window's, headless (dummy drivers), in
     real time; or else the headless ones, as fast as they go."""
     folder = os.path.join(args.out, 'session', label)
     os.makedirs(folder, exist_ok=True)
-    plans = [write_session_plan(program, side, folder, not window) for side in (0, 1)]
+    plans = [write_session_plan(program, side, folder, None if window else match) for side in (0, 1)]
     trouble = ['--net-latency', str(args.latency), '--net-loss', str(args.loss)]
     env = dict(os.environ)
     procs = []
@@ -637,7 +710,7 @@ def check_session(label, program, args, ports, window):
             cmd += ['--host', '%s:%d' % (LOCALHOST, ports[0]), '--net-delay', str(args.delay),
                     '--card1', os.path.join(folder, 'card1.mcd'), '--card2', os.path.join(folder, 'card2.mcd')]
             if not window:
-                cmd += SESSION_MATCH
+                cmd += SESSION_MATCHES[match][0]
         else:
             cmd += ['--join', '%s:%d' % (LOCALHOST, ports[0]), '--net-bind', '%s:%d' % (LOCALHOST, ports[1])]
         if window:
@@ -701,7 +774,7 @@ def check_session(label, program, args, ports, window):
             print('    checkpoints printed: %s; the last reached: %s' % (
                 ' '.join(order[n] for n in printed), order[max(printed)]))
         if not window:
-            problems += session_match_problems(label, who, err, out, plans[side])
+            problems += session_match_problems(label, who, err, out, plans[side], match)
         hashes.append(hashes_of(err))
     host_err = read(os.path.join(folder, 'side0.err'))
     if 'the other program ended after frame' not in host_err:
@@ -1179,6 +1252,9 @@ def run_checks(args, base):
             if not args.stress:
                 problems += check_arena_refused('%d-bit' % bits, program, args,
                                                 (ports[0] + 14, ports[1] + 14))
+                # a Crew match, its crews picked in the session
+                problems += check_session('%d-bit-crew' % bits, program, args, (ports[0] + 16, ports[1] + 16),
+                                          False, 'crew')
             continue
         check = check_rollback if rollback else check_link
         problems += check('%d-bit' % bits, program, args, ports)

@@ -55,8 +55,9 @@
  * the host's match rule (port_match.h). 10: a room of several's match
  * (the lobby's version 2; NETPLAY.md, section 16): the rule that the
  * match's end is the session's, with who won in the state, and a player
- * who leaves in the middle of a fight. */
-#define SESSION_PROTOCOL 10
+ * who leaves in the middle of a fight. 11: the rule may be Crew, whose
+ * crews the game's state carries. */
+#define SESSION_PROTOCOL 11
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -1290,6 +1291,7 @@ void port_ApplySession(void) {
     port_Log("session: the host's match rule is %s, %d\n",
              port_GetMatchRule() == PORT_MATCH_STOCK      ? "stock"
              : port_GetMatchRule() == PORT_MATCH_FIRST_TO ? "first_to"
+             : port_GetMatchRule() == PORT_MATCH_CREW     ? "crew"
                                                           : "single",
              port_GetMatchCount());
     port_Log("session: the host's unlock_all is %s, its "
@@ -1410,6 +1412,7 @@ s32 port_WatchSession(const u8 *in) {
              g_session.rules,
              port_GetMatchRule() == PORT_MATCH_STOCK      ? "stock"
              : port_GetMatchRule() == PORT_MATCH_FIRST_TO ? "first_to"
+             : port_GetMatchRule() == PORT_MATCH_CREW     ? "crew"
                                                           : "single",
              port_GetMatchCount(), g_session.wider >> SHAPE_SHIFT,
              g_session.wider & SHAPE_MASK);
@@ -1427,7 +1430,10 @@ static s32 port_MatchIsDecided(s32 *winner) {
         if (!g_port_match.over) {
             return FALSE;
         }
-        *winner = g_port_match.winner;
+        /* a Crew match whose crews ran out at once is nobody's */
+        *winner = g_port_match.winner == PORT_MATCH_DRAWN
+                      ? -1
+                      : (s32)g_port_match.winner;
         return TRUE;
     }
     *winner = g_fight_winner == 0 || g_fight_winner == 1 ? g_fight_winner : -1;

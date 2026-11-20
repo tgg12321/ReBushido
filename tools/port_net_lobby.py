@@ -461,6 +461,73 @@ def case_rooms(case):
     judge_rooms(case, segments)
 
 
+def case_rooms_crew(case):
+    """A room of several whose match is Crew 2 (docs/PORT.md, "Match rules",
+    "Crew"): Ayame and Bunta play the rotation's first match, each picking
+    his crew's second place with his own pad, and Chie watches it. The
+    match is decided at the second fight's end, the result's card, as a
+    Stock match's is: there it ends, on all three at the same frame, its
+    hashes the same on all."""
+    lobby = case.server(*ROOM_SERVER)
+    with PLAN_LOCK:
+        plan = port_net.write_room_plan(HEADLESS, case.folder, crew=True)
+    base = [HEADLESS, '--image', playtest.RETAIL_CUE, '--no-cards', '--lobby', lobby, '--net-plan-pads',
+            '--net-seed', str(ROOM_SEED), '--plan', plan, '--trace', '--match', 'crew:2'] + TROUBLE
+
+    def member(label, *more):
+        return case.start(label, base + ['--out', os.path.join(case.folder, label), '--player', label.capitalize()] +
+                          list(more))
+
+    procs = [member('ayame', '--room-open', 'Crews', '--room-rule', 'fixed', '--room-matches', '1')]
+    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", 30)
+    if code is None:
+        case.fail('the room of several was given no code')
+        return
+    procs.append(member('bunta', '--room-enter', code.group(1), '--room-matches', '1'))
+    procs.append(member('chie', '--room-enter', code.group(1), '--room-watcher', '--room-matches', '1'))
+    labels = ['ayame', 'bunta', 'chie']
+    codes = wait_all(procs, SECONDS)
+    segments = {}
+    for label, code_ in zip(labels, codes):
+        err = case.err(label)
+        if code_ != 0:
+            case.fail('%s ended with %s (%s)' % (label, code_, os.path.join(case.folder, label + '.err')))
+        if 'DESYNC' in err:
+            case.fail('%s found a desync' % label)
+        segments[label] = room_segments(err)
+    players = [label for label in labels if segments[label].get(1, {}).get('role', 'watch') != 'watch']
+    if sorted(players) != ['ayame', 'bunta'] or 1 not in segments['chie']:
+        case.fail('match 1 was not Ayame and Bunta\'s, watched by Chie: %r' %
+                  {label: segments[label].get(1, {}).get('role') for label in labels})
+        return
+    for label in players:
+        if "session: the host's match rule is crew, 2" not in case.err(label) and \
+                'match rule crew, 2' not in case.err(label):
+            case.fail('%s did not play the host\'s Crew 2' % label)
+        if 'room: match 1 over: its' not in case.err(label):
+            case.fail('%s\'s match 1 did not end with a winner' % label)
+    # both fights fought: the match was not over at the first's card
+    outs = ''.join(read(os.path.join(case.folder, label + '.out')) for label in players)
+    if 'cp kill2 ' not in outs:
+        case.fail('no player printed the second fight\'s kill: the match did not go on to it')
+    # the players' hashes alike, and the spectator's (fewer: it runs from
+    # the fight's start) the same as theirs, as case_rooms holds them
+    hashes = [segments[label][1]['hashes'] for label in labels]
+    common = sorted(set(hashes[0]) & set(hashes[1]))
+    differ = [f for f in common if hashes[0][f] != hashes[1][f]]
+    watched = sorted(set(hashes[2]) & set(common))
+    if differ:
+        case.fail('match 1: the players\' hashes differ from frame %d' % differ[0])
+    elif len(common) < 40:
+        case.fail('match 1: too few hashes in common on the players (%d)' % len(common))
+    elif len(watched) < 5 or any(hashes[2][f] != hashes[0][f] for f in watched):
+        case.fail('match 1: Chie\'s hashes are not the players\' (%d in common)' % len(watched))
+    else:
+        case.said.append('a Crew 2 match in a room: Ayame and Bunta picked their crews, two fights, decided at '
+                         'the result\'s card; %d hashes the same on both players, %d of them Chie\'s watching'
+                         % (len(common), len(watched)))
+
+
 def judge_rooms(case, segments):
     """The rotation's order, every match's hashes alike on all who ran it,
     the spectators', the leave and the match beside."""
@@ -539,6 +606,10 @@ HEADLESS_CASES = [('punch', case_punch), ('relay', case_relay), ('mapped', case_
                   # Windows halves at once, and this one is long enough for
                   # the two to meet in one folder)
                   ('rooms-win' if IS_WINDOWS else 'rooms', case_rooms)]
+# Run after the cases above, not beside them (they all run at once, and
+# three programs more starve those that count their round trips), and in
+# the Linux half alone: a room's Crew match.
+LATER_CASES = [('rooms-crew', case_rooms_crew)]
 
 
 # ---- the window's cases (Windows) ----
@@ -1057,13 +1128,17 @@ def main():
         cases = HEADLESS_CASES + WINDOW_CASES
     else:
         cases = HEADLESS_CASES
+    later = LATER_CASES if args.what == 'headless' else []
     if args.only:
         cases = [c for c in cases if c[0] in args.only]
+        later = [c for c in later if c[0] in args.only]
     for program in {HEADLESS} | ({WINDOW} if args.what == 'windows' else set()):
         if not os.path.isfile(os.path.join(REPO, program)):
             print('FAILED: port_net_lobby: no %s (build it first)' % program)
             return 1
-    problems = run(cases, args.port_base)
+    problems = run(cases, args.port_base) if cases else []
+    if later:
+        problems += run(later, args.port_base + len(cases) * PORTS_PER_CASE)
     for problem in problems:
         print('FAILED: port_net_lobby: ' + problem)
     if not problems:

@@ -22,6 +22,12 @@ static s32 port_MatchCount(s32 count) {
                                            : count;
 }
 
+static s32 port_MatchCrewSize(s32 count) {
+    return count < PORT_MATCH_CREW_LEAST  ? PORT_MATCH_CREW_LEAST
+           : count > PORT_MATCH_CREW_MOST ? PORT_MATCH_CREW_MOST
+                                          : count;
+}
+
 /* Made the first time the game asks, and the page reset when the
  * window's setting has changed (port_SetMatchDefault). */
 static PortMatch *port_Match(void) {
@@ -39,12 +45,34 @@ static PortMatch *port_Match(void) {
         match->default_rule = (u8)rule;
         match->default_count = (u8)count;
         match->page_rule = (u8)rule;
-        match->page_count = (u8)count;
+        /* the setting's number is the crew's size when its rule is Crew;
+         * otherwise Crew starts at five, Stock and First to at it */
+        match->page_count =
+            (u8)(rule == PORT_MATCH_CREW ? PORT_MATCH_COUNT_DEFAULT : count);
+        match->page_crew =
+            (u8)(rule == PORT_MATCH_CREW ? port_MatchCrewSize(count)
+                                         : PORT_MATCH_CREW_DEFAULT);
     }
     return match;
 }
 
-/* The score back to the match's start: N lives, no wins. */
+/* A side's fighter in play into the fight's configuration: the crew's
+ * place after those lost. */
+static void port_MatchCrewPut(PortMatch *match, s32 side) {
+    s32 place = match->count - match->lives[side];
+    const PortCrewPick *pick;
+
+    if (place < 0 || place >= PORT_MATCH_CREW_MOST) {
+        return;
+    }
+    pick = &match->crew[side][place];
+    g_fight_config.roster[side] =
+        (s8)g_fighter_character_rosters[pick->fighter];
+    g_fight_config.weapon[side] = (s8)pick->weapon;
+}
+
+/* The score back to the match's start: N lives (a crew's fighters), no
+ * wins; a crew's first fighters in play. */
 static void port_MatchRestart(PortMatch *match) {
     match->lives[0] = match->lives[1] = match->count;
     match->wins[0] = match->wins[1] = 0;
@@ -54,8 +82,41 @@ static void port_MatchRestart(PortMatch *match) {
     match->winner = 0;
     match->card = PORT_MATCH_CARD_NONE;
     match->card_frames = 0;
+    if (match->rule == PORT_MATCH_CREW) {
+        port_MatchCrewPut(match, 0);
+        port_MatchCrewPut(match, 1);
+    }
 }
 
+/* A Crew match begins: the crews picked on the select screen; each place
+ * not picked (a mode that picked none, or the CPU's crew before its
+ * opponent is chosen) the fighter and weapon the menus started with. */
+static void port_MatchCrewBegin(PortMatch *match) {
+    s32 side;
+    s32 place;
+
+    match->count = (u8)port_MatchCrewSize(match->page_crew);
+    if (match->crew_size != match->count) {
+        match->crew_picked = 0;
+    }
+    for (side = 0; side < 2; side++) {
+        s32 picked = side < match->crew_sides ? match->crew_picked : 0;
+
+        for (place = picked; place < PORT_MATCH_CREW_MOST; place++) {
+            match->crew[side][place].fighter =
+                g_fighter_roster_characters[(u8)g_fight_config.roster[side]];
+            match->crew[side][place].weapon = (u8)g_fight_config.weapon[side];
+        }
+    }
+    match->crew_size = match->count;
+    match->crew_picked = match->count;
+    match->crew_grid = FALSE;
+    /* kept for the stage pages after the match */
+    match->crew_kept = TRUE;
+}
+
+/* A mode begun from the menus (port_match.h): its match, of the stage
+ * pages' rule, from the start. */
 void port_MatchBegin(s32 mode) {
     PortMatch *match = port_Match();
 
@@ -64,6 +125,9 @@ void port_MatchBegin(s32 mode) {
     match->rule =
         port_MatchModeHasRules(mode) ? match->page_rule : (u8)PORT_MATCH_SINGLE;
     match->count = (u8)port_MatchCount(match->page_count);
+    if (match->rule == PORT_MATCH_CREW) {
+        port_MatchCrewBegin(match);
+    }
     port_MatchRestart(match);
 }
 
@@ -99,6 +163,21 @@ void port_MatchFightOver(s32 mode, s32 p1_fell, s32 p2_fell) {
                 match->over = TRUE;
                 match->winner = (u8)(side == 0);
             }
+        }
+    } else if (match->rule == PORT_MATCH_CREW) {
+        /* the loser's fighter out, both on a draw; the match is over when
+         * a crew has none left, drawn if both ran out at once */
+        if (match->last != PORT_MATCH_WON_P2) {
+            match->lives[1]--;
+        }
+        if (match->last != PORT_MATCH_WON_P1) {
+            match->lives[0]--;
+        }
+        if (match->lives[0] == 0 || match->lives[1] == 0) {
+            match->over = TRUE;
+            match->winner = match->lives[0] == match->lives[1]
+                                ? (u8)PORT_MATCH_DRAWN
+                                : (u8)(match->lives[0] == 0);
         }
     } else if (match->last != PORT_MATCH_DRAW) {
         /* First to N: a draw scores nothing */
@@ -142,6 +221,21 @@ static void port_MatchNextFight(void) {
     g_sys_screen = SCREEN_FIGHT_INIT;
 }
 
+/* The next fight of a Crew match: each crew's fighter in play, loaded
+ * afresh as any fight starts (the winner too), on the same stage. */
+static void port_MatchNextCrewFight(PortMatch *match) {
+    cdrom_StopAndWait();
+    snd_EndFight();
+    port_MatchCrewPut(match, 0);
+    port_MatchCrewPut(match, 1);
+    g_fight_restart = 0;
+    /* no loading picture, the screen black (fight_Init blanks it): the
+     * screen after a fight has drawn over the pictures' place in video
+     * memory */
+    g_disp_loading_screen = LOADING_SCREEN_NONE;
+    g_sys_screen = SCREEN_FIGHT_INIT;
+}
+
 /* A frame after a fight of a match (port_match.h): the card, then the
  * next fight, the stage select, versus the CPU's next opponent, or the
  * game's own menu. */
@@ -163,7 +257,11 @@ s32 port_MatchAfterFight(s32 pressed) {
     }
     match->card = PORT_MATCH_CARD_NONE;
     if (!match->over) {
-        port_MatchNextFight();
+        if (match->rule == PORT_MATCH_CREW) {
+            port_MatchNextCrewFight(match);
+        } else {
+            port_MatchNextFight();
+        }
         return TRUE;
     }
     if (match->mode == FIGHT_MODE_VSCPU) {
@@ -199,13 +297,20 @@ s32 port_MatchHidesWins(s32 mode) {
            port_MatchModeHasRules(mode);
 }
 
+/* The select screen loads (port_match.h): back to the stage pages after
+ * a match of versus or link, the crews kept; otherwise begun afresh. */
 s32 port_MatchToStages(void) {
     PortMatch *match = port_Match();
     s32 to_stages = match->to_stages;
 
     match->to_stages = FALSE;
-    return to_stages &&
-           (match->mode == FIGHT_MODE_VS || match->mode == FIGHT_MODE_NETWORK);
+    to_stages = to_stages && (match->mode == FIGHT_MODE_VS ||
+                              match->mode == FIGHT_MODE_NETWORK);
+    if (!to_stages) {
+        /* a select screen begun afresh picks its crews afresh */
+        port_MatchCrewDrop();
+    }
+    return to_stages;
 }
 
 /* A frame of a stage page (port_match.h): Circle the rule, Start its
@@ -222,6 +327,14 @@ s32 port_MatchPageStep(s32 mode, s32 pressed, s32 is_open) {
         match->page_rule = (u8)((match->page_rule + 1) % PORT_MATCH_RULES);
         return TRUE;
     }
+    if ((pressed & PAD_ANY(PADstart)) && match->page_rule == PORT_MATCH_CREW) {
+        /* a crew of two to eight, and round again */
+        snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        match->page_crew = (u8)(match->page_crew >= PORT_MATCH_CREW_MOST
+                                    ? PORT_MATCH_CREW_LEAST
+                                    : port_MatchCrewSize(match->page_crew + 1));
+        return TRUE;
+    }
     if ((pressed & PAD_ANY(PADstart)) &&
         match->page_rule != PORT_MATCH_SINGLE) {
         snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
@@ -230,4 +343,173 @@ s32 port_MatchPageStep(s32 mode, s32 pressed, s32 is_open) {
         return TRUE;
     }
     return FALSE;
+}
+
+/* ---- Crew: the picks (port_match.h) ---- */
+
+s32 port_MatchCrewWanted(s32 mode, s32 sides) {
+    PortMatch *match = port_Match();
+
+    if (!port_MatchModeHasRules(mode) || match->page_rule != PORT_MATCH_CREW) {
+        return FALSE;
+    }
+    if (match->crew_picked > 0 && match->crew_picked < match->crew_size) {
+        /* a later place being picked */
+        return TRUE;
+    }
+    if (match->crew_kept && match->crew_picked == match->crew_size &&
+        match->crew_size == port_MatchCrewSize(match->page_crew) &&
+        match->crew_sides == sides) {
+        /* the crews of the match before, at the page's size */
+        return FALSE;
+    }
+    /* the first place: the picks the screen has just made */
+    match->crew_size = (u8)port_MatchCrewSize(match->page_crew);
+    match->crew_sides = (u8)sides;
+    match->crew_picked = 0;
+    match->crew_kept = FALSE;
+    return TRUE;
+}
+
+/* A side's pick into the place being picked; the last side's takes the
+ * place, and the grid is due for the next. */
+void port_MatchCrewTake(s32 side, s32 fighter, s32 weapon) {
+    PortMatch *match = port_Match();
+
+    if (side < 0 || side >= 2 || match->crew_picked >= match->crew_size) {
+        return;
+    }
+    match->crew[side][match->crew_picked].fighter = (u8)fighter;
+    match->crew[side][match->crew_picked].weapon = (u8)weapon;
+    if (side == match->crew_sides - 1) {
+        /* the place is taken: the grid comes up for the next */
+        match->crew_picked++;
+        match->crew_grid = match->crew_picked < match->crew_size;
+    }
+}
+
+s32 port_MatchCrewDone(void) {
+    PortMatch *match = port_Match();
+
+    return match->crew_size != 0 && match->crew_picked >= match->crew_size;
+}
+
+s32 port_MatchCrewPicking(void) {
+    PortMatch *match = port_Match();
+
+    return match->page_rule == PORT_MATCH_CREW && match->crew_picked > 0 &&
+           match->crew_picked < match->crew_size;
+}
+
+s32 port_MatchCrewGridDue(void) {
+    PortMatch *match = port_Match();
+    s32 due = match->crew_grid;
+
+    match->crew_grid = FALSE;
+    return due;
+}
+
+s32 port_MatchCrewFirst(s32 side, s32 *fighter, s32 *weapon) {
+    PortMatch *match = port_Match();
+
+    if (match->crew_picked == 0 || side < 0 || side >= match->crew_sides) {
+        return FALSE;
+    }
+    *fighter = match->crew[side][0].fighter;
+    *weapon = match->crew[side][0].weapon;
+    return TRUE;
+}
+
+void port_MatchCrewDrop(void) {
+    PortMatch *match = port_Match();
+
+    match->crew_picked = 0;
+    match->crew_size = 0;
+    match->crew_grid = FALSE;
+    match->crew_kept = FALSE;
+}
+
+/* ---- Crew: versus the CPU ---- */
+
+/* The dice's sequence: a 16-bit linear congruential one (its multiplier
+ * and increment), and what spreads the frame count over the seed. */
+#define CREW_DIE_MULTIPLY 0x6255U
+#define CREW_DIE_ADD 0x3619U
+#define CREW_SEED_SPREAD 0x9E37U
+
+/* The CPU's dice, `sides` of them: a sequence of its own, so that the
+ * game's rand() is drawn on as it would be without a crew. */
+static s32 port_MatchCrewDie(PortMatch *match, s32 sides) {
+    match->crew_seed =
+        (u16)(match->crew_seed * CREW_DIE_MULTIPLY + CREW_DIE_ADD);
+    return (s32)((u32)match->crew_seed * (u32)sides >> 16);
+}
+
+/* A weapon for a fighter of the CPU's as the game gives its opponents
+ * one: the gunners their guns, the others any of the six blades, the
+ * second clan the yari for the naginata. */
+static s32 port_MatchCrewWeapon(PortMatch *match, s32 character) {
+    s32 weapon;
+
+    if (character == CHARACTER_TSUBAME) {
+        return WEAPON_ID_LONG_GUN;
+    }
+    if (character == CHARACTER_KATZE) {
+        return WEAPON_ID_SHORT_GUN;
+    }
+    weapon = port_MatchCrewDie(match, WEAPON_ID_FIRST_GUN);
+    if (weapon == WEAPON_ID_NAGINATA && g_fighter_clans[character] != 0) {
+        weapon = WEAPON_ID_YARI;
+    }
+    return weapon;
+}
+
+/* Versus the CPU's opponent chosen (port_match.h): he leads the CPU's
+ * crew, the rest drawn from the run's opponents (its last ones left out),
+ * and the opponent's match begins with the player's crew whole. */
+void port_MatchOpponentChosen(void) {
+    PortMatch *match = port_Match();
+    u8 characters[sizeof(g_vscpu_order)];
+    s32 pool = 0;
+    s32 place;
+    s32 i;
+
+    if (match->rule != PORT_MATCH_CREW || match->mode != FIGHT_MODE_VSCPU) {
+        return;
+    }
+    for (i = 0; i < g_vscpu_count && i < (s32)sizeof(g_vscpu_order); i++) {
+        if (g_vscpu_order[i] != CHARACTER_LAST_1 &&
+            g_vscpu_order[i] != CHARACTER_LAST_2) {
+            characters[pool++] = g_vscpu_order[i];
+        }
+    }
+    match->crew_seed =
+        (u16)((u32)g_disp_frame_count * CREW_SEED_SPREAD + (u32)g_vscpu_faced);
+    match->crew[1][0].fighter =
+        g_fighter_roster_characters[(u8)g_fight_config.roster[1]];
+    match->crew[1][0].weapon = (u8)g_fight_config.weapon[1];
+    for (place = 1; place < PORT_MATCH_CREW_MOST; place++) {
+        s32 character = pool > 0 ? characters[port_MatchCrewDie(match, pool)]
+                                 : match->crew[1][0].fighter;
+
+        match->crew[1][place].fighter = (u8)character;
+        match->crew[1][place].weapon =
+            (u8)port_MatchCrewWeapon(match, character);
+    }
+    match->lives[0] = match->lives[1] = match->count;
+    port_MatchCrewPut(match, 0);
+}
+
+/* The game's Rematch (port_match.h): a Crew match begun again loads its
+ * first fighters, behind a black screen as the next fight of a match. */
+s32 port_MatchRematchLoads(void) {
+    PortMatch *match = port_Match();
+
+    if (match->rule != PORT_MATCH_CREW || match->mode != g_fight_mode) {
+        return FALSE;
+    }
+    cdrom_StopAndWait();
+    snd_EndFight();
+    g_disp_loading_screen = LOADING_SCREEN_NONE;
+    return TRUE;
 }

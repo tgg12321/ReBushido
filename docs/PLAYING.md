@@ -558,8 +558,8 @@ since the two players' mods may differ.
 ## Match rules
 
 A fight in Bushido Blade is usually one kill. For versus (two players,
-online too) and versus the CPU the port adds two **matches** of several
-fights:
+online too) and versus the CPU the port adds three **matches** of
+several fights:
 
 - **Single fight**: the game's own, one fight and its menu (the
   default);
@@ -568,15 +568,21 @@ fights:
   stage with the same fighters, each keeping the lives left, until one
   player has none;
 - **First to N** (1 to 9): fights until one player has won N; the pips
-  at the top fill as fights are won.
+  at the top fill as fights are won;
+- **Crew N** (2 to 8, five to begin with): each player picks a crew of N
+  fighters, each with a weapon, in order; they are his N lives (see
+  "Crew" below).
 
 On a **stage page** the panel's Match says what the fight will be:
 **Circle** (X on the keyboard for player one) turns the rule, Single
-fight, Stock, First to, and **Start** (Return) its number. The page
-keeps what you left it at; the settings menu's **Match rule** and
-**Match count** (`match_rule = single|stock|first_to` and `match_count
-= N` in `rebushido.cfg`) are where it starts, and what versus the CPU
-plays when it has no stage page (`stage_select_everywhere = off`).
+fight, Stock, First to, Crew, and **Start** (Return) its number. The
+page keeps what you left it at; the settings menu's **Match rule** and
+**Match count** (`match_rule = single|stock|first_to|crew` and
+`match_count = N` in `rebushido.cfg`) are where it starts, and what
+versus the CPU plays when it has no stage page (`stage_select_everywhere
+= off`). The page keeps the crew's size apart from the number of Stock
+and First to: Crew starts at five, unless `match_rule = crew`, when
+`match_count` is the crew's size.
 
 Inside each fight everything is the game's own: the kill, the replay,
 the winner's view. Then, in place of the menu after a fight, a card
@@ -603,6 +609,53 @@ so a fight never ends on time.
 Online the **host's** `match_rule` and `match_count` are where both
 players' stage pages start; either player's Circle and Start change it
 there, as on one console, and both PCs keep the same score.
+
+### Crew
+
+A crew battle: each player picks a crew of fighters and weapons, and
+they are his lives. The first to put every fighter of the other's crew
+down wins.
+
+**Picking the crew.** Pick your fighter and weapon as ever, then on the
+stage page choose Crew (Circle) and its size (Start), and the stage
+(Cross). That fighter and weapon are your crew's first. The character
+select comes back for each place left, the cursor where you left it,
+with a strip at the foot of the screen showing both crews so far and
+the place being picked; pick a fighter and a weapon each time. A fighter
+may be in a crew more than once, with the same weapon or another. When
+the last place is picked the first fight starts, on the stage you chose.
+Triangle on the character select, before you have picked for that place,
+drops the crews and goes back to the stage page.
+
+**The fights.** Each fight is the two crews' fighters in play: the
+first of each to begin with. The fighter who falls is out, and the next
+of his crew comes in. The winner stays, with the same fighter and
+weapon, and starts the next fight fresh, unhurt, at the stage's own
+starting places, as any fight starts. A draw (both fall) puts a fighter
+out of each crew. A surrender (the kaishaku) is the surrenderer's lost
+fight.
+
+**Winning.** The match ends when a crew has no fighter left; if both
+run out at once (a draw on both last fighters) the match is drawn.
+
+**On the screen.** Over the fight a strip across the top: each player's
+fighter in play and his weapon, and under them each crew's names, the
+one in play in the player's colour, those out dimmed and struck through
+in red. After each fight a card shows both crews, who took the fight
+and who comes in; at the end, whose crew won (or the draw).
+
+**After the match**, as the other rules: in versus and online the stage
+select, the crews kept, so Cross there plays the same crews again
+(change the size, or Triangle back to the weapons, to pick new ones).
+**Versus the CPU** is a crew match against each opponent: the game's own
+opponent leads the CPU's crew, the rest of it drawn at random from the
+run's opponents, with a weapon each as the game would give them. Put
+his crew out and the next opponent comes, your crew whole again; lose
+yours and the game's menu after a defeat comes up, whose Rematch is the
+same two crews from the start.
+
+**Online** the host's rule holds, and each player picks his own crew on
+his own PC, as on one console.
 
 ## Everything unlocked
 

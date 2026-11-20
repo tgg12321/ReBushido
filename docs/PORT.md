@@ -8678,8 +8678,10 @@ ROADMAP 21 (the owner, 2026-11-20): beside the game's single fight, a
 **Stock N** match (each side N lives, a fight lost takes one) and
 **First to N** (fights until a side has won N), for versus, link,
 online versus and versus the CPU (PLAYING.md, "Match rules", for how
-they play). `include/port_match.h` has the rules; all of it is under
-`RB_PORT`, and the PlayStation builds play as they did.
+they play); and (the owner, the same day) **Crew N**, crews of fighters
+and weapons picked in turn (below, "Crew"). `include/port_match.h` has
+the rules; all of it is under `RB_PORT`, and the PlayStation builds play
+as they did.
 
 **Where the choice is.** On a stage page Circle turns the rule and Start
 its number (`port_MatchPageStep`, from `select_StageStep` after the
@@ -8756,6 +8758,120 @@ fight's end have none of the counter's red rules (252 pixels before it
 was left out). `tools/port_rollback.py`'s Stock plan rolls a match
 back every 24 frames; `tools/port_net.py session` plays its session as
 a Stock match.
+
+### Crew
+
+The owner, 2026-11-20: "a crew battle type gamemode where you select 5
+fighters and five weapons and those are essentially your five lives.
+First to kill all the opponents' fighters wins." `PORT_MATCH_CREW`,
+after First to on the stage page's Circle; Start turns its size, 2 to
+8, five unless the window's `match_rule = crew` gives `match_count`
+(`--match crew` is five, `--match crew:N` N). The page keeps the crew's
+size apart from Stock's and First to's number (`page_crew`).
+
+**The pick, on the game's own select screen.** The rule is chosen on
+the stage page, which comes after the fighters and weapons, so the
+fighter and weapon each side has already picked are its crew's first
+place. Where the screen would then be done (Cross on a stage, an
+arena's page, or, in a mode with no stage page, the weapons crossed),
+`select_PortCrewPick` hands the picks to `port_MatchCrewTake` and, while
+places are left, closes the door on the grid instead
+(`g_select_next_step`); when the grid comes up `select_PortCrewGrid`
+clears the picks, each cursor left where it was, and the grid, the
+weapons and their crossing run as the game has them for the next place.
+The last place's crossing ends the screen with the stage chosen before,
+the settings' first picks put back to the crews' first places
+(`select_PortCrewFirst`), so the first fight is theirs. Picks may repeat
+from place to place; within one place the two cursors keep apart, as
+the game's always do. Triangle on the grid with nothing picked, during
+a later place, lets the crews go and goes back to the stage page with
+the first place's picks (`select_PortCrewBack`); Triangle on a stage
+page lets kept crews go. While a later place is picked the window lays a
+strip over the foot of the screen: each crew so far, names and weapons,
+and the place being picked (`PORT_MATCH_SHOWN_PICK`).
+
+**The fights.** `port_MatchBegin` takes the crews (a place not picked,
+which only a mode that picked none has, is the fighter and weapon the
+menus started with). The fighter in play of a side is its crew's place
+after those lost (`lives` counts a crew's fighters left). A fight lost
+takes the loser's fighter, a draw one from each; when a crew has none
+the match is over, its winner the other, or `PORT_MATCH_DRAWN` (2) when
+both ran out at once. Between fights the card, then
+`port_MatchNextCrewFight`: each side's fighter in play into
+`g_fight_config` (roster and weapon), `g_fight_restart` 0, and the
+fight is loaded and begun afresh, behind a black screen
+(`LOADING_SCREEN_NONE`: the game's loading pictures are not in video
+memory once the screen after a fight has drawn its menu's sheets over
+them, and either shows scraps of it), as any fight starts, the winner too,
+at the stage's own places (where the Stock and First to fights start
+where the fighters stood). The winner's fighter and weapon stay; the
+game's own wins count goes on counting (the HUD hides it under any
+match rule).
+
+**After the match.** As Stock and First to: the result's card, then in
+versus and online the stage page, the crews kept (`crew_kept`): Cross
+there plays a new match of the same crews, unless the crew's size was
+changed (then the crews are picked again from the first place); Triangle
+lets them go and goes back to the weapons.
+
+**Versus the CPU.** A match per opponent, as the other rules. The
+player picks his crew; the CPU's is led by the game's own opponent
+(`fight_NextVsCpuOpponent` calls `port_MatchOpponentChosen`), its other
+places drawn from the run's opponents (its last two left out), each
+with a weapon as the game gives an opponent one (the gunners their guns,
+a blade otherwise, the second clan the yari for the naginata). The
+draws are dice of the match's own (`crew_seed`, seeded from the frame
+count and the opponent's number), so the game's `rand()` is drawn on as
+without a crew. The CPU's crew out: the next opponent, whose match
+begins with the player's crew whole. The player's crew out (or a
+drawn match): the game's menu after a defeat; its Rematch is a new match
+of both crews' first fighters, loaded again (`port_MatchRematchLoads`
+turns the game's restart where the fighters stand into a load).
+
+**Online.** The host's `match_rule` and `match_count` hold, as for the
+others (protocol 11: the rule may be Crew, which an older program does
+not know). Each player picks his own crew with his own pad on the
+shared select screen; the crews, the place being picked and the score
+are `g_port_match`, in the state, so a rollback, a replay and the two
+machines of a session hold them. In a room of several (NETPLAY.md,
+section 16) a rotation's match of Crew ends where Stock's does: at the
+screen after a fight once the match is over (the result's card), its
+winner the room's result, a drawn match nobody's
+(`port_MatchIsDecided`, `session.c`).
+
+**The picture** (`match_page.c`). Over a fight a strip across the whole
+top: each side's label and fighter in play with his weapon, the rule
+between, and under them each crew's names, the first side's from the
+left and the second's from the right (two rows for a crew of more than
+five), the one in play in the side's colour, a fallen one dimmed and
+struck through in red. The card after a fight: each crew as a column of
+names and weapons in the same three looks, how many are left, and who
+took the fight and who comes in (or the draw, or who won the match, or
+that both crews are out). The names are `port_MatchCrewName`
+(`gamestate.c`, the character's roster's name).
+
+**How it is proved.** `tools/port_match.py` (`make port-stage-select`),
+both sizes, the traces held to each other: `vs_crew`, versus Crew 3 (the
+second places picked one place down the grid on each side, the third
+another: Kannuki, Mikado, Tatsumi against Gengoro, Kaun, Jo); the first
+fight the first player's (Gengoro out, Kannuki stays and meets Kaun),
+the second a draw (both out: Mikado meets Jo), the third the first
+player's (the second crew out, 2 to 0), the result, the stage page with
+the crews kept, and Cross there a new match of them; `vs_crew_drawn`,
+Crew 2 of two draws, a drawn match; `vscpu_crew`, versus the CPU Crew 2,
+the CPU's crew the game's first opponent and one drawn, which as the
+port plays today takes both of the player's fighters, the game's menu
+after a defeat and its Rematch the crews' first fighters loaded again.
+The draws are written by the plan (`poke`: the first fighter fallen
+once the second has), since nobody plays the second fighter. `tools/
+port_replay.py` plays a Crew 2 match's fights back from their replays
+(`vs_crew_won`: no draw, which no replay could hold), every hash the
+same; `tools/port_net.py session` plays a second session as a Crew 2
+match, each player picking his crew's second place, the hashes and the
+fight's replays the same on both machines; `tools/port_net_lobby.py
+headless`'s `rooms-crew` plays a room's rotation match as Crew 2, two
+players and a spectator: two fights, the match decided at the result's
+card, the players' hashes alike and the spectator's theirs.
 
 ## ReBushido's top menu
 
