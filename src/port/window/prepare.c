@@ -48,8 +48,10 @@
 #define BAR_FRONT 0xFFB8963Cu
 
 /* the mods the tool makes, in the order it makes them */
+#if defined(_WIN32)
 static const char * const g_prepare_mods[] = {"art", "stages-hd", "fighters"};
 #define PREPARE_MODS (s32)(sizeof(g_prepare_mods) / sizeof(g_prepare_mods[0]))
+#endif
 
 /* Whether mods/NAME needs making for `key`: not if its made-from-disc.txt
  * says this key, nor if it is a mod of the player's own (a mod.txt and no
