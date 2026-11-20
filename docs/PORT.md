@@ -2592,8 +2592,11 @@ on the terraced fields showed a fence the console hides behind a terrace.
   console cut a near tile into four or sixteen pieces, each linked at
   its own farthest corner, so a piece by his feet could be painted
   over them where the whole face is not; that is the console cutting
-  off the soles of a fighter's feet, and is not copied. An effect has
-  no node and no slot and is never hidden; a shadow lies on the ground
+  off the soles of a fighter's feet, and is not copied. A fighter's
+  polygon writes its own depth as it is painted all the same
+  (`port_GlMarksDepth`), for the stage's flames below. An effect has
+  no node and no slot and is not hidden by the slots; a stage's flame
+  is held by the depth (below, "The effects"); a shadow lies on the ground
   and keeps the depth test with its offset, as the stage's own pieces
   do, which is what still hides a fence behind a terrace.
 - **A batch is held as it was when its primitives came.** The last batch
@@ -7199,7 +7202,28 @@ prover; `port_remaster.h`):
 | `exact` | each where the projection put it, its size without the rounding, and named, so that a picture between two frames moves it by its name (`gl_tween.c`) |
 | `smooth` | `exact`, and its texture read smoothed (`FLAG_SMOOTH_EFFECT`, `gl_draw.c`): the four texels about the point, a clear one counting as how much of the effect is not there, so the edge fades out instead of stopping at a texel's edge |
 
-Whatever the setting, **an effect is never hidden by the ground's
+**A stage's flame is held by the depth** with `exact` and `smooth`
+(`port_RemasterNoteStanding`, `port_GlIsHeldFlame`): the owner
+(2026-11-19), "the fires on the Shainto Gate stage still seem to be
+drawn on top of everything". The console hid a flame behind a pillar by
+painting the pillar after it, by the ordering table; the remastered
+picture paints the ground's mesh, its pieces and all, where the
+farthest tile was, so a flame came after every pillar and wall in front
+of it and over them, in the 4:3 middle and the bands alike. A flame
+stands on its point, all of it above it and none in front, so its whole
+quad is tested at that point's depth less half its width (the game's
+own size for its kind: what is nearer by less than that is inside the
+fire, the rim and the bars of its basket, which at the point's own depth
+cut dark lines through it), and writes none, against what the depth
+buffer holds: the ground's mesh and its pieces, the fighters' models'
+layer, and the fighters' own polygons, which write their depth as they
+are painted (`port_GlMarksDepth`) because the game sorts a flame by its
+own depth and a fighter at the renderer's scale, and a flame behind him
+can come a slot nearer. The flame's mix is its own (added); nothing of
+it is written. Every other effect, which reaches in front of its point
+as far as round it, is held as before.
+
+Whatever the setting, **no other effect is hidden by the ground's
 depth**, as the console hid none (`port_GlIsOverGround`): a dust cloud
 whose lower half is "under" the ground in the world is drawn whole, as
 the console draws it. That is also why there is no soft-particle fade

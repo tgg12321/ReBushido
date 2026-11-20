@@ -459,8 +459,8 @@ extern void port_RemasterSetPrim(PortAddress prim);
  * PORT_EFFECTS_EXACT draws each where the projection really put it,
  * its size without the rounding, and moves it between two frames by its
  * name; PORT_EFFECTS_SMOOTH also reads its texture smoothed, its clear
- * texels fading the edge out. None of them is ever hidden by the
- * ground's depth, as the console hid none of them. */
+ * texels fading the edge out. None of them is hidden by the ground's
+ * depth but the stage's flames (port_RemasterNoteStanding). */
 enum {
     PORT_EFFECTS_ORIGINAL = 0,
     PORT_EFFECTS_EXACT = 1,
@@ -488,6 +488,24 @@ extern void port_RemasterNoteEffect(PortAddress prim, PortAddress points,
 extern void port_RemasterNoteSprite(
     PortAddress prim, PortAddress center, s32 scale_number, s32 depth,
     PortAddress name, s32 piece);
+/* ... and that sprite stands on its point, all of it above the point and
+ * none of it in front: a flame of the stage's (eff_DrawFlames). Such a
+ * one is held against what stands nearer -- the ground's mesh and its
+ * pieces, the fighters drawn from models -- at its point's own depth.
+ * The console hid a flame behind a wall or a fighter by painting them
+ * after it, by the ordering table; the remastered picture paints the
+ * ground's mesh, walls and all, where the farthest tile was, so painting
+ * alone left every flame over the walls in front of it (the owner,
+ * 2026-11-19: "the fires on the Shainto Gate stage still seem to be
+ * drawn on top of everything"). Any other sprite reaches in front of its
+ * point as far as it reaches round it, and is not held. `reach` is the
+ * flame's own width, in the world's units: what is nearer than its point
+ * by less than that, or than what holds a flame (gl_draw.c,
+ * FLAME_HOLDER_REACH), is what it burns in -- the rim and the bars of a
+ * basket, the walls of a stone lantern's firebox about a candle seen
+ * through its window -- and does not hide it. Called after
+ * port_RemasterNoteSprite. */
+extern void port_RemasterNoteStanding(PortAddress prim, s32 reach);
 
 /* ---- the stage drawn as one mesh (src/port/gl/gl_stage.c) ---- */
 
@@ -818,9 +836,14 @@ typedef struct {
     /* This is a drawing of a fighter's own and not of the stage
      * (port_RemasterNoteFighter). */
     s32 is_fighter;
-    /* This is an effect's (port_RemasterNoteEffect): never hidden by the
+    /* This is an effect's (port_RemasterNoteEffect): not hidden by the
      * ground's depth, and its texture smoothed with `effects smooth`. */
     s32 is_effect;
+    /* ... and a sprite standing on its point, which is held against what
+     * stands nearer than that point by more than this after all
+     * (port_RemasterNoteStanding): a flame of the stage's, and how far
+     * round its point it burns. 0 for anything else. */
+    s32 standing_reach;
     /* The ordering-table slot the renderer linked it at
      * (port_RemasterNoteOtSlot), which is all the console sorted it by:
      * a larger slot is farther and painted sooner. -1 where it was not
