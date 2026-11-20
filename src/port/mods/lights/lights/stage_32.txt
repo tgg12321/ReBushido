@@ -1,0 +1,69 @@
+# The first team battle court (stage 32): the hall, a band of windows
+# along the whole of its south wall (z -10,000, from 2,000 to 4,000 up,
+# x -10,000 to 8,040), the hall's only opening. What comes through falls
+# across the court in three pools: the moon's at night, the day's by day.
+format = 1
+
+[light windows_west_moon]
+kind = spot
+at = -6000 -3000 -9800
+direction = 0 1 2
+cone = 40 75
+color = #A8B8FF
+intensity = 0.5
+radius = 16000
+shadow = yes
+times = night
+
+[light windows_middle_moon]
+kind = spot
+at = 0 -3000 -9800
+direction = 0 1 2
+cone = 40 75
+color = #A8B8FF
+intensity = 0.5
+radius = 16000
+shadow = yes
+times = night
+
+[light windows_east_moon]
+kind = spot
+at = 6000 -3000 -9800
+direction = 0 1 2
+cone = 40 75
+color = #A8B8FF
+intensity = 0.5
+radius = 16000
+times = night
+
+[light windows_west_day]
+kind = spot
+at = -6000 -3000 -9800
+direction = 0 1 2
+cone = 40 75
+color = #FFF2DC
+intensity = 0.4
+radius = 16000
+shadow = yes
+times = dawn day dusk
+
+[light windows_middle_day]
+kind = spot
+at = 0 -3000 -9800
+direction = 0 1 2
+cone = 40 75
+color = #FFF2DC
+intensity = 0.4
+radius = 16000
+shadow = yes
+times = dawn day dusk
+
+[light windows_east_day]
+kind = spot
+at = 6000 -3000 -9800
+direction = 0 1 2
+cone = 40 75
+color = #FFF2DC
+intensity = 0.4
+radius = 16000
+times = dawn day dusk

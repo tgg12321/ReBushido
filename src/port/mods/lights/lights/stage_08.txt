@@ -9,3 +9,13 @@ intensity = 0.65
 radius = 3200
 flicker = 0.4
 shadow = yes
+
+# The stone lantern east of the path (its fire box at x 7,015, z 10,610,
+# from 1,000 to 1,675 up): a candle in it from dusk, small and low.
+[light stone_lantern]
+at = 7015 -1350 10610
+color = #FFB060
+intensity = 0.3
+radius = 2600
+flicker = 0.25
+times = dusk night

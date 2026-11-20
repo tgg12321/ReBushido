@@ -1,0 +1,50 @@
+# The main Tatara shrine (stage 0): the hall, its two doors open in the
+# west wall (x -12,000; each 4,000 wide and 5,100 high, z -6,000 to -2,000
+# and 2,000 to 6,040). The light of outside comes in through them and
+# falls across the floor: the moon's, cool, at night; the day's, warmer,
+# by day. A spot in each doorway, pointing in and a little down.
+format = 1
+
+[light door_south_moon]
+kind = spot
+at = -11700 -3000 -4000
+direction = 3 1 0
+cone = 40 75
+color = #A8B8FF
+intensity = 0.5
+radius = 16000
+shadow = yes
+times = night
+
+[light door_north_moon]
+kind = spot
+at = -11700 -3000 4020
+direction = 3 1 0
+cone = 40 75
+color = #A8B8FF
+intensity = 0.5
+radius = 16000
+shadow = yes
+times = night
+
+[light door_south_day]
+kind = spot
+at = -11700 -3000 -4000
+direction = 3 1 0
+cone = 40 75
+color = #FFF0D8
+intensity = 0.4
+radius = 16000
+shadow = yes
+times = dawn day dusk
+
+[light door_north_day]
+kind = spot
+at = -11700 -3000 4020
+direction = 3 1 0
+cone = 40 75
+color = #FFF0D8
+intensity = 0.4
+radius = 16000
+shadow = yes
+times = dawn day dusk
