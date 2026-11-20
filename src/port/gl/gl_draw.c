@@ -1194,25 +1194,16 @@ static const char g_gl_fragment_text[] =
     "        float seen = sun_visible_quick(world, v_world_normal);\n"
     "        color *= 1.0 - u_sun_dark * (1.0 - seen);\n"
     /* and lit at the time of day as the stage is (gl_time.h) */
-    "        color = time_relight(color, normalize(v_world_normal));
-"
-    "#ifdef PORT_LIGHTS_LIT
-"
-    "        lit_base = color;
-"
-    "        lit_added = lights_add_wrapped(world, v_world_normal, LIT_WRAP);
-"
-    "        color += lit_added;
-"
-    "#endif
-"
-    "    }
-"
+    "        color = time_relight(color, normalize(v_world_normal));\n"
+    "#ifdef PORT_LIGHTS_LIT\n"
+    "        lit_base = color;\n"
+    "        lit_added = lights_add_wrapped(world, v_world_normal, LIT_WRAP);\n"
+    "        color += lit_added;\n"
+    "#endif\n"
+    "    }\n"
     /* the stage's own polygons the game lit, by the time's floor */
-    "    if ((v_info.w & 16u) != 0u && (v_flags.w & 2u) == 0u) {
-"
-    "        color *= u_time_floor;
-"
+    "    if ((v_info.w & 16u) != 0u && (v_flags.w & 2u) == 0u) {\n"
+    "        color *= u_time_floor;\n"
     "    }\n"
     "    float shade = 1.0;\n"
     "    if ((v_flags.w & 1u) != 0u) {\n"
