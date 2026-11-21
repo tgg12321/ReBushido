@@ -81,8 +81,10 @@ WAITS = {
     'port-net': ['port', 'port-sdl'],
     # the Windows programs meeting each other, by address and through a
     # lobby server run here, the menu's restart and the refusals
-    # (tools/port_net_lobby.py windows)
-    'port-net-windows': ['port-sdl-windows'],
+    # (tools/port_net_lobby.py windows); after port-net, not beside it:
+    # the two together ran some fifty programs at once and timed out
+    # under the load (2026-11-20)
+    'port-net-windows': ['port-sdl-windows', 'port-net'],
     # the Windows program's updater against a release server of its own
     # (tools/port_update_test.py), in build/tests/port_update/
     'port-update': ['port-sdl-windows'],
