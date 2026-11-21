@@ -78,6 +78,7 @@ static const char g_port_usage[] =
     "            [--music-mods on|off] [--dump-music FOLDER]\n"
     "            [--fight-music stage|original|none|KEY]\n"
     "            [--dump-stages FOLDER] [--weapon 1|2=NAME]\n"
+    "            [--dump-movie FOLDER]\n"
     "            [--arena NAME] [--fight-cpu] [--match RULE[:N]]\n"
     "            [--unlock-all] [--stage-select] [--menu rebushido|original]\n"
     "            [--net-bind ADDRESS:PORT --net-peer ADDRESS:PORT]\n"
@@ -212,6 +213,9 @@ static const char g_port_usage[] =
     "  --dump-textures FOLDER   write each texture the game draws there as\n"
     "                 a PNG, once, named by its key: what a replacement is\n"
     "                 made from (the remastered picture only)\n"
+    "  --dump-movie FOLDER   each frame of the movie as it is first shown,\n"
+    "                 movie-NNNN.png by its number in the stream: what\n"
+    "                 tools/port_movies.py makes larger\n"
     "  --music-mods on|off   off plays the game's own music where a mod\n"
     "                 has some (on)\n"
     "  --dump-music FOLDER   write each piece of music the game plays\n"
@@ -414,6 +418,7 @@ static void port_RunGame(void) {
 s32 port_Main(s32 argc, char **argv) {
     static char out_folder[PATH_BYTES_MAX];
     static char shots_folder[PATH_BYTES_MAX];
+    static char movie_folder[PATH_BYTES_MAX];
     const char *image = NULL;
     const char *plan = NULL;
     const char *replay = NULL;
@@ -564,6 +569,8 @@ s32 port_Main(s32 argc, char **argv) {
             port_ModsSetFolder(argv[++i]);
         } else if (port_TextsEqual(word, "--dump-textures")) {
             port_ModsSetDumpFolder(argv[++i]);
+        } else if (port_TextsEqual(word, "--dump-movie")) {
+            port_MovieSetDumpFolder(port_FolderPrefix(argv[++i], movie_folder));
         } else if (port_TextsEqual(word, "--dump-music")) {
             port_MusicSetDumpFolder(argv[++i]);
         } else if (port_TextsEqual(word, "--arena")) {

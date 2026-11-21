@@ -101,6 +101,37 @@ s32 StMode = 1;
 #undef StGetNext
 
 #include "src/port/stream.c"
+
+/* Which frame each display buffer holds (src/port/movie_shown.c), with
+ * nothing of the display or the files under it: the dump is not run. */
+#include "port_gpu.h"
+#include "port_host.h"
+
+static s32 g_made_playing;
+
+s32 port_MovieIsPlaying(void) { return g_made_playing; }
+
+void port_GetDisplay(PortDisplay *display) {
+    display->x = 0;
+    display->y = 0;
+    display->w = 0;
+    display->h = 0;
+    display->is_on = 0;
+    display->is_rgb24 = 0;
+}
+
+s32 port_WriteDisplayPng(s32 file) { return file >= 0; }
+
+s32 port_HostCreate(const char *path) {
+    (void)path;
+    return -1;
+}
+
+void port_HostClose(s32 file) { (void)file; }
+
+void port_Fail(const char *format, ...) { (void)format; }
+
+#include "src/port/movie_shown.c"
 #include "runtime/runtime.h"
 
 /* ---- a bitstream made by hand ---- */
@@ -633,6 +664,49 @@ static void test_Stream(void) {
     CHECK_EQ(port_PumpStream(), 0);
 }
 
+/* The frame on show followed through the player's three steps, as
+ * movovl/src/movie.c takes them: frame N pulled and expanded, the frame
+ * before decoded, the one before that copied to a display buffer. */
+static void test_Shown(void) {
+    static u32 vlc[2][4];
+    /* each the size of a whole picture, which a strip lies inside */
+    static u8 picture[2][MOVIE_PICTURE_BYTES];
+    u32 frame;
+
+    port_MovieForgetShown();
+    CHECK_EQ(port_MovieShownFrame(0).number, 0);
+    for (frame = 1; frame <= 6; frame++) {
+        u32 *expanded = vlc[frame & 1];
+
+        /* frame N into run-level buffer N & 1, with scale N + 10 */
+        port_MovieNotePulled(frame);
+        port_MovieNoteExpanded(expanded, frame + 10);
+        if (frame >= 2) {
+            /* frame N - 1 decoded into picture (N - 1) & 1, in two slices */
+            port_MovieNoteDecoding(vlc[(frame - 1) & 1]);
+            port_MovieNoteDecodedInto(picture[(frame - 1) & 1]);
+            port_MovieNoteDecodedInto(picture[(frame - 1) & 1] + 1000);
+        }
+        if (frame >= 3) {
+            /* frame N - 2 copied, a strip from its middle, into buffer
+             * (N & 1): y 0 or 240 */
+            port_MovieNoteCopied((frame & 1) * 240, picture[frame & 1] + 5000);
+            CHECK_EQ(
+                port_MovieShownFrame((s32)(frame & 1) * 240).number, frame - 2);
+            CHECK_EQ(
+                port_MovieShownFrame((s32)(frame & 1) * 240).scale, frame + 8);
+        }
+    }
+    /* both buffers, each its own frame */
+    CHECK_EQ(port_MovieShownFrame(0).number, 4);
+    CHECK_EQ(port_MovieShownFrame(300).number, 3);
+    /* a copy of pixels that are no picture's changes nothing */
+    port_MovieNoteCopied(0, vlc);
+    CHECK_EQ(port_MovieShownFrame(0).number, 4);
+    port_MovieForgetShown();
+    CHECK_EQ(port_MovieShownFrame(0).number, 0);
+}
+
 void test_Main(void) {
     port_ResetMdec(); /* the chip as it is after a reset: its two tables */
     test_Bits();
@@ -644,4 +718,5 @@ void test_Main(void) {
     test_Color();
     test_Chip();
     test_Stream();
+    test_Shown();
 }

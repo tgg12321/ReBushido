@@ -1951,15 +1951,28 @@ static void port_DrawPicture(u32 blank, s32 may_tap) {
                             display.is_rgb24, g_port_frame);
     }
     if (g_port_has_gl) {
-        /* a movie is video and is smoothed when it is scaled, as the
-         * remastered picture is, whatever the filter says of the game's
-         * blocks */
+        /* with the remastered picture a movie is video: made better on the
+         * card (`movies = enhanced`, gl_movie.h), or smoothed when it is
+         * scaled whatever the filter says of the game's blocks (`smooth`);
+         * `original` keeps the filter's way */
+        s32 movie = port_RemasterIsOn() && port_MovieIsPlaying()
+                        ? g_port_settings.movies
+                        : PORT_MOVIES_ORIGINAL;
+
         port_FitPicture(window_w, window_h, g_port_settings.scale, &place);
-        port_GlShowPixels(g_port_frame, w, h, window_w, window_h, place.x,
-                          place.y, place.w, place.h,
-                          g_port_settings.is_linear ||
-                              (port_RemasterIsOn() && port_MovieIsPlaying()),
-                          FALSE);
+        if (movie == PORT_MOVIES_ENHANCED && display.is_rgb24) {
+            PortMovieFrame frame = port_MovieShownFrame(display.y);
+
+            if (port_GlShowMovie(
+                    g_port_frame, w, h, window_w, window_h, place.x, place.y,
+                    place.w, place.h, frame.number, frame.scale)) {
+                return;
+            }
+        }
+        port_GlShowPixels(
+            g_port_frame, w, h, window_w, window_h, place.x, place.y, place.w,
+            place.h, g_port_settings.is_linear || movie != PORT_MOVIES_ORIGINAL,
+            FALSE);
         return;
     }
     port_SizeTexture(w, h);

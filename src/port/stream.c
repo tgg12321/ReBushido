@@ -329,6 +329,7 @@ void (*CdDataCallback(void (*func)()))() {
  * what turns the drive and lets the rest of the machine go on. */
 u32 StGetNext(u32 **addr, u32 **header) {
     if (port_StGetNextRing(addr, header) == 0) {
+        port_MovieNotePulled(((const StSECTOR *)*header)->frameCount);
         g_port_stream.waited = 0;
         g_port_movie.frames++;
         return 0;

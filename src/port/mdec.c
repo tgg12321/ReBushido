@@ -436,6 +436,7 @@ s32 DecDCTvlc(u32 *bs, u32 *buf) {
     u32 count = 0;
 
     port_BuildMdecTables();
+    port_MovieNoteExpanded(buf, scale);
     buf[0] = MDEC_DECODE_COMMAND | (words & MDEC_SIZE_MASK);
     if (header[1] != FRAME_MAGIC || version != FRAME_VERSION_2) {
         port_Log("rebushido: this movie's frames are version %u, which the "
@@ -742,6 +743,7 @@ void DecDCTin(u32 *buf, s32 mode) {
     g_port_mdec.codes = (const u16 *)(buf + 1);
     g_port_mdec.codes_left = (*buf & MDEC_SIZE_MASK) * 2;
     g_port_mdec.frames++;
+    port_MovieNoteDecoding(buf);
     g_port_mdec.pixels_bytes = 0;
     g_port_mdec.pixels_at = 0;
     if (g_port_mdec.in_callback != NULL) {
@@ -757,6 +759,7 @@ void DecDCTout(u32 *buf, s32 size) {
     u32 *at = buf;
     s32 words = size;
 
+    port_MovieNoteDecodedInto(buf);
     if (g_port_mdec.running) {
         g_port_mdec.waiting = 1;
         g_port_mdec.waiting_at = buf;

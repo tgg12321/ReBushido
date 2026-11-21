@@ -89,6 +89,7 @@
 #include "port_card.h"
 #include "port_gpu.h"
 #include "port_host.h"
+#include "port_movie.h"
 #include "port_spu.h"
 #include "bb2.h"
 
@@ -1090,6 +1091,9 @@ void port_OnBlank(u32 blank) {
     if (g_port_shots_folder != NULL && blank % g_port_shots_every == 0 &&
         !g_port_rerun && !g_port_ahead) {
         port_WriteBlankPicture(blank);
+    }
+    if (!g_port_rerun && !g_port_ahead) {
+        port_MovieDumpBlank();
     }
     if (g_port_trace) {
         port_PrintTrace(blank);

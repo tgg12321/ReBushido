@@ -49,6 +49,14 @@ enum {
     PORT_GRAPHICS_FOLLOW = 2
 };
 
+/* How the remastered picture shows the movie (the window's `movies`;
+ * src/port/gl/gl_movie.h). */
+enum {
+    PORT_MOVIES_ORIGINAL = 0, /* the console's frames, by `filter` */
+    PORT_MOVIES_SMOOTH = 1,   /* stretched smooth */
+    PORT_MOVIES_ENHANCED = 2  /* cleaned and made larger on the card */
+};
+
 /* What --graphics or the F2 key says; PORT_GRAPHICS_FOLLOW to go back to
  * the options page's choice. */
 extern void port_SetGraphics(s32 which);

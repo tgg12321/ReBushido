@@ -29,6 +29,7 @@
 #include "gl_light.h"
 #include "gl_light_list.h"
 #include "gl_load.h"
+#include "gl_movie.h"
 #include "gl_replace.h"
 #include "gl_scene.h"
 #include "gl_see.h"
@@ -4092,6 +4093,15 @@ const char *port_GlStart(
                      options->is_exact ? 0 : options->is_ambient_occlusion,
                      options->is_exact ? 0 : options->is_bloom,
                      options->is_exact ? 0 : options->is_tonemap);
+    /* the movie made better (gl_movie.h): a card that cannot have it
+     * shows the movie smoothed */
+    {
+        const char *why = port_GlMovieStart(getproc);
+
+        if (why != NULL) {
+            port_GlSay("the movie is shown smoothed: ", why);
+        }
+    }
     /* the walls seen through (gl_see.h), which the ground's mesh draws */
     port_GlSeeSetOn(options->is_exact ? 0 : options->see_through);
 
@@ -4447,6 +4457,22 @@ s32 port_GlShowPixels(
         window_w, window_h, x, y, w, h, is_linear, is_over);
     port_GlLeaveWindow();
     return TRUE;
+}
+
+s32 port_GlShowMovie(
+    const u32 *pixels, s32 pixels_w, s32 pixels_h, s32 window_w, s32 window_h,
+    s32 x, s32 y, s32 w, s32 h, u32 number, u32 scale) {
+    s32 shown;
+
+    if (!g_gl.is_started) {
+        return FALSE;
+    }
+    port_GlMoviePrepare(number);
+    port_GlTakeWindow(window_w, window_h);
+    shown = port_GlMovieDraw(pixels, pixels_w, pixels_h, window_w, window_h, x,
+                             y, w, h, number, scale);
+    port_GlLeaveWindow();
+    return shown;
 }
 
 s32 port_GlReadWindow(u32 *out, u32 room, s32 window_w, s32 window_h) {
