@@ -9061,7 +9061,7 @@ recorded keeps it with the input (`SOND`, below).
 NETPLAY.md) the game is stopped at its boundary and the pages are drawn
 by the session's waits. There, if the pages were beside the main menu,
 the game's sound goes on by itself: `port_PageKeepSound` runs, for each
-blank of the PC's time since the last (at most six at once; one a call
+blank of the PC's time since the last (at most twelve at once; one a call
 in a test's run), what a stopped console still does
 (`port_RunStoppedSound`): the sound asked for, the music's step of
 `cdrom_Update` alone every other blank (`cdrom_KeepMusicGoing`, so a

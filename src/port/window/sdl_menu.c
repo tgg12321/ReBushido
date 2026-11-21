@@ -91,7 +91,7 @@ static void port_MenuEvent(const SDL_Event *event);
 /* The console's blanks a second, as the PC's milliseconds count them: the
  * stopped game's sound is made at this pace. */
 #define BLANKS_A_SECOND 60
-#define SOUND_BLANKS_MOST 6
+#define SOUND_BLANKS_MOST 12
 
 s32 port_PageCanBeBeside(void) {
     PortGameState now;

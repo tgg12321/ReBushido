@@ -2204,6 +2204,11 @@ s32 port_MaybeRunOnlinePages(u32 blank) {
         port_PagesBesideTurn();
         return TRUE;
     }
+    if (g_pages.is_beside) {
+        /* closed between two blanks, by a press read with the window's
+         * events, or left for a session asked for */
+        port_PagesClosed();
+    }
     if (!g_pages.wanted || port_IsNetplayOn() || port_OnlineIsBusy()) {
         return FALSE;
     }
