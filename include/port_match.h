@@ -285,5 +285,9 @@ extern s32 port_GetMatchCount(void);
 /* in the session's word: the rule in the low byte, the number above */
 extern u32 port_MatchBits(void);
 extern void port_HoldMatch(u32 bits);
+/* The rule and whether it is held, kept, and put back: a ranked match
+ * holds the ladder's rule (online.c), and the player's comes back after. */
+extern void port_KeepMatch(void);
+extern void port_RestoreMatch(void);
 
 #endif /* PORT_MATCH_H */

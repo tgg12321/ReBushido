@@ -87,3 +87,14 @@ stb_vorbis          stb_vorbis's own, in the decoder's memory
 vorb                stb_vorbis's own: stb_vorbis by its other name
 stb_vorbis_alloc    stb_vorbis's own: a local, the memory it is given
 stb_vorbis_comment  stb_vorbis's own: a local, the file's tags
+
+# Monocypher's (src/port/vendor/monocypher/, as shipped; include/
+# port_monocypher.h): its contexts are locals of its own functions and of
+# the port's callers, which reach them by name alone; nothing is laid over
+# one, and none is the game's state.
+crypto_argon2_extras    Monocypher's, a caller's local: never laid over memory
+crypto_argon2_inputs    Monocypher's, a caller's local: never laid over memory
+crypto_blake2b_ctx      Monocypher's, a local of its own functions
+crypto_poly1305_ctx     Monocypher's, a local of its own functions
+crypto_sha512_ctx       Monocypher's, a local of its own functions
+crypto_sha512_hmac_ctx  Monocypher's, a local of its own functions

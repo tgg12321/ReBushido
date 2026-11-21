@@ -131,6 +131,7 @@ enum {
     LINUX_RENAME = 82,
     LINUX_UNLINK = 87,
     LINUX_GETDENTS64 = 217,
+    LINUX_GETRANDOM = 318,
 };
 
 /* The call's number in %rax, its arguments in %rdi, %rsi, %rdx, %r10,
@@ -199,6 +200,7 @@ enum {
     LINUX_RENAME = 38,
     LINUX_UNLINK = 10,
     LINUX_GETDENTS64 = 220,
+    LINUX_GETRANDOM = 355,
 };
 
 static LinuxWord port_LinuxCall(
@@ -725,6 +727,35 @@ s32 port_HostMakeFolder(const char *path) {
         port_LinuxCall(LINUX_MKDIR, (LinuxWord)path, LINUX_FOLDER_MODE, 0);
 
     return !LINUX_IS_ERROR(made) || (s32)(-made) == LINUX_EEXIST;
+}
+
+/* The kernel's random bytes (getrandom, which waits only until the
+ * kernel's pool is first filled, at boot); /dev/urandom where the call
+ * is older than the kernel. */
+s32 port_HostRandom(void *out, u32 count) {
+    u8 *at = out;
+    u32 had = 0;
+    s32 file;
+
+    while (had < count) {
+        LinuxWord got = port_LinuxCall(
+            LINUX_GETRANDOM, (LinuxWord)(at + had), count - had, 0);
+
+        if (LINUX_IS_ERROR(got) || got == 0) {
+            break;
+        }
+        had += (u32)got;
+    }
+    if (had == count) {
+        return 1;
+    }
+    file = port_HostOpen("/dev/urandom");
+    if (file < 0) {
+        return 0;
+    }
+    had = port_HostReadAt(file, 0, out, count);
+    port_HostClose(file);
+    return had == count;
 }
 
 s32 port_HostRemove(const char *path) {

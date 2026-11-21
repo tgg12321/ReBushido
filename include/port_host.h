@@ -110,6 +110,11 @@ extern void port_HostDate(PortDate *date);
 #define PORT_HOST_TICKS_PER_MICROSECOND 10
 extern u32 port_HostTicks(void);
 
+/* `count` bytes from the system's own source of random numbers, the
+ * one its keys are made from (a ranked identity's, src/port/ranked.c):
+ * 1, or 0 where it gave none. */
+extern s32 port_HostRandom(void *out, u32 count);
+
 /* ---- the network: datagrams of UDP over IPv4 and IPv6 (docs/NETPLAY.md,
  * sections 11 and 14; src/port/net.c) ---- */
 

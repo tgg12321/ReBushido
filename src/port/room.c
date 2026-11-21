@@ -15,6 +15,7 @@
 #include "common.h"
 #include "port_host.h"
 #include "port_net.h"
+#include "port_ranked.h"
 #include "port_room.h"
 #include "bb2.h"
 
@@ -85,7 +86,7 @@ enum {
     STATUS_INCOMPATIBLE = 0x88,
 };
 
-#define RELAY_VERSION 2
+#define RELAY_VERSION 3
 #define ROOM_FLAG_PLAYS 0x01
 
 /* ROOM's fields. */
@@ -597,6 +598,9 @@ s32 port_RoomIsOn(void) { return g_room.is_on; }
 void port_RoomTick(void) {
     u32 now;
 
+    /* the ranked ladder's client is stayed in wherever the room is: at
+     * each of the same turns (ranked.c) */
+    port_RankedTick();
     if (!g_room.is_on) {
         return;
     }

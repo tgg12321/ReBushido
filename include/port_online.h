@@ -61,6 +61,13 @@ typedef struct {
     u32 leave_frame; /* ... at this frame of it */
     u32 delay;
     u32 paths;
+    /* the ranked ladder instead (--ranked; docs/NETPLAY.md, section 17):
+     * queued, its matches played as they come, `matches` of them decided
+     * before the program ends; the lists printed then (--ranked-lists);
+     * a test's false report of the winner (--ranked-lie) */
+    s32 ranked;
+    s32 lists;
+    s32 lie;
 } PortOnlineRoom;
 
 extern void port_OnlineRoomAuto(const PortOnlineRoom *room);
@@ -77,6 +84,10 @@ extern s32 port_OnlineIsRoomMatch(void);
 /* Whether the room is the command line's (--room-open, --room-enter): no
  * pages come up between its matches. */
 extern s32 port_OnlineIsRoomAuto(void);
+/* A ranked match (port_ranked.h's port_RankedNext) asked for by the
+ * pages, as a room's is: NULL, or what is wrong. */
+extern const char *port_OnlineAskRanked(
+    const struct PortRoomNext *next, const PortOnlineAsk *how);
 /* The player asks to leave the session or the watching (the window's
  * keys): once shown, twice left. */
 extern void port_OnlineLeave(void);

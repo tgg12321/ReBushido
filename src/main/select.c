@@ -2528,6 +2528,29 @@ static void select_StageStep(
             g_select_mode == FIGHT_MODE_NETWORK) {
             chosen = SELECT_STAGE_LINK_TO;
         }
+        /* a ranked match's stage is the lobby's: taken as the page opens,
+         * before anyone chooses */
+        {
+            s32 place;
+
+            if (g_select_door == SELECT_DOOR_OPEN &&
+                g_select_result != PAGE_CONFIRMED &&
+                port_RankedStagePlace(&place)) {
+                s32 stage = codes[(place / SELECT_STAGE_PAGE_PLACES) *
+                                      SELECT_STAGE_PAGE_CODES +
+                                  place % SELECT_STAGE_PAGE_PLACES];
+
+                if (stage == SELECT_STAGE_LINK_FROM &&
+                    g_select_mode == FIGHT_MODE_NETWORK) {
+                    stage = SELECT_STAGE_LINK_TO;
+                }
+                snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
+                g_select_settings->stage_index = stage;
+                g_select_result = PAGE_CONFIRMED;
+                port_StageChosen(stage);
+                g_select_pressed = 0;
+            }
+        }
         taken = port_StagePageStep(
             g_select_pressed, &chosen, g_select_door == SELECT_DOOR_OPEN);
         if (taken == PORT_STAGE_PAGE_ARENA) {

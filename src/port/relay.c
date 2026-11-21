@@ -29,7 +29,7 @@
 
 /* 2: rooms of several (docs/NETPLAY.md, section 16); a server of 1 says
  * VERSION to this program, and this one's to one of 1 */
-#define RELAY_VERSION 2
+#define RELAY_VERSION 3
 #define SALT_BYTES 16
 #define KEY_BYTES 32
 #define CHALLENGE_BYTES 16

@@ -32,6 +32,7 @@
 #include "port_disc.h"
 #include "port_host.h"
 #include "port_net.h"
+#include "port_ranked.h"
 #include "port_replay.h"
 #include "port_room.h"
 #include "bb2.h"
@@ -212,6 +213,8 @@ static s32 g_np_own_pad_only;
  * the match's feed (watch.c). A spectator: watching, and its own hashes
  * held to the players'. */
 static u32 g_np_fed;
+/* ... and a ranked match's, to its digest (ranked.c) */
+static u32 g_np_ranked_fed;
 static s32 g_np_watch;
 static PortNetplayHash g_np_watch_hashes[NETPLAY_HASHES];
 static u32 g_np_watch_held;
@@ -334,6 +337,7 @@ void port_ResetNetplay(void) {
     g_np_leave = FALSE;
     g_np_leave_at = 0;
     g_np_fed = 0;
+    g_np_ranked_fed = 0;
     g_np_watch = FALSE;
     g_np_watch_held = 0;
     for (i = 0; i < NETPLAY_HASHES; i++) {
@@ -715,6 +719,7 @@ static void port_NetplayFinalHashes(void) {
         port_Log("netplay: frame %u hash %08X%08X\n", frame,
                  (u32)(hash->hash >> WORD_BITS), (u32)hash->hash);
         port_FeedHash(frame, hash->hash);
+        port_RankedHash(frame, hash->hash);
         port_NetplayCompareHash(frame);
         frame += NETPLAY_HASH_EVERY;
     }
@@ -833,6 +838,15 @@ static void port_NetplayFeed(void) {
                                                      : g_np_remote_count;
 
     port_RoomTick();
+    /* a ranked match's digest is made of the same, on both machines */
+    while (g_np_ranked_fed < final) {
+        u16 mine = g_np_local_inputs[g_np_ranked_fed & NETPLAY_INPUT_MASK];
+        u16 theirs = g_np_remote_inputs[g_np_ranked_fed & NETPLAY_INPUT_MASK];
+
+        port_RankedFrame(g_np_ranked_fed, g_np_local == 0 ? mine : theirs,
+                         g_np_local == 0 ? theirs : mine);
+        g_np_ranked_fed++;
+    }
     if (!port_FeedIsOn()) {
         return;
     }

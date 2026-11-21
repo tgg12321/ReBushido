@@ -32,6 +32,7 @@
 #include "port_music.h"
 #include "port_net.h"
 #include "port_online.h"
+#include "port_ranked.h"
 #include "port_replay.h"
 #include "port_room.h"
 #include "port_spu.h"
@@ -203,6 +204,15 @@ static const char g_port_usage[] =
     "  --room-side open|join   ... open a match beside the room's, or join\n"
     "                 one, and end after it\n"
     "  --leave-at N:F for tests: leave match N of the room at its frame F\n"
+    "  --ranked       with --lobby: play ranked (docs/NETPLAY.md, section\n"
+    "                 17): into the queue, its matches played as they\n"
+    "                 come, as --player; --ranked-matches N ends the\n"
+    "                 program once N are decided (--leave-at N:F leaves\n"
+    "                 this program's Nth); --ranked-lists prints the\n"
+    "                 ladder then\n"
+    "  --identity FILE    the ranked identity's file (made if it is not\n"
+    "                 there; rebushido-identity.key here if not said)\n"
+    "  --ranked-lie   for tests: report the other player won (a dispute)\n"
     "  --net-plan-pads   for tests: in a session, the plan's pad of this\n"
     "                 program's place alone (a plan presses both)\n"
     "  --session-differ build|disc|mods|protocol   for tests: say another\n"
@@ -519,6 +529,13 @@ s32 port_Main(s32 argc, char **argv) {
             rollback_quiet = 1;
         } else if (port_TextsEqual(word, "--whole-state")) {
             port_SetWholeState();
+        } else if (port_TextsEqual(word, "--ranked")) {
+            room_auto.on = TRUE;
+            room_auto.ranked = TRUE;
+        } else if (port_TextsEqual(word, "--ranked-lists")) {
+            room_auto.lists = TRUE;
+        } else if (port_TextsEqual(word, "--ranked-lie")) {
+            room_auto.lie = TRUE;
         } else if (
             port_TextsEqual(word, "--help") || port_TextsEqual(word, "-h")) {
             port_Print("%s", g_port_usage);
@@ -748,6 +765,16 @@ s32 port_Main(s32 argc, char **argv) {
             }
             room_auto.leave_match = (u32)match;
             room_auto.leave_frame = (u32)frame;
+        } else if (port_TextsEqual(word, "--ranked-matches")) {
+            s32 count = 0;
+
+            if (!port_ParseNumber(argv[++i], &count) || count < 0) {
+                port_UsageError(
+                    "--ranked-matches takes a number, not ", argv[i]);
+            }
+            room_auto.matches = (u32)count;
+        } else if (port_TextsEqual(word, "--identity")) {
+            port_RankedSetIdentity(argv[++i]);
         } else if (port_TextsEqual(word, "--net-plan-pads")) {
             port_SetNetplayOwnPadOnly(TRUE);
         } else if (port_TextsEqual(word, "--player")) {
@@ -889,8 +916,9 @@ s32 port_Main(s32 argc, char **argv) {
          * program (online.c), each from the state of the game's start */
         if (!has_lobby || session_role != PORT_SESSION_NONE || room != NULL ||
             session_after > 0) {
-            port_UsageError("--room-open and --room-enter need a --lobby, "
-                            "and no --host, --join, --room or --session-at",
+            port_UsageError("--room-open, --room-enter and --ranked need a "
+                            "--lobby, and no --host, --join, --room or "
+                            "--session-at",
                             "");
         }
         port_KeepWord(room_auto.lobby, sizeof(room_auto.lobby), lobby_text);
