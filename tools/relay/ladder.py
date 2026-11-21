@@ -1423,6 +1423,13 @@ def judge_two(a, b, m):
         return M_RATED, WON_SECOND, "the first player left"
     if reasons == (R_OTHER_LEFT, R_I_LEFT) and a.winner == b.winner == WON_FIRST:
         return M_RATED, WON_FIRST, "the second player left"
+    # a leave in the match's last frames: the one program saw the match
+    # decided, the leaver's left first; the leaver's own signed report
+    # concedes, and who leaves loses
+    if reasons == (R_I_LEFT, R_DECIDED) and a.winner == WON_SECOND:
+        return M_RATED, WON_SECOND, "the first player left as it was decided"
+    if reasons == (R_DECIDED, R_I_LEFT) and b.winner == WON_FIRST:
+        return M_RATED, WON_FIRST, "the second player left as it was decided"
     if all(reason in (R_NOT_MET, R_DESYNC) for reason in reasons):
         return M_VOID, WON_NONE, "not played to an end (%s)" % " and ".join(REASON_NAMES[x] for x in reasons)
     return M_DISPUTED, WON_NONE, "the reports differ (%s, %s)" % (REASON_NAMES[a.reason], REASON_NAMES[b.reason])

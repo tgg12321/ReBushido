@@ -1114,6 +1114,20 @@ def test_ranked_leaver(server, state):
     r = h.report(mh["match"], ladder.WON_SECOND, reason=ladder.R_OTHER_LEFT)
     check(r["state"] == ladder.M_RATED and r["winner"] == ladder.WON_SECOND, "a leave both said: %r" % r)
     check(g.hello()["losses"] == 1 and h.hello()["wins"] == 1, "the leaver did not lose")
+    # a leave in the last frames: the other's program saw the match decided
+    # (whoever it says won), the leaver's own report concedes
+    for leaver_first in (True, False):
+        g2, h2 = Player(server, "Goro%d" % leaver_first), Player(server, "Hana%d" % leaver_first)
+        for p in (g2, h2):
+            p.say(ladder.A_NAME)
+        m1, m2 = matched_pair(g2, h2)
+        leaver, stayer = (g2, h2) if leaver_first else (h2, g2)
+        number = m1["match"]
+        conceded = ladder.WON_SECOND if leaver_first else ladder.WON_FIRST
+        leaver.report(number, conceded, reason=ladder.R_I_LEFT)
+        r = stayer.report(number, ladder.WON_FIRST if leaver_first else ladder.WON_SECOND)
+        check(r["state"] == ladder.M_RATED and r["winner"] == conceded,
+              "a leave as the match was decided: %r" % ladder.STATE_NAMES.get(r["state"]))
     # one report; the other never heard from again
     i, j = Player(server, "Isao"), Player(server, "Jun")
     for p in (i, j):
@@ -1171,9 +1185,12 @@ def test_ranked_ladder_pages(server, ayame):
     check(ratings == sorted(ratings, reverse=True) and [e["rank"] for e in top["entries"]] ==
           list(range(1, len(names) + 1)), "the ladder's order: %r" % top["entries"])
     recent = ayame.say(ladder.A_LADDER, arg2=ladder.L_RECENT)
-    check(recent["entries"] and recent["entries"][0]["state"] != ladder.M_PLAYING and
-          any(e["a"] == "Bunta" and e["b"] == "Dai" and e["state"] == ladder.M_RATED for e in recent["entries"]),
-          "the recent matches: %r" % recent["entries"])
+    entries = recent["entries"]
+    check(len(entries) == 8 and all(e["state"] != ladder.M_PLAYING for e in entries) and
+          [e["when"] for e in entries] == sorted((e["when"] for e in entries), reverse=True) and
+          any(e["state"] == ladder.M_RATED and e["delta_a"] == -e["delta_b"] != 0 for e in entries) and
+          any(e["state"] == ladder.M_DISPUTED for e in entries),
+          "the recent matches: %r" % entries)
 
 
 def test_ranked_restart(state):

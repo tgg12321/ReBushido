@@ -643,7 +643,7 @@ RANKED_SEED = 5151
 # Fumi leaves her match in the middle of its fight, at this frame of the
 # session (its fight begins near 1,050, with the ladder's stage taken at once,
 # and the first cut is near 1,560)
-RANKED_LEAVE_FRAME = 1350
+RANKED_LEAVE_FRAME = 1150
 
 
 def ranked_logs(text):

@@ -1987,6 +1987,7 @@ it is decided. The server keeps the signed report as it came, and decides:
 | --- | --- |
 | both played to the end, the same winner, digest and frames | **rated** |
 | one left, the other says the other left, the same winner | **rated**: the leaver loses |
+| one left in the match's last frames, the other saw it decided | **rated** as the leaver's own report concedes |
 | one report, the other player unheard for 20 s (left, crashed, lost the network) | **rated** as the one report says: the leaver loses |
 | one report, the other still there and not reporting after 3 minutes | disputed |
 | different winners, different digests, both saying the other left, a rule not the ladder's | **disputed** |
@@ -2109,7 +2110,7 @@ programs through a local server with a store, 60 ms each way and 5% lost:
 | --- | --- | --- |
 | 1 | Ayame and Bunta queue, are paired and play (First to 1 on this test server, a fight each match) | the same stage on both, the host's rule First to 1 held on both; both digests the same, every hash alike; rated: the winner 1500 to 1662, the loser 1500 to 1338; Bunta's program prints the ladder with both at those ratings |
 | 2 | Chie and Dai; Dai's program reports the other winner (`--ranked-lie`) | disputed, unrated; both sides' replays uploaded and kept; one unpacked and played back by `--replay-check`: 570 frames, 30 hashes the same as recorded |
-| 3 | Eiko and Fumi; Fumi leaves at frame 1,350, in the fight | Fumi reports she left, Eiko that the other did; rated, Fumi's loss |
+| 3 | Eiko and Fumi; Fumi leaves at frame 1,150, in the fight | Fumi reports she left, Eiko that the other did; rated, Fumi's loss |
 | | a report of match 1 forged under Ayame's key | `BAD_SIGNATURE`, in the server's log; her rating unchanged |
 
 About 30 seconds. `win-ranked` (Windows, the gate's `port-net-windows`):

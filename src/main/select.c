@@ -2536,18 +2536,18 @@ static void select_StageStep(
             if (g_select_door == SELECT_DOOR_OPEN &&
                 g_select_result != PAGE_CONFIRMED &&
                 port_RankedStagePlace(&place)) {
-                s32 stage = codes[(place / SELECT_STAGE_PAGE_PLACES) *
+                s32 lobby_stage = codes[(place / SELECT_STAGE_PAGE_PLACES) *
                                       SELECT_STAGE_PAGE_CODES +
                                   place % SELECT_STAGE_PAGE_PLACES];
 
-                if (stage == SELECT_STAGE_LINK_FROM &&
+                if (lobby_stage == SELECT_STAGE_LINK_FROM &&
                     g_select_mode == FIGHT_MODE_NETWORK) {
-                    stage = SELECT_STAGE_LINK_TO;
+                    lobby_stage = SELECT_STAGE_LINK_TO;
                 }
                 snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
-                g_select_settings->stage_index = stage;
+                g_select_settings->stage_index = lobby_stage;
                 g_select_result = PAGE_CONFIRMED;
-                port_StageChosen(stage);
+                port_StageChosen(lobby_stage);
                 g_select_pressed = 0;
             }
         }
