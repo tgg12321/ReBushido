@@ -638,7 +638,10 @@ def judge_rooms(case, segments):
 
 RANKED_SERVER = ROOM_SERVER + ['--ranked-same-address', '--identities-per-day', '100', '--ranked-rate', '100000',
                                '--signed-rate', '100000', '--ranked-first-to', '1', '--gone-timeout', '10',
-                               '--report-wait', '3']
+                               '--report-wait', '3', '--ranked-stages', '0']
+# (the stage drawn is the stage pages' first place, the one the scripted
+# fight of port_net's plans is written for: on another its presses may
+# never cut the other down, and the match never ends)
 RANKED_SEED = 5151
 # Fumi leaves her match in the middle of its fight, at this frame of the
 # session (its fight begins near 1,050, with the ladder's stage taken at once,
@@ -749,7 +752,8 @@ def judge_ranked(case, logs, state, lobby, rc, ladder):
               a['won'] != b['won']):
         case.fail('the ratings did not move as the result: %r, %r' % (a, b))
     else:
-        case.said.append('match %d (Ayame and Bunta, the stage drawn: place %d): both digests %s..., rated: '
+        case.said.append('match %d (Ayame and Bunta, the lobby's stage taken on both: place %d): both digests '
+                         '%s..., rated: '
                          'Ayame %s, 1500 to %d; Bunta %s, 1500 to %d'
                          % (a['match'], a['stage'], a['digest'][:16], a['won'], a['after'], b['won'], b['after']))
     common = sorted(set(a['hashes']) & set(b['hashes']))

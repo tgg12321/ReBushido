@@ -1121,7 +1121,7 @@ class Ladder:
 
     def make_match(self, a, b, now):
         """A match of a (its host, player 1: the longer waiting) and b."""
-        stage = secrets.randbelow(STAGE_PLACES)
+        stage = secrets.choice(self.o.ranked_stages)
         number = self.store.new_match(a.key, b.key, self.wall(), self.o.ranked_first_to, stage)
         live = Live()
         live.number = number

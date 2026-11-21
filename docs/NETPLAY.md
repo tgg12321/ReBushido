@@ -1952,7 +1952,8 @@ the match (player 1).
 
 **The match.** The server makes it a row of its store at once (so that a
 report after a restart is still taken), draws its **stage**, one of the
-18 places of the three stage pages, and gives both players a `MATCHED`:
+18 places of the three stage pages (`--ranked-stages` narrows the
+draw), and gives both players a `MATCHED`:
 the match's number, the code and ticket to meet by, the role, the stage,
 the rule and the other's name and rating. It is played as a room's match
 is (section 16, `PORT_SESSION_RULE_ONE_MATCH`), with two differences:
@@ -2108,7 +2109,7 @@ programs through a local server with a store, 60 ms each way and 5% lost:
 
 | Match | What runs | Result |
 | --- | --- | --- |
-| 1 | Ayame and Bunta queue, are paired and play (First to 1 on this test server, a fight each match) | the same stage on both, the host's rule First to 1 held on both; both digests the same, every hash alike; rated: the winner 1500 to 1662, the loser 1500 to 1338; Bunta's program prints the ladder with both at those ratings |
+| 1 | Ayame and Bunta queue, are paired and play (First to 1 on this test server, a fight each match, and the stage drawn from the first place alone, the one the scripted fight is written for: on another its presses may never cut the other down) | the lobby's stage taken on both, the host's rule First to 1 held on both; both digests the same, every hash alike; rated: the winner 1500 to 1662, the loser 1500 to 1338; Bunta's program prints the ladder with both at those ratings |
 | 2 | Chie and Dai; Dai's program reports the other winner (`--ranked-lie`) | disputed, unrated; both sides' replays uploaded and kept; one unpacked and played back by `--replay-check`: 570 frames, 30 hashes the same as recorded |
 | 3 | Eiko and Fumi; Fumi leaves at frame 1,150, in the fight | Fumi reports she left, Eiko that the other did; rated, Fumi's loss |
 | | a report of match 1 forged under Ayame's key | `BAD_SIGNATURE`, in the server's log; her rating unchanged |

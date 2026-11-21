@@ -1650,6 +1650,17 @@ def bound_text(sock):
     return "%s:%d" % (name[0], name[1])
 
 
+def parse_stages(text):
+    """--ranked-stages: places of the stage pages, 0 to 17, by commas."""
+    try:
+        places = sorted({int(word) for word in text.split(",") if word.strip()})
+    except ValueError:
+        raise argparse.ArgumentTypeError("not places by commas: %r" % text)
+    if not places or places[0] < 0 or places[-1] >= ladder.STAGE_PLACES:
+        raise argparse.ArgumentTypeError("places are 0 to %d: %r" % (ladder.STAGE_PLACES - 1, text))
+    return places
+
+
 def arguments(argv):
     p = argparse.ArgumentParser(description="ReBushido lobby, rendezvous and relay server (UDP).")
     p.add_argument(
@@ -1690,6 +1701,8 @@ def arguments(argv):
     p.add_argument("--state", metavar="DIR", help="the ladder's folder (its SQLite file, backups, disputes); "
                    "none: ranked play is off")
     p.add_argument("--ranked-first-to", type=int, default=3, metavar="N", help="a ranked match: First to N")
+    p.add_argument("--ranked-stages", type=parse_stages, default=list(range(ladder.STAGE_PLACES)), metavar="LIST",
+                   help="the stage pages' places (0 to 17) a match's stage is drawn from, as 0,3,7 (default: all)")
     p.add_argument("--ranked-rate", type=float, default=20, help="ranked requests a second per IP")
     p.add_argument("--signed-rate", type=float, default=2, help="signed ranked requests a second per IP and per key")
     p.add_argument("--identities-per-day", type=int, default=3, help="new ranked identities per IP a day")
