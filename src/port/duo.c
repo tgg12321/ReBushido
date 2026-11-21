@@ -5,6 +5,7 @@
  * saved, put back and hashed with the game's own variables, so a rollback
  * and the machines of a session hold them as they hold the game. */
 #include "common.h"
+#include "port_net.h"
 #include "bb2.h"
 
 /* The scratchpad's points of one slot (FightScratch): three of the
@@ -511,11 +512,12 @@ static void port_DuoStand(
     fighter->initial_orientation = fighter->orientation;
 }
 
-/* Is the second fighter of a team the CPU's: the CPU's partners, or a
- * team whose first is the CPU's. */
+/* Is the second fighter of a team the CPU's: the CPU's partners, a team
+ * whose first is the CPU's, or a session's, whose input is two pads, one
+ * a machine (docs/NETPLAY.md, section 17). */
 static s32 port_DuoPartnerIsCpu(s32 slot) {
     return g_port_duo.teams != PORT_TEAMS_TWO_PADS ||
-           g_fight_config.is_cpu[slot];
+           g_fight_config.is_cpu[slot] || port_IsNetplayOn();
 }
 
 /* The second fighter of the team of `slot` set up in the slot as the

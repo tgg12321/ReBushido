@@ -43,6 +43,14 @@ the display N a second (0: the PC's own, which a hidden window's swaps
 wait for). Its numbers are kept apart (+paced). The budget's case
 ra1-paced is ra1 paced at 144 a second whatever --paced says.
 
+--rollback measures a rollback of the whole window of netplay instead
+(docs/NETPLAY.md, section 12: a guess is never more than 8 frames ahead):
+the Windows program without a window runs the same plan with
+--rollback-test 8 --rollback-quiet, one on one and two on two (the
+partners the CPU's; docs/PORT.md, "Two on two"), and says what a state
+put back and 8 frames of the fight run again quietly cost, on average
+and at the most: the budget of a rollback at four fighters. Kept as the
+cases rollback-1v1 and rollback-2v2.
 --budget runs the gate's cases and holds them to LIMITS: what the owner
 targets (2026-11-18: 144 pictures a second at 2560 by 1440, with run-ahead,
 and room for four players and a larger stage), not what the program
@@ -122,9 +130,14 @@ CASES = {
     # --paced says: the press's way to the screen (docs/PORT.md, "Input
     # lag")
     'ra1-paced': (1, 'on', None),
+    # two on two (docs/PORT.md, "Two on two"): the same fight of four, the
+    # partners the CPU's, every fighter drawn and stepped for real
+    'ra1-2v2': (1, 'on', None),
 }
+# A case's settings over the bench's own.
+CASE_SETTINGS = {'ra1-2v2': (('teams', 'cpu'),)}
 PACED_CASES = ('ra1-paced',)
-DEFAULT_CASES = ('ra0', 'ra1', 'ra2', 'ra1-plain', 'ra1-stress')
+DEFAULT_CASES = ('ra0', 'ra1', 'ra2', 'ra1-plain', 'ra1-stress', 'ra1-2v2')
 BUDGET_CASES = ('ra0', 'ra1', 'ra2', 'ra1-stress', 'ra1-paced')
 
 # The budget (--budget): (case, measure, at most, what it is). The
@@ -362,7 +375,7 @@ def run(case, image, mods, plan, overrides=()):
     settings = port_budget.SETTINGS.format(run_ahead=run_ahead).replace(
         'fighter_models = on', 'fighter_models = ' + fighters).replace(
         'shadows = cast', 'shadows = map')
-    for key, value in overrides:
+    for key, value in tuple(CASE_SETTINGS.get(case, ())) + tuple(overrides):
         lines = [line for line in settings.splitlines() if line.split('=')[0].strip() != key]
         settings = '\n'.join(lines + ['%s = %s' % (key, value)]) + '\n'
     with open(config, 'w', encoding='utf-8', newline='\n') as f:
@@ -406,6 +419,69 @@ def run(case, image, mods, plan, overrides=()):
     if foreign:
         sys.exit('port-bench: %s: %s (%s)' % (case, foreign[0], log))
     return folder, time.time() - start
+
+
+HEADLESS = os.path.join(REPO, 'build', 'port-sdl', 'windows', 'rebushido-headless.exe')
+# netplay's window: no guess is more than this many frames ahead
+# (NETPLAY_PREDICT_MAX), so a rollback runs at most this many again
+ROLLBACK_WINDOW = 8
+ROLLBACK_CASES = (('rollback-1v1', []), ('rollback-2v2', ['--teams', 'cpu']))
+
+
+def rollback_line(text, what):
+    """`rollback: WHAT A us on average, B at most` of the program's report:
+    (A, B) in ms, or None."""
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith('rollback: ' + what + ' '):
+            words = line[len('rollback: ' + what) + 1:].split()
+            try:
+                return int(words[0]) / 1000.0, int(words[4]) / 1000.0
+            except (IndexError, ValueError):
+                return None
+    return None
+
+
+def measure_rollback(image, mods):
+    """A rollback of the whole window, one on one and two on two: the
+    program without a window on port_game's plan with --rollback-test,
+    each frame run again quietly; {case: measures}."""
+    import playtest
+
+    results = {}
+    for case, extra in ROLLBACK_CASES:
+        folder = os.path.join(OUT_DIR, 'runs', case)
+        os.makedirs(folder, exist_ok=True)
+        playtest.PORT_PROGRAM = HEADLESS
+        playtest.PORT_SYMBOLS = HEADLESS + '.sym'
+        plan = os.path.join(folder, 'plan.txt')
+        global PROGRAM
+        kept = PROGRAM
+        PROGRAM = HEADLESS
+        try:
+            write_plan(plan)
+        finally:
+            PROGRAM = kept
+        cmd = [HEADLESS, '--image', image, '--plan', plan, '--no-cards', '--mods', 'off', '--out', folder,
+               '--rollback-test', str(ROLLBACK_WINDOW), '--rollback-quiet', '--frames', str(FRAMES)] + extra
+        done = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                              timeout=RUN_SECONDS * 4)
+        text = done.stderr.decode('utf-8', 'replace')
+        with open(os.path.join(folder, 'rollback.err'), 'w', encoding='utf-8', newline='\n') as f:
+            f.write(text)
+        step = rollback_line(text, 'a step of a fight run again, quietly')
+        load = rollback_line(text, 'load')
+        if step is None or load is None or 'rollback: ok' not in text:
+            print('port-bench: %s: no rollback report (%s)' % (case, os.path.join(folder, 'rollback.err')))
+            continue
+        results[case] = {'step_ms': step[0], 'step_worst_ms': step[1], 'load_ms': load[0],
+                         'window_ms': load[0] + ROLLBACK_WINDOW * step[0],
+                         'window_worst_ms': load[1] + ROLLBACK_WINDOW * step[1]}
+        print('port-bench: %s: a frame of the fight run again quietly %.2f ms (worst %.2f), a state put back '
+              '%.2f ms: a rollback of %d frames %.1f ms on average, %.1f at most'
+              % (case, step[0], step[1], load[0], ROLLBACK_WINDOW, results[case]['window_ms'],
+                 results[case]['window_worst_ms']))
+    return results
 
 
 def centile(values, fraction):
@@ -756,6 +832,8 @@ def main():
                     help="a setting of rebushido.cfg changed for every case (a trial: its numbers are kept "
                          "as the commit's name with +KEY-VALUE)")
     ap.add_argument('--reuse', action='store_true', help='measure the runs already in build/bench/runs/')
+    ap.add_argument('--rollback', action='store_true',
+                    help='a rollback of the whole window, one on one and two on two, instead of the cases')
     ap.add_argument('--program', help='another build of the window to measure (a variant of the flags)')
     ap.add_argument('--label', help="kept as the commit's name and +LABEL, beside the commit's own numbers")
     ap.add_argument('--paced', action='store_true',
@@ -825,6 +903,9 @@ def main():
         card_lock.hold(True, 'port-bench')
     results = {}
     loaded = []
+    if args.rollback:
+        cases = ()
+        results.update(measure_rollback(image, mods))
     for case in cases:
         if args.reuse:
             folder, seconds = os.path.join(OUT_DIR, 'runs', case), 0.0
