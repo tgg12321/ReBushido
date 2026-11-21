@@ -2537,8 +2537,8 @@ static void select_StageStep(
                 g_select_result != PAGE_CONFIRMED &&
                 port_RankedStagePlace(&place)) {
                 s32 lobby_stage = codes[(place / SELECT_STAGE_PAGE_PLACES) *
-                                      SELECT_STAGE_PAGE_CODES +
-                                  place % SELECT_STAGE_PAGE_PLACES];
+                                            SELECT_STAGE_PAGE_CODES +
+                                        place % SELECT_STAGE_PAGE_PLACES];
 
                 if (lobby_stage == SELECT_STAGE_LINK_FROM &&
                     g_select_mode == FIGHT_MODE_NETWORK) {
