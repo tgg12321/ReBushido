@@ -501,7 +501,9 @@ def link_blob(target, objects):
         print('\n'.join('    ' + line for line in proc.stderr.split('\n')[:30]))
         return None
     proc = run([target.objcopy, '-w', '--keep-global-symbol=%sport_*' % target.under,
-                '--keep-global-symbol=%sg_port_*' % target.under, whole, blob])
+                '--keep-global-symbol=%sg_port_*' % target.under,
+                # Monocypher's, which the updater calls (update_core.c)
+                '--keep-global-symbol=%scrypto_*' % target.under, whole, blob])
     if proc.returncode != 0:
         print('\n'.join('    ' + line for line in proc.stderr.split('\n')[:30]))
         return None

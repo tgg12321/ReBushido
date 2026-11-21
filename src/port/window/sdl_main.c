@@ -51,6 +51,7 @@
 #include "port_stage_choice.h"
 #include "port_fight_music.h"
 #include "port_match.h"
+#include "port_ranked.h"
 #include "port_top_menu.h"
 #include "shared.h"
 #include "sdl_window.h"
@@ -59,6 +60,8 @@
 #define PATH_BYTES_MAX 1024
 #define ARGUMENTS_MAX 64
 #define SETTINGS_FILE "rebushido.cfg"
+/* the ranked identity, beside the settings (docs/PLAYING.md, "Ranked") */
+#define IDENTITY_FILE "rebushido-identity.key"
 #define SETTINGS_BYTES_MAX 0x10000
 #define IMAGE_SUM_BYTES 0x100000
 #define CUE_BYTES_MAX 2048
@@ -1153,6 +1156,23 @@ int main(int argc, char **argv) {
         port_OpenLog(log, beside);
     }
     port_LoadSettings(config, beside);
+    {
+        /* the ranked identity beside the settings file, as the cards are
+         * beside the program (--identity names another) */
+        static char identity[PATH_BYTES_MAX];
+        const char *settings = g_port_settings_written;
+        const char *cut = settings;
+        const char *at;
+
+        for (at = settings; *at != 0; at++) {
+            if (*at == '/' || *at == '\\') {
+                cut = at + 1;
+            }
+        }
+        snprintf(identity, sizeof(identity), "%.*s%s", (int)(cut - settings),
+                 settings, IDENTITY_FILE);
+        port_RankedSetIdentity(identity);
+    }
     /* the updater (update.h): never in a session of online play or a
      * test's run, unless the test names its server; a downloaded update
      * put in place before anything else is done */
