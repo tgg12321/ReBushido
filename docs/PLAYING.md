@@ -593,7 +593,18 @@ several fights:
   fighters, each with a weapon, in order; they are his N lives (see
   "Crew" below).
 
-On a **stage page** the panel's Match says what the fight will be:
+**Choosing the battle type.** With ReBushido's main menu (`menu =
+rebushido`, as the program comes), Versus, Vs. CPU and Online open on a
+**Battle type** page before the character select: **Left** and
+**Right** change the rule (Single fight, Stock, First to, Crew) or its
+number, **Up** and **Down** go between the two, **Cross** goes on to the
+Character Select and **Triangle** goes back. Online, player 1 (the host)
+chooses and the other player sees it; in a room of several the room's
+rule is played and the page is not shown. The stage page then shows the
+rule and leaves it as chosen; to change it, go back to the main menu and
+in again.
+
+With `menu = original`, on a **stage page** the panel's Match says what the fight will be:
 **Circle** (X on the keyboard for player one) turns the rule, Single
 fight, Stock, First to, Crew, and **Start** (Return) its number. The
 page keeps what you left it at; the settings menu's **Match rule** and
@@ -605,14 +616,26 @@ and First to: Crew starts at five, unless `match_rule = crew`, when
 `match_count` is the crew's size.
 
 Inside each fight everything is the game's own: the kill, the replay,
-the winner's view. Then, in place of the menu after a fight, a card
+the winner's view. Over the fight there is only a little: each player's
+lives, wins or fighters left as small pips at the top, where the game
+shows its count of wins. Then, in place of the menu after a fight, a card
 says who took the fight and the score, and the next fight starts by
 itself a couple of seconds later where the fighters stand, as Rematch
-starts one (Cross makes the card go sooner). When the match is decided
-a card names the winner, and then:
+starts one (Cross makes the card go sooner).
+
+**Wounds.** In **Stock** and **Crew** the winner of a fight goes into
+the next one with the wounds he had at its end: a wounded leg or sword
+arm, a lost off arm, wounds to the body, slowing and weakening him as
+they did. The player who lost a life (Stock) comes back unhurt, a crew's
+next fighter comes in unhurt, and after a draw both start unhurt. The
+card between fights says who stays wounded. In **First to N** every
+fight starts unhurt, as in a single fight. When the match is decided
+a card names the winner, and then (a **Crew** match always goes back to
+the main menu, below):
 
 - in **versus** and **online**, the **stage select**, the fighters and
-  weapons kept: choose the next stage (and rule) and fight, or
+  weapons kept: choose the next stage (and, with `menu = original`, the
+  rule) and fight, or
   **Triangle** to go back to the weapons and the characters;
 - in **versus the CPU** each opponent is a match of its own: win it and
   the game goes on to the next opponent, whose match starts afresh;
@@ -636,46 +659,53 @@ A crew battle: each player picks a crew of fighters and weapons, and
 they are his lives. The first to put every fighter of the other's crew
 down wins.
 
-**Picking the crew.** Pick your fighter and weapon as ever, then on the
-stage page choose Crew (Circle) and its size (Start), and the stage
-(Cross). That fighter and weapon are your crew's first. The character
-select comes back for each place left, the cursor where you left it,
-with a strip at the foot of the screen showing both crews so far and
-the place being picked; pick a fighter and a weapon each time. A fighter
-may be in a crew more than once, with the same weapon or another. When
-the last place is picked the first fight starts, on the stage you chose.
-Triangle on the character select, before you have picked for that place,
-drops the crews and goes back to the stage page.
+**Picking the crew.** Choose Crew and its size on the Battle type page;
+then the character select comes up once for each place of your crew,
+first to last, the cursor where you left it, with a strip at the foot of
+the screen showing both crews so far and the place being picked: pick a
+fighter and a weapon each time. **Every fighter of a crew is a different
+character**: one your crew already has cannot be picked (Cross only
+sounds), and the select shows it dimmed, or locked when both crews have
+it. Weapons may repeat. A crew is no bigger than the characters you can
+pick (six on a new save; more as you win them, or with "Unlock
+everything"). After the last place, the stage (where the mode has a
+stage page), and the first fight. Triangle on the character select,
+before you have picked for that place, goes back to the place before;
+on the stage page, back to the last place's weapon.
+
+With `menu = original` the crew is picked after the stage page, as
+before: your first fighter and weapon are the crew's first, and the
+character select comes back for each place left; the fighters are all
+different there too.
 
 **The fights.** Each fight is the two crews' fighters in play: the
 first of each to begin with. The fighter who falls is out, and the next
 of his crew comes in. The winner stays, with the same fighter and
-weapon, and starts the next fight fresh, unhurt, at the stage's own
-starting places, as any fight starts. A draw (both fall) puts a fighter
+weapon and the wounds he ended the fight with, and starts the next fight
+at the stage's own starting places, as any fight starts; the fighter who
+comes in is unhurt. A draw (both fall) puts a fighter
 out of each crew. A surrender (the kaishaku) is the surrenderer's lost
 fight.
 
 **Winning.** The match ends when a crew has no fighter left; if both
 run out at once (a draw on both last fighters) the match is drawn.
 
-**On the screen.** Over the fight a strip across the top: each player's
-fighter in play and his weapon, and under them each crew's names, the
-one in play in the player's colour, those out dimmed and struck through
-in red. After each fight a card shows both crews, who took the fight
-and who comes in; at the end, whose crew won (or the draw).
+**On the screen.** Over the fight, a pip for each fighter left in each
+crew, at the top. After each fight a card shows both crews in full,
+those out struck through, who took the fight, who comes in and who stays
+wounded; at the end, whose crew won (or the draw).
 
-**After the match**, as the other rules: in versus and online the stage
-select, the crews kept, so Cross there plays the same crews again
-(change the size, or Triangle back to the weapons, to pick new ones).
-**Versus the CPU** is a crew match against each opponent: the game's own
-opponent leads the CPU's crew, the rest of it drawn at random from the
-run's opponents, with a weapon each as the game would give them. Put
-his crew out and the next opponent comes, your crew whole again; lose
-yours and the game's menu after a defeat comes up, whose Rematch is the
-same two crews from the start.
+**After the match** the result's card, and then the **main menu**: a
+crew battle is a whole session. **Versus the CPU** is one crew match
+against the CPU's crew, led by the game's own first opponent, the rest
+of it drawn at random from the run's opponents, all different
+characters, with a weapon each as the game would give them; win or
+lose, the main menu after it.
 
 **Online** the host's rule holds, and each player picks his own crew on
-his own PC, as on one console.
+his own PC, as on one console. When the match is over, both go back to
+their main menu and the session ends; in a room of several, back to the
+room for the next match.
 
 ## Everything unlocked
 

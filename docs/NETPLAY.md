@@ -1075,7 +1075,10 @@ have met:
   (`MEET_MUSIC`; PORT.md, "A fight's music") and the time of day the
   stages start at (`MEET_TIME`; PORT.md, "The time of day"), protocol 6,
   and the host's `match_rule` and `match_count` (`MEET_MATCH`, protocol
-  8; PORT.md, "Match rules"; protocol 11 when the rule may be Crew);
+  8; PORT.md, "Match rules"; protocol 11 when the rule may be Crew;
+  12 with the rule page before the first select, crews of different
+  characters, the winner's wounds kept and a Crew match's end the
+  session's);
   both programs hold them for the session,
   so a guest plays with the host's unlocks, the host's fights' music
   and the host's match rule whatever its own settings say, and its
@@ -1104,8 +1107,12 @@ the host takes the stage. After a fight the game's own menu offers
 Rematch, the select screen, or the main menu; a way back to the top menu
 comes straight back to versus. A Stock, First to or Crew match
 (PORT.md, "Match rules") goes from fight to fight by itself, with a card
-of the score, and back to the stage pages; its score (and a Crew's
-crews, each player's picked with his own pad) is the game's state
+of the score, and back to the stage pages (a Crew match back to the top
+menu, which ends the session on both: protocol 12); with the host's
+`menu = rebushido` the host's pad chooses the rule on the page before
+the first select. Its score (and a Crew's crews, each player's picked
+with his own pad, and the wounds a Stock or Crew winner keeps) is the
+game's state
 (`g_port_match`, `src/port/match.c`), so a rollback puts it back with
 the fight and both machines keep the same. **In a fight Start is nobody's**: the
 pause menu would stop the other player's game too. Where the frame's
@@ -1271,14 +1278,16 @@ socket on 127.0.0.1:
   state hashes are the same on both and no card file was written. (The
   `window` pair below keeps the game's own menu and its Rematch.) 64-bit: about 2,490 frames, 82 hashes the same on both;
   67 and 79 rollbacks, the longest 8 frames; 32-bit: 69 and 77, the same
-  82 hashes on both (each size's own, section 7). Then a second session
-  of each size plays a **Crew** match of two (the host's `--match
-  crew:2`; PORT.md, "Match rules", "Crew"): after the stage each player
-  picks his crew's second place on the grid with his own pad, the crews
-  and the score in the state on both, the second fight the crews' next
-  fighters loaded afresh. 64-bit: about 2,830 frames, 94 hashes the same
-  on both, 63 and 73 rollbacks, the first fight's replays alike and
-  played back;
+  82 hashes on both (each size's own, section 7). Then two more
+  sessions of each size, begun in the running program with the host's
+  `menu = rebushido` (PORT.md, "Match rules", "The rule first"), play a
+  **Crew** match of two and a **Stock** match of two, the rule turned on
+  the page by the host's pad: the crews picked at the grid, of different
+  characters; the first fight's winner wounded into the second; the
+  Crew match's end the top menu, where the session ends on both at the
+  same frame. 64-bit: Crew 76 hashes the same on both, the last at
+  frame 2,280, Stock 67 (32-bit: 80 and 58), both fights' replays alike
+  on both machines and played back;
 - `window`: the same between two of the window's programs, headless
   (dummy drivers), in real time with their sound card and pacing, 60 ms
   each way and 5% lost; the host must play on alone after the guest

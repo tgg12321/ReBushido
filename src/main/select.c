@@ -611,8 +611,12 @@ static void select_PortCrewGrid(void) {
 /* Triangle on the grid with nothing picked, while a crew's later place is
  * being picked: the crews let go and back to the stage pages with the
  * first place's picks (TRUE); in a mode with no stage page the screen is
- * left, as the game leaves it (FALSE). */
+ * left, as the game leaves it (FALSE). With the rule chosen before the
+ * grid, back to the place before instead (TRUE), to pick it again. */
 static s32 select_PortCrewBack(void) {
+    if (port_MatchRuleFirst()) {
+        return port_MatchCrewBackOne();
+    }
     if (!port_MatchCrewPicking()) {
         return FALSE;
     }
@@ -624,6 +628,49 @@ static s32 select_PortCrewBack(void) {
     }
     select_PortBackToStages(1 + g_select_extra_players);
     return TRUE;
+}
+
+/* The characters the grid offers: those of the places that can be
+ * picked, each once (a crew's size is no more than that). */
+static s32 select_PortOpenFighters(void) {
+    u32 seen = 0;
+    s32 count = 0;
+    s32 row;
+    s32 col;
+
+    for (row = 0; row < SELECT_GRID_ROWS; row++) {
+        for (col = 0; col < SELECT_GRID_COLS; col++) {
+            s32 fighter = g_select_grid[row][col].fighter;
+
+            if (g_select_mode < FIGHT_MODE_VS && row == SELECT_ROW_LEFT_OUT &&
+                (col == SELECT_COL_LEFT_OUT_1 ||
+                 col == SELECT_COL_LEFT_OUT_2)) {
+                continue;
+            }
+            if (!(g_select_fighter_flags[g_select_grid[row][col].value] &
+                  SELECT_FIGHTER_OPEN) ||
+                fighter >= CHARACTER_COUNT || (seen >> fighter & 1)) {
+                continue;
+            }
+            seen |= 1U << fighter;
+            count++;
+        }
+    }
+    return count;
+}
+
+/* Which of the sides picking a crew have `fighter` in a place taken: a
+ * bit each. */
+static s32 select_PortCrewTaken(s32 fighter) {
+    s32 sides = 0;
+    s32 side;
+
+    for (side = 0; side < 1 + g_select_extra_players; side++) {
+        if (port_MatchCrewHas(side, fighter)) {
+            sides |= 1 << side;
+        }
+    }
+    return sides;
 }
 #endif
 
@@ -745,9 +792,17 @@ s32 select_Load(
     port_FightMusicReset();
 #endif
 #if RB_PORT
-    /* after a match, back to the stage pages (port_match.h) */
-    if (port_MatchToStages()) {
-        select_PortBackToStages(2);
+    /* after a match, back to the stage pages (port_match.h); otherwise,
+     * with ReBushido's top menu, the rule's page before the grid */
+    {
+        s32 to_stages = port_MatchToStages();
+
+        if (to_stages) {
+            select_PortBackToStages(2);
+        }
+        port_MatchRulePageOpen(
+            g_select_mode, to_stages, select_PortOpenFighters(),
+            1 + g_select_extra_players);
     }
 #endif
     DrawSync(0);
@@ -864,6 +919,19 @@ s32 select_Update(s32 held, s32 pressed) {
     /* the grid up again for a crew's next place (port_match.h) */
     if (g_select_step == SELECT_STEP_FIGHTER && port_MatchCrewGridDue()) {
         select_PortCrewGrid();
+    }
+    /* the rule's page over the grid, before anything is picked: the grid
+     * is drawn under it and given no presses */
+    if (g_select_step == SELECT_STEP_FIGHTER) {
+        s32 leave = FALSE;
+
+        if (port_MatchRulePageStep(g_select_pressed, &leave)) {
+            g_select_pressed = 0;
+            g_select_held = 0;
+            if (leave) {
+                g_select_result = PAGE_CANCELED;
+            }
+        }
     }
 #endif
     pool_frame = g_select_work->pool_frame + 1;
@@ -1319,6 +1387,10 @@ void select_FighterStep(MenuDrawCtx *ctx) {
     s16 side;
     s16 grid_col;
     s16 grid_row;
+#if RB_PORT
+    s32 crew_taken; /* the crews that have the place's character */
+    s32 all_taken;
+#endif
 
     draw.scale_x = SPRITE_SCALE_ONE;
     draw.scale_y = SPRITE_SCALE_ONE;
@@ -1405,9 +1477,22 @@ void select_FighterStep(MenuDrawCtx *ctx) {
                  grid_col == SELECT_COL_LEFT_OUT_2)) {
                 continue;
             }
-            if (g_select_fighter_flags[g_select_grid[grid_row][grid_col]
-                                           .value] &
-                SELECT_FIGHTER_OPEN) {
+#if RB_PORT
+            /* (a character every crew picking has: the locked name, as
+             * the game draws one; one that a crew has and the other may
+             * still pick the window greys for that crew's side,
+             * match_page.c) */
+            crew_taken =
+                select_PortCrewTaken(g_select_grid[grid_row][grid_col].fighter);
+            all_taken = (1 << (1 + g_select_extra_players)) - 1;
+#endif
+            if ((g_select_fighter_flags[g_select_grid[grid_row][grid_col]
+                                            .value] &
+                 SELECT_FIGHTER_OPEN)
+#if RB_PORT
+                && crew_taken != all_taken
+#endif
+            ) {
                 draw.y = 0;
                 draw.x = 0;
                 draw.has_color = 0;
@@ -1600,8 +1685,17 @@ static void select_MoveFighterCursors(MenuDrawCtx *ctx) {
             draw.sprt_out = ctx->prims.sprt;
             ctx->prims.sprt = sprite_Draw(&draw);
         }
+#if RB_PORT
+        /* a character the side's crew already has (port_match.h): refused,
+         * as a locked one is */
         if ((g_select_pressed & PAD_OF(PADRdown, pad)) &&
-            g_select_picks.rec[side].fighter == SELECT_NONE) {
+            g_select_picks.rec[side].fighter == SELECT_NONE &&
+            port_MatchCrewHas(side, g_select_grid[*row][*col].fighter)) {
+            snd_Play(SELECT_SOUND_LOCKED, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        } else
+#endif
+            if ((g_select_pressed & PAD_OF(PADRdown, pad)) &&
+                g_select_picks.rec[side].fighter == SELECT_NONE) {
             if (*flags & SELECT_FIGHTER_OPEN) {
                 g_select_picks.rec[side].weapon = SELECT_NONE;
                 g_select_weapon_cursors[side] = SELECT_WEAPON_START;
@@ -2196,7 +2290,10 @@ void select_WeaponsOutStep(MenuDrawCtx *ctx) {
         /* a crew's later place taken (port_match.h): the grid again for
          * the next, or, the crews picked, the screen done, its stage
          * chosen before */
-        if (port_MatchCrewPicking()) {
+        if (port_MatchRuleFirst() && select_PortCrewPick()) {
+            /* the rule chosen before the grid: each place is taken as its
+             * weapons cross, the grid again for the next */
+        } else if (!port_MatchRuleFirst() && port_MatchCrewPicking()) {
             if (!select_PortCrewPick()) {
                 g_select_result = PAGE_CONFIRMED;
             }
@@ -2215,7 +2312,7 @@ void select_WeaponsOutStep(MenuDrawCtx *ctx) {
 #if RB_PORT
                 /* a Crew match with no stage page: its crews picked from here
                  * (port_match.h) */
-                if (select_PortCrewPick()) {
+                if (!port_MatchRuleFirst() && select_PortCrewPick()) {
                     g_select_result = PAGE_RUNNING;
                 }
 #endif
@@ -2555,8 +2652,9 @@ static void select_StageStep(
 
                 snd_Play(MENU_SOUND_CANCEL, SND_VOLUME_MAX, SND_VOLUME_MAX);
 #if RB_PORT
-                /* the crews kept from a match are let go (port_match.h) */
-                port_MatchCrewDrop();
+                /* the crews kept from a match are let go; a rule-first
+                 * crew's last place is picked again (port_match.h) */
+                port_MatchCrewStageBack();
 #endif
                 fighter = g_select_picks.rec[i].fighter;
                 g_select_picks.rec[i].weapon = SELECT_NONE;

@@ -56,8 +56,12 @@
  * (the lobby's version 2; NETPLAY.md, section 16): the rule that the
  * match's end is the session's, with who won in the state, and a player
  * who leaves in the middle of a fight. 11: the rule may be Crew, whose
- * crews the game's state carries. */
-#define SESSION_PROTOCOL 11
+ * crews the game's state carries. 12: the rule is chosen on a page before
+ * the first select, by the host's pad; a crew's picks are all different
+ * characters; a Stock or Crew fight's winner keeps his wounds, in the
+ * state; a Crew match's end goes back to the top menu, which ends a
+ * session of two (port_match.h). */
+#define SESSION_PROTOCOL 12
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -253,6 +257,14 @@ void port_SetSessionSeed(u32 seed) {
 }
 
 void port_SetSessionRules(u32 rules) { g_session.rules = rules; }
+
+/* (port_match.h) */
+s32 port_SessionIsRoomMatch(void) {
+    return g_session.role != PORT_SESSION_NONE &&
+           (g_session.rules & PORT_SESSION_RULE_ONE_MATCH) != 0;
+}
+
+s32 port_SessionIsOn(void) { return g_session.role != PORT_SESSION_NONE; }
 
 void port_CancelSession(void) { g_session.canceled = 1; }
 
@@ -1512,6 +1524,20 @@ void port_SessionInput(u32 frame, PortInput *input, u16 *used) {
         }
     }
     if (g_port_top_menu.session_result != 0) {
+        input->buttons[0] = 0;
+        input->buttons[1] = 0;
+        *used = 0;
+        return;
+    }
+    if (!(g_session.rules & PORT_SESSION_RULE_ONE_MATCH) &&
+        g_port_top_menu.session_left == 0 && port_MatchEndsSession() &&
+        g_sys_screen == SCREEN_MENU_UPDATE && g_menu_page == MENU_PAGE_TOP) {
+        /* a Crew match over, the game back at its top menu: the session
+         * of two ends there, on both machines at the same frame, whatever
+         * its rules (port_match.h) */
+        g_port_top_menu.session_left = frame + 1;
+    }
+    if (g_port_top_menu.session_left != 0 && g_port_match.to_top) {
         input->buttons[0] = 0;
         input->buttons[1] = 0;
         *used = 0;

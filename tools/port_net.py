@@ -39,9 +39,12 @@ and a guest turned away that goes on with its own game.
 (section 13). `session` also holds the two players to the same arena
 (docs/MODS.md, "Custom arenas"): the sample arena compiled at test time,
 the host with it in play (--arena) and the guest without, which the host
-must turn away. And a second headless session of each size plays a Crew
-match of two (PORT.md, "Match rules", "Crew"), each player picking his
-crew's second place.
+must turn away. And two more headless sessions of each size, begun in the
+running program with ReBushido's top menu, play a Crew match of two and a
+Stock match of two with the rule chosen by the host before the first
+select (PORT.md, "Match rules", "The rule first"): the crews of different
+fighters, the first fight's winner wounded into the second, the Crew
+match's end the top menu, where the session ends on both.
 
 Under load (docs/NETPLAY.md, section 12, "Under load"): `--stress N` runs
 the checks N times over and counts the runs that failed and those that
@@ -279,36 +282,10 @@ SESSION_MATCH_EXPECT = {
     'rematch': 'expect = ["mode == FIGHT_MODE_VS", "wins_p1 + wins_p2 == 1", "port_match_rule == 1", '
                '"port_match_count == 2", "port_match_lives_p1 + port_match_lives_p2 == 3"]\n',
 }
-# And a session of its own plays a Crew match of two (docs/PORT.md, "Match
-# rules"), the host's rule again: each player picks the second place of
-# his crew on the grid after the stage (the fighter and weapon under the
-# cursors, the same as the first), and the second fight is the crews' next
-# fighters, loaded afresh, the loser's next against the winner, which is
-# the first fight's pair again. It ends the match: the result's card.
-SESSION_CREW = ['--match', 'crew:2']
-SESSION_CREW_PICKS = ["crew2+100 CROSS", "crew2+110 P2 CROSS", "crew2+300 CROSS", "crew2+340 P2 CROSS"]
-SESSION_CREW_PLACE = '''
-[[checkpoint]]
-name = "crew2"
-when = "port_match_crew_picked == 1"
-within = 3000
-shot = false
-'''
-SESSION_CREW_EXPECT = {
-    'crew2': 'expect = ["port_match_page_rule == 3", "port_match_crew_size == 2", '
-             '"port_match_crew_sides == 2"]\n',
-    'fight': 'expect = ["mode == FIGHT_MODE_VS", "port_match_rule == 3", "port_match_crew_picked == 2", '
-             '"port_match_lives_p1 == 2", "port_match_lives_p2 == 2"]\n',
-    'after_fight': 'expect = ["port_match_rule == 3", "port_match_card == 1", "port_match_fights == 1", '
-                   '"port_match_lives_p1 + port_match_lives_p2 == 3"]\n',
-    'rematch': 'expect = ["mode == FIGHT_MODE_VS", "port_match_rule == 3", "port_match_count == 2", '
-               '"port_match_lives_p1 + port_match_lives_p2 == 3", "p1_defeated == 0", "p2_defeated == 0"]\n',
-}
 # what each kind of session's match is: the host's arguments, what its
 # checkpoints expect, what both sides' logs say of the rule
 SESSION_MATCHES = {
     'stock': (SESSION_MATCH, SESSION_MATCH_EXPECT, "session: the host's match rule is stock, 2"),
-    'crew': (SESSION_CREW, SESSION_CREW_EXPECT, "session: the host's match rule is crew, 2"),
 }
 
 
@@ -318,8 +295,6 @@ def session_checkpoints(match):
     if not match:
         return SESSION_CHECKPOINTS
     text = SESSION_CHECKPOINTS
-    if match == 'crew':
-        text = text.replace('\n[[checkpoint]]\nname = "fight"', SESSION_CREW_PLACE + '\n[[checkpoint]]\nname = "fight"')
     for name, expect in SESSION_MATCHES[match][1].items():
         head = 'name = "%s"\n' % name
         start = text.index(head)
@@ -356,8 +331,7 @@ def write_session_plan(program, side, folder, match=None):
     path. `match`: the session plays that of SESSION_MATCHES."""
     fight = port_game_fight()
     rematch = [p.replace('fight+', 'rematch+', 1) for p in fight]
-    picks = SESSION_CREW_PICKS if match == 'crew' else []
-    presses = own_pad(SESSION_SELECT + picks + fight + rematch, side)
+    presses = own_pad(SESSION_SELECT + fight + rematch, side)
     if side == 0:
         presses.append("after_fight+%d CROSS" % (30 if match else 120))
     toml = os.path.join(folder, 'session_side%d.toml' % side)
@@ -461,23 +435,54 @@ shot = false
 '''
 
 
-# A room's match of Crew 2 (--match crew:2): the crews' second places
-# picked after the stage, as the same fighters and weapons, so that the
-# second fight, the loser's next against the winner, is the first's pair
-# again and ends the same way: the match decided at its result's card.
+# A room's match of Crew 2 (--match crew:2), whose rule is the room's: no
+# rule page, the crews picked at the grid from the first place (the rule
+# first, docs/PORT.md, "Match rules"), each player's second place one
+# place down after a Cross the select refuses, then the stage. The first
+# fight is wounding_fight's, whose winner keeps his wounds into the
+# second, finishing_fight's, the loser's next coming in unhurt; the match decided at its
+# result's card, which ends the room's session, back to the room's page.
+ROOM_CREW_PRESSES = ["select+280 CROSS", "select+320 P2 CROSS", "select+580 CROSS", "select+620 P2 CROSS",
+                     "crew2+60 CROSS", "crew2+66 P2 CROSS", "crew2+100 DOWN", "crew2+110 P2 DOWN",
+                     "crew2+140 CROSS", "crew2+150 P2 CROSS", "crew2+340 CROSS", "crew2+380 P2 CROSS",
+                     "stages+40 CROSS"]
 ROOM_CREW_CHECKPOINTS = ROOM_CHECKPOINTS.replace('''
 [[checkpoint]]
-name = "fight"''', SESSION_CREW_PLACE.replace('within = 3000', 'within = 100000000') + '''
+name = "fight"''', '''
+[[checkpoint]]
+name = "crew2"
+when = "port_match_crew_picked == 1"
+within = 100000000
+shot = false
+expect = ["port_match_rule_first == 1", "port_match_rule_page == 0", "port_match_crew_size == 2"]
+
+[[checkpoint]]
+name = "stages"
+when = "port_on_stages == 1"
+within = 100000000
+shot = false
+expect = ["port_match_crew_picked == 2", "port_crew_p1_1 != port_crew_p1_2", "port_crew_p2_1 != port_crew_p2_2"]
+
 [[checkpoint]]
 name = "fight"''').replace('''
 [[checkpoint]]
 name = "after_fight"''', '''
+[[checkpoint]]
+name = "card"
+when = "port_match_card == 1"
+within = 100000000
+shot = false
+expect = ["port_match_fights == 1", "port_match_kept_p1 + port_match_kept_p2 == 1",
+          "port_match_kept_p1 == 0 || WOUNDED_P1", "port_match_kept_p2 == 0 || WOUNDED_P2"]
+
 [[checkpoint]]
 name = "fight2"
 when = "screen == SCREEN_FIGHT_UPDATE && winner == FIGHT_NOBODY"
 at_frame = true
 within = 100000000
 shot = false
+expect = ["port_match_kept_p1 == 0 || (p1_leg_wounds == port_match_legs_p1 && p1_arm_wounds == port_match_arm_p1 && p1_body_wounds == port_match_body_p1 && p1_off_arm_ok == port_match_off_arm_p1)",
+          "port_match_kept_p2 == 0 || (p2_leg_wounds == port_match_legs_p2 && p2_arm_wounds == port_match_arm_p2 && p2_body_wounds == port_match_body_p2 && p2_off_arm_ok == port_match_off_arm_p2)"]
 
 [[checkpoint]]
 name = "kill2"
@@ -497,12 +502,13 @@ def write_room_plan(program, folder, crew=False):
     fight = port_game_fight()
     presses = SESSION_SELECT + fight
     if crew:
-        presses = SESSION_SELECT + SESSION_CREW_PICKS + fight + [p.replace('fight+', 'fight2+', 1) for p in fight]
+        presses = ROOM_CREW_PRESSES + wounding_fight() + finishing_fight()
     with open(toml, 'w', encoding='utf-8', newline='\n') as f:
         f.write('about = "A room of several\'s matches, both pads."\n')
         f.write('discs = ["port"]\nlimit = 200000000\nseconds = %d\n' % SECONDS)
         f.write('input = [\n%s\n]\n' % ',\n'.join('    "%s"' % p for p in presses))
-        f.write(ROOM_CREW_CHECKPOINTS if crew else ROOM_CHECKPOINTS)
+        f.write(ROOM_CREW_CHECKPOINTS.replace('WOUNDED_P1', WOUNDED % {'s': 1}).replace(
+            'WOUNDED_P2', WOUNDED % {'s': 2}) if crew else ROOM_CHECKPOINTS)
     playtest.PORT_PROGRAM = program
     playtest.PORT_SYMBOLS = program + '.sym'
     test = playtest.Test(toml)
@@ -841,6 +847,307 @@ def check_session_replays(label, program, folder, window):
               % (label, len(common), '' if window else ', each played back with every hash the same',
                  ', and %d the host played on alone' % len(alone) if alone else ''),
               flush=True)
+    return problems
+
+
+# A session's Crew match with the rule first (docs/PORT.md, "Match rules",
+# "The rule first"), begun in the running program (--session-at) with
+# ReBushido's top menu (--menu rebushido): the host's pad turns the rule
+# page to Crew 2 (the guest's Right there is not the session's: the host
+# chooses), each player picks his crew at the grid, the second place first
+# refused the first's fighter and then one place down, and the host the
+# stage. The first fight wounding_fight's, whose winner keeps his wounds
+# into the second, finishing_fight's, and the match decided, its card, the
+# game goes back to the top menu, where the session ends on both machines
+# at the same frame and each goes back to its own game.
+SESSION_RB_CREW_PRESSES = [
+    "rule+20 P2 RIGHT", "rule+30 RIGHT", "rule+42 RIGHT", "rule+54 RIGHT", "rule+76 DOWN", "rule+88 LEFT",
+    "rule+100 LEFT", "rule+112 LEFT", "rule+150 CROSS",
+    "grid+60 CROSS", "grid+70 P2 CROSS", "grid+260 CROSS", "grid+300 P2 CROSS",
+    "crew2+60 CROSS", "crew2+66 P2 CROSS", "crew2+100 DOWN", "crew2+110 P2 DOWN", "crew2+140 CROSS",
+    "crew2+150 P2 CROSS", "crew2+340 CROSS", "crew2+380 P2 CROSS",
+    "stages+40 CROSS"]
+# And the same with Stock 2 (the owner, 2026-11-20: "For stock battles,
+# make injuries persist as well"): Right, Down, Left on the rule page,
+# each player's fighter and weapon, the stage; the first fight's winner
+# keeps his wounds into the second, the loser of a life comes back unhurt;
+# the match decided, the stage page as Stock has it, and the guest ends.
+SESSION_RB_STOCK_PRESSES = [
+    "rule+20 P2 RIGHT", "rule+30 RIGHT", "rule+52 DOWN", "rule+64 LEFT", "rule+94 CROSS",
+    "grid+60 CROSS", "grid+70 P2 CROSS", "grid+260 CROSS", "grid+300 P2 CROSS",
+    "stages+40 CROSS"]
+# what the winner of the first fight takes into the second: some wound
+WOUNDED = ('(port_match_legs_p%(s)d + port_match_arm_p%(s)d + port_match_body_p%(s)d > 0 || '
+           'port_match_off_arm_p%(s)d == 0)')
+SESSION_RB_CREW_CHECKPOINTS = '''
+[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 6000
+shot = false
+
+[[checkpoint]]
+name = "rule"
+when = "port_match_rule_page == 1"
+within = 600
+shot = false
+expect = ["port_match_rule_first == 1", "port_match_page_rule == 0"]
+
+[[checkpoint]]
+name = "grid"
+when = "port_match_rule_page == 0"
+within = 1000
+shot = false
+expect = [GRID_EXPECT]
+
+CREW_PLACES
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+at_frame = true
+within = 16000
+shot = false
+expect = ["mode == FIGHT_MODE_VS", "port_match_rule == RULE", "port_match_lives_p1 == 2", "port_match_lives_p2 == 2"]
+
+[[checkpoint]]
+name = "kill"
+when = "winner != FIGHT_NOBODY"
+at_frame = true
+within = 16000
+shot = false
+
+[[checkpoint]]
+name = "card"
+when = "port_match_card == 1"
+within = 16000
+shot = false
+expect = ["port_match_fights == 1", "port_match_kept_p1 + port_match_kept_p2 == 1",
+          "port_match_kept_p1 == 0 || %(wounded_p1)s", "port_match_kept_p2 == 0 || %(wounded_p2)s"]
+
+[[checkpoint]]
+name = "fight2"
+when = "screen == SCREEN_FIGHT_UPDATE && winner == FIGHT_NOBODY"
+at_frame = true
+within = 16000
+shot = false
+expect = ["port_match_kept_p1 == 0 || (p1_leg_wounds == port_match_legs_p1 && p1_arm_wounds == port_match_arm_p1 && p1_body_wounds == port_match_body_p1 && p1_off_arm_ok == port_match_off_arm_p1)",
+          "port_match_kept_p2 == 0 || (p2_leg_wounds == port_match_legs_p2 && p2_arm_wounds == port_match_arm_p2 && p2_body_wounds == port_match_body_p2 && p2_off_arm_ok == port_match_off_arm_p2)",
+          "port_match_kept_p1 == 1 || (p1_leg_wounds + p1_arm_wounds + p1_body_wounds == 0 && p1_off_arm_ok == 1)",
+          "port_match_kept_p2 == 1 || (p2_leg_wounds + p2_arm_wounds + p2_body_wounds == 0 && p2_off_arm_ok == 1)"]
+
+[[checkpoint]]
+name = "kill2"
+when = "winner != FIGHT_NOBODY"
+at_frame = true
+within = 16000
+shot = false
+
+[[checkpoint]]
+name = "result"
+when = "port_match_card == 2"
+within = 16000
+shot = false
+expect = ["port_match_over == 1"]
+THE_END''' % {'wounded_p1': WOUNDED % {'s': 1}, 'wounded_p2': WOUNDED % {'s': 2}}
+SESSION_RB_KINDS = {
+    'crew': (SESSION_RB_CREW_PRESSES, {
+        'RULE': '3',
+        'GRID_EXPECT': '"port_match_page_rule == 3", "port_match_crew_size == 2", "port_match_crew_sides == 2"',
+        'CREW_PLACES': '''[[checkpoint]]
+name = "crew2"
+when = "port_match_crew_picked == 1"
+within = 1500
+shot = false
+
+[[checkpoint]]
+name = "stages"
+when = "port_on_stages == 1"
+within = 1500
+shot = false
+expect = ["port_match_crew_picked == 2", "port_crew_p1_1 != port_crew_p1_2", "port_crew_p2_1 != port_crew_p2_2"]
+''',
+        'THE_END': '''
+[[checkpoint]]
+name = "top"
+when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && port_match_to_top == 1"
+within = 3000
+shot = false
+
+[[checkpoint]]
+name = "stay"
+after = 600
+shot = false
+'''}),
+    'stock': (SESSION_RB_STOCK_PRESSES, {
+        'RULE': '1',
+        'GRID_EXPECT': '"port_match_page_rule == 1", "port_match_page_count == 2", "port_match_rule_first == 1"',
+        'CREW_PLACES': '''[[checkpoint]]
+name = "stages"
+when = "port_on_stages == 1"
+within = 1500
+shot = false
+''',
+        'THE_END': '''
+[[checkpoint]]
+name = "back"
+when = "port_on_stages == 1"
+within = 3000
+shot = false
+expect = ["port_match_over == 1", "port_match_to_top == 0"]
+'''}),
+}
+# the Stock session's ends: the guest's plan a second after the stage
+# page, the host on alone
+SESSION_RB_STOCK_END = {0: '\n[[checkpoint]]\nname = "alone"\nafter = 900\nshot = false\n',
+                        1: '\n[[checkpoint]]\nname = "end"\nframes = 60\nshot = false\n'}
+
+
+def session_rb_checkpoints(kind, side):
+    """SESSION_RB_CREW_CHECKPOINTS for `kind` (a key of SESSION_RB_KINDS)
+    and side `side`."""
+    text = SESSION_RB_CREW_CHECKPOINTS
+    for word, value in SESSION_RB_KINDS[kind][1].items():
+        text = text.replace(word, value)
+    if kind == 'stock':
+        text += SESSION_RB_STOCK_END[side]
+    return text
+
+
+def wounding_fight():
+    """Two pads' presses in a fight whose winner ends it wounded: the
+    second player walks in and strikes with Cross for 260 frames, the first
+    waiting, then the first walks in and strikes with Cross until one falls
+    (as the port plays today the first wins it, wounded)."""
+    presses = []
+
+    def strikes(start, end, every, button, pad, walk):
+        at, n = start, 0
+        while at < end:
+            if n % 3 == 0:
+                presses.append((at, pad, walk))
+                at += 22
+            presses.append((at, pad, button))
+            n += 1
+            at += every
+
+    strikes(0, 260, 35, 'CROSS', 1, 'LEFT hold 20f')
+    strikes(300, 6000, 30, 'CROSS', 0, 'RIGHT hold 20f')
+    return ['fight+%df %s%s' % (at, 'P2 ' if pad else '', button) for at, pad, button in sorted(presses)]
+
+
+def finishing_fight(checkpoint='fight2'):
+    """The first pad's presses in the fight after `checkpoint`, the second
+    pressing nothing: a walk in and two low strikes a second, as
+    tools/port_match.py's fights (port_stage_select.fight_presses), which
+    put down a fighter nobody plays, wounded or not."""
+    return ['%s+%df %s' % (checkpoint, n * 60 + offset, button) for n in range(66)
+            for offset, button in ((0, 'RIGHT hold 20f'), (25, 'CIRCLE'), (40, 'CIRCLE'))]
+
+
+def write_rb_crew_plan(program, side, folder, kind='crew'):
+    """The plan of side `side` for the rule-first session of `kind` (a key
+    of SESSION_RB_KINDS): its path."""
+    presses = SESSION_RB_KINDS[kind][0] + wounding_fight() + finishing_fight()
+    toml = os.path.join(folder, 'rb_crew_side%d.toml' % side)
+    with open(toml, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('about = "A session\'s Crew match, the rule first, side %d."\n' % side)
+        f.write('discs = ["port"]\nlimit = 60000\nseconds = %d\n' % SECONDS)
+        f.write('input = [\n%s\n]\n' % ',\n'.join('    "%s"' % p for p in own_pad(presses, side)))
+        f.write(session_rb_checkpoints(kind, side))
+    playtest.PORT_PROGRAM = program
+    playtest.PORT_SYMBOLS = program + '.sym'
+    test = playtest.Test(toml)
+    disc = playtest.Disc('port')
+    test.set_discs([disc])
+    _, lines = test.plan(disc, playtest.header_names(), 1)
+    path = os.path.join(folder, 'rb_crew_plan_side%d.txt' % side)
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(lines) + '\n')
+    return path
+
+
+def plan_claims(plan, out, toml_text):
+    """Each checkpoint `out` printed, and the claims of its `expect` in
+    `toml_text` that do not hold there: [(checkpoint, claim)], and the
+    checkpoints printed."""
+    import tomllib
+    table = tomllib.loads(toml_text)
+    expects = {cp['name']: cp.get('expect', []) for cp in table.get('checkpoint', [])}
+    names = [line.split()[1] for line in read(plan).split('\n') if line.startswith('var ')]
+    failed = []
+    printed = []
+    for line in out.split('\n'):
+        words = line.split()
+        if len(words) > 3 and words[0] == 'cp' and words[1] in expects:
+            printed.append(words[1])
+            values = dict(playtest.header_names())
+            values.update(zip(names, (int(v) for v in words[3:])))
+            failed += [(words[1], claim) for claim in expects[words[1]] if not playtest.evaluate(claim, values)]
+    return failed, printed
+
+
+def check_session_rb_crew(label, program, args, ports, kind='crew'):
+    """The rule-first session of `kind`, Crew (SESSION_RB_CREW_PRESSES) or
+    Stock: the problems found."""
+    folder = os.path.join(args.out, 'session', label)
+    os.makedirs(folder, exist_ok=True)
+    plans = [write_rb_crew_plan(program, side, folder, kind) for side in (0, 1)]
+    more = []
+    for side in (0, 1):
+        replays = os.path.join(folder, 'side%d-replays' % side)
+        if os.path.isdir(replays):
+            shutil.rmtree(replays)
+        # (the first boundary: with ReBushido's top menu the opening movie
+        # comes at once, and plays through between two boundaries)
+        more.append(['--session-at', '1', '--menu', 'rebushido', '--mods', 'off', '--replays', replays])
+    host = start_session_side(program, 0, folder, 'side0', plans[0], args, ports, more[0])
+    time.sleep(0.3)
+    guest = start_session_side(program, 1, folder, 'side1', plans[1], args, ports, more[1])
+    codes = [wait_session_side(host, SECONDS), wait_session_side(guest, SECONDS)]
+    problems = []
+    hashes = []
+    for side, code in enumerate(codes):
+        who = 'host' if side == 0 else 'guest'
+        err = read(os.path.join(folder, 'side%d.err' % side))
+        out = read(os.path.join(folder, 'side%d.out' % side))
+        toml = read(os.path.join(folder, 'rb_crew_side%d.toml' % side))
+        print('port_net: session: %s: %s: exit %s' % (label, who, code), flush=True)
+        if code != 0:
+            problems.append('session: %s: the %s ended with %s (%s/side%d.err)' % (label, who, code, folder, side))
+        if 'DESYNC' in err:
+            problems.append('session: %s: the %s found a desync' % (label, who))
+        if kind == 'crew' and ('the players went back to the top menu at frame' not in err or
+                               "the player's own game put back" not in err):
+            problems.append('session: %s: the %s\'s session did not end at the top menu, the player\'s own game '
+                            'put back (%s/side%d.err)' % (label, who, folder, side))
+        failed, printed = plan_claims(plans[side], out, toml)
+        # (a checkpoint only a frame run again after a rollback reaches is
+        # not printed: the guest's may miss one; its session's end is in
+        # its log)
+        last = 'top' if kind == 'crew' else 'back'
+        for name in ('select', 'rule', 'grid', 'stages', 'card', 'fight2', 'result', last) if side == 0 else \
+                ('select', 'result'):
+            if name not in printed:
+                problems.append('session: %s: the %s did not reach `%s`' % (label, who, name))
+        for name, claim in failed:
+            problems.append('session: %s: the %s at `%s`: not %s' % (label, who, name, claim))
+        hashes.append(hashes_of(err))
+    common = sorted(set(hashes[0]) & set(hashes[1]))
+    differ = [frame for frame in common if hashes[0][frame] != hashes[1][frame]]
+    if differ:
+        problems.append('session: %s: the state hashes differ from frame %d' % (label, differ[0]))
+    if len(common) < 40:
+        problems.append('session: %s: too few state hashes in common (%d)' % (label, len(common)))
+    if not problems and kind == 'crew':
+        print('port_net: session: %s: the rule chosen by the host before the grid, the crews of different '
+              'fighters, the first fight\'s winner wounded into the second, the top menu at the match\'s end '
+              'and the session ended there on both; %d state hashes the same on both, the last at frame %d'
+              % (label, len(common), common[-1]), flush=True)
+    elif not problems:
+        print('port_net: session: %s: Stock 2 chosen by the host before the grid, the first fight\'s winner '
+              'wounded into the second, the loser of a life unhurt, the stage page at the match\'s end; %d state '
+              'hashes the same on both, the last at frame %d' % (label, len(common), common[-1]), flush=True)
+    problems += check_session_replays(label, program, folder, False)
     return problems
 
 
@@ -1252,9 +1559,13 @@ def run_checks(args, base):
             if not args.stress:
                 problems += check_arena_refused('%d-bit' % bits, program, args,
                                                 (ports[0] + 14, ports[1] + 14))
-                # a Crew match, its crews picked in the session
-                problems += check_session('%d-bit-crew' % bits, program, args, (ports[0] + 16, ports[1] + 16),
-                                          False, 'crew')
+                # a Crew match, the rule chosen before the grid by the
+                # host and the crews picked in the session
+                problems += check_session_rb_crew('%d-bit-crew' % bits, program, args,
+                                                  (ports[0] + 16, ports[1] + 16))
+                # and Stock, whose winner keeps his wounds too
+                problems += check_session_rb_crew('%d-bit-stock-wounds' % bits, program, args,
+                                                  (ports[0] + 18, ports[1] + 18), 'stock')
             continue
         check = check_rollback if rollback else check_link
         problems += check('%d-bit' % bits, program, args, ports)

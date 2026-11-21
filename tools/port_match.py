@@ -159,8 +159,8 @@ expect = ["port_match_page_rule == 2", "port_match_page_count == 2"]
     fight('fight', ['port_match_rule == 2', 'port_match_count == 2', 'port_match_wins_p1 == 0',
                     'port_match_wins_p2 == 0', 'mode == 4'],
           'card', ['port_match_card == 1', 'port_match_wins_p1 == 1', 'port_match_wins_p2 == 0',
-                   'port_match_over == 0']) + \
-    fight('fight2', SAME + ['port_match_wins_p1 == 1'],
+                   'port_match_over == 0', 'port_match_kept_p1 == 0', 'p1_leg_wounds == 1']) + \
+    fight('fight2', SAME + ['port_match_wins_p1 == 1', 'p1_leg_wounds == 0', 'port_match_kept_p1 == 0'],
           'result', ['port_match_card == 2', 'port_match_wins_p1 == 2', 'port_match_wins_p2 == 0',
                      'port_match_over == 1', 'port_match_winner == 0']) + '''
 [[checkpoint]]
@@ -254,6 +254,15 @@ within = 1500
 expect = ["menu_page == MENU_PAGE_SELECT", "port_crew_p1_2 == %(p1_2)d", "port_crew_p2_2 == %(p2_2)d"]
 '''
 
+# A Crew match's end: the top menu, the crews let go (versus, online and
+# versus the CPU alike, won or lost).
+TOP = '''
+[[checkpoint]]
+name = "top"
+when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && port_match_to_top == 1"
+within = 3000
+expect = ["port_match_crew_size == 0", "port_match_crew_picked == 0"]
+'''
 # A fight a draw: both fall. Nobody plays the second fighter, so the
 # first player's strikes would always win it; the plan writes that the
 # first fell too, once the second has, which the game counts as a draw
@@ -276,7 +285,6 @@ TOML_VS_CREW = 'about = "Versus mode, a Crew match of three (tools/port_match.py
     "stages+40 CROSS",
     %(picks)s,
     %(presses_crew)s,
-    "back+60 CROSS",
 ]
 ''' + CREW_COMPARE + START + SELECT + CREW_PLACES + \
     fight('fight', ['port_match_rule == 3', 'port_match_count == 3', 'port_match_lives_p1 == 3',
@@ -291,22 +299,7 @@ TOML_VS_CREW = 'about = "Versus mode, a Crew match of three (tools/port_match.py
         '\n[[checkpoint]]\nname = "card2"', DOWN % 'down2' + '\n[[checkpoint]]\nname = "card2"') + \
     fight('fight3', ['p1_character == %(p1_2)d', 'p2_character == %(p2_3)d', 'stage == %(stage)d'],
           'result', ['port_match_card == 2', 'port_match_lives_p1 == 2', 'port_match_lives_p2 == 0',
-                     'port_match_fights == 3', 'port_match_over == 1', 'port_match_winner == 0']) + '''
-[[checkpoint]]
-name = "back"
-when = "port_on_stages == 1"
-within = 3000
-expect = ["menu_page == MENU_PAGE_SELECT", "port_match_over == 1", "port_match_crew_picked == 3"]
-
-[[checkpoint]]
-name = "again"
-when = "screen == SCREEN_FIGHT_UPDATE"
-at_frame = true
-within = 3000
-expect = ["mode == 4", "p1_character == %(p1)d", "p2_character == %(p2)d", "port_match_rule == 3",
-          "port_match_lives_p1 == 3", "port_match_lives_p2 == 3", "port_match_fights == 0",
-          "port_crew_p1_2 == %(p1_2)d", "port_crew_p2_3 == %(p2_3)d"]
-'''
+                     'port_match_fights == 3', 'port_match_over == 1', 'port_match_winner == 0']) + TOP
 
 # Versus mode, Crew 2, two draws: both crews out at once, a drawn match.
 TOML_VS_CREW_DRAWN = 'about = "Versus mode, a Crew match of two drawn (tools/port_match.py)"\n' + CREW_HEAD + \
@@ -327,13 +320,7 @@ TOML_VS_CREW_DRAWN = 'about = "Versus mode, a Crew match of two drawn (tools/por
     fight('fight2', ['p1_character == %(p1_2)d', 'p2_character == %(p2_2)d'],
           'result', ['port_match_card == 2', 'port_match_last == 2', 'port_match_lives_p1 == 0',
                      'port_match_lives_p2 == 0', 'port_match_over == 1', 'port_match_winner == 2']).replace(
-        '\n[[checkpoint]]\nname = "result"', DOWN % 'down2' + '\n[[checkpoint]]\nname = "result"') + '''
-[[checkpoint]]
-name = "back"
-when = "port_on_stages == 1"
-within = 3000
-expect = ["menu_page == MENU_PAGE_SELECT", "port_match_over == 1", "port_match_winner == 2"]
-'''
+        '\n[[checkpoint]]\nname = "result"', DOWN % 'down2' + '\n[[checkpoint]]\nname = "result"') + TOP
 
 # Versus mode, Crew 2, both fights the first player's: the second crew
 # out. tools/port_replay.py's, whose fights are played back from their
@@ -370,7 +357,6 @@ TOML_VSCPU_CREW = 'about = "Versus the CPU, a Crew match of two (tools/port_matc
     '''input = [%(opening)s,
     %(vscpu_crew)s,
     %(presses)s,
-    "lost+30 CROSS",
 ]
 ''' + CREW_COMPARE + START + SELECT + '''
 [[checkpoint]]
@@ -382,26 +368,14 @@ expect = ["port_match_page_rule == 3", "port_match_crew_size == 2", "port_match_
 ''' + \
     fight('fight', ['port_match_rule == 3', 'port_match_count == 2', 'mode == 1', 'p1_character == %(p1)d',
                     'p2_character == %(cpu_crew)d', 'port_crew_p2_1 == %(cpu_crew)d',
-                    'port_crew_p2_2 == %(cpu_crew_2)d', 'port_crew_p1_2 == %(p1_2)d'],
+                    'port_crew_p2_2 == %(cpu_crew_2)d', 'port_crew_p1_2 == %(p1_2)d',
+                    'port_crew_p2_1 != port_crew_p2_2'],
           'card', ['port_match_card == 1', 'port_match_last == 1', 'port_match_lives_p1 == 1',
                    'port_match_lives_p2 == 2']) + \
     fight('fight2', ['mode == 1', 'p1_character == %(p1_2)d', 'p2_character == %(cpu_crew)d'],
           'result', ['port_match_card == 2', 'port_match_lives_p1 == 0', 'port_match_lives_p2 == 2',
-                     'port_match_over == 1', 'port_match_winner == 1']).replace('within = 6000', 'within = 9000') + '''
-
-[[checkpoint]]
-name = "lost"
-when = "screen == SCREEN_AFTER_FIGHT_UPDATE && port_match_card == 0"
-within = 3000
-expect = ["port_match_lives_p1 == 2", "port_match_lives_p2 == 2", "port_match_fights == 0"]
-
-[[checkpoint]]
-name = "rematch"
-when = "screen == SCREEN_FIGHT_UPDATE && winner == FIGHT_NOBODY"
-within = 3000
-expect = ["mode == 1", "p1_character == %(p1)d", "p2_character == %(cpu_crew)d", "port_match_rule == 3",
-          "port_match_lives_p1 == 2", "port_match_lives_p2 == 2"]
-'''
+                     'port_match_over == 1', 'port_match_winner == 1']).replace('within = 6000', 'within = 9000') + \
+    TOP
 
 # Group battle (the game's team battle, FIGHT_MODE_TEAM): the top menu's
 # fifth row; the first side picks the first place of the grid and its
@@ -505,12 +479,341 @@ def group_plans():
     return plans
 
 
+# ---- the rule first (ReBushido's top menu, --menu rebushido) ----
+#
+# With ReBushido's top menu the rule is chosen on a page of its own before
+# the first select screen's grid (docs/PORT.md, "Match rules", "The rule
+# first"): Left and Right turn the row's value, Up and Down the row, Cross
+# takes it. A crew's places are then picked one after another at the grid,
+# each taken as its weapons cross, before the stage page; a character the
+# crew has is refused (Cross plays the locked sound and picks nothing) and
+# drawn dimmed, or locked when every crew picking has it. The winner of a
+# Stock or Crew fight keeps his wounds into the next; at a Crew match's end
+# the game goes back to the top menu.
+#
+# The opening is the play tests' less the options page, which ReBushido's
+# top menu does not show; the top menu's rows are Singleplayer, Versus,
+# Training, Online Play and Options, the Singleplayer page's Story, Vs. CPU,
+# Slash and Group Battle.
+RB_START = '\n[[checkpoint]]\nname = "movie"' + START.split('\n[[checkpoint]]\nname = "movie"', 1)[1]
+RB_OPENING = [press for press in OPENING if not press.startswith('"page+')]
+RB_VS_MENU = '"menu+30 DOWN", "menu+90 CROSS"'
+RB_VSCPU_MENU = '"menu+30 CROSS", "menu+90 DOWN", "menu+150 CROSS"'
+RB_ARGS = ['--mods', 'off', '--menu', 'rebushido']
+RB_COMPARE = CREW_COMPARE.replace('"p1_weapon", "p2_weapon"]', '"p1_weapon", "p2_weapon", "port_match_rule_page", '
+                                  '"port_match_rule_row", "port_match_page_rule", "port_match_kept_p1", '
+                                  '"port_match_kept_p2", "p1_leg_wounds", "p2_leg_wounds", "port_match_to_top"]')
+
+
+def rule_presses(rights, lefts):
+    """The rule page's presses: from Single fight, Right to Stock, First to
+    or Crew, then Down to its number, which Left takes down, and Cross."""
+    presses = ['"rule+%d RIGHT"' % (30 + 12 * i) for i in range(rights)]
+    at = 30 + 12 * rights + 10
+    presses.append('"rule+%d DOWN"' % at)
+    for i in range(lefts):
+        at += 12
+        presses.append('"rule+%d LEFT"' % at)
+    presses.append('"rule+%d CROSS"' % (at + 30))
+    return ', '.join(presses)
+
+
+RB_RULE = '''
+[[checkpoint]]
+name = "rule"
+when = "port_match_rule_page == 1"
+within = 3000
+expect = ["menu_page == MENU_PAGE_SELECT", "port_match_rule_first == 1", "port_match_crew_picked == 0",
+          "port_match_page_rule == 0"]
+
+[[checkpoint]]
+name = "grid"
+when = "port_match_rule_page == 0"
+within = 1000
+shot = false
+expect = [GRID_EXPECT]
+'''
+# the grid's first place: each side the fighter and the weapon under its
+# cursor, as versus mode's play tests take them
+RB_FIRST_PICKS = '"grid+60 CROSS", "grid+70 P2 CROSS", "grid+260 CROSS", "grid+300 P2 CROSS"'
+RB_FIRST_PICK_CPU = '"grid+60 CROSS", "grid+260 CROSS"'
+# a later place: first Cross on the fighter the crew has (refused), then
+# one place down and Cross, and the weapon under the cursor
+RB_PLACE = '''"crewN+60 CROSS", "crewN+66 P2 CROSS", "crewN+100 DOWN", "crewN+110 P2 DOWN",
+    "crewN+140 CROSS", "crewN+150 P2 CROSS", "crewN+340 CROSS", "crewN+380 P2 CROSS"'''
+RB_PLACE_CPU = '''"crewN+60 CROSS", "crewN+100 DOWN", "crewN+140 CROSS", "crewN+340 CROSS"'''
+
+
+def rb_place(n, cpu=False):
+    return (RB_PLACE_CPU if cpu else RB_PLACE).replace('crewN', 'crew%d' % n)
+
+
+def rb_crew_place(n, size):
+    """The checkpoints of a crew's later place `n`: the grid up again, and
+    after the refused Cross nothing picked."""
+    return '''
+[[checkpoint]]
+name = "crew%d"
+when = "port_match_crew_picked == %d"
+within = 1500
+expect = ["menu_page == MENU_PAGE_SELECT", "port_match_crew_size == %d"]
+
+[[checkpoint]]
+name = "dup%d"
+after = 90
+expect = ["port_match_crew_picked == %d", "port_match_rule_page == 0"]
+''' % (n, n - 1, size, n, n - 1)
+
+
+# the wound: once a fight is under way the plan gives the first fighter a
+# leg wound (a `poke`, as the draws are written), and the second one too,
+# who then falls to the first's strikes
+WOUND = '''
+[[checkpoint]]
+name = "%s"
+after = 150
+shot = false
+'''
+RB_POKE = 4
+
+
+def wound_pokes(checkpoint, both=True):
+    """The pokes of the wounds at `checkpoint`: the first fighter's leg,
+    and the second's too if `both`."""
+    pokes = [(checkpoint, RB_POKE, 'p1_leg_wounds', 1)]
+    if both:
+        pokes.append((checkpoint, RB_POKE, 'p2_leg_wounds', 1))
+    return pokes
+
+
+def wounded(text, name):
+    """`text` with the wound's checkpoint before the checkpoint `name`."""
+    head = '\n[[checkpoint]]\nname = "%s"' % name
+    return text.replace(head, WOUND % (name + '_wound') + head, 1)
+
+
+RB_SELECT = SELECT.split('\n[[checkpoint]]\nname = "stages"')[0]
+
+# Versus mode, Crew 2 chosen on the rule page (Right three times, Down,
+# Left three times: five to two); the first place picked at the grid, the
+# second refused the first's fighter on each side and then one place down
+# (Kannuki and Mikado against Gengoro and Kaun); the stage. The first fight
+# the first player's, his leg wounded on the way (and the second's, who is
+# out): Kannuki stays with the wound against Kaun, who comes in unhurt;
+# the second fight the first player's too, the match won, its card, and
+# the top menu.
+TOML_RB_VS_CREW = 'about = "Versus mode, the rule first: Crew 2, a wounded winner, the top menu ' \
+    '(tools/port_match.py)"\n' + CREW_HEAD + '''input = [%(rb_opening)s,
+    %(rb_vs_menu)s,
+    %(rule_crew)s,
+    %(first_picks)s,
+    %(place2)s,
+    "stages+40 CROSS",
+    %(presses)s,
+]
+''' + RB_COMPARE + RB_START + RB_SELECT + \
+    RB_RULE.replace('GRID_EXPECT', '"port_match_page_rule == 3", "port_match_page_crew == 2", '
+                    '"port_match_crew_size == 2", "port_match_crew_sides == 2", "port_match_crew_picked == 0"') + \
+    rb_crew_place(2, 2) + '''
+[[checkpoint]]
+name = "stages"
+when = "port_on_stages == 1"
+within = 1500
+expect = ["port_match_crew_picked == 2", "port_crew_p1_1 == %(p1)d", "port_crew_p1_2 == %(p1_2)d",
+          "port_crew_p2_1 == %(p2)d", "port_crew_p2_2 == %(p2_2)d", "port_match_page_rule == 3"]
+''' + \
+    wounded(fight('fight', ['port_match_rule == 3', 'port_match_count == 2', 'p1_character == %(p1)d',
+                            'p2_character == %(p2)d', 'p1_leg_wounds == 0', 'port_match_kept_p1 == 0'],
+                  'card', ['port_match_card == 1', 'port_match_last == 0', 'port_match_lives_p2 == 1',
+                           'port_match_kept_p1 == 1', 'port_match_legs_p1 == 1', 'port_match_kept_p2 == 0',
+                           'port_match_legs_p2 == 0']), 'card') + \
+    fight('fight2', ['p1_character == %(p1)d', 'p2_character == %(p2_2)d', 'p1_leg_wounds == 1',
+                     'p2_leg_wounds == 0', 'p1_defeated == 0', 'p2_defeated == 0', 'p1_off_arm_ok == 1'],
+          'result', ['port_match_card == 2', 'port_match_over == 1', 'port_match_winner == 0',
+                     'port_match_lives_p2 == 0', 'port_match_kept_p1 == 0']).replace('within = 6000',
+                                                                                     'within = 9000') + \
+    TOP
+
+# Versus the CPU, Crew 3 on the rule page (Right three times, Down, Left
+# twice: five to three), no stage page: the player's crew picked at the
+# grid (the second and third places refused the fighters the crew has
+# first), the CPU's three all different characters, led by the game's
+# opponent. As the port plays today the CPU takes the player's fighters
+# one after another: the match lost, its card, and the top menu, not the
+# game's menu after a defeat.
+TOML_RB_VSCPU_CREW = 'about = "Versus the CPU, the rule first: Crew 3, the CPU\'s crew all different, the top ' \
+    'menu (tools/port_match.py)"\n' + CREW_HEAD.replace('limit = 14000', 'limit = 20000') + \
+    '''input = [%(rb_opening)s,
+    %(rb_vscpu_menu)s,
+    %(rule_crew3)s,
+    %(first_pick_cpu)s,
+    %(place2_cpu)s,
+    %(place3_cpu)s,
+    %(presses)s,
+]
+''' + RB_COMPARE + RB_START + RB_SELECT + \
+    RB_RULE.replace('GRID_EXPECT', '"port_match_page_rule == 3", "port_match_page_crew == 3", '
+                    '"port_match_crew_size == 3", "port_match_crew_sides == 1"') + \
+    rb_crew_place(2, 3) + rb_crew_place(3, 3) + '''
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE && winner == FIGHT_NOBODY"
+at_frame = true
+within = 3000
+expect = ["mode == 1", "port_match_rule == 3", "port_match_count == 3", "port_crew_p1_1 == %(p1)d",
+          "port_crew_p1_2 == %(p1_2)d", "port_crew_p1_3 == %(p1_3)d", "port_crew_p2_1 != port_crew_p2_2",
+          "port_crew_p2_1 != port_crew_p2_3", "port_crew_p2_2 != port_crew_p2_3", "p1_character == %(p1)d"]
+
+[[checkpoint]]
+name = "result"
+when = "port_match_card == 2"
+within = 14000
+expect = ["port_match_over == 1", "port_match_winner == 1", "port_match_lives_p1 == 0"]
+''' + TOP
+
+# Versus mode, Stock 2 on the rule page (Right, Down, Left: three to two):
+# the first fight the first player's, both legs wounded on the way: the
+# winner comes into the second fight with his, the loser of a life unhurt;
+# the second fight the first player's too, the result, and the stage page
+# with the fighters kept, as Stock goes on.
+TOML_RB_VS_STOCK = 'about = "Versus mode, the rule first: Stock 2, a wounded winner (tools/port_match.py)"\n' + \
+    HEAD + '''input = [%(rb_opening)s,
+    %(rb_vs_menu)s,
+    %(rule_stock)s,
+    %(first_picks)s,
+    "stages+40 CROSS",
+    %(presses_stock)s,
+]
+''' + RB_COMPARE + RB_START + RB_SELECT + \
+    RB_RULE.replace('GRID_EXPECT', '"port_match_page_rule == 1", "port_match_page_count == 2"') + '''
+[[checkpoint]]
+name = "stages"
+when = "port_on_stages == 1"
+within = 1500
+shot = false
+''' + \
+    wounded(fight('fight', ['port_match_rule == 1', 'port_match_count == 2', 'p1_leg_wounds == 0'],
+                  'card', ['port_match_card == 1', 'port_match_lives_p2 == 1', 'port_match_kept_p1 == 1',
+                           'port_match_legs_p1 == 1', 'port_match_kept_p2 == 0']), 'card') + \
+    fight('fight2', SAME + ['p1_leg_wounds == 1', 'p2_leg_wounds == 0', 'p1_defeated == 0', 'p2_defeated == 0'],
+          'result', ['port_match_card == 2', 'port_match_over == 1', 'port_match_winner == 0']) + '''
+[[checkpoint]]
+name = "back"
+when = "port_on_stages == 1"
+within = 3000
+expect = ["menu_page == MENU_PAGE_SELECT", "port_match_over == 1", "port_match_to_top == 0"]
+'''
+
+
+def wounding_presses():
+    """Both pads' presses in a fight whose winner ends it wounded, with no
+    poke (a rollback and a replay hold only what the pads did): the second
+    player walks in and strikes with Cross for 260 frames, the first
+    waiting, then the first walks in and strikes with Cross until one
+    falls (tools/port_net.py's wounding_fight); in the fight after, the
+    first pad's walk and low strikes, the second pressing nothing."""
+    presses = []
+
+    def strikes(start, end, every, button, pad, walk):
+        at, n = start, 0
+        while at < end:
+            if n % 3 == 0:
+                presses.append((at, pad, walk))
+                at += 22
+            presses.append((at, pad, button))
+            n += 1
+            at += every
+
+    strikes(0, 260, 35, 'CROSS', 1, 'LEFT hold 20f')
+    strikes(300, 6000, 30, 'CROSS', 0, 'RIGHT hold 20f')
+    first = ['"fight+%df %s%s"' % (at, 'P2 ' if pad else '', button) for at, pad, button in sorted(presses)]
+    second = ['"fight2+%df %s"' % (n * 60 + offset, button) for n in range(66)
+              for offset, button in ((0, 'RIGHT hold 20f'), (25, 'CIRCLE'), (40, 'CIRCLE'))]
+    return ', '.join(first + second)
+
+
+# what the first fight's winner takes into the second: some wound, and at
+# the second's start his counts the match's, the other's none
+WOUNDED = ('(port_match_legs_p%(s)d + port_match_arm_p%(s)d + port_match_body_p%(s)d > 0 || '
+           'port_match_off_arm_p%(s)d == 0)')
+WOUND_CARD = ['port_match_card == 1', 'port_match_kept_p1 + port_match_kept_p2 == 1',
+              'port_match_kept_p1 == 0 || ' + WOUNDED % {'s': 1}, 'port_match_kept_p2 == 0 || ' + WOUNDED % {'s': 2}]
+WOUND_SECOND = [
+    'port_match_kept_p%(s)d == 0 || (p%(s)d_leg_wounds == port_match_legs_p%(s)d && p%(s)d_arm_wounds == '
+    'port_match_arm_p%(s)d && p%(s)d_body_wounds == port_match_body_p%(s)d && p%(s)d_off_arm_ok == '
+    'port_match_off_arm_p%(s)d)' % {'s': s} for s in (1, 2)] + [
+    'port_match_kept_p%(s)d == 1 || (p%(s)d_leg_wounds + p%(s)d_arm_wounds + p%(s)d_body_wounds == 0 && '
+    'p%(s)d_off_arm_ok == 1)' % {'s': s} for s in (1, 2)]
+
+# Versus mode, the rule first, Crew 2 and Stock 2, both pads' presses
+# (wounding_presses), no poke: the first fight's winner wounded into the
+# second, every pick and press the pads'. tools/port_replay.py plays their
+# fights back from their replays and port-rollback rolls them back.
+TOML_RB_VS_CREW_WOUNDS = 'about = "Versus mode, the rule first: Crew 2, the winner wounded by the pads ' \
+    '(tools/port_match.py)"\n' + CREW_HEAD + '''input = [%(rb_opening)s,
+    %(rb_vs_menu)s,
+    %(rule_crew)s,
+    %(first_picks)s,
+    %(place2)s,
+    "stages+40 CROSS",
+    %(wounding)s,
+]
+''' + RB_COMPARE + RB_START + RB_SELECT + RB_RULE.replace('GRID_EXPECT', '"port_match_page_rule == 3"') + \
+    rb_crew_place(2, 2).split('\n[[checkpoint]]\nname = "dup2"')[0] + '''
+[[checkpoint]]
+name = "stages"
+when = "port_on_stages == 1"
+within = 1500
+shot = false
+''' + fight('fight', ['port_match_rule == 3', 'port_match_kept_p1 == 0'], 'card', WOUND_CARD).replace(
+        'within = 6000', 'within = 14000') + \
+    fight('fight2', WOUND_SECOND, 'result', ['port_match_card == 2', 'port_match_over == 1']).replace(
+        'within = 6000', 'within = 9000') + TOP
+TOML_RB_VS_STOCK_WOUNDS = 'about = "Versus mode, the rule first: Stock 2, the winner wounded by the pads ' \
+    '(tools/port_match.py)"\n' + CREW_HEAD + '''input = [%(rb_opening)s,
+    %(rb_vs_menu)s,
+    %(rule_stock)s,
+    %(first_picks)s,
+    "stages+40 CROSS",
+    %(wounding)s,
+]
+''' + RB_COMPARE + RB_START + RB_SELECT + RB_RULE.replace('GRID_EXPECT', '"port_match_page_rule == 1"') + '''
+[[checkpoint]]
+name = "stages"
+when = "port_on_stages == 1"
+within = 1500
+shot = false
+''' + fight('fight', ['port_match_rule == 1', 'port_match_kept_p1 == 0'], 'card', WOUND_CARD).replace(
+        'within = 6000', 'within = 14000') + \
+    fight('fight2', WOUND_SECOND, 'result', ['port_match_card == 2', 'port_match_over == 1']).replace(
+        'within = 6000', 'within = 9000')
+# (also tools/port_replay.py's and port-rollback's)
+WOUND_PLANS = [
+    ('rb_vs_crew_wounds', TOML_RB_VS_CREW_WOUNDS, RB_ARGS + ['--match', 'single']),
+    ('rb_vs_stock_wounds', TOML_RB_VS_STOCK_WOUNDS, RB_ARGS + ['--match', 'single']),
+]
+
+
+def rb_values():
+    """The rule-first plans' values."""
+    return dict(rb_opening=', '.join(RB_OPENING), rb_vs_menu=RB_VS_MENU, rb_vscpu_menu=RB_VSCPU_MENU,
+                rule_crew=rule_presses(3, 3), rule_crew3=rule_presses(3, 2), rule_stock=rule_presses(1, 1),
+                first_picks=RB_FIRST_PICKS, first_pick_cpu=RB_FIRST_PICK_CPU, place2=rb_place(2),
+                place2_cpu=rb_place(2, True), place3_cpu=rb_place(3, True), wounding=wounding_presses())
+
+
+RB_PLANS = [
+    ('rb_vs_crew', TOML_RB_VS_CREW, RB_ARGS + ['--match', 'single'], wound_pokes('card_wound')),
+    ('rb_vscpu_crew', TOML_RB_VSCPU_CREW, RB_ARGS + ['--unlock-all', '--match', 'single']),
+    ('rb_vs_stock', TOML_RB_VS_STOCK, RB_ARGS + ['--match', 'single'], wound_pokes('card_wound')),
+] + WOUND_PLANS
+
 # versus mode's first fighters (the grid's first place and the second
 # cursor's) on the second page's first stage (Building Rooftop); versus
 # the CPU's first opponent of the run as an empty save and the stage pages
 # have it; the crews' later places as CREW_PICKS moves the cursors
 VALUES = {'menu': VS_MENU, 'vscpu': VSCPU_MENU, 'vscpu_crew': VSCPU_CREW_MENU, 'stage': 29, 'p1': 0, 'p2': 12,
-          'cpu': 14, 'cpu_crew': 9, 'cpu_crew_2': 7, 'picks': CREW_PICKS, 'p1_2': 2, 'p2_2': 13, 'p1_3': 1, 'p2_3': 14}
+          'cpu': 14, 'cpu_crew': 9, 'cpu_crew_2': 6, 'picks': CREW_PICKS, 'p1_2': 2, 'p2_2': 13, 'p1_3': 1, 'p2_3': 14}
 # A Crew match's plans (also tools/port_replay.py's): name, plan, the
 # program's arguments, the plan's pokes (the draws).
 CREW_POKE = 4
@@ -535,10 +838,12 @@ def main(argv):
     parser.add_argument('--out', default=os.path.join(REPO, 'build', 'match'))
     parser.add_argument('--shots', default=None)
     parser.add_argument('--only', nargs='*', help='the plans to run (vs_stock, vs_first_to, vscpu_stock, vscpu_won, vs_crew, '
-                        'vs_crew_drawn, vscpu_crew, group_stock, group_first_to, group_crew)')
+                        'vs_crew_drawn, vscpu_crew, rb_vs_crew, rb_vscpu_crew, rb_vs_stock, group_stock, '
+                        'group_first_to, group_crew)')
     parser.add_argument('--rollback', action='store_true',
                         help="vs_stock's match through tools/port_rollback.py instead: rolled back every "
-                        "24 frames, on both sizes")
+                        "24 frames, on both sizes (and a Crew 2 match, and the rule-first Crew and Stock "
+                        "matches whose winner is wounded)")
     args = parser.parse_args(argv[1:])
     import playtest
     report = Report()
@@ -546,18 +851,19 @@ def main(argv):
     os.makedirs(out, exist_ok=True)
     values = dict(VALUES, opening=', '.join(OPENING), presses=fight_presses(),
                   presses_crew=fight_presses(CREW_ROUNDS), presses_stock=fight_presses(STOCK_ROUNDS),
-                  group_menu=group_menu(), group_presses=group_presses())
+                  group_menu=group_menu(), group_presses=group_presses(), **rb_values())
     plans = [
         ('vs_stock', TOML_VS_STOCK, ['--mods', 'off', '--match', 'stock:2']),
-        ('vs_first_to', TOML_VS_FIRST_TO, ['--mods', 'off', '--match', 'stock:1']),
+        ('vs_first_to', wounded(TOML_VS_FIRST_TO, 'card'), ['--mods', 'off', '--match', 'stock:1'],
+         wound_pokes('card_wound', both=False)),
         ('vscpu_stock', TOML_VSCPU_STOCK, ['--mods', 'off', '--stage-select', '--unlock-all', '--match', 'stock:2']),
         ('vscpu_won', TOML_VSCPU_WON, ['--mods', 'off', '--stage-select', '--unlock-all', '--match', 'stock:1']),
-    ] + CREW_PLANS + group_plans()
+    ] + CREW_PLANS + RB_PLANS + group_plans()
     if args.rollback:
         # the Stock match, and a Crew match, its crews picked and its
         # fighters loaded afresh between fights
         code = 0
-        for name, text, extra in (plans[0], CREW_REPLAY_PLAN):
+        for name, text, extra in [plans[0], CREW_REPLAY_PLAN] + WOUND_PLANS:
             toml = os.path.join(out, '%s-rollback.toml' % name)
             with open(toml, 'w', encoding='utf-8', newline='\n') as f:
                 # no pictures: a frame run again quietly paints none, and a

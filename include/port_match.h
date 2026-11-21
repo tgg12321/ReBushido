@@ -13,7 +13,8 @@
  *   before the match (the select screen's grid and weapons once a place,
  *   after the stage page); each fight is the two crews' fighters in play,
  *   the loser's is out and the next of its crew comes in, the winner
- *   stays, loaded afresh as any fight starts; a draw takes one from both.
+ *   stays, loaded afresh as any fight starts, with the wounds he had at
+ *   the fight's end; a draw takes one from both.
  *   The match ends when a crew has none left, drawn when both run out at
  *   once.
  *
@@ -33,17 +34,22 @@
  * win, a match lost to the game's own menu after a defeat, whose Rematch
  * is a new match against the same opponent.
  *
- * The rule is chosen on the stage pages (Circle turns the rule, Start its
- * number), which start from the window's match_rule and match_count and
- * keep what the players left them at until the setting changes; a
- * mode with no stage page (versus the CPU with the original's stages)
- * plays the setting's. In a session the host's setting holds (the
- * session's welcome). What the players chose and the match's score are
- * the game's state (src/port/match.c is a state file): rolled back with
- * the game, and the same on both machines of a session. The window draws
- * the panel's column, the lives or the score over the fight and the cards
- * from it (src/port/window/match_page.c); none of it is in the game's
- * video memory. The PlayStation builds never see this header. */
+ * With ReBushido's top menu the rule is chosen on a page of its own before
+ * the first select's grid (Left and Right the value, Up and Down the row,
+ * Cross), the crews then picked from the grid's first place, each a
+ * character the crew does not have; the stage page shows the rule and
+ * leaves it. With menu = original it is chosen on the stage pages (Circle
+ * turns the rule, Start its number). Both start from the window's
+ * match_rule and match_count and keep what the players left them at until
+ * the setting changes; a mode with no stage page and no rule page plays
+ * the setting's. Under Stock and Crew a fight's winner keeps his wounds
+ * into the next fight; a Crew match's end goes back to the top menu. In a
+ * session the host's setting holds (the session's welcome). What the players
+ * chose and the match's score are the game's state (src/port/match.c is a state
+ * file): rolled back with the game, and the same on both machines of a session.
+ * The window draws the panel's column, the lives or the score over the fight
+ * and the cards from it (src/port/window/match_page.c); none of it is in the
+ * game's video memory. The PlayStation builds never see this header. */
 
 #include "common.h"
 
@@ -95,6 +101,23 @@ typedef struct {
     u8 weapon;
 } PortCrewPick;
 
+/* A fighter's wounds as the match keeps them (the Fighter's off_arm_ok,
+ * leg_wounds, arm_wounds, body_wounds). */
+enum {
+    PORT_WOUND_OFF_ARM_OK = 0,
+    PORT_WOUND_LEGS = 1,
+    PORT_WOUND_ARM = 2,
+    PORT_WOUND_BODY = 3,
+    PORT_WOUNDS = 4
+};
+
+/* The rule page's rows. */
+enum {
+    PORT_MATCH_ROW_RULE = 0,
+    PORT_MATCH_ROW_COUNT = 1, /* the number, or the crew's size */
+    PORT_MATCH_ROWS = 2
+};
+
 typedef struct {
     u8 is_started;
     u8 page_rule;     /* the stage pages' rule (PORT_MATCH_...) */
@@ -125,6 +148,21 @@ typedef struct {
     u8 crew_kept;   /* the crews of the match before, kept for the next */
     u16 crew_seed;  /* the CPU's crew's dice */
     PortCrewPick crew[2][PORT_MATCH_CREW_MOST];
+    /* The rule chosen before the first select (ReBushido's top menu, or a
+     * room of several's rule): the select screen's rule page is up
+     * (rule_page) on its row (PORT_MATCH_ROW_...); the screen's rule was
+     * chosen before its grid (rule_first), so a crew's places are taken
+     * at the weapons' crossing and the stage page shows the rule alone. */
+    u8 rule_page;
+    u8 rule_row;
+    u8 rule_first;
+    u8 crew_most; /* the most a crew may have here: the fighters open */
+    /* Stock and Crew: the wounds a fight's winner takes into the next
+     * (PORT_WOUND_...), for the side whose wounds_kept is set */
+    u8 wounds_kept[2];
+    s8 wounds[2][PORT_WOUNDS];
+    u8 to_top;     /* the match decided went back to the top menu */
+    u8 rule_sides; /* the sides the rule page's select screen picks for */
 } PortMatch;
 
 extern PortMatch g_port_match;
@@ -195,6 +233,46 @@ extern void port_MatchOpponentChosen(void);
  * fighters are to be loaded again (the crews' first), FALSE to start
  * where the fighters are, as the game does. */
 extern s32 port_MatchRematchLoads(void);
+
+/* ---- the rule page, the wounds and the end (under RB_PORT) ---- */
+
+/* The select screen loads (select.c, select_Load), `to_stages` if it opens
+ * on the stage pages after a match, `open` the fighters its grid offers:
+ * whether the rule comes before the grid this time, and its page up if so
+ * (with ReBushido's top menu; a room's rule is the room's, so its page is
+ * not shown), `sides` the sides that pick. */
+extern void port_MatchRulePageOpen(
+    s32 mode, s32 to_stages, s32 open, s32 sides);
+/* A frame of the select screen while the rule page is up: Up and Down the
+ * row, Left and Right its value, Cross the rule taken and the grid's
+ * turn. TRUE while the page has the frame (the grid is given no presses);
+ * *leave set when Triangle leaves the screen. In a session the first pad,
+ * the host's, chooses. */
+extern s32 port_MatchRulePageStep(s32 pressed, s32 *leave);
+/* The rule was chosen before this select screen's grid. */
+extern s32 port_MatchRuleFirst(void);
+/* Stage pages after the crews of a rule-first Crew match are picked:
+ * Triangle back to the weapons un-takes the last place. */
+extern void port_MatchCrewStageBack(void);
+/* Triangle on the grid of a crew's later place, nothing picked: back to
+ * the place before (TRUE), its picks taken again. */
+extern s32 port_MatchCrewBackOne(void);
+/* The crew of `side` already has `fighter` (enum CharacterId) in a place
+ * taken: the select refuses it. */
+extern s32 port_MatchCrewHas(s32 side, s32 fighter);
+/* A fighter set up for a fight (fighter.c, fighter_Init), after the
+ * game has healed it: the winner of a Stock or Crew match's fight before
+ * comes in with that fight's wounds. */
+extern void port_MatchPutWounds(
+    s32 index, s16 *off_arm_ok, s16 *legs, s16 *arm, s16 *body);
+/* The match went back to the top menu at its end (a Crew match): a
+ * session of two ends once the game is there (session.c). */
+extern s32 port_MatchEndsSession(void);
+/* The session's (session.c, outside the state but the same on every
+ * machine of it): a room of several's match is being played. */
+extern s32 port_SessionIsRoomMatch(void);
+/* a session of netplay is being played: the first pad is the host's */
+extern s32 port_SessionIsOn(void);
 
 /* ---- the run's choice, outside the state (src/port/play_switches.c) ---- */
 

@@ -241,8 +241,14 @@ s32 port_MatchShown(void) {
     const PortMatch *match = &g_port_match;
 
     if (g_sys_screen == SCREEN_MENU_UPDATE && g_menu_page == MENU_PAGE_SELECT) {
-        /* a Crew match's later places being picked */
-        return match->page_rule == PORT_MATCH_CREW && match->crew_picked > 0 &&
+        if (match->rule_page) {
+            /* the rule's page, before the grid */
+            return PORT_MATCH_SHOWN_RULE;
+        }
+        /* a Crew match's later places being picked (or, the rule chosen
+         * before the grid, every place) */
+        return match->page_rule == PORT_MATCH_CREW &&
+                       (match->crew_picked > 0 || match->rule_first) &&
                        match->crew_picked < match->crew_size
                    ? PORT_MATCH_SHOWN_PICK
                    : PORT_MATCH_SHOWN_NONE;
@@ -257,6 +263,24 @@ s32 port_MatchShown(void) {
     }
     return g_sys_screen == SCREEN_FIGHT_UPDATE ? PORT_MATCH_SHOWN_HUD
                                                : PORT_MATCH_SHOWN_NONE;
+}
+
+s32 port_MatchCrewMarks(s32 row, s32 col) {
+    s32 fighter;
+    s32 marks = 0;
+    s32 side;
+
+    if (row < 0 || row >= SELECT_GRID_ROWS || col < 0 ||
+        col >= SELECT_GRID_COLS) {
+        return 0;
+    }
+    fighter = g_select_grid[row][col].fighter;
+    for (side = 0; side < g_port_match.crew_sides && side < 2; side++) {
+        if (port_MatchCrewHas(side, fighter)) {
+            marks |= 1 << side;
+        }
+    }
+    return marks;
 }
 
 const char *port_MatchCrewName(s32 fighter) {
