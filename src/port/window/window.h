@@ -596,6 +596,23 @@ typedef struct {
 } PortPanelRowsView;
 
 extern void port_ReadPanelRows(PortPanelRowsView *view);
+/* The training page's and the group battle page's line the same way
+ * (PORT_TOP_LINE_...): whether each is on the picture, its place in the
+ * game's screen (left, top, width) and whether it is lit. */
+#define PORT_PAGE_LINES 2 /* PORT_TOP_LINES */
+#define PORT_PAGE_LINE_TRAINING 0
+#define PORT_PAGE_LINE_GROUP 1
+
+typedef struct {
+    s32 is_up[PORT_PAGE_LINES];
+    s32 place[PORT_PAGE_LINES][3];
+    s32 is_lit[PORT_PAGE_LINES];
+} PortPageLinesView;
+
+extern void port_ReadPageLines(PortPageLinesView *view);
+/* What the window lays over them (top_page.c), as port_TopPagePixels. */
+extern s32 port_PageLinesPixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
 /* What the window lays over them (top_page.c), as port_TopPagePixels. */
 extern s32 port_PanelRowsPixels(
     s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);

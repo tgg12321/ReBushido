@@ -157,9 +157,10 @@ the game saves; the keys and buttons are in *Controls*).
 In a fight the pause menu's rows are **Continue**, **Return to
 Character Select** and **Return to Main Menu**, and the menu after a
 fight's **Rematch** and the same two (the game's own lettering says
-"Return to Sub Menu" and "Return to Top Menu"). In Training, Return to
-Character Select goes back to training's own page first, as the game's
-did.
+"Return to Sub Menu" and "Return to Top Menu"); the training page and
+the Group Battle page say **Return to Main Menu** too. In Training,
+Return to Character Select goes back to training's own page first, as
+the game's did.
 
 `menu = original` in `rebushido.cfg` (or *Menus* in *The game*) puts
 the game's own menus back, the options page at boot included, with the

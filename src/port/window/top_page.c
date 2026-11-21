@@ -79,6 +79,18 @@
 #define COLOR_PANEL_ROW 0xFFFFFFFFU
 #define COLOR_PANEL_ROW_DIM 0x80FFFFFFU
 #define COLOR_PANEL_SHADOW 0xFF181818U
+/* The training page's and the group battle page's "Return to Main Menu"
+ * (port_top_menu.h, PORT_TOP_LINE_...): the baseline below the top of the
+ * game's sheet, the height, and the look of each page's lettering
+ * (tools/port_ui.py): the training page's yellow with a shadow, the group
+ * battle page's yellow with a dark edge; a row not lit is the game's tint
+ * of half, laid half over what is under it. */
+#define LINE_BASELINE 12
+#define SIZE_LINE_ROW 15
+#define COLOR_TRAINING 0xFFEDED24U
+#define COLOR_GROUP 0xFFFFFF00U
+#define COLOR_LINE_DARK 0xFF000000U
+#define LINE_DIM_SHIFT 1
 
 /* The colours, 0xAARRGGBB: a row the cursor is on, one that can be
  * chosen (the game's gold), one that cannot, the caption's white, and
@@ -373,5 +385,134 @@ s32 port_PanelRowsPixels(
     }
     *pixels = g_rows.pixels;
     *box = g_rows.box;
+    return TRUE;
+}
+
+/* ---- the training page's and the group battle page's renamed line ---- */
+
+static struct {
+    s32 drawn;
+    s32 area_w;
+    s32 area_h;
+    PortPageLinesView view;
+    u32 *pixels;
+    u32 room;
+    PortRect box;
+} g_lines;
+
+/* A colour at half its brightness and half laid over: a dim row's. */
+static u32 port_LineDim(u32 color) {
+    return 0x80000000U | ((color >> LINE_DIM_SHIFT) & 0x007F7F7FU);
+}
+
+/* Line `i` in its page's look, at its sheet's left, as wide as the
+ * game's line at the most. */
+static void port_PageLineText(const PortPageLinesView *view, s32 i) {
+    PortTextStyle style;
+    s32 size = SIZE_LINE_ROW * g_lines.area_h / GAME_H;
+    s32 most =
+        (view->place[i][2] + view->place[i][2] / 4) * g_lines.area_w / GAME_W;
+    s32 width;
+    u32 color = i == PORT_PAGE_LINE_GROUP ? COLOR_GROUP : COLOR_TRAINING;
+    u32 dark = COLOR_LINE_DARK;
+
+    memset(&style, 0, sizeof(style));
+    style.face = PORT_FACE_BOLD;
+    style.size = size < 6 ? 6 : size;
+    if (!view->is_lit[i]) {
+        color = port_LineDim(color);
+        dark = 0x80000000U;
+    }
+    style.color = color;
+    if (i == PORT_PAGE_LINE_GROUP) {
+        style.outline = dark;
+        style.outline_px = style.size / 12 > 1 ? style.size / 12 : 1;
+    } else {
+        style.shadow = dark;
+        style.shadow_px = style.size / 12 > 1 ? style.size / 12 : 1;
+    }
+    width = port_TextMeasure("Return to Main Menu", &style);
+    if (width > most && width > 0) {
+        style.size = style.size * most / width;
+    }
+    port_TextDraw(
+        g_lines.pixels, g_lines.box.w, g_lines.box.h,
+        view->place[i][0] * g_lines.area_w / GAME_W - g_lines.box.x,
+        (view->place[i][1] + LINE_BASELINE) * g_lines.area_h / GAME_H -
+            g_lines.box.y,
+        "Return to Main Menu", &style);
+}
+
+s32 port_PageLinesPixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box) {
+    PortPageLinesView view;
+    s32 any = FALSE;
+    s32 left = GAME_W;
+    s32 right = 0;
+    s32 top = GAME_H;
+    s32 bottom = 0;
+    s32 i;
+    u32 need;
+
+    port_ReadPageLines(&view);
+    for (i = 0; i < PORT_PAGE_LINES; i++) {
+        if (view.is_up[i]) {
+            any = TRUE;
+            left = view.place[i][0] < left ? view.place[i][0] : left;
+            right = view.place[i][0] + view.place[i][2] * 2 > right
+                        ? view.place[i][0] + view.place[i][2] * 2
+                        : right;
+            top = view.place[i][1] < top ? view.place[i][1] : top;
+            bottom = view.place[i][1] + SIZE_LINE_ROW + 4 > bottom
+                         ? view.place[i][1] + SIZE_LINE_ROW + 4
+                         : bottom;
+        }
+    }
+    if (!any || area_w <= 0 || area_h <= 0) {
+        return FALSE;
+    }
+    if (!g_top.font_ok) {
+        g_top.font_ok = port_FontStart();
+        if (!g_top.font_ok) {
+            return FALSE;
+        }
+    }
+    left = left - 4 < 0 ? 0 : left - 4;
+    right = right > GAME_W ? GAME_W : right;
+    top = top - 4 < 0 ? 0 : top - 4;
+    bottom = bottom > GAME_H ? GAME_H : bottom;
+    if (right <= left || bottom <= top) {
+        return FALSE;
+    }
+    if (!g_lines.drawn || g_lines.area_w != area_w ||
+        g_lines.area_h != area_h ||
+        memcmp(&g_lines.view, &view, sizeof(view)) != 0) {
+        g_lines.area_w = area_w;
+        g_lines.area_h = area_h;
+        g_lines.view = view;
+        g_lines.box.x = left * area_w / GAME_W;
+        g_lines.box.y = top * area_h / GAME_H;
+        g_lines.box.w = right * area_w / GAME_W - g_lines.box.x;
+        g_lines.box.h = bottom * area_h / GAME_H - g_lines.box.y;
+        need = (u32)(g_lines.box.w * g_lines.box.h);
+        if (need > g_lines.room) {
+            free(g_lines.pixels);
+            g_lines.pixels = malloc((size_t)need * sizeof(u32));
+            g_lines.room = g_lines.pixels != NULL ? need : 0;
+        }
+        if (g_lines.pixels == NULL || need == 0) {
+            g_lines.drawn = FALSE;
+            return FALSE;
+        }
+        memset(g_lines.pixels, 0, (size_t)need * sizeof(u32));
+        for (i = 0; i < PORT_PAGE_LINES; i++) {
+            if (view.is_up[i]) {
+                port_PageLineText(&view, i);
+            }
+        }
+        g_lines.drawn = TRUE;
+    }
+    *pixels = g_lines.pixels;
+    *box = g_lines.box;
     return TRUE;
 }

@@ -9105,17 +9105,21 @@ Menu (the owner, 2026-11-20):
   Select" and "Return to Main Menu" there, centred, white where the
   cursor is and half laid over the panel where it is not, as the game's
   semi-transparent rows are, narrowed to the panel where the line is
-  long (`port_PanelRowsPixels`). Both over either picture. In Training the
-  row still goes back to training's own page first, as the game's Sub
-  Menu did;
+  long (`port_PanelRowsPixels`). The training page's and the Group Battle
+  page's "Return to Top Menu" the same way (`menu_DrawPractice`,
+  `select_DrawTeamRules`, `port_TopMenuNoteLine`; `port_PageLinesPixels`):
+  "Return to Main Menu" at the left of the game's line, in each page's
+  look (the training page's yellow with a shadow, the Group Battle
+  page's with a dark edge), dimmed and half laid over where the game's is
+  dim. All over either picture. In Training, Return to Character Select
+  still goes back to training's own page first, as the game's Sub Menu
+  did;
 - not renamed: the code's names (`port_TopMenu...`, `g_port_top_menu`,
   `PORT_TOP_...`, `top_page.c`, the game's `menu_...`), the session log's
-  lines that tests read, and the game's other pictures of "Return to Top
-  Menu" -- the options page's (which ReBushido's main menu never shows),
-  the Group Battle page's and the training page's. Renaming the port's
+  lines that tests read, and the game's options page's "Return to Top
+  Menu", which ReBushido's main menu never shows. Renaming the port's
   names would touch every file of the main menu, the match rules and the
-  online flow beside another agent's work for little; the two pages'
-  rows are the next to do, the same way as the pause's.
+  online flow beside another agent's work for little.
 
 **Proved** (`tools/port_menus_test.py`, a step of the gate; Windows, or
 the Linux window from WSL), the window hidden with SDL's dummy drivers,

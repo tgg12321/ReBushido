@@ -217,6 +217,20 @@ void port_ReadPanelRows(PortPanelRowsView *view) {
     view->y[1] = g_port_top_menu.panel_y[1];
 }
 
+void port_ReadPageLines(PortPageLinesView *view) {
+    s32 i;
+
+    for (i = 0; i < PORT_PAGE_LINES; i++) {
+        view->is_up[i] =
+            g_port_top_menu.is_on &&
+            (u32)g_disp_frame_count - g_port_top_menu.line_frame[i] <= 2;
+        view->place[i][0] = g_port_top_menu.line_place[i][0];
+        view->place[i][1] = g_port_top_menu.line_place[i][1];
+        view->place[i][2] = g_port_top_menu.line_place[i][2];
+        view->is_lit[i] = g_port_top_menu.line_lit[i];
+    }
+}
+
 s32 port_IsOnStagePages(void) {
     return g_port_stage_choice.on_stages &&
            g_sys_screen == SCREEN_MENU_UPDATE &&

@@ -2730,6 +2730,16 @@ static void menu_DrawPractice(MenuCtx *ctx) {
             draw.semi = 1;
         }
         draw.header = PTR(sheets[i]);
+#if RB_PORT
+        if (i == PRACTICE_SHEET_ROWS + PRACTICE_ROW_BACK &&
+            port_TopMenuIsOn()) {
+            /* ReBushido's menus: "Return to Main Menu", which the window
+             * letters in this row's place (port_top_menu.h) */
+            port_TopMenuNoteLine(PORT_TOP_LINE_TRAINING, draw.header, draw.x,
+                                 draw.y, draw.semi == 0);
+            continue;
+        }
+#endif
         draw.table = draw.header->cells;
         draw.sprt_out = ctx->prims.sprt;
         ctx->prims.sprt = sprite_Draw(&draw);

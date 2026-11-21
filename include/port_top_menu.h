@@ -70,6 +70,13 @@ typedef struct {
 
 extern const PortTopRow g_port_top_rows[PORT_TOP_PAGES][PORT_TOP_ROWS];
 
+/* The game's lines of other pages that ReBushido's menus name anew. */
+enum {
+    PORT_TOP_LINE_TRAINING = 0, /* the training page's Return to Top Menu */
+    PORT_TOP_LINE_GROUP = 1,    /* the group battle page's */
+    PORT_TOP_LINES = 2,
+};
+
 /* What the settings menu is asked to open on. */
 enum {
     PORT_TOP_ASK_OPTIONS = 0,
@@ -112,6 +119,14 @@ typedef struct {
     u8 panel_kind;
     u8 panel_cursor;
     s16 panel_y[2];
+    /* ... and the training page's and the group battle page's "Return to
+     * Top Menu", which they name "Return to Main Menu" the same way
+     * (PORT_TOP_LINE_...): the frame each was last drawn in, its place
+     * (the left, the top and the width of the game's sheet) and whether
+     * it is lit. */
+    u32 line_frame[PORT_TOP_LINES];
+    s16 line_place[PORT_TOP_LINES][3];
+    u8 line_lit[PORT_TOP_LINES];
 } PortTopMenu;
 
 extern PortTopMenu g_port_top_menu;
@@ -147,6 +162,10 @@ extern s32 port_TopMenuIsCovered(void);
  * (`row` 0, back to character select, or 1, to the main menu), drawn at
  * the screen's `y` this frame. */
 extern void port_TopMenuNotePanelRow(s32 row, s32 y, s32 panel, s32 cursor);
+/* A line of another page's (PORT_TOP_LINE_...) left out for the window to
+ * letter: its sheet, drawn at (`x`, `y`) this frame, lit or not. */
+extern void port_TopMenuNoteLine(
+    s32 line, const void *sheet, s32 x, s32 y, s32 is_lit);
 
 /* ---- the game's menu sounds, for the window's pages ---- */
 

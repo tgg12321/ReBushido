@@ -311,6 +311,16 @@ static void select_DrawTeamRules(MenuDrawCtx *ctx) {
                     (TEAM_RULE_SHEET_TIMES - 1) ==
                 i) {
             draw.header = PTR(sheets[i]);
+#if RB_PORT
+            if (i == TEAM_RULE_SHEET_ROWS + TEAM_RULE_EXIT &&
+                port_TopMenuIsOn()) {
+                /* ReBushido's menus: "Return to Main Menu", which the
+                 * window letters in this row's place (port_top_menu.h) */
+                port_TopMenuNoteLine(PORT_TOP_LINE_GROUP, draw.header, draw.x,
+                                     draw.y, (lit >> i) & 1);
+                continue;
+            }
+#endif
             draw.table = draw.header->cells;
             draw.sprt_out = ctx->prims.sprt;
             ctx->prims.sprt = sprite_Draw(&draw);

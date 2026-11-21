@@ -2243,8 +2243,10 @@ static PortOverlay g_port_match_page;
 /* the window's own pages, the settings menu and the online pages
  * (sdl_menu.c) */
 static PortOverlay g_port_page;
-/* the pause's and the after-fight menu's renamed rows (top_page.c) */
+/* the pause's and the after-fight menu's renamed rows, and the training
+ * and group battle pages' (top_page.c) */
 static PortOverlay g_port_panel_rows;
+static PortOverlay g_port_page_lines;
 
 static void port_DrawOverlay(PortOverlay *overlay, PortOverlayPixels make) {
     const u32 *pixels;
@@ -2305,6 +2307,7 @@ static void port_DrawMatchPage(void) {
 
 static void port_DrawWindowPage(void) {
     port_DrawOverlay(&g_port_panel_rows, port_PanelRowsPixels);
+    port_DrawOverlay(&g_port_page_lines, port_PageLinesPixels);
     port_DrawOverlay(&g_port_page, port_PagePixels);
 }
 

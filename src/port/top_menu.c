@@ -124,6 +124,33 @@ void port_TopMenuTakeOptions(void) {
 
 s32 port_TopMenuIsCovered(void) { return g_port_top_menu.covered; }
 
+void port_TopMenuNoteLine(s32 line, const void *of, s32 x, s32 y, s32 is_lit) {
+    const SpriteSheet *sheet = (const SpriteSheet *)of;
+    s32 left = 0;
+    s32 right = 0;
+    s32 top = 0;
+    s32 i;
+
+    for (i = 0; i < sheet->count; i++) {
+        const SpriteCell *cell = &sheet->cells[i];
+
+        if (i == 0 || cell->x < left) {
+            left = cell->x;
+        }
+        if (i == 0 || cell->x + cell->w > right) {
+            right = cell->x + cell->w;
+        }
+        if (i == 0 || cell->y < top) {
+            top = cell->y;
+        }
+    }
+    g_port_top_menu.line_frame[line] = (u32)g_disp_frame_count;
+    g_port_top_menu.line_place[line][0] = (s16)(x + left);
+    g_port_top_menu.line_place[line][1] = (s16)(y + top);
+    g_port_top_menu.line_place[line][2] = (s16)(right - left);
+    g_port_top_menu.line_lit[line] = (u8)(is_lit != 0);
+}
+
 void port_TopMenuNotePanelRow(s32 row, s32 y, s32 panel, s32 cursor) {
     g_port_top_menu.panel_frame = (u32)g_disp_frame_count;
     g_port_top_menu.panel_kind = (u8)panel;
