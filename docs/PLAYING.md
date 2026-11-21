@@ -857,7 +857,10 @@ game's own pictures and models made anew and are not the project's to
 give. The package for Windows makes them itself the first time it starts
 with your disc ("The first start", below): `mods/art/` (the menus, the
 select screens' portraits, the loading screens, the captions and the
-fight's counters, every 2D texture six times larger), `mods/stages-hd/`
+fight's counters, every 2D texture six times larger, the pictures and
+the painted backgrounds and maps by a learned upscaler, Real-ESRGAN, on
+your graphics card where it has Vulkan, and by plain smoothing where it
+has not), `mods/stages-hd/`
 (every stage's textures four times larger) and `mods/fighters/`
 (Tatsumi's model with its joints and crossing layers mended). From the
 repository the same three are made by `tools/port_art.py`,
