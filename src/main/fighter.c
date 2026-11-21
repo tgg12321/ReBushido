@@ -1105,6 +1105,13 @@ void fighter_Init(s32 fighter_index, s32 is_cpu, s32 roster_id, s32 weapon,
         g_story_chapter_fights < 2 || g_fight_restart != 0) {
         fighter_HealWounds(fighter);
     }
+#if RB_PORT
+    /* a Stock or Crew match's fight won before: the winner comes in with
+     * its wounds (port_match.h) */
+    port_MatchPutWounds(
+        fighter_index, &fighter->off_arm_ok, &fighter->leg_wounds,
+        &fighter->arm_wounds, &fighter->body_wounds);
+#endif
     fighter->lost_arm_speed = g_fighter_lost_arm_speeds[fighter->character];
     for (i = 0; i < 4; i++) {
         fighter->arm_wound_speeds[i] =

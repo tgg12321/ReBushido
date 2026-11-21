@@ -8712,7 +8712,10 @@ and weapons picked in turn (below, "Crew"). `include/port_match.h` has
 the rules; all of it is under `RB_PORT`, and the PlayStation builds play
 as they did.
 
-**Where the choice is.** On a stage page Circle turns the rule and Start
+**Where the choice is.** With ReBushido's top menu (`menu = rebushido`,
+the window's as built), before the first select screen's grid: below,
+"The rule first". With `menu = original`, as the original's menus are,
+on a stage page: Circle turns the rule and Start
 its number (`port_MatchPageStep`, from `select_StageStep` after the
 kinds, the time and the music: neither button was the page's). The
 page's rule starts at the window's `match_rule` and `match_count`
@@ -8720,6 +8723,44 @@ page's rule starts at the window's `match_rule` and `match_count`
 in `play_switches.c` as the fight's music is, and keeps what the players
 left it at until the setting changes; the window's panel shows it as a
 column "Match" (`stage_page.c`) where the mode plays matches.
+
+### The rule first
+
+The owner, 2026-11-20: "make sure they can choose their battle type
+before they land on the character select screen the first time." In
+versus, versus the CPU and online, with ReBushido's top menu, the select
+screen opens on a page of the rule, the grid drawn under it and given no
+presses (`port_MatchRulePageOpen` from `select_Load`,
+`port_MatchRulePageStep` from `select_Update`): two rows, the rule
+(Single fight, Stock, First to, Crew) and its number (lives, wins, or
+the crew's size; no second row for the single fight); Up and Down the
+row, Left and Right the value, round at the ends; Cross takes it and the
+grid has the presses; Triangle leaves the screen, as Triangle on the
+grid with nothing picked does. Its rows start where the window's
+`match_rule` and `match_count` put the stage pages' (the page's rule is
+the same `page_rule`, `page_count` and `page_crew`). The window draws
+it (`match_page.c`, `PORT_MATCH_SHOWN_RULE`), over a darkened screen,
+in the stage pages' panel's colours; the game's video memory has the
+grid alone.
+
+Choices made: the page comes each time the select screen opens afresh
+(from the top menu, or after a Crew match), not when it opens on the
+stage pages after a Stock or First to match, whose rule stays. The stage
+page then shows the rule in its panel's column and does not change it
+(`rule_first`: Circle and Start are not the match's there), so that crews
+picked are always of the rule they were picked for; to change the rule,
+Triangle back to the top menu and in again. Triangle on the grid of a
+crew's later place, nothing picked, goes back one place (its picks made
+again), and on the stage page after the crews back to the last place's
+weapons; on the grid of the first place it leaves the screen as the
+game's does. Online the host's pad (the first) chooses; the guest's
+presses on the page are not the page's, but either player's Triangle
+leaves, as on the grid, and both machines show the page as the host
+turns it (the page is the game's state). In a room of several the rule
+is the room's, as its host set it: no page, the rule first all the same
+(the crews picked at the grid), the stage page showing it. With `menu =
+original`, none of this: the page is not shown and the rule is chosen on
+the stage pages as before, crews after them (below, "Crew").
 
 **The game's flow, and where the port steps in.** A mode started from
 the menus (`fight_ApplyConfig`) begins a match with the page's rule
@@ -8748,7 +8789,8 @@ handed to the game's own menu after a defeat, the score reset, so its
 Rematch is a new match.
 
 **The state.** The page's rule and the match's score (lives, wins, the
-last fight, the card and its frames) are `g_port_match`
+last fight, the card and its frames), the rule page and its row, the
+wounds a winner keeps (below) are `g_port_match`
 (`src/port/match.c`, a state file): saved, put back and hashed with the
 game, so a rollback puts the score back with the fight and the two
 machines of a session keep the same. In a session the welcome carries
@@ -8756,12 +8798,43 @@ the host's `match_rule` and `match_count` (`MEET_MATCH`, protocol 8) and
 both hold them (`port_HoldMatch`); the pages' presses are the same on
 both machines, so the rule is.
 
+### Wounds kept
+
+The owner, 2026-11-20: "For crew battle, make sure injuries do persist
+between rounds", and "For stock battles, make injuries persist as well.
+But leave injuries resetting for first to X fights." The game keeps a
+fighter's wounds in four counts (`Fighter.off_arm_ok`, `leg_wounds`,
+`arm_wounds`, `body_wounds`: a lost off arm, and the legs', the sword
+arm's and the body's wounds, which slow it and take its power;
+`fighter_Wound`, `motion_UpdateFrameStep`) and heals them as each fight
+sets the fighter up (`fighter_Init`, `fighter_HealWounds`; only story
+mode's player keeps his through a chapter). Under Stock and Crew, where
+the game counts the fight (`port_MatchFightOver`), the winner's four
+counts are kept (`port_MatchKeepWounds`: `wounds_kept`, `wounds`), taken
+before the winner's view, which gives the winner his off arm back for
+its pose; the loser (Stock's life lost) comes back unhurt, or is out
+(Crew: the next of his crew comes in unhurt), and a draw keeps nobody's.
+`fighter_Init` puts them back after its healing (`port_MatchPutWounds`),
+for the next fight of the match alone: a match begun or restarted, the
+next opponent's, a First to N or a single fight have none. Everything
+else is fresh as before (Crew's fighters loaded again at the stage's
+places; Stock's where they stood). No count kills: a kill is a blow's
+(`fighter_TakeHit`), so a fighter who starts wounded is slow, weakened
+or one-armed and stands; the counts are kept as they were, large ones
+too (the game's tables stop at three). The story mode's wrappings on the
+model (`g_fight_story_wounds`) are story mode's and not drawn. The card
+between fights says who stays wounded and where.
+
 **The picture.** None of it is in the game's video memory: the window
 lays it over the picture at its own resolution (`match_page.c`, through
 the overlay `port_DrawOverlay` that the stage pages' panel uses too).
-Over a fight of a match a strip at the top: 1P's and 2P's (or the
-CPU's) pips, filled for the lives left or the wins, the rule between
-them; after a fight the card, its title the rule and the fight's
+Over a fight of a match, light (the owner, 2026-11-20: "keep the gui
+very light for actually in battle"): each side's label and small pips,
+filled for the lives left, the wins or the crew's fighters left, on a
+faint band where the game's own count of wins stands (`hud.c`,
+`COUNTER_LEFT_X`, `COUNTER_RIGHT_X`), under the CPU's count of opponents
+versus the CPU; no rule and no names (the cards between fights have
+them); after a fight the card, its title the rule and the fight's
 number, each side's name, number and pips, and who took the fight, a
 draw, or who won the match. What is shown is `port_MatchShown`
 (`gamestate.c`): the card on the screens after a fight while one is up,
@@ -8784,7 +8857,30 @@ is a fight won and two lost, the game's menu after it and its Rematch a
 new match; versus the CPU Stock 1, the match won and the next opponent
 with a fresh one. In the versus plans the game's pictures at each
 fight's end have none of the counter's red rules (252 pixels before it
-was left out). Group battle is played under `--match stock:2`,
+was left out). With ReBushido's top menu (`--menu rebushido`), the rule first:
+`rb_vs_crew`, versus, Crew 2 chosen on the rule page (Right three
+times, Down, Left three times), the second place's Cross on the first's
+fighter refused on each side (nothing picked 90 frames on) and then one
+place down; the first fight the first player's, the plan giving both
+fighters a leg wound during it (a `poke`): Kannuki stays with his
+(`p1_leg_wounds == 1` at the second fight's start, kept by the match),
+Kaun comes in unhurt; the second fight his too, the result, and the top
+menu, the crews let go; `rb_vs_stock`, Stock 2 on the page, the same
+wounds: the winner keeps his into the second fight, the loser of a life
+comes back unhurt, then the stage page as Stock has it; `rb_vscpu_crew`,
+versus the CPU with no stage page, Crew 3 on the page, the second and
+third places refused the crew's fighters first, the CPU's three all
+different, the match lost and the top menu, not the game's menu after a
+defeat; and two with no poke, every press the pads'
+(`wounding_presses`: the second player strikes first, the first then
+wins, wounded in the body): `rb_vs_crew_wounds` and `rb_vs_stock_wounds`,
+the winner's four counts at the second fight's start the match's, the
+other's none. `tools/port_replay.py` plays those two matches' fights back
+from their replays, every hash the same (the second fight's winner
+wounded from its first frame, which the replay's start holds), and
+`port-rollback` rolls them back every 24 frames on both sizes, with
+`vs_stock` and `vs_crew_won`. `vs_first_to` gives the first fight's
+winner a leg wound too, and its second fight starts with none. Group battle is played under `--match stock:2`,
 `first_to:2` and `crew:3` in turn: its first match won, the card of
 the scores, the second match begun and 300 frames of it, with no rule
 in play and no card of the strip at any of them ("Memory", "A table on
@@ -8802,7 +8898,31 @@ after First to on the stage page's Circle; Start turns its size, 2 to
 (`--match crew` is five, `--match crew:N` N). The page keeps the crew's
 size apart from Stock's and First to's number (`page_crew`).
 
-**The pick, on the game's own select screen.** The rule is chosen on
+**The pick, on the game's own select screen, the rule first.** With the
+rule chosen before the grid ("The rule first"), the crew's size is known
+before anything is picked: from the first place on, each place's
+fighters and weapons are picked on the grid and the weapon row, and
+taken as its weapons cross (`select_WeaponsOutStep`,
+`select_PortCrewPick`, `port_MatchCrewWanted`), the grid coming up again
+for the next while places are left; after the last the screen goes on
+as the game's does, to the stage page or, versus the CPU with no stage
+page, to the fight. The strip at the foot shows the crews from the
+first place.
+
+**Every pick a different character** (the owner, 2026-11-20: "enforce
+choosing different characters"). Within one crew a character is never
+picked twice; weapons may repeat. Cross on a character the side's crew
+already has is refused as a locked one is, with its sound
+(`port_MatchCrewHas`, in `select_MoveFighterCursors`); the grid draws it
+as the game draws a locked fighter when every crew picking has it, and
+its name dimmed when one crew has it and the other may still pick it
+(`select_FighterStep`, `select_PortCrewTaken`). A crew is no bigger than
+the characters the grid offers (`crew_most`, counted as the screen
+loads, `select_PortOpenFighters`: six with an empty save's versus, eight
+and more with `unlock_all`): the rule page's and the stage page's size
+stop there. The CPU's crew is all different characters too (below).
+
+**The pick with `menu = original`.** The rule is chosen on
 the stage page, which comes after the fighters and weapons, so the
 fighter and weapon each side has already picked are its crew's first
 place. Where the screen would then be done (Cross on a stage, an
@@ -8814,9 +8934,9 @@ clears the picks, each cursor left where it was, and the grid, the
 weapons and their crossing run as the game has them for the next place.
 The last place's crossing ends the screen with the stage chosen before,
 the settings' first picks put back to the crews' first places
-(`select_PortCrewFirst`), so the first fight is theirs. Picks may repeat
-from place to place; within one place the two cursors keep apart, as
-the game's always do. Triangle on the grid with nothing picked, during
+(`select_PortCrewFirst`), so the first fight is theirs. A crew's
+characters are all different here too; within one place the two
+cursors keep apart, as the game's always do. Triangle on the grid with nothing picked, during
 a later place, lets the crews go and goes back to the stage page with
 the first place's picks (`select_PortCrewBack`); Triangle on a stage
 page lets kept crews go. While a later place is picked the window lays a
@@ -8837,33 +8957,44 @@ fight is loaded and begun afresh, behind a black screen
 memory once the screen after a fight has drawn its menu's sheets over
 them, and either shows scraps of it), as any fight starts, the winner too,
 at the stage's own places (where the Stock and First to fights start
-where the fighters stood). The winner's fighter and weapon stay; the
-game's own wins count goes on counting (the HUD hides it under any
-match rule).
+where the fighters stood). The winner's fighter and weapon stay, with
+the wounds he ended the fight with ("Wounds kept"); the incoming fighter
+is unhurt. The game's own wins count goes on counting (the HUD hides it
+under any match rule).
 
-**After the match.** As Stock and First to: the result's card, then in
-versus and online the stage page, the crews kept (`crew_kept`): Cross
-there plays a new match of the same crews, unless the crew's size was
-changed (then the crews are picked again from the first place); Triangle
-lets them go and goes back to the weapons.
+**After the match** (the owner, 2026-11-20: "when the crew battle is
+over, the session ends and it goes back to mode select"). The result's
+card, then the top menu, in versus, versus the CPU and online alike,
+won, lost or drawn (`port_MatchAfterFight`: `to_top`, the crews let go,
+`g_menu_reopen_mode` 0). In a session of two the top menu is the
+session's end on both machines at the same frame, whatever the
+session's rules (`port_MatchEndsSession`, `port_SessionInput`): each
+goes back to its own game, as when both players go back to the top menu
+there. A room of several's match ends where it is decided, at the
+result's card, as before, and its players go back to the room. Stock
+and First to keep their way: the stage page, the fighters kept.
 
 **Versus the CPU.** A match per opponent, as the other rules. The
 player picks his crew; the CPU's is led by the game's own opponent
 (`fight_NextVsCpuOpponent` calls `port_MatchOpponentChosen`), its other
 places drawn from the run's opponents (its last two left out), each
 with a weapon as the game gives an opponent one (the gunners their guns,
-a blade otherwise, the second clan the yari for the naginata). The
-draws are dice of the match's own (`crew_seed`, seeded from the frame
-count and the opponent's number), so the game's `rand()` is drawn on as
-without a crew. The CPU's crew out: the next opponent, whose match
-begins with the player's crew whole. The player's crew out (or a
-drawn match): the game's menu after a defeat; its Rematch is a new match
-of both crews' first fighters, loaded again (`port_MatchRematchLoads`
-turns the game's restart where the fighters stand into a load).
+a blade otherwise, the second clan the yari for the naginata). Each
+place is a character the crew does not have yet: the leader is taken out
+of the pool, and each character drawn too; should the pool run dry
+before the crew is whole, any named character not in it
+(`port_MatchCrewPoolRefill`). The draws are dice of the match's own
+(`crew_seed`, seeded from the frame count and the opponent's number),
+so the game's `rand()` is drawn on as without a crew. The crew match
+against the CPU is the whole run: won or lost, its result's card and
+then the top menu, not the next opponent nor the game's menu after a
+defeat.
 
 **Online.** The host's `match_rule` and `match_count` hold, as for the
 others (protocol 11: the rule may be Crew, which an older program does
-not know). Each player picks his own crew with his own pad on the
+not know; protocol 12: the rule page, crews of different characters,
+the wounds kept, a Crew match's end the session's), and with
+ReBushido's top menu the host's pad chooses on the rule page. Each player picks his own crew with his own pad on the
 shared select screen; the crews, the place being picked and the score
 are `g_port_match`, in the state, so a rollback, a replay and the two
 machines of a session hold them. In a room of several (NETPLAY.md,
@@ -8872,39 +9003,50 @@ screen after a fight once the match is over (the result's card), its
 winner the room's result, a drawn match nobody's
 (`port_MatchIsDecided`, `session.c`).
 
-**The picture** (`match_page.c`). Over a fight a strip across the whole
-top: each side's label and fighter in play with his weapon, the rule
-between, and under them each crew's names, the first side's from the
-left and the second's from the right (two rows for a crew of more than
-five), the one in play in the side's colour, a fallen one dimmed and
-struck through in red. The card after a fight: each crew as a column of
+**The picture** (`match_page.c`). Over a fight the light pips of the
+other rules, a pip a fighter of the crew left; no names. The card after
+a fight: each crew as a column of
 names and weapons in the same three looks, how many are left, and who
-took the fight and who comes in (or the draw, or who won the match, or
+took the fight and who comes in, and who stays wounded and where (or the draw, or who won the match, or
 that both crews are out). The names are `port_MatchCrewName`
 (`gamestate.c`, the character's roster's name).
 
 **How it is proved.** `tools/port_match.py` (`make port-stage-select`),
-both sizes, the traces held to each other: `vs_crew`, versus Crew 3 (the
+both sizes, the traces held to each other: the rule-first plans above
+(`rb_vs_crew`, `rb_vscpu_crew`); and with `menu = original` `vs_crew`, versus Crew 3 (the
 second places picked one place down the grid on each side, the third
 another: Kannuki, Mikado, Tatsumi against Gengoro, Kaun, Jo); the first
 fight the first player's (Gengoro out, Kannuki stays and meets Kaun),
 the second a draw (both out: Mikado meets Jo), the third the first
-player's (the second crew out, 2 to 0), the result, the stage page with
-the crews kept, and Cross there a new match of them; `vs_crew_drawn`,
-Crew 2 of two draws, a drawn match; `vscpu_crew`, versus the CPU Crew 2,
-the CPU's crew the game's first opponent and one drawn, which as the
-port plays today takes both of the player's fighters, the game's menu
-after a defeat and its Rematch the crews' first fighters loaded again.
+player's (the second crew out, 2 to 0), the result and the top menu;
+`vs_crew_drawn`, Crew 2 of two draws, a drawn match and the top menu;
+`vscpu_crew`, versus the CPU Crew 2, the CPU's crew the game's first
+opponent and another character drawn, which as the port plays today
+takes both of the player's fighters, and the top menu.
 The draws are written by the plan (`poke`: the first fighter fallen
 once the second has), since nobody plays the second fighter. `tools/
 port_replay.py` plays a Crew 2 match's fights back from their replays
 (`vs_crew_won`: no draw, which no replay could hold), every hash the
-same; `tools/port_net.py session` plays a second session as a Crew 2
-match, each player picking his crew's second place, the hashes and the
-fight's replays the same on both machines; `tools/port_net_lobby.py
-headless`'s `rooms-crew` plays a room's rotation match as Crew 2, two
-players and a spectator: two fights, the match decided at the result's
-card, the players' hashes alike and the spectator's theirs.
+same; `tools/port_net.py session` plays two more sessions of each size,
+begun in the running program (`--session-at 1`: with ReBushido's top
+menu the opening movie comes at once, and plays through between two of
+the program's boundaries) with `--menu rebushido`: Crew 2 and Stock 2,
+the host turning the rule page (the guest's Right there not taken),
+each player picking his crew at the grid, a refused Cross first; the
+fights `wounding_fight`'s (the second player strikes first, the first
+then wins, wounded): the first fight's winner kept wounded into the
+second (his four counts at its start the match's, the other's none),
+and the Crew match's end the top menu, where the session ends on both
+at the same frame and each program's own game is put back; the hashes
+the same on both, and the fights' replays the same on both machines and
+played back with every hash the same, the second fight's winner wounded
+from its first frame. `tools/port_net_lobby.py headless`'s `rooms-crew`
+plays a room's rotation match as Crew 2, two players and a spectator:
+no rule page (the room's rule), the crews picked at the grid of
+different characters, `wounding_fight`'s two fights, the first's
+winner wounded into the second, the match decided at the result's card
+and each player back to the room, the players' hashes alike and the
+spectator's theirs.
 
 ## ReBushido's top menu
 

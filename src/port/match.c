@@ -22,10 +22,23 @@ static s32 port_MatchCount(s32 count) {
                                            : count;
 }
 
+/* A crew's size: two to eight, and no more than the fighters the select
+ * screen offers (every pick of a crew is a different character). */
 static s32 port_MatchCrewSize(s32 count) {
-    return count < PORT_MATCH_CREW_LEAST  ? PORT_MATCH_CREW_LEAST
-           : count > PORT_MATCH_CREW_MOST ? PORT_MATCH_CREW_MOST
-                                          : count;
+    s32 most = g_port_match.crew_most;
+
+    if (most < PORT_MATCH_CREW_LEAST || most > PORT_MATCH_CREW_MOST) {
+        most = PORT_MATCH_CREW_MOST;
+    }
+    return count < PORT_MATCH_CREW_LEAST ? PORT_MATCH_CREW_LEAST
+           : count > most                ? most
+                                         : count;
+}
+
+/* The rules whose fight's winner keeps his wounds into the next: Stock
+ * and Crew (the owner, 2026-11-20); First to N's fights start unhurt. */
+static s32 port_MatchKeepsWounds(s32 rule) {
+    return rule == PORT_MATCH_STOCK || rule == PORT_MATCH_CREW;
 }
 
 /* Made the first time the game asks, and the page reset when the
@@ -82,6 +95,7 @@ static void port_MatchRestart(PortMatch *match) {
     match->winner = 0;
     match->card = PORT_MATCH_CARD_NONE;
     match->card_frames = 0;
+    match->wounds_kept[0] = match->wounds_kept[1] = FALSE;
     if (match->rule == PORT_MATCH_CREW) {
         port_MatchCrewPut(match, 0);
         port_MatchCrewPut(match, 1);
@@ -121,6 +135,7 @@ void port_MatchBegin(s32 mode) {
     PortMatch *match = port_Match();
 
     match->to_stages = FALSE;
+    match->to_top = FALSE;
     match->mode = (u8)mode;
     match->rule =
         port_MatchModeHasRules(mode) ? match->page_rule : (u8)PORT_MATCH_SINGLE;
@@ -129,6 +144,59 @@ void port_MatchBegin(s32 mode) {
         port_MatchCrewBegin(match);
     }
     port_MatchRestart(match);
+}
+
+/* A value of a wound as the match keeps it. */
+static s8 port_MatchWound(s32 value) {
+    return (s8)(value < 0 ? 0 : value > 0x7F ? 0x7F : value);
+}
+
+/* The fight just decided (PortMatch.last): under Stock and Crew its
+ * winner's wounds, taken as the fight ended (before the winner's view,
+ * which gives the winner his off arm back for the pose), are kept for the
+ * next fight; the loser comes back unhurt (Stock) or is out (Crew), and a
+ * draw keeps nobody's. The counts are the game's own, and no count kills
+ * (a kill is a blow's): a fighter who starts wounded is slowed, weakened
+ * or one-armed as he was, never down. */
+static void port_MatchKeepWounds(PortMatch *match) {
+    s32 side;
+
+    for (side = 0; side < 2; side++) {
+        const Fighter *fighter = &g_fighters[side];
+        s8 *wounds = match->wounds[side];
+
+        match->wounds_kept[side] =
+            (u8)(port_MatchKeepsWounds(match->rule) && !match->over &&
+                 match->last ==
+                     (side == 0 ? PORT_MATCH_WON_P1 : PORT_MATCH_WON_P2));
+        if (!match->wounds_kept[side]) {
+            memset(wounds, 0, PORT_WOUNDS);
+            continue;
+        }
+        wounds[PORT_WOUND_OFF_ARM_OK] = (s8)(fighter->off_arm_ok != 0);
+        wounds[PORT_WOUND_LEGS] = port_MatchWound(fighter->leg_wounds);
+        wounds[PORT_WOUND_ARM] = port_MatchWound(fighter->arm_wounds);
+        wounds[PORT_WOUND_BODY] = port_MatchWound(fighter->body_wounds);
+    }
+}
+
+/* A fighter set up for the next fight (port_match.h): the winner's
+ * wounds put back over the game's healing. */
+void port_MatchPutWounds(
+    s32 index, s16 *off_arm_ok, s16 *legs, s16 *arm, s16 *body) {
+    const PortMatch *match = &g_port_match;
+    const s8 *wounds;
+
+    if (index < 0 || index >= 2 || !match->wounds_kept[index] ||
+        !port_MatchKeepsWounds(match->rule) || match->mode != g_fight_mode ||
+        match->over) {
+        return;
+    }
+    wounds = match->wounds[index];
+    *off_arm_ok = wounds[PORT_WOUND_OFF_ARM_OK];
+    *legs = wounds[PORT_WOUND_LEGS];
+    *arm = wounds[PORT_WOUND_ARM];
+    *body = wounds[PORT_WOUND_BODY];
 }
 
 /* A fight of the match decided (port_match.h): the score, and the card
@@ -187,6 +255,7 @@ void port_MatchFightOver(s32 mode, s32 p1_fell, s32 p2_fell) {
             match->winner = (u8)side;
         }
     }
+    port_MatchKeepWounds(match);
     match->card = match->over ? PORT_MATCH_CARD_RESULT : PORT_MATCH_CARD_SCORE;
     match->card_frames = 0;
 }
@@ -199,7 +268,9 @@ s32 port_MatchNextOpponent(void) {
     if (match->rule == PORT_MATCH_SINGLE) {
         return TRUE;
     }
-    if (match->over && match->winner == 0) {
+    if (match->over && match->winner == 0 && match->rule != PORT_MATCH_CREW) {
+        /* (a Crew match won is the run's end: its card, then the top
+         * menu) */
         /* the next opponent's match */
         port_MatchRestart(match);
         return TRUE;
@@ -264,6 +335,20 @@ s32 port_MatchAfterFight(s32 pressed) {
         }
         return TRUE;
     }
+    if (match->rule == PORT_MATCH_CREW) {
+        /* a Crew match is the whole session: back to the top menu, in
+         * versus, online and versus the CPU, won or lost (the owner,
+         * 2026-11-20); a session of two ends there (session.c), a room's
+         * ended as the match was decided */
+        match->to_top = TRUE;
+        port_MatchCrewDrop();
+        cdrom_StopAndWait();
+        snd_EndFight();
+        g_disp_loading_screen = LOADING_SCREEN_NONE;
+        g_menu_reopen_mode = 0;
+        g_sys_screen = SCREEN_MENU_INIT;
+        return TRUE;
+    }
     if (match->mode == FIGHT_MODE_VSCPU) {
         if (match->winner == 0) {
             /* won by a draw the opponent fell second in: on to the next */
@@ -319,7 +404,9 @@ s32 port_MatchPageStep(s32 mode, s32 pressed, s32 is_open) {
     PortMatch *match = port_Match();
 
     match->page_on = (u8)port_MatchModeHasRules(mode);
-    if (!match->page_on || !is_open) {
+    if (!match->page_on || !is_open || match->rule_first) {
+        /* (a rule chosen before the grid is shown, not changed: the crews
+         * picked are of it) */
         return FALSE;
     }
     if (pressed & PAD_ANY(PADRright)) {
@@ -330,9 +417,10 @@ s32 port_MatchPageStep(s32 mode, s32 pressed, s32 is_open) {
     if ((pressed & PAD_ANY(PADstart)) && match->page_rule == PORT_MATCH_CREW) {
         /* a crew of two to eight, and round again */
         snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
-        match->page_crew = (u8)(match->page_crew >= PORT_MATCH_CREW_MOST
-                                    ? PORT_MATCH_CREW_LEAST
-                                    : port_MatchCrewSize(match->page_crew + 1));
+        match->page_crew =
+            (u8)(match->page_crew >= port_MatchCrewSize(PORT_MATCH_CREW_MOST)
+                     ? PORT_MATCH_CREW_LEAST
+                     : port_MatchCrewSize(match->page_crew + 1));
         return TRUE;
     }
     if ((pressed & PAD_ANY(PADstart)) &&
@@ -353,9 +441,16 @@ s32 port_MatchCrewWanted(s32 mode, s32 sides) {
     if (!port_MatchModeHasRules(mode) || match->page_rule != PORT_MATCH_CREW) {
         return FALSE;
     }
-    if (match->crew_picked > 0 && match->crew_picked < match->crew_size) {
-        /* a later place being picked */
+    if (match->crew_picked < match->crew_size &&
+        (match->crew_picked > 0 || match->rule_first)) {
+        /* a later place being picked (or, the rule chosen before the
+         * grid, the first) */
         return TRUE;
+    }
+    if (match->rule_first && match->crew_size != 0 &&
+        match->crew_picked >= match->crew_size) {
+        /* the crews picked before the stage page: its stage is chosen */
+        return FALSE;
     }
     if (match->crew_kept && match->crew_picked == match->crew_size &&
         match->crew_size == port_MatchCrewSize(match->page_crew) &&
@@ -464,6 +559,49 @@ static s32 port_MatchCrewWeapon(PortMatch *match, s32 character) {
     return weapon;
 }
 
+/* `pool` of `characters` with `character` taken out: how many are left. */
+static s32 port_MatchCrewPoolLess(u8 *characters, s32 pool, s32 character) {
+    s32 i;
+
+    for (i = 0; i < pool;) {
+        if (characters[i] == character) {
+            characters[i] = characters[--pool];
+        } else {
+            i++;
+        }
+    }
+    return pool;
+}
+
+/* The pool drawn dry before the CPU's crew is whole: every named
+ * character a gun or a blade can be given (not the clans' last two, nor
+ * the roster's nameless) that the crew's places before `place` do not
+ * have. */
+static s32 port_MatchCrewPoolRefill(
+    PortMatch *match, u8 *characters, s32 place) {
+    s32 pool = 0;
+    s32 character;
+    s32 i;
+
+    for (character = 0; character < CHARACTER_LAST_1; character++) {
+        if (character == CHARACTER_VANISHER ||
+            character == CHARACTER_SIDEARM_1 ||
+            character == CHARACTER_ARMORED ||
+            character == CHARACTER_SIDEARM_2) {
+            continue;
+        }
+        for (i = 0; i < place; i++) {
+            if (match->crew[1][i].fighter == character) {
+                break;
+            }
+        }
+        if (i == place) {
+            characters[pool++] = (u8)character;
+        }
+    }
+    return pool;
+}
+
 /* Versus the CPU's opponent chosen (port_match.h): he leads the CPU's
  * crew, the rest drawn from the run's opponents (its last ones left out),
  * and the opponent's match begins with the player's crew whole. */
@@ -488,10 +626,24 @@ void port_MatchOpponentChosen(void) {
     match->crew[1][0].fighter =
         g_fighter_roster_characters[(u8)g_fight_config.roster[1]];
     match->crew[1][0].weapon = (u8)g_fight_config.weapon[1];
+    /* every place a character of its own: the leader out of the pool,
+     * each drawn taken out of it (the pool is the run's opponents; should
+     * it run dry, any of the named characters not yet in the crew) */
+    pool = port_MatchCrewPoolLess(characters, pool, match->crew[1][0].fighter);
     for (place = 1; place < PORT_MATCH_CREW_MOST; place++) {
-        s32 character = pool > 0 ? characters[port_MatchCrewDie(match, pool)]
-                                 : match->crew[1][0].fighter;
+        s32 character;
 
+        if (pool == 0) {
+            pool = port_MatchCrewPoolRefill(match, characters, place);
+        }
+        if (pool > 0) {
+            s32 drawn = port_MatchCrewDie(match, pool);
+
+            character = characters[drawn];
+            characters[drawn] = characters[--pool];
+        } else {
+            character = match->crew[1][0].fighter;
+        }
         match->crew[1][place].fighter = (u8)character;
         match->crew[1][place].weapon =
             (u8)port_MatchCrewWeapon(match, character);
@@ -513,3 +665,147 @@ s32 port_MatchRematchLoads(void) {
     g_disp_loading_screen = LOADING_SCREEN_NONE;
     return TRUE;
 }
+
+/* ---- the rule page, before the first select (port_match.h) ---- */
+
+/* The rule taken before the grid: a Crew's places to be picked from the
+ * first, each as its weapons cross. */
+static void port_MatchRuleTaken(PortMatch *match) {
+    port_MatchCrewDrop();
+    if (match->page_rule == PORT_MATCH_CREW) {
+        match->crew_size = (u8)port_MatchCrewSize(match->page_crew);
+        match->crew_sides = match->rule_sides;
+        match->crew_picked = 0;
+    }
+}
+
+void port_MatchRulePageOpen(s32 mode, s32 to_stages, s32 open, s32 sides) {
+    PortMatch *match = port_Match();
+    s32 room = port_SessionIsRoomMatch();
+
+    match->crew_most = (u8)(open < PORT_MATCH_CREW_LEAST ? PORT_MATCH_CREW_LEAST
+                            : open > PORT_MATCH_CREW_MOST ? PORT_MATCH_CREW_MOST
+                                                          : open);
+    match->page_crew = (u8)port_MatchCrewSize(match->page_crew);
+    match->rule_first =
+        (u8)(port_MatchModeHasRules(mode) && (port_TopMenuIsOn() || room));
+    /* a room's rule is the room's, as its host set it: no page */
+    match->rule_page = (u8)(match->rule_first && !room && !to_stages);
+    match->rule_row = PORT_MATCH_ROW_RULE;
+    match->rule_sides = (u8)sides;
+    if (match->rule_first && room && !to_stages) {
+        port_MatchRuleTaken(match);
+    }
+}
+
+s32 port_MatchRuleFirst(void) { return g_port_match.rule_first; }
+
+/* The value of the page's row a step on (`step` 1 or -1), round at the
+ * ends. */
+static void port_MatchRuleTurn(PortMatch *match, s32 step) {
+    s32 least;
+    s32 most;
+    s32 value;
+
+    if (match->rule_row == PORT_MATCH_ROW_RULE) {
+        match->page_rule = (u8)((match->page_rule + PORT_MATCH_RULES + step) %
+                                PORT_MATCH_RULES);
+        return;
+    }
+    if (match->page_rule == PORT_MATCH_CREW) {
+        least = PORT_MATCH_CREW_LEAST;
+        most = port_MatchCrewSize(PORT_MATCH_CREW_MOST);
+        value = match->page_crew + step;
+        match->page_crew = (u8)(value < least  ? most
+                                : value > most ? least
+                                               : value);
+        return;
+    }
+    least = PORT_MATCH_COUNT_LEAST;
+    most = PORT_MATCH_COUNT_MOST;
+    value = match->page_count + step;
+    match->page_count = (u8)(value < least  ? most
+                             : value > most ? least
+                                            : value);
+}
+
+s32 port_MatchRulePageStep(s32 pressed, s32 *leave) {
+    PortMatch *match = port_Match();
+    /* in a session the host's pad chooses; Triangle is either player's,
+     * as on the grid */
+    s32 own = port_SessionIsOn() ? pressed & PAD_OF(0xFFFF, 0) : pressed;
+
+    if (!match->rule_page) {
+        return FALSE;
+    }
+    if (pressed & PAD_ANY(PADRup)) {
+        snd_Play(MENU_SOUND_CANCEL, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        *leave = TRUE;
+        return TRUE;
+    }
+    if (own & PAD_ANY(PADRdown)) {
+        snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        match->rule_page = FALSE;
+        port_MatchRuleTaken(match);
+        return TRUE;
+    }
+    if ((own & PAD_ANY(PADLup | PADLdown)) &&
+        match->page_rule != PORT_MATCH_SINGLE) {
+        snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        match->rule_row =
+            (u8)(match->rule_row == PORT_MATCH_ROW_RULE ? PORT_MATCH_ROW_COUNT
+                                                        : PORT_MATCH_ROW_RULE);
+    } else if (own & PAD_ANY(PADLleft | PADLright)) {
+        snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        port_MatchRuleTurn(match, (own & PAD_ANY(PADLright)) ? 1 : -1);
+        if (match->page_rule == PORT_MATCH_SINGLE) {
+            match->rule_row = PORT_MATCH_ROW_RULE;
+        }
+    }
+    return TRUE;
+}
+
+/* ---- Crew: a different character each place, and going back ---- */
+
+s32 port_MatchCrewHas(s32 side, s32 fighter) {
+    const PortMatch *match = &g_port_match;
+    s32 place;
+
+    if (side < 0 || side >= 2 || match->page_rule != PORT_MATCH_CREW ||
+        match->crew_size == 0) {
+        return FALSE;
+    }
+    for (place = 0; place < match->crew_picked && place < match->crew_size;
+         place++) {
+        if (match->crew[side][place].fighter == fighter) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+s32 port_MatchCrewBackOne(void) {
+    PortMatch *match = port_Match();
+
+    if (!match->rule_first || !port_MatchCrewPicking()) {
+        return FALSE;
+    }
+    match->crew_picked--;
+    match->crew_grid = TRUE;
+    return TRUE;
+}
+
+void port_MatchCrewStageBack(void) {
+    PortMatch *match = port_Match();
+
+    if (match->rule_first && match->page_rule == PORT_MATCH_CREW &&
+        match->crew_size != 0 && match->crew_picked >= match->crew_size &&
+        !match->crew_kept) {
+        /* the weapons of the last place again: its crossing takes it */
+        match->crew_picked--;
+        return;
+    }
+    port_MatchCrewDrop();
+}
+
+s32 port_MatchEndsSession(void) { return g_port_match.to_top; }

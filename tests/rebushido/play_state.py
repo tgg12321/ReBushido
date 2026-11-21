@@ -78,6 +78,21 @@ MEMBERS = {
     'port_crew_p2_1': 'PortMatch.crew[1][0].fighter',
     'port_crew_p2_2': 'PortMatch.crew[1][1].fighter',
     'port_crew_p2_3': 'PortMatch.crew[1][2].fighter',
+    'port_match_rule_page': 'PortMatch.rule_page',
+    'port_match_rule_row': 'PortMatch.rule_row',
+    'port_match_rule_first': 'PortMatch.rule_first',
+    'port_match_crew_most': 'PortMatch.crew_most',
+    'port_match_kept_p1': 'PortMatch.wounds_kept[0]',
+    'port_match_kept_p2': 'PortMatch.wounds_kept[1]',
+    'port_match_off_arm_p1': 'PortMatch.wounds[0][0]',
+    'port_match_legs_p1': 'PortMatch.wounds[0][1]',
+    'port_match_arm_p1': 'PortMatch.wounds[0][2]',
+    'port_match_body_p1': 'PortMatch.wounds[0][3]',
+    'port_match_off_arm_p2': 'PortMatch.wounds[1][0]',
+    'port_match_legs_p2': 'PortMatch.wounds[1][1]',
+    'port_match_arm_p2': 'PortMatch.wounds[1][2]',
+    'port_match_body_p2': 'PortMatch.wounds[1][3]',
+    'port_match_to_top': 'PortMatch.to_top',
 }
 
 

@@ -555,6 +555,7 @@ enum {
     PORT_MATCH_SHOWN_HUD = 1,
     PORT_MATCH_SHOWN_CARD = 2,
     PORT_MATCH_SHOWN_PICK = 3,
+    PORT_MATCH_SHOWN_RULE = 4, /* the rule's page before the first select */
 };
 
 extern s32 port_MatchShown(void);

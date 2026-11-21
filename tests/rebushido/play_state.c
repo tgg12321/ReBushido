@@ -70,6 +70,21 @@ void test_Main(void) {
     WHERE(PortMatch, crew[1][0].fighter);
     WHERE(PortMatch, crew[1][1].fighter);
     WHERE(PortMatch, crew[1][2].fighter);
+    WHERE(PortMatch, rule_page);
+    WHERE(PortMatch, rule_row);
+    WHERE(PortMatch, rule_first);
+    WHERE(PortMatch, crew_most);
+    WHERE(PortMatch, wounds_kept[0]);
+    WHERE(PortMatch, wounds_kept[1]);
+    WHERE(PortMatch, wounds[0][0]);
+    WHERE(PortMatch, wounds[0][1]);
+    WHERE(PortMatch, wounds[0][2]);
+    WHERE(PortMatch, wounds[0][3]);
+    WHERE(PortMatch, wounds[1][0]);
+    WHERE(PortMatch, wounds[1][1]);
+    WHERE(PortMatch, wounds[1][2]);
+    WHERE(PortMatch, wounds[1][3]);
+    WHERE(PortMatch, to_top);
     /* the hit tests' scratch, which first_frame_sweep.toml reads by
      * address: a sweep's far end as it is and as it was */
     CHECK_EQ(SCRATCHPAD, 0x1F800000);

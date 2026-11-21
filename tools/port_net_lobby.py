@@ -510,6 +510,27 @@ def case_rooms_crew(case):
     outs = ''.join(read(os.path.join(case.folder, label + '.out')) for label in players)
     if 'cp kill2 ' not in outs:
         case.fail('no player printed the second fight\'s kill: the match did not go on to it')
+    # the rule first, the crews of different fighters, and the first
+    # fight's winner wounded into the second, where a player printed them
+    plan_text = read(plan.replace('room_plan.txt', 'room.toml'))
+    printed = set()
+    for label in players:
+        failed, seen = port_net.plan_claims(plan, read(os.path.join(case.folder, label + '.out')), plan_text)
+        printed.update(seen)
+        for name, claim in failed:
+            case.fail('%s at `%s`: not %s' % (label, name, claim))
+    for name in ('crew2', 'stages', 'card', 'fight2'):
+        if name not in printed:
+            case.fail('no player printed `%s`' % name)
+    # back to the room: each player's session ended with the match, his
+    # own game put back, the room going on (its rotation's next ask), not
+    # at the game's top menu
+    for label in players:
+        after = case.err(label).split('room: match 1 over', 1)[-1]
+        if "online: the player's own game put back" not in after:
+            case.fail('%s did not go back to the room after the match' % label)
+        if 'the players went back to the top menu' in case.err(label):
+            case.fail('%s\'s room match ended at the top menu, not at the match\'s end' % label)
     # the players' hashes alike, and the spectator's (fewer: it runs from
     # the fight's start) the same as theirs, as case_rooms holds them
     hashes = [segments[label][1]['hashes'] for label in labels]

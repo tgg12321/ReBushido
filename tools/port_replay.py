@@ -178,8 +178,11 @@ def main(argv):
     import port_match
     values.update(port_match.VALUES, opening=', '.join(port_stage_select.OPENING),
                   presses=port_stage_select.fight_presses(),
-                  presses_crew=port_stage_select.fight_presses(port_match.CREW_ROUNDS))
+                  presses_crew=port_stage_select.fight_presses(port_match.CREW_ROUNDS), **port_match.rb_values())
     plans.append(port_match.CREW_REPLAY_PLAN)
+    # and the rule-first Crew and Stock matches whose first fight's winner
+    # comes into the second wounded (the pads' presses alone)
+    plans += port_match.WOUND_PLANS
     for plan in plans:
         name, text, extra = plan[:3]
         pokes = plan[3] if len(plan) > 3 else ()

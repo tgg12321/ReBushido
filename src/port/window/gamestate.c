@@ -217,8 +217,14 @@ s32 port_MatchShown(void) {
     const PortMatch *match = &g_port_match;
 
     if (g_sys_screen == SCREEN_MENU_UPDATE && g_menu_page == MENU_PAGE_SELECT) {
-        /* a Crew match's later places being picked */
-        return match->page_rule == PORT_MATCH_CREW && match->crew_picked > 0 &&
+        if (match->rule_page) {
+            /* the rule's page, before the grid */
+            return PORT_MATCH_SHOWN_RULE;
+        }
+        /* a Crew match's later places being picked (or, the rule chosen
+         * before the grid, every place) */
+        return match->page_rule == PORT_MATCH_CREW &&
+                       (match->crew_picked > 0 || match->rule_first) &&
                        match->crew_picked < match->crew_size
                    ? PORT_MATCH_SHOWN_PICK
                    : PORT_MATCH_SHOWN_NONE;
