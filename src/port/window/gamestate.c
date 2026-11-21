@@ -241,6 +241,24 @@ s32 port_MatchShown(void) {
                                                : PORT_MATCH_SHOWN_NONE;
 }
 
+s32 port_MatchCrewMarks(s32 row, s32 col) {
+    s32 fighter;
+    s32 marks = 0;
+    s32 side;
+
+    if (row < 0 || row >= SELECT_GRID_ROWS || col < 0 ||
+        col >= SELECT_GRID_COLS) {
+        return 0;
+    }
+    fighter = g_select_grid[row][col].fighter;
+    for (side = 0; side < g_port_match.crew_sides && side < 2; side++) {
+        if (port_MatchCrewHas(side, fighter)) {
+            marks |= 1 << side;
+        }
+    }
+    return marks;
+}
+
 const char *port_MatchCrewName(s32 fighter) {
     return fighter >= 0 && fighter <= CHARACTER_COUNT
                ? port_NameRoster(g_fighter_character_rosters[fighter])

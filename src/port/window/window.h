@@ -562,6 +562,9 @@ extern s32 port_MatchShown(void);
 /* A Crew match's place of a side: the fighter's name as the window shows
  * it (match_page.c reads the crews; the game's tables are here). */
 extern const char *port_MatchCrewName(s32 fighter);
+/* The crews that have the character at the select grid's place (row,
+ * col): a bit a side (port_MatchCrewHas). */
+extern s32 port_MatchCrewMarks(s32 row, s32 col);
 /* What the window lays over the picture for them, as
  * port_StagePagePixels does for the stage pages. */
 extern s32 port_MatchPixels(

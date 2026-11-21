@@ -130,8 +130,6 @@ enum SelectDoor {
 #define SELECT_PULSE_DEPTH 63
 #define SELECT_PULSE_CENTER 0xC0
 #define SELECT_PULSE_SIDE_PHASE (ANGLE_TURN / 8 - 1)
-/* the port's: a name a crew already has, dimmed (port_match.h) */
-#define SELECT_CREW_DIM 0x30
 #define SELECT_PULSE(speed, phase)                                             \
     SPRITE_GLOW(rsin(((g_select_work->frames & (SELECT_PULSE_FRAMES - 1))      \
                       << (speed)) +                                            \
@@ -651,7 +649,7 @@ static s32 select_PortOpenFighters(void) {
             }
             if (!(g_select_fighter_flags[g_select_grid[row][col].value] &
                   SELECT_FIGHTER_OPEN) ||
-                fighter >= 32 || (seen >> fighter & 1)) {
+                fighter >= CHARACTER_COUNT || (seen >> fighter & 1)) {
                 continue;
             }
             seen |= 1U << fighter;
@@ -1480,7 +1478,10 @@ void select_FighterStep(MenuDrawCtx *ctx) {
                 continue;
             }
 #if RB_PORT
-            /* (a character every crew picking has: the locked name) */
+            /* (a character every crew picking has: the locked name, as
+             * the game draws one; one that a crew has and the other may
+             * still pick the window greys for that crew's side,
+             * match_page.c) */
             crew_taken =
                 select_PortCrewTaken(g_select_grid[grid_row][grid_col].fighter);
             all_taken = (1 << (1 + g_select_extra_players)) - 1;
@@ -1512,13 +1513,6 @@ void select_FighterStep(MenuDrawCtx *ctx) {
                         break;
                     }
                 }
-#if RB_PORT
-                /* a character one crew has, the other not: dimmed */
-                if (crew_taken != 0 && !draw.has_color) {
-                    draw.has_color = 1;
-                    draw.col_r = draw.col_g = draw.col_b = SELECT_CREW_DIM;
-                }
-#endif
                 draw.header =
                     PTR(sheets[g_select_grid[grid_row][grid_col].value +
                                SELECT_FIGHTER_SHEET_NAMES]);

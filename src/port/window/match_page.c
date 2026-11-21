@@ -533,6 +533,47 @@ static void port_MatchCrewCard(const PortMatch *match) {
  * picked: each crew so far, the place being picked marked. */
 #define CREW_PICK_Y 202
 #define CREW_PICK_H 36
+/* And over the grid, a name a crew already has, greyed and tagged with
+ * its side: the grid's names (select.c, GRID_COL_X, GRID_ROW_PITCH and
+ * PANEL_Y) stand from these places, measured on the screen. */
+#define PICK_AREA_Y 120
+#define GRID_NAME_X 98
+#define GRID_NAME_Y 128
+#define GRID_NAME_W 80
+#define GRID_NAME_H 12
+#define GRID_NAME_PITCH 16
+#define GRID_NAME_COLS 4
+#define GRID_NAME_ROWS 5
+#define COLOR_GREYED 0xC8D6CFC2U
+
+static s32 port_MatchGridX(s32 col) { return col * 116 + (col >> 1) * 20; }
+
+static void port_MatchCrewGrid(void) {
+    s32 row;
+    s32 col;
+
+    for (row = 0; row < GRID_NAME_ROWS; row++) {
+        for (col = 0; col < GRID_NAME_COLS; col++) {
+            s32 marks = port_MatchCrewMarks(row, col);
+            s32 x = GRID_NAME_X + port_MatchGridX(col);
+            s32 y = GRID_NAME_Y + row * GRID_NAME_PITCH;
+            s32 side;
+
+            if (marks == 0) {
+                continue;
+            }
+            port_MatchRect(x, y, GRID_NAME_W, GRID_NAME_H, COLOR_GREYED);
+            for (side = 0; side < 2; side++) {
+                if (marks & (1 << side)) {
+                    port_MatchText(
+                        x + GRID_NAME_W - 14 + side * 12, y + GRID_NAME_H - 2,
+                        SIZE_HUD - 2, PORT_FACE_BOLD, side == 0 ? "1P" : "2P",
+                        side == 0 ? COLOR_SIDE_1 : COLOR_SIDE_2, 1);
+                }
+            }
+        }
+    }
+}
 
 static void port_MatchCrewPick(const PortMatch *match) {
     char line[48];
@@ -545,6 +586,7 @@ static void port_MatchCrewPick(const PortMatch *match) {
     s32 side;
     s32 place;
 
+    port_MatchCrewGrid();
     port_MatchRect(
         CREW_HUD_X, CREW_PICK_Y, CREW_HUD_W, CREW_PICK_H, COLOR_PANEL);
     port_MatchFrame(
@@ -602,9 +644,9 @@ static void port_MatchCrewPick(const PortMatch *match) {
 
 /* ---- the rule's page, before the first select ---- */
 
-#define RULE_X 150
+#define RULE_X 110
 #define RULE_Y 40
-#define RULE_W 340
+#define RULE_W 420
 #define RULE_H 156
 #define RULE_TITLE 22 /* from the page's top */
 #define RULE_FIRST 50 /* the first row's baseline */
@@ -736,10 +778,11 @@ static void port_MatchArea(
         *w = GAME_W;
         *h = GAME_H;
     } else if (shown == PORT_MATCH_SHOWN_PICK) {
+        /* the strip, and the grid's names over it */
         *x = CREW_HUD_X;
-        *y = CREW_PICK_Y;
+        *y = PICK_AREA_Y;
         *w = CREW_HUD_W;
-        *h = CREW_PICK_H;
+        *h = CREW_PICK_Y + CREW_PICK_H - PICK_AREA_Y;
     } else if (shown == PORT_MATCH_SHOWN_HUD) {
         *x = LIGHT_AREA_X;
         *y = port_MatchLightY(match);

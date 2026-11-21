@@ -146,9 +146,12 @@ void port_MatchBegin(s32 mode) {
     port_MatchRestart(match);
 }
 
+/* The most a wound's count is kept at: what an s8 holds. */
+#define WOUND_MOST 0x7F
+
 /* A value of a wound as the match keeps it. */
 static s8 port_MatchWound(s32 value) {
-    return (s8)(value < 0 ? 0 : value > 0x7F ? 0x7F : value);
+    return (s8)(value < 0 ? 0 : value > WOUND_MOST ? WOUND_MOST : value);
 }
 
 /* The fight just decided (PortMatch.last): under Stock and Crew its
@@ -679,6 +682,8 @@ static void port_MatchRuleTaken(PortMatch *match) {
     }
 }
 
+/* The select screen loads (port_match.h): the crew's most, whether the
+ * rule comes first, and the page up if it is to be shown. */
 void port_MatchRulePageOpen(s32 mode, s32 to_stages, s32 open, s32 sides) {
     PortMatch *match = port_Match();
     s32 room = port_SessionIsRoomMatch();
@@ -729,6 +734,8 @@ static void port_MatchRuleTurn(PortMatch *match, s32 step) {
                                             : value);
 }
 
+/* A frame of the rule page (port_match.h): Triangle leaves, Cross takes
+ * the rule, Up and Down the row, Left and Right its value. */
 s32 port_MatchRulePageStep(s32 pressed, s32 *leave) {
     PortMatch *match = port_Match();
     /* in a session the host's pad chooses; Triangle is either player's,
@@ -795,6 +802,8 @@ s32 port_MatchCrewBackOne(void) {
     return TRUE;
 }
 
+/* Triangle on a stage page (port_match.h): a rule-first crew's last place
+ * to be picked again at its weapons; otherwise the crews let go. */
 void port_MatchCrewStageBack(void) {
     PortMatch *match = port_Match();
 
