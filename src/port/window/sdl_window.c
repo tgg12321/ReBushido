@@ -2306,8 +2306,12 @@ static void port_DrawMatchPage(void) {
 }
 
 static void port_DrawWindowPage(void) {
-    port_DrawOverlay(&g_port_panel_rows, port_PanelRowsPixels);
-    port_DrawOverlay(&g_port_page_lines, port_PageLinesPixels);
+    /* the game's renamed rows are of the picture under a page: left out
+     * while one is up over them, as the game's own lettering is darkened */
+    if (!port_MenuIsOpen() && !port_OnlinePagesAreOpen()) {
+        port_DrawOverlay(&g_port_panel_rows, port_PanelRowsPixels);
+        port_DrawOverlay(&g_port_page_lines, port_PageLinesPixels);
+    }
     port_DrawOverlay(&g_port_page, port_PagePixels);
 }
 

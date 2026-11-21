@@ -9041,8 +9041,9 @@ Options row opened in the original:
 
 Over the main menu the game draws the backdrop and the panel itself.
 Over the pause (and wherever the game is stopped) the window draws them:
-the picture darkened (0xB8 of black) and the same panel, slate blue
-(0x4C, 0x4C, 0x6C) laid half over it, at the game's place for it (63 to
+the picture darkened (0xD0 of black; the game's renamed rows of the
+panel under it are left out) and the same panel, slate blue (0x4C,
+0x4C, 0x6C) laid half over it, at the game's place for it (63 to
 577 across, 48 to 224 down, of the game's 640 by 240). The online pages'
 keyboard, a room's page and the meeting are laid out in the same panel.
 

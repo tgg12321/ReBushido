@@ -118,7 +118,7 @@ extern void port_FillRect(
  * (menu_SetPanelColor), over the picture darkened where the game does not
  * draw it itself; and the title's rule, a light line and two fainter */
 #define PORT_LOOK_PANEL 0x804C4C6CU
-#define PORT_LOOK_DARKEN 0xB8000008U
+#define PORT_LOOK_DARKEN 0xD0000008U
 #define PORT_LOOK_RULE 0xFFC8C8D0U
 #define PORT_LOOK_RULE_FAINT 0x90808090U
 #define PORT_LOOK_RULE_FAINTER 0x50808090U
