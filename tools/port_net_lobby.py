@@ -752,7 +752,7 @@ def judge_ranked(case, logs, state, lobby, rc, ladder):
               a['won'] != b['won']):
         case.fail('the ratings did not move as the result: %r, %r' % (a, b))
     else:
-        case.said.append('match %d (Ayame and Bunta, the lobby's stage taken on both: place %d): both digests '
+        case.said.append('match %d (Ayame and Bunta, the lobby\'s stage taken on both: place %d): both digests '
                          '%s..., rated: '
                          'Ayame %s, 1500 to %d; Bunta %s, 1500 to %d'
                          % (a['match'], a['stage'], a['digest'][:16], a['won'], a['after'], b['won'], b['after']))
