@@ -124,6 +124,22 @@ typedef struct {
     u8 clone_cloth[2][CLONE_CLOTH_BYTES];
 } PortDuo;
 
+/* Where tests/play/state.toml reads the duo (its `port_duo_*`): a member
+ * that moved fails the build, and tests/rebushido/play_state.py holds
+ * state.toml's offsets to these. */
+#define PORT_DUO_AT(member, at)                                                \
+    typedef char port_duo_at_##member                                          \
+        [__builtin_offsetof(PortDuo, member) == (at) ? 1 : -1]
+PORT_DUO_AT(on, 0);
+PORT_DUO_AT(decided, 2);
+PORT_DUO_AT(target, 4);
+PORT_DUO_AT(down, 8);
+PORT_DUO_AT(hits_taken, 12);
+PORT_DUO_AT(last_hit_by, 16);
+PORT_DUO_AT(rest, 20);
+PORT_DUO_AT(bound, 25);
+PORT_DUO_AT(kind, 29);
+
 static PortDuo g_port_duo;
 
 s32 port_DuoIsOn(void) { return g_port_duo.on; }
