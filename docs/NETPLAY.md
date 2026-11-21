@@ -1285,8 +1285,9 @@ socket on 127.0.0.1:
   the page by the host's pad: the crews picked at the grid, of different
   characters; the first fight's winner wounded into the second; the
   Crew match's end the top menu, where the session ends on both at the
-  same frame. 64-bit Crew: about 4,200 frames, 139 hashes the same on
-  both, both fights' replays alike and played back;
+  same frame. 64-bit: Crew 76 hashes the same on both, the last at
+  frame 2,280, Stock 67 (32-bit: 80 and 58), both fights' replays alike
+  on both machines and played back;
 - `window`: the same between two of the window's programs, headless
   (dummy drivers), in real time with their sound card and pacing, 60 ms
   each way and 5% lost; the host must play on alone after the guest
