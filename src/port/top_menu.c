@@ -124,6 +124,8 @@ void port_TopMenuTakeOptions(void) {
 
 s32 port_TopMenuIsCovered(void) { return g_port_top_menu.covered; }
 
+/* The place of a sheet's line (its cells' left, top and width) and the
+ * frame, for the window (port_top_menu.h). */
 void port_TopMenuNoteLine(s32 line, const void *of, s32 x, s32 y, s32 is_lit) {
     const SpriteSheet *sheet = (const SpriteSheet *)of;
     s32 left = 0;
