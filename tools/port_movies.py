@@ -6,8 +6,8 @@ docs/PORT.md, "The movie made better").
 
     python tools/port_movies.py dump    [--image CUE] [--frames tmp/movies/frames]
                                         [--program PROGRAM]
-    python tools/port_movies.py upscale --upscaler PATH/realesrgan-ncnn-vulkan(.exe)
-                                        [--frames ...] [--larger tmp/movies/larger]
+    python tools/port_movies.py upscale [--upscaler PATH/realesrgan-ncnn-vulkan(.exe)]
+                                        [--gpu N] [--frames ...] [--larger tmp/movies/larger]
     python tools/port_movies.py build   [--larger ...] [--out tmp/mods/movies-hd]
                                         [--quality 85]
     python tools/port_movies.py all     --upscaler PATH ... (the three)
@@ -22,8 +22,11 @@ graphics card, with its model realesr-animevideov3 at four times (BSD-3-Clause,
 the Real-ESRGAN repository's: https://github.com/xinntao/Real-ESRGAN). Neither
 is the project's or shipped by it: the player downloads the release
 (realesrgan-ncnn-vulkan-20220424, which has the model in its models/) and
-gives its program's path. The program is run with paths as its arguments and
-nothing else.
+gives its program's path, or the program is the one the PC package keeps in
+prepare/upscaler/ beside rebushido.exe, where its models/ has the model. The
+program is run with paths as its arguments and nothing else; `--gpu N` is its
+`-g`, the card it runs on (it picks one itself otherwise). With no Vulkan it
+writes nothing, which is said.
 
 `build` writes each larger frame as a baseline JPEG (Pillow; the port reads
 it with stb_image) into one file, movies/opening.rbmv: "RBMOVIE1", six words
@@ -116,7 +119,19 @@ def dump(args):
           % (len(found), max(found), time.time() - started, folder))
 
 
+def find_upscaler(given):
+    """The upscaler's program: the one given, or the PC package's."""
+    if given:
+        return given
+    for folder in (os.path.join(ROOT, 'prepare', 'upscaler'), os.path.join(ROOT, 'upscaler')):
+        for name in ('realesrgan-ncnn-vulkan.exe', 'realesrgan-ncnn-vulkan'):
+            if os.path.isfile(os.path.join(folder, name)):
+                return os.path.join(folder, name)
+    return None
+
+
 def upscale(args):
+    args.upscaler = find_upscaler(args.upscaler)
     if not args.upscaler or not os.path.isfile(args.upscaler):
         raise SystemExit('port_movies: --upscaler names realesrgan-ncnn-vulkan, its program')
     models = os.path.join(os.path.dirname(os.path.abspath(args.upscaler)), 'models')
@@ -127,12 +142,16 @@ def upscale(args):
         raise SystemExit('port_movies: no frames in %s: run dump first' % frames)
     larger = fresh_folder(args.larger)
     started = time.time()
-    run = subprocess.run([os.path.abspath(args.upscaler), '-i', frames, '-o', larger,
-                          '-n', MODEL, '-s', str(SCALE), '-m', models, '-f', 'png'],
-                         capture_output=True, text=True)
-    if run.returncode != 0:
+    command = [os.path.abspath(args.upscaler), '-i', frames, '-o', larger,
+               '-n', MODEL, '-s', str(SCALE), '-m', models, '-f', 'png']
+    if args.gpu is not None:
+        command += ['-g', str(args.gpu)]
+    run = subprocess.run(command, capture_output=True, text=True)
+    if run.returncode != 0 or len(frame_files(larger)) != len(frame_files(frames)):
         sys.stderr.write(run.stderr[-2000:])
-        raise SystemExit('port_movies: the upscaler ended with %d' % run.returncode)
+        raise SystemExit('port_movies: the upscaler ended with %d and wrote %d of %d frames '
+                         '(no Vulkan says "invalid gpu device")'
+                         % (run.returncode, len(frame_files(larger)), len(frame_files(frames))))
     print('port_movies: upscale: %d frames in %.0f s: %s'
           % (len(frame_files(larger)), time.time() - started, larger))
 
@@ -201,6 +220,7 @@ def main():
     ap.add_argument('--image', default=os.path.join(ROOT, IMAGE))
     ap.add_argument('--program', help='the port without a window (default %s)' % PROGRAMS.get(os.name))
     ap.add_argument('--upscaler', help='realesrgan-ncnn-vulkan\'s program, its models/ beside it')
+    ap.add_argument('--gpu', type=int, help="the upscaler's -g: which card (0 the first)")
     ap.add_argument('--frames', default=os.path.join(ROOT, FRAMES))
     ap.add_argument('--larger', default=os.path.join(ROOT, LARGER))
     ap.add_argument('--out', default=os.path.join(ROOT, OUT))

@@ -660,11 +660,19 @@ is in the program or the package.
 dump 9, the upscale 72 (39 frames a second), the JPEGs 8 -- and 125 MB.
 
 **Why it is a step of its own, not the first start's** ("Made from your
-disc"): the upscaler is a program of someone else's (6 MB, with a model
-of 1.2 MB), which `prepare/` would have to ship and run on a Vulkan driver
-it cannot vouch for, where a PC without one would only fail; it makes 125 MB where the three mods of the first
-start make 190 MB together; and it is for one minute and fifty seconds of
-film. So a player chooses it. Without it `movies = enhanced` still cleans
+disc"): it makes 125 MB where the three mods of the first start make
+190 MB together, for one minute and fifty seconds of film; it is a minute
+and a half on an RTX 3090 and many minutes on a PC's own graphics, on a
+Vulkan driver nothing can vouch for (with none it writes nothing); and a
+learned upscale differs from card to card in the last bits, so it cannot
+be held to the same bytes everywhere as the first start's mods are. So a
+player chooses it. Where the PC package keeps the upscaler in
+`prepare/upscaler/` for the art, the tool finds it there (no `--upscaler`)
+once the model, `realesr-animevideov3-x4.bin` and `.param` (1.2 MB), is
+put beside the art's in that list of files; `--gpu N` picks the card.
+The art itself uses `realesrgan-x4plus`, which keeps more of a still
+picture's texture; for the film the video model was chosen, made for
+frames that follow one another, and four times faster. Without it `movies = enhanced` still cleans
 and enlarges the console's frames on the card, which is most of the way
 for the film's smooth parts (PORT.md, "The movie made better").
 
