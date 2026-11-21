@@ -83,6 +83,11 @@ TOP_FOLDERS = ['mods', 'licenses', 'prepare']
 # What a player's own folder holds and a package never may: the disc, the
 # cards, the settings, the logs and the pictures.
 REFUSED_ENDINGS = ('.bin', '.cue', '.iso', '.chd', '.img', '.mcd', '.cfg', '.log')
+# ... but for the art's upscaler's model, whose weights end .bin: that one
+# file at its own place, and only with the bytes of the release
+# (port_prepare_bundle.UPSCALER_FILES)
+ALLOWED_DESPITE_ENDING = {'prepare/upscaler/' + rel: sha for rel, sha in port_prepare_bundle.UPSCALER_FILES.items()
+                          if rel.lower().endswith(REFUSED_ENDINGS)}
 REFUSED_FOLDERS = ('logs', 'screenshots')
 # The DLLs a Windows program may ask for and every Windows has; and SDL2.dll
 # beside it. Anything else (libwinpthread, libstdc++) the player would not have.
@@ -309,7 +314,9 @@ def check(folder, written, mods):
                     problems.append('%s/ is a player\'s folder' % rel)
                 continue
             found.add(rel)
-            if lower.endswith(REFUSED_ENDINGS):
+            if lower.endswith(REFUSED_ENDINGS) and not (
+                    rel in ALLOWED_DESPITE_ENDING
+                    and hashlib.sha256(read(path)).hexdigest() == ALLOWED_DESPITE_ENDING[rel]):
                 problems.append('%s: a disc image, card, setting or log is never packed' % rel)
             if lower.endswith('.png') and parts[0] != 'mods':
                 problems.append('%s: a picture outside mods/ (a screenshot?)' % rel)
@@ -474,6 +481,9 @@ def plants():
     must refuse."""
     return [
         ('a disc image', 'Bushido Blade 2 (USA).bin', b'\0' * 2352),
+        ('a disc image in the place of the upscaler\'s model', 'prepare/upscaler/models/realesrgan-x4plus.bin',
+         b'\0' * 2352),
+        ('a .bin beside the upscaler\'s model', 'prepare/upscaler/models/disc.bin', b'\0' * 2352),
         ('its cue sheet', 'Bushido Blade 2 (USA).cue', b'FILE "x.bin" BINARY\n'),
         ('an .iso', 'mods/english/disc.iso', b'CD001'),
         ('a .chd', 'game.chd', b'MComprHD'),
