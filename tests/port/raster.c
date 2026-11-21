@@ -14,6 +14,15 @@
 #include "src/port/gpu.c"
 #include "src/port/picture.c"
 #include "port/remaster_stub.h"
+
+/* No movie plays here (src/port/movie_shown.c). */
+s32 port_MovieIsPlaying(void) { return 0; }
+
+void port_MovieNoteCopied(s32 y, const void *pixels) {
+    (void)y;
+    (void)pixels;
+}
+
 #include "runtime/runtime.h"
 
 /* Whether a step is run again (src/port/step.c): every step here is the
