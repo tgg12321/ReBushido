@@ -419,20 +419,17 @@ the stage").
     **Crew** (the owner, 2026-11-20: "select 5 fighters and five weapons
     and those are essentially your five lives. First to kill all the
     opponents' fighters wins"). **Done** ([`PORT.md`](PORT.md), "Match
-    rules", "Crew"; [`PLAYING.md`](PLAYING.md), "Crew"): Crew N (2 to 8,
-    five to begin with) after First to on the stage page's Circle; each
-    side's crew picked on the game's own select screen, the first place
-    before the stage page and the grid and weapons again for each place
-    after it, a strip of the crews so far at the foot; the loser's
-    fighter out and the next in, the winner staying, every fight loaded
-    afresh; a draw one out of each, both crews out a drawn match; the
-    crews' names over the fight (the one in play coloured, the fallen
-    struck through) and on the cards; the crews kept on the stage page
-    after the match. Versus the CPU a crew match per opponent, his crew
-    led by the game's opponent and the rest drawn; online each player
-    picks his own, the host's rule held (protocol 11). Left: the owner's
-    eye on the strip, the cards and the pick (`tmp/crew/`); whether the
-    winner should stay hurt (he starts fresh, as the owner asked).
+    rules", "Crew"; [`PLAYING.md`](PLAYING.md), "Crew"): the battle type
+    chosen on its own page before the first select (Crew N, 2 to 8, no
+    more than the grid's characters); each crew picked place by place on
+    the game's own select, no character twice (the CPU's too); the loser's
+    fighter out and the next in, the winner staying with the wounds he
+    ended with (Stock keeps them too; First to starts everyone fresh); a
+    draw one out of each, both crews out a drawn match; small pips over
+    the fight, the crews in full on the cards between fights; the match's
+    end back to the Main Menu (online both players; a room's match to the
+    room). Protocol 12. Left: the owner's eye on the pages and cards
+    (`tmp/crew/`, `tmp/crew2/`).
 22. **Online lobbies of more than two** (after the seamless online
     menus): a room holds several players and spectators; spectators
     watch a match live (the session's inputs, rolled forward, no
