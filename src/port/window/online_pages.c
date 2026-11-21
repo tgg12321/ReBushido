@@ -34,42 +34,41 @@
 #include "sdl_window.h"
 #include "update.h"
 
-/* The game's screen, whose places the pages are laid out in, as the top
- * menu's are: 640 by 240, shown 4:3. */
-#define GAME_W 640
-#define GAME_H 240
-/* The page's panel, in the game's places. */
-#define PANEL_X 40
-#define PANEL_Y 14
-#define PANEL_W 560
-#define PANEL_H 212
+/* The game's screen, whose places the pages are laid out in, as its own
+ * pages are: 640 by 240, shown 4:3. */
+#define GAME_W PORT_LOOK_GAME_W
+#define GAME_H PORT_LOOK_GAME_H
+/* The game's wide panel, the Option Menu's (menu.h): the title above it,
+ * the rows in it. */
+#define PANEL_X PORT_LOOK_PANEL_X
+#define PANEL_Y PORT_LOOK_PANEL_Y
+#define PANEL_W PORT_LOOK_PANEL_W
+#define PANEL_H PORT_LOOK_PANEL_H
 /* Lines' heights, in the game's lines: the title, a row, a line of text,
  * a small note. */
-#define SIZE_TITLE 17
-#define SIZE_ROW 12
-#define SIZE_TEXT 9
-#define SIZE_NOTE 8
-#define TITLE_Y 36
-#define ROWS_Y 62
+#define SIZE_TITLE PORT_LOOK_SIZE_TITLE
+#define SIZE_ROW PORT_LOOK_SIZE_ROW
+#define SIZE_TEXT PORT_LOOK_SIZE_TEXT
+#define SIZE_NOTE PORT_LOOK_SIZE_NOTE
+#define ROWS_Y 64
 #define ROW_PITCH 15
-#define ROWS_X 72
-#define VALUE_X 276
-#define HELP_Y 200
-#define FOOT_Y 216
+#define ROWS_X 84
+#define VALUE_X 290
+#define HELP_Y 202
+#define FOOT_Y 236
 #define ROWS_SHOWN 9
-/* The colours, 0xAARRGGBB: the top menu's (top_page.c), and the panel. */
-#define COLOR_CURSOR 0xFFFFEC9CU
-#define COLOR_ROW 0xFFD8B860U
-#define COLOR_ROW_OFF 0xFF707070U
-#define COLOR_TEXT 0xFFF2F2F2U
-#define COLOR_DIM 0xFFA8ACB8U
-#define COLOR_WARN 0xFFF0A848U
-#define COLOR_GOOD 0xFF8CD88CU
-#define COLOR_SHADOW 0xC0101838U
-#define COLOR_PANEL 0xF00C1020U
-#define COLOR_EDGE 0xFF6A5530U
-#define COLOR_KEY 0xFF20283CU
-#define COLOR_KEY_ON 0xFF6A5530U
+/* The colours, 0xAARRGGBB: the game's Option Menu's (menu.h); the cursor's
+ * glows (g_pages.pulse). */
+#define COLOR_CURSOR port_LookPulse(g_pages.pulse)
+#define COLOR_ROW PORT_LOOK_ROW
+#define COLOR_ROW_OFF PORT_LOOK_OFF
+#define COLOR_TEXT PORT_LOOK_WHITE
+#define COLOR_DIM PORT_LOOK_GREY
+#define COLOR_WARN PORT_LOOK_WARN
+#define COLOR_GOOD PORT_LOOK_GOOD
+#define COLOR_KEY 0x80181C34U
+#define COLOR_KEY_ON 0xA0484830U
+#define COLOR_FIELD 0x90000010U
 #define ROOMS_MAX 12
 #define TEXT_BYTES 400
 #define WORD_BYTES 64
@@ -223,68 +222,42 @@ static struct {
     s32 until;   /* a PORT_SESSION_PHASE_ an `until:` waits for, or -1 */
     u32 shots;
     s32 stick[2];
-    /* the pixels */
-    u32 *pixels;
-    u32 room;
-    PortRect place;
-    s32 area_w;
-    s32 area_h;
-    s32 font_ok;
+    /* open beside the running game (the top menu's), and SDL's ticks as
+     * they opened */
+    s32 is_beside;
+    u32 opened_at;
+    /* frames since the cursor last moved (its glow), and of the page's
+     * fade in */
+    s32 pulse;
+    s32 fade;
+    s32 drawn_page;
+    /* the page being drawn (port_OnlinePagesDraw) */
+    PortLook *look;
 } g_pages = {.until = -1, .rotation = PORT_ROOM_RULE_FIXED};
 
 /* ---- places and letters ---- */
 
-static s32 port_PageX(s32 x) {
-    return x * g_pages.area_w / GAME_W - g_pages.place.x;
-}
-
-static s32 port_PageY(s32 y) {
-    return y * g_pages.area_h / GAME_H - g_pages.place.y;
-}
-
 enum {
-    ALIGN_LEFT = 0,
-    ALIGN_CENTRE = 1,
-    ALIGN_RIGHT = 2,
+    ALIGN_LEFT = PORT_LOOK_LEFT,
+    ALIGN_CENTRE = PORT_LOOK_CENTRE,
+    ALIGN_RIGHT = PORT_LOOK_RIGHT,
 };
 
 /* A line of the page's text, `lines` of the game's lines high, its
- * baseline at the game's `y`: in the port's typeface with a shadow, as the
- * top menu's (top_page.c). */
+ * baseline at the game's `y`: in the port's typeface with the game's
+ * shadow (page_look.c), a title's face, a row's or a line's. */
 static void port_PageText(
     s32 x, s32 y, s32 lines, const char *text, u32 color, s32 align) {
-    PortTextStyle style;
-    s32 size = lines * g_pages.area_h / GAME_H;
-    s32 px;
-
-    if (size < 6) {
-        size = 6;
-    }
-    memset(&style, 0, sizeof(style));
-    style.face = lines == SIZE_TITLE ? PORT_FACE_TITLE
-                 : lines == SIZE_ROW ? PORT_FACE_BOLD
-                                     : PORT_FACE_TEXT;
-    style.size = size;
-    style.color = color;
-    style.shadow = COLOR_SHADOW;
-    style.shadow_px = size / 14 > 1 ? size / 14 : 1;
-    px = port_PageX(x);
-    if (align == ALIGN_CENTRE) {
-        px -= port_TextMeasure(text, &style) / 2;
-    } else if (align == ALIGN_RIGHT) {
-        px -= port_TextMeasure(text, &style);
-    }
-    port_TextDraw(g_pages.pixels, g_pages.place.w, g_pages.place.h, px,
-                  port_PageY(y), text, &style);
+    port_LookText(g_pages.look, x, y, lines,
+                  lines >= SIZE_TITLE ? PORT_FACE_TITLE
+                  : lines == SIZE_ROW ? PORT_FACE_BOLD
+                                      : PORT_FACE_TEXT,
+                  text, color, align);
 }
 
 /* A box of the game's places, filled. */
 static void port_PageBox(s32 x, s32 y, s32 w, s32 h, u32 color) {
-    s32 left = port_PageX(x);
-    s32 top = port_PageY(y);
-
-    port_FillRect(g_pages.pixels, g_pages.place.w, g_pages.place.h, left, top,
-                  port_PageX(x + w) - left, port_PageY(y + h) - top, color);
+    port_LookBox(g_pages.look, x, y, w, h, color);
 }
 
 /* `text` broken between words into lines of at most `width` of the
@@ -297,7 +270,7 @@ static s32 port_PageWrapped(
 
     memset(&style, 0, sizeof(style));
     style.face = PORT_FACE_TEXT;
-    style.size = SIZE_TEXT * g_pages.area_h / GAME_H;
+    style.size = SIZE_TEXT * g_pages.look->area_h / GAME_H;
     while (*text != 0 && lines < most) {
         s32 fits = 0;
         s32 end = 0;
@@ -313,7 +286,7 @@ static s32 port_PageWrapped(
             memcpy(line, text, (size_t)end);
             line[end] = 0;
             if (fits != 0 && port_TextMeasure(line, &style) >
-                                 width * g_pages.area_w / GAME_W) {
+                                 width * g_pages.look->area_w / GAME_W) {
                 break;
             }
             fits = end;
@@ -493,7 +466,7 @@ static void port_PageRow(s32 row, char *name, u32 name_room, char *value,
             "For those who know their address: host or join without the "
             "lobby",
             "What the lobby and the other player see",
-            "Back to the top menu"};
+            "Back to the main menu"};
 
         snprintf(name, name_room, "%s", names[row]);
         *help = helps[row];
@@ -608,10 +581,9 @@ static void port_PageRow(s32 row, char *name, u32 name_room, char *value,
     }
 }
 
+/* The page's title above the panel, with the game's rule under it. */
 static void port_PageTitle(const char *title) {
-    port_PageText(
-        GAME_W / 2, TITLE_Y, SIZE_TITLE, title, COLOR_ROW, ALIGN_CENTRE);
-    port_PageBox(PANEL_X + 24, TITLE_Y + 6, PANEL_W - 48, 1, COLOR_EDGE);
+    port_LookTitle(g_pages.look, title);
 }
 
 static void port_PageFoot(const char *left) {
@@ -649,9 +621,6 @@ static void port_PageDrawRows(void) {
             color = is_cursor ? COLOR_CURSOR : COLOR_ROW_OFF;
         }
         if (is_cursor) {
-            port_PageBox(
-                ROWS_X - 12, y - 10, PANEL_W - 2 * (ROWS_X - 12 - PANEL_X), 13,
-                0x40FFEC9CU);
             help = row_help;
         }
         port_PageText(ROWS_X, y, SIZE_ROW, name, color, ALIGN_LEFT);
@@ -701,7 +670,7 @@ static void port_PageKeyboard(void) {
     } else {
         snprintf(shown, sizeof(shown), "%s_", g_pages.typed);
     }
-    port_PageBox(ROWS_X, 52, PANEL_W - 2 * (ROWS_X - PANEL_X), 16, 0xC0000000U);
+    port_PageBox(ROWS_X, 52, PANEL_W - 2 * (ROWS_X - PANEL_X), 16, COLOR_FIELD);
     port_PageText(ROWS_X + 6, 64, SIZE_ROW, shown, COLOR_TEXT, ALIGN_LEFT);
     for (row = 0; row < KEY_ROWS; row++) {
         s32 count = (s32)strlen(g_keys[row]);
@@ -912,44 +881,13 @@ static void port_PageMeeting(void) {
                   COLOR_DIM, ALIGN_LEFT);
 }
 
+/* The page into `look` (port_OnlinePagesDraw). */
 static void port_PageDraw(void) {
-    s32 window_w = 0;
-    s32 window_h = 0;
-    u32 need;
-
-    port_GetWindowSize(&window_w, &window_h);
-    if (window_w <= 0 || window_h <= 0) {
-        return;
+    if (g_pages.page != g_pages.drawn_page) {
+        /* another page fades in, as the game's pages come up */
+        g_pages.drawn_page = g_pages.page;
+        g_pages.fade = 0;
     }
-    if (!g_pages.font_ok) {
-        g_pages.font_ok = port_FontStart();
-        if (!g_pages.font_ok) {
-            return;
-        }
-    }
-    /* the game's 4:3 picture, as the window shows it */
-    g_pages.area_h = window_h;
-    g_pages.area_w = window_h * 4 / 3 < window_w ? window_h * 4 / 3 : window_w;
-    g_pages.place.x = PANEL_X * g_pages.area_w / GAME_W;
-    g_pages.place.y = PANEL_Y * g_pages.area_h / GAME_H;
-    g_pages.place.w =
-        (PANEL_X + PANEL_W) * g_pages.area_w / GAME_W - g_pages.place.x;
-    g_pages.place.h =
-        (PANEL_Y + PANEL_H) * g_pages.area_h / GAME_H - g_pages.place.y;
-    need = (u32)(g_pages.place.w * g_pages.place.h);
-    if (need > g_pages.room) {
-        free(g_pages.pixels);
-        g_pages.pixels = malloc((size_t)need * sizeof(u32));
-        g_pages.room = g_pages.pixels != NULL ? need : 0;
-    }
-    if (g_pages.pixels == NULL) {
-        return;
-    }
-    for (need = 0; need < (u32)(g_pages.place.w * g_pages.place.h); need++) {
-        g_pages.pixels[need] = COLOR_PANEL;
-    }
-    port_PageBox(PANEL_X, PANEL_Y, PANEL_W, 1, COLOR_EDGE);
-    port_PageBox(PANEL_X, PANEL_Y + PANEL_H - 1, PANEL_W, 1, COLOR_EDGE);
     switch (g_pages.page) {
     case PAGE_MAIN:
         port_PageTitle("Online Play");
@@ -1005,25 +943,49 @@ static void port_PageDraw(void) {
     }
 }
 
-/* The page drawn over the game's stopped picture and shown; for a test, a
- * picture of the window first. */
+void port_OnlinePagesDraw(PortLook *look, s32 is_own) {
+    g_pages.look = look;
+    port_LookPanel(look, is_own);
+    port_PageDraw();
+    port_LookFade(look, g_pages.fade, PORT_LOOK_FADE_FRAMES);
+}
+
+s32 port_OnlinePagesAreOpen(void) { return g_pages.is_open || g_pages.meeting; }
+
+s32 port_OnlinePagesAreBeside(void) {
+    return g_pages.is_open && g_pages.is_beside;
+}
+
+/* The pages' glow and fade a frame on. */
+static void port_PagesTick(void) {
+    g_pages.pulse++;
+    if (g_pages.fade < PORT_LOOK_FADE_FRAMES) {
+        g_pages.fade++;
+    }
+}
+
+/* The page shown over the game's stopped picture; for a test, a picture
+ * of the window first. Beside the game, the picture is taken as the next
+ * blank shows it. */
 static void port_PageShow(s32 is_shot) {
     char path[TEXT_BYTES];
+    const char *shot = NULL;
 
-    port_PageDraw();
-    if (g_pages.pixels == NULL) {
+    if (is_shot && g_port_window_options.menu_shots != NULL) {
+        port_MakeFolder(g_port_window_options.menu_shots);
+        snprintf(path, sizeof(path), "%s/online-%03u.png",
+                 g_port_window_options.menu_shots, g_pages.shots++);
+        port_Note("online pages: a picture of the window, %s", path);
+        shot = path;
+    }
+    if (g_pages.is_beside && g_pages.is_open) {
+        if (shot != NULL) {
+            port_PageShot(shot);
+        }
         return;
     }
-    if (!is_shot || g_port_window_options.menu_shots == NULL) {
-        port_ShowMenu(
-            port_GetBlankCount(), g_pages.pixels, &g_pages.place, NULL);
-        return;
-    }
-    port_MakeFolder(g_port_window_options.menu_shots);
-    snprintf(path, sizeof(path), "%s/online-%03u.png",
-             g_port_window_options.menu_shots, g_pages.shots++);
-    port_ShowMenu(port_GetBlankCount(), g_pages.pixels, &g_pages.place, path);
-    port_Note("online pages: a picture of the window, %s", path);
+    port_PagesTick();
+    port_ShowPage(port_GetBlankCount(), shot);
 }
 
 /* ---- the pages' work ---- */
@@ -1646,6 +1608,28 @@ static void port_PagesAccept(void) {
     }
 }
 
+/* The game's sound for a press (port_PageSound): the cursor moved, a row
+ * or a key taken, a way back. */
+static void port_PagesPressSound(s32 press) {
+    switch (press) {
+    case PRESS_UP:
+    case PRESS_DOWN:
+    case PRESS_LEFT:
+    case PRESS_RIGHT:
+        g_pages.pulse = 0;
+        port_PageSound(PORT_PAGE_SOUND_CURSOR);
+        break;
+    case PRESS_BACK:
+        port_PageSound(PORT_PAGE_SOUND_CANCEL);
+        break;
+    case PRESS_NONE:
+        break;
+    default:
+        port_PageSound(PORT_PAGE_SOUND_CONFIRM);
+        break;
+    }
+}
+
 static void port_PagesPress(s32 press) {
     s32 rows = port_PageRowCount();
     s32 page = g_pages.page;
@@ -1654,6 +1638,7 @@ static void port_PagesPress(s32 press) {
     if (press == PRESS_NONE) {
         return;
     }
+    port_PagesPressSound(press);
     if (g_pages.page == PAGE_KEYBOARD) {
         port_KeyboardPress(press);
         return;
@@ -1967,17 +1952,52 @@ static void port_PagesTakeWords(void) {
 
 /* ---- the loop ---- */
 
-/* The pages, from the moment they open to the moment they close or a
- * session is asked for. Nothing of the game's runs in here. */
-static void port_RunPages(u32 blank) {
-    u32 started = SDL_GetTicks();
-
+/* The pages opened: beside the game where it is at ReBushido's top
+ * menu, which they cover (its music goes on under them, and their presses
+ * sound as the game's menus do), or over it stopped. */
+static void port_PagesOpened(u32 blank, s32 is_beside) {
     g_pages.is_open = TRUE;
     g_pages.wanted = FALSE;
+    g_pages.is_beside = is_beside;
+    g_pages.opened_at = SDL_GetTicks();
+    g_pages.fade = 0;
+    g_pages.pulse = 0;
+    g_pages.drawn_page = g_pages.page;
     port_PagesTakeWords();
+    port_PageSoundsOn(is_beside);
+    port_PageCover(is_beside);
     /* nothing downloads or asks while online play is up (update.h) */
     port_UpdateSetOnline(TRUE);
-    port_Note("online pages: open; the game is stopped at blank %u", blank);
+    port_Note(is_beside ? "online pages: open beside the game, which runs on "
+                          "under them; blank %u"
+                        : "online pages: open; the game is stopped at blank "
+                          "%u",
+              blank);
+}
+
+/* The pages closed, or left for a session asked for: what is still held
+ * is no press of the game's. */
+static void port_PagesClosed(void) {
+    port_HoldBackPads();
+    if (!port_OnlineIsBusy()) {
+        /* the updater may look again (update.h) */
+        port_UpdateSetOnline(FALSE);
+        port_PageSoundsOn(FALSE);
+        port_PageCover(FALSE);
+    }
+    port_Note("online pages: closed after %u ms at blank %u%s",
+              SDL_GetTicks() - g_pages.opened_at, port_GetBlankCount(),
+              port_OnlineIsBusy() ? "; a session begins at the game's next "
+                                    "boundary"
+                                  : "");
+    g_pages.is_beside = FALSE;
+}
+
+/* The pages, from the moment they open to the moment they close or a
+ * session is asked for, with the game stopped. Nothing of the game's runs
+ * in here. */
+static void port_RunPages(u32 blank) {
+    port_PagesOpened(blank, FALSE);
     while (g_pages.is_open) {
         SDL_Event event;
         s32 is_shot = FALSE;
@@ -1999,15 +2019,33 @@ static void port_RunPages(u32 blank) {
             SDL_Delay(STEP_MS);
         }
     }
-    port_HoldBackPads();
-    if (!port_OnlineIsBusy()) {
-        /* the updater may look again (update.h) */
-        port_UpdateSetOnline(FALSE);
+    port_PagesClosed();
+}
+
+/* A blank's turn of the pages beside the game: a test's word, the room's
+ * turn, the glow and the fade on a frame. Their presses came with the
+ * window's events (port_OnlinePagesEvent). */
+static void port_PagesBesideTurn(void) {
+    s32 is_shot = FALSE;
+
+    if (g_pages.is_open) {
+        port_PagesPress(port_PagesWord(&is_shot));
     }
-    port_Note("online pages: closed after %u ms%s", SDL_GetTicks() - started,
-              port_OnlineIsBusy() ? "; a session begins at the game's next "
-                                    "boundary"
-                                  : "");
+    if (g_pages.is_open) {
+        port_PagesRoomTurn();
+    }
+    if (!g_pages.is_open) {
+        port_PagesClosed();
+        return;
+    }
+    port_PagesTick();
+    if (is_shot) {
+        port_PageShow(TRUE);
+    }
+}
+
+void port_OnlinePagesEvent(const SDL_Event *event) {
+    port_PagesPress(port_PagesEvent(event));
 }
 
 /* ---- the meeting, at the game's boundary (online.c) ---- */
@@ -2034,6 +2072,10 @@ static void port_PagesWait(const char *status) {
     if (press == PRESS_NONE) {
         press = port_PagesWord(&is_shot);
     }
+    /* the game is stopped at its boundary while the two meet; the top
+     * menu's music under the pages goes on (sdl_menu.c) */
+    port_PageKeepSound();
+    port_PagesPressSound(press);
     port_GetSessionLobby(&lobby);
     if (lobby.phase == PORT_SESSION_PHASE_READY) {
         s32 *cursor = &g_pages.cursor[PAGE_MEETING];
@@ -2075,6 +2117,10 @@ static void port_PagesOnline(s32 event, const char *why) {
     switch (event) {
     case PORT_ONLINE_MEETING:
         port_UpdateSetOnline(TRUE);
+        /* drawn by the session's waits, over the game stopped at its
+         * boundary (port_PageShow) */
+        g_pages.is_beside = FALSE;
+        g_pages.fade = PORT_LOOK_FADE_FRAMES;
         port_PagesTakeWords();
         g_pages.wait_hook = g_port_net_wait_hook;
         g_pages.fail_hook = g_port_net_fail_hook;
@@ -2096,6 +2142,9 @@ static void port_PagesOnline(s32 event, const char *why) {
         g_port_session_ready_hook = NULL;
         g_pages.meeting = FALSE;
         g_pages.page = PAGE_MAIN;
+        /* the session's game is from power on: the player's own top menu,
+         * covered, is put back as it was when the session ends */
+        port_PageSoundsOn(FALSE);
         port_HoldBackPads();
         port_WindowStateReplaced();
         port_Say("online: the session begins in this program: the game from "
@@ -2150,8 +2199,16 @@ void port_AskForOnlinePages(const char *why) {
 }
 
 s32 port_MaybeRunOnlinePages(u32 blank) {
+    if (g_pages.is_open && g_pages.is_beside) {
+        port_PagesBesideTurn();
+        return TRUE;
+    }
     if (!g_pages.wanted || port_IsNetplayOn() || port_OnlineIsBusy()) {
         return FALSE;
+    }
+    if (port_PageCanBeBeside()) {
+        port_PagesOpened(blank, TRUE);
+        return TRUE;
     }
     port_RunPages(blank);
     return TRUE;

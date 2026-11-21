@@ -43,7 +43,11 @@ const PortTopRow g_port_top_rows[PORT_TOP_PAGES][PORT_TOP_ROWS] = {
         {"Vs. CPU", {NULL, NULL}, PORT_TOP_MODE, GAME_ROW_VSCPU, SIDE},
         {"Slash", {NULL, NULL}, PORT_TOP_MODE, GAME_ROW_CHANBARA, SIDE},
         {"Group Battle", {NULL, NULL}, PORT_TOP_MODE, GAME_ROW_TEAM, SIDE},
-        {"Back", {"Back", "To the top menu"}, PORT_TOP_BACK, GAME_ROW_STORY, 0},
+        {"Back",
+         {"Back", "To the main menu"},
+         PORT_TOP_BACK,
+         GAME_ROW_STORY,
+         0},
     },
 };
 
@@ -116,4 +120,23 @@ void port_TopMenuTakeOptions(void) {
     g_game_settings.first_person = 0;
     g_saved_record.flags =
         (u8)((g_saved_record.flags & ~GAME_OPTION_FLAGS) | flags);
+}
+
+s32 port_TopMenuIsCovered(void) { return g_port_top_menu.covered; }
+
+void port_TopMenuNotePanelRow(s32 row, s32 y, s32 panel, s32 cursor) {
+    g_port_top_menu.panel_frame = (u32)g_disp_frame_count;
+    g_port_top_menu.panel_kind = (u8)panel;
+    g_port_top_menu.panel_cursor = (u8)cursor;
+    g_port_top_menu.panel_y[row & 1] = (s16)y;
+}
+
+/* The game's sounds, by the window's number for them. */
+void port_TopMenuPlaySound(s32 sound) {
+    static const s32 g_sounds[PORT_TOP_SOUNDS] = {
+        MENU_SOUND_CURSOR, MENU_SOUND_CONFIRM, MENU_SOUND_CANCEL};
+
+    if (sound >= 0 && sound < PORT_TOP_SOUNDS) {
+        snd_Play(g_sounds[sound], SND_VOLUME_MAX, SND_VOLUME_MAX);
+    }
 }

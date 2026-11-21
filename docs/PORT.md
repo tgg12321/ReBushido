@@ -8906,14 +8906,14 @@ headless`'s `rooms-crew` plays a room's rotation match as Crew 2, two
 players and a spectator: two fights, the match decided at the result's
 card, the players' hashes alike and the spectator's theirs.
 
-## ReBushido's top menu
+## ReBushido's main menu
 
 The owner, 2026-11-19: drop the options page at boot, put every setting
 in the menu's Options, drop the first person's view, Link Mode becomes
 Online Play, and Group Battle, Slash, Vs. CPU and Story go under one
 Singleplayer row; Training stays on the top menu. The window's setting
 `menu` (`rebushido`, as built, or `original`; `--menu` on the command
-line), `include/port_top_menu.h`; docs/PLAYING.md, "The top menu".
+line), `include/port_top_menu.h`; docs/PLAYING.md, "The main menu".
 
 **What the game does.** `src/port/top_menu.c` (a state file) holds the
 two pages' rows, the page and the cursor, and a count of the times the

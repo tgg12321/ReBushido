@@ -41,21 +41,21 @@
 
 /* ---- the game ---- */
 
-/* ReBushido's top menu (include/port_top_menu.h; docs/PLAYING.md, "The
- * top menu"): 0, Singleplayer, Versus, Training, Online Play and Options,
+/* ReBushido's main menu (include/port_top_menu.h; docs/PLAYING.md, "The
+ * main menu"): 0, Singleplayer, Versus, Training, Online Play and Options,
  * seen from the side only, with no options page at boot; 1, the game's
  * own menus and ReBushido's options page. A run of a test's (--plan or
  * --frames) has the original's unless --menu says otherwise. */
 PORT_SETTING(top_menu,
     .name = "menu", .value = "rebushido",
-    .note = "rebushido: ReBushido's top menu, with no\n"
+    .note = "rebushido: ReBushido's main menu, with no\n"
             "options page at boot; original: the game's\n"
             "own menus and the options page",
     .read = PORT_READ_WORDS, .words = {"rebushido", "original"},
     .is = "rebushido or original",
     .menu = PORT_MENU_GAME, .rank = 90, .takes = PORT_TAKES_RESTART,
     .label = "Menus",
-    .help = "ReBushido's top menu, or the game's own with the options "
+    .help = "ReBushido's main menu, or the game's own with the options "
             "page at boot",
     .shown = {"ReBushido", "Original"})
 
@@ -638,15 +638,15 @@ PORT_SETTING(disc_mods,
     .help = "The art, the stages' textures and the fighters made from your "
             "disc at a start, when they are not made yet")
 
-/* The English top menu the program ships as a mod of its own,
+/* The English main menu the program ships as a mod of its own,
  * mods/english/ (docs/MODS.md, "The English menu"); 0 leaves it out. */
 PORT_SETTING(english,
     .name = "english", .value = "on",
-    .note = "the top menu in English, a mod the program\n"
+    .note = "the main menu in English, a mod the program\n"
             "ships (mods/english/); off for Japanese",
     .menu = PORT_MENU_MODS, .rank = 10, .takes = PORT_TAKES_RESTART,
-    .label = "English top menu",
-    .help = "The top menu's Japanese drawn again in English (Remastered)")
+    .label = "English main menu",
+    .help = "The main menu's Japanese drawn again in English (Remastered)")
 
 /* The menus' lettering drawn again, the mod the program ships as
  * mods/ui/ (docs/MODS.md, "The sharp menus"); 0 leaves it out. */

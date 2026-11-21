@@ -58,10 +58,10 @@ SMALL_FACE = 'bold'
 SCALE_X = 6
 SCALE_Y = 12
 
-MANIFEST = '''# ReBushido's English top menu: built in, made by tools/port_english.py
+MANIFEST = '''# ReBushido's English main menu: built in, made by tools/port_english.py
 # (docs/MODS.md, "The English menu"). `english = off` in rebushido.cfg,
 # or the settings menu, leaves it out.
-name = English top menu
+name = English main menu
 version = 1.0
 order = -100      # before every other mod: any of yours of the same key wins
 author = ReBushido

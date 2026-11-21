@@ -151,6 +151,14 @@ extern u32 port_GetSampleCount(void);
  * runs (the sound library's tick), then the samples of one blank are
  * mixed. */
 extern void port_RunSoundBlank(u32 blank);
+/* A blank's sound where the game's frames are stopped at a boundary of
+ * its menu and its sound goes on, as a console's does while a game waits
+ * (the window's online pages while two players meet): the menu sound
+ * the window asked for, the music's step every other blank (the menu's
+ * frames are two blanks), the game's queue of sounds started, and a
+ * blank of the chip and the drive. The game's state changes as its
+ * frames would have changed it; nothing of the clock moves. */
+extern void port_RunStoppedSound(void);
 /* Called with each blank's samples as they are made, if not NULL: the
  * window's sound card (src/port/window/). It may be called more than
  * once in a blank: the blank's samples are made in two pieces, before

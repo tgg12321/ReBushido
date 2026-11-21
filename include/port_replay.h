@@ -65,6 +65,11 @@ extern void port_ReplayBoundary(void);
 /* The game takes input number `index` (pad.c, port_TakeInput), after
  * the take hook: kept, if a fight is being recorded. */
 extern void port_ReplayTook(const struct PortInput *input, u32 index);
+/* ... and the menu sound the window asked the game for as it took it
+ * (port_top_menu.h), kept with it; and the one a replay being played
+ * kept with input number `index`, or -1. */
+extern void port_ReplayTookSound(u32 index, s32 sound);
+extern s32 port_ReplaySoundAt(u32 index);
 
 /* The disc the game runs from, whose runs of bytes a fight's start is
  * not written with (main.c); and each sector the game reads from it

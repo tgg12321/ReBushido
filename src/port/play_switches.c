@@ -57,6 +57,36 @@ void port_SetGameOptions(u32 flags) {
     }
 }
 
+/* The menu sounds the window's pages asked for (port_top_menu.h): a few
+ * at most between two of the game's inputs, the oldest played first. */
+#define ASKED_SOUNDS 4
+
+static struct {
+    s32 count;
+    s32 sounds[ASKED_SOUNDS];
+} g_port_asked_sounds;
+
+void port_AskMenuSound(s32 sound) {
+    if (g_port_asked_sounds.count < ASKED_SOUNDS) {
+        g_port_asked_sounds.sounds[g_port_asked_sounds.count++] = sound;
+    }
+}
+
+s32 port_TakeMenuSound(void) {
+    s32 sound;
+    s32 i;
+
+    if (g_port_asked_sounds.count == 0) {
+        return -1;
+    }
+    sound = g_port_asked_sounds.sounds[0];
+    g_port_asked_sounds.count--;
+    for (i = 0; i < g_port_asked_sounds.count; i++) {
+        g_port_asked_sounds.sounds[i] = g_port_asked_sounds.sounds[i + 1];
+    }
+    return sound;
+}
+
 s32 port_GetTopMenuSwitch(void) { return g_port_play_switches.top_menu; }
 
 s32 port_GetBugfixesSwitch(void) { return g_port_play_switches.bugfixes; }

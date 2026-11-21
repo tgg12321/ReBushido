@@ -128,12 +128,12 @@ pressed in -- which is usually one of those, and is what is on the
 screen when you press it. That is the picture to send when something
 looks wrong only while the game is moving.
 
-## The top menu
+## The main menu
 
 The program goes straight to the game's opening: ReBushido's options
 page, which the PlayStation disc shows first, is not shown, and its
 setting, Bug fixes, is in the settings menu with the rest. A memory card
-with the game's save on it is loaded without asking. Then the top menu,
+with the game's save on it is loaded without asking. Then the main menu,
 in the game's own look, with five rows:
 
 | The row | What it is |
@@ -145,7 +145,7 @@ in the game's own look, with five rows:
 | **Options** | the settings menu (below), in place of the game's own options page |
 
 Up and down choose, Cross takes the row, Triangle goes back (from the
-top page, to the opening, as the game's does). Every fight is seen from
+main page, to the opening, as the game's does). Every fight is seen from
 the side: the game's first person's view (POV) is not offered, and the
 link cable's mode is Online Play. What the game's options page had --
 Difficulty, Music and Monitor -- are settings of the settings menu's
@@ -162,9 +162,9 @@ original's unless `--menu rebushido` says otherwise.
 
 Every setting of `rebushido.cfg` below and the buttons of both players
 are in a menu of the program's own, drawn over the game at the window's
-own resolution. **Options** on the top menu opens it, and **F1** or a
+own resolution. **Options** on the main menu opens it, and **F1** or a
 controller's **guide button** anywhere; **Select** opens it on the
-screens where the game has no use for Select: the top menu, the options
+screens where the game has no use for Select: the main menu, the options
 page at boot (`menu = original`) and the fight's pause menu (Start,
 then Select).
 
@@ -201,7 +201,7 @@ fixes, the game's Difficulty, Music and Monitor, Graphics
 (as F2), the resolution, the ground as one mesh, the shadows, smooth
 lighting, the effects, the dead zone, and the buttons. What waits for the program to start again is said
 on its line, `(after a restart)`: antialiasing, the draw distance, the
-shape, the frame rate, the menus (`menu`), the English top menu, the sharp menus and the
+shape, the frame rate, the menus (`menu`), the English main menu, the sharp menus and the
 mods.
 
 **Player 1's buttons** and **Player 2's buttons** list each of the
@@ -217,7 +217,7 @@ and keeps it in `rebushido.cfg`, and the program starts with it. With
 `menu = original` the options page at boot sets it from the memory card
 instead. **Difficulty** (Hard, which the game starts with, or Easy),
 **Music** and **Monitor** (Color, or black and white) are the game's
-own options, taken at the next frame of the top menu and written into
+own options, taken at the next frame of the main menu and written into
 the game's save as its options page did.
 
 **The menu writes `rebushido.cfg`** as it closes, if anything was
@@ -244,7 +244,7 @@ menu says so under the caption, and the settings menu's first page has
   holding the zip and every file in it to the release's signed manifest;
   then **Restart and install X** ends the program, puts the new files in
   place, and starts it again.
-- **Later**: the top menu's notice is not shown again for that version.
+- **Later**: the main menu's notice is not shown again for that version.
 - **What's new in X**: the release's notes, signed with it.
 
 Nothing of yours is touched: `rebushido.cfg`, the memory cards, `logs\`,
@@ -252,7 +252,7 @@ Nothing of yours is touched: `rebushido.cfg`, the memory cards, `logs\`,
 and any mod of your own. A file the new version no longer has is taken
 away only if it is still what the old version shipped. If the new
 program does not start, every file is put back and the old program is
-started again; it says so on the top menu and does not offer that
+started again; it says so on the main menu and does not offer that
 version by itself again. What the step did is in `update\apply.log`.
 
 | setting | values | |
@@ -304,7 +304,7 @@ music = off              # no music, the sounds alone
 monitor = bw             # the game's picture in black and white
 mods = off               # none of the mods in mods/ (on is the default)
 disc_mods = off          # never make the art, stages and fighters from the disc
-english = off            # the top menu in Japanese (on is the default)
+english = off            # the main menu in Japanese (on is the default)
 ui = off                 # the menus' own lettering (on is the default)
 music_mods = off         # the game's own music (on is the default)
 quick_loading = off      # every blank of a load at the console's pace
@@ -496,12 +496,12 @@ second controller is needed. Square switches the stage under the cursor
 between Classic and Remastered Classic and Select opens the custom
 arenas, as in versus mode ("Kinds of stage").
 
-- **Versus the CPU**: top menu, Vs. CPU, a fighter, a weapon, then the
+- **Versus the CPU**: main menu, Vs. CPU, a fighter, a weapon, then the
   stage pages. Every opponent of the run is fought on the stage chosen.
-- **Training**: top menu, Training, either kind of practice, a fighter
+- **Training**: main menu, Training, either kind of practice, a fighter
   and the weapons, then the stage pages. The fight is on the stage
   chosen, the ninja or the opponent and the pause menu's options as
-  before; "Return to Sub Menu" comes back to training's own page, and
+  before; "Return to Character Select" (the game's own "Return to Character Select") comes back to training's own page, and
   from there through the select screen to the stage pages again.
 
 `stage_select_everywhere = off` gives both modes back their own stages,
@@ -671,7 +671,7 @@ the game keeps behind its progress, for trying every fighter:
   the only mode that has them;
 - versus the CPU's full run: the gunners and the clan's last fighter
   among the opponents, and the ending after the twentieth;
-- **slash mode** on the top menu, which the game opens once all six
+- **slash mode** on the main menu, which the game opens once all six
   stories have been finished.
 
 The weapons are not behind any progress: each fighter has his clan's
@@ -681,7 +681,7 @@ the save itself keeps only what you have won, so a save made with the
 setting on (after a story, a chanbara run, or from the game's own options page)
 writes your own progress and nothing more, and turning the setting off
 puts everything back as your card has it. It takes effect at the next
-screen that reads it: a select screen as it opens, and the top menu the
+screen that reads it: a select screen as it opens, and the main menu the
 next time it is shown. Online, the host's setting is both players'.
 ## More pictures a second
 
@@ -813,11 +813,11 @@ What only your screen and PC decide, and what helps there:
 
 A folder `mods/` beside the program holds mods: each a folder of its
 own, whose files stand in for the game's. The program comes with two,
-drawn by Graphics Remastered. `mods/english/`: **the top menu in
+drawn by Graphics Remastered. `mods/english/`: **the main menu in
 English** (Story Mode, Vs. CPU Mode and the rest in place of 決戦の間 and
 the others); `english = off` leaves it out ([`MODS.md`](MODS.md), "The
 English menu"). `mods/ui/`: **the sharp menus**, the pause menu, the
-menu after a fight, the top menu's captions, the select screens' titles
+menu after a fight, the main menu's captions, the select screens' titles
 and the group battle's page lettered again in a font, sharp at any size;
 `ui = off` leaves it out ("The sharp menus").
 
@@ -884,10 +884,10 @@ two programs check both before anything starts, and say what differs.
 The way the two PCs reach each other is the program's to find: a room
 at the lobby is all either player has to choose.
 
-**Online Play** on the top menu opens the online pages, drawn over the
-game in the top menu's look. Up and Down choose, Enter or Cross takes
+**Online Play** on the main menu opens the online pages, drawn over the
+game in the main menu's look. Up and Down choose, Enter or Cross takes
 a row, Escape or Circle goes back; a controller's buttons work as on
-the top menu. Nothing starts again: the session begins in the program
+the main menu. Nothing starts again: the session begins in the program
 you are playing, and when it ends you are back where you were.
 
 - **Quick Match** joins the first open room at the lobby that is your
@@ -980,7 +980,7 @@ another build, version, disc image or gameplay mods (with your setup
 code to compare), a wrong password, a full or closed room, an
 incompatible room, nobody answering at the address, a lobby that does
 not answer, or a player who stopped answering. The online pages say
-it and stay up; OK, and you try again or go back to the top menu. The
+it and stay up; OK, and you try again or go back to the main menu. The
 log has it too. (A session started from the command line, below, shows
 the message and then ends, as before.)
 
@@ -1004,10 +1004,10 @@ once, as on one console; the host picks the stage. After a fight the
 game's menu offers a **rematch**, the select screen again, or the main
 menu, or plays a Stock or First to match (the host's `match_rule`;
 "Match rules" above), which goes from fight to fight by itself and
-back to the stage select. **The main menu leaves**: going back to the top menu after a
+back to the stage select. **The main menu leaves**: going back to the main menu after a
 fight (or Triangle on the select screen before either has chosen) ends
 the session for both players at the same moment, and each is back at
-their own top menu, with their own memory cards, unlocks and settings,
+their own main menu, with their own memory cards, unlocks and settings,
 where they were before they went online; the online pages say the
 session is over. In a fight Start does nothing: there is no pause
 online. The opening movie is skipped.
@@ -1023,7 +1023,7 @@ line says *Press F1 or Escape again to leave the fight*, and a second
 press within three seconds leaves it. The other player wins it, both of
 you are back at your own games, and the online pages (or the room's
 page, in a room of several) say so. Closing the window
-leaves too; the other player is told and is back at their own top menu
+leaves too; the other player is told and is back at their own main menu
 (in a session started from the command line, they play on alone). If
 nothing is heard from the other PC for 15 seconds, or the two games
 part (a desync), the session ends the same way, and the pages say why.
@@ -1086,7 +1086,7 @@ fight began, and every press of both players after it, so that the fight
 is played again rather than filmed. Keep replays (the settings menu, the
 game's page; `replays = off` in `rebushido.cfg`) turns it off.
 
-**Watching one**: the settings menu (F1, or Options on the top menu),
+**Watching one**: the settings menu (F1, or Options on the main menu),
 Replays. The newest is at the top, with its date, both fighters and their
 weapons, the mode, the stage and how long it was. Enter or Cross plays it
 (from a menu, not in the middle of a fight), from the fight's loading
@@ -1138,7 +1138,7 @@ them, and the game never touches ReBushido's:
 | The file | What it holds |
 |---|---|
 | `BASLUS-00663BUSHIDO2` | the game's own save: the fighters unlocked, chanbara's best times and the game's options. One block |
-| `BASLUS-00663REBUSHI` | ReBushido's settings, which the options page sets (`menu = original`; ReBushido's top menu keeps them in `rebushido.cfg`). One block |
+| `BASLUS-00663REBUSHI` | ReBushido's settings, which the options page sets (`menu = original`; ReBushido's main menu keeps them in `rebushido.cfg`). One block |
 
 On a PlayStation, and in an emulator, they are on the memory card in slot
 1, as any save is. In the port each slot is a file on the computer: an

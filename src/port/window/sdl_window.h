@@ -117,9 +117,44 @@ union SDL_Event;
 /* The menu is asked for (`why`, for the log): it opens at the end of the
  * first blank where the game has shown a frame since. */
 extern void port_AskForMenu(const char *why);
-/* At a blank's end: the menu, where it was asked for, from the moment it
- * opens to the moment it closes, with the game stopped. */
+/* At a blank's end: the menu, where it was asked for. Over ReBushido's
+ * top menu and the fight's pause it opens beside the game, which goes on
+ * running under it with no press given it, and has a turn here at every
+ * blank; anywhere else it runs from the moment it opens to the moment it
+ * closes, with the game stopped. The online pages likewise. */
 extern void port_MaybeRunMenu(u32 blank);
+
+/* ---- the window's pages over the game (sdl_menu.c; docs/PORT.md, "The
+ * window's pages in the game's look") ---- */
+
+/* Whether the game is where a page opens beside it: ReBushido's top menu,
+ * or the fight's pause. */
+extern s32 port_PageCanBeBeside(void);
+/* Whether a page (the settings menu, the online pages) is open beside the
+ * running game: the PC's input is the page's, and the game is given no
+ * press. */
+extern s32 port_PageIsBeside(void);
+/* ReBushido's top menu covered by a page or not (port_top_menu.h). */
+extern void port_PageCover(s32 on);
+/* The page's sounds played or not (port_PageSound): where the game runs
+ * beside it, or its sound goes on while it is stopped. */
+extern void port_PageSoundsOn(s32 on);
+/* An event of SDL's taken by a page beside the game: TRUE where it was
+ * (every one but the window's own keys, F2, F3, F9 and F12). */
+extern s32 port_PageTakesEvent(const union SDL_Event *event);
+/* What is laid over the game's 4:3 area for the page open, as
+ * port_StagePagePixels: FALSE where none is. */
+extern s32 port_PagePixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
+/* A test's picture of the window with the page on it: at the next blank
+ * shown, where the page is beside the game; the path, once, to the window
+ * as it shows it (sdl_window.c). */
+extern void port_PageShot(const char *path);
+extern const char *port_PageTakeShot(void);
+/* The game's sound for a blank where it is stopped and a page asks that
+ * its sound go on (port_RunStoppedSound): as many blanks as the PC's time
+ * owes since the last, at most a few. */
+extern void port_PageKeepSound(void);
 /* A pad's buttons `held` now, of which `sent` were held before: where
  * Select opens the menu (the screens that do nothing with it), the
  * buttons to hold back from the game until let go, and in `out` what the
@@ -129,9 +164,14 @@ extern u32 port_MenuTakesPad(u32 held, u32 sent, u32 *out);
 /* ---- what sdl_window.c does for the menu ---- */
 
 extern void port_GetWindowSize(s32 *w, s32 *h);
-/* The game's picture as it stopped, darkened, the menu's `pixels` over it
- * at `place`, and shown; for a test, the window as a PNG at `shot` first,
- * where that is not NULL. */
+/* The game's picture as it stopped, with the page open over it
+ * (port_PagePixels), and shown; for a test, the window as a PNG at `shot`
+ * first, where that is not NULL. */
+extern void port_ShowPage(u32 blank, const char *shot);
+/* The game's picture as it stopped, darkened, `pixels` over it at `place`,
+ * and shown; for a test, the window as a PNG at `shot` first, where that
+ * is not NULL: netplay's panel of a session from the command line
+ * (sdl_net.c). */
 extern void port_ShowMenu(
     u32 blank, const u32 *pixels, const PortRect *place, const char *shot);
 /* Whatever the pads hold now is not given to the game until let go. */
@@ -206,8 +246,17 @@ extern const char *port_StartOnline(const PortOnlineStart *start);
 extern void port_StartOnlinePages(void);
 /* Online Play: the pages open at the end of the next blank. */
 extern void port_AskForOnlinePages(const char *why);
-/* At a blank's end: the pages, where asked for; TRUE if they were up. */
+/* At a blank's end: the pages, where asked for; TRUE if they were up.
+ * Beside the game, a turn of theirs. */
 extern s32 port_MaybeRunOnlinePages(u32 blank);
+/* Whether they are open, and beside the running game; an event of SDL's
+ * given them there; and their page drawn in the game's look (menu.h,
+ * PortLook). */
+extern s32 port_OnlinePagesAreOpen(void);
+extern s32 port_OnlinePagesAreBeside(void);
+extern void port_OnlinePagesEvent(const union SDL_Event *event);
+struct PortLook;
+extern void port_OnlinePagesDraw(struct PortLook *look, s32 is_own);
 /* The state of another moment was put back (a session begun or ended in
  * the program): nothing drawn between frames until two more, all of
  * video memory given to the card, the settings menu's count of the top

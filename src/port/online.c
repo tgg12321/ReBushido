@@ -252,7 +252,7 @@ static const char *port_OnlineEndWords(s32 end) {
     case PORT_NETPLAY_END_QUIT:
         return "You left the fight.";
     default:
-        return "You both went back to the top menu: the session is over.";
+        return "You both went back to the main menu: the session is over.";
     }
 }
 

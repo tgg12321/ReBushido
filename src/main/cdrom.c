@@ -619,6 +619,17 @@ static s32 cdrom_EndLoopingAudio(void) {
     cdrom_Stop();
     return 1;
 }
+
+/* (The native port.) The music's step of cdrom_Update alone, where the
+ * game's frames are stopped and its sound goes on: the window's pages
+ * while two players meet (src/port/sound.c, port_RunStoppedSound). A
+ * piece that ends there starts again as the game's frames would start
+ * it; a read of the disc is left for the frames. */
+void cdrom_KeepMusicGoing(void) {
+    if (g_cdrom.state >= CDROM_STATE_AUDIO_SETMODE) {
+        cdrom_UpdateAudio();
+    }
+}
 #endif
 
 /* Asks for the whole of file `file_index` of the table to be read to `dest`.

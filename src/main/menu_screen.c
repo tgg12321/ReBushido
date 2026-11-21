@@ -505,6 +505,13 @@ void menu_Update(void) {
         if (g_pad_state.held) {
             g_sys_screen_frames = 1;
         }
+#if RB_PORT
+        /* a page of the window's over ReBushido's top menu is the
+         * player's, however long nothing is pressed (port_top_menu.h) */
+        if (port_TopMenuIsCovered()) {
+            g_sys_screen_frames = 1;
+        }
+#endif
         if (g_sys_screen_frames >= MENU_IDLE_FRAMES) {
             g_sys_screen = SCREEN_MOVIE;
         }

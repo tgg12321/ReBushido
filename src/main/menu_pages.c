@@ -1210,7 +1210,18 @@ static void menu_DrawModeCaptions(MenuCtx *ctx, SpriteDraw *draw) {
 }
 
 /* The top menu's title. */
+#if RB_PORT
+/* (The native port.) The rows of the title's sheet with its big line:
+ * under them, its small "TOP MENU", which ReBushido's top menu leaves out
+ * for the window's "MAIN MENU" (src/port/window/top_page.c). */
+#define TOP_TITLE_LINE_ROWS 17
+#define TOP_TITLE_CELLS_MOST 8
+#endif
+
 static void menu_DrawTopTitle(MenuCtx *ctx, SpriteDraw *draw) {
+#if RB_PORT
+    static SpriteCell g_line_cells[TOP_TITLE_CELLS_MOST];
+#endif
     draw->header = PTR(PTR(ctx->file->top_sheets)[TOP_SHEET_TITLE]);
     draw->x = 0;
     draw->y = 0;
@@ -1220,6 +1231,19 @@ static void menu_DrawTopTitle(MenuCtx *ctx, SpriteDraw *draw) {
     draw->scale_x = SPRITE_SCALE_ONE;
     draw->scale_y = SPRITE_SCALE_ONE;
     draw->table = draw->header->cells;
+#if RB_PORT
+    if (port_TopMenuIsOn() && draw->header->count <= TOP_TITLE_CELLS_MOST) {
+        s32 i;
+
+        for (i = 0; i < draw->header->count; i++) {
+            g_line_cells[i] = draw->header->cells[i];
+            if (g_line_cells[i].h > TOP_TITLE_LINE_ROWS) {
+                g_line_cells[i].h = TOP_TITLE_LINE_ROWS;
+            }
+        }
+        draw->table = g_line_cells;
+    }
+#endif
     draw->ft4_out = ctx->prims.ft4;
     ctx->prims.ft4 = sprite_DrawScaled(draw, SPRITE_QUAD_NORMAL);
     SetDrawMode(ctx->prims.mode, 1, 0, sprite_GetTPage(draw->header, 0), 0);
@@ -1651,6 +1675,14 @@ static s32 menu_UpdatePortTop(MenuCtx *ctx, s32 events, u32 pressed) {
     GpuDb *db = &g_disp_db[g_disp_frame_count & 1];
     const PortTopRow *of;
 
+    if (port_TopMenuIsCovered()) {
+        /* a page of the window's over the menu (the settings menu, the
+         * online pages): the backdrop and the wide panel of the game's
+         * Option Menu under it, and nothing else; its music goes on */
+        port_TopMenuTakeOptions();
+        menu_DrawPageFrame(ctx, MENU_PANEL_WIDE, db);
+        return MENU_TOP_RUNNING;
+    }
     if (NUDGE_DOWN(events) == NUDGE_PLUS) {
         port_TopMenuMove(1, g_menu_top.rows_on);
         g_menu_pulse = 0;

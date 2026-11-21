@@ -137,7 +137,7 @@ static const char g_port_window_usage[] =
     "                 game computes the same either way\n"
     "\n"
     "In the window: F1 opens the settings menu (Select does on the\n"
-    "options page, the top menu and the pause, and a controller's guide\n"
+    "options page, the main menu and the pause, and a controller's guide\n"
     "button anywhere), which changes and writes the settings file.\n"
     "Escape is the game's Start in a fight, which pauses it, and its\n"
     "way back everywhere else (Triangle; Cross skips a cutscene). It\n"

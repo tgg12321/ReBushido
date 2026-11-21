@@ -1098,7 +1098,7 @@ mode is versus (`menu_GetTopRowMode`, `src/main/menu_pages.c`, under
 `RB_PORT`), then Cross: about ten seconds. With the host's `menu =
 rebushido` there is no options page, the save is loaded without the
 question, and the row is Versus, which stands for the game's own
-(`PORT.md`, "ReBushido's top menu"). The **versus select screen is
+(`PORT.md`, "ReBushido's main menu"). The **versus select screen is
 the match's set-up**, both players choosing at once as on a couch, and
 the host takes the stage. After a fight the game's own menu offers
 Rematch, the select screen, or the main menu; a way back to the top menu

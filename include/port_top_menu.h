@@ -1,8 +1,8 @@
 #ifndef PORT_TOP_MENU_H
 #define PORT_TOP_MENU_H
 
-/* ReBushido's top menu on the native port (docs/PLAYING.md, "The top
- * menu"; docs/PORT.md, "ReBushido's top menu"): the window's `menu =
+/* ReBushido's top menu on the native port (docs/PLAYING.md, "The main
+ * menu"; docs/PORT.md, "ReBushido's main menu"): the window's `menu =
  * rebushido`, which a player's program has unless the settings say
  * `original`. With it:
  *
@@ -95,7 +95,23 @@ typedef struct {
     /* a room's match (PORT_SESSION_RULE_ONE_MATCH): who won it, 1 or 2
      * for the first or second pad, 3 for nobody; 0 while it goes on */
     u8 session_result;
+    /* a page of the window's (the settings menu, the online pages) is up
+     * over the menu: the game draws its backdrop and wide panel alone,
+     * takes no press and does not count the time to its movie
+     * (port_TopMenuSetCovered) */
+    u8 covered;
     u32 session_left;
+    /* The pause's and the menu after a fight's two last rows, which
+     * ReBushido's menus name "Return to Character Select" and "Return to
+     * Main Menu" where the game's lettering says "Return to Sub Menu" and
+     * "Return to Top Menu": the game leaves them out (hud.c) and the
+     * window letters them (top_page.c). The frame they were last drawn
+     * in (g_disp_frame_count), the panel's kind (HUD_PANEL_...), the row
+     * under the cursor and the screen's y of the top of each row. */
+    u32 panel_frame;
+    u8 panel_kind;
+    u8 panel_cursor;
+    s16 panel_y[2];
 } PortTopMenu;
 
 extern PortTopMenu g_port_top_menu;
@@ -125,6 +141,36 @@ extern void port_TopMenuAsk(s32 page);
 /* The game's options as the run's settings have them, into the menus'
  * record and the save's flags (menu_screen.c, menu_pages.c). */
 extern void port_TopMenuTakeOptions(void);
+/* Whether a page of the window's is up over the menu (`covered`). */
+extern s32 port_TopMenuIsCovered(void);
+/* A row of the pause's or the after-fight menu's that the window letters
+ * (`row` 0, back to character select, or 1, to the main menu), drawn at
+ * the screen's `y` this frame. */
+extern void port_TopMenuNotePanelRow(s32 row, s32 y, s32 panel, s32 cursor);
+
+/* ---- the game's menu sounds, for the window's pages ---- */
+
+/* The three sounds the game's menus make (menu_pages.c): the cursor
+ * moved, a row taken, a way back. The window's pages (the settings
+ * menu, the online pages) ask for them as the game's menus would play
+ * them. */
+enum {
+    PORT_TOP_SOUND_CURSOR = 0,
+    PORT_TOP_SOUND_CONFIRM = 1,
+    PORT_TOP_SOUND_CANCEL = 2,
+    PORT_TOP_SOUNDS = 3,
+};
+
+/* One played, as the game's menus play it (snd_Play: it sounds at the
+ * frame's flush of the queue). */
+extern void port_TopMenuPlaySound(s32 sound);
+/* The sounds the window asked for since the game last took its input:
+ * asked outside the state (play_switches.c), and played by the game as
+ * it takes its next input (pad.c, port_TakeInput), so that a replay
+ * keeps them with that input (port_replay.h). -1 when there are none
+ * left. */
+extern void port_AskMenuSound(s32 sound);
+extern s32 port_TakeMenuSound(void);
 
 /* ---- the run's switches, outside the state (play_switches.c) ---- */
 
