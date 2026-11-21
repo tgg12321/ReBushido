@@ -9122,6 +9122,19 @@ Menu (the owner, 2026-11-20):
   names would touch every file of the main menu, the match rules and the
   online flow beside another agent's work for little.
 
+**A new page in this look** (the match rules' page before the first
+character select is the next): drawn by the window, it is a `PortLook`
+(`port_LookBegin`, `port_LookPanel` with the backdrop its own unless the
+game draws it, `port_LookTitle`, `port_LookText` with `PORT_LOOK_ROW`
+and `port_LookPulse` for the cursor's row, `port_LookFade`), laid over
+the 4:3 area as the others are (`port_DrawOverlay`), with
+`port_PageSound` at each press; opened beside the game where it waits
+for the player, given no press, as `port_PageCanBeBeside` and
+`port_MenuTakesPad` do for these. Drawn by the game, the page asks
+`menu_DrawPageFrame(ctx, MENU_PANEL_WIDE, db)` for the Option Menu's
+backdrop and plays `snd_Play(MENU_SOUND_...)` as its menus do, and the
+window letters it in the same `PORT_LOOK_` colours.
+
 **Proved** (`tools/port_menus_test.py`, a step of the gate; Windows, or
 the Linux window from WSL), the window hidden with SDL's dummy drivers,
 `--fast`, `--wav`:
