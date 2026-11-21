@@ -87,6 +87,8 @@ extern void replay_AdvanceFrame(void);
 
 /* The ring of frames, [frame][fighter]. It lives in the shared work buffer. */
 extern ReplayFighterFrame (*g_replay_fighter_frames)[2];
+/* The frame of the ring being recorded (replay.c). */
+extern u8 g_replay_write_frame;
 
 /* What replay_RecordObjectDraw and replay_RecordEvent record. */
 extern ReplayObjectDraw g_replay_object_draws[REPLAY_OBJECT_DRAWS];

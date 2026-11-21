@@ -93,7 +93,7 @@
 #include "port_spu.h"
 #include "bb2.h"
 
-#define VALUES_MAX 128
+#define VALUES_MAX 256
 #define PRESSES_MAX 1024
 #define CHECKPOINTS_MAX 2048
 #define TESTS_MAX 8

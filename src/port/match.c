@@ -38,7 +38,9 @@ static s32 port_MatchCrewSize(s32 count) {
 /* The rules whose fight's winner keeps his wounds into the next: Stock
  * and Crew (the owner, 2026-11-20); First to N's fights start unhurt. */
 static s32 port_MatchKeepsWounds(s32 rule) {
-    return rule == PORT_MATCH_STOCK || rule == PORT_MATCH_CREW;
+    /* (not two on two's, whose four start every fight unhurt) */
+    return (rule == PORT_MATCH_STOCK || rule == PORT_MATCH_CREW) &&
+           g_port_match.teams == PORT_TEAMS_ONE;
 }
 
 /* Made the first time the game asks, and the page reset when the
@@ -47,6 +49,7 @@ static PortMatch *port_Match(void) {
     PortMatch *match = &g_port_match;
     s32 rule = port_GetMatchRule();
     s32 count = port_MatchCount(port_GetMatchCount());
+    s32 teams = port_GetTeamsDefault();
 
     if (!match->is_started) {
         match->is_started = TRUE;
@@ -65,6 +68,11 @@ static PortMatch *port_Match(void) {
         match->page_crew =
             (u8)(rule == PORT_MATCH_CREW ? port_MatchCrewSize(count)
                                          : PORT_MATCH_CREW_DEFAULT);
+    }
+    if (match->default_teams != teams + 1) {
+        /* (kept one more than the choice, so that the first ask sets it) */
+        match->default_teams = (u8)(teams + 1);
+        match->page_teams = (u8)teams;
     }
     return match;
 }
@@ -140,6 +148,12 @@ void port_MatchBegin(s32 mode) {
     match->rule =
         port_MatchModeHasRules(mode) ? match->page_rule : (u8)PORT_MATCH_SINGLE;
     match->count = (u8)port_MatchCount(match->page_count);
+    /* two on two with a mode that has matches, and not with Crew, whose
+     * fighters change between fights (port_duo.h) */
+    match->teams =
+        (u8)(port_MatchModeHasRules(mode) && match->rule != PORT_MATCH_CREW
+                 ? match->page_teams
+                 : PORT_TEAMS_ONE);
     if (match->rule == PORT_MATCH_CREW) {
         port_MatchCrewBegin(match);
     }

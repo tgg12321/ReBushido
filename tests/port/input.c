@@ -198,7 +198,7 @@ static void test_Record(void) {
 
     /* a value of a fixed size: sixteen buttons a pad and whether it is
      * there */
-    CHECK_EQ(sizeof(PortInput), 6);
+    CHECK_EQ(sizeof(PortInput), 12);
 
     /* before the driver's first blank, nothing has answered */
     test_StartPads();

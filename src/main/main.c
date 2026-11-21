@@ -670,6 +670,11 @@ void main(void) {
         frame_ot = frame_db->ot;
         ClearOTagR(frame_ot, DISP_OT_SIZE);
         g_disp_ot = frame_ot;
+#if RB_PORT
+        /* two on two's four fighters fill more than the console's
+         * buffers: the port's larger ones for its fights (port_duo.h) */
+        port_DuoPrimBuffers();
+#endif
         g_disp_prim_cursor = (u32 *)ADDR(g_disp_prim_buffers[index]);
         eff_SelectPrimBuffer(index);
         font_BeginFrame();

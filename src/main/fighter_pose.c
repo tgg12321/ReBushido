@@ -507,9 +507,18 @@ void fight_UpdateDistance(void) {
     s32 mode = g_fight_mode;
     g_fight_distance = distance;
     g_fight_distance_change = distance - old_distance;
+#if RB_PORT
+    /* two on two: not between two of whom one is held by a third
+     * (port_duo.h) */
+    if (mode != FIGHT_MODE_TEAM && mode != FIGHT_MODE_PRACTICE &&
+        port_DuoMayPair()) {
+        fight_StartPairedMoves();
+    }
+#else
     if (mode != FIGHT_MODE_TEAM && mode != FIGHT_MODE_PRACTICE) {
         fight_StartPairedMoves();
     }
+#endif
     g_fight_lock_requested = 0;
 }
 

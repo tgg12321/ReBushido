@@ -183,6 +183,10 @@ static void resource_OnModelMoved(s32 block_id, s32 delta) {
     }
     model->data = model->data + delta;
     cloth_RebaseModel(model, delta);
+#if RB_PORT
+    /* two on two's copy of the model reads the same data (port_duo.h) */
+    port_DuoModelMoved(slot, delta);
+#endif
     /* MODEL_LOAD_HAS_VAB, tested as a bit */
     if ((model->load_flags.word >> 1) & 1) {
         /* the model's sound bank is in the block too */

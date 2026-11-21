@@ -1,0 +1,314 @@
+#!/usr/bin/env python3
+"""Two on two driven on the native port (docs/PORT.md, "Two on two";
+ROADMAP 24): a plan of the play tests' kind for each case, on both sizes
+of the port (build/port/, build/port32/), whose traces must be the same
+line for line and whose checkpoints must hold what the fight made. The
+fighters are numbered 1 to 4 as the plans' values have them: 1 and 3 the
+first team (the first pad's character twice), 2 and 4 the second.
+
+- retarget: `--fight` Kannuki against Mikado, every fighter a person's
+  and only the first played. Fighter 1 targets fighter 2 as the fight
+  starts; R2 turns him to fighter 4, whom he walks to and strikes low
+  until the blow lands on him (the hit counted against 4, by 1, and none
+  on 2). He strikes on: 4 falls, and he is turned to 2 by himself (his
+  target down), and strikes 2 down too. The second team out: the first's
+  win, and the fight rests on 1 and the last to fall (2) for the game's
+  own fall, replay and winner's view, then its menu after a fight.
+- pads: the third pad's turn: fighter 3 (P3), who targets 4 as the
+  fight starts, turns to 2 with his R2, walks to him and strikes (Cross:
+  2's guard beats Circle's blow aside); his blows land on the second
+  team's two, who stand side by side: the first on 4, the nearer (a blow
+  lands on whichever enemy it meets), the input of the third pad kept by the
+  replay.
+- cpu: the same fighters, all four the CPU's (`--fight-cpu --teams
+  cpu`): a fight that plays itself to one team out, the game's menu after
+  it, both sizes alike.
+- second_wins: the second team's win, written by the plan: fighters 1
+  and 2 fall (a `poke` of each slot's is_defeated), the fight goes on
+  with 3 and 4, then 3 falls: the first team out, the winner the second.
+- draw: all four written down in two blanks: both teams out at once, the
+  game's draw (both fallen in its slots).
+- stock: Stock 2 (`--match stock:2`), CPU partners, the first player as
+  in `retarget` but with no R2, the second team the CPU's: two fights of
+  two on two, which as the port plays today the second team takes (its
+  first standing each time), the score's card between, the next fight
+  begun afresh with all four up, and the result's card.
+
+    python3 tools/port_duo.py [--out FOLDER] [--shots FOLDER] [--only PLAN...]
+                              [--rollback]
+
+retarget, pads and cpu are recorded as replays (`--replays`) and every
+file is played back by both sizes with `--replay-check`
+(tools/port_replay.py): by the program that recorded it with every hash
+the same. With --rollback, retarget, pads and stock are run by
+tools/port_rollback.py instead (make port-rollback): the state saved,
+put back and run again every 24 frames across the fight, on both sizes.
+
+In WSL, with the programs `make port` builds and the player's disc (as
+tools/port_stage_select.py finds them). Exit 0 if every check passes."""
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(REPO, 'tools'))
+from port_stage_select import Report, fight_presses, run_plan  # noqa: E402
+
+HEAD = '''discs = ["port"]
+cards = "none"
+limit = %(limit)d
+seconds = 900
+'''
+
+COMPARE = 'compare = ["screen", "winner", "port_duo_on", "port_duo_decided", "port_duo_target_1", ' \
+          '"port_duo_target_2", "port_duo_target_3", "port_duo_target_4", "port_duo_down_1", "port_duo_down_2", ' \
+          '"port_duo_down_3", "port_duo_down_4", "port_duo_hits_1", "port_duo_hits_2", "port_duo_hits_3", ' \
+          '"port_duo_hits_4", "port_duo_rest_1", "port_duo_rest_2", "port_duo_bound_1", "port_duo_bound_2", ' \
+          '"port_duo_bound_3", "port_duo_bound_4", "port_duo_kind_1", "port_duo_kind_2", "port_duo_kind_3", ' \
+          '"port_duo_kind_4", "port_match_card"]\n'
+
+FIGHT = '''
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE && port_duo_on == 1"
+at_frame = true
+within = 3000
+expect = ["port_duo_target_1 == 1", "port_duo_target_2 == 0", "port_duo_target_3 == 3", "port_duo_target_4 == 2",
+          "port_duo_down_1 == 0", "port_duo_down_2 == 0", "port_duo_down_3 == 0", "port_duo_down_4 == 0",
+          "winner == FIGHT_NOBODY"]
+'''
+
+AFTER = '''
+[[checkpoint]]
+name = "after"
+when = "screen == SCREEN_AFTER_FIGHT_UPDATE"
+within = 6000
+expect = [%(after)s]
+'''
+
+# 1 retargets with R2, strikes 4 down, then 2.
+TOML_RETARGET = 'about = "Two on two: a retarget, a blow on the second enemy, the first team\'s win ' \
+    '(tools/port_duo.py)"\n' + HEAD + '''input = ["fight+20f R2", %(presses)s]
+''' + COMPARE + FIGHT + '''
+[[checkpoint]]
+name = "retargeted"
+when = "port_duo_target_1 == 3"
+at_frame = true
+within = 200
+expect = ["port_duo_target_2 == 0", "port_duo_target_3 == 3", "port_duo_hits_2 == 0", "port_duo_hits_4 == 0"]
+
+[[checkpoint]]
+name = "struck"
+when = "port_duo_hits_4 >= 1"
+at_frame = true
+within = 6000
+expect = ["port_duo_hit_by_4 == 0", "port_duo_hits_2 == 0", "port_duo_hit_by_2 == 255", "port_duo_target_1 == 3"]
+
+[[checkpoint]]
+name = "first_down"
+when = "port_duo_down_4 == 1"
+at_frame = true
+within = 6000
+expect = ["port_duo_down_2 == 0", "port_duo_decided == 0", "winner == FIGHT_NOBODY", "port_duo_hit_by_4 == 0",
+          "screen == SCREEN_FIGHT_UPDATE"]
+
+[[checkpoint]]
+name = "turned"
+when = "port_duo_target_1 == 1"
+at_frame = true
+within = 100
+expect = ["port_duo_down_4 == 1", "port_duo_down_2 == 0"]
+
+[[checkpoint]]
+name = "decided"
+when = "port_duo_decided == 1"
+at_frame = true
+within = 9000
+expect = ["port_duo_down_2 == 1", "port_duo_down_4 == 1", "port_duo_down_1 == 0", "winner == 0",
+          "port_duo_hit_by_2 == 0", "port_duo_rest_1 == 0", "port_duo_rest_2 == 1", "p2_defeated == 1",
+          "p1_defeated == 0"]
+''' + AFTER % {'after': '"winner == 0", "port_duo_down_1 == 0"'}
+
+# 3 (the third pad) turns from 4 to 2 and strikes him.
+TOML_PADS = 'about = "Two on two: the third pad retargets and strikes (tools/port_duo.py)"\n' + HEAD + \
+    '''input = ["fight+20f P3 R2", %(presses_p3)s]
+''' + COMPARE + FIGHT + '''
+[[checkpoint]]
+name = "retargeted"
+when = "port_duo_target_3 == 1"
+at_frame = true
+within = 200
+expect = ["port_duo_target_1 == 1", "port_duo_target_4 == 2"]
+
+[[checkpoint]]
+name = "struck"
+when = "port_duo_hits_4 >= 1"
+at_frame = true
+within = 6000
+expect = ["port_duo_hit_by_4 == 2", "port_duo_target_3 == 1", "port_duo_hits_1 == 0", "port_duo_hits_3 == 0"]
+'''
+
+TOML_CPU = 'about = "Two on two, four CPU fighters, to one team out (tools/port_duo.py)"\n' + HEAD + 'input = []\n' + \
+    COMPARE + FIGHT + '''
+[[checkpoint]]
+name = "decided"
+when = "port_duo_decided == 1"
+at_frame = true
+within = 20000
+expect = ["(port_duo_down_1 == 1 && port_duo_down_3 == 1) || (port_duo_down_2 == 1 && port_duo_down_4 == 1)"]
+''' + AFTER % {'after': '"winner == 0 || winner == 1"'}
+
+# The fighters in the slots written down: first the two firsts (the fight
+# rests on the seconds then), the seconds after.
+DOWN = '''
+[[checkpoint]]
+name = "%(name)s"
+frames = %(frames)d
+within = 400
+expect = [%(expect)s]
+'''
+
+TOML_SECOND_WINS = 'about = "Two on two: the second team\'s win, the falls written by the plan ' \
+    '(tools/port_duo.py)"\n' + HEAD + 'input = []\n' + COMPARE + FIGHT + \
+    DOWN % {'name': 'later', 'frames': 60, 'expect': '"port_duo_decided == 0"'} + '''
+[[checkpoint]]
+name = "firsts_down"
+when = "port_duo_down_1 == 1 && port_duo_down_2 == 1"
+at_frame = true
+within = 400
+expect = ["port_duo_decided == 0", "winner == FIGHT_NOBODY", "port_duo_rest_1 == 2", "port_duo_rest_2 == 3",
+          "port_duo_target_3 == 3", "port_duo_target_4 == 2"]
+
+[[checkpoint]]
+name = "decided"
+when = "port_duo_decided == 1"
+at_frame = true
+within = 400
+expect = ["port_duo_down_3 == 1", "port_duo_down_4 == 0", "winner == 1", "port_duo_rest_1 == 2",
+          "port_duo_rest_2 == 3", "p1_defeated == 1", "p2_defeated == 0"]
+''' + AFTER % {'after': '"winner == 1"'}
+
+TOML_DRAW = 'about = "Two on two: all four down at once, a draw (tools/port_duo.py)"\n' + HEAD + 'input = []\n' + \
+    COMPARE + FIGHT + DOWN % {'name': 'later', 'frames': 60, 'expect': '"port_duo_decided == 0"'} + '''
+[[checkpoint]]
+name = "seconds_in"
+when = "port_duo_rest_1 == 2 && port_duo_rest_2 == 3"
+at_frame = true
+within = 400
+expect = ["port_duo_down_1 == 1", "port_duo_down_2 == 1", "port_duo_decided == 0", "winner == FIGHT_NOBODY"]
+
+[[checkpoint]]
+name = "decided"
+when = "port_duo_decided == 1"
+at_frame = true
+within = 400
+expect = ["port_duo_down_1 == 1", "port_duo_down_2 == 1", "port_duo_down_3 == 1", "port_duo_down_4 == 1",
+          "p1_defeated == 1", "p2_defeated == 1"]
+''' + AFTER % {'after': '"p1_defeated == 1", "p2_defeated == 1"'}
+
+# Stock 2: two fights, the second team's both, the score's card between.
+TOML_STOCK = 'about = "Two on two, a Stock match of two lives (tools/port_duo.py)"\n' + HEAD + \
+    'input = [%(presses)s, %(presses2)s]\n' + COMPARE.replace(']\n', ', "port_match_lives_p1", '
+                                                              '"port_match_lives_p2"]\n') + FIGHT + '''
+[[checkpoint]]
+name = "card"
+when = "port_match_card != 0"
+within = 9000
+expect = ["port_match_card == 1", "port_match_lives_p1 == 1", "port_match_lives_p2 == 2", "port_match_teams == 1",
+          "port_duo_down_1 == 1", "port_duo_down_3 == 1", "winner == 1"]
+
+[[checkpoint]]
+name = "fight2"
+when = "screen == SCREEN_FIGHT_UPDATE && winner == FIGHT_NOBODY && port_duo_on == 1"
+at_frame = true
+within = 3000
+expect = ["port_duo_down_1 == 0", "port_duo_down_2 == 0", "port_duo_down_3 == 0", "port_duo_down_4 == 0",
+          "port_duo_decided == 0", "port_match_lives_p1 == 1"]
+
+[[checkpoint]]
+name = "result"
+when = "port_match_card == 2"
+within = 12000
+expect = ["port_match_lives_p1 == 0", "port_match_lives_p2 == 2", "port_match_over == 1", "port_match_winner == 1"]
+'''
+
+FIGHT_ARGS = ['--mods', 'off', '--fight', 'tatara-shrine', 'kannuki', 'mikado']
+# the plans recorded as replays, and those rolled back (no `poke`: a
+# plan's write into memory is no input, which neither holds)
+REPLAY_PLANS = ('retarget', 'pads', 'cpu')
+# the third pad's round: a shorter walk than the first's, and Cross (the
+# second fighter's guard beats a Circle aside from where he comes in)
+P3_ROUND = [(0, 'RIGHT hold 8f'), (25, 'CROSS'), (40, 'CROSS')]
+ROLLBACK_PLANS = ('retarget', 'pads', 'stock')
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
+    parser.add_argument('--out', default=os.path.join(REPO, 'build', 'duo'))
+    parser.add_argument('--shots', default=None)
+    parser.add_argument('--only', nargs='*', help='the plans to run (retarget, pads, cpu, second_wins, draw, stock)')
+    parser.add_argument('--rollback', action='store_true',
+                        help='retarget, pads and stock through tools/port_rollback.py instead')
+    args = parser.parse_args(argv[1:])
+    import playtest
+    report = Report()
+    out = os.path.abspath(args.out)
+    os.makedirs(out, exist_ok=True)
+    presses = fight_presses(rounds=120)
+    values = {'presses': presses, 'presses2': presses.replace('"fight+', '"fight2+'),
+              'presses_p3': fight_presses(60, 60, P3_ROUND).replace('f ', 'f P3 ')}
+    plans = [
+        ('retarget', TOML_RETARGET, FIGHT_ARGS + ['--fight-2p', '--teams', 'pads'], (), 20000),
+        ('pads', TOML_PADS, FIGHT_ARGS + ['--fight-2p', '--teams', 'pads'], (), 12000),
+        ('cpu', TOML_CPU, FIGHT_ARGS + ['--fight-cpu', '--teams', 'cpu'], (), 30000),
+        ('second_wins', TOML_SECOND_WINS, FIGHT_ARGS + ['--fight-2p', '--teams', 'pads'],
+         ('poke', [('later', 2, 'p1_defeated', 1), ('later', 2, 'p2_defeated', 1),
+                   ('firsts_down', 2, 'p1_defeated', 1)]), 6000),
+        ('draw', TOML_DRAW, FIGHT_ARGS + ['--fight-2p', '--teams', 'pads'],
+         ('poke', [('later', 2, 'p1_defeated', 1), ('later', 2, 'p2_defeated', 1),
+                   ('seconds_in', 2, 'p1_defeated', 1), ('seconds_in', 2, 'p2_defeated', 1)]), 6000),
+        ('stock', TOML_STOCK, FIGHT_ARGS + ['--teams', 'cpu', '--match', 'stock:2'], (), 40000),
+    ]
+    if args.rollback:
+        code = 0
+        for name, text, extra, _, limit in plans:
+            if name not in ROLLBACK_PLANS:
+                continue
+            toml = os.path.join(out, '%s-rollback.toml' % name)
+            with open(toml, 'w', encoding='utf-8', newline='\n') as f:
+                # no pictures: a frame run again quietly paints none
+                text = re.sub(r'^shot = .*\n', '', text % dict(values, limit=limit), flags=re.M)
+                f.write(re.sub(r'^(name = .*)$', r'\1\nshot = false', text, flags=re.M))
+            folder = os.path.join(out, 'rollback-' + name)
+            code |= subprocess.run([sys.executable, os.path.join(REPO, 'tools', 'port_rollback.py'), '--test',
+                                    toml, '--out', folder] + ['--with=' + arg for arg in extra],
+                                   cwd=REPO).returncode
+        return code
+    if args.only:
+        plans = [plan for plan in plans if plan[0] in args.only]
+    import port_replay
+    for name, text, extra, pokes, limit in plans:
+        plan_pokes = pokes[1] if pokes else ()
+        more = []
+        replays = os.path.join(out, 'replays-' + name)
+        if name in REPLAY_PLANS:
+            if os.path.isdir(replays):
+                shutil.rmtree(replays)
+            os.makedirs(replays)
+            more = ['--replays', replays]
+        traces = run_plan(playtest, report, out, name, text % dict(values, limit=limit), extra + more, args.shots,
+                          plan_pokes)
+        if traces is None:
+            return 1
+        if more:
+            port_replay.check_folder(report, name, replays, extra)
+    print('port_duo: %d checks failed' % report.failed)
+    print('%s: port_duo' % ('FAILED' if report.failed else 'OK'))
+    return 1 if report.failed else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv))

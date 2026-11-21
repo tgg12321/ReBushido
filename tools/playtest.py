@@ -620,11 +620,11 @@ class Test:
         every = {cp.name for cp in self.checkpoints}
         in_frames = any(cp.how == "frames" or cp.at_frame for cp in checkpoints)
         for item in self.input:
-            m = re.fullmatch(r"\s*(?:(\w[\w-]*)\s*\+\s*)?(\d+)(f?)\s+(?:P([12])\s+)?(\w+)"
+            m = re.fullmatch(r"\s*(?:(\w[\w-]*)\s*\+\s*)?(\d+)(f?)\s+(?:P([1-4])\s+)?(\w+)"
                              r"(?:\s+hold\s+(\d+)(f?))?\s*", item)
             if not m:
                 raise TestError("input `%s`: write `BLANK BUTTON`, `CHECKPOINT+BLANKS BUTTON` or "
-                                "`CHECKPOINT+FRAMESf BUTTON`, with `P2` before the button for the second pad "
+                                "`CHECKPOINT+FRAMESf BUTTON`, with `P2` before the button for the second pad (`P3`, `P4` the port's third and fourth) "
                                 "and `hold N` (or `hold Nf`) after it" % item)
             base, frames, unit, pad, button, hold, hold_unit = m.groups()
             if unit and base is None:

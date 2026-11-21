@@ -17,7 +17,12 @@
 #include <psxsdk/libgte.h>
 #include "model.h"
 
-#define CLOTH_COUNT 8         /* cloths alive at once */
+#if RB_PORT
+/* the native port's two on two has two more models' cloth (port_duo.h) */
+#define CLOTH_COUNT 20
+#else
+#define CLOTH_COUNT 8 /* cloths alive at once */
+#endif
 #define CLOTH_POINT_SPRINGS 8 /* springs from, and to, one point */
 #define CLOTH_COLLIDERS 3     /* ellipsoids one cloth can meet */
 #define MODEL_CLOTH_PIECES 5  /* cloth meshes one model can have */

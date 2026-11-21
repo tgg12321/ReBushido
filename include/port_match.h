@@ -115,7 +115,8 @@ enum {
 enum {
     PORT_MATCH_ROW_RULE = 0,
     PORT_MATCH_ROW_COUNT = 1, /* the number, or the crew's size */
-    PORT_MATCH_ROWS = 2
+    PORT_MATCH_ROW_TEAMS = 2, /* one on one or two on two (port_duo.h) */
+    PORT_MATCH_ROWS = 3
 };
 
 typedef struct {
@@ -163,6 +164,11 @@ typedef struct {
     s8 wounds[2][PORT_WOUNDS];
     u8 to_top;     /* the match decided went back to the top menu */
     u8 rule_sides; /* the sides the rule page's select screen picks for */
+    /* Two on two (port_duo.h): the rule page's choice (PORT_TEAMS_...),
+     * what it was last reset to, and the match in play's */
+    u8 page_teams;
+    u8 default_teams;
+    u8 teams;
 } PortMatch;
 
 extern PortMatch g_port_match;
