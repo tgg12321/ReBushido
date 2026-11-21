@@ -257,7 +257,9 @@ def case_menu(program, image, folder):
     plan = write_plan(program, folder, BOOT + MENU_PRESSES, TOP, 2400)
     code, log, output = run_window(program, image, folder, plan,
                                    ['--online-keys', ONLINE_KEYS, '--menu-keys', MENU_KEYS],
-                                   'net_port = %d\n' % (47000 + os.getpid() % 1000))
+                                   # (above the ports of port-net and its
+                                   # Windows cases, which run beside it)
+                                   'net_port = %d\n' % (58000 + os.getpid() % 1000))
     if code != 0:
         problems.append('the program ended %s' % code)
     cps = checkpoints(output)
