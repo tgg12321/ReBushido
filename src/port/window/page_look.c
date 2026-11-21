@@ -92,11 +92,9 @@ void port_LookPanel(PortLook *look, s32 is_own) {
     if (!is_own) {
         return;
     }
-    /* the picture under it darkened, as the game's backdrop is dark, and
-     * the game's wide panel (menu_DrawPageFrame, MENU_PANEL_WIDE): its
-     * slate blue laid half over what is under it */
-    port_LookBox(
-        look, 0, 0, PORT_LOOK_GAME_W, PORT_LOOK_GAME_H, PORT_LOOK_DARKEN);
+    /* the game's wide panel (menu_DrawPageFrame, MENU_PANEL_WIDE): its
+     * slate blue laid half over what is under it, which the window has
+     * darkened, as the game's backdrop is dark (sdl_window.c) */
     port_LookBox(look, PORT_LOOK_PANEL_X, PORT_LOOK_PANEL_Y, PORT_LOOK_PANEL_W,
                  PORT_LOOK_PANEL_H, PORT_LOOK_PANEL);
 }

@@ -145,8 +145,9 @@ typedef struct PortLook {
  * typeface). */
 extern s32 port_LookBegin(PortLook *look, s32 area_w, s32 area_h);
 /* The game's backdrop where the window draws it itself (`is_own`): the
- * picture darkened and the wide panel; nothing where the game's own menu
- * page is under it and draws them. */
+ * wide panel, over the picture the window has darkened
+ * (PORT_LOOK_DARKEN); nothing where the game's own menu page is under it
+ * and draws them. */
 extern void port_LookPanel(PortLook *look, s32 is_own);
 /* A box of the game's places filled with `color` over what is there. */
 extern void port_LookBox(PortLook *look, s32 x, s32 y, s32 w, s32 h, u32 color);

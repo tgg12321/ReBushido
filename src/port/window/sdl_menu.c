@@ -160,6 +160,11 @@ void port_PageKeepSound(void) {
 
 void port_PageChanged(void) { g_port_page.changes++; }
 
+s32 port_PageHasOwnBackdrop(void) {
+    return (port_MenuIsOpen() || port_OnlinePagesAreOpen()) &&
+           !g_port_page.covered;
+}
+
 s32 port_PagePixels(s32 area_w, s32 area_h, const u32 **pixels, PortRect *box) {
     s32 is_menu = port_MenuIsOpen();
 
@@ -176,9 +181,9 @@ s32 port_PagePixels(s32 area_w, s32 area_h, const u32 **pixels, PortRect *box) {
         /* where the top menu is covered, the game draws its own backdrop
          * and panel under the page */
         if (is_menu) {
-            port_MenuDrawLook(&g_port_page.look, !g_port_page.covered);
+            port_MenuDrawLook(&g_port_page.look, port_PageHasOwnBackdrop());
         } else {
-            port_OnlinePagesDraw(&g_port_page.look, !g_port_page.covered);
+            port_OnlinePagesDraw(&g_port_page.look, port_PageHasOwnBackdrop());
         }
         g_port_page.drawn_changes = g_port_page.changes;
         g_port_page.drawn_w = area_w;

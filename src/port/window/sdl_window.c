@@ -2311,6 +2311,25 @@ static void port_DrawWindowPage(void) {
     if (!port_MenuIsOpen() && !port_OnlinePagesAreOpen()) {
         port_DrawOverlay(&g_port_panel_rows, port_PanelRowsPixels);
         port_DrawOverlay(&g_port_page_lines, port_PageLinesPixels);
+        return;
+    }
+    if (port_PageHasOwnBackdrop()) {
+        /* the whole picture darkened under the page's panel, the bands of
+         * a wider one too, not the console's 4:3 alone */
+        static const u32 g_dark = PORT_LOOK_DARKEN;
+        s32 window_w = 0;
+        s32 window_h = 0;
+
+        port_WindowSize(&window_w, &window_h);
+        if (g_port_has_gl) {
+            port_GlShowPixels(&g_dark, 1, 1, window_w, window_h, 0, 0, window_w,
+                              window_h, FALSE, TRUE);
+        } else if (g_port_renderer != NULL) {
+            SDL_SetRenderDrawBlendMode(g_port_renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(
+                g_port_renderer, 0, 0, 0, PORT_LOOK_DARKEN >> ALPHA_SHIFT);
+            SDL_RenderFillRect(g_port_renderer, NULL);
+        }
     }
     port_DrawOverlay(&g_port_page, port_PagePixels);
 }

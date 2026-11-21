@@ -145,6 +145,10 @@ extern s32 port_PageTakesEvent(const union SDL_Event *event);
 /* A page's turn or press: its pixels are drawn again at the next
  * picture (port_PagePixels). */
 extern void port_PageChanged(void);
+/* Whether the page open draws the game's backdrop itself (anywhere but
+ * over the main menu, which draws its own): the window darkens the whole
+ * picture under it. */
+extern s32 port_PageHasOwnBackdrop(void);
 /* What is laid over the game's 4:3 area for the page open, as
  * port_StagePagePixels: FALSE where none is. */
 extern s32 port_PagePixels(
