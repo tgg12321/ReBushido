@@ -40,7 +40,8 @@ nobody at the address, the host gone quiet, a wrong password and an
 incompatible room, each said on the guest's screen and the host's.
 
 Every case runs at once, each with its own server and ports from
---port-base (PORTS_PER_CASE apart). Outputs in build/net-lobby/. Exits 1
+--port-base (PORTS_PER_CASE apart). Outputs in build/net-lobby/
+(build/net-lobby-windows/ from Windows). Exits 1
 if one failed. Needs the retail disc's image as tools/port_net.py does,
 and says so and passes without it."""
 import argparse
@@ -65,7 +66,10 @@ HEADLESS = os.path.join(REPO, 'build/port-sdl/windows/rebushido-headless.exe' if
 WINDOW = os.path.join(REPO, 'build/port-sdl/windows/rebushido.exe' if IS_WINDOWS else 'build/port-sdl/linux/rebushido')
 BASE_PORT = 45000
 PORTS_PER_CASE = 10
-OUT = os.path.join(REPO, 'build', 'net-lobby')
+# (each system's half its own: the gate runs the Linux and the Windows
+# halves at once, and their cases of one name met in one folder, one
+# half's start emptying it under the other's programs)
+OUT = os.path.join(REPO, 'build', 'net-lobby-windows' if IS_WINDOWS else 'net-lobby')
 SECONDS = 420
 PASSWORD = 'sesame7'
 TROUBLE = ['--net-latency', '60', '--net-loss', '5']
