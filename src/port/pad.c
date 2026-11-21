@@ -110,6 +110,29 @@ void port_ReadDevicesNow(void) {
     }
 }
 
+/* The menu sound the window's pages asked for (port_top_menu.h), one an
+ * input, played as the game's menus play theirs and kept with the input
+ * in a replay being recorded; in one being played, the one it kept. A
+ * frame run ahead or again plays none and takes none, so that the step
+ * that is heard plays it once. */
+static void port_PlayAskedSound(void) {
+    s32 sound;
+
+    if (port_ReplayIsPlaying()) {
+        sound = port_ReplaySoundAt(g_port_input_count);
+    } else if (g_port_ahead || g_port_rerun) {
+        return;
+    } else {
+        sound = port_TakeMenuSound();
+        if (sound >= 0) {
+            port_ReplayTookSound(g_port_input_count, sound);
+        }
+    }
+    if (sound >= 0) {
+        port_TopMenuPlaySound(sound);
+    }
+}
+
 /* The game reads the pads (port_platform.h): the packets, as the driver
  * leaves them, from the input. One that nothing answered says so, and
  * the rest of it is left as it was. This is the frame's boundary: the
@@ -123,6 +146,7 @@ void port_TakeInput(void) {
         g_port_take_hook(&g_port_input);
     }
     port_ReplayTook(&g_port_input, g_port_input_count);
+    port_PlayAskedSound();
     g_port_input_count++;
     for (pad = 0; pad < PORT_PADS; pad++) {
         u8 *packet = g_port_pad_buffers[pad];

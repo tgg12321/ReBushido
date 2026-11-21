@@ -588,6 +588,43 @@ typedef struct {
 } PortTopView;
 
 extern void port_ReadTopMenu(PortTopView *view);
+
+/* The pause's and the after-fight menu's rows that ReBushido's menus name
+ * anew (port_top_menu.h): whether they are on the picture, the row under
+ * the cursor (the game's: 1 and 2 are these two) and each row's y in the
+ * game's screen. */
+typedef struct {
+    s32 is_up;
+    s32 cursor;
+    s32 y[2];
+} PortPanelRowsView;
+
+extern void port_ReadPanelRows(PortPanelRowsView *view);
+/* The training page's and the group battle page's line the same way
+ * (PORT_TOP_LINE_...): whether each is on the picture, its place in the
+ * game's screen (left, top, width) and whether it is lit. */
+#define PORT_PAGE_LINES 2 /* PORT_TOP_LINES */
+#define PORT_PAGE_LINE_TRAINING 0
+#define PORT_PAGE_LINE_GROUP 1
+
+typedef struct {
+    s32 is_up[PORT_PAGE_LINES];
+    s32 place[PORT_PAGE_LINES][3];
+    s32 is_lit[PORT_PAGE_LINES];
+} PortPageLinesView;
+
+extern void port_ReadPageLines(PortPageLinesView *view);
+/* What the window lays over them (top_page.c), as port_TopPagePixels. */
+extern s32 port_PageLinesPixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
+/* What the window lays over them (top_page.c), as port_TopPagePixels. */
+extern s32 port_PanelRowsPixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
+/* A page of the window's (the settings menu, the online pages) is up over
+ * ReBushido's top menu, or is no longer: the game draws its backdrop and
+ * panel alone under it (port_top_menu.h). The one other thing the window
+ * writes of the game's, at a blank's turn. */
+extern void port_SetTopMenuCovered(s32 on);
 /* The same for ReBushido's top menu (top_page.c): the rows' names and the
  * captions the game has none for, laid over the game's own page while it
  * is up (port_top_menu.h). */

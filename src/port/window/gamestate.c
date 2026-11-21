@@ -195,7 +195,7 @@ void port_ReadTopMenu(PortTopView *view) {
     s32 i;
 
     view->is_up = g_port_top_menu.is_on && g_sys_screen == SCREEN_MENU_UPDATE &&
-                  g_menu_page == MENU_PAGE_TOP;
+                  g_menu_page == MENU_PAGE_TOP && !g_port_top_menu.covered;
     view->page = g_port_top_menu.page;
     view->cursor = g_port_top_menu.cursor[g_port_top_menu.page];
     for (i = 0; i < PORT_TOP_ROWS; i++) {
@@ -205,6 +205,30 @@ void port_ReadTopMenu(PortTopView *view) {
     }
     view->caption[0] = rows[view->cursor].caption[0];
     view->caption[1] = rows[view->cursor].caption[1];
+}
+
+void port_ReadPanelRows(PortPanelRowsView *view) {
+    /* drawn in this frame or the one before: the pause's loop and the
+     * menu after a fight draw them every frame they are up */
+    view->is_up = g_port_top_menu.is_on &&
+                  (u32)g_disp_frame_count - g_port_top_menu.panel_frame <= 2;
+    view->cursor = g_port_top_menu.panel_cursor;
+    view->y[0] = g_port_top_menu.panel_y[0];
+    view->y[1] = g_port_top_menu.panel_y[1];
+}
+
+void port_ReadPageLines(PortPageLinesView *view) {
+    s32 i;
+
+    for (i = 0; i < PORT_PAGE_LINES; i++) {
+        view->is_up[i] =
+            g_port_top_menu.is_on &&
+            (u32)g_disp_frame_count - g_port_top_menu.line_frame[i] <= 2;
+        view->place[i][0] = g_port_top_menu.line_place[i][0];
+        view->place[i][1] = g_port_top_menu.line_place[i][1];
+        view->place[i][2] = g_port_top_menu.line_place[i][2];
+        view->is_lit[i] = g_port_top_menu.line_lit[i];
+    }
 }
 
 s32 port_IsOnStagePages(void) {
@@ -281,6 +305,11 @@ s32 port_LoadKind(void) {
     }
     return port_ReadScreen() != 0 ? PORT_LOAD_READ : PORT_LOAD_PICTURE;
 }
+
+/* A page of the window's over ReBushido's top menu (port_top_menu.h):
+ * written at a blank's turn, where the game is still, as the Bug fixes
+ * below. */
+void port_SetTopMenuCovered(s32 on) { g_port_top_menu.covered = (u8)(on != 0); }
 
 /* The game's own Bug fixes setting, for the settings menu (menu.h). The
  * one thing here that writes the game: the menu sets it while the game is

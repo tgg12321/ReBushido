@@ -117,6 +117,9 @@
 #define TAG_HASH TAG('H', 'A', 'S', 'H')
 #define TAG_END TAG('E', 'N', 'D', ' ')
 #define TAG_DISC TAG('D', 'I', 'S', 'C')
+/* the menu sounds of the window's pages over the fight's pause: a count,
+ * then each frame's number and its sound (a file without it has none) */
+#define TAG_SOUND TAG('S', 'O', 'N', 'D')
 
 static const char g_magic[MAGIC_BYTES] = {
     'R', 'B', 'R', 'E', 'P', 'L', 'A', 'Y'};
@@ -127,11 +130,14 @@ static const char * const g_mode_words[] = {
 #define MODE_WORDS ((s32)(sizeof(g_mode_words) / sizeof(g_mode_words[0])))
 
 /* One frame of a fight: the two pads' buttons, which pads answered (a
- * bit each), and the view it read (VIEW's number). */
+ * bit each), the view it read (VIEW's number), and the menu sound the
+ * window asked the game for as it took the input (port_top_menu.h), plus
+ * one, or 0: SOND. */
 typedef struct {
     u16 buttons[PORT_PADS];
     u8 present;
     u8 view;
+    u8 sound;
 } ReplayFrame;
 
 typedef struct {
@@ -267,7 +273,7 @@ static struct {
 static struct {
     u32 index;
     ReplayFrame frame;
-} g_last = {NONE, {{0, 0}, 0, 0}};
+} g_last = {NONE, {{0, 0}, 0, 0, 0}};
 
 /* Whether each of the last boundaries was in a fight, by input number. */
 static u32 g_ring_count[FIGHT_RING];
@@ -941,7 +947,7 @@ static u32 port_PutVarint(u8 *out, u32 value) {
 
 /* The frames as INPT has them, into `out`: its length. */
 static u32 port_ReplayPackInputs(u8 *out) {
-    ReplayFrame last = {{0, 0}, 0, 0};
+    ReplayFrame last = {{0, 0}, 0, 0, 0};
     u32 at = 0;
     u32 frame = 0;
 
@@ -1177,6 +1183,19 @@ static void port_ReplayWrite(void) {
     port_PutWord(inputs, g_rec.length);
     at = WORD_BYTES + port_ReplayPackInputs(inputs + WORD_BYTES);
     ok &= port_AppendChunk(file, TAG_INPUT, inputs, at);
+    /* the menu sounds, where the window's pages played any */
+    at = WORD_BYTES;
+    for (i = 0; i < (s32)g_rec.length; i++) {
+        if (g_rec.frames[i].sound != 0) {
+            port_PutWord(inputs + at, (u32)i);
+            port_PutWord(inputs + at + WORD_BYTES, g_rec.frames[i].sound);
+            at += 2 * WORD_BYTES;
+        }
+    }
+    port_PutWord(inputs, (at - WORD_BYTES) / (2 * WORD_BYTES));
+    if (at > WORD_BYTES) {
+        ok &= port_AppendChunk(file, TAG_SOUND, inputs, at);
+    }
     port_PutWord(inputs, hash_count);
     port_PutWord(inputs + WORD_BYTES, PORT_REPLAY_HASH_EVERY);
     at = 2 * WORD_BYTES;
@@ -1421,7 +1440,26 @@ void port_ReplayTook(const PortInput *input, u32 index) {
     frame->buttons[1] = input->buttons[1];
     frame->present =
         (u8)((input->present[0] != 0) | ((input->present[1] != 0) << 1));
+    frame->sound = 0;
     g_rec.length = at + 1;
+}
+
+void port_ReplayTookSound(u32 index, s32 sound) {
+    if (g_port_ahead || g_rec.state != REC_FIGHT || index < g_rec.start_count ||
+        index - g_rec.start_count >= FRAMES_MAX) {
+        return;
+    }
+    g_rec.frames[index - g_rec.start_count].sound = (u8)(sound + 1);
+}
+
+s32 port_ReplaySoundAt(u32 index) {
+    u32 at = index - g_play.start_count;
+
+    if (g_play.state != PLAY_ON || index < g_play.start_count ||
+        at >= g_play.frames) {
+        return -1;
+    }
+    return (s32)g_play.list[at].sound - 1;
 }
 
 /* Every frame of a session's fight is known and run as it was: the
@@ -2048,7 +2086,7 @@ static u32 port_GetVarint(const u8 *in, u32 size, u32 *at) {
 
 /* INPT into the playback's frames: FALSE where it is not whole. */
 static s32 port_ReplayUnpackInputs(const u8 *in, u32 size) {
-    ReplayFrame now = {{0, 0}, 0, 0};
+    ReplayFrame now = {{0, 0}, 0, 0, 0};
     u32 frames;
     u32 frame = 0;
     u32 at = WORD_BYTES;
@@ -2157,6 +2195,21 @@ static s32 port_ReplayUnpackRest(const u8 *bytes, u32 size) {
     if (!port_FindChunk(bytes, size, TAG_INPUT, &chunk, &chunk_size) ||
         !port_ReplayUnpackInputs(chunk, chunk_size)) {
         return FALSE;
+    }
+    if (port_FindChunk(bytes, size, TAG_SOUND, &chunk, &chunk_size) &&
+        chunk_size >= WORD_BYTES) {
+        u32 count = port_GetWord(chunk);
+
+        for (i = 0;
+             i < count && WORD_BYTES + (i + 1) * 2 * WORD_BYTES <= chunk_size;
+             i++) {
+            const u8 *at = chunk + WORD_BYTES + i * 2 * WORD_BYTES;
+            u32 frame = port_GetWord(at);
+
+            if (frame < g_play.frames) {
+                g_play.list[frame].sound = (u8)port_GetWord(at + WORD_BYTES);
+            }
+        }
     }
     if (!port_FindChunk(bytes, size, TAG_HASH, &chunk, &chunk_size) ||
         chunk_size < 2 * WORD_BYTES ||

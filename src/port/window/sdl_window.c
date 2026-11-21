@@ -219,6 +219,9 @@ static u32 g_port_rerun_heard;
 static u32 g_port_rerun_lost;
 /* The pixels laid over a picture where SDL's renderer draws
  * (port_LayPixels). */
+static SDL_Texture *g_port_menu_texture;
+static s32 g_port_menu_texture_w;
+static s32 g_port_menu_texture_h;
 static SDL_Texture *g_port_lay_texture;
 static s32 g_port_lay_w;
 static s32 g_port_lay_h;
@@ -405,9 +408,6 @@ static s32 g_port_inject_waiting_count;
  * pixels are in g_port_frame. */
 static PortDisplay g_port_ahead_display;
 /* The settings menu's own texture, where SDL's renderer draws. */
-static SDL_Texture *g_port_menu_texture;
-static s32 g_port_menu_texture_w;
-static s32 g_port_menu_texture_h;
 
 static void port_SwapPicture(void);
 static void port_NoteStepRefresh(u32 now, u32 shown_for);
@@ -2240,6 +2240,13 @@ typedef struct {
 
 static PortOverlay g_port_stage_page;
 static PortOverlay g_port_match_page;
+/* the window's own pages, the settings menu and the online pages
+ * (sdl_menu.c) */
+static PortOverlay g_port_page;
+/* the pause's and the after-fight menu's renamed rows, and the training
+ * and group battle pages' (top_page.c) */
+static PortOverlay g_port_panel_rows;
+static PortOverlay g_port_page_lines;
 
 static void port_DrawOverlay(PortOverlay *overlay, PortOverlayPixels make) {
     const u32 *pixels;
@@ -2296,6 +2303,35 @@ static void port_DrawStagePage(void) {
 
 static void port_DrawMatchPage(void) {
     port_DrawOverlay(&g_port_match_page, port_MatchPixels);
+}
+
+static void port_DrawWindowPage(void) {
+    /* the game's renamed rows are of the picture under a page: left out
+     * while one is up over them, as the game's own lettering is darkened */
+    if (!port_MenuIsOpen() && !port_OnlinePagesAreOpen()) {
+        port_DrawOverlay(&g_port_panel_rows, port_PanelRowsPixels);
+        port_DrawOverlay(&g_port_page_lines, port_PageLinesPixels);
+        return;
+    }
+    if (port_PageHasOwnBackdrop()) {
+        /* the whole picture darkened under the page's panel, the bands of
+         * a wider one too, not the console's 4:3 alone */
+        static const u32 g_dark = PORT_LOOK_DARKEN;
+        s32 window_w = 0;
+        s32 window_h = 0;
+
+        port_WindowSize(&window_w, &window_h);
+        if (g_port_has_gl) {
+            port_GlShowPixels(&g_dark, 1, 1, window_w, window_h, 0, 0, window_w,
+                              window_h, FALSE, TRUE);
+        } else if (g_port_renderer != NULL) {
+            SDL_SetRenderDrawBlendMode(g_port_renderer, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(
+                g_port_renderer, 0, 0, 0, PORT_LOOK_DARKEN >> ALPHA_SHIFT);
+            SDL_RenderFillRect(g_port_renderer, NULL);
+        }
+    }
+    port_DrawOverlay(&g_port_page, port_PagePixels);
 }
 
 /* The counter in the port's typeface (font.c), at the window's own
@@ -2440,6 +2476,7 @@ static void port_DrawCounter(void) {
     port_DrawStagePage();
     port_DrawMatchPage();
     port_DrawTopPage();
+    port_DrawWindowPage();
     if (!g_port_show_fps) {
         return;
     }
@@ -2818,6 +2855,18 @@ void port_ShowMenu(
         where.h = place->h;
         SDL_RenderCopy(g_port_renderer, g_port_menu_texture, NULL, &where);
     }
+    if (shot != NULL && !port_WriteWindowPng(shot)) {
+        port_Say("--menu-shots: %s cannot be written", shot);
+    }
+    port_SwapPicture();
+}
+
+void port_ShowPage(u32 blank, const char *shot) {
+    /* a turn of a page's loop, with the game stopped */
+    port_PageChanged();
+    port_DrawPicture(blank, FALSE);
+    /* the page is laid over it with what else is (port_DrawCounter) */
+    port_DrawCounter();
     if (shot != NULL && !port_WriteWindowPng(shot)) {
         port_Say("--menu-shots: %s cannot be written", shot);
     }
@@ -3276,6 +3325,11 @@ static void port_ReadEvents(void) {
     while (SDL_PollEvent(&event)) {
         if (port_ReplayWindowEvent(&event)) {
             /* a playback's key or button (sdl_replay.c) */
+            continue;
+        }
+        if (port_PageTakesEvent(&event)) {
+            /* a page beside the game: the settings menu or the online
+             * pages over the top menu or the pause (sdl_menu.c) */
             continue;
         }
         switch (event.type) {
@@ -4805,6 +4859,14 @@ static void port_ShowBlank(u32 blank) {
     if (g_port_window_options.tap_window != NULL &&
         blank % (u32)g_port_window_options.tap_every == 0) {
         port_TapWindow(blank);
+    }
+    {
+        /* a test's picture of a page beside the game, as it is shown */
+        const char *shot = port_PageTakeShot();
+
+        if (shot != NULL && !port_WriteWindowPng(shot)) {
+            port_Say("--menu-shots: %s cannot be written", shot);
+        }
     }
     if (g_port_window_options.shot_at > 0 &&
         blank == (u32)g_port_window_options.shot_at) {

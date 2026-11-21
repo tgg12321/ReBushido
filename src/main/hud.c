@@ -480,6 +480,16 @@ s32 hud_DrawPanel(s32 panel, s32 cursor_and_options, s32 prims, s32 ot_index) {
         draw.table = g_hud_panel_item_cells[j];
         draw.x = 0;
         draw.y = y_base + top;
+#if RB_PORT
+        if (port_TopMenuIsOn()) {
+            /* ReBushido's menus: "Return to Character Select" and "Return
+             * to Main Menu", which the window letters in this row's place
+             * (port_top_menu.h) */
+            port_TopMenuNotePanelRow(
+                j - 2, draw.y + draw.table[0].y, panel, selected_row);
+            continue;
+        }
+#endif
         draw.sprt_out = next_sprt;
         draw.ot_index = ot_index;
         next_sprt = sprite_Draw(&draw);

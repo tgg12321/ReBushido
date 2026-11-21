@@ -131,6 +131,11 @@ extern void cdrom_WaitAudioStarted(void);
 
 /* Abandons the current request, whatever it is. */
 extern void cdrom_StopAndWait(void);
+#if RB_PORT
+/* (The native port.) The music's step alone, while the game's frames are
+ * stopped and its sound goes on (src/port/sound.c). */
+extern void cdrom_KeepMusicGoing(void);
+#endif
 
 /* The volume of the disc's audio: how much of its left channel goes to the
  * left and right speakers, and of its right channel to the right and left

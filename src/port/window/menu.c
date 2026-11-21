@@ -1,8 +1,9 @@
 /* The native port's settings menu (menu.h; docs/PLAYING.md, "The settings
  * menu"): its pages, what a press does on each, the settings file kept in
- * step, and the menu drawn into pixels the window lays over the game's
- * picture. Only the build with a window has this file; it holds nothing
- * of the game's state (sdl_window.c stops the game while it is open). */
+ * step, and the menu drawn in the look of the game's own pages
+ * (page_look.c), which the window lays over the game's picture. Only the
+ * build with a window has this file; it holds nothing of the game's
+ * state (sdl_menu.c: beside the running game, or with it stopped). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,19 +24,6 @@
 #define BUTTONS 14
 /* the most settings whose values as the program started are kept */
 #define CHOICES_KEPT 64
-
-/* The colours, 0xAARRGGBB. */
-#define COLOR_PANEL 0xF60E121EU
-#define COLOR_EDGE 0xFF6A5530U
-#define COLOR_TITLE 0xFFE6C877U
-#define COLOR_TEXT 0xFFEDEDF2U
-#define COLOR_DIM 0xFF8E96AAU
-#define COLOR_BAR 0xFF26304AU
-#define COLOR_BAR_EDGE 0xFFE6C877U
-#define COLOR_NOTE 0xFFF0A848U
-#define COLOR_CAPTURE 0xF0080A12U
-#define COLOR_DEFAULT 0xFF6E7A92U
-#define COLOR_CHANGED 0xFFE6C877U
 
 /* What marks the value built in, beside the cursor's setting. */
 #define MENU_BUILT_IN "default"
@@ -119,6 +107,10 @@ static struct {
     s32 font_ok;
     /* the updater's view the Updates page was built for */
     s32 update_generation;
+    /* frames since the cursor last moved (its glow), and of the page's
+     * fade in */
+    s32 pulse;
+    s32 fade;
 } g_menu;
 
 /* Defined further down. */
@@ -142,7 +134,12 @@ static void port_MenuBuild(s32 page, s32 cursor) {
     if (page == PAGE_ONLINE || g_menu.page == PAGE_ONLINE) {
         port_UpdateSetOnline(page == PAGE_ONLINE);
     }
+    if (page != g_menu.page) {
+        /* another page fades in, as the game's pages come up */
+        g_menu.fade = 0;
+    }
     g_menu.page = page;
+    g_menu.pulse = 0;
     g_menu.row_count = 0;
     if (page == PAGE_MAIN) {
         for (group = 0; group < PORT_CHOICE_GROUPS; group++) {
@@ -557,7 +554,7 @@ static const char *port_MenuHelp(void) {
                      "you restart";
     }
     case ROW_UPDATE_LATER:
-        return "The top menu's notice is not shown again for this version";
+        return "The main menu's notice is not shown again for this version";
     case ROW_UPDATE_NOTE:
         return "The release's notes, signed with it";
     case ROW_REPLAYS:
@@ -627,6 +624,8 @@ static void port_MenuStepChoice(s32 choice, s32 step) {
     } else if (!port_SetChoice(&g_port_settings, choice, next)) {
         return;
     }
+    /* the game's own options page sounds its cursor as a value changes */
+    port_PageSound(PORT_PAGE_SOUND_CURSOR);
     port_MenuSetLine(of->name, of->words[next]);
     if (of->takes == PORT_TAKES_NOW) {
         port_WindowApplyChoice(choice);
@@ -634,9 +633,11 @@ static void port_MenuStepChoice(s32 choice, s32 step) {
 }
 
 static void port_MenuMove(s32 step) {
-    if (g_menu.row_count > 0) {
+    if (g_menu.row_count > 1) {
         g_menu.cursor =
             (g_menu.cursor + step + g_menu.row_count) % g_menu.row_count;
+        g_menu.pulse = 0;
+        port_PageSound(PORT_PAGE_SOUND_CURSOR);
     }
 }
 
@@ -810,12 +811,18 @@ void port_MenuPress(s32 what) {
         }
         break;
     case PORT_MENU_ACCEPT:
+        /* the game's sounds: a row taken, or a way back */
+        port_PageSound(row->kind == ROW_BACK || row->kind == ROW_CLOSE
+                           ? PORT_PAGE_SOUND_CANCEL
+                           : PORT_PAGE_SOUND_CONFIRM);
         port_MenuAccept();
         break;
     case PORT_MENU_BACK:
+        port_PageSound(PORT_PAGE_SOUND_CANCEL);
         port_MenuBack();
         break;
     case PORT_MENU_CLOSE:
+        port_PageSound(PORT_PAGE_SOUND_CANCEL);
         port_MenuClose();
         break;
     case PORT_MENU_CLEAR:
@@ -879,6 +886,7 @@ void port_MenuOpen(const char *path) {
     g_menu.is_typing = FALSE;
     g_menu.opened_on = g_menu.open_on;
     g_menu.open_on = PORT_MENU_OPEN_MAIN;
+    g_menu.fade = 0;
     port_MenuBuild(PAGE_MAIN, 0);
     if (g_menu.opened_on == PORT_MENU_OPEN_ONLINE) {
         /* Online Play: its page, Back out of the menu */
@@ -941,19 +949,50 @@ s32 port_MenuWord(const char *word) {
 
 /* ---- drawing ---- */
 
-void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
+/* The page's places, in the game's screen (menu.h, PORT_LOOK_...): the
+ * rows' names at the left of the game's wide panel, their values at its
+ * right, the first row's baseline and the rows' pitch, the help under
+ * them and the keys under the panel. */
+#define LOOK_LABEL_X 84
+#define LOOK_VALUE_X 556
+#define LOOK_ROW_Y 67
+#define LOOK_ROW_PITCH 12
+#define LOOK_ROWS_SHOWN 10
+#define LOOK_HELP_Y 204
+#define LOOK_NOTE_Y 215
+#define LOOK_KEYS_Y 236
+#define LOOK_HEAD_Y 57
+
+/* The page's title, as the game's Option Menu has its own. */
+static void port_MenuTitle(char *out, u32 room) {
+    if (g_menu.page == PAGE_GROUP) {
+        snprintf(out, room, "%s", port_FindChoiceGroup(g_menu.group)->title);
+        return;
+    }
+    snprintf(out, room, "%s",
+             g_menu.page == PAGE_MAIN      ? "Options"
+             : g_menu.page == PAGE_ONLINE  ? "Play online"
+             : g_menu.page == PAGE_UPDATE  ? "Updates"
+             : g_menu.page == PAGE_REPLAYS ? "Replays"
+             : g_menu.pad == 0             ? "Player 1's buttons"
+                                           : "Player 2's buttons");
+}
+
+void port_MenuTick(void) {
+    if (!g_menu.is_open) {
+        return;
+    }
+    g_menu.pulse++;
+    if (g_menu.fade < PORT_LOOK_FADE_FRAMES) {
+        g_menu.fade++;
+    }
+}
+
+void port_MenuDrawLook(PortLook *look, s32 is_own) {
     char label[LABEL_BYTES];
     char value[VALUE_BYTES];
-    PortTextStyle heading;
-    s32 line = h / 30;
-    s32 size;
-    s32 pad;
-    s32 panel_w;
-    s32 panel_h;
-    s32 x;
-    s32 y;
-    s32 rows_shown;
     s32 i;
+    s32 y;
 
     if (g_menu.page == PAGE_UPDATE) {
         PortUpdateView view;
@@ -963,122 +1002,65 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
             port_MenuBuild(PAGE_UPDATE, g_menu.cursor);
         }
     }
-    if (line < 12) {
-        line = 12;
-    }
-    size = line * 64 / 100;
-    pad = line / 2;
-    panel_w = line * 30;
-    if (panel_w > w - 2 * pad) {
-        panel_w = w - 2 * pad;
-    }
-    panel_h = h - 2 * pad;
-    if (panel_h > line * 32) {
-        panel_h = line * 32;
-    }
-    out->x = (w - panel_w) / 2;
-    out->y = (h - panel_h) / 2;
-    out->w = panel_w;
-    out->h = panel_h;
-    for (i = 0; i < panel_w * panel_h; i++) {
-        pixels[i] = COLOR_PANEL;
-    }
-    port_FillRect(pixels, panel_w, panel_h, 0, 0, panel_w, 2, COLOR_EDGE);
-    port_FillRect(
-        pixels, panel_w, panel_h, 0, panel_h - 2, panel_w, 2, COLOR_EDGE);
-    if (!g_menu.font_ok) {
-        return;
-    }
-    port_FontSetSize(size);
-    memset(&heading, 0, sizeof(heading));
-    heading.face = PORT_FACE_BOLD;
-    heading.size = size;
-    x = pad * 2;
-    y = pad + port_FontAscent();
-    if (g_menu.page == PAGE_GROUP) {
-        snprintf(label, sizeof(label), "Settings: %s",
-                 port_FindChoiceGroup(g_menu.group)->title);
-    } else {
-        snprintf(label, sizeof(label), "%s",
-                 g_menu.page == PAGE_MAIN      ? "ReBushido: settings"
-                 : g_menu.page == PAGE_ONLINE  ? "ReBushido: play online"
-                 : g_menu.page == PAGE_UPDATE  ? "ReBushido: updates"
-                 : g_menu.page == PAGE_REPLAYS ? "ReBushido: replays"
-                 : g_menu.pad == 0             ? "Controls: player 1's buttons"
-                                   : "Controls: player 2's buttons");
-    }
-    heading.color = COLOR_TITLE;
-    port_TextDraw(pixels, panel_w, panel_h, x, y + line / 4, label, &heading);
-    snprintf(value, sizeof(value), "%s", port_GetVersionText());
-    port_FontDraw(
-        pixels, panel_w, panel_h, panel_w - x - port_FontMeasure(value),
-        y + line / 4, value, COLOR_DIM);
+    port_LookPanel(look, is_own);
+    port_MenuTitle(label, sizeof(label));
+    port_LookTitle(look, label);
     if (g_menu.page == PAGE_BUTTONS) {
-        snprintf(label, sizeof(label), "keys   |   controller");
-        port_FontDraw(
-            pixels, panel_w, panel_h, panel_w - x - port_FontMeasure(label),
-            y + line * 5 / 4, label, COLOR_DIM);
+        port_LookText(look, LOOK_VALUE_X, LOOK_HEAD_Y, PORT_LOOK_SIZE_NOTE,
+                      PORT_FACE_TEXT, "keys   |   controller", PORT_LOOK_GREY,
+                      PORT_LOOK_RIGHT);
     }
     /* the rows, scrolled to keep the cursor's in view */
-    y = pad + line * 2 + line / 2;
-    rows_shown = (panel_h - (y - pad) - line * 3) / line;
-    if (rows_shown < 1) {
-        rows_shown = 1;
-    }
     if (g_menu.cursor < g_menu.first) {
         g_menu.first = g_menu.cursor;
     }
-    if (g_menu.cursor >= g_menu.first + rows_shown) {
-        g_menu.first = g_menu.cursor - rows_shown + 1;
+    if (g_menu.cursor >= g_menu.first + LOOK_ROWS_SHOWN) {
+        g_menu.first = g_menu.cursor - LOOK_ROWS_SHOWN + 1;
     }
-
+    if (g_menu.first > 0) {
+        port_LookText(
+            look, PORT_LOOK_GAME_W / 2, LOOK_HEAD_Y, PORT_LOOK_SIZE_NOTE,
+            PORT_FACE_TEXT, "more above", PORT_LOOK_GREY, PORT_LOOK_CENTRE);
+    }
+    y = LOOK_ROW_Y;
     for (i = g_menu.first;
-         i < g_menu.row_count && i < g_menu.first + rows_shown; i++) {
+         i < g_menu.row_count && i < g_menu.first + LOOK_ROWS_SHOWN; i++) {
         const MenuRow *row = &g_menu.rows[i];
         s32 is_cursor = i == g_menu.cursor;
-        s32 baseline = y + (line + port_FontAscent()) / 2 - line / 10;
         s32 is_arrows;
-        u32 color = is_cursor ? COLOR_TEXT : COLOR_DIM;
+        s32 width;
+        u32 color = is_cursor ? port_LookPulse(g_menu.pulse) : PORT_LOOK_ROW;
 
         port_MenuDescribe(row, label, value, &is_arrows);
         if (g_menu.page == PAGE_MAIN && row->kind == ROW_ONLINE) {
             /* the groups above, the rest below a rule */
-            port_FillRect(pixels, panel_w, panel_h, x, y + line / 8,
-                          panel_w - 2 * x, 1, COLOR_EDGE);
-            y += line / 4;
-            baseline += line / 4;
+            port_LookBox(look, LOOK_LABEL_X, y - LOOK_ROW_PITCH + 3,
+                         LOOK_VALUE_X - LOOK_LABEL_X, 1, PORT_LOOK_RULE_FAINT);
+            y += LOOK_ROW_PITCH / 3;
         }
-        if (is_cursor) {
-            port_FillRect(pixels, panel_w, panel_h, x - pad / 2, y + 1,
-                          panel_w - 2 * x + pad, line - 2, COLOR_BAR);
-            port_FillRect(pixels, panel_w, panel_h, x - pad / 2, y + 1,
-                          pad / 4 > 2 ? pad / 4 : 2, line - 2, COLOR_BAR_EDGE);
-        }
-        port_FontDraw(
-            pixels, panel_w, panel_h, x + pad, baseline, label, color);
+        width = port_LookText(look, LOOK_LABEL_X, y, PORT_LOOK_SIZE_ROW,
+                              PORT_FACE_BOLD, label, color, PORT_LOOK_LEFT);
         if (row->kind == ROW_CHOICE &&
             port_FindChoice(row->index)->takes == PORT_TAKES_RESTART &&
             row->index < CHOICES_KEPT &&
             port_MenuChoiceValue(row->index) != g_menu.start[row->index]) {
             /* changed, and waiting on the program's next start */
-            port_FontDraw(pixels, panel_w, panel_h,
-                          x + pad + port_FontMeasure(label) + pad, baseline,
-                          "(after a restart)", COLOR_NOTE);
+            port_LookText(look, LOOK_LABEL_X + width + 8, y,
+                          PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT,
+                          "(after a restart)", PORT_LOOK_WARN, PORT_LOOK_LEFT);
         }
         if (value[0] != 0) {
             char shown[VALUE_BYTES + 8];
-            s32 width;
-            /* a setting's value: the one built in, or another, which is
-             * gold; the cursor's says which is built in */
+            /* a setting's value: white as the game's set value is, or
+             * gold where it is not the one built in */
             s32 built_in = row->kind == ROW_CHOICE
                                ? port_FindChoice(row->index)->built_in
                                : -1;
-            s32 is_built_in =
-                built_in >= 0 && port_MenuChoiceValue(row->index) == built_in;
+            u32 value_color =
+                built_in >= 0 && port_MenuChoiceValue(row->index) != built_in
+                    ? PORT_LOOK_GOLD
+                    : PORT_LOOK_WHITE;
 
-            if (built_in >= 0 && !is_built_in && !is_cursor) {
-                color = COLOR_CHANGED;
-            }
             if (is_cursor && is_arrows) {
                 snprintf(shown, sizeof(shown), "<  %s  >", value);
             } else {
@@ -1086,37 +1068,47 @@ void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out) {
             }
             if (is_cursor && g_menu.is_capturing) {
                 snprintf(shown, sizeof(shown), "press a key or a button...");
+                value_color = PORT_LOOK_WARN;
             }
-            width = port_FontMeasure(shown);
-            port_FontDraw(
-                pixels, panel_w, panel_h, panel_w - x - width, baseline, shown,
-                is_cursor && g_menu.is_capturing ? COLOR_NOTE : color);
-            if (is_cursor && built_in >= 0 && !g_menu.is_capturing) {
-                char mark[VALUE_BYTES];
-
-                if (is_built_in) {
-                    snprintf(mark, sizeof(mark), "%s", MENU_BUILT_IN);
-                } else {
-                    snprintf(mark, sizeof(mark), "%s: %s", MENU_BUILT_IN,
-                             port_FindChoice(row->index)->shown[built_in]);
-                }
-                port_FontDraw(
-                    pixels, panel_w, panel_h,
-                    panel_w - x - width - pad - port_FontMeasure(mark),
-                    baseline, mark, COLOR_DEFAULT);
-            }
+            port_LookText(look, LOOK_VALUE_X, y, PORT_LOOK_SIZE_TEXT + 1,
+                          PORT_FACE_TEXT, shown, value_color, PORT_LOOK_RIGHT);
         }
-        y += line;
+        y += LOOK_ROW_PITCH;
     }
-    /* the line about the cursor's row, a note, and the keys */
-    y = panel_h - pad - line * 2;
-    port_FillRect(pixels, panel_w, panel_h, x, y - line / 4, panel_w - 2 * x, 1,
-                  COLOR_EDGE);
-    port_FontDraw(pixels, panel_w, panel_h, x, y + port_FontAscent(),
-                  g_menu.note[0] != 0 ? g_menu.note : port_MenuHelp(),
-                  g_menu.note[0] != 0 ? COLOR_NOTE : COLOR_TEXT);
-    port_FontDraw(pixels, panel_w, panel_h, x, y + line + port_FontAscent(),
-                  "Arrows / D-pad: choose, change    Enter / Cross: open    "
-                  "Esc / Circle: back    F1: close",
-                  COLOR_DIM);
+    if (g_menu.first + LOOK_ROWS_SHOWN < g_menu.row_count) {
+        port_LookText(
+            look, PORT_LOOK_GAME_W / 2, y, PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT,
+            "more below", PORT_LOOK_GREY, PORT_LOOK_CENTRE);
+    }
+    /* the line about the cursor's row, and a note or the value built in */
+    port_LookBox(look, LOOK_LABEL_X, LOOK_HELP_Y - 11,
+                 LOOK_VALUE_X - LOOK_LABEL_X, 1, PORT_LOOK_RULE_FAINT);
+    port_LookText(
+        look, LOOK_LABEL_X, LOOK_HELP_Y, PORT_LOOK_SIZE_TEXT, PORT_FACE_TEXT,
+        port_MenuHelp(), PORT_LOOK_WHITE, PORT_LOOK_LEFT);
+    if (g_menu.note[0] != 0) {
+        port_LookText(
+            look, LOOK_LABEL_X, LOOK_NOTE_Y, PORT_LOOK_SIZE_TEXT,
+            PORT_FACE_TEXT, g_menu.note, PORT_LOOK_WARN, PORT_LOOK_LEFT);
+    } else if (g_menu.rows[g_menu.cursor].kind == ROW_CHOICE) {
+        const PortChoice *of =
+            port_FindChoice(g_menu.rows[g_menu.cursor].index);
+
+        if (of->built_in >= 0) {
+            snprintf(label, sizeof(label), "%s: %s", MENU_BUILT_IN,
+                     of->shown[of->built_in]);
+            port_LookText(
+                look, LOOK_LABEL_X, LOOK_NOTE_Y, PORT_LOOK_SIZE_TEXT,
+                PORT_FACE_TEXT, label, PORT_LOOK_GREY, PORT_LOOK_LEFT);
+        }
+    }
+    port_LookText(
+        look, LOOK_VALUE_X, LOOK_NOTE_Y, PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT,
+        port_GetVersionText(), PORT_LOOK_OFF, PORT_LOOK_RIGHT);
+    port_LookText(look, PORT_LOOK_GAME_W / 2, LOOK_KEYS_Y, PORT_LOOK_SIZE_NOTE,
+                  PORT_FACE_TEXT,
+                  "Cross / Enter: choose    Left, Right: change    "
+                  "Circle / Escape: back    F1: close",
+                  PORT_LOOK_GREY, PORT_LOOK_CENTRE);
+    port_LookFade(look, g_menu.fade, PORT_LOOK_FADE_FRAMES);
 }

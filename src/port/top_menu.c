@@ -43,7 +43,11 @@ const PortTopRow g_port_top_rows[PORT_TOP_PAGES][PORT_TOP_ROWS] = {
         {"Vs. CPU", {NULL, NULL}, PORT_TOP_MODE, GAME_ROW_VSCPU, SIDE},
         {"Slash", {NULL, NULL}, PORT_TOP_MODE, GAME_ROW_CHANBARA, SIDE},
         {"Group Battle", {NULL, NULL}, PORT_TOP_MODE, GAME_ROW_TEAM, SIDE},
-        {"Back", {"Back", "To the top menu"}, PORT_TOP_BACK, GAME_ROW_STORY, 0},
+        {"Back",
+         {"Back", "To the main menu"},
+         PORT_TOP_BACK,
+         GAME_ROW_STORY,
+         0},
     },
 };
 
@@ -116,4 +120,52 @@ void port_TopMenuTakeOptions(void) {
     g_game_settings.first_person = 0;
     g_saved_record.flags =
         (u8)((g_saved_record.flags & ~GAME_OPTION_FLAGS) | flags);
+}
+
+s32 port_TopMenuIsCovered(void) { return g_port_top_menu.covered; }
+
+/* The place of a sheet's line (its cells' left, top and width) and the
+ * frame, for the window (port_top_menu.h). */
+void port_TopMenuNoteLine(s32 line, const void *of, s32 x, s32 y, s32 is_lit) {
+    const SpriteSheet *sheet = (const SpriteSheet *)of;
+    s32 left = 0;
+    s32 right = 0;
+    s32 top = 0;
+    s32 i;
+
+    for (i = 0; i < sheet->count; i++) {
+        const SpriteCell *cell = &sheet->cells[i];
+
+        if (i == 0 || cell->x < left) {
+            left = cell->x;
+        }
+        if (i == 0 || cell->x + cell->w > right) {
+            right = cell->x + cell->w;
+        }
+        if (i == 0 || cell->y < top) {
+            top = cell->y;
+        }
+    }
+    g_port_top_menu.line_frame[line] = (u32)g_disp_frame_count;
+    g_port_top_menu.line_place[line][0] = (s16)(x + left);
+    g_port_top_menu.line_place[line][1] = (s16)(y + top);
+    g_port_top_menu.line_place[line][2] = (s16)(right - left);
+    g_port_top_menu.line_lit[line] = (u8)(is_lit != 0);
+}
+
+void port_TopMenuNotePanelRow(s32 row, s32 y, s32 panel, s32 cursor) {
+    g_port_top_menu.panel_frame = (u32)g_disp_frame_count;
+    g_port_top_menu.panel_kind = (u8)panel;
+    g_port_top_menu.panel_cursor = (u8)cursor;
+    g_port_top_menu.panel_y[row & 1] = (s16)y;
+}
+
+/* The game's sounds, by the window's number for them. */
+void port_TopMenuPlaySound(s32 sound) {
+    static const s32 g_sounds[PORT_TOP_SOUNDS] = {
+        MENU_SOUND_CURSOR, MENU_SOUND_CONFIRM, MENU_SOUND_CANCEL};
+
+    if (sound >= 0 && sound < PORT_TOP_SOUNDS) {
+        snd_Play(g_sounds[sound], SND_VOLUME_MAX, SND_VOLUME_MAX);
+    }
 }

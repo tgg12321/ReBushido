@@ -20,6 +20,10 @@ playing each other directly and through a lobby server run here, the
 menu's restart and every refusal on the screen; from Windows only);
 port-update (tools/port_update_test.py: the Windows program's updater
 against a release server and key of its own; from Windows only);
+port-menus (tools/port_menus_test.py: the window's pages beside the
+running game, the settings menu and the online pages over the main menu
+and the pause, held to the game's music and menu sounds, and a fight
+paused with them kept and played back as a replay);
 port-budget (tools/port_budget.py: the window's processor time for a
 fight with run-ahead, held to a budget); port-bench (tools/port_bench.py:
 the Windows build on the real graphics card, the processor's and the
@@ -82,6 +86,10 @@ WAITS = {
     # the Windows program's updater against a release server of its own
     # (tools/port_update_test.py), in build/tests/port_update/
     'port-update': ['port-sdl-windows'],
+    # the window's pages and their sound (tools/port_menus_test.py), in
+    # build/tests/port_menus/: the Windows program from Windows, the
+    # Linux one elsewhere
+    'port-menus': ['port-sdl', 'port-sdl-windows'],
     # the window's build timed: after every other step, alone on the
     # machine, so that its milliseconds are its own (ALONE)
     'port-budget': ['port-sdl'],
@@ -97,7 +105,8 @@ WAITS = {
 ALONE = ['port-budget', 'port-bench', 'port-pause']
 # Steps that run what was built, in the checkout itself: the others build in
 # tools/mirror.sh's copy of it.
-IN_PLACE = ['port-rollback', 'port-stage-select', 'port-net', 'port-net-windows', 'port-update', 'port-budget',
+IN_PLACE = ['port-rollback', 'port-stage-select', 'port-net', 'port-net-windows', 'port-update', 'port-menus',
+            'port-budget',
             'port-bench', 'port-pause']
 BUILDS = ['game', 'rb-build', 'discs', 'port', 'port-sdl', 'port-sdl-windows']
 # The steps of the gate's own beside the checks: (name, command, where).
@@ -114,6 +123,7 @@ OWN = [
     ('port-net-windows', None, 'host'),  # with its ports (net_base) and Windows' Python
     # skips itself off Windows
     ('port-update', [None, 'tools/port_update_test.py'], 'host'),
+    ('port-menus', [None, 'tools/port_menus_test.py'], 'host'),
     ('port-budget', ['python3', 'tools/port_budget.py'], 'wsl'),
     # --report-only until the owner's targets are met (docs/PORT.md,
     # "Measuring on the card"); skips itself where there is no card

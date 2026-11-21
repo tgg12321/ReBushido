@@ -186,7 +186,7 @@ The PlayStation disc keeps it: it has no other menu of ReBushido's. The
 native port's window does not show it: with ReBushido's top menu (the
 window's `menu = rebushido`, as built) the program goes straight to the
 opening, Bugfixes is the settings menu's `bugfixes` and Graphics the
-window's own (`PORT.md`, "ReBushido's top menu"); with `menu =
+window's own (`PORT.md`, "ReBushido's main menu"); with `menu =
 original`, and in every run of a test's plan, the page is as here.
 
 | Row | Choices | |

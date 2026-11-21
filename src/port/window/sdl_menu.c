@@ -1,14 +1,23 @@
 /* The native port's settings menu in the window (menu.h, sdl_window.h;
  * docs/PLAYING.md, "The settings menu"): when it opens, the keys and the
- * controllers while it is open, and the loop it runs in with the game
- * stopped. Only the build with a window has this file.
+ * controllers while it is open, and how it runs: beside the game, or in
+ * a loop of its own with the game stopped. Only the build with a window
+ * has this file.
  *
  * It is opened by F1 or a controller's guide button anywhere, by Select
- * on the three screens whose own loops do nothing with Select: the top
+ * on the three screens whose own loops do nothing with Select: the main
  * menu, ReBushido's options page at boot, and the fight's pause menu; and
- * by Options and Online Play on ReBushido's top menu, which ask for it
+ * by Options and Online Play on ReBushido's main menu, which ask for it
  * through the game's state (port_top_menu.h).
- * Asked for, it opens at the end of the first vertical blank where the
+ * Over ReBushido's main menu and the fight's pause it opens at the next
+ * blank beside the game, which goes on running under it: the PC's input
+ * is the menu's, the game is given no press, the menu has a turn at each
+ * blank and is drawn at each picture, and over the main menu the game
+ * draws its Option Menu's backdrop under it (port_PageCover). The online
+ * pages open the same way; what the two share is here ("the pages over
+ * the game"; docs/PORT.md, "The window's pages in the game's look").
+ * Anywhere else, asked for, it opens at the end of the first vertical
+ * blank where the
  * game has shown a new frame (the game's own frame boundary, where the
  * window has just shown it), or after a few blanks where the game shows
  * none, as on a load. Then the game is not run at all: the window loops
@@ -26,6 +35,7 @@
 #include "port_net.h"
 #include "port_online.h"
 #include "port_remaster.h"
+#include "port_spu.h"
 #include "port_top_menu.h"
 #include "shared.h"
 #include "sdl_window.h"
@@ -44,8 +54,6 @@ static struct {
     s32 is_wanted;
     u32 asked_at;    /* the blank */
     s32 asked_frame; /* the game's frames shown then */
-    u32 *pixels;
-    u32 room;
     u32 opened;
     u32 shots;
     /* the left stick's last direction, so that a push is one press */
@@ -53,7 +61,176 @@ static struct {
     /* the times ReBushido's top menu has asked for the menu, as far as
      * the menu has followed them (port_top_menu.h) */
     s32 asks_seen;
+    /* open beside the running game (the top menu's, the pause's) */
+    s32 is_beside;
+    u32 opened_at; /* SDL's ticks */
+    /* a test's presses (--menu-keys), and blanks to wait (`wait:N`) */
+    const char *words;
+    s32 waiting;
 } g_port_menu;
+
+/* What the settings menu and the online pages share: the page's pixels,
+ * whether the top menu is covered, whether their sounds are played, and a
+ * test's picture to take. */
+static struct {
+    PortLook look;
+    s32 covered;
+    s32 sounds_on;
+    char shot[PATH_BYTES];
+    s32 has_shot;
+    /* the stopped game's sound: SDL's ticks at its last blank, and the
+     * blanks it has had */
+    u32 sound_at;
+    u32 sound_blanks;
+    /* the page's turns and presses, counted: its pixels are drawn again
+     * only when this or the area has changed since, not at each of the
+     * pictures a blank may show */
+    u32 changes;
+    u32 drawn_changes;
+    s32 drawn_w;
+    s32 drawn_h;
+    s32 drawn_menu;
+} g_port_page;
+
+static void port_MenuEvent(const SDL_Event *event);
+
+/* ---- the pages over the game ---- */
+
+/* The console's blanks a second, as the PC's milliseconds count them: the
+ * stopped game's sound is made at this pace. */
+#define BLANKS_A_SECOND 60
+#define SOUND_BLANKS_MOST 12
+
+s32 port_PageCanBeBeside(void) {
+    PortGameState now;
+
+    port_ReadGameState(&now);
+    return (now.is_top_menu && now.is_top_menu_ours) || now.is_paused;
+}
+
+s32 port_PageIsBeside(void) {
+    return (port_MenuIsOpen() && g_port_menu.is_beside) ||
+           port_OnlinePagesAreBeside();
+}
+
+void port_PageCover(s32 on) {
+    PortGameState now;
+
+    port_ReadGameState(&now);
+    on = on && now.is_top_menu && now.is_top_menu_ours;
+    g_port_page.covered = on;
+    if (on != port_TopMenuIsCovered()) {
+        port_SetTopMenuCovered(on);
+    }
+}
+
+void port_PageSoundsOn(s32 on) {
+    g_port_page.sounds_on = on;
+    g_port_page.sound_at = SDL_GetTicks();
+    g_port_page.sound_blanks = 0;
+}
+
+void port_PageSound(s32 sound) {
+    if (g_port_page.sounds_on) {
+        port_AskMenuSound(sound);
+    }
+}
+
+void port_PageKeepSound(void) {
+    u32 now = SDL_GetTicks();
+    u32 owed = (now - g_port_page.sound_at) * BLANKS_A_SECOND / 1000;
+    u32 i;
+
+    if (!g_port_page.sounds_on) {
+        return;
+    }
+    if (g_port_window_options.is_fast) {
+        /* a test's run: a blank a turn, whatever the time */
+        owed = g_port_page.sound_blanks + 1;
+    }
+    for (i = 0; g_port_page.sound_blanks < owed && i < SOUND_BLANKS_MOST; i++) {
+        port_RunStoppedSound();
+        g_port_page.sound_blanks++;
+    }
+    if (g_port_page.sound_blanks < owed) {
+        /* the PC was held up: what is owed past a few blanks is let go */
+        g_port_page.sound_blanks = owed;
+    }
+}
+
+void port_PageChanged(void) { g_port_page.changes++; }
+
+s32 port_PageHasOwnBackdrop(void) {
+    return (port_MenuIsOpen() || port_OnlinePagesAreOpen()) &&
+           !g_port_page.covered;
+}
+
+s32 port_PagePixels(s32 area_w, s32 area_h, const u32 **pixels, PortRect *box) {
+    s32 is_menu = port_MenuIsOpen();
+
+    if (!is_menu && !port_OnlinePagesAreOpen()) {
+        return FALSE;
+    }
+    if (g_port_page.look.pixels == NULL ||
+        g_port_page.drawn_changes != g_port_page.changes ||
+        g_port_page.drawn_w != area_w || g_port_page.drawn_h != area_h ||
+        g_port_page.drawn_menu != is_menu) {
+        if (!port_LookBegin(&g_port_page.look, area_w, area_h)) {
+            return FALSE;
+        }
+        /* where the top menu is covered, the game draws its own backdrop
+         * and panel under the page */
+        if (is_menu) {
+            port_MenuDrawLook(&g_port_page.look, port_PageHasOwnBackdrop());
+        } else {
+            port_OnlinePagesDraw(&g_port_page.look, port_PageHasOwnBackdrop());
+        }
+        g_port_page.drawn_changes = g_port_page.changes;
+        g_port_page.drawn_w = area_w;
+        g_port_page.drawn_h = area_h;
+        g_port_page.drawn_menu = is_menu;
+    }
+    *pixels = g_port_page.look.pixels;
+    box->x = 0;
+    box->y = 0;
+    box->w = area_w;
+    box->h = area_h;
+    return TRUE;
+}
+
+void port_PageShot(const char *path) {
+    snprintf(g_port_page.shot, sizeof(g_port_page.shot), "%s", path);
+    g_port_page.has_shot = TRUE;
+}
+
+const char *port_PageTakeShot(void) {
+    if (!g_port_page.has_shot) {
+        return NULL;
+    }
+    g_port_page.has_shot = FALSE;
+    return g_port_page.shot;
+}
+
+s32 port_PageTakesEvent(const SDL_Event *event) {
+    if (!port_PageIsBeside()) {
+        return FALSE;
+    }
+    port_PageChanged();
+    if (event->type == SDL_KEYDOWN || event->type == SDL_KEYUP) {
+        SDL_Scancode code = event->key.keysym.scancode;
+
+        if (code == SDL_SCANCODE_F2 || code == SDL_SCANCODE_F3 ||
+            code == SDL_SCANCODE_F9 || code == SDL_SCANCODE_F12) {
+            return FALSE;
+        }
+    }
+    if (port_MenuIsOpen()) {
+        port_MenuEvent(event);
+    } else {
+        port_OnlinePagesEvent(event);
+    }
+    return TRUE;
+}
 
 void port_AskForMenu(const char *why) {
     PortGameState now;
@@ -86,6 +263,11 @@ u32 port_MenuTakesPad(u32 held, u32 sent, u32 *out) {
     PortGameState now;
 
     *out = held;
+    if (port_PageIsBeside()) {
+        /* a page beside the game: nothing is the game's until let go */
+        *out = 0;
+        return held;
+    }
     if (!(held & select) || (sent & select)) {
         return 0;
     }
@@ -387,87 +569,139 @@ static s32 port_NextMenuWord(const char **at, char *word) {
     return TRUE;
 }
 
-/* The menu drawn and shown; and where a test asked for it, the window
- * kept as a PNG (--menu-shots). */
-static void port_DrawMenu(u32 blank, s32 is_shot) {
-    char path[PATH_BYTES];
-    PortRect place;
-    s32 window_w = 0;
-    s32 window_h = 0;
-
-    port_GetWindowSize(&window_w, &window_h);
-    if (window_w <= 0 || window_h <= 0) {
-        return;
-    }
-    if (g_port_menu.room < (u32)(window_w * window_h)) {
-        free(g_port_menu.pixels);
-        g_port_menu.room = (u32)(window_w * window_h);
-        g_port_menu.pixels = malloc((size_t)g_port_menu.room * sizeof(u32));
-        if (g_port_menu.pixels == NULL) {
-            g_port_menu.room = 0;
-            return;
-        }
-    }
-    port_MenuDraw(g_port_menu.pixels, window_w, window_h, &place);
-    if (!is_shot || g_port_window_options.menu_shots == NULL) {
-        port_ShowMenu(blank, g_port_menu.pixels, &place, NULL);
-        return;
+/* The path of a test's next picture (--menu-shots), or NULL where none
+ * was asked for. */
+static const char *port_MenuShotPath(char *path, u32 room) {
+    if (g_port_window_options.menu_shots == NULL) {
+        return NULL;
     }
     port_MakeFolder(g_port_window_options.menu_shots);
-    snprintf(path, sizeof(path), "%s/menu-%03u.png",
-             g_port_window_options.menu_shots, g_port_menu.shots++);
-    port_ShowMenu(blank, g_port_menu.pixels, &place, path);
+    snprintf(path, room, "%s/menu-%03u.png", g_port_window_options.menu_shots,
+             g_port_menu.shots++);
+    return path;
 }
 
-/* The menu, from the moment it opens to the moment it closes. Nothing of
- * the game's runs in here; the sound card plays what is queued and then
- * silence. */
-static void port_RunMenu(u32 blank) {
-    const char *words = g_port_window_options.menu_keys;
-    const char *path = port_GetSettingsPath();
+/* A test's next word, at a turn of the menu's: a press, `shot` (the
+ * window's picture as it shows the menu), or `wait:N` (N turns with
+ * none). With none left, the menu is closed. TRUE where the word was
+ * `shot`. */
+static s32 port_MenuTestTurn(void) {
     char word[WORD_BYTES];
-    u32 started = SDL_GetTicks();
+
+    if (g_port_menu.words == NULL) {
+        return FALSE;
+    }
+    if (g_port_menu.waiting > 0) {
+        g_port_menu.waiting--;
+        return FALSE;
+    }
+    if (!port_NextMenuWord(&g_port_menu.words, word)) {
+        g_port_menu.words = NULL;
+        port_MenuPress(PORT_MENU_CLOSE);
+        return FALSE;
+    }
+    if (strcmp(word, "shot") == 0) {
+        return TRUE;
+    }
+    if (strncmp(word, "wait:", 5) == 0) {
+        g_port_menu.waiting = atoi(word + 5);
+    } else if (!port_MenuWord(word)) {
+        port_Say("--menu-keys: no such press: %s", word);
+    }
+    return FALSE;
+}
+
+/* The menu opened: on the page asked for, its sounds played where the
+ * game runs beside it, the top menu covered. */
+static void port_OpenMenu(u32 blank, s32 is_beside) {
+    const char *path = port_GetSettingsPath();
 
     g_port_menu.is_wanted = FALSE;
     g_port_menu.opened++;
     g_port_menu.stick[0] = 0;
     g_port_menu.stick[1] = 0;
+    g_port_menu.is_beside = is_beside;
+    g_port_menu.opened_at = SDL_GetTicks();
+    g_port_menu.words = g_port_window_options.menu_keys;
+    g_port_menu.waiting = 0;
     port_MenuOpen(path != NULL ? path : "rebushido.cfg");
-    port_Note("settings menu: open (%u times now); the game is stopped at "
+    port_PageSoundsOn(is_beside);
+    port_PageCover(is_beside);
+    if (is_beside) {
+        port_Note("settings menu: open (%u times now) beside the game, which "
+                  "runs on under it; blank %u",
+                  g_port_menu.opened, blank);
+    } else {
+        port_Note("settings menu: open (%u times now); the game is stopped at "
+                  "blank %u",
+                  g_port_menu.opened, blank);
+    }
+}
+
+/* The menu closed: the key or the button that closed it is no press of
+ * the game's. */
+static void port_ClosedMenu(u32 blank) {
+    port_HoldBackPads();
+    port_PageSoundsOn(FALSE);
+    port_PageCover(FALSE);
+    port_Note("settings menu: closed after %u ms; the game goes on from "
               "blank %u",
-              g_port_menu.opened, blank);
+              SDL_GetTicks() - g_port_menu.opened_at, blank);
+    g_port_menu.is_beside = FALSE;
+}
+
+/* The menu, from the moment it opens to the moment it closes, with the
+ * game stopped. Nothing of the game's runs in here; the sound card plays
+ * what is queued and then silence. */
+static void port_RunMenu(u32 blank) {
+    char path[PATH_BYTES];
+
+    port_OpenMenu(blank, FALSE);
     while (port_MenuIsOpen()) {
         SDL_Event event;
-        s32 is_shot = FALSE;
+        s32 is_shot;
 
         while (SDL_PollEvent(&event)) {
             port_MenuEvent(&event);
         }
-        if (words != NULL && port_MenuIsOpen()) {
-            /* a test's presses, one a picture */
-            if (!port_NextMenuWord(&words, word)) {
-                port_MenuPress(PORT_MENU_CLOSE);
-                break;
-            }
-            if (strcmp(word, "shot") == 0) {
-                is_shot = TRUE;
-            } else if (!port_MenuWord(word)) {
-                port_Say("--menu-keys: no such press: %s", word);
-            }
-        }
+        is_shot = port_MenuIsOpen() && port_MenuTestTurn();
         if (!port_MenuIsOpen()) {
             break;
         }
-        port_DrawMenu(blank, is_shot);
+        port_MenuTick();
+        port_ShowPage(
+            blank, is_shot ? port_MenuShotPath(path, sizeof(path)) : NULL);
         if (!g_port_window_options.is_fast) {
             SDL_Delay(STEP_MS);
         }
     }
-    /* the key or the button that closed it is no press of the game's */
-    port_HoldBackPads();
-    port_Note("settings menu: closed after %u ms; the game goes on from "
-              "blank %u",
-              SDL_GetTicks() - started, blank);
+    port_ClosedMenu(blank);
+}
+
+/* A blank's turn of the menu open beside the game: a test's word, the
+ * glow and the fade on a frame. Its presses came with the window's events
+ * (port_PageTakesEvent). */
+static void port_MenuBesideTurn(u32 blank) {
+    char path[PATH_BYTES];
+
+    if (port_MenuIsOpen() && port_MenuTestTurn()) {
+        const char *shot = port_MenuShotPath(path, sizeof(path));
+
+        if (shot != NULL) {
+            port_PageShot(shot);
+        }
+    }
+    if (!port_MenuIsOpen()) {
+        port_ClosedMenu(blank);
+        return;
+    }
+    port_MenuTick();
+    if (!port_PageCanBeBeside()) {
+        /* the game left the screen under it (it cannot, with no press;
+         * a state put back can): the menu goes with it */
+        port_MenuPress(PORT_MENU_CLOSE);
+        port_ClosedMenu(blank);
+    }
 }
 
 /* Whether a test asked for the menu at this blank (--menu-at). */
@@ -496,6 +730,22 @@ void port_MenuFollowAsks(void) {
 void port_MaybeRunMenu(u32 blank) {
     PortGameState now;
 
+    /* a blank's turn: the glow and the fade move on */
+    port_PageChanged();
+    if (port_MenuIsOpen() && g_port_menu.is_beside) {
+        port_MenuBesideTurn(blank);
+        return;
+    }
+    if (g_port_menu.is_beside) {
+        /* closed between two blanks, by a press read at a boundary */
+        port_ClosedMenu(blank);
+    }
+    if (!port_MenuIsOpen() && !port_OnlinePagesAreOpen() &&
+        !port_OnlineIsBusy() && port_TopMenuIsCovered()) {
+        /* no page is up (a session's end with none to come back to, a
+         * state put back): the top menu is the game's again */
+        port_PageCover(FALSE);
+    }
     port_ReadGameState(&now);
     if (now.menu_asks != g_port_menu.asks_seen) {
         /* Options or Online Play on ReBushido's top menu: the count only
@@ -520,6 +770,12 @@ void port_MaybeRunMenu(u32 blank) {
         port_AskForMenu("--menu-at");
     }
     if (!g_port_menu.is_wanted) {
+        return;
+    }
+    if (port_PageCanBeBeside()) {
+        /* the top menu or the pause: the game goes on under the menu, its
+         * music with it, as under a page of its own */
+        port_OpenMenu(blank, TRUE);
         return;
     }
     if (now.frames != g_port_menu.asked_frame ||

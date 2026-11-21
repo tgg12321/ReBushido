@@ -1249,7 +1249,8 @@ made, and as the program ends. The window's files are
 | `gamestate.c` | reads the game's variables out for the log, and has the names the log gives screens, modes, fighters, weapons and stages; it writes one, the Bug fixes setting, for the settings menu |
 | `sdl_window.c` | the window, the sound card and the controllers, on SDL; the counter; the log's notes of the game |
 | `sdl_log.c` | the session's log file |
-| `menu.c`, `sdl_menu.c`, `font.c`, `menu.h` | the settings menu ([`PLAYING.md`](PLAYING.md), "The settings menu"): its pages and what a press does, when it opens and the loop it runs in with the game stopped at a frame's boundary, and its text drawn at the window's resolution in the port's typeface, Shippori Mincho (below, "The port's lettering"). None of it is the game's state: these files are linked outside the game's object, as every file of the window is |
+| `menu.c`, `sdl_menu.c`, `font.c`, `menu.h` | the settings menu ([`PLAYING.md`](PLAYING.md), "The settings menu"): its pages and what a press does, when it opens, beside the running game over the main menu and the pause or in a loop of its own with the game stopped at a frame's boundary elsewhere, and its text drawn at the window's resolution in the port's typeface, Shippori Mincho (below, "The port's lettering"). None of it is the game's state: these files are linked outside the game's object, as every file of the window is |
+| `page_look.c` | the look of the game's own menu pages, the Option Menu's, which the settings menu and the online pages are drawn in (below, "The window's pages in the game's look") |
 | `sdl_main.c` | where the program starts: its own options, the settings file, the disc image when none is named |
 | `host_posix.c` | `port_host.h` on a C library, for Linux (Windows has `src/port/host_windows.c`) |
 
@@ -9048,14 +9049,14 @@ winner wounded into the second, the match decided at the result's card
 and each player back to the room, the players' hashes alike and the
 spectator's theirs.
 
-## ReBushido's top menu
+## ReBushido's main menu
 
 The owner, 2026-11-19: drop the options page at boot, put every setting
 in the menu's Options, drop the first person's view, Link Mode becomes
 Online Play, and Group Battle, Slash, Vs. CPU and Story go under one
 Singleplayer row; Training stays on the top menu. The window's setting
 `menu` (`rebushido`, as built, or `original`; `--menu` on the command
-line), `include/port_top_menu.h`; docs/PLAYING.md, "The top menu".
+line), `include/port_top_menu.h`; docs/PLAYING.md, "The main menu".
 
 **What the game does.** `src/port/top_menu.c` (a state file) holds the
 two pages' rows, the page and the cursor, and a count of the times the
@@ -9085,9 +9086,12 @@ page at the window's resolution, as `stage_page.c` does the stage
 pages', from what `gamestate.c` reads out (`port_ReadTopMenu`); its
 letters are drawn by one function, `port_TopPageText`. `sdl_menu.c`
 follows the count of asks and opens the settings menu on its first page
-(Options), or the online pages (Online Play: `online_pages.c`, drawn
-over the game in the top menu's look; a session begins and ends there
-in the running program, `NETPLAY.md`, section 15).
+(Options), or the online pages (Online Play: `online_pages.c`; a
+session begins and ends there in the running program, `NETPLAY.md`,
+section 15), both beside the running game, which draws its Option
+Menu's backdrop under them (below, "The window's pages in the game's
+look"). `top_page.c` letters the title's MAIN MENU too, and the pause's
+and the after-fight menu's renamed rows.
 
 **The tests.** The switch is off in the program without a window, and
 in every run of a plan or `--frames` unless `--menu rebushido` comes
@@ -9101,6 +9105,201 @@ boots to the top menu and reaches Singleplayer then Vs. CPU's select
 screen, Training's page, Online Play's page and Options; port-rollback
 of that plan with `--with=--menu --with=rebushido` is the same with and
 without rollbacks.
+
+## The window's pages in the game's look
+
+The owner, 2026-11-20: "For the Online play menu, make sure sound
+effects and music persist and try to standardize the GUI to be more
+similar to the base game, not obviously a window drawn on top of the
+emulation. Same for the options menu, integrate it into the game itself
+like you would any other. Lets also rename 'Top Menu' and 'Sub Menu'
+across the game to be 'Main Menu' and 'Character Select'."
+
+**Beside the game, not over it stopped.** The settings menu
+(`menu.c`, `sdl_menu.c`) and the online pages (`online_pages.c`) opened
+over ReBushido's main menu or over a fight's pause are no longer a loop
+of the window's with the game stopped: they open *beside* the game
+(`port_PageCanBeBeside`: the main menu with `menu = rebushido`, or the
+pause), which goes on running its own frames under them. So its music
+goes on as the game plays it, a piece that ends starts again as the
+game starts it, and nothing is silent or begins again on the way in or
+out. While a page is beside the game:
+
+- every event of SDL's is the page's (`port_PageTakesEvent`, from
+  `port_ReadEvents`) but the window's own F2, F3, F9 and F12; what the
+  keys and controllers hold is followed all the same, and nothing is
+  given to the game (`port_MenuTakesPad` holds it all back until let
+  go), so the game's frames under it take no press;
+- the page has a turn at each blank (`port_MaybeRunMenu`): a test's word,
+  the room's turn, the cursor's glow and the fade;
+- it is drawn at every picture the window shows, as the stage pages and
+  the match rules are (`port_DrawOverlay`, `port_PagePixels`), so it is
+  the same over the console's picture and the remastered one, and with
+  more pictures a second than the game's frames.
+
+Anywhere else -- F1 in the middle of a fight, on a load, at the boot (the
+tests' `--menu-at` and `--online-at`) -- the menu and the pages run as
+before, with the game stopped at a blank (`port_RunMenu`,
+`port_RunPages`), drawn the same way over its last picture
+(`port_ShowPage`): there a fight would go on under them, and a replay
+being recorded would keep frames no input made.
+
+**The main menu covered.** Beside ReBushido's main menu, the page covers
+it: the window writes `g_port_top_menu.covered` (`port_SetTopMenuCovered`,
+at a blank's turn, where the game is still, as it writes the Bug fixes),
+and the game's main menu (`menu_UpdatePortTop`) then draws the backdrop
+and the wide panel of its own Option Menu (`menu_DrawPageFrame`,
+`MENU_PANEL_WIDE`: the night sky, the clouds, the moon and the slate
+panel) and nothing else, takes no press, and does not count the time to
+its movie (`menu_Update`, `MENU_IDLE_FRAMES`, held at 1 as a held button
+holds it). The window's rows over the main menu (`top_page.c`) are not
+drawn while it is covered. The flag is cleared as the last page closes,
+and at any blank where no page is up and no session is being set up.
+
+**The look** (`page_look.c`, menu.h's `PORT_LOOK_...`), followed from
+the game's Option Menu (`menu_DrawOptions`), the page the main menu's
+Options row opened in the original:
+
+- the title above the panel in white, centred, over the game's grey rule
+  (`menu_DrawTitleRule`: a light line and two fainter);
+- the rows in the panel in the dull gold the game's rows have laid half
+  over its panel, (174, 174, 74); the cursor's row in yellow, (255, 255,
+  49), swelling and fading as the game's cursor does (`MENU_PULSE`: once
+  round in 32 frames, 47 either side of the plain tint, from an eighth of
+  a turn, started again at each move); no bar under the cursor, as the
+  game has none;
+- a value that is set in white, as the game's chosen value is; one that
+  is not the one built in in gold (the settings menu's own rule, kept);
+- the help line under the rows in white, notes in grey, the keys under
+  the panel in grey;
+- a page comes up with a fade of eight frames (`PORT_LOOK_FADE_FRAMES`):
+  the game's own pages change with a cut and a music fade
+  (`MENU_PAGE_FADE_TO_MODE`), which a page of rows that change often
+  does not want; the fade is the nearest to a page of the game's coming
+  up, and the music is not faded at all, as the owner asked;
+- the port's one typeface (Shippori Mincho; "The port's lettering"),
+  the titles in ExtraBold, the rows in Bold, the rest in Regular, with
+  the dark shadow down and to the right the game's lettering has.
+
+Over the main menu the game draws the backdrop and the panel itself.
+Over the pause (and wherever the game is stopped) the window draws them:
+the picture darkened (0xD0 of black; the game's renamed rows of the
+panel under it are left out) and the same panel, slate blue (0x4C,
+0x4C, 0x6C) laid half over it, at the game's place for it (63 to
+577 across, 48 to 224 down, of the game's 640 by 240). The online pages'
+keyboard, a room's page and the meeting are laid out in the same panel.
+
+**The sounds.** A press on a page plays the game's own menu sound: the
+cursor's as the cursor moves or a value changes, the confirm's as a row
+is taken, the cancel's on a way back (Back, Escape, Circle, F1's close)
+-- `MENU_SOUND_CURSOR`, `_CONFIRM`, `_CANCEL`, played by `snd_Play` as
+the game's menus play them (`port_TopMenuPlaySound`). The window asks for
+one (`port_PageSound`, `port_AskMenuSound`, outside the state in
+`play_switches.c`); the game plays it as it takes its next input
+(`port_TakeInput`, `port_PlayAskedSound`), so it is one of that input's
+effects: a frame run ahead or again plays none, and a replay being
+recorded keeps it with the input (`SOND`, below).
+
+**The meeting.** While two players meet (`online.c`, section 15 of
+NETPLAY.md) the game is stopped at its boundary and the pages are drawn
+by the session's waits. There, if the pages were beside the main menu,
+the game's sound goes on by itself: `port_PageKeepSound` runs, for each
+blank of the PC's time since the last (at most twelve at once; one a call
+in a test's run), what a stopped console still does
+(`port_RunStoppedSound`): the sound asked for, the music's step of
+`cdrom_Update` alone every other blank (`cdrom_KeepMusicGoing`, so a
+piece that ends starts again; a read of the disc is left for the
+frames), the game's queue of sounds started (`snd_FlushQueue`) and a
+blank of the chip and the drive (`port_RunSoundBlank`). It changes the
+player's own state as their frames would have; that state is saved as
+the session begins and put back as it ends, so the music goes on from
+where the meeting left it, and the pages come back beside it. The
+session's own game is from power on and plays its own sound.
+
+**A replay of a fight paused with a page over it.** The pause's frames
+are the fight's, and a page's sounds change the sound chip's state,
+which the replay's hashes hold: a file without them would not play back
+the same. So each input's sound is kept (`ReplayFrame.sound`) and
+written as a chunk of its own, `SOND` (a count, then each frame's
+number and its sound plus one, as words), which a file without one
+does not have; the playback plays each as its frame's input is taken.
+The format's version is unchanged: an older file has no `SOND` and no
+sound, and an older program skips the chunk.
+
+**Main Menu and Character Select.** What a player sees says Main Menu
+where it said top menu, and Character Select where the game says Sub
+Menu (the owner, 2026-11-20):
+
+- our own: the main page's Back row's caption ("To the main menu"), the
+  online pages' and the session's words, the Updates page, the
+  settings' labels and help (`menu`, `english`: "English main menu"),
+  `--help`, the English mod's name, the players' README and
+  docs/PLAYING.md;
+- the game's own lettering, with ReBushido's menus (`menu = rebushido`;
+  `original` keeps the game's words, as it keeps its menus): the main
+  menu's title draws its big line alone (`menu_DrawTopTitle`, the
+  sheet's top 17 rows, which are textures of their own keys: the English
+  mod has its "Select a Trial" for them too, `tools/port_english.py`,
+  `TITLE_LINE`) and the window letters "MAIN MENU" under it in the
+  game's teal capitals with their dark edge, spaced over the span of the
+  game's "TOP MENU" (`top_page.c`, `port_TopPageSmall`); the pause's and
+  the after-fight menu's last two rows, "Return to Sub Menu" and "Return
+  to Top Menu", are left out by the game (`hud_DrawPanel`) and their
+  places noted (`port_TopMenuNotePanelRow`: the frame, the panel, the
+  cursor, each row's y), and the window letters "Return to Character
+  Select" and "Return to Main Menu" there, centred, white where the
+  cursor is and half laid over the panel where it is not, as the game's
+  semi-transparent rows are, narrowed to the panel where the line is
+  long (`port_PanelRowsPixels`). The training page's and the Group Battle
+  page's "Return to Top Menu" the same way (`menu_DrawPractice`,
+  `select_DrawTeamRules`, `port_TopMenuNoteLine`; `port_PageLinesPixels`):
+  "Return to Main Menu" at the left of the game's line, in each page's
+  look (the training page's yellow with a shadow, the Group Battle
+  page's with a dark edge), dimmed and half laid over where the game's is
+  dim. All over either picture. In Training, Return to Character Select
+  still goes back to training's own page first, as the game's Sub Menu
+  did;
+- not renamed: the code's names (`port_TopMenu...`, `g_port_top_menu`,
+  `PORT_TOP_...`, `top_page.c`, the game's `menu_...`), the session log's
+  lines that tests read, and the game's options page's "Return to Top
+  Menu", which ReBushido's main menu never shows. Renaming the port's
+  names would touch every file of the main menu, the match rules and the
+  online flow beside another agent's work for little.
+
+**The battle type's page** (the match rules' page before the first
+character select, `match_page.c`, `port_MatchRulePage`) is drawn in the
+same look: the select screen under it darkened twice over (its lettering
+is bright), the wide panel, the title "Battle type" over the rule, the
+rows' names in the gold and the row under the cursor in the yellow, each
+value in white with `<` and `>` beside the cursor's, the rule's two lines
+in white and the keys under the panel. Its presses were the game's own
+menu sounds already (`port_MatchRulePageStep`, played by the game).
+
+**A new page in this look**: drawn by the window, it is a `PortLook`
+(`port_LookBegin`, `port_LookPanel` with the backdrop its own unless the
+game draws it, `port_LookTitle`, `port_LookText` with `PORT_LOOK_ROW`
+and `port_LookPulse` for the cursor's row, `port_LookFade`), laid over
+the 4:3 area as the others are (`port_DrawOverlay`), with
+`port_PageSound` at each press; opened beside the game where it waits
+for the player, given no press, as `port_PageCanBeBeside` and
+`port_MenuTakesPad` do for these. Drawn by the game, the page asks
+`menu_DrawPageFrame(ctx, MENU_PANEL_WIDE, db)` for the Option Menu's
+backdrop and plays `snd_Play(MENU_SOUND_...)` as its menus do, and the
+window letters it in the same `PORT_LOOK_` colours.
+
+**Proved** (`tools/port_menus_test.py`, a step of the gate; Windows, or
+the Linux window from WSL), the window hidden with SDL's dummy drivers,
+`--fast`, `--wav`:
+
+| Case | What runs | Held |
+| --- | --- | --- |
+| `menu` | the main menu: Singleplayer and back, down to Online Play; the online pages beside it (down, down, up, Host a room, back, back); Options: the settings menu beside it (down, down, up, a group, back, close); Online Play again, Join by address, Host: the meeting, 300 of its turns, given up | the game's own confirm, cancel and cursor sounds noted from its own presses (vab 0, program 0, tones 1, 2 and 0); the pages and the menu open beside the game for 59 blanks each, each playing exactly 3 cursors, 1 confirm and 2 cancels, the game's own, and nothing else; the music under them as loud as before them (7,340 and 8,058 RMS against 5,271); not one gap of 0.1 s from the main menu's music on to the meeting's end (the longest: none); 301 blanks of sound made while the game stood still in the meeting |
+| `pause` | a versus fight (port_game's), paused at its 120th frame; the settings menu over the pause (down, down, up, a group, back, close); Escape, and the fight on to its kill | 6 sounds over the pause; the fight's replay keeps them (`SOND`, 6) and `--replay-check` plays it back with every hash the same; the same file with `SOND` taken out does not (it ends 1): the sounds are what keeps it the same |
+
+The pictures, before and after, of every online page, the settings menu
+from the main menu and from the pause, and the renamed rows, in both
+pictures: the main checkout's `tmp/menus/`, kept for the owner and not
+committed.
 
 ## Updates
 

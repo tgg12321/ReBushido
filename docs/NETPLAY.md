@@ -1101,7 +1101,7 @@ mode is versus (`menu_GetTopRowMode`, `src/main/menu_pages.c`, under
 `RB_PORT`), then Cross: about ten seconds. With the host's `menu =
 rebushido` there is no options page, the save is loaded without the
 question, and the row is Versus, which stands for the game's own
-(`PORT.md`, "ReBushido's top menu"). The **versus select screen is
+(`PORT.md`, "ReBushido's main menu"). The **versus select screen is
 the match's set-up**, both players choosing at once as on a couch, and
 the host takes the stage. After a fight the game's own menu offers
 Rematch, the select screen, or the main menu; a way back to the top menu
@@ -1655,11 +1655,14 @@ in it. A host's first hello of a meeting now says `HELLO_RESET`, so
 that the server lets that guest go and the room waits again: the
 second room of a running program is the first's, under its old code.
 
-**The pages** (`online_pages.c`): Online Play on the top menu opens
-them (the count of `port_TopMenuAsk`, `sdl_menu.c`) over the game,
-stopped at a blank as the settings menu stops it, drawn at the window's
-resolution in the top menu's look (the port's typeface, `port_TextDraw`;
-none of it in the game's video memory): Quick Match, Host a room,
+**The pages** (`online_pages.c`): Online Play on the main menu opens
+them (the count of `port_TopMenuAsk`, `sdl_menu.c`) beside the game,
+which runs on under them with its music and draws its Option Menu's
+backdrop, drawn at the window's resolution in the look of the game's
+own pages (`page_look.c`, the port's typeface; none of it in the game's
+video memory; PORT.md, "The window's pages in the game's look"); opened
+anywhere else (a test's `--online-at`), over the game stopped at a
+blank, as before: Quick Match, Host a room,
 Browse rooms, Join by code, Join by address, Your name, Back; a
 keyboard drawn on the page for a pad; and, while the two meet (drawn by
 the session's waits at the boundary), the host's *Waiting for a player*
@@ -1675,7 +1678,14 @@ online page asks the same way (`port_StartOnline`), with its advanced
 rows. The window's own state is told a load happened
 (`port_WindowStateReplaced`): nothing is drawn between frames until two
 more, video memory goes to the card again, and the settings menu's
-count of asks follows the state's.
+count of asks follows the state's. While two players meet, with the
+pages opened beside the main menu, the player's own game is stopped at
+its boundary but its sound goes on, as a waiting console's does: its
+music, a piece started again as it ends, and the pages' menu sounds
+(`port_RunStoppedSound`; PORT.md, "The window's pages in the game's
+look"). That changes the player's own state, which is saved as the
+session begins and put back as it ends: the music comes back where the
+meeting left it.
 
 **Proved in the window** by `tools/port_net_lobby.py` (`win-pages` and
 `win-pages-refused` on Windows; the same cases through the Linux window

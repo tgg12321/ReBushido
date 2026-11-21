@@ -462,7 +462,11 @@ needs the game running, and the source's layout
 What a change to `main` passes before it is pushed: the eleven checks,
 the window's two builds, the play tests' discs, the layout, the port's
 rollback self-test, `make port-net` (and from Windows `port-net-windows`,
-below), the window's budget
+below), the window's pages and their sound (`tools/port_menus_test.py`:
+the settings menu and the online pages beside the running game, the
+game's music and menu sounds held by the WAV, and a paused fight's
+replay with them; docs/PORT.md, "The window's pages in the game's
+look"), the window's budget
 (`tools/port_budget.py`: a fight's processor time with `run_ahead 2`
 against `run_ahead 0`, with the HD fighters; docs/PORT.md, "The
 budget"), the bench on the graphics card (`tools/port_bench.py --budget

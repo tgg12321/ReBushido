@@ -1449,7 +1449,7 @@ def check_inprocess(label, program, args, base):
 
     codes, errs = results['leave']
     said = [("the players went back to the top menu at frame" in err and
-             'session 1 has ended: You both went back to the top menu' in err and
+             'session 1 has ended: You both went back to the Main Menu' in err and
              "the player's own game put back" in err) for err in errs]
     if codes != [0, 0] or not all(said):
         problems.append('inprocess: %s: leave: the way back to the top menu from the select screen did not end the '

@@ -6,13 +6,18 @@
  * game's picture, drawn by the window at its own resolution and in its
  * own font. Only the build with a window has it.
  *
- * The menu is none of the game's state. While it is open the game is
+ * The menu is none of the game's state. Over ReBushido's main menu and
+ * the fight's pause it is open beside the game, which runs on under it
+ * with no press given it, its music with it (sdl_menu.c; docs/PORT.md,
+ * "The window's pages in the game's look"); anywhere else the game is
  * stopped at a vertical blank where it has just shown a frame
- * (sdl_window.c, port_RunMenu): nothing of the game runs, and when it
- * closes the game goes on from that blank as if the time had not passed.
- * What it changes is the window's settings and the settings file, and
- * one setting of the game's own (the bug fixes, which the options page
- * at boot sets as well).
+ * (port_RunMenu): nothing of the game runs, and when it closes the game
+ * goes on from that blank as if the time had not passed. It is drawn in
+ * the look of the game's own Option Menu (page_look.c), and its presses
+ * play the game's own menu sounds (port_PageSound). What it changes is
+ * the window's settings and the settings file, and one setting of the
+ * game's own (the bug fixes, which the options page at boot sets as
+ * well).
  *
  * Its pages: the first, a row for each group of settings (the game, the
  * display, the remastered picture, the controls, the mods), Play online,
@@ -78,6 +83,89 @@ extern void port_FontDraw(u32 *pixels, s32 w, s32 h, s32 x, s32 baseline,
 extern void port_FillRect(
     u32 *pixels, s32 w, s32 h, s32 x, s32 y, s32 rw, s32 rh, u32 color);
 
+/* ---- the look of the game's menu pages (page_look.c) ---- */
+
+/* The game's screen the pages are placed in: 640 by 240, shown 4:3. */
+#define PORT_LOOK_GAME_W 640
+#define PORT_LOOK_GAME_H 240
+/* The game's wide panel (menu_pages.c, MENU_PANEL_WIDE: the Option
+ * Menu's), and its title above it with the rule under. */
+#define PORT_LOOK_PANEL_X 63
+#define PORT_LOOK_PANEL_Y 48
+#define PORT_LOOK_PANEL_W 514
+#define PORT_LOOK_PANEL_H 176
+#define PORT_LOOK_TITLE_Y 33
+#define PORT_LOOK_RULE_Y 38
+/* lines of text, in the game's lines: a title, a row, a line, a note */
+#define PORT_LOOK_SIZE_TITLE 15
+#define PORT_LOOK_SIZE_ROW 11
+#define PORT_LOOK_SIZE_TEXT 9
+#define PORT_LOOK_SIZE_NOTE 8
+/* The colours, 0xAARRGGBB, measured from the game's Option Menu: a title
+ * and a value set, white; a row, the dull gold of the game's rows laid
+ * half over its panel; the cursor's, yellow (its pulse: port_LookPulse);
+ * a value not set and a note, grey; a row that cannot be chosen, dark. */
+#define PORT_LOOK_WHITE 0xFFFFFFFFU
+#define PORT_LOOK_ROW 0xFFAEAE4AU
+#define PORT_LOOK_CURSOR 0xFFFFFF31U
+#define PORT_LOOK_GREY 0xFFACACB4U
+#define PORT_LOOK_OFF 0xFF68687AU
+#define PORT_LOOK_GOLD 0xFFE6C877U
+#define PORT_LOOK_WARN 0xFFF0A848U
+#define PORT_LOOK_GOOD 0xFF8CD88CU
+#define PORT_LOOK_SHADOW 0xB0000010U
+/* the game's panel, slate blue laid half over what is under it
+ * (menu_SetPanelColor), over the picture darkened where the game does not
+ * draw it itself; and the title's rule, a light line and two fainter */
+#define PORT_LOOK_PANEL 0x804C4C6CU
+#define PORT_LOOK_DARKEN 0xD0000008U
+#define PORT_LOOK_RULE 0xFFC8C8D0U
+#define PORT_LOOK_RULE_FAINT 0x90808090U
+#define PORT_LOOK_RULE_FAINTER 0x50808090U
+/* a page fades in over this many frames, as it opens or changes */
+#define PORT_LOOK_FADE_FRAMES 8
+
+enum {
+    PORT_LOOK_LEFT = 0,
+    PORT_LOOK_CENTRE = 1,
+    PORT_LOOK_RIGHT = 2,
+};
+
+/* A page's pixels: the whole of the game's 4:3 area, `area_w` by
+ * `area_h` of the window's pixels. */
+typedef struct PortLook {
+    u32 *pixels;
+    u32 room;
+    s32 area_w;
+    s32 area_h;
+    s32 font_ok;
+} PortLook;
+
+/* The pixels made ready, cleared: FALSE if they cannot be (no memory, no
+ * typeface). */
+extern s32 port_LookBegin(PortLook *look, s32 area_w, s32 area_h);
+/* The game's backdrop where the window draws it itself (`is_own`): the
+ * wide panel, over the picture the window has darkened
+ * (PORT_LOOK_DARKEN); nothing where the game's own menu page is under it
+ * and draws them. */
+extern void port_LookPanel(PortLook *look, s32 is_own);
+/* A box of the game's places filled with `color` over what is there. */
+extern void port_LookBox(PortLook *look, s32 x, s32 y, s32 w, s32 h, u32 color);
+/* A line of text `lines` of the game's lines high, its baseline at the
+ * game's `y`, aligned on the game's `x` (PORT_LOOK_...), in a face of the
+ * port's typeface with the shadow the game's lettering has: its width in
+ * the game's places. */
+extern s32 port_LookText(PortLook *look, s32 x, s32 y, s32 lines, s32 face,
+                         const char *text, u32 color, s32 align);
+extern s32 port_LookMeasure(
+    const PortLook *look, s32 lines, s32 face, const char *text);
+/* A page's title, centred over the panel, with the game's rule under. */
+extern void port_LookTitle(PortLook *look, const char *title);
+/* The cursor's colour `frames` after it last moved: the game's glow. */
+extern u32 port_LookPulse(s32 frames);
+/* Everything drawn so far laid `shown` of `of` over the picture: a fade. */
+extern void port_LookFade(PortLook *look, s32 shown, s32 of);
+
 /* ---- the menu (menu.c) ---- */
 
 /* What the player does in the menu: the keys, the controllers' and the
@@ -120,10 +208,12 @@ extern void port_MenuCaptured(s32 keys, const char *value);
  * takes the last one away and `\n` keeps what is typed. */
 extern s32 port_MenuIsTyping(void);
 extern void port_MenuType(char c);
-/* The menu over a picture `w` by `h`, the window's size: its rectangle
- * in `out`, and its pixels (0xAARRGGBB) into `pixels`, which has room for
- * `w` by `h`. The rest of the window is darkened by the window itself. */
-extern void port_MenuDraw(u32 *pixels, s32 w, s32 h, PortRect *out);
+/* The menu drawn into a page of the game's look (page_look.c): with the
+ * picture darkened and the game's panel where `is_own`, its text alone
+ * where the game's own menu page is under it. */
+extern void port_MenuDrawLook(PortLook *look, s32 is_own);
+/* A frame of the menu's: its cursor's glow and its fade move on. */
+extern void port_MenuTick(void);
 /* A run's test (--menu-keys): what the menu is told, a word at a time. */
 extern s32 port_MenuWord(const char *word);
 
@@ -174,6 +264,17 @@ extern void port_MenuSetLine(const char *name, const char *value);
 extern void port_MenuLeave(void);
 
 /* ---- what the window does for it (sdl_window.c, sdl_menu.c) ---- */
+
+/* The game's own menu sounds, which the pages play as its menus do
+ * (port_top_menu.h, PORT_TOP_SOUND_...): the cursor moved or a value
+ * changed, a row taken, a way back. */
+enum {
+    PORT_PAGE_SOUND_CURSOR = 0,
+    PORT_PAGE_SOUND_CONFIRM = 1,
+    PORT_PAGE_SOUND_CANCEL = 2,
+};
+
+extern void port_PageSound(s32 sound);
 
 /* A setting the menu changed that takes at once (PORT_TAKES_NOW). */
 extern void port_WindowApplyChoice(s32 choice);

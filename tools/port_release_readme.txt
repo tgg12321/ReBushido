@@ -28,7 +28,7 @@ WHAT IS IN THE PACKAGE
   rebushido.exe       the program
   SDL2.dll            the library it opens its window with
   rebushido.exe.sym   the program's names: with it a crash says where
-  mods\               the mods it comes with: the English top menu,
+  mods\               the mods it comes with: the English main menu,
                       the sharp menus, the stages' lights and a sample
                       arena
   prepare\            what makes the rest of the remastered art from
@@ -100,7 +100,7 @@ settings menu, to end the program.
 
 THE SETTINGS MENU
 -----------------
-F1 opens it anywhere (or Select on the options page, the top menu and
+F1 opens it anywhere (or Select on the options page, the main menu and
 the pause menu). The arrow keys choose a line and change it; Enter
 opens a line or binds a button; Escape goes back. In it are the
 picture, the sound, the keys and buttons of both players, the game's
@@ -189,7 +189,7 @@ UPDATES
 -------
 At a start (at most once a day) the program asks the project's GitHub
 releases, in the background, whether there is a newer version. If
-there is, the top menu says so; Options (or F1), Updates, has "Update
+there is, the main menu says so; Options (or F1), Updates, has "Update
 now", "Later" and what is new in it. Update now downloads it beside the
 program (into update\), and "Restart and install" ends the game, puts
 the new files in place and starts it again. Your settings

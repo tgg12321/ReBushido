@@ -444,6 +444,10 @@ def case_rooms(case):
     code = code.group(1)
     procs = [host]
     procs.append(member('bunta', '--room-enter', code, '--room-matches', '3', '--leave-at', '2:%d' % LEAVE_FRAME))
+    # the rotation's order is the order they come in: Chie once Bunta is in
+    # (under load the two programs started together came in either way)
+    if case.wait_for('bunta', r'room: in room', 60) is None:
+        case.fail('Bunta never came into the room')
     procs.append(member('chie', '--room-enter', code, '--room-matches', '3'))
     procs.append(member('dai', '--room-enter', code, '--room-watcher', '--room-no-watch', '--room-side', 'open'))
     procs.append(member('eiko', '--room-enter', code, '--room-watcher', '--room-no-watch', '--room-side', 'join'))

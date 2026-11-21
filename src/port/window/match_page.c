@@ -644,17 +644,17 @@ static void port_MatchCrewPick(const PortMatch *match) {
 
 /* ---- the rule's page, before the first select ---- */
 
-#define RULE_X 110
-#define RULE_Y 40
-#define RULE_W 420
-#define RULE_H 156
-#define RULE_TITLE 22 /* from the page's top */
-#define RULE_FIRST 50 /* the first row's baseline */
-#define RULE_ROW 20
-#define RULE_ABOUT 100 /* the rule's words */
-#define RULE_FOOT 146
-#define COLOR_SHADE 0xA0000000U
-#define COLOR_ROW 0x60E6C877U
+/* in the game's wide panel (menu.h, PORT_LOOK_PANEL_...): the rows'
+ * names at its left and their values at its right, the first's baseline
+ * and the pitch, the rule's words, the host's line and the keys under the
+ * panel */
+#define RULE_LABEL_X 96
+#define RULE_VALUE_X 544
+#define RULE_FIRST_Y 80
+#define RULE_ROW 22
+#define RULE_ABOUT_Y 150
+#define RULE_HOST_Y 190
+#define RULE_KEYS_Y 236
 
 static const char * const g_match_rule_words[PORT_MATCH_RULES][2] = {
     {"One fight, as the original game plays it.", ""},
@@ -665,23 +665,36 @@ static const char * const g_match_rule_words[PORT_MATCH_RULES][2] = {
      "The winner stays, wounds and all; the loser's next comes in."},
 };
 
+/* The rule's page, in the look of the game's own pages (page_look.c;
+ * docs/PORT.md, "The window's pages in the game's look"): the picture
+ * darkened, the game's wide panel, the title over its rule, the rows in
+ * the game's gold and the cursor's in its yellow, each value in white
+ * between the arrows. Its presses sound as the game's menus' do, played
+ * by the game (match.c, port_MatchRulePageStep). */
 static void port_MatchRulePage(const PortMatch *match) {
+    PortLook look;
     char value[32];
     s32 rule = match->page_rule < PORT_MATCH_RULES ? match->page_rule : 0;
     s32 rows = rule == PORT_MATCH_SINGLE ? 1 : PORT_MATCH_ROWS;
     s32 row;
 
-    port_MatchRect(0, 0, GAME_W, GAME_H, COLOR_SHADE);
-    port_MatchRect(RULE_X, RULE_Y, RULE_W, RULE_H, COLOR_PANEL);
-    port_MatchFrame(RULE_X, RULE_Y, RULE_W, RULE_H, COLOR_EDGE);
-    port_MatchText(GAME_W / 2, RULE_Y + RULE_TITLE, SIZE_TITLE, PORT_FACE_TITLE,
-                   "Battle type", COLOR_GOLD, 0);
-    port_MatchRect(
-        RULE_X + 20, RULE_Y + RULE_TITLE + 5, RULE_W - 40, 1, COLOR_EDGE);
+    /* the page's pixels are the whole 4:3 area (port_MatchArea) */
+    memset(&look, 0, sizeof(look));
+    look.pixels = g_match_page.pixels;
+    look.room = g_match_page.room;
+    look.area_w = g_match_page.area_w;
+    look.area_h = g_match_page.area_h;
+    look.font_ok = g_match_page.font_ok;
+    /* twice: the select screen's lettering is bright under it */
+    port_LookBox(&look, 0, 0, GAME_W, GAME_H, PORT_LOOK_DARKEN);
+    port_LookBox(&look, 0, 0, GAME_W, GAME_H, PORT_LOOK_DARKEN);
+    port_LookPanel(&look, TRUE);
+    port_LookTitle(&look, "Battle type");
     for (row = 0; row < rows; row++) {
-        s32 y = RULE_Y + RULE_FIRST + row * RULE_ROW;
+        s32 y = RULE_FIRST_Y + row * RULE_ROW;
         s32 is_on = match->rule_row == row;
         const char *label;
+        char shown[48];
 
         if (row == PORT_MATCH_ROW_RULE) {
             label = "Rule";
@@ -702,30 +715,29 @@ static void port_MatchRulePage(const PortMatch *match) {
                      (int)(rule == PORT_MATCH_CREW ? match->page_crew
                                                    : match->page_count));
         }
-        if (is_on) {
-            port_MatchRect(RULE_X + 16, y - 12, RULE_W - 32, 16, COLOR_ROW);
-        }
-        port_MatchText(RULE_X + 30, y, SIZE_NAME + 1, PORT_FACE_BOLD, label,
-                       is_on ? COLOR_GOLD : COLOR_TEXT, -1);
-        port_MatchText(RULE_X + RULE_W - 30, y, SIZE_NAME + 1, PORT_FACE_BOLD,
-                       ">", is_on ? COLOR_GOLD : COLOR_DIM, 1);
-        port_MatchText(RULE_X + RULE_W - 130, y, SIZE_NAME + 1, PORT_FACE_BOLD,
-                       "<", is_on ? COLOR_GOLD : COLOR_DIM, -1);
-        port_MatchText(RULE_X + RULE_W - 80, y, SIZE_NAME + 1, PORT_FACE_BOLD,
-                       value, COLOR_TEXT, 0);
+        port_LookText(
+            &look, RULE_LABEL_X, y, PORT_LOOK_SIZE_ROW + 1, PORT_FACE_BOLD,
+            label, is_on ? PORT_LOOK_CURSOR : PORT_LOOK_ROW, PORT_LOOK_LEFT);
+        snprintf(shown, sizeof(shown), is_on ? "<  %s  >" : "%s", value);
+        port_LookText(&look, RULE_VALUE_X, y, PORT_LOOK_SIZE_ROW,
+                      PORT_FACE_TEXT, shown, PORT_LOOK_WHITE, PORT_LOOK_RIGHT);
     }
-    port_MatchText(GAME_W / 2, RULE_Y + RULE_ABOUT, SIZE_LINE - 1,
-                   PORT_FACE_TEXT, g_match_rule_words[rule][0], COLOR_DIM, 0);
-    port_MatchText(GAME_W / 2, RULE_Y + RULE_ABOUT + 12, SIZE_LINE - 1,
-                   PORT_FACE_TEXT, g_match_rule_words[rule][1], COLOR_DIM, 0);
+    port_LookText(
+        &look, RULE_LABEL_X, RULE_ABOUT_Y, PORT_LOOK_SIZE_TEXT, PORT_FACE_TEXT,
+        g_match_rule_words[rule][0], PORT_LOOK_WHITE, PORT_LOOK_LEFT);
+    port_LookText(&look, RULE_LABEL_X, RULE_ABOUT_Y + 12, PORT_LOOK_SIZE_TEXT,
+                  PORT_FACE_TEXT, g_match_rule_words[rule][1], PORT_LOOK_WHITE,
+                  PORT_LOOK_LEFT);
     if (port_SessionIsOn()) {
-        port_MatchText(
-            GAME_W / 2, RULE_Y + RULE_FOOT - 16, SIZE_LINE - 1, PORT_FACE_BOLD,
-            "Player 1, the host, chooses", COLOR_SIDE_1, 0);
+        port_LookText(&look, RULE_LABEL_X, RULE_HOST_Y, PORT_LOOK_SIZE_TEXT,
+                      PORT_FACE_BOLD, "Player 1, the host, chooses",
+                      COLOR_SIDE_1, PORT_LOOK_LEFT);
     }
-    port_MatchText(
-        GAME_W / 2, RULE_Y + RULE_FOOT, SIZE_LINE - 1, PORT_FACE_TEXT,
-        "Cross: to the Character Select    Triangle: back", COLOR_TEXT, 0);
+    port_LookText(
+        &look, GAME_W / 2, RULE_KEYS_Y, PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT,
+        "Cross: to the Character Select    Left, Right: change    "
+        "Triangle: back",
+        PORT_LOOK_GREY, PORT_LOOK_CENTRE);
 }
 
 /* ---- what the window asks ---- */
