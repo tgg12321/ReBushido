@@ -22,6 +22,27 @@ void port_ReplayTook(const PortInput *input, u32 index) {
     (void)index;
 }
 
+/* ... nor played, and the window asks for no menu sound
+ * (port_top_menu.h) */
+s32 port_ReplayIsPlaying(void) { return 0; }
+
+s32 port_ReplaySoundAt(u32 index) {
+    (void)index;
+    return -1;
+}
+
+void port_ReplayTookSound(u32 index, s32 sound) {
+    (void)index;
+    (void)sound;
+}
+
+s32 port_TakeMenuSound(void) { return -1; }
+
+void port_TopMenuPlaySound(s32 sound) { (void)sound; }
+
+/* Run-ahead (src/port/step.c): no frame is run ahead here. */
+s32 g_port_ahead;
+
 s32 g_port_rerun;
 
 /* ---- what pad_Update reaches ---- */
