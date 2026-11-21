@@ -1279,6 +1279,69 @@ def case_win_room(case):
     save_pictures(case, PICTURES)
 
 
+def case_win_ranked(case):
+    """Ranked play from a window's pages (Online Play, Ranked, Find a ranked
+    match) against a window of the command line (--ranked): the lobby pairs
+    them, the window's pages begin the match in the running program, both
+    report, the match is rated; the window's Ranked page shows the result
+    and its ladder page the two (pictures in its shots)."""
+    state = os.path.join(case.folder, 'ladder')
+    lobby = case.server('--state', state, *RANKED_SERVER)
+    with PLAN_LOCK:
+        plan = port_net.write_room_plan(WINDOW, case.folder)
+    shots = os.path.join(case.folder, 'shots', 'kaede')
+    os.makedirs(shots, exist_ok=True)
+    cfg = os.path.join(case.folder, 'kaede.cfg')
+    with open(cfg, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('fullscreen = off\nnet_listen = local\nnet_portmap = off\nnet_lobby = %s\nnet_player = Kaede\n'
+                'fps = off\n' % lobby)
+    # Online Play's rows: Quick Match, Host, Browse, Code, Address, Ranked
+    keys = ('down down down down down accept wait:10 shot accept until:queued wait:10 shot '
+            'until:ranked wait:30 shot accept wait:10 shot down accept until:list wait:10 shot')
+    window = case.start('kaede', [WINDOW, '--config', cfg, '--log', os.path.join(case.folder, 'kaede.log'),
+                                  '--out', os.path.join(case.folder, 'kaede'), '--image', playtest.RETAIL_CUE,
+                                  '--windowed', '--quick-loading', 'on', '--plan', plan, '--net-plan-pads',
+                                  '--net-seed', str(RANKED_SEED), '--no-cards', '--online-at', '120',
+                                  '--online-keys', keys, '--menu-shots', shots,
+                                  '--identity', os.path.join(case.folder, 'kaede.key')], DUMMY)
+    if case.wait_for('kaede', r'ranked: \S+ goes into the queue', 90) is None:
+        case.fail('the window never queued from its pages')
+        window.kill()
+        return
+    # (a window of the command line: its setup code is the other window's,
+    # where the headless program's build is another)
+    goro_cfg = os.path.join(case.folder, 'goro.cfg')
+    with open(goro_cfg, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('fullscreen = off\nnet_listen = local\nnet_portmap = off\n')
+    other = case.start('goro', [WINDOW, '--config', goro_cfg, '--log', os.path.join(case.folder, 'goro.log'),
+                                '--out', os.path.join(case.folder, 'goro'), '--image', playtest.RETAIL_CUE,
+                                '--windowed', '--quick-loading', 'on', '--plan', plan, '--net-plan-pads',
+                                '--net-seed', str(RANKED_SEED), '--no-cards', '--lobby', lobby, '--ranked',
+                                '--ranked-matches', '1', '--player', 'Goro',
+                                '--identity', os.path.join(case.folder, 'goro.key')], DUMMY)
+    code = wait_all([other], SECONDS)[0]
+    shown = case.wait_for('kaede', r'a picture of the window, .*online-004\.png', 120)
+    time.sleep(2.0)
+    window.kill()
+    kaede = ranked_logs(case.err('kaede') + read(os.path.join(case.folder, 'kaede.log')))
+    goro = ranked_logs(case.err('goro') + read(os.path.join(case.folder, 'goro.log')))
+    if code != 0:
+        case.fail('the command line\'s window ended with %s' % code)
+    if kaede.get('match') is None or kaede.get('match') != goro.get('match'):
+        case.fail('the two windows did not play one match: %r, %r' %
+                  (kaede.get('match'), goro.get('match')))
+    elif kaede.get('state') != 'rated' or goro.get('state') != 'rated' or kaede.get('digest') != goro.get('digest'):
+        case.fail('the match is not rated alike on both: %r, %r' % (kaede, goro))
+    else:
+        case.said.append('match %d from the window\'s pages: Kaede %s, 1500 to %d; Goro %s, 1500 to %d; the digests '
+                         'alike' % (kaede['match'], kaede['won'], kaede['after'], goro['won'], goro['after']))
+    if shown is None:
+        case.fail('the window\'s pages did not show the ladder after the match')
+    if 'starts again' in case.err('kaede') + read(os.path.join(case.folder, 'kaede.log')):
+        case.fail('the window started again')
+    save_pictures(case, PICTURES)
+
+
 def save_pictures(case, into):
     """The case's pictures of the pages, copied into `into`."""
     shots = os.path.join(case.folder, 'shots')
@@ -1296,6 +1359,8 @@ WINDOW_CASES = [('win-headless', case_win_headless), ('win-window', case_win_win
                 ('win-rooms', case_win_rooms), ('win-portmap', case_win_portmap), ('win-refused', case_win_refused),
                 ('win-quiet', case_win_quiet), ('win-lobby-refused', case_win_lobby_refused),
                 ('win-pages', case_pages), ('win-pages-refused', case_pages_refused), ('win-room', case_win_room)]
+# (and the window's ranked page with a match, after the rest: WINDOWS_LATER_CASES)
+WINDOWS_LATER_CASES.append(('win-ranked', case_win_ranked))
 # the online pages' cases, which the window's half of tools/port_net.py runs on Linux too
 PAGES_CASES = [('pages', case_pages), ('pages-refused', case_pages_refused), ('room', case_win_room)]
 

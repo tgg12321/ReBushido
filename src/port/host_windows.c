@@ -458,11 +458,11 @@ s32 port_HostMakeFolder(const char *path) {
            GetLastError() == ERROR_ALREADY_EXISTS;
 }
 
+typedef BOOLEAN(WINAPI *PortRtlGenRandom)(PVOID buffer, ULONG length);
+
 /* RtlGenRandom (advapi32's SystemFunction036), the system's source of
  * random numbers: looked up as the program runs, as this host links no
  * more than kernel32 and ws2_32. */
-typedef BOOLEAN(WINAPI *PortRtlGenRandom)(PVOID buffer, ULONG length);
-
 s32 port_HostRandom(void *out, u32 count) {
     static PortRtlGenRandom generate;
 

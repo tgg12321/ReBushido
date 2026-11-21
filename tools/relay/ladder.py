@@ -1465,7 +1465,14 @@ def unpack(path, folder):
 
 
 def show(folder):
-    store = Store(folder)
+    """The ladder as JSON, the store opened for reading alone: safe beside
+    the running server, and making no file of its own (as root, it must
+    not, or the service's user could not open it after)."""
+    path = os.path.join(folder, "ladder.sqlite")
+    if not os.path.isfile(path):
+        raise SystemExit("no ladder at %s" % path)
+    store = Store.__new__(Store)
+    store.db = sqlite3.connect("file:%s?mode=ro" % path, uri=True)
     out = {"players": [], "recent": []}
     for p in store.top(1, 1000):
         out["players"].append({"rank": p["rank"], "name": p["name"], "rating": round(p["rating"]),

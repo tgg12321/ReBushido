@@ -16,7 +16,6 @@
  * end, as netplay's hashes are. */
 #include "common.h"
 #include "port_host.h"
-#include "port_match.h"
 #include "port_monocypher.h"
 #include "port_net.h"
 #include "port_ranked.h"
@@ -41,6 +40,8 @@
 #define HALF_BYTES 2
 #define BITS_PER_BYTE 8
 #define HEX_DIGITS 16
+/* a's value as a hex digit */
+#define HEX_LETTERS_FROM 10
 #define PRINT_KEY_BYTES 8
 /* the signature's domain, before the 176 bytes it covers (ladder.py) */
 #define DOMAIN "ReBushido ranked 1"
@@ -70,7 +71,15 @@
 /* the identity's file */
 #define IDENTITY_HEAD "ReBushido ranked identity 1"
 #define IDENTITY_BYTES 512
+/* the seed's line: after a line's end, the word and a space */
+#define SEED_WORD "\nseed "
+#define SEED_WORD_BYTES 6
+/* a file written beside first: its name and ".part" */
+#define PART_ENDING ".part"
+#define PART_PATH_BYTES (PORT_RANKED_PATH_BYTES + sizeof(PART_ENDING))
 #define DEFAULT_IDENTITY "rebushido-identity.key"
+#define KEY_ENDING ".key"
+#define KEY_ENDING_BYTES 4
 /* the stage pages' places: three pages of six */
 #define STAGE_PLACES 18
 #define MATCH_COUNT_SHIFT 8
@@ -316,15 +325,16 @@ static void port_RankedKeep(char *out, u32 room, const char *text) {
     out[i] = 0;
 }
 
-static s32 port_RankedHexDigit(char c) {
-    if (c >= '0' && c <= '9') {
-        return c - '0';
+/* A hex digit's value, of either case: -1 where it is not one. */
+static s32 port_RankedHexDigit(char letter) {
+    if (letter >= '0' && letter <= '9') {
+        return letter - '0';
     }
-    if (c >= 'a' && c <= 'f') {
-        return c - 'a' + HEX_DIGITS - 6;
+    if (letter >= 'a' && letter <= 'f') {
+        return letter - 'a' + HEX_LETTERS_FROM;
     }
-    if (c >= 'A' && c <= 'F') {
-        return c - 'A' + HEX_DIGITS - 6;
+    if (letter >= 'A' && letter <= 'F') {
+        return letter - 'A' + HEX_LETTERS_FROM;
     }
     return -1;
 }
@@ -366,6 +376,7 @@ static void port_RankedTakeSeed(u8 *seed) {
  * their own, under its first line. 1, or 0 where it is not one. */
 static s32 port_RankedParse(const char *text, u32 size, u8 *seed) {
     static const char head[] = IDENTITY_HEAD;
+    static const char seed_word[] = SEED_WORD;
     u32 i;
     u32 at;
 
@@ -374,17 +385,21 @@ static s32 port_RankedParse(const char *text, u32 size, u8 *seed) {
             return 0;
         }
     }
-    for (at = i; at + 5 < size; at++) {
-        if (text[at] == '\n' && text[at + 1] == 's' && text[at + 2] == 'e' &&
-            text[at + 3] == 'e' && text[at + 4] == 'd' && text[at + 5] == ' ') {
-            u32 from = at + 6;
+    for (at = i; at + SEED_WORD_BYTES <= size; at++) {
+        u32 k;
+
+        for (k = 0; k < SEED_WORD_BYTES && text[at + k] == seed_word[k]; k++) {
+        }
+        if (k == SEED_WORD_BYTES) {
+            u32 from = at + SEED_WORD_BYTES;
 
             for (i = 0; i < PORT_ED25519_SEED_BYTES; i++) {
                 s32 high = from + 2 * i + 1 < size
                                ? port_RankedHexDigit(text[from + 2 * i])
                                : -1;
-                s32 low = high >= 0 ? port_RankedHexDigit(text[from + 2 * i + 1])
-                                    : -1;
+                s32 low = high >= 0
+                              ? port_RankedHexDigit(text[from + 2 * i + 1])
+                              : -1;
 
                 if (low < 0) {
                     return 0;
@@ -403,7 +418,7 @@ static s32 port_RankedWriteIdentity(const char *path, const u8 *seed) {
     char text[IDENTITY_BYTES];
     char hex[2 * PORT_ED25519_SEED_BYTES + 1];
     char key_hex[2 * PORT_ED25519_PUBLIC_BYTES + 1];
-    char part[PORT_RANKED_PATH_BYTES + 8];
+    char part[PART_PATH_BYTES];
     u32 length;
     s32 file;
     s32 ok;
@@ -423,7 +438,7 @@ static s32 port_RankedWriteIdentity(const char *path, const u8 *seed) {
     crypto_wipe(hex, sizeof(hex));
     for (length = 0; text[length] != 0; length++) {
     }
-    port_RankedText(part, sizeof(part), "%s.part", path);
+    port_RankedText(part, sizeof(part), "%s" PART_ENDING, path);
     file = port_HostCreate(part);
     if (file < 0) {
         crypto_wipe(text, sizeof(text));
@@ -485,8 +500,8 @@ static s32 port_RankedIdentity(char *why, u32 room) {
         if (!port_RankedWriteIdentity(path, kept)) {
             crypto_wipe(kept, sizeof(kept));
             g_ranked.has_key = FALSE;
-            port_RankedText(why, room,
-                            "Your identity could not be written to %s.", path);
+            port_RankedText(
+                why, room, "Your identity could not be written to %s.", path);
             return 0;
         }
         crypto_wipe(kept, sizeof(kept));
@@ -500,9 +515,11 @@ static s32 port_RankedIdentity(char *why, u32 room) {
 s32 port_RankedBackUp(char *out, u32 room) {
     const char *path = port_RankedIdentityPath();
     char text[IDENTITY_BYTES];
+    char stem[PORT_RANKED_PATH_BYTES];
     PortDate date;
     s32 file;
     u32 size;
+    u32 length;
     s32 ok;
 
     file = port_HostOpen(path);
@@ -515,9 +532,18 @@ s32 port_RankedBackUp(char *out, u32 room) {
     size = port_HostReadAt(file, 0, text, sizeof(text));
     port_HostClose(file);
     port_HostDate(&date);
-    port_RankedText(out, room, "%s-backup-%04d%02d%02d-%02d%02d%02d.key", path,
-                    date.year, date.month, date.day, date.hour, date.minute,
-                    date.second);
+    /* NAME-backup-DATE.key, of NAME.key */
+    for (length = 0; path[length] != 0; length++) {
+    }
+    if (length > KEY_ENDING_BYTES &&
+        port_TextsEqual(path + length - KEY_ENDING_BYTES, KEY_ENDING)) {
+        length -= KEY_ENDING_BYTES;
+    }
+    port_RankedKeep(
+        stem, length + 1 < sizeof(stem) ? length + 1 : sizeof(stem), path);
+    port_RankedText(
+        out, room, "%s-backup-%04d%02d%02d-%02d%02d%02d%s", stem, date.year,
+        date.month, date.day, date.hour, date.minute, date.second, KEY_ENDING);
     file = port_HostCreate(out);
     ok = file >= 0 && port_HostAppend(file, text, size);
     if (file >= 0) {
@@ -526,8 +552,8 @@ s32 port_RankedBackUp(char *out, u32 room) {
     }
     crypto_wipe(text, sizeof(text));
     if (!ok) {
-        port_RankedText(out, room, "The copy could not be written beside %s.",
-                        path);
+        port_RankedText(
+            out, room, "The copy could not be written beside %s.", path);
         return 0;
     }
     port_Log("ranked: the identity copied to %s\n", out);
@@ -559,8 +585,8 @@ static void port_RankedSend(u8 *out, s32 action, u32 count) {
         action == ACTION_REPORT) {
         port_RankedCopy(message, (const u8 *)domain, DOMAIN_BYTES);
         port_RankedCopy(message + DOMAIN_BYTES, out, SIGNED_BYTES);
-        crypto_ed25519_sign(out + RANK_SIGNATURE, g_ranked.secret, message,
-                            sizeof(message));
+        crypto_ed25519_sign(
+            out + RANK_SIGNATURE, g_ranked.secret, message, sizeof(message));
     }
     port_HostUdpSend(g_ranked.socket, &g_ranked.server, out, count);
 }
@@ -701,10 +727,10 @@ static void port_RankedTakeResult(const u8 *in) {
     view->after = (s32)port_RankedHalf(in + ANSWER_AFTER);
     view->other_before = (s32)port_RankedHalf(in + ANSWER_OTHER_BEFORE);
     view->other_after = (s32)port_RankedHalf(in + ANSWER_OTHER_AFTER);
-    view->won = view->winner == PORT_ROOM_DRAW ? 2
-                : view->winner == PORT_ROOM_WON_FIRST    ? first
-                : view->winner == PORT_ROOM_WON_SECOND   ? !first
-                                                         : -1;
+    view->won = view->winner == PORT_ROOM_DRAW         ? 2
+                : view->winner == PORT_ROOM_WON_FIRST  ? first
+                : view->winner == PORT_ROOM_WON_SECOND ? !first
+                                                       : -1;
 }
 
 /* An upload of the match's replays begun, where the lobby asks for them:
@@ -739,7 +765,8 @@ static void port_RankedStartUpload(void) {
     if (g_ranked.blob == NULL) {
         return;
     }
-    port_RankedCopy(g_ranked.blob, (const u8 *)UPLOAD_MAGIC, UPLOAD_MAGIC_BYTES);
+    port_RankedCopy(
+        g_ranked.blob, (const u8 *)UPLOAD_MAGIC, UPLOAD_MAGIC_BYTES);
     port_NetPutWord(g_ranked.blob + UPLOAD_MAGIC_BYTES, 0);
     at = UPLOAD_MAGIC_BYTES + WORD_BYTES;
     for (i = 0; i < g_ranked.replay_count; i++) {
@@ -766,15 +793,16 @@ static void port_RankedStartUpload(void) {
             break;
         }
         port_NetPutWord(g_ranked.blob + at, length);
-        port_RankedCopy(g_ranked.blob + at + WORD_BYTES, (const u8 *)name,
-                        length);
+        port_RankedCopy(
+            g_ranked.blob + at + WORD_BYTES, (const u8 *)name, length);
         at += WORD_BYTES + length;
         port_NetPutWord(g_ranked.blob + at, size);
         at += WORD_BYTES;
         at += port_HostReadAt(file, 0, g_ranked.blob + at, size);
         port_HostClose(file);
-        port_NetPutWord(g_ranked.blob + UPLOAD_MAGIC_BYTES,
-                        port_NetGetWord(g_ranked.blob + UPLOAD_MAGIC_BYTES) + 1);
+        port_NetPutWord(
+            g_ranked.blob + UPLOAD_MAGIC_BYTES,
+            port_NetGetWord(g_ranked.blob + UPLOAD_MAGIC_BYTES) + 1);
     }
     g_ranked.blob_size = at;
     g_ranked.sent_to = 0;
@@ -793,7 +821,8 @@ static void port_RankedUploadTurn(void) {
     u32 at;
     s32 i;
 
-    if (!g_ranked.view.uploading || now - g_ranked.upload_at < UPLOAD_EVERY_MS) {
+    if (!g_ranked.view.uploading ||
+        now - g_ranked.upload_at < UPLOAD_EVERY_MS) {
         return;
     }
     g_ranked.upload_at = now;
@@ -824,10 +853,10 @@ static void port_RankedTake(const u8 *in, s32 status, u32 request) {
 
     g_ranked.heard_at = port_NetClock();
     if (stamp != 0 && trip < START_GIVE_UP_MS) {
-        g_ranked.rtt = g_ranked.rtt == 0
-                           ? trip
-                           : (g_ranked.rtt * (RTT_SMOOTH - 1) + trip) /
-                                 RTT_SMOOTH;
+        g_ranked.rtt =
+            g_ranked.rtt == 0
+                ? trip
+                : (g_ranked.rtt * (RTT_SMOOTH - 1) + trip) / RTT_SMOOTH;
         view->rtt = g_ranked.rtt;
     }
     for (i = 0; i < NONCE_BYTES; i++) {
@@ -903,10 +932,11 @@ static void port_RankedTake(const u8 *in, s32 status, u32 request) {
             port_RankedCopy(g_ranked.ticket, in + ANSWER_TICKET, TICKET_BYTES);
             g_ranked.count = in[ANSWER_COUNT];
             view->match = number;
-            view->role = in[ANSWER_ROLE] == 1 ? PORT_SESSION_HOST
-                                              : PORT_SESSION_JOIN;
+            view->role =
+                in[ANSWER_ROLE] == 1 ? PORT_SESSION_HOST : PORT_SESSION_JOIN;
             view->stage = in[ANSWER_STAGE];
-            port_RankedGetText(view->opponent, in + ANSWER_OPPONENT, NAME_FIELD);
+            port_RankedGetText(
+                view->opponent, in + ANSWER_OPPONENT, NAME_FIELD);
             view->opponent_rating =
                 (s32)port_RankedHalf(in + ANSWER_OPPONENT_RATING);
             view->state = PORT_RANKED_PLAYING;
@@ -967,8 +997,9 @@ static void port_RankedTake(const u8 *in, s32 status, u32 request) {
         view->list_first = port_NetGetWord(in + ANSWER_FIRST);
         view->list_count = count < PORT_RANKED_ROWS ? count : PORT_RANKED_ROWS;
         for (i = 0; i < view->list_count; i++) {
-            port_RankedTakeRow(&view->rows[i], in + ANSWER_BYTES + i * ROW_BYTES,
-                               view->list_kind);
+            port_RankedTakeRow(
+                &view->rows[i], in + ANSWER_BYTES + i * ROW_BYTES,
+                view->list_kind);
         }
         view->list_made++;
         break;
@@ -990,8 +1021,8 @@ static void port_RankedReceive(u32 wait_ms) {
     }
     for (got = port_HostUdpReceive(
              g_ranked.socket, in, sizeof(in), &from, wait_ms);
-         got > 0; got = port_HostUdpReceive(
-                      g_ranked.socket, in, sizeof(in), &from, 0)) {
+         got > 0;
+         got = port_HostUdpReceive(g_ranked.socket, in, sizeof(in), &from, 0)) {
         s32 detail;
         u32 number;
         s32 kind = port_NetReadHeader(in, got, &detail, &number);
@@ -1062,6 +1093,8 @@ s32 port_RankedStart(
     return 1;
 }
 
+/* The client let go: out of the queue if in it, its socket closed, what
+ * it knew forgotten but the key's print. */
 void port_RankedStop(void) {
     PortRankedView kept = g_ranked.view;
 
@@ -1077,12 +1110,15 @@ void port_RankedStop(void) {
     g_ranked.asking = 0;
     g_ranked.lobby[0] = 0;
     port_RankedClear((u8 *)&g_ranked.view, sizeof(g_ranked.view));
-    port_RankedKeep(g_ranked.view.print, sizeof(g_ranked.view.print),
-                    kept.print);
+    port_RankedKeep(
+        g_ranked.view.print, sizeof(g_ranked.view.print), kept.print);
 }
 
 s32 port_RankedIsOn(void) { return g_ranked.is_on; }
 
+/* The client's turn (port_ranked.h): the lobby's words read, an ask
+ * unanswered said again, an upload's chunks sent, and once a second a STAY
+ * where the player is queued, in a match or waiting for its decision. */
 void port_RankedTick(void) {
     u32 now;
     s32 phase = g_ranked.view.phase;
@@ -1121,6 +1157,8 @@ void port_RankedQueue(void) {
     port_RankedAsk(ACTION_QUEUE);
 }
 
+/* Out of the queue (port_ranked.h): the lobby told once; a LEAVE lost is
+ * a player the queue lets go of after ten seconds unheard. */
 void port_RankedLeaveQueue(void) {
     if (!g_ranked.is_on || !g_ranked.queued) {
         return;
@@ -1178,15 +1216,16 @@ static s32 port_RankedFetch(s32 kind, u32 first) {
     return 1;
 }
 
+/* The player, the ladder's top and their own matches, to the log
+ * (port_ranked.h). */
 void port_RankedPrintLists(void) {
     const PortRankedView *view = &g_ranked.view;
     s32 i;
 
     port_Log("ranked: the ladder: you are %s, %d%s (RD %d), rank %u of %u, "
              "%d won, %d lost, %d drawn\n",
-             view->player, view->rating, view->provisional ? "?" : "",
-             view->rd, view->rank, view->of, view->wins, view->losses,
-             view->draws);
+             view->player, view->rating, view->provisional ? "?" : "", view->rd,
+             view->rank, view->of, view->wins, view->losses, view->draws);
     if (port_RankedFetch(PORT_RANKED_TOP, 1)) {
         for (i = 0; i < view->list_count; i++) {
             const PortRankedRow *row = &view->rows[i];
@@ -1236,21 +1275,24 @@ s32 port_RankedNext(PortRoomNext *out) {
     }
     port_RankedCopy(out->match.ticket, g_ranked.ticket, TICKET_BYTES);
     out->match.has_ticket = TRUE;
-    port_RankedKeep(out->first, sizeof(out->first),
-                    view->role == PORT_SESSION_HOST ? g_ranked.player
-                                                    : view->opponent);
-    port_RankedKeep(out->second, sizeof(out->second),
-                    view->role == PORT_SESSION_HOST ? view->opponent
-                                                    : g_ranked.player);
+    port_RankedKeep(
+        out->first, sizeof(out->first),
+        view->role == PORT_SESSION_HOST ? g_ranked.player : view->opponent);
+    port_RankedKeep(
+        out->second, sizeof(out->second),
+        view->role == PORT_SESSION_HOST ? view->opponent : g_ranked.player);
     g_ranked.handed = TRUE;
     return 1;
 }
 
 u32 port_RankedRule(void) {
     return (u32)PORT_MATCH_FIRST_TO |
-           ((u32)(g_ranked.count > 0 ? g_ranked.count : 1) << MATCH_COUNT_SHIFT);
+           ((u32)(g_ranked.count > 0 ? g_ranked.count : 1)
+            << MATCH_COUNT_SHIFT);
 }
 
+/* A match begins (port_ranked.h): the room for its digest's makings,
+ * made once, and its replays' list emptied. */
 void port_RankedMatchBegins(void) {
     if (g_ranked.frames == NULL) {
         g_ranked.frames = port_HostAllocate(FRAMES_MOST * FRAME_BYTES);
@@ -1273,17 +1315,22 @@ s32 port_RankedStagePlace(s32 *place) {
     return TRUE;
 }
 
+/* A frame's two final inputs, in order (port_ranked.h): as they are
+ * hashed, its number and the two pads. */
 void port_RankedFrame(u32 frame, u16 first, u16 second) {
     if (!g_ranked.playing || frame != g_ranked.fed || frame >= FRAMES_MOST) {
         return;
     }
     port_NetPutWord(g_ranked.frames + frame * FRAME_BYTES, frame);
-    port_RankedPutHalf(g_ranked.frames + frame * FRAME_BYTES + WORD_BYTES, first);
     port_RankedPutHalf(
-        g_ranked.frames + frame * FRAME_BYTES + WORD_BYTES + HALF_BYTES, second);
+        g_ranked.frames + frame * FRAME_BYTES + WORD_BYTES, first);
+    port_RankedPutHalf(
+        g_ranked.frames + frame * FRAME_BYTES + WORD_BYTES + HALF_BYTES,
+        second);
     g_ranked.fed = frame + 1;
 }
 
+/* A final state hash (port_ranked.h): its frame and its eight bytes. */
 void port_RankedHash(u32 frame, u64 hash) {
     u8 *at;
     s32 i;
@@ -1303,8 +1350,8 @@ void port_RankedReplayWritten(const char *path) {
     if (!g_ranked.playing || g_ranked.replay_count >= REPLAYS_MOST) {
         return;
     }
-    port_RankedKeep(g_ranked.replays[g_ranked.replay_count],
-                    PORT_RANKED_PATH_BYTES, path);
+    port_RankedKeep(
+        g_ranked.replays[g_ranked.replay_count], PORT_RANKED_PATH_BYTES, path);
     g_ranked.replay_count++;
 }
 
@@ -1324,8 +1371,8 @@ static void port_RankedDigest(u32 end, u8 *digest) {
             count = i + 1;
         }
     }
-    crypto_blake2b(
-        parts + DIGEST_BYTES, DIGEST_BYTES, g_ranked.hashes, count * HASH_BYTES);
+    crypto_blake2b(parts + DIGEST_BYTES, DIGEST_BYTES, g_ranked.hashes,
+                   count * HASH_BYTES);
     port_RankedClear(parts + 2 * DIGEST_BYTES, DIGEST_BYTES);
     port_NetPutWord(parts + 2 * DIGEST_BYTES, end);
     crypto_blake2b(digest, DIGEST_BYTES, parts, sizeof(parts));
@@ -1334,6 +1381,9 @@ static void port_RankedDigest(u32 end, u8 *digest) {
              frames, count, end);
 }
 
+/* The match's end (port_ranked.h): its report made of why it ended, the
+ * winner the session saw, the rule it held and the digest, and asked of
+ * the lobby until it has it. */
 void port_RankedMatchEnds(s32 end, s32 winner, s32 met) {
     RankedReport *report = &g_ranked.report;
     char hex[2 * DIGEST_BYTES + 1];
@@ -1357,8 +1407,8 @@ void port_RankedMatchEnds(s32 end, s32 winner, s32 met) {
         report->count = port_GetMatchCount();
     } else if (end == PORT_NETPLAY_END_QUIT) {
         report->reason = PORT_RANKED_I_LEFT;
-    } else if (end == PORT_NETPLAY_END_PEER_LEFT ||
-               end == PORT_NETPLAY_END_SILENT) {
+    } else if (
+        end == PORT_NETPLAY_END_PEER_LEFT || end == PORT_NETPLAY_END_SILENT) {
         report->reason = PORT_RANKED_OTHER_LEFT;
     } else {
         /* a desync, or back at the top menu before the match was decided
@@ -1369,8 +1419,8 @@ void port_RankedMatchEnds(s32 end, s32 winner, s32 met) {
     }
     if (g_ranked.lie && (report->winner == PORT_ROOM_WON_FIRST ||
                          report->winner == PORT_ROOM_WON_SECOND)) {
-        report->winner = PORT_ROOM_WON_FIRST + PORT_ROOM_WON_SECOND -
-                         report->winner;
+        report->winner =
+            PORT_ROOM_WON_FIRST + PORT_ROOM_WON_SECOND - report->winner;
         port_Log("ranked: (a test's lie: player %d is reported the "
                  "winner)\n",
                  report->winner + 1);
@@ -1378,17 +1428,17 @@ void port_RankedMatchEnds(s32 end, s32 winner, s32 met) {
     g_ranked.has_report = TRUE;
     g_ranked.playing = FALSE;
     port_RankedPutHex(hex, report->digest, DIGEST_BYTES);
-    port_Log("ranked: match %u ended (%s): reported %s, digest %s\n",
-             g_ranked.match,
-             report->reason == PORT_RANKED_ENDED        ? "played to its end"
-             : report->reason == PORT_RANKED_I_LEFT     ? "this player left"
-             : report->reason == PORT_RANKED_OTHER_LEFT ? "the other left"
-             : report->reason == PORT_RANKED_NOT_MET    ? "never met"
-                                                        : "not to an end",
-             report->winner == PORT_ROOM_WON_FIRST    ? "player 1 won"
-             : report->winner == PORT_ROOM_WON_SECOND ? "player 2 won"
-             : report->winner == PORT_ROOM_DRAW       ? "a draw"
-                                                      : "no winner",
-             hex);
+    port_Log(
+        "ranked: match %u ended (%s): reported %s, digest %s\n", g_ranked.match,
+        report->reason == PORT_RANKED_ENDED        ? "played to its end"
+        : report->reason == PORT_RANKED_I_LEFT     ? "this player left"
+        : report->reason == PORT_RANKED_OTHER_LEFT ? "the other left"
+        : report->reason == PORT_RANKED_NOT_MET    ? "never met"
+                                                   : "not to an end",
+        report->winner == PORT_ROOM_WON_FIRST    ? "player 1 won"
+        : report->winner == PORT_ROOM_WON_SECOND ? "player 2 won"
+        : report->winner == PORT_ROOM_DRAW       ? "a draw"
+                                                 : "no winner",
+        hex);
     port_RankedAsk(ACTION_REPORT);
 }

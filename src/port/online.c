@@ -33,7 +33,6 @@
 #include "common.h"
 #include "port_disc.h"
 #include "port_host.h"
-#include "port_match.h"
 #include "port_net.h"
 #include "port_online.h"
 #include "port_ranked.h"
@@ -660,10 +659,6 @@ void port_OnlineRoomAuto(const PortOnlineRoom *room) {
     g_online.room.on = TRUE;
 }
 
-/* The program's room, a program with no pages (--room-open, --room-enter):
- * opened or entered at its first boundary, a match beside it asked for,
- * its matches played and watched as they come, and the program ended once
- * the room has had the results it was to wait for. */
 /* The ranked ladder, a program with no pages (--ranked): queued at its
  * first boundary, its matches played as the lobby gives them, queued again
  * after each is decided, and the program ended once `matches` are, with
@@ -717,6 +712,10 @@ static void port_OnlineRankedTurn(void) {
     port_RankedWait(ROOM_IDLE_MS);
 }
 
+/* The program's room, a program with no pages (--room-open, --room-enter):
+ * opened or entered at its first boundary, a match beside it asked for,
+ * its matches played and watched as they come, and the program ended once
+ * the room has had the results it was to wait for. */
 static void port_OnlineRoomTurn(void) {
     PortOnlineRoom *room = &g_online.room;
     PortRoomView view;

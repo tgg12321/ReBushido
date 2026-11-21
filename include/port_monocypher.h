@@ -43,13 +43,11 @@ typedef __SIZE_TYPE__ size_t;
 /* A key pair made of a seed of 32 random bytes, which it wipes. */
 extern void crypto_ed25519_key_pair(
     u8 secret_key[PORT_ED25519_SECRET_BYTES],
-    u8 public_key[PORT_ED25519_PUBLIC_BYTES],
-    u8 seed[PORT_ED25519_SEED_BYTES]);
+    u8 public_key[PORT_ED25519_PUBLIC_BYTES], u8 seed[PORT_ED25519_SEED_BYTES]);
 /* An Ed25519 signature (RFC 8032) of `message`. */
-extern void crypto_ed25519_sign(
-    u8 signature[PORT_ED25519_SIGNATURE_BYTES],
-    const u8 secret_key[PORT_ED25519_SECRET_BYTES], const u8 *message,
-    PortSize message_size);
+extern void crypto_ed25519_sign(u8 signature[PORT_ED25519_SIGNATURE_BYTES],
+                                const u8 secret_key[PORT_ED25519_SECRET_BYTES],
+                                const u8 *message, PortSize message_size);
 /* BLAKE2b (RFC 7693) of `message`, `hash_size` bytes of it (1 to 64). */
 extern void crypto_blake2b(
     u8 *hash, PortSize hash_size, const u8 *message, PortSize message_size);

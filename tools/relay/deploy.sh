@@ -2,20 +2,26 @@
 # Install, check or remove the ReBushido relay server on an Ubuntu box, as root.
 #
 #   bash deploy.sh             install, or bring an install up to date (idempotent)
-#   bash deploy.sh status      what is installed and whether it listens
-#   bash deploy.sh uninstall   undo everything install did
+#   bash deploy.sh status      what is installed, whether it listens, the ladder's store
+#   bash deploy.sh uninstall   undo everything install did, but keep the ladder's store
+#   bash deploy.sh uninstall --purge   ... and remove the store and its backups too
 #
-# Run it from a copy of tools/relay/ (it installs the rebushido_relay.py and
-# rebushido-relay.service beside it). It touches nothing but its own unit,
-# its folder /opt/rebushido-relay and, only when ufw is active and it added
-# it, one ufw rule for 7845/udp. It never restarts or reconfigures any other
-# service.
+# Run it from a copy of tools/relay/ (it installs the rebushido_relay.py,
+# ladder.py and rebushido-relay.service beside it). It touches nothing but
+# its own unit, its folder /opt/rebushido-relay, the service's state folder
+# (/var/lib/private/rebushido-relay, which systemd makes and keeps: the
+# ranked ladder's SQLite file, its daily backups and disputed replays) and,
+# only when ufw is active and it added it, one ufw rule for 7845/udp. It
+# never restarts or reconfigures any other service.
 set -eu
 
 NAME=rebushido-relay
 PORT=7845
 DIR=/opt/rebushido-relay
 UNIT=/etc/systemd/system/$NAME.service
+# the state folder systemd keeps for the DynamicUser service (StateDirectory=)
+STATE=/var/lib/private/$NAME
+FILES="rebushido_relay.py ladder.py"
 MARK=$DIR/ufw-rule-added
 PYTHON=/usr/bin/python3
 SRC=$(cd "$(dirname "$0")" && pwd)
@@ -60,11 +66,12 @@ ufw_allows_port() {
 
 do_install() {
     need_root
-    for f in rebushido_relay.py "$NAME.service"; do
+    for f in $FILES "$NAME.service"; do
         [ -f "$SRC/$f" ] || die "$SRC/$f is missing: run deploy.sh from a copy of tools/relay/"
     done
     [ -x "$PYTHON" ] || die "no $PYTHON (apt install python3-minimal)"
     "$PYTHON" -c 'import sys; sys.exit(sys.version_info < (3, 8))' || die "$PYTHON is older than 3.8"
+    "$PYTHON" -c 'import sqlite3' 2>/dev/null || die "$PYTHON has no sqlite3 (apt install python3)"
     local sd
     sd=$(systemctl --version | awk 'NR == 1 { print $2 }')
     [ "${sd:-0}" -ge 235 ] 2>/dev/null || die "systemd $sd is too old for DynamicUser (235 or newer)"
@@ -82,11 +89,14 @@ do_install() {
         install -d -m 0755 -o root -g root "$DIR"
         changed "created $DIR"
     fi
-    if ! cmp -s "$SRC/rebushido_relay.py" "$DIR/rebushido_relay.py"; then
-        install -m 0644 -o root -g root "$SRC/rebushido_relay.py" "$DIR/rebushido_relay.py"
-        changed "installed $DIR/rebushido_relay.py"
-        restart=1
-    fi
+    for f in $FILES; do
+        if ! cmp -s "$SRC/$f" "$DIR/$f"; then
+            install -m 0644 -o root -g root "$SRC/$f" "$DIR/$f"
+            changed "installed $DIR/$f"
+            restart=1
+        fi
+    done
+    "$PYTHON" -I "$DIR/ladder.py" --self-test >/dev/null || die "ladder.py's self-test failed on this box"
     if ! cmp -s "$SRC/$NAME.service" "$UNIT"; then
         install -m 0644 -o root -g root "$SRC/$NAME.service" "$UNIT"
         changed "installed $UNIT"
@@ -143,6 +153,9 @@ do_install() {
     else
         echo "Changed ${#CHANGES[@]} thing(s)."
     fi
+    if [ -d "$STATE" ]; then
+        echo "The ladder's store: $STATE (kept across redeploys)"
+    fi
     echo "A cloud firewall in front of the box (Hetzner's, for one) must let UDP $PORT in as well."
 }
 
@@ -170,7 +183,9 @@ do_uninstall() {
         note "ufw: no rule of this script's to remove"
     fi
     if [ -d "$DIR" ]; then
-        rm -f "$DIR/rebushido_relay.py" "$MARK"
+        for f in $FILES; do rm -f "$DIR/$f"; done
+        rm -f "$MARK"
+        rm -rf "$DIR/__pycache__"
         if rmdir "$DIR" 2>/dev/null; then
             changed "removed $DIR"
         else
@@ -179,6 +194,15 @@ do_uninstall() {
         fi
     fi
     note "no user to remove: the service ran as a DynamicUser"
+    if [ -d "$STATE" ]; then
+        if [ "${1:-}" = "--purge" ]; then
+            rm -rf -- "$STATE"
+            rm -f /var/lib/$NAME
+            changed "removed the ladder's store $STATE (--purge)"
+        else
+            note "kept the ladder's store $STATE (uninstall --purge removes it)"
+        fi
+    fi
     if [ "${#CHANGES[@]}" -eq 0 ]; then
         echo "Nothing to do: it was not installed."
     else
@@ -198,6 +222,13 @@ do_status() {
         echo "  server:   $DIR/rebushido_relay.py"
     else
         echo "  server:   not installed"
+    fi
+    if [ -f "$STATE/ladder.sqlite" ]; then
+        echo "  ladder:   $STATE ($(du -sh "$STATE" 2>/dev/null | cut -f1)," \
+            "$(ls "$STATE/backups" 2>/dev/null | grep -c '^ladder-') backups," \
+            "$(ls "$STATE/disputes" 2>/dev/null | grep -c '\.rbu$') disputed replays)"
+    else
+        echo "  ladder:   no store yet"
     fi
     local lines
     lines=$(port_lines)
@@ -224,7 +255,7 @@ do_status() {
 
 case "${1:-install}" in
 install) do_install ;;
-uninstall) do_uninstall ;;
+uninstall) do_uninstall "${2:-}" ;;
 status) do_status ;;
-*) die "usage: bash deploy.sh [install|status|uninstall]" ;;
+*) die "usage: bash deploy.sh [install|status|uninstall [--purge]]" ;;
 esac

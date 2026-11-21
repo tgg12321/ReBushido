@@ -28,12 +28,12 @@
 /* What the client is doing. */
 enum {
     PORT_RANKED_OFF = 0,
-    PORT_RANKED_ASKING = 1,  /* who this player is: the lobby's answer */
-    PORT_RANKED_IDLE = 2,    /* known, not queued */
-    PORT_RANKED_QUEUED = 3,  /* waiting for a match */
-    PORT_RANKED_MATCHED = 4, /* a match given: met and played */
+    PORT_RANKED_ASKING = 1,   /* who this player is: the lobby's answer */
+    PORT_RANKED_IDLE = 2,     /* known, not queued */
+    PORT_RANKED_QUEUED = 3,   /* waiting for a match */
+    PORT_RANKED_MATCHED = 4,  /* a match given: met and played */
     PORT_RANKED_REPORTED = 5, /* its result told, the other's awaited */
-    PORT_RANKED_DECIDED = 6, /* rated, disputed or void */
+    PORT_RANKED_DECIDED = 6,  /* rated, disputed or void */
 };
 
 /* A match's state at the lobby. */
@@ -72,7 +72,7 @@ typedef struct {
     s32 provisional;
     char player[PORT_RELAY_PLAYER_BYTES];
     /* a match's */
-    u32 when; /* seconds since 1970, UTC */
+    u32 when;   /* seconds since 1970, UTC */
     s32 winner; /* PORT_ROOM_WON_..., or PORT_ROOM_NOBODY */
     s32 state;  /* PORT_RANKED_RATED, ... */
     s32 delta_first;
