@@ -95,11 +95,29 @@ the stages loaded: stage 17
   puts it together): CPython 3.12 for Windows with numpy and Pillow, the
   very files of the Python the developer tools' `build` steps run on, made
   a Python of that folder alone (`python312._pth`: no setting, variable or
-  package of the PC's is seen), and the repository's tools as they are:
+  package of the PC's is seen), the art's learned upscaler
+  (`prepare/upscaler/`: `realesrgan-ncnn-vulkan.exe`, `vcomp140.dll` and the
+  x4plus model, each held to its SHA-256 by `tools/port_prepare_bundle.py`,
+  and their licences in `prepare/licenses/`: "The art mod"), and the
+  repository's tools as they are:
   `tools/port_prepare.py`, `port_art.py`, `port_stage_hd.py`,
   `fighter_export.py` and `port_models/geometry.py`, with the plans the
   program plays (`prepare/plans/`, written by the packager from the
-  program's own `.sym`). About 18 MB of the zip.
+  program's own `.sym`). About 18 MB of the zip, and the upscaler 33 MB
+  more (the model's weights 31 of them: they hardly compress); the zip is
+  62 MB in all.
+- **How the upscaler reaches the player.** In the package, beside the
+  Python (asked for 2026-11-20 where the licences allow, over a download
+  at the first start): its licences (MIT, BSD 3-Clause) let it be given,
+  the player needs nothing from the internet, and the zip carries the
+  very bytes the packager checked. The cost is the zip's size, 33 MB more
+  for every player, those with no Vulkan card too, and so for every
+  update that changes the package. A download at the first start, held
+  to the same SHA-256, would keep the zip at 29 MB and cost a player with
+  a card the release's whole 45 MB zip from GitHub (its three models and
+  a sample video are one file), a first start that falls back to the art
+  without the model when GitHub cannot be reached or is slow, and one
+  more thing for the program to fetch, check and unpack.
 - **How.** `src/port/window/prepare.c`, at a player's start (no `--plan`,
   `--frames`, `--fast` or `--mods`; `mods` and `disc_mods` on), looks at
   `mods/art`, `mods/stages-hd` and `mods/fighters`: each is made unless its
@@ -148,12 +166,21 @@ the stages loaded: stage 17
   the art and the stages the same bytes; the fighter's model, whose
   vertices are floats written to the last bit, is the same on every PC
   with AVX2 and FMA (any of the last ten years) and differs in a few of
-  its floats on one without.
+  its floats on one without. The art's pictures and paintings made by the
+  learned upscaler are the graphics card's arithmetic: the package and
+  the developer tools make them on the one PC's card, and they are the
+  same bytes; made on two PCs' cards they may differ by a few steps of 255
+  ("The art mod", "With no model"). Without the model the art is the same
+  bytes on every PC, as before.
 - **Time and room**, measured on the owner's PC (Ryzen 9 9950X3D, its own
   graphics card): 205 seconds in all; the art 63 (50 of them the seven
   runs that dump), the stages 139 (75 dumping, 64 making the 955 pages
   larger, six at once), the fighter 3. `prepare-work/` holds about 500 MB
-  while it works; the mods are 190 MB (the art 29, the stages 160).
+  while it works; the mods are 190 MB (the art 29, the stages 160). With
+  the art's learned upscaler (2026-11-20, an RTX 3090): the art's `build`
+  17 seconds (the model 6 of them), the art 39 MB; the whole first start,
+  stopped once at 100 seconds and started again as the prover does it,
+  200 seconds.
 - **Never shipped.** `tools/port_release.py` refuses any folder of `mods/`
   it does not make from the repository (and any file of `prepare/` it did
   not write, a `prepare-work/` or a picture outside `mods/`), and
@@ -489,7 +516,7 @@ says otherwise; its order is -100, as the English menu's.
 | The pause menu | Pause Menu, Continue, Return to Sub Menu, Return to Top Menu |
 | The menu after a fight | Rematch, Return to Sub Menu, Return to Top Menu |
 | The top menu's captions | Story Mode, Vs. CPU Mode, Training Mode, Vs. Mode, Group Battle Mode, Link Mode, Option Menu, and the second ones under the picture (Battle of the Two Schools, Trust Your Skills, Master Your Weapon, Select Battle Stage, May the Best School Win, 2 Player Link Battle, Other Options); Side View and POV on their panel |
-| The select screens | Select Character, Select Weapon, Select School, and Select Battle Stage, its "Battle Stage" in the titles' look; every fighter's name, the fourteen every unlock brings among them; every weapon's name (Katana, Nodachi, Long Sword, Broadsword, Naginata, Yari); the stages' names on all three pages and ( Map 1 ), ( Map ? ), ( Map 3 ) |
+| The select screens | Select Character, Select Weapon, Select School, and Select Battle Stage, its "Battle Stage" in the titles' look; every fighter's name, the fourteen every unlock brings among them; every weapon's name (Katana, Nodachi, Long Sword, Broadsword, Naginata, Yari); the stages' names on all three pages and ( Map 1 ), ( Map 2 ) (the game's own reads ( Map ? )), ( Map 3 ) |
 | The group battle | its page (Group Battle Mode, Number of Entries, Match, Time Limit, Start, Return to Top Menu, and the values: 1 point, 3 point, 3 4 5, 60 120 sec); the teams' names; 1ST 2ND 3RD in each colour; the fighters and the weapons in the list's black and the sides' blue and red, and its small Select Weapon; the card before the battle and after each (the sides, 1ST 2ND 3RD, and every fighter's name, the twenty of the game's sheet of them) -- each name in each colour that one group battle's picks showed (a name in a colour no run has shown yet is still the game's); WINS, KILLS |
 | The training mode | Training Mode, Practice, Practice Round, Return to Top Menu and the six lines under them; the Select button's page (Attack, Dash) |
 | The story | the narration that opens it (Off the sea of Setonaikai ...); the stage card (Next Battle Stage, Battle Stage, Outside the Meikyokan) |
@@ -551,19 +578,24 @@ makes from their own disc, as the hd fighters are (`tools/fighter_hd.py`):
 
 ```
 python3 tools/port_art.py dump --image "Bushido Blade 2 (USA).cue"   # Linux or WSL
-python tools/port_art.py build                                          # numpy and Pillow
+python tools/port_art.py build                                          # Windows: numpy, Pillow, the upscaler
 ```
 
 `dump` plays the game with no window on the GL prover
-(`python3 tools/port_gl_build.py`), seven runs at once: from the boot
+(`python3 tools/port_gl_build.py`), eight runs at once: from the boot
 through each mode of the top menu, its select screens, a fight with its
-pause menu, the fight's end and the menus after it, every texture
-written into `tmp/art/dump/` with no mod in the way (about 1,200 of
-them). A player who would rather play the screens through runs the game
-with `--dump-textures FOLDER` and gives `build --dump FOLDER` (as many
-as they like). `build` writes `tmp/mods/art/`, order -200 -- under the
-built-in mods and under any of the player's own -- with each texture six
-times larger (`--scale`), by its kind:
+pause menu, the fight's end and the menus after it, and versus mode's
+stage pages walked across, left to the first and right to the third (the
+other runs take the page they open on), every texture written into
+`tmp/art/dump/` with no mod in the way (about 1,370 of them), and where
+each was in video memory into `where.txt` beside them (from the log's
+`mods: wrote` and `mods: had` lines: every run says where it saw each
+texture, whichever run wrote its file, so the file is the same however the
+runs fall). A player who would rather play the screens through runs the
+game with `--dump-textures FOLDER` and gives `build --dump FOLDER` (as
+many as they like). `build` writes `tmp/mods/art/`, order -200 -- under
+the built-in mods and under any of the player's own -- with each texture
+six times larger (`--scale`), by its kind:
 
 - **a few colours** (six or fewer: an emblem, a frame, a button): each
   colour's area smoothed as a shape of its own (bicubic, at twice the
@@ -573,18 +605,104 @@ times larger (`--scale`), by its kind:
 - **lettering and the like** (up to 48 colours): the colours smoothed
   over their alpha, and the outline made sharp again from the smoothed
   alpha, a pixel or two wide;
-- **a picture** (more, or 16 bits: a portrait, a loading screen's map,
-  the boot logo): Lanczos and an unsharp mask.
+- **a painting** (8 to 48 colours that cover nine tenths of the texture or
+  more, a side of 16 texels or more, and not one ramp of one hue: the
+  backgrounds' tiles, the clouds of the top menu, the stage select's maps
+  and its scroll, the select screens' panels and emblems) and **a
+  picture** (more, or 16 bits: a portrait, the top menu's pictures of the
+  modes, the loading screen's map, the boot logo): **Real-ESRGAN's x4plus
+  model** (below), four times larger, then Lanczos to six.
 
-A texture with a side under four texels is left as it is. Each is
-written here in numpy and Pillow; no model and no other project's
-program is used, so nothing is added to what the licence covers (a
-learned upscaler with weights of a clear licence would do better on the
-portraits; none is used). Copy `tmp/mods/art/` into `mods/` beside the
-program; it is never committed (the PC package makes it itself at its
-first start: "Made from your disc"). From one disc: 1,224 textures dumped,
-1,070 made larger (653 lettering, 360 of a few colours, 57 pictures), 154
-too small, in 8 seconds.
+A texture with a side under four texels is left as it is.
+
+**The model.** [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)'s
+`RealESRGAN_x4plus`, through
+[realesrgan-ncnn-vulkan](https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan),
+a program of its own that runs on any graphics card with Vulkan and needs
+no Python of its own: the release of Real-ESRGAN v0.2.5.0
+(`realesrgan-ncnn-vulkan-20220424-windows.zip`, SHA-256
+`abc02804e17982a3be33675e4d471e91ea374e65b70167abc09e31acb412802d`). Its
+licences, read from the repositories themselves (`tools/upscaler/`): the
+program is MIT (with realsr-ncnn-vulkan's MIT, which it grew from), built
+with Tencent's ncnn, BSD 3-Clause; the weights are published in Real-ESRGAN's
+own releases under that repository's BSD 3-Clause licence, with no terms of
+their own. (They were trained on DIV2K, Flickr2K and OST, whose terms are
+the datasets' and do not reach the weights by any licence the project
+publishes.) The zip has no licence file of its own, so the package carries
+the three texts. Tried and not taken: `realesrgan-x4plus-anime` and
+`realesr-animevideov3`, in the same zip, which flatten the clouds, the maps
+and the faces into areas of one colour; x4plus keeps the paint's grain and
+takes away the dither. Not looked at further: models of other licences
+(4x-UltraSharp and the like are CC BY-NC-SA).
+
+How it is used, in `tools/port_art.py`:
+
+- **The tiles put back together.** The game cuts a background or a map
+  into tiles of 64 texels and lays them side by side in a page of video
+  memory, one colour table for all. Made larger one by one, each had an
+  edge of its own, a seam the model's detail made plain. So `build` reads
+  `where.txt` and lays every texture of one depth and colour table where
+  it was, joins the ones that touch -- and only where the step across their
+  join is no more than twice the steps beside it and six (`goes_on`): the
+  top menu's moon lies as its two halves side by side, and the page of the
+  stage select's maps holds two maps one over the other -- and makes each
+  such canvas larger whole, then cuts each texture from it. Two textures
+  that overlap and differ (two pictures loaded into one place at two
+  times) are on canvases of their own. A canvas that holds a painting or a
+  picture is the model's whole, so a cloud tile of less than nine tenths
+  goes with its neighbours.
+- **Round each texture or canvas** eight texels of its edge are repeated
+  for the model to see, and what it does not draw takes its nearest drawn
+  texel's colour, so no black creeps in from outside.
+- **The outline** is today's way's (the picture's or the lettering's), and
+  **the darkest colours** too: where today's way gives a texel no part
+  over 24, its colour is today's, and the model's is mixed in above that.
+  The model lifts black a step or two, which a texture the game draws
+  adding or subtracting showed as a box round it.
+- **One ramp of one hue** stays today's: a soft shape of a few steps from
+  dark to light (the moon, which the game subtracts from the red sky, the
+  flares of a fight) is one line of colours, and the model gives it a hard
+  edge in place of its soft one. The spread of the colours across their
+  main line over the spread along it is 0.025 for the moon and 0 for the
+  flares; 0.03 is the limit, and the loading screen's map of ink on paper,
+  of one hue as well, is 0.039.
+
+**With no model.** `--upscaler off`, or no upscaler found, or one that
+writes nothing (a PC with no Vulkan driver, where it says `invalid gpu
+device`, or one slower than ten minutes): a painting is made as
+lettering and a picture by Lanczos and an unsharp mask, which is every
+texture as it was before the model, byte for byte (the same dump, the
+tool of before and `--upscaler off`: no texture differs; `mod.txt` says
+which way it was made). Those are numpy's and Pillow's and the same on
+every PC. The model's are the same bytes every time on one graphics card
+(the art made twice on the RTX 3090), and not on another: the same canvases
+on this PC's own Radeon came out within 9 steps of 255, 1.2 on the
+average, which no eye sees. `build` finds the upscaler at `--upscaler
+FOLDER`, `RB_UPSCALER`, the package's `prepare/upscaler/`, or
+`tmp/art-tools/realesrgan-ncnn-vulkan-20220424/` of the checkout or of
+the main one; it is a Windows program, so a `build` in WSL makes the art
+with no model.
+
+**What it costs**, on the owner's PC (RTX 3090): the whole `build` 17
+seconds (8 without the model), the model's part 6 of them: 207 textures
+on 71 canvases. The mod is 39 MB (33 without it). From one disc: 1,368
+textures dumped; 178 too small, 582 lettering, 401 of a few colours, 148
+paintings and 59 pictures by the model; 4 steps of fades.
+
+**What no dump reaches.** The story's card before each battle ("Next
+Battle Stage", the map and the stage's picture) looks the same with the
+art and without it, at 2560 by 1440: its map is not drawn from the map's
+texture the dump has (`179x127-4-55b2db20102945a1`, which the log says is
+found), most likely from a copy of the screen the game keeps while the
+stage loads. Making it sharp is the remastered picture's to do
+(`src/port/gl/`), not the art's.
+The screens no tour reaches -- the ending, the credits, the slash mode
+(shut until won) -- are not in the dump; `--dump-textures` while playing
+them adds them.
+
+Copy `tmp/mods/art/` into `mods/` beside the program; it is never
+committed (the PC package makes it itself at its first start: "Made from
+your disc").
 
 ## The title picture
 

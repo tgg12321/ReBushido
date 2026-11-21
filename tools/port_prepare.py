@@ -81,7 +81,7 @@ author = ReBushido (tools/port_models/)
 '''
 # How long each piece takes, in seconds on the owner's PC (docs/MODS.md,
 # "Made from your disc"), for the share of the whole the bar shows
-WEIGHTS = {'art-dump': 50, 'art-build': 12, 'stage-dump': 75, 'stage-build': 64, 'fighters': 3}
+WEIGHTS = {'art-dump': 50, 'art-build': 17, 'stage-dump': 75, 'stage-build': 64, 'fighters': 3}
 RETRIES = 1
 RENAME_TRIES = 20
 # The settings the program dumps with, whatever the player's rebushido.cfg
@@ -208,10 +208,12 @@ def start_run(args, plan, out, dump):
                             creationflags=flags), log
 
 
-def run_all(args, runs, progress, weight, what, check=None):
+def run_all(args, runs, progress, weight, what, check=None, where=False):
     """Plays the runs, `args.jobs` at once: [(name, plan, out, dump)].
     A run already done (its `.done` beside it) is not played again. A run
-    that `check` says stopped short is played once more."""
+    that `check` says stopped short is played once more. With `where`, what
+    each run's log says of where its textures were goes into the dump's
+    where.txt, as port_art.dump writes it."""
     waiting = list(runs)
     running = []
     tries = {}
@@ -254,6 +256,8 @@ def run_all(args, runs, progress, weight, what, check=None):
                     continue
                 say('note', '%s: %s stopped short' % (what, name))
             bring_in(os.path.join(out, 'dump'), dump)
+            if where:
+                port_art.add_where(dump, port_art.where_lines(text))
             with open(out + '.done', 'w') as f:
                 f.write('%d\n' % process.returncode)
             shutil.rmtree(out, ignore_errors=True)
@@ -283,7 +287,7 @@ def make_art(args, progress, staging):
             for mode in port_art.MODES]
     # every mode at once, as port_art.dump plays them
     jobs, args.jobs = args.jobs, max(args.jobs, len(runs))
-    run_all(args, runs, progress, WEIGHTS['art-dump'], 'the screens played')
+    run_all(args, runs, progress, WEIGHTS['art-dump'], 'the screens played', where=True)
     args.jobs = jobs
     progress.show('the art: made larger')
     build = argparse.Namespace(dump=[dump], out=staging, scale=6, keys=None)

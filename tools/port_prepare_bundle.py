@@ -36,8 +36,14 @@ names. Its parts:
     prepare/tools/           tools/port_prepare.py and what it runs
     prepare/src/main/        the three files of the source fighter_export.py
                              reads its tables from
+    prepare/upscaler/        realesrgan-ncnn-vulkan.exe, vcomp140.dll and
+                             models/realesrgan-x4plus.*: the learned
+                             upscaler the art's pictures are made larger
+                             with (tools/port_art.py), its files held to
+                             their SHA-256 (UPSCALER_FILES)
     prepare/licenses/        Python's, numpy's (and OpenBLAS's and the
-                             others it bundles) and Pillow's licences
+                             others it bundles), Pillow's and the
+                             upscaler's licences (tools/upscaler/)
 
 tools/port_release.py writes prepare/plans/ beside it, the plans the
 program plays, from the program's own .sym.
@@ -73,6 +79,27 @@ TOOLS = ['tools/port_prepare.py', 'tools/port_art.py', 'tools/port_stage_hd.py',
          'tools/build_disc.py', 'tools/port_models/geometry.py', 'tools/port_models/fighter_glb.py',
          'tools/port_models/meshes.py', 'tools/port_models/check.py', 'src/main/model.c', 'src/main/resource.c',
          'src/main/resource_data.c']
+# The learned upscaler the art mod is made with (tools/port_art.py,
+# docs/MODS.md, "The art mod"): realesrgan-ncnn-vulkan's Windows release of
+# 2022-04-24 (Real-ESRGAN v0.2.5.0) and its x4plus model, four of its files
+# and no more, each held to its SHA-256 so that only that release is ever
+# shipped. Not in the repository: the packager takes them from
+# RB_UPSCALER, or from tmp/art-tools/realesrgan-ncnn-vulkan-20220424/ of
+# this checkout or of the main one, where
+# https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-windows.zip
+# (SHA-256 abc02804e17982a3be33675e4d471e91ea374e65b70167abc09e31acb412802d)
+# is unpacked.
+UPSCALER_FOLDER = 'realesrgan-ncnn-vulkan-20220424'
+UPSCALER_FILES = {
+    'realesrgan-ncnn-vulkan.exe': '07e49f7cbb4ede01ae4dd4c399d3a7e5846e3d2085c3128eff881e55cb7b1a0c',
+    # Microsoft's OpenMP runtime, which the program is built with; one of
+    # Visual C++'s redistributable files, as vcruntime140.dll is
+    'vcomp140.dll': '8f72ef2e483465444b2059fc6744d6cb22cd8d8a27f6fa56befd2a42dcd0f78b',
+    'models/realesrgan-x4plus.bin': '713ee713b0353afaa27976f0563a64a5043bd70b9bd8936c2e26e25ebcdbcddf',
+    'models/realesrgan-x4plus.param': '35330ececcea33b6c397a72548e788d5d53becee4734c50b7fada36e89f10a86',
+}
+# their licences, kept in the repository (tools/upscaler/)
+UPSCALER_LICENCES = ['Real-ESRGAN-ncnn-vulkan-LICENSE.txt', 'Real-ESRGAN-LICENSE.txt', 'ncnn-LICENSE.txt']
 LICENCE_NOTE = '''The Python in prepare/
 ====================
 
@@ -94,6 +121,25 @@ Python itself is under the PSF licence, licenses/Python-LICENSE.txt, which
 lists what it is built with. vcruntime140.dll and vcruntime140_1.dll are
 Microsoft's Visual C++ runtime, which Python's own distributions carry
 beside it and which may be given with a program built with it.
+
+The upscaler in prepare/upscaler/
+=================================
+
+The art mod's pictures are made larger by a learned upscaler, where the
+PC has a graphics card with Vulkan (without one, by the Python's own
+arithmetic):
+
+- realesrgan-ncnn-vulkan (https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan),
+  of the release Real-ESRGAN v0.2.5.0: the MIT licence, with
+  realsr-ncnn-vulkan's MIT licence, in
+  licenses/Real-ESRGAN-ncnn-vulkan-LICENSE.txt. It is built with Tencent's
+  ncnn (https://github.com/Tencent/ncnn): the BSD 3-Clause licence, with
+  the licences of what ncnn builds in, in licenses/ncnn-LICENSE.txt.
+- The model realesrgan-x4plus (models/), the weights of Real-ESRGAN
+  (https://github.com/xinntao/Real-ESRGAN), published with it under its
+  BSD 3-Clause licence, licenses/Real-ESRGAN-LICENSE.txt.
+- vcomp140.dll, Microsoft's OpenMP runtime, which the program is built
+  with and which may be given with it as vcruntime140.dll is.
 
 These are separate programs that rebushido.exe starts; none of them is
 built into it. The tools in prepare/tools/ are this repository's own
@@ -170,6 +216,40 @@ def dist_version(site, package):
     fail('%s has no %s (pip install %s, in Windows\' own Python)' % (site, package, package))
 
 
+def main_checkout():
+    """The checkout of which this one is a worktree (itself if none)."""
+    proc = subprocess.run(['git', '-C', ROOT, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                          capture_output=True, text=True)
+    common = proc.stdout.strip()
+    return os.path.dirname(common) if proc.returncode == 0 and common else ROOT
+
+
+def upscaler_files():
+    """{path under prepare/: bytes} of the upscaler and its licences; the
+    packager stops where a file is missing or is not the release's."""
+    import hashlib
+
+    places = [os.environ.get('RB_UPSCALER')] + [os.path.join(top, 'tmp', 'art-tools', UPSCALER_FOLDER)
+                                                 for top in (ROOT, main_checkout())]
+    folder = next((to_here(p) for p in places if p and os.path.isfile(os.path.join(to_here(p), 'models',
+                                                                                    'realesrgan-x4plus.bin'))), None)
+    if folder is None:
+        fail('no upscaler: unpack %s into tmp/art-tools/%s/ (or RB_UPSCALER=FOLDER)' % (
+            'realesrgan-ncnn-vulkan-20220424-windows.zip', UPSCALER_FOLDER))
+    out = {}
+    for rel, want in UPSCALER_FILES.items():
+        path = os.path.join(folder, *rel.split('/'))
+        if not os.path.isfile(path):
+            fail('%s is not there' % path)
+        data = read(path)
+        if hashlib.sha256(data).hexdigest() != want:
+            fail('%s is not the release\'s (its SHA-256 is not %s)' % (path, want))
+        out['upscaler/' + rel] = data
+    for name in UPSCALER_LICENCES:
+        out['licenses/' + name] = read(os.path.join(ROOT, 'tools', 'upscaler', name))
+    return out
+
+
 def files(python=None):
     """{path under prepare/: bytes}, all of it but the plans."""
     python = python or windows_python()
@@ -198,6 +278,7 @@ def files(python=None):
     for rel, data in tree(os.path.join(numpy_info, 'licenses'), set()).items():
         out['licenses/numpy/' + rel] = data
     out['licenses/Pillow-LICENSE.txt'] = read(os.path.join(pillow_info, 'licenses', 'LICENSE'))
+    out.update(upscaler_files())
     version = re.search(rb'Python (3\.\d+\.\d+)', read(os.path.join(python, 'NEWS.txt'))) \
         if os.path.isfile(os.path.join(python, 'NEWS.txt')) else None
     out['licenses/README.txt'] = (LICENCE_NOTE % {
