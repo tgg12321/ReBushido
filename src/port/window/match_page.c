@@ -1,10 +1,12 @@
 /* The native port's window: the match rules laid over the game's picture
- * (window.h; include/port_match.h; docs/PLAYING.md, "Match rules"). Over
- * a fight of a match a strip at the top of the screen: each side's lives
- * of a Stock match, filled while a side has them and hollow once lost, or
- * each side's wins of a First to N, filled as they are won, the rule
- * between them. After a fight of a match, in place of the game's menu, a
- * card: the fight's outcome and the score, or the match's winner. Drawn
+ * (window.h; include/port_match.h; docs/PLAYING.md, "Match rules"). On
+ * the select screen, before the first grid, the rule's page; while a
+ * crew is picked, a strip of the crews at the foot. Over a fight of a
+ * match, light: each side's lives (Stock), wins (First to N) or crew's
+ * fighters left (Crew) as small pips by its label, where the game's own
+ * count of wins stands. After a fight of a match, in place of the game's
+ * menu, a card: the fight's outcome and the score (the crews in full, and
+ * the wounds a winner takes on), or the match's winner. Drawn
  * at the window's own resolution in the port's typeface, as the stage
  * pages' panel is (stage_page.c), none of it in the game's video memory;
  * everything it shows it reads of the game's state (src/port/match.c),
@@ -38,16 +40,6 @@
 /* each side's colour: the first's warm, the second's cool */
 #define COLOR_SIDE_1 0xFFE8A05AU
 #define COLOR_SIDE_2 0xFF7AB4F0U
-
-/* The strip over a fight: across the middle of the top. */
-#define HUD_X 160
-#define HUD_Y 3
-#define HUD_W 320
-#define HUD_H 17
-#define HUD_BASE 15
-#define HUD_PIP 12   /* a pip's pitch, across */
-#define HUD_PIP_R 2  /* its radius, in lines */
-#define HUD_INSET 12 /* the pips from the strip's ends */
 
 /* The card after a fight: in the middle of the screen. */
 #define CARD_X 150
@@ -224,30 +216,81 @@ static s32 port_MatchHas(const PortMatch *match, s32 side) {
                : match->wins[side];
 }
 
-static void port_MatchHud(const PortMatch *match) {
-    char rule[24];
-    s32 count = match->count;
-    s32 step = HUD_PIP;
+/* Over a fight of a match, light (the owner, 2026-11-20: "keep the gui
+ * very light for actually in battle"): each side's lives, wins or crew's
+ * fighters left as small pips by its label, where the game's own count
+ * of wins stands (hud.c, COUNTER_LEFT_X and COUNTER_RIGHT_X), no names
+ * and no rule; under the game's count of opponents versus the CPU. The
+ * cards between fights say the rest. */
+#define LIGHT_Y 24
+#define LIGHT_Y_CPU 44
+#define LIGHT_H 11
+#define LIGHT_LEFT 72
+#define LIGHT_RIGHT 568
+#define LIGHT_LABEL 18 /* the label's room before the pips */
+#define LIGHT_PIP 9
+#define LIGHT_PIP_R 2
+#define LIGHT_AREA_X (LIGHT_LEFT - 4)
+#define LIGHT_AREA_W (LIGHT_RIGHT - LIGHT_LEFT + 8)
+#define COLOR_LIGHT 0x700E121EU
 
-    /* nine pips a side fit: closer when there are more than eight */
-    if (count > 8) {
-        step = HUD_PIP * 8 / count;
+static s32 port_MatchLightY(const PortMatch *match) {
+    return match->mode == MODE_VSCPU ? LIGHT_Y_CPU : LIGHT_Y;
+}
+
+static void port_MatchLightHud(const PortMatch *match) {
+    s32 top = port_MatchLightY(match);
+    s32 count = match->count;
+    s32 step = count > 8 ? LIGHT_PIP * 8 / count : LIGHT_PIP;
+    s32 w = LIGHT_LABEL + count * step + 2;
+    s32 mid = top + LIGHT_H / 2;
+
+    /* a faint band under each side's, that they read over any stage */
+    port_MatchRect(LIGHT_LEFT - 3, top, w, LIGHT_H, COLOR_LIGHT);
+    port_MatchRect(LIGHT_RIGHT + 3 - w, top, w, LIGHT_H, COLOR_LIGHT);
+    port_MatchText(LIGHT_LEFT, top + LIGHT_H - 2, SIZE_HUD - 1, PORT_FACE_BOLD,
+                   "1P", COLOR_SIDE_1, -1);
+    port_MatchText(LIGHT_RIGHT, top + LIGHT_H - 2, SIZE_HUD - 1, PORT_FACE_BOLD,
+                   match->mode == MODE_VSCPU ? "CPU" : "2P", COLOR_SIDE_2, 1);
+    port_MatchPips(LIGHT_LEFT + LIGHT_LABEL + step / 2 - 2, mid, step,
+                   LIGHT_PIP_R, count, port_MatchHas(match, 0), COLOR_SIDE_1);
+    port_MatchPips(
+        LIGHT_RIGHT - LIGHT_LABEL - step / 2 + 2 -
+            (match->mode == MODE_VSCPU ? 6 : 0),
+        mid, -step, LIGHT_PIP_R, count, port_MatchHas(match, 1), COLOR_SIDE_2);
+}
+
+/* The wounds a fight's winner takes into the next, in a few words, or
+ * nothing ("" when he is unhurt). */
+static void port_MatchWoundWords(
+    char *out, s32 room, const PortMatch *match, s32 side) {
+    const s8 *wounds = match->wounds[side];
+    const char *parts[PORT_WOUNDS];
+    s32 n = 0;
+    s32 i;
+
+    out[0] = 0;
+    if (!match->wounds_kept[side]) {
+        return;
     }
-    port_MatchRect(HUD_X, HUD_Y, HUD_W, HUD_H, COLOR_STRIP);
-    port_MatchFrame(HUD_X, HUD_Y, HUD_W, HUD_H, COLOR_EDGE);
-    port_MatchRuleName(rule, sizeof(rule), match->rule, count);
-    port_MatchText(GAME_W / 2, HUD_BASE - 1, SIZE_HUD, PORT_FACE_BOLD, rule,
-                   COLOR_GOLD, 0);
-    port_MatchText(HUD_X + 4, HUD_BASE - 1, SIZE_HUD - 1, PORT_FACE_BOLD, "1P",
-                   COLOR_SIDE_1, -1);
-    port_MatchText(
-        HUD_X + HUD_W - 4, HUD_BASE - 1, SIZE_HUD - 1, PORT_FACE_BOLD,
-        match->mode == MODE_VSCPU ? "CPU" : "2P", COLOR_SIDE_2, 1);
-    /* the first side's from its name inwards, the second's likewise */
-    port_MatchPips(HUD_X + HUD_INSET + 16, HUD_Y + HUD_H / 2, step, HUD_PIP_R,
-                   count, port_MatchHas(match, 0), COLOR_SIDE_1);
-    port_MatchPips(HUD_X + HUD_W - HUD_INSET - 20, HUD_Y + HUD_H / 2, -step,
-                   HUD_PIP_R, count, port_MatchHas(match, 1), COLOR_SIDE_2);
+    if (wounds[PORT_WOUND_LEGS] > 0) {
+        parts[n++] = "leg";
+    }
+    if (wounds[PORT_WOUND_ARM] > 0) {
+        parts[n++] = "sword arm";
+    }
+    if (!wounds[PORT_WOUND_OFF_ARM_OK]) {
+        parts[n++] = "off arm";
+    }
+    if (wounds[PORT_WOUND_BODY] > 0) {
+        parts[n++] = "body";
+    }
+    for (i = 0; i < n; i++) {
+        size_t used = strlen(out);
+
+        snprintf(out + used, (size_t)room - used, "%s%s", i == 0 ? "" : ", ",
+                 parts[i]);
+    }
 }
 
 static void port_MatchCard(const PortMatch *match) {
@@ -299,8 +342,17 @@ static void port_MatchCard(const PortMatch *match) {
                            : "Both fell: a draw, no point",
                        COLOR_TEXT, 0);
     } else {
-        snprintf(line, sizeof(line), "%s takes the fight. Next fight...",
-                 names[match->last == PORT_MATCH_WON_P2]);
+        char wounds[48];
+
+        port_MatchWoundWords(
+            wounds, sizeof(wounds), match, match->last == PORT_MATCH_WON_P2);
+        if (wounds[0] != 0) {
+            snprintf(line, sizeof(line), "%s takes the fight, wounded: %s",
+                     names[match->last == PORT_MATCH_WON_P2], wounds);
+        } else {
+            snprintf(line, sizeof(line), "%s takes the fight. Next fight...",
+                     names[match->last == PORT_MATCH_WON_P2]);
+        }
         port_MatchText(GAME_W / 2, CARD_LINE, SIZE_LINE, PORT_FACE_TEXT, line,
                        COLOR_TEXT, 0);
     }
@@ -364,85 +416,14 @@ static void port_MatchCrewSlot(const PortMatch *match, s32 side, s32 place,
     }
 }
 
-/* The fighter of a side in play, and its weapon. */
-static void port_MatchCrewNow(
-    char *out, s32 room, const PortMatch *match, s32 side) {
-    s32 place = match->count - match->lives[side];
-
-    if (place >= match->count) {
-        place = match->count - 1;
-    }
-    snprintf(out, (size_t)room, "%s, %s",
-             port_MatchCrewName(match->crew[side][place].fighter),
-             port_NameWeapon(match->crew[side][place].weapon));
-}
-
-/* The strip over a fight of a Crew match: across the whole top, each
- * side's label and fighter in play, the rule between them, and under them
- * each crew's names, the first's from the left, the second's from the
- * right; two rows of them for a crew of more than five. */
+/* The strip over the select screen's foot and the pick's rows: names to
+ * a row, two rows for a crew of more than five. */
 #define CREW_HUD_X 16
 #define CREW_HUD_W 608
-#define CREW_HUD_HEAD 13
-#define CREW_HUD_ROW 10
 #define CREW_HUD_SIDE 280 /* each side's names, from its end inwards */
 #define CREW_SIZE_NAME 7
 
 static s32 port_MatchCrewRows(s32 count) { return count > 5 ? 2 : 1; }
-
-static s32 port_MatchCrewHudH(const PortMatch *match) {
-    return CREW_HUD_HEAD + 5 + port_MatchCrewRows(match->count) * CREW_HUD_ROW;
-}
-
-/* The strip's top: versus the CPU under the game's own count of the
- * opponents, which is at the top right. */
-#define CREW_HUD_Y_CPU 38
-
-static s32 port_MatchCrewHudY(const PortMatch *match) {
-    return match->mode == MODE_VSCPU ? CREW_HUD_Y_CPU : HUD_Y;
-}
-
-static void port_MatchCrewHud(const PortMatch *match) {
-    char rule[24];
-    char now[48];
-    char fit[48];
-    s32 top = port_MatchCrewHudY(match);
-    s32 h = port_MatchCrewHudH(match);
-    s32 rows = port_MatchCrewRows(match->count);
-    s32 per_row = (match->count + rows - 1) / rows;
-    s32 slot = CREW_HUD_SIDE / per_row;
-    s32 right = CREW_HUD_X + CREW_HUD_W - 6;
-    s32 place;
-
-    port_MatchRect(CREW_HUD_X, top, CREW_HUD_W, h, COLOR_STRIP);
-    port_MatchFrame(CREW_HUD_X, top, CREW_HUD_W, h, COLOR_EDGE);
-    port_MatchRuleName(rule, sizeof(rule), match->rule, match->count);
-    port_MatchText(GAME_W / 2, top + CREW_HUD_HEAD - 1, SIZE_HUD,
-                   PORT_FACE_BOLD, rule, COLOR_GOLD, 0);
-    port_MatchText(CREW_HUD_X + 6, top + CREW_HUD_HEAD - 1, SIZE_HUD - 1,
-                   PORT_FACE_BOLD, "1P", COLOR_SIDE_1, -1);
-    port_MatchText(right, top + CREW_HUD_HEAD - 1, SIZE_HUD - 1, PORT_FACE_BOLD,
-                   match->mode == MODE_VSCPU ? "CPU" : "2P", COLOR_SIDE_2, 1);
-    port_MatchCrewNow(now, sizeof(now), match, 0);
-    port_MatchFit(fit, sizeof(fit), now, SIZE_HUD - 1, PORT_FACE_BOLD, 200);
-    port_MatchText(CREW_HUD_X + 30, top + CREW_HUD_HEAD - 1, SIZE_HUD - 1,
-                   PORT_FACE_BOLD, fit, COLOR_TEXT, -1);
-    port_MatchCrewNow(now, sizeof(now), match, 1);
-    port_MatchFit(fit, sizeof(fit), now, SIZE_HUD - 1, PORT_FACE_BOLD, 200);
-    port_MatchText(right - 30, top + CREW_HUD_HEAD - 1, SIZE_HUD - 1,
-                   PORT_FACE_BOLD, fit, COLOR_TEXT, 1);
-    port_MatchRect(CREW_HUD_X + 6, top + CREW_HUD_HEAD + 2, CREW_HUD_W - 12, 1,
-                   COLOR_EDGE);
-    for (place = 0; place < match->count; place++) {
-        s32 col = place % per_row;
-        s32 y = top + CREW_HUD_HEAD + 2 + (place / per_row + 1) * CREW_HUD_ROW;
-
-        port_MatchCrewSlot(match, 0, place, CREW_HUD_X + 6 + col * slot, y,
-                           slot - 4, CREW_SIZE_NAME, -1);
-        port_MatchCrewSlot(match, 1, place, right - col * slot, y, slot - 4,
-                           CREW_SIZE_NAME, 1);
-    }
-}
 
 /* The card after a fight of a Crew match: each crew as a column of its
  * places, fallen, in play or waiting, and what the fight came to. */
@@ -456,7 +437,7 @@ static void port_MatchCrewHud(const PortMatch *match) {
 #define CREW_CARD_SIDE 100 /* each column's middle from the screen's */
 
 static s32 port_MatchCrewCardH(const PortMatch *match) {
-    return CREW_CARD_FIRST + (match->count - 1) * CREW_CARD_ROW + 30;
+    return CREW_CARD_FIRST + (match->count - 1) * CREW_CARD_ROW + 42;
 }
 
 static void port_MatchCrewCard(const PortMatch *match) {
@@ -523,11 +504,26 @@ static void port_MatchCrewCard(const PortMatch *match) {
         s32 loser = match->last == PORT_MATCH_WON_P1;
         s32 next = match->count - match->lives[loser];
 
+        char wounds[48];
+
         snprintf(
             line, sizeof(line), "%s takes the fight. %s comes in",
             names[!loser],
             port_MatchCrewName(
                 match->crew[loser][next < match->count ? next : 0].fighter));
+        port_MatchWoundWords(wounds, sizeof(wounds), match, !loser);
+        if (wounds[0] != 0) {
+            char stays[96];
+
+            snprintf(
+                stays, sizeof(stays), "%s stays, wounded: %s",
+                port_MatchCrewName(
+                    match->crew[!loser][match->count - match->lives[!loser]]
+                        .fighter),
+                wounds);
+            port_MatchText(GAME_W / 2, bottom - 12, SIZE_LINE - 1,
+                           PORT_FACE_TEXT, stays, COLOR_STRUCK, 0);
+        }
     }
     port_MatchText(
         GAME_W / 2, bottom, SIZE_LINE, PORT_FACE_TEXT, line, COLOR_TEXT, 0);
@@ -537,6 +533,47 @@ static void port_MatchCrewCard(const PortMatch *match) {
  * picked: each crew so far, the place being picked marked. */
 #define CREW_PICK_Y 202
 #define CREW_PICK_H 36
+/* And over the grid, a name a crew already has, greyed and tagged with
+ * its side: the grid's names (select.c, GRID_COL_X, GRID_ROW_PITCH and
+ * PANEL_Y) stand from these places, measured on the screen. */
+#define PICK_AREA_Y 120
+#define GRID_NAME_X 98
+#define GRID_NAME_Y 128
+#define GRID_NAME_W 80
+#define GRID_NAME_H 12
+#define GRID_NAME_PITCH 16
+#define GRID_NAME_COLS 4
+#define GRID_NAME_ROWS 5
+#define COLOR_GREYED 0xC8D6CFC2U
+
+static s32 port_MatchGridX(s32 col) { return col * 116 + (col >> 1) * 20; }
+
+static void port_MatchCrewGrid(void) {
+    s32 row;
+    s32 col;
+
+    for (row = 0; row < GRID_NAME_ROWS; row++) {
+        for (col = 0; col < GRID_NAME_COLS; col++) {
+            s32 marks = port_MatchCrewMarks(row, col);
+            s32 x = GRID_NAME_X + port_MatchGridX(col);
+            s32 y = GRID_NAME_Y + row * GRID_NAME_PITCH;
+            s32 side;
+
+            if (marks == 0) {
+                continue;
+            }
+            port_MatchRect(x, y, GRID_NAME_W, GRID_NAME_H, COLOR_GREYED);
+            for (side = 0; side < 2; side++) {
+                if (marks & (1 << side)) {
+                    port_MatchText(
+                        x + GRID_NAME_W - 14 + side * 12, y + GRID_NAME_H - 2,
+                        SIZE_HUD - 2, PORT_FACE_BOLD, side == 0 ? "1P" : "2P",
+                        side == 0 ? COLOR_SIDE_1 : COLOR_SIDE_2, 1);
+                }
+            }
+        }
+    }
+}
 
 static void port_MatchCrewPick(const PortMatch *match) {
     char line[48];
@@ -549,6 +586,7 @@ static void port_MatchCrewPick(const PortMatch *match) {
     s32 side;
     s32 place;
 
+    port_MatchCrewGrid();
     port_MatchRect(
         CREW_HUD_X, CREW_PICK_Y, CREW_HUD_W, CREW_PICK_H, COLOR_PANEL);
     port_MatchFrame(
@@ -604,6 +642,92 @@ static void port_MatchCrewPick(const PortMatch *match) {
     }
 }
 
+/* ---- the rule's page, before the first select ---- */
+
+#define RULE_X 110
+#define RULE_Y 40
+#define RULE_W 420
+#define RULE_H 156
+#define RULE_TITLE 22 /* from the page's top */
+#define RULE_FIRST 50 /* the first row's baseline */
+#define RULE_ROW 20
+#define RULE_ABOUT 100 /* the rule's words */
+#define RULE_FOOT 146
+#define COLOR_SHADE 0xA0000000U
+#define COLOR_ROW 0x60E6C877U
+
+static const char * const g_match_rule_words[PORT_MATCH_RULES][2] = {
+    {"One fight, as the original game plays it.", ""},
+    {"Each side has a number of lives; a fight lost takes one.",
+     "The winner keeps his wounds into the next fight."},
+    {"Fights until a side has won the number.", "Every fight starts unhurt."},
+    {"Each side picks a crew of different fighters: its lives.",
+     "The winner stays, wounds and all; the loser's next comes in."},
+};
+
+static void port_MatchRulePage(const PortMatch *match) {
+    char value[32];
+    s32 rule = match->page_rule < PORT_MATCH_RULES ? match->page_rule : 0;
+    s32 rows = rule == PORT_MATCH_SINGLE ? 1 : PORT_MATCH_ROWS;
+    s32 row;
+
+    port_MatchRect(0, 0, GAME_W, GAME_H, COLOR_SHADE);
+    port_MatchRect(RULE_X, RULE_Y, RULE_W, RULE_H, COLOR_PANEL);
+    port_MatchFrame(RULE_X, RULE_Y, RULE_W, RULE_H, COLOR_EDGE);
+    port_MatchText(GAME_W / 2, RULE_Y + RULE_TITLE, SIZE_TITLE, PORT_FACE_TITLE,
+                   "Battle type", COLOR_GOLD, 0);
+    port_MatchRect(
+        RULE_X + 20, RULE_Y + RULE_TITLE + 5, RULE_W - 40, 1, COLOR_EDGE);
+    for (row = 0; row < rows; row++) {
+        s32 y = RULE_Y + RULE_FIRST + row * RULE_ROW;
+        s32 is_on = match->rule_row == row;
+        const char *label;
+
+        if (row == PORT_MATCH_ROW_RULE) {
+            label = "Rule";
+            port_MatchRuleName(value, sizeof(value), rule, 0);
+            if (rule != PORT_MATCH_SINGLE) {
+                /* the name alone: the number is the next row's */
+                char *space = strrchr(value, ' ');
+
+                if (space != NULL) {
+                    *space = 0;
+                }
+            }
+        } else {
+            label = rule == PORT_MATCH_STOCK      ? "Lives"
+                    : rule == PORT_MATCH_FIRST_TO ? "Wins"
+                                                  : "Crew size";
+            snprintf(value, sizeof(value), "%d",
+                     (int)(rule == PORT_MATCH_CREW ? match->page_crew
+                                                   : match->page_count));
+        }
+        if (is_on) {
+            port_MatchRect(RULE_X + 16, y - 12, RULE_W - 32, 16, COLOR_ROW);
+        }
+        port_MatchText(RULE_X + 30, y, SIZE_NAME + 1, PORT_FACE_BOLD, label,
+                       is_on ? COLOR_GOLD : COLOR_TEXT, -1);
+        port_MatchText(RULE_X + RULE_W - 30, y, SIZE_NAME + 1, PORT_FACE_BOLD,
+                       ">", is_on ? COLOR_GOLD : COLOR_DIM, 1);
+        port_MatchText(RULE_X + RULE_W - 130, y, SIZE_NAME + 1, PORT_FACE_BOLD,
+                       "<", is_on ? COLOR_GOLD : COLOR_DIM, -1);
+        port_MatchText(RULE_X + RULE_W - 80, y, SIZE_NAME + 1, PORT_FACE_BOLD,
+                       value, COLOR_TEXT, 0);
+    }
+    port_MatchText(GAME_W / 2, RULE_Y + RULE_ABOUT, SIZE_LINE - 1,
+                   PORT_FACE_TEXT, g_match_rule_words[rule][0], COLOR_DIM, 0);
+    port_MatchText(GAME_W / 2, RULE_Y + RULE_ABOUT + 12, SIZE_LINE - 1,
+                   PORT_FACE_TEXT, g_match_rule_words[rule][1], COLOR_DIM, 0);
+    if (port_SessionIsOn()) {
+        port_MatchText(
+            GAME_W / 2, RULE_Y + RULE_FOOT - 16, SIZE_LINE - 1, PORT_FACE_BOLD,
+            "Player 1, the host, chooses", COLOR_SIDE_1, 0);
+    }
+    port_MatchText(
+        GAME_W / 2, RULE_Y + RULE_FOOT, SIZE_LINE - 1, PORT_FACE_TEXT,
+        "Cross: to the Character Select    Triangle: back", COLOR_TEXT, 0);
+}
+
 /* ---- what the window asks ---- */
 
 /* What is shown, as one number: the look and everything it draws. */
@@ -616,6 +740,22 @@ static s32 port_MatchKey(s32 shown, const PortMatch *match) {
     const u8 *byte = &match->crew[0][0].fighter;
     s32 i;
 
+    if (shown == PORT_MATCH_SHOWN_RULE) {
+        return shown | match->page_rule << 3 | match->rule_row << 6 |
+               match->page_count << 8 | match->page_crew << 12 |
+               port_SessionIsOn() << 16;
+    }
+    if (shown == PORT_MATCH_SHOWN_HUD) {
+        return key;
+    }
+    for (i = 0; i < 2; i++) {
+        key ^= (s32)((u32)(match->wounds_kept[i] * 0x10 |
+                           match->wounds[i][PORT_WOUND_LEGS] * 0x3 |
+                           match->wounds[i][PORT_WOUND_ARM] * 0x5 |
+                           match->wounds[i][PORT_WOUND_BODY] * 0x7 |
+                           match->wounds[i][PORT_WOUND_OFF_ARM_OK])
+                     << (27 + i * 2));
+    }
     if (match->rule != PORT_MATCH_CREW && shown != PORT_MATCH_SHOWN_PICK) {
         return key;
     }
@@ -632,23 +772,32 @@ static s32 port_MatchKey(s32 shown, const PortMatch *match) {
 /* Where a look is, in the game's places. */
 static void port_MatchArea(
     s32 shown, const PortMatch *match, s32 *x, s32 *y, s32 *w, s32 *h) {
-    if (shown == PORT_MATCH_SHOWN_PICK) {
+    if (shown == PORT_MATCH_SHOWN_RULE) {
+        *x = 0;
+        *y = 0;
+        *w = GAME_W;
+        *h = GAME_H;
+    } else if (shown == PORT_MATCH_SHOWN_PICK) {
+        /* the strip, and the grid's names over it */
         *x = CREW_HUD_X;
-        *y = CREW_PICK_Y;
+        *y = PICK_AREA_Y;
         *w = CREW_HUD_W;
-        *h = CREW_PICK_H;
+        *h = CREW_PICK_Y + CREW_PICK_H - PICK_AREA_Y;
+    } else if (shown == PORT_MATCH_SHOWN_HUD) {
+        *x = LIGHT_AREA_X;
+        *y = port_MatchLightY(match);
+        *w = LIGHT_AREA_W;
+        *h = LIGHT_H;
     } else if (match->rule == PORT_MATCH_CREW) {
-        *x = shown == PORT_MATCH_SHOWN_HUD ? CREW_HUD_X : CREW_CARD_X;
-        *y = shown == PORT_MATCH_SHOWN_HUD ? port_MatchCrewHudY(match)
-                                           : CREW_CARD_Y;
-        *w = shown == PORT_MATCH_SHOWN_HUD ? CREW_HUD_W : CREW_CARD_W;
-        *h = shown == PORT_MATCH_SHOWN_HUD ? port_MatchCrewHudH(match)
-                                           : port_MatchCrewCardH(match);
+        *x = CREW_CARD_X;
+        *y = CREW_CARD_Y;
+        *w = CREW_CARD_W;
+        *h = port_MatchCrewCardH(match);
     } else {
-        *x = shown == PORT_MATCH_SHOWN_HUD ? HUD_X : CARD_X;
-        *y = shown == PORT_MATCH_SHOWN_HUD ? HUD_Y : CARD_Y;
-        *w = shown == PORT_MATCH_SHOWN_HUD ? HUD_W : CARD_W;
-        *h = shown == PORT_MATCH_SHOWN_HUD ? HUD_H : CARD_H;
+        *x = CARD_X;
+        *y = CARD_Y;
+        *w = CARD_W;
+        *h = CARD_H;
     }
 }
 
@@ -694,16 +843,14 @@ s32 port_MatchPixels(
             return FALSE;
         }
         memset(g_match_page.pixels, 0, (size_t)need * sizeof(u32));
-        if (shown == PORT_MATCH_SHOWN_PICK) {
+        if (shown == PORT_MATCH_SHOWN_RULE) {
+            port_MatchRulePage(match);
+        } else if (shown == PORT_MATCH_SHOWN_PICK) {
             port_MatchCrewPick(match);
-        } else if (match->rule == PORT_MATCH_CREW) {
-            if (shown == PORT_MATCH_SHOWN_HUD) {
-                port_MatchCrewHud(match);
-            } else {
-                port_MatchCrewCard(match);
-            }
         } else if (shown == PORT_MATCH_SHOWN_HUD) {
-            port_MatchHud(match);
+            port_MatchLightHud(match);
+        } else if (match->rule == PORT_MATCH_CREW) {
+            port_MatchCrewCard(match);
         } else {
             port_MatchCard(match);
         }
