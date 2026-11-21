@@ -12,7 +12,6 @@
 #include "common.h"
 #include "port_movie.h"
 #include "port_replay.h"
-#include "port_top_menu.h"
 #include "bb2.h"
 
 /* A pad's packet: a status byte (0 when the pad answered, 0xFF before

@@ -522,6 +522,7 @@ void port_RunSoundBlank(u32 blank) {
     port_MixSound(BLANK_HEAD_FRAMES);
 }
 
+/* A blank's sound with the game's frames stopped (port_spu.h). */
 void port_RunStoppedSound(void) {
     static u32 g_stopped_blanks;
     s32 sound = port_TakeMenuSound();

@@ -196,7 +196,7 @@ static const char g_port_window_usage_end[] =
     "log), --menu-at N[,N...] (what F1 does, at those blanks),\n"
     "--menu-keys WORDS (presses in the settings menu, one a picture: up,\n"
     "down, left, right, accept, back, close, clear, key:NAME, pad:NAME,\n"
-    "shot), --menu-shots FOLDER (where shot keeps the window),\n"
+    "shot, wait:N), --menu-shots FOLDER (where shot keeps the window),\n"
     "--online-at N (the online pages opened at blank N, as Online Play\n"
     "opens them), --online-keys WORDS (presses on them: up, down, left,\n"
     "right, accept, back, delete, shift, done, type:TEXT, shot, wait:N,\n"

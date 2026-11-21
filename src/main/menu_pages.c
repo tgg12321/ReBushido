@@ -1218,6 +1218,8 @@ static void menu_DrawModeCaptions(MenuCtx *ctx, SpriteDraw *draw) {
 #define TOP_TITLE_CELLS_MOST 8
 #endif
 
+/* The top menu's title, its big line and the small one under it; on
+ * ReBushido's main menu its big line alone (above). */
 static void menu_DrawTopTitle(MenuCtx *ctx, SpriteDraw *draw) {
 #if RB_PORT
     static SpriteCell g_line_cells[TOP_TITLE_CELLS_MOST];

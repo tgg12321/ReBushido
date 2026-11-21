@@ -72,6 +72,7 @@ void port_AskMenuSound(s32 sound) {
     }
 }
 
+/* The oldest asked for, taken off the list (port_top_menu.h). */
 s32 port_TakeMenuSound(void) {
     s32 sound;
     s32 i;
