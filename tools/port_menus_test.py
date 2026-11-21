@@ -80,9 +80,15 @@ shot = false
 '''
 FIGHT = '''
 [[checkpoint]]
-name = "select"
-when = "menu_page == MENU_PAGE_SELECT"
+name = "rule"
+when = "port_match_rule_page == 1"
 within = 3000
+shot = false
+
+[[checkpoint]]
+name = "grid"
+when = "port_match_rule_page == 0"
+within = 1000
 shot = false
 
 [[checkpoint]]
@@ -120,8 +126,10 @@ MENU_SOUNDS = {'cursor': 3, 'confirm': 1, 'cancel': 2}
 # port_game (tests/play/port_game.toml); Start at its 120th frame, the menu
 # over the pause (--menu-at), and Escape (the pause's Triangle) to go on,
 # counted in blanks: the pause's frames are none of the plan's
-VERSUS = ["menu+60 DOWN", "menu+100 CROSS", "select+280 CROSS", "select+320 P2 CROSS", "select+580 CROSS",
-          "select+620 P2 CROSS", "select+1180 CROSS"]
+# (ReBushido's main menu: the battle type's page first, Cross takes Single
+# fight; docs/PORT.md, "Match rules")
+VERSUS = ["menu+60 DOWN", "menu+100 CROSS", "rule+30 CROSS", "grid+60 CROSS", "grid+70 P2 CROSS",
+          "grid+260 CROSS", "grid+300 P2 CROSS", "grid+860 CROSS"]
 STRIKES = ["fight+50f RIGHT hold 20f", "fight+50f P2 LEFT hold 10f"] + \
     ["fight+%df %s" % (72 + 30 * i, 'CIRCLE' if i % 2 == 0 else 'CROSS') for i in range(28)] + \
     ["fight+%df P2 CIRCLE" % (65 + 35 * i) for i in range(24)]

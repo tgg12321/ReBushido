@@ -9266,8 +9266,16 @@ Menu (the owner, 2026-11-20):
   names would touch every file of the main menu, the match rules and the
   online flow beside another agent's work for little.
 
-**A new page in this look** (the match rules' page before the first
-character select is the next): drawn by the window, it is a `PortLook`
+**The battle type's page** (the match rules' page before the first
+character select, `match_page.c`, `port_MatchRulePage`) is drawn in the
+same look: the select screen under it darkened twice over (its lettering
+is bright), the wide panel, the title "Battle type" over the rule, the
+rows' names in the gold and the row under the cursor in the yellow, each
+value in white with `<` and `>` beside the cursor's, the rule's two lines
+in white and the keys under the panel. Its presses were the game's own
+menu sounds already (`port_MatchRulePageStep`, played by the game).
+
+**A new page in this look**: drawn by the window, it is a `PortLook`
 (`port_LookBegin`, `port_LookPanel` with the backdrop its own unless the
 game draws it, `port_LookTitle`, `port_LookText` with `PORT_LOOK_ROW`
 and `port_LookPulse` for the cursor's row, `port_LookFade`), laid over
