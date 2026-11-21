@@ -9128,6 +9128,206 @@ winner wounded into the second, the match decided at the result's card
 and each player back to the room, the players' hashes alike and the
 spectator's theirs.
 
+## Two on two
+
+ROADMAP 24 (the owner, 2026-11-21: "go ahead"): four fighters in one
+fight, two teams; a button turns a fighter to the other enemy; online.
+`include/port_duo.h` and `src/port/duo.c` (a state file); all of it is
+under `RB_PORT`, and with two on two off the fight is the game's own,
+frame for frame (`fight_Update` hands its frame to `fight_UpdateDuo`
+only while `port_DuoIsOn`).
+
+**How the game holds four.** The game's fight is written for two:
+`g_fighters[2]`, each fighter's `other`, the scratchpad's points of two
+(`FightScratch`), the pair's globals (how far apart, the paired move,
+the blade lock), two model slots, two motion files. Rather than widen
+all of it, each fighter has a place of his own in `g_port_duo`, and the
+fighters a step is about are put into the game's two slots: a **team is
+a slot** (the first pad's team the first slot, the second's the
+second), so a fighter is only ever put beside an enemy, and the game's
+code, which knows nothing of four, runs as it is. What a fighter has
+that is his slot's goes with him (`port_DuoPut`): his `Fighter`, his
+model in the slot (`model_PortPut`), his scratchpad points (weapon,
+second blade, bodies apart, the 22 of the body) and his body points
+(`g_fighter_body_points`), and his frames of the replay's ring. What a
+pair has (`g_fight_distance` and its change, the paired move's seven,
+the falling pair, the blades met, the lock's five) is kept for each of
+the four pairs of enemies (`PortDuoPair`, `port_DuoPairKeep`,
+`port_DuoPairTake`).
+
+**A team is one character and weapon, twice.** Video memory holds two
+characters' textures (the model slots' pages at x 640 and 768; x 896
+up is the effects'), and the RAM two motion files, and a model's
+textures are addressed by its meshes' own texture pages: a third or a
+fourth character has nowhere to go. So a team is two of its first
+fighter's character with his weapon, which the select screen picks as
+it does for one on one. The second's model is a copy of the first's
+(`port_DuoCloneModel`): the `Model` copied and its pointers into itself
+moved (`model_Rebase`, as the arena moves a model), its own nodes,
+matrices and cloth (the cloth's block copied and made again, the cloth
+pool 20 in the port, `CLOTH_COUNT`), the meshes, textures and colour
+tables shared. The copy follows its model when the arena moves it
+(`port_DuoModelMoved`), and the slots' own models go back into them
+before anything may move them (`model_Rebase`, a fight's start:
+`port_DuoModelsHome`). Things that are the slot's and not the fighter's
+stay shared: the face's texture (a team mate's hurt face shows on the
+other's), the point light's target, the model's sound bank (the same
+voice, which it is). The four fighters' primitives overflow the
+console's buffers: in a fight of four the port's larger buffers are the
+game's (`port_DuoPrimBuffers`, at a frame's start), where the run has the
+console's (and the state keeps them, by the pages written).
+
+**A frame** (`fight_UpdateDuo`, fight.c): the side view over all four
+(below); the targets (below); each pair measured (`fight_UpdateDistance`,
+whose paired moves are not begun between two of whom one is held by a
+third, `port_DuoMayPair`); each fighter, 1 to 4, stepped in his slot with
+his target in the other (`fighter_Update`), his pad read: the game's
+two pads as the game reads them, the third and fourth through the
+game's own reader as if they were the slot's half of its pad state
+(`port_DuoReadOwnPad`: the button configuration and the mirroring are
+the slot's), the CPU's its own; R2 and Select are taken out of every
+fighter's pad. Then each pair's blows and bodies (`fight_UpdateFighterPair`):
+a pair held together by a paired move or a lock always, one of whom is
+held by a third never, the fallen not; team mates kept apart by a push
+of their own (`port_DuoKeepMatesApart`). Then the pair the fight rests
+on is put in the slots (`port_DuoEndFrame`) and the frame goes on as
+the game's: the loose objects, the stage's cells for all four, the
+scene, the mode, the fall.
+
+**Targets.** Each fighter targets an enemy, his `other` while he is
+stepped. A press of **R2** (`PADR2`, which the side view's fight never
+reads: only the first person's zoom took it, with L2, and ReBushido has
+no first person) turns him to the other enemy, if he stands and is not
+held by a third; the button is a pad button like any other, so it is
+remapped as every other is (`p1.r2 = ...`, the settings menu's
+Controls). A fighter whose target falls turns to the one left. The CPU
+turns to the other enemy when he is nearer by a third, looking every 30
+of its frames (`port_DuoChooseTargets`). A paired move or a blade lock
+is between two: from its start (`MOVE_EVENT_LOCK` on both, a paired
+move's start asked for in a step, or a throw begun at its distance by
+the pair's measure, `port_DuoMeasured`) until neither is in one, the
+two are held to
+each other (`PortDuo.bound`), each other's target, and neither strikes
+or is struck by anyone else.
+
+**Blows.** A pair's meeting is the game's: either fighter's blade on
+the other's body, guards, clashes, deflections, wounds, the one-hit
+kills, a gun's shot, a thrown thing (`object_HitFighters`, by the slot
+that threw it), all of it between enemies only. Team mates never meet,
+so there is no friendly fire: their blades pass through each other.
+A swing meets whichever enemy it reaches, the target or not (the third
+pad's plan strikes at 2 and its blow lands on 4, who stands beside him).
+No one gives up: the kaishaku (Select) is a scene of two, and Select is
+taken out of every fighter's pad.
+
+**The fall and the end.** A fallen fighter lies and is stepped as the
+game steps one (his death throes, his weapon dropped); the fight goes
+on. `g_fight_winner` is held at nobody while both teams stand. Between
+steps the fight rests on a pair (`PortDuo.rest`): the living, the first
+of each team before the second; once a team has none, the last of it to
+fall and the enemy who has him as his target. So the game's own fall
+(`fight_UpdateDefeat`: two seconds, then the mode), its count of the
+win, the match's (`port_MatchFightOver`: a team out is a side's fight
+lost), the replay and the winner's view all run as they do for two: the
+replay is of that pair (each fighter's frames are kept in a ring of his
+own, and the game's ring is given the resting pair's, all of it as the
+fight is decided), the winner's view of the winner. Both teams out
+within the two seconds is the game's draw (both fallen in the slots).
+
+**The camera** (`port_DuoCameraPoints`) gives the side view
+(`camera_UpdateSideView`) two points and two fighters: along the line
+from the first team's middle to the second's (so the first team stays
+on the left, where the game's pad directions want it), the two ends of
+the fighters to be seen (the living; all four once the fight is
+decided), each end pushed out by half the widest of them off the line,
+so that the distance the view eases to takes in all four; the fighters
+whose ground it looks over are the two at the ends.
+
+**The match.** The rule page has a third row, Fighters: one on one,
+two on two with the CPU's partners, or with four players
+(`PortMatch.page_teams`, `teams`; the window's `teams = one|cpu|pads`,
+`--teams`). Single fight, Stock and First to take it; Crew does not (its
+fighters change between fights; the row is not shown). Two on two's
+fighters start every fight unhurt: no wounds are kept. Stock and First to
+count a team's fight as a side's. A fight's second fighters stand beside
+their firsts, square to the line between the teams, at 1,600 (or 900,
+or behind), where the way is clear and the ground level
+(`port_DuoFindPlace`), the two seconds facing each other as the firsts
+do. Versus the CPU, the CPU's team is its opponent twice, the player's
+partner the CPU's or the third pad's.
+
+**The pads.** The input has four pads (`PORT_INPUT_PADS`): the game's
+two, which its reads see, and the third and fourth, which only two on
+two reads. A replay keeps them (format 2: `CHANGED_THIRD`,
+`CHANGED_FOURTH`; a file of format 1 is read as before). The window
+binds four (`PORT_WINDOW_PADS`): `p3.*` and `p4.*` in rebushido.cfg,
+the third and fourth controllers plugged in as built in, and a page of
+each in the settings menu's Controls. A plan presses `P3` and `P4`.
+
+**The picture.** Remastered draws all four: the fighters' own models
+for each (the views are five, the game's three slots and the two
+copies: `port_DuoViewModel`, fighter_view.c). Over a fight of two on two
+the window lays, as light as the match's strip (match_page.c), a band
+under the game's count of wins (or the match's strip) with each team's
+fighters, `1P`/`3P` and `2P`/`4P` or `CPU`, a pip each filled while he
+stands; and over each standing fighter's head a small tag of the same in
+his team's colour, under it the numbers of the players who have him as
+their target (`port_DuoTagPixels`, laid where the head projects:
+`port_DuoShown`, the renderer's view squashed to half height as the
+frame is). The game's video memory has none of it.
+
+**What it costs.** A fight frame of four steps the fight about twice
+over: `port-rollback`'s fights of four run a step of a fight in 4 to 5
+ms on Linux in WSL (two fighters' about 2 to 3). On the Windows
+program, by `tools/port_bench.py --rollback` (the program without a
+window, port_game's plan, `--rollback-test 8 --rollback-quiet`): a
+frame of the fight run again quietly 0.71 ms one on one
+and 0.98 ms two on two, a state put back 0.08 to 0.09 ms;
+**a rollback of netplay's whole window of 8 frames 5.8 ms one
+on one and 7.9 ms two on two** (the worst 6.8
+and 8.5). The window (`port_bench.py`, the case
+`ra1-2v2`, the fight of four with the CPU's partners, RTX 3090 at 2,560
+by 1,440): beside ra1 run straight after it, on a machine loaded by other
+checkouts' emulators (38 and 40% of the processors busy, so both
+higher than on a quiet one): the window's processor 4.04 ms median and
+7.50 at 95% (ra1 2.00 and 3.36), the card 3.10 and 4.25 (ra1 2.86 and
+4.16), the step's own thread 3.91 (ra1 3.10), 6.6% of the fight's
+blanks over 6.94 ms. The band and the four tags are five overlays a
+picture: drawn through one texture of the card, each written while the
+card still drew from it, they cost the card 4.5 ms a picture, so the
+host's pixels have textures of their own now, none written again for
+three pictures (`port_GlShowPixels`, gl_draw.c: the card 7.45 ms
+median before, 3.10 after).
+
+**How it is proved.** `tools/port_duo.py` (`make port-stage-select`),
+both sizes, the traces the same line for line:
+
+| Plan | What it holds |
+| --- | --- |
+| `retarget` | `--fight` Kannuki against Mikado, every fighter a person's, only the first played: 1 targets 2 as the fight starts, R2 turns him to 4, his blow lands on 4 (counted against 4, by 1, none on 2), 4 falls and 1 is turned to 2 by himself, 2 falls: the second team out, the winner the first, the fight resting on 1 and 2 (the last to fall), the game's fall, replay and menu |
+| `pads` | the third pad: 3 turns from 4 to 2 with his R2 and his blows land (on 4, beside 2) |
+| `menu` | ReBushido's main menu: the rule page to Stock 2 and two on two with the CPU's partners, the grid, the stage; three fights of four, the score's card between, the result's |
+| `cpu` | all four the CPU's: a fight that plays itself to a team out |
+| `second_wins` | the firsts written down (a `poke`), the fight goes on with the seconds, then 3: the second team's win |
+| `draw` | all four written down at once: both teams out, the game's draw |
+| `stock` | `--match stock:2`, the CPU's partners: two fights, the score's card, the next fight with all four up, the result |
+
+`retarget`, `pads` and `cpu` are recorded as replays and played back by
+both sizes with `--replay-check`, every hash the same (and `pads`' input
+of the third pad with them). `make port-rollback` rolls back `retarget`,
+`pads` and `stock` every 24 frames on both sizes, plain and quietly,
+with no difference. Online: NETPLAY.md, section 18.
+
+**What is left.** Teams of two different characters, or different
+weapons, need video memory for a third and fourth character (a model's
+textures are addressed by its meshes' own pages) and two more motion
+files; a wider video memory is a change of the GPU, the side channel and
+the remastered picture alike. Four players on four PCs (NETPLAY.md,
+section 18). A team mate's face and point light are his slot's. A
+fighter left lying by his player on a roof below (the rooftop) may be
+out of his enemies' CPU partners' reach. The owner's eye on the band,
+the tags and the page.
+
 ## ReBushido's main menu
 
 The owner, 2026-11-19: drop the options page at boot, put every setting

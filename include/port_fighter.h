@@ -27,9 +27,10 @@
 typedef __UINTPTR_TYPE__ PortAddress;
 #endif
 
-/* The game's three model slots (MODEL_SLOT_COUNT) and the skeleton every
- * model shares (MODEL_BONE_COUNT, g_model_bones). */
-#define PORT_FIGHTER_SLOTS 3
+/* The game's three model slots (MODEL_SLOT_COUNT), and two on two's two
+ * copies of the first two's models (port_duo.h, port_DuoViewModel); and
+ * the skeleton every model shares (MODEL_BONE_COUNT, g_model_bones). */
+#define PORT_FIGHTER_SLOTS 5
 #define PORT_FIGHTER_BONES 21
 /* What a fighter may hold or wear in a frame, at most. */
 #define PORT_FIGHTER_WEAPONS 8

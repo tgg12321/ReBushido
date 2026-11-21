@@ -777,6 +777,26 @@ PORT_SETTING(match_count,
     .choices = {"1", "2", "3", "4", "5", "7", "9"},
     .shown = {"1", "2", "3", "4", "5", "7", "9"})
 
+/* Two on two (include/port_duo.h; docs/PLAYING.md, "Two on two"): one on
+ * one as the game; or four fighters in two teams, each team two of its
+ * first player's fighter, the second of each the CPU's (cpu) or played
+ * from the third and fourth pads (pads; the CPU's where the team's first
+ * is). The rule page before the select starts at it; versus, versus the
+ * CPU and online, not with Crew. In a session the host's holds. */
+PORT_SETTING(teams,
+    .name = "teams", .value = "one",
+    .note = "one: one on one; cpu: two on two, the\n"
+            "partners the CPU's; pads: two on two, the\n"
+            "partners the third and fourth pads'",
+    .read = PORT_READ_WORDS, .words = {"one", "cpu", "pads"},
+    .is = "one, cpu or pads",
+    .menu = PORT_MENU_GAME, .rank = 77, .takes = PORT_TAKES_NOW,
+    .label = "Teams",
+    .help = "One on one, or two on two: each side two of its fighter, "
+            "the partners the CPU's or the third and fourth pads'; R2 "
+            "turns to the other enemy",
+    .shown = {"One on one", "Two on two, CPU", "Two on two, pads"})
+
 /* The blanks in which the game waits for the disc behind its loading
  * picture are hurried through, not shown at the console's pace
  * (docs/PORT.md, "Quick loading"); 0 shows each as the console would.

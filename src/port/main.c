@@ -243,6 +243,9 @@ static const char g_port_usage[] =
     "  --time-of-day W  stage (the default), dawn, day, dusk or night:\n"
     "                 the time the stages start at (the window's\n"
     "                 time_of_day; docs/PLAYING.md, \"The time of day\")\n"
+    "  --teams one|cpu|pads  one on one, or two on two with the CPU's\n"
+    "                 partners or the third and fourth pads' (the\n"
+    "                 window's teams; docs/PLAYING.md, \"Two on two\")\n"
     "  --match single|stock:N|first_to:N|crew:N  the match rule the stage\n"
     "                 select starts at, N 1 to 9, a crew's 2 to 8 (five\n"
     "                 if not given; the window's match_rule and\n"
@@ -615,6 +618,18 @@ s32 port_Main(s32 argc, char **argv) {
             port_SetStageTimeDefault(time);
         } else if (port_TextsEqual(word, "--match")) {
             port_ParseMatch(i + 1 < argc ? argv[++i] : "");
+        } else if (port_TextsEqual(word, "--teams") && has_value) {
+            const char *teams = argv[++i];
+
+            if (port_TextsEqual(teams, "one")) {
+                port_SetTeamsDefault(PORT_TEAMS_ONE);
+            } else if (port_TextsEqual(teams, "cpu")) {
+                port_SetTeamsDefault(PORT_TEAMS_TWO_CPU);
+            } else if (port_TextsEqual(teams, "pads")) {
+                port_SetTeamsDefault(PORT_TEAMS_TWO_PADS);
+            } else {
+                port_UsageError("--teams takes one, cpu or pads, not ", teams);
+            }
         } else if (port_TextsEqual(word, "--dump-stages")) {
             port_SetStageDumpFolder(argv[++i]);
         } else if (port_TextsEqual(word, "--weapon")) {
@@ -1112,10 +1127,9 @@ s32 port_Main(s32 argc, char **argv) {
                        (u32)(g_port_state_bss_end - g_port_game_bss));
 #if RB_REMASTER_VIEW
     /* ... and the port's own buffers of primitives, where this run draws
-     * more of the stage than the console does (port_remaster.h) */
-    if (port_RemasterPrimBufferBytes() != 0) {
-        port_AddLinkRegion(PORT_PRIMS_ADDR, PORT_PRIMS_SIZE);
-    }
+     * more of the stage than the console does (port_remaster.h), or a
+     * fight of two on two draws four fighters (port_duo.h) */
+    port_AddLinkRegion(PORT_PRIMS_ADDR, PORT_PRIMS_SIZE);
 #endif
     /* the game, a step at a time (step.c): the rollback self-test has
      * its turn between two */

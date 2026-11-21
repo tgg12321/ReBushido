@@ -228,11 +228,27 @@ void port_HoldFightMusic(u32 bits) {
 typedef struct {
     s32 rule;
     s32 count;
+    s32 teams; /* PORT_TEAMS_... (port_duo.h) */
     s32 held;
 } PortMatchAsked;
 
 static PortMatchAsked g_port_match_asked = {
-    PORT_MATCH_SINGLE, PORT_MATCH_COUNT_DEFAULT, FALSE};
+    PORT_MATCH_SINGLE, PORT_MATCH_COUNT_DEFAULT, PORT_TEAMS_ONE, FALSE};
+
+/* the teams in the session's word, over the rule and its number */
+#define MATCH_TEAMS_SHIFT 16
+
+void port_SetTeamsDefault(s32 teams) {
+    if (g_port_match_asked.held) {
+        return;
+    }
+    g_port_match_asked.teams =
+        teams >= PORT_TEAMS_ONE && teams < PORT_TEAMS_CHOICES
+            ? teams
+            : PORT_TEAMS_ONE;
+}
+
+s32 port_GetTeamsDefault(void) { return g_port_match_asked.teams; }
 
 /* The window's or the command line's rule and number, each kept to what
  * there is; nothing once the session holds the host's. */
@@ -256,7 +272,8 @@ s32 port_GetMatchCount(void) { return g_port_match_asked.count; }
 
 u32 port_MatchBits(void) {
     return (u32)g_port_match_asked.rule |
-           (u32)g_port_match_asked.count << MATCH_COUNT_SHIFT;
+           (u32)g_port_match_asked.count << MATCH_COUNT_SHIFT |
+           (u32)g_port_match_asked.teams << MATCH_TEAMS_SHIFT;
 }
 
 /* The rule as it was before a ranked match held the ladder's
@@ -271,5 +288,6 @@ void port_HoldMatch(u32 bits) {
     g_port_match_asked.held = FALSE;
     port_SetMatchDefault((s32)(bits & MATCH_BYTE),
                          (s32)(bits >> MATCH_COUNT_SHIFT & MATCH_BYTE));
+    port_SetTeamsDefault((s32)(bits >> MATCH_TEAMS_SHIFT & MATCH_BYTE));
     g_port_match_asked.held = TRUE;
 }

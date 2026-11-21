@@ -850,6 +850,11 @@ void fight_Init(void) {
     s32 i;
     s32 load_addr;
 
+#if RB_PORT
+    /* two on two's fighters out of the slots, the slots' own models back
+     * (port_duo.h) */
+    port_DuoFightBegin();
+#endif
     snd_Reset();
     if (g_disp_loading_screen != LOADING_SCREEN_STAGE_CARD) {
         disp_Blank();
@@ -1005,6 +1010,10 @@ void fight_Init(void) {
             fighter_StartMove(1, move, 0);
         }
     }
+#if RB_PORT
+    /* two on two: each team's second fighter (port_duo.h) */
+    port_DuoFightSet();
+#endif
     g_fight_defeat_frames = 0;
     g_fight_winner = FIGHT_NOBODY;
     camera_InitSideView(&g_fighters[0], &g_fighters[1]);
@@ -1148,12 +1157,78 @@ static void camera_QueueTinyModel(void) {
 
 /* ---- the fight's screens, continued ---- */
 
+#if RB_PORT
+/* A frame of a fight of two on two (port_duo.h), as fight_Update's of
+ * two: the side view over all four, then for each of the four pairs of
+ * enemies their distance, each fighter's step beside his target, each
+ * pair's blows and bodies, the team mates kept apart; the fight rests on
+ * two of them for the rest of the frame and for the game's own fall. */
+static void fight_UpdateDuo(void) {
+    PadState pad;
+    Vec3 first_point;
+    Vec3 second_point;
+    Fighter *first_fighter;
+    Fighter *second_fighter;
+    s32 who;
+    s32 pair;
+
+    g_fight_squashed_view = scene_GetSquashedView();
+    port_DuoCameraPoints(
+        &first_point, &second_point, &first_fighter, &second_fighter);
+    camera_UpdateSideView(
+        &first_point, &second_point, first_fighter, second_fighter);
+    camera_BeginFightScene();
+    replay_BeginFrame();
+    port_DuoChooseTargets();
+    for (pair = 0; pair < PORT_DUO_PAIRS; pair++) {
+        if (port_DuoPutPair(pair, 0)) {
+            fight_UpdateDistance();
+            port_DuoMeasured();
+        }
+    }
+    for (who = 0; who < PORT_DUO_FIGHTERS; who++) {
+        port_DuoPutFighter(who, &pad);
+        fighter_Update(PORT_DUO_SLOT(who), &pad);
+        port_DuoFighterDone(who);
+    }
+    for (pair = 0; pair < PORT_DUO_PAIRS; pair++) {
+        if (port_DuoPutPair(pair, 1)) {
+            port_DuoBeforeMeet();
+            fight_UpdateFighterPair();
+            port_DuoAfterMeet();
+        }
+    }
+    port_DuoKeepMatesApart();
+    port_DuoEndFrame();
+    object_Update();
+    object_UpdateDirt();
+    replay_AdvanceFrame();
+    for (who = 0; who < PORT_DUO_FIGHTERS; who++) {
+        Vec3 at;
+
+        port_DuoPlace(who, &at);
+        stage_OpenCellsTo(at.x, at.z);
+    }
+    /* the debug view leaves the stage out */
+    scene_End((g_fight_debug_view ^ 1) != 0);
+    fight_UpdateMode();
+    snd_UpdateStageSounds();
+    fight_UpdateDefeat();
+}
+#endif
+
 /* SCREEN_FIGHT_UPDATE: a frame of the fight. The camera follows the
  * fighters, each fighter is played from its pad, the two are tested against
  * each other, and the mode has its say. */
 void fight_Update(void) {
     PadState pad;
 
+#if RB_PORT
+    if (port_DuoIsOn()) {
+        fight_UpdateDuo();
+        return;
+    }
+#endif
     g_fight_squashed_view = scene_GetSquashedView();
     camera_UpdateSideView(
         &g_fighters[0].camera_target, &g_fighters[1].camera_target,

@@ -143,7 +143,7 @@ static void port_FighterNoteTiny(const SceneNode *node) {
 
     if (node->mesh >= TINY_BODY_MESHES ||
         (g_tiny.model_id >= 0 && g_tiny.serial == g_serial) || slot < 0 ||
-        slot >= PORT_FIGHTER_SLOTS) {
+        slot >= MODEL_SLOT_COUNT) {
         return;
     }
     model = model_Get(slot);
@@ -207,13 +207,22 @@ static void port_FighterNoteCloth(s32 slot, const SceneNode *node) {
     }
 }
 
+/* The model of a view: the game's slot's, or with two on two on the
+ * fighter's own whichever slot he is in (port_DuoViewModel). */
+static Model *port_FighterViewModel(s32 slot) {
+    if (port_DuoIsOn()) {
+        return port_DuoViewModel(slot);
+    }
+    return slot < MODEL_SLOT_COUNT ? model_Get(slot) : NULL;
+}
+
 s32 port_FighterLoadedModel(s32 slot) {
     Model *model;
 
     if (slot < 0 || slot >= PORT_FIGHTER_SLOTS) {
         return -1;
     }
-    model = model_Get(slot);
+    model = port_FighterViewModel(slot);
     return model != NULL ? model->model_id : -1;
 }
 
@@ -245,7 +254,7 @@ void port_FighterNoteNode(PortAddress at) {
         return;
     }
     for (slot = 0; slot < PORT_FIGHTER_SLOTS; slot++) {
-        Model *model = model_Get(slot);
+        Model *model = port_FighterViewModel(slot);
 
         /* a body drawn as outlines (model_SetOutline: the fighter looked
          * through in the first-person view) is the game's own lines: no

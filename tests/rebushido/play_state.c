@@ -85,6 +85,8 @@ void test_Main(void) {
     WHERE(PortMatch, wounds[1][2]);
     WHERE(PortMatch, wounds[1][3]);
     WHERE(PortMatch, to_top);
+    WHERE(PortMatch, page_teams);
+    WHERE(PortMatch, teams);
     /* the hit tests' scratch, which first_frame_sweep.toml reads by
      * address: a sweep's far end as it is and as it was */
     CHECK_EQ(SCRATCHPAD, 0x1F800000);

@@ -98,6 +98,10 @@ static void model_SetShadowHeight(ModelNode *shadow, s32 ground_y) {
 
 void model_ClearAll(void) {
     s32 i;
+#if RB_PORT
+    /* two on two's copies of the models are gone with them (port_duo.h) */
+    port_DuoForget();
+#endif
     for (i = 0; i < MODEL_SLOT_COUNT; i++) {
         g_models[i] = NULL;
         g_model_texture_requests[i] = 0;
@@ -721,6 +725,11 @@ void model_Rebase(s32 slot, s32 delta) {
     Model **entry;
     Model *model;
     s32 i;
+#if RB_PORT
+    /* the slot's own model, not a copy two on two has put there
+     * (port_duo.h) */
+    port_DuoModelsHome();
+#endif
     entry = &g_models[slot];
     model = (Model *)((u8 *)*entry + delta);
     *entry = model;
@@ -765,6 +774,10 @@ static void model_RebaseNodeParents(s32 delta, ModelNode *node, s32 count) {
 /* ---- the model slots ---- */
 
 Model *model_Get(s32 slot) { return g_models[slot]; }
+
+#if RB_PORT
+void model_PortPut(s32 slot, Model *model) { g_models[slot] = model; }
+#endif
 
 /* The number of the model in slot `slot`, or -1. Nothing calls it. */
 static s32 model_GetId(s32 slot) {

@@ -189,17 +189,22 @@ extern void port_WaitOneLine(void);
 /* ---- the pads (src/port/pad.c) ---- */
 
 #define PORT_PADS 2
+/* The pads an input has: the game's two, and the third and fourth that
+ * two on two's partners are played from (port_duo.h), which the game's
+ * own reads never see. */
+#define PORT_INPUT_PADS 4
 
 /* What the game reads of both pads at one of its reads: the input of a
  * frame, a value that can be kept, sent and played again (docs/
  * NETPLAY.md, "Input"). The game reads a digital pad's sixteen buttons
- * and never a stick, so that is all there is. */
+ * and never a stick, so that is all there is; the third and fourth pads
+ * are two on two's. */
 typedef struct PortInput {
-    u16 buttons[PORT_PADS]; /* Sony's PAD... masks, a bit set for each held */
-    u8 present[PORT_PADS];  /* 0: the pad's packet says that none answered */
+    u16 buttons[PORT_INPUT_PADS]; /* Sony's PAD... masks, a bit for each held */
+    u8 present[PORT_INPUT_PADS];  /* 0: the pad's packet says none answered */
 } PortInput;
 
-/* A button of pad 0 or 1 goes down or comes up for a run's script; the
+/* A button of pad 0 to 3 goes down or comes up for a run's script; the
  * game sees it from the next vertical blank. `button` is one of Sony's
  * PAD... masks (libetc.h). */
 extern void port_SetPadButton(s32 pad, u32 button, s32 down);

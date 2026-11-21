@@ -62,6 +62,12 @@ typedef ptrdiff_t GLintptr;
  * frame, at the most (gl_load.h): 32 MB, a page of the stage and its levels
  * several times over */
 #define LOAD_BYTES_A_FRAME (32U << 20)
+/* the host's pixels shown over the picture (port_GlShowPixels): this many
+ * textures, so that each overlay of a picture has its own, and none is
+ * written again within HOST_IN_FLIGHT pictures of being drawn from (the
+ * card is a picture or two behind; writing one it still reads waits) */
+#define HOST_TEXTURES 32
+#define HOST_IN_FLIGHT 3
 
 #define GL_FALSE 0
 #define GL_TRUE 1
@@ -557,9 +563,11 @@ static struct {
     /* what shows the picture in a window, and the texture the host's own
      * pixels are given to the card in (port_GlShowPixels) */
     GLuint show_program;
-    GLuint host_texture;
-    s32 host_w;
-    s32 host_h;
+    GLuint host_texture[HOST_TEXTURES];
+    s32 host_w[HOST_TEXTURES];
+    s32 host_h[HOST_TEXTURES];
+    u32 host_used[HOST_TEXTURES]; /* the picture it was last given in */
+    u32 host_picture;             /* the pictures finished */
     s32 scale_x; /* a pixel of video memory is this many of the picture */
     s32 scale_y;
     s32 sample; /* ... and this many of those each way are averaged */
@@ -3935,7 +3943,8 @@ const char *port_GlStart(
     g_gl.show_at_source = glGetUniformLocation(g_gl.show_program, "u_source");
     g_gl.show_at_texture = glGetUniformLocation(g_gl.show_program, "u_texture");
     g_gl.show_at_over = glGetUniformLocation(g_gl.show_program, "u_over");
-    glGenTextures(1, &g_gl.host_texture);
+    glGenTextures(HOST_TEXTURES, g_gl.host_texture);
+    g_gl.host_picture = HOST_IN_FLIGHT;
 
     /* the mirror (gl.h, PORT_GL_VRAM_SHADER) */
     glGenBuffers(1, &g_gl.vram_buffer);
@@ -4201,6 +4210,7 @@ void port_GlFinishFrame(void) {
     if (!g_gl.is_started) {
         return;
     }
+    g_gl.host_picture++;
     port_GlFlush();
     /* the fighters' shadows: the mask, and the ground under them
      * darkened. It is before the picture is averaged down, so the soft
@@ -4432,28 +4442,59 @@ s32 port_GlShowPicture(
     return TRUE;
 }
 
-s32 port_GlShowPixels(
-    const u32 *pixels, s32 pixels_w, s32 pixels_h, s32 window_w, s32 window_h,
-    s32 x, s32 y, s32 w, s32 h, s32 is_linear, s32 is_over) {
-    if (!g_gl.is_started || pixels_w <= 0 || pixels_h <= 0 || w <= 0 ||
-        h <= 0) {
-        return FALSE;
+/* The host's texture for pixels of this size: the longest unused of
+ * this size, if the card is done with it (HOST_IN_FLIGHT), else the
+ * longest unused of all, made this size. Several overlays a picture (two
+ * on two's band and tags) so each have textures of their own, and none
+ * is made again or written while the card may still draw from it. */
+static s32 port_GlHostTexture(s32 pixels_w, s32 pixels_h) {
+    u32 now = g_gl.host_picture;
+    s32 best = 0;
+    s32 same = -1;
+    s32 i;
+
+    for (i = 0; i < HOST_TEXTURES; i++) {
+        if (g_gl.host_w[i] == pixels_w && g_gl.host_h[i] == pixels_h &&
+            (same < 0 ||
+             now - g_gl.host_used[i] > now - g_gl.host_used[same])) {
+            same = i;
+        }
+        if (now - g_gl.host_used[i] > now - g_gl.host_used[best]) {
+            best = i;
+        }
     }
-    glBindTexture(GL_TEXTURE_2D, g_gl.host_texture);
-    if (pixels_w != g_gl.host_w || pixels_h != g_gl.host_h) {
+    if (same >= 0 && now - g_gl.host_used[same] >= HOST_IN_FLIGHT) {
+        best = same;
+    }
+    g_gl.host_used[best] = g_gl.host_picture;
+    glBindTexture(GL_TEXTURE_2D, g_gl.host_texture[best]);
+    if (pixels_w != g_gl.host_w[best] || pixels_h != g_gl.host_h[best]) {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pixels_w, pixels_h, 0, GL_BGRA,
                      GL_UNSIGNED_BYTE, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        g_gl.host_w = pixels_w;
-        g_gl.host_h = pixels_h;
+        g_gl.host_w[best] = pixels_w;
+        g_gl.host_h[best] = pixels_h;
     }
+    return best;
+}
+
+s32 port_GlShowPixels(
+    const u32 *pixels, s32 pixels_w, s32 pixels_h, s32 window_w, s32 window_h,
+    s32 x, s32 y, s32 w, s32 h, s32 is_linear, s32 is_over) {
+    s32 host;
+
+    if (!g_gl.is_started || pixels_w <= 0 || pixels_h <= 0 || w <= 0 ||
+        h <= 0) {
+        return FALSE;
+    }
+    host = port_GlHostTexture(pixels_w, pixels_h);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, pixels_w, pixels_h, GL_BGRA,
                     GL_UNSIGNED_BYTE, pixels);
     port_GlTakeWindow(window_w, window_h);
     port_GlPresent(
-        g_gl.host_texture, pixels_w, pixels_h, 0, 0, pixels_w, pixels_h,
+        g_gl.host_texture[host], pixels_w, pixels_h, 0, 0, pixels_w, pixels_h,
         window_w, window_h, x, y, w, h, is_linear, is_over);
     port_GlLeaveWindow();
     return TRUE;

@@ -115,7 +115,8 @@ enum {
 enum {
     PORT_MATCH_ROW_RULE = 0,
     PORT_MATCH_ROW_COUNT = 1, /* the number, or the crew's size */
-    PORT_MATCH_ROWS = 2
+    PORT_MATCH_ROW_TEAMS = 2, /* one on one or two on two (port_duo.h) */
+    PORT_MATCH_ROWS = 3
 };
 
 typedef struct {
@@ -163,6 +164,11 @@ typedef struct {
     s8 wounds[2][PORT_WOUNDS];
     u8 to_top;     /* the match decided went back to the top menu */
     u8 rule_sides; /* the sides the rule page's select screen picks for */
+    /* Two on two (port_duo.h): the rule page's choice (PORT_TEAMS_...),
+     * what it was last reset to, and the match in play's */
+    u8 page_teams;
+    u8 default_teams;
+    u8 teams;
 } PortMatch;
 
 extern PortMatch g_port_match;
@@ -251,6 +257,9 @@ extern void port_MatchRulePageOpen(
 extern s32 port_MatchRulePageStep(s32 pressed, s32 *leave);
 /* The rule was chosen before this select screen's grid. */
 extern s32 port_MatchRuleFirst(void);
+/* The rule page has the row (PORT_MATCH_ROW_...) for the rule on it: the
+ * number but for the single fight, the teams but for Crew. */
+extern s32 port_MatchRuleHasRow(const PortMatch *match, s32 row);
 /* Stage pages after the crews of a rule-first Crew match are picked:
  * Triangle back to the weapons un-takes the last place. */
 extern void port_MatchCrewStageBack(void);

@@ -93,7 +93,27 @@ MEMBERS = {
     'port_match_arm_p2': 'PortMatch.wounds[1][2]',
     'port_match_body_p2': 'PortMatch.wounds[1][3]',
     'port_match_to_top': 'PortMatch.to_top',
+    'port_match_page_teams': 'PortMatch.page_teams',
+    'port_match_teams': 'PortMatch.teams',
 }
+# Two on two's state is duo.c's own structure, which no header shows: its
+# offsets are those duo.c's PORT_DUO_AT holds the build to, members of
+# u8s, each fighter's (`_1` to `_4`) one further.
+DUO = os.path.join(support.ROOT, 'src', 'port', 'duo.c')
+DUO_NAMES = {'hits': 'hits_taken', 'hit_by': 'last_hit_by'}
+
+
+def duo_offset(name):
+    """The offset duo.c gives state.toml's `port_duo_...` value, or None."""
+    with open(DUO, encoding='utf-8') as f:
+        at = dict((m, int(o, 0)) for m, o in re.findall(r'^PORT_DUO_AT\((\w+), (\w+)\);', f.read(), re.M))
+    key = name[len('port_duo_'):]
+    index = 0
+    match = re.match(r'(\w+?)_([1-4])$', key)
+    if match:
+        key, index = match.group(1), int(match.group(2)) - 1
+    member = DUO_NAMES.get(key, key)
+    return None if member not in at else at[member] + index
 
 
 def check(lines, checks):
@@ -113,6 +133,13 @@ def check(lines, checks):
         if symbol == 'g_fighters':
             player, _, key = name.partition('_')
             extra = where['Fighter'] if player == 'p2' else 0
+        if symbol == 'g_port_duo':
+            want = duo_offset(name)
+            checks.true('state.toml\'s `%s` (%s) is a member duo.c\'s PORT_DUO_AT holds' % (name, place),
+                        want is not None)
+            if want is not None:
+                checks.equal('the offset of state.toml\'s `%s`' % name, offset, want)
+            continue
         member = MEMBERS.get(key)
         if member is None:
             checks.true('state.toml\'s `%s` (%s) is a member tests/rebushido/play_state.py knows' % (name, place),

@@ -2128,3 +2128,72 @@ A dispute is the owner's to look at by hand: there is no tool that sets a
 disputed match's result (a line of SQL on the store does). A player who
 loses their identity file and its copies cannot get their rating back.
 The ladder has no seasons and no decay of a rating but RD's.
+
+## 18. Two on two online
+
+ROADMAP 24 (docs/PORT.md, "Two on two"): four fighters in one fight.
+What a session already is holds them: the four fighters, the copies of
+the two models, the four pairs' globals and each fighter's ring of the
+replay are a state file's (`src/port/duo.c`), saved, put back and run
+again with the game, and the fight of four is as deterministic as the
+fight of two (`port-rollback` holds it, both sizes, plain and quiet).
+
+**What a session carries.** The host's `teams` rides in the welcome's
+match word (`port_MatchBits`, over the rule and its number), held by the
+guest as the rule is (`port_HoldMatch`; the log says `session: the
+host's teams are two on two`). A session's input is one pad from each
+PC, so in a session both teams' partners are the CPU's, whatever the
+host's choice (`port_DuoPartnerIsCpu`: `port_IsNetplayOn`). Protocol
+13 (setup codes `P13-...`).
+
+**Rollback at four.** A guess is never more than 8 frames ahead
+(section 12), so the most a rollback runs again is 8 frames. On the
+Windows program without a window (`tools/port_bench.py --rollback`,
+port_game's plan, each frame run again quietly), RTX 3090's PC: one on
+one 5.8 ms for the whole window (0.71 ms a
+frame), two on two 7.9 ms (0.98 ms a frame); the
+state put back 0.08 to 0.09 ms. A frame of four costs about 40% more
+than a frame of two: the fight's two steps of fighters and two of pairs
+over, the drawing the same. The worst rollback at four, 8.5 ms, is
+within half of the game's frame of 16.7 ms.
+
+**Proved** on this PC: `tools/port_net.py session` plays, after its
+other sessions, a Stock match of two on two (`64-bit-duo`,
+`32-bit-duo`): the host's `--match stock:2 --teams cpu`, the guest given
+neither, over 100 ms each way and 5% lost; both fights to a team out,
+the score's card, the rematch, every state hash the same on both
+machines (142 hashes on each size, the same on both), and the fight's replays the same on both and
+played back with every hash the same. `tools/port_net_lobby.py
+headless`'s `rooms-duo`: a room of several whose rotation's first match
+is a fight of four, Ayame and Bunta its players and Chie its spectator,
+who runs all four from the fight's start: 63 hashes the same on both players, 17 of them Chie's as she watched. The session's
+stage is the stage page's second (on the rooftop a fighter left lying by
+the plan may lie on a roof below, out of the CPU partners' reach, and
+the fight never ends).
+
+**What four players on four PCs needs.** Today's session is two PCs, a
+pad each, and everything built on it says so:
+
+- **the input**: a session's frame is two pads, one from each side
+  (`g_np_local_inputs`, `g_np_remote_inputs`, u16 each); four players
+  need the four pads in one frame, each PC's own and three others',
+  each guessed and each able to roll the session back, and the hash of
+  a frame final only once all four are known;
+- **the network**: either every PC to every other (six ways, each found
+  as today's two are: direct, router, punch, relay) or the host's PC in
+  the middle, passing each guest's inputs to the others (more delay to
+  each guest, one way each); the datagrams carry an input for each pad
+  they speak for, and their acknowledgements for each sender;
+- **the meeting**: the welcome and its cards to three guests, all four
+  ready before the start, and a guest who leaves (his fighter the CPU's,
+  or the match over);
+- **the lobby**: a room's match of four (its tickets for four, the
+  server's rotation of teams), the spectators' feed of four pads a frame
+  (its format and the server's version, the VPS's), and the replays'
+  frames of four, which the format already has (version 2).
+
+A middle way would be **two players on each of two PCs**: each PC's
+input two pads (its first and its third, or its second and its fourth),
+a 32-bit word a side instead of 16 in the datagrams, the replays and the
+spectators' feed. It meets on today's ways, but the feed's format is the
+lobby server's too.

@@ -170,7 +170,10 @@ static void port_StateFindPieces(void) {
     port_StateAddRun(
         saved, &g_port_state_saved_count, "context", &g_port_game_context,
         (PortAddress)(&g_port_game_context + 1));
-    if (port_RemasterPrimBufferBytes() != 0) {
+    /* the port's own buffers of primitives: the remastered picture's
+     * further stage, or two on two's fights (port_duo.h); kept by the
+     * pages written, so a run that never draws there keeps none of it */
+    {
         u8 *prims = (u8 *)ADDR(PORT_PRIMS_ADDR);
 
         port_StateAddRun(saved, &g_port_state_saved_count, "prims", prims,

@@ -37,6 +37,13 @@ void arena_Reset(void) {
 void arena_UpdatePeak(s32 end_addr) {
     s32 peak;
 
+#if RB_PORT
+    /* two on two's copies of the models keep their cloth outside the
+     * arena (port_duo.h): not the arena's to count */
+    if (end_addr != 0 && port_DuoHoldsAddress(end_addr)) {
+        return;
+    }
+#endif
     if (!end_addr) {
         end_addr = g_arena_free_ptr;
     }

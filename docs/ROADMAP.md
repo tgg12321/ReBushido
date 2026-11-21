@@ -470,6 +470,29 @@ the stage").
 24. **2v2** (longer term): four fighters in one fight, two teams; a
     button retargets to the other enemy; online with four players
     (rollback of four, the bench's four-fighter case as the budget).
+    **Done but for four PCs** ([`PORT.md`](PORT.md), "Two on two";
+    [`PLAYING.md`](PLAYING.md), "Two on two"; [`NETPLAY.md`](NETPLAY.md),
+    section 18), the owner's "go ahead" of 2026-11-21: the game's two
+    slots hold four, a team a slot, each fighter's record, model, points
+    and replay frames put in as his step comes, each pair of enemies'
+    globals kept (`src/port/duo.c`); a team is two of its first player's
+    character and weapon (video memory holds two characters), the
+    second's model a copy; R2 retargets (a fallen target is left by
+    itself, the CPU turns to a nearer enemy), every blow and kill between
+    enemies, none between team mates, a lock or a throw between two; the
+    side view over all four; a team out loses, the game's own fall,
+    replay and winner's view of the last to fall and his enemy; the rule
+    page's Fighters row (one on one, CPU partners, four players) with
+    Single, Stock and First to, `teams`; the third and fourth pads (the
+    input, replays, the window's bindings and controllers); a light band
+    and tags over the heads; the fighters' own models for all four.
+    Online with the CPU's partners (protocol 13), in sessions and rooms,
+    spectators watching. A rollback of the whole window at four
+    7.9 ms against 5.8 at two. Left: four players on
+    four PCs (an input of four pads, the network and the lobby for four:
+    NETPLAY.md, section 18); teams of different characters (video memory
+    for four); the owner's eye on the band, the tags and the page
+    (`tmp/2v2/`).
 25. **A ladder and Elo** (longer term): ranked matches through the
     lobby server, an Elo (or Glicko) rating per player, a ladder page;
     identities, anti-cheat by replay checks (item 23), and the

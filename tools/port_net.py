@@ -286,6 +286,16 @@ SESSION_MATCH_EXPECT = {
 # checkpoints expect, what both sides' logs say of the rule
 SESSION_MATCHES = {
     'stock': (SESSION_MATCH, SESSION_MATCH_EXPECT, "session: the host's match rule is stock, 2"),
+    # two on two (docs/PORT.md, "Two on two"): the host's --teams cpu, which
+    # the guest takes from the welcome as the rule; each player's partner
+    # the CPU's, the four in the state on both machines; the host's seed
+    # fixed, so that the fights are the same each run (with the plan's
+    # second player idle a fight can stand off: a CPU partner on a ledge of
+    # Purple Cavern does not come down to him)
+    'duo': (SESSION_MATCH + ['--teams', 'cpu', '--net-seed', '4242'], dict(
+        SESSION_MATCH_EXPECT, fight='expect = ["mode == FIGHT_MODE_VS", "port_duo_on == 1", '
+                                    '"port_match_teams == 1", "stage == 24"]\n'),
+        "session: the host's teams are two on two"),
 }
 
 
@@ -295,6 +305,11 @@ def session_checkpoints(match):
     if not match:
         return SESSION_CHECKPOINTS
     text = SESSION_CHECKPOINTS
+    if match == 'duo':
+        # a team out takes longer than a fighter: the CPU's partners fight
+        # on after the first player's presses end
+        text = text.replace('within = 4000\nshot = false\nexpect = ["p1_defeated',
+                            'within = 16000\nshot = false\nexpect = ["p1_defeated')
     for name, expect in SESSION_MATCHES[match][1].items():
         head = 'name = "%s"\n' % name
         start = text.index(head)
@@ -331,14 +346,21 @@ def write_session_plan(program, side, folder, match=None):
     path. `match`: the session plays that of SESSION_MATCHES."""
     fight = port_game_fight()
     rematch = [p.replace('fight+', 'rematch+', 1) for p in fight]
-    presses = own_pad(SESSION_SELECT + fight + rematch, side)
+    select = SESSION_SELECT
+    if match == 'duo':
+        # the stage page's next (Purple Cavern, on one level: on the
+        # rooftop the cursor is on first, a fighter the plan leaves lying
+        # may lie on a roof below, where his enemies' CPU partners do not
+        # come)
+        select = SESSION_SELECT[:-1] + ['select+1150 RIGHT'] + SESSION_SELECT[-1:]
+    presses = own_pad(select + fight + rematch, side)
     if side == 0:
         presses.append("after_fight+%d CROSS" % (30 if match else 120))
     toml = os.path.join(folder, 'session_side%d.toml' % side)
     with open(toml, 'w', encoding='utf-8', newline='\n') as f:
         f.write('about = "A session of netplay, side %d."\n' % side)
         # (the cards are the host's own, as the command line names them)
-        f.write('discs = ["port"]\nlimit = 16000\nseconds = %d\n' % SECONDS)
+        f.write('discs = ["port"]\nlimit = %d\nseconds = %d\n' % (48000 if match == 'duo' else 16000, SECONDS))
         f.write('input = [\n%s\n]\n' % ',\n'.join('    "%s"' % p for p in presses))
         f.write(session_checkpoints(match) + SESSION_END[side])
     playtest.PORT_PROGRAM = program
@@ -495,12 +517,15 @@ shot = false
 name = "after_fight"''')
 
 
-def write_room_plan(program, folder, crew=False):
+def write_room_plan(program, folder, crew=False, duo=False):
     """The plan of every member of a room for `program`: its path. `crew`:
-    a Crew 2 match's (ROOM_CREW_CHECKPOINTS)."""
+    a Crew 2 match's (ROOM_CREW_CHECKPOINTS). `duo`: a fight of two on two,
+    on the stage page's next stage (as the session's, SESSION_MATCHES)."""
     toml = os.path.join(folder, 'room.toml')
     fight = port_game_fight()
     presses = SESSION_SELECT + fight
+    if duo:
+        presses = SESSION_SELECT[:-1] + ['select+1150 RIGHT'] + SESSION_SELECT[-1:] + fight
     if crew:
         presses = ROOM_CREW_PRESSES + wounding_fight() + finishing_fight()
     with open(toml, 'w', encoding='utf-8', newline='\n') as f:
@@ -1566,6 +1591,9 @@ def run_checks(args, base):
                 # and Stock, whose winner keeps his wounds too
                 problems += check_session_rb_crew('%d-bit-stock-wounds' % bits, program, args,
                                                   (ports[0] + 18, ports[1] + 18), 'stock')
+                # a Stock match of two on two, the partners the CPU's
+                problems += check_session('%d-bit-duo' % bits, program, args, (ports[0] + 20, ports[1] + 20),
+                                          False, 'duo')
             continue
         check = check_rollback if rollback else check_link
         problems += check('%d-bit' % bits, program, args, ports)

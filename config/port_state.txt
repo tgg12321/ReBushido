@@ -34,6 +34,7 @@ state    src/port/gpu.c        libgpu's calls, the display, the ordering tables'
 state    src/port/gte.c         the GTE's registers
 state    src/port/mdec.c        the movie's decoder
 state    src/port/match.c       the match rule the stage pages hold, and the match's score
+state    src/port/duo.c         two on two: the four fighters, the copies of the models, the pairs' globals
 state    src/port/memory.c     the console's memory, mapped
 state    src/port/movie.c       where the game runs the movie's player
 state    src/port/pad.c         the pads' driver and the one input point

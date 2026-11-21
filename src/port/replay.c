@@ -31,7 +31,10 @@
 #include "port_spu.h"
 #include "bb2.h"
 
-#define FORMAT_VERSION 1
+/* 2: a frame may have the third and fourth pads (CHANGED_THIRD,
+ * CHANGED_FOURTH, two on two's); a file of version 1 is read as before */
+#define FORMAT_VERSION 2
+#define FORMAT_VERSION_FIRST 1
 #define MAGIC_BYTES 8
 #define HEAD_BYTES (MAGIC_BYTES + 4)
 #define CHUNK_HEAD_BYTES 8
@@ -73,6 +76,8 @@
 #define CHANGED_SECOND 2
 #define CHANGED_PRESENT 4
 #define CHANGED_VIEW 8
+#define CHANGED_THIRD 16
+#define CHANGED_FOURTH 32
 /* what the disc holds already (DISC): the game's last sectors read, each
  * 64 bytes of them indexed by a hash, and a run of the disc found in the
  * snapshot that is at least MATCH_LEAST bytes long */
@@ -135,7 +140,7 @@ static const char * const g_mode_words[] = {
  * window asked the game for as it took the input (port_top_menu.h), plus
  * one, or 0: SOND. */
 typedef struct {
-    u16 buttons[PORT_PADS];
+    u16 buttons[PORT_INPUT_PADS];
     u8 present;
     u8 view;
     u8 sound;
@@ -948,7 +953,7 @@ static u32 port_PutVarint(u8 *out, u32 value) {
 
 /* The frames as INPT has them, into `out`: its length. */
 static u32 port_ReplayPackInputs(u8 *out) {
-    ReplayFrame last = {{0, 0}, 0, 0, 0};
+    ReplayFrame last = {{0, 0, 0, 0}, 0, 0, 0};
     u32 at = 0;
     u32 frame = 0;
 
@@ -960,6 +965,8 @@ static u32 port_ReplayPackInputs(u8 *out) {
         while (frame + run < g_rec.length &&
                g_rec.frames[frame + run].buttons[0] == now->buttons[0] &&
                g_rec.frames[frame + run].buttons[1] == now->buttons[1] &&
+               g_rec.frames[frame + run].buttons[2] == now->buttons[2] &&
+               g_rec.frames[frame + run].buttons[3] == now->buttons[3] &&
                g_rec.frames[frame + run].present == now->present &&
                g_rec.frames[frame + run].view == now->view) {
             run++;
@@ -968,6 +975,8 @@ static u32 port_ReplayPackInputs(u8 *out) {
         changed |= now->buttons[1] != last.buttons[1] ? CHANGED_SECOND : 0;
         changed |= now->present != last.present ? CHANGED_PRESENT : 0;
         changed |= now->view != last.view ? CHANGED_VIEW : 0;
+        changed |= now->buttons[2] != last.buttons[2] ? CHANGED_THIRD : 0;
+        changed |= now->buttons[3] != last.buttons[3] ? CHANGED_FOURTH : 0;
         out[at++] = changed;
         if (changed & CHANGED_FIRST) {
             out[at++] = (u8)now->buttons[0];
@@ -982,6 +991,14 @@ static u32 port_ReplayPackInputs(u8 *out) {
         }
         if (changed & CHANGED_VIEW) {
             out[at++] = now->view;
+        }
+        if (changed & CHANGED_THIRD) {
+            out[at++] = (u8)now->buttons[2];
+            out[at++] = (u8)(now->buttons[2] >> BITS_PER_BYTE);
+        }
+        if (changed & CHANGED_FOURTH) {
+            out[at++] = (u8)now->buttons[3];
+            out[at++] = (u8)(now->buttons[3] >> BITS_PER_BYTE);
         }
         at += port_PutVarint(out + at, run);
         last = *now;
@@ -1429,8 +1446,11 @@ void port_ReplayTook(const PortInput *input, u32 index) {
     g_last.index = index;
     g_last.frame.buttons[0] = input->buttons[0];
     g_last.frame.buttons[1] = input->buttons[1];
+    g_last.frame.buttons[2] = input->buttons[2];
+    g_last.frame.buttons[3] = input->buttons[3];
     g_last.frame.present =
-        (u8)((input->present[0] != 0) | ((input->present[1] != 0) << 1));
+        (u8)((input->present[0] != 0) | ((input->present[1] != 0) << 1) |
+             ((input->present[2] != 0) << 2) | ((input->present[3] != 0) << 3));
     if (g_rec.state != REC_FIGHT || index < g_rec.start_count) {
         return;
     }
@@ -1441,8 +1461,11 @@ void port_ReplayTook(const PortInput *input, u32 index) {
     frame = &g_rec.frames[at];
     frame->buttons[0] = input->buttons[0];
     frame->buttons[1] = input->buttons[1];
+    frame->buttons[2] = input->buttons[2];
+    frame->buttons[3] = input->buttons[3];
     frame->present =
-        (u8)((input->present[0] != 0) | ((input->present[1] != 0) << 1));
+        (u8)((input->present[0] != 0) | ((input->present[1] != 0) << 1) |
+             ((input->present[2] != 0) << 2) | ((input->present[3] != 0) << 3));
     frame->sound = 0;
     g_rec.length = at + 1;
 }
@@ -1905,7 +1928,8 @@ static s32 port_ReplayPlayable(const u8 *bytes, u32 size, char *why, u32 room) {
     u32 i;
 
     if (size < HEAD_BYTES ||
-        port_GetWord(bytes + MAGIC_BYTES) != FORMAT_VERSION) {
+        (port_GetWord(bytes + MAGIC_BYTES) != FORMAT_VERSION &&
+         port_GetWord(bytes + MAGIC_BYTES) != FORMAT_VERSION_FIRST)) {
         port_ReplayText(why, room, "a replay of another version of the format");
         return FALSE;
     }
@@ -2089,7 +2113,7 @@ static u32 port_GetVarint(const u8 *in, u32 size, u32 *at) {
 
 /* INPT into the playback's frames: FALSE where it is not whole. */
 static s32 port_ReplayUnpackInputs(const u8 *in, u32 size) {
-    ReplayFrame now = {{0, 0}, 0, 0, 0};
+    ReplayFrame now = {{0, 0, 0, 0}, 0, 0, 0};
     u32 frames;
     u32 frame = 0;
     u32 at = WORD_BYTES;
@@ -2118,6 +2142,14 @@ static s32 port_ReplayUnpackInputs(const u8 *in, u32 size) {
         }
         if ((changed & CHANGED_VIEW) && at < size) {
             now.view = in[at++];
+        }
+        if ((changed & CHANGED_THIRD) && at + HALF_BYTES <= size) {
+            now.buttons[2] = (u16)(in[at] | (in[at + 1] << BITS_PER_BYTE));
+            at += HALF_BYTES;
+        }
+        if ((changed & CHANGED_FOURTH) && at + HALF_BYTES <= size) {
+            now.buttons[3] = (u16)(in[at] | (in[at + 1] << BITS_PER_BYTE));
+            at += HALF_BYTES;
         }
         run = port_GetVarint(in, size, &at);
         while (run-- > 0 && frame < frames) {
@@ -2365,6 +2397,10 @@ static void port_ReplayTakeHook(PortInput *input) {
     input->buttons[1] = frame->buttons[1];
     input->present[0] = (u8)(frame->present & 1);
     input->present[1] = (u8)((frame->present >> 1) & 1);
+    input->buttons[2] = frame->buttons[2];
+    input->buttons[3] = frame->buttons[3];
+    input->present[2] = (u8)((frame->present >> 2) & 1);
+    input->present[3] = (u8)((frame->present >> 3) & 1);
 }
 
 /* This run's own, kept out of a load of the replay's start and put back

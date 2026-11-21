@@ -162,8 +162,11 @@ static void port_MenuBuild(s32 page, s32 cursor) {
             port_MenuAddRow(ROW_CHOICE, of->first + i);
         }
         if (g_menu.group == PORT_MENU_CONTROLS - 1) {
-            port_MenuAddRow(ROW_BUTTONS, 0);
-            port_MenuAddRow(ROW_BUTTONS, 1);
+            s32 pad;
+
+            for (pad = 0; pad < PORT_WINDOW_PADS; pad++) {
+                port_MenuAddRow(ROW_BUTTONS, pad);
+            }
         }
         port_MenuAddRow(ROW_BACK, 0);
     } else if (page == PAGE_UPDATE) {
@@ -969,13 +972,15 @@ static void port_MenuTitle(char *out, u32 room) {
         snprintf(out, room, "%s", port_FindChoiceGroup(g_menu.group)->title);
         return;
     }
+    if (g_menu.page == PAGE_BUTTONS) {
+        snprintf(out, room, "Player %d's buttons", (int)(g_menu.pad + 1));
+        return;
+    }
     snprintf(out, room, "%s",
-             g_menu.page == PAGE_MAIN      ? "Options"
-             : g_menu.page == PAGE_ONLINE  ? "Play online"
-             : g_menu.page == PAGE_UPDATE  ? "Updates"
-             : g_menu.page == PAGE_REPLAYS ? "Replays"
-             : g_menu.pad == 0             ? "Player 1's buttons"
-                                           : "Player 2's buttons");
+             g_menu.page == PAGE_MAIN     ? "Options"
+             : g_menu.page == PAGE_ONLINE ? "Play online"
+             : g_menu.page == PAGE_UPDATE ? "Updates"
+                                          : "Replays");
 }
 
 void port_MenuTick(void) {

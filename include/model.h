@@ -191,6 +191,11 @@ extern void model_SetFace(s32 slot, s32 face);
 /* Draws the model in slot `slot` as outlines in its own colour, or solid
  * again: what a fighter looks like to itself in the first-person view. */
 extern void model_SetOutline(s32 slot, s32 on);
+#if RB_PORT
+/* The native port's two on two puts a fighter's own model in a slot as
+ * it puts him there (port_duo.h). */
+extern void model_PortPut(s32 slot, Model *model);
+#endif
 
 /* ---- the tiny model ----
  * In the first-person view the fighter being looked through is also drawn as

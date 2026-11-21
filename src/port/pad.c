@@ -35,13 +35,13 @@ static u8 *g_port_pad_buffers[PORT_PADS];
 static s32 g_port_pad_buffer_sizes[PORT_PADS];
 static s32 g_port_pads_started;
 /* The buttons a run's script holds on each pad, as Sony's PAD... masks. */
-static u32 g_port_pad_held[PORT_PADS];
+static u32 g_port_pad_held[PORT_INPUT_PADS];
 /* What the driver read at the last vertical blank since it started:
  * nothing answered before that. */
 static PortInput g_port_pad_read;
 /* ... of it, what the run's script held then: a read of the PC's own
  * input later on keeps it (port_ReadDevicesNow). */
-static u32 g_port_pad_read_held[PORT_PADS];
+static u32 g_port_pad_read_held[PORT_INPUT_PADS];
 
 /* The window's keys and controllers, and the hook on each input
  * (port_platform.h): nothing in the build without one. */
@@ -51,7 +51,7 @@ PortInput g_port_input;
 u32 g_port_input_count;
 
 void port_SetPadButton(s32 pad, u32 button, s32 down) {
-    if (pad < 0 || pad >= PORT_PADS) {
+    if (pad < 0 || pad >= PORT_INPUT_PADS) {
         return;
     }
     if (down) {
@@ -65,7 +65,7 @@ void port_SetPadButton(s32 pad, u32 button, s32 down) {
 void port_SampleInput(PortInput *input) {
     s32 pad;
 
-    for (pad = 0; pad < PORT_PADS; pad++) {
+    for (pad = 0; pad < PORT_INPUT_PADS; pad++) {
         u32 held = g_port_pad_held[pad];
 
         if (g_port_device_hook != NULL) {
@@ -85,7 +85,7 @@ void port_FillPads(void) {
 
     if (g_port_pads_started) {
         port_SampleInput(&g_port_pad_read);
-        for (pad = 0; pad < PORT_PADS; pad++) {
+        for (pad = 0; pad < PORT_INPUT_PADS; pad++) {
             g_port_pad_read_held[pad] = g_port_pad_held[pad];
         }
     }
@@ -100,7 +100,7 @@ void port_ReadDevicesNow(void) {
     if (!g_port_pads_started || g_port_device_hook == NULL) {
         return;
     }
-    for (pad = 0; pad < PORT_PADS; pad++) {
+    for (pad = 0; pad < PORT_INPUT_PADS; pad++) {
         u32 held = g_port_device_hook(pad);
 
         held |= g_port_pad_read_held[pad];

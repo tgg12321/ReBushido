@@ -10,6 +10,14 @@ s32 DrawSync(s32 mode) { return 0; }
 
 void resource_ForgetWeapons(void) {}
 
+#if RB_PORT
+/* No copy of two on two's holds an address of this arena (port_duo.h). */
+s32 port_DuoHoldsAddress(s32 address) {
+    (void)address;
+    return FALSE;
+}
+#endif
+
 /* What the blocks' owners were told: the last move of each block, and how
  * many there were. */
 static s32 g_test_moved_by[ARENA_BLOCK_COUNT + 1];

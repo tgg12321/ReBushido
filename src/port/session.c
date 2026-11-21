@@ -60,8 +60,10 @@
  * the first select, by the host's pad; a crew's picks are all different
  * characters; a Stock or Crew fight's winner keeps his wounds, in the
  * state; a Crew match's end goes back to the top menu, which ends a
- * session of two (port_match.h). */
-#define SESSION_PROTOCOL 12
+ * session of two (port_match.h). 13: the host's teams (port_duo.h) in
+ * the welcome's match word, two on two's four fighters in the state, the
+ * partners the CPU's (a session's input has two pads). */
+#define SESSION_PROTOCOL 13
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -1306,6 +1308,9 @@ void port_ApplySession(void) {
              : port_GetMatchRule() == PORT_MATCH_CREW     ? "crew"
                                                           : "single",
              port_GetMatchCount());
+    port_Log(
+        "session: the host's teams are %s\n",
+        port_GetTeamsDefault() == PORT_TEAMS_ONE ? "one on one" : "two on two");
     port_Log("session: the host's unlock_all is %s, its "
              "stage_select_everywhere %s, its fight_music %s\n",
              (g_session.play & PORT_PLAY_BIT_UNLOCK_ALL) ? "on" : "off",
