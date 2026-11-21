@@ -2836,6 +2836,8 @@ void port_ShowMenu(
 }
 
 void port_ShowPage(u32 blank, const char *shot) {
+    /* a turn of a page's loop, with the game stopped */
+    port_PageChanged();
     port_DrawPicture(blank, FALSE);
     /* the page is laid over it with what else is (port_DrawCounter) */
     port_DrawCounter();

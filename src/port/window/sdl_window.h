@@ -142,6 +142,9 @@ extern void port_PageSoundsOn(s32 on);
 /* An event of SDL's taken by a page beside the game: TRUE where it was
  * (every one but the window's own keys, F2, F3, F9 and F12). */
 extern s32 port_PageTakesEvent(const union SDL_Event *event);
+/* A page's turn or press: its pixels are drawn again at the next
+ * picture (port_PagePixels). */
+extern void port_PageChanged(void);
 /* What is laid over the game's 4:3 area for the page open, as
  * port_StagePagePixels: FALSE where none is. */
 extern s32 port_PagePixels(

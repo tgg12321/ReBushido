@@ -82,6 +82,14 @@ static struct {
      * blanks it has had */
     u32 sound_at;
     u32 sound_blanks;
+    /* the page's turns and presses, counted: its pixels are drawn again
+     * only when this or the area has changed since, not at each of the
+     * pictures a blank may show */
+    u32 changes;
+    u32 drawn_changes;
+    s32 drawn_w;
+    s32 drawn_h;
+    s32 drawn_menu;
 } g_port_page;
 
 static void port_MenuEvent(const SDL_Event *event);
@@ -150,19 +158,32 @@ void port_PageKeepSound(void) {
     }
 }
 
+void port_PageChanged(void) { g_port_page.changes++; }
+
 s32 port_PagePixels(s32 area_w, s32 area_h, const u32 **pixels, PortRect *box) {
-    if (!port_MenuIsOpen() && !port_OnlinePagesAreOpen()) {
+    s32 is_menu = port_MenuIsOpen();
+
+    if (!is_menu && !port_OnlinePagesAreOpen()) {
         return FALSE;
     }
-    if (!port_LookBegin(&g_port_page.look, area_w, area_h)) {
-        return FALSE;
-    }
-    /* where the top menu is covered, the game draws its own backdrop and
-     * panel under the page */
-    if (port_MenuIsOpen()) {
-        port_MenuDrawLook(&g_port_page.look, !g_port_page.covered);
-    } else {
-        port_OnlinePagesDraw(&g_port_page.look, !g_port_page.covered);
+    if (g_port_page.look.pixels == NULL ||
+        g_port_page.drawn_changes != g_port_page.changes ||
+        g_port_page.drawn_w != area_w || g_port_page.drawn_h != area_h ||
+        g_port_page.drawn_menu != is_menu) {
+        if (!port_LookBegin(&g_port_page.look, area_w, area_h)) {
+            return FALSE;
+        }
+        /* where the top menu is covered, the game draws its own backdrop
+         * and panel under the page */
+        if (is_menu) {
+            port_MenuDrawLook(&g_port_page.look, !g_port_page.covered);
+        } else {
+            port_OnlinePagesDraw(&g_port_page.look, !g_port_page.covered);
+        }
+        g_port_page.drawn_changes = g_port_page.changes;
+        g_port_page.drawn_w = area_w;
+        g_port_page.drawn_h = area_h;
+        g_port_page.drawn_menu = is_menu;
     }
     *pixels = g_port_page.look.pixels;
     box->x = 0;
@@ -189,6 +210,7 @@ s32 port_PageTakesEvent(const SDL_Event *event) {
     if (!port_PageIsBeside()) {
         return FALSE;
     }
+    port_PageChanged();
     if (event->type == SDL_KEYDOWN || event->type == SDL_KEYUP) {
         SDL_Scancode code = event->key.keysym.scancode;
 
@@ -703,6 +725,8 @@ void port_MenuFollowAsks(void) {
 void port_MaybeRunMenu(u32 blank) {
     PortGameState now;
 
+    /* a blank's turn: the glow and the fade move on */
+    port_PageChanged();
     if (port_MenuIsOpen() && g_port_menu.is_beside) {
         port_MenuBesideTurn(blank);
         return;
