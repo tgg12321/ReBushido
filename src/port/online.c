@@ -35,6 +35,7 @@
 #include "port_host.h"
 #include "port_net.h"
 #include "port_online.h"
+#include "port_ranked.h"
 #include "port_paint.h"
 #include "port_replay.h"
 #include "port_room.h"
@@ -74,6 +75,10 @@ static struct {
     s32 room_asked;
     PortRoomNext next;
     s32 room_match; /* the session being met is a room's */
+    s32 ranked;     /* ... or a ranked match (port_ranked.h) */
+    u32 ranked_played;
+    u32 ranked_decided;
+    u32 ranked_last; /* the last match decided, its number */
     /* a program with no pages: its room (--room-open, --room-enter) */
     PortOnlineRoom room;
     s32 room_opened;
@@ -278,6 +283,19 @@ static void port_OnlineCountDown(s32 failed) {
 static void port_OnlineMatchBegins(void) {
     const PortRoomNext *next = &g_online.next;
 
+    if (g_online.ranked) {
+        g_online.ranked_played++;
+        port_Log("ranked: match %d (%s vs %s) begins: this program plays "
+                 "player %d\n",
+                 next->match.number, next->first, next->second,
+                 next->role == PORT_SESSION_HOST ? 1 : 2);
+        port_RankedMatchBegins();
+        if (g_online.room.on && g_online.room.leave_match != 0 &&
+            g_online.room.leave_match == g_online.ranked_played) {
+            port_SetNetplayLeaveAt(g_online.room.leave_frame);
+        }
+        return;
+    }
     port_Log("room: match %d (%s vs %s) begins: this program plays player "
              "%d%s\n",
              next->match.number, next->first, next->second,
@@ -311,6 +329,11 @@ static void port_OnlineMatchEnds(s32 end) {
         end == PORT_NETPLAY_END_PEER_LEFT || end == PORT_NETPLAY_END_SILENT) {
         winner = first ? PORT_ROOM_WON_FIRST : PORT_ROOM_WON_SECOND;
     }
+    if (g_online.ranked) {
+        port_RankedMatchEnds(end, winner, TRUE);
+        g_online.room_match = FALSE;
+        return;
+    }
     port_FeedEnd(port_NetplayFrameNow(), winner);
     port_FeedFinish();
     port_RoomResult(next->match.number, winner);
@@ -341,7 +364,11 @@ static void port_OnlineRun(void) {
         port_Log("online: %s; the program goes on with its own game\n",
                  canceled ? "the meeting was given up" : "no session");
         port_OnlineLetGo();
-        if (g_online.room_match) {
+        if (g_online.room_match && g_online.ranked) {
+            /* a ranked match the two never met: void, if both say so */
+            port_RankedMatchEnds(0, PORT_ROOM_NOBODY, FALSE);
+            g_online.room_match = FALSE;
+        } else if (g_online.room_match) {
             /* the room goes on: a match not met is nobody's */
             port_RoomResult(g_online.next.match.number, PORT_ROOM_DRAW);
             port_RoomDone(g_online.next.match.number);
@@ -616,9 +643,73 @@ const char *port_OnlineAskRoom(
     return NULL;
 }
 
+/* A ranked match asked for by the pages (port_online.h). */
+const char *port_OnlineAskRanked(
+    const PortRoomNext *next, const PortOnlineAsk *how) {
+    const char *problem = port_OnlineAskRoom(next, how);
+
+    if (problem == NULL) {
+        g_online.ranked = TRUE;
+    }
+    return problem;
+}
+
 void port_OnlineRoomAuto(const PortOnlineRoom *room) {
     g_online.room = *room;
     g_online.room.on = TRUE;
+}
+
+/* The ranked ladder, a program with no pages (--ranked): queued at its
+ * first boundary, its matches played as the lobby gives them, queued again
+ * after each is decided, and the program ended once `matches` are, with
+ * the ladder's lists printed first where it was asked (--ranked-lists). */
+static void port_OnlineRankedTurn(void) {
+    PortOnlineRoom *room = &g_online.room;
+    PortRankedView view;
+    PortRoomNext next;
+    char why[WHY_BYTES];
+
+    if (!g_online.room_opened) {
+        if (room->lie) {
+            port_RankedLie();
+        }
+        if (!port_RankedStart(room->lobby, room->player, why, sizeof(why))) {
+            port_SessionFail(why);
+            port_Quit(PORT_EXIT_FAILED);
+        }
+        g_online.room_opened = TRUE;
+        port_RankedQueue();
+    }
+    port_RankedTick();
+    port_RankedGet(&view);
+    if (view.phase == PORT_RANKED_IDLE && view.why[0] != 0) {
+        port_SessionFail(view.why);
+        port_Quit(PORT_EXIT_FAILED);
+    }
+    if (port_RankedNext(&next)) {
+        g_online.next = next;
+        g_online.room_asked = TRUE;
+        g_online.ranked = TRUE;
+        return;
+    }
+    if (view.phase == PORT_RANKED_DECIDED && !view.uploading &&
+        view.match != g_online.ranked_last) {
+        g_online.ranked_last = view.match;
+        g_online.ranked_decided++;
+        if (room->matches != 0 && g_online.ranked_decided >= room->matches) {
+            if (room->lists) {
+                port_RankedPrintLists();
+            }
+            port_Log("ranked: %u matches decided; the program ends\n",
+                     g_online.ranked_decided);
+            port_RankedStop();
+            port_Quit(PORT_EXIT_OK);
+        }
+        port_RankedQueue();
+    }
+    /* nothing to do: the program's own game, which nothing paces with no
+     * window, is let run no faster than this */
+    port_RankedWait(ROOM_IDLE_MS);
 }
 
 /* The program's room, a program with no pages (--room-open, --room-enter):
@@ -634,6 +725,10 @@ static void port_OnlineRoomTurn(void) {
 
     if (!room->on) {
         port_RoomTick();
+        return;
+    }
+    if (room->ranked) {
+        port_OnlineRankedTurn();
         return;
     }
     if (!g_online.room_opened) {
@@ -704,7 +799,7 @@ static void port_OnlineRoomRun(void) {
     const PortOnlineRoom *room = &g_online.room;
 
     g_online.room_asked = FALSE;
-    if (g_online.next.what == PORT_ROOM_NEXT_WATCH) {
+    if (g_online.next.what == PORT_ROOM_NEXT_WATCH && !g_online.ranked) {
         port_OnlineWatchRun();
         return;
     }
@@ -716,7 +811,17 @@ static void port_OnlineRoomRun(void) {
         room->on ? room->paths : g_online.ask.paths);
     g_online.ask = ask;
     g_online.room_match = TRUE;
+    if (g_online.ranked) {
+        /* the ladder's rule held by the host's welcome, and the player's
+         * own put back after */
+        port_KeepMatch();
+        port_HoldMatch(port_RankedRule());
+    }
     port_OnlineRun();
+    if (g_online.ranked) {
+        port_RestoreMatch();
+        g_online.ranked = FALSE;
+    }
 }
 
 /* A boundary of the program's own play (port_online.h): --session-at's

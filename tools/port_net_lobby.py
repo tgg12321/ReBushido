@@ -27,6 +27,11 @@ or build/port-sdl/windows/rebushido-headless.exe on Windows):
     punchto  no lobby: --host with --punch-to and --join from a fixed port
     list     the lobby's list (relay_client.py) while a host waits: its
              name, its host, locked, its setup code
+    ranked   the ranked ladder (a lobby with a store): two pairs queued and
+             paired, one match rated, one disputed by a false report (its
+             replays uploaded and played back), a leaver's loss, the
+             ladder's lists printed, a forged report refused (after the
+             rest, as rooms-crew; ranked-win in the Windows half)
     refused  a wrong password, an incompatible disc, no such room, a lobby
              that does not answer: each turned away, and why
 
@@ -49,6 +54,7 @@ import ctypes
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -628,6 +634,204 @@ def judge_rooms(case, segments):
         case.fail('Dai and Eiko did not play a match beside the room\'s')
 
 
+# ---- the ranked ladder (docs/NETPLAY.md, section 17) ----
+
+RANKED_SERVER = ROOM_SERVER + ['--ranked-same-address', '--identities-per-day', '100', '--ranked-rate', '100000',
+                               '--signed-rate', '100000', '--ranked-first-to', '1', '--gone-timeout', '10',
+                               '--report-wait', '3', '--ranked-stages', '0']
+# (the stage drawn is the stage pages' first place, the one the scripted
+# fight of port_net's plans is written for: on another its presses may
+# never cut the other down, and the match never ends)
+RANKED_SEED = 5151
+# Fumi leaves her match in the middle of its fight, at this frame of the
+# session (its fight begins near 1,050, with the ladder's stage taken at once,
+# and the first cut is near 1,560)
+RANKED_LEAVE_FRAME = 1150
+
+
+def ranked_logs(text):
+    """What a ranked program said: {'match': N, 'state': ..., 'won': ...,
+    'before': B, 'after': A, 'digest': hex, 'reason': ..., 'stage': S}."""
+    out = {}
+    m = re.search(r'ranked: match (\d+): \S+ \((\d+)\) against (\S+) \((\d+)\), first to (\d+), stage (\d+); '
+                  r'this program is player (\d)', text)
+    if m:
+        out.update(match=int(m.group(1)), opponent=m.group(3), first_to=int(m.group(5)), stage=int(m.group(6)),
+                   player=int(m.group(7)))
+    m = re.search(r'ranked: match \d+ ended \(([^)]*)\): reported ([^,]*), digest ([0-9a-f]+)', text)
+    if m:
+        out.update(reason=m.group(1), reported=m.group(2), digest=m.group(3))
+    m = re.search(r'ranked: match \d+ is (\w+): ([^,]*), (\d+) to (\d+)', text)
+    if m:
+        out.update(state=m.group(1), won=m.group(2), before=int(m.group(3)), after=int(m.group(4)))
+    out['ladder'] = re.findall(r'ranked: the ladder: (\d+)\. (\S+) (\d+)\??', text)
+    out['hashes'] = dict((int(f), h) for f, h in re.findall(r'netplay: frame (\d+) hash ([0-9A-F]+)', text))
+    return out
+
+
+def ranked_public(path):
+    """The public key of a program's identity file."""
+    m = re.search(r'^public ([0-9a-f]{64})$', read(path), re.M)
+    return bytes.fromhex(m.group(1)) if m else None
+
+
+def case_ranked(case):
+    """Ranked play through a local lobby with a ladder (its store in the
+    case's folder): two pairs queued, paired and played, each match's two
+    reports signed; Ayame and Bunta's agree and are rated, Dai's names the
+    other winner and his match is disputed, its replays uploaded, and one
+    of them played back by --replay-check; Fumi leaves her match in its
+    fight and loses it; the ladder's lists printed by a program, as its
+    page shows them; and a report forged under Ayame's key refused."""
+    import relay_client as rc
+    import ladder
+    state = os.path.join(case.folder, 'ladder')
+    lobby = case.server('--state', state, *RANKED_SERVER)
+    with PLAN_LOCK:
+        plan = port_net.write_room_plan(HEADLESS, case.folder)
+    base = [HEADLESS, '--image', playtest.RETAIL_CUE, '--no-cards', '--lobby', lobby, '--net-plan-pads',
+            '--net-seed', str(RANKED_SEED), '--plan', plan, '--trace', '--ranked', '--ranked-matches', '1'] + TROUBLE
+
+    def player(label, *more):
+        return case.start(label, base + ['--out', os.path.join(case.folder, label), '--player', label.capitalize(),
+                                         '--identity', os.path.join(case.folder, label + '.key'),
+                                         '--replays', os.path.join(case.folder, label + '-replays')] + list(more))
+
+    procs = {'ayame': player('ayame')}
+    if case.wait_for('ayame', r'ranked: \S+ goes into the queue', 30) is None:
+        case.fail('Ayame never queued')
+        return
+    procs['bunta'] = player('bunta', '--ranked-lists')
+    if case.wait_for('bunta', r'ranked: match \d+:', 60) is None:
+        case.fail('Ayame and Bunta were never paired')
+    procs['chie'] = player('chie')
+    if case.wait_for('chie', r'ranked: \S+ goes into the queue', 30) is None:
+        case.fail('Chie never queued')
+    procs['dai'] = player('dai', '--ranked-lie')
+    if case.wait_for('dai', r'ranked: match \d+:', 60) is None:
+        case.fail('Chie and Dai were never paired')
+    labels = ['ayame', 'bunta', 'chie', 'dai']
+    codes = wait_all([procs[label] for label in labels], SECONDS)
+    logs = {}
+    for label, code in zip(labels, codes):
+        if code != 0:
+            case.fail('%s ended with %s (%s)' % (label, code, os.path.join(case.folder, label + '.err')))
+        if 'DESYNC' in case.err(label):
+            case.fail('%s found a desync' % label)
+        logs[label] = ranked_logs(case.err(label))
+    # the leaver's pair, after: no more than four programs at once
+    procs['eiko'] = player('eiko')
+    if case.wait_for('eiko', r'ranked: \S+ goes into the queue', 30) is None:
+        case.fail('Eiko never queued')
+    procs['fumi'] = player('fumi', '--leave-at', '1:%d' % RANKED_LEAVE_FRAME)
+    for label, code in zip(['eiko', 'fumi'], wait_all([procs['eiko'], procs['fumi']], SECONDS)):
+        if code != 0:
+            case.fail('%s ended with %s (%s)' % (label, code, os.path.join(case.folder, label + '.err')))
+        logs[label] = ranked_logs(case.err(label))
+    judge_ranked(case, logs, state, lobby, rc, ladder)
+
+
+def judge_ranked(case, logs, state, lobby, rc, ladder):
+    a, b, c, d, e, f = (logs[k] for k in ('ayame', 'bunta', 'chie', 'dai', 'eiko', 'fumi'))
+    # the pairs, the rule and the stage
+    if a.get('match') is None or a.get('match') != b.get('match') or {a.get('player'), b.get('player')} != {1, 2}:
+        case.fail('Ayame and Bunta did not play one match: %r, %r' % (a.get('match'), b.get('match')))
+        return
+    if a.get('first_to') != 1 or a.get('stage') != b.get('stage'):
+        case.fail('the rule or the stage is not the lobby\'s on both: %r' % ((a.get('stage'), b.get('stage')),))
+    for label in ('ayame', 'bunta'):
+        if 'session: the host\'s match rule is first_to, 1' not in case.err(label):
+            case.fail('%s did not play the ladder\'s First to 1' % label)
+    # agreeing reports, rated, the ratings moved
+    if a.get('digest') is None or a.get('digest') != b.get('digest'):
+        case.fail('the two digests of match %s differ: %s and %s' % (a.get('match'), a.get('digest'), b.get('digest')))
+    if a.get('state') != 'rated' or b.get('state') != 'rated':
+        case.fail('Ayame and Bunta\'s match is not rated: %r, %r' % (a.get('state'), b.get('state')))
+    elif not (a['before'] == b['before'] == 1500 and a['after'] != 1500 and b['after'] != 1500 and
+              (a['after'] > 1500) == (a['won'] == 'won') and (b['after'] > 1500) == (b['won'] == 'won') and
+              a['won'] != b['won']):
+        case.fail('the ratings did not move as the result: %r, %r' % (a, b))
+    else:
+        case.said.append('match %d (Ayame and Bunta, the lobby\'s stage taken on both: place %d): both digests '
+                         '%s..., rated: '
+                         'Ayame %s, 1500 to %d; Bunta %s, 1500 to %d'
+                         % (a['match'], a['stage'], a['digest'][:16], a['won'], a['after'], b['won'], b['after']))
+    common = sorted(set(a['hashes']) & set(b['hashes']))
+    if len(common) < 30 or any(a['hashes'][x] != b['hashes'][x] for x in common):
+        case.fail('match %s\'s hashes are not alike on both (%d in common)' % (a.get('match'), len(common)))
+    # the ladder printed, as its page shows it
+    names = {name: int(rating) for _, name, rating in b['ladder']}
+    if names.get('Ayame') != a.get('after') or names.get('Bunta') != b.get('after'):
+        case.fail('the ladder Bunta printed is not the ratings: %r' % b['ladder'])
+    else:
+        case.said.append('the ladder as Bunta\'s program had it: %s' % ', '.join(
+            '%s. %s %s' % row for row in b['ladder']))
+    # a dispute: Dai reported the other winner
+    if c.get('match') is None or c.get('match') != d.get('match'):
+        case.fail('Chie and Dai did not play one match')
+    elif c.get('state') != 'disputed' or d.get('state') != 'disputed':
+        case.fail('Dai\'s false report was not disputed: %r, %r' % (c.get('state'), d.get('state')))
+    else:
+        uploaded = sorted(n for n in os.listdir(os.path.join(state, 'disputes')) if n.endswith('.rbu'))
+        if len(uploaded) != 2:
+            case.fail('the dispute\'s replays are not both kept: %r' % uploaded)
+        else:
+            out = os.path.join(case.folder, 'dispute')
+            files = ladder.unpack(os.path.join(state, 'disputes', uploaded[0]), out)
+            checked = [port_replay_check(path) for path in files if path.endswith('.rbr')]
+            if not checked or any(code != 0 for code, _ in checked):
+                case.fail('the disputed replays do not play back: %r' % checked)
+            else:
+                case.said.append('match %d (Chie and Dai, Dai reporting the other winner): disputed, unrated; both '
+                                 'sides\' replays kept (%s), %d played back by --replay-check: %s'
+                                 % (c['match'], ', '.join(uploaded), len(checked), checked[0][1]))
+    # a leaver loses
+    if f.get('reason') != 'this player left' or e.get('reason') != 'the other left':
+        case.fail('the leave was not reported as one: %r, %r' % (e.get('reason'), f.get('reason')))
+    elif e.get('state') != 'rated' or e.get('won') != 'won' or f.get('won') != 'lost':
+        case.fail('the leaver did not lose: %r, %r' % (e, f))
+    else:
+        case.said.append('match %d: Fumi left in its fight (frame %d) and lost it: Eiko 1500 to %d, Fumi 1500 to %d'
+                         % (e['match'], RANKED_LEAVE_FRAME, e['after'], f['after']))
+    # a forgery: a report under Ayame's key, signed by another's
+    host, port = lobby.rsplit(':', 1)
+    key = ranked_public(os.path.join(case.folder, 'ayame.key'))
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(2.0)
+    try:
+        sock.sendto(rc.rank(ladder.A_HELLO, None, key=key), (host, int(port)))
+        hello = rc.parse_ranked(sock.recv(2048))
+        mallory = rc.Identity()
+        winner = ladder.WON_FIRST if a.get('player') == 2 else ladder.WON_SECOND
+        sock.sendto(rc.rank(ladder.A_REPORT, None, key=key, nonce=hello['nonce'], sign_with=mallory,
+                            match=a.get('match') or 0, winner=winner, reason=ladder.R_DECIDED, rule=2, count=1,
+                            digest=b'F' * 32, frames=1), (host, int(port)))
+        forged = rc.parse_ranked(sock.recv(2048))
+        sock.sendto(rc.rank(ladder.A_HELLO, None, key=key), (host, int(port)))
+        after = rc.parse_ranked(sock.recv(2048))
+    except (OSError, ValueError) as error:
+        case.fail('the lobby did not answer the forgery: %r' % error)
+        return
+    finally:
+        sock.close()
+    if forged['status'] != ladder.E_BAD_SIGNATURE or after['rating'] != a.get('after'):
+        case.fail('a forged report: %s, Ayame\'s rating %r' % (forged['name'], after['rating']))
+    elif 'signature is not its key\'s' not in read(os.path.join(case.folder, 'server.log')):
+        case.fail('the forgery is not in the lobby\'s log')
+    else:
+        case.said.append('a report forged under Ayame\'s key: refused (BAD_SIGNATURE), her rating still %d'
+                         % after['rating'])
+
+
+def port_replay_check(path):
+    """`--replay-check` of a replay by the headless program: (exit code,
+    its last line)."""
+    done = subprocess.run([HEADLESS, '--image', playtest.RETAIL_CUE, '--no-cards', '--replay-check', path], cwd=REPO,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, timeout=SECONDS)
+    said = [line for line in done.stderr.decode('utf-8', 'replace').splitlines() if line.startswith('replay:')]
+    return done.returncode, said[-1] if said else '(nothing said)'
+
+
 HEADLESS_CASES = [('punch', case_punch), ('relay', case_relay), ('mapped', case_mapped), ('v6', case_v6),
                   ('direct6', case_direct6), ('punchto', case_punchto), ('list', case_list),
                   ('refused', case_refused),
@@ -638,7 +842,9 @@ HEADLESS_CASES = [('punch', case_punch), ('relay', case_relay), ('mapped', case_
 # Run after the cases above, not beside them (they all run at once, and
 # three programs more starve those that count their round trips), and in
 # the Linux half alone: a room's Crew match.
-LATER_CASES = [('rooms-crew', case_rooms_crew)]
+LATER_CASES = [('rooms-crew', case_rooms_crew), ('ranked', case_ranked)]
+# ... and in the Windows half, its own ranked case, after the rest
+WINDOWS_LATER_CASES = [('ranked-win', case_ranked)]
 
 
 # ---- the window's cases (Windows) ----
@@ -1077,6 +1283,69 @@ def case_win_room(case):
     save_pictures(case, PICTURES)
 
 
+def case_win_ranked(case):
+    """Ranked play from a window's pages (Online Play, Ranked, Find a ranked
+    match) against a window of the command line (--ranked): the lobby pairs
+    them, the window's pages begin the match in the running program, both
+    report, the match is rated; the window's Ranked page shows the result
+    and its ladder page the two (pictures in its shots)."""
+    state = os.path.join(case.folder, 'ladder')
+    lobby = case.server('--state', state, *RANKED_SERVER)
+    with PLAN_LOCK:
+        plan = port_net.write_room_plan(WINDOW, case.folder)
+    shots = os.path.join(case.folder, 'shots', 'kaede')
+    os.makedirs(shots, exist_ok=True)
+    cfg = os.path.join(case.folder, 'kaede.cfg')
+    with open(cfg, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('fullscreen = off\nnet_listen = local\nnet_portmap = off\nnet_lobby = %s\nnet_player = Kaede\n'
+                'fps = off\n' % lobby)
+    # Online Play's rows: Quick Match, Host, Browse, Code, Address, Ranked
+    keys = ('down down down down down accept wait:10 shot accept until:queued wait:10 shot '
+            'until:ranked wait:30 shot accept wait:10 shot down accept until:list wait:10 shot')
+    window = case.start('kaede', [WINDOW, '--config', cfg, '--log', os.path.join(case.folder, 'kaede.log'),
+                                  '--out', os.path.join(case.folder, 'kaede'), '--image', playtest.RETAIL_CUE,
+                                  '--windowed', '--quick-loading', 'on', '--plan', plan, '--net-plan-pads',
+                                  '--net-seed', str(RANKED_SEED), '--no-cards', '--online-at', '120',
+                                  '--online-keys', keys, '--menu-shots', shots,
+                                  '--identity', os.path.join(case.folder, 'kaede.key')], DUMMY)
+    if case.wait_for('kaede', r'ranked: \S+ goes into the queue', 90) is None:
+        case.fail('the window never queued from its pages')
+        window.kill()
+        return
+    # (a window of the command line: its setup code is the other window's,
+    # where the headless program's build is another)
+    goro_cfg = os.path.join(case.folder, 'goro.cfg')
+    with open(goro_cfg, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('fullscreen = off\nnet_listen = local\nnet_portmap = off\n')
+    other = case.start('goro', [WINDOW, '--config', goro_cfg, '--log', os.path.join(case.folder, 'goro.log'),
+                                '--out', os.path.join(case.folder, 'goro'), '--image', playtest.RETAIL_CUE,
+                                '--windowed', '--quick-loading', 'on', '--plan', plan, '--net-plan-pads',
+                                '--net-seed', str(RANKED_SEED), '--no-cards', '--lobby', lobby, '--ranked',
+                                '--ranked-matches', '1', '--player', 'Goro',
+                                '--identity', os.path.join(case.folder, 'goro.key')], DUMMY)
+    code = wait_all([other], SECONDS)[0]
+    shown = case.wait_for('kaede', r'a picture of the window, .*online-004\.png', 120)
+    time.sleep(2.0)
+    window.kill()
+    kaede = ranked_logs(case.err('kaede') + read(os.path.join(case.folder, 'kaede.log')))
+    goro = ranked_logs(case.err('goro') + read(os.path.join(case.folder, 'goro.log')))
+    if code != 0:
+        case.fail('the command line\'s window ended with %s' % code)
+    if kaede.get('match') is None or kaede.get('match') != goro.get('match'):
+        case.fail('the two windows did not play one match: %r, %r' %
+                  (kaede.get('match'), goro.get('match')))
+    elif kaede.get('state') != 'rated' or goro.get('state') != 'rated' or kaede.get('digest') != goro.get('digest'):
+        case.fail('the match is not rated alike on both: %r, %r' % (kaede, goro))
+    else:
+        case.said.append('match %d from the window\'s pages: Kaede %s, 1500 to %d; Goro %s, 1500 to %d; the digests '
+                         'alike' % (kaede['match'], kaede['won'], kaede['after'], goro['won'], goro['after']))
+    if shown is None:
+        case.fail('the window\'s pages did not show the ladder after the match')
+    if 'starts again' in case.err('kaede') + read(os.path.join(case.folder, 'kaede.log')):
+        case.fail('the window started again')
+    save_pictures(case, PICTURES)
+
+
 def save_pictures(case, into):
     """The case's pictures of the pages, copied into `into`."""
     shots = os.path.join(case.folder, 'shots')
@@ -1094,6 +1363,8 @@ WINDOW_CASES = [('win-headless', case_win_headless), ('win-window', case_win_win
                 ('win-rooms', case_win_rooms), ('win-portmap', case_win_portmap), ('win-refused', case_win_refused),
                 ('win-quiet', case_win_quiet), ('win-lobby-refused', case_win_lobby_refused),
                 ('win-pages', case_pages), ('win-pages-refused', case_pages_refused), ('win-room', case_win_room)]
+# (and the window's ranked page with a match, after the rest: WINDOWS_LATER_CASES)
+WINDOWS_LATER_CASES.append(('win-ranked', case_win_ranked))
 # the online pages' cases, which the window's half of tools/port_net.py runs on Linux too
 PAGES_CASES = [('pages', case_pages), ('pages-refused', case_pages_refused), ('room', case_win_room)]
 
@@ -1157,7 +1428,7 @@ def main():
         cases = HEADLESS_CASES + WINDOW_CASES
     else:
         cases = HEADLESS_CASES
-    later = LATER_CASES if args.what == 'headless' else []
+    later = LATER_CASES if args.what == 'headless' else WINDOWS_LATER_CASES if args.what == 'windows' else []
     if args.only:
         cases = [c for c in cases if c[0] in args.only]
         later = [c for c in later if c[0] in args.only]

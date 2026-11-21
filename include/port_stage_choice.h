@@ -91,6 +91,12 @@ enum {
  * arenas' page for the window to draw. Returns PORT_STAGE_PAGE_...; with
  * ..._ARENA `*stage` is the host to fight on. */
 extern s32 port_StagePageStep(s32 pressed, s32 *stage, s32 is_open);
+/* A ranked match's stage (src/port/ranked.c; docs/NETPLAY.md, section
+ * 17), drawn by the lobby for the match: TRUE and its place among the
+ * three pages' 18 (a page's six, in its order, page after page), which
+ * the stage pages take as soon as they open. Outside the state, the same
+ * on both machines of the match for all of it. */
+extern s32 port_RankedStagePlace(s32 *place);
 /* A frame of the select screen on none of the stage pages. */
 extern void port_StageLeftPages(void);
 /* The grid's own cross on `stage`: the fight is on the disc's stage, in

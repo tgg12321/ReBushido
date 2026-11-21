@@ -84,9 +84,8 @@ WINDOW_HOSTED = ['sdl_main.c', 'sdl_window.c', 'sdl_log.c', 'sdl_menu.c', 'sdl_n
                  'menu_replays.c', 'sdl_replay.c',
                  'sampler.c', 'warm.c', 'portmap.c', 'cpu_prefer.c',
                  'prepare.c', 'update.c', 'update_core.c', 'update_apply.c', 'online_pages.c']
-# Monocypher (src/port/vendor/monocypher/, CC0 or BSD-2): the updater's
-# Ed25519, as it is shipped
-VENDOR_HOSTED = ['src/port/vendor/monocypher/monocypher.c', 'src/port/vendor/monocypher/monocypher-ed25519.c']
+# (Monocypher, the updater's Ed25519, is in every program: tools/
+# port_build.py's VENDOR_FILES)
 # The release key the updater holds every release's manifest to (docs/
 # PORT.md, "Updates"): its public half, the hex of 32 bytes, or `none`
 RELEASE_KEY = 'config/release_public_key.txt'
@@ -237,7 +236,7 @@ class Target:
                 self.game_flags.append('-mcmodel=small')
             self.sdl = self.find_sdl(bits)
             self.sdl_flags = ['-I%s/include/SDL2' % self.sdl] if self.sdl else []
-            self.hosted = ([WINDOW_DIR + f for f in WINDOW_HOSTED] + VENDOR_HOSTED
+            self.hosted = ([WINDOW_DIR + f for f in WINDOW_HOSTED]
                            + [GL_DIR + f for f in GL_HOSTED] + ['src/port/host_windows.c'])
         else:
             self.cc, self.objcopy, self.nm, self.objdump = 'gcc', 'objcopy', 'nm', 'objdump'
@@ -248,7 +247,7 @@ class Target:
             self.game_flags = []
             self.sdl = None
             self.sdl_flags = ['-I/usr/include/SDL2', '-D_REENTRANT']
-            self.hosted = ([WINDOW_DIR + f for f in WINDOW_HOSTED] + VENDOR_HOSTED
+            self.hosted = ([WINDOW_DIR + f for f in WINDOW_HOSTED]
                            + [GL_DIR + f for f in GL_HOSTED] + [WINDOW_DIR + 'host_posix.c'])
 
     @staticmethod
@@ -400,7 +399,9 @@ def compile_one(job):
         cmd += ['-MD', '-MF', obj[:-2] + '.d', '-c', path, '-o', obj]
         proc = run(cmd)
     else:
-        if kind == 'port':
+        if kind == 'port' and path in port_build.VENDOR_FILES:
+            pass  # as it is shipped, its warnings off (port_build.VENDOR_FLAGS)
+        elif kind == 'port':
             flags = [f for f in flags if f != '-w'] + port_build.PORT_WARNINGS + ['-I' + WINDOW_DIR.rstrip('/')]
         else:
             flags = flags + [port_build.INSTRUMENT]
@@ -500,7 +501,9 @@ def link_blob(target, objects):
         print('\n'.join('    ' + line for line in proc.stderr.split('\n')[:30]))
         return None
     proc = run([target.objcopy, '-w', '--keep-global-symbol=%sport_*' % target.under,
-                '--keep-global-symbol=%sg_port_*' % target.under, whole, blob])
+                '--keep-global-symbol=%sg_port_*' % target.under,
+                # Monocypher's, which the updater calls (update_core.c)
+                '--keep-global-symbol=%scrypto_*' % target.under, whole, blob])
     if proc.returncode != 0:
         print('\n'.join('    ' + line for line in proc.stderr.split('\n')[:30]))
         return None

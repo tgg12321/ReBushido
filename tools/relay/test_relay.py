@@ -9,14 +9,18 @@ exits 0, or names the first check that failed and exits 1.
 """
 
 import os
+import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import ladder  # noqa: E402
 import relay_client as rc  # noqa: E402
 
 SERVER = os.path.join(HERE, "rebushido_relay.py")
@@ -457,9 +461,10 @@ def test_bad_requests(server):
     five = host_hello(cands=[LAN] * 4)
     five = five[:124] + b"\x05" + five[125:]
     check(answer(five) == rc.E_BAD_REQUEST, "five candidates")
-    # the clients of version 1 are refused, cleanly
+    # the clients of versions 1 and 2 are refused, cleanly
     check(answer(rc.hello(rc.F_HOST, name="x", version=1)) == rc.E_VERSION, "version 1")
-    check(answer(rc.hello(rc.F_HOST, name="x", version=3)) == rc.E_VERSION, "version 3")
+    check(answer(rc.hello(rc.F_HOST, name="x", version=2)) == rc.E_VERSION, "version 2")
+    check(answer(rc.hello(rc.F_HOST, name="x", version=4)) == rc.E_VERSION, "version 4")
     # None of these made a room.
     check(answer(host_hello(name="Good")) == rc.S_WAITING, "a good HELLO after bad ones")
 
@@ -815,6 +820,517 @@ def groups_server():
         server.kill()
 
 
+# --- the ranked ladder (ladder.py; docs/NETPLAY.md, section 17) ------------
+
+RANKED_SETUP = "P12-7Q2K-M9XD-0000"
+
+
+class Player:
+    """A ranked player: its identity, its client, the server's last words."""
+
+    def __init__(self, server, name, seed=None, rtt=20):
+        self.client = Client(server)
+        self.me = rc.Identity(seed)
+        self.name = name
+        self.rtt = rtt
+        self.nonce = bytes(16)
+        self.token = bytes(16)
+        self.last = None
+
+    def say(self, action, timeout=1.5, **fields):
+        """A RANK sent, the RANKED that answers it (parsed); a signed one
+        signed again once with the fresh nonce of a STALE."""
+        fields.setdefault("name", self.name)
+        fields.setdefault("setup", RANKED_SETUP)
+        fields.setdefault("rtt", self.rtt)
+        for _ in range(2):
+            self.client.drain()
+            self.client.send(rc.rank(action, self.me, nonce=self.nonce, **fields))
+            reply = self.client.recv(ladder.K_RANKED, timeout)
+            check(reply is not None, "%s: no RANKED to action %d" % (self.name, action))
+            self.last = rc.parse_ranked(reply)
+            self.nonce = self.last["nonce"]
+            if self.last["status"] != ladder.E_STALE:
+                break
+        if self.last["token"] != bytes(16):
+            self.token = self.last["token"]
+        return self.last
+
+    def hello(self):
+        return self.say(ladder.A_HELLO)
+
+    def queue(self):
+        return self.say(ladder.A_QUEUE)
+
+    def stay(self, match=0):
+        return self.say(ladder.A_STAY, token=self.token, match=match)
+
+    def wait_match(self, seconds=4.0):
+        """STAYs until the server gives a match: the MATCHED (parsed)."""
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            r = self.stay()
+            if r["what"] == ladder.W_MATCHED:
+                return r
+            time.sleep(0.2)
+        return None
+
+    def report(self, match, winner, reason=ladder.R_DECIDED, digest=b"D" * 32, frames=4000, **fields):
+        fields.setdefault("rule", ladder.RULE_FIRST_TO)
+        fields.setdefault("count", 3)
+        return self.say(ladder.A_REPORT, match=match, winner=winner, reason=reason, digest=digest, frames=frames,
+                        **fields)
+
+    def outcome(self, match, seconds=5.0):
+        """STAYs (match `match`) until it is decided: the REPORTED."""
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            r = self.stay(match)
+            if r["what"] == ladder.W_REPORTED and r["state"] != ladder.M_PLAYING:
+                return r
+            time.sleep(0.2)
+        return None
+
+
+def ranked_server(state, *more):
+    return Server("--verbose", "--state", state, "--ranked-same-address", "--identities-per-day", "1000",
+                  "--ranked-rate", "100000", "--signed-rate", "100000", "--query-rate", "100000",
+                  "--hello-rate", "100000", "--watch-rate", "100000", "--ranked-widen", "0", "--ranked-ping-widen",
+                  "0", "--gone-timeout", "1.5", "--report-wait", "0.5", "--report-timeout", "3",
+                  "--ranked-pair-per-day", "2", "--backup-every", "1", "--backups-keep", "2", *more, v6=False)
+
+
+def set_rating(state, player, rating, rd=60.0):
+    db = sqlite3.connect(os.path.join(state, "ladder.sqlite"), timeout=5)
+    db.execute("UPDATE players SET rating = ?, rd = ? WHERE key = ?", (rating, rd, player.me.public))
+    db.commit()
+    db.close()
+
+
+def matched_pair(a, b):
+    """a and b queued at once: both MATCHED to one match, a its host."""
+    for p in (a, b):
+        r = p.queue()
+        check(r["status"] == 1 and r["what"] == ladder.W_QUEUED, "%s queues: %r" % (p.name, r["name"]))
+    ma, mb = a.wait_match(), b.wait_match()
+    check(ma is not None and mb is not None, "%s and %s were not paired" % (a.name, b.name))
+    check(ma["match"] == mb["match"] and ma["code"] == mb["code"] and ma["ticket"] == mb["ticket"],
+          "the two were given different matches")
+    check({ma["role"], mb["role"]} == {1, 2}, "the roles: %r and %r" % (ma["role"], mb["role"]))
+    return (ma, mb) if ma["role"] == 1 else (mb, ma)
+
+
+def test_ranked_identity(server, state):
+    """A key, its name, every request of it signed; a forged one refused."""
+    ayame = Player(server, "Ayame")
+    h = ayame.hello()
+    check(h["status"] == 1 and not h["flags"] & ladder.F_REGISTERED and h["nonce"] != bytes(16),
+          "HELLO of a new key: %r" % h)
+    check(h["first_to"] == 3, "the ladder's rule: first to %d" % h["first_to"])
+    n = ayame.say(ladder.A_NAME)
+    check(n["status"] == 1 and n["flags"] & ladder.F_REGISTERED and n["player"] == "Ayame" and
+          n["rating"] == 1500 and n["rd"] == 350 and n["flags"] & ladder.F_PROVISIONAL, "NAME: %r" % n)
+    # a forgery: Ayame's key, signed by another's
+    mallory = rc.Identity()
+    ayame.client.drain()
+    ayame.client.send(rc.rank(ladder.A_NAME, ayame.me, nonce=ayame.nonce, name="Mallory", setup=RANKED_SETUP,
+                              sign_with=mallory))
+    f = rc.parse_ranked(ayame.client.recv(ladder.K_RANKED))
+    check(f["status"] == ladder.E_BAD_SIGNATURE, "a forged NAME: %r" % f["name"])
+    # a signature of the right key over other bytes (one changed after)
+    raw = bytearray(rc.rank(ladder.A_NAME, ayame.me, nonce=ayame.nonce, name="Ayame2", setup=RANKED_SETUP))
+    raw[60] ^= 1
+    ayame.client.send(bytes(raw))
+    f = rc.parse_ranked(ayame.client.recv(ladder.K_RANKED))
+    check(f["status"] == ladder.E_BAD_SIGNATURE, "a changed NAME: %r" % f["name"])
+    check(ayame.hello()["player"] == "Ayame", "a forged NAME changed the name")
+    # an old nonce: STALE, with a fresh one
+    ayame.client.send(rc.rank(ladder.A_NAME, ayame.me, nonce=bytes(16), name="Ayame", setup=RANKED_SETUP))
+    s = rc.parse_ranked(ayame.client.recv(ladder.K_RANKED))
+    check(s["status"] == ladder.E_STALE and s["nonce"] == ayame.nonce, "an old nonce: %r" % s["name"])
+    # a client of version 2
+    ayame.client.send(rc.rank(ladder.A_HELLO, ayame.me, version=2))
+    v = rc.parse_ranked(ayame.client.recv(ladder.K_RANKED))
+    check(v["status"] == ladder.E_VERSION, "a RANK of version 2: %r" % v["name"])
+    # an unsigned QUEUE (no signature at all)
+    ayame.client.send(rc.rank(ladder.A_QUEUE, None, key=ayame.me.public, nonce=ayame.nonce, name="Ayame",
+                              setup=RANKED_SETUP))
+    u = rc.parse_ranked(ayame.client.recv(ladder.K_RANKED))
+    check(u["status"] == ladder.E_BAD_SIGNATURE, "an unsigned QUEUE: %r" % u["name"])
+    check(any("signature is not its key's" in line for line in server.lines), "a forgery not logged")
+    return ayame
+
+
+def test_ranked_names(server, ayame):
+    """The rules of a name, and none taken that looks like another's."""
+    other = Player(server, "x")
+    for bad, why in (("Al", "too short"), ("A" * 16, "too long"), ("Ay@me", "a character"), (" Ayame", "a space"),
+                     ("Ay  ame", "two spaces"), ("_Kei", "a separator first"), ("Admin", "a kept name"),
+                     ("ReBushido", "a kept name")):
+        r = other.say(ladder.A_NAME, name=bad)
+        check(r["status"] == ladder.E_NAME_BAD, "the name %r (%s): %r" % (bad, why, r["name"]))
+    for alike in ("Ayame", "AYAME", "ayame", "Ay_ame", "4yame", "Ay.a.me", "Ayarne"):
+        r = other.say(ladder.A_NAME, name=alike)
+        check(r["status"] == ladder.E_NAME_TAKEN, "%r beside Ayame's: %r" % (alike, r["name"]))
+    check(other.say(ladder.A_NAME, name="Utsusemi")["status"] == 1, "a name of its own")
+    # a rename frees the old name; the key keeps its rating
+    check(other.say(ladder.A_NAME, name="Utsu")["player"] == "Utsu", "a rename")
+    third = Player(server, "Utsusemi")
+    check(third.say(ladder.A_NAME)["status"] == 1, "a name given up is free")
+    check(ayame.say(ladder.A_NAME, name="ayame")["status"] == 1, "a player's own name in other letters")
+    check(ayame.say(ladder.A_NAME, name="Ayame")["player"] == "Ayame", "and back")
+
+
+def test_ranked_queue(server, state):
+    """Pairing by rating and by round trip; never one's self; the meeting."""
+    a, b, c = Player(server, "Bunta"), Player(server, "Chie"), Player(server, "Dai")
+    for p in (a, b, c):
+        check(p.say(ladder.A_NAME)["status"] == 1, "%s's name" % p.name)
+    set_rating(state, a, 1500)
+    set_rating(state, b, 1900)
+    set_rating(state, c, 1560)
+    for p in (a, b, c):
+        check(p.queue()["what"] == ladder.W_QUEUED, "%s queues" % p.name)
+    ma, mc = a.wait_match(), c.wait_match()
+    check(ma is not None and mc is not None and ma["match"] == mc["match"], "Bunta (1500) and Dai (1560) paired")
+    check(ma["role"] == 1 and mc["role"] == 2, "the one who waited longer hosts")
+    check(ma["opponent"] == "Dai" and mc["opponent"] == "Bunta" and mc["opponent_rating"] == 1500,
+          "each told the other's name and rating: %r" % ((ma["opponent"], mc["opponent"]),))
+    check(ma["count"] == 3 and 0 <= ma["stage"] < ladder.STAGE_PLACES and ma["stage"] == mc["stage"],
+          "the rule and the stage: %r" % ((ma["count"], ma["stage"], mc["stage"]),))
+    time.sleep(1.0)
+    check(b.stay()["what"] == ladder.W_QUEUED, "Chie (1900) paired at 340 apart")
+    # far in round trips: not paired
+    far = Player(server, "Eiko", rtt=400)
+    check(far.say(ladder.A_NAME)["status"] == 1, "Eiko's name")
+    set_rating(state, far, 1900)
+    far.queue()
+    time.sleep(1.2)
+    check(far.stay()["what"] == ladder.W_QUEUED and b.stay()["what"] == ladder.W_QUEUED,
+          "Eiko (400 ms) paired with Chie (20 ms)")
+    check(b.say(ladder.A_LEAVE, token=b.token)["flags"] & ladder.F_QUEUED == 0, "LEAVE")
+    far.say(ladder.A_LEAVE, token=far.token)
+    # the match is met through the lobby by its ticket, as a room's
+    host = Client(server)
+    s = host.ask(rc.hello(rc.F_HOST | rc.F_TICKET, code=ma["code"], player="Bunta", setup=RANKED_SETUP,
+                          secret=ma["ticket"]))
+    check(s["detail"] == rc.S_WAITING and s["code"] == ma["code"], "the ranked match's host: %r" % s)
+    wrong = Client(server).ask(rc.hello(rc.F_GUEST | rc.F_TICKET, code=ma["code"], setup=RANKED_SETUP,
+                                        secret=bytes(16)))
+    check(wrong["detail"] == rc.E_NO_ROOM, "a wrong ticket: %r" % wrong["name"])
+    guest = Client(server)
+    g = guest.ask(rc.hello(rc.F_GUEST | rc.F_TICKET, code=ma["code"], player="Dai", setup=RANKED_SETUP,
+                           secret=mc["ticket"]))
+    check(g["detail"] == rc.S_PUNCH and g["peer"] == host.address(), "the ranked match's guest: %r" % g["name"])
+    return a, c, ma, mc
+
+
+def expected(rating_a, rd_a, rating_b, rd_b, score_a):
+    first = ladder.glicko2(rating_a, rd_a, ladder.START_VOLATILITY, [(rating_b, rd_b, score_a)], periods=0.0)
+    second = ladder.glicko2(rating_b, rd_b, ladder.START_VOLATILITY, [(rating_a, rd_a, 1.0 - score_a)], periods=0.0)
+    return round(first[0]), round(second[0])
+
+
+def test_ranked_agree(server, state, a, c, ma, mc):
+    """Two reports that agree: the match rated, by Glicko-2's numbers."""
+    r = a.report(ma["match"], ladder.WON_FIRST)
+    check(r["status"] == 1 and r["what"] == ladder.W_REPORTED and r["state"] == ladder.M_PLAYING,
+          "the first report waits for the other: %r" % r)
+    r2 = c.report(mc["match"], ladder.WON_FIRST)
+    check(r2["state"] == ladder.M_RATED, "two reports alike: %r" % ladder.STATE_NAMES.get(r2["state"]))
+    want = expected(1500, 60, 1560, 60, 1.0)
+    got = a.outcome(ma["match"])
+    check(got["before"] == 1500 and got["after"] == want[0] and r2["before"] == 1560 and r2["after"] == want[1],
+          "the ratings: %r and %r, not %r" % ((got["before"], got["after"]), (r2["before"], r2["after"]), want))
+    check(a.hello()["wins"] == 1 and c.hello()["losses"] == 1, "the win and the loss counted")
+    # told again: the same answer, nothing rated twice
+    again = c.report(mc["match"], ladder.WON_FIRST)
+    check(again["state"] == ladder.M_RATED and again["after"] == want[1], "a report told twice")
+    check(c.hello()["losses"] == 1, "a report told twice was counted twice")
+    # a report of one not in the match
+    stranger = Player(server, "Fumi")
+    stranger.say(ladder.A_NAME)
+    s = stranger.report(ma["match"], ladder.WON_SECOND)
+    check(s["status"] == ladder.E_NO_MATCH, "a stranger's report: %r" % s["name"])
+    return want
+
+
+def test_ranked_dispute(server, state, a, c):
+    """Reports that differ: held as disputed, unrated; the replays kept."""
+    ma, mc = matched_pair(a, c)
+    before = (a.hello()["rating"], c.hello()["rating"])
+    a.report(ma["match"], ladder.WON_FIRST, digest=b"A" * 32)
+    r = c.report(mc["match"], ladder.WON_FIRST, digest=b"C" * 32)
+    check(r["state"] == ladder.M_DISPUTED and r["upload"] == 1, "digests that differ: %r" % r)
+    check((a.hello()["rating"], c.hello()["rating"]) == before, "a disputed match was rated")
+    # the replays, uploaded in chunks
+    files = [("fight-1.rbr", os.urandom(2500)), ("fight-2.rbr", b"RBREPLAY" + bytes(900))]
+    blob = rc.upload_blob(files)
+    have = 0
+    for _ in range(20):
+        c.client.drain()
+        c.client.send(rc.upload(c.me, c.token, mc["match"], have, len(blob), blob[have:have + ladder.UPLOAD_CHUNK]))
+        u = rc.parse_ranked(c.client.recv(ladder.K_RANKED))
+        check(u["status"] == 1, "UPLOAD: %r" % u["name"])
+        have = u["have"]
+        if have >= len(blob):
+            break
+    check(have == len(blob), "the upload stopped at %d of %d" % (have, len(blob)))
+    path = os.path.join(state, "disputes", "match-%d-b.rbu" % mc["match"])
+    check(os.path.isfile(path) and open(path, "rb").read() == blob, "the dispute's replays are not kept whole")
+    out = os.path.join(state, "unpacked")
+    made = ladder.unpack(path, out)
+    check([open(p, "rb").read() for p in made] == [d for _, d in files], "the upload's files unpacked")
+    shutil.rmtree(out)
+    check(c.stay(mc["match"])["upload"] == 0, "an upload asked for again once kept")
+    # too large a side
+    big = a.stay(ma["match"])
+    check(big["upload"] == 1, "the other side's upload is not asked for")
+    a.client.send(rc.upload(a.me, a.token, ma["match"], 0, (4 << 20) + 1, b"RBRANKUP"))
+    u = rc.parse_ranked(a.client.recv(ladder.K_RANKED))
+    check(u["status"] == ladder.E_FULL, "an upload over its size: %r" % u["name"])
+    return path
+
+
+def test_ranked_pair_limit(server, a, c):
+    """The same two, already twice today: not paired again."""
+    for p in (a, c):
+        p.queue()
+    time.sleep(1.5)
+    check(a.stay()["what"] == ladder.W_QUEUED and c.stay()["what"] == ladder.W_QUEUED,
+          "the same pair paired a third time in a day")
+    for p in (a, c):
+        p.say(ladder.A_LEAVE, token=p.token)
+
+
+def test_ranked_leaver(server, state):
+    """A player who leaves mid-match loses it: said by both, or by one with
+    the other gone; a quiet stayer's match disputed."""
+    g, h = Player(server, "Goro"), Player(server, "Hana")
+    for p in (g, h):
+        p.say(ladder.A_NAME)
+    mg, mh = matched_pair(g, h)
+    g.report(mg["match"], ladder.WON_SECOND, reason=ladder.R_I_LEFT)
+    r = h.report(mh["match"], ladder.WON_SECOND, reason=ladder.R_OTHER_LEFT)
+    check(r["state"] == ladder.M_RATED and r["winner"] == ladder.WON_SECOND, "a leave both said: %r" % r)
+    check(g.hello()["losses"] == 1 and h.hello()["wins"] == 1, "the leaver did not lose")
+    # a leave in the last frames: the other's program saw the match decided
+    # (whoever it says won), the leaver's own report concedes
+    for leaver_first in (True, False):
+        g2, h2 = Player(server, "Goro%d" % leaver_first), Player(server, "Hana%d" % leaver_first)
+        for p in (g2, h2):
+            p.say(ladder.A_NAME)
+        m1, m2 = matched_pair(g2, h2)
+        leaver, stayer = (g2, h2) if leaver_first else (h2, g2)
+        number = m1["match"]
+        conceded = ladder.WON_SECOND if leaver_first else ladder.WON_FIRST
+        leaver.report(number, conceded, reason=ladder.R_I_LEFT)
+        r = stayer.report(number, ladder.WON_FIRST if leaver_first else ladder.WON_SECOND)
+        check(r["state"] == ladder.M_RATED and r["winner"] == conceded,
+              "a leave as the match was decided: %r" % ladder.STATE_NAMES.get(r["state"]))
+    # one report; the other never heard from again
+    i, j = Player(server, "Isao"), Player(server, "Jun")
+    for p in (i, j):
+        p.say(ladder.A_NAME)
+    mi, mj = matched_pair(i, j)
+    i.report(mi["match"], ladder.WON_FIRST, reason=ladder.R_OTHER_LEFT)
+    out = i.outcome(mi["match"], 6.0)
+    check(out is not None and out["state"] == ladder.M_RATED and out["winner"] == ladder.WON_FIRST,
+          "the gone player's match: %r" % (out and ladder.STATE_NAMES.get(out["state"])))
+    # one report; the other still there and saying nothing of it
+    k, m = Player(server, "Kei"), Player(server, "Mai")
+    for p in (k, m):
+        p.say(ladder.A_NAME)
+    mk, mm = matched_pair(k, m)
+    k.report(mk["match"], ladder.WON_FIRST)
+    end = time.monotonic() + 6.0
+    state_now = ladder.M_PLAYING
+    while time.monotonic() < end and state_now == ladder.M_PLAYING:
+        m.stay()
+        state_now = k.stay(mk["match"])["state"]
+        time.sleep(0.3)
+    check(state_now == ladder.M_DISPUTED, "a report the other never made: %r" % ladder.STATE_NAMES.get(state_now))
+    # both say the other left: disputed
+    n, o = Player(server, "Nao"), Player(server, "Oto")
+    for p in (n, o):
+        p.say(ladder.A_NAME)
+    mn, mo = matched_pair(n, o)
+    n.report(mn["match"], ladder.WON_FIRST, reason=ladder.R_OTHER_LEFT)
+    r = o.report(mo["match"], ladder.WON_SECOND, reason=ladder.R_OTHER_LEFT)
+    check(r["state"] == ladder.M_DISPUTED, "each saying the other left: %r" % ladder.STATE_NAMES.get(r["state"]))
+    # neither met: void
+    p_, q = Player(server, "Ryo"), Player(server, "Sora")
+    for p in (p_, q):
+        p.say(ladder.A_NAME)
+    mp, mq = matched_pair(p_, q)
+    p_.report(mp["match"], ladder.WON_NONE, reason=ladder.R_NOT_MET)
+    r = q.report(mq["match"], ladder.WON_NONE, reason=ladder.R_NOT_MET)
+    check(r["state"] == ladder.M_VOID, "a match never met: %r" % ladder.STATE_NAMES.get(r["state"]))
+    # a report of another rule than the ladder's
+    t, u = Player(server, "Taro"), Player(server, "Uta")
+    for p in (t, u):
+        p.say(ladder.A_NAME)
+    mt, mu = matched_pair(t, u)
+    t.report(mt["match"], ladder.WON_FIRST, count=1)
+    r = u.report(mu["match"], ladder.WON_FIRST, count=1)
+    check(r["state"] == ladder.M_DISPUTED, "a match of another rule: %r" % ladder.STATE_NAMES.get(r["state"]))
+
+
+def test_ranked_ladder_pages(server, ayame):
+    top = ayame.say(ladder.A_LADDER, arg=1, arg2=ladder.L_TOP)
+    names = [e["player"] for e in top["entries"]]
+    check(top["what"] == ladder.W_LADDER and "Bunta" in names and "Dai" in names and "Ayame" not in names,
+          "the ladder's top: %r" % names)
+    ratings = [e["rating"] for e in top["entries"]]
+    check(ratings == sorted(ratings, reverse=True) and [e["rank"] for e in top["entries"]] ==
+          list(range(1, len(names) + 1)), "the ladder's order: %r" % top["entries"])
+    recent = ayame.say(ladder.A_LADDER, arg2=ladder.L_RECENT)
+    entries = recent["entries"]
+    check(len(entries) == 8 and all(e["state"] != ladder.M_PLAYING for e in entries) and
+          [e["when"] for e in entries] == sorted((e["when"] for e in entries), reverse=True) and
+          any(e["state"] == ladder.M_RATED and e["delta_a"] == -e["delta_b"] != 0 for e in entries) and
+          any(e["state"] == ladder.M_DISPUTED for e in entries),
+          "the recent matches: %r" % entries)
+
+
+def test_ranked_restart(state):
+    """What is kept survives the server's end and start: the names, the
+    ratings, a match being played, which is reported after the start."""
+    server = ranked_server(state)
+    try:
+        a, b = Player(server, "Vic"), Player(server, "Wen")
+        for p in (a, b):
+            p.say(ladder.A_NAME)
+        ma, mb = matched_pair(a, b)
+        a.report(ma["match"], ladder.WON_SECOND)
+        server.stop()
+    finally:
+        server.kill()
+    server = ranked_server(state)
+    try:
+        check(any("ladder is" in line for line in server.lines), "no ladder line at the start")
+        again = Player(server, "Vic", seed=a.me.seed)
+        h = again.hello()
+        check(h["flags"] & ladder.F_REGISTERED and h["player"] == "Vic", "the name after a restart: %r" % h)
+        other = Player(server, "Wen", seed=b.me.seed)
+        r = other.report(mb["match"], ladder.WON_SECOND)
+        check(r["state"] == ladder.M_RATED, "a match reported across a restart: %r" %
+              ladder.STATE_NAMES.get(r["state"]))
+        taken = Player(server, "Vic")
+        check(taken.say(ladder.A_NAME)["status"] == ladder.E_NAME_TAKEN, "a name held across a restart")
+        server.stop()
+    finally:
+        server.kill()
+
+
+def test_ranked_backup(state):
+    folder = os.path.join(state, "backups")
+    made = sorted(n for n in os.listdir(folder) if n.endswith(".sqlite"))
+    check(made, "no backup in %s" % folder)
+    check(len(made) <= 2, "more backups kept than asked: %r" % made)
+    copy = sqlite3.connect(os.path.join(folder, made[-1]))
+    try:
+        names = {row[0] for row in copy.execute("SELECT name FROM players")}
+        mode = copy.execute("PRAGMA integrity_check").fetchone()[0]
+    finally:
+        copy.close()
+    check(mode == "ok" and "Bunta" in names and "Dai" in names, "the backup holds %r (%s)" % (sorted(names), mode))
+    check(not any(n.endswith(".part") for n in os.listdir(folder)), "a backup half made is left")
+
+
+def test_ranked_limits(state):
+    """New identities a day, the requests' rate, the signed requests' rate,
+    and two of one address never paired."""
+    server = Server("--state", state, "--identities-per-day", "2", "--ranked-rate", "20", "--signed-rate", "2",
+                    v6=False)
+    try:
+        made = []
+        for name in ("Lim1", "Lim2", "Lim3"):
+            p = Player(server, name)
+            made.append(p.say(ladder.A_NAME)["status"])
+            time.sleep(0.6)
+        check(made[:2] == [1, 1] and made[2] == ladder.E_TOO_MANY, "new identities from one address: %r" % made)
+        flood = Player(server, "Flood")
+        got = []
+        for _ in range(60):
+            flood.client.send(rc.rank(ladder.A_HELLO, flood.me))
+        while True:
+            reply = flood.client.recv(ladder.K_RANKED, 0.3)
+            if reply is None:
+                break
+            got.append(rc.parse_ranked(reply)["status"])
+        check(got.count(1) <= 45 and ladder.E_RATE_LIMITED in got and got.count(ladder.E_RATE_LIMITED) <= 2,
+              "60 HELLOs at once: %d answered, %d refused" % (got.count(1), got.count(ladder.E_RATE_LIMITED)))
+        time.sleep(2.5)
+        signed = []
+        for _ in range(12):
+            flood.client.send(rc.rank(ladder.A_NAME, flood.me, nonce=flood.hello()["nonce"], name="Flood",
+                                      setup=RANKED_SETUP))
+            reply = flood.client.recv(ladder.K_RANKED, 0.3)
+            signed.append(rc.parse_ranked(reply)["status"] if reply else None)
+        check(signed.count(ladder.E_RATE_LIMITED) + signed.count(None) >= 3, "12 signed at once: %r" % signed)
+        server.stop()
+    finally:
+        server.kill()
+    # the same address: not paired, where the server is a public one's
+    other_state = state + "-one-address"
+    server = Server("--state", other_state, "--identities-per-day", "10", v6=False)
+    try:
+        x, y = Player(server, "Xan"), Player(server, "Yui")
+        for p in (x, y):
+            p.say(ladder.A_NAME)
+            time.sleep(0.6)
+            p.queue()
+        time.sleep(1.5)
+        check(x.stay()["what"] == ladder.W_QUEUED and y.stay()["what"] == ladder.W_QUEUED,
+              "two of one address paired")
+        server.stop()
+    finally:
+        server.kill()
+        shutil.rmtree(other_state, ignore_errors=True)
+
+
+def test_ranked_off():
+    """No --state: ranked play is off, and says so."""
+    server = Server(v6=False)
+    try:
+        p = Player(server, "Zen")
+        check(p.hello()["status"] == ladder.E_DISABLED, "a server with no store")
+        server.stop()
+    finally:
+        server.kill()
+
+
+def ranked_server_tests():
+    check(not ladder.self_test(), "ladder.py's self-test: %r" % ladder.self_test())
+    (r, rd, vol, games), want = ladder.GLICKO_EXAMPLE
+    got = ladder.glicko2(r, rd, vol, games)
+    check(abs(got[0] - 1464.06) < 0.01 and abs(got[1] - 151.52) < 0.01 and abs(got[2] - 0.05999) < 0.00001,
+          "Glicko-2's worked example: %r" % (got,))
+    state = tempfile.mkdtemp(prefix="rebushido-ladder-")
+    try:
+        server = ranked_server(state)
+        try:
+            ayame = test_ranked_identity(server, state)
+            test_ranked_names(server, ayame)
+            a, c, ma, mc = test_ranked_queue(server, state)
+            test_ranked_agree(server, state, a, c, ma, mc)
+            test_ranked_dispute(server, state, a, c)
+            test_ranked_pair_limit(server, a, c)
+            test_ranked_leaver(server, state)
+            test_ranked_ladder_pages(server, ayame)
+            time.sleep(1.2)
+            server.stop()
+        finally:
+            server.kill()
+        test_ranked_backup(state)
+        test_ranked_restart(state)
+        test_ranked_limits(state)
+        test_ranked_off()
+    finally:
+        shutil.rmtree(state, ignore_errors=True)
+
+
 # --- the limits --------------------------------------------------------------
 
 
@@ -943,7 +1459,7 @@ def limits_relay():
 def main():
     start = time.monotonic()
     tests = [main_server, groups_server, limits_default, limits_creations, limits_server_full, limits_wrong_passwords,
-             limits_relay]
+             limits_relay, ranked_server_tests]
     for test in tests:
         try:
             test()

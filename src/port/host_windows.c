@@ -458,6 +458,25 @@ s32 port_HostMakeFolder(const char *path) {
            GetLastError() == ERROR_ALREADY_EXISTS;
 }
 
+typedef BOOLEAN(WINAPI *PortRtlGenRandom)(PVOID buffer, ULONG length);
+
+/* RtlGenRandom (advapi32's SystemFunction036), the system's source of
+ * random numbers: looked up as the program runs, as this host links no
+ * more than kernel32 and ws2_32. */
+s32 port_HostRandom(void *out, u32 count) {
+    static PortRtlGenRandom generate;
+
+    if (generate == NULL) {
+        HMODULE library = LoadLibraryA("advapi32.dll");
+
+        if (library != NULL) {
+            generate = (PortRtlGenRandom)(void (*)(void))GetProcAddress(
+                library, "SystemFunction036");
+        }
+    }
+    return generate != NULL && generate(out, count) != 0;
+}
+
 s32 port_HostRemove(const char *path) { return DeleteFileA(path) != 0; }
 
 s32 port_HostRename(const char *from, const char *to) {

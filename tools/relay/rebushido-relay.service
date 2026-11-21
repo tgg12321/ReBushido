@@ -7,14 +7,20 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# No --listen: 0.0.0.0:7845, and [::]:7845 where the box has IPv6.
-ExecStart=/usr/bin/python3 -I -u /opt/rebushido-relay/rebushido_relay.py
+# No --listen: 0.0.0.0:7845, and [::]:7845 where the box has IPv6. The
+# ranked ladder's store in the state folder below (docs/NETPLAY.md, 17).
+ExecStart=/usr/bin/python3 -I -u /opt/rebushido-relay/rebushido_relay.py --state /var/lib/rebushido-relay
 Restart=on-failure
 RestartSec=2
 
-# A user made for each start and gone after it: the server owns no file and
-# writes none, so there is no account to keep or to remove.
+# A user made for each start and gone after it. The one folder it writes is
+# its state folder: systemd makes /var/lib/private/rebushido-relay, gives it
+# to the user of each start, and keeps it across restarts, stops and
+# redeploys (deploy.sh never removes it; `uninstall --purge` does). Only
+# that user and root can read it.
 DynamicUser=yes
+StateDirectory=rebushido-relay
+StateDirectoryMode=0700
 NoNewPrivileges=yes
 CapabilityBoundingSet=
 AmbientCapabilities=

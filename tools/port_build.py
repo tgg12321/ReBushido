@@ -349,6 +349,14 @@ PORT_OWN_FLAGS = {'src/port/vorbis.c': ['-Isrc/port/vendor/libc', '-msse', '-mss
 # among them, and the vector instructions of src/port/vorbis.c read its
 # constants on the 16-byte boundaries it was compiled for.
 NATURAL_ALIGNMENT = {'src/port/vorbis.c'}
+# Monocypher (src/port/vendor/monocypher/, CC0 or BSD-2), as it is shipped:
+# Ed25519 and BLAKE2b for the updater and the ranked ladder (include/
+# port_monocypher.h). Compiled with every program as the port's own files
+# are, but in C99, with the few types it takes from a C library given
+# before it, and its warnings off: code the project did not write.
+VENDOR_FLAGS = ['-std=gnu99', '-w', '-DPORT_MONOCYPHER_BUILD', '-include', 'include/port_monocypher.h',
+                '-Isrc/port/vendor/libc', '-Isrc/port/vendor/monocypher']
+VENDOR_FILES = ['src/port/vendor/monocypher/monocypher.c', 'src/port/vendor/monocypher/monocypher-ed25519.c']
 
 
 def sources():
@@ -363,6 +371,7 @@ def sources():
     out += [(path, False, flags) for path, flags in MOVOVL_FILES]
     out += [('src/port/' + f, True, PORT_OWN_FLAGS.get('src/port/' + f, []))
             for f in sorted(os.listdir('src/port')) if f.endswith('.c')]
+    out += [(path, True, VENDOR_FLAGS) for path in VENDOR_FILES]
     return out
 
 
@@ -464,7 +473,10 @@ def compile_one(job):
         made = os.path.getmtime(obj)
         if newest is not None and newest < made and os.path.getmtime(path) < made and stamp < made:
             return path, obj, False, ''
-    if own:
+    if own and path in VENDOR_FILES:
+        # code the project did not write: as it is, its warnings off
+        pass
+    elif own:
         # the port's own: its warnings on, and errors
         flags = [f for f in flags if f != '-w'] + PORT_WARNINGS
     else:

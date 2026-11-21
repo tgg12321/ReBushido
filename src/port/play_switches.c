@@ -225,11 +225,14 @@ void port_HoldFightMusic(u32 bits) {
 #define MATCH_COUNT_SHIFT 8
 #define MATCH_BYTE 0xFF
 
-static struct {
+typedef struct {
     s32 rule;
     s32 count;
     s32 held;
-} g_port_match_asked = {PORT_MATCH_SINGLE, PORT_MATCH_COUNT_DEFAULT, FALSE};
+} PortMatchAsked;
+
+static PortMatchAsked g_port_match_asked = {
+    PORT_MATCH_SINGLE, PORT_MATCH_COUNT_DEFAULT, FALSE};
 
 /* The window's or the command line's rule and number, each kept to what
  * there is; nothing once the session holds the host's. */
@@ -255,6 +258,14 @@ u32 port_MatchBits(void) {
     return (u32)g_port_match_asked.rule |
            (u32)g_port_match_asked.count << MATCH_COUNT_SHIFT;
 }
+
+/* The rule as it was before a ranked match held the ladder's
+ * (online.c), put back after. */
+static PortMatchAsked g_port_match_kept;
+
+void port_KeepMatch(void) { g_port_match_kept = g_port_match_asked; }
+
+void port_RestoreMatch(void) { g_port_match_asked = g_port_match_kept; }
 
 void port_HoldMatch(u32 bits) {
     g_port_match_asked.held = FALSE;

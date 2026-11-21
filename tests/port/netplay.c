@@ -106,6 +106,18 @@ void port_FeedHash(u32 frame, u64 hash) {
 
 void port_FeedTick(void) {}
 
+/* no ranked match either (src/port/ranked.c) */
+void port_RankedFrame(u32 frame, u16 first, u16 second) {
+    (void)frame;
+    (void)first;
+    (void)second;
+}
+
+void port_RankedHash(u32 frame, u64 hash) {
+    (void)frame;
+    (void)hash;
+}
+
 void port_WatchTick(void) {}
 
 s32 port_WatchHash(u32 frame, u64 *hash) {

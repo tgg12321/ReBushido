@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""The ReBushido lobby, rendezvous and relay server (protocol version 2).
+"""The ReBushido lobby, rendezvous and relay server (protocol version 3).
 
 One process, UDP, the Python 3 standard library alone (3.8 or newer). It
 keeps a list of open rooms, introduces a room's host and guest to each other
 so they can punch through their routers, and passes their game traffic on
-when they cannot. It reads no disc and writes nothing to disk; all it keeps,
-in memory, is each room's code, names, setup code, the salt and verifier of
-its password, and the addresses.
+when they cannot. It reads no disc. What it keeps of rooms is in memory:
+each room's code, names, setup code, the salt and verifier of its password,
+and the addresses.
 
 Version 2 adds rooms of several (docs/NETPLAY.md, section 16): up to eight
 members, a rotation of matches the server picks (a fixed turn, or the
@@ -15,20 +15,29 @@ two-player room is, admitted by a ticket the server gives its two players.
 The match's host sends the server the match's feed once (its settings, the
 fight's start state as a replay keeps it, then every input and hash); the
 server keeps it in memory while the match lasts and a little after, and
-gives it to every spectator who asks. A client of version 1 is refused with
-VERSION.
+gives it to every spectator who asks.
 
-The wire format is docs/NETPLAY.md, sections 14 and 16; tools/relay/README.md
+Version 3 adds the ranked ladder (docs/NETPLAY.md, section 17; ladder.py
+beside this): identities by Ed25519 keys, a queue paired by rating and round
+trip, ranked matches met as a room's are, signed results, Glicko-2 ratings
+and the ladder's pages. It is the one thing the server writes to disk, in
+the folder --state names (with none, ranked play is off): an SQLite file of
+keys, names, ratings and results, its daily backups, and the replays of a
+disputed match. A client of version 1 or 2 is refused with VERSION.
+
+The wire format is docs/NETPLAY.md, sections 14, 16 and 17; tools/relay/README.md
 says how to run and deploy it.
 
     python3 rebushido_relay.py                      0.0.0.0:7845 and [::]:7845
     python3 rebushido_relay.py --listen 127.0.0.1:7845 --verbose
+    python3 rebushido_relay.py --state /var/lib/rebushido-relay   ranked play too
 """
 
 import argparse
 import collections
 import hashlib
 import hmac
+import os
 import secrets
 import select
 import signal
@@ -37,7 +46,12 @@ import struct
 import sys
 import time
 
-RELAY_VERSION = 2
+# ladder.py beside this file (python3 -I, as the service runs it, does not
+# look in the script's own folder by itself)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ladder  # noqa: E402
+
+RELAY_VERSION = 3
 DEFAULT_PORT = 7845
 MAGIC = b"RB"
 
@@ -56,6 +70,8 @@ K_FEED = 59  # a match's host: its feed, for the spectators
 K_FEED_ACK = 60
 K_WATCH = 61  # a spectator: what it has of a match's feed
 K_SCENE = 62  # the feed, to a spectator
+K_RANKED = ladder.K_RANKED  # 54: the ladder's answer
+K_RANK = ladder.K_RANK  # 63: a ranked request (ladder.py)
 K_CONTROL = 48  # kinds 48..63 are the server's; below is game traffic
 K_CONTROL_END = 64
 
@@ -364,7 +380,8 @@ class Bucket:
 class Source:
     """What is kept per source IP (an IPv6 /64), for the limits only."""
 
-    __slots__ = ("hello", "query", "create", "watch", "wrong", "blocked_until", "limited_at", "seen")
+    __slots__ = ("hello", "query", "create", "watch", "ranked", "signed", "wrong", "blocked_until", "limited_at",
+                 "seen")
 
     def __init__(self, limits, now):
         self.hello = Bucket(limits.hello_rate, limits.hello_rate, now)
@@ -372,6 +389,10 @@ class Source:
         self.watch = Bucket(limits.watch_rate, limits.watch_rate, now)
         self.query = Bucket(limits.query_rate, limits.query_rate, now)
         self.create = Bucket(limits.creations_per_min / 60.0, limits.creations_per_min, now)
+        # the ladder's requests, and of them the signed ones (each signature
+        # checked costs a few milliseconds)
+        self.ranked = Bucket(limits.ranked_rate, limits.ranked_rate * 2, now)
+        self.signed = Bucket(limits.signed_rate, limits.signed_rate * 3, now)
         self.wrong = collections.deque()
         self.blocked_until = 0.0
         self.limited_at = -1e9
@@ -608,6 +629,30 @@ class Server:
         self.dropped = 0
         self.stats_at = time.monotonic()
         self.verbose = options.verbose
+        self.version = RELAY_VERSION
+        self.ranked_errors = 0
+        self.ladder = ladder.Ladder(self, options, log)
+
+    def ranked_safely(self, work, *args):
+        """The ladder's work, whose failure (a full disk, say) is logged and
+        never ends the lobby and relay for everyone."""
+        try:
+            work(*args)
+        except Exception as error:  # noqa: BLE001
+            self.ranked_errors += 1
+            if self.ranked_errors <= 20 or self.ranked_errors % 1000 == 0:
+                log("ranked: an error (%d so far): %s: %s" % (self.ranked_errors, type(error).__name__, error))
+
+    def bucket(self, rate, burst, now):
+        return Bucket(rate, burst, now)
+
+    def rate_limited_ranked(self, endpoint, source, now):
+        """The ladder's RATE_LIMITED, once a second at most per source."""
+        if source is not None and now - source.limited_at >= 1.0:
+            source.limited_at = now
+            self.ladder.refuse(endpoint, ladder.E_RATE_LIMITED, 0)
+        else:
+            self.dropped += 1
 
     # --- sending ---
 
@@ -714,6 +759,8 @@ class Server:
             self.feed(endpoint, data, now)
         elif kind == K_WATCH:
             self.watch(endpoint, data, now)
+        elif kind == K_RANK:
+            self.ranked_safely(self.ladder.datagram, endpoint, self.source(endpoint, now), data, now)
         else:
             self.dropped += 1  # PUNCH, PUNCH_ACK, a server's kind, unknown
 
@@ -815,7 +862,11 @@ class Server:
             self.guest_hello(endpoint, source, hello, now)
 
     def ticket_of(self, hello):
-        """The match a ticketed HELLO is of, if its ticket is that match's."""
+        """The match a ticketed HELLO is of, if its ticket is that match's: a
+        room of several's, or a ranked one's."""
+        ranked = self.ladder.ticket_of(hello.code, hello.secret)
+        if ranked is not None:
+            return ranked
         found = self.match_codes.get(hello.code)
         if found is None or found[1].ended is not None:
             return None
@@ -943,7 +994,8 @@ class Server:
         """A code no room, room of several or match has."""
         while True:
             code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(CODE_LENGTH)).encode()
-            if code not in self.rooms and code not in self.groups and code not in self.match_codes:
+            if code not in self.rooms and code not in self.groups and code not in self.match_codes and \
+                    code not in self.ladder.codes:
                 return code
 
     def create(self, host, now, code=None, counted=True):
@@ -1476,6 +1528,7 @@ class Server:
 
     def tick(self, now):
         self.group_tick(now)
+        self.ranked_safely(self.ladder.tick, now)
         for room in list(self.rooms.values()):
             self.decide(room, now)
             if room.mode in (S_WAITING, S_PUNCH):
@@ -1507,6 +1560,8 @@ class Server:
                     sum(len(g.matches()) for g in self.groups.values()),
                 )
             )
+            if self.ladder.store is not None:
+                log(self.ladder.summary())
             self.received = self.sent = self.forwarded = self.dropped = 0
             self.stats_at = now
 
@@ -1595,6 +1650,17 @@ def bound_text(sock):
     return "%s:%d" % (name[0], name[1])
 
 
+def parse_stages(text):
+    """--ranked-stages: places of the stage pages, 0 to 17, by commas."""
+    try:
+        places = sorted({int(word) for word in text.split(",") if word.strip()})
+    except ValueError:
+        raise argparse.ArgumentTypeError("not places by commas: %r" % text)
+    if not places or places[0] < 0 or places[-1] >= ladder.STAGE_PLACES:
+        raise argparse.ArgumentTypeError("places are 0 to %d: %r" % (ladder.STAGE_PLACES - 1, text))
+    return places
+
+
 def arguments(argv):
     p = argparse.ArgumentParser(description="ReBushido lobby, rendezvous and relay server (UDP).")
     p.add_argument(
@@ -1631,13 +1697,52 @@ def arguments(argv):
                    help="how long a match's feed is kept for its spectators after it ends")
     p.add_argument("--watch-rate", type=float, default=400, help="WATCHes and FEEDs a second per IP")
     p.add_argument("--max-sources", type=int, default=100000, help="source IPs tracked for the limits")
+    # the ladder (ladder.py; docs/NETPLAY.md, section 17)
+    p.add_argument("--state", metavar="DIR", help="the ladder's folder (its SQLite file, backups, disputes); "
+                   "none: ranked play is off")
+    p.add_argument("--ranked-first-to", type=int, default=3, metavar="N", help="a ranked match: First to N")
+    p.add_argument("--ranked-stages", type=parse_stages, default=list(range(ladder.STAGE_PLACES)), metavar="LIST",
+                   help="the stage pages' places (0 to 17) a match's stage is drawn from, as 0,3,7 (default: all)")
+    p.add_argument("--ranked-rate", type=float, default=20, help="ranked requests a second per IP")
+    p.add_argument("--signed-rate", type=float, default=2, help="signed ranked requests a second per IP and per key")
+    p.add_argument("--identities-per-day", type=int, default=3, help="new ranked identities per IP a day")
+    p.add_argument("--ranked-pair-per-day", type=int, default=3, help="matches of the same two players in 24 hours")
+    p.add_argument("--ranked-same-address", action="store_true",
+                   help="let two of one IP be paired (tests on one PC; never on a public server)")
+    p.add_argument("--ranked-window", type=float, default=150, help="the rating gap paired at once")
+    p.add_argument("--ranked-widen", type=float, default=10, help="... and its widening a second of waiting")
+    p.add_argument("--ranked-window-most", type=float, default=800, help="... and its most")
+    p.add_argument("--ranked-ping", type=float, default=250, metavar="MS",
+                   help="the two players' round trips to the server, added, paired at once")
+    p.add_argument("--ranked-ping-widen", type=float, default=10, metavar="MS", help="... a second of waiting")
+    p.add_argument("--ranked-ping-most", type=float, default=600, metavar="MS", help="... and its most")
+    p.add_argument("--queue-most", type=int, default=2000, help="players in the queue at once")
+    p.add_argument("--queue-timeout", type=float, default=10.0, metavar="S", help="a queued player unheard so long leaves it")
+    p.add_argument("--gone-timeout", type=float, default=20.0, metavar="S",
+                   help="a match's player unheard so long has left it")
+    p.add_argument("--report-wait", type=float, default=10.0, metavar="S",
+                   help="how long one report waits for the other's before a leaver is judged")
+    p.add_argument("--report-timeout", type=float, default=180.0, metavar="S",
+                   help="how long one report waits for a player still there before the match is disputed")
+    p.add_argument("--match-timeout", type=float, default=3600.0, metavar="S", help="a match nobody reports is void")
+    p.add_argument("--decided-linger", type=float, default=600.0, metavar="S",
+                   help="how long a decided match's players may still ask for it in memory")
+    p.add_argument("--tau", type=float, default=ladder.TAU, help="Glicko-2's system constant")
+    p.add_argument("--name-days", type=int, default=180, help="days a name stays held by a player unseen")
+    p.add_argument("--keep-days", type=int, default=730, help="days a player and a match are kept after the last seen")
+    p.add_argument("--dispute-days", type=int, default=60, help="days a disputed match's replays are kept")
+    p.add_argument("--dispute-bytes", type=int, default=4 << 20, help="the most of one side's replays of a dispute")
+    p.add_argument("--disputes-total", type=int, default=1 << 30, help="the most of all disputes' replays kept")
+    p.add_argument("--backup-every", type=float, default=86400.0, metavar="S",
+                   help="seconds between backups (a day: one a day, named by it)")
+    p.add_argument("--backups-keep", type=int, default=7, help="backups kept")
     p.add_argument("--stats-interval", type=float, default=60.0, metavar="S", help="seconds between count lines")
     options = p.parse_args(argv)
     for name in ("max_rooms", "rooms_per_ip", "wrong_passwords_per_min", "max_sources"):
         if getattr(options, name) < 1:
             p.error("--%s must be at least 1" % name.replace("_", "-"))
     for name in ("creations_per_min", "hello_rate", "query_rate", "relay_datagram_rate", "relay_byte_rate", "stats_interval",
-                 "watch_rate"):
+                 "watch_rate", "ranked_rate", "signed_rate", "ranked_window", "ranked_ping", "backup_every"):
         if getattr(options, name) <= 0:
             p.error("--%s must be above 0" % name.replace("_", "-"))
     return options
@@ -1656,6 +1761,10 @@ def main(argv=None):
         if hasattr(signal, name):
             signal.signal(getattr(signal, name), stop)
     log("rebushido-relay %d listening on %s" % (RELAY_VERSION, ", ".join(bound_text(s) for s in sockets)))
+    if server.ladder.store is not None:
+        log("ranked: the ladder is %s (first to %d)" % (server.ladder.store.path, options.ranked_first_to))
+    else:
+        log("ranked: off (no --state)")
     tick_every = 0.1
     next_tick = time.monotonic() + tick_every
     try:
@@ -1685,6 +1794,7 @@ def main(argv=None):
         pass
     for sock in sockets:
         sock.close()
+    server.ladder.close()
     log("stopped: %d rooms dropped, %d rooms of several" % (len(server.rooms), len(server.groups)))
     return 0
 

@@ -393,6 +393,19 @@ s32 port_HostMakeFolder(const char *path) {
     return stat(path, &about) == 0 && S_ISDIR(about.st_mode);
 }
 
+/* The kernel's random bytes, by /dev/urandom. */
+s32 port_HostRandom(void *out, u32 count) {
+    FILE *file = fopen("/dev/urandom", "rb");
+    size_t had;
+
+    if (file == NULL) {
+        return 0;
+    }
+    had = fread(out, 1, count, file);
+    fclose(file);
+    return had == count;
+}
+
 s32 port_HostRemove(const char *path) { return unlink(path) == 0; }
 
 s32 port_HostRename(const char *from, const char *to) {

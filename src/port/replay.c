@@ -26,6 +26,7 @@
 #include "port_host.h"
 #include "port_net.h"
 #include "port_png.h"
+#include "port_ranked.h"
 #include "port_replay.h"
 #include "port_spu.h"
 #include "bb2.h"
@@ -1220,6 +1221,8 @@ static void port_ReplayWrite(void) {
              path, g_rec.length, g_rec.deflate.out_at, size, g_dedupe.saved,
              g_dedupe.match_count, g_dedupe.slices,
              g_dedupe.ticks / TICKS_PER_MS, g_dedupe.ticks_most / TICKS_PER_MS);
+    /* a ranked match's fight: kept for the lobby, if it asks (a dispute) */
+    port_RankedReplayWritten(path);
     port_ReplayPrune(port_ReplayFileSize(path));
 }
 

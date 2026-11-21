@@ -10,8 +10,10 @@ own link cable over UDP (section 11), rollback netplay of a whole
 session between two programs (section 12), and netplay as a player has
 it: in the window, paced, with a line on the screen, set up by `--host`
 and `--join` or the settings menu's Play online page, proved between two
-window programs on one PC (section 13). What is left is play between two
-real PCs, and what section 13 leaves to the owner.
+window programs on one PC (section 13). Then the lobby and its ways
+(section 14), sessions begun in the running program (15), rooms of several
+(16) and the ranked ladder (17). What is left is play between two real PCs,
+and what section 13 leaves to the owner.
 
 **In short:** the game step is already deterministic and repeatable from its
 inputs alone, and a whole snapshot of the machine is small and quick to
@@ -1374,7 +1376,8 @@ joiner's hellos do the other way.
 **The lobby** (`tools/relay/rebushido_relay.py`, `README.md` beside it)
 is one process of standard-library Python, UDP alone, on the owner's
 server (`PORT_NET_LOBBY_DEFAULT`, `135.181.108.74:7845`; `net_lobby` and
-`--lobby` name another). It keeps rooms in memory, nothing on disk: a
+`--lobby` name another). It keeps rooms in memory, nothing of them on disk
+(the ranked ladder's store, section 17, is the one thing it writes): a
 room's code, its name, its host's name and setup code, its password's
 salt and verifier, and the two addresses. It reads no game datagram:
 it passes on those of a relayed room, between that room's two addresses
@@ -1870,5 +1873,258 @@ lost on every match's session:
 feed's and the watch's pacing over a real network (on one PC the
 spectators keep up at once). A spectator of a match's menus before its
 first fight sees nothing until the fight begins. Matches across builds
-are refused by the setup code as before. A ladder and Elo (ROADMAP 25)
-can take a room's results and the replays' starts as their check.
+are refused by the setup code as before. The ranked ladder (ROADMAP 25)
+is section 17.
+
+
+## 17. The ranked ladder
+
+ROADMAP 25 (the owner, 2026-11-21): ranked matches through the lobby
+server, a rating per player, a ladder page; identities, results checked
+by both players and by the replays, and the server's own care for what
+it keeps. How a player uses it: [`PLAYING.md`](PLAYING.md), "Ranked". The
+code: the server's half `tools/relay/ladder.py` (imported by
+`rebushido_relay.py`), the program's `src/port/ranked.c` and
+`include/port_ranked.h`, the pages in `src/port/window/online_pages.c`.
+
+**The design in short.** No accounts and no email: a player is an
+Ed25519 key their program made, and the server knows them by its public
+half and the name they chose. A ranked match is a session of two, met as
+a room's match is (section 16: a code and a ticket the server gives its
+two players alone), played under a fixed rule, and reported by both
+programs, each report signed and naming the match's **digest**. Reports
+that agree are rated by Glicko-2; any other outcome is held, unrated,
+for the owner to look at, with the replays of the match's fights if the
+server asked for them. The server never runs the game (it has no disc):
+it compares, it does not judge play.
+
+**Identity.** On the first use of Ranked the program draws 32 bytes
+from the system's own source of random numbers (`port_HostRandom`:
+`getrandom` on Linux, `RtlGenRandom` on Windows) and keeps them as the
+seed of an Ed25519 key pair (Monocypher 4.0.2, now in every program of
+the port, `include/port_monocypher.h`) in a small text file beside the
+settings, `rebushido-identity.key` (`--identity FILE` names another): the
+seed, the public key, and a few lines saying what the file is. It is
+written beside and renamed, so a half-written file is never the
+identity, and a damaged one is said, never replaced. Losing the file is
+losing the identity: the Ranked page's *Back up your identity* writes a
+dated copy beside it (PLAYING.md says to keep one elsewhere).
+
+**Signatures.** Every request is a `RANK` datagram of 240 bytes; the
+three that change what the server keeps (`NAME`, `QUEUE`, `REPORT`) are
+signed over the string `ReBushido ranked 1` and the datagram's first 176
+bytes, which hold the key and a **nonce** the server gave: the first 16
+bytes of HMAC-SHA256(the server's secret, key ‖ the minute), good for
+that minute and the next. Every answer carries the current nonce, and a
+request with an old one is answered `STALE` with a fresh one, which the
+program signs again with. A signature heard on the wire is so of no use
+two minutes later, and the server keeps no per-key counter to forget.
+The server checks Ed25519 in Python (`ladder.verify`, the RFC's
+arithmetic; about 2 ms each), at most 2 a second per address and per key.
+The other requests are not signed: `HELLO` (the profile and the nonce),
+`LADDER` (a page of the ladder), and `STAY`, `LEAVE` and `UPLOAD`, which
+carry the 16-byte token a signed `QUEUE` was given.
+
+**Names.** 3 to 15 of the letters, digits, space, `.`, `_` and `-` (what
+the port's typeface and every field of the lobby have), beginning with a
+letter or a digit, no two spaces together and none at the end. A name is
+refused if its **fold** is another key's: the fold lowercases it, takes
+away the separators and maps the look-alikes (`0` o, `1` `i` `|` l, `5`
+s, `rn` m, `vv` w, ...), so `Ayame`, `AYAME`, `Ay_ame`, `4yame` and
+`Ayarne` are one name. A name is held while its player has been seen in
+the last 180 days. A few names are kept (`ReBushido`, `admin`, `server`,
+`moderator`, `SquareSoft`, ...). A rename frees the old name. A new
+identity may be registered from one address at most 3 times a day.
+
+**The queue and the pairing.** A signed `QUEUE` puts the player in the
+queue with their rating, the setup code (section 14: only players of the
+same build, disc and gameplay mods are paired) and their round trip to
+the server; a `STAY` every second keeps them there (10 seconds unheard
+and they are out). Twice a second the server pairs, longest waiting first:
+with the player of the same setup code, never of the same address (an
+IPv4 address or IPv6 /64), not already paired with them 3 times in the
+last 24 hours, whose rating is within 150 points and whose round trip
+added to theirs is within 250 ms, both widening as the first waits (10
+points and 10 ms a second, to 800 and 600), taking the nearest by both.
+The round trips added are the most the two can be apart through the
+server, so a direct way is never worse. The one who waited longer hosts
+the match (player 1).
+
+**The match.** The server makes it a row of its store at once (so that a
+report after a restart is still taken), draws its **stage**, one of the
+18 places of the three stage pages (`--ranked-stages` narrows the
+draw), and gives both players a `MATCHED`:
+the match's number, the code and ticket to meet by, the role, the stage,
+the rule and the other's name and rating. It is played as a room's match
+is (section 16, `PORT_SESSION_RULE_ONE_MATCH`), with two differences:
+the host's program holds the ladder's rule, **First to 3** (`--ranked-
+first-to`), as its session's match rule whatever its own setting
+(`port_HoldMatch`, and the player's own put back after), and the stage
+pages, as they open, take the server's stage before anyone chooses
+(`port_RankedStagePlace`, `select.c`; the same on both machines, outside
+the state, so a rollback over those frames chooses it again). Every fight
+of the match is on that stage. Who leaves loses: a player who leaves in
+the middle (F1 or Escape twice, section 16) reports that they left, the
+other that the other left, and both name the same winner.
+
+**The digest.** As netplay makes each frame's two inputs final it gives
+them to `ranked.c` (`port_RankedFrame`, the frame and both pads, as a
+room's match's feed has them), and each final state hash
+(`port_RankedHash`). At the match's end, the frame the session ended at
+(`port_SessionLeftAt`, the same on both machines), the digest is
+BLAKE2b-256 of the BLAKE2b of every input before that frame, the BLAKE2b
+of every hash before it, and the frame: the same inputs and hashes a
+replay keeps of each fight, of the whole session. Two honest programs of a
+match played to its end make the same digest; a program that played
+another game, or reports another, does not.
+
+**Results.** Each program sends a signed `REPORT`: the match, why it
+ended (played to its end, the other left, I left, a desync, never met),
+the winner it saw, the rule its session held, the frames and the digest;
+said again until the server has it, then a `STAY` naming the match until
+it is decided. The server keeps the signed report as it came, and decides:
+
+| The reports | Decided |
+| --- | --- |
+| both played to the end, the same winner, digest and frames | **rated** |
+| one left, the other says the other left, the same winner | **rated**: the leaver loses |
+| one left in the match's last frames, the other saw it decided | **rated** as the leaver's own report concedes |
+| one report, the other player unheard for 20 s (left, crashed, lost the network) | **rated** as the one report says: the leaver loses |
+| one report, the other still there and not reporting after 3 minutes | disputed |
+| different winners, different digests, both saying the other left, a rule not the ladder's | **disputed** |
+| both never met, or a desync on both | void |
+| nobody reports within an hour | void |
+
+A disputed or void match is not rated. For a disputed one the server asks
+both players for the **replays** of its fights (section 15's replays,
+which every online fight writes): their files in one upload (`RBRANKUP`,
+each file's name and bytes), sent in chunks of 1 KB with the token, at
+most 4 MB a side and 1 GB of all disputes, kept 60 days as
+`disputes/match-N-a.rbu` and `-b.rbu`. The owner unpacks one
+(`python3 tools/relay/ladder.py --unpack FILE DIR`) and plays each fight
+back with `rebushido --replay-check FILE` (or watches it): the replay's
+own hashes say whether it is a game the program can play to its end, and
+the two sides' replays say who is telling the truth.
+
+**The rating: Glicko-2** (Glickman, "Example of the Glicko-2 system",
+2013), over Elo because a new player's rating is uncertain and should
+move fast and settle (its RD, the rating deviation, says how far), and
+because a player back after months should move fast again. The
+constants: a new player 1500, RD 350, volatility 0.06; the system
+constant τ 0.5; RD kept between 30 and 350. Each match is a rating period
+of its own for both players; the step that widens RD for time without
+play counts that time in days (a fraction of one too), so that ten
+matches in an evening do not widen it ten times. Each is rated against
+the other's rating with the other's RD as widened to now. A draw (a
+First to 3 has none, but the rule may change) scores a half. A rating
+whose RD is above 110 is **provisional**, shown with `?` (about the first
+ten matches). The ladder orders the rated players by rating. The test
+holds the code to the paper's worked example (1500/200/0.06 against
+1400/30 won, 1550/100 and 1700/300 lost: 1464.06, 151.52, 0.05999).
+
+**The ladder page** (Online Play, Ranked, The ladder): the top eight and
+on, eight around the player, the player's last eight matches, everyone's
+last eight, each match with its date, who beat whom and the two ratings'
+change; the player's own rating, place, RD and record on the Ranked page
+above its rows. `python3 tools/relay/ladder.py --show STATE_DIR` prints
+the same as JSON on the server (no web page: the server keeps UDP alone).
+
+**The server's care for its data.** The ladder is the one thing the
+lobby writes to disk, in the folder `--state` names (none: ranked play
+is off, `DISABLED`); on the VPS the service's own
+`/var/lib/private/rebushido-relay`, made by systemd for its
+`DynamicUser` (`StateDirectory=`), readable by that user and root alone,
+and kept across restarts and redeploys. What it holds:
+
+| What | Kept |
+| --- | --- |
+| a player: the public key, the name and its fold, the rating, RD, volatility, the record, when made, last seen (to the hour), last rated | while seen in the last two years; the name held 180 days after the last time seen |
+| a match: the two keys, when, the state, the winner and why, the rule and the stage, both signed reports as they came, the ratings before and after | two years |
+| a disputed match's replays | 60 days, at most 4 MB a side and 1 GB in all |
+| the nonces' secret | for good (a new one only with a new store) |
+
+No address of anyone's is written: the limits by address are in memory
+alone. The file is SQLite (Python's standard library) in write-ahead
+mode with full synchronisation; each change is one transaction, so a
+crash or a power cut leaves the last change whole or not at all, and a
+match being played when the server stops is reported after it starts
+again. A replay upload is written beside and renamed. Once a day the
+server copies the store with SQLite's online backup into
+`backups/ladder-YYYY-MM-DD.sqlite` and keeps the last seven; the copies
+are the store's, the disputed replays are not in them. A failure of the
+ladder's (a full disk) is logged and never stops the lobby and relay.
+
+**Limits.** Per address: 20 ranked requests a second, 2 signed a second
+(and 2 a second per key), 3 new identities a day, an upload's chunks at
+the spectators' rate; 2,000 in the queue; the same pair at most 3
+matches in 24 hours. Every number is an option of the server
+(`--help`).
+
+**The wire** (lobby version 3; a client of version 1 or 2 is answered
+`VERSION`, and its screen says "The lobby server is of another version").
+Little-endian; text zero-padded ASCII.
+
+| Kind | Who | Bytes | What |
+| --- | --- | --- | --- |
+| 63 `RANK` | client | 240 (an `UPLOAD` 176 and a chunk of 1,024) | an action (`HELLO`, `NAME`, `QUEUE`, `STAY`, `LEAVE`, `REPORT`, `UPLOAD`, `LADDER`); the key, the nonce, the name, the setup code, a stamp (echoed: the round trip), the round trip, why a match ended, the match, the token, the winner, the rule and its count, the frames, the digest, two arguments (a list's kind and first place, an upload's place and size); the signature |
+| 54 `RANKED` | server | 168 and up to eight rows of 48 | a status (OK or an error: `VERSION`, `RATE_LIMITED`, `BAD_SIGNATURE`, `STALE`, `NAME_TAKEN`, `NAME_BAD`, `NO_MATCH`, `DISABLED`, `TOO_MANY`, `FULL`) and what it is (a profile, queued, matched, reported, a list, uploaded); the nonce, the player's name, rating, RD, place and record, the token, the queue, the match (number, role, stage, count, code, ticket, the other's name and rating), its result (state, winner, the ratings before and after), an upload's progress, a list's rows (a place: rank, name, rating, RD, record, provisional; a match: when, the two names, the winner, the state, the two changes) |
+
+`tools/relay/relay_client.py` builds and reads both, and
+`tools/relay/test_relay.py` holds the server to them.
+
+**Session protocol.** Unchanged (12): a ranked match is a room's match
+to the session; the rule comes in the host's welcome as ever, and the
+stage from the server to both. A guest's report names the rule its
+session held, so a host that played another is disputed.
+
+**Proved.**
+
+`tools/relay/test_relay.py` (Windows and Linux, about 45 seconds with
+the rest): identities and signatures (a new key, its name; a NAME signed
+by another key under Ayame's, one with a byte changed after signing, an
+unsigned QUEUE: each `BAD_SIGNATURE` and logged; an old nonce `STALE`
+with a fresh one; version 2 refused); names (too short or long, a
+character, a space first or two, a separator first, kept names; seven
+spellings of a name held refused, a name of its own taken, a rename freeing
+the old); the queue (1500 and 1560 paired, 1900 not; 400 ms of round
+trip not; the longer waiting hosts; each told the other's name and rating,
+the rule and one stage; the match met by its ticket, a wrong ticket
+refused); agreeing reports rated to Glicko-2's own numbers, the record
+counted, a report said twice not counted twice, a stranger's refused;
+different digests disputed, unrated, its replays uploaded in chunks,
+kept whole and unpacked, an upload over 4 MB refused; the same pair not
+paired a third time; a leaver who says so, one who goes quiet, a player
+who stays and never reports, both saying the other left, a match never
+met, a match of another rule; the ladder's top and recent pages; the
+store across a stop and a start (a name, a rating, a match reported after
+the start, a name still held); the backup (made, at most the kept number,
+a whole SQLite file holding the players); the limits (new identities a
+day, 60 requests at once, 12 signed at once, two of one address never
+paired); a server with no store; and `ladder.py --self-test`: RFC 8032's
+cases and Glicko-2's worked example.
+
+`tools/port_net_lobby.py`'s `ranked` case (Linux, in `make port-net`) and
+`ranked-win` (Windows, in the gate's `port-net-windows`), headless
+programs through a local server with a store, 60 ms each way and 5% lost:
+
+| Match | What runs | Result |
+| --- | --- | --- |
+| 1 | Ayame and Bunta queue, are paired and play (First to 1 on this test server, a fight each match, and the stage drawn from the first place alone, the one the scripted fight is written for: on another its presses may never cut the other down) | the lobby's stage taken on both, the host's rule First to 1 held on both; both digests the same, every hash alike; rated: the winner 1500 to 1662, the loser 1500 to 1338; Bunta's program prints the ladder with both at those ratings |
+| 2 | Chie and Dai; Dai's program reports the other winner (`--ranked-lie`) | disputed, unrated; both sides' replays uploaded and kept; one unpacked and played back by `--replay-check`: 570 frames, 30 hashes the same as recorded |
+| 3 | Eiko and Fumi; Fumi leaves at frame 1,150, in the fight | Fumi reports she left, Eiko that the other did; rated, Fumi's loss |
+| | a report of match 1 forged under Ayame's key | `BAD_SIGNATURE`, in the server's log; her rating unchanged |
+
+About 30 seconds. `win-ranked` (Windows, the gate's `port-net-windows`):
+a hidden window opens Online Play, Ranked, *Find a ranked match*; a second
+window of the command line (`--ranked`) queues; the two are paired, the
+first window's pages begin the match in the running program, it is played
+and rated alike on both, and the first window's Ranked page shows the
+result and its ladder page the two. Pictures of every page: the case's
+`shots/`, and the owner's copies in `tmp/ladder/`.
+
+**What is left.** Two players' PCs on two networks, and the server under
+real players (the pairing's widening and limits are guesses until then).
+A dispute is the owner's to look at by hand: there is no tool that sets a
+disputed match's result (a line of SQL on the store does). A player who
+loses their identity file and its copies cannot get their rating back.
+The ladder has no seasons and no decay of a rating but RD's.

@@ -11,6 +11,10 @@
  *                     long open, and whether it can be joined or why not
  *   Join by code      the six letters and digits a host reads out
  *   Join by address   the advanced way: host or join by an address typed
+ *   Ranked            the ladder (docs/NETPLAY.md, section 17): your
+ *                     rating and place, a ranked match found by the lobby
+ *                     and played, the ladder's top and the recent matches,
+ *                     a copy of your identity
  *   Your name         what the lobby and the other player see
  *
  * Whatever is typed is typed on the keyboard, or with a pad on the
@@ -26,10 +30,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "menu.h"
 #include "port_net.h"
 #include "port_online.h"
+#include "port_ranked.h"
 #include "port_room.h"
 #include "shared.h"
 #include "sdl_window.h"
@@ -92,6 +98,10 @@ enum {
     PAGE_MESSAGE,
     /* a room of several: its members, its matches, the member's choices */
     PAGE_ROOM,
+    /* the ranked ladder: the player, the queue, the match's result; and
+     * its lists */
+    PAGE_RANKED,
+    PAGE_LADDER,
     /* while the two meet (drawn by the session's waits) */
     PAGE_MEETING,
 };
@@ -127,10 +137,43 @@ enum {
     MAIN_BROWSE,
     MAIN_CODE,
     MAIN_ADDRESS,
+    MAIN_RANKED,
     MAIN_NAME,
     MAIN_BACK,
     MAIN_ROWS
 };
+
+/* The ranked page's rows, and the ladder's. */
+enum {
+    RANKED_FIND,
+    RANKED_LADDER,
+    RANKED_MINE,
+    RANKED_NAME,
+    RANKED_BACKUP,
+    RANKED_BACK,
+    RANKED_ROWS
+};
+
+enum { LADDER_WHICH, LADDER_MORE, LADDER_BACK, LADDER_ROWS };
+
+/* The ranked page: the player's lines above its rows; the ladder's table
+ * above its rows. */
+#define RANKED_INFO_Y 54
+#define RANKED_LINE 14
+#define RANKED_ROWS_Y 104
+#define LADDER_TABLE_Y 52
+#define LADDER_LINE 11
+#define LADDER_ROWS_Y 158
+#define LADDER_RANK_X (ROWS_X + 20)
+#define LADDER_NAME_X (ROWS_X + 30)
+#define LADDER_RATING_X (ROWS_X + 210)
+#define LADDER_RECORD_X (ROWS_X + 260)
+#define LADDER_LISTS 4
+/* --online-keys' `until:ranked`: a ranked match decided; `until:list`: a
+ * list of the ladder had; `until:queued`: in the queue */
+#define UNTIL_RANKED 102
+#define UNTIL_LIST 103
+#define UNTIL_QUEUED 104
 
 /* (a room's kind and rotation after Open, so that the rows above keep
  * their places) */
@@ -201,6 +244,14 @@ static struct {
     PortRoomNext room_next;
     u32 room_due;
     s32 room_waiting;
+    /* the ranked ladder: a match the lobby gave, and when it begins; the
+     * list shown, and the last list a test waited for */
+    PortRoomNext ranked_next;
+    u32 ranked_due;
+    s32 ranked_waiting;
+    s32 list_kind;
+    u32 list_first;
+    u32 list_seen;
     /* the lobby's rooms */
     PortRoom rooms[ROOMS_MAX];
     s32 room_count;
@@ -359,6 +410,10 @@ static s32 port_PageRowCount(void) {
         return 1;
     case PAGE_ROOM:
         return ROOM_ROWS;
+    case PAGE_RANKED:
+        return RANKED_ROWS;
+    case PAGE_LADDER:
+        return LADDER_ROWS;
     case PAGE_MEETING:
         return 2;
     default:
@@ -447,6 +502,87 @@ static void port_PageRoomRow(s32 row, char *name, u32 name_room, char *value,
     }
 }
 
+/* The ladder's lists, as the ladder's page names them. */
+static const char *port_ListName(s32 kind) {
+    switch (kind) {
+    case PORT_RANKED_AROUND:
+        return "around you";
+    case PORT_RANKED_MINE:
+        return "your matches";
+    case PORT_RANKED_RECENT:
+        return "everyone's matches";
+    default:
+        return "the top";
+    }
+}
+
+/* A row of the ranked page or the ladder's. */
+static void port_PageRankedRow(s32 row, char *name, u32 name_room, char *value,
+                               u32 value_room, const char **help) {
+    PortRankedView view;
+
+    port_RankedGet(&view);
+    if (g_pages.page == PAGE_LADDER) {
+        switch (row) {
+        case LADDER_WHICH:
+            snprintf(name, name_room, "Showing");
+            snprintf(value, value_room, "%s", port_ListName(g_pages.list_kind));
+            *help = "Cross: the next list (the top, around you, your "
+                    "matches, everyone's)";
+            break;
+        case LADDER_MORE:
+            snprintf(name, name_room, "The next eight");
+            snprintf(value, value_room, "%s",
+                     g_pages.list_kind == PORT_RANKED_TOP ? "" : "(the top's)");
+            *help = "Further down the ladder; from the top again after its "
+                    "end";
+            break;
+        default:
+            snprintf(name, name_room, "Back");
+            *help = "Back to the ranked page";
+            break;
+        }
+        return;
+    }
+    switch (row) {
+    case RANKED_FIND:
+        if (view.phase == PORT_RANKED_QUEUED) {
+            snprintf(name, name_room, "Stop looking");
+            *help = "Out of the queue; the ladder may be read while you wait";
+        } else {
+            snprintf(name, name_room, "Find a ranked match");
+            snprintf(value, value_room, "First to %d, a stage the lobby draws",
+                     view.first_to > 0 ? view.first_to : 3);
+            *help = "The lobby pairs you with a player near your rating and "
+                    "ping";
+        }
+        break;
+    case RANKED_LADDER:
+        snprintf(name, name_room, "The ladder");
+        *help = "The top players, and your place among them";
+        break;
+    case RANKED_MINE:
+        snprintf(name, name_room, "Your matches");
+        *help = "Your last eight ranked matches";
+        break;
+    case RANKED_NAME:
+        snprintf(name, name_room, "Your name");
+        snprintf(value, value_room, "%s", port_PlayerName());
+        *help = "3 to 15 letters and digits, a name no other player has";
+        break;
+    case RANKED_BACKUP:
+        snprintf(name, name_room, "Back up your identity");
+        snprintf(value, value_room, "key %s...", view.print);
+        *help = "A copy of your identity's file: lose it and your rating is "
+                "gone";
+        break;
+    default:
+        snprintf(name, name_room, "Back");
+        *help = "Out of the queue, back to the online pages";
+        break;
+    }
+}
+
 /* A row's name and value, and the line of help under the rows. */
 static void port_PageRow(s32 row, char *name, u32 name_room, char *value,
                          u32 value_room, const char **help) {
@@ -456,7 +592,7 @@ static void port_PageRow(s32 row, char *name, u32 name_room, char *value,
     case PAGE_MAIN: {
         static const char * const names[] = {
             "Quick Match",     "Host a room", "Browse rooms", "Join by code",
-            "Join by address", "Your name",   "Back"};
+            "Join by address", "Ranked",      "Your name",    "Back"};
         static const char * const helps[] = {
             "Joins the first open room that can be joined, or opens one "
             "of your own",
@@ -466,6 +602,7 @@ static void port_PageRow(s32 row, char *name, u32 name_room, char *value,
             "The six letters and digits the host reads out to you",
             "For those who know their address: host or join without the "
             "lobby",
+            "Matches the lobby finds you, rated on the ladder",
             "What the lobby and the other player see",
             "Back to the main menu"};
 
@@ -576,6 +713,10 @@ static void port_PageRow(s32 row, char *name, u32 name_room, char *value,
     case PAGE_ROOM:
         port_PageRoomRow(row, name, name_room, value, value_room, help);
         break;
+    case PAGE_RANKED:
+    case PAGE_LADDER:
+        port_PageRankedRow(row, name, name_room, value, value_room, help);
+        break;
     default:
         name[0] = 0;
         break;
@@ -611,7 +752,10 @@ static void port_PageDrawRows(void) {
         char value[TEXT_BYTES];
         const char *row_help;
         /* (the room's page has its members and matches above its rows) */
-        s32 y = (g_pages.page == PAGE_ROOM ? ROOM_ROWS_Y : ROWS_Y) +
+        s32 y = (g_pages.page == PAGE_ROOM     ? ROOM_ROWS_Y
+                 : g_pages.page == PAGE_RANKED ? RANKED_ROWS_Y
+                 : g_pages.page == PAGE_LADDER ? LADDER_ROWS_Y
+                                               : ROWS_Y) +
                 (i - first) * ROW_PITCH;
         s32 is_cursor = i == g_pages.cursor[g_pages.page];
         u32 color = is_cursor ? COLOR_CURSOR : COLOR_ROW;
@@ -778,6 +922,183 @@ static void port_PageRoom(void) {
     port_PageDrawRows();
 }
 
+/* What the ranked page says of the queue, the match and its result:
+ * its words and their colour. */
+static u32 port_PageRankedStatus(
+    const PortRankedView *view, char *line, u32 room) {
+    if (g_pages.ranked_waiting) {
+        snprintf(line, room, "Your match against %s (%d): in a moment",
+                 view->opponent, view->opponent_rating);
+        return COLOR_GOOD;
+    }
+    switch (view->phase) {
+    case PORT_RANKED_QUEUED:
+        snprintf(line, room,
+                 "Looking for an opponent near %d: %u s, %u in the queue",
+                 view->rating, view->waited, view->queue);
+        return COLOR_TEXT;
+    case PORT_RANKED_MATCHED:
+        snprintf(line, room, "Match %u against %s: under way", view->match,
+                 view->opponent);
+        return COLOR_TEXT;
+    case PORT_RANKED_REPORTED:
+        snprintf(line, room, "Match %u: waiting for %s's report", view->match,
+                 view->opponent);
+        return COLOR_TEXT;
+    case PORT_RANKED_DECIDED:
+        if (view->state == PORT_RANKED_RATED) {
+            snprintf(line, room,
+                     "Match %u against %s rated: you %s, %d to %d "
+                     "(%+d)",
+                     view->match, view->opponent,
+                     view->won == 1   ? "won"
+                     : view->won == 0 ? "lost"
+                                      : "drew",
+                     view->before, view->after, view->after - view->before);
+            return view->won == 0 ? COLOR_TEXT : COLOR_GOOD;
+        }
+        if (view->state == PORT_RANKED_DISPUTED) {
+            snprintf(line, room,
+                     "Match %u against %s is disputed: the two reports differ, "
+                     "and it is not rated%s",
+                     view->match, view->opponent,
+                     view->uploading ? "; its replays go to the lobby" : "");
+            return COLOR_WARN;
+        }
+        snprintf(line, room,
+                 "Match %u against %s was not played to an end: "
+                 "not rated",
+                 view->match, view->opponent);
+        return COLOR_DIM;
+    default:
+        if (view->why[0] != 0) {
+            snprintf(line, room, "%s", view->why);
+            return COLOR_WARN;
+        }
+        snprintf(line, room,
+                 "Matches are First to %d, on a stage the lobby "
+                 "draws; who leaves loses",
+                 view->first_to > 0 ? view->first_to : 3);
+        return COLOR_DIM;
+    }
+}
+
+/* The ranked page: the player, their rating and place, their record and
+ * round trip, what is happening; then its rows. */
+static void port_PageRanked(void) {
+    PortRankedView view;
+    char line[TEXT_BYTES];
+    u32 color;
+
+    port_RankedGet(&view);
+    port_PageTitle("Ranked");
+    if (view.rank != 0) {
+        snprintf(line, sizeof(line), "%s     %d%s     rank %u of %u",
+                 view.player, view.rating, view.provisional ? "?" : "",
+                 view.rank, view.of);
+    } else {
+        snprintf(line, sizeof(line), "%s     %d?     not yet on the ladder",
+                 view.registered ? view.player : port_PlayerName(),
+                 view.rating);
+    }
+    port_PageText(
+        GAME_W / 2, RANKED_INFO_Y, SIZE_ROW, line, COLOR_CURSOR, ALIGN_CENTRE);
+    snprintf(line, sizeof(line),
+             "%d won, %d lost, %d drawn     RD %d%s     %u ms to the lobby",
+             view.wins, view.losses, view.draws, view.rd,
+             view.provisional ? " (provisional)" : "", view.rtt);
+    port_PageText(GAME_W / 2, RANKED_INFO_Y + RANKED_LINE, SIZE_TEXT, line,
+                  COLOR_TEXT, ALIGN_CENTRE);
+    color = port_PageRankedStatus(&view, line, sizeof(line));
+    port_PageWrapped(ROWS_X, RANKED_INFO_Y + 2 * RANKED_LINE + 4,
+                     PANEL_W - 2 * (ROWS_X - PANEL_X), 2, line, color);
+    port_PageDrawRows();
+}
+
+/* The ladder's page: a list (places, or matches) and its rows. */
+static void port_PageLadder(void) {
+    PortRankedView view;
+    char line[TEXT_BYTES];
+    s32 i;
+
+    port_RankedGet(&view);
+    snprintf(
+        line, sizeof(line), "Ladder: %s", port_ListName(g_pages.list_kind));
+    port_PageTitle(line);
+    if (view.list_count == 0) {
+        port_PageText(
+            GAME_W / 2, LADDER_TABLE_Y + 3 * LADDER_LINE, SIZE_TEXT,
+            view.list_made == 0 ? "Asking the lobby..." : "Nobody here yet",
+            COLOR_DIM, ALIGN_CENTRE);
+    }
+    for (i = 0; i < view.list_count; i++) {
+        const PortRankedRow *row = &view.rows[i];
+        s32 y = LADDER_TABLE_Y + i * LADDER_LINE;
+
+        if (view.list_kind == PORT_RANKED_TOP ||
+            view.list_kind == PORT_RANKED_AROUND) {
+            u32 color = strcmp(row->player, view.player) == 0 ? COLOR_CURSOR
+                                                              : COLOR_TEXT;
+
+            snprintf(line, sizeof(line), "%u.", row->rank);
+            port_PageText(
+                LADDER_RANK_X, y, SIZE_TEXT, line, COLOR_DIM, ALIGN_RIGHT);
+            port_PageText(
+                LADDER_NAME_X, y, SIZE_TEXT, row->player, color, ALIGN_LEFT);
+            snprintf(line, sizeof(line), "%d%s", row->rating,
+                     row->provisional ? "?" : "");
+            port_PageText(
+                LADDER_RATING_X, y, SIZE_TEXT, line, color, ALIGN_RIGHT);
+            snprintf(line, sizeof(line), "%d won  %d lost  %d drawn", row->wins,
+                     row->losses, row->draws);
+            port_PageText(
+                LADDER_RECORD_X, y, SIZE_NOTE, line, COLOR_DIM, ALIGN_LEFT);
+        } else {
+            const char *verb =
+                row->state == PORT_RANKED_DISPUTED ? "disputed"
+                : row->state == PORT_RANKED_VOID   ? "void"
+                : row->winner == PORT_ROOM_DRAW    ? "drew"
+                                                   : "beat";
+            s32 first_won = row->winner != PORT_ROOM_WON_SECOND;
+            const char *a = first_won ? row->player : row->second;
+            const char *b = first_won ? row->second : row->player;
+            s32 da = first_won ? row->delta_first : row->delta_second;
+            s32 db = first_won ? row->delta_second : row->delta_first;
+            time_t when = (time_t)row->when;
+            struct tm *at = gmtime(&when);
+
+            snprintf(line, sizeof(line), "%04d-%02d-%02d",
+                     at != NULL ? at->tm_year + 1900 : 0,
+                     at != NULL ? at->tm_mon + 1 : 0,
+                     at != NULL ? at->tm_mday : 0);
+            port_PageText(ROWS_X, y, SIZE_NOTE, line, COLOR_DIM, ALIGN_LEFT);
+            if (row->state == PORT_RANKED_RATED) {
+                snprintf(line, sizeof(line), "%s %s %s   %+d / %+d", a, verb, b,
+                         da, db);
+            } else {
+                snprintf(line, sizeof(line), "%s and %s: %s", row->player,
+                         row->second, verb);
+            }
+            port_PageText(
+                LADDER_NAME_X + 50, y, SIZE_TEXT, line,
+                row->state == PORT_RANKED_RATED ? COLOR_TEXT : COLOR_DIM,
+                ALIGN_LEFT);
+        }
+    }
+    if (view.rank != 0) {
+        snprintf(line, sizeof(line), "You, %s: %d%s, rank %u of %u",
+                 view.player, view.rating, view.provisional ? "?" : "",
+                 view.rank, view.of);
+    } else {
+        snprintf(line, sizeof(line),
+                 "You are not on the ladder yet: a rated match puts you there "
+                 "(? is a provisional rating)");
+    }
+    port_PageText(GAME_W / 2, LADDER_TABLE_Y + 8 * LADDER_LINE + 2, SIZE_NOTE,
+                  line, COLOR_CURSOR, ALIGN_CENTRE);
+    port_PageDrawRows();
+}
+
 /* While the two meet: the host's room and its code and the way, or the
  * guest's progress; then the lobby before the fight. */
 static void port_PageMeeting(void) {
@@ -928,6 +1249,14 @@ static void port_PageDraw(void) {
     case PAGE_ROOM:
         port_PageRoom();
         port_PageFoot("A room of several: players and spectators");
+        break;
+    case PAGE_RANKED:
+        port_PageRanked();
+        port_PageFoot("The ladder: Glicko-2, both players' reports agreeing");
+        break;
+    case PAGE_LADDER:
+        port_PageLadder();
+        port_PageFoot("? : a provisional rating, its first matches");
         break;
     case PAGE_MESSAGE:
         port_PageTitle("Online Play");
@@ -1265,6 +1594,156 @@ static void port_PagesRoomTurn(void) {
     g_pages.is_open = FALSE;
 }
 
+static void port_PagesType(s32 field, const char *start);
+
+/* The ranked page opened: the lobby asked who this player is (their
+ * identity made where there is none). */
+static void port_PagesRankedOpen(void) {
+    PortNetAddress lobby;
+    char why[TEXT_BYTES];
+
+    if (!port_PagesLobby(&lobby)) {
+        port_PageMessage("No lobby server is set: the settings menu's Play "
+                         "online page has it.",
+                         COLOR_WARN);
+        return;
+    }
+    if (!port_RankedStart(
+            g_port_settings.net_lobby, port_PlayerName(), why, sizeof(why))) {
+        port_PageMessage(why, COLOR_WARN);
+        g_pages.back_to = PAGE_MAIN;
+        return;
+    }
+    g_pages.ranked_waiting = FALSE;
+    g_pages.cursor[PAGE_RANKED] = 0;
+    port_PageGo(PAGE_RANKED);
+}
+
+/* A list of the ladder asked for, shown on its page. */
+static void port_PagesList(s32 kind, u32 first) {
+    g_pages.list_kind = kind;
+    g_pages.list_first = first;
+    port_RankedAskList(kind, first);
+    port_PageGo(PAGE_LADDER);
+}
+
+/* A path's last part: a file's own name. */
+static const char *port_PagesFileName(const char *path) {
+    const char *name = path;
+    const char *at;
+
+    for (at = path; *at != 0; at++) {
+        if (*at == '/' || *at == '\\') {
+            name = at + 1;
+        }
+    }
+    return name;
+}
+
+static void port_PagesRankedAccept(s32 row) {
+    PortRankedView view;
+    char path[TEXT_BYTES];
+    char line[TEXT_BYTES * 2];
+
+    port_RankedGet(&view);
+    if (g_pages.page == PAGE_LADDER) {
+        if (row == LADDER_WHICH) {
+            s32 next = (g_pages.list_kind + 1) % LADDER_LISTS;
+
+            port_PagesList(next, next == PORT_RANKED_TOP ? 1 : 0);
+        } else if (row == LADDER_MORE) {
+            port_PagesList(PORT_RANKED_TOP,
+                           g_pages.list_kind == PORT_RANKED_TOP &&
+                                   view.list_count == PORT_RANKED_ROWS
+                               ? g_pages.list_first + PORT_RANKED_ROWS
+                               : 1);
+        } else {
+            port_PageGo(PAGE_RANKED);
+        }
+        return;
+    }
+    switch (row) {
+    case RANKED_FIND:
+        if (view.phase == PORT_RANKED_QUEUED) {
+            port_RankedLeaveQueue();
+        } else {
+            port_RankedQueue();
+        }
+        break;
+    case RANKED_LADDER:
+        port_PagesList(PORT_RANKED_TOP, 1);
+        break;
+    case RANKED_MINE:
+        port_PagesList(PORT_RANKED_MINE, 0);
+        break;
+    case RANKED_NAME:
+        port_PagesType(FIELD_NAME, g_port_settings.net_player);
+        break;
+    case RANKED_BACKUP:
+        if (port_RankedBackUp(path, sizeof(path))) {
+            snprintf(line, sizeof(line),
+                     "A copy of your identity is saved beside it, as %s. Keep "
+                     "it somewhere safe: if %s is ever lost, put the copy back "
+                     "under that name.",
+                     port_PagesFileName(path),
+                     port_PagesFileName(port_RankedIdentityPath()));
+            port_PageMessage(line, COLOR_GOOD);
+        } else {
+            port_PageMessage(path, COLOR_WARN);
+        }
+        break;
+    default:
+        port_RankedLeaveQueue();
+        port_PageGo(PAGE_MAIN);
+        break;
+    }
+}
+
+/* The ranked turn while the pages are up: the queue and the match stayed
+ * in, and a match the lobby gave begun, after a moment's notice. */
+static void port_PagesRankedTurn(void) {
+    PortOnlineAsk how;
+    const char *problem;
+
+    if (!port_RankedIsOn()) {
+        return;
+    }
+    port_RankedTick();
+    if (!g_pages.ranked_waiting) {
+        if (!port_RankedNext(&g_pages.ranked_next)) {
+            return;
+        }
+        g_pages.ranked_waiting = TRUE;
+        g_pages.ranked_due =
+            SDL_GetTicks() +
+            (g_port_window_options.is_fast ? 0 : ROOM_NOTICE_MS);
+        port_Note("online pages: ranked match %d (%s vs %s) next",
+                  g_pages.ranked_next.match.number, g_pages.ranked_next.first,
+                  g_pages.ranked_next.second);
+        if (g_pages.page != PAGE_RANKED) {
+            port_PageGo(PAGE_RANKED);
+        }
+        return;
+    }
+    if ((s32)(SDL_GetTicks() - g_pages.ranked_due) < 0) {
+        return;
+    }
+    g_pages.ranked_waiting = FALSE;
+    memset(&how, 0, sizeof(how));
+    snprintf(how.lobby, sizeof(how.lobby), "%s", g_port_settings.net_lobby);
+    snprintf(how.player, sizeof(how.player), "%s", port_PlayerName());
+    snprintf(
+        how.bind, sizeof(how.bind), "%s",
+        g_port_settings.net_listen ? ADDRESS_ALL ":0" : ADDRESS_LOCAL ":0");
+    how.delay = (u32)g_port_settings.net_delay;
+    problem = port_OnlineAskRanked(&g_pages.ranked_next, &how);
+    if (problem != NULL) {
+        port_PageNote(problem, COLOR_WARN);
+        return;
+    }
+    g_pages.is_open = FALSE;
+}
+
 /* Quick Match: the first room that can be joined, or one of the player's
  * own. */
 static void port_PagesQuickMatch(void) {
@@ -1367,6 +1846,9 @@ static void port_KeyboardDone(void) {
         snprintf(g_port_settings.net_player, sizeof(g_port_settings.net_player),
                  "%s", typed);
         port_MenuSetLine("net_player", typed);
+        /* the ladder's name too, where ranked play is on (the lobby may
+         * refuse it: the ranked page says why) */
+        port_RankedRename(port_PlayerName());
         break;
     case FIELD_ROOM:
         snprintf(g_port_settings.net_room, sizeof(g_port_settings.net_room),
@@ -1550,6 +2032,9 @@ static void port_PagesAccept(void) {
         case MAIN_ADDRESS:
             port_PageGo(PAGE_ADDRESS);
             break;
+        case MAIN_RANKED:
+            port_PagesRankedOpen();
+            break;
         case MAIN_NAME:
             port_PagesType(FIELD_NAME, g_port_settings.net_player);
             break;
@@ -1578,6 +2063,10 @@ static void port_PagesAccept(void) {
         break;
     case PAGE_ROOM:
         port_PagesRoomAccept(row);
+        break;
+    case PAGE_RANKED:
+    case PAGE_LADDER:
+        port_PagesRankedAccept(row);
         break;
     case PAGE_ADDRESS:
         if (row == ADDRESS_JOIN_AT) {
@@ -1656,6 +2145,11 @@ static void port_PagesPress(s32 press) {
         } else if (g_pages.page == PAGE_ROOM) {
             /* nobody leaves a room by a slip: Back goes to its Leave row */
             *cursor = ROOM_LEAVE;
+        } else if (g_pages.page == PAGE_LADDER) {
+            port_PageGo(PAGE_RANKED);
+        } else if (g_pages.page == PAGE_RANKED) {
+            port_RankedLeaveQueue();
+            port_PageGo(PAGE_MAIN);
         } else if (g_pages.page == PAGE_MESSAGE) {
             g_pages.page = g_pages.back_to;
             g_pages.note[0] = 0;
@@ -1881,6 +2375,21 @@ static s32 port_PagesWord(s32 *is_shot) {
             return PRESS_NONE;
         }
         g_pages.until = -1;
+    } else if (g_pages.until >= UNTIL_RANKED && g_pages.until <= UNTIL_QUEUED) {
+        /* the ranked ladder: a match decided, a list had, in the queue */
+        PortRankedView view;
+
+        port_RankedGet(&view);
+        if ((g_pages.until == UNTIL_RANKED &&
+             (view.phase != PORT_RANKED_DECIDED || view.uploading)) ||
+            (g_pages.until == UNTIL_LIST &&
+             view.list_made == g_pages.list_seen) ||
+            (g_pages.until == UNTIL_QUEUED &&
+             view.phase != PORT_RANKED_QUEUED)) {
+            return PRESS_NONE;
+        }
+        g_pages.list_seen = view.list_made;
+        g_pages.until = -1;
     } else if (g_pages.until >= 0) {
         PortSessionLobby lobby;
 
@@ -1929,6 +2438,9 @@ static s32 port_PagesWord(s32 *is_shot) {
             : strcmp(word + 6, "cards") == 0   ? PORT_SESSION_PHASE_CARDS
             : strcmp(word + 6, "room") == 0    ? UNTIL_ROOM
             : strcmp(word + 6, "message") == 0 ? UNTIL_MESSAGE
+            : strcmp(word + 6, "ranked") == 0  ? UNTIL_RANKED
+            : strcmp(word + 6, "list") == 0    ? UNTIL_LIST
+            : strcmp(word + 6, "queued") == 0  ? UNTIL_QUEUED
                                                : PORT_SESSION_PHASE_WAITING;
         return PRESS_NONE;
     }
@@ -2012,6 +2524,9 @@ static void port_RunPages(u32 blank) {
         if (g_pages.is_open) {
             port_PagesRoomTurn();
         }
+        if (g_pages.is_open) {
+            port_PagesRankedTurn();
+        }
         if (!g_pages.is_open) {
             break;
         }
@@ -2034,6 +2549,9 @@ static void port_PagesBesideTurn(void) {
     }
     if (g_pages.is_open) {
         port_PagesRoomTurn();
+    }
+    if (g_pages.is_open) {
+        port_PagesRankedTurn();
     }
     if (!g_pages.is_open) {
         port_PagesClosed();
@@ -2158,7 +2676,9 @@ static void port_PagesOnline(s32 event, const char *why) {
             why != NULL ? why : "The session is over.", COLOR_TEXT);
         /* a room's match over: back to the room (the command line's has
          * no pages) */
-        g_pages.back_to = port_RoomIsOn() ? PAGE_ROOM : PAGE_MAIN;
+        g_pages.back_to = port_RoomIsOn()     ? PAGE_ROOM
+                          : port_RankedIsOn() ? PAGE_RANKED
+                                              : PAGE_MAIN;
         g_pages.wanted = !port_OnlineIsRoomAuto();
         port_Say("online: the session has ended: %s; back to your own game",
                  why != NULL ? why : "");
@@ -2169,7 +2689,9 @@ static void port_PagesOnline(s32 event, const char *why) {
         g_port_session_ready_hook = NULL;
         g_pages.meeting = FALSE;
         port_HoldBackPads();
-        g_pages.page = port_RoomIsOn() ? PAGE_ROOM : PAGE_MAIN;
+        g_pages.page = port_RoomIsOn()     ? PAGE_ROOM
+                       : port_RankedIsOn() ? PAGE_RANKED
+                                           : PAGE_MAIN;
         if (why != NULL) {
             port_PageMessage(
                 g_pages.failed[0] != 0 ? g_pages.failed
@@ -2177,7 +2699,9 @@ static void port_PagesOnline(s32 event, const char *why) {
                                        : "The session could not be set up: the "
                                          "log says why.",
                 COLOR_WARN);
-            g_pages.back_to = port_RoomIsOn() ? PAGE_ROOM : PAGE_MAIN;
+            g_pages.back_to = port_RoomIsOn()     ? PAGE_ROOM
+                              : port_RankedIsOn() ? PAGE_RANKED
+                                                  : PAGE_MAIN;
         }
         g_pages.wanted = !port_OnlineIsRoomAuto();
         break;

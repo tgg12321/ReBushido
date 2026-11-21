@@ -969,7 +969,9 @@ you are playing, and when it ends you are back where you were.
 - **Join by code**: the six letters and digits the host reads out.
 - **Join by address** (advanced): no lobby; type the host's address
   and port, or *Host here* at your port (below).
-- **Your name**: what the lobby and the other player see.
+- **Ranked**: matches the lobby finds you, rated on a ladder ("Ranked",
+  below).
+- **Your name**: what the lobby and the other player see (and the ladder).
 
 Anything typed is typed on the keyboard, or, with a pad, on the
 keyboard drawn on the page: Cross types the key under the cursor,
@@ -1125,11 +1127,64 @@ their round trip to the lobby), the match now and the last result.
 Each match is the host of the match's (its first player's) cards,
 unlocks and settings, as any session is.
 
+### Ranked
+
+**Ranked** on the Online Play pages plays matches the lobby finds you and
+rates them on a ladder (NETPLAY.md, section 17). Its page shows your
+name, your rating and your place, your wins and losses, and what is
+happening.
+
+- **Find a ranked match** puts you in the queue. The lobby pairs you with
+  a player near your rating and with a good connection, of the same
+  setup code; the wider it looks the longer you wait. When it has, the
+  page says who, and the match begins by itself a moment later.
+- **The rule is fixed**: First to 3, on a stage the lobby draws for the
+  match (the stage pages take it as they open), whatever your own
+  settings. Fighters and weapons are yours to choose.
+- **Who leaves loses**: leaving in the middle (F1 or Escape twice), closing
+  the program or losing the network counts as a loss.
+- **The result**: when the match is decided both programs tell the lobby,
+  each signed with its player's identity. If the two agree the match is
+  rated and the page shows your new rating. If they do not, the match is
+  **disputed** and not rated, and your program sends the lobby the
+  match's replays for the project's owner to check.
+- **The rating** is Glicko-2: everyone starts at 1500, and a new player's
+  rating moves a lot at first and settles (a `?` beside it means it is
+  still provisional, about the first ten matches). It moves more against a
+  stronger player and less against a weaker one.
+- **The ladder** shows the top players, those around you, your last
+  matches and everyone's (*Showing*; *The next eight* goes down the list).
+- The same two players are rated against each other at most three times
+  a day, and two players of one address are never paired.
+
+**Your identity.** There are no accounts and no passwords: the first time
+you open Ranked, the program makes your **identity**, a key kept in the
+file `rebushido-identity.key` beside `rebushido.cfg`. The ladder knows you
+by it, and your name with it; no other player can take a name you hold
+(or one too like it).
+
+- **Keep a copy.** *Back up your identity* writes a copy beside it,
+  `rebushido-identity-backup-DATE.key`; put a copy somewhere else too (a
+  USB stick, your cloud storage). Moving to another PC: copy the file
+  beside its `rebushido.cfg`.
+- **Lose the file and its copies, and your rating and name are gone**:
+  the program makes a new identity, a new player at 1500. Nobody, not even
+  the project, can give the old one back.
+- **Give it to nobody**: whoever has the file can play as you.
+- A damaged identity file is never replaced: the page says so; put your
+  copy back, or move the damaged file away to begin again.
+
+The lobby keeps your identity's public half, your name, your rating and
+record and your matches' results for two years after you last play, and a
+disputed match's replays for 60 days; never your address
+(NETPLAY.md, section 17).
+
 Online play has been tried on one PC between Windows programs and
 between Linux ones, through every way of the lobby, and through the
 owner's lobby server across the internet (NETPLAY.md, section 14); a
-room of several of six programs on one PC (section 16); not yet between
-two players' PCs.
+room of several of six programs on one PC (section 16); ranked matches
+between programs on one PC (section 17); not yet between two players'
+PCs.
 
 ## Replays
 
@@ -1212,6 +1267,10 @@ card file from an emulator works here.
 
 `tools/card.py` lists, checks and opens up a card image, whoever wrote it
 (`python tools/card.py list card1.mcd`).
+
+Your ranked identity is not a save of the game's: it is the file
+`rebushido-identity.key` beside `rebushido.cfg` ("Ranked", above). Keep a
+copy of it.
 
 ## The opening movie
 

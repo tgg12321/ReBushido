@@ -12,10 +12,15 @@ Builds HELLO, LIST and WHOAMI datagrams and reads STATE, ROOMS and YOUARE
 
 import hashlib
 import hmac
+import os
 import socket
 import struct
+import sys
 
-RELAY_VERSION = 2
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ladder  # noqa: E402
+
+RELAY_VERSION = 3
 HEADER = struct.Struct("<2sBBI")
 
 K_HELLO = 48
@@ -379,4 +384,78 @@ def parse_scene(data):
         out.update(zip(("frame", "winner"), struct.unpack_from("<IB", data, 16)))
     elif part == P_NONE:
         out["why"] = data[16]
+    return out
+
+
+# --- the ranked ladder (docs/NETPLAY.md, section 17; ladder.py) ---
+
+
+class Identity:
+    """A player's key, as a program's identity file holds its seed."""
+
+    def __init__(self, seed=None):
+        self.seed = seed if seed is not None else os.urandom(32)
+        self.public = ladder.public_key(self.seed)
+
+
+def rank(action, identity=None, key=None, nonce=bytes(16), version=RELAY_VERSION, sign_with=None, **fields):
+    """A 240-byte RANK. A signed action is signed by `identity`, or by
+    `sign_with` (another identity: a forgery) under `identity`'s key."""
+    public = key if key is not None else (identity.public if identity is not None else bytes(32))
+    signed = ladder.rank_bytes(action, version, key=public, nonce=nonce, **fields)
+    signer = sign_with if sign_with is not None else identity
+    signature = ladder.sign(signer.seed, ladder.DOMAIN + signed) if (
+        action in ladder.SIGNED_ACTIONS and signer is not None) else bytes(64)
+    return signed + signature
+
+
+def upload(identity, token, match, offset, total, chunk, version=RELAY_VERSION):
+    signed = ladder.rank_bytes(ladder.A_UPLOAD, version, key=identity.public, token=token, match=match, arg=offset,
+                               arg2=total)
+    return signed + chunk[:ladder.UPLOAD_CHUNK].ljust(ladder.UPLOAD_CHUNK, b"\0")
+
+
+def upload_blob(files):
+    """The container a dispute's replays go up in: (name, bytes) pairs."""
+    out = [ladder.UPLOAD_MAGIC, struct.pack("<I", len(files))]
+    for name, data in files:
+        raw = name.encode("ascii")
+        out += [struct.pack("<I", len(raw)), raw, struct.pack("<I", len(data)), data]
+    return b"".join(out)
+
+
+def parse_ranked(data):
+    if len(data) < ladder.RANKED_HEAD or data[2] != ladder.K_RANKED:
+        raise ValueError("not a RANKED (%d bytes)" % len(data))
+    kind, status, request = parse_header(data)
+    out = {"status": status, "name": ladder.ERROR_NAMES.get(status, "OK" if status == 1 else str(status)),
+           "request": request, "nonce": data[8:24]}
+    stamp, flags, what, first_to = struct.unpack_from("<IBBB", data, 24)
+    out.update(stamp=stamp, flags=flags, what=what, first_to=first_to, player=text(data[32:48]))
+    (out["rating"], out["rd"], out["rank"], out["of"], out["wins"], out["losses"],
+     out["draws"], _) = struct.unpack_from("<HHIIHHHH", data, 48)
+    out["token"] = data[68:84]
+    out["waited"], out["queue"] = struct.unpack_from("<HH", data, 84)
+    out["match"], out["role"], out["stage"], out["count"] = struct.unpack_from("<IBBB", data, 88)
+    out["code"] = text(data[96:104])
+    out["ticket"] = data[104:120]
+    out["opponent"] = text(data[120:136])
+    out["opponent_rating"], out["opponent_rd"] = struct.unpack_from("<HH", data, 136)
+    (out["state"], out["upload"], out["winner"], _, out["before"], out["after"], out["other_before"],
+     out["other_after"]) = struct.unpack_from("<BBBBHHHH", data, 140)
+    out["have"], out["most"] = struct.unpack_from("<II", data, 152)
+    first, count, lkind = struct.unpack_from("<IBB", data, 160)
+    out["first"], out["kind"] = first, lkind
+    entries = []
+    for i in range(count):
+        e = data[ladder.RANKED_HEAD + i * ladder.ENTRY_SIZE:ladder.RANKED_HEAD + (i + 1) * ladder.ENTRY_SIZE]
+        if lkind in (ladder.L_TOP, ladder.L_AROUND):
+            r, rating, rd, w, l, d, prov = struct.unpack_from("<IHHHHHH", e)
+            entries.append({"rank": r, "rating": rating, "rd": rd, "wins": w, "losses": l, "draws": d,
+                            "provisional": bool(prov), "player": text(e[16:32])})
+        else:
+            when, winner, state, da, db, rating = struct.unpack_from("<IBBhhH", e)
+            entries.append({"when": when, "winner": winner, "state": state, "delta_a": da, "delta_b": db,
+                            "a": text(e[12:28]), "b": text(e[28:44])})
+    out["entries"] = entries
     return out

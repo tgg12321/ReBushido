@@ -3,6 +3,7 @@
  * link cable, and the C library where Sony's own C is not compiled
  * (docs/PORT.md, "Sony's libraries in the port"). */
 #include "common.h"
+#include "port_monocypher.h"
 #include <psxsdk/libsn.h>
 #include "bb2.h"
 
@@ -69,6 +70,30 @@ s32 memcmp(const void *first, const void *second, u32 count) {
     }
     return 0;
 }
+
+#if !defined(__x86_64__)
+#define BITS_PER_BYTE 8
+
+/* The remainder of two 64-bit numbers, which a 32-bit x86 compiler calls
+ * for `%` (the C compiler's own library has it, and this program links
+ * none): Monocypher's Argon2 has one (include/port_monocypher.h), though
+ * the port never calls it. Long division, a bit at a time. */
+u64 __umoddi3(u64 dividend, u64 divisor) {
+    u64 left = 0;
+    s32 bit;
+
+    if (divisor == 0) {
+        return 0;
+    }
+    for (bit = (s32)(sizeof(dividend) * BITS_PER_BYTE) - 1; bit >= 0; bit--) {
+        left = (left << 1) | ((dividend >> bit) & 1);
+        if (left >= divisor) {
+            left -= divisor;
+        }
+    }
+    return left;
+}
+#endif
 
 #define GAME_LINE_MAX 512
 

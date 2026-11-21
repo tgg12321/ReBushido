@@ -474,3 +474,27 @@ the stage").
     lobby server, an Elo (or Glicko) rating per player, a ladder page;
     identities, anti-cheat by replay checks (item 23), and the
     server's own care for the data it keeps.
+    **Done** ([`NETPLAY.md`](NETPLAY.md), section 17; [`PLAYING.md`](PLAYING.md),
+    "Ranked"; `tools/relay/README.md`): lobby version 3. An identity is an
+    Ed25519 key the program makes on first use (Monocypher, now in every
+    program), kept in `rebushido-identity.key` beside the settings, with a
+    copy a row away; names of 3 to 15 letters, none folded alike to
+    another's. Every name, queue and result is signed over the lobby's
+    nonce. The queue pairs by rating and round trip, the same setup code,
+    never one address, the same pair at most three times a day; the match
+    is a room's match under the ladder's rule (First to 3) on a stage the
+    lobby draws. Both programs report the winner with the match's digest
+    (BLAKE2b of its every final input and state hash); agreeing reports are
+    rated by Glicko-2, a leaver loses, anything else is held disputed with
+    both sides' replays uploaded for `--replay-check`. The store is SQLite
+    in the service's own state folder (`StateDirectory=`), WAL, a backup a
+    day with seven kept, holding keys, names, ratings, results and disputed
+    replays for set times. Online Play's Ranked page and the ladder's page
+    (the top, around you, your matches, everyone's). Proved by
+    `test_relay.py` (identities and forgeries, names, pairing, results,
+    disputes, leavers, limits, a restart, the backup, Glicko-2's worked
+    example) and `port_net_lobby.py`'s `ranked`, `ranked-win` and
+    `win-ranked` (programs and windows queued, paired, played, rated,
+    disputed, a leaver, a forged report refused). Left: deploying the
+    lobby (the owner's), real players on real networks, a tool to settle a
+    dispute (by hand in SQL now), seasons.
