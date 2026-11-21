@@ -95,6 +95,17 @@ TITLE = [
     ('18x26-4-9a3735aff71297c0', 18),
 ]
 TITLE_W, TITLE_H = 210, 26
+# ... and the same four with their top 17 rows alone, the big line without
+# "TOP MENU": ReBushido's main menu draws them so, and the window letters
+# "MAIN MENU" under them (src/main/menu_pages.c, menu_DrawTopTitle;
+# docs/PORT.md, "The window's pages in the game's look")
+TITLE_LINE = [
+    ('64x17-4-7f54a096cad0f6f6', 64),
+    ('64x17-4-ccb3c631d5542906', 64),
+    ('64x17-4-41b4e644cc9223a1', 64),
+    ('18x17-4-08bf66f52fb55380', 18),
+]
+TITLE_LINE_H = 17
 TITLE_TEXT = 'Select a Trial'
 # the big line in rows 1 to 16, from 5 to 205 across; the small letters
 # of "TOP MENU" in rows 18 to 24, each about these middles
@@ -228,6 +239,10 @@ def pictures():
     x = 0
     for key, width in TITLE:
         out[key] = png_bytes(title.crop((x * SCALE_X, 0, (x + width) * SCALE_X, TITLE_H * SCALE_Y)))
+        x += width
+    x = 0
+    for key, width in TITLE_LINE:
+        out[key] = png_bytes(title.crop((x * SCALE_X, 0, (x + width) * SCALE_X, TITLE_LINE_H * SCALE_Y)))
         x += width
     return out
 

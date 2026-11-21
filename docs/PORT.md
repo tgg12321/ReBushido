@@ -9096,7 +9096,9 @@ Menu (the owner, 2026-11-20):
 - the game's own lettering, with ReBushido's menus (`menu = rebushido`;
   `original` keeps the game's words, as it keeps its menus): the main
   menu's title draws its big line alone (`menu_DrawTopTitle`, the
-  sheet's top 17 rows) and the window letters "MAIN MENU" under it in the
+  sheet's top 17 rows, which are textures of their own keys: the English
+  mod has its "Select a Trial" for them too, `tools/port_english.py`,
+  `TITLE_LINE`) and the window letters "MAIN MENU" under it in the
   game's teal capitals with their dark edge, spaced over the span of the
   game's "TOP MENU" (`top_page.c`, `port_TopPageSmall`); the pause's and
   the after-fight menu's last two rows, "Return to Sub Menu" and "Return
