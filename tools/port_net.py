@@ -288,8 +288,11 @@ SESSION_MATCHES = {
     'stock': (SESSION_MATCH, SESSION_MATCH_EXPECT, "session: the host's match rule is stock, 2"),
     # two on two (docs/PORT.md, "Two on two"): the host's --teams cpu, which
     # the guest takes from the welcome as the rule; each player's partner
-    # the CPU's, the four in the state on both machines
-    'duo': (SESSION_MATCH + ['--teams', 'cpu'], dict(
+    # the CPU's, the four in the state on both machines; the host's seed
+    # fixed, so that the fights are the same each run (with the plan's
+    # second player idle a fight can stand off: a CPU partner on a ledge of
+    # Purple Cavern does not come down to him)
+    'duo': (SESSION_MATCH + ['--teams', 'cpu', '--net-seed', '4242'], dict(
         SESSION_MATCH_EXPECT, fight='expect = ["mode == FIGHT_MODE_VS", "port_duo_on == 1", '
                                     '"port_match_teams == 1", "stage == 24"]\n'),
         "session: the host's teams are two on two"),

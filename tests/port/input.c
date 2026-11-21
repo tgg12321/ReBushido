@@ -388,7 +388,7 @@ static void test_Layouts(void) {
 
     port_SetDefaultSettings(&g_test_settings, test_LookUp);
     count = g_test_settings.count;
-    CHECK_EQ(count, 2 * (14 + 18));
+    CHECK_EQ(count, 2 * (14 + 18) + 2 * 18);
     CHECK_EQ(g_test_settings.layout, 0);
     CHECK(test_StringsEqual(g_port_layouts[0].name, "original"));
     /* naming the layout built in changes nothing */

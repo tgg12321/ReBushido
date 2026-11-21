@@ -916,8 +916,8 @@ s32 port_MatchPixels(
 #define DUO_BAND_Y 38
 #define DUO_BAND_Y_CPU 58
 #define DUO_BAND_H 11
-#define DUO_NAME_W 16 /* a fighter's name's room before his pip */
-#define DUO_STEP 26   /* from one fighter of a team to the other */
+#define DUO_NAME_W 20 /* a fighter's name's room before his pip */
+#define DUO_STEP 34   /* from one fighter of a team to the other */
 #define DUO_BAND_W (2 * DUO_STEP + 4)
 #define DUO_TAG_W 36
 #define DUO_TAG_H 22

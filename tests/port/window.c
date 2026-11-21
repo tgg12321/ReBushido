@@ -776,7 +776,7 @@ static void test_Keys(void) {
     /* the layout built in: every button of both pads has one key, and
      * one button of a controller, a direction a stick as well */
     port_SetDefaultSettings(settings, test_LookUp);
-    CHECK_EQ(settings->count, 2 * (14 + 18));
+    CHECK_EQ(settings->count, 2 * (14 + 18) + 2 * 18);
     CHECK_EQ(test_CountBindings(1, 0, PADRdown), 1);
     CHECK_EQ(test_CountBindings(0, 0, PADRdown), 1);
     CHECK_EQ(test_CountBindings(1, 1, PADLup), 1);
@@ -931,7 +931,7 @@ static void test_Keys(void) {
     port_SetDefaultSettings(settings, test_LookUp);
     test_ReadText(
         "p1.cross = key Nonesuch\n"  /* 1 */
-        "p3.cross = key Z\n"         /* 2 */
+        "p5.cross = key Z\n"         /* 2 */
         "p1.jump = key Z\n"          /* 3 */
         "p1.cross = mouse left\n"    /* 4 */
         "scale = huge\n"             /* 5 */
@@ -944,7 +944,7 @@ static void test_Keys(void) {
     CHECK_EQ(g_test_complaint_lines[0], 1);
     CHECK_EQ(g_test_complaint_lines[6], 7);
     CHECK_EQ(g_test_complaint_lines[7], 9);
-    CHECK_EQ(settings->count, 2 * (14 + 18));
+    CHECK_EQ(settings->count, 2 * (14 + 18) + 2 * 18);
     CHECK_EQ(settings->scale, PORT_SCALE_FIT);
     CHECK_EQ(settings->deadzone, PORT_DEADZONE_DEFAULT);
     binding = port_FindBinding(settings, 1, 0, PADRdown);
@@ -957,7 +957,7 @@ static void test_Keys(void) {
     port_SetDefaultSettings(settings, test_LookUp);
     test_ReadText("p1.start = key Escape\n");
     CHECK_EQ(g_test_complaints, 1);
-    CHECK_EQ(settings->count, 2 * (14 + 18));
+    CHECK_EQ(settings->count, 2 * (14 + 18) + 2 * 18);
     binding = port_FindBinding(settings, 1, 0, PADstart);
     CHECK(binding != NULL && binding->code == 40);
 }
@@ -1321,7 +1321,7 @@ static void test_Counter(void) {
     port_SetDefaultSettings(&g_test_settings, test_LookUp);
     CHECK_EQ(g_test_settings.fps, 1);
     CHECK_EQ(g_test_settings.fps_corner, PORT_CORNER_TOP_LEFT);
-    CHECK_EQ(g_test_settings.count, 2 * (14 + 18));
+    CHECK_EQ(g_test_settings.count, 2 * (14 + 18) + 2 * 18);
     test_ReadText("fps = off\nfps_corner = bottom-right\n");
     CHECK_EQ(g_test_complaints, 0);
     CHECK_EQ(g_test_settings.fps, 0);

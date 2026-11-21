@@ -708,6 +708,52 @@ his own PC, as on one console. When the match is over, both go back to
 their main menu and the session ends; in a room of several, back to the
 room for the next match.
 
+## Two on two
+
+Versus, Vs. CPU and online can be fought **two on two**: four fighters,
+two teams. Each side picks its fighter and weapon on the character
+select as for one on one, and its team is **two of that fighter**: the
+game keeps two characters in the console's video memory, so a team is
+one character twice (told apart by the tags over their heads). The
+second of each team is the CPU's, or played from the **third and fourth
+pads** (the third controller plugged in is player three's, the team of
+player one; the fourth is player four's, with player two).
+
+**Choosing it.** On the Battle type page before the character select
+(ReBushido's main menu) the third row, **Fighters**: One on one, Two on
+two (CPU partners), or Two on two (four players); Up and Down go between
+the rows, Left and Right change one. It goes with Single fight, Stock and
+First to (each fight is the teams'); not with Crew, whose row is not
+shown. The settings menu's **Teams** (`teams = one|cpu|pads` in
+`rebushido.cfg`) is where the page starts, and what a mode with no page
+plays. Versus the CPU, the CPU's team is the opponent twice and your
+partner the CPU's or player three's.
+
+**Fighting.** Each fighter has an enemy he faces and walks towards, as
+in one on one; **R2 turns him to the other enemy** (remapped as every
+button is: `p1.r2 = ...`, or the settings menu's Controls). When his
+enemy falls he turns to the one left by himself; the CPU turns to the
+nearer one. Every blow, guard and one-hit kill works on either enemy,
+and a swing meets whoever it reaches; team mates' blades pass through
+each other (no friendly fire), and team mates do not stand in each
+other. A blade lock or a throw is between two: while it lasts neither
+of them strikes or is struck by anyone else. There is no giving up
+(Select) in two on two. The camera keeps all four in view. Fighters
+start every fight unhurt (Stock does not keep wounds in two on two).
+
+**On the screen**, light: under the counter at the top, each team's
+fighters (1P and 3P, 2P and 4P, or CPU) with a pip that empties as one
+falls; over each fighter's head a small tag of his number in his team's
+colour, and under it the numbers of the players who have him as their
+target. A **team loses when both its fighters have fallen**; then, as in
+one on one, the replay (of the last to fall and his enemy), the
+winner's view and the menu, or the match's card.
+
+**Online** the host's choice holds, and each player's partner is the
+CPU's (a session carries one player's pad from each PC); in a room of
+several the matches are the room host's, and spectators watch all four.
+Four players on four PCs is not there yet.
+
 ## Everything unlocked
 
 **`unlock_all = on`** (the settings menu's "Unlock everything"; off with

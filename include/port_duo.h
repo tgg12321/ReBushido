@@ -128,6 +128,9 @@ extern void port_DuoEndFrame(void);
  * slots (fighter_pose.c): not when either is held by a third or fallen;
  * a paired move asked for then is let go. TRUE with two on two off. */
 extern s32 port_DuoMayPair(void);
+/* After a pair was measured (fight_UpdateDistance): a paired move it
+ * began holds the two, each the other's target from now on. */
+extern void port_DuoMeasured(void);
 
 /* The model a fighter's view of the remastered picture is of
  * (port_fighter.h; fighter_view.c): while two on two is on, views 0 and

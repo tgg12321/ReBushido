@@ -1183,6 +1183,7 @@ static void fight_UpdateDuo(void) {
     for (pair = 0; pair < PORT_DUO_PAIRS; pair++) {
         if (port_DuoPutPair(pair, 0)) {
             fight_UpdateDistance();
+            port_DuoMeasured();
         }
     }
     for (who = 0; who < PORT_DUO_FIGHTERS; who++) {

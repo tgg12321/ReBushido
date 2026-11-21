@@ -685,12 +685,16 @@ static void port_DuoLetGo(void) {
     }
 }
 
+/* Two held together, each the other's target: the pair whose globals
+ * hold their paired move or lock is the one each is stepped beside. */
 static void port_DuoBind(s32 first, s32 second) {
     PortDuo *duo = &g_port_duo;
 
     if (duo->bound[first] == NOBODY && duo->bound[second] == NOBODY) {
         duo->bound[first] = (u8)second;
         duo->bound[second] = (u8)first;
+        duo->target[first] = (u8)second;
+        duo->target[second] = (u8)first;
     }
 }
 
@@ -798,6 +802,18 @@ s32 port_DuoMayPair(void) {
         return FALSE;
     }
     return TRUE;
+}
+
+/* A paired move begun by the measure binds the two in the slots
+ * (port_duo.h): fight_StartPairedMoves begins one of a move's own (a
+ * throw at its distance) with no ask that a step would have bound. */
+void port_DuoMeasured(void) {
+    PortDuo *duo = &g_port_duo;
+
+    if (g_fighters[0].move_started == MOVE_START_PAIRED &&
+        g_fighters[1].move_started == MOVE_START_PAIRED) {
+        port_DuoBind(duo->in_slot[0], duo->in_slot[1]);
+    }
 }
 
 /* The pad of a fighter of the third or fourth pad, as the game's own pad
