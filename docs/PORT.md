@@ -9287,7 +9287,17 @@ and 0.98 ms two on two, a state put back 0.08 to 0.09 ms;
 on one and 7.9 ms two on two** (the worst 6.8
 and 8.5). The window (`port_bench.py`, the case
 `ra1-2v2`, the fight of four with the CPU's partners, RTX 3090 at 2,560
-by 1,440): BENCH_2V2.
+by 1,440): beside ra1 run straight after it, on a machine loaded by other
+checkouts' emulators (38 and 40% of the processors busy, so both
+higher than on a quiet one): the window's processor 4.04 ms median and
+7.50 at 95% (ra1 2.00 and 3.36), the card 3.10 and 4.25 (ra1 2.86 and
+4.16), the step's own thread 3.91 (ra1 3.10), 6.6% of the fight's
+blanks over 6.94 ms. The band and the four tags are five overlays a
+picture: drawn through one texture of the card, each written while the
+card still drew from it, they cost the card 4.5 ms a picture, so the
+host's pixels have textures of their own now, none written again for
+three pictures (`port_GlShowPixels`, gl_draw.c: the card 7.45 ms
+median before, 3.10 after).
 
 **How it is proved.** `tools/port_duo.py` (`make port-stage-select`),
 both sizes, the traces the same line for line:

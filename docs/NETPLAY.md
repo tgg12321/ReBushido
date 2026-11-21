@@ -1898,7 +1898,8 @@ one 5.8 ms for the whole window (0.71 ms a
 frame), two on two 7.9 ms (0.98 ms a frame); the
 state put back 0.08 to 0.09 ms. A frame of four costs about 40% more
 than a frame of two: the fight's two steps of fighters and two of pairs
-over, the drawing the same.
+over, the drawing the same. The worst rollback at four, 8.5 ms, is
+within half of the game's frame of 16.7 ms.
 
 **Proved** on this PC: `tools/port_net.py session` plays, after its
 other sessions, a Stock match of two on two (`64-bit-duo`,
