@@ -8,15 +8,18 @@ drawn again at a higher resolution, for the remastered picture
     python3 tools/port_art.py dump  [--image CUE] [--dump tmp/art/dump]
                                     [--program build/port-gl/rebushido-gl]
     python  tools/port_art.py build [--dump tmp/art/dump ...] [--out tmp/mods/art]
-                                    [--scale 6] [--keys KEY,...]
+                                    [--scale 6] [--keys KEY,...] [--upscaler FOLDER|off]
     python3 tools/port_art.py all   (both, where one Python has numpy)
 
 `dump` plays the game with no window on the GL prover (tools/port_gl_build.py;
 Linux, or WSL), from the boot through each mode of the top menu, its select
 screens, a fight with its pause menu, the fight's end and the menus after it,
-writing every texture the game draws (`--dump-textures`) into one folder. A
-player who would rather play through the screens themselves runs the game with
-`--dump-textures FOLDER` and gives that folder to `build`.
+and versus mode's stage pages walked across, all three, writing every texture
+the game draws (`--dump-textures`) into one folder, and where each was in
+video memory into its where.txt. A player who would rather play through the
+screens themselves runs the game with `--dump-textures FOLDER` and gives that
+folder to `build` (with no where.txt, each picture's tiles are made larger
+apart).
 
 `build` makes each dumped texture `scale` times larger, by its kind:
 
@@ -29,12 +32,23 @@ player who would rather play through the screens themselves runs the game with
     over colours multiplied by their alpha) and the outline of what is drawn
     made sharp again from the smoothed alpha, so a letter is a clean shape
     with an edge a pixel or two wide;
-  - a picture of more colours (a portrait, a loading screen's map, the boot
-    logo): Lanczos and an unsharp mask.
+  - a painting, up to 48 colours that cover the texture and are not one ramp
+    of one hue (a background's tile, the stage select's map, a panel), and a
+    picture of more colours (a portrait, a loading screen's map, the boot
+    logo): Real-ESRGAN's x4plus model, through realesrgan-ncnn-vulkan on the
+    PC's graphics card, four times larger and then Lanczos to the scale. The
+    tiles of one picture, which lie side by side in a page of video memory
+    with one colour table and go on from each other, are put back together
+    first (where.txt) and made larger whole, so no tile has an edge of its
+    own. The outline is today's way's, and so are the darkest colours.
 
-All three are written here, with numpy and Pillow; no model and no program of
-anyone else's is used, so nothing is added to what the project's licence
-covers. A texture whose side is under four texels is left as it is.
+    Where there is no upscaler (--upscaler off, or none found) or it cannot
+    run (no Vulkan), a painting is made as lettering and a picture by
+    Lanczos and an unsharp mask, as before the model: those are written here,
+    with numpy and Pillow, and are the same bytes on every PC. The model's
+    are the same on one graphics card every time, and within a few steps of
+    255 on another. A texture whose side is under four texels is left as it
+    is.
 
 Fades: the port draws a texture the game fades through its colour table, or
 a picture it fades by writing it again, from the replacement it has seen,
@@ -53,6 +67,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 # numpy's BLAS on one kernel, whatever the PC: OpenBLAS picks one by the
 # processor, and the kernels round alike only mostly, so the pages made on
@@ -73,15 +88,39 @@ version = 1.0
 order = -200      # under the built-in mods and under any of yours
 author = ReBushido (tools/port_art.py)
 '''
+MADE_BY = '''# its pictures and paintings made larger by %s
+'''
 
 # ---- the tour: the plans `dump` plays ----
 
 # The top menu's rows, from the top: each mode is chosen by going down to
 # it. The slash mode's row is shut until it is won, so its index lands on
 # the options' row; the options' row is 7.
-MODES = ['story', 'vscpu', 'training', 'vs', 'group', 'link', 'setup']
+MODES = ['story', 'vscpu', 'training', 'vs', 'group', 'link', 'setup', 'stages']
 MODE_ROWS = {'story': 0, 'vscpu': 1, 'training': 2, 'vs': 3, 'group': 4, 'link': 5, 'setup': 7}
 TWO_PADS = ('vs', 'group')
+# `stages`: versus mode's select screens pressed through as
+# tools/port_stage_select.py presses them, then the stage pages walked
+# across, left to the first and right to the third, so that every page's
+# map, names and title are drawn (the other tours take the page they open
+# on), then a fight and its loading screen
+STAGES_PRESSES = [
+    'menu+30 DOWN', 'menu+60 DOWN', 'menu+90 DOWN', 'menu+150 CROSS',
+    'select+280 CROSS', 'select+320 P2 CROSS', 'select+500 CROSS', 'select+540 P2 CROSS',
+    'stages+60 LEFT', 'stages+120 LEFT', 'stages+180 LEFT', 'stages+240 LEFT',
+    'stages+300 DOWN', 'stages+360 DOWN', 'stages+420 RIGHT',
+] + ['stages+%d RIGHT' % t for t in range(480, 1200, 60)] + ['stages+1260 UP', 'stages+1320 CROSS']
+STAGES_CHECKPOINTS = '''[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 3000
+shot = false
+[[checkpoint]]
+name = "stages"
+when = "port_on_stages == 1"
+within = 3000
+shot = false
+'''
 
 PLAN = '''about = "tools/port_art.py: the screens of %(mode)s"
 discs = ["port"]
@@ -105,7 +144,7 @@ name = "menu"
 when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && screen_frames >= 120"
 within = 3000
 shot = false
-[[checkpoint]]
+%(between)s[[checkpoint]]
 name = "fight"
 when = "screen == SCREEN_FIGHT_UPDATE"
 at_frame = true
@@ -122,18 +161,23 @@ def plan_text(mode, limit=9000):
     """A plan that goes from the boot to the mode's row, takes it, presses
     Cross through its select screens, walks in and pauses the fight, fights
     it to its end and presses on through the menus after it."""
-    row = MODE_ROWS[mode]
     presses = ['page+30 START', 'movie+300 START', 'movie+600 CROSS', 'movie+900 START']
-    presses += ['menu+%d DOWN' % (30 + 30 * i) for i in range(row)]
-    presses.append('menu+%d CROSS' % (60 + 30 * row))
-    for t in range(300, 2600, 90):
-        presses.append('menu+%d CROSS' % t)
-        if mode in TWO_PADS:
-            presses.append('menu+%d P2 CROSS' % (t + 20))
+    between = ''
+    if mode == 'stages':
+        presses += STAGES_PRESSES
+        between = STAGES_CHECKPOINTS
+    else:
+        row = MODE_ROWS[mode]
+        presses += ['menu+%d DOWN' % (30 + 30 * i) for i in range(row)]
+        presses.append('menu+%d CROSS' % (60 + 30 * row))
+        for t in range(300, 2600, 90):
+            presses.append('menu+%d CROSS' % t)
+            if mode in TWO_PADS:
+                presses.append('menu+%d P2 CROSS' % (t + 20))
     presses += ['fight+30f RIGHT hold 20f', 'fight+80f START', 'fight+90 START']
     presses += ['fight+%df %s' % (f, 'CIRCLE' if f % 60 else 'CROSS') for f in range(120, 1500, 30)]
     presses += ['fight+%df CROSS' % f for f in range(1600, 3600, 70)]
-    return PLAN % {'mode': mode, 'limit': limit, 'end': limit - 1300,
+    return PLAN % {'mode': mode, 'limit': limit, 'end': limit - 1300, 'between': between,
                    'presses': ',\n'.join('    "%s"' % p for p in presses)}
 
 
@@ -176,10 +220,14 @@ def dump(args):
         cmd = [program, '--image', args.image, '--plan', plan, '--out', out, '--graphics', 'remastered',
                '--gl-scale', '1', '--mods', empty, '--dump-textures', args.dump]
         runs.append((mode, subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT), log))
+    lines = set()
     for mode, process, log in runs:
         process.wait()
         log.close()
+        with open(os.path.join(work, mode + '.log'), encoding='utf-8', errors='replace') as f:
+            lines |= where_lines(f.read())
         print('port_art: %s played' % mode)
+    add_where(args.dump, lines)
     shutil.rmtree(work)
     count = len([n for n in os.listdir(args.dump) if n.endswith('.png')])
     print('port_art: %d textures in %s' % (count, args.dump))
@@ -260,16 +308,353 @@ FADE_BRIGHTNESS_MIN = 40
 FADE_ERROR_MAX = 10
 
 
+# a painting: a texture of up to 48 colours that covers its rectangle (the
+# backgrounds' tiles, the stage select's map, the loading screen's, the
+# select screens' panels and emblems), which lettering never does
+PAINTING_COVER_MIN = 0.9
+PAINTING_COLORS_MIN = 8
+PAINTING_SIDE_MIN = 16
+# ... and whose colours are not one ramp of one hue: a soft shape of a few
+# steps from dark to light (the top menu's moon, the flares of the fight)
+# has the model make a hard edge of its soft one and is kept to today's
+# way. The spread of the colours across their main line over the spread
+# along it: the moon is 0.025, the flares 0; the loading screen's map of
+# ink on paper, of one hue too, 0.039
+PAINTING_SPREAD_MIN = 0.03
+
+# ---- the learned upscaler ----
+
+# Real-ESRGAN (github.com/xinntao/Real-ESRGAN, BSD-3-Clause, the weights
+# with it) through realesrgan-ncnn-vulkan (github.com/xinntao/
+# Real-ESRGAN-ncnn-vulkan, MIT; Tencent's ncnn, BSD-3-Clause): a program of
+# its own on any Vulkan graphics card, run with paths as its arguments
+# (docs/MODS.md, "The art mod"). x4plus for both kinds: the anime model and
+# realesr-animevideov3 were tried and flatten the clouds, the maps and the
+# landscapes into shapes of one colour.
+UPSCALER = 'realesrgan-ncnn-vulkan'
+MODEL_OF = {'picture': 'realesrgan-x4plus', 'painting': 'realesrgan-x4plus'}
+# what a kind is made by when there is no model: today's ways, so that the
+# mod without the model is the bytes it always was
+FALLBACK_OF = {'picture': 'picture', 'painting': 'lettering'}
+MODEL_SCALE = 4
+# texels of each texture's edge repeated round it, so that the model sees
+# no edge where a tile of a larger picture meets the next
+MODEL_PAD = 8
+# a card too slow for the model (or none, under a software Vulkan) is given
+# up on and the mod made without it
+MODEL_SECONDS = 600
+CREATE_NO_WINDOW = 0x08000000
+# two tiles are put together where the step across their join is no more
+# than this many times the steps beside it, and this much
+JOIN_STEP_TIMES = 2.0
+JOIN_STEP_MIN = 6.0
+# where today's way leaves a texel this dark or darker, its colour is
+# today's, and the model's is mixed in above it: the model lifts black a
+# step or two, which a texture the game draws adding to what is under it
+# (the top menu's moon) shows as a box round it
+DARK_LEVEL = 24.0
+
+
 def kind_of(name, rgba):
     import numpy as np
 
-    opaque = rgba[rgba[:, :, 3] > 0]
+    drawn = rgba[:, :, 3] > 0
+    opaque = rgba[drawn]
     colors = len(np.unique(opaque.reshape(-1, 4), axis=0)) if len(opaque) else 0
     if name.split('-')[1] == '16' or colors > LETTERING_COLORS_MAX:
         return 'picture'
     if colors <= SHAPES_COLORS_MAX:
         return 'shapes'
+    if (colors >= PAINTING_COLORS_MIN and min(rgba.shape[:2]) >= PAINTING_SIDE_MIN
+            and drawn.mean() >= PAINTING_COVER_MIN and spread(opaque) >= PAINTING_SPREAD_MIN):
+        return 'painting'
     return 'lettering'
+
+
+def spread(texels):
+    """How far the colours of `texels` (n by 4) stray from the line they
+    lie along most: the second spread over the first, 0 for colours of
+    one ramp."""
+    import numpy as np
+
+    rgb = texels[:, :3].astype(np.float64)
+    rgb = rgb - rgb.mean(0)
+    ev = np.sort(np.clip(np.linalg.eigvalsh(rgb.T @ rgb / max(len(rgb), 1)), 0, None))[::-1]
+    return float(np.sqrt(ev[1] / ev[0])) if ev[0] > 0 else 0.0
+
+
+def checkouts():
+    """This checkout, and the main one where this is a worktree of it (its
+    .git a file that names the main one's .git/worktrees/NAME)."""
+    out = [ROOT]
+    dot_git = os.path.join(ROOT, '.git')
+    if os.path.isfile(dot_git):
+        with open(dot_git, encoding='utf-8') as f:
+            line = f.read().strip()
+        if line.startswith('gitdir:'):
+            gitdir = line[len('gitdir:'):].strip()
+            if os.name != 'nt' and len(gitdir) > 2 and gitdir[1] == ':':
+                # a worktree made on Windows, read in WSL
+                gitdir = '/mnt/%s/%s' % (gitdir[0].lower(), gitdir[3:].replace('\\', '/'))
+            out.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(gitdir)))))
+    return out
+
+
+def find_upscaler(given):
+    """The folder of realesrgan-ncnn-vulkan and its models/: `given`, or
+    RB_UPSCALER, or the package's prepare/upscaler/ beside these tools, or
+    tmp/art-tools/ of the checkout. None where there is none, or `off`."""
+    if given == 'off':
+        return None
+    exe = UPSCALER + ('.exe' if os.name == 'nt' else '')
+    places = [given] if given and given != 'auto' else [
+        os.environ.get('RB_UPSCALER'),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'upscaler')] + [
+        os.path.join(top, 'tmp', 'art-tools', 'realesrgan-ncnn-vulkan-20220424') for top in checkouts()]
+    for place in places:
+        if place and os.path.isfile(os.path.join(place, exe)) and all(
+                os.path.isfile(os.path.join(place, 'models', m + '.bin')) for m in MODEL_OF.values()):
+            return os.path.abspath(place)
+    if given and given != 'auto':
+        print('port_art: no %s with its models in %s' % (exe, given))
+    return None
+
+
+def fill_under(rgba):
+    """The colours of a texture with each texel it does not draw given its
+    nearest drawn neighbour's, so the model sees no black round a shape."""
+    import numpy as np
+
+    rgb = rgba[:, :, :3].astype(np.float64)
+    have = rgba[:, :, 3] > 0
+    if have.all() or not have.any():
+        return rgb
+    while not have.all():
+        total = np.zeros_like(rgb)
+        count = np.zeros(have.shape)
+        padded_rgb = np.pad(rgb, ((1, 1), (1, 1), (0, 0)))
+        padded = np.pad(have, 1)
+        h, w = have.shape
+        for dy, dx in ((0, 1), (2, 1), (1, 0), (1, 2)):
+            near = padded[dy:dy + h, dx:dx + w]
+            total += padded_rgb[dy:dy + h, dx:dx + w] * near[..., None]
+            count += near
+        new = ~have & (count > 0)
+        rgb[new] = total[new] / count[new][:, None]
+        have = have | new
+    return rgb
+
+
+def upscale_by_model(upscaler, textures, scale, work=None):
+    """{name: RGB array `scale` times larger} of {name: (rgba, model)}, by
+    the model on the PC's graphics card; (made, why) where `why` says what
+    failed, and the textures it was are not in `made`. `work` is a folder
+    of its own to work in (a new one in the system's if not said), removed
+    after."""
+    import numpy as np
+    from PIL import Image
+
+    made = {}
+    if work is None:
+        import tempfile  # here: the tests' own random.py is not the one tempfile needs
+
+        work = tempfile.mkdtemp(prefix='port_art_model_')
+    os.makedirs(work, exist_ok=True)
+    why = None
+    exe = os.path.join(upscaler, UPSCALER + ('.exe' if os.name == 'nt' else ''))
+    try:
+        for model in sorted(set(m for _, m in textures.values())):
+            names = sorted(n for n, (_, m) in textures.items() if m == model)
+            src = os.path.join(work, model + '-in')
+            out = os.path.join(work, model + '-out')
+            os.makedirs(src)
+            os.makedirs(out)
+            for name in names:
+                rgb = np.pad(fill_under(textures[name][0]), ((MODEL_PAD, MODEL_PAD), (MODEL_PAD, MODEL_PAD), (0, 0)),
+                             mode='edge')
+                Image.fromarray(np.clip(rgb + 0.5, 0, 255).astype(np.uint8), 'RGB').save(
+                    os.path.join(src, name + '.png'))
+            cmd = [exe, '-i', src, '-o', out, '-n', model, '-s', str(MODEL_SCALE), '-m',
+                   os.path.join(upscaler, 'models'), '-f', 'png']
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, errors='replace', timeout=MODEL_SECONDS,
+                                      creationflags=CREATE_NO_WINDOW if os.name == 'nt' else 0)
+            except (OSError, subprocess.TimeoutExpired) as e:
+                why = '%s: %s' % (model, e)
+                continue
+            said = (proc.stdout + proc.stderr).strip().splitlines()
+            for name in names:
+                h, w = textures[name][0].shape[:2]
+                path = os.path.join(out, name + '.png')
+                big = Image.open(path).convert('RGB') if os.path.exists(path) else None
+                if big is None or big.size != ((w + 2 * MODEL_PAD) * MODEL_SCALE, (h + 2 * MODEL_PAD) * MODEL_SCALE):
+                    why = '%s: %s' % (model, said[-1] if said else 'no picture written (exit %d)' % proc.returncode)
+                    break
+                big = big.crop((MODEL_PAD * MODEL_SCALE, MODEL_PAD * MODEL_SCALE, (MODEL_PAD + w) * MODEL_SCALE,
+                                (MODEL_PAD + h) * MODEL_SCALE))
+                if scale != MODEL_SCALE:
+                    big = big.resize((w * scale, h * scale), Image.LANCZOS)
+                made[name] = np.asarray(big).astype(np.float64)
+            else:
+                continue
+            # one texture failed: none of this model's is used, so the
+            # mod is never part one way and part the other by chance
+            for name in names:
+                made.pop(name, None)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return made, why
+
+
+WHERE = 'where.txt'
+WHERE_HEAD = '# where each texture was in video memory: key, page x y, at u v, table x y (tools/port_art.py)\n'
+
+
+def where_lines(log_text):
+    """The lines of where.txt that a run's log says: every texture written
+    out (`wrote`) or found written (`had`), where it was."""
+    import re
+
+    out = set()
+    for m in re.finditer(r'mods: (?:wrote|had) .*?([0-9]+x[0-9]+-[0-9]+-[0-9a-f]+)\.png \(page (-?\d+) (-?\d+), '
+                         r'at (-?\d+) (-?\d+), table (-?\d+) (-?\d+)\)', log_text):
+        out.add(' '.join(m.groups()))
+    return out
+
+
+def add_where(dump, lines):
+    """`lines` added to the dump's where.txt, which is kept sorted, so that
+    it says the same whatever order the runs ended in."""
+    path = os.path.join(dump, WHERE)
+    have = set()
+    if os.path.exists(path):
+        with open(path, encoding='utf-8') as f:
+            have = set(line.strip() for line in f if line.strip() and not line.startswith('#'))
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(WHERE_HEAD + ''.join(line + '\n' for line in sorted(have | set(lines))))
+
+
+def read_where(folders):
+    """{key: [(depth, table x, table y, x, y)]}: where each texture was, x
+    and y counted in texels of its own depth across video memory."""
+    out = {}
+    for folder in folders:
+        path = os.path.join(folder, WHERE)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding='utf-8') as f:
+            for line in f:
+                if line.startswith('#') or not line.strip():
+                    continue
+                key, px, py, u, v, cx, cy = line.split()
+                depth = int(key.split('-')[1])
+                place = (depth, int(cx), int(cy), int(px) * (16 // depth) + int(u), int(py) + int(v))
+                if place not in out.setdefault(key, []):
+                    out[key].append(place)
+    for places in out.values():
+        places.sort()
+    return out
+
+
+def goes_on(left, right):
+    """Whether `right` (texels, rows by columns) goes on from `left`'s last
+    column as a picture does: the step across the join no larger than
+    those beside it. Two pieces of one page laid side by side that are not
+    side by side on the screen (the top menu's moon, whose two halves lie
+    so) do not, and are made larger apart."""
+    import numpy as np
+
+    if left.shape[1] < 2 or right.shape[1] < 2:
+        return True
+    a = left[:, :, :3].astype(np.float64)
+    b = right[:, :, :3].astype(np.float64)
+    across = np.abs(a[:, -1] - b[:, 0]).mean()
+    beside = (np.abs(a[:, -1] - a[:, -2]).mean() + np.abs(b[:, 0] - b[:, 1]).mean()) / 2
+    return across <= JOIN_STEP_TIMES * beside + JOIN_STEP_MIN
+
+
+def touching(textures, members):
+    """[(name, x, y)] split into the groups whose rectangles overlap or
+    share a length of edge, one with another: the tiles of one picture,
+    and not what else of its page shares its colour table."""
+    def rect(member):
+        name, x, y = member
+        return x, y, x + textures[name].shape[1], y + textures[name].shape[0]
+
+    def meet(a, b):
+        ax0, ay0, ax1, ay1 = rect(a)
+        bx0, by0, bx1, by1 = rect(b)
+        across = min(ax1, bx1) - max(ax0, bx0)
+        down = min(ay1, by1) - max(ay0, by0)
+        if across > 0 and down > 0:
+            return True
+        if down > 0 and across == 0:
+            left, right = (a, b) if ax1 == bx0 else (b, a)
+            top, bottom = max(ay0, by0), min(ay1, by1)
+            return goes_on(textures[left[0]][top - left[2]:bottom - left[2]],
+                           textures[right[0]][top - right[2]:bottom - right[2]])
+        if across > 0 and down == 0:
+            upper, lower = (a, b) if ay1 == by0 else (b, a)
+            first, last = max(ax0, bx0), min(ax1, bx1)
+            return goes_on(textures[upper[0]][:, first - upper[1]:last - upper[1]].transpose(1, 0, 2),
+                           textures[lower[0]][:, first - lower[1]:last - lower[1]].transpose(1, 0, 2))
+        return False
+
+    parts = []
+    for member in members:
+        joined = [part for part in parts if any(meet(member, other) for other in part)]
+        for part in joined:
+            parts.remove(part)
+        parts.append(sorted([member] + [m for part in joined for m in part]))
+    return sorted(parts)
+
+
+def canvases(textures, names, where):
+    """The textures of `names` put back together where they lay side by
+    side in video memory, with one colour table: the tiles of one picture
+    (a background, a map) are cut from one page, and made larger apart
+    each would have an edge of its own. [(x0, y0, w, h, [(name, x, y)])],
+    a texture of no known place on one of its own; one that does not
+    agree with what lies under it on another canvas."""
+    import numpy as np
+
+    groups = {}
+    alone = []
+    for name in sorted(names):
+        if name in where:
+            depth, cx, cy, x, y = where[name][0]
+            groups.setdefault((depth, cx, cy), []).append((name, x, y))
+        else:
+            alone.append(name)
+    out = []
+    for key in sorted(groups):
+        laid = []  # [[(name, x, y)]]
+        for name, x, y in groups[key]:
+            h, w = textures[name].shape[:2]
+            for members in laid:
+                fits = True
+                for other, ox, oy in members:
+                    oh, ow = textures[other].shape[:2]
+                    x0, y0, x1, y1 = max(x, ox), max(y, oy), min(x + w, ox + ow), min(y + h, oy + oh)
+                    if x0 < x1 and y0 < y1 and not np.array_equal(
+                            textures[name][y0 - y:y1 - y, x0 - x:x1 - x], textures[other][y0 - oy:y1 - oy, x0 - ox:x1 - ox]):
+                        fits = False
+                        break
+                if fits:
+                    members.append((name, x, y))
+                    break
+            else:
+                laid.append([(name, x, y)])
+        for members in [part for members in laid for part in touching(textures, members)]:
+            x0 = min(x for _, x, _ in members)
+            y0 = min(y for _, _, y in members)
+            x1 = max(x + textures[n].shape[1] for n, x, _ in members)
+            y1 = max(y + textures[n].shape[0] for n, _, y in members)
+            out.append((x0, y0, x1 - x0, y1 - y0, [(n, x - x0, y - y0) for n, x, y in members]))
+    for name in alone:
+        h, w = textures[name].shape[:2]
+        out.append((0, 0, w, h, [(name, 0, 0)]))
+    return out
 
 
 def fades(textures):
@@ -327,16 +712,68 @@ def build(args):
             os.remove(os.path.join(out, entry))
     counts = {}
     made = {}
+    kinds = {}
     for name, rgba in sorted(textures.items()):
         h, w = rgba.shape[:2]
         if w < SIDE_MIN or h < SIDE_MIN:
             counts['left as it is'] = counts.get('left as it is', 0) + 1
             continue
-        kind = kind_of(name, rgba)
-        big = ways[kind](rgba.astype(np.float64), args.scale)
+        kinds[name] = kind_of(name, rgba)
+    # the pictures and the paintings by the model, where there is a card
+    # that runs it; what it could not make is made as without it
+    upscaler = find_upscaler(getattr(args, 'upscaler', 'auto'))
+    by_model = {}
+    how = 'numpy and Pillow alone (no %s)' % UPSCALER
+    if upscaler:
+        # the pictures and paintings with what lay beside them, each canvas
+        # made larger whole
+        laid = canvases(textures, [n for n, k in kinds.items() if k != 'shapes'], read_where(args.dump))
+        asked = {}
+        cut = {}
+        for i, (_, _, w, h, members) in enumerate(laid):
+            member_kinds = [kinds[n] for n, _, _ in members]
+            if not any(k in MODEL_OF for k in member_kinds):
+                continue
+            canvas = np.zeros((h, w, 4), np.uint8)
+            for name, x, y in members:
+                th, tw = textures[name].shape[:2]
+                drawn = textures[name][:, :, 3:4] > 0
+                canvas[y:y + th, x:x + tw] = np.where(drawn, textures[name], canvas[y:y + th, x:x + tw])
+            job = 'canvas%04d' % i
+            asked[job] = (canvas, MODEL_OF['picture' if 'picture' in member_kinds else 'painting'])
+            cut[job] = members
+        started = time.time()
+        made_by, why = upscale_by_model(upscaler, asked, args.scale)
+        s = args.scale
+        for job, members in cut.items():
+            if job not in made_by:
+                continue
+            for name, x, y in members:
+                th, tw = textures[name].shape[:2]
+                by_model[name] = made_by[job][y * s:(y + th) * s, x * s:(x + tw) * s]
+                if kinds[name] not in MODEL_OF:
+                    # beside a painting in its page: one with it
+                    kinds[name] = 'painting'
+        models = sorted(set(m for j, (_, m) in asked.items() if j in made_by))
+        print('port_art: %d textures on %d canvases by %s in %.1f seconds%s' % (
+            len(by_model), len(made_by), ', '.join(models) or 'no model', time.time() - started,
+            '; the rest without it: ' + why if why else ''))
+        if models:
+            how = '%s, by %s' % (', '.join(models), UPSCALER)
+    for name, kind in sorted(kinds.items()):
+        rgba = textures[name]
+        if kind in MODEL_OF and name not in by_model:
+            kind = FALLBACK_OF[kind]
+        big = ways[FALLBACK_OF.get(kind, kind)](rgba.astype(np.float64), args.scale)
+        if name in by_model:
+            # the model's colours, today's in the dark, and the outline of
+            # today's way
+            light = np.clip(big[:, :, :3].max(2, keepdims=True) / DARK_LEVEL, 0, 1)
+            big = np.dstack([by_model[name] * light + big[:, :, :3] * (1 - light), big[:, :, 3:4]])
         image = Image.fromarray(np.clip(big + 0.5, 0, 255).astype(np.uint8), 'RGBA')
         made[name] = image
         image.save(os.path.join(out, name + '.png'), optimize=False, compress_level=6)
+        kind += ' by the model' if name in by_model else ''
         counts[kind] = counts.get(kind, 0) + 1
     steps = 0
     for name, (base, tint) in fades(textures).items():
@@ -348,7 +785,7 @@ def build(args):
             os.path.join(out, name + '.png'), compress_level=6)
         steps += 1
     with open(os.path.join(args.out, 'mod.txt'), 'w', encoding='utf-8', newline='\n') as f:
-        f.write(MANIFEST)
+        f.write(MANIFEST + MADE_BY % how)
     print('port_art: %d textures into %s: %s; %d steps of fades' % (
         len(made) + steps, args.out, ', '.join('%d %s' % (v, k) for k, v in sorted(counts.items())), steps))
     return 0
@@ -363,6 +800,9 @@ def main():
     ap.add_argument('--out', default=DEFAULT_OUT)
     ap.add_argument('--scale', type=int, default=6)
     ap.add_argument('--keys', help='only these keys (build)')
+    ap.add_argument('--upscaler', default='auto',
+                    help="the folder of realesrgan-ncnn-vulkan and its models/ (build); off for numpy and Pillow "
+                    "alone; auto: RB_UPSCALER, the package's prepare/upscaler/, tmp/art-tools/")
     args = ap.parse_args()
     args.dump = args.dump or [DEFAULT_DUMP]
     if args.step in ('dump', 'all'):

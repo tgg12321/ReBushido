@@ -41,7 +41,10 @@ def run(checks):
     checks.equal('the art tour\'s limit is port_art\'s', port_prepare.ART_LIMIT,
                  port_art.plan_text.__defaults__[0])
     checks.equal('the stages', port_stage_hd.ALL_STAGES, 38)
-    checks.true('every art mode has a row', all(m in port_art.MODE_ROWS for m in port_art.MODES))
+    checks.true('every art mode has a row, or presses of its own',
+                all(m in port_art.MODE_ROWS or m == 'stages' for m in port_art.MODES))
+    checks.true("the stage pages' tour stops on the stage pages",
+                'port_on_stages' in port_art.plan_text('stages') and 'stages+' in port_art.plan_text('stages'))
 
     work = os.path.join(support.ROOT, 'build', 'tests', 'port_prepare')
     if os.path.isdir(work):

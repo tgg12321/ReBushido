@@ -263,8 +263,14 @@ static void port_ReplaceDump(
     snprintf(path, sizeof(path), "%s/%s.png", folder, name);
     file = fopen(path, "rb");
     if (file != NULL) {
-        /* written by a run before this one */
+        /* written by a run before this one, or beside it: where it is in
+         * this run is said all the same, so that what the runs say
+         * together does not hang on which of them wrote it first
+         * (tools/port_art.py puts a picture's tiles together by it) */
         fclose(file);
+        port_ReplaceSay("mods: had %s (page %d %d, at %d %d, table %d %d)",
+                        path, region->page_x, region->page_y, region->u,
+                        region->v, region->clut_x, region->clut_y);
         return;
     }
     rgba = malloc((size_t)region->w * (size_t)region->h * RGBA);

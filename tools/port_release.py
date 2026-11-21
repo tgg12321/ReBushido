@@ -114,14 +114,18 @@ The mods made from the player's disc
 -----------------------------------
 prepare/ holds what rebushido.exe runs, the first time it starts with a
 disc, to make the remastered art, the stages' textures and the fighters
-from that disc into mods/: CPython for Windows with numpy and Pillow, and
-this repository's own tools (prepare/tools/, the same licence as the rest).
-Python is under the PSF licence, numpy under the BSD licence with what its
-wheel bundles (OpenBLAS, LAPACK, the GCC runtime under its Runtime Library
-Exception), Pillow under the MIT-CMU licence with the libraries it builds
-in: their texts are in prepare/licenses/ (README.txt there says which is
-which). They are programs of their own that rebushido.exe starts; none is
-built into it.
+from that disc into mods/: CPython for Windows with numpy and Pillow, the
+learned upscaler realesrgan-ncnn-vulkan with Real-ESRGAN's x4plus model
+(prepare/upscaler/, for the art's pictures, on a graphics card with
+Vulkan), and this repository's own tools (prepare/tools/, the same licence
+as the rest). Python is under the PSF licence, numpy under the BSD licence
+with what its wheel bundles (OpenBLAS, LAPACK, the GCC runtime under its
+Runtime Library Exception), Pillow under the MIT-CMU licence with the
+libraries it builds in, realesrgan-ncnn-vulkan under the MIT licence with
+Tencent's ncnn under the BSD 3-Clause licence, and the x4plus model under
+Real-ESRGAN's BSD 3-Clause licence: their texts are in prepare/licenses/
+(README.txt there says which is which). They are programs of their own
+that rebushido.exe starts; none is built into it.
 
 Nothing of Bushido Blade 2's data is in this package: the program reads it
 from the player's own image of the disc, and makes the mods above from it
