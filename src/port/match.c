@@ -719,6 +719,31 @@ void port_MatchRulePageOpen(s32 mode, s32 to_stages, s32 open, s32 sides) {
 
 s32 port_MatchRuleFirst(void) { return g_port_match.rule_first; }
 
+s32 port_MatchRuleHasRow(const PortMatch *match, s32 row) {
+    if (row == PORT_MATCH_ROW_COUNT) {
+        return match->page_rule != PORT_MATCH_SINGLE;
+    }
+    if (row == PORT_MATCH_ROW_TEAMS) {
+        return match->page_rule != PORT_MATCH_CREW;
+    }
+    return row == PORT_MATCH_ROW_RULE;
+}
+
+/* The page's next row that it has, `step` 1 down or -1 up, round at the
+ * ends. */
+static void port_MatchRuleRowStep(PortMatch *match, s32 step) {
+    s32 row = match->rule_row;
+    s32 i;
+
+    for (i = 0; i < PORT_MATCH_ROWS; i++) {
+        row = (row + PORT_MATCH_ROWS + step) % PORT_MATCH_ROWS;
+        if (port_MatchRuleHasRow(match, row)) {
+            break;
+        }
+    }
+    match->rule_row = (u8)row;
+}
+
 /* The value of the page's row a step on (`step` 1 or -1), round at the
  * ends. */
 static void port_MatchRuleTurn(PortMatch *match, s32 step) {
@@ -726,6 +751,12 @@ static void port_MatchRuleTurn(PortMatch *match, s32 step) {
     s32 most;
     s32 value;
 
+    if (match->rule_row == PORT_MATCH_ROW_TEAMS) {
+        match->page_teams =
+            (u8)((match->page_teams + PORT_TEAMS_CHOICES + step) %
+                 PORT_TEAMS_CHOICES);
+        return;
+    }
     if (match->rule_row == PORT_MATCH_ROW_RULE) {
         match->page_rule = (u8)((match->page_rule + PORT_MATCH_RULES + step) %
                                 PORT_MATCH_RULES);
@@ -770,16 +801,17 @@ s32 port_MatchRulePageStep(s32 pressed, s32 *leave) {
         port_MatchRuleTaken(match);
         return TRUE;
     }
-    if ((own & PAD_ANY(PADLup | PADLdown)) &&
-        match->page_rule != PORT_MATCH_SINGLE) {
-        snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
-        match->rule_row =
-            (u8)(match->rule_row == PORT_MATCH_ROW_RULE ? PORT_MATCH_ROW_COUNT
-                                                        : PORT_MATCH_ROW_RULE);
+    if (own & PAD_ANY(PADLup | PADLdown)) {
+        u8 row = match->rule_row;
+
+        port_MatchRuleRowStep(match, (own & PAD_ANY(PADLdown)) ? 1 : -1);
+        if (match->rule_row != row) {
+            snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        }
     } else if (own & PAD_ANY(PADLleft | PADLright)) {
         snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
         port_MatchRuleTurn(match, (own & PAD_ANY(PADLright)) ? 1 : -1);
-        if (match->page_rule == PORT_MATCH_SINGLE) {
+        if (!port_MatchRuleHasRow(match, match->rule_row)) {
             match->rule_row = PORT_MATCH_ROW_RULE;
         }
     }

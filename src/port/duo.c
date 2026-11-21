@@ -362,6 +362,23 @@ static void port_DuoCloneModel(s32 slot) {
     duo->clone_made[slot] = TRUE;
 }
 
+/* A view's model (port_duo.h): the slots' own, then the copies. */
+Model *port_DuoViewModel(s32 view) {
+    const PortDuo *duo = &g_port_duo;
+
+    if (!duo->on) {
+        return NULL;
+    }
+    if (view >= 0 && view < 2) {
+        return duo->own_model[view];
+    }
+    if (view >= PORT_DUO_FIGHTERS - 1 && view < PORT_DUO_FIGHTERS + 1 &&
+        duo->clone_made[view - (PORT_DUO_FIGHTERS - 1)]) {
+        return (Model *)&duo->clone[view - (PORT_DUO_FIGHTERS - 1)];
+    }
+    return NULL;
+}
+
 s32 port_DuoHoldsAddress(s32 address) {
     u32 from = (u32)ADDR(g_port_duo.clone_cloth);
     u32 at = (u32)address;
@@ -1160,7 +1177,8 @@ static s32 port_DuoProject(const Vec3 *at, PortDuoTag *tag) {
         return FALSE;
     }
     tag->x = (s16)(ofx + out[0] * h / out[2]);
-    tag->y = (s16)(ofy + out[1] * h / out[2]);
+    /* the frame is drawn squashed to half its height (render.c) */
+    tag->y = (s16)(ofy + (out[1] / 2) * h / out[2]);
     tag->seen = TRUE;
     return TRUE;
 }

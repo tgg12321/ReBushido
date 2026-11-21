@@ -20,6 +20,12 @@ first team (the first pad's character twice), 2 and 4 the second.
   team's two, who stand side by side: the first on 4, the nearer (a blow
   lands on whichever enemy it meets), the input of the third pad kept by the
   replay.
+- menu: ReBushido's main menu (`--menu rebushido`), versus: on the rule
+  page Stock (Right), its lives down to 2 (Down, Left), the fighters'
+  row (Down) to two on two with the CPU's partners (Right), Cross; each
+  side's fighter and weapon picked at the grid, the stage; the fight is
+  two on two (the match's teams the page's), the first player striking,
+  to the score's card, the second fight of four, and the result's card.
 - cpu: the same fighters, all four the CPU's (`--fight-cpu --teams
   cpu`): a fight that plays itself to one team out, the game's menu after
   it, both sizes alike.
@@ -56,6 +62,10 @@ import sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(REPO, 'tools'))
 from port_stage_select import Report, fight_presses, run_plan  # noqa: E402
+from port_match import RB_ARGS, RB_FIRST_PICKS, RB_OPENING, RB_START, RB_VS_MENU  # noqa: E402
+
+# the opening's checkpoints and ReBushido's main menu (tools/port_match.py)
+MENU_START = RB_START
 
 HEAD = '''discs = ["port"]
 cards = "none"
@@ -131,6 +141,63 @@ expect = ["port_duo_down_2 == 1", "port_duo_down_4 == 1", "port_duo_down_1 == 0"
           "port_duo_hit_by_2 == 0", "port_duo_rest_1 == 0", "port_duo_rest_2 == 1", "p2_defeated == 1",
           "p1_defeated == 0"]
 ''' + AFTER % {'after': '"winner == 0", "port_duo_down_1 == 0"'}
+
+# ReBushido's main menu: versus, the rule page (Stock 2, two on two with
+# the CPU's partners), the grid's first fighters, the stage.
+TOML_MENU = 'about = "Two on two chosen on the rule page: a Stock match of two (tools/port_duo.py)"\n' + HEAD + \
+    '''input = [%(rb_opening)s,
+    %(rb_vs_menu)s,
+    "rule+30 RIGHT", "rule+50 DOWN", "rule+70 LEFT", "rule+90 DOWN", "rule+110 RIGHT", "rule+150 CROSS",
+    %(first_picks)s,
+    "stages+40 CROSS",
+    %(presses)s, %(presses2)s,
+]
+''' + COMPARE.replace(']\n', ', "port_match_rule_page", "port_match_rule_row", "port_match_page_rule", '
+                      '"port_match_page_teams", "port_match_teams"]\n') + MENU_START + '''
+[[checkpoint]]
+name = "select"
+when = "menu_page == MENU_PAGE_SELECT"
+within = 1500
+shot = false
+
+[[checkpoint]]
+name = "rule"
+when = "port_match_rule_page == 1"
+within = 3000
+expect = ["port_match_page_rule == 0", "port_match_page_teams == 0"]
+
+[[checkpoint]]
+name = "grid"
+when = "port_match_rule_page == 0"
+within = 1000
+expect = ["port_match_page_rule == 1", "port_match_page_teams == 1"]
+
+[[checkpoint]]
+name = "stages"
+when = "port_on_stages == 1"
+within = 1500
+shot = false
+''' + FIGHT.replace('expect = [', 'expect = ["port_match_teams == 1", "port_match_rule == 1", '
+                     '"port_match_count == 2", ') + '''
+[[checkpoint]]
+name = "card"
+when = "port_match_card != 0"
+within = 9000
+expect = ["port_match_card == 1", "port_match_teams == 1"]
+
+[[checkpoint]]
+name = "fight2"
+when = "screen == SCREEN_FIGHT_UPDATE && winner == FIGHT_NOBODY && port_duo_on == 1"
+at_frame = true
+within = 3000
+expect = ["port_duo_down_1 == 0", "port_duo_down_2 == 0", "port_duo_down_3 == 0", "port_duo_down_4 == 0"]
+
+[[checkpoint]]
+name = "result"
+when = "port_match_card == 2"
+within = 12000
+expect = ["port_match_over == 1", "port_match_teams == 1"]
+'''
 
 # 3 (the third pad) turns from 4 to 2 and strikes him.
 TOML_PADS = 'about = "Two on two: the third pad retargets and strikes (tools/port_duo.py)"\n' + HEAD + \
@@ -249,7 +316,8 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--out', default=os.path.join(REPO, 'build', 'duo'))
     parser.add_argument('--shots', default=None)
-    parser.add_argument('--only', nargs='*', help='the plans to run (retarget, pads, cpu, second_wins, draw, stock)')
+    parser.add_argument('--only', nargs='*', help='the plans to run (retarget, pads, menu, cpu, second_wins, draw, '
+                        'stock)')
     parser.add_argument('--rollback', action='store_true',
                         help='retarget, pads and stock through tools/port_rollback.py instead')
     args = parser.parse_args(argv[1:])
@@ -259,10 +327,12 @@ def main(argv):
     os.makedirs(out, exist_ok=True)
     presses = fight_presses(rounds=120)
     values = {'presses': presses, 'presses2': presses.replace('"fight+', '"fight2+'),
+              'rb_opening': ', '.join(RB_OPENING), 'rb_vs_menu': RB_VS_MENU, 'first_picks': RB_FIRST_PICKS,
               'presses_p3': fight_presses(60, 60, P3_ROUND).replace('f ', 'f P3 ')}
     plans = [
         ('retarget', TOML_RETARGET, FIGHT_ARGS + ['--fight-2p', '--teams', 'pads'], (), 20000),
         ('pads', TOML_PADS, FIGHT_ARGS + ['--fight-2p', '--teams', 'pads'], (), 12000),
+        ('menu', TOML_MENU, RB_ARGS + ['--match', 'single'], (), 40000),
         ('cpu', TOML_CPU, FIGHT_ARGS + ['--fight-cpu', '--teams', 'cpu'], (), 30000),
         ('second_wins', TOML_SECOND_WINS, FIGHT_ARGS + ['--fight-2p', '--teams', 'pads'],
          ('poke', [('later', 2, 'p1_defeated', 1), ('later', 2, 'p2_defeated', 1),

@@ -202,8 +202,12 @@ enum {
     PORT_SOURCE_AXIS = 3,   /* a stick or a trigger pushed one way */
 };
 
-#define PORT_BINDINGS_MAX 160
+#define PORT_BINDINGS_MAX 256
 #define PORT_PADS 2
+/* The pads the window binds keys and controllers to: the game's two, and
+ * the third and fourth that two on two's partners are played from
+ * (port_duo.h). */
+#define PORT_WINDOW_PADS 4
 /* An axis's furthest. */
 #define PORT_AXIS_MAX 32767
 /* How far a stick is pushed before it counts, in parts of a hundred. */
@@ -211,7 +215,7 @@ enum {
 
 typedef struct {
     u8 source;     /* PORT_SOURCE_... */
-    u8 pad;        /* 0 or 1 */
+    u8 pad;        /* 0 to 3 (PORT_WINDOW_PADS) */
     s8 direction;  /* an axis's: 1 or -1 */
     u8 is_default; /* from the layout built in, not from a file */
     u8 is_down;
@@ -568,6 +572,14 @@ extern s32 port_MatchCrewMarks(s32 row, s32 col);
 /* What the window lays over the picture for them, as
  * port_StagePagePixels does for the stage pages. */
 extern s32 port_MatchPixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
+/* Two on two over its fight (include/port_duo.h; match_page.c): the band
+ * of the teams, who stands; and a fighter's tag over his head, the one
+ * port_DuoTagChoose chose (0 to 3), with the players who target him. */
+extern s32 port_DuoBandPixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
+extern void port_DuoTagChoose(s32 who);
+extern s32 port_DuoTagPixels(
     s32 area_w, s32 area_h, const u32 **pixels, PortRect *box);
 /* "Single fight", "Stock N", "First to N" or "Crew N" into `out`. */
 extern void port_MatchRuleName(char *out, s32 room, s32 rule, s32 count);

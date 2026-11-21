@@ -115,14 +115,53 @@ static const char g_port_layout_original[] =
     "p2.l2 = pad +lefttrigger\n"
     "p2.r2 = pad +righttrigger\n"
     "p2.start = pad start\n"
-    "p2.select = pad back\n";
+    "p2.select = pad back\n"
+    "\n"
+    "# Two on two's third and fourth players: the third and fourth\n"
+    "# controllers plugged in\n"
+    "p3.up = pad dpup\n"
+    "p3.down = pad dpdown\n"
+    "p3.left = pad dpleft\n"
+    "p3.right = pad dpright\n"
+    "p3.up = pad -lefty\n"
+    "p3.down = pad +lefty\n"
+    "p3.left = pad -leftx\n"
+    "p3.right = pad +leftx\n"
+    "p3.cross = pad a\n"
+    "p3.circle = pad b\n"
+    "p3.square = pad x\n"
+    "p3.triangle = pad y\n"
+    "p3.l1 = pad leftshoulder\n"
+    "p3.r1 = pad rightshoulder\n"
+    "p3.l2 = pad +lefttrigger\n"
+    "p3.r2 = pad +righttrigger\n"
+    "p3.start = pad start\n"
+    "p3.select = pad back\n"
+    "p4.up = pad dpup\n"
+    "p4.down = pad dpdown\n"
+    "p4.left = pad dpleft\n"
+    "p4.right = pad dpright\n"
+    "p4.up = pad -lefty\n"
+    "p4.down = pad +lefty\n"
+    "p4.left = pad -leftx\n"
+    "p4.right = pad +leftx\n"
+    "p4.cross = pad a\n"
+    "p4.circle = pad b\n"
+    "p4.square = pad x\n"
+    "p4.triangle = pad y\n"
+    "p4.l1 = pad leftshoulder\n"
+    "p4.r1 = pad rightshoulder\n"
+    "p4.l2 = pad +lefttrigger\n"
+    "p4.r2 = pad +righttrigger\n"
+    "p4.start = pad start\n"
+    "p4.select = pad back\n";
 
 const PortLayout g_port_layouts[PORT_LAYOUTS] = {
     {"original", g_port_layout_original},
 };
 
 /* The most a layout's text may be: it is read from a copy. */
-#define LAYOUT_BYTES_MAX 4096
+#define LAYOUT_BYTES_MAX 8192
 
 /* ---- text ---- */
 
@@ -321,8 +360,8 @@ static const char *port_ReadBinding(
     if (name[0] != 'p' && name[0] != 'P') {
         return "not a setting";
     }
-    if ((name[1] != '1' && name[1] != '2') || name[2] != '.') {
-        return "a pad is p1 or p2, then a dot and its button";
+    if (name[1] < '1' || name[1] >= '1' + PORT_WINDOW_PADS || name[2] != '.') {
+        return "a pad is p1 to p4, then a dot and its button";
     }
     binding.pad = (u8)(name[1] - '1');
     binding.button = port_FindPadButtons(name + 3);

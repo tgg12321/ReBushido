@@ -60,6 +60,7 @@
 #include "port_stage_choice.h"
 #include "port_fight_music.h"
 #include "port_match.h"
+#include "port_duo.h"
 #include "port_top_menu.h"
 #include "shared.h"
 #include "portmap.h"
@@ -373,11 +374,11 @@ static s32 g_port_load_stalled;
 
 /* The controller of each pad, and SDL's number for it while it is
  * plugged in. */
-static SDL_GameController *g_port_controllers[PORT_PADS];
-static SDL_JoystickID g_port_controller_ids[PORT_PADS];
+static SDL_GameController *g_port_controllers[PORT_WINDOW_PADS];
+static SDL_JoystickID g_port_controller_ids[PORT_WINDOW_PADS];
 /* The buttons the keys and controllers held on each pad when they were
  * last read, which is what the port's pads are given (g_port_device_hook). */
-static u32 g_port_sent[PORT_PADS];
+static u32 g_port_sent[PORT_WINDOW_PADS];
 /* For the end's account: a plan's presses made as the PC's input, the
  * key and controller events read, and the changes told to the pads. */
 static u32 g_port_injected;
@@ -386,7 +387,7 @@ static u32 g_port_controller_events;
 static u32 g_port_pad_changes;
 /* What the pads are not given until it is let go: what was held as the
  * settings menu closed, and the Select that opened it (sdl_menu.c). */
-static u32 g_port_held_back[PORT_PADS];
+static u32 g_port_held_back[PORT_WINDOW_PADS];
 /* The button of player one's pad that Escape holds while it is down,
  * chosen as it went down (port_EscapeButton); 0 while it is up. */
 static u32 g_port_escape_held;
@@ -471,7 +472,7 @@ void port_DescribeControls(void) {
     size_t which;
     s32 i;
 
-    for (pad = 0; pad < PORT_PADS; pad++) {
+    for (pad = 0; pad < PORT_WINDOW_PADS; pad++) {
         port_Say("player %d:", pad + 1);
         for (which = 0; which < sizeof(order) / sizeof(order[0]); which++) {
             u32 button = port_FindPadButton(order[which]);
@@ -796,7 +797,7 @@ static void port_OpenAudio(void) {
 static s32 port_FindController(SDL_JoystickID id) {
     s32 pad;
 
-    for (pad = 0; pad < PORT_PADS; pad++) {
+    for (pad = 0; pad < PORT_WINDOW_PADS; pad++) {
         if (g_port_controllers[pad] != NULL &&
             g_port_controller_ids[pad] == id) {
             return pad;
@@ -823,13 +824,13 @@ static void port_AddController(int device) {
     if (port_FindController(id) >= 0) {
         return;
     }
-    for (pad = 0; pad < PORT_PADS; pad++) {
+    for (pad = 0; pad < PORT_WINDOW_PADS; pad++) {
         if (g_port_controllers[pad] == NULL) {
             break;
         }
     }
-    if (pad == PORT_PADS) {
-        port_Say("a third controller is not used: %s",
+    if (pad == PORT_WINDOW_PADS) {
+        port_Say("a fifth controller is not used: %s",
                  SDL_GameControllerNameForIndex(device));
         return;
     }
@@ -2253,6 +2254,9 @@ typedef struct {
 
 static PortOverlay g_port_stage_page;
 static PortOverlay g_port_match_page;
+/* two on two's band and its fighters' tags (match_page.c) */
+static PortOverlay g_port_duo_band;
+static PortOverlay g_port_duo_tags[PORT_DUO_FIGHTERS];
 /* the window's own pages, the settings menu and the online pages
  * (sdl_menu.c) */
 static PortOverlay g_port_page;
@@ -2315,7 +2319,14 @@ static void port_DrawStagePage(void) {
 }
 
 static void port_DrawMatchPage(void) {
+    s32 who;
+
     port_DrawOverlay(&g_port_match_page, port_MatchPixels);
+    port_DrawOverlay(&g_port_duo_band, port_DuoBandPixels);
+    for (who = 0; who < PORT_DUO_FIGHTERS; who++) {
+        port_DuoTagChoose(who);
+        port_DrawOverlay(&g_port_duo_tags[who], port_DuoTagPixels);
+    }
 }
 
 static void port_DrawWindowPage(void) {
@@ -2951,7 +2962,7 @@ static u32 port_PadHeld(s32 pad) {
 void port_HoldBackPads(void) {
     s32 pad;
 
-    for (pad = 0; pad < PORT_PADS; pad++) {
+    for (pad = 0; pad < PORT_WINDOW_PADS; pad++) {
         g_port_held_back[pad] = port_PadHeld(pad);
     }
 }
@@ -3136,6 +3147,8 @@ void port_WindowApplyChoice(s32 choice) {
         strcmp(name, "match_rule") == 0 || strcmp(name, "match_count") == 0) {
         port_SetMatchDefault(
             g_port_settings.match_rule, g_port_settings.match_count);
+    } else if (strcmp(name, "teams") == 0) {
+        port_SetTeamsDefault(g_port_settings.teams);
     } else if (strcmp(name, "bugfixes") == 0) {
         /* the game's own, at once, as the options page at boot set it */
         port_WindowGameSwitches();
@@ -3161,7 +3174,7 @@ static void port_SendPads(void) {
     s32 pad;
     u32 bit;
 
-    for (pad = 0; pad < PORT_PADS; pad++) {
+    for (pad = 0; pad < PORT_WINDOW_PADS; pad++) {
         u32 held = port_PadHeld(pad);
         u32 changed;
 
@@ -3186,7 +3199,7 @@ static void port_SendPads(void) {
 /* The port's pads ask what the PC holds on one of them (port_platform.h):
  * what it held when the events were last read, at a vertical blank. */
 static u32 port_DeviceButtons(s32 pad) {
-    return pad >= 0 && pad < PORT_PADS ? g_port_sent[pad] : 0;
+    return pad >= 0 && pad < PORT_WINDOW_PADS ? g_port_sent[pad] : 0;
 }
 
 static void port_TakeKey(const SDL_KeyboardEvent *key) {

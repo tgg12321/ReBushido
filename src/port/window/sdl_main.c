@@ -51,6 +51,7 @@
 #include "port_stage_choice.h"
 #include "port_fight_music.h"
 #include "port_match.h"
+#include "port_duo.h"
 #include "port_top_menu.h"
 #include "shared.h"
 #include "sdl_window.h"
@@ -1284,6 +1285,8 @@ int main(int argc, char **argv) {
     /* the match rule (port_match.h); --match has the last word */
     port_SetMatchDefault(
         g_port_settings.match_rule, g_port_settings.match_count);
+    /* two on two (port_duo.h); --teams has the last word */
+    port_SetTeamsDefault(g_port_settings.teams);
     /* ReBushido's top menu (port_top_menu.h), in a player's run: a test's
      * (--plan, --frames) presses through the original's menus, and has
      * them unless its --menu, which comes after, says otherwise */

@@ -17,6 +17,7 @@
 
 #include "menu.h"
 #include "port_match.h"
+#include "port_duo.h"
 
 /* The game's screen, whose places these are given in: 640 by 240, shown
  * 4:3, so that a unit across is half a unit down. */
@@ -61,7 +62,9 @@
 #define SIZE_NAME 10
 #define SIZE_LINE 10
 
-static struct {
+/* What a look is drawn into: its pixels, where they go in the area, and
+ * what they were drawn for. */
+typedef struct {
     s32 drawn;
     s32 area_w;
     s32 area_h;
@@ -70,7 +73,12 @@ static struct {
     u32 room;
     PortRect box;
     s32 font_ok;
-} g_match_page;
+} MatchCanvas;
+
+/* The match's own looks; two on two's tags and band have canvases of
+ * their own (below), drawn by the same hand through `g_canvas`. */
+static MatchCanvas g_match_page;
+static MatchCanvas *g_canvas = &g_match_page;
 
 void port_MatchRuleName(char *out, s32 room, s32 rule, s32 count) {
     if (rule == PORT_MATCH_STOCK) {
@@ -87,15 +95,15 @@ void port_MatchRuleName(char *out, s32 room, s32 rule, s32 count) {
 /* ---- places and shapes ---- */
 
 static s32 port_MatchX(s32 x) {
-    return x * g_match_page.area_w / GAME_W - g_match_page.box.x;
+    return x * g_canvas->area_w / GAME_W - g_canvas->box.x;
 }
 
 static s32 port_MatchY(s32 y) {
-    return y * g_match_page.area_h / GAME_H - g_match_page.box.y;
+    return y * g_canvas->area_h / GAME_H - g_canvas->box.y;
 }
 
 static s32 port_MatchSize(s32 lines) {
-    s32 size = lines * g_match_page.area_h / GAME_H;
+    s32 size = lines * g_canvas->area_h / GAME_H;
 
     return size < 6 ? 6 : size;
 }
@@ -104,9 +112,8 @@ static void port_MatchRect(s32 x, s32 y, s32 w, s32 h, u32 color) {
     s32 x0 = port_MatchX(x);
     s32 y0 = port_MatchY(y);
 
-    port_FillRect(
-        g_match_page.pixels, g_match_page.box.w, g_match_page.box.h, x0, y0,
-        port_MatchX(x + w) - x0, port_MatchY(y + h) - y0, color);
+    port_FillRect(g_canvas->pixels, g_canvas->box.w, g_canvas->box.h, x0, y0,
+                  port_MatchX(x + w) - x0, port_MatchY(y + h) - y0, color);
 }
 
 static void port_MatchFrame(s32 x, s32 y, s32 w, s32 h, u32 color) {
@@ -114,10 +121,10 @@ static void port_MatchFrame(s32 x, s32 y, s32 w, s32 h, u32 color) {
     s32 y0 = port_MatchY(y);
     s32 x1 = port_MatchX(x + w);
     s32 y1 = port_MatchY(y + h);
-    s32 line = g_match_page.area_h >= 960 ? 2 : 1;
-    u32 *p = g_match_page.pixels;
-    s32 bw = g_match_page.box.w;
-    s32 bh = g_match_page.box.h;
+    s32 line = g_canvas->area_h >= 960 ? 2 : 1;
+    u32 *p = g_canvas->pixels;
+    s32 bw = g_canvas->box.w;
+    s32 bh = g_canvas->box.h;
 
     port_FillRect(p, bw, bh, x0, y0, x1 - x0, line, color);
     port_FillRect(p, bw, bh, x0, y1 - line, x1 - x0, line, color);
@@ -148,8 +155,8 @@ static void port_MatchText(
     } else if (align > 0) {
         px -= port_TextMeasure(text, &style);
     }
-    port_TextDraw(g_match_page.pixels, g_match_page.box.w, g_match_page.box.h,
-                  px, port_MatchY(y), text, &style);
+    port_TextDraw(g_canvas->pixels, g_canvas->box.w, g_canvas->box.h, px,
+                  port_MatchY(y), text, &style);
 }
 
 /* A pip round (x, y) of the game's places, `r` lines out: filled, or a
@@ -157,7 +164,7 @@ static void port_MatchText(
 static void port_MatchPip(s32 x, s32 y, s32 r, u32 color, s32 is_filled) {
     s32 cx = port_MatchX(x);
     s32 cy = port_MatchY(y);
-    float radius = (float)(r * g_match_page.area_h / GAME_H);
+    float radius = (float)(r * g_canvas->area_h / GAME_H);
     float ring = radius / 3.0f < 1.0f ? 1.0f : radius / 3.0f;
     s32 reach = (s32)radius + 2;
     s32 i;
@@ -188,8 +195,8 @@ static void port_MatchPip(s32 x, s32 y, s32 r, u32 color, s32 is_filled) {
             if (cover > 1.0f) {
                 cover = 1.0f;
             }
-            port_FillRect(g_match_page.pixels, g_match_page.box.w,
-                          g_match_page.box.h, cx + i, cy + j, 1, 1,
+            port_FillRect(g_canvas->pixels, g_canvas->box.w, g_canvas->box.h,
+                          cx + i, cy + j, 1, 1,
                           (u32)(cover * (float)(color >> 24)) << 24 |
                               (color & 0xFFFFFFU));
         }
@@ -410,7 +417,7 @@ static void port_MatchCrewSlot(const PortMatch *match, s32 side, s32 place,
     port_MatchText(x, y, lines, face, name, color, align < 0 ? -1 : align);
     if (stand == CREW_OUT) {
         port_MatchStyle(&style, lines, face, color);
-        w = port_TextMeasure(name, &style) * GAME_W / g_match_page.area_w;
+        w = port_TextMeasure(name, &style) * GAME_W / g_canvas->area_w;
         port_MatchRect(
             align > 0 ? x - w : x, y - (lines + 2) / 4, w, 1, COLOR_STRUCK);
     }
@@ -652,8 +659,8 @@ static void port_MatchCrewPick(const PortMatch *match) {
 #define RULE_VALUE_X 544
 #define RULE_FIRST_Y 80
 #define RULE_ROW 22
-#define RULE_ABOUT_Y 150
-#define RULE_HOST_Y 190
+#define RULE_ABOUT_Y 160
+#define RULE_HOST_Y 196
 #define RULE_KEYS_Y 236
 
 static const char * const g_match_rule_words[PORT_MATCH_RULES][2] = {
@@ -675,28 +682,42 @@ static void port_MatchRulePage(const PortMatch *match) {
     PortLook look;
     char value[32];
     s32 rule = match->page_rule < PORT_MATCH_RULES ? match->page_rule : 0;
-    s32 rows = rule == PORT_MATCH_SINGLE ? 1 : PORT_MATCH_ROWS;
+    s32 shown_rows = 0;
     s32 row;
 
     /* the page's pixels are the whole 4:3 area (port_MatchArea) */
     memset(&look, 0, sizeof(look));
-    look.pixels = g_match_page.pixels;
-    look.room = g_match_page.room;
-    look.area_w = g_match_page.area_w;
-    look.area_h = g_match_page.area_h;
-    look.font_ok = g_match_page.font_ok;
+    look.pixels = g_canvas->pixels;
+    look.room = g_canvas->room;
+    look.area_w = g_canvas->area_w;
+    look.area_h = g_canvas->area_h;
+    look.font_ok = g_canvas->font_ok;
     /* twice: the select screen's lettering is bright under it */
     port_LookBox(&look, 0, 0, GAME_W, GAME_H, PORT_LOOK_DARKEN);
     port_LookBox(&look, 0, 0, GAME_W, GAME_H, PORT_LOOK_DARKEN);
     port_LookPanel(&look, TRUE);
     port_LookTitle(&look, "Battle type");
-    for (row = 0; row < rows; row++) {
-        s32 y = RULE_FIRST_Y + row * RULE_ROW;
+    for (row = 0; row < PORT_MATCH_ROWS; row++) {
+        s32 y = RULE_FIRST_Y + shown_rows * RULE_ROW;
         s32 is_on = match->rule_row == row;
         const char *label;
         char shown[48];
 
-        if (row == PORT_MATCH_ROW_RULE) {
+        if (!port_MatchRuleHasRow(match, row)) {
+            continue;
+        }
+        shown_rows++;
+        if (row == PORT_MATCH_ROW_TEAMS) {
+            static const char * const teams[PORT_TEAMS_CHOICES] = {
+                "One on one", "Two on two, CPU partners",
+                "Two on two, four players"};
+
+            label = "Fighters";
+            snprintf(
+                value, sizeof(value), "%s",
+                teams[match->page_teams < PORT_TEAMS_CHOICES ? match->page_teams
+                                                             : 0]);
+        } else if (row == PORT_MATCH_ROW_RULE) {
             label = "Rule";
             port_MatchRuleName(value, sizeof(value), rule, 0);
             if (rule != PORT_MATCH_SINGLE) {
@@ -726,8 +747,17 @@ static void port_MatchRulePage(const PortMatch *match) {
         &look, RULE_LABEL_X, RULE_ABOUT_Y, PORT_LOOK_SIZE_TEXT, PORT_FACE_TEXT,
         g_match_rule_words[rule][0], PORT_LOOK_WHITE, PORT_LOOK_LEFT);
     port_LookText(&look, RULE_LABEL_X, RULE_ABOUT_Y + 12, PORT_LOOK_SIZE_TEXT,
-                  PORT_FACE_TEXT, g_match_rule_words[rule][1], PORT_LOOK_WHITE,
-                  PORT_LOOK_LEFT);
+                  PORT_FACE_TEXT,
+                  match->page_teams != PORT_TEAMS_ONE && rule != PORT_MATCH_CREW
+                      ? "Two on two: each side two of its fighter, all unhurt."
+                      : g_match_rule_words[rule][1],
+                  PORT_LOOK_WHITE, PORT_LOOK_LEFT);
+    if (match->page_teams != PORT_TEAMS_ONE && rule != PORT_MATCH_CREW) {
+        port_LookText(
+            &look, RULE_LABEL_X, RULE_ABOUT_Y + 24, PORT_LOOK_SIZE_TEXT,
+            PORT_FACE_TEXT, "R2 turns to the other enemy.", PORT_LOOK_WHITE,
+            PORT_LOOK_LEFT);
+    }
     if (port_SessionIsOn()) {
         port_LookText(&look, RULE_LABEL_X, RULE_HOST_Y, PORT_LOOK_SIZE_TEXT,
                       PORT_FACE_BOLD, "Player 1, the host, chooses",
@@ -735,8 +765,8 @@ static void port_MatchRulePage(const PortMatch *match) {
     }
     port_LookText(
         &look, GAME_W / 2, RULE_KEYS_Y, PORT_LOOK_SIZE_NOTE, PORT_FACE_TEXT,
-        "Cross: to the Character Select    Left, Right: change    "
-        "Triangle: back",
+        "Cross: to the Character Select    Up, Down: row    Left, Right: "
+        "change    Triangle: back",
         PORT_LOOK_GREY, PORT_LOOK_CENTRE);
 }
 
@@ -755,7 +785,7 @@ static s32 port_MatchKey(s32 shown, const PortMatch *match) {
     if (shown == PORT_MATCH_SHOWN_RULE) {
         return shown | match->page_rule << 3 | match->rule_row << 6 |
                match->page_count << 8 | match->page_crew << 12 |
-               port_SessionIsOn() << 16;
+               port_SessionIsOn() << 16 | match->page_teams << 17;
     }
     if (shown == PORT_MATCH_SHOWN_HUD) {
         return key;
@@ -827,34 +857,34 @@ s32 port_MatchPixels(
     if (shown == PORT_MATCH_SHOWN_NONE || area_w <= 0 || area_h <= 0) {
         return FALSE;
     }
-    if (!g_match_page.font_ok) {
-        g_match_page.font_ok = port_FontStart();
-        if (!g_match_page.font_ok) {
+    if (!g_canvas->font_ok) {
+        g_canvas->font_ok = port_FontStart();
+        if (!g_canvas->font_ok) {
             return FALSE;
         }
     }
     key = port_MatchKey(shown, match);
-    if (!g_match_page.drawn || g_match_page.area_w != area_w ||
-        g_match_page.area_h != area_h || g_match_page.key != key) {
-        g_match_page.key = key;
-        g_match_page.area_w = area_w;
-        g_match_page.area_h = area_h;
+    if (!g_canvas->drawn || g_canvas->area_w != area_w ||
+        g_canvas->area_h != area_h || g_canvas->key != key) {
+        g_canvas->key = key;
+        g_canvas->area_w = area_w;
+        g_canvas->area_h = area_h;
         port_MatchArea(shown, match, &x, &y, &w, &h);
-        g_match_page.box.x = x * area_w / GAME_W;
-        g_match_page.box.y = y * area_h / GAME_H;
-        g_match_page.box.w = (x + w) * area_w / GAME_W - g_match_page.box.x;
-        g_match_page.box.h = (y + h) * area_h / GAME_H - g_match_page.box.y;
-        need = (u32)(g_match_page.box.w * g_match_page.box.h);
-        if (need > g_match_page.room) {
-            free(g_match_page.pixels);
-            g_match_page.pixels = malloc((size_t)need * sizeof(u32));
-            g_match_page.room = g_match_page.pixels != NULL ? need : 0;
+        g_canvas->box.x = x * area_w / GAME_W;
+        g_canvas->box.y = y * area_h / GAME_H;
+        g_canvas->box.w = (x + w) * area_w / GAME_W - g_canvas->box.x;
+        g_canvas->box.h = (y + h) * area_h / GAME_H - g_canvas->box.y;
+        need = (u32)(g_canvas->box.w * g_canvas->box.h);
+        if (need > g_canvas->room) {
+            free(g_canvas->pixels);
+            g_canvas->pixels = malloc((size_t)need * sizeof(u32));
+            g_canvas->room = g_canvas->pixels != NULL ? need : 0;
         }
-        if (g_match_page.pixels == NULL || need == 0) {
-            g_match_page.drawn = FALSE;
+        if (g_canvas->pixels == NULL || need == 0) {
+            g_canvas->drawn = FALSE;
             return FALSE;
         }
-        memset(g_match_page.pixels, 0, (size_t)need * sizeof(u32));
+        memset(g_canvas->pixels, 0, (size_t)need * sizeof(u32));
         if (shown == PORT_MATCH_SHOWN_RULE) {
             port_MatchRulePage(match);
         } else if (shown == PORT_MATCH_SHOWN_PICK) {
@@ -866,9 +896,211 @@ s32 port_MatchPixels(
         } else {
             port_MatchCard(match);
         }
-        g_match_page.drawn = TRUE;
+        g_canvas->drawn = TRUE;
     }
-    *pixels = g_match_page.pixels;
-    *box = g_match_page.box;
+    *pixels = g_canvas->pixels;
+    *box = g_canvas->box;
+    return TRUE;
+}
+
+/* ---- two on two (include/port_duo.h) ----
+ *
+ * Over a fight of two on two, as light as the match's strip: a band
+ * under the game's count of wins (or the match's strip), each team's
+ * fighters by their pad's number (or CPU) with a pip that is filled
+ * while he stands; and over each standing fighter's head a small tag of
+ * the same, in his team's colour, with under it the numbers of the
+ * players who have him as their target. The tags move with the fighters:
+ * each is a small canvas of its own, drawn again only when what it says
+ * changes, and laid where his head is on the screen (port_DuoShown). */
+#define DUO_BAND_Y 38
+#define DUO_BAND_Y_CPU 58
+#define DUO_BAND_H 11
+#define DUO_NAME_W 16 /* a fighter's name's room before his pip */
+#define DUO_STEP 26   /* from one fighter of a team to the other */
+#define DUO_BAND_W (2 * DUO_STEP + 4)
+#define DUO_TAG_W 36
+#define DUO_TAG_H 22
+#define DUO_TAG_TEXT 9   /* the name's baseline in the tag */
+#define DUO_TAG_MARKS 19 /* the targeters' numbers' */
+#define DUO_TAGS PORT_DUO_FIGHTERS
+
+static MatchCanvas g_duo_band;
+static MatchCanvas g_duo_tags[DUO_TAGS];
+static s32 g_duo_tag_now;
+
+/* A fighter's name on the band and his tag: his pad's number, or CPU. */
+static const char *port_DuoName(const PortDuoShown *shown, s32 who) {
+    static const char * const names[PORT_DUO_FIGHTERS] = {
+        "1P", "2P", "3P", "4P"};
+
+    return shown->is_cpu[who] ? "CPU" : names[who];
+}
+
+static u32 port_DuoColor(s32 who) {
+    return PORT_DUO_SLOT(who) == 0 ? COLOR_SIDE_1 : COLOR_SIDE_2;
+}
+
+/* The canvas made ready for an area and a box: its pixels cleared when
+ * what it shows (`key`) or the area changed, TRUE then (it is to be
+ * drawn). FALSE with nothing to draw into. */
+static s32 port_DuoCanvas(MatchCanvas *canvas, s32 area_w, s32 area_h, s32 key,
+                          s32 w, s32 h, s32 *fresh) {
+    u32 need;
+
+    *fresh = FALSE;
+    if (!canvas->font_ok) {
+        canvas->font_ok = port_FontStart();
+        if (!canvas->font_ok) {
+            return FALSE;
+        }
+    }
+    if (canvas->drawn && canvas->area_w == area_w && canvas->area_h == area_h &&
+        canvas->key == key) {
+        return TRUE;
+    }
+    canvas->key = key;
+    canvas->area_w = area_w;
+    canvas->area_h = area_h;
+    canvas->box.x = 0;
+    canvas->box.y = 0;
+    canvas->box.w = w * area_w / GAME_W;
+    canvas->box.h = h * area_h / GAME_H;
+    need = (u32)(canvas->box.w * canvas->box.h);
+    if (need > canvas->room) {
+        free(canvas->pixels);
+        canvas->pixels = malloc((size_t)need * sizeof(u32));
+        canvas->room = canvas->pixels != NULL ? need : 0;
+    }
+    if (canvas->pixels == NULL || need == 0) {
+        canvas->drawn = FALSE;
+        return FALSE;
+    }
+    memset(canvas->pixels, 0, (size_t)need * sizeof(u32));
+    canvas->drawn = TRUE;
+    *fresh = TRUE;
+    return TRUE;
+}
+
+/* The band of both teams: who stands. */
+static void port_DuoBand(const PortDuoShown *shown) {
+    s32 side;
+    s32 i;
+
+    port_MatchRect(0, 0, DUO_BAND_W, DUO_BAND_H, COLOR_LIGHT);
+    port_MatchRect(GAME_W - DUO_BAND_W, 0, DUO_BAND_W, DUO_BAND_H, COLOR_LIGHT);
+    for (side = 0; side < PORT_DUO_TEAMS; side++) {
+        for (i = 0; i < 2; i++) {
+            s32 who = side + 2 * i;
+            s32 x = side == 0 ? 3 + i * DUO_STEP
+                              : GAME_W - 3 - DUO_NAME_W - 4 - i * DUO_STEP;
+
+            port_MatchText(x, DUO_BAND_H - 2, SIZE_HUD - 1, PORT_FACE_BOLD,
+                           port_DuoName(shown, who), port_DuoColor(who), -1);
+            port_MatchPip(x + DUO_NAME_W + 1, DUO_BAND_H / 2, LIGHT_PIP_R,
+                          shown->alive[who] ? port_DuoColor(who) : COLOR_LOST,
+                          shown->alive[who]);
+        }
+    }
+}
+
+s32 port_DuoBandPixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box) {
+    PortDuoShown shown;
+    s32 key = 0;
+    s32 top;
+    s32 fresh;
+    s32 who;
+
+    port_DuoShown(&shown);
+    if (!shown.on || area_w <= 0 || area_h <= 0) {
+        return FALSE;
+    }
+    for (who = 0; who < PORT_DUO_FIGHTERS; who++) {
+        key = key * 4 + shown.alive[who] * 2 + shown.is_cpu[who];
+    }
+    if (!port_DuoCanvas(
+            &g_duo_band, area_w, area_h, key, GAME_W, DUO_BAND_H, &fresh)) {
+        return FALSE;
+    }
+    if (fresh) {
+        g_canvas = &g_duo_band;
+        port_DuoBand(&shown);
+        g_canvas = &g_match_page;
+    }
+    top = g_port_match.mode == MODE_VSCPU ? DUO_BAND_Y_CPU : DUO_BAND_Y;
+    *pixels = g_duo_band.pixels;
+    *box = g_duo_band.box;
+    box->y = top * area_h / GAME_H;
+    return TRUE;
+}
+
+void port_DuoTagChoose(s32 who) { g_duo_tag_now = who; }
+
+s32 port_DuoTagPixels(
+    s32 area_w, s32 area_h, const u32 **pixels, PortRect *box) {
+    PortDuoShown shown;
+    MatchCanvas *canvas;
+    s32 who = g_duo_tag_now;
+    s32 key;
+    s32 fresh;
+    s32 other;
+    s32 marks = 0;
+
+    if (who < 0 || who >= DUO_TAGS) {
+        return FALSE;
+    }
+    port_DuoShown(&shown);
+    if (!shown.on || !shown.alive[who] || !shown.tag[who].seen || area_w <= 0 ||
+        area_h <= 0) {
+        return FALSE;
+    }
+    canvas = &g_duo_tags[who];
+    /* the players who have him as their target */
+    for (other = 0; other < PORT_DUO_FIGHTERS; other++) {
+        if (!shown.is_cpu[other] && shown.alive[other] &&
+            shown.target[other] == who) {
+            marks |= 1 << other;
+        }
+    }
+    key = marks * 2 + shown.is_cpu[who];
+    if (!port_DuoCanvas(
+            canvas, area_w, area_h, key, DUO_TAG_W, DUO_TAG_H, &fresh)) {
+        return FALSE;
+    }
+    if (fresh) {
+        char line[16];
+        s32 used = 0;
+
+        g_canvas = canvas;
+        port_MatchRect(DUO_TAG_W / 2 - 9, 1, 18, DUO_TAG_TEXT + 1, COLOR_LIGHT);
+        port_MatchText(
+            DUO_TAG_W / 2, DUO_TAG_TEXT, SIZE_HUD - 1, PORT_FACE_BOLD,
+            port_DuoName(&shown, who), port_DuoColor(who), 0);
+        line[0] = 0;
+        for (other = 0; other < PORT_DUO_FIGHTERS; other++) {
+            if (marks & (1 << other)) {
+                used += snprintf(line + used, sizeof(line) - (size_t)used,
+                                 "%s%d", used == 0 ? "" : " ", (int)other + 1);
+            }
+        }
+        if (used > 0) {
+            port_MatchText(
+                DUO_TAG_W / 2, DUO_TAG_MARKS, SIZE_HUD - 2, PORT_FACE_BOLD,
+                line, port_DuoColor(PORT_DUO_SLOT(who) ^ 1), 0);
+        }
+        g_canvas = &g_match_page;
+    }
+    *pixels = canvas->pixels;
+    *box = canvas->box;
+    box->x = (shown.tag[who].x - DUO_TAG_W / 2) * area_w / GAME_W;
+    box->y = (shown.tag[who].y - DUO_TAG_H) * area_h / GAME_H;
+    /* kept in the area: a head off its edge has its tag at the edge */
+    box->x = box->x < 0                        ? 0
+             : box->x > area_w - canvas->box.w ? area_w - canvas->box.w
+                                               : box->x;
+    box->y = box->y < 0                        ? 0
+             : box->y > area_h - canvas->box.h ? area_h - canvas->box.h
+                                               : box->y;
     return TRUE;
 }

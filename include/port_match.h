@@ -257,6 +257,9 @@ extern void port_MatchRulePageOpen(
 extern s32 port_MatchRulePageStep(s32 pressed, s32 *leave);
 /* The rule was chosen before this select screen's grid. */
 extern s32 port_MatchRuleFirst(void);
+/* The rule page has the row (PORT_MATCH_ROW_...) for the rule on it: the
+ * number but for the single fight, the teams but for Crew. */
+extern s32 port_MatchRuleHasRow(const PortMatch *match, s32 row);
 /* Stage pages after the crews of a rule-first Crew match are picked:
  * Triangle back to the weapons un-takes the last place. */
 extern void port_MatchCrewStageBack(void);
