@@ -134,15 +134,16 @@ The program goes straight to the game's opening: ReBushido's options
 page, which the PlayStation disc shows first, is not shown, and its
 setting, Bug fixes, is in the settings menu with the rest. A memory card
 with the game's save on it is loaded without asking. Then the main menu,
-in the game's own look, with five rows:
+in the game's own look (its title says MAIN MENU where the game's said
+TOP MENU), with five rows:
 
 | The row | What it is |
 |---|---|
 | **Singleplayer** | a page of its own: **Story**, **Vs. CPU**, **Slash** (once it is won, as in the original) and **Group Battle**, and **Back** |
 | **Versus** | two players, the second on the second pad |
 | **Training** | the game's training, either kind of practice |
-| **Online Play** | the online pages, over the game: Quick Match, host a room, browse rooms, join by code or by address ("Playing online"); Back on them comes back here |
-| **Options** | the settings menu (below), in place of the game's own options page |
+| **Online Play** | the online pages, a page of the game's own look: Quick Match, host a room, browse rooms, join by code or by address ("Playing online"); Back on them comes back here |
+| **Options** | the settings menu (below), in place of the game's own options page and in its look |
 
 Up and down choose, Cross takes the row, Triangle goes back (from the
 main page, to the opening, as the game's does). Every fight is seen from
@@ -153,20 +154,36 @@ first group, *The game*; its Memory Card and Key Configuration are not
 needed (the cards are files kept beside the program, written whenever
 the game saves; the keys and buttons are in *Controls*).
 
+In a fight the pause menu's rows are **Continue**, **Return to
+Character Select** and **Return to Main Menu**, and the menu after a
+fight's **Rematch** and the same two (the game's own lettering says
+"Return to Sub Menu" and "Return to Top Menu"). In Training, Return to
+Character Select goes back to training's own page first, as the game's
+did.
+
 `menu = original` in `rebushido.cfg` (or *Menus* in *The game*) puts
-the game's own menus back, the options page at boot included, the next
-time the program starts. A test's run (`--plan`, `--frames`) has the
+the game's own menus back, the options page at boot included, with the
+game's own words, the next time the program starts. A test's run (`--plan`, `--frames`) has the
 original's unless `--menu rebushido` says otherwise.
 
 ## The settings menu
 
 Every setting of `rebushido.cfg` below and the buttons of both players
-are in a menu of the program's own, drawn over the game at the window's
-own resolution. **Options** on the main menu opens it, and **F1** or a
-controller's **guide button** anywhere; **Select** opens it on the
-screens where the game has no use for Select: the main menu, the options
-page at boot (`menu = original`) and the fight's pause menu (Start,
-then Select).
+are in a menu of the program's own, drawn as a page of the game's: the
+look of its Option Menu (the title over a grey rule, the rows in its
+dull gold in its slate panel, the cursor's row in its glowing yellow),
+in the port's typeface at the window's own resolution, and the game's
+own menu sounds as you move, take a row and go back. **Options** on the
+main menu opens it, and **F1** or a controller's **guide button**
+anywhere; **Select** opens it on the screens where the game has no use
+for Select: the main menu, the options page at boot (`menu = original`)
+and the fight's pause menu (Start, then Select).
+
+Over the main menu and over the pause the game goes on under it: the
+main menu's night sky, clouds and moon stay, the music plays on as the
+game plays it, and the game is given no press while it is open (and
+none still held as it closes). Over the pause the fight's picture is
+darkened under the menu's panel, as under a game's own pause page.
 
 Its first page is a row for each group of settings -- **The game**,
 **Display**, **The remastered picture**, **Controls** and **Mods** --
@@ -187,11 +204,13 @@ the one built in is gold.
 The menu's own keys are always these, whatever the players' are. Its
 last line, **Quit ReBushido**, keeps the settings and ends the program.
 
-**The game is stopped while it is open**, at the end of the vertical
-blank where it has just shown a frame, and goes on from there when it
-closes as if no time had passed: nothing of the game runs in between,
-and a key or a button still held as the menu closes is not given to the
-game until it is let go. The sound runs out and comes back.
+**Anywhere else** -- F1 in the middle of a fight, on a load, at the
+opening -- **the game is stopped while it is open**, at the end of the
+vertical blank where it has just shown a frame, and goes on from there
+when it closes as if no time had passed: nothing of the game runs in
+between, and a key or a button still held as the menu closes is not
+given to the game until it is let go. There the sound runs out and
+comes back, and the menu is silent.
 
 What changes at once: the full screen, the picture's size and its
 pixels, waiting for the display, the counter and its corner, quick
@@ -884,10 +903,12 @@ two programs check both before anything starts, and say what differs.
 The way the two PCs reach each other is the program's to find: a room
 at the lobby is all either player has to choose.
 
-**Online Play** on the main menu opens the online pages, drawn over the
-game in the main menu's look. Up and Down choose, Enter or Cross takes
-a row, Escape or Circle goes back; a controller's buttons work as on
-the main menu. Nothing starts again: the session begins in the program
+**Online Play** on the main menu opens the online pages, pages of the
+game's own look (its Option Menu's, as the settings menu's), with the
+main menu's music playing on under them and the game's own menu sounds.
+Up and Down choose, Enter or Cross takes a row, Escape or Circle goes
+back; a controller's buttons work as on the main menu. While you wait
+for the other player the music goes on too. Nothing starts again: the session begins in the program
 you are playing, and when it ends you are back where you were.
 
 - **Quick Match** joins the first open room at the lobby that is your

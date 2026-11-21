@@ -1,6 +1,7 @@
-/* The native port's window: the online pages, drawn over the game in the
- * top menu's look (sdl_window.h; docs/PLAYING.md, "Playing online";
- * docs/NETPLAY.md, section 15). Online Play on the top menu opens them:
+/* The native port's window: the online pages, beside the running game in
+ * the look of its own pages (page_look.c; sdl_menu.c, "the pages over
+ * the game"; docs/PLAYING.md, "Playing online"; docs/NETPLAY.md, section
+ * 15). Online Play on the main menu opens them:
  *
  *   Quick Match       the first open room of the lobby that is this
  *                     program's kind and has no password, or a room of

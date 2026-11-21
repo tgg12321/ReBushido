@@ -6,13 +6,18 @@
  * game's picture, drawn by the window at its own resolution and in its
  * own font. Only the build with a window has it.
  *
- * The menu is none of the game's state. While it is open the game is
+ * The menu is none of the game's state. Over ReBushido's main menu and
+ * the fight's pause it is open beside the game, which runs on under it
+ * with no press given it, its music with it (sdl_menu.c; docs/PORT.md,
+ * "The window's pages in the game's look"); anywhere else the game is
  * stopped at a vertical blank where it has just shown a frame
- * (sdl_window.c, port_RunMenu): nothing of the game runs, and when it
- * closes the game goes on from that blank as if the time had not passed.
- * What it changes is the window's settings and the settings file, and
- * one setting of the game's own (the bug fixes, which the options page
- * at boot sets as well).
+ * (port_RunMenu): nothing of the game runs, and when it closes the game
+ * goes on from that blank as if the time had not passed. It is drawn in
+ * the look of the game's own Option Menu (page_look.c), and its presses
+ * play the game's own menu sounds (port_PageSound). What it changes is
+ * the window's settings and the settings file, and one setting of the
+ * game's own (the bug fixes, which the options page at boot sets as
+ * well).
  *
  * Its pages: the first, a row for each group of settings (the game, the
  * display, the remastered picture, the controls, the mods), Play online,

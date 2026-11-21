@@ -7,10 +7,13 @@
  * game's own name would be (lit, dark where it cannot be chosen, bright
  * under the cursor), and for the three rows the game has no caption for
  * (Singleplayer, Online Play, Back) two lines of its own in the caption's
- * place. It is drawn at the window's own resolution, the same over the
- * remastered picture and the console's (F2), and none of it is in the
- * game's video memory. Everything it shows it reads of the game's state
- * (gamestate.c, port_ReadTopMenu).
+ * place, and "MAIN MENU" under the title's big line where the game's
+ * says "TOP MENU". It is drawn at the window's own resolution, the same
+ * over the remastered picture and the console's (F2), and none of it is
+ * in the game's video memory. The pause's and the after-fight menu's
+ * "Return to Character Select" and "Return to Main Menu" are lettered
+ * here too (port_PanelRowsPixels). Everything it shows it reads of the game's
+ * state (gamestate.c, port_ReadTopMenu).
  *
  * Its letters are drawn by port_TopPageText alone: the font and the look
  * of the page's text are that one function's. */

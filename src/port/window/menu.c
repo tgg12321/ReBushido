@@ -1,8 +1,9 @@
 /* The native port's settings menu (menu.h; docs/PLAYING.md, "The settings
  * menu"): its pages, what a press does on each, the settings file kept in
- * step, and the menu drawn into pixels the window lays over the game's
- * picture. Only the build with a window has this file; it holds nothing
- * of the game's state (sdl_window.c stops the game while it is open). */
+ * step, and the menu drawn in the look of the game's own pages
+ * (page_look.c), which the window lays over the game's picture. Only the
+ * build with a window has this file; it holds nothing of the game's
+ * state (sdl_menu.c: beside the running game, or with it stopped). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

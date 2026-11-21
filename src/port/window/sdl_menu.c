@@ -1,14 +1,23 @@
 /* The native port's settings menu in the window (menu.h, sdl_window.h;
  * docs/PLAYING.md, "The settings menu"): when it opens, the keys and the
- * controllers while it is open, and the loop it runs in with the game
- * stopped. Only the build with a window has this file.
+ * controllers while it is open, and how it runs: beside the game, or in
+ * a loop of its own with the game stopped. Only the build with a window
+ * has this file.
  *
  * It is opened by F1 or a controller's guide button anywhere, by Select
- * on the three screens whose own loops do nothing with Select: the top
+ * on the three screens whose own loops do nothing with Select: the main
  * menu, ReBushido's options page at boot, and the fight's pause menu; and
- * by Options and Online Play on ReBushido's top menu, which ask for it
+ * by Options and Online Play on ReBushido's main menu, which ask for it
  * through the game's state (port_top_menu.h).
- * Asked for, it opens at the end of the first vertical blank where the
+ * Over ReBushido's main menu and the fight's pause it opens at the next
+ * blank beside the game, which goes on running under it: the PC's input
+ * is the menu's, the game is given no press, the menu has a turn at each
+ * blank and is drawn at each picture, and over the main menu the game
+ * draws its Option Menu's backdrop under it (port_PageCover). The online
+ * pages open the same way; what the two share is here ("the pages over
+ * the game"; docs/PORT.md, "The window's pages in the game's look").
+ * Anywhere else, asked for, it opens at the end of the first vertical
+ * blank where the
  * game has shown a new frame (the game's own frame boundary, where the
  * window has just shown it), or after a few blanks where the game shows
  * none, as on a load. Then the game is not run at all: the window loops
