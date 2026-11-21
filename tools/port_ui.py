@@ -390,9 +390,11 @@ BLOCKS = [
         ('64x12-4-c9a11b597bcece83', 64, 48), ('42x12-4-d92236264443805f', 128, 48), ('64x12-4-0aa207e4c639d4ab', 0, 60),
         ('64x12-4-8fb30e3c813f8643', 64, 60), ('16x12-4-297b79f908be19ce', 128, 60),
     ]),
-    # ( Map ? )
+    # ( Map ? ), the game's title of the middle stage page, which the
+    # owner (2026-11-20) has read "( Map 2 )", in the colours of the first
+    # page's ( Map 1 ) (below), so the three read alike
     block((74, 12), [
-        text('( Map ? )', [(1, 0, 73, 11)], 'serif', 'edge', (164, 158, 146), (168, 163, 150), (49, 49, 41)),
+        text('( Map 2 )', [(1, 0, 73, 11)], 'serif', 'edge', (143, 136, 125), (140, 134, 123), (37, 36, 32)),
     ], [
         ('64x12-4-f0074d3374741ed3', 0, 0), ('10x12-4-7a2c1d11f241da6e', 64, 0),
     ]),
@@ -536,7 +538,7 @@ BLOCKS = [
     # The select screens' lettering the first table had not: the fighters
     # every unlock brings (the six of an empty save are above), the
     # weapons but the katana, and the stage pages' first and third pages
-    # (Map 1, Map 3; Map ? is above). Measured from dumps of versus mode
+    # (Map 1, Map 3; the middle page's is above). Measured from dumps of versus mode
     # and versus the CPU with --unlock-all, both cursors walked over the
     # grid, the weapons and the pages.
     # UTSUSEMI
