@@ -1219,6 +1219,85 @@ ten within 1): the largest is 7 and 86 in a hundred are within 1.
 sound compared with the emulator's sample for sample, which the chip's
 own comparison stands in for ("Sound").
 
+### The movie made better
+
+The movie is the software GPU's picture, 320 by 240 in the 24-bit mode,
+which the card's remastered picture does not draw. The window's `movies`
+setting (the settings menu's Remastered page, "Movies") says how the
+remastered picture shows it; the console's picture (F2) shows it as it
+always did, and nothing of this touches the decode, the player or what a
+play test takes (`port_movie` holds the same files):
+
+| `movies` | What the window shows |
+|---|---|
+| `original` | the console's frames, as blocks or smoothed as the `filter` setting says of the game's |
+| `smooth` | the console's frames stretched smooth: what it was before |
+| `enhanced` (built in) | the frames cleaned and made larger on the card, in five passes; or a mod's frames made from the disc, where there is one (MODS.md, "The movie made larger") |
+
+**The five passes** (`src/port/gl/gl_movie.c`, after the window's other
+passes, into the picture's rectangle of the window):
+
+1. **colour**, at the console's size. The chip decodes the two colour
+   differences at half the width and height and lays each over its 2 by 2
+   pixels flat (`mdec.c`), which shows as stairs of colour along every
+   coloured edge. The differences are taken back out of the four pixels
+   (the step to red, green and blue is linear, so the four's mean is the
+   cell's but where a channel was clipped) and each pixel takes them from
+   the four nearest cells by how near their centres are, 9, 3, 3 and 1
+   sixteenths, keeping its own brightness.
+2. **blocks**, at the console's size: across each edge between two 8 by 8
+   blocks, where the step is small and both sides are flat, the step is
+   spread over the four pixels beside it (in the manner of H.264's
+   in-loop filter's weak mode), as strong as the frame's own quantisation
+   scale says. That scale comes with the frame: the port follows which
+   frame of the stream each of the player's two display buffers holds
+   through the pointers the player hands its steps (`StGetNext`,
+   `DecDCTvlc`, `DecDCTin`, `DecDCTout`, `LoadImage`;
+   `src/port/movie_shown.c`, outside the game's state).
+3. **ringing**, at the console's size: each pixel the mean of the nine
+   about it weighted by how near their brightness is to its own, so a
+   ripple a few steps high beside an edge goes and the edge stays; as wide
+   as the scale says.
+4. **larger**, to the window's rectangle: AMD FidelityFX Super Resolution
+   1's EASU (MIT; written again in GLSL 3.30, the notice in the file), which
+   enlarges along an edge and not across it, held between the four nearest
+   texels so that it never rings.
+5. **sharper**: FSR 1's RCAS at 0.6 stops (0.66), lightly.
+
+With a mod's movie the first three are not run: its frame N is decoded
+(stb_image, the next frame made ready while the current one is on show)
+and goes through `larger` and `sharper` (1.2 stops, 0.435).
+
+**What it costs**, measured through the whole movie at 2560 by 1440 on the
+owner's PC (RTX 3090; the window's `--profile`, blanks 600 to 5,500), the
+card's time of the pass that puts the picture into the window, and the
+processor's time of the window's `picture` part (which, for the mod,
+decodes a JPEG of 1280 by 960 once a movie frame, every other blank):
+
+| `movies` | The card, median (95th, most) | The processor, median (95th, most) |
+|---|---|---|
+| `smooth` | 0.032 ms (0.036, 0.20) | 0.18 ms (0.41, 1.0) |
+| `enhanced` | 0.18 ms (0.25, 0.37) | 0.87 ms (2.2, 5.7) |
+| `enhanced` with the mod | 0.13 ms (0.13, 0.78) | 3.4 ms (9.9, 14.4) |
+
+So a frame of the movie costs the card about 0.15 ms more than before,
+well inside a blank of 16.7 ms while nothing else is drawn; the mod's
+decode is the most of it, on the processor, and fits too. A thread of
+its own for the decode would take it off the blank; it was not needed.
+
+**What it looks like**: the same frames in the four ways, taken from the
+window at 2560 by 1440 (a run each with `--tap-window`, frames of text, a
+face in the dark, two dark scenes, a face by firelight and a fast
+movement), are kept outside the repository; on llvmpipe the enhanced
+picture is the card's to within one step of 255 in any channel. Against
+`smooth`, `enhanced` takes the colour stairs off every coloured edge,
+takes the blocks out of the dark gradients and the fog, and draws edges
+and lettering as lines instead of a smear; it cannot put back what the
+quantisation took. The mod's frames are another thing: clean edges, eyes,
+hair and lettering drawn sharp at four times, the blocks and ringing gone;
+a little flatter in the hair and the fog than the film, as a learned
+upscale is.
+
 ## The window
 
 A second build of the port has a window, a sound card and the PC's keys

@@ -618,6 +618,61 @@ it is the remastered picture, so the title and its fade are the mod's
 picture at the window's resolution. With no mod's picture of it the
 title is the software GPU's, smoothed, as before.
 
+## The movie made larger
+
+The opening movie's frames made four times larger by a learned upscaler,
+which the window shows in place of the console's frames with `movies =
+enhanced` (the setting built in; PORT.md, "The movie made better"). It is
+the game's own film made anew, so it is a mod each player makes from their
+own disc and is never shipped or committed:
+
+```
+python tools/port_movies.py all --image "Bushido Blade 2 (USA).cue" \
+    --upscaler PATH\realesrgan-ncnn-vulkan.exe
+```
+
+- `dump` runs the port with no window to the movie's end with
+  `--dump-movie FOLDER`, which writes each frame as it is first shown,
+  `movie-NNNN.png` by its number in the stream (`src/port/movie_shown.c`):
+  2,814 frames, the 320 by 240 the chip decodes. (The last 506 of the
+  stream's 3,320 are behind the title picture and never shown.)
+- `upscale` runs **Real-ESRGAN's ncnn program** with the model
+  **realesr-animevideov3** at four times, on any graphics card with
+  Vulkan. The player downloads it: the release
+  `realesrgan-ncnn-vulkan-20220424-windows.zip` (or `-ubuntu`, `-macos`) of
+  github.com/xinntao/Real-ESRGAN, v0.2.5.0, which has the model in its
+  `models/`; the tool is given the program's path and runs it with paths
+  as its arguments, nothing else of the download.
+- `build` writes the frames as baseline JPEGs, quality 85, into one file,
+  `tmp/mods/movies-hd/movies/opening.rbmv` (the layout is in
+  `src/port/gl/gl_movie.h`), with a manifest of order -200. Copy
+  `tmp/mods/movies-hd/` into `mods/`.
+
+**Licences**, read from the sources themselves: the program
+(Real-ESRGAN-ncnn-vulkan) is MIT, Xintao Wang; ncnn, which it is built on,
+is BSD-3-Clause, Tencent; the model's weights are released in the
+Real-ESRGAN repository, BSD-3-Clause, Xintao Wang, with no terms of their
+own. The port reads the JPEGs with stb_image (Sean Barrett, MIT or public
+domain), compiled in (`src/port/vendor/stb_image.h`). None of the upscaler
+is in the program or the package.
+
+**Time and room**, on the owner's PC (RTX 3090): 89 seconds in all -- the
+dump 9, the upscale 72 (39 frames a second), the JPEGs 8 -- and 125 MB.
+
+**Why it is a step of its own, not the first start's** ("Made from your
+disc"): the upscaler is a program of someone else's (6 MB, with a model
+of 1.2 MB), which `prepare/` would have to ship and run on a Vulkan driver
+it cannot vouch for, where a PC without one would only fail; it makes 125 MB where the three mods of the first
+start make 190 MB together; and it is for one minute and fifty seconds of
+film. So a player chooses it. Without it `movies = enhanced` still cleans
+and enlarges the console's frames on the card, which is most of the way
+for the film's smooth parts (PORT.md, "The movie made better").
+
+The port shows the mod's frame N when the player shows frame N (the
+stream's own number, followed through the player's buffers), so the film
+keeps the disc's sound in step, frame for frame, and a mod with fewer
+frames than the stream shows the console's frames after its last.
+
 ## Skies
 
 A stage open to the sky has a night sky of the port's own in the

@@ -56,6 +56,7 @@ outside  src/port/fighter_view.c  the remastered fighter's bones, camera and lig
 outside  src/port/host_linux.c  the host: file handles, the signal stack, the fiber's host side
 outside  src/port/host_windows.c  the host on Windows
 outside  src/port/main.c        the program's arguments and the disc's file
+outside  src/port/movie_shown.c  which frame of the movie each display buffer holds, for the window's picture
 outside  src/port/lights.c      the lights of the stages' files and what the effects lit up, for the picture alone
 outside  src/port/netplay.c     the session: inputs, guesses, the states kept, the hashes
 outside  src/port/online.c      a session begun in the running program: the state of the game's start, the player's own, what was asked

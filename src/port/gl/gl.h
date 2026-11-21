@@ -422,6 +422,15 @@ extern s32 port_GlShowPixels(
     const u32 *pixels, s32 pixels_w, s32 pixels_h, s32 window_w, s32 window_h,
     s32 x, s32 y, s32 w, s32 h, s32 is_linear, s32 is_over);
 
+/* A movie's frame into the same kind of rectangle, made better on the
+ * card (gl_movie.h; the window's `movies = enhanced`): `pixels` as above,
+ * the software GPU's picture of it, and the frame's number in the stream
+ * and its quantisation scale (port_movie.h), by which a mod's frame is
+ * found and the blocks are smoothed. FALSE if it cannot be. */
+extern s32 port_GlShowMovie(
+    const u32 *pixels, s32 pixels_w, s32 pixels_h, s32 window_w, s32 window_h,
+    s32 x, s32 y, s32 w, s32 h, u32 number, u32 scale);
+
 /* The window's own pixels as they are now, 0xFFRRGGBB each, a row after a
  * row from the top: at most `room` of them. For a test's picture of what
  * a player would see; nothing else reads them back. */

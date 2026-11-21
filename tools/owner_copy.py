@@ -28,7 +28,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
 BUILT = os.path.join(ROOT, 'build', 'port-sdl', 'windows')
 FILES = ['rebushido.exe', 'SDL2.dll']
-DISC_MODS = ['art', 'stages-hd', 'fighters']  # fighters: geometry-fixed models, the game's own texture (2026-11-19)
+DISC_MODS = ['art', 'stages-hd', 'fighters', 'movies-hd']  # fighters: geometry-fixed models, the game's own texture (2026-11-19); movies-hd: tools/port_movies.py, where it was made
 
 
 def copy_folder(source, target):

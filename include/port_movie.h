@@ -106,4 +106,31 @@ extern void port_MovieOverlayMain(s32 argc, void *argv);
  * included: the window shows the software GPU's picture then. */
 extern s32 port_MovieIsPlaying(void);
 
+/* ---- the frame on show (src/port/movie_shown.c) ---- */
+
+/* A frame of the stream: its number (1 the first; 0 none yet) and its
+ * quantisation scale (1 to 63, how coarse its blocks are). */
+typedef struct {
+    u32 number;
+    u32 scale;
+} PortMovieFrame;
+
+/* What each step of the player was handed, from the port's StGetNext,
+ * DecDCTvlc, DecDCTin, DecDCTout and LoadImage, so that the frame each
+ * display buffer holds is known (docs/PORT.md, "The movie made better").
+ * None of it changes what the steps do. */
+extern void port_MovieNotePulled(u32 number);
+extern void port_MovieNoteExpanded(const void *buffer, u32 scale);
+extern void port_MovieNoteDecoding(const void *buffer);
+extern void port_MovieNoteDecodedInto(const void *picture);
+extern void port_MovieNoteCopied(s32 y, const void *pixels);
+/* The frame in the display buffer at `display_y`. */
+extern PortMovieFrame port_MovieShownFrame(s32 display_y);
+/* As the player starts: nothing on show. */
+extern void port_MovieForgetShown(void);
+/* `--dump-movie FOLDER` (the folder with its `/`), and at each blank the
+ * frame on show written as FOLDER/movie-NNNN.png if it is a new one. */
+extern void port_MovieSetDumpFolder(const char *folder);
+extern void port_MovieDumpBlank(void);
+
 #endif /* PORT_MOVIE_H */

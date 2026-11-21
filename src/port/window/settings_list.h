@@ -613,6 +613,28 @@ PORT_SETTING(time_of_day,
             "stage at its own, and L1 and R1 there turn one",
     .shown = {"The stage's own", "Dawn", "Day", "Dusk", "Night"})
 
+/* How the opening movie is shown in the remastered picture
+ * (PORT_MOVIES_...; src/port/gl/gl_movie.h; docs/PORT.md, "The movie
+ * made better"): the console's frames as blocks or smoothed by the
+ * `filter` setting, stretched smooth, or cleaned of the decoder's blocks
+ * and made larger along their edges on the card -- or a mod's frames,
+ * made larger from the disc (tools/port_movies.py), where there is one.
+ * The console's picture (F2) shows the movie as `original`. */
+PORT_SETTING(movies,
+    .name = "movies", .value = "enhanced",
+    .note = "original: the console's frames, by\n"
+            "`filter`; smooth: stretched smooth;\n"
+            "enhanced: cleaned and made larger on the\n"
+            "graphics card, or a mod's movie made from\n"
+            "the disc (tools/port_movies.py)",
+    .read = PORT_READ_WORDS, .words = {"original", "smooth", "enhanced"},
+    .is = "original, smooth or enhanced",
+    .menu = PORT_MENU_REMASTER, .rank = 168, .takes = PORT_TAKES_NOW,
+    .label = "Movies",
+    .help = "The opening movie as the console's frames, stretched smooth, "
+            "or cleaned and made larger on the graphics card",
+    .shown = {"Original", "Smooth", "Enhanced"})
+
 /* The mods beside the program are read (docs/MODS.md); 0 runs the game
  * with none of them, as `--mods off` does. */
 PORT_SETTING(mods,

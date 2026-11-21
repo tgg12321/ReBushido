@@ -37,6 +37,7 @@ s32 port_MovieIsPlaying(void) { return g_port_movie_is_playing; }
 s32 Exec(struct EXEC *exec, s32 argc, char **argv) {
     (void)exec;
     g_port_movie_is_playing = TRUE;
+    port_MovieForgetShown();
     port_MovieOverlayMain(argc, argv);
     g_port_movie_is_playing = FALSE;
     return 1;

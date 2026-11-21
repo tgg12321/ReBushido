@@ -27,6 +27,7 @@ enum {
     PORT_MOD_MOTIONS,  /* a motion file, .bbm (port_discfiles.h) */
     PORT_MOD_ARENAS,   /* a custom arena, .arena (port_arenas.h) */
     PORT_MOD_LIGHTS,   /* a stage's lights, .txt (port_lights.h) */
+    PORT_MOD_MOVIES,   /* a movie made larger, .rbmv (gl_movie.h) */
     PORT_MOD_KINDS
 };
 

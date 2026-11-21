@@ -13,6 +13,7 @@
  * call that asked for it returns, so DrawSync never waits. */
 #include "common.h"
 #include "port_gpu.h"
+#include "port_movie.h"
 #include "bb2.h"
 
 /* A primitive's first word: the address of the next in its low 24 bits
@@ -539,6 +540,9 @@ s32 LoadImage(RECT *rect, u32 *pixels) {
 
     if (words <= 0) {
         return -1;
+    }
+    if (port_MovieIsPlaying()) {
+        port_MovieNoteCopied(rect->y, pixels);
     }
     port_WriteGp0(GPU_CLEAR_CACHE);
     port_WriteGp0(GPU_LOAD);

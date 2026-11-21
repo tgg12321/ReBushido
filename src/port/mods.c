@@ -60,12 +60,12 @@
 
 static const char * const g_port_mod_kind_folders[PORT_MOD_KINDS] = {
     "textures", "models",  "music",  "stages", "skies",
-    "weapons",  "motions", "arenas", "lights"};
+    "weapons",  "motions", "arenas", "lights", "movies"};
 /* the ending a kind's file must have to be read, or one of several
  * separated by `|`; NULL for any */
 static const char * const g_port_mod_kind_endings[PORT_MOD_KINDS] = {
-    ".png", ".glb", ".ogg|.wav", NULL,  ".png",
-    ".txt", ".bbm", ".arena",    ".txt"};
+    ".png", ".glb", ".ogg|.wav", NULL,   ".png",
+    ".txt", ".bbm", ".arena",    ".txt", ".rbmv"};
 
 typedef struct {
     PortModManifest manifest;
@@ -708,13 +708,14 @@ void port_ModsStart(const char *program) {
         }
         port_Log("mods:   %s%s%s (%s, order %d): %d textures, %d models, "
                  "%d music, %d stages, %d skies, %d weapons, %d motions, "
-                 "%d lights\n",
+                 "%d lights, %d movies\n",
                  mod->manifest.name, mod->manifest.version[0] != 0 ? " " : "",
                  mod->manifest.version, mod->folder, mod->manifest.order,
                  mod->counts[PORT_MOD_TEXTURES], mod->counts[PORT_MOD_MODELS],
                  mod->counts[PORT_MOD_MUSIC], mod->counts[PORT_MOD_STAGES],
                  mod->counts[PORT_MOD_SKIES], mod->counts[PORT_MOD_WEAPONS],
-                 mod->counts[PORT_MOD_MOTIONS], mod->counts[PORT_MOD_LIGHTS]);
+                 mod->counts[PORT_MOD_MOTIONS], mod->counts[PORT_MOD_LIGHTS],
+                 mod->counts[PORT_MOD_MOVIES]);
     }
     if (g_port_mods.overridden > 0) {
         port_Log("mods: %d files of one mod overridden by a later one's\n",
