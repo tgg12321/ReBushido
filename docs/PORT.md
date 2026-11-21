@@ -8724,44 +8724,6 @@ in `play_switches.c` as the fight's music is, and keeps what the players
 left it at until the setting changes; the window's panel shows it as a
 column "Match" (`stage_page.c`) where the mode plays matches.
 
-### The rule first
-
-The owner, 2026-11-20: "make sure they can choose their battle type
-before they land on the character select screen the first time." In
-versus, versus the CPU and online, with ReBushido's top menu, the select
-screen opens on a page of the rule, the grid drawn under it and given no
-presses (`port_MatchRulePageOpen` from `select_Load`,
-`port_MatchRulePageStep` from `select_Update`): two rows, the rule
-(Single fight, Stock, First to, Crew) and its number (lives, wins, or
-the crew's size; no second row for the single fight); Up and Down the
-row, Left and Right the value, round at the ends; Cross takes it and the
-grid has the presses; Triangle leaves the screen, as Triangle on the
-grid with nothing picked does. Its rows start where the window's
-`match_rule` and `match_count` put the stage pages' (the page's rule is
-the same `page_rule`, `page_count` and `page_crew`). The window draws
-it (`match_page.c`, `PORT_MATCH_SHOWN_RULE`), over a darkened screen,
-in the stage pages' panel's colours; the game's video memory has the
-grid alone.
-
-Choices made: the page comes each time the select screen opens afresh
-(from the top menu, or after a Crew match), not when it opens on the
-stage pages after a Stock or First to match, whose rule stays. The stage
-page then shows the rule in its panel's column and does not change it
-(`rule_first`: Circle and Start are not the match's there), so that crews
-picked are always of the rule they were picked for; to change the rule,
-Triangle back to the top menu and in again. Triangle on the grid of a
-crew's later place, nothing picked, goes back one place (its picks made
-again), and on the stage page after the crews back to the last place's
-weapons; on the grid of the first place it leaves the screen as the
-game's does. Online the host's pad (the first) chooses; the guest's
-presses on the page are not the page's, but either player's Triangle
-leaves, as on the grid, and both machines show the page as the host
-turns it (the page is the game's state). In a room of several the rule
-is the room's, as its host set it: no page, the rule first all the same
-(the crews picked at the grid), the stage page showing it. With `menu =
-original`, none of this: the page is not shown and the rule is chosen on
-the stage pages as before, crews after them (below, "Crew").
-
 **The game's flow, and where the port steps in.** A mode started from
 the menus (`fight_ApplyConfig`) begins a match with the page's rule
 (`port_MatchBegin`); a rematch and versus the CPU's next opponent do not
@@ -8797,33 +8759,6 @@ machines of a session keep the same. In a session the welcome carries
 the host's `match_rule` and `match_count` (`MEET_MATCH`, protocol 8) and
 both hold them (`port_HoldMatch`); the pages' presses are the same on
 both machines, so the rule is.
-
-### Wounds kept
-
-The owner, 2026-11-20: "For crew battle, make sure injuries do persist
-between rounds", and "For stock battles, make injuries persist as well.
-But leave injuries resetting for first to X fights." The game keeps a
-fighter's wounds in four counts (`Fighter.off_arm_ok`, `leg_wounds`,
-`arm_wounds`, `body_wounds`: a lost off arm, and the legs', the sword
-arm's and the body's wounds, which slow it and take its power;
-`fighter_Wound`, `motion_UpdateFrameStep`) and heals them as each fight
-sets the fighter up (`fighter_Init`, `fighter_HealWounds`; only story
-mode's player keeps his through a chapter). Under Stock and Crew, where
-the game counts the fight (`port_MatchFightOver`), the winner's four
-counts are kept (`port_MatchKeepWounds`: `wounds_kept`, `wounds`), taken
-before the winner's view, which gives the winner his off arm back for
-its pose; the loser (Stock's life lost) comes back unhurt, or is out
-(Crew: the next of his crew comes in unhurt), and a draw keeps nobody's.
-`fighter_Init` puts them back after its healing (`port_MatchPutWounds`),
-for the next fight of the match alone: a match begun or restarted, the
-next opponent's, a First to N or a single fight have none. Everything
-else is fresh as before (Crew's fighters loaded again at the stage's
-places; Stock's where they stood). No count kills: a kill is a blow's
-(`fighter_TakeHit`), so a fighter who starts wounded is slow, weakened
-or one-armed and stands; the counts are kept as they were, large ones
-too (the game's tables stop at three). The story mode's wrappings on the
-model (`g_fight_story_wounds`) are story mode's and not drawn. The card
-between fights says who stays wounded and where.
 
 **The picture.** None of it is in the game's video memory: the window
 lays it over the picture at its own resolution (`match_page.c`, through
@@ -8887,6 +8822,71 @@ in play and no card of the strip at any of them ("Memory", "A table on
 a stack that has gone"). `tools/port_rollback.py`'s Stock plan rolls a match
 back every 24 frames; `tools/port_net.py session` plays its session as
 a Stock match.
+
+### The rule first
+
+The owner, 2026-11-20: "make sure they can choose their battle type
+before they land on the character select screen the first time." In
+versus, versus the CPU and online, with ReBushido's top menu, the select
+screen opens on a page of the rule, the grid drawn under it and given no
+presses (`port_MatchRulePageOpen` from `select_Load`,
+`port_MatchRulePageStep` from `select_Update`): two rows, the rule
+(Single fight, Stock, First to, Crew) and its number (lives, wins, or
+the crew's size; no second row for the single fight); Up and Down the
+row, Left and Right the value, round at the ends; Cross takes it and the
+grid has the presses; Triangle leaves the screen, as Triangle on the
+grid with nothing picked does. Its rows start where the window's
+`match_rule` and `match_count` put the stage pages' (the page's rule is
+the same `page_rule`, `page_count` and `page_crew`). The window draws
+it (`match_page.c`, `PORT_MATCH_SHOWN_RULE`), over a darkened screen,
+in the stage pages' panel's colours; the game's video memory has the
+grid alone.
+
+Choices made: the page comes each time the select screen opens afresh
+(from the top menu, or after a Crew match), not when it opens on the
+stage pages after a Stock or First to match, whose rule stays. The stage
+page then shows the rule in its panel's column and does not change it
+(`rule_first`: Circle and Start are not the match's there), so that crews
+picked are always of the rule they were picked for; to change the rule,
+Triangle back to the top menu and in again. Triangle on the grid of a
+crew's later place, nothing picked, goes back one place (its picks made
+again), and on the stage page after the crews back to the last place's
+weapons; on the grid of the first place it leaves the screen as the
+game's does. Online the host's pad (the first) chooses; the guest's
+presses on the page are not the page's, but either player's Triangle
+leaves, as on the grid, and both machines show the page as the host
+turns it (the page is the game's state). In a room of several the rule
+is the room's, as its host set it: no page, the rule first all the same
+(the crews picked at the grid), the stage page showing it. With `menu =
+original`, none of this: the page is not shown and the rule is chosen on
+the stage pages as before, crews after them (below, "Crew").
+
+### Wounds kept
+
+The owner, 2026-11-20: "For crew battle, make sure injuries do persist
+between rounds", and "For stock battles, make injuries persist as well.
+But leave injuries resetting for first to X fights." The game keeps a
+fighter's wounds in four counts (`Fighter.off_arm_ok`, `leg_wounds`,
+`arm_wounds`, `body_wounds`: a lost off arm, and the legs', the sword
+arm's and the body's wounds, which slow it and take its power;
+`fighter_Wound`, `motion_UpdateFrameStep`) and heals them as each fight
+sets the fighter up (`fighter_Init`, `fighter_HealWounds`; only story
+mode's player keeps his through a chapter). Under Stock and Crew, where
+the game counts the fight (`port_MatchFightOver`), the winner's four
+counts are kept (`port_MatchKeepWounds`: `wounds_kept`, `wounds`), taken
+before the winner's view, which gives the winner his off arm back for
+its pose; the loser (Stock's life lost) comes back unhurt, or is out
+(Crew: the next of his crew comes in unhurt), and a draw keeps nobody's.
+`fighter_Init` puts them back after its healing (`port_MatchPutWounds`),
+for the next fight of the match alone: a match begun or restarted, the
+next opponent's, a First to N or a single fight have none. Everything
+else is fresh as before (Crew's fighters loaded again at the stage's
+places; Stock's where they stood). No count kills: a kill is a blow's
+(`fighter_TakeHit`), so a fighter who starts wounded is slow, weakened
+or one-armed and stands; the counts are kept as they were, large ones
+too (the game's tables stop at three). The story mode's wrappings on the
+model (`g_fight_story_wounds`) are story mode's and not drawn. The card
+between fights says who stays wounded and where.
 
 ### Crew
 
