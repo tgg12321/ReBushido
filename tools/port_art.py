@@ -269,7 +269,43 @@ STAFF_BLANKS = 3300
 # a run won fast and with no continue, and the save's question
 SLASH_STATE = '''[state]
 chanbara_count = "g_chanbara_count:u8"
+ending = "g_fight_ending:u8"
 '''
+# What follows the fight, each screen pressed on from a checkpoint of its
+# own, so that a load that takes another number of frames on another
+# program (the window's, the GL prover's) moves nothing: the replay
+# skipped, the best times read, the two endings, the save's question
+SLASH_AFTER = '''[[checkpoint]]
+name = "replay"
+when = "screen == SCREEN_REPLAY_UPDATE"
+within = 2000
+shot = false
+[[checkpoint]]
+name = "times"
+when = "screen == SCREEN_BEST_TIMES_UPDATE"
+within = 2000
+shot = false
+[[checkpoint]]
+name = "fast"
+when = "screen == SCREEN_ENDING_UPDATE"
+within = 2000
+shot = false
+[[checkpoint]]
+name = "clean"
+when = "screen == SCREEN_ENDING_UPDATE && ending >= 8"
+within = 2000
+shot = false
+[[checkpoint]]
+name = "save"
+when = "screen == SCREEN_SAVE_UPDATE"
+within = 2000
+shot = false
+[[checkpoint]]
+name = "end"
+after = 300
+shot = false
+'''
+SLASH_PRESSES = ['replay+60 CROSS', 'times+240 CROSS', 'fast+300 CROSS', 'clean+300 CROSS', 'save+120 CROSS']
 SLASH_POKES = [('fight', 60, 1, 'chanbara_count', 100), ('fight', 120, 1, 'p2_defeated', 1)]
 
 
@@ -324,6 +360,21 @@ def plan_text(mode, limit=9000):
     if mode == 'setup':
         presses = ['page+30 START', 'movie+300 START', 'movie+600 CROSS', 'movie+900 START'] + SETUP_PRESSES
         return SETUP_PLAN % {'limit': limit, 'presses': ',\n'.join('    "%s"' % p for p in presses)}
+    if mode == 'slash':
+        # the top menu's row and the select screens as the other modes',
+        # then the fight won as it begins (SLASH_POKES) and the screens
+        # after it each from its own checkpoint
+        row = MODE_ROWS[mode]
+        presses = ['page+30 START', 'movie+300 START', 'movie+600 CROSS', 'movie+900 START']
+        presses += ['menu+%d DOWN' % (30 + 30 * i) for i in range(row)]
+        presses.append('menu+%d CROSS' % (60 + 30 * row))
+        presses += ['menu+%d CROSS' % t for t in range(300, 1500, 90)]
+        presses += ['fight+30f RIGHT hold 20f'] + SLASH_PRESSES
+        text = PLAN % {'mode': mode, 'limit': limit, 'end': 0, 'between': '', 'state': SLASH_STATE,
+                       'presses': ',\n'.join('    "%s"' % p for p in presses)}
+        # the fight's checkpoint, then the screens after it in place of the
+        # fight's end
+        return text[:text.index('[[checkpoint]]\nname = "end"')] + SLASH_AFTER
     if mode in ENDINGS:
         n = ENDINGS[mode]
         presses = ['ending+%d CROSS' % t for t in range(400, 1700, 300)]
@@ -356,8 +407,7 @@ def plan_text(mode, limit=9000):
     presses += ['fight+30f RIGHT hold 20f', 'fight+80f START', 'fight+90 START']
     presses += ['fight+%df %s' % (f, 'CIRCLE' if f % 60 else 'CROSS') for f in range(120, 1500, 30)]
     presses += ['fight+%df CROSS' % f for f in range(1600, 3600, 70)]
-    state = SLASH_STATE if mode == 'slash' else ''
-    return PLAN % {'mode': mode, 'limit': limit, 'end': limit - 1300, 'between': between, 'state': state,
+    return PLAN % {'mode': mode, 'limit': limit, 'end': limit - 1300, 'between': between, 'state': '',
                    'presses': ',\n'.join('    "%s"' % p for p in presses)}
 
 
