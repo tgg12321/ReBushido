@@ -1,0 +1,15 @@
+format = 1
+# The castle rooftop: cherry petals drifting past the moon.
+
+[wind]
+strength = 0.6
+direction = 300
+gusts = 0.5
+
+[particles petals]
+kind = petals
+area = -12000 -6000 12000 6000
+count = 260
+size = 34
+top = 3500
+color = #F4BCCB

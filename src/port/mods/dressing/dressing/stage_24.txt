@@ -1,0 +1,14 @@
+format = 1
+# The purple cavern: embers from the candles by the iron gate.
+
+[wind]
+strength = 0.15
+direction = 0
+gusts = 0.1
+
+[particles embers]
+kind = embers
+on = flames
+count = 30
+size = 10
+color = #FFB050

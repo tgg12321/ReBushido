@@ -33,6 +33,7 @@
 
 #include "common.h"
 #include "gl.h"
+#include "gl_dressing.h"
 #include "gl_fighter.h"
 #include "gl_light_list.h"
 #include "gl_shadow.h"
@@ -175,6 +176,9 @@ static const char g_usage[] =
     "                 the stages open to it (gl_sky.h)\n"
     "  --see-through W  off (the default here) or on: the stage's walls\n"
     "                 thinned where they hide a fighter (gl_see.h)\n"
+    "  --dressing W   off (the default here) or on: a Remastered Classic\n"
+    "                 stage's dressing, its grass, water and particles\n"
+    "                 (gl_dressing.h)\n"
     "  --stage-lights W  off (the default here) or on: the lights of\n"
     "                 the stage's files and flames (gl_light_list.h)\n"
     "  --effect-lights W  off (the default here) or on: the lights of\n"
@@ -1011,6 +1015,11 @@ static void port_GlBlank(u32 blank) {
         if (news != NULL) {
             fprintf(stderr, "gl %s\n", news);
         }
+        /* and what its dressing grew into (gl_dressing.h) */
+        news = port_GlDressingNews();
+        if (news != NULL) {
+            fprintf(stderr, "gl %s\n", news);
+        }
     }
     if (wanted && port_RemasterIsOn()) {
         const PortRemasterCounts *counts = port_GetRemasterFrameCounts();
@@ -1458,6 +1467,10 @@ int main(int argc, char **argv) {
             port_GlLightListSetEffectsOn(!strcmp(argv[++i], "on"));
         } else if (!strcmp(word, "--see-through")) {
             options.see_through = !strcmp(argv[++i], "on");
+        } else if (!strcmp(word, "--dressing")) {
+            /* off with nothing said: the provers hold the picture to the
+             * stage as it was */
+            options.is_dressing = !strcmp(argv[++i], "on");
         } else if (!strcmp(word, "--stage-depth")) {
             options.is_stage_depth = strcmp(argv[++i], "off") != 0;
         } else if (!strcmp(word, "--shadows")) {

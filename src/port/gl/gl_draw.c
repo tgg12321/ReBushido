@@ -25,6 +25,7 @@
 #include "common.h"
 #include "gl.h"
 #include "gl_bench.h"
+#include "gl_dressing.h"
 #include "gl_fighter.h"
 #include "gl_light.h"
 #include "gl_light_list.h"
@@ -3365,6 +3366,8 @@ static void port_GlBegin(void) {
      * over and taken as the frame's (gl_lights.h) */
     port_GlLightListFrame();
     port_GlLightsTake();
+    /* the fighters' steps and slashes in the dressing (gl_dressing.h) */
+    port_GlDressingFrame();
 }
 
 /* ---- what the stage's own mesh asks of the picture (gl.h) ---- */
@@ -3744,6 +3747,7 @@ void port_GlSetOptions(const PortGlOptions *options) {
     port_GlSceneSetOn(!options->is_exact);
     port_GlSkySetKind(options->is_exact ? 0 : options->sky);
     port_GlSeeSetOn(options->is_exact ? 0 : options->see_through);
+    port_GlDressingSetOn(options->is_exact ? 0 : options->is_dressing);
     if (g_gl.is_started) {
         /* the setting may have turned the mesh on or off, and the depth
          * buffer is attached only for it */
@@ -4102,8 +4106,18 @@ const char *port_GlStart(
             port_GlSay("the movie is shown smoothed: ", why);
         }
     }
+    /* a stage's dressing (gl_dressing.h), which the ground's mesh draws: a
+     * card that cannot have it draws the stage without it */
+    {
+        const char *why = port_GlDressingStart(getproc);
+
+        if (why != NULL) {
+            port_GlSay("no dressing of the stages: ", why);
+        }
+    }
     /* the walls seen through (gl_see.h), which the ground's mesh draws */
     port_GlSeeSetOn(options->is_exact ? 0 : options->see_through);
+    port_GlDressingSetOn(options->is_exact ? 0 : options->is_dressing);
 
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);

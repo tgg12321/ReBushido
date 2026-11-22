@@ -1,0 +1,11 @@
+format = 1
+# The lumberyard: sawdust off the sand kicked up by steps.
+
+[wind]
+strength = 0.4
+direction = 90
+gusts = 0.35
+
+[particles dust]
+kind = dust
+color = #D9C9A0

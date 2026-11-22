@@ -103,6 +103,9 @@ extern void port_GlLightsTake(void);
  * show and the one after it, or -1 for the game's own frame (gl_shadow.c
  * tells it as it tells the shadows). */
 extern void port_GlLightsSetPhase(s32 phase);
+/* The picture's clock, in game frames: the frames taken, and the phase of
+ * this picture between two of them (the dressing's wind, gl_dressing.h). */
+extern float port_GlLightsClock(void);
 /* A picture begins: what was worked out for the last is forgotten. */
 extern void port_GlLightsNewPicture(void);
 /* This picture's lights as they were sent to the card (once prepared):

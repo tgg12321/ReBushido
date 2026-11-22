@@ -1,0 +1,18 @@
+format = 1
+# Team battle 2: embers from the fire baskets, and sand kicked up by steps.
+
+[wind]
+strength = 0.35
+direction = 45
+gusts = 0.3
+
+[particles embers]
+kind = embers
+on = flames
+count = 70
+size = 10
+color = #FFB050
+
+[particles dust]
+kind = dust
+on = sand

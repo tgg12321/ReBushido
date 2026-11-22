@@ -1,0 +1,19 @@
+format = 1
+# Under the railway: dust off the earth, and leaves blown under the bridge.
+
+[wind]
+strength = 0.5
+direction = 330
+gusts = 0.4
+
+[particles dust]
+kind = dust
+on = earth
+
+[particles leaves]
+kind = leaves
+area = -1000 -14750 19500 14750
+count = 70
+size = 44
+top = 3000
+color = #80703C

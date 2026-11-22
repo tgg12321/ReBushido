@@ -1,0 +1,27 @@
+format = 1
+# The Tatara shrine: embers rising from the fire baskets on the deck's
+# railing, and the grass of the shrine's lawn.
+
+[wind]
+strength = 0.35
+direction = 40
+gusts = 0.3
+
+[grass meadow]
+area = -18000 -11000 17000 11000
+on = green
+count = 9000
+height = 90 200
+
+[grass meadow_middle]
+area = -7000 -7000 7000 7000
+on = green
+count = 12000
+height = 90 200
+
+[particles embers]
+kind = embers
+on = flames
+count = 70
+size = 10
+color = #FFB050

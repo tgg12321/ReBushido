@@ -40,6 +40,7 @@
 #include "common.h"
 #include "gl.h"
 #include "gl_bench.h"
+#include "gl_dressing.h"
 #include "gl_light.h"
 #include "gl_light_list.h"
 #include "gl_scene.h"
@@ -2478,6 +2479,9 @@ static void port_GlStageBuild(const PortStageView *view) {
     /* for tools/port_lights.py, with --dump-textures alone */
     port_GlLightListDumpMesh(g_stage.building, (s32)sizeof(StageVertex),
                              g_stage.built, g_stage.piece_first);
+    /* ... and for the dressing, which grows on it (gl_dressing.h) */
+    port_GlDressingNoteGround(g_stage.building, (s32)sizeof(StageVertex),
+                              g_stage.built, g_stage.piece_first);
     if (g_stage.piece_count > 0) {
         /* what the mesh made of the pieces, for the run's log */
         snprintf(g_stage.news, sizeof(g_stage.news),
@@ -2660,6 +2664,7 @@ static void port_GlStageUniforms(
     GLint clut[2 * (PORT_STAGE_FOG_LEVELS + 1)];
     GLuint open[TILE_WORDS];
     GLuint pieces[PORT_STAGE_PIECE_WORDS];
+    u32 hidden[PORT_STAGE_PIECE_WORDS];
     s32 scale_x = picture->draw_x;
     s32 scale_y = picture->draw_y;
     s32 i;
@@ -2741,10 +2746,11 @@ static void port_GlStageUniforms(
     /* which pieces the mesh draws: those the frame queued and left as
      * they were, that the mesh holds, on a stage they are drawn from it
      * on (port_GlStageIsTile leaves out their primitives by the same) */
+    port_GlDressingHiddenPieces(hidden, PORT_STAGE_PIECE_WORDS);
     for (i = 0; i < PORT_STAGE_PIECE_WORDS; i++) {
         pieces[i] = port_GlStagePropsAreOn(port_RemasterStageNumber()) &&
                             !g_stage.is_props_hidden
-                        ? view->pieces[i] & g_stage.piece_in[i]
+                        ? view->pieces[i] & g_stage.piece_in[i] & ~hidden[i]
                         : 0;
     }
     glUniform1uiv(g_stage.at_pieces, PORT_STAGE_PIECE_WORDS, pieces);
@@ -2762,10 +2768,50 @@ static void port_GlStageUniforms(
     glUniform1i(g_stage.at_slots, 1);
 }
 
+/* The view the mesh is drawn with, as the dressing is given it
+ * (gl_dressing.h): the same projection, depth, slots and fog. */
+static void port_GlStageDressingView(
+    const PortStageView *view, const PortGlPicture *picture,
+    const PortRemasterPrim *paint, PortGlDressingView *out) {
+    s32 is_mixed = port_GlStageIsMixed(view);
+    s32 i;
+
+    port_GlStageView(view, out->view);
+    for (i = 0; i < 9; i++) {
+        out->rotation[i] = (is_mixed ? g_stage_mixed.exact_matrix[i]
+                                     : (float)view->matrix[i]) /
+                           4096.0f;
+    }
+    for (i = 0; i < 3; i++) {
+        out->camera[i] =
+            is_mixed ? g_stage_mixed.exact_camera[i] : (float)view->camera[i];
+    }
+    out->h = (float)view->h;
+    out->screen[0] = (float)view->ofx / (float)PORT_REMASTER_ONE +
+                     (float)(paint->offset_x + picture->margin);
+    out->screen[1] =
+        (float)view->ofy / (float)PORT_REMASTER_ONE + (float)paint->offset_y;
+    out->target[0] = (float)picture->target_w;
+    out->target[1] = (float)picture->target_h;
+    out->scale[0] = (float)picture->draw_x;
+    out->scale[1] = (float)picture->draw_y;
+    out->near_plane = NEAR_PLANE * 2.0f;
+    out->depth = DEPTH_RANGE / (float)(1 << (view->far_shift & 31));
+    out->far = (float)(1 << (view->far_shift & 31));
+    out->depth_shift = view->depth_shift & 31;
+    out->fog_levels = view->fog_levels;
+    for (i = 0; i < 32; i++) {
+        out->fog_slot[i] =
+            (i < view->fog_levels) ? view->fog_slot[i] : 0x7FFFFFFF;
+    }
+    out->cutoff = view->ot_cutoff;
+}
+
 static void port_GlStageDrawMesh(
     const PortGlPicture *picture, const PortRemasterPrim *paint) {
     const PortStageView *view =
         g_stage.has_own_view ? &g_stage.own_view : port_GetRemasterStageView();
+    PortGlDressingView dressing;
     s32 scale_x = picture->draw_x;
     s32 scale_y = picture->draw_y;
 
@@ -2878,7 +2924,14 @@ static void port_GlStageDrawMesh(
         }
         glDepthFunc(GL_LESS);
     }
+    /* the dressing that stands on the ground, into its slots and depth
+     * (gl_dressing.h) */
+    port_GlStageDressingView(view, picture, paint, &dressing);
+    port_GlDressingDrawSolid(&dressing);
     port_GlGroundSlotsEnd();
+    /* ... and what mixes with what is under it: the water, the particles */
+    port_GlStageTarget(picture);
+    port_GlDressingDrawMixed(&dressing);
     g_stage.draws++;
     g_stage.drawn_vertices += (u32)g_stage.vertex_count;
     /* The scene is tested against this depth and writes none of it
@@ -2908,6 +2961,7 @@ void port_GlStageSunPrepare(void) {
 u32 port_GlStageDrawSunCasters(const float *matrix) {
     PortGlPicture picture;
     GLuint pieces[PORT_STAGE_PIECE_WORDS];
+    u32 hidden[PORT_STAGE_PIECE_WORDS];
     const PortStageView *view;
     s32 i;
 
@@ -2917,10 +2971,11 @@ u32 port_GlStageDrawSunCasters(const float *matrix) {
     }
     port_GlGetPicture(&picture);
     view = g_stage.has_own_view ? &g_stage.own_view : &g_stage.drawn_view;
+    port_GlDressingHiddenPieces(hidden, PORT_STAGE_PIECE_WORDS);
     for (i = 0; i < PORT_STAGE_PIECE_WORDS; i++) {
         pieces[i] = port_GlStagePropsAreOn(port_RemasterStageNumber()) &&
                             !g_stage.is_props_hidden
-                        ? view->standing[i] & g_stage.piece_in[i]
+                        ? view->standing[i] & g_stage.piece_in[i] & ~hidden[i]
                         : 0;
     }
     glUseProgram(g_stage.sun_program);

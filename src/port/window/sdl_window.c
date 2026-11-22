@@ -38,6 +38,7 @@
 
 #include "gl.h"
 #include "gl_bench.h"
+#include "gl_dressing.h"
 #include "gl_fighter.h"
 #include "gl_light_list.h"
 #include "gl_load.h"
@@ -998,6 +999,8 @@ static void port_GlOptionsFor(s32 scale, PortGlOptions *options) {
     /* the sky and the walls seen through (gl_sky.h, gl_see.h) */
     options->sky = g_port_settings.sky;
     options->see_through = g_port_settings.see_through;
+    /* a Remastered Classic stage's dressing (gl_dressing.h) */
+    options->is_dressing = g_port_settings.dressing;
     /* the lights beside the stage's own, which are no option of the
      * backend's: told to their list here (gl_light_list.h) */
     port_GlLightListSetStageOn(g_port_settings.stage_lights);
@@ -3108,7 +3111,7 @@ void port_WindowApplyChoice(s32 choice) {
          strcmp(name, "shadows") == 0 || strcmp(name, "smooth_light") == 0 ||
          strcmp(name, "lights") == 0 || strcmp(name, "effects") == 0 ||
          strcmp(name, "sky") == 0 || strcmp(name, "see_through") == 0 ||
-         strcmp(name, "stage_lights") == 0 ||
+         strcmp(name, "stage_lights") == 0 || strcmp(name, "dressing") == 0 ||
          strcmp(name, "effect_lights") == 0 ||
          strcmp(name, "reflections") == 0 ||
          strcmp(name, "ambient_occlusion") == 0 || strcmp(name, "bloom") == 0 ||
@@ -4831,6 +4834,11 @@ static void port_ShowBlank(u32 blank) {
         }
         /* and whether the stage has a sky (gl_sky.h) */
         news = port_GlSkyNews();
+        if (news != NULL) {
+            port_Say("%s", news);
+        }
+        /* and what its dressing grew into (gl_dressing.h) */
+        news = port_GlDressingNews();
         if (news != NULL) {
             port_Say("%s", news);
         }

@@ -310,6 +310,12 @@ void port_GlLightsSetPhase(s32 phase) {
     g_lights.phase = phase < 0 ? -1 : phase;
 }
 
+float port_GlLightsClock(void) {
+    return (float)g_lights.frames +
+           (g_lights.phase >= 0 ? (float)g_lights.phase / (float)PORT_TWEEN_ONE
+                                : 0.0f);
+}
+
 void port_GlLightsNewPicture(void) { g_lights.is_prepared = FALSE; }
 
 const void *port_GlLightsCard(s32 *count) {

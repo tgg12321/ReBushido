@@ -1,0 +1,7 @@
+name = Dressing
+version = 1.0
+# The stages' dressing the program ships (ROADMAP 17; docs/MODS.md,
+# "Dressing"): grass, bushes, reeds, water and particles on the Remastered
+# Classic stages. Made by hand and by tools/port_dressing.py; nothing of it
+# is the disc's.
+order = -100

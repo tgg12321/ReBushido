@@ -93,6 +93,9 @@ typedef struct {
     /* The stage's walls and pieces that stand between the camera and a
      * fighter faded so that he can be seen (gl_see.h): 0 off. */
     s32 see_through;
+    /* A Remastered Classic stage's dressing: its grass, bushes, reeds,
+     * water, particles and meshes (gl_dressing.h): 0 off. */
+    s32 is_dressing;
     /* The three things that make the hardware's picture the console's,
      * for the proof at scale 1 (docs/PORT.md, "Remastered"): the
      * corners where the PlayStation held them, the texture flat across

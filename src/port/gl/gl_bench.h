@@ -49,6 +49,8 @@ typedef enum {
     PORT_GPU_BLOOM,    /* the lights' glow (gl_post.c) */
     PORT_GPU_POST,     /* the depth taken down, and the passes laid over
                         * the picture (gl_post.c) */
+    PORT_GPU_DRESS,    /* a stage's dressing: foliage, meshes, water,
+                        * particles (gl_dressing.c) */
     PORT_GPU_PASSES
 } PortGpuPass;
 

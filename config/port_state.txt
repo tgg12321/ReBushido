@@ -58,6 +58,7 @@ outside  src/port/host_windows.c  the host on Windows
 outside  src/port/main.c        the program's arguments and the disc's file
 outside  src/port/movie_shown.c  which frame of the movie each display buffer holds, for the window's picture
 outside  src/port/lights.c      the lights of the stages' files and what the effects lit up, for the picture alone
+outside  src/port/dressing.c    the stages' dressing files, for the picture alone
 outside  src/port/netplay.c     the session: inputs, guesses, the states kept, the hashes
 outside  src/port/online.c      a session begun in the running program: the state of the game's start, the player's own, what was asked
 outside  src/port/mods.c        the mods' table, made once as the program starts
