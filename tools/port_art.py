@@ -110,11 +110,8 @@ OPTIONS_ROW = 6
 TWO_PADS = ('vs', 'group')
 # What the save says is won (port_play.h's PORT_PLAY_ALL_UNLOCKS, every
 # fighter and the slash mode; PORT_PLAY_ALL_STAFF_ROLLS), written into it
-# for the slash tour as the top menu opens: --unlock-all would do it too,
-# but it shows on ReBushido's options page, which the window's program and
-# the GL prover draw from colour tables of their own, and those tables
-# outlive the page in video memory, so that the tour's textures were keyed
-# apart on the two (port_prepare_prove)
+# for the slash tour as the top menu opens: what --unlock-all does, in the
+# plan alone, so that the first start's run of it needs nothing of its own
 ALL_UNLOCKS = 0x053FF3FF
 ALL_STAFF_ROLLS = 0x3F
 # A fight straight from the start (docs/PORT.md, "Straight into a fight"),

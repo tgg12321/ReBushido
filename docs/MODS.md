@@ -611,12 +611,15 @@ after it; versus mode's stage pages walked across, left to the first and
 right to the third (the other runs take the page they open on); the
 options (`setup`: each choice both ways, the memory card's page, the key
 configuration with both pads' cursors walked down it); the slash mode
-(`slash`: opened by `--unlock-all`, and its run won as it begins, a `poke`
-of the hundred opponents' count and one of the opponent struck down, so
-that the replay, the best times, the two endings of a run won fast with no
-continue and the save's question follow as the game has them, each
-pressed on from a checkpoint of its own, so that a load that takes other
-frames on the window's program than on the GL prover moves nothing); and the
+(`slash`: opened by writing everything won into the save as the top menu
+opens, as `--unlock-all` does but in the plan alone, so that the first
+start's runs need no argument of their own -- and its run
+won as it begins, a `poke` of the hundred opponents' count and one of the
+opponent struck down, so that the replay, the best times and the save's
+question follow as the game has them, each pressed on from a checkpoint of
+its own, so that a load that takes other frames on one program than on
+the other moves nothing; the endings of a run won are the endings' tours',
+since with everything won already the game shows none); and the
 endings (below), every texture written into `tmp/art/dump/` with no mod
 in the way (about 1,590 of them), and where
 each was in video memory into `where.txt` beside them (from the log's
@@ -718,11 +721,14 @@ FOLDER`, `RB_UPSCALER`, the package's `prepare/upscaler/`, or
 the main one; it is a Windows program, so a `build` in WSL makes the art
 with no model.
 
-**What it costs**, on the owner's PC (RTX 3090): the whole `build` 17
-seconds (8 without the model), the model's part 6 of them: 207 textures
-on 71 canvases. The mod is 39 MB (33 without it). From one disc: 1,368
-textures dumped; 178 too small, 582 lettering, 401 of a few colours, 148
-paintings and 59 pictures by the model; 4 steps of fades.
+**What it costs**, on the owner's PC (RTX 3090): the whole `build` 23
+seconds, the model's part 7 of them: 209 textures on 74 canvases. The mod
+is 46 MB. From one disc (2026-11-22, the seventeen tours): 1,591 textures
+dumped, of which the built-in mods replace 567; 141 too small, 380
+lettering, 294 of a few colours, 145 paintings and 64 pictures by the
+model; 4 steps of fades. (Before the options, the slash mode and the
+endings were toured, and with the built-in mods' textures in it: 1,368
+dumped, 17 seconds, 39 MB.)
 
 **The endings.** Ten endings (`enum Ending`, nine pictures) follow a
 story, a full run against the CPU, a group battle or the slash mode won:
@@ -773,8 +779,8 @@ frames and icons as well). `--check` ends 1 if a texture is `NONE`;
 with their keys. A tour that ended short of its screens says so.
 
 With the art built from the same dump every texture the tours draw has a
-replacement (2026-11-22: 1,591 textures; 565 the built-in mods', 878 the
-art's, 7 steps of fades, 141 small). So the gap it shows is what the tours
+replacement (2026-11-22: 1,591 textures; 567 the built-in mods', 883 the
+art's, 141 small). So the gap it shows is what the tours
 do not reach, which no tool can list, or an art mod made before a tour was
 added: the art of a disc made before the options, the slash mode and the
 endings were toured has 159 `NONE` of them. What no tour reaches:
