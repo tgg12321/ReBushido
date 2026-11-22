@@ -1,0 +1,44 @@
+format = 1
+# The orange tree fields: grass under the trees, leaves falling from them,
+# and fireflies.
+
+[wind]
+strength = 0.45
+direction = 70
+gusts = 0.35
+
+[grass meadow]
+area = -11000 -14000 11000 23000
+on = any
+count = 18000
+height = 90 210
+
+[grass meadow_middle]
+area = -7000 -7000 7000 7000
+on = any
+count = 12000
+height = 90 210
+
+[particles leaves]
+kind = leaves
+area = -9500 -13500 9500 21500
+count = 120
+size = 44
+top = 3500
+color = #6E8A30
+
+[flowers bloom]
+area = -11000 -14000 11000 23000
+on = green
+count = 300
+height = 60 120
+color = #FFFFFF
+
+[particles fireflies]
+kind = fireflies
+area = -9500 -13500 9500 21500
+count = 80
+size = 18
+top = 900
+color = #C8FF7A
+times = dusk night

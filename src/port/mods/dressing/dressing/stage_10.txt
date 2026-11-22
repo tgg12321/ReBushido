@@ -1,0 +1,19 @@
+format = 1
+# Snake cliff: grass in the wind over the cliff top.
+
+[wind]
+strength = 0.8
+direction = 250
+gusts = 0.55
+
+[grass meadow]
+area = -6500 -15500 15750 16000
+on = any
+count = 20000
+height = 90 230
+
+[grass meadow_middle]
+area = -5000 -7000 7000 7000
+on = any
+count = 12000
+height = 90 230

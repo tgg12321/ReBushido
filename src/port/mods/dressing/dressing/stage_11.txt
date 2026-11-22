@@ -1,0 +1,49 @@
+format = 1
+# The Kimigaura coast: the sea beyond the beach, its waves and the moon on
+# it, and the sand the fighters kick up.
+
+[wind]
+strength = 0.7
+direction = 200
+gusts = 0.4
+
+[water sea]
+area = -20000 -16000 -3600 16500
+y = 1990
+color = #0E2A3A
+clarity = 0.25
+waves = 1.6
+
+[particles sand]
+kind = dust
+on = any
+color = #D8D2C4
+
+# rocks standing out of the shallows past the beach, where no fighter goes
+# (tools/port_dressing.py rocks made them)
+[mesh rock_north]
+file = rock_0
+at = -5600 0 -9000
+sit = yes
+turn = 30
+scale = 1.6
+
+[mesh rock_middle]
+file = rock_1
+at = -6200 0 -1500
+sit = yes
+turn = 110
+scale = 2.2
+
+[mesh rock_low]
+file = rock_2
+at = -5200 0 2600
+sit = yes
+turn = 200
+
+[mesh rock_south]
+file = rock_3
+at = -5900 0 9500
+sit = yes
+turn = 300
+scale = 1.8

@@ -1,0 +1,23 @@
+format = 1
+# The lost bridge: the river far below it, and leaves falling into the
+# gorge.
+
+[wind]
+strength = 0.6
+direction = 10
+gusts = 0.45
+
+[water river]
+area = -4000 -12000 4040 16040
+y = 5700
+color = #18303A
+clarity = 0.3
+waves = 1.4
+
+[particles leaves]
+kind = leaves
+area = -3500 -15500 3500 11000
+count = 90
+size = 48
+top = 4000
+color = #7C6A34

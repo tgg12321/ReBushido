@@ -1,0 +1,11 @@
+format = 1
+# The railway: dust off the ballast kicked up by steps.
+
+[wind]
+strength = 0.6
+direction = 270
+gusts = 0.45
+
+[particles dust]
+kind = dust
+on = earth

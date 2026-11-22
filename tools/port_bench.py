@@ -133,12 +133,20 @@ CASES = {
     # two on two (docs/PORT.md, "Two on two"): the same fight of four, the
     # partners the CPU's, every fighter drawn and stepped for real
     'ra1-2v2': (1, 'on', None),
+    # a stage dressed (ROADMAP 17; docs/PORT.md, "The dressing"): outside
+    # the Meikyokan, its lawn of some 27,000 tufts, flowers and fireflies,
+    # and the same with four fighters pushing the grass
+    'ra1-dressed': (1, 'on', None),
+    'ra1-dressed-stress': (1, 'on', 'fighters=4'),
 }
 # A case's settings over the bench's own.
 CASE_SETTINGS = {'ra1-2v2': (('teams', 'cpu'),)}
+# The dressed cases: the stage the plan's poke sets in place of Tatara
+# Shrine's, and the shipped dressing among the mods (build/bench/mods-dressed/).
+DRESSED_CASES = {'ra1-dressed': 8, 'ra1-dressed-stress': 8}
 PACED_CASES = ('ra1-paced',)
-DEFAULT_CASES = ('ra0', 'ra1', 'ra2', 'ra1-plain', 'ra1-stress', 'ra1-2v2')
-BUDGET_CASES = ('ra0', 'ra1', 'ra2', 'ra1-stress', 'ra1-paced')
+DEFAULT_CASES = ('ra0', 'ra1', 'ra2', 'ra1-plain', 'ra1-stress', 'ra1-2v2', 'ra1-dressed')
+BUDGET_CASES = ('ra0', 'ra1', 'ra2', 'ra1-stress', 'ra1-paced', 'ra1-dressed')
 
 # The budget (--budget): (case, measure, at most, what it is). The
 # measures are of the fight's blanks in which the game drew a frame,
@@ -212,6 +220,14 @@ LIGHT_PASSES = ('sun', 'lights', 'ssr', 'ao', 'bloom', 'post')
 LIGHT_BUDGET_MS = 2.0
 MET_LIMITS += [
     ('ra1', 'light_p95', LIGHT_BUDGET_MS, "the lighting's passes on the card, a fight frame, 95%, run_ahead 1"),
+]
+# The dressing's own share of the card (`dress`: its foliage, meshes, water
+# and particles), and the dressed stage's whole picture, held as the rest.
+DRESS_PASSES = ('dress',)
+DRESS_BUDGET_MS = 1.5
+MET_LIMITS += [
+    ('ra1-dressed', 'dress_p95', DRESS_BUDGET_MS, "the dressing's pass on the card, a fight frame, 95%"),
+    ('ra1-dressed', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, a dressed stage"),
 ]
 # The fight's first second is the end of its load: the limits on the
 # worst blanks are of what follows it.
@@ -343,7 +359,32 @@ def make_mods(main_repo):
     return mods, missing
 
 
-def write_plan(out):
+def make_dressed_mods(mods):
+    """build/bench/mods-dressed/: the bench's mods and the shipped
+    dressing beside them, for the dressed cases."""
+    import shutil
+
+    dressed = os.path.join(OUT_DIR, 'mods-dressed')
+    os.makedirs(dressed, exist_ok=True)
+    for name in os.listdir(mods):
+        source = os.path.join(mods, name)
+        target = os.path.join(dressed, name)
+        if os.path.exists(target):
+            continue
+        if name in DISC_MADE_MODS:
+            subprocess.run(['cmd', '/c', 'mklink', '/J', target, os.path.realpath(source)],
+                           capture_output=True, check=True)
+        else:
+            shutil.copytree(source, target)
+    source = os.path.join(os.path.dirname(PROGRAM), 'mods', 'dressing')
+    target = os.path.join(dressed, 'dressing')
+    if os.path.isdir(target):
+        shutil.rmtree(target)
+    shutil.copytree(source, target)
+    return dressed
+
+
+def write_plan(out, stage=None):
     import playtest
 
     playtest.PORT_PROGRAM = PROGRAM
@@ -358,6 +399,8 @@ def write_plan(out):
     cps = [line.split()[1] for line in lines if line.startswith('cp ')]
     select = cps.index('select') + 1
     for name, value in port_budget.POKES:
+        if stage is not None and name in ('config_stage', 'stage'):
+            value = stage
         address, size = where[name]
         lines.append('poke %d 0 %d %d %d %d' % (select, FRAMES, address, size, value))
     with open(out, 'w', encoding='utf-8', newline='\n') as f:
@@ -606,6 +649,8 @@ def measure(folder, paced=False):
     card = [sum(gpu[b]) for b in frames if b in gpu]
     light_index = [i for i, name in enumerate(gpu_parts) if name in LIGHT_PASSES]
     light = [sum(gpu[b][i] for i in light_index if i < len(gpu[b])) for b in frames if b in gpu]
+    dress_index = [i for i, name in enumerate(gpu_parts) if name in DRESS_PASSES]
+    dress = [sum(gpu[b][i] for i in dress_index if i < len(gpu[b])) for b in frames if b in gpu]
     all_card = {b: sum(v) for b, v in gpu.items()}
     over = sum(1 for b, (_, v) in rows.items() if work(v) > BUDGET_MS or all_card.get(b, 0.0) > BUDGET_MS)
     # a stall is against a frame's own work: the blanks between frames
@@ -672,6 +717,7 @@ def measure(folder, paced=False):
         'worst': max(all_cpu) if all_cpu else 0.0,
         'gpu_worst': max(all_card.values()) if all_card else 0.0,
         'light_p95': centile(light, 0.95),
+        'dress_p95': centile(dress, 0.95),
         'hitches': 100.0 * over / len(rows) if rows else 0.0,
         'stalls': stalls[:12],
         'settled_p99': centile(settled, 0.99),
@@ -828,6 +874,9 @@ def main():
     ap.add_argument('--budget', action='store_true', help="the gate's cases, held to LIMITS")
     ap.add_argument('--report-only', action='store_true', help='say what is over the budget, and pass')
     ap.add_argument('--against', metavar='REV', help="another commit's numbers (build/bench/), regressions")
+    ap.add_argument('--dressed-stage', type=int, default=None, metavar='N',
+                    help='the dressed cases on stage N in place of their own (a trial: the cost of '
+                         "another stage's dressing)")
     ap.add_argument('--set', action='append', default=[], metavar='KEY=VALUE',
                     help="a setting of rebushido.cfg changed for every case (a trial: its numbers are kept "
                          "as the commit's name with +KEY-VALUE)")
@@ -868,6 +917,11 @@ def main():
         print('port-bench: without the mods %s (not in tmp/mods/)' % ', '.join(missing))
     plan = os.path.join(OUT_DIR, 'plan.txt')
     write_plan(plan)
+    plans = {}
+    for case in set(cases) & set(DRESSED_CASES):
+        plans[case] = os.path.join(OUT_DIR, 'plan-%s.txt' % case)
+        write_plan(plans[case], DRESSED_CASES[case] if args.dressed_stage is None else args.dressed_stage)
+    dressed_mods = make_dressed_mods(mods) if plans else mods
     print('port-bench: %s, %s, the window %s, unpaced; commit %s' % (card, os.path.relpath(PROGRAM, REPO),
                                                                      WINDOW, commit_name()), flush=True)
     theirs = None
@@ -913,7 +967,8 @@ def main():
         else:
             seen = others_running()
             before = system_times()
-            folder, seconds = run(case, image, mods, plan, [tuple(s.split("=", 1)) for s in args.set])
+            folder, seconds = run(case, image, dressed_mods if case in plans else mods,
+                                  plans.get(case, plan), [tuple(s.split("=", 1)) for s in args.set])
             load = {'others': seen, 'busy': busy_since(before)}
         results[case] = measure(folder, PACED or case in PACED_CASES)
         report('%s (%.0f s)' % (case, seconds), results[case])
@@ -932,6 +987,8 @@ def main():
     if args.set:
         # a trial's numbers are kept apart from the commit's own
         name += '+' + ','.join(item.replace('=', '-').replace(' ', '') for item in args.set)
+    if args.dressed_stage is not None:
+        name += '+stage-%d' % args.dressed_stage
     keep = cache_dir(name)
     os.makedirs(keep, exist_ok=True)
     old = {}

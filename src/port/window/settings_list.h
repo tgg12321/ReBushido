@@ -570,6 +570,21 @@ PORT_SETTING(effect_lights,
     .label = "Flash lights",
     .help = "The flash of a clash, a hit or a shot lights the scene")
 
+/* A Remastered Classic stage's dressing (ROADMAP 17; src/port/gl/
+ * gl_dressing.h; docs/MODS.md, "Dressing"): grass, bushes and reeds in the
+ * wind, pushed by the fighters and their slashes; water; dust, leaves,
+ * embers, snow and petals; scenery meshes. The picture's alone: nothing of
+ * the game's state, so a session online is the same either way. */
+PORT_SETTING(dressing,
+    .name = "dressing", .value = "on",
+    .note = "on: a Remastered Classic stage's grass,\n"
+            "bushes, water, dust, leaves and embers\n"
+            "(Remastered); off: the stage as it was",
+    .menu = PORT_MENU_REMASTER, .rank = 155, .takes = PORT_TAKES_NOW,
+    .label = "Stage dressing",
+    .help = "Grass, bushes, water, dust, leaves and embers on Remastered "
+            "Classic stages")
+
 /* The kind every stage starts as on the stage select, and the kind the
  * modes with no stage page fight on (include/port_stage_choice.h;
  * docs/PLAYING.md, "Kinds of stage"): 0 Classic, the disc's stage with

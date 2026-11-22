@@ -11,6 +11,7 @@
 #include "gl.h"
 #include "gl_bench.h"
 #include "gl_lights.h"
+#include "gl_dressing.h"
 #include "gl_see.h"
 #include "gl_shadow.h"
 #include "gl_stage.h"
@@ -308,6 +309,12 @@ void port_GlLightsSetMadeUp(s32 count) {
 
 void port_GlLightsSetPhase(s32 phase) {
     g_lights.phase = phase < 0 ? -1 : phase;
+}
+
+float port_GlLightsClock(void) {
+    return (float)g_lights.frames +
+           (g_lights.phase >= 0 ? (float)g_lights.phase / (float)PORT_TWEEN_ONE
+                                : 0.0f);
 }
 
 void port_GlLightsNewPicture(void) { g_lights.is_prepared = FALSE; }
@@ -795,6 +802,7 @@ void port_GlLightsPrepare(void) {
                             g_lights.stage_framebuffer[slot + face]);
                         glClear(GL_DEPTH_BUFFER_BIT);
                         port_GlStageDrawSunCasters(m);
+                        port_GlDressingDrawSunCasters(m);
                     }
                 }
                 if (!is_kept) {

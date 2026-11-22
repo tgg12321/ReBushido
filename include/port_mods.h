@@ -28,6 +28,8 @@ enum {
     PORT_MOD_ARENAS,   /* a custom arena, .arena (port_arenas.h) */
     PORT_MOD_LIGHTS,   /* a stage's lights, .txt (port_lights.h) */
     PORT_MOD_MOVIES,   /* a movie made larger, .rbmv (gl_movie.h) */
+    PORT_MOD_DRESSING, /* a stage's dressing, .txt, and its meshes, .obj
+                          (port_dressing.h) */
     PORT_MOD_KINDS
 };
 

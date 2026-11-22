@@ -1,0 +1,11 @@
+format = 1
+# The abandoned shipyard: dust off the sand.
+
+[wind]
+strength = 0.6
+direction = 180
+gusts = 0.45
+
+[particles dust]
+kind = dust
+on = sand

@@ -336,6 +336,22 @@ the stage").
     meshes that keep the original silhouette), with a check that
     nothing that looks solid stands where the collision grid has none;
     then a pass over all 38 stages. Builds on item 14's lights.
+    **Done** (the owner, 2026-11-21: "go ahead"; [`PORT.md`](PORT.md),
+    "The dressing"; [`MODS.md`](MODS.md), "Dressing"): the mod kind
+    `dressing/` -- grass, flowers, reeds and bushes by instancing, swayed
+    by the stage's wind, pushed by the fighters and by a blade swept near
+    the ground; water reflecting the sky and rippling where a fighter
+    wades; dust from steps, leaves, petals, snow, embers from the flames,
+    fireflies; OBJ scenery meshes, alone or in a piece's place within its
+    box -- grown from the ground's own mesh and coloured by the stage's
+    own textures, lit by the stage's light, the sun's maps, the lights and
+    the time of day, the picture's alone (`dressing`, on); the check
+    (`tools/port_dressing.py check`, a test) that nothing solid-looking
+    stands where the collision grid lets a fighter walk; 27 stages
+    dressed by the program's own mod, procedural, nothing downloaded or
+    taken from the disc; the bench's `ra1-dressed`. Left: the halls'
+    dust in the light, rain, the foliage casting into the sun's maps,
+    a piece's mesh shipped (MODS.md, "Not yet dressed").
 18. **Custom arenas**: a stage authored in Blender as a render mesh and
     a collision mesh with each face's surface (firm, sand, wet,
     barrier), compiled into the game's ground (`MODS.md`, "Stages");

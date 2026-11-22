@@ -1,0 +1,38 @@
+format = 1
+# Outside the Meikyokan: the dojo's lawn either side of the stone path, the
+# flowers of the clover in it, and fireflies at night.
+
+[wind]
+strength = 0.45
+direction = 30
+gusts = 0.35
+
+# where the fights are: a thick lawn
+[grass lawn]
+area = -13500 -4500 11500 19500
+on = green
+count = 20000
+height = 90 190
+
+# up the path to the gate
+[grass path_lawn]
+area = -6000 -20500 4000 -4500
+on = green
+count = 7000
+height = 90 190
+
+[flowers clover]
+area = -13500 -4500 11500 19500
+on = green
+count = 700
+height = 60 110
+color = #F4F1E4
+
+[particles fireflies]
+kind = fireflies
+area = -12000 -4000 10000 16000
+count = 90
+size = 14
+top = 900
+color = #C8FF7A
+times = dusk night

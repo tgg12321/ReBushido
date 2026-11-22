@@ -1,0 +1,20 @@
+format = 1
+# The bus stop: dust off the earth of the road's edge, and leaves blown
+# along it.
+
+[wind]
+strength = 0.5
+direction = 120
+gusts = 0.45
+
+[particles dust]
+kind = dust
+on = earth
+
+[particles leaves]
+kind = leaves
+area = -11250 -13500 9500 15000
+count = 60
+size = 44
+top = 2400
+color = #8A7038
