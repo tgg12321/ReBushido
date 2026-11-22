@@ -880,11 +880,12 @@ def fades(textures):
 SHIPPED_MODS = ('ui', 'english')
 
 
-def shipped_keys():
-    """The keys the built-in mods replace: theirs in the repository, or
-    beside the PC package's program."""
+def shipped_keys(folders=None):
+    """The keys the built-in mods replace: theirs in `folders` (the PC
+    package's mods beside its program: port_prepare.py), or the
+    repository's."""
     keys = set()
-    for folder in (os.path.join(ROOT, 'src', 'port', 'mods'), os.path.join(ROOT, 'mods')):
+    for folder in folders or [os.path.join(ROOT, 'src', 'port', 'mods')]:
         for mod in SHIPPED_MODS:
             there = os.path.join(folder, mod, 'textures')
             if os.path.isdir(there):
@@ -938,7 +939,7 @@ def build(args):
     # menu its cursor tints gold) is drawn from that mod's picture, tinted
     # (docs/MODS.md, "Fades"): a picture of the art's own would be drawn
     # in its place
-    tints = tints_of_shipped(textures, shipped_keys())
+    tints = tints_of_shipped(textures, shipped_keys(getattr(args, 'shipped', None)))
     textures = {k: v for k, v in textures.items() if k not in tints}
     out = os.path.join(args.out, 'textures')
     os.makedirs(out, exist_ok=True)

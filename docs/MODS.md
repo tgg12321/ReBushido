@@ -767,11 +767,11 @@ frames and icons as well). `--check` ends 1 if a texture is `NONE`;
 with their keys. A tour that ended short of its screens says so.
 
 With the art built from the same dump every texture the tours draw has a
-replacement (2026-11-22: 1,591 textures; 553 the built-in mods', 897 the
-art's, 141 small). So the gap it shows is what the tours do not reach,
-which no tool can list, or an art mod made before a tour was added: the
-art of a disc made before the options, the slash mode and the endings
-were toured has 171 `NONE` of them. What no tour reaches:
+replacement (2026-11-22: 1,591 textures; 565 the built-in mods', 878 the
+art's, 7 steps of fades, 141 small). So the gap it shows is what the tours
+do not reach, which no tool can list, or an art mod made before a tour was
+added: the art of a disc made before the options, the slash mode and the
+endings were toured has 159 `NONE` of them. What no tour reaches:
 
 - **the link cable's picture** and a link battle: the port has no link
   cable;

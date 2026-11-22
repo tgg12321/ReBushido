@@ -42,7 +42,11 @@ def run(checks):
                  port_art.plan_text.__defaults__[0])
     checks.equal('the stages', port_stage_hd.ALL_STAGES, 38)
     checks.true('every art mode has a row, or presses of its own',
-                all(m in port_art.MODE_ROWS or m == 'stages' for m in port_art.MODES))
+                all(m in port_art.MODE_ROWS or m in ('stages', 'setup') or m in port_art.ENDINGS
+                    for m in port_art.MODES))
+    checks.true("the run of a tour is given what its tour asks (the slash mode's --unlock-all)",
+                "port_art.tour_args(name)" in open(os.path.join(support.ROOT, 'tools', 'port_prepare.py'),
+                                                   encoding='utf-8').read())
     checks.true("the stage pages' tour stops on the stage pages",
                 'port_on_stages' in port_art.plan_text('stages') and 'stages+' in port_art.plan_text('stages'))
 

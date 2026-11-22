@@ -289,7 +289,8 @@ def make_art(args, progress, staging):
     run_all(args, runs, progress, WEIGHTS['art-dump'], 'the screens played', where=True)
     args.jobs = jobs
     progress.show('the art: made larger')
-    build = argparse.Namespace(dump=[dump], out=staging, scale=6, keys=None)
+    # the built-in mods beside the program, whose tints the art does not make
+    build = argparse.Namespace(dump=[dump], out=staging, scale=6, keys=None, shipped=[args.mods])
     if port_art.build(build):
         return 'the art could not be made larger'
     progress.add(WEIGHTS['art-build'], 'the art: made larger')
