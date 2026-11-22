@@ -2302,6 +2302,8 @@ static const PortDressSet *port_DressNow(void) {
     return set;
 }
 
+s32 port_GlDressingIsShown(void) { return port_DressNow() != NULL; }
+
 void port_GlDressingHiddenPieces(u32 *words, s32 count) {
     s32 i;
 

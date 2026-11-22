@@ -2812,6 +2812,7 @@ static void port_GlStageDrawMesh(
     const PortStageView *view =
         g_stage.has_own_view ? &g_stage.own_view : port_GetRemasterStageView();
     PortGlDressingView dressing;
+    s32 is_dressed;
     s32 scale_x = picture->draw_x;
     s32 scale_y = picture->draw_y;
 
@@ -2926,12 +2927,17 @@ static void port_GlStageDrawMesh(
     }
     /* the dressing that stands on the ground, into its slots and depth
      * (gl_dressing.h) */
-    port_GlStageDressingView(view, picture, paint, &dressing);
-    port_GlDressingDrawSolid(&dressing);
+    is_dressed = port_GlDressingIsShown();
+    if (is_dressed) {
+        port_GlStageDressingView(view, picture, paint, &dressing);
+        port_GlDressingDrawSolid(&dressing);
+    }
     port_GlGroundSlotsEnd();
     /* ... and what mixes with what is under it: the water, the particles */
-    port_GlStageTarget(picture);
-    port_GlDressingDrawMixed(&dressing);
+    if (is_dressed) {
+        port_GlStageTarget(picture);
+        port_GlDressingDrawMixed(&dressing);
+    }
     g_stage.draws++;
     g_stage.drawn_vertices += (u32)g_stage.vertex_count;
     /* The scene is tested against this depth and writes none of it

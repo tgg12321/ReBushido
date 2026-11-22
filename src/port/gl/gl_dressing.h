@@ -67,6 +67,9 @@ extern void port_GlDressingNoteGround(
  * steps and slashes, the dust they kick up and the ripples they make. */
 extern void port_GlDressingFrame(void);
 
+/* Whether the stage has a dressing to draw now: on, a Remastered Classic
+ * stage with files, its ground the mesh's. */
+extern s32 port_GlDressingIsShown(void);
 /* What stands on the ground and hides what is behind it -- the foliage and
  * the meshes -- into the colour buffer, the ground's slots and its depth,
  * while the mesh's slots are bound (gl_stage.c, between
