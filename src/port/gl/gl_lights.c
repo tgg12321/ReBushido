@@ -11,6 +11,7 @@
 #include "gl.h"
 #include "gl_bench.h"
 #include "gl_lights.h"
+#include "gl_dressing.h"
 #include "gl_see.h"
 #include "gl_shadow.h"
 #include "gl_stage.h"
@@ -801,6 +802,7 @@ void port_GlLightsPrepare(void) {
                             g_lights.stage_framebuffer[slot + face]);
                         glClear(GL_DEPTH_BUFFER_BIT);
                         port_GlStageDrawSunCasters(m);
+                        port_GlDressingDrawSunCasters(m);
                     }
                 }
                 if (!is_kept) {

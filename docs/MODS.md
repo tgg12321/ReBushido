@@ -47,7 +47,9 @@ mods/
   them, the hd mod, from your disc, and `tools/port_models/build.py` the
   remade mod, the fighters made anew one by one and checked against the
   game's own: PORT.md, "The fighters remade"), `skies/` (a stage's sky, below),
-  `lights/` (a stage's lights, `.txt`: "Lights"),
+  `lights/` (a stage's lights, `.txt`: "Lights"), `dressing/` (a
+  stage's grass, water and particles, `.txt`, and its meshes, `.obj`:
+  "Dressing"),
   `music/` (`.ogg` and `.wav`: "Music"), `stages/` (any ending:
   "Stages"), `arenas/` (`.arena`: "Custom arenas"), `weapons/` (`.txt`)
   and `motions/` (`.bbm`: "Weapons and motions"). Under a kind's folder the files may be in folders of any
@@ -977,6 +979,209 @@ cliffs, the railway, the castle rooftop), or places abandoned, whose lamps
 would not be lit (the abandoned ship, station, tunnel and shipyard), or
 with lamps drawn unlit (the outside of the Meikyokan's posts), or with a
 source no fight's camera sees (the lighthouse's lamp, 16,000 up).
+
+## Dressing
+
+A **Remastered Classic** stage (PLAYING.md, "Kinds of stage") is
+dressed: grass, bushes, reeds and flowers drawn by instancing, swayed by
+the stage's wind and pushed aside by the fighters and by a blade swept
+near the ground; water that reflects the sky and ripples where a fighter
+wades; dust kicked up by steps, leaves and petals falling, embers rising
+from the fires, fireflies; scenery meshes. ROADMAP 17; how it is drawn is
+PORT.md, "The dressing".
+
+**It is the picture's alone.** Nothing of a dressing is the game's state
+or changes a value the game computes: a fight, a replay and a session
+online are the same with it and without it, and two players online may
+have different dressings (`tools/port_dressing.py hashes` holds it). It
+needs Graphics Remastered and the ground drawn as one mesh
+(`stage_mesh`); a Classic stage, an arena and the Original picture (F2)
+have none of it. `dressing = off` turns it off.
+
+```
+mods/
+  my-meadows/
+    mod.txt              order = 10
+    dressing/
+      stage_08.txt       outside the Meikyokan
+      boulder.obj        a mesh a stage's file names
+```
+
+- The key is `stage_NN`, as the skies' and the lights' (`STAGE_NAMES` of
+  `tools/port_remaster_prove.py`); a mesh's file is any other name, `.obj`.
+- **Layered** as the light files are: every mod's file of the stage, in
+  the mods' order, each adding blocks, changing a block of the same kind
+  and name (only the lines it says), `remove NAME` one, `clear` all those
+  before it. At most 48 blocks a stage.
+- The log says what each stage's files came to (`dressing: stage 8 has 5
+  blocks of 1 files`), what it grew into (`dressing: stage 8 grown from 5
+  blocks: 27000 tufts of grass, ...`) and any line not used, with why.
+
+### The file
+
+Lines of `name = value`, `#` after a space a comment (not a colour's):
+
+```
+format = 1
+
+[wind]                   # the stage's one wind
+strength = 0.5           # 0 to 4; 0.5 a breeze
+direction = 30           # the way it blows, degrees about the upright
+gusts = 0.35             # 0 steady to 1
+
+[grass lawn]             # a kind and a name of one word
+area = -13500 -4500 11500 19500   # x0 z0 x1 z1: where (up to 8 lines)
+avoid = -1000 -20000 0 20000      # ... and where not (up to 8)
+on = green               # which ground it grows on (below)
+count = 20000            # how many tufts at most
+height = 90 190          # how tall, the least and the most
+```
+
+The world's units, the world's y running down, as the light files'.
+
+| Kind | What | Its own words |
+|---|---|---|
+| `grass` | tufts of seven blades, bent by the wind, pushed by what passes | `height`, `width`, `on`, `level`, `heights`, `sway` |
+| `flowers` | three blades and a bloom of five petals; `color` is the bloom's | the same |
+| `reeds` | three tall blades, one with a brown head | the same |
+| `bush` | a mound of leaves; **looks solid** unless `solid = no` | the same |
+| `water` | a level surface that reflects the sky, the sun or the moon and the lamps, waved by the wind and rippled where a fighter wades | `y`, `color`, `clarity`, `waves`, `on` |
+| `particles` | `kind = dust`, `leaves`, `embers`, `snow`, `petals` or `fireflies` | `size`, `top`, `count`, `on` |
+| `mesh` | a scenery mesh of the mods' (`file`); **looks solid** | `file`, `at`, `turn`, `scale`, `sit`, `piece`, `color`, `tint` |
+| `wind` | the stage's wind | `strength`, `direction`, `gusts` |
+
+What every kind may say: `area`, `avoid`, `count`, `color` (`#RRGGBB`,
+three numbers, or `ground`: the stage's own colour under each place),
+`tint` (each channel times the colour over `#808080`), `times` (`dawn`,
+`day`, `dusk`, `night` or `always`: shown only then; the stage's own time
+counts as night, as the light files'), `solid`.
+
+- **Where foliage grows.** Each place is looked up on the ground's own
+  mesh, its highest face that looks up: kept where that face is level
+  enough (`level`, 0.8 if nothing says), is the ground's and not a
+  piece's, lies within `heights = Y0 Y1` where the block says, and its
+  texture's colour there is of the kind `on` says -- `green` (grass and
+  moss), `earth` (browns, a wooden floor too), `sand`, `stone` (greys),
+  `snow` (near white), `blue` (water's own colours) or `any` -- and so
+  is the ground a tuft's reach about it, so that a path's stones stay
+  bare. The colour of each thing is that texture's own, a little richer,
+  unless the block gives one. So a dressing names no colour of the disc
+  and carries none: it says where and how much, the stage says the rest.
+- **Water** is a level quad of each `area` at height `y`; or, with `on`,
+  laid on the ground's own faces of that colour in its areas, `y` above
+  them (a stream's bed, whatever its shape). `color` is the water's own
+  where one looks down into it, `clarity` how much of what is under it
+  shows (0 to 1), `waves` their size (0 to 4).
+- **Particles**: `dust` is kicked up where a fighter steps, inside its
+  areas (anywhere, if none) and on its `on` ground, its colour the
+  ground's unless it says; `embers` rise from the stage's own flames
+  (`on = flames`); `leaves`, `snow` and `petals` fall over the first
+  area from `top` above the ground, drifting with the wind; `fireflies`
+  hover from the ground to `top` and blink. `size` is a particle's.
+- **A mesh** is a Wavefront OBJ in the world's units, y down: `v x y z`
+  or `v x y z r g b` (its colour, 0 to 1), `f` of three or more corners
+  (a polygon is made a fan; texture and normal numbers are read past).
+  It is turned `turn` degrees about the upright through its middle,
+  scaled by `scale` and set at `at`, or, with `sit = yes`, on the ground
+  under `at`'s x and z, `at`'s y above it. With `piece = N` it **stands
+  in for the stage's piece N** (the pieces as `gl_stage.c` reads them)
+  and keeps its silhouette: it is fitted into the piece's own box, so it
+  is never larger than the piece, a mesh whose proportions are more than
+  a quarter from the box's is refused (the log says so), and the piece
+  is left out while it stands (a piece cut down takes its mesh with it).
+
+### The check
+
+`python3 tools/port_dressing.py check` (in WSL; a test of
+`tests/run.py --rebushido`, `port/dressing`) reads every file as the
+program does and fails where:
+
+- a line is not understood, or a block lies outside its stage;
+- **anything that looks solid** -- a mesh, a bush, foliage marked
+  `solid = yes` -- **could stand where a fighter can walk**: where the
+  stage's collision grid has a floor a fighter gets to. The walk is the
+  arena validator's (`tools/arena_validate.py`), over the stage's own
+  ground file (`formats/GROUND.md`, read from your disc by `rebushido
+  --dump-stages`), from the game's own starts, every 250 units, climbing
+  what a fighter climbs; a solid thing's rectangle, grown by how far it
+  reaches (a bush two thirds of its height, a mesh its box turned and
+  scaled), must hold none of the points walked. So nothing that looks
+  solid stands where the grid would let a fighter walk through it. A
+  mesh standing in for a piece is the piece's own shape and is not
+  walked against. Grass, flowers and reeds, pushed aside by whoever walks
+  through them, may grow anywhere.
+
+Without a disc image and the port built the walk is skipped, and says so.
+
+### Making one
+
+- `python3 tools/port_lights.py dump` writes each stage's mesh from your
+  disc (`tmp/lights/dump/`), and `python3 tools/port_dressing.py walk
+  --stages N` a picture of where a fighter walks
+  (`tmp/dressing/maps/walk_NN.png`, over a map of the stage from above where
+  `stage_NN.png` is there) and the box of it: where to put what.
+- Write `dressing/stage_NN.txt`, run `check`, and look:
+  `python tools/port_dressing.py shots --stages N --times stage,night
+  --mods FOLDER` (on Windows, the card's program, a window never shown)
+  runs a fight of the CPU on the stage at 2,560 by 1,440, the dressing off
+  and on, and keeps pictures of it in `tmp/stages17/`.
+- `python3 tools/port_dressing.py rocks` makes the rocks the program
+  ships (`dressing/meshes/rock_N.obj`): an icosahedron cut twice, pushed
+  out and in by waves of a seed, flattened below, mossed where it faces
+  up. Procedural, nothing of anyone's art.
+
+### The dressing the program ships
+
+`src/port/mods/dressing/` (order -100, under yours), one file a stage,
+written by hand from the stages' maps, walks and pictures:
+
+| Stage | Its dressing |
+|---|---|
+| 3 Tatara shrine | embers from the fire baskets; grass where the lawn is |
+| 4 Bus stop | dust off the road's earth, leaves along it |
+| 5 Lost bridge | the river far below, leaves into the gorge |
+| 6 Tatara shrine path | moss and grass along the path, flowers, shrubs on the hillsides, embers from the stone lanterns, fireflies |
+| 7 Bamboo thicket | bamboo leaves falling, dust off the earth |
+| 8 Outside Meikyokan | the dojo's lawn, clover, fireflies |
+| 9 Future dump site | rough grass, dust |
+| 10 Snake cliff | grass in a strong wind |
+| 11 Kimigaura coast | the sea and its waves, rocks in the shallows, sand kicked up |
+| 12 Orange tree fields | grass, white flowers, leaves falling, fireflies |
+| 13 Castle rooftop | cherry petals past the moon |
+| 14 Under lost bridge | sand kicked up, leaves from the bridge |
+| 15 Terraced fields | grass on the banks, fireflies over the paddies |
+| 16 Under railway | dust, leaves |
+| 17 Water tower dam | leaves over the concrete |
+| 18 Lumberyard | sawdust kicked up |
+| 19 Lighthouse | the cliff top's grass in the sea wind, flowers |
+| 20 Kabuki stage | embers from the torches |
+| 22 Ferry dock | the sea about the quay, dust off the concrete |
+| 23 Shainto gate | embers from the fires, grass in the moss |
+| 24 Purple cavern | embers from the candles |
+| 25 Abandoned station | grass over the ground, leaves, fireflies |
+| 26 Railway | dust off the ballast |
+| 27 Abandoned tunnel | grass, dust |
+| 28 Abandoned shipyard | dust off the sand |
+| 31 Shainto cemetery | grass between the graves, cherry petals, embers from the candles, fireflies |
+| 33 Team battle 2 | embers from the fire baskets, sand kicked up |
+
+**What its assets are.** No picture and no model of anyone's: the
+foliage, the water and the particles are drawn by the program's own
+shaders from numbers (`src/port/gl/gl_dressing.c`), coloured by the
+stage's own textures as the game loaded them, and the rocks are made by
+`tools/port_dressing.py rocks` from a seed. All of it is the
+repository's, under its licence (AGPL-3.0, `LICENSE`); nothing was
+downloaded and nothing comes from the disc or from another game.
+
+**Not yet dressed**, and what each wants: the halls and dojos (0 the
+main Tatara shrine, 1 the Meikyokan, 32 team battle 1, 34 chanbara, 35
+and 36 practice: dust motes in the light through the doors, which
+wants a particle kind that hangs in a light's cone), 2 Shainto HQ
+(candle smoke), 21 the abandoned ship (spray, gulls), 29 the building
+rooftop and 30 its parking lot (rain and puddles, which want a weather
+kind), and 37, which no fight reaches. Scenery meshes standing in for
+pieces (`piece`) are supported and checked but no stage ships one yet:
+each wants a model made for its piece.
 
 ## Music
 

@@ -11,6 +11,7 @@
 #include "gl_shadow.h"
 #include "gl_stage.h"
 #include "gl_sun.h"
+#include "gl_dressing.h"
 #include "gl_time.h"
 #include "port_remaster.h"
 
@@ -521,6 +522,7 @@ s32 port_GlSunPrepare(const PortStageView *view) {
         glClear(GL_DEPTH_BUFFER_BIT);
         if (port_SunStageCasts()) {
             g_sun.triangles += port_GlStageDrawSunCasters(g_sun.matrix[i]);
+            g_sun.triangles += port_GlDressingDrawSunCasters(g_sun.matrix[i]);
         }
         g_sun.triangles += port_GlShadowDrawSunCasters(g_sun.matrix[i]);
     }

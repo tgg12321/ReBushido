@@ -739,7 +739,7 @@ def main():
     w = sub.add_parser('walk')
     w.add_argument('--grounds', default=GROUNDS)
     w.add_argument('--stages', default='8')
-    w.add_argument('--maps', default=os.path.join(ROOT, 'tmp', 's17', 'maps'))
+    w.add_argument('--maps', default=os.path.join(ROOT, 'tmp', 'dressing', 'maps'))
     w.add_argument('--image', default=os.path.join(ROOT, 'Bushido Blade 2 (USA).cue'))
     w.add_argument('--program', default=os.path.join(ROOT, 'build', 'port', 'rebushido'))
     hs = sub.add_parser('hashes')

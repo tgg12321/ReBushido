@@ -113,6 +113,7 @@ typedef ptrdiff_t GLintptr;
     GL(void, glUniform3fv, (GLint, GLsizei, const GLfloat *))                  \
     GL(void, glUniform4fv, (GLint, GLsizei, const GLfloat *))                  \
     GL(void, glUniformMatrix3fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
+    GL(void, glUniformMatrix4fv, (GLint, GLsizei, GLboolean, const GLfloat *)) \
     GL(void, glDrawArrays, (GLenum, GLint, GLsizei))                           \
     GL(void, glDrawArraysInstanced, (GLenum, GLint, GLsizei, GLsizei))
 
@@ -301,7 +302,6 @@ typedef struct {
     GLint top;
     GLint flames;
     GLint flame_count;
-    GLint count;
     /* the water's */
     GLint water;
     GLint clarity;
@@ -323,6 +323,8 @@ static struct {
     GLuint mesh;
     GLuint water;
     GLuint particles;
+    GLuint caster;
+    GLint caster_at_sun;
     DressAt foliage_at;
     DressAt mesh_at;
     DressAt water_at;
@@ -367,13 +369,10 @@ static struct {
     u32 frames;
     float weapon_at[PORT_FIGHTER_WEAPONS][3];
     s32 weapon_count;
-    float slashes[SLASHES_MOST][4];
-    float slash_ways[SLASHES_MOST][4];
     s32 slash_count;
     DressDust dust[DUST_MOST];
     s32 dust_next;
     s32 dust_used;
-    s32 dust_sent;
     float ripples[RIPPLES_MOST][4];
     s32 ripple_next;
     u32 seed;
@@ -482,7 +481,7 @@ static u32 port_DressSeedOf(const char *name, s32 stage, s32 kind) {
     "    depth = v.z;\n"                                                         \
     "    return vec4(at / u_target - v.z, v.z - u_near, v.z);\n"                 \
     "}\n" /* the wind at a place: how far it leans a thing's top, of its         \
-           * height, its way in x and z */                                                           \
+           * height, its way in x and z */                                       \
     "vec2 dress_wind(vec3 root, float seed) {\n"                                 \
     "    vec2 way = u_wind.xy;\n"                                                \
     "    float along = dot(root.xz, way);\n"                                     \
@@ -538,8 +537,8 @@ static u32 port_DressSeedOf(const char *name, s32 stage, s32 kind) {
     "    return clamp((float(level) + part - 0.5) / float(u_fog_levels),\n"          \
     "                 0.0, 1.0) * u_fog_color.a;\n"                                  \
     "}\n" /* the light at a place, in the game's bytes (128 one), its normal         \
-           * of length one: the stage's lights, less the sun where its maps                         \
-           * hide it, and the frame's lights; `base` the stage's alone */                                 \
+           * of length one: the stage's lights, less the sun where its maps          \
+           * hide it, and the frame's lights; `base` the stage's alone */            \
     "vec3 dress_light(vec3 place, vec3 n, out vec3 base) {\n"                        \
     "    vec3 ir = max(u_light * n, vec3(0.0)) * 4096.0;\n"                          \
     "    vec3 color = clamp(u_back + (u_color * ir) / 16.0, 0.0, 255.0);\n"          \
@@ -1020,6 +1019,20 @@ static const char g_dress_particles_fragment[] =
     "    o_color = vec4(clamp(color, 0.0, 255.0) / 255.0, alpha);\n"
     "}\n";
 
+/* The meshes as the sun or a light sees them: their depth alone. */
+static const char g_dress_caster_vertex[] =
+    "#version 330 core\n"
+    "layout(location = 0) in vec3 a_place;\n"
+    "uniform mat4 u_sun;\n"
+    "void main() {\n"
+    "    gl_Position = u_sun * vec4(a_place, 1.0);\n"
+    "}\n";
+
+static const char g_dress_caster_fragment[] =
+    "#version 330 core\n"
+    "void main() {\n"
+    "}\n";
+
 /* ---- making the programs ---- */
 
 static void port_DressSay(const char *what, const char *more) {
@@ -1105,7 +1118,6 @@ static void port_DressLocate(GLuint program, DressAt *at) {
     at->top = glGetUniformLocation(program, "u_top");
     at->flames = glGetUniformLocation(program, "u_flames");
     at->flame_count = glGetUniformLocation(program, "u_flame_count");
-    at->count = glGetUniformLocation(program, "u_count");
     at->water = glGetUniformLocation(program, "u_water");
     at->clarity = glGetUniformLocation(program, "u_clarity");
     at->waves = glGetUniformLocation(program, "u_waves");
@@ -1137,10 +1149,13 @@ const char *port_GlDressingStart(void *(*getproc)(const char *name)) {
         port_DressProgram(g_dress_water_vertex, g_dress_water_fragment);
     g_dress.particles =
         port_DressProgram(g_dress_particles_vertex, g_dress_particles_fragment);
+    g_dress.caster =
+        port_DressProgram(g_dress_caster_vertex, g_dress_caster_fragment);
     if (g_dress.foliage == 0 || g_dress.mesh == 0 || g_dress.water == 0 ||
-        g_dress.particles == 0) {
+        g_dress.particles == 0 || g_dress.caster == 0) {
         return g_dress.problem;
     }
+    g_dress.caster_at_sun = glGetUniformLocation(g_dress.caster, "u_sun");
     port_DressLocate(g_dress.foliage, &g_dress.foliage_at);
     port_DressLocate(g_dress.mesh, &g_dress.mesh_at);
     port_DressLocate(g_dress.water, &g_dress.water_at);
@@ -2687,6 +2702,31 @@ void port_GlDressingDrawSolid(const PortGlDressingView *view) {
     glBindVertexArray(0);
     port_GlCountDraw(g_dress.triangles * 3, g_dress.draws);
     PORT_GPU_END();
+}
+
+u32 port_GlDressingDrawSunCasters(const float *matrix) {
+    const PortDressSet *set = port_DressNow();
+    u32 triangles = 0;
+    s32 i;
+
+    if (set == NULL || g_dress.mesh_vertex_count == 0) {
+        return 0;
+    }
+    glUseProgram(g_dress.caster);
+    glUniformMatrix4fv(g_dress.caster_at_sun, 1, GL_FALSE, matrix);
+    glBindVertexArray(g_dress.mesh_array);
+    for (i = 0; i < g_dress.run_count; i++) {
+        const DressRun *run = &g_dress.runs[i];
+
+        if (run->kind != PORT_DRESS_MESH || run->count == 0 ||
+            !port_DressShownNow(&set->block[run->block])) {
+            continue;
+        }
+        glDrawArrays(GL_TRIANGLES, run->first, run->count);
+        triangles += (u32)(run->count / 3);
+    }
+    glBindVertexArray(0);
+    return triangles;
 }
 
 void port_GlDressingDrawMixed(const PortGlDressingView *view) {

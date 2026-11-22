@@ -798,6 +798,9 @@ def main():
     ap.add_argument('--budget', action='store_true', help="the gate's cases, held to LIMITS")
     ap.add_argument('--report-only', action='store_true', help='say what is over the budget, and pass')
     ap.add_argument('--against', metavar='REV', help="another commit's numbers (build/bench/), regressions")
+    ap.add_argument('--dressed-stage', type=int, default=None, metavar='N',
+                    help='the dressed cases on stage N in place of their own (a trial: the cost of '
+                         "another stage's dressing)")
     ap.add_argument('--set', action='append', default=[], metavar='KEY=VALUE',
                     help="a setting of rebushido.cfg changed for every case (a trial: its numbers are kept "
                          "as the commit's name with +KEY-VALUE)")
@@ -839,7 +842,7 @@ def main():
     plans = {}
     for case in set(cases) & set(DRESSED_CASES):
         plans[case] = os.path.join(OUT_DIR, 'plan-%s.txt' % case)
-        write_plan(plans[case], DRESSED_CASES[case])
+        write_plan(plans[case], DRESSED_CASES[case] if args.dressed_stage is None else args.dressed_stage)
     dressed_mods = make_dressed_mods(mods) if plans else mods
     print('port-bench: %s, %s, the window %s, unpaced; commit %s' % (card, os.path.relpath(PROGRAM, REPO),
                                                                      WINDOW, commit_name()), flush=True)
@@ -903,6 +906,8 @@ def main():
     if args.set:
         # a trial's numbers are kept apart from the commit's own
         name += '+' + ','.join(item.replace('=', '-').replace(' ', '') for item in args.set)
+    if args.dressed_stage is not None:
+        name += '+stage-%d' % args.dressed_stage
     keep = cache_dir(name)
     os.makedirs(keep, exist_ok=True)
     old = {}

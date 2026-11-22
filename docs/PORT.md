@@ -8344,7 +8344,7 @@ dressing asks it where it decides:
 | The stage's own lights (torches, fires, lanterns: the lights files, MODS.md "Lights") | off | as `stage_lights` says | `port_LightsOfStage` (`src/port/lights.c`) |
 | The stages' pages made larger (`stages-hd`) and any mod's page pictures | the game's own textures | the mod's | `port_GlSceneFind` (`src/port/gl/gl_scene.c`) |
 | The night sky | the game's colour of the distance | as `sky` says | the sky's drawing (`src/port/gl/gl_sky.c`) |
-| Item 17's dressing (foliage, water, particles), when it comes | off | on | the same question |
+| The dressing (grass, bushes, water, particles, meshes: ROADMAP 17, "The dressing") | off | as `dressing` says | `port_DressingOfStage` (`src/port/dressing.c`) |
 | The time of day ("The time of day") | the game's own | as chosen | `port_StageTime` (`src/port/stage_choice.c`) |
 
 Everything else is the engine's and the renderer's and is the same in
@@ -8594,6 +8594,153 @@ a time adds to a frame is a few uniforms, one more read of the fog's
 levels in the mesh's shader and the sky's branch: nothing measurable
 above the load's noise. The processor's side is unchanged (the look is
 worked out when the stage or the time changes).
+
+## The dressing
+
+ROADMAP 17 (the owner, 2026-11-21: "go ahead"): a Remastered Classic
+stage dressed with what nobody touches -- foliage drawn by instancing and
+stirred by the wind, the fighters and the slashes; water; dust, leaves,
+embers, snow and petals; scenery meshes -- built on item 14's lights and
+item 20's time of day. The files are a mod kind of their own
+([`MODS.md`](MODS.md), "Dressing"); the program ships 27 stages' of them
+(`src/port/mods/dressing/`). The window's `dressing` (on) turns it on and
+off; the prover's `--dressing` is off unless said, so every prover's
+picture is the stage as it was.
+
+**Where.** `src/port/dressing.c` (`include/port_dressing.h`) reads and
+layers a stage's files, as `lights.c` the light files, and answers
+nothing on a Classic stage (`port_StageIsDressed`) or with an arena in
+play. `src/port/gl/gl_dressing.c` (`gl_dressing.h`) makes the picture of
+it. Both are outside the game's state (`config/port_state.txt`;
+`gl/` is the picture's): nothing of either is saved, put back or hashed,
+and nothing the game computes reads them.
+
+**Grown once a stage.** When the ground's mesh is built
+(`port_GlStageBuild`), its triangles that look up are kept, sorted into
+squares of 512 units, with a copy of video memory and the stage's
+textures as they were loaded (`port_GlDressingNoteGround`). The first
+picture that draws the dressing grows it: every place a block asks for,
+by a sequence seeded from the stage and the block's name (so a stage
+grows the same every time), is looked up on the ground under it -- the
+highest face that looks up, its height, how level it lies, the texel its
+texture has there -- and kept where the block's rules say ([`MODS.md`]
+(MODS.md), "Dressing"), coloured by that texel. The things go to the card
+once: 36 bytes a thing of foliage, 28 a vertex of the meshes and the
+water. Measured: a stage of 27,000 tufts grows in about 20 ms.
+
+**Drawn in the ground's place.** The dressing is drawn by the mesh's own
+draw (`port_GlStageDrawMesh`), with its projection, its depth and its
+fog handed over whole (`PortGlDressingView`): so it is in every picture
+the ground is in, the pictures between two frames too, with the camera
+between the two. Two passes:
+
+- **What stands** -- the foliage and the meshes -- right after the
+  ground, while the ground's slots are bound (`port_GlGroundSlotsBegin`):
+  it writes the colour, the depth (in the world's units, as the mesh's)
+  and the ordering-table slot of its own depth. So a fighter drawn from
+  the game's own polygons, who is held against the ground by the slots
+  (`port_GlIsOverGround`), is hidden by a blade of grass in front of his
+  feet and not by one behind them; a stage's piece the game still draws
+  is held by the depth; the reflections and the occlusion see a
+  thing's depth as they see the ground's. Its alpha is 1: not the
+  ground's, not a reflecting floor (gl_post.h).
+- **What mixes** -- the water and the particles -- after the slots, with
+  the depth tested and not written, the alpha left as the ground wrote
+  it. The water is mixed over the stage's own water (its own colour where
+  one looks down into it, the sky where one looks along it, by Fresnel);
+  the particles that glow (embers, fireflies) are added.
+
+**The foliage.** One instanced draw a block: a thing's vertices are built
+in the vertex shader from the vertex's number -- a tuft of grass seven
+blades of two bends and a tip (105 vertices), reeds three blades of three
+bends with a head, flowers three blades and a bloom of two crossed quads,
+a bush 36 leaves as cards over half an egg (the leaf's shape cut in the
+fragment) -- each blade's place, turn, height and lean from a hash of the
+thing's seed. A blade bends keeping its length: its top moved by the
+lean, the wind and what pushes it, its rise what is left. Farther than
+6,300 units from the camera a thing is drawn less often and with fewer
+blades (`FOLIAGE_THIN`: five blades at 7,200, three past 12,600, and of
+the things fewer the farther, down to a seventh): it is a few pixels
+there and most of the vertices.
+
+- **The wind** is the stage's file's (`[wind]`): its way, strength and
+  gusts; each thing sways in three waves that run along the wind's way
+  over the ground, a gust that crosses the stage now and then, and a
+  flutter across it, all of the picture's clock (the frames taken and the
+  phase between two, as the lights' flicker: the same at any frame rate).
+- **What pushes**: each fighter, an upright cylinder about his bones
+  (gl_see.h, `port_GlSeeFightersAlways`), pushes what is within half of
+  it at his feet away from his axis, and where he was 8 and 16 frames
+  before pushes too, less, so the grass rises again behind him; and a
+  weapon whose hand moves more than 45 units in a frame near the ground
+  is a slash (port_fighter.h, the weapons drawn), sweeping a 900-unit
+  circle ahead of the hand its way. Sixteen at most, read once a game
+  frame (`port_GlDressingFrame`).
+- **The light** is the ground's own: the stage's three lights (or the time
+  of day's setup, `port_GlTimeTileLights`), less the sun where its maps
+  hide it (`sun_visible`, `sun_shade`), and the frame's lights
+  (`lights_add`), at a normal mostly the ground's up so that a meadow is
+  lit as the ground under it, darker towards the roots; then the
+  tonemap and the fog of the ground's levels (or the time's).
+
+**The water** is a level quad of each rectangle, or the ground's own faces
+of the water's colour lifted a little. Its normal is four waves along
+and across the wind (the size `waves` says) and the rings where a fighter
+wades: a fighter whose feet are in the water's rectangle at its height
+starts a ring every 9 frames while he moves, every 50 at rest, eight at
+most at once. What it reflects is the sky's gradient of the time of day
+(the night's at the stage's own time), the sun's or the moon's glint
+where its maps let it reach, and the frame's lights; its fog is half the
+ground's, so that a sea far off still shows its waves.
+
+**The particles** are worked out from their number and the clock alone
+where they fall or rise over an area (leaves, snow and petals falling
+from `top`, drifting with the wind and turning; fireflies hovering and
+blinking; embers rising from the game's own flames, `port_LightsGame`),
+so they cost the processor nothing; a step's dust is a ring of 512
+events on the processor, each its place, way, time and colour (the
+ground's under the fighter), sent each picture.
+
+**The meshes** are the mods' OBJ files, turned, scaled and placed when the
+stage grows: at a place, on the ground under it (`sit`), or in a piece's
+place, fitted into the piece's box (and refused where the proportions
+differ by more than a quarter), the piece then left out of the mesh's
+draw and its sun casters (`port_GlDressingHiddenPieces`). A mesh casts
+into the sun's maps and the strongest lights' cubes as the stage does.
+
+**What it changes of the rest.** With no dressing file for the stage, or
+`dressing off`, or a Classic stage, nothing is drawn and nothing of the
+picture differs: the provers (`port_gl_prove.py`, `port_stage_prove.py`,
+`port_fps_prove.py`, `--against main`) run with it off and hold every
+stage's picture to main's. The card's own timer has a pass of its own,
+`dress` (gl_bench.h), inside `stage`.
+
+**The game's state.** `python tools/port_dressing.py hashes` runs a fight
+of the CPU on stages 8, 11 and 31, on the window's program with the
+dressing on and then off: the game's state at every blank (`--trace`) is
+the same line for line, and each fight's replay made with it on, played
+with it off (`--replay-check`), has every hash (each 30 frames) the one
+recorded. Online, `tools/port_net.py session` and the rollback test
+(`make port-rollback`) pass as before: the headless programs they run
+read the dressing's files but draw nothing, and the window's programs of
+`port_net.py window` draw it.
+
+**What it costs** (the bench, `tools/port_bench.py`, the RTX 3090 at 2,560
+by 1,440; `ra1-dressed` is `ra1` on the Meikyokan's lawn with the
+shipped dressing, its 27,000 tufts, flowers and fireflies; `-stress` four
+fighters):
+
+COSTS
+
+**What is left.** The foliage takes the sun's shadows and does not cast
+any (the meshes cast into the sun's maps and the lights' cubes,
+`port_GlDressingDrawSunCasters`); no stage ships a mesh standing in for a
+piece; the water reflects the sky and the lights but not the stage or the
+fighters (the reflections on the screen are the floors' plane's,
+c of the lighting overhaul); a stream drawn on the ground's own faces
+follows them by whole faces, so a stream painted across them in its
+texture is better left alone (the stage under the lost bridge's); the
+halls want dust in the light; rain and puddles want a weather kind.
 
 ## Every stage in every mode, and every unlock
 

@@ -305,7 +305,8 @@ const char *port_ParticlesKindName(s32 kind) {
                : "?";
 }
 
-/* A block as a file starts it: every number its kind's own (port_dressing.h). */
+/* A block as a file starts it: every number its kind's own (port_dressing.h).
+ */
 void port_DressDefault(
     PortDressDef *block, s32 kind, const char *name, u32 length) {
     u32 i;

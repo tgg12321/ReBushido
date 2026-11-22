@@ -76,6 +76,10 @@ extern void port_GlDressingDrawSolid(const PortGlDressingView *view);
  * the ground, the picture's framebuffer bound again. */
 extern void port_GlDressingDrawMixed(const PortGlDressingView *view);
 
+/* The meshes as the sun or a light sees them, through `matrix` (a column
+ * after a column), into the depth map bound now (gl_sun.h, gl_lights.h):
+ * the triangles drawn. */
+extern u32 port_GlDressingDrawSunCasters(const float *matrix);
 /* The pieces a mesh stands in for this frame, a bit each (as the mesh's
  * u_pieces): the ground's mesh leaves them out. */
 extern void port_GlDressingHiddenPieces(u32 *words, s32 count);
