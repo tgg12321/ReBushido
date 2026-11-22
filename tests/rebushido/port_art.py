@@ -108,5 +108,36 @@ def run(checks):
                                                   os.path.join(work, 'model'))
             checks.true('an upscaler that fails gives nothing, and says why',
                         made == {} and why is not None and 'invalid gpu device' in why)
+
+        # a built-in mod's texture is not the art's to make
+        mods = os.path.join(work, 'mods')
+        os.makedirs(os.path.join(mods, 'ui', 'textures'))
+        open(os.path.join(mods, 'ui', 'textures', '8x4-4-0000000000000001.png'), 'wb').close()
+        checks.equal("the built-in mods' keys, the package's beside its program",
+                     port_art.shipped_keys([mods]), {'8x4-4-0000000000000001'})
+
+        # the tours: each a plan, its checkpoints in order, its pokes of
+        # values it can name
+        import tomllib
+
+        for mode in port_art.MODES:
+            plan = tomllib.loads(port_art.plan_text(mode))
+            names = [c['name'] for c in plan['checkpoint']]
+            checks.true('%s: a plan whose presses are timed from its own checkpoints' % mode,
+                        all(p.split('+')[0] in names or p.split()[0].isdigit() for p in plan['input']))
+            for checkpoint, _, _, value, _ in port_art.tour_pokes(mode):
+                checks.true('%s: its poke of %s at a checkpoint of its own' % (mode, value), checkpoint in names)
+                checks.true('%s: %s a value it names' % (mode, value),
+                            value in plan.get('state', {}) or value in ('screen', 'p2_defeated'))
+        checks.true('the options are the seventh row with the slash mode shut, the slash mode the seventh open',
+                    port_art.OPTIONS_ROW == 6 and port_art.MODE_ROWS['slash'] == 6 and
+                    'menu+%d DOWN' % (30 + 30 * 5) in port_art.plan_text('setup') and
+                    'menu+%d DOWN' % (30 + 30 * 6) not in port_art.plan_text('setup'))
+        checks.true("the slash mode is opened by the save's unlocks, written as the menu begins",
+                    ('movie', 10, 1, 'unlocks', port_art.ALL_UNLOCKS) in port_art.tour_pokes('slash') and
+                    port_art.tour_args('slash') == [])
+        checks.equal('the endings, eight tours of the ten', sorted(port_art.ENDINGS.values()), list(range(8)))
+        checks.true('the slash mode won fast goes on to the ending of no continue',
+                    ('fight', 60, 1, 'clean_unlock', 1) in port_art.tour_pokes('ending-6'))
     finally:
         shutil.rmtree(work)

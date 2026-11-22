@@ -157,9 +157,7 @@ def plans(symbols, scratch):
     toml = os.path.join(scratch, 'tour.toml')
     out = {}
     for mode in port_art.MODES:
-        with open(toml, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(port_art.plan_text(mode, ART_LIMIT))
-        _, lines = playtest.Test(toml).plan(playtest.Disc('port'), names, 1)
+        lines = port_art.plan_lines(mode, playtest, names, scratch, ART_LIMIT)
         out['art-%s.plan' % mode] = '\n'.join(lines) + '\n'
     remaster.PROGRAM = os.path.relpath(playtest.PORT_PROGRAM, remaster.ROOT)
     remaster.write_tour(toml, port_stage_hd.DUMP_FRAMES, 1)
@@ -195,14 +193,15 @@ def child_env():
     return env
 
 
-def start_run(args, plan, out, dump):
+def start_run(args, plan, out, dump, extra=()):
     """The program, playing `plan` with no window shown and no mod,
-    writing every texture it draws into `dump`."""
+    writing every texture it draws into `dump`; `extra`, what else the
+    run is given (port_art.tour_args)."""
     os.makedirs(out, exist_ok=True)
     log = os.path.join(out, 'log.txt')
     cmd = [args.program, '--hidden', '--no-sound', '--fast', '--config', args.config, '--log', log,
            '--image', args.image, '--plan', plan, '--out', out, '--graphics', 'remastered',
-           '--resolution', '1', '--mods', args.empty, '--dump-textures', dump]
+           '--resolution', '1', '--mods', args.empty, '--dump-textures', dump] + list(extra)
     flags = CREATE_NO_WINDOW if os.name == 'nt' else 0
     return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=child_env(),
                             creationflags=flags), log
@@ -235,7 +234,7 @@ def run_all(args, runs, progress, weight, what, check=None, where=False):
             # mod's dump only when it has ended: the program writes a
             # texture once, where its file is not there yet, so a file
             # cut short by a run that was stopped must never be among them
-            process, log = start_run(args, plan, out, os.path.join(out, 'dump'))
+            process, log = start_run(args, plan, out, os.path.join(out, 'dump'), port_art.tour_args(name))
             running.append((name, plan, out, dump, process, log))
         if not running:
             break
@@ -285,12 +284,13 @@ def make_art(args, progress, staging):
     os.makedirs(dump, exist_ok=True)
     runs = [(mode, os.path.join(args.plans, 'art-%s.plan' % mode), os.path.join(args.work, 'art-runs', mode), dump)
             for mode in port_art.MODES]
-    # every mode at once, as port_art.dump plays them
-    jobs, args.jobs = args.jobs, max(args.jobs, len(runs))
+    # as many at once as port_art.dump plays them
+    jobs, args.jobs = args.jobs, max(args.jobs, min(len(runs), port_art.DUMP_JOBS))
     run_all(args, runs, progress, WEIGHTS['art-dump'], 'the screens played', where=True)
     args.jobs = jobs
     progress.show('the art: made larger')
-    build = argparse.Namespace(dump=[dump], out=staging, scale=6, keys=None)
+    # the built-in mods beside the program, whose tints the art does not make
+    build = argparse.Namespace(dump=[dump], out=staging, scale=6, keys=None, shipped=[args.mods])
     if port_art.build(build):
         return 'the art could not be made larger'
     progress.add(WEIGHTS['art-build'], 'the art: made larger')

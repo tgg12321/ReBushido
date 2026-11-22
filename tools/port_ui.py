@@ -4,7 +4,8 @@ menus"): the lettering of the game's 2D screens drawn again in a font,
 sharp at any size -- the pause menu, the menu after a fight, the top menu's
 captions, the select screens, the group battle's page, the training mode's
 page, the memory card's messages, the story's narration, the stage cards,
-the results, and the built-in font of ReBushido's options page.
+the results, the options' pages, the slash mode's, the staff roll, and the
+built-in font of ReBushido's options page.
 
     python tools/port_ui.py                  write src/port/mods/ui/
     python tools/port_ui.py --check          exit 1 if what is there is not
@@ -119,14 +120,18 @@ CARD_NAME_TOP = (255, 255, 255)
 CARD_NAME_BOTTOM = (214, 214, 214)
 
 
-def text(words, boxes, font, look, top, bottom, dark, panel=None, aspect=ASPECT):
+def text(words, boxes, font, look, top, bottom, dark, panel=None, aspect=ASPECT, screen=None, slant=0.0):
     """A text of a block: its words, the rectangles its letters fill
     (left, top, right, bottom: texels, the right and bottom past it; more
     than one where it is wrapped), its font and its look; for a panel, the
-    panel's rectangle; and the texel's width on the screen for its height
-    there, if its screen is not one of 640 by 240 (ASPECT)."""
+    panel's rectangle; the texel's width on the screen for its height
+    there, if its screen is not one of 640 by 240 (ASPECT); the screen
+    it is of, where its kind (kind()) is to be that screen's alone; and,
+    for the game's italic (the staff roll's), how far its letters lean:
+    the face has no italic of its own, so its upright letters are leant,
+    `slant` texels across for each one up."""
     return dict(words=words, boxes=boxes, font=font, look=look, top=top, bottom=bottom, dark=dark, panel=panel,
-                aspect=aspect)
+                aspect=aspect, screen=screen, slant=slant)
 
 
 def rule(box, colour):
@@ -1103,6 +1108,384 @@ BLOCKS = [
         ('32x12-4-22954d4c95990b88', 0, 0), ('32x12-4-a1ee6b0eea567260', 32, 0),
         ('18x12-4-be8c58b84ba0710e', 64, 0),
     ]),
+    # -- the options' pages (setup) --
+    # Frontal Attack / Reverse / Change Stance / Default / Custom (the key configuration's rows)
+    block((109, 43), [
+        text('Frontal', [(0, 0, 52, 7)], 'sans', 'edge', (220, 213, 229), (217, 210, 228), (106, 90, 148), screen='setup'),
+        text('Attack', [(56, 0, 103, 7)], 'sans', 'edge', (230, 224, 236), (211, 203, 223), (106, 90, 148), screen='setup'),
+        text('Reverse', [(0, 9, 58, 16)], 'sans', 'edge', (208, 200, 218), (212, 205, 224), (106, 90, 148), screen='setup'),
+        text('Change', [(0, 18, 53, 27)], 'sans', 'edge', (210, 202, 224), (211, 203, 223), (106, 90, 148), screen='setup'),
+        text('Stance', [(58, 18, 109, 27)], 'sans', 'edge', (198, 192, 211), (209, 201, 220), (106, 90, 148), screen='setup'),
+        text('Default', [(0, 27, 57, 34)], 'sans', 'edge', (215, 208, 225), (212, 205, 224), (106, 90, 148), screen='setup'),
+        text('Custom', [(0, 36, 55, 43)], 'sans', 'edge', (212, 205, 223), (209, 201, 220), (106, 90, 148), screen='setup'),
+    ], [
+        ('52x9-4-6378171017f2c657', 0, 0), ('47x9-4-b5017fa0624ef1c2', 56, 0), ('58x9-4-63bf55d40d817a1d', 0, 9),
+        ('53x9-4-902fdd545e5ecd09', 0, 18), ('51x9-4-bd2f1e0100633535', 58, 18), ('57x7-4-55ccbbf8a92a8ee0', 0, 27),
+        ('55x7-4-71cda711f2428507', 0, 36),
+    ]),
+    # 1P / 2P
+    block((184, 24), [
+        text('1P', [(75, 0, 112, 11)], 'heavy', 'edge', (230, 230, 230), (203, 203, 203), (49, 49, 49), screen='setup'),
+        rule((1, 6, 68, 7), (255, 255, 255)),
+        rule((119, 6, 183, 7), (255, 255, 255)),
+        text('2P', [(72, 12, 113, 23)], 'heavy', 'edge', (235, 235, 235), (204, 204, 204), (57, 57, 57), screen='setup'),
+        rule((64, 18, 68, 19), (255, 255, 255)),
+        rule((116, 18, 128, 19), (255, 255, 255)),
+    ], [
+        ('64x12-4-0465c91a49cd099f', 0, 0), ('64x12-4-d3202adaf3d08d92', 64, 0), ('56x12-4-ccf87c2d008343ff', 128, 0),
+        ('64x12-4-b992ffcd289d80de', 64, 12),
+    ]),
+    # EXIT
+    block((180, 14), [
+        text('EXIT', [(60, 1, 120, 12)], 'sans', 'plain', (16, 16, 0), (8, 8, 0), (255, 255, 0), panel=(0, 0, 180, 14), screen='setup'),
+    ], [
+        ('64x14-4-0b766cd86f508913', 0, 0), ('64x14-4-56f8c5503802da18', 64, 0), ('52x14-4-0f2ff7f703cde6fc', 128, 0),
+    ]),
+    # OK
+    block((180, 14), [
+        text('OK', [(69, 2, 109, 13)], 'sans', 'plain', (16, 16, 41), (8, 8, 33), (165, 165, 255), panel=(0, 0, 180, 14), screen='setup'),
+    ], [
+        ('64x14-4-48f51f02cfa15b75', 0, 0), ('64x14-4-f0864d51a5984ec7', 64, 0), ('52x14-4-03c50b7a96728b71', 128, 0),
+    ]),
+    # N/A
+    block((180, 14), [
+        text('N/A', [(65, 2, 113, 13)], 'sans', 'plain', (33, 16, 0), (24, 8, 0), (255, 140, 57), panel=(0, 0, 180, 14), screen='setup'),
+    ], [
+        ('64x14-4-20cd2df4e6ed5d95', 0, 0), ('64x14-4-a67ca72bb3d95b12', 64, 0), ('52x14-4-50647ee38fd9ceb9', 128, 0),
+    ]),
+    # Memory Card / Key Configuration (the titles of the options' pages)
+    block((224, 36), [
+        text('Memory Card', [(0, 1, 168, 17)], 'sans', 'edge', (214, 214, 214), (217, 217, 217), (16, 16, 16), screen='setup'),
+        text('Key Configuration', [(0, 19, 221, 35)], 'sans', 'edge', (212, 212, 212), (204, 204, 204), (16, 16, 16), screen='setup'),
+    ], [
+        ('64x18-4-ff878969d06f89b0', 0, 0), ('64x18-4-52d90ef865968069', 64, 0), ('47x18-4-03ee51327fdc7e0c', 128, 0),
+        ('64x18-4-bcb71400bbab2454', 0, 18), ('64x18-4-f229fdd0f0cdc29e', 64, 18), ('64x18-4-ec0411ed33b2ee0c', 128, 18),
+        ('32x18-4-90e181f1c672190b', 192, 18),
+    ]),
+    # Option Menu
+    block((159, 18), [
+        text('Option Menu', [(0, 1, 159, 17)], 'sans', 'edge', (215, 215, 215), (205, 205, 205), (16, 16, 16), screen='setup'),
+    ], [
+        ('64x18-4-ac788bcdcc1dd241', 0, 0), ('64x18-4-002a50732d61a9fe', 64, 0), ('31x18-4-58f5806fa2349184', 128, 0),
+    ]),
+    # Color / B&W / On / Off / Load / Data
+    block((125, 48), [
+        text('Color', [(0, 1, 62, 12)], 'sans', 'edge', (205, 205, 205), (211, 211, 211), (90, 90, 90), screen='setup'),
+        text('B&W', [(62, 2, 118, 12)], 'sans', 'edge', (219, 219, 219), (209, 209, 209), (90, 90, 90), screen='setup'),
+        text('On', [(0, 17, 33, 29)], 'sans', 'edge', (215, 215, 215), (211, 211, 211), (90, 90, 90), screen='setup'),
+        text('Off', [(34, 17, 68, 29)], 'sans', 'edge', (211, 211, 211), (211, 211, 211), (74, 74, 74), screen='setup'),
+        text('Load', [(68, 17, 125, 28)], 'sans', 'edge', (211, 211, 211), (221, 221, 221), (24, 24, 24), screen='setup'),
+        text('Data', [(8, 33, 63, 44)], 'sans', 'edge', (193, 193, 193), (220, 220, 220), (41, 41, 41), screen='setup'),
+    ], [
+        ('62x16-4-a820ec12e48c77f2', 0, 0), ('63x16-4-e8e4bb9037c46983', 62, 0), ('33x16-4-cf67eedd75bfc77e', 0, 16),
+        ('34x16-4-cc2a0f58b5024f96', 34, 16), ('57x16-4-07609dd79f5369ef', 68, 16), ('63x16-4-6156a41631858050', 0, 32),
+    ]),
+    # Hard / Easy / Save
+    block((110, 32), [
+        text('Hard', [(0, 2, 53, 12)], 'sans', 'edge', (203, 203, 203), (205, 205, 205), (90, 90, 90), screen='setup'),
+        text('Easy', [(54, 2, 110, 15)], 'sans', 'edge', (212, 212, 212), (207, 207, 207), (90, 90, 90), screen='setup'),
+        text('Save', [(0, 17, 60, 28)], 'sans', 'edge', (211, 211, 211), (219, 219, 219), (24, 24, 24), screen='setup'),
+    ], [
+        ('53x16-4-287a7afc7edc240f', 0, 0), ('56x16-4-9d5137446aff9eea', 54, 0), ('60x16-4-bc9f394b3f14f0d5', 0, 16),
+    ]),
+    # Monitor / Difficulty / Music / Memory Card / Return / Key Configuration / Return to Top Menu (the options' rows) (the gold of the cursor's row is the block after)
+    block((250, 64), [
+        text('Monitor', [(0, 1, 83, 15)], 'sans', 'edge', (194, 194, 194), (193, 193, 193), (0, 0, 0), screen='setup'),
+        text('Difficulty', [(88, 1, 184, 15)], 'sans', 'edge', (195, 195, 195), (190, 190, 190), (0, 0, 0), screen='setup'),
+        text('Music', [(186, 1, 248, 15)], 'sans', 'edge', (197, 197, 197), (201, 201, 201), (0, 0, 0), screen='setup'),
+        text('Memory Card', [(0, 17, 153, 31)], 'sans', 'edge', (200, 200, 200), (183, 183, 183), (0, 0, 0), screen='setup'),
+        text('Return', [(158, 17, 235, 31)], 'sans', 'edge', (200, 200, 32), (210, 210, 34), (0, 0, 0), screen='setup'),
+        text('Key Configuration', [(0, 33, 207, 47)], 'sans', 'edge', (196, 196, 196), (186, 186, 186), (0, 0, 0), screen='setup'),
+        text('Return to Top Menu', [(0, 49, 228, 63)], 'sans', 'edge', (197, 197, 197), (190, 190, 190), (0, 0, 0), screen='setup'),
+    ], [
+        ('64x16-4-a86a418be9d2732c', 0, 0), ('23x16-4-041c0f6f42415309', 64, 0), ('64x16-4-100e99727fb11ec4', 88, 0),
+        ('34x16-4-2dad72e8201f3e9f', 152, 0), ('64x16-4-0bff80788e999ca3', 186, 0), ('64x16-4-495f3af606eae509', 0, 16),
+        ('64x16-4-3271d24f04acac66', 64, 16), ('29x16-4-1246602f5ff27773', 128, 16), ('64x16-4-99ebcf67e646125c', 158, 16),
+        ('13x16-4-c30efc501d9eafa9', 222, 16), ('64x16-4-18dd56da4ed184af', 0, 32), ('64x16-4-719e41ebd3b6fde7', 64, 32),
+        ('64x16-4-7c103b1e93b7e4bc', 128, 32), ('15x16-4-b44ec55feaa338fa', 192, 32), ('64x16-4-cc6fa51a3d8822b5', 0, 48),
+        ('64x16-4-5048e2490a8eab69', 64, 48), ('64x16-4-5f969d6bd8a922ed', 128, 48), ('36x16-4-fcadda4d73f9d14c', 192, 48),
+    ]),
+    # the options' rows under the cursor: the same in gold, a colour table
+    # of its own (not a tint of the white's: MODS.md, "Fades")
+    block((250, 64), [
+        text('Monitor', [(0, 1, 83, 15)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
+        text('Difficulty', [(88, 1, 184, 15)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
+        text('Music', [(186, 1, 248, 15)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
+        text('Memory Card', [(0, 17, 153, 31)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
+        text('Key Configuration', [(0, 33, 207, 47)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0),
+             screen='setup'),
+    ], [
+        ('64x16-4-3b0f25d6359c0665', 0, 0), ('23x16-4-4652ac5bbd75b640', 64, 0), ('64x16-4-4431ebfe224b040d', 88, 0),
+        ('34x16-4-7c53e12029f3f402', 152, 0), ('64x16-4-312e029678822e76', 186, 0), ('64x16-4-8b95d7e2821f4840', 0, 16),
+        ('64x16-4-bfde8f0f5842d18b', 64, 16), ('29x16-4-edd32694a9e11b86', 128, 16), ('64x16-4-5b57743b2bd0b352', 0, 32),
+        ('64x16-4-4503054e887c37da', 64, 32), ('64x16-4-44df40a645e99cf5', 128, 32), ('15x16-4-4c2ab6d4a30ece9f', 192, 32),
+    ]),
+    # -- end of the options' pages (setup) --
+    # -- the slash mode (slash) --
+    # YES / NO (the memory card's question)
+    block((81, 14), [
+        text('YES', [(0, 1, 40, 11)], 'sans', 'edge', (190, 190, 190), (193, 193, 193), (16, 16, 16), screen='slash'),
+        text('/', [(41, 1, 51, 11)], 'sans', 'edge', (222, 222, 222), (194, 194, 194), (16, 16, 16), screen='slash'),
+        text('NO', [(51, 1, 81, 11)], 'sans', 'edge', (207, 207, 207), (201, 201, 201), (16, 16, 16), screen='slash'),
+    ], [
+        ('40x14-4-09f1d315ab624090', 0, 0), ('10x14-4-504fadd3a436ea84', 40, 0), ('31x14-4-fd3f270ba61046bb', 50, 0),
+    ]),
+    # 100 Kills Time Trial Records (the slash mode's page and its best times)
+    block((256, 24), [
+        text('100 Kills Time Trial Records', [(0, 0, 256, 11), (0, 12, 93, 23)], 'serif', 'edge', (47, 192, 198),
+             (49, 197, 208), (24, 49, 49), screen='slash'),
+    ], [
+        ('64x12-4-7475da21699fbee3', 0, 0), ('64x12-4-e29b175b88bb00a9', 64, 0), ('64x12-4-9fdf3c160213bddf', 128, 0),
+        ('64x12-4-40cb6b2697874e26', 192, 0), ('64x12-4-441e19c78fd79c78', 0, 12), ('30x12-4-e28398c1c9f63437', 64, 12),
+    ]),
+    # Memory Card has been removed
+    block((204, 28), [
+        text('Memory Card has been', [(0, 1, 204, 13)], 'sans', 'edge', (185, 185, 185), (197, 197, 197), (16, 16, 16), screen='slash'),
+        text('removed', [(5, 15, 83, 25)], 'sans', 'edge', (201, 201, 201), (197, 197, 197), (16, 16, 16), screen='slash'),
+    ], [
+        ('64x14-4-8b3fc5cdc55f0af3', 0, 0), ('64x14-4-6837eacefa09a296', 64, 0), ('64x14-4-e24b401d4c379792', 128, 0),
+        ('12x14-4-1543c65b874eaeec', 192, 0), ('64x14-4-b04ca7e9138032bf', 0, 14), ('19x14-4-45cbe01ec5cccb8b', 64, 14),
+    ]),
+    # Save current data / on Memory Card?
+    block((157, 28), [
+        text('Save current data', [(0, 3, 157, 13)], 'sans', 'edge', (197, 197, 197), (197, 197, 197), (16, 16, 16), screen='slash'),
+        text('on Memory Card?', [(0, 15, 156, 27)], 'sans', 'edge', (187, 187, 187), (171, 171, 171), (16, 16, 16), screen='slash'),
+    ], [
+        ('64x28-4-3caed2584a2bf914', 0, 0), ('64x28-4-151dad2d8efc7559', 64, 0), ('29x28-4-a6235fb322ea65ad', 128, 0),
+    ]),
+    # 100 Kills Time Trial (the slash mode's banner)
+    block((256, 32), [
+        text('100 Kills Time Trial', [(40, 12, 215, 20)], 'sans', 'edge', (229, 229, 229), (214, 214, 214), (82, 82, 82), screen='slash'),
+    ], [
+        ('64x32-4-8f9d6157aab5cce8', 0, 0), ('64x32-4-bc5055557d06439a', 64, 0), ('64x32-4-75ec75120d71cb69', 128, 0),
+        ('64x32-4-8ebb0b91991880d2', 192, 0),
+    ]),
+    # Slash Mode (the top menu's caption)
+    block((136, 14), [
+        text('Slash Mode', [(0, 1, 136, 11)], 'thin', **CAPTION),
+    ], [
+        ('64x14-4-7a696e02dc59d94c', 0, 0), ('64x14-4-4606258b6b108b3c', 64, 0), ('8x14-4-603f58428c63ed23', 128, 0),
+    ]),
+    # Slash Mode (the slash mode's page)
+    block((148, 18), [
+        text('Slash Mode', [(0, 1, 148, 14)], 'sans', 'edge', (221, 221, 221), (222, 222, 222), (16, 16, 16), screen='slash'),
+    ], [
+        ('64x18-4-a1e228ce29098581', 0, 0), ('64x18-4-21f541176cc93486', 64, 0), ('20x18-4-d3cac6b3a70f7edc', 128, 0),
+    ]),
+    # 56789: the fight's digits after 01234 (above), its clock's in the
+    # slash mode
+    block((95, 14), [
+        text('56789', [(0, 0, 95, 14)], 'heavy', 'edge', (255, 255, 255), (255, 255, 255), (0, 0, 0)),
+    ], [
+        ('19x14-4-0cd31b7435567903', 0, 0), ('19x14-4-8499a3e9243f1834', 19, 0), ('19x14-4-e2eb4e5d8e909083', 38, 0),
+        ('19x14-4-3a751eb7f2eceb19', 57, 0), ('19x14-4-5b8551da4c9b334a', 76, 0),
+    ]),
+    # -- end of the slash mode (slash) --
+    # -- the staff roll (ending-0) --
+    # Executive Producer ... Programmer
+    block((252, 176), [
+        text('Executive', [(0, 2, 128, 13)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Producer', [(10, 18, 130, 29)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Tetsuo', [(0, 34, 81, 45)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Mizuno', [(92, 34, 179, 45)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Tomoyuki', [(0, 50, 116, 64)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Takechi', [(125, 50, 217, 61)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Hironobu', [(0, 66, 110, 77)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Sakaguchi', [(120, 66, 248, 80)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Hisashi', [(0, 82, 88, 93)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Suzuki', [(99, 82, 180, 93)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Tetsuhisa', [(0, 98, 117, 109)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Tsuruzono', [(125, 98, 252, 109)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Producer', [(0, 114, 120, 125)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Director', [(121, 114, 228, 125)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('KUNIHIKO', [(0, 131, 135, 142)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('NAKATA', [(16, 147, 121, 158)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('Programmer', [(0, 162, 167, 176)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+    ], [
+        ('128x16-4-e0516368bdeaa88e', 0, 0), ('130x16-4-93cc0603a2cb5228', 0, 16), ('81x16-4-77d4b7dcb5b66ec1', 0, 32),
+        ('87x16-4-41c742224018bf22', 92, 32), ('116x16-4-d4b890c389c3b25e', 0, 48), ('93x16-4-2d50538c92cb03ca', 124, 48),
+        ('110x16-4-6862afabca4c2fd5', 0, 64), ('128x16-4-421a6a2c11cce2f4', 120, 64), ('88x16-4-8278b596f06c1f4d', 0, 80),
+        ('82x16-4-313896d455b77deb', 98, 80), ('118x16-4-79ded1846432ec9c', 0, 96), ('128x16-4-b62818237fbe6ae2', 124, 96),
+        ('120x16-4-943bbb627ca6378c', 0, 112), ('109x16-4-dd01831fcfafe432', 120, 112), ('136x16-4-7e9a992615b51a79', 0, 128),
+        ('105x16-4-6af23f2edd4d588b', 16, 144), ('167x16-4-a5381dedd84c011f', 0, 160),
+    ]),
+    # NAOTAKA / MASAKI
+    block((129, 32), [
+        text('NAOTAKA', [(0, 2, 129, 13)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('MASAKI', [(0, 18, 107, 29)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+    ], [
+        ('129x16-4-417bf02c89b3e838', 0, 0), ('107x16-4-572d08beaa91bb29', 0, 16),
+    ]),
+    # UEDA
+    block((74, 16), [
+        text('UEDA', [(0, 2, 73, 13)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+    ], [
+        ('74x16-4-9c9d25e4cf1fd5ce', 0, 0),
+    ]),
+    # Kazuhiro Hasegawa ... and all staffs of (the logo under it is the art's)
+    block((248, 64), [
+        text('Kazuhiro', [(0, 1, 107, 12)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Hasegawa', [(118, 1, 247, 15)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Takeshi', [(0, 18, 93, 29)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Fusano', [(106, 18, 195, 29)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Kiyoko', [(0, 33, 82, 47)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Maeda', [(92, 33, 175, 44)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('and all staffs of', [(0, 50, 186, 62)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+    ], [
+        ('107x16-4-f64a8060d5d4c94d', 0, 0), ('130x16-4-669a4c85a762c454', 118, 0), ('93x16-4-f6656cf9d1877053', 0, 16),
+        ('91x16-4-6c83a808be6e6ac0', 104, 16), ('82x16-4-3e02b76be410b041', 0, 32), ('83x16-4-4d0a24cc3da2a53d', 92, 32),
+        ('186x16-4-4efe64f7ba9e2cea', 0, 48),
+    ]),
+    # BUSHIDO BLADE 2 STAFF
+    block((255, 32), [
+        text('BUSHIDO BLADE 2', [(0, 2, 255, 13)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('STAFF', [(9, 18, 96, 29)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+    ], [
+        ('255x16-4-cddd647a4231b525', 0, 0), ('96x16-4-18dbfc1312fdd491', 0, 16),
+    ]),
+    # Junya Kuroda
+    block((176, 16), [
+        text('Junya', [(0, 1, 79, 15)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Kuroda', [(81, 1, 175, 13)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+    ], [
+        ('80x16-4-a3cbb861506ed5fa', 0, 0), ('96x16-4-13d9c48f4b0163b6', 80, 0),
+    ]),
+    # YAMASHITA ... Motion Capturing
+    block((255, 256), [
+        text('YAMASHITA', [(10, 2, 163, 13)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('Stage Design', [(0, 18, 183, 32)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('HIROAKI', [(0, 34, 115, 45)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('NAKAGAWA', [(16, 50, 174, 61)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('TAKAFUMI', [(0, 66, 138, 77)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('KAGAYA', [(146, 66, 255, 77)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('ETSUKO', [(0, 82, 114, 93)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('YAMADA', [(133, 82, 244, 93)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('Character Design', [(0, 98, 230, 112)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('NAHO', [(0, 114, 80, 125)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('KODAMA', [(96, 114, 215, 125)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('2D Design', [(1, 130, 137, 144)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('MASATAKA', [(1, 146, 146, 157)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('AOCHI', [(161, 146, 251, 157)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('Motion Creating', [(0, 162, 212, 176)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('MASAKAZU', [(0, 178, 154, 189)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('TAGAWA', [(10, 194, 123, 205)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('Motion Control', [(0, 210, 206, 221)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('KYOKO', [(0, 226, 99, 237)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('TANGE', [(117, 226, 210, 237)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('Motion Capturing', [(1, 242, 239, 256)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+    ], [
+        ('153x16-4-0a105587dce4225a', 10, 0), ('183x16-4-7612a20293bb71d5', 0, 16), ('115x16-4-58d3a915d268a3d9', 0, 32),
+        ('158x16-4-82cfd502f37a79b3', 16, 48), ('138x16-4-ce34020188bfc4a5', 0, 64), ('109x16-4-1eff8ca3b61f10d0', 146, 64),
+        ('114x16-4-ccd3d5b97b0cf519', 0, 80), ('112x16-4-d297f27b7c85cb0f', 132, 80), ('230x16-4-676b4840c4839b67', 0, 96),
+        ('81x16-4-212beaadabe8755f', 0, 112), ('119x16-4-fdf2060dc1a41378', 96, 112), ('137x16-4-5c9e1db8a4511507', 0, 128),
+        ('147x16-4-aff13d7a267c0a0d', 0, 144), ('92x16-4-4d92157f78073618', 160, 144), ('212x16-4-213daf8aeb14ef7d', 0, 160),
+        ('154x16-4-02a88465d71699a8', 0, 176), ('116x16-4-2265f2713fe495a3', 8, 192), ('207x16-4-cc030e5e4fdfaab5', 0, 208),
+        ('100x16-4-5f11f6130cb39c64', 0, 224), ('95x16-4-44d044f63299368a', 116, 224), ('239x16-4-f4995fde0a85fbbe', 0, 240),
+    ]),
+    # TETSUYA OKAMOTO ... Teruaki
+    block((168, 128), [
+        text('TETSUYA', [(1, 2, 124, 13)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('OKAMOTO', [(17, 18, 158, 29)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('Data Control', [(0, 34, 168, 45)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('TOMOHIRO', [(0, 50, 151, 61)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('MARUYAMA', [(8, 66, 166, 77)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), slant=0.3, screen='staff'),
+        text('Music', [(0, 82, 77, 93)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Ryuji', [(80, 82, 139, 96)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Sound', [(0, 98, 84, 109)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Teruaki', [(0, 114, 89, 125)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+    ], [
+        ('124x16-4-6149e3a312a45821', 0, 0), ('142x16-4-dfb135950ab6dfde', 16, 16), ('168x16-4-a1cdb1a785a57bdf', 0, 32),
+        ('151x16-4-3fe785b9e3cdddda', 0, 48), ('158x16-4-3be2f4b98d00a4d9', 8, 64), ('77x16-4-c920b795849028fe', 0, 80),
+        ('59x16-4-6f5a935db480767f', 80, 82), ('84x16-4-edc596616607d5ea', 0, 96), ('89x16-4-df661326a3ceb8b0', 0, 112),
+    ]),
+    # Sasai
+    block((68, 16), [
+        text('Sasai', [(1, 0, 68, 11)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+    ], [
+        ('68x16-4-62f7ee36d54ee5d3', 0, 0),
+    ]),
+    # Sugawara
+    block((125, 16), [
+        text('Sugawara', [(1, 2, 125, 16)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+    ], [
+        ('125x16-4-57ed9680e76d8721', 0, 0),
+    ]),
+    # Opening Movie ... Mari Nishikawa (on black)
+    block((255, 256), [
+        text('Opening Movie', [(0, 1, 200, 15)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 0, 200, 16), screen='staff'),
+        text('Digital Media Lab.', [(0, 17, 236, 31)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 16, 236, 32), screen='staff'),
+        rule((0, 48, 19, 64), (0, 0, 0)),
+        text('Localization Director', [(0, 33, 255, 44), (0, 49, 19, 60)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 32, 255, 48), screen='staff'),
+        text('Ichiro Nonaka (S.C.L', [(0, 64, 255, 78)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 64, 255, 80), screen='staff'),
+        text('SQUARE SOFT,', [(0, 80, 249, 96)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 80, 255, 96), screen='staff'),
+        rule((110, 48, 191, 64), (0, 0, 0)),
+        text('Localization Management', [(0, 97, 255, 110), (110, 49, 191, 62)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 96, 255, 112), screen='staff'),
+        text('Masahiro Nakajima', [(0, 113, 236, 126)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 112, 236, 128), screen='staff'),
+        text('Randall Fujimoto', [(0, 129, 206, 142)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 128, 206, 144), screen='staff'),
+        rule((0, 160, 106, 176), (0, 0, 0)),
+        text('Localization Project Leader', [(0, 145, 255, 158), (0, 161, 106, 174)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 144, 255, 160), screen='staff'),
+        text('Yutaka Sano', [(0, 177, 157, 188)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 176, 157, 192), screen='staff'),
+        rule((158, 176, 214, 192), (0, 0, 0)),
+        text('Localization Specialists', [(0, 193, 255, 207), (160, 177, 214, 191)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 192, 255, 208), screen='staff'),
+        text('Naomi Cooper', [(0, 208, 176, 222)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 208, 176, 224), screen='staff'),
+        text('Sammy Matsushima', [(0, 225, 252, 239)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 224, 252, 240), screen='staff'),
+        text('Mari Nishikawa', [(0, 241, 186, 252)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 240, 186, 256), screen='staff'),
+        text('.)', [(20, 48, 38, 62)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(20, 48, 38, 64), screen='staff'),
+        text('INC.', [(45, 48, 109, 64)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(38, 48, 109, 64), screen='staff'),
+    ], [
+        ('200x16-4-1c362e6d6759365f', 0, 0), ('236x16-4-a521391922bdde70', 0, 16), ('255x16-4-433c98e7d333680a', 0, 32),
+        ('19x16-4-34c3768b47434c86', 0, 48), ('18x16-4-42e4c799d4d353c2', 20, 48), ('71x16-4-e47361b18e92d102', 38, 48),
+        ('81x16-4-88695c90c0b5f9d4', 110, 48), ('255x16-4-ea8cc2def5458582', 0, 64), ('255x16-4-bd62e4af0f6ee9e0', 0, 80),
+        ('255x16-4-4c7fd4c694a7595a', 0, 96), ('236x16-4-0a0574d4f6cd15ea', 0, 112), ('206x16-4-b37479f2610ca273', 0, 128),
+        ('255x16-4-ec4f27f6e7e83982', 0, 144), ('106x16-4-018cda0506e6ac9b', 0, 160), ('157x16-4-dd3a00eaeee20d7e', 0, 176),
+        ('56x16-4-f24c7c724e4f1e4d', 158, 176), ('255x16-4-35b37a8524b3c088', 0, 192), ('176x16-4-32e175022d11d5ac', 0, 208),
+        ('252x16-4-503c8f51d59a9e2f', 0, 224), ('186x16-4-b24a8c89990c0c57', 0, 240),
+    ]),
+    # Associate Producer ... Jonathan Williams (on black)
+    block((255, 64), [
+        rule((0, 16, 7, 32), (0, 0, 0)),
+        text('Associate Producer', [(0, 1, 255, 12), (0, 17, 7, 28)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 0, 255, 16), screen='staff'),
+        text('Akihito Kozu', [(8, 17, 162, 28)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(8, 16, 162, 32), screen='staff'),
+        text('QA Manager', [(0, 33, 162, 47)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 32, 162, 48), screen='staff'),
+        text('Jonathan Williams', [(0, 49, 226, 61)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 48, 226, 64), screen='staff'),
+    ], [
+        ('255x16-4-a6ea6a1c9916b8ea', 0, 0), ('7x16-4-5b8f2865ca1a812b', 0, 16), ('154x16-4-9a6ac2946994b5ea', 8, 16),
+        ('162x16-4-92978efaea8bd020', 0, 32), ('226x16-4-432d334f5f7d4762', 0, 48),
+    ]),
+    # Special Thanks to ...
+    block((249, 112), [
+        text('Special Thanks to', [(1, 2, 236, 16)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Nobuyasu', [(0, 18, 123, 32)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Asano', [(131, 18, 209, 29)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Takashi', [(0, 34, 93, 45)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Hashizume', [(112, 34, 249, 45)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Tsutomu', [(0, 50, 104, 61)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Mawatari', [(123, 50, 233, 61)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Shingo', [(0, 66, 85, 80)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Akiyama', [(100, 66, 207, 80)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Takeshi', [(1, 82, 94, 93)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Takenaka', [(110, 82, 229, 93)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Toshiyuki', [(0, 98, 113, 112)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+        text('Saotome', [(131, 98, 242, 109)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), screen='staff'),
+    ], [
+        ('236x16-4-dbbc188eacbcb2db', 0, 0), ('123x16-4-498553d44ea3f939', 0, 16), ('79x16-4-edd088ffea0da0cf', 130, 16),
+        ('93x16-4-8ce1946da337af04', 0, 32), ('137x16-4-82309a5a5c733287', 112, 32), ('104x16-4-7c162bd4aa49cb36', 0, 48),
+        ('111x16-4-244a98db8ade1134', 122, 48), ('85x16-4-d1e83e988ffa8da2', 0, 64), ('107x16-4-d72da315c36a0073', 100, 64),
+        ('94x16-4-50097f24258d3604', 0, 80), ('119x16-4-7b49f1d95992e8de', 110, 80), ('113x16-4-8bc1c5db0ab4be29', 0, 96),
+        ('112x16-4-509fa7bdea75227e', 130, 96),
+    ]),
+    # -- end of the staff roll (ending-0) --
+    # -- a fight begun again (story) --
+    # REMATCH (under the story's 再戦, a fight begun again), and the same
+    # pieces through the colour table of a step of its fade, which is one
+    # step from the first's
+    block((90, 10), [
+        text('REMATCH', [(0, 0, 90, 9)], 'sans', 'edge', (212, 212, 212), (215, 215, 215), (0, 0, 0), screen='story'),
+    ], [
+        ('64x10-4-5261391d6cb0457f', 0, 0), ('26x10-4-24e3b89cd88ce67d', 64, 0),
+        ('64x10-4-bf5f976697e035d8', 0, 0), ('26x10-4-eb04d7182efe1d56', 64, 0),
+    ]),
+    # -- end of a fight begun again (story) --
 ]
 
 # The built-in font's characters: each key, eight by eight and seven by
@@ -1191,8 +1574,9 @@ def strip_size(item):
 
 def kind(item):
     """Texts of one kind are drawn one size: one face, one height, and
-    capitals alone or not (the fighters' names, the menus' lines)."""
-    return item['font'], strip_size(item)[3], item['words'].isupper(), item['aspect']
+    capitals alone or not (the fighters' names, the menus' lines), of one
+    screen where a text says its screen."""
+    return item['font'], strip_size(item)[3], item['words'].isupper(), item['aspect'], item['screen'], item['slant']
 
 
 def kind_sizes():
@@ -1225,8 +1609,15 @@ def text_strip(item):
     # a text wrapped over rectangles, or a line of the menus the game cuts
     # into pieces at fixed places (LINES), reaches the ends of its strip
     fill = len(item['boxes']) > 1 or any(item is t for entry in LINES for t in entry['texts'])
-    letters = line_mask(item['words'], FONTS[item['font']], box_w, box_h, narrowed, item['aspect'],
+    # a leaning text is fitted to the width its lean leaves, then leant
+    lean = int(round(item['slant'] * box_h))
+    letters = line_mask(item['words'], FONTS[item['font']], box_w - lean, box_h, narrowed, item['aspect'],
                         KIND_SIZES.get(kind(item)), fill)
+    if lean:
+        upright = Image.new('L', (box_w, box_h), 0)
+        upright.paste(letters, (0, 0))
+        letters = upright.transform((box_w, box_h), Image.AFFINE,
+                                    (1, lean / float(box_h), -lean, 0, 1, 0), resample=Image.BICUBIC)
     if item['font'] in THICKENED:
         letters = letters.filter(ImageFilter.MaxFilter(THICKEN_PIXELS * 2 + 1))
     inset = room // 2 if look == 'edge' else 0

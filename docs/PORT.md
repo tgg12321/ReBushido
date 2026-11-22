@@ -4726,6 +4726,18 @@ the drawing thread, 1.5 to 14 ms each, and `port_bench.py` found the
 fight's first blank at 20 to 30 ms against 4 before (its card part,
 2026-11-20). The card is drawn with the display off and needs only that.
 
+The story's stage card is not: it is drawn with the display on, twice, so
+that it is in both buffers, and then left on show while the stage loads,
+the route's marks drawn into it once each (`story_StageCardUpdate`,
+`disp_DrawLoadingScreen`). Read beside the game, the art's map and picture
+came after the last frame that drew them, and the card kept the game's
+own textures in the window (the provers, which read at once, never showed
+it). So the game says while it draws a picture it will keep on show
+(`port_RemasterKeepsPicture`, `port_remaster.h`: the card's two frames and
+each call that draws a mark), and a primitive drawn then has its picture
+read at once too (`port_RemasterIsPictureKept` in `port_GlReplacementOf`):
+the card's few pictures, once each, while the stage loads.
+
 **The stage's pages looked up again for nothing.** A page of the stage
 is looked up again (its key over all of its 65,536 texels) when the
 game writes over it. Two things that put video memory back as it was

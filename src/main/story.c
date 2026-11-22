@@ -378,10 +378,18 @@ void story_StageCardInit(void) {
 void story_StageCardUpdate(void) {
     g_sys_screen_frames++;
     if (g_sys_screen_frames < 3) {
+#if RB_PORT
+        /* the card stays on show while the stage loads: the remastered
+         * picture reads a mod's pictures of it at once */
+        port_RemasterKeepsPicture(TRUE);
+#endif
         g_disp_prim_cursor += hud_DrawStageCard((s32)g_disp_prim_cursor, 1) / 4;
     }
     if (g_sys_screen_frames == 3) {
         DrawSync(0);
+#if RB_PORT
+        port_RemasterKeepsPicture(FALSE);
+#endif
         story_LoadNextStageCard(g_story_script_cursor);
         /* longer than any wait: the first mark is drawn at once */
         g_story_route_timer = 500;

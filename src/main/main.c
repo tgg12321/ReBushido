@@ -849,8 +849,16 @@ void disp_DrawLoadingScreen(void) {
         break;
     }
     }
+#if RB_PORT
+    /* a mark of the stage card stays in the buffer, drawn once: the
+     * remastered picture reads a mod's picture of it at once */
+    port_RemasterKeepsPicture(screen == LOADING_SCREEN_STAGE_CARD);
+#endif
     DrawOTag(g_disp_ot + 1);
     DrawSync(0);
+#if RB_PORT
+    port_RemasterKeepsPicture(FALSE);
+#endif
 }
 
 /* The whole of video memory's display area, for clearing both buffers. */
