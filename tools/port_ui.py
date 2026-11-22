@@ -4,7 +4,8 @@ menus"): the lettering of the game's 2D screens drawn again in a font,
 sharp at any size -- the pause menu, the menu after a fight, the top menu's
 captions, the select screens, the group battle's page, the training mode's
 page, the memory card's messages, the story's narration, the stage cards,
-the results, and the built-in font of ReBushido's options page.
+the results, the options' pages, the slash mode's, the staff roll, and the
+built-in font of ReBushido's options page.
 
     python tools/port_ui.py                  write src/port/mods/ui/
     python tools/port_ui.py --check          exit 1 if what is there is not
@@ -1169,11 +1170,11 @@ BLOCKS = [
     ]),
     # Color / B&W / On / Off / Load / Data
     block((125, 48), [
-        text('Color', [(0, 1, 52, 12)], 'sans', 'edge', (205, 205, 205), (211, 211, 211), (90, 90, 90), screen='setup'),
-        text('B&W', [(54, 1, 118, 12)], 'sans', 'edge', (219, 219, 219), (209, 209, 209), (90, 90, 90), screen='setup'),
-        text('On', [(0, 17, 32, 29)], 'sans', 'edge', (215, 215, 215), (211, 211, 211), (90, 90, 90), screen='setup'),
-        text('Off', [(32, 17, 67, 29)], 'sans', 'edge', (211, 211, 211), (211, 211, 211), (74, 74, 74), screen='setup'),
-        text('Load', [(67, 17, 125, 29)], 'sans', 'edge', (211, 211, 211), (221, 221, 221), (24, 24, 24), screen='setup'),
+        text('Color', [(0, 1, 62, 12)], 'sans', 'edge', (205, 205, 205), (211, 211, 211), (90, 90, 90), screen='setup'),
+        text('B&W', [(62, 2, 118, 12)], 'sans', 'edge', (219, 219, 219), (209, 209, 209), (90, 90, 90), screen='setup'),
+        text('On', [(0, 17, 33, 29)], 'sans', 'edge', (215, 215, 215), (211, 211, 211), (90, 90, 90), screen='setup'),
+        text('Off', [(34, 17, 68, 29)], 'sans', 'edge', (211, 211, 211), (211, 211, 211), (74, 74, 74), screen='setup'),
+        text('Load', [(68, 17, 125, 28)], 'sans', 'edge', (211, 211, 211), (221, 221, 221), (24, 24, 24), screen='setup'),
         text('Data', [(8, 33, 63, 44)], 'sans', 'edge', (193, 193, 193), (220, 220, 220), (41, 41, 41), screen='setup'),
     ], [
         ('62x16-4-a820ec12e48c77f2', 0, 0), ('63x16-4-e8e4bb9037c46983', 62, 0), ('33x16-4-cf67eedd75bfc77e', 0, 16),
@@ -1181,7 +1182,7 @@ BLOCKS = [
     ]),
     # Hard / Easy / Save
     block((110, 32), [
-        text('Hard', [(0, 2, 53, 15)], 'sans', 'edge', (203, 203, 203), (205, 205, 205), (90, 90, 90), screen='setup'),
+        text('Hard', [(0, 2, 53, 12)], 'sans', 'edge', (203, 203, 203), (205, 205, 205), (90, 90, 90), screen='setup'),
         text('Easy', [(54, 2, 110, 15)], 'sans', 'edge', (212, 212, 212), (207, 207, 207), (90, 90, 90), screen='setup'),
         text('Save', [(0, 17, 60, 28)], 'sans', 'edge', (211, 211, 211), (219, 219, 219), (24, 24, 24), screen='setup'),
     ], [
@@ -1189,11 +1190,11 @@ BLOCKS = [
     ]),
     # Monitor / Difficulty / Music / Memory Card / Return / Key Configuration / Return to Top Menu (the options' rows) (the gold of the cursor's row is the block after)
     block((250, 64), [
-        text('Monitor', [(0, 1, 85, 15)], 'sans', 'edge', (194, 194, 194), (193, 193, 193), (0, 0, 0), screen='setup'),
-        text('Difficulty', [(85, 1, 185, 15)], 'sans', 'edge', (195, 195, 195), (190, 190, 190), (0, 0, 0), screen='setup'),
+        text('Monitor', [(0, 1, 83, 15)], 'sans', 'edge', (194, 194, 194), (193, 193, 193), (0, 0, 0), screen='setup'),
+        text('Difficulty', [(88, 1, 184, 15)], 'sans', 'edge', (195, 195, 195), (190, 190, 190), (0, 0, 0), screen='setup'),
         text('Music', [(185, 1, 250, 15)], 'sans', 'edge', (197, 197, 197), (201, 201, 201), (0, 0, 0), screen='setup'),
-        text('Memory Card', [(0, 17, 155, 31)], 'sans', 'edge', (200, 200, 200), (183, 183, 183), (0, 0, 0), screen='setup'),
-        text('Return', [(155, 17, 235, 31)], 'sans', 'edge', (200, 200, 32), (210, 210, 34), (0, 0, 0), screen='setup'),
+        text('Memory Card', [(0, 17, 153, 31)], 'sans', 'edge', (200, 200, 200), (183, 183, 183), (0, 0, 0), screen='setup'),
+        text('Return', [(158, 17, 235, 31)], 'sans', 'edge', (200, 200, 32), (210, 210, 34), (0, 0, 0), screen='setup'),
         text('Key Configuration', [(0, 33, 207, 47)], 'sans', 'edge', (196, 196, 196), (186, 186, 186), (0, 0, 0), screen='setup'),
         text('Return to Top Menu', [(0, 49, 228, 63)], 'sans', 'edge', (197, 197, 197), (190, 190, 190), (0, 0, 0), screen='setup'),
     ], [
@@ -1207,10 +1208,10 @@ BLOCKS = [
     # the options' rows under the cursor: the same in gold, a colour table
     # of its own (not a tint of the white's: MODS.md, "Fades")
     block((250, 64), [
-        text('Monitor', [(0, 1, 85, 15)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
-        text('Difficulty', [(85, 1, 185, 15)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
+        text('Monitor', [(0, 1, 83, 15)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
+        text('Difficulty', [(88, 1, 184, 15)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
         text('Music', [(185, 1, 250, 15)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
-        text('Memory Card', [(0, 17, 155, 31)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
+        text('Memory Card', [(0, 17, 153, 31)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
         text('Key Configuration', [(0, 33, 207, 47)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0),
              screen='setup'),
     ], [

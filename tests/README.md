@@ -74,7 +74,12 @@ python3 tests/run.py --rebushido -v rebushido/settings # one, showing what it pr
   menus' table (`tools/port_ui.py`) to the group battle card's names in
   `hud.c`: every one of the twenty has a block cut as the card cuts it,
   and a picture in `src/port/mods/ui/` for each piece; read from the
-  source alone, with no Pillow.
+  source alone, with no Pillow. `rebushido/ui_screens` holds the table's
+  sections of the screens the art's tours reached last (the options'
+  pages, the slash mode, the staff roll, REMATCH): every piece inside its
+  block with its picture, of one block alone and holding letters, a rule
+  or a panel; the staff roll a name a piece; the cursor's gold cut where
+  the white is.
 - A test of one of ReBushido's fixes is `tests/rebushido/fix_NAME.c`: it
   includes the game's file that has the fix and runs the function with
   the "Bugfixes" setting off, for what the original does, and on

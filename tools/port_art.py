@@ -7,6 +7,7 @@ drawn again at a higher resolution, for the remastered picture
 
     python3 tools/port_art.py dump  [--image CUE] [--dump tmp/art/dump]
                                     [--program build/port-gl/rebushido-gl]
+                                    [--modes a,b] [--logs FOLDER]
     python  tools/port_art.py build [--dump tmp/art/dump ...] [--out tmp/mods/art]
                                     [--scale 6] [--keys KEY,...] [--upscaler FOLDER|off]
     python3 tools/port_art.py all   (both, where one Python has numpy)
@@ -14,7 +15,8 @@ drawn again at a higher resolution, for the remastered picture
 `dump` plays the game with no window on the GL prover (tools/port_gl_build.py;
 Linux, or WSL), from the boot through each mode of the top menu, its select
 screens, a fight with its pause menu, the fight's end and the menus after it,
-and versus mode's stage pages walked across, all three, writing every texture
+versus mode's stage pages walked across, all three, the options' pages, the
+slash mode won and the ten endings (MODES; --modes for some), writing every texture
 the game draws (`--dump-textures`) into one folder, and where each was in
 video memory into its where.txt. A player who would rather play through the
 screens themselves runs the game with `--dump-textures FOLDER` and gives that

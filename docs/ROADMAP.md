@@ -240,10 +240,22 @@ the stage").
     screens and the group battle's, the stage card, the results, and
     ReBushido's options page's characters; and the title picture after
     the opening movie is the art mod's, at the window's resolution
-    ([`MODS.md`](MODS.md), "The sharp menus", "The title picture"). Left:
-    the lettering of screens no dump has reached (the setup mode's
-    pages, the slash mode's, the endings), each a block of
-    `tools/port_ui.py`'s table away.
+    ([`MODS.md`](MODS.md), "The sharp menus", "The title picture").
+    The screens no dump had reached are toured now (2026-11-22): the
+    options' pages, the slash mode won and the ten endings
+    (`tools/port_art.py`), so the art has them, and their lettering is
+    in the font -- the options, the memory card's page and the key
+    configuration, the slash mode's page and records, the memory card's
+    question, the staff roll (its italic leant), REMATCH, the fight's
+    digits 5 to 9; the story's stage card shows the art's map in the
+    window (its pictures read at once); and `tools/port_coverage.py`
+    lists what no mod replaces of what the tours draw (MODS.md, "What is
+    covered"). Left: the screens no tour reaches (a group battle's
+    result, a run against the CPU or a story played to its end, the
+    memory card's pages with a card in), and lettering that stays the
+    art's: the endings' pictures and the Japanese titles (the port's cut
+    of the face has no Japanese), the best times' digits (the tours draw
+    only some of the ten).
 12. **Optimisation**, for a smooth and seamless game.
     Begun on the port's window ([`PORT.md`](PORT.md), "Where the time
     goes"): `--profile` says where each blank's time goes; the video

@@ -522,8 +522,11 @@ says otherwise; its order is -100, as the English menu's.
 | The group battle | its page (Group Battle Mode, Number of Entries, Match, Time Limit, Start, Return to Top Menu, and the values: 1 point, 3 point, 3 4 5, 60 120 sec); the teams' names; 1ST 2ND 3RD in each colour; the fighters and the weapons in the list's black and the sides' blue and red, and its small Select Weapon; the card before the battle and after each (the sides, 1ST 2ND 3RD, and every fighter's name, the twenty of the game's sheet of them) -- each name in each colour that one group battle's picks showed (a name in a colour no run has shown yet is still the game's); WINS, KILLS |
 | The training mode | Training Mode, Practice, Practice Round, Return to Top Menu and the six lines under them; the Select button's page (Attack, Dash) |
 | The story | the narration that opens it (Off the sea of Setonaikai ...); the stage card (Next Battle Stage, Battle Stage, Outside the Meikyokan) |
-| The memory card | Checking Memory Card, Please wait, Do not remove Memory Card |
-| Elsewhere | the fight's digits 0 to 4, on and off, Frontal and Reverse |
+| The memory card | Checking Memory Card, Please wait, Do not remove Memory Card; Memory Card has been removed; Save current data on Memory Card? YES / NO |
+| The options (setup) | Option Menu and its rows (Monitor, Difficulty, Music, Memory Card, Key Configuration, Return to Top Menu) in white and in the cursor's gold, and their choices (Color, B&W, Hard, Easy, On, Off); the memory card's page (Memory Card, Load Data, Save Data, Return); the key configuration (Key Configuration, 1P and 2P with their rules, Frontal Attack, Reverse Attack, Change Stance, Default, Custom, and EXIT, N/A and OK on their panels) |
+| The slash mode | Slash Mode, the top menu's caption and its page's title; 100 Kills Time Trial Records; its banner, 100 Kills Time Trial |
+| The staff roll | every heading and name of it, Square's upright and the Lightweight staff's leant as the game's italic is (the face has no italic of its own: `text(slant=)`) |
+| Elsewhere | the fight's digits 0 to 9 (5 to 9 the slash mode's clock reaches), on and off, Frontal and Reverse; REMATCH, under the story's 再戦 |
 | ReBushido's options page | every character of the built-in font (`font.c`), eight by eight and the seven by seven its larger text reads |
 
 **How it is made.** `python tools/port_ui.py` draws the pictures into
@@ -566,6 +569,23 @@ first lines (the pause menu's, the captions', the titles') `--measure
 DIR...` prints again. Like the English menu's, the pictures are the
 project's own, kept in the repository: no pixel of the game's is in them.
 
+The screens the tours reached last (the options' pages, the slash mode,
+the staff roll; "The art mod", below) are sections of the table of their
+own, and their texts say their screen (`text(screen=)`), so that a kind
+of theirs is one size among themselves and the sizes of the screens before
+are as they were. A row the cursor is on in the options is drawn through
+a colour table of its own, gold, not a tint of the white one's (which the
+program would draw from the white picture: "Fades"), so its gold is a block
+of its own, cut where the white is. What stays the art's: lettering that is
+part of a picture (the endings' pictures, whose Japanese characters the
+port's cut of the face has not, and the staff roll's logos); the
+Japanese titles (再戦, the HUD's 時間); and the best times' digits, of
+which the tours draw only those of the times they show, so that a time
+lettered from both would mix two faces. `tests/rebushido/ui_screens.py`
+holds those sections: every piece inside its block, with a picture, of one
+block alone, holding letters, a rule or a panel; the staff roll's pieces a
+name each, whole; the gold cut where the white is.
+
 The built-in font's characters are a texture each, the key of each worked
 out from the font's picture in `font.c` (four characters share a place in
 it, each through its own colour table): a character in Shippori Mincho's
@@ -584,12 +604,19 @@ python tools/port_art.py build                                          # Window
 ```
 
 `dump` plays the game with no window on the GL prover
-(`python3 tools/port_gl_build.py`), eight runs at once: from the boot
-through each mode of the top menu, its select screens, a fight with its
-pause menu, the fight's end and the menus after it, and versus mode's
-stage pages walked across, left to the first and right to the third (the
-other runs take the page they open on), every texture written into
-`tmp/art/dump/` with no mod in the way (about 1,370 of them), and where
+(`python3 tools/port_gl_build.py`), eight runs at once, seventeen tours
+(`port_art.MODES`): from the boot through each mode of the top menu, its
+select screens, a fight with its pause menu, the fight's end and the menus
+after it; versus mode's stage pages walked across, left to the first and
+right to the third (the other runs take the page they open on); the
+options (`setup`: each choice both ways, the memory card's page, the key
+configuration with both pads' cursors walked down it); the slash mode
+(`slash`: opened by `--unlock-all`, and its run won as it begins, a `poke`
+of the hundred opponents' count and one of the opponent struck down, so
+that the replay, the best times, the two endings of a run won fast with no
+continue and the save's question follow as the game has them); and the
+endings (below), every texture written into `tmp/art/dump/` with no mod
+in the way (about 1,590 of them), and where
 each was in video memory into `where.txt` beside them (from the log's
 `mods: wrote` and `mods: had` lines: every run says where it saw each
 texture, whichever run wrote its file, so the file is the same however the
@@ -691,20 +718,73 @@ on 71 canvases. The mod is 39 MB (33 without it). From one disc: 1,368
 textures dumped; 178 too small, 582 lettering, 401 of a few colours, 148
 paintings and 59 pictures by the model; 4 steps of fades.
 
-**What no dump reaches.** The story's card before each battle ("Next
-Battle Stage", the map and the stage's picture) looks the same with the
-art and without it, at 2560 by 1440: its map is not drawn from the map's
-texture the dump has (`179x127-4-55b2db20102945a1`, which the log says is
-found), most likely from a copy of the screen the game keeps while the
-stage loads. Making it sharp is the remastered picture's to do
-(`src/port/gl/`), not the art's.
-The screens no tour reaches -- the ending, the credits, the slash mode
-(shut until won) -- are not in the dump; `--dump-textures` while playing
-them adds them.
+**The endings.** Ten endings (`enum Ending`, nine pictures) follow a
+story, a full run against the CPU, a group battle or the slash mode won:
+nothing a tour plays reaches one by playing. Each tour `ending-N` begins a
+fight straight from the start (`--fight`; PORT.md, "Straight into a
+fight") and, two frames in, writes the ending's number into
+`g_fight_ending` and the screen `SCREEN_ENDING_INIT` into `g_sys_screen`
+(`poke`s, as the game's own step does where a run is won): from there it
+is the game's own way, the ending's picture over its scene and then the
+screen after that ending. `ending-0` goes on through the staff roll to its
+end (2,880 frames) and the save's question; `ending-6` and `ending-7`, a
+slash mode won fast, are told the run had no continue as well
+(`g_chanbara_clean_unlock`), so the game goes on to endings 8 and 9 as it
+does. Each is a few hundred blanks to its ending: the fastest way there,
+where a story played through is half an hour.
+
+**The story's stage card** ("Next Battle Stage", the map and the stage's
+picture) is drawn twice, into both display buffers, and then left on show
+while the stage loads, the route's marks drawn once each into it: in the
+window, whose mods' pictures are read beside the game and come a frame or
+two after they are first asked for, it kept the game's own textures (an
+art pass, 2026-11-21, saw it the same with the art as without). The card
+and its marks now say so (`port_RemasterKeepsPicture`, PORT.md, "What
+nothing clears is read at once"), and their pictures are read at once.
 
 Copy `tmp/mods/art/` into `mods/` beside the program; it is never
 committed (the PC package makes it itself at its first start: "Made from
 your disc").
+
+### What is covered
+
+```
+python3 tools/port_coverage.py play     # Linux or WSL: the tours, dumped, into build/coverage/
+python  tools/port_coverage.py report [--art tmp/mods/art] [--check] [--sheet]
+```
+
+`play` plays the art's tours as `dump` does, keeping each tour's log;
+`report` holds every texture each tour drew to the mods that replace it --
+the built-in ones (`ui`, `english`) and the art made from the disc -- and
+writes `build/coverage/report.txt`: for each tour how many are `ui`,
+`english`, `art`, a step of a fade of one of those (`fade`), too small to
+make larger (`small`, a side under four texels: a rule, a cursor's dot, as
+the game drew them), or `NONE`; and, as a list of its own, the lettering
+the art alone replaces (the art's kind `lettering` that no built-in mod
+has: where the sharp menus are still to reach, though that kind has the
+frames and icons as well). `--check` ends 1 if a texture is `NONE`;
+`--sheet` draws each tour's of no replacement and of the art's lettering
+with their keys. A tour that ended short of its screens says so.
+
+With the art built from the same dump every texture the tours draw has a
+replacement (2026-11-22: 1,591 textures; 553 the built-in mods', 897 the
+art's, 141 small). So the gap it shows is what the tours do not reach,
+which no tool can list, or an art mod made before a tour was added: the
+art of a disc made before the options, the slash mode and the endings
+were toured has 171 `NONE` of them. What no tour reaches:
+
+- **the link cable's picture** and a link battle: the port has no link
+  cable;
+- **a group battle played to its end**: its endings are the
+  `ending-4` and `ending-5` tours', but its result screen
+  (`SCREEN_TEAM_RESULT`) is not toured;
+- **a run against the CPU played to its end**, and its kill count, and
+  **the story past its first fight** (its later stage cards, cutscenes and
+  interludes): the tours stop after one fight;
+- **the memory card's pages with a card in** (load, save and their
+  messages): every tour runs with no card, so that a run is the same on any
+  PC;
+- **the debug menu**, which no player reaches.
 
 ## The title picture
 
