@@ -156,7 +156,7 @@ PORT_GL_DRESSING_FUNCTIONS
 #define BUSH_VERTICES (BUSH_CARDS * 6)
 /* How far from the camera, in world units, the foliage begins to thin:
  * past it fewer things and fewer blades to a tuft. */
-#define FOLIAGE_THIN 9000.0f
+#define FOLIAGE_THIN 7500.0f
 /* How far a tuft's blades reach from its root, about. */
 #define TUFT_REACH 60.0f
 /* What pushes the foliage, at most: the fighters, where they were a few

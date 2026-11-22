@@ -8658,8 +8658,8 @@ a bush 36 leaves as cards over half an egg (the leaf's shape cut in the
 fragment) -- each blade's place, turn, height and lean from a hash of the
 thing's seed. A blade bends keeping its length: its top moved by the
 lean, the wind and what pushes it, its rise what is left. Farther than
-6,300 units from the camera a thing is drawn less often and with fewer
-blades (`FOLIAGE_THIN`: five blades at 7,200, three past 12,600, and of
+5,250 units from the camera a thing is drawn less often and with fewer
+blades (`FOLIAGE_THIN`: five blades at 6,000, three past 10,500, and of
 the things fewer the farther, down to a seventh): it is a few pixels
 there and most of the vertices.
 
