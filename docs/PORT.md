@@ -8618,7 +8618,10 @@ and nothing the game computes reads them.
 **Grown once a stage.** When the ground's mesh is built
 (`port_GlStageBuild`), its triangles that look up are kept, sorted into
 squares of 512 units, with a copy of video memory and the stage's
-textures as they were loaded (`port_GlDressingNoteGround`). The first
+textures as they were loaded (`port_GlDressingNoteGround`), where the
+stage is to be dressed (a stage with nothing to grow pays nothing in
+the fight's first frames, where the mesh is built; the dressing turned
+on in the menu grows with the next stage loaded). The first
 picture that draws the dressing grows it: every place a block asks for,
 by a sequence seeded from the stage and the block's name (so a stage
 grows the same every time), is looked up on the ground under it -- the
@@ -8730,7 +8733,26 @@ by 1,440; `ra1-dressed` is `ra1` on the Meikyokan's lawn with the
 shipped dressing, its 27,000 tufts, flowers and fireflies; `-stress` four
 fighters):
 
-COSTS
+| stage, kind of dressing | card, median / 95% | `dress`, 95% |
+|---|---|---|
+| 8 Outside Meikyokan, the dressing off | 2.59 / 3.17 | -- |
+| 8 Outside Meikyokan: a lawn of 27,000 tufts, flowers, fireflies (`ra1-dressed`) | 3.10 / 3.85 | 0.75 |
+| ... four fighters pushing it (`ra1-dressed-stress`, before the thinning below) | 3.78 / 4.50 | 1.01 |
+| 19 Lighthouse: its meadow and flowers, the most grass on screen | 3.54 / 4.36 | 1.30 |
+| 31 Shainto cemetery: grass, petals, embers, fireflies | 3.83 / 4.78 | 1.31 |
+| 11 Kimigaura coast: the sea, four rocks, the sand's dust | 2.63 / 3.20 | 0.03 |
+| 20 Kabuki stage: embers alone | 2.38 / 3.22 | 0.02 |
+
+So a stage of water and particles costs nothing measurable; a meadow
+costs what its blades on screen cost, about a millisecond at the 95th
+centile where the grass fills the picture, held to 1.5 (`dress_p95`,
+`DRESS_BUDGET_MS`, met with `MET_SLACK`) and the whole card to the
+refresh. The grass-heavy stages were 1.6 ms before the foliage began to
+thin at 5,250 units and not 6,300 (`FOLIAGE_THIN` 7,500, was 9,000). The
+processor's side is the growing, once a stage (some 20 ms), and the
+frame's pushers and dust, a few microseconds. With no dressing to draw
+(`dressing off`, a Classic stage, a stage with no file, every case of the
+bench but the dressed two) nothing of it is asked of the card.
 
 **What is left.** The foliage takes the sun's shadows and does not cast
 any (the meshes cast into the sun's maps and the lights' cubes,

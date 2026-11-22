@@ -1275,6 +1275,19 @@ void port_GlDressingNoteGround(
         stride < (s32)sizeof(DressStageVertex)) {
         return;
     }
+    /* Kept only for a stage that will be dressed: the ground is built in
+     * the fight's first frames, and a stage with nothing to grow pays
+     * nothing there. Turned on later, the dressing grows with the next
+     * stage loaded. */
+    {
+        const PortDressSet *set =
+            g_dress.is_on ? port_DressingOfStage(port_RemasterStageNumber())
+                          : NULL;
+
+        if (set == NULL || set->count == 0) {
+            return;
+        }
+    }
     g_dress.tris = (DressTri *)malloc((size_t)(count / 3) * sizeof(DressTri));
     if (g_dress.vram == NULL) {
         g_dress.vram = (u16 *)malloc(VRAM_W * VRAM_H * sizeof(u16));
