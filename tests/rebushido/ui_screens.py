@@ -7,7 +7,8 @@ and no Pillow: every piece lies inside its block and is a picture of the
 mod eight pixels a texel; no key is a piece of two blocks of the whole
 table; every text lies inside its block and every piece holds a text's
 letters, a rule or a panel; the staff roll's pieces are each a name or a heading of their own,
-as STAFF.BIN cuts them, each holding one text whole; the gold of the
+as STAFF.BIN cuts them, each holding one text whole (or the end of one the
+sheet wraps to its next row); the gold of the
 options' rows under the cursor is cut where the white is; and the italic
 of the roll's Lightweight staff leans, the rest stand up."""
 import ast
@@ -101,14 +102,17 @@ def run(checks):
                             any(meets(rect, box) for box in drawn))
                 checks.equal("%s: %s's picture in the mod, eight pixels a texel" % (name, key),
                              png_size(os.path.join(TEXTURES, key + '.png')), (pw * SCALE, ph * SCALE))
-    # the staff roll: a text for each piece, whole within it
+    # the staff roll: a text for each piece, whole within it, or the end of
+    # a text wrapped from the row before (Localization Director, Associate
+    # Producer), the rest of its letters
     for (w, h), texts, pieces, _ in found[STAFF]:
-        checks.equal('the staff roll: a text for each piece (%s)' % texts[0][0], len(texts), len(pieces))
+        boxes = [box for t in texts for box in t[1]]
+        checks.equal("the staff roll: a text, or a text's end, for each piece (%s)" % texts[0][0],
+                     len(boxes), len(pieces))
         for key, x, y in pieces:
             pw, ph = size_of(key)
-            inside = [t for t in texts if len(t[1]) == 1 and x <= t[1][0][0] and t[1][0][2] <= x + pw
-                      and y <= t[1][0][1] and t[1][0][3] <= y + ph]
-            checks.equal('the staff roll: %s holds one text whole' % key, len(inside), 1)
+            inside = [b for b in boxes if x <= b[0] and b[2] <= x + pw and y <= b[1] and b[3] <= y + ph]
+            checks.equal('the staff roll: %s holds one text, or its end, whole' % key, len(inside), 1)
     words = {t[0]: t[2] for block in found[STAFF] for t in block[1]}
     checks.true("the staff roll: the Lightweight staff's names lean",
                 all(words[n] > 0 for n in ('KUNIHIKO', 'Director', 'Motion Capturing', 'TETSUYA')))

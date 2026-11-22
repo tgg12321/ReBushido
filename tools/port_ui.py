@@ -1414,8 +1414,8 @@ BLOCKS = [
     block((255, 256), [
         text('Opening Movie', [(0, 1, 200, 15)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 0, 200, 16), screen='staff'),
         text('Digital Media Lab.', [(0, 17, 236, 31)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 16, 236, 32), screen='staff'),
-        text('Localization Directo', [(0, 33, 255, 44)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 32, 255, 48), screen='staff'),
-        text('r', [(0, 52, 19, 60)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 48, 19, 64), screen='staff'),
+        text('Localization Director', [(0, 33, 255, 44), (0, 49, 19, 60)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 32, 255, 48), screen='staff'),
+        rule((0, 48, 19, 64), (0, 0, 0)),
         text('.)', [(20, 48, 38, 62)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(20, 48, 38, 64), screen='staff'),
         text('INC.', [(45, 48, 109, 62)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(38, 48, 109, 64), screen='staff'),
         text('ement', [(110, 49, 191, 60)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(110, 48, 191, 64), screen='staff'),
@@ -1443,8 +1443,8 @@ BLOCKS = [
     ]),
     # Associate Producer ... Jonathan Williams (on black)
     block((255, 64), [
-        text('Associate Produce', [(0, 1, 255, 12)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 0, 255, 16), screen='staff'),
-        text('r', [(0, 19, 7, 27)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 16, 7, 32), screen='staff'),
+        text('Associate Producer', [(0, 1, 255, 12), (0, 17, 7, 28)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 0, 255, 16), screen='staff'),
+        rule((0, 16, 7, 32), (0, 0, 0)),
         text('Akihito Kozu', [(8, 17, 162, 28)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(8, 16, 162, 32), screen='staff'),
         text('QA Manager', [(0, 33, 162, 47)], 'sans', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 32, 162, 48), screen='staff'),
         text('Jonathan Williams', [(0, 49, 226, 61)], 'serif', 'plain', (255, 255, 255), (255, 255, 255), (0, 0, 0), panel=(0, 48, 226, 64), screen='staff'),
