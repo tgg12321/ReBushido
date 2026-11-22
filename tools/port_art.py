@@ -93,12 +93,26 @@ MADE_BY = '''# its pictures and paintings made larger by %s
 
 # ---- the tour: the plans `dump` plays ----
 
+# The tours, each a run of its own: each mode of the top menu with its
+# select screens and a fight; `stages`, versus mode's stage pages walked
+# across; `setup`, the options and their pages; `slash`, the slash mode
+# (shut until it is won: opened by --unlock-all) to its end; and the
+# endings, `ending-N`, each begun from a fight (below, ENDINGS).
+MODES = ['story', 'vscpu', 'training', 'vs', 'group', 'link', 'setup', 'stages', 'slash',
+         'ending-0', 'ending-1', 'ending-2', 'ending-3', 'ending-4', 'ending-5', 'ending-6', 'ending-7']
 # The top menu's rows, from the top: each mode is chosen by going down to
-# it. The slash mode's row is shut until it is won, so its index lands on
-# the options' row; the options' row is 7.
-MODES = ['story', 'vscpu', 'training', 'vs', 'group', 'link', 'setup', 'stages']
-MODE_ROWS = {'story': 0, 'vscpu': 1, 'training': 2, 'vs': 3, 'group': 4, 'link': 5, 'setup': 7}
+# it. With the slash mode shut (an empty save) the options' row is the
+# seventh, 6; with it open (`slash`, --unlock-all) the slash mode is 6.
+MODE_ROWS = {'story': 0, 'vscpu': 1, 'training': 2, 'vs': 3, 'group': 4, 'link': 5, 'slash': 6}
+OPTIONS_ROW = 6
 TWO_PADS = ('vs', 'group')
+# What each tour's run is given besides the plan: the slash mode open
+UNLOCK = ['--unlock-all']
+# A fight straight from the start (docs/PORT.md, "Straight into a fight"),
+# for the endings
+ENDING_FIGHT = ['--fight', 'tatara-shrine', 'kannuki', 'mikado']
+# runs at once
+DUMP_JOBS = 8
 # `stages`: versus mode's select screens pressed through as
 # tools/port_stage_select.py presses them, then the stage pages walked
 # across, left to the first and right to the third, so that every page's
@@ -129,7 +143,7 @@ limit = %(limit)d
 input = [
 %(presses)s
 ]
-[[checkpoint]]
+%(state)s[[checkpoint]]
 name = "page"
 when = "rb_page == RB_PAGE_UP"
 within = 2000
@@ -157,10 +171,173 @@ shot = false
 '''
 
 
+# `setup`: the options page (its six rows, each choice both ways and back:
+# the monitor's B&W shows the page in grey), the memory card's page (its
+# load and save shut with no card), and the key configuration, both pads'
+# cursors walked down it, an action given no button (N/A) and back
+SETUP_PRESSES = (['menu+%d DOWN' % (30 + 30 * i) for i in range(OPTIONS_ROW)] + [
+    'menu+240 CROSS',
+    'menu+330 RIGHT', 'menu+400 RIGHT', 'menu+460 DOWN', 'menu+520 RIGHT', 'menu+580 RIGHT',
+    'menu+640 DOWN', 'menu+700 RIGHT', 'menu+760 RIGHT', 'menu+820 DOWN', 'menu+880 CROSS',
+    'menu+960 UP', 'menu+1020 CROSS', 'menu+1300 CROSS', 'menu+1400 UP', 'menu+1460 CROSS', 'menu+1740 CROSS',
+    'menu+1840 TRIANGLE', 'menu+1940 DOWN', 'menu+2000 CROSS',
+    'menu+2100 DOWN', 'menu+2160 DOWN', 'menu+2220 DOWN', 'menu+2280 CROSS', 'menu+2340 DOWN', 'menu+2400 CROSS',
+    'menu+2460 P2 DOWN', 'menu+2520 P2 DOWN', 'menu+2580 P2 DOWN', 'menu+2640 P2 DOWN',
+    'menu+2760 DOWN', 'menu+2820 CROSS', 'menu+2900 CROSS', 'menu+3000 CROSS', 'menu+3100 DOWN', 'menu+3160 CROSS',
+    'menu+3300 CROSS', 'menu+3400 CROSS'])
+SETUP_PLAN = '''about = "tools/port_art.py: the screens of setup"
+discs = ["port"]
+cards = "none"
+limit = %(limit)d
+input = [
+%(presses)s
+]
+[[checkpoint]]
+name = "page"
+when = "rb_page == RB_PAGE_UP"
+within = 2000
+shot = false
+[[checkpoint]]
+name = "movie"
+when = "screen == SCREEN_MOVIE"
+within = 1000
+shot = false
+[[checkpoint]]
+name = "menu"
+when = "screen == SCREEN_MENU_UPDATE && menu_page == MENU_PAGE_TOP && screen_frames >= 120"
+within = 3000
+shot = false
+[[checkpoint]]
+name = "end"
+after = 3600
+shot = false
+'''
+
+# The endings (fight.h, enum Ending): ten, of nine pictures, that only a
+# story, a full run against the CPU, a group battle or the slash mode won
+# reaches. Each `ending-N` begins a fight straight from the start and
+# writes the ending into the game's memory as it begins (`poke`: the
+# ending's number, then the screen, SCREEN_ENDING_INIT, as the game's own
+# step does where a run is won): from there it is the game's own way on,
+# the ending's picture, its scene, and after it the screen that follows
+# that ending. `ending-0` goes on through the staff roll to its end and the
+# save's question; `ending-6` and `ending-7`, a slash mode won fast, are
+# told the run had no continue as well, so the game goes on to the other
+# ending of that side, 8 and 9, as it does.
+ENDINGS = {'ending-%d' % n: n for n in range(8)}
+SCREEN_ENDING_INIT = 18
+ENDING_PLAN = '''about = "tools/port_art.py: the screens of %(mode)s"
+discs = ["port"]
+cards = "none"
+limit = %(limit)d
+input = [
+%(presses)s
+]
+[state]
+ending = "g_fight_ending:u8"
+clean_unlock = "g_chanbara_clean_unlock:u8"
+chanbara_count = "g_chanbara_count:u8"
+[[checkpoint]]
+name = "fight"
+when = "screen == SCREEN_FIGHT_UPDATE"
+at_frame = true
+within = 2000
+shot = false
+[[checkpoint]]
+name = "ending"
+when = "screen == SCREEN_ENDING_UPDATE"
+within = 2000
+shot = false
+%(staff)s[[checkpoint]]
+name = "end"
+after = %(after)d
+shot = false
+'''
+STAFF_CHECKPOINT = '''[[checkpoint]]
+name = "staff"
+when = "screen == SCREEN_STAFF_ROLL_UPDATE"
+within = 2000
+shot = false
+'''
+# the staff roll's 2,880 frames, at a frame a blank, and the save's question
+STAFF_BLANKS = 3300
+# `slash`: the hundred opponents' count written to the last (`poke`), and
+# the opponent then struck down, so that the run is won as it begins: the
+# replay, the best times with the run's time among them, the endings of
+# a run won fast and with no continue, and the save's question
+SLASH_STATE = '''[state]
+chanbara_count = "g_chanbara_count:u8"
+'''
+SLASH_POKES = [('fight', 60, 1, 'chanbara_count', 100), ('fight', 120, 1, 'p2_defeated', 1)]
+
+
+def tour_args(mode):
+    """What the tour's run is given besides its plan."""
+    if mode == 'slash':
+        return list(UNLOCK)
+    if mode in ENDINGS:
+        return list(ENDING_FIGHT)
+    return []
+
+
+def tour_pokes(mode):
+    """The tour's pokes: [(checkpoint, blanks after it, blanks held, value's
+    name, value)]."""
+    if mode == 'slash':
+        return list(SLASH_POKES)
+    if mode in ENDINGS:
+        n = ENDINGS[mode]
+        pokes = [('fight', 60, 1, 'ending', n)]
+        if n in (6, 7):
+            pokes.append(('fight', 60, 1, 'clean_unlock', 1))
+        return pokes + [('fight', 60, 1, 'screen', SCREEN_ENDING_INIT)]
+    return []
+
+
+def plan_lines(mode, playtest, names, folder, limit=9000):
+    """The tour's plan as the program reads it (its lines), with its pokes;
+    `folder` to write the plan's TOML into for a moment."""
+    toml = os.path.join(folder, mode + '.toml')
+    with open(toml, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(plan_text(mode, limit))
+    _, lines = playtest.Test(toml).plan(playtest.Disc('port'), names, 1)
+    os.remove(toml)
+    values = {}
+    for line in lines:
+        words = line.split()
+        if words and words[0] == 'var':
+            values[words[1]] = (int(words[2]), int(words[3]))
+    checkpoints = [line.split()[1] for line in lines if line.startswith('cp ')]
+    for checkpoint, after, hold, name, value in tour_pokes(mode):
+        address, size = values[name]
+        lines.append('poke %d %d %d %d %d %d' % (checkpoints.index(checkpoint) + 1, after, hold, address, size, value))
+    return lines
+
+
 def plan_text(mode, limit=9000):
     """A plan that goes from the boot to the mode's row, takes it, presses
     Cross through its select screens, walks in and pauses the fight, fights
-    it to its end and presses on through the menus after it."""
+    it to its end and presses on through the menus after it; or the
+    options' pages walked (`setup`), or an ending begun from a fight."""
+    if mode == 'setup':
+        presses = ['page+30 START', 'movie+300 START', 'movie+600 CROSS', 'movie+900 START'] + SETUP_PRESSES
+        return SETUP_PLAN % {'limit': limit, 'presses': ',\n'.join('    "%s"' % p for p in presses)}
+    if mode in ENDINGS:
+        n = ENDINGS[mode]
+        presses = ['ending+%d CROSS' % t for t in range(400, 1700, 300)]
+        staff = ''
+        after = 1800
+        if n == 0:
+            # the staff roll to its end, then the save's question
+            presses = ['ending+400 CROSS', 'staff+%d CROSS' % (STAFF_BLANKS - 100), 'staff+%d CROSS' % STAFF_BLANKS]
+            staff = STAFF_CHECKPOINT
+            after = STAFF_BLANKS + 300
+        elif n == 1:
+            presses = ['ending+400 CROSS', 'staff+60 CROSS', 'staff+300 CROSS']
+            staff = STAFF_CHECKPOINT
+            after = 600
+        return ENDING_PLAN % {'mode': mode, 'limit': limit, 'staff': staff, 'after': after,
+                              'presses': ',\n'.join('    "%s"' % p for p in presses)}
     presses = ['page+30 START', 'movie+300 START', 'movie+600 CROSS', 'movie+900 START']
     between = ''
     if mode == 'stages':
@@ -177,7 +354,8 @@ def plan_text(mode, limit=9000):
     presses += ['fight+30f RIGHT hold 20f', 'fight+80f START', 'fight+90 START']
     presses += ['fight+%df %s' % (f, 'CIRCLE' if f % 60 else 'CROSS') for f in range(120, 1500, 30)]
     presses += ['fight+%df CROSS' % f for f in range(1600, 3600, 70)]
-    return PLAN % {'mode': mode, 'limit': limit, 'end': limit - 1300, 'between': between,
+    state = SLASH_STATE if mode == 'slash' else ''
+    return PLAN % {'mode': mode, 'limit': limit, 'end': limit - 1300, 'between': between, 'state': state,
                    'presses': ',\n'.join('    "%s"' % p for p in presses)}
 
 
@@ -201,31 +379,36 @@ def dump(args):
     work = tempfile.mkdtemp(prefix='port_art_')
     empty = os.path.join(work, 'no-mods')
     os.makedirs(empty)
-    runs = []
     names = playtest.header_names()
-    for mode in MODES:
-        toml = os.path.join(work, mode + '.toml')
-        with open(toml, 'w', encoding='utf-8', newline='\n') as f:
-            f.write(plan_text(mode))
-        test = playtest.Test(toml)
-        _, lines = test.plan(playtest.Disc('port'), names, 1)
-        plan = os.path.join(work, mode + '.plan')
-        with open(plan, 'w', encoding='utf-8', newline='\n') as f:
-            f.write('\n'.join(lines) + '\n')
-        out = os.path.join(work, mode)
-        os.makedirs(out)
-        log = open(os.path.join(work, mode + '.log'), 'w')
-        # with no mods, so that every texture is written out, the built-in
-        # mods' own among them
-        cmd = [program, '--image', args.image, '--plan', plan, '--out', out, '--graphics', 'remastered',
-               '--gl-scale', '1', '--mods', empty, '--dump-textures', args.dump]
-        runs.append((mode, subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT), log))
+    modes = getattr(args, 'modes', None) or MODES
+    logs = getattr(args, 'logs', None)
+    waiting = list(modes)
+    running = []
     lines = set()
-    for mode, process, log in runs:
+    while waiting or running:
+        while waiting and len(running) < DUMP_JOBS:
+            mode = waiting.pop(0)
+            plan = os.path.join(work, mode + '.plan')
+            with open(plan, 'w', encoding='utf-8', newline='\n') as f:
+                f.write('\n'.join(plan_lines(mode, playtest, names, work)) + '\n')
+            out = os.path.join(work, mode)
+            os.makedirs(out)
+            log = open(os.path.join(work, mode + '.log'), 'w')
+            # with no mods, so that every texture is written out, the
+            # built-in mods' own among them
+            cmd = [program, '--image', args.image, '--plan', plan, '--out', out, '--graphics', 'remastered',
+                   '--gl-scale', '1', '--mods', empty, '--dump-textures', args.dump] + tour_args(mode)
+            running.append((mode, subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT), log))
+        mode, process, log = running.pop(0)
         process.wait()
         log.close()
         with open(os.path.join(work, mode + '.log'), encoding='utf-8', errors='replace') as f:
-            lines |= where_lines(f.read())
+            text = f.read()
+        lines |= where_lines(text)
+        if logs:
+            os.makedirs(logs, exist_ok=True)
+            with open(os.path.join(logs, mode + '.log'), 'w', encoding='utf-8', newline='\n') as f:
+                f.write(text)
         print('port_art: %s played' % mode)
     add_where(args.dump, lines)
     shutil.rmtree(work)
@@ -800,6 +983,8 @@ def main():
     ap.add_argument('--out', default=DEFAULT_OUT)
     ap.add_argument('--scale', type=int, default=6)
     ap.add_argument('--keys', help='only these keys (build)')
+    ap.add_argument('--modes', type=lambda s: s.split(','), help='only these tours (dump): %s' % ','.join(MODES))
+    ap.add_argument('--logs', help="a folder for each tour's log (dump)")
     ap.add_argument('--upscaler', default='auto',
                     help="the folder of realesrgan-ncnn-vulkan and its models/ (build); off for numpy and Pillow "
                     "alone; auto: RB_UPSCALER, the package's prepare/upscaler/, tmp/art-tools/")
