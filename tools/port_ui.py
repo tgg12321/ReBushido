@@ -1136,19 +1136,19 @@ BLOCKS = [
     ]),
     # EXIT
     block((180, 14), [
-        text('EXIT', [(60, 1, 120, 12)], 'sans', 'plain', (100, 100, 0), (71, 71, 0), (255, 255, 0), panel=(0, 0, 180, 14), screen='setup'),
+        text('EXIT', [(60, 1, 120, 12)], 'sans', 'plain', (16, 16, 0), (8, 8, 0), (255, 255, 0), panel=(0, 0, 180, 14), screen='setup'),
     ], [
         ('64x14-4-0b766cd86f508913', 0, 0), ('64x14-4-56f8c5503802da18', 64, 0), ('52x14-4-0f2ff7f703cde6fc', 128, 0),
     ]),
     # OK
     block((180, 14), [
-        text('OK', [(69, 2, 109, 13)], 'sans', 'plain', (57, 60, 85), (58, 63, 88), (165, 165, 255), panel=(0, 0, 180, 14), screen='setup'),
+        text('OK', [(69, 2, 109, 13)], 'sans', 'plain', (16, 16, 41), (8, 8, 33), (165, 165, 255), panel=(0, 0, 180, 14), screen='setup'),
     ], [
         ('64x14-4-48f51f02cfa15b75', 0, 0), ('64x14-4-f0864d51a5984ec7', 64, 0), ('52x14-4-03c50b7a96728b71', 128, 0),
     ]),
     # N/A
     block((180, 14), [
-        text('N/A', [(65, 2, 113, 13)], 'sans', 'plain', (65, 34, 11), (109, 58, 17), (255, 140, 57), panel=(0, 0, 180, 14), screen='setup'),
+        text('N/A', [(65, 2, 113, 13)], 'sans', 'plain', (33, 16, 0), (24, 8, 0), (255, 140, 57), panel=(0, 0, 180, 14), screen='setup'),
     ], [
         ('64x14-4-20cd2df4e6ed5d95', 0, 0), ('64x14-4-a67ca72bb3d95b12', 64, 0), ('52x14-4-50647ee38fd9ceb9', 128, 0),
     ]),
@@ -1187,7 +1187,7 @@ BLOCKS = [
     ], [
         ('53x16-4-287a7afc7edc240f', 0, 0), ('56x16-4-9d5137446aff9eea', 54, 0), ('60x16-4-bc9f394b3f14f0d5', 0, 16),
     ]),
-    # Monitor / Difficulty / Music / Memory Card / Return / Key Configuration / Return to Top Menu (the options' rows) (tinted, drawn from these: 15x16-4-4c2ab6d4a30ece9f, 23x16-4-4652ac5bbd75b640, 29x16-4-edd32694a9e11b86, 34x16-4-7c53e12029f3f402, 64x16-4-312e029678822e76, 64x16-4-3b0f25d6359c0665, 64x16-4-4431ebfe224b040d, 64x16-4-44df40a645e99cf5, 64x16-4-4503054e887c37da, 64x16-4-5b57743b2bd0b352, 64x16-4-8b95d7e2821f4840, 64x16-4-bfde8f0f5842d18b)
+    # Monitor / Difficulty / Music / Memory Card / Return / Key Configuration / Return to Top Menu (the options' rows) (the gold of the cursor's row is the block after)
     block((250, 64), [
         text('Monitor', [(0, 1, 85, 15)], 'sans', 'edge', (194, 194, 194), (193, 193, 193), (0, 0, 0), screen='setup'),
         text('Difficulty', [(85, 1, 185, 15)], 'sans', 'edge', (195, 195, 195), (190, 190, 190), (0, 0, 0), screen='setup'),
@@ -1203,6 +1203,21 @@ BLOCKS = [
         ('13x16-4-c30efc501d9eafa9', 222, 16), ('64x16-4-18dd56da4ed184af', 0, 32), ('64x16-4-719e41ebd3b6fde7', 64, 32),
         ('64x16-4-7c103b1e93b7e4bc', 128, 32), ('15x16-4-b44ec55feaa338fa', 192, 32), ('64x16-4-cc6fa51a3d8822b5', 0, 48),
         ('64x16-4-5048e2490a8eab69', 64, 48), ('64x16-4-5f969d6bd8a922ed', 128, 48), ('36x16-4-fcadda4d73f9d14c', 192, 48),
+    ]),
+    # the options' rows under the cursor: the same in gold, a colour table
+    # of its own (not a tint of the white's: MODS.md, "Fades")
+    block((250, 64), [
+        text('Monitor', [(0, 1, 85, 15)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
+        text('Difficulty', [(85, 1, 185, 15)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
+        text('Music', [(185, 1, 250, 15)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
+        text('Memory Card', [(0, 17, 155, 31)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0), screen='setup'),
+        text('Key Configuration', [(0, 33, 207, 47)], 'sans', 'edge', (209, 209, 33), (203, 203, 32), (0, 0, 0),
+             screen='setup'),
+    ], [
+        ('64x16-4-3b0f25d6359c0665', 0, 0), ('23x16-4-4652ac5bbd75b640', 64, 0), ('64x16-4-4431ebfe224b040d', 88, 0),
+        ('34x16-4-7c53e12029f3f402', 152, 0), ('64x16-4-312e029678822e76', 186, 0), ('64x16-4-8b95d7e2821f4840', 0, 16),
+        ('64x16-4-bfde8f0f5842d18b', 64, 16), ('29x16-4-edd32694a9e11b86', 128, 16), ('64x16-4-5b57743b2bd0b352', 0, 32),
+        ('64x16-4-4503054e887c37da', 64, 32), ('64x16-4-44df40a645e99cf5', 128, 32), ('15x16-4-4c2ab6d4a30ece9f', 192, 32),
     ]),
     # -- end of the options' pages (setup) --
     # -- the slash mode (slash) --
@@ -1460,7 +1475,7 @@ BLOCKS = [
     ]),
     # -- end of the staff roll (ending-0) --
     # -- a fight begun again (story) --
-    # REMATCH (under the story's 再戦, a fight begun again) (tinted, drawn from these: 26x10-4-eb04d7182efe1d56, 64x10-4-bf5f976697e035d8)
+    # REMATCH (under the story's 再戦, a fight begun again): its two other keys are steps of a fade of these, drawn from them tinted
     block((90, 10), [
         text('REMATCH', [(0, 0, 90, 9)], 'sans', 'edge', (212, 212, 212), (215, 215, 215), (0, 0, 0), screen='story'),
     ], [

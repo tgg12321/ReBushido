@@ -1528,6 +1528,12 @@ s32 port_RemasterStageNumber(void) {
 static PortStageTexture g_stage_textures[PORT_STAGE_TEXTURES_MAX];
 static s32 g_stage_texture_count;
 static u32 g_stage_texture_version;
+/* port_RemasterKeepsPicture's */
+static s32 g_picture_is_kept;
+
+void port_RemasterKeepsPicture(s32 is_kept) { g_picture_is_kept = is_kept; }
+
+s32 port_RemasterIsPictureKept(void) { return g_picture_is_kept; }
 
 void port_RemasterBeginStageTextures(void) {
     if (g_backend == NULL) {

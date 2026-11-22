@@ -489,6 +489,8 @@ SIDE_MIN = 4
 FADE_TEXELS_MIN = 256
 FADE_BRIGHTNESS_MIN = 40
 FADE_ERROR_MAX = 10
+# how much brighter than its base a tint's part may be measured
+FADE_TINT_SLACK = 0.03
 
 
 # a painting: a texture of up to 48 colours that covers its rectangle (the
@@ -872,6 +874,49 @@ def fades(textures):
     return found
 
 
+# The built-in mods whose pictures a tint of is not made here
+SHIPPED_MODS = ('ui', 'english')
+
+
+def shipped_keys():
+    """The keys the built-in mods replace: theirs in the repository, or
+    beside the PC package's program."""
+    keys = set()
+    for folder in (os.path.join(ROOT, 'src', 'port', 'mods'), os.path.join(ROOT, 'mods')):
+        for mod in SHIPPED_MODS:
+            there = os.path.join(folder, mod, 'textures')
+            if os.path.isdir(there):
+                keys |= set(n[:-4] for n in os.listdir(there) if n.endswith('.png'))
+    return keys
+
+
+def tints_of_shipped(textures, shipped):
+    """{name: base}: the dumped textures, of no built-in mod's, that are a
+    texture of a built-in mod's tinted: its size and outline, its colours
+    that one's times a number for each part, none brighter."""
+    import numpy as np
+
+    groups = {}
+    for name, rgba in textures.items():
+        if name in shipped:
+            groups.setdefault((rgba.shape, (rgba[:, :, 3] > 0).tobytes()), []).append(name)
+    out = {}
+    for name, rgba in sorted(textures.items()):
+        if name in shipped:
+            continue
+        drawn = rgba[:, :, 3] > 0
+        if not drawn.any():
+            continue
+        c = rgba[:, :, :3][drawn].astype(np.float64)
+        for base in groups.get((rgba.shape, drawn.tobytes()), []):
+            b = textures[base][:, :, :3][drawn].astype(np.float64)
+            tint = (c.sum(0) + 1e-9) / np.maximum(b.sum(0), 1e-9)
+            if tint.max() <= 1.0 + FADE_TINT_SLACK and np.abs(b * tint - c).max() <= FADE_ERROR_MAX:
+                out[name] = base
+                break
+    return out
+
+
 def build(args):
     import numpy as np
     from PIL import Image
@@ -887,6 +932,12 @@ def build(args):
                 textures[entry[:-4]] = np.asarray(Image.open(os.path.join(folder, entry)).convert('RGBA'))
     if args.keys:
         textures = {k: v for k, v in textures.items() if k in args.keys.split(',')}
+    # a step of a tint of a texture a built-in mod replaces (a row of a
+    # menu its cursor tints gold) is drawn from that mod's picture, tinted
+    # (docs/MODS.md, "Fades"): a picture of the art's own would be drawn
+    # in its place
+    tints = tints_of_shipped(textures, shipped_keys())
+    textures = {k: v for k, v in textures.items() if k not in tints}
     out = os.path.join(args.out, 'textures')
     os.makedirs(out, exist_ok=True)
     # what an earlier build wrote goes: the mod is this build's alone

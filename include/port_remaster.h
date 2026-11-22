@@ -753,6 +753,14 @@ extern void port_RemasterBeginStageTextures(void);
  * naming that table at (clut_x, named_y). */
 extern void port_RemasterNoteStageTexture(
     const void *tim, s32 x, s32 y, s32 clut_x, s32 clut_y, s32 named_y);
+/* The game is drawing a picture it will then keep on show without drawing
+ * it again (the story's stage card, drawn into both buffers and left there
+ * while the stage loads), or has done: a mod's picture of what it draws is
+ * to be read at once, as the display's while it is off is, not beside the
+ * game, where it would come after the last frame that draws it (docs/
+ * PORT.md, "What nothing clears is read at once"). */
+extern void port_RemasterKeepsPicture(s32 is_kept);
+extern s32 port_RemasterIsPictureKept(void);
 /* What has been noted, how many, and a number that changes each time the
  * stage's textures are loaded again. */
 extern const PortStageTexture *port_RemasterStageTextures(

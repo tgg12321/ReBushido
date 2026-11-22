@@ -2857,8 +2857,10 @@ static void port_GlReplacementOf(
      * is begun so). Not a primitive whose drawing area is the display's:
      * here every 2D primitive of the game's frames is, and a fight's first
      * blank read the ui mod's pictures on this thread (docs/PORT.md,
-     * "What nothing clears is read at once") */
-    s32 is_on_show = !g_gl.display_is_on;
+     * "What nothing clears is read at once"); or drawn into a picture the
+     * game keeps on show and does not draw again (the story's stage card,
+     * port_RemasterKeepsPicture) */
+    s32 is_on_show = !g_gl.display_is_on || port_RemasterIsPictureKept();
 
     if (g_gl.options.is_exact ||
         !port_GlReplaceFind(prim, is_on_show, &found)) {
