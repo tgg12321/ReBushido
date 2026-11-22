@@ -371,6 +371,9 @@ def make_dressed_mods(mods):
         target = os.path.join(dressed, name)
         if os.path.exists(target):
             continue
+        if not os.path.exists(source):
+            # a junction to a mod no longer made (tmp/mods/hd, 2026-11-19)
+            continue
         if name in DISC_MADE_MODS:
             subprocess.run(['cmd', '/c', 'mklink', '/J', target, os.path.realpath(source)],
                            capture_output=True, check=True)
