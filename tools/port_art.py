@@ -98,18 +98,25 @@ MADE_BY = '''# its pictures and paintings made larger by %s
 # The tours, each a run of its own: each mode of the top menu with its
 # select screens and a fight; `stages`, versus mode's stage pages walked
 # across; `setup`, the options and their pages; `slash`, the slash mode
-# (shut until it is won: opened by --unlock-all) to its end; and the
+# (shut until it is won: opened by the save's unlocks written) to its end; and the
 # endings, `ending-N`, each begun from a fight (below, ENDINGS).
 MODES = ['story', 'vscpu', 'training', 'vs', 'group', 'link', 'setup', 'stages', 'slash',
          'ending-0', 'ending-1', 'ending-2', 'ending-3', 'ending-4', 'ending-5', 'ending-6', 'ending-7']
 # The top menu's rows, from the top: each mode is chosen by going down to
 # it. With the slash mode shut (an empty save) the options' row is the
-# seventh, 6; with it open (`slash`, --unlock-all) the slash mode is 6.
+# seventh, 6; with it open (`slash`) the slash mode is 6.
 MODE_ROWS = {'story': 0, 'vscpu': 1, 'training': 2, 'vs': 3, 'group': 4, 'link': 5, 'slash': 6}
 OPTIONS_ROW = 6
 TWO_PADS = ('vs', 'group')
-# What each tour's run is given besides the plan: the slash mode open
-UNLOCK = ['--unlock-all']
+# What the save says is won (port_play.h's PORT_PLAY_ALL_UNLOCKS, every
+# fighter and the slash mode; PORT_PLAY_ALL_STAFF_ROLLS), written into it
+# for the slash tour as the top menu opens: --unlock-all would do it too,
+# but it shows on ReBushido's options page, which the window's program and
+# the GL prover draw from colour tables of their own, and those tables
+# outlive the page in video memory, so that the tour's textures were keyed
+# apart on the two (port_prepare_prove)
+ALL_UNLOCKS = 0x053FF3FF
+ALL_STAFF_ROLLS = 0x3F
 # A fight straight from the start (docs/PORT.md, "Straight into a fight"),
 # for the endings
 ENDING_FIGHT = ['--fight', 'tatara-shrine', 'kannuki', 'mikado']
@@ -263,18 +270,21 @@ shot = false
 '''
 # the staff roll's 2,880 frames, at a frame a blank, and the save's question
 STAFF_BLANKS = 3300
-# `slash`: the hundred opponents' count written to the last (`poke`), and
-# the opponent then struck down, so that the run is won as it begins: the
-# replay, the best times with the run's time among them, the endings of
-# a run won fast and with no continue, and the save's question
+# `slash`: the save's unlocks written as the menu begins, then the hundred
+# opponents' count written to the last (`poke`), and the opponent struck
+# down, so that the run is won as it begins: the replay, the best times
+# with the run's time among them, and the save's question (the endings of
+# a run won are the `ending-6` and `ending-7` tours': with everything won
+# already the game shows none)
 SLASH_STATE = '''[state]
 chanbara_count = "g_chanbara_count:u8"
-ending = "g_fight_ending:u8"
+unlocks = "g_saved_record+0:s32"
+staff_rolls = "g_saved_record+4:u8"
 '''
 # What follows the fight, each screen pressed on from a checkpoint of its
 # own, so that a load that takes another number of frames on another
 # program (the window's, the GL prover's) moves nothing: the replay
-# skipped, the best times read, the two endings, the save's question
+# skipped, the best times read, the save's question
 SLASH_AFTER = '''[[checkpoint]]
 name = "replay"
 when = "screen == SCREEN_REPLAY_UPDATE"
@@ -283,16 +293,6 @@ shot = false
 [[checkpoint]]
 name = "times"
 when = "screen == SCREEN_BEST_TIMES_UPDATE"
-within = 2000
-shot = false
-[[checkpoint]]
-name = "fast"
-when = "screen == SCREEN_ENDING_UPDATE"
-within = 2000
-shot = false
-[[checkpoint]]
-name = "clean"
-when = "screen == SCREEN_ENDING_UPDATE && ending >= 8"
 within = 2000
 shot = false
 [[checkpoint]]
@@ -305,14 +305,13 @@ name = "end"
 after = 300
 shot = false
 '''
-SLASH_PRESSES = ['replay+60 CROSS', 'times+240 CROSS', 'fast+300 CROSS', 'clean+300 CROSS', 'save+120 CROSS']
-SLASH_POKES = [('fight', 60, 1, 'chanbara_count', 100), ('fight', 120, 1, 'p2_defeated', 1)]
+SLASH_PRESSES = ['replay+60 CROSS', 'times+240 CROSS', 'save+120 CROSS']
+SLASH_POKES = [('movie', 10, 1, 'unlocks', ALL_UNLOCKS), ('movie', 10, 1, 'staff_rolls', ALL_STAFF_ROLLS),
+               ('fight', 60, 1, 'chanbara_count', 100), ('fight', 120, 1, 'p2_defeated', 1)]
 
 
 def tour_args(mode):
     """What the tour's run is given besides its plan."""
-    if mode == 'slash':
-        return list(UNLOCK)
     if mode in ENDINGS:
         return list(ENDING_FIGHT)
     return []
@@ -541,8 +540,6 @@ SIDE_MIN = 4
 FADE_TEXELS_MIN = 256
 FADE_BRIGHTNESS_MIN = 40
 FADE_ERROR_MAX = 10
-# how much brighter than its base a tint's part may be measured
-FADE_TINT_SLACK = 0.03
 
 
 # a painting: a texture of up to 48 colours that covers its rectangle (the
@@ -926,7 +923,7 @@ def fades(textures):
     return found
 
 
-# The built-in mods whose pictures a tint of is not made here
+# The built-in mods, whose textures are theirs and not made here
 SHIPPED_MODS = ('ui', 'english')
 
 
@@ -941,33 +938,6 @@ def shipped_keys(folders=None):
             if os.path.isdir(there):
                 keys |= set(n[:-4] for n in os.listdir(there) if n.endswith('.png'))
     return keys
-
-
-def tints_of_shipped(textures, shipped):
-    """{name: base}: the dumped textures, of no built-in mod's, that are a
-    texture of a built-in mod's tinted: its size and outline, its colours
-    that one's times a number for each part, none brighter."""
-    import numpy as np
-
-    groups = {}
-    for name, rgba in textures.items():
-        if name in shipped:
-            groups.setdefault((rgba.shape, (rgba[:, :, 3] > 0).tobytes()), []).append(name)
-    out = {}
-    for name, rgba in sorted(textures.items()):
-        if name in shipped:
-            continue
-        drawn = rgba[:, :, 3] > 0
-        if not drawn.any():
-            continue
-        c = rgba[:, :, :3][drawn].astype(np.float64)
-        for base in groups.get((rgba.shape, drawn.tobytes()), []):
-            b = textures[base][:, :, :3][drawn].astype(np.float64)
-            tint = (c.sum(0) + 1e-9) / np.maximum(b.sum(0), 1e-9)
-            if tint.max() <= 1.0 + FADE_TINT_SLACK and np.abs(b * tint - c).max() <= FADE_ERROR_MAX:
-                out[name] = base
-                break
-    return out
 
 
 def build(args):
@@ -985,12 +955,15 @@ def build(args):
                 textures[entry[:-4]] = np.asarray(Image.open(os.path.join(folder, entry)).convert('RGBA'))
     if args.keys:
         textures = {k: v for k, v in textures.items() if k in args.keys.split(',')}
-    # a step of a tint of a texture a built-in mod replaces (a row of a
-    # menu its cursor tints gold) is drawn from that mod's picture, tinted
-    # (docs/MODS.md, "Fades"): a picture of the art's own would be drawn
-    # in its place
-    tints = tints_of_shipped(textures, shipped_keys(getattr(args, 'shipped', None)))
-    textures = {k: v for k, v in textures.items() if k not in tints}
+    # a texture a built-in mod replaces is that mod's (order -100, over the
+    # art's -200), and a step of a fade of one is drawn from its picture,
+    # tinted (docs/MODS.md, "Fades"): a picture of the art's own of either
+    # would be drawn in that one's place. Whether a dump has one is not
+    # always the same from run to run (the group battle's card names, in
+    # the colours one battle's picks show), and the mod is the same bytes
+    # whatever the runs drew of them
+    shipped = shipped_keys(getattr(args, 'shipped', None))
+    textures = {k: v for k, v in textures.items() if k not in shipped}
     out = os.path.join(args.out, 'textures')
     os.makedirs(out, exist_ok=True)
     # what an earlier build wrote goes: the mod is this build's alone

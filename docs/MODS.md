@@ -614,7 +614,9 @@ configuration with both pads' cursors walked down it); the slash mode
 (`slash`: opened by `--unlock-all`, and its run won as it begins, a `poke`
 of the hundred opponents' count and one of the opponent struck down, so
 that the replay, the best times, the two endings of a run won fast with no
-continue and the save's question follow as the game has them); and the
+continue and the save's question follow as the game has them, each
+pressed on from a checkpoint of its own, so that a load that takes other
+frames on the window's program than on the GL prover moves nothing); and the
 endings (below), every texture written into `tmp/art/dump/` with no mod
 in the way (about 1,590 of them), and where
 each was in video memory into `where.txt` beside them (from the log's
@@ -624,7 +626,11 @@ runs fall). A player who would rather play the screens through runs the
 game with `--dump-textures FOLDER` and gives `build --dump FOLDER` (as
 many as they like). `build` writes `tmp/mods/art/`, order -200 -- under
 the built-in mods and under any of the player's own -- with each texture
-six times larger (`--scale`), by its kind:
+six times larger (`--scale`), but those a built-in mod replaces (`ui`,
+`english`), which would never be drawn from it and which a dump has or
+has not from run to run (the group battle's card names, in the colours
+one battle's picks show), so that the mod is the same bytes whatever the
+runs drew; with `ui = off` those are the game's own. By its kind:
 
 - **a few colours** (six or fewer: an emblem, a frame, a button): each
   colour's area smoothed as a shape of its own (bicubic, at twice the

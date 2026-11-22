@@ -109,21 +109,12 @@ def run(checks):
             checks.true('an upscaler that fails gives nothing, and says why',
                         made == {} and why is not None and 'invalid gpu device' in why)
 
-        # a built-in mod's texture tinted is not the art's to make; a
-        # texture of a colour table of its own, or brighter, is
-        white = np.zeros((4, 8, 4), np.uint8)
-        white[1:3, 1:7] = (200, 200, 200, 255)
-        white[1, 1] = (40, 40, 40, 255)
-        gold = white.copy()
-        gold[:, :, 2] = (gold[:, :, 2].astype(np.float64) * 0.2).astype(np.uint8)
-        other = white.copy()
-        other[1, 1] = (40, 40, 8, 255)
-        other[2, 2] = (150, 150, 32, 255)
-        brighter = white.copy()
-        brighter[1:3, 1:7, :3] = 250
-        found = port_art.tints_of_shipped(
-            {'w': white, 'g': gold, 'o': other, 'b': brighter, 'n': np.zeros((4, 8, 4), np.uint8)}, {'w'})
-        checks.equal("a built-in mod's texture tinted is drawn from its picture", found, {'g': 'w'})
+        # a built-in mod's texture is not the art's to make
+        mods = os.path.join(work, 'mods')
+        os.makedirs(os.path.join(mods, 'ui', 'textures'))
+        open(os.path.join(mods, 'ui', 'textures', '8x4-4-0000000000000001.png'), 'wb').close()
+        checks.equal("the built-in mods' keys, the package's beside its program",
+                     port_art.shipped_keys([mods]), {'8x4-4-0000000000000001'})
 
         # the tours: each a plan, its checkpoints in order, its pokes of
         # values it can name
@@ -142,7 +133,9 @@ def run(checks):
                     port_art.OPTIONS_ROW == 6 and port_art.MODE_ROWS['slash'] == 6 and
                     'menu+%d DOWN' % (30 + 30 * 5) in port_art.plan_text('setup') and
                     'menu+%d DOWN' % (30 + 30 * 6) not in port_art.plan_text('setup'))
-        checks.equal('the slash mode is opened by --unlock-all', port_art.tour_args('slash'), ['--unlock-all'])
+        checks.true("the slash mode is opened by the save's unlocks, written as the menu begins",
+                    ('movie', 10, 1, 'unlocks', port_art.ALL_UNLOCKS) in port_art.tour_pokes('slash') and
+                    port_art.tour_args('slash') == [])
         checks.equal('the endings, eight tours of the ten', sorted(port_art.ENDINGS.values()), list(range(8)))
         checks.true('the slash mode won fast goes on to the ending of no continue',
                     ('fight', 60, 1, 'clean_unlock', 1) in port_art.tour_pokes('ending-6'))

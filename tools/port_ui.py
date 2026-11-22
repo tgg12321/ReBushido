@@ -1476,11 +1476,14 @@ BLOCKS = [
     ]),
     # -- end of the staff roll (ending-0) --
     # -- a fight begun again (story) --
-    # REMATCH (under the story's 再戦, a fight begun again): its two other keys are steps of a fade of these, drawn from them tinted
+    # REMATCH (under the story's 再戦, a fight begun again), and the same
+    # pieces through the colour table of a step of its fade, which is one
+    # step from the first's
     block((90, 10), [
         text('REMATCH', [(0, 0, 90, 9)], 'sans', 'edge', (212, 212, 212), (215, 215, 215), (0, 0, 0), screen='story'),
     ], [
         ('64x10-4-5261391d6cb0457f', 0, 0), ('26x10-4-24e3b89cd88ce67d', 64, 0),
+        ('64x10-4-bf5f976697e035d8', 0, 0), ('26x10-4-eb04d7182efe1d56', 64, 0),
     ]),
     # -- end of a fight begun again (story) --
 ]
