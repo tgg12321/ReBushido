@@ -7516,7 +7516,27 @@ ring or two of vertices a side, so a deep bend is rounded across a few
 large triangles, not a smooth curve; a remade model with edge loops at
 the joints (`tools/port_models/`) bends smoother by the same blend.
 
-**Cost.** COST_PLACEHOLDER
+**Cost.** Once a model as it loads, the bands (a few passes over its
+vertices: nothing to see beside reading the file). Each pose, 21 dual
+quaternions on the processor beside the 21 matrices it already makes,
+and a vec4 a vertex more for the card; a vertex of a band is a dual
+quaternion mixed and applied in place of its eight terms. Measured with
+`port_bench.py` (RTX 3090, 2,560 by 1,440) with every fighter drawn from
+the game's own model (a trial: the disc's models as a mod in the bench's
+`mods`), `--set joints=rigid` against `blended`, the card's passes, ms
+(median, a fight frame):
+
+| case | skin, rigid | skin, blended | fighters, rigid | fighters, blended | cloth, rigid | cloth, blended |
+| --- | --- | --- | --- | --- | --- | --- |
+| `ra1` | 0.07 | 0.07 | 0.12 | 0.12 | 0.41 | 0.41 |
+| `ra1-stress` (four fighters) | 0.10 | 0.10 | 0.17 | 0.17 | 0.62 | 0.63 |
+| `ra1-2v2` | 0.12 | 0.12 | 0.14 | 0.14 | 0.73 | 0.75 |
+
+The same to a hundredth: below what the bench can tell. Other agents' runs
+loaded the machine through both (the bench says so), so the totals are not
+to be trusted, but the passes held from one run to the other. The bench's
+own cases draw the game's own fighters (no fighter models: "not hd"), where
+nothing of this runs.
 ### The effects
 
 **How the game draws them** (`src/main/eff.c`, `include/eff.h`). Blood,
