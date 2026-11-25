@@ -114,6 +114,7 @@ static struct {
     s32 count;
     s32 music; /* the row of music, and its rule's (port_fight_music.h) */
     s32 music_rule;
+    s32 stage; /* the stage under the cursor, for its own piece */
     s32 match; /* the match rule's column (port_PageMatchKey) */
     /* the pixels, `box` of the game's area */
     u32 *pixels;
@@ -513,6 +514,12 @@ static void port_PageStrip(const PortStageChoice *choice, s32 count) {
     columns[n].value = port_FightMusicRowName(row);
     columns[n].color =
         row == PORT_FIGHT_MUSIC_ROW_OWN ? COLOR_TEXT : COLOR_GOLD;
+    /* the stage's own piece of a mod's (port_MusicStagePiece) */
+    if (row == PORT_FIGHT_MUSIC_ROW_OWN &&
+        port_MusicStagePiece(choice->cursor_stage) != NULL) {
+        columns[n].value = "Stage's own: mod";
+        columns[n].color = COLOR_GOLD;
+    }
     columns[n].caps[0] = "L2";
     columns[n].caps[1] = "R2";
     columns[n].cap_count = 2;
@@ -568,6 +575,8 @@ static void port_PageStrip(const PortStageChoice *choice, s32 count) {
 static void port_PageArenas(const PortStageChoice *choice, s32 count) {
     static const char * const fight[] = {"#cross"};
     static const char * const back[] = {"#triangle", "SELECT"};
+    static const char * const turn[] = {"L1", "R1"};
+    static char pages[24];
     const PortArena *chosen = port_ArenaAt(choice->page_cursor);
     const Preview *preview;
     s32 base = port_PageY(PAGE_KEYS_BASE);
@@ -604,6 +613,14 @@ static void port_PageArenas(const PortStageChoice *choice, s32 count) {
         port_PageText(ROW_BAR_X + ROW_BAR_W / 2, ROW_FIRST + ROWS * ROW_PITCH,
                       SIZE_LABEL, "more below", COLOR_DIM, TRUE, FALSE);
     }
+    /* more than a page: which of them, L1 and R1 turning them */
+    if (count > ROWS) {
+        snprintf(pages, sizeof(pages), "page %d of %d",
+                 (choice->page_cursor / ROWS) + 1, (count + ROWS - 1) / ROWS);
+        port_PageText(ROW_BAR_X + ROW_BAR_W / 2,
+                      ROW_FIRST + ROWS * ROW_PITCH + ROW_PITCH / 2, SIZE_LABEL,
+                      pages, COLOR_DIM, TRUE, FALSE);
+    }
     preview = port_PagePreview(choice->page_cursor);
     if (preview != NULL) {
         port_PagePicture(preview, PICTURE_X, PICTURE_Y, PICTURE_W, PICTURE_H);
@@ -624,9 +641,15 @@ static void port_PageArenas(const PortStageChoice *choice, s32 count) {
     /* the buttons, as the panel under the scroll draws them, in the middle */
     w = port_PageKeys(0, base, fight, 1, NULL, "Fight here", FALSE) + gap +
         port_PageKeys(0, base, back, 2, "or", "Back", FALSE);
+    if (count > ROWS) {
+        w += gap + port_PageKeys(0, base, turn, 2, NULL, "Pages", FALSE);
+    }
     x = port_PageX(GAME_W / 2) - w / 2;
     x += port_PageKeys(x, base, fight, 1, NULL, "Fight here", TRUE) + gap;
-    port_PageKeys(x, base, back, 2, "or", "Back", TRUE);
+    x += port_PageKeys(x, base, back, 2, "or", "Back", TRUE);
+    if (count > ROWS) {
+        port_PageKeys(x + gap, base, turn, 2, NULL, "Pages", TRUE);
+    }
 }
 
 /* ---- what the window asks ---- */
@@ -659,6 +682,7 @@ s32 port_StagePagePixels(
         g_page.count != count || g_page.music != g_port_fight_music.row ||
         g_page.music_rule != port_GetFightMusicRule() ||
         g_page.time != choice->cursor_time ||
+        g_page.stage != choice->cursor_stage ||
         g_page.match != port_PageMatchKey()) {
         g_page.match = port_PageMatchKey();
         g_page.music = g_port_fight_music.row;
@@ -670,6 +694,7 @@ s32 port_StagePagePixels(
         g_page.top = choice->page_top;
         g_page.kind = choice->cursor_kind;
         g_page.time = choice->cursor_time;
+        g_page.stage = choice->cursor_stage;
         g_page.count = count;
         g_page.box.x = (open ? PAGE_X : STRIP_X) * area_w / GAME_W;
         g_page.box.y = (open ? PAGE_Y : STRIP_Y) * area_h / GAME_H;

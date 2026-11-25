@@ -455,8 +455,10 @@ and R2) and, when a mod brings any, **Arenas** (Select).
 **Square** switches the stage under the cursor between Classic and
 Remastered Classic, and it stays so for as long as the program runs.
 **Select** opens the page of the **custom arenas**: up and down choose
-one, its picture beside the list; **Cross** fights on it; **Triangle**
-or Select goes back to the stages. **L1** and **R1** turn the stage's
+one, its picture beside the list; with more than five, **L1** and
+**R1** turn a page of five, round from the last to the first; **Cross**
+fights on it; **Triangle** or Select goes back to the stages. On the
+stages' grid **L1** and **R1** turn the stage's
 time of day ("The time of day", below), **L2** and **R2** choose the
 fight's music ("Music on the stage select", below). On the keyboard
 Square is A, Select is Right Shift, L1 and R1 are Q and W and L2 and R2
@@ -547,7 +549,11 @@ forward through:
 
 - **Stage's own** (where the row starts): the piece versus mode plays on
   that stage, in every mode; a mod's arena's own piece on an arena.
-  Practice and chanbara keep the pieces they have in the original;
+  Practice and chanbara keep the pieces they have in the original. A
+  music mod may give a stage a piece of its own (`music/stage07.ogg`:
+  [`MODS.md`](MODS.md), "A stage's own piece"), and the panel then reads
+  **Stage's own: mod**. Online it is heard only where both players have
+  the same stages' pieces; otherwise both hear the game's;
 - every piece the game has, by where the game plays it: Tatara Shrine
   (most stages', and the narration's), Select screen, Snake Cliff,
   Bamboo Thicket, Meikyokan Dojo, **Unheard I** and **Unheard II** (two
@@ -953,6 +959,16 @@ replacement must be, and `music_mods = off` (the settings menu's
 writes them all from your disc to begin from. A stage mod can change
 how fights play on it, so both players of a netplay session need the
 same ones. [`MODS.md`](MODS.md), "Music" and "Stages".
+
+A mod's **weapons** (`weapons/`) are new weapons on one of the game's:
+on the weapon select, **L1** and **R1** on a weapon go round it and the
+mods' weapons made on it, a line under the row saying which, and Cross
+picks it. A weapon may have its own model in the remastered picture and
+a motion file of its own. The program ships one to try, a studded war
+club on the katana: set `enabled = yes` in `mods/kanabo/mod.txt`. Both
+players of an online session need the same weapon mods, or the session
+is refused and the page says why. [`MODS.md`](MODS.md), "A mod's weapon
+on the select screens".
 
 ### The first start
 

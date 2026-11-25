@@ -216,6 +216,41 @@ static Model *port_FighterViewModel(s32 slot) {
     return slot < MODEL_SLOT_COUNT ? model_Get(slot) : NULL;
 }
 
+/* The nodes weapon_Queue last put in each model slot's first hand
+ * (port_RemasterNoteHeldWeapon), in each of the two buffers a frame is
+ * built in by turns: a weapon's node is made afresh in each frame's
+ * buffer, and a frame may be drawn after the next one is built. */
+#define HELD_BUFFERS 2
+static PortAddress g_held_nodes[MODEL_SLOT_COUNT][HELD_BUFFERS];
+static s32 g_held_next[MODEL_SLOT_COUNT];
+
+void port_RemasterNoteHeldWeapon(const void *node, s32 slot) {
+    if (slot >= 0 && slot < MODEL_SLOT_COUNT) {
+        g_held_nodes[slot][g_held_next[slot]] = (PortAddress)node;
+        g_held_next[slot] = (g_held_next[slot] + 1) % HELD_BUFFERS;
+    }
+}
+
+/* The model of a mod's weapon (port_WeaponHeldModel) where the weapon
+ * node is in a fighter's first hand, or NULL (two on two keeps the game's
+ * models). */
+static const char *port_FighterHeldModel(PortAddress at, s32 weapon_model) {
+    s32 slot;
+    s32 i;
+
+    if (port_DuoIsOn()) {
+        return NULL;
+    }
+    for (slot = 0; slot < MODEL_SLOT_COUNT; slot++) {
+        for (i = 0; i < HELD_BUFFERS; i++) {
+            if (g_held_nodes[slot][i] == at) {
+                return port_WeaponHeldModel(slot, weapon_model);
+            }
+        }
+    }
+    return NULL;
+}
+
 s32 port_FighterLoadedModel(s32 slot) {
     Model *model;
 
@@ -280,6 +315,7 @@ void port_FighterNoteNode(PortAddress at) {
 
         weapon->node = at;
         weapon->weapon = port_FighterWeaponModel(node->mesh / 2);
+        weapon->model_key = port_FighterHeldModel(at, weapon->weapon);
         weapon->serial = g_serial;
         port_FighterCopyMatrix(&weapon->world, &node->world);
         port_FighterCopyLights(weapon->light, weapon->color, weapon->back,

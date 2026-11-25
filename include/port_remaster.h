@@ -751,6 +751,10 @@ extern void port_RemasterBeginStageTextures(void);
 /* One of them: the TIM at `tim`, its picture loaded at (x, y) and its
  * colour table at (clut_x, clut_y), as tex_LoadTim was told, the faces
  * naming that table at (clut_x, named_y). */
+/* weapon_Queue put a weapon's node, `node`, in the first hand of the
+ * model in slot `slot` (src/port/fighter_view.c): the picture draws a
+ * mod's weapon's own model there (port_weapons.h). None of the state. */
+extern void port_RemasterNoteHeldWeapon(const void *node, s32 slot);
 extern void port_RemasterNoteStageTexture(
     const void *tim, s32 x, s32 y, s32 clut_x, s32 clut_y, s32 named_y);
 /* The game is drawing a picture it will then keep on show without drawing
@@ -765,6 +769,30 @@ extern s32 port_RemasterIsPictureKept(void);
  * stage's textures are loaded again. */
 extern const PortStageTexture *port_RemasterStageTextures(
     s32 *count, u32 *version);
+
+/* ---- the fighters' own textures (src/port/gl/gl_scene.c) ---- */
+
+/* A fighter's pages are replaced as the stage's are (docs/MODS.md, "The
+ * scene's textures by page"), keyed by what his model's file loaded into
+ * them. model.c says which TIMs those are as it loads them, by slot (0,
+ * the first; 1, the second, two pages to the right). The stage's number
+ * (port_RemasterStageTextures' `version`) changes with them. */
+#define PORT_MODEL_TEXTURE_SLOTS 2
+#define PORT_FIGHTER_TEXTURES_MAX 64
+/* Slot `slot`'s textures are about to be loaded: its last are
+ * forgotten. */
+extern void port_RemasterBeginFighterTextures(s32 slot);
+/* From now on every TIM tex_LoadTim loads is slot `slot`'s (-1: none's),
+ * the faces naming its colour table `named_dy` rows from where it is
+ * loaded: 0, or above the fog's block's plain copy of a fogged model's
+ * tables, which the faces name in the fog's own rows (model.c). */
+extern void port_RemasterNoteFighterTextures(s32 slot, s32 named_dy);
+/* tex_LoadTim's: the TIM it has just loaded, for the slot noting. */
+extern void port_RemasterNoteTim(
+    const void *tim, s32 x, s32 y, s32 clut_x, s32 clut_y);
+/* What slot `slot`'s model has loaded, and how many. */
+extern const PortStageTexture *port_RemasterFighterTextures(
+    s32 slot, s32 *count);
 
 /* ---- what a primitive is, once decoded ---- */
 

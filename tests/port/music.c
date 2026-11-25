@@ -78,9 +78,9 @@ s32 port_GetSessionRole(void) { return g_made_role; }
 
 /* the mods: bb2_m1-3 is the looped WAV, bb2_m1-5 the other, and
  * my_theme, a piece of its own, the other again; bb2_m1-5 a second
- * time, from a later mod */
+ * time, from a later mod; stage07, stage 7's own piece, the other again */
 static const char * const g_made_keys[] = {
-    "bb2_m1-3", "bb2_m1-5", "my_theme", "bb2_m1-5", "bb2_m1"};
+    "bb2_m1-3", "bb2_m1-5", "my_theme", "bb2_m1-5", "bb2_m1", "stage07"};
 
 const char *port_ModFind(s32 kind, const char *key) {
     if (kind != PORT_MOD_MUSIC) {
@@ -89,14 +89,27 @@ const char *port_ModFind(s32 kind, const char *key) {
     if (port_TextsEqual(key, "bb2_m1-3")) {
         return g_made_looped;
     }
-    if (port_TextsEqual(key, "bb2_m1-5") || port_TextsEqual(key, "my_theme")) {
+    if (port_TextsEqual(key, "bb2_m1-5") || port_TextsEqual(key, "my_theme") ||
+        port_TextsEqual(key, "stage07")) {
         return g_made_once;
     }
     return NULL;
 }
 
+/* a file's part of a sum: here its key's alone */
+u64 port_ModFileHash(s32 kind, const char *key, const char *path) {
+    u64 hash = (u64)kind + 1;
+
+    (void)path;
+    while (*key != TEXT_END) {
+        hash = hash * 131 + (u8)*key++;
+    }
+    return hash;
+}
+
 s32 port_ModFileOf(s32 kind, s32 place, const char **key, const char **path) {
-    if (kind != PORT_MOD_MUSIC || place < 0 || place >= 5) {
+    if (kind != PORT_MOD_MUSIC || place < 0 ||
+        place >= (s32)(sizeof(g_made_keys) / sizeof(g_made_keys[0]))) {
         return FALSE;
     }
     *key = g_made_keys[place];
@@ -180,6 +193,20 @@ static void test_Keys(void) {
     /* a name with no ending keeps all of itself */
     port_MusicKey("KAISYA", 3, key, sizeof(key));
     CHECK(port_TextsEqual(key, "kaisya-3"));
+    /* a stage's own piece: `stage` and two digits, of a stage there is */
+    port_MusicStageKey(7, key, sizeof(key));
+    CHECK(port_TextsEqual(key, "stage07"));
+    port_MusicStageKey(29, key, sizeof(key));
+    CHECK(port_TextsEqual(key, "stage29"));
+    CHECK(port_MusicStageOfKey("stage07") == 7);
+    CHECK(port_MusicStageOfKey("stage00") == 0);
+    CHECK(port_MusicStageOfKey("stage37") == 37);
+    CHECK(port_MusicStageOfKey("stage38") == -1);
+    CHECK(port_MusicStageOfKey("stage7") == -1);
+    CHECK(port_MusicStageOfKey("stage007") == -1);
+    CHECK(port_MusicStageOfKey("stage-07") == -1);
+    CHECK(port_MusicStageOfKey("stages07") == -1);
+    CHECK(port_MusicStageOfKey("bb2_m1-0") == -1);
 }
 
 static void test_Tags(void) {
@@ -573,6 +600,25 @@ static void test_Extras(void) {
     CHECK(port_MusicExtraKey(1) == NULL);
 }
 
+/* A stage's own piece: stage07 is stage 7's, and no piece of its own of
+ * the row's (test_Extras); held off for a session whose peers differ. */
+static void test_StagePieces(void) {
+    u32 sum;
+
+    CHECK(port_TextsEqual(port_MusicStagePiece(7), "stage07"));
+    CHECK(port_MusicStagePiece(8) == NULL);
+    CHECK(port_MusicStagePiece(-1) == NULL);
+    CHECK(port_MusicStagePiece(STAGE_COUNT) == NULL);
+    sum = port_MusicStageSum();
+    CHECK(sum != 0);
+    CHECK(sum <= 0xFFFF);
+    CHECK_EQ(port_MusicStageSum(), sum);
+    port_MusicHoldStagePieces(FALSE);
+    CHECK(port_MusicStagePiece(7) == NULL);
+    port_MusicHoldStagePieces(TRUE);
+    CHECK(port_TextsEqual(port_MusicStagePiece(7), "stage07"));
+}
+
 void test_Main(void) {
     g_made_looped = test_Arg(0);
     g_made_once = test_Arg(1);
@@ -585,4 +631,5 @@ void test_Main(void) {
     test_Ogg(test_Arg(2));
     test_Player();
     test_Extras();
+    test_StagePieces();
 }

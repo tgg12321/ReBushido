@@ -28,6 +28,12 @@
 #include "bb2.h"
 
 #define CHIP_RATE PORT_SPU_RATE
+/* a stage's own piece: `stage` and the stage's number in two digits */
+#define STAGE_KEY_WORD "stage"
+#define DECIMAL 10
+#define STAGE_SUM_FOLD_32 32
+#define STAGE_SUM_FOLD_16 16
+#define STAGE_SUM_MASK 0xFFFF
 #define RATE_MIN 8000
 #define RATE_MAX 96000
 /* the most samples one call mixes: a blank's are fewer */
@@ -176,7 +182,15 @@ static struct {
     s32 extras_found;
     s32 extra_count;
     char extras[PORT_FIGHT_MUSIC_EXTRAS_MAX][PORT_MOD_KEY_SIZE];
+    /* the mods' stages' own pieces (`stage07`), found once: each stage's
+     * key, empty where no mod has one; a session's peers whose pieces are
+     * not the same leave them out (port_MusicHoldStagePieces) */
+    s32 stages_found;
+    char stage_keys[STAGE_COUNT][PORT_MUSIC_STAGE_KEY_SIZE];
+    s32 stages_held_off;
 } g_port_music = {.dump_file = -1, .dump_slot = -1};
+
+static void port_MusicFindStages(void);
 
 static void port_MusicSay(char *out, u32 room, const char *format, ...) {
     PortArgs args;
@@ -849,6 +863,8 @@ void port_MusicStart(void) {
             port_ModsCount(PORT_MOD_MUSIC),
             g_port_music.is_off ? ", which music_mods = off leaves out" : "");
     }
+    /* before the game's first step, and so before the window asks */
+    port_MusicFindStages();
     if (g_port_music.dump_folder != NULL) {
         port_HostMakeFolder(g_port_music.dump_folder);
         g_port_music.unmixed = port_HostAllocate(FRAMES_MAX * 2 * sizeof(s16));
@@ -916,6 +932,30 @@ static s32 port_MusicIsDiscKey(const char *key) {
     return FALSE;
 }
 
+/* The stage a key is the own piece of (`stage07`, two digits), or -1
+ * (port_music.h). */
+s32 port_MusicStageOfKey(const char *key) {
+    u32 i;
+    s32 stage;
+
+    for (i = 0; i < sizeof(STAGE_KEY_WORD) - 1; i++) {
+        if (key[i] != STAGE_KEY_WORD[i]) {
+            return -1;
+        }
+    }
+    if (key[i] < '0' || key[i] > '9' || key[i + 1] < '0' || key[i + 1] > '9' ||
+        key[i + 2] != TEXT_END) {
+        return -1;
+    }
+    stage = (key[i] - '0') * DECIMAL + (key[i + 1] - '0');
+    return stage < STAGE_COUNT ? stage : -1;
+}
+
+void port_MusicStageKey(s32 stage, char *key, u32 room) {
+    port_MusicSay(key, room, "%s%d%d", STAGE_KEY_WORD,
+                  stage / DECIMAL % DECIMAL, stage % DECIMAL);
+}
+
 /* The mods' pieces that stand in for none of the disc's, once: the mods
  * and the disc's directory are read before the game's first step, and
  * neither changes after. */
@@ -931,7 +971,7 @@ static void port_MusicFindExtras(void) {
         if (g_port_music.extra_count >= PORT_FIGHT_MUSIC_EXTRAS_MAX) {
             break;
         }
-        if (port_MusicIsDiscKey(key)) {
+        if (port_MusicIsDiscKey(key) || port_MusicStageOfKey(key) >= 0) {
             continue;
         }
         for (i = 0; i < g_port_music.extra_count; i++) {
@@ -974,4 +1014,67 @@ void port_MusicSetFightPiece(const char *carrier, const char *extra) {
     }
     port_MusicSay(g_port_music.fight_carrier, PORT_MOD_KEY_SIZE, "%s", carrier);
     port_MusicSay(g_port_music.fight_extra, PORT_MOD_KEY_SIZE, "%s", extra);
+}
+
+/* ---- a stage's own piece (port_fight_music.h) ---- */
+
+/* Each stage's own piece of the mods', once: the mods are read before
+ * the game's first step, and do not change. */
+static void port_MusicFindStages(void) {
+    s32 stage;
+
+    g_port_music.stages_found = TRUE;
+    for (stage = 0; stage < STAGE_COUNT; stage++) {
+        char *key = g_port_music.stage_keys[stage];
+
+        port_MusicStageKey(stage, key, PORT_MUSIC_STAGE_KEY_SIZE);
+        if (port_ModFind(PORT_MOD_MUSIC, key) == NULL) {
+            key[0] = TEXT_END;
+            continue;
+        }
+        port_Log("music: %s is stage %d's own piece\n", key, stage);
+    }
+}
+
+const char *port_MusicStagePiece(s32 stage) {
+    if (stage < 0 || stage >= STAGE_COUNT || g_port_music.stages_held_off) {
+        return NULL;
+    }
+    if (!g_port_music.stages_found) {
+        port_MusicFindStages();
+    }
+    return g_port_music.stage_keys[stage][0] != TEXT_END
+               ? g_port_music.stage_keys[stage]
+               : NULL;
+}
+
+/* The stages' pieces' sum: each one's kind, key and bytes, as the gameplay
+ * mods' files are summed (port_ModFileHash), added, so that the order the
+ * mods were read in does not count; folded to 16 bits, 0 for none. */
+u32 port_MusicStageSum(void) {
+    u64 sum = 0;
+    s32 stage;
+
+    if (!g_port_music.stages_found) {
+        port_MusicFindStages();
+    }
+    for (stage = 0; stage < STAGE_COUNT; stage++) {
+        const char *key = g_port_music.stage_keys[stage];
+
+        if (key[0] != TEXT_END) {
+            sum += port_ModFileHash(
+                PORT_MOD_MUSIC, key, port_ModFind(PORT_MOD_MUSIC, key));
+        }
+    }
+    if (sum == 0) {
+        return 0;
+    }
+    sum ^= sum >> STAGE_SUM_FOLD_32;
+    sum ^= sum >> STAGE_SUM_FOLD_16;
+    /* some pieces' sum is never none's */
+    return (u32)(sum & STAGE_SUM_MASK) | 1;
+}
+
+void port_MusicHoldStagePieces(s32 is_on) {
+    g_port_music.stages_held_off = !is_on;
 }

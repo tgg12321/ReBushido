@@ -181,6 +181,18 @@ def read_sidecar(path):
     return table, textures
 
 
+def sidecar_owner(path):
+    """Whose page it is, as its sidecar says: `stage`, or `fighter` (a
+    fighter's model's pages, which the dump writes too and this mod leaves
+    out); a sidecar of before owners were written is the stage's."""
+    with open(path, encoding='utf-8') as f:
+        for line in f:
+            words = line.split()
+            if words and words[0] == 'owner':
+                return words[1]
+    return 'stage'
+
+
 def make_upscaler(np, Image):
     """The four steps (the module's docstring), as functions of numpy
     arrays of floats, 0 to 255, rows by columns by channels."""
@@ -450,7 +462,8 @@ def build(args):
         print('port_stage_hd: no folder %s: `dump` first, or --dump FOLDER' % pages)
         return 1
     names = sorted(n[:-4] for n in os.listdir(pages)
-                   if n.endswith('.png') and os.path.exists(os.path.join(pages, n[:-4] + '.txt')))
+                   if n.endswith('.png') and os.path.exists(os.path.join(pages, n[:-4] + '.txt'))
+                   and sidecar_owner(os.path.join(pages, n[:-4] + '.txt')) == 'stage')
     if args.keys:
         names = [n for n in names if n in args.keys.split(',')]
     out = os.path.join(args.out, 'textures')

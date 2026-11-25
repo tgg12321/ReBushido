@@ -95,10 +95,13 @@ typedef struct {
 } PortFighterView;
 
 /* A weapon or a thing worn, as drawn this frame: the node, which weapon
- * model it is (enum WeaponModel, or -1), and its world matrix. */
+ * model it is (enum WeaponModel, or -1), the model of a mod's weapon
+ * drawn for it (port_WeaponHeldModel: models/KEY.glb, or NULL), and its
+ * world matrix. */
 typedef struct {
     PortAddress node;
     s32 weapon;
+    const char *model_key;
     u32 serial;
     PortFighterMatrix world;
     s16 light[9];

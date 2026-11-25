@@ -3010,6 +3010,21 @@ log. (The bar is not slack: the fog mixed from one band's edge to the
 next instead of about the band's middle put the abandoned shipyard at
 5.08% and it fell out, which is how that was found.)
 
+**A custom arena** stands on its host's number but is a ground of its own,
+so it is held to the prover by itself: `--arena FILE.arena` puts the file
+alone in a folder of mods, runs the tour on its host with `--arena`, and
+writes the line of `g_arena_proved` (`gl_stage.c`) it comes to: the
+arena's key and the FNV-1a of its whole file, so that the verdict is of
+the arena as measured and of no other. While an arena is in play the mesh
+takes its verdict, not the host's; an arena not in the table (a mod's
+own, or one changed since) keeps the game's own tiles unless
+`stage_mesh = every`, and the log says so. The sample, `courtyard`, keeps
+the mesh (trace the same, areas 0.620%, the largest 10,752 pixels, black
+0.001%), and so does the compiler's test arena, the gallery (0.651%,
+4,352, 0.001%), which is not shipped and so not in the table;
+`tests/rebushido/arena.py` fails when the sample as compiled is no longer
+the file the table names.
+
 **What the differences are**, looked at picture by picture and not only
 counted: the ground is in both, in the same place, with the same things
 standing on it, and nothing of a fighter, a shadow or a dropped weapon is
@@ -7141,7 +7156,16 @@ the weapon's own lights. A weapon's node is made afresh in each frame's
 buffer, so its primitives are told by its address within the frame, and
 the model that weapon is by its place among the loaded ones
 (`g_resource_loaded_weapons`). Between two frames it is mixed as a
-fighter's bones are.
+fighter's bones are. A mod's weapon with a model of its own (`model =
+KEY`, MODS.md, "A mod's weapon on the select screens") is drawn from
+`models/KEY.glb`, in the same format, in place of the weapon model in
+its fighter's first hand: `weapon_Queue` says which model slot's hand it
+put each node in (`port_RemasterNoteHeldWeapon`, under
+`RB_REMASTER_VIEW`), the last two of each slot kept since a frame may be
+drawn after the next is built (`port_FighterHeldModel`, `fighter_view.c`,
+outside the state); `port_GlFighterWeaponOf` (`gl_fighter.c`) keeps a
+place for each key and finds the file in the mods' `models/` whatever
+`fighter_models` names.
 
 **The tiny model.** In the first-person view the fighter looked through
 is drawn again as a small figure in the top left corner (`model_tiny.c`):
@@ -8460,7 +8484,7 @@ dressing asks it where it decides:
 | Feature | Classic | Remastered Classic | Where it asks |
 |---|---|---|---|
 | The stage's own lights (torches, fires, lanterns: the lights files, MODS.md "Lights") | off | as `stage_lights` says | `port_LightsOfStage` (`src/port/lights.c`) |
-| The stages' pages made larger (`stages-hd`) and any mod's page pictures | the game's own textures | the mod's | `port_GlSceneFind` (`src/port/gl/gl_scene.c`) |
+| The stages' pages made larger (`stages-hd`) and any mod's page pictures of the stage (a fighter's are his on either: MODS.md, "A fighter's pages") | the game's own textures | the mod's | `port_GlSceneFind` (`src/port/gl/gl_scene.c`) |
 | The night sky | the game's colour of the distance | as `sky` says | the sky's drawing (`src/port/gl/gl_sky.c`) |
 | The dressing (grass, bushes, water, particles, meshes: ROADMAP 17, "The dressing") | off | as `dressing` says | `port_DressingOfStage` (`src/port/dressing.c`) |
 | The time of day ("The time of day") | the game's own | as chosen | `port_StageTime` (`src/port/stage_choice.c`) |
@@ -8494,7 +8518,8 @@ The game's hooks, all under `RB_PORT`:
 - `select_StageStep` (`select.c`), before the grid reads its presses:
   `port_StagePageStep` with the stage under the cursor. Square switches
   that stage's kind; Select opens the arenas' page, which then has every
-  press: up and down, Cross to fight on the arena (the grid's stage index
+  press: up and down, L1 and R1 a page of five back or on (round from
+  the last to the first), Cross to fight on the arena (the grid's stage index
   set to its host, the page confirmed as the grid's own Cross does),
   Triangle or Select back. The grid's own Cross calls `port_StageChosen`:
   the fight's kind is that stage's, and the arena is the run's own
@@ -8537,7 +8562,8 @@ colour): **Kind** ("Remastered" in gold, "Classic" in white; Square),
 (Select); one size of letters for the values, one for the buttons'
 words, a value too long for its column made smaller. The arenas' page
 covers the map and the
-scroll: the arenas by their names (five rows, scrolled), the picture of
+scroll: the arenas by their names (five rows, scrolled; past five, which
+page of how many under them, and L1 and R1 among the keys), the picture of
 the one under the cursor (the PNG its file carries, or a card of its
 name), and the same keys for what Cross, and Triangle or Select, do.
 It reads the state and the
@@ -9024,6 +9050,20 @@ place the next time that stream starts, until another stream does. The
 state is then the stage's own piece's, whatever the mods. In a session
 the row offers none of them: two peers' mods may differ, and the row is
 the state.
+
+**A stage's own piece.** A mod's `music/stage07.ogg` is stage 7's
+(`port_MusicStagePiece`, `music.c`; MODS.md, "A stage's own piece"). Where
+the row is at the rule's own, the fight's start puts it over the stage's
+stream the same way (`port_MusicSetFightPiece`): over the track it starts
+under `stage`, and in versus over the track the game itself starts under
+`original`; never on an arena (`port_StageArena`). The state is the disc's
+piece's still. The stage page's panel reads "Stage's own: mod" where the
+stage under the cursor (`PortStageChoice.cursor_stage`) has one. In a
+session each machine sends the sum of its stages' pieces in the high half
+of `MEET_MUSIC` (the low half is the host's setting, as before); where the
+two sums differ both hold the pieces off (`port_MusicHoldStagePieces`,
+`session.c`'s `port_HoldSessionStageMusic`), so the two hear one track; a
+spectator holds its own to the host's.
 
 **The state.** The row and what the fight's start made of it are
 `g_port_fight_music` (`src/port/fight_music.c`, a state file); the run's

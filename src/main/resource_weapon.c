@@ -260,6 +260,14 @@ void weapon_Queue(s32 weapon_model, s32 where, s32 *pos, s16 *rot) {
             node->node.world.t[2] =
                 node->node.world.t[2] + PTR(hand->node.parent)->world.t[2];
             where |= WEAPON_DRAW_HELD;
+#if RB_REMASTER_VIEW
+            /* the picture's: whose first hand this node is in, for a mod's
+             * weapon's own model (port_weapons.h) */
+            if (!second_hand) {
+                port_RemasterNoteHeldWeapon(
+                    node, (where & (WEAPON_DRAW_HELD - 1)) >> 1);
+            }
+#endif
             hand->node.world = node->node.world;
             ground_y = model->ground_y;
         }

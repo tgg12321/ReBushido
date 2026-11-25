@@ -21,8 +21,11 @@
 #include "psxsdk/libgte.h"
 
 /* The version of the file's format this program reads: a file says
- * `format = 1`. A later program reads every earlier format. */
-#define PORT_WEAPON_FORMAT 1
+ * `format = 1`, or 2 for a file that names a model or motions of its
+ * own (`model =`, `motions =`). A later program reads every earlier
+ * format. */
+#define PORT_WEAPON_FORMAT 2
+#define PORT_WEAPON_FORMAT_OWN_FILES 2
 /* the most points a weapon has (the pole arms' three) */
 #define PORT_WEAPON_POINTS_MAX 3
 #define PORT_WEAPON_NAME_SIZE 48
@@ -70,7 +73,21 @@ typedef struct {
      * (g_cpu_weapon_reaches, g_cpu_weapon_ranges) */
     s32 cpu_reach;
     s32 cpu_range;
+    /* `model =`: the mod's `models/KEY.glb`, drawn in the hand in place
+     * of the weapon model in the remastered picture; empty for none */
+    char model_key[PORT_WEAPON_KEY_SIZE];
+    /* `motions =`: the mod's `motions/KEY.bbm`, the fighter's motion file
+     * in place of his set's; empty for the base's set. Its motion set's
+     * weapon class is PORT_WEAPON_MOTION_CLASS + motion_number. */
+    char motions_key[PORT_WEAPON_KEY_SIZE];
+    s32 motion_number;
 } PortWeapon;
+
+/* A motion set (include/motion.h, MOTION_SET) whose weapon class is this
+ * or more is a mod's weapon's own motion file: class 8 to 15, one for each
+ * weapon with `motions =`. The game's own classes are 0 to 7. */
+#define PORT_WEAPON_MOTION_CLASS 8
+#define PORT_WEAPON_MOTION_FILES 8
 
 /* A weapon's file, `length` bytes of `text`, into `weapon` (whose `key`
  * the caller has set): TRUE if it is a weapon this program can use, else
@@ -121,5 +138,65 @@ extern s32 port_WeaponModel(s32 index, s32 weapon_id, s32 own);
 extern s32 port_WeaponDefaultStance(s32 index, s32 weapon_id, s32 own);
 extern s32 port_WeaponCpuReach(s32 index, s32 weapon_id, s32 own);
 extern s32 port_WeaponCpuRange(s32 index, s32 weapon_id, s32 own);
+
+/* ---- a weapon's own files ---- */
+
+/* The motion set fighter `index` fights with (motion_LoadFighterFiles):
+ * `set`, the game's, or for a mod's weapon with motions of its own the
+ * set of its own class with the same stance kinds. */
+extern s32 port_WeaponMotionSet(s32 index, s32 weapon_id, s32 set);
+/* The weapon class whose rules a set's fighter keeps (the two special
+ * stances of the first two classes: motion_AttachFighter): the set's own,
+ * or a mod's weapon's base. */
+extern s32 port_WeaponMotionClass(s32 set);
+/* For a set of a mod's weapon's own: its motion file read into `dest`
+ * (the game's room for a fighter's motion file) and TRUE; FALSE for a
+ * set of the disc's, which the game reads itself. */
+extern s32 port_WeaponReadMotions(s32 set, void *dest);
+/* The key of the model a fighter in model slot `slot` draws in his hand
+ * for the weapon model `weapon_model`, where his mod's weapon has one
+ * (`model =`), or NULL. Read by the picture (fighter_view.c). */
+extern const char *port_WeaponHeldModel(s32 slot, s32 weapon_model);
+
+/* ---- the weapon select (src/port/weapon_pick.c, a state file) ---- */
+
+/* The mods' new weapons on one of the game's: how many (a weapon that
+ * replaces is not one), and the one at `place` from 1 (NULL past the
+ * last). */
+extern s32 port_WeaponVariantCount(s32 weapon_id);
+extern const PortWeapon *port_WeaponVariant(s32 weapon_id, s32 place);
+/* A weapon's place among port_WeaponAt's. */
+extern s32 port_WeaponPlaceOf(const PortWeapon *weapon);
+
+/* What the weapon select holds of the mods' weapons: each side's place
+ * among the weapon's variants under its cursor (0, the game's own; n,
+ * the n-th of port_WeaponVariant), the weapon that was under it, and the
+ * mod's weapon each fighter picked (its place in port_WeaponAt plus one, or
+ * PORT_WEAPON_PICK_NONE). The game's state: saved, put back and hashed,
+ * so a rollback, the two machines of a session and a replay hold it. */
+#define PORT_WEAPON_PICK_NONE 0
+
+typedef struct {
+    s8 variant[PORT_WEAPON_SIDES];
+    s8 cursor_weapon[PORT_WEAPON_SIDES];
+    s8 picked[PORT_WEAPON_SIDES];
+    u8 is_started;
+    u32 row_frame; /* the frame the weapon row last ran (g_disp_frame_count) */
+} PortWeaponPick;
+
+extern PortWeaponPick g_port_weapon_pick;
+
+/* The select screen loads (select_Load): nothing picked. */
+extern void port_WeaponPickReset(void);
+/* A frame of the weapon row for a side still choosing, with `weapon_id`
+ * under its cursor: L1 (`back`) and R1 (`on`) go through the weapon's
+ * variants. TRUE if it took a press. */
+extern s32 port_WeaponPickStep(s32 side, s32 weapon_id, s32 back, s32 on);
+/* The side picks `weapon_id` (Cross): the variant under its cursor is
+ * its fighter's. */
+extern void port_WeaponPickTake(s32 side, s32 weapon_id);
+/* For the window: the name of what a side's cursor (or pick) shows, or
+ * NULL for the game's own weapon; and how many variants it has. */
+extern const char *port_WeaponPickShown(s32 side, s32 *count);
 
 #endif /* PORT_WEAPONS_H */

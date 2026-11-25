@@ -8,7 +8,8 @@
  * mesh (gl_stage.c) and the walls, the props and whatever else of the
  * stage the renderer draws as primitives (gl_draw.c). A stage's textures
  * are then a few files, a page and a table each, and not hundreds of
- * pieces.
+ * pieces. A fighter's pages are replaced the same way, keyed by what his
+ * model's file loaded (docs/MODS.md, "A fighter's pages").
  *
  * The page's key is of the stage's own texels in it and the table as the
  * stage's file loaded it (port_mods.h, port_TexturePageKey), so it is the
@@ -42,7 +43,7 @@ extern void port_GlSceneSetOn(s32 on);
  * written over looked up again. */
 extern void port_GlSceneNewFrame(void);
 /* Whether a mod's page stands in for this primitive's texture: a face of
- * the stage, in perspective, through no texture window. */
+ * the stage or of a fighter, in perspective, through no texture window. */
 extern s32 port_GlSceneFind(const PortRemasterPrim *prim);
 /* The game wrote this rectangle of video memory. */
 extern void port_GlSceneWroteVram(s32 x, s32 y, s32 w, s32 h);

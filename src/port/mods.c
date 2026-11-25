@@ -782,9 +782,9 @@ s32 port_ModFileOf(s32 kind, s32 place, const char **key, const char **path) {
     return FALSE;
 }
 
-/* One file's part of the gameplay hash: FNV-1a over its kind, its key and
- * its bytes. */
-static u64 port_ModsFileHash(s32 kind, const char *key, const char *path) {
+/* One file's part of the gameplay hash (port_mods.h): FNV-1a over its
+ * kind, its key and its bytes. */
+u64 port_ModFileHash(s32 kind, const char *key, const char *path) {
     u8 chunk[HASH_CHUNK_BYTES];
     u64 hash = (KEY_START ^ (u64)kind) * KEY_PRIME;
     s32 file;
@@ -830,7 +830,7 @@ u64 port_ModsGameplayHash(void) {
         /* a sum, so that the order the folders were listed in does not
          * count */
         for (place = 0; port_ModFileOf(kinds[k], place, &key, &path); place++) {
-            hash += port_ModsFileHash(kinds[k], key, path);
+            hash += port_ModFileHash(kinds[k], key, path);
         }
     }
     return hash;

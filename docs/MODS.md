@@ -284,9 +284,9 @@ of its own.
 - **The scene's faces by the piece**: each face reads a small piece of
   its page that is not a texture of its own, so its key would be a piece
   of a fighter, and a fighter's texture would be hundreds of files. The
-  stage's faces are replaced by whole page instead ("The scene's textures
-  by page", below); the fighters and their weapons are not (their own
-  models are: PORT.md, "The fighters' own models").
+  stage's faces and the fighters' are replaced by whole page instead ("The
+  scene's textures by page", below); the weapons in their hands are not
+  (their own models are: PORT.md, "The fighters' own models").
 - **The fight drawn again under the pause** is the scene as well.
 - **The movie**, which the console shows in its 24-bit mode and the
   remastered picture leaves to the software GPU (smoothed). The title
@@ -363,10 +363,66 @@ makes its pictures from.
 - With no mod's textures nothing is looked up and no shader takes the
   path; with `--gl-exact` neither.
 
-What it leaves to video memory: a face of a fighter or a weapon, a page
-of 16-bit texels, a face read through a texture window, and a face the
-side channel has no depth for (the game's own tiles where the ground is
-not drawn as one mesh are partly that).
+What it leaves to video memory: a face of a weapon, a page of 16-bit
+texels, a face read through a texture window, and a face the side channel
+has no depth for (the game's own tiles where the ground is not drawn as
+one mesh are partly that).
+
+### A fighter's pages
+
+**The fighters are replaced by whole page too**, the same way: a mod's
+picture of one of a fighter's pages, seen through one of his colour
+tables, stands in for every face of his that reads that page through that
+table. The key is the stage's, `page-256x256-D-HASH`, made the same way,
+but **of the fighter's own texels**: as each fighter's model loads
+(`model.c`, slot 0 the first fighter's, slot 1 the second's, two pages to
+the right), it says which TIMs it loaded and where
+(`port_RemasterBeginFighterTextures`, port_remaster.h; `tex_LoadTim` notes
+each), and a texel of the page that no TIM of that fighter wrote is hashed
+as 0, whatever the stage or the other fighter put there. So video memory's
+pixels have an owner each -- the stage, the first fighter or the second --
+and a page and table are keyed by their owner's pixels, the owner being
+whoever loaded the table the faces name.
+
+- **The table is the one the model's file loaded.** On a stage whose fog
+  falls on a fighter (`stage_GetFoggedModel`), his faces name the fog's
+  block of tables, which the fog writes over all through the frame; the
+  key takes the colours from the plain copy of them the game loads below
+  that block, as the stage's come from the row below the fog's. A fogged
+  fighter's extra textures (the groups `model_LoadExtraTextures` loads on
+  request) are loaded straight into the fog's rows with no plain copy, and
+  are left to video memory.
+- **The second fighter's tint.** Where the game tints the second fighter's
+  clothes (`model_TintOpponent`, a fighter against himself), it writes his
+  tables: the page is looked up again and its key is of the tinted colours,
+  so the tinted clothes are a page of their own, dumped and replaced on
+  their own. A fade or the fog's colours after that are followed as the
+  stage's are (the colours now over the colours the picture was made from).
+- **Not gated by the stage's kind.** A stage fought Classic draws the
+  stage's faces from the game's own textures, not a mod's pages; a
+  fighter's pages are his on every stage.
+- **With the other replacements.** A face is drawn from a page only where
+  no 2D replacement (a texture of the 2D layer, by its own key) stands in
+  for it, and a fighter drawn by his own model (`models/M100.glb` and the
+  rest: PORT.md, "The fighters' own models") draws none of the game's
+  faces, so his pages are not read at all. A page of the stage and one of a
+  fighter never stand in for each other's faces: the lookup knows whose
+  table it holds.
+
+`--dump-textures FOLDER` writes a fighter's pages into `FOLDER/pages/` as
+the stage's, the list beside each naming its owner (`owner stage`, `owner
+fighter 1` or `2`) and that owner's own textures in it;
+`tools/port_stage_hd.py` makes the stage's alone larger.
+
+**How it is proved** (the GL prover, `port_game`'s plan, Graphics:
+Remastered, no mod but this): the first fighter's pages dumped from the
+fight (27 pages and tables), each given its colours turned (red to green,
+green to blue, blue to red) at four times the size, and put in a mod. The
+pictures are the plain run's, pixel for pixel, until the fight; in the
+fight the first fighter alone differs, his clothes and skin in the turned
+colours, the stage, the second fighter and the lettering as they were. The
+trace of the run is the plain run's, and so are both sizes' of the port
+with the mod.
 
 ## The stages' pages made larger
 
@@ -1335,6 +1391,61 @@ stereo, 44,100 a second, from the moment the drive starts the stream.
 Play through what you want; a piece heard twice is kept from the longer
 play. That is what a replacement stands in for, and its key is its name.
 
+### A stage's own piece
+
+The game shares five pieces among its 38 stages, so a replacement of
+`bb2_m1-0` is heard on most of them. A mod's **`music/stage07.ogg`** (or
+`.wav`: `stage` and the stage's number in two digits, `stage00` to
+`stage37`, the numbers of "Stages" below) is **stage 7's alone**: a
+fight on stage 7 hears it, and every other stage keeps its own piece of
+the disc's (or a mod's replacement of that piece, as before).
+
+- **When.** A fight whose stage select's row of music is at its first
+  place, the stage's own ("Stage's own", or "Game's own" under
+  `fight_music = original`), hears the stage's piece: every mode that
+  plays the stage's music (versus, and with `fight_music = stage` versus
+  the CPU, story and the rest; practice and chanbara keep their own
+  pieces). Any other place of the row (L2 and R2: a piece of the game's,
+  a mod's piece of its own, None) is heard as it is chosen, so the
+  stage's piece is never forced on a player. The row says "Stage's own:
+  mod" in gold where the stage under the cursor has one. An arena keeps
+  its host's piece, or its own track: an arena is a place of its own.
+- **How.** As a mod's piece of its own: the game starts the stage's own
+  stream of the disc's as ever, and the stage's piece is heard in its
+  place for as long as the stream plays (the loop, the length cut at the
+  original's, the volumes and fades: below). The game's state is what it
+  is with the disc's piece; `music_mods = off` plays that piece. A stage
+  key is never offered in the row as a piece of its own.
+- **Online.** Both machines must hear one track. The host's welcome and
+  the guest's hello carry each one's stages' pieces as a sum of their
+  files' bytes (`port_MusicStageSum`, in the high half of the session's
+  music word): where the two are the same, both hear the stages' pieces;
+  where they differ (one has a piece the other has not, or another
+  file), neither does for that session, and both hear the stage's own of
+  the disc's. The log says which (`session: the stages' own pieces of
+  music are ...`). It never turns a session away: music is no part of
+  the game.
+
+**How it is proved** (headless, `port_game`'s plan, a versus fight on
+stage 29, both sizes; `tmp/mods10/music_test.py` of the work, not
+kept): `music/stage29.wav`, a tone of 300, 500 and 700 Hz a second each
+at 48,000 a second, looped from its second second to the end of its
+third: the trace is the plain run's line for line in both sizes, and
+both sizes' traces are the same; the sound is the plain run's to the
+fight's first sample of music (49.46 s), then 300, 500, 700, 500, 700
+Hz second by second until the fight's stream ends (72.69 s), and the
+plain run's again after (`tools/port_wav.py`'s spectrogram shows the
+steps). The same with `--fight-music stage`. A `stage07.wav`, a stage
+not fought, and `stage29.wav` with `--music-mods off`: the sound is the
+plain run's byte for byte. `--fight-music bb2_m1-2` (the row moved off
+the stage's own) with `stage29.wav`: byte for byte the plain run's with
+that piece. In sessions of `tools/port_net.py`'s own check (a fight, a
+rematch, the replays): both with a piece for every stage, both say the
+pieces are the same and both open `stage29`, 75 state hashes the same;
+the host with them and the guest with none, both say they are not the
+same and neither opens one, 75 hashes the same. `tests/port/music.c`:
+the keys, the stages' pieces, the sum and the hold.
+
 ### Making one
 
 Put `KEY.ogg` (Ogg Vorbis) or `KEY.wav` (whole numbers of 8, 16, 24 or
@@ -1547,12 +1658,27 @@ author's own, `sand_yard`); `start1a`, `start1b` ... `start4b` are where
 the fighters of each of four pairs start (empties; the compiler stands
 each on the floor under it); `obstacle...` is a post a blade stops at
 (its middle and its top); everything else is drawn, each material's
-picture made 64 by 64 in 16 colours. The scene is Y up in metres as
+picture made 128, 64 or 32 texels square in 16 colours (below). The scene is Y up in metres as
 glTF and Blender write it (`scale = 1000` makes a metre 1,000 of the
 game's units: the fighters are about 1,700 tall). A face is drawn and met
 from its front only. What is drawn and what is met are two meshes on
 purpose: steps drawn as steps are met as a ramp (the sample's), a wall
 of a barrier may be met where nothing is drawn.
+
+**Textures.** The stage's room is the bottom right quarter of video
+memory's pages 10 to 12 (their halves and quarters hold the smaller
+copies the renderer reads far off: formats/GROUND.md) and the fog's row
+of 20 colour tables. Each material is a texture of **128** by 128 (a whole
+quarter), **64** (a quarter of one, the disc's commonest) or **32** (a
+sixteenth): the largest of those no larger than its picture's longer
+side, or what `texture_size NAME = 32|64|128` of `arena.txt` says. The
+larger are placed first, each in the first room of its size free, so the
+three pages hold three of 128, twelve of 64, forty-eight of 32 or a mix
+(one of 128, four of 64 and fifteen of 32 is twenty), and **20 textures**
+at most. A face whose texture points run past its texture **repeats it**:
+it is cut at every whole u and v into faces that each span it once (the
+game's faces read no texture window), and the compiler says how many
+pieces that made.
 
 `arena.txt` has the scene's name and the program's tables, every line
 optional but the scene:
@@ -1579,6 +1705,8 @@ lights = courtyard-noon         # the remastered light's key (lights/)
 chain = ring 6 37 -500 -500 500 -500 500 500 -500 500
                                 # the CPU's obstacles (cpu.h, NavChain):
                                 # ring or open, a kind, a margin, corners
+texture_size flagstone = 128   # its texture's size: 32, 64 or 128; if
+                                # not given, the picture's (Textures, above)
 texture flagstone = flagstone.png   # a material's picture, if the scene
                                     # does not carry it
 preview = preview.png           # the stage select's picture of it; if not
@@ -1668,7 +1796,9 @@ an arena a fight cannot be fought on, saying where:
    500 tiles, 1,000 entries of the cells' lists, 256 corners a tile, a
    collision grid of 65,534 bytes; every collision face convex, on its
    plane, within the 8,000 units of its middle the GTE's projection
-   reaches; 20 colour tables in the fog's row;
+   reaches; 20 colour tables in the fog's row; every picture, a texture
+   or one of its smaller copies, in the stage's pages 10 to 13 and over no
+   other;
 3. **the floor**: from every start, every point a fighter can get to is
    walked 250 units at a time with the game's own cast in Python
    (`tools/ground_cast.py`, `collision.c` number for number): a wall
@@ -1714,7 +1844,22 @@ such a hole failing.
   the cast on a grid made by hand (a face met from the front only, the
   next cell's, none past the grid), the sample compiled twice the same
   and read back whole, the validator passing it and failing it with the
-  floor taken from under the first start.
+  floor taken from under the first start; the textures' places (four of
+  64 a page in the first compiler's order, the larger first, 48 of 32 and
+  no more), their sizes, a face cut at its repeats into pieces that cover
+  it; the **gallery** (`tools/arenas/gallery/make_gallery.py`, made at
+  test time: a floor of one face repeating a 128 four times each way,
+  brick walls repeating a 64, eighteen panels of 64 and 32, every picture
+  worked out by the script) compiled to twenty textures and passed by the
+  validator, none of its 60 pictures over another; and the stage prover's
+  verdict on the sample held to the sample as compiled now. The sample
+  compiles to the same bytes as before textures had sizes.
+- The gallery fought: `arena_validate.py --fight` passes it, both sizes
+  printing the same 329 lines, the second fighter the winner.
+- `tools/port_stage_prove.py --arena` on the sample and the gallery: both
+  keep the mesh (PORT.md, "The ground as one mesh"), the gallery's floor
+  repeating its flagstones and their hairlines and every panel its own
+  picture, with the tiles and with the mesh.
 - `tests/port/arenas.c`: an arena's file read and every line that can be
   wrong refused with its reason, its picture found, the mods' arenas with
   one in play and one left out, every answer to the game for the host,
@@ -1724,7 +1869,9 @@ such a hole failing.
 - `tools/port_stage_select.py` (`make port-stage-select`, a step of the
   gate): the stage select's page driven to a fight on the sample and then
   to its host from the disc, on both sizes (PORT.md, "The stage select's
-  kinds of stage").
+  kinds of stage"); and seven arenas (`many_arenas`): R1 to the second
+  page, down, R1 round to the first, L1 back, Cross on the seventh, which
+  is fought.
 - `tools/arena_validate.py --fight` on the sample, above; `make
   port-net`'s session check refusing a guest without the host's arena;
   the play tests (`same_as_original` and the port's) and port-rollback
@@ -1732,9 +1879,29 @@ such a hole failing.
 
 ### What a stage editor needs next
 
-- **The stage select (ROADMAP 16)**: done, above. Left: more than five
-  arenas are scrolled through five rows; a page of pages, or the
-  arenas' pictures as a grid like the stages', when there are many.
+Done since the first arena:
+
+- **More than five arenas**: L1 and R1 turn the arenas' page a page of
+  five at a time, round from the last to the first, and the page says
+  which of how many (PLAYING.md, "Kinds of stage").
+- **Textures** of 128, 64 and 32, up to 20 of them, and a face that
+  repeats its texture ("Textures", above).
+- **The ground as one mesh held to the prover on an arena**:
+  `tools/port_stage_prove.py --arena FILE.arena`, and the arena's own
+  verdict in `g_arena_proved` (PORT.md, "The ground as one mesh"); the
+  sample keeps the mesh by it.
+- **An arena's pages from a mod's pictures**, as the disc's stages' are
+  ("The scene's textures by page"): it needed nothing new, the arena's
+  TIMs being loaded by `tex_LoadStageGroup` as a stage's are. Proved on the
+  gallery: `--dump-textures` writes its 20 pages and tables, and a mod of
+  a picture for each (a checkerboard of 512 by 512) draws them on the floor,
+  walls and panels, the fog's colours over them; the trace is the plain
+  run's, and the pictures are the same up to the fight.
+
+Left:
+
+- **A grid of the arenas' pictures**, like the stages', when there are
+  many; and more than 32 (`PORT_ARENAS_MAX`).
 - **Larger arenas**: a ground longer than its host's needs NDATA.INF
   given its new length and room in the arena block (`ARENA_STAGE`); and
   past the grid's 32 by 32 cells, the game's collision and its cells'
@@ -1742,15 +1909,14 @@ such a hole failing.
 - **Pieces**: the compiler writes tiles alone; a piece (a mesh of its own
   placed and turned, `stage_ReadCells`) would let a repeated thing be one
   mesh drawn many times, and could be opened up when it hides a fighter.
-- **Textures** larger than 64 by 64, repeating across a face (a texture
-  window), and more than 12 of them; the stage's pages from a mod's
-  pictures in the remastered picture as the disc's are
-  ("The stages' pages made larger").
-- **The remastered picture's ground as one mesh** is proved stage by
-  stage on the disc's grounds (`g_stage_proved`); an arena stands on its
-  host's number, so `stage_mesh` takes the host's verdict; an arena
-  should be held to it as the disc's grounds are
-  (`tools/port_stage_prove.py`), and was not yet.
+  The validator already counts them (60 at most).
+- **More than 20 textures, or larger than 128**: the fog's row holds 20
+  colour tables, and the stage's pages are the three the disc's stages
+  use; a fourth page (13), or textures sharing a table, would be more.
+- **A texture window** in place of cutting a face at its repeats: the
+  game's tile records name none, so it would be a record of the renderer's
+  own; cutting costs primitives (the gallery's floor and walls are 27
+  pieces more), which the frame's room bounds as it bounds cut quads.
 
 ## Weapons and motions
 
@@ -1864,28 +2030,96 @@ moves), when its weapon can hit (the marks), the frames themselves, and
 the CPU's scripts. The log says it: `motions: u123 from ..., 252816
 bytes over the disc's sectors 3871 to 3994`.
 
-**What is not done yet**, and how it would be:
+### A mod's weapon on the select screens
 
-- **A motion of a mod's own beside the game's**, not in place of one:
-  a weapon's file saying `motions = KEY`, and its fighters loading
-  that file into their motion slot in place of their set's
-  (`motion_LoadFighterFiles`). The slot's file is found by the set's
-  number (`g_motion_loaded_sets`), so the mod's set needs a number of
-  its own (a weapon class past 7 in the set's top digit) that the rest
-  of the game, which reads the weapon from the fighter and not from the
-  set, never sees; the slot's room is the largest disc file's.
+Every new slot (a weapon file with `replaces = no`) is on the **weapon
+select**, on its base: with the cursor on the katana, **L1** and **R1**
+go round the katana's variants, the game's own katana first and then
+each mod's weapon on the katana in the mods' order, and Cross picks
+the one shown. A line under the weapon row says which (the mod's
+weapon's `name` in gold, or "the game's own" and how many of the mods'
+there are); the weapon row's own picture and name stay the base's.
+Moving the cursor to another weapon goes back to the game's own. Each
+side chooses on its own pad, as the row is chosen. In every mode whose
+select screen has the weapon row (versus, versus the CPU, story,
+practice), the fighter picked keeps it until the select screen loads
+again, through a versus the CPU run and every rematch. A `--weapon`
+of the run still gives a fighter a new slot without the select screen;
+a pick on the select screen comes before it.
+
+What the select screen holds of it is **the game's state**
+(`g_port_weapon_pick`, `src/port/weapon_pick.c`, a state file): each
+side's variant under its cursor and each fighter's pick, saved, put back
+and hashed with the rest, so a rollback puts it back, the two machines
+of a session pick the same with the same presses, and a replay picks it
+again. The weapons themselves are the same on both machines or the
+session is refused (Netplay, below).
+
+**Its own model.** `model = KEY` (format 2) names a mod's
+`models/KEY.glb`, which the remastered picture draws in the fighter's
+hand in place of the weapon model, in the format of the game's own
+weapon models (PORT.md, "The fighters' own models", "The weapons"). The
+fighter is the one whose hand `weapon_Queue` put the weapon in
+(`port_FighterHeldModel`). The console's picture,
+Graphics: Original, draws `models =`'s numbers, the base's if it does not
+say; so does a weapon lying loose after a fight, and two on two. A model
+that no mod has is said in the log, and the base's is drawn.
+
+**Its own motions.** `motions = KEY` (format 2) names a mod's
+`motions/KEY.bbm`, a whole motion file in the disc's format
+([`formats/BBM.md`](formats/BBM.md)): every character fighting with the
+weapon loads it in place of his set's file. Its motion set is a number of
+its own (`port_WeaponMotionSet`): the weapon class 8 and on in the top
+digit (one for each weapon with motions, eight at most) and the base's
+stance kinds below, so the game's two slots of motion files tell it
+from the disc's sets and two fighters share it only when both have it;
+`motion_LoadFighterFiles` reads it from the mod
+(`port_WeaponReadMotions`) where it would read a set's file off the disc,
+and the two special stances follow the base's class
+(`port_WeaponMotionClass`). A file larger than the game's room for one
+(the disc's largest set's file) or missing leaves the weapon out, with the
+reason in the log. The log says the set the base would have had,
+`weapons: the fighter in place 1 fights with kanabo, whose base's motion
+set is 0321`: its file on the disc (`U123.BBM`) is where a weapon's own
+motions start from. Everything else of the weapon is still the base's:
+its sounds, the CPU's scripts (in the motion file: so a weapon's own file
+brings its own), the scabbard, the dropped weapon.
+
+**A file of format 2**: `model =` and `motions =` are its; a file that
+says them with `format = 1` is refused ("model and motions are format
+2's"), and a program before them refuses a format 2 file with "a later
+ReBushido is needed".
+
+### The kanabo
+
+The program ships one weapon as an example, **`mods/kanabo/`**
+(`src/port/mods/kanabo/`), left out until its `mod.txt` says `enabled =
+yes`: an iron-studded war club on the katana, longer (its tip at 1,100
+to the katana's 950), a little slower (0.95) and heavier in a clash (1.4), with
+the katana's motions. Its model, `models/kanabo.glb`, is made by
+`tools/weapon_kanabo.py` from numbers alone: an octagonal shaft
+widening to the cap, rows of iron studs, a corded grip, a collar and a
+pommel ring, its texture drawn by the script; nothing of the disc's or of
+any other game's, and no AI-made or bought mesh.
+
+### What is not done yet
+
+- **A place of its own in the grid**: a mod's weapon is a variant of its
+  base on the base's place, its picture and name the base's; a seventh
+  place needs the select screen's file's pictures and names
+  (`select_data.c`, `SelectFile.weapon_pixels`) and a `weapon_id` of its
+  own everywhere the game indexes by weapon (the tables above, the
+  sounds', the CPU's, the dropped object's).
 - **One move attached to another file's motion**: a move's motion is a
   number in its own file's table, and its frames are in that file's
   stream, so a move of another file's is the file's own after a merge:
   a tool (beside `tools/inspect_bbm.py`) that adds a motion, its marks
-  and its frames to a file and points a move at it.
-- **New weapon types on the select screens**: a slot past the eight
-  with its place in the grid, its picture and its name
-  (`select_data.c`, the select screen's file), and its own
-  `weapon_id` everywhere the game indexes by weapon (the tables above,
-  the motion set's digit, the sounds' table, the CPU's): the port's
-  table would give those rows for it.
-- **A weapon's sounds and its dropped object** as numbers of the file.
+  and its frames to a file and points a move at it. A weapon's own motion
+  file is whole, made from a disc file by such a tool or by hand.
+- **A weapon's sounds and its dropped object** as numbers of the file;
+  the CPU's own weapons in versus the CPU (`g_vscpu_weapons`) and team
+  battle's are the game's.
+- **Its own model in two on two** and on a weapon lying loose.
 
 ### Netplay
 
@@ -1897,9 +2131,13 @@ not the same" ([`NETPLAY.md`](NETPLAY.md), section 13). Both players
 give the same `--weapon`s, which say both places'. What is read is
 none of the game's state (`config/port_state.txt`): the table is made
 once and only read; which weapon a fighter has is worked out each time
-from his place and his `weapon_id`, which are the game's, so a rollback
-has nothing of it to put back. A motion file is the game's state where
-the game loaded it, as the disc's is.
+from his place and his `weapon_id` and the weapon select's pick, which
+are the game's (`g_port_weapon_pick`), so a rollback puts it back with
+the rest. A motion file is the game's state where the game loaded it, as
+the disc's is; a weapon's own motion file, read from the mod, likewise.
+A weapon's own model is hashed into the session's set-up too: both
+players must have the same mod, every file of it, or the guest is turned
+away with the reason on the online page.
 
 ### How it is proved
 
@@ -1919,6 +2157,27 @@ the game loaded it, as the disc's is.
   with every hit's first frame three later (67 moves): the trace is the
   plain run's until the fighter's first blow (frame 1,612), and the
   fight is lost.
+- **The kanabo on the weapon select** (port_game's plan with player
+  one's R1 on the weapon row before he picks; the mod copied with
+  `enabled = yes`), both sizes, each size's two traces the same: with no
+  mod R1 does nothing (the plain run's trace), and with the mod not
+  picked neither; picked (the log: `picks kanabo`), the fight is the
+  plain run's to its 56th frame and then goes otherwise, to a kill. Its
+  own motions as a copy of the disc's U123.BBM (the file of the set the
+  log names): the same fight line for line, but the load 26 frames
+  shorter (the file is read from the mod, not through the drive); as
+  S123.BBM, the long sword's: another fight from its 55th line, to a kill.
+  Each fight's replay plays back with every hash the one recorded, and
+  is refused without the mod ("recorded with other gameplay mods"). The
+  rollback self-test passes with it picked (111 rounds, 888 frames, both
+  sizes). A session of `tools/port_net.py`'s check with the host's R1:
+  both machines say the first fighter picks the kanabo and fights with
+  it, 78 state hashes the same, both sizes, and both machines' replays
+  play back with the mod; a guest without the mod is turned away before
+  the game, and the online page says why ("The other player's gameplay
+  mods (weapons, motions, stages, arenas) are not the same as yours").
+  The window's own pixels of the weapon row's line and the club in the
+  hand: `tmp/mods10/` of the work.
 - `tests/port/weapons.c`: a weapon's file read, every line that can be
   wrong refused with its reason, the factors, a folder of mods with a
   new slot, one that replaces and one left out, every answer to the
@@ -1967,15 +2226,13 @@ ending a kind's files must have.
 
 ## What is next
 
-- **The fighters' textures by page**, as the stage's are: their own
-  models are the larger step, and are taken already.
+- **The weapons' textures by page**, as the fighters' are ("A fighter's
+  pages"): `resource_RequestWeapon` loads their tables into a block of
+  their own, which would need its TIMs noted as a model's are.
 - **More of the lettering in a font**: what no tour of the dumps
   reached (the setup mode's own pages, the slash mode's, the results of
   the other modes, the endings) is the art mod's, made larger; each is a
   block of `tools/port_ui.py`'s table away, measured from a dump.
-- **Music by stage**: a key for a fight's piece with its stage
-  (`bb2_m1-0` on stage 7 alone), so that a mod can give each stage a
-  piece of its own though the game shares five among them.
 - **FLAC**: a third kind of music file, with a decoder of whole numbers
   (dr_flac, public domain, is one).
 - Stages and arenas: "What a stage editor needs next", above.

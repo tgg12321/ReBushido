@@ -13,6 +13,7 @@
 #include "src/port/text.c"
 #include "src/port/mods.c"
 #include "src/port/weapons.c"
+#include "src/port/weapon_pick.c"
 #include "runtime/runtime.h"
 
 /* ---- the game's tables ---- */
@@ -57,8 +58,56 @@ static const MadeEntry g_made_tree[] = {
     {"mods/blades/textures/x.png", "not counted"},
     {"mods/blades/motions", NULL},
     {"mods/blades/motions/u123.bbm", "MW motion"},
+    /* a weapon with a model and motions of its own (format 2), and one
+     * whose motions are larger than the game's room for them */
+    {"mods/blades/weapons/kanabo.txt",
+     "format = 2\n"
+     "name = Kanabo\n"
+     "base = katana\n"
+     "model = Kanabo\n"
+     "motions = kanabo\n"},
+    {"mods/blades/weapons/huge.txt", "format = 2\nbase = yari\n"
+                                     "motions = huge\n"},
+    {"mods/blades/motions/kanabo.bbm",
+     "kanabo's motions: a file of 147 bytes, more than a motion file's head "
+     "and less than the disc's largest set's file, which is 300 bytes here."
+     "........"},
+    {"mods/blades/motions/huge.bbm",
+     "0123456789012345678901234567890123456789012345678901234567890123456789"
+     "0123456789012345678901234567890123456789012345678901234567890123456789"
+     "0123456789012345678901234567890123456789012345678901234567890123456789"
+     "0123456789012345678901234567890123456789012345678901234567890123456789"
+     "0123456789012345678901234567890123456789012345678901234567890123456789"},
+    {"mods/blades/models", NULL},
+    {"mods/blades/models/kanabo.glb", "a club's model"},
 };
 #define MADE_ENTRIES ((s32)(sizeof(g_made_tree) / sizeof(g_made_tree[0])))
+
+/* ---- the disc's motion files, and the select screen's ---- */
+
+static const PortDiscFile g_made_disc[] = {
+    {"MOTION/", 0, 100, 2048},           {"MOTION/WIN.DAT", 7, 101, 9000},
+    {"MOTION/COMMON.BBM", 7, 110, 5000}, {"MOTION/U123.BBM", 7, 120, 200},
+    {"MOTION/U124.BBM", 7, 130, 300},    {"STAGE/S07.DAT", 6, 140, 900},
+};
+
+const PortDiscFile *port_DiscFileNumber(u32 index) {
+    return index < sizeof(g_made_disc) / sizeof(g_made_disc[0])
+               ? &g_made_disc[index]
+               : NULL;
+}
+
+s32 g_disp_frame_count;
+static s32 g_made_sounds;
+
+s32 snd_Play(s32 sound, s32 right, s32 left) {
+    (void)sound;
+    (void)right;
+    (void)left;
+    g_made_sounds++;
+    return 0;
+}
+
 #define MADE_FILES_MAX 8
 
 static s32 g_made_open[MADE_FILES_MAX];
@@ -230,7 +279,15 @@ static void test_File(void) {
         "format = 1\nbase = katana\nbase = yari\n", "line 3: said twice");
     test_Wrong("format = 1\nkatana\n", "line 2: not NAME = VALUE");
     test_Wrong("base = katana\n", "no `format = 1`");
-    test_Wrong("format = 2\nbase = katana\n", "line 1: a later format");
+    test_Wrong("format = 3\nbase = katana\n", "line 1: a later format");
+    test_Wrong("format = 1\nbase = katana\nmodel = club\n",
+               "model and motions are format 2's");
+    test_Wrong("format = 2\nbase = katana\nmodel = a/club\n",
+               "line 3: model takes the name");
+    test_Wrong("format = 2\nbase = katana\nmotions = club.bbm\n",
+               "line 3: motions takes the name");
+    test_Wrong("format = 2\nbase = katana\nmotions =\n",
+               "line 3: motions takes the name");
     test_Wrong("format = x\n", "line 1: format takes");
     test_Wrong("format = 1\n", "no `base =`");
     test_Wrong("format = 1\nbase = club\n", "line 2: base is one of");
@@ -303,6 +360,23 @@ static u64 test_FileHash(s32 kind, const char *key, const char *text) {
     return hash;
 }
 
+/* The weapon of the run's that has this key, or NULL. */
+static const PortWeapon *test_Weapon(const char *key) {
+    s32 i;
+
+    for (i = 0; i < port_WeaponsCount(); i++) {
+        if (test_StringsEqual(port_WeaponAt(i)->key, key)) {
+            return port_WeaponAt(i);
+        }
+    }
+    return NULL;
+}
+
+/* A made-up file's text, by its path. */
+static const char *test_Text(const char *path) {
+    return g_made_tree[made_Find(path)].text;
+}
+
 static void test_Run(void) {
     const PortWeapon *long_katana;
     const PortWeapon *yari;
@@ -316,15 +390,16 @@ static void test_Run(void) {
     CHECK(port_WeaponsChoose("1=KATANA-LONG"));
     port_ModsSetFolder("mods");
     port_ModsStart("ignored");
-    CHECK_EQ(port_ModsCount(PORT_MOD_WEAPONS), 3);
-    CHECK_EQ(port_ModsCount(PORT_MOD_MOTIONS), 1);
+    CHECK_EQ(port_ModsCount(PORT_MOD_WEAPONS), 5);
+    CHECK_EQ(port_ModsCount(PORT_MOD_MOTIONS), 3);
     port_WeaponsStart();
-    /* broken.txt is left out: a naginata has three points */
-    CHECK_EQ(port_WeaponsCount(), 2);
-    long_katana = port_WeaponAt(0)->base == WEAPON_ID_KATANA ? port_WeaponAt(0)
-                                                             : port_WeaponAt(1);
-    yari =
-        port_WeaponAt(0) == long_katana ? port_WeaponAt(1) : port_WeaponAt(0);
+    /* broken.txt is left out: a naginata has three points; and huge.txt:
+     * its motions are larger than the disc's largest set's file */
+    CHECK_EQ(port_WeaponsCount(), 3);
+    long_katana = test_Weapon("katana-long");
+    yari = test_Weapon("heavy-yari");
+    CHECK(test_Weapon("huge") == NULL);
+    CHECK(long_katana != NULL && yari != NULL && test_Weapon("kanabo"));
     CHECK(test_StringsEqual(long_katana->key, "katana-long"));
     CHECK(test_StringsEqual(yari->name, "heavy-yari"));
     /* the new slot is the first fighter's, and only with a katana */
@@ -362,11 +437,107 @@ static void test_Run(void) {
     mods = test_FileHash(PORT_MOD_WEAPONS, "katana-long", g_made_tree[3].text) +
            test_FileHash(PORT_MOD_WEAPONS, "heavy-yari", g_made_tree[4].text) +
            test_FileHash(PORT_MOD_WEAPONS, "broken", g_made_tree[5].text) +
-           test_FileHash(PORT_MOD_MOTIONS, "u123", g_made_tree[9].text);
+           test_FileHash(PORT_MOD_MOTIONS, "u123", g_made_tree[9].text) +
+           test_FileHash(PORT_MOD_WEAPONS, "kanabo",
+                         test_Text("mods/blades/weapons/kanabo.txt")) +
+           test_FileHash(PORT_MOD_WEAPONS, "huge",
+                         test_Text("mods/blades/weapons/huge.txt")) +
+           test_FileHash(PORT_MOD_MOTIONS, "kanabo",
+                         test_Text("mods/blades/motions/kanabo.bbm")) +
+           test_FileHash(PORT_MOD_MOTIONS, "huge",
+                         test_Text("mods/blades/motions/huge.bbm"));
     CHECK(port_ModsGameplayHash() == mods);
+    /* and the session's, the kanabo's own model in it too */
+    mods += test_FileHash(
+        PORT_MOD_MODELS, "kanabo", test_Text("mods/blades/models/kanabo.glb"));
     CHECK(port_WeaponsSessionHash() != mods);
     g_port_weapons.chosen[0] = NULL;
     CHECK(port_WeaponsSessionHash() == mods);
+    /* the long katana was --weapon's; the kanabo is no one's until it is
+     * picked */
+    CHECK(port_WeaponOf(0, WEAPON_ID_KATANA) == NULL);
+}
+
+/* The weapon select: the katana's two new slots, gone round with L1 and
+ * R1 (the game's own among them), picked with Cross, and what each
+ * fighter then fights with; the kanabo's own motion set, its file read
+ * into the game's room, and its base's rules kept. */
+static void test_Pick(void) {
+    const PortWeapon *kanabo = test_Weapon("kanabo");
+    const PortWeapon *first = port_WeaponVariant(WEAPON_ID_KATANA, 1);
+    const PortWeapon *second = port_WeaponVariant(WEAPON_ID_KATANA, 2);
+    static u8 room[512];
+    const char *shown;
+    s32 count;
+    s32 set;
+
+    CHECK_EQ(port_WeaponVariantCount(WEAPON_ID_KATANA), 2);
+    CHECK_EQ(port_WeaponVariantCount(WEAPON_ID_YARI), 0); /* it replaces */
+    CHECK_EQ(port_WeaponVariantCount(WEAPON_ID_NODACHI), 0);
+    CHECK(first != NULL && second != NULL && first != second);
+    CHECK(first == kanabo || second == kanabo);
+    CHECK(port_WeaponVariant(WEAPON_ID_KATANA, 3) == NULL);
+    CHECK(port_WeaponVariant(WEAPON_ID_KATANA, 0) == NULL);
+    port_WeaponPickReset();
+    g_made_sounds = 0;
+    g_disp_frame_count = 100;
+    /* nothing pressed: the game's own, and nothing picked */
+    CHECK(!port_WeaponPickStep(0, WEAPON_ID_KATANA, FALSE, FALSE));
+    CHECK(port_WeaponPickShown(0, &count) == NULL);
+    CHECK_EQ(count, 2);
+    /* R1 twice: the second variant; L1 three times: round to it again */
+    CHECK(port_WeaponPickStep(0, WEAPON_ID_KATANA, FALSE, TRUE));
+    CHECK(port_WeaponPickStep(0, WEAPON_ID_KATANA, FALSE, TRUE));
+    CHECK_EQ(g_port_weapon_pick.variant[0], 2);
+    CHECK(port_WeaponPickStep(0, WEAPON_ID_KATANA, TRUE, FALSE));
+    CHECK(port_WeaponPickStep(0, WEAPON_ID_KATANA, TRUE, FALSE));
+    CHECK(port_WeaponPickStep(0, WEAPON_ID_KATANA, TRUE, FALSE));
+    CHECK_EQ(g_port_weapon_pick.variant[0], 2);
+    CHECK_EQ(g_made_sounds, 5);
+    shown = port_WeaponPickShown(0, &count);
+    CHECK(shown != NULL && test_StringsEqual(shown, second->name));
+    /* a weapon with none: nothing to go round, and the cursor's move
+     * takes the variant back to the game's own */
+    CHECK(!port_WeaponPickStep(0, WEAPON_ID_NODACHI, FALSE, TRUE));
+    CHECK_EQ(g_port_weapon_pick.variant[0], 0);
+    CHECK(port_WeaponPickShown(0, &count) == NULL && count == 0);
+    /* the kanabo picked by the first side; the second takes the katana */
+    port_WeaponPickStep(0, WEAPON_ID_KATANA, FALSE, FALSE);
+    while (port_WeaponVariant(
+               WEAPON_ID_KATANA, g_port_weapon_pick.variant[0]) != kanabo) {
+        port_WeaponPickStep(0, WEAPON_ID_KATANA, FALSE, TRUE);
+    }
+    port_WeaponPickTake(0, WEAPON_ID_KATANA);
+    port_WeaponPickStep(1, WEAPON_ID_KATANA, FALSE, FALSE);
+    port_WeaponPickTake(1, WEAPON_ID_KATANA);
+    CHECK(port_WeaponOf(0, WEAPON_ID_KATANA) == kanabo);
+    CHECK(port_WeaponOf(1, WEAPON_ID_KATANA) == NULL);
+    /* the pick is the katana's alone */
+    CHECK(port_WeaponOf(0, WEAPON_ID_LONG_SWORD) == NULL);
+    shown = port_WeaponPickShown(0, &count);
+    CHECK(shown != NULL && test_StringsEqual(shown, "Kanabo"));
+    /* the row is gone three frames on */
+    g_disp_frame_count += 3;
+    CHECK(port_WeaponPickShown(0, &count) == NULL && count == 0);
+    /* its own motion set: class 8 with the base's stance kinds */
+    set = port_WeaponMotionSet(0, WEAPON_ID_KATANA, 0x0124);
+    CHECK_EQ(set, 0x8124);
+    CHECK_EQ(port_WeaponMotionSet(1, WEAPON_ID_KATANA, 0x0124), 0x0124);
+    CHECK_EQ(port_WeaponMotionClass(set), WEAPON_ID_KATANA);
+    CHECK_EQ(port_WeaponMotionClass(0x3123), 3);
+    CHECK_EQ(port_WeaponMotionClass(0x9123), 9); /* no weapon's */
+    CHECK(!port_WeaponReadMotions(0x0124, room));
+    CHECK(port_WeaponReadMotions(set, room));
+    CHECK(test_BytesEqual(
+        room, test_Text("mods/blades/motions/kanabo.bbm"),
+        port_TextLength(test_Text("mods/blades/motions/kanabo.bbm"))));
+    /* choosing again: nothing picked while the side chooses */
+    port_WeaponPickStep(0, WEAPON_ID_KATANA, FALSE, FALSE);
+    CHECK(port_WeaponOf(0, WEAPON_ID_KATANA) == NULL);
+    /* and the select screen loaded again: nothing at all */
+    port_WeaponPickTake(0, WEAPON_ID_KATANA);
+    CHECK(port_WeaponOf(0, WEAPON_ID_KATANA) == kanabo);
+    port_WeaponPickReset();
     CHECK(port_WeaponOf(0, WEAPON_ID_KATANA) == NULL);
 }
 
@@ -374,4 +545,5 @@ void test_Main(void) {
     test_File();
     test_None();
     test_Run();
+    test_Pick();
 }

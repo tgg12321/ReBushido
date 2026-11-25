@@ -48,6 +48,8 @@ MEMBERS = {
     'port_cursor_tier': 'PortStageChoice.cursor_kind',
     'port_time': 'PortStageChoice.fight_time',
     'port_cursor_time': 'PortStageChoice.cursor_time',
+    'port_page_cursor': 'PortStageChoice.page_cursor',
+    'port_page_top': 'PortStageChoice.page_top',
     'port_unlock_all': 'PortPlay.unlock_all',
     'port_stage_pages': 'PortPlay.stage_pages',
     'port_page_used': 'PortPlay.page_used',

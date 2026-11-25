@@ -205,6 +205,11 @@ u16 clut_y;
     if (id != TIM_ID) {
         return;
     }
+#if RB_REMASTER_VIEW
+    /* a fighter's model's, for a mod's picture of his whole pages
+     * (port_remaster.h) */
+    port_RemasterNoteTim(tim - 4, image_x, image_y, clut_x, clut_y);
+#endif
     has_clut = *(s32 *)tim & TIM_HAS_CLUT;
     tim += 4;
     if (has_clut) {

@@ -8,6 +8,7 @@
  * are read once and only read after, and which one a fighter has is
  * worked out from the game's state each time it is asked. */
 #include "common.h"
+#include "port_discfiles.h"
 #include "port_host.h"
 #include "port_mods.h"
 #include "bb2.h"
@@ -17,6 +18,12 @@
 #define PROBLEM_SIZE 160
 /* a weapon's file is not larger than this */
 #define FILE_BYTES_MAX 0x4000
+/* a motion file is its head (the sections' offsets and the first row of
+ * stances, docs/formats/BBM.md) at the least */
+#define MOTION_FILE_LEAST 0x80
+/* a motion set's stance kinds, below its weapon class (MOTION_SET) */
+#define MOTION_SET_KINDS 0xFFF
+#define MOTION_SET_CLASS_SHIFT 12
 /* a point's coordinates, from the hand: the yari's tip is 1,930 out */
 #define POINT_MAX 8192
 /* the CPU's numbers (cpu_data.c): a reach is kept in units of 2 and a
@@ -212,7 +219,9 @@ enum {
     SAID_PRACTICE = 1 << 8,
     SAID_STANCE = 1 << 9,
     SAID_CPU_REACH = 1 << 10,
-    SAID_CPU_RANGE = 1 << 11
+    SAID_CPU_RANGE = 1 << 11,
+    SAID_MODEL = 1 << 12,
+    SAID_MOTIONS = 1 << 13
 };
 
 /* Whether `model` is one a weapon in a hand can be: one of the models the
@@ -240,6 +249,26 @@ static s32 port_WeaponModelFits(s32 base, s32 practice, s32 model) {
         }
     }
     return FALSE;
+}
+
+/* A mod's file's key, as the mods' table has it (port_mods.h): the name
+ * in small letters, without an ending or a folder. FALSE for none, one
+ * too long, or one with a folder in it. */
+static s32 port_WeaponTakeKey(char *out, const char *value, u32 length) {
+    u32 i;
+
+    if (length == 0 || length >= PORT_WEAPON_KEY_SIZE) {
+        return FALSE;
+    }
+    for (i = 0; i < length; i++) {
+        if (value[i] == '/' || value[i] == '\\' || value[i] == '.' ||
+            value[i] < ' ') {
+            return FALSE;
+        }
+        out[i] = port_WeaponLower(value[i]);
+    }
+    out[length] = TEXT_END;
+    return TRUE;
 }
 
 /* One line's name and value into the weapon: NULL, or why it cannot be. */
@@ -275,6 +304,10 @@ static const char *port_WeaponTakeLine(
         bit = SAID_CPU_REACH;
     } else if (port_WeaponWordIs(name, name_length, "cpu_range")) {
         bit = SAID_CPU_RANGE;
+    } else if (port_WeaponWordIs(name, name_length, "model")) {
+        bit = SAID_MODEL;
+    } else if (port_WeaponWordIs(name, name_length, "motions")) {
+        bit = SAID_MOTIONS;
     } else if (port_WeaponWordIs(name, name_length, "author") ||
                port_WeaponWordIs(name, name_length, "about")) {
         return NULL;
@@ -293,7 +326,7 @@ static const char *port_WeaponTakeLine(
             return "format takes the format's number, 1";
         }
         if (numbers[0] > PORT_WEAPON_FORMAT) {
-            return "a later format than this program reads (1): a later "
+            return "a later format than this program reads (2): a later "
                    "ReBushido is needed";
         }
         weapon->format = numbers[0];
@@ -369,6 +402,16 @@ static const char *port_WeaponTakeLine(
         }
         weapon->default_stance = numbers[0];
         break;
+    case SAID_MODEL:
+    case SAID_MOTIONS:
+        if (!port_WeaponTakeKey(
+                bit == SAID_MODEL ? weapon->model_key : weapon->motions_key,
+                value, value_length)) {
+            return bit == SAID_MODEL
+                       ? "model takes the name of a mod's models/NAME.glb"
+                       : "motions takes the name of a mod's motions/NAME.bbm";
+        }
+        break;
     case SAID_CPU_REACH:
         if (count != 1 || numbers[0] < 0 || numbers[0] > CPU_REACH_MAX ||
             numbers[0] % CPU_REACH_UNIT != 0) {
@@ -395,6 +438,10 @@ static const char *port_WeaponCheck(const PortWeapon *weapon, u32 said) {
     }
     if (!(said & SAID_BASE)) {
         return "no `base =`: the weapon whose model and motions it has";
+    }
+    if ((said & (SAID_MODEL | SAID_MOTIONS)) &&
+        weapon->format < PORT_WEAPON_FORMAT_OWN_FILES) {
+        return "model and motions are format 2's: say `format = 2`";
     }
     if (weapon->point_count != 0 &&
         weapon->point_count != g_fighter_weapon_point_counts[weapon->base]) {
@@ -443,6 +490,9 @@ s32 port_WeaponParse(
     weapon->default_stance = PORT_WEAPON_UNSET;
     weapon->cpu_reach = PORT_WEAPON_UNSET;
     weapon->cpu_range = PORT_WEAPON_CPU_UNSET;
+    weapon->model_key[0] = TEXT_END;
+    weapon->motions_key[0] = TEXT_END;
+    weapon->motion_number = PORT_WEAPON_UNSET;
     while (at < length) {
         u32 start = at;
         u32 end;
@@ -534,6 +584,88 @@ s32 port_WeaponsChoose(const char *side_and_key) {
 
 /* One mod's weapon's file, read and checked: kept, or left out with
  * the reason in the log. */
+/* The room the game has for a fighter's motion file: the largest of the
+ * disc's motion sets' files (every .BBM of MOTION/ but COMMON.BBM:
+ * U123.BBM and the rest, docs/formats/BBM.md), which it reads into either
+ * slot. */
+static u32 port_WeaponMotionRoom(void) {
+    static const char folder[] = "MOTION/";
+    const PortDiscFile *file;
+    u32 room = 0;
+    u32 i;
+
+    for (i = 0; (file = port_DiscFileNumber(i)) != NULL; i++) {
+        const char *name = file->path + file->name_at;
+        u32 at;
+
+        for (at = 0;
+             folder[at] != TEXT_END &&
+             port_WeaponLower(file->path[at]) == port_WeaponLower(folder[at]);
+             at++) {
+        }
+        if (folder[at] != TEXT_END || at != file->name_at ||
+            !port_TextEndsWith(name, ".BBM") ||
+            port_WeaponWordIs(name, port_TextLength(name), "common.bbm")) {
+            continue;
+        }
+        room = file->size > room ? file->size : room;
+    }
+    return room;
+}
+
+/* A weapon's own files, as the program starts: its motion file there and
+ * no larger than the game's room for one (it is read into the game's
+ * memory, and is how the game plays), and a number of its own; its model
+ * only said in the log if missing (it is the picture's). FALSE and why
+ * where the weapon cannot be used. */
+static s32 port_WeaponOwnFiles(PortWeapon *weapon, char *problem, u32 room) {
+    const char *path;
+    u32 size;
+    u32 motion_room;
+    s32 used = 0;
+    s32 i;
+
+    if (weapon->model_key[0] != TEXT_END &&
+        port_ModFind(PORT_MOD_MODELS, weapon->model_key) == NULL) {
+        port_Log("weapons: %s: no mod has models/%s.glb: the base's model is "
+                 "drawn\n",
+                 weapon->key, weapon->model_key);
+    }
+    if (weapon->motions_key[0] == TEXT_END) {
+        return TRUE;
+    }
+    path = port_ModFind(PORT_MOD_MOTIONS, weapon->motions_key);
+    if (path == NULL) {
+        port_WeaponSay(problem, room, "motions: no mod has motions/%s.bbm",
+                       weapon->motions_key);
+        return FALSE;
+    }
+    size = port_ModFileSize(path);
+    motion_room = port_WeaponMotionRoom();
+    if (size < MOTION_FILE_LEAST || size > motion_room) {
+        port_WeaponSay(
+            problem, room,
+            "motions: %s.bbm is %u bytes; a motion file is %u to "
+            "%u (the game's room for one)",
+            weapon->motions_key, size, MOTION_FILE_LEAST, motion_room);
+        return FALSE;
+    }
+    for (i = 0; i < g_port_weapons.count; i++) {
+        used += g_port_weapons.weapons[i].motion_number != PORT_WEAPON_UNSET;
+    }
+    if (used >= PORT_WEAPON_MOTION_FILES) {
+        port_WeaponSay(problem, room,
+                       "motions: more than %d weapons have motions of their "
+                       "own",
+                       PORT_WEAPON_MOTION_FILES);
+        return FALSE;
+    }
+    weapon->motion_number = used;
+    return TRUE;
+}
+
+/* One mod's weapon file, read, checked and its own files found: into the
+ * table, or left out with the reason in the log. */
 static void port_WeaponsRead(const char *key, const char *path) {
     static char text[FILE_BYTES_MAX];
     char problem[PROBLEM_SIZE];
@@ -560,7 +692,8 @@ static void port_WeaponsRead(const char *key, const char *path) {
         port_Log("weapons: %s (%s) cannot be read; left out\n", key, path);
         return;
     }
-    if (!port_WeaponParse(text, got, weapon, problem, sizeof(problem))) {
+    if (!port_WeaponParse(text, got, weapon, problem, sizeof(problem)) ||
+        !port_WeaponOwnFiles(weapon, problem, sizeof(problem))) {
         port_Log("weapons: %s (%s): %s; left out\n", key, path, problem);
         return;
     }
@@ -653,6 +786,19 @@ u64 port_WeaponsSessionHash(void) {
         }
         hash += one;
     }
+    /* a weapon's own model is the picture's, but it is part of the mod
+     * both players must have the same of */
+    for (side = 0; side < g_port_weapons.count; side++) {
+        const PortWeapon *weapon = &g_port_weapons.weapons[side];
+        const char *path =
+            weapon->model_key[0] != TEXT_END
+                ? port_ModFind(PORT_MOD_MODELS, weapon->model_key)
+                : NULL;
+
+        if (path != NULL) {
+            hash += port_ModFileHash(PORT_MOD_MODELS, weapon->model_key, path);
+        }
+    }
     return hash;
 }
 
@@ -660,10 +806,20 @@ u64 port_WeaponsSessionHash(void) {
 
 const PortWeapon *port_WeaponOf(s32 index, s32 weapon_id) {
     const PortWeapon *chosen;
+    s32 picked;
 
     if (g_port_weapons.count == 0 || weapon_id < 0 ||
         weapon_id >= WEAPON_ID_COUNT) {
         return NULL;
+    }
+    /* the one picked on the weapon select (the game's state), then the
+     * run's --weapon, then the one that stands in for the weapon */
+    picked = index >= 0 && index < PORT_WEAPON_SIDES
+                 ? g_port_weapon_pick.picked[index]
+                 : PORT_WEAPON_PICK_NONE;
+    if (picked > PORT_WEAPON_PICK_NONE && picked <= g_port_weapons.count &&
+        g_port_weapons.weapons[picked - 1].base == weapon_id) {
+        return &g_port_weapons.weapons[picked - 1];
     }
     chosen = index >= 0 && index < PORT_WEAPON_SIDES
                  ? g_port_weapons.chosen[index]
@@ -747,4 +903,124 @@ s32 port_WeaponCpuRange(s32 index, s32 weapon_id, s32 own) {
     return weapon != NULL && weapon->cpu_range != PORT_WEAPON_CPU_UNSET
                ? weapon->cpu_range
                : own;
+}
+
+/* ---- a weapon's own files ---- */
+
+/* The mods' weapon whose motion set is `set`, or NULL for one of the
+ * disc's. */
+static const PortWeapon *port_WeaponOfSet(s32 set) {
+    s32 number =
+        (s32)((u32)set >> MOTION_SET_CLASS_SHIFT) - PORT_WEAPON_MOTION_CLASS;
+    s32 i;
+
+    if (number < 0) {
+        return NULL;
+    }
+    for (i = 0; i < g_port_weapons.count; i++) {
+        if (g_port_weapons.weapons[i].motion_number == number) {
+            return &g_port_weapons.weapons[i];
+        }
+    }
+    return NULL;
+}
+
+/* The set fighter `index` loads (port_weapons.h), said in the log where a
+ * mod's weapon is his. */
+s32 port_WeaponMotionSet(s32 index, s32 weapon_id, s32 set) {
+    const PortWeapon *weapon = port_WeaponOf(index, weapon_id);
+
+    if (weapon == NULL) {
+        return set;
+    }
+    /* which of the disc's files it would have had: where a mod's own
+     * motions start from (docs/formats/BBM.md, "File names and motion
+     * sets") */
+    port_Log(
+        "weapons: the fighter in place %d fights with %s, whose base's "
+        "motion set is %04x%s%s\n",
+        index + 1, weapon->key, (u32)set,
+        weapon->motion_number != PORT_WEAPON_UNSET ? "; its own: motions/" : "",
+        weapon->motions_key);
+    if (weapon->motion_number == PORT_WEAPON_UNSET) {
+        return set;
+    }
+    return ((PORT_WEAPON_MOTION_CLASS + weapon->motion_number)
+            << MOTION_SET_CLASS_SHIFT) |
+           (set & MOTION_SET_KINDS);
+}
+
+s32 port_WeaponMotionClass(s32 set) {
+    const PortWeapon *weapon = port_WeaponOfSet(set);
+
+    return weapon != NULL ? weapon->base
+                          : (s32)((u32)set >> MOTION_SET_CLASS_SHIFT);
+}
+
+/* A mod's weapon's own motion file into the game's room for it
+ * (port_weapons.h). */
+s32 port_WeaponReadMotions(s32 set, void *dest) {
+    const PortWeapon *weapon;
+    const char *path;
+    u32 room;
+    u32 got;
+
+    if ((s32)((u32)set >> MOTION_SET_CLASS_SHIFT) < PORT_WEAPON_MOTION_CLASS) {
+        return FALSE;
+    }
+    weapon = port_WeaponOfSet(set);
+    path = weapon != NULL ? port_ModFind(PORT_MOD_MOTIONS, weapon->motions_key)
+                          : NULL;
+    room = port_WeaponMotionRoom();
+    got = path != NULL ? port_ModReadFile(path, dest, room) : 0;
+    port_Log("weapons: %s's motions, %s.bbm: %u bytes read into the "
+             "fighter's motion file\n",
+             weapon != NULL ? weapon->key : "?",
+             weapon != NULL ? weapon->motions_key : "?", got);
+    return TRUE;
+}
+
+/* The model key of the weapon in a slot's hand (port_weapons.h): his
+ * own weapon's model alone, not a second weapon's. */
+const char *port_WeaponHeldModel(s32 slot, s32 weapon_model) {
+    const PortWeapon *weapon;
+
+    if (slot < 0 || slot >= PORT_WEAPON_SIDES ||
+        g_fighters[slot].weapon_model != weapon_model) {
+        return NULL;
+    }
+    weapon = port_WeaponOf(slot, g_fighters[slot].weapon_id);
+    return weapon != NULL && weapon->model_key[0] != TEXT_END
+               ? weapon->model_key
+               : NULL;
+}
+
+/* ---- the weapon select's variants ---- */
+
+s32 port_WeaponVariantCount(s32 weapon_id) {
+    s32 count = 0;
+    s32 i;
+
+    for (i = 0; i < g_port_weapons.count; i++) {
+        count += !g_port_weapons.weapons[i].replaces &&
+                 g_port_weapons.weapons[i].base == weapon_id;
+    }
+    return count;
+}
+
+const PortWeapon *port_WeaponVariant(s32 weapon_id, s32 place) {
+    s32 i;
+
+    for (i = 0; i < g_port_weapons.count && place > 0; i++) {
+        if (!g_port_weapons.weapons[i].replaces &&
+            g_port_weapons.weapons[i].base == weapon_id && --place == 0) {
+            return &g_port_weapons.weapons[i];
+        }
+    }
+    return NULL;
+}
+
+s32 port_WeaponPlaceOf(const PortWeapon *weapon) {
+    return weapon != NULL ? (s32)(weapon - g_port_weapons.weapons)
+                          : PORT_WEAPON_UNSET;
 }

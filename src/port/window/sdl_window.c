@@ -54,6 +54,7 @@
 #include "port_music.h"
 #include "port_online.h"
 #include "port_paint.h"
+#include "port_weapons.h"
 #include "port_profile.h"
 #include "port_remaster.h"
 #include "port_spu.h"
@@ -2261,6 +2262,8 @@ static PortOverlay g_port_match_page;
 /* two on two's band and its fighters' tags (match_page.c) */
 static PortOverlay g_port_duo_band;
 static PortOverlay g_port_duo_tags[PORT_DUO_FIGHTERS];
+/* the mods' weapons on the weapon select, a side each (match_page.c) */
+static PortOverlay g_port_weapon_picks[PORT_WEAPON_SIDES];
 /* the window's own pages, the settings menu and the online pages
  * (sdl_menu.c) */
 static PortOverlay g_port_page;
@@ -2330,6 +2333,11 @@ static void port_DrawMatchPage(void) {
     for (who = 0; who < PORT_DUO_FIGHTERS; who++) {
         port_DuoTagChoose(who);
         port_DrawOverlay(&g_port_duo_tags[who], port_DuoTagPixels);
+    }
+    /* the mods' weapons on the weapon select (port_weapons.h) */
+    for (who = 0; who < PORT_WEAPON_SIDES; who++) {
+        port_WeaponPickChoose(who);
+        port_DrawOverlay(&g_port_weapon_picks[who], port_WeaponPickPixels);
     }
 }
 

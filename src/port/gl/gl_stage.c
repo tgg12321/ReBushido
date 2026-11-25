@@ -51,6 +51,7 @@
 #include "gl_lights.h"
 #include "gl_post.h"
 #include "port_gpu.h"
+#include "port_arenas.h"
 #include "port_remaster.h"
 
 /* the game's own headers, for the shapes of what the mesh is built from:
@@ -311,6 +312,7 @@ static struct {
     /* which stage the last line of news was about, and the line itself
      * (port_GlStageNews): -1 before there has been one */
     s32 said_stage;
+    const void *said_arena; /* the arena in play when it was said */
     s32 has_news;
     char news[256];
     GLuint program;
@@ -1312,6 +1314,50 @@ static s32 port_GlStagePropsAreOn(s32 stage) {
     return g_stage.is_props_every || g_stage_props_proved[stage];
 }
 
+/* The custom arenas the mesh is measured good on (docs/MODS.md, "Custom
+ * arenas"): an arena stands on its host's number but is a ground of its
+ * own, so it is held to the prover by itself
+ * (tools/port_stage_prove.py --arena, whose verdict.txt gives the line),
+ * by its file's key and the FNV-1a of the whole file (PortArena.hash):
+ * the arena as it was measured, and no other. An arena not here -- a
+ * mod's own, or one changed since -- draws the game's own tiles unless
+ * the setting says every stage, and the run's log says so. Each is
+ * ReBushido's own, compiled from its source as the window's build ships
+ * it (tests/rebushido/arena.py holds the sample's to its source). */
+typedef struct {
+    const char *key;
+    u64 hash;
+} ArenaProved;
+
+static const ArenaProved g_arena_proved[] = {
+    {"courtyard", 0xFBA6BC9B59AE7F72ULL}, /* tools/arenas/courtyard/ */
+};
+
+/* The arena in play on this stage, or NULL: the host's own ground. */
+static const PortArena *port_GlStageArena(s32 stage) {
+    const PortArena *arena = port_ArenaInPlay();
+
+    return arena != NULL && arena->host == stage ? arena : NULL;
+}
+
+/* Whether the mesh is measured good on what is loaded as this stage: the
+ * arena in play by its own verdict, else the stage by g_stage_proved. */
+static s32 port_GlStageProved(s32 stage) {
+    const PortArena *arena = port_GlStageArena(stage);
+    u32 i;
+
+    if (arena == NULL) {
+        return g_stage_proved[stage];
+    }
+    for (i = 0; i < sizeof(g_arena_proved) / sizeof(g_arena_proved[0]); i++) {
+        if (strcmp(g_arena_proved[i].key, arena->key) == 0 &&
+            g_arena_proved[i].hash == arena->hash) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 /* Whether this stage's ground is the mesh's, with no word said about it:
  * the setting, a stage the mesh is measured good on, or every stage where
  * the setting says so. */
@@ -1322,22 +1368,35 @@ static s32 port_GlStageIsOnQuietly(s32 stage) {
     if (stage < 0 || stage >= STAGE_COUNT) {
         return FALSE;
     }
-    return g_stage.is_every || g_stage_proved[stage];
+    return g_stage.is_every || port_GlStageProved(stage);
 }
 
 /* Which path this stage's ground takes, for the run's log: said once a
- * stage, whenever the stage or the setting changes. */
+ * stage (and arena), whenever the stage or the setting changes. */
 static void port_GlStageTellPath(s32 stage) {
+    const void *arena = stage >= 0 && stage < STAGE_COUNT
+                            ? (const void *)port_GlStageArena(stage)
+                            : NULL;
     const char *how;
 
-    if (stage == g_stage.said_stage) {
+    if (stage == g_stage.said_stage && arena == g_stage.said_arena) {
         return;
     }
     g_stage.said_stage = stage;
+    g_stage.said_arena = arena;
     if (!g_stage.is_started || !g_stage.is_on) {
         how = "the game's own tile primitives: stage_mesh is off";
     } else if (stage < 0 || stage >= STAGE_COUNT) {
         how = "the game's own tile primitives: no stage is loaded";
+    } else if (arena != NULL && !port_GlStageProved(stage)) {
+        how = g_stage.is_every
+                  ? "one static mesh of its own, the setting saying every "
+                    "stage (the arena in play is not measured)"
+                  : "the game's own tile primitives: the mesh is not "
+                    "measured good on the arena in play";
+    } else if (arena != NULL) {
+        how = "one static mesh of its own, measured good on the arena in "
+              "play";
     } else if (g_stage_proved[stage]) {
         how = "one static mesh of its own";
     } else if (g_stage.is_every) {
