@@ -1127,6 +1127,41 @@ u64 port_StateHash(void) {
     return port_HashEnd(&lanes, bytes);
 }
 
+/* Where the core lies and what it is (port_state.h): the size of a
+ * pointer, the system, each kind's two ends and the state's runs among
+ * them, and the code's sum. The core's code begins with Sony's, the
+ * game's and the port's, at the same place in every build of a system
+ * (after the C library's start-up), so a window that differs moves none
+ * of it; where it does move it (the core's variables put a page further
+ * on by a window that grew), the sum differs and the state is refused. */
+u64 port_StateBuildSum(void) {
+    const char * const marks[] = {
+        g_port_core_text,       g_port_core_text_end, g_port_core_rodata,
+        g_port_core_rodata_end, g_port_core_data,     g_port_core_data_end,
+        g_port_core_bss,        g_port_core_bss_end,  g_port_game_data,
+        g_port_state_data_end,  g_port_game_bss,      g_port_state_bss_end,
+    };
+    u32 words[2 + sizeof(marks) / sizeof(marks[0]) + 2];
+    PortHashLanes lanes;
+    u32 count = 0;
+    u32 i;
+
+    words[count++] = (u32)sizeof(void *);
+#if defined(_WIN32)
+    words[count++] = 1;
+#else
+    words[count++] = 2;
+#endif
+    for (i = 0; i < sizeof(marks) / sizeof(marks[0]); i++) {
+        words[count++] = (u32)(PortAddress)marks[i];
+    }
+    words[count++] = (u32)g_port_code_sum;
+    words[count++] = (u32)(g_port_code_sum >> WORD_BITS);
+    port_HashStart(&lanes);
+    port_HashBytes(&lanes, (const u8 *)words, count * sizeof(words[0]));
+    return port_HashEnd(&lanes, count * sizeof(words[0]));
+}
+
 /* A hash of each page of what a snapshot holds, into `out`, in the
  * snapshot's order: g_port_rollback_page_count of them. */
 static void port_HashPages(u64 *out) {

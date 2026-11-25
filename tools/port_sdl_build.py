@@ -10,6 +10,9 @@
                                                 neither does). The other size is built beside it,
                                                 into build/port-sdl/linux32/ or windows32/
     python3 tools/port_sdl_build.py --host [--windows]   only say whether this host can build it
+    python3 tools/port_sdl_build.py --padded [--windows] and beside the program two whose window
+                                                differs (rebushido-pad-small, -pad-large), for
+                                                tools/port_replay.py --window
 
 `make port-sdl` and `make port-sdl-windows` run it (`wsl bash tools/build.sh
 port-sdl`). It is the same program as `make port` builds (tools/
@@ -56,6 +59,7 @@ What it needs:
 """
 import concurrent.futures
 import glob
+import hashlib
 import os
 import re
 import shutil
@@ -150,19 +154,37 @@ COFF_ALIGN_MASK = 0xF << COFF_ALIGN_SHIFT
 SDL_PROBE = '#include <SDL.h>\nint main(void) { return SDL_Init(0); }\n'
 
 # The object of the game and the port: the variables in the PlayStation's
-# order, kind by kind, and marks at each kind's two ends.
+# order, kind by kind, and marks at each kind's two ends. Each kind's
+# first part, between g_port_core_<kind> and g_port_core_<kind>_end, is
+# the core: everything but the window's own files and the version's
+# (APART), whose sections follow it. The code is one section, so that no
+# part of the core (the game's `main` in .text.startup, cold code in
+# .text.unlikely) is put by the program's link after the window's code
+# and SDL's: a build whose window differs has its core where this one has
+# it, and its sum (code_sum) is this one's (docs/PORT.md, "Replays":
+# "Held to the program").
 BLOB_LD_TEXT = '''/* Written by tools/port_sdl_build.py: the game and the port as one object.
  * The game's variables are in the order of the PlayStation program. */
 %(format)sSECTIONS
 {
+    .text : {
+        %(under)sg_port_core_text = .;
+        EXCLUDE_FILE(%(apart)s) *(.text .text.* .text$*)
+        %(under)sg_port_core_text_end = .;
+        *(.text .text.* .text$*)
+    }
     %(rodata_name)s : {
         %(under)sg_port_blob_rodata = .;
+        %(under)sg_port_core_rodata = .;
 %(rodata)s
+        EXCLUDE_FILE(%(apart)s) *(%(rodata_name)s %(rodata_name)s%(dot)s*)
+        %(under)sg_port_core_rodata_end = .;
         *(%(rodata_name)s %(rodata_name)s%(dot)s*)
         %(under)sg_port_blob_rodata_end = .;
     }
     .data : {
         %(under)sg_port_blob_data = .;
+        %(under)sg_port_core_data = .;
         %(under)sg_port_game_data = .;
 %(data)s
         %(under)sg_port_game_data_end = .;
@@ -170,11 +192,14 @@ BLOB_LD_TEXT = '''/* Written by tools/port_sdl_build.py: the game and the port a
         %(under)sg_port_run_data = .;
 %(run_data)s
         %(under)sg_port_state_data_end = .;
+        EXCLUDE_FILE(%(apart)s) *(.data .data%(dot)s*)
+        %(under)sg_port_core_data_end = .;
         *(.data .data%(dot)s*)
         %(under)sg_port_blob_data_end = .;
     }
     .bss : {
         %(under)sg_port_blob_bss = .;
+        %(under)sg_port_core_bss = .;
         %(under)sg_port_game_bss = .;
 %(bss)s
         %(under)sg_port_game_bss_end = .;
@@ -182,11 +207,28 @@ BLOB_LD_TEXT = '''/* Written by tools/port_sdl_build.py: the game and the port a
         %(under)sg_port_run_bss = .;
 %(run_bss)s
         %(under)sg_port_state_bss_end = .;
+        EXCLUDE_FILE(%(apart)s) *(.bss .bss%(dot)s*) EXCLUDE_FILE(%(apart)s) *(COMMON)
+        %(under)sg_port_core_bss_end = .;
         *(.bss .bss%(dot)s*) *(COMMON)
         %(under)sg_port_blob_bss_end = .;
     }
 }
 '''
+# The files of the game's object that are not its core: the window's
+# arithmetic (WINDOW_PLAIN, WINDOW_GAME), and the version, whose text holds
+# the commit.
+APART = ['*src_port_window_*.o', '*src_rebushido_version.o']
+# The hosted files' functions all in .text, after the game's object's
+# (Linux: a C compiler puts `main` and cold code in sections that the link
+# puts before every .text, the game's object's too).
+HOSTED_IN_TEXT = ['-fno-reorder-functions', '-fno-reorder-blocks-and-partition']
+# --padded: the programs whose window differs from this one's, beside it
+# (rebushido-pad-small and rebushido-pad-large), and their room before the
+# window's files: code, variables and constants, in bytes. A little moves
+# the window's code and nothing of the game's object; much moves the
+# game's object's variables and constants too.
+PADDED = '%s-pad-%s'
+PADS = [('small', (96, 0, 0)), ('large', (0x30000, 0x30000, 0x30000))]
 
 
 class Target:
@@ -449,6 +491,7 @@ def write_blob_script(target, objects, path):
     # (config/port_state.txt)
     outside = port_build.outside_state_patterns()
     words = {'under': target.under, 'dot': target.dot, 'rodata_name': target.kinds['.rodata'], 'outside': outside,
+             'apart': ' '.join(APART),
              'run': port_build.run_state_patterns(),
              'run_data': port_build.run_state_sections(['.data'], target.dot),
              'run_bss': port_build.run_state_sections(['.bss'], target.dot),
@@ -514,13 +557,95 @@ def link_blob(target, objects):
     # pointer it keeps (port_host.h), the two ends of its own
     # variables (given at the link, below), and on Windows what the compiler
     # and the linker themselves call
-    allowed = re.compile(r'^_{0,3}(port_Host\w+|g_port_game_context|g_port_data_(start|end)|chkstk_ms|main|alloca'
+    allowed = re.compile(r'^_{0,3}(port_Host\w+|g_port_data_(start|end)|g_port_code_sum|chkstk_ms|main|alloca'
                          r'|pei386_runtime_relocator)$')
     strangers = [name for name in undefined_of(target, blob) if not allowed.match(name)]
     if strangers:
         print("port-sdl: the game's object asks for names that are not the host's: %s" % ' '.join(strangers))
         return None
     return blob
+
+
+def code_sum(target, blob):
+    """The sum of the game's object's core (BLOB_LD_TEXT): its code, its
+    constants and its variables' first values, byte for byte, how large
+    its zeroed variables are, and every place they name another (each
+    relocation, with the name it reaches). It is taken from the object
+    before the program's link, so it says nothing of where the window's
+    code or SDL's lie. 64 bits of it, or None."""
+    marks = {}
+    for address, letter, size, name in symbols_of(target, blob):
+        if name.startswith('g_port_core_'):
+            marks[name[len('g_port_core_'):]] = address
+    sections = {'text': '.text', 'rodata': target.kinds['.rodata'], 'data': '.data'}
+    if any(kind not in marks or kind + '_end' not in marks for kind in list(sections) + ['bss']):
+        print("port-sdl: the game's object has no marks of its core (g_port_core_...)")
+        return None
+    digest = hashlib.sha1()
+    for kind, section in sections.items():
+        raw = target.dir + '/core_%s.bin' % kind
+        proc = run([target.objcopy, '-O', 'binary', '--only-section=' + section, blob, raw])
+        if proc.returncode != 0:
+            print('\n'.join('    ' + line for line in proc.stderr.split('\n')[:10]))
+            return None
+        with open(raw, 'rb') as f:
+            data = f.read()
+        os.remove(raw)
+        digest.update(('%s %d\n' % (kind, marks[kind + '_end'] - marks[kind])).encode())
+        digest.update(data[marks[kind]:marks[kind + '_end']])
+    digest.update(('bss %d\n' % (marks['bss_end'] - marks['bss'])).encode())
+    proc = run([target.objdump, '-r', blob])
+    if proc.returncode != 0:
+        return None
+    section = None
+    for line in proc.stdout.split('\n'):
+        m = re.match(r'^RELOCATION RECORDS FOR \[(.*)\]:', line)
+        if m:
+            section = next((kind for kind, name in sections.items() if name == m.group(1)), None)
+            continue
+        m = re.match(r'^([0-9a-f]+)\s+(\S+)\s+(\S+)', line)
+        if section and m and marks[section] <= int(m.group(1), 16) < marks[section + '_end']:
+            digest.update(('%s %s\n' % (section, line.strip())).encode())
+    return int.from_bytes(digest.digest()[:8], 'little')
+
+
+def compile_code_sum(target, value):
+    """The code's sum as a C file of the build's own, compiled outside the
+    game's object (it is not part of what it sums): its object, or None."""
+    path = target.dir + '/code_sum.c'
+    obj = target.dir + '/code_sum.o'
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('/* Written by tools/port_sdl_build.py: the sum of the game\'s object\'s\n'
+                ' * core (port_StateBuildSum, src/port/state.c). */\n'
+                'extern const unsigned long long g_port_code_sum;\n'
+                'const unsigned long long g_port_code_sum = 0x%016XULL;\n' % value)
+    proc = run([target.cc] + ([] if target.windows else [target.size_flag]) + ['-O2', '-c', path, '-o', obj])
+    if proc.returncode != 0:
+        print('\n'.join('    ' + line for line in proc.stderr.split('\n')[:10]))
+        return None
+    return obj
+
+
+def write_pad(target, name, text, data, rodata):
+    """An object of nothing but room (`text`, `data` and `rodata` bytes),
+    linked before the window's files in a program made to test that a
+    build whose window differs plays this one's replays (tools/
+    port_replay.py, --window): its path."""
+    # C, not assembly, so that the object is marked as the compiler marks
+    # every other (on Linux its note of the processor's features, without
+    # which the link lays out the program's calls to libraries otherwise)
+    path = '%s/pad_%s.c' % (target.dir, name)
+    obj = path[:-2] + '.o'
+    constants = '.section .rdata,\\"dr\\"' if target.windows else '.section .rodata'
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('/* Written by tools/port_sdl_build.py --padded */\n'
+                '__asm__(".text\\n.fill %d, 1, 0xcc\\n.data\\n.fill %d, 1, 0\\n%s\\n.fill %d, 1, 0\\n.text\\n");\n'
+                % (text, data, constants, rodata))
+    proc = run([target.cc] + ([] if target.windows else [target.size_flag]) + ['-O2', '-c', path, '-o', obj])
+    if proc.returncode != 0:
+        print('\n'.join('    ' + line for line in proc.stderr.split('\n')[:10]))
+        return None
+    return obj
 
 
 def console_layouts(target, program):
@@ -737,8 +862,10 @@ def main():
         hosted_more = os.environ['RB_HOSTED_FLAGS'].split()
     else:
         hosted_more = HOSTED_FAST if bits == 64 else []
-    HOSTED_FLAGS.extend(more + hosted_more)
     target = Target('--windows' in args, bits)
+    if not target.windows:
+        hosted_more = hosted_more + HOSTED_IN_TEXT
+    HOSTED_FLAGS.extend(more + hosted_more)
     problem = check_host(target)
     if problem:
         print('port-sdl: %s' % problem)
@@ -800,9 +927,27 @@ def main():
     if blob is None:
         print("FAILED: port-sdl: the game's object does not link")
         return 1
-    if not link_program(target, target.program, [blob] + hosted, target.link_flags() + hosted_more):
+    value = code_sum(target, blob)
+    summed = None if value is None else compile_code_sum(target, value)
+    if summed is None:
+        print("FAILED: port-sdl: the sum of the game's object's core was not made")
+        return 1
+    if not link_program(target, target.program, [blob, summed] + hosted, target.link_flags() + hosted_more):
         return 1
     made = [target.program]
+    if '--padded' in args:
+        # the same program with room between the game's object and the
+        # window's files: a build whose window differs, a little (its
+        # game's object where this one's is) and much (the game's
+        # variables moved, which no replay of this one's plays on)
+        for name, sizes in PADS:
+            pad = write_pad(target, name, *sizes)
+            program = PADDED % (target.program[:-4] if target.windows else target.program, name)
+            program += '.exe' if target.windows else ''
+            if pad is None or not link_program(target, program, [blob, summed, pad] + hosted,
+                                               target.link_flags() + hosted_more):
+                return 1
+            made.append(program)
     made += ['%s/mods/%s/' % (target.dir, name) for name in copy_mods(target)]
     if target.windows:
         shutil.copyfile(target.sdl + '/bin/SDL2.dll', target.dir + '/SDL2.dll')
@@ -817,12 +962,13 @@ def main():
             print('FAILED: port-sdl: src/port/host_windows.c does not compile for the program without a C library')
             return 1
         headless = target.dir + '/rebushido-headless.exe'
-        if not link_program(target, headless, [blob, plain],
+        if not link_program(target, headless, [blob, summed, plain],
                             ['-nostdlib', '-Wl,-e,' + target.under + 'port_WindowsStart', '-lkernel32', '-lws2_32', '-lgcc']
                             + target.windows_link_flags()):
             return 1
         made.append(headless)
-    print('OK: port-sdl: %s: %d files (%d compiled now)' % (', '.join(made), len(game) + len(hosted), built))
+    print("OK: port-sdl: %s: %d files (%d compiled now); the core's sum %016X"
+          % (', '.join(made), len(game) + len(hosted), built, value))
     return 0
 
 

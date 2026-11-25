@@ -192,20 +192,33 @@ LINK_PLACES = [
 ]
 LD_SCRIPT_TEXT = '''/* Written by tools/port_build.py: the native port's link. The game's
  * variables are in the order of the PlayStation program, kind by kind;
- * then the rest of the game's state, then what is not (config/port_state.txt). */
+ * then the rest of the game's state, then what is not (config/port_state.txt).
+ * The marks g_port_core_... are each kind's two ends, and g_port_code_sum
+ * is 0: a program with no window is all core, and its version stands for
+ * its code (src/port/state.c, port_StateBuildSum). */
 ENTRY(_start)
 SECTIONS
 {
     . = 0x%(base)X + SIZEOF_HEADERS;
-    .text : { *(.text .text.*) }
+    .text : {
+        g_port_core_text = .;
+        *(.text .text.*)
+        g_port_core_text_end = .;
+    }
     . = ALIGN(0x1000);
     g_port_data_start = .;
     .rodata : {
+        g_port_core_rodata = .;
 %(rodata)s
         *(.rodata .rodata.*)
+        . = ALIGN(8);
+        g_port_code_sum = .;
+        QUAD(0)
+        g_port_core_rodata_end = .;
     }
     . = ALIGN(0x1000);
     .data : {
+        g_port_core_data = .;
         g_port_game_data = .;
 %(data)s
         g_port_game_data_end = .;
@@ -214,8 +227,10 @@ SECTIONS
 %(run_data)s
         g_port_state_data_end = .;
         *(.data .data.*)
+        g_port_core_data_end = .;
     }
     .bss : {
+        g_port_core_bss = .;
         g_port_game_bss = .;
 %(bss)s
         g_port_game_bss_end = .;
@@ -224,6 +239,7 @@ SECTIONS
 %(run_bss)s
         g_port_state_bss_end = .;
         *(.bss .bss.*) *(COMMON)
+        g_port_core_bss_end = .;
     }
     g_port_data_end = .;
     /DISCARD/ : { *(.note.GNU-stack) *(.comment) *(.eh_frame) *(.note.gnu.property) }

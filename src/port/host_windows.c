@@ -627,16 +627,19 @@ static LONG WINAPI port_WindowsOnFault(EXCEPTION_POINTERS *fault) {
 
 #if defined(__i386__)
 /* ... and this one on the game's stack: the last handler of that
- * stack's chain, which port_HostStartGame puts at its top. It is asked
- * only when nothing above it took the fault, a system library's own
- * handlers among them. */
-static EXCEPTION_DISPOSITION __cdecl port_WindowsOnGameFault(
-    EXCEPTION_RECORD *record, void *frame, CONTEXT *context, void *dispatch) {
+ * stack's chain, which port_HostStartGame puts at its top (as the game's
+ * object's port_FiberOnFault, which calls this). It is asked only when
+ * nothing above it took the fault, a system library's own handlers among
+ * them. */
+static s32 port_WindowsOnGameFault(
+    void *record, void *frame, void *context, void *dispatch) {
+    EXCEPTION_RECORD *fault = record;
+
     (void)frame;
     (void)dispatch;
-    if ((record->ExceptionFlags &
+    if ((fault->ExceptionFlags &
          (EXCEPTION_UNWINDING | EXCEPTION_EXIT_UNWIND)) == 0) {
-        port_WindowsReport(record, context);
+        port_WindowsReport(fault, context);
     }
     return ExceptionContinueSearch;
 }
@@ -704,19 +707,6 @@ s32 port_HostProtect(void *start, u32 bytes, s32 is_writable) {
 
 /* ---- the game's stack, as a fiber (port_host.h, port_fiber.h) ---- */
 
-PortAddress g_port_game_context;
-static PortAddress g_port_host_context;
-static void (*g_port_game_function)(void);
-
-/* Where the game's stack first returns to: the frame pointer is 0 there,
- * which ends the chain of callers a crash report walks. */
-static void port_WindowsGameEntry(void) {
-    g_port_game_function();
-    for (;;) {
-        port_HostExit(1);
-    }
-}
-
 /* Windows keeps where the thread's stack is, and hands a fault to nobody
  * while the stack pointer is outside it: so the switch keeps each
  * stack's own copy of the thread's record (port_fiber.h), and the game's
@@ -735,19 +725,20 @@ void port_HostStartGame(void (*function)(void), u32 stack_top) {
     if (VirtualQuery((void *)(top - 1), &memory, sizeof(memory)) != 0) {
         bottom = (PortAddress)memory.AllocationBase;
     }
-    g_port_game_function = function;
 #if defined(__i386__)
     {
         PortAddress *chain = (PortAddress *)top - 2;
         PortAddress record[PORT_FIBER_TIB_WORDS];
 
         chain[0] = (PortAddress)-1;
-        chain[1] = (PortAddress)port_WindowsOnGameFault;
+        /* the game's object's handler, which passes the fault on to
+         * this file's (port_fiber.h) */
+        g_port_fiber_on_fault = port_WindowsOnGameFault;
+        chain[1] = (PortAddress)port_FiberOnFault;
         record[0] = bottom;
         record[1] = top;
         record[2] = (PortAddress)chain;
-        g_port_game_context = port_FiberPrepare(
-            (PortAddress)chain, port_WindowsGameEntry, record);
+        port_FiberStartGame(function, (PortAddress)chain, record);
     }
 #else
     {
@@ -755,18 +746,9 @@ void port_HostStartGame(void (*function)(void), u32 stack_top) {
 
         record[0] = bottom;
         record[1] = top;
-        g_port_game_context =
-            port_FiberPrepare(top, port_WindowsGameEntry, record);
+        port_FiberStartGame(function, top, record);
     }
 #endif
-}
-
-void port_HostEnterGame(void) {
-    port_FiberSwitch(&g_port_host_context, g_port_game_context);
-}
-
-void port_HostLeaveGame(void) {
-    port_FiberSwitch(&g_port_game_context, g_port_host_context);
 }
 
 /* Where the program without a C runtime starts. Its arguments out of

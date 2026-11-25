@@ -389,24 +389,23 @@ static u64 port_SumWord(u64 sum, u32 word) {
     return port_SumBytes(sum, bytes, sizeof(bytes));
 }
 
-/* The build: the game's version (with its commit), the size of a
- * pointer, the system, and where the program's variables lie and how
- * large its state is. Two programs that agree on these lay the game's
- * memory out alike, which is what makes their states' hashes comparable. */
+/* The build: the game's version (with its commit), how large its state
+ * is, and where the game's object's core lies and what its code is
+ * (port_StateBuildSum: the size of a pointer and the system among it).
+ * Two programs that agree on these run the same game on memory laid out
+ * alike, which is what makes their states' hashes comparable and the
+ * host's start a spectator's to put in (port_ReplayLoadServed). The
+ * version keeps two releases apart, which the lobby and the relay match
+ * players by; where only the window differs, the core's sum would let
+ * them meet (docs/NETPLAY.md, "Save, load and hash"). */
 static u64 port_SessionBuild(void) {
+    u64 layout = port_StateBuildSum();
     u64 sum = FNV_OFFSET;
 
     sum = port_SumBytes(sum, g_rb_version, port_TextLength(g_rb_version));
-    sum = port_SumWord(sum, (u32)sizeof(void *));
-#if defined(_WIN32)
-    sum = port_SumWord(sum, 1);
-#else
-    sum = port_SumWord(sum, 2);
-#endif
     sum = port_SumWord(sum, port_StateSize());
-    sum = port_SumWord(sum, (u32)(g_port_data_end - g_port_data_start));
-    sum = port_SumWord(sum, (u32)(PortAddress)g_port_data_start);
-    return port_SumWord(sum, (u32)(PortAddress)port_Main);
+    sum = port_SumWord(sum, (u32)layout);
+    return port_SumWord(sum, (u32)(layout >> 32));
 }
 
 /* A sector's data into the disc's sum: its subheader and what it carries

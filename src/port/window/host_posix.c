@@ -579,31 +579,8 @@ s32 port_HostProtect(void *start, u32 bytes, s32 is_writable) {
 
 /* ---- the game's stack, as a fiber (port_host.h, port_fiber.h) ---- */
 
-PortAddress g_port_game_context;
-static PortAddress g_port_host_context;
-static void (*g_port_game_function)(void);
-
-/* Where the game's stack first returns to: the frame pointer is 0 there,
- * which ends the chain of callers a crash report walks. */
-static void port_PosixGameEntry(void) {
-    g_port_game_function();
-    for (;;) {
-        port_HostExit(1);
-    }
-}
-
 void port_HostStartGame(void (*function)(void), u32 stack_top) {
-    g_port_game_function = function;
-    g_port_game_context =
-        port_FiberPrepare(stack_top, port_PosixGameEntry, NULL);
-}
-
-void port_HostEnterGame(void) {
-    port_FiberSwitch(&g_port_host_context, g_port_game_context);
-}
-
-void port_HostLeaveGame(void) {
-    port_FiberSwitch(&g_port_game_context, g_port_host_context);
+    port_FiberStartGame(function, stack_top, NULL);
 }
 
 #endif /* !_WIN32 */
