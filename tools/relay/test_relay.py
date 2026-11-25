@@ -461,10 +461,22 @@ def test_bad_requests(server):
     five = host_hello(cands=[LAN] * 4)
     five = five[:124] + b"\x05" + five[125:]
     check(answer(five) == rc.E_BAD_REQUEST, "five candidates")
-    # the clients of versions 1 and 2 are refused, cleanly
-    check(answer(rc.hello(rc.F_HOST, name="x", version=1)) == rc.E_VERSION, "version 1")
-    check(answer(rc.hello(rc.F_HOST, name="x", version=2)) == rc.E_VERSION, "version 2")
-    check(answer(rc.hello(rc.F_HOST, name="x", version=4)) == rc.E_VERSION, "version 4")
+    # the clients of versions 1 to 3 are refused, cleanly: their HELLO was
+    # 208 bytes, and the version is looked at before the size
+    for old in (1, 2, 3):
+        check(answer(rc.hello(rc.F_HOST, name="x", version=old)[:208]) == rc.E_VERSION, "version %d" % old)
+    check(answer(rc.hello(rc.F_HOST, name="x", version=3)) == rc.E_VERSION, "version 3 of 232 bytes")
+    check(answer(rc.hello(rc.F_HOST, name="x", version=5)) == rc.E_VERSION, "version 5")
+    # version 4's seat, players and key
+    key = os.urandom(16)
+    check(answer(rc.hello(rc.F_HOST, name="x", players=3)) == rc.E_BAD_REQUEST, "players 3")
+    check(answer(rc.hello(rc.F_HOST, name="x", seat=4)) == rc.E_BAD_REQUEST, "seat 4")
+    check(answer(good[:226] + b"\x01" + good[227:]) == rc.E_BAD_REQUEST, "a byte after the seat")
+    check(answer(rc.hello(rc.F_GUEST, code="AAAAAA", players=4)) == rc.E_BAD_REQUEST, "a guest's players")
+    check(answer(rc.hello(rc.F_HOST, name="x", players=4)) == rc.E_BAD_REQUEST, "a room of four with no seat key")
+    check(answer(rc.hello(rc.F_HOST, code="AAAAAA", seat=2)) == rc.E_BAD_REQUEST, "a second seat with no key")
+    check(answer(rc.hello(rc.F_HOST, seat=2, seat_key=key)) == rc.E_BAD_REQUEST, "a second seat with no code")
+    check(answer(rc.hello(rc.F_HOST, code="AAAAAA", seat=2, seat_key=key)) == rc.E_NO_ROOM, "a seat of no room")
     # None of these made a room.
     check(answer(host_hello(name="Good")) == rc.S_WAITING, "a good HELLO after bad ones")
 
@@ -708,20 +720,23 @@ def test_group_feed(server):
     c.stay()
     c.client.send(rc.watch(c.code, c.token, code))
     got = [rc.parse_scene(c.client.recv(rc.K_SCENE)) for _ in range(2)]
-    check(got[0]["part"] == rc.P_SETTINGS and got[0]["settings"] == settings and got[0]["first"] == "Goro",
-          "the settings to a spectator: %r" % got[0])
+    check(got[0]["part"] == rc.P_SETTINGS and got[0]["settings"] == settings and
+          got[0]["names"] == ["Goro", "Hana", "", ""], "the settings to a spectator: %r" % got[0])
     check(got[1]["part"] == rc.P_NONE and got[1]["why"] == 1, "nothing yet: %r" % got[1])
     for index in range(3):
         feeder.send(rc.feed_start(code, ticket, 600, start, index))
         feeder.recv(rc.K_FEED_ACK)
-    frames = bytes(range(240)) * 4  # 240 frames, the most of a datagram
+    frames = bytes(range(240)) * 4  # 120 frames of 8 bytes, the most of a datagram
     hashes = [(630, b"H" * 8), (660, b"I" * 8)]
     feeder.send(rc.feed_inputs(code, ticket, 600, frames, hashes))
     ack = rc.parse_feed_ack(feeder.recv(rc.K_FEED_ACK))
-    check(ack["start_frame"] == 600 and ack["chunks"] == {0, 1, 2} and ack["next"] == 840, "the feed's ack: %r" % ack)
+    check(ack["start_frame"] == 600 and ack["chunks"] == {0, 1, 2} and ack["next"] == 720, "the feed's ack: %r" % ack)
+    # more than a datagram's frames are not taken
+    feeder.send(rc.feed_inputs(code, ticket, 720, bytes(8) * 121))
+    check(feeder.recv(rc.K_FEED_ACK, 0.3) is None, "121 frames in a FEED")
     # inputs that overlap are taken from where the server is
-    feeder.send(rc.feed_inputs(code, ticket, 800, bytes(4) * 100))
-    check(rc.parse_feed_ack(feeder.recv(rc.K_FEED_ACK))["next"] == 900, "overlapping inputs")
+    feeder.send(rc.feed_inputs(code, ticket, 700, bytes(8) * 100))
+    check(rc.parse_feed_ack(feeder.recv(rc.K_FEED_ACK))["next"] == 800, "overlapping inputs")
     # the start, all of it, then the inputs
     c.client.drain()
     c.client.send(rc.watch(c.code, c.token, code, has_settings=True))
@@ -742,21 +757,21 @@ def test_group_feed(server):
             break
         scenes.append(rc.parse_scene(reply))
     inputs = b"".join(s["inputs"] for s in scenes if s["part"] == rc.P_INPUTS)
-    check(inputs == frames + bytes(4) * 60, "the inputs from the start: %d bytes" % len(inputs))
+    check(inputs == frames + bytes(8) * 80, "the inputs from the start: %d bytes" % len(inputs))
     check(scenes[0]["hashes"] == hashes, "the hashes among them: %r" % scenes[0]["hashes"])
     # the end, and a spectator who is not a member
-    feeder.send(rc.feed_end(code, ticket, 900, rc.W_SECOND))
+    feeder.send(rc.feed_end(code, ticket, 800, rc.W_SECOND))
     feeder.recv(rc.K_FEED_ACK)
-    c.client.send(rc.watch(c.code, c.token, code, 600, 900, True, {0, 1, 2}))
+    c.client.send(rc.watch(c.code, c.token, code, 600, 800, True, {0, 1, 2}))
     end = rc.parse_scene(c.client.recv(rc.K_SCENE))
-    check(end["part"] == rc.P_END and end["frame"] == 900 and end["winner"] == rc.W_SECOND, "the end: %r" % end)
+    check(end["part"] == rc.P_END and end["frame"] == 800 and end["winner"] == rc.W_SECOND, "the end: %r" % end)
     stranger = Client(server)
     stranger.send(rc.watch(c.code, bytes(16), code))
     scene = rc.parse_scene(stranger.recv(rc.K_SCENE))
     check(scene["part"] == rc.P_NONE and scene["why"] == 3, "a stranger watched: %r" % scene)
     # the match over, its feed is kept a while for those still watching
     a.say(rc.A_RESULT, number=match["number"], arg=rc.W_SECOND)
-    c.client.send(rc.watch(c.code, c.token, code, 600, 900, True, {0, 1, 2}))
+    c.client.send(rc.watch(c.code, c.token, code, 600, 800, True, {0, 1, 2}))
     check(rc.parse_scene(c.client.recv(rc.K_SCENE))["part"] == rc.P_END, "the feed of a match over")
 
 
@@ -780,8 +795,15 @@ def test_group_refusals(server):
     check(inc["status"] == rc.E_INCOMPATIBLE and inc["setup"] == SETUP, "INCOMPATIBLE: %r" % inc)
     check(other.say(rc.A_ENTER, code="ZZZZZZ")["status"] == rc.E_NO_ROOM, "no such room")
     check(other.say(rc.A_STAY, code=a.code, token=os.urandom(16))["status"] == rc.E_NO_ROOM, "a stranger's token")
-    other.client.send(rc.room_hello(rc.A_OPEN, name="Old", player="Taro", setup=SETUP, version=1))
-    check(rc.parse_roster(other.client.recv(rc.K_ROSTER))["status"] == rc.E_VERSION, "a client of version 1")
+    for old in (1, 3):
+        other.client.send(rc.room_hello(rc.A_OPEN, name="Old", player="Taro", setup=SETUP, version=old))
+        check(rc.parse_roster(other.client.recv(rc.K_ROSTER))["status"] == rc.E_VERSION, "a ROOM of version %d" % old)
+    other.client.send(rc.room_hello(rc.A_OPEN, name="Old", player="Taro", setup=SETUP, version=3)[:100])
+    check(rc.parse_roster(other.client.recv(rc.K_ROSTER))["status"] == rc.E_VERSION, "a short ROOM of version 3")
+    raw = bytearray(rc.room_hello(rc.A_OPEN, name="Odd", player="Taro", setup=SETUP))
+    raw[140] |= 0x04
+    other.client.send(bytes(raw))
+    check(rc.parse_roster(other.client.recv(rc.K_ROSTER))["status"] == rc.E_BAD_REQUEST, "a ROOM's unknown flag")
     other.client.send(rc.room_hello(rc.A_OPEN, name="x")[:100])
     check(rc.parse_roster(other.client.recv(rc.K_ROSTER))["status"] == rc.E_BAD_REQUEST, "a short ROOM")
     many = open_group(server, rc.RULE_OFF, ["P%d" % i for i in range(8)])
@@ -803,6 +825,149 @@ def test_group_timeout(server, member_timeout):
     check(pair_now(a) == ("Uta", "Yui") or pair_now(a) == ("Yui", "Uta"), "the next match: %r" % (pair_now(a),))
 
 
+def test_group_four_fixed(server):
+    """A room of several whose rotation makes matches of four: two teams of
+    two, a fixed turn, met as a room of four by its ticket."""
+    members = open_group(server, rc.RULE_FIXED, ("Ayame", "Bunta", "Chie", "Dai", "Eiko"), four=True)
+    a, b, c, d, e = members
+    r = a.stay()
+    match = r["match"]
+    check(r["size"] == 4 and match["number"] == 1, "a rotation of four: %r" % ((r["size"], match),))
+    check(a.names(*match["players"]) == ("Ayame", "Bunta", "Chie", "Dai"), "the first four: %r" % match)
+    # the ticket to the match's four players and nobody else
+    for m in members:
+        ticket = m.stay()["match"]["ticket"]
+        check((ticket == match["ticket"]) == (m is not e) and (ticket != bytes(16)) == (m is not e),
+              "%s's ticket of a match of four" % m.player)
+    busy = {x["player"]: bool(x["flags"] & rc.M_BUSY) for x in a.stay()["members"]}
+    check(busy == {"Ayame": True, "Bunta": True, "Chie": True, "Dai": True, "Eiko": False}, "busy: %r" % busy)
+    # met as a room of four: its first player hosts all three seats
+    code, ticket = match["code"], match["ticket"]
+
+    def host(seat):
+        return rc.hello(rc.F_HOST | rc.F_TICKET, code=code, player="Ayame", setup=SETUP, secret=ticket, players=4,
+                        seat=seat)
+
+    def guest(seat, player, secret=ticket):
+        return rc.hello(rc.F_GUEST | rc.F_TICKET, code=code, player=player, setup=SETUP, secret=secret, seat=seat)
+
+    h1, h2, h3 = Client(server), Client(server), Client(server)
+    gb, gc, gd = Client(server), Client(server), Client(server)
+    check(h2.ask(host(2))["detail"] == rc.E_NO_ROOM, "a match's seat before its first")
+    check(gb.ask(guest(1, "Bunta"))["detail"] == rc.S_WAITING, "a match's guest before its host")
+    s = h1.ask(host(1))
+    check(s["detail"] == rc.S_WAITING and s["code"] == code, "the match's first seat: %r" % s)
+    s = h2.ask(host(2))
+    check(s["detail"] == rc.S_WAITING and s["code"] == code, "the match's second seat: %r" % s)
+    g = gc.ask(guest(2, "Chie"))
+    check(g["detail"] == rc.S_PUNCH and g["peer"] == h2.address() and g["code"] == code, "Chie in seat 2: %r" % g)
+    check(gd.ask(guest(3, "Dai"))["detail"] == rc.S_WAITING, "Dai before seat 3 is open")
+    h3.ask(host(3))
+    g = gd.ask(guest(3, "Dai"))
+    check(g["detail"] == rc.S_PUNCH and g["peer"] == h3.address(), "Dai in seat 3: %r" % g)
+    g = gb.ask(guest(1, "Bunta"))
+    check(g["detail"] == rc.S_PUNCH and g["peer"] == h1.address(), "Bunta in seat 1: %r" % g)
+    check(Client(server).ask(guest(0, "Eiko", bytes(16)))["detail"] == rc.E_NO_ROOM, "a wrong ticket")
+    check(Client(server).ask(guest_hello(code))["detail"] == rc.E_NO_ROOM, "a guest of no ticket")
+    check(Client(server).ask(guest(0, "Eiko"))["detail"] == rc.E_ROOM_FULL, "a fifth player")
+    check(code not in codes(a.client), "a match of four is listed")
+    # a fixed turn: the first team wins; then the second
+    turns = []
+    for winner in (rc.W_FIRST, rc.W_SECOND, rc.W_FIRST):
+        match = a.stay()["match"]
+        turns.append(a.names(*match["players"]))
+        first = [m for m in members if m.player == turns[-1][0]][0]
+        first.say(rc.A_RESULT, number=match["number"], arg=winner)
+    check(turns == [("Ayame", "Bunta", "Chie", "Dai"), ("Bunta", "Chie", "Dai", "Eiko"),
+                    ("Chie", "Dai", "Eiko", "Ayame")], "a fixed turn of four: %r" % turns)
+    wins = {m["player"]: m["wins"] for m in a.stay()["members"]}
+    # Ayame and Chie; Chie and Eiko; Chie and Eiko
+    check(wins == {"Ayame": 1, "Bunta": 0, "Chie": 3, "Dai": 0, "Eiko": 2}, "both winners' wins: %r" % wins)
+    last = a.roster["last"]
+    check(last["number"] == 3 and a.names(last["a"], last["b"]) == ("Chie", "Dai") and last["winner"] == rc.W_FIRST,
+          "the last result: %r" % last)
+
+
+def test_group_four_winner(server):
+    """The winners staying, a draw, and a player leaving his match of four."""
+    members = open_group(server, rc.RULE_WINNER, ("Fumi", "Goro", "Hana", "Isao", "Jun", "Kei"), four=True)
+    a = members[0]
+    by_name = {m.player: m for m in members}
+
+    def play(winner):
+        match = a.stay()["match"]
+        names = a.names(*match["players"])
+        by_name[names[0]].say(rc.A_RESULT, number=match["number"], arg=winner)
+        return names
+
+    first = play(rc.W_SECOND)  # Goro and Isao win
+    second = play(rc.W_DRAW)  # the match's four to the end
+    third = a.stay()["match"]
+    check(first == ("Fumi", "Goro", "Hana", "Isao"), "the first match: %r" % (first,))
+    # the winners first, the rest, the losers last: Goro Isao Jun Kei Fumi Hana
+    check(second == ("Goro", "Isao", "Jun", "Kei"), "after a team's win: %r" % (second,))
+    # a draw: Fumi Hana, then the four: Fumi Hana Goro Isao Jun Kei
+    check(a.names(*third["players"]) == ("Fumi", "Hana", "Goro", "Isao"), "after a draw: %r" % third)
+    wins = {m["player"]: m["wins"] for m in a.stay()["members"]}
+    check(wins["Goro"] == 1 and wins["Isao"] == 1 and sum(wins.values()) == 2, "the wins: %r" % wins)
+    # Hana (player 2, the second team) leaves: Fumi and Goro win it
+    by_name["Hana"].say(rc.A_LEAVE)
+    r = a.stay()
+    check(r["last"]["number"] == third["number"] and r["last"]["winner"] == rc.W_FIRST,
+          "a player who left his match of four: %r" % r["last"])
+    wins = {m["player"]: m["wins"] for m in r["members"]}
+    check(wins["Fumi"] == 1 and wins["Goro"] == 2 and wins["Isao"] == 1, "the leaver's team lost: %r" % wins)
+    # five left; the next match of four is made at once
+    check(len(r["match"]["players"]) == 4 and "Hana" not in a.names(*r["match"]["players"]),
+          "the next match: %r" % r["match"])
+    # a room of two still makes matches of two
+    two = open_group(server, rc.RULE_FIXED, ("Mai", "Nao", "Oto", "Ran"))
+    r = two[0].stay()
+    check(r["size"] == 2 and len(r["match"]["players"]) == 2, "a room of two: %r" % ((r["size"], r["match"]),))
+
+
+def test_group_four_feed(server):
+    """A match of four's feed: four names, 8-byte inputs over several SCENE
+    datagrams, the hashes among them."""
+    members = open_group(server, rc.RULE_FIXED, ("Sora", "Taro", "Uta", "Waka", "Yui"), four=True)
+    a, spectator = members[0], members[4]
+    match = a.stay()["match"]
+    code, ticket = match["code"], match["ticket"]
+    feeder = Client(server)
+    feeder.send(rc.feed_settings(code, ticket, bytes(64)))
+    feeder.recv(rc.K_FEED_ACK)
+    start = os.urandom(1500)
+    for index in range(2):
+        feeder.send(rc.feed_start(code, ticket, 1000, start, index))
+        feeder.recv(rc.K_FEED_ACK)
+    # 360 frames of four pads, a hash every 30 frames: three FEEDs of 120
+    frames = b"".join(bytes((f & 0xFF, f >> 8, 1, 0, 2, 0, 3, 0)) for f in range(360))
+    every = [(1000 + f, b"%08d" % f) for f in range(0, 360, 30)]
+    for i in range(3):
+        part = [(f, h) for f, h in every if 1000 + i * 120 <= f < 1120 + i * 120]
+        check(len(part) <= rc.HASHES_A_DATAGRAM, "the test's hashes")
+        feeder.send(rc.feed_inputs(code, ticket, 1000 + i * 120, frames[i * 960:(i + 1) * 960], part))
+        ack = rc.parse_feed_ack(feeder.recv(rc.K_FEED_ACK))
+    check(ack["next"] == 1360, "the feed of four: %r" % ack)
+    spectator.stay()
+    spectator.client.drain()
+    spectator.client.send(rc.watch(spectator.code, spectator.token, code, 1000, 1000, False, {0, 1}))
+    scenes = []
+    while True:
+        reply = spectator.client.recv(rc.K_SCENE, 0.3)
+        if reply is None:
+            break
+        scenes.append(rc.parse_scene(reply))
+    settings = [x for x in scenes if x["part"] == rc.P_SETTINGS]
+    check(settings and settings[0]["names"] == ["Sora", "Taro", "Uta", "Waka"], "the four names: %r" % settings)
+    inputs = [x for x in scenes if x["part"] == rc.P_INPUTS]
+    check([x["first"] for x in inputs] == [1000, 1120, 1240] and all(x["count"] == 120 for x in inputs),
+          "the inputs in datagrams of 120: %r" % [(x["first"], x["count"]) for x in inputs])
+    check(b"".join(x["inputs"] for x in inputs) == frames, "the 8-byte inputs as they were sent")
+    check([h for x in inputs for h in x["hashes"]] == every, "every hash among them: %r" %
+          [len(x["hashes"]) for x in inputs])
+
+
 def groups_server():
     member_timeout = 3.0
     server = Server("--verbose", "--rooms-per-ip", "1000", "--creations-per-min", "100000", "--hello-rate", "100000",
@@ -814,7 +979,204 @@ def groups_server():
         test_group_sides(server)
         test_group_feed(server)
         test_group_refusals(server)
+        test_group_four_fixed(server)
+        test_group_four_winner(server)
+        test_group_four_feed(server)
         test_group_timeout(server, member_timeout)
+        server.stop()
+    finally:
+        server.kill()
+
+
+# --- a room of four (four players on four PCs, lobby version 4) -------------
+
+
+def four_host(code=b"", key=b"", seat=0, flags=0, salt=b"", secret=b"", cands=(), name="Four"):
+    """A host's socket of a room of four: its first seat (players 4), or its
+    second or third."""
+    return rc.hello(rc.F_HOST | flags, code, name if seat <= 1 else "", "Mikado", SETUP, salt, secret, cands,
+                    seat_key=key, players=4 if seat <= 1 else 0, seat=seat)
+
+
+def four_guest(code, seat=0, player="Utsusemi", secret=b"", flags=0, setup=SETUP):
+    return rc.hello(rc.F_GUEST | flags, code, b"", player, setup, b"", secret, (), seat=seat)
+
+
+def listed(client, code):
+    rooms = [r for r in list_all(client) if r["code"] == code]
+    check(len(rooms) == 1, "the room of four is not listed once: %r" % rooms)
+    return rooms[0]
+
+
+def joined(host, guest, state, what):
+    """A guest's STATE of PUNCH (or RELAYED) and its host's, pushed: the
+    same token, each the other's peer."""
+    check(state and state["detail"] in (rc.S_PUNCH, rc.S_RELAYED) and state["peer"] == host.address(),
+          "%s: %r" % (what, state))
+    pushed = host.recv(rc.K_STATE)
+    check(pushed is not None, "%s: its host was not told" % what)
+    h = rc.parse_state(pushed)
+    check(h["detail"] == state["detail"] and h["token"] == state["token"] != 0 and h["peer"] == guest.address(),
+          "%s: its host's STATE %r" % (what, h))
+    return state["token"]
+
+
+def test_four_room(server, window):
+    key = os.urandom(16)
+    h1, h2, h3 = Client(server), Client(server), Client(server)
+    s = h1.ask(four_host(key=key))
+    check(s and s["detail"] == rc.S_WAITING, "a room of four: %r" % s)
+    code = s["code"]
+    r = listed(h1, code)
+    check(r["four"] and not r["group"] and r["players"] == 1 and r["name"] == "Four", "listed: %r" % r)
+    # a guest who asks for seat 2 before its socket is open: WAITING
+    early = Client(server)
+    w = early.ask(four_guest(code, seat=2, player="Bunta"))
+    check(w["detail"] == rc.S_WAITING and w["code"] == code and w["player"] == "Mikado", "before seat 2: %r" % w)
+    # a wrong seat key, no such room, a seat's socket that is the first's
+    check(Client(server).ask(four_host(code, os.urandom(16), 2))["detail"] == rc.E_NO_ROOM, "a wrong seat key")
+    check(Client(server).ask(four_host("ZZZZZZ", key, 2))["detail"] == rc.E_NO_ROOM, "a seat of no room")
+    check(h1.ask(four_host(code, key, 2))["detail"] == rc.E_BAD_REQUEST, "the first seat's socket as the second")
+    # the second and third seats
+    for client, seat in ((h2, 2), (h3, 3)):
+        s = client.ask(four_host(code, key, seat))
+        check(s["detail"] == rc.S_WAITING and s["code"] == code and s["you"] == client.address(),
+              "seat %d: %r" % (seat, s))
+    check(h2.ask(four_host(code, key, 3))["detail"] == rc.E_BAD_REQUEST, "seat 2's socket as seat 3")
+    check(listed(h1, code)["players"] == 1, "the seats are counted as players")
+    check(codes(h1).count(code) == 1, "a seat is listed")
+    # the guests, in the order they come: the first free seat, or theirs
+    g1, g3 = Client(server), Client(server)
+    t1 = joined(h1, g1, g1.ask(four_guest(code, player="Ayame")), "the first guest")
+    check(listed(h1, code)["players"] == 2, "a room of four with one guest")
+    t2 = joined(h2, early, early.ask(four_guest(code, seat=2, player="Bunta")), "the guest of seat 2")
+    check(listed(h1, code)["players"] == 3, "a room of four with two guests")
+    t3 = joined(h3, g3, g3.ask(four_guest(code, player="Chie")), "the third guest")
+    check(len({t1, t2, t3}) == 3, "the seats' tokens: %r" % ((t1, t2, t3),))
+    check(listed(h1, code)["players"] == 4, "a room of four full")
+    full = Client(server).ask(four_guest(code, player="Dai"))
+    check(full["detail"] == rc.E_ROOM_FULL and full["code"] == code, "a fourth guest: %r" % full["name"])
+    check(Client(server).ask(four_guest(code, seat=3))["detail"] == rc.E_ROOM_FULL, "a guest asking a full seat")
+    check(h2.ask(four_guest(code))["detail"] == rc.E_BAD_REQUEST, "a seat's host as a guest")
+    inc = Client(server).ask(four_guest(code, setup="P5-0000-0000-0001"))
+    check(inc["detail"] == rc.E_INCOMPATIBLE and inc["setup"] == SETUP, "an incompatible guest: %r" % inc)
+    # a guest again: its own seat
+    again = g3.ask(four_guest(code, player="Chie"))
+    check(again["detail"] == rc.S_PUNCH and again["token"] == t3 and again["peer"] == h3.address(),
+          "a guest's hello again: %r" % again)
+    # each pair decided alone: seat 1 IPv6, seat 2 IPv4, seat 3 relayed
+    f6 = rc.F_PUNCHED4 | rc.F_PUNCHED6
+    until_both(h2, four_host(code, key, 2, rc.F_PUNCHED4), early, four_guest(code, 2, "Bunta", flags=rc.F_PUNCHED4),
+               rc.S_DIRECT4, 1.0)
+    check(h1.ask(four_host(code, key))["detail"] == rc.S_PUNCH, "seat 1 decided with seat 2")
+    check(h3.ask(four_host(code, key, 3))["detail"] == rc.S_PUNCH, "seat 3 decided with seat 2")
+    until_both(h1, four_host(code, key, flags=f6), g1, four_guest(code, player="Ayame", flags=f6), rc.S_DIRECT6, 1.0)
+    until_both(h3, four_host(code, key, 3), g3, four_guest(code, player="Chie"), rc.S_RELAYED, window + 2.0)
+    forwarding(h3, g3)
+    # the relayed pair's datagrams go to it alone; the others' are not relayed
+    g1.send(rc.header(1) + b"seat 1 is direct")
+    early.send(rc.header(1) + b"seat 2 is direct")
+    check(all(c.recv(None, 0.2) is None for c in (h1, h2, h3, g3)), "a direct seat's datagram was relayed")
+    # a seat's reset lets its guest go alone
+    s = h3.ask(four_host(code, key, 3, rc.F_RESET))
+    check(s["detail"] == rc.S_WAITING and s["token"] == 0, "seat 3 reset: %r" % s["name"])
+    g3.send(rc.header(1) + b"after the reset")
+    check(h3.recv(None, 0.2) is None, "a seat reset still relays")
+    check(listed(h1, code)["players"] == 3, "the reset seat's guest is counted")
+    check(h1.ask(four_host(code, key))["detail"] == rc.S_DIRECT6, "a seat's reset reached the first")
+    joined(h3, g3, g3.ask(four_guest(code, player="Chie")), "a guest after its seat's reset")
+    return h1, h2, h3, code
+
+
+def test_four_given_seat(server):
+    """A guest asking for a given seat; the first free seat of those open."""
+    key = os.urandom(16)
+    h1, h3 = Client(server), Client(server)
+    code = h1.ask(four_host(key=key))["code"]
+    h3.ask(four_host(code, key, 3))
+    g = Client(server)
+    joined(h3, g, g.ask(four_guest(code, seat=3)), "a guest asking for seat 3")
+    g1 = Client(server)
+    joined(h1, g1, g1.ask(four_guest(code)), "a guest of any seat")
+    # seats 1 and 3 taken, seat 2 not open: wait
+    late = Client(server)
+    check(late.ask(four_guest(code))["detail"] == rc.S_WAITING, "no free seat of those open")
+    check(late.ask(four_guest(code, seat=1))["detail"] == rc.E_ROOM_FULL, "a guest asking a seat taken")
+    h2 = Client(server)
+    h2.ask(four_host(code, key, 2))
+    joined(h2, late, late.ask(four_guest(code)), "a guest once seat 2 opened")
+
+
+def test_four_locked(server):
+    """A locked room of four: each guest proves the password once, then may
+    wait for its seat."""
+    salt = os.urandom(16)
+    verifier = rc.verifier(salt, "kabuto")
+    key = os.urandom(16)
+    h1 = Client(server)
+    code = h1.ask(four_host(key=key, salt=salt, secret=verifier))["code"]
+    r = listed(h1, code)
+    check(r["locked"] and r["four"] and r["salt"] == salt, "a locked room of four listed: %r" % r)
+    a = Client(server)
+    p = a.ask(four_guest(code, player="Ayame"))
+    check(p["detail"] == rc.S_PASSWORD and p["salt"] == salt, "PASSWORD: %r" % p)
+    joined(h1, a, a.ask(four_guest(code, player="Ayame", secret=rc.proof(verifier, p["challenge"]))), "a proved guest")
+    b = Client(server)
+    p = b.ask(four_guest(code, seat=2, player="Bunta"))
+    w = b.ask(four_guest(code, seat=2, player="Bunta", secret=rc.proof(rc.verifier(salt, "nope"), p["challenge"])))
+    check(w["detail"] == rc.E_WRONG_PASSWORD, "a wrong password: %r" % w["name"])
+    w = b.ask(four_guest(code, seat=2, player="Bunta", secret=rc.proof(verifier, w["challenge"])))
+    check(w["detail"] == rc.S_WAITING, "proved, before seat 2: %r" % w["name"])
+    check(b.ask(four_guest(code, seat=2, player="Bunta"))["detail"] == rc.S_WAITING, "a proved guest asked again")
+    h2 = Client(server)
+    s = h2.ask(four_host(code, key, 2))
+    check(s["detail"] == rc.S_WAITING, "a locked room's second seat: %r" % s)
+    joined(h2, b, b.ask(four_guest(code, seat=2, player="Bunta")), "a guest proved once, its seat open")
+    c = Client(server)
+    check(c.ask(four_guest(code, player="Chie"))["detail"] == rc.S_PASSWORD, "another guest proves too")
+
+
+def test_four_expiry(server, waiting):
+    """A seat goes with its own host's silence; the room with its first's,
+    and its seats with it."""
+    key = os.urandom(16)
+    h1, h2, h3 = Client(server), Client(server), Client(server)
+    code = h1.ask(four_host(key=key))["code"]
+    h2.ask(four_host(code, key, 2))
+    h3.ask(four_host(code, key, 3))
+    g2 = Client(server)
+    joined(h2, g2, g2.ask(four_guest(code, seat=2)), "seat 2's guest")
+    end = time.monotonic() + waiting + 1.0
+    while time.monotonic() < end:
+        h1.ask(four_host(code, key), 0.1)
+        h2.ask(four_host(code, key, 2), 0.1)
+        time.sleep(0.2)
+    check(Client(server).ask(four_guest(code, seat=3))["detail"] == rc.S_WAITING, "seat 3 outlived its host")
+    check(h2.ask(four_host(code, key, 2))["detail"] in (rc.S_PUNCH, rc.S_RELAYED), "seat 2 went with seat 3")
+    check(listed(h1, code)["players"] == 2, "the room after seat 3 went")
+    # the first seat quiet: the room goes, and its seats
+    end = time.monotonic() + waiting + 1.0
+    while time.monotonic() < end and code in codes(h2):
+        h2.ask(four_host(code, key, 2), 0.1)
+        time.sleep(0.2)
+    check(code not in codes(h2), "the room of four outlived its first seat")
+    check(h2.ask(four_host(code, key, 2))["detail"] == rc.E_NO_ROOM, "a seat of a room gone")
+    check(g2.ask(four_guest(code, seat=2))["detail"] == rc.E_NO_ROOM, "a guest of a seat of a room gone")
+    time.sleep(0.3)  # the server's log, read beside
+    check(any("its room of four closed" in line for line in server.lines), "the seats not closed with their room")
+
+
+def fours_server():
+    window, waiting = 2.0, 1.5
+    server = Server("--verbose", "--punch-window", str(window), "--v6-grace", "0.3", "--waiting-timeout", str(waiting),
+                    "--direct-timeout", "10", "--relayed-timeout", "10", "--rooms-per-ip", "1000",
+                    "--creations-per-min", "100000", "--hello-rate", "100000", "--query-rate", "100000",
+                    "--wrong-passwords-per-min", "1000", v6=False)
+    try:
+        test_four_room(server, window)
+        test_four_given_seat(server)
+        test_four_locked(server)
+        test_four_expiry(server, waiting)
         server.stop()
     finally:
         server.kill()
@@ -948,10 +1310,14 @@ def test_ranked_identity(server, state):
     ayame.client.send(rc.rank(ladder.A_NAME, ayame.me, nonce=bytes(16), name="Ayame", setup=RANKED_SETUP))
     s = rc.parse_ranked(ayame.client.recv(ladder.K_RANKED))
     check(s["status"] == ladder.E_STALE and s["nonce"] == ayame.nonce, "an old nonce: %r" % s["name"])
-    # a client of version 2
-    ayame.client.send(rc.rank(ladder.A_HELLO, ayame.me, version=2))
+    # clients of versions 2 and 3 (and a malformed one of 3: VERSION still)
+    for old in (2, 3):
+        ayame.client.send(rc.rank(ladder.A_HELLO, ayame.me, version=old))
+        v = rc.parse_ranked(ayame.client.recv(ladder.K_RANKED))
+        check(v["status"] == ladder.E_VERSION, "a RANK of version %d: %r" % (old, v["name"]))
+    ayame.client.send(rc.rank(ladder.A_HELLO, ayame.me, version=3)[:200])
     v = rc.parse_ranked(ayame.client.recv(ladder.K_RANKED))
-    check(v["status"] == ladder.E_VERSION, "a RANK of version 2: %r" % v["name"])
+    check(v["status"] == ladder.E_VERSION, "a short RANK of version 3: %r" % v["name"])
     # an unsigned QUEUE (no signature at all)
     ayame.client.send(rc.rank(ladder.A_QUEUE, None, key=ayame.me.public, nonce=ayame.nonce, name="Ayame",
                               setup=RANKED_SETUP))
@@ -1458,8 +1824,8 @@ def limits_relay():
 
 def main():
     start = time.monotonic()
-    tests = [main_server, groups_server, limits_default, limits_creations, limits_server_full, limits_wrong_passwords,
-             limits_relay, ranked_server_tests]
+    tests = [main_server, groups_server, fours_server, limits_default, limits_creations, limits_server_full,
+             limits_wrong_passwords, limits_relay, ranked_server_tests]
     for test in tests:
         try:
             test()

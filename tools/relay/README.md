@@ -51,9 +51,38 @@ for it yet).
 
 ## The protocol
 
-Protocol version 3: summarized in `docs/NETPLAY.md`, sections 14, 16 and 17; every field, to the byte, in `relay_client.py` (and the client's `src/port/relay.c`, `room.c`, `watch.c` and `ranked.c`).
-Version 3 adds the ranked ladder (kinds 63 `RANK` and 54 `RANKED`); a client
-of version 1 or 2 is answered VERSION.
+Protocol version 4: summarized in `docs/NETPLAY.md`, sections 14, 16 and 17; every field, to the byte, in `relay_client.py` (and the client's `src/port/relay.c`, `room.c`, `watch.c` and `ranked.c`).
+Version 4 adds four players on four PCs (ROADMAP 24), the host's PC in the
+middle; a client of version 1, 2 or 3 is answered VERSION (the header's
+version is looked at before a datagram's size, in HELLO, ROOM and RANK):
+
+- `HELLO` is 232 bytes: v3's 208, then a 16-byte **seat key**, `players`
+  (0 or 2 a room of two, 4 a room of four, on a host's first seat), `seat`
+  (a host's socket: 0 or 1 the first, 2 or 3 the others; a guest: the seat
+  it asks for, 0 any) and six zero bytes.
+- **A room of four** is listed once (the list's flags byte has `0x04`, its
+  players are the host and the guests of all its seats) and has three
+  seats, each a two-player room of its own between one of the host's
+  sockets and one guest, met as any room of two is (its own token, punch,
+  direct or relayed way, expiry). The first seat is the room the host's
+  first hello opened; seats 2 and 3 are opened by the host's other sockets
+  with the room's code and seat key (a room's match: its ticket), and are
+  never listed. A guest is put in the seat it asks for, else the first free
+  one; one whose seat's socket has not said hello yet is told WAITING and
+  says hello again. A locked room's password is proved once a guest, at the
+  room. Removing the room removes its seats.
+- A room of several opened with `0x02` in ROOM's flags makes **matches of
+  four** (players 1 and 3 against 2 and 4): ROSTER's rotation match has its
+  four players (`0xFF` for none) and its last result the room's match size;
+  every one of a match's players is given its ticket; the winners stay, or
+  the match's first goes to the end; a player who leaves loses it for his
+  team. Matches beside the room stay of two.
+- A feed's frame is **four pads**, 8 bytes (a match of two sends zeros for
+  pads 3 and 4): 120 frames and 4 hashes a FEED or SCENE; SCENE's settings
+  carry four players' names.
+- The ranked ladder stays one on one.
+
+Version 3 adds the ranked ladder (kinds 63 `RANK` and 54 `RANKED`).
 Version 2 adds rooms of several (kinds 57 to 62: a room's members, its
 rotation, its matches' tickets, and each match's feed kept in memory for
 its spectators while it lasts and 30 seconds after) and each host's round
@@ -65,7 +94,7 @@ detail, a little-endian u32); kinds 48 to 63 are the server's:
 
 | Kind | Name | Way | What |
 |---|---|---|---|
-| 48 | HELLO | client to server | host: open or keep a room; guest: join one (208 bytes) |
+| 48 | HELLO | client to server | host: open or keep a room, or a room of four's seat; guest: join one (232 bytes) |
 | 49 | STATE | server to client | the answer to every HELLO: WAITING, PASSWORD, PUNCH, DIRECT4, DIRECT6, RELAYED, or an error |
 | 50, 51 | PUNCH, PUNCH_ACK | client to client | the server drops them |
 | 52 | LIST | client to server | a page of 12 rooms, from an index |
@@ -105,10 +134,12 @@ and every limit.
 
 The test starts the server on `127.0.0.1` and `[::1]` (the IPv6 part is
 skipped where there is none) on ports the system picks and drives fake
-clients through every state, refusal and limit, and the ladder (identities
-and forged signatures, names, the queue, agreeing and disputed results,
-leavers, limits, a restart, the backup, Glicko-2's worked example), in
-about 45 seconds:
+clients through every state, refusal and limit, rooms of four (seats opened
+by the host's sockets, guests placed and paired one by one, a locked room,
+seats expiring), rooms of several with matches of four, and the ladder
+(identities and forged signatures, names, the queue, agreeing and disputed
+results, leavers, limits, a restart, the backup, Glicko-2's worked example),
+in about a minute:
 
     python tools/relay/test_relay.py          # Windows
     python3 tools/relay/test_relay.py         # WSL, Linux
@@ -127,6 +158,25 @@ about 45 seconds:
 
 (`scp -r tools/relay` into a folder that is there already copies it into
 `relay/` inside it: copy the files.)
+
+**Version 4 on the owner's server.** A server of version 4 answers every
+program of version 3 (the released ones) VERSION, and a program of version 4
+cannot use a server of version 3: put it up when the programs of version 4
+are released, not before. On this PC, first:
+
+    python tools/relay/test_relay.py
+
+then, from the repository's root (the box is the one in the owner's notes):
+
+    ssh root@BOX mkdir -p /root/rebushido-relay-src
+    scp tools/relay/rebushido_relay.py tools/relay/ladder.py tools/relay/relay_client.py \
+        tools/relay/deploy.sh tools/relay/rebushido-relay.service root@BOX:/root/rebushido-relay-src/
+    ssh root@BOX bash /root/rebushido-relay-src/deploy.sh
+    ssh root@BOX bash /root/rebushido-relay-src/deploy.sh status
+    ssh root@BOX journalctl -u rebushido-relay -n 5 --no-pager    # "rebushido-relay 4 listening on ..."
+
+The ladder's store is untouched by the update (its format did not change),
+and the service's restart drops the rooms in memory, as any update does.
 
 Install is idempotent: run it again after changing the server and it
 replaces what changed and restarts the service, and says nothing changed
@@ -188,10 +238,13 @@ thousands of datagrams a second, so many relayed rooms at once are bound by
 one processor before memory.
 
 A room of several's members cost a few hundred bytes each; each match's
-feed is its fight's start (about 215 KB, at most 1 MB) and 4 bytes a
+feed is its fight's start (about 215 KB, at most 1 MB) and 8 bytes a
 frame, kept while the match lasts and `--feed-linger` (30 s) after, so a
 busy server holds a few hundred KB a match in play. A spectator coming in
 is sent its match's start once, then a few KB a second.
+
+A room of four is three rooms (its seats), counted once against its host's
+address and three times against the 500.
 
 Limits, all options: 500 rooms in all (then SERVER_FULL); per source IP
 (an IPv6 /64), 3 rooms hosted and 6 created a minute, 30 HELLOs and 10 LISTs
