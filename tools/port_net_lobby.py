@@ -29,7 +29,8 @@ or build/port-sdl/windows/rebushido-headless.exe on Windows):
              name, its host, locked, its setup code
     ranked   the ranked ladder (a lobby with a store): two pairs queued and
              paired, one match rated, one disputed by a false report (its
-             replays uploaded and played back), a leaver's loss, the
+             replays uploaded and played back, then checked and settled by
+             tools/relay/disputes.py), a leaver's loss, the
              ladder's lists printed, a forged report refused (after the
              rest, as rooms-crew; ranked-win in the Windows half)
     refused  a wrong password, an incompatible disc, no such room, a lobby
@@ -63,6 +64,7 @@ if one failed. Needs the retail disc's image as tools/port_net.py does,
 and says so and passes without it."""
 import argparse
 import ctypes
+import json
 import os
 import re
 import shutil
@@ -859,6 +861,7 @@ def judge_ranked(case, logs, state, lobby, rc, ladder):
                 case.said.append('match %d (Chie and Dai, Dai reporting the other winner): disputed, unrated; both '
                                  'sides\' replays kept (%s), %d played back by --replay-check: %s'
                                  % (c['match'], ', '.join(uploaded), len(checked), checked[0][1]))
+                settle_dispute(case, state, c['match'], ladder)
     # a leaver loses
     if f.get('reason') != 'this player left' or e.get('reason') != 'the other left':
         case.fail('the leave was not reported as one: %r, %r' % (e.get('reason'), f.get('reason')))
@@ -895,6 +898,46 @@ def judge_ranked(case, logs, state, lobby, rc, ladder):
     else:
         case.said.append('a report forged under Ayame\'s key: refused (BAD_SIGNATURE), her rating still %d'
                          % after['rating'])
+
+
+def settle_dispute(case, state, number, ladder):
+    """The owner's tools/relay/disputes.py on the dispute, beside the running
+    lobby: both sides' replays checked by the headless program, Chie's
+    report borne out and Dai's not, then the match settled as the replays
+    show and rated."""
+    tool = os.path.join(REPO, 'tools', 'relay', 'disputes.py')
+    verdict_path = os.path.join(case.folder, 'verdict.json')
+    done = subprocess.run([sys.executable, tool, '--state', state, 'check', str(number), '--image',
+                           playtest.RETAIL_CUE, '--program', HEADLESS, '--save', verdict_path], cwd=REPO,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, timeout=SECONDS)
+    said = done.stdout.decode('utf-8', 'replace')
+    with open(os.path.join(case.folder, 'disputes-check.txt'), 'w', encoding='utf-8') as f:
+        f.write(said)
+    if done.returncode != 0 or not os.path.isfile(verdict_path):
+        case.fail('disputes.py check of match %d ended %d: %s' % (number, done.returncode, said[-400:]))
+        return
+    with open(verdict_path, encoding='ascii') as f:
+        verdict = json.load(f)
+    reports = {r['name']: r['borne_out'] for r in verdict['reports'].values()}
+    sides = verdict['sides'].values()
+    if verdict['suggest']['state'] != 'rated' or reports != {'Chie': True, 'Dai': False} or \
+            not all(side['held'] for side in sides) or verdict['same_fights']['alike'] < 1:
+        case.fail('disputes.py did not bear out Chie\'s report and not Dai\'s: %s' % said[-600:])
+        return
+    done = subprocess.run([sys.executable, tool, '--state', state, 'resolve', str(number), '--winner', 'replays',
+                           '--verdict', verdict_path, '--reason', 'the replays of both sides', '--yes'], cwd=REPO,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, timeout=SECONDS)
+    settled = done.stdout.decode('utf-8', 'replace').strip().splitlines()
+    store = ladder.Store(state, server=False)
+    try:
+        m = store.match(number)
+    finally:
+        store.close()
+    if done.returncode != 0 or m['state'] != ladder.M_RATED or m['winner'] != verdict['suggest']['winner_code']:
+        case.fail('disputes.py resolve of match %d: %s' % (number, settled[-1:] if settled else done.returncode))
+        return
+    case.said.append('disputes.py: both sides\' replays hold, %d fight(s) alike on both; %s; %s' % (
+        verdict['same_fights']['alike'], verdict['suggest']['why'], settled[-1]))
 
 
 def port_replay_check(path):

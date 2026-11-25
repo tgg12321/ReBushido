@@ -2010,11 +2010,18 @@ both players for the **replays** of its fights (section 15's replays,
 which every online fight writes): their files in one upload (`RBRANKUP`,
 each file's name and bytes), sent in chunks of 1 KB with the token, at
 most 4 MB a side and 1 GB of all disputes, kept 60 days as
-`disputes/match-N-a.rbu` and `-b.rbu`. The owner unpacks one
-(`python3 tools/relay/ladder.py --unpack FILE DIR`) and plays each fight
-back with `rebushido --replay-check FILE` (or watches it): the replay's
-own hashes say whether it is a game the program can play to its end, and
-the two sides' replays say who is telling the truth.
+`disputes/match-N-a.rbu` and `-b.rbu`. The owner settles it with
+`tools/relay/disputes.py` (`tools/relay/README.md`, "Disputes"): it lists
+the disputes, plays both sides' replays back with the port's
+`--replay-check` (on the VPS, which has no disc, by an export checked on
+the owner's PC), and says for each fight whether the replay's own hashes
+hold and who won it by the game's state as the playback leaves it (the
+port prints it; never what the file says of itself), what each side's
+replays show of the match, whether the fights both sides sent are alike,
+and which report they bear out; then, on the owner's word, rates the match
+as the replays show (or as the owner says) or voids it, the decision and
+its reason written into the store (`settled`, the store's schema 2, kept
+as long as the match).
 
 **The rating: Glicko-2** (Glickman, "Example of the Glicko-2 system",
 2013), over Elo because a new player's rating is uncertain and should
@@ -2051,6 +2058,7 @@ and kept across restarts and redeploys. What it holds:
 | a player: the public key, the name and its fold, the rating, RD, volatility, the record, when made, last seen (to the hour), last rated | while seen in the last two years; the name held 180 days after the last time seen |
 | a match: the two keys, when, the state, the winner and why, the rule and the stage, both signed reports as they came, the ratings before and after | two years |
 | a disputed match's replays | 60 days, at most 4 MB a side and 1 GB in all |
+| a dispute the owner settled: when, the decision, its reason, what the dispute was, what the replays said | as long as its match |
 | the nonces' secret | for good (a new one only with a new store) |
 
 No address of anyone's is written: the limits by address are in memory
@@ -2110,8 +2118,11 @@ store across a stop and a start (a name, a rating, a match reported after
 the start, a name still held); the backup (made, at most the kept number,
 a whole SQLite file holding the players); the limits (new identities a
 day, 60 requests at once, 12 signed at once, two of one address never
-paired); a server with no store; and `ladder.py --self-test`: RFC 8032's
-cases and Glicko-2's worked example.
+paired); a server with no store; `disputes.py` beside the running server
+(two disputes checked, one settled rated as its replays show and its
+players told, one settled void from an export, neither twice; a store of
+schema 1 migrated by the server, its copy kept, and settled after); and
+`ladder.py --self-test`: RFC 8032's cases and Glicko-2's worked example.
 
 `tools/port_net_lobby.py`'s `ranked` case (Linux, in `make port-net`) and
 `ranked-win` (Windows, in the gate's `port-net-windows`), headless
@@ -2120,7 +2131,7 @@ programs through a local server with a store, 60 ms each way and 5% lost:
 | Match | What runs | Result |
 | --- | --- | --- |
 | 1 | Ayame and Bunta queue, are paired and play (First to 1 on this test server, a fight each match, and the stage drawn from the first place alone, the one the scripted fight is written for: on another its presses may never cut the other down) | the lobby's stage taken on both, the host's rule First to 1 held on both; both digests the same, every hash alike; rated: the winner 1500 to 1662, the loser 1500 to 1338; Bunta's program prints the ladder with both at those ratings |
-| 2 | Chie and Dai; Dai's program reports the other winner (`--ranked-lie`) | disputed, unrated; both sides' replays uploaded and kept; one unpacked and played back by `--replay-check`: 570 frames, 30 hashes the same as recorded |
+| 2 | Chie and Dai; Dai's program reports the other winner (`--ranked-lie`) | disputed, unrated; both sides' replays uploaded and kept; one unpacked and played back by `--replay-check`: 570 frames, 30 hashes the same as recorded; then `disputes.py check` beside the running lobby: both sides' replays hold, their one fight alike on both, Chie the winner by the game's state, her report borne out and Dai's not; `resolve --winner replays`: rated, Chie 1500 to 1662, Dai 1500 to 1338 |
 | 3 | Eiko and Fumi; Fumi leaves at frame 1,150, in the fight | Fumi reports she left, Eiko that the other did; rated, Fumi's loss |
 | | a report of match 1 forged under Ayame's key | `BAD_SIGNATURE`, in the server's log; her rating unchanged |
 
@@ -2134,8 +2145,9 @@ result and its ladder page the two. Pictures of every page: the case's
 
 **What is left.** Two players' PCs on two networks, and the server under
 real players (the pairing's widening and limits are guesses until then).
-A dispute is the owner's to look at by hand: there is no tool that sets a
-disputed match's result (a line of SQL on the store does). A player who
+A dispute whose two sides' replays show different winners, or none, is
+still the owner's to look at (`disputes.py` says so and settles it as the
+owner says). A player who
 loses their identity file and its copies cannot get their rating back.
 The ladder has no seasons and no decay of a rating but RD's.
 

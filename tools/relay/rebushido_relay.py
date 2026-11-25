@@ -2004,6 +2004,10 @@ def main(argv=None):
     log("rebushido-relay %d listening on %s" % (RELAY_VERSION, ", ".join(bound_text(s) for s in sockets)))
     if server.ladder.store is not None:
         log("ranked: the ladder is %s (first to %d)" % (server.ladder.store.path, options.ranked_first_to))
+        migrated = server.ladder.store.migrated
+        if migrated and not migrated[2]:
+            log("ranked: the ladder's store migrated from schema %d to %d (the copy before: %s)" %
+                (migrated[0], migrated[1], os.path.basename(server.ladder.store.copied_before)))
     else:
         log("ranked: off (no --state)")
     tick_every = 0.1

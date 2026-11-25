@@ -2451,6 +2451,9 @@ static void port_ReplayLoadStart(void) {
 /* The playback ends: the game as it was before it put back. */
 static void port_ReplayEnd(const char *trouble) {
     PortGameView view;
+    /* who won by the game's own state as the playback left it, not by
+     * what the file says (tools/relay/disputes.py) */
+    s32 winner = g_fight_winner;
 
     g_play.state = PLAY_OFF;
     port_StateLoad(g_play.back);
@@ -2461,8 +2464,8 @@ static void port_ReplayEnd(const char *trouble) {
         port_Log("replay: %s: %s\n", g_play.path, trouble);
     } else {
         port_Log("replay: %s: %u frames played, %u hashes the same as "
-                 "recorded\n",
-                 g_play.path, g_play.frame, g_play.hashes_matched);
+                 "recorded, the winner by its state %d\n",
+                 g_play.path, g_play.frame, g_play.hashes_matched, winner);
     }
     if (g_port_replay_end_hook != NULL) {
         g_port_replay_end_hook(trouble);
