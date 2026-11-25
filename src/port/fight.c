@@ -193,6 +193,7 @@ static s32 port_FightFighter(const char *text, s32 side) {
         text, &g_port_fight.roster[side], &g_port_fight.weapon[side]);
 }
 
+/* Two on two's seconds of the fight (port_platform.h). */
 s32 port_ChooseFightPartners(const char *first, const char *second) {
     if (!port_FightFighterInto(first, &g_port_fight.partner_roster[0],
                                &g_port_fight.partner_weapon[0]) ||

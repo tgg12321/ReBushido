@@ -191,6 +191,8 @@ void port_MatchSetPartner(s32 side, s32 fighter, s32 weapon) {
     match->partner_picked[side] = TRUE;
 }
 
+/* The select screen's pads while the partners are picked (port_match.h):
+ * the third and fourth pads' held buttons kept, for what each presses. */
 void port_MatchPartnerPads(s32 *held, s32 *pressed) {
     PortMatch *match = port_Match();
     u32 was = match->pads_held;

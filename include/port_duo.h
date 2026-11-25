@@ -119,9 +119,16 @@ extern void port_DuoLoadPartners(s32 staging);
  * where no slot's is his, and his win pose. */
 extern void port_DuoLoadPartnerMotions(void);
 /* The model is a partner's own, whose textures are in the second bank of
- * video memory (model_face.c: his face's eyes and mouth are copied
- * there). */
+ * video memory (port_gpu.h). */
 extern s32 port_DuoModelIsBanked(const struct Model *model);
+/* While on, the textures loaded go to the second bank (model.c, as a
+ * partner of his own is loaded). */
+extern void port_DuoBankLoading(s32 is_on);
+/* A face's part copied for `model` (model_face.c): TRUE if it is a
+ * partner's own, whose face is in the second bank, where it is copied at
+ * once; FALSE for the game's copy by the GPU. */
+extern s32 port_DuoFaceMove(const struct Model *model, s32 from_x, s32 from_y,
+                            s32 w, s32 h, s32 to_x, s32 to_y);
 /* The fight set up (fight_Init, its two fighters in their first moves):
  * the second of each team made, his model copied, all four placed. */
 extern void port_DuoFightSet(void);

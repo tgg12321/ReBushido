@@ -5,9 +5,6 @@
  * Compiled with small data. */
 #include "common.h"
 #include "bb2.h"
-#if RB_PORT
-#include "port_gpu.h"
-#endif
 
 /* Defined further down. */
 static void model_SetMatrixTables(Model *model);
@@ -167,13 +164,13 @@ s32 model_PortLoadPartner(Model *model, s32 slot, s32 model_id, s32 file_addr,
         (s32 *)ADDR((s32)file + ALIGN4(file[MODEL_FILE_SHADOWS])),
         mesh_block + 1);
     model->cloth_params = (s32)file + ALIGN4(file[MODEL_FILE_CLOTH]);
-    port_SetVramBankLoading(TRUE);
+    port_DuoBankLoading(TRUE);
     if (slot == 0) {
         tex_LoadGroup(textures, 0);
     } else {
         tex_LoadGroupAt(textures, 0, MODEL_SECOND_SLOT_DX, 0);
     }
-    port_SetVramBankLoading(FALSE);
+    port_DuoBankLoading(FALSE);
     if (slot != 0) {
         tex_ShiftBlockPages(
             mesh_block, MODEL_SECOND_SLOT_PAGES, 0, MODEL_SECOND_SLOT_PAGES, 0);

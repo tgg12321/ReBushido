@@ -476,6 +476,19 @@ s32 port_DuoHoldsAddress(s32 address) {
            (at >= PORT_DUO_AREA_ADDR && at <= PORT_DUO_AREA_END);
 }
 
+void port_DuoBankLoading(s32 is_on) { port_SetVramBankLoading(is_on); }
+
+/* A face part's copy for the model in a slot (port_duo.h): a partner's
+ * own is in the second bank, where it is copied at once. */
+s32 port_DuoFaceMove(const Model *model, s32 from_x, s32 from_y, s32 w, s32 h,
+                     s32 to_x, s32 to_y) {
+    if (!port_DuoModelIsBanked(model)) {
+        return FALSE;
+    }
+    port_VramBankMove(from_x, from_y, w, h, to_x, to_y);
+    return TRUE;
+}
+
 s32 port_DuoModelIsBanked(const Model *model) {
     const PortDuo *duo = &g_port_duo;
     s32 slot;
@@ -488,6 +501,8 @@ s32 port_DuoModelIsBanked(const Model *model) {
     return FALSE;
 }
 
+/* The engine's state reset (port_duo.h): no copy, no partner's own model,
+ * no motions of the fighters' own, no second bank. */
 void port_DuoForget(void) {
     PortDuo *duo = &g_port_duo;
 
@@ -644,13 +659,19 @@ static u16 port_DuoPartnerSet(s32 slot) {
     return (u16)port_WeaponMotionSet(slot, weapon, set);
 }
 
+/* Where a motion file's moves start: after its head and its rows of
+ * moves for each stance (MotionFile), the first row in the head. */
+#define MOTION_FILE_MOVES_AT 0x6C
+#define MOTION_FILE_STANCE_ROW 6
+
 /* The parts of a motion file in memory, as motion_LoadFighterFiles finds
  * them. */
 static void port_DuoSections(u32 address, MotionSections *out) {
     const MotionFile *file = (const MotionFile *)ADDR(address);
 
     out->moves =
-        (u16 *)ADDR(address + 0x6C + (u32)(file->stance_move_rows - 1) * 6);
+        (u16 *)ADDR(address + MOTION_FILE_MOVES_AT +
+                    (u32)(file->stance_move_rows - 1) * MOTION_FILE_STANCE_ROW);
     out->entries = (u16 *)ADDR(address + (u32)file->section_offsets[0]);
     out->metadata = (u8 *)ADDR(address + (u32)file->section_offsets[1]);
     out->cpu_scripts = (u16 *)ADDR(address + (u32)file->section_offsets[2]);
@@ -680,6 +701,8 @@ static void port_DuoAskWeapons(s32 slot, s32 roster, s32 weapon) {
     }
 }
 
+/* Each team's second of a model no slot has: his model loaded, his
+ * weapons asked for (port_duo.h). */
 void port_DuoLoadPartners(s32 staging) {
     PortDuo *duo = &g_port_duo;
     s32 slot;
@@ -714,6 +737,9 @@ void port_DuoLoadPartners(s32 staging) {
     }
 }
 
+/* Each team's second's motion file, where neither of the game's rooms
+ * has his set and his own room has not, and his character's win pose,
+ * read into his room (port_duo.h). */
 void port_DuoLoadPartnerMotions(void) {
     PortDuo *duo = &g_port_duo;
     s32 slot;
@@ -873,6 +899,10 @@ static void port_DuoSetPartner(
     port_DuoPut(slot);
 }
 
+/* A fight about to be set up (port_duo.h): the slots' own models and the
+ * game's motion files back, the copies' cloth let go, no second bank; and
+ * each team's second's pick, the match's or his first's (a fight again
+ * keeps what it had). */
 void port_DuoFightBegin(void) {
     PortDuo *duo = &g_port_duo;
     s32 slot;

@@ -377,7 +377,6 @@ static void port_PutPixel(
     *at = pixel | gpu->mask_set;
 }
 
-/* The texel at (u, v) of a paint's page, through the texture window. */
 /* A pixel a paint reads its texture from: of two on two's second bank
  * where the paint has it and it has the place (port_gpu.h), otherwise
  * of video memory. */
@@ -394,6 +393,7 @@ static u16 port_TexelAt(const PortPaint *paint, s32 x, s32 y) {
     return g_port_vram[y * PORT_VRAM_WIDTH + x];
 }
 
+/* The texel at (u, v) of a paint's page, through the texture window. */
 static u16 port_ReadTexel(const PortPaint *paint, s32 u, s32 v) {
     const PortGpu *gpu = paint->gpu;
     s32 y;

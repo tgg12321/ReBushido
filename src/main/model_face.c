@@ -4,9 +4,6 @@
  * end before model.c's begin). */
 #include "common.h"
 #include "bb2.h"
-#if RB_PORT
-#include "port_gpu.h"
-#endif
 
 /* Defined further down. */
 static s32 g_model_face_move_frame;
@@ -75,8 +72,8 @@ static void model_CopyFacePart(s32 slot, s32 part) {
         /* two on two's partner of a character of his own has his face in
          * the second bank of video memory (port_gpu.h): copied there at
          * once, as nothing draws into it */
-        if (port_DuoModelIsBanked(model_Get(slot))) {
-            port_VramBankMove(src.x, src.y, src.w, src.h, x, y);
+        if (port_DuoFaceMove(
+                model_Get(slot), src.x, src.y, src.w, src.h, x, y)) {
             return;
         }
 #endif

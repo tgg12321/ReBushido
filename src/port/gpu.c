@@ -558,6 +558,7 @@ static void port_BankLoadImage(const RECT *rect, const u32 *pixels) {
     }
 }
 
+/* A copy within the bank (port_gpu.h): what of it is the bank's. */
 void port_VramBankMove(
     s32 from_x, s32 from_y, s32 w, s32 h, s32 to_x, s32 to_y) {
     s32 row;
