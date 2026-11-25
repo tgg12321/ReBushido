@@ -70,7 +70,10 @@ version is looked at before a datagram's size, in HELLO, ROOM and RANK):
   never listed. A guest is put in the seat it asks for, else the first free
   one; one whose seat's socket has not said hello yet is told WAITING and
   says hello again. A locked room's password is proved once a guest, at the
-  room. Removing the room removes its seats.
+  room. The room is kept while the host of any of its seats still says
+  hello or uses its seat's relay (the host meets its guests a seat at a
+  time, its first seat's way decided and quiet meanwhile); removing the
+  room removes its seats.
 - A room of several opened with `0x02` in ROOM's flags makes **matches of
   four** (players 1 and 3 against 2 and 4): ROSTER's rotation match has its
   four players (`0xFF` for none) and its last result the room's match size;

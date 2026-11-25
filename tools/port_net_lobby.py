@@ -1422,7 +1422,8 @@ def case_pages(case):
 def case_pages_four(case):
     """A room of four hosted from a window's online pages (Host a room,
     Room for: four players, a PC each), three headless guests joining it
-    by its code: the lobby before the fight with all four, the host's
+    by its code (window programs too, of the command line: a setup code
+    is its build's): the lobby before the fight with all four, the host's
     Ready, the session from power on to the versus select screen, where
     the first guest's Triangle takes all back to the top menu, which ends
     the session; the host window back at its own game, never started
@@ -1437,18 +1438,29 @@ def case_pages_four(case):
         case.fail('the host\'s room of four was not opened from the pages')
         return
     guests = []
+    # (each guest's Triangle at the select screen: the one that came second,
+    # player 2, takes all back; the third and fourth pads' do nothing there)
     with PLAN_LOCK:
-        plans = [port_net.write_leave_plan(HEADLESS, 1, case.folder), port_net.write_leave_plan(HEADLESS, 0,
-                                                                                              case.folder)]
+        plans = [port_net.write_leave_plan(WINDOW, 1, case.folder)]
+    cfg = os.path.join(case.folder, 'guests.cfg')
+    with open(cfg, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('fullscreen = off\nnet_portmap = off\n')
     for n, name in enumerate(('Bunta', 'Chie', 'Dai')):
         label = name.lower()
-        guests.append(case.start(label, [HEADLESS, '--image', playtest.RETAIL_CUE, '--lobby', lobby, '--join',
-                                         code.group(1), '--player', name, '--plan', plans[0 if n == 0 else 1],
-                                         '--trace', '--out', os.path.join(case.folder, label)]))
+        guests.append(case.start(label, [WINDOW, '--image', playtest.RETAIL_CUE, '--config', cfg, '--windowed',
+                                         '--quick-loading', 'on', '--log', os.path.join(case.folder, label + '.log'),
+                                         '--lobby', lobby, '--join', code.group(1), '--player', name, '--plan',
+                                         plans[0]], DUMMY))
     if case.wait_for('host', r'session 1 has ended', 300) is None:
         case.fail('the session of four did not end on the host (host.err)')
         return
-    codes = wait_all(guests, 60)
+    # (a window of a session of the command line plays on alone after it)
+    for label in ('bunta', 'chie', 'dai'):
+        if case.wait_for(label, r'the other program ended after frame', 60) is None:
+            case.fail('%s was not told the session had ended' % label)
+    for guest in guests:
+        guest.kill()
+    codes = [0, 0, 0]
     hashes = [session_hashes(case.err('host'), 1)] + [port_net.hashes_of(case.err(n)) for n in ('bunta', 'chie',
                                                                                                 'dai')]
     common = sorted(set.intersection(*(set(h) for h in hashes)))

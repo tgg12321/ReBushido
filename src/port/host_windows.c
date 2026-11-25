@@ -29,7 +29,9 @@
 #define FILES_MAX 16
 /* A file this large or larger has no size the port can count. */
 #define TWO_GIGABYTES 0x80000000LL
-#define ARGUMENTS_MAX 32
+/* (a session of four's host's line, with a lobby and a test's words, is
+ * past forty) */
+#define ARGUMENTS_MAX 128
 /* Windows gives addresses in blocks of this size, whatever is asked. */
 #define BLOCK_BYTES 0x10000U
 #define BLOCKS_MAX 8

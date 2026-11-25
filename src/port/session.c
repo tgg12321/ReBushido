@@ -1305,6 +1305,20 @@ static s32 port_HostLobby(char *note, u32 room) {
     }
 }
 
+/* The host gave the meeting up, or could not go on with it: every guest
+ * that is in is told, so that none waits for a game that will not come. */
+static void port_HostLetAllGo(void) {
+    s32 link;
+
+    for (link = 0; link < g_session.guests; link++) {
+        if (g_session.guest[link].met) {
+            port_NetSelectLink(link);
+            port_SendLeave();
+        }
+    }
+    port_NetSelectLink(0);
+}
+
 /* The host: each of its links' guests met in turn (every way of a
  * session of two, the lobby's seat or the address's port of each), the
  * others kept in meanwhile; then the lobby of all. 1 once all have been
@@ -1353,12 +1367,12 @@ static s32 port_HostAll(void) {
             port_NetSelectLink(link);
             if (port_IsRelayOn() &&
                 !port_RelayMeet(PORT_SESSION_HOST, tried[link])) {
-                port_NetSelectLink(0);
+                port_HostLetAllGo();
                 return 0;
             }
             tried[link] = 1;
             if (!port_HostSession(note, sizeof(note))) {
-                port_NetSelectLink(0);
+                port_HostLetAllGo();
                 return 0;
             }
             continue;
@@ -1585,15 +1599,6 @@ static s32 port_JoinSession(void) {
             port_SessionProgress(status, sizeof(status),
                                  "The host has let you in: receiving its "
                                  "memory cards");
-            if (now - heard_at > SILENT_GIVE_UP_MS) {
-                port_Log("session: the host stopped answering\n");
-                port_SessionText(why, sizeof(why),
-                                 "The host stopped answering, after letting "
-                                 "you in (%u seconds with nothing heard).",
-                                 SILENT_GIVE_UP_MS / MS_PER_SECOND);
-                port_SessionFail(why);
-                return 0;
-            }
         } else if (now - start > JOIN_GIVE_UP_MS) {
             port_Log("session: nobody answered at %s\n", at);
             port_SessionText(
@@ -1603,6 +1608,17 @@ static s32 port_JoinSession(void) {
                 "other (the router's port mapped or forwarded, or a lobby "
                 "room)?",
                 at, JOIN_GIVE_UP_MS / MS_PER_SECOND);
+            port_SessionFail(why);
+            return 0;
+        }
+        if (welcomed && now - heard_at > SILENT_GIVE_UP_MS) {
+            /* (in the lobby too: a host of four meeting the others still
+             * tells its guests of it every 100 ms) */
+            port_Log("session: the host stopped answering\n");
+            port_SessionText(why, sizeof(why),
+                             "The host stopped answering, after letting "
+                             "you in (%u seconds with nothing heard).",
+                             SILENT_GIVE_UP_MS / MS_PER_SECOND);
             port_SessionFail(why);
             return 0;
         }
