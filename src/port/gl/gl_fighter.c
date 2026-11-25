@@ -30,6 +30,7 @@
 #include "gl_post.h"
 #include "gl_fighter_card.h"
 #include "gl_fighter_file.h"
+#include "gl_joints.h"
 #include "gl_light.h"
 #include "gl_load.h"
 #include "port_profile.h"
@@ -173,6 +174,7 @@ typedef ptrdiff_t GLsizeiptr;
     GL(void, glUseProgram, (GLuint))                                           \
     GL(GLint, glGetUniformLocation, (GLuint, const GLchar *))                  \
     GL(void, glUniform1i, (GLint, GLint))                                      \
+    GL(void, glUniform4fv, (GLint, GLsizei, const GLfloat *))                  \
     GL(void, glUniform1f, (GLint, GLfloat))                                    \
     GL(void, glUniform2f, (GLint, GLfloat, GLfloat))                           \
     GL(void, glUniform3f, (GLint, GLfloat, GLfloat, GLfloat))                  \
@@ -253,6 +255,9 @@ typedef struct {
     GLuint array;
     GLuint buffer;
     GLuint elements;
+    /* each vertex's band about a joint (gl_joints.h), four floats a
+     * vertex, attribute 15; 0 where no vertex is in one (a weapon) */
+    GLuint band;
     s32 part_count;
     PortFighterPart part[PORT_FIGHTER_FILE_PARTS];
     GLuint texture[PORT_FIGHTER_FILE_TEXTURES];
@@ -357,6 +362,8 @@ static struct {
     FighterLayer layer[LAYERS];
     GLint at_joint;
     GLint at_world;
+    GLint at_dual;
+    GLint at_joints;
     GLint at_index;
     GLint at_palette;
     GLint at_paletted;
@@ -484,6 +491,11 @@ static const char g_fighter_vertex_text[] =
     "layout(location = 5) in vec4 a_term[8];\n"
     "layout(location = 13) in uvec4 a_term_joint;\n"
     "layout(location = 14) in uvec4 a_term_joint1;\n"
+    /* its band about a joint, and the pose's dual quaternions, where the
+     * joints are blended (gl_joints.h) */
+    "layout(location = 15) in vec4 a_band;\n"
+    "uniform vec4 u_dual[42];\n"
+    "uniform int u_joints;\n" PORT_GL_JOINTS_GLSL
     /* each bone's world matrix less the camera's place, times its
      * inverse bind matrix: for the normals */
     "uniform mat4 u_joint[21];\n"
@@ -563,6 +575,13 @@ static const char g_fighter_vertex_text[] =
     "              + u_world[a_term_joint1.z] * a_term[6]\n"
     "              + u_world[a_term_joint1.w] * a_term[7]).xyz;\n"
     "        normal = mat3(skin) * a_normal;\n"
+    "        if (u_joints != 0 && a_band.w == 0.0) {\n"
+    "            normal = a_normal;\n"
+    "            int a = int(a_band.x) * 2;\n"
+    "            int b = int(a_band.y) * 2;\n"
+    "            world = joint_place(u_dual[a], u_dual[a + 1], u_dual[b],\n"
+    "                                u_dual[b + 1], a_band.z, a_place, normal);\n"
+    "        }\n"
     "    }\n"
     "    vec3 v = u_view * world;\n"
     /* the projection the coprocessor makes, as the stage's mesh has it
@@ -921,6 +940,8 @@ const char *port_GlFighterStart(void *(*getproc)(const char *name)) {
     g_fighter.member = glGetUniformLocation(g_fighter.program, name)
     AT(at_joint, "u_joint");
     AT(at_world, "u_world");
+    AT(at_dual, "u_dual");
+    AT(at_joints, "u_joints");
     AT(at_index, "u_index");
     AT(at_palette, "u_palette");
     AT(at_paletted, "u_paletted");
@@ -1154,7 +1175,7 @@ static void port_GlFighterMakeCloth(
  * farther from any point than the shares' sizes times the farthest
  * place. */
 static void port_GlFighterCastBox(
-    FighterModel *model, const PortFighterFile *file) {
+    FighterModel *model, const PortFighterFile *file, const float (*band)[4]) {
     s32 i;
     s32 k;
 
@@ -1211,7 +1232,47 @@ static void port_GlFighterCastBox(
         if ((float)sizes + 0.01f > model->cast_shares) {
             model->cast_shares = (float)sizes + 0.01f;
         }
+        /* a vertex of a joint's band (gl_joints.h) is turned about the
+         * joint, whatever its terms */
+        if (band != NULL) {
+            float joint = port_GlJointsReach(file, band[i], v->place, largest);
+
+            if (joint > model->bone_reach[largest]) {
+                model->bone_reach[largest] = joint;
+            }
+            if (joint > model->cast_reach) {
+                model->cast_reach = joint;
+            }
+        }
     }
+}
+
+/* The model's joints' bands (gl_joints.h), worked out of its bind pose
+ * once, as it loads: a buffer of them, attribute 15 of its vertex array,
+ * where any vertex is in one; and the boxes it is cast and drawn in, which
+ * hold the bands turned. */
+static void port_GlFighterJoints(
+    FighterModel *model, const PortFighterFile *file) {
+    float(*band)[4] = NULL;
+
+    model->band = 0;
+    if (file->vertex_count > 0) {
+        band = malloc((size_t)file->vertex_count * sizeof(*band));
+    }
+    if (band != NULL && port_GlJointsWeigh(file, band) > 0) {
+        glGenBuffers(1, &model->band);
+        glBindVertexArray(model->array);
+        glBindBuffer(GL_ARRAY_BUFFER, model->band);
+        glBufferData(GL_ARRAY_BUFFER,
+                     (GLsizeiptr)((size_t)file->vertex_count * sizeof(*band)),
+                     band, GL_STATIC_DRAW);
+        glVertexAttribPointer(15, 4, GL_FLOAT, GL_FALSE, 0, NULL);
+        glEnableVertexAttribArray(15);
+        glBindVertexArray(0);
+    }
+    port_GlFighterCastBox(
+        model, file, model->band != 0 ? (const float(*)[4])band : NULL);
+    free(band);
 }
 
 /* A model's file, `name`.glb, read and made ready for the card the first
@@ -1319,7 +1380,7 @@ static FighterModel *port_GlFighterLoad(FighterModel *model, const char *name) {
     }
     model->triangles = file.index_count / 3;
     model->vertex_count = file.vertex_count;
-    port_GlFighterCastBox(model, &file);
+    port_GlFighterJoints(model, &file);
     model->clut_count = 0;
     if (file.clut_count > 0 && file.index.w > 0) {
         model->clut = malloc((size_t)file.clut_count * sizeof(*model->clut));
@@ -1932,6 +1993,17 @@ static void port_GlFighterDrawOne(
         g_fighter.at_joint, PORT_FIGHTER_FILE_JOINTS, GL_FALSE, joints);
     glUniformMatrix4fv(
         g_fighter.at_world, PORT_FIGHTER_FILE_JOINTS, GL_FALSE, worlds);
+    /* the joints blended (gl_joints.h) on the same matrices */
+    if (model->band != 0 && port_GlJointsIsOn()) {
+        float dual[PORT_GL_JOINT_DUALS][4];
+
+        port_GlJointsDuals((const float(*)[16])model->inverse_bind,
+                           (const float(*)[16])worlds, dual);
+        glUniform4fv(g_fighter.at_dual, PORT_GL_JOINT_DUALS, dual[0]);
+        glUniform1i(g_fighter.at_joints, 1);
+    } else {
+        glUniform1i(g_fighter.at_joints, 0);
+    }
     glUniform1i(g_fighter.at_paletted, port_GlFighterPalette(model, place));
     port_GlFighterUpload3(g_fighter.at_view, pose->view, 0.5);
     glUniform1f(g_fighter.at_h, (GLfloat)pose->h);
@@ -2029,9 +2101,11 @@ static s32 port_GlFighterClothOfNode(
  * FALSE where the model has no buffer to pose. */
 static s32 port_GlFighterPoseAsk(
     const FighterModel *model, const PortFighterView *view, s32 slot,
-    float (*world)[16], float (*turn)[9], PortGlCardPoseAsk *ask) {
+    float (*world)[16], float (*turn)[9], float (*dual)[4],
+    PortGlCardPoseAsk *ask) {
     FighterPose pose;
     u64 key = HASH_START;
+    s32 is_blended = model->band != 0 && port_GlJointsIsOn();
     s32 j;
 
     if (model->buffer == 0 || model->vertex_count <= 0) {
@@ -2041,6 +2115,10 @@ static s32 port_GlFighterPoseAsk(
     key = port_GlFighterHash(key, view->bone, sizeof(view->bone));
     if (g_fighter.copy != 0) {
         key = port_GlFighterHash(key, &g_fighter.copy, sizeof(g_fighter.copy));
+    }
+    /* the joints blended pose another body (gl_joints.h) */
+    if (is_blended) {
+        key = port_GlFighterHash(key, &is_blended, sizeof(is_blended));
     }
     port_GlFighterPoseOf(&pose, view, NULL, 0.0);
     /* each bone's world matrix, a column after a column; and each joint's
@@ -2074,6 +2152,14 @@ static s32 port_GlFighterPoseAsk(
     ask->vertex_count = model->vertex_count;
     ask->world = (const float(*)[16])world;
     ask->turn = (const float(*)[9])turn;
+    ask->band_buffer = 0;
+    ask->dual = NULL;
+    if (is_blended) {
+        port_GlJointsDuals((const float(*)[16])model->inverse_bind,
+                           (const float(*)[16])world, dual);
+        ask->band_buffer = model->band;
+        ask->dual = (const float(*)[4])dual;
+    }
     ask->pose = -1;
     return TRUE;
 }
@@ -2083,9 +2169,10 @@ static s32 port_GlFighterPoseOnCard(
     const FighterModel *model, const PortFighterView *view, s32 slot) {
     static float world[PORT_FIGHTER_FILE_JOINTS][16];
     static float turn[PORT_FIGHTER_FILE_JOINTS][9];
+    static float dual[PORT_GL_JOINT_DUALS][4];
     PortGlCardPoseAsk ask;
 
-    if (!port_GlFighterPoseAsk(model, view, slot, world, turn, &ask)) {
+    if (!port_GlFighterPoseAsk(model, view, slot, world, turn, dual, &ask)) {
         return -1;
     }
     port_GlFighterCardPoses(&ask, 1);
@@ -2129,6 +2216,13 @@ static u64 port_GlFighterHeldKey(
         hash =
             port_GlFighterHash(hash, &g_fighter.copy, sizeof(g_fighter.copy));
     }
+    /* ... and whether the body it was kept out of had its joints blended
+     * (gl_joints.h) */
+    if (port_GlJointsIsOn()) {
+        s32 is_on = TRUE;
+
+        hash = port_GlFighterHash(hash, &is_on, sizeof(is_on));
+    }
     return hash != 0 ? hash : 1;
 }
 
@@ -2156,6 +2250,7 @@ typedef struct {
     float points[PORT_FIGHTER_CLOTHS][PORT_FIGHTER_CLOTH_POINTS * 3];
     float world[PORT_FIGHTER_FILE_JOINTS][16];
     float turn[PORT_FIGHTER_FILE_JOINTS][9];
+    float dual[PORT_GL_JOINT_DUALS][4];
     s32 count;
 } HoldAsk;
 
@@ -2243,7 +2338,7 @@ static void port_GlFighterHoldViews(
         if (port_GlFighterHoldAsk(models[k], views[k], slots[k], &asks[n]) >
                 0 &&
             port_GlFighterPoseAsk(models[k], views[k], slots[k], asks[n].world,
-                                  asks[n].turn, &poses[n])) {
+                                  asks[n].turn, asks[n].dual, &poses[n])) {
             n++;
         }
     }
@@ -3500,6 +3595,11 @@ s32 port_GlFighterCastOf(s32 caster, s32 with_feet, PortGlFighterCast *cast) {
             cast->world[i][12 + r] = (float)pose.bone_place[i][r];
         }
         cast->world[i][15] = 1.0f;
+    }
+    if (model->band != 0 && port_GlJointsIsOn()) {
+        cast->is_blended = TRUE;
+        port_GlJointsDuals((const float(*)[16])model->inverse_bind,
+                           (const float(*)[16])cast->world, cast->dual);
     }
     /* The box: a vertex is its terms' vectors turned, no farther from the
      * sum of its shares of the bones' places than `cast_reach`; and that

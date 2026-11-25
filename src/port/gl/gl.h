@@ -69,6 +69,9 @@ typedef struct {
      * for the model (gl_fighter.h, docs/PORT.md, "The fighters' own
      * models"): 0 the game's own primitives. */
     s32 is_fighter_models;
+    /* Those models' joints blended, bending as one skin (gl_joints.h): 0
+     * their parts rigid on their bones, as the game's. */
+    s32 is_joints_blended;
     /* The game's own lighting worked out again at each pixel, from the
      * normals the ground's mesh and the fighters' models have, with the
      * stage's own lights (docs/PORT.md, "Lighting"): 0 as each vertex or

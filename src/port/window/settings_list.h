@@ -396,6 +396,24 @@ PORT_SETTING(fighter_models,
     .label = "Fighters' own models",
     .help = "The fighters drawn from a mod's models where it has them")
 
+/* Those models' shoulders, elbows, waist, hips and knees bent as one skin,
+ * each joint's two parts carried by a turning mix of their bones; rigid,
+ * the parts on their own bones as the game's (src/port/gl/gl_joints.h).
+ * Only what is drawn changes. */
+PORT_SETTING(joints_blended,
+    .name = "joints", .value = "blended",
+    .note = "blended: the models' shoulders, elbows,\n"
+            "waist, hips and knees bend as one skin;\n"
+            "rigid: each part on its own bone, as the\n"
+            "game's (Remastered)",
+    .read = PORT_READ_WORDS, .words = {"rigid", "blended"},
+    .is = "rigid or blended",
+    .menu = PORT_MENU_REMASTER, .rank = 112, .takes = PORT_TAKES_NOW,
+    .label = "Fighters' joints",
+    .help = "The models' joints bent as one skin, or rigid parts as the "
+            "game's",
+    .shown = {"Rigid", "Blended"})
+
 /* How much a fighter's shadow darkens the ground it falls on, in
  * hundredths: 0 is the game's own black silhouettes; `cast`, the shadows
  * cast from the fighters' own bodies; built in, `map`, the sun's own
