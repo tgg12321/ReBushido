@@ -154,10 +154,11 @@ WINDOWS_BELOW = 10000
 
 
 def net_base():
-    """port-net's first UDP port: one of a hundred bases 100 apart from
+    """port-net's first UDP port: one of ninety bases 200 apart from
     47000, chosen by the checkout's path, so that two checkouts' gates at
-    once do not meet (tools/port_net.py takes 96 from its base)."""
-    return 47000 + 100 * (zlib.crc32(REPO.replace('\\', '/').lower().encode()) % 100)
+    once do not meet (tools/port_net.py takes 144 from its base: 24 for
+    each of its six whats but the lobby's)."""
+    return 47000 + 200 * (zlib.crc32(REPO.replace('\\', '/').lower().encode()) % 90)
 
 
 def in_wsl(cmd, mirror=True):

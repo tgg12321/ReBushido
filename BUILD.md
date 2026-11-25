@@ -497,7 +497,8 @@ ReBushido host tests for the probe, which builds three of them). The
 headers several builds write (`build/modern/include/`,
 `build/port/include/`) are written whole and only when they change, so
 that builds side by side never read one half written. `port-net` takes
-96 UDP ports of 127.0.0.1 from a base chosen by the checkout's path
+144 UDP ports of 127.0.0.1 from a base chosen by the checkout's path (one
+of ninety, 200 apart)
 (`--net-base`), so that two checkouts' gates do not meet, and its lobby
 cases (`tools/port_net_lobby.py headless`: the lobby server of
 `tools/relay/` run here, and two programs meeting through it by every

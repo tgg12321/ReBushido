@@ -34,6 +34,18 @@ or build/port-sdl/windows/rebushido-headless.exe on Windows):
              rest, as rooms-crew; ranked-win in the Windows half)
     refused  a wrong password, an incompatible disc, no such room, a lobby
              that does not answer: each turned away, and why
+    four-punch   four players on four PCs (docs/NETPLAY.md, section 18): a
+             locked room of four (--players 4), three guests by its code,
+             each at a seat of its own, each a hole punched to the host
+             (127.0.0.2 to .5); a fight of two on two, every fighter a
+             player's; every hash the same on all four
+    four-relay   the same through the lobby's relay alone, each guest's
+             seat its own relayed pair
+    rooms-four   a room of several whose matches are of four (--room-size
+             4): Ayame, Bunta, Chie and Dai play, Sora watches; the second
+             match, its order turned, left in its fight by Dai, whose team
+             loses it (after the rest, as are the two above; the Windows
+             half's are -win)
 
 `windows` (Windows' own Python) adds the window's programs: a session
 headless and with a window (tools/port_net.py's, with a window: in real
@@ -894,6 +906,170 @@ def port_replay_check(path):
     return done.returncode, said[-1] if said else '(nothing said)'
 
 
+# ---- four players (docs/NETPLAY.md, section 18) ----
+
+FOUR_NAMES = ['Ayame', 'Bunta', 'Chie', 'Dai']
+
+
+def four_judge(case, labels, codes, path_words, least=60):
+    """Every program of a session of four ended well, found no desync,
+    took the way `path_words` says; every hash the same on all."""
+    hashes = []
+    for label, code in zip(labels, codes):
+        err = case.err(label)
+        if 'DESYNC' in err:
+            case.fail('%s found a desync' % label)
+        if code != 0:
+            case.fail('%s ended with %s (%s)' % (label, code, os.path.join(case.folder, label + '.err')))
+        if '4 players on 4 PCs' not in err:
+            case.fail('%s did not say the session was of four players on four PCs' % label)
+        ways = re.findall(r'relay: the way is (.*)|relay: (no hole could be punched)', err)
+        if path_words and not re.search(path_words, err):
+            case.fail('%s did not take the way %r' % (label, path_words))
+        case.said.append('%s: %s' % (label, '; '.join(a or 'the relay' for a, _ in ways) or 'no way said'))
+        hashes.append(port_net.hashes_of(err))
+    common = sorted(set.intersection(*(set(h) for h in hashes)))
+    for label, mine in zip(labels[1:], hashes[1:]):
+        differ = [f for f in sorted(set(mine) & set(hashes[0])) if mine[f] != hashes[0][f]]
+        if differ:
+            case.fail('%s\'s hash of frame %d is not the host\'s' % (label, differ[0]))
+    if len(common) < least:
+        case.fail('too few state hashes in common on all four (%d)' % len(common))
+    if not case.problems:
+        rollbacks = [re.search(r'netplay: \d+ frames; (\d+) rollbacks', case.err(label)) for label in labels]
+        case.said.append('%d state hashes the same on all four, the last %s at frame %d; rollbacks %s' % (
+            len(common), hashes[0][common[-1]], common[-1], ', '.join(r.group(1) for r in rollbacks if r)))
+
+
+def four_session(case, paths, path_words):
+    """A room of four at the lobby: the host's (--players 4) and three
+    guests by its code, each a seat, each its way to the host (`paths`,
+    --net-paths: every way, or the relay alone); a fight of four to a team
+    out, with port_net's plan of four (every pad's, each program its own:
+    --net-plan-pads)."""
+    lobby = case.server(*ROOM_SERVER)
+    with PLAN_LOCK:
+        host_plan = port_net.write_four_plan(HEADLESS, 0, None, case.folder)
+        guest_plan = port_net.write_four_plan(HEADLESS, 1, None, case.folder)
+    common = ['--image', playtest.RETAIL_CUE, '--lobby', lobby, '--net-plan-pads', '--trace'] + TROUBLE + \
+        (['--net-paths', paths] if paths else [])
+    labels = [name.lower() for name in FOUR_NAMES]
+    procs = [case.start(labels[0], [HEADLESS] + common + [
+        '--plan', host_plan, '--out', os.path.join(case.folder, labels[0]), '--host', '127.0.0.2:%d' % case.port(1),
+        '--players', '4', '--room', 'Fours ' + case.name, '--player', FOUR_NAMES[0], '--room-password', PASSWORD,
+        '--net-seed', '4242', '--card1', os.path.join(case.folder, 'card1.mcd'), '--card2',
+        os.path.join(case.folder, 'card2.mcd')])]
+    code = case.wait_for(labels[0], r"room's code is (\w+)", 30)
+    if code is None:
+        case.fail('the host was given no room code')
+        return
+    for n in (1, 2, 3):
+        procs.append(case.start(labels[n], [HEADLESS] + common + [
+            '--plan', guest_plan, '--out', os.path.join(case.folder, labels[n]), '--join', code.group(1),
+            '--net-bind', '127.0.0.%d:%d' % (2 + n, case.port(1 + n)), '--player', FOUR_NAMES[n],
+            '--room-password', PASSWORD]))
+    codes = wait_session(case, labels, procs, SECONDS)
+    four_judge(case, labels, codes, path_words)
+    for card in ('card1.mcd', 'card2.mcd'):
+        if os.path.exists(os.path.join(case.folder, card)):
+            case.fail('%s was written, and nothing of a session is' % card)
+
+
+def case_four_punch(case):
+    four_session(case, None, r'the way is a punched hole')
+
+
+def case_four_relay(case):
+    four_session(case, 'relay', r'no hole could be punched')
+
+
+# The second match of the room of four is left in the middle of its fight
+# by one of its players, at this frame of its session.
+FOUR_LEAVE_FRAME = 1900
+
+
+def case_rooms_four(case):
+    """A room of several whose matches are of four (--room-size 4): Ayame
+    opens it (a fixed turn), Bunta, Chie and Dai play, Sora watches. The
+    rotation's first match is Ayame, Bunta, Chie and Dai, Ayame and Chie a
+    team against Bunta and Dai, met under the match's code by its ticket,
+    each guest at the seat of its place; Sora watches it from its fight's
+    start. The second match, the order turned (Bunta first), is left in
+    the middle of its fight by Dai, whose team loses it. Every hash of a
+    match the same on its four players and its spectator."""
+    lobby = case.server(*ROOM_SERVER)
+    with PLAN_LOCK:
+        plan = port_net.write_room_plan(HEADLESS, case.folder, four=True)
+    base = [HEADLESS, '--image', playtest.RETAIL_CUE, '--no-cards', '--lobby', lobby, '--net-plan-pads',
+            '--net-seed', str(ROOM_SEED), '--plan', plan, '--trace'] + TROUBLE
+
+    def member(label, *more):
+        return case.start(label, base + ['--out', os.path.join(case.folder, label), '--player', label.capitalize()] +
+                          list(more))
+
+    procs = [member('ayame', '--room-open', 'Fours', '--room-rule', 'fixed', '--room-size', '4', '--room-matches',
+                    '2')]
+    code = case.wait_for('ayame', r"room's code is (\w+) \(a room of several", 30)
+    if code is None:
+        case.fail('the room of several was given no code')
+        return
+    code = code.group(1)
+    # the rotation's order is the order they come in
+    for label, more in (('bunta', ()), ('chie', ()), ('dai', ('--leave-at', '2:%d' % FOUR_LEAVE_FRAME))):
+        procs.append(member(label, '--room-enter', code, '--room-matches', '2', *more))
+        if case.wait_for(label, r'room: in room', 60) is None:
+            case.fail('%s never came into the room' % label.capitalize())
+    procs.append(member('sora', '--room-enter', code, '--room-watcher', '--room-matches', '2'))
+    labels = ['ayame', 'bunta', 'chie', 'dai', 'sora']
+    codes = wait_all(procs, SECONDS * 2)
+    segments = {}
+    for label, code_ in zip(labels, codes):
+        err = case.err(label)
+        if code_ != 0:
+            case.fail('%s ended with %s (%s)' % (label, code_, os.path.join(case.folder, label + '.err')))
+        if 'DESYNC' in err:
+            case.fail('%s found a desync' % label)
+        segments[label] = room_segments(err)
+    for number, players in ((1, ('ayame', 'bunta', 'chie', 'dai')), (2, ('bunta', 'chie', 'dai', 'ayame'))):
+        who = {label: seg[number] for label, seg in segments.items() if number in seg}
+        playing = sorted(label for label, part in who.items() if part['role'] != 'watch')
+        if playing != sorted(players) or 'sora' not in who:
+            case.fail('match %d was not %s\'s, watched by Sora: %r' % (
+                number, ', '.join(players), {label: part['role'] for label, part in who.items()}))
+            continue
+        roles = {label: who[label]['role'] for label in players}
+        if [roles[label] for label in players] != ['player 1', 'player 2', 'player 3', 'player 4']:
+            case.fail('match %d: the places were not the rotation\'s: %r' % (number, roles))
+        reference = who[players[0]]['hashes']
+        for label in list(players[1:]) + ['sora']:
+            mine = who[label]['hashes']
+            shared = sorted(set(mine) & set(reference))
+            differ = [f for f in shared if mine[f] != reference[f]]
+            if differ:
+                case.fail('match %d: %s\'s hash of frame %d is not %s\'s' % (number, label, differ[0], players[0]))
+            if len(shared) < (5 if label == 'sora' else 30):
+                case.fail('match %d: %s has %d hashes in common with %s' % (number, label, len(shared), players[0]))
+        held = re.search(r'(\d+) hashes the same as its players\'', '\n'.join(who['sora']['text']))
+        case.said.append('match %d (%s and %s vs %s and %s): %d hashes on its host, the same on all four; Sora '
+                         'held %s of them' % ((number,) + tuple(p.capitalize() for p in
+                                                                (players[0], players[2], players[1], players[3])) +
+                                             (len(reference), held.group(1) if held else 'none')))
+        if not held or int(held.group(1)) < 5:
+            case.fail('match %d: Sora held too few of its hashes to the players\'' % number)
+    first = '\n'.join(sum((segments[label].get(1, {}).get('text', []) for label in labels[:4]), []))
+    if 'room: match 1: the' not in first or \
+            any("the host's teams are two on two" not in case.err(label) for label in labels[:4]):
+        case.fail('match 1 was not a fight of two on two decided for a team')
+    second = '\n'.join(segments['dai'].get(2, {}).get('text', []))
+    others = '\n'.join(sum((segments[label].get(2, {}).get('text', []) for label in ('ayame', 'bunta', 'chie')), []))
+    if 'this player left the session at frame %d' % FOUR_LEAVE_FRAME not in second or \
+            'room: match 2 over: its second player won' not in second + others or \
+            others.count('(player 3)') < 3:
+        case.fail('Dai\'s leave in the middle of match 2 was not as it must be')
+    else:
+        case.said.append('Dai left match 2 at frame %d, in its fight: his team (Bunta and Dai) lost it, the others '
+                         'told, all back to their own games and the room' % FOUR_LEAVE_FRAME)
+
 HEADLESS_CASES = [('punch', case_punch), ('relay', case_relay), ('mapped', case_mapped), ('v6', case_v6),
                   ('direct6', case_direct6), ('punchto', case_punchto), ('list', case_list),
                   ('refused', case_refused),
@@ -908,6 +1084,11 @@ LATER_CASES = [('rooms-crew', case_rooms_crew), ('rooms-duo', case_rooms_duo),
                ('ranked', case_ranked)]
 # ... and in the Windows half, its own ranked case, after the rest
 WINDOWS_LATER_CASES = [('ranked-win', case_ranked)]
+# Four players, after those (four programs each): through the lobby, a
+# punched hole and the relay; then a room of several's matches of four.
+FOUR_CASES = [('four-punch-win' if IS_WINDOWS else 'four-punch', case_four_punch),
+              ('four-relay-win' if IS_WINDOWS else 'four-relay', case_four_relay)]
+FOUR_LATER_CASES = [('rooms-four-win' if IS_WINDOWS else 'rooms-four', case_rooms_four)]
 
 
 # ---- the window's cases (Windows) ----
@@ -1238,6 +1419,60 @@ def case_pages(case):
     save_pictures(case, PICTURES)
 
 
+def case_pages_four(case):
+    """A room of four hosted from a window's online pages (Host a room,
+    Room for: four players, a PC each), three headless guests joining it
+    by its code: the lobby before the fight with all four, the host's
+    Ready, the session from power on to the versus select screen, where
+    the first guest's Triangle takes all back to the top menu, which ends
+    the session; the host window back at its own game, never started
+    again, and every hash the same on all four."""
+    lobby = case.server()
+    host_keys = ('shot down accept down down down accept shot up accept '
+                 'until:waiting wait:20 shot until:lobby wait:20 shot accept')
+    host = pages_window(case, 'host', 'net_lobby = %s\nnet_player = Hostess\nnet_room = Fours\nnet_delay = 2\n'
+                        % lobby, host_keys, 0)
+    code = case.wait_for('host', r"room's code is (\w+)", 90)
+    if code is None:
+        case.fail('the host\'s room of four was not opened from the pages')
+        return
+    guests = []
+    with PLAN_LOCK:
+        plans = [port_net.write_leave_plan(HEADLESS, 1, case.folder), port_net.write_leave_plan(HEADLESS, 0,
+                                                                                              case.folder)]
+    for n, name in enumerate(('Bunta', 'Chie', 'Dai')):
+        label = name.lower()
+        guests.append(case.start(label, [HEADLESS, '--image', playtest.RETAIL_CUE, '--lobby', lobby, '--join',
+                                         code.group(1), '--player', name, '--plan', plans[0 if n == 0 else 1],
+                                         '--trace', '--out', os.path.join(case.folder, label)]))
+    if case.wait_for('host', r'session 1 has ended', 300) is None:
+        case.fail('the session of four did not end on the host (host.err)')
+        return
+    codes = wait_all(guests, 60)
+    hashes = [session_hashes(case.err('host'), 1)] + [port_net.hashes_of(case.err(n)) for n in ('bunta', 'chie',
+                                                                                                'dai')]
+    common = sorted(set.intersection(*(set(h) for h in hashes)))
+    if len(common) < 10 or any(h[f] != hashes[0][f] for h in hashes for f in common):
+        case.fail('the four programs\' hashes are not the same (%d in common)' % len(common))
+    for label, code_ in zip(('bunta', 'chie', 'dai'), codes):
+        if code_ != 0:
+            case.fail('%s ended with %s' % (label, code_))
+        if '4 players on 4 PCs' not in case.err(label):
+            case.fail('%s did not play a session of four' % label)
+    host_err = case.err('host')
+    if 'starts again' in host_err or 'started again as process' in host_err:
+        case.fail('the host started again')
+    if '4 players on 4 PCs' not in host_err or 'all 4 players are here and ready: go' not in host_err:
+        case.fail('the host did not meet its three guests and say go')
+    if host.poll() is not None:
+        case.fail('the host\'s process ended (exit %s)' % host.returncode)
+    if not case.problems:
+        case.said.append('a room of four from the host window\'s pages, three guests by its code; the session '
+                         'ended at the select screen on all, %d state hashes the same on all four' % len(common))
+    host.kill()
+    save_pictures(case, PICTURES)
+
+
 def case_pages_refused(case):
     """A guest of another build (--session-differ) joins a room by its code
     from the pages: the lobby turns it away, the pages say why in plain
@@ -1425,11 +1660,13 @@ def save_pictures(case, into):
 WINDOW_CASES = [('win-headless', case_win_headless), ('win-window', case_win_window), ('win-menu', case_win_menu),
                 ('win-rooms', case_win_rooms), ('win-portmap', case_win_portmap), ('win-refused', case_win_refused),
                 ('win-quiet', case_win_quiet), ('win-lobby-refused', case_win_lobby_refused),
-                ('win-pages', case_pages), ('win-pages-refused', case_pages_refused), ('win-room', case_win_room)]
+                ('win-pages', case_pages), ('win-pages-refused', case_pages_refused), ('win-room', case_win_room),
+                ('win-pages-four', case_pages_four)]
 # (and the window's ranked page with a match, after the rest: WINDOWS_LATER_CASES)
 WINDOWS_LATER_CASES.append(('win-ranked', case_win_ranked))
 # the online pages' cases, which the window's half of tools/port_net.py runs on Linux too
-PAGES_CASES = [('pages', case_pages), ('pages-refused', case_pages_refused), ('room', case_win_room)]
+PAGES_CASES = [('pages', case_pages), ('pages-refused', case_pages_refused), ('room', case_win_room),
+               ('pages-four', case_pages_four)]
 
 
 # ---- through a real server ----
@@ -1492,9 +1729,11 @@ def main():
     else:
         cases = HEADLESS_CASES
     later = LATER_CASES if args.what == 'headless' else WINDOWS_LATER_CASES if args.what == 'windows' else []
+    fours = [FOUR_CASES, FOUR_LATER_CASES] if args.what != 'internet' else []
     if args.only:
         cases = [c for c in cases if c[0] in args.only]
         later = [c for c in later if c[0] in args.only]
+        fours = [[c for c in batch if c[0] in args.only] for batch in fours]
     for program in {HEADLESS} | ({WINDOW} if args.what == 'windows' else set()):
         if not os.path.isfile(os.path.join(REPO, program)):
             print('FAILED: port_net_lobby: no %s (build it first)' % program)
@@ -1502,6 +1741,11 @@ def main():
     problems = run(cases, args.port_base) if cases else []
     if later:
         problems += run(later, args.port_base + len(cases) * PORTS_PER_CASE)
+    base = args.port_base + (len(cases) + len(later)) * PORTS_PER_CASE
+    for batch in fours:
+        if batch:
+            problems += run(batch, base)
+            base += len(batch) * PORTS_PER_CASE
     for problem in problems:
         print('FAILED: port_net_lobby: ' + problem)
     if not problems:

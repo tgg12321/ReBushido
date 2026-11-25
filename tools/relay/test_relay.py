@@ -1137,8 +1137,10 @@ def test_four_locked(server):
 
 
 def test_four_expiry(server, waiting):
-    """A seat goes with its own host's silence; the room with its first's,
-    and its seats with it."""
+    """A seat goes with its own host's silence; the room is kept while the
+    host of one of its seats still says hello (the host meets its guests a
+    seat at a time, its first seat quiet once its guest is in), and goes
+    with its seats once all are quiet."""
     key = os.urandom(16)
     h1, h2, h3 = Client(server), Client(server), Client(server)
     code = h1.ask(four_host(key=key))["code"]
@@ -1154,12 +1156,18 @@ def test_four_expiry(server, waiting):
     check(Client(server).ask(four_guest(code, seat=3))["detail"] == rc.S_WAITING, "seat 3 outlived its host")
     check(h2.ask(four_host(code, key, 2))["detail"] in (rc.S_PUNCH, rc.S_RELAYED), "seat 2 went with seat 3")
     check(listed(h1, code)["players"] == 2, "the room after seat 3 went")
-    # the first seat quiet: the room goes, and its seats
+    # the first seat quiet, the second saying hello: the room is kept
     end = time.monotonic() + waiting + 1.0
-    while time.monotonic() < end and code in codes(h2):
+    while time.monotonic() < end:
         h2.ask(four_host(code, key, 2), 0.1)
         time.sleep(0.2)
-    check(code not in codes(h2), "the room of four outlived its first seat")
+    check(code in codes(h2), "the room of four went while a seat's host still said hello")
+    # all quiet: the room goes, and its seats with it, once the last seat's
+    # way is idle (seat 2's relay, --relayed-timeout)
+    end = time.monotonic() + 10.0 + 2 * waiting + 3.0
+    while time.monotonic() < end and code in codes(Client(server)):
+        time.sleep(0.2)
+    check(code not in codes(Client(server)), "the room of four outlived its seats' hosts")
     check(h2.ask(four_host(code, key, 2))["detail"] == rc.E_NO_ROOM, "a seat of a room gone")
     check(g2.ask(four_guest(code, seat=2))["detail"] == rc.E_NO_ROOM, "a guest of a seat of a room gone")
     time.sleep(0.3)  # the server's log, read beside

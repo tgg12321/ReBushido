@@ -2,7 +2,8 @@
 """Two programs of the native port playing each other over UDP on this PC
 (docs/NETPLAY.md, sections 11 and 12), headless:
 
-    python3 tools/port_net.py link|rollback|session|window [--bits 32|64]
+    python3 tools/port_net.py link|rollback|session|window|inprocess|four
+                              [--bits 32|64]
                               [--out FOLDER] [--latency MS] [--loss PERCENT]
                               [--delay N] [--port-base PORT] [--stress N]
                               [--burn K] [--cpus LIST] [--pause MS]
@@ -34,6 +35,18 @@ known) is the same on both, to the last frame they share near the end.
 program started for it: the first frame's hash and every one after the
 same with the same seed, two sessions one after the other in one process,
 and a guest turned away that goes on with its own game.
+
+`four`: four players (docs/NETPLAY.md, section 18). Four headless
+programs, the host's --players 4 meeting three guests at its port and the
+two after it, the host passing each guest's inputs on to the others; two
+programs of --players 2x2, two players on each; and the four of the first
+again with the fourth player leaving in the middle of the fight. The
+session presses all to versus select, the first two pick, and the fight is
+two on two, every fighter a player's, every pad pressing (four_presses),
+over 100 ms each way and 5% lost. It passes if every program ends well,
+none finds a desync, every state hash is the same on all, each printed the
+fight to its end (or the leave, which all are told of), and the fight's
+replays are the same on every machine and played back.
 
 `session` and `window` are a session's, set up by --host and --join
 (section 13). `session` also holds the two players to the same arena
@@ -518,10 +531,11 @@ shot = false
 name = "after_fight"''')
 
 
-def write_room_plan(program, folder, crew=False, duo=False):
+def write_room_plan(program, folder, crew=False, duo=False, four=False):
     """The plan of every member of a room for `program`: its path. `crew`:
     a Crew 2 match's (ROOM_CREW_CHECKPOINTS). `duo`: a fight of two on two,
-    on the stage page's next stage (as the session's, SESSION_MATCHES)."""
+    on the stage page's next stage (as the session's, SESSION_MATCHES).
+    `four`: a match of four players' (four_presses), every pad's."""
     toml = os.path.join(folder, 'room.toml')
     fight = port_game_fight()
     presses = SESSION_SELECT + fight
@@ -529,6 +543,8 @@ def write_room_plan(program, folder, crew=False, duo=False):
         presses = SESSION_SELECT[:-1] + ['select+1150 RIGHT'] + SESSION_SELECT[-1:] + fight
     if crew:
         presses = ROOM_CREW_PRESSES + wounding_fight() + finishing_fight()
+    if four:
+        presses = four_presses()
     with open(toml, 'w', encoding='utf-8', newline='\n') as f:
         f.write('about = "A room of several\'s matches, both pads."\n')
         f.write('discs = ["port"]\nlimit = 200000000\nseconds = %d\n' % SECONDS)
@@ -893,7 +909,8 @@ def check_session_replays(label, program, folder, window):
 # the session back, on every program.
 FOUR_SELECT = ["select+280 CROSS", "select+320 P2 CROSS", "select+580 CROSS", "select+620 P2 CROSS",
                "select+1150 RIGHT", "select+1180 CROSS"]
-FOUR_ROUNDS = 100
+# (a plan has 1024 presses at most: every pad's rounds in one plan fit)
+FOUR_ROUNDS = 80
 FOUR_ROUNDS_OF = {
     1: [(0, 'RIGHT hold 20f'), (22, 'CIRCLE'), (52, 'CROSS')],
     2: [(0, 'LEFT hold 10f'), (15, 'CIRCLE'), (50, 'CIRCLE')],
@@ -968,7 +985,8 @@ def write_four_plan(program, side, pads, folder, leave=False):
     """The plan of PC `side` of a session of four, which plays `pads`: its
     path. `leave`: its player leaves FOUR_LEAVE_FRAMES into the fight
     (its plan ends there)."""
-    presses = four_pads(four_presses(), pads)
+    # (no pads: every pad's, each program pressing its own: --net-plan-pads)
+    presses = four_presses() if pads is None else four_pads(four_presses(), pads)
     toml = os.path.join(folder, 'four_side%d.toml' % side)
     with open(toml, 'w', encoding='utf-8', newline='\n') as f:
         f.write('about = "A session of four players, PC %d (pads %s)."\n' % (side, pads))
@@ -1909,11 +1927,11 @@ PAGES_ABOVE = 500
 
 
 def run_all(args):
-    """link, rollback, session, window and the lobby's at once, each a program of this
+    """link, rollback, session, window, inprocess, four and the lobby's at once, each a program of this
     file with its own PORTS_USED ports from --port-base on and its own
     folder of --out; what each printed, in that order, and 1 if one
     failed (make port-net)."""
-    whats = ('link', 'rollback', 'session', 'window', 'inprocess', 'lobby')
+    whats = ('link', 'rollback', 'session', 'window', 'inprocess', 'four', 'lobby')
     if not 1024 + LOBBY_BELOW <= args.port_base <= 65535 - PORTS_USED * len(whats):
         print('FAILED: port_net: --port-base: from 1024 to %d for all' % (65535 - PORTS_USED * len(whats)))
         return 1

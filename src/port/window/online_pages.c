@@ -1145,8 +1145,9 @@ static void port_PageMeeting(void) {
     is_host = lobby.role == PORT_SESSION_HOST;
     if (lobby.phase == PORT_SESSION_PHASE_READY) {
         const char *me = lobby.name[0] != 0 ? lobby.name : "You";
-        const char *them =
-            lobby.peer_name[0] != 0 ? lobby.peer_name : "The other player";
+        const char *them = lobby.players > 2         ? "The others"
+                           : lobby.peer_name[0] != 0 ? lobby.peer_name
+                                                     : "The other player";
 
         port_PageTitle("Ready to fight");
         port_PageText(
@@ -1154,10 +1155,20 @@ static void port_PageMeeting(void) {
         port_PageText(
             GAME_W * 3 / 4 - 20, y, SIZE_ROW, them, COLOR_CURSOR, ALIGN_CENTRE);
         port_PageText(GAME_W / 4 + 20, y + 14, SIZE_TEXT,
-                      is_host ? "Player 1 (the host)" : "Player 2", COLOR_DIM,
-                      ALIGN_CENTRE);
-        port_PageText(GAME_W * 3 / 4 - 20, y + 14, SIZE_TEXT,
-                      is_host ? "Player 2" : "Player 1 (the host)", COLOR_DIM,
+                      is_host             ? "Player 1 (the host)"
+                      : lobby.players > 2 ? "A guest"
+                                          : "Player 2",
+                      COLOR_DIM, ALIGN_CENTRE);
+        if (lobby.players > 2) {
+            /* four players (docs/NETPLAY.md, section 18): how many are
+             * here; the game begins once all are, and all are ready */
+            snprintf(line, sizeof(line), "%d of %d players here", lobby.here,
+                     lobby.players);
+        } else {
+            snprintf(line, sizeof(line), "%s",
+                     is_host ? "Player 2" : "Player 1 (the host)");
+        }
+        port_PageText(GAME_W * 3 / 4 - 20, y + 14, SIZE_TEXT, line, COLOR_DIM,
                       ALIGN_CENTRE);
         port_PageText(GAME_W / 4 + 20, y + 30, SIZE_ROW,
                       g_pages.ready ? "Ready" : "Not ready",

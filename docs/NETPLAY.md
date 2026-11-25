@@ -12,7 +12,8 @@ it: in the window, paced, with a line on the screen, set up by `--host`
 and `--join` or the settings menu's Play online page, proved between two
 window programs on one PC (section 13). Then the lobby and its ways
 (section 14), sessions begun in the running program (15), rooms of several
-(16) and the ranked ladder (17). What is left is play between two real PCs,
+(16), the ranked ladder (17) and two on two online, four players on four
+PCs among them (18). What is left is play between two real PCs,
 and what section 13 leaves to the owner.
 
 **In short:** the game step is already deterministic and repeatable from its
@@ -1414,7 +1415,7 @@ printable ASCII.
 
 | Kind | Who | Bytes | What |
 | --- | --- | --- | --- |
-| 48 `HELLO` | client | 208 | role and flags; the room's code, name, the player's name, the setup code, the salt, the verifier (host) or proof (guest), up to four candidates |
+| 48 `HELLO` | client | 208 (232 in version 4: a room of four's seat key, its players, the seat; section 18) | role and flags; the room's code, name, the player's name, the setup code, the salt, the verifier (host) or proof (guest), up to four candidates |
 | 49 `STATE` | server | 208 | waiting, password (salt, challenge), punch (the other's candidates, the token), direct4, direct6, relayed, or an error; the code, the address seen, the other's |
 | 50, 51 `PUNCH`, `PUNCH_ACK` | client to client | 16 | the token, the candidate aimed at, the sender's clock (echoed: the round trip) |
 | 52, 53 `LIST`, `ROOMS` | client, server | 16, 8 + 92 each | up to twelve rooms a datagram (and rooms of several, section 16) |
@@ -1767,7 +1768,8 @@ session of two, as every session before.
   feed in memory while the match lasts and 30 seconds after, and gives
   every member who asks (`WATCH`) what it lacks (`SCENE`): the
   settings, the start's chunks it has not, then the inputs from the
-  frame it wants, eight hashes to a datagram of 240 frames. A host's
+  frame it wants, eight hashes to a datagram of 240 frames (in version 4
+  four pads a frame, four hashes to a datagram of 120: section 18). A host's
   upload does not grow with its spectators; the server's is about 215
   KB a spectator as it comes in, then a few KB a second.
 - *A spectator* waits for a fight's start, keeps its own game (as a
@@ -1828,7 +1830,7 @@ several (0x02), whose players are its members. New kinds, little-endian:
 | --- | --- | --- | --- |
 | 57 `ROOM` | member | 160 | an action (`OPEN`, `ENTER`, `STAY`, `LEAVE`, `RULE`, `RESULT`, `SIDE_OPEN`, `SIDE_JOIN`, `SIDE_DONE`): the room's code, name, player, setup code, salt and verifier (open) or proof (enter), the member's token, whether it plays, the rule, an argument, a stamp, its round trip, a match's number |
 | 58 `ROSTER` | server | 472 | OK, `PASSWORD` (salt, challenge) or an error; the code, name, the member's token and id, the rule, the host, the setup code, the rotation's match (number, players, code, ticket to its players), the last result, eight members (id, flags, wins, round trip, name), four matches beside it |
-| 59 `FEED` | a match's host | to 1,200 | the match's code and ticket; its settings, a chunk of the start (its frame, size, place, count), inputs (the first frame, how many, up to eight hashes, four bytes a frame), or the end (the frame, who won) |
+| 59 `FEED` | a match's host | to 1,200 | the match's code and ticket; its settings, a chunk of the start (its frame, size, place, count), inputs (the first frame, how many, up to eight hashes, four bytes a frame; version 4: four, eight), or the end (the frame, who won) |
 | 60 `FEED_ACK` | server | 160 | the start's frame and its chunks had, the settings and the end had, the next frame wanted |
 | 61 `WATCH` | spectator | 192 | the room's code, the token, the match's code, the start it has and its chunks, the frame it wants |
 | 62 `SCENE` | server | to 1,144 | the settings and the two players' names, a chunk of the start, inputs with their hashes, the end, or nothing yet / no such match / not a member |
@@ -1849,7 +1851,7 @@ locked room's password, an incompatible setup, a ninth member, version
 server's 500 and a host's three; its matches do not count against their
 hosts' addresses. Per source address, `--watch-rate` (400 a second) for
 `WATCH` and `FEED` together; a start of at most 1 MB and 2^18 frames of
-inputs a feed. A feed is about the start's size and 4 bytes a frame: a
+inputs a feed. A feed is about the start's size and 4 bytes a frame (8 in version 4): a
 few hundred KB a match, kept while it lasts and `--feed-linger` (30 s)
 after. `--member-timeout` (20 s) and `--side-timeout` (120 s) are the
 rest.
@@ -2141,10 +2143,11 @@ fight of two (`port-rollback` holds it, both sizes, plain and quiet).
 **What a session carries.** The host's `teams` rides in the welcome's
 match word (`port_MatchBits`, over the rule and its number), held by the
 guest as the rule is (`port_HoldMatch`; the log says `session: the
-host's teams are two on two`). A session's input is one pad from each
-PC, so in a session both teams' partners are the CPU's, whatever the
-host's choice (`port_DuoPartnerIsCpu`: `port_IsNetplayOn`). Protocol
-13 (setup codes `P13-...`).
+host's teams are two on two`). A session of two players' input is one pad
+from each PC, so there both teams' partners are the CPU's, whatever the
+host's choice (`port_DuoPartnerIsCpu`: `port_IsNetplayOn` and two pads);
+a session of four players (below) has a player for every fighter.
+Protocol 13 (setup codes `P13-...`); 14 with four players.
 
 **Rollback at four.** A guess is never more than 8 frames ahead
 (section 12), so the most a rollback runs again is 8 frames. On the

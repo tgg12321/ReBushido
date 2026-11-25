@@ -46,11 +46,13 @@ ra1-paced is ra1 paced at 144 a second whatever --paced says.
 --rollback measures a rollback of the whole window of netplay instead
 (docs/NETPLAY.md, section 12: a guess is never more than 8 frames ahead):
 the Windows program without a window runs the same plan with
---rollback-test 8 --rollback-quiet, one on one and two on two (the
-partners the CPU's; docs/PORT.md, "Two on two"), and says what a state
-put back and 8 frames of the fight run again quietly cost, on average
-and at the most: the budget of a rollback at four fighters. Kept as the
-cases rollback-1v1 and rollback-2v2.
+--rollback-test 8 --rollback-quiet, one on one, two on two (the
+partners the CPU's; docs/PORT.md, "Two on two") and two on two of four
+players (every fighter a pad's, as four PCs play it: docs/NETPLAY.md,
+section 18), and says what a state put back and 8 frames of the fight run
+again quietly cost, on average and at the most: the budget of a rollback
+at four fighters. Kept as the cases rollback-1v1, rollback-2v2 and
+rollback-4p.
 --budget runs the gate's cases and holds them to LIMITS: what the owner
 targets (2026-11-18: 144 pictures a second at 2560 by 1440, with run-ahead,
 and room for four players and a larger stage), not what the program
@@ -471,7 +473,11 @@ HEADLESS = os.path.join(REPO, 'build', 'port-sdl', 'windows', 'rebushido-headles
 # netplay's window: no guess is more than this many frames ahead
 # (NETPLAY_PREDICT_MAX), so a rollback runs at most this many again
 ROLLBACK_WINDOW = 8
-ROLLBACK_CASES = (('rollback-1v1', []), ('rollback-2v2', ['--teams', 'cpu']))
+# one on one, two on two with the CPU's partners, and two on two of four
+# players (docs/NETPLAY.md, section 18: four pads, each another PC's and
+# guessed, every fighter a player's)
+ROLLBACK_CASES = (('rollback-1v1', []), ('rollback-2v2', ['--teams', 'cpu']),
+                  ('rollback-4p', ['--teams', 'pads']))
 
 
 def rollback_line(text, what):

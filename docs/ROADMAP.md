@@ -516,10 +516,23 @@ the stage").
     and tags over the heads; the fighters' own models for all four.
     Online with the CPU's partners (protocol 13), in sessions and rooms,
     spectators watching. A rollback of the whole window at four
-    7.9 ms against 5.8 at two. Left: four players on
-    four PCs (an input of four pads, the network and the lobby for four:
-    NETPLAY.md, section 18); teams of different characters (video memory
-    for four); the owner's eye on the band, the tags and the page
+    7.9 ms against 5.8 at two. **Four players on four PCs** (2026-11-25,
+    NETPLAY.md, section 18; PLAYING.md, "Four players online"): protocol
+    14 and lobby version 4 (version 3 clients refused); the host's PC in
+    the middle, passing each guest's inputs on (each guest needs one way,
+    to the host, found by section 14's ladder: a link and a socket each);
+    an input of four pads a frame, each guessed and rolled back on its own;
+    the meeting of three guests (`--players 4`), or two players on each of
+    two PCs (`--players 2x2`); rooms of four at the lobby (a seat a guest),
+    rooms of several whose matches are of four, the spectators' feed of
+    four pads; the online pages' *Room for* and Quick Match. A player who
+    leaves ends the session for all, his team losing a room's match. Proved
+    headless on this PC, by address and through a local lobby (a punched
+    hole, the relay), in a room of several with a spectator and a leave,
+    on Linux and Windows, every hash the same on all; replays of the fight
+    of four played back. Left: four real PCs and players; the CPU taking a
+    leaver's fighter over; teams of different characters (video memory
+    for four); the owner's eye on the band, the tags and the pages
     (`tmp/2v2/`).
 25. **A ladder and Elo** (longer term): ranked matches through the
     lobby server, an Elo (or Glicko) rating per player, a ladder page;
