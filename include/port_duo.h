@@ -78,12 +78,14 @@ enum {
  * room is the game's memory: saved, put back and hashed with it. */
 #define PORT_DUO_AREA_ADDR 0x80010000U
 #define PORT_DUO_AREA_END 0x8010DB00U /* SYS_SOUND_VAB_ADDR */
-/* first the second bank of video memory (port_gpu.h) */
+/* first the second bank of video memory (port_gpu.h): its
+ * PORT_VRAM_BANK_PIXELS, two bytes each; then each partner's win pose
+ * (MOTION_WIN_SECTORS of WIN.DAT), his motion file (the game's room for
+ * one) and his model */
 #define PORT_DUO_BANK_ADDR PORT_DUO_AREA_ADDR
-#define PORT_DUO_BANK_BYTES 0x20000   /* PORT_VRAM_BANK_PIXELS, two bytes each \
-                                       */
-#define PORT_DUO_WIN_BYTES 0x3800     /* MOTION_WIN_SECTORS of WIN.DAT */
-#define PORT_DUO_MOTION_BYTES 0x48000 /* the game's room for a motion file */
+#define PORT_DUO_BANK_BYTES 0x20000
+#define PORT_DUO_WIN_BYTES 0x3800
+#define PORT_DUO_MOTION_BYTES 0x48000
 #define PORT_DUO_WIN_ADDR(slot)                                                \
     (PORT_DUO_BANK_ADDR + PORT_DUO_BANK_BYTES +                                \
      (u32)(slot) * PORT_DUO_WIN_BYTES)
