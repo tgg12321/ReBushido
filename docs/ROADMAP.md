@@ -553,13 +553,16 @@ the stage").
     the meeting of three guests (`--players 4`), or two players on each of
     two PCs (`--players 2x2`); rooms of four at the lobby (a seat a guest),
     rooms of several whose matches are of four, the spectators' feed of
-    four pads; the online pages' *Room for* and Quick Match. A player who
-    leaves ends the session for all, his team losing a room's match. Proved
+    four pads; the online pages' *Room for* and Quick Match. A guest of four
+    PCs who leaves the fight (or goes silent) gives his fighter to the CPU,
+    decided by the host at one frame and passed on as his pad's input
+    (protocol 16; NETPLAY.md, section 19), and the others play the match
+    out; the host's leave ends the session for all. Proved
     headless on this PC, by address and through a local lobby (a punched
     hole, the relay), in a room of several with a spectator and a leave,
     on Linux and Windows, every hash the same on all; replays of the fight
-    of four played back. Left: four real PCs and players; the CPU taking a
-    leaver's fighter over; teams of different characters (video memory
+    of four played back. Left: four real PCs and players; teams of
+    different characters (video memory
     for four); the owner's eye on the band, the tags and the pages
     (`tmp/2v2/`).
 25. **A ladder and Elo** (longer term): ranked matches through the

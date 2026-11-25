@@ -134,6 +134,9 @@ extern s32 port_NetplayPads(void);
 /* The pad whose player left the session (another program's goodbye says
  * it), or -1. */
 extern s32 port_NetplayLeftPad(void);
+/* The pads whose players have left a session of four and whose fighters
+ * the CPU plays (a bit each; docs/NETPLAY.md, section 19). */
+extern u32 port_NetplayCpuPads(void);
 extern s32 port_IsNetplayOn(void);
 /* Where the other program has gone, this one plays on alone instead of
  * ending (the window's: a player is not thrown out of the game). */
@@ -186,23 +189,26 @@ enum {
 
 typedef struct {
     s32 is_on;
-    s32 pad;        /* 0 to 3: the first this program plays */
-    s32 pads;       /* the session's, 2 or 4 */
-    u32 local_mask; /* this program's pads, a bit each */
-    s32 state;      /* PORT_NETPLAY_... */
-    u32 delay;      /* frames */
-    u32 ping_ms;    /* the round trip, smoothed */
-    u32 rollback;   /* the most frames run again in one rollback lately */
-    u32 rollbacks;  /* in all */
-    s32 ahead;      /* frames this program is ahead, in sixteenths */
-    u32 frame;      /* the game's frame (steps since the session began) */
-    u32 waited_ms;  /* how long the present wait has been */
-    u32 alone_ms;   /* how long ago the other went, if it has */
-    u32 held_ms;    /* how long this program has held back, in all */
-    s32 is_session; /* set up by --host or --join */
-    s32 watching;   /* a spectator of a room's match */
-    u32 behind;     /* a spectator: the frames it has and has not run */
-    u32 leave_ms;   /* a leave asked: how long ago (0: none) */
+    s32 pad;          /* 0 to 3: the first this program plays */
+    s32 pads;         /* the session's, 2 or 4 */
+    u32 local_mask;   /* this program's pads, a bit each */
+    s32 state;        /* PORT_NETPLAY_... */
+    u32 delay;        /* frames */
+    u32 ping_ms;      /* the round trip, smoothed */
+    u32 rollback;     /* the most frames run again in one rollback lately */
+    u32 rollbacks;    /* in all */
+    s32 ahead;        /* frames this program is ahead, in sixteenths */
+    u32 frame;        /* the game's frame (steps since the session began) */
+    u32 waited_ms;    /* how long the present wait has been */
+    u32 alone_ms;     /* how long ago the other went, if it has */
+    u32 held_ms;      /* how long this program has held back, in all */
+    s32 is_session;   /* set up by --host or --join */
+    s32 watching;     /* a spectator of a room's match */
+    u32 behind;       /* a spectator: the frames it has and has not run */
+    u32 leave_ms;     /* a leave asked: how long ago (0: none) */
+    s32 cpu_pad;      /* the last pad the CPU took over, or -1 */
+    u32 cpu_ms;       /* how long ago it did */
+    s32 cpu_on_leave; /* this player's leave gives his fighter to the CPU */
 } PortNetplayStats;
 
 extern void port_GetNetplayStats(PortNetplayStats *stats);

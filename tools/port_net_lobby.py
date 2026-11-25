@@ -43,9 +43,9 @@ or build/port-sdl/windows/rebushido-headless.exe on Windows):
              seat its own relayed pair
     rooms-four   a room of several whose matches are of four (--room-size
              4): Ayame, Bunta, Chie and Dai play, Sora watches; the second
-             match, its order turned, left in its fight by Dai, whose team
-             loses it (after the rest, as are the two above; the Windows
-             half's are -win)
+             match, its order turned, left in its fight by Dai, whose
+             fighter the CPU plays on to the match's end (after the rest,
+             as are the two above; the Windows half's are -win)
 
 `windows` (Windows' own Python) adds the window's programs: a session
 headless and with a window (tools/port_net.py's, with a window: in real
@@ -995,7 +995,8 @@ def case_rooms_four(case):
     team against Bunta and Dai, met under the match's code by its ticket,
     each guest at the seat of its place; Sora watches it from its fight's
     start. The second match, the order turned (Bunta first), is left in
-    the middle of its fight by Dai, whose team loses it. Every hash of a
+    the middle of its fight by Dai, whose fighter the CPU plays on to the
+    match's end (docs/NETPLAY.md, section 19). Every hash of a
     match the same on its four players and its spectator."""
     lobby = case.server(*ROOM_SERVER)
     with PLAN_LOCK:
@@ -1041,8 +1042,13 @@ def case_rooms_four(case):
         if [roles[label] for label in players] != ['player 1', 'player 2', 'player 3', 'player 4']:
             case.fail('match %d: the places were not the rotation\'s: %r' % (number, roles))
         reference = who[players[0]]['hashes']
+        cpu_from = re.search(r'the CPU plays his fighter from frame (\d+)', '\n'.join(who[players[0]]['text']))
         for label in list(players[1:]) + ['sora']:
             mine = who[label]['hashes']
+            if cpu_from and label == 'dai':
+                # the leaver's own hashes after the CPU took his pad are
+                # his inputs', not the match's (NETPLAY.md, section 19)
+                mine = {f: h for f, h in mine.items() if f < int(cpu_from.group(1))}
             shared = sorted(set(mine) & set(reference))
             differ = [f for f in shared if mine[f] != reference[f]]
             if differ:
@@ -1061,14 +1067,22 @@ def case_rooms_four(case):
             any("the host's teams are two on two" not in case.err(label) for label in labels[:4]):
         case.fail('match 1 was not a fight of two on two decided for a team')
     second = '\n'.join(segments['dai'].get(2, {}).get('text', []))
-    others = '\n'.join(sum((segments[label].get(2, {}).get('text', []) for label in ('ayame', 'bunta', 'chie')), []))
+    stayed = {label: '\n'.join(segments[label].get(2, {}).get('text', [])) for label in ('ayame', 'bunta', 'chie',
+                                                                                         'sora')}
+    taken = [re.search(r'netplay: player 3 has left the (?:session|match): the CPU plays his fighter from frame '
+                       r'(\d+)', text) for text in stayed.values()]
+    over = re.search(r'room: match 2 over: (its \w+ player won|nobody won)', stayed['bunta'])
     if 'this player left the session at frame %d' % FOUR_LEAVE_FRAME not in second or \
-            'room: match 2 over: its second player won' not in second + others or \
-            others.count('(player 3)') < 3:
-        case.fail('Dai\'s leave in the middle of match 2 was not as it must be')
+            'its end is the other players\' to tell' not in second or not all(taken) or \
+            len(set(t.group(1) for t in taken)) != 1 or not over or \
+            any('netplay: the match was decided at frame' not in stayed[label] for label in ('ayame', 'bunta',
+                                                                                             'chie')):
+        case.fail('Dai\'s leave in the middle of match 2 was not as it must be (the CPU playing his fighter on)')
     else:
-        case.said.append('Dai left match 2 at frame %d, in its fight: his team (Bunta and Dai) lost it, the others '
-                         'told, all back to their own games and the room' % FOUR_LEAVE_FRAME)
+        case.said.append('Dai left match 2 at frame %d, in its fight: the CPU played his fighter from frame %s on, '
+                         'on the three who stayed and Sora; the match played to its end (%s, the room told by '
+                         'its host), all back to their own games and the room'
+                         % (FOUR_LEAVE_FRAME, taken[0].group(1), over.group(1)))
 
 HEADLESS_CASES = [('punch', case_punch), ('relay', case_relay), ('mapped', case_mapped), ('v6', case_v6),
                   ('direct6', case_direct6), ('punchto', case_punchto), ('list', case_list),

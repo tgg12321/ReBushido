@@ -101,11 +101,22 @@ static u32 port_NetWords(char *out, u32 room) {
     if (stats.leave_ms != 0) {
         /* the leave asked once: the second leaves (port_online.h) */
         snprintf(out, room, "%s",
-                 stats.watching   ? "Press F1 or Escape again to stop watching"
+                 stats.watching ? "Press F1 or Escape again to stop watching"
+                 : stats.cpu_on_leave
+                     ? "Press F1 or Escape again to leave the fight: the "
+                       "CPU plays your fighter on"
                  : stats.pads > 2 ? "Press F1 or Escape again to leave the "
                                     "fight: the other team wins it"
                                   : "Press F1 or Escape again to leave the "
                                     "fight: the other player wins it");
+        return COLOR_WAIT;
+    }
+    if (stats.cpu_pad >= 0 && stats.cpu_ms < ALONE_SHOWN_MS &&
+        stats.state == PORT_NETPLAY_PLAYING) {
+        /* a player of four has left: the CPU plays his fighter on
+         * (docs/NETPLAY.md, section 19) */
+        snprintf(out, room, "Player %d has left: the CPU plays his fighter",
+                 stats.cpu_pad + 1);
         return COLOR_WAIT;
     }
     if (stats.watching) {

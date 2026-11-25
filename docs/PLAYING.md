@@ -1224,9 +1224,17 @@ host, found as for two.
   is sent on to the next port by itself).
 
 The line at the top says `Online: player 3 of 4` (or `player 1 and 3 of
-4`) and the worst ping among the PCs. A player who leaves, or stops
-answering, ends the session for everyone, and in a room's match his team
-loses it. Everyone needs the same setup code, as for two.
+4`) and the worst ping among the PCs. **A player who leaves** the
+fight, or stops answering for 15 seconds, on four PCs: the CPU plays
+his fighter on (his tag says `CPU`, and the line says *Player 4 has
+left: the CPU plays his fighter* for a few seconds), the fight and the
+match go on for the other three, and the session ends for all at the
+match's end; in a room's match the result is the match's as it was
+played out. If the host's player leaves, or the fight has not begun, or
+he was the last other player, the session ends for everyone as before,
+and in a room's match the leaver's team loses it. Of two on each of two
+PCs, either leaving ends it. Everyone needs the same setup code, as for
+two.
 
 ### Ranked
 
