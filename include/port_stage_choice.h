@@ -39,6 +39,8 @@ enum {
 
 /* no arena in play */
 #define PORT_STAGE_NO_ARENA (-1)
+/* the arenas a page of them shows: three rows of two, as a stage page */
+#define PORT_STAGE_PAGE_PLACES 6
 /* no stage under the grid's cursor (PortStageChoice.cursor_stage) */
 #define PORT_STAGE_NO_CURSOR 0xFF
 
@@ -49,8 +51,8 @@ typedef struct {
     s8 arena;        /* the arena in play (port_ArenaAt), or NO_ARENA */
     s8 loaded_arena; /* the arena the stage in memory was loaded with */
     u8 page_open;    /* the arenas' page is up over the stage pages */
-    u8 page_cursor;  /* its row */
-    u8 page_top;     /* the first row shown */
+    u8 page_cursor;  /* the arena under its cursor */
+    u8 page_top;     /* the first arena of the page shown */
     u8 on_stages;    /* a stage page ran this frame (for the play tests) */
     u8 cursor_kind;  /* the kind of the stage under the grid's cursor */
     u8 is_started;
@@ -88,12 +90,17 @@ enum {
 
 /* A frame of a stage page (select.c, select_StageStep), before the grid
  * reads the presses (L1 and R1 turn the time of day of the stage under
- * the cursor back and on): `pressed` the pads' presses, `stage` the stage under
+ * the cursor back and on; on the arenas' page the d-pad, L1 and R1 are
+ * its own): `pressed` the pads' presses, `stage` the stage under
  * the grid's cursor (-1: none), `is_open` the door open so the grid
  * takes presses. Keeps the kind of the stage under the cursor and the
  * arenas' page for the window to draw. Returns PORT_STAGE_PAGE_...; with
  * ..._ARENA `*stage` is the host to fight on. */
 extern s32 port_StagePageStep(s32 pressed, s32 *stage, s32 is_open);
+/* TRUE while the arenas' page is up over a stage page: the game's page
+ * leaves out its map and the stages' names, where the window draws the
+ * arenas (src/port/window/stage_page.c). */
+extern s32 port_StagePageCovers(void);
 /* A ranked match's stage (src/port/ranked.c; docs/NETPLAY.md, section
  * 17), drawn by the lobby for the match: TRUE and its place among the
  * three pages' 18 (a page's six, in its order, page after page), which

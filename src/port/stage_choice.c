@@ -6,21 +6,31 @@
  *
  * On a stage page Square switches the stage under the cursor between
  * Classic and Remastered Classic, L1 and R1 turn its time of day (its
- * own, dawn, day, dusk, night), and Select opens the arenas' page over
- * it: up and down choose an arena, Cross fights on it (on the stage it
- * stands in for, which the player is never shown), Triangle or Select
- * goes back to the stages. Nothing here draws: the window lays the
- * switch's state and the arenas' page over the picture from what this
- * file keeps (src/port/window/stage_page.c), so video memory is the
- * console's and the play tests that hold the port's picture to the
- * emulator's see the screen they always did. */
+ * own, dawn, day, dusk, night), and Select opens the arenas' page in
+ * its place, a page of the stage select's own shape: six arenas on the
+ * scroll, three rows of two, the d-pad among them as on the stages' grid
+ * (past the page's side to the next page, as the grid's arrows go to the
+ * next map), L1 and R1 a page back or on, Cross fights on the one under
+ * the cursor (on the stage it stands in for, which the player is never
+ * shown), Triangle or Select goes back to the stages; each press with the
+ * game's own sound. Nothing here draws: the window lays the panel and the
+ * arenas' names and pictures over the picture from what this file keeps
+ * (src/port/window/stage_page.c), and the game's page leaves out its map
+ * and the stages' names while the arenas' page is up
+ * (port_StagePageCovers), so with it down video memory is the console's
+ * and the play tests that hold the port's picture to the emulator's see
+ * the screen they always did. */
 #include "common.h"
 #include "bb2.h"
 
 PortStageChoice g_port_stage_choice;
 
-/* the rows of the arenas' page shown at once */
-#define PAGE_ROWS 5
+/* The arenas' page is a page of the stage select's own shape: six places
+ * on the scroll, three rows of two, an arena's place on its page being
+ * row * 2 + column as a stage's is (port_stage_choice.h). */
+#define PAGE_PLACES PORT_STAGE_PAGE_PLACES
+#define PAGE_COLS 2
+#define PAGE_ROWS (PAGE_PLACES / PAGE_COLS)
 
 /* The modes whose fights come from a stage page: versus and link, and
  * versus the CPU and training when their select screen went on to the
@@ -95,40 +105,69 @@ s32 port_StageArena(void) {
 
 /* ---- a stage page ---- */
 
-static void port_StagePageMove(PortStageChoice *choice, s32 step) {
-    s32 count = port_ArenaCount();
-    s32 row = choice->page_cursor + step;
+s32 port_StagePageCovers(void) {
+    return g_port_stage_choice.page_open && port_ArenaCount() > 0;
+}
 
-    if (row < 0) {
-        row = count - 1;
-    } else if (row >= count) {
-        row = 0;
-    }
-    choice->page_cursor = (u8)row;
-    if (row < choice->page_top) {
-        choice->page_top = (u8)row;
-    } else if (row >= choice->page_top + PAGE_ROWS) {
-        choice->page_top = (u8)(row - PAGE_ROWS + 1);
+/* The arena at `place` of page `page`, or the last where the page has
+ * none there; the page's first is where it is shown from. */
+static void port_StagePagePut(PortStageChoice *choice, s32 page, s32 place) {
+    s32 count = port_ArenaCount();
+    s32 at = page * PAGE_PLACES + place;
+
+    choice->page_top = (u8)(page * PAGE_PLACES);
+    choice->page_cursor = (u8)(at < count ? at : count - 1);
+}
+
+/* L1 and R1, or Left and Right past the page's edge: the page one back or
+ * on (round from the last to the first and back), the cursor on the same
+ * place of it or the page's last. */
+static void port_StagePageTurn(PortStageChoice *choice, s32 way, s32 place) {
+    s32 count = port_ArenaCount();
+    s32 pages = (count + PAGE_PLACES - 1) / PAGE_PLACES;
+    s32 page = (choice->page_cursor / PAGE_PLACES + way + pages) % pages;
+
+    port_StagePagePut(choice, page, place);
+}
+
+/* Up and down: the row above or below in the same column, round the
+ * page's three, past any the page has no arena in. */
+static void port_StagePageRow(PortStageChoice *choice, s32 way) {
+    s32 count = port_ArenaCount();
+    s32 page = choice->page_cursor / PAGE_PLACES;
+    s32 place = choice->page_cursor % PAGE_PLACES;
+    s32 col = place % PAGE_COLS;
+    s32 row = place / PAGE_COLS;
+    s32 i;
+
+    for (i = 0; i < PAGE_ROWS - 1; i++) {
+        row = (row + way + PAGE_ROWS) % PAGE_ROWS;
+        if (page * PAGE_PLACES + row * PAGE_COLS + col < count) {
+            port_StagePagePut(choice, page, row * PAGE_COLS + col);
+            return;
+        }
     }
 }
 
-/* L1 and R1 on the arenas' page: the list as pages of PAGE_ROWS, the
- * cursor's page one back or on (round from the last to the first and
- * back), the cursor on the same row of it or the page's last. */
-static void port_StagePageTurn(PortStageChoice *choice, s32 way) {
+/* Left and right: the other column, as the stages' grid goes; past the
+ * page's edge to the next page or the one before where there are more
+ * than one, as the grid's arrows go to the next map. */
+static void port_StagePageColumn(PortStageChoice *choice, s32 way) {
     s32 count = port_ArenaCount();
-    s32 pages = (count + PAGE_ROWS - 1) / PAGE_ROWS;
-    s32 page;
-    s32 row = choice->page_cursor % PAGE_ROWS;
+    s32 page = choice->page_cursor / PAGE_PLACES;
+    s32 place = choice->page_cursor % PAGE_PLACES;
+    s32 col = place % PAGE_COLS;
+    s32 row = place / PAGE_COLS;
+    s32 to = col + way;
 
-    if (pages < 2) {
+    if (count > PAGE_PLACES && (to < 0 || to >= PAGE_COLS)) {
+        port_StagePageTurn(choice, way, row * PAGE_COLS + (to < 0 ? 1 : 0));
         return;
     }
-    page = (choice->page_cursor / PAGE_ROWS + way + pages) % pages;
-    choice->page_top = (u8)(page * PAGE_ROWS);
-    choice->page_cursor =
-        (u8)(page * PAGE_ROWS + row < count ? page * PAGE_ROWS + row
-                                            : count - 1);
+    to = (to + PAGE_COLS) % PAGE_COLS;
+    if (page * PAGE_PLACES + row * PAGE_COLS + to < count) {
+        port_StagePagePut(choice, page, row * PAGE_COLS + to);
+    }
 }
 
 /* A frame of a stage page (port_stage_choice.h): Square and Select on the
@@ -171,12 +210,13 @@ s32 port_StagePageStep(s32 pressed, s32 *stage, s32 is_open) {
         if ((pressed & PAD_ANY(PADselect)) && port_ArenaCount() > 0) {
             snd_Play(MENU_SOUND_CONFIRM, SND_VOLUME_MAX, SND_VOLUME_MAX);
             choice->page_open = TRUE;
-            choice->page_cursor =
-                (u8)(choice->arena >= 0 && choice->arena < port_ArenaCount()
-                         ? choice->arena
-                         : 0);
-            choice->page_top = 0;
-            port_StagePageMove(choice, 0);
+            {
+                s32 at = choice->arena >= 0 && choice->arena < port_ArenaCount()
+                             ? choice->arena
+                             : 0;
+
+                port_StagePagePut(choice, at / PAGE_PLACES, at % PAGE_PLACES);
+            }
             return PORT_STAGE_PAGE_TAKEN;
         }
         return PORT_STAGE_PAGE_GRID;
@@ -190,16 +230,17 @@ s32 port_StagePageStep(s32 pressed, s32 *stage, s32 is_open) {
         choice->page_open = FALSE;
         return PORT_STAGE_PAGE_TAKEN;
     }
-    if (pressed & PAD_ANY(PADLdown)) {
+    if (pressed & PAD_ANY(PADLdown | PADLup)) {
         snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
-        port_StagePageMove(choice, 1);
-    } else if (pressed & PAD_ANY(PADLup)) {
+        port_StagePageRow(choice, (pressed & PAD_ANY(PADLdown)) ? 1 : -1);
+    } else if (pressed & PAD_ANY(PADLright | PADLleft)) {
         snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
-        port_StagePageMove(choice, -1);
+        port_StagePageColumn(choice, (pressed & PAD_ANY(PADLright)) ? 1 : -1);
     } else if (
-        (pressed & PAD_ANY(PADL1 | PADR1)) && port_ArenaCount() > PAGE_ROWS) {
+        (pressed & PAD_ANY(PADL1 | PADR1)) && port_ArenaCount() > PAGE_PLACES) {
         snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
-        port_StagePageTurn(choice, (pressed & PAD_ANY(PADR1)) ? 1 : -1);
+        port_StagePageTurn(choice, (pressed & PAD_ANY(PADR1)) ? 1 : -1,
+                           choice->page_cursor % PAGE_PLACES);
     }
     arena = port_ArenaAt(choice->page_cursor);
     if ((pressed & PAD_ANY(PADRdown)) && arena != NULL) {

@@ -1063,7 +1063,14 @@ have met:
   arenas";
   textures, models, skies and music are not in it, and may differ). A
   guest that differs is turned away with the reason, which both logs
-  say;
+  say and the guest's screen shows. The arenas' sum goes in the hello
+  and the welcome on its own as well (`MEET_ARENAS`, protocol 17), so a
+  guest whose gameplay mods differ in their arenas -- one without the
+  host's, or with another, or another order -- is told that it is the
+  arenas (`REFUSE_ARENAS`: "The other player's custom arenas are not the
+  same as yours: you both need the same arenas, from the same mods."),
+  whether the host has one in play (`--arena`) or only offers them on
+  the stage select's arenas' page;
 - the host sends its **two memory cards**, whole, 1 KB a datagram, the
   guest saying which parts it has every 20 ms, and a **seed** taken from
   its clock. Both then play on copies of the host's cards kept in memory
@@ -2312,7 +2319,7 @@ ROADMAP 24's gap (2026-11-25): in a fight of four on four PCs, a guest
 who leaves, or stops answering, no longer ends the session for all. His
 fighter is the CPU's from one frame, the same on every remaining machine,
 and the fight and its match go on for the other three; the session ends
-for all at the match's end. Protocol 16 (setup codes `P16-...`); the
+for all at the match's end. Protocol 16 (setup codes `P17-...` since the arenas' protocol 17); the
 lobby is unchanged (version 4).
 
 **Decided by the host, carried by the input.** The host is the middle of

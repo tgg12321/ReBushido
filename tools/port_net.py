@@ -56,8 +56,12 @@ played back.
 `session` and `window` are a session's, set up by --host and --join
 (section 13). `session` also holds the two players to the same arena
 (docs/MODS.md, "Custom arenas"): the sample arena compiled at test time,
-the host with it in play (--arena) and the guest without, which the host
-must turn away. And two more headless sessions of each size, begun in the
+the host with it in play (--arena), or only installed, and the guest
+without, which the host must turn away for its arenas; and a Stock match
+of two on the sample arena, both with it as a mod, the host choosing it
+on the stage select's arenas' page (Select, then Cross), both fights on
+it with the same state hashes and both machines' replays played back.
+And two more headless sessions of each size, begun in the
 running program with ReBushido's top menu, play a Crew match of two and a
 Stock match of two with the rule chosen by the host before the first
 select (PORT.md, "Match rules", "The rule first"): the crews of different
@@ -315,6 +319,17 @@ SESSION_MATCHES = {
         SESSION_MATCH_EXPECT, fight='expect = ["mode == FIGHT_MODE_VS", "port_duo_on == 1", '
                                     '"port_match_teams == 1", "stage == 24"]\n'),
         "session: the host's teams are two on two"),
+    # a custom arena chosen on the stage select's arenas' page (docs/MODS.md,
+    # "Custom arenas"): both machines have the sample arena as a mod, and
+    # the host opens the page with Select where it takes the stage and
+    # takes the first arena with Cross; both fight on it, over its host
+    # stage, both fights of the match
+    'arena': (SESSION_MATCH, dict(
+        SESSION_MATCH_EXPECT, fight='expect = ["mode == FIGHT_MODE_VS", "p1_cpu == 0", "p2_cpu == 0", '
+                                    '"stage == %d", "port_arena == 0"]\n' % 25,
+        rematch='expect = ["mode == FIGHT_MODE_VS", "wins_p1 + wins_p2 == 1", "port_match_rule == 1", '
+                '"stage == %d", "port_arena == 0"]\n' % 25),
+        "session: the host's match rule is stock, 2"),
 }
 
 
@@ -372,6 +387,9 @@ def write_session_plan(program, side, folder, match=None):
         # may lie on a roof below, where his enemies' CPU partners do not
         # come)
         select = SESSION_SELECT[:-1] + ['select+1150 RIGHT'] + SESSION_SELECT[-1:]
+    elif match == 'arena':
+        # the arenas' page (Select), and Cross there on its first
+        select = SESSION_SELECT[:-1] + ['select+1150 SELECT'] + SESSION_SELECT[-1:]
     presses = own_pad(select + fight + rematch, side)
     if side == 0:
         presses.append("after_fight+%d CROSS" % (30 if match else 120))
@@ -744,13 +762,15 @@ def check_session(label, program, args, ports, window, match='stock'):
     folder = os.path.join(args.out, 'session', label)
     os.makedirs(folder, exist_ok=True)
     plans = [write_session_plan(program, side, folder, None if window else match) for side in (0, 1)]
+    # both machines' mods: the sample arena, where the session fights on it
+    mods = ['--mods', arena_mods(folder)] if match == 'arena' and not window else []
     trouble = ['--net-latency', str(args.latency), '--net-loss', str(args.loss)]
     env = dict(os.environ)
     procs = []
     start = time.time()
     for side in (0, 1):
         cmd = [program, '--image', playtest.RETAIL_CUE, '--plan', plans[side], '--trace',
-               '--out', os.path.join(folder, 'side%d' % side)] + trouble
+               '--out', os.path.join(folder, 'side%d' % side)] + trouble + mods
         # each machine keeps the session's fights as replays (docs/PORT.md,
         # "Replays"), held to each other's below
         replays = os.path.join(folder, 'side%d-replays' % side)
@@ -850,17 +870,18 @@ def check_session(label, program, args, ports, window, match='stock'):
     if not problems:
         print('port_net: session: %s: %d state hashes, the same on both, the last at frame %d: %s'
               % (label, len(common), common[-1], hashes[0][common[-1]]), flush=True)
-    problems += check_session_replays(label, program, folder, window)
+    problems += check_session_replays(label, program, folder, window, mods)
     return problems
 
 
-def check_session_replays(label, program, folder, window):
+def check_session_replays(label, program, folder, window, more=()):
     """The session's fights as both machines kept them, a fight's two files
     found by the frame it began at: the same fights on each (but for the
     window's host, which plays on alone after the guest has gone and keeps
     that fight too), each fight's two files with the same inputs, views and
     hashes, and each played back by the headless program of the same size
-    with every hash the one recorded (tools/port_replay.py)."""
+    with every hash the one recorded (tools/port_replay.py), given `more`
+    (the mods the session had)."""
     import port_replay
     problems = []
     files = []
@@ -886,7 +907,7 @@ def check_session_replays(label, program, folder, window):
             # headless program is another build
             continue
         for path in (host, guest):
-            code, said = port_replay.check_replay(program, path, [])
+            code, said = port_replay.check_replay(program, path, list(more))
             if code != 0:
                 problems.append('session: %s: %s: %s' % (label, path, said))
     if not problems:
@@ -1499,25 +1520,37 @@ ARENA_SOURCE = 'tools/arenas/courtyard'
 ARENA_SECONDS = 60
 
 
-def check_arena_refused(label, program, args, ports):
-    """The host has an arena in play and the guest has not: the guest is
-    turned away at the meeting, before either starts the game, and says
-    why (port_ArenaSessionHash, src/port/session.c)."""
+def arena_mods(folder):
+    """The sample arena compiled as a mod into `folder`: the mods' folder."""
     import arena_compile
-    folder = os.path.join(args.out, 'session', label + '-arena')
     mods = os.path.join(folder, 'mods')
     os.makedirs(os.path.join(mods, 'courtyard', 'arenas'), exist_ok=True)
     with open(os.path.join(mods, 'courtyard', 'mod.txt'), 'w', encoding='utf-8', newline='\n') as f:
         f.write('name = Stone courtyard\n')
     with open(os.path.join(mods, 'courtyard', 'arenas', 'courtyard.arena'), 'wb') as f:
         f.write(arena_compile.compile_arena(os.path.join(REPO, ARENA_SOURCE), report=lambda text: None))
+    return mods
+
+
+def check_arena_refused(label, program, args, ports, asked=True):
+    """The host has the sample arena and the guest has not: the guest is
+    turned away at the meeting, before either starts the game, and says
+    that it is the arenas (port_ArenaSessionHash, REFUSE_ARENAS in
+    src/port/session.c). `asked`: the host has it in play (--arena); or
+    else only installed, to be chosen on the stage select's arenas' page,
+    which the guest could not follow."""
+    folder = os.path.join(args.out, 'session', label + ('-arena' if asked else '-arena-installed'))
+    mods = arena_mods(folder)
     procs = []
     for side in (0, 1):
-        cmd = [program, '--image', playtest.RETAIL_CUE, '--mods', mods, '--no-cards']
+        cmd = [program, '--image', playtest.RETAIL_CUE, '--no-cards']
         if side == 0:
-            cmd += ['--host', '%s:%d' % (LOCALHOST, ports[0]), '--arena', 'courtyard']
+            cmd += ['--mods', mods, '--host', '%s:%d' % (LOCALHOST, ports[0])]
+            if asked:
+                cmd += ['--arena', 'courtyard']
         else:
-            cmd += ['--join', '%s:%d' % (LOCALHOST, ports[0]), '--net-bind', '%s:%d' % (LOCALHOST, ports[1])]
+            cmd += ['--mods', 'off', '--join', '%s:%d' % (LOCALHOST, ports[0]),
+                    '--net-bind', '%s:%d' % (LOCALHOST, ports[1])]
         err = open(os.path.join(folder, 'side%d.err' % side), 'wb')
         procs.append((subprocess.Popen(PINNED + cmd, cwd=REPO, stdout=subprocess.DEVNULL, stderr=err,
                                        stdin=subprocess.DEVNULL), err))
@@ -1537,12 +1570,13 @@ def check_arena_refused(label, program, args, ports):
     guest_err.close()
     host_err.close()
     said = read(os.path.join(folder, 'side1.err'))
-    if code in (0, None) or 'turned this program away' not in said or 'the arena in play' not in said:
-        problems.append('session: %s: a guest without the host\'s arena was not turned away (exit %s; %s)'
-                        % (label, code, os.path.join(folder, 'side1.err')))
+    what = 'in play' if asked else 'installed'
+    if code in (0, None) or 'turned this program away' not in said or 'custom arenas' not in said:
+        problems.append('session: %s: a guest without the host\'s arena (%s) was not turned away for it '
+                        '(exit %s; %s)' % (label, what, code, os.path.join(folder, 'side1.err')))
     else:
-        print('port_net: session: %s: a guest without the host\'s arena turned away, as it must be' % label,
-              flush=True)
+        print('port_net: session: %s: a guest without the host\'s arena (%s) turned away for its arenas, as '
+              'it must be' % (label, what), flush=True)
     return problems
 
 
@@ -1909,6 +1943,13 @@ def run_checks(args, base):
             if not args.stress:
                 problems += check_arena_refused('%d-bit' % bits, program, args,
                                                 (ports[0] + 14, ports[1] + 14))
+                problems += check_arena_refused('%d-bit' % bits, program, args,
+                                                (ports[0] + 14, ports[1] + 14), False)
+                # a match on the sample arena, chosen on the arenas' page
+                # by the host's presses (the ports of the first session,
+                # which has ended)
+                problems += check_session('%d-bit-arena-menu' % bits, program, args,
+                                          (ports[0] + 10, ports[1] + 10), False, 'arena')
                 # a Crew match, the rule chosen before the grid by the
                 # host and the crews picked in the session
                 problems += check_session_rb_crew('%d-bit-crew' % bits, program, args,

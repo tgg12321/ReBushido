@@ -410,10 +410,13 @@ the stage").
     against what is drawn, and `--fight`: CPU against CPU on both sizes,
     the same trace); netplay's set-up turns away a guest whose arena
     differs (`make port-net`). The sample, a stone courtyard made in
-    Blender, passes. Left: the stage select's page for the arenas (item
-    16; MODS.md, "What a stage editor needs next"), arenas larger than
-    their host's room, pieces, textures past 64 by 64, the
-    ground-as-one-mesh proved on an arena.
+    Blender, passes. The stage select's page for the arenas (item 16;
+    2026-11-25): a page of the stage select in its own look, six arenas
+    to a page, the picture in the map's frame, in every mode that has
+    stage pages, online (a guest without the host's arenas told so:
+    protocol 17) and in replays. Left (MODS.md, "What a stage editor
+    needs next"): arenas larger than their host's room, pieces, more
+    than 32 arenas.
 19. **The fighters' models overhauled** (the owner, 2026-11-18: art made
     entirely by AI): each fighter remade with faces and hands, faithful
     to his original design and colours, and held by checks to the

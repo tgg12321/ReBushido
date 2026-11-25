@@ -75,8 +75,11 @@
  * the spectators' feed four pads a frame (the lobby's version 4). 16: a
  * guest of four PCs who leaves a fight of four gives his fighter to the
  * CPU, the host playing his pad on as the CPU's (netplay's INPUT_CPU,
- * section 19), and the session goes on to the match's end. */
-#define SESSION_PROTOCOL 16
+ * section 19), and the session goes on to the match's end. 17: the hello
+ * and the welcome carry the custom arenas' sum beside the gameplay mods'
+ * (MEET_ARENAS), so a guest whose arenas are not the host's is told that
+ * it is the arenas (REFUSE_ARENAS). */
+#define SESSION_PROTOCOL 17
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -202,6 +205,7 @@ enum {
     REFUSE_BUILD = 2,
     REFUSE_DISC = 3,
     REFUSE_MODS = 4,
+    REFUSE_ARENAS = 5, /* the gameplay mods differ in their arenas */
 };
 
 /* A hello and a welcome after the header (whose number is the
@@ -213,6 +217,8 @@ enum {
  * switches (port_play.h), the welcome's fight_music (port_fight_music.h),
  * the time of day the stages start at (port_stage_choice.h), the match
  * rule (port_match.h), the welcome's rules (PORT_SESSION_RULE_...), the
+ * session's pads and seats, the custom arenas' sum (port_ArenaSessionHash,
+ * part of the gameplay mods' too: it says which of them differ), the
  * version's text, and last the player's name. */
 enum {
     MEET_BUILD = PORT_NET_HEADER_BYTES,
@@ -229,7 +235,8 @@ enum {
     MEET_MATCH = MEET_TIME + WORD_BYTES,
     MEET_RULES = MEET_MATCH + WORD_BYTES,
     MEET_SEATS = MEET_RULES + WORD_BYTES,
-    MEET_VERSION = MEET_SEATS + WORD_BYTES,
+    MEET_ARENAS = MEET_SEATS + WORD_BYTES,
+    MEET_VERSION = MEET_ARENAS + 2 * WORD_BYTES,
     MEET_NAME = MEET_VERSION + VERSION_BYTES,
     MEET_BYTES = MEET_NAME + PORT_SESSION_NAME_BYTES
 };
@@ -246,7 +253,8 @@ static struct {
     PortNetAddress address;
     u64 build;
     u64 disc;
-    u64 mods; /* the mods that change how the game plays */
+    u64 mods;   /* the mods that change how the game plays */
+    u64 arenas; /* the custom arenas among them (port_ArenaSessionHash) */
     u32 delay;
     u32 seed;
     u32 cards;       /* a bit a slot that has a card */
@@ -488,7 +496,8 @@ static void port_SessionSums(void) {
     g_session.disc = g_session.disc_image != NULL
                          ? port_SessionDisc(g_session.disc_image)
                          : 0;
-    g_session.mods = port_WeaponsSessionHash() + port_ArenaSessionHash();
+    g_session.arenas = port_ArenaSessionHash();
+    g_session.mods = port_WeaponsSessionHash() + g_session.arenas;
     if (g_session.differ == PORT_SESSION_DIFFER_BUILD) {
         g_session.build ^= 1;
     } else if (g_session.differ == PORT_SESSION_DIFFER_DISC) {
@@ -574,6 +583,10 @@ static const char *port_RefusalText(s32 reason) {
         return "the other player's mods that change how the game plays "
                "(weapons, motions, stages, the arena in play) or --weapon "
                "and --arena are not the same as this one's";
+    case REFUSE_ARENAS:
+        return "the other player's custom arenas (the mods' arenas/, in "
+               "their order, and --arena) are not the same as this one's: "
+               "the arena in play could not be the same";
     default:
         return "the other program turned this one away";
     }
@@ -594,6 +607,9 @@ static const char *port_RefusalWords(s32 reason) {
     case REFUSE_MODS:
         return "The other player's gameplay mods (weapons, motions, stages, "
                "arenas) are not the same as yours.";
+    case REFUSE_ARENAS:
+        return "The other player's custom arenas are not the same as yours: "
+               "you both need the same arenas, from the same mods.";
     default:
         return "The other player's game turned yours away.";
     }
@@ -653,6 +669,7 @@ static void port_SendMeet(s32 kind) {
     port_PutLong(out + MEET_BUILD, g_session.build);
     port_PutLong(out + MEET_DISC, g_session.disc);
     port_PutLong(out + MEET_MODS, g_session.mods);
+    port_PutLong(out + MEET_ARENAS, g_session.arenas);
     port_NetPutWord(out + MEET_DELAY, g_session.delay);
     port_NetPutWord(out + MEET_SEED, g_session.seed);
     port_NetPutWord(out + MEET_CARDS, g_session.cards);
@@ -724,7 +741,9 @@ static s32 port_CheckMeet(const u8 *in, s32 bytes, u32 protocol) {
         return REFUSE_DISC;
     }
     if (port_GetLong(in + MEET_MODS) != g_session.mods) {
-        return REFUSE_MODS;
+        return port_GetLong(in + MEET_ARENAS) != g_session.arenas
+                   ? REFUSE_ARENAS
+                   : REFUSE_MODS;
     }
     g_session.peer_shape = port_NetGetWord(in + MEET_SHAPE);
     port_TakeShape(g_session.peer_shape);
