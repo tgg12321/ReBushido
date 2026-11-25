@@ -521,7 +521,7 @@ the stage").
     spectators watching. A rollback of the whole window at four
     7.9 ms against 5.8 at two. **Four players on four PCs** (2026-11-25,
     NETPLAY.md, section 18; PLAYING.md, "Four players online"): protocol
-    14 and lobby version 4 (version 3 clients refused); the host's PC in
+    15 and lobby version 4 (version 3 clients refused); the host's PC in
     the middle, passing each guest's inputs on (each guest needs one way,
     to the host, found by section 14's ladder: a link and a socket each);
     an input of four pads a frame, each guessed and rolled back on its own;

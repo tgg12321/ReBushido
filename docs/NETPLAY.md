@@ -2147,7 +2147,7 @@ host's teams are two on two`). A session of two players' input is one pad
 from each PC, so there both teams' partners are the CPU's, whatever the
 host's choice (`port_DuoPartnerIsCpu`: `port_IsNetplayOn` and two pads);
 a session of four players (below) has a player for every fighter.
-Protocol 13 (setup codes `P13-...`); 14 with four players.
+Protocol 13 (setup codes `P13-...`); 15 with four players.
 
 **Rollback at four.** A guess is never more than 8 frames ahead
 (section 12), so the most a rollback runs again is 8 frames. On the
@@ -2174,7 +2174,7 @@ stage is the stage page's second (on the rooftop a fighter left lying by
 the plan may lie on a roof below, out of the CPU partners' reach, and
 the fight never ends).
 
-**Four players on four PCs** (protocol 14, lobby version 4; the owner,
+**Four players on four PCs** (protocol 15, lobby version 4; the owner,
 2026-11-25: "work whatever items you can without my intervention"). The
 host is player 1 and the middle of a star: each guest has one link, to
 the host, and the host one to each guest; the host passes each guest's

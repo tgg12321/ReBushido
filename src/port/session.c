@@ -62,7 +62,7 @@
  * state; a Crew match's end goes back to the top menu, which ends a
  * session of two (port_match.h). 13: the host's teams (port_duo.h) in
  * the welcome's match word, two on two's four fighters in the state, the
- * partners the CPU's (a session's input has two pads). 14: four players
+ * partners the CPU's (a session's input has two pads). 15: four players
  * (docs/NETPLAY.md, section 18): on four PCs, the host meeting three
  * guests, a link each, and passing each one's inputs to the others; or
  * two on each of two PCs. The welcome says the session's pads and the
@@ -70,7 +70,7 @@
  * session's margin, a second guest at the host's first port is sent on to
  * the next (KIND_MOVE), netplay's datagrams carry each pad's inputs, and
  * the spectators' feed four pads a frame (the lobby's version 4). */
-#define SESSION_PROTOCOL 14
+#define SESSION_PROTOCOL 15
 /* A part of a memory card a datagram carries, and so many to a card. */
 #define CHUNK_BYTES 1024
 #define CHUNKS_PER_CARD (PORT_CARD_IMAGE_SIZE / CHUNK_BYTES)
@@ -1890,7 +1890,7 @@ enum {
     SETTING_WIDER,
     SETTING_DELAY,
     SETTING_SEED,
-    SETTING_PADS, /* the session's pads, 2 or 4 (protocol 14) */
+    SETTING_PADS, /* the session's pads, 2 or 4 (protocol 15) */
     SETTING_WORDS
 };
 
