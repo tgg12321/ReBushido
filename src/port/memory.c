@@ -24,9 +24,12 @@
  *                      (SYS_STACK_TOP), which the port gives SetSp and
  *                      does not use: the game's stack is elsewhere
  *                      (PORT_STACK_ADDR, port_platform.h).
- *                      Below the sound bank nothing is read or
- *                      written: the program that lives there on the
- *                      console is this one, elsewhere.
+ *                      Below the sound bank the game reads and
+ *                      writes nothing: the program that lives there
+ *                      on the console is this one, elsewhere. Two on
+ *                      two's partners of characters of their own have
+ *                      their models, motions and textures there
+ *                      (PORT_DUO_AREA_ADDR, port_duo.h).
  *                      A save file may carry patches, words to write
  *                      anywhere in the RAM (memcard_save.c): on the
  *                      port those land in this memory too, and below

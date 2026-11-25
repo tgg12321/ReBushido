@@ -9656,20 +9656,21 @@ four:
   characters (the slots' pages at x 640 and 768, x 896 up the effects',
   the lower half the stage's), and a model's textures are named by its
   meshes' own pages and colour tables: a third or fourth has nowhere to
-  go in the console's 1024 by 512. The port's GPU has as many lines again
-  after them (`g_port_vram`, `PORT_VRAM_ROWS`; port_gpu.h). A partner's
-  textures and colour tables are loaded there where his slot's are in the
-  first (`port_SetVramBankLoading`: `LoadImage` writes the second bank),
-  and his meshes' colour tables have their top bit set
-  (`tex_PortMarkBank`, through `tex_ShiftBlock`), which the chip never
-  reads: a polygon whose table has it reads its texels and table from the
-  second bank while the fight says so (`port_SetVramBankOn`;
-  `PortPaint.texels`, raster.c). Nothing draws into the second bank: a
-  face's eyes and mouth are copied within it at once
-  (`port_VramBankMove`, model_face.c), not by the GPU; the state keeps it
-  as watched pages of the game's (it is after the lines the GPU marks).
-  With the bank off, or a table's top bit clear, everything is the
-  console's: one on one is the game's, pixel for pixel.
+  go in the console's 1024 by 512. The port's GPU has a second bank of the
+  slots' part (x 640 to 895, lines 0 to 255: `PORT_VRAM_BANK_X`, `_W`,
+  `_H`; port_gpu.h), 128 KB at the head of the partners' room of the RAM
+  (`PORT_DUO_BANK_ADDR`), so the state saves and hashes it with the RAM
+  and the program's own variables are no larger. A partner's textures
+  and colour tables are loaded there where his slot's are in the first
+  (`port_SetVramBankLoading`: `LoadImage` writes the bank), and his
+  meshes' colour tables have their top bit set (`tex_PortMarkBank`,
+  through `tex_ShiftBlock`), which the chip never reads: a polygon whose
+  table has it reads its texels and table from the bank where the bank
+  has them, while the fight has one (`port_SetVramBank`;
+  `PortPaint.bank`, raster.c). Nothing draws into it: a face's eyes and
+  mouth are copied within it at once (`port_VramBankMove`, model_face.c),
+  not by the GPU. With no bank, or a table's top bit clear, everything is
+  the console's: one on one is the game's, pixel for pixel.
 - **The motions.** Each fighter's motion file, the decoder of its stream
   and his win pose go with him into his slot (`PortDuoMotion`:
   `port_DuoMotionKeep` and `port_DuoMotionTake` beside his `Fighter`,
@@ -9690,9 +9691,10 @@ kinds), the point light's target, the sounds a thrown thing makes. The
 remastered picture draws the second bank too: a polygon of it names its
 page and table 1024 lines further down (`PORT_VRAM_BANK_NAMED_Y`,
 remaster.c), the card's mirror of video memory has the bank's lines after
-the console's (`port_GlUploadBank`, each frame the lines that differ;
-`vram()` of gl.h reads a line of 1024 or more from the bank), a fighter's
-colour tables are read there for his model's tints (gl_fighter.c), and a
+the console's, at line 512 and after (`port_GlUploadBank`, each frame the
+lines that differ; `vram()` of gl.h reads a line of 1024 or more there),
+a fighter's colour tables are read from the bank for his model's tints
+(gl_fighter.c, `port_VramBankAt`), and a
 partner's meshes are a fighter's to the renderer
 (`port_RemasterNoteFighter`, render_asm.c), so **each of the four is
 drawn from his own model** (`fighter_models`) where one is given. A mod's

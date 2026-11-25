@@ -2444,9 +2444,9 @@ of it is the game's state and its inputs:
   machine alike (`fight_Init`): a partner's model and what it keeps into
   the console's RAM below the common sound bank (`PORT_DUO_AREA_ADDR`),
   saved and hashed with the rest of the RAM; his textures into the second
-  bank of the port's video memory, which is after the lines the GPU
-  writes and so kept as the game's watched pages (port_gpu.h); his motion
-  file and win pose into the same room. Each fighter's motion file, its
+  bank of the port's video memory, which is the head of the same room
+  (port_gpu.h), so saved and hashed with it; his motion file and win pose
+  into the same room. Each fighter's motion file, its
   decoder and his win pose are put into his slot with him
   (`PortDuoMotion`, a state file's). A rollback puts all of it back as it
   puts back the fight.
