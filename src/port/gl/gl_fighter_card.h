@@ -46,6 +46,10 @@ typedef struct {
     s32 vertex_count;
     const float (*world)[16];
     const float (*turn)[9];
+    /* the model's joints' bands and the pose's dual quaternions, where the
+     * joints are blended (gl_joints.h); band_buffer 0 where not */
+    u32 band_buffer;
+    const float (*dual)[4];
     s32 pose;
 } PortGlCardPoseAsk;
 

@@ -27,6 +27,7 @@
 #include "gl_bench.h"
 #include "gl_dressing.h"
 #include "gl_fighter.h"
+#include "gl_joints.h"
 #include "gl_light.h"
 #include "gl_light_list.h"
 #include "gl_load.h"
@@ -3749,6 +3750,7 @@ void port_GlSetOptions(const PortGlOptions *options) {
     port_RemasterSetEffects(
         options->is_exact ? PORT_EFFECTS_ORIGINAL : options->effects);
     port_GlLightSetSmooth(options->is_exact ? 0 : options->is_smooth_light);
+    port_GlJointsSetOn(options->is_exact ? 0 : options->is_joints_blended);
     port_GlLightsSetOn(options->is_exact ? 0 : options->is_lights);
     port_GlPostSetOn(options->is_exact ? 0 : options->is_reflections,
                      options->is_exact ? 0 : options->is_ambient_occlusion,
@@ -4084,6 +4086,7 @@ const char *port_GlStart(
     port_RemasterSetEffects(
         options->is_exact ? PORT_EFFECTS_ORIGINAL : options->effects);
     port_GlLightSetSmooth(options->is_exact ? 0 : options->is_smooth_light);
+    port_GlJointsSetOn(options->is_exact ? 0 : options->is_joints_blended);
     port_GlLightsSetOn(options->is_exact ? 0 : options->is_lights);
     /* the sky (gl_sky.h): a card that cannot have it shows the game's
      * own colour of the distance */

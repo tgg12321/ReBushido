@@ -28,6 +28,7 @@
  * untouched (port_fighter.h). */
 
 #include "common.h"
+#include "gl_joints.h"
 #include "port_fighter.h"
 #include "port_remaster.h"
 
@@ -109,6 +110,11 @@ typedef struct {
     u32 array;
     s32 indices;
     float world[PORT_FIGHTER_BONES][16];
+    /* the joints blended (gl_joints.h): the pose's dual quaternions of
+     * those matrices, where is_blended (the model's bands are its vertex
+     * array's attribute 15) */
+    s32 is_blended;
+    float dual[PORT_GL_JOINT_DUALS][4];
     u32 feet;
     s32 cloth_count;
     s32 cloth_mesh[PORT_GL_CAST_CLOTHS];
