@@ -153,12 +153,41 @@ def checks_of(path=CHECKS):
 WINDOWS_BELOW = 10000
 
 
+def reserved_ports():
+    """[(first, last)] of the ports Windows keeps from programs (Hyper-V,
+    WSL and others reserve ranges at boot, which a bind then fails on with
+    WinError 10013), UDP and TCP both; nothing off Windows or if netsh
+    cannot say."""
+    if os.name != 'nt':
+        return []
+    found = []
+    for protocol in ('udp', 'tcp'):
+        try:
+            out = subprocess.run(['netsh', 'int', 'ipv4', 'show', 'excludedportrange',
+                                  'protocol=' + protocol],
+                                 capture_output=True, text=True, timeout=20).stdout
+        except (OSError, subprocess.SubprocessError):
+            continue
+        for m in re.finditer(r'^\s*(\d+)\s+(\d+)', out, re.M):
+            found.append((int(m.group(1)), int(m.group(2))))
+    return found
+
+
 def net_base():
     """port-net's first UDP port: one of ninety bases 200 apart from
     47000, chosen by the checkout's path, so that two checkouts' gates at
     once do not meet (tools/port_net.py takes 144 from its base: 24 for
-    each of its six whats but the lobby's)."""
-    return 47000 + 200 * (zlib.crc32(REPO.replace('\\', '/').lower().encode()) % 90)
+    each of its six whats but the lobby's). A base whose ports, or
+    port-net-windows' (WINDOWS_BELOW) or the lobby cases' (20000 below),
+    meet a range Windows has reserved is passed over for the next."""
+    first = zlib.crc32(REPO.replace('\\', '/').lower().encode()) % 90
+    reserved = reserved_ports()
+    for step in range(90):
+        base = 47000 + 200 * ((first + step) % 90)
+        spans = [(base - below, base - below + 199) for below in (0, WINDOWS_BELOW, 20000)]
+        if not any(a <= hi and lo <= b for a, b in spans for lo, hi in reserved):
+            return base
+    return 47000 + 200 * first
 
 
 def in_wsl(cmd, mirror=True):
