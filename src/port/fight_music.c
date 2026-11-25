@@ -127,6 +127,13 @@ s32 port_FightMusicStart(s32 mode, s32 stage, s32 music_off) {
     s32 own = stage >= 0 && stage < STAGE_COUNT
                   ? port_ArenaMusic(stage, g_snd_stage_music_tracks[stage])
                   : PORT_FIGHT_MUSIC_GAME;
+    /* the stage's own piece of a mod's (port_MusicStagePiece), heard over
+     * the stage's stream; an arena is a place of its own, and keeps its
+     * host's stream */
+    const char *stage_piece =
+        own != PORT_FIGHT_MUSIC_GAME && port_StageArena() == PORT_STAGE_NO_ARENA
+            ? port_MusicStagePiece(stage)
+            : NULL;
     s32 track;
 
     music->heard = PORT_FIGHT_MUSIC_HEARD_GAME;
@@ -143,6 +150,11 @@ s32 port_FightMusicStart(s32 mode, s32 stage, s32 music_off) {
         (music->rule == PORT_FIGHT_MUSIC_ORIGINAL ||
          mode == FIGHT_MODE_PRACTICE || mode == FIGHT_MODE_CHANBARA ||
          own == PORT_FIGHT_MUSIC_GAME)) {
+        /* versus, whose fight the game itself gives the stage's stream
+         * (snd_StartFightMusic): the stage's own piece over it */
+        if (mode == FIGHT_MODE_VS && stage_piece != NULL) {
+            port_MusicSetFightPiece(port_FightMusicPieceKey(own), stage_piece);
+        }
         return PORT_FIGHT_MUSIC_GAME;
     }
     if (row == PORT_FIGHT_MUSIC_ROW_NONE) {
@@ -151,6 +163,9 @@ s32 port_FightMusicStart(s32 mode, s32 stage, s32 music_off) {
     }
     if (row == PORT_FIGHT_MUSIC_ROW_OWN) {
         track = own;
+        if (stage_piece != NULL) {
+            port_MusicSetFightPiece(port_FightMusicPieceKey(own), stage_piece);
+        }
     } else if (row < PORT_FIGHT_MUSIC_ROW_NONE) {
         /* a track of cdrom.c's, or the staff roll's piece */
         track = row - PORT_FIGHT_MUSIC_ROW_FIRST_PIECE;

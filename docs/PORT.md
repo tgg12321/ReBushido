@@ -8919,6 +8919,20 @@ state is then the stage's own piece's, whatever the mods. In a session
 the row offers none of them: two peers' mods may differ, and the row is
 the state.
 
+**A stage's own piece.** A mod's `music/stage07.ogg` is stage 7's
+(`port_MusicStagePiece`, `music.c`; MODS.md, "A stage's own piece"). Where
+the row is at the rule's own, the fight's start puts it over the stage's
+stream the same way (`port_MusicSetFightPiece`): over the track it starts
+under `stage`, and in versus over the track the game itself starts under
+`original`; never on an arena (`port_StageArena`). The state is the disc's
+piece's still. The stage page's panel reads "Stage's own: mod" where the
+stage under the cursor (`PortStageChoice.cursor_stage`) has one. In a
+session each machine sends the sum of its stages' pieces in the high half
+of `MEET_MUSIC` (the low half is the host's setting, as before); where the
+two sums differ both hold the pieces off (`port_MusicHoldStagePieces`,
+`session.c`'s `port_HoldSessionStageMusic`), so the two hear one track; a
+spectator holds its own to the host's.
+
 **The state.** The row and what the fight's start made of it are
 `g_port_fight_music` (`src/port/fight_music.c`, a state file); the run's
 setting is outside it (`play_switches.c`) and taken in when the game

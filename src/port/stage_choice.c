@@ -119,6 +119,8 @@ s32 port_StagePageStep(s32 pressed, s32 *stage, s32 is_open) {
     const PortArena *arena;
 
     choice->on_stages = TRUE;
+    choice->cursor_stage =
+        *stage >= 0 && *stage < STAGE_COUNT ? (u8)*stage : PORT_STAGE_NO_CURSOR;
     choice->cursor_kind = *stage >= 0 && *stage < STAGE_COUNT
                               ? choice->kinds[*stage]
                               : choice->default_kind;

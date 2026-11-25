@@ -139,4 +139,29 @@ extern const char *port_MusicExtraKey(s32 index);
  * before, so two peers are the same whatever their mods. */
 extern void port_MusicSetFightPiece(const char *carrier, const char *extra);
 
+/* ---- a stage's own piece (src/port/music.c; docs/MODS.md, "A stage's
+ * own piece") ---- */
+
+/* A mod's `music/stage07.ogg` (or `.wav`) is stage 7's own: a fight on
+ * stage 7 whose row is the stage's own hears it over the stage's stream
+ * of the disc's, as a piece of a mod's own is heard, and the stages that
+ * share that stream keep the disc's. The key is `stage` and the stage's
+ * number in two digits. */
+#define PORT_MUSIC_STAGE_KEY_SIZE 8
+/* The stage `key` is the own piece of, or -1. */
+extern s32 port_MusicStageOfKey(const char *key);
+/* Stage `stage`'s key, `stage07` (PORT_MUSIC_STAGE_KEY_SIZE bytes). */
+extern void port_MusicStageKey(s32 stage, char *key, u32 room);
+/* The key of stage `stage`'s own piece of the mods', or NULL: none, or
+ * held off for the session. */
+extern const char *port_MusicStagePiece(s32 stage);
+/* The stages' own pieces as one number of 16 bits, their files' bytes
+ * summed (port_ModFileHash): the same on two machines that have the same
+ * pieces, whatever their order, and 0 for none. A session's peers send it
+ * in their hello and welcome; where the two differ, both hold the pieces
+ * off for the session (port_MusicHoldStagePieces(FALSE)) and hear the
+ * stages' own of the disc's, or of a replacement of it, as they would. */
+extern u32 port_MusicStageSum(void);
+extern void port_MusicHoldStagePieces(s32 is_on);
+
 #endif /* PORT_FIGHT_MUSIC_H */

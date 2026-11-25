@@ -545,7 +545,11 @@ forward through:
 
 - **Stage's own** (where the row starts): the piece versus mode plays on
   that stage, in every mode; a mod's arena's own piece on an arena.
-  Practice and chanbara keep the pieces they have in the original;
+  Practice and chanbara keep the pieces they have in the original. A
+  music mod may give a stage a piece of its own (`music/stage07.ogg`:
+  [`MODS.md`](MODS.md), "A stage's own piece"), and the panel then reads
+  **Stage's own: mod**. Online it is heard only where both players have
+  the same stages' pieces; otherwise both hear the game's;
 - every piece the game has, by where the game plays it: Tatara Shrine
   (most stages', and the narration's), Select screen, Snake Cliff,
   Bamboo Thicket, Meikyokan Dojo, **Unheard I** and **Unheard II** (two

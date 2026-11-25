@@ -39,6 +39,8 @@ enum {
 
 /* no arena in play */
 #define PORT_STAGE_NO_ARENA (-1)
+/* no stage under the grid's cursor (PortStageChoice.cursor_stage) */
+#define PORT_STAGE_NO_CURSOR 0xFF
 
 typedef struct {
     u8 kinds[38];    /* each stage's PORT_STAGE_ kind (STAGE_COUNT) */
@@ -56,6 +58,7 @@ typedef struct {
     u8 default_time; /* what the times were last reset to */
     u8 fight_time;   /* the fight's: the stage chosen's, or the default */
     u8 cursor_time;  /* the time of the stage under the grid's cursor */
+    u8 cursor_stage; /* the stage under the grid's cursor, or NO_CURSOR */
 } PortStageChoice;
 
 extern PortStageChoice g_port_stage_choice;

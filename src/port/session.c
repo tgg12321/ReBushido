@@ -104,6 +104,9 @@
 #define PERCENT 100
 #define SHAPE_SHIFT 16
 #define SHAPE_MASK 0xFFFF
+/* the music's word: fight_music's bits below, the sender's sum of its
+ * stages' own pieces (port_MusicStageSum) in the high half */
+#define STAGE_MUSIC_SHIFT 16
 #define DECIMAL 10
 /* The setup code (port_SessionSetupCode): each sum folded to this many
  * bits, written as four of Crockford's base-32 digits. */
@@ -197,17 +200,19 @@ static struct {
     u64 mods; /* the mods that change how the game plays */
     u32 delay;
     u32 seed;
-    u32 cards;  /* a bit a slot that has a card */
-    u32 shape;  /* this program's picture's shape, as MEET_SHAPE has it */
-    u32 kind;   /* the host's kind of stage the stages start as */
-    u32 play;   /* the host's gameplay switches (port_PlaySwitchBits) */
-    u32 music;  /* the host's fight_music (port_FightMusicBits) */
-    u32 time;   /* the host's time of day the stages start at */
-    u32 rules;  /* the host's PORT_SESSION_RULE_... */
-    u32 match;  /* the host's match rule (port_MatchBits) */
-    u32 wider;  /* the wider of the two players' */
-    u32 have;   /* chunks the guest has */
-    u32 needed; /* chunks there are to have */
+    u32 cards;       /* a bit a slot that has a card */
+    u32 shape;       /* this program's picture's shape, as MEET_SHAPE has it */
+    u32 kind;        /* the host's kind of stage the stages start as */
+    u32 play;        /* the host's gameplay switches (port_PlaySwitchBits) */
+    u32 music;       /* the host's fight_music (port_FightMusicBits) */
+    u32 stage_music; /* this program's stages' pieces' sum */
+    u32 peer_stage_music; /* the other's, from its hello or welcome */
+    u32 time;             /* the host's time of day the stages start at */
+    u32 rules;            /* the host's PORT_SESSION_RULE_... */
+    u32 match;            /* the host's match rule (port_MatchBits) */
+    u32 wider;            /* the wider of the two players' */
+    u32 have;             /* chunks the guest has */
+    u32 needed;           /* chunks there are to have */
     u8 map[CHUNK_MAP_BYTES];
     u32 next_chunk; /* the host's turn round them */
     u32 status_at;
@@ -620,6 +625,8 @@ static s32 port_CheckMeet(const u8 *in, s32 bytes, u32 protocol) {
         return REFUSE_MODS;
     }
     port_TakeShape(port_NetGetWord(in + MEET_SHAPE));
+    g_session.peer_stage_music =
+        port_NetGetWord(in + MEET_MUSIC) >> STAGE_MUSIC_SHIFT;
     for (i = 0; i < PORT_SESSION_NAME_BYTES; i++) {
         version[i] = (char)in[MEET_NAME + i];
     }
@@ -1246,7 +1253,9 @@ s32 port_MeetSession(const PortDisc *disc, u32 delay) {
     g_session.delay = delay;
     g_session.kind = (u32)port_GetStageKindDefault();
     g_session.play = port_PlaySwitchBits();
-    g_session.music = port_FightMusicBits();
+    g_session.stage_music = port_MusicStageSum();
+    g_session.music =
+        port_FightMusicBits() | g_session.stage_music << STAGE_MUSIC_SHIFT;
     g_session.time = (u32)port_GetStageTimeDefault();
     g_session.match = port_MatchBits();
     port_RemasterGetView(&view);
@@ -1285,6 +1294,22 @@ s32 port_MeetSession(const PortDisc *disc, u32 delay) {
     return ok;
 }
 
+/* The stages' own pieces of music (port_MusicStageSum): heard on both
+ * machines where both have the same, on neither where they differ, so
+ * that the two hear one track. `theirs` is the other's sum (the host's,
+ * for a spectator). */
+static void port_HoldSessionStageMusic(u32 theirs) {
+    u32 ours = port_MusicStageSum();
+
+    port_MusicHoldStagePieces(ours == theirs);
+    if (ours != 0 || theirs != 0) {
+        port_Log("session: the stages' own pieces of music are %s\n",
+                 ours == theirs ? "the same on both machines, and heard"
+                                : "not the same on both machines: neither "
+                                  "hears them");
+    }
+}
+
 /* The session as the game starts (port_net.h): the host's cards in both
  * slots, netplay on, the host's switches held and the margin fixed. */
 void port_ApplySession(void) {
@@ -1300,6 +1325,7 @@ void port_ApplySession(void) {
     port_HoldStageKindDefault((s32)g_session.kind);
     port_HoldPlaySwitches(g_session.play);
     port_HoldFightMusic(g_session.music);
+    port_HoldSessionStageMusic(g_session.peer_stage_music);
     port_HoldStageTimeDefault((s32)g_session.time);
     port_HoldMatch(g_session.match);
     port_Log("session: the host's match rule is %s, %d\n",
@@ -1420,6 +1446,7 @@ s32 port_WatchSession(const u8 *in) {
     port_HoldStageKindDefault((s32)g_session.kind);
     port_HoldPlaySwitches(g_session.play);
     port_HoldFightMusic(g_session.music);
+    port_HoldSessionStageMusic(g_session.music >> STAGE_MUSIC_SHIFT);
     port_HoldStageTimeDefault((s32)g_session.time);
     port_HoldMatch(g_session.match);
     port_RemasterFixMargin((s32)(g_session.wider >> SHAPE_SHIFT),

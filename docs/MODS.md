@@ -1335,6 +1335,61 @@ stereo, 44,100 a second, from the moment the drive starts the stream.
 Play through what you want; a piece heard twice is kept from the longer
 play. That is what a replacement stands in for, and its key is its name.
 
+### A stage's own piece
+
+The game shares five pieces among its 38 stages, so a replacement of
+`bb2_m1-0` is heard on most of them. A mod's **`music/stage07.ogg`** (or
+`.wav`: `stage` and the stage's number in two digits, `stage00` to
+`stage37`, the numbers of "Stages" below) is **stage 7's alone**: a
+fight on stage 7 hears it, and every other stage keeps its own piece of
+the disc's (or a mod's replacement of that piece, as before).
+
+- **When.** A fight whose stage select's row of music is at its first
+  place, the stage's own ("Stage's own", or "Game's own" under
+  `fight_music = original`), hears the stage's piece: every mode that
+  plays the stage's music (versus, and with `fight_music = stage` versus
+  the CPU, story and the rest; practice and chanbara keep their own
+  pieces). Any other place of the row (L2 and R2: a piece of the game's,
+  a mod's piece of its own, None) is heard as it is chosen, so the
+  stage's piece is never forced on a player. The row says "Stage's own:
+  mod" in gold where the stage under the cursor has one. An arena keeps
+  its host's piece, or its own track: an arena is a place of its own.
+- **How.** As a mod's piece of its own: the game starts the stage's own
+  stream of the disc's as ever, and the stage's piece is heard in its
+  place for as long as the stream plays (the loop, the length cut at the
+  original's, the volumes and fades: below). The game's state is what it
+  is with the disc's piece; `music_mods = off` plays that piece. A stage
+  key is never offered in the row as a piece of its own.
+- **Online.** Both machines must hear one track. The host's welcome and
+  the guest's hello carry each one's stages' pieces as a sum of their
+  files' bytes (`port_MusicStageSum`, in the high half of the session's
+  music word): where the two are the same, both hear the stages' pieces;
+  where they differ (one has a piece the other has not, or another
+  file), neither does for that session, and both hear the stage's own of
+  the disc's. The log says which (`session: the stages' own pieces of
+  music are ...`). It never turns a session away: music is no part of
+  the game.
+
+**How it is proved** (headless, `port_game`'s plan, a versus fight on
+stage 29, both sizes; `tmp/mods10/music_test.py` of the work, not
+kept): `music/stage29.wav`, a tone of 300, 500 and 700 Hz a second each
+at 48,000 a second, looped from its second second to the end of its
+third: the trace is the plain run's line for line in both sizes, and
+both sizes' traces are the same; the sound is the plain run's to the
+fight's first sample of music (49.46 s), then 300, 500, 700, 500, 700
+Hz second by second until the fight's stream ends (72.69 s), and the
+plain run's again after (`tools/port_wav.py`'s spectrogram shows the
+steps). The same with `--fight-music stage`. A `stage07.wav`, a stage
+not fought, and `stage29.wav` with `--music-mods off`: the sound is the
+plain run's byte for byte. `--fight-music bb2_m1-2` (the row moved off
+the stage's own) with `stage29.wav`: byte for byte the plain run's with
+that piece. In sessions of `tools/port_net.py`'s own check (a fight, a
+rematch, the replays): both with a piece for every stage, both say the
+pieces are the same and both open `stage29`, 75 state hashes the same;
+the host with them and the guest with none, both say they are not the
+same and neither opens one, 75 hashes the same. `tests/port/music.c`:
+the keys, the stages' pieces, the sum and the hold.
+
 ### Making one
 
 Put `KEY.ogg` (Ogg Vorbis) or `KEY.wav` (whole numbers of 8, 16, 24 or
@@ -1973,9 +2028,6 @@ ending a kind's files must have.
   reached (the setup mode's own pages, the slash mode's, the results of
   the other modes, the endings) is the art mod's, made larger; each is a
   block of `tools/port_ui.py`'s table away, measured from a dump.
-- **Music by stage**: a key for a fight's piece with its stage
-  (`bb2_m1-0` on stage 7 alone), so that a mod can give each stage a
-  piece of its own though the game shares five among them.
 - **FLAC**: a third kind of music file, with a decoder of whole numbers
   (dr_flac, public domain, is one).
 - Stages and arenas: "What a stage editor needs next", above.

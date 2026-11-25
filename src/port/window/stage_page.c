@@ -114,6 +114,7 @@ static struct {
     s32 count;
     s32 music; /* the row of music, and its rule's (port_fight_music.h) */
     s32 music_rule;
+    s32 stage; /* the stage under the cursor, for its own piece */
     s32 match; /* the match rule's column (port_PageMatchKey) */
     /* the pixels, `box` of the game's area */
     u32 *pixels;
@@ -513,6 +514,12 @@ static void port_PageStrip(const PortStageChoice *choice, s32 count) {
     columns[n].value = port_FightMusicRowName(row);
     columns[n].color =
         row == PORT_FIGHT_MUSIC_ROW_OWN ? COLOR_TEXT : COLOR_GOLD;
+    /* the stage's own piece of a mod's (port_MusicStagePiece) */
+    if (row == PORT_FIGHT_MUSIC_ROW_OWN &&
+        port_MusicStagePiece(choice->cursor_stage) != NULL) {
+        columns[n].value = "Stage's own: mod";
+        columns[n].color = COLOR_GOLD;
+    }
     columns[n].caps[0] = "L2";
     columns[n].caps[1] = "R2";
     columns[n].cap_count = 2;
@@ -659,6 +666,7 @@ s32 port_StagePagePixels(
         g_page.count != count || g_page.music != g_port_fight_music.row ||
         g_page.music_rule != port_GetFightMusicRule() ||
         g_page.time != choice->cursor_time ||
+        g_page.stage != choice->cursor_stage ||
         g_page.match != port_PageMatchKey()) {
         g_page.match = port_PageMatchKey();
         g_page.music = g_port_fight_music.row;
@@ -670,6 +678,7 @@ s32 port_StagePagePixels(
         g_page.top = choice->page_top;
         g_page.kind = choice->cursor_kind;
         g_page.time = choice->cursor_time;
+        g_page.stage = choice->cursor_stage;
         g_page.count = count;
         g_page.box.x = (open ? PAGE_X : STRIP_X) * area_w / GAME_W;
         g_page.box.y = (open ? PAGE_Y : STRIP_Y) * area_h / GAME_H;

@@ -96,6 +96,9 @@ extern s32 port_ModFileOf(
  * that does not depend on the order they were found in: two netplay
  * peers must have the same (port_WeaponsSessionHash). 0 with none. */
 extern u64 port_ModsGameplayHash(void);
+/* One file's part of such a sum: FNV-1a over its kind, its key and every
+ * byte of it (the key's alone where it cannot be read). */
+extern u64 port_ModFileHash(s32 kind, const char *key, const char *path);
 /* A file's size, and up to `room` bytes of it into `dest`: how many were
  * read (0 where it cannot be). */
 extern u32 port_ModFileSize(const char *path);
