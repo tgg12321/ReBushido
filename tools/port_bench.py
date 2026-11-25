@@ -332,30 +332,69 @@ def card_name():
     return None
 
 
-def make_mods(main_repo):
-    """build/bench/mods/: the shipped mods copied from the build, and the
-    disc-made ones joined to the main checkout's tmp/mods/ (never copied,
-    never deleted through)."""
+def unjoin(path):
+    """A junction or link at `path` removed alone (never what it points
+    at); True if there was one."""
+    isjunction = getattr(os.path, 'isjunction', lambda _p: False)
+    if isjunction(path) or os.path.islink(path):
+        os.rmdir(path) if isjunction(path) else os.unlink(path)
+        return True
+    return False
+
+
+def copy_mod(source, target):
+    """`target` made a copy of the mod folder `source`, again only when the
+    source has changed (its files' count, sizes and times). The bench's
+    disc-made mods are copies, not junctions into the main checkout's
+    tmp/mods/: a recursive delete of a checkout's build/ went through such
+    a junction and emptied tmp/mods/art more than once (2026-11-19, -25)."""
     import shutil
 
+    unjoin(target)
+    stamp = []
+    for folder, dirs, files in os.walk(source):
+        dirs.sort()
+        for name in sorted(files):
+            info = os.stat(os.path.join(folder, name))
+            stamp.append('%s %d %d' % (os.path.relpath(os.path.join(folder, name), source), info.st_size,
+                                       int(info.st_mtime)))
+    stamp = '\n'.join(stamp) + '\n'
+    kept = os.path.join(target, '.bench-copy')
+    if os.path.isfile(kept):
+        with open(kept, encoding='utf-8') as f:
+            if f.read() == stamp:
+                return
+    if os.path.isdir(target):
+        for folder, dirs, files in os.walk(target):
+            for name in dirs + files:
+                if unjoin(os.path.join(folder, name)):
+                    dirs[:] = [d for d in dirs if d != name]
+        shutil.rmtree(target)
+    shutil.copytree(source, target)
+    with open(kept, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(stamp)
+
+
+def make_mods(main_repo):
+    """build/bench/mods/: the shipped mods copied from the build, and the
+    disc-made ones copied from the main checkout's tmp/mods/ (copy_mod)."""
     mods = os.path.join(OUT_DIR, 'mods')
     os.makedirs(mods, exist_ok=True)
+    for name in os.listdir(mods):
+        # junctions of the bench before 2026-11-25, and to mods no longer
+        # made (tmp/mods/hd): removed alone
+        unjoin(os.path.join(mods, name))
     for name in SHIPPED_MODS:
         source = os.path.join(os.path.dirname(PROGRAM), 'mods', name)
-        target = os.path.join(mods, name)
         if os.path.isdir(source):
-            if os.path.isdir(target) and not os.path.islink(target):
-                shutil.rmtree(target)
-            shutil.copytree(source, target)
+            copy_mod(source, os.path.join(mods, name))
     missing = []
     for name in DISC_MADE_MODS:
         source = os.path.join(main_repo, 'tmp', 'mods', name)
-        target = os.path.join(mods, name)
-        if not os.path.isdir(source):
+        if not os.path.isdir(source) or not os.listdir(source):
             missing.append(name)
             continue
-        if not os.path.exists(target):
-            subprocess.run(['cmd', '/c', 'mklink', '/J', target, source], capture_output=True, check=True)
+        copy_mod(source, os.path.join(mods, name))
     return mods, missing
 
 
@@ -366,19 +405,12 @@ def make_dressed_mods(mods):
 
     dressed = os.path.join(OUT_DIR, 'mods-dressed')
     os.makedirs(dressed, exist_ok=True)
+    for name in os.listdir(dressed):
+        unjoin(os.path.join(dressed, name))
     for name in os.listdir(mods):
         source = os.path.join(mods, name)
-        target = os.path.join(dressed, name)
-        if os.path.exists(target):
-            continue
-        if not os.path.exists(source):
-            # a junction to a mod no longer made (tmp/mods/hd, 2026-11-19)
-            continue
-        if name in DISC_MADE_MODS:
-            subprocess.run(['cmd', '/c', 'mklink', '/J', target, os.path.realpath(source)],
-                           capture_output=True, check=True)
-        else:
-            shutil.copytree(source, target)
+        if os.path.isdir(source):
+            copy_mod(source, os.path.join(dressed, name))
     source = os.path.join(os.path.dirname(PROGRAM), 'mods', 'dressing')
     target = os.path.join(dressed, 'dressing')
     if os.path.isdir(target):
