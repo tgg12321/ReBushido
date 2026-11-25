@@ -10,28 +10,28 @@ gusts = 0.6
 
 [particles spray_south]
 kind = spray
-area = -6000 -6600 6000 -5900
-count = 240
-size = 60
+area = -8000 -8800 8000 -8000
+count = 300
+size = 80
 color = #E8F0F4
 
 [particles spray_north]
 kind = spray
-area = -6000 5900 6000 6600
-count = 240
-size = 60
+area = -8000 8000 8000 8800
+count = 300
+size = 80
 color = #E8F0F4
 
 [particles spray_east]
 kind = spray
-area = 5900 -6000 6600 6000
-count = 240
-size = 60
+area = 8000 -8000 8800 8000
+count = 300
+size = 80
 color = #E8F0F4
 
 [particles spray_west]
 kind = spray
-area = -6600 -6000 -5900 6000
-count = 240
-size = 60
+area = -8800 -8000 -8000 8000
+count = 300
+size = 80
 color = #E8F0F4
