@@ -57,8 +57,9 @@ NAME_MOST = 31
 COUNT_MOST = 20000
 HEIGHT_MOST = 20000
 WORLD_MOST = 40000
-KINDS = ['grass', 'bush', 'reeds', 'flowers', 'water', 'particles', 'mesh', 'wind']
-PARTICLES = ['dust', 'leaves', 'embers', 'snow', 'petals', 'fireflies']
+KINDS = ['grass', 'bush', 'reeds', 'flowers', 'water', 'particles', 'mesh', 'wind', 'shafts']
+PARTICLES = ['dust', 'leaves', 'embers', 'snow', 'petals', 'fireflies', 'rain', 'smoke', 'motes',
+             'spray', 'mist']
 ONS = ['any', 'green', 'earth', 'sand', 'stone', 'snow', 'blue']
 TIMES = ['dawn', 'day', 'dusk', 'night']
 # the walk (tools/arena_validate.py's): its step, and how far about a solid
@@ -77,6 +78,7 @@ DEFAULTS = {
     'mesh': dict(count=0, height=(0, 0), solid=True),
     'water': dict(count=0, height=(0, 0), solid=False),
     'wind': dict(count=0, height=(0, 0), solid=False),
+    'shafts': dict(count=120, height=(2000, 2000), solid=False),
 }
 
 
@@ -165,7 +167,7 @@ def set_value(block, name, value):
     elif name in ('height', 'size'):
         words = value.split()
         h = wholes(value, len(words)) if len(words) in (1, 2) else None
-        if h is None or (len(h) == 2 and (h[0] < 1 or h[0] > h[1])) or max(h) > HEIGHT_MOST or min(h) < 1:
+        if h is None or (len(h) == 2 and block['kind'] != 'shafts' and h[0] > h[1]) or max(h) > HEIGHT_MOST or min(h) < 1:
             raise Problem('`height` is one or two numbers, the least first')
         block['height'] = (h[0], h[-1])
     elif name == 'width':
@@ -227,6 +229,23 @@ def set_value(block, name, value):
     elif name == 'direction':
         if abs(wholes(value, 1)[0]) > 360:
             raise Problem('`direction` is -360 to 360')
+    elif name in ('puddles', 'reflect', 'sky'):
+        if not 0 <= number(value.strip()) <= 1:
+            raise Problem('`%s` is 0 to 1' % name)
+    elif name in ('rain', 'foam', 'glow'):
+        if not 0 <= number(value.strip()) <= 4:
+            raise Problem('`%s` is 0 to 4' % name)
+    elif name == 'flow':
+        way, speed = wholes(value, 2)
+        if abs(way) > 360 or not 0 <= speed <= 4000:
+            raise Problem('`flow` is a way, -360 to 360, and a speed, 0 to 4,000')
+    elif name == 'shallow':
+        color(value)
+    elif name == 'light':
+        words = value.split()
+        if not 1 <= len(words) <= 4 or any(len(w) > NAME_MOST for w in words):
+            raise Problem("`light` is up to 4 names of the stage's lights")
+        block['lights'] = [w.lower() for w in words]
     else:
         raise Problem('not a word a dressing block has: %s' % name)
 
@@ -635,6 +654,64 @@ def rock_obj(seed, radius=420.0, moss=(0.30, 0.38, 0.20), stone=(0.42, 0.41, 0.3
     return '\n'.join(lines) + '\n'
 
 
+def grave_obj(width=464.0, height=1150.0, depth=464.0, stone=(0.50, 0.49, 0.47),
+              moss=(0.33, 0.40, 0.25), seed=11):
+    """A Japanese gravestone as a Wavefront OBJ's text, `width` across,
+    `depth` deep and `height` tall, its foot at y 0 and its top at -height
+    (the world's y runs down): a footing stepped twice, and the tall stone with its edges
+    chamfered and its top a low pyramid; stone, darker and mossed where it
+    faces up and at the foot. Procedural: nothing of anyone's art."""
+    import random
+
+    rnd = random.Random(seed)
+    lines = ['# A gravestone made by tools/port_dressing.py meshes: procedural, '
+             'the world\'s units, y down']
+    count = [0]
+
+    def colour(up, low=0.0):
+        grain = rnd.uniform(-0.025, 0.025)
+        shade = 1.0 - 0.18 * low
+        return [min(1, max(0, (stone[k] + (moss[k] - stone[k]) * up * 0.5) * shade + grain))
+                for k in range(3)]
+
+    def vertex(x, y, z, rgb):
+        lines.append('v %.1f %.1f %.1f %.3f %.3f %.3f' % (x * width, -y * height, z * depth, *rgb))
+        count[0] += 1
+        return count[0]
+
+    def outline(half_x, half_z, chamfer):
+        c = chamfer
+        return [(-half_x + c, -half_z), (half_x - c, -half_z), (half_x, -half_z + c), (half_x, half_z - c),
+                (half_x - c, half_z), (-half_x + c, half_z), (-half_x, half_z - c), (-half_x, -half_z + c)]
+
+    def prism(y0, y1, half_x, half_z, chamfer, low):
+        shape = outline(half_x, half_z, chamfer)
+        bottom = [vertex(x, y0, z, colour(0.0, low)) for x, z in shape]
+        top_side = [vertex(x, y1, z, colour(0.0, low * 0.5)) for x, z in shape]
+        n = len(shape)
+        for i in range(n):
+            lines.append('f %d %d %d %d' % (bottom[i], bottom[(i + 1) % n], top_side[(i + 1) % n], top_side[i]))
+        lines.append('f ' + ' '.join(str(v) for v in reversed(bottom)))
+        top = [vertex(x, y1, z, colour(1.0)) for x, z in shape]
+        lines.append('f ' + ' '.join(str(v) for v in top))
+
+    # the footing, stepped twice
+    prism(0.00, 0.12, 0.50, 0.50, 0.02, 1.0)
+    prism(0.12, 0.24, 0.40, 0.40, 0.02, 0.6)
+    # the tall stone, its edges chamfered
+    # the stone as wide of the footing as a square one, wider where the
+    # footing is long
+    stele = 0.42 - 0.17 * min(1.0, depth / width)
+    prism(0.24, 0.93, stele, 0.25, 0.035, 0.2)
+    # its top: a low pyramid
+    shape = outline(stele, 0.25, 0.035)
+    rim = [vertex(x, 0.93, z, colour(0.9)) for x, z in shape]
+    peak = vertex(0.0, 1.0, 0.0, colour(1.0))
+    for i in range(len(rim)):
+        lines.append('f %d %d %d' % (rim[i], rim[(i + 1) % len(rim)], peak))
+    return '\n'.join(lines) + '\n'
+
+
 def rocks(args):
     folder = os.path.join(args.folder, 'dressing', 'meshes')
     os.makedirs(folder, exist_ok=True)
@@ -642,6 +719,25 @@ def rocks(args):
         path = os.path.join(folder, 'rock_%d.obj' % n)
         with open(path, 'w', encoding='utf-8', newline='\n') as f:
             f.write(rock_obj(1000 + n))
+        print(path)
+    return 0
+
+
+# the meshes the program makes that stand in for a stage's piece (`piece`),
+# and their proportions, width height depth (gl_dressing.c fits each into
+# its piece's box, of the piece's own proportions within a quarter)
+GRAVES = {'grave': (464.0, 1150.0, 464.0), 'grave_wide': (1732.0, 1150.0, 464.0)}
+
+
+def meshes(args):
+    """The scenery meshes the program ships, made here: the gravestones
+    that stand in for the cemetery's own (`piece`)."""
+    folder = os.path.join(args.folder, 'dressing', 'meshes')
+    os.makedirs(folder, exist_ok=True)
+    for name, (w, h, d) in sorted(GRAVES.items()):
+        path = os.path.join(folder, name + '.obj')
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(grave_obj(w, h, d))
         print(path)
     return 0
 
@@ -668,7 +764,9 @@ def raw_to_png(raw, png):
     with open(raw, 'rb') as f:
         data = f.read()
     _, w, h, _ = struct.unpack('<4I', data[:16])
-    image = Image.frombytes('RGBA', (w, h), data[16:16 + 4 * w * h]).convert('RGB')
+    # the window's pixels as port_GlReadWindow keeps them: ARGB words, so
+    # blue, green, red, alpha in memory
+    image = Image.frombytes('RGBA', (w, h), data[16:16 + 4 * w * h], 'raw', 'BGRA').convert('RGB')
     image.save(png)
 
 
@@ -749,6 +847,8 @@ def main():
     hs.add_argument('--image', default=os.path.join(ROOT, 'Bushido Blade 2 (USA).cue'))
     hs.add_argument('--mods', default=os.path.join(ROOT, 'build', 'port-sdl', 'windows', 'mods'))
     hs.add_argument('--fighters', default='kannuki mikado')
+    m = sub.add_parser('meshes')
+    m.add_argument('--folder', default=SHIPPED)
     r = sub.add_parser('rocks')
     r.add_argument('--folder', default=SHIPPED)
     r.add_argument('--count', type=int, default=4)
@@ -774,6 +874,8 @@ def main():
         return hashes(args)
     if args.command == 'rocks':
         return rocks(args)
+    if args.command == 'meshes':
+        return meshes(args)
     if args.command == 'walk':
         return walkable_map(args)
     return shots(args)

@@ -58,6 +58,10 @@ static const char * const g_port_fight_stages[] = {
     "chanbara",
     "practice 1",
     "practice 2",
+    /* the castle rooftop as link mode fights on it (select.c,
+     * SELECT_STAGE_LINK_TO): a stage of its own, a model of a castle town
+     * below */
+    "castle rooftop link",
 };
 
 /* enum RosterId (fighter.h). */

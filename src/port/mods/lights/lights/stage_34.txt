@@ -1,0 +1,72 @@
+# Chanbara's hall (stage 34): the long hall, its paper windows high along
+# the north wall (z 2,500, from 2,700 to 4,500 up, x -12,000 to 12,000).
+# What comes through them falls across the floor in three pools: the
+# moon's at night, the day's by day. Its shafts in the air are the
+# dressing's (src/port/mods/dressing/dressing/stage_34.txt).
+format = 1
+
+[light windows_west_moon]
+kind = spot
+at = -9000 -3600 2300
+direction = 0 1 -2
+cone = 40 75
+color = #A8B8FF
+intensity = 0.45
+radius = 14000
+shadow = yes
+times = night
+
+[light windows_middle_moon]
+kind = spot
+at = 0 -3600 2300
+direction = 0 1 -2
+cone = 40 75
+color = #A8B8FF
+intensity = 0.45
+radius = 14000
+shadow = yes
+times = night
+
+[light windows_east_moon]
+kind = spot
+at = 9000 -3600 2300
+direction = 0 1 -2
+cone = 40 75
+color = #A8B8FF
+intensity = 0.45
+radius = 14000
+shadow = yes
+times = night
+
+[light windows_west_day]
+kind = spot
+at = -9000 -3600 2300
+direction = 0 1 -2
+cone = 40 75
+color = #FFF0D8
+intensity = 0.35
+radius = 14000
+shadow = yes
+times = dawn day dusk
+
+[light windows_middle_day]
+kind = spot
+at = 0 -3600 2300
+direction = 0 1 -2
+cone = 40 75
+color = #FFF0D8
+intensity = 0.35
+radius = 14000
+shadow = yes
+times = dawn day dusk
+
+[light windows_east_day]
+kind = spot
+at = 9000 -3600 2300
+direction = 0 1 -2
+cone = 40 75
+color = #FFF0D8
+intensity = 0.35
+radius = 14000
+shadow = yes
+times = dawn day dusk

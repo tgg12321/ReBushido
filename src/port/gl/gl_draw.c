@@ -4234,6 +4234,16 @@ void port_GlFinishFrame(void) {
     PORT_GPU_BEGIN(PORT_GPU_SHADOW);
     port_GlShadowFinish();
     PORT_GPU_END();
+    /* the dressing's shafts of light, over the stage the game painted
+     * after its ground (gl_dressing.h); nothing where none was drawn */
+    {
+        PortGlPicture picture;
+
+        port_GlGetPicture(&picture);
+        port_GlDressingDrawLate(
+            picture.framebuffer, picture.target_w, picture.target_h);
+        g_gl.has_state = FALSE;
+    }
     /* the lighting's passes after the scene (gl_post.h), over the picture
      * averaged down: with them, it is averaged down into a buffer of its
      * own even at one sample a pixel */

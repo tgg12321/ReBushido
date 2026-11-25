@@ -1,0 +1,25 @@
+format = 1
+# The castle rooftop as link mode fights on it (stage 37: the game's link
+# mode puts it in the castle rooftop's place, select.c): a castle's
+# courtyard, its walls, gate and bridge, seen from afar in the dark. Cherry
+# petals drifting over the whole of it in the wind, as over the rooftop
+# itself (stage_13), and the courtyard's gravel kicked up by the fighters'
+# steps.
+
+[wind]
+strength = 0.6
+direction = 300
+gusts = 0.5
+
+[particles petals]
+kind = petals
+area = -20000 -26000 22000 24000
+count = 1400
+size = 70
+top = 5000
+color = #F4BCCB
+
+[particles gravel]
+kind = dust
+on = any
+color = #D8D4CC

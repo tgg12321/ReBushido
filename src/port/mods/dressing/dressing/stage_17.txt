@@ -9,7 +9,7 @@ gusts = 0.5
 [particles leaves]
 kind = leaves
 area = -9500 -12000 8000 12000
-count = 80
-size = 44
+count = 128
+size = 62
 top = 3500
 color = #7A6E3C

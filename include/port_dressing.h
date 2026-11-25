@@ -28,6 +28,8 @@
 #define PORT_DRESSING_ONE 1000
 /* The most of one block: tufts, bushes, reeds, particles. */
 #define PORT_DRESSING_COUNT_MOST 20000
+/* The most of the stage's lights a shafts block names (`light`). */
+#define PORT_DRESSING_LIGHTS 4
 
 /* A block's kind: `[grass NAME]` and the rest. */
 enum {
@@ -39,6 +41,7 @@ enum {
     PORT_DRESS_PARTICLES = 5, /* dust, leaves, embers, snow, petals */
     PORT_DRESS_MESH = 6,      /* a scenery mesh, a file of the mods' */
     PORT_DRESS_WIND = 7,      /* the stage's wind (one block) */
+    PORT_DRESS_SHAFTS = 8, /* light through a door or a window, and its motes */
     PORT_DRESS_KINDS
 };
 
@@ -50,6 +53,11 @@ enum {
     PORT_PARTICLES_SNOW = 3,      /* falling over an area */
     PORT_PARTICLES_PETALS = 4,    /* falling and turning over an area */
     PORT_PARTICLES_FIREFLIES = 5, /* drifting and blinking over an area */
+    PORT_PARTICLES_RAIN = 6,      /* streaks falling, splashing on the ground */
+    PORT_PARTICLES_SMOKE = 7,     /* rising and spreading from the flames */
+    PORT_PARTICLES_MOTES = 8,     /* hanging in the air, seen in the light */
+    PORT_PARTICLES_SPRAY = 9,     /* thrown up where the waves break */
+    PORT_PARTICLES_MIST = 10,     /* banks drifting low with the wind */
     PORT_PARTICLES_KINDS
 };
 
@@ -122,6 +130,27 @@ typedef struct {
     s32 strength;
     s32 direction;
     s32 gusts;
+    /* water: how much of its area is puddles (0 all of it), how much rain
+     * rings it, how much foam where it meets the shore, how much it mirrors
+     * the stage and the fighters, in thousandths (`puddles`, `rain`,
+     * `foam`, `reflect`, `sky`); the way it flows, degrees, and how fast, world
+     * units a second (`flow`); its colour where it is shallow (`shallow`,
+     * has_shallow 0: worked out from `color`) */
+    s32 puddles;
+    s32 rain;
+    s32 foam;
+    s32 reflect;
+    s32 sky; /* how much of the sky it mirrors, thousandths (`sky`): none
+              * under a roof */
+    s32 flow[2];
+    s32 has_shallow;
+    u8 shallow[3];
+    u8 pad2;
+    /* shafts: the stage's lights it is the light of, by name (`light`), and
+     * how bright it is, in thousandths (`glow`; particles too) */
+    s32 light_count;
+    char light[PORT_DRESSING_LIGHTS][PORT_DRESSING_NAME_SIZE];
+    s32 glow;
 } PortDressDef;
 
 typedef struct {

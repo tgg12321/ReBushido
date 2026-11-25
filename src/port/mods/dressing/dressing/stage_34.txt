@@ -1,0 +1,30 @@
+format = 1
+# Chanbara's hall: the light through the paper windows high along its
+# north wall in shafts across the long floor, the dust hanging in them
+# (the windows' lights, src/port/mods/lights/), and motes over the boards.
+
+[shafts windows_west]
+light = windows_west_moon windows_west_day
+at = -9000 -3600 2400
+size = 6000 1800
+count = 160
+
+[shafts windows_middle]
+light = windows_middle_moon windows_middle_day
+at = 0 -3600 2400
+size = 6000 1800
+count = 160
+
+[shafts windows_east]
+light = windows_east_moon windows_east_day
+at = 9000 -3600 2400
+size = 6000 1800
+count = 160
+
+[particles motes]
+kind = motes
+area = -15500 -3500 15500 1500
+count = 500
+size = 8
+top = 3500
+color = #FFF4E0

@@ -22,8 +22,8 @@ height = 90 210
 [particles leaves]
 kind = leaves
 area = -9500 -13500 9500 21500
-count = 120
-size = 44
+count = 192
+size = 62
 top = 3500
 color = #6E8A30
 

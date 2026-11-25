@@ -49,8 +49,15 @@
 #define PARTICLES_TOP 3000
 /* how level the ground must be, of a normal 1000 long */
 #define LEVEL_LEAST 800
-/* water: what shows through it, its waves */
+/* water: what shows through it, how much it mirrors the stage */
 #define WATER_CLARITY 350
+#define WATER_REFLECT 600
+/* the fastest a water flows, world units a second */
+#define FLOW_MOST 4000
+/* a shafts block's opening, as wide as high, if it says nothing, and its
+ * motes */
+#define SHAFT_SIZE 2000
+#define SHAFT_MOTES 120
 
 static struct {
     s32 has_stage; /* whether a stage's set is kept */
@@ -60,10 +67,12 @@ static struct {
 } g_port_dressing;
 
 static const char * const g_dress_kind_names[PORT_DRESS_KINDS] = {
-    "grass", "bush", "reeds", "flowers", "water", "particles", "mesh", "wind"};
+    "grass",     "bush", "reeds", "flowers", "water",
+    "particles", "mesh", "wind",  "shafts"};
 
 static const char * const g_particles_kind_names[PORT_PARTICLES_KINDS] = {
-    "dust", "leaves", "embers", "snow", "petals", "fireflies"};
+    "dust", "leaves", "embers", "snow",  "petals", "fireflies",
+    "rain", "smoke",  "motes",  "spray", "mist"};
 
 static const char * const g_dress_on_names[PORT_DRESS_ON_KINDS] = {
     "any", "green", "earth", "sand", "stone", "snow", "blue"};
@@ -332,6 +341,10 @@ void port_DressDefault(
     block->top = PARTICLES_TOP;
     block->strength = PORT_DRESSING_ONE / 2;
     block->gusts = PORT_DRESSING_ONE / 3;
+    block->foam = PORT_DRESSING_ONE;
+    block->reflect = WATER_REFLECT;
+    block->sky = PORT_DRESSING_ONE;
+    block->glow = PORT_DRESSING_ONE;
     switch (kind) {
     case PORT_DRESS_GRASS:
     case PORT_DRESS_FLOWERS:
@@ -357,6 +370,11 @@ void port_DressDefault(
         break;
     case PORT_DRESS_MESH:
         block->solid = TRUE;
+        break;
+    case PORT_DRESS_SHAFTS:
+        block->count = SHAFT_MOTES;
+        block->height[0] = SHAFT_SIZE;
+        block->height[1] = SHAFT_SIZE;
         break;
     default:
         break;
@@ -572,6 +590,101 @@ static const char *port_DressingOn(
     return NULL;
 }
 
+/* `light = NAME ...`: the stage's lights a shafts block is the light of. */
+static const char *port_DressingLights(
+    PortDressDef *block, const char *value, const char *end) {
+    const char *word;
+    u32 length;
+    s32 count = 0;
+
+    while ((length = port_DressingWord(&value, end, &word)) != 0) {
+        u32 i;
+
+        if (count >= PORT_DRESSING_LIGHTS ||
+            length + 1 > PORT_DRESSING_NAME_SIZE) {
+            return "`light` is up to 4 names of the stage's lights, each of "
+                   "at most 31 letters";
+        }
+        for (i = 0; i < length; i++) {
+            block->light[count][i] = port_DressingLower(word[i]);
+        }
+        block->light[count][length] = TEXT_END;
+        count++;
+    }
+    if (count == 0) {
+        return "`light` is the names of the stage's lights";
+    }
+    block->light_count = count;
+    return NULL;
+}
+
+/* `name = value` of the water's and the shafts' words of the second pass:
+ * NULL, what is wrong, or `""` where the name is not one of them. */
+static const char *port_DressingSetMore(
+    PortDressDef *block, const char *name, u32 name_length, const char *value,
+    const char *end) {
+    s32 numbers[2];
+
+    if (port_DressingWordIs(name, name_length, "puddles")) {
+        return port_DressingFractionIn(
+                   value, end, &block->puddles, 0, PORT_DRESSING_ONE)
+                   ? NULL
+                   : "`puddles` is a number of 0 to 1";
+    }
+    if (port_DressingWordIs(name, name_length, "rain")) {
+        return port_DressingFractionIn(
+                   value, end, &block->rain, 0, 4 * PORT_DRESSING_ONE)
+                   ? NULL
+                   : "`rain` is a number of 0 to 4";
+    }
+    if (port_DressingWordIs(name, name_length, "foam")) {
+        return port_DressingFractionIn(
+                   value, end, &block->foam, 0, 4 * PORT_DRESSING_ONE)
+                   ? NULL
+                   : "`foam` is a number of 0 to 4";
+    }
+    if (port_DressingWordIs(name, name_length, "reflect")) {
+        return port_DressingFractionIn(
+                   value, end, &block->reflect, 0, PORT_DRESSING_ONE)
+                   ? NULL
+                   : "`reflect` is a number of 0 to 1";
+    }
+    if (port_DressingWordIs(name, name_length, "sky")) {
+        return port_DressingFractionIn(
+                   value, end, &block->sky, 0, PORT_DRESSING_ONE)
+                   ? NULL
+                   : "`sky` is a number of 0 to 1";
+    }
+    if (port_DressingWordIs(name, name_length, "glow")) {
+        return port_DressingFractionIn(
+                   value, end, &block->glow, 0, 4 * PORT_DRESSING_ONE)
+                   ? NULL
+                   : "`glow` is a number of 0 to 4";
+    }
+    if (port_DressingWordIs(name, name_length, "flow")) {
+        if (!port_DressingWholes(value, end, numbers, 2) ||
+            numbers[0] < -DEGREES_TURN || numbers[0] > DEGREES_TURN ||
+            numbers[1] < 0 || numbers[1] > FLOW_MOST) {
+            return "`flow` is two numbers: the way it flows, degrees, and "
+                   "how fast, 0 to 4,000 units a second";
+        }
+        block->flow[0] = numbers[0];
+        block->flow[1] = numbers[1];
+        return NULL;
+    }
+    if (port_DressingWordIs(name, name_length, "shallow")) {
+        if (!port_DressingColor(value, end, block->shallow)) {
+            return "`shallow` is #RRGGBB or three numbers of 0 to 255";
+        }
+        block->has_shallow = TRUE;
+        return NULL;
+    }
+    if (port_DressingWordIs(name, name_length, "light")) {
+        return port_DressingLights(block, value, end);
+    }
+    return "";
+}
+
 /* `name = value` of a block: NULL, or what is wrong with it. */
 static const char *port_DressingSet(
     PortDressDef *block, const char *name, u32 name_length, const char *value,
@@ -580,6 +693,10 @@ static const char *port_DressingSet(
     const char *why =
         port_DressingSetShared(block, name, name_length, value, end);
 
+    if (why == NULL || why[0] != TEXT_END) {
+        return why;
+    }
+    why = port_DressingSetMore(block, name, name_length, value, end);
     if (why == NULL || why[0] != TEXT_END) {
         return why;
     }
@@ -595,9 +712,11 @@ static const char *port_DressingSet(
         if (words == 1 &&
             port_DressingWholeIn(value, end, numbers, 1, HEIGHT_MOST)) {
             numbers[1] = numbers[0];
-        } else if (words != 2 || !port_DressingWholes(value, end, numbers, 2) ||
-                   numbers[0] < 1 || numbers[0] > numbers[1] ||
-                   numbers[1] > HEIGHT_MOST) {
+        } else if (
+            words != 2 || !port_DressingWholes(value, end, numbers, 2) ||
+            numbers[0] < 1 || numbers[1] < 1 ||
+            (numbers[0] > numbers[1] && block->kind != PORT_DRESS_SHAFTS) ||
+            numbers[0] > HEIGHT_MOST || numbers[1] > HEIGHT_MOST) {
             return "`height` is one or two numbers of world units, the "
                    "least first, up to 20,000";
         }
@@ -702,7 +821,8 @@ static const char *port_DressingSet(
         if (block->kind != PORT_DRESS_PARTICLES || which < 0 ||
             port_DressingWord(&value, end, &more) != 0) {
             return "`kind` is a particles block's: dust, leaves, embers, "
-                   "snow, petals or fireflies";
+                   "snow, petals, fireflies, rain, smoke, motes, spray or "
+                   "mist";
         }
         block->subkind = which;
         return NULL;
@@ -753,8 +873,8 @@ static s32 port_DressingOpen(
         port_DressingWord(&rest, close, &more) != 0 ||
         name_length + 1 > PORT_DRESSING_NAME_SIZE) {
         *why = "a block begins `[KIND NAME]`: grass, bush, reeds, flowers, "
-               "water, particles, mesh or wind, the name one word of at "
-               "most 31 letters";
+               "water, particles, mesh, wind or shafts, the name one word "
+               "of at most 31 letters";
         return -1;
     }
     if (name_length == 0) {

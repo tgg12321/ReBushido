@@ -10,9 +10,12 @@ gusts = 0.4
 [water sea]
 area = -20000 -16000 -3600 16500
 y = 1990
-color = #0E2A3A
+color = #0B3448
+shallow = #2C7470
 clarity = 0.25
 waves = 1.6
+foam = 1.5
+reflect = 0.7
 
 [particles sand]
 kind = dust

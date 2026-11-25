@@ -78,6 +78,12 @@ extern void port_GlDressingDrawSolid(const PortGlDressingView *view);
 /* What mixes with what is behind it -- the water, the particles -- after
  * the ground, the picture's framebuffer bound again. */
 extern void port_GlDressingDrawMixed(const PortGlDressingView *view);
+/* The shafts of light of a shafts block, kept by the last DrawMixed and
+ * drawn here, at the picture's end (gl_draw.c, port_GlFinishFrame), into
+ * `framebuffer` of `w` by `h`: over the walls and pieces the game painted
+ * after the ground, held by the ground's depth. Nothing where the last
+ * ground drew none. */
+extern void port_GlDressingDrawLate(u32 framebuffer, s32 w, s32 h);
 
 /* The meshes as the sun or a light sees them, through `matrix` (a column
  * after a column), into the depth map bound now (gl_sun.h, gl_lights.h):
