@@ -1140,10 +1140,14 @@ source no fight's camera sees (the lighthouse's lamp, 16,000 up).
 A **Remastered Classic** stage (PLAYING.md, "Kinds of stage") is
 dressed: grass, bushes, reeds and flowers drawn by instancing, swayed by
 the stage's wind and pushed aside by the fighters and by a blade swept
-near the ground; water that reflects the sky and ripples where a fighter
-wades; dust kicked up by steps, leaves and petals falling, embers rising
-from the fires, fireflies; scenery meshes. ROADMAP 17; how it is drawn is
-PORT.md, "The dressing".
+near the ground; water that reflects the sky, the stage and the fighters,
+deeper in colour where it is deep, foaming along its shore and rippling
+where a fighter wades or the rain falls; puddles; rain, candle smoke, sea
+spray and mist; shafts of light through a hall's doors and windows with
+the dust hanging in them; dust kicked up by steps, leaves and petals
+falling, embers rising from the fires, fireflies; scenery meshes, alone or
+in a piece's place. ROADMAP 17; how it is drawn is PORT.md, "The
+dressing".
 
 **It is the picture's alone.** Nothing of a dressing is the game's state
 or changes a value the game computes: a fight, a replay and a session
@@ -1200,8 +1204,9 @@ The world's units, the world's y running down, as the light files'.
 | `flowers` | three blades and a bloom of five petals; `color` is the bloom's | the same |
 | `reeds` | three tall blades, one with a brown head | the same |
 | `bush` | a mound of leaves; **looks solid** unless `solid = no` | the same |
-| `water` | a level surface that reflects the sky, the sun or the moon and the lamps, waved by the wind and rippled where a fighter wades | `y`, `color`, `clarity`, `waves`, `on` |
-| `particles` | `kind = dust`, `leaves`, `embers`, `snow`, `petals` or `fireflies` | `size`, `top`, `count`, `on` |
+| `water` | a level surface that reflects the sky, the sun or the moon, the lamps, and the stage and the fighters; waved by the wind, rippled where a fighter wades, ringed by rain; deep or shallow by the ground under it, foaming along its shore; or puddles | `y`, `color`, `shallow`, `clarity`, `waves`, `foam`, `reflect`, `sky`, `flow`, `puddles`, `rain`, `on` |
+| `particles` | `kind = dust`, `leaves`, `embers`, `snow`, `petals`, `fireflies`, `rain`, `smoke`, `motes`, `spray` or `mist` | `size`, `top`, `count`, `on`, `glow` |
+| `shafts` | the light of the stage's own lights through a door or a window, as shafts in the air, with motes hanging in them | `light`, `at`, `size`, `count`, `glow` |
 | `mesh` | a scenery mesh of the mods' (`file`); **looks solid** | `file`, `at`, `turn`, `scale`, `sit`, `piece`, `color`, `tint` |
 | `wind` | the stage's wind | `strength`, `direction`, `gusts` |
 
@@ -1226,13 +1231,41 @@ counts as night, as the light files'), `solid`.
   laid on the ground's own faces of that colour in its areas, `y` above
   them (a stream's bed, whatever its shape). `color` is the water's own
   where one looks down into it, `clarity` how much of what is under it
-  shows (0 to 1), `waves` their size (0 to 4).
+  shows (0 to 1), `waves` their size (0 to 4). Where the ground under a
+  level water lies deep it is `color`, where shallow `shallow` (lighter
+  and greener than `color` if it says none); the ground standing above it
+  is its shore, where `foam` (0 to 4, 1 if nothing says) laps, and rough
+  water (`waves` 1.5 and more) has caps of it. `reflect` (0 to 1, 0.6) is
+  how much it mirrors the stage's pieces and the fighters (the picture's
+  own reflections, `reflections`, as a floor that shines), `sky` (0 to 1,
+  1) how much of the sky it mirrors: 0 under a roof. `flow = WAY SPEED`
+  (degrees, units a second) carries its ripples along. With `on` the
+  water is laid on all the ground's faces in its areas and kept, texel
+  by texel, to where the ground's texture is of that colour: a stream
+  painted across the faces (the stage under the lost bridge's). With
+  `puddles` (0 to 1: how much of the ground) it is the ground's own faces
+  of `on`'s colour in its areas, wet only in patches, darkened about
+  them, and `rain` (0 to 4) rings it with drops.
 - **Particles**: `dust` is kicked up where a fighter steps, inside its
   areas (anywhere, if none) and on its `on` ground, its colour the
   ground's unless it says; `embers` rise from the stage's own flames
   (`on = flames`); `leaves`, `snow` and `petals` fall over the first
   area from `top` above the ground, drifting with the wind; `fireflies`
   hover from the ground to `top` and blink. `size` is a particle's.
+  `rain` is streaks falling from `top` over the first area, slanted by
+  the wind, and a splash for every third where it lands; `smoke` rises
+  from the stage's flames (`on = flames`, or from the ground over its
+  area), spreading and thinning; `motes` hang in the air over the area
+  and are seen where the stage's lights fall on them; `spray` is thrown
+  up in bursts along the area, as waves break, and falls back; `mist` is
+  banks of `size` drifting low across the area with the wind. `glow` (0
+  to 4, 1) makes any of them brighter or thicker.
+- **Shafts** take each of the stage's lights the block names (`light =
+  NAME ...`, up to four, of its light files, "Lights" above), shown at the times the light is, and draw its light through
+  an opening `size = WIDTH HEIGHT` across the light's way, centred on
+  `at` (or the light's own place), to the floor: a box of air whose light
+  is gathered along the line of sight, in blades as through a lattice,
+  fading along it, with `count` motes hanging in it.
 - **A mesh** is a Wavefront OBJ in the world's units, y down: `v x y z`
   or `v x y z r g b` (its colour, 0 to 1), `f` of three or more corners
   (a polygon is made a fan; texture and normal numbers are read past).
@@ -1280,6 +1313,10 @@ Without a disc image and the port built the walk is skipped, and says so.
   --mods FOLDER` (on Windows, the card's program, a window never shown)
   runs a fight of the CPU on the stage at 2,560 by 1,440, the dressing off
   and on, and keeps pictures of it in `tmp/stages17/`.
+- `python tools/port_dressing.py meshes` makes the gravestones the
+  program ships (`dressing/meshes/grave*.obj`): a footing stepped twice
+  and the stone with its edges chamfered and a low pyramid on top, of the
+  proportions of the pieces they stand in for.
 - `python3 tools/port_dressing.py rocks` makes the rocks the program
   ships (`dressing/meshes/rock_N.obj`): an icosahedron cut twice, pushed
   out and in by waves of a seed, flattened below, mossed where it faces
@@ -1292,6 +1329,9 @@ written by hand from the stages' maps, walks and pictures:
 
 | Stage | Its dressing |
 |---|---|
+| 0 Main Tatara shrine | shafts of light through the two doors in the west wall (the doors' own lights), motes |
+| 1 Meikyokan dojo | shafts through the two high windows, motes |
+| 2 Shainto HQ | smoke rising from the candles, motes in their light |
 | 3 Tatara shrine | embers from the fire baskets; grass where the lawn is |
 | 4 Bus stop | dust off the road's earth, leaves along it |
 | 5 Lost bridge | the river far below, leaves into the gorge |
@@ -1300,16 +1340,17 @@ written by hand from the stages' maps, walks and pictures:
 | 8 Outside Meikyokan | the dojo's lawn, clover, fireflies |
 | 9 Future dump site | rough grass, dust |
 | 10 Snake cliff | grass in a strong wind |
-| 11 Kimigaura coast | the sea and its waves, rocks in the shallows, sand kicked up |
+| 11 Kimigaura coast | the sea, deep and shallow, foam along the shore and on the waves, mirroring the fighters; rocks in the shallows, sand kicked up |
 | 12 Orange tree fields | grass, white flowers, leaves falling, fireflies |
 | 13 Castle rooftop | cherry petals past the moon |
-| 14 Under lost bridge | sand kicked up, leaves from the bridge |
+| 14 Under lost bridge | the stream painted across the ground as water, running along its bed; sand kicked up, leaves from the bridge |
 | 15 Terraced fields | grass on the banks, fireflies over the paddies |
 | 16 Under railway | dust, leaves |
 | 17 Water tower dam | leaves over the concrete |
 | 18 Lumberyard | sawdust kicked up |
 | 19 Lighthouse | the cliff top's grass in the sea wind, flowers |
 | 20 Kabuki stage | embers from the torches |
+| 21 Abandoned ship | sea spray thrown up past the rail on all four sides, in a strong sea wind |
 | 22 Ferry dock | the sea about the quay, dust off the concrete |
 | 23 Shainto gate | embers from the fires, grass in the moss |
 | 24 Purple cavern | embers from the candles |
@@ -1317,26 +1358,36 @@ written by hand from the stages' maps, walks and pictures:
 | 26 Railway | dust off the ballast |
 | 27 Abandoned tunnel | grass, dust |
 | 28 Abandoned shipyard | dust off the sand |
-| 31 Shainto cemetery | grass between the graves, cherry petals, embers from the candles, fireflies |
+| 29 Building rooftop | rain blown across it and splashing on the roof, puddles ringed by it, mirroring the towers' lights and the fighters |
+| 30 Building parking lot | puddles on the concrete, mirroring the ceiling's lights and the fighters, drips from the ceiling |
+| 31 Shainto cemetery | grass between the graves, cherry petals, embers from the candles, fireflies; three of its gravestones (pieces 3, 6 and 8, bare blocks) as stepped stones with chamfered edges |
+| 32 Team battle 1 | three shafts through the band of windows in the south wall, motes |
 | 33 Team battle 2 | embers from the fire baskets, sand kicked up |
+| 34 Chanbara | three shafts through the paper windows along the north wall (lights of their own, `lights/stage_34.txt`), motes |
+| 35, 36 Practice | dust motes over the boards |
+| 37 Castle rooftop, link mode | cherry petals over the whole courtyard, gravel kicked up |
 
 **What its assets are.** No picture and no model of anyone's: the
 foliage, the water and the particles are drawn by the program's own
 shaders from numbers (`src/port/gl/gl_dressing.c`), coloured by the
-stage's own textures as the game loaded them, and the rocks are made by
-`tools/port_dressing.py rocks` from a seed. All of it is the
-repository's, under its licence (AGPL-3.0, `LICENSE`); nothing was
-downloaded and nothing comes from the disc or from another game.
+stage's own textures as the game loaded them; the rocks are made by
+`tools/port_dressing.py rocks` from a seed, and the gravestones
+(`grave.obj`, `grave_wide.obj`) by `tools/port_dressing.py meshes` from
+a few numbers; the shafts' light is the stage's light files'. All of it
+is the repository's, under its licence (AGPL-3.0, `LICENSE`); nothing was
+downloaded, nothing was made by another program, and nothing comes from
+the disc or from another game.
 
-**Not yet dressed**, and what each wants: the halls and dojos (0 the
-main Tatara shrine, 1 the Meikyokan, 32 team battle 1, 34 chanbara, 35
-and 36 practice: dust motes in the light through the doors, which
-wants a particle kind that hangs in a light's cone), 2 Shainto HQ
-(candle smoke), 21 the abandoned ship (spray, gulls), 29 the building
-rooftop and 30 its parking lot (rain and puddles, which want a weather
-kind), and 37, which no fight reaches. Scenery meshes standing in for
-pieces (`piece`) are supported and checked but no stage ships one yet:
-each wants a model made for its piece.
+**Every stage is dressed**, 37 too: it is the castle rooftop as the
+game's link mode fights on it (`select.c`, `SELECT_STAGE_LINK_TO`: link
+mode's castle rooftop is stage 37, a courtyard seen from afar), which the
+port reaches with the original menus' link mode over the network
+(NETPLAY.md, "11. The link cable over UDP") or with `--fight 37` (`castle rooftop
+link`). What is left: gulls over the ship; a mist the fight camera would
+see (the `mist` kind is there, but no stage's open water lies where the
+fight looks); more of the pieces standing in by meshes of their own (only
+the cemetery's three plainest gravestones do: a piece's mesh has to keep
+its box's proportions within a quarter).
 
 ## Music
 

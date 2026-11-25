@@ -1,0 +1,12 @@
+format = 1
+# The first practice dojo, its floor in the dark: dust motes hanging over
+# the boards, catching the light.
+
+[particles motes]
+kind = motes
+area = -9500 -9500 9500 9500
+count = 600
+size = 9
+top = 3500
+glow = 1.6
+color = #FFF0D8

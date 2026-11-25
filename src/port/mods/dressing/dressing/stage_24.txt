@@ -9,6 +9,6 @@ gusts = 0.1
 [particles embers]
 kind = embers
 on = flames
-count = 30
-size = 10
+count = 48
+size = 12
 color = #FFB050

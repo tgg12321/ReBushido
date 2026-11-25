@@ -14,7 +14,7 @@ on = earth
 [particles leaves]
 kind = leaves
 area = -9250 -7500 13250 9500
-count = 180
-size = 40
+count = 288
+size = 56
 top = 5000
 color = #A8B070

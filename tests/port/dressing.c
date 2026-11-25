@@ -343,6 +343,62 @@ static void test_File(void) {
     }
 }
 
+/* The second pass's words: the weather, the water's, the shafts'. */
+static void test_Weather(void) {
+    static PortDressSet set;
+    char problem[PROBLEM_SIZE];
+    const PortDressDef *block;
+
+    set.count = 0;
+    CHECK_EQ(
+        test_Parse(
+            "format = 1\n"
+            "[particles rain]\n"
+            "kind = rain\n"
+            "area = -100 -100 100 100\n"
+            "glow = 1.5\n"
+            "[water puddles]\n"
+            "puddles = 0.4\n"
+            "rain = 2\n"
+            "foam = 0\n"
+            "reflect = 0.9\n"
+            "flow = 80 420\n"
+            "shallow = #3E8C8A\n"
+            "[shafts door]\n"
+            "light = door_moon Door_Day\n"
+            "size = 3800 1900\n",
+            &set, problem),
+        0);
+    CHECK_EQ(set.count, 3);
+    block = &set.block[0];
+    CHECK_EQ(block->subkind, PORT_PARTICLES_RAIN);
+    CHECK_EQ(block->glow, 1500);
+    block = &set.block[1];
+    CHECK_EQ(block->puddles, 400);
+    CHECK_EQ(block->rain, 2000);
+    CHECK_EQ(block->foam, 0);
+    CHECK_EQ(block->reflect, 900);
+    CHECK_EQ(block->flow[0], 80);
+    CHECK_EQ(block->flow[1], 420);
+    CHECK_EQ(block->has_shallow, TRUE);
+    CHECK_EQ(block->shallow[0], 0x3E);
+    block = &set.block[2];
+    CHECK_EQ(block->kind, PORT_DRESS_SHAFTS);
+    CHECK_EQ(block->light_count, 2);
+    CHECK(test_BytesEqual(block->light[1], "door_day", 9));
+    /* an opening is as wide as it is, whichever is the more */
+    CHECK_EQ(block->height[0], 3800);
+    CHECK_EQ(block->height[1], 1900);
+    CHECK_EQ(block->count, 120);
+    CHECK_EQ(set.block[1].reflect, 900);
+    test_Wrong("[water a]\npuddles = 2\n", "line 2: `puddles` is");
+    test_Wrong("[water a]\nflow = 80\n", "line 2: `flow` is two");
+    test_Wrong("[water a]\nflow = 80 9000\n", "line 2: `flow` is two");
+    test_Wrong("[shafts a]\nlight = a b c d e\n", "line 2: `light` is up");
+    test_Wrong("[particles a]\nkind = hail\n", "line 2: `kind` is a");
+    test_Wrong("[grass a]\nheight = 200 100\n", "line 2: `height` is one");
+}
+
 static void test_Layers(void) {
     const PortDressSet *set;
     static const PortArena arena;
@@ -414,6 +470,7 @@ static void test_Shipped(void) {
 
 void test_Main(void) {
     test_File();
+    test_Weather();
     test_Layers();
     test_Shipped();
 }

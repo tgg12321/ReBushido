@@ -1,0 +1,12 @@
+format = 1
+# The second practice dojo: dust motes hanging over the boards, catching
+# the hall's light.
+
+[particles motes]
+kind = motes
+area = -13500 -13500 13500 13500
+count = 700
+size = 9
+top = 3500
+glow = 1.6
+color = #FFF0D8

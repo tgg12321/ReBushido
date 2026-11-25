@@ -1,0 +1,25 @@
+format = 1
+# The main Tatara shrine: the light of outside through the two doors in
+# its west wall falling across the hall in shafts, the dust hanging in
+# them (the doors' own lights, src/port/mods/lights/), and motes over the
+# boards wherever a light reaches.
+
+[shafts door_south]
+light = door_south_moon door_south_day
+at = -11900 -2550 -4000
+size = 3800 4900
+count = 160
+
+[shafts door_north]
+light = door_north_moon door_north_day
+at = -11900 -2550 4020
+size = 3800 4900
+count = 160
+
+[particles motes]
+kind = motes
+area = -11000 -9000 7000 9000
+count = 500
+size = 8
+top = 3500
+color = #FFF4E0

@@ -14,7 +14,23 @@ color = #CFC7B5
 [particles leaves]
 kind = leaves
 area = -9000 -9000 5000 13000
-count = 70
-size = 26
+count = 112
+size = 36
 top = 2600
 color = #7A6A3A
+
+# the stream painted across the ground, as water: laid on the ground's faces
+# under it and kept to where its texture is the stream's colour, running
+# along its bed
+[water stream]
+area = -12000 -12000 8500 19000
+on = blue
+y = 6
+level = 0.6
+flow = 80 420
+waves = 0.5
+foam = 1.2
+reflect = 0.6
+clarity = 0.45
+color = #1D4A5A
+shallow = #3E8C8A

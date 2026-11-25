@@ -1,0 +1,37 @@
+format = 1
+# The abandoned ship: the sea wind across the deck, and spray thrown up
+# past the rail where the waves break against the hull, on all four sides
+# of the deck (each burst a group of the block's, falling back).
+
+[wind]
+strength = 1.1
+direction = 200
+gusts = 0.6
+
+[particles spray_south]
+kind = spray
+area = -8000 -8800 8000 -8000
+count = 300
+size = 80
+color = #E8F0F4
+
+[particles spray_north]
+kind = spray
+area = -8000 8000 8000 8800
+count = 300
+size = 80
+color = #E8F0F4
+
+[particles spray_east]
+kind = spray
+area = 8000 -8000 8800 8000
+count = 300
+size = 80
+color = #E8F0F4
+
+[particles spray_west]
+kind = spray
+area = -8800 -8000 -8000 8000
+count = 300
+size = 80
+color = #E8F0F4

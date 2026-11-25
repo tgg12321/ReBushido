@@ -1,0 +1,25 @@
+format = 1
+# The Meikyokan dojo: the light through the two windows high in its west
+# wall in shafts across the hall, the dust hanging in them (the windows'
+# own lights, src/port/mods/lights/), and motes over the boards wherever a
+# light reaches.
+
+[shafts window_south]
+light = window_south_moon window_south_day
+at = -9950 -3000 -6930
+size = 3200 1950
+count = 140
+
+[shafts window_north]
+light = window_north_moon window_north_day
+at = -9950 -3000 5815
+size = 2750 1950
+count = 140
+
+[particles motes]
+kind = motes
+area = -9500 -9500 13500 9500
+count = 500
+size = 8
+top = 3500
+color = #FFF4E0

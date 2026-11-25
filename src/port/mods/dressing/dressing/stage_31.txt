@@ -22,16 +22,16 @@ height = 80 190
 [particles petals]
 kind = petals
 area = -15500 -10000 19250 7500
-count = 200
-size = 34
+count = 260
+size = 41
 top = 3000
 color = #F2B4C6
 
 [particles embers]
 kind = embers
 on = flames
-count = 30
-size = 10
+count = 48
+size = 12
 color = #FFB050
 
 [particles fireflies]
@@ -42,3 +42,19 @@ size = 18
 top = 900
 color = #C8FF7A
 times = dusk night
+
+# the plain gravestone by the path (piece 3, a bare block) as a
+# stepped stone with chamfered edges and a pyramid top, made by
+# tools/port_dressing.py meshes and fitted into the piece's own box
+[mesh grave_by_path]
+file = grave
+piece = 3
+
+# the two wide stones beside it (pieces 6 and 8), the same, wide
+[mesh grave_wide_east]
+file = grave_wide
+piece = 6
+
+[mesh grave_wide_west]
+file = grave_wide
+piece = 8

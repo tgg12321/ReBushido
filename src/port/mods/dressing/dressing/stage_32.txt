@@ -1,0 +1,31 @@
+format = 1
+# The first team battle court: the light through the band of windows high
+# in its south wall in three shafts across the court, the dust hanging in
+# them (the windows' own lights, src/port/mods/lights/), and motes over
+# the boards wherever a light reaches.
+
+[shafts windows_west]
+light = windows_west_moon windows_west_day
+at = -6000 -3000 -9950
+size = 5600 1950
+count = 160
+
+[shafts windows_middle]
+light = windows_middle_moon windows_middle_day
+at = 0 -3000 -9950
+size = 5600 1950
+count = 160
+
+[shafts windows_east]
+light = windows_east_moon windows_east_day
+at = 6000 -3000 -9950
+size = 5600 1950
+count = 160
+
+[particles motes]
+kind = motes
+area = -9500 -9500 7500 9500
+count = 500
+size = 8
+top = 3500
+color = #FFF4E0

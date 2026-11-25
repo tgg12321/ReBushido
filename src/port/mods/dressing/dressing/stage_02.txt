@@ -1,0 +1,24 @@
+format = 1
+# Shainto HQ: smoke rising from the candles, thin and grey, curling and
+# spreading as it climbs, and motes in the candles' light.
+
+[wind]
+strength = 0.15
+direction = 40
+gusts = 0.2
+
+[particles smoke]
+kind = smoke
+on = flames
+count = 160
+size = 45
+glow = 1.2
+color = #A8A49C
+
+[particles motes]
+kind = motes
+area = -11500 -11250 11500 11500
+count = 400
+size = 8
+top = 3000
+color = #FFE8C8

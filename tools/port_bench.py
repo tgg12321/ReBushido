@@ -140,15 +140,19 @@ CASES = {
     # and the same with four fighters pushing the grass
     'ra1-dressed': (1, 'on', None),
     'ra1-dressed-stress': (1, 'on', 'fighters=4'),
+    # the building's rooftop in the rain: 4,500 streaks and their
+    # splashes, puddles that mirror the stage (the post's reflections)
+    'ra1-rain': (1, 'on', None),
 }
 # A case's settings over the bench's own.
 CASE_SETTINGS = {'ra1-2v2': (('teams', 'cpu'),)}
 # The dressed cases: the stage the plan's poke sets in place of Tatara
 # Shrine's, and the shipped dressing among the mods (build/bench/mods-dressed/).
-DRESSED_CASES = {'ra1-dressed': 8, 'ra1-dressed-stress': 8}
+DRESSED_CASES = {'ra1-dressed': 8, 'ra1-dressed-stress': 8, 'ra1-rain': 29}
 PACED_CASES = ('ra1-paced',)
-DEFAULT_CASES = ('ra0', 'ra1', 'ra2', 'ra1-plain', 'ra1-stress', 'ra1-2v2', 'ra1-dressed')
-BUDGET_CASES = ('ra0', 'ra1', 'ra2', 'ra1-stress', 'ra1-paced', 'ra1-dressed')
+DEFAULT_CASES = ('ra0', 'ra1', 'ra2', 'ra1-plain', 'ra1-stress', 'ra1-2v2', 'ra1-dressed',
+                 'ra1-rain')
+BUDGET_CASES = ('ra0', 'ra1', 'ra2', 'ra1-stress', 'ra1-paced', 'ra1-dressed', 'ra1-rain')
 
 # The budget (--budget): (case, measure, at most, what it is). The
 # measures are of the fight's blanks in which the game drew a frame,
@@ -230,6 +234,8 @@ DRESS_BUDGET_MS = 1.5
 MET_LIMITS += [
     ('ra1-dressed', 'dress_p95', DRESS_BUDGET_MS, "the dressing's pass on the card, a fight frame, 95%"),
     ('ra1-dressed', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, a dressed stage"),
+    ('ra1-rain', 'dress_p95', DRESS_BUDGET_MS, "the dressing's pass on the card, a fight frame, 95%, in the rain"),
+    ('ra1-rain', 'gpu_p95', BUDGET_MS, "the card's time of a fight frame, 95%, in the rain"),
 ]
 # The fight's first second is the end of its load: the limits on the
 # worst blanks are of what follows it.
