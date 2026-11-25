@@ -200,6 +200,9 @@ cut near the camera only when an edge is longer than 1,200 units (every
 cut is four primitives where there was one, and a frame's room for them
 is the game's: a ground of 1,700 small quads all cut overflows it); the
 collision grid with each face cut to every cell it crosses, 250 units past
-the cell as the disc's are, its outline grown by 2 units; up to 12
-textures of 64 by 64 in pages 10 to 12 with their two smaller copies,
-their colour tables in row 480.
+the cell as the disc's are, its outline grown by 2 units; up to 20
+textures (the fog's row) of 128, 64 or 32 texels square in the bottom
+right quarter of pages 10 to 12 (a 128 the whole quarter, a 64 a quarter
+of it, a 32 a sixteenth; the larger placed first), each with its two
+smaller copies at half and a quarter of its place, their colour tables in
+row 480; a face that repeats its texture cut at each repeat.

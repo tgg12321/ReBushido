@@ -8,6 +8,12 @@ tiles, stage by stage, with nothing shown (docs/PORT.md, "Remastered",
             [--out build/stagemesh] [--pairs 2] [--distance max]
             [--mesh every|on] [--other tiles|nodepth] [--mods FOLDER]
             [--props] [--gpu llvmpipe|card] [--against REV] [--store-baseline]
+            [--arena FILE.arena]
+
+With --arena it measures a custom arena (docs/MODS.md, "Custom arenas")
+in place of its host, the file alone in a folder of mods of its own, and
+the verdict's line is g_arena_proved's: the arena's key and the FNV-1a of
+its whole file, so the verdict holds for that file alone.
 
 Every stage the game can load is measured, 0 to 37: the 32 a fight can
 be set on, and the six the modes have of their own, which the menus
@@ -128,10 +134,38 @@ def verdict_of(row):
     return None
 
 
-def write_verdict(path, rows, props=False):
+def arena_of(path, folder):
+    """An arena's file put alone in a folder of mods of its own: its key
+    (the file's name), its host (`stands_in_for`, 25 if it does not say),
+    the FNV-1a of the whole file as the program takes it (port_arenas.h,
+    `hash`) and the folder."""
+    import shutil
+
+    with open(path, 'rb') as f:
+        data = f.read()
+    key = os.path.splitext(os.path.basename(path))[0].lower()
+    host = 25
+    for line in data.split(b'\n')[1:]:
+        words = line.decode('latin-1').split('=', 1)
+        if len(words) == 2 and words[0].strip() in ('preview', 'ground'):
+            break
+        if len(words) == 2 and words[0].strip() == 'stands_in_for':
+            host = int(words[1].split('#')[0])
+    value = 0xCBF29CE484222325
+    for byte in data:
+        value = ((value ^ byte) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    mods = os.path.abspath(folder)
+    if os.path.isdir(mods):
+        shutil.rmtree(mods)
+    os.makedirs(os.path.join(mods, key, 'arenas'))
+    shutil.copyfile(path, os.path.join(mods, key, 'arenas', key + '.arena'))
+    return {'key': key, 'host': host, 'hash': value, 'mods': mods}
+
+
+def write_verdict(path, rows, props=False, arena=None):
     """The table a reader looks at, and the line of g_stage_proved (or,
-    with --props, g_stage_props_proved) it comes to
-    (src/port/gl/gl_stage.c)."""
+    with --props, g_stage_props_proved; with --arena, g_arena_proved) it
+    comes to (src/port/gl/gl_stage.c)."""
     table = 'g_stage_props_proved' if props else 'g_stage_proved'
     with open(path, 'w', encoding='utf-8', newline='\n') as f:
         if props:
@@ -162,6 +196,11 @@ def write_verdict(path, rows, props=False):
         seen_stages = set(row['stage'] for row in rows)
         f.write('\nstages measured %d, the mesh kept on %d\n'
                 % (len(rows), len(kept)))
+        if arena:
+            f.write('\ng_arena_proved\'s line for the arena, if the mesh is kept:\n  %s\n'
+                    % ('{"%s", 0x%016XULL},' % (arena['key'], arena['hash']) if kept
+                       else '(none: the arena keeps the tiles)'))
+            return path
         f.write('\n%s, a stage a number, for the stages measured '
                 'here\n(a stage this run did not reach is left as it was):\n'
                 % table)
@@ -357,6 +396,9 @@ def main():
     # the mods both runs draw with (docs/MODS.md): a mod of the stage's
     # pages is to hold the verdicts as the game's own textures do
     ap.add_argument('--mods', default=None)
+    # a custom arena measured in place of its host (docs/MODS.md, "Custom
+    # arenas"): its verdict is g_arena_proved's, not the host's
+    ap.add_argument('--arena', default=None, metavar='FILE.arena')
     gl.add_gpu_option(ap)
     import baseline
 
@@ -385,6 +427,14 @@ def main():
         else:
             stages.append(int(piece))
     stages = [s for s in stages if 0 <= s < remaster.ALL_STAGES]
+    arena = None
+    if args.arena:
+        if args.mods:
+            print('port_stage_prove: --arena makes a folder of mods of its own; no --mods with it')
+            return 1
+        arena = arena_of(args.arena, os.path.join(args.out, 'arena-mods'))
+        args.mods = arena['mods']
+        stages = [arena['host']]
     held = baseline.Baseline(
         'port_stage_prove' + ('-props' if args.props else ''), args.gpu,
         dict((key, getattr(args, key)) for key in ('scale', 'tall', 'frames', 'every', 'distance', 'aspect',
@@ -395,7 +445,9 @@ def main():
         os.path.join(args.out, 'tour.toml'), args.frames, 20)
     rows = []
     for stage in stages:
-        folder = os.path.join(args.out, '%02d-%s' % (stage, STAGE_NAMES[stage]))
+        name = 'arena ' + arena['key'] if arena else STAGE_NAMES[stage]
+        folder = os.path.join(args.out, 'arena-' + arena['key'] if arena
+                              else '%02d-%s' % (stage, STAGE_NAMES[stage]))
         os.makedirs(folder, exist_ok=True)
         plan = remaster.plan_for(
             toml_path, os.path.join(folder, 'plan.txt'), stage, args.frames)
@@ -429,6 +481,8 @@ def main():
                 common += ['--gl-tall', str(args.tall)]
             if args.mods:
                 common += ['--mods', args.mods]
+            if arena:
+                common += ['--arena', arena['key']]
             log = os.path.join(folder, which + '.log')
             err = os.path.join(folder, which + '.err')
             for _ in range(3):
@@ -443,10 +497,10 @@ def main():
                           os.path.join(folder, 'on.log'))
         seen = look(os.path.join(folder, 'off'), os.path.join(folder, 'on'),
                     args.pairs, folder, args.from_blank, args.mark)
-        row = {'stage': stage, 'name': STAGE_NAMES[stage], 'same_trace': same,
+        row = {'stage': stage, 'name': name, 'same_trace': same,
                'off': runs['off'], 'on': runs['on'], 'pixels': seen}
         rows.append(row)
-        units['%02d-%s' % (stage, STAGE_NAMES[stage])] = dict(
+        units[os.path.basename(folder)] = dict(
             row, verdict=verdict_of(row),
             trace=dict((which, baseline.file_hash(os.path.join(folder, which + '.log'))
                         if os.path.exists(os.path.join(folder, which + '.log')) else None)
@@ -479,7 +533,7 @@ def main():
                        row['on']['vertices_mean'], row['off']['seconds'],
                        row['on']['seconds']))
     said = write_verdict(os.path.join(args.out, 'verdict.txt'), rows,
-                         args.props)
+                         args.props, arena)
     print()
     for row in rows:
         why = verdict_of(row)

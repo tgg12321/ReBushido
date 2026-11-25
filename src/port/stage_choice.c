@@ -112,6 +112,25 @@ static void port_StagePageMove(PortStageChoice *choice, s32 step) {
     }
 }
 
+/* L1 and R1 on the arenas' page: the list as pages of PAGE_ROWS, the
+ * cursor's page one back or on (round from the last to the first and
+ * back), the cursor on the same row of it or the page's last. */
+static void port_StagePageTurn(PortStageChoice *choice, s32 way) {
+    s32 count = port_ArenaCount();
+    s32 pages = (count + PAGE_ROWS - 1) / PAGE_ROWS;
+    s32 page;
+    s32 row = choice->page_cursor % PAGE_ROWS;
+
+    if (pages < 2) {
+        return;
+    }
+    page = (choice->page_cursor / PAGE_ROWS + way + pages) % pages;
+    choice->page_top = (u8)(page * PAGE_ROWS);
+    choice->page_cursor =
+        (u8)(page * PAGE_ROWS + row < count ? page * PAGE_ROWS + row
+                                            : count - 1);
+}
+
 /* A frame of a stage page (port_stage_choice.h): Square and Select on the
  * grid, or the arenas' page, which has every press while it is up. */
 s32 port_StagePageStep(s32 pressed, s32 *stage, s32 is_open) {
@@ -177,6 +196,10 @@ s32 port_StagePageStep(s32 pressed, s32 *stage, s32 is_open) {
     } else if (pressed & PAD_ANY(PADLup)) {
         snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
         port_StagePageMove(choice, -1);
+    } else if (
+        (pressed & PAD_ANY(PADL1 | PADR1)) && port_ArenaCount() > PAGE_ROWS) {
+        snd_Play(MENU_SOUND_CURSOR, SND_VOLUME_MAX, SND_VOLUME_MAX);
+        port_StagePageTurn(choice, (pressed & PAD_ANY(PADR1)) ? 1 : -1);
     }
     arena = port_ArenaAt(choice->page_cursor);
     if ((pressed & PAD_ANY(PADRdown)) && arena != NULL) {
